@@ -520,6 +520,7 @@ pub fn universal_sched(
         rrow!("memsetcopy", "constsequence", crate::kuna_memsetsequence::RuleMemsetCopy::with_group(false, "constsequence")),
         rrow!("rodatastringcopy", "constsequence", crate::kuna_rodatastring::RuleRodataStringCopy::with_group(false, "constsequence")),
         rrow!("fatstr", "constsequence", crate::kuna_fatstr::RuleFatStr::with_group(false, "constsequence")),
+        rrow!("swiftstr", "constsequence", crate::kuna_swiftstr::RuleSwiftString::with_group(false, "constsequence")),
         rrow!("bitfield_store", "bitfields", crate::bitfield::RuleBitFieldStore),
         rrow!("bitfield_out", "bitfields", crate::bitfield::RuleBitFieldOut),
         rrow!("bitfield_load", "bitfields", crate::bitfield::RuleBitFieldLoad),
@@ -801,6 +802,11 @@ pub fn universal_sched(
             act!(ActionPrototypeTypes::boxed("protorecovery")),
             act!(ActionFuncLink::boxed("protorecovery")),
             act!(ActionFuncLinkOutOnly::boxed("noproto")),
+            // (kuna) swifterror (option `swiftcall`): the error register
+            // defined after a throwing Swift call and read before a throwing
+            // return. After FuncLink, which gives each call its model; before
+            // heritage, which links the new write and read.
+            act!(crate::p4_calls::kuna_swifterror::ActionSwiftError::boxed("protorecovery")),
             fullloop,
             act!(ActionMappedLocalSync::boxed("localrecovery")),
             act!(ActionStartCleanUp::boxed("cleanup")),

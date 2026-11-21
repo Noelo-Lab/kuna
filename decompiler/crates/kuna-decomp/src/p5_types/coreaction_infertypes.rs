@@ -103,6 +103,12 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
                 return t;
             }
         }
+        // (kuna swiftcall) a throwing call's error is an object reference.
+        if in0_off == crate::userop::BUILTIN_SWIFT_ERROR as u64 {
+            if let Some(Ok(t)) = arch.types().map(|t| t.get_type_void().and_then(|v| t.get_type_pointer(out_size, v, 1))) {
+                return t;
+            }
+        }
     }
     // C++ `TypeOpCall::getOutputLocal` (typeop.cc:722) / `TypeOpCallind::getOutputLocal`
     // (typeop.cc:778): when the resolved `FuncCallSpecs` has a locked (committed)
@@ -390,6 +396,7 @@ fn call_output_type_local(data: &Funcdata, op: OpId, opcode: OpCode) -> Option<R
         return crate::p4_calls::kuna_passthrough::tail_return_type(data, op, size)
             .or_else(|| crate::p4_calls::kuna_slotargs::declared_result_type(data, op, fc, size))
             .or_else(|| crate::p4_calls::kuna_callrettype::stated_return_type(data, op, fc))
+            .or_else(|| crate::kuna_swiftinfer::pair_output_type(data, op))
             .or_else(|| crate::p4_calls::kuna_narrowret::stated_type(data, op, fc, size))
             .or_else(|| crate::kuna_floatreg::jump_result_type(data, op, size));
     }

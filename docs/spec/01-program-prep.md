@@ -6017,9 +6017,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   descriptor is an import (`…Tq`), the real member name; `Module.Sub.vtable#3.init`
   for an override of a local base; `<Module.Type:Swift.Hashable>.hash(into:)`
   for a resilient witness whose requirement descriptor is an import,
-  `<T:P>.requirement#2` for a local protocol's witness (the witness-table words,
+  `<T:P>.requirement#2.getter` (its position and requirement kind) for a local protocol's witness (the witness-table words,
   read through the chained-fixup overlay on a Mach-O and the `R_*_RELATIVE`
-  addends on an ELF), `Module.P.requirement#2.default` for a default
+  addends on an ELF), `Module.P.requirement#2.getter.default` for a default
   implementation; and the records: `….nominal_type_descriptor`,
   `….protocol_descriptor`, `….module_descriptor`,
   `<T:P>.protocol_conformance_descriptor`, `<T:P>.protocol_witness_table`,
@@ -6043,7 +6043,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   claimed by more than one type. Such a function is never named after one of
   its claimants: when all claims come from one type it is named after the
   first member (sorted) with the count of members it serves
-  (`<T:P>.requirement#0.merged#2`); when they are witnesses of one protocol
+  (`<T:P>.requirement#0.getter.merged#2`); when they are witnesses of one protocol
   member from different types it is named after the member alone
   (`<*:Swift.RawRepresentable>.init(rawValue:)`); any other mix (different
   types' vtable slots, different members) keeps the engine placeholder. A
@@ -6171,9 +6171,23 @@ every other binary's pass list is byte-identical to before the pass existed):
   static layout, so the name is still right), a nested struct inline, a
   collection as its storage word under the instantiation's name, a closure as
   its two words; an optional keeps its payload's type when nil is the zero
-  word (a reference, a string, a collection, a closure). Any other type — an
-  enum, an imported value type (`Foundation.Date`), a generic instantiation
-  without a known layout, a tuple, an existential — is `undefined<n>` over the
+  word (a reference, a string, a collection, a closure). A payload-less enum
+  with a static layout is a C enum of its cases in declaration order (the
+  values the runtime gives them, 0, 1, …) at the width its value witness
+  table states, so a field or a return of that type prints its case by name;
+  an optional of an integer, a float or a struct (a payload with no spare
+  bit) is a two-field struct named after the instantiation, the payload then
+  a one-byte `is_nil` tag; a Clang-imported type (`__C.CGSize`, `__C.NSString`)
+  is the C type of that name when the image has one (DWARF, the Objective-C
+  pass), inline for a struct and through a pointer for a class; a tuple is a
+  struct of its elements at their natural alignment, named after the tuple
+  with fields `_0`, `_1`, …; in an image that kept its symbols, a global
+  variable's storage symbol (`$s…vp`) types its data object with the
+  variable's demangled type under the dotted name (`callfix.ctr.step = 2;`,
+  `tests/stages/kuna-swiftglobals.xml`). Any other type — an enum with
+  payloads, an imported value type (`Foundation.Date`), a generic
+  instantiation without a known layout, an existential — is `undefined<n>`
+  over the
   bytes up to the next field, so the layout is always right and the names are
   always real; only the field's own type is withheld. A layout is refused
   whole when the field count disagrees with the descriptor, an offset
@@ -6233,7 +6247,13 @@ every other binary's pass list is byte-identical to before the pass existed):
   and — in an image that kept its symbols — every method, accessor,
   initializer and deinitializer the demangler places in a class, struct or
   enum, directly or through an extension, the throwing ones (a `throws` on the
-  function type) to `__swiftcall_throws`. A static member of a struct or enum
+  function type) to `__swiftcall_throws`, the `async` ones (an `async` on the
+  function type, or an await/suspend resume partial of one) to
+  `__swiftasynccall` / `__swiftasynccall_throws`, which also take the task's
+  context in the `swiftasync` register (x22 / r14; hinted as
+  `swift.AsyncContext *async_context`). Where the whole signature of a
+  symbol-named function maps to kuna types the arm declares its prototype
+  instead of binding the model alone (§4, `swiftcall`). A static member of a struct or enum
   binds nothing: its metatype is thin and passed nowhere. Specializations,
   thunks and closures are left alone. Each binding carries a `self` hint
   (`AnalysisOutput::swift_types.models` / `input_hints` → the decompile
@@ -6263,6 +6283,102 @@ every other binary's pass list is byte-identical to before the pass existed):
   `swift_call_syms_elf` on, and `swift_call_native_elf` on, where a C function
   uses r12 as an ordinary variable and a class witness of a class-bound
   protocol takes the reference.
+- **Swift names from code shape** (part of `swiftmetadata`; the pass reads
+  them at load, with the type-layout arm's metadata locations;
+  `decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swiftnames.rs`):
+  where a record gives only a position, the code at it is read (A64 only; the
+  decoder knows the handful of load/store, add, move and branch forms the
+  matchers need). *Stored-property accessors*: a class vtable run of getter,
+  setter and modify slots is one property's, and a stored property's getter
+  addresses its field first — `add x0, x20, #off` for the exclusivity check,
+  a direct `ldr`/`str` off `x20` (the `swiftself` register), or a register
+  offset whose value the body loads from a field offset global (`adrp; ldr`,
+  read statically: a class whose layout another module fixes). The offset
+  picks the field record through the static metadata's field offset vector
+  (the type-layout arm's metadata location), which must be a `var`; the
+  property is the record's name, a lazy property's `$__lazy_storage_$_`
+  storage naming the property itself (`Module.Class.cells.getter`). A
+  computed property dispatches through the isa or calls before it touches a
+  field, so it never matches. The evidence must agree: a setter or modify the
+  optimizer kept addresses the same field (a stored modify yields the field's
+  address; a lazy one calls the getter), a lazy getter stores the storage
+  back, each field is claimed by one run, and the matched getters follow the
+  field records' order — any failure leaves the class's slots positional. An
+  override of a slot so named takes the member too (`Module.Sub.width.getter`).
+  *Protocol requirements*: a local requirement takes the member name of what
+  a class conformance's witness thunk forwards to — the vtable slot it loads
+  through the isa (`ldr x8, [x20]; ldr x8, [x8, #off]; blr x8`, the offset
+  mapped through the class's and its local superclasses' vtable positions) or
+  the slot implementation it calls — or of a surviving witness symbol, when
+  every conformance agrees and the member's kind matches the requirement's; a
+  settable property's modify requirement follows a getter and setter so
+  named. That names the requirement for every conformer, struct witnesses
+  included (`<Module.Dot:Module.Shape>.id.getter`). A requirement left unnamed
+  has its witnesses carry the requirement kind (`<T:P>.requirement#2.getter`,
+  `.method`, `.init`, `.setter`, `.modify`, `.read`), on every architecture
+  and with or without the layout arm: the kind is the record's own.
+  *Value witnesses*: each statically laid-out struct and enum names the
+  functions its value witness table points at
+  (`Module.Token.destroy_value_witness`, and an enum's `getEnumTag`,
+  `destructiveProjectEnumData`, `destructiveInjectEnumTag`); a copy witness
+  that is a bitwise copy of exactly the type's size (loads off `x1` stored off
+  `x0` covering `[0, size)`) is the shared `__swift_memcpy<size>_<align>`, a
+  `destroy` that only returns is `__swift_noop_void_return`, and an enum's
+  `destroy` / `initializeWithCopy` whose one call is a local function names
+  that function its `outlined_consume` / `outlined_copy`. *Runtime helpers*:
+  the functions IRGen emits into every Swift image are matched by their fixed
+  arm64 bodies (branch displacements cleared) and the import each call's stub
+  reaches — `__swift_instantiateConcreteTypeFromMangledName` (the swiftc 5 and
+  6 forms and a split form taking the cache and the mangled-name reference
+  apart, each calling `swift_getTypeByMangledNameInContext` or its `2`
+  variant), `__swift_project_boxed_opaque_existential_1`,
+  `__swift_mutable_project_boxed_opaque_existential_1` (calling
+  `swift_makeBoxUnique`) and `__swift_destroy_boxed_opaque_existential_1`
+  (tail-calling `swift_release`); a C name takes the format's prefix (`_` on
+  a Mach-O). These claims join the record claims before any name is given, so
+  folded code resolves as above. On the stripped fixture `swift_names_macho`
+  every name code shape gives equals the unstripped twin's symbol or is the
+  kind-tagged position of it (`kuna-console/tests/verify_swiftnames.rs`); the
+  stage test `tests/stages/kuna-swiftnames.xml` runs the fixture with
+  `swiftmetadata` off and on.
+- **Swift runtime prototypes** (Swift-detected Mach-O and ELF, always on;
+  `decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swiftruntime.rs`):
+  the runtime's entry points carry the signatures its public headers give
+  them (`swift/Runtime/HeapObject.h`, `Metadata.h`, `Casting.h`,
+  `Exclusivity.h`), bound by name so an import stub, a GOT slot and an
+  unstripped runtime all take them — about 180 rows: allocation and
+  refcounting (the native, unknown-object, bridge-object, unowned and error
+  families with their `_n` counts), boxes and errors (`swift.BoxPair`),
+  metadata accessors and instantiation (`swift.MetadataResponse`, the
+  metadata and its state, two words, so a caller's `x0` read is `.metadata`),
+  casting (`swift_dynamicCast` is a `bool`), exclusivity, weak and unowned
+  references, enum tags, array bulk operations, class/struct/enum metadata
+  initialization and the task allocator. The runtime is C under the platform
+  convention, so these are plain prototypes; the `swiftcc` entry points
+  whose arguments ride in the Swift registers (`swift_task_switch`, the
+  key-path accessors) are left to recovery, and so are the three whose last
+  argument the compiler leaves unset when the callee ignores it (`swift_once`,
+  `swift_getKeyPath`, `swift_getWitnessTable`): a declared slot there would
+  make a stale register an argument and a parameter of the caller. An object
+  reference is a
+  `void *`: its type is the metadata's, which the call site knows, and a
+  `swift.HeapObject *` would hide the first stored property behind
+  `obj[1].isa`. The table states facts of the runtime's ABI, so it has no
+  option; the pass is registered for a Swift-detected image only and every
+  other image's pass list is unchanged. The stage test
+  `tests/stages/kuna-swiftruntime.xml` runs the stripped `swift_types_elf`.
+  On arm64 the table also carries the runtime's register-specific retain and
+  release entry points (`swift/Runtime/CustomRRABI.h`): `swift_retain_x<N>`
+  takes the object in `x<N>` and returns it in `x0`, `swift_release_x<N>`
+  reads `x<N>` and returns nothing, for `N` in 1–15 and 19–28 (`x0` is the
+  plain entry point, `x16`/`x17` are call glue, `x18` is reserved, `x29`/`x30`
+  the frame and link registers). An optimized caller releases a value through
+  them without moving it into `x0`, where no convention places a parameter,
+  so the one parameter is explicit storage on the prototype (the
+  `objc_retain_x<N>` shape) and the call prints its argument:
+  `swift_release_x20(v)` for the bare `swift_release_x20()`. The stage test
+  `tests/stages/kuna-swiftrrregs.xml` runs `swift_rr_regs_macho`, an arm64
+  Mach-O assembled against the iOS libswiftCore.
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the

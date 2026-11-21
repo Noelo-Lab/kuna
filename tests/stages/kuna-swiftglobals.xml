@@ -1,0 +1,51 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Typed Swift globals from their storage symbols (`option swifttypes
+    on|off`).
+
+    Issue: a Swift global's storage symbol (`$s7callfix3ctrAA7CounterVvp`)
+    names its type in its mangling, yet the data object renders under the
+    mangled name as untyped bytes: `$s7callfix3ctrAA7CounterVvp._8_8_ = 2`.
+
+    Stage / sub-stage: P1 external-refinement, the layout arm
+    (`kuna_swifttypes::global_variable`): a `Variable` entity's demangled
+    type is the typed data object's type.
+
+    P0 assertion: `option swifttypes on|off` (default on; the pass needs
+    `swiftmetadata on`).
+
+    Both passes load `swift_call_syms_elf` (symbols kept) with
+    `swiftmetadata on`. Pass 1 (`option swifttypes off`): the globals keep
+    their mangled names and raw accesses. Pass 2 (the default): `callfix.n`,
+    `callfix.acct` and `callfix.ctr` are typed, so the struct global's fields
+    print as `callfix.ctr.value` and `callfix.ctr.step`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_call_syms_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>option swifttypes off</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_call_syms_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="swifttypes off: the struct global is raw bytes under its mangled name" min="1" max="1">\*\(unsigned long \*\)&amp;\$s7callfix3ctrAA7CounterVvp\[8\] = 2;</stringmatch>
+<stringmatch name="swifttypes on: the integer global is typed and named" min="1" max="1">callfix\.n = </stringmatch>
+<stringmatch name="swifttypes on: the struct global's fields print by name" min="1" max="1">callfix\.ctr\.step = 2;</stringmatch>
+<stringmatch name="swifttypes on: the class-reference global is typed" min="1" max="1">callfix\.acct = </stringmatch>
+</decompilertest>

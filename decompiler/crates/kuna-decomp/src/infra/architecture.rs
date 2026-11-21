@@ -1328,6 +1328,10 @@ pub struct Architecture {
     /// (kuna `swiftcall`) Per-image cache of whether a callee's body leaves
     /// `swiftself` unread ([`crate::kuna_swiftcall::seed_self_readers`]).
     pub kuna_swift_self_first_cache: std::collections::HashMap<(int4, uintb), bool>,
+    /// (kuna `swiftcall`) Whether the body at an entry reads `swiftself`
+    /// before writing it, other than to save it
+    /// ([`crate::kuna_swiftinfer::seed`]).
+    pub kuna_swift_self_reads: std::collections::BTreeMap<(int4, uintb), bool>,
     /// (kuna `argclobber`) Per-image cache of the forwarding resolution
     /// ([`crate::kuna_calleedeadarg::resolve_forward_transfer`]) — what a value
     /// the caller leaves in a register can reach once the callee at `(space
@@ -2562,6 +2566,7 @@ impl Architecture {
             kuna_callee_dead_cache: std::collections::HashMap::new(),
             kuna_callee_memory_cache: std::collections::HashMap::new(),
             kuna_swift_self_first_cache: std::collections::HashMap::new(),
+            kuna_swift_self_reads: std::collections::BTreeMap::new(),
             kuna_callee_forward_cache: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_tail_callee_batch: false,
@@ -4804,6 +4809,9 @@ impl Architecture {
             for id in [BUILTIN_MEMSET16, BUILTIN_MEMSET32, BUILTIN_MEMSET64, BUILTIN_MEMCMP] {
                 userops.register_builtin(id, &adapter)?;
             }
+            // (kuna swiftcall) the Swift error register's two moments.
+            userops.register_builtin(crate::userop::BUILTIN_SWIFT_ERROR, &adapter)?;
+            userops.register_builtin(crate::userop::BUILTIN_SWIFT_THROW, &adapter)?;
             Ok(())
         })();
         self.userops = userops;
@@ -6204,21 +6212,24 @@ impl Architecture {
             byname.insert(rc.get_name().to_string(), Rc::clone(&rc));
             out.push(rc);
         }
-        // (kuna `swiftcall`) Swift's two models, derived from the default one
+        // (kuna `swiftcall`) Swift's four models, derived from the default one
         // on a language Swift targets when the spec declares neither.
         let default_el = find_child(root, "default_proto").and_then(|dp| find_child(&dp, "prototype"));
         let regs = crate::kuna_swiftcall::swift_registers(|name| {
             self.translate.probe_register_varnode(name.as_bytes()).map(|v| v.size as int4)
         });
-        if let (Some(el), Some((self_reg, error_reg))) = (default_el, regs) {
-            for (name, error) in [
-                (crate::kuna_swiftcall::SWIFTCALL, None),
-                (crate::kuna_swiftcall::SWIFTCALL_THROWS, Some(error_reg)),
-            ] {
+        if let (Some(el), Some((self_reg, error_reg, async_reg))) = (default_el, regs) {
+            for (name, throws, is_async) in crate::kuna_swiftcall::MODELS {
                 if byname.contains_key(name) {
                     continue;
                 }
-                let derived = Rc::new(crate::kuna_swiftcall::derive_model(&el, name, self_reg, error));
+                let derived = Rc::new(crate::kuna_swiftcall::derive_model(
+                    &el,
+                    name,
+                    self_reg,
+                    throws.then_some(error_reg),
+                    is_async.then_some(async_reg),
+                ));
                 if let Ok(model) = self.decode_proto_model(&derived, root) {
                     let rc = Rc::new(model);
                     byname.insert(name.to_string(), Rc::clone(&rc));

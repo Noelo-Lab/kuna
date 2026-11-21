@@ -2048,6 +2048,9 @@ fn decompile_func_full_with_objects_inner(
         // global-only lookup never finds the prototype the DWARF C++ arm parked on
         // `Account::deposit`. Inert for every prototype parked by NAME (that path
         // resolves through the global scope, so it can only reach global symbols).
+        // (kuna `swiftcall`) Which direct callees, and whether this function,
+        // read `swiftself` on entry.
+        let reads_swiftself = crate::kuna_swiftinfer::seed(arch, &mut fd);
         let recovered_proto = if pending_proto.is_none() {
             arch.symboltab.function_proto_pieces_across_scopes(&entry_addr).cloned()
         } else {
@@ -2082,6 +2085,46 @@ fn decompile_func_full_with_objects_inner(
             fd.apply_locked_prototype_with_model(&rt.output, None)?;
             fd.get_func_proto_mut().set_input_lock(false);
             fd.kuna_set_elfmain(Some(rt.fresh()));
+        } else if let Some(abi) = fd.get_arch().swift_abi.clone().filter(|_| {
+            fd.get_arch().bound_proto_model(&entry_addr).is_none_or(|m| m.get_name().starts_with("__swift"))
+        }) {
+            // (kuna `swiftcall`) A Swift function's convention without a
+            // signature: the one the metadata bound, upgraded by what the
+            // body calls — `swift_willThrow` makes it throw, the task
+            // runtime's suspension entry points make it `async` — so a
+            // stripped image's resume partials take their context and its
+            // throwing functions hand back their error. A function the
+            // metadata did not bind is Swift when its body reads `swiftself`.
+            let bound = fd.get_arch().bound_proto_model(&entry_addr);
+            let (mut is_async, mut throws) = crate::kuna_swiftcall::callee_evidence(&fd, |a| {
+                arch.symboltab
+                    .find_function_across_scopes(a)
+                    .map(|(sid, _)| arch.symboltab.symbol(sid).get_name().to_string())
+            });
+            if let Some(b) = &bound {
+                let n = b.get_name();
+                throws |= n.ends_with("_throws");
+                is_async |= n.starts_with(crate::kuna_swiftcall::SWIFTASYNCCALL);
+            }
+            if bound.is_some() || is_async || throws || reads_swiftself {
+                let proto = fd.get_func_proto_mut();
+                proto.set_model(Some(abi.model(is_async, throws)));
+                proto.set_model_lock(true);
+                let mut hints: Vec<crate::kuna_inputhints::InputHint> =
+                    input_hints.as_deref().cloned().unwrap_or_default();
+                if is_async && !hints.iter().any(|h| h.addr == abi.async_reg.0) {
+                    hints.push(crate::kuna_inputhints::InputHint {
+                        addr: abi.async_reg.0.clone(),
+                        size: abi.async_reg.1,
+                        name: "async_context".to_string(),
+                        ct: abi.async_context.clone(),
+                    });
+                }
+                if reads_swiftself && !hints.iter().any(|h| h.addr == abi.self_reg.0) {
+                    hints.extend(crate::kuna_swiftinfer::self_hint(arch));
+                }
+                fd.kuna_set_input_hints((!hints.is_empty()).then(|| std::rc::Rc::new(hints)));
+            }
         } else if let Some(model) =
             fd.get_arch().bound_proto_model(&entry_addr)
         {

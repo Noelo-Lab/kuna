@@ -1446,6 +1446,73 @@ clang -target arm64-apple-macos11 -O1 -c macho_gotdata_local.c -o m.o
        -e _main -o macho_gotdata_local m.o
 ```
 
+### `macho_swift_strsel_arm64` — Swift string literals picked per branch (`fatstr`)
+
+`macho_swift_strsel_arm64` (arm64, ~51 KB, stripped) is the fixture for
+`tests/stages/kuna-swiftstrcsel.xml`: Swift string literals whose two words
+(count word, object word) are chosen per branch, by `csel` pairs or a switch,
+so each arm's words live in registers that are not numbered next to each other.
+Its source `macho_swift_strsel.swift` is built with swiftc 6.3 for
+`arm64-apple-macosx13.0` against a macOS SDK (an SDK is only a build input:
+the binary imports `libswiftCore` and `libSystem` and carries nothing from it):
+
+```bash
+SDK=/path/to/MacOSX13.3.sdk          # any macOS SDK with usr/lib/swift
+RES=/path/to/XcodeDefault.xctoolchain/usr/lib/swift
+swiftc -target arm64-apple-macosx13.0 -sdk "$SDK" -resource-dir "$RES" -O \
+       -module-name strsel -c macho_swift_strsel.swift -o m.o
+ld64.lld -arch arm64 -platform_version macos 13.0 13.3 -syslibroot "$SDK" \
+       -L "$SDK/usr/lib/swift" -lSystem -lswiftCore -o strsel m.o
+llvm-strip --strip-all -o macho_swift_strsel_arm64 strsel
+```
+
+**Pinned VMAs** (the unstripped `strsel` symbol table): `strsel.pick(_:_:)`
+(`$s6strsel4pickySiSb_SbtF`)@`0x100000d30` (two `csel` pairs per literal:
+"serviceItems"/"serviceDate", "shape"/"animal"), `strsel.tag(_:_:)`@`0x100000e30`
+("enabled"/"disabled" selected and stored into `Box.label`),
+`strsel.blank(_:)`@`0x100000eb0` (the empty literal stored),
+`Field.hash(into:)`@`0x100000f1c` (a switch over "serviceItems", "serviceDate",
+"serviceProvider", "odoMeter").
+
+### `swift_names_macho` — a stripped arm64 Swift Mach-O (`swiftmetadata`)
+
+`swift_names_macho` (arm64 Mach-O, 67 KB) is the fixture for the names the
+Swift metadata pass reads off code shape (`tests/stages/kuna-swiftnames.xml`,
+`kuna-console/tests/verify_swiftnames.rs`), and `swift_names_macho_symbols`
+is the same link before the strip, the oracle the test holds every derived
+name to. Its source `swift_names_macho.swift` declares internal types (so the
+executable exports nothing but `_main`, as an app does): a class with stored,
+`let`, lazy and computed properties, a subclass with a stored and a computed
+property conforming to a local protocol, structs conforming to it (one too
+large for the existential buffer), a plain-data struct and a payload enum.
+Built on Linux with the swiftly 5.10.1 toolchain and a Darwin Swift SDK
+bundle (`~/.swiftpm/swift-sdks/darwin.artifactbundle`, MacOSX 13.3 SDK, its
+`ld64.lld`); the binary carries no SDK content, only its import names:
+
+```bash
+B=~/.swiftpm/swift-sdks/darwin.artifactbundle
+SDK=$B/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
+swiftc -O -module-name namefix -target arm64-apple-macos13 -sdk $SDK \
+  -use-ld=lld -ld-path=$B/toolset/bin/ld64.lld swift_names_macho.swift \
+  -o swift_names_macho_symbols
+llvm-strip --strip-all -o swift_names_macho swift_names_macho_symbols
+```
+
+**Pinned VMAs** (the twin's symbols): `$s7namefix5BoardC5widthSivg`
+(`Board.width.getter`, vtable slot 0)@`0x100001514`, the lazy
+`Board.cells.getter` (slot 6)@`0x1000016ac`, `Tile.id.getter`@`0x100001ab8`,
+the `Dot: Shape` witness of `id.getter`@`0x1000020bc` and of the computed
+`area.getter`@`0x1000020e0`, `__swift_instantiateConcreteTypeFromMangledName`
+@`0x10000262c`, `__swift_project_boxed_opaque_existential_1`@`0x100002764`,
+`Token`'s `destroy` value witness@`0x1000027f4` and `outlined copy`
+@`0x1000027a8`, `__swift_memcpy25_8`@`0x1000028d0`. With `swiftmetadata` on
+they decompile as `namefix.Board.width.getter`,
+`<namefix.Dot:namefix.Shape>.id.getter`,
+`<namefix.Dot:namefix.Shape>.requirement#3.getter`,
+`___swift_instantiateConcreteTypeFromMangledName`, …, where the records
+alone give `namefix.Board.vtable#0.getter`,
+`<namefix.Dot:namefix.Shape>.requirement#0.getter`, `sub_10000262c`, ….
+
 ### `swift_metadata_elf` — a stripped Swift executable (`swiftmetadata`)
 
 `swift_metadata_elf` (x86-64 ELF, 14 KB) is the Swift runtime-metadata fixture
@@ -2362,9 +2429,9 @@ Its `DT_RUNPATH` was blanked after the build the same way as
 witnesses of `Alpha` and `Beta` both at `0x27f0`, `Delta`'s `tag.getter` and
 `describe()` witnesses both at `0x2ab0`, `Gamma`'s `Keyed.key.getter` witness
 at `0x2850`, `Alpha`'s `describe()` at `0x2800`. With `swiftmetadata on` they
-decompile as `<*:icffix.Tagged>.requirement#0(void)`,
-`<icffix.Delta:icffix.Tagged>.requirement#0.merged#2(void)` and
-`<icffix.Gamma:icffix.Keyed>.requirement#0(swift.type_metadata *Self, void
+decompile as `<*:icffix.Tagged>.requirement#0.getter(void)`,
+`<icffix.Delta:icffix.Tagged>.requirement#0.getter.merged#2(void)` and
+`<icffix.Gamma:icffix.Keyed>.requirement#0.getter(swift.type_metadata *Self, void
 *witness_table, icffix.Gamma *self)`.
 ### `swift_call_elf` / `swift_call_syms_elf` — Swift methods, witnesses and a throwing call (`swiftcall`)
 
@@ -2407,12 +2474,69 @@ on` (`swiftcall` is on by default) the class method decompiles as
 `callfix.Account.vtable#7.method(callfix.Account *self,long a1,long a2)` and
 passes `self` to the virtual calls it makes on itself, the struct witness
 writes `self->step`, the class witness takes `callfix.Account **self`, and
-`run` passes `a0` to both virtual calls and keeps `if (v5) {
-swift_release(v5); v3 = -1; }`; with symbols, `advance` takes `callfix.Counter
-*self` and `run` passes it `a1`, `peek` gains no `self`, and `settle` hands its
-own `self` to both `fee(for:)` calls. With `swiftcall off` the methods read
+`run` passes `a0` to both virtual calls and reads the throwing call's error
+as `v5 = swift_error(); if (v5) { swift_release(v5); v3 = -1; }`; with
+symbols, `run` is declared `(callfix.Account *a0, callfix.Counter *a1, long
+a2)`, `advance(by:times:)` takes `(long by, long times, callfix.Counter *self)`
+and `run` passes it `a1`, `peek(_:)` takes `self` by value (`peek(_:)(a2,*a1)`),
+`withdraw(_:)` ends in `swift_throw(v5)` with the allocated error, and `settle`
+hands its own `self` to both `fee(for:)` calls. With `swiftcall off` the methods read
 `self` from an unnamed r13, the calls pass none, and `run` returns the throwing
 call's result unchecked.
+
+### `swift_sigs_syms_elf` / `swift_sigs_elf` — declared Swift signatures, four-word returns, async (`swiftcall`)
+
+`swift_sigs_syms_elf` (x86-64 ELF, 26 KB, symbols kept) is the declared-prototype
+fixture (`tests/stages/kuna-swiftsigs.xml`); `swift_sigs_elf` is the same binary
+after `llvm-strip --strip-all` (`tests/stages/kuna-swiftasync.xml`: the async
+context from what the body calls, with no name to say so). Its source
+`swift_sigs_syms_elf.swift` declares a class `Box` whose methods return a
+three-word struct (`triple`, back in `rcx:rdx:rax`), a five-word struct (`wide`,
+through the indirect result register, rax on x86-64 Swift), a payload-less enum
+(`tint`, `Color`), an `async` method (`slow`, its context in r14) and a plain
+`scaled(_:by:)`; a struct `Triple` with a non-mutating `sum()` (`self`
+exploded) and a mutating `bump(_:)` (`self` in r13); free functions taking a
+three-word struct by value (`sum3`), a five-word one by address (`sum5`), a
+tuple in and out (`swap2`), and generic ones (`twice<T>`, `hashed<T:
+Hashable>`, the metadata and witness table after their arguments). Built with
+`swiftc -O -module-name sigfix -parse-as-library swift_sigs_syms_elf.swift
+-o swift_sigs_syms_elf` (not stripped: the signatures are the symbols').
+
+**Pinned VMAs** (`nm`): `Box.triple(_:)`@`0x3e00`, `Box.wide(_:)`@`0x3e30`,
+`Box.slow(_:)`@`0x3ea0` (resume partial@`0x3110`), `Box.tint(_:)`@`0x3ee0`,
+`Box.color.getter`@`0x3d30`, `Triple.sum()`@`0x4010` (self exploded) and
+`Triple.bump(_:)`@`0x3f20` (mutating, self in r13), `sum3(_:)`@`0x3f70` (a
+three-word struct by value), `sum5(_:)`@`0x3f80` (a five-word struct by
+address), `swap2(_:)`@`0x3f60` (a tuple in and out), `twice<A>(_:_:)`@`0x3f30`
+and `hashed<A: Hashable>(_:_:)`@`0x3f40` (the metadata and witness table
+after the arguments). With `swiftmetadata on` they decompile as
+`sigfix.Triple sigfix.Box.triple(_:)(long a0, sigfix.Box *self)`,
+`sigfix.Wide *sigfix.Box.wide(_:)(sigfix.Wide *rethidden, long a0, sigfix.Box *self)`,
+`void sigfix.Box.slow(_:)(swift.AsyncContext *async_context, sigfix.Box *self, …)`
+(`async_context[1].resume_parent = self;`), `sigfix.Color sigfix.Box.tint(_:)(…)
+{ … return red; }`, `long sigfix.sum3(_:)(sigfix.Triple a0)`, `long
+sigfix.sum5(_:)(sigfix.Wide *a0)`, `(Swift.Int,Swift.Int)
+sigfix.swap2(_:)((Swift.Int,Swift.Int) a0)`, `long sigfix.hashed(_:_:)(void *a0,
+long a1, swift.type_metadata *metadata_A, void *witness_A_Hashable)`, `long
+sigfix.Triple.sum()(sigfix.Triple self)` and `void sigfix.Triple.bump(_:)(long a0,
+sigfix.Triple *self)`.
+
+### `swift_infer_elf` — Swift functions the metadata does not bind (`swiftcall`)
+
+`swift_infer_elf` (x86-64 ELF, 11 KB, stripped) is the fixture for
+`tests/stages/kuna-swiftinfer.xml`. Its source `swift_infer_elf.swift` returns an
+escaping closure from `makeAdder`, whose partial-apply forwarder (0x24b0)
+reads the captured `Box` through r13; `usePair` (0x2840) reads both words of
+the `(Int, Int)` that `split` returns; `forward` (0x28a0) calls the throwing
+`mayThrow` with its own r12 and tests r12 after. Built with the swiftly 6.3
+toolchain:
+
+```bash
+swiftc -O -module-name inferfix -parse-as-library swift_infer_elf.swift -o swift_infer_syms_elf
+llvm-strip --strip-all -o swift_infer_elf swift_infer_syms_elf
+```
+
+SHA-256: `27e0e70757ea530825ba3e489f012c93566fa02f730e99b928ed951bd65ab162`.
 
 ### `swift_call_helper_elf` — a mutating struct call after a runtime helper (`swiftcall`)
 
@@ -2454,7 +2578,7 @@ llvm-objcopy --strip-all nativefix swift_call_native_elf
 (`0x10fe`) zero r12, make an unrelated call and read r12 back as a value,
 which no throwing call's caller does: `tests/stages/kuna-swiftcall.xml` pins
 that their `__swiftcall_throws` rule stays off, so the zero stays a zero.
-`<nativefix.Impl:nativefix.ClassOnly>.requirement#0` (`0xe70`) is the witness
+`<nativefix.Impl:nativefix.ClassOnly>.requirement#0.getter` (`0xe70`) is the witness
 of a class-bound protocol on a class, whose `self` is the reference itself.
 
 ### `swift_call_arm64_elf` — arm64 callers that test x21 after a throwing call (`swiftcall`)
