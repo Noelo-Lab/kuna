@@ -143,7 +143,7 @@ impl<'a> A32Tables<'a> {
                 if targets.is_empty() {
                     return TableRead::default();
                 }
-                return TableRead { cases: targets, stated: Some(cases), gap: None };
+                return TableRead { cases: targets, stated: Some(cases), gap: None, unbounded: false };
             }
             if index.is_none()
                 && matches!(op.opcode, OpCode::CPUI_INT_LEFT | OpCode::CPUI_INT_MULT | OpCode::CPUI_INT_ADD)

@@ -226,6 +226,9 @@ mod decompile_graph_cli;
 #[path = "decompile_json_cli.rs"]
 mod decompile_json_cli;
 
+#[path = "tail_callee_batch_cli.rs"]
+mod tail_callee_batch_cli;
+
 #[path = "function_warnings_cli.rs"]
 mod function_warnings_cli;
 
@@ -279,6 +282,9 @@ mod fid_cli;
 
 #[path = "fid_db_status_cli.rs"]
 mod fid_db_status_cli;
+
+#[path = "flirt_make_cli.rs"]
+mod flirt_make_cli;
 
 #[path = "float_unordered_compare.rs"]
 mod float_unordered_compare;
@@ -833,6 +839,10 @@ mod integer_field_extract;
 mod go_store_value;
 #[path = "go_pointer_arithmetic.rs"]
 mod go_pointer_arithmetic;
+#[path = "go_stack_abi.rs"]
+mod go_stack_abi;
+#[path = "call_table_cli.rs"]
+mod call_table_cli;
 
 #[path = "rust_integer_conversions.rs"]
 mod rust_integer_conversions;
@@ -911,3 +921,6 @@ mod call_site_prototype;
 
 #[path = "xrefs_immutable_got.rs"]
 mod xrefs_immutable_got;
+
+#[path = "types_header.rs"]
+mod types_header;

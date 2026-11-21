@@ -1022,6 +1022,11 @@ impl Funcdata {
         std::mem::take(&mut self.pending_comments)
     }
 
+    /// Discard the buffered comments of any type in `types`.
+    pub fn drop_pending_comments(&mut self, types: kuna_base::types::uint4) {
+        self.pending_comments.retain(|(tp, _, _)| tp & types == 0);
+    }
+
     /// How many analysis comments are buffered (a mark for
     /// [`Self::truncate_pending_comments`]).
     pub fn pending_comment_count(&self) -> usize {
@@ -4457,8 +4462,8 @@ impl Funcdata {
     /// given (type-locked, equates, asserted identities) and the prototype only
     /// its locked parts, so a restarted analysis starts where a fresh decompile
     /// does. The W3 IR clears (`clearBlocks`, `obank.clear`, `vbank.clear`) and
-    /// the flag/index reset are faithful. Buffered comments survive, as C++
-    /// comments already in the database survive a restart.
+    /// the flag/index reset are faithful. Buffered comments survive; the
+    /// restart drive drops the warnings (`refollow_flow`).
     pub fn clear(&mut self) {
         self.kuna_atomic_xadds.clear();
         self.ppc32_pic_calls.clear();

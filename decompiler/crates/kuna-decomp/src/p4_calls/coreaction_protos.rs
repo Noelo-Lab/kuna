@@ -652,6 +652,13 @@ impl Action for ActionDefaultParams {
                         }
                     }
                 }
+                // C++ `fc->copy(otherfunc->getFuncProto())` carries the callee's
+                // own extrapop, which `option extrapop <n> <name>` may have set.
+                if has_funcdata {
+                    if let Some(expop) = arch.query_function_extra_pop(data.get_call_specs(i).get_entry_address()) {
+                        data.get_call_specs_mut(i).proto_mut().set_extra_pop(expop);
+                    }
+                }
             } else if arch.callee_proto_model(data.get_call_specs(i).get_entry_address()).is_some() {
                 crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
                     data.get_call_specs_mut(i).proto_mut(),
