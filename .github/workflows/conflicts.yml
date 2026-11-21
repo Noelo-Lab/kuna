@@ -1,0 +1,41 @@
+name: Conflicts
+
+# Labels every open PR that no longer merges cleanly into main with
+# `needs rebase`, and takes the label off once the author resolves it. The
+# green checks on a PR describe its last test run only; GitHub tracks merge
+# conflicts separately and never reports them as a check, so without this a
+# conflicting PR looks ready in the PR list.
+#
+# A push to main can break any open PR, so that event rechecks all of them; a
+# push to a PR rechecks that PR. `pull_request_target` (not `pull_request`)
+# because a fork PR's `pull_request` token is read-only and cannot label. It is
+# safe here: the job never checks out or runs the PR's code, it only reads
+# GitHub's mergeability and edits labels.
+
+on:
+  push:
+    branches: [main]
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions: {}
+
+concurrency:
+  group: conflicts-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: eps1lon/actions-label-merge-conflict@e0e7fd9fd8ddda6d9727236e35daf319381a0a4f # v3.1.0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          dirtyLabel: needs rebase
+          commentOnDirty: >-
+            This PR conflicts with `main` and is labelled `needs rebase`. Please
+            rebase it onto the current `main`; the label comes off on its own once it
+            merges cleanly again.
