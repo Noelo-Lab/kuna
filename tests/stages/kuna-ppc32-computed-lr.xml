@@ -1,0 +1,141 @@
+<!-- Authored PPC32 computed-LR transfer, P2 flow classification. Always-on
+     correctness fix: the nonzero arm branches to the common epilogue, rather
+     than returning its input. No option changes the instruction's meaning. -->
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default">
+  <bytechunk space="ram" offset="0x1000" readonly="true">
+    7c0802a6 9421fff0 90010014 2c030000
+    41820010 38001024 7c0803a6 4e800020
+    38600007 38600007 80010014 38210010
+    7c0803a6 4e800020
+  </bytechunk>
+  <symbol space="ram" offset="0x1000" name="dispatch"/>
+  <bytechunk space="ram" offset="0x1100" readonly="true">
+    7c0802a6 38802000 90040000 3860000b
+    80040000 7c0803a6 4e800020
+  </bytechunk>
+  <bytechunk space="ram" offset="0x2000" readonly="false">
+    00000000 00000000
+  </bytechunk>
+  <symbol space="ram" offset="0x1100" name="saved_lr"/>
+  <bytechunk space="ram" offset="0x1200" readonly="true">
+    7d8802a6 38600005 38001214 7c0803a6
+    4e800020 7d8803a6 4bfffff8
+  </bytechunk>
+  <symbol space="ram" offset="0x1200" name="shared_lr"/>
+  <bytechunk space="ram" offset="0x1300" readonly="true">
+    7d8802a6 38600009 7c006000 4c820020
+    7c0803a6 4e800020
+  </bytechunk>
+  <symbol space="ram" offset="0x1300" name="guarded_lr"/>
+  <bytechunk space="ram" offset="0x1400" readonly="true">
+    7d8802a6 38600009 38001414 7c0803a6
+    4e800020 38001420 7c0803a6 4bfffff4
+    3863000e 7d8803a6 4e800020
+  </bytechunk>
+  <symbol space="ram" offset="0x1400" name="two_destinations"/>
+  <bytechunk space="ram" offset="0x1500" readonly="true">
+    7d8802a6 2c030000 4182000c 38800004
+    48000008 38800014 7c862378 7ca62050
+    38a51540 7ca803a6 4e800020 00000000
+    7c6803a6 4bfffff4 00000000 00000000
+    38600049 7d8803a6 4e800020 00000000
+    4bffffd8
+  </bytechunk>
+  <symbol space="ram" offset="0x1500" name="correlated_operands"/>
+  <bytechunk space="ram" offset="0x1600" readonly="true">
+    9421fff0 7d8802a6 9181000c 8164fffc
+    38210010 3860004d 38a01640 7c055800
+    4c820020 7ca803a6 4e800020 00000000
+    00000000 39401660 7c240b78 4bffffc5
+    38630001 7d4803a6 4e800020 00000000
+    00000000 00000000 00000000 00000000
+    38000001 44000002
+  </bytechunk>
+  <symbol space="ram" offset="0x1600" name="saved_lr_through_alias"/>
+  <bytechunk space="ram" offset="0x1700" readonly="true">
+    9421fff0 7d8802a6 9181000c 8181000c
+    9061000c 38210010 2c030000 41820010
+    38001738 7c0803a6 4e800020 38600051
+    7d8803a6 4e800020 38600055 7d8803a6
+    4e800020
+  </bytechunk>
+  <symbol space="ram" offset="0x1700" name="reused_lr_slot"/>
+  <bytechunk space="ram" offset="0x1800" readonly="true">
+    7d8802a6 388c0004 2c030000 41820010
+    38001828 7c0803a6 4e800020 3860005d
+    7d8803a6 4e800020 38600059 7d8803a6
+    4e800020
+  </bytechunk>
+  <symbol space="ram" offset="0x1800" name="unused_lr_arithmetic"/>
+  <bytechunk space="ram" offset="0x1900" readonly="false">
+    7d8802a6 3d606000 916c0000 60000000
+    60000000 38a01940 80c50000 38600061
+    7c065800 4c820020 7ca803a6 4e800020
+    00000000 39401960 38600000 4bffffc5
+    7c000378 38630001 7d4803a6 4e800020
+    00000000 00000000 00000000 00000000
+    38000001 44000002
+  </bytechunk>
+  <symbol space="ram" offset="0x1900" name="store_through_lr"/>
+  <bytechunk space="ram" offset="0x1a00" readonly="true">
+    7d8802a6 91840000 38600064 38001a18
+    7c0803a6 4e800020 38600063 7d8803a6
+    4e800020
+  </bytechunk>
+  <symbol space="ram" offset="0x1a00" name="store_incoming_lr_then_jump"/>
+</binaryimage>
+<script>
+  <com>load addr 0x1000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1200</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1300</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1100</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1400</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1500</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1600</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1700</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>map prototype unused_lr_arithmetic int4 unused_lr_arithmetic(int4 a0);</com>
+  <com>load addr 0x1800</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1900</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>map prototype store_incoming_lr_then_jump int4 store_incoming_lr_then_jump(int4 i,int4 *slot);</com>
+  <com>load addr 0x1a00</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="computed LR reaches the common epilogue" min="1" max="2">return 7;</stringmatch>
+<stringmatch name="computed LR does not return the input" min="0" max="0">return a0;</stringmatch>
+<stringmatch name="fixed-address saved LR preserves its return value" min="1" max="1">return 0xb;</stringmatch>
+<stringmatch name="fixed-address saved LR is not a dispatch" min="0" max="0">jump-as-call</stringmatch>
+<stringmatch name="shared LR transfer preserves its return value" min="1" max="2">return 5;</stringmatch>
+<stringmatch name="guarded LR restore preserves its return value" min="1" max="2">return 9;</stringmatch>
+<stringmatch name="shared LR transfer reaches its second destination" min="1" max="1">return 0x17;</stringmatch>
+<stringmatch name="joined LR operands reach their common destination" min="1" max="1">return 0x49;</stringmatch>
+<stringmatch name="stack alias retains the callee return value" min="1" max="2">return 0x4d;</stringmatch>
+<stringmatch name="stack alias leaves the continuation in the caller" min="0" max="0">return 0x4e;</stringmatch>
+<stringmatch name="reusing a saved LR slot preserves the later local branch" min="1" max="1">return 0x55;</stringmatch>
+<stringmatch name="unused LR arithmetic preserves the later local branch" min="1" max="1">return 0x59;</stringmatch>
+<stringmatch name="a store through LR leaves the continuation in the caller" min="0" max="0">return 0x62;</stringmatch>
+<stringmatch name="storing incoming LR leaves the local jump reachable" min="1" max="1">return (0x63|99);</stringmatch>
+<stringmatch name="storing incoming LR does not end the function early" min="0" max="0">return (0x64|100);</stringmatch>
+</decompilertest>

@@ -1,4 +1,6 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
+#[path = "ppc32_computed_lr.rs"]
+mod ppc32_computed_lr;
 #[path = "mips_elf_selection.rs"]
 mod mips_elf_selection;
 #[path = "return_branch_cli.rs"]
