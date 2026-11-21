@@ -2251,7 +2251,8 @@ mod tests {
         // and kuna-objcdirect / an Objective-C direct method's receiver is its class
         // and kuna-itaniumrtti-macho / Itanium RTTI on a Mach-O through chained-fixup binds
         // and kuna-itaniumrtti-macho-classic / and through classic LC_DYLD_INFO binds
-        assert_eq!(count, 833, "corpus file count drifted");
+        // and kuna-typeorder / distinct types order by id and shape before heap address
+        assert_eq!(count, 834, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

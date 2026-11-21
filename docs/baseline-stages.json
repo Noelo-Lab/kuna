@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4846,
-    4846
+    4849,
+    4849
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4701,6 +4701,9 @@
     "data:two strings advance past the scalar without consuming the float bank",
     "data:two verified string pairs retain physical argument order at a call",
     "data:two verified strings retain all four typed physical words",
+    "data:typeorder #1: fx::Three is declared ahead of fx::Multi",
+    "data:typeorder #2: Result is declared ahead of Option",
+    "data:typeorder #3: fx::Multi is defined after fx::Three",
     "data:unbiased indexing stays unchanged",
     "data:unchanged contents reuse one logical pointer at both calls",
     "data:uncompressed invalid result stays uninferred",
