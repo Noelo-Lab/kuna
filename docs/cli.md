@@ -4930,6 +4930,44 @@ applies to `decompile`, `decompile-all`, `decompile-project`,
 `decompile-graph`, `functions`, `disassemble`, `raw-pcode`, `read`, `xrefs`,
 `strings`, `crypto` and `blobs`; `kuna fid build` reads a whole archive itself.
 
+## `kuna bsim` — function similarity across a corpus
+
+FID answers "is this the *same* known library function?" by exact fingerprint.
+BSim answers the question a fingerprint cannot: "which functions in this corpus
+**look like** this one?". Both read the decompiler's feature vector, but BSim
+weights it and compares vectors by cosine similarity.
+
+```bash
+kuna bsim build app.exe -o app.kbsm                 # sign every function
+kuna bsim query app.exe --corpus app.kbsm --address 0x401010
+kuna bsim info app.kbsm --json                      # what the corpus holds
+```
+
+`build` decompiles each function through the same per-function step every other
+surface runs, signs it with the decompiler's feature generator, and stores it.
+Ingesting the same content twice is not an error (BSim deduplicates on the
+executable's MD5, which the corpus records); ingesting a *different* build under
+the same name is refused unless you pass `--name`. `--max-functions N` bounds a
+first look, and it stops in address order, so a capped corpus is a prefix and may
+legitimately omit a function you then look for.
+
+`query` signs the function at `--address`/`--name` and reports matches best
+first, each with **similarity** and **significance**. The floor
+(`--min-similarity`, default 0.7) is applied before `--max-matches` (default 10),
+so a strong match is never crowded out by a weak one taken first. A query that
+finds nothing says which floor it used and how many functions it considered, so
+"not in the corpus" and "searched with a high floor" are never confused.
+
+**A match is a measure of shape, not proof of the same source.** Two unrelated
+functions that compile alike score high, and structurally identical stubs (a PLT
+range) score 1.0 against each other. Read the numbers as a lead.
+
+Scoring needs Ghidra's weight tables (`lshweights_*.xml`, which ship with Ghidra
+under `Ghidra/Features/BSim/data`). They are found through `--weights <dir>`, else
+`KUNA_BSIM_WEIGHTS`, else beside the corpus. A run without them **fails** rather
+than scoring against an invented scale: a similarity number only means what the
+table that defined it says.
+
 ## `kuna fid` — function identification by fingerprint
 
 `kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>` writes a kuna

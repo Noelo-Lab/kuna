@@ -6488,6 +6488,27 @@ every other binary's pass list is byte-identical to before the pass existed):
   separately observable: with any one missing the hash matched the stock corpus
   for no function on a real MSVC binary, and with them it recovers the library
   names Ghidra's own analyzer reports for the same addresses.
+- **BSim** (`decompiler/crates/kuna-analysis/src/analyzers/bsim/`): function
+  **similarity**, not identification. FID asks whether a function *is* a known
+  library function; BSim asks which functions *look like* it, which is the one
+  question a fingerprint cannot answer. The feature list is the decompiler's
+  existing signature generator (`kuna_decomp::signature`, settings `0x49` — the
+  value every shipped `lshweights_*.xml` declares, whose mode bits are
+  `SIG_COLLAPSE_INDNOISE | SIG_DONOTUSE_CONST`); the rest is a port of Ghidra's
+  `generic/lsh`. `lshweights.rs` loads the TF/IDF tables, with `IDFLookup` kept
+  as Ghidra's open-addressing probe table (smallest power of two ≥ size, doubled)
+  because that slot layout is what serialization observes; `lsh.rs` builds the
+  sparse weighted vector and implements `calculateSignificance` with its flip
+  and size-difference penalties; `corpus.rs` stores signatures in a
+  self-describing `KBSM` file, deduplicating an ingest by executable MD5 as BSim
+  does; `query.rs` scores and orders matches, applying the similarity floor
+  before the limit. Verified: a corpus of 1084 functions from a real static
+  binary, queried with the function at `0x4017c0`, returns exactly that function
+  at similarity 1.000 among 1084 considered; a hand computation from
+  `lshweights_32.xml`'s own constants reproduces the reported significance
+  exactly (2.810343 for a disjoint pair). Similarity is a measure of **shape**:
+  structurally identical PLT stubs score 1.0 against each other, so a match is a
+  lead, never a verdict.
 - **FLIRT** (`flirt`, default-off, Listing-gated, signatures via `KUNA_FLIRT_SIGS`;
   `decompiler/crates/kuna-analysis/src/analyzers/flirt/mod.rs (FlirtPass)`): names
   library functions from IDA FLIRT `.sig` files (versions 5 to 11; raw, deflate,

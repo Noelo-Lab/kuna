@@ -26,5 +26,8 @@
 //! `LSHVectorFactory.calculateSignificance`, so a score kuna reports means what
 //! Ghidra's BSim means by it.
 
+pub mod corpus;
 pub mod lsh;
 pub mod lshweights;
+pub mod query;
+pub mod signature;

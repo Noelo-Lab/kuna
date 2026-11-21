@@ -3,6 +3,7 @@
 mod args;
 mod armember;
 mod blobs;
+mod bsim;
 mod callgraph;
 mod catalog;
 mod crypto;
@@ -68,6 +69,7 @@ const COMMANDS: &[(&str, CommandHandler)] = &[
     ("modes", cmd_modes),
     ("specs", specs::run),
     ("fid", fid::run),
+    ("bsim", bsim::run),
     ("flirt", flirt::run),
     ("rust-signatures", rust_signatures::run),
 ];

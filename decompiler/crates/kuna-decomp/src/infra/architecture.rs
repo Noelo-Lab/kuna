@@ -5434,6 +5434,26 @@ impl Architecture {
         self.cspec_xml = Some(xml);
     }
 
+    /// The compiler-spec id (`<compiler_spec id="...">`), when the frontend
+    /// supplied the `.cspec`.
+    ///
+    /// A corpus records this so two builds of the same source compare as the
+    /// same toolchain, which is what BSim's `ExecutableRecord` stores. `None`
+    /// when no cspec was supplied or it names no id.
+    pub fn compiler_spec_id(&self) -> Option<String> {
+        let xml = self.cspec_xml.as_ref()?;
+        let text = std::str::from_utf8(xml).ok()?;
+        let start = text.find("<compiler_spec")?;
+        let tag = &text[start..];
+        let end = tag.find('>')?;
+        let head = &tag[..end];
+        let id_at = head.find("id=\"")?;
+        let rest = &head[id_at + 4..];
+        let id_end = rest.find('"')?;
+        let id = &rest[..id_end];
+        (!id.is_empty()).then(|| id.to_string())
+    }
+
     /// (kuna, Phase 3) Record the wire `<coretypes>` XML for the ghidra-mode
     /// [`build_core_types`](Architecture::build_core_types) decode.  Must be
     /// set before [`init_post_engine`](Architecture::init_post_engine).
