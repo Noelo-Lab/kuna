@@ -1,0 +1,806 @@
+# Synopsys ARCv2 (ARC EM / HS) base instruction set.
+#
+# A 32-bit instruction is two 16-bit words, most significant word first, each
+# word in the image's byte order; a long immediate is two more words after the
+# instruction. Both endiannesses therefore share every pattern below.
+#
+# Zero-overhead loops: `lp` records the loop start in the context of the
+# address it names as the loop end. The instruction decoded there is prefixed
+# with the hardware's end-of-body test, a direct branch back to the loop start.
+
+define endian=$(ENDIAN);
+define alignment=2;
+
+define space ram      type=ram_space      size=4 default;
+define space register type=register_space size=4;
+
+define register offset=0x000 size=4 [
+  r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r23 r24 r25 gp fp sp ilink r30 blink r32 r33 r34 r35 r36 r37 r38 r39 r40 r41 r42 r43 r44 r45 r46 r47 r48 r49 r50 r51 r52 r53 r54 r55 r56 r57 r58 r59 lp_count r61 r62 pcl
+];
+define register offset=0x100 size=4 [ pc lp_start lp_end jli_base ldi_base ei_base ];
+define register offset=0x120 size=1 [ Z N C V ];
+define register offset=0x200 size=8 [ contextreg ];
+
+define context contextreg
+  phase   = (0,0)
+  lpend   = (1,1) noflow
+  lpstart = (2,33) noflow
+;
+
+define pcodeop aux_read;
+define pcodeop aux_write;
+define pcodeop set_flags;
+define pcodeop set_kernel_flags;
+define pcodeop software_interrupt;
+define pcodeop trap;
+define pcodeop breakpoint;
+define pcodeop sleep;
+define pcodeop sync;
+define pcodeop set_interrupt_enable;
+define pcodeop clear_interrupt_enable;
+define pcodeop load_locked;
+define pcodeop store_conditional;
+define pcodeop unimplemented_instruction;
+
+define token h1(16)
+  maj     = (11,15)
+  blo     = (8,10)
+  bl0     = (8,10)
+  bl1     = (8,10)
+  bl2     = (8,10)
+  bl3     = (8,10)
+  bl4     = (8,10)
+  bl5     = (8,10)
+  bl6     = (8,10)
+  bl7     = (8,10)
+  pp      = (6,7)
+  sub     = (0,5)
+  s8      = (0,7)
+  bdisp   = (1,10)
+  bfar    = (0,0)
+  bldisp  = (2,10)
+  blfar   = (1,1)
+  brdisp  = (1,7)
+  rraa    = (6,7)
+  rrsub   = (3,5)
+  rrzz    = (1,2)
+  rrx     = (0,0)
+  dbnzsub = (1,5)
+  dbnzn   = (0,0)
+  sb      = (8,10)
+  sb2     = (8,10)
+  sb3     = (8,10)
+  sc      = (5,7)
+  sa      = (0,2)
+  sr4     = (8,9)
+  srb     = (7,7)
+  si2     = (3,4)
+  si3     = (2,4)
+  sop5    = (0,4)
+  sop3    = (5,7)
+  sbit0   = (0,0)
+  sbit2   = (2,2)
+  sbit3   = (3,3)
+  sbit4   = (4,4)
+  sbit7   = (7,7)
+  sbit10  = (10,10)
+  shl0    = (5,7)
+  shl1    = (5,7)
+  shl2    = (5,7)
+  shl3    = (5,7)
+  shlo    = (5,7)
+  shhi    = (0,1)
+  sgl0    = (8,10)
+  sgl1    = (8,10)
+  sgl2    = (8,10)
+  sgl3    = (8,10)
+  sglo    = (8,10)
+  sghi    = (3,4)
+  ss3     = (8,10)
+  su3     = (0,2)
+  su4     = (1,4)
+  su5     = (0,4)
+  su6     = (5,10)
+  su7     = (0,6)
+  su8     = (0,7)
+  su10    = (0,9)
+  suhi3   = (4,6)
+  suhi4   = (4,7)
+  suhi6   = (5,10) signed
+  sU      = (10,10)
+  suu     = (3,4)
+  sfp     = (8,8)
+  slink   = (9,9)
+  sjmp    = (10,10)
+  sgpop   = (9,10)
+  sbrop   = (9,10)
+  sbrcc   = (6,8)
+  sd6     = (0,5) signed
+  sd7     = (0,6) signed
+  sd9     = (0,8) signed
+  sd11    = (0,10) signed
+;
+
+define token h2(16)
+  F       = (15,15)
+  bhi     = (12,14)
+  creg    = (6,11)
+  areg    = (0,5)
+  u6      = (6,11)
+  w6      = (6,11) signed
+  s12lo   = (6,11)
+  s12hi   = (0,5) signed
+  m       = (5,5)
+  Q       = (0,4)
+  bhi10   = (6,15) signed
+  bmid10  = (6,15)
+  btop    = (0,3) signed
+  dslot   = (5,5)
+  brm     = (4,4)
+  bri     = (0,2)
+  ldS     = (15,15) signed
+  lddi    = (11,11)
+  ldaa    = (9,10)
+  ldzz    = (7,8)
+  ldx     = (6,6)
+  rrdi    = (15,15)
+  stdi    = (5,5)
+  staa    = (3,4)
+  stzz    = (1,2)
+  stw     = (0,0)
+;
+
+define token lh(16) limmhi = (0,15);
+define token ll(16) limmlo = (0,15);
+
+attach variables [ bl0 ] [ r0 r1 r2 r3 r4 r5 r6 r7 ];
+attach variables [ bl1 ] [ r8 r9 r10 r11 r12 r13 r14 r15 ];
+attach variables [ bl2 ] [ r16 r17 r18 r19 r20 r21 r22 r23 ];
+attach variables [ bl3 ] [ r24 r25 gp fp sp ilink r30 blink ];
+attach variables [ bl4 ] [ r32 r33 r34 r35 r36 r37 r38 r39 ];
+attach variables [ bl5 ] [ r40 r41 r42 r43 r44 r45 r46 r47 ];
+attach variables [ bl6 ] [ r48 r49 r50 r51 r52 r53 r54 r55 ];
+attach variables [ bl7 ] [ r56 r57 r58 r59 lp_count r61 r62 pcl ];
+attach variables [ creg areg ] [ r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r23 r24 r25 gp fp sp ilink r30 blink r32 r33 r34 r35 r36 r37 r38 r39 r40 r41 r42 r43 r44 r45 r46 r47 r48 r49 r50 r51 r52 r53 r54 r55 r56 r57 r58 r59 lp_count r61 r62 pcl ];
+attach variables [ sb sb2 sb3 sc sa ] [ r0 r1 r2 r3 r12 r13 r14 r15 ];
+attach variables [ sr4 ] [ r0 r1 r2 r3 ];
+attach variables [ srb ] [ r0 r1 ];
+attach variables [ shl0 sgl0 ] [ r0 r1 r2 r3 r4 r5 r6 r7 ];
+attach variables [ shl1 sgl1 ] [ r8 r9 r10 r11 r12 r13 r14 r15 ];
+attach variables [ shl2 sgl2 ] [ r16 r17 r18 r19 r20 r21 r22 r23 ];
+attach variables [ shl3 sgl3 ] [ r24 r25 gp fp sp ilink r30 blink ];
+
+macro flagsZN(r) { Z = (r == 0); N = (r s< 0); }
+macro flagsAdd(x, y) { C = carry(x, y); V = scarry(x, y); }
+macro flagsSub(x, y) { C = (x < y); V = sborrow(x, y); }
+
+limm: v is limmhi ; limmlo [ v = (limmhi << 16) | limmlo; ] { export *[const]:4 v; }
+
+with : phase=1 {
+
+# ---- operands of the 32-bit formats; every table starts at the instruction ----
+
+srcB: bl0 is bl0 ; bhi=0 { export bl0; }
+srcB: bl1 is bl1 ; bhi=1 { export bl1; }
+srcB: bl2 is bl2 ; bhi=2 { export bl2; }
+srcB: bl3 is bl3 ; bhi=3 { export bl3; }
+srcB: bl4 is bl4 ; bhi=4 { export bl4; }
+srcB: bl5 is bl5 ; bhi=5 { export bl5; }
+srcB: bl6 is bl6 ; bhi=6 { export bl6; }
+srcB: bl7 is bl7 ; bhi=7 { export bl7; }
+srcB: limm is blo=6 ; bhi=7 ; limm { export limm; }
+srcB: "pcl" is blo=7 ; bhi=7 { local t:4 = inst_start & 0xfffffffc; export t; }
+
+dstB: bl0 is bl0 ; bhi=0 { export bl0; }
+dstB: bl1 is bl1 ; bhi=1 { export bl1; }
+dstB: bl2 is bl2 ; bhi=2 { export bl2; }
+dstB: bl3 is bl3 ; bhi=3 { export bl3; }
+dstB: bl4 is bl4 ; bhi=4 { export bl4; }
+dstB: bl5 is bl5 ; bhi=5 { export bl5; }
+dstB: bl6 is bl6 ; bhi=6 { export bl6; }
+dstB: bl7 is bl7 ; bhi=7 { export bl7; }
+dstB: "0" is blo=6 ; bhi=7 { local t:4 = 0; export t; }
+
+srcC: creg is maj ; creg { export creg; }
+srcC: limm is maj ; creg=62 ; limm { export limm; }
+srcC: "pcl" is maj ; creg=63 { local t:4 = inst_start & 0xfffffffc; export t; }
+
+dstA: areg is maj ; areg { export areg; }
+dstA: "0" is maj ; areg=62 { local t:4 = 0; export t; }
+
+immU6: u6 is maj ; u6 { export *[const]:4 u6; }
+immS12: v is maj ; s12hi & s12lo [ v = (s12hi << 6) | s12lo; ] { export *[const]:4 v; }
+
+src2: srcC is pp=0 ... & srcC ... { export srcC; }
+src2: immU6 is pp=1 ... & immU6 ... { export immU6; }
+src2: immS12 is pp=2 ... & immS12 ... { export immS12; }
+src2: srcC is (pp=3 ; m=0) ... & srcC ... { export srcC; }
+src2: immU6 is (pp=3 ; m=1) ... & immU6 ... { export immU6; }
+
+dst: dstA is pp=0 ... & dstA ... { export dstA; }
+dst: dstA is pp=1 ... & dstA ... { export dstA; }
+dst: dstB is pp=2 ... & dstB ... { export dstB; }
+dst: dstB is pp=3 ... & dstB ... { export dstB; }
+
+cc: "eq"  is Q=0x01 { export Z; }
+cc: "ne"  is Q=0x02 { local t:1 = !Z; export t; }
+cc: "p"   is Q=0x03 { local t:1 = !N; export t; }
+cc: "n"   is Q=0x04 { export N; }
+cc: "lo"  is Q=0x05 { export C; }
+cc: "hs"  is Q=0x06 { local t:1 = !C; export t; }
+cc: "v"   is Q=0x07 { export V; }
+cc: "nv"  is Q=0x08 { local t:1 = !V; export t; }
+cc: "gt"  is Q=0x09 { local t:1 = (N == V) && !Z; export t; }
+cc: "ge"  is Q=0x0a { local t:1 = (N == V); export t; }
+cc: "lt"  is Q=0x0b { local t:1 = (N != V); export t; }
+cc: "le"  is Q=0x0c { local t:1 = Z || (N != V); export t; }
+cc: "hi"  is Q=0x0d { local t:1 = !C && !Z; export t; }
+cc: "ls"  is Q=0x0e { local t:1 = C || Z; export t; }
+cc: "pnz" is Q=0x0f { local t:1 = !N && !Z; export t; }
+
+jcc: is pp { }
+jcc: is pp=3 ; Q=0 { }
+jcc: cc is pp=3 ; cc { if (!cc) goto inst_next; }
+
+# Conditional execution of the `pp=3` operand mode.
+docc: is pp { }
+docc: is pp=3 ; Q=0 { }
+docc: "."^cc is pp=3 ; cc { if (!cc) goto inst_next; }
+
+
+# ---- major 0x04: general operations ----
+
+:add^docc dst, srcB, src2 is (maj=4 & sub=0x00 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB + src2; }
+:add^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x00 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local r:4 = x + y; flagsAdd(x, y); flagsZN(r); dst = r; }
+:adc^docc dst, srcB, src2 is (maj=4 & sub=0x01 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB + src2 + zext(C); }
+:adc^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x01 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local ci:4 = zext(C); local s:4 = x + y; local r:4 = s + ci; C = carry(x, y) || carry(s, ci); V = scarry(x, y) ^^ scarry(s, ci); flagsZN(r); dst = r; }
+:sub^docc dst, srcB, src2 is (maj=4 & sub=0x02 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB - src2; }
+:sub^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x02 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local r:4 = x - y; flagsSub(x, y); flagsZN(r); dst = r; }
+:sbc^docc dst, srcB, src2 is (maj=4 & sub=0x03 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB - src2 - zext(C); }
+:sbc^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x03 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local ci:4 = zext(C); local s:4 = x - y; local r:4 = s - ci; C = (x < y) || (s < ci); V = sborrow(x, y) ^^ sborrow(s, ci); flagsZN(r); dst = r; }
+:and^docc dst, srcB, src2 is (maj=4 & sub=0x04 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB & src2; }
+:and^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x04 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local r:4 = x & y;  flagsZN(r); dst = r; }
+:or^docc dst, srcB, src2 is (maj=4 & sub=0x05 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB | src2; }
+:or^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x05 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local r:4 = x | y;  flagsZN(r); dst = r; }
+:bic^docc dst, srcB, src2 is (maj=4 & sub=0x06 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB & ~src2; }
+:bic^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x06 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local r:4 = x & ~y;  flagsZN(r); dst = r; }
+:xor^docc dst, srcB, src2 is (maj=4 & sub=0x07 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB ^ src2; }
+:xor^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x07 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local r:4 = x ^ y;  flagsZN(r); dst = r; }
+:max^docc dst, srcB, src2 is (maj=4 & sub=0x08 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local r:4 = x; if (x s>= y) goto <done>; r = y; <done> dst = r; }
+:max^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x08 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local d:4 = x - y; Z = (d == 0); N = (d s< 0); V = sborrow(x, y); C = (y s>= x); local r:4 = x; if (x s>= y) goto <done>; r = y; <done> dst = r; }
+:min^docc dst, srcB, src2 is (maj=4 & sub=0x09 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local r:4 = x; if (x s<= y) goto <done>; r = y; <done> dst = r; }
+:min^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x09 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local d:4 = x - y; Z = (d == 0); N = (d s< 0); V = sborrow(x, y); C = (y s<= x); local r:4 = x; if (x s<= y) goto <done>; r = y; <done> dst = r; }
+:rsub^docc dst, srcB, src2 is (maj=4 & sub=0x0e ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = src2 - srcB; }
+:rsub^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x0e ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local r:4 = y - x; flagsSub(y, x); flagsZN(r); dst = r; }
+:bset^docc dst, srcB, src2 is (maj=4 & sub=0x0f ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB | (1 << (src2 & 31)); }
+:bset^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x0f ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local r:4 = x | (1 << (y & 31));  flagsZN(r); dst = r; }
+:bclr^docc dst, srcB, src2 is (maj=4 & sub=0x10 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB & ~(1 << (src2 & 31)); }
+:bclr^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x10 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local r:4 = x & ~(1 << (y & 31));  flagsZN(r); dst = r; }
+:bxor^docc dst, srcB, src2 is (maj=4 & sub=0x12 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB ^ (1 << (src2 & 31)); }
+:bxor^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x12 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local r:4 = x ^ (1 << (y & 31));  flagsZN(r); dst = r; }
+:bmsk^docc dst, srcB, src2 is (maj=4 & sub=0x13 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB & ((2 << (src2 & 31)) - 1); }
+:bmsk^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x13 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local r:4 = x & ((2 << (y & 31)) - 1);  flagsZN(r); dst = r; }
+:bmskn^docc dst, srcB, src2 is (maj=4 & sub=0x2c ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB & ~((2 << (src2 & 31)) - 1); }
+:bmskn^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x2c ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local r:4 = x & ~((2 << (y & 31)) - 1);  flagsZN(r); dst = r; }
+:add1^docc dst, srcB, src2 is (maj=4 & sub=0x14 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB + (src2 << 1); }
+:add1^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x14 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2 << 1; local r:4 = x + y; flagsAdd(x, y); flagsZN(r); dst = r; }
+:add2^docc dst, srcB, src2 is (maj=4 & sub=0x15 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB + (src2 << 2); }
+:add2^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x15 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2 << 2; local r:4 = x + y; flagsAdd(x, y); flagsZN(r); dst = r; }
+:add3^docc dst, srcB, src2 is (maj=4 & sub=0x16 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB + (src2 << 3); }
+:add3^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x16 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2 << 3; local r:4 = x + y; flagsAdd(x, y); flagsZN(r); dst = r; }
+:sub1^docc dst, srcB, src2 is (maj=4 & sub=0x17 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB - (src2 << 1); }
+:sub1^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x17 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2 << 1; local r:4 = x - y; flagsSub(x, y); flagsZN(r); dst = r; }
+:sub2^docc dst, srcB, src2 is (maj=4 & sub=0x18 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB - (src2 << 2); }
+:sub2^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x18 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2 << 2; local r:4 = x - y; flagsSub(x, y); flagsZN(r); dst = r; }
+:sub3^docc dst, srcB, src2 is (maj=4 & sub=0x19 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB - (src2 << 3); }
+:sub3^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x19 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2 << 3; local r:4 = x - y; flagsSub(x, y); flagsZN(r); dst = r; }
+:mpy^docc dst, srcB, src2 is (maj=4 & sub=0x1a ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB * src2; }
+:mpy^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x1a ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:8 = sext(srcB); local y:8 = sext(src2); local p:8 = x * y; local r:4 = p:4; V = (p != sext(r)); flagsZN(r); dst = r; }
+:mpym^docc dst, srcB, src2 is (maj=4 & sub=0x1b ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { local x:8 = sext(srcB); local y:8 = sext(src2); local p:8 = x * y; dst = p(4); }
+:mpym^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x1b ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:8 = sext(srcB); local y:8 = sext(src2); local p:8 = x * y; local r:4 = p(4); V = 0; flagsZN(r); dst = r; }
+:mpymu^docc dst, srcB, src2 is (maj=4 & sub=0x1c ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { local x:8 = zext(srcB); local y:8 = zext(src2); local p:8 = x * y; dst = p(4); }
+:mpymu^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x1c ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:8 = zext(srcB); local y:8 = zext(src2); local p:8 = x * y; local r:4 = p(4); V = 0; N = 0; Z = (r == 0); dst = r; }
+:mpyu^docc dst, srcB, src2 is (maj=4 & sub=0x1d ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = srcB * src2; }
+:mpyu^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x1d ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:8 = zext(srcB); local y:8 = zext(src2); local p:8 = x * y; local r:4 = p:4; V = (p != zext(r)); N = 0; Z = (r == 0); dst = r; }
+:mpyw^docc dst, srcB, src2 is (maj=4 & sub=0x1e ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; dst = sext(x:2) * sext(y:2); }
+:mpyw^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x1e ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local r:4 = sext(x:2) * sext(y:2); V = 0; flagsZN(r); dst = r; }
+:mpyuw^docc dst, srcB, src2 is (maj=4 & sub=0x1f ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; dst = zext(x:2) * zext(y:2); }
+:mpyuw^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x1f ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local r:4 = zext(x:2) * zext(y:2); V = 0; flagsZN(r); dst = r; }
+:xbfu^docc dst, srcB, src2 is (maj=4 & sub=0x2d ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { local y:4 = src2; dst = (srcB >> (y & 31)) & ((2 << ((y >> 5) & 31)) - 1); }
+:xbfu^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x2d ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local y:4 = src2; local r:4 = (srcB >> (y & 31)) & ((2 << ((y >> 5) & 31)) - 1); flagsZN(r); dst = r; }
+:seteq^docc dst, srcB, src2 is (maj=4 & sub=0x38 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = zext(srcB == src2); }
+:seteq^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x38 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local d:4 = x - y; flagsSub(x, y); flagsZN(d); dst = zext(x == y); }
+:setne^docc dst, srcB, src2 is (maj=4 & sub=0x39 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = zext(srcB != src2); }
+:setne^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x39 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local d:4 = x - y; flagsSub(x, y); flagsZN(d); dst = zext(x != y); }
+:setlt^docc dst, srcB, src2 is (maj=4 & sub=0x3a ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = zext(srcB s< src2); }
+:setlt^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x3a ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local d:4 = x - y; flagsSub(x, y); flagsZN(d); dst = zext(x s< y); }
+:setge^docc dst, srcB, src2 is (maj=4 & sub=0x3b ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = zext(srcB s>= src2); }
+:setge^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x3b ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local d:4 = x - y; flagsSub(x, y); flagsZN(d); dst = zext(x s>= y); }
+:setlo^docc dst, srcB, src2 is (maj=4 & sub=0x3c ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = zext(srcB < src2); }
+:setlo^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x3c ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local d:4 = x - y; flagsSub(x, y); flagsZN(d); dst = zext(x < y); }
+:seths^docc dst, srcB, src2 is (maj=4 & sub=0x3d ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = zext(srcB >= src2); }
+:seths^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x3d ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local d:4 = x - y; flagsSub(x, y); flagsZN(d); dst = zext(x >= y); }
+:setle^docc dst, srcB, src2 is (maj=4 & sub=0x3e ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = zext(srcB s<= src2); }
+:setle^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x3e ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local d:4 = x - y; flagsSub(x, y); flagsZN(d); dst = zext(x s<= y); }
+:setgt^docc dst, srcB, src2 is (maj=4 & sub=0x3f ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { dst = zext(srcB s> src2); }
+:setgt^docc^".f" dst, srcB, src2 is (maj=4 & sub=0x3f ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local d:4 = x - y; flagsSub(x, y); flagsZN(d); dst = zext(x s> y); }
+
+:mov^docc dstB, src2 is (maj=4 & sub=0x0a ; F=0) ... & docc ... & dstB ... & src2 ... { dstB = src2; }
+:mov^docc^".f" dstB, src2 is (maj=4 & sub=0x0a ; F=1) ... & docc ... & dstB ... & src2 ... { local r:4 = src2; flagsZN(r); dstB = r; }
+:nop  is maj=4 & sub=0x0a & pp=1 & blo=6 ; F=0 & bhi=7 & u6=0 & areg=0 { }
+:tst^docc srcB, src2 is (maj=4 & sub=0x0b ; F=1) ... & docc ... & srcB ... & src2 ... { local r:4 = srcB & src2; flagsZN(r); }
+:cmp^docc srcB, src2 is (maj=4 & sub=0x0c ; F=1) ... & docc ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local r:4 = x - y; flagsSub(x, y); flagsZN(r); }
+:rcmp^docc srcB, src2 is (maj=4 & sub=0x0d ; F=1) ... & docc ... & srcB ... & src2 ... { local x:4 = srcB; local y:4 = src2; local r:4 = y - x; flagsSub(y, x); flagsZN(r); }
+:btst^docc srcB, src2 is (maj=4 & sub=0x11 ; F=1) ... & docc ... & srcB ... & src2 ... { local r:4 = srcB & (1 << (src2 & 31)); flagsZN(r); }
+
+# ---- jumps ----
+
+jdst: [srcC] is pp=0 ... & srcC ... { export srcC; }
+jdst: immU6 is pp=1 ... & immU6 ... { export immU6; }
+jdst: immS12 is pp=2 ... & immS12 ... { export immS12; }
+jdst: [srcC] is (pp=3 ; m=0) ... & srcC ... { export srcC; }
+jdst: immU6 is (pp=3 ; m=1) ... & immU6 ... { export immU6; }
+
+:j^jcc jdst is (maj=4 & sub=0x20 ; F=0) ... & jcc ... & jdst ... { goto [jdst]; }
+:j^jcc^".d" jdst is (maj=4 & sub=0x21 ; F=0) ... & jcc ... & jdst ... { local t:4 = jdst; delayslot(1); goto [t]; }
+:j "[blink]" is maj=4 & sub=0x20 & pp=0 ; F=0 & creg=31 { return [blink]; }
+:j^jcc "[blink]" is (maj=4 & sub=0x20 & pp=3 ; F=0 & creg=31 & m=0) ... & jcc ... { return [blink]; }
+:j.d "[blink]" is maj=4 & sub=0x21 & pp=0 ; F=0 & creg=31 { local t:4 = blink; delayslot(1); return [t]; }
+:j^jcc^".d" "[blink]" is (maj=4 & sub=0x21 & pp=3 ; F=0 & creg=31 & m=0) ... & jcc ... { local t:4 = blink; delayslot(1); return [t]; }
+:jl^jcc jdst is (maj=4 & sub=0x22 ; F=0) ... & jcc ... & jdst ... { local t:4 = jdst; blink = inst_next; call [t]; }
+:jl^jcc^".d" jdst is (maj=4 & sub=0x23 ; F=0) ... & jcc ... & jdst ... { local t:4 = jdst; blink = inst_next; delayslot(1); call [t]; }
+
+:bi [srcC] is (maj=4 & sub=0x24 & pp=0 ; F=0) ... & srcC ... { local t:4 = inst_next + (srcC << 2); goto [t]; }
+:bih [srcC] is (maj=4 & sub=0x25 & pp=0 ; F=0) ... & srcC ... { local t:4 = inst_next + (srcC << 1); goto [t]; }
+:ldi dstB, [src2] is (maj=4 & sub=0x26 ; F=0) ... & dstB ... & src2 ... { local ea:4 = ldi_base + (src2 << 2); dstB = *:4 ea; }
+:aex dstB, [src2] is (maj=4 & sub=0x27 ; F=0) ... & dstB ... & src2 ... { local t:4 = aux_read(src2); aux_write(src2, dstB); dstB = t; }
+:flag^docc src2 is (maj=4 & sub=0x29 ; F=0) ... & docc ... & src2 ... { set_flags(src2); }
+:kflag^docc src2 is (maj=4 & sub=0x29 ; F=1) ... & docc ... & src2 ... { set_kernel_flags(src2); }
+:lr dstB, [src2] is (maj=4 & sub=0x2a ; F=0) ... & dstB ... & src2 ... { dstB = aux_read(src2); }
+:sr srcB, [src2] is (maj=4 & sub=0x2b ; F=0) ... & srcB ... & src2 ... { aux_write(src2, srcB); }
+
+# ---- zero-overhead loop ----
+
+lptarget: addr is pp=2 ; s12hi & s12lo [ addr = (inst_start & 0xfffffffc) + (((s12hi << 6) | s12lo) << 1); ] { export *[ram]:4 addr; }
+lptarget: addr is pp=3 ; m=1 & u6 [ addr = (inst_start & 0xfffffffc) + (u6 << 1); ] { export *[ram]:4 addr; }
+
+:lp lptarget is (maj=4 & sub=0x28 & pp=2 ; F=0) & lptarget
+  [ lpend = 1; lpstart = inst_start + 4; globalset(lptarget, lpend); globalset(lptarget, lpstart); ]
+  { lp_start = inst_next; lp_end = &lptarget; }
+:lp lptarget is (maj=4 & sub=0x28 & pp=3 ; F=0 & Q=0) & lptarget
+  [ lpend = 1; lpstart = inst_start + 4; globalset(lptarget, lpend); globalset(lptarget, lpstart); ]
+  { lp_start = inst_next; lp_end = &lptarget; }
+:lp^cc lptarget is (maj=4 & sub=0x28 & pp=3 ; F=0 & cc) & lptarget
+  [ lpend = 1; lpstart = inst_start + 4; globalset(lptarget, lpend); globalset(lptarget, lpstart); ]
+  { if (!cc) goto lptarget; lp_start = inst_next; lp_end = &lptarget; }
+
+dbtarget: addr is maj ; s12hi & s12lo [ addr = (inst_start & 0xfffffffc) + (((s12hi << 6) | s12lo) << 1); ] { export *[ram]:4 addr; }
+:dbnz dstB, dbtarget is (maj=4 & pp=2 & dbnzsub=6 & dbnzn=0 ; F=0) ... & dstB ... & dbtarget ... { dstB = dstB - 1; if (dstB != 0) goto dbtarget; }
+:dbnz.d dstB, dbtarget is (maj=4 & pp=2 & dbnzsub=6 & dbnzn=1 ; F=0) ... & dstB ... & dbtarget ... { dstB = dstB - 1; local t:1 = (dstB != 0); delayslot(1); if (t) goto dbtarget; }
+
+# ---- major 0x04, subopcode 0x2f: single-operand operations ----
+
+:asl dstB, src2 is (maj=4 & sub=0x2f ; F=0 & areg=0x00) ... & dstB ... & src2 ... { local x:4 = src2; dstB = x + x; }
+:asl.f dstB, src2 is (maj=4 & sub=0x2f ; F=1 & areg=0x00) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = x + x; flagsAdd(x, x); flagsZN(r); dstB = r; }
+:asr dstB, src2 is (maj=4 & sub=0x2f ; F=0 & areg=0x01) ... & dstB ... & src2 ... { local x:4 = src2; dstB = x s>> 1; }
+:asr.f dstB, src2 is (maj=4 & sub=0x2f ; F=1 & areg=0x01) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = x s>> 1; C = ((x & 1) != 0); flagsZN(r); dstB = r; }
+:lsr dstB, src2 is (maj=4 & sub=0x2f ; F=0 & areg=0x02) ... & dstB ... & src2 ... { local x:4 = src2; dstB = x >> 1; }
+:lsr.f dstB, src2 is (maj=4 & sub=0x2f ; F=1 & areg=0x02) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = x >> 1; C = ((x & 1) != 0); flagsZN(r); dstB = r; }
+:ror dstB, src2 is (maj=4 & sub=0x2f ; F=0 & areg=0x03) ... & dstB ... & src2 ... { local x:4 = src2; dstB = (x >> 1) | (x << 31); }
+:ror.f dstB, src2 is (maj=4 & sub=0x2f ; F=1 & areg=0x03) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = (x >> 1) | (x << 31); C = ((x & 1) != 0); flagsZN(r); dstB = r; }
+:rrc dstB, src2 is (maj=4 & sub=0x2f ; F=0 & areg=0x04) ... & dstB ... & src2 ... { local x:4 = src2; dstB = (x >> 1) | (zext(C) << 31); }
+:rrc.f dstB, src2 is (maj=4 & sub=0x2f ; F=1 & areg=0x04) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = (x >> 1) | (zext(C) << 31); C = ((x & 1) != 0); flagsZN(r); dstB = r; }
+:sexb dstB, src2 is (maj=4 & sub=0x2f ; F=0 & areg=0x05) ... & dstB ... & src2 ... { local x:4 = src2; dstB = sext(x:1); }
+:sexb.f dstB, src2 is (maj=4 & sub=0x2f ; F=1 & areg=0x05) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = sext(x:1);  flagsZN(r); dstB = r; }
+:sexh dstB, src2 is (maj=4 & sub=0x2f ; F=0 & areg=0x06) ... & dstB ... & src2 ... { local x:4 = src2; dstB = sext(x:2); }
+:sexh.f dstB, src2 is (maj=4 & sub=0x2f ; F=1 & areg=0x06) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = sext(x:2);  flagsZN(r); dstB = r; }
+:extb dstB, src2 is (maj=4 & sub=0x2f ; F=0 & areg=0x07) ... & dstB ... & src2 ... { local x:4 = src2; dstB = zext(x:1); }
+:extb.f dstB, src2 is (maj=4 & sub=0x2f ; F=1 & areg=0x07) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = zext(x:1);  flagsZN(r); dstB = r; }
+:exth dstB, src2 is (maj=4 & sub=0x2f ; F=0 & areg=0x08) ... & dstB ... & src2 ... { local x:4 = src2; dstB = zext(x:2); }
+:exth.f dstB, src2 is (maj=4 & sub=0x2f ; F=1 & areg=0x08) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = zext(x:2);  flagsZN(r); dstB = r; }
+:abs dstB, src2 is (maj=4 & sub=0x2f ; F=0 & areg=0x09) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = x; if (x s>= 0) goto <done>; r = -x; <done> dstB = r; }
+:abs.f dstB, src2 is (maj=4 & sub=0x2f ; F=1 & areg=0x09) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = x; C = (x s< 0); V = (x == 0x80000000); if (x s>= 0) goto <done>; r = -x; <done> flagsZN(r); dstB = r; }
+:not dstB, src2 is (maj=4 & sub=0x2f ; F=0 & areg=0x0a) ... & dstB ... & src2 ... { local x:4 = src2; dstB = ~x; }
+:not.f dstB, src2 is (maj=4 & sub=0x2f ; F=1 & areg=0x0a) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = ~x;  flagsZN(r); dstB = r; }
+:rlc dstB, src2 is (maj=4 & sub=0x2f ; F=0 & areg=0x0b) ... & dstB ... & src2 ... { local x:4 = src2; dstB = (x << 1) | zext(C); }
+:rlc.f dstB, src2 is (maj=4 & sub=0x2f ; F=1 & areg=0x0b) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = (x << 1) | zext(C); C = (x s< 0); flagsZN(r); dstB = r; }
+:rol dstB, src2 is (maj=4 & sub=0x2f ; F=0 & areg=0x0d) ... & dstB ... & src2 ... { local x:4 = src2; dstB = (x << 1) | (x >> 31); }
+:rol.f dstB, src2 is (maj=4 & sub=0x2f ; F=1 & areg=0x0d) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = (x << 1) | (x >> 31); C = (x s< 0); flagsZN(r); dstB = r; }
+
+:ex dstB, [src2] is (maj=4 & sub=0x2f ; areg=0x0c) ... & dstB ... & src2 ... { local ea:4 = src2; local t:4 = *:4 ea; *:4 ea = dstB; dstB = t; }
+:llock dstB, [src2] is (maj=4 & sub=0x2f ; areg=0x10) ... & dstB ... & src2 ... { local ea:4 = src2; load_locked(ea); dstB = *:4 ea; }
+:scond srcB, [src2] is (maj=4 & sub=0x2f ; areg=0x11) ... & srcB ... & src2 ... { local ea:4 = src2; Z = store_conditional(ea, srcB); }
+
+:sleep src2 is (maj=4 & sub=0x2f & blo=1 ; F=0 & bhi=0 & areg=0x3f) ... & src2 ... { sleep(src2); }
+:swi  is maj=4 & sub=0x2f & pp=1 & blo=2 ; F=0 & bhi=0 & creg=0 & areg=0x3f { software_interrupt(); }
+:sync  is maj=4 & sub=0x2f & pp=1 & blo=3 ; F=0 & bhi=0 & creg=0 & areg=0x3f { sync(); }
+:rtie  is maj=4 & sub=0x2f & pp=1 & blo=4 ; F=0 & bhi=0 & creg=0 & areg=0x3f { return [ilink]; }
+:brk  is maj=4 & sub=0x2f & pp=1 & blo=5 ; F=0 & bhi=0 & creg=0 & areg=0x3f { breakpoint(); }
+:seti src2 is (maj=4 & sub=0x2f & blo=6 ; F=0 & bhi=0 & areg=0x3f) ... & src2 ... { set_interrupt_enable(src2); }
+:clri src2 is (maj=4 & sub=0x2f & blo=7 ; F=0 & bhi=0 & areg=0x3f) ... & src2 ... { src2 = clear_interrupt_enable(); }
+:clri  is maj=4 & sub=0x2f & pp=1 & blo=7 ; F=0 & bhi=0 & areg=0x3f { clear_interrupt_enable(); }
+
+# ---- major 0x05: shifts, divide, bit scan ----
+
+:asl^docc dst, srcB, src2 is (maj=5 & sub=0x00 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local n:4 = src2 & 31; dst = x << n; }
+:asl^docc^".f" dst, srcB, src2 is (maj=5 & sub=0x00 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local n:4 = src2 & 31; local r:4 = x << n; if (n == 0) goto <keep>; C = (((x >> (32 - n)) & 1) != 0); <keep> flagsZN(r); dst = r; }
+:lsr^docc dst, srcB, src2 is (maj=5 & sub=0x01 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local n:4 = src2 & 31; dst = x >> n; }
+:lsr^docc^".f" dst, srcB, src2 is (maj=5 & sub=0x01 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local n:4 = src2 & 31; local r:4 = x >> n; if (n == 0) goto <keep>; C = (((x >> (n - 1)) & 1) != 0); <keep> flagsZN(r); dst = r; }
+:asr^docc dst, srcB, src2 is (maj=5 & sub=0x02 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local n:4 = src2 & 31; dst = x s>> n; }
+:asr^docc^".f" dst, srcB, src2 is (maj=5 & sub=0x02 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local n:4 = src2 & 31; local r:4 = x s>> n; if (n == 0) goto <keep>; C = (((x >> (n - 1)) & 1) != 0); <keep> flagsZN(r); dst = r; }
+:ror^docc dst, srcB, src2 is (maj=5 & sub=0x03 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local n:4 = src2 & 31; dst = (x >> n) | (x << ((32 - n) & 31)); }
+:ror^docc^".f" dst, srcB, src2 is (maj=5 & sub=0x03 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local x:4 = srcB; local n:4 = src2 & 31; local r:4 = (x >> n) | (x << ((32 - n) & 31)); if (n == 0) goto <keep>; C = (((x >> (n - 1)) & 1) != 0); <keep> flagsZN(r); dst = r; }
+:div^docc dst, srcB, src2 is (maj=5 & sub=0x04 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { local y:4 = src2; if (y == 0) goto inst_next; dst = srcB s/ y; }
+:div^docc^".f" dst, srcB, src2 is (maj=5 & sub=0x04 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local y:4 = src2; if (y == 0) goto inst_next; local r:4 = srcB s/ y; V = 0; flagsZN(r); dst = r; }
+:divu^docc dst, srcB, src2 is (maj=5 & sub=0x05 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { local y:4 = src2; if (y == 0) goto inst_next; dst = srcB / y; }
+:divu^docc^".f" dst, srcB, src2 is (maj=5 & sub=0x05 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local y:4 = src2; if (y == 0) goto inst_next; local r:4 = srcB / y; V = 0; N = 0; Z = (r == 0); dst = r; }
+:rem^docc dst, srcB, src2 is (maj=5 & sub=0x08 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { local y:4 = src2; if (y == 0) goto inst_next; dst = srcB s% y; }
+:rem^docc^".f" dst, srcB, src2 is (maj=5 & sub=0x08 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local y:4 = src2; if (y == 0) goto inst_next; local r:4 = srcB s% y; V = 0; flagsZN(r); dst = r; }
+:remu^docc dst, srcB, src2 is (maj=5 & sub=0x09 ; F=0) ... & docc ... & dst ... & srcB ... & src2 ... { local y:4 = src2; if (y == 0) goto inst_next; dst = srcB % y; }
+:remu^docc^".f" dst, srcB, src2 is (maj=5 & sub=0x09 ; F=1) ... & docc ... & dst ... & srcB ... & src2 ... { local y:4 = src2; if (y == 0) goto inst_next; local r:4 = srcB % y; V = 0; N = 0; Z = (r == 0); dst = r; }
+:swap dstB, src2 is (maj=5 & sub=0x2f ; F=0 & areg=0x00) ... & dstB ... & src2 ... { local x:4 = src2; dstB = (x << 16) | (x >> 16); }
+:swap.f dstB, src2 is (maj=5 & sub=0x2f ; F=1 & areg=0x00) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = (x << 16) | (x >> 16);  flagsZN(r); dstB = r; }
+:norm dstB, src2 is (maj=5 & sub=0x2f ; F=0 & areg=0x01) ... & dstB ... & src2 ... { local x:4 = src2; dstB = lzcount(x ^ (x s>> 31)) - 1; }
+:norm.f dstB, src2 is (maj=5 & sub=0x2f ; F=1 & areg=0x01) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = lzcount(x ^ (x s>> 31)) - 1;  flagsZN(r); dstB = r; }
+:normh dstB, src2 is (maj=5 & sub=0x2f ; F=0 & areg=0x08) ... & dstB ... & src2 ... { local x:4 = src2; local h:2 = x:2; local k:4 = lzcount(h ^ (h s>> 15)); dstB = k - 1; }
+:normh.f dstB, src2 is (maj=5 & sub=0x2f ; F=1 & areg=0x08) ... & dstB ... & src2 ... { local x:4 = src2; local h:2 = x:2; local k:4 = lzcount(h ^ (h s>> 15)); local r:4 = k - 1; Z = (h == 0); N = (h s< 0); dstB = r; }
+:swape dstB, src2 is (maj=5 & sub=0x2f ; F=0 & areg=0x09) ... & dstB ... & src2 ... { local x:4 = src2; dstB = (x << 24) | ((x & 0xff00) << 8) | ((x >> 8) & 0xff00) | (x >> 24); }
+:swape.f dstB, src2 is (maj=5 & sub=0x2f ; F=1 & areg=0x09) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = (x << 24) | ((x & 0xff00) << 8) | ((x >> 8) & 0xff00) | (x >> 24);  flagsZN(r); dstB = r; }
+:lsl16 dstB, src2 is (maj=5 & sub=0x2f ; F=0 & areg=0x0a) ... & dstB ... & src2 ... { local x:4 = src2; dstB = x << 16; }
+:lsl16.f dstB, src2 is (maj=5 & sub=0x2f ; F=1 & areg=0x0a) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = x << 16;  flagsZN(r); dstB = r; }
+:lsr16 dstB, src2 is (maj=5 & sub=0x2f ; F=0 & areg=0x0b) ... & dstB ... & src2 ... { local x:4 = src2; dstB = x >> 16; }
+:lsr16.f dstB, src2 is (maj=5 & sub=0x2f ; F=1 & areg=0x0b) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = x >> 16;  flagsZN(r); dstB = r; }
+:asr16 dstB, src2 is (maj=5 & sub=0x2f ; F=0 & areg=0x0c) ... & dstB ... & src2 ... { local x:4 = src2; dstB = x s>> 16; }
+:asr16.f dstB, src2 is (maj=5 & sub=0x2f ; F=1 & areg=0x0c) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = x s>> 16;  flagsZN(r); dstB = r; }
+:asr8 dstB, src2 is (maj=5 & sub=0x2f ; F=0 & areg=0x0d) ... & dstB ... & src2 ... { local x:4 = src2; dstB = x s>> 8; }
+:asr8.f dstB, src2 is (maj=5 & sub=0x2f ; F=1 & areg=0x0d) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = x s>> 8;  flagsZN(r); dstB = r; }
+:lsr8 dstB, src2 is (maj=5 & sub=0x2f ; F=0 & areg=0x0e) ... & dstB ... & src2 ... { local x:4 = src2; dstB = x >> 8; }
+:lsr8.f dstB, src2 is (maj=5 & sub=0x2f ; F=1 & areg=0x0e) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = x >> 8;  flagsZN(r); dstB = r; }
+:lsl8 dstB, src2 is (maj=5 & sub=0x2f ; F=0 & areg=0x0f) ... & dstB ... & src2 ... { local x:4 = src2; dstB = x << 8; }
+:lsl8.f dstB, src2 is (maj=5 & sub=0x2f ; F=1 & areg=0x0f) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = x << 8;  flagsZN(r); dstB = r; }
+:rol8 dstB, src2 is (maj=5 & sub=0x2f ; F=0 & areg=0x10) ... & dstB ... & src2 ... { local x:4 = src2; dstB = (x << 8) | (x >> 24); }
+:rol8.f dstB, src2 is (maj=5 & sub=0x2f ; F=1 & areg=0x10) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = (x << 8) | (x >> 24);  flagsZN(r); dstB = r; }
+:ror8 dstB, src2 is (maj=5 & sub=0x2f ; F=0 & areg=0x11) ... & dstB ... & src2 ... { local x:4 = src2; dstB = (x >> 8) | (x << 24); }
+:ror8.f dstB, src2 is (maj=5 & sub=0x2f ; F=1 & areg=0x11) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = (x >> 8) | (x << 24);  flagsZN(r); dstB = r; }
+:ffs dstB, src2 is (maj=5 & sub=0x2f ; F=0 & areg=0x12) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = 31; if (x == 0) goto <done>; r = popcount((x & -x) - 1); <done> dstB = r; }
+:ffs.f dstB, src2 is (maj=5 & sub=0x2f ; F=1 & areg=0x12) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = 31; Z = (x == 0); N = (x s< 0); if (x == 0) goto <done>; r = popcount((x & -x) - 1); <done> dstB = r; }
+:fls dstB, src2 is (maj=5 & sub=0x2f ; F=0 & areg=0x13) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = 0; if (x == 0) goto <done>; r = 31 - lzcount(x); <done> dstB = r; }
+:fls.f dstB, src2 is (maj=5 & sub=0x2f ; F=1 & areg=0x13) ... & dstB ... & src2 ... { local x:4 = src2; local r:4 = 0; Z = (x == 0); N = (x s< 0); if (x == 0) goto <done>; r = 31 - lzcount(x); <done> dstB = r; }
+
+# ---- major 0x02 / 0x03 / 0x04(0x30..0x37): load and store ----
+
+ldDisp: v is s8 ; ldS [ v = (ldS << 8) | s8; ] { export *[const]:4 v; }
+ldDisp4: ldDisp is ldDisp { local t:4 = ldDisp << 2; export t; }
+ldDisp2: ldDisp is ldDisp { local t:4 = ldDisp << 1; export t; }
+
+ldEA: [srcB, ldDisp] is (maj ; ldaa=0) ... & srcB ... & ldDisp ... { local ea:4 = srcB + ldDisp; export ea; }
+ldEA: [srcB] is (s8=0 ; ldaa=0 & ldS=0) ... & srcB ... { local ea:4 = srcB; export ea; }
+ldEA: [srcB, ldDisp] is (maj ; ldaa=1) ... & srcB ... & ldDisp ... { local ea:4 = srcB + ldDisp; srcB = ea; export ea; }
+ldEA: [srcB, ldDisp] is (maj ; ldaa=2) ... & srcB ... & ldDisp ... { local ea:4 = srcB; srcB = ea + ldDisp; export ea; }
+ldEA: [srcB, ldDisp4] is (maj ; ldaa=3 & ldzz=0) ... & srcB ... & ldDisp4 ... { local ea:4 = srcB + ldDisp4; export ea; }
+ldEA: [srcB, ldDisp2] is (maj ; ldaa=3 & ldzz=2) ... & srcB ... & ldDisp2 ... { local ea:4 = srcB + ldDisp2; export ea; }
+
+ldsfx: is maj ; ldaa=0 { }
+ldsfx: ".aw" is maj ; ldaa=1 { }
+ldsfx: ".ab" is maj ; ldaa=2 { }
+ldsfx: ".as" is maj ; ldaa=3 { }
+
+:ld^ldsfx dstA, ldEA is (maj=2 ; ldzz=0 & ldx=0) ... & ldsfx ... & dstA ... & ldEA ... { dstA = *:4 ldEA; }
+:ldb^ldsfx dstA, ldEA is (maj=2 ; ldzz=1 & ldx=0) ... & ldsfx ... & dstA ... & ldEA ... { local t:1 = *:1 ldEA; dstA = zext(t); }
+:ldb.x^ldsfx dstA, ldEA is (maj=2 ; ldzz=1 & ldx=1) ... & ldsfx ... & dstA ... & ldEA ... { local t:1 = *:1 ldEA; dstA = sext(t); }
+:ldh^ldsfx dstA, ldEA is (maj=2 ; ldzz=2 & ldx=0) ... & ldsfx ... & dstA ... & ldEA ... { local t:2 = *:2 ldEA; dstA = zext(t); }
+:ldh.x^ldsfx dstA, ldEA is (maj=2 ; ldzz=2 & ldx=1) ... & ldsfx ... & dstA ... & ldEA ... { local t:2 = *:2 ldEA; dstA = sext(t); }
+
+rrEA: [srcB, srcC] is rraa=0 ... & srcB ... & srcC ... { local ea:4 = srcB + srcC; export ea; }
+rrEA: [srcB, srcC] is rraa=1 ... & srcB ... & srcC ... { local ea:4 = srcB + srcC; srcB = ea; export ea; }
+rrEA: [srcB, srcC] is rraa=2 ... & srcB ... & srcC ... { local ea:4 = srcB; srcB = ea + srcC; export ea; }
+rrEA: [srcB, srcC] is rraa=3 ... & rrzz=0 ... & srcB ... & srcC ... { local ea:4 = srcB + (srcC << 2); export ea; }
+rrEA: [srcB, srcC] is rraa=3 ... & rrzz=2 ... & srcB ... & srcC ... { local ea:4 = srcB + (srcC << 1); export ea; }
+
+rrsfx: is rraa=0 { }
+rrsfx: ".aw" is rraa=1 { }
+rrsfx: ".ab" is rraa=2 { }
+rrsfx: ".as" is rraa=3 { }
+
+:ld^rrsfx dstA, rrEA is maj=4 ... & rrsub=6 ... & rrzz=0 ... & rrx=0 ... & rrsfx ... & dstA ... & rrEA ... { dstA = *:4 rrEA; }
+:ldb^rrsfx dstA, rrEA is maj=4 ... & rrsub=6 ... & rrzz=1 ... & rrx=0 ... & rrsfx ... & dstA ... & rrEA ... { local t:1 = *:1 rrEA; dstA = zext(t); }
+:ldb.x^rrsfx dstA, rrEA is maj=4 ... & rrsub=6 ... & rrzz=1 ... & rrx=1 ... & rrsfx ... & dstA ... & rrEA ... { local t:1 = *:1 rrEA; dstA = sext(t); }
+:ldh^rrsfx dstA, rrEA is maj=4 ... & rrsub=6 ... & rrzz=2 ... & rrx=0 ... & rrsfx ... & dstA ... & rrEA ... { local t:2 = *:2 rrEA; dstA = zext(t); }
+:ldh.x^rrsfx dstA, rrEA is maj=4 ... & rrsub=6 ... & rrzz=2 ... & rrx=1 ... & rrsfx ... & dstA ... & rrEA ... { local t:2 = *:2 rrEA; dstA = sext(t); }
+
+stEA: [srcB, ldDisp] is (maj ; staa=0) ... & srcB ... & ldDisp ... { local ea:4 = srcB + ldDisp; export ea; }
+stEA: [srcB] is (s8=0 ; staa=0 & ldS=0) ... & srcB ... { local ea:4 = srcB; export ea; }
+stEA: [srcB, ldDisp] is (maj ; staa=1) ... & srcB ... & ldDisp ... { local ea:4 = srcB + ldDisp; export ea; }
+stEA: [srcB, ldDisp] is (maj ; staa=2) ... & srcB ... & ldDisp ... { local ea:4 = srcB; export ea; }
+stEA: [srcB, ldDisp4] is (maj ; staa=3 & stzz=0) ... & srcB ... & ldDisp4 ... { local ea:4 = srcB + ldDisp4; export ea; }
+stEA: [srcB, ldDisp2] is (maj ; staa=3 & stzz=2) ... & srcB ... & ldDisp2 ... { local ea:4 = srcB + ldDisp2; export ea; }
+
+# The base register of a store is updated after the value is read.
+stWB: is maj ; staa { }
+stWB: is (maj ; staa=1) ... & srcB ... & ldDisp ... { srcB = srcB + ldDisp; }
+stWB: is (maj ; staa=2) ... & srcB ... & ldDisp ... { srcB = srcB + ldDisp; }
+
+stsfx: is maj ; staa=0 { }
+stsfx: ".aw" is maj ; staa=1 { }
+stsfx: ".ab" is maj ; staa=2 { }
+stsfx: ".as" is maj ; staa=3 { }
+
+stVal: srcC is (maj ; stw=0) ... & srcC ... { export srcC; }
+stVal: w6 is maj ; stw=1 & w6 { export *[const]:4 w6; }
+
+:st^stsfx stVal, stEA is (maj=3 ; stzz=0) ... & stsfx ... & stVal ... & stEA ... & stWB ... { local v:4 = stVal; local ea:4 = stEA; build stWB; *:4 ea = v; }
+:stb^stsfx stVal, stEA is (maj=3 ; stzz=1) ... & stsfx ... & stVal ... & stEA ... & stWB ... { local v:4 = stVal; local ea:4 = stEA; build stWB; *:1 ea = v:1; }
+:sth^stsfx stVal, stEA is (maj=3 ; stzz=2) ... & stsfx ... & stVal ... & stEA ... & stWB ... { local v:4 = stVal; local ea:4 = stEA; build stWB; *:2 ea = v:2; }
+
+# ---- major 0x00 / 0x01: branches ----
+
+bTarget: addr is bdisp ; bhi10 [ addr = (inst_start & 0xfffffffc) + ((bhi10 << 11) | (bdisp << 1)); ] { export *[ram]:4 addr; }
+bFar: addr is bdisp ; bmid10 & btop [ addr = (inst_start & 0xfffffffc) + ((btop << 21) | (bmid10 << 11) | (bdisp << 1)); ] { export *[ram]:4 addr; }
+blTarget: addr is bldisp ; bhi10 [ addr = (inst_start & 0xfffffffc) + ((bhi10 << 11) | (bldisp << 2)); ] { export *[ram]:4 addr; }
+blFar: addr is bldisp ; bmid10 & btop [ addr = (inst_start & 0xfffffffc) + ((btop << 21) | (bmid10 << 11) | (bldisp << 2)); ] { export *[ram]:4 addr; }
+brTarget: addr is brdisp ; ldS [ addr = (inst_start & 0xfffffffc) + ((ldS << 8) | (brdisp << 1)); ] { export *[ram]:4 addr; }
+
+:b bTarget is (maj=0 & bfar=0 ; dslot=0 & Q=0) ... & bTarget ... { goto bTarget; }
+:b.d bTarget is (maj=0 & bfar=0 ; dslot=1 & Q=0) ... & bTarget ... { delayslot(1); goto bTarget; }
+:b^cc bTarget is (maj=0 & bfar=0 ; dslot=0 & cc) ... & bTarget ... { if (cc) goto bTarget; }
+:b^cc^".d" bTarget is (maj=0 & bfar=0 ; dslot=1 & cc) ... & bTarget ... { local t:1 = cc; delayslot(1); if (t) goto bTarget; }
+:b bFar is (maj=0 & bfar=1 ; dslot=0) ... & bFar ... { goto bFar; }
+:b.d bFar is (maj=0 & bfar=1 ; dslot=1) ... & bFar ... { delayslot(1); goto bFar; }
+
+:bl blTarget is (maj=1 & bfar=0 & blfar=0 ; dslot=0 & Q=0) ... & blTarget ... { blink = inst_next; call blTarget; }
+:bl.d blTarget is (maj=1 & bfar=0 & blfar=0 ; dslot=1 & Q=0) ... & blTarget ... { blink = inst_next; delayslot(1); call blTarget; }
+:bl^cc blTarget is (maj=1 & bfar=0 & blfar=0 ; dslot=0 & cc) ... & blTarget ... { if (!cc) goto inst_next; blink = inst_next; call blTarget; }
+:bl^cc^".d" blTarget is (maj=1 & bfar=0 & blfar=0 ; dslot=1 & cc) ... & blTarget ... { local t:1 = cc; delayslot(1); if (!t) goto inst_next; blink = inst_next; call blTarget; }
+:bl blFar is (maj=1 & bfar=0 & blfar=1 ; dslot=0) ... & blFar ... { blink = inst_next; call blFar; }
+:bl.d blFar is (maj=1 & bfar=0 & blfar=1 ; dslot=1) ... & blFar ... { blink = inst_next; delayslot(1); call blFar; }
+
+brC: srcC is (maj ; brm=0) ... & srcC ... { export srcC; }
+brC: immU6 is (maj ; brm=1) ... & immU6 ... { export immU6; }
+
+:breq srcB, brC, brTarget is (maj=1 & bfar=1 ; dslot=0 & bri=0) ... & srcB ... & brC ... & brTarget ... { local x:4 = srcB; local y:4 = brC; if (x == y) goto brTarget; }
+:breq.d srcB, brC, brTarget is (maj=1 & bfar=1 ; dslot=1 & bri=0) ... & srcB ... & brC ... & brTarget ... { local x:4 = srcB; local y:4 = brC; local t:1 = (x == y); delayslot(1); if (t) goto brTarget; }
+:brne srcB, brC, brTarget is (maj=1 & bfar=1 ; dslot=0 & bri=1) ... & srcB ... & brC ... & brTarget ... { local x:4 = srcB; local y:4 = brC; if (x != y) goto brTarget; }
+:brne.d srcB, brC, brTarget is (maj=1 & bfar=1 ; dslot=1 & bri=1) ... & srcB ... & brC ... & brTarget ... { local x:4 = srcB; local y:4 = brC; local t:1 = (x != y); delayslot(1); if (t) goto brTarget; }
+:brlt srcB, brC, brTarget is (maj=1 & bfar=1 ; dslot=0 & bri=2) ... & srcB ... & brC ... & brTarget ... { local x:4 = srcB; local y:4 = brC; if (x s< y) goto brTarget; }
+:brlt.d srcB, brC, brTarget is (maj=1 & bfar=1 ; dslot=1 & bri=2) ... & srcB ... & brC ... & brTarget ... { local x:4 = srcB; local y:4 = brC; local t:1 = (x s< y); delayslot(1); if (t) goto brTarget; }
+:brge srcB, brC, brTarget is (maj=1 & bfar=1 ; dslot=0 & bri=3) ... & srcB ... & brC ... & brTarget ... { local x:4 = srcB; local y:4 = brC; if (x s>= y) goto brTarget; }
+:brge.d srcB, brC, brTarget is (maj=1 & bfar=1 ; dslot=1 & bri=3) ... & srcB ... & brC ... & brTarget ... { local x:4 = srcB; local y:4 = brC; local t:1 = (x s>= y); delayslot(1); if (t) goto brTarget; }
+:brlo srcB, brC, brTarget is (maj=1 & bfar=1 ; dslot=0 & bri=4) ... & srcB ... & brC ... & brTarget ... { local x:4 = srcB; local y:4 = brC; if (x < y) goto brTarget; }
+:brlo.d srcB, brC, brTarget is (maj=1 & bfar=1 ; dslot=1 & bri=4) ... & srcB ... & brC ... & brTarget ... { local x:4 = srcB; local y:4 = brC; local t:1 = (x < y); delayslot(1); if (t) goto brTarget; }
+:brhs srcB, brC, brTarget is (maj=1 & bfar=1 ; dslot=0 & bri=5) ... & srcB ... & brC ... & brTarget ... { local x:4 = srcB; local y:4 = brC; if (x >= y) goto brTarget; }
+:brhs.d srcB, brC, brTarget is (maj=1 & bfar=1 ; dslot=1 & bri=5) ... & srcB ... & brC ... & brTarget ... { local x:4 = srcB; local y:4 = brC; local t:1 = (x >= y); delayslot(1); if (t) goto brTarget; }
+:bbit0 srcB, brC, brTarget is (maj=1 & bfar=1 ; dslot=0 & bri=6) ... & srcB ... & brC ... & brTarget ... { local x:4 = srcB; local y:4 = brC; if (((x >> (y & 31)) & 1) == 0) goto brTarget; }
+:bbit0.d srcB, brC, brTarget is (maj=1 & bfar=1 ; dslot=1 & bri=6) ... & srcB ... & brC ... & brTarget ... { local x:4 = srcB; local y:4 = brC; local t:1 = (((x >> (y & 31)) & 1) == 0); delayslot(1); if (t) goto brTarget; }
+:bbit1 srcB, brC, brTarget is (maj=1 & bfar=1 ; dslot=0 & bri=7) ... & srcB ... & brC ... & brTarget ... { local x:4 = srcB; local y:4 = brC; if (((x >> (y & 31)) & 1) != 0) goto brTarget; }
+:bbit1.d srcB, brC, brTarget is (maj=1 & bfar=1 ; dslot=1 & bri=7) ... & srcB ... & brC ... & brTarget ... { local x:4 = srcB; local y:4 = brC; local t:1 = (((x >> (y & 31)) & 1) != 0); delayslot(1); if (t) goto brTarget; }
+
+# ---- 16-bit instructions ----
+
+sH: shl0 is shhi=0 & shl0 { export shl0; }
+sH: shl1 is shhi=1 & shl1 { export shl1; }
+sH: shl2 is shhi=2 & shl2 { export shl2; }
+sH: shl3 is shhi=3 & shl3 { export shl3; }
+sH: limm is shhi=3 & shlo=6 ; limm { export limm; }
+
+sHdst: shl0 is shhi=0 & shl0 { export shl0; }
+sHdst: shl1 is shhi=1 & shl1 { export shl1; }
+sHdst: shl2 is shhi=2 & shl2 { export shl2; }
+sHdst: shl3 is shhi=3 & shl3 { export shl3; }
+sHdst: "0" is shhi=3 & shlo=6 { local t:4 = 0; export t; }
+
+sG: sgl0 is sghi=0 & sgl0 { export sgl0; }
+sG: sgl1 is sghi=1 & sgl1 { export sgl1; }
+sG: sgl2 is sghi=2 & sgl2 { export sgl2; }
+sG: sgl3 is sghi=3 & sgl3 { export sgl3; }
+sG: "0" is sghi=3 & sglo=6 { local t:4 = 0; export t; }
+
+sS3: ss3 is ss3 { export *[const]:4 ss3; }
+sS3: "-1" is ss3=7 { export 0xffffffff:4; }
+
+sU5x4: v is sU & suu [ v = (sU << 4) | (suu << 2); ] { export *[const]:4 v; }
+sU6: v is suhi3 & su3 [ v = (suhi3 << 3) | su3; ] { export *[const]:4 v; }
+sU7i: v is suhi4 & su3 [ v = (suhi4 << 3) | su3; ] { export *[const]:4 v; }
+sGp11: v is suhi6 & su3 [ v = ((suhi6 << 3) | su3) << 2; ] { export *[const]:4 v; }
+sU3: su3 is su3 { export *[const]:4 su3; }
+sU5: su5 is su5 { export *[const]:4 su5; }
+sU5x2: v is su5 [ v = su5 << 1; ] { export *[const]:4 v; }
+sU5x4b: v is su5 [ v = su5 << 2; ] { export *[const]:4 v; }
+sU7: su7 is su7 { export *[const]:4 su7; }
+sU8: su8 is su8 { export *[const]:4 su8; }
+sU8x4: v is su8 [ v = (inst_start & 0xfffffffc) + (su8 << 2); ] { export *[const]:4 v; }
+sS9: sd9 is sd9 { export *[const]:4 sd9; }
+sS9x2: v is sd9 [ v = sd9 << 1; ] { export *[const]:4 v; }
+sS9x4: v is sd9 [ v = sd9 << 2; ] { export *[const]:4 v; }
+
+sRel10: addr is sd9 [ addr = (inst_start & 0xfffffffc) + (sd9 << 1); ] { export *[ram]:4 addr; }
+sRel7: addr is sd6 [ addr = (inst_start & 0xfffffffc) + (sd6 << 1); ] { export *[ram]:4 addr; }
+sRel8: addr is sd7 [ addr = (inst_start & 0xfffffffc) + (sd7 << 1); ] { export *[ram]:4 addr; }
+sRel13: addr is sd11 [ addr = (inst_start & 0xfffffffc) + (sd11 << 2); ] { export *[ram]:4 addr; }
+
+:mov_s sG, sH is maj=0x08 ... & sbit2=0 ... & sG ... & sH ... { sG = sH; }
+:ld_s sr4, [sH, sU5x4] is maj=0x08 ... & sbit2=1 ... & sr4 ... & sH ... & sU5x4 ... { local ea:4 = sH + sU5x4; sr4 = *:4 ea; }
+
+:ld_s.as sa, [sb, sc] is maj=0x09 & si2=0 & sa & sb & sc { local ea:4 = sb + (sc << 2); sa = *:4 ea; }
+:sub_s sa, sb, sc is maj=0x09 & si2=2 & sa & sb & sc { sa = sb - sc; }
+:add_s srb, sb, sU6 is maj=0x09 & sbit3=1 & srb & sb & sU6 { srb = sb + sU6; }
+
+:ld_s "r1", ["gp", sGp11] is maj=0x0a & si2=0 & sGp11 { local ea:4 = gp + sGp11; r1 = *:4 ea; }
+:st_s "r0", ["gp", sGp11] is maj=0x0a & si2=2 & sGp11 { local ea:4 = gp + sGp11; *:4 ea = r0; }
+:ldi_s sb, [sU7i] is maj=0x0a & sbit3=1 & sb & sU7i { local ea:4 = ldi_base + (sU7i << 2); sb = *:4 ea; }
+
+:jli_s su10 is maj=0x0b & sbit10=0 & su10 { blink = inst_next; local t:4 = jli_base + (su10 << 2); call [t]; }
+:ei_s su10 is maj=0x0b & sbit10=1 & su10 { local t:4 = ei_base + (su10 << 2); call [t]; }
+
+:ld_s sa, [sb, sc] is maj=0x0c & si2=0 & sa & sb & sc { local ea:4 = sb + sc; sa = *:4 ea; }
+:ldb_s sa, [sb, sc] is maj=0x0c & si2=1 & sa & sb & sc { local ea:4 = sb + sc; local t:1 = *:1 ea; sa = zext(t); }
+:ldh_s sa, [sb, sc] is maj=0x0c & si2=2 & sa & sb & sc { local ea:4 = sb + sc; local t:2 = *:2 ea; sa = zext(t); }
+:add_s sa, sb, sc is maj=0x0c & si2=3 & sa & sb & sc { sa = sb + sc; }
+
+:add_s sc, sb, sU3 is maj=0x0d & si2=0 & sc & sb & sU3 { sc = sb + sU3; }
+:sub_s sc, sb, sU3 is maj=0x0d & si2=1 & sc & sb & sU3 { sc = sb - sU3; }
+:asl_s sc, sb, sU3 is maj=0x0d & si2=2 & sc & sb & sU3 { sc = sb << sU3; }
+:asr_s sc, sb, sU3 is maj=0x0d & si2=3 & sc & sb & sU3 { sc = sb s>> sU3; }
+
+:add_s sb, sb2, sH is maj=0x0e ... & si3=0 ... & sb ... & sb2 ... & sH ... { sb = sb + sH; }
+:add_s sHdst, sH, sS3 is maj=0x0e ... & si3=1 ... & sHdst ... & sH ... & sS3 ... { sHdst = sH + sS3; }
+:mov_s sHdst, sS3 is maj=0x0e & si3=3 & sHdst & sS3 { sHdst = sS3; }
+:cmp_s sb, sH is maj=0x0e ... & si3=4 ... & sb ... & sH ... { local x:4 = sb; local y:4 = sH; local r:4 = x - y; flagsSub(x, y); flagsZN(r); }
+:cmp_s sH, sS3 is maj=0x0e ... & si3=5 ... & sH ... & sS3 ... { local x:4 = sH; local y:4 = sS3; local r:4 = x - y; flagsSub(x, y); flagsZN(r); }
+:mov_s.ne sb, sH is maj=0x0e ... & si3=7 ... & sb ... & sH ... { if (Z) goto inst_next; sb = sH; }
+
+:j_s [sb] is maj=0x0f & sop5=0 & sop3=0 & sb { goto [sb]; }
+:j_s.d [sb] is maj=0x0f & sop5=0 & sop3=1 & sb { local t:4 = sb; delayslot(1); goto [t]; }
+:jl_s [sb] is maj=0x0f & sop5=0 & sop3=2 & sb { local t:4 = sb; blink = inst_next; call [t]; }
+:jl_s.d [sb] is maj=0x0f & sop5=0 & sop3=3 & sb { local t:4 = sb; blink = inst_next; delayslot(1); call [t]; }
+:sub_s.ne sb, sb2, sb3 is maj=0x0f & sop5=0 & sop3=6 & sb & sb2 & sb3 { if (Z) goto inst_next; sb = 0; }
+:nop_s  is maj=0x0f & sop5=0 & sop3=7 & sb=0 { }
+:unimp_s  is maj=0x0f & sop5=0 & sop3=7 & sb=1 { unimplemented_instruction(); }
+:swi_s  is maj=0x0f & sop5=0 & sop3=7 & sb=2 { software_interrupt(); }
+:jeq_s ["blink"] is maj=0x0f & sop5=0 & sop3=7 & sb=4 { if (!Z) goto inst_next; return [blink]; }
+:jne_s ["blink"] is maj=0x0f & sop5=0 & sop3=7 & sb=5 { if (Z) goto inst_next; return [blink]; }
+:j_s ["blink"] is maj=0x0f & sop5=0 & sop3=7 & sb=6 { return [blink]; }
+:j_s.d ["blink"] is maj=0x0f & sop5=0 & sop3=7 & sb=7 { local t:4 = blink; delayslot(1); return [t]; }
+
+:sub_s sb, sb2, sc is maj=0x0f & sop5=0x02 & sb & sb2 & sc { sb = sb - sc; }
+:and_s sb, sb2, sc is maj=0x0f & sop5=0x04 & sb & sb2 & sc { sb = sb & sc; }
+:or_s sb, sb2, sc is maj=0x0f & sop5=0x05 & sb & sb2 & sc { sb = sb | sc; }
+:bic_s sb, sb2, sc is maj=0x0f & sop5=0x06 & sb & sb2 & sc { sb = sb & ~sc; }
+:xor_s sb, sb2, sc is maj=0x0f & sop5=0x07 & sb & sb2 & sc { sb = sb ^ sc; }
+:mpyw_s sb, sb2, sc is maj=0x0f & sop5=0x09 & sb & sb2 & sc { local x:4 = sb; local y:4 = sc; sb = sext(x:2) * sext(y:2); }
+:mpyuw_s sb, sb2, sc is maj=0x0f & sop5=0x0a & sb & sb2 & sc { local x:4 = sb; local y:4 = sc; sb = zext(x:2) * zext(y:2); }
+:tst_s sb, sc is maj=0x0f & sop5=0x0b & sb & sc { local r:4 = sb & sc; flagsZN(r); }
+:mpy_s sb, sb2, sc is maj=0x0f & sop5=0x0c & sb & sb2 & sc { sb = sb * sc; }
+:sexb_s sb, sc is maj=0x0f & sop5=0x0d & sb & sc { local x:4 = sc; sb = sext(x:1); }
+:sexh_s sb, sc is maj=0x0f & sop5=0x0e & sb & sc { local x:4 = sc; sb = sext(x:2); }
+:extb_s sb, sc is maj=0x0f & sop5=0x0f & sb & sc { local x:4 = sc; sb = zext(x:1); }
+:exth_s sb, sc is maj=0x0f & sop5=0x10 & sb & sc { local x:4 = sc; sb = zext(x:2); }
+:abs_s sb, sc is maj=0x0f & sop5=0x11 & sb & sc { local x:4 = sc; local r:4 = x; if (x s>= 0) goto <done>; r = -x; <done> sb = r; }
+:not_s sb, sc is maj=0x0f & sop5=0x12 & sb & sc { sb = ~sc; }
+:neg_s sb, sc is maj=0x0f & sop5=0x13 & sb & sc { sb = -sc; }
+:add1_s sb, sb2, sc is maj=0x0f & sop5=0x14 & sb & sb2 & sc { sb = sb + (sc << 1); }
+:add2_s sb, sb2, sc is maj=0x0f & sop5=0x15 & sb & sb2 & sc { sb = sb + (sc << 2); }
+:add3_s sb, sb2, sc is maj=0x0f & sop5=0x16 & sb & sb2 & sc { sb = sb + (sc << 3); }
+:asl_s sb, sb2, sc is maj=0x0f & sop5=0x18 & sb & sb2 & sc { sb = sb << (sc & 31); }
+:lsr_s sb, sb2, sc is maj=0x0f & sop5=0x19 & sb & sb2 & sc { sb = sb >> (sc & 31); }
+:asr_s sb, sb2, sc is maj=0x0f & sop5=0x1a & sb & sb2 & sc { sb = sb s>> (sc & 31); }
+:asl_s sb, sc is maj=0x0f & sop5=0x1b & sb & sc { sb = sc << 1; }
+:asr_s sb, sc is maj=0x0f & sop5=0x1c & sb & sc { sb = sc s>> 1; }
+:lsr_s sb, sc is maj=0x0f & sop5=0x1d & sb & sc { sb = sc >> 1; }
+:trap_s su6 is maj=0x0f & sop5=0x1e & su6 { trap(su6:1); }
+:swi_s su6 is maj=0x0f & sop5=0x1f & su6 { software_interrupt(su6:1); }
+:brk_s  is maj=0x0f & sop5=0x1f & su6=0x3f { breakpoint(); }
+
+:ld_s sc, [sb, sU5x4b] is maj=0x10 & sc & sb & sU5x4b { local ea:4 = sb + sU5x4b; sc = *:4 ea; }
+:ldb_s sc, [sb, sU5] is maj=0x11 & sc & sb & sU5 { local ea:4 = sb + sU5; local t:1 = *:1 ea; sc = zext(t); }
+:ldh_s sc, [sb, sU5x2] is maj=0x12 & sc & sb & sU5x2 { local ea:4 = sb + sU5x2; local t:2 = *:2 ea; sc = zext(t); }
+:ldh_s.x sc, [sb, sU5x2] is maj=0x13 & sc & sb & sU5x2 { local ea:4 = sb + sU5x2; local t:2 = *:2 ea; sc = sext(t); }
+:st_s sc, [sb, sU5x4b] is maj=0x14 & sc & sb & sU5x4b { local ea:4 = sb + sU5x4b; *:4 ea = sc; }
+:stb_s sc, [sb, sU5] is maj=0x15 & sc & sb & sU5 { local ea:4 = sb + sU5; local v:4 = sc; *:1 ea = v:1; }
+:sth_s sc, [sb, sU5x2] is maj=0x16 & sc & sb & sU5x2 { local ea:4 = sb + sU5x2; local v:4 = sc; *:2 ea = v:2; }
+
+:asl_s sb, sb2, sU5 is maj=0x17 & sop3=0 & sb & sb2 & sU5 { sb = sb << sU5; }
+:lsr_s sb, sb2, sU5 is maj=0x17 & sop3=1 & sb & sb2 & sU5 { sb = sb >> sU5; }
+:asr_s sb, sb2, sU5 is maj=0x17 & sop3=2 & sb & sb2 & sU5 { sb = sb s>> sU5; }
+:sub_s sb, sb2, sU5 is maj=0x17 & sop3=3 & sb & sb2 & sU5 { sb = sb - sU5; }
+:bset_s sb, sb2, sU5 is maj=0x17 & sop3=4 & sb & sb2 & sU5 { sb = sb | (1 << sU5); }
+:bclr_s sb, sb2, sU5 is maj=0x17 & sop3=5 & sb & sb2 & sU5 { sb = sb & ~(1 << sU5); }
+:bmsk_s sb, sb2, sU5 is maj=0x17 & sop3=6 & sb & sb2 & sU5 { sb = sb & ((2 << sU5) - 1); }
+:btst_s sb, sU5 is maj=0x17 & sop3=7 & sb & sU5 { local r:4 = sb & (1 << sU5); flagsZN(r); }
+
+:ld_s sb, ["sp", sU5x4b] is maj=0x18 & sop3=0 & sb & sU5x4b { local ea:4 = sp + sU5x4b; sb = *:4 ea; }
+:ldb_s sb, ["sp", sU5x4b] is maj=0x18 & sop3=1 & sb & sU5x4b { local ea:4 = sp + sU5x4b; local t:1 = *:1 ea; sb = zext(t); }
+:st_s sb, ["sp", sU5x4b] is maj=0x18 & sop3=2 & sb & sU5x4b { local ea:4 = sp + sU5x4b; *:4 ea = sb; }
+:stb_s sb, ["sp", sU5x4b] is maj=0x18 & sop3=3 & sb & sU5x4b { local ea:4 = sp + sU5x4b; local v:4 = sb; *:1 ea = v:1; }
+:add_s sb, "sp", sU5x4b is maj=0x18 & sop3=4 & sb & sU5x4b { sb = sp + sU5x4b; }
+:add_s "sp", "sp", sU5x4b is maj=0x18 & sop3=5 & sb=0 & sU5x4b { sp = sp + sU5x4b; }
+:sub_s "sp", "sp", sU5x4b is maj=0x18 & sop3=5 & sb=1 & sU5x4b { sp = sp - sU5x4b; }
+:pop_s sb is maj=0x18 & sop3=6 & su5=0x01 & sb { sb = *:4 sp; sp = sp + 4; }
+:pop_s "blink" is maj=0x18 & sop3=6 & su5=0x11 { blink = *:4 sp; sp = sp + 4; }
+:push_s sb is maj=0x18 & sop3=7 & su5=0x01 & sb { sp = sp - 4; *:4 sp = sb; }
+:push_s "blink" is maj=0x18 & sop3=7 & su5=0x11 { sp = sp - 4; *:4 sp = blink; }
+
+# enter_s / leave_s: blink at the lowest slot, then r13 upward, then fp.
+linkOff: is slink=0 { export 0:4; }
+linkOff: is slink=1 { export 4:4; }
+enterLink: is slink=0 { }
+enterLink: "blink" is slink=1 { *:4 sp = blink; }
+leaveLink: is slink=0 { }
+leaveLink: "blink" is slink=1 { blink = *:4 sp; }
+enterRegs:  is su4=0 & linkOff { local base:4 = sp + linkOff;  local e:4 = base + 0; export e; }
+leaveRegs:  is su4=0 & linkOff { local base:4 = sp + linkOff;  local e:4 = base + 0; export e; }
+enterRegs: "r13" is su4=1 & linkOff { local base:4 = sp + linkOff; *:4 (base + 0) = r13; local e:4 = base + 4; export e; }
+leaveRegs: "r13" is su4=1 & linkOff { local base:4 = sp + linkOff; r13 = *:4 (base + 0); local e:4 = base + 4; export e; }
+enterRegs: "r13-r14" is su4=2 & linkOff { local base:4 = sp + linkOff; *:4 (base + 0) = r13; *:4 (base + 4) = r14; local e:4 = base + 8; export e; }
+leaveRegs: "r13-r14" is su4=2 & linkOff { local base:4 = sp + linkOff; r13 = *:4 (base + 0); r14 = *:4 (base + 4); local e:4 = base + 8; export e; }
+enterRegs: "r13-r15" is su4=3 & linkOff { local base:4 = sp + linkOff; *:4 (base + 0) = r13; *:4 (base + 4) = r14; *:4 (base + 8) = r15; local e:4 = base + 12; export e; }
+leaveRegs: "r13-r15" is su4=3 & linkOff { local base:4 = sp + linkOff; r13 = *:4 (base + 0); r14 = *:4 (base + 4); r15 = *:4 (base + 8); local e:4 = base + 12; export e; }
+enterRegs: "r13-r16" is su4=4 & linkOff { local base:4 = sp + linkOff; *:4 (base + 0) = r13; *:4 (base + 4) = r14; *:4 (base + 8) = r15; *:4 (base + 12) = r16; local e:4 = base + 16; export e; }
+leaveRegs: "r13-r16" is su4=4 & linkOff { local base:4 = sp + linkOff; r13 = *:4 (base + 0); r14 = *:4 (base + 4); r15 = *:4 (base + 8); r16 = *:4 (base + 12); local e:4 = base + 16; export e; }
+enterRegs: "r13-r17" is su4=5 & linkOff { local base:4 = sp + linkOff; *:4 (base + 0) = r13; *:4 (base + 4) = r14; *:4 (base + 8) = r15; *:4 (base + 12) = r16; *:4 (base + 16) = r17; local e:4 = base + 20; export e; }
+leaveRegs: "r13-r17" is su4=5 & linkOff { local base:4 = sp + linkOff; r13 = *:4 (base + 0); r14 = *:4 (base + 4); r15 = *:4 (base + 8); r16 = *:4 (base + 12); r17 = *:4 (base + 16); local e:4 = base + 20; export e; }
+enterRegs: "r13-r18" is su4=6 & linkOff { local base:4 = sp + linkOff; *:4 (base + 0) = r13; *:4 (base + 4) = r14; *:4 (base + 8) = r15; *:4 (base + 12) = r16; *:4 (base + 16) = r17; *:4 (base + 20) = r18; local e:4 = base + 24; export e; }
+leaveRegs: "r13-r18" is su4=6 & linkOff { local base:4 = sp + linkOff; r13 = *:4 (base + 0); r14 = *:4 (base + 4); r15 = *:4 (base + 8); r16 = *:4 (base + 12); r17 = *:4 (base + 16); r18 = *:4 (base + 20); local e:4 = base + 24; export e; }
+enterRegs: "r13-r19" is su4=7 & linkOff { local base:4 = sp + linkOff; *:4 (base + 0) = r13; *:4 (base + 4) = r14; *:4 (base + 8) = r15; *:4 (base + 12) = r16; *:4 (base + 16) = r17; *:4 (base + 20) = r18; *:4 (base + 24) = r19; local e:4 = base + 28; export e; }
+leaveRegs: "r13-r19" is su4=7 & linkOff { local base:4 = sp + linkOff; r13 = *:4 (base + 0); r14 = *:4 (base + 4); r15 = *:4 (base + 8); r16 = *:4 (base + 12); r17 = *:4 (base + 16); r18 = *:4 (base + 20); r19 = *:4 (base + 24); local e:4 = base + 28; export e; }
+enterRegs: "r13-r20" is su4=8 & linkOff { local base:4 = sp + linkOff; *:4 (base + 0) = r13; *:4 (base + 4) = r14; *:4 (base + 8) = r15; *:4 (base + 12) = r16; *:4 (base + 16) = r17; *:4 (base + 20) = r18; *:4 (base + 24) = r19; *:4 (base + 28) = r20; local e:4 = base + 32; export e; }
+leaveRegs: "r13-r20" is su4=8 & linkOff { local base:4 = sp + linkOff; r13 = *:4 (base + 0); r14 = *:4 (base + 4); r15 = *:4 (base + 8); r16 = *:4 (base + 12); r17 = *:4 (base + 16); r18 = *:4 (base + 20); r19 = *:4 (base + 24); r20 = *:4 (base + 28); local e:4 = base + 32; export e; }
+enterRegs: "r13-r21" is su4=9 & linkOff { local base:4 = sp + linkOff; *:4 (base + 0) = r13; *:4 (base + 4) = r14; *:4 (base + 8) = r15; *:4 (base + 12) = r16; *:4 (base + 16) = r17; *:4 (base + 20) = r18; *:4 (base + 24) = r19; *:4 (base + 28) = r20; *:4 (base + 32) = r21; local e:4 = base + 36; export e; }
+leaveRegs: "r13-r21" is su4=9 & linkOff { local base:4 = sp + linkOff; r13 = *:4 (base + 0); r14 = *:4 (base + 4); r15 = *:4 (base + 8); r16 = *:4 (base + 12); r17 = *:4 (base + 16); r18 = *:4 (base + 20); r19 = *:4 (base + 24); r20 = *:4 (base + 28); r21 = *:4 (base + 32); local e:4 = base + 36; export e; }
+enterRegs: "r13-r22" is su4=10 & linkOff { local base:4 = sp + linkOff; *:4 (base + 0) = r13; *:4 (base + 4) = r14; *:4 (base + 8) = r15; *:4 (base + 12) = r16; *:4 (base + 16) = r17; *:4 (base + 20) = r18; *:4 (base + 24) = r19; *:4 (base + 28) = r20; *:4 (base + 32) = r21; *:4 (base + 36) = r22; local e:4 = base + 40; export e; }
+leaveRegs: "r13-r22" is su4=10 & linkOff { local base:4 = sp + linkOff; r13 = *:4 (base + 0); r14 = *:4 (base + 4); r15 = *:4 (base + 8); r16 = *:4 (base + 12); r17 = *:4 (base + 16); r18 = *:4 (base + 20); r19 = *:4 (base + 24); r20 = *:4 (base + 28); r21 = *:4 (base + 32); r22 = *:4 (base + 36); local e:4 = base + 40; export e; }
+enterRegs: "r13-r23" is su4=11 & linkOff { local base:4 = sp + linkOff; *:4 (base + 0) = r13; *:4 (base + 4) = r14; *:4 (base + 8) = r15; *:4 (base + 12) = r16; *:4 (base + 16) = r17; *:4 (base + 20) = r18; *:4 (base + 24) = r19; *:4 (base + 28) = r20; *:4 (base + 32) = r21; *:4 (base + 36) = r22; *:4 (base + 40) = r23; local e:4 = base + 44; export e; }
+leaveRegs: "r13-r23" is su4=11 & linkOff { local base:4 = sp + linkOff; r13 = *:4 (base + 0); r14 = *:4 (base + 4); r15 = *:4 (base + 8); r16 = *:4 (base + 12); r17 = *:4 (base + 16); r18 = *:4 (base + 20); r19 = *:4 (base + 24); r20 = *:4 (base + 28); r21 = *:4 (base + 32); r22 = *:4 (base + 36); r23 = *:4 (base + 40); local e:4 = base + 44; export e; }
+enterRegs: "r13-r24" is su4=12 & linkOff { local base:4 = sp + linkOff; *:4 (base + 0) = r13; *:4 (base + 4) = r14; *:4 (base + 8) = r15; *:4 (base + 12) = r16; *:4 (base + 16) = r17; *:4 (base + 20) = r18; *:4 (base + 24) = r19; *:4 (base + 28) = r20; *:4 (base + 32) = r21; *:4 (base + 36) = r22; *:4 (base + 40) = r23; *:4 (base + 44) = r24; local e:4 = base + 48; export e; }
+leaveRegs: "r13-r24" is su4=12 & linkOff { local base:4 = sp + linkOff; r13 = *:4 (base + 0); r14 = *:4 (base + 4); r15 = *:4 (base + 8); r16 = *:4 (base + 12); r17 = *:4 (base + 16); r18 = *:4 (base + 20); r19 = *:4 (base + 24); r20 = *:4 (base + 28); r21 = *:4 (base + 32); r22 = *:4 (base + 36); r23 = *:4 (base + 40); r24 = *:4 (base + 44); local e:4 = base + 48; export e; }
+enterRegs: "r13-r25" is su4=13 & linkOff { local base:4 = sp + linkOff; *:4 (base + 0) = r13; *:4 (base + 4) = r14; *:4 (base + 8) = r15; *:4 (base + 12) = r16; *:4 (base + 16) = r17; *:4 (base + 20) = r18; *:4 (base + 24) = r19; *:4 (base + 28) = r20; *:4 (base + 32) = r21; *:4 (base + 36) = r22; *:4 (base + 40) = r23; *:4 (base + 44) = r24; *:4 (base + 48) = r25; local e:4 = base + 52; export e; }
+leaveRegs: "r13-r25" is su4=13 & linkOff { local base:4 = sp + linkOff; r13 = *:4 (base + 0); r14 = *:4 (base + 4); r15 = *:4 (base + 8); r16 = *:4 (base + 12); r17 = *:4 (base + 16); r18 = *:4 (base + 20); r19 = *:4 (base + 24); r20 = *:4 (base + 28); r21 = *:4 (base + 32); r22 = *:4 (base + 36); r23 = *:4 (base + 40); r24 = *:4 (base + 44); r25 = *:4 (base + 48); local e:4 = base + 52; export e; }
+enterRegs: "r13-gp" is su4=14 & linkOff { local base:4 = sp + linkOff; *:4 (base + 0) = r13; *:4 (base + 4) = r14; *:4 (base + 8) = r15; *:4 (base + 12) = r16; *:4 (base + 16) = r17; *:4 (base + 20) = r18; *:4 (base + 24) = r19; *:4 (base + 28) = r20; *:4 (base + 32) = r21; *:4 (base + 36) = r22; *:4 (base + 40) = r23; *:4 (base + 44) = r24; *:4 (base + 48) = r25; *:4 (base + 52) = gp; local e:4 = base + 56; export e; }
+leaveRegs: "r13-gp" is su4=14 & linkOff { local base:4 = sp + linkOff; r13 = *:4 (base + 0); r14 = *:4 (base + 4); r15 = *:4 (base + 8); r16 = *:4 (base + 12); r17 = *:4 (base + 16); r18 = *:4 (base + 20); r19 = *:4 (base + 24); r20 = *:4 (base + 28); r21 = *:4 (base + 32); r22 = *:4 (base + 36); r23 = *:4 (base + 40); r24 = *:4 (base + 44); r25 = *:4 (base + 48); gp = *:4 (base + 52); local e:4 = base + 56; export e; }
+
+enterSize: v is su4 & sfp & slink [ v = (su4 + sfp + slink) << 2; ] { export *[const]:4 v; }
+
+:enter_s "{"^enterRegs enterLink^"}" is maj=0x18 & sU=0 & sop3=7 & sbit0=0 & sfp=0 & enterRegs & enterLink & enterSize { sp = sp - enterSize; build enterLink; build enterRegs; }
+:enter_s "{"^enterRegs "fp" enterLink^"}" is maj=0x18 & sU=0 & sop3=7 & sbit0=0 & sfp=1 & enterRegs & enterLink & enterSize { sp = sp - enterSize; build enterLink; build enterRegs; *:4 enterRegs = fp; fp = sp; }
+:leave_s "{"^leaveRegs leaveLink^"}" is maj=0x18 & sjmp=0 & sop3=6 & sbit0=0 & sfp=0 & leaveRegs & leaveLink & enterSize { build leaveLink; build leaveRegs; sp = sp + enterSize; }
+:leave_s "{"^leaveRegs "fp" leaveLink^"}" is maj=0x18 & sjmp=0 & sop3=6 & sbit0=0 & sfp=1 & leaveRegs & leaveLink & enterSize { sp = fp; build leaveLink; build leaveRegs; fp = *:4 leaveRegs; sp = sp + enterSize; }
+:leave_s "{"^leaveRegs leaveLink "pcl}" is maj=0x18 & sjmp=1 & sop3=6 & sbit0=0 & sfp=0 & leaveRegs & leaveLink & enterSize { build leaveLink; build leaveRegs; sp = sp + enterSize; return [blink]; }
+:leave_s "{"^leaveRegs "fp" leaveLink "pcl}" is maj=0x18 & sjmp=1 & sop3=6 & sbit0=0 & sfp=1 & leaveRegs & leaveLink & enterSize { sp = fp; build leaveLink; build leaveRegs; fp = *:4 leaveRegs; sp = sp + enterSize; return [blink]; }
+
+:ld_s "r0", ["gp", sS9x4] is maj=0x19 & sgpop=0 & sS9x4 { local ea:4 = gp + sS9x4; r0 = *:4 ea; }
+:ldb_s "r0", ["gp", sS9] is maj=0x19 & sgpop=1 & sS9 { local ea:4 = gp + sS9; local t:1 = *:1 ea; r0 = zext(t); }
+:ldh_s "r0", ["gp", sS9x2] is maj=0x19 & sgpop=2 & sS9x2 { local ea:4 = gp + sS9x2; local t:2 = *:2 ea; r0 = zext(t); }
+:add_s "r0", "gp", sS9x4 is maj=0x19 & sgpop=3 & sS9x4 { r0 = gp + sS9x4; }
+
+:ld_s sb, [sU8x4] is maj=0x1a & sb & sU8x4 { sb = *:4 sU8x4; }
+:mov_s sb, sU8 is maj=0x1b & sb & sU8 { sb = sU8; }
+:add_s sb, sb2, sU7 is maj=0x1c & sbit7=0 & sb & sb2 & sU7 { sb = sb + sU7; }
+:cmp_s sb, sU7 is maj=0x1c & sbit7=1 & sb & sU7 { local x:4 = sb; local y:4 = sU7; local r:4 = x - y; flagsSub(x, y); flagsZN(r); }
+:breq_s sb, 0, sRel8 is maj=0x1d & sbit7=0 & sb & sRel8 { if (sb == 0) goto sRel8; }
+:brne_s sb, 0, sRel8 is maj=0x1d & sbit7=1 & sb & sRel8 { if (sb != 0) goto sRel8; }
+
+:b_s sRel10 is maj=0x1e & sbrop=0 & sRel10 { goto sRel10; }
+:beq_s sRel10 is maj=0x1e & sbrop=1 & sRel10 { if (Z) goto sRel10; }
+:bne_s sRel10 is maj=0x1e & sbrop=2 & sRel10 { if (!Z) goto sRel10; }
+:bgt_s sRel7 is maj=0x1e & sbrop=3 & sbrcc=0 & sRel7 { if ((N == V) && !Z) goto sRel7; }
+:bge_s sRel7 is maj=0x1e & sbrop=3 & sbrcc=1 & sRel7 { if (N == V) goto sRel7; }
+:blt_s sRel7 is maj=0x1e & sbrop=3 & sbrcc=2 & sRel7 { if (N != V) goto sRel7; }
+:ble_s sRel7 is maj=0x1e & sbrop=3 & sbrcc=3 & sRel7 { if (Z || (N != V)) goto sRel7; }
+:bhi_s sRel7 is maj=0x1e & sbrop=3 & sbrcc=4 & sRel7 { if (!C && !Z) goto sRel7; }
+:bhs_s sRel7 is maj=0x1e & sbrop=3 & sbrcc=5 & sRel7 { if (!C) goto sRel7; }
+:blo_s sRel7 is maj=0x1e & sbrop=3 & sbrcc=6 & sRel7 { if (C) goto sRel7; }
+:bls_s sRel7 is maj=0x1e & sbrop=3 & sbrcc=7 & sRel7 { if (C || Z) goto sRel7; }
+:bl_s sRel13 is maj=0x1f & sRel13 { blink = inst_next; call sRel13; }
+
+} # with : phase=1
+
+# ---- zero-overhead loop end ----
+
+lpBack: addr is lpstart [ addr = lpstart + 0; ] { export *[ram]:4 addr; }
+
+:^instruction  is phase=0 & lpend=0 & instruction [ phase = 1; ] { build instruction; }
+:^instruction  is phase=0 & lpend=1 & lpBack & instruction [ phase = 1; ]
+{
+  lp_count = lp_count - 1;
+  if (lp_count != 0) goto lpBack;
+  build instruction;
+}

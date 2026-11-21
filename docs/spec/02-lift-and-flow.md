@@ -3511,6 +3511,49 @@ provide processor-version and privilege-appropriate reads and masked writes.
 Register and immediate MSR update NZCVQ only when the flag byte is selected,
 preserving arithmetic flags across control-only writes.
 
+### Synopsys ARCv2 (GH-1632)
+
+`specs/Ghidra/Processors/ARC/data/languages/arcv2.sinc` is the ARCv2 base
+instruction set of the ARC EM and HS cores, compiled once per byte order
+(`arcv2_le.slaspec`, `arcv2_be.slaspec`). A 32-bit instruction is two 16-bit
+words, the most significant first, each word in the image's byte order, and a
+long immediate is two more words after the instruction; the spec therefore uses
+16-bit tokens only and the two byte orders share every pattern. The six-bit
+`b` register field is split across both words, so each operand table starts at
+the instruction and spans it: register 62 in a source field reads the long
+immediate, register 62 in a destination field discards the result, and
+register 63 reads `pcl`, the instruction address with its low two bits clear.
+The operand mode bits select `a = b op c`, `a = b op u6`, `b = b op s12` or
+the conditional `b = b op c|u6`, whose condition skips the instruction when it
+fails. The `F` bit selects a second constructor that writes `Z`, `N`, `C` and
+`V`; carry on a subtraction is the borrow. A `.d` branch, jump or call
+evaluates its condition and target first, then runs the delay slot.
+
+The zero-overhead loop is carried in the decode context. `lp end` records the
+address after itself in `lpstart` at address `end` and sets `lpend` there
+(`globalset`); it writes `lp_start` and `lp_end` and, in its conditional form,
+branches to `end` when the condition fails. The instruction decoded at `end`
+is prefixed with the hardware's test: `lp_count` is decremented and, while it
+is not zero, control branches directly to the loop start. The test is on the
+instruction at the loop end, not on the last body instruction, because the
+core compares the next program counter with `LP_END` however that address is
+reached. A counted loop therefore structures as a `do .. while` over
+`lp_count`. Languages without `lp` are unaffected.
+
+The compiler spec is the ARC ELF ABI: `r0`-`r7` carry arguments, `r0` (and
+`r1:r0`, `r0:r1` big-endian, for 64 bits) the result, `blink` the return
+address, and `r13`-`r25`, `gp`, `fp` and `sp` are callee-saved. `enter_s` and
+`leave_s` store `blink` lowest, then `r13` upward, then `fp`. Auxiliary
+registers are opaque (`lr`/`sr`/`aex` lift to `aux_read`/`aux_write`), as are
+`flag`, `sleep`, `swi`, `trap_s`, `seti`/`clri`, `llock`/`scond`. `jli_s`,
+`ei_s` and `ldi` index tables at the `jli_base`, `ei_base` and `ldi_base`
+registers, which nothing sets; `bi`/`bih` are computed jumps. The DSP, FPU and
+64-bit multiply-accumulate extensions (major opcodes 6 and 7 and the
+accumulator forms of 5) and ARCompact are not decoded. Exercised by
+`tests/stages/kuna-arcv2-zeroloop.xml` and
+`kuna-sleigh/tests/arcv2_decode.rs` (one vector per instruction class and
+operand form, assembled by the GNU ARC assembler).
+
 ### RISC-V Zcmp and Zcmt (GH-1630)
 
 The Zc code-size extensions (`specs/Ghidra/Processors/RISCV/data/languages/riscv.zc.sinc`)

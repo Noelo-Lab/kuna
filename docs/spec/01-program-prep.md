@@ -331,6 +331,16 @@ Every other RISC-V image keeps the default selection, including one whose
 attribute blobs are malformed, truncated or conflicting, and `--target` always
 wins.
 
+(kuna, GH-1632) A Synopsys ARC ELF has no architecture in the object reader, so
+its machine is read from the ELF header
+(`decompiler/crates/kuna-analysis/src/loader/kuna_arctarget.rs`).
+`EM_ARC_COMPACT2` (195, ARC EM and HS) selects `ARC:LE:32:ARCv2` or
+`ARC:BE:32:ARCv2` by the image's byte order (§2). `EM_ARC_COMPACT` (93,
+ARC600/ARC700) is not mapped: its 16-bit encodings differ and it has no
+language yet, so it still needs an explicit `--target`. A relocatable ARC
+object loads, but its relocation types are not applied; a call to an undefined
+symbol keeps the unrelocated displacement.
+
 (kuna) PowerPC32 ELF APU requirements are read by
 `decompiler/crates/kuna-analysis/src/loader/kuna_ppcaputarget.rs` when the
 default-off `ppcapu` load-time option is on. SPE and embedded floating-point APUs
@@ -8418,6 +8428,13 @@ target. Over 26 images (ARM, x86-64, i386 PE, AArch64, MIPS, PowerPC and RISC-V)
 only the ARM inventories change: 37 entries fewer in all, 23 of them right after a
 predicated call and the rest mid-body entries that sat in the functions those
 entries had cut short, with no symbol-table start lost.
+
+(kuna, GH-1632) The same holds for any other branch a returning call instruction
+carries. The instruction at the end of an ARC zero-overhead loop is prefixed
+with the branch back to the loop start (§2); when that instruction is a `bl`,
+the back-edge is a jump inside the caller, not a second callee, so a call
+instruction that falls through keeps only its `CALL` targets. The loop body is
+still reached by the fall-through of `lp`.
 
 The instruction model stores records in 1,024-row chunks. Its private address
 index groups sorted `(address, row number)` pairs into 4 KiB pages, with a B-tree

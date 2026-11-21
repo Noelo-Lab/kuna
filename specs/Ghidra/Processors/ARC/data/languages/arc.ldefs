@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<language_definitions>
+  <language processor="ARC" endian="little" size="32" variant="ARCv2" version="1.0"
+            slafile="arcv2_le.sla" processorspec="arcv2.pspec" id="ARC:LE:32:ARCv2">
+    <description>Synopsys ARCv2 (ARC EM / HS) 32-bit, little endian</description>
+    <compiler name="default" spec="arcv2_le.cspec" id="default"/>
+  </language>
+  <language processor="ARC" endian="big" size="32" variant="ARCv2" version="1.0"
+            slafile="arcv2_be.sla" processorspec="arcv2.pspec" id="ARC:BE:32:ARCv2">
+    <description>Synopsys ARCv2 (ARC EM / HS) 32-bit, big endian</description>
+    <compiler name="default" spec="arcv2_be.cspec" id="default"/>
+  </language>
+</language_definitions>

@@ -31,6 +31,7 @@
 //! defined-function reader lifted out of [`crate::loadimage_object`].
 
 pub mod arm_markers;
+pub(crate) mod kuna_arctarget;
 pub(crate) mod kuna_ppcaputarget;
 pub(crate) mod kuna_ppc64elfv2target;
 #[cfg(test)]

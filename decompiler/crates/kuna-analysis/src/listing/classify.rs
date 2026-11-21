@@ -47,10 +47,14 @@ pub struct Classified {
 /// A predicated call (ARM `blgt`, A32 or in a Thumb IT block) lifts to a
 /// `CBRANCH` to the next instruction ahead of its `CALL`. That skip is the
 /// call's fall-through, not a callee, so it is not one of a call's `flows`.
+/// Neither is any other branch a returning call instruction carries: a call
+/// that ends an ARC zero-overhead loop is prefixed with the branch back to the
+/// loop start, which is a jump inside the caller. Every flow of a call is
+/// read as a callee, so only the `CALL` targets remain.
 pub fn classify(ops: &[RawOp], vma: u64, len: u32) -> Classified {
     let fall_vma = vma.wrapping_add(len as u64);
     let mut flows: Vec<u64> = Vec::new();
-    let mut skips: Vec<usize> = Vec::new();
+    let mut jumps: Vec<usize> = Vec::new();
     let mut flow = FlowType::default();
 
     // Per-op target collection + kind/predicate accumulation. The op order is
@@ -62,9 +66,7 @@ pub fn classify(ops: &[RawOp], vma: u64, len: u32) -> Classified {
                 // Conditional branch: target unless the in0 is p-code-relative
                 // (constant space), which resolves to fall-through (gotcha 1).
                 if let Some(target) = absolute_branch_target(op) {
-                    if target == fall_vma {
-                        skips.push(flows.len());
-                    }
+                    jumps.push(flows.len());
                     flows.push(target);
                 }
                 flow.kind = FlowKind::ConditionalBranch;
@@ -73,6 +75,7 @@ pub fn classify(ops: &[RawOp], vma: u64, len: u32) -> Classified {
             }
             OpCode::CPUI_BRANCH => {
                 if let Some(target) = absolute_branch_target(op) {
+                    jumps.push(flows.len());
                     flows.push(target);
                 }
                 flow.kind = FlowKind::UnconditionalBranch;
@@ -125,7 +128,7 @@ pub fn classify(ops: &[RawOp], vma: u64, len: u32) -> Classified {
     flow.has_fallthrough = has_fallthrough;
     let fall_through = has_fallthrough.then_some(fall_vma);
     if flow.is_call && has_fallthrough {
-        for at in skips.into_iter().rev() {
+        for at in jumps.into_iter().rev() {
             flows.remove(at);
         }
     }
@@ -298,6 +301,21 @@ mod tests {
         let (ram, _cst) = spaces();
         let ops = vec![
             op(OpCode::CPUI_CBRANCH, Some(vn(&ram, 0x1004))),
+            op(OpCode::CPUI_CALL, Some(vn(&ram, 0x4000))),
+        ];
+        let c = classify(&ops, 0x1000, 4);
+        assert!(c.flow.is_call);
+        assert_eq!(c.flows, vec![0x4000]);
+        assert_eq!(c.fall_through, Some(0x1004));
+    }
+
+    /// A branch ahead of a call in one instruction is a jump inside the caller
+    /// (the ARC zero-overhead loop back-edge), never a second callee.
+    #[test]
+    fn branch_ahead_of_a_call_is_not_a_callee() {
+        let (ram, _cst) = spaces();
+        let ops = vec![
+            op(OpCode::CPUI_CBRANCH, Some(vn(&ram, 0x0ff0))),
             op(OpCode::CPUI_CALL, Some(vn(&ram, 0x4000))),
         ];
         let c = classify(&ops, 0x1000, 4);
