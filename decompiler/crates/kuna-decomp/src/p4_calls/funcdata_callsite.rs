@@ -356,16 +356,20 @@ pub fn check_input_trial_use(
 
         // (kuna) `passthrough`: an inactive trial that is the function's own
         // incoming register, untouched, is no evidence against a later one;
-        // an active stack trial holding one is no argument it leads up to.
+        // an active stack trial holding one is no argument it leads up to, and
+        // an active trial the function reads again after the call is no
+        // evidence for the forwarded ones in front of it.
         {
-            let (addr, size, inactive, act) = {
+            let (addr, size, active, inactive) = {
                 let t = data.get_call_specs(idx).active_input().get_trial(i);
-                (t.get_address().clone(), t.get_size(), !t.is_active() && !t.is_definitely_not_used(), t.is_active())
+                (t.get_address().clone(), t.get_size(), t.is_active(), !t.is_active() && !t.is_definitely_not_used())
             };
             if (inactive && crate::p4_calls::kuna_passthrough::forwarded_in_place(data, op, slot, &addr, size))
-                || (act && crate::p4_calls::kuna_passthrough::saves_own_register(data, op, slot, &addr))
+                || (active && crate::p4_calls::kuna_passthrough::saves_own_register(data, op, slot, &addr))
             {
                 data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).set_forwarded_input();
+            } else if active && crate::p4_calls::kuna_passthrough::survives_call(data, op, vn) {
+                data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).set_live_past_call();
             }
         }
 
