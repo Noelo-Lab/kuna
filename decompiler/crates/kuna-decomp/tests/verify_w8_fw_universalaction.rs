@@ -122,7 +122,7 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
     );
     assert_eq!(
-        nonblank, 310,
+        nonblank, 312,
         "full kuna schedule registration count changed"
     );
 
@@ -134,7 +134,7 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
             "universal", "start", "constbase", "linuxsyscall", "x64syscall", "syscallregs",
             "pebnames", "msvcstrappend", "rustprobestack", "chkstkdarwin", "normalizesetup", "defaultparams",
             "extrapopsetup",
-            "prototypetypes", "funclink", "funclink_outonly", "fullloop",
+            "prototypetypes", "funclink", "funclink_outonly", "swifterror",
         ]
     );
 
