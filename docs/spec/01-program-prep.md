@@ -421,6 +421,38 @@ correction changes only that model's return stack effect: its stackshift,
 stack-argument offsets, register banks and other Go models remain as stated.
 The AArch64 C model already has a zero extra pop.
 
+(kuna) **The default model follows the image's Go release**
+(`decompiler/crates/kuna-decomp/src/infra/architecture.rs
+(kuna_go_stack_default)`, run right after the cspec's models are registered).
+The register ABI reached amd64 in go1.17 and arm64 in go1.18
+(`decompiler/crates/kuna-decomp/src/p1_partition/kuna_goreg.rs
+(register_abi)`); 386 never got it, and its golang cspec already defaults to
+`abi0`. An older image passes every argument on the stack, so under
+`abi-internal` its calls lost all their arguments (`main.add3();` in a go1.16
+build). Such an image takes `abi0` as its default model. The AArch64 `abi0`
+model states `extrapop="0"` for the reason given above for `abi-internal`:
+`BL` pushes nothing, so with the eight-byte pop every call moved the caller's
+stack pointer and its later outgoing arguments read as stores to its own
+parameters. The release is the
+one on the load options, read by
+`decompiler/crates/kuna-analysis/src/loader/gobuildinfo.rs
+(go_toolchain_version)` from the build-info blob in either form: the inline
+strings of go1.18+, or the pair of pointers to Go string headers that go1.13
+to go1.17 wrote, resolved through the image. An image with no blob (before
+go1.13) is placed by the pclntab format of its named table section
+(`decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs
+(format_last_release)`): the go1.2 layout ends at go1.15 and the go1.16 layout
+at go1.17, so the first is a stack image on both CPUs and the second on arm64
+only. An image with no release keeps the cspec default. The cspec's `abi0`
+states no output, because a Go stack result sits after the arguments at an
+offset the model cannot give, so a callee's stack result is still not shown as
+a return value. On a stripped go1.16.15 build `main.main` went from
+`main.add3(); os.Exit();` to `main.add3(dat_4e7738,2,7); os.Exit(v1);`. The
+same test removes the goroutine register below: before the register ABI `g`
+lived in thread-local storage and R14/x28 were ordinary registers, so
+`goroutine_register` names none and a function that used the register as
+scratch no longer prints `g`.
+
 (kuna) **With the golang cspec active, the goroutine register becomes the
 named, typed global `g`** (always on;
 `decompiler/crates/kuna-decomp/src/p1_partition/kuna_goreg.rs`, installed by
