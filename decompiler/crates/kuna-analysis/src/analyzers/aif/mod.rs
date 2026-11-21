@@ -1001,6 +1001,8 @@ fn aif_candidates(
     // (the accepted body, or one byte on a reject) and continue.
     let mut frame_spans = frames.iter().peekable();
     let mut cursor = listing.first_undefined_after(0);
+    let stride = decoder.translate.translate_base().section_instruction_stride;
+    let mut section_start = 0;
     let mut scan_end = 0;
     let mut gap_hi = u64::MAX;
     while let Some(gap_start) = cursor {
@@ -1022,9 +1024,10 @@ fn aif_candidates(
         // are legitimate.
         if gap_start >= scan_end {
             gap_hi = listing.next_instruction_start_after(gap_start).unwrap_or(u64::MAX);
-            let exec_hi = listing.exec_ranges().iter()
+            let &(base, exec_hi) = decoder.exec_ranges.iter()
                 .find(|&&(lo, hi)| lo <= gap_start && gap_start < hi)
-                .map(|&(_, hi)| hi).expect("undefined address belongs to an executable range");
+                .expect("undefined address belongs to an executable range");
+            section_start = base;
             scan_end = gap_hi.min(exec_hi);
         }
         if roots.is_some_and(|roots| roots.range(gap_start..gap_hi).next().is_none()) {
@@ -1035,13 +1038,15 @@ fn aif_candidates(
         // (kuna, `aif strict`) The cursor slides to the next instruction-alignment
         // boundary rather than the next byte, and only an aligned address or a
         // hole's first byte is a candidate at all.
-        let mut advanced = if aifstrict {
-            kuna_aifstrict::next_probe_after(gap_start, gap_hi)
+        let (allowed, mut advanced) = if let Some(width) = stride {
+            section_probe(section_start, gap_start, scan_end, width)
+        } else if aifstrict {
+            (kuna_aifstrict::probe_allowed(listing, gap_start),
+             kuna_aifstrict::next_probe_after(gap_start, gap_hi))
         } else {
-            gap_start.saturating_add(1)
+            (true, gap_start.saturating_add(1))
         };
-        let probe_here = (!aifstrict || kuna_aifstrict::probe_allowed(listing, gap_start))
-            && listing.is_undefined(gap_start) && !claimed.contains(&gap_start);
+        let probe_here = allowed && listing.is_undefined(gap_start) && !claimed.contains(&gap_start);
         // (kuna, `aifnoppad`) No entry starts on filler: filler in front of a known
         // function or zero fill is not probed, and an accept moves past padding.
         let filler = match &mut padding {
@@ -1135,6 +1140,13 @@ fn aif_candidates(
     }
 
     accepted.into_iter().collect()
+}
+
+/// Membership and next probe, bounded so adjacent sections restart at their own origin.
+fn section_probe(base: u64, at: u64, end: u64, stride: core::num::NonZeroU32) -> (bool, u64) {
+    let width = u64::from(stride.get());
+    let offset = (at - base) % width;
+    (offset == 0, at.saturating_add(width - offset).min(end))
 }
 
 /// The outcome of one gap-start probe. `Uncorroborated` is `aif precise`'s
@@ -1640,6 +1652,17 @@ mod tests {
         assert!(strict_instruction_fits_gap(0x1000, 5, 0x1005));
         assert!(!strict_instruction_fits_gap(0x1000, 6, 0x1005));
         assert!(!strict_instruction_fits_gap(u64::MAX - 1, 4, u64::MAX));
+    }
+
+    #[test]
+    fn section_grid_restarts_at_each_executable_section() {
+        let stride = core::num::NonZeroU32::new(6).unwrap();
+        assert_eq!(section_probe(0x1000, 0x1000, 0x100b, stride), (true, 0x1006));
+        assert_eq!(section_probe(0x1000, 0x1002, 0x100b, stride), (false, 0x1006));
+        assert_eq!(section_probe(0x1000, 0x1006, 0x100b, stride), (true, 0x100b));
+        assert_eq!(section_probe(0x100b, 0x100b, 0x1020, stride), (true, 0x1011));
+        assert_eq!(section_probe(0x100b, 0x1011, 0x1020, stride), (true, 0x1017));
+        assert_eq!(section_probe(u64::MAX - 2, u64::MAX - 1, u64::MAX, stride), (false, u64::MAX));
     }
 
     #[test]
