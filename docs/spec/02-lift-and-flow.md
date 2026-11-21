@@ -2415,23 +2415,28 @@ the case targets.
    of such a table are offsets and say nothing about where it ends; the
    table after it does. A function's jump tables are emitted together, back
    to back in one read-only section, so a table runs exactly to the lowest
-   table of the same function above it. Before it recovers any table, the
-   flow decodes the function's extent once (`flow.rs
-   (FlowInfo::recover_jump_tables)` over
+   table of the same function above it. When a table's recovery fails
+   outright (no model, or the basic model's normal failure) and the function
+   has not been scanned yet, the flow decodes the function's extent once
+   (`flow.rs (FlowInfo::recover_jump_tables)` over
    `decompiler/crates/kuna-decomp/src/p2_lift/kuna_switchextent.rs
    (function_tables)`: its entry to the next known function entry,
    `context.rs (ArchContext::function_entry_after)`, or a MiB), folds every
    register through the small lattice the dispatch shapes need and names
    the table of each computed jump the fold proves reads one, sorted on the
-   function (`Funcdata::kuna_extent_tables`, carried into the recovery
-   partial). When the basic model finds the range unbounded and every other
-   fallback declines, `jumptable.rs
-   (JumpBasicModel::kuna_try_extent_bound_table)` takes the melded path's one
-   LOAD, reads its address as a constant table plus an index scaled by the
-   entry width (`kuna_switchextent.rs (table_read)`), and re-bounds the range
-   to `[0, N)` on that index with `N` the entries that fit before the next
-   table, at least two and at most `jumptablemax`; the rows then pass the
-   run-on cut above like any unguarded table's. A function's last table has
+   function (`Funcdata::kuna_extent_tables`, shared with the recovery
+   partial). With two or more tables named, the recovery runs once more:
+   when the basic model finds the range unbounded and every other fallback
+   declines, `jumptable.rs (JumpBasicModel::kuna_try_extent_bound_table)`
+   takes the melded path's one LOAD, reads its address as a constant table
+   plus an index scaled by the entry width (`kuna_switchextent.rs
+   (table_read)`), and re-bounds the range to `[0, N)` on that index with
+   `N` the entries that fit before the next table, at least two and at most
+   `jumptablemax`; the rows then pass the run-on cut above like any
+   unguarded table's. A function whose extent names fewer than two tables,
+   or a dispatch retried after an earlier recovery, is not re-run, so a
+   recovery that fails for its own reasons costs one extent scan and no
+   second pipeline. A function's last table has
    no such bound and is left as it was: an object the function merely reads
    may sit anywhere in the section, and a bound taken from one could run the
    table on into another function's, whose entries are plausible code

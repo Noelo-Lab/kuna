@@ -1355,7 +1355,7 @@ mod tests {
             .filter(|w| reads.iter().any(|r| keys_overlap(*r, *w)))
             .collect();
         let (_, feeding) = feeders(writer, written, None);
-        guard_cases(writer, &feeding, branch, at, None, max)
+        guard_cases(writer, &feeding, branch, at, None, max, false)
     }
 
     /// `ja` sends the selectors above `c` away: the dispatch sees `c + 1`.

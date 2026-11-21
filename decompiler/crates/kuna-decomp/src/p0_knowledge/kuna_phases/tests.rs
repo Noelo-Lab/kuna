@@ -865,7 +865,8 @@ fn option_values_live_value_present_for_76() {
     // +1 for `postinc` (live_field = post_increment).
     // +1 for `panicloc` (live_field = analysis_panicloc).
     // +1 for `opaquepredicate` (live_field = opaque_predicate).
-    assert_eq!(with_live, 82);
+    // +1 for `switchextent` (live_field = switch_extent).
+    assert_eq!(with_live, 83);
 }
 
 #[test]
