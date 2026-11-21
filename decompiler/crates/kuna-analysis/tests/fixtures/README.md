@@ -1446,6 +1446,30 @@ clang -target arm64-apple-macos11 -O1 -c macho_gotdata_local.c -o m.o
        -e _main -o macho_gotdata_local m.o
 ```
 
+### `macho_dataslots_arm64` — data-import slots by their mangling (`machodataslots`)
+
+`macho_dataslots_arm64` (arm64, ~50 KB, from `macho_dataslots.c`) reads, through
+`__got` slots, three imported data objects whose mangling says what they are — an
+Objective-C class object (`_OBJC_CLASS_$_NSObject`), a Swift type's metadata
+(`_$sSSN`), a C++ static data member (`__ZNSt3__15ctypeIcE2idE`) — plus the plain
+C `imported_counter`, and `main` calls `imported_call` through its stub. The
+indirect-symbol walk names every slot; the three marked ones are not function
+inventory entries, and `importdata` renders each read as the import
+(`kuna-console/tests/verify_machodataslots.rs`). Built with clang 20 and `ld64.lld`:
+
+```bash
+clang -target arm64-apple-macos11 -O1 -c macho_dataslots.c -o m.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+         -e _main -o macho_dataslots_arm64 m.o
+llvm-strip -x macho_dataslots_arm64
+```
+
+**Pinned VMAs:** `_read_objc_class`@`0x100000510`, `_read_swift_metadata`@`0x100000520`,
+`_read_cpp_static_member`@`0x100000530`, `_read_counter`@`0x100000540`, the stub
+`imported_call`@`0x100000554`; `__got` slots `OBJC_CLASS_$_NSObject`@`0x100004000`,
+`$sSSN`@`0x100004008`, `std::__1::ctype<char>::id`@`0x100004010`,
+`imported_counter`@`0x100004018`.
+
 ### `swift_metadata_elf` — a stripped Swift executable (`swiftmetadata`)
 
 `swift_metadata_elf` (x86-64 ELF, 14 KB) is the Swift runtime-metadata fixture
