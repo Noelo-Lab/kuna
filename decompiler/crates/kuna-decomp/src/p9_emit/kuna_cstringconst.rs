@@ -18,16 +18,20 @@
 //! so with records inside it.
 //!
 //! The integer arm takes only an argument of a call (slot 1 and up), reached
-//! directly or through copies and phis: a value compared, added or stored might
-//! be a plain integer that happens to equal an address, while an argument that
-//! holds the address of a literal is that literal.
+//! directly or through copies and phis, that lands on the first byte of a
+//! literal and that the callee's prototype does not lock to a scalar type: a
+//! value compared, added or stored, a declared `size_t`, or an integer that
+//! lands mid-literal might be a plain integer that happens to equal an address
+//! (`setvbuf(fp, NULL, 0, 0x4000)` in a dylib whose `__cstring` spans 0x4000).
 
 use std::rc::Rc;
 
+use kuna_base::address::Address;
 use kuna_base::types::uintb;
 
 use crate::architecture::Architecture;
 use crate::context::{OpId, VarnodeId};
+use crate::dtype::type_metatype::{TYPE_BOOL, TYPE_FLOAT, TYPE_INT, TYPE_UINT};
 use crate::dtype::Datatype;
 use crate::funcdata::Funcdata;
 use kuna_num::opcodes::OpCode;
@@ -60,19 +64,66 @@ pub fn literal_char(arch: &Architecture, val: uintb, size: i32) -> Option<Rc<Dat
     arch.types().get_type_char(1).ok()
 }
 
+/// The character type an integer-typed constant `val` that `op` reads is read
+/// with: [`literal_char`], at the first byte of a literal, and an argument of a
+/// call ([`is_call_argument`]).
+pub fn call_literal_char(
+    arch: &Architecture,
+    fd: &Funcdata,
+    op: OpId,
+    vn: VarnodeId,
+    val: uintb,
+    size: i32,
+) -> Option<Rc<Datatype>> {
+    let sub = literal_char(arch, val, size)?;
+    (starts_literal(arch, val) && is_call_argument(fd, op, vn)).then_some(sub)
+}
+
+/// Does a literal begin at `val`: the section's first byte, or the byte after
+/// a NUL? An integer that lands inside one (`setvbuf(fp, NULL, 0, 0x4000)`) is
+/// not the address of a literal the program names.
+fn starts_literal(arch: &Architecture, val: uintb) -> bool {
+    if arch.cstring_ranges.iter().any(|&(start, _)| start == val) {
+        return true;
+    }
+    let Some(spc) = arch.manage().get_default_data_space() else { return false };
+    let mut prev = [0xffu8; 1];
+    let addr = Address::new(Rc::clone(spc), val - 1);
+    let loader_rc = arch.translate().loader_rc();
+    let read = loader_rc.borrow_mut().load_fill(&mut prev, &addr).is_ok();
+    read && prev[0] == 0
+}
+
+/// Does the call `op`'s prototype lock argument `slot` to a scalar type? A
+/// declared `size_t` (`malloc`, `write`, `memset`) is never a literal.
+fn declared_scalar(fd: &Funcdata, op: OpId, slot: i32) -> bool {
+    let Some(index) = fd.get_call_specs_index(op) else { return false };
+    fd.get_call_specs(index)
+        .proto()
+        .get_param(slot - 1)
+        .filter(|p| p.is_type_locked())
+        .and_then(|p| p.get_type())
+        .is_some_and(|t| matches!(t.get_metatype(), TYPE_INT | TYPE_UINT | TYPE_BOOL | TYPE_FLOAT))
+}
+
 /// Is `vn`, read by `op`, an argument of a call (any input but the call
-/// target), directly or through a few copies and phis (`v = 0x28a62; ...;
-/// (*v7)(a0, a1, v, 0, 0)`)?
+/// target) that the prototype does not declare a scalar, directly or through a
+/// few copies and phis (`v = 0x28a62; ...; (*v7)(a0, a1, v, 0, 0)`)?
 pub fn is_call_argument(fd: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
     const DEPTH: usize = 4;
     let mut frontier = vec![(op, vn)];
+    let mut seen: Vec<(OpId, VarnodeId)> = Vec::new();
     for _ in 0..DEPTH {
         let mut next = Vec::new();
         for (op, vn) in frontier {
+            if seen.contains(&(op, vn)) {
+                continue;
+            }
+            seen.push((op, vn));
             let Some(o) = fd.obank().get(op) else { continue };
             match o.code() {
                 OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
-                    if (1..o.num_input()).any(|slot| o.get_in(slot) == Some(vn)) {
+                    if (1..o.num_input()).any(|slot| o.get_in(slot) == Some(vn) && !declared_scalar(fd, op, slot)) {
                         return true;
                     }
                 }

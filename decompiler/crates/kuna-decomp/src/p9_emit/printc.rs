@@ -11037,14 +11037,11 @@ impl PrintC {
                 }
                 return;
             }
-            // (kuna `cstringconst`) A constant inside a string-literal section
-            // that a call takes as an argument reads as the literal, whatever
-            // the callee's parameter type.
-            if !v.is_synthetic_literal()
-                && self.out_lang == crate::kuna_lang::OutLang::C
-                && crate::kuna_cstringconst::is_call_argument(fd, op, vn)
-            {
-                if let Some(sub) = crate::kuna_cstringconst::literal_char(arch, off, sz) {
+            // (kuna `cstringconst`) A constant at the start of a literal that a
+            // call takes as an argument its prototype does not declare a scalar
+            // reads as the literal.
+            if !v.is_synthetic_literal() && self.out_lang == crate::kuna_lang::OutLang::C {
+                if let Some(sub) = crate::kuna_cstringconst::call_literal_char(arch, fd, op, vn, off, sz) {
                     let point = fd.obank().get(op).map(|o| o.get_addr().clone()).unwrap_or_default();
                     if self.push_ptr_char_constant_ir(arch, off, sz, &sub, &point, op, vn, None) {
                         return;
