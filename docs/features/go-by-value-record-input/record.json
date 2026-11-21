@@ -1,0 +1,24 @@
+{
+  "opportunity": "go-by-value-record-input::main.Manhattan",
+  "status": "proposal",
+  "source_decompiler": "Kuna",
+  "change_kind": "strict-correctness",
+  "phase": "P4",
+  "main_at_creation": "a4445ec6972b1e3470b7637306b49af98ffc89fc",
+  "selector": "main.Manhattan",
+  "option": null,
+  "observations": {
+    "compiler_versions": ["go1.22.10", "go1.27.2"],
+    "architectures": ["amd64", "arm64"],
+    "authored_cases": 576,
+    "scalar_mismatches": 0,
+    "declared_record_mismatches": 568,
+    "diagnostic_join_variants": 4
+  },
+  "decisions": [
+    "Use the shared Go ABIInternal input allocator.",
+    "Require two complete, direct 64-bit integer fields in a 16-byte record.",
+    "Assign both fields atomically from the current GPR position or place the whole argument on the stack.",
+    "Preserve explicit storage and applicable call-site prototype authority."
+  ]
+}
