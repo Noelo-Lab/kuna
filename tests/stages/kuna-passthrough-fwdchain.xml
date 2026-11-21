@@ -37,6 +37,13 @@
     shape that always recovered (f3, a run of two), and `k(a,b,fp){ fp(a+1,b); }`
     (k: `add x0; br x2`), whose forwarded x1 stands AFTER the last active
     register and must stay dropped in both passes.
+
+    i9 is the shape gcc's IPA register allocation leaves at a call to a local
+    function it knows clobbers nothing: `ldr x3, [x9]; bl g1` with x0..x2 the
+    function's own parameters, all four read after the call.  g1 is `ret`,
+    a callee that takes no register, so x3 is not an argument the forwarded
+    registers lead up to and the call stays `g1()` in both passes (the
+    unguarded rule printed `g1(a0,a1,a2,dat_2000)`).
 -->
 <bytechunk space="ram" offset="0x100000">
 7f8000f10804805263c0889a80001fd6fd7bbfa9fd0300919f8000f108048052
@@ -46,7 +53,13 @@
 <symbol space="ram" offset="0x100000" name="f4"/>
 <symbol space="ram" offset="0x100010" name="m5"/>
 <symbol space="ram" offset="0x10003c" name="f3"/>
+<bytechunk space="ram" offset="0x100100">
+c0035fd6fd7bbfa9fd030091090084d2230140f9fbffff970000038b0000018b
+0000028bfd7bc1a8c0035fd6
+</bytechunk>
 <symbol space="ram" offset="0x10004c" name="k"/>
+<symbol space="ram" offset="0x100100" name="g1"/>
+<symbol space="ram" offset="0x100104" name="i9"/>
 </binaryimage>
 <script>
   <com>option passthrough off</com>
@@ -62,6 +75,9 @@
   <com>lo fu k</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu i9</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option passthrough on</com>
   <com>lo fu f4</com>
   <com>decompile</com>
@@ -73,6 +89,9 @@
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu k</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu i9</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
@@ -88,4 +107,5 @@
 <stringmatch name="passthrough-fwdchain #5: the three-argument shape recovers in both passes" min="2" max="2">\(\*a3\)\(a0,a1,a2\); // jump-as-call</stringmatch>
 <stringmatch name="passthrough-fwdchain #6: a forwarded register after the last active one stays dropped in both passes" min="2" max="2">\(\*a2\)\(a0 \+ 1\); // jump-as-call</stringmatch>
 <stringmatch name="passthrough-fwdchain #7: no pass invents a trailing argument" min="0" max="0">\(\*a2\)\(a0 \+ 1,a1\)</stringmatch>
+<stringmatch name="passthrough-fwdchain #8: a register the callee does not take is no argument the forwarded ones lead up to" min="2" max="2">  g1\(\);</stringmatch>
 </decompilertest>
