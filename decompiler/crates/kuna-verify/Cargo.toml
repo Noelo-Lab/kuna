@@ -1,0 +1,33 @@
+[package]
+autotests = false
+name = "kuna-verify"
+description = "kuna dev-only differential semantic checking: the machine's lifted code against the decompiled function (diffverify)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+kuna-base.workspace = true
+kuna-num.workspace = true
+kuna-sleigh.workspace = true
+kuna-decomp.workspace = true
+kuna-console.workspace = true
+regex.workspace = true
+serde_json = "1"
+slotmap.workspace = true
+
+[dev-dependencies]
+object = { workspace = true, features = ["write"] }
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "kuna-verify"
+path = "src/bin/kuna-verify.rs"
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

@@ -1,0 +1,173 @@
+{
+  "slug": "diffverify",
+  "track": "infrastructure",
+  "scope": "large",
+  "proposal": true,
+  "option": null,
+  "default_on": false,
+  "change_kind": "tooling",
+  "phase": null,
+  "owning_crate": "decompiler/crates/kuna-verify",
+  "external_tools": [
+    "z3 (SMT-LIB 2 over a pipe)",
+    "Unicorn / qemu-user"
+  ],
+  "first_slice": "C1",
+  "motivating_fix": "https://github.com/Noelo-Lab/kuna/pull/794",
+  "optional_dependency": [
+    "https://github.com/Noelo-Lab/kuna/pull/1699"
+  ],
+  "tiers": {
+    "C": "concrete: SLEIGH emulation of the binary vs a new interpreter over the final Funcdata, from the same raw state; prototype claims checked against a typed contract (source, DWARF) when one exists, else PROTOTYPE_SUSPECT",
+    "S": "z3 proof over SMT-LIB 2 of SLEIGH p-code vs the Funcdata, under a deterministic budget (rlimit, unroll and query caps); bounded loops; budget regressions flagged",
+    "L": "SLEIGH lift vs Unicorn/qemu-user",
+    "P": "printed C vs binary (separate proposal)"
+  },
+  "coverage_estimate": {
+    "p3_p4_fixes_since_2026_06": 56,
+    "body_rewrite": 15,
+    "prototype_abi": 29,
+    "not_visible": 12,
+    "prototype_abi_note": "DIFFERS only with a typed contract; otherwise PROTOTYPE_SUSPECT at most"
+  },
+  "prior_work": [
+    {
+      "name": "D-Helix",
+      "venue": "USENIX Security 2024",
+      "url": "https://www.usenix.org/system/files/usenixsecurity24-zou.pdf"
+    }
+  ],
+  "measurements_required": {
+    "C1": "per-function and total Tier C time",
+    "C3": "localization cost per finding",
+    "C4": "precision (triage) and recall (reverted fixes)"
+  },
+  "slices": [
+    "C1 register-only leaf functions",
+    "C2 memory and call effects",
+    "C3 rule localization",
+    "C4 corpus, precision and recall",
+    "C5 concolic inputs",
+    "S1",
+    "S2",
+    "L1",
+    "P"
+  ],
+  "status": "C1 and C2 implemented; C4 precision and recall on tests/datatests + tests/stages",
+  "measurements": {
+    "C1": {
+      "corpus": "tests/datatests + tests/stages, 256 runs per function",
+      "files": 782,
+      "functions": 3979,
+      "verdicts": {
+        "AGREES": 696,
+        "DIFFERS": 4,
+        "DIVERGES": 3,
+        "UNKNOWN": 331,
+        "SKIPPED": 2945
+      },
+      "differs_triage": {
+        "known_bug": 3,
+        "harness": 1
+      },
+      "check_seconds": 3.6,
+      "wall_seconds": 20.6,
+      "peak_rss_mb": 454,
+      "results": "docs/features/diffverify/c1-results.md",
+      "check_seconds_first_build": 49.8,
+      "wall_seconds_one_worker": 66,
+      "workers": 14
+    },
+    "C2": {
+      "corpus": "tests/datatests + tests/stages, 256 runs per function",
+      "functions": 3979,
+      "verdicts": {
+        "AGREES": 2482,
+        "DIFFERS": 500,
+        "DIVERGES": 3,
+        "UNKNOWN": 994,
+        "SKIPPED": 0
+      },
+      "c1_agrees_regressed": 0,
+      "differs_triaged": false,
+      "check_seconds": 50.3,
+      "wall_seconds": 11.0,
+      "workers": 14,
+      "peak_rss_mb": 332,
+      "done_when": "both checks by a fault injected in a local build",
+      "results": "docs/features/diffverify/c2-results.md"
+    },
+    "C4": {
+      "corpus": "tests/datatests + tests/stages, 256 runs per function",
+      "functions": 4030,
+      "verdicts": {
+        "AGREES": 3174,
+        "DIFFERS": 92,
+        "DIVERGES": 12,
+        "UNKNOWN": 752
+      },
+      "c1_agrees_regressed": 0,
+      "c2_agrees_regressed": 12,
+      "differs_triage": {
+        "section2": {
+          "kuna_bug": 5,
+          "pinned_by_test": 8,
+          "source_ub": 3,
+          "harness_limit": 12
+        },
+        "call_checks_added": 49,
+        "call_checks_false_positives": 0
+      },
+      "check_seconds": 152.9,
+      "wall_seconds": 22.9,
+      "workers": 14,
+      "peak_rss_mb": 216,
+      "recall": {
+        "fixes_since_2026_06": 56,
+        "with_stage_fixture": 39,
+        "measured": 27,
+        "semantic_bugs_reproduced": 22,
+        "caught_no_contract": 7,
+        "caught_with_contract": 11,
+        "missed": 11,
+        "ir_equivalent": 3,
+        "crash_file_error": 1,
+        "not_reproduced": 1,
+        "method": "fault restored by hand in a local build per fix (sources moved since, so reverts do not apply); fixture assertions confirm the pre-fix output",
+        "before_call_checks": {
+          "caught_no_contract": 5,
+          "caught_with_contract": 9
+        }
+      },
+      "results": "docs/features/diffverify/c4-results.md",
+      "kuna_bugs": [
+        "gh8777-flagcompare-sborrow FUN_0 (RuleSborrowGe polarity)",
+        "kuna-repframecopy sub_4012c0 (stack-pop guess)",
+        "kuna-stackviews obj_global_reuse (default stackviews off drops stores to an escaped frame)",
+        "kuna-libctypes next_byte x2 (recovered return wider than int)"
+      ],
+      "float_support": {
+        "newly_judged": 242,
+        "new_differs": 15,
+        "kuna_defects": 5,
+        "harness_limit_functions": 3
+      },
+      "system_calls": {
+        "newly_judged": 72,
+        "new_differs": 21,
+        "new_differs_pinned_off_passes": 21,
+        "new_diverges": 12
+      }
+    }
+  },
+  "declared_divergences": [
+    "returnpair-rdx-zero",
+    "switchrunon-cut-row",
+    "synthesized-call",
+    "gowritebarrier",
+    "nan-quieting",
+    "syscall-result",
+    "panic-check",
+    "ptrauth-trap"
+  ]
+}
