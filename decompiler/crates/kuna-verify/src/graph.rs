@@ -34,6 +34,8 @@ pub struct Outcome {
     /// The first call where a callee the machine ran for real read an
     /// argument register kuna's call does not pass the same value in.
     pub call_input: Option<CallInput>,
+    /// System calls and traps, in order.
+    pub events: Vec<crate::calls::UserEvent>,
 }
 
 /// A call whose callee reads argument-register bytes kuna passes otherwise:
@@ -63,6 +65,7 @@ struct Run<'e, 'p, 'c> {
     calls: &'c Calls,
     perturb: Option<&'c Perturb>,
     call_input: Option<CallInput>,
+    events: Vec<crate::calls::UserEvent>,
     /// The machine's calls, whose recorded effects this side replays.
     replay: &'c [Record],
     state: State<'e, 'p>,
@@ -329,6 +332,29 @@ impl Run<'_, '_, '_> {
                 if let Some(b) = builtin {
                     return Err(Halt::Unsupported(format!("{b} at {at:#x}")));
                 }
+                let system = crate::calls::SYSTEM_USEROPS.contains(&name.as_str());
+                let trap = crate::calls::TRAP_USEROPS.contains(&name.as_str());
+                if system || trap {
+                    let mut ins = Vec::with_capacity(op.ins.len().saturating_sub(1));
+                    for k in 1..op.ins.len() {
+                        ins.push(self.input(op, k)?);
+                    }
+                    let k = self.events.len();
+                    self.events.push(crate::calls::UserEvent { at, name: name.clone(), ins, file: Vec::new() });
+                    if trap {
+                        return Ok(Flow::NoReturn);
+                    }
+                    if let Some(out) = op.out.as_ref() {
+                        self.set(out, crate::calls::userop_value(self.state.run, k, out.size))?;
+                    }
+                    return Ok(Flow::Next);
+                }
+                if name == crate::program::SYSCALL_ERROR {
+                    if let (Some(out), Some(k)) = (op.out.as_ref(), self.events.len().checked_sub(1)) {
+                        self.set(out, crate::calls::syscall_error_value(self.state.run, k, out.size))?;
+                        return Ok(Flow::Next);
+                    }
+                }
                 if op.out.is_some() || !crate::machine::EXIT_ONLY_USEROPS.contains(&name.as_str()) {
                     return Err(Halt::Unsupported(format!("CALLOTHER {name} at {at:#x}")));
                 }
@@ -396,6 +422,7 @@ impl Run<'_, '_, '_> {
             writes: self.state.writes(),
             read_uninitialized: self.state.read_uninitialized,
             call_input: self.call_input,
+            events: self.events,
             calls: self.records,
             noreturn,
         }
@@ -428,6 +455,7 @@ pub fn run(
         calls,
         perturb,
         call_input: None,
+        events: Vec::new(),
         replay,
         state: State::new(env, run),
         initial: State::new(env, run),

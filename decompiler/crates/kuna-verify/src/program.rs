@@ -146,7 +146,13 @@ pub fn memory_builtin(index: u64) -> Option<&'static str> {
     .map(|(_, name)| name)
 }
 
+/// The name the decompiler's `syscall_error()` builtin is checked under.
+pub const SYSCALL_ERROR: &str = "syscall_error";
+
 pub fn userop_name(prog: &ConsoleProgram, index: u64) -> String {
+    if index == u64::from(kuna_decomp::userop::BUILTIN_SYSCALL_ERROR) {
+        return SYSCALL_ERROR.to_string();
+    }
     let mut names = Vec::new();
     prog.arch().translate().get_user_op_names(&mut names);
     names.get(index as usize).cloned().unwrap_or_else(|| format!("#{index}"))

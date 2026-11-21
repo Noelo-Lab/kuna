@@ -109,3 +109,28 @@ fn reading_a_register_spill_past_an_array_is_undefined() {
     let checked = of(&v, &["q_clang", "w_clang"]);
     assert!(!checked.is_empty() && checked.iter().all(|l| l.starts_with("UNKNOWN")), "{checked:?}");
 }
+
+/// A system call writes the kernel's result register: `on` agrees, `off` (the
+/// bug the test pins) differs, and `auto` on an image that names no operating
+/// system leaves the register unwritten, which is declared.
+#[test]
+fn system_call_result_follows_the_kernel() {
+    let v = verdicts("kuna-syscallregs-arm");
+    assert_eq!(of(&v, &["pair"]), ["AGREES(256)", "DIFFERS", "DIVERGES(syscall-result)"]);
+    let v = verdicts("kuna-x64syscall");
+    assert_eq!(of(&v, &["kernel_call"]), ["DIFFERS", "AGREES(256)", "AGREES(256)"]);
+    assert_eq!(of(&verdicts("kuna-ownreturn"), &["sys2nr"]), ["DIVERGES(syscall-result)"]);
+}
+
+/// A removed Go bounds-check panic and a cut arm64e pointer-authentication
+/// trap are declared; the checks kuna keeps agree.
+#[test]
+fn removed_checks_are_declared() {
+    let v = verdicts("kuna-gobounds");
+    assert_eq!(of(&v, &["pick"]), ["AGREES(256)", "DIVERGES(panic-check)", "AGREES(256)"]);
+    let specs = repo().join("specs").to_string_lossy().into_owned();
+    let path = repo().join("tests/stages/kuna-ptrauthtrap.xml");
+    let res = check_datatest(&path.to_string_lossy(), &[specs], &Options::default());
+    let v: Vec<_> = res.reports.iter().map(|r| (r.function.clone(), r.verdict.label())).collect();
+    assert_eq!(of(&v, &["x30check", "x30forged"]), ["DIVERGES(ptrauth-trap)", "AGREES(256)"]);
+}

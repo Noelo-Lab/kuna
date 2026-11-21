@@ -7,7 +7,7 @@
 //! typed contract is given, at the contract's width with kuna's value converted
 //! to the contract type by C's rules.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::rc::Rc;
 use std::time::Instant;
 
@@ -18,7 +18,7 @@ use kuna_decomp::funcdata::Funcdata;
 use crate::abi::{self, Claim};
 use crate::contract::{CType, Contract};
 use crate::divergence::{self, ReturnMismatch};
-use crate::calls::{self, Calls, Record};
+use crate::calls::{self, Calls, Record, UserEvent};
 use crate::program::{self, Program};
 use crate::report::{Report, Verdict};
 use crate::state::{Env, State, Writes};
@@ -238,6 +238,9 @@ fn compare_calls(prog: &ConsoleProgram, env: &Env, run: u32, calls: &Calls, m: &
                 let name = mc.target.and_then(|t| prog.function_named_at(t)).unwrap_or_default();
                 if name.starts_with("runtime.gcWriteBarrier") {
                     return CallCompare { differs: None, declared: Some(divergence::GO_WRITE_BARRIER.id), suspects };
+                }
+                if kuna_decomp::kuna_gobounds::is_go_check_name(&name) || kuna_decomp::kuna_securitycheck::is_security_check_name(&name) {
+                    return CallCompare { differs: None, declared: Some(divergence::PANIC_CHECK.id), suspects };
                 }
                 let l = format!("call {n} at {:#x} to {}: the machine makes it, kuna does not", mc.at, target(mc.target));
                 if STACK_PROTECTOR.contains(&name.trim_start_matches('_')) {
@@ -466,6 +469,78 @@ fn callee_differs(prog: &ConsoleProgram, calls: &Calls, a: Option<&Record>, b: O
     (writes(ea) != writes(eb)).then(|| "callee writes other memory".to_string())
 }
 
+/// The machine stopped in a pointer-authentication trap kuna does not reach.
+fn ptrauth_trap(m: &[UserEvent], g: &[UserEvent]) -> bool {
+    m.last().is_some_and(|e| {
+        e.name.as_bytes() == kuna_decomp::kuna_ptrauthtrap::BREAKPOINT_USEROP
+            && e.ins.first().is_some_and(|&i| kuna_decomp::kuna_ptrauthtrap::is_ptrauth_trap_immediate(i as u64))
+            && !g.iter().any(|k| k.at == e.at)
+    })
+}
+
+/// The first system call or trap the two sides reach differently.
+fn compare_events(prog: &ConsoleProgram, m: &[UserEvent], g: &[UserEvent]) -> Option<Vec<String>> {
+    let regs = if g.iter().any(|e| crate::calls::SYSTEM_USEROPS.contains(&e.name.as_str())) {
+        crate::calls::SyscallAbi::of(prog).inputs
+    } else {
+        Vec::new()
+    };
+    let show = |e: Option<&UserEvent>| {
+        e.map_or_else(
+            || "none".to_string(),
+            |e| {
+                let ins: Vec<String> = e.ins.iter().map(|v| format!("{v:#x}")).collect();
+                format!("{} at {:#x} ({})", e.name, e.at, ins.join(", "))
+            },
+        )
+    };
+    let n = (0..m.len().max(g.len())).find(|&k| match (m.get(k), g.get(k)) {
+        (Some(a), Some(b)) => !same_event(a, b, &regs),
+        _ => true,
+    })?;
+    Some(vec![format!("user op {}: machine {}, kuna {}", n + 1, show(m.get(n)), show(g.get(n)))])
+}
+
+/// Same op at the same place with the same inputs. Past the machine op's own
+/// inputs kuna attaches the registers a system call reads: the number register
+/// and then some of the argument registers in order, each matched against
+/// what the machine's register file holds in it.
+fn same_event(m: &UserEvent, g: &UserEvent, regs: &[Storage]) -> bool {
+    if m.at != g.at || m.name != g.name || g.ins.len() < m.ins.len() || m.ins[..] != g.ins[..m.ins.len()] {
+        return false;
+    }
+    let extra = &g.ins[m.ins.len()..];
+    if extra.is_empty() || regs.is_empty() || !crate::calls::SYSTEM_USEROPS.contains(&m.name.as_str()) {
+        return extra.is_empty() || !crate::calls::SYSTEM_USEROPS.contains(&m.name.as_str());
+    }
+    let file: HashMap<u64, u8> = m.file.iter().copied().collect();
+    let held = |st: &Storage| -> Option<u128> {
+        let big = st.space.is_big_endian();
+        let mut v = 0u128;
+        for i in 0..st.size as u64 {
+            let b = *file.get(&(st.off + i))? as u128;
+            let shift = if big { (st.size as u64 - 1 - i) * 8 } else { i * 8 };
+            v |= b << shift;
+        }
+        Some(v)
+    };
+    let fits = |v: u128, st: &Storage| held(st).is_none_or(|h| h == v & crate::value::mask(st.size));
+    if !fits(extra[0], &regs[0]) {
+        return false;
+    }
+    let mut left = regs[1..].iter();
+    extra[1..].iter().all(|&v| left.any(|st| fits(v, st)))
+}
+
+/// Whether the machine's system calls write the kernel's result registers:
+/// everywhere but where `syscallregs auto` leaves them unwritten, on an image
+/// that names no operating system.
+fn kernel_returns(prog: &ConsoleProgram) -> bool {
+    use kuna_decomp::kuna_syscallregs::{SyscallFamily, SyscallRegsMode};
+    let arch = prog.arch();
+    SyscallFamily::from_archid(&arch.archid).is_none() || arch.image_os_userland || arch.syscall_regs != SyscallRegsMode::Auto
+}
+
 /// The first observable two machine runs differ in.
 fn machine_differs(
     prog: &ConsoleProgram,
@@ -570,6 +645,7 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
     env.extensions = abi::extensions(fd, &env, prog);
     env.tracked = tracked(prog, fd, &mut env);
     env.booleans = booleans(fd, &env);
+    env.kernel.set(kernel_returns(prog));
     let contract_storage = match contract.filter(|c| !c.ret.is_void()) {
         Some(c) => match abi::return_storage(prog, fd, &c.ret) {
             Ok(s) => Some(s),
@@ -593,6 +669,7 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
     let mut call_suspects: Vec<String> = Vec::new();
     let perturb = unassigned(prog, &env, fd, &claim, &program, &calls);
     let mut perturbed_runs = 0u32;
+    let mut kernel_shows = false;
     for run in 0..opts.runs {
         let m = machine::run(&env, run, entry, opts.budget, &calls, None);
         let replay: &[Record] = m.as_ref().map(|mo| mo.calls.as_slice()).unwrap_or(&[]);
@@ -620,6 +697,14 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
                 continue;
             }
             (Ok(mo), Ok(go)) => {
+                if diverged.is_none() && !env.kernel.get() && mo.events.iter().any(|e| calls::SYSTEM_USEROPS.contains(&e.name.as_str())) {
+                    env.kernel.set(true);
+                    let alt = machine::run(&env, run, entry, opts.budget, &calls, None);
+                    env.kernel.set(false);
+                    if alt.is_ok_and(|alt| machine_differs(prog, &env, run, &calls, &claim, &mo, &alt).is_some()) {
+                        kernel_shows = true;
+                    }
+                }
                 if go.unmatched_switch && left_cfg(&mo) {
                     diverged.get_or_insert(divergence::SWITCH_RUNON.id);
                     continue;
@@ -659,6 +744,10 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
                 call_suspects.push(s);
             }
         }
+        if ptrauth_trap(&mo.events, &go.events) {
+            diverged.get_or_insert(divergence::PTRAUTH_TRAP.id);
+            continue;
+        }
         let mut cc = compare_calls(prog, &env, run, &calls, &mo.calls, &go.calls);
         if let Some(ci) = go.call_input.as_ref().filter(|_| cc.differs.is_none() && cc.declared.is_none()) {
             if let Ok(alt) = machine::run(&env, run, entry, opts.budget, &calls, Some(&ci.with)) {
@@ -672,6 +761,9 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
                     }
                 }
             }
+        }
+        if cc.differs.is_none() && cc.declared.is_none() {
+            cc.differs = compare_events(prog, &mo.events, &go.events);
         }
         let canary = cc.suspects.iter().any(|s| s.starts_with("canary: "));
         if canary {
@@ -739,6 +831,9 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
                 return finish(Verdict::Differs { run, of: opts.runs }, differs(lines), call_suspects);
             }
             Ok(Outcome::Same) => {}
+        }
+        if kernel_shows {
+            diverged.get_or_insert(divergence::SYSCALL_RESULT.id);
         }
         if let Some(w) = upper.as_mut().filter(|_| !mo.noreturn) {
             w.observe(&mut ms);

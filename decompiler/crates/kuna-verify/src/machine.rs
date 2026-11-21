@@ -171,6 +171,8 @@ pub struct Outcome<'e, 'p> {
     pub convention: Vec<(u64, u64)>,
     /// An in-image callee given a frame object got the stub's guessed effect.
     pub guessed: bool,
+    /// System calls and traps, in order.
+    pub events: Vec<crate::calls::UserEvent>,
 }
 
 struct Machine<'e, 'p, 'c> {
@@ -186,6 +188,8 @@ struct Machine<'e, 'p, 'c> {
     /// function's budget, which the decompiled side never spends on them.
     callee_pool: u64,
     in_callee: bool,
+    /// System calls and traps, in order.
+    events: Vec<crate::calls::UserEvent>,
     /// Argument-register bytes to give one call's callee instead of the
     /// machine's own: kuna's, to see whether the callee cares.
     with_args: Option<&'c WithArgs>,
@@ -438,6 +442,7 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
             noreturn,
             followed: self.followed,
             guessed: self.guessed,
+            events: self.events,
             convention: self.convention,
         }
     }
@@ -656,6 +661,34 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit
             }
             OpCode::CPUI_CALLOTHER => {
                 let name = crate::program::userop_name(env.prog, arg(0)?.offset);
+                let system = crate::calls::SYSTEM_USEROPS.contains(&name.as_str());
+                let trap = crate::calls::TRAP_USEROPS.contains(&name.as_str());
+                if (system && mode != Mode::Opaque) || (trap && top) {
+                    let mut ins = Vec::with_capacity(op.ins.len().saturating_sub(1));
+                    for vn in op.ins.iter().skip(1) {
+                        ins.push(read(&mut m.state, vn)?);
+                    }
+                    let k = m.events.len();
+                    let file = m.state.register_file();
+                    m.events.push(crate::calls::UserEvent { at: addr, name, ins, file });
+                    if trap {
+                        return Ok(Exit::NoReturn);
+                    }
+                    let run = m.state.run;
+                    if let Some(out) = op.out.as_ref() {
+                        write(&mut m.state, out, crate::calls::userop_value(run, k, out.size))?;
+                    } else if env.kernel.get() {
+                        let abi = crate::calls::SyscallAbi::of(env.prog);
+                        if let Some(r) = abi.result.as_ref().filter(|_| !abi.inputs.is_empty()) {
+                            m.state.write_storage(&r.space, r.off, r.size, crate::calls::userop_value(run, k, r.size))?;
+                        }
+                        if let Some(e) = abi.error.as_ref() {
+                            m.state.write_storage(&e.space, e.off, e.size, crate::calls::syscall_error_value(run, k, e.size))?;
+                        }
+                    }
+                    i += 1;
+                    continue;
+                }
                 if !(op.out.is_none() && EXIT_ONLY_USEROPS.contains(&name.as_str())) {
                     return Err(Halt::Unsupported(format!("CALLOTHER {name} at {addr:#x}")));
                 }
@@ -757,6 +790,7 @@ pub fn run<'e, 'p>(
         budget,
         callee_pool: budget,
         in_callee: false,
+        events: Vec::new(),
         guessed: false,
         copies: Vec::new(),
         restoring: Vec::new(),

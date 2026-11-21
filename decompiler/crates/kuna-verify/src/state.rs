@@ -7,7 +7,7 @@
 //! pointer is fixed, and image-backed memory reads the load image. Each side then
 //! keeps its own writes on top.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::hash::BuildHasherDefault;
 use std::rc::Rc;
@@ -70,6 +70,8 @@ pub struct Env<'p> {
     pub ret_slot: u32,
     /// Register parameters of type `bool`: a caller passes 0 or 1.
     pub booleans: Vec<(i32, u64, u32)>,
+    /// The machine's system calls write the kernel's result registers.
+    pub kernel: Cell<bool>,
     /// Image pages by base address; `None` for a page not mapped whole.
     image: RefCell<HashMap<u64, Option<Box<[u8]>>>>,
     /// Bytes of the pages not mapped whole.
@@ -188,6 +190,7 @@ impl<'p> Env<'p> {
             ret_addr: None,
             ret_slot: 0,
             booleans: Vec::new(),
+            kernel: Cell::new(true),
             image: RefCell::new(HashMap::new()),
             image_bytes: RefCell::new(HashMap::new()),
             thunks: RefCell::new(HashMap::new()),
@@ -740,6 +743,11 @@ impl<'e, 'p> State<'e, 'p> {
             .flat_map(|&(off, size)| (0..u64::from(size)).map(move |i| off + i))
             .map(|o| (o, self.byte(&register, o)))
             .collect()
+    }
+
+    /// Every register byte this side holds, written or read: `(offset, byte)`.
+    pub fn register_file(&self) -> Vec<(u64, u8)> {
+        self.flags.iter().enumerate().filter(|(_, f)| **f & PRESENT != 0).map(|(i, _)| (i as u64, self.regs[i])).collect()
     }
 
     /// Put back every register byte `before` held, except those in `keep`:

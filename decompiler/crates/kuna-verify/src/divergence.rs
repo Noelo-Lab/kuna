@@ -64,6 +64,31 @@ pub const GO_WRITE_BARRIER: Divergence = Divergence {
     matches: |_| false,
 };
 
+/// `gobounds` (Go) and `securitycheck` (Rust) remove the branch to a
+/// bounds, slice or division check's panic helper, keeping the access it
+/// guards. On an input that fails the check the machine calls the helper.
+pub const PANIC_CHECK: Divergence = Divergence {
+    id: "panic-check",
+    option: "gobounds, securitycheck",
+    arch: "",
+    observable: "the calls a function makes",
+    pattern: "the machine calls a Go or Rust check's panic helper, whose branch kuna removed",
+    matches: |_| false,
+};
+
+/// `ptrauthtrap` cuts an arm64e pointer-authentication check: the bit test of
+/// an authenticated return address and its `brk #0xc470..0xc473`, which an
+/// authentic pointer never reaches. The machine does not authenticate (SLEIGH
+/// hides `autibsp`), so the address it tests is whatever was loaded.
+pub const PTRAUTH_TRAP: Divergence = Divergence {
+    id: "ptrauth-trap",
+    option: "ptrauthtrap",
+    arch: "AARCH64",
+    observable: "whether the function traps",
+    pattern: "the machine reaches a pointer-authentication brk whose check kuna cut",
+    matches: |_| false,
+};
+
 /// `nanignore compare` (the default) treats a float conversion round trip as
 /// the identity, as upstream does, so a signalling NaN comes back as it went in
 /// where the machine's conversions return it quieted.
@@ -73,6 +98,21 @@ pub const NAN_QUIETING: Divergence = Divergence {
     arch: "",
     observable: "a float return",
     pattern: "both sides return a NaN that differs only in its quiet bit",
+    matches: |_| false,
+};
+
+/// `syscallregs auto` (the default) gives a system call its result register
+/// only on an image the loader identified as an operating system's user-space
+/// program; on any other image the call writes nothing, as upstream models it.
+/// The machine is then run the same way, and this is declared when a kernel
+/// writing the result register, as Linux and the BSDs do, would change what
+/// the function returns, writes or calls.
+pub const SYSCALL_RESULT: Divergence = Divergence {
+    id: "syscall-result",
+    option: "syscallregs",
+    arch: "",
+    observable: "a system call's result",
+    pattern: "on an image that names no operating system, the result the kernel would return changes an observable",
     matches: |_| false,
 };
 

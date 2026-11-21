@@ -98,6 +98,70 @@ pub struct Calls {
     pub output_regs: Vec<(u64, u32)>,
 }
 
+/// A system call or a trap, as a side reached it: an operation outside the
+/// program that both sides must reach in the same order with the same inputs.
+#[derive(Clone, Debug)]
+pub struct UserEvent {
+    pub at: u64,
+    pub name: String,
+    pub ins: Vec<u128>,
+    /// The machine's side: its register file there, `(offset, byte)`.
+    pub file: Vec<(u64, u8)>,
+}
+
+/// User ops that enter the operating system and come back: an uninterpreted
+/// function of their inputs whose output, if any, both sides get alike. What
+/// the kernel does to registers is not modeled.
+pub const SYSTEM_USEROPS: &[&str] = &["syscall", "swi", "software_interrupt", "ecall", "CallSupervisor"];
+
+/// User ops that trap and do not come back: the run ends there.
+pub const TRAP_USEROPS: &[&str] = &["SoftwareBreakpoint", "UndefinedInstructionException"];
+
+/// The value a system call's output gets: fixed by the run and its index.
+/// What a system call reads and writes, in the registers kuna's `syscallregs`
+/// and `x64syscall` give it: the number register then the argument registers,
+/// in the order kuna attaches them, the result register, and the register
+/// the kernel flags a failure in.
+#[derive(Default)]
+pub struct SyscallAbi {
+    pub inputs: Vec<Storage>,
+    pub result: Option<Storage>,
+    pub error: Option<Storage>,
+}
+
+impl SyscallAbi {
+    /// The target's system-call registers; empty for a target neither models.
+    pub fn of(prog: &kuna_console::engine::ConsoleProgram) -> Self {
+        use kuna_decomp::{kuna_syscallregs::SyscallFamily, kuna_x64syscall};
+        let arch = prog.arch();
+        let Some(lookup) = arch.manage().register_lookup() else { return Self::default() };
+        let reg = |nm: &str| {
+            let st = lookup.probe_register(nm)?;
+            Some(Storage::new(st.space.as_ref()?, st.offset, st.size))
+        };
+        let (names, result, error): (Vec<&str>, &str, Option<&str>) = match SyscallFamily::from_archid(&arch.archid) {
+            Some(f) => (f.inputs(reg(f.result()).is_some_and(|r| r.size == 8)).to_vec(), f.result(), f.error_flag()),
+            None if reg(kuna_x64syscall::NUM_REGISTER).is_some_and(|r| r.size == 8) => (
+                std::iter::once(kuna_x64syscall::NUM_REGISTER).chain(kuna_x64syscall::ARG_REGISTERS).collect(),
+                kuna_x64syscall::NUM_REGISTER,
+                None,
+            ),
+            None => return Self::default(),
+        };
+        let Some(inputs) = names.iter().map(|nm| reg(nm)).collect::<Option<Vec<_>>>() else { return Self::default() };
+        SyscallAbi { inputs, result: reg(result), error: error.and_then(reg) }
+    }
+}
+
+/// The value the kernel flags system call `index` with, in both runs.
+pub fn syscall_error_value(run: u32, index: usize, size: u32) -> u128 {
+    crate::graph::scramble(0x0e77_f1a6, run, index as u64) & crate::value::mask(size)
+}
+
+pub fn userop_value(run: u32, index: usize, size: u32) -> u128 {
+    crate::graph::scramble(0x05ca_11ed, run, index as u64) & crate::value::mask(size)
+}
+
 /// One call as a side made it.
 #[derive(Clone, Debug)]
 pub struct Record {

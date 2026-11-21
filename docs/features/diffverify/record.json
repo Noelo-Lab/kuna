@@ -151,6 +151,12 @@
         "new_differs": 15,
         "kuna_defects": 5,
         "harness_limit_functions": 3
+      },
+      "system_calls": {
+        "newly_judged": 72,
+        "new_differs": 21,
+        "new_differs_pinned_off_passes": 21,
+        "new_diverges": 12
       }
     }
   },
@@ -159,6 +165,9 @@
     "switchrunon-cut-row",
     "synthesized-call",
     "gowritebarrier",
-    "nan-quieting"
+    "nan-quieting",
+    "syscall-result",
+    "panic-check",
+    "ptrauth-trap"
   ]
 }

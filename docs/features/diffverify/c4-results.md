@@ -21,19 +21,20 @@ decompiles with an abbreviated command (§5).
 
 | verdict | C2 | C4 |
 |---|---:|---:|
-| `AGREES(256)` | 2,482 | 3,174 |
-| `DIFFERS` | 500 | 92 |
-| `DIVERGES` | 3 | 12 |
-| `UNKNOWN` | 994 | 752 |
+| `AGREES(256)` | 2,482 | 3,246 |
+| `DIFFERS` | 500 | 113 |
+| `DIVERGES` | 3 | 24 |
+| `UNKNOWN` | 994 | 647 |
 
-`UNKNOWN` by reason: 509 unsupported operations (system calls and traps, SIMD user
-ops, memory builtins, ISA-mode switches, float formats other than IEEE single and
-double), 221 budget, 16 traps on both sides, and 6 undefined reads of the frame.
+`UNKNOWN` by reason: 399 unsupported operations (SIMD and barrier user ops, memory
+builtins, ISA-mode switches, float formats other than IEEE single and double), 226
+budget, 16 traps on both sides, and 6 undefined reads of the frame.
 
-Of the 92 `DIFFERS`:
+Of the 113 `DIFFERS`:
 - 28 are the ones §2 triages;
 - 49 come from the two checks of §6a and are triaged in §6b;
-- 15 come from float support and are triaged in §6c.
+- 15 come from float support and are triaged in §6c;
+- 21 come from system calls and are triaged in §6d.
 
 None is an unexplained harness defect.
 
@@ -53,9 +54,10 @@ Every function C1 found to agree still agrees. Of C2's 2,482, twelve no longer a
   float op the model cannot run, so the stub's effect is a guess:
   `UNKNOWN(guessed-callee)`.
 
-The 11 `DIVERGES` match their predicates: `synthesized-call` (the MSVC string append,
-outlined and AVR wrapper calls kuna makes up), `gowritebarrier` and
-`switchrunon-cut-row`.
+The 24 `DIVERGES` match their predicates: `synthesized-call` (the MSVC string append,
+outlined, AVR wrapper and `linuxsyscall` calls kuna makes up), `gowritebarrier`,
+`switchrunon-cut-row`, `nan-quieting` (§6c), and `syscall-result`, `panic-check` and
+`ptrauth-trap` (§6d).
 
 ## 2. Every `DIFFERS`
 
@@ -350,6 +352,48 @@ This judges 242 more functions (2,932 to 3,174 agree). Of the 15 new `DIFFERS`:
 `nanignore compare` treats a float conversion round trip as the identity, so a
 signalling NaN comes back unquieted. A float return that differs only in the quiet bit
 of a NaN matches it.
+
+### 6d. System calls and traps
+
+A system call (`syscall`, `svc`, `ecall`, `sc`, `swi`) is now an event on both sides
+instead of an unsupported op. Each side records the address, the user op and its
+inputs, and the two lists are compared in order:
+- **Inputs.** The SLEIGH op takes no registers. kuna's `syscallregs` and `x64syscall`
+  attach the number register and then some of the argument registers. Each one kuna
+  attaches is matched, in ABI order, with what the machine's register file holds there.
+- **Result.** The machine writes the kernel's result register (and MIPS `a3`, PowerPC
+  `cr0`), as Linux and the BSDs do. The value is one both sides share, and kuna's call
+  output gets it too.
+- **Traps.** A trap (`brk`, `udf`) in the function's own code ends the run as a
+  no-return. One reached inside a callee the machine runs for real is not an event.
+
+`syscallregs auto`, the default, writes nothing on an image that names no operating
+system, and every XML fixture is one. There the machine writes nothing either. The run
+is then repeated with the kernel's write, and if that changes the return, a store or a
+call, the function is `DIVERGES(syscall-result)`.
+
+Two more options cut code the machine runs, knowingly:
+- `gobounds` and `securitycheck` remove the branch to a Go or Rust check's panic
+  helper: `DIVERGES(panic-check)` when the machine calls one kuna does not.
+- `ptrauthtrap` cuts an arm64e pointer-authentication check. The machine does not
+  authenticate (SLEIGH hides `autibsp`), so the return address it tests is whatever
+  was loaded: `DIVERGES(ptrauth-trap)` when it stops in the `brk #0xc47x`.
+
+This judges 72 more functions (3,174 to 3,246 agree; unsupported ops 509 to 399):
+- **21 new `DIFFERS`, all off passes the tests pin.** These are `syscallregs off` in
+  the ARM, AArch64, RISC-V, MIPS, MIPS `a3` and PowerPC `cr0` tests, `x64syscall off`
+  in `kuna-x64syscall`, and both passes of `kuna-linuxsyscall-x64-compat`. In each,
+  the register read after the call still holds the number or an argument.
+- **12 new `DIVERGES`:**
+  - 6 `syscall-result`: the `auto` passes and `kuna-ownreturn` `sys2nr`, which returns
+    `a0 + 1` where a kernel returns its result + 1;
+  - 2 `panic-check`: `kuna-gobounds` and `oxidizer-securitycheck` `pick` with the
+    option on;
+  - 2 `ptrauth-trap`: `x30check` and `_tail_auth` with `ptrauthtrap on`;
+  - 2 `synthesized-call`: `linuxsyscall`'s calls, which the machine used to stop short
+    of at the `int 0x80`.
+
+The `on` and `abi` passes of every system-call test agree.
 
 ## 7. Cost
 
