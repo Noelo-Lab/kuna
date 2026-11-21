@@ -1263,33 +1263,113 @@ pub fn is_call_target(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
         .is_some_and(|o| o.code() == OpCode::CPUI_CALLIND && o.get_in(0) == Some(vn))
 }
 
-/// Does the function read `vn`, the value the call `op` reads in an argument
-/// register, again after the call?
+/// Does the function read the storage of `vn`, the value the call `op` reads
+/// in an argument trial, again after the call?
 ///
-/// Heritage links the register's value after a call to its value before it
-/// through an INDIRECT whose second input names the call; a read of that
-/// INDIRECT's output is a read of the register past the call. gcc keeps a value
-/// in a caller-saved register across a call when it knows the callee leaves it
-/// alone (`-fipa-ra`, a static callee in the same unit): `expandload_zext`'s
-/// `f` computes `r8`, calls `sink`, and returns `r8d`. `checkInputTrialUse`
-/// records the shape on the active trial
-/// ([`crate::fspec::ParamTrial::set_live_past_call`]) for
-/// [`neutral_in_chain`] to read.
+/// Heritage puts an INDIRECT naming the call on every range the call may
+/// change; a read of its output is a read of the storage past the call. The
+/// INDIRECT may read the value before the call (a callee the analysis knows
+/// leaves it alone) or create a new one (a register the model kills), and it
+/// may cover more bytes than the trial (a 16-byte reload of two 8-byte
+/// slots), so every INDIRECT of `op` overlapping the trial counts. Its output
+/// is followed through further INDIRECTs and MULTIEQUALs; a CALL or RETURN
+/// reading it is no read, since heritage hands every later call of unknown
+/// prototype and every RETURN the range anyway. gcc keeps a value in a
+/// caller-saved register across a call when it knows the callee leaves it
+/// alone (`-fipa-ra`): `expandload_zext`'s `f` computes `r8`, calls `sink`
+/// and returns `r8d`, and crazyflie's `piecewise_compressed_is_finished`
+/// keeps `s14`/`s15` across `bl` to a `bx lr` callee and subtracts them after
+/// it. A frame local in the outgoing-argument area is read again too: mirai's
+/// `main` stores six function pointers at `[rsp]` before its first call and
+/// reloads them after. `checkInputTrialUse` records the shape on the active
+/// trial ([`crate::fspec::ParamTrial::set_live_past_call`]) for
+/// [`anchors_neutral_run`] to read.
 pub fn survives_call(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
     let Some(v) = data.vbank().get(vn) else { return false };
-    if v.get_space().get_type() != spacetype::IPTR_PROCESSOR {
+    let read = |start: VarnodeId| {
+        let (mut work, mut seen) = (vec![start], Vec::new());
+        while let Some(cur) = work.pop() {
+            if seen.contains(&cur) || seen.len() > 32 {
+                continue;
+            }
+            seen.push(cur);
+            for o in data.vbank().get(cur).into_iter().flat_map(|c| c.descend_iter()).filter_map(|d| data.obank().get(d)) {
+                match o.code() {
+                    OpCode::CPUI_INDIRECT | OpCode::CPUI_MULTIEQUAL => work.extend(o.get_out()),
+                    OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN => {}
+                    _ => return true,
+                }
+            }
+        }
+        false
+    };
+    let Some(space) = v.get_addr().get_space() else { return false };
+    let (off, end) = (v.get_offset(), v.get_offset().wrapping_add(v.get_size().max(0) as u64));
+    let lo = Address::new(std::rc::Rc::clone(space), off.saturating_sub(32));
+    data.vbank().iter_loc_addr_range(&lo, &Address::new(std::rc::Rc::clone(space), end)).any(|w| {
+        data.vbank().get(w).is_some_and(|x| {
+            x.get_offset() < end
+                && x.get_offset().wrapping_add(x.get_size().max(0) as u64) > off
+                && x.get_def().and_then(|d| data.obank().get(d)).is_some_and(|d| {
+                d.code() == OpCode::CPUI_INDIRECT
+                    && d
+                        .get_in(1)
+                        .and_then(|i| data.vbank().get(i))
+                        .is_some_and(|i| OpId::from(slotmap::KeyData::from_ffi(i.get_offset())) == op)
+                })
+                && read(w)
+        })
+    })
+}
+
+/// Is `vn` a constant moved into place, through at most a few COPYs?
+pub fn holds_constant(data: &Funcdata, vn: VarnodeId) -> bool {
+    let mut cur = data.vbank().get(vn);
+    for _ in 0..4 {
+        let Some(v) = cur else { return false };
+        if v.is_constant() {
+            return true;
+        }
+        let Some(d) = v.get_def().and_then(|d| data.obank().get(d)).filter(|d| d.code() == OpCode::CPUI_COPY) else {
+            return false;
+        };
+        cur = d.get_in(0).and_then(|c| data.vbank().get(c));
+    }
+    false
+}
+
+/// Is `vn` a constant written in a block that ends in a branch one of whose
+/// other successors makes a call, not in the block of the call `op`?
+///
+/// That is the zero gcc's stack-protector epilogue wipes a canary register
+/// with: `eors ip,r3,ip; mov r3,#0; bne __stack_chk_fail` and then `b g`, where
+/// r3 is no argument of `g`. `checkInputTrialUse` records it as
+/// [`survives_call`]'s shape: a value that is not set up for the call.
+pub fn set_before_branch(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
+    let Some(d) = data.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d)) else {
+        return false;
+    };
+    if !holds_constant(data, vn) {
         return false;
     }
-    v.descend_iter().any(|d| {
-        data.obank().get(d).is_some_and(|o| {
-            o.code() == OpCode::CPUI_INDIRECT
-                && o.get_in(0) == Some(vn)
-                && o
-                    .get_in(1)
-                    .and_then(|i| data.vbank().get(i))
-                    .is_some_and(|i| OpId::from(slotmap::KeyData::from_ffi(i.get_offset())) == op)
-                && o.get_out().and_then(|out| data.vbank().get(out)).is_some_and(|out| !out.has_no_descend())
-        })
+    let (Some(db), Some(cb)) = (d.get_parent(), data.obank().get(op).and_then(|o| o.get_parent())) else {
+        return false;
+    };
+    if db == cb || !data.bb_op_tail(db).and_then(|t| data.obank().get(t)).is_some_and(|t| t.code() == OpCode::CPUI_CBRANCH) {
+        return false;
+    }
+    let blocks = data.bblocks_ref();
+    let b = blocks.block(db);
+    (0..b.size_out()).any(|k| {
+        let s = b.get_out(k);
+        let mut cur = if s == cb { None } else { data.bb_op_head(s) };
+        while let Some(o) = cur.and_then(|c| data.obank().get(c)) {
+            if matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
+                return true;
+            }
+            cur = o.basic_neighbours().1;
+        }
+        false
     })
 }
 
@@ -1316,12 +1396,7 @@ pub fn survives_call(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
 /// first, and a stack slot is never neutral: an untouched incoming stack
 /// argument says nothing about the callee's list. Only a call site's trials
 /// qualify (`isRecoverSubcall`); the function's own input recovery has
-/// `inputparamgap`. And the later register must be set up FOR the call: one
-/// the function reads again after it ([`survives_call`]) is caller state the
-/// callee happens not to clobber, so a forwarded register in front of such a
-/// trial counts as upstream counts it. `expandload_zext`'s `f` keeps its result
-/// in `r8` across `call sink` and returns it; `rsi`, `rdx` and `rcx` are a
-/// chain of three in front of it, and `sink` keeps its one argument.
+/// `inputparamgap`.
 ///
 /// The rule keeps to registers that ARE the function's input in front of an
 /// argument the callee takes. An unreferenced slot, or one on a range this
@@ -1332,23 +1407,18 @@ pub fn survives_call(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
 /// And where upstream's count, forwarded registers included, would veto a
 /// trial, `force_inactive_chain` lets it through only when every register of
 /// the run in front of it is forwarded and the trial may end one
-/// ([`anchors_neutral_run`]), and from then on keeps only trials that may: in
-/// gcc AArch64's stack-protector epilogue before `b lseek`, x3 holds the
-/// guard's address for the check, x4 the zero `subs` left and x5 the zero the
-/// canary was wiped with, and none of them is `lseek`'s fourth argument.
+/// ([`anchors_neutral_run`], [`ends_rescued_run`]), and from then on keeps
+/// only trials that may: in gcc AArch64's stack-protector epilogue before
+/// `b lseek`, x3 holds the guard's address for the check, x4 the zero `subs`
+/// left and x5 the zero the canary was wiped with, and none of them is
+/// `lseek`'s fourth argument.
 pub fn neutral_in_chain(active: &ParamActive, i: int4, is_spacebase: bool) -> bool {
     let Some(scope) = active.forwarded_neutral() else { return false };
     if !active.is_recover_subcall() || is_spacebase {
         return false;
     }
     let trial = active.get_trial(i);
-    if !(trial.is_forwarded_input() || ((trial.is_unref() || trial.is_untouched()) && scope.unref)) {
-        return false;
-    }
-    (i + 1..active.get_num_trials()).all(|j| {
-        let later = active.get_trial(j);
-        !(later.is_active() && later.is_live_past_call())
-    })
+    trial.is_forwarded_input() || ((trial.is_unref() || trial.is_untouched()) && scope.unref)
 }
 
 /// May the active trial `trial` end a run of [`neutral_in_chain`] registers,
@@ -1360,11 +1430,30 @@ pub fn neutral_in_chain(active: &ParamActive, i: int4, is_spacebase: bool) -> bo
 /// argument. And not a register a direct callee is known not to take
 /// ([`NeutralScope::untaken`]): gcc's IPA register allocation keeps a value
 /// across a call to a known `void g(void)` in `rcx`, which reads as an active
-/// fourth argument.
+/// fourth argument. And the trial must be set up FOR the call: not a value
+/// the function reads again after it ([`survives_call`]), which is caller
+/// state the callee happens not to clobber (`expandload_zext`'s `f` keeps its
+/// result in `r8` across `call sink` with `rsi`, `rdx` and `rcx` forwarded in
+/// front of it, and `sink` keeps its one argument), not the stack-protector
+/// wipe ([`set_before_branch`]), and not a register reloaded from the frame
+/// ([`crate::p4_calls::kuna_reloadarg`]): FreeRTOS `xTaskIncrementTick` is
+/// `push {r3,lr}; ...; ldmia sp!,{r3,lr}; b.w part`, and the r3 the pop
+/// restores is the function's own, not a fourth argument behind r0..r2.
 pub fn anchors_neutral_run(active: &ParamActive, trial: &ParamTrial, is_spacebase: bool) -> bool {
     let Some(scope) = active.forwarded_neutral() else { return true };
     !(is_spacebase && trial.is_forwarded_input())
+        && !trial.is_live_past_call()
+        && !trial.has_frame_reload()
         && !scope.untaken.iter().any(|(a, s)| shares_byte(a, *s, trial.get_address(), trial.get_size()))
+}
+
+/// May the active trial `trial`, the one a run of [`neutral_in_chain`]
+/// registers upstream would veto ends at, be where the rescued list starts
+/// again?  Not a stack slot holding a constant the function stored: with every
+/// argument register in front of it forwarded, that is a frame local in the
+/// outgoing-argument area, not an argument the forwarded registers lead up to.
+pub fn ends_rescued_run(active: &ParamActive, trial: &ParamTrial, is_spacebase: bool) -> bool {
+    active.forwarded_neutral().is_none() || !(is_spacebase && trial.is_stored_constant())
 }
 
 /// Does the stack argument slot `addr` the call `op` reads in `slot` hold one

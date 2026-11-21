@@ -356,9 +356,9 @@ pub fn check_input_trial_use(
 
         // (kuna) `passthrough`: an inactive trial that is the function's own
         // incoming register, untouched, is no evidence against a later one;
-        // an active stack trial holding one is no argument it leads up to, and
-        // an active trial the function reads again after the call is no
-        // evidence for the forwarded ones in front of it.
+        // an active stack trial holding one, an active trial not set up for
+        // the call, and a constant stored to a stack slot are no evidence for
+        // the forwarded ones in front of them.
         {
             let (addr, size, active, inactive) = {
                 let t = data.get_call_specs(idx).active_input().get_trial(i);
@@ -368,8 +368,19 @@ pub fn check_input_trial_use(
                 || (active && crate::p4_calls::kuna_passthrough::saves_own_register(data, op, slot, &addr))
             {
                 data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).set_forwarded_input();
-            } else if active && crate::p4_calls::kuna_passthrough::survives_call(data, op, vn) {
+            } else if active
+                && data.get_arch().pass_through
+                && (crate::p4_calls::kuna_passthrough::survives_call(data, op, vn)
+                    || crate::p4_calls::kuna_passthrough::set_before_branch(data, op, vn))
+            {
                 data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).set_live_past_call();
+            }
+            if active
+                && data.get_arch().pass_through
+                && crate::p4_calls::kuna_stackarggap::address_is_spacebase(&addr)
+                && crate::p4_calls::kuna_passthrough::holds_constant(data, vn)
+            {
+                data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).set_stored_constant();
             }
         }
 

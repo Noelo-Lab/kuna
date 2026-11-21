@@ -995,12 +995,15 @@ pub mod param_trial_flags {
     /// (kuna `passthrough`) The function's own incoming register, untouched:
     /// in place in the register the trial names, or saved to the stack slot.
     pub const FORWARDED_INPUT: uint4 = 0x2000;
-    /// (kuna `passthrough`) An active register the function reads again after
-    /// the call, through the call's INDIRECT.
+    /// (kuna `passthrough`) An active trial not set up for the call: storage
+    /// the function reads again after it, or the stack-protector wipe.
     pub const LIVE_PAST_CALL: uint4 = 0x4000;
     /// (kuna `passthrough`) On a register range the pass claimed because the
     /// function never touches it.
     pub const UNTOUCHED: uint4 = 0x8000;
+    /// (kuna `passthrough`) An active stack slot holding a constant the
+    /// function stored there.
+    pub const STORED_CONSTANT: uint4 = 0x10000;
 }
 
 /// A register or memory location that may be used to pass a parameter or return
@@ -1178,15 +1181,20 @@ impl ParamTrial {
     /// [`crate::p4_calls::kuna_passthrough::forwarded_in_place`].
     pub fn set_forwarded_input(&mut self) { self.flags |= param_trial_flags::FORWARDED_INPUT; }
     pub fn is_forwarded_input(&self) -> bool { self.flags & param_trial_flags::FORWARDED_INPUT != 0 }
-    /// (kuna `passthrough`) Record that the function reads this register again
-    /// after the call; see
-    /// [`crate::p4_calls::kuna_passthrough::survives_call`].
+    /// (kuna `passthrough`) Record that the active trial is not set up for the
+    /// call; see [`crate::p4_calls::kuna_passthrough::survives_call`] and
+    /// [`crate::p4_calls::kuna_passthrough::set_before_branch`].
     pub fn set_live_past_call(&mut self) { self.flags |= param_trial_flags::LIVE_PAST_CALL; }
     pub fn is_live_past_call(&self) -> bool { self.flags & param_trial_flags::LIVE_PAST_CALL != 0 }
     /// (kuna `passthrough`) Record that the trial is on a range the pass
     /// claimed because the function never touches it.
     pub fn set_untouched(&mut self) { self.flags |= param_trial_flags::UNTOUCHED; }
     pub fn is_untouched(&self) -> bool { self.flags & param_trial_flags::UNTOUCHED != 0 }
+    /// (kuna `passthrough`) Record that the active stack trial holds a
+    /// constant the function stored; see
+    /// [`crate::p4_calls::kuna_passthrough::ends_rescued_run`].
+    pub fn set_stored_constant(&mut self) { self.flags |= param_trial_flags::STORED_CONSTANT; }
+    pub fn is_stored_constant(&self) -> bool { self.flags & param_trial_flags::STORED_CONSTANT != 0 }
 
     /// Does this show solid movement into the Varnode (C++ `hasAncestorSolid`)?
     pub fn has_ancestor_solid(&self) -> bool {
@@ -3338,7 +3346,7 @@ impl ParamListStandard {
         // forwarded; whether a run upstream would veto has been let through.
         let (mut up_len, mut mixed, mut rescued) = (0, false, false);
         for i in start..stop {
-            let (defnouse, is_act, is_unref, addr_is_spacebase, slotgrp, protected, forwarded, anchors) = {
+            let (defnouse, is_act, is_unref, addr_is_spacebase, slotgrp, protected, forwarded, anchors, opens) = {
                 let trial = active.get_trial(i);
                 let addr_sb = trial
                     .get_address()
@@ -3368,6 +3376,7 @@ impl ParamListStandard {
                     // untouched is neither a run of empty slots nor its end.
                     crate::p4_calls::kuna_passthrough::neutral_in_chain(active, i, addr_sb),
                     crate::p4_calls::kuna_passthrough::anchors_neutral_run(active, trial, addr_sb),
+                    crate::p4_calls::kuna_passthrough::ends_rescued_run(active, trial, addr_sb),
                 )
             };
             if defnouse {
@@ -3419,7 +3428,7 @@ impl ParamListStandard {
                 // [`crate::p4_calls::kuna_passthrough::anchors_neutral_run`].
                 if up_len > maxchain {
                     rescued = true;
-                    seenchain |= mixed;
+                    seenchain |= mixed || !opens;
                 }
                 seenchain |= rescued && !anchors;
                 chainlength = 0;
