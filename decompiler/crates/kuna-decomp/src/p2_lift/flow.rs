@@ -4054,14 +4054,17 @@ truncating the fall-through here"
             // another table to end this one at, try again with that bound
             // (`kuna_switchextent.rs`).
             // A table that is its function's last and whose rows run on asked
-            // for the next functions' tables too.
-            let wanted = self.data.kuna_later_wanted.take();
-            if matches!(mode, Ok(None) | Err(RecoveryMode::FailNormal))
+            // for the next functions' tables too, on either attempt.
+            let mut wanted = self.data.kuna_later_wanted.take();
+            let mut rounds = 0;
+            while rounds < 2
+                && matches!(mode, Ok(None) | Err(RecoveryMode::FailNormal))
                 && retried.is_none()
                 && (self.data.kuna_extent_tables.is_none() || wanted.is_some())
                 && self.data.get_arch().switch_extent
                 && !crate::decompile_drive::deadline_passed_in("jump-table recovery")
             {
+                rounds += 1;
                 let entry = self.data.get_address().clone();
                 let end = self.data.get_arch().function_entry_after(&entry);
                 let mut bounded = false;
@@ -4102,6 +4105,7 @@ truncating the fall-through here"
                         &mut shared_partial,
                     );
                 }
+                wanted = self.data.kuna_later_wanted.take();
             }
             let mode = match (mode, retried) {
                 (Ok(Some(idx)), _) => Ok(Some(idx)),
