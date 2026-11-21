@@ -685,7 +685,7 @@ pub(super) fn guard_cases(
         if c == 0 {
             continue;
         }
-        let taken = |x: u64| condition_when(writer, i, branch, at, x, data);
+        let taken = |x: u64| condition_when(writer, i, branch, at, x, 0, data);
         // A branch into the dispatch is taken for the small selector instead.
         let n = match (taken(above), taken(1 - above), entering) {
             (Some(true), Some(false), false) | (Some(false), Some(true), true) => c.checked_add(1),
@@ -697,6 +697,33 @@ pub(super) fn guard_cases(
         best = best.max(n);
     }
     usize::try_from(best?).ok()
+}
+
+/// Does a comparison among `writer[feeding]` send its constant `c` itself to
+/// the other side than the dispatch, which [`guard_cases`] counts as in range?
+/// At `sel == c` a `<` is false and a `<=` true, and the flags the compare also
+/// sets (ZF) read as set: `cmp $7; jbe dispatch` keeps 7, `cmp $5; jb dispatch`
+/// does not.
+pub(super) fn boundary_leaves(
+    writer: &[FullOp],
+    feeding: &[usize],
+    branch: &[FullOp],
+    at: usize,
+    data: Option<&Rc<AddrSpace>>,
+    entering: bool,
+) -> bool {
+    let ops = if writer.is_empty() { branch } else { writer };
+    feeding.iter().any(|&i| {
+        let op = &ops[i];
+        let equal = match op.opcode {
+            OpCode::CPUI_INT_LESS | OpCode::CPUI_INT_SLESS => 0,
+            OpCode::CPUI_INT_LESSEQUAL | OpCode::CPUI_INT_SLESSEQUAL => 1,
+            _ => return false,
+        };
+        let (Some(a), Some(b)) = (op.ins.first(), op.ins.get(1)) else { return false };
+        let constant = |vn: &VarnodeData| constant_in(&ops[..i], vn, data).is_some();
+        constant(a) != constant(b) && condition_when(writer, i, branch, at, equal, 1, data).is_some_and(|t| t != entering)
+    })
 }
 
 /// `vn`'s value when it is a constant, or a temporary `ops` copied one into
@@ -714,19 +741,20 @@ fn constant_in(ops: &[FullOp], vn: &VarnodeData, data: Option<&Rc<AddrSpace>>) -
 /// The guard's condition when the op at `set` (in `writer`, or in `branch`
 /// when `writer` is empty) yields `x`: `writer` runs first and `branch` up to
 /// its `CBRANCH` at `at` after it, and a register `branch` reads that nothing
-/// evaluated is a clear flag. `None` when the condition does not follow.
+/// evaluated is a flag holding `unset`. `None` when the condition does not follow.
 fn condition_when(
     writer: &[FullOp],
     set: usize,
     branch: &[FullOp],
     at: usize,
     x: u64,
+    unset: u64,
     data: Option<&Rc<AddrSpace>>,
 ) -> Option<bool> {
     let mut env: Vec<(Key, u64)> = Vec::new();
     let in_branch = writer.is_empty();
-    let phases: [(&[FullOp], bool, Option<usize>); 2] =
-        [(writer, false, Some(set)), (&branch[..at], true, in_branch.then_some(set))];
+    let phases: [(&[FullOp], Option<u64>, Option<usize>); 2] =
+        [(writer, None, Some(set)), (&branch[..at], Some(unset), in_branch.then_some(set))];
     for (ops, clear, set) in phases {
         for (i, op) in ops.iter().enumerate() {
             let Some(out) = op.out.as_ref() else { continue };
@@ -739,24 +767,24 @@ fn condition_when(
         }
     }
     let cond = branch.get(at)?.ins.get(1)?;
-    known(cond, &env, true, data).map(|v| v != 0)
+    known(cond, &env, Some(unset), data).map(|v| v != 0)
 }
 
-/// `vn`'s value in `env`; with `clear`, a register nothing set reads as zero.
-fn known(vn: &VarnodeData, env: &[(Key, u64)], clear: bool, data: Option<&Rc<AddrSpace>>) -> Option<u64> {
+/// `vn`'s value in `env`; with `clear`, a register nothing set reads as that value.
+fn known(vn: &VarnodeData, env: &[(Key, u64)], clear: Option<u64>, data: Option<&Rc<AddrSpace>>) -> Option<u64> {
     if is_constant(vn) {
         return Some(vn.offset & mask(vn.size));
     }
     let key = key_of(vn, data)?;
     match env.iter().rev().find(|(k, _)| *k == key) {
         Some(&(_, v)) => Some(v),
-        None if clear && matches!(key, Key::Reg(..)) => Some(0),
+        None if matches!(key, Key::Reg(..)) => clear,
         None => None,
     }
 }
 
 /// The boolean and bitwise ops a branch condition is spelled in.
-fn evaluate(op: &FullOp, env: &[(Key, u64)], clear: bool, data: Option<&Rc<AddrSpace>>) -> Option<u64> {
+fn evaluate(op: &FullOp, env: &[(Key, u64)], clear: Option<u64>, data: Option<&Rc<AddrSpace>>) -> Option<u64> {
     let get = |i: usize| known(op.ins.get(i)?, env, clear, data);
     Some(match op.opcode {
         OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT => get(0)?,
