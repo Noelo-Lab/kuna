@@ -2225,7 +2225,8 @@ Behaviors specific to `decompile-all`:
   import's mangling names a data object (a Swift type's metadata or descriptor, a
   witness table, an Objective-C class, a C++ vtable or static member) is not in
   `kuna functions` at all: it is named in the symbol table only, as an ELF GOT
-  data slot is. The slot test is what
+  data slot is, and that name selects the slot as a data object (`kuna xrefs
+  --to OBJC_CLASS_$_NSObject`, `kuna read`). The slot test is what
   covers a packed PE that keeps its whole import directory inside its one
   `CODE|EXECUTE` section, where the section flags cannot tell the two apart.
   Analysis-discovered entries inside executable sections join

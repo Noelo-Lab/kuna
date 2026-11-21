@@ -9,6 +9,7 @@
 //!
 //! - **Inventory**: the three data-import slots are not entries; the plain C
 //!   `imported_counter` slot, which carries no mark, still is, as is the stub.
+//! - **Lookup**: a data-import slot's name selects the slot as a data object.
 //! - **`importdata` off**: the four reads are `*dat_<slot>`.
 //! - **`importdata` on** (default): they are the imports.
 
@@ -101,6 +102,14 @@ fn data_import_slots_are_not_function_entries() {
     let (_, counter_slot, _, _) = READS[3];
     assert!(entries.contains(&counter_slot), "the plain C import slot stays an entry: {entries:x?}");
     assert!(entries.contains(&IMPORTED_CALL_STUB), "the stub stays an entry: {entries:x?}");
+}
+
+#[test]
+fn data_import_slot_names_select_the_slot_as_data() {
+    let mut prog = boot();
+    prog.commit_pending_analysis().expect("analysis commit succeeds");
+    assert_eq!(prog.lookup_data_alias("OBJC_CLASS_$_NSObject"), Some(0x100004000));
+    assert_eq!(prog.lookup_data_alias("Swift.String.type_metadata"), Some(0x100004008));
 }
 
 #[test]

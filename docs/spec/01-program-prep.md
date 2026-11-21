@@ -2561,7 +2561,14 @@ funcsym stream:
   the function stream spells it, never an inventory entry — so `PrintC::op_load`
   renders the read as the import: `return OBJC_CLASS_$_NSObject;`,
   `return Swift.String.type_metadata;`. The app above lists 2,541 fewer entries;
-  no other entry moves.
+  no other entry moves. The Swift metadata reader (`analyzers/swift`) still
+  resolves a relative pointer through such a slot to the import it holds, so a
+  witness of an imported protocol keeps its name on an image whose binds are
+  classic `LC_DYLD_INFO` opcodes rather than chained fixups. The slot's name,
+  like an ELF GOT data slot's, is a data alias (`lookup_data_alias`), so
+  `kuna xrefs --to` and `kuna read` select the slot by the import's name. The
+  walk runs on every read of the import stream, so each demangled
+  classification is memoized per thread.
 - **In-code literal pools** (kuna, `litpoolconst`, always on, DIV-136,
   `decompiler/crates/kuna-decomp/src/p1_partition/kuna_litpoolconst.rs`): the
   third user of the same "constant by construction, not by policy" exception, and
