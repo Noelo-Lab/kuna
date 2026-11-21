@@ -2679,6 +2679,27 @@ funcsym stream:
   is stripped. The image's own exports (its external `nlist` entries and its
   export trie) join the stream only when they lie in a code section (§1.2,
   `data_exports`).
+  (kuna `stubbinds`, default on) A stripped image can keep a stub whose
+  indirect-symbol entry no longer indexes anything: a chained-fixups link
+  records each import again as the bind on the slot its stub loads, so `strip`
+  may drop the undefined `nlist` and write `INDIRECT_SYMBOL_LOCAL | ABS` over
+  the entry, which is how the SwiftPM-built frameworks of an App Store app ship
+  most of their Swift stdlib and runtime calls. The walk above leaves such a
+  stub `sub_<addr>`.
+  `decompiler/crates/kuna-analysis/src/loader/kuna_stubbinds.rs (StubBindsPass)`
+  decodes each stub of an `S_SYMBOL_STUBS` section the walk did not name to the
+  slot it jumps through (`adrp; ldr; br` on arm64, the `adrp; add; ldr; braa` of
+  an arm64e `__auth_stubs` entry, `jmp [rip+disp32]` on x86-64), reads the
+  slot's addend-free chained bind (`chained.rs`) and names the stub after the
+  import, one leading `_` stripped and the name demangled as the walk's names
+  are, so `sub_fc80(0x28)` renders `Swift._StringGuts.grow(_:)(0x28)`. A stub
+  that does not decode, a slot with no bind, and a bind with an addend are left
+  alone, and the slot itself is not this pass's to name. The name is a pass
+  function symbol, not a format-resolver import, so the built-in libc
+  prototypes (which match the resolver's imports) are not seeded on it. The
+  chains are walked only when the indirect-symbol walk left some stub unnamed.
+  Mach-O only, inert without chained fixups or with a complete indirect-symbol
+  table, so every datatest is byte-identical.
 - **dyld shared cache cross-image references** (kuna, `dyldcrossrefs`,
   default on, env-bridged): an image rebuilt from a dyld shared cache calls into
   other images past its own stubs. The cache builder sends a `bl` to a stub

@@ -476,6 +476,13 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         passes.push(Box::new(crate::loader::kuna_authptrcall::AuthPtrCallPass));
     }
 
+    // S1 stripped-stub naming (StubBindsPass): a `__stubs` entry whose
+    // indirect-symbol entry is `LOCAL|ABS` is named after the chained bind on
+    // the slot it jumps through. Committed only when `stubbinds` is on.
+    if format == object::BinaryFormat::MachO {
+        passes.push(Box::new(crate::loader::kuna_stubbinds::StubBindsPass));
+    }
+
     // S1 MSVC RTTI / vftable recovery (RttiPass): on a Windows PE, parse the
     // CompleteObjectLocator → RTTI3/2/1 → RTTI0 graph in `.rdata`/`.data`, demangle
     // each `.?A…@@` class name, and emit `<Class>::vftable` / `<Class>::RTTI_*`
@@ -1995,7 +2002,7 @@ mod tests {
         assert!(macho.contains(&"objc"), "Mach-O must carry the objc pass");
         // Compare the format-neutral base after dropping each format's gated
         // additions: `elfgotimports` for ELF and `peimportcall`, `authptrcall`,
-        // `cfstrings` and `objc` for Mach-O. Both carry `itaniumrtti`.
+        // `stubbinds`, `cfstrings` and `objc` for Mach-O. Both carry `itaniumrtti`.
         let elf_neutral: Vec<&str> = elf
             .iter()
             .copied()
@@ -2004,7 +2011,7 @@ mod tests {
         let macho_neutral: Vec<&str> = macho
             .iter()
             .copied()
-            .filter(|&p| !matches!(p, "peimportcall" | "authptrcall" | "cfstrings" | "objc"))
+            .filter(|&p| !matches!(p, "peimportcall" | "authptrcall" | "stubbinds" | "cfstrings" | "objc"))
             .collect();
         assert_eq!(
             macho_neutral, elf_neutral,
