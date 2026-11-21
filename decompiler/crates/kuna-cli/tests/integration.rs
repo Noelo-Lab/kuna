@@ -924,3 +924,6 @@ mod xrefs_immutable_got;
 
 #[path = "types_header.rs"]
 mod types_header;
+
+#[path = "bounds_checked_prototypes.rs"]
+mod bounds_checked_prototypes;
