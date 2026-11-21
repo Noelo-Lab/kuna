@@ -963,6 +963,7 @@ kuna_options! { self, p1;
         on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")
     },
     "calltable" => on_off!(analysis_calltable, "Call-table recovery and the call-table vs switch vote"),
+    "stubbinds" => on_off!(analysis_stubbinds, "Stripped Mach-O stubs named from their slot's chained bind"),
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
     "panicloc" => on_off!(analysis_panicloc, "Rust panic Location record pass"),
     "swiftmetadata" => on_off!(analysis_swiftmetadata, "Swift runtime-metadata recovery pass"),

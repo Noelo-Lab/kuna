@@ -1881,6 +1881,9 @@ pub struct Architecture {
     /// (kuna) Call tables, the call-table vs switch vote and the switch-case
     /// entries it drops (`calltable`). Default on; reads the Listing.
     pub analysis_calltable: bool,
+    /// (kuna) Name a stripped Mach-O stub from the chained bind on its slot
+    /// (`stubbinds`). Default on; Mach-O only.
+    pub analysis_stubbinds: bool,
     /// (kuna) Gate the Mach-O Objective-C metadata recovery pass (`objc`); default
     /// **off**. The kuna analog of Ghidra's `ObjcTypeMetadataAnalyzer`
     /// (name-recovery half): when the binary is a Mach-O, walk the `__objc_*`
@@ -2659,6 +2662,7 @@ impl Architecture {
             analysis_aifpoolslide: true,
             analysis_tailcallentry: false,
             analysis_calltable: false,
+            analysis_stubbinds: false,
             analysis_objc: false,
             analysis_swiftmetadata: false,
             analysis_cfstrings: false,
@@ -3015,6 +3019,7 @@ impl Architecture {
         self.analysis_aifpoolslide = true;
         self.analysis_tailcallentry = true; // tail-call function-entry recovery (ARM-only, needs listing)
         self.analysis_calltable = true; // call tables and the call-table vs switch vote (needs listing)
+        self.analysis_stubbinds = true; // (kuna) stripped Mach-O stubs named from their slot's chained bind (Mach-O-only pass)
         self.analysis_objc = true; // Mach-O Objective-C metadata recovery (Mach-O-only pass)
         self.analysis_swiftmetadata = true; // Swift runtime-metadata recovery (inert without swift5_* sections)
         self.analysis_cfstrings = true; // (kuna) Mach-O __cfstring constant-string recovery default-on: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675); on an 80 MB third-party arm64 iOS app one decompile is within noise (min 2.324 s off, 2.359 s on, medians 2.442 / 2.372 over 6 interleaved runs)

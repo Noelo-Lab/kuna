@@ -3554,6 +3554,9 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // the live gate is the pre-invocation check in `run_listing_consumers`.
         "tailcallentry" => arch.analysis_tailcallentry,
         "calltable" => arch.analysis_calltable,
+        // (kuna) Stripped Mach-O stub naming from chained binds; default-on,
+        // output-changing (names `sub_` stubs), so `off` really skips it.
+        "stubbinds" => arch.analysis_stubbinds,
         // (kuna) Mach-O Objective-C metadata recovery — default-OFF (output-changing:
         // renames IMP functions + adds class/selector symbols). Registered here so it
         // is gated by `analysis_objc` rather than running by the fail-open default.

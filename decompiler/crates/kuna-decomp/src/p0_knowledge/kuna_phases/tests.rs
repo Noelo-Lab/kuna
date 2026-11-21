@@ -404,6 +404,9 @@ fn option_values_live_value_present_for_76() {
         // (kuna) Call tables: an analysis-pass gate read console-side, like
         // `tailcallentry` above. Default-on.
         "calltable",
+        // (kuna) Stripped Mach-O stub naming: an analysis-pass gate read
+        // console-side, like `calltable` above. Default-on.
+        "stubbinds",
         // (kuna) ARM literal-pool inference — an analysis-pass gate with no codegen
         // live reader (read console-side via kuna_live_value), same as
         // `tailcallentry` above. Default-off, ARM-only.
@@ -1122,6 +1125,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `opaquepredicate`; its P3 row sits after `globalarrayanchor`.
     // +1 for `calltable`; its P1 row sits after `tailcallentry`.
     // +1 for `callresultuse`; its P4 row sits after `opaquepredicate`.
+    // +1 for `stubbinds`; its P1 row sits after `calltable`.
     assert_eq!(json.matches("},\n").count(), 228);
 }
 

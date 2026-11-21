@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4926,
-    4926
+    4930,
+    4930
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2545,6 +2545,10 @@
     "data:STRUCTSYNTH-UNCLAIMED #1: each reader loads the word into a local ahead of its store",
     "data:STRUCTSYNTH-UNCLAIMED #2: no reader spells the load through the writer's byte member",
     "data:STRUCTSYNTH-UNCLAIMED #3: only the writer names the writer's structure",
+    "data:STUBBINDS #1: off, the stripped stub is anonymous and _probe_stub calls it as sub_",
+    "data:STUBBINDS #2: on, the stub is named after the bind on its slot",
+    "data:STUBBINDS #3: on, _probe_stub no longer calls an anonymous stub",
+    "data:STUBBINDS #4: off, the stub itself is anonymous",
     "data:STUBTAILCALL: no pass treats the resolver as an indirect branch",
     "data:STUBTAILCALL: the resolver call is the stub's tail call",
     "data:STUBTAILCALL: the resolver call never falls through into the next stub",
