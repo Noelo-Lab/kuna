@@ -2535,6 +2535,33 @@ funcsym stream:
   stop that fold. The same holds for a local GOT entry (`RELATIVE` to an in-image
   object) inside RELRO, which the fold above already renders as the object. A
   local entry outside RELRO stays a dereference for the reason given above.
+- **Mach-O data-import slots** (kuna, `machodataslots`, committed under
+  `importdata`, default on;
+  `decompiler/crates/kuna-analysis/src/loader/kuna_machodataslots.rs`): the
+  Mach-O counterpart. The indirect-symbol walk (`macho_stubs.rs`) names every
+  `__got` / `__la_symbol_ptr` entry after the import it holds and hands each to
+  the function-symbol stream, so a call through the slot resolves and the slot
+  is a canonical inventory entry (chapter [00](00-overview.md)). A symbol-pointer
+  slot of a data object is a pointer word too, but never a callable one, and it
+  was listed as a size-0 function all the same: 7,865 of a 72 MB Swift app's
+  270,680 entries were `__got` words. The walk keeps out of the import stream
+  every slot whose import's *mangling* says it is data (`is_data_import`): an
+  Objective-C class, metaclass, ivar-offset, protocol or exception-type object
+  by its `_OBJC_*_$_` prefix; a Swift symbol by the kind at the top of its
+  demangling tree (`kuna_swift::is_data_symbol`: type metadata, a nominal type,
+  protocol, conformance, opaque-type, method, property or enum-case descriptor,
+  a witness table, a cache, a field offset, an async or coro function-pointer
+  record, a variable's storage; an accessor, thunk, constructor or metadata
+  accessor is code); an Itanium C++ symbol whose encoding carries no parameter
+  list (a static data member, a vtable, typeinfo, guard variable). A plain C
+  import carries no such mark and stays a callable slot, as before. The slot is
+  still an import slot (`import_slots`, so `peimportcall` paints it `externref`),
+  and the pass names it for its import exactly as `elfgotimports` names a
+  `GLOB_DAT` slot — a symbol-table `FunctionSymbol`, demangled and sanitized as
+  the function stream spells it, never an inventory entry — so `PrintC::op_load`
+  renders the read as the import: `return OBJC_CLASS_$_NSObject;`,
+  `return Swift.String.type_metadata;`. The app above lists 2,541 fewer entries;
+  no other entry moves.
 - **In-code literal pools** (kuna, `litpoolconst`, always on, DIV-136,
   `decompiler/crates/kuna-decomp/src/p1_partition/kuna_litpoolconst.rs`): the
   third user of the same "constant by construction, not by policy" exception, and
