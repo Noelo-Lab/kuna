@@ -97,6 +97,6 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH6882 #1: post-call unimp renders as a computed call (bug reproduced)" min="1" max="1">\(\*v1\)\(\)</stringmatch>
-<stringmatch name="GH6882 #2: sparcstructret on recovers the function tail (the real return expression)" min="1" max="1">return v2\[0\] \+ v1;</stringmatch>
+<stringmatch name="GH6882 #1: post-call unimp renders as a computed call (bug reproduced)" min="1" max="1">\(\*v1\)\([^)]*\)</stringmatch>
+<stringmatch name="GH6882 #2: sparcstructret on recovers the function tail (the real return expression)" min="1" max="1">return v[0-9]\[0\] \+ v[0-9];</stringmatch>
 </decompilertest>

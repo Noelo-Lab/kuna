@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4916,
-    4916
+    4926,
+    4926
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -415,6 +415,14 @@
     "data:CALLOVERLAP #6: full, the epilogue adds 1.0 to the recovered call result, not to a stale pre-call read",
     "data:CALLPOPRET #1: the call is followed as a branch and recovers the pointer to the inline data",
     "data:CALLPOPRET #2: no port reads are decoded at the unreachable return address",
+    "data:CALLRESULTUSE #1: on, a result handed to the next call is its argument, in chain and tail",
+    "data:CALLRESULTUSE #2: on, a result handed back or branched on and handed back keeps the strict reading (ret, branch, chain, tail, dead; branch and chain again under off)",
+    "data:CALLRESULTUSE #3: on, a rewritten x0 is the constant, not the result",
+    "data:CALLRESULTUSE #4: all, the untouched result at the ret is returned",
+    "data:CALLRESULTUSE #5: all, the branched-on and the stored-past results are returned (branch, dead)",
+    "data:CALLRESULTUSE #6: all, ret, branch and dead return",
+    "data:CALLRESULTUSE #7: off, the branched-on result is dropped, as under on",
+    "data:CALLRESULTUSE #8: off, the hand-off to the next call is lost",
     "data:CALLRETPAIR #1: the call is never a bare statement with its JSValue discarded",
     "data:CALLRETPAIR #2: the call gains the 16-byte join output the cspec output rule asked for",
     "data:CALLRETPAIR #3: both halves are SUBPIECEs of the call output instead of locals with no definition",
@@ -1262,7 +1270,7 @@
     "data:Go equality preserves a separate implied load in its NaN guard",
     "data:Go field conversions respect diagnostic suppression",
     "data:Go float storage conversion preserves bits",
-    "data:Go gopanic fallthrough sentinel appears only with known no-return off",
+    "data:Go gopanic fallthrough sentinel appears only with known no-return off (callresultuse hands panicCheck1's untouched rax to gopanic, whose prototype the console has not settled)",
     "data:Go high pair stores each named result field",
     "data:Go indexed signed store converts unsigned value",
     "data:Go integer pointer conversion retains uintptr bridge",
@@ -1452,7 +1460,7 @@
     "data:KUNA-CATALOG #4: v850indirectbranch is a V850-gated default ()",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
     "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, switchguardbound, switchsharedcase, switchmultipred, unrolledguard, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, securitycheck, structsynth, protoorder, calleevote, rustprobestack)",
-    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, constselectjump, arraystride, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, guardarm, loopcondhoist, endptrbound, structsynth, structmerge, structheadless, devectorize, gomorestack, gowritebarrier, ptrauthtrap, rustprobestack, chkstkdarwin, opaquepredicate)",
+    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, constselectjump, arraystride, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, guardarm, loopcondhoist, endptrbound, structsynth, structmerge, structheadless, devectorize, gomorestack, gowritebarrier, ptrauthtrap, rustprobestack, chkstkdarwin, opaquepredicate, callresultuse)",
     "data:KUNA-CATALOG #8: the opt-in-tool change_kind counts explicitly opted transformations ()",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CATALOG FID defaults off",
@@ -2080,7 +2088,9 @@
     "data:PIC indirect returning call retains return 7 @dup2",
     "data:PIC off and restored off keep the unnamed stub",
     "data:PIC off keeps the unnamed stub",
-    "data:PIC off leaves every driver-linked stub unnamed",
+    "data:PIC off leaves check's stub unnamed",
+    "data:PIC off leaves every driver-linked stub unnamed (callresultuse hands each unknown stub's r3 to the next)",
+    "data:PIC off leaves every driver-linked stub unnamed, second pair",
     "data:PIC on names the proved terminal call",
     "data:PLTLOCAL #1: the forwarded registers are never lost to the stub",
     "data:PLTLOCAL #2: built at the definition, its declared parameters arrive",

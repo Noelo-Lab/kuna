@@ -1,0 +1,103 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    kuna: an unknown callee's result, read untouched by the next call or by
+    the RETURN, is that call's result.
+
+    Stage / sub-stage: P4 return and parameter recovery, the ancestor walk
+    behind the trials of the next call's inputs and the function's RETURN
+    (Funcdata::ancestorOpUse, p4_calls/kuna_callresultuse.rs).  Option
+    `callresultuse`, off|on|all, default on.
+
+    Source (clang -target aarch64-linux-gnu -O1 -fno-optimize-sibling-calls;
+    g, g2 and p are symbols without bytes, so the callees' prototypes are
+    unknown and they print as sub_2000 and sub_2100):
+
+        long g(long);
+        long g2(long);
+        int *p;
+        long ret(long a) { return g(a); }
+        long branch(long a) { long r = g(a); if (r) *p = 1; return r; }
+        long chain(long a) { long r = g2(g(a)); *p = 1; return r; }
+        long tail(long a) { return g2(g(a)); }
+        void dead(long a) { g(a); *p = 1; }
+        void fresh(long a) { g(a); g2(5); *p = 1; }
+
+    The bug: x0 after `bl g` is an INDIRECT creation, the register g may
+    return, and the ancestor walk refused such a value as a trial for the
+    next call's input or the RETURN; and where no op names x0 (chain, tail:
+    `bl g; bl g2`) the register was never heritaged, so the second call had
+    no trial there at all.  branch printed `if (sub_2000()) ...` and void,
+    chain and tail `sub_2000(); sub_2100();`.
+
+    `on`: the result handed to the next call is its argument
+    (`sub_2100(sub_2000())` in chain and tail); a result only handed back,
+    or branched on and handed back (ret, branch, chain, tail, dead: x0
+    untouched at the ret) keeps the strict reading and stays void, since
+    `void h(long a) { if (g(a)) *p = 1; }` compiles to branch's bytes too;
+    fresh rewrites x0 before g2.  `all`: the untouched result at the ret is
+    the return value (ret, branch, dead).
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+fd7bbfa9fd030091fe030094fd7bc1a8c0035fd6fd7bbfa9fd030091f9030094
+a00000b4080000d029008052080140f9090100b9fd7bc1a8c0035fd6fd7bbfa9
+fd030091ef0300942e040094080000d029008052080140f9090100b9fd7bc1a8
+c0035fd6fd7bbfa9fd030091e503009424040094fd7bc1a8c0035fd6fd7bbfa9
+fd030091df030094080000d029008052080140f9090100b9fd7bc1a8c0035fd6
+fd7bbfa9fd030091d6030094a000805214040094080000d029008052080140f9
+090100b9fd7bc1a8c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="ret"/>
+<symbol space="ram" offset="0x1014" name="branch"/>
+<symbol space="ram" offset="0x103c" name="chain"/>
+<symbol space="ram" offset="0x1064" name="tail"/>
+<symbol space="ram" offset="0x107c" name="dead"/>
+<symbol space="ram" offset="0x10a0" name="fresh"/>
+</binaryimage>
+<script>
+  <com>lo fu ret</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu branch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu chain</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu tail</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu dead</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fresh</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option callresultuse all</com>
+  <com>lo fu ret</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu branch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu dead</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option callresultuse off</com>
+  <com>lo fu branch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu chain</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLRESULTUSE #1: on, a result handed to the next call is its argument, in chain and tail" min="2" max="2">sub_2100\(sub_2000\(\)\)</stringmatch>
+<stringmatch name="CALLRESULTUSE #2: on, a result handed back or branched on and handed back keeps the strict reading (ret, branch, chain, tail, dead; branch and chain again under off)" min="7" max="7">^void (ret|branch|chain|tail|dead)\(void\)</stringmatch>
+<stringmatch name="CALLRESULTUSE #3: on, a rewritten x0 is the constant, not the result" min="1" max="1">sub_2100\(5\)</stringmatch>
+<stringmatch name="CALLRESULTUSE #4: all, the untouched result at the ret is returned" min="1" max="1">return sub_2000\(\);</stringmatch>
+<stringmatch name="CALLRESULTUSE #5: all, the branched-on and the stored-past results are returned (branch, dead)" min="2" max="2">^  return v1;</stringmatch>
+<stringmatch name="CALLRESULTUSE #6: all, ret, branch and dead return" min="3" max="3">^(unsigned long|int8|long) (ret|branch|dead)\(void\)</stringmatch>
+<stringmatch name="CALLRESULTUSE #7: off, the branched-on result is dropped, as under on" min="2" max="2">if \(!?sub_2000\(\)\)</stringmatch>
+<stringmatch name="CALLRESULTUSE #8: off, the hand-off to the next call is lost" min="1" max="1">^  sub_2100\(\);</stringmatch>
+</decompilertest>

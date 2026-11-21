@@ -2259,7 +2259,9 @@ impl Funcdata {
         self.vbank_mut().get_mut(invn).expect("onlyOpUse: stale invn").set_mark();
         varlist.push((invn, main_flags, None));
         let active_output = self.get_active_output().is_some();
-        let forced_return = crate::p4_calls::kuna_voidret::scoring_return(self, opmatch);
+        let forced_return = crate::p4_calls::kuna_voidret::scoring_return(self, opmatch)
+            || crate::p4_calls::kuna_callresultuse::scoring_return(self, opmatch, invn);
+        let result_argument = crate::p4_calls::kuna_callresultuse::scoring_argument(self, opmatch, invn);
         let call_return = crate::p4_calls::kuna_exclusivecallret::applies(self, opmatch, trial);
         let mut reached_match = false;
         let mut i = 0;
@@ -2356,6 +2358,12 @@ impl Funcdata {
                             continue;
                         }
                         if self.check_call_double_use(opmatch, op, vn, cur_flags, trial) {
+                            continue;
+                        }
+                        // (kuna) `callresultuse`: a call result handed to another
+                        // call as well is a value both read.  See
+                        // [`crate::p4_calls::kuna_callresultuse::scoring_argument`].
+                        if result_argument && o.get_slot(vn) > 0 {
                             continue;
                         }
                         res = false;
@@ -2498,7 +2506,10 @@ impl Funcdata {
         offset: int4,
         main_flags: kuna_base::types::uint4,
     ) -> bool {
-        let mut memo = AncestorMemo::default();
+        let mut memo = AncestorMemo {
+            call_result_root: crate::p4_calls::kuna_callresultuse::scores_trial(self, invn, op),
+            ..AncestorMemo::default()
+        };
         self.ancestor_op_use_in(&mut memo, maxlevel, invn, op, trial, offset, main_flags).is_used()
     }
 
@@ -2516,7 +2527,11 @@ impl Funcdata {
         offset: int4,
         main_flags: kuna_base::types::uint4,
     ) -> (bool, u64) {
-        let mut memo = AncestorMemo { every_path, ..AncestorMemo::default() };
+        let mut memo = AncestorMemo {
+            every_path,
+            call_result_root: crate::p4_calls::kuna_callresultuse::scores_trial(self, invn, op),
+            ..AncestorMemo::default()
+        };
         let used = self.ancestor_op_use_in(&mut memo, maxlevel, invn, op, trial, offset, main_flags).is_used();
         (used, memo.steps)
     }
@@ -2590,9 +2605,10 @@ impl Funcdata {
         match code {
             OpCode::CPUI_INDIRECT => {
                 if self.obank().get(def).map(|o| o.is_indirect_creation()).unwrap_or(false) {
-                    return Ancestry::of(
-                        self.kuna_forced_scoring() && self.only_op_use(invn, op, trial, main_flags),
-                    );
+                    // (kuna) `callresultuse`: a call's possible output is its
+                    // result.  See [`crate::p4_calls::kuna_callresultuse`].
+                    let scored = self.kuna_forced_scoring() || memo.call_result_root;
+                    return Ancestry::of(scored && self.only_op_use(invn, op, trial, main_flags));
                 }
                 let in0 = self.obank().get(def).and_then(|o| o.get_in(0));
                 if let Some(in0) = in0 {
@@ -2735,7 +2751,9 @@ impl Funcdata {
                 Ancestry::of(self.only_op_use(invn, op, trial, main_flags))
             }
             OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
-                Ancestry::of(self.kuna_forced_scoring() && self.only_op_use(invn, op, trial, main_flags))
+                // (kuna) `callresultuse`: a known callee's output is its result.
+                let scored = self.kuna_forced_scoring() || memo.call_result_root;
+                Ancestry::of(scored && self.only_op_use(invn, op, trial, main_flags))
             }
             _ => Ancestry::of(self.only_op_use(invn, op, trial, main_flags)),
         }
@@ -2798,6 +2816,9 @@ type AncestorKey = (VarnodeId, int4, uint4);
 struct AncestorMemo {
     /// The MULTIEQUALs marked on the current path, outermost first.
     path: Vec<OpId>,
+    /// (kuna) `callresultuse`: the trial's root is a call result on every
+    /// path, so a CALL output or creation ends a path as a use.
+    call_result_root: bool,
     unused: crate::kuna_fasthash::FxHashMap<AncestorKey, UnusedAbove>,
     #[cfg(test)]
     every_path: bool,

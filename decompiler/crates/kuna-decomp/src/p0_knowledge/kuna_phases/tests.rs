@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_228() {
-    assert_eq!(kuna_num_settables(), 228);
-    assert_eq!(SETTABLE_TABLE.len(), 228);
+fn settable_count_is_229() {
+    assert_eq!(kuna_num_settables(), 229);
+    assert_eq!(SETTABLE_TABLE.len(), 229);
 }
 
 #[test]
-fn tier_counts_are_46_core_124_transform_58_analysis() {
+fn tier_counts_are_46_core_125_transform_58_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_46_core_124_transform_58_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (46, 124, 58));
+    assert_eq!((core, transform, analysis), (46, 125, 58));
 }
 
 #[test]
@@ -668,6 +668,10 @@ fn option_values_live_value_present_for_76() {
                             // (kuna) `gowritebarrier`: the same MODE shape;
                             // its live value is `Architecture::go_write_barrier`.
                             | "gowritebarrier"
+                            // (kuna) `callresultuse` takes `off|on|all` over an
+                            // enum field; its live value is
+                            // `Architecture::call_result_use`.
+                            | "callresultuse"
                             // (kuna) `impliedrefs`/`termdup` take an INTEGER
                             // (`2|3|4|<n>`), which the codegen live reader (a
                             // bool `live_true`/`live_false` pair) cannot
@@ -1117,7 +1121,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `repstring`; its P3 row sits after `strlenscan`.
     // +1 for `opaquepredicate`; its P3 row sits after `globalarrayanchor`.
     // +1 for `calltable`; its P1 row sits after `tailcallentry`.
-    assert_eq!(json.matches("},\n").count(), 227);
+    // +1 for `callresultuse`; its P4 row sits after `opaquepredicate`.
+    assert_eq!(json.matches("},\n").count(), 228);
 }
 
 #[test]

@@ -1164,6 +1164,7 @@ impl Action for ActionFuncLink {
         }
         crate::p4_calls::kuna_voidret::plant(data);
         crate::kuna_retcallhalf::plant(data);
+        crate::p4_calls::kuna_callresultuse::plant(data);
         crate::kuna_floatreg::note_float_pairs(data);
         0
     }
@@ -1912,6 +1913,8 @@ impl Action for ActionReturnRecovery {
         if active.is_fully_checked() {
             crate::p4_calls::kuna_zerocallregs::drop_epilogue_zeros(data, &mut active, &return_ops);
             crate::p4_calls::kuna_passthrough::keep_tail_return_whole(data, &mut active);
+            crate::p4_calls::kuna_callresultuse::yield_to_own_value(data, &mut active, &return_ops);
+            crate::p4_calls::kuna_callresultuse::settle_planted(data, &mut active);
             crate::p4_calls::kuna_zerofillreturn::drop_zero_fill(data, &mut active, &return_ops);
             crate::kuna_armfloatreturn::narrow_returns(data, &mut active);
             crate::kuna_retsysreg::drop_set_aside(data, &mut active, &return_ops);
