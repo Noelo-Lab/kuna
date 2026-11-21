@@ -2255,7 +2255,8 @@ mod tests {
         // and kuna-loopcontinue-while / a jump to a do-while's own test prints as continue
         // and kuna-switchsingle / a jump table whose entries all name one block is a direct branch
         // and kuna-protoorder-tailcallees / a single decompile states its tail callees' prototypes first
-        assert_eq!(count, 837, "corpus file count drifted");
+        // and kuna-typevote / a variable left undefinedN takes the type its ops vote for (option typevote)
+        assert_eq!(count, 838, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

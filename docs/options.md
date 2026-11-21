@@ -457,6 +457,8 @@ Three tiers:
 | an arm64 macOS function with a large frame or a variable-length array prints with a (void) parameter list | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | a variable-length array is sized from a register nothing assigns after __chkstk_darwin() | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | __chkstk_darwin is called with arguments it does not take | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
+| a variable declared undefined4/undefined8 although it is shifted, masked or compared | [`typevote`](#typevote----on--off-default-on) |
+| a cast back to a variable's own declared type at each read | [`typevote`](#typevote----on--off-default-on) |
 | a DOS program's globals print as *(short *)0x308e near-pointer dereferences instead of named globals | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | every function of an MS-DOS executable declares an unsigned short local commented // ds | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | the same DOS global gets no shared name across functions | [`mzdgroup`](#mzdgroup----on--off-default-on) |
@@ -1828,6 +1830,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default. Keep it on for macOS and iOS arm64 binaries: a function with a large frame or a variable-length array otherwise prints `v = __chkstk_darwin();`, loses the parameters it reads after the probe, or sizes a stack allocation from a register nothing assigns. Flip OFF to see the probe calls again, for instance to find the functions that allocate more than a page of stack.
 - **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-chkstkdarwin
 - **Example:** `option chkstkdarwin off`
+
+### `typevote` -- on | off, default `on`
+
+- **Symptoms:** a variable declared undefined4/undefined8 although it is shifted, masked or compared; a cast back to a variable's own declared type at each read.
+- **What it does:** Type a variable the type passes leave undefinedN by a vote over the ops that write and read it, once every variable is final. Logical shifts and zero extension vote unsigned; arithmetic shifts, sign extension and signed compares vote signed; a copy from or to an integer-typed value votes its signedness; other integer ops vote numeric (int on a tie, the C default); float ops vote float. A returned value is not voted and a parameter takes only an unsigned vote, so no signature changes; a piece of a union keeps its type. Merge copies added after type inference start untyped, so an unsigned int parameter printed (unsigned int)a1 at each read.
+- **When to flip:** On (default). Flip off to see which values type inference left undefined.
+- **Where / provenance:** P5/type-propagation · kuna · presentation-default · kuna-typevote
+- **Example:** `option typevote off`
 
 ## Analysis & loader passes
 

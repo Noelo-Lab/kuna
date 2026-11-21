@@ -2709,8 +2709,8 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
         "(unsigned int)(v1 < 0x3fc00000)",
         "if (v1 == 0x3fc00001)",
         "(unsigned int)(0x3fc00000 < v1)",
-        "*a2 = (short)((unsigned int)v1 >> 0x10);",
-        "a2[1] = (unsigned int)v1 >> 0x10;",
+        "*a2 = (short)(v1 >> 0x10);",
+        "a2[1] = v1 >> 0x10;",
     ] {
         assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
     }

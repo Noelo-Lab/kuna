@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4862,
-    4862
+    4864,
+    4864
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1525,6 +1525,8 @@
     "data:KUNA-THUNKENTRY #2: sum and start are functions in both passes",
     "data:KUNA-THUNKENTRY #3: leaf is a function in fast and aggressive mode",
     "data:KUNA-THUNKENTRY #4: leaf decompiles to its own body",
+    "data:KUNA-TYPEVOTE #1: the voted shifts need no cast (default)",
+    "data:KUNA-TYPEVOTE #2: typevote off casts the undefined instances",
     "data:KUNA-UNMAPPEDENTRY #1: the XML path renders the source form x <= 8",
     "data:KUNA-WIDESTRINGS32 #1: off, the literal prints as its address",
     "data:KUNA-WIDESTRINGS32 #2: on, the literal prints as L\"hellow\"",
