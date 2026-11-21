@@ -5538,7 +5538,9 @@ fn commit_analysis_output(
         kuna_signature_names::SignatureNames::collect(prog, &out, zero_size_data_names);
 
     // Keep lookup identities even when richer debug information wins the map;
-    // a spelling shared by several objects resolves to its lowest address.
+    // a spelling shared by several objects resolves to its lowest address. A
+    // data import is looked up by the name of the `externref` slot holding it.
+    let externref_slots: std::collections::HashSet<u64> = out.externref.iter().map(|&(first, _)| first).collect();
     let aliases: Vec<(String, u64)> = prog
         .loader_data_objects
         .iter()
@@ -5547,6 +5549,12 @@ fn commit_analysis_output(
         .chain(out.symbols.iter().filter(|s| s.kind == SymKind::Data).map(|s| (s.name.clone(), s.addr)))
         .chain(out.data_objects.iter().map(|d| (d.name.clone(), d.addr)))
         .chain(out.typed_data.iter().map(|d| (d.name.clone(), d.addr)))
+        .chain(
+            out.import_slot_names
+                .iter()
+                .filter(|(slot, _)| externref_slots.contains(slot))
+                .map(|(slot, name)| (name.clone(), *slot)),
+        )
         .collect();
     for (name, address) in aliases {
         let slot = prog.data_name_aliases.entry(name).or_insert(address);

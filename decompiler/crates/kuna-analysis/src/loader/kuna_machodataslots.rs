@@ -24,7 +24,9 @@ use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 /// metaclass, ivar offset, protocol and exception-type objects by prefix; a
 /// Swift symbol by its demangling tree; an Itanium C++ symbol by its encoding
 /// (a vtable, typeinfo, guard or static data member has no function type).
-/// A plain C name is not classified.
+/// A plain C name is not classified. The indirect-symbol walk runs on every
+/// read of the import stream, about twenty times a load, so each demangled
+/// answer is kept per thread.
 pub(crate) fn is_data_import(raw: &[u8]) -> bool {
     const OBJC_OBJECTS: [&[u8]; 5] = [
         b"_OBJC_CLASS_$_",
@@ -38,10 +40,33 @@ pub(crate) fn is_data_import(raw: &[u8]) -> bool {
     }
     let Ok(name) = std::str::from_utf8(raw) else { return false };
     let name = name.strip_prefix('_').unwrap_or(name);
-    if crate::sourcelang::is_swift_mangled(name) {
-        return crate::demangle::kuna_swift::is_data_symbol(name).unwrap_or(false);
+    let swift = crate::sourcelang::is_swift_mangled(name);
+    if !swift && !name.starts_with("_Z") {
+        return false;
     }
-    name.starts_with("_Z") && itanium_is_data(name)
+    MEMO.with(|memo| {
+        if let Some(&data) = memo.borrow().get(raw) {
+            return data;
+        }
+        let data = if swift {
+            crate::demangle::kuna_swift::is_data_symbol(name).unwrap_or(false)
+        } else {
+            itanium_is_data(name)
+        };
+        let mut memo = memo.borrow_mut();
+        if memo.len() >= MEMO_CAP {
+            memo.clear();
+        }
+        memo.insert(raw.into(), data);
+        data
+    })
+}
+
+const MEMO_CAP: usize = 1 << 17;
+
+thread_local! {
+    static MEMO: std::cell::RefCell<std::collections::HashMap<Box<[u8]>, bool>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
 /// An Itanium encoding is a function exactly when it carries a parameter list:
