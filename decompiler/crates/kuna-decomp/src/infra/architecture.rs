@@ -3076,11 +3076,10 @@ impl Architecture {
     /// + emitter indent increment
     /// (`PrintC::reset_wire_option_defaults`: nullprinting, inplaceops,
     /// conventionprinting, nocastprinting, hideimpliedexts, the brace
-    /// formats, indentincrement).  NOT covered: the action-database
+    /// formats, indentincrement, maxlinewidth).  NOT covered: the action-database
     /// default-group reset (the shared STUB(W5) of [`Self::reset_defaults`] —
     /// the `currentaction` option toggles accumulate for the session), and
-    /// `maxlinewidth`/`commentstyle`, which are recorded-no-op printer stubs
-    /// with no state to reset.
+    /// `commentstyle`, a recorded-no-op printer stub with no state to reset.
     pub fn reset_wire_defaults(&mut self) {
         // The load-time PPC32 PIC mode is program and process state, so a wire
         // reset clears both.
@@ -7043,17 +7042,14 @@ impl ArchOptionContext for Architecture {
     fn set_hide_implied_exts(&mut self, val: bool) {
         self.print.set_hide_implied_exts(val);
     }
-    fn set_max_line_size(&mut self, val: int4) {
-        // C++ throws on a bad range; the Rust setter returns a Result.  The
-        // option apply already validated the parse; ignore the (always-Ok)
-        // no-markup result.
-        let _ = self.print.set_max_line_size(val);
+    fn set_max_line_size(&mut self, val: int4) -> KunaResult<()> {
+        self.print.set_max_line_size(val)
     }
     fn set_indent_increment(&mut self, val: int4) {
         self.print.set_indent_increment(val);
     }
-    fn set_line_comment_indent(&mut self, val: int4) {
-        let _ = self.print.set_line_comment_indent(val);
+    fn set_line_comment_indent(&mut self, val: int4) -> KunaResult<()> {
+        self.print.set_line_comment_indent(val)
     }
     fn set_comment_style(&mut self, style: &str) {
         self.print.set_comment_style(style);

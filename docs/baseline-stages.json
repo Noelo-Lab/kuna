@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4882,
-    4882
+    4886,
+    4886
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1670,6 +1670,10 @@
     "data:MAPPED-FLOW #5: the fall-through that ends exactly at the mapped end names its successor",
     "data:MAPPED-FLOW #6: the zero padding that is mapped is still lifted",
     "data:MAPPED-FLOW #7: the padding byte whose instruction runs past the mapped end is cut",
+    "data:MAXLINEWIDTH #1: by default the return is one line",
+    "data:MAXLINEWIDTH #2: at 40 columns the prototype breaks after its third parameter",
+    "data:MAXLINEWIDTH #3: at 40 columns the return breaks into three lines",
+    "data:MAXLINEWIDTH #4: the last term continues under the expression",
     "data:MINSS #1: scalar selection includes unordered and equal operands",
     "data:MINSS #2: upper ratio clamp includes unordered operands",
     "data:MINSS #3: lower ratio clamp retains unordered operands",

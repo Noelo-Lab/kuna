@@ -78,8 +78,8 @@ use kuna_base::types::{int4, int8, uint4, uintb};
 use crate::dtype::type_metatype;
 use crate::options::{BraceStyle, NamespaceStrategy};
 use crate::prettyprint::{
-    BraceStyle as EmitBraceStyle, Emit, EmitBase, EmitMarkup, EmitNoMarkup, MarkupProvenance,
-    MarkupRef, SyntaxHighlight,
+    BraceStyle as EmitBraceStyle, Emit, EmitBase, EmitMarkup, EmitNoMarkup, EmitPrettyPrint,
+    LowLevel, MarkupProvenance, MarkupRef, SyntaxHighlight,
 };
 use crate::printlanguage::{
     format_binary, modifiers, most_natural_base, parentheses, unicode_needs_escape, Atom, OpToken,
@@ -1286,6 +1286,9 @@ pub enum PrintEmit {
     NoMarkup(EmitNoMarkup),
     /// The packed clang token-markup back-end (ghidra-mode `decompileAt`).
     Markup(EmitMarkup),
+    /// The line-breaking printer over the plain-text back-end, active once
+    /// `option maxlinewidth` sets a line size.
+    Pretty(Box<EmitPrettyPrint>),
 }
 
 /// Forward one [`Emit`] call to whichever [`PrintEmit`] variant is active — the
@@ -1295,18 +1298,34 @@ macro_rules! pe_forward {
         match $self {
             PrintEmit::NoMarkup(e) => e.$method($($arg),*),
             PrintEmit::Markup(e) => e.$method($($arg),*),
+            PrintEmit::Pretty(e) => e.$method($($arg),*),
         }
     };
 }
 
 impl PrintEmit {
+    /// The plain-text sink, directly or under the line-breaking printer.
+    fn plain_mut(&mut self) -> Option<&mut EmitNoMarkup> {
+        match self {
+            PrintEmit::NoMarkup(e) => Some(e),
+            PrintEmit::Pretty(e) => match e.lowlevel_mut() {
+                LowLevel::NoMarkup(s) => Some(s),
+                LowLevel::Markup(_) => None,
+            },
+            PrintEmit::Markup(_) => None,
+        }
+    }
     /// Reset the active back-end's output buffer (C++ `Emit::setOutputStream`),
     /// dispatched to the concrete leaf (both leaves clear their owned sink).
     /// Type-divergent (not on the [`Emit`] trait): the leaves' sinks differ.
     pub fn set_output_stream(&mut self) {
         match self {
-            PrintEmit::NoMarkup(e) => e.set_output_stream(),
             PrintEmit::Markup(e) => e.set_output_stream(),
+            _ => {
+                if let Some(s) = self.plain_mut() {
+                    s.set_output_stream();
+                }
+            }
         }
     }
     /// Borrow the accumulated plain text (the `EmitNoMarkup` standalone
@@ -1316,33 +1335,31 @@ impl PrintEmit {
         match self {
             PrintEmit::NoMarkup(e) => e.output(),
             PrintEmit::Markup(_) => "",
+            PrintEmit::Pretty(e) => e.output(),
         }
     }
     /// Take ownership of the accumulated packed markup bytes (the `EmitMarkup`
     /// `doc_function_markup` return); empty on the plain-text leaf.
     pub fn take_markup_bytes(&mut self) -> Vec<u8> {
         match self {
-            PrintEmit::NoMarkup(_) => Vec::new(),
             PrintEmit::Markup(e) => e.take_output(),
+            _ => Vec::new(),
         }
     }
     /// Take the structured associations captured by the markup leaf.
     pub fn take_markup_provenance(&mut self) -> MarkupProvenance {
         match self {
-            PrintEmit::NoMarkup(_) => MarkupProvenance::default(),
             PrintEmit::Markup(e) => e.take_provenance(),
+            _ => MarkupProvenance::default(),
         }
     }
     /// Take the root statement associations captured by the plain-text leaf.
     pub fn take_plain_statement_provenance(&mut self) -> MarkupProvenance {
-        match self {
-            PrintEmit::NoMarkup(e) => e.take_statement_provenance(),
-            PrintEmit::Markup(_) => MarkupProvenance::default(),
-        }
+        self.plain_mut().map(|e| e.take_statement_provenance()).unwrap_or_default()
     }
     /// Enable or disable the plain-text statement-root sidecar.
     pub fn set_plain_statement_provenance(&mut self, val: bool) {
-        if let PrintEmit::NoMarkup(e) = self {
+        if let Some(e) = self.plain_mut() {
             e.set_capture_statement_provenance(val);
         }
     }
@@ -1355,14 +1372,18 @@ impl PrintEmit {
     /// Take the tokens captured by the markup leaf.
     pub fn take_markup_tokens(&mut self) -> Vec<crate::prettyprint::EmitToken> {
         match self {
-            PrintEmit::NoMarkup(_) => Vec::new(),
             PrintEmit::Markup(e) => e.take_tokens(),
+            _ => Vec::new(),
         }
     }
     /// Whether the plain-text statement-root sidecar is active.
     pub fn captures_plain_statement_provenance(&self) -> bool {
         match self {
             PrintEmit::NoMarkup(e) => e.captures_statement_provenance(),
+            PrintEmit::Pretty(e) => match e.lowlevel() {
+                LowLevel::NoMarkup(s) => s.captures_statement_provenance(),
+                LowLevel::Markup(_) => false,
+            },
             PrintEmit::Markup(_) => false,
         }
     }
@@ -1518,6 +1539,9 @@ pub struct PrintC {
     /// `<function>` document.  A concrete enum (not `Box<dyn Emit>`), so the
     /// ~260 `self.emit.<method>()` sites stay static (see [`PrintEmit`]).
     pub(crate) emit: PrintEmit,
+    /// The `option maxlinewidth` line size for plain-text output; `None` (the
+    /// kuna default) prints each statement on one line.
+    plain_line_size: Option<int4>,
     /// (kuna) Scoped raw pointer to the [`Funcdata`] currently being emitted,
     /// live ONLY for the duration of [`emit_function_document`](PrintC::emit_function_document).
     /// Lets the fd-free RPN leaf emitters ([`emit_atom`](PrintC::emit_atom) /
@@ -1639,6 +1663,7 @@ impl PrintC {
             name: CAPABILITY_NAME.to_string(),
             flat: false,
             emit: PrintEmit::NoMarkup(EmitNoMarkup::new()),
+            plain_line_size: None,
             emit_fd: None,
             revpol: Vec::new(),
             nodepend: Vec::new(),
@@ -1705,6 +1730,9 @@ impl PrintC {
         self.name = name.to_string();
         self.out_lang =
             crate::kuna_lang::OutLang::from_print_name(name).unwrap_or(crate::kuna_lang::OutLang::C);
+        if self.plain_line_size.is_some() && !self.emit.emits_markup() {
+            self.emit = self.plain_emit();
+        }
     }
 
     /// The active output language.
@@ -1823,8 +1851,7 @@ impl PrintC {
         self.emit.close_brace_indent("}", id);
         self.emit.tag_line();
         self.emit.end_function(id1);
-
-        // After the C++ flush the bound ostream holds the text.
+        self.emit.flush().expect("PrintC::docFunction: emit flush");
         self.emit.output_str().to_string()
     }
 
@@ -1850,12 +1877,52 @@ impl PrintC {
     pub fn set_hide_implied_exts(&mut self, val: bool) {
         self.options.set_hide_implied_exts(val);
     }
-    /// C++ `glb->print->setMaxLineSize(val)` (options.cc:524).
-    pub fn set_max_line_size(&mut self, _val: int4) -> KunaResult<()> {
-        // STUB(W8 prettyprint): EmitNoMarkup ignores line size; EmitPrettyPrint
-        // honours it.  Recorded so the option succeeds (the C++ validates the
-        // range inside Emit::setMaxLineSize; the no-markup path is unbounded).
+    /// C++ `glb->print->setMaxLineSize(val)` (options.cc:524). Plain-text output
+    /// goes through [`EmitPrettyPrint`] from here on, which breaks lines longer
+    /// than `val`; the markup back-end is left unbroken.
+    pub fn set_max_line_size(&mut self, val: int4) -> KunaResult<()> {
+        EmitPrettyPrint::new().set_max_line_size_pretty(val)?;
+        self.plain_line_size = Some(val);
+        if !self.emit.emits_markup() {
+            self.emit = self.plain_emit();
+        }
         Ok(())
+    }
+    /// Print unbroken lines until [`Self::restore_line_size`], for a render
+    /// whose records (warning lines, line mappings, call-argument positions)
+    /// address its text line by line. Returns the line size to restore.
+    pub fn suspend_line_size(&mut self) -> Option<int4> {
+        let size = self.plain_line_size.take();
+        if size.is_some() && !self.emit.emits_markup() {
+            self.emit = self.plain_emit();
+        }
+        size
+    }
+    /// Undo [`Self::suspend_line_size`].
+    pub fn restore_line_size(&mut self, size: Option<int4>) {
+        if size.is_some() {
+            self.plain_line_size = size;
+            if !self.emit.emits_markup() {
+                self.emit = self.plain_emit();
+            }
+        }
+    }
+    /// A fresh plain-text back-end honoring [`Self::plain_line_size`] for C
+    /// output only (Go ends a statement at a line break; Rust and Go print
+    /// unbroken), carrying the current indent increment.
+    fn plain_emit(&self) -> PrintEmit {
+        let mut emit = match self.plain_line_size.filter(|_| self.out_lang == crate::kuna_lang::OutLang::C) {
+            Some(size) => {
+                let mut pretty = EmitPrettyPrint::new();
+                pretty
+                    .set_max_line_size_pretty(size)
+                    .expect("plain_line_size was validated when set");
+                PrintEmit::Pretty(Box::new(pretty))
+            }
+            None => PrintEmit::NoMarkup(EmitNoMarkup::new()),
+        };
+        emit.set_indent_increment(self.emit.get_indent_increment());
+        emit
     }
     /// C++ `glb->print->setIndentIncrement(val)` (options.cc:541).
     pub fn set_indent_increment(&mut self, val: int4) {
@@ -1863,9 +1930,7 @@ impl PrintC {
     }
     /// C++ `glb->print->setLineCommentIndent(val)` (options.cc:559).
     pub fn set_line_comment_indent(&mut self, val: int4) -> KunaResult<()> {
-        // C++ PrintLanguage::setLineCommentIndent validates against maxlinesize;
-        // the EmitNoMarkup max is unbounded, so any non-negative value is valid.
-        self.context.set_line_comment_indent(val, int4::MAX)
+        self.context.set_line_comment_indent(val, self.plain_line_size.unwrap_or(int4::MAX))
     }
     /// C++ `glb->print->getHeaderComment()` (options.cc:583).
     pub fn header_comment_flags(&self) -> uint4 {
@@ -1920,13 +1985,17 @@ impl PrintC {
     /// inplaceops, conventionprinting, nocastprinting, hideimpliedexts, the
     /// four brace formats — plus the kuna rendering toggles, whose
     /// construction defaults ARE the shipped defaults) and the emitter's
-    /// indent increment (Java default 2).  `max_line_size` and
-    /// `comment_style` are recorded-no-op stubs with no state to reset;
-    /// everything context-held (integer format, comment indent/flags,
-    /// namespace strategy, language) is reset by the caller's fresh
-    /// [`PrintContext`](crate::printlanguage::PrintContext).
+    /// indent increment (Java default 2), and the plain-text line size (back
+    /// to unbroken lines).  `comment_style` is a recorded-no-op stub with no
+    /// state to reset; everything context-held (integer format, comment
+    /// indent/flags, namespace strategy, language) is reset by the caller's
+    /// fresh [`PrintContext`](crate::printlanguage::PrintContext).
     pub fn reset_wire_option_defaults(&mut self) {
         self.options = PrintCOptions::new();
+        self.plain_line_size = None;
+        if !self.emit.emits_markup() {
+            self.emit = self.plain_emit();
+        }
         self.emit.set_indent_increment(2);
     }
 
@@ -2513,13 +2582,13 @@ impl PrintC {
     /// datatest path NEVER calls this, so `emit` stays `NoMarkup` and the
     /// 675-assertion byte output is untouched.
     pub fn set_markup(&mut self, val: bool) {
-        let increment = self.emit.get_indent_increment();
         self.emit = if val {
-            PrintEmit::Markup(EmitMarkup::new())
+            let mut markup = PrintEmit::Markup(EmitMarkup::new());
+            markup.set_indent_increment(self.emit.get_indent_increment());
+            markup
         } else {
-            PrintEmit::NoMarkup(EmitNoMarkup::new())
+            self.plain_emit()
         };
-        self.emit.set_indent_increment(increment);
     }
 
     /// Emit the ghidra-mode `decompileAt` clang token-markup `<function>` document
@@ -2792,6 +2861,7 @@ impl PrintC {
         self.emit.close_brace_indent("}", id);
         self.emit.tag_line();
         self.emit.end_function(id1);
+        self.emit.flush().expect("PrintC::docFunction: emit flush");
         // (kuna) Retire the scoped fd pointer (see the field doc): it is valid
         // only for this call's dynamic extent.
         self.emit_fd = None;

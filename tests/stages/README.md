@@ -74,6 +74,10 @@ four-byte OFF result against the proved eight-byte result and high-piece callers
 Its CLI companion executes the original bytes and untouched emitted C/header
 under MIPS QEMU at O0/O2, including selected exports, workers and streaming.
 
+`kuna-maxlinewidth.xml` checks that `option maxlinewidth 40` breaks a long
+prototype and return statement at 40 columns, while the default prints each on
+one line.
+
 `kuna-stack-byte-copy.xml` checks pushed scratch bytes, partial reads and a
 saved snapshot under the stack store guard. Its CLI companion compiles
 and executes the exact C at O2 in default, stackviews and stackalias modes, and checks
