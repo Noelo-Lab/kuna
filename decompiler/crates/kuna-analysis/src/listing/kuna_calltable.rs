@@ -77,6 +77,8 @@ pub fn scan(file: &object::File, listing: &Listing, arch: &Architecture, transla
     let data_space = arch.manage().get_default_data_space().map(Rc::clone);
     let decoded: HashSet<u64> = listing.instructions().map(|(&a, _)| a).collect();
     let preserved = preserved_registers(arch);
+    let named_set = std::cell::OnceCell::new();
+    let named = |at: u64| named_set.get_or_init(|| pool.code_named(file)).contains(&at);
     let reach = Reach {
         max_entries: match arch.max_jumptable_size {
             0 => DEFAULT_MAX_ENTRIES,
@@ -84,6 +86,7 @@ pub fn scan(file: &object::File, listing: &Listing, arch: &Architecture, transla
         },
         preserved: &preserved,
         settled: true,
+        named: Some(&named),
     };
     let exec = listing.exec_ranges().to_vec();
     let arm = object::Object::architecture(file) == object::Architecture::Arm;

@@ -128,6 +128,26 @@ impl<'a> PoolImage<'a> {
         })
     }
 
+    /// Every pointer-aligned read-only address a 32-bit window of `file`'s code
+    /// spells: what an instruction names as a displacement or a pool word,
+    /// whether or not anything decoded it.
+    pub(super) fn code_named(&self, file: &object::File) -> std::collections::HashSet<u64> {
+        let ptr = u64::from(self.ptr);
+        let (lo, hi) = (self.ro[0].0, self.ro[self.ro.len() - 1].1);
+        let mut out = std::collections::HashSet::new();
+        for sec in file.sections().filter(|s| s.kind() == SectionKind::Text) {
+            let Ok(data) = sec.data() else { continue };
+            for b in data.windows(4) {
+                let b: [u8; 4] = b.try_into().unwrap();
+                let v = u64::from(if self.little_endian { u32::from_le_bytes(b) } else { u32::from_be_bytes(b) });
+                if v % ptr == 0 && v >= lo && v < hi && self.contains_bytes(v, ptr) {
+                    out.insert(v);
+                }
+            }
+        }
+        out
+    }
+
     /// The target's pointer width in bytes, which is also the stride of any
     /// array of pointers in the image (`kuna_switchtable`'s table).
     pub(super) fn ptr_width(&self) -> u32 {

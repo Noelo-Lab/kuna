@@ -201,13 +201,16 @@ const MAX_INSN_BYTES: u64 = 16;
 /// unscaled index, the 16-instruction search for the range check, the masked
 /// index, and the re-read once the code above a dispatch is decoded
 /// (`TableRead::gap`).
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub(super) struct Reach<'a> {
     pub max_entries: usize,
     pub preserved: &'a [(u64, u64)],
     /// The decoded set is final: a dispatch nothing falls into will not be
     /// read again, so a table with no range check above it has none.
     pub settled: bool,
+    /// (kuna `calltable`) Whether code names an address, decoded or not: a
+    /// table with no range check ends before the next table it runs into.
+    pub named: Option<&'a dyn Fn(u64) -> bool>,
 }
 
 impl Reach<'_> {
@@ -306,13 +309,18 @@ pub(super) fn register_targets(
             TableRead { cases: read(limit), stated: Some(limit), gap: None, unbounded: false }
         }
         // (kuna `calltable`) A pointer table with no count runs to the first
-        // word that is not code of the section the transfer is in.
-        (Err(gap), None) if table.1.is_none() && (call || reach.settled || gap.is_none()) => TableRead {
-            cases: targets(table.0, from, pool, exec, None, max_entries.min(CALL_TABLE_MAX)),
-            stated: None,
-            gap: None,
-            unbounded: !call,
-        },
+        // word that is not code of the section the transfer is in, or to the
+        // first word code names, where another table starts.
+        (Err(gap), None) if table.1.is_none() && (call || reach.settled || gap.is_none()) => {
+            let mut cases = targets(table.0, from, pool, exec, None, max_entries.min(CALL_TABLE_MAX));
+            let stride = u64::from(pool.ptr_width());
+            if let Some(named) = reach.named.filter(|_| cases.len() > 1) {
+                if let Some(at) = (1..cases.len()).find(|&i| named(table.0 + i as u64 * stride)) {
+                    cases.truncate(at);
+                }
+            }
+            TableRead { cases, stated: None, gap: None, unbounded: !call }
+        }
         (Err(gap), masked) => match masked.map(|n| (n, read(n))) {
             Some((n, cases)) if cases.len() == n => TableRead { cases, stated: Some(n), gap: None, unbounded: false },
             _ => TableRead { gap, ..TableRead::default() },

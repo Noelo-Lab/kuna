@@ -495,6 +495,7 @@ fn switch_targets(
             max_entries,
             preserved: &ctx.preserved,
             settled: false,
+            named: None,
         },
     );
     if read.unbounded {

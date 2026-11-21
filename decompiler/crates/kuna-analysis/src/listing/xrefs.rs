@@ -835,10 +835,13 @@ fn descend(
         n => n as usize,
     };
     let preserved = kuna_switchtable::preserved_registers(arch);
+    let named_set = std::cell::OnceCell::new();
+    let named = |at: u64| pool.as_ref().is_some_and(|p| named_set.get_or_init(|| p.code_named(file)).contains(&at));
     let reach = kuna_switchtable::Reach {
         max_entries,
         preserved: &preserved,
         settled: false,
+        named: Some(&named),
     };
     let arm = file.architecture() == object::Architecture::Arm;
     let pic_image = pool.as_ref().map(|pool| kuna_picpool::Image {
@@ -1501,7 +1504,7 @@ fn descend(
                         });
                     }
                     let call_table = arch.analysis_calltable
-                        && kuna_calltable::is_call_table(&cases, unbounded, |t| st.funcs.contains(&t) && t != entry);
+                        && kuna_calltable::is_call_table(&cases, stated.is_none(), |t| st.funcs.contains(&t) && t != entry);
                     if call_table {
                         for t in cases.iter().copied().collect::<BTreeSet<u64>>() {
                             st.file(vma, t, XrefKind::Call, &text);

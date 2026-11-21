@@ -8929,7 +8929,16 @@ that is a case of a range-checked switch or already code inside a function
 (`decompiler/crates/kuna-analysis/src/listing/kuna_calltable.rs
 (call_table_run)`), and the walk behind `kuna xrefs` reads its unchecked
 indexed calls only once its queue has drained, when those switches have been
-decoded. The vote (`decompiler/crates/kuna-analysis/src/listing/kuna_calltable.rs
+decoded. A switch reached only through the call table itself is not decoded
+by then, so a table with no range check also ends before the first word that
+code names as an address, decoded or not: every pointer-aligned read-only
+address that four bytes of a code section spell (the displacement of `jmp
+*tbl(,%rdi,8)`, a pool word) is collected once, on the first such read
+(`decompiler/crates/kuna-analysis/src/listing/kuna_poolref.rs (code_named)`).
+The walk reads a switch whose operand names its table up to the first word
+that is not code, with no count, and votes that read by the strict rule for
+an unchecked table, so a switch table that runs on into a table of known
+functions stays a switch. The vote (`decompiler/crates/kuna-analysis/src/listing/kuna_calltable.rs
 (is_call_table)`): an indexed call calls every entry; a jump through a
 range-checked table whose distinct targets are 40% or more other functions'
 entries is a table of tail calls; a jump through an unchecked table is one
@@ -8946,10 +8955,16 @@ case body that opens `push rbp; mov rbp,rsp` looks like a function to a
 prologue scan. On the fixture `calltable_x86_64` the two functions of the
 called table are found, its read stops at the next switch's cases, the
 labels of an unchecked jump table are not functions, and the prologue-shaped
-case is no longer a function. Over 529 stripped decbench ELFs, 1,150 ELF and
-PE fixtures and four sqlite3 builds the function lists do not move; over 200
-generated non-PIE gcc/clang programs without unwind tables it finds 276
-table-only functions and adds no false start.
+case is no longer a function. On the fixture `calltable_split_x86_64` the
+function `h0` of a called table is found, and neither the cases of `bsw`,
+whose table follows and which only `h0` reaches, nor those of `sw`, whose
+table runs on into a table of functions, are functions or call targets. Over
+529 stripped decbench ELFs, 1,150 ELF and PE fixtures and four sqlite3 builds
+the function lists do not move; over 200 generated non-PIE gcc/clang programs
+without unwind tables it finds 257 table-only functions and adds no false
+start, and over 320 generated multi-file non-PIE gcc, clang and i386 programs
+1,944 and none. A table reached only through an unchecked jump is no longer
+found by running into it from the table before.
 
 **Tail-call entries** (`tailcallentry`, on by default, ARM-only; kuna;
 `decompiler/crates/kuna-analysis/src/listing/kuna_tailcallentry.rs (tail_call_entries)`)
