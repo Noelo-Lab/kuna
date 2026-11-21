@@ -90,6 +90,7 @@ fn typed_entry(
         is_function: false,
         func_inject_id: -1,
         func_no_return: false,
+        func_extra_pop: None,
         symbol_id: 0,
     }
 }

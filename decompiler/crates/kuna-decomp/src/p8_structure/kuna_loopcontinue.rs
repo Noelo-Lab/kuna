@@ -4,8 +4,11 @@
 //! structuring, as do loops whose retained latch has a condition or whose body
 //! contains another loop head.
 
+use std::collections::BTreeMap;
+
 use crate::block::{block_flags, BlockGraph, BlockKind, BlockType};
 use crate::context::BlockId;
+use crate::funcdata::Funcdata;
 
 pub(crate) fn refine_latches(graph: &mut BlockGraph, root: BlockId) {
     let mut edges = Vec::new();
@@ -81,14 +84,15 @@ pub(crate) fn refine_latches(graph: &mut BlockGraph, root: BlockId) {
     }
 }
 
-/// A continue in an infinite loop resumes its first leaf. Conditional loops
-/// reset the scope: their continue can evaluate a test or iterator instead.
-pub(crate) fn recover_continues(graph: &mut BlockGraph, root: BlockId) {
+/// A continue in an infinite loop resumes its first leaf. A conditional loop
+/// resumes the leaf `points` gives it ([`continue_points`]), or resets the
+/// scope when it has none: its continue can evaluate a test or iterator instead.
+pub(crate) fn recover_continues(graph: &mut BlockGraph, root: BlockId, points: &BTreeMap<BlockId, BlockId>) {
     let mut stack = vec![(root, None)];
     while let Some((id, mut head)) = stack.pop() {
         match graph.block(id).get_type() {
             BlockType::InfLoop => head = graph.get_front_leaf(id),
-            BlockType::WhileDo | BlockType::DoWhile => head = None,
+            BlockType::WhileDo | BlockType::DoWhile => head = points.get(&id).copied(),
             _ => {}
         }
         let target = match graph.block(id).get_type() {
@@ -110,6 +114,56 @@ pub(crate) fn recover_continues(graph: &mut BlockGraph, root: BlockId) {
             stack.push((graph.block(id).get_block(i), head));
         }
     }
+}
+
+/// The leaf a `continue;` resumes at in each while-do and do-while loop under
+/// `root`: a while-do's condition block, unless it prints as a `for` whose
+/// iterate statement a `continue;` runs first, and a do-while's last leaf when
+/// that leaf prints nothing but the loop test and the output language's
+/// do-while runs that test on `continue;`.
+pub(crate) fn continue_points(data: &Funcdata, root: BlockId) -> BTreeMap<BlockId, BlockId> {
+    let graph = data.sblocks_ref();
+    let mut points = BTreeMap::new();
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        let block = graph.block(id);
+        for i in 0..block.get_size() {
+            stack.push(block.get_block(i));
+        }
+        let point = match block.get_type() {
+            BlockType::WhileDo if block.get_iterate_op().is_none() => {
+                graph.sub_block(id, 0).and_then(|cond| graph.get_front_leaf(cond))
+            }
+            BlockType::DoWhile if data.get_arch().do_while_continue => graph
+                .sub_block(id, 0)
+                .and_then(|body| graph.get_exit_leaf(body))
+                .filter(|&leaf| prints_only_its_branch(data, leaf)),
+            _ => None,
+        };
+        if let Some(leaf) = point {
+            points.insert(id, leaf);
+        }
+    }
+    points
+}
+
+/// Does the structured leaf `leaf` print no statement besides its branch?
+fn prints_only_its_branch(data: &Funcdata, leaf: BlockId) -> bool {
+    let Some(bb) = data.sblocks_ref().block(leaf).get_copy() else { return false };
+    let BlockKind::Basic(basic) = data.bblocks_ref().block(bb).kind() else { return false };
+    let mut cur = basic.op_head;
+    while let Some(op) = cur {
+        cur = data.bb_op_next(op);
+        let Some(o) = data.obank().get(op) else { return false };
+        if o.is_branch() || o.not_printed() || o.is_marker() {
+            continue;
+        }
+        let implied = o.get_out().and_then(|v| data.vbank().get(v)).is_some_and(|v| v.is_implied());
+        if !implied {
+            return false;
+        }
+    }
+    true
 }
 
 #[cfg(test)]
@@ -183,7 +237,7 @@ mod tests {
         let skip = jump(&mut graph, root, middle);
         let body = graph.new_block_list(root, &[head, middle, restart, skip]).unwrap();
         graph.new_block_inf_loop(root, body);
-        recover_continues(&mut graph, root);
+        recover_continues(&mut graph, root, &BTreeMap::new());
         assert_eq!(graph.block(restart).get_goto_type(), block_flags::f_continue_goto);
         assert_eq!(graph.block(skip).get_goto_type(), block_flags::f_goto_goto);
     }
@@ -200,7 +254,7 @@ mod tests {
         let inner = graph.new_block_inf_loop(root, inner_body);
         let outer_body = graph.new_block_list(root, &[outer_head, inner]).unwrap();
         graph.new_block_inf_loop(root, outer_body);
-        recover_continues(&mut graph, root);
+        recover_continues(&mut graph, root, &BTreeMap::new());
         assert_eq!(graph.block(outer_jump).get_goto_type(), block_flags::f_goto_goto);
         assert_eq!(graph.block(inner_jump).get_goto_type(), block_flags::f_continue_goto);
     }
@@ -213,7 +267,7 @@ mod tests {
         let restart = jump(&mut graph, root, head);
         let body = graph.new_block_list(root, &[head, restart]).unwrap();
         graph.new_block_do_while(root, body);
-        recover_continues(&mut graph, root);
+        recover_continues(&mut graph, root, &BTreeMap::new());
         assert_eq!(graph.block(restart).get_goto_type(), block_flags::f_goto_goto);
     }
 }
