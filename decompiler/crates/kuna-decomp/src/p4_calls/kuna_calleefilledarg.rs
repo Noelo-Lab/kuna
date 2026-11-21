@@ -41,21 +41,25 @@
 //!
 //! # The evidence
 //!
-//! The callee's own body, read by the entry-liveness walk
+//! The callee is an Objective-C selector stub: named `objc_msgSend$<sel>`,
+//! the name the linker gives the stubs it synthesizes into `__objc_stubs` and
+//! the `objc` analyzer gives them in a stripped image. Its convention is
+//! `objc_msgSend`'s with the selector supplied, so `x1` (`rsi`) is no
+//! parameter of it and the method's arguments follow in `x2` (`rdx`) onward.
+//! A C callee has no such gap: `void tramp2(void) { g_fp(g_x, 1); }` also
+//! fills `rdi` and `rsi` and jumps through a register, but a caller's `idiv`
+//! remainder left in `rdx` is no argument of it, and the positional cascade is
+//! what keeps it off the call.
+//!
+//! Then the callee's own body, read by the entry-liveness walk
 //! [`crate::p4_calls::kuna_calleedeadarg`] already caches for every direct
-//! call. Two things have to hold. The callee is a TRAMPOLINE
+//! call, has to agree. The stub is a TRAMPOLINE
 //! ([`CalleeEntryDead::is_trampoline`]): every path it has leaves through an
-//! indirect transfer the walk cannot follow (`br x16` through a GOT slot, `jmp
-//! *%rax`), none returns or calls a named target, and it reads no register on
-//! entry -- so whatever it does not write goes to the real target exactly as
-//! the caller staged it, and the slots after the filled one are the caller's
-//! evidence alone. And the register is written on every path from the entry
-//! before anything could read it ([`CalleeEntryDead::proves_dead`]). The
-//! second alone would admit `void sink(long x) { printf("%ld\n", x); }`, which
-//! writes `rsi` before reading it: at clang -O0 `sink((a - e) / 3)` leaves the
-//! `idiv` remainder in `rdx`, and with `rsi` killed by the `strrchr` before
-//! it, the positional cascade is what keeps `rdx` off the call. A trampoline
-//! has no body of its own to leave such a remainder for.
+//! indirect jump (`br x16` through a GOT slot), none returns or calls, and it
+//! reads no register on entry -- so whatever it does not write goes to the
+//! real target exactly as the caller staged it. And the register is written on
+//! every path from the entry before anything could read it
+//! ([`CalleeEntryDead::proves_dead`]).
 //!
 //! The pass acts only on a trial the caller's own evidence has ALREADY scored
 //! definitely-not-used. A slot that is both unfilled by the caller and
@@ -71,11 +75,11 @@
 //! prints one argument whether or not the callee loads `rdx`.
 //!
 //! A trial that is anything but definitely-not-used, a non-register trial, an
-//! indirect call, a callee that returns or calls on, and one the walk could
-//! not cover keep the positional rule. Default-on: the only call sites it can
-//! change are calls to a trampoline that loads an argument register the
-//! caller left unset, with actively staged registers after it, and on both
-//! parity corpora none is.
+//! indirect call, any other callee, and a stub the walk could not cover keep
+//! the positional rule. Default-on, inert outside Mach-O Objective-C: the only
+//! call sites it can change are calls to a selector stub that loads an
+//! argument register the caller left unset, with actively staged registers
+//! after it, and on both parity corpora none is.
 
 use crate::fspec::FuncCallSpecs;
 use crate::funcdata::Funcdata;
@@ -84,12 +88,12 @@ use crate::funcdata::Funcdata;
 /// and mark every register trial the caller scored definitely-not-used that
 /// the callee writes before any read on every path from its entry.
 ///
-/// A direct call to a trampoline only ([`CalleeEntryDead::is_trampoline`]):
-/// with the option off, no probe for the callee, or a callee that returns,
-/// calls a named target or reads a register on entry, the trials keep the
-/// positional rule.
+/// A direct call to a selector stub ([`is_selector_stub`]) whose body is a
+/// trampoline ([`CalleeEntryDead::is_trampoline`]) only: with the option off,
+/// any other callee, no probe for it, or one that returns, calls or reads a
+/// register on entry, the trials keep the positional rule.
 pub fn mark(call: &mut FuncCallSpecs, data: &Funcdata) {
-    let dead = (data.get_arch().callee_filled_arg)
+    let dead = (data.get_arch().callee_filled_arg && is_selector_stub(call.get_name()))
         .then(|| data.kuna_callee_entry_dead_shared(call.get_entry_address()))
         .flatten()
         .filter(|d| d.is_trampoline());
@@ -104,6 +108,13 @@ pub fn mark(call: &mut FuncCallSpecs, data: &Funcdata) {
         }
     }
     active.set_callee_filled(dead);
+}
+
+/// Is `name` an Objective-C selector stub, `objc_msgSend$<sel>` (with the
+/// Mach-O symbol's leading underscore or without)?
+fn is_selector_stub(name: &str) -> bool {
+    let name = name.strip_prefix('_').unwrap_or(name);
+    name.strip_prefix("objc_msgSend$").is_some_and(|sel| !sel.is_empty())
 }
 
 #[cfg(test)]

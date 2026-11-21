@@ -652,8 +652,8 @@ pub struct Architecture {
     pub ret_split_limit: Option<u64>,
     /// Opt-in stack-address evidence for call input trials.
     pub stack_addr_arg_trial: bool,
-    /// (kuna) `option calleefilledarg`: an unfilled argument register the
-    /// callee loads itself ends no argument list.  See
+    /// (kuna) `option calleefilledarg`: an unfilled argument register an
+    /// Objective-C selector stub loads itself ends no argument list.  See
     /// [`crate::p4_calls::kuna_calleefilledarg`].
     pub callee_filled_arg: bool,
     /// (kuna) `option bejoin`: when a two-register value joins with its high
@@ -2779,7 +2779,7 @@ impl Architecture {
         self.ret_split_global = true; // (kuna) DIV-PENDING default-on: a shared RETURN block that stores to GLOBALS is not the bare epilogue `ActionReturnSplit::isSplittable` assumes, so it is no longer cloned into every predecessor. One-directional (it can only decline a split) and byte-identical (0/675) on the datatest corpus; restore the upstream predicate with `option retsplitglobal off`
         self.ret_split_limit = Some(crate::p8_structure::kuna_retsplitlimit::DEFAULT_LIMIT); // (kuna) GH-1034 default-on: a return block whose split would clone more than 2^20 ops keeps its gotos
         self.stack_addr_arg_trial = false;
-        self.callee_filled_arg = true; // (kuna) option calleefilledarg default-on: a definitely-unused argument register the callee writes before reading is no parameter slot, so the positional rule does not end the list there (0/675)
+        self.callee_filled_arg = true; // (kuna) option calleefilledarg default-on: at an objc_msgSend$<sel> selector stub, a definitely-unused argument register the stub writes before reading is no parameter slot, so the positional rule does not end the list there; inert outside Objective-C (0/675)
         self.be_join = crate::kuna_bejoin::BeJoinMode::Callers; // (kuna) option bejoin default `callers` (#904): a big-endian or AVR pair joins high word first, as the ABI returns it, only where the instructions prove one wide value (a sign or zero extension, a product's halves made apart, two adjacent loads, a proven callee's pair) or a caller reads the second register after the call; `evidence` drops the callers, `on` is the instruction-shape guess, which also reads an int over the high half of a 64-bit temporary as that long long
         self.octeon_effects = crate::kuna_octeoneffects::OcteonEffectsMode::Atomic; // (kuna) option octeoneffects default `atomic` (0/675)
         self.be_join_pass = crate::kuna_bejoinpass::BeJoinPassMode::Whole; // (kuna) option bejoinpass default `whole` (#904): a pair a call hands back untouched joins in the order of its proven side, and an unproven function handing back a proven callee's pair returns the callee's whole value
