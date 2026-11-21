@@ -11,6 +11,12 @@
 //!
 //! - **`cstringconst` off**: `0x610` and `v1 = 0x613;`.
 //! - **`cstringconst` on** (default): `" ("` and `v1 = ".SH";`.
+//!
+//! Guard fixture: `tests/fixtures/macho_cstringconst_guard_arm64`, from
+//! `macho_cstringconst_guard.c`. `setvbuf`'s declared `size_t` `0x58b` (the first
+//! byte of `"hello world"`) and `0x58d` (two bytes into it, through an untyped
+//! function pointer) stay integers either way; `lit`'s `"id"` and `"hello world"`
+//! are literals when on.
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -24,11 +30,15 @@ use kuna_console::ifaceterm::ConsoleCommands;
 use kuna_decomp::decompile_drive::build_and_follow_flow;
 
 const BIN: &str = "macho_cstringconst_arm64";
+const GUARD_BIN: &str = "macho_cstringconst_guard_arm64";
 
-/// `(function VMA, expected off, expected on)`.
-const CASES: [(u64, &str, &str); 2] = [
-    (0x508, "(a0,0x610,0);", "(a0,\" (\",0);"),
-    (0x55c, "v1 = 0x613;", "v1 = \".SH\";"),
+/// `(fixture, function VMA, expected off, expected on)`.
+const CASES: [(&str, u64, &str, &str); 5] = [
+    (BIN, 0x508, "(a0,0x610,0);", "(a0,\" (\",0);"),
+    (BIN, 0x55c, "v1 = 0x613;", "v1 = \".SH\";"),
+    (GUARD_BIN, 0x510, "setvbuf(a0,NULL,0,0x58b);", "setvbuf(a0,NULL,0,0x58b);"),
+    (GUARD_BIN, 0x520, "(a0,0x58d,0);", "(a0,0x58d,0);"),
+    (GUARD_BIN, 0x538, "(a0,0x588,0x58b);", "(a0,\"id\",\"hello world\");"),
 ];
 
 fn repo_root() -> PathBuf {
@@ -45,11 +55,11 @@ fn name_at(prog: &ConsoleProgram, vma: u64) -> String {
     }
 }
 
-/// Bootstrap, set `cstringconst`, commit, then decompile the function at `vma`.
-fn render(vma: u64, on: bool) -> String {
+/// Bootstrap `bin`, set `cstringconst`, commit, then decompile the function at `vma`.
+fn render(bin: &str, vma: u64, on: bool) -> String {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    let path = root.join("decompiler/crates/kuna-analysis/tests/fixtures").join(BIN);
+    let path = root.join("decompiler/crates/kuna-analysis/tests/fixtures").join(bin);
     assert!(path.exists(), "missing fixture {path:?}");
 
     let mut prog = bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots)
@@ -85,10 +95,10 @@ fn render(vma: u64, on: bool) -> String {
 
 #[test]
 fn literal_section_constants_print_as_literals_only_when_on() {
-    for &(vma, off_line, on_line) in &CASES {
-        let off = render(vma, false);
-        let on = render(vma, true);
-        assert!(off.contains(off_line), "0x{vma:x} cstringconst off must print `{off_line}`:\n{off}");
-        assert!(on.contains(on_line), "0x{vma:x} cstringconst on must print `{on_line}`:\n{on}");
+    for &(bin, vma, off_line, on_line) in &CASES {
+        let off = render(bin, vma, false);
+        let on = render(bin, vma, true);
+        assert!(off.contains(off_line), "{bin} 0x{vma:x} cstringconst off must print `{off_line}`:\n{off}");
+        assert!(on.contains(on_line), "{bin} 0x{vma:x} cstringconst on must print `{on_line}`:\n{on}");
     }
 }

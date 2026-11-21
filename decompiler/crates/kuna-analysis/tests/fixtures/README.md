@@ -1431,6 +1431,26 @@ llvm-strip -x macho_cstringconst_arm64
 **Pinned VMAs:** `_emit`@`0x508`, `_choose`@`0x55c`, `__cstring`@`0x610` (`" ("`
 at `0x610`, `".SH"` at `0x613`).
 
+`macho_cstringconst_guard_arm64` (arm64 dylib at base 0, ~50 KB, from
+`macho_cstringconst_guard.c`) passes integers that land inside `__cstring`
+without being literals: `sized` hands `setvbuf`, which declares a `size_t`,
+`0x58b` (the first byte of `"hello world"`), and `mid` passes `0x58d` (two
+bytes into it) through the untyped `sink`; `lit` passes the literals `"id"` and
+`"hello world"` to the same pointer. With `cstringconst` on, the two integers
+stay integers and `lit`'s arguments print as literals. Built with clang 21 and
+the rustup `ld64.lld` (LLD 20.1.8), SHA-256
+`26d6d99dcaf49a04d3c42ba8587a1827e7775bc9d53b593d65eeae49b7d7e8cb`:
+
+```bash
+clang -target arm64-apple-macos11 -O1 -fno-inline -c macho_cstringconst_guard.c -o m.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+         -dylib -install_name @rpath/csg.dylib -o macho_cstringconst_guard_arm64 m.o
+llvm-strip -x macho_cstringconst_guard_arm64
+```
+
+**Pinned VMAs:** `_sized`@`0x510`, `_mid`@`0x520`, `_lit`@`0x538`,
+`__cstring`@`0x588` (`"id"` at `0x588`, `"hello world"` at `0x58b`).
+
 ### `macho_gotdata` — data imports read through `__got` (`importdata`)
 
 `macho_gotdata` (arm64, ~50 KB) reads two imported **data** symbols through

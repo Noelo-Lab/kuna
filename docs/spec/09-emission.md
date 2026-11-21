@@ -2407,11 +2407,17 @@ taken: rustc gives a whole `.rodata` those flags with records inside it (the
 `panicloc` fixture's `core::panic::Location`). `PrintC::push_vn_explicit_ir` consults
 `literal_char` at two points: in the pointer arm, beside the `cfstrings` check,
 for a pointer-typed constant whose pointee is not a character type; and ahead of
-the integer path for a constant that is an argument of a call (`is_call_argument`,
-slot 1 and up), since a value compared, added or stored may be a plain integer
-that equals an address. Both reach `push_ptr_char_constant_ir`, which reads and
-escapes the bytes as for a `char *` constant and declines when they are not a
-string. Off keeps the integer or address.
+the integer path for a constant that is an argument of a call (`call_literal_char`:
+slot 1 and up, reached directly or through a few copies and phis), since a value
+compared, added or stored may be a plain integer that equals an address. The
+integer arm also needs the constant to land on the first byte of a literal (the
+section's first byte, or the byte after a NUL) and the callee's prototype not to
+lock that argument to a scalar type: in a dylib at base 0 a `size_t` like the
+`0x4000` of `setvbuf(fp, NULL, 0, 0x4000)` can fall inside `__cstring`, and
+would otherwise print as the tail of whatever literal holds that byte. Both
+reach `push_ptr_char_constant_ir`, which reads and escapes the bytes as for a
+`char *` constant and declines when they are not a string. Off keeps the
+integer or address.
 
 (kuna) **The ghidra-mode third style (Phase 3, DIV-77).** The ghidra-mode
 process sets a separate `name_style_ghidra` flag alongside (not instead of)
