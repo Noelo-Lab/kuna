@@ -33,7 +33,8 @@
 //! prototype is still written as version 1.
 
 #[expect(clippy::disallowed_types, reason = "lookup indices; output ordering is explicit")]
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{hash_map::Entry, BTreeMap, HashMap};
+use std::rc::Rc;
 
 use kuna_base::error::{KunaError, KunaResult};
 
@@ -86,8 +87,9 @@ pub struct FidRecord {
     /// The function's prototype as one C declaration (`int f(char *s)`).
     pub prototype: Option<String>,
     /// The type declarations the prototype needs, each one C declaration
-    /// without a line break, in definition-before-use order.
-    pub typedefs: Vec<String>,
+    /// without a line break, in definition-before-use order. Records that
+    /// name one run in the file share one decoded copy.
+    pub typedefs: Rc<[String]>,
 }
 
 /// Read-only metadata and full-hash lookup for a fingerprint database.
@@ -280,6 +282,7 @@ impl FidDb {
             }
             Ok(text)
         };
+        let mut decoded_runs: BTreeMap<(usize, usize), Rc<[String]>> = BTreeMap::new();
         let mut records: Vec<FidRecord> = Vec::with_capacity(raw.len());
         for rr in raw {
             let name = text(rr.name_off)?;
@@ -292,7 +295,15 @@ impl FidDb {
                 .checked_add(count)
                 .and_then(|end| types.get(first..end))
                 .ok_or_else(|| KunaError::bad_data("fid: type run past the type table"))?;
-            let typedefs = run.iter().map(|off| text(*off)).collect::<KunaResult<Vec<String>>>()?;
+            let typedefs = match decoded_runs.get(&(first, count)) {
+                Some(shared) => Rc::clone(shared),
+                None => {
+                    let decoded: Rc<[String]> =
+                        run.iter().map(|off| text(*off)).collect::<KunaResult<Vec<String>>>()?.into();
+                    decoded_runs.insert((first, count), Rc::clone(&decoded));
+                    decoded
+                }
+            };
             records.push(FidRecord {
                 full_hash: rr.full_hash,
                 specific_hash: rr.specific_hash,
@@ -451,7 +462,7 @@ mod tests {
             flags: FLAG_HAS_TERMINATOR,
             name: name.to_string(),
             prototype: None,
-            typedefs: Vec::new(),
+            typedefs: Default::default(),
         }
     }
 
@@ -459,7 +470,7 @@ mod tests {
     fn prototypes_and_typedefs_round_trip_in_version_2() {
         let mut described = rec(2, 20, 5, 0, "parse_header");
         described.prototype = Some("int parse_header(unsigned char *buf,hdr *out)".into());
-        described.typedefs = vec!["typedef struct hdr hdr;".into(), "struct hdr { unsigned int magic; };".into()];
+        described.typedefs = vec!["typedef struct hdr hdr;".to_string(), "struct hdr { unsigned int magic; };".into()].into();
         let mut shares = rec(3, 30, 5, 0, "other");
         shares.typedefs = described.typedefs.clone();
         let records = vec![rec(1, 10, 4, 0, "plain"), described, shares];
@@ -639,7 +650,7 @@ mod tests {
     }
 
     #[test]
-    fn records_sharing_one_long_run_stop_at_the_text_budget() {
+    fn records_naming_overlapping_runs_stop_at_the_text_budget() {
         let (n, run, len) = (300u32, 300u32, 1024usize);
         let mut bytes: Vec<u8> = Vec::new();
         bytes.extend_from_slice(FID_DB_MAGIC);
@@ -652,12 +663,12 @@ mod tests {
             bytes.extend_from_slice(&0u64.to_le_bytes());
             bytes.extend_from_slice(&5i16.to_le_bytes());
             bytes.extend_from_slice(&[0, 0]);
-            for word in [0, NO_STRING, 0, run] {
+            for word in [0, NO_STRING, i, run] {
                 bytes.extend_from_slice(&word.to_le_bytes());
             }
         }
-        bytes.extend_from_slice(&run.to_le_bytes());
-        for _ in 0..run {
+        bytes.extend_from_slice(&(n + run).to_le_bytes());
+        for _ in 0..n + run {
             bytes.extend_from_slice(&2u32.to_le_bytes());
         }
         bytes.extend_from_slice(b"f\0");
@@ -666,5 +677,20 @@ mod tests {
         assert!(bytes.len() < 16 << 10);
         let err = FidDb::load(&bytes).unwrap_err().explain().to_string();
         assert!(err.contains("expand past"), "{err}");
+    }
+
+    #[test]
+    fn records_naming_one_run_share_its_text() {
+        let decl = |d: &str| d.to_string();
+        let mut a = FidRecord { full_hash: 1, specific_hash: 0, code_unit_size: 5, specific_addl: 0, flags: 0,
+            name: "f".into(), prototype: Some("s *f(void)".into()),
+            typedefs: vec![decl("typedef struct s s;"), decl("struct s { int4 a; };")].into() };
+        let mut b = a.clone();
+        b.full_hash = 2;
+        b.name = "g".into();
+        a.prototype = Some("s *g(void)".into());
+        let db = FidDb::load(&FidDb::from_records("x86:LE:64:default", "gcc", vec![a, b]).serialize()).unwrap();
+        let records = db.records();
+        assert!(Rc::ptr_eq(&records[0].typedefs, &records[1].typedefs));
     }
 }

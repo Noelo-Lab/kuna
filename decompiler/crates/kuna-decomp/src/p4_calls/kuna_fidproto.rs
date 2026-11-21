@@ -81,7 +81,7 @@ pub fn declaration(pieces: &PrototypePieces) -> Option<Declaration> {
     for ct in types.iter().filter(|ct| !(record(ct) && (ct.is_incomplete() || !laid_out_again(ct)))) {
         let text = one_line(&crate::kuna_structdefs::definition_text(ct, rt.clone()));
         if !text.is_empty() {
-            typedefs.push(text.replace("undefined1 _pad", "uint1 _pad"));
+            typedefs.push(sized_enum(ct, text.replace("undefined1 _pad", "uint1 _pad")));
         }
     }
     Some(Declaration { prototype: format!("{ret}{sep}{name}({params})"), typedefs })
@@ -112,6 +112,22 @@ fn laid_out_again(ct: &Datatype) -> bool {
         }
         _ => true,
     }
+}
+
+/// An enum's definition with its width as a C23 underlying type: the parser
+/// otherwise makes it `int`-wide, which moves every member after a packed or
+/// `-fshort-enums` one.
+fn sized_enum(ct: &Datatype, text: String) -> String {
+    if !ct.is_enum_type() || ct.get_typedef().is_some() {
+        return text;
+    }
+    let name = crate::printc::sanitize_type_name(ct.get_name());
+    let sign = if ct.get_metatype() == type_metatype::TYPE_INT { "int" } else { "uint" };
+    text.replacen(
+        &format!("typedef enum {name} {{"),
+        &format!("typedef enum {name} : {sign}{} {{", ct.get_size()),
+        1,
+    )
 }
 
 fn identifier(name: &str) -> Option<&str> {
@@ -249,6 +265,30 @@ mod tests {
         assert_eq!(
             declared.typedefs,
             ["typedef struct padded padded;", "struct padded { int4 m0; uint1 _pad4[4]; int8 m1; };"]
+        );
+    }
+
+    #[test]
+    fn an_enum_is_stored_at_its_width() {
+        use crate::dtype::TypeFactory;
+        let types = crate::dtype::TypeFactoryImpl::new();
+        types.set_default_alignment_map();
+        types.set_max_basetype_size(8);
+        types.setup_sizes(Some(8), 8, 4);
+        let _ = types.cache_core_types();
+        let shell = types.get_type_enum_sized("kind", 1, type_metatype::TYPE_ENUM_UINT).unwrap();
+        let names = std::collections::BTreeMap::from([(0, "K_A".to_string()), (1, "K_B".to_string())]);
+        let kind = types.set_enum_values(&shell, names).unwrap();
+        let pieces = PrototypePieces {
+            name: "f".into(),
+            intypes: vec![kind],
+            innames: vec!["k".into()],
+            first_var_arg_slot: -1,
+            ..Default::default()
+        };
+        assert_eq!(
+            declaration(&pieces).unwrap().typedefs,
+            ["typedef enum kind : uint1 { K_A = 0x0, K_B = 0x1 } kind;"]
         );
     }
 }

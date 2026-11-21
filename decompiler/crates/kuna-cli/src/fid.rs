@@ -152,7 +152,6 @@ fn cmd_build(argv: &[String]) -> i32 {
         }
     }
 
-    dedup_records(&mut all);
     for name in args.declared.fill(&mut all) {
         eprintln!("kuna fid build: warning: --assert prototype {name}: no record has that name");
     }
@@ -160,6 +159,7 @@ fn cmd_build(argv: &[String]) -> i32 {
     if !disputed.is_empty() {
         eprintln!("kuna fid build: defined differently by two objects, left opaque: {}", disputed.join(", "));
     }
+    dedup_records(&mut all);
     let described = all.iter().filter(|r| r.prototype.is_some()).count();
 
     let db = FidDb::from_records(lang, cspec, all);
@@ -318,7 +318,7 @@ mod tests {
             flags: 0,
             name: name.to_string(),
             prototype: None,
-            typedefs: Vec::new(),
+            typedefs: Default::default(),
         }
     }
 

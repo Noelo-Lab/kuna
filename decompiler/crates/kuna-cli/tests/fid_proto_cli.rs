@@ -74,7 +74,7 @@ fn a_version_1_database_names_the_function_and_nothing_more() {
         .cloned()
         .map(|mut record| {
             assert!(record.prototype.take().is_some());
-            record.typedefs.clear();
+            record.typedefs = Default::default();
             record
         })
         .collect();
@@ -116,4 +116,67 @@ fn a_stated_prototype_the_body_reads_past_is_dropped_and_reported() {
     let code = decompile(&unknown, &[]);
     assert!(code.contains(RECOVERED), "{code}");
     assert!(code.contains("the .fid prototype `int parse_header(missing_t *buf,unsigned int len,void *out)` was dropped"), "{code}");
+}
+
+fn layouts() -> std::path::PathBuf {
+    common::repo_root().join("tests/fixtures/fid/layouts")
+}
+
+fn build_all(objects: &[&str], out: &Path) -> String {
+    let result = kuna()
+        .args(["fid", "build"])
+        .args(objects.iter().map(|o| layouts().join(o)))
+        .arg("-o")
+        .arg(out)
+        .args(["--lang", "x86:LE:64:default", "--cspec", "gcc"])
+        .output()
+        .expect("run kuna fid build");
+    let stderr = String::from_utf8_lossy(&result.stderr).into_owned();
+    assert!(result.status.success(), "{stderr}");
+    stderr
+}
+
+/// `decompile-all` of the stripped layouts `prog` against `db`: (stdout, stderr).
+fn decompile_layouts(db: &Path) -> (String, String) {
+    let result = kuna()
+        .arg("decompile-all")
+        .arg(layouts().join("prog"))
+        .args(["--option", "fid", "on"])
+        .env("kuna_fid_db", db)
+        .output()
+        .expect("run kuna decompile-all");
+    let stderr = String::from_utf8_lossy(&result.stderr).into_owned();
+    assert!(result.status.success(), "{stderr}");
+    (String::from_utf8(result.stdout).unwrap(), stderr)
+}
+
+#[test]
+fn a_packed_enum_member_leaves_the_members_after_it_in_place() {
+    let scratch = tempfile::tempdir().unwrap();
+    let db = scratch.path().join("layouts.fid");
+    build_all(&["lib.o"], &db);
+    let (code, _) = decompile_layouts(&db);
+    assert!(code.contains("return h->len * x + h->id ^ (unsigned long)h->flag;"), "{code}");
+}
+
+#[test]
+fn a_structure_passed_by_value_without_its_definition_drops_the_prototype() {
+    let scratch = tempfile::tempdir().unwrap();
+    let db = scratch.path().join("layouts.fid");
+    build_all(&["lib.o"], &db);
+    let (code, stderr) = decompile_layouts(&db);
+    assert!(!stderr.contains("panicked"), "{stderr}");
+    assert!(!code.contains("rethidden"), "{code}");
+    assert!(code.contains("take_bits(make_bits(a0),a0)"), "{code}");
+    assert_eq!(code.matches("was dropped: bits is passed by value but has no definition").count(), 2, "{code}");
+}
+
+#[test]
+fn a_type_two_objects_define_differently_is_disputed_whichever_comes_first() {
+    let scratch = tempfile::tempdir().unwrap();
+    let (ab, ba) = (scratch.path().join("ab.fid"), scratch.path().join("ba.fid"));
+    for said in [build_all(&["a.o", "b.o"], &ab), build_all(&["b.o", "a.o"], &ba)] {
+        assert!(said.contains("defined differently by two objects, left opaque: st"), "{said}");
+    }
+    assert_eq!(std::fs::read(&ab).unwrap(), std::fs::read(&ba).unwrap());
 }

@@ -45,7 +45,7 @@ pub fn describe(arch: &Architecture, image: &ObjectLoadImage, records: &mut [Fid
             .and_then(kuna_decomp::kuna_fidproto::declaration);
         if let Some(declaration) = declaration {
             record.prototype = Some(declaration.prototype);
-            record.typedefs = declaration.typedefs;
+            record.typedefs = declaration.typedefs.into();
             described += 1;
         }
     }
@@ -56,7 +56,7 @@ pub fn describe(arch: &Architecture, image: &ObjectLoadImage, records: &mut [Fid
 /// forward declaration alone. Returns the names left opaque.
 pub fn drop_disputed(records: &mut [FidRecord]) -> Vec<String> {
     let mut definitions: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
-    for text in records.iter().flat_map(|r| &r.typedefs) {
+    for text in records.iter().flat_map(|r| r.typedefs.iter()) {
         if let Some(name) = defined_record(text) {
             definitions.entry(name).or_default().insert(text);
         }
@@ -64,13 +64,21 @@ pub fn drop_disputed(records: &mut [FidRecord]) -> Vec<String> {
     let disputed: BTreeSet<String> =
         definitions.into_iter().filter(|(_, texts)| texts.len() > 1).map(|(name, _)| name.to_string()).collect();
     for record in records.iter_mut() {
-        record.typedefs.retain(|text| defined_record(text).is_none_or(|name| !disputed.contains(name)));
+        if record.typedefs.iter().any(|text| defined_record(text).is_some_and(|name| disputed.contains(name))) {
+            record.typedefs =
+                record.typedefs.iter().filter(|text| defined_record(text).is_none_or(|name| !disputed.contains(name))).cloned().collect();
+        }
     }
     disputed.into_iter().collect()
 }
 
-/// The tag a stored `struct N { … };` or `union N { … };` defines.
+/// The tag a stored `struct N { … };`, `union N { … };` or
+/// `typedef enum N [: T] { … } N;` defines.
 fn defined_record(text: &str) -> Option<&str> {
+    if let Some(rest) = text.strip_prefix("typedef enum ") {
+        let (name, body) = rest.split_once(' ')?;
+        return (body.starts_with('{') || body.starts_with(": ")).then_some(name);
+    }
     let rest = text.strip_prefix("struct ").or_else(|| text.strip_prefix("union "))?;
     let (name, body) = rest.split_once(' ')?;
     body.starts_with('{').then_some(name)
@@ -95,7 +103,7 @@ mod tests {
 
     fn record(specific: u64, prototype: Option<&str>) -> FidRecord {
         FidRecord { full_hash: 42, specific_hash: specific, code_unit_size: 5, specific_addl: 0,
-            flags: 0, name: "f".into(), prototype: prototype.map(str::to_owned), typedefs: Vec::new() }
+            flags: 0, name: "f".into(), prototype: prototype.map(str::to_owned), typedefs: Default::default() }
     }
 
     #[test]
@@ -114,10 +122,19 @@ mod tests {
     fn a_type_two_objects_define_differently_is_left_opaque() {
         let forward = |n: &str| format!("typedef struct {n} {n};");
         let mut records = [record(1, Some("int f(s *p,t *q)")), record(2, Some("int g(s *p,t *q)"))];
-        records[0].typedefs = vec![forward("s"), forward("t"), "struct s { int4 a; };".into(), "struct t { int4 a; };".into()];
-        records[1].typedefs = vec![forward("s"), forward("t"), "struct s { int8 b; };".into(), "struct t { int4 a; };".into()];
+        records[0].typedefs = vec![forward("s"), forward("t"), "struct s { int4 a; };".into(), "struct t { int4 a; };".into()].into();
+        records[1].typedefs = vec![forward("s"), forward("t"), "struct s { int8 b; };".into(), "struct t { int4 a; };".into()].into();
         assert_eq!(drop_disputed(&mut records), ["s"]);
-        assert_eq!(records[0].typedefs, [forward("s"), forward("t"), "struct t { int4 a; };".into()]);
-        assert_eq!(records[1].typedefs, [forward("s"), forward("t"), "struct t { int4 a; };".into()]);
+        assert_eq!(*records[0].typedefs, [forward("s"), forward("t"), "struct t { int4 a; };".into()]);
+        assert_eq!(*records[1].typedefs, [forward("s"), forward("t"), "struct t { int4 a; };".into()]);
+    }
+
+    #[test]
+    fn an_enumeration_two_objects_define_differently_is_left_out() {
+        let mut records = [record(1, Some("int f(mode m)")), record(2, Some("int g(mode m)"))];
+        records[0].typedefs = vec!["typedef enum mode : uint4 { A = 0x0 } mode;".to_string()].into();
+        records[1].typedefs = vec!["typedef enum mode : uint4 { B = 0x2 } mode;".to_string()].into();
+        assert_eq!(drop_disputed(&mut records), ["mode"]);
+        assert!(records.iter().all(|r| r.typedefs.is_empty()));
     }
 }

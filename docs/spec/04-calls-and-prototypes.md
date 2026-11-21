@@ -1427,7 +1427,12 @@ declaration alone (an opaque type at the match) unless the parser, laying the
 definition out afresh, puts every member where the object has it
 (`laid_out_again`): no bitfields, which the definition text moves to the end,
 every member on its natural alignment after the one before, and a size its
-alignment divides (a union: the size of its largest member).
+alignment divides (a union: the size of its largest member). An enumeration is
+written with its width as a C23 underlying type (`typedef enum N : uint1 { … }
+N;`, `sized_enum`), since the parser otherwise makes it `int`-wide and a packed
+or `-fshort-enums` member would move every member after it. A record left
+opaque that the prototype passes or returns by value costs the whole prototype
+at the match (01 §1.4).
 
 ### Setup (once, before fullloop)
 

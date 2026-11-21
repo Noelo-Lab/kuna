@@ -16,7 +16,7 @@ mod tests {
     fn record(hash: u64, count: i16) -> FidRecord {
         FidRecord { full_hash: 42, specific_hash: hash, code_unit_size: count,
             specific_addl: 0, flags: 0, name: "candidate".into(),
-            prototype: None, typedefs: Vec::new() }
+            prototype: None, typedefs: Default::default() }
     }
 
     #[test]

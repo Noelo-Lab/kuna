@@ -386,8 +386,9 @@ pub struct FidProtoFact {
     pub name: String,
     /// The prototype as one C declaration.
     pub prototype: String,
-    /// The type declarations the prototype needs, definition before use.
-    pub typedefs: Vec<String>,
+    /// The type declarations the prototype needs, definition before use,
+    /// shared by every match of one record.
+    pub typedefs: std::rc::Rc<[String]>,
 }
 
 /// A function the FID matcher re-identified by full-hash fingerprint: at `addr`,

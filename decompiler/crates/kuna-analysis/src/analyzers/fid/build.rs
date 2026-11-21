@@ -213,7 +213,7 @@ pub fn build_records(
             flags,
             name: name.clone(),
             prototype: None,
-            typedefs: Vec::new(),
+            typedefs: Default::default(),
         });
     }
 

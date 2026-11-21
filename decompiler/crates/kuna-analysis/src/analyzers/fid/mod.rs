@@ -128,7 +128,7 @@ impl AnalysisPass for FidPass {
                     addr: entry,
                     name: name.clone(),
                     prototype: record.prototype.clone().unwrap_or_default(),
-                    typedefs: record.typedefs.clone(),
+                    typedefs: Rc::clone(&record.typedefs),
                 });
             }
             let fact = FidMatch { addr: entry, name, by_signature: true };
@@ -215,7 +215,7 @@ mod tests {
             flags: 0,
             name: name.to_string(),
             prototype: None,
-            typedefs: Vec::new(),
+            typedefs: Default::default(),
         }
     }
 

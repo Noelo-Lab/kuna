@@ -43,7 +43,7 @@ impl Declared {
         for record in records.iter_mut() {
             if let Some(prototype) = self.prototypes.get(&record.name) {
                 record.prototype = Some(prototype.clone());
-                record.typedefs = self.typedefs.clone();
+                record.typedefs = self.typedefs.as_slice().into();
             }
         }
         self.prototypes
@@ -71,7 +71,7 @@ mod tests {
             flags: 0,
             name: name.into(),
             prototype: prototype.map(str::to_owned),
-            typedefs: Vec::new(),
+            typedefs: Default::default(),
         }
     }
 
@@ -85,7 +85,7 @@ mod tests {
         let mut records = [record("parse", Some("int parse(void *a)")), record("other", None)];
         assert_eq!(declared.fill(&mut records), ["absent"]);
         assert_eq!(records[0].prototype.as_deref(), Some("int parse(hdr *out)"));
-        assert_eq!(records[0].typedefs, ["struct hdr { unsigned int magic; };"]);
+        assert_eq!(*records[0].typedefs, ["struct hdr { unsigned int magic; };"]);
         assert_eq!(records[1], record("other", None));
     }
 }
