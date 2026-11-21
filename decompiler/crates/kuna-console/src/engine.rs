@@ -5148,6 +5148,10 @@ pub(crate) fn bootstrap_object(
         &kuna_sleigh::loadimage::LoadImage::get_segments(&loader),
     );
     let globalref_ranges: Vec<(u64, u64)> = loader.data_object_ranges().to_vec();
+    let cstring_ranges: Vec<(u64, u64)> =
+        kuna_decomp::kuna_cstringconst::literal_sections(
+            loader.section_metadata().iter().map(|s| (s.name.as_str(), s.kind.as_str(), s.vma, s.size)),
+        );
 
     // (kuna `bejoin callers`) The exception-table sections, at the addresses
     // the loader maps them to (an object's synthetic layout, relocated), so
@@ -5374,6 +5378,8 @@ pub(crate) fn bootstrap_object(
 
     // (kuna `globalref`) ... and the sections a program's data objects live in.
     prog.arch_mut().globalref_ranges = std::rc::Rc::new(globalref_ranges);
+    // (kuna `cstringconst`) ... and the sections that hold only string literals.
+    prog.arch_mut().cstring_ranges = std::rc::Rc::new(cstring_ranges);
 
     // NB: the analysis-pass facts are committed later, gated, in
     // `commit_analysis_passes` (called from `IfcReadSymbols`), after the per-pass

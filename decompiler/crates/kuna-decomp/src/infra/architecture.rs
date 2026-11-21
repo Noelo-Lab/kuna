@@ -340,6 +340,13 @@ pub struct Architecture {
     /// on every path without a section table, so it is inert for the XML
     /// datatest oracle.
     pub globalref_ranges: Rc<Vec<(u64, u64)>>,
+    /// (kuna `cstringconst`) The `[start, end)` ranges of the loaded sections
+    /// that hold only C string literals (a Mach-O `__cstring` section of type
+    /// `S_CSTRING_LITERALS`). Empty without a section table.
+    pub cstring_ranges: Rc<Vec<(u64, u64)>>,
+    /// (kuna `cstringconst`) Print a pointer-wide constant inside one of
+    /// [`Self::cstring_ranges`] as the string literal there, whatever its type.
+    pub cstring_const: bool,
     /// Infer pointers from likely-address constants (C++ `infer_pointers`).
     pub infer_pointers: bool,
     /// How many bits of alignment a function ptr has (C++ `funcptr_align`).
@@ -2353,6 +2360,8 @@ impl Architecture {
             eh_sections: None,
             func_sizes: Rc::new(Vec::new()),
             globalref_ranges: Rc::new(Vec::new()),
+            cstring_ranges: Rc::new(Vec::new()),
+            cstring_const: false, // (kuna) option cstringconst; reset_defaults sets the shipped default
             infer_pointers: false,
             funcptr_align: 0,
             flowoptions: 0,
@@ -2892,6 +2901,7 @@ impl Architecture {
         self.cast_arith = true; // (kuna) option castarith default-on: a pointer plus whole elements prints as ((T *)p)[k] instead of *(T *)((long)p + K); 0/675 datatest assertions moved, 16 stage assertions moved to the new form, 444-slice typesweep identical, speed within budget; docs/features/castarith/record.json
         self.cast_index = true; // (kuna) option castindex default-on: a pointer plus a variable index of whole elements prints as ((T *)p)[i], a char * difference as p - q; 0/675 datatest assertions moved, stages PARITY OK, 444-slice typesweep identical, speed within budget; docs/features/castindex/default-on-evaluation.md
         self.elem_ptr = true; // (kuna) option elemptr default-on: see docs/features/elemptr/default-on-evaluation.md
+        self.cstring_const = true; // (kuna) option cstringconst default-on: inert without a string-literal section, so 0/675 datatest assertions move
         self.char_ptr = false; // (kuna) option charptr; shipped off -- the flip is held on `make test-cli`, see docs/features/charptr/default-on-evaluation.md
         self.ptr_from_use = crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void; // (kuna) option ptrfromuse default void: 0/675 datatests, stages PARITY OK, type_match 0 worse over 10,748 decbench functions; evidence in docs/features/ptrfromuse/default-on-evaluation.md
         self.callbacktype = crate::kuna_callbacktype::CallbackTypeMode::On; // (kuna) option callbacktype default `on`: a function whose address reaches exactly one kind of declared callback slot takes that slot's prototype; evidence in docs/features/callbacktype/default-on-evaluation.md
