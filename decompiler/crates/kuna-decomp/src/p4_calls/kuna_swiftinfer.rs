@@ -24,7 +24,8 @@
 //!   halves are read apart is the pair Swift returns small aggregates in
 //!   (a `String`, an `Array` and its count, a closure and its context), typed
 //!   as the structure `swift.pair { _0, _1 }` instead of a 128-bit integer
-//!   ([`pair_output_type`]).
+//!   ([`pair_output_type`]), and so is a Swift function's own two-word result
+//!   built from its words ([`pair_return_type`]).
 //!
 //! Inert unless the image binds the Swift convention (the metadata pass found
 //! Swift): part of `option swiftcall`.
@@ -361,7 +362,12 @@ fn read_as_pair(data: &Funcdata, vn: VarnodeId) -> bool {
 /// than a placeholder `sub_` name)?
 fn may_be_swift(data: &Funcdata, op: OpId) -> bool {
     let Some(i) = data.get_call_specs_index(op) else { return true };
-    let name = data.get_call_specs(i).get_name();
+    may_be_swift_name(data.get_call_specs(i).get_name())
+}
+
+/// Can a function of this name be a Swift function: not named as a C or
+/// Objective-C function?
+fn may_be_swift_name(name: &str) -> bool {
     if name.starts_with("objc_msgSend") || name.starts_with("-[") || name.starts_with("+[") {
         return false;
     }
@@ -372,15 +378,42 @@ fn may_be_swift(data: &Funcdata, op: OpId) -> bool {
 /// `swift.pair` for the result of the call `op` when [`read_as_pair`]
 /// accepts it, in place of the 128-bit integer the join would print as.
 pub fn pair_output_type(data: &Funcdata, op: OpId) -> Option<Rc<Datatype>> {
-    let arch = data.get_arch();
-    if arch.swift_abi.is_none() {
+    if data.get_arch().swift_abi.is_none() {
         return None;
     }
     let out = data.obank().get(op)?.get_out()?;
     if !read_as_pair(data, out) || !may_be_swift(data, op) {
         return None;
     }
-    let types = arch.types()?;
+    pair_type(data)
+}
+
+/// `swift.pair` for the value input `slot` of the `RETURN` `op` of a function
+/// whose output is not declared and that may be Swift (under a Swift model, or
+/// not named as C or Objective-C, as [`may_be_swift`] asks of a callee), when
+/// the value is a two-word join of whole registers built from its two words
+/// (`PIECE(hi, lo)`): the pair the function returns its small aggregate in.
+pub fn pair_return_type(data: &Funcdata, op: OpId, slot: int4) -> Option<Rc<Datatype>> {
+    let proto = data.get_func_proto();
+    if data.get_arch().swift_abi.is_none() || proto.is_output_locked() {
+        return None;
+    }
+    if !proto.get_model_name().starts_with("__swift") && !may_be_swift_name(data.get_name()) {
+        return None;
+    }
+    let vn = data.obank().get(op)?.get_in(slot)?;
+    let v = data.vbank().get(vn)?;
+    if v.get_size() != 16 || v.get_addr().get_space().map(|s| s.get_type()) != Some(spacetype::IPTR_JOIN) {
+        return None;
+    }
+    let def = data.obank().get(v.get_def()?)?;
+    let word = |i: int4| def.get_in(i).and_then(|x| data.vbank().get(x)).is_some_and(|x| x.get_size() == 8);
+    (def.code() == OpCode::CPUI_PIECE && word(0) && word(1)).then(|| pair_type(data))?
+}
+
+/// The structure `swift.pair { _0, _1 }` of two untyped words.
+fn pair_type(data: &Funcdata) -> Option<Rc<Datatype>> {
+    let types = data.get_arch().types()?;
     if let Ok(Some(t)) = types.find_by_name(PAIR_NAME) {
         return (t.get_metatype() == type_metatype::TYPE_STRUCT && t.get_size() == 16).then_some(t);
     }

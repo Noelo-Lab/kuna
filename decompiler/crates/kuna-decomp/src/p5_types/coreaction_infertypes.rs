@@ -226,6 +226,13 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
         }
     }
 
+    // (kuna `swiftcall`) A Swift function's two-word result is its pair.
+    if opcode == OpCode::CPUI_RETURN && slot >= 1 {
+        if let Some(ct) = crate::kuna_swiftinfer::pair_return_type(data, op, slot) {
+            return ct;
+        }
+    }
+
     // C++ `TypeOpReturn::getInputLocal` (typeop.cc:903-921): a RETURN's value input
     // (slot >= 1) suggests the *function's* recovered output data-type, so a
     // struct-by-value return (e.g. `foo` in rax / edx:eax) flows onto the returned
