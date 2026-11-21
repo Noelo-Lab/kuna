@@ -58,7 +58,7 @@ jobs:
 
       - name: Install Rust (stable) + wasm32-wasip1 target
         run: |
-          rustup toolchain install stable --profile minimal --component clippy
+          rustup toolchain install stable --profile minimal --component clippy --component rustfmt
           rustup default stable
           rustup target add wasm32-wasip1
 
@@ -73,6 +73,10 @@ jobs:
 
       - name: Lint the CLI and the base and numeric libraries
         run: make lint
+
+      - name: rustfmt the Rust files this PR adds
+        if: github.event_name == 'pull_request'
+        run: make fmt-new FMT_BASE=origin/${{ github.base_ref }}
 
       # `.sla` files are gitignored build artifacts and EVERY datatest decodes
       # through them. `make test` would bootstrap them on demand, but asserting

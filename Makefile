@@ -17,7 +17,7 @@ PYTHON  ?= python3
 # (inside target/, which is gitignored, so a failed run leaves no repo litter).
 GHIDRA_SIM_LOG := $(ENGINE)/target/ghidra-sim.log
 
-.PHONY: all binaries specs test test-stages test-cli test-tools test-ghidra rust rust-test lint clean check-spec version observatory coverage
+.PHONY: all binaries specs test test-stages test-cli test-tools test-ghidra rust rust-test lint fmt fmt-new clean check-spec version observatory coverage
 
 all: binaries specs
 
@@ -120,6 +120,19 @@ rust-test:
 # is fresh to a later run, which then passes without linting it.
 lint:
 	cd $(ENGINE) && cargo clippy --release -p kuna-cli -p kuna-base -p kuna-num --no-deps -- -D warnings
+
+# Most of the existing tree predates rustfmt, so formatting is enforced only on
+# Rust files a branch ADDS (renames are not additions; test fixtures, whose
+# line numbers tests may read, are skipped). `make fmt` formats the
+# whole workspace, for a one-off sweep.
+FMT_BASE ?= origin/main
+fmt:
+	cd $(ENGINE) && cargo fmt --all
+
+fmt-new:
+	@files="$$(git -C $(ROOT) diff --name-only --diff-filter=A $(FMT_BASE)...HEAD -- '*.rs' ':(glob,exclude)**/fixtures/**')"; \
+	if [ -z "$$files" ]; then echo "fmt-new: no Rust files added since $(FMT_BASE)"; exit 0; fi; \
+	cd $(ROOT) && rustfmt --check $$files
 
 clean:
 	cd $(ENGINE) && cargo clean
