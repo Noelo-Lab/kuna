@@ -1107,6 +1107,10 @@ pub struct ArchContext {
     pub loop_cond_hoist: bool,
     /// Preserve secondary natural-loop latches as continues (`loopcontinue`).
     pub loop_continue: bool,
+    /// (kuna `loopcontinue`) The output language's do-while runs its test on
+    /// `continue;`: C `do..while` and Go's `for` post statement do, Rust's
+    /// `loop { ..; if !(c) { break; } }` restarts the body instead.
+    pub do_while_continue: bool,
     /// (kuna) region structurer cyclic loop-successor refinement
     /// (`region_loop_refine`, opt-in default-off).  When set (and
     /// `region_structure` is on), multi-exit / multi-latch / mid-entry loops are
@@ -1695,6 +1699,7 @@ impl ArchContext {
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_continue: true,
+            do_while_continue: true,
             loop_cond_hoist: false,      // loopcondhoist (opt-in default-off)
             region_loop_refine: false,   // regionlooprefine (opt-in default-off)
             region_edge_order: false,    // regionedgeorder (opt-in default-off)

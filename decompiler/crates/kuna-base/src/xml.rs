@@ -2252,7 +2252,8 @@ mod tests {
         // and kuna-itaniumrtti-macho / Itanium RTTI on a Mach-O through chained-fixup binds
         // and kuna-itaniumrtti-macho-classic / and through classic LC_DYLD_INFO binds
         // and kuna-typeorder / distinct types order by id and shape before heap address
-        assert_eq!(count, 834, "corpus file count drifted");
+        // and kuna-loopcontinue-while / a jump to a do-while's own test prints as continue
+        assert_eq!(count, 835, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
