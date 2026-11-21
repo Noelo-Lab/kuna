@@ -110,11 +110,14 @@ impl ArchOptionContext for Ctx {
     fn set_convention_printing(&mut self, _v: bool) {}
     fn set_no_cast_printing(&mut self, _v: bool) {}
     fn set_hide_implied_exts(&mut self, _v: bool) {}
-    fn set_max_line_size(&mut self, v: int4) {
+    fn set_max_line_size(&mut self, v: int4) -> Result<(), KunaError> {
         self.log.push(format!("max_line={v}"));
+        Ok(())
     }
     fn set_indent_increment(&mut self, _v: int4) {}
-    fn set_line_comment_indent(&mut self, _v: int4) {}
+    fn set_line_comment_indent(&mut self, _v: int4) -> Result<(), KunaError> {
+        Ok(())
+    }
     fn set_comment_style(&mut self, _s: &str) {}
     fn header_comment_flags(&self) -> uint4 {
         self.header_comment
