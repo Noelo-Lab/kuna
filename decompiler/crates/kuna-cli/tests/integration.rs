@@ -214,6 +214,8 @@ mod dos_mz_cli;
 #[path = "dos_exit_cli.rs"]
 mod dos_exit_cli;
 
+#[path = "cil_cli.rs"]
+mod cil_cli;
 #[path = "dos_extent_cli.rs"]
 mod dos_extent_cli;
 

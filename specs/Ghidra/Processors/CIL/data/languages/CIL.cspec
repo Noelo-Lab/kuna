@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<compiler_spec>
+  <data_organization>
+    <pointer_size value="8"/>
+    <wchar_size value="2"/>
+    <short_size value="2"/>
+    <integer_size value="4"/>
+    <long_size value="8"/>
+    <long_long_size value="8"/>
+    <float_size value="4"/>
+    <double_size value="8"/>
+  </data_organization>
+  <global>
+    <range space="ram"/>
+  </global>
+  <stackpointer register="SP" space="ram" growth="negative"/>
+  <default_proto>
+    <prototype name="__cilcall" extrapop="0" stackshift="0">
+      <input>
+        <pentry minsize="1" maxsize="8">
+          <register name="a0"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8">
+          <register name="a1"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8">
+          <register name="a2"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8">
+          <register name="a3"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8">
+          <register name="a4"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8">
+          <register name="a5"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8">
+          <register name="a6"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8">
+          <register name="a7"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8">
+          <register name="a8"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8">
+          <register name="a9"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8">
+          <register name="a10"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8">
+          <register name="a11"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8">
+          <register name="a12"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8">
+          <register name="a13"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8">
+          <register name="a14"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8">
+          <register name="a15"/>
+        </pentry>
+        <pentry minsize="1" maxsize="500" align="8">
+          <addr offset="8" space="stack"/>
+        </pentry>
+      </input>
+      <output>
+        <pentry minsize="1" maxsize="8">
+          <register name="rv"/>
+        </pentry>
+      </output>
+      <unaffected>
+        <register name="SP"/>
+        <register name="a0"/>
+        <register name="a1"/>
+        <register name="a2"/>
+        <register name="a3"/>
+        <register name="a4"/>
+        <register name="a5"/>
+        <register name="a6"/>
+        <register name="a7"/>
+        <register name="a8"/>
+        <register name="a9"/>
+        <register name="a10"/>
+        <register name="a11"/>
+        <register name="a12"/>
+        <register name="a13"/>
+        <register name="a14"/>
+        <register name="a15"/>
+        <register name="sv0"/>
+        <register name="sv1"/>
+        <register name="sv2"/>
+        <register name="sv3"/>
+        <register name="sv4"/>
+        <register name="sv5"/>
+        <register name="sv6"/>
+        <register name="sv7"/>
+        <register name="sv8"/>
+        <register name="sv9"/>
+        <register name="sv10"/>
+        <register name="sv11"/>
+        <register name="sv12"/>
+        <register name="sv13"/>
+        <register name="sv14"/>
+        <register name="sv15"/>
+        <register name="s0"/>
+        <register name="s1"/>
+        <register name="s2"/>
+        <register name="s3"/>
+        <register name="s4"/>
+        <register name="s5"/>
+        <register name="s6"/>
+        <register name="s7"/>
+        <register name="s8"/>
+        <register name="s9"/>
+        <register name="s10"/>
+        <register name="s11"/>
+        <register name="s12"/>
+        <register name="s13"/>
+        <register name="s14"/>
+        <register name="s15"/>
+        <register name="s16"/>
+        <register name="s17"/>
+        <register name="s18"/>
+        <register name="s19"/>
+        <register name="s20"/>
+        <register name="s21"/>
+        <register name="s22"/>
+        <register name="s23"/>
+        <register name="s24"/>
+        <register name="s25"/>
+        <register name="s26"/>
+        <register name="s27"/>
+        <register name="s28"/>
+        <register name="s29"/>
+        <register name="s30"/>
+        <register name="s31"/>
+        <register name="s32"/>
+        <register name="s33"/>
+        <register name="s34"/>
+        <register name="s35"/>
+        <register name="s36"/>
+        <register name="s37"/>
+        <register name="s38"/>
+        <register name="s39"/>
+        <register name="s40"/>
+        <register name="s41"/>
+        <register name="s42"/>
+        <register name="s43"/>
+        <register name="s44"/>
+        <register name="s45"/>
+        <register name="s46"/>
+        <register name="s47"/>
+        <register name="s48"/>
+        <register name="s49"/>
+        <register name="s50"/>
+        <register name="s51"/>
+        <register name="s52"/>
+        <register name="s53"/>
+        <register name="s54"/>
+        <register name="s55"/>
+        <register name="s56"/>
+        <register name="s57"/>
+        <register name="s58"/>
+        <register name="s59"/>
+        <register name="s60"/>
+        <register name="s61"/>
+        <register name="s62"/>
+        <register name="s63"/>
+      </unaffected>
+      <killedbycall>
+        <register name="rv"/>
+      </killedbycall>
+    </prototype>
+  </default_proto>
+</compiler_spec>

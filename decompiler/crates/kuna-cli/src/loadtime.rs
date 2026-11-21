@@ -33,6 +33,7 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
         "kernelcache" => (kuna_kernelcache::KERNELCACHE_ENV, Kernelcache),
         "kernelcache-boot" => (kuna_decomp::kuna_kernelcacheboot::KERNELCACHE_BOOT_ENV, Trimmed),
         "goabi" => (kuna_goabi::GOABI_ENV, DefaultOn),
+        "cil" => (kuna_decomp::kuna_cil::CIL_ENV, DefaultOn),
         "symbolnamechars" => (kuna_symbolnamechars::SYMBOLNAMECHARS_ENV, SymbolNameChars),
         "libctypes" => (kuna_libctypes::LIBCTYPES_ENV, LibcTypes),
         "calltargettype" => (kuna_calltargettype::CALLTARGETTYPE_ENV, DefaultOn),
@@ -355,6 +356,7 @@ mod tests {
             ("objcivars".into(), "off".into()),
             ("macho-arm64e".into(), "off".into()),
             ("dyldcrossrefs".into(), "off".into()),
+            ("cil".into(), "off".into()),
             ("sourcelang".into(), "auto".into()),
             ("unrelated".into(), "on".into()),
         ];
@@ -371,6 +373,7 @@ mod tests {
                 ("KUNA_MACHO_ARM64E", Some("off")),
                 ("KUNA_MACHO_SLICE", Some("arm64")),
                 ("KUNA_DYLDCROSSREFS", Some("off")),
+                ("KUNA_CIL", Some("off")),
                 (kuna_sourcelang::SOURCELANG_ENV, None),
                 (kuna_analysis::passes::LOAD_OBJC_ENV, Some("on")),
                 (kuna_analysis::passes::LOAD_STRINGS_ENV, Some("on")),

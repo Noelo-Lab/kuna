@@ -1,0 +1,51 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Kuna #1633: a managed .NET assembly decompiles from its CIL method
+    bodies. Stage: P1 environment binding (the loader picks the CIL language
+    and reads the ECMA-335 metadata) and P2 lift (CIL.slaspec, decoded under
+    the stack depth and operand class the loader paints as context).
+    P0 assertion: option cil on|off (default on).
+
+    The script loads the committed fixture
+    decompiler/crates/kuna-analysis/tests/fixtures/cil_hello.dll (source
+    cil_hello.cs): a top-level statement that sums an int array through a
+    local function.
+
+    Pass 1 (cil off) is the gap: the PE loads as x86 and its one function is
+    the _CorExeMain stub (assert #1). Pass 2 (default) is the fix: the local
+    function is named from the metadata and typed from its signature
+    (assert #2) and decompiles to a loop over the array (asserts #3-#4);
+    the entry point allocates the array and calls it by name, the call
+    token resolved to the method (asserts #5-#6).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>option cil off</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/cil_hello.dll</com>
+  <com>read symbols</com>
+  <com>load addr 0x4027f6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option cil on</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/cil_hello.dll</com>
+  <com>read symbols</com>
+  <com>load addr 0x402084</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x402051</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="cil #1: off shows only the native stub" min="1" max="1">^  _CorExeMain\(\);</stringmatch>
+<stringmatch name="cil #2: the method is named and typed from the metadata" min="1" max="1">^int4 Program::&lt;&lt;Main&gt;\$&gt;g__Sum\|0_0\(int4 \*a\)</stringmatch>
+<stringmatch name="cil #3: the body is a loop bounded by the array length" min="1" max="1">for \(v1 = 0; v1 &lt; \(int4\)ldlen\(a\); v1 = v1 \+ 1\) \{</stringmatch>
+<stringmatch name="cil #4: that adds the elements" min="1" max="1">^    v2 \+= a\[v1\];</stringmatch>
+<stringmatch name="cil #5: the entry point allocates the array" min="1" max="1">a = \(int4 \*\)newarr\(3,4\);</stringmatch>
+<stringmatch name="cil #6: and calls the method its token names" min="1" max="1">System\.Console::WriteLine\(Program::&lt;&lt;Main&gt;\$&gt;g__Sum\|0_0\(a\)\);</stringmatch>
+</decompilertest>

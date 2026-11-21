@@ -43,6 +43,7 @@ pub mod kuna_dyldcache;
 // (kuna) The Go runtime-type harvest gate (load-time, env-bridged).
 // (kuna) golang cspec auto-selection + the .abi0 stack-ABI model binding
 // (load-time, env-bridged).
+pub mod kuna_cil;
 pub mod kuna_goabi;
 // (kuna) Discriminant-value naming for recovered variant parts (load-time,
 // env-bridged; the first VariantLayout consumer).

@@ -202,9 +202,21 @@ fn hint(id: &'static str, version: Option<String>, text: String, actionable: boo
     RuntimeHint { id, version, hint: text, actionable, crates: None }
 }
 
+/// Whether an invocation with these arguments loads a managed assembly as CIL:
+/// its last `--option cil` is not off and it names no `--target`.
+pub fn cil_view(args: &[String]) -> bool {
+    let off = args
+        .windows(3)
+        .rev()
+        .find(|w| w[0] == "--option" && w[1] == "cil")
+        .is_some_and(|w| matches!(w[2].trim().to_ascii_lowercase().as_str(), "off" | "0" | "false"));
+    !off && !args.iter().any(|a| a == "--target")
+}
+
 /// Recognize the runtimes and packers `bytes` carries. `toolchain` adds the Go
 /// and Rust verdicts, which need a full object parse and are informational.
-pub fn detect(bytes: &[u8], toolchain: bool) -> Vec<RuntimeHint> {
+/// `cil` says a managed assembly is being read from its CIL.
+pub fn detect(bytes: &[u8], toolchain: bool, cil: bool) -> Vec<RuntimeHint> {
     let pe = pe_view(bytes);
     let mut seen: Vec<Marker> = Vec::new();
     let mut last_cookie = None;
@@ -222,12 +234,21 @@ pub fn detect(bytes: &[u8], toolchain: bool) -> Vec<RuntimeHint> {
     let mut out = Vec::new();
 
     if pe.as_ref().is_some_and(|p| p.clr) {
-        out.push(hint(
-            "dotnet",
-            None,
-            "managed .NET assembly: native decompilation shows only the stub; use ilspycmd".into(),
-            true,
-        ));
+        out.push(if cil {
+            hint(
+                "dotnet",
+                None,
+                "managed .NET assembly: decompiled from its CIL method bodies; a body the lift does not cover is marked unimplemented".into(),
+                false,
+            )
+        } else {
+            hint(
+                "dotnet",
+                None,
+                "managed .NET assembly: native decompilation shows only the stub; the default `--option cil on` without --target decompiles its methods".into(),
+                true,
+            )
+        });
     }
     if let Some(version) = nativeaot_version(bytes, pe.as_ref()) {
         let label = version
@@ -353,8 +374,8 @@ pub fn to_json(hints: &[RuntimeHint]) -> Json {
 }
 
 /// Print each actionable hint for `binary` as one `note:` line on stderr.
-pub fn note_to_stderr(binary: &str) {
-    let Some(hints) = crate::image::inspect(binary, |bytes| Some(detect(bytes, false))) else {
+pub fn note_to_stderr(binary: &str, cil: bool) {
+    let Some(hints) = crate::image::inspect(binary, |bytes| Some(detect(bytes, false, cil))) else {
         return;
     };
     for h in hints.iter().filter(|h| h.actionable) {
@@ -392,7 +413,7 @@ pub fn note_for_invocation(sub: &str, rest: &[String]) {
         .iter()
         .find(|a| !a.starts_with('-') && std::path::Path::new(a.as_str()).is_file())
     {
-        note_to_stderr(binary);
+        note_to_stderr(binary, cil_view(rest));
     }
 }
 
@@ -455,11 +476,26 @@ mod tests {
 
     #[test]
     fn clr_directory_marks_a_managed_assembly() {
-        let hints = detect(&pe(0x10b, true, &[b".text"], &[]), false);
-        assert_eq!(ids(&hints), ["dotnet"]);
-        assert!(hints[0].hint.contains("ilspycmd"));
-        assert!(detect(&pe(0x20b, true, &[b".text"], &[]), false)[0].id == "dotnet");
-        assert!(detect(&pe(0x10b, false, &[b".text"], &[]), false).is_empty());
+        let native = detect(&pe(0x10b, true, &[b".text"], &[]), false, false);
+        assert_eq!(ids(&native), ["dotnet"]);
+        assert!(native[0].actionable && native[0].hint.contains("only the stub"));
+        let cil = detect(&pe(0x10b, true, &[b".text"], &[]), false, true);
+        assert_eq!(ids(&cil), ["dotnet"]);
+        assert!(!cil[0].actionable && cil[0].hint.contains("CIL method bodies"));
+        assert!(detect(&pe(0x20b, true, &[b".text"], &[]), false, false)[0].id == "dotnet");
+        assert!(detect(&pe(0x10b, false, &[b".text"], &[]), false, false).is_empty());
+    }
+
+    #[test]
+    fn the_cil_view_ends_at_an_explicit_target_or_the_last_cil_off() {
+        let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        assert!(cil_view(&args(&["a.dll"])));
+        assert!(cil_view(&args(&["a.dll", "--option", "cil", "on"])));
+        assert!(!cil_view(&args(&["a.dll", "--option", "cil", "off"])));
+        assert!(cil_view(&args(&["a.dll", "--option", "cil", "off", "--option", "cil", "on"])));
+        assert!(!cil_view(&args(&["a.dll", "--option", "cil", "on", "--option", "cil", "OFF"])));
+        assert!(!cil_view(&args(&["a.dll", "--target", "x86:LE:32:default"])));
+        assert!(cil_view(&args(&["a.dll", "--option", "strings", "off"])));
     }
 
     fn elf(sections: &[(&[u8], &[u8])]) -> Vec<u8> {
@@ -482,7 +518,7 @@ mod tests {
             (b".dotnet_eh_table", b"\0"),
             (b".comment", ILC_COMMENT),
         ]);
-        let hints = detect(&elf, false);
+        let hints = detect(&elf, false, false);
         assert_eq!(ids(&hints), ["nativeaot"]);
         assert_eq!(hints[0].version.as_deref(), Some("10.0.2"));
         assert!(hints[0].hint.contains("NativeAOT (ILC 10.0.2)"));
@@ -494,9 +530,9 @@ mod tests {
         let managed: &[(&[u8], &[u8])] = &[(b"__managedcode", b"\xc3"), (b".dotnet_eh_table", b"\0")];
         let decoy: (&[u8], &[u8]) = (b".rodata", b"built with ilc 1.2.3\0");
         let image = elf(&[managed[0], decoy, managed[1], (b".comment", ILC_COMMENT)]);
-        assert_eq!(detect(&image, false)[0].version.as_deref(), Some("10.0.2"));
+        assert_eq!(detect(&image, false, false)[0].version.as_deref(), Some("10.0.2"));
 
-        let no_comment = detect(&elf(&[managed[0], decoy, managed[1]]), false);
+        let no_comment = detect(&elf(&[managed[0], decoy, managed[1]]), false, false);
         assert_eq!(ids(&no_comment), ["nativeaot"]);
         assert_eq!(no_comment[0].version, None);
         assert!(no_comment[0].hint.starts_with("NativeAOT image:"));
@@ -509,7 +545,7 @@ mod tests {
             (b".rodata", b"__managedcode\0.dotnet_eh_table\0.NET: ilc 1.2.3\0"),
             (b".comment", ILC_COMMENT),
         ]);
-        assert!(detect(&image, false).is_empty());
+        assert!(detect(&image, false, false).is_empty());
     }
 
     #[test]
@@ -517,19 +553,19 @@ mod tests {
         let exe = std::fs::read(std::env::current_exe().unwrap()).unwrap();
         let has = |needle: &[u8]| exe.windows(needle.len()).any(|w| w == needle);
         assert!(has(b"__managedcode") && has(b".dotnet_eh_table"));
-        assert!(!ids(&detect(&exe, false)).contains(&"nativeaot"));
+        assert!(!ids(&detect(&exe, false, false)).contains(&"nativeaot"));
     }
 
     #[test]
     fn nativeaot_windows_pe_is_named_by_unbox_and_modules() {
         let sections: &[&[u8]] = &[b".text", b".unbox", b".modules", b".comment"];
         let image = pe_section_data(pe(0x20b, false, sections, b"\0ilc 1.2.3\0"), 3, ILC_COMMENT);
-        let hints = detect(&image, false);
+        let hints = detect(&image, false, false);
         assert_eq!(ids(&hints), ["nativeaot"]);
         assert_eq!(hints[0].version.as_deref(), Some("10.0.2"));
 
         let only_unbox = pe(0x20b, false, &[b".text", b".unbox"], &[]);
-        assert!(detect(&only_unbox, false).is_empty());
+        assert!(detect(&only_unbox, false, false).is_empty());
     }
 
     /// A PE32+ image from [`pe`] whose second section is an export directory
@@ -559,38 +595,38 @@ mod tests {
     fn nativeaot_windows_pe_is_named_by_its_debug_header_export() {
         let names: &[&[u8]] = &[b"AppEntry", b"DotNetRuntimeDebugHeader", b"add", b"shutdown"];
         for count in 2..=names.len() {
-            let hints = detect(&pe_exporting(&names[..count]), false);
+            let hints = detect(&pe_exporting(&names[..count]), false, false);
             assert_eq!(ids(&hints), ["nativeaot"]);
             assert_eq!(hints[0].version, None);
             assert!(hints[0].hint.starts_with("NativeAOT image:"));
         }
-        assert_eq!(ids(&detect(&pe_exporting(&names[1..2]), false)), ["nativeaot"]);
+        assert_eq!(ids(&detect(&pe_exporting(&names[1..2]), false, false)), ["nativeaot"]);
 
         let near: &[&[u8]] = &[b"DotNetRuntimeDebugHeade", b"DotNetRuntimeDebugHeaderV2", b"add"];
-        assert!(detect(&pe_exporting(near), false).is_empty());
-        assert!(detect(&pe_exporting(&[]), false).is_empty());
+        assert!(detect(&pe_exporting(near), false, false).is_empty());
+        assert!(detect(&pe_exporting(&[]), false, false).is_empty());
         let spelled_out = pe(0x20b, false, &[b".text"], b"\0DotNetRuntimeDebugHeader\0");
-        assert!(detect(&spelled_out, false).is_empty());
+        assert!(detect(&spelled_out, false, false).is_empty());
 
         let mut cut = pe_exporting(names);
         cut.truncate(cut.len() - 30);
-        assert!(detect(&cut, false).is_empty());
+        assert!(detect(&cut, false, false).is_empty());
     }
 
     #[test]
     fn nativeaot_needs_both_elf_markers_and_an_elf() {
         let only_managed = elf(&[(b"__managedcode", b"\xc3"), (b".comment", ILC_COMMENT)]);
-        assert!(detect(&only_managed, false).is_empty());
+        assert!(detect(&only_managed, false, false).is_empty());
 
         let pe_image = pe(0x20b, false, &[b".text"], b"__managedcode\0.dotnet_eh_table\0");
-        assert!(detect(&pe_image, false).is_empty());
+        assert!(detect(&pe_image, false, false).is_empty());
     }
 
     #[test]
     fn pyinstaller_cookie_reports_its_python_version() {
         let mut image = pe(0x20b, false, &[b".text"], &[]);
         image.extend(cookie(313, b"python313.dll"));
-        let hints = detect(&image, false);
+        let hints = detect(&image, false, false);
         assert_eq!(ids(&hints), ["pyinstaller"]);
         assert_eq!(hints[0].version.as_deref(), Some("3.13"));
         assert_eq!(hints[0].hint, "PyInstaller bundle (Python 3.13): extract with pyinstxtractor-ng");
@@ -599,7 +635,7 @@ mod tests {
         elf.resize(0x200, 0);
         elf.extend(cookie(312, b"libpython3.12.so"));
         elf.extend(vec![0u8; 0x800]);
-        assert_eq!(detect(&elf, false)[0].version.as_deref(), Some("3.12"));
+        assert_eq!(detect(&elf, false, false)[0].version.as_deref(), Some("3.12"));
     }
 
     #[test]
@@ -608,42 +644,42 @@ mod tests {
         elf.resize(0x200, 0);
         elf.extend_from_slice(PYI_MAGIC);
         elf.extend(vec![0xffu8; 0x100]);
-        assert!(detect(&elf, false).is_empty());
+        assert!(detect(&elf, false, false).is_empty());
     }
 
     #[test]
     fn upx_sections_or_magic_mark_a_packed_image() {
-        assert_eq!(ids(&detect(&pe(0x10b, false, &[b"UPX0", b"UPX1"], &[]), false)), ["upx"]);
+        assert_eq!(ids(&detect(&pe(0x10b, false, &[b"UPX0", b"UPX1"], &[]), false, false)), ["upx"]);
         let mut elf = b"\x7fELF".to_vec();
         elf.resize(0xe8, 0);
         elf.extend_from_slice(b"UPX!");
         elf.resize(0x400, 0);
-        assert_eq!(ids(&detect(&elf, false)), ["upx"]);
+        assert_eq!(ids(&detect(&elf, false, false)), ["upx"]);
     }
 
     #[test]
     fn windows_script_runtimes_need_a_pe() {
         let autoit = pe(0x10b, false, &[b".text"], b"....AU3!EA06....");
-        assert_eq!(ids(&detect(&autoit, false)), ["autoit"]);
+        assert_eq!(ids(&detect(&autoit, false, false)), ["autoit"]);
         let vb6 = pe(0x10b, false, &[b".text"], b"MSVBVM60.DLL\0");
-        assert_eq!(ids(&detect(&vb6, false)), ["vb6"]);
+        assert_eq!(ids(&detect(&vb6, false, false)), ["vb6"]);
         let mut elf = b"\x7fELF".to_vec();
         elf.extend_from_slice(b"AU3!EA06 twinBASIC MSVBVM60.DLL");
-        assert!(detect(&elf, false).is_empty());
+        assert!(detect(&elf, false, false).is_empty());
     }
 
     #[test]
     fn a_damaged_dos_magic_still_names_twinbasic() {
         let mut image = pe(0x10b, false, &[b".text"], b"\0twinBASIC\0");
         image[0] = 0x15;
-        assert_eq!(ids(&detect(&image, false)), ["twinbasic"]);
+        assert_eq!(ids(&detect(&image, false, false)), ["twinbasic"]);
     }
 
     #[test]
     fn nuitka_marker_is_recognized() {
         let mut elf = b"\x7fELF".to_vec();
         elf.extend_from_slice(b"\0NUITKA_ONEFILE_PARENT\0");
-        assert_eq!(ids(&detect(&elf, false)), ["nuitka"]);
+        assert_eq!(ids(&detect(&elf, false, false)), ["nuitka"]);
     }
 
     #[test]

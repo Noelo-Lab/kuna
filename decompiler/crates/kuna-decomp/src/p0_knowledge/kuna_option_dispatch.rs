@@ -860,6 +860,11 @@ kuna_options! { self, p1;
             crate::kuna_dyldcache::image_name(p1).map(str::to_string);
         Ok(crate::kuna_dyldcache::set_dyldimage(p1))
     },
+    "cil" => {
+        let msg = crate::kuna_cil::set_cil(p1)?;
+        self.load_options_mut().cil = crate::options::on_or_off(p1)?;
+        Ok(msg)
+    },
     "dyldcrossrefs" => {
         let msg = crate::kuna_dyldcache::set_dyldcrossrefs(p1)?;
         self.load_options_mut().dyldcrossrefs = crate::options::on_or_off(p1)?;

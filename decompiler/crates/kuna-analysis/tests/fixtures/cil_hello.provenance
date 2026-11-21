@@ -1,0 +1,21 @@
+cil_hello.dll -- a managed .NET assembly for the `cil` loader
+(decompiler/crates/kuna-analysis/src/loadimage_cil.rs, tests/stages/kuna-cil.xml).
+
+What it is
+  The console program in cil_hello.cs, built for net8.0: a top-level
+  statement that sums an int array through a local function. Three method
+  bodies (Program::<Main>$, Program::.ctor, Program::<<Main>$>g__Sum|0_0),
+  one fat header with locals, one static array initializer with an RVA.
+
+Why it is vendored
+  CI has no .NET SDK.
+
+Where it came from
+  dotnet new console -o hello
+  cp cil_hello.cs hello/Program.cs
+  dotnet build hello -c Release -o out \
+      -p:DebugType=none -p:DebugSymbols=false -p:Deterministic=true
+  cp out/hello.dll cil_hello.dll
+
+  .NET SDK 8.0.108 on Linux x86-64; two builds are byte-identical.
+  DebugType=none keeps the build directory out of the image.
