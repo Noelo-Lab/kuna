@@ -367,10 +367,13 @@ impl<'a> GapDecoder<'a> {
         }
     }
 
-    fn recorded(&self, at: u64) -> Rc<ProbedInsn> {
+    fn recorded_instruction(&self, at: u64) -> Option<&Rc<ProbedInsn>> {
         self.cache.get(&at).and_then(Option::as_ref)
             .or_else(|| self.frame_instructions.as_ref().and_then(|insns| insns.get(&at)))
-            .cloned().expect("validated instruction has a decode record")
+    }
+
+    fn recorded(&self, at: u64) -> Rc<ProbedInsn> {
+        self.recorded_instruction(at).cloned().expect("validated instruction has a decode record")
     }
 
     /// The shared memo's record for `vma`, in this decoder's form.
@@ -567,7 +570,7 @@ fn check_valid_subroutine(
     gap_lo: u64,
     gap_hi: u64,
 ) -> Option<BTreeSet<u64>> {
-    check_valid_subroutine_with_policy(decoder, listing, entry, gap_lo, gap_hi, false)
+    check_valid_subroutine_with_policy(decoder, listing, entry, gap_lo, gap_hi, false, None)
         .map(|(body, _adds_info)| body)
 }
 
@@ -578,7 +581,7 @@ fn check_valid_subroutine_strict(
     gap_lo: u64,
     gap_hi: u64,
 ) -> Option<BTreeSet<u64>> {
-    check_valid_subroutine_with_policy(decoder, listing, entry, gap_lo, gap_hi, true)
+    check_valid_subroutine_with_policy(decoder, listing, entry, gap_lo, gap_hi, true, None)
         .map(|(body, _adds_info)| body)
 }
 
@@ -630,6 +633,7 @@ fn check_valid_subroutine_with_policy(
     gap_lo: u64,
     gap_hi: u64,
     strict: bool,
+    required_entry: Option<u64>,
 ) -> Option<(BTreeSet<u64>, bool)> {
     let mut body = std::mem::take(&mut decoder.visited);
     let mut worklist = std::mem::take(&mut decoder.worklist);
@@ -660,6 +664,9 @@ fn check_valid_subroutine_with_policy(
     worklist.push(prefix.end);
     let accepted = follow_subroutine(
         decoder, listing, gap_lo, gap_hi, strict, prefix, flags, &mut body, &mut worklist);
+    // A padding run can terminate before reaching the classified destination.
+    // Check the actual instruction starts before materializing a rejected suffix.
+    let accepted = accepted.filter(|_| required_entry.is_none_or(|at| prefix.contains(at) || body.contains(&at)));
     let result = accepted.map(|corroborated| (
         prefix.addresses().chain(body.iter().copied()).collect(), corroborated));
     decoder.visited = body;
@@ -1075,19 +1082,25 @@ fn aif_candidates(
             _ => kuna_aifnoppad::Filler::No,
         };
         if probe_here && filler != kuna_aifnoppad::Filler::Refuse {
-            let entry_allowed = |at| stride.is_none_or(|width| {
-                if (gap_start..scan_end).contains(&at) {
+            let entry_allowed = |decoder: &GapDecoder, at| stride.is_none_or(|width| {
+                let slot_available = if (gap_start..scan_end).contains(&at) {
                     section_probe(section_start, at, scan_end, width).0
                 } else {
                     at < gap_hi && entry_fits_slot(listing, at, width, windows)
-                }
+                };
+                slot_available && decoder.recorded_instruction(at).is_some_and(|insn| insn.len <= width.get())
             });
             let pool_end = literals.as_ref().and_then(|lits| lits.run_end(gap_start));
             // A padding suffix has the same destination as the whole run. Check it
             // before constructing its body, unless a literal pool supplies the entry.
-            let probe = match (pool_end, filler) {
-                (None, kuna_aifnoppad::Filler::Before(at)) if !entry_allowed(at) => Probe::Reject,
-                _ => probe_gap_start(decoder, listing, &hist, gap_start, gap_hi, aifcorroborate),
+            let padding_entry = match (pool_end, filler) {
+                (None, kuna_aifnoppad::Filler::Before(at)) => Some(at),
+                _ => None,
+            };
+            let probe = if padding_entry.is_some_and(|at| !entry_allowed(decoder, at)) {
+                Probe::Reject
+            } else {
+                probe_gap_start(decoder, listing, &hist, gap_start, gap_hi, aifcorroborate, padding_entry)
             };
             // (kuna, `aifbracket`) A fragment of the enclosing known function is
             // refused but, like an `aif precise` refusal, consumes its body.
@@ -1113,11 +1126,7 @@ fn aif_candidates(
             };
             let mut entry = gap_start;
             if let Probe::Accept(body) = &mut probe {
-                entry = match (pool_end, filler) {
-                    (Some(end), _) => end,
-                    (None, kuna_aifnoppad::Filler::Before(at)) if body.contains(&at) => at,
-                    _ => gap_start,
-                };
+                entry = pool_end.or(padding_entry).unwrap_or(gap_start);
                 if roots.is_none() && entry == gap_start {
                     if let Some(prefix) = kuna_sparcprologue::prefix(decoder, listing, &claimed, entry) {
                         body.extend([prefix, prefix + 4]);
@@ -1126,7 +1135,7 @@ fn aif_candidates(
                 }
                 // Padding, pools and a recovered prologue can all move the entry.
                 // Refuse an invalid destination before claiming any of its body.
-                if entry != gap_start && !entry_allowed(entry) {
+                if !entry_allowed(decoder, entry) {
                     probe = Probe::Reject;
                 }
             }
@@ -1238,6 +1247,7 @@ fn probe_gap_start(
     gap_start: u64,
     gap_hi: u64,
     aifcorroborate: bool,
+    required_entry: Option<u64>,
 ) -> Probe {
     let Some(fp) = decoder.fingerprint(gap_start) else { return Probe::Reject };
     let count = hist.get(&fp).copied().unwrap_or(0);
@@ -1245,7 +1255,7 @@ fn probe_gap_start(
         return Probe::Reject;
     }
     let Some((body, corroborated)) =
-        check_valid_subroutine_with_policy(decoder, listing, gap_start, gap_start, gap_hi, false)
+        check_valid_subroutine_with_policy(decoder, listing, gap_start, gap_start, gap_hi, false, required_entry)
     else {
         return Probe::Reject;
     };

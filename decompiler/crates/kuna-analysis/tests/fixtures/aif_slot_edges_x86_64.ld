@@ -20,4 +20,11 @@ SECTIONS {
     .abutting : { *(.abutting) } :code
     . = 0x408006;
     .long_padding : { *(.long_padding) } :code
+    . = 0x418006;
+    .long_insn : { *(.long_insn) } :code
+    .long_insn_tail : { *(.long_insn_tail) } :code
+    . = 0x419006;
+    .trapped : { *(.trapped) } :code
+    . = 0x41a006;
+    .padded_wide : { *(.padded_wide) } :code
 }

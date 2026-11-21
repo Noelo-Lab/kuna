@@ -135,7 +135,7 @@ fn legacy_walk(
         };
         if (!strict || kuna_aifstrict::probe_allowed(listing, start)) && !claimed.contains(&start) {
             decoder.linear_run = None;
-            let body = match probe_gap_start(decoder, listing, &hist, start, hi, corroborate) {
+            let body = match probe_gap_start(decoder, listing, &hist, start, hi, corroborate, None) {
                 Probe::Accept(body) => {
                     entries.insert(start);
                     Some(body)
@@ -278,7 +278,7 @@ fn validation_instruction_limit_is_unchanged() {
         for strict in [false, true] {
             let mut decoder = GapDecoder::new(&engine, Rc::clone(&space), listing.exec_ranges());
             let body =
-                check_valid_subroutine_with_policy(&mut decoder, &listing, BASE, BASE, end, strict);
+                check_valid_subroutine_with_policy(&mut decoder, &listing, BASE, BASE, end, strict, None);
             assert_eq!(body.is_some(), count == MAX_FOLLOW_INSNS);
             assert_eq!(decoder.decoded_addresses.len(), MAX_FOLLOW_INSNS);
         }
@@ -324,6 +324,7 @@ fn overlapping_linear_prefixes_preserve_validation_and_decode_order() {
                     entry,
                     end,
                     strict,
+                    None,
                 );
                 let got = check_valid_subroutine_with_policy(
                     &mut candidate,
@@ -332,6 +333,7 @@ fn overlapping_linear_prefixes_preserve_validation_and_decode_order() {
                     entry,
                     end,
                     strict,
+                    None,
                 );
                 assert_eq!(got, want, "entry {i}, backward={backward}, strict={strict}");
                 assert_eq!(got.is_some(), !backward && i >= 1002);
@@ -382,6 +384,7 @@ fn cached_prefix_replays_deferred_branches_and_call_information() {
                     entry,
                     end,
                     strict,
+                    None,
                 );
                 let got = check_valid_subroutine_with_policy(
                     &mut candidate,
@@ -390,6 +393,7 @@ fn cached_prefix_replays_deferred_branches_and_call_information() {
                     entry,
                     end,
                     strict,
+                    None,
                 );
                 assert_eq!(got, want, "{kind}, entry {i}, strict={strict}");
                 if i == 0 {
@@ -584,5 +588,23 @@ fn invalid_padding_suffixes_do_not_validate_bodies() {
                 assert_eq!(decoder.validation_steps, 0, "off-grid run of {count} NOPs");
             }
         }
+    }
+}
+
+#[test]
+fn required_entry_must_be_a_reached_instruction_start() {
+    let mut bytes = [0x00, 0xf0, 0x20, 0xe3].repeat(8); // eight ARM NOPs
+    let ret = BASE + bytes.len() as u64;
+    bytes.extend([0x1e, 0xff, 0x2f, 0xe1].repeat(2));
+    let end = BASE + bytes.len() as u64;
+    let (engine, space) = arm(bytes);
+    let listing = Listing::from_model_for_test(Vec::new(), Vec::new(), Vec::new(), vec![(BASE, end)]);
+    let mut decoder = GapDecoder::new(&engine, space, listing.exec_ranges());
+
+    // Prime the straight-line cache, then require starts in the cached NOPs and at the RET.
+    assert!(check_valid_subroutine(&mut decoder, &listing, BASE, BASE, end).is_some());
+    for (required, reached) in [(BASE + 4, true), (ret, true), (BASE + 5, false), (ret + 4, false)] {
+        let body = check_valid_subroutine_with_policy(&mut decoder, &listing, BASE, BASE, end, false, Some(required));
+        assert_eq!(body.is_some(), reached, "required address {required:#x}");
     }
 }
