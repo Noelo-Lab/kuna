@@ -59,7 +59,12 @@
     has no boundary at all - the AArch64 variadic register-save shape - and
     `caller3` writes `mov $2,%r8d` before the CALL, so the register the run stops
     at is carrying a fifth argument and truncating there would hide it.  Both are
-    declined.
+    declined by this rule.  Their lists are then filled from the caller's side
+    alone, by `passthrough` (kuna_passthrough.rs, default on): the three
+    forwarded registers in front of the written one no longer count as the
+    inactive chain that ended the list, so forceInactiveChain's hole fill takes
+    them, and `caller3` keeps its fifth argument.  With `passthrough off` both
+    sites render empty, as the rule here leaves them.
 -->
 <bytechunk space="ram" offset="0x100000">
 c30000000000000000000000000000004889f801f001d001c8e8e2ffffffc300
@@ -78,6 +83,7 @@ ffffff01d85bc331c05bc3000000000000000000000000000000000000000000
 <symbol space="ram" offset="0x1000b0" name="caller3"/>
 </binaryimage>
 <script>
+  <com>option passthrough off</com>
   <com>lo fu caller</com>
   <com>decompile</com>
   <com>print C</com>
@@ -87,10 +93,19 @@ ffffff01d85bc331c05bc3000000000000000000000000000000000000000000
   <com>lo fu caller3</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option passthrough on</com>
+  <com>lo fu caller2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu caller3</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="calleearitycut #1: only the two discriminators render an empty argument list" min="2" max="2">callee2?\(\)</stringmatch>
+<stringmatch name="calleearitycut #1: with passthrough off, only the two discriminators render an empty argument list" min="2" max="2">callee2?\(\)</stringmatch>
 <stringmatch name="calleearitycut #2: the four arguments the callee's body reads are recovered, bounded by the register the run stops at" min="1" max="1">callee\(a[0-9]+,a[0-9]+,a[0-9]+,1\)</stringmatch>
-<stringmatch name="calleearitycut #3: a callee that reads every argument register leaves the run no boundary, so its site is untouched" min="1" max="1">callee2\(\)</stringmatch>
-<stringmatch name="calleearitycut #4: `caller3` writes the register the run stops at, so it is carrying a further argument and that site is untouched" min="1" max="1">callee\(\)</stringmatch>
+<stringmatch name="calleearitycut #3: a callee that reads every argument register leaves the run no boundary, so this rule leaves its site alone" min="1" max="1">callee2\(\)</stringmatch>
+<stringmatch name="calleearitycut #4: `caller3` writes the register the run stops at, so it is carrying a further argument and this rule leaves its site alone" min="1" max="1">callee\(\)</stringmatch>
+<stringmatch name="calleearitycut #5: by default the forwarded registers fill the discriminators' lists from the caller's side" min="1" max="1">callee2\(a0,a1,a2,1\)</stringmatch>
+<stringmatch name="calleearitycut #6: by default `caller3` keeps its fifth argument" min="1" max="1">callee\(a0,a1,a2,1,2\)</stringmatch>
 </decompilertest>

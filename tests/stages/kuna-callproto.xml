@@ -4,9 +4,11 @@
     Call-site prototypes (`override prototype`, the `callproto` assertion).
 
     `report` calls a variadic function pointer twice; the second call is a tail
-    jump through r8, and the register holding its target is read as a fifth
-    argument. No callee symbol carries a signature for a call through a
-    pointer, so the only place to state it is the call instruction.
+    jump through r8, and the register holding its target was read as a fifth
+    argument until the register an indirect call jumps through stopped scoring
+    as one of its arguments (kuna_passthrough.rs, is_call_target). No callee
+    symbol carries a signature for a call through a pointer, so the only place
+    to state it is the call instruction.
 
     Pass 1 is the recovery with nothing stated. Pass 2 gives the tail jump its
     own prototype without the trailing `;`. Pass 3 places a parameter with
@@ -44,7 +46,7 @@ efffff4889de4489f231c05b415e415f
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="callproto #1: nothing stated, the call target is read as a fifth argument" min="1" max="1">a0 \+ 1,[^;]*\*v1\);</stringmatch>
+<stringmatch name="callproto #1: nothing stated, the call target is not read as a fifth argument" min="1" max="1">\(0x308,a1,a0,a0 \+ 1\);</stringmatch>
 <stringmatch name="callproto #2: the stated prototype leaves exactly four arguments" min="1" max="1">\("%s %d %d",a1,a0,a0 \+ 1\);</stringmatch>
 <stringmatch name="callproto #3: a parameter placed with @R8D reads the target register" min="1" max="1">\("%s %d %d",a1,[^,;]*\*v1\);</stringmatch>
 <stringmatch name="callproto #4: the tail jump is a call in every pass" min="3" max="3">jump-as-call</stringmatch>

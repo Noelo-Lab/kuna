@@ -1482,6 +1482,10 @@ impl Action for ActionActiveParam {
                 // the next slot is on the stack -- the ABI reaches the stack
                 // only past a full register file.
                 fc.get_active_input().set_stack_arg_gap(true);
+                // (kuna) `passthrough`: a register this caller hands on untouched
+                // is not a run of empty slots in front of a later argument.
+                let forwarded_neutral = data.get_arch().pass_through;
+                fc.get_active_input().set_forwarded_neutral(forwarded_neutral);
                 let reads = fc.callee_reg_model().is_some_and(|m| fc.proto().has_matching_model(m));
                 fc.get_active_input().set_callee_reads_registers(reads);
                 crate::kuna_armfloatargs::mark_single_floats(&mut fc, data);

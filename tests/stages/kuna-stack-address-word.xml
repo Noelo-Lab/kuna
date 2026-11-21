@@ -7,12 +7,19 @@
 <symbol space="ram" offset="0x1000" name="conditional_word"/>
 <symbol space="ram" offset="0x2000" name="read_word"/>
 </binaryimage>
+<!-- Three passes, as in kuna-stack-address-argument.xml: upstream's scoring,
+     stackaddrargtrial, and the default, where passthrough keeps the forwarded
+     registers out of the inactive chain. -->
 <script>
+<com>option passthrough off</com>
 <com>load function conditional_word</com><com>decompile</com><com>print C</com>
 <com>option stackaddrargtrial on</com>
 <com>load function conditional_word</com><com>decompile</com><com>print C</com>
+<com>option stackaddrargtrial off</com>
+<com>option passthrough on</com>
+<com>load function conditional_word</com><com>decompile</com><com>print C</com>
 </script>
-<stringmatch name="STACK WORD #1: default loses the pointer" min="1" max="1">read_word\(\)</stringmatch>
-<stringmatch name="STACK WORD #2: enabled retains all four arguments" min="1" max="1">read_word\(a0,a1,a2,v</stringmatch>
-<stringmatch name="STACK WORD #3: enabled preserves the output-dependent condition" min="1" max="1">!v2\[0\]</stringmatch>
+<stringmatch name="STACK WORD #1: upstream's scoring loses the pointer" min="1" max="1">read_word\(\)</stringmatch>
+<stringmatch name="STACK WORD #2: enabled, and the default, retain all four arguments" min="2" max="2">read_word\(a0,a1,a2,v</stringmatch>
+<stringmatch name="STACK WORD #3: enabled, and the default, preserve the output-dependent condition" min="2" max="2">!v2\[0\]</stringmatch>
 </decompilertest>

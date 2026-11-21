@@ -226,7 +226,8 @@ pub fn check_input_trial_use(
         } else if {
             let t = data.get_call_specs(idx).active_input().get_trial(i);
             data.get_call_specs(idx).carries_jump_target(t.get_address(), t.get_size())
-        } {
+        } || crate::p4_calls::kuna_passthrough::is_call_target(data, op, vn)
+        {
             data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
         } else if {
             // (kuna) `passthrough`: a trial on a range the pass claimed is left
@@ -347,6 +348,18 @@ pub fn check_input_trial_use(
             } else {
                 // An ancestor is unaffected, an unusual input, or killed by a call
                 data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
+            }
+        }
+
+        // (kuna) `passthrough`: an inactive trial that is the function's own
+        // incoming register, untouched, is no evidence against a later one.
+        {
+            let (addr, size, inactive) = {
+                let t = data.get_call_specs(idx).active_input().get_trial(i);
+                (t.get_address().clone(), t.get_size(), !t.is_active() && !t.is_definitely_not_used())
+            };
+            if inactive && crate::p4_calls::kuna_passthrough::forwarded_in_place(data, op, slot, &addr, size) {
+                data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).set_forwarded_input();
             }
         }
 

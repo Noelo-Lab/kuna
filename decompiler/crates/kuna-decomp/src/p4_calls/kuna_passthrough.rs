@@ -144,7 +144,7 @@ use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
 use crate::context::{OpId, VarnodeId};
-use crate::fspec::FuncCallSpecs;
+use crate::fspec::{FuncCallSpecs, ParamActive, ParamTrial};
 use crate::funcdata::Funcdata;
 use crate::p0_knowledge::options::on_or_off;
 use crate::varnode::Varnode;
@@ -1209,6 +1209,75 @@ fn overlaps_claim(claims: &[PassThroughClaim], addr: &Address, size: int4) -> bo
 /// off as well, and they are scored as they are there.
 pub fn claimed_range(data: &Funcdata, addr: &Address, size: int4) -> bool {
     data.get_arch().pass_through && holds_trials(data.kuna_passthrough_claims(), addr, size)
+}
+
+/// Is the value the call `op` reads in `slot` the function's own incoming
+/// register, untouched, in exactly the storage the trial `[addr, addr+size)`
+/// names?
+///
+/// Upstream scores such a trial inactive ("not likely a parameter but maybe"):
+/// the caller moved nothing into the register, so nothing says the callee
+/// wants it. `checkInputTrialUse` records the shape on the trial
+/// ([`crate::fspec::ParamTrial::set_forwarded_input`]) for
+/// [`neutral_in_chain`] to read.
+pub fn forwarded_in_place(data: &Funcdata, op: OpId, slot: int4, addr: &Address, size: int4) -> bool {
+    if !data.get_arch().pass_through {
+        return false;
+    }
+    let Some(vn) = data.obank().get(op).and_then(|o| o.get_in(slot)) else { return false };
+    data.vbank()
+        .get(vn)
+        .is_some_and(|v| v.is_input() && !v.is_written() && v.get_size() == size && v.get_addr() == addr)
+}
+
+/// Is `vn`, the value an argument trial of the indirect call `op` reads, the
+/// value `op` jumps through?
+///
+/// The register that carries an indirect call's target is not also carrying an
+/// argument. Upstream's `checkCallDoubleUse` says as much for a SECOND call
+/// that reads the value as its target ("indirect call variable, definitely
+/// not a param"), but `onlyOpUse` takes the matched call's own read of its
+/// trial slot as the parameter use and never looks at slot 0, so `mov
+/// r9,0x401020; cmovz r9,r8; jmp r9` scored `r9` an active sixth argument of
+/// the call it is the target of, and `(*v1)(...,v1)` only stayed `(*v1)()`
+/// because the forwarded registers in front of it vetoed the list
+/// ([`neutral_in_chain`]). Scored definitely-not-used, it neither anchors a
+/// hole fill nor is filled.
+pub fn is_call_target(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
+    data.obank()
+        .get(op)
+        .is_some_and(|o| o.code() == OpCode::CPUI_CALLIND && o.get_in(0) == Some(vn))
+}
+
+/// Does an inactive trial at a call site stay out of `forceInactiveChain`'s
+/// count of empty argument slots?
+///
+/// The chain rule (`fspec.cc:1519`, `maxchain = 2`) reads a run of more than
+/// two inactive slots as the end of the argument list and demotes every later
+/// trial, the active ones included. Its premise is that an inactive register
+/// holds incidental caller state. A REGISTER the function hands on untouched
+/// is not that: it holds what the function was called with, whether no op of
+/// the function names it (an unreferenced trial `buildTrialMap` synthesized)
+/// or an op reads it elsewhere ([`forwarded_in_place`]). The ABI fills
+/// argument registers in order, so when a later register IS actively set up
+/// for the call, the forwarded registers in front of it are the arguments the
+/// callee reads before it, and the function's own parameters. So a forwarded
+/// register counts toward neither a run nor its end; the tail loop that fills
+/// the holes below the last active trial then takes it, as it does any
+/// two-slot hole today. `f(a,b,c,d,fp){ if (d<=32) d=32; fp(a,b,c,d); }` at
+/// -O2 (`csel x3,...; br x4`) kept `(*a4)()` and lost the clamp to dead-code
+/// elimination; it is `(*a4)(a0,a1,a2,a3)` with the rule. A forwarded register
+/// after the last active trial stays dropped (`k(a,b,fp){ fp(a+1,b); }` is
+/// still `(*a2)(a0 + 1)`), the `stackarggap` end-of-list test still runs
+/// first, and a stack slot is never neutral: an untouched incoming stack
+/// argument says nothing about the callee's list. Only a call site's trials
+/// qualify (`isRecoverSubcall`); the function's own input recovery has
+/// `inputparamgap`.
+pub fn neutral_in_chain(active: &ParamActive, trial: &ParamTrial, is_spacebase: bool) -> bool {
+    if !active.is_forwarded_neutral() || !active.is_recover_subcall() || is_spacebase {
+        return false;
+    }
+    trial.is_forwarded_input() || trial.is_unref()
 }
 
 /// Does `[addr, addr+size)` share a byte with a claim that keeps call-site

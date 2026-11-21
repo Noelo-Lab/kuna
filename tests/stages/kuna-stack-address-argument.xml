@@ -7,12 +7,20 @@
 <symbol space="ram" offset="0x1000" name="widen_value"/>
 <symbol space="ram" offset="0x2000" name="read_half"/>
 </binaryimage>
+<!-- Three passes: upstream's scoring (passthrough off, stackaddrargtrial off)
+     loses the call; stackaddrargtrial protects the stack-address trial from the
+     inactive-chain veto; the default (passthrough on) keeps the three forwarded
+     registers out of that chain, so the call is recovered without it. -->
 <script>
+<com>option passthrough off</com>
 <com>load function widen_value</com><com>decompile</com><com>print C</com>
 <com>option stackaddrargtrial on</com>
 <com>load function widen_value</com><com>decompile</com><com>print C</com>
+<com>option stackaddrargtrial off</com>
+<com>option passthrough on</com>
+<com>load function widen_value</com><com>decompile</com><com>print C</com>
 </script>
-<stringmatch name="STACK ADDRESS #1: default loses the output argument" min="1" max="1">read_half\(\)</stringmatch>
-<stringmatch name="STACK ADDRESS #2: enabled retains the local address" min="1" max="1">read_half\(a0,a1,a2,v</stringmatch>
-<stringmatch name="STACK ADDRESS #3: only the default folds the output to zero" min="1" max="1">\*a3 = 0;</stringmatch>
+<stringmatch name="STACK ADDRESS #1: upstream's scoring loses the output argument" min="1" max="1">read_half\(\)</stringmatch>
+<stringmatch name="STACK ADDRESS #2: enabled, and the default, retain the local address" min="2" max="2">read_half\(a0,a1,a2,v</stringmatch>
+<stringmatch name="STACK ADDRESS #3: only upstream's scoring folds the output to zero" min="1" max="1">\*a3 = 0;</stringmatch>
 </decompilertest>
