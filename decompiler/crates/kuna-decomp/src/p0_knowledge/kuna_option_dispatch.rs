@@ -192,6 +192,7 @@ kuna_options! { self, p1;
     "msvcstrappend" => on_off!(msvc_str_append, "MSVC std::string inlined append collapsing"),
     "switchselector" => on_off!(switch_selector_guard, "Lowered-switch in-function-selector restriction"),
     "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
+    "calleefilledarg" => on_off!(callee_filled_arg, "Callee-filled argument slots"),
     "callwide" => {
         let enabled = on_or_off(p1)?;
         self.kuna_callwide.clear();
@@ -318,6 +319,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
+    "switchextent" => on_off!(switch_extent, "Unchecked jump table ends at the function's next table"),
     "constselectjump" => {
         let (mode, msg) = crate::kuna_constselectjump::OptionConstSelectJump.apply(p1)?;
         self.const_select_jump = mode;
@@ -670,6 +672,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "charptr" => on_off!(char_ptr, "character-pointer evidence"),
+    "cstringconst" => on_off!(cstring_const, "string-literal rendering of constants inside a string-literal section"),
     "elemptr" => {
         let (val, msg) = crate::p5_types::kuna_elemptr::OptionElemPtr.apply(p1)?;
         self.elem_ptr = val;
@@ -958,6 +961,7 @@ kuna_options! { self, p1;
         on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")
     },
     "calltable" => on_off!(analysis_calltable, "Call-table recovery and the call-table vs switch vote"),
+    "stubbinds" => on_off!(analysis_stubbinds, "Stripped Mach-O stubs named from their slot's chained bind"),
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
     "panicloc" => on_off!(analysis_panicloc, "Rust panic Location record pass"),
     "swiftmetadata" => on_off!(analysis_swiftmetadata, "Swift runtime-metadata recovery pass"),

@@ -4036,7 +4036,7 @@ truncating the fall-through here"
             let retried = self.data.find_jump_table_index(op).filter(|&idx| {
                 self.data.get_jump_table(idx as int4).kuna_keeps_recovered_targets()
             });
-            let mode = if crate::decompile_drive::deadline_passed_in("jump-table recovery") {
+            let mut mode = if crate::decompile_drive::deadline_passed_in("jump-table recovery") {
                 Ok(None)
             } else {
                 let mode = self.data.recover_jump_table_flow(
@@ -4049,6 +4049,36 @@ truncating the fall-through here"
                 crate::decompile_drive::deadline_passed_in("jump-table recovery");
                 mode
             };
+            // (kuna `switchextent`) A table nothing bounded: decode the
+            // function's extent once, name its jump tables, and when it has
+            // another table to end this one at, try again with that bound
+            // (`kuna_switchextent.rs`).
+            if matches!(mode, Ok(None) | Err(RecoveryMode::FailNormal))
+                && retried.is_none()
+                && self.data.kuna_extent_tables.is_none()
+                && self.data.get_arch().switch_extent
+                && !crate::decompile_drive::deadline_passed_in("jump-table recovery")
+            {
+                let entry = self.data.get_address().clone();
+                let end = self.data.get_arch().function_entry_after(&entry);
+                let tables = std::rc::Rc::new(super::kuna_switchextent::function_tables(
+                    self.env.translate(), self.env.mapped_flow_image(), &entry, end,
+                ));
+                if let Some(partial) = shared_partial.as_mut() {
+                    partial.kuna_extent_tables = Some(std::rc::Rc::clone(&tables));
+                }
+                let bounded = tables.len() >= 2;
+                self.data.kuna_extent_tables = Some(tables);
+                if bounded {
+                    mode = self.data.recover_jump_table_flow(
+                        op,
+                        record,
+                        &visited_snapshot,
+                        run_pipeline,
+                        &mut shared_partial,
+                    );
+                }
+            }
             let mode = match (mode, retried) {
                 (Ok(Some(idx)), _) => Ok(Some(idx)),
                 (_, Some(idx)) => {

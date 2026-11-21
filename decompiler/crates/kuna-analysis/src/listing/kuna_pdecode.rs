@@ -874,6 +874,7 @@ fn run(
             detail,
             tables: None,
             a32_tables: None,
+            a64_tables: None,
             memo: None,
         };
         if !gate.wait() {

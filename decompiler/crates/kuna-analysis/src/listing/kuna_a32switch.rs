@@ -120,7 +120,7 @@ impl<'a> A32Tables<'a> {
             if op.opcode == OpCode::CPUI_BRANCHIND {
                 let shape = op.ins.first().and_then(|vn| value_of(vn, &vals, data));
                 let words = match shape {
-                    Some(Val::Entry { table, width: 4 }) if table == base => true,
+                    Some(Val::Entry { table, width: 4, .. }) if table == base => true,
                     Some(Val::Indexed(table)) if table == base => false,
                     _ => return TableRead::default(),
                 };

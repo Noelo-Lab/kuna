@@ -259,7 +259,7 @@ pub(super) fn register_targets(
     };
     let table = match flow.within(want, from, &insn.1, at) {
         Reached::Known(Val::Case { table, base }) => (table, Some(base)),
-        Reached::Known(Val::Entry { table, width }) if width == pool.ptr_width() => (table, None),
+        Reached::Known(Val::Entry { table, width, .. }) if width == pool.ptr_width() => (table, None),
         _ => return TableRead::default(),
     };
     let index = std::mem::take(&mut flow.index);
@@ -268,7 +268,7 @@ pub(super) fn register_targets(
     };
     let masked = index
         .into_iter()
-        .filter_map(|at| mask_limit(translate, code_space, data, decoded, from, at, reach.max_entries))
+        .filter_map(|at| mask_limit(translate, code_space, data, &|at| decoded.contains(&at), from, at, reach.max_entries))
         .min();
     let limit = masked.map_or(limit, |n| n.min(limit));
     let cases = match table {
@@ -324,7 +324,7 @@ fn guard_at(
     let want: Vec<Key> = ops[at].ins.get(1).and_then(|vn| key_of(vn, data)).into_iter().collect();
     let (reads, feeding) = feeders(&ops[..at], want, data);
     let reads = regs(reads);
-    if let Some(n) = guard_cases(&[], &feeding, ops, at, data, max_entries) {
+    if let Some(n) = guard_cases(&[], &feeding, ops, at, data, max_entries, false) {
         return Some((n, reads, Vec::new()));
     }
     let mut above = Vec::new();
@@ -342,7 +342,7 @@ fn guard_at(
         let written: Vec<Key> = writes.filter(|w| reads.iter().any(|r| keys_overlap(*r, *w))).collect();
         if !written.is_empty() {
             let (compared, feeding) = feeders(wops, written, data);
-            let n = guard_cases(wops, &feeding, ops, at, data, max_entries)?;
+            let n = guard_cases(wops, &feeding, ops, at, data, max_entries, false)?;
             return Some((n, regs(compared), above));
         }
         cur = w;

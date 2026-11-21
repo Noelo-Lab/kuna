@@ -44,9 +44,9 @@ fn group_count_is_39() {
 }
 
 #[test]
-fn subphase_count_is_48() {
-    assert_eq!(kuna_num_subphases(), 48);
-    assert_eq!(SUBPHASE_TABLE.len(), 48);
+fn subphase_count_is_49() {
+    assert_eq!(kuna_num_subphases(), 49);
+    assert_eq!(SUBPHASE_TABLE.len(), 49);
 }
 
 #[test]
@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_228() {
-    assert_eq!(kuna_num_settables(), 228);
-    assert_eq!(SETTABLE_TABLE.len(), 228);
+fn settable_count_is_232() {
+    assert_eq!(kuna_num_settables(), 232);
+    assert_eq!(SETTABLE_TABLE.len(), 232);
 }
 
 #[test]
-fn tier_counts_are_46_core_124_transform_58_analysis() {
+fn tier_counts_are_48_core_125_transform_59_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_46_core_124_transform_58_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (46, 124, 58));
+    assert_eq!((core, transform, analysis), (48, 125, 59));
 }
 
 #[test]
@@ -404,6 +404,9 @@ fn option_values_live_value_present_for_76() {
         // (kuna) Call tables: an analysis-pass gate read console-side, like
         // `tailcallentry` above. Default-on.
         "calltable",
+        // (kuna) Stripped Mach-O stub naming: an analysis-pass gate read
+        // console-side, like `calltable` above. Default-on.
+        "stubbinds",
         // (kuna) ARM literal-pool inference — an analysis-pass gate with no codegen
         // live reader (read console-side via kuna_live_value), same as
         // `tailcallentry` above. Default-off, ARM-only.
@@ -862,7 +865,10 @@ fn option_values_live_value_present_for_76() {
     // +1 for `postinc` (live_field = post_increment).
     // +1 for `panicloc` (live_field = analysis_panicloc).
     // +1 for `opaquepredicate` (live_field = opaque_predicate).
-    assert_eq!(with_live, 82);
+    // +1 for `calleefilledarg` (live_field = callee_filled_arg).
+    // +1 for `cstringconst` (live_field = cstring_const).
+    // +1 for `switchextent` (live_field = switch_extent).
+    assert_eq!(with_live, 85);
 }
 
 #[test]
@@ -1117,7 +1123,11 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `repstring`; its P3 row sits after `strlenscan`.
     // +1 for `opaquepredicate`; its P3 row sits after `globalarrayanchor`.
     // +1 for `calltable`; its P1 row sits after `tailcallentry`.
-    assert_eq!(json.matches("},\n").count(), 227);
+    // +1 for `stubbinds`; its P1 row sits after `calltable`.
+    // +1 for `cstringconst`; its P9 row sits after `globalref`.
+    // +1 for `switchextent`; its P2 row sits after `switchmodbound`.
+    assert_eq!(json.matches("},\n").count(), 231);
+    // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 
 #[test]
