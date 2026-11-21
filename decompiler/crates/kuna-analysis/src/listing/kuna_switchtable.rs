@@ -201,10 +201,16 @@ const MAX_INSN_BYTES: u64 = 16;
 /// unscaled index, the 16-instruction search for the range check, the masked
 /// index, and the re-read once the code above a dispatch is decoded
 /// (`TableRead::gap`).
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub(super) struct Reach<'a> {
     pub max_entries: usize,
     pub preserved: &'a [(u64, u64)],
+    /// The decoded set is final: a dispatch nothing falls into will not be
+    /// read again, so a table with no range check above it has none.
+    pub settled: bool,
+    /// (kuna `calltable`) Whether code names an address, decoded or not: a
+    /// table with no range check ends before the next table it runs into.
+    pub named: Option<&'a dyn Fn(u64) -> bool>,
 }
 
 impl Reach<'_> {
@@ -250,11 +256,13 @@ pub(super) fn register_targets(
 
     let mut vals: Vec<(Key, Val)> = Vec::new();
     let mut dispatch = None;
+    let mut call = false;
     let mut index: Option<(u64, usize, Key)> = None;
     'slice: for (vma, ops) in &slice {
         for (i, op) in ops.iter().enumerate() {
-            if op.opcode == OpCode::CPUI_BRANCHIND && *vma == from {
+            if matches!(op.opcode, OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALLIND) && *vma == from {
                 dispatch = op.ins.first().and_then(|vn| value_of(vn, &vals, data_space));
+                call = op.opcode == OpCode::CPUI_CALLIND;
                 break 'slice;
             }
             if leaves_registers_unknown(op.opcode) {
@@ -298,10 +306,23 @@ pub(super) fn register_targets(
     match (guard_limit(translate, code_space, data_space, decoded, from, reach), masked) {
         (Ok(limit), masked) => {
             let limit = masked.map_or(limit, |n| n.min(limit));
-            TableRead { cases: read(limit), stated: Some(limit), gap: None }
+            TableRead { cases: read(limit), stated: Some(limit), gap: None, unbounded: false }
+        }
+        // (kuna `calltable`) A pointer table with no count runs to the first
+        // word that is not code of the section the transfer is in, or to the
+        // first word code names, where another table starts.
+        (Err(gap), None) if table.1.is_none() && (call || reach.settled || gap.is_none()) => {
+            let mut cases = targets(table.0, from, pool, exec, None, max_entries.min(CALL_TABLE_MAX));
+            let stride = u64::from(pool.ptr_width());
+            if let Some(named) = reach.named.filter(|_| cases.len() > 1) {
+                if let Some(at) = (1..cases.len()).find(|&i| named(table.0 + i as u64 * stride)) {
+                    cases.truncate(at);
+                }
+            }
+            TableRead { cases, stated: None, gap: None, unbounded: !call }
         }
         (Err(gap), masked) => match masked.map(|n| (n, read(n))) {
-            Some((n, cases)) if cases.len() == n => TableRead { cases, stated: Some(n), gap: None },
+            Some((n, cases)) if cases.len() == n => TableRead { cases, stated: Some(n), gap: None, unbounded: false },
             _ => TableRead { gap, ..TableRead::default() },
         },
     }
@@ -386,7 +407,10 @@ fn mask_limit(
     None
 }
 
-/// What [`register_targets`] read at one computed jump.
+/// The most entries a pointer table with no range check is read to.
+pub(super) const CALL_TABLE_MAX: usize = 256;
+
+/// What [`register_targets`] read at one computed jump or call.
 #[derive(Debug, Default)]
 pub(super) struct TableRead {
     /// The case bodies, in table order.
@@ -396,6 +420,10 @@ pub(super) struct TableRead {
     /// Where the read stopped for want of a decoded instruction ending at this
     /// address: the walk reached the dispatch before the code falling into it.
     pub gap: Option<u64>,
+    /// (kuna `calltable`) A jump through a pointer table with no range check:
+    /// the entries run to the first non-code word. That is a call table's
+    /// shape; a table read this way is never taken as a switch.
+    pub unbounded: bool,
 }
 
 /// How many cases the range check ahead of the dispatch admits, or `None` when

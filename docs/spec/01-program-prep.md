@@ -9084,6 +9084,58 @@ an entry" a property of the wiring rather than of a heuristic. Output-changing
 (more functions), hence default-off; ARM-only and Listing-tier, so it is a strict
 no-op on every other architecture, with `listing off`, and on the XML datatest path.
 
+**Call tables** (`calltable`, on by default; kuna;
+`decompiler/crates/kuna-analysis/src/listing/kuna_calltable.rs (scan)`). A
+table a computed transfer indexes is either a switch or a table of functions.
+The tables are read with the register-chain fold the switch reader uses
+(`decompiler/crates/kuna-analysis/src/listing/kuna_switchtable.rs
+(register_targets)`), which also answers for a `CALLIND` and reads a pointer
+table with no range check up to 256 entries, stopping at the first word that
+is not code of the section the transfer is in; such a read is flagged
+`unbounded` and is never taken as a switch. Nothing marks where a table with
+no range check ends, so a function table followed by another switch's table
+reads on into its case labels: such a read is cut before the first target
+that is a case of a range-checked switch or already code inside a function
+(`decompiler/crates/kuna-analysis/src/listing/kuna_calltable.rs
+(call_table_run)`), and the walk behind `kuna xrefs` reads its unchecked
+indexed calls only once its queue has drained, when those switches have been
+decoded. A switch reached only through the call table itself is not decoded
+by then, so a table with no range check also ends before the first word that
+code names as an address, decoded or not: every pointer-aligned read-only
+address that four bytes of a code section spell (the displacement of `jmp
+*tbl(,%rdi,8)`, a pool word) is collected once, on the first such read
+(`decompiler/crates/kuna-analysis/src/listing/kuna_poolref.rs (code_named)`).
+The walk reads a switch whose operand names its table up to the first word
+that is not code, with no count, and votes that read by the strict rule for
+an unchecked table, so a switch table that runs on into a table of known
+functions stays a switch. The vote (`decompiler/crates/kuna-analysis/src/listing/kuna_calltable.rs
+(is_call_table)`): an indexed call calls every entry; a jump through a
+range-checked table whose distinct targets are 40% or more other functions'
+entries is a table of tail calls; a jump through an unchecked table is one
+only when every target is already another function's entry, so it never adds
+a function. An unchecked switch (gcc drops the range check under
+`__builtin_unreachable()`) and a computed goto read exactly like a table of
+tail calls, and gcc aligns their labels to 16 bytes as it does functions, so
+an unchecked jump to targets that are not yet functions is left alone. The
+targets of a call table become entries, and in the `kuna xrefs` walk they are
+call references of the dispatcher rather than its switch cases. The other way
+round, a discovered, non-symbol entry that sits on a case of a switch and that
+no call reaches is dropped at the commit (`AnalysisOutput::case_entries`): a
+case body that opens `push rbp; mov rbp,rsp` looks like a function to a
+prologue scan. On the fixture `calltable_x86_64` the two functions of the
+called table are found, its read stops at the next switch's cases, the
+labels of an unchecked jump table are not functions, and the prologue-shaped
+case is no longer a function. On the fixture `calltable_split_x86_64` the
+function `h0` of a called table is found, and neither the cases of `bsw`,
+whose table follows and which only `h0` reaches, nor those of `sw`, whose
+table runs on into a table of functions, are functions or call targets. Over
+529 stripped decbench ELFs, 1,150 ELF and PE fixtures and four sqlite3 builds
+the function lists do not move; over 200 generated non-PIE gcc/clang programs
+without unwind tables it finds 257 table-only functions and adds no false
+start, and over 320 generated multi-file non-PIE gcc, clang and i386 programs
+1,944 and none. A table reached only through an unchecked jump is no longer
+found by running into it from the table before.
+
 **Tail-call entries** (`tailcallentry`, on by default, ARM-only; kuna;
 `decompiler/crates/kuna-analysis/src/listing/kuna_tailcallentry.rs (tail_call_entries)`)
 closes the walk's other structural blind spot. The recursive-descent walk

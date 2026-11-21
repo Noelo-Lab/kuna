@@ -1357,6 +1357,16 @@ pub fn run_listing_consumers_replaying_observed(
         out.push(("tailcallentry", tce_out));
     }
 
+    // (kuna `calltable`) Call tables add their targets as entries; a discovered
+    // entry on a switch case that nothing calls is not a function.
+    if arch.analysis_listing && arch.analysis_calltable && listing.has_refs() {
+        let tables = crate::listing::kuna_calltable::scan(&file, &listing, arch, translate);
+        let mut ct_out = AnalysisOutput::default();
+        ct_out.entries = tables.entries;
+        ct_out.case_entries = tables.case_entries;
+        out.push(("calltable", ct_out));
+    }
+
     // (kuna `callerreads`) Where each direct call returns to, for the decompile
     // step to read a `void` function's callers from.
     if arch.analysis_listing && listing.has_refs() {

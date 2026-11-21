@@ -3553,6 +3553,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // functions, so it changes emitted C by construction). Listing consumer;
         // the live gate is the pre-invocation check in `run_listing_consumers`.
         "tailcallentry" => arch.analysis_tailcallentry,
+        "calltable" => arch.analysis_calltable,
         // (kuna) Mach-O Objective-C metadata recovery — default-OFF (output-changing:
         // renames IMP functions + adds class/selector symbols). Registered here so it
         // is gated by `analysis_objc` rather than running by the fail-open default.
@@ -5454,6 +5455,10 @@ fn commit_analysis_output(
     let mut out = out;
     if let Some(entry) = out.go_chanrecv2 {
         prog.arch_mut().go_chanrecv2 = Some(entry);
+    }
+    if !out.case_entries.is_empty() {
+        let cases: std::collections::BTreeSet<u64> = out.case_entries.iter().copied().collect();
+        out.entries.retain(|e| !cases.contains(e));
     }
     for slot in std::mem::take(&mut out.ppc32_pic_slots) {
         prog.arch_mut().ppc32_pic_imports.insert(slot.address, slot);

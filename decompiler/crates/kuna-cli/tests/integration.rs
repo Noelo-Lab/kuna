@@ -838,6 +838,8 @@ mod go_store_value;
 mod go_pointer_arithmetic;
 #[path = "go_stack_abi.rs"]
 mod go_stack_abi;
+#[path = "call_table_cli.rs"]
+mod call_table_cli;
 
 #[path = "rust_integer_conversions.rs"]
 mod rust_integer_conversions;

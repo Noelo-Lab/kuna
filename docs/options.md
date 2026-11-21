@@ -626,6 +626,10 @@ Three tiers:
 | a shared ISR handler is swallowed by the two-instruction stub that branches to it | [`tailcallentry`](#tailcallentry----on--off-default-on) |
 | function entry missing where the previous function ends in an unconditional branch | [`tailcallentry`](#tailcallentry----on--off-default-on) |
 | kuna emits one oversized function where the ground truth has two | [`tailcallentry`](#tailcallentry----on--off-default-on) |
+| a function reached only through a table of function pointers is missing | [`calltable`](#calltable----on--off-default-on) |
+| kuna xrefs shows no caller for a function called through ops[i](x) | [`calltable`](#calltable----on--off-default-on) |
+| a switch case that opens with push rbp is listed as a function | [`calltable`](#calltable----on--off-default-on) |
+| a dispatcher's table of tail calls is printed as a switch | [`calltable`](#calltable----on--off-default-on) |
 | go function parameters missing or void while the body reads rax/rbx locals that are never assigned | [`goabi`](#goabi----auto--off-default-auto) |
 | a go function returning two values loses the second and the statements computing it | [`goabi`](#goabi----auto--off-default-auto) |
 | go output full of unassigned register-commented locals | [`goabi`](#goabi----auto--off-default-auto) |
@@ -2178,6 +2182,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On by default, with `listing` (which `kuna decompile`, `decompile-all` and `functions` inject on non-x86-64 and the `aggressive` preset supplies): on stripped ARM firmware a routine reached only by a tail `B` -- a shared ISR stub's handler, a `pop {r4,lr} ; b helper` tail call, a jump-thunk target -- becomes a function of its own instead of being absorbed into an earlier function and producing no output. Measured on 96 Cortex-M images: +561 ground-truth functions, 94.6% of the new entries are real function starts, zero real bodies split, zero entries lost. Inert on every non-ARM image and without `listing`. Flip off to leave the walk's absorption in place.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-tailcallentry
 - **Example:** `option listing on --option tailcallentry on`
+
+### `calltable` -- on | off, default `on`
+
+- **Symptoms:** a function reached only through a table of function pointers is missing; kuna xrefs shows no caller for a function called through ops[i](x); a switch case that opens with push rbp is listed as a function; a dispatcher's table of tail calls is printed as a switch.
+- **What it does:** Read the table a computed transfer indexes and decide whether it is a switch or a table of functions. An indexed CALL through a pointer table calls every entry. A computed JUMP through a range-checked table whose distinct targets are 40% or more other functions' entries is a call table of tail calls, not a switch; a JUMP through a table with no range check is one only when every target is already another function's entry, because an unchecked switch or a computed goto reads the same way. Call-table targets become function entries and, in the reference walk behind `kuna xrefs`, call references of the dispatcher instead of its switch cases. The other way round, a discovered entry (not a symbol) that sits on a case of a switch and that no call reaches is dropped from the function list. The tables are read with the register-chain fold the switch reader uses; a pointer table with no range check is read up to 256 entries and stops at the first word that is not code of the section the transfer is in, or before the first target that is a case of a range-checked switch or code already inside a function, where the read ran into the next table. Reads the Listing, so it is inert where `listing` is off.
+- **When to flip:** On (default). Flip off if a hand-written dispatcher's table is misread as functions, or to see a prologue-shaped switch case listed as a function again.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-calltable
+- **Example:** `--option calltable off`
 
 ### `goabi` -- auto | off, default `auto`
 
