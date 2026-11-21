@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4930,
-    4930
+    4931,
+    4931
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -423,6 +423,9 @@
     "data:CALLRESULTUSE #6: all, ret, branch and dead return",
     "data:CALLRESULTUSE #7: off, the branched-on result is dropped, as under on",
     "data:CALLRESULTUSE #8: off, the hand-off to the next call is lost",
+    "data:CALLRESULTUSE-ARMTAIL #1: by default the tail call after another call takes no arguments",
+    "data:CALLRESULTUSE-ARMTAIL #2: by default g keeps its one argument",
+    "data:CALLRESULTUSE-ARMTAIL #3: by default t1 gains no parameter",
     "data:CALLRETPAIR #1: the call is never a bare statement with its JSValue discarded",
     "data:CALLRETPAIR #2: the call gains the 16-byte join output the cspec output rule asked for",
     "data:CALLRETPAIR #3: both halves are SUBPIECEs of the call output instead of locals with no definition",
@@ -1270,7 +1273,7 @@
     "data:Go equality preserves a separate implied load in its NaN guard",
     "data:Go field conversions respect diagnostic suppression",
     "data:Go float storage conversion preserves bits",
-    "data:Go gopanic fallthrough sentinel appears only with known no-return off (callresultuse hands panicCheck1's untouched rax to gopanic, whose prototype the console has not settled)",
+    "data:Go gopanic fallthrough sentinel appears only with known no-return off",
     "data:Go high pair stores each named result field",
     "data:Go indexed signed store converts unsigned value",
     "data:Go integer pointer conversion retains uintptr bridge",
@@ -2088,9 +2091,7 @@
     "data:PIC indirect returning call retains return 7 @dup2",
     "data:PIC off and restored off keep the unnamed stub",
     "data:PIC off keeps the unnamed stub",
-    "data:PIC off leaves check's stub unnamed",
-    "data:PIC off leaves every driver-linked stub unnamed (callresultuse hands each unknown stub's r3 to the next)",
-    "data:PIC off leaves every driver-linked stub unnamed, second pair",
+    "data:PIC off leaves every driver-linked stub unnamed",
     "data:PIC on names the proved terminal call",
     "data:PLTLOCAL #1: the forwarded registers are never lost to the stub",
     "data:PLTLOCAL #2: built at the definition, its declared parameters arrive",

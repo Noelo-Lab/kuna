@@ -13,8 +13,6 @@
 //! violate one condition of the bound, `bejoin_unreach_{arm32,thumb}_be_O2`,
 //! whose `u_pool` calls `hi` ahead of `__builtin_unreachable()`, and
 //! `poolcase_thumb1_le32` (source `poolcase_thumb1.s`), a Thumb-1 switch.
-//! `probe` ends in `bl use; bl die` through imports, which `callresultuse`
-//! prints as `die(use(v1))`.
 
 use crate::common;
 
@@ -43,7 +41,7 @@ fn a_call_followed_by_its_literal_pool_ends_the_function() {
         let code = decompile(fixture, "probe", &[]);
         assert!(!code.contains("halt_baddata") && !code.contains("Bad instruction"), "{fixture}:\n{code}");
         let last = code.lines().rev().find(|line| line.trim() != "}").unwrap_or_default();
-        assert!(last.contains("(v1));") && last.contains(BOUND), "{fixture}:\n{code}");
+        assert!(last.contains("();") && last.contains(BOUND), "{fixture}:\n{code}");
         let off = decompile(fixture, "probe", &["--option", "funcboundflow", "off"]);
         assert!(off.contains("halt_baddata(); // warn: Bad instruction - Truncating control flow here"), "{fixture}:\n{off}");
     }

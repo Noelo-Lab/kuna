@@ -7,7 +7,8 @@
     Stage / sub-stage: P4 return and parameter recovery, the ancestor walk
     behind the trials of the next call's inputs and the function's RETURN
     (Funcdata::ancestorOpUse, p4_calls/kuna_callresultuse.rs).  Option
-    `callresultuse`, off|on|all, default on.
+    `callresultuse`, off|on|all, default off (kuna-callresultuse-armtail.xml);
+    the script turns it on first.
 
     Source (clang -target aarch64-linux-gnu -O1 -fno-optimize-sibling-calls;
     g, g2 and p are symbols without bytes, so the callees' prototypes are
@@ -55,6 +56,7 @@ fd7bbfa9fd030091d6030094a000805214040094080000d029008052080140f9
 <symbol space="ram" offset="0x10a0" name="fresh"/>
 </binaryimage>
 <script>
+  <com>option callresultuse on</com>
   <com>lo fu ret</com>
   <com>decompile</com>
   <com>print C</com>

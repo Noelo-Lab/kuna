@@ -61,9 +61,9 @@ use crate::funcdata::Funcdata;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum CallResultUse {
     /// Upstream's reading: a call result is never a trial's only use.
+    #[default]
     Off,
     /// The next call's argument.
-    #[default]
     On,
     /// `On`, and the return value whenever it reaches the RETURN untouched.
     All,

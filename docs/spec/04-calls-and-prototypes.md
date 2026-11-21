@@ -9594,7 +9594,7 @@ same callee. Third, heritage visits only a range some op reads or writes, so
 first call gets no output trial and the second no input trial.
 
 With the option on (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callresultuse.rs`,
-`off|on|all`, default `on`), a trial whose root is a call result on every path
+`off|on|all`, default `off`, see below), a trial whose root is a call result on every path
 (`kuna_callresultuse.rs (call_result_root)`: through MULTIEQUALs, COPYs and
 the INDIRECT effects of later calls, every definition is a CALL or CALLIND's
 output or a creation whose range is a possible output of the callee's model,
@@ -9651,6 +9651,25 @@ returns from now return, and 56 return where the reader has `void`, 53 of
 them Swift functions ending in an ARC release whose `void` only a runtime
 signature table knows. `decompile-all` of an 834 KiB framework takes the
 same time to within the noise.
+
+The option is off by default because the reading is right where results are
+handed from message to message and wrong in most other code. In C, `bl g;
+bl h` with `x0` untouched is far more often `g(); h();`, two calls of which
+the second takes nothing, than `h(g())`. Over 12 AArch64 builds of bzip2,
+zlib, dash and gzip (clang 21 at O0, O2 and O2 `-fno-inline`), `on` changed
+141 of 3,202 functions; of the 276 arguments it added at calls to in-image
+functions whose DWARF gives their parameter count, 275 were false
+(`cadvise(void)`, `onint(void)`, `yylex(void)`, `flush_outbuf(void)`), and 8
+`void` functions became returning (dash's `flushall`, gzip's `warning`).
+Once the first register is active at a call, upstream's
+contiguity rules follow it: gcc's ARM `push {r3,lr}; bl g; pop.w {r3,lr};
+b.w h`, from `void t1(void) { g(6); h(); }`, gave `h` the pair `r1:r0`, the
+leftover `r2` and the reloaded `r3`, and `t1` four parameters
+(`tests/stages/kuna-callresultuse-armtail.xml` pins the default). On x86-64
+`rax` is no argument register, but a `mov rcx,rax` temporary at a gcc -O0
+variadic call was taken for a trailing argument (`fprintf(stream,fmt,v1,fmt)`).
+With the option off every function decompiles as it did before the option
+existed.
 
 ### Raw caller reads prove a return outside callee-first settling (`kuna_callerreads.rs`)
 

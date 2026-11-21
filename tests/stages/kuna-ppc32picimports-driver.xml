@@ -26,9 +26,7 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="PIC off leaves every driver-linked stub unnamed (callresultuse hands each unknown stub's r3 to the next)" min="1" max="1">v1 = sub_5b0\(sub_590\(\)\);</stringmatch>
-<stringmatch name="PIC off leaves every driver-linked stub unnamed, second pair" min="1" max="1">sub_580\(sub_5d0\(v1\)\);</stringmatch>
-<stringmatch name="PIC off leaves check's stub unnamed" min="1" max="1">^  sub_5d0\(\);</stringmatch>
+<stringmatch name="PIC off leaves every driver-linked stub unnamed" min="5" max="5">^  sub_5[89bd]0\(\);</stringmatch>
 <stringmatch name="PIC abi names every stub despite the start files' jump through CTR" min="5" max="5">^  (other|another|extra|__stack_chk_fail)\(\);</stringmatch>
 <stringmatch name="the no-return import ends refs only with the option abi" min="1" max="1">__stack_chk_fail\(\); // no-return</stringmatch>
 <stringmatch name="both passes keep check's return" min="2" max="2">return 7;</stringmatch>

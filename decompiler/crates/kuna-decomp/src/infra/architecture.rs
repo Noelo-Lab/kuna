@@ -2430,7 +2430,7 @@ impl Architecture {
             sparc_struct_return: false,
             global_array_anchor: false,
             opaque_predicate: false,
-            call_result_use: crate::p4_calls::kuna_callresultuse::CallResultUse::On,
+            call_result_use: crate::p4_calls::kuna_callresultuse::CallResultUse::Off,
             ret_split_global: false,
             ret_split_limit: None,
             stack_addr_arg_trial: false,
@@ -2878,7 +2878,7 @@ impl Architecture {
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
         self.arm_constant_shift = crate::p9_emit::kuna_armconstantshift::ConstShiftMode::Off;
-        self.call_result_use = crate::p4_calls::kuna_callresultuse::CallResultUse::On; // (kuna) option callresultuse
+        self.call_result_use = crate::p4_calls::kuna_callresultuse::CallResultUse::Off; // (kuna) option callresultuse: default off, `bl g; bl h` is `g(); h();` far more often than `h(g())` in C
         self.wrap_add = false; // (kuna) option wrapadd: default off, the casts cost readability on every widened int sum
         self.rust_array_zero = false;
         self.arm_float_args = true; // (kuna) option armfloatargs: default-ON with armfloatreturn; inert unless the ELF states the VFP procedure-call standard
