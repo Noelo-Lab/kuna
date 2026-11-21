@@ -2684,8 +2684,8 @@ funcsym stream:
   records each import again as the bind on the slot its stub loads, so `strip`
   may drop the undefined `nlist` and write `INDIRECT_SYMBOL_LOCAL | ABS` over
   the entry, which is how the SwiftPM-built frameworks of an App Store app ship
-  most of their Swift stdlib and runtime calls (DeviceKit: 29 of 76 stubs,
-  RevenueCat: 696 of 848). The walk above leaves such a stub `sub_<addr>`.
+  most of their Swift stdlib and runtime calls. The walk above leaves such a
+  stub `sub_<addr>`.
   `decompiler/crates/kuna-analysis/src/loader/kuna_stubbinds.rs (StubBindsPass)`
   decodes each stub of an `S_SYMBOL_STUBS` section the walk did not name to the
   slot it jumps through (`adrp; ldr; br` on arm64, the `adrp; add; ldr; braa` of
@@ -2694,7 +2694,10 @@ funcsym stream:
   import, one leading `_` stripped and the name demangled as the walk's names
   are, so `sub_fc80(0x28)` renders `Swift._StringGuts.grow(_:)(0x28)`. A stub
   that does not decode, a slot with no bind, and a bind with an addend are left
-  alone, and the slot itself is not this pass's to name.
+  alone, and the slot itself is not this pass's to name. The name is a pass
+  function symbol, not a format-resolver import, so the built-in libc
+  prototypes (which match the resolver's imports) are not seeded on it. The
+  chains are walked only when the indirect-symbol walk left some stub unnamed.
   Mach-O only, inert without chained fixups or with a complete indirect-symbol
   table, so every datatest is byte-identical.
 - **dyld shared cache cross-image references** (kuna, `dyldcrossrefs`,
