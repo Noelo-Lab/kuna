@@ -57,6 +57,9 @@ pub struct VmCtx {
     /// A far value the VPC register took without a fetch, followed once it
     /// survives a second block.
     pub pending_vpc: Option<u64>,
+    /// The path left the interpreter for the function's own code; a jump
+    /// back into the protector is a re-entry.
+    pub exited: bool,
 }
 
 /// How a node's control flow was resolved.
@@ -222,6 +225,16 @@ pub struct Explorer<'a> {
     node_addrs: BTreeSet<u64>,
     /// The stack depths seen this round at each native address and context.
     stack_depths: BTreeMap<(u64, Option<u64>), Vec<Option<i128>>>,
+    /// Addresses in the function's own code some path reached outside the
+    /// interpreter, over every round: a native node's run ends there.
+    native_starts: BTreeSet<u64>,
+    /// Addresses inside the runs of native nodes emulated this round.
+    native_covered: BTreeSet<u64>,
+    /// Native starts found this round inside an earlier native node's run.
+    new_splits: usize,
+    /// The stack pointer's offset from its entry value where native code
+    /// first jumped into the protector this round.
+    vm_entry_depth: Option<Option<i128>>,
     /// The node being resolved left by a direct jump (a constant in the instruction).
     direct_exit: bool,
     /// The context each arm of the conditional exit being resolved continues in.
@@ -271,6 +284,8 @@ const MAX_CALLEE_SCAN: usize = 512;
 const MAX_PUSHED_WORDS: i128 = 16;
 /// Most stack depths kept apart at one native address and context.
 const MAX_STACK_DEPTHS: usize = 4;
+/// Salt of the context a re-entered interpreter region starts with.
+const REGION_TAG: u64 = 0x7e00_0000_0000_0000;
 
 /// A call leaving the interpreter: where it goes and where it comes back.
 #[derive(Clone, Copy, Debug)]
@@ -316,6 +331,10 @@ impl<'a> Explorer<'a> {
             callees: BTreeMap::new(),
             node_addrs: BTreeSet::new(),
             stack_depths: BTreeMap::new(),
+            native_starts: BTreeSet::new(),
+            native_covered: BTreeSet::new(),
+            new_splits: 0,
+            vm_entry_depth: None,
             direct_exit: false,
             arm_ctxs: Vec::new(),
             forget_fresh: BTreeSet::new(),
@@ -377,6 +396,7 @@ impl<'a> Explorer<'a> {
                 self.widen_all();
             }
             self.new_syms = 0;
+            self.new_splits = 0;
             if self.timed_out {
                 break;
             }
@@ -393,15 +413,15 @@ impl<'a> Explorer<'a> {
                 self.stats.halts,
                 self.started.elapsed().as_secs_f64()
             ));
-            if self.new_syms == 0 && n == prev_nodes {
-                break;
+            if self.new_splits > 0 {
+                self.log.push(format!("round {}: {} native blocks split", round + 1, self.new_splits));
             }
-            if self.new_syms == 0 && round > 0 {
+            if self.new_syms == 0 && self.new_splits == 0 && (n == prev_nodes || round > 0) {
                 break;
             }
             prev_nodes = n;
         }
-        self.stats.converged = self.new_syms == 0 && !self.stats.cut_short;
+        self.stats.converged = self.new_syms == 0 && self.new_splits == 0 && !self.stats.cut_short;
         self.stats.nodes = cfg.nodes.len();
         self.stats.insns = cfg.nodes.iter().map(|n| n.insns.len()).sum();
         self.stats.vm_nodes = cfg.nodes.iter().filter(|n| n.entry_ctx.in_vm).count();
@@ -431,6 +451,8 @@ impl<'a> Explorer<'a> {
         self.stats.cut_short = false;
         self.node_addrs.clear();
         self.stack_depths.clear();
+        self.native_covered.clear();
+        self.vm_entry_depth = None;
         let mut cfg = FlatCfg { nodes: Vec::new(), index: BTreeMap::new(), entry: 0, escapes: Vec::new(), sym_sources: BTreeMap::new() };
         self.sym_sources.clear();
         let mut worklist: VecDeque<NodeId> = VecDeque::new();
@@ -719,6 +741,9 @@ impl<'a> Explorer<'a> {
         });
         cfg.index.insert(key, id);
         self.node_addrs.insert(key.addr);
+        if !ctx.in_vm && !self.target.is_foreign_code(key.addr) && self.native_starts.insert(key.addr) && self.native_covered.contains(&key.addr) {
+            self.new_splits += 1;
+        }
         worklist.push_back(id);
         id
     }
@@ -732,11 +757,7 @@ impl<'a> Explorer<'a> {
     /// stack pointer).  At most [`MAX_STACK_DEPTHS`] depths are kept apart
     /// per address and context; a further one is reached at the first.
     fn at_depth(&mut self, mut key: NodeKey, state: &mut State) -> NodeKey {
-        let sp = state.read_reg(&mut self.arena, self.abi.sp, self.abi.ptr_size);
-        let depth = match self.arena.affine_probe(sp) {
-            Some((Some(b), k)) if Some(b) == self.sp0 => Some(k),
-            _ => None,
-        };
+        let depth = self.sp_depth(state);
         let seen = self.stack_depths.entry((key.addr, key.ctx)).or_default();
         key.sp = if seen.contains(&depth) {
             depth
@@ -749,13 +770,25 @@ impl<'a> Explorer<'a> {
         key
     }
 
+    /// The stack pointer's offset from its entry value, when it has one.
+    fn sp_depth(&mut self, state: &mut State) -> Option<i128> {
+        let sp = state.read_reg(&mut self.arena, self.abi.sp, self.abi.ptr_size);
+        match self.arena.affine_probe(sp) {
+            Some((Some(b), k)) if Some(b) == self.sp0 => Some(k),
+            _ => None,
+        }
+    }
+
     /// Emulate one node.  An interpreter instruction that branches back to
     /// itself with a decided guard (a `rep movsb` with a concrete count)
     /// repeats inside the node, one instance per iteration, as angr's
     /// rep-movsb shortcut does, instead of re-reaching its own node and
     /// symbolizing its counters.  Such an instruction of the function's own
     /// code starts a node of its own and loops there, so the program's copy
-    /// loop stays a loop over its source pointer.
+    /// loop stays a loop over its source pointer.  A node of the function's
+    /// own code outside the interpreter ends where another such node starts,
+    /// so paths that join inside a straight run of native code share its
+    /// tail, as a disassembler's basic blocks do.
     fn emulate_node(&mut self, cfg: &mut FlatCfg, worklist: &mut VecDeque<NodeId>, emu: &mut Emulator<'a>, id: NodeId) {
         let mut state = cfg.nodes[id as usize].entry.clone();
         let ctx = cfg.nodes[id as usize].entry_ctx;
@@ -763,7 +796,12 @@ impl<'a> Explorer<'a> {
         let mut insns: Vec<Rc<LiftedInsn>> = Vec::new();
         let mut traces: Vec<InsnTrace> = Vec::new();
         let mut exit;
+        let native = !ctx.in_vm && !self.target.is_foreign_code(addr);
         loop {
+            if native && !insns.is_empty() && self.native_starts.contains(&addr) {
+                exit = Exit::Fallthrough(addr);
+                break;
+            }
             if !self.target.is_mapped(addr) {
                 exit = Exit::Halt(format!("flow into unmapped address {addr:#x}"));
                 break;
@@ -850,6 +888,9 @@ impl<'a> Explorer<'a> {
                 }
                 _ => break,
             }
+        }
+        if native {
+            self.native_covered.extend(insns.iter().skip(1).map(|i| i.addr));
         }
         self.image_ptrs.append(&mut emu.image_loads);
         // A conditional that only skips to the next instruction (a CMOV) joins
@@ -1393,6 +1434,8 @@ impl<'a> Explorer<'a> {
                         // Dispatch through the interpreter: the pushed return
                         // address salts the context so each entry stub is distinct.
                         if !ctx.in_vm || (ctx.vpc_reg.is_none() && ctx.vpc_cell.is_none()) {
+                            let site = cfg.nodes[id as usize].key.addr;
+                            ctx = self.entering_vm(&mut state, ctx, site, c);
                             let salt = ctx.ctx.unwrap_or(0).rotate_left(17) ^ fallthrough;
                             ctx.ctx = Some(salt);
                         }
@@ -1689,8 +1732,69 @@ impl<'a> Explorer<'a> {
                 return NodeExit::TailCall(c);
             }
         }
+        let site = cfg.nodes[id as usize].key.addr;
+        let ctx = if pushed.is_none() && self.leaves_vm(&mut state, &ctx, c) {
+            self.forget_below_sp(&mut state);
+            VmCtx { exited: true, ..VmCtx::default() }
+        } else {
+            self.entering_vm(&mut state, ctx, site, c)
+        };
         let key = NodeKey::at(c, ctx.ctx);
         NodeExit::Branch(self.reach(cfg, worklist, key, state, ctx, Some(id)))
+    }
+
+    /// The interpreter hands control back to the function's own code at `c`
+    /// (angr's `_vm_mode_should_end`): a computed jump or return out of the
+    /// interpreter's context, to code outside the protector's sections that
+    /// is not a fragment of its handlers, once the VPC register no longer
+    /// holds a virtual PC (the exit restored the native registers), or, for
+    /// a VPC kept in a memory cell, which keeps its last value, once the stack
+    /// pointer is back where native code entered the interpreter (angr's
+    /// `_on_vm_entry_frame`).  Every exit to one address then reaches one
+    /// node, with the native context, as angr keys post-exit blocks with no
+    /// VPC: the function's epilogue is not copied once per virtual exit.
+    fn leaves_vm(&mut self, state: &mut State, ctx: &VmCtx, c: u64) -> bool {
+        if !ctx.in_vm || self.direct_exit || self.target.is_foreign_code(c) {
+            return false;
+        }
+        let left = if ctx.vpc_cell.is_some() {
+            let depth = self.sp_depth(state);
+            depth.is_some() && self.vm_entry_depth == Some(depth)
+        } else {
+            ctx.vpc_reg.is_some_and(|r| self.vpc_values(state, r, false).is_none())
+        };
+        left && !self.handler_fragment(c)
+    }
+
+    /// Drop what the path stored on the entry stack below the stack pointer
+    /// (past the x86-64 red zone): the interpreter's context the exit left
+    /// there is dead to the program, and paths that left by different exits
+    /// would otherwise differ there at the node they join.
+    fn forget_below_sp(&mut self, state: &mut State) {
+        let Some(depth) = self.sp_depth(state) else { return };
+        let red = if self.abi.ptr_size == 8 { 128 } else { 0 };
+        if let Some(region) = state.mem.get_mut(&self.sp0) {
+            region.remove_where(|o| o < depth - red);
+        }
+    }
+
+    /// The context for a transfer from native code into the protector's
+    /// code at `c`.  The first one records the stack depth the interpreter
+    /// is entered at.  After an exit, a jump back in starts a new region
+    /// keyed by its site (angr's re-entry region tag), so it never shares the
+    /// first entry's nodes.
+    fn entering_vm(&mut self, state: &mut State, mut ctx: VmCtx, site: u64, c: u64) -> VmCtx {
+        if ctx.in_vm || !self.target.is_foreign_code(c) || self.target.is_foreign_code(site) {
+            return ctx;
+        }
+        if self.vm_entry_depth.is_none() {
+            self.vm_entry_depth = Some(self.sp_depth(state));
+        }
+        if ctx.exited {
+            ctx.exited = false;
+            ctx.ctx = Some(REGION_TAG ^ site);
+        }
+        ctx
     }
 
     /// The code at `c` is a fragment of the interpreter's handlers: its

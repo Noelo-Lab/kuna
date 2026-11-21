@@ -4000,6 +4000,35 @@ interpreter (a re-entry stub, an external call's return), the context sticks
 to the last VPC, salted with the return address that a dispatch call pushed,
 so two re-entry stubs never share the entry handler's node.
 
+The interpreter handing control back to the function's own code ends that
+(`Explorer::leaves_vm`, angr's `_vm_mode_should_end`). A computed jump or
+return out of a block in the interpreter's context, with no return address
+pushed, to code outside the protector's sections that is not a fragment of
+its handlers, is an exit once the VPC register no longer holds a virtual PC:
+the exit restored the native registers. A VPC kept in a memory cell keeps
+its last value after the exit, so there the stack pointer must instead be
+back at the depth where native code first jumped into the protector (angr's
+`_on_vm_entry_frame`). The exit's target is keyed with no VPC, as angr keys
+the blocks after an exit, so every exit to one address reaches one node.
+What the path stored on the stack below the stack pointer, past the x86-64
+red zone, is dropped there (`Explorer::forget_below_sp`): it is the
+interpreter's context, dead to the program, and paths that left by different
+exits would otherwise differ there at the node they join. A
+function whose virtual branches each leave for the shared epilogue, its
+`/GS` cookie check included, then runs that epilogue once in the recovered
+program, as it does in the binary, instead of once per virtual exit. A jump
+from there back into the protector is a re-entry: it is keyed by its site,
+so it never shares the first entry's nodes (angr's re-entry region tag).
+
+A node of the function's own code outside the interpreter ends where
+another such node starts (`Explorer::emulate_node`), as a disassembler ends
+a basic block at a jump target. Exits often land a few instructions apart
+in one straight run (one at an SDK marker's leftover `or ebx, ebx` or at a
+register restore, another just past it); without the split, each path would
+run its own copy of the rest of the run, and the paths would never join.
+The starts are kept over every round. A start found inside a run that was
+already emulated forces another round, in which that run ends there.
+
 An instruction that branches back to itself (an x86 `rep` prefix) is handled
 by where it lives (`Explorer::emulate_node`). In the protector's code, with a
 decided count, it repeats inside its node, one instance per iteration, as
@@ -4119,7 +4148,7 @@ forward past a block that left no readable VPC symbolizes it like any other
 location, so a path the key cannot tell apart is not dropped. The next round starts over. At a recorded node, each recorded
 location becomes a fresh symbol that carries the agreed known bits. The fixpoint
 is reached when a round records no new location, no new constant, no opened
-location and no narrowed bits. The known bits only narrow, so each round's are
+location, no narrowed bits and no new split of a native run. The known bits only narrow, so each round's are
 implied by every value a path brought, and at the fixpoint every guard folded
 through them holds on every path. A pointer advanced in a loop (`sym + 1`
 against `sym`) loses one more high bit to the carry every round, which would
@@ -4522,7 +4551,7 @@ synthetic `pushan_vm_x86_64` fixture, a push/ret-dispatched stack-machine
 interpreter in a 64 KiB `.vmp0` whose bytecode computes `arg0 == 0 ? 7 :
 arg0 + 5` with a cmov-selected virtual branch. With `off`, the function is an
 empty body. With the default, the virtual branch and both returns are
-recovered. `tests/stages/kuna-pushan-sound.xml` decompiles fifteen
+recovered. `tests/stages/kuna-pushan-sound.xml` decompiles sixteen
 hand-written programs of the `pushan_vm2_x86_64` fixture, each aimed at a way
 the recovered program could say something false: loops whose exit tests need
 more than two observed counter values (a `setl` the JZ selects on by `cmov`,
@@ -4530,8 +4559,10 @@ an equality, a bound of 2^40), a branch on a comparison stored and reloaded,
 correlated branches, two branches to one label, values across System V calls
 and a local a call writes, a read-only table indexed by the loop counter, a
 writable global read before and after a call, stores through a pointer
-argument on two paths and in a loop, and two programs the header reports as
-incomplete (a loop that grows the stack, a virtual jump through an argument).
+argument on two paths and in a loop, two programs the header reports as
+incomplete (a loop that grows the stack, a virtual jump through an argument),
+and two virtual exits into one native epilogue, one of them an instruction
+ahead of it, whose call the recovered program makes once.
 The expression arena and the state have unit tests in
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanexpr/tests.rs` and
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanstate/tests.rs`, and

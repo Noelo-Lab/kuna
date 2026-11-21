@@ -8,8 +8,9 @@ tests need more than two observed counter values, a branch on memory written
 earlier, correlated branches, two branches to one label, values live across a
 native call, a local a call writes through its address, a read-only table and
 a stack array indexed by a loop counter, a branch on a mutable global, stores
-through a pointer argument on two paths, a loop that grows the stack, and a
-virtual jump through an argument.  Every program sits
+through a pointer argument on two paths, a loop that grows the stack, a
+virtual jump through an argument, and two virtual exits into one native
+epilogue, one of them an instruction ahead of it.  Every program sits
 in its own 256-byte block of seeded random filler (entropy above 7 bits/byte).
 Regenerate with `python3 pushan_vm2_x86_64.py` (needs GNU as/ld)."""
 import os, random, subprocess, tempfile
@@ -18,6 +19,7 @@ OPS = ["LDCTX", "STCTX", "LEAV", "LDIMM", "ADD", "SUB", "MUL", "LT", "EQ", "LD",
 rng = random.Random(7681)
 codes = rng.sample(range(1, 256), len(OPS))
 OP = dict(zip(OPS, codes))
+OP["LEAVE"] = min(set(range(1, 256)) - set(codes))
 A0, A1 = 0, 8
 
 
@@ -150,10 +152,19 @@ PROGRAMS = {
                 "L", ("LDCTX", A0), ("LD",), ("LDIMM", 10), ("LT",), ("JZ", "D"),
                 ("LDCTX", A0), ("LD",), ("LDIMM", 1), ("ADD",), ("LDCTX", A0), ("ST",), ("JMP", "L"),
                 "D", ("LDCTX", A0), ("LD",), ("EXIT",)],
+    # return fin(a0 ? a0 + 5 : 7 + 1);   (each arm leaves the VM for the stub's native tail:
+    # the else arm at its `add rax, 1`, the then arm one instruction later)
+    "f_epi": [("LDCTX", A0), ("JZ", "Z"),
+              ("LDCTX", A0), ("LDIMM", 5), ("ADD",), ldimm_sym("f_epi_tail"), ("LEAVE",),
+              "Z", ("LDIMM", 7), ldimm_sym("f_epi_inc"), ("LEAVE",)],
 }
 
 NAMES = list(PROGRAMS)
-DATA = {"tbl": 0x0, "g_flag": 0x0, "g_side": 0x0}
+DATA = {"tbl": 0x0, "g_flag": 0x0, "g_side": 0x0, "f_epi_tail": 0x0, "f_epi_inc": 0x0}
+LOCAL = {"f_epi_tail", "f_epi_inc"}
+STUB_PRE = {"f_epi": ["push rbx"]}
+STUB_TAIL = {"f_epi": ["f_epi_inc:", "    add rax, 1", "f_epi_tail:", "    mov rdi, rax", "    call fin",
+                       "    pop rbx", "    ret"]}
 
 
 def build(addrs):
@@ -171,12 +182,15 @@ def build(addrs):
 def source(blocks):
     out = [".intel_syntax noprefix", ".section .text,\"ax\",@progbits"]
     for i, name in enumerate(NAMES):
-        out += [f".globl {name}", f".type {name},@function", f"{name}:",
-                f"    push {i * 256 + 64}", "    jmp vm_entry", f".size {name}, .-{name}"]
+        out += [f".globl {name}", f".type {name},@function", f"{name}:"]
+        out += ["    " + x for x in STUB_PRE.get(name, [])]
+        out += [f"    push {i * 256 + 64}", "    jmp vm_entry"] + STUB_TAIL.get(name, []) + [f".size {name}, .-{name}"]
     out += [".globl ext", ".type ext,@function", "ext:",
             "    mov qword ptr [rip+g_side], rdi", "    lea rax, [rdi+rdi+1]", "    ret", ".size ext, .-ext",
             ".globl setv", ".type setv,@function", "setv:",
             "    mov qword ptr [rdi], 9", "    xor eax, eax", "    ret", ".size setv, .-setv",
+            ".globl fin", ".type fin,@function", "fin:",
+            "    lea rax, [rdi+rdi*2]", "    ret", ".size fin, .-fin",
             ".section .rodata,\"a\",@progbits", ".p2align 3", ".globl tbl", "tbl:", "    .quad 1, 2, 300, 4",
             ".section .data,\"aw\",@progbits", ".p2align 3", ".globl g_flag", "g_flag:", "    .quad 0",
             ".globl g_side", "g_side:", "    .quad 0",
@@ -204,8 +218,10 @@ def source(blocks):
             "h_callp:", "    pop rdi", "    push rsi", "    call setv", "    pop rsi", "    push rax", "    jmp dispatch",
             "h_exit:", "    pop rax", "    mov rsp, rbp", "    pop rdi", "    pop rsi", "    pop rbp", "    pop rbx",
             "    add rsp, 8", "    ret",
+            "h_leave:", "    pop rcx", "    pop rax", "    mov rsp, rbp", "    pop rdi", "    pop rsi", "    pop rbp",
+            "    pop rbx", "    add rsp, 8", "    jmp rcx",
             ".p2align 8", "handlers:"]
-    handler = {OP[o]: "h_" + o.lower() for o in OPS}
+    handler = {c: "h_" + o.lower() for o, c in OP.items()}
     for i in range(256):
         out.append(f"    .quad {handler.get(i, '0')}")
     out += [".p2align 8", "bytecode:"]
@@ -215,11 +231,11 @@ def source(blocks):
     return "\n".join(out)
 
 
-def link(d, src, dst):
+def link(d, src, dst, discard=True):
     s, o = os.path.join(d, "vm.s"), os.path.join(d, "vm.o")
     open(s, "w").write(src)
     subprocess.run(["as", "--64", "-o", o, s], check=True)
-    subprocess.run(["ld", "-static", "-e", NAMES[0], "--discard-all", "--build-id=none", "-o", dst, o], check=True)
+    subprocess.run(["ld", "-static", "-e", NAMES[0]] + (["--discard-all"] if discard else []) + ["--build-id=none", "-o", dst, o], check=True)
 
 
 def symbols(path):
@@ -237,9 +253,9 @@ dst = os.path.join(here, "pushan_vm2_x86_64")
 with tempfile.TemporaryDirectory() as d:
     state = rng.getstate()
     probe = os.path.join(d, "probe")
-    link(d, source(build({k: 0 for k in DATA})), probe)
+    link(d, source(build({k: 0 for k in DATA})), probe, discard=False)
     nm = symbols(probe)
     addrs = {k: nm[k] for k in DATA}
     rng.setstate(state)
     link(d, source(build(addrs)), dst)
-    assert all(symbols(dst)[k] == addrs[k] for k in DATA)
+    assert all(symbols(dst)[k] == addrs[k] for k in DATA if k not in LOCAL)
