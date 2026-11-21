@@ -748,6 +748,8 @@ pub struct ArchContext {
     pub retsysreg_cop_userops: Vec<kuna_base::types::uint4>,
     /// Retain register trials carrying proven stack addresses.
     pub stack_addr_arg_trial: bool,
+    /// (kuna) `option calleefilledarg`.
+    pub callee_filled_arg: bool,
     /// (kuna) `option bejoin`: when may a two-register value join with its
     /// high word in the first register where the ABI puts it?  Read by
     /// [`crate::p4_calls::kuna_bejoin::mode`].
@@ -1594,6 +1596,7 @@ impl ArchContext {
             retsysreg_userops: Vec::new(),
             retsysreg_cop_userops: Vec::new(),
             stack_addr_arg_trial: false,
+            callee_filled_arg: true,
             // (kuna) `option bejoin`; the real value is copied from the engine
             // Architecture in `build_arch_handle`.
             be_join: crate::kuna_bejoin::BeJoinMode::Off,
