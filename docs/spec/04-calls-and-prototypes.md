@@ -254,6 +254,29 @@ existing treatment. Ordinary call alias handling then preserves output loads
 and their dependent conditions. A stack address may be incidental, so a known
 interface should use a declared prototype instead of this inference.
 
+With `calleefilledarg on` (default), an argument register the callee loads
+itself is not a parameter slot. `ParamListStandard::forceNoUse` applies the
+positional rule of every register convention at each call: the first register
+nobody fills ends the argument list, so a trial scored definitely-not-used
+turns every trial after it inactive. A callee that is a trampoline -- every
+path leaves through an indirect transfer, none returns or calls a named
+target, nothing is read on entry (the entry-liveness probe `calleedeadarg`
+caches for every direct call) -- and that writes the register on every path
+from its entry before anything could read it cannot be taking a parameter
+there, and forwards every register it does not write to the real target as
+the caller staged it: an Objective-C `objc_msgSend$<sel>` selector stub loads
+the selector into `x1` and jumps through a GOT slot, and the caller stages its
+real arguments in `x2` onward. So a definitely-not-used register trial at such
+a callee, and a hole `buildTrialMap` backfills on such a register, are
+stepped over by `forceNoUse` and never materialised by `forceInactiveChain`'s
+hole filling: the slots after it are scored on their own evidence. The chain
+rule is untouched (a filled hole still counts against the run of empty slots
+the convention tolerates), and a trial the caller's evidence scored anything
+else, a stack trial, an indirect call, a callee that returns or calls on
+(`void sink(long x) { printf("%ld\n", x); }` writes `rsi` first, and the
+cascade is what keeps an `idiv` remainder in `rdx` off its call), and one the
+probe could not cover keep the positional rule.
+
 
 ```yaml
 Anchors:

@@ -488,6 +488,25 @@ impl CalleeEntryDead {
             && self.takes_none(idx, off, end)
     }
 
+    /// Is this body a trampoline: every path it has leaves for code the walk
+    /// could not name (an indirect jump through a GOT slot or a register),
+    /// none returns or calls a named target, and nothing is read before it is
+    /// written? What such a body writes is its own business; every other
+    /// register goes to the real target untouched. Read by
+    /// [`crate::p4_calls::kuna_calleefilledarg`].
+    pub fn is_trampoline(&self) -> bool {
+        self.complete
+            && !self.lost
+            && self.skipped.is_none()
+            && !self.cuts.is_empty()
+            && self.cuts.len() == self.opaque_cuts.len()
+            && self.named_cuts.is_empty()
+            && self.trap_cuts.is_empty()
+            && self.returning_opaque == 0
+            && self.reads.is_empty()
+            && self.return_reads.is_empty()
+    }
+
     /// Does some path reach a system call with a byte of `[addr, addr+size)`
     /// still holding the caller's value, so the kernel may read it?
     pub fn traps_unwritten(&self, addr: &Address, size: int4) -> bool {
