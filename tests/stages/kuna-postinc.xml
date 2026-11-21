@@ -1,0 +1,64 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna-postinc: a pointer step after the statement that dereferences the
+    pointer prints as a post-increment (option postinc).
+
+    Source (gcc -O1, x86-64):
+      int sumb(const unsigned char *p, int n) {
+        int s = 0;
+        while (n) { n = n - 1; s += *p; p++; }
+        return s;
+      }
+      int sumi(const int *p, const int *e) {
+        int s = 0;
+        while (p != e) s += *p++;
+        return s;
+      }
+    fill is authored: mov [rdi],dl; add rdi,1; cmp rdi,rsi; jne; ret.
+
+    Stage: P9, ActionPostIncrement: the step p = p + 1 reads the same value
+    only the LOAD of one byte before it reads, p points to one-byte elements,
+    and the statement with the LOAD is printed right before the step, so the
+    step prints nothing and the LOAD prints *p++. fill is the STORE form. In
+    sumi the compiler steps the pointer before the LOAD and the loop compares
+    the stepped copy, so nothing folds.
+
+    Pass 1 (default) prints v2 += (uint4)*a0++; and *a0++ = a2; pass 2
+    (postinc off) the access and the step.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+f30f1efa85f6742789f0488d0c07b800000000669066662e0f1f8400000000000fb61701d04883c7014839cf75f2c389f0c3f30f1efab8000000000f1f4400000fb614068814074883c00184d275f1c3f30f1efa4839f77414b80000000066904883c7040347fc4839fe75f4c3b800000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x402000" readonly="true">
+88174883c7014839f775f5c3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="sumb"/>
+<symbol space="ram" offset="0x401050" name="sumi"/>
+<symbol space="ram" offset="0x402000" name="fill"/>
+</binaryimage>
+<script>
+  <com>lo fu sumb</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sumi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option postinc off</com>
+  <com>lo fu sumb</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-POSTINC #1: the step folds into the load (default)" min="1" max="1">^      v2 \+= \(uint4\)\*a0\+\+;$</stringmatch>
+<stringmatch name="KUNA-POSTINC #2: the step folds into the store (default)" min="1" max="1">^    \*a0\+\+ = a2;$</stringmatch>
+<stringmatch name="KUNA-POSTINC #3: a step through a copy the loop compares is left" min="1" max="1">^      a0 = v2;$</stringmatch>
+<stringmatch name="KUNA-POSTINC #4: postinc off keeps each step as its own statement" min="2" max="2">a0 = &amp;a0\[1\];</stringmatch>
+<stringmatch name="KUNA-POSTINC #5: postinc off prints no post-increment" min="2" max="2">\+\+</stringmatch>
+</decompilertest>

@@ -1482,10 +1482,11 @@ throwaway per-call `RestartLog`
 (RestartLog)`) that is dropped on return — diagnostic plumbing not yet wired to
 the Architecture-owned log — and neither fires during a jump-table
 sub-decompilation (the `is_jumptable_recovery_on` guards at the call sites —
-the sub-query must not mutate P0, §0.7). The console `deadcode delay` command
-exists but is an unwired stub (`kuna-console/src/ifacedecomp.rs
-(IfcDeadcodedelay)` returns engine-unavailable); the only live writer of the
-Override is `Heritage::bump_deadcode_delay`.
+the sub-query must not mutate P0, §0.7). The console `deadcode delay <space> <n>` command
+(`kuna-console/src/ifacedecomp.rs (IfcDeadcodedelay)`) sets a space's delay for
+all functions when no function is loaded; the per-function form is refused
+because the console rebuilds the Funcdata (and its Override) on `decompile`, so
+the only live writer of the Override is `Heritage::bump_deadcode_delay`.
 
 (kuna early restart) Upstream finishes the pass that asked for
 the restart: every later mainloop iteration, the merges and the structuring of
@@ -1704,6 +1705,19 @@ and must share the same eight-byte source typed as an eight-byte float.
 Different sources, changed low slices, wider floats, incompatible types and
 other unary operations decline. These are strict value-correctness repairs
 with no inference option; they add no floating-status or exception model.
+
+**One-destination switches.** `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_4.rs
+(RuleSwitchSingle)` rewrites a BRANCHIND whose block has one out-edge and
+whose recovered jump table is labelled into a BRANCH to the table's first
+address, then drops the table and the structured-block graph so no `switch`
+is emitted. A header warning (`Switch with 1 destination removed at <addr>`,
+plus `: N cases all go to same destination` when every entry matches) is
+added unless the table has one entry and the switch value is a constant
+(`tests/stages/kuna-switchsingle.xml`). Unlike upstream, a one-entry table
+over a computed value is left alone: kuna's table recovery can keep only the
+entries its guards prove reachable, so a single kept entry is not proof that
+the dispatch has one destination. This is a strict fix with no option: a
+`switch` with one `default:` arm states a selection the code does not make.
 
 **Ordered floating-point condition negation.** The shared
 `decompiler/crates/kuna-num/src/opcodes.rs (get_booleanflip)` table returns no
@@ -3118,13 +3132,16 @@ and splices the block out of the graph
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
 (Funcdata::remove_from_flow_split)`). The action loops over all blocks until a
 full round makes no change, and refuses to run at all while unreachable blocks
-exist. One kuna conservatism: the per-space "has heritage run yet" array the
-removability test consults is hard-wired to *false*
-(`condexe.rs (ConditionalExecution::build_heritage_array)` — a port seam never
-re-wired to the live `Funcdata::num_heritage_passes`), so an iblock op whose
-output has **no readers** is always refused rather than trusted once its space
-is heritaged; strictly conservative relative to upstream (a collapse is missed,
-never wrongly taken). `condexe.rs (RuleOrPredicate)` (oppool1, group
+exist. An iblock op whose output has **no readers** is removable only once
+its space has had at least one heritage pass: before that, the missing readers
+may simply not be linked yet. `condexe.rs (ConditionalExecution::build_heritage_array)`
+records that per space from `Funcdata::num_heritage_passes`, as upstream. Most
+such ops fall to dead-code removal first. They still reach the test when the
+space's dead-code delay outlasts its heritage delay (the console
+`deadcode delay` command, `tests/stages/kuna-condexe-heritage.xml`), and on
+ARM predicated code: a `moveq`/`movne` pair ahead of the re-tested branch
+(u-boot `env_attr_lookup`) now collapses into the guarded block.
+`condexe.rs (RuleOrPredicate)` (oppool1, group
 `conditionalexe`) handles the value-form of the same redundancy: an INT_OR
 (or INT_XOR) where one operand is provably zero along the path that reaches it (the
 `MultiPredicate` zero-slot analysis) collapses to a COPY of the other operand.
