@@ -354,6 +354,9 @@ mod verify_cfstring;
 #[path = "verify_elfgotimports.rs"]
 mod verify_elfgotimports;
 
+#[path = "verify_machodataslots.rs"]
+mod verify_machodataslots;
+
 #[path = "verify_object_formats.rs"]
 mod verify_object_formats;
 

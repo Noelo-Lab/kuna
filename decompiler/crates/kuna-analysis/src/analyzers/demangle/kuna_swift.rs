@@ -116,3 +116,76 @@ pub fn demangle_swift_name(raw: &str) -> Option<String> {
     let tree = demangle_swift_tree(raw)?;
     name::print_name(&tree)
 }
+
+/// Whether a mangled Swift symbol names a data object (type metadata, a
+/// descriptor, a witness table, a cache, a function-pointer record, a
+/// variable's storage) rather than code, or `None` for a name outside the
+/// coverage. Anything not listed, an accessor or thunk included, is code.
+pub fn is_data_symbol(raw: &str) -> Option<bool> {
+    let tree = demangle_swift_tree(raw)?;
+    let top = tree.first()?;
+    let kind = if top.kind == Kind::Static { top.first()?.kind } else { top.kind };
+    Some(matches!(
+        kind,
+        Kind::Variable
+            | Kind::TypeMetadata
+            | Kind::FullTypeMetadata
+            | Kind::GenericTypeMetadataPattern
+            | Kind::TypeMetadataInstantiationCache
+            | Kind::TypeMetadataSingletonInitializationCache
+            | Kind::TypeMetadataLazyCache
+            | Kind::TypeMetadataDemanglingCache
+            | Kind::MetadataInstantiationCache
+            | Kind::NoncanonicalSpecializedGenericTypeMetadata
+            | Kind::NoncanonicalSpecializedGenericTypeMetadataCache
+            | Kind::CanonicalPrespecializedGenericTypeCachingOnceToken
+            | Kind::CanonicalSpecializedGenericMetaclass
+            | Kind::NominalTypeDescriptor
+            | Kind::NominalTypeDescriptorRecord
+            | Kind::Metaclass
+            | Kind::ClassMetadataBaseOffset
+            | Kind::ObjCResilientClassStub
+            | Kind::FullObjCResilientClassStub
+            | Kind::ModuleDescriptor
+            | Kind::ExtensionDescriptor
+            | Kind::AnonymousDescriptor
+            | Kind::ProtocolDescriptor
+            | Kind::ProtocolDescriptorRecord
+            | Kind::ProtocolRequirementsBaseDescriptor
+            | Kind::ProtocolSelfConformanceDescriptor
+            | Kind::ProtocolSelfConformanceWitnessTable
+            | Kind::ProtocolConformanceDescriptor
+            | Kind::ProtocolConformanceDescriptorRecord
+            | Kind::ProtocolWitnessTable
+            | Kind::ProtocolWitnessTablePattern
+            | Kind::GenericProtocolWitnessTable
+            | Kind::ResilientProtocolWitnessTable
+            | Kind::LazyProtocolWitnessTableCacheVariable
+            | Kind::AssociatedTypeDescriptor
+            | Kind::AssociatedConformanceDescriptor
+            | Kind::BaseConformanceDescriptor
+            | Kind::ValueWitnessTable
+            | Kind::FieldOffset
+            | Kind::PropertyDescriptor
+            | Kind::MethodDescriptor
+            | Kind::EnumCase
+            | Kind::OpaqueTypeDescriptor
+            | Kind::OpaqueTypeDescriptorRecord
+            | Kind::OpaqueTypeDescriptorAccessorKey
+            | Kind::OpaqueTypeDescriptorAccessorVar
+            | Kind::ReflectionMetadataBuiltinDescriptor
+            | Kind::ReflectionMetadataFieldDescriptor
+            | Kind::ReflectionMetadataAssocTypeDescriptor
+            | Kind::ReflectionMetadataSuperclassDescriptor
+            | Kind::GlobalVariableOnceToken
+            | Kind::OutlinedVariable
+            | Kind::OutlinedReadOnlyObject
+            | Kind::ExtendedExistentialTypeShape
+            | Kind::UniqueExtendedExistentialTypeShapeSymbolicReference
+            | Kind::AsyncFunctionPointer
+            | Kind::CoroFunctionPointer
+            | Kind::DynamicallyReplaceableFunctionKey
+            | Kind::DynamicallyReplaceableFunctionVar
+            | Kind::AccessibleFunctionRecord
+    ))
+}

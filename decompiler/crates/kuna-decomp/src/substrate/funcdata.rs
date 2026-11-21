@@ -1263,6 +1263,16 @@ impl Funcdata {
         self.kuna_callee_entry_dead.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
     }
 
+    /// (kuna `calleefilledarg`) The same probe, shared, for a `ParamActive` to
+    /// hold through `fillinMap`.
+    pub fn kuna_callee_entry_dead_shared(
+        &self,
+        entry: &Address,
+    ) -> Option<std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>> {
+        let sp = entry.get_space()?;
+        self.kuna_callee_entry_dead.get(&(sp.get_index(), entry.get_offset())).cloned()
+    }
+
     /// (kuna `hiddenretarg`) Remember the leaves of a value vetoed from a call.
     pub fn kuna_note_hiddenret_vetoed(&mut self, leaves: &[VarnodeId]) {
         self.kuna_hiddenret_vetoed.extend(leaves.iter().copied());
