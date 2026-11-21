@@ -1,170 +1,147 @@
 //! The function-extent generator — the code units the FID hasher fingerprints.
 //!
-//! # What this is
+//! Ghidra hashes `func.getBody()`: the address set the FunctionManager recorded as
+//! the function's body, iterated as instructions in ascending address order
+//! (`FunctionBodyFunctionExtentGenerator`). kuna's program model has function
+//! **entries**, not bodies, so this module defines the extent explicitly and both
+//! sides of a match use it — the builder that fingerprints a library function and
+//! the pass that fingerprints the same function in a stripped image. A single
+//! instruction of disagreement makes the hashes differ and the lookup miss
+//! silently, so the shared definition is the whole point of this module.
 //!
-//! Ghidra's `FunctionExtentGenerator` returns the ordered list of code units that
-//! make up a function's body. The concrete strategy FID uses is
-//! `FunctionBodyFunctionExtentGenerator`: it walks `func.getBody()` (the address
-//! set the FunctionManager recorded as the body) and collects the instructions in
-//! ascending address order.
+//! The definition is a **linear decode** from the entry to its end bound: every
+//! instruction in the function's address range, including blocks after a `ret`.
+//! Two other readings were measured wrong on real binaries:
 //!
-//! kuna's Listing tracks function **entries**, not bodies (`listing/mod.rs` — the
-//! `DiscoveredFunction` model is keyed by entry VMA; there is no per-function
-//! body address set). So this generator reconstructs the body as the
-//! **address-contiguous clip** `[entry, next_function_after(entry))` over the
-//! flat, address-ordered instruction map — the exact idiom
-//! [`crate::noreturn_disc`] already uses for its call-site / fall-through
-//! reasoning.
+//! - the address clip `[entry, next_entry)` absorbed alignment padding and
+//!   interleaved code — a 347-code-unit extent for a 29-code-unit function, so
+//!   every lookup missed;
+//! - a control-flow walk stopping at the first `ret` hashed 9 code units of a
+//!   function whose body is 16, so a database built from an object stopped
+//!   matching its own linked program.
 //!
-//! # LOSS (documented, §1 of `docs/history/fid-design.md`)
-//!
-//! This is **address-contiguous, not flow-reachable**: an interleaved or outlined
-//! body (code from another function physically sitting between `entry` and the
-//! next function entry, or this function's own code living after the next entry)
-//! is mis-clipped. This is the same approximation `noreturn_disc` accepts and
-//! the one place kuna's FID is *less* faithful than Ghidra's. For the common case
-//! (the compiler lays a function down contiguously) it is exact.
-//!
-//! # Origin (upstream Ghidra, the tree kuna was ported from)
+//! # Origin (upstream Ghidra)
 //!
 //! - `Ghidra/Features/FunctionID/src/main/java/ghidra/feature/fid/hash/FunctionBodyFunctionExtentGenerator.java`
-//!   — `calculateExtent(func)`: iterate `listing.getInstructions(body, true)`
-//!   (ascending) and collect them. kuna substitutes the `[entry, next)` clip for
-//!   `func.getBody()`.
+//! - `.../hash/FunctionExtentGenerator.java` — the strategy interface.
 
-use crate::listing::{Insn, Listing};
+use std::rc::Rc;
 
-/// Reconstruct the extent of the function entered at `entry`: the decoded
-/// instructions in `[entry, next_function_after(entry))`, in ascending address
-/// order.
-///
-/// Returns the instructions in body order — the input to
-/// [`crate::fid::hash::FidHasher`] (PR4 turns each `&Insn` + its SLEIGH mask
-/// into an [`crate::fid::hash::InsnFingerprint`]).
-///
-/// The hasher itself rejects extents below
-/// [`SHORT_HASH_CODE_UNIT_LENGTH`](crate::fid::hash::SHORT_HASH_CODE_UNIT_LENGTH);
-/// this generator returns whatever the clip contains (possibly empty).
-pub fn calculate_extent<'a>(listing: &'a Listing, entry: u64) -> Vec<&'a Insn> {
-    // The exclusive upper bound: the next function entry strictly after `entry`
-    // (`mod.rs::next_function_after`). `None` ⇒ the clip runs to the end of the
-    // instruction map.
-    let next = listing.next_function_after(entry).map(|f| f.entry);
-    clip_extent(listing.instructions_in_range(entry, next), entry, next)
+use kuna_sleigh::translate::Translate;
+
+use crate::listing::classify::classify;
+use crate::listing::decode::decode_one;
+
+/// One decoded instruction in a function's extent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ExtentInsn {
+    pub addr: u64,
+    pub len: u32,
+    pub is_call: bool,
+    /// The instruction is a return / unconditional branch out (the builder sets
+    /// [`FLAG_HAS_TERMINATOR`](crate::fid::db::FLAG_HAS_TERMINATOR) from it).
+    pub is_terminal: bool,
 }
 
-/// The pure clip: given the address-ordered `(vma, insn)` stream, keep the
-/// instructions in `[entry, next)` (with `next = None` meaning "to the end").
+/// The extent definition **both** sides of a FID match use: the builder hashing a
+/// library function from its symbol and the lookup hashing the same function in a
+/// stripped image.
 ///
-/// Split out from [`calculate_extent`] so the clip rule is unit-testable without
-/// constructing a full [`Listing`] (which needs an `object::File` + the SLEIGH
-/// decoder). The production path supplies the Listing's range-bounded iterator.
-fn clip_extent<'a, I>(instructions: I, entry: u64, next: Option<u64>) -> Vec<&'a Insn>
-where
-    I: IntoIterator<Item = (&'a u64, &'a Insn)>,
-{
-    let mut extent: Vec<&Insn> = Vec::new();
-    for (&vma, insn) in instructions {
-        if vma < entry {
-            // Before this function's entry — `getInstructions(body, true)` would
-            // not include it (the body starts at `entry`).
+/// It is a **linear decode** from `entry` to `end` (exclusive), which is what
+/// Ghidra's `FunctionBodyFunctionExtentGenerator` hashes: every instruction in the
+/// function's address range, including the blocks after a `ret` that a
+/// flow-following walk would skip. Two earlier attempts were each wrong in a way
+/// the tests caught:
+///
+/// - the address clip `[entry, next_entry)` absorbed alignment padding, giving a
+///   347-code-unit extent for a 29-code-unit function, so every lookup missed;
+/// - a control-flow walk that stopped at the first `ret` hashed 9 code units of a
+///   function whose body is 16, so a database built from the object stopped
+///   matching its own linked program.
+///
+/// Decoding stops at an undecodable byte, at `end`, or when an instruction would
+/// cross `end`.
+/// True when `target` cannot belong to the body entered at `entry`: it lies at or
+/// past the end bound (another function's entry), or before `entry` itself. Such a
+/// branch is a tail call, not intra-function flow.
+fn is_other_entry(entry: u64, target: u64, end: Option<u64>) -> bool {
+    target < entry || end.is_some_and(|n| target >= n)
+}
+
+pub fn decode_extent(
+    translate: &dyn Translate,
+    entry: u64,
+    end: Option<u64>,
+    code_space: &Rc<kuna_base::space::AddrSpace>,
+) -> Vec<ExtentInsn> {
+    // Flow-reachable decode, which is what `func.getBody()` is: start at the
+    // entry, follow each instruction's fall-through and its in-function branch
+    // targets, and stop at a terminal, an undecodable byte, or `end`. Reaching a
+    // block after a `ret` (a second exit selected by an earlier conditional
+    // jump) keeps it in the body; unreachable padding after the last terminal
+    // does not.
+    let mut seen: std::collections::BTreeMap<u64, ExtentInsn> = std::collections::BTreeMap::new();
+    let mut pending: Vec<u64> = vec![entry];
+    let mut visited: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
+    let mut guard = 1u32 << 20;
+    while let Some(vma) = pending.pop() {
+        if !visited.insert(vma) {
             continue;
         }
-        if matches!(next, Some(n) if vma >= n) {
-            // Reached the next function's entry — the clip is exclusive of it.
-            // The map is address-ordered, so everything past here is out of body.
+        if end.is_some_and(|n| vma >= n) {
+            continue;
+        }
+        if guard == 0 {
             break;
         }
-        extent.push(insn);
+        guard -= 1;
+        let Ok(dec) = decode_one(translate, vma, code_space, false, false) else {
+            continue; // an undecodable byte contributes nothing
+        };
+        let len = dec.len.max(1); // never advance by 0
+        if end.is_some_and(|n| vma.checked_add(u64::from(len)).is_none_or(|e| e > n)) {
+            continue;
+        }
+        let cls = classify(&dec.ops, vma, dec.len);
+        seen.insert(vma, ExtentInsn {
+            addr: vma,
+            len,
+            is_call: cls.flow.is_call,
+            is_terminal: cls.flow.is_terminal,
+        });
+        if !cls.flow.is_terminal {
+            if let Some(fall) = cls.fall_through {
+                pending.push(fall);
+            }
+        }
+        // Follow an in-function branch target. An unconditional `JMP` is NOT
+        // treated as external: a forward `JMP` to a shared epilogue or a jump into
+        // a loop header is ordinary intra-function flow, and skipping it truncated
+        // real bodies. A tail call is instead recognised by its DESTINATION — the
+        // target is another entry, which is exactly what Ghidra records as that
+        // other function's body — using the same `entries` set the end bound comes
+        // from.
+        if !cls.flow.is_call {
+            for target in &cls.flows {
+                if !is_other_entry(entry, *target, end) {
+                    pending.push(*target);
+                }
+            }
+        }
     }
-    extent
+    seen.into_values().collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
-
-    fn insn_at(addr: u64, len: u32) -> Insn {
-        Insn {
-            addr,
-            len,
-            fall_through: Some(addr + len as u64),
-            flow: Default::default(),
-            flows: vec![],
-            mnemonic: String::new().into(),
-            operands: String::new(),
-            pcode: None,
-        }
-    }
-
-    /// Build an address-ordered instruction map (the shape `instructions()`
-    /// yields) for the clip tests.
-    fn map_of(insns: Vec<Insn>) -> BTreeMap<u64, Insn> {
-        insns.into_iter().map(|i| (i.addr, i)).collect()
-    }
 
     #[test]
-    fn clips_between_consecutive_function_entries() {
-        // Two functions: f@0x1000 (3 insns) and g@0x1010 (2 insns), laid out
-        // contiguously. The extent of f is exactly its three instructions.
-        let map = map_of(vec![
-            insn_at(0x1000, 4),
-            insn_at(0x1004, 4),
-            insn_at(0x1008, 4),
-            insn_at(0x1010, 4),
-            insn_at(0x1014, 4),
-        ]);
-
-        let ext_f: Vec<u64> = clip_extent(map.iter(), 0x1000, Some(0x1010))
-            .iter()
-            .map(|i| i.addr)
-            .collect();
-        assert_eq!(ext_f, vec![0x1000, 0x1004, 0x1008]);
-
-        let ext_g: Vec<u64> = clip_extent(map.iter(), 0x1010, None)
-            .iter()
-            .map(|i| i.addr)
-            .collect();
-        assert_eq!(ext_g, vec![0x1010, 0x1014]);
-    }
-
-    #[test]
-    fn last_function_runs_to_end_of_map() {
-        let map = map_of(vec![
-            insn_at(0x2000, 2),
-            insn_at(0x2002, 2),
-            insn_at(0x2004, 2),
-        ]);
-        let ext: Vec<u64> = clip_extent(map.iter(), 0x2000, None)
-            .iter()
-            .map(|i| i.addr)
-            .collect();
-        assert_eq!(ext, vec![0x2000, 0x2002, 0x2004]);
-    }
-
-    #[test]
-    fn instructions_before_entry_excluded() {
-        // A function entry that is not the first instruction in the map: anything
-        // before the entry is not part of the body.
-        let map = map_of(vec![
-            insn_at(0x3000, 4), // before entry
-            insn_at(0x3004, 4), // entry
-            insn_at(0x3008, 4),
-        ]);
-        let ext: Vec<u64> = clip_extent(map.iter(), 0x3004, None)
-            .iter()
-            .map(|i| i.addr)
-            .collect();
-        assert_eq!(ext, vec![0x3004, 0x3008]);
-    }
-
-    #[test]
-    fn empty_clip_when_no_instructions_in_range() {
-        // An entry past every instruction yields an empty extent (the hasher then
-        // rejects it as < 4 code units).
-        let map = map_of(vec![insn_at(0x4000, 4), insn_at(0x4004, 4)]);
-        let ext = clip_extent(map.iter(), 0x5000, None);
-        assert!(ext.is_empty());
+    fn extent_insn_carries_the_facts_the_hasher_and_flags_need() {
+        let insn = ExtentInsn { addr: 0x1000, len: 5, is_call: true, is_terminal: false };
+        assert_eq!(insn.addr, 0x1000);
+        assert_eq!(insn.len, 5);
+        assert!(insn.is_call);
+        assert!(!insn.is_terminal);
     }
 }

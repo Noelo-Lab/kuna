@@ -110,8 +110,10 @@ fn a_missing_unreadable_or_invalid_database_is_reported_and_the_run_succeeds() {
     for (db, status, says) in [
         (&missing, "missing", "no such file"),
         (&directory, "unreadable", "cannot be read"),
-        (&truncated, "invalid", "not a kuna .fid database"),
-        (&garbage, "invalid", "not a kuna .fid database"),
+        // The reader is format-agnostic now, so the sentence names neither
+        // spelling; the diagnosis after it names the real problem.
+        (&truncated, "invalid", "not a FID database kuna can read (fid: truncated"),
+        (&garbage, "invalid", "not a FID database kuna can read (fid: bad magic"),
     ] {
         let (doc, stderr) = functions(Some(db));
         assert_eq!(names(&doc), ["sub_401000", "sub_401020"], "{status}");

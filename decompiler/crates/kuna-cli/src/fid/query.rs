@@ -1,5 +1,7 @@
 //! Read-only candidate lookup against a user-supplied kuna FID database.
-use kuna_analysis::fid::db::{FidDatabase, FidDb};
+use kuna_analysis::fid::db::FidDatabase;
+use kuna_analysis::fid::ghidrafid::FidFile;
+use kuna_analysis::fid::kuna_fidapply::LoadedFid;
 use kuna_analysis::fid::fingerprint_function;
 use kuna_analysis::listing::CodeUnit;
 use kuna_analysis::listing::Listing;
@@ -95,12 +97,11 @@ fn query(binary: &str, db_path: &str, addresses: &[u64]) -> Result<serde_json::V
     if file.kind() == object::ObjectKind::Relocatable {
         return Err("relocatable objects are not supported for lookup".into());
     }
-    let db = FidDb::load(&db_bytes).map_err(|e| format!("invalid database: {e}"))?;
     let prog = bootstrap_from_object(binary, "", &super::spec_roots())
         .map_err(|e| format!("bootstrap: {e}"))?;
     let arch = prog.arch();
     let lang = kuna_decomp::kuna_langfamily::language_id(&arch.archid);
-    kuna_analysis::fid::kuna_fidapply::applies(db.lang_id(), arch)?;
+    let (db, format) = load_database(&db_bytes, arch, lang)?;
     let image =
         ObjectLoadImage::from_bytes(binary, &bytes).map_err(|e| format!("load image: {e}"))?;
     let base_seeds = kuna_analysis::passes::listing_seeds(&file, &bytes);
@@ -129,14 +130,14 @@ fn query(binary: &str, db_path: &str, addresses: &[u64]) -> Result<serde_json::V
         };
         let run = || {
             if is_discovered {
-                fid_candidate(binary, db_path, &db, lang, &baseline, &prog, addr)
+                fid_candidate(binary, db_path, &db, format, lang, &baseline, &prog, addr)
             } else {
                 let mut seeds = base_seeds.clone();
                 seeds.push(addr);
                 seeds.sort_unstable();
                 seeds.dedup();
                 let listing = Listing::build(&file, &image, arch, arch.translate(), &seeds);
-                fid_candidate(binary, db_path, &db, lang, &listing, &prog, addr)
+                fid_candidate(binary, db_path, &db, format, lang, &listing, &prog, addr)
             }
         };
         let result = if thumb {
@@ -192,10 +193,27 @@ pub(super) fn package_results(
     Ok(json!({"binary": binary, "database": database, "queries": queries}))
 }
 
+/// Load a database in either on-disk spelling (kuna `.fid`, Ghidra
+/// `.fidbf`/`.fidb`), refusing one that does not apply to the image language.
+fn load_database(
+    bytes: &[u8],
+    arch: &kuna_decomp::architecture::Architecture,
+    lang: &str,
+) -> Result<(LoadedFid, &'static str), String> {
+    if let Ok(db) = kuna_analysis::fid::db::FidDb::load(bytes) {
+        kuna_analysis::fid::kuna_fidapply::applies(db.lang_id(), arch)?;
+        return Ok((LoadedFid::Kuna(db), "kuna_fid"));
+    }
+    let ghidra = FidFile::load(bytes).map_err(|e| format!("invalid database: {e}"))?;
+    ghidra.applies_to_language(lang)?;
+    Ok((LoadedFid::Ghidra(ghidra), "ghidra_fid"))
+}
+
 fn fid_candidate(
     binary: &str,
     db_path: &str,
-    db: &FidDb,
+    db: &LoadedFid,
+    database_format: &'static str,
     lang: &str,
     listing: &Listing,
     prog: &ConsoleProgram,
@@ -207,9 +225,10 @@ fn fid_candidate(
         ));
     }
     if prog.is_arm32() {
-        for insn in kuna_analysis::fid::extent::calculate_extent(listing, addr) {
+        let end = listing.next_function_after(addr).map(|f| f.entry);
+        for (vma, insn) in listing.instructions_in_range(addr, end) {
             let matches_listing =
-                prog.disassemble_at(insn.addr)
+                prog.disassemble_at(*vma)
                     .is_ok_and(|(len, mnemonic, operands)| {
                         u32::try_from(len).ok() == Some(insn.len)
                             && mnemonic == insn.mnemonic.as_str()
@@ -266,7 +285,7 @@ fn fid_candidate(
         _ => "ambiguous",
     };
     Ok(
-        json!({"binary": binary, "database": db_path, "database_format": "kuna_fid", "language": lang,
+        json!({"binary": binary, "database": db_path, "database_format": database_format, "language": lang,
         "address": format!("0x{addr:x}"), "status": status, "match_basis": "full_hash",
         "full_hash": format!("0x{:016x}", quad.full_hash), "specific_hash": format!("0x{:016x}", quad.specific_hash),
         "code_unit_size": quad.code_unit_size, "specific_hash_evidence": specific_evidence, "candidates": candidates}),
@@ -293,12 +312,17 @@ mod tests {
         let arch = prog.arch();
         let seeds = kuna_analysis::passes::listing_seeds(&file, &bytes);
         let listing = Listing::build(&file, &image, arch, arch.translate(), &seeds);
-        let db = FidDb::from_records("ARM:LE:32:v8", "default", vec![]);
+        let db = LoadedFid::Kuna(kuna_analysis::fid::db::FidDb::from_records(
+            "ARM:LE:32:v8",
+            "default",
+            vec![],
+        ));
         let query = || {
             fid_candidate(
                 path,
                 "test.fid",
                 &db,
+                "kuna_fid",
                 "ARM:LE:32:v8",
                 &listing,
                 &prog,

@@ -26,6 +26,7 @@ flirt-sig.workspace = true
 memmap2 = "0.9"
 
 [dev-dependencies]
+kuna-console.workspace = true
 object = { workspace = true, features = ["write"] }
 
 [lints]

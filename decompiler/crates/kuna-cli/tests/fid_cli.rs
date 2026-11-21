@@ -119,8 +119,14 @@ fn query_reports_candidates_collisions_and_invalid_databases() {
     assert_eq!(value["instruction_boundary"], "instruction_start");
     assert_eq!(value["match_basis"], "full_hash");
     assert_eq!(value["candidates"][0]["name"], "kuna_crc32");
-    assert_eq!(value["candidates"][0]["specific_hash_matches"], false);
-    assert_eq!(value["specific_hash_evidence"], "no_candidate_matches");
+    // The specific hash agrees because the builder's and the lookup's operand
+    // op-objects now match: `kuna_crc32` is self-contained (it calls no external
+    // symbol, see `tests/fixtures/fid/lib.c`), so the same body fingerprinted
+    // from the object and from the linked program folds the same scalar values.
+    // It disagreed while the operand objects were derived differently on each
+    // side.
+    assert_eq!(value["candidates"][0]["specific_hash_matches"], true);
+    assert_eq!(value["specific_hash_evidence"], "matching_candidate");
     assert_eq!(value["candidates"][0]["code_unit_size_matches"], true);
     let batch = Command::new(env!("CARGO_BIN_EXE_kuna"))
         .args(["fid", "query"]).arg(&binary).arg("--db").arg(&fixture)

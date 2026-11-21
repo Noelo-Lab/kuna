@@ -98,7 +98,6 @@ pub fn build_records(
     // the raw `object::File` symbol address is section-relative.
     let mut funcs = image.func_symbols();
     let arm32 = arch.archid.starts_with("ARM:") && arch.archid.contains(":32:");
-    let sizes: std::collections::BTreeMap<u64, u64> = image.func_symbol_sizes().into_iter().collect();
     funcs.sort_by_key(|(a, _)| if arm32 { (*a & !1, a & 1 == 0) } else { (*a, false) });
     funcs.dedup_by_key(|(a, _)| if arm32 { *a & !1 } else { *a });
 
@@ -123,15 +122,16 @@ pub fn build_records(
         if name.is_empty() {
             continue;
         }
-        // The exclusive upper bound: the nearer of the next function entry and
-        // the symbol end. `None` ⇒ decode until a terminal / error.
+        // The exclusive upper bound is the next function entry — NOT the symbol
+        // size. A library object carries sizes and a stripped image does not, so
+        // honoring the size made the two sides hash different instruction sets
+        // (the object's body stopped before its trailing padding, the stripped
+        // image's ran into it) and a database built from the object stopped
+        // matching its own linked program. Bounding by the next entry gives both
+        // sides the same extent.
         let address = if arm32 { *entry & !1 } else { *entry };
         let next = funcs.get(idx + 1).map(|(a, _)| if arm32 { *a & !1 } else { *a });
-        let symbol_end = sizes.get(entry).and_then(|size| address.checked_add(*size));
-        let end = match (next, symbol_end) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        };
+        let end = next;
         let Some(_scope) = translate.context_scope() else { continue };
         if arm32 && entry & 1 != 0 {
             let addr = Address::new(Rc::clone(&code_space), address);
@@ -139,7 +139,7 @@ pub fn build_records(
                 continue;
             }
         }
-        let extent = decode_extent(translate, address, end, &code_space);
+        let extent = crate::fid::extent::decode_extent(translate, address, end, &code_space);
         if extent.len() < 4 {
             if dbg {
                 eprintln!("[fid] {name} @ {entry:#x}: extent {} < 4, skip", extent.len());
@@ -222,50 +222,6 @@ pub fn build_records(
 /// `[entry, end)` (with `end = None` ⇒ stop at the first terminal or decode
 /// error). Each instruction is decoded once through `decode_one` and classified
 /// for its flow (`is_call` / `is_terminal`).
-fn decode_extent(
-    translate: &Sleigh,
-    entry: u64,
-    next: Option<u64>,
-    code_space: &Rc<kuna_base::space::AddrSpace>,
-) -> Vec<ExtentInsn> {
-    let mut out: Vec<ExtentInsn> = Vec::new();
-    let mut vma = entry;
-    // A generous guard against a runaway decode (a body that never reaches a
-    // terminal and has no `next` bound): cap at a large instruction count.
-    let mut guard = 1 << 20;
-    loop {
-        if let Some(n) = next {
-            if vma >= n {
-                break; // reached the next function entry (exclusive clip)
-            }
-        }
-        if guard == 0 {
-            break;
-        }
-        guard -= 1;
-
-        // `want_assembly = false`: the extent clip reads only `len` and `ops`.
-        let Ok(dec) = decode_one(translate, vma, code_space, false, false) else {
-            break; // an undecodable byte ends the clip
-        };
-        let len = dec.len.max(1); // never advance by 0 (avoid an infinite loop)
-        if next.is_some_and(|end| vma.checked_add(u64::from(len)).is_none_or(|end_insn| end_insn > end)) {
-            break;
-        }
-        let cls = classify(&dec.ops, vma, dec.len);
-        let is_terminal = cls.flow.is_terminal;
-        out.push(ExtentInsn { addr: vma, len, is_call: cls.flow.is_call, is_terminal });
-
-        // When there is no `next` bound, a terminal (return / unconditional
-        // branch out) ends the contiguous body.
-        if next.is_none() && is_terminal {
-            break;
-        }
-        vma = vma.wrapping_add(u64::from(len));
-    }
-    out
-}
-
 /// Project a decoded [`InsnMask`](kuna_sleigh::sleigh::InsnMask) + the flow/address
 /// info into the hasher's [`InsnFingerprint`]. The field mapping is 1:1 (the
 /// hasher's `OpObject` mirrors the SLEIGH one); the only translation is the enum

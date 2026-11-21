@@ -6415,6 +6415,79 @@ every other binary's pass list is byte-identical to before the pass existed):
   the text `decompile` surface relays from its `decomp_dbg` session. A configured database that is not matched does not change the exit
   status: it only ever adds names, and a database set for a batch of
   mixed-architecture images is expected not to apply to some of them.
+  (kuna) **Ghidra database interop**
+  (`decompiler/crates/kuna-analysis/src/analyzers/fid/ghidradb.rs (Database)`,
+  `ghidrafid.rs (FidFile)`, `schema.rs (Schema)`): an FID database is accepted in
+  Ghidra's two on-disk spellings as well as kuna's `.fid`, so a run can match
+  against a stock Ghidra corpus without rebuilding it. Both wrap the same Ghidra
+  `db` container: a buffer file of fixed-size blocks whose block 0 is the file
+  header, one user buffer holding `DBParms` (parameter 0 is the master table
+  root), and a B-tree per table described by a master-table record carrying the
+  table name, version, root buffer id, key type, encoded field types and packed
+  column names. All integers are big-endian; the user payload starts five bytes
+  into its block; records are decoded from a node's leaf slots (fixed-length
+  entries, or variable-length entries with a record offset, rejecting indirect
+  chained-buffer storage); the packed column-name list begins with the primary
+  key's name, so it is dropped before the column names are paired with the
+  encoded field types. A `.fidbf` is that container verbatim; a `.fidb` is a
+  Java-serialization header (magic, format version, item name, content type,
+  file type, payload length) followed by a **streamed** deflate member with no
+  central directory, so it is inflated from the local file header rather than
+  read as a zip archive. The adapter indexes `Functions Table` by full hash,
+  resolving each `Name ID` through `Strings Table` exactly as
+  `FidQueryService.findRecord` does, and reports each `Libraries Table` row as
+  the language the database applies to. Every read is bounds-checked: a foreign
+  or truncated file is an error, never a panic.
+  (kuna) **The function extent Ghidra fingerprints**
+  (`decompiler/crates/kuna-analysis/src/analyzers/fid/extent.rs (decode_extent)`):
+  Ghidra hashes `func.getBody()`, the address set the FunctionManager recorded.
+  kuna's program model has function **entries**, not bodies, so the extent is
+  defined once here and **both** sides of a match use it — the builder that
+  fingerprints a library function and the pass that fingerprints the same
+  function in a stripped image. One instruction of disagreement makes the hashes
+  differ and the lookup miss silently, so this shared definition is the point.
+  It is a flow-reachable decode from the entry: follow each instruction's
+  fall-through, follow a **conditional** branch target (the other arm of an
+  `if`), and stop at a terminal, an undecodable byte, or the end bound. Two other
+  readings were measured wrong on real binaries and are recorded here because
+  each looks reasonable: the address clip `[entry, next_entry)` absorbed
+  alignment padding and interleaved code (a 347-code-unit extent for a
+  29-code-unit function, so every lookup missed), and a decode that stopped at the
+  **first** `ret` hashed 9 code units of a function whose body is 16, so a
+  database built from an object stopped matching its own linked program. The
+  end bound is the next function entry, never a symbol size: a library object
+  carries sizes and a stripped image does not, so honoring the size made the two
+  sides hash different instruction sets. Measured against Ghidra's own
+  `FidService.hashFunction` on a real MSVC binary (56 named functions), 36 hash
+  bit-exactly and 53 agree on the code-unit count. Of the 20 that differ, 2 also
+  differ in code-unit count (a body-range difference: Ghidra's FunctionManager
+  holds compiler-generated filter code as a separate range). The other 18 have
+  the SAME instruction count, the same per-instruction mask bytes, the same
+  op-object lists and the same operand counts — verified instruction by
+  instruction on one of them (139 instructions, zero differences in those four
+  facts) — so their cause is **not established** and is an open gap, not an
+  explained one.
+  **No false names**: of the functions kuna names from the stock
+  `vsOlder_x86` corpus, every one that Ghidra's own FID pass also names carries
+  the identical name. Every address both name carries the same name, so on the
+  measured overlap there is no disagreement, and the fidelity gap costs recall.
+
+  (kuna) **The instruction mask the hash consumes**
+  (`decompiler/crates/kuna-sleigh/src/sleigh.rs (instruction_mask)`): the mask
+  and the per-operand op-objects follow Ghidra's Java accessors, not the raw
+  SLEIGH state, because FID digests them. Operands are the **root** constructor's,
+  in the order `Constructor.getOpsPrintOrder` prints them (declaration order puts
+  a `MOV`'s operands in the wrong slots); an operand's op-objects come from
+  `OperandSymbol.printList`, which descends into a subtable's print pieces so a
+  memory operand reports its base register *and* its displacement scalar, and
+  which promotes a sole constant handle to the address its constructor's result
+  template exports (`HandleTpl.fixPrintPiece`) — a branch target is a scalar until
+  that promotion, and Ghidra reports an `Address`. `FixedHandle.fixable`
+  therefore defaults to true, which is what makes that promotion possible. These
+  three (operand order, op-object recursion, and the promotion) are each
+  separately observable: with any one missing the hash matched the stock corpus
+  for no function on a real MSVC binary, and with them it recovers the library
+  names Ghidra's own analyzer reports for the same addresses.
 - **FLIRT** (`flirt`, default-off, Listing-gated, signatures via `KUNA_FLIRT_SIGS`;
   `decompiler/crates/kuna-analysis/src/analyzers/flirt/mod.rs (FlirtPass)`): names
   library functions from IDA FLIRT `.sig` files (versions 5 to 11; raw, deflate,

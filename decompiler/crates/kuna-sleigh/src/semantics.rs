@@ -942,6 +942,44 @@ impl HandleTpl {
         self.temp_offset = ConstTpl::new_real(ConstType::Real, val);
     }
 
+    /// C++ `HandleTpl::fixPrintPiece`: promote a constant operand handle to the
+    /// address its subtable template exports.
+    ///
+    /// `Constructor.printList` calls this once per operand whose pieces produced
+    /// exactly one handle. A branch operand's handle is a constant until this
+    /// runs, which is why Ghidra reports an **Address** for a `JNZ` target while
+    /// the raw handle is a scalar.
+    pub fn fix_print_piece(
+        &self,
+        hand: &mut FixedHandle,
+        walker: &(impl SymbolWalker + ?Sized),
+        handle_index: i32,
+    ) {
+        if !hand.fixable {
+            return;
+        }
+        if hand.space.as_ref().map(|s| s.get_type()) != Some(spacetype::IPTR_CONSTANT) {
+            hand.fixable = false;
+            return;
+        }
+        if self.space.get_type() == ConstType::Spaceid && self.space.is_unique_space() {
+            hand.fixable = false;
+            return;
+        }
+        if self.ptroffset.get_type() == ConstType::Handle
+            && self.ptroffset.get_handle_index() == handle_index
+        {
+            hand.space = self.space.fix_space(walker).ok().flatten();
+            if let Some(space) = hand.space.clone() {
+                hand.offset_offset =
+                    hand.offset_offset.wrapping_mul(u64::from(space.get_word_size()));
+            }
+            hand.size = self.size.fix(walker).unwrap_or(0) as u32;
+        } else {
+            hand.fixable = false;
+        }
+    }
+
     /// C++ `fix`: resolve this template into `hand` against the walker.
     pub fn fix(&self, hand: &mut FixedHandle, walker: &(impl SymbolWalker + ?Sized)) -> KunaResult<()> {
         if self.ptrspace.get_type() == ConstType::Real {
@@ -1647,6 +1685,7 @@ mod tests {
             offset_size: 0,
             temp_space: None,
             temp_offset: 0,
+            fixable: true,
         }
     }
 
@@ -1660,6 +1699,7 @@ mod tests {
             offset_size: 4,
             temp_space: Some(uniq(manager)),
             temp_offset: 0x300,
+            fixable: true,
         }
     }
 
@@ -1673,6 +1713,7 @@ mod tests {
             offset_size: 0,
             temp_space: None,
             temp_offset: 0,
+            fixable: true,
         }
     }
 

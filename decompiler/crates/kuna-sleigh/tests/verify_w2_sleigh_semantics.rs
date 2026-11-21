@@ -248,6 +248,7 @@ fn verify_w2sem_offset_plus_const_shift_boundary() {
         offset_size: 0,
         temp_space: None,
         temp_offset: 0,
+            fixable: true,
     });
 
     // defined region: shift by 7 bytes = 56 bits
@@ -269,6 +270,7 @@ fn verify_w2sem_offset_plus_const_shift_boundary() {
         offset_size: 0,
         temp_space: None,
         temp_offset: 0,
+            fixable: true,
     });
     let plus = ConstTpl::new_handle_plus(0, VField::VOffsetPlus, 0x0007_0003);
     assert_eq!(plus.fix(&walker2).unwrap(), 0x103);

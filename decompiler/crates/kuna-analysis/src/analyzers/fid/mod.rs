@@ -49,8 +49,11 @@
 pub mod build;
 pub mod db;
 pub mod extent;
+pub mod ghidradb;
+pub mod ghidrafid;
 pub mod hash;
 pub mod kuna_fidapply;
+pub mod schema;
 pub mod skipper;
 mod kuna_fidstrict;
 
@@ -59,7 +62,8 @@ use std::rc::Rc;
 use kuna_base::address::Address;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, FidMatch, Phase};
-use crate::fid::db::{FidDatabase, FidRecord};
+use crate::fid::db::FidRecord;
+use crate::fid::kuna_fidapply::LoadedFid;
 use crate::fid::hash::{FidHashQuad, FidHasher, InsnFingerprint, NoRelocations};
 use crate::fid::skipper::{InstructionSkipper, X86InstructionSkipper};
 
@@ -104,11 +108,11 @@ impl AnalysisPass for FidPass {
         let Some(path) = fid_db_path() else {
             return out;
         };
-        let (report, db) = kuna_fidapply::open(&path, ctx.arch);
+        let (report, db) = kuna_fidapply::open_any(&path, ctx.arch);
         out.fid_databases.push(report);
-        let Some(db) = db else {
+        if let LoadedFid::None = db {
             return out;
-        };
+        }
 
         for (&entry, _) in listing.functions() {
             let Ok(quad) = fingerprint_function(listing, ctx.arch, entry) else {
@@ -137,24 +141,29 @@ fn fid_db_path() -> Option<std::path::PathBuf> {
     scoped(|o| o.fid_db.clone()).unwrap_or_else(env::fid_db)
 }
 
-/// Fingerprint a discovered function using the same extent and masks as the FID pass.
-/// The error distinguishes an undersized function from a failed instruction mask.
+/// Fingerprint a discovered function with the same extent definition and mask
+/// projection the FID builder uses ([`crate::fid::build`]), so a function hashes
+/// identically whether it was built into a database or looked up against one.
+///
+/// The extent's end bound is the next discovered entry, exactly as the builder
+/// bounds a symbolized function.
 pub fn fingerprint_function(
     listing: &crate::listing::Listing,
     arch: &kuna_decomp::architecture::Architecture,
     entry: u64,
 ) -> Result<FidHashQuad, &'static str> {
-    let extent = extent::calculate_extent(listing, entry);
+    let space = arch.manage().get_default_code_space().ok_or("no_code_space")?;
+    let translate = arch.translate().as_sleigh().ok_or("unsupported_translator")?;
+    let end = listing.next_function_after(entry).map(|f| f.entry);
+    let extent = extent::decode_extent(translate, entry, end, space);
     if extent.len() < hash::SHORT_HASH_CODE_UNIT_LENGTH as usize {
         return Err("too_short");
     }
-    let space = arch.manage().get_default_code_space().ok_or("no_code_space")?;
-    let translate = arch.translate().as_sleigh().ok_or("unsupported_translator")?;
     let mut fps: Vec<InsnFingerprint> = Vec::with_capacity(extent.len());
-    for insn in extent {
+    for insn in &extent {
         let addr = Address::new(Rc::clone(space), insn.addr);
         let mask = translate.instruction_mask(&addr).map_err(|_| "mask_failed")?;
-        fps.push(build::fingerprint_from_mask(insn.addr, insn.len, insn.flow.is_call, mask));
+        fps.push(build::fingerprint_from_mask(insn.addr, insn.len, insn.is_call, mask));
     }
     let skippers: Vec<Box<dyn InstructionSkipper>> = if arch.archid.starts_with("x86:") {
         vec![Box::new(X86InstructionSkipper)]

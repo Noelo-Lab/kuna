@@ -61,8 +61,9 @@ impl Token {
 /// for the dereferenced value.
 ///
 /// (C++ leaves a default-constructed FixedHandle uninitialized; the Rust
-/// `Default` zeroes every field, with the null space pointers as `None`.)
-#[derive(Debug, Clone, Default)]
+/// `Default` zeroes every field, with the null space pointers as `None`, except
+/// `fixable`, which Java's `FixedHandle` initializes to **true**.)
+#[derive(Debug, Clone)]
 pub struct FixedHandle {
     /// The address space of the Varnode
     pub space: Option<Rc<AddrSpace>>,
@@ -78,6 +79,25 @@ pub struct FixedHandle {
     pub temp_space: Option<Rc<AddrSpace>>,
     /// Offset of the temporary location
     pub temp_offset: u64,
+    /// `FixedHandle.fixable` — `Constructor.printList` may still promote this
+    /// handle from a constant to the address its subtable exports. Java
+    /// initializes it to `true`; a handle that fails promotion is set `false`.
+    pub fixable: bool,
+}
+
+impl Default for FixedHandle {
+    fn default() -> Self {
+        FixedHandle {
+            space: None,
+            size: 0,
+            offset_space: None,
+            offset_offset: 0,
+            offset_size: 0,
+            temp_space: None,
+            temp_offset: 0,
+            fixable: true,
+        }
+    }
 }
 
 #[cfg(test)]
