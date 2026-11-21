@@ -142,6 +142,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("switchguardbound", "on"), // speed-expensive
     ("unrolledguard", "on"),    // speed-expensive
     ("globalarrayanchor", "on"),
+    ("opaquepredicate", "on"),
     ("sparcstructret", "on"), // SPARC-idiom-gated; no-op off-SPARC
     ("v850indirectbranch", "on"), // V850-gated (kuna_v850indbranch::applies); no-op off-V850
     ("regionedgeorder", "on"),

@@ -815,6 +815,8 @@ pub struct ArchContext {
     pub present_lessequal: bool,
     /// Keep mapped global array bases separate from negative element offsets.
     pub global_array_anchor: bool,
+    /// Fold comparisons proven constant for every input (`opaquepredicate`).
+    pub opaque_predicate: bool,
     /// (kuna) refuse to split a shared RETURN block that stores to GLOBALS
     /// (`retsplitglobal`).  Read by
     /// [`Funcdata::return_split_is_splittable`](crate::funcdata::Funcdata),
@@ -1633,6 +1635,7 @@ impl ArchContext {
             // registered `enabled=false` is inert there — matching the gate-off
             // unit tests.
             global_array_anchor: false,
+            opaque_predicate: false,
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
             ret_split_limit: None,       // retsplitlimit (the ArchSeam carries the real default)
             simd_shuffle_userops: Vec::new(),
