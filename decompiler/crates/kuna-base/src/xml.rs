@@ -2267,7 +2267,7 @@ mod tests {
         // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
         // and kuna-callresultuse / an unknown callee's result read untouched by the next call is its argument (option callresultuse)
         // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
-        assert_eq!(count, 848, "corpus file count drifted");
+        assert_eq!(count, 849, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
