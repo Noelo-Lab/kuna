@@ -342,6 +342,12 @@ pub trait FlowEnvironment {
         Ok(None)
     }
 
+    /// (kuna) The prototype the loader parked for the call instruction at `site`
+    /// ([`crate::p2_lift::kuna_callsiteproto`]).
+    fn call_site_prototype(&self, _site: &Address) -> Option<crate::fspec::PrototypePieces> {
+        None
+    }
+
     /// A PC-capture transfer to an interior the loader assigned to this function.
     fn is_ppc_pc_capture(&self, _fd: &Funcdata, _op: OpId) -> bool { false }
 
@@ -3325,6 +3331,12 @@ truncating the fall-through here"
         {
             let op_addr =
                 self.data.obank().get(op).map(|o| o.get_addr().clone()).unwrap_or_default();
+            if self.data.get_override().find_proto_override(&op_addr).is_none() {
+                if let Some(pieces) = self.env.call_site_prototype(&op_addr) {
+                    let parked = Box::new(crate::overrides::PiecesProtoOverride { pieces });
+                    self.data.get_override_mut().insert_proto_override(op_addr.clone(), parked);
+                }
+            }
             let ov = self.data.get_override().find_proto_override(&op_addr);
             if let Some(proto) = ov.and_then(|ov| ov.prototype()) {
                 fc.proto_mut().copy(proto);

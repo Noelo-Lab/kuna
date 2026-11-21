@@ -1557,6 +1557,16 @@ fn list_functions(args: &Args) -> Result<(ConsoleProgram, Vec<FunctionEntry>), S
     Ok((prog, entries))
 }
 
+/// (kuna `uefi`) The protocol and PPI interface instances the EFI module at
+/// `path` installs, read off one load of it (`kuna unpack --protocols`).
+pub(crate) fn uefi_installs(
+    path: &std::path::Path,
+) -> Result<Vec<kuna_decomp::kuna_uefiprotocols::InstalledInterface>, String> {
+    let args = parse_args(&[path.to_string_lossy().into_owned()], "functions")?;
+    let prog = load_program(&args, DriverDefaults::Functions)?;
+    Ok(prog.arch().kuna_uefi_installs.clone())
+}
+
 /// Which bundle of driver defaults a surface takes in [`load_program`].
 ///
 /// Both variants take the same DISCOVERY policy (DIV-20/DIV-68); they differ only

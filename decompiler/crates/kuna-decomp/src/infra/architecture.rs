@@ -1724,6 +1724,12 @@ pub struct Architecture {
     /// function entry -> call site -> callee entry
     /// ([`crate::p2_lift::kuna_calleeoverride`]).
     pub kuna_callee_overrides: std::collections::BTreeMap<Address, std::collections::BTreeMap<Address, Address>>,
+    /// (kuna) Loader-stated prototypes of single call instructions, by the
+    /// instruction's address ([`crate::p2_lift::kuna_callsiteproto`]).
+    pub kuna_callsite_protos: std::collections::BTreeMap<u64, crate::fspec::PrototypePieces>,
+    /// (kuna `uefi`) The interface instances the EFI module installs
+    /// ([`crate::kuna_uefiprotocols`]).
+    pub kuna_uefi_installs: Vec<crate::kuna_uefiprotocols::InstalledInterface>,
     /// (kuna `formatstring`) Which variadic arguments the target passes exactly
     /// as named ones, which bounds what a closed printf/scanf override may
     /// declare. A FACT, written once at `load file` from the image's container;
@@ -1818,6 +1824,9 @@ pub struct Architecture {
     /// parity gate is byte-identical. Default-off (output-changing: it adds named
     /// data symbols); `--option rtti on` enables it.
     pub analysis_rtti: bool,
+    /// (kuna) Gate the UEFI module markup pass (`uefi`); default on. PE-only,
+    /// and inert unless the image's Subsystem is an EFI one.
+    pub analysis_uefi: bool,
     /// (kuna, NOVEL) Gate the Itanium (GCC/Clang) RTTI + vtable recovery pass
     /// (`itaniumrtti`); default **off**. Ghidra has no Itanium RTTI analyzer at all
     /// — its `RttiAnalyzer` is Microsoft-only and its GCC class recovery is
@@ -2636,6 +2645,8 @@ impl Architecture {
             elfmain_main_decl: None,
             format_override_callpoints: std::collections::BTreeSet::new(),
             kuna_callee_overrides: std::collections::BTreeMap::new(),
+            kuna_callsite_protos: std::collections::BTreeMap::new(),
+            kuna_uefi_installs: Vec::new(),
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
             analysis_listing: false,
             analysis_fast_funcdisc: false,
@@ -2651,6 +2662,7 @@ impl Architecture {
             analysis_fid_strict: false,
             analysis_flirt: false,
             analysis_rtti: false,
+            analysis_uefi: false,
             analysis_itaniumrtti: false,
             analysis_panicloc: false,
             analysis_aif: crate::kuna_aif::AifMode::Off,
@@ -3005,6 +3017,7 @@ impl Architecture {
         self.analysis_flirt = false;
         self.analysis_rtti = true; // MSVC RTTI / vftable recovery (PE-only pass)
         self.analysis_panicloc = true; // (kuna) default-on, Rust images only: the pass is registered for a rustc-detected image and the XML datatest path never runs an analysis pass (0/675)
+        self.analysis_uefi = true; // UEFI module markup (EFI-subsystem PE only)
         self.analysis_itaniumrtti = true; // (kuna, NOVEL) Itanium RTTI / vtable recovery (ELF-only pass)
         self.analysis_aif = crate::kuna_aif::AifMode::Off; // Aggressive Instruction Finder gap-walk default-off; `aggressive` sets `strict`
         // (kuna, GH-299) AIF bracketed-candidate reject -- default-ON; inert without `aif`.

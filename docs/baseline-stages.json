@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4920,
-    4920
+    4942,
+    4942
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2746,6 +2746,28 @@
     "data:UCOMISS unordered #7: nanignore none keeps the guards",
     "data:UCOMISS unordered #8: no ordered spelling of an unordered flag",
     "data:UCOMISS unordered #9: an isnan test beside an exact jbe stays",
+    "data:UEFI #1: off, the boot-services call is an offset off an untyped word",
+    "data:UEFI #2: on, the entry carries the specification's prototype",
+    "data:UEFI #3: on, the boot-services table is read as a member",
+    "data:UEFI #4: on, the service is a member call and its GUID argument is named",
+    "data:UEFI #5: on, the protocol GUIDs of the install call are named",
+    "data:UEFIPROTO #10: a PEI service read from below the IDT is a member call",
+    "data:UEFIPROTO #11: a call through the located PPI names its member",
+    "data:UEFIPROTO #12: the PPI descriptor a PEIM installs is named from its GUID",
+    "data:UEFIPROTO #13: the IDT read is GetPeiServicesTablePointer",
+    "data:UEFIPROTO #14: the function an installed PPI points at has the member's prototype",
+    "data:UEFIPROTO #15: an SMM driver's system table is found through GetSmstLocation",
+    "data:UEFIPROTO #16: an SMM protocol lookup types its interface and the call names the member",
+    "data:UEFIPROTO #17: a call through the SMM interface names its member",
+    "data:UEFIPROTO #1: off, a boot service outside the entry is an offset off an untyped global",
+    "data:UEFIPROTO #2: on, the entry stores the tables in gST and gBS",
+    "data:UEFIPROTO #3: on, the located interface pointer is typed from its GUID",
+    "data:UEFIPROTO #4: on, the installed instances are named and typed",
+    "data:UEFIPROTO #5: on, a write into the instance names its member",
+    "data:UEFIPROTO #6: on, the binding's member function has the member's name and prototype",
+    "data:UEFIPROTO #7: on, a boot service outside the entry is a member call through gBS",
+    "data:UEFIPROTO #8: a PEIM is entered with its file handle and the PEI services",
+    "data:UEFIPROTO #9: a PPI lookup names the module of the volume that installs the PPI",
     "data:UNSIGNED-BYTE-VM-SELECTOR #1: the selector declaration remains",
     "data:UNSIGNED-BYTE-VM-SELECTOR #2: the recovered switch remains",
     "data:UNSIGNED-BYTE-VM-SELECTOR #3: the low case remains",

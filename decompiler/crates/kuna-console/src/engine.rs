@@ -3146,6 +3146,11 @@ impl ConsoleProgram {
                             merged.merge(out);
                         }
                     }
+                    // (kuna `uefi`) UEFI module markup decodes the module, so it
+                    // runs here; it declines everything but an EFI-subsystem PE.
+                    if analysis_pass_enabled(self.arch(), "uefi") {
+                        merged.merge(kuna_analysis::passes::run_uefi(&bytes, self.arch(), image_path));
+                    }
                     // Deferred Listing build + consumer/fast-inventory run, gated
                     // on the matching option. The call-fixup seed list is the names
                     // the load-time pass flagged resolved to addresses via the
@@ -3532,6 +3537,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // PE-only (the pass + its passes_for registration both self-gate on PE), so
         // a default run / every non-PE binary commits nothing here.
         "rtti" => arch.analysis_rtti,
+        "uefi" => arch.analysis_uefi,
         // (kuna, NOVEL) Itanium (GCC/Clang) RTTI + vtable recovery — the class
         // names, typeinfo/vtable labels and per-slot virtual-method names are
         // computed at LOAD but COMMITTED only when this gate is on. Default-OFF
@@ -5928,6 +5934,14 @@ fn commit_analysis_output(
         prog.arch_mut().format_call_overrides = parked;
     }
 
+    // (kuna) Park the prototypes a pass stated for single call instructions
+    // (`kuna_decomp::kuna_callsiteproto`) and the interface instances the
+    // `uefi` pass found installed.
+    for (site, pieces) in &out.call_prototypes {
+        prog.arch_mut().kuna_callsite_protos.entry(*site).or_insert_with(|| pieces.clone());
+    }
+    prog.arch_mut().kuna_uefi_installs.clone_from(&out.uefi_installs);
+
     // (kuna `pushpadread`) The stack-argument count per format call site, carried
     // for the callee-body probe (not the varargs typing above, so independent of
     // the `formatstring` gate). gcc pushes a format call's stack arguments below
@@ -6082,6 +6096,10 @@ fn commit_analysis_output(
     //    unterminated literals read back as one 39-byte string). A bounded
     //    fact's `len` is the exact element count — there is no terminator.
     let blob_extents = crate::kuna_blobdata::Extents::new(&out.blobs);
+    // (kuna) A typed data object outranks a string literal read inside it: an
+    // EFI table's signature (`BOOTSERV`) scans as text, but the table is typed.
+    let typed_spans: Vec<(u64, u64)> =
+        out.typed_data.iter().map(|d| (d.addr, d.addr + d.type_.get_size().max(1) as u64)).collect();
     let wide = if prog.arch().analysis_widestrings { out.wide_strings.as_slice() } else { &[] };
     let wide32 =
         if prog.arch().analysis_widestrings32 { out.wide_strings32.as_slice() } else { &[] };
@@ -6096,7 +6114,7 @@ fn commit_analysis_output(
         .chain(wide.iter().map(|f| (f, 2u32)))
         .chain(out.strings.iter().map(|f| (f, 1u32)))
     {
-        if blob_extents.contains(fact.addr) {
+        if blob_extents.contains(fact.addr) || typed_spans.iter().any(|&(lo, hi)| fact.addr >= lo && fact.addr < hi) {
             continue;
         }
         let addr = Address::new(Rc::clone(code_space), fact.addr);

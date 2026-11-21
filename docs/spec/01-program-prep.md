@@ -1752,6 +1752,59 @@ it, and a walk that publishes nothing leaves the context partition as it found
 it. A wholly Thumb image can opt into the explicit `--isa thumb` range paint
 instead.
 
+(kuna) **Firmware front ends.** `decompiler/crates/kuna-analysis/src/loader/firmware/`
+holds the probes that turn a headerless firmware file into raw-image arguments.
+`cortexm.rs (probe)` reads a Cortex-M vector table: word 0 an initial stack
+pointer in `0x10000000..0x40000000` (SRAM or a CCM/TCM alias), the fifteen
+system words zero or odd pointers below `0x20000000` with Reset non-zero
+(reserved slots are not checked, since NXP parts keep a checksum there), then
+IRQ words to the first word that is neither, at most 496, trailing zeros
+trimmed. The base is voted: every 2-byte-aligned dummy handler after the table
+(`bx lr`, `b .`, `b.w .`, `nop; b .`) and every handler target give the
+candidate `target - offset` when it is 0x1000-aligned, and the most-voted
+candidate wins with at least 15 votes; else the first of 0x08000000, 0,
+0x400000, 0x10000, 0x8000, 0x10000000 that holds every handler; else the page
+below the lowest handler. Handlers are named `<Exception>_Handler` and
+`IRQ<n>_Handler`, a target several IRQs share is `Default_Handler`. The CLI
+(`decompiler/crates/kuna-cli/src/rawfront.rs (prepare)`) turns the table into
+`--raw-image` arguments before a subcommand parses its own, so the engine sees
+an ordinary raw load; the probe runs only on a file whose magic no object
+loader claims, and an explicit `--base` or a non-ARM `--target` turns it off. `svd.rs (parse)` reads a CMSIS-SVD device with the kuna XML
+reader: peripherals (`derivedFrom` reusing the base's registers and type),
+clusters, `dim`/`dimIncrement`/`dimIndex` expansion, register sizes inherited
+from the peripheral or device, and `<interrupt>` names. `Peripheral::c_struct`
+lays a peripheral out as a C structure, dropping a register that overlaps an
+earlier one and padding gaps. The CLI's `--svd FILE` asserts the structure
+(`typedef`), the peripheral as a typed global at its base (`data`) and its
+register range as volatile, and names the IRQ handlers the vector table found
+from the interrupts. `uefifv.rs (walk)` walks UEFI PI firmware volumes for `kuna unpack`:
+FV header (`_FVH`, extended header), FFS files (24- or 32-byte headers, 8-byte
+alignment, erase polarity from the volume attributes), sections (4-byte
+alignment, extended sizes), nested volumes in `FIRMWARE_VOLUME_IMAGE` sections
+and RAW files, standard compression sections stored uncompressed or in the
+EFI 1.1 format (`tiano.rs (decompress)`, a port of EDK2
+`BaseTools/Source/C/Common/Decompress.c` with the 4-bit position set, retried
+with the 5-bit Tiano set), and GUID-defined sections for EDK2 LZMA (the
+13-byte LZMA-alone header in front of a raw LZMA1 stream, decoded by the UPX
+decoder of `decompiler/crates/kuna-analysis/src/upx/lzma.rs` behind its own
+two-byte property prefix), LZMA with the x86 BCJ filter (decoded as the LZMA
+SDK `x86_Convert`), Tiano and CRC32. Every PE32/TE section is a module named
+by the file's UI section. `containers.rs (detect)` reads U-Boot
+legacy images, Intel HEX, Motorola S-records, ESP32/ESP8266 application images,
+uClinux bFLT v4 (rebasing GOT entries and relocations past the 64-byte header,
+as `binfmt_flat` does), Qualcomm MBN/SBL wrappers, MediaTek `md1img` (the
+`md1rom` section at 0x90000000 as MIPS32 LE, the LZMA-alone `md1_dbginfo`
+symbol records as function names, a nanoMIPS ROM reported because no SLEIGH
+spec decodes it) and PC BIOS images (a reset vector in the last 16 bytes; the
+last 128 KiB mapped below 1 MiB and entered at F000:FFF0, so a 64 KiB image is
+segment F000 under the raw-image code-segment rule above, or with a 32-bit
+target the whole flash ending at 4 GiB), and returns either one flat image
+(lowest to highest loaded address, gaps filled, at most 256 MiB; an ESP image
+whose segments span more keeps the segments in the entry's 16 MiB window) with
+the processor, base and entries its header states, or the ELF it wraps. The
+CLI stages the flat image in a temporary directory and loads it as a raw image;
+a flat image without a processor is probed for a Cortex-M table at its base.
+
 PE entry discovery and Listing seeds normalize the low bit according to the
 selected decoder before deduplication and naming. A 32-bit ARM decoder clears
 the Thumb bit; a non-ARM override preserves an odd address even when the header
@@ -4024,6 +4077,153 @@ moves.
   spellings the libc tables carry are `__stdcall` WinSock exports and keep the
   default. Only where the default model's `extrapop` is unknown and the spec
   registers a `__cdecl` model of its own, so x86-64 and every ELF are untouched.
+- **(kuna) UEFI module markup** (`uefi`, default on,
+  `decompiler/crates/kuna-analysis/src/analyzers/uefi/mod.rs (UefiPass)`):
+  a PE image whose optional-header `Subsystem` is 10..13 (EFI application, boot
+  service driver, runtime driver, ROM) is a UEFI module, and its entry point is
+  `EFI_STATUS _ModuleEntryPoint(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE
+  *SystemTable)`. The pass names the entry (as a symbol, and as a rename of the
+  engine placeholder the PE entry already carries) and parks that prototype on
+  it by address. The EFI types are built in Rust from the UEFI and PI
+  specifications (`decompiler/crates/kuna-analysis/src/analyzers/uefi/types.rs`):
+  `EFI_GUID`, `EFI_TABLE_HEADER`, `EFI_SYSTEM_TABLE`, `EFI_BOOT_SERVICES`,
+  `EFI_RUNTIME_SERVICES`, `EFI_DXE_SERVICES`, `EFI_PEI_SERVICES`, the console
+  text protocols and `EFI_CONFIGURATION_TABLE`, laid out with natural alignment
+  at the image's pointer width, with `EFI_STATUS`/`EFI_TPL`/`EFI_HANDLE`/
+  `EFI_EVENT`/`EFI_PHYSICAL_ADDRESS` as typedefs and every service member a
+  function pointer with its specification prototype, so a boot-services call
+  renders as `(*v1->LocateProtocol)(&guid,NULL,&iface)`. A `This` parameter is
+  `VOID *`, because a completed structure cannot hold a pointer to itself. Three
+  data facts follow. Every 16-byte value at 4-byte alignment in a data section
+  that equals a GUID declared in the EDK2 package files
+  (`decompiler/crates/kuna-analysis/src/analyzers/uefi/guids.txt`, 965 names
+  from edk2-stable202505, excluding values with eight or more zero bytes such as
+  `gZeroGuid`) becomes an `EFI_GUID` named after it, with a numeric suffix on a
+  repeat. Every 8-byte-aligned `EFI_TABLE_HEADER` signature in a data section
+  (`IBI SYST`, `BOOTSERV`, `RUNTSERV`, `DXE_SERV`, `PEI SERV`) types the table a
+  core module defines statically (`mBootServices`, ...). Every ARM PEI-services
+  getter (Thumb `mrc p15,0,r0,c13,c0,2; bx lr`, the A32 form, AArch64 `mrs x0,
+  tpidr_el0; ret`) in a code section becomes `ArmReadTpidrurw` returning
+  `EFI_PEI_SERVICES **`. A typed data fact outranks a string literal the string
+  scan found inside it (a table's signature reads as text), so the commit
+  (`decompiler/crates/kuna-console/src/engine.rs (commit_analysis_output)`)
+  skips such a string.
+
+  The pass then follows the service tables through the code
+  (`decompiler/crates/kuna-analysis/src/analyzers/uefi/flow.rs (Walk)`). It
+  decodes, so it runs at the analysis commit
+  (`decompiler/crates/kuna-analysis/src/passes.rs (run_uefi)`), not in the
+  load-time list. It lifts the code reachable from the entry point and from the
+  code pointers the data sections hold, at most 60,000 instructions shared
+  between the two, and walks each function over its basic blocks with a small
+  state per register and stack slot: a constant, a stack address, the
+  function's own parameter, or a pointer to one of the EFI structures. The
+  state at the head of a block is the intersection of what its predecessors
+  leave, iterated to a fixed point around a loop, and a block only an indirect
+  jump reaches starts from nothing, so a value is known only when it is the
+  same on every way in. A call keeps stack addresses, the registers the
+  prototype model preserves and, when the callee calls nothing, the registers
+  the callee does not write. The entry's parameters seed the walk, a typed
+  pointer passed to a function seeds that function's parameter, and a typed
+  pointer a function returns on every path is what its callers receive. The
+  walk repeats, at most four times, until nothing more is learned. What it
+  reads:
+
+  - A typed pointer stored into a writable global types the global and names
+    it as EDK2 does: `gImageHandle`, `gST`, `gBS`, `gRT`, `gDS`, `gSmst`,
+    `gMmst`, and `m<Interface>` for a protocol pointer. A global two different
+    types are stored into gets neither.
+  - `LocateProtocol`, `HandleProtocol`, `OpenProtocol`, `SmmLocateProtocol` /
+    `MmLocateProtocol` and `LocatePpi` take a GUID. When the GUID has an
+    interface struct, the global or stack slot the interface out-parameter
+    addresses holds a pointer to it, and that one call gets a prototype whose
+    out-parameter is `INTERFACE **`
+    (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_callsiteproto.rs (parked)`:
+    a prototype parked by call-instruction address, installed as the call's
+    prototype override when `FlowInfo` builds the call, unless the function
+    already carries an override there).
+  - Every other call the walk reads through a table or interface member
+    (`gBS->CreateEvent`, `This->ReadDisk`) gets the member's prototype the
+    same way. The decompiler would otherwise learn the prototype only when
+    type propagation reaches the pointer the call goes through, which is too
+    late to place the arguments, so it analyzes the whole function a second
+    time; with the prototype there when the call is built it analyzes the
+    function once, and an argument that is a function address is a function
+    from the start. It is also the only source for a PEIM that reads the table
+    pointer inline, which leaves the decompiler no typed pointer to read the
+    member from. A jump through a member (a tail call) states nothing, and a
+    call the walk cannot follow to its table (its pointer comes from a heap
+    record, or the block is only reached through a jump table) is still
+    resolved by the decompiler, at the cost of the second analysis.
+  - `InstallProtocolInterface`, `InstallMultipleProtocolInterfaces` (its
+    GUID/interface pairs up to the NULL), the MM installs and `InstallPpi` /
+    `ReInstallPpi` name an interface instance. The instance is typed with the
+    interface struct and named `g<Interface>`, and each function it points at
+    is named `<Interface><Member>` with the member's prototype, so a driver's
+    `DriverBindingSupported(EFI_DRIVER_BINDING_PROTOCOL *This, EFI_HANDLE
+    ControllerHandle, ...)` is recovered from its binding instance. A PPI list
+    is walked descriptor by descriptor to the entry flagged
+    `EFI_PEI_PPI_DESCRIPTOR_TERMINATE_LIST`, each one typed
+    `EFI_PEI_PPI_DESCRIPTOR`; `NotifyPpi` does the same with
+    `EFI_PEI_NOTIFY_DESCRIPTOR` and gives each callback the notify prototype
+    with its PPI typed from the GUID.
+  - A member whose prototype has an out-parameter `T **` for a known `T`
+    (`EFI_SMM_BASE2_PROTOCOL.GetSmstLocation`) types what it is handed, which is
+    how an SMM driver's `gSmst` is found.
+
+  The interface structs come from
+  `decompiler/crates/kuna-analysis/src/analyzers/uefi/protocols.txt`, generated
+  by `scripts/gen_uefi_protocols.py` from the EDK2 `MdePkg` and `MdeModulePkg`
+  headers (edk2-stable202505, BSD-2-Clause-Patent): 371 protocol and PPI GUIDs
+  with the layout of their interface, plus `EFI_MM_SYSTEM_TABLE` and
+  `EFI_SMM_SYSTEM_TABLE2`. A member the generator cannot lay out exactly (a
+  union, a bit-field, a packed or unknown by-value type) ends its struct, so
+  every offset in the table is the header's. A struct is built in the type
+  factory the first time something names it
+  (`decompiler/crates/kuna-analysis/src/analyzers/uefi/types.rs (EfiTypes)`),
+  so an image pays for the interfaces it uses; a `This` parameter is a pointer
+  to its own interface. An interface installed under a GUID the table has no
+  struct for gets one synthesized from the instance: one member per pointer
+  slot up to the last slot that points at a function start, `Function_<off>`
+  for those and `Field_<off>` for the others, named from the GUID
+  (`gEdkiiFooProtocolGuid` gives `EDKII_FOO_PROTOCOL`, an unknown GUID
+  `PROTOCOL_<Data1>`).
+
+  The phase decides the entry prototype. A module whose service calls go
+  through `EFI_PEI_SERVICES` is a PEIM, entered as `EFI_STATUS
+  _ModuleEntryPoint(VOID *FileHandle, EFI_PEI_SERVICES **PeiServices)`; a
+  standalone-MM module is entered with `EFI_MM_SYSTEM_TABLE *MmSystemTable`.
+  Without other evidence the walk reads the module as a DXE module first and
+  as the other two only when that resolves no service call. Two EDK2 library
+  shapes are recognized in a PEIM because every service call goes through
+  them: a function that reads the IDT register (`sidt`) and loads the pointer
+  below the IDT base is `GetPeiServicesTablePointer`, returning
+  `EFI_PEI_SERVICES **` (the X64 and IA32 counterpart of the ARM getters
+  above), and a short function that only forwards its own parameters to one
+  PEI service is named `PeiServices<Service>` and treated as that service at
+  its call sites. On 32-bit ARM (PE machine `ARM`,
+  `THUMB` or `ARMNT`) a code pointer's low bit selects Thumb and is not part
+  of the address, for the entry point as for an interface member.
+
+  Across the modules of one firmware volume, `kuna unpack <firmware>` writes
+  `kuna-uefi.index` beside the modules
+  (`decompiler/crates/kuna-analysis/src/analyzers/uefi/index.rs (Index)`): each
+  module's FFS file type and, with `--protocols`, every interface instance
+  each module installs, read off one load of the module (the pass leaves them
+  on the architecture as
+  `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_uefiprotocols.rs (InstalledInterface)`).
+  A module loaded from
+  that directory takes its phase from its file type (PEIM, PEI core and
+  combined PEIM/driver are PEI; MM standalone and MM core standalone are MM;
+  a traditional SMM driver is entered as a DXE driver), takes the struct
+  another module synthesized for a GUID, and gets a comment at each interface
+  lookup naming the module that installs it, the instance address and the
+  member functions: `gEfiPeiRscHandlerPpiGuid is installed by
+  ReportStatusCodeRouterPei.efi (EFI_PEI_RSC_HANDLER_PPI at 0x829a90:
+  Register=0x8297ff, Unregister=0x8298c8)`. The index is plain text, a line that does not parse
+  is skipped and a file over 16 MiB is not read. The walk is static: an
+  interface installed from a heap copy, or under a GUID computed at run time,
+  is not seen.
 - **(kuna) Declared names** (`declaredlibcproto`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/mod.rs (declared_libc_prototype)`,
   consulted from `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declare_function)`):
