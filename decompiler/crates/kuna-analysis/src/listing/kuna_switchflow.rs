@@ -37,17 +37,19 @@
 //! agree keep the value, ones that disagree make it unknown, and a predecessor
 //! the walk has not decoded — the back edge of a loop whose latch only the
 //! case bodies reach — contributes nothing, as the linear slice never saw it
-//! either. The range check is the nearest conditional branch above the
-//! dispatch along the same edges whose fall-through side leads down to it,
-//! read by [`kuna_switchtable::guard_cases`] as before; a path that meets any
-//! other conditional branch first yields no bound.
+//! either. The range check is the nearest conditional branch up the single
+//! chain of predecessors ending at the dispatch, falling through to it, read
+//! by [`kuna_switchtable::guard_cases`] as before, and it must compare the
+//! register the table is indexed by; a join, a taken side, any other
+//! conditional branch or a comparison of another value yields no bound.
 //!
 //! The read runs only once the dispatching function's queue has drained, so
 //! every edge of the body is known, and only for a dispatch the linear read
-//! declined. A function with no unread dispatch pays nothing. One read decodes
-//! at most [`MAX_FLOW_INSNS`] instructions, each once.
+//! declined in the function whose walk it is. A function with no unread
+//! dispatch pays nothing. One read decodes at most [`MAX_FLOW_INSNS`]
+//! instructions, each once.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use kuna_base::space::AddrSpace;
@@ -58,8 +60,8 @@ use kuna_sleigh::translate::Translate;
 use super::kuna_poolref::PoolImage;
 use super::kuna_switchtable::{
     self, delta_targets, feeders, fold, guard_cases, is_constant, key_of, keys_overlap,
-    leaves_registers_unknown, leaving_branch, survives, targets, value_of_key, Key, Reach,
-    TableRead, Val, MAX_GUARD_INSNS,
+    leaves_registers_unknown, leaving_branch, mask_limit, survives, targets, value_of, value_of_key,
+    Key, Reach, TableRead, Val, MAX_GUARD_INSNS,
 };
 use super::xrefs::{decode, FullCapture, FullOp};
 
@@ -124,6 +126,9 @@ struct Flow<'a> {
     memo: HashMap<(Key, u64), Reached>,
     active: HashSet<(Key, u64)>,
     budget: usize,
+    /// The table-address sums whose unknown addend is the index, as
+    /// `(instruction, op, key)`, for [`kuna_switchtable::mask_limit`].
+    index: Vec<(u64, usize, Key)>,
 }
 
 impl Flow<'_> {
@@ -170,6 +175,12 @@ impl Flow<'_> {
             }
             let vals = self.inputs(op, vma, ops, i);
             let Some(folded) = fold(op, &vals, self.data, self.pool) else { return Reached::Unknown };
+            if op.opcode == OpCode::CPUI_INT_ADD && matches!(folded, Val::Indexed(_)) {
+                let unknown = op.ins.iter().find(|vn| value_of(vn, &vals, self.data).is_none());
+                if let Some(index) = unknown.and_then(|vn| key_of(vn, self.data)) {
+                    self.index.push((vma, i, index));
+                }
+            }
             if out == key {
                 return Reached::Known(folded);
             }
@@ -237,6 +248,7 @@ pub(super) fn register_targets(
         memo: HashMap::new(),
         active: HashSet::new(),
         budget: MAX_FLOW_INSNS,
+        index: Vec::new(),
     };
     let Some(insn) = flow.insn(from) else { return TableRead::default() };
     let Some(at) = insn.1.iter().position(|op| {
@@ -250,9 +262,15 @@ pub(super) fn register_targets(
         Reached::Known(Val::Entry { table, width }) if width == pool.ptr_width() => (table, None),
         _ => return TableRead::default(),
     };
-    let Some(limit) = guard_limit(&mut flow, from, reach.max_entries) else {
+    let index = std::mem::take(&mut flow.index);
+    let Some(limit) = guard_limit(&mut flow, from, &index, reach.max_entries) else {
         return TableRead::default();
     };
+    let masked = index
+        .into_iter()
+        .filter_map(|at| mask_limit(translate, code_space, data, decoded, from, at, reach.max_entries))
+        .min();
+    let limit = masked.map_or(limit, |n| n.min(limit));
     let cases = match table {
         (table, Some(base)) => delta_targets(table, base, from, pool, exec, Some(limit), reach.max_entries),
         (table, None) => targets(table, from, pool, exec, Some(limit), reach.max_entries),
@@ -260,72 +278,126 @@ pub(super) fn register_targets(
     TableRead { cases, stated: Some(limit), ..TableRead::default() }
 }
 
-/// The case count the range check above `from` states, searching the
-/// predecessor edges breadth-first for the nearest conditional branch whose
-/// fall-through side leads to the dispatch, with the bound in the branch or
-/// in the nearest instruction above it that writes what the condition reads
-/// ([`kuna_switchtable::guard_limit`]'s rule). A conditional branch that is
-/// no range check, or that reaches the dispatch by its taken side, ends its
-/// path.
-fn guard_limit(flow: &mut Flow, from: u64, max_entries: usize) -> Option<usize> {
-    let mut queue = VecDeque::from([from]);
-    let mut seen = HashSet::from([from]);
-    while let Some(cur) = queue.pop_front() {
+/// The case count the range check above `from` states: the nearest
+/// conditional branch up the single chain of predecessors that ends at the
+/// dispatch, falling through to it, with the bound in the branch or in the
+/// nearest instruction falling into it that writes what the condition reads
+/// ([`kuna_switchtable::guard_limit`]'s rule), and comparing the selector: one
+/// of the table-address `index` addends, followed up the same instructions,
+/// still names a register the comparison reads ([`selects`]). A join, the
+/// function's entry, a branch the chain leaves by its taken side and a
+/// comparison of another value bound nothing.
+fn guard_limit(flow: &mut Flow, from: u64, index: &[(u64, usize, Key)], max_entries: usize) -> Option<usize> {
+    let mut path = vec![from];
+    let mut cur = from;
+    while path.len() <= MAX_GUARD_FLOW_INSNS {
         let preds: Vec<u64> = flow.edges.preds(cur).collect();
-        for p in preds {
-            if !seen.insert(p) {
-                continue;
-            }
-            if seen.len() > MAX_GUARD_FLOW_INSNS {
+        let &[p] = preds.as_slice() else { return None };
+        let insn = flow.insn(p)?;
+        path.push(p);
+        if let Some(at) = leaving_branch(&insn.1, p, insn.0) {
+            if p.wrapping_add(u64::from(insn.0)) != cur {
                 return None;
             }
-            let Some(insn) = flow.insn(p) else { continue };
-            let (len, ops) = (insn.0, &insn.1);
-            let Some(at) = leaving_branch(ops, p, len) else {
-                queue.push_back(p);
-                continue;
-            };
-            if p.wrapping_add(u64::from(len)) != cur {
-                continue;
-            }
-            if let Some(n) = guard_at(flow, p, ops, at, max_entries) {
-                return Some(n);
-            }
+            let (n, compared, above) = guard_at(flow, p, &insn.1, at, max_entries)?;
+            path.extend(above);
+            return index.iter().any(|&site| selects(flow, &path, site, &compared)).then_some(n);
         }
+        cur = p;
     }
     None
 }
 
 /// The bound the conditional branch at op `at` of the instruction at `p`
 /// states, from the comparison in the branch itself or in the nearest
-/// instruction falling into it that writes what the condition reads.
-fn guard_at(flow: &mut Flow, p: u64, ops: &[FullOp], at: usize, max_entries: usize) -> Option<usize> {
+/// instruction falling into it that writes what the condition reads, with the
+/// registers that comparison reads and the instructions above `p` down to it.
+fn guard_at(
+    flow: &mut Flow,
+    p: u64,
+    ops: &[FullOp],
+    at: usize,
+    max_entries: usize,
+) -> Option<(usize, Vec<Key>, Vec<u64>)> {
     let data = flow.data;
+    let regs = |keys: Vec<Key>| -> Vec<Key> { keys.into_iter().filter(|k| matches!(k, Key::Reg(..))).collect() };
     let want: Vec<Key> = ops[at].ins.get(1).and_then(|vn| key_of(vn, data)).into_iter().collect();
     let (reads, feeding) = feeders(&ops[..at], want, data);
+    let reads = regs(reads);
     if let Some(n) = guard_cases(&[], &feeding, ops, at, data, max_entries) {
-        return Some(n);
+        return Some((n, reads, Vec::new()));
     }
-    let reads: Vec<Key> = reads.into_iter().filter(|k| matches!(k, Key::Reg(..))).collect();
+    let mut above = Vec::new();
     let mut cur = p;
     for _ in 0..MAX_GUARD_INSNS {
-        // The instruction that falls into `cur`, as the linear search reads.
         let preds: Vec<u64> = flow.edges.preds(cur).collect();
-        let (w, insn) = preds.into_iter().find_map(|w| {
-            let insn = flow.insn(w)?;
-            (w.wrapping_add(u64::from(insn.0)) == cur && kuna_switchtable::falls_through(&insn.1))
-                .then_some((w, insn))
-        })?;
+        let &[w] = preds.as_slice() else { return None };
+        let insn = flow.insn(w)?;
+        if w.wrapping_add(u64::from(insn.0)) != cur || !kuna_switchtable::falls_through(&insn.1) {
+            return None;
+        }
+        above.push(w);
         let wops = &insn.1;
         let writes = wops.iter().filter_map(|op| op.out.as_ref().and_then(|vn| key_of(vn, data)));
         let written: Vec<Key> = writes.filter(|w| reads.iter().any(|r| keys_overlap(*r, *w))).collect();
         if !written.is_empty() {
-            let (_, feeding) = feeders(wops, written, data);
-            return guard_cases(wops, &feeding, ops, at, data, max_entries);
+            let (compared, feeding) = feeders(wops, written, data);
+            let n = guard_cases(wops, &feeding, ops, at, data, max_entries)?;
+            return Some((n, regs(compared), above));
         }
         cur = w;
     }
     None
+}
+
+/// Does the table-address addend `key`, read by op `upto` of the instruction
+/// at `vma` on `path` (the dispatch first, the comparison last), name a
+/// register in `compared` once followed up `path` through copies, extensions
+/// and arithmetic with a constant, as [`kuna_switchtable::mask_limit`] follows
+/// an index? Any other definition on the way is a different value.
+fn selects(flow: &mut Flow, path: &[u64], (vma, upto, mut key): (u64, usize, Key), compared: &[Key]) -> bool {
+    let data = flow.data;
+    let Some(start) = path.iter().position(|&at| at == vma) else { return false };
+    let names = |key: Key| compared.iter().any(|c| keys_overlap(*c, key));
+    let mut upto = Some(upto);
+    for (i, &at) in path.iter().enumerate().skip(start) {
+        if i + 1 == path.len() && names(key) {
+            return true;
+        }
+        let Some(insn) = flow.insn(at) else { return false };
+        let ops = &insn.1[..upto.take().unwrap_or(insn.1.len()).min(insn.1.len())];
+        for op in ops.iter().rev() {
+            let Some(out) = op.out.as_ref().and_then(|vn| key_of(vn, data)) else { continue };
+            if !keys_overlap(out, key) {
+                continue;
+            }
+            let input = |i: usize| op.ins.get(i).and_then(|vn| key_of(vn, data));
+            let constant = |i: usize| op.ins.get(i).is_some_and(|vn| is_constant(vn));
+            if out != key {
+                if op.opcode == OpCode::CPUI_INT_ZEXT && input(0) == Some(key) {
+                    continue;
+                }
+                return false;
+            }
+            let next = match op.opcode {
+                OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => input(0),
+                OpCode::CPUI_INT_MULT
+                | OpCode::CPUI_INT_LEFT
+                | OpCode::CPUI_INT_AND
+                | OpCode::CPUI_INT_ADD
+                | OpCode::CPUI_INT_SUB
+                    if constant(1) =>
+                {
+                    input(0)
+                }
+                OpCode::CPUI_INT_MULT | OpCode::CPUI_INT_AND | OpCode::CPUI_INT_ADD if constant(0) => input(1),
+                _ => None,
+            };
+            let Some(next) = next else { return false };
+            key = next;
+        }
+    }
+    names(key)
 }
 
 #[cfg(test)]

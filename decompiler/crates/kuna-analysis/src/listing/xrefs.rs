@@ -1307,6 +1307,9 @@ fn descend(
             if insn_queue.is_empty() && !pending.is_empty() {
                 let edges = kuna_switchflow::Edges::new(body_edges.clone());
                 for (vma, mode, branch) in std::mem::take(&mut pending) {
+                    if st.funcs.range(..=vma).next_back() != Some(&entry) {
+                        continue;
+                    }
                     let read = kuna_switchflow::register_targets(
                         translate, &code_space, data_space.as_ref(), &st.decoded, vma, &branch,
                         p, &exec, &reach, &edges,

@@ -355,7 +355,7 @@ pub(super) fn leaving_branch(ops: &[FullOp], at: u64, len: u32) -> Option<usize>
 /// dispatch, through scaling, copies and zero extensions, to an `and` with a
 /// constant. The caller takes the smaller of this and the range check, and with
 /// no range check requires every entry to be a case.
-fn mask_limit(
+pub(super) fn mask_limit(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
     data: Option<&Rc<AddrSpace>>,

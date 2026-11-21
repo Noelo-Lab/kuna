@@ -548,16 +548,37 @@ fn a_callee_behind_a_hoisted_base_or_far_guard_has_its_dispatcher_as_caller() {
     assert!(wrong.is_empty(), "case-body callees without their dispatcher:\n{}", wrong.join("\n"));
 }
 
-/// A miss is never silent: every computed jump of the flow fixtures is read,
-/// and the tail jump through a register in `callproto_x86_64`'s `report`
-/// (`jmp r8` at `0x13b0`, no table) is reported as unresolved.
+/// A miss is never silent: every range-checked computed jump of the flow
+/// fixtures is read, and the ones with no bound — `unrelated_guard`'s
+/// unchecked dispatch at `0x1001ad`, and the tail jump through a register in
+/// `callproto_x86_64`'s `report` (`jmp r8` at `0x13b0`, no table) — are
+/// reported as unresolved.
 #[test]
 fn an_unread_computed_jump_is_reported_and_a_read_one_is_not() {
-    for fixture in ["switchtable_flow_x86_64", "pe_switchshared_x86_64.exe"] {
+    for (fixture, unread) in [("switchtable_flow_x86_64", &[0x1001ad][..]), ("pe_switchshared_x86_64.exe", &[])] {
         let idx = index_of(fixture);
         let left: Vec<u64> = idx.unresolved_computed_jumps().collect();
-        assert!(left.is_empty(), "{fixture}: {left:#x?}");
+        assert_eq!(left, unread, "{fixture}: {left:#x?}");
     }
     let idx = index_of("callproto_x86_64");
     assert_eq!(idx.unresolved_computed_jumps_in(0x1370), [0x13b0]);
+}
+
+/// A comparison of another value is no range check. `unrelated_guard`
+/// dispatches on a discriminant loaded from memory, unchecked, under `cmp
+/// $0x800,%esi; jae` and with its base above a `jmp`: read as 2,049 cases its
+/// table ran on into `next_table`'s, filed jumps into the middle of
+/// `next_table` and took its dispatch, whose own four cases were lost.
+#[test]
+fn a_comparison_of_another_value_bounds_no_table() {
+    let idx = index_of("switchtable_flow_x86_64");
+    let jumps = |at: u64| -> Vec<u64> {
+        let mut to: Vec<u64> =
+            idx.refs_from_instruction(at).iter().filter(|r| r.kind == XrefKind::Jump).map(|r| r.to).collect();
+        to.sort_unstable();
+        to
+    };
+    assert_eq!(jumps(0x1001ad), Vec::<u64>::new());
+    assert_eq!(jumps(0x1001d2), [0x1001d4, 0x1001d6, 0x1001d8, 0x1001da]);
+    assert_eq!(idx.function_containing(0x1001d2), Some(0x1001bd));
 }

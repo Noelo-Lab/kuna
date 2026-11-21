@@ -10643,13 +10643,28 @@ what the calling convention does not preserve. Predecessors that agree keep
 the value, ones that disagree make it unknown, and a predecessor the walk has
 not decoded — the back edge of a loop whose latch only the case bodies reach
 — contributes nothing, as the linear slice never saw it either. The range
-check is the nearest conditional branch above the dispatch along the same
-edges whose fall-through side leads down to it, read by the same rule as
-before; a path that meets any other conditional branch first yields no bound,
-and a branch that reaches the dispatch by its taken side is not read as a
-guard. Only a range-checked table is read this way (the unchecked call-table
-read and the masked index stay with the slice). A function with no declined
-dispatch pays nothing; one read decodes at most 512 instructions, each once,
+check is the nearest conditional branch up the single chain of predecessors
+that ends at the dispatch, falling through to it, read by the same rule as
+before, and it must compare the **selector**: the table-address addend the
+fold could not value, followed up the same instructions through copies,
+extensions and arithmetic with a constant (the steps the masked index is
+followed by), must reach the comparison still naming a register it reads. A
+join on the way up, the function's entry, a branch the chain leaves by its
+taken side, a conditional branch that is no range check and a comparison of
+another value all bound nothing. Without that test the far reach read
+comparisons the slice never could as table sizes: Rust's `write_char` matches
+an enum discriminant loaded from memory with no range check, seventeen
+instructions under `cmp $0x800,%esi; jae` on the code point, and that read
+as 2,049 cases ran through the next tables into the middle of other
+functions, whose own dispatches it then decoded and read wrongly in turn
+(cargo: 34 such reads among 139, 219 references lost). An index masked by
+`and $m` caps the count at `m + 1` here as in the slice. Only a range-checked
+table is read this way (the unchecked call-table read stays with the slice),
+and only by the walk of the function whose extent holds the dispatch: a
+body that reaches another function's dispatch through an edge into its
+middle leaves it to that function's walk, which reads it linearly once the
+code falling into it is decoded. A function with no declined dispatch pays
+nothing; one read decodes at most 512 instructions, each once,
 and a jump that is no switch — a tail call through a pointer, a virtual
 dispatch — declines at the first definition the fold does not model, as the
 slice does. On the issue's repro (Clang 21/22 `-O2 -fPIE -pie`, MSVC 19.50

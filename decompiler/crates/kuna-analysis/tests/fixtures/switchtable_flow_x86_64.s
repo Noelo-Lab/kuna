@@ -191,6 +191,64 @@ branch_b:
 	leaf	t_fg_2, 0x32
 	leaf	t_fg_3, 0x33
 
+# An unchecked dispatch (an exhaustive match on a discriminant loaded from
+# memory, no range check) whose base is hoisted above a `jmp`, under a
+# comparison of another value. That comparison bounds nothing, so the table,
+# which `next_table`'s follows directly, is not read at all.
+	.globl	unrelated_guard
+	.type	unrelated_guard, @function
+unrelated_guard:
+	push	%rbx
+	lea	.Lug_jt(%rip), %rbx
+	cmp	$0x800, %esi
+	jae	.Lug_out
+	jmp	.Lug_disp
+.Lug_disp:
+	mov	(%rdi), %eax
+	movslq	(%rbx,%rax,4), %rax
+	add	%rbx, %rax
+	jmp	*%rax
+.Lug_c0:
+	call	t_ug_0
+	jmp	.Lug_out
+.Lug_c1:
+	call	t_ug_1
+.Lug_out:
+	pop	%rbx
+	ret
+	.size	unrelated_guard, .-unrelated_guard
+
+# The control: a switch the linear slice reads, whose table follows
+# `unrelated_guard`'s.
+	.globl	next_table
+	.type	next_table, @function
+next_table:
+	cmp	$0x3, %edi
+	ja	.Lnt_out
+	mov	%edi, %eax
+	lea	.Lnt_jt(%rip), %rcx
+	movslq	(%rcx,%rax,4), %rax
+	add	%rcx, %rax
+	jmp	*%rax
+.Lnt_c0:
+	jmp	t_nt_0
+.Lnt_c1:
+	jmp	t_nt_1
+.Lnt_c2:
+	jmp	t_nt_2
+.Lnt_c3:
+	jmp	t_nt_3
+.Lnt_out:
+	ret
+	.size	next_table, .-next_table
+
+	leaf	t_ug_0, 0x40
+	leaf	t_ug_1, 0x41
+	leaf	t_nt_0, 0x50
+	leaf	t_nt_1, 0x51
+	leaf	t_nt_2, 0x52
+	leaf	t_nt_3, 0x53
+
 	.section .rodata
 	.align 4
 .Lli_jt:
@@ -214,4 +272,12 @@ branch_b:
 	.long	.Lfg_c1-.Lfg_jt
 	.long	.Lfg_c2-.Lfg_jt
 	.long	.Lfg_c3-.Lfg_jt
+.Lug_jt:
+	.long	.Lug_c0-.Lug_jt
+	.long	.Lug_c1-.Lug_jt
+.Lnt_jt:
+	.long	.Lnt_c0-.Lnt_jt
+	.long	.Lnt_c1-.Lnt_jt
+	.long	.Lnt_c2-.Lnt_jt
+	.long	.Lnt_c3-.Lnt_jt
 	.section .note.GNU-stack,"",@progbits
