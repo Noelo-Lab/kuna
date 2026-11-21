@@ -23,7 +23,9 @@ address and a result buffer in `x8` are the controls.
 
 `kuna-aif-slot-edges.xml` loads one ELF with stock x86-64 and with a six-byte
 instruction grid. It checks padded entries and first instructions ending at
-or crossing the section boundary. The datatest runner includes the corpus's
+or crossing the section boundary. It also checks that a weak candidate with an
+oversized instruction cannot hide a corroborated entry, and distinguishes
+a return immediate from a disjoint following function. The datatest runner includes the corpus's
 `specs/` directory in its normal language search. The fixture language reuses
 the stock x86-64 decoder and GCC calling convention.
 

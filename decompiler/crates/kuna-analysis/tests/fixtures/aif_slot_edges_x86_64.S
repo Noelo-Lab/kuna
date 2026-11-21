@@ -1,5 +1,5 @@
 # GNU binutils 2.47.20260726. Stripped ELF SHA-256:
-# d8b61345325d9fe9dc83ef6dd3d7b7918ef545290ac80b8b89ab5393f9f80505
+# d332dde1c4a631f919c11a4720883e66164cb3a707077635905c80ca26199bc9
 # Build from this directory:
 # as --64 aif_slot_edges_x86_64.S -o edges.o
 # ld --build-id=none -T aif_slot_edges_x86_64.ld edges.o -o edges
@@ -22,7 +22,7 @@ _start:
 call inside_slot
 call following_slot
 .set i, 0
-.rept 64
+.rept 128
 .byte 0x2e,0xe8
 .long handlers + i * 18 - . - 4
 .set i, i + 1
@@ -43,6 +43,18 @@ ret6
 nop6
 nop6
 ret6
+.endr
+
+.rept 56
+add2
+mov40
+ret6
+.endr
+.rept 8
+mov40
+.byte 0x05,2,0,0,0           # five-byte ADD, weak MOV/ADD fingerprint of length 11
+ret6
+.byte 0
 .endr
 
 .section .padding,"ax"
@@ -152,4 +164,51 @@ nop6
 wide_after_padding:
 .byte 0x2e,0x36,0xb8,40,0,0,0
 .byte 0x05,2,0,0,0
+ret6
+
+.section .weak_prefix,"ax"
+.fill 12,1,0
+.type oversized_prefix,@object
+oversized_prefix:
+.byte 0x2e,0x36,0xb8,40,0,0,0
+.byte 0x05,2,0,0,0
+.type after_weak_prefix,@function
+after_weak_prefix:
+add2
+mov40
+ret6
+
+.macro claimed_return opcode
+.fill 12,1,0
+mov40
+.byte 0x05,2,0,0,0
+.byte \opcode
+.endm
+.section .claimed_imm,"ax"
+claimed_return 0xc2          # RET imm16 owns the first two bytes below
+.type immediate_bytes,@object
+immediate_bytes:
+mov40
+add2
+ret6
+.section .claimed_end,"ax"
+claimed_return 0xc3          # one-byte RET ends just before the next function
+.type adjoining_function,@function
+adjoining_function:
+mov40
+add2
+ret6
+
+.macro mixed_nops
+.byte 0x0f,0x1f,0x44,0,0
+.byte 0x66,0x66,0x0f,0x1f,0x44,0,0
+.endm
+.section .mixed_padding,"ax"
+.rept 1990
+mixed_nops
+.endr
+.byte 0x2e,0x36,0x3e,0x26,0xf3,0xcc
+mixed_nops
+.type after_trap_padding,@function
+after_trap_padding:
 ret6

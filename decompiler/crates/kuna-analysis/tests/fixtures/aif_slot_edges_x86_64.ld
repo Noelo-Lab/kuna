@@ -27,4 +27,12 @@ SECTIONS {
     .trapped : { *(.trapped) } :code
     . = 0x41a006;
     .padded_wide : { *(.padded_wide) } :code
+    . = 0x41b006;
+    .weak_prefix : { *(.weak_prefix) } :code
+    . = 0x41c006;
+    .claimed_imm : { *(.claimed_imm) } :code
+    . = 0x41d006;
+    .claimed_end : { *(.claimed_end) } :code
+    . = 0x41e006;
+    .mixed_padding : { *(.mixed_padding) } :code
 }

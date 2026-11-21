@@ -55,13 +55,15 @@ pub(super) enum Filler {
     /// Padding in front of undecoded code that starts at the address held: probe
     /// the candidate, and plant an accept there instead.
     Before(u64),
+    /// A terminal instruction on the only path prevents reaching the code after the run.
+    Blocked,
 }
 
 #[derive(Clone, Copy)]
 enum RunEnd {
     Entry,
     BeyondValidationLimit,
-    Code(u64),
+    Code { at: u64, blocked: bool },
     Other,
 }
 
@@ -88,7 +90,7 @@ impl PaddingRuns {
         }
         let mut run = Vec::new();
         let mut at = entry;
-        let end = loop {
+        let mut end = loop {
             if let Some(&end) = self.ends.get(&at) {
                 break end;
             }
@@ -107,17 +109,28 @@ impl PaddingRuns {
             }
             match decoder.probe(at) {
                 Some(insn) if is_padding(&insn, self.wide) => {
-                    run.push(at);
-                    at = at.saturating_add(u64::from(insn.len));
+                    let next = at.saturating_add(u64::from(insn.len));
+                    let terminal = !decoder.frame_probe && (insn.is_terminal || insn.kind == super::FlowKind::ComputedJump);
+                    let straight = insn.flows.is_empty() && insn.fall_through == Some(next);
+                    run.push((at, terminal, straight));
+                    at = next;
                 }
-                Some(insn) if !is_zero_fill(&insn) => break RunEnd::Code(at),
+                Some(insn) if !is_zero_fill(&insn) => break RunEnd::Code { at, blocked: false },
                 _ => break RunEnd::Other,
             }
         };
-        self.ends.extend(run.into_iter().map(|at| (at, end)));
+        // Propagate a terminal only through unconditional fallthroughs. Suffixes
+        // after it retain the destination, and a branch still gets full validation.
+        for (start, terminal, straight) in run.into_iter().rev() {
+            if let RunEnd::Code { blocked, .. } = &mut end {
+                *blocked = terminal || (straight && *blocked);
+            }
+            self.ends.insert(start, end);
+        }
         match end {
             RunEnd::Entry | RunEnd::BeyondValidationLimit => Filler::Refuse,
-            RunEnd::Code(at) => Filler::Before(at),
+            RunEnd::Code { blocked: true, .. } => Filler::Blocked,
+            RunEnd::Code { at, .. } => Filler::Before(at),
             RunEnd::Other => Filler::No,
         }
     }
