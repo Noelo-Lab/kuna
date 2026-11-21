@@ -1,0 +1,121 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A">
+<!--
+    A constant integer written into a byte array keeps its native width.
+    P3 simplification (`option bytestorewidth on|off`, default off,
+    p3_dataflow/kuna_bytestorewidth.rs in SplitDatatype).
+
+    fill stores the 4-byte integer 3 at +0x18 of the node alloc_node returns
+    (x86-64 `movl $0x3,0x18(%rax)`, AArch64 `str w1,[x0,#24]`, PowerPC32
+    `stw r10,24(r9)`); fill_text stores "abc" with its NUL there (GCC's
+    inlined `memcpy`). The script loads byte_store_width_{x86_64,aarch64,ppc32}.so
+    (source byte_store_width.c, recipe in the fixtures README) and states
+    alloc_node's return (on PowerPC32 its PIC call stub at 0x310) as a View
+    whose 20-byte `char` array starts the second element at +0x18, or as a
+    record of four named byte fields there.
+
+    No upstream issue: reported for a record view in an x86-64 shared library.
+    Assert #1 is the default (option off) pass: upstream SplitDatatype splits
+    the one word store into four byte assignments. Assert #2 is the option-on
+    pass: the store prints at its own width. Assert #3: with the option on, the
+    text constant still splits into its characters. Assert #4: with the option
+    on, a write into four named byte fields still splits into those fields.
+-->
+  <bytechunk space="ram" offset="0x1000" readonly="true">c0035fd6</bytechunk>
+  <symbol space="ram" offset="0x1000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/byte_store_width_x86_64.so</com>
+  <com>read symbols</com>
+  <com>parse line struct View { unsigned char preceding[20]; unsigned int word; };</com>
+  <com>map return 0x1050::%RAX View *</com>
+  <com>load function fill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/byte_store_width_x86_64.so</com>
+  <com>read symbols</com>
+  <com>option bytestorewidth on</com>
+  <com>parse line struct View { unsigned char preceding[20]; unsigned int word; };</com>
+  <com>map return 0x1050::%RAX View *</com>
+  <com>load function fill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fill_text</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/byte_store_width_x86_64.so</com>
+  <com>read symbols</com>
+  <com>option bytestorewidth on</com>
+  <com>parse line struct Bytes { unsigned char pad[24]; unsigned char a; unsigned char b; unsigned char c; unsigned char d; };</com>
+  <com>map return 0x1050::%RAX Bytes *</com>
+  <com>load function fill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/byte_store_width_aarch64.so</com>
+  <com>read symbols</com>
+  <com>parse line struct View { unsigned char preceding[20]; unsigned int word; };</com>
+  <com>map return 0x2e0::%x0 View *</com>
+  <com>load function fill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/byte_store_width_aarch64.so</com>
+  <com>read symbols</com>
+  <com>option bytestorewidth on</com>
+  <com>parse line struct View { unsigned char preceding[20]; unsigned int word; };</com>
+  <com>map return 0x2e0::%x0 View *</com>
+  <com>load function fill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fill_text</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/byte_store_width_aarch64.so</com>
+  <com>read symbols</com>
+  <com>option bytestorewidth on</com>
+  <com>parse line struct Bytes { unsigned char pad[24]; unsigned char a; unsigned char b; unsigned char c; unsigned char d; };</com>
+  <com>map return 0x2e0::%x0 Bytes *</com>
+  <com>load function fill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/byte_store_width_ppc32.so</com>
+  <com>read symbols</com>
+  <com>parse line struct View { unsigned char preceding[20]; unsigned int word; };</com>
+  <com>map return 0x310::%r3 View *</com>
+  <com>load function fill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/byte_store_width_ppc32.so</com>
+  <com>read symbols</com>
+  <com>option bytestorewidth on</com>
+  <com>parse line struct View { unsigned char preceding[20]; unsigned int word; };</com>
+  <com>map return 0x310::%r3 View *</com>
+  <com>load function fill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fill_text</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/byte_store_width_ppc32.so</com>
+  <com>read symbols</com>
+  <com>option bytestorewidth on</com>
+  <com>parse line struct Bytes { unsigned char pad[24]; unsigned char a; unsigned char b; unsigned char c; unsigned char d; };</com>
+  <com>map return 0x310::%r3 Bytes *</com>
+  <com>load function fill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="kuna-bytestorewidth #1: by default the word store splits into bytes" min="3" max="3">v1\[1\]\.preceding\[1\] = 0;</stringmatch>
+<stringmatch name="kuna-bytestorewidth #2: option on keeps the word store's width" min="3" max="3">\*\(unsigned int \*\)v1\[1\]\.preceding = 3;</stringmatch>
+<stringmatch name="kuna-bytestorewidth #3: a text constant still splits into characters" min="3" max="3">v1\[1\]\.preceding\[1\] = 0x62;</stringmatch>
+<stringmatch name="kuna-bytestorewidth #4: named byte fields still split" min="3" max="3">->d = [03];</stringmatch>
+</decompilertest>

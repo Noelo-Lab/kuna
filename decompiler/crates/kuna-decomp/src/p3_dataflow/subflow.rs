@@ -4534,6 +4534,12 @@ impl SplitDatatype {
         if Self::is_arithmetic_input(data, out_vn) {
             return Ok(false); // Sanity check on output
         }
+        if data.get_arch().byte_store_width {
+            let big = data.vbank().get(out_vn).expect("stale out").get_space().is_big_endian();
+            if super::kuna_bytestorewidth::keeps_constant_whole(data, in_vn, out_type, big) {
+                return Ok(false);
+            }
+        }
         let mut in_varnodes: Vec<VarnodeId> = Vec::new();
         let mut out_varnodes: Vec<VarnodeId> = Vec::new();
         let _unres_out_type = data.vbank().get(out_vn).expect("stale out").get_type().clone();
@@ -4705,6 +4711,13 @@ impl SplitDatatype {
         }
         if Self::is_arithmetic_output(data, in_vn) {
             return Ok(false); // Sanity check
+        }
+        if data.get_arch().byte_store_width && load_op.is_none() {
+            let store_in0 = data.obank().get(store_op).expect("stale store").get_in(0).expect("store in0");
+            let big = space_from_const(data, store_in0).is_big_endian();
+            if super::kuna_bytestorewidth::keeps_constant_whole(data, in_vn, out_type, big) {
+                return Ok(false);
+            }
         }
         let mut store_root = RootPointer::default();
         if !store_root.find(data, &mut self.resolver, store_op, out_type)? {
@@ -7703,6 +7716,33 @@ mod tests {
         let mut inv: Vec<VarnodeId> = Vec::new();
         assert!(!sd.generate_constants(&mut fd, zout, &mut inv).unwrap());
         assert!(inv.is_empty(), "oversize piece must clear the accumulator");
+    }
+
+    /// (kuna `bytestorewidth`) The option reads the same constant forms
+    /// `generate_constants` splits: a constant, an `INT_ZEXT` of one, and a
+    /// `PIECE` of two.
+    #[test]
+    fn bytestorewidth_reads_zext_and_piece_constants() {
+        use super::super::kuna_bytestorewidth::constant_value;
+        let mut fd = build_fd();
+        let c = mk_const(&mut fd, 4, 3);
+        assert_eq!(constant_value(&fd, c), Some((3, 4)));
+        let low = mk_const(&mut fd, 4, 0x1122_3344);
+        let zext = mk_op(&mut fd, 0x80, 1, OpCode::CPUI_INT_ZEXT);
+        wire_in(&mut fd, zext, low, 0);
+        let zout = mk_reg(&mut fd, 0x50, 8);
+        let zout = wire_out(&mut fd, zext, zout);
+        assert_eq!(constant_value(&fd, zout), Some((0x1122_3344, 8)));
+        let high = mk_const(&mut fd, 4, 0x5566_7788);
+        let low = mk_const(&mut fd, 4, 3);
+        let piece = mk_op(&mut fd, 0x90, 2, OpCode::CPUI_PIECE);
+        wire_in(&mut fd, piece, high, 0);
+        wire_in(&mut fd, piece, low, 1);
+        let pout = mk_reg(&mut fd, 0x60, 8);
+        let pout = wire_out(&mut fd, piece, pout);
+        assert_eq!(constant_value(&fd, pout), Some((0x5566_7788_0000_0003, 8)));
+        let reg = mk_reg(&mut fd, 0x70, 4);
+        assert_eq!(constant_value(&fd, reg), None);
     }
 
     fn pieces_with_byte_oracle(bytes: &[u8], big_endian: bool) -> (SplitDatatype, Vec<u64>) {
