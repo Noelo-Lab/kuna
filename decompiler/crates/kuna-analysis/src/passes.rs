@@ -389,6 +389,12 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // `aif/mod.rs` + docs/history/analysis-port-log.md.
     ];
 
+    // (kuna `cortexmscs`) The Cortex-M System Control Space as typed volatile
+    // globals (a raw image is stashed by its bootstrap). Registered for every
+    // format; the pass self-gates on a Cortex-M language or M-profile ELF build
+    // attributes.
+    passes.push(Box::new(crate::cortexmscs::CortexMScsPass));
+
     // (kuna, NOVEL) S1 Itanium (GCC/Clang) RTTI + vtable recovery
     // (ItaniumRttiPass): on an ELF, discover every `_ZTI…` typeinfo object from the
     // dynamic relocations that name a `__cxxabiv1` typeinfo vtable (the anchor that
@@ -553,6 +559,13 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // false) AND a fingerprint-matching `.pdb` is supplied via `kuna_pdb_path`, so a
     // default run is byte-identical and bound to the real-PE path (the XML datatest
     // oracle is untouched). Types/typed-locals/lines are the deferred PR-P2/P3.
+    // (kuna `uefi`) UEFI module markup: the entry prototype, the EFI table
+    // types, EDK2 GUID names and statically defined service tables of a PE whose
+    // Subsystem is an EFI one. PE-only; the pass self-gates on the subsystem.
+    if format == object::BinaryFormat::Pe {
+        passes.push(Box::new(crate::uefi::UefiPass));
+    }
+
     if format == object::BinaryFormat::Pe {
         passes.push(Box::new(crate::pdb::PdbPass));
         // S1 PDB-procedure-interior entry suppression (`pdbinterior`): the same

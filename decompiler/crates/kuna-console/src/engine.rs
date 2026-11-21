@@ -3532,6 +3532,8 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // PE-only (the pass + its passes_for registration both self-gate on PE), so
         // a default run / every non-PE binary commits nothing here.
         "rtti" => arch.analysis_rtti,
+        "uefi" => arch.analysis_uefi,
+        "cortexmscs" => arch.analysis_cortexmscs,
         // (kuna, NOVEL) Itanium (GCC/Clang) RTTI + vtable recovery — the class
         // names, typeinfo/vtable labels and per-slot virtual-method names are
         // computed at LOAD but COMMITTED only when this gate is on. Default-OFF
@@ -4519,6 +4521,10 @@ pub(crate) fn bootstrap_raw_image(
     let mut prog = empty_program(raw.into_sleigh(), registry, ProgramContainer::Raw, description);
     prog.pending_synthetic_entries = pending_synthetic_entries;
     prog.pending_analysis = input_isa_stash(input_context_paints);
+    if let Some(blocks) = kuna_analysis::cortexmscs::layout(&arch_id) {
+        let scs = kuna_analysis::pass::AnalysisOutput { cortexm_scs: Some(blocks), ..Default::default() };
+        prog.pending_analysis.push((kuna_analysis::cortexmscs::ID, scs));
+    }
     prog.analysis_code_space = Some(code_space);
     prog.raw_address_units = Some((word_size, arm32));
     Ok(prog)
@@ -5481,6 +5487,17 @@ fn commit_analysis_output(
     out.symbols.extend(go_prototypes.iter().map(|fact| kuna_analysis::pass::SymFact {
         addr: fact.entry, name: fact.pieces.name.clone(), kind: SymKind::Function,
     }));
+    // 0a. (kuna `cortexmscs`) The System Control Space of a Cortex-M image:
+    //     its types are built here, not at load, so the gate decides whether
+    //     they exist; the ranges are marked volatile at step 4b.
+    let scs_ranges = match out.cortexm_scs.take() {
+        Some(blocks) => {
+            let (globals, ranges) = kuna_analysis::cortexmscs::materialize(prog.arch().types(), blocks);
+            out.typed_data.extend(globals);
+            ranges
+        }
+        None => Vec::new(),
+    };
     // 0b. (kuna `swifttypes`) The Swift type-layout arm's facts, the same
     //     deferred shape: on, the typed metadata records and the accessor
     //     prototypes fold into their streams (the register-pinned parameters
@@ -6082,6 +6099,10 @@ fn commit_analysis_output(
     //    unterminated literals read back as one 39-byte string). A bounded
     //    fact's `len` is the exact element count — there is no terminator.
     let blob_extents = crate::kuna_blobdata::Extents::new(&out.blobs);
+    // (kuna) A typed data object outranks a string literal read inside it: an
+    // EFI table's signature (`BOOTSERV`) scans as text, but the table is typed.
+    let typed_spans: Vec<(u64, u64)> =
+        out.typed_data.iter().map(|d| (d.addr, d.addr + d.type_.get_size().max(1) as u64)).collect();
     let wide = if prog.arch().analysis_widestrings { out.wide_strings.as_slice() } else { &[] };
     let wide32 =
         if prog.arch().analysis_widestrings32 { out.wide_strings32.as_slice() } else { &[] };
@@ -6096,7 +6117,7 @@ fn commit_analysis_output(
         .chain(wide.iter().map(|f| (f, 2u32)))
         .chain(out.strings.iter().map(|f| (f, 1u32)))
     {
-        if blob_extents.contains(fact.addr) {
+        if blob_extents.contains(fact.addr) || typed_spans.iter().any(|&(lo, hi)| fact.addr >= lo && fact.addr < hi) {
             continue;
         }
         let addr = Address::new(Rc::clone(code_space), fact.addr);
@@ -6237,6 +6258,16 @@ fn commit_analysis_output(
     //     claim, and the loader's own untyped `undefined8` naming of the same slot
     //     is skipped by its `occupied` guard below. The stream is empty unless the
     //     `libctypes` gate is on (`LibcTypesPass` returns before it collects).
+    for &(start, size) in &scs_ranges {
+        let Some(end) = start.checked_add(size).filter(|end| *end > start && *end - 1 <= code_space.get_highest()) else {
+            continue;
+        };
+        prog.arch_mut().symboltab.set_property_range(
+            kuna_decomp::varnode::varnode_flags::volatil,
+            &Address::new(Rc::clone(code_space), start),
+            &Address::new(Rc::clone(code_space), end),
+        );
+    }
     let stream_syms = out.typed_data.as_slice();
     for fact in stream_syms {
         let addr = Address::new(Rc::clone(code_space), fact.addr);

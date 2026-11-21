@@ -4,6 +4,8 @@ use object::{Object, ObjectSection};
 
 /// `Tag_CPU_arch_profile`; the value is a character, `'M'` for a microcontroller.
 const TAG_CPU_ARCH_PROFILE: u32 = 7;
+/// `Tag_CPU_arch`: 16, 17 and 21 are the ARMv8-M architectures.
+const TAG_CPU_ARCH: u32 = 6;
 /// `Tag_ARM_ISA_use`; 0 says the image may not use A32 instructions.
 const TAG_ARM_ISA_USE: u32 = 8;
 
@@ -25,6 +27,24 @@ pub fn thumb_only(file: &object::File<'_>) -> bool {
             let little = file.is_little_endian();
             let tag = |wanted| file_attribute(data, little, wanted, |v| v, None).flatten();
             tag(TAG_CPU_ARCH_PROFILE) == Some(u32::from(b'M')) || tag(TAG_ARM_ISA_USE) == Some(0)
+        })
+}
+
+/// `Tag_CPU_arch` of an ARM ELF whose build attributes state the M profile
+/// (0 when the tag is absent); `None` for any other image.
+pub fn m_profile_arch(file: &object::File<'_>) -> Option<u32> {
+    if file.format() != object::BinaryFormat::Elf
+        || file.architecture() != object::Architecture::Arm
+    {
+        return None;
+    }
+    file.sections()
+        .filter(|s| s.name() == Ok(".ARM.attributes"))
+        .find_map(|section| {
+            let data = section.data().ok()?;
+            let little = file.is_little_endian();
+            let tag = |wanted| file_attribute(data, little, wanted, |v| v, None).flatten();
+            (tag(TAG_CPU_ARCH_PROFILE) == Some(u32::from(b'M'))).then(|| tag(TAG_CPU_ARCH).unwrap_or(0))
         })
 }
 

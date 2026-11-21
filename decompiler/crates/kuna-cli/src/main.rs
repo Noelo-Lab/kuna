@@ -31,6 +31,7 @@ mod optname;
 mod output;
 mod paths;
 mod project_stream;
+mod rawfront;
 mod runtime_hints;
 mod rust_signatures;
 mod skill;
@@ -106,6 +107,13 @@ fn main() -> ExitCode {
     };
     loadtime::export_image_selection(&rest);
     followimages::apply(sub, &mut rest, follow_limit);
+    let _firmware = match rawfront::prepare(sub, &mut rest) {
+        Ok(staged) => staged,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
+    };
     let rest = rest.as_slice();
     runtime_hints::note_for_invocation(sub, rest);
     let code = match sub {
@@ -156,6 +164,7 @@ fn usage() {
          kuna blobs <binary> [--isa auto|arm|thumb] [--json] [--extract DIR] [--kind png,jpeg,gif,bmp,ico,zip,gzip,xz,zstd] [--section NAME] [--no-xrefs]\n\
          kuna unpack <binary> [-o OUT] [--json]\n\
          kuna unpack <dyld_shared_cache> (--list | --image NAME [-o OUT]) [--json]\n\
+         kuna unpack <uefi-firmware.fd> [--list] [-o DIR] [--json]\n\
          kuna strings <binary> [--isa auto|arm|thumb] [--json] [--min-length N] [--filter REGEX] [--encoding ascii|utf16|all] [--section NAME] [--no-xrefs]\n\
          kuna raw-pcode <binary> [--isa auto|arm|thumb] <name|0xaddr|0xstart-0xend> [--addr] [--count N] [--bytes N] [--follow] [--json] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--slice ARCH] [--target T] [--sleighpath D]\n\
          kuna disassemble <binary> [--isa auto|arm|thumb] <name|0xaddr|0xstart-0xend> [--addr] [--as code|data|auto] [--count N] [--bytes N] [--json] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--slice ARCH] [--target T] [--sleighpath D]\n\

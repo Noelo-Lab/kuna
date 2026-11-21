@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4920,
-    4920
+    4937,
+    4937
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -566,6 +566,18 @@
     "data:CORTEXMPRIV #2: OFF turns a straight-line special-register read into a branch (pass 1 only)",
     "data:CORTEXMPRIV #3: the real effect survives in BOTH passes",
     "data:CORTEXMPRIV #4: ON folds the guard away, leaving one unconditional read (pass 2 only)",
+    "data:CORTEXMSCS #10: on, the debug blocks are typed",
+    "data:CORTEXMSCS #11: on, the debug exception and monitor control register is a member",
+    "data:CORTEXMSCS #12: on, a register beyond its block is its own global",
+    "data:CORTEXMSCS #1: off, VTOR is a raw address",
+    "data:CORTEXMSCS #2: off, the interrupt enable is a computed store",
+    "data:CORTEXMSCS #3: on, VTOR is a member store",
+    "data:CORTEXMSCS #4: on, the coprocessor access register is read and written as a member",
+    "data:CORTEXMSCS #5: on, the interrupt enable indexes the set-enable words",
+    "data:CORTEXMSCS #6: on, a constant interrupt enable is element 0",
+    "data:CORTEXMSCS #7: on, byte-wide priority registers index by interrupt",
+    "data:CORTEXMSCS #8: on, SysTick is a block of its own",
+    "data:CORTEXMSCS #9: on, the system handler priority bytes index as an array",
     "data:CP selectors #1: region numbers are constants",
     "data:CP selectors #2: CPU data stays dynamic",
     "data:CP selectors #3: read numbers are constants",
@@ -2746,6 +2758,11 @@
     "data:UCOMISS unordered #7: nanignore none keeps the guards",
     "data:UCOMISS unordered #8: no ordered spelling of an unordered flag",
     "data:UCOMISS unordered #9: an isnan test beside an exact jbe stays",
+    "data:UEFI #1: off, the boot-services call is an offset off an untyped word",
+    "data:UEFI #2: on, the entry carries the specification's prototype",
+    "data:UEFI #3: on, the boot-services table is read as a member",
+    "data:UEFI #4: on, the service is a member call and its GUID argument is named",
+    "data:UEFI #5: on, the protocol GUIDs of the install call are named",
     "data:UNSIGNED-BYTE-VM-SELECTOR #1: the selector declaration remains",
     "data:UNSIGNED-BYTE-VM-SELECTOR #2: the recovered switch remains",
     "data:UNSIGNED-BYTE-VM-SELECTOR #3: the low case remains",
