@@ -1,0 +1,43 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Swift register-specific retain/release entry points.
+
+    Issue: an optimized arm64 Swift caller releases or retains an object
+    through the runtime's `swift_release_x<N>` / `swift_retain_x<N>` entry
+    points (`swift/Runtime/CustomRRABI.h`), which take the object in `x<N>`
+    instead of `x0`. Under the C model no parameter lives there, so every such
+    call printed with no argument: `swift_release_x20();`.
+
+    Stage / sub-stage: P1 external-refinement, `SwiftRuntimePass`
+    (`kuna-analysis/src/analyzers/swift/kuna_swiftruntime.rs`). No option: the
+    entry points are the runtime's ABI, like the rest of the table.
+
+    The fixture `swift_rr_regs_macho` (arm64 Mach-O, assembled from
+    `swift_rr_regs_macho.s` against the iOS 16.5 libswiftCore) imports
+    `swift_retain`, `swift_release_x20` and `swift_retain_x21`. `keep_first`
+    releases its second argument through `x20`; `retain_second` retains its
+    second argument through `x21` and stores the result, which the entry point
+    returns in `x0`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_rr_regs_macho</com>
+  <com>read symbols</com>
+  <com>load addr 0x100004000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x10000402c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="the release through x20 takes its argument" min="1" max="1">swift_release_x20\(a1\);</stringmatch>
+<stringmatch name="the retain through x21 takes its argument and returns in x0" min="1" max="1">\*a0 = \(unsigned long\)swift_retain_x21\(a1\);</stringmatch>
+<stringmatch name="the plain entry point is unchanged" min="1" max="1">swift_retain\(a0\);</stringmatch>
+</decompilertest>

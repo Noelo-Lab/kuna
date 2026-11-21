@@ -16,11 +16,20 @@
 //! ignores it (`swift_once`'s context, `swift_getKeyPath`'s arguments,
 //! `swift_getWitnessTable`'s instantiation arguments): a declared slot there
 //! would make a stale register an argument, and a parameter of the caller.
+//!
+//! On arm64 the runtime also exports a retain and a release per register
+//! (`swift/Runtime/CustomRRABI.h`): `swift_retain_x<N>` takes the object in
+//! `x<N>` and returns it in `x0`, `swift_release_x<N>` reads `x<N>` and returns
+//! nothing, so an optimized caller releases a value without moving it into
+//! `x0`. Outside every calling convention, those take their one parameter as
+//! explicit storage.
 
 use std::rc::Rc;
 
+use kuna_base::address::Address;
+use kuna_decomp::architecture::Architecture;
 use kuna_decomp::dtype::{Datatype, TypeFactory, TypeField, type_metatype};
-use kuna_decomp::fspec::PrototypePieces;
+use kuna_decomp::fspec::{parameter_pieces_flags, ParameterPieces, PrototypePieces};
 use object::read::Object;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
@@ -464,6 +473,59 @@ pub fn prototypes(tf: &dyn TypeFactory, ptr_size: i32) -> Vec<PrototypePieces> {
     out
 }
 
+/// The registers the runtime defines `swift_retain_x<N>` / `swift_release_x<N>`
+/// for (`CUSTOM_RR_ENTRYPOINTS_FOREACH_REG`): `x0` is the plain entry point,
+/// `x16`/`x17` are call glue, `x18` is reserved, `x29`/`x30` the frame and
+/// link registers.
+pub const CUSTOM_RR_REGISTERS: [u32; 25] =
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28];
+
+/// `swift_retain_x19` → `(true, 19)`, `swift_release_x8` → `(false, 8)`; `None`
+/// for any other name, a register the runtime defines no entry point for included.
+pub fn custom_rr_register(name: &str) -> Option<(bool, u32)> {
+    let (retains, rest) = match name.strip_prefix("swift_retain_x") {
+        Some(rest) => (true, rest),
+        None => (false, name.strip_prefix("swift_release_x")?),
+    };
+    let n: u32 = rest.parse().ok()?;
+    CUSTOM_RR_REGISTERS.contains(&n).then_some((retains, n))
+}
+
+/// The register-specific retain and release entry points: one `swift_retain_x<N>`
+/// (`void *obj @ x<N>`, the object back in `x0`) and one `swift_release_x<N>`
+/// (`void` of the same) per register in [`CUSTOM_RR_REGISTERS`].
+pub fn custom_rr_prototypes(arch: &Architecture, ptr_size: i32) -> Vec<PrototypePieces> {
+    let types = Types { tf: arch.types(), ptr_size };
+    let Some(obj) = types.of(Obj) else { return Vec::new() };
+    let Some(void) = types.of(Void) else { return Vec::new() };
+    let storage = |register: &str| {
+        let vn = arch.get_register_varnode(register.as_bytes()).ok()?;
+        Some(ParameterPieces {
+            addr: Address::new(vn.space?, vn.offset),
+            type_: Some(Rc::clone(&obj)),
+            flags: parameter_pieces_flags::TYPELOCK | parameter_pieces_flags::NAMELOCK,
+        })
+    };
+    let mut out = Vec::with_capacity(2 * CUSTOM_RR_REGISTERS.len());
+    for n in CUSTOM_RR_REGISTERS {
+        let Some(input) = storage(&format!("x{n}")) else { continue };
+        for retains in [true, false] {
+            let family = if retains { "retain" } else { "release" };
+            out.push(PrototypePieces {
+                name: format!("swift_{family}_x{n}"),
+                outtype: Some(if retains { Rc::clone(&obj) } else { Rc::clone(&void) }),
+                intypes: vec![Rc::clone(&obj)],
+                innames: vec!["obj".to_string()],
+                first_var_arg_slot: -1,
+                output_storage: if retains { storage("x0") } else { None },
+                input_storage: vec![(0, input.clone())],
+                kuna_library_names: None,
+            });
+        }
+    }
+    out
+}
+
 /// P1 pass: the runtime prototypes of a Swift image (always on; registered
 /// for a Swift-detected image only).
 pub struct SwiftRuntimePass;
@@ -481,6 +543,9 @@ impl AnalysisPass for SwiftRuntimePass {
         let mut out = AnalysisOutput::default();
         let ptr_size = if ctx.file.is_64() { 8 } else { 4 };
         out.prototypes = prototypes(ctx.arch.types(), ptr_size);
+        if ctx.file.architecture() == object::Architecture::Aarch64 && ptr_size == 8 {
+            out.prototypes.extend(custom_rr_prototypes(ctx.arch, ptr_size));
+        }
         out
     }
 }
@@ -497,5 +562,19 @@ mod tests {
         names.dedup();
         assert_eq!(names.len(), total, "a runtime entry point is listed twice");
         assert!(names.iter().all(|n| n.starts_with("swift_")));
+    }
+
+    #[test]
+    fn custom_rr_names_name_their_register() {
+        assert_eq!(custom_rr_register("swift_retain_x19"), Some((true, 19)));
+        assert_eq!(custom_rr_register("swift_release_x8"), Some((false, 8)));
+        assert_eq!(custom_rr_register("swift_release_x0"), None, "x0 is the plain entry point");
+        assert_eq!(custom_rr_register("swift_retain_x16"), None, "call glue");
+        assert_eq!(custom_rr_register("swift_retain_x18"), None, "reserved");
+        assert_eq!(custom_rr_register("swift_retain_x29"), None, "the frame pointer");
+        assert_eq!(custom_rr_register("swift_retain"), None);
+        assert_eq!(custom_rr_register("swift_retain_xa"), None);
+        assert_eq!(custom_rr_register("swift_bridgeObjectRelease_x20"), None);
+        assert_eq!(CUSTOM_RR_REGISTERS.len(), 25);
     }
 }

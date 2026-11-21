@@ -6367,6 +6367,18 @@ every other binary's pass list is byte-identical to before the pass existed):
   option; the pass is registered for a Swift-detected image only and every
   other image's pass list is unchanged. The stage test
   `tests/stages/kuna-swiftruntime.xml` runs the stripped `swift_types_elf`.
+  On arm64 the table also carries the runtime's register-specific retain and
+  release entry points (`swift/Runtime/CustomRRABI.h`): `swift_retain_x<N>`
+  takes the object in `x<N>` and returns it in `x0`, `swift_release_x<N>`
+  reads `x<N>` and returns nothing, for `N` in 1–15 and 19–28 (`x0` is the
+  plain entry point, `x16`/`x17` are call glue, `x18` is reserved, `x29`/`x30`
+  the frame and link registers). An optimized caller releases a value through
+  them without moving it into `x0`, where no convention places a parameter,
+  so the one parameter is explicit storage on the prototype (the
+  `objc_retain_x<N>` shape) and the call prints its argument:
+  `swift_release_x20(v)` for the bare `swift_release_x20()`. The stage test
+  `tests/stages/kuna-swiftrrregs.xml` runs `swift_rr_regs_macho`, an arm64
+  Mach-O assembled against the iOS libswiftCore.
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the
