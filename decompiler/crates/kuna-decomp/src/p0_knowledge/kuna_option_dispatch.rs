@@ -670,6 +670,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "charptr" => on_off!(char_ptr, "character-pointer evidence"),
+    "cstringconst" => on_off!(cstring_const, "string-literal rendering of constants inside a string-literal section"),
     "elemptr" => {
         let (val, msg) = crate::p5_types::kuna_elemptr::OptionElemPtr.apply(p1)?;
         self.elem_ptr = val;
