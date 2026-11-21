@@ -37,6 +37,10 @@ whose block holds unread flag writes once the register space has had a heritage
 pass (`deadcode delay register 50` keeps those writes alive). Before the fix the
 second `if (x)` stayed.
 
+`kuna-switchsingle.xml` checks that a jump table whose four entries all name one
+block becomes straight-line code with the "all go to same destination" warning
+instead of a `switch` with only a `default` arm.
+
 `ghangr-call-argument-extensions.xml` checks explicit and missing parameter
 contracts. The CLI companion executes complete emitted C, Go and Rust callers
 and callees, covering zero extension, sign extension, signedness and store canaries.

@@ -40,7 +40,7 @@
       {
         "path": "functions[0].code",
         "op": "matches",
-        "value": "(?s)sub_402010\\(\\);\\s*switch\\(0x401000\\) \\{\\s*case 0x401000:"
+        "value": "(?s)sub_402010\\(\\);\\s*halt_missing\\(\\); // warn: Function flow out of bounds: r0x0040200a flows to r0x00401000"
       },
       {
         "path": "functions[0].code",
@@ -49,5 +49,5 @@
       }
     ]
   },
-  "notes": "Vendored CryptoME-shaped PE: require the unpacker call followed by the full recovered tail-transfer construct. Destination digits in a warning cannot satisfy this predicate; the encrypted target has no function symbol."
+  "notes": "Vendored CryptoME-shaped PE: require the unpacker call followed by the recovered tail transfer, which is a direct jump out of the defined range. A RET left alone prints no such flow; the encrypted target has no function symbol."
 }
