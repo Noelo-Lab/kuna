@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4930,
-    4930
+    4934,
+    4934
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -42,13 +42,17 @@
     "data:AIF slots #12: padding ending in a trap cannot plant its start or the unreached return",
     "data:AIF slots #13: reachable padding can lead to a five-byte entry instruction",
     "data:AIF slots #14: a padding-adjusted entry instruction must also fit its slot",
+    "data:AIF slots #15: a previously accepted return owns its immediate bytes",
+    "data:AIF slots #16: an entry immediately following a one-byte return remains eligible",
+    "data:AIF slots #17: both preceding functions are found on the grid",
+    "data:AIF slots #18: precise mode reaches the function after the oversized weak candidate",
     "data:AIF slots #1: a one-byte padding shift never creates an off-grid entry",
     "data:AIF slots #2: a five-byte section tail cannot supply a six-byte first slot",
     "data:AIF slots #3: an exact-fit first slot is found with the fixture processor",
     "data:AIF slots #4: the exact-fit function uses its continuation in the next section",
     "data:AIF slots #5: a full padding slot advances to the aligned function entry",
     "data:AIF slots #6: an aligned padding destination also needs a complete first slot",
-    "data:AIF slots #7: both inventories contain the executable entry",
+    "data:AIF slots #7: all inventories contain the executable entry",
     "data:AIF slots #8: known code in the sixth byte rules out the adjusted entry",
     "data:AIF slots #9: known code immediately after the first slot permits the adjusted entry",
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",

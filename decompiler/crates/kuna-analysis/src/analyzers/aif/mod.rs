@@ -970,6 +970,27 @@ struct GapWalk<'e> {
     poolslide: Option<(&'e kuna_decomp::architecture::Architecture, Rc<AddrSpace>)>,
 }
 
+/// Disjoint inclusive byte ranges, keyed by their last byte. A candidate slot may
+/// start inside an old instruction or contain the start of one.
+#[derive(Default)]
+struct ClaimedCode(BTreeMap<u64, u64>);
+
+impl ClaimedCode {
+    fn overlaps(&self, first: u64, last: u64) -> bool {
+        self.0.range(first..).next().is_some_and(|(_, &start)| start <= last)
+    }
+
+    fn insert(&mut self, mut first: u64, mut last: u64) {
+        while let Some((&end, &start)) = self.0.range(first.saturating_sub(1)..).next() {
+            if start > last.saturating_add(1) { break; }
+            self.0.remove(&end);
+            first = first.min(start);
+            last = last.max(end);
+        }
+        self.0.insert(last, first);
+    }
+}
+
 /// Frame-prefix probes skip claimed spans and gaps containing no frame roots.
 /// Only `listing` establishes code coverage; `corpus` may include provisional callees.
 fn aif_candidates(
@@ -1001,7 +1022,7 @@ fn aif_candidates(
     }
 
     let mut accepted: BTreeSet<u64> = BTreeSet::new();
-    let mut claimed: BTreeSet<u64> = BTreeSet::new();
+    let mut claimed = ClaimedCode::default();
 
     // Walk every undefined gap: `first_undefined_after(start)` returns the next
     // undefined executable VMA. Probe it, then advance past whatever we resolved
@@ -1074,7 +1095,7 @@ fn aif_candidates(
         } else {
             (true, gap_start.saturating_add(1))
         };
-        let probe_here = allowed && listing.is_undefined(gap_start) && !claimed.contains(&gap_start);
+        let probe_here = allowed && listing.is_undefined(gap_start) && !claimed.overlaps(gap_start, gap_start);
         // (kuna, `aifnoppad`) No entry starts on filler: filler in front of a known
         // function or zero fill is not probed, and an accept moves past padding.
         let filler = match &mut padding {
@@ -1088,7 +1109,8 @@ fn aif_candidates(
                 } else {
                     at < gap_hi && entry_fits_slot(listing, at, width, windows)
                 };
-                slot_available && decoder.recorded_instruction(at).is_some_and(|insn| insn.len <= width.get())
+                slot_available && !claimed.overlaps(at, at.saturating_add(u64::from(width.get() - 1)))
+                    && decoder.recorded_instruction(at).is_some_and(|insn| insn.len <= width.get())
             });
             let pool_end = literals.as_ref().and_then(|lits| lits.run_end(gap_start));
             // A padding suffix has the same destination as the whole run. Check it
@@ -1097,7 +1119,8 @@ fn aif_candidates(
                 (None, kuna_aifnoppad::Filler::Before(at)) => Some(at),
                 _ => None,
             };
-            let probe = if padding_entry.is_some_and(|at| !entry_allowed(decoder, at)) {
+            let probe = if (pool_end.is_none() && filler == kuna_aifnoppad::Filler::Blocked)
+                || padding_entry.is_some_and(|at| !entry_allowed(decoder, at)) {
                 Probe::Reject
             } else {
                 probe_gap_start(decoder, listing, &hist, gap_start, gap_hi, aifcorroborate, padding_entry)
@@ -1124,23 +1147,32 @@ fn aif_candidates(
                 (_, Some(_)) => Probe::Reject,
                 (probe, None) => probe,
             };
-            let mut entry = gap_start;
+            let mut entry = pool_end.or(padding_entry).unwrap_or(gap_start);
             if let Probe::Accept(body) = &mut probe {
-                entry = pool_end.or(padding_entry).unwrap_or(gap_start);
                 if roots.is_none() && entry == gap_start {
                     if let Some(prefix) = kuna_sparcprologue::prefix(decoder, listing, &claimed, entry) {
                         body.extend([prefix, prefix + 4]);
                         entry = prefix;
                     }
                 }
-                // Padding, pools and a recovered prologue can all move the entry.
-                // Refuse an invalid destination before claiming any of its body.
-                if !entry_allowed(decoder, entry) {
+            }
+            // Both outcomes consume the body. Check the candidate and any
+            // adjusted entry before its bytes can hide another function.
+            if let Probe::Accept(_) | Probe::Uncorroborated(_) = &probe {
+                if !entry_allowed(decoder, gap_start) || (entry != gap_start && !entry_allowed(decoder, entry)) {
                     probe = Probe::Reject;
                 }
             }
-            if let (Some(lits), Probe::Accept(body) | Probe::Uncorroborated(body)) = (&mut literals, &probe) {
-                lits.add_body(listing, decoder, body);
+            if let Probe::Accept(body) | Probe::Uncorroborated(body) = &probe {
+                if let Some(lits) = &mut literals {
+                    lits.add_body(listing, decoder, body);
+                }
+                for &at in body {
+                    // Without a declared slot width retain the ordinary start-only policy.
+                    let last = stride.map_or(at, |_| at.saturating_add(u64::from(decoder.recorded(at).len - 1)));
+                    claimed.insert(at, last);
+                }
+                advanced = body.last().copied().unwrap_or(gap_start).saturating_add(1);
             }
             match probe
             {
@@ -1159,9 +1191,6 @@ fn aif_candidates(
                         decoder.straight_line.as_mut().unwrap().extend(reached);
                     }
                     accepted.insert(entry);
-                    let body_max = body.iter().copied().max().unwrap_or(gap_start);
-                    advanced = body_max.saturating_add(1);
-                    claimed.extend(body);
                 }
                 // (kuna, `aif precise`) An uncorroborated candidate is refused
                 // as an ENTRY but still consumes its body. Without that, refusing
@@ -1173,9 +1202,6 @@ fn aif_candidates(
                     if let Some(refused) = &mut decoder.straight_line {
                         refused.extend(body.iter().copied());
                     }
-                    let body_max = body.iter().copied().max().unwrap_or(gap_start);
-                    advanced = body_max.saturating_add(1);
-                    claimed.extend(body);
                 }
                 Probe::Reject => {}
             }
