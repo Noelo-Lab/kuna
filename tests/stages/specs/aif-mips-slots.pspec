@@ -1,0 +1,12 @@
+<processor_spec>
+  <properties>
+    <property key="kuna.aif.sectionInstructionStride" value="4"/>
+  </properties>
+  <programcounter register="pc"/>
+  <context_data>
+    <context_set space="ram">
+      <set name="PAIR_INSTRUCTION_FLAG" val="0"/>
+      <set name="RELP" val="1"/>
+    </context_set>
+  </context_data>
+</processor_spec>

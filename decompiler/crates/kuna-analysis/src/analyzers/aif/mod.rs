@@ -201,6 +201,7 @@ struct GapDecoder<'a> {
     code_space: Rc<AddrSpace>,
     exec_ranges: &'a [(u64, u64)],
     prior_partition: Option<&'a Listing>,
+    measure_encoded_len: bool,
     /// `vma -> Some(insn)` on a good decode, `vma -> None` on an undecodable byte
     /// (so a re-probe is cached too).
     cache: BTreeMap<u64, Option<Rc<ProbedInsn>>>,
@@ -271,7 +272,10 @@ impl LinearRun {
 /// A speculatively-decoded instruction (the gap-probe analog of [`crate::listing::Insn`]).
 #[derive(Clone, PartialEq, Eq)]
 struct ProbedInsn {
+    /// Traversal and occupied bytes, including executed delay slots.
     len: u32,
+    /// Width of the first encoding for section-slot admission.
+    encoded_len: u32,
     kind: FlowKind,
     is_call: bool,
     is_terminal: bool,
@@ -290,6 +294,7 @@ impl<'a> GapDecoder<'a> {
     ) -> Self {
         GapDecoder {
             translate, code_space, exec_ranges, prior_partition: None, cache: BTreeMap::new(),
+            measure_encoded_len: translate.translate_base().section_instruction_stride.is_some() && translate.may_have_delay_slots(),
             spare: None, frame_instructions: None, memo: None, full_capture: None, keep_ops: true,
             frame_probe: false, prologue_starts: None, straight_line: None, scratch: Decoded::default(), mnemonics: Vec::new(),
             visited: HashSet::new(), worklist: Vec::new(), linear_run: None, linear_events: VecDeque::new(),
@@ -382,7 +387,8 @@ impl<'a> GapDecoder<'a> {
         let (translate, space) = (self.translate, Rc::clone(&self.code_space));
         memo.recall(translate, &space, vma, |m| {
             Rc::new(ProbedInsn {
-                len: m.len, kind: m.flow.kind, is_call: m.flow.is_call, is_terminal: m.flow.is_terminal,
+                // The memo only certifies lifts confined to this instruction.
+                len: m.len, encoded_len: m.len, kind: m.flow.kind, is_call: m.flow.is_call, is_terminal: m.flow.is_terminal,
                 fall_through: m.fall_through, flows: m.flows.to_vec(), mnemonic: self.intern_mnemonic(m.mnemonic),
                 operands: m.operands.to_string(), reusable: Some(Rc::clone(m.reusable)),
             })
@@ -402,6 +408,12 @@ impl<'a> GapDecoder<'a> {
 
     fn decode_uncached(&mut self, vma: u64) -> Option<Rc<ProbedInsn>> {
         if !self.in_exec(vma) { return None; }
+        // Measure in the incoming context, before the lift applies any commits.
+        // Without delay slots the lift already returns the encoded length.
+        let encoded_len = if self.measure_encoded_len {
+            let addr = kuna_base::address::Address::new(Rc::clone(&self.code_space), vma);
+            self.translate.instruction_length(&addr).ok().and_then(|len| u32::try_from(len).ok()).filter(|&len| len != 0)
+        } else { None };
         let mut reusable = if let Some(capture) = &mut self.full_capture {
             crate::listing::kuna_decodereuse::capture(self.translate, vma, &self.code_space,
                 &mut self.scratch, capture, self.keep_ops).ok()?
@@ -422,9 +434,13 @@ impl<'a> GapDecoder<'a> {
         let mnemonic = self.intern_mnemonic(&text);
         self.scratch.mnemonic = text;
         let decoded = &self.scratch;
+        // The traversal extent is a conservative upper bound if a separate
+        // length could not be obtained.
+        let encoded_len = encoded_len.unwrap_or(decoded.len);
         if let Some(mut spare) = self.spare.take() {
             let record = Rc::get_mut(&mut spare).expect("retired record is exclusively owned");
             record.len = decoded.len;
+            record.encoded_len = encoded_len;
             record.kind = c.flow.kind;
             record.is_call = c.flow.is_call;
             record.is_terminal = c.flow.is_terminal;
@@ -436,7 +452,7 @@ impl<'a> GapDecoder<'a> {
             Some(spare)
         } else {
             Some(Rc::new(ProbedInsn {
-                len: decoded.len, kind: c.flow.kind, is_call: c.flow.is_call,
+                len: decoded.len, encoded_len, kind: c.flow.kind, is_call: c.flow.is_call,
                 is_terminal: c.flow.is_terminal, fall_through: c.fall_through,
                 flows: c.flows, mnemonic, operands: decoded.operands.clone(), reusable,
             }))
@@ -1030,6 +1046,16 @@ fn aif_candidates(
     let mut frame_spans = frames.iter().peekable();
     let stride = decoder.translate.translate_base().section_instruction_stride
         .filter(|_| listing.has_section_origins());
+    if stride.is_some() {
+        // Multiple direct targets may decode overlapping instructions. A short
+        // inner instruction cannot release bytes of an enclosing instruction,
+        // even across a section boundary.
+        for (&at, insn) in listing.instructions() {
+            if insn.len > 0 {
+                claimed.insert(at, at.saturating_add(u64::from(insn.len - 1)));
+            }
+        }
+    }
     let mut cursor = if stride.is_some() {
         listing.first_undefined_at_or_after(0)
     } else {
@@ -1099,7 +1125,7 @@ fn aif_candidates(
         // A trained fingerprint can have the right total length while its first
         // instruction exceeds the slot. Check before classifying or walking the body.
         let probe_here = allowed && listing.is_undefined(gap_start) && !claimed.overlaps(gap_start, last)
-            && stride.is_none_or(|width| decoder.probe(gap_start).is_some_and(|insn| insn.len <= width.get()));
+            && stride.is_none_or(|width| decoder.probe(gap_start).is_some_and(|insn| insn.encoded_len <= width.get()));
         // (kuna, `aifnoppad`) No entry starts on filler: filler in front of a known
         // function or zero fill is not probed, and an accept moves past padding.
         let filler = match &mut padding {
@@ -1114,7 +1140,7 @@ fn aif_candidates(
                     at < gap_hi && entry_fits_slot(listing, at, width, windows)
                 };
                 slot_available && !claimed.overlaps(at, at.saturating_add(u64::from(width.get() - 1)))
-                    && decoder.recorded_instruction(at).is_some_and(|insn| insn.len <= width.get())
+                    && decoder.recorded_instruction(at).is_some_and(|insn| insn.encoded_len <= width.get())
             });
             let pool_end = literals.as_ref().and_then(|lits| lits.run_end(gap_start));
             // A padding suffix has the same destination as the whole run. Check it

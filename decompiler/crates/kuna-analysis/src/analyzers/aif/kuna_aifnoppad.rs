@@ -65,7 +65,7 @@ enum RunEnd {
     BeyondValidationLimit,
     // Minimum padding visits before the destination. A terminal makes it unreachable.
     Code { at: u64, min_visits: u32 },
-    Other,
+    Other { blocked: bool },
 }
 
 /// The per-walk filler runs, memoized for every instruction of a run so a long
@@ -106,7 +106,7 @@ impl PaddingRuns {
                 break RunEnd::BeyondValidationLimit;
             }
             if (!section_slots && run.len() == super::MAX_FOLLOW_INSNS) || !listing.is_undefined(at) {
-                break RunEnd::Other;
+                break RunEnd::Other { blocked: false };
             }
             match decoder.probe(at) {
                 Some(insn) if is_padding(&insn, self.wide) => {
@@ -117,7 +117,7 @@ impl PaddingRuns {
                     at = next;
                 }
                 Some(insn) if !is_zero_fill(&insn) => break RunEnd::Code { at, min_visits: 0 },
-                _ => break RunEnd::Other,
+                _ => break RunEnd::Other { blocked: false },
             }
         };
         // Only a straight fallthrough must traverse the next suffix. An alternate
@@ -131,6 +131,10 @@ impl PaddingRuns {
                 } else {
                     1
                 };
+            } else if let RunEnd::Other { blocked } = &mut end {
+                // Even without a code destination (e.g. zero fill), this prefix
+                // reaches only padding when its sole path ends at a terminal.
+                *blocked = terminal || (straight && *blocked);
             }
             self.ends.insert(start, end);
         }
@@ -139,7 +143,8 @@ impl PaddingRuns {
             // The destination itself requires one more visit.
             RunEnd::Code { min_visits, .. } if min_visits as usize >= super::MAX_FOLLOW_INSNS => Filler::Blocked,
             RunEnd::Code { at, .. } => Filler::Before(at),
-            RunEnd::Other => Filler::No,
+            RunEnd::Other { blocked: true } => Filler::Blocked,
+            RunEnd::Other { blocked: false } => Filler::No,
         }
     }
 }
@@ -197,7 +202,7 @@ mod tests {
 
     fn insn(mnemonic: &str, operands: &str) -> ProbedInsn {
         ProbedInsn {
-            len: 1, kind: FlowKind::Fallthrough, is_call: false, is_terminal: false, fall_through: None,
+            len: 1, encoded_len: 1, kind: FlowKind::Fallthrough, is_call: false, is_terminal: false, fall_through: None,
             flows: Vec::new(), mnemonic: Rc::from(mnemonic), operands: operands.to_string(), reusable: None,
         }
     }

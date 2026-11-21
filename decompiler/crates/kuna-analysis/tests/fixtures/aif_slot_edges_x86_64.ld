@@ -35,4 +35,9 @@ SECTIONS {
     .claimed_end : { *(.claimed_end) } :code
     . = 0x41e006;
     .mixed_padding : { *(.mixed_padding) } :code
+    . = 0x425000;
+    .outer_insn : { *(.outer_insn) } :code
+    .nested_bytes : { *(.nested_bytes) } :code
+    . = 0x426006;
+    .zero_after_trap : { *(.zero_after_trap) } :code
 }

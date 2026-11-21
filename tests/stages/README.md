@@ -21,13 +21,12 @@ caller builds in `x8` for a hidden `pacda` is not the next call's first
 argument, with the modifier computed and folded to a constant. A tagged
 address and a result buffer in `x8` are the controls.
 
-`kuna-aif-slot-edges.xml` loads one ELF with stock x86-64 and with a six-byte
-instruction grid. It checks padded entries and first instructions ending at
-or crossing the section boundary. It also checks that a weak candidate with an
-oversized instruction cannot hide a corroborated entry, and distinguishes
-a return immediate from a disjoint following function. The datatest runner includes the corpus's
-`specs/` directory in its normal language search. The fixture language reuses
-the stock x86-64 decoder and GCC calling convention.
+`kuna-aif-slot-edges.xml` compares stock and section-relative AIF inventories
+on stripped x86-64 and MIPS32 ELFs. The six-byte x86 grid covers padded
+entries, section boundaries, overlapping decodes and terminal padding before
+zero fill. The four-byte MIPS grid checks both direct and padding-adjusted
+entry candidates with delay slots. The fixture languages reuse the stock
+decoders and calling conventions through the stage corpus's `specs/` directory.
 
 `ghangr-go-paniccheck-return.xml` checks that a returning Go panic helper
 falls through to the terminal `runtime.gopanic` call. It also checks the

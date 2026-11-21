@@ -1,5 +1,5 @@
 # GNU binutils 2.47.20260726. Stripped ELF SHA-256:
-# d332dde1c4a631f919c11a4720883e66164cb3a707077635905c80ca26199bc9
+# 9a7e787d9a18f2f57e79f72cdd5a1d72551eb81db74122c4083079a6c4b64683
 # Build from this directory:
 # as --64 aif_slot_edges_x86_64.S -o edges.o
 # ld --build-id=none -T aif_slot_edges_x86_64.ld edges.o -o edges
@@ -21,6 +21,14 @@
 _start:
 call inside_slot
 call following_slot
+call containing_mov
+call interior_ret
+.set j, 0
+.rept 8
+.byte 0xe8
+.long small_handlers + j * 5 - . - 4
+.set j, j + 1
+.endr
 .set i, 0
 .rept 128
 .byte 0x2e,0xe8
@@ -55,6 +63,14 @@ mov40
 .byte 0x05,2,0,0,0           # five-byte ADD, weak MOV/ADD fingerprint of length 11
 ret6
 .byte 0
+.endr
+
+.macro short_leaf
+.byte 0xb0,40,0x04,2,0xc3    # MOV AL,40; ADD AL,2; RET
+.endm
+small_handlers:
+.rept 8
+short_leaf
 .endr
 
 .section .padding,"ax"
@@ -211,4 +227,32 @@ mixed_nops
 mixed_nops
 .type after_trap_padding,@function
 after_trap_padding:
+ret6
+
+.section .outer_insn,"ax"
+.fill 6,1,0xcc
+containing_mov:
+.byte 0x48,0xb8
+interior_ret:
+.byte 0xc3,0x77
+.section .nested_bytes,"ax"
+inside_immediate:
+short_leaf
+.byte 0x77
+ret
+.fill 5,1,0xcc
+after_known_code:
+short_leaf
+.byte 0xcc
+
+.section .zero_after_trap,"ax"
+.fill 12,1,0
+nop6
+nop6
+.byte 0x2e,0x36,0x3e,0x26,0xf3,0xcc
+.fill 6,1,0
+nop6
+nop6
+after_zero_padding:
+mov40
 ret6
