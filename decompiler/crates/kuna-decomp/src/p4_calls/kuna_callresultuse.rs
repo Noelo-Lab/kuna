@@ -148,10 +148,8 @@ fn walk_call_results(data: &Funcdata, root: VarnodeId) -> bool {
 /// output of the callee's model, and whose effect is a CALL or CALLIND)?
 fn scores_def(data: &Funcdata, def: OpId) -> bool {
     let Some(op) = data.obank().get(def) else { return false };
-    let first_register = op
-        .get_out()
-        .and_then(|v| data.vbank().get(v))
-        .is_some_and(|v| first_result_register(data, v.get_addr(), v.get_size()));
+    let Some(out) = op.get_out().and_then(|v| data.vbank().get(v)) else { return false };
+    let first_register = first_result_register(data, out.get_addr(), out.get_size());
     match op.code() {
         OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => first_register,
         OpCode::CPUI_INDIRECT if op.is_indirect_creation() => {
@@ -162,23 +160,44 @@ fn scores_def(data: &Funcdata, def: OpId) -> bool {
             possible_output
                 && first_register
                 && crate::kuna_retcallhalf::created_by_call(data, op)
-                && !callee_known_void(data, op)
+                && !callee_result_elsewhere(data, op, out.get_addr(), out.get_size())
         }
         _ => false,
     }
 }
 
 /// Is the call `creation` is the effect of one whose callee's output is
-/// settled as `void`: a prototype with its output locked and no return value?
-/// The register it clobbers is then not a result.
-fn callee_known_void(data: &Funcdata, creation: &crate::op::PcodeOp) -> bool {
+/// settled somewhere other than `[addr, addr+size)`: a prototype with its
+/// output locked and no return value, or one returned in other storage (a
+/// `double` in `d0` on hard-float ARM, whose `r0` the call also clobbers)?
+/// The register the creation stands for is then not a result.
+fn callee_result_elsewhere(data: &Funcdata, creation: &crate::op::PcodeOp, addr: &Address, size: int4) -> bool {
     let Some(iop) = creation.get_in(1).and_then(|v| data.vbank().get(v)) else { return false };
     let call = OpId::from(slotmap::KeyData::from_ffi(iop.get_offset()));
+    let end = addr.get_offset().wrapping_add(size.max(0) as u64);
     (0..data.num_calls()).any(|i| {
         let fc = data.get_call_specs(i);
-        fc.get_op() == call
-            && fc.proto().is_output_locked()
-            && fc.proto().get_output_type().is_none_or(|t| t.get_metatype() == type_metatype::TYPE_VOID)
+        if fc.get_op() != call {
+            return false;
+        }
+        let disjoint = |out_addr: &Address, out_size: int4| {
+            let out_end = out_addr.get_offset().wrapping_add(out_size.max(0) as u64);
+            out_addr.get_space().map(|s| s.get_index()) != addr.get_space().map(|s| s.get_index())
+                || out_end <= addr.get_offset()
+                || end <= out_addr.get_offset()
+        };
+        if fc.proto().is_output_locked() {
+            let out = fc.proto().get_output();
+            return fc.proto().get_output_type().is_none_or(|t| t.get_metatype() == type_metatype::TYPE_VOID)
+                || disjoint(&out.get_address(), out.get_size());
+        }
+        // `protoorder types` states the callee's recovery without locking it;
+        // its result storage is recorded only with `passthrough` on.
+        match data.kuna_protoorder_types(fc.get_entry_address()).map(|s| s.result.as_ref()) {
+            Some(Some((out_addr, out_size))) => disjoint(out_addr, *out_size),
+            Some(None) => data.get_arch().pass_through,
+            None => false,
+        }
     })
 }
 

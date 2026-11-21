@@ -1,4 +1,7 @@
 //! Recompile stores whose pointers resolve after their memory SSA guards exist.
+//! `touch` is an import called twice with `x0` untouched in between, which
+//! `callresultuse` reads as `touch(touch(a0))`; the printed C is compiled
+//! against the real `void touch(void)`, so the round trip pins the option off.
 use crate::common;
 use common::process;
 use std::process::Command;
@@ -24,6 +27,9 @@ fn late_resolved_stores_remain_visible_to_calls_and_aliasing_loads() {
             &common::fixture(fixture),
             "--functions",
             FUNCTIONS,
+            "--option",
+            "callresultuse",
+            "off",
         ]);
         assert_eq!(code, 0, "{fixture}: {stderr}");
         let preamble = "extern int gi;\nvoid touch(void);\n";

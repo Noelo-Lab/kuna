@@ -9598,7 +9598,12 @@ With the option on (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callresultu
 (`kuna_callresultuse.rs (call_result_root)`: through MULTIEQUALs, COPYs and
 the INDIRECT effects of later calls, every definition is a CALL or CALLIND's
 output or a creation whose range is a possible output of the callee's model,
-whose effect is a call, and whose callee is not settled as `void`,
+whose effect is a call, and whose callee's result is not settled elsewhere
+(`kuna_callresultuse.rs (callee_result_elsewhere)`: a locked `void` output, a
+locked output in other storage, or under `protoorder types` a stated result
+in other storage, as hard-float ARM's `double dfi(double, float, int)` returns
+in `d0` and clobbers the `r0` the next call reads; a stated recovery with no
+result is `void` when `passthrough` records results),
 `kuna_callresultuse.rs (scores_def)`) is scored like any other value as the
 next call's input: `ancestor_op_use` accepts the creation or the output as a
 use (`Funcdata::ancestor_op_step`, the `memo.call_result_root` arm), and
