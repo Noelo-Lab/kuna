@@ -995,6 +995,9 @@ pub mod param_trial_flags {
     /// (kuna `passthrough`) The function's own incoming register, untouched, in
     /// the storage the trial names.
     pub const FORWARDED_INPUT: uint4 = 0x2000;
+    /// (kuna `passthrough`) An active register the function reads again after
+    /// the call, through the call's INDIRECT.
+    pub const LIVE_PAST_CALL: uint4 = 0x4000;
 }
 
 /// A register or memory location that may be used to pass a parameter or return
@@ -1172,6 +1175,11 @@ impl ParamTrial {
     /// [`crate::p4_calls::kuna_passthrough::forwarded_in_place`].
     pub fn set_forwarded_input(&mut self) { self.flags |= param_trial_flags::FORWARDED_INPUT; }
     pub fn is_forwarded_input(&self) -> bool { self.flags & param_trial_flags::FORWARDED_INPUT != 0 }
+    /// (kuna `passthrough`) Record that the function reads this register again
+    /// after the call; see
+    /// [`crate::p4_calls::kuna_passthrough::survives_call`].
+    pub fn set_live_past_call(&mut self) { self.flags |= param_trial_flags::LIVE_PAST_CALL; }
+    pub fn is_live_past_call(&self) -> bool { self.flags & param_trial_flags::LIVE_PAST_CALL != 0 }
 
     /// Does this show solid movement into the Varnode (C++ `hasAncestorSolid`)?
     pub fn has_ancestor_solid(&self) -> bool {
@@ -3346,7 +3354,7 @@ impl ParamListStandard {
                     ) || crate::p4_calls::kuna_stackaddrargtrial::trial_is_protected(active, trial, &self.entry),
                     // (kuna) `passthrough`: a register the function hands on
                     // untouched is neither a run of empty slots nor its end.
-                    crate::p4_calls::kuna_passthrough::neutral_in_chain(active, trial, addr_sb),
+                    crate::p4_calls::kuna_passthrough::neutral_in_chain(active, i, addr_sb),
                 )
             };
             if defnouse {
