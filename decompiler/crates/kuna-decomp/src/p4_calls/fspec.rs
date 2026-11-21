@@ -992,6 +992,9 @@ pub mod param_trial_flags {
     pub const STACK_ADDRESS: uint4 = 0x800;
     /// (kuna) Solid only through a reload from the caller's frame.
     pub const FRAME_RELOAD: uint4 = 0x1000;
+    /// (kuna `passthrough`) The function's own incoming register, untouched, in
+    /// the storage the trial names.
+    pub const FORWARDED_INPUT: uint4 = 0x2000;
 }
 
 /// A register or memory location that may be used to pass a parameter or return
@@ -1164,6 +1167,11 @@ impl ParamTrial {
     pub fn has_stack_address(&self) -> bool { self.flags & param_trial_flags::STACK_ADDRESS != 0 }
     pub fn set_frame_reload(&mut self) { self.flags |= param_trial_flags::FRAME_RELOAD; }
     pub fn has_frame_reload(&self) -> bool { self.flags & param_trial_flags::FRAME_RELOAD != 0 }
+    /// (kuna `passthrough`) Record that the call reads the function's own
+    /// incoming register here, untouched; see
+    /// [`crate::p4_calls::kuna_passthrough::forwarded_in_place`].
+    pub fn set_forwarded_input(&mut self) { self.flags |= param_trial_flags::FORWARDED_INPUT; }
+    pub fn is_forwarded_input(&self) -> bool { self.flags & param_trial_flags::FORWARDED_INPUT != 0 }
 
     /// Does this show solid movement into the Varnode (C++ `hasAncestorSolid`)?
     pub fn has_ancestor_solid(&self) -> bool {
@@ -1331,6 +1339,10 @@ pub struct ParamActive {
     /// SITE's argument list when the next slot is on the stack?  Set by
     /// `ActionActiveParam`; see [`crate::p4_calls::kuna_stackarggap`].
     stack_arg_gap: bool,
+    /// (kuna) `passthrough`: does a forwarded argument register at this CALL
+    /// SITE stay out of the inactive-chain count?  Set by `ActionActiveParam`;
+    /// see [`crate::p4_calls::kuna_passthrough::neutral_in_chain`].
+    forwarded_neutral: bool,
     /// (kuna `calleereginputs`) Does the callee read every register parameter
     /// of the model these trials are scored against?  Set by
     /// `ActionActiveParam`; see [`crate::p4_calls::kuna_calleereginputs`].
@@ -1363,6 +1375,7 @@ impl ParamActive {
             vararg_stack_split: false, // (kuna) varargstackargs
             own_input_gap: false,      // (kuna) inputparamgap
             stack_arg_gap: false,      // (kuna) stackarggap
+            forwarded_neutral: false,  // (kuna) passthrough
             callee_reads_registers: false, // (kuna) calleereginputs
             cond_exe_retry: Default::default(), // (kuna) condexeret
             single_floats: Vec::new(), // (kuna) armfloatargs
@@ -1508,6 +1521,18 @@ impl ParamActive {
     /// property of the call, not of one pass.
     pub fn set_stack_arg_gap(&mut self, val: bool) {
         self.stack_arg_gap = val;
+    }
+
+    /// (kuna) `passthrough`: does a forwarded argument register at this call
+    /// site stay out of the inactive-chain count?
+    pub fn is_forwarded_neutral(&self) -> bool {
+        self.forwarded_neutral
+    }
+
+    /// (kuna) `passthrough`: record that these are a call site's trials and the
+    /// option is on; a property of the call, as `stack_arg_gap` is.
+    pub fn set_forwarded_neutral(&mut self, val: bool) {
+        self.forwarded_neutral = val;
     }
 
     /// (kuna `calleereginputs`) Does the callee read every register parameter
@@ -3293,7 +3318,7 @@ impl ParamListStandard {
         let mut chainlength = 0;
         let mut max = -1;
         for i in start..stop {
-            let (defnouse, is_act, is_unref, addr_is_spacebase, slotgrp, protected) = {
+            let (defnouse, is_act, is_unref, addr_is_spacebase, slotgrp, protected, forwarded) = {
                 let trial = active.get_trial(i);
                 let addr_sb = trial
                     .get_address()
@@ -3319,6 +3344,9 @@ impl ParamListStandard {
                         trial,
                         &self.entry,
                     ) || crate::p4_calls::kuna_stackaddrargtrial::trial_is_protected(active, trial, &self.entry),
+                    // (kuna) `passthrough`: a register the function hands on
+                    // untouched is neither a run of empty slots nor its end.
+                    crate::p4_calls::kuna_passthrough::neutral_in_chain(active, trial, addr_sb),
                 )
             };
             if defnouse {
@@ -3344,6 +3372,12 @@ impl ParamListStandard {
                     },
                 ) {
                     seenchain = true;
+                }
+                // (kuna) `passthrough`: a forwarded register is not a run of
+                // empty slots.  See
+                // [`crate::p4_calls::kuna_passthrough::neutral_in_chain`].
+                if forwarded {
+                    continue;
                 }
                 if i == start {
                     chainlength += slotgrp - groupstart + 1;

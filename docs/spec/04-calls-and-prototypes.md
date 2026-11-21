@@ -7307,10 +7307,53 @@ wrong return: 212 of 4,267 gained returns over 444 decbench slices, against 6 of
 budget answers `false` when it runs out, because `true` there states a return on a
 body it never finished reading.
 
-Nothing is added where a callee stated nothing: a single-function `kuna
-decompile`, a narrowed or sharded `decompile-all`, an import, `--option
-protoorder off`, and under `--option protoorder types` a callee in a recursive
-component, leave every call as the option-off run renders it. Under the default
+**A forwarded register in front of a live one, whatever the callee stated.**
+One rule of this option asks nothing of the callee, so it reaches an indirect
+call and a call whose target stated no list: `forceInactiveChain`
+(`fspec.cc:1519`, `maxchain = 2`) must not count a register the function hands
+on untouched as an empty argument slot. The chain rule reads a run of more than
+two inactive slots as the end of the argument list and demotes every trial after
+it, the active ones included; its premise is that an inactive register holds
+incidental caller state. A register the function never writes is not that: it
+holds what the function was called with, whether no op names it (an unreferenced
+trial `buildTrialMap` synthesized for the slot) or an op reads it elsewhere and
+the call's input is the function's own input Varnode
+(`kuna_passthrough::forwarded_in_place`, recorded on the trial by
+`check_input_trial_use`). The ABI fills argument registers in order, so when a
+later register *is* actively set up for the call, the forwarded registers in
+front of it are the arguments the callee reads before it, and the function's
+parameters. `f(a,b,c,d,fp){ if (d<=32) d=32; fp(a,b,c,d); }` compiles at -O2 to
+`cmp x3,#0x20; csel x3,x3,x8,gt; br x4`: the three unreferenced slots before
+`x3` were a chain of three, `x3` was demoted with them, the `csel` had no reader
+and dead-code removal took the clamp, and the function printed
+`(*a4)(); // jump-as-call`. With `fp(a,b,c)` in front of the clamp, a chain of
+two, the same shape recovered all four arguments already. At a call site
+(`isRecoverSubcall`), a forwarded REGISTER trial now counts toward neither a run
+nor its end (`kuna_passthrough::neutral_in_chain`), and the tail loop that fills
+the holes below the last active trial takes it as it takes any two-slot hole;
+the `stackarggap` end-of-list test is still asked of it first. A forwarded
+register after the last active trial is still dropped (`k(a,b,fp){ fp(a+1,b); }`
+stays `(*a2)(a0 + 1)`: nothing after `x0` was set up), a stack slot is never
+neutral (an untouched incoming stack argument says nothing about the callee's
+list), and the function's own input recovery has `inputparamgap` for the same
+shape. One trial is scored definitely-not-used before any of this, with the
+option on or off: the register an indirect call jumps through
+(`kuna_passthrough::is_call_target`: the trial's Varnode is the CALLIND's input
+0). `onlyOpUse` takes the matched call's read of the trial slot as the
+parameter use and never asks about slot 0, so `mov r9,0x401020; cmovz r9,r8;
+jmp r9` scored `r9` an active sixth argument of the call it is the target of,
+and a tail jump through `r8` read `r8` as its fifth argument
+(`tests/stages/kuna-callproto.xml`); the chain veto was all that hid the
+first. `tests/stages/kuna-passthrough-fwdchain.xml` pins the four-argument tail
+jump and the `blr` form beside it, with the option off reproducing the empty
+call, and the three-argument control and the trailing-register control that
+move in neither pass.
+
+Beyond that rule, nothing is added where a callee stated nothing: a
+single-function `kuna decompile`, a narrowed or sharded `decompile-all`, an
+import, `--option protoorder off`, and under `--option protoorder types` a
+callee in a recursive component, leave every call as the option-off run renders
+it. Under the default
 `cycles` a recursive callee states its list like any other, and this rule reads
 it on the same terms. `tests/stages/kuna-passthrough.xml` is the negative
 control for that clause (the console states no prototype); the positive witness
