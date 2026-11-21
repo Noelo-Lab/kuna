@@ -5,28 +5,31 @@
     -objc_stubs_fast sends each message through a __objc_stubs entry that
     loads the selector into x1 and jumps to objc_msgSend:
 
-      count_by   adrp x1,...; ldr x1,[x1,#off]; adrp x16,...; ldr x16,[x16,#off]; br x16
+      objc_msgSend$countByEnumeratingWithState:objects:count:
+                 adrp x1,...; ldr x1,[x1,#off]; adrp x16,...; ldr x16,[x16,#off]; br x16
 
     and the caller leaves x1 alone (the last call killed it) while it stages
     the real arguments in x2, x3 and x4:
 
       walk       mov x1,x19; bl prep; mov x0,x19; mov x2,sp; add x3,sp,#0x40;
-                 mov w4,#0x10; bl count_by
+                 mov w4,#0x10; bl objc_msgSend$countBy...
 
     x2, x3 and x4 score active, x1 scores definitely-not-used, and
     ParamListStandard::forceNoUse (fspec.cc:1623) reads the positional rule
     of the convention - the first register nobody fills ends the list - and
     turned the three active trials inactive, so the call printed
-    `count_by(a0)`: the address of the stack object never reached the call,
+    `objc_msgSend$countBy...(a0)`: the address of the stack object never
+    reached the call,
     the object's zero initialiser folded through it, and the loop read
     `*(unsigned long *)(v3 * 8)`.
 
     Stage / sub-stage: P4 "active-input-trial-scoring"
-    (kuna_calleefilledarg.rs, option calleefilledarg, default on).  A register
-    the callee's body writes on every path from its entry before anything
-    could read it, that the caller never filled, is no parameter slot: the
-    positional rule steps over it and the slots after it are scored on their
-    own.
+    (kuna_calleefilledarg.rs, option calleefilledarg, default on).  At a
+    call to an Objective-C selector stub, a register the stub's body writes
+    on every path from its entry before anything could read it, that the
+    caller never filled, is no parameter slot: the positional rule steps over
+    it and the slots after it are scored on their own.  A C callee keeps the
+    rule (kuna-calleefilledarg-ctramp.xml).
 
     Hand-written AArch64; `prep` is declared so its call kills x1 outright
     at the first send (at the second, inside the loop, x1 is a phi and the
@@ -57,7 +60,7 @@ e00313aa12000094f4ffff17fd7b4ea9f44f4da9f6574ca9ffc30391c0035fd6
 </bytechunk>
 <symbol space="ram" offset="0x100004000" name="walk"/>
 <symbol space="ram" offset="0x1000040c0" name="walk_plain"/>
-<symbol space="ram" offset="0x100004180" name="count_by"/>
+<symbol space="ram" offset="0x100004180" name="objc_msgSend$countByEnumeratingWithState:objects:count:"/>
 <symbol space="ram" offset="0x100004194" name="count_plain"/>
 <symbol space="ram" offset="0x1000041a0" name="prep"/>
 <symbol space="ram" offset="0x1000041a8" name="use"/>
@@ -72,9 +75,9 @@ e00313aa12000094f4ffff17fd7b4ea9f44f4da9f6574ca9ffc30391c0035fd6
   <com>lo fu walk</com>  <com>decompile</com>  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="calleefilledarg #1: the stub call keeps the receiver, the state address, the buffer and the count" min="2" max="2">count_by\(a0,&amp;v1,v2,0x10\);</stringmatch>
+<stringmatch name="calleefilledarg #1: the stub call keeps the receiver, the state address, the buffer and the count" min="2" max="2">objc_msgSend\$countByEnumeratingWithState:objects:count:\(a0,&amp;v1,v2,0x10\);</stringmatch>
 <stringmatch name="calleefilledarg #2: the state's mutation pointer is read after the call, not folded" min="1" max="1">v4 = \*v7;</stringmatch>
 <stringmatch name="calleefilledarg #3: the control stub does not fill x1, so the positional rule stands" min="1" max="1">count_plain\(a0\);</stringmatch>
-<stringmatch name="calleefilledarg #4: off restores the one-argument call and the folded state read" min="2" max="2">count_by\(a0\);</stringmatch>
+<stringmatch name="calleefilledarg #4: off restores the one-argument call and the folded state read" min="2" max="2">objc_msgSend\$countByEnumeratingWithState:objects:count:\(a0\);</stringmatch>
 <stringmatch name="calleefilledarg #5: off folds the items pointer through the call" min="1" max="1">\*\(unsigned long \*\)\(v3 \* 8\)</stringmatch>
 </decompilertest>
