@@ -13,6 +13,26 @@
     the table ends where next_kind's table, the next function's, begins:
     three cases. Off, the rows from next_kind's table print as phantom cases
     returning next_kind's 0x28.
+
+    `last_two` (0x20008, after `first_fn` at 0x20000) is the last known
+    function: its own `x0 & 0xff` table tab_a (signed halfwords, `ldrsh`,
+    at 0x2107c) is followed by a range-checked table and then by negative
+    rows, which reach back into first_fn, so its sanity check asks the flow
+    for the next functions' tables. None follows, and the flow still runs
+    the recovery once more: last_two stays a switch, not one computed call.
+    Assembled with llvm-mc -triple=aarch64 and ld.lld -Ttext=0x20000:
+        first_fn: mov w0, #7; ret
+        last_two: and x8, x0, #0xff; adrp x9, tab_a; add x9, x9, :lo12:tab_a
+                  adr x10, La; ldrsh w11, [x9, x8, lsl #1]
+                  add x10, x10, w11, sxtw #2; br x10
+        La:  mov w0, #50; ret
+        La1: mov w0, #51; ret
+        La2: cmp w1, #3; b.hi Ld; adrp x9, tab_b; add x9, x9, :lo12:tab_b
+             adr x10, Lb; ldrh w11, [x9, w1, uxtw #1]
+             add x10, x10, x11, lsl #2; br x10
+        Lb .. Lb3: mov w0, #60 .. #63; ret      Ld: mov w0, #-1; ret
+        tab_a: .hword 0, 2, 4
+        tab_b: .hword 0, 2, 4, 6, 0xfff8, 0xfffa, 0xfff9, 0xfffb; .space 512
 -->
 <bytechunk space="ram" offset="0x10000">
 081c40921f2003d5a98600108a0000102b7968784a090b8b40011fd6c0038052c0035fd6e0038052c0035fd600048052c0035fd61f0c0071e8040054080000b0088903918a000010095960784a09098b40011fd61f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d500058052c0035fd620058052c0035fd640058052c0035fd660058052c0035fd600008012c0035fd6
@@ -22,6 +42,23 @@
 </bytechunk>
 <symbol space="ram" offset="0x10000" name="name_of"/>
 <symbol space="ram" offset="0x10034" name="next_kind"/>
+<bytechunk space="ram" offset="0x20000">
+e0008052c0035fd6081c40921f2003d5698300108a0000102b79e8784ac92b8b40011fd640068052c0035fd660068052c0035fd63f0c0071e8010054090000b0
+290902918a0000102b5961784a090b8b40011fd680078052c0035fd6a0078052c0035fd6c0078052c0035fd6e0078052c0035fd600008012c0035fd6
+</bytechunk>
+<bytechunk space="ram" offset="0x2107c">
+0000020004000000020004000600f8fffafff9fffbff000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x20000" name="first_fn"/>
+<symbol space="ram" offset="0x20008" name="last_two"/>
 </binaryimage>
 <script>
   <com>load function name_of</com>
@@ -31,9 +68,15 @@
   <com>load function name_of</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option switchextent on</com>
+  <com>load function last_two</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="switchnext #1: the byte-masked table ends at the next function's table: cases 0 to 2 only (option on), with case 1 and 2 again off" min="5" max="5">case [0-2]:</stringmatch>
+<stringmatch name="switchnext #1: the byte-masked table ends at the next function's table: cases 0 to 2 only (option on), with case 1 and 2 again off" min="5" max="5">case [0-2]:
+return 0x(1e|1f|20);</stringmatch>
 <stringmatch name="switchnext #2: next_kind's code is not a case of name_of with the option on; off, its rows print as phantom cases" min="1" max="1">return 0x28;</stringmatch>
 <stringmatch name="switchnext #3: no phantom case 3 with the option on" min="1" max="1">case 3:</stringmatch>
+<stringmatch name="switchnext #4: last_two, the last function, still recovers its table when no function follows: its case 1 returns 0x33" min="1" max="1">return 0x33;</stringmatch>
 </decompilertest>

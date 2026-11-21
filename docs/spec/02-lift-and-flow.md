@@ -2465,9 +2465,12 @@ the case targets.
    function (`kuna_switchextent.rs (later_tables)`: function by function, at
    most 32, until one dispatches through a table above the one asked
    about), stores their tables on the function (`Funcdata::kuna_later_tables`)
-   and runs the recovery once more. A table whose rows all stay inside the
-   function costs nothing, and the decode runs only for a table already
-   unguarded and leaving the function.
+   and runs the recovery once more. When no known function follows, the
+   list is empty and the recovery still runs once more, so the table ends
+   at the function's own next table or keeps its rows as before; the
+   request never leaves a table unrecovered. A table whose rows all stay
+   inside the function costs nothing, and the decode runs only for a table
+   already unguarded and leaving the function.
 
    **Guards that leave the top open (always on).**
    `jumptable.rs (JumpBasicModel::analyze_guards)` records the

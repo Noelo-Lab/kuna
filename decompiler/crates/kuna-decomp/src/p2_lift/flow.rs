@@ -4075,16 +4075,18 @@ truncating the fall-through here"
                     bounded = tables.len() >= 2;
                     self.data.kuna_extent_tables = Some(tables);
                 }
-                if let (Some(table), Some(end)) = (wanted, end) {
+                if let Some(table) = wanted {
                     let arch = self.data.get_arch();
                     let space = entry.get_space().cloned();
                     let next_entry = |at: u64| {
                         let s = space.as_ref()?;
                         arch.function_entry_after(&Address::new(std::rc::Rc::clone(s), at))
                     };
-                    let later = std::rc::Rc::new(super::kuna_switchextent::later_tables(
-                        self.env.translate(), self.env.mapped_flow_image(), &entry, end, table, next_entry,
-                    ));
+                    let later = std::rc::Rc::new(end.map_or_else(Vec::new, |end| {
+                        super::kuna_switchextent::later_tables(
+                            self.env.translate(), self.env.mapped_flow_image(), &entry, end, table, next_entry,
+                        )
+                    }));
                     if let Some(partial) = shared_partial.as_mut() {
                         partial.kuna_later_tables = Some(std::rc::Rc::clone(&later));
                     }
