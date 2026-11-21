@@ -245,7 +245,9 @@ re-map, kuna resolves the SLEIGH language id directly off the object header
 (machine + endianness + class → e.g. `x86:LE:64:default:gcc`). An `EM_BPF` (247)
 object takes `eBPF:LE:64:default` or `eBPF:BE:64:default` by its byte order, the
 same two ids the vendored `eBPF.opinion` declares, so a `clang --target=bpf -c`
-program loads without `--target`.
+program loads without `--target`. An `EM_S390` (22) object of the 64-bit class
+takes `s390x:BE:64:default`; the 31-bit class has no language and still needs
+`--target`.
 
 (kuna) ELF target selection also reads declared instruction and ABI requirements
 (`decompiler/crates/kuna-analysis/src/loader/kuna_mipstarget.rs`). MIPS ELF32 can
@@ -2097,7 +2099,8 @@ funcsym stream:
 - **ELF** (`decompiler/crates/kuna-analysis/src/loader/elf_plt.rs
   (resolve_plt_imports)`, the `ElfDefaultGotPltMarkup` analog): build
   `got_slot → name` from the dynamic relocations, then decode each `.plt*` stub's
-  indirect jump per architecture (x86-64/x32, i386, AArch64, ARM, RISC-V, SPARC)
+  indirect jump per architecture (x86-64/x32, i386, AArch64, ARM, RISC-V, SPARC,
+  s390x)
   and match the *decoded* GOT target against the map — self-correcting, since PLT0
   and IRELATIVE/IFUNC stubs jump to non-symbol-bearing slots and fall out
   automatically. `.plt.sec`/`.plt.got` outrank `.plt` so the CET call target wins.
@@ -2105,6 +2108,10 @@ funcsym stream:
   entry itself), so a `sethi %g1`-headed word that is a relocation key is named
   when a complete entry fits behind it: 12 bytes for ELF32 (SPARC, SPARC32Plus),
   32 for ELF64, whatever the word's offset from the start of the scanned window.
+  An s390x stub (`decompiler/crates/kuna-analysis/src/loader/kuna_s390xplt.rs
+  (decode)`) is `larl %r1,slot; lg %r1,0(%r1); br %r1` from both GNU `ld` and
+  `lld`; the PLT header starts with the same `larl` but continues with `mvc`,
+  so it names nothing.
   `option ifuncfpret` (on by default, x86-64) adds a second pass that DOES name those
   IRELATIVE IFUNC stubs — `ifunc_<resolver>`, keyed off the `R_X86_64_IRELATIVE`
   resolver-address map — so a tail `jmp` to a glibc math/mem/str dispatcher's stub

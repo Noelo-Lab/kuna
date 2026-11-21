@@ -2152,6 +2152,7 @@ pub(crate) fn compose_language_id(arch: Architecture, endian: &str, model: Optio
         }
         Architecture::Sparc64 => format!("sparc:{endian}:64:default:{}", model.unwrap_or("default")),
         Architecture::Bpf => format!("eBPF:{endian}:64:default:{}", model.unwrap_or("default")),
+        Architecture::S390x => format!("s390x:BE:64:default:{}", model.unwrap_or("default")),
         _ => return None,
     })
 }
@@ -2206,6 +2207,7 @@ pub fn elf_language_ids() -> Vec<String> {
         (Architecture::Sparc, &["BE"]),
         (Architecture::Sparc64, &["BE"]),
         (Architecture::Bpf, &["LE", "BE"]),
+        (Architecture::S390x, &["BE"]),
     ];
     let mut out = Vec::new();
     for &(arch, endians) in arches {

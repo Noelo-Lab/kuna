@@ -71,6 +71,7 @@ mod reloc_apply;
 // (kuna) MIPS relocations, `$gp` and GOT for a relocatable object.
 mod kuna_mipsreloc;
 mod kuna_commonalloc;
+mod kuna_s390xplt;
 mod kuna_sparc_relcode;
 // (kuna) `relocrebase`: rebase the load-time analysis facts of a relocatable
 // object into the loaded image's address space (GH-289).

@@ -1,0 +1,71 @@
+<decompilertest>
+<binaryimage arch="s390x:BE:64:default:default">
+<!--
+    Kuna #1635: IBM z/Architecture (s390x) processor support, first slice.
+    Stage: P1 load (EM_S390 -> s390x:BE:64:default, PLT stub naming),
+    P2 p-code lift (specs/Ghidra/Processors/s390x), P4 prototypes (s390x.cspec).
+    No option: a processor module is inert on every other target.
+
+    The script loads the committed ELF built from
+    decompiler/crates/kuna-cli/tests/fixtures/s390x/s390x_abi.c (clang -O2,
+    -mcpu=z196). Before this change the load failed with "unsupported machine
+    S390x", so every assert below is the fixed output.
+
+    #1-#2  r2..r6 carry the arguments, r2 the result, and the PLT stub is named.
+    #3     a load-on-condition (`locgr`) over a signed compare folds to one relation.
+    #4     an unsigned compare-and-branch keeps its unsignedness.
+    #5     the sixth and seventh arguments are read from 160(r15) and 168(r15).
+    #6     DLGR's 128-bit dividend pair folds to one divide and one remainder.
+    #7-#8  the jump table of `pick` is recovered, with calls through the PLT.
+    #9     STMG/LMG save and restore named registers, so no register store
+           survives into the body of a function with a frame, and both calls
+           of the issue's `twice` reach the named import.
+    #10    binary floating point: f0/f2 arguments, f0 result, MADBR.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">07fe</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/s390x/s390x_abi.elf</com>
+  <com>read symbols</com>
+  <com>load function twice</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function scaled</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function larger</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function below</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function seven</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function quotrem</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function frame</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function blend</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="s390x #1: r2 and r3 arrive as parameters" min="1" max="1">^int8 scaled\(int8 a0,int8 a1\)</stringmatch>
+<stringmatch name="s390x #2: the PLT stub is named and its argument and result are kept" min="1" max="1">return ext\(a0 \* 3 \+ a1\) \+ 1;</stringmatch>
+<stringmatch name="s390x #3: locgr after a signed compare is one relation" min="1" max="1">if \(a0 &lt;= a1\)</stringmatch>
+<stringmatch name="s390x #4: the unsigned compare keeps unsigned operands" min="1" max="1">below\(uint4 a0,uint4 a1\)</stringmatch>
+<stringmatch name="s390x #5: arguments six and seven come from the stack" min="1" max="1">return a0 \+ a1 \+ a2 \+ a3 \+ a4 \+ a5 \+ a6;</stringmatch>
+<stringmatch name="s390x #6: the dividend pair folds to a divide and a remainder" min="1" max="1">return a0 % a1 \+ a0 / a1;</stringmatch>
+<stringmatch name="s390x #7: the jump table is a switch" min="1" max="1">switch\(a0\)</stringmatch>
+<stringmatch name="s390x #8: a case calls through the PLT" min="1" max="1">ext2\(1,0x16\) \+ 1;</stringmatch>
+<stringmatch name="s390x #9: no saved register leaks out of a prologue and no call target is unnamed" min="0" max="0">unaff_|in_r1[0-5]|halt_baddata|sub_[0-9a-f]+</stringmatch>
+<stringmatch name="s390x #10: a double multiply-add on f0 and f2" min="1" max="1">^float8 blend\(float8 a0,float8 a1\)</stringmatch>
+</decompilertest>
