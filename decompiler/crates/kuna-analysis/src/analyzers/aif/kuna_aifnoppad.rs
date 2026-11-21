@@ -55,7 +55,7 @@ pub(super) enum Filler {
     /// Padding in front of undecoded code that starts at the address held: probe
     /// the candidate, and plant an accept there instead.
     Before(u64),
-    /// A terminal instruction on the only path prevents reaching the code after the run.
+    /// The validator cannot reach the code after this run within its instruction budget.
     Blocked,
 }
 
@@ -63,7 +63,8 @@ pub(super) enum Filler {
 enum RunEnd {
     Entry,
     BeyondValidationLimit,
-    Code { at: u64, blocked: bool },
+    // Minimum padding visits before the destination. A terminal makes it unreachable.
+    Code { at: u64, min_visits: u32 },
     Other,
 }
 
@@ -115,21 +116,28 @@ impl PaddingRuns {
                     run.push((at, terminal, straight));
                     at = next;
                 }
-                Some(insn) if !is_zero_fill(&insn) => break RunEnd::Code { at, blocked: false },
+                Some(insn) if !is_zero_fill(&insn) => break RunEnd::Code { at, min_visits: 0 },
                 _ => break RunEnd::Other,
             }
         };
-        // Propagate a terminal only through unconditional fallthroughs. Suffixes
-        // after it retain the destination, and a branch still gets full validation.
+        // Only a straight fallthrough must traverse the next suffix. An alternate
+        // flow may skip the rest, and a terminal cannot reach the destination.
         for (start, terminal, straight) in run.into_iter().rev() {
-            if let RunEnd::Code { blocked, .. } = &mut end {
-                *blocked = terminal || (straight && *blocked);
+            if let RunEnd::Code { min_visits, .. } = &mut end {
+                *min_visits = if terminal {
+                    u32::MAX
+                } else if straight {
+                    min_visits.saturating_add(1)
+                } else {
+                    1
+                };
             }
             self.ends.insert(start, end);
         }
         match end {
             RunEnd::Entry | RunEnd::BeyondValidationLimit => Filler::Refuse,
-            RunEnd::Code { blocked: true, .. } => Filler::Blocked,
+            // The destination itself requires one more visit.
+            RunEnd::Code { min_visits, .. } if min_visits as usize >= super::MAX_FOLLOW_INSNS => Filler::Blocked,
             RunEnd::Code { at, .. } => Filler::Before(at),
             RunEnd::Other => Filler::No,
         }

@@ -564,6 +564,78 @@ fn slot_listing(
     (arch, space, listing)
 }
 
+/// Replace the long padding section of the trained ELF with equal-size pairs
+/// and an aligned RET. Keep the section origin and the training functions.
+fn slot_pair_fixture(pair: [u8; 12], align_budget_boundary: bool) -> (kuna_decomp::architecture::Architecture, Rc<AddrSpace>, Listing, u64) {
+    use object::{Object, ObjectSection};
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut bytes = std::fs::read(root.join("tests/fixtures/aif_slot_edges_x86_64")).unwrap();
+    let file = object::File::parse(&*bytes).unwrap();
+    let section = file.section_by_name(".long_padding").unwrap();
+    let (offset, size) = section.file_range().unwrap();
+    let length = (size - 7) as usize;
+    let ret = section.address() + length as u64;
+    let data = &mut bytes[offset as usize..][..size as usize];
+    assert_eq!(length % pair.len(), 0);
+    for chunk in data[..length].chunks_exact_mut(pair.len()) {
+        chunk.copy_from_slice(&pair);
+    }
+    if align_budget_boundary {
+        // Make both the last reachable start and its immediate predecessor
+        // land on the grid. The rest of the run alternates instruction lengths.
+        let boundary = length - 6 * MAX_FOLLOW_INSNS;
+        for nop in data[boundary..boundary + 24].chunks_exact_mut(6) {
+            nop.copy_from_slice(&[0x66, 0x0f, 0x1f, 0x44, 0, 0]);
+        }
+    }
+    data[length..].rotate_left(1); // Move the final one-byte NOP behind the RET.
+    let file = object::File::parse(&*bytes).unwrap();
+    let sla = std::fs::read(root.join("../../../specs/Ghidra/Processors/x86/data/languages/x86-64.sla")).unwrap();
+    let (arch, space, listing) = slot_listing(&file, &bytes, &sla, core::num::NonZeroU32::new(6));
+    (arch, space, listing, ret)
+}
+
+#[test]
+fn oversized_slot_starts_skip_body_validation() {
+    // Both MOV/ADD pairs match the trained 12-byte fingerprint.
+    let oversized = [0x2e, 0x36, 0xb8, 40, 0, 0, 0, 0x05, 2, 0, 0, 0];
+    let fitting = [0x2e, 0xb8, 40, 0, 0, 0, 0x81, 0xc0, 2, 0, 0, 0];
+    for pair in [oversized, fitting] {
+        let (arch, space, listing, ret) = slot_pair_fixture(pair, false);
+        for count in [100, 1990] {
+            let start = ret - 12 * count;
+            let windows = [(start, ret + 6)];
+            for noppad in [true, false] {
+                let mut decoder = GapDecoder::new(arch.translate(), Rc::clone(&space), &windows);
+                let policy = GapWalk { strict: true, corroborate: false, bracket: None, noppad, poolslide: None };
+                let entries = aif_candidates(&listing, &listing, &mut decoder, policy, &BTreeMap::new(), None, None);
+                if pair == oversized {
+                    assert!(entries.is_empty());
+                    assert_eq!(decoder.validation_steps, 0, "{count} oversized candidates, padding={noppad}");
+                } else {
+                    assert_eq!(entries, [start]);
+                    assert!(decoder.validation_steps > 0);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn mixed_padding_spends_one_walk_within_the_budget() {
+    let nops = [0x0f, 0x1f, 0x44, 0, 0, 0x66, 0x66, 0x0f, 0x1f, 0x44, 0, 0];
+    let (arch, space, listing, ret) = slot_pair_fixture(nops, true);
+    for count in [3998, 3999, 4000, 4002, 6000, 7998, 8000, 8500] {
+        let windows = [(ret - 6 * count, ret + 6)];
+        let mut decoder = GapDecoder::new(arch.translate(), Rc::clone(&space), &windows);
+        let policy = GapWalk { strict: true, corroborate: false, bracket: None, noppad: true, poolslide: None };
+        let entries = aif_candidates(&listing, &listing, &mut decoder, policy, &BTreeMap::new(), None, None);
+        assert_eq!(entries, [ret], "{count} padding instructions");
+        // The RET itself needs one visit. No earlier suffix can reach it.
+        assert_eq!(decoder.validation_steps, (count as usize + 1).min(MAX_FOLLOW_INSNS), "{count} padding instructions");
+    }
+}
+
 #[test]
 fn mixed_padding_before_a_trap_does_not_revalidate_each_suffix() {
     use object::{Object, ObjectSection};

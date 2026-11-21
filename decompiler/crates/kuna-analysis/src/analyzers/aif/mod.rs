@@ -1095,7 +1095,11 @@ fn aif_candidates(
         } else {
             (true, gap_start.saturating_add(1))
         };
-        let probe_here = allowed && listing.is_undefined(gap_start) && !claimed.overlaps(gap_start, gap_start);
+        let last = stride.map_or(gap_start, |width| gap_start.saturating_add(u64::from(width.get() - 1)));
+        // A trained fingerprint can have the right total length while its first
+        // instruction exceeds the slot. Check before classifying or walking the body.
+        let probe_here = allowed && listing.is_undefined(gap_start) && !claimed.overlaps(gap_start, last)
+            && stride.is_none_or(|width| decoder.probe(gap_start).is_some_and(|insn| insn.len <= width.get()));
         // (kuna, `aifnoppad`) No entry starts on filler: filler in front of a known
         // function or zero fill is not probed, and an accept moves past padding.
         let filler = match &mut padding {
@@ -1156,12 +1160,10 @@ fn aif_candidates(
                     }
                 }
             }
-            // Both outcomes consume the body. Check the candidate and any
-            // adjusted entry before its bytes can hide another function.
-            if let Probe::Accept(_) | Probe::Uncorroborated(_) = &probe {
-                if !entry_allowed(decoder, gap_start) || (entry != gap_start && !entry_allowed(decoder, entry)) {
-                    probe = Probe::Reject;
-                }
+            // A pool, padding run or reconstructed prologue can move the entry.
+            // Check that new slot before either outcome claims the body.
+            if entry != gap_start && !matches!(probe, Probe::Reject) && !entry_allowed(decoder, entry) {
+                probe = Probe::Reject;
             }
             if let Probe::Accept(body) | Probe::Uncorroborated(body) = &probe {
                 if let Some(lits) = &mut literals {
