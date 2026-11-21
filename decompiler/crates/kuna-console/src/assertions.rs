@@ -25,6 +25,7 @@
 //!   isolate [<func>::]<symbol>             isolate              P6 merge-aggressiveness
 //!   typedef <C declaration>                parse line           P5
 //!   data <addr> <C typedeclaration>        map address          P5 const-pointer
+//!   import <slot> <name>                   map import           P1 environment-binding
 //!   comment [<func>::]<addr> <text>        comment instruction  P9
 //!   flow [<func>::]<addr> <flowkind>       override flow        P2 flow-classification
 //!   callee [<func>::]<addr> <name|addr>    override indirect    P2 flow-classification
@@ -58,7 +59,7 @@
 //!   in-process surface — where the loader's symbols are
 //!   already mapped by the time a caller can say anything — re-applies the
 //!   property to the symbols the range covers.
-//! * **Program-scoped** (`function`, `typedef`, `prototype`, `data`) is applied
+//! * **Program-scoped** (`function`, `typedef`, `prototype`, `data`, `import`) is applied
 //!   by [`apply_program_scoped`] right after the analysis commit, so a declared
 //!   fact outranks whatever discovery decided.
 //! * **Function-scoped** (`param`, `return`, `comment`, `flow`, `callee`, `callproto`) is turned into
@@ -119,6 +120,9 @@ pub enum Body {
     Prototype { func: String, decl: String },
     /// `data <addr> <C typedeclaration>` — a named, typed global.
     Data { addr: u64, decl: String },
+    /// `import <slot> <name>` — the pointer word at `slot` holds the address of
+    /// the external function `name`, as an import table entry would say.
+    Import { addr: u64, name: String },
     /// `param [<func>::]<i> <storage> <C typedeclaration>` — a locked input.
     Param { func: Option<String>, index: int4, storage: String, decl: String },
     /// `return [<func>::]<storage> <C typedeclaration>` — a locked return.
@@ -185,6 +189,7 @@ impl Body {
             Body::Typedef { .. } => ("typedef", "P5", "type-propagation"),
             Body::Prototype { .. } => ("prototype", "P4", "prototype-source"),
             Body::Data { .. } => ("data", "P5", "const-pointer"),
+            Body::Import { .. } => ("import", "P1", "environment-binding"),
             Body::Param { .. } => ("param", "P4", "prototype-source"),
             Body::Return { .. } => ("return", "P4", "prototype-source"),
             Body::Comment { .. } => ("comment", "P9", "external-refinement"),
@@ -485,6 +490,10 @@ fn apply_one_program_scoped(prog: &mut ConsoleProgram, body: &Body) -> Result<()
         }
         Body::Prototype { func, decl } => apply_prototype(prog, func, decl),
         Body::Data { addr, decl } => apply_data(prog, *addr, decl),
+        Body::Import { addr, name } => {
+            let slot = data_addr(prog, *addr)?;
+            prog.declare_import(slot, name).map(|_| ()).map_err(|e| e.explain().to_string())
+        }
         Body::Readonly { addr, size } => {
             paint_property(prog, *addr, *size, kuna_decomp::varnode::varnode_flags::readonly)
         }
@@ -537,7 +546,7 @@ fn paint_property(
 /// Walks the global scope's map by repeatedly asking for the next overlapping
 /// entry and stepping past it, so the cost is one lookup per covered symbol
 /// rather than one per byte.
-fn repaint_covered_symbols(
+pub(crate) fn repaint_covered_symbols(
     prog: &mut ConsoleProgram,
     space: &Rc<kuna_base::space::AddrSpace>,
     first: u64,
@@ -558,7 +567,7 @@ fn repaint_covered_symbols(
             let entry = prog.arch().symboltab.entry(scope, eref);
             (entry.symbol, entry.get_last().wrapping_add(1))
         };
-        prog.arch_mut().symboltab.set_attribute(sym, flag);
+        prog.arch_mut().symboltab.kuna_add_range_property(sym, flag);
         // A zero-width or backwards entry would spin; always make progress.
         at = past.max(at.wrapping_add(1));
     }

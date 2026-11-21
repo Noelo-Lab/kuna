@@ -2439,6 +2439,7 @@ lowering) and applied by
 | `typedef <C declaration>` | `parse line` | P5 type-propagation |
 | `prototype <func> <C declaration>` | `map prototype` | P4 prototype-source |
 | `data <addr> <C typedeclaration>` | `map address` | P5 const-pointer |
+| `import <slot> <name>` | `map import` | P1 environment-binding |
 | `param [<func>::]<i> <storage> <C typedeclaration>` | `map param` | P4 prototype-source |
 | `return [<func>::]<storage> <C typedeclaration>` | `map return` | P4 prototype-source |
 | `comment [<func>::]<addr> <text>` | `comment instruction` | P9 external-refinement |
@@ -2495,7 +2496,7 @@ the caller never described; and the loader's analysis passes have already run ov
 the file image, so function discovery does not see a recovered layer — its
 functions are declared with `function`/`--define-function` in the same assertion
 file. **Program-scoped** directives (`function`, `typedef`, `prototype`,
-`data`) are applied right after the analysis commit
+`data`, `import`) are applied right after the analysis commit
 (`ConsoleProgram::set_assertions` + `assertions::apply_program_scoped`, called
 from `decompiler/crates/kuna-cli/src/decompile_all.rs (load_program)`), for the
 same reason a declared boundary is: an assertion outranks discovery.
@@ -3068,6 +3069,30 @@ any resolution of kuna's own, so the statement outranks a destination kuna
 would have recovered (the import a GOT-slot call loads). Two `callee`
 directives for one call site leave the later one planted; the same function
 reports the earlier one rejected.
+
+An `import` directive states what the loader would have read from an import
+table entry: the pointer word at `<slot>` holds the address of the external
+function `<name>`. It exists for an image whose table no longer says so. A
+protector that rebuilds the import directory keeps the program's slots and their
+references but drops their names (Themida lists one import per DLL); a program
+that fills a table from `GetProcAddress` or `dlsym`, or an image dumped from
+memory, has slots no table describes at all. The fact is committed in the
+loader's own model of an import slot
+(`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declare_import)`):
+the `externref` property is painted over the word, a `FunctionSymbol` named
+`<name>` is mapped at the slot (renaming one already there), the slot joins the
+import-slot set so the whole-binary inventory does not decompile it as a body,
+and the name's built-in libc signature is parked on the symbol as a declared
+function's is. `ActionDeindirect` then resolves any `CALLIND` whose target is
+the slot's contents through its `isPersist() && isExternalRef()` arm, exactly
+as it does for a slot the PE or Mach-O tables named, so native calls through the
+slot and the calls a devirtualized function makes through it (02, section 2.11)
+both print as calls to `<name>`. A data symbol already covering the slot keeps
+its name for the slot's own reads and writes; the property is ORed into it by
+`Database::kuna_add_range_property`, because upstream's `setAttribute` masks
+`externref` off (only an `ExternRefSymbol` carries it there). The script surface
+lowers the directive to the console command `map import <slot> <name>`
+(`kuna-console/src/ifacedecomp.rs (IfcMapImport)`), which calls the same method.
 
 A `call` (or `callreturn`) override carries one more fact with it: the RET-call
 chain it starts. `push <continuation>; push <target>; ret` is a call spelled

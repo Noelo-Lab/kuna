@@ -1647,6 +1647,8 @@ pub fn register_kuna_commands(status: &mut IfaceStatus) {
         Box::new(crate::ifacedecomp::IfcOverrideIndirect),
         &["override", "indirect"],
     );
+    // (kuna) Nor this: an import a packer stripped from the import table.
+    status.register_com(Box::new(crate::ifacedecomp::IfcMapImport), &["map", "import"]);
 }
 
 /// Join tokens with single spaces — C++ `joinTokens(tokens,0,tokens.size())`.

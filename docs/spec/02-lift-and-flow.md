@@ -4202,7 +4202,10 @@ back into native code over a return address the interpreter has pushed (its
 `push ret; jmp f` call form). A jump to another function's entry is a tail
 call. A computed target that is not code but was read from a data slot of the
 image is a call through that slot (an import or GOT entry). It is a call when
-the interpreter pushed a return address, and a tail call through the slot otherwise. `Explorer::apply_call_summary` models a call that is not followed. The return
+the interpreter pushed a return address, and a tail call through the slot otherwise. The emitted call loads the slot and
+calls what it holds, so it is named the way a native `call [slot]` is: by the import symbol at the slot. Themida keeps the
+program's import slots but rebuilds the import directory with one import per DLL, so most of them carry no name; an
+`import <slot> <name>` assertion (00, *Caller assertions*) supplies it. `Explorer::apply_call_summary` models a call that is not followed. The return
 register gets a fresh call-result symbol. Each ABI scratch register (RCX,
 RDX, R8-R11 and the arithmetic flags on Windows x86-64, RSI and RDI as well
 under the System V convention every other x86-64 image uses, ECX/EDX on x86)

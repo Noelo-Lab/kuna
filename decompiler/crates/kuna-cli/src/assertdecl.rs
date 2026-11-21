@@ -138,6 +138,7 @@ pub(crate) fn console_form(
             (Slot::Program, format!("map prototype {func} {}", semicolon(decl)))
         }
         Body::Data { addr, decl } => (Slot::Program, format!("map address {addr:#x} {decl}")),
+        Body::Import { addr, name } => (Slot::Program, format!("map import {addr:#x} {name}")),
         Body::Param { func, index, storage, decl } => match names_another(func, target) {
             Some(f) => (Slot::Program, format!("map param {f}::{index} {storage} {decl}")),
             None => (Slot::Function, format!("map param {index} {storage} {decl}")),
@@ -359,6 +360,9 @@ mod tests {
             "callee 0x147a handle_open extra",
             "callproto 0x13b0",
             "callproto report void f(void)",
+            "import 0x403064",
+            "import notahex memset",
+            "import 0x403064 memset extra",
         ] {
             let err = parse_one(spec).expect_err("refuses");
             assert!(err.starts_with("--assert"), "got {err:?} for {spec:?}");
@@ -400,6 +404,10 @@ mod tests {
         assert_eq!(
             lowered("data 0x601040 char *sneaky"),
             (Slot::Program, "map address 0x601040 char *sneaky".into())
+        );
+        assert_eq!(
+            lowered("import 0x403064 memset"),
+            (Slot::Program, "map import 0x403064 memset".into())
         );
         assert_eq!(
             lowered("param 0 RDI char *user"),
