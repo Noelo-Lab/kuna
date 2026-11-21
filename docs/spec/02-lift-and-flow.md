@@ -2403,6 +2403,42 @@ the case targets.
    does not read them back. The function then decodes its own body only:
    0x14000a040 prints its four cases in 0.7 s.
 
+   **The function's next table (`kuna_switchextent.rs`, `switchextent`,
+   default on).** A table whose selector the compiler knows to be in range
+   has no guard and a selector wider than a byte: Swift's `switch` over a
+   multi-payload enum indexes a halfword offset table straight with the case
+   `swift_getEnumCaseMultiPayload` returned, and clang does the same for a C
+   `switch` whose `default` is `__builtin_unreachable()`. The range then
+   exceeds `jumptablemax` before any row is read, the basic model declines,
+   and the dispatch prints as a computed call that ends the function's flow:
+   a 13 KB Swift copy helper decompiled to its first 500 lines. The entries
+   of such a table are offsets and say nothing about where it ends; the
+   table after it does. A function's jump tables are emitted together, back
+   to back in one read-only section, so a table runs exactly to the lowest
+   table of the same function above it. Before it recovers any table, the
+   flow decodes the function's extent once (`flow.rs
+   (FlowInfo::recover_jump_tables)` over
+   `decompiler/crates/kuna-decomp/src/p2_lift/kuna_switchextent.rs
+   (function_tables)`: its entry to the next known function entry,
+   `context.rs (ArchContext::function_entry_after)`, or a MiB), folds every
+   register through the small lattice the dispatch shapes need and names
+   the table of each computed jump the fold proves reads one, sorted on the
+   function (`Funcdata::kuna_extent_tables`, carried into the recovery
+   partial). When the basic model finds the range unbounded and every other
+   fallback declines, `jumptable.rs
+   (JumpBasicModel::kuna_try_extent_bound_table)` takes the melded path's one
+   LOAD, reads its address as a constant table plus an index scaled by the
+   entry width (`kuna_switchextent.rs (table_read)`), and re-bounds the range
+   to `[0, N)` on that index with `N` the entries that fit before the next
+   table, at least two and at most `jumptablemax`; the rows then pass the
+   run-on cut above like any unguarded table's. A function's last table has
+   no such bound and is left as it was: an object the function merely reads
+   may sit anywhere in the section, and a bound taken from one could run the
+   table on into another function's, whose entries are plausible code
+   addresses measured from the wrong base. The discovery Listing applies the
+   same rule when it reads an AArch64 compact table with no range check
+   (chapter 1, `kuna_a64switch.rs`).
+
    **Guards that leave the top open (always on).**
    `jumptable.rs (JumpBasicModel::analyze_guards)` records the
    conditional branches on the path just before the dispatch as guards

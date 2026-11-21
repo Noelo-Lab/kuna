@@ -4019,6 +4019,16 @@ truncating the fall-through here"
         let table_ops: Vec<OpId> = self.tablelist.clone();
         let record = self.does_jump_record();
         let for_inline = self.is_flow_for_inline();
+        // (kuna `switchextent`) The function's jump tables, decoded once from
+        // its extent, bound a table no range check does.
+        if !table_ops.is_empty() && self.data.kuna_extent_tables.is_none() && self.data.get_arch().switch_extent {
+            let entry = self.data.get_address().clone();
+            let end = self.data.get_arch().function_entry_after(&entry);
+            let tables = super::kuna_switchextent::function_tables(
+                self.env.translate(), self.env.mapped_flow_image(), &entry, end,
+            );
+            self.data.kuna_extent_tables = Some(std::rc::Rc::new(tables));
+        }
         // Snapshot the original flow's `visited` for the partial clone.
         let visited_snapshot = self.visited.clone();
         // The partial sub-decompilation shared by every table in this batch (C++

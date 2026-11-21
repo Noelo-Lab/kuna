@@ -104,6 +104,10 @@ Three tiers:
 | a MIPS syscall wrapper that passes its parameters straight to the kernel shows none of them | [`syscallregs`](#syscallregs----off--auto--on-default-auto) |
 | switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed call | [`switchmodbound`](#switchmodbound----on--off-default-off-destructive-opt-in) |
 | indirect jump bounded only by a modulo or and-mask on its index never becomes a switch | [`switchmodbound`](#switchmodbound----on--off-default-off-destructive-opt-in) |
+| a swift function ends in (*(code *)(v * 4 + 0x...))(); // jump-as-call after swift_getEnumCaseMultiPayload | [`switchextent`](#switchextent----on--off-default-on) |
+| 'Could not recover jumptable' on a dispatch with no cmp before it | [`switchextent`](#switchextent----on--off-default-on) |
+| an arm64 switch's case bodies listed as sub_ functions and the dispatcher truncated at the first one | [`switchextent`](#switchextent----on--off-default-on) |
+| a 13 KB function decompiles to its first few hundred lines | [`switchextent`](#switchextent----on--off-default-on) |
 | indirect jump renders as a computed (code *)() call whose destinations are already constants in the emitted C | [`constselectjump`](#constselectjump----off--reentry--on-default-reentry-destructive-opt-in) |
 | 'Treating indirect jump as call' on a CMOV/predicated dispatch | [`constselectjump`](#constselectjump----off--reentry--on-default-reentry-destructive-opt-in) |
 | the body behind a conditional indirect branch is never decoded | [`constselectjump`](#constselectjump----off--reentry--on-default-reentry-destructive-opt-in) |
@@ -1070,6 +1074,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Set on PER PROGRAM when a switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed call; DESTRUCTIVE as a global default (may over-bound an unrelated indirect jump).
 - **Where / provenance:** P2/switch-model · ghidra-upstream · opt-in-tool · GH-9191
 - **Example:** `option switchmodbound on`
+
+### `switchextent` -- on | off, default `on`
+
+- **Symptoms:** a swift function ends in (*(code *)(v * 4 + 0x...))(); // jump-as-call after swift_getEnumCaseMultiPayload; 'Could not recover jumptable' on a dispatch with no cmp before it; an arm64 switch's case bodies listed as sub_ functions and the dispatcher truncated at the first one; a 13 KB function decompiles to its first few hundred lines.
+- **What it does:** End a jump table that no range check bounds at the next jump table of the same function. A compiler that knows its selector is in range checks nothing before the dispatch: Swift's `switch` over a multi-payload enum indexes a halfword offset table straight with the case `swift_getEnumCaseMultiPayload` returned, and clang does the same for a C `switch` whose `default` is `__builtin_unreachable()`. The basic model then has no guard, the selector's whole width exceeds `jumptablemax`, and the dispatch prints as a computed call that ends the function's flow. The entries of such a table are offsets and say nothing about where it ends; the table after it does: a function's jump tables are emitted together, back to back in one read-only section, so a table runs exactly to the lowest table of the same function above it. Before it recovers any table the flow decodes the function's extent once (its entry to the next known entry), folds every register through the lattice the dispatch shapes need, and names the table of each computed jump the fold proves reads one; a table the guard analysis could not bound is then re-bounded to the entries that fit before the next one, and the run-on cut (`switchrunon`) still trims rows that leave the function. A function's last table has no such bound and is left as it was: an object the function merely reads may sit anywhere in the section, and a bound taken from one could run the table on into another function's. The discovery Listing applies the same rule when it reads an AArch64 compact table (`adr` base, `ldrb`/`ldrh`/`ldrsw` entry scaled by `lsl #2`) with no range check, so the case bodies are the dispatcher's own code there too and the aggressive instruction finder plants no entry on them; a range-checked AArch64 table is read there whatever this option says.
+- **When to flip:** Leave on: a Swift enum dispatch or an unreachable-default C switch recovers as a switch when another table of the function follows it. Flip off to see the computed call the model gives up with, or if a function's tables are not laid out back to back (hand-written assembly).
+- **Where / provenance:** P2/switch-model · kuna · structure-recovery · kuna-switchextent
+- **Example:** `option switchextent off`
 
 ### `constselectjump` -- off | reentry | on, default `reentry` (destructive opt-in)
 

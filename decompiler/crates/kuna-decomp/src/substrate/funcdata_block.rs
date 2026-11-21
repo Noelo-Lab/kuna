@@ -2685,6 +2685,7 @@ impl Funcdata {
             }
         }
         partial.truncated_flow_clone(self)?;
+        partial.kuna_extent_tables = self.kuna_extent_tables.clone();
         Ok(partial)
     }
 
