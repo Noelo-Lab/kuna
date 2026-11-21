@@ -7336,18 +7336,66 @@ register after the last active trial is still dropped (`k(a,b,fp){ fp(a+1,b); }`
 stays `(*a2)(a0 + 1)`: nothing after `x0` was set up), a stack slot is never
 neutral (an untouched incoming stack argument says nothing about the callee's
 list), and the function's own input recovery has `inputparamgap` for the same
-shape. One trial is scored definitely-not-used before any of this, with the
-option on or off: the register an indirect call jumps through
-(`kuna_passthrough::is_call_target`: the trial's Varnode is the CALLIND's input
-0). `onlyOpUse` takes the matched call's read of the trial slot as the
-parameter use and never asks about slot 0, so `mov r9,0x401020; cmovz r9,r8;
-jmp r9` scored `r9` an active sixth argument of the call it is the target of,
-and a tail jump through `r8` read `r8` as its fifth argument
-(`tests/stages/kuna-callproto.xml`); the chain veto was all that hid the
-first. `tests/stages/kuna-passthrough-fwdchain.xml` pins the four-argument tail
-jump and the `blr` form beside it, with the option off reproducing the empty
-call, and the three-argument control and the trailing-register control that
-move in neither pass.
+shape.
+
+The rule is held to registers that *are* the function's input in front of an
+argument the callee takes, because without those limits it reads incidental
+caller state as arguments, which is what the chain veto exists to stop: over 15
+decbench ARM firmware binaries and two router binaries it changed 345 of 5,067
+functions, most of them by inventing arguments. Each call site gets a
+`kuna_passthrough::NeutralScope` from `neutral_scope`, and:
+
+- an unreferenced slot, or one on a range this option claimed because the
+  function never touches it (recorded on the trial by `check_input_trial_use`),
+  is neutral only at a call no other call can precede (`first_calls`); after
+  an earlier call it holds that call's leftovers, so
+  gcc ARM's `push {r3,lr}; bl g; pop.w {r3,lr}; b.w h` does not pass `g`'s
+  r0/r1, an r2 nothing set and the reloaded alignment push r3 to `h`;
+- where upstream's count of the run in front of an active trial, forwarded
+  registers included, exceeds `maxchain`, `force_inactive_chain` keeps the
+  trial only when every register in the run is forwarded and
+  `anchors_neutral_run` allows the trial, and from then on keeps only later
+  active trials it allows. gcc AArch64's stack-protector epilogue in front of
+  a tail `b lseek` leaves x3 holding the guard's address (read by the check,
+  so inactive but not forwarded), x4 the zero `subs` left and x5 the zero the
+  canary was wiped with; the forwarded x1 and x2 do not carry `lseek` past x3;
+- `anchors_neutral_run` refuses a stack slot holding one of the function's own
+  incoming registers stored there unchanged
+  (`kuna_passthrough::saves_own_register`, recorded on the trial by
+  `check_input_trial_use`): `push {r3,lr}; bl errp` leaves the caller's own r3
+  at `[sp]`, where it reads as an active fifth argument. A stack slot the
+  caller set up is allowed like a register: glibc's `re_search_2` forwards all
+  eight argument registers and its own stack argument and passes a constant
+  tenth;
+- it also refuses a register a direct callee is known not to take: its own
+  bounded entry decode never takes it (`CalleeEntryDead::never_takes`), or its
+  `protoorder` statement leaves it out. gcc's IPA register allocation keeps a
+  value across a call to a known `void g(void)` in `rcx` (AArch64 `x3`), read
+  after the call, which scores as an active fourth argument, and the canary
+  wipe in front of a tail call to a four-argument function reads as its fifth
+  and sixth.
+
+`tests/stages/kuna-passthrough-fwdchain-arm.xml` pins both ARM shapes and the
+`i9` case of `tests/stages/kuna-passthrough-fwdchain.xml` the IPA shape, each
+printing the empty call in both passes.
+
+One trial is scored inactive before any of this, with the option on or off: the
+register an indirect call jumps through (`kuna_passthrough::is_call_target`:
+the trial's Varnode is the CALLIND's input 0). `onlyOpUse` takes the matched
+call's read of the trial slot as the parameter use and never asks about slot 0,
+so `mov r9,0x401020; cmovz r9,r8; jmp r9` scored `r9` an active sixth argument
+of the call it is the target of, and a tail jump through `r8` read `r8` as its
+fifth argument (`tests/stages/kuna-callproto.xml`); the chain veto was all that
+hid the first. Inactive, it never anchors a hole fill and is dropped from the
+end of a list, but is still filled below a later argument, where the ABI's
+order makes it an argument: `fp(fp,x+1)` is `inc %rsi; jmp *%rdi`, and
+definitely-not-used would make `forceNoUse` drop the `x+1` with it
+(`tests/stages/kuna-passthrough-calltarget.xml`). An AArch64 `br`/`blr` reads
+its target through a copy into `pc`, so the rule does not arise there.
+`tests/stages/kuna-passthrough-fwdchain.xml` pins the four-argument tail jump
+and the `blr` form beside it, with the option off reproducing the empty call,
+and the three-argument control and the trailing-register control that move in
+neither pass.
 
 Beyond that rule, nothing is added where a callee stated nothing: a
 single-function `kuna decompile`, a narrowed or sharded `decompile-all`, an

@@ -1,0 +1,66 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:Cortex">
+<!--
+    The limits of `passthrough`'s forwarded-register chain rule
+    (kuna-passthrough-fwdchain.xml) on the commonest gcc ARM prologue,
+    `push {r3, lr}`, where r3 is pushed only to keep the stack 8-byte aligned:
+
+        t1:  push {r3, lr}; movs r0, #6; bl g; pop.w {r3, lr}; b.w h
+        t2:  cmp r0, #5; ble 1f; mov.w r0, #0x1000; bx lr
+         1:  push {r3, lr}; bl 0x20004; movs r2, #22; mov r3, r0
+             mov.w r0, #-1; str r2, [r3]; pop {r3, pc}
+
+    from `void t1(void) { g(6); h(); }` and `unsigned t2(int x) { if (x > 5)
+    return 0x1000; *errp() = 0x16; return 0xffffffff; }` (gcc 12 -O2 -mthumb
+    -march=armv7-m).  Counting every untouched argument register as a
+    forwarded argument, the rule printed `h((int4)v2,(int4)(v2 >> 0x20),v1,a3)`
+    and `sub_20004(a0,a1,a2,a3,a3)` and gave both functions four parameters:
+    at `h`, r2 is what `g` left and r3 the reloaded alignment push; at the
+    call in `t2`, the pushed r3 sits at [sp] and reads as an active fifth
+    argument.  An unreferenced slot counts as forwarded only at a call no other
+    call can precede, and forwarded registers still count in front of a stack
+    slot.  Over 15 decbench ARM firmware binaries and 2 router binaries the
+    unguarded rule changed 345 of 5,067 functions, most of them this way.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring", option `passthrough`
+    (kuna_passthrough.rs, neutral_in_chain / anchors_neutral_run).  `g` is
+    `bx lr` and `h` is `bx ip`, a tail jump the callee probe cannot see
+    through, so nothing about `h` says it takes no arguments; 0x20004 is
+    outside the image.  Both passes print the empty calls.
+-->
+<bytechunk space="ram" offset="0x10000">
+08b506200ff0fcffbde808400ff0f9bf052802dd4ff48050704708b50ff0f2ff
+162203464ff0ff301a6008bd
+</bytechunk>
+<bytechunk space="ram" offset="0x20000">
+70476047
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="t1"/>
+<symbol space="ram" offset="0x10010" name="t2"/>
+<symbol space="ram" offset="0x20000" name="g"/>
+<symbol space="ram" offset="0x20002" name="h"/>
+</binaryimage>
+<script>
+  <com>set context TMode 1 [ram,0x10000] [ram,0x1002b]</com>
+  <com>set context TMode 1 [ram,0x20000] [ram,0x20003]</com>
+  <com>option passthrough off</com>
+  <com>lo fu t1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu t2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option passthrough on</com>
+  <com>lo fu t1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu t2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="passthrough-fwdchain-arm #1: the tail call after another call takes no arguments in either pass" min="2" max="2">  h\(\); // tail-call</stringmatch>
+<stringmatch name="passthrough-fwdchain-arm #2: the call behind the alignment push takes no arguments in either pass" min="2" max="2">\*\(unsigned int \*\)sub_20004\(\) = 0x16;</stringmatch>
+<stringmatch name="passthrough-fwdchain-arm #3: t1 gains no parameter" min="2" max="2">void t1\(void\)</stringmatch>
+<stringmatch name="passthrough-fwdchain-arm #4: t2 keeps its one parameter" min="2" max="2">unsigned int t2\(int4 a0\)</stringmatch>
+</decompilertest>

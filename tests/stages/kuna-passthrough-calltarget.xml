@@ -1,0 +1,40 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The register an indirect call jumps through, when it is also an argument
+    slot in front of a live one.
+
+        s5:  inc %rsi; jmp *%rdi
+
+    is `void s5(void (*fp)(void *, long), long x) { fp((void *)fp, x + 1); }`
+    (clang -O2): the target is passed to itself.  `passthrough` reads the
+    register a call jumps through as no argument of its own
+    (kuna_passthrough.rs, is_call_target), because `onlyOpUse` takes the
+    call's read of the trial slot as the parameter use and never looks at
+    slot 0.  Scored definitely-not-used, that trial made forceNoUse drop every
+    argument after it too, so the call printed `(*a0)()` and lost `x + 1`.  It
+    is scored inactive instead: dropped from the end of a list, as the target
+    r8 of kuna-callproto.xml is, and filled below a later argument, where the
+    ABI's order makes it the first one.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring", option `passthrough`
+    (is_call_target applies in both passes).
+-->
+<bytechunk space="ram" offset="0x1000">
+48ffc6ffe7
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="s5"/>
+</binaryimage>
+<script>
+  <com>option passthrough off</com>
+  <com>lo fu s5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option passthrough on</com>
+  <com>lo fu s5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="passthrough-calltarget #1: the target passed to itself stays an argument in front of the live one" min="2" max="2">\(\*a0\)\(a0,a1 \+ 1\); // jump-as-call</stringmatch>
+</decompilertest>

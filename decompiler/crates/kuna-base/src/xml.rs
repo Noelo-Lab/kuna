@@ -2266,7 +2266,9 @@ mod tests {
         // and kuna-gotypenames / Go type descriptors and itabs named as the linker spells them, go1.16 on
         // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
         // and kuna-passthrough-fwdchain / forwarded registers in front of a live one are not an inactive chain (option passthrough)
-        assert_eq!(count, 848, "corpus file count drifted");
+        // and kuna-passthrough-fwdchain-arm / gcc ARM's push {r3,lr} invents no argument under that rule
+        // and kuna-passthrough-calltarget / the register an indirect call jumps through stays an argument below a live one
+        assert_eq!(count, 850, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
