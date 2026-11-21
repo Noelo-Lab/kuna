@@ -21,9 +21,9 @@
     linker's identical code folding, `llvm-strip` strip all). Pass 1
     (`option swiftmetadata off`) shows the placeholders. Pass 2 (on): the
     function both `Alpha` and `Beta` use for `Tagged.tag.getter` is
-    `<*:icffix.Tagged>.requirement#0` with no `self` parameter; `Delta`'s
+    `<*:icffix.Tagged>.requirement#0.getter` with no `self` parameter; `Delta`'s
     `tag.getter` and `describe()` share one function,
-    `<icffix.Delta:icffix.Tagged>.requirement#0.merged#2`, also without a
+    `<icffix.Delta:icffix.Tagged>.requirement#0.getter.merged#2`, also without a
     `self`; `Gamma`'s own `key.getter` keeps its name and its typed `self`.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
@@ -59,8 +59,8 @@ c3
 </script>
 <stringmatch name="swiftmetadata off: the folded getter is a placeholder" min="1" max="1">sub_27f0\(void\)</stringmatch>
 <stringmatch name="swiftmetadata off: the folded pair is a placeholder" min="1" max="1">sub_2ab0\(void\)</stringmatch>
-<stringmatch name="swiftmetadata on: a member two types share is named without a type and takes no self" min="1" max="1">&lt;\*:icffix\.Tagged&gt;\.requirement#0\(void\)</stringmatch>
-<stringmatch name="swiftmetadata on: two members of one type sharing a body are named after the first with the count" min="1" max="1">&lt;icffix\.Delta:icffix\.Tagged&gt;\.requirement#0\.merged#2\(void\)</stringmatch>
-<stringmatch name="swiftmetadata on: an unshared witness getter keeps its name and typed self" min="1" max="1">&lt;icffix\.Gamma:icffix\.Keyed&gt;\.requirement#0\(swift\.type_metadata \*Self,void \*witness_table,icffix\.Gamma \*self\)</stringmatch>
+<stringmatch name="swiftmetadata on: a member two types share is named without a type and takes no self" min="1" max="1">&lt;\*:icffix\.Tagged&gt;\.requirement#0\.getter\(void\)</stringmatch>
+<stringmatch name="swiftmetadata on: two members of one type sharing a body are named after the first with the count" min="1" max="1">&lt;icffix\.Delta:icffix\.Tagged&gt;\.requirement#0\.getter\.merged#2\(void\)</stringmatch>
+<stringmatch name="swiftmetadata on: an unshared witness getter keeps its name and typed self" min="1" max="1">&lt;icffix\.Gamma:icffix\.Keyed&gt;\.requirement#0\.getter\(swift\.type_metadata \*Self,void \*witness_table,icffix\.Gamma \*self\)</stringmatch>
 <stringmatch name="swiftmetadata on: no type's self is pretended on folded code" min="0" max="0">icffix\.Alpha \*self|icffix\.Beta \*self|icffix\.Delta \*self</stringmatch>
 </decompilertest>

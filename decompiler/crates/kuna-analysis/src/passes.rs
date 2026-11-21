@@ -535,6 +535,9 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // an image without the sections produces nothing.
     if compiler == Compiler::Swift && matches!(format, object::BinaryFormat::MachO | object::BinaryFormat::Elf) {
         passes.push(Box::new(crate::swift::SwiftMetadataPass));
+        // (kuna) The Swift runtime's entry points with their header
+        // signatures, bound by name.
+        passes.push(Box::new(crate::swift::kuna_swiftruntime::SwiftRuntimePass));
     }
 
     // S1 PE PDB metadata recovery (PdbPass): on a Windows PE, read the CodeView
@@ -2024,17 +2027,17 @@ mod tests {
         }
     }
 
-    /// The Swift metadata pass is registered only for a Swift image in one of
-    /// the two formats Swift ships in (Mach-O, ELF), after every format block,
-    /// and for no other compiler or format.
+    /// The Swift metadata pass and the runtime-prototype pass are registered
+    /// only for a Swift image in one of the two formats Swift ships in
+    /// (Mach-O, ELF), after every format block, and for no other compiler or
+    /// format.
     #[test]
     fn swiftmetadata_pass_registered_for_swift_macho_and_elf_only() {
         for f in [object::BinaryFormat::MachO, object::BinaryFormat::Elf] {
             let swift = ids(&passes_for(Compiler::Swift, f));
-            assert_eq!(swift.last(), Some(&"swiftmetadata"), "{f:?}: swiftmetadata is appended last");
             let base = ids(&passes_for(Compiler::Clang, f));
-            assert_eq!(&swift[..base.len()], &base[..], "{f:?}: the Swift set is the base set + swiftmetadata");
-            assert_eq!(swift.len(), base.len() + 1);
+            assert_eq!(&swift[..base.len()], &base[..], "{f:?}: the Swift set is the base set + the Swift passes");
+            assert_eq!(&swift[base.len()..], ["swiftmetadata", "swiftruntime"], "{f:?}: the Swift passes close the set");
         }
         for f in [object::BinaryFormat::Pe, object::BinaryFormat::Coff] {
             assert!(!ids(&passes_for(Compiler::Swift, f)).contains(&"swiftmetadata"), "{f:?} must not carry swiftmetadata");

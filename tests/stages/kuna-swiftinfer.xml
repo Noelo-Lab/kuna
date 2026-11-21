@@ -1,0 +1,61 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The Swift convention of functions the metadata did not bind (`option
+    swiftcall on|off`).
+
+    Issue: the `swiftcall` arm bound `__swiftcall` only to functions Swift
+    metadata places in a type. A closure's partial-apply forwarder kept the C
+    model, so the context it reads from swiftself (r13 / x20) was an
+    uninitialised local (`long v2; // r13`), and a two-word Swift result was a
+    128-bit integer split by `SUB168(v1,0)` / `SUB168(v1,8)`.
+
+    Stage / sub-stage: P4 prototype recovery. The decompile drive decodes the
+    function and its direct callees (`p4_calls/kuna_swiftinfer.rs (seed)`); a
+    body that reads swiftself on entry for anything but saving it decompiles
+    under `__swiftcall` with the input named `swiftself`. The call-output type
+    (`TypeOpCall::getOutputLocal`) of a two-word join whose words are read apart
+    is `swift.pair`.
+
+    The fixture `swift_infer_elf` is a stripped swiftc 6.3 build of
+    `swift_infer_elf.swift` (recipe in the fixtures README): 0x24b0 is the
+    partial-apply forwarder of `makeAdder`'s closure, 0x2840 is `usePair`, which
+    reads both words `split` returns. Pass 1 (`option swiftcall off`) is the
+    BUG, pass 2 (the default) the FIX.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_infer_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>option swiftcall off</com>
+  <com>read symbols</com>
+  <com>load addr 0x24b0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x2840</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_infer_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x24b0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x2840</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="swiftcall off: the closure reads an uninitialised r13" min="1" max="1">int8 v2; // r13</stringmatch>
+<stringmatch name="swiftcall off: the pair is a 128-bit integer split apart" min="1" max="1">return SUB168\(v1,0\) - SUB168\(v1,8\);</stringmatch>
+<stringmatch name="swiftcall on: the closure takes its context as swiftself" min="1" max="1">int8 sub_24b0\(void \*swiftself\)</stringmatch>
+<stringmatch name="swiftcall on: the context is read through swiftself" min="1" max="1">return \(\(int8 \*\)swiftself\)\[2\] \+ 1;</stringmatch>
+<stringmatch name="swiftcall on: the two-word result is a swift.pair" min="1" max="1">swift\.pair v1; // rdx:rax</stringmatch>
+<stringmatch name="swiftcall on: its words are read as fields" min="1" max="1">return v1\._0 - v1\._1;</stringmatch>
+</decompilertest>

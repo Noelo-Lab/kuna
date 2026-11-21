@@ -1,0 +1,56 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Swift string literals (`option fatstr off|auto|always`).
+
+    Issue: a Swift.String literal is two constant words, so a getter that
+    returns "shape" reads `0xe500000000000000` and `0x6570616873`, and a
+    class initializer that stores "animal" into a field stores
+    `0xe600000000000000` beside `0x6c616d696e61`.
+
+    Stage / sub-stage: P5 const-pointer, `RuleSwiftString`
+    (`kuna-decomp/src/p5_types/kuna_swiftstr.rs`).
+
+    P0 assertion: `option fatstr off|auto|always` (default auto: act on a
+    Swift image).
+
+    Both passes load the real fixture `swift_types_elf` (x86-64 ELF, swiftc
+    6.3, stripped) with `swiftmetadata on` for the names. Pass 1 (`option
+    swiftstr off`) shows the words; pass 2 (the default) the literals: the
+    object word of the small string is `"shape"` where the two words meet in
+    the return register pair, and `"animal"` where the initializer stores it.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_types_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>option fatstr off</com>
+  <com>read symbols</com>
+  <com>load addr 0x2ce0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x3940</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_types_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x2ce0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x3940</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="fatstr off: the small string's object word is a constant (on: it is the text)" min="1" max="1">= 0xe500000000000000;</stringmatch>
+<stringmatch name="fatstr off: the stored string's object word is a constant" min="1" max="1">= 0xe600000000000000;</stringmatch>
+<stringmatch name="fatstr auto: the returned small string is its text" min="1" max="1">"shape"</stringmatch>
+<stringmatch name="fatstr auto: the stored small string is its text" min="1" max="1">"animal"</stringmatch>
+</decompilertest>

@@ -2266,7 +2266,17 @@ mod tests {
         // and kuna-gotypenames / Go type descriptors and itabs named as the linker spells them, go1.16 on
         // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
         // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
-        assert_eq!(count, 848, "corpus file count drifted");
+        // and kuna-swiftstr / a Swift string literal's two constant words print as the literal
+        // and kuna-swiftstrcsel / a Swift literal's two words are paired along one branch arm
+        // and kuna-swiftruntime / the Swift runtime's entry points carry their header signatures
+        // and kuna-swiftsigs / Swift prototypes declared from mangled names under the Swift models
+        // and kuna-swiftasync / a stripped Swift function's convention from what it calls
+        // and kuna-swiftglobals / a Swift global typed from its storage symbol
+        // and kuna-swiftinfer / an unbound function that reads swiftself is Swift; a two-word result is a pair
+        // and kuna-swiftnames / Swift accessors, witnesses, value witnesses and helpers named from code shape
+        // and kuna-swiftrrregs / the Swift runtime's register-specific retain and release entry points
+        // and kuna-swiftstdlib / the Swift standard library's C entry points carry their shims-header signatures
+        assert_eq!(count, 858, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
