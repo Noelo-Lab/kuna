@@ -1120,6 +1120,8 @@ pub struct ArchContext {
     /// `continue;`: C `do..while` and Go's `for` post statement do, Rust's
     /// `loop { ..; if !(c) { break; } }` restarts the body instead.
     pub do_while_continue: bool,
+    /// (kuna `gotonext`) Re-derive switch fall-thru chains before the case sort.
+    pub goto_next: bool,
     /// (kuna) region structurer cyclic loop-successor refinement
     /// (`region_loop_refine`, opt-in default-off).  When set (and
     /// `region_structure` is on), multi-exit / multi-latch / mid-entry loops are
@@ -1710,6 +1712,7 @@ impl ArchContext {
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_continue: true,
             do_while_continue: true,
+            goto_next: false,
             loop_cond_hoist: false,      // loopcondhoist (opt-in default-off)
             region_loop_refine: false,   // regionlooprefine (opt-in default-off)
             region_edge_order: false,    // regionedgeorder (opt-in default-off)

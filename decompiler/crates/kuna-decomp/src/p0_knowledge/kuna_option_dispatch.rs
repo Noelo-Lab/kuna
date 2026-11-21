@@ -633,6 +633,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
+    "gotonext" => on_off!(goto_next, "goto-to-next suppression"),
     "importdata" => on_off!(import_data, "import-slot data-read rendering"),
     "castimplied" => on_off!(cast_implied, "C-implied cast elision"),
     "castsign" => on_off!(cast_sign, "signed declarations for signed-only locals"),
