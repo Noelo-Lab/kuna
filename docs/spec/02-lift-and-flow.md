@@ -2432,7 +2432,9 @@ the case targets.
    plus an index scaled by the entry width (`kuna_switchextent.rs
    (table_read)`), and re-bounds the range to `[0, N)` on that index with
    `N` the entries that fit before the next table, at least two and at most
-   `jumptablemax`; the rows then pass the run-on cut above like any
+   `jumptablemax`, and only when the next table lies in the same load-image
+   section (`context.rs (ArchContext::in_section_of)`), as the discovery
+   Listing requires; the rows then pass the run-on cut above like any
    unguarded table's. A function whose extent names fewer than two tables,
    or a dispatch retried after an earlier recovery, is not re-run, so a
    recovery that fails for its own reasons costs one extent scan and no

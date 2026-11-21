@@ -3350,9 +3350,10 @@ impl JumpBasicModel {
 
     /// (kuna `switchextent`) Re-bound a table no guard reaches to `[0, N)`
     /// when the function's next jump table lies `N` entries past this one's
-    /// start (`p2_lift/kuna_switchextent.rs`). The melded path must hold one
-    /// LOAD whose address is a constant table plus an index scaled by the
-    /// entry width; that index becomes the range's start.
+    /// start in the same load-image section (`p2_lift/kuna_switchextent.rs`).
+    /// The melded path must hold one LOAD whose address is a constant table
+    /// plus an index scaled by the entry width; that index becomes the
+    /// range's start.
     fn kuna_try_extent_bound_table(&mut self, fd: &Funcdata, maxtablesize: uint4) -> bool {
         let Some(tables) = fd.kuna_extent_tables.as_ref() else { return false };
         let loads: Vec<OpId> = (0..self.path_meld.num_ops())
@@ -3366,6 +3367,10 @@ impl JumpBasicModel {
             return false;
         }
         let Some(&next) = tables.iter().find(|&&t| t > table) else { return false };
+        let Some(space) = fd.get_address().get_space().cloned() else { return false };
+        if !fd.get_arch().in_section_of(&Address::new(Rc::clone(&space), table), &Address::new(space, next)) {
+            return false;
+        }
         let count = (next - table) / stride;
         if count < 2 || count > uintb::from(maxtablesize) {
             return false;
