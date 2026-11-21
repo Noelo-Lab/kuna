@@ -5718,10 +5718,7 @@ impl<'a> FuncdataCoverCtx<'a> {
             table
         });
         if let Some(&Some(bid)) = usize::try_from(index).ok().and_then(|at| table.get(at)) {
-            debug_assert!((0..n)
-                .map(|i| self.fd.bblocks_get_block(i))
-                .find(|&b| self.fd.bblocks.block(b).get_index() == index)
-                .is_some_and(|b| b == bid));
+            debug_assert_eq!(self.fd.bblocks.block(bid).get_index(), index);
             return bid;
         }
         for i in 0..n {
