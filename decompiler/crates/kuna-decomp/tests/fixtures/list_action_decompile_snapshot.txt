@@ -282,27 +282,29 @@
 0275        !         mergetype
 0276        !         hideshadow
 0277        !         copymarker
-0278                  latedonothing
-0279                  blockstructure
-0280                  prefercomplement
-0281                  structuretransform
-0282                  branchflip
-0283                  presentcompareform
-0284        !         outputprototype
-0285        !         inputprototype
-0286        !         mapglobals
-0287        !         dynamicsymbols
-0288        !         namevars
-0289                  calltargettype
-0290        !         setcasts
-0291                  finalstructure
-0292                  gotoreduce
-0293                  taildup
-0294                  ifelseflatten
-0295                  crossjumprevert
-0296                  dedupitetail
-0297                  iteregion
-0298                  iteboolean
-0299                  paramcopyhoist
-0300        !         prototypewarnings
-0301                  stop
+0278                  typevote
+0279                  latedonothing
+0280                  blockstructure
+0281                  prefercomplement
+0282                  structuretransform
+0283                  branchflip
+0284                  presentcompareform
+0285        !         outputprototype
+0286        !         inputprototype
+0287        !         mapglobals
+0288        !         dynamicsymbols
+0289        !         namevars
+0290                  calltargettype
+0291        !         setcasts
+0292                  finalstructure
+0293                  postinc
+0294                  gotoreduce
+0295                  taildup
+0296                  ifelseflatten
+0297                  crossjumprevert
+0298                  dedupitetail
+0299                  iteregion
+0300                  iteboolean
+0301                  paramcopyhoist
+0302        !         prototypewarnings
+0303                  stop

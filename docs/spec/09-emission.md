@@ -2106,7 +2106,27 @@ feeding a STORE address prints `*ptr` or hides the dereference
 (`print_load_value`/`print_store_value`), a negated condition flips a
 comparison token to its complement instead of printing `!`.
 
-**The pretty-printer.** All of the above emits *logical* tokens; line breaks
+**The pretty-printer.** All of the above emits *logical* tokens. By default
+kuna prints them straight to the plain emitter, one statement per line,
+where upstream always breaks lines at 100 columns. `option maxlinewidth N`
+(20 to 10000) selects upstream's line breaking for plain text:
+`printc.rs (PrintC::set_max_line_size)` puts `EmitPrettyPrint` in front of the
+plain emitter, and `printc.rs (PrintC::set_markup)` keeps it when it restores
+plain text after a markup render. The markup back-end is never wrapped, and
+only C output is: Go ends a statement at a line break, and Rust and Go print
+unbroken (`printc.rs (PrintC::set_name)` re-selects the emitter when the
+language changes). Only the console's `print C` (and so plain `kuna decompile` text) is
+broken: the batch render behind `--json`, `decompile-all` and the browser front-end
+returns records that address its code line by line (warning lines, line
+mappings, the call-argument positions later casts are written at), so
+`decompiler/crates/kuna-console/src/project.rs (decompile_pulled)` prints each
+of its functions unbroken (`printc.rs (PrintC::suspend_line_size)`). A label
+line fires a pending `else` brace before the label, as it does without the
+pretty-printer (`prettyprint.rs (EmitPrettyPrint::try_tag_line_indent)`). The
+line size also bounds `option commentindent`: an indent of N or more is refused
+(`printc.rs (PrintC::set_line_comment_indent)`), as upstream does
+(`tests/stages/kuna-maxlinewidth.xml`). The datatest corpus passes unchanged
+with `maxlinewidth` set to 100 or 200. When selected, line breaks
 are chosen by `prettyprint.rs (EmitPrettyPrint)`, an Oppen-style streaming
 formatter transcribed verbatim because its breaks are part of the byte-exact
 output: tokens queue in a circular buffer (initial capacity 300, grown by 200
@@ -2118,8 +2138,8 @@ content no longer fits either indents to the group's saved column or, when
 breaking would recover fewer than 10 characters, stays on the line;
 overflow permanently raises inner indents to guarantee at least half a line of
 working space (`prettyprint.rs (EmitPrettyPrint::overflow)`), and inside a
-comment every forced break re-emits the comment fill prefix. Defaults: 100
-columns (`option maxlinewidth`), indent step 2 (`option indentincrement`),
+comment every forced break re-emits the comment fill prefix. Defaults: no
+line limit (`option maxlinewidth`), indent step 2 (`option indentincrement`),
 comment indent 20; brace placement per construct via the four `braceformat`
 fields of `printc.rs (PrintCOptions)`: if/loop/switch braces sit on the same
 line as their construct, and a function's brace sits directly under its
@@ -5391,3 +5411,18 @@ bundle also checks carry boundaries and exact source/destination aliasing.
 the 5% budget; wall median changed by -0.119%. The C path does not call this Rust
 helper, so this records the measured failure without attributing a cause. The
 original measurement is retained and the correction ships as an explicit opt-in.
+
+**Post-increment** (`postinc`, default on, C output only; kuna;
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_postinc.rs (ActionPostIncrement)`,
+run after the final structure): an in-place pointer step `p = p + c` (an
+`INT_ADD` of a constant `c`, or a `PTRADD` of one element of `c` bytes, whose
+output and first input are the same variable) prints nothing, and the LOAD or
+STORE before it prints its pointer as `p++` (`printc.rs (PrintC::push_post_increment)`,
+token `POST_INCREMENT`, a postfix like the call parentheses), when the stepped
+value is read by exactly that LOAD or STORE besides the step, the access is
+`c` bytes and `p` points to `c`-byte elements (so `p++` steps the same bytes),
+the access is not a stack byte copy, and the statement holding the access is
+the one printed right before the step in the same block. `v = *p; p = &p[1];`
+prints `v = *p++;`, `*d = c; d = &d[1];` prints `*d++ = c;`. A step that goes
+through a copy the loop also compares (`v2 = &a0[1]; v1 += *a0; a0 = v2;`) is
+left as it is (`tests/stages/kuna-postinc.xml`).

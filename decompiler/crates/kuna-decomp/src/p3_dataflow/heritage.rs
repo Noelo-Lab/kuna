@@ -1078,14 +1078,14 @@ impl Heritage {
     ///
     /// A negative number indicates the number of passes to wait before the
     /// first heritage will occur.  Errors if the space is not heritaged (the
-    /// C++ throws `LowlevelError`).
+    /// C++ throws `LowlevelError`) or the per-space info is not built yet.
     pub fn num_heritage_passes(&self, spc: &Rc<AddrSpace>) -> kuna_base::error::KunaResult<int4> {
-        let info = self.get_info(spc);
-        if !info.is_heritaged() {
+        let info = self.infolist.get(spc.get_index() as usize);
+        let Some(info) = info.filter(|info| info.is_heritaged()) else {
             return Err(kuna_base::error::KunaError::lowlevel(
                 "Trying to calculate passes for non-heritaged space",
             ));
-        }
+        };
         Ok(self.pass - info.delay)
     }
 
