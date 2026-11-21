@@ -66,7 +66,10 @@ fn usage() {
          --min-similarity defaults to 0.7 and is applied before --max-matches\n\
          (default 10), so a strong match is never crowded out by a weak one.\n\
          Scoring needs Ghidra's weight tables (lshweights_*.xml), resolved from\n\
-         --weights <dir>, else KUNA_BSIM_WEIGHTS, else beside the corpus."
+         --weights <dir>, else KUNA_BSIM_WEIGHTS, else beside the corpus.\n\
+         query --json emits {{binary, corpus, function, features, min_similarity,\n\
+         considered, skipped_settings, truncated, matches, reason}}; info --json\n\
+         emits {{corpus, settings, language, executables, functions}}."
     );
 }
 
