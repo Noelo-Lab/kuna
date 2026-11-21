@@ -16,6 +16,14 @@
 //! RDX,[__ImageBase]; MOV ECX,[RDX+RBX*4+0x2000]; ADD RCX,RDX`, base != table),
 //! where each case body holds a direct `CALL` nothing else in the image reaches.
 //!
+//! `switchtable_flow_x86_64` and `pe_switchshared_x86_64.exe` (GH-1824) hold
+//! the dispatches whose base or range check lies beyond a linear walk back
+//! from the jump: a base hoisted out of a loop above an `if/else` whose first
+//! arm ends in `jmp`, two switches sharing one base where the first switch's
+//! case bodies end in `jmp`, and a range check more than sixteen instructions
+//! up. The reference walk reads them over the function's predecessor edges
+//! (`listing/kuna_switchflow.rs`).
+//!
 //! Each fixture is one `dispatch` whose four cases push a distinct literal and
 //! whose default arm pushes a fifth. The default arm is the control: it is
 //! reached by the `JA` and was always attributed correctly, so a run where only
@@ -440,4 +448,116 @@ fn a_function_called_only_from_a_case_body_has_its_dispatcher_as_caller() {
         }
     }
     assert!(wrong.is_empty(), "case-body callees without their dispatcher:\n{}", wrong.join("\n"));
+}
+
+/// One dispatch of `switchtable_flow_x86_64` or `pe_switchshared_x86_64.exe`
+/// (GH-1824): the base or the range check is out of the linear slice's reach,
+/// and each case body calls or tail-jumps to a function nothing else reaches.
+struct Flow {
+    shape: &'static str,
+    fixture: &'static str,
+    dispatch: u64,
+    branch: u64,
+    cases: [u64; 4],
+    callees: [u64; 4],
+}
+
+const FLOW: [Flow; 5] = [
+    Flow {
+        shape: "base hoisted out of the loop, above an if/else whose first arm ends in jmp",
+        fixture: "switchtable_flow_x86_64",
+        dispatch: 0x100000,
+        branch: 0x10003a,
+        cases: [0x10003c, 0x100043, 0x10004a, 0x100051],
+        callees: [0x100132, 0x100138, 0x10013e, 0x100144],
+    },
+    Flow {
+        shape: "the first of two switches sharing one base (read by the slice as before)",
+        fixture: "switchtable_flow_x86_64",
+        dispatch: 0x100064,
+        branch: 0x10007e,
+        cases: [0x100080, 0x100087, 0x10008e, 0x100095],
+        callees: [0x10014a, 0x100150, 0x100156, 0x10015c],
+    },
+    Flow {
+        shape: "the second of two switches sharing one base, behind the first's case jmps",
+        fixture: "switchtable_flow_x86_64",
+        dispatch: 0x100064,
+        branch: 0x1000ae,
+        cases: [0x1000b0, 0x1000b7, 0x1000be, 0x1000c5],
+        callees: [0x100162, 0x100168, 0x10016e, 0x100174],
+    },
+    Flow {
+        shape: "the range check twenty-two instructions above the jump",
+        fixture: "switchtable_flow_x86_64",
+        dispatch: 0x1000cc,
+        branch: 0x10011d,
+        cases: [0x10011f, 0x100121, 0x100123, 0x100125],
+        callees: [0x10017a, 0x100180, 0x100186, 0x10018c],
+    },
+    Flow {
+        shape: "MSVC: the second switch through a shared LEA RDI,[__ImageBase]",
+        fixture: "pe_switchshared_x86_64.exe",
+        dispatch: 0x140001080,
+        branch: 0x140001103,
+        cases: [0x140001110, 0x140001120, 0x140001130, 0x140001140],
+        callees: [0x140001040, 0x140001050, 0x140001060, 0x140001070],
+    },
+];
+
+/// Each dispatch reaches exactly its four cases over the predecessor edges,
+/// and the first switch of the shared-base pair still reads as it did.
+#[test]
+fn a_dispatch_beyond_the_linear_slice_reaches_exactly_its_cases() {
+    let mut wrong = Vec::new();
+    for fx in FLOW {
+        let idx = index_of(fx.fixture);
+        let mut jumps: Vec<u64> = idx
+            .refs_from_instruction(fx.branch)
+            .iter()
+            .filter(|r| r.kind == XrefKind::Jump)
+            .map(|r| r.to)
+            .collect();
+        jumps.sort_unstable();
+        if jumps != fx.cases {
+            wrong.push(format!("{}: {jumps:#x?}", fx.shape));
+        }
+    }
+    assert!(wrong.is_empty(), "dispatches that do not reach exactly their cases:\n{}", wrong.join("\n"));
+}
+
+/// The GH-1824 symptom: a function called only from such a case body has its
+/// dispatcher as caller, and `kuna xrefs --to` it no longer answers nothing.
+#[test]
+fn a_callee_behind_a_hoisted_base_or_far_guard_has_its_dispatcher_as_caller() {
+    let mut wrong = Vec::new();
+    for fx in FLOW {
+        let idx = index_of(fx.fixture);
+        for callee in fx.callees {
+            let owners: Vec<Option<u64>> = idx
+                .refs_to(callee)
+                .iter()
+                .filter(|r| matches!(r.kind, XrefKind::Call | XrefKind::Jump))
+                .map(|r| idx.function_containing(r.from))
+                .collect();
+            if owners != [Some(fx.dispatch)] {
+                wrong.push(format!("{}: {callee:#x} reached from {owners:#x?}", fx.shape));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "case-body callees without their dispatcher:\n{}", wrong.join("\n"));
+}
+
+/// A miss is never silent: every computed jump of the flow fixtures is read,
+/// and the tail jump through a register in `callproto_x86_64`'s `report`
+/// (`jmp r8` at `0x13b0`, no table) is reported as unresolved.
+#[test]
+fn an_unread_computed_jump_is_reported_and_a_read_one_is_not() {
+    for fixture in ["switchtable_flow_x86_64", "pe_switchshared_x86_64.exe"] {
+        let idx = index_of(fixture);
+        let left: Vec<u64> = idx.unresolved_computed_jumps().collect();
+        assert!(left.is_empty(), "{fixture}: {left:#x?}");
+    }
+    let idx = index_of("callproto_x86_64");
+    assert_eq!(idx.unresolved_computed_jumps_in(0x1370), [0x13b0]);
 }

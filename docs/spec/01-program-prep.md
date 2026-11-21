@@ -10609,6 +10609,58 @@ table again once its own queue drains and walks the cases as its own: it reaches
 the dispatch by falling into it, and it is the function the cold fragment
 belongs to.
 
+*Predecessor edges.* (kuna; `decompiler/crates/kuna-analysis/src/listing/kuna_switchflow.rs
+(register_targets)`) The slice steps back by address and stops at the first
+instruction that does not fall through, so a base hoisted above a `jmp` never
+reaches it, and the sixteen-instruction search for the range check has the
+same wall. Three shapes every x86-64 compiler emits lost whole switches to that
+— every call their case bodies make, with `coverage.unwalked` and `notes`
+empty: a base hoisted out of a loop above an `if/else` whose first arm ends in
+`jmp` (clang `-O2`, MSVC `/O2`; the slice stops at the `jmp` seven
+instructions short of the `lea`), two switches sharing one hoisted `LEA
+RBP,[__ImageBase]` where the first switch's case bodies end in `jmp` or `ret`
+before the second dispatch (MSVC: the second switch read 0 of 8), and a range
+check more than sixteen instructions above the jump. Once a body's queue has
+drained, every dispatch in it that the linear read declined is read again over
+the body's own **predecessor edges** — each decoded instruction's fall-through
+and branch targets, and the case edges of the switches it has read, the edges
+the walk already follows forward. The value a register holds on entry to an
+instruction is what each decoded predecessor leaves in it, met: asked on
+demand from the `BRANCHIND`'s input back through the ops that define what it
+still wants, folded through the slice's own four values, with a call killing
+what the calling convention does not preserve. Predecessors that agree keep
+the value, ones that disagree make it unknown, and a predecessor the walk has
+not decoded — the back edge of a loop whose latch only the case bodies reach
+— contributes nothing, as the linear slice never saw it either. The range
+check is the nearest conditional branch above the dispatch along the same
+edges whose fall-through side leads down to it, read by the same rule as
+before; a path that meets any other conditional branch first yields no bound,
+and a branch that reaches the dispatch by its taken side is not read as a
+guard. Only a range-checked table is read this way (the unchecked call-table
+read and the masked index stay with the slice). A function with no declined
+dispatch pays nothing; one read decodes at most 512 instructions, each once,
+and a jump that is no switch — a tail call through a pointer, a virtual
+dispatch — declines at the first definition the fold does not model, as the
+slice does. On the issue's repro (Clang 21/22 `-O2 -fPIE -pie`, MSVC 19.50
+`/O2`) all four functions read 8 of 8 case helpers where three read 0 of 8 or 8
+of 16; on gcc 15 `-O2` the hoisted-loop shape stays unread, because gcc keeps
+the base in a caller-saved `%r8` across calls whose bodies it has seen
+(`-fipa-ra`), which no model of the default calling convention admits. On bash
+`kuna strings` owns 29 more literals (1,031 to 1,060) at the same 0.43 s;
+`kuna xrefs` on a 14.5 MB libavcodec goes from 5.49 s to 5.61 s.
+
+*What is left is said.* (kuna; `decompiler/crates/kuna-cli/src/xrefs.rs
+(unresolved_jumps_note)`) Every decoded computed jump on a register or a
+loaded temporary that neither read resolved to a switch or a call table is
+recorded (`XrefIndex::unresolved_computed_jumps`; a jump through a pointer
+slot — `jmp *slot(%rip)`, a PLT entry, or crt's `mov slot(%rip),%rax; jmp
+*%rax`, which the fold reads as a slot and never a table — and a trap's
+`BRANCHIND` on what its own `CALLOTHER` yields are not ones), and `kuna
+xrefs` puts them in `coverage.notes`: for `--from` a function, the ones inside
+it; for a `--to` that found nothing, every one in the image, since the
+reference asked about may sit in a case body the walk never decoded. A miss
+is no longer silent.
+
 With all five, the 51 binaries miss 156 direct call sites instead of 3,913 —
 none at `-O0` outside tar and e2fsck — and the call graph gains 1,868 edges and
 loses three, two of which were jumps from a table read past its end. What is

@@ -61,6 +61,7 @@ mod kuna_gotcall;
 mod kuna_regcarry;
 mod kuna_ppclocalentry;
 mod kuna_pltstub;
+mod kuna_switchflow;
 mod kuna_switchtable;
 mod kuna_thumbswitch;
 mod kuna_a32switch;

@@ -309,9 +309,6 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     let mut coverage =
         coverage_of(&prog, &file, &index, &names, &target, args.direction, unwalked, fileset.as_ref());
     coverage.notes.extend(proof_note);
-    for note in &coverage.notes {
-        eprintln!("note: {note}");
-    }
     let rows = match args.direction {
         // `--to` answers for the callable, not the literal address: an import
         // reached through a veneer and an IAT/GOT slot is one thing under two
@@ -330,6 +327,10 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         .into_iter()
         .filter(|r| args.instructions && (args.kinds.is_empty() || args.kinds.contains(&r.kind)))
         .collect();
+    coverage.notes.extend(unresolved_jumps_note(&prog, &index, &names, &target, args.direction, rows.is_empty()));
+    for note in &coverage.notes {
+        eprintln!("note: {note}");
+    }
     let data = kuna_analysis::loader::kuna_dataptrs::data_pointers(&file, &bytes);
     let operands = matches!(
         object::Object::architecture(&file),
@@ -641,6 +642,55 @@ fn unwalked_note(
              mapped executable but not marked as code: {}. References made from them are not in \
              this answer; `kuna xrefs --from <address>` decodes one",
             unwalked.len(),
+            listed.join(", ")
+        )
+    })
+}
+
+/// (kuna) `switchflow`: the computed jumps the walk resolved to no table, so
+/// a miss is never silent. For `--from` a function, the ones inside it; for a
+/// `--to` that found nothing, every one in the image, since the reference
+/// asked about may sit in a case body the walk never decoded.
+fn unresolved_jumps_note(
+    prog: &ConsoleProgram,
+    index: &XrefIndex,
+    names: &EntryNames,
+    target: &Target,
+    direction: Direction,
+    empty: bool,
+) -> Option<String> {
+    const LISTED: usize = 3;
+    let (sites, scope, owned): (Vec<u64>, &str, bool) = match direction {
+        Direction::From if index.is_function_entry(target.addr) || names.at(target.addr).is_some() => {
+            (index.unresolved_computed_jumps_in(target.addr), "this function holds", false)
+        }
+        Direction::To if empty => (index.unresolved_computed_jumps().collect(), "the walk left", true),
+        _ => return None,
+    };
+    if sites.is_empty() {
+        return None;
+    }
+    let spell = |at: u64| match owning_function(prog, index, names, at).filter(|_| owned) {
+        Some((_, name)) => format!("0x{at:x} in {name}"),
+        None => format!("0x{at:x}"),
+    };
+    let mut listed: Vec<String> = sites.iter().take(LISTED).map(|&at| spell(at)).collect();
+    if sites.len() > LISTED {
+        listed.push(format!("{} more", sites.len() - LISTED));
+    }
+    Some(if sites.len() == 1 {
+        format!(
+            "{scope} a computed jump at {} that was not resolved to a jump table or a call table \
+             (a switch whose table base or range check the walk could not read, or a jump through \
+             a pointer): the code it reaches may be undecoded, so references made from there are not \
+             listed",
+            listed[0]
+        )
+    } else {
+        format!(
+            "{scope} {} computed jumps that were not resolved to a jump table or a call table ({}): \
+             the code they reach may be undecoded, so references made from there are not listed",
+            sites.len(),
             listed.join(", ")
         )
     })

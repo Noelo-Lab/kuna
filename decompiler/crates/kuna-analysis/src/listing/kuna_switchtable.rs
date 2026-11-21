@@ -189,7 +189,7 @@ const MAX_DISPATCH_INSNS: usize = 96;
 /// its `ja` and the jump (`mov %eax,%eax; lea 0(,%rax,4),%rdx; lea jt,%rax; mov
 /// (%rdx,%rax,1),%eax; cltq; lea jt,%rdx; add %rdx,%rax`), and gcc -O2 schedules
 /// the callee-saved pushes and argument moves of the case bodies in between.
-const MAX_GUARD_INSNS: usize = 16;
+pub(super) const MAX_GUARD_INSNS: usize = 16;
 
 /// The widest instruction any vendored processor encodes, which bounds how far
 /// back a predecessor's first byte can lie.
@@ -288,6 +288,7 @@ pub(super) fn register_targets(
     let table = match dispatch {
         Some(Val::Case { table, base }) => (table, Some(base)),
         Some(Val::Entry { table, width }) if width == pool.ptr_width() => (table, None),
+        Some(Val::Slot) => return TableRead { gap, slot: true, ..TableRead::default() },
         _ => return TableRead { gap, ..TableRead::default() },
     };
     // Read only now, on a jump that really does index a table: without the
@@ -306,7 +307,7 @@ pub(super) fn register_targets(
     match (guard_limit(translate, code_space, data_space, decoded, from, reach), masked) {
         (Ok(limit), masked) => {
             let limit = masked.map_or(limit, |n| n.min(limit));
-            TableRead { cases: read(limit), stated: Some(limit), gap: None, unbounded: false }
+            TableRead { cases: read(limit), stated: Some(limit), ..TableRead::default() }
         }
         // (kuna `calltable`) A pointer table with no count runs to the first
         // word that is not code of the section the transfer is in, or to the
@@ -319,10 +320,12 @@ pub(super) fn register_targets(
                     cases.truncate(at);
                 }
             }
-            TableRead { cases, stated: None, gap: None, unbounded: !call }
+            TableRead { cases, stated: None, unbounded: !call, ..TableRead::default() }
         }
         (Err(gap), masked) => match masked.map(|n| (n, read(n))) {
-            Some((n, cases)) if cases.len() == n => TableRead { cases, stated: Some(n), gap: None, unbounded: false },
+            Some((n, cases)) if cases.len() == n => {
+                TableRead { cases, stated: Some(n), ..TableRead::default() }
+            }
             _ => TableRead { gap, ..TableRead::default() },
         },
     }
@@ -332,7 +335,7 @@ pub(super) fn register_targets(
 /// `at`, `len` bytes long) for another instruction, if any. A `cmov`'s or a
 /// `rep` prefix's `CBRANCH` only skips the rest of its own instruction (it goes
 /// to `inst_next`, or to an op of the same instruction), so it is no guard.
-fn leaving_branch(ops: &[FullOp], at: u64, len: u32) -> Option<usize> {
+pub(super) fn leaving_branch(ops: &[FullOp], at: u64, len: u32) -> Option<usize> {
     let next = at.wrapping_add(u64::from(len));
     ops.iter().rposition(|op| {
         op.opcode == OpCode::CPUI_CBRANCH
@@ -424,6 +427,10 @@ pub(super) struct TableRead {
     /// the entries run to the first non-code word. That is a call table's
     /// shape; a table read this way is never taken as a switch.
     pub unbounded: bool,
+    /// The jump is through a single pointer slot, not an indexed table (`mov
+    /// slot(%rip),%rax; jmp *%rax`, a GOT-forwarding veneer): nothing further
+    /// is to be read at it.
+    pub slot: bool,
 }
 
 /// How many cases the range check ahead of the dispatch admits, or `None` when
@@ -511,7 +518,7 @@ fn guard_limit(
 /// five-case table indexed by `sel + 5`. Read as `c + 1`, that one ran on into
 /// the next table. A lower bound that leaves more than `max_entries` values is
 /// no bound at all: it is the first of two checks, not a table's size.
-fn guard_cases(
+pub(super) fn guard_cases(
     writer: &[FullOp],
     feeding: &[usize],
     branch: &[FullOp],
@@ -635,7 +642,7 @@ fn previous(decoded: &HashSet<u64>, cur: u64) -> Option<u64> {
 /// (`classify`): it does unless the last op is a `BRANCH`, `BRANCHIND` or
 /// `RETURN`. Stepping back over an instruction that does not is leaving the
 /// block for code that never runs ahead of the dispatch.
-fn falls_through(ops: &[FullOp]) -> bool {
+pub(super) fn falls_through(ops: &[FullOp]) -> bool {
     !ops.last().is_some_and(|op| {
         matches!(op.opcode, OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_RETURN)
     })
@@ -643,7 +650,7 @@ fn falls_through(ops: &[FullOp]) -> bool {
 
 /// Within one instruction's `ops`, the ops that compute any of `want`, by index,
 /// and the varnodes that computation reads from outside the instruction.
-fn feeders(ops: &[FullOp], mut want: Vec<Key>, data: Option<&Rc<AddrSpace>>) -> (Vec<Key>, Vec<usize>) {
+pub(super) fn feeders(ops: &[FullOp], mut want: Vec<Key>, data: Option<&Rc<AddrSpace>>) -> (Vec<Key>, Vec<usize>) {
     let mut feeding = Vec::new();
     for (i, op) in ops.iter().enumerate().rev() {
         let Some(out) = op.out.as_ref().and_then(|vn| key_of(vn, data)) else { continue };
@@ -790,12 +797,17 @@ pub(super) enum Val {
     Halves { table: u64, width: u32 },
     /// `base` plus a doubled entry: the case address of a `tbb`/`tbh`.
     Short { table: u64, width: u32, base: u64 },
+    /// A pointer-wide word read out of one constant address, no index: a
+    /// forwarding veneer's slot (`mov slot(%rip),%rax; jmp *%rax`), which
+    /// is never a table but is known not to be one. Unknown to every other
+    /// op.
+    Slot,
 }
 
 /// A varnode's identity, in the two classes the fold models — the same split
 /// [`super::kuna_picpool`] makes, since `register` and `ram` are both processor
 /// spaces and only the default data space tells them apart.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum Key {
     Reg(u64, u32),
     Tmp(u64, u32),
@@ -821,11 +833,16 @@ pub(super) fn value_of(vn: &VarnodeData, vals: &[(Key, Val)], data: Option<&Rc<A
     if space.get_type() == spacetype::IPTR_CONSTANT {
         return Some(Val::Const(vn.offset & mask(vn.size)));
     }
-    let key = key_of(vn, data)?;
+    let big = data.is_some_and(|d| d.is_big_endian());
+    value_of_key(key_of(vn, data)?, vals, big)
+}
+
+/// [`value_of`] by key: `key`'s own tracked value, else the low part of the
+/// wider register that holds it (`big` is the processor's byte order).
+pub(super) fn value_of_key(key: Key, vals: &[(Key, Val)], big: bool) -> Option<Val> {
     if let Some((_, v)) = vals.iter().rev().find(|(k, _)| *k == key) {
         return Some(*v);
     }
-    let big = data.is_some_and(|d| d.is_big_endian());
     let (class, off, size) = split(key);
     vals.iter().rev().find_map(|&(k, v)| {
         let (c, o, s) = split(k);
@@ -847,7 +864,7 @@ pub(super) fn value_of(vn: &VarnodeData, vals: &[(Key, Val)], data: Option<&Rc<A
 /// Does this op make every tracked register unbelievable? A call clobbers the
 /// caller-saved ones; what the calling convention preserves survives it
 /// ([`survives`]).
-fn leaves_registers_unknown(opcode: OpCode) -> bool {
+pub(super) fn leaves_registers_unknown(opcode: OpCode) -> bool {
     matches!(
         opcode,
         OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER
@@ -859,7 +876,7 @@ fn leaves_registers_unknown(opcode: OpCode) -> bool {
 /// and its dispatch (`lea jt(%rip),%r13; ... call f; cmp $5,%eax; ja; mov
 /// %eax,%eax; movslq 0(%r13,%rax,4),%rax`), and the compiler relied on the
 /// callee keeping it.
-fn survives(key: Key, preserved: &[(u64, u64)]) -> bool {
+pub(super) fn survives(key: Key, preserved: &[(u64, u64)]) -> bool {
     let Key::Reg(off, size) = key else { return false };
     let end = off.saturating_add(u64::from(size));
     preserved.iter().any(|&(lo, hi)| off >= lo && end <= hi)
@@ -893,8 +910,13 @@ pub(super) fn fold(
     pool: &PoolImage,
 ) -> Option<Val> {
     let get = |i: usize| -> Option<Val> { value_of(op.ins.get(i)?, vals, data) };
+    let ptr = pool.ptr_width();
     match op.opcode {
-        OpCode::CPUI_COPY => get(0),
+        OpCode::CPUI_COPY => get(0).or_else(|| {
+            let vn = op.ins.first()?;
+            let space = vn.space.as_ref()?;
+            (vn.size == ptr && matches!(data, Some(d) if Rc::ptr_eq(space, d))).then_some(Val::Slot)
+        }),
         OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => match get(0)? {
             Val::Const(c) => {
                 let width = op.ins.first()?.size;
@@ -905,7 +927,7 @@ pub(super) fn fold(
                 }))
             }
             v @ (Val::Entry { .. } | Val::Case { .. } | Val::Halves { .. }) => Some(v),
-            Val::Indexed(_) | Val::Short { .. } => None,
+            Val::Indexed(_) | Val::Short { .. } | Val::Slot => None,
         },
         OpCode::CPUI_INT_ADD => {
             let out = op.out.as_ref()?.size;
@@ -934,8 +956,10 @@ pub(super) fn fold(
                 }
                 // A constant plus something the fold does not know is the array
                 // address: the unknown is the selector, scaled.
-                (Some(Val::Const(a)), None) | (None, Some(Val::Const(a))) => Some(Val::Indexed(a)),
-                (Some(Val::Indexed(a)), None) | (None, Some(Val::Indexed(a))) => {
+                (Some(Val::Const(a)), None | Some(Val::Slot)) | (None | Some(Val::Slot), Some(Val::Const(a))) => {
+                    Some(Val::Indexed(a))
+                }
+                (Some(Val::Indexed(a)), None | Some(Val::Slot)) | (None | Some(Val::Slot), Some(Val::Indexed(a))) => {
                     Some(Val::Indexed(a))
                 }
                 _ => None,
@@ -967,10 +991,11 @@ pub(super) fn fold(
             let width = op.out.as_ref()?.size;
             match get(1)? {
                 Val::Indexed(table) | Val::Short { base: table, .. }
-                    if matches!(width, 1 | 2 | 4) || width == pool.ptr_width() =>
+                    if matches!(width, 1 | 2 | 4) || width == ptr =>
                 {
                     Some(Val::Entry { table, width })
                 }
+                Val::Const(_) if width == ptr => Some(Val::Slot),
                 _ => None,
             }
         }
