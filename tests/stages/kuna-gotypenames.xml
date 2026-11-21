@@ -61,7 +61,7 @@
   <com>quit</com>
 </script>
 <stringmatch name="gotypenames #1: go1.16 names the itab of the interface conversion" min="1" max="1">dat_[0-9a-f]+ = go:itab\.\*main\.Point,main\.Shape;</stringmatch>
-<stringmatch name="gotypenames #2: go1.16 names the descriptors printany compares against" min="1" max="1">v[0-9]+ == &amp;type:string</stringmatch>
+<stringmatch name="gotypenames #2: go1.16 names the descriptors printany compares against" min="1" max="1">a0 == &amp;type:string</stringmatch>
 <stringmatch name="gotypenames #3: go1.17 interns the allocated struct with its fields" min="1" max="1">main\.Point \*v1; // rax</stringmatch>
 <stringmatch name="gotypenames #4: go1.26 spells the allocated type with its import path" min="1" max="1">runtime\.newobject\(&amp;type:internal/bisect\.Matcher\)</stringmatch>
 <stringmatch name="gotypenames #5: go1.26 spells the itab with its import path" min="1" max="1">= go:itab\.internal/poll\.errNetClosing,error;</stringmatch>
