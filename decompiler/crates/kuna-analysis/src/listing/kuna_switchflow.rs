@@ -37,11 +37,14 @@
 //! agree keep the value, ones that disagree make it unknown, and a predecessor
 //! the walk has not decoded — the back edge of a loop whose latch only the
 //! case bodies reach — contributes nothing, as the linear slice never saw it
-//! either. The range check is the nearest conditional branch up the single
-//! chain of predecessors ending at the dispatch, falling through to it, read
-//! by [`kuna_switchtable::guard_cases`] as before, and it must compare the
-//! register the table is indexed by; a join, a taken side, any other
-//! conditional branch or a comparison of another value yields no bound.
+//! either. The range check is, on every path of predecessors up from the
+//! dispatch, the nearest conditional branch, by either of its sides, read by
+//! [`kuna_switchtable::guard_cases`] as before; a join takes the largest
+//! count. It must compare the value the table is indexed by: the addend of
+//! the table-address sum, followed up the path, names a register the
+//! comparison reads or is loaded from the address it loads. The entry, a
+//! cycle, any other conditional branch or a comparison of another value
+//! yields no bound.
 //!
 //! The read runs only once the dispatching function's queue has drained, so
 //! every edge of the body is known, and only for a dispatch the linear read

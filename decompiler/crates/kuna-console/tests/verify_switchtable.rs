@@ -20,8 +20,10 @@
 //! the dispatches whose base or range check lies beyond a linear walk back
 //! from the jump: a base hoisted out of a loop above an `if/else` whose first
 //! arm ends in `jmp`, two switches sharing one base where the first switch's
-//! case bodies end in `jmp`, and a range check more than sixteen instructions
-//! up. The reference walk reads them over the function's predecessor edges
+//! case bodies end in `jmp`, a range check more than sixteen instructions up,
+//! a check clang copies into both arms above the dispatch's block, and a
+//! selector compared in memory and loaded again for the dispatch. The
+//! reference walk reads them over the function's predecessor edges
 //! (`listing/kuna_switchflow.rs`).
 //!
 //! Each fixture is one `dispatch` whose four cases push a distinct literal and
@@ -462,7 +464,7 @@ struct Flow {
     callees: [u64; 4],
 }
 
-const FLOW: [Flow; 5] = [
+const FLOW: [Flow; 7] = [
     Flow {
         shape: "base hoisted out of the loop, above an if/else whose first arm ends in jmp",
         fixture: "switchtable_flow_x86_64",
@@ -494,6 +496,22 @@ const FLOW: [Flow; 5] = [
         branch: 0x10011d,
         cases: [0x10011f, 0x100121, 0x100123, 0x100125],
         callees: [0x10017a, 0x100180, 0x100186, 0x10018c],
+    },
+    Flow {
+        shape: "clang -O3: the range check copied into both arms above the dispatch's block",
+        fixture: "switchtable_flow_x86_64",
+        dispatch: 0x100201,
+        branch: 0x100239,
+        cases: [0x10023b, 0x100242, 0x100249, 0x100250],
+        callees: [0x1002b3, 0x1002b9, 0x1002bf, 0x1002c5],
+    },
+    Flow {
+        shape: "the selector compared in memory and loaded again from the same address",
+        fixture: "switchtable_flow_x86_64",
+        dispatch: 0x10025b,
+        branch: 0x100291,
+        cases: [0x100293, 0x10029a, 0x1002a1, 0x1002a8],
+        callees: [0x1002cb, 0x1002d1, 0x1002d7, 0x1002dd],
     },
     Flow {
         shape: "MSVC: the second switch through a shared LEA RDI,[__ImageBase]",
@@ -550,12 +568,13 @@ fn a_callee_behind_a_hoisted_base_or_far_guard_has_its_dispatcher_as_caller() {
 
 /// A miss is never silent: every range-checked computed jump of the flow
 /// fixtures is read, and the ones with no bound — `unrelated_guard`'s
-/// unchecked dispatch at `0x1001ad`, and the tail jump through a register in
+/// unchecked dispatch at `0x1001ad` and `field_guard`'s at `0x100300`, and the
+/// tail jump through a register in
 /// `callproto_x86_64`'s `report` (`jmp r8` at `0x13b0`, no table) — are
 /// reported as unresolved.
 #[test]
 fn an_unread_computed_jump_is_reported_and_a_read_one_is_not() {
-    for (fixture, unread) in [("switchtable_flow_x86_64", &[0x1001ad][..]), ("pe_switchshared_x86_64.exe", &[])] {
+    for (fixture, unread) in [("switchtable_flow_x86_64", &[0x1001ad, 0x100300][..]), ("pe_switchshared_x86_64.exe", &[])] {
         let idx = index_of(fixture);
         let left: Vec<u64> = idx.unresolved_computed_jumps().collect();
         assert_eq!(left, unread, "{fixture}: {left:#x?}");
@@ -572,13 +591,47 @@ fn an_unread_computed_jump_is_reported_and_a_read_one_is_not() {
 #[test]
 fn a_comparison_of_another_value_bounds_no_table() {
     let idx = index_of("switchtable_flow_x86_64");
-    let jumps = |at: u64| -> Vec<u64> {
-        let mut to: Vec<u64> =
-            idx.refs_from_instruction(at).iter().filter(|r| r.kind == XrefKind::Jump).map(|r| r.to).collect();
-        to.sort_unstable();
-        to
-    };
-    assert_eq!(jumps(0x1001ad), Vec::<u64>::new());
-    assert_eq!(jumps(0x1001d2), [0x1001d4, 0x1001d6, 0x1001d8, 0x1001da]);
+    assert_eq!(jumps_from(&idx, 0x1001ad), Vec::<u64>::new());
+    assert_eq!(jumps_from(&idx, 0x1001d2), [0x1001d4, 0x1001d6, 0x1001d8, 0x1001da]);
     assert_eq!(idx.function_containing(0x1001d2), Some(0x1001bd));
+}
+
+/// The jump edges filed at the instruction `at`, sorted.
+fn jumps_from(idx: &XrefIndex, at: u64) -> Vec<u64> {
+    let mut to: Vec<u64> =
+        idx.refs_from_instruction(at).iter().filter(|r| r.kind == XrefKind::Jump).map(|r| r.to).collect();
+    to.sort_unstable();
+    to
+}
+
+/// A comparison of another field of the same struct is no range check.
+/// `field_guard` dispatches on the field at `8(%rdi)` under `cmpl
+/// $0x800,4(%rdi); jae`: the field's address, a constant plus an unknown, was
+/// taken for the table's index, whose base register the comparison reads, and
+/// the 2,049 cases ran on into `field_next`'s table and took its dispatch.
+#[test]
+fn a_comparison_of_another_field_bounds_no_table() {
+    let idx = index_of("switchtable_flow_x86_64");
+    assert_eq!(jumps_from(&idx, 0x100300), Vec::<u64>::new());
+    assert_eq!(jumps_from(&idx, 0x100325), [0x100327, 0x100329, 0x10032b, 0x10032d]);
+    assert_eq!(idx.function_containing(0x100325), Some(0x100310));
+}
+
+/// clang -O3 copies the range check into both arms above the dispatch's
+/// block (`dup_guard`): one arm branches into it on `jbe`, the other falls
+/// into it past `ja`. Every path into the block checks the selector, so the
+/// join is bounded.
+#[test]
+fn a_check_copied_into_both_arms_bounds_the_join() {
+    let idx = index_of("switchtable_flow_x86_64");
+    assert_eq!(jumps_from(&idx, 0x100239), [0x10023b, 0x100242, 0x100249, 0x100250]);
+}
+
+/// `mem_guard` compares the selector in memory and loads it again from the
+/// same address for the dispatch (`cmpb $3,(%r12,%rbx); ja; movzbl
+/// (%r12,%rbx),%eax`), as gcc does for a `switch` on a byte of an array.
+#[test]
+fn a_selector_loaded_where_the_comparison_loads_is_bounded() {
+    let idx = index_of("switchtable_flow_x86_64");
+    assert_eq!(jumps_from(&idx, 0x100291), [0x100293, 0x10029a, 0x1002a1, 0x1002a8]);
 }

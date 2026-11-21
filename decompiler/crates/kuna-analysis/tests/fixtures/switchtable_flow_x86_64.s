@@ -249,6 +249,161 @@ next_table:
 	leaf	t_nt_2, 0x52
 	leaf	t_nt_3, 0x53
 
+# clang -O3: the range check copied into both arms of an if/else above the
+# dispatch's block, one arm branching into it (`jbe`) and the other falling
+# into it past `ja` the default. The block is a join of two checks, both of
+# the selector; the base is above the arms, out of the slice's reach.
+	.globl	dup_guard
+	.type	dup_guard, @function
+dup_guard:
+	push	%rbx
+	push	%r12
+	push	%r13
+	mov	%edi, %r12d
+	lea	.Ldg_jt(%rip), %r13
+	test	$0x1, %sil
+	jne	.Ldg_odd
+	call	branch_b
+	cmp	$0x3, %r12d
+	jbe	.Ldg_disp
+	jmp	.Ldg_out
+.Ldg_odd:
+	call	branch_a
+	cmp	$0x3, %r12d
+	ja	.Ldg_out
+.Ldg_disp:
+	mov	%r12d, %eax
+	movslq	(%r13,%rax,4), %rax
+	add	%r13, %rax
+	jmp	*%rax
+.Ldg_c0:
+	call	t_dg_0
+	jmp	.Ldg_out
+.Ldg_c1:
+	call	t_dg_1
+	jmp	.Ldg_out
+.Ldg_c2:
+	call	t_dg_2
+	jmp	.Ldg_out
+.Ldg_c3:
+	call	t_dg_3
+.Ldg_out:
+	pop	%r13
+	pop	%r12
+	pop	%rbx
+	ret
+	.size	dup_guard, .-dup_guard
+
+# gcc: the selector compared in memory and loaded again from the same
+# address for the dispatch (`cmpb $0x78,(%rax,%rcx); ja; movzbl
+# (%rax,%rcx),%edi`), the base above an if/else whose first arm ends in `jmp`.
+	.globl	mem_guard
+	.type	mem_guard, @function
+mem_guard:
+	push	%rbx
+	push	%r12
+	push	%r13
+	mov	%rdi, %r12
+	mov	%rdx, %rbx
+	lea	.Lmg_jt(%rip), %r13
+	test	%esi, %esi
+	jne	.Lmg_a
+	call	branch_b
+	jmp	.Lmg_merge
+.Lmg_a:
+	call	branch_a
+.Lmg_merge:
+	cmpb	$0x3, (%r12,%rbx,1)
+	ja	.Lmg_out
+	movzbl	(%r12,%rbx,1), %eax
+	movslq	(%r13,%rax,4), %rax
+	add	%r13, %rax
+	jmp	*%rax
+.Lmg_c0:
+	call	t_mg_0
+	jmp	.Lmg_out
+.Lmg_c1:
+	call	t_mg_1
+	jmp	.Lmg_out
+.Lmg_c2:
+	call	t_mg_2
+	jmp	.Lmg_out
+.Lmg_c3:
+	call	t_mg_3
+.Lmg_out:
+	pop	%r13
+	pop	%r12
+	pop	%rbx
+	ret
+	.size	mem_guard, .-mem_guard
+
+	leaf	t_dg_0, 0x60
+	leaf	t_dg_1, 0x61
+	leaf	t_dg_2, 0x62
+	leaf	t_dg_3, 0x63
+	leaf	t_mg_0, 0x70
+	leaf	t_mg_1, 0x71
+	leaf	t_mg_2, 0x72
+	leaf	t_mg_3, 0x73
+
+# A comparison of another field of the same struct is no range check: the
+# discriminant at 8(%rdi) is dispatched on unchecked under `cmpl
+# $0x800,4(%rdi); jae`. The field's own address is a constant plus an
+# unknown, as the table's is, but it is not the table's; read as 2,049 cases
+# the table ran on into `field_next`'s, whose own four cases were lost.
+	.globl	field_guard
+	.type	field_guard, @function
+field_guard:
+	push	%rbx
+	lea	.Lfd_jt(%rip), %rbx
+	cmpl	$0x800, 0x4(%rdi)
+	jae	.Lfd_out
+	jmp	.Lfd_disp
+.Lfd_disp:
+	mov	0x8(%rdi), %eax
+	movslq	(%rbx,%rax,4), %rax
+	add	%rbx, %rax
+	jmp	*%rax
+.Lfd_c0:
+	call	t_fd_0
+	jmp	.Lfd_out
+.Lfd_c1:
+	call	t_fd_1
+.Lfd_out:
+	pop	%rbx
+	ret
+	.size	field_guard, .-field_guard
+
+# The control: a switch the slice reads, whose table follows `field_guard`'s.
+	.globl	field_next
+	.type	field_next, @function
+field_next:
+	cmp	$0x3, %edi
+	ja	.Lfn_out
+	mov	%edi, %eax
+	lea	.Lfn_jt(%rip), %rcx
+	movslq	(%rcx,%rax,4), %rax
+	add	%rcx, %rax
+	jmp	*%rax
+.Lfn_c0:
+	jmp	t_fn_0
+.Lfn_c1:
+	jmp	t_fn_1
+.Lfn_c2:
+	jmp	t_fn_2
+.Lfn_c3:
+	jmp	t_fn_3
+.Lfn_out:
+	ret
+	.size	field_next, .-field_next
+
+	leaf	t_fd_0, 0x80
+	leaf	t_fd_1, 0x81
+	leaf	t_fn_0, 0x90
+	leaf	t_fn_1, 0x91
+	leaf	t_fn_2, 0x92
+	leaf	t_fn_3, 0x93
+
 	.section .rodata
 	.align 4
 .Lli_jt:
@@ -280,4 +435,22 @@ next_table:
 	.long	.Lnt_c1-.Lnt_jt
 	.long	.Lnt_c2-.Lnt_jt
 	.long	.Lnt_c3-.Lnt_jt
+.Ldg_jt:
+	.long	.Ldg_c0-.Ldg_jt
+	.long	.Ldg_c1-.Ldg_jt
+	.long	.Ldg_c2-.Ldg_jt
+	.long	.Ldg_c3-.Ldg_jt
+.Lmg_jt:
+	.long	.Lmg_c0-.Lmg_jt
+	.long	.Lmg_c1-.Lmg_jt
+	.long	.Lmg_c2-.Lmg_jt
+	.long	.Lmg_c3-.Lmg_jt
+.Lfd_jt:
+	.long	.Lfd_c0-.Lfd_jt
+	.long	.Lfd_c1-.Lfd_jt
+.Lfn_jt:
+	.long	.Lfn_c0-.Lfn_jt
+	.long	.Lfn_c1-.Lfn_jt
+	.long	.Lfn_c2-.Lfn_jt
+	.long	.Lfn_c3-.Lfn_jt
 	.section .note.GNU-stack,"",@progbits

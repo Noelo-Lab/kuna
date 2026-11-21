@@ -1398,6 +1398,11 @@ mod tests {
     /// The case count `guard_limit` reads for a compare `writer` and a branch
     /// `branch` whose last op is the `CBRANCH`.
     fn guarded(writer: &[FullOp], branch: &[FullOp], max: usize) -> Option<usize> {
+        guard_cases(writer, &feeding(writer, branch), branch, branch.len() - 1, None, max, false)
+    }
+
+    /// The ops of `writer` that compute what `branch`'s `CBRANCH` reads.
+    fn feeding(writer: &[FullOp], branch: &[FullOp]) -> Vec<usize> {
         let at = branch.len() - 1;
         let want: Vec<Key> = branch[at].ins.get(1).and_then(|v| key_of(v, None)).into_iter().collect();
         let (reads, _) = feeders(&branch[..at], want, None);
@@ -1407,8 +1412,7 @@ mod tests {
             .filter_map(|o| o.out.as_ref().and_then(|v| key_of(v, None)))
             .filter(|w| reads.iter().any(|r| keys_overlap(*r, *w)))
             .collect();
-        let (_, feeding) = feeders(writer, written, None);
-        guard_cases(writer, &feeding, branch, at, None, max, false)
+        feeders(writer, written, None).1
     }
 
     /// `ja` sends the selectors above `c` away: the dispatch sees `c + 1`.
@@ -1434,6 +1438,27 @@ mod tests {
         let jb = vec![op(OpCode::CPUI_CBRANCH, None, vec![vn(&reg, 0x9000, 8), vn(&reg, 0x200, 1)])];
         assert_eq!(guarded(&x86_cmp(&reg, &uniq, &cst, 0xffff_fffb), &jb, 1024), Some(5));
         assert_eq!(guarded(&x86_cmp(&reg, &uniq, &cst, 5), &jb, 1024), None);
+    }
+
+    /// A branch into the dispatch after `cmp $3`: `jbe` keeps 3 itself in
+    /// range, `jb` sends it away, so the `c + 1` both count as is one too many
+    /// for `jb`, which the predecessor-edge read declines.
+    #[test]
+    fn a_branch_into_the_dispatch_keeps_or_sends_away_its_constant() {
+        let (reg, uniq, cst) = spaces();
+        let (cf, zf, t) = (vn(&reg, 0x200, 1), vn(&reg, 0x206, 1), vn(&uniq, 0x10, 1));
+        let jbe = vec![
+            op(OpCode::CPUI_BOOL_OR, Some(t.clone()), vec![cf.clone(), zf]),
+            op(OpCode::CPUI_CBRANCH, None, vec![vn(&reg, 0x9000, 8), t]),
+        ];
+        let jb = vec![op(OpCode::CPUI_CBRANCH, None, vec![vn(&reg, 0x9000, 8), cf])];
+        let cmp = x86_cmp(&reg, &uniq, &cst, 3);
+        let read = |branch: &[FullOp]| {
+            let (feeding, at) = (feeding(&cmp, branch), branch.len() - 1);
+            (guard_cases(&cmp, &feeding, branch, at, None, 1024, true), boundary_leaves(&cmp, &feeding, branch, at, None, true))
+        };
+        assert_eq!(read(&jbe), (Some(4), false));
+        assert_eq!(read(&jb), (Some(4), true));
     }
 
     /// `je` reads only ZF: the carry of the same `cmp` is no bound.

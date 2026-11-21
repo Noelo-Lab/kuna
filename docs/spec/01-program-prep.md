@@ -10698,15 +10698,30 @@ what the calling convention does not preserve. Predecessors that agree keep
 the value, ones that disagree make it unknown, and a predecessor the walk has
 not decoded — the back edge of a loop whose latch only the case bodies reach
 — contributes nothing, as the linear slice never saw it either. The range
-check is the nearest conditional branch up the single chain of predecessors
-that ends at the dispatch, falling through to it, read by the same rule as
-before, and it must compare the **selector**: the table-address addend the
-fold could not value, followed up the same instructions through copies,
-extensions and arithmetic with a constant (the steps the masked index is
-followed by), must reach the comparison still naming a register it reads. A
-join on the way up, the function's entry, a branch the chain leaves by its
-taken side, a conditional branch that is no range check and a comparison of
-another value all bound nothing. Without that test the far reach read
+check is found on **every path** of predecessors up from the dispatch: on
+each, the nearest conditional branch, whether the path leaves it by its
+fall-through or by its taken side, read by the same rule as before. clang
+`-O3` copies a switch's check into both arms of an `if/else` above the
+dispatch's block, `cmp $7,%r15d; jbe disp` in one and `cmp $7,%r15d; ja
+default` falling into it in the other; a join takes the largest count of its
+paths. A check the path leaves by its taken side that sends its constant
+itself away (`cmp $5,%edi; jb disp`, where `jbe` would keep 5) is declined,
+since the count rule states one case more than such a check admits. Each
+check must compare the **selector**: the addend of the sum that addresses
+the table itself (the sum the table's load reads from, or one whose constant
+is the table), which the fold could not value, followed up the path through
+copies, extensions and arithmetic with a constant (the steps the masked index
+is followed by), must reach the comparison still naming a register it reads,
+or be loaded from the address the comparison loads from (gcc's `cmpb
+$0x78,(%rax,%rcx); ja; movzbl (%rax,%rcx),%edi`) with no store, call or write
+to that address's registers in between; a register the calling convention
+does not preserve is a different value past a call. Any other constant plus
+unknown on the way is no index: a field's address (`mov 8(%rdi),%eax`) is
+one, and its base register is what a comparison of another field (`cmpl
+$0x800,4(%rdi)`) reads. The function's entry, a path that comes back to
+itself, more than 64 predecessors visited, a conditional branch that is no
+range check and a comparison of another value all bound nothing. Without that
+test the far reach read
 comparisons the slice never could as table sizes: Rust's `write_char` matches
 an enum discriminant loaded from memory with no range check, seventeen
 instructions under `cmp $0x800,%esi; jae` on the code point, and that read
