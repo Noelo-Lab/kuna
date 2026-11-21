@@ -1,0 +1,609 @@
+# Instructions the RH850 (V850E3v5) cores add to V850E2M:
+# rotate, bit-field insert, loop, register-range push/pop, linked load and
+# conditional store, doubleword load/store, register-indirect JARL, cache and
+# hypervisor operations, and the system-register banks LDSR/STSR select.
+
+
+
+#####################################################
+#####		  DataManipulation		#####
+#####################################################
+
+
+# ROTL imm5, reg2, reg3 - rrrrr111111iiiii|wwwww00011000100
+:rotl op0004, R1115, R2731 is op0510=0x3F & op0004 & R1115; op1626=0xC4 & R2731
+{
+	local lsh:4 = op0004;
+	local res:4 = (R1115 << lsh) | (R1115 >> (32 - lsh));
+	R2731 = res;
+	set_OV0_S_Z(res);
+	$(CY) = res[0,1] && (lsh != 0);
+}
+
+# ROTL reg1, reg2, reg3 - rrrrr111111RRRRR|wwwww00011000110
+:rotl R0004, R1115, R2731 is op0510=0x3F & R0004 & R1115; op1626=0xC6 & R2731
+{
+	local lsh:4 = R0004 & 0x1f;
+	local rsh:4 = (32 - lsh) & 0x1f;
+	local res:4 = (R1115 << lsh) | (R1115 >> rsh);
+	R2731 = res;
+	set_OV0_S_Z(res);
+	$(CY) = res[0,1] && (lsh != 0);
+}
+
+# BINS reg1, pos, width, reg2 - rrrrr111111RRRRR|MMMMK0001SS1LLL0
+# msb = pos + width - 1 and lsb = pos; MMMM and KLLL are their low four bits,
+# SS says which of them are 16 or more.
+macro bitfield_insert(dst, src, msb, lsb)
+{
+	local mask:4 = ((2 << msb) - 1) & ~((1 << lsb) - 1);
+	local res:4 = (dst & ~mask) | ((src << lsb) & mask);
+	dst = res;
+	set_OV0_S_Z(res);
+}
+
+:bins R0004, pos, width, R1115 is op0510=0x3F & R0004 & R1115; op2831 & op2727 & op2026=0x09 & op1719 & op1616=0
+[ pos = ((op2727 << 3) | op1719) + 16; width = op2831 + 17 - pos; ]
+{
+	local msb:4 = op2831 + 16;
+	local lsb:4 = pos;
+	bitfield_insert(R1115, R0004, msb, lsb);
+}
+:bins R0004, pos, width, R1115 is op0510=0x3F & R0004 & R1115; op2831 & op2727 & op2026=0x0B & op1719 & op1616=0
+[ pos = (op2727 << 3) | op1719; width = op2831 + 17 - pos; ]
+{
+	local msb:4 = op2831 + 16;
+	local lsb:4 = pos;
+	bitfield_insert(R1115, R0004, msb, lsb);
+}
+:bins R0004, pos, width, R1115 is op0510=0x3F & R0004 & R1115; op2831 & op2727 & op2026=0x0D & op1719 & op1616=0
+[ pos = (op2727 << 3) | op1719; width = op2831 + 1 - pos; ]
+{
+	local msb:4 = op2831;
+	local lsb:4 = pos;
+	bitfield_insert(R1115, R0004, msb, lsb);
+}
+
+
+
+#####################################################
+#####		     Load / Store		#####
+#####################################################
+
+
+# LD.DW disp23[reg1], reg3 - 00000111101RRRRR|wwwwwdddddd01001|DDDDDDDDDDDDDDDD
+:ld.dw disp23[R0004], R2731x2 is op0515=0x3D & R0004; R2731x2 & op2727=0 & op2126 & op1620=0x9; s3247
+[ disp23 = (s3247 << 7) | (op2126 << 1); ]
+{
+	local adr:4 = R0004 + disp23;
+	R2731x2 = *:8 adr;
+}
+:ld.dw disp23[R0004], R2731 is op0515=0x3D & R0004; R2731 & R2731hi & op2727=1 & op2126 & op1620=0x9; s3247
+[ disp23 = (s3247 << 7) | (op2126 << 1); ]
+{
+	local adr:4 = R0004 + disp23;
+	local data:8 = *:8 adr;
+	R2731 = data:4;
+	R2731hi = data(4);
+}
+
+# ST.DW reg3, disp23[reg1] - 00000111101RRRRR|wwwwwdddddd01111|DDDDDDDDDDDDDDDD
+:st.dw R2731x2, disp23[R0004] is op0515=0x3D & R0004; R2731x2 & op2727=0 & op2126 & op1620=0xF; s3247
+[ disp23 = (s3247 << 7) | (op2126 << 1); ]
+{
+	local adr:4 = R0004 + disp23;
+	*:8 adr = R2731x2;
+}
+:st.dw R2731, disp23[R0004] is op0515=0x3D & R0004; R2731 & R2731hi & op2727=1 & op2126 & op1620=0xF; s3247
+[ disp23 = (s3247 << 7) | (op2126 << 1); ]
+{
+	local adr:4 = R0004 + disp23;
+	local data:8 = (zext(R2731hi) << 32) | zext(R2731);
+	*:8 adr = data;
+}
+
+# LDL.W [reg1], reg3 - 00000111111RRRRR|wwwww01101111000
+:ldl.w [R0004], R2731 is op0515=0x3F & R0004; op1626=0x378 & R2731
+{
+	R2731 = *:4 R0004;
+	LLBIT = 1;
+}
+
+# STC.W reg3, [reg1] - 00000111111RRRRR|wwwww01101111010
+:stc.w R2731, [R0004] is op0515=0x3F & R0004; op1626=0x37A & R2731
+{
+	local linked:1 = LLBIT;
+	LLBIT = 0;
+	if (!linked) goto <done>;
+	*:4 R0004 = R2731;
+	<done>
+	R2731 = zext(linked);
+}
+
+# CLL - 1111111111111111|1111000101100000
+:cll is op0015=0xFFFF; op1631=0xF160
+{
+	LLBIT = 0;
+}
+
+
+
+#####################################################
+#####		    Stack ranges		#####
+#####################################################
+
+
+# PUSHSP rh-rt stores rh, rh+1, ... rt at descending addresses; POPSP rh-rt
+# loads rt, rt-1, ... rh at ascending ones.  Each general register has one
+# table per direction that acts only when rh <= register <= rt; the two
+# comparisons are written as the bit prefixes that cover the range.
+Push0: is op0004=0; op2731	{ local zero:4 = 0; push(zero); }
+Push0: is op0004; op2731	{ }
+Push1: is op0104=0; (op2731=1 | op2831=1 | op2931=1 | op3031=1 | op3131=1)	{ push(r1); }
+Push1: is op0004; op2731	{ }
+Push2: is (op0104=0 | op0004=2); (op2831=1 | op2931=1 | op3031=1 | op3131=1)	{ push(r2); }
+Push2: is op0004; op2731	{ }
+Push3: is op0204=0 & rh0004; (op2731=3 | op2931=1 | op3031=1 | op3131=1)	{ local old:4 = sp + ((3 - rh0004) * 4); push(old); }
+Push3: is op0004; op2731	{ }
+Push4: is (op0204=0 | op0004=4); (op2931=1 | op3031=1 | op3131=1)	{ push(gp); }
+Push4: is op0004; op2731	{ }
+Push5: is (op0204=0 | op0104=2); (op2731=5 | op2831=3 | op3031=1 | op3131=1)	{ push(tp); }
+Push5: is op0004; op2731	{ }
+Push6: is (op0204=0 | op0104=2 | op0004=6); (op2831=3 | op3031=1 | op3131=1)	{ push(r6); }
+Push6: is op0004; op2731	{ }
+Push7: is op0304=0; (op2731=7 | op3031=1 | op3131=1)	{ push(r7); }
+Push7: is op0004; op2731	{ }
+Push8: is (op0304=0 | op0004=8); (op3031=1 | op3131=1)	{ push(r8); }
+Push8: is op0004; op2731	{ }
+Push9: is (op0304=0 | op0104=4); (op2731=9 | op2831=5 | op2931=3 | op3131=1)	{ push(r9); }
+Push9: is op0004; op2731	{ }
+Push10: is (op0304=0 | op0104=4 | op0004=10); (op2831=5 | op2931=3 | op3131=1)	{ push(r10); }
+Push10: is op0004; op2731	{ }
+Push11: is (op0304=0 | op0204=2); (op2731=11 | op2931=3 | op3131=1)	{ push(r11); }
+Push11: is op0004; op2731	{ }
+Push12: is (op0304=0 | op0204=2 | op0004=12); (op2931=3 | op3131=1)	{ push(r12); }
+Push12: is op0004; op2731	{ }
+Push13: is (op0304=0 | op0204=2 | op0104=6); (op2731=13 | op2831=7 | op3131=1)	{ push(r13); }
+Push13: is op0004; op2731	{ }
+Push14: is (op0304=0 | op0204=2 | op0104=6 | op0004=14); (op2831=7 | op3131=1)	{ push(r14); }
+Push14: is op0004; op2731	{ }
+Push15: is op0404=0; (op2731=15 | op3131=1)	{ push(r15); }
+Push15: is op0004; op2731	{ }
+Push16: is (op0404=0 | op0004=16); op3131=1	{ push(r16); }
+Push16: is op0004; op2731	{ }
+Push17: is (op0404=0 | op0104=8); (op2731=17 | op2831=9 | op2931=5 | op3031=3)	{ push(r17); }
+Push17: is op0004; op2731	{ }
+Push18: is (op0404=0 | op0104=8 | op0004=18); (op2831=9 | op2931=5 | op3031=3)	{ push(r18); }
+Push18: is op0004; op2731	{ }
+Push19: is (op0404=0 | op0204=4); (op2731=19 | op2931=5 | op3031=3)	{ push(r19); }
+Push19: is op0004; op2731	{ }
+Push20: is (op0404=0 | op0204=4 | op0004=20); (op2931=5 | op3031=3)	{ push(r20); }
+Push20: is op0004; op2731	{ }
+Push21: is (op0404=0 | op0204=4 | op0104=10); (op2731=21 | op2831=11 | op3031=3)	{ push(r21); }
+Push21: is op0004; op2731	{ }
+Push22: is (op0404=0 | op0204=4 | op0104=10 | op0004=22); (op2831=11 | op3031=3)	{ push(r22); }
+Push22: is op0004; op2731	{ }
+Push23: is (op0404=0 | op0304=2); (op2731=23 | op3031=3)	{ push(r23); }
+Push23: is op0004; op2731	{ }
+Push24: is (op0404=0 | op0304=2 | op0004=24); op3031=3	{ push(r24); }
+Push24: is op0004; op2731	{ }
+Push25: is (op0404=0 | op0304=2 | op0104=12); (op2731=25 | op2831=13 | op2931=7)	{ push(r25); }
+Push25: is op0004; op2731	{ }
+Push26: is (op0404=0 | op0304=2 | op0104=12 | op0004=26); (op2831=13 | op2931=7)	{ push(r26); }
+Push26: is op0004; op2731	{ }
+Push27: is (op0404=0 | op0304=2 | op0204=6); (op2731=27 | op2931=7)	{ push(r27); }
+Push27: is op0004; op2731	{ }
+Push28: is (op0404=0 | op0304=2 | op0204=6 | op0004=28); op2931=7	{ push(r28); }
+Push28: is op0004; op2731	{ }
+Push29: is (op0404=0 | op0304=2 | op0204=6 | op0104=14); (op2731=29 | op2831=15)	{ push(r29); }
+Push29: is op0004; op2731	{ }
+Push30: is (op0404=0 | op0304=2 | op0204=6 | op0104=14 | op0004=30); op2831=15	{ push(ep); }
+Push30: is op0004; op2731	{ }
+Push31: is op0004; op2731=31	{ push(lp); }
+Push31: is op0004; op2731	{ }
+
+Pop0: is op0004=0; op2731	{ sp = sp + 4; }
+Pop0: is op0004; op2731	{ }
+Pop1: is op0104=0; (op2731=1 | op2831=1 | op2931=1 | op3031=1 | op3131=1)	{ pop(r1); }
+Pop1: is op0004; op2731	{ }
+Pop2: is (op0104=0 | op0004=2); (op2831=1 | op2931=1 | op3031=1 | op3131=1)	{ pop(r2); }
+Pop2: is op0004; op2731	{ }
+Pop3: is op0204=0; (op2731=3 | op2931=1 | op3031=1 | op3131=1)	{ sp = sp + 4; }
+Pop3: is op0004; op2731	{ }
+Pop4: is (op0204=0 | op0004=4); (op2931=1 | op3031=1 | op3131=1)	{ pop(gp); }
+Pop4: is op0004; op2731	{ }
+Pop5: is (op0204=0 | op0104=2); (op2731=5 | op2831=3 | op3031=1 | op3131=1)	{ pop(tp); }
+Pop5: is op0004; op2731	{ }
+Pop6: is (op0204=0 | op0104=2 | op0004=6); (op2831=3 | op3031=1 | op3131=1)	{ pop(r6); }
+Pop6: is op0004; op2731	{ }
+Pop7: is op0304=0; (op2731=7 | op3031=1 | op3131=1)	{ pop(r7); }
+Pop7: is op0004; op2731	{ }
+Pop8: is (op0304=0 | op0004=8); (op3031=1 | op3131=1)	{ pop(r8); }
+Pop8: is op0004; op2731	{ }
+Pop9: is (op0304=0 | op0104=4); (op2731=9 | op2831=5 | op2931=3 | op3131=1)	{ pop(r9); }
+Pop9: is op0004; op2731	{ }
+Pop10: is (op0304=0 | op0104=4 | op0004=10); (op2831=5 | op2931=3 | op3131=1)	{ pop(r10); }
+Pop10: is op0004; op2731	{ }
+Pop11: is (op0304=0 | op0204=2); (op2731=11 | op2931=3 | op3131=1)	{ pop(r11); }
+Pop11: is op0004; op2731	{ }
+Pop12: is (op0304=0 | op0204=2 | op0004=12); (op2931=3 | op3131=1)	{ pop(r12); }
+Pop12: is op0004; op2731	{ }
+Pop13: is (op0304=0 | op0204=2 | op0104=6); (op2731=13 | op2831=7 | op3131=1)	{ pop(r13); }
+Pop13: is op0004; op2731	{ }
+Pop14: is (op0304=0 | op0204=2 | op0104=6 | op0004=14); (op2831=7 | op3131=1)	{ pop(r14); }
+Pop14: is op0004; op2731	{ }
+Pop15: is op0404=0; (op2731=15 | op3131=1)	{ pop(r15); }
+Pop15: is op0004; op2731	{ }
+Pop16: is (op0404=0 | op0004=16); op3131=1	{ pop(r16); }
+Pop16: is op0004; op2731	{ }
+Pop17: is (op0404=0 | op0104=8); (op2731=17 | op2831=9 | op2931=5 | op3031=3)	{ pop(r17); }
+Pop17: is op0004; op2731	{ }
+Pop18: is (op0404=0 | op0104=8 | op0004=18); (op2831=9 | op2931=5 | op3031=3)	{ pop(r18); }
+Pop18: is op0004; op2731	{ }
+Pop19: is (op0404=0 | op0204=4); (op2731=19 | op2931=5 | op3031=3)	{ pop(r19); }
+Pop19: is op0004; op2731	{ }
+Pop20: is (op0404=0 | op0204=4 | op0004=20); (op2931=5 | op3031=3)	{ pop(r20); }
+Pop20: is op0004; op2731	{ }
+Pop21: is (op0404=0 | op0204=4 | op0104=10); (op2731=21 | op2831=11 | op3031=3)	{ pop(r21); }
+Pop21: is op0004; op2731	{ }
+Pop22: is (op0404=0 | op0204=4 | op0104=10 | op0004=22); (op2831=11 | op3031=3)	{ pop(r22); }
+Pop22: is op0004; op2731	{ }
+Pop23: is (op0404=0 | op0304=2); (op2731=23 | op3031=3)	{ pop(r23); }
+Pop23: is op0004; op2731	{ }
+Pop24: is (op0404=0 | op0304=2 | op0004=24); op3031=3	{ pop(r24); }
+Pop24: is op0004; op2731	{ }
+Pop25: is (op0404=0 | op0304=2 | op0104=12); (op2731=25 | op2831=13 | op2931=7)	{ pop(r25); }
+Pop25: is op0004; op2731	{ }
+Pop26: is (op0404=0 | op0304=2 | op0104=12 | op0004=26); (op2831=13 | op2931=7)	{ pop(r26); }
+Pop26: is op0004; op2731	{ }
+Pop27: is (op0404=0 | op0304=2 | op0204=6); (op2731=27 | op2931=7)	{ pop(r27); }
+Pop27: is op0004; op2731	{ }
+Pop28: is (op0404=0 | op0304=2 | op0204=6 | op0004=28); op2931=7	{ pop(r28); }
+Pop28: is op0004; op2731	{ }
+Pop29: is (op0404=0 | op0304=2 | op0204=6 | op0104=14); (op2731=29 | op2831=15)	{ pop(r29); }
+Pop29: is op0004; op2731	{ }
+Pop30: is (op0404=0 | op0304=2 | op0204=6 | op0104=14 | op0004=30); op2831=15	{ pop(ep); }
+Pop30: is op0004; op2731	{ }
+Pop31: is op0004; op2731=31	{ pop(lp); }
+Pop31: is op0004; op2731	{ }
+
+PushGroup0: is Push0 & Push1 & Push2 & Push3 & Push4 & Push5 & Push6 & Push7
+{
+	build Push0;
+	build Push1;
+	build Push2;
+	build Push3;
+	build Push4;
+	build Push5;
+	build Push6;
+	build Push7;
+}
+
+PushGroup1: is Push8 & Push9 & Push10 & Push11 & Push12 & Push13 & Push14 & Push15
+{
+	build Push8;
+	build Push9;
+	build Push10;
+	build Push11;
+	build Push12;
+	build Push13;
+	build Push14;
+	build Push15;
+}
+
+PushGroup2: is Push16 & Push17 & Push18 & Push19 & Push20 & Push21 & Push22 & Push23
+{
+	build Push16;
+	build Push17;
+	build Push18;
+	build Push19;
+	build Push20;
+	build Push21;
+	build Push22;
+	build Push23;
+}
+
+PushGroup3: is Push24 & Push25 & Push26 & Push27 & Push28 & Push29 & Push30 & Push31
+{
+	build Push24;
+	build Push25;
+	build Push26;
+	build Push27;
+	build Push28;
+	build Push29;
+	build Push30;
+	build Push31;
+}
+
+PopGroup3: is Pop31 & Pop30 & Pop29 & Pop28 & Pop27 & Pop26 & Pop25 & Pop24
+{
+	build Pop31;
+	build Pop30;
+	build Pop29;
+	build Pop28;
+	build Pop27;
+	build Pop26;
+	build Pop25;
+	build Pop24;
+}
+
+PopGroup2: is Pop23 & Pop22 & Pop21 & Pop20 & Pop19 & Pop18 & Pop17 & Pop16
+{
+	build Pop23;
+	build Pop22;
+	build Pop21;
+	build Pop20;
+	build Pop19;
+	build Pop18;
+	build Pop17;
+	build Pop16;
+}
+
+PopGroup1: is Pop15 & Pop14 & Pop13 & Pop12 & Pop11 & Pop10 & Pop9 & Pop8
+{
+	build Pop15;
+	build Pop14;
+	build Pop13;
+	build Pop12;
+	build Pop11;
+	build Pop10;
+	build Pop9;
+	build Pop8;
+}
+
+PopGroup0: is Pop7 & Pop6 & Pop5 & Pop4 & Pop3 & Pop2 & Pop1 & Pop0
+{
+	build Pop7;
+	build Pop6;
+	build Pop5;
+	build Pop4;
+	build Pop3;
+	build Pop2;
+	build Pop1;
+	build Pop0;
+}
+
+# PUSHSP rh-rt - 01000111111RRRRR|wwwww00101100000
+:pushsp _R0004-_R2731 is (op1115=0x08 & op0510=0x3F & _R0004; op1626=0x160 & _R2731)
+	& PushGroup0 & PushGroup1 & PushGroup2 & PushGroup3
+{
+	build PushGroup0;
+	build PushGroup1;
+	build PushGroup2;
+	build PushGroup3;
+}
+
+# POPSP rh-rt - 01100111111RRRRR|wwwww00101100000
+:popsp _R0004-_R2731 is (op1115=0x0C & op0510=0x3F & _R0004; op1626=0x160 & _R2731)
+	& PopGroup3 & PopGroup2 & PopGroup1 & PopGroup0
+{
+	build PopGroup3;
+	build PopGroup2;
+	build PopGroup1;
+	build PopGroup0;
+}
+
+
+
+#####################################################
+#####		       Branch			#####
+#####################################################
+
+
+# JARL [reg1], reg3 - 11000111111RRRRR|wwwww00101100000
+:jarl [R0004], R2731 is op1115=0x18 & op0510=0x3F & R0004; op1626=0x160 & R2731
+{
+	local dest:4 = R0004;
+	R2731 = inst_next;
+	call [dest];
+}
+
+# LOOP reg1, disp16 - 00000110111RRRRR|ddddddddddddddd1
+loopadr: res is op1731 [ res = inst_start - (op1731 << 1); ] { export *:4 res; }
+
+:loop R0004, loopadr is op0515=0x37 & R0004; op1616=1 & loopadr
+{
+	local minus1:4 = 0xFFFFFFFF;
+	set_general_flags_pos(R0004, minus1);
+	R0004 = R0004 + minus1;
+	if (R0004 != 0) goto loopadr;
+}
+
+
+
+#####################################################
+#####		       Special			#####
+#####################################################
+
+
+define pcodeop __cache;
+define pcodeop __prefetch;
+define pcodeop __snooze;
+define pcodeop __hvtrap;
+define pcodeop __hvcall;
+define pcodeop __dbtrap;
+define pcodeop __rmtrap;
+
+# CACHE cacheop, [reg1] - 111pp111111RRRRR|PPPPP00101100000
+:cache cacheop, [R0004] is op1315=0x7 & op1112 & op0510=0x3F & R0004; op2731 & op1626=0x160
+[ cacheop = (op1112 << 5) | op2731; ]
+{
+	local cop:4 = cacheop;
+	__cache(cop, R0004);
+}
+
+# PREF prefop, [reg1] - 11011111111RRRRR|PPPPP00101100000
+:pref op2731, [R0004] is op1115=0x1B & op0510=0x3F & R0004; op2731 & op1626=0x160
+{
+	local pfop:4 = op2731;
+	__prefetch(pfop, R0004);
+}
+
+# SNOOZE - 0000111111100000|0000000100100000
+:snooze is op0015=0xFE0; op1631=0x120
+{
+	__snooze();
+}
+
+# SYNCI - 0000000000011100
+:synci is op0015=0x1C
+{
+	__synchronize();
+}
+
+# HVTRAP vector5 - 00000111111vvvvv|0000000100010000
+:hvtrap op0004 is op0515=0x3F & op0004; op1631=0x110
+{
+	local vector:4 = op0004;
+	__hvtrap(vector);
+}
+
+# HVCALL vector8 - 11010111111vvvvv|01VVV00101100000
+:hvcall vector8 is op0515=0x6BF & op0004; op3131=0 & op3030=1 & op2729 & op1626=0x160
+[ vector8 = (op2729 << 5) | op0004; ]
+{
+	local vector:4 = vector8;
+	__hvcall(vector);
+}
+
+# DBTRAP - 1111100001000000
+:dbtrap is op0015=0xF840
+{
+	DBPC = inst_next;
+	DBPSW = PSW;
+	__dbtrap();
+}
+
+# DBRET - 0000011111100000|0000000101000110
+:dbret is op0015=0x7E0; op1631=0x146
+{
+	PC = DBPC;
+	PSW = DBPSW;
+	return [PC];
+}
+
+# RMTRAP - 1111000001000000
+:rmtrap is op0015=0xF040
+{
+	__rmtrap();
+}
+
+define pcodeop __dbcp;
+define pcodeop __dbhvtrap;
+define pcodeop __dbpush;
+define pcodeop __dbtag;
+define pcodeop __tlb;
+
+# DBCP - 1110100001000000
+:dbcp is op0015=0xE840
+{
+	__dbcp();
+}
+
+# DBHVTRAP - 1110000001000000
+:dbhvtrap is op0015=0xE040
+{
+	__dbhvtrap();
+}
+
+# DBPUSH rh-rt - 01011111111RRRRR|wwwww00101100000
+:dbpush _R0004-_R2731 is op1115=0x0B & op0510=0x3F & _R0004 & op0004; op1626=0x160 & _R2731 & op2731
+{
+	local first:4 = op0004;
+	local last:4 = op2731;
+	__dbpush(first, last);
+}
+
+# DBTAG imm10 - 11001111111iiiii|IIIII00101100000
+:dbtag imm10 is op1115=0x19 & op0510=0x3F & op0004; op1626=0x160 & op2731
+[ imm10 = (op2731 << 5) | op0004; ]
+{
+	local tag:4 = imm10;
+	__dbtag(tag);
+}
+
+# DST - 0000011111100000|0000000100110100
+:dst is op0015=0x7E0; op1631=0x134
+{
+	__synchronize();
+}
+
+# EST - 0000011111100000|0000000100110010
+:est is op0015=0x7E0; op1631=0x132
+{
+	__synchronize();
+}
+
+# TLBAI, TLBR, TLBS, TLBVI, TLBW - 1000011111100000|ooooo00101100000
+:tlbai is op0015=0x87E0; op1631=0x8960	{ __tlb(0x11:1); }
+:tlbr  is op0015=0x87E0; op1631=0xE960	{ __tlb(0x1D:1); }
+:tlbs  is op0015=0x87E0; op1631=0xC160	{ __tlb(0x18:1); }
+:tlbvi is op0015=0x87E0; op1631=0x8160	{ __tlb(0x10:1); }
+:tlbw  is op0015=0x87E0; op1631=0xE160	{ __tlb(0x1C:1); }
+
+
+
+#####################################################
+#####		       Float			#####
+#####################################################
+
+
+# CVTF.HS reg2, reg3 - rrrrr11111100010|wwwww10001000010
+:cvtf.hs R1115, R2731 is R1115 & op0510=0x3F & op0004=0b00010; R2731 & op2126=0b100010 & op1620=0b00010
+{
+	local half:2 = R1115:2;
+	R2731 = float2float(half);
+}
+
+# CVTF.SH reg2, reg3 - rrrrr11111100011|wwwww10001000010
+:cvtf.sh R1115, R2731 is R1115 & op0510=0x3F & op0004=0b00011; R2731 & op2126=0b100010 & op1620=0b00010
+{
+	local half:2 = float2float(R1115);
+	R2731 = zext(half);
+}
+
+
+
+@ifdef RH850
+#####################################################
+#####		System-register banks		#####
+#####################################################
+
+
+# LDSR reg2, regID, selID - rrrrr111111RRRRR|sssss00000100000
+
+ldsrdst: S1R1115, 1 is S1R1115; op2731=1 & op1626=0x20	{ export S1R1115; }
+ldsrdst: S2R1115, 2 is S2R1115; op2731=2 & op1626=0x20	{ export S2R1115; }
+ldsrdst: S3R1115, 3 is S3R1115; op2731=3 & op1626=0x20	{ export S3R1115; }
+ldsrdst: S4R1115, 4 is S4R1115; op2731=4 & op1626=0x20	{ export S4R1115; }
+ldsrdst: S5R1115, 5 is S5R1115; op2731=5 & op1626=0x20	{ export S5R1115; }
+ldsrdst: S6R1115, 6 is S6R1115; op2731=6 & op1626=0x20	{ export S6R1115; }
+ldsrdst: S7R1115, 7 is S7R1115; op2731=7 & op1626=0x20	{ export S7R1115; }
+
+:ldsr R0004, ldsrdst is (op0510=0x3F & R0004) ... & ldsrdst
+{
+	ldsrdst = R0004;
+}
+
+# STSR regID, reg2, selID - rrrrr111111RRRRR|sssss00001000000
+
+stsrsrc: S1R0004 is S1R0004; op2731=1 & op1626=0x40	{ export S1R0004; }
+stsrsrc: S2R0004 is S2R0004; op2731=2 & op1626=0x40	{ export S2R0004; }
+stsrsrc: S3R0004 is S3R0004; op2731=3 & op1626=0x40	{ export S3R0004; }
+stsrsrc: S4R0004 is S4R0004; op2731=4 & op1626=0x40	{ export S4R0004; }
+stsrsrc: S5R0004 is S5R0004; op2731=5 & op1626=0x40	{ export S5R0004; }
+stsrsrc: S6R0004 is S6R0004; op2731=6 & op1626=0x40	{ export S6R0004; }
+stsrsrc: S7R0004 is S7R0004; op2731=7 & op1626=0x40	{ export S7R0004; }
+stsrsel: 1 is op2731=1	{ }
+stsrsel: 2 is op2731=2	{ }
+stsrsel: 3 is op2731=3	{ }
+stsrsel: 4 is op2731=4	{ }
+stsrsel: 5 is op2731=5	{ }
+stsrsel: 6 is op2731=6	{ }
+stsrsel: 7 is op2731=7	{ }
+
+:stsr stsrsrc, R1115, stsrsel is (op0510=0x3F & R1115; stsrsel) & stsrsrc
+{
+	R1115 = stsrsrc;
+}
+@endif
