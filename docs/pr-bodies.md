@@ -40,9 +40,11 @@ Other rules for bodies:
   the same problem; the PR's first section describes it. Open an issue only for
   a problem you are not fixing now.
 - **Do not @-mention the maintainers** in a PR, its body, or its comments.
-- **Name the model.** An automatically generated PR ends with one line naming
-  the model that generated it, for example ``Model: `provider/model-id` ``.
-  This is the one fact about how a PR was made that a body states.
+- **Name the model.** An automatically generated PR or issue ends with one
+  line naming the model that generated it and the reasoning effort it ran at,
+  after a colon, for example ``Model: `anthropic/claude-opus-5-5:high` ``. Leave
+  out `:<effort>` only when the model has no effort setting. This is the one
+  fact about how a PR or issue was made that its body states.
 - **Fill in the repo's template** if it has one but the template's headings do
   not excuse a long body.
 - For a **feature or refactor** rather than a fix, section 1 becomes "what this
