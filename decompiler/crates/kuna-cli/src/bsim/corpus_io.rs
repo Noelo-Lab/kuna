@@ -513,7 +513,11 @@ pub(super) fn cmd_info(argv: &[String]) -> i32 {
 fn load_corpus_program(binary: &str) -> Result<kuna_console::engine::ConsoleProgram, String> {
     let mut args = crate::decompile_all::Args::serial();
     args.binary = binary.to_string();
-    crate::decompile_all::load_program(&args, crate::decompile_all::DriverDefaults::Functions)
+    // `Decompile`, not `Functions`: this surface decompiles every entry, and the
+    // inventory-only bundle skips the analysis that produces the varnodes and
+    // symbols a signature measures. With the wrong bundle every function signed
+    // as if it were a bare stub.
+    crate::decompile_all::load_program(&args, crate::decompile_all::DriverDefaults::Decompile)
 }
 
 fn basename(path: &str) -> String {

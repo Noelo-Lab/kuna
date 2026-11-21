@@ -4962,6 +4962,12 @@ finds nothing says which floor it used and how many functions it considered, so
 functions that compile alike score high, and structurally identical stubs (a PLT
 range) score 1.0 against each other. Read the numbers as a lead.
 
+The use it exists for is pairing a function across builds: with a corpus built
+from one build, querying the same function in another returns the counterpart at
+the top with a high score — a function at `0x411440` in one build matched the
+same source compiled at `0x411430` in the next, at similarity 1.000, while
+unrelated functions in that corpus scored 0.71–0.73.
+
 Scoring needs Ghidra's weight tables (`lshweights_*.xml`, which ship with Ghidra
 under `Ghidra/Features/BSim/data`). They are found through `--weights <dir>`, else
 `KUNA_BSIM_WEIGHTS`, else beside the corpus. A run without them **fails** rather
