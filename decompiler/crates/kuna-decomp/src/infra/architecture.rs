@@ -340,6 +340,13 @@ pub struct Architecture {
     /// on every path without a section table, so it is inert for the XML
     /// datatest oracle.
     pub globalref_ranges: Rc<Vec<(u64, u64)>>,
+    /// (kuna `cstringconst`) The `[start, end)` ranges of the loaded sections
+    /// that hold only C string literals (a Mach-O `__cstring` section of type
+    /// `S_CSTRING_LITERALS`). Empty without a section table.
+    pub cstring_ranges: Rc<Vec<(u64, u64)>>,
+    /// (kuna `cstringconst`) Print a pointer-wide constant inside one of
+    /// [`Self::cstring_ranges`] as the string literal there, whatever its type.
+    pub cstring_const: bool,
     /// Infer pointers from likely-address constants (C++ `infer_pointers`).
     pub infer_pointers: bool,
     /// How many bits of alignment a function ptr has (C++ `funcptr_align`).
@@ -652,6 +659,10 @@ pub struct Architecture {
     pub ret_split_limit: Option<u64>,
     /// Opt-in stack-address evidence for call input trials.
     pub stack_addr_arg_trial: bool,
+    /// (kuna) `option calleefilledarg`: an unfilled argument register an
+    /// Objective-C selector stub loads itself ends no argument list.  See
+    /// [`crate::p4_calls::kuna_calleefilledarg`].
+    pub callee_filled_arg: bool,
     /// (kuna) `option bejoin`: when a two-register value joins with its high
     /// word in the first register where the ABI puts it there.  Read by
     /// [`crate::p4_calls::kuna_bejoin`] through the `ArchContext` handle.
@@ -2353,6 +2364,8 @@ impl Architecture {
             eh_sections: None,
             func_sizes: Rc::new(Vec::new()),
             globalref_ranges: Rc::new(Vec::new()),
+            cstring_ranges: Rc::new(Vec::new()),
+            cstring_const: false, // (kuna) option cstringconst; reset_defaults sets the shipped default
             infer_pointers: false,
             funcptr_align: 0,
             flowoptions: 0,
@@ -2433,6 +2446,7 @@ impl Architecture {
             ret_split_global: false,
             ret_split_limit: None,
             stack_addr_arg_trial: false,
+            callee_filled_arg: false, // (kuna) option calleefilledarg; reset_defaults sets the shipped default
             be_join: crate::kuna_bejoin::BeJoinMode::Off, // (kuna) option bejoin; reset_defaults sets the shipped default
             be_join_pass: crate::kuna_bejoinpass::BeJoinPassMode::Off, // (kuna) option bejoinpass; reset_defaults sets the shipped default
             octeon_effects: crate::kuna_octeoneffects::OcteonEffectsMode::Off, // (kuna) option octeoneffects; reset_defaults sets the shipped default
@@ -2779,6 +2793,7 @@ impl Architecture {
         self.ret_split_global = true; // (kuna) DIV-PENDING default-on: a shared RETURN block that stores to GLOBALS is not the bare epilogue `ActionReturnSplit::isSplittable` assumes, so it is no longer cloned into every predecessor. One-directional (it can only decline a split) and byte-identical (0/675) on the datatest corpus; restore the upstream predicate with `option retsplitglobal off`
         self.ret_split_limit = Some(crate::p8_structure::kuna_retsplitlimit::DEFAULT_LIMIT); // (kuna) GH-1034 default-on: a return block whose split would clone more than 2^20 ops keeps its gotos
         self.stack_addr_arg_trial = false;
+        self.callee_filled_arg = true; // (kuna) option calleefilledarg default-on: at an objc_msgSend$<sel> selector stub, a definitely-unused argument register the stub writes before reading is no parameter slot, so the positional rule does not end the list there; inert outside Objective-C (0/675)
         self.be_join = crate::kuna_bejoin::BeJoinMode::Callers; // (kuna) option bejoin default `callers` (#904): a big-endian or AVR pair joins high word first, as the ABI returns it, only where the instructions prove one wide value (a sign or zero extension, a product's halves made apart, two adjacent loads, a proven callee's pair) or a caller reads the second register after the call; `evidence` drops the callers, `on` is the instruction-shape guess, which also reads an int over the high half of a 64-bit temporary as that long long
         self.octeon_effects = crate::kuna_octeoneffects::OcteonEffectsMode::Atomic; // (kuna) option octeoneffects default `atomic` (0/675)
         self.be_join_pass = crate::kuna_bejoinpass::BeJoinPassMode::Whole; // (kuna) option bejoinpass default `whole` (#904): a pair a call hands back untouched joins in the order of its proven side, and an unproven function handing back a proven callee's pair returns the callee's whole value
@@ -2892,6 +2907,7 @@ impl Architecture {
         self.cast_arith = true; // (kuna) option castarith default-on: a pointer plus whole elements prints as ((T *)p)[k] instead of *(T *)((long)p + K); 0/675 datatest assertions moved, 16 stage assertions moved to the new form, 444-slice typesweep identical, speed within budget; docs/features/castarith/record.json
         self.cast_index = true; // (kuna) option castindex default-on: a pointer plus a variable index of whole elements prints as ((T *)p)[i], a char * difference as p - q; 0/675 datatest assertions moved, stages PARITY OK, 444-slice typesweep identical, speed within budget; docs/features/castindex/default-on-evaluation.md
         self.elem_ptr = true; // (kuna) option elemptr default-on: see docs/features/elemptr/default-on-evaluation.md
+        self.cstring_const = true; // (kuna) option cstringconst default-on: inert without a string-literal section, so 0/675 datatest assertions move
         self.char_ptr = false; // (kuna) option charptr; shipped off -- the flip is held on `make test-cli`, see docs/features/charptr/default-on-evaluation.md
         self.ptr_from_use = crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void; // (kuna) option ptrfromuse default void: 0/675 datatests, stages PARITY OK, type_match 0 worse over 10,748 decbench functions; evidence in docs/features/ptrfromuse/default-on-evaluation.md
         self.callbacktype = crate::kuna_callbacktype::CallbackTypeMode::On; // (kuna) option callbacktype default `on`: a function whose address reaches exactly one kind of declared callback slot takes that slot's prototype; evidence in docs/features/callbacktype/default-on-evaluation.md
@@ -3521,6 +3537,7 @@ impl Architecture {
         ctx.retsysreg_userops = ids(crate::kuna_retsysreg::STATE_USEROP_NAMES);
         ctx.retsysreg_cop_userops = ids(crate::kuna_retsysreg::COP_USEROP_NAMES);
         ctx.stack_addr_arg_trial = self.stack_addr_arg_trial;
+        ctx.callee_filled_arg = self.callee_filled_arg;
         // (kuna) carry the big-endian pair-order gate so `kuna_bejoin` reaches
         // `option bejoin` via `glb`.
         ctx.be_join = self.be_join;
