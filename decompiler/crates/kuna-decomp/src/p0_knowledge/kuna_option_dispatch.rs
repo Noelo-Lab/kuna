@@ -551,9 +551,10 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "returndup" => {
-        let (val, msg) =
+        let (val, calls, msg) =
             crate::p8_structure::kuna_returndup::OptionReturnDup.apply(p1)?;
         self.duplicate_shared_returns = val;
+        self.duplicate_call_returns = calls;
         Ok(msg)
     },
     "rettriangle" => {

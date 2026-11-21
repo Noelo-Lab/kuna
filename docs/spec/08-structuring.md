@@ -1309,6 +1309,32 @@ distinguishes them. Its per-edge narrowings — `earlyreturn` (DIV-23) and
 `switchreturn` (DIV-25) — remain separate options: they reach the mixed
 const/variable diamonds this whole-block gate rejects outright.
 
+### returndup calls — one call per path for a cross-jumped call tail
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_returndupcalls.rs
+(ActionReturnDupCalls)` runs in the `returnsplit` group right after
+`returndup`, only at the value `option returndup calls` (not a default). gcc
+`-Os` cross-jumps the tails of paths that end in the same call: each path sets
+the arguments and jumps to one `call f; ...; ret` block, so the call reads
+MULTIEQUALs and prints as `if (c) { a = b; k = 2; } return f(a, k);`. The pass
+splits such a block once per predecessor with
+`decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
+(Funcdata::node_split_calls)`, the `node_split` clone with CALL and INDIRECT
+cloning enabled: each cloned call gets its own copy of the original call spec
+(`FuncCallSpecs::clone_for_op`, a fresh fspec handle), and a cloned INDIRECT's
+iop input names the cloned call. Each path then prints its own call:
+`if (c) return f(b, 2); return f(a, 1);`.
+
+A block qualifies when it has no successors, two to four distinct
+predecessors, at most 16 ops, exactly one direct CALL, an argument of that call
+computed (within the block) from a MULTIEQUAL, and no INDIRECT that still
+creates the call's output (prototype recovery has not settled the output yet;
+a later fullloop pass retries). Each predecessor runs exactly one copy, so the
+split preserves behaviour. It is a value of `returndup` rather than its
+default because the source often wrote the merged form as a ternary argument
+(`lua_pushstring(L, isint ? "integer" : "float")`), and the binary cannot tell
+the two apart.
+
 ### orchain — the split that must not happen (decbench)
 
 `returndup` is right about a *guard clause* and wrong about the *operand chain

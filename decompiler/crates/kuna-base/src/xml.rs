@@ -2261,7 +2261,8 @@ mod tests {
         // and kuna-loweredswitch-tree / loweredswitch tree re-rolls a twenty-case compare tree
         // and kuna-maxlinewidth / option maxlinewidth breaks plain-text lines
         // and kuna-postinc / a pointer step after its dereference prints *p++
-        assert_eq!(count, 843, "corpus file count drifted");
+        // and kuna-returndupcalls / gcc -Os cross-jumped call tails split per path
+        assert_eq!(count, 844, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

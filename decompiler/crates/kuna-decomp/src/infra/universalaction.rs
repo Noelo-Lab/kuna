@@ -724,6 +724,9 @@ pub fn universal_sched(
             // same merge/naming passes and are re-structured by the next fullloop
             // iteration (and the final ActionBlockStructure).
             act!(crate::p8_structure::kuna_returndup::ActionReturnDup::boxed("returnsplit")),
+            // (kuna) `returndup calls`: split a cross-jumped `call f; return`
+            // block per predecessor.
+            act!(crate::p8_structure::kuna_returndupcalls::ActionReturnDupCalls::boxed("returnsplit")),
             // (kuna) angr SAILR `ReturnDuplicatorHigh`, per-edge const narrowing (option
             // `earlyreturn`, default-OFF).  Sibling of ActionReturnDup: peels only the
             // CONSTANT arm of a mixed return phi (the guard's `return K`), leaving the
