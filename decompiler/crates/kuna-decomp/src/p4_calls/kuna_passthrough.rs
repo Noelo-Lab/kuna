@@ -1213,7 +1213,7 @@ pub fn claimed_range(data: &Funcdata, addr: &Address, size: int4) -> bool {
 
 /// Is the value the call `op` reads in `slot` the function's own incoming
 /// register, untouched, in exactly the storage the trial `[addr, addr+size)`
-/// names?
+/// names -- itself, or through COPYs that keep it in that storage?
 ///
 /// Upstream scores such a trial inactive ("not likely a parameter but maybe"):
 /// the caller moved nothing into the register, so nothing says the callee
@@ -1224,10 +1224,21 @@ pub fn forwarded_in_place(data: &Funcdata, op: OpId, slot: int4, addr: &Address,
     if !data.get_arch().pass_through {
         return false;
     }
-    let Some(vn) = data.obank().get(op).and_then(|o| o.get_in(slot)) else { return false };
-    data.vbank()
-        .get(vn)
-        .is_some_and(|v| v.is_input() && !v.is_written() && v.get_size() == size && v.get_addr() == addr)
+    let mut cur = data.obank().get(op).and_then(|o| o.get_in(slot));
+    for _ in 0..8 {
+        let Some(v) = cur.and_then(|vn| data.vbank().get(vn)) else { return false };
+        if v.get_size() != size || v.get_addr() != addr {
+            return false;
+        }
+        if v.is_input() {
+            return !v.is_written();
+        }
+        cur = match v.get_def().and_then(|d| data.obank().get(d)) {
+            Some(d) if d.code() == OpCode::CPUI_COPY => d.get_in(0),
+            _ => return false,
+        };
+    }
+    false
 }
 
 /// Is `vn`, the value an argument trial of the indirect call `op` reads, the
@@ -1241,8 +1252,11 @@ pub fn forwarded_in_place(data: &Funcdata, op: OpId, slot: int4, addr: &Address,
 /// r9,0x401020; cmovz r9,r8; jmp r9` scored `r9` an active sixth argument of
 /// the call it is the target of, and `(*v1)(...,v1)` only stayed `(*v1)()`
 /// because the forwarded registers in front of it vetoed the list
-/// ([`neutral_in_chain`]). Scored definitely-not-used, it neither anchors a
-/// hole fill nor is filled.
+/// ([`neutral_in_chain`]). Scored inactive, it never anchors a hole fill and
+/// is dropped from the end of the list; it is filled only below a later
+/// argument, where the ABI's order makes it the target passed to itself
+/// (`fp(fp,x+1)` is `inc %rsi; jmp *%rdi`). Definitely-not-used would make
+/// `forceNoUse` drop that `x+1` too.
 pub fn is_call_target(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
     data.obank()
         .get(op)
@@ -1273,11 +1287,114 @@ pub fn is_call_target(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
 /// argument says nothing about the callee's list. Only a call site's trials
 /// qualify (`isRecoverSubcall`); the function's own input recovery has
 /// `inputparamgap`.
+///
+/// The rule keeps to registers that ARE the function's input in front of an
+/// argument the callee takes. An unreferenced slot, or one on a range this
+/// pass claimed ([`claimed_range`]), is the function's input only at a call no
+/// other call can precede ([`NeutralScope`]): after gcc
+/// ARM's `push {r3,lr}; bl g; pop {r3,lr}; b h`, r2 at `h` is what `g` left
+/// and r3 the alignment push reloaded, not `h`'s third and fourth arguments.
+/// And where upstream's count, forwarded registers included, would veto a
+/// trial, `force_inactive_chain` lets it through only when every register of
+/// the run in front of it is forwarded and the trial may end one
+/// ([`anchors_neutral_run`]), and from then on keeps only trials that may: in
+/// gcc AArch64's stack-protector epilogue before `b lseek`, x3 holds the
+/// guard's address for the check, x4 the zero `subs` left and x5 the zero the
+/// canary was wiped with, and none of them is `lseek`'s fourth argument.
 pub fn neutral_in_chain(active: &ParamActive, trial: &ParamTrial, is_spacebase: bool) -> bool {
-    if !active.is_forwarded_neutral() || !active.is_recover_subcall() || is_spacebase {
+    let Some(scope) = active.forwarded_neutral() else { return false };
+    if !active.is_recover_subcall() || is_spacebase {
         return false;
     }
-    trial.is_forwarded_input() || trial.is_unref()
+    trial.is_forwarded_input() || ((trial.is_unref() || trial.is_untouched()) && scope.unref)
+}
+
+/// May the active trial `trial` end a run of [`neutral_in_chain`] registers,
+/// so the run does not count toward `forceInactiveChain`'s veto of it?
+///
+/// Not a stack slot holding a register the function saved there
+/// ([`saves_own_register`]): ARM's `push {r3,lr}` keeps the stack aligned and
+/// leaves the caller's own r3 at `[sp]`, where it reads as an active fifth
+/// argument. And not a register a direct callee is known not to take
+/// ([`NeutralScope::untaken`]): gcc's IPA register allocation keeps a value
+/// across a call to a known `void g(void)` in `rcx`, which reads as an active
+/// fourth argument.
+pub fn anchors_neutral_run(active: &ParamActive, trial: &ParamTrial, is_spacebase: bool) -> bool {
+    let Some(scope) = active.forwarded_neutral() else { return true };
+    !(is_spacebase && trial.is_forwarded_input())
+        && !scope.untaken.iter().any(|(a, s)| shares_byte(a, *s, trial.get_address(), trial.get_size()))
+}
+
+/// Does the stack argument slot `addr` the call `op` reads in `slot` hold one
+/// of the function's own incoming registers, stored there unchanged -- a
+/// register save or an alignment push, not a value set up for the callee?
+pub fn saves_own_register(data: &Funcdata, op: OpId, slot: int4, addr: &Address) -> bool {
+    if !data.get_arch().pass_through || addr.get_space().is_none_or(|s| s.get_type() != spacetype::IPTR_SPACEBASE) {
+        return false;
+    }
+    let mut cur = data.obank().get(op).and_then(|o| o.get_in(slot));
+    for _ in 0..8 {
+        let Some(v) = cur.and_then(|vn| data.vbank().get(vn)) else { return false };
+        if v.is_input() {
+            return v.get_space().get_type() == spacetype::IPTR_PROCESSOR;
+        }
+        let def = v.get_def().and_then(|d| data.obank().get(d));
+        cur = match def {
+            Some(d) if matches!(d.code(), OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT) => d.get_in(0),
+            _ => return false,
+        };
+    }
+    false
+}
+
+fn shares_byte(a: &Address, asize: int4, b: &Address, bsize: int4) -> bool {
+    a.get_space().map(|sp| sp.get_index()) == b.get_space().map(|sp| sp.get_index())
+        && a.get_offset() < b.get_offset().wrapping_add(bsize.max(0) as u64)
+        && b.get_offset() < a.get_offset().wrapping_add(asize.max(0) as u64)
+}
+
+/// Which forwarded registers at one call site [`neutral_in_chain`] lets out of
+/// the inactive-chain count.
+#[derive(Debug, Clone, Default)]
+pub struct NeutralScope {
+    /// No other call can run before this one ([`first_calls`]), so an argument
+    /// register no op names, or one this pass claimed, still holds the
+    /// function's own input here.
+    pub unref: bool,
+    /// The argument registers a direct callee is known not to take: its own
+    /// body never reads them
+    /// ([`crate::kuna_calleedeadarg::CalleeEntryDead::never_takes`]), or its
+    /// `protoorder` statement leaves them out.
+    pub untaken: Vec<(Address, int4)>,
+}
+
+/// The [`NeutralScope`] of the call `fc`, `None` with the option off. `first`
+/// caches [`first_calls`] across the calls of one `ActionActiveParam` pass.
+pub fn neutral_scope(data: &Funcdata, fc: &FuncCallSpecs, first: &mut Option<Vec<OpId>>) -> Option<NeutralScope> {
+    if !data.get_arch().pass_through {
+        return None;
+    }
+    let op = fc.get_op();
+    let unref = first.get_or_insert_with(|| first_calls(data)).contains(&op);
+    let entry = fc.get_entry_address();
+    let direct = data.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_CALL) && entry != data.get_address();
+    let mut untaken = Vec::new();
+    if direct && fc.proto().has_model() {
+        let stated = data.kuna_protoorder_types(entry);
+        let probe = data.kuna_callee_entry_dead(entry);
+        for e in fc.proto().model().input().get_entry() {
+            if e.get_space().get_type() != spacetype::IPTR_PROCESSOR {
+                continue;
+            }
+            let a = Address::new(std::rc::Rc::clone(e.get_space()), e.get_base());
+            let size = e.get_size();
+            let unstated = stated.is_some_and(|s| !s.inputs.iter().any(|(sa, ss, _)| shares_byte(sa, *ss, &a, size)));
+            if unstated || probe.is_some_and(|p| p.never_takes(&a, size)) {
+                untaken.push((a, size));
+            }
+        }
+    }
+    Some(NeutralScope { unref, untaken })
 }
 
 /// Does `[addr, addr+size)` share a byte with a claim that keeps call-site

@@ -992,9 +992,12 @@ pub mod param_trial_flags {
     pub const STACK_ADDRESS: uint4 = 0x800;
     /// (kuna) Solid only through a reload from the caller's frame.
     pub const FRAME_RELOAD: uint4 = 0x1000;
-    /// (kuna `passthrough`) The function's own incoming register, untouched, in
-    /// the storage the trial names.
+    /// (kuna `passthrough`) The function's own incoming register, untouched:
+    /// in place in the register the trial names, or saved to the stack slot.
     pub const FORWARDED_INPUT: uint4 = 0x2000;
+    /// (kuna `passthrough`) On a register range the pass claimed because the
+    /// function never touches it.
+    pub const UNTOUCHED: uint4 = 0x4000;
 }
 
 /// A register or memory location that may be used to pass a parameter or return
@@ -1172,6 +1175,10 @@ impl ParamTrial {
     /// [`crate::p4_calls::kuna_passthrough::forwarded_in_place`].
     pub fn set_forwarded_input(&mut self) { self.flags |= param_trial_flags::FORWARDED_INPUT; }
     pub fn is_forwarded_input(&self) -> bool { self.flags & param_trial_flags::FORWARDED_INPUT != 0 }
+    /// (kuna `passthrough`) Record that the trial is on a range the pass
+    /// claimed because the function never touches it.
+    pub fn set_untouched(&mut self) { self.flags |= param_trial_flags::UNTOUCHED; }
+    pub fn is_untouched(&self) -> bool { self.flags & param_trial_flags::UNTOUCHED != 0 }
 
     /// Does this show solid movement into the Varnode (C++ `hasAncestorSolid`)?
     pub fn has_ancestor_solid(&self) -> bool {
@@ -1339,10 +1346,11 @@ pub struct ParamActive {
     /// SITE's argument list when the next slot is on the stack?  Set by
     /// `ActionActiveParam`; see [`crate::p4_calls::kuna_stackarggap`].
     stack_arg_gap: bool,
-    /// (kuna) `passthrough`: does a forwarded argument register at this CALL
-    /// SITE stay out of the inactive-chain count?  Set by `ActionActiveParam`;
-    /// see [`crate::p4_calls::kuna_passthrough::neutral_in_chain`].
-    forwarded_neutral: bool,
+    /// (kuna) `passthrough`: which forwarded argument registers at this CALL
+    /// SITE stay out of the inactive-chain count, `None` for none.  Set by
+    /// `ActionActiveParam`; see
+    /// [`crate::p4_calls::kuna_passthrough::neutral_in_chain`].
+    forwarded_neutral: Option<crate::p4_calls::kuna_passthrough::NeutralScope>,
     /// (kuna `calleereginputs`) Does the callee read every register parameter
     /// of the model these trials are scored against?  Set by
     /// `ActionActiveParam`; see [`crate::p4_calls::kuna_calleereginputs`].
@@ -1375,7 +1383,7 @@ impl ParamActive {
             vararg_stack_split: false, // (kuna) varargstackargs
             own_input_gap: false,      // (kuna) inputparamgap
             stack_arg_gap: false,      // (kuna) stackarggap
-            forwarded_neutral: false,  // (kuna) passthrough
+            forwarded_neutral: None,   // (kuna) passthrough
             callee_reads_registers: false, // (kuna) calleereginputs
             cond_exe_retry: Default::default(), // (kuna) condexeret
             single_floats: Vec::new(), // (kuna) armfloatargs
@@ -1523,15 +1531,15 @@ impl ParamActive {
         self.stack_arg_gap = val;
     }
 
-    /// (kuna) `passthrough`: does a forwarded argument register at this call
+    /// (kuna) `passthrough`: which forwarded argument registers at this call
     /// site stay out of the inactive-chain count?
-    pub fn is_forwarded_neutral(&self) -> bool {
-        self.forwarded_neutral
+    pub fn forwarded_neutral(&self) -> Option<&crate::p4_calls::kuna_passthrough::NeutralScope> {
+        self.forwarded_neutral.as_ref()
     }
 
-    /// (kuna) `passthrough`: record that these are a call site's trials and the
-    /// option is on; a property of the call, as `stack_arg_gap` is.
-    pub fn set_forwarded_neutral(&mut self, val: bool) {
+    /// (kuna) `passthrough`: record the call's scope, `None` with the option
+    /// off; a property of the call, as `stack_arg_gap` is.
+    pub fn set_forwarded_neutral(&mut self, val: Option<crate::p4_calls::kuna_passthrough::NeutralScope>) {
         self.forwarded_neutral = val;
     }
 
@@ -3317,8 +3325,12 @@ impl ParamListStandard {
         let mut seenchain = false;
         let mut chainlength = 0;
         let mut max = -1;
+        // (kuna) `passthrough`: upstream's count of the run, forwarded
+        // registers included; whether the run holds a register that is not
+        // forwarded; whether a run upstream would veto has been let through.
+        let (mut up_len, mut mixed, mut rescued) = (0, false, false);
         for i in start..stop {
-            let (defnouse, is_act, is_unref, addr_is_spacebase, slotgrp, protected, forwarded) = {
+            let (defnouse, is_act, is_unref, addr_is_spacebase, slotgrp, protected, forwarded, anchors) = {
                 let trial = active.get_trial(i);
                 let addr_sb = trial
                     .get_address()
@@ -3347,6 +3359,7 @@ impl ParamListStandard {
                     // (kuna) `passthrough`: a register the function hands on
                     // untouched is neither a run of empty slots nor its end.
                     crate::p4_calls::kuna_passthrough::neutral_in_chain(active, trial, addr_sb),
+                    crate::p4_calls::kuna_passthrough::anchors_neutral_run(active, trial, addr_sb),
                 )
             };
             if defnouse {
@@ -3373,30 +3386,36 @@ impl ParamListStandard {
                 ) {
                     seenchain = true;
                 }
+                let step = if i == start {
+                    slotgrp - groupstart + 1
+                } else {
+                    let pt = active.get_trial(i - 1);
+                    slotgrp - if pt.get_entry().is_some() { pt.slot_group(&self.entry) } else { 0 }
+                };
                 // (kuna) `passthrough`: a forwarded register is not a run of
                 // empty slots.  See
                 // [`crate::p4_calls::kuna_passthrough::neutral_in_chain`].
+                up_len += step;
                 if forwarded {
                     continue;
                 }
-                if i == start {
-                    chainlength += slotgrp - groupstart + 1;
-                } else {
-                    let prev_slotgrp = {
-                        let pt = active.get_trial(i - 1);
-                        if pt.get_entry().is_some() {
-                            pt.slot_group(&self.entry)
-                        } else {
-                            0
-                        }
-                    };
-                    chainlength += slotgrp - prev_slotgrp;
-                }
+                mixed |= !addr_is_spacebase;
+                chainlength += step;
                 if chainlength > maxchain {
                     seenchain = true;
                 }
             } else {
+                // (kuna) `passthrough`: a run upstream vetoes is let through
+                // only when every register in it is forwarded, and from then on
+                // only to trials that may end one.  See
+                // [`crate::p4_calls::kuna_passthrough::anchors_neutral_run`].
+                if up_len > maxchain {
+                    rescued = true;
+                    seenchain |= mixed;
+                }
+                seenchain |= rescued && !anchors;
                 chainlength = 0;
+                (up_len, mixed) = (0, false);
                 // (kuna) `inputparamgap`: a protected trial is a REGISTER the
                 // function's own body reads before writing, and the chain does
                 // not get to veto it.  Trials sort into parameter order, so
