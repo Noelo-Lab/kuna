@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<compiler_spec>
+  <data_organization>
+    <absolute_max_alignment value="0"/>
+    <machine_alignment value="1"/>
+    <default_alignment value="1"/>
+    <default_pointer_alignment value="4"/>
+    <pointer_size value="4"/>
+    <wchar_size value="4"/>
+    <short_size value="2"/>
+    <integer_size value="4"/>
+    <long_size value="4"/>
+    <long_long_size value="8"/>
+    <float_size value="4"/>
+    <double_size value="8"/>
+    <long_double_size value="16"/>
+    <size_alignment_map>
+      <entry size="1" alignment="1"/>
+      <entry size="2" alignment="2"/>
+      <entry size="4" alignment="4"/>
+      <entry size="8" alignment="8"/>
+      <entry size="16" alignment="16"/>
+    </size_alignment_map>
+  </data_organization>
+  <global>
+    <range space="ram"/>
+  </global>
+  <stackpointer register="sp" space="ram"/>
+  <default_proto>
+    <prototype name="__wasm" extrapop="0" stackshift="0">
+      <input>
+        <pentry minsize="1" maxsize="16000" align="16">
+          <addr offset="0x100000" space="register"/>
+        </pentry>
+      </input>
+      <output>
+        <pentry minsize="4" maxsize="4" metatype="float">
+          <register name="rf0"/>
+        </pentry>
+        <pentry minsize="8" maxsize="8" metatype="float">
+          <register name="rd0"/>
+        </pentry>
+        <pentry minsize="1" maxsize="4">
+          <register name="ri0"/>
+        </pentry>
+        <pentry minsize="5" maxsize="8">
+          <register name="rl0"/>
+        </pentry>
+      </output>
+      <unaffected>
+        <register name="sp"/>
+        <varnode space="register" offset="0x10000000" size="0x10000000"/>
+        <varnode space="register" offset="0x40000000" size="0x40000000"/>
+      </unaffected>
+      <killedbycall>
+        <varnode space="register" offset="0x1000" size="0x1000"/>
+        <varnode space="register" offset="0x100000" size="0x100000"/>
+      </killedbycall>
+    </prototype>
+  </default_proto>
+</compiler_spec>

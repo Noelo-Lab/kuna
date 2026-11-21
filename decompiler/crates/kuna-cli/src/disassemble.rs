@@ -930,7 +930,8 @@ fn render_text(region: &Region, rows: &[Row], truncated: bool) -> String {
         }
     );
     for r in rows {
-        let line = format!("{:<13} {:<22}{}", format!("0x{:x}", r.addr), r.hex(), r.text());
+        // An instruction of 11 or more bytes fills the hex column: keep a space.
+        let line = format!("{:<13} {:<21} {}", format!("0x{:x}", r.addr), r.hex(), r.text());
         let _ = writeln!(out, "{}", line.trim_end());
     }
     out

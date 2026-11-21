@@ -2086,6 +2086,118 @@ their reads, a video-mode probe keeps its read of the EGA switches at 0x487,
 and the hard-disk parameter vectors at 0x104 and 0x118 are read where the code
 reads them.
 
+(kuna) **A WebAssembly module loads as a flat image of register-form code.**
+(#1634; always on, no option: before it the module did not load at all.) A
+module (`\0asm`, version 1) has no addresses: code is a list of bodies for a
+stack machine, linear memory is its own index space, and globals and tables are
+index spaces too. The decompiler works on addressed code that reads and writes
+storage locations. Two steps at load close the gap, and after them a module is
+an ordinary image.
+
+*The module.* `decompiler/crates/kuna-analysis/src/loader/format/wasm.rs (Module)`
+reads the type, import, function, table, memory, global, export, start, element,
+code and data sections and the `name` custom section's function and global
+names. Every count is checked against the bytes left in its section before
+anything is allocated, and a malformed section is an error with a reason; a
+damaged `name` section only loses names.
+
+*The layout.* `decompiler/crates/kuna-analysis/src/loadimage_wasm.rs (WasmImage)`
+gives each index space a fixed place in one 32-bit space:
+
+| Address | Contents |
+|---|---|
+| `0x00000000` | linear memory 0 at its minimum size, zero except where an active data segment with a constant offset places bytes (a later segment wins an overlap) |
+| `0x80000000` | code: every defined body, lowered, in function-index order |
+| `0xd0000000` | globals, 16 bytes apart, each holding its constant initial value |
+| `0xe0100000` | tables, as 4-byte code addresses, filled from the active element segments |
+| `0xf0000000` | imported functions, 16 bytes apart, with no bytes behind them |
+
+A linear-memory address in the program is therefore the address the decompiler
+prints. A memory whose minimum exceeds 2 GiB, or a 64-bit memory, is refused. A
+function's name is the `name` section's, else its export name, else (an import)
+its field name, demangled as an object file's symbol is; a defined function with none is named at `read symbols` like
+any other unnamed entry. An import is a named call target (`UndefinedExternal`,
+as an object file's undefined symbol is), listed by `functions` and never
+decompiled. Its declared signature is parked on it
+(`loadimage_wasm.rs (WasmImage::prototypes)`), since it has no body to recover
+one from; a defined function's signature is left to the decompiler, because a
+locked `i32` parameter could no longer be typed as the pointer its body uses it
+as. Each named global is a data symbol of its width, and each table is typed an
+array of code pointers named by its export (else `table<N>`), so an indirect
+call prints as `(*table0[i])(...)`. Read-only: the code; an immutable global
+whose initializer is a constant; and a table nothing can write, which is one
+that is neither imported nor exported in a module whose every body was lowered
+(a lowered body holds no table write, an unlowered one may).
+
+*The lowering.* A body is validated code, so the height of the operand stack at
+each instruction is a static fact, and so is the type of each slot.
+`decompiler/crates/kuna-analysis/src/loader/kuna_wasmlower.rs (Lowering::lower)`
+walks a
+body with the validation algorithm's control stack and type stack and writes one
+16-byte record per operation that still does something once the stack is gone:
+the opcode, a type code where the opcode alone is untyped (`local.get`,
+`select`), the stack height it runs at, and its immediates, with every branch
+and call target already an address. Operand `k` from the top of the stack is
+register slot `height - k`; a local is a register; a parameter arrives in an
+argument register, and the first records of a body copy each parameter the body
+reads to its local and zero every other local it reads. So `local.get 1; local.get 0; i32.mul` is `s0 = l1; s1 =
+l0; s0 = s0 * s1`, which the decompiler's ordinary dataflow turns back into one
+expression. The rest of the mapping:
+
+- `block`, `loop`, `end`, `nop`, `drop` and the reinterpret casts leave no
+  record. `if` is a branch past its true arm when the condition is zero, and
+  `else` a branch past the false arm.
+- A branch (`br`, `br_if`, `return`) that carries values to a label expecting
+  them at a lower height is preceded by `move` records; a conditional one whose
+  moves must not run on the fall-through path is a `br_unless` around them.
+- `br_table` is a bounds test that branches to the default label, then an
+  indirect jump through a table of addresses stored after the record; the
+  decompiler's own jump-table recovery reads it as a `switch`. A target that
+  needs moves gets a trampoline after the table.
+- A call is one `arg` record per parameter, the call, and a `result` record.
+  `call_indirect` loads its target from the table's region; `return_call` is
+  the call followed by the return.
+- A global is the memory at its slot. The exception is the mutable `i32` global
+  the `name` section or an export calls `__stack_pointer`: the toolchain
+  convention for the linear-memory stack, lowered to the stack-pointer register,
+  so a frame carved from it is recovered as stack locals instead of printed as
+  arithmetic on a global.
+- Code the validation rules make unreachable is dropped.
+
+A body is refused, and becomes a single `unsupported` record (it decompiles to
+`unsupported();`), when it does not validate or uses something outside this
+slice: SIMD, reference types and table instructions, exceptions, atomics,
+passive-segment instructions, a function type with more than one result, a
+memory other than memory 0, more than 8192 locals, 1024 parameters or an
+operand stack deeper than 1024 (the registers the language names), or branches
+whose carried values would lower to more than four records per byte of the
+body (compiled code stays under one; the bound keeps a hostile body from
+lowering to gigabytes). The load
+prints one `[kuna wasm]` note with the count and the first reason. Segments
+whose offset is not a constant inside their memory or table are counted and
+reported the same way.
+
+*The language.* `specs/Ghidra/Processors/Wasm/data/languages/Wasm.slaspec` gives
+each record its p-code; the language id is `Wasm:LE:32:default` and a module
+decodes as nothing else. The compiler spec passes arguments in the `a<N>`
+register range, returns in one register per value type (`ri0`, `rl0`, `rf0`,
+`rd0`, so an `i32` result is never read as the stale half of an earlier `f64`
+one), keeps locals and stack slots across a call, and uses linear memory as the
+stack space. Operations p-code has no operator for are user ops (`rotl`,
+`rotr`, `ctz`, `fmin`, `fmax`, `fcopysign`, `memory_copy`, `memory_fill`,
+`memory_size`, `memory_grow`, `trap` for `unreachable`); `f*.trunc` and
+`f*.nearest` are the `FLOAT_TRUNC` and `FLOAT_ROUNDEVEN` user ops that chapter
+05 types as float to float.
+
+The dispatcher is `decompiler/crates/kuna-console/src/engine.rs
+(bootstrap_wasm_bytes)`. Surfaces that need an `object::File` (`strings`,
+`xrefs`, `decompile-graph`) refuse a module with a capability error, as they do
+a TE. Measured on a 2.6 MB Go `wasip1` module: 1792 functions load in 0.08 s
+and every body lowers. Checked by compiling the printed C of functions from
+`tests/fixtures/wasm/calls.wasm` beside their source and comparing results on
+random inputs (`decompiler/crates/kuna-cli/tests/wasm_cli.rs`), and by
+`tests/stages/kuna-wasm-module.xml`.
+
 ## 1.3 Loader markup
 
 Import naming exists because a CALL into a linkage stub carries no symbol: without

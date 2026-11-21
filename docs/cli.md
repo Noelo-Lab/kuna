@@ -1455,6 +1455,54 @@ with other segments in DS.
 `decompile-graph` and the graph-backed `--summary`/`--reachable-from` need an
 object-file view and refuse it with a capability error, as for a TE.
 
+### WebAssembly modules
+
+A `.wasm` module (`\0asm`, binary version 1) loads directly. It has no addresses
+of its own, so kuna lays it out as one flat 32-bit image and lowers each
+function body from stack form to register form at load:
+
+```bash
+kuna functions module.wasm                # defined functions, then imports
+kuna decompile module.wasm mul_add
+kuna decompile-all module.wasm
+kuna disassemble module.wasm mul_add      # the lowered records
+kuna read module.wasm 0x10000 --bytes 64  # linear memory, data segments placed
+```
+
+| Address | Contents |
+|---|---|
+| `0x00000000` | linear memory 0: a memory address in the program is the address printed |
+| `0x80000000` | code, one lowered body after another |
+| `0xd0000000` | globals, 16 bytes apart |
+| `0xe0100000` | tables of code addresses (`table0`, or the table's export name) |
+| `0xf0000000` | imported functions: named call targets with no body |
+
+Function names come from the `name` section, then the export, then the import
+field, and are demangled. Parameters print as `a0`, `a1`, ...; a variable's storage comment names
+wasm locals (`l3`) and operand-stack slots (`s0`). `br_table` prints as a
+`switch`, `call_indirect` as a call through `table0[i]`, and a frame taken from
+the `__stack_pointer` global as stack locals. `disassemble` and `raw-pcode` show
+the lowered form: one 16-byte record per operation, with the wasm mnemonic,
+branch and call targets as addresses, and the records the lowering adds (`param`,
+`zero`, `arg`, `result`, `retval`, `move`, `br_unless`, `br_table.default`).
+
+A body that uses an instruction outside the supported set (SIMD, reference
+types and table instructions, exceptions, atomics, passive segments), a
+function type with more than one result, or more locals or stack than the
+language names, decompiles to `unsupported();`. The load says how many on
+stderr and why the first one was refused:
+
+```
+[kuna wasm] m.wasm: 2 of 310 function bodies were not lowered and decompile to an unsupported() call; the first is function 17, which uses instruction 0xfd
+```
+
+A module decodes only as `Wasm:LE:32:default`; `--target` with another language
+is an error. A 64-bit memory, or a memory whose minimum is above 2 GiB, is
+refused. `decompile`, `decompile-all`, `functions`, `disassemble`/`read`,
+`raw-pcode`, `decompile-project` and the console support wasm input; `strings`,
+`xrefs` and `decompile-graph` need an object-file view and refuse it with a
+capability error, as for a TE.
+
 ### Headerless raw images
 
 `--raw-image` loads a file that has no object header. It is separate from
