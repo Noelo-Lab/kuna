@@ -6406,7 +6406,10 @@ every other binary's pass list is byte-identical to before the pass existed):
   of a `sig/` tree loads only the libraries that can apply.
   At every discovered entry the byte trie is walked over the first `pattern_len`
   bytes; a module matches when the byte-swapped CRC-16/X.25 of the `crc_len` bytes
-  after the prefix, its tail bytes and its expected instruction bits agree. A
+  after the prefix, its tail bytes and its expected instruction bits agree. An
+  entry with fewer bytes than the prefix left in its section is walked over
+  zero-padded code and keeps only the modules whose length fits in what is left,
+  so a short function that ends the section is matched like any other. A
   reference names a function when the instruction covering its offset points
   there: a branch or call target or, on x86, the address its 32-bit field encodes
   (an `ifunc` resolver references its implementations with `lea`, which the Listing
@@ -6541,6 +6544,42 @@ every other binary's pass list is byte-identical to before the pass existed):
   candidate to indicate availability. The check reads only the requested
   manifest location and its referenced banks. Reports and application each
   obtain their own explicit manifest inputs.
+- **FLIRT signature writer** (`kuna flirt make`, a build-time command that no
+  decompile reaches;
+  `decompiler/crates/kuna-analysis/src/analyzers/flirt/kuna_flirtpat.rs (patterns_from_object)`,
+  `decompiler/crates/kuna-analysis/src/analyzers/flirt/kuna_flirtsig.rs (build_sig)`):
+  writes the `.pat` and `.sig` files the FLIRT pass above reads, from object files
+  or the members of a static library. One pattern is made per function start that
+  carries a global name (aliases at one address share it, a strong name before a
+  weak one, fewer leading underscores first): the function's bytes, up to its
+  symbol size or else to the next function symbol of the section, with every byte
+  a relocation rewrites left variable. On the fixed-width instruction sets
+  (AArch64, MIPS, PowerPC, SPARC, LoongArch) the whole instruction word is
+  variable. On x86 the bytes a linker may rewrite when it relaxes the relocation
+  are variable too: the opcode and ModRM in front of a `GOTPCRELX`, `GOT32X` or
+  initial-exec TLS field, and the whole general-dynamic and local-dynamic TLS call
+  sequences. A relocation against a global name is recorded as a reference at the
+  field's offset. Functions with only a local symbol, names a compiler or
+  assembler made up (`.L` labels, mapping symbols, `.cold`/`.part.N`/`.isra.N`/`.constprop.N`
+  clones, PC thunks, static-initialization stubs) and functions with fewer than
+  four fixed bytes in their first 32 yield no pattern. A `.pat` line is the first
+  32 bytes in hex (`..` for a variable byte), the length and value of the CRC-16
+  over the fixed bytes that follow (at most 255, ending at the first variable
+  byte), the function length, `:0000 name` per public name, `^offset name` per
+  reference and the bytes after the CRC region; `---` closes the file.
+  The `.sig` is format version 10, uncompressed: the header (processor id, a
+  file-type mask naming the executable format the objects link into, the library
+  name) and a prefix tree over the 32 leading bytes whose leaves list their
+  modules by CRC. Functions with the same leading bytes, CRC length and CRC
+  collide, and are resolved in this order: an offset after the CRC region where
+  all of them have a fixed byte and two differ splits the group by that tail
+  byte, repeatedly; then an offset where all of them refer to a global name that
+  the library does not define as data splits it by that reference, which the
+  matcher confirms against the call target (a module holds one reference, so
+  only a function alone with its name is resolved). Functions with the same bytes
+  and the same name become one module. Whatever still collides is listed on
+  stderr and left out of the `.sig`: no name is chosen and no module is merged
+  under two names.
 - **Format strings** (`formatstring off|static|full`, default `static`;
   `decompiler/crates/kuna-analysis/src/analyzers/formatstring/mod.rs`): what a
   `printf`/`scanf`-family call does with its variadic arguments is stated by its

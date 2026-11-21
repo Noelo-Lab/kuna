@@ -4976,6 +4976,55 @@ or database could not be read or loaded (a relocatable object included), the
 database language differs, or the single queried address is not a decodable
 entry; `2` a malformed command line, with the usage block.
 
+## `kuna flirt make` — write FLIRT `.pat` and `.sig` files
+
+`kuna flirt make <lib.a|*.o ...> -o <out.pat> [--sig <out.sig>] [--libname NAME]`
+writes FLIRT signatures for the functions of object files or static libraries, so
+a library you have (a vendored `libz.a`, one build of a libc) can name its
+functions in a stripped binary:
+
+```
+$ kuna flirt make libthree.a -o three.pat --sig three.sig
+kuna flirt make: libthree.a: 8 pattern(s)
+kuna flirt make: wrote three.pat (8 pattern(s))
+kuna flirt make: collision: twin_one, twin_two are not told apart; left out of three.sig
+kuna flirt make: wrote three.sig (6 module(s), 1 unresolved collision(s))
+$ KUNA_FLIRT_SIGS=$PWD/three.sig kuna functions prog --option flirt on
+0x401060	sum_bytes	(sub_401060)
+0x4010d0	wrap_mix	(sub_4010d0)
+```
+
+`-o` is the `.pat` text, one line per function that has a global name:
+
+```
+4883EC08BE0B000000E8........4883C40883C001C3.................... 00 0000 0016 :0000 wrap_mix ^000A mix_fold
+```
+
+The fields are the first 32 bytes (`..` is a byte a relocation rewrites, or
+padding past the end of a shorter function), the length and value of the CRC-16
+over the fixed bytes after them, the function length, each public name as
+`:0000 name`, each referenced global name as `^offset name`, and the remaining
+bytes. Functions with only a local symbol, compiler-generated names and functions
+with fewer than four fixed bytes in their first 32 are left out; the last are
+counted on stderr.
+
+`--sig` also writes the binary signature file (format version 10, uncompressed)
+that `--option flirt on` reads through `KUNA_FLIRT_SIGS`. `--libname` sets the
+library name in its header; the default is the first input's file stem. All
+inputs must be objects of one architecture, format and byte order, and the header
+admits the executable format they link into (ELF objects make a signature for ELF
+binaries).
+
+Functions with the same leading 32 bytes and the same CRC collide. `flirt make`
+tells them apart by a tail byte (an offset after the CRC region where they all
+have a fixed byte and differ), then by a referenced name (`wrap_mix` and
+`wrap_sum` above are the same bytes around a call to a different function, and
+the matcher accepts each only where the call goes to that name). Functions that
+nothing tells apart are reported as a `collision:` line and left out of the
+`.sig`; they stay in the `.pat`. Functions with the same bytes and the same name
+are written once. The exit status is 0 when the files were written, 1 when an
+input cannot be read or no function is left to write, and 2 on a usage error.
+
 ## Everything else
 
 `kuna modes` (list the option presets) also exists, plus minor flags not covered
