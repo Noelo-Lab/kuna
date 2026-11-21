@@ -1,0 +1,12 @@
+<language_definitions>
+  <language processor="x86" endian="little" size="64" variant="AIFSlots" version="1.0"
+            slafile="x86-64.sla" processorspec="aif-slots.pspec" id="x86:LE:64:AIFSlots">
+    <description>Synthetic six-byte instruction slots for AIF tests</description>
+    <compiler name="gcc" spec="x86-64-gcc.cspec" id="gcc"/>
+  </language>
+  <language processor="MIPS" endian="big" size="32" variant="AIFSlots" version="1.0"
+            slafile="mips32be.sla" processorspec="aif-mips-slots.pspec" id="MIPS:BE:32:AIFSlots">
+    <description>Four-byte instruction slots for delay-slot AIF tests</description>
+    <compiler name="default" spec="mips32be.cspec" id="default"/>
+  </language>
+</language_definitions>

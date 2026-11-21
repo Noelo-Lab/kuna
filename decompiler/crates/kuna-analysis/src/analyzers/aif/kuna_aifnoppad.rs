@@ -55,13 +55,17 @@ pub(super) enum Filler {
     /// Padding in front of undecoded code that starts at the address held: probe
     /// the candidate, and plant an accept there instead.
     Before(u64),
+    /// The validator cannot reach the code after this run within its instruction budget.
+    Blocked,
 }
 
 #[derive(Clone, Copy)]
 enum RunEnd {
     Entry,
-    Code(u64),
-    Other,
+    BeyondValidationLimit,
+    // Minimum padding visits before the destination. A terminal makes it unreachable.
+    Code { at: u64, min_visits: u32 },
+    Other { blocked: bool },
 }
 
 /// The per-walk filler runs, memoized for every instruction of a run so a long
@@ -76,9 +80,8 @@ impl PaddingRuns {
         PaddingRuns { wide: decoder.code_space.get_addr_size() > 4, ends: HashMap::new() }
     }
 
-    /// Classify the gap candidate at `entry`. A padding run is read no further
-    /// than the validity walk follows a candidate.
-    pub(super) fn classify(&mut self, listing: &Listing, decoder: &mut GapDecoder, entry: u64) -> Filler {
+    /// Classify the gap candidate at `entry` with bounded lookahead.
+    pub(super) fn classify(&mut self, listing: &Listing, decoder: &mut GapDecoder, entry: u64, section_slots: bool) -> Filler {
         let Some(first) = decoder.probe(entry) else { return Filler::No };
         if is_zero_fill(&first) {
             return Filler::Refuse;
@@ -88,30 +91,60 @@ impl PaddingRuns {
         }
         let mut run = Vec::new();
         let mut at = entry;
-        let end = loop {
+        let mut end = loop {
             if let Some(&end) = self.ends.get(&at) {
                 break end;
             }
             if listing.function_at(at).is_some() {
                 break RunEnd::Entry;
             }
-            if run.len() == super::MAX_FOLLOW_INSNS || !listing.is_undefined(at) {
-                break RunEnd::Other;
+            // With a declared grid we need the actual destination. Once two
+            // validation windows are all padding, no start in the first window
+            // can reach it. Leave the second window open for shorter suffixes.
+            if section_slots && run.len() == 2 * super::MAX_FOLLOW_INSNS {
+                run.truncate(super::MAX_FOLLOW_INSNS);
+                break RunEnd::BeyondValidationLimit;
+            }
+            if (!section_slots && run.len() == super::MAX_FOLLOW_INSNS) || !listing.is_undefined(at) {
+                break RunEnd::Other { blocked: false };
             }
             match decoder.probe(at) {
                 Some(insn) if is_padding(&insn, self.wide) => {
-                    run.push(at);
-                    at = at.saturating_add(u64::from(insn.len));
+                    let next = at.saturating_add(u64::from(insn.len));
+                    let terminal = !decoder.frame_probe && (insn.is_terminal || insn.kind == super::FlowKind::ComputedJump);
+                    let straight = insn.flows.is_empty() && insn.fall_through == Some(next);
+                    run.push((at, terminal, straight));
+                    at = next;
                 }
-                Some(insn) if !is_zero_fill(&insn) => break RunEnd::Code(at),
-                _ => break RunEnd::Other,
+                Some(insn) if !is_zero_fill(&insn) => break RunEnd::Code { at, min_visits: 0 },
+                _ => break RunEnd::Other { blocked: false },
             }
         };
-        self.ends.extend(run.into_iter().map(|at| (at, end)));
+        // Only a straight fallthrough must traverse the next suffix. An alternate
+        // flow may skip the rest, and a terminal cannot reach the destination.
+        for (start, terminal, straight) in run.into_iter().rev() {
+            if let RunEnd::Code { min_visits, .. } = &mut end {
+                *min_visits = if terminal {
+                    u32::MAX
+                } else if straight {
+                    min_visits.saturating_add(1)
+                } else {
+                    1
+                };
+            } else if let RunEnd::Other { blocked } = &mut end {
+                // Even without a code destination (e.g. zero fill), this prefix
+                // reaches only padding when its sole path ends at a terminal.
+                *blocked = terminal || (straight && *blocked);
+            }
+            self.ends.insert(start, end);
+        }
         match end {
-            RunEnd::Entry => Filler::Refuse,
-            RunEnd::Code(at) => Filler::Before(at),
-            RunEnd::Other => Filler::No,
+            RunEnd::Entry | RunEnd::BeyondValidationLimit => Filler::Refuse,
+            // The destination itself requires one more visit.
+            RunEnd::Code { min_visits, .. } if min_visits as usize >= super::MAX_FOLLOW_INSNS => Filler::Blocked,
+            RunEnd::Code { at, .. } => Filler::Before(at),
+            RunEnd::Other { blocked: true } => Filler::Blocked,
+            RunEnd::Other { blocked: false } => Filler::No,
         }
     }
 }
@@ -169,7 +202,7 @@ mod tests {
 
     fn insn(mnemonic: &str, operands: &str) -> ProbedInsn {
         ProbedInsn {
-            len: 1, kind: FlowKind::Fallthrough, is_call: false, is_terminal: false, fall_through: None,
+            len: 1, encoded_len: 1, kind: FlowKind::Fallthrough, is_call: false, is_terminal: false, fall_through: None,
             flows: Vec::new(), mnemonic: Rc::from(mnemonic), operands: operands.to_string(), reusable: None,
         }
     }

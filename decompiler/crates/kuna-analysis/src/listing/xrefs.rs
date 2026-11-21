@@ -789,14 +789,8 @@ fn descend(
         return empty();
     };
 
-    let exec: Vec<(u64, u64)> = {
-        let mut r: Vec<(u64, u64)> = crate::entry::executable_sections(file)
-            .into_iter()
-            .map(|(lo, hi, _data)| (lo, hi))
-            .collect();
-        r.sort_unstable();
-        r
-    };
+    let coverage = super::ExecutableCoverage::from_object(file);
+    let exec = &coverage.ranges;
     // A relocatable object is laid out synthetically by the loader, so the raw
     // `object` view's section addresses are pre-link and describe a different
     // address space than the seeds live in (`reloc_object::is_synthetically_laid_out`).
@@ -931,7 +925,7 @@ fn descend(
     let mut frame_cache = crate::aif::ArmFrames::default();
     let mut frame_partition = None;
     let mut walk_context = super::kuna_walkcontext::WalkContext::new(
-        prologues, translate, arch, &code_space, &exec,
+        prologues, translate, arch, &code_space, exec,
     );
     if arch.analysis_listing && arch.input_arm_isa_override {
         if let Some(context) = &mut walk_context {
@@ -978,7 +972,7 @@ fn descend(
             Some(entry) => entry,
             None if prologues && !prologues_done => {
                 prologues_done = true;
-                let mut listing = partition_listing(&partition, &st.funcs, &exec);
+                let mut listing = partition_listing(&partition, &st.funcs, &coverage);
                 if gapwalk {
                     render_fingerprints(
                         &mut listing, &st.funcs, arch, translate, &code_space,
@@ -986,7 +980,7 @@ fn descend(
                     );
                 }
                 let frames = crate::aif::raw_arm_frames(
-                    file, &listing, arch, translate, Rc::clone(&code_space), &exec, true, None,
+                    file, &listing, arch, translate, Rc::clone(&code_space), exec, true, None,
                 );
                 let found = frames.roots.clone();
                 frame_cache = frames;
@@ -1041,7 +1035,7 @@ fn descend(
                         let original = frame_partition.as_ref().unwrap();
                         let candidates = frame_candidates.iter().copied()
                             .filter(|root| st.funcs.contains(root)).collect();
-                        let mut corpus = partition_listing(&partition, &st.funcs, &exec);
+                        let mut corpus = partition_listing(&partition, &st.funcs, &coverage);
                         render_fingerprints(
                             &mut corpus, &st.funcs, arch, translate, &code_space,
                             &partition, fingerprint_contexts.as_ref(),
@@ -1141,10 +1135,10 @@ fn descend(
                         &code_space,
                         &partition,
                         &st.funcs,
-                        &exec,
+                        &coverage,
                         fingerprint_contexts.as_ref(),
                         frame_partition.as_ref(),
-                        Some(&crate::aif::kuna_aifbracket::BracketEvidence::from_object(file, &exec)),
+                        Some(&crate::aif::kuna_aifbracket::BracketEvidence::from_object(file, exec)),
                     );
                     pending_focus.extend(found.into_iter().rev());
                     continue;
@@ -1242,7 +1236,7 @@ fn descend(
                 let mut read = kuna_switchtable::TableRead::default();
                 if let Some(tables) = &a32_tables {
                     let decoded = |at: u64| st.decoded.contains(&at);
-                    read = tables.targets(translate, &code_space, &exec, &decoded, vma);
+                    read = tables.targets(translate, &code_space, exec, &decoded, vma);
                 }
                 let predicated = a32_tables.is_some() && is_predicated(translate, &code_space, vma);
                 if read.cases.is_empty() && read.stated.is_none() && read.gap.is_none() && !predicated {
@@ -1254,7 +1248,7 @@ fn descend(
                         vma,
                         Some(&branch),
                         p,
-                        &exec,
+                        exec,
                         &reach,
                         thumb_tables.as_ref(),
                     );
@@ -1468,7 +1462,7 @@ fn descend(
                 if let Some(p) = pool.as_ref() {
                     let a32 = a32_tables.as_ref().map_or_else(kuna_switchtable::TableRead::default, |tables| {
                         let decoded = |at: u64| st.decoded.contains(&at);
-                        tables.decoded_targets(translate, &code_space, &exec, &decoded, vma, cap.ops(), len)
+                        tables.decoded_targets(translate, &code_space, exec, &decoded, vma, cap.ops(), len)
                     });
                     let branch = cap
                         .ops()
@@ -1487,7 +1481,7 @@ fn descend(
                                 base,
                                 vma,
                                 p,
-                                &exec,
+                                exec,
                                 None,
                                 max_entries,
                             ));
@@ -1505,7 +1499,7 @@ fn descend(
                             vma,
                             branch,
                             p,
-                            &exec,
+                            exec,
                             &reach,
                             thumb_tables.as_ref(),
                         );
@@ -1736,7 +1730,7 @@ fn gap_entries(
     code_space: &Rc<AddrSpace>,
     partition: &[(u64, u32)],
     funcs: &BTreeSet<u64>,
-    exec: &[(u64, u64)],
+    coverage: &super::ExecutableCoverage,
     contexts: Option<&super::kuna_fingerprintcontext::FingerprintContexts>,
     frame: Option<&super::Listing>,
     bracket: Option<&crate::aif::kuna_aifbracket::BracketEvidence>,
@@ -1744,7 +1738,7 @@ fn gap_entries(
     if funcs.len() < AIF_MIN_FUNCTIONS || partition.is_empty() {
         return Vec::new();
     }
-    let mut listing = partition_listing(partition, funcs, exec);
+    let mut listing = partition_listing(partition, funcs, coverage);
     let _probe = crate::aif::arm_gap_probe_scope(translate);
     render_fingerprints(&mut listing, funcs, arch, translate, code_space, partition, contexts);
     let poolslide = (arch.analysis_aifpoolslide && crate::loadimage_object::is_arm32_language(&arch.archid))
@@ -1820,7 +1814,7 @@ fn partition_covers(partition: &BTreeMap<u64, u32>, vma: u64) -> bool {
 fn partition_listing(
     partition: &[(u64, u32)],
     funcs: &BTreeSet<u64>,
-    exec: &[(u64, u64)],
+    coverage: &super::ExecutableCoverage,
 ) -> super::Listing {
     let mut insns = super::kuna_insnstore::InstructionStore::default();
     for &(addr, len) in partition {
@@ -1855,7 +1849,7 @@ fn partition_listing(
                 )
             })
             .collect(),
-        exec.to_vec(),
+        coverage.clone(),
     )
 }
 
@@ -2560,7 +2554,7 @@ pub(super) fn in_range(ranges: &[(u64, u64)], vma: u64) -> bool {
 
 /// The same address set as `ranges`, as the sorted, disjoint spans [`in_range`]
 /// searches: overlapping and touching ranges are merged.
-pub(super) fn range_union(mut ranges: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
+pub(crate) fn range_union(mut ranges: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
     ranges.sort_unstable();
     let mut out: Vec<(u64, u64)> = Vec::with_capacity(ranges.len());
     for (lo, hi) in ranges {

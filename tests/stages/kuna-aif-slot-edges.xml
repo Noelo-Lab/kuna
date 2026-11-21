@@ -1,0 +1,71 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+  <bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/aif_slot_edges_x86_64</com>
+  <com>option listing on</com>
+  <com>option aif strict</com>
+  <com>option funcstart_patterns off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file x86:LE:64:AIFSlots:gcc decompiler/crates/kuna-analysis/tests/fixtures/aif_slot_edges_x86_64</com>
+  <com>option listing on</com>
+  <com>option aif strict</com>
+  <com>option funcstart_patterns off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>load function sub_404012</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file x86:LE:64:AIFSlots:gcc decompiler/crates/kuna-analysis/tests/fixtures/aif_slot_edges_x86_64</com>
+  <com>option listing on</com>
+  <com>option aif precise</com>
+  <com>option funcstart_patterns off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/aif_slots_mips32</com>
+  <com>option listing on</com>
+  <com>option aif strict</com>
+  <com>option funcstart_patterns off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file MIPS:BE:32:AIFSlots:default decompiler/crates/kuna-analysis/tests/fixtures/aif_slots_mips32</com>
+  <com>option listing on</com>
+  <com>option aif strict</com>
+  <com>option funcstart_patterns off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>quit</com>
+</script>
+<stringmatch name="AIF slots #1: a one-byte padding shift never creates an off-grid entry" min="0" max="0">0x40201[23] sub_40201[23]</stringmatch>
+<stringmatch name="AIF slots #2: a five-byte section tail cannot supply a six-byte first slot" min="0" max="0">0x403012 sub_403012</stringmatch>
+<stringmatch name="AIF slots #3: an exact-fit first slot is found with the fixture processor" min="1" max="1">0x404012 sub_404012</stringmatch>
+<stringmatch name="AIF slots #4: the exact-fit function uses its continuation in the next section" min="1" max="1">return 0x2a;</stringmatch>
+<stringmatch name="AIF slots #5: a full padding slot advances to the aligned function entry" min="1" max="1">0x402030 sub_402030</stringmatch>
+<stringmatch name="AIF slots #6: an aligned padding destination also needs a complete first slot" min="0" max="0">0x40501[28] sub_40501[28]</stringmatch>
+<stringmatch name="AIF slots #7: all x86 inventories contain the executable entry" min="3" max="3">0x401000 sub_401000</stringmatch>
+<stringmatch name="AIF slots #8: known code in the sixth byte rules out the adjusted entry" min="0" max="0">0x40601e sub_40601e</stringmatch>
+<stringmatch name="AIF slots #9: known code immediately after the first slot permits the adjusted entry" min="1" max="1">0x40701e sub_40701e</stringmatch>
+<stringmatch name="AIF slots #10: exhausting the body limit does not plant an entry inside padding" min="0" max="0">0x40e98a sub_40e98a</stringmatch>
+<stringmatch name="AIF slots #11: a seven-byte instruction cannot borrow the next section's first byte" min="0" max="0">0x418012 sub_418012</stringmatch>
+<stringmatch name="AIF slots #12: padding ending in a trap cannot plant its start or the unreached return" min="0" max="0">0x4190(12|18|1e|24) sub_</stringmatch>
+<stringmatch name="AIF slots #13: reachable padding can lead to a five-byte entry instruction" min="2" max="2">0x41903c sub_41903c</stringmatch>
+<stringmatch name="AIF slots #14: a padding-adjusted entry instruction must also fit its slot" min="0" max="0">0x41a01e sub_41a01e</stringmatch>
+<stringmatch name="AIF slots #15: a previously accepted return owns its immediate bytes" min="0" max="0">0x41c01e sub_41c01e</stringmatch>
+<stringmatch name="AIF slots #16: an entry immediately following a one-byte return remains eligible" min="1" max="1">0x41d01e sub_41d01e</stringmatch>
+<stringmatch name="AIF slots #17: both preceding functions are found on the grid" min="2" max="2">0x41[cd]012 sub_41[cd]012</stringmatch>
+<stringmatch name="AIF slots #18: precise mode reaches the function after the oversized weak candidate" min="2" max="2">0x41b01e sub_41b01e</stringmatch>
+<stringmatch name="AIF slots #19: a shorter nested return cannot expose the enclosing MOV immediate" min="0" max="0">0x42500a sub_42500a</stringmatch>
+<stringmatch name="AIF slots #20: the disjoint short leaf after the MOV remains discoverable" min="1" max="1">0x425016 sub_425016</stringmatch>
+<stringmatch name="AIF slots #21: terminal padding before zero fill cannot supply an entry" min="0" max="0">0x4260(12|18|1e) sub_</stringmatch>
+<stringmatch name="AIF slots #22: padding beyond zero fill still reaches its own leaf" min="2" max="2">0x426036 sub_426036</stringmatch>
+<stringmatch name="AIF slots #23: a branch encoding fits one slot ahead of its executed delay slot" min="2" max="2">0x502000 sub_502000</stringmatch>
+<stringmatch name="AIF slots #24: both MIPS inventories retain the ordinary leaf" min="2" max="2">0x502014 sub_502014</stringmatch>
+<stringmatch name="AIF slots #25: a padding-adjusted delayed branch fits the same four-byte grid" min="2" max="2">0x50202c sub_50202c</stringmatch>
+</decompilertest>

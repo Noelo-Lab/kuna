@@ -135,7 +135,7 @@ fn legacy_walk(
         };
         if (!strict || kuna_aifstrict::probe_allowed(listing, start)) && !claimed.contains(&start) {
             decoder.linear_run = None;
-            let body = match probe_gap_start(decoder, listing, &hist, start, hi, corroborate) {
+            let body = match probe_gap_start(decoder, listing, &hist, start, hi, corroborate, None) {
                 Probe::Accept(body) => {
                     entries.insert(start);
                     Some(body)
@@ -278,7 +278,7 @@ fn validation_instruction_limit_is_unchanged() {
         for strict in [false, true] {
             let mut decoder = GapDecoder::new(&engine, Rc::clone(&space), listing.exec_ranges());
             let body =
-                check_valid_subroutine_with_policy(&mut decoder, &listing, BASE, BASE, end, strict);
+                check_valid_subroutine_with_policy(&mut decoder, &listing, BASE, BASE, end, strict, None);
             assert_eq!(body.is_some(), count == MAX_FOLLOW_INSNS);
             assert_eq!(decoder.decoded_addresses.len(), MAX_FOLLOW_INSNS);
         }
@@ -324,6 +324,7 @@ fn overlapping_linear_prefixes_preserve_validation_and_decode_order() {
                     entry,
                     end,
                     strict,
+                    None,
                 );
                 let got = check_valid_subroutine_with_policy(
                     &mut candidate,
@@ -332,6 +333,7 @@ fn overlapping_linear_prefixes_preserve_validation_and_decode_order() {
                     entry,
                     end,
                     strict,
+                    None,
                 );
                 assert_eq!(got, want, "entry {i}, backward={backward}, strict={strict}");
                 assert_eq!(got.is_some(), !backward && i >= 1002);
@@ -382,6 +384,7 @@ fn cached_prefix_replays_deferred_branches_and_call_information() {
                     entry,
                     end,
                     strict,
+                    None,
                 );
                 let got = check_valid_subroutine_with_policy(
                     &mut candidate,
@@ -390,6 +393,7 @@ fn cached_prefix_replays_deferred_branches_and_call_information() {
                     entry,
                     end,
                     strict,
+                    None,
                 );
                 assert_eq!(got, want, "{kind}, entry {i}, strict={strict}");
                 if i == 0 {
@@ -536,4 +540,173 @@ fn a_rescan_through_the_shared_memo_decodes_nothing_again() {
     let mut repeated = GapDecoder::new(&engine, space, listing.exec_ranges());
     assert_eq!(fresh.reconcile(&listing, &listing, &mut repeated, &roots, &[], frame_policy()), replacements);
     assert!(repeated.decoded_addresses.is_empty(), "a rescan decoded {:x?} again", repeated.decoded_addresses);
+}
+
+fn slot_listing(
+    file: &object::File, bytes: &[u8], sla: &[u8], stride: Option<core::num::NonZeroU32>,
+) -> (kuna_decomp::architecture::Architecture, Rc<AddrSpace>, Listing) {
+    use crate::loadimage_object::ObjectLoadImage;
+    use kuna_decomp::architecture::Architecture;
+    use object::Object;
+    let mut loader = ObjectLoadImage::from_bytes_silent("slots", bytes).unwrap();
+    let mut engine = Sleigh::new(Box::new(Bytes(Vec::new())), Box::new(ContextInternal::new()));
+    engine.initialize_from_sla(sla).unwrap();
+    for (name, value) in [("addrsize", 2), ("opsize", 1), ("longMode", 1)] {
+        engine.set_context_default(name, value);
+    }
+    engine.translate_base_mut().section_instruction_stride = stride;
+    let space = Rc::clone(engine.base().manager().get_default_code_space().unwrap());
+    loader.attach_to_space(Rc::clone(&space));
+    engine.set_loader(Box::new(loader));
+    let arch = Architecture::new("x86:LE:64:default:gcc", engine);
+    let listing = Listing::build_without_image(file, &arch, arch.translate(), &[file.entry()]);
+    assert!(listing.is_instruction_start(0x406023) && listing.is_instruction_start(0x407024));
+    (arch, space, listing)
+}
+
+/// Replace the long padding section of the trained ELF with equal-size pairs
+/// and an aligned RET. Keep the section origin and the training functions.
+fn slot_pair_fixture(pair: [u8; 12], align_budget_boundary: bool) -> (kuna_decomp::architecture::Architecture, Rc<AddrSpace>, Listing, u64) {
+    use object::{Object, ObjectSection};
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut bytes = std::fs::read(root.join("tests/fixtures/aif_slot_edges_x86_64")).unwrap();
+    let file = object::File::parse(&*bytes).unwrap();
+    let section = file.section_by_name(".long_padding").unwrap();
+    let (offset, size) = section.file_range().unwrap();
+    let length = (size - 7) as usize;
+    let ret = section.address() + length as u64;
+    let data = &mut bytes[offset as usize..][..size as usize];
+    assert_eq!(length % pair.len(), 0);
+    for chunk in data[..length].chunks_exact_mut(pair.len()) {
+        chunk.copy_from_slice(&pair);
+    }
+    if align_budget_boundary {
+        // Make both the last reachable start and its immediate predecessor
+        // land on the grid. The rest of the run alternates instruction lengths.
+        let boundary = length - 6 * MAX_FOLLOW_INSNS;
+        for nop in data[boundary..boundary + 24].chunks_exact_mut(6) {
+            nop.copy_from_slice(&[0x66, 0x0f, 0x1f, 0x44, 0, 0]);
+        }
+    }
+    data[length..].rotate_left(1); // Move the final one-byte NOP behind the RET.
+    let file = object::File::parse(&*bytes).unwrap();
+    let sla = std::fs::read(root.join("../../../specs/Ghidra/Processors/x86/data/languages/x86-64.sla")).unwrap();
+    let (arch, space, listing) = slot_listing(&file, &bytes, &sla, core::num::NonZeroU32::new(6));
+    (arch, space, listing, ret)
+}
+
+#[test]
+fn oversized_slot_starts_skip_body_validation() {
+    // Both MOV/ADD pairs match the trained 12-byte fingerprint.
+    let oversized = [0x2e, 0x36, 0xb8, 40, 0, 0, 0, 0x05, 2, 0, 0, 0];
+    let fitting = [0x2e, 0xb8, 40, 0, 0, 0, 0x81, 0xc0, 2, 0, 0, 0];
+    for pair in [oversized, fitting] {
+        let (arch, space, listing, ret) = slot_pair_fixture(pair, false);
+        for count in [100, 1990] {
+            let start = ret - 12 * count;
+            let windows = [(start, ret + 6)];
+            for noppad in [true, false] {
+                let mut decoder = GapDecoder::new(arch.translate(), Rc::clone(&space), &windows);
+                let policy = GapWalk { strict: true, corroborate: false, bracket: None, noppad, poolslide: None };
+                let entries = aif_candidates(&listing, &listing, &mut decoder, policy, &BTreeMap::new(), None, None);
+                if pair == oversized {
+                    assert!(entries.is_empty());
+                    assert_eq!(decoder.validation_steps, 0, "{count} oversized candidates, padding={noppad}");
+                } else {
+                    assert_eq!(entries, [start]);
+                    assert!(decoder.validation_steps > 0);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn mixed_padding_spends_one_walk_within_the_budget() {
+    let nops = [0x0f, 0x1f, 0x44, 0, 0, 0x66, 0x66, 0x0f, 0x1f, 0x44, 0, 0];
+    let (arch, space, listing, ret) = slot_pair_fixture(nops, true);
+    for count in [3998, 3999, 4000, 4002, 6000, 7998, 8000, 8500] {
+        let windows = [(ret - 6 * count, ret + 6)];
+        let mut decoder = GapDecoder::new(arch.translate(), Rc::clone(&space), &windows);
+        let policy = GapWalk { strict: true, corroborate: false, bracket: None, noppad: true, poolslide: None };
+        let entries = aif_candidates(&listing, &listing, &mut decoder, policy, &BTreeMap::new(), None, None);
+        assert_eq!(entries, [ret], "{count} padding instructions");
+        // The RET itself needs one visit. No earlier suffix can reach it.
+        assert_eq!(decoder.validation_steps, (count as usize + 1).min(MAX_FOLLOW_INSNS), "{count} padding instructions");
+    }
+}
+
+#[test]
+fn mixed_padding_before_a_trap_does_not_revalidate_each_suffix() {
+    use object::{Object, ObjectSection};
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let bytes = std::fs::read(root.join("tests/fixtures/aif_slot_edges_x86_64")).unwrap();
+    let file = object::File::parse(&*bytes).unwrap();
+    let sla = std::fs::read(root.join("../../../specs/Ghidra/Processors/x86/data/languages/x86-64.sla")).unwrap();
+    let (arch, space, listing) = slot_listing(&file, &bytes, &sla, None);
+    let section = file.section_by_name(".mixed_padding").unwrap();
+    let end = section.address() + section.size();
+    let ret = end - 6;
+    for pairs in [100, 1000, 1990] {
+        // The trap is followed by two more NOPs that *can* reach the RET.
+        let windows = [(ret - 18 - 12 * pairs, end)];
+        let mut decoder = GapDecoder::new(arch.translate(), Rc::clone(&space), &windows);
+        let policy = GapWalk { strict: false, corroborate: false, bracket: None, noppad: true, poolslide: None };
+        let entries = aif_candidates(&listing, &listing, &mut decoder, policy, &BTreeMap::new(), None, None);
+        assert_eq!(entries, [ret]);
+        assert!(decoder.validation_steps <= 12 * pairs as usize, "{pairs} pairs took {} visits", decoder.validation_steps);
+    }
+}
+
+#[test]
+fn invalid_padding_suffixes_do_not_validate_bodies() {
+    use object::{Object, ObjectSection};
+
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut bytes = std::fs::read(root.join("tests/fixtures/aif_slot_edges_x86_64")).unwrap();
+    let file = object::File::parse(&*bytes).unwrap();
+    let padding = file.section_by_name(".long_padding").unwrap();
+    let end = padding.address() + padding.size();
+    let ret = end - 7; // The fixture ends with a one-byte NOP and a six-byte RET.
+    let (offset, size) = padding.file_range().unwrap();
+    let tail = (offset + size - 7) as usize;
+    let sla = std::fs::read(root.join("../../../specs/Ghidra/Processors/x86/data/languages/x86-64.sla")).unwrap();
+    for aligned in [false, true] {
+        if aligned {
+            bytes[tail..tail + 7].rotate_left(1); // Move only that NOP behind the RET.
+        }
+        let file = object::File::parse(&*bytes).unwrap();
+        let (arch, space, listing) = slot_listing(&file, &bytes, &sla, core::num::NonZeroU32::new(6));
+        for count in [256, 8500] {
+            let windows = [(ret - 6 * count, end)];
+            let mut decoder = GapDecoder::new(arch.translate(), Rc::clone(&space), &windows);
+            let policy = GapWalk { strict: true, corroborate: false, bracket: None, noppad: true, poolslide: None };
+            let entries = aif_candidates(&listing, &listing, &mut decoder, policy, &BTreeMap::new(), None, None);
+            if aligned {
+                assert_eq!(entries, [ret], "{count} padding instructions");
+                assert!(decoder.validation_steps > 0);
+            } else {
+                assert!(entries.is_empty(), "unexpected entries after {count} NOPs: {entries:x?}");
+                assert_eq!(decoder.validation_steps, 0, "off-grid run of {count} NOPs");
+            }
+        }
+    }
+}
+
+#[test]
+fn required_entry_must_be_a_reached_instruction_start() {
+    let mut bytes = [0x00, 0xf0, 0x20, 0xe3].repeat(8); // eight ARM NOPs
+    let ret = BASE + bytes.len() as u64;
+    bytes.extend([0x1e, 0xff, 0x2f, 0xe1].repeat(2));
+    let end = BASE + bytes.len() as u64;
+    let (engine, space) = arm(bytes);
+    let listing = Listing::from_model_for_test(Vec::new(), Vec::new(), Vec::new(), vec![(BASE, end)]);
+    let mut decoder = GapDecoder::new(&engine, space, listing.exec_ranges());
+
+    // Prime the straight-line cache, then require starts in the cached NOPs and at the RET.
+    assert!(check_valid_subroutine(&mut decoder, &listing, BASE, BASE, end).is_some());
+    for (required, reached) in [(BASE + 4, true), (ret, true), (BASE + 5, false), (ret + 4, false)] {
+        let body = check_valid_subroutine_with_policy(&mut decoder, &listing, BASE, BASE, end, false, Some(required));
+        assert_eq!(body.is_some(), reached, "required address {required:#x}");
+    }
 }

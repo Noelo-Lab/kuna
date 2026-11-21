@@ -242,6 +242,8 @@ pub struct TranslateBase {
     /// Byte modulo on which instructions are aligned (C++ protected; same
     /// crate access for the engine)
     pub(crate) alignment: i32,
+    /// Optional processor declaration for speculative entries, relative to each executable section.
+    pub section_instruction_stride: Option<core::num::NonZeroU32>,
     /// Floating point formats utilized by the processor (C++ protected)
     pub(crate) floatformats: Vec<FloatFormat>,
 }
@@ -257,6 +259,7 @@ impl TranslateBase {
             target_isbigendian: false,
             unique_base: 0,
             alignment: 1,
+            section_instruction_stride: None,
             floatformats: Vec::new(),
         }
     }
@@ -477,6 +480,9 @@ pub trait Translate: RegisterLookup {
     /// returns a list of these ops in index order.
     /// \param res is the resulting vector of user op names
     fn get_user_op_names(&self, res: &mut Vec<String>);
+
+    /// Whether a lift can consume delay slots beyond the instruction's encoding.
+    fn may_have_delay_slots(&self) -> bool { true }
 
     /// \brief Get the length of a machine instruction
     ///
