@@ -951,6 +951,8 @@ pub struct Architecture {
     pub loop_cond_hoist: bool,
     /// Preserve secondary natural-loop latches as continues (`loopcontinue`).
     pub loop_continue: bool,
+    /// (kuna `postinc`) A pointer step after its dereference prints as `*p++`.
+    pub post_increment: bool,
     /// (kuna) Region structurer cyclic loop-successor refinement: when
     /// `region_structure` is on, refine a multi-exit / multi-latch (or
     /// irreducible mid-entry) loop by virtualizing its *secondary* exits and
@@ -2488,6 +2490,7 @@ impl Architecture {
             region_structure: true,
             guard_arm: false,
             loop_continue: true,
+            post_increment: true,
             loop_cond_hoist: false,
             region_loop_refine: false,
             region_edge_order: false,
@@ -2802,6 +2805,7 @@ impl Architecture {
         self.array_size = crate::p6_variables::kuna_arraysize::LEVEL_ON; // (kuna) option arraysize default-on: an escaped stack buffer ends at the byte count a library call states for it when that count lies within the alignment padding below the gap (0/675 datatest)
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.loop_continue = true;
+        self.post_increment = true;
         self.region_loop_refine = true; // (kuna) DIV-13 default-on (region structurer multi-exit/irreducible loop-successor refinement; 0/675 ablation)
         self.region_edge_order = false; // (kuna) SAILR P2 default-OFF opt-in (H2 post-dominator + dominance-tiered edge-virtualization ordering; only reorders which goto is chosen when virtualizing, so OFF is byte-identical)
         self.outline_spec = String::new(); // (kuna) default-OFF opt-in (excise a supplied single-entry region into a synthesized pseudofunction call; destructive, and inert with no region supplied)
@@ -3615,6 +3619,7 @@ impl Architecture {
         ctx.do_while_continue =
             self.print.out_lang().profile().forms.do_while != crate::kuna_lang::DoWhileForm::RustLoopBreakIf;
         ctx.goto_next = self.goto_next; // gotonext
+        ctx.post_increment = self.post_increment && self.print.out_lang() == crate::kuna_lang::OutLang::C;
         ctx.loop_cond_hoist = self.loop_cond_hoist; // loopcondhoist
         ctx.region_loop_refine = self.region_loop_refine; // regionlooprefine
         ctx.region_edge_order = self.region_edge_order; // regionedgeorder

@@ -2260,7 +2260,8 @@ mod tests {
         // and kuna-loweredswitch-linear / loweredswitch linear re-rolls a linear equality chain
         // and kuna-loweredswitch-tree / loweredswitch tree re-rolls a twenty-case compare tree
         // and kuna-maxlinewidth / option maxlinewidth breaks plain-text lines
-        assert_eq!(count, 842, "corpus file count drifted");
+        // and kuna-postinc / a pointer step after its dereference prints *p++
+        assert_eq!(count, 843, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

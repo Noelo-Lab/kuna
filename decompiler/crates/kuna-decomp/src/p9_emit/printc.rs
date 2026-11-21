@@ -240,6 +240,8 @@ pub mod tokens {
     pub static CONDITIONAL: OpToken = op_token("?", ":", 3, 16, false, TokenType::Binary, 1, 0);
     /// The assignment operator `=` (printc.cc:57).
     pub static ASSIGNMENT: OpToken = op_token("=", "", 2, 14, false, TokenType::Binary, 1, 5);
+    /// (kuna `postinc`) `p++`, a postfix around its one operand and a blank.
+    pub static POST_INCREMENT: OpToken = op_token("", "++", 2, 66, false, TokenType::Postsurround, 0, 0);
     /// The comma operator `,` for parameter lists (printc.cc:58).
     pub static COMMA: OpToken = op_token(",", "", 2, 2, true, TokenType::Binary, 0, 0);
     /// The `new` operator (printc.cc:59).
@@ -9168,6 +9170,9 @@ impl PrintC {
             ));
             return;
         }
+        if self.push_post_increment(fd, arch, op, ptr) {
+            return;
+        }
         let usearray = self.check_array_deref(fd, ptr) || self.is_value_indirect_input(fd, ptr);
         let mut m = self.context.mods();
         if usearray && !self.context.is_set(modifiers::FORCE_POINTER) {
@@ -9176,6 +9181,19 @@ impl PrintC {
             self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
         }
         self.push_vn_ir_m(fd, arch, ptr, op, m);
+    }
+
+    /// (kuna `postinc`) `*ptr++` for a LOAD or STORE `kuna_postinc` marked.
+    fn push_post_increment(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, ptr: VarnodeId) -> bool {
+        let marked = fd.obank().get(op).is_some_and(|o| o.get_addlflags() & crate::op::pcodeop_addlflags::kuna_postinc != 0);
+        if !marked {
+            return false;
+        }
+        self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+        self.push_op(&tokens::POST_INCREMENT, Some(op_key(op)));
+        self.push_vn_explicit_ir(fd, arch, ptr, op);
+        self.push_atom(&Atom::syntax("", TagType::BlankToken, crate::printlanguage::SyntaxHighlight::no_color));
+        true
     }
 
     fn storage_load_member_type(
@@ -9229,6 +9247,12 @@ impl PrintC {
             None => return,
         };
         let val = fd.obank().get(op).and_then(|o| o.get_in(2));
+        if self.push_post_increment(fd, arch, op, ptr) {
+            if let Some(val) = val {
+                self.push_vn_ir_m(fd, arch, val, op, mods);
+            }
+            return;
+        }
         let usearray = self.check_array_deref(fd, ptr) || self.is_value_indirect_input(fd, ptr);
         let mut m = mods;
         if usearray && !self.context.is_set(modifiers::FORCE_POINTER) {

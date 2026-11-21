@@ -842,6 +842,7 @@ pub fn universal_sched(
             act!(crate::kuna_calltargettype::ActionCallTargetType::boxed("typerecovery")),
             act!(ActionSetCasts::boxed("casts")),
             act!(ActionFinalStructure::boxed("blockrecovery")),
+            act!(crate::kuna_postinc::ActionPostIncrement::boxed("blockrecovery")),
             // (kuna) angr SAILR return-tail goto-reduction (option `gotoreduce`):
             // call-free return tails at `return`, then return tails with a call
             // (`free(p); return;`) at `on`.  Runs after the tree is final + goto
