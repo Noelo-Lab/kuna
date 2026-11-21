@@ -3036,8 +3036,13 @@ literal takes its C type from its digits and suffix, operands meet under the
 usual arithmetic conversions, unsigned arithmetic wraps at its width, and a
 signed `<<` wraps as GCC and Clang define it. The width of `long` differs
 between targets, so a `long` or `unsigned long` result is kept only while it
-means the same at 32 and 64 bits. An expression C leaves undefined (a signed
-overflow, a shift by the width or more, a division by zero), one that depends
+means the same at 32 and 64 bits. A hex or octal `LL` literal above the signed
+64-bit range is unsigned under GCC and Clang but signed under MSVC, so it is
+not folded. The loader reads headers before it knows the target, so `int` is
+32 bits wide: on a target whose `int` is 16 bits (AVR, MSP430) a folded value
+that overflows 16 bits is the 32-bit one. An expression C leaves undefined (a
+signed overflow, including `INT_MIN % -1`, a shift by the width or more, a
+division by zero), one that depends
 on the target, one with a `char` or `short` cast, and one whose value the
 grammar cannot read back (above the signed 64-bit range) is left as written,
 and the grammar refuses its declaration: a declaration is stated with C's

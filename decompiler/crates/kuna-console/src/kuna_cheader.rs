@@ -211,7 +211,7 @@ fn split_declarations(file: &str, text: &str) -> Vec<Chunk> {
     let mut continued = false;
     let mut read = Tail::default();
     for raw in text.split('\n') {
-        line += 1;
+        line = line.saturating_add(1);
         let directive = continued || raw.trim_start().starts_with('#');
         if directive {
             if !continued {
@@ -265,10 +265,11 @@ fn split_declarations(file: &str, text: &str) -> Vec<Chunk> {
                     cur.push(c);
                 }
                 ';' if braces == 0 && parens == 0 => flush(&mut out, &mut cur, &start),
+                _ if c.is_whitespace() && cur.ends_with(char::is_whitespace) => {}
                 _ => cur.push(c),
             }
         }
-        if !cur.is_empty() {
+        if !cur.is_empty() && !cur.ends_with(char::is_whitespace) {
             cur.push(' ');
         }
     }
@@ -508,7 +509,7 @@ fn literal(toks: &[String], at: &mut usize) -> Option<(i128, Ty)> {
         ("l", _) => &[Ty::Long],
         ("ul" | "lu", _) => &[Ty::ULong],
         ("ll", true) => &[Ty::LLong],
-        ("ll", false) => &[Ty::LLong, Ty::ULLong],
+        ("ll", false) => &[Ty::LLong],
         ("ull" | "llu", _) => &[Ty::ULLong],
         _ => return None,
     };
@@ -619,7 +620,7 @@ fn constant(
                 "-" => a - b,
                 "*" => a.checked_mul(b)?,
                 "/" => a.checked_div(b)?,
-                _ => a.checked_rem(b)?,
+                _ => ty.value(a.checked_div(b)?).and(a.checked_rem(b))?,
             };
             (ty.value(v)?, ty)
         };

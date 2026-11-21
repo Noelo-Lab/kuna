@@ -123,3 +123,27 @@ fn a_body_is_found_after_a_record_in_the_same_declaration() {
         ]
     );
 }
+
+#[test]
+fn a_linkage_block_after_a_long_gap_is_still_transparent() {
+    let gap = "\n".repeat(300);
+    let got = bodies(&format!("extern{gap}\"C\" {{\ntypedef int id_t;\n}}\n"));
+    assert_eq!(got, vec![(302, typedef("typedef int id_t"))]);
+}
+
+#[test]
+fn constants_compilers_disagree_on_are_not_folded() {
+    let got = bodies(
+        "enum h { A = 0xFFFFFFFFFFFFFFFFLL >> 32, B = (-2147483647 - 1) % -1, C = 7 % -2 };\n",
+    );
+    assert_eq!(
+        got,
+        vec![(1, typedef("enum h{A = 0xFFFFFFFFFFFFFFFFLL>>32, B = (-2147483647-1)%-1, C = 1}"))]
+    );
+}
+
+#[test]
+fn a_line_marker_at_the_top_of_the_range_does_not_overflow() {
+    let chunks = split_declarations("t.h", "# 18446744073709551615 \"x.h\"\ntypedef int a;\ntypedef int b;\n");
+    assert_eq!(chunks.len(), 2);
+}
