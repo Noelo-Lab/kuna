@@ -1,0 +1,154 @@
+package pkg
+
+public class TestLabeledJumps {
+   public fun testContinue(tester: (Int) -> Boolean) {
+      label36@ for (i in 1..100) {// 5
+         for (j in 1..100) {// 6
+            if (tester(j) as java.lang.Boolean) {// 7
+               continue@label36
+            }
+
+            System.out.println("$j $i")// 11
+         }
+
+         System.out.println("loop")// 14
+      }
+   }// 16
+
+   public fun testBreak(tester: (Int) -> Boolean) {
+      label33@ for (i in 1..100) {// 19
+         for (j in 1..100) {// 20
+            if (tester(j) as java.lang.Boolean) {// 21
+               break@label33
+            }
+
+            System.out.println("$j $i")// 25
+         }
+      }
+
+      System.out.println("end")// 29
+   }// 30
+}
+
+class 'pkg/TestLabeledJumps' {
+   method 'testContinue (Lkotlin/jvm/functions/Function1;)V' {
+      6      4
+      7      4
+      9      4
+      a      4
+      e      5
+      f      5
+      11      5
+      12      5
+      16      6
+      17      6
+      18      6
+      19      6
+      1a      6
+      1b      6
+      1c      6
+      1d      6
+      1e      6
+      1f      6
+      20      6
+      21      6
+      22      6
+      23      6
+      24      6
+      25      6
+      26      6
+      27      6
+      28      6
+      2c      10
+      2d      10
+      2e      10
+      2f      10
+      30      10
+      31      10
+      32      10
+      33      10
+      34      10
+      35      10
+      37      10
+      38      10
+      39      10
+      40      13
+      41      13
+      42      13
+      43      13
+      44      13
+      46      13
+      47      13
+      48      13
+      4f      15
+   }
+
+   method 'testBreak (Lkotlin/jvm/functions/Function1;)V' {
+      6      18
+      7      18
+      9      18
+      a      18
+      e      19
+      f      19
+      11      19
+      12      19
+      16      20
+      17      20
+      18      20
+      19      20
+      1a      20
+      1b      20
+      1c      20
+      1d      20
+      1e      20
+      1f      20
+      20      20
+      21      20
+      22      20
+      23      20
+      24      20
+      25      20
+      26      20
+      27      20
+      28      20
+      2c      24
+      2d      24
+      2e      24
+      2f      24
+      30      24
+      31      24
+      32      24
+      33      24
+      34      24
+      35      24
+      37      24
+      38      24
+      39      24
+      46      28
+      47      28
+      48      28
+      49      28
+      4a      28
+      4c      28
+      4d      28
+      4e      28
+      4f      29
+   }
+}
+
+Lines mapping:
+5 <-> 5
+6 <-> 6
+7 <-> 7
+11 <-> 11
+14 <-> 14
+16 <-> 16
+19 <-> 19
+20 <-> 20
+21 <-> 21
+25 <-> 25
+29 <-> 29
+30 <-> 30
+Not mapped:
+8
+22

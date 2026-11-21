@@ -1,0 +1,66 @@
+package pkg
+
+public final var topLevelVar: Int = 42// 7
+   internal set
+
+public final val topLevelVal: Regex = Regex("")// 9
+public const val topLevelConstVal: Int = 926
+
+public fun topLevelFun() {
+   val x: Int = 1// 4
+}// 5
+
+public fun interpolateTopLevel() {
+   System.out.println("topLevelVar = ${topLevelVar}")// 14
+   System.out.println("topLevelConstVal = 926")// 15
+}// 16
+
+class 'pkg/TestTopLevelKt' {
+   method '<clinit> ()V' {
+      0      2
+      1      2
+      9      5
+      a      5
+   }
+
+   method 'topLevelFun ()V' {
+      0      9
+      1      9
+      2      10
+   }
+
+   method 'interpolateTopLevel ()V' {
+      0      13
+      1      13
+      2      13
+      3      13
+      4      13
+      5      13
+      6      13
+      7      13
+      8      13
+      9      13
+      a      13
+      c      13
+      d      13
+      e      13
+      f      14
+      10      14
+      11      14
+      12      14
+      13      14
+      15      14
+      16      14
+      17      14
+      18      15
+   }
+}
+
+Lines mapping:
+4 <-> 10
+5 <-> 11
+7 <-> 3
+9 <-> 6
+14 <-> 14
+15 <-> 15
+16 <-> 16

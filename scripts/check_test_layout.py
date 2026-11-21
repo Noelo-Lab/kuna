@@ -32,9 +32,17 @@ def load_manifest(text: str) -> dict:
     return config
 
 
+CRATE_DIRS = ("decompiler/crates", "decompiler/nonnative")
+
+
+def manifests(root: Path) -> list[Path]:
+    """Every workspace member's manifest: the native crates and the non-native engines."""
+    return sorted(m for d in CRATE_DIRS for m in (root / d).glob("*/Cargo.toml"))
+
+
 def check(root: Path) -> list[str]:
     errors = []
-    for manifest in sorted((root / "decompiler/crates").glob("*/Cargo.toml")):
+    for manifest in manifests(root):
         config = load_manifest(manifest.read_text())
         if config.get("package", {}).get("autotests", True):
             continue

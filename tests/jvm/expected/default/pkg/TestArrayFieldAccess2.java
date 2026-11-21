@@ -1,0 +1,376 @@
+package pkg;
+
+public class TestArrayFieldAccess2 {
+   private int[] array = new int[10];// 4
+   private int index = 1;// 5
+   private int value;
+
+   public void test() {
+      this.value = this.array[this.index]++;// 9
+   }// 10
+
+   public void test1() {
+      this.value = this.array[this.index] = this.array[this.index] + 4;// 13
+   }// 14
+
+   public void test2() {
+      this.value = this.array[this.index] = this.array[this.index] - 4;// 17
+   }// 18
+
+   public void test3() {
+      this.value = this.array[this.index] = this.array[this.index] * 4;// 21
+   }// 22
+
+   public void test4() {
+      this.value = this.array[this.index] = this.array[this.index] / 4;// 25
+   }// 26
+
+   public void test5() {
+      this.value = this.array[this.index] = this.array[this.index] | 4;// 29
+   }// 30
+
+   public void test6() {
+      this.value = this.array[this.index] = this.array[this.index] & 4;// 33
+   }// 34
+
+   public void testPP() {
+      this.value = this.array[this.index++]++;// 37
+   }// 38
+
+   public void test1PP() {
+      this.value = this.array[this.index++] += 4;// 41
+   }// 42
+
+   public void test2PP() {
+      this.value = this.array[this.index++] -= 4;// 45
+   }// 46
+
+   public void test3PP() {
+      this.value = this.array[this.index++] *= 4;// 49
+   }// 50
+
+   public void test4PP() {
+      this.value = this.array[this.index++] /= 4;// 53
+   }// 54
+
+   public void test5PP() {
+      this.value = this.array[this.index++] |= 4;// 57
+   }// 58
+
+   public void test6PP() {
+      this.value = this.array[this.index++] &= 4;// 61
+   }// 62
+}
+
+class 'pkg/TestArrayFieldAccess2' {
+   method '<init> ()V' {
+      5      3
+      6      3
+      d      4
+   }
+
+   method 'test ()V' {
+      0      8
+      1      8
+      2      8
+      3      8
+      4      8
+      5      8
+      6      8
+      7      8
+      8      8
+      a      8
+      d      8
+      f      8
+      10      8
+      11      8
+      12      9
+   }
+
+   method 'test1 ()V' {
+      0      12
+      1      12
+      2      12
+      3      12
+      4      12
+      5      12
+      6      12
+      7      12
+      8      12
+      a      12
+      b      12
+      c      12
+      e      12
+      f      12
+      10      12
+      11      12
+      12      13
+   }
+
+   method 'test2 ()V' {
+      0      16
+      1      16
+      2      16
+      3      16
+      4      16
+      5      16
+      6      16
+      7      16
+      8      16
+      a      16
+      b      16
+      c      16
+      e      16
+      f      16
+      10      16
+      11      16
+      12      17
+   }
+
+   method 'test3 ()V' {
+      0      20
+      1      20
+      2      20
+      3      20
+      4      20
+      5      20
+      6      20
+      7      20
+      8      20
+      a      20
+      b      20
+      c      20
+      e      20
+      f      20
+      10      20
+      11      20
+      12      21
+   }
+
+   method 'test4 ()V' {
+      0      24
+      1      24
+      2      24
+      3      24
+      4      24
+      5      24
+      6      24
+      7      24
+      8      24
+      a      24
+      b      24
+      c      24
+      e      24
+      f      24
+      10      24
+      11      24
+      12      25
+   }
+
+   method 'test5 ()V' {
+      0      28
+      1      28
+      2      28
+      3      28
+      4      28
+      5      28
+      6      28
+      7      28
+      8      28
+      a      28
+      b      28
+      c      28
+      e      28
+      f      28
+      10      28
+      11      28
+      12      29
+   }
+
+   method 'test6 ()V' {
+      0      32
+      1      32
+      2      32
+      3      32
+      4      32
+      5      32
+      6      32
+      7      32
+      8      32
+      a      32
+      b      32
+      c      32
+      e      32
+      f      32
+      10      32
+      11      32
+      12      33
+   }
+
+   method 'testPP ()V' {
+      0      36
+      1      36
+      2      36
+      3      36
+      4      36
+      5      36
+      7      36
+      8      36
+      9      36
+      c      36
+      11      36
+      14      36
+      16      36
+      17      36
+      18      36
+      19      37
+   }
+
+   method 'test1PP ()V' {
+      0      40
+      1      40
+      2      40
+      3      40
+      4      40
+      5      40
+      7      40
+      8      40
+      9      40
+      c      40
+      12      40
+      15      40
+      16      40
+      17      40
+      18      40
+      19      41
+   }
+
+   method 'test2PP ()V' {
+      0      44
+      1      44
+      2      44
+      3      44
+      4      44
+      5      44
+      7      44
+      8      44
+      9      44
+      c      44
+      12      44
+      15      44
+      16      44
+      17      44
+      18      44
+      19      45
+   }
+
+   method 'test3PP ()V' {
+      0      48
+      1      48
+      2      48
+      3      48
+      4      48
+      5      48
+      7      48
+      8      48
+      9      48
+      c      48
+      12      48
+      15      48
+      16      48
+      17      48
+      18      48
+      19      49
+   }
+
+   method 'test4PP ()V' {
+      0      52
+      1      52
+      2      52
+      3      52
+      4      52
+      5      52
+      7      52
+      8      52
+      9      52
+      c      52
+      12      52
+      15      52
+      16      52
+      17      52
+      18      52
+      19      53
+   }
+
+   method 'test5PP ()V' {
+      0      56
+      1      56
+      2      56
+      3      56
+      4      56
+      5      56
+      7      56
+      8      56
+      9      56
+      c      56
+      12      56
+      15      56
+      16      56
+      17      56
+      18      56
+      19      57
+   }
+
+   method 'test6PP ()V' {
+      0      60
+      1      60
+      2      60
+      3      60
+      4      60
+      5      60
+      7      60
+      8      60
+      9      60
+      c      60
+      12      60
+      15      60
+      16      60
+      17      60
+      18      60
+      19      61
+   }
+}
+
+Lines mapping:
+4 <-> 4
+5 <-> 5
+9 <-> 9
+10 <-> 10
+13 <-> 13
+14 <-> 14
+17 <-> 17
+18 <-> 18
+21 <-> 21
+22 <-> 22
+25 <-> 25
+26 <-> 26
+29 <-> 29
+30 <-> 30
+33 <-> 33
+34 <-> 34
+37 <-> 37
+38 <-> 38
+41 <-> 41
+42 <-> 42
+45 <-> 45
+46 <-> 46
+49 <-> 49
+50 <-> 50
+53 <-> 53
+54 <-> 54
+57 <-> 57
+58 <-> 58
+61 <-> 61
+62 <-> 62
+Not mapped:
+3

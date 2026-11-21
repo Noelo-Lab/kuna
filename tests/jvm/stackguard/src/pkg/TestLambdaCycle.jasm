@@ -1,0 +1,64 @@
+package pkg;
+super public class TestLambdaCycle
+	version 61:0
+{
+  const #7 = Method TestLambdaCycle.ping:"()V";
+  const #8 = Method TestLambdaCycle.pong:"()V";
+  Field task:"Lpkg/TestLambdaCycle$Task;";
+  public Method "<init>":"()V"
+	stack 3 locals 1
+  {
+		aload_0;
+		invokespecial	Method java/lang/Object."<init>":"()V";
+		return;
+  }
+  public Method start:"()V"
+	stack 3 locals 1
+  {
+		aload_0;
+		aload_0;
+		invokedynamic	InvokeDynamic REF_invokeStatic:Method java/lang/invoke/LambdaMetafactory.metafactory:"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;":run:"(Lpkg/TestLambdaCycle;)Lpkg/TestLambdaCycle$Task;" {
+			MethodType "()V",
+			MethodHandle REF_invokeVirtual:#7,
+			MethodType "()V"
+		};
+		putfield	Field task:"Lpkg/TestLambdaCycle$Task;";
+		return;
+  }
+  synthetic Method ping:"()V"
+	stack 3 locals 1
+  {
+		aload_0;
+		aload_0;
+		invokedynamic	InvokeDynamic REF_invokeStatic:Method java/lang/invoke/LambdaMetafactory.metafactory:"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;":run:"(Lpkg/TestLambdaCycle;)Lpkg/TestLambdaCycle$Task;" {
+			MethodType "()V",
+			MethodHandle REF_invokeVirtual:#8,
+			MethodType "()V"
+		};
+		putfield	Field task:"Lpkg/TestLambdaCycle$Task;";
+		return;
+  }
+  synthetic Method pong:"()V"
+	stack 3 locals 1
+  {
+		aload_0;
+		aload_0;
+		invokedynamic	InvokeDynamic REF_invokeStatic:Method java/lang/invoke/LambdaMetafactory.metafactory:"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;":run:"(Lpkg/TestLambdaCycle;)Lpkg/TestLambdaCycle$Task;" {
+			MethodType "()V",
+			MethodHandle REF_invokeVirtual:#7,
+			MethodType "()V"
+		};
+		putfield	Field task:"Lpkg/TestLambdaCycle$Task;";
+		return;
+  }
+  NestMembers TestLambdaCycle$Task;
+  static abstract interface InnerClass Task=class TestLambdaCycle$Task of class TestLambdaCycle;
+  public static final InnerClass Lookup=class java/lang/invoke/MethodHandles$Lookup of class java/lang/invoke/MethodHandles;
+}
+interface TestLambdaCycle$Task
+	version 61:0
+{
+  public abstract Method run:"()V";
+  NestHost TestLambdaCycle;
+  static abstract interface InnerClass Task=class TestLambdaCycle$Task of class TestLambdaCycle;
+}

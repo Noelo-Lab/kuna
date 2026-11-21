@@ -1,0 +1,329 @@
+package pkg;
+
+public class TestSwitchPatternMatching18 {
+   static void test(Integer o) {
+      switch (o) {// 5
+         case 42:
+            System.out.println("42");// 6
+            break;
+         case Integer i when i < 50:// 8
+            System.out.println("small");
+            break;
+         case Comparable<Integer> i when i.compareTo(17) > 0:// 9
+            System.out.println("comparable");// 10
+            break;
+         default:
+            System.out.println("default");// 11
+      }
+   }// 13
+
+   static void test2(Integer o) {
+      switch (o) {// 16
+         case 16:
+         case null:
+            System.out.println("maybe 16?");// 18
+            break;
+         case 42:
+            System.out.println("42");// 17
+            break;
+         case Integer i when i < 50:// 19
+            System.out.println("small");
+            break;
+         default:
+            System.out.println("default");// 20
+      }
+   }// 22
+
+   static void test3(Integer o) {
+      switch (o) {// 25
+         case 16:
+         case null:
+            System.out.println("definitely null");// 29
+            break;
+         case 42:
+            System.out.println("42");// 26
+            break;
+         case Integer i when i < 50:// 27
+            System.out.println("small");
+            break;
+         default:
+            System.out.println("default");// 30
+      }
+   }// 32
+}
+
+class 'pkg/TestSwitchPatternMatching18' {
+   method 'test (Ljava/lang/Integer;)V' {
+      0      4
+      10      4
+      11      4
+      12      4
+      13      4
+      14      4
+      15      4
+      16      4
+      17      4
+      18      4
+      19      4
+      1a      4
+      1b      4
+      1c      4
+      1d      4
+      1e      4
+      1f      4
+      20      4
+      21      4
+      22      4
+      23      4
+      24      4
+      25      4
+      26      4
+      27      4
+      28      4
+      29      4
+      2a      4
+      2b      4
+      2c      6
+      2d      6
+      2e      6
+      2f      6
+      30      6
+      31      6
+      32      6
+      33      6
+      34      7
+      38      8
+      39      8
+      3a      8
+      3b      8
+      3c      8
+      3d      8
+      3e      8
+      3f      8
+      40      8
+      41      8
+      47      9
+      48      9
+      49      9
+      4a      9
+      4b      9
+      4c      9
+      4d      9
+      4e      9
+      4f      10
+      53      11
+      54      11
+      55      11
+      56      11
+      57      11
+      58      11
+      59      11
+      5a      11
+      5b      11
+      5c      11
+      5d      11
+      5e      11
+      5f      11
+      60      11
+      61      11
+      62      11
+      63      11
+      69      12
+      6a      12
+      6b      12
+      6c      12
+      6d      12
+      6e      12
+      6f      12
+      70      12
+      71      13
+      74      15
+      75      15
+      76      15
+      77      15
+      78      15
+      79      15
+      7a      15
+      7b      15
+      7f      17
+   }
+
+   method 'test2 (Ljava/lang/Integer;)V' {
+      0      20
+      b      20
+      c      20
+      d      20
+      e      20
+      f      20
+      10      20
+      11      20
+      12      20
+      13      20
+      14      20
+      15      20
+      16      20
+      17      20
+      18      20
+      19      20
+      1a      20
+      1b      20
+      1c      20
+      1d      20
+      1e      20
+      1f      20
+      20      20
+      21      20
+      22      20
+      23      20
+      24      20
+      25      20
+      26      20
+      27      20
+      28      26
+      29      26
+      2a      26
+      2b      26
+      2c      26
+      2d      26
+      2e      26
+      2f      26
+      30      27
+      33      23
+      34      23
+      35      23
+      36      23
+      37      23
+      38      23
+      39      23
+      3a      23
+      3b      24
+      3f      28
+      40      28
+      41      28
+      42      28
+      43      28
+      44      28
+      45      28
+      46      28
+      47      28
+      48      28
+      4e      29
+      4f      29
+      50      29
+      51      29
+      52      29
+      53      29
+      54      29
+      55      29
+      56      30
+      59      32
+      5a      32
+      5b      32
+      5c      32
+      5d      32
+      5e      32
+      5f      32
+      60      32
+      64      34
+   }
+
+   method 'test3 (Ljava/lang/Integer;)V' {
+      0      37
+      b      37
+      c      37
+      d      37
+      e      37
+      f      37
+      10      37
+      11      37
+      12      37
+      13      37
+      14      37
+      15      37
+      16      37
+      17      37
+      18      37
+      19      37
+      1a      37
+      1b      37
+      1c      37
+      1d      37
+      1e      37
+      1f      37
+      20      37
+      21      37
+      22      37
+      23      37
+      24      37
+      25      37
+      26      37
+      27      37
+      28      43
+      29      43
+      2a      43
+      2b      43
+      2c      43
+      2d      43
+      2e      43
+      2f      43
+      30      44
+      34      45
+      35      45
+      36      45
+      37      45
+      38      45
+      39      45
+      3a      45
+      3b      45
+      3c      45
+      3d      45
+      43      46
+      44      46
+      45      46
+      46      46
+      47      46
+      48      46
+      49      46
+      4a      46
+      4b      47
+      4e      40
+      4f      40
+      50      40
+      51      40
+      52      40
+      53      40
+      54      40
+      55      40
+      56      41
+      59      49
+      5a      49
+      5b      49
+      5c      49
+      5d      49
+      5e      49
+      5f      49
+      60      49
+      64      51
+   }
+}
+
+Lines mapping:
+5 <-> 5
+6 <-> 7
+8 <-> 9
+9 <-> 12
+10 <-> 13
+11 <-> 16
+13 <-> 18
+16 <-> 21
+17 <-> 27
+18 <-> 24
+19 <-> 29
+20 <-> 33
+22 <-> 35
+25 <-> 38
+26 <-> 44
+27 <-> 46
+29 <-> 41
+30 <-> 50
+32 <-> 52

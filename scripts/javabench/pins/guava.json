@@ -1,0 +1,34 @@
+{
+ "artifacts": {
+  "com.google.guava:guava:33.8.0-jre": {
+   "sha256": "97b79ec3f2c0a6313a0c2df51ce1abdf8907e6531803467b81efcaaf99b35161",
+   "url": "https://repo1.maven.org/maven2/com/google/guava/guava/33.8.0-jre/guava-33.8.0-jre.jar"
+  },
+  "com.google.guava:guava:33.8.0-jre:sources": {
+   "sha256": "4f183ff540044f5ce4f9c1084888510632dfac2953ced0da45760bc74d99f4ca",
+   "url": "https://repo1.maven.org/maven2/com/google/guava/guava/33.8.0-jre/guava-33.8.0-jre-sources.jar"
+  }
+ },
+ "deps": [
+  {
+   "coord": "com.google.errorprone:error_prone_annotations:2.52.0",
+   "sha256": "24822b246a2da324006fc5a1c940b1d2cf9cd716e530155c39fea695d5ab01c4"
+  },
+  {
+   "coord": "com.google.guava:failureaccess:1.0.3",
+   "sha256": "cbfc3906b19b8f55dd7cfd6dfe0aa4532e834250d7f080bd8d211a3e246b59cb"
+  },
+  {
+   "coord": "com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava",
+   "sha256": "b372a037d4230aa57fbeffdef30fd6123f9c0c2db85d0aced00c91b974f33f99"
+  },
+  {
+   "coord": "com.google.j2objc:j2objc-annotations:3.1",
+   "sha256": "84d3a150518485f8140ea99b8a985656749629f6433c92b80c75b36aba3b099b"
+  },
+  {
+   "coord": "org.jspecify:jspecify:1.0.1",
+   "sha256": "070d75f261fe4c5b8202508366715f7f2d4660f88c8ef7e6d3575e48c9683b66"
+  }
+ ]
+}

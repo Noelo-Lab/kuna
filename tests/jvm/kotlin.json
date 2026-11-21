@@ -1,0 +1,1051 @@
+{
+ "notes": "Kotlin cases vendored by kotlin_corpus.py from the Kotlin oracle corpus ($KUNA_JVM_ORACLE/corpus-kt): the fixture form of every case that needs no library. KotlinTests sets load only the Kotlin plugin in Vineflower (jvm_plugins on here: the other two bundled plugins do not change these outputs, per the corpus crosscheck); core SingleClassesTest sets load none and print Java. option_pairs are the complete effective option map. regen.py adds these cases to cases.tsv.",
+ "corpus_manifest_sha256": "ca579c7d53b76a59e5ff80c43611475fe2bb77cdf51ad41178253e30ebee8b85",
+ "excluded": [
+  {
+   "id": "kotlin-core-entire-classpath/pkg/TestKotlinConstructorKt",
+   "reason": "include-classpath=1 with kotlin-stdlib on the oracle JVM class path (tools/m2/kotlin-stdlib-jdk8-2.0.0.jar, tools/m2/kotlin-stdlib-2.0.0.jar, tools/m2/kotlin-stdlib-jdk7-2.0.0.jar, tools/m2/annotations-24.0.0.jar)"
+  },
+  {
+   "id": "kotlin-core-entire-classpath/pkg/TestNamedSuspendFun2Kt",
+   "reason": "include-classpath=1 with kotlin-stdlib on the oracle JVM class path (tools/m2/kotlin-stdlib-jdk8-2.0.0.jar, tools/m2/kotlin-stdlib-2.0.0.jar, tools/m2/kotlin-stdlib-jdk7-2.0.0.jar, tools/m2/annotations-24.0.0.jar)"
+  }
+ ],
+ "sets": [
+  {
+   "name": "Kotlin Core Default",
+   "slug": "kotlin-core-default",
+   "fixture": false,
+   "source": "test/org/jetbrains/java/decompiler/SingleClassesTest.java (this::registerDefault)",
+   "option_pairs": [
+    [
+     "jvm_plugins",
+     "0"
+    ],
+    [
+     "log-level",
+     "warn"
+    ],
+    [
+     "decompile-generics",
+     "1"
+    ],
+    [
+     "remove-synthetic",
+     "1"
+    ],
+    [
+     "remove-bridge",
+     "1"
+    ],
+    [
+     "keep-literals",
+     "1"
+    ],
+    [
+     "__unit_test_mode__",
+     "1"
+    ],
+    [
+     "new-line-separator",
+     "1"
+    ],
+    [
+     "error-message",
+     ""
+    ],
+    [
+     "include-runtime",
+     ""
+    ],
+    [
+     "bytecode-source-mapping",
+     "1"
+    ],
+    [
+     "__dump_original_lines__",
+     "1"
+    ],
+    [
+     "dump-exception-on-error",
+     "0"
+    ],
+    [
+     "ignore-invalid-bytecode",
+     "1"
+    ],
+    [
+     "verify-anonymous-classes",
+     "1"
+    ],
+    [
+     "include-classpath",
+     "0"
+    ],
+    [
+     "ternary-in-if",
+     "1"
+    ],
+    [
+     "force-jsr-inline",
+     "1"
+    ],
+    [
+     "verify-pre-post-merges",
+     "1"
+    ]
+   ]
+  },
+  {
+   "name": "Kotlin Entire Classpath",
+   "slug": "kotlin-entire-classpath",
+   "fixture": false,
+   "source": "plugins/kotlin/src/test/java/org/vineflower/kotlin/KotlinTests.java (this::registerKotlinTests)",
+   "option_pairs": [
+    [
+     "jvm_plugins",
+     "1"
+    ],
+    [
+     "log-level",
+     "warn"
+    ],
+    [
+     "decompile-generics",
+     "1"
+    ],
+    [
+     "remove-synthetic",
+     "0"
+    ],
+    [
+     "remove-bridge",
+     "1"
+    ],
+    [
+     "keep-literals",
+     "1"
+    ],
+    [
+     "__unit_test_mode__",
+     "1"
+    ],
+    [
+     "new-line-separator",
+     "1"
+    ],
+    [
+     "error-message",
+     ""
+    ],
+    [
+     "include-runtime",
+     ""
+    ],
+    [
+     "bytecode-source-mapping",
+     "1"
+    ],
+    [
+     "__dump_original_lines__",
+     "1"
+    ],
+    [
+     "dump-exception-on-error",
+     "0"
+    ],
+    [
+     "ignore-invalid-bytecode",
+     "1"
+    ],
+    [
+     "verify-anonymous-classes",
+     "1"
+    ]
+   ]
+  },
+  {
+   "name": "Kotlin Multifile Facade",
+   "slug": "kotlin-multifile-facade",
+   "fixture": false,
+   "source": "plugins/kotlin/src/test/java/org/vineflower/kotlin/KotlinTests.java (this::registerMultifileTests)",
+   "option_pairs": [
+    [
+     "jvm_plugins",
+     "1"
+    ],
+    [
+     "log-level",
+     "warn"
+    ],
+    [
+     "decompile-generics",
+     "1"
+    ],
+    [
+     "remove-synthetic",
+     "0"
+    ],
+    [
+     "remove-bridge",
+     "1"
+    ],
+    [
+     "keep-literals",
+     "1"
+    ],
+    [
+     "__unit_test_mode__",
+     "1"
+    ],
+    [
+     "new-line-separator",
+     "1"
+    ],
+    [
+     "error-message",
+     ""
+    ],
+    [
+     "include-runtime",
+     ""
+    ],
+    [
+     "bytecode-source-mapping",
+     "1"
+    ],
+    [
+     "__dump_original_lines__",
+     "1"
+    ],
+    [
+     "dump-exception-on-error",
+     "0"
+    ],
+    [
+     "ignore-invalid-bytecode",
+     "1"
+    ],
+    [
+     "kt-decompile-facades",
+     "1"
+    ]
+   ]
+  }
+ ],
+ "tests": [
+  {
+   "id": "kotlin-core-default/pkg/TestIllegalVarName",
+   "set": "Kotlin Core Default",
+   "class_files": [
+    "kotlin/core-kt/pkg/TestIllegalVarName.class"
+   ],
+   "oracle": "expected/kotlin-core-default/pkg/TestIllegalVarName.java",
+   "decompiled_file": "TestIllegalVarName.kt",
+   "decompiled_file_fallback": "TestIllegalVarName.java",
+   "reference": "testData/results/pkg/TestIllegalVarName.dec"
+  },
+  {
+   "id": "kotlin-core-default/pkg/TestKotlinEnumWhen",
+   "set": "Kotlin Core Default",
+   "class_files": [
+    "kotlin/core-kt/pkg/TestKotlinEnumWhen.class",
+    "kotlin/core-kt/pkg/TestKotlinEnumWhen$WhenMappings.class"
+   ],
+   "oracle": "expected/kotlin-core-default/pkg/TestKotlinEnumWhen.java",
+   "decompiled_file": "TestKotlinEnumWhen.kt",
+   "decompiled_file_fallback": "TestKotlinEnumWhen.java",
+   "reference": "testData/results/pkg/TestKotlinEnumWhen.dec"
+  },
+  {
+   "id": "kotlin-core-default/pkg/TestRunSuspend",
+   "set": "Kotlin Core Default",
+   "class_files": [
+    "kotlin/core-kt/pkg/TestRunSuspend.class"
+   ],
+   "oracle": "expected/kotlin-core-default/pkg/TestRunSuspend.java",
+   "decompiled_file": "TestRunSuspend.kt",
+   "decompiled_file_fallback": "TestRunSuspend.java",
+   "reference": "testData/results/pkg/TestRunSuspend.dec"
+  },
+  {
+   "id": "kotlin-core-default/pkg/TestSuspendLambdaKt",
+   "set": "Kotlin Core Default",
+   "class_files": [
+    "kotlin/core-kt/pkg/TestSuspendLambdaKt.class",
+    "kotlin/core-kt/pkg/TestSuspendLambdaKt$sl1$1.class"
+   ],
+   "oracle": "expected/kotlin-core-default/pkg/TestSuspendLambdaKt.java",
+   "decompiled_file": "TestSuspendLambdaKt.kt",
+   "decompiled_file_fallback": "TestSuspendLambdaKt.java",
+   "reference": "testData/results/pkg/TestSuspendLambdaKt.dec"
+  },
+  {
+   "id": "kotlin-core-default/pkg/TestSynchronizedUnprotected",
+   "set": "Kotlin Core Default",
+   "class_files": [
+    "kotlin/core-kt/pkg/TestSynchronizedUnprotected.class"
+   ],
+   "oracle": "expected/kotlin-core-default/pkg/TestSynchronizedUnprotected.java",
+   "decompiled_file": "TestSynchronizedUnprotected.kt",
+   "decompiled_file_fallback": "TestSynchronizedUnprotected.java",
+   "reference": "testData/results/pkg/TestSynchronizedUnprotected.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestAnnotations",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestAnnotations.class",
+    "kotlin/kt/pkg/TestAnnotations$RepeatableAnnotation$Container.class",
+    "kotlin/kt/pkg/TestAnnotations$RepeatableAnnotation.class",
+    "kotlin/kt/pkg/TestAnnotations$TestAnnotation.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestAnnotations.kt",
+   "decompiled_file": "TestAnnotations.kt",
+   "decompiled_file_fallback": "TestAnnotations.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestAnnotations.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestAnonymousEverything",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestAnonymousEverything.class",
+    "kotlin/kt/pkg/TestAnonymousEverything$testAnonymousObject$obj$1.class",
+    "kotlin/kt/pkg/TestAnonymousEverything$testConstructorReference$createAny$1.class",
+    "kotlin/kt/pkg/TestAnonymousEverything$testFunctionAnonymousObject$obj$1.class",
+    "kotlin/kt/pkg/TestAnonymousEverything$testFunctionReference$ref$1.class",
+    "kotlin/kt/pkg/TestAnonymousEverything$testMultipleSubtypes$obj$1.class",
+    "kotlin/kt/pkg/TestAnonymousEverything$testNoTypeReference$newList$1.class",
+    "kotlin/kt/pkg/TestAnonymousEverything$testSerializableLambda$lambda$1.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestAnonymousEverything.kt",
+   "decompiled_file": "TestAnonymousEverything.kt",
+   "decompiled_file_fallback": "TestAnonymousEverything.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestAnonymousEverything.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestAnyType",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestAnyType.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestAnyType.kt",
+   "decompiled_file": "TestAnyType.kt",
+   "decompiled_file_fallback": "TestAnyType.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestAnyType.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestBitwiseFunctions",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestBitwiseFunctions.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestBitwiseFunctions.kt",
+   "decompiled_file": "TestBitwiseFunctions.kt",
+   "decompiled_file_fallback": "TestBitwiseFunctions.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestBitwiseFunctions.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestClassDec",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestClassDec.class",
+    "kotlin/kt/pkg/TestClassDec$EmptyDec.class",
+    "kotlin/kt/pkg/TestClassDec$Vec2i.class",
+    "kotlin/kt/pkg/TestClassDec$Vec2iVal.class",
+    "kotlin/kt/pkg/TestClassDec$Vec2iVar.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestClassDec.kt",
+   "decompiled_file": "TestClassDec.kt",
+   "decompiled_file_fallback": "TestClassDec.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestClassDec.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestClassicStringInterpolation",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/ktold/pkg/TestClassicStringInterpolation.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestClassicStringInterpolation.kt",
+   "decompiled_file": "TestClassicStringInterpolation.kt",
+   "decompiled_file_fallback": "TestClassicStringInterpolation.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestClassicStringInterpolation.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestCompanionObject",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestCompanionObject.class",
+    "kotlin/kt/pkg/TestCompanionObject$Companion.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestCompanionObject.kt",
+   "decompiled_file": "TestCompanionObject.kt",
+   "decompiled_file_fallback": "TestCompanionObject.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestCompanionObject.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestComparison",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestComparison.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestComparison.kt",
+   "decompiled_file": "TestComparison.kt",
+   "decompiled_file_fallback": "TestComparison.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestComparison.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestCompileTimeErrors",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestCompileTimeErrors.class",
+    "kotlin/kt/pkg/TestCompileTimeErrors$Test.class",
+    "kotlin/kt/pkg/TestCompileTimeErrors$test2$1.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestCompileTimeErrors.kt",
+   "decompiled_file": "TestCompileTimeErrors.kt",
+   "decompiled_file_fallback": "TestCompileTimeErrors.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestCompileTimeErrors.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestConstructors",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestConstructors.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestConstructors.kt",
+   "decompiled_file": "TestConstructors.kt",
+   "decompiled_file_fallback": "TestConstructors.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestConstructors.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestContracts",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestContracts.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestContracts.kt",
+   "decompiled_file": "TestContracts.kt",
+   "decompiled_file_fallback": "TestContracts.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestContracts.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestConvertedK2JOps",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestConvertedK2JOps.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestConvertedK2JOps.kt",
+   "decompiled_file": "TestConvertedK2JOps.kt",
+   "decompiled_file_fallback": "TestConvertedK2JOps.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestConvertedK2JOps.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestDataClass",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestDataClass.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestDataClass.kt",
+   "decompiled_file": "TestDataClass.kt",
+   "decompiled_file_fallback": "TestDataClass.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestDataClass.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestDestructors",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestDestructors.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestDestructors.kt",
+   "decompiled_file": "TestDestructors.kt",
+   "decompiled_file_fallback": "TestDestructors.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestDestructors.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestEnumClass",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestEnumClass.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestEnumClass.kt",
+   "decompiled_file": "TestEnumClass.kt",
+   "decompiled_file_fallback": "TestEnumClass.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestEnumClass.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestExtensionFun",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestExtensionFun.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestExtensionFun.kt",
+   "decompiled_file": "TestExtensionFun.kt",
+   "decompiled_file_fallback": "TestExtensionFun.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestExtensionFun.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestForRange",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestForRange.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestForRange.kt",
+   "decompiled_file": "TestForRange.kt",
+   "decompiled_file_fallback": "TestForRange.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestForRange.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestFunVarargs",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestFunVarargs.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestFunVarargs.kt",
+   "decompiled_file": "TestFunVarargs.kt",
+   "decompiled_file_fallback": "TestFunVarargs.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestFunVarargs.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestFuncRef",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestFuncRefKt.class",
+    "kotlin/kt/pkg/TestFuncRefKt$test$1.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestFuncRef.kt",
+   "decompiled_file": "TestFuncRefKt.kt",
+   "decompiled_file_fallback": "TestFuncRefKt.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestFuncRef.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestGenerics",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestGenerics.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestGenerics.kt",
+   "decompiled_file": "TestGenerics.kt",
+   "decompiled_file_fallback": "TestGenerics.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestGenerics.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestIfRange",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestIfRange.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestIfRange.kt",
+   "decompiled_file": "TestIfRange.kt",
+   "decompiled_file_fallback": "TestIfRange.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestIfRange.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestInfixFun",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestInfixFun.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestInfixFun.kt",
+   "decompiled_file": "TestInfixFun.kt",
+   "decompiled_file_fallback": "TestInfixFun.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestInfixFun.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestKotlinTypes",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestKotlinTypes.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestKotlinTypes.kt",
+   "decompiled_file": "TestKotlinTypes.kt",
+   "decompiled_file_fallback": "TestKotlinTypes.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestKotlinTypes.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestKt",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestKt.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestKt.kt",
+   "decompiled_file": "TestKt.kt",
+   "decompiled_file_fallback": "TestKt.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestKt.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestLabeledJumps",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestLabeledJumps.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestLabeledJumps.kt",
+   "decompiled_file": "TestLabeledJumps.kt",
+   "decompiled_file_fallback": "TestLabeledJumps.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestLabeledJumps.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestNonInlineLambda",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestNonInlineLambda.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestNonInlineLambda.kt",
+   "decompiled_file": "TestNonInlineLambda.kt",
+   "decompiled_file_fallback": "TestNonInlineLambda.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestNonInlineLambda.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestNothingReturns",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestNothingReturns.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestNothingReturns.kt",
+   "decompiled_file": "TestNothingReturns.kt",
+   "decompiled_file_fallback": "TestNothingReturns.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestNothingReturns.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestNullable",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestNullable.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestNullable.kt",
+   "decompiled_file": "TestNullable.kt",
+   "decompiled_file_fallback": "TestNullable.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestNullable.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestNullableOperator",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestNullableOperator.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestNullableOperator.kt",
+   "decompiled_file": "TestNullableOperator.kt",
+   "decompiled_file_fallback": "TestNullableOperator.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestNullableOperator.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestObject",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestObject.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestObject.kt",
+   "decompiled_file": "TestObject.kt",
+   "decompiled_file_fallback": "TestObject.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestObject.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestParams",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestParams.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestParams.kt",
+   "decompiled_file": "TestParams.kt",
+   "decompiled_file_fallback": "TestParams.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestParams.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestPoorNames",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestPoorNames.class",
+    "kotlin/kt/pkg/TestPoorNames$Class with spaces.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestPoorNames.kt",
+   "decompiled_file": "TestPoorNames.kt",
+   "decompiled_file_fallback": "TestPoorNames.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestPoorNames.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestPropertyAccess",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestPropertyAccess.class",
+    "kotlin/kt/ext/Person.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestPropertyAccess.kt",
+   "decompiled_file": "TestPropertyAccess.kt",
+   "decompiled_file_fallback": "TestPropertyAccess.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestPropertyAccess.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestReflection",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestReflection.class",
+    "kotlin/kt/pkg/TestReflection$testFunctionReference$f$1.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestReflection.kt",
+   "decompiled_file": "TestReflection.kt",
+   "decompiled_file_fallback": "TestReflection.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestReflection.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestSafeCasts",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestSafeCasts.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestSafeCasts.kt",
+   "decompiled_file": "TestSafeCasts.kt",
+   "decompiled_file_fallback": "TestSafeCasts.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestSafeCasts.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestSealedHierarchy",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestSealedHierarchy.class",
+    "kotlin/kt/pkg/TestSealedHierarchy$TestClass.class",
+    "kotlin/kt/pkg/TestSealedHierarchy$TestObject.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestSealedHierarchy.kt",
+   "decompiled_file": "TestSealedHierarchy.kt",
+   "decompiled_file_fallback": "TestSealedHierarchy.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestSealedHierarchy.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestShadowParam",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestShadowParam.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestShadowParam.kt",
+   "decompiled_file": "TestShadowParam.kt",
+   "decompiled_file_fallback": "TestShadowParam.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestShadowParam.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestSmartCasts",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestSmartCasts.class",
+    "kotlin/kt/pkg/TestSmartCasts$A$B.class",
+    "kotlin/kt/pkg/TestSmartCasts$A$C.class",
+    "kotlin/kt/pkg/TestSmartCasts$A.class",
+    "kotlin/kt/pkg/TestSmartCasts$X$DefaultImpls.class",
+    "kotlin/kt/pkg/TestSmartCasts$X.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestSmartCasts.kt",
+   "decompiled_file": "TestSmartCasts.kt",
+   "decompiled_file_fallback": "TestSmartCasts.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestSmartCasts.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestStringInterpolation",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestStringInterpolation.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestStringInterpolation.kt",
+   "decompiled_file": "TestStringInterpolation.kt",
+   "decompiled_file_fallback": "TestStringInterpolation.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestStringInterpolation.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestSynchronized",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestSynchronized.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestSynchronized.kt",
+   "decompiled_file": "TestSynchronized.kt",
+   "decompiled_file_fallback": "TestSynchronized.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestSynchronized.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestTailrecFunctions",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestTailrecFunctions.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestTailrecFunctions.kt",
+   "decompiled_file": "TestTailrecFunctions.kt",
+   "decompiled_file_fallback": "TestTailrecFunctions.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestTailrecFunctions.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestTopLevelKt",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestTopLevelKt.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestTopLevelKt.kt",
+   "decompiled_file": "TestTopLevelKt.kt",
+   "decompiled_file_fallback": "TestTopLevelKt.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestTopLevelKt.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestTryCatchExpressions",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestTryCatchExpressions.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryCatchExpressions.kt",
+   "decompiled_file": "TestTryCatchExpressions.kt",
+   "decompiled_file_fallback": "TestTryCatchExpressions.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestTryCatchExpressions.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestTryCatchFinally",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestTryCatchFinally.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryCatchFinally.kt",
+   "decompiled_file": "TestTryCatchFinally.kt",
+   "decompiled_file_fallback": "TestTryCatchFinally.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestTryCatchFinally.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestTryCatchNested",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestTryCatchNested.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryCatchNested.kt",
+   "decompiled_file": "TestTryCatchNested.kt",
+   "decompiled_file_fallback": "TestTryCatchNested.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestTryCatchNested.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestTryCatchThrowable",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestTryCatchThrowable.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryCatchThrowable.kt",
+   "decompiled_file": "TestTryCatchThrowable.kt",
+   "decompiled_file_fallback": "TestTryCatchThrowable.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestTryCatchThrowable.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestTryFinally",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestTryFinally.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryFinally.kt",
+   "decompiled_file": "TestTryFinally.kt",
+   "decompiled_file_fallback": "TestTryFinally.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestTryFinally.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestTryFinallyExpressions",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestTryFinallyExpressions.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryFinallyExpressions.kt",
+   "decompiled_file": "TestTryFinallyExpressions.kt",
+   "decompiled_file_fallback": "TestTryFinallyExpressions.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestTryFinallyExpressions.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestTryLoop",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestTryLoop.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryLoop.kt",
+   "decompiled_file": "TestTryLoop.kt",
+   "decompiled_file_fallback": "TestTryLoop.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestTryLoop.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestTryLoop2",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestTryLoop2.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryLoop2.kt",
+   "decompiled_file": "TestTryLoop2.kt",
+   "decompiled_file_fallback": "TestTryLoop2.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestTryLoop2.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestTryLoopNoCatch",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestTryLoopNoCatch.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryLoopNoCatch.kt",
+   "decompiled_file": "TestTryLoopNoCatch.kt",
+   "decompiled_file_fallback": "TestTryLoopNoCatch.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestTryLoopNoCatch.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestTryLoopRecompile",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestTryLoopRecompile.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryLoopRecompile.kt",
+   "decompiled_file": "TestTryLoopRecompile.kt",
+   "decompiled_file_fallback": "TestTryLoopRecompile.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestTryLoopRecompile.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestTryLoopReturnFinally",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestTryLoopReturnFinally.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryLoopReturnFinally.kt",
+   "decompiled_file": "TestTryLoopReturnFinally.kt",
+   "decompiled_file_fallback": "TestTryLoopReturnFinally.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestTryLoopReturnFinally.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestTryLoopSimpleFinally",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestTryLoopSimpleFinally.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryLoopSimpleFinally.kt",
+   "decompiled_file": "TestTryLoopSimpleFinally.kt",
+   "decompiled_file_fallback": "TestTryLoopSimpleFinally.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestTryLoopSimpleFinally.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestTryReturn",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestTryReturn.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryReturn.kt",
+   "decompiled_file": "TestTryReturn.kt",
+   "decompiled_file_fallback": "TestTryReturn.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestTryReturn.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestTrySplit",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestTrySplit.class",
+    "kotlin/kt/pkg/TestTrySplit$Companion.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestTrySplit.kt",
+   "decompiled_file": "TestTrySplit.kt",
+   "decompiled_file_fallback": "TestTrySplit.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestTrySplit.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestTrySynchronized",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestTrySynchronized.class",
+    "kotlin/kt/pkg/TestTrySynchronized$Companion.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestTrySynchronized.kt",
+   "decompiled_file": "TestTrySynchronized.kt",
+   "decompiled_file_fallback": "TestTrySynchronized.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestTrySynchronized.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestTryVar",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestTryVar.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryVar.kt",
+   "decompiled_file": "TestTryVar.kt",
+   "decompiled_file_fallback": "TestTryVar.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestTryVar.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestVarReplace",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestVarReplaceKt.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestVarReplace.kt",
+   "decompiled_file": "TestVarReplaceKt.kt",
+   "decompiled_file_fallback": "TestVarReplaceKt.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestVarReplace.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestVars",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestVars.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestVars.kt",
+   "decompiled_file": "TestVars.kt",
+   "decompiled_file_fallback": "TestVars.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestVars.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestWhen",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestWhen.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestWhen.kt",
+   "decompiled_file": "TestWhen.kt",
+   "decompiled_file_fallback": "TestWhen.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestWhen.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestWhenBoolean",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestWhenBoolean.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestWhenBoolean.kt",
+   "decompiled_file": "TestWhenBoolean.kt",
+   "decompiled_file_fallback": "TestWhenBoolean.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestWhenBoolean.dec"
+  },
+  {
+   "id": "kotlin-entire-classpath/pkg/TestWhenControlFlow",
+   "set": "Kotlin Entire Classpath",
+   "class_files": [
+    "kotlin/kt/pkg/TestWhenControlFlow.class"
+   ],
+   "oracle": "expected/kotlin-entire-classpath/pkg/TestWhenControlFlow.kt",
+   "decompiled_file": "TestWhenControlFlow.kt",
+   "decompiled_file_fallback": "TestWhenControlFlow.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestWhenControlFlow.dec"
+  },
+  {
+   "id": "kotlin-multifile-facade/pkg/TestMultifile",
+   "set": "Kotlin Multifile Facade",
+   "class_files": [
+    "kotlin/kt/pkg/TestMultifile.class"
+   ],
+   "oracle": "expected/kotlin-multifile-facade/pkg/TestMultifile.kt",
+   "decompiled_file": "TestMultifile.kt",
+   "decompiled_file_fallback": "TestMultifile.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestMultifile.dec"
+  },
+  {
+   "id": "kotlin-multifile-facade/pkg/TestMultifile__TestMultifileA",
+   "set": "Kotlin Multifile Facade",
+   "class_files": [
+    "kotlin/kt/pkg/TestMultifile__TestMultifileAKt.class"
+   ],
+   "oracle": "expected/kotlin-multifile-facade/pkg/TestMultifile__TestMultifileA.kt",
+   "decompiled_file": "TestMultifile__TestMultifileAKt.kt",
+   "decompiled_file_fallback": "TestMultifile__TestMultifileAKt.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestMultifile__TestMultifileA.dec"
+  },
+  {
+   "id": "kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB",
+   "set": "Kotlin Multifile Facade",
+   "class_files": [
+    "kotlin/kt/pkg/TestMultifile__TestMultifileBKt.class"
+   ],
+   "oracle": "expected/kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB.kt",
+   "decompiled_file": "TestMultifile__TestMultifileBKt.kt",
+   "decompiled_file_fallback": "TestMultifile__TestMultifileBKt.java",
+   "reference": "plugins/kotlin/testData/results/pkg/TestMultifile__TestMultifileB.dec"
+  }
+ ]
+}

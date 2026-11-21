@@ -1,0 +1,210 @@
+package pkg;
+
+public class TestPPMMLoop {
+   public void test(int a, String s) {
+      while (++a > 0) {// 5
+         s = s + "a";// 6
+      }
+   }// 8
+
+   public void test1(int a, String s) {
+      while (a++ > 0) {// 11
+         s = s + "a";// 12
+      }
+   }// 14
+
+   public void test2(int a, String s) {
+      while (--a > 0) {// 17
+         s = s + "a";// 18
+      }
+   }// 20
+
+   public void test3(int a, String s) {
+      while (a-- > 0) {// 23
+         s = s + "a";// 24
+      }
+   }// 26
+
+   public void test4() {
+      int vvv1 = -68;// 29
+      int var10000 = ++vvv1;// 30
+      vvv1--;// 31
+      if (var10000 < 110 ? vvv1 >= 1773919094 : vvv1 > 20) {
+         throw new RuntimeException();// 34
+      }
+   }// 32
+
+   public void test5() {
+      int vvv1 = -68;// 38
+      int var10000 = ++vvv1;// 39
+      vvv1--;// 40
+      if (var10000 < 110 ? vvv1 >= 1773919094 : vvv1 > 20 && vvv1 == 380) {
+         throw new RuntimeException();// 43
+      }
+   }// 41
+}
+
+class 'pkg/TestPPMMLoop' {
+   method 'test (ILjava/lang/String;)V' {
+      0      4
+      1      4
+      2      4
+      3      4
+      4      4
+      5      4
+      6      4
+      e      5
+      12      5
+      13      5
+      17      5
+      18      5
+      19      5
+      1a      5
+      1e      7
+   }
+
+   method 'test1 (ILjava/lang/String;)V' {
+      1      10
+      2      10
+      3      10
+      4      10
+      5      10
+      6      10
+      e      11
+      12      11
+      13      11
+      17      11
+      18      11
+      19      11
+      1a      11
+      1e      13
+   }
+
+   method 'test2 (ILjava/lang/String;)V' {
+      0      16
+      1      16
+      2      16
+      3      16
+      4      16
+      5      16
+      6      16
+      e      17
+      12      17
+      13      17
+      17      17
+      18      17
+      19      17
+      1a      17
+      1e      19
+   }
+
+   method 'test3 (ILjava/lang/String;)V' {
+      1      22
+      2      22
+      3      22
+      4      22
+      5      22
+      6      22
+      e      23
+      12      23
+      13      23
+      17      23
+      18      23
+      19      23
+      1a      23
+      1e      25
+   }
+
+   method 'test4 ()V' {
+      0      28
+      1      28
+      2      28
+      3      29
+      4      29
+      5      29
+      7      30
+      8      30
+      9      30
+      a      31
+      b      31
+      c      31
+      d      31
+      e      31
+      f      31
+      10      31
+      11      31
+      12      31
+      13      31
+      14      31
+      18      31
+      19      31
+      1a      31
+      1b      31
+      1c      31
+      1d      31
+      1e      34
+      26      32
+   }
+
+   method 'test5 ()V' {
+      0      37
+      1      37
+      2      37
+      3      38
+      4      38
+      5      38
+      7      39
+      8      39
+      9      39
+      a      40
+      b      40
+      c      40
+      d      40
+      e      40
+      f      40
+      10      40
+      11      40
+      12      40
+      13      40
+      14      40
+      18      40
+      19      40
+      1a      40
+      1b      40
+      1c      40
+      1d      40
+      1e      40
+      1f      40
+      20      40
+      21      40
+      22      40
+      23      40
+      24      40
+      25      43
+      2d      41
+   }
+}
+
+Lines mapping:
+5 <-> 5
+6 <-> 6
+8 <-> 8
+11 <-> 11
+12 <-> 12
+14 <-> 14
+17 <-> 17
+18 <-> 18
+20 <-> 20
+23 <-> 23
+24 <-> 24
+26 <-> 26
+29 <-> 29
+30 <-> 30
+31 <-> 31
+32 <-> 35
+34 <-> 33
+38 <-> 38
+39 <-> 39
+40 <-> 40
+41 <-> 44
+43 <-> 42

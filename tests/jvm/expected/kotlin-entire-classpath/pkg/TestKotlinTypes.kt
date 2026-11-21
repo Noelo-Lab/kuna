@@ -1,0 +1,27 @@
+package pkg
+
+public class TestKotlinTypes {
+   public final val consumer: (Int) -> Unit = { it: Int ->
+      Unit.INSTANCE// 8
+   }
+
+   public fun throwAlways(): Nothing {
+      throw Exception()// 5
+   }
+}
+
+class 'pkg/TestKotlinTypes' {
+   method 'consumer$lambda$0 (I)Lkotlin/Unit;' {
+      0      4
+      1      4
+      2      4
+   }
+
+   method 'throwAlways ()Ljava/lang/Void;' {
+      7      8
+   }
+}
+
+Lines mapping:
+5 <-> 9
+8 <-> 5

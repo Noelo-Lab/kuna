@@ -1,0 +1,231 @@
+package pkg;
+
+public enum TestEnum {
+   E1,
+   E2 {
+      @Override
+      public void m() {
+      }// 22
+   },
+   E3("-", TestEnum.Type.ODD),// 24
+   E4("+", TestEnum.Type.EVEN) {// 25
+      @Override
+      public void m() {
+      }// 27
+   };
+
+   private String s;
+
+   public void m() {
+   }// 32
+
+   TestEnum() {
+      this("?", null);// 36
+   }
+
+   TestEnum(@Deprecated String s, TestEnum.Type t) {
+      this.s = s;// 37
+   }
+
+   private void testSwitch() {
+      switch (this) {// 40
+         case E1:
+            System.out.println("E1");// 42
+            break;// 43
+         case E2:
+            System.out.println("E2");// 45
+            break;// 46
+         case E3:
+            System.out.println("E3");// 48
+            break;// 49
+         case E4:
+            System.out.println("E4");// 51
+      }
+
+      switch (TestEnum.Type.ODD) {// 55
+         case ODD:
+            System.out.println("ODD");// 57
+      }
+   }// 59
+
+   private enum Type {
+      ODD,
+      EVEN;
+   }
+}
+
+class 'pkg/TestEnum$1' {
+   method 'm ()V' {
+      0      7
+   }
+}
+
+class 'pkg/TestEnum' {
+   method '<clinit> ()V' {
+      21      9
+      22      9
+      23      9
+      24      9
+      25      9
+      33      10
+      34      10
+      35      10
+      36      10
+      37      10
+   }
+
+   method 'm ()V' {
+      0      19
+   }
+
+   method '<init> (Ljava/lang/String;I)V' {
+      3      22
+      4      22
+      5      22
+      6      22
+      7      22
+      8      22
+      9      23
+   }
+
+   method '<init> (Ljava/lang/String;ILjava/lang/String;Lpkg/TestEnum$Type;)V' {
+      6      26
+      7      26
+      8      26
+      9      26
+      a      26
+      b      27
+   }
+
+   method 'testSwitch ()V' {
+      3      30
+      7      30
+      8      30
+      9      30
+      a      30
+      b      30
+      c      30
+      d      30
+      e      30
+      f      30
+      10      30
+      11      30
+      12      30
+      13      30
+      14      30
+      15      30
+      16      30
+      17      30
+      18      30
+      19      30
+      1a      30
+      1b      30
+      1c      30
+      1d      30
+      1e      30
+      1f      30
+      20      30
+      21      30
+      22      30
+      23      30
+      24      30
+      25      30
+      26      30
+      27      30
+      28      32
+      29      32
+      2a      32
+      2b      32
+      2c      32
+      2d      32
+      2e      32
+      2f      32
+      30      33
+      33      35
+      34      35
+      35      35
+      36      35
+      37      35
+      38      35
+      39      35
+      3a      35
+      3b      36
+      3e      38
+      3f      38
+      40      38
+      41      38
+      42      38
+      43      38
+      44      38
+      45      38
+      46      39
+      49      41
+      4a      41
+      4b      41
+      4c      41
+      4d      41
+      4e      41
+      4f      41
+      50      41
+      54      44
+      55      44
+      56      44
+      5a      44
+      5b      44
+      5c      44
+      5d      44
+      5e      44
+      5f      44
+      60      44
+      61      44
+      62      44
+      63      44
+      64      44
+      65      44
+      66      44
+      67      44
+      68      44
+      69      44
+      6a      44
+      6b      44
+      6c      46
+      6d      46
+      6e      46
+      6f      46
+      70      46
+      71      46
+      72      46
+      73      46
+      74      48
+   }
+}
+
+class 'pkg/TestEnum$2' {
+   method 'm ()V' {
+      0      13
+   }
+}
+
+Lines mapping:
+22 <-> 8
+24 <-> 10
+25 <-> 11
+27 <-> 14
+32 <-> 20
+36 <-> 23
+37 <-> 27
+40 <-> 31
+42 <-> 33
+43 <-> 34
+45 <-> 36
+46 <-> 37
+48 <-> 39
+49 <-> 40
+51 <-> 42
+55 <-> 45
+57 <-> 47
+59 <-> 49
+Not mapped:
+18
+19
+20

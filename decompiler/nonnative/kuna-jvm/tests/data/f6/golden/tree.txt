@@ -1,0 +1,24 @@
+UNIT directory $DATA/tree
+R true false
+C -1 pkg/Hello$1
+C -1 pkg/Hello
+C -1 pkg/util/Util
+D 
+D pkg
+D pkg/util
+D res
+D libs
+O -1 readme.txt
+O -1 res/.keep
+K 2
+UNIT archive $DATA/tree/top.zip
+R false false
+D b
+O -1 a.txt
+O -1 b/c.txt
+K 0
+UNIT archive $DATA/tree/libs/inner.jar
+R false false
+D q
+O -1 q/Inner.txt
+K 0

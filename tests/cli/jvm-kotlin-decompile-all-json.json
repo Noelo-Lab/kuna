@@ -1,0 +1,67 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--json",
+    "--option",
+    "jvm_include_runtime",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {},
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "tests/fixtures/jvm/kotlin/classes/com/ex/kt/Counter.class",
+    "binary_sha256": "f695d9acc53b042fc895a794e3e9e46f1270f85dbbf28b5d52fd348a74134e6b",
+    "binary_size": 1840,
+    "binary_source": "in-repo",
+    "in_repo_path": "tests/fixtures/jvm/kotlin/classes/com/ex/kt/Counter.class",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "engine",
+        "op": "eq",
+        "value": "jvm"
+      },
+      {
+        "path": "language",
+        "op": "eq",
+        "value": "kotlin"
+      },
+      {
+        "path": "classes[0].path",
+        "op": "eq",
+        "value": "com/ex/kt/Counter.kt"
+      },
+      {
+        "path": "classes[0].language",
+        "op": "eq",
+        "value": "kotlin"
+      },
+      {
+        "path": "functions[0].language",
+        "op": "eq",
+        "value": "kotlin"
+      },
+      {
+        "path": "functions[0].path",
+        "op": "eq",
+        "value": "com/ex/kt/Counter.kt"
+      }
+    ]
+  },
+  "notes": "decompile-all --json on a Kotlin class file names the Kotlin unit (.kt path) and gives the document, each class record and each method record the language of its unit.",
+  "probe_id": "p-dde6a4183eb3"
+}

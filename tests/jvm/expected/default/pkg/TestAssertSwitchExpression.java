@@ -1,0 +1,69 @@
+package pkg;
+
+public class TestAssertSwitchExpression {
+   public void test(int i, String s) {
+      assert s.equals(switch (i) {// 5
+         case 1 -> "1";// 6
+         case 2 -> "2";// 7
+         default -> "Unknown";// 8
+      });
+   }// 10
+}
+
+class 'pkg/TestAssertSwitchExpression' {
+   method 'test (ILjava/lang/String;)V' {
+      6      4
+      7      4
+      8      4
+      9      4
+      a      4
+      b      4
+      c      4
+      d      4
+      e      4
+      f      4
+      10      4
+      11      4
+      12      4
+      13      4
+      14      4
+      15      4
+      16      4
+      17      4
+      18      4
+      19      4
+      1a      4
+      1b      4
+      1c      4
+      1d      4
+      1e      4
+      1f      4
+      20      4
+      21      4
+      22      4
+      23      4
+      24      5
+      25      5
+      29      6
+      2a      6
+      2e      7
+      2f      7
+      30      4
+      31      4
+      32      4
+      33      4
+      34      4
+      35      4
+      3a      4
+      3b      4
+      3c      4
+      3e      9
+   }
+}
+
+Lines mapping:
+5 <-> 5
+6 <-> 6
+7 <-> 7
+8 <-> 8
+10 <-> 10

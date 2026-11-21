@@ -1,0 +1,43 @@
+package pkg;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Target;
+
+class TypeAnnotations {
+   private @TypeAnnotations.TA("field type") String f1;
+   @TypeAnnotations.MixA("field and type")
+   private String f2;
+
+   @TypeAnnotations.TA("return type") int m1() {
+      return 42;// 18
+   }
+
+   void m2(@TypeAnnotations.TA("parameter") int i) {
+   }// 21
+
+   @Target({ElementType.FIELD, ElementType.TYPE_USE})
+   @interface MixA {
+      String value();
+   }
+
+   @Target(ElementType.TYPE_USE)
+   @interface TA {
+      String value();
+   }
+}
+
+class 'pkg/TypeAnnotations' {
+   method 'm1 ()I' {
+      0      11
+      1      11
+      2      11
+   }
+
+   method 'm2 (I)V' {
+      0      15
+   }
+}
+
+Lines mapping:
+18 <-> 12
+21 <-> 16

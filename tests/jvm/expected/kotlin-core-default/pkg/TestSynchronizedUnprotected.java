@@ -1,0 +1,52 @@
+package pkg;
+
+import kotlin.Metadata;
+import kotlin.Unit;
+
+@Metadata(
+   mv = {2, 0, 0},
+   k = 1,
+   xi = 48,
+   d1 = "\u0000\u0012\n\u0002\u0018\u0002\n\u0002\u0010\u0000\n\u0002\b\u0003\n\u0002\u0010\u0002\n\u0000\u0018\u00002\u00020\u0001B\u0007¢\u0006\u0004\b\u0002\u0010\u0003J\u0006\u0010\u0004\u001a\u00020\u0005¨\u0006\u0006",
+   d2 = {"Lpkg/TestSynchronizedUnprotected;", "", "<init>", "()V", "test", "", "vineflower_testDataKotlin"}
+)
+public final class TestSynchronizedUnprotected {
+   // $VF: Extended synchronized range to monitorexit
+   public final void test() {
+      synchronized (this) {
+         int var2/* $VF was: $i$a$-synchronized-TestSynchronizedUnprotected$test$1 */ = 0;
+         System.out.println("Boom");// 6
+         Unit var4 = Unit.INSTANCE;// 5 7
+      }
+   }
+}
+
+class 'pkg/TestSynchronizedUnprotected' {
+   method 'test ()V' {
+      0      15
+      2      15
+      3      15
+      5      16
+      6      16
+      7      17
+      8      17
+      9      17
+      a      17
+      b      17
+      d      17
+      e      17
+      f      17
+      11      18
+      12      18
+      13      18
+      14      18
+      17      20
+   }
+}
+
+Lines mapping:
+5 <-> 19
+6 <-> 18
+7 <-> 19
+Not mapped:
+8

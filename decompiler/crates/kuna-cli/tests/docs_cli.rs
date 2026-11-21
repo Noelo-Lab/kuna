@@ -9,7 +9,7 @@ use serde_json::Value;
 mod common;
 use common::repo_root;
 
-const REQUIRED: [&str; 5] = ["cli", "options", "agents", "phases", "modes"];
+const REQUIRED: [&str; 7] = ["cli", "options", "agents", "phases", "modes", "jvm", "options-jvm"];
 
 // A concurrent fork can inherit the copy's writable descriptor until exec,
 // causing the relocated executable to fail with ETXTBSY even after copy returns.

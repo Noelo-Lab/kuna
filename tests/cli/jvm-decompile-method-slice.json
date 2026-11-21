@@ -1,0 +1,41 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "com.ex.Main.check",
+    "--option",
+    "jvm_include_runtime",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {},
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "tests/fixtures/jvm/app.jar",
+    "binary_sha256": "e6b6dbdd90823010d81dd913a9c3301e52d902901532d42fe9fdde8b46247dd6",
+    "binary_size": 3096,
+    "binary_source": "in-repo",
+    "in_repo_path": "tests/fixtures/jvm/app.jar",
+    "selector": "com.ex.Main.check",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "^public static boolean check\\(String key\\) \\{\\n   return key\\.length\\(\\) == 16 && Main\\.Checker\\.verify\\(key\\);\\n\\}\\n$"
+    ],
+    "stdout_absent": [
+      "package com\\.ex",
+      "^   public"
+    ]
+  },
+  "notes": "A JVM method selector prints that method's slice of its compilation unit, with the class indentation removed; the jar is routed to the JVM engine before any native loading.",
+  "probe_id": "p-2ab6e9536b89"
+}

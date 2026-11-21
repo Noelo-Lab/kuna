@@ -1,0 +1,145 @@
+package pkg;
+
+import java.lang.invoke.ConstantBootstraps;
+import java.lang.invoke.VarHandle;
+import java.lang.invoke.MethodHandles.Lookup;
+import java.nio.file.StandardOpenOption;
+
+public class TestCondy {
+   public static final Integer field = 1;// 13 14
+   public static final TestCondy selfField = null;// 17
+
+   public static String testNull() {
+      return /* $VF: constant dynamic */ null;// 25
+   }
+
+   public static FakeEnum testEnum() {
+      return /* $VF: constant dynamic */ FakeEnum.FOO;// 32
+   }
+
+   public static Class testPrimitiveClass() {
+      return /* $VF: constant dynamic */ void.class;// 39
+   }
+
+   public static Class testWrongPrimitiveClass() {
+      return (Class)ConstantBootstraps.primitiveClass<"U">();// 45 46
+   }
+
+   public static Class testGetStaticFinal() {
+      return /* $VF: constant dynamic */ field;// 55
+   }
+
+   public static Class testGetSelfStaticFinal() {
+      return /* $VF: constant dynamic */ selfField;// 62
+   }
+
+   public static VarHandle testStaticVarHandle() {
+      return (VarHandle)ConstantBootstraps.staticFieldVarHandle<"field",TestCondy,Integer>();// 68 72
+   }
+
+   public static VarHandle testArrayVarHandle() {
+      return (VarHandle)ConstantBootstraps.arrayVarHandle<"unused",TestCondy[]>();// 78 81
+   }
+
+   public static StandardOpenOption test(int var0) {
+      return (StandardOpenOption[])TestConstantDynamic.getValues<"EnumC$Values">()[var0];// 87 91 92 93
+   }
+
+   public static StandardOpenOption[] getValues(Lookup var0, String var1, Class var2) {
+      return StandardOpenOption.values();// 99 100
+   }
+}
+
+class 'pkg/TestCondy' {
+   method '<clinit> ()V' {
+      0      8
+      1      8
+      2      8
+      3      8
+      7      9
+   }
+
+   method 'testNull ()Ljava/lang/String;' {
+      2      12
+   }
+
+   method 'testEnum ()Lpkg/FakeEnum;' {
+      2      16
+   }
+
+   method 'testPrimitiveClass ()Ljava/lang/Class;' {
+      2      20
+   }
+
+   method 'testWrongPrimitiveClass ()Ljava/lang/Class;' {
+      0      24
+      1      24
+      2      24
+   }
+
+   method 'testGetStaticFinal ()Ljava/lang/Class;' {
+      2      28
+   }
+
+   method 'testGetSelfStaticFinal ()Ljava/lang/Class;' {
+      2      32
+   }
+
+   method 'testStaticVarHandle ()Ljava/lang/invoke/VarHandle;' {
+      0      36
+      1      36
+      2      36
+   }
+
+   method 'testArrayVarHandle ()Ljava/lang/invoke/VarHandle;' {
+      0      40
+      1      40
+      2      40
+   }
+
+   method 'test (I)Ljava/nio/file/StandardOpenOption;' {
+      0      44
+      1      44
+      2      44
+      3      44
+      4      44
+      5      44
+   }
+
+   method 'getValues (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/Class;)[Ljava/nio/file/StandardOpenOption;' {
+      0      48
+      1      48
+      2      48
+      3      48
+   }
+}
+
+Lines mapping:
+13 <-> 9
+14 <-> 9
+17 <-> 10
+25 <-> 13
+32 <-> 17
+39 <-> 21
+45 <-> 25
+46 <-> 25
+55 <-> 29
+62 <-> 33
+68 <-> 37
+72 <-> 37
+78 <-> 41
+81 <-> 41
+87 <-> 45
+91 <-> 45
+92 <-> 45
+93 <-> 45
+99 <-> 49
+100 <-> 49
+Not mapped:
+15
+18
+24
+31
+38
+52
+61

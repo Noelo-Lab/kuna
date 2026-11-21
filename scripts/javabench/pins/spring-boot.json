@@ -1,0 +1,146 @@
+{
+ "artifacts": {
+  "org.springframework.boot:spring-boot:4.1.2": {
+   "sha256": "1fbf6443a301eb9a098bd024149c0edc6578b073f75da8c98bc1af84c43a8f59",
+   "url": "https://repo1.maven.org/maven2/org/springframework/boot/spring-boot/4.1.2/spring-boot-4.1.2.jar"
+  },
+  "org.springframework.boot:spring-boot:4.1.2:sources": {
+   "sha256": "f2ef46f7c8f59c6cee48feeb2964144995d796a7fbbd176bbfeb3bbae7113096",
+   "url": "https://repo1.maven.org/maven2/org/springframework/boot/spring-boot/4.1.2/spring-boot-4.1.2-sources.jar"
+  }
+ },
+ "deps": [
+  {
+   "coord": "ch.qos.logback:logback-classic:1.5.38",
+   "sha256": "afb439c61fa287c9e1925523b13baab03617e724406a389d48b61c2c3e46b700"
+  },
+  {
+   "coord": "ch.qos.logback:logback-core:1.5.38",
+   "sha256": "a855a0fc97b1d06f4efb1c3bba5ebd0eb508d8b58e68e89e4bbc23a85135c883"
+  },
+  {
+   "coord": "com.fasterxml.jackson.core:jackson-annotations:2.21",
+   "sha256": "53ca085f4a150f703f49e1aabd935bd03b43e1ea3d55d135438292af22cef56b"
+  },
+  {
+   "coord": "com.google.code.gson:gson:2.13.2",
+   "sha256": "dd0ce1b55a3ed2080cb70f9c655850cda86c206862310009dcb5e5c95265a5e0"
+  },
+  {
+   "coord": "com.google.errorprone:error_prone_annotations:2.41.0",
+   "sha256": "a56e782b5b50811ac204073a355a21d915a2107fce13ec711331ad036f660fcc"
+  },
+  {
+   "coord": "commons-logging:commons-logging:1.3.6",
+   "sha256": "f8ead8943401081dea0aa824b5b1ba40a0e4ed297a572a0f02258150a0b62357"
+  },
+  {
+   "coord": "io.micrometer:micrometer-commons:1.17.2",
+   "sha256": "af8c85e879025ce30c381e6810e14c4f52b4150894e36c815860d14763271348"
+  },
+  {
+   "coord": "io.micrometer:micrometer-observation:1.17.2",
+   "sha256": "d3ff53cfa0532dc1af0de349073f9aeb985e01f4b88c1d904350178805859695"
+  },
+  {
+   "coord": "io.projectreactor:reactor-core:3.8.8",
+   "sha256": "0a4987b728de02b097ca4707493b12771a3b126013c7e25353be32383ede8f12"
+  },
+  {
+   "coord": "jakarta.servlet:jakarta.servlet-api:6.1.0",
+   "sha256": "8a31f465f3593bf2351531a5c952014eb839da96a605b5825b93dd54714c48c4"
+  },
+  {
+   "coord": "jakarta.validation:jakarta.validation-api:3.1.1",
+   "sha256": "63ce00156388c365f3ac1be71fcfaf114682fc0c452020b5df6e7ec236e142ab"
+  },
+  {
+   "coord": "org.apache.groovy:groovy:5.0.8",
+   "sha256": "942993eee2a6a8f5fcbc1bc76c1ab18d179d598c9b29c8fc96a0138b162e0fa8"
+  },
+  {
+   "coord": "org.apache.logging.log4j:log4j-api:2.25.5",
+   "sha256": "64777f73ea0b3104c04eb82befbdccc30a425a19e83ad06cb2f93aa303511863"
+  },
+  {
+   "coord": "org.apache.logging.log4j:log4j-core:2.25.5",
+   "sha256": "050c4f85deb48b055e9c041ac39043fbb79ce477841a11a1eb2969c86c6a0072"
+  },
+  {
+   "coord": "org.apache.logging.log4j:log4j-jul:2.25.5",
+   "sha256": "23c0b34c3c31811bea7716a33137d1e9e8e228f9f8c240b69f30cdca9afe9a7a"
+  },
+  {
+   "coord": "org.crac:crac:1.5.0",
+   "sha256": "f4426e1641c8f0fa2f025a4cd7c40c285abaf265930e6717adfcaef03d034850"
+  },
+  {
+   "coord": "org.jetbrains.kotlin:kotlin-reflect:2.3.21",
+   "sha256": "33e37d9dfa86c7a29ab34e975b5f4a1287b458878611051f3485652220c1a2cb"
+  },
+  {
+   "coord": "org.jetbrains.kotlin:kotlin-stdlib:2.3.21",
+   "sha256": "6f64eac736db9434dd6925b4a518b9d1d17177652320c37916cf9ba3ce7d7d7a"
+  },
+  {
+   "coord": "org.jetbrains:annotations:13.0",
+   "sha256": "ace2a10dc8e2d5fd34925ecac03e4988b2c0f851650c94b8cef49ba1bd111478"
+  },
+  {
+   "coord": "org.jspecify:jspecify:1.0.1",
+   "sha256": "070d75f261fe4c5b8202508366715f7f2d4660f88c8ef7e6d3575e48c9683b66"
+  },
+  {
+   "coord": "org.reactivestreams:reactive-streams:1.0.4",
+   "sha256": "f75ca597789b3dac58f61857b9ac2e1034a68fa672db35055a8fb4509e325f28"
+  },
+  {
+   "coord": "org.slf4j:jul-to-slf4j:2.0.20",
+   "sha256": "062249d0677a0e08039120a2292a8db064c69d04282bf562af2e54c53ff06976"
+  },
+  {
+   "coord": "org.slf4j:slf4j-api:2.0.20",
+   "sha256": "7e1446499b359675d8aabe6af2de86b85e72ae8a2a932c0b40d0e5ba57097439"
+  },
+  {
+   "coord": "org.springframework:spring-aop:7.0.10",
+   "sha256": "babf50a645f4f788e1267078cf891e472f657cabf65518055cf5214220574e3f"
+  },
+  {
+   "coord": "org.springframework:spring-beans:7.0.10",
+   "sha256": "bd67c6fc887afa30cbcb489ff4f82bf19f818e79ab1cf1bef98dff8a289108ec"
+  },
+  {
+   "coord": "org.springframework:spring-context:7.0.10",
+   "sha256": "f0065166b6a5101a871ab8702d6c4011cf39faed370a64e7ef14a3ad2bf2a99a"
+  },
+  {
+   "coord": "org.springframework:spring-core:7.0.10",
+   "sha256": "a236f31a7c07e3a1a8e7839ec5c0d47b5cc75709132db50416d5dad320341f12"
+  },
+  {
+   "coord": "org.springframework:spring-expression:7.0.10",
+   "sha256": "12067b66548f7613fa8938ca6051a6d1dd8c397bf478e0bb1adb9936358ec81d"
+  },
+  {
+   "coord": "org.springframework:spring-test:7.0.10",
+   "sha256": "73c18292b63e814c415c1c470fcc47be1e21442b80ee31a0bcd949e53d0c49bd"
+  },
+  {
+   "coord": "org.springframework:spring-web:7.0.10",
+   "sha256": "76ddb03d236547f6852def8cb303e1cf2cd2c1954dec5bf2abd87d11b89dfee7"
+  },
+  {
+   "coord": "org.yaml:snakeyaml:2.6",
+   "sha256": "c8f7a98e7394adda02f6317249710e4d1b4c7a25aa8c7eace0c2eea52eb8bf85"
+  },
+  {
+   "coord": "tools.jackson.core:jackson-core:3.1.7",
+   "sha256": "7608c367fd8a92666d28711519599543c180298259963184ce04d2947a8f71e7"
+  },
+  {
+   "coord": "tools.jackson.core:jackson-databind:3.1.7",
+   "sha256": "48c781de87e2016e1f0d973748a27130f11643e7ac080173f40e2d9669d84be3"
+  }
+ ]
+}

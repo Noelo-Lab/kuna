@@ -1,0 +1,129 @@
+package pkg;
+
+import java.util.function.Supplier;
+
+public abstract class TestDoubleNestedClass {
+   private static final TestDoubleNestedClass INNER1 = new TestDoubleNestedClass() {
+      private int x = 5;
+
+      @Override
+      Object test() {
+         class Local {
+            int getX() {
+               return x;
+            }
+         }
+
+         return new Local();
+      }
+   };
+   private static final TestDoubleNestedClass INNER2 = new TestDoubleNestedClass() {
+      @Override
+      Object test() {
+         return new Object() {};
+      }
+   };
+
+   abstract Object test();
+
+   static class Child1 {
+      int x = 5;
+
+      Supplier<TestDoubleNestedClass> foo(int var1) {
+         byte var2 = 10;
+         return () -> new TestDoubleNestedClass() {
+            @Override
+            Object test() {
+               int var1x = Child1.this.x + var1;
+               int var2x = var1 + var2;
+               return Child1.this.x + var1x + var2x;
+            }
+         };
+      }
+   }
+}
+
+class 'pkg/TestDoubleNestedClass$1' {
+   method '<init> ()V' {
+      5      6
+   }
+
+   method 'test ()Ljava/lang/Object;' {
+      8      16
+   }
+}
+
+class 'pkg/TestDoubleNestedClass$1$1Local' {
+   method 'getX ()I' {
+      1      12
+      2      12
+      3      12
+      4      12
+      5      12
+      6      12
+      7      12
+   }
+}
+
+class 'pkg/TestDoubleNestedClass$2' {
+   method 'test ()Ljava/lang/Object;' {
+      8      22
+   }
+}
+
+class 'pkg/TestDoubleNestedClass$Child1' {
+   method '<init> ()V' {
+      5      29
+   }
+
+   method 'foo (I)Ljava/util/function/Supplier;' {
+      0      32
+      1      32
+      2      32
+      b      33
+   }
+
+   method 'lambda$foo$0 (II)Lpkg/TestDoubleNestedClass;' {
+      a      33
+   }
+}
+
+class 'pkg/TestDoubleNestedClass$Child1$1' {
+   method 'test ()Ljava/lang/Object;' {
+      1      36
+      2      36
+      3      36
+      4      36
+      5      36
+      6      36
+      8      36
+      9      36
+      a      36
+      b      36
+      c      36
+      e      37
+      f      37
+      10      37
+      12      37
+      13      37
+      14      37
+      15      37
+      16      37
+      18      38
+      19      38
+      1a      38
+      1b      38
+      1c      38
+      1d      38
+      1e      38
+      1f      38
+      20      38
+      21      38
+      22      38
+      23      38
+      24      38
+      25      38
+   }
+}
+
+Lines mapping:

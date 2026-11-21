@@ -228,8 +228,15 @@ def settables_from_phases_toml(repo=None) -> int:
     return n
 
 
+def native_rows(rows) -> list:
+    """The native engine's rows. A catalog that also lists non-native engines' options tags
+    every row with `engine`; a row without the field is native (older catalogs carry none)."""
+    return [r for r in rows if not isinstance(r, dict) or r.get("engine", "native") == "native"]
+
+
 def catalog_rows(repo=None, kuna=None) -> list:
-    """The live `kuna catalog --json` rows. A capture, not a parse of the source of truth."""
+    """The live `kuna catalog --json` rows of the native engine. A capture, not a parse of
+    the source of truth; every counter here describes phases.toml, so JVM rows are dropped."""
     exe = Path(kuna) if kuna else config.kuna_bin()
     if not exe.exists():
         raise DeriveError("kuna binary not built at {} (cargo build --release -p kuna-cli)".format(exe))
@@ -247,7 +254,10 @@ def catalog_rows(repo=None, kuna=None) -> list:
     except ValueError as exc:
         raise DeriveError("`kuna catalog --json` emitted unparseable JSON: {}".format(exc))
     rows = data.get("settables", data) if isinstance(data, dict) else data
-    if not isinstance(rows, list) or not rows:
+    if not isinstance(rows, list):
+        raise DeriveError("`kuna catalog --json` returned no settable rows")
+    rows = native_rows(rows)
+    if not rows:
         raise DeriveError("`kuna catalog --json` returned no settable rows")
     return rows
 

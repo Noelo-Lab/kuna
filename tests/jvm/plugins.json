@@ -1,0 +1,115 @@
+{
+ "notes": "Cases for Vineflower's bundled plugins (VariableRenaming, IdeaNotNull), replayed from the plugins' own tests (plugins/*/src/test) plus one plain-defaults case. Every set turns the bundled plugins on with the kuna option jvm_plugins; the oracle ran the release jar with its bundled plugins (vf-decompile --plugins). Sets with \"fixture\": true start from the test fixture's base map. Class files and expected text are vendored here by plugin_oracle.py; regen.py adds these cases to cases.tsv.",
+ "sets": [
+  {
+   "name": "With Idea Not Null",
+   "slug": "with-idea-not-null",
+   "fixture": true,
+   "source": "plugins/idea-not-null/src/test/java/org/vineflower/ideanotnull/InnClassesTest.java",
+   "option_pairs": [
+    ["jvm_plugins", "1"],
+    ["bytecode-source-mapping", "1"],
+    ["__dump_original_lines__", "1"],
+    ["dump-exception-on-error", "0"],
+    ["ignore-invalid-bytecode", "1"],
+    ["verify-anonymous-classes", "1"],
+    ["include-classpath", "0"],
+    ["ternary-in-if", "1"],
+    ["force-jsr-inline", "1"]
+   ]
+  },
+  {
+   "name": "JAD Naming",
+   "slug": "jad-naming",
+   "fixture": true,
+   "source": "plugins/variable-renaming/src/test/java/org/vineflower/variablerenaming/VariableRenamingTest.java",
+   "option_pairs": [
+    ["jvm_plugins", "1"],
+    ["bytecode-source-mapping", "1"],
+    ["__dump_original_lines__", "1"],
+    ["dump-exception-on-error", "0"],
+    ["variable-renaming", "jad"]
+   ]
+  },
+  {
+   "name": "Tiny Naming",
+   "slug": "tiny-naming",
+   "fixture": true,
+   "source": "plugins/variable-renaming/src/test/java/org/vineflower/variablerenaming/VariableRenamingTest.java",
+   "option_pairs": [
+    ["jvm_plugins", "1"],
+    ["bytecode-source-mapping", "1"],
+    ["__dump_original_lines__", "1"],
+    ["dump-exception-on-error", "0"],
+    ["variable-renaming", "tiny"]
+   ]
+  },
+  {
+   "name": "Plugin Defaults",
+   "slug": "plugin-defaults",
+   "fixture": false,
+   "source": "java -jar vineflower-1.12.0.jar (CLI defaults, bundled plugins loaded); expected text is the oracle corpus's expected-defaults",
+   "option_pairs": [
+    ["jvm_plugins", "1"]
+   ]
+  }
+ ],
+ "tests": [
+  {
+   "id": "with-idea-not-null/TestIdeaNotNull",
+   "set": "With Idea Not Null",
+   "class_files": ["custom/TestIdeaNotNull.class"],
+   "oracle": "expected/with-idea-not-null/TestIdeaNotNull.java",
+   "decompiled_file": "TestIdeaNotNull.java",
+   "reference": "plugins/idea-not-null/testData/results/TestIdeaNotNull.dec"
+  },
+  {
+   "id": "jad-naming/TestJadLvtCollision",
+   "set": "JAD Naming",
+   "class_files": ["plugins/variable-renaming/custom/TestJadLvtCollision.class"],
+   "oracle": "expected/jad-naming/TestJadLvtCollision.java",
+   "decompiled_file": "TestJadLvtCollision.java",
+   "reference": "plugins/variable-renaming/testData/results/TestJadLvtCollision.dec"
+  },
+  {
+   "id": "jad-naming/pkg/TestJADLocalClasses",
+   "set": "JAD Naming",
+   "class_files": [
+    "plugins/variable-renaming/java8/pkg/TestJADLocalClasses.class",
+    "plugins/variable-renaming/java8/pkg/TestJADLocalClasses$1Test.class"
+   ],
+   "oracle": "expected/jad-naming/pkg/TestJADLocalClasses.java",
+   "decompiled_file": "TestJADLocalClasses.java",
+   "reference": "plugins/variable-renaming/testData/results/pkg/TestJADLocalClasses.dec"
+  },
+  {
+   "id": "jad-naming/pkg/TestJADNaming",
+   "set": "JAD Naming",
+   "class_files": ["plugins/variable-renaming/java8/pkg/TestJADNaming.class"],
+   "oracle": "expected/jad-naming/pkg/TestJADNaming.java",
+   "decompiled_file": "TestJADNaming.java",
+   "reference": "plugins/variable-renaming/testData/results/pkg/TestJADNaming.dec"
+  },
+  {
+   "id": "tiny-naming/pkg/TestTinyNaming",
+   "set": "Tiny Naming",
+   "class_files": [
+    "plugins/variable-renaming/java8/pkg/TestTinyNaming.class",
+    "plugins/variable-renaming/java8/pkg/TestTinyNaming$PascalCase.class",
+    "plugins/variable-renaming/java8/pkg/TestTinyNaming$camelCase.class",
+    "plugins/variable-renaming/java8/pkg/TestTinyNaming$clas.class"
+   ],
+   "oracle": "expected/tiny-naming/pkg/TestTinyNaming.java",
+   "decompiled_file": "TestTinyNaming.java",
+   "reference": "plugins/variable-renaming/testData/results/pkg/TestTinyNaming.dec"
+  },
+  {
+   "id": "plugin-defaults/TestIdeaNotNull",
+   "set": "Plugin Defaults",
+   "class_files": ["custom/TestIdeaNotNull.class"],
+   "oracle": "expected/plugin-defaults/TestIdeaNotNull.java",
+   "decompiled_file": "TestIdeaNotNull.java",
+   "reference": null
+  }
+ ]
+}

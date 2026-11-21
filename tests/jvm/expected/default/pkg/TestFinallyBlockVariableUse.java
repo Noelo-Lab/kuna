@@ -1,0 +1,122 @@
+package pkg;
+
+public class TestFinallyBlockVariableUse {
+   public int test(String s, int i, int j) {
+      System.out.println("a");// 5
+
+      try {
+         System.out.println("b");// 7
+
+         try {
+            return Integer.parseInt(s) - j;// 9 11
+         } catch (NumberFormatException e) {// 13
+            i = j;// 14
+            throw e;// 15
+         }
+      } finally {
+         int id = i - j;// 18
+         if (id > 0) {// 19
+            this.accept(new Object[]{id, s, i, j});// 21
+         }
+      }
+   }
+
+   private boolean condition(int i) {
+      return i-- > 0;// 27
+   }
+
+   private void accept(Object[] args) {
+   }// 32
+}
+
+class 'pkg/TestFinallyBlockVariableUse' {
+   method 'test (Ljava/lang/String;II)I' {
+      0      4
+      1      4
+      2      4
+      3      4
+      4      4
+      5      4
+      6      4
+      7      4
+      8      7
+      9      7
+      a      7
+      b      7
+      c      7
+      d      7
+      e      7
+      f      7
+      10      10
+      11      10
+      12      10
+      13      10
+      14      10
+      15      10
+      18      10
+      49      11
+      4b      12
+      4c      12
+      4d      13
+      4e      13
+      4f      13
+      52      16
+      53      16
+      54      16
+      55      16
+      56      16
+      57      17
+      58      17
+      59      17
+      5a      17
+      5b      17
+      5c      18
+      63      18
+      64      18
+      65      18
+      66      18
+      67      18
+      6b      18
+      6f      18
+      70      18
+      71      18
+      72      18
+      76      18
+      77      18
+      78      18
+      79      18
+      7b      18
+      7c      18
+      7d      18
+   }
+
+   method 'condition (I)Z' {
+      1      24
+      2      24
+      3      24
+      4      24
+      5      24
+      6      24
+      c      24
+   }
+
+   method 'accept ([Ljava/lang/Object;)V' {
+      0      28
+   }
+}
+
+Lines mapping:
+5 <-> 5
+7 <-> 8
+9 <-> 11
+11 <-> 11
+13 <-> 12
+14 <-> 13
+15 <-> 14
+18 <-> 17
+19 <-> 18
+21 <-> 19
+27 <-> 25
+32 <-> 29
+Not mapped:
+23

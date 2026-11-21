@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Decompile with the Vineflower 1.12.0 release jar through DecompilerTestFixture's ConsoleDecompiler API
+# path (see ../../README.md). Same flags as ../../java/bin/vf-decompile (without --javadoc), plus:
+#
+#   --kotlin-only    load ONLY the Kotlin plugin (the bundled vineflower-kotlin-0.1.0.jar, via ServiceLoader),
+#                    like the plugin's Gradle test run; = --plugin-jar $CORPUS/tools/plugin/vineflower-kotlin-0.1.0.jar
+#   --plugin-jar J   load only the plugins ServiceLoader finds in jar J (repeatable)
+#   --plugins        load all plugins bundled in the release jar (kotlin, idea-not-null, variable-renaming)
+#   (none of these)  no plugins (SingleClassesTest's view: Kotlin classes come out as Java)
+#
+# Env: KUNA_JVM_ORACLE, or the overrides CORPUS (holds driver/classes and tools/plugin, built by
+#      ../driver/build.sh), VF_JAVA (default JDK 17), VF_JAR; VF_XMX (default 1g), VF_JAVA_OPTS,
+#      VF_CP_EXTRA (extra entries, ':'-separated, appended to the driver JVM's java.class.path -- what
+#      include-classpath=1 scans).
+set -euo pipefail
+NO_ORACLE='set it to the JVM oracle workspace (decompiler/nonnative/kuna-jvm/tools/oracle/README.md)'
+CORPUS=${CORPUS:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/corpus-kt}
+VF_JAVA=${VF_JAVA:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/jdks/jdk17/bin/java}
+VF_JAR=${VF_JAR:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/oracle/vineflower-1.12.0.jar}
+args=()
+for a in "$@"; do
+  if [ "$a" = "--kotlin-only" ]; then args+=(--plugin-jar "$CORPUS/tools/plugin/vineflower-kotlin-0.1.0.jar"); else args+=("$a"); fi
+done
+CP="$CORPUS/driver/classes:$VF_JAR${VF_CP_EXTRA:+:$VF_CP_EXTRA}"
+# shellcheck disable=SC2086
+exec "$VF_JAVA" "-Xmx${VF_XMX:-1g}" -Dfile.encoding=UTF-8 ${VF_JAVA_OPTS:-} -cp "$CP" corpuskt.KtVfDriver "${args[@]}"

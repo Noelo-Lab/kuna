@@ -26,6 +26,8 @@
 //! handing free heap pages back once the process holds [`ARMED_SLACK`] more
 //! than the last release left under an explicit limit, or [`MIN_GROWTH`] more
 //! otherwise, spending at most [`RELEASE_SHARE`] of the time on it ([`settle`]).
+//! A driver running drives on many threads at once (the JVM engine's) turns
+//! that release off ([`set_release_before_drives`]).
 
 use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -71,6 +73,10 @@ const RELEASE_SHARE: u64 = 32;
 /// Can this platform's allocator hand free pages back ([`release_free_pages`])?
 const RELEASES: bool = cfg!(all(target_os = "linux", target_env = "gnu"));
 
+/// Whether a drive may start by handing free pages back ([`settle`]); see
+/// [`set_release_before_drives`].
+static RELEASE_BEFORE_DRIVES: AtomicBool = AtomicBool::new(true);
+
 #[derive(Clone, Copy)]
 struct Drive {
     start: u64,
@@ -101,6 +107,16 @@ pub fn use_cgroup_default() -> bool {
     *CGROUP_LEVELS.lock().unwrap_or_else(|e| e.into_inner()) = levels;
     CGROUP_DEFAULT.store(on, Ordering::Relaxed);
     on
+}
+
+/// Lets a drive start without handing free pages back (on by default). A
+/// driver whose drives run on many threads at once turns it off: there the
+/// release walks every thread's heap while the others allocate, so it costs
+/// far more than it does a single-threaded batch, and the resident set it
+/// would lower is the whole process's rather than the drive's. A tripped
+/// drive still releases on the way out.
+pub fn set_release_before_drives(on: bool) {
+    RELEASE_BEFORE_DRIVES.store(on, Ordering::Relaxed);
 }
 
 /// The cgroup default's margin for a cap: `max(512 MiB, cap / 10)`, never
@@ -190,7 +206,10 @@ pub fn settle(measured: bool, explicit: bool) -> Option<u64> {
     let rss = resident_bytes()?;
     let floor = FLOOR.fetch_min(rss, Ordering::Relaxed).min(rss);
     let since = now_ns().saturating_sub(RELEASED_AT.load(Ordering::Relaxed));
-    if !RELEASES || !release_due(rss, floor, explicit, since, RELEASE_COST.load(Ordering::Relaxed)) {
+    if !RELEASES
+        || !RELEASE_BEFORE_DRIVES.load(Ordering::Relaxed)
+        || !release_due(rss, floor, explicit, since, RELEASE_COST.load(Ordering::Relaxed))
+    {
         return Some(rss);
     }
     Some(release().unwrap_or(rss))

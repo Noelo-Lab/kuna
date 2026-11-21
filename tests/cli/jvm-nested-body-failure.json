@@ -1,0 +1,75 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--json",
+    "--option",
+    "jvm_include_runtime",
+    "off",
+    "--option",
+    "jvm_vineflower_compat",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {},
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "tests/fixtures/jvm/failures/classes/com/ex/fail/Nested.class",
+    "binary_sha256": "5bc9fcac6f30f61ba277358b3b062fa9e528baf4ead6025d31d849c13af118cc",
+    "binary_size": 2995,
+    "binary_source": "in-repo",
+    "in_repo_path": "tests/fixtures/jvm/failures/classes/com/ex/fail/Nested.class",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "functions[0].name",
+        "op": "eq",
+        "value": "com.ex.fail.Nested.escape"
+      },
+      {
+        "path": "functions[0].nested_errors",
+        "op": "len_eq",
+        "value": 1
+      },
+      {
+        "path": "functions[0].nested_errors[0].body",
+        "op": "eq",
+        "value": "com.ex.fail.Nested.lambda$escape$1(Ljava/lang/StringBuilder;I)V"
+      },
+      {
+        "path": "functions[2].nested_errors[0].body",
+        "op": "eq",
+        "value": "com.ex.fail.Nested$1.run()V"
+      },
+      {
+        "path": "functions[4].nested_errors",
+        "op": "len_eq",
+        "value": 0
+      },
+      {
+        "path": "classes[0].status",
+        "op": "eq",
+        "value": "decompiled"
+      },
+      {
+        "path": "classes[0].nested_errors",
+        "op": "len_eq",
+        "value": 1
+      }
+    ]
+  },
+  "notes": "A lambda or anonymous-class method that fails inside a method fails that method: decompile-all --json names the failed body in the enclosing method's nested_errors (and its error), and a failed field-initializer lambda in the class record's nested_errors. Compat mode keeps the Vineflower failure after a kuna fix.",
+  "probe_id": "p-bb3387bdddc5"
+}

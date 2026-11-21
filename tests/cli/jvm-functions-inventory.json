@@ -1,0 +1,40 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--option",
+    "jvm_include_runtime",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {},
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "tests/fixtures/jvm/app.jar",
+    "binary_sha256": "e6b6dbdd90823010d81dd913a9c3301e52d902901532d42fe9fdde8b46247dd6",
+    "binary_size": 3096,
+    "binary_source": "in-repo",
+    "in_repo_path": "tests/fixtures/jvm/app.jar",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "^com\\.ex\\.Main\\.check\\(Ljava/lang/String;\\)Z$",
+      "^com\\.ex\\.util\\.Helper\\.loop\\(I\\)I$"
+    ],
+    "stdout_absent": [
+      "^0x"
+    ]
+  },
+  "notes": "functions on a jar lists every method from the class files as class.method plus its JVM descriptor, without decompiling.",
+  "probe_id": "p-2d3453c7ce3d"
+}

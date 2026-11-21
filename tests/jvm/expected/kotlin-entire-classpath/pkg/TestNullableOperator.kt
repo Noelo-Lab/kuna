@@ -1,0 +1,200 @@
+package pkg
+
+public class TestNullableOperator {
+   public fun test(x: Int?): Int {
+      return x ?: 0// 5
+   }
+
+   public fun test2(x: String?): String {
+      var var10000: java.lang.String = x// 9
+      if (x == null) {
+         var10000 = "default"
+      }
+
+      return var10000
+   }
+
+   public fun test2_1(x: Any?): Any {
+      var var10000: Any = x// 13
+      if (x == null) {
+         var10000 = "default"
+      }
+
+      return var10000
+   }
+
+   public fun test2_2(x: Any?): Any {
+      var var10000: Any = x// 17
+      if (x == null) {
+         var10000 = "default"
+      }
+
+      return var10000
+   }
+
+   public fun test3(x: Int?): Int {
+      if (x != null) {// 21
+         return x
+      } else {
+         throw Exception()
+      }
+   }
+
+   public fun test4(x: Exception?) {
+      if (x != null) {// 25
+         x.printStackTrace()
+      }
+   }// 26
+
+   public fun test5(x: Exception?) {
+      if (x != null) {// 29
+         x.printStackTrace()
+      } else {
+         throw Exception()
+      }
+   }
+
+   public fun test6(x: Int?): Int {
+      if (x != null) {// 33
+         val y: Int = x
+         System.out.println(y)// 35
+         return y// 37
+      } else {
+         return 0
+      }
+   }
+
+   public fun test6_1(x: Int?) {
+      if (x != null) {// 41
+         System.out.println(x)// 43
+      }
+   }
+}
+
+class 'pkg/TestNullableOperator' {
+   method 'test (Ljava/lang/Integer;)I' {
+      0      4
+      c      4
+      d      4
+   }
+
+   method 'test2 (Ljava/lang/String;)Ljava/lang/String;' {
+      0      8
+      2      9
+      3      9
+      4      9
+      6      10
+      7      10
+      8      13
+   }
+
+   method 'test2_1 (Ljava/lang/Object;)Ljava/lang/Object;' {
+      0      17
+      2      18
+      3      18
+      4      18
+      6      19
+      7      19
+      8      22
+   }
+
+   method 'test2_2 (Ljava/lang/Object;)Ljava/lang/Object;' {
+      0      26
+      2      27
+      3      27
+      4      27
+      6      28
+      7      28
+      8      31
+   }
+
+   method 'test3 (Ljava/lang/Integer;)I' {
+      0      35
+      2      35
+      3      35
+      4      35
+      5      36
+      6      36
+      7      36
+      8      36
+      13      38
+   }
+
+   method 'test4 (Ljava/lang/Exception;)V' {
+      0      43
+      2      43
+      3      43
+      4      43
+      5      44
+      6      44
+      7      44
+      c      46
+   }
+
+   method 'test5 (Ljava/lang/Exception;)V' {
+      0      49
+      2      49
+      3      49
+      4      49
+      5      50
+      6      50
+      7      50
+      8      54
+      13      52
+   }
+
+   method 'test6 (Ljava/lang/Integer;)I' {
+      0      57
+      2      57
+      3      57
+      4      57
+      5      58
+      6      58
+      7      58
+      8      58
+      c      62
+      d      62
+      e      59
+      f      59
+      10      59
+      12      59
+      13      59
+      14      59
+      16      60
+   }
+
+   method 'test6_1 (Ljava/lang/Integer;)V' {
+      0      67
+      2      67
+      3      67
+      4      67
+      5      68
+      6      68
+      7      68
+      c      70
+      d      68
+      e      68
+      f      68
+      11      68
+      12      68
+      13      68
+   }
+}
+
+Lines mapping:
+5 <-> 5
+9 <-> 9
+13 <-> 18
+17 <-> 27
+21 <-> 36
+25 <-> 44
+26 <-> 47
+29 <-> 50
+33 <-> 58
+35 <-> 60
+37 <-> 61
+41 <-> 68
+43 <-> 69
+Not mapped:
+30
+44

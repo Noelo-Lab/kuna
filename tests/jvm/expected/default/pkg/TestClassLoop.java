@@ -1,0 +1,358 @@
+package pkg;
+
+public class TestClassLoop {
+   public static void testSimpleInfinite() {
+      while (true) {
+         System.out.println();// 23
+      }
+   }
+
+   public static void testFinally() {
+      boolean a = Math.random() > 0.0;// 29
+
+      while (true) {
+         try {
+            if (!a) {// 33
+               return;// 34
+            }
+         } finally {
+            System.out.println("1");// 38
+         }
+      }
+   }
+
+   public static void testCatch() {
+      boolean a = Math.random() > 0.0;// 45
+
+      while (true) {
+         try {
+            if (!a) {// 49
+               return;// 50
+            }
+         } catch (Exception e) {// 53
+            System.out.println("1");// 54
+         }
+      }
+   }
+
+   public static void testFinallyContinue() {
+      boolean a = Math.random() > 0.0;// 61
+
+      while (true) {
+         while (true) {
+            try {
+               System.out.println("1");// 65
+               break;
+            } finally {
+               if (a) {// 68
+                  System.out.println("3");// 69
+                  continue;// 70
+               }
+            }
+         }
+
+         System.out.println("4");// 74
+      }
+   }
+
+   public static int testWhileCombined(String in) {
+      int len = in.length();// 79
+      int i = 0;// 80
+      boolean decSeen = false;// 81
+      boolean signSeen = false;// 82
+      int decPt = 0;// 83
+      int nLeadZero = 0;// 85
+      int nTrailZero = 0;// 86
+
+      while (i < len) {// 89
+         char c = in.charAt(i);// 90
+         if (c == '0') {// 91
+            nLeadZero++;// 92
+         } else {
+            if (c != '.') {// 93
+               break;
+            }
+
+            if (decSeen) {// 94
+               throw new NumberFormatException("multiple points");// 96
+            }
+
+            decPt = i;// 98
+            if (signSeen) {// 99
+               decPt--;// 100
+            }
+
+            decSeen = true;// 102
+         }
+
+         i++;// 106
+      }
+
+      return decPt;// 108
+   }
+
+   public int testLoopIpp(int i, int j) {
+      while (true) {
+         try {
+            if (i >= j) {// 114
+               return j;// 124
+            }
+
+            i = j++ / i;// 115
+         } catch (RuntimeException re) {// 117
+            i = 10;// 118
+         }
+      }
+   }
+}
+
+class 'pkg/TestClassLoop' {
+   method 'testSimpleInfinite ()V' {
+      0      5
+      1      5
+      2      5
+      3      5
+      4      5
+      5      5
+   }
+
+   method 'testFinally ()V' {
+      0      10
+      1      10
+      2      10
+      3      10
+      4      10
+      5      10
+      6      10
+      7      10
+      d      10
+      e      14
+      f      14
+      10      14
+      11      14
+      1a      15
+      27      18
+      28      18
+      29      18
+      2a      18
+      2b      18
+      2c      18
+      2d      18
+      2e      18
+   }
+
+   method 'testCatch ()V' {
+      0      24
+      1      24
+      2      24
+      3      24
+      4      24
+      5      24
+      6      24
+      7      24
+      d      24
+      e      28
+      f      28
+      10      28
+      11      28
+      12      29
+      16      31
+      17      32
+      18      32
+      19      32
+      1a      32
+      1b      32
+      1c      32
+      1d      32
+      1e      32
+   }
+
+   method 'testFinallyContinue ()V' {
+      0      38
+      1      38
+      2      38
+      3      38
+      4      38
+      5      38
+      6      38
+      7      38
+      d      38
+      e      43
+      f      43
+      10      43
+      11      43
+      12      43
+      13      43
+      14      43
+      15      43
+      26      46
+      27      46
+      28      46
+      29      46
+      2a      47
+      2b      47
+      2c      47
+      2d      47
+      2e      47
+      2f      47
+      30      47
+      31      47
+      32      48
+      37      53
+      38      53
+      39      53
+      3a      53
+      3b      53
+      3c      53
+      3d      53
+      3e      53
+   }
+
+   method 'testWhileCombined (Ljava/lang/String;)I' {
+      0      58
+      1      58
+      2      58
+      3      58
+      4      58
+      5      59
+      6      59
+      7      60
+      8      60
+      9      61
+      a      61
+      b      61
+      c      62
+      d      62
+      e      62
+      f      63
+      10      63
+      11      63
+      12      64
+      13      64
+      14      64
+      15      66
+      16      66
+      17      66
+      18      66
+      19      66
+      1a      67
+      1b      67
+      1c      67
+      1d      67
+      1e      67
+      1f      67
+      20      67
+      21      68
+      22      68
+      23      68
+      24      68
+      25      68
+      26      68
+      27      68
+      28      69
+      29      69
+      2a      69
+      2e      71
+      2f      71
+      30      71
+      31      71
+      32      71
+      33      71
+      34      71
+      35      75
+      36      75
+      37      75
+      38      75
+      3d      76
+      3e      76
+      42      76
+      43      79
+      44      79
+      45      79
+      46      80
+      47      80
+      48      80
+      49      80
+      4a      80
+      4b      81
+      4c      81
+      4d      81
+      4e      84
+      4f      84
+      50      87
+      51      87
+      52      87
+      56      90
+      57      90
+      58      90
+   }
+
+   method 'testLoopIpp (II)I' {
+      0      96
+      1      96
+      2      96
+      3      96
+      4      96
+      6      100
+      7      100
+      8      100
+      9      100
+      a      100
+      b      100
+      12      101
+      13      102
+      14      102
+      15      102
+      19      97
+      1a      97
+   }
+}
+
+Lines mapping:
+23 <-> 6
+29 <-> 11
+33 <-> 15
+34 <-> 16
+38 <-> 19
+45 <-> 25
+49 <-> 29
+50 <-> 30
+53 <-> 32
+54 <-> 33
+61 <-> 39
+65 <-> 44
+68 <-> 47
+69 <-> 48
+70 <-> 49
+74 <-> 54
+79 <-> 59
+80 <-> 60
+81 <-> 61
+82 <-> 62
+83 <-> 63
+85 <-> 64
+86 <-> 65
+89 <-> 67
+90 <-> 68
+91 <-> 69
+92 <-> 70
+93 <-> 72
+94 <-> 76
+96 <-> 77
+98 <-> 80
+99 <-> 81
+100 <-> 82
+102 <-> 85
+106 <-> 88
+108 <-> 91
+114 <-> 97
+115 <-> 101
+117 <-> 102
+118 <-> 103
+124 <-> 98
+Not mapped:
+39
+55
+72
+119
+120

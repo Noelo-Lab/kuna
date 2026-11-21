@@ -1,0 +1,77 @@
+package pkg;
+
+public class TestLabeledBlockInConstructor {
+   public TestLabeledBlockInConstructor() {
+      boolean result;
+      label12: {
+         if (Math.random() < 0.5) {// 7
+            System.out.println(1);// 8
+            if (Math.random() < 0.5) {// 9
+               result = false;// 10
+               break label12;// 11
+            }
+         }
+
+         result = true;// 14
+      }
+
+      System.out.println(result);// 16
+   }// 17
+}
+
+class 'pkg/TestLabeledBlockInConstructor' {
+   method '<init> ()V' {
+      4      6
+      5      6
+      6      6
+      7      6
+      8      6
+      9      6
+      a      6
+      b      6
+      c      6
+      d      6
+      e      7
+      f      7
+      10      7
+      11      7
+      12      7
+      13      7
+      14      7
+      15      8
+      16      8
+      17      8
+      18      8
+      19      8
+      1a      8
+      1b      8
+      1c      8
+      1d      8
+      1e      8
+      1f      9
+      20      9
+      21      10
+      24      14
+      25      14
+      26      17
+      27      17
+      28      17
+      29      17
+      2a      17
+      2b      17
+      2c      17
+      2d      18
+   }
+}
+
+Lines mapping:
+7 <-> 7
+8 <-> 8
+9 <-> 9
+10 <-> 10
+11 <-> 11
+14 <-> 15
+16 <-> 18
+17 <-> 19
+Not mapped:
+4

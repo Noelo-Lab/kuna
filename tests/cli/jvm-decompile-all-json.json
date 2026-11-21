@@ -1,0 +1,67 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--json",
+    "--option",
+    "jvm_include_runtime",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {},
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "tests/fixtures/jvm/app.jar",
+    "binary_sha256": "e6b6dbdd90823010d81dd913a9c3301e52d902901532d42fe9fdde8b46247dd6",
+    "binary_size": 3096,
+    "binary_source": "in-repo",
+    "in_repo_path": "tests/fixtures/jvm/app.jar",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "engine",
+        "op": "eq",
+        "value": "jvm"
+      },
+      {
+        "path": "language",
+        "op": "eq",
+        "value": "java"
+      },
+      {
+        "path": "classes",
+        "op": "len_eq",
+        "value": 2
+      },
+      {
+        "path": "functions",
+        "op": "len_gt",
+        "value": 5
+      },
+      {
+        "path": "functions[0].address",
+        "op": "eq",
+        "value": null
+      },
+      {
+        "path": "functions[0].path",
+        "op": "eq",
+        "value": "com/ex/Main.java"
+      }
+    ]
+  },
+  "notes": "decompile-all --json on a jar keeps the native document shape: method records with null addresses and bytecode sizes, plus one compilation unit per top-level class.",
+  "probe_id": "p-14413704d585"
+}

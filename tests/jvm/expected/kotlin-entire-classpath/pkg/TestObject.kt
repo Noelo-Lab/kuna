@@ -1,0 +1,50 @@
+package pkg
+
+public object TestObject {
+   private final var objectVar: Int = 42// 8
+   public final val objectVal: Regex = Regex("")// 10
+   public const val objectConstVal: Int = 926
+
+   public fun objectFun() {
+      objectVar += -1// 5
+   }// 6
+
+   @JvmStatic
+   public fun objectJvmStaticFun() {
+      val var0: Int = objectVar++// 16
+   }// 17
+}
+
+class 'pkg/TestObject' {
+   method '<clinit> ()V' {
+      a      3
+      b      3
+      13      4
+      14      4
+   }
+
+   method 'objectFun ()V' {
+      5      8
+      7      8
+      8      8
+      9      8
+      a      9
+   }
+
+   method 'objectJvmStaticFun ()V' {
+      0      13
+      1      13
+      2      13
+      3      13
+      a      13
+      e      14
+   }
+}
+
+Lines mapping:
+5 <-> 9
+6 <-> 10
+8 <-> 4
+10 <-> 5
+16 <-> 14
+17 <-> 15

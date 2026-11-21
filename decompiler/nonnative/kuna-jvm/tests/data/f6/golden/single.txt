@@ -1,0 +1,11 @@
+UNIT file $DATA/tree/pkg/Hello.class
+R true false
+C -1 pkg/Hello
+K 0
+UNIT file $DATA/tree/readme.txt
+R true false
+O -1 readme.txt
+K 0
+UNIT file $DATA/tree/missing.class
+R true false
+K 0

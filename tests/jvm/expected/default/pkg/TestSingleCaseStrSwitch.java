@@ -1,0 +1,47 @@
+package pkg;
+
+public class TestSingleCaseStrSwitch {
+   public String test(String s) {
+      return switch (s) {// 5
+         case "" -> "foo bar";// 6
+         default -> s;// 7
+      };
+   }
+}
+
+class 'pkg/TestSingleCaseStrSwitch' {
+   method 'test (Ljava/lang/String;)Ljava/lang/String;' {
+      0      4
+      1d      5
+      1e      5
+      28      4
+      29      4
+      2a      4
+      2b      4
+      2c      4
+      2d      4
+      2e      4
+      2f      4
+      30      4
+      31      4
+      32      4
+      33      4
+      34      4
+      35      4
+      36      4
+      37      4
+      38      4
+      39      4
+      3a      4
+      3b      4
+      3c      5
+      3d      5
+      41      6
+      42      4
+   }
+}
+
+Lines mapping:
+5 <-> 5
+6 <-> 6
+7 <-> 7

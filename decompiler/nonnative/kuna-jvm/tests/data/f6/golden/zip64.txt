@@ -1,0 +1,6 @@
+UNIT archive $DATA/zip64.zip
+R true false
+D b
+O -1 a.txt
+O -1 b/c.txt
+K 0

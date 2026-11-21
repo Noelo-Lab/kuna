@@ -1,0 +1,3 @@
+{
+ "default/pkg/TestJava11StringConcat": "javac-build: Temurin javac 11.0.33 emits the string-concat bytecode recorded in upstream's alternate TestJava11StringConcat_1.dec (the fixture accepts either file)"
+}

@@ -1,0 +1,150 @@
+package pkg;
+
+public class TestSwitchPatternMatching15 {
+   static void test(Object s) {
+      switch (s) {// 5
+         case Integer i when i > 0:// 6
+            System.out.println("positive integer: " + i);// 7
+            break;// 8
+         case Number n when n.hashCode() != 0:// 9
+            System.out.println("Normal number: " + n);// 10
+            break;// 11
+         case Integer i:// 12
+            System.out.println(i);// 13
+            break;// 14
+         case Number n:// 15
+            System.out.println("Number: " + n);// 16
+            break;// 17
+         default:
+      }
+   }// 21
+}
+
+class 'pkg/TestSwitchPatternMatching15' {
+   method 'test (Ljava/lang/Object;)V' {
+      0      4
+      10      4
+      11      4
+      12      4
+      13      4
+      14      4
+      15      4
+      16      4
+      17      4
+      18      4
+      19      4
+      1a      4
+      1b      4
+      1c      4
+      1d      4
+      1e      4
+      1f      4
+      20      4
+      21      4
+      22      4
+      23      4
+      24      4
+      25      4
+      26      4
+      27      4
+      28      4
+      29      4
+      2a      4
+      2b      4
+      2c      4
+      2d      4
+      2e      4
+      2f      4
+      34      5
+      35      5
+      36      5
+      37      5
+      38      5
+      39      5
+      3a      5
+      3b      5
+      41      6
+      42      6
+      43      6
+      44      6
+      45      6
+      46      6
+      47      6
+      48      6
+      49      6
+      4a      6
+      4b      6
+      4c      6
+      4d      7
+      54      8
+      55      8
+      56      8
+      57      8
+      58      8
+      59      8
+      5a      8
+      5b      8
+      5c      8
+      5d      8
+      63      9
+      64      9
+      65      9
+      66      9
+      67      9
+      6b      9
+      6c      9
+      6d      9
+      6e      9
+      6f      9
+      70      9
+      71      9
+      72      9
+      73      10
+      7a      11
+      7b      11
+      7c      12
+      7d      12
+      7e      12
+      7f      12
+      80      12
+      81      12
+      82      12
+      83      12
+      84      13
+      8b      14
+      8c      14
+      8d      15
+      8e      15
+      8f      15
+      90      15
+      91      15
+      95      15
+      96      15
+      97      15
+      98      15
+      99      15
+      9a      15
+      9b      15
+      9c      15
+      9d      16
+      a3      19
+   }
+}
+
+Lines mapping:
+5 <-> 5
+6 <-> 6
+7 <-> 7
+8 <-> 8
+9 <-> 9
+10 <-> 10
+11 <-> 11
+12 <-> 12
+13 <-> 13
+14 <-> 14
+15 <-> 15
+16 <-> 16
+17 <-> 17
+21 <-> 20
+Not mapped:
+19

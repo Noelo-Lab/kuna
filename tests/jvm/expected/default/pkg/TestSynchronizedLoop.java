@@ -1,0 +1,325 @@
+package pkg;
+
+public class TestSynchronizedLoop {
+   public void test1(int i) {
+      try {
+         while (true) {
+            synchronized (this) {// 7
+               while (i >= i) {// 8
+                  this.wait();// 9
+               }
+            }
+
+            synchronized (this) {// 13
+               this.notifyAll();// 14
+            }// 15
+         }
+      } catch (Exception e) {// 17
+         throw new RuntimeException(e);// 18
+      }
+   }
+
+   public void test2() {
+      while (true) {
+         synchronized (this) {// 24
+            ;
+         }// 26
+      }
+   }
+
+   public void test7(int i) {
+      synchronized (this) {// 31
+         while (i > 0) {// 32
+            System.out.println(--i);// 33 34
+         }
+      }
+   }// 37
+
+   public void test12(int i) {
+      synchronized (this) {// 41
+         System.out.println(1);// 42
+
+         while (true) {
+            if (i <= 0) {// 43
+               System.out.println(2);// 56
+               if (i > -2) {// 57
+                  System.out.println(3);// 58
+               }
+               break;
+            }
+
+            i--;// 44
+            System.out.println(1.5);// 45
+
+            try {
+               System.out.println(1.6);// 47
+            } finally {
+               System.out.println(1.7);// 49
+               if (i > 5) {// 50
+                  break;
+               }
+            }
+         }
+      }
+
+      if (i > 2) {// 62
+         System.out.println("Hello!");// 63
+      }
+   }// 65
+
+   public void testLoop(double var1) {
+      if (var1 >= 88.29) {// 68
+         synchronized (this) {// 69
+            while (true) {
+               long var12 = 399L;// 74
+               var1 /= 97.81;// 75
+            }
+         }
+      }
+   }// 81
+
+   public void testFlatten() {
+      long var2 = -151L;// 84
+      long var3 = -384L;// 85
+
+      while (var2 == 5L) {// 86
+         synchronized (this) {// 87
+            var3 -= -714L;// 88
+         }// 89
+      }
+   }// 91
+}
+
+class 'pkg/TestSynchronizedLoop' {
+   method 'test1 (I)V' {
+      0      6
+      3      6
+      4      7
+      5      7
+      6      7
+      7      7
+      8      7
+      9      8
+      a      8
+      b      8
+      c      8
+      1a      12
+      1d      12
+      1e      13
+      1f      13
+      20      13
+      21      13
+      23      14
+      31      16
+      36      17
+      3a      17
+   }
+
+   method 'test2 ()V' {
+      0      23
+      3      23
+      5      25
+   }
+
+   method 'test7 (I)V' {
+      0      30
+      3      30
+      4      31
+      5      31
+      6      31
+      7      31
+      8      32
+      9      32
+      a      32
+      b      32
+      c      32
+      d      32
+      f      32
+      10      32
+      11      32
+      1f      35
+   }
+
+   method 'test12 (I)V' {
+      0      38
+      3      38
+      4      39
+      5      39
+      6      39
+      7      39
+      8      39
+      9      39
+      a      39
+      b      42
+      c      42
+      d      42
+      e      42
+      f      50
+      10      50
+      11      50
+      12      51
+      13      51
+      14      51
+      15      51
+      16      51
+      17      51
+      18      51
+      19      51
+      1a      51
+      1b      54
+      1c      54
+      1d      54
+      1e      54
+      1f      54
+      20      54
+      21      54
+      22      54
+      23      54
+      38      56
+      39      56
+      3a      56
+      3b      56
+      3c      56
+      3d      56
+      3e      56
+      3f      56
+      40      56
+      41      57
+      42      57
+      43      57
+      44      57
+      45      57
+      50      43
+      51      43
+      52      43
+      53      43
+      54      43
+      55      43
+      56      43
+      57      44
+      58      44
+      59      44
+      5a      44
+      5b      44
+      5c      44
+      5d      45
+      5e      45
+      5f      45
+      60      45
+      61      45
+      62      45
+      63      45
+      70      64
+      71      64
+      72      64
+      73      64
+      74      64
+      75      65
+      76      65
+      77      65
+      78      65
+      79      65
+      7a      65
+      7b      65
+      7c      65
+      7d      67
+   }
+
+   method 'testLoop (D)V' {
+      0      70
+      1      70
+      2      70
+      3      70
+      4      70
+      5      70
+      6      70
+      7      70
+      8      71
+      b      71
+      c      73
+      d      73
+      e      73
+      f      73
+      10      73
+      12      74
+      13      74
+      14      74
+      16      74
+      21      78
+   }
+
+   method 'testFlatten ()V' {
+      0      81
+      1      81
+      2      81
+      3      81
+      4      82
+      5      82
+      6      82
+      7      82
+      8      84
+      9      84
+      a      84
+      b      84
+      c      84
+      10      85
+      14      85
+      16      86
+      17      86
+      18      86
+      1a      86
+      1d      87
+      2c      89
+   }
+}
+
+Lines mapping:
+7 <-> 7
+8 <-> 8
+9 <-> 9
+13 <-> 13
+14 <-> 14
+15 <-> 15
+17 <-> 17
+18 <-> 18
+24 <-> 24
+26 <-> 26
+31 <-> 31
+32 <-> 32
+33 <-> 33
+34 <-> 33
+37 <-> 36
+41 <-> 39
+42 <-> 40
+43 <-> 43
+44 <-> 51
+45 <-> 52
+47 <-> 55
+49 <-> 57
+50 <-> 58
+56 <-> 44
+57 <-> 45
+58 <-> 46
+62 <-> 65
+63 <-> 66
+65 <-> 68
+68 <-> 71
+69 <-> 72
+74 <-> 74
+75 <-> 75
+81 <-> 79
+84 <-> 82
+85 <-> 83
+86 <-> 85
+87 <-> 86
+88 <-> 87
+89 <-> 88
+91 <-> 90
+Not mapped:
+11
+36
+51
+53
+60
+76
+79

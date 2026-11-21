@@ -1,0 +1,69 @@
+package pkg;
+
+public class TestSwitchExprString1 {
+   public TestSwitchExprString1.Type get(String s) {
+      if (s == null) {// 9
+         return TestSwitchExprString1.Type.B;// 10
+      }
+
+      return switch (s) {// 13
+         case "a" -> TestSwitchExprString1.Type.A;// 14
+         default -> TestSwitchExprString1.Type.B;// 15
+      };
+   }
+
+   enum Type {
+      A,
+      B;
+   }
+}
+
+class 'pkg/TestSwitchExprString1' {
+   method 'get (Ljava/lang/String;)Lpkg/TestSwitchExprString1$Type;' {
+      0      4
+      1      4
+      2      4
+      3      4
+      4      5
+      5      5
+      6      5
+      7      5
+      8      8
+      25      9
+      26      9
+      30      8
+      31      8
+      32      8
+      33      8
+      34      8
+      35      8
+      36      8
+      37      8
+      38      8
+      39      8
+      3a      8
+      3b      8
+      3c      8
+      3d      8
+      3e      8
+      3f      8
+      40      8
+      41      8
+      42      8
+      43      8
+      44      9
+      45      9
+      46      9
+      4a      10
+      4b      10
+      4c      10
+      4d      8
+   }
+}
+
+Lines mapping:
+9 <-> 5
+10 <-> 6
+13 <-> 9
+14 <-> 10
+15 <-> 11

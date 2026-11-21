@@ -1,0 +1,297 @@
+package pkg
+
+public data class TestDataClass(dataClassVal: Regex, variableWithVeryLongName: Int, requestLineWrapsIfTheParamListIsTooLong: List<String>, nullability: String?) {
+   public final val dataClassVal: Regex
+   public final val variableWithVeryLongName: Int
+   public final val requestLineWrapsIfTheParamListIsTooLong: List<String>
+   public final val nullability: String?
+
+   init {
+      this.dataClassVal = dataClassVal// 4
+      this.variableWithVeryLongName = variableWithVeryLongName// 5
+      this.requestLineWrapsIfTheParamListIsTooLong = requestLineWrapsIfTheParamListIsTooLong// 6
+      this.nullability = nullability// 7
+   }// 3
+
+   public operator fun component1(): Regex {
+      return this.dataClassVal
+   }
+
+   public operator fun component2(): Int {
+      return this.variableWithVeryLongName
+   }
+
+   public operator fun component3(): List<String> {
+      return this.requestLineWrapsIfTheParamListIsTooLong
+   }
+
+   public operator fun component4(): String? {
+      return this.nullability
+   }
+
+   public fun copy(
+      dataClassVal: Regex = this.dataClassVal,
+      variableWithVeryLongName: Int = this.variableWithVeryLongName,
+      requestLineWrapsIfTheParamListIsTooLong: List<String> = this.requestLineWrapsIfTheParamListIsTooLong,
+      nullability: String? = this.nullability
+   ): TestDataClass {
+      return TestDataClass(dataClassVal, variableWithVeryLongName, requestLineWrapsIfTheParamListIsTooLong, nullability)
+   }
+
+   public open fun toString(): String {
+      return "TestDataClass(dataClassVal=${this.dataClassVal}, variableWithVeryLongName=${this.variableWithVeryLongName}, requestLineWrapsIfTheParamListIsTooLong=${this.requestLineWrapsIfTheParamListIsTooLong}, nullability=${this.nullability})"
+   }
+
+   public open fun hashCode(): Int {
+      return (
+               (this.dataClassVal.hashCode() * 31 + Integer.hashCode(this.variableWithVeryLongName)) * 31
+                  + this.requestLineWrapsIfTheParamListIsTooLong.hashCode()
+            )
+            * 31
+         + (if (this.nullability == null) 0 else this.nullability.hashCode())
+      }
+
+   public open operator fun equals(other: Any?): Boolean {
+      label40@
+      if (this === other) {
+         return true
+      } else {
+         return other is TestDataClass
+            && this.dataClassVal == (other as TestDataClass).dataClassVal
+            && this.variableWithVeryLongName == (other as TestDataClass).variableWithVeryLongName
+            && this.requestLineWrapsIfTheParamListIsTooLong == (other as TestDataClass).requestLineWrapsIfTheParamListIsTooLong
+            && this.nullability == (other as TestDataClass).nullability
+         }
+   }
+}
+
+class 'pkg/TestDataClass' {
+   method '<init> (Lkotlin/text/Regex;ILjava/util/List;Ljava/lang/String;)V' {
+      10      9
+      11      9
+      12      9
+      13      9
+      14      9
+      15      10
+      16      10
+      17      10
+      18      10
+      19      10
+      1a      11
+      1b      11
+      1c      11
+      1d      11
+      1e      11
+      1f      12
+      20      12
+      21      12
+      22      12
+      23      12
+      24      12
+      25      13
+   }
+
+   method 'component1 ()Lkotlin/text/Regex;' {
+      0      16
+      1      16
+      2      16
+      3      16
+      4      16
+   }
+
+   method 'component2 ()I' {
+      0      20
+      1      20
+      2      20
+      3      20
+      4      20
+   }
+
+   method 'component3 ()Ljava/util/List;' {
+      0      24
+      1      24
+      2      24
+      3      24
+      4      24
+   }
+
+   method 'component4 ()Ljava/lang/String;' {
+      0      28
+      1      28
+      2      28
+      3      28
+      4      28
+   }
+
+   method 'copy (Lkotlin/text/Regex;ILjava/util/List;Ljava/lang/String;)Lpkg/TestDataClass;' {
+      7      32
+      8      32
+      9      32
+      a      32
+      10      37
+      11      37
+      12      37
+      13      33
+      14      33
+      15      33
+      16      33
+      18      37
+      1f      34
+      20      34
+      21      34
+      22      34
+      2c      35
+      2d      35
+      2e      35
+      2f      35
+   }
+
+   method 'toString ()Ljava/lang/String;' {
+      0      41
+      1      41
+      2      41
+      3      41
+      4      41
+      5      41
+      6      41
+      7      41
+      8      41
+      9      41
+      a      41
+      b      41
+      c      41
+      d      41
+      e      41
+      f      41
+      10      41
+      11      41
+      12      41
+      13      41
+      14      41
+      15      41
+   }
+
+   method 'hashCode ()I' {
+      0      46
+      1      46
+      2      46
+      3      46
+      4      46
+      5      46
+      6      46
+      8      46
+      9      46
+      a      46
+      b      46
+      c      46
+      d      46
+      e      46
+      f      46
+      10      46
+      11      46
+      12      46
+      13      46
+      15      46
+      16      46
+      17      46
+      18      46
+      19      47
+      1a      47
+      1b      47
+      1c      47
+      1d      47
+      1e      47
+      1f      47
+      20      46
+      22      46
+      23      49
+      24      49
+      25      45
+      26      50
+      27      50
+      28      50
+      29      50
+      2a      50
+      2b      50
+      2c      50
+      2d      50
+      31      50
+      32      50
+      33      50
+      34      50
+      35      50
+      36      50
+      37      50
+      38      45
+      3b      45
+   }
+
+   method 'equals (Ljava/lang/Object;)Z' {
+      0      55
+      1      55
+      2      55
+      3      55
+      4      55
+      5      56
+      6      56
+      7      58
+      8      58
+      9      58
+      a      58
+      b      58
+      c      58
+      d      58
+      10      59
+      11      59
+      12      59
+      13      59
+      15      59
+      16      59
+      17      59
+      18      59
+      19      59
+      1a      59
+      1b      59
+      1c      59
+      20      59
+      21      59
+      22      59
+      25      60
+      26      60
+      27      60
+      28      60
+      29      60
+      2a      60
+      2b      60
+      2c      60
+      2d      60
+      2e      60
+      2f      60
+      32      61
+      33      61
+      34      61
+      35      61
+      36      61
+      37      61
+      38      61
+      39      61
+      3d      61
+      3e      61
+      3f      61
+      42      62
+      43      62
+      44      62
+      45      62
+      46      62
+      47      62
+      48      62
+      49      62
+   }
+}
+
+Lines mapping:
+3 <-> 14
+4 <-> 10
+5 <-> 11
+6 <-> 12
+7 <-> 13

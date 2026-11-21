@@ -1,0 +1,37 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "strings",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {},
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "tests/fixtures/jvm/app.jar",
+    "binary_sha256": "e6b6dbdd90823010d81dd913a9c3301e52d902901532d42fe9fdde8b46247dd6",
+    "binary_size": 3096,
+    "binary_source": "in-repo",
+    "in_repo_path": "tests/fixtures/jvm/app.jar",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 1
+    },
+    "stderr_matches": [
+      "JVM input \\(jar\\) is decompiled by the non-native JVM engine",
+      "kuna docs jvm"
+    ],
+    "stdout_bytes": {
+      "eq": 0
+    }
+  },
+  "notes": "Subcommands the JVM engine does not answer yet refuse a jar with a capability error naming the supported ones, instead of failing inside the native loader.",
+  "probe_id": "p-17184aee67dd"
+}

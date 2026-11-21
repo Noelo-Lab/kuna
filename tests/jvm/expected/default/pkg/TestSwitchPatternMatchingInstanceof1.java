@@ -1,0 +1,112 @@
+package pkg;
+
+public class TestSwitchPatternMatchingInstanceof1 {
+   public void test(Object o) {
+      switch (o) {// 5
+         case String s when o instanceof Integer a:// 6
+            System.out.println(s);
+            break;
+         case Integer i:// 7
+            System.out.println(i);
+            break;
+         case String s:// 8
+            System.out.println(s);
+            break;
+         default:
+            System.out.println("Default");// 9
+      }
+   }// 11
+}
+
+class 'pkg/TestSwitchPatternMatchingInstanceof1' {
+   method 'test (Ljava/lang/Object;)V' {
+      0      4
+      10      4
+      11      4
+      12      4
+      13      4
+      14      4
+      15      4
+      16      4
+      17      4
+      18      4
+      19      4
+      1a      4
+      1b      4
+      1c      4
+      1d      4
+      1e      4
+      1f      4
+      20      4
+      21      4
+      22      4
+      23      4
+      24      4
+      25      4
+      26      4
+      27      4
+      28      4
+      29      4
+      2a      4
+      2b      4
+      30      5
+      31      5
+      32      5
+      33      5
+      34      5
+      35      5
+      36      5
+      37      5
+      38      5
+      3d      5
+      3e      5
+      3f      6
+      40      6
+      41      6
+      47      6
+      48      6
+      4a      6
+      4b      6
+      4c      6
+      4f      7
+      56      8
+      57      8
+      58      9
+      59      9
+      5a      9
+      5b      9
+      5c      9
+      5d      9
+      5e      9
+      5f      9
+      60      10
+      67      11
+      68      11
+      69      12
+      6a      12
+      6b      12
+      6c      12
+      6d      12
+      6e      12
+      6f      12
+      70      12
+      71      13
+      74      15
+      75      15
+      76      15
+      77      15
+      78      15
+      79      15
+      7a      15
+      7b      15
+      7f      17
+   }
+}
+
+Lines mapping:
+5 <-> 5
+6 <-> 6
+7 <-> 9
+8 <-> 12
+9 <-> 16
+11 <-> 18

@@ -1,0 +1,70 @@
+package pkg
+
+public class TestCompanionObject {
+   public fun notInCompanion() {
+      System.out.println("notInCompanion")// 5
+   }// 6
+
+   public companion object {
+      public final val companionVal: String
+
+      @JvmStatic
+      public final val companionValJvmStatic: String
+
+      public fun inCompanion() {
+         System.out.println("inCompanion")// 15
+      }// 16
+
+      public fun inCompanionJvmStatic() {
+         System.out.println("inCompanionJvmStatic")// 20
+      }// 21
+   }
+}
+
+class 'pkg/TestCompanionObject' {
+   method 'notInCompanion ()V' {
+      0      4
+      1      4
+      2      4
+      3      4
+      4      4
+      6      4
+      7      4
+      8      4
+      9      5
+   }
+}
+
+class 'pkg/TestCompanionObject$Companion' {
+   method 'inCompanion ()V' {
+      0      14
+      1      14
+      2      14
+      3      14
+      4      14
+      6      14
+      7      14
+      8      14
+      9      15
+   }
+
+   method 'inCompanionJvmStatic ()V' {
+      0      18
+      1      18
+      2      18
+      3      18
+      4      18
+      6      18
+      7      18
+      8      18
+      9      19
+   }
+}
+
+Lines mapping:
+5 <-> 5
+6 <-> 6
+15 <-> 15
+16 <-> 16
+20 <-> 19
+21 <-> 20

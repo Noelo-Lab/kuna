@@ -1,0 +1,117 @@
+package pkg;
+
+public class TestSwitchPatternMatchingConstructor1 {
+   private TestSwitchPatternMatchingConstructor1(String s) {
+      System.out.println(s);// 5
+   }// 6
+
+   private TestSwitchPatternMatchingConstructor1(TestSwitchPatternMatchingConstructor1.Shape s) {
+      this(switch (s) {// 9
+         case null -> "null";// 12
+         case TestSwitchPatternMatchingConstructor1.Triangle t when t.calculateArea() > 100.0 -> "Large triangle";// 10
+         case TestSwitchPatternMatchingConstructor1.Triangle t -> "Small triangle";// 11
+         default -> "Non-triangle";// 13
+      });
+   }// 15
+
+   private abstract static class Shape {
+      abstract double calculateArea();
+   }
+
+   private static class Triangle extends TestSwitchPatternMatchingConstructor1.Shape {
+      @Override
+      double calculateArea() {
+         return 0.0;// 25
+      }
+   }
+}
+
+class 'pkg/TestSwitchPatternMatchingConstructor1' {
+   method '<init> (Ljava/lang/String;)V' {
+      4      4
+      5      4
+      6      4
+      7      4
+      8      4
+      9      4
+      a      4
+      b      5
+   }
+
+   method '<init> (Lpkg/TestSwitchPatternMatchingConstructor1$Shape;)V' {
+      1      8
+      c      8
+      d      8
+      e      8
+      f      8
+      10      8
+      11      8
+      12      8
+      13      8
+      14      8
+      15      8
+      16      8
+      17      8
+      18      8
+      19      8
+      1a      8
+      1b      8
+      1c      8
+      1d      8
+      1e      8
+      1f      8
+      20      8
+      21      8
+      22      8
+      23      8
+      24      8
+      25      8
+      26      8
+      27      8
+      2c      10
+      2d      10
+      2e      10
+      2f      10
+      30      10
+      31      10
+      32      10
+      33      10
+      34      10
+      35      10
+      36      10
+      3f      10
+      40      10
+      48      11
+      49      11
+      4a      11
+      4b      11
+      4f      9
+      50      9
+      54      12
+      55      12
+      59      8
+      5a      8
+      5b      8
+      5c      14
+   }
+}
+
+class 'pkg/TestSwitchPatternMatchingConstructor1$Triangle' {
+   method 'calculateArea ()D' {
+      0      23
+      1      23
+   }
+}
+
+Lines mapping:
+5 <-> 5
+6 <-> 6
+9 <-> 9
+10 <-> 11
+11 <-> 12
+12 <-> 10
+13 <-> 13
+15 <-> 15
+25 <-> 24
+Not mapped:
+4

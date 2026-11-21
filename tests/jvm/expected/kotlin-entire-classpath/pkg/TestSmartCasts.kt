@@ -1,0 +1,570 @@
+package pkg
+
+public class TestSmartCasts {
+   public fun testWhen(o: Any?): String {
+      if (o is java.lang.String) {// 19 20
+         return o as java.lang.String// 21
+      } else {
+         if (o is TestSmartCasts.A.B) {// 24
+            System.out.println("B: $o")
+         } else {
+            if (o !is TestSmartCasts.A.C) {// 25
+               if (o is Pair) {// 26
+                  return "<${this.testWhen((o as Pair).getFirst())}, ${this.testWhen((o as Pair).getSecond())}>"
+               }
+
+               if (o == null) {// 27
+                  return "null"
+               }
+
+               return "else: $o"// 28
+            }
+
+            System.out.println("C: $o")
+         }
+
+         return (o as TestSmartCasts.A).test()// 31
+      }
+   }
+
+   public fun testIf(a: Any?): String {
+      return if (a !is TestSmartCasts.A.B && a !is TestSmartCasts.A.C) "else: $a" else (a as TestSmartCasts.A).test()// 35 36 39
+   }
+
+   public fun testIf2(a: Any?): String {
+      if (a is TestSmartCasts.A) {// 43
+         if (a is TestSmartCasts.A.B || a is TestSmartCasts.A.C) {// 44
+            System.out.println((a as TestSmartCasts.A).test())// 45
+         }
+
+         if (a is TestSmartCasts.A.B) {// 48
+            if (a is TestSmartCasts.A.C) {// 49
+               System.out.println((a as TestSmartCasts.A.B).testB())// 50
+               System.out.println((a as TestSmartCasts.A.C).testC())// 51
+            }
+
+            if (a is TestSmartCasts.A.C && (a as TestSmartCasts.A.C).testC() == "C" || a is TestSmartCasts.A.B) {// 54
+               System.out.println((a as TestSmartCasts.A.B).testB())// 55
+            }
+         }
+      }
+
+      return "else: $a"// 60
+   }
+
+   public fun testCast(a: Any?) {
+      System.out.println(a)// 64
+      System.out.println("hello")// 66
+      System.out.println(a)// 67
+      (a as java.lang.String).charAt(0)// 68
+      System.out.println((a as java.lang.String).charAt(0))// 69
+   }// 70
+
+   public fun testSealedIf(a: pkg.TestSmartCasts.A): String {
+      if (a is TestSmartCasts.A.B) {// 73
+         return (a as TestSmartCasts.A.B).testB()// 74
+      } else {
+         return if (a is TestSmartCasts.A.C) (a as TestSmartCasts.A.C).testC() else a.test()// 75 76 78
+      }
+   }
+
+   public fun testDoubleType(t: List<String>): String {
+      return if (t is TestSmartCasts.X) (t as TestSmartCasts.X).woo(t as MutableIterable<*>) else t.get(0) as java.lang.String// 83 84 87
+   }
+
+   public sealed class A protected constructor() {
+      public fun test(): String {
+         return ""// 15
+      }
+
+      public class B : TestSmartCasts.A() {// 8
+         public fun testB(): String {
+            return "B"// 9
+         }
+      }
+
+      public class C : TestSmartCasts.A() {// 11
+         public fun testC(): String {
+            return "C"// 12
+         }
+      }
+   }
+
+   public interface X {
+      public open fun Iterable<*>.woo(): String {
+      }
+
+      // $VF: Class flags could not be determined
+      internal class DefaultImpls {
+         @JvmStatic
+         fun woo(`$this`: TestSmartCasts.X, `$receiver`: MutableIterable<*>): java.lang.String {
+            "A"// 5
+         }
+      }
+   }
+}
+
+class 'pkg/TestSmartCasts' {
+   method 'testWhen (Ljava/lang/Object;)Ljava/lang/String;' {
+      0      4
+      2      4
+      3      4
+      4      4
+      5      4
+      6      4
+      7      4
+      8      4
+      9      5
+      a      5
+      b      5
+      c      5
+      d      5
+      e      7
+      f      7
+      10      7
+      11      7
+      12      7
+      13      7
+      14      7
+      15      8
+      16      8
+      17      8
+      18      8
+      19      8
+      1a      8
+      1b      8
+      1c      8
+      1d      8
+      1f      8
+      20      8
+      21      8
+      25      10
+      29      10
+      2a      10
+      2b      10
+      2c      22
+      2d      22
+      2e      22
+      2f      22
+      30      22
+      31      22
+      32      22
+      33      22
+      34      22
+      36      22
+      37      22
+      38      22
+      3c      11
+      3d      11
+      3e      11
+      3f      11
+      40      11
+      41      11
+      42      11
+      43      12
+      44      12
+      45      12
+      46      12
+      47      12
+      48      12
+      49      12
+      4a      12
+      4b      12
+      4c      12
+      4d      12
+      4e      12
+      4f      12
+      50      12
+      51      12
+      52      12
+      53      12
+      54      12
+      55      12
+      56      12
+      57      12
+      58      12
+      59      12
+      5a      12
+      5b      12
+      5c      12
+      5d      12
+      5e      12
+      5f      15
+      60      15
+      61      15
+      62      15
+      63      16
+      64      16
+      65      16
+      66      19
+      67      19
+      68      19
+      69      19
+      6a      19
+      6b      19
+      6c      19
+      6d      25
+      74      25
+      75      25
+      76      25
+      77      25
+      78      25
+      79      25
+      7a      25
+   }
+
+   method 'testIf (Ljava/lang/Object;)Ljava/lang/String;' {
+      0      30
+      4      30
+      5      30
+      6      30
+      7      30
+      b      30
+      c      30
+      d      30
+      e      30
+      f      30
+      10      30
+      11      30
+      12      30
+      13      30
+      14      30
+      16      30
+      17      30
+      18      30
+      19      30
+      1a      30
+      1b      30
+   }
+
+   method 'testIf2 (Ljava/lang/Object;)Ljava/lang/String;' {
+      0      34
+      1      34
+      2      34
+      3      34
+      4      34
+      5      34
+      6      34
+      7      35
+      8      35
+      9      35
+      a      35
+      b      35
+      c      35
+      d      35
+      e      35
+      f      35
+      10      35
+      11      35
+      12      35
+      13      35
+      14      35
+      15      36
+      16      36
+      17      36
+      18      36
+      19      36
+      1a      36
+      1b      36
+      1c      36
+      1d      36
+      1e      36
+      20      36
+      21      36
+      22      36
+      23      39
+      24      39
+      25      39
+      26      39
+      27      39
+      28      39
+      29      39
+      2a      40
+      2b      40
+      2c      40
+      2d      40
+      2e      40
+      2f      40
+      30      40
+      31      41
+      32      41
+      33      41
+      34      41
+      35      41
+      36      41
+      37      41
+      38      41
+      39      41
+      3a      41
+      3c      41
+      3d      41
+      3e      41
+      3f      42
+      40      42
+      41      42
+      42      42
+      43      42
+      44      42
+      45      42
+      46      42
+      47      42
+      48      42
+      4a      42
+      4b      42
+      4c      42
+      4d      45
+      4e      45
+      4f      45
+      50      45
+      51      45
+      52      45
+      53      45
+      54      45
+      55      45
+      56      45
+      57      45
+      58      45
+      59      45
+      5a      45
+      5b      45
+      5c      45
+      60      45
+      61      45
+      62      45
+      63      45
+      64      45
+      65      45
+      66      45
+      67      45
+      68      45
+      69      45
+      6a      46
+      6b      46
+      6c      46
+      6d      46
+      6e      46
+      6f      46
+      70      46
+      71      46
+      72      46
+      73      46
+      75      46
+      76      46
+      77      46
+      78      51
+      79      51
+      7a      51
+      7b      51
+      7c      51
+      7d      51
+      7e      51
+   }
+
+   method 'testCast (Ljava/lang/Object;)V' {
+      0      55
+      1      55
+      2      55
+      3      55
+      4      55
+      5      55
+      6      55
+      12      56
+      13      56
+      14      56
+      15      56
+      16      56
+      18      56
+      19      56
+      1a      56
+      1b      57
+      1c      57
+      1d      57
+      1e      57
+      20      57
+      21      57
+      22      57
+      23      58
+      24      58
+      25      58
+      26      58
+      27      58
+      28      58
+      29      58
+      2a      58
+      2c      59
+      2d      59
+      2e      59
+      2f      59
+      30      59
+      31      59
+      32      59
+      33      59
+      35      59
+      36      59
+      37      59
+      38      59
+      39      59
+      3a      59
+      3b      59
+      3c      60
+   }
+
+   method 'testSealedIf (Lpkg/TestSmartCasts$A;)Ljava/lang/String;' {
+      6      63
+      7      63
+      8      63
+      9      63
+      a      63
+      b      63
+      c      63
+      d      64
+      e      64
+      f      64
+      10      64
+      11      64
+      12      64
+      13      64
+      14      64
+      15      66
+      16      66
+      17      66
+      18      66
+      19      66
+      1a      66
+      1b      66
+      1c      66
+      1d      66
+      1e      66
+      1f      66
+      20      66
+      21      66
+      22      66
+      24      66
+      25      66
+      26      66
+      27      66
+   }
+
+   method 'testDoubleType (Ljava/util/List;)Ljava/lang/String;' {
+      6      71
+      7      71
+      8      71
+      9      71
+      a      71
+      b      71
+      c      71
+      d      71
+      11      71
+      12      71
+      13      71
+      14      71
+      15      71
+      16      71
+      17      71
+      18      71
+      19      71
+      1a      71
+      1b      71
+      1c      71
+      1d      71
+      1f      71
+      20      71
+      21      71
+      22      71
+      23      71
+      24      71
+      25      71
+      26      71
+      27      71
+      28      71
+   }
+}
+
+class 'pkg/TestSmartCasts$A' {
+   method 'test ()Ljava/lang/String;' {
+      0      76
+      1      76
+      2      76
+   }
+}
+
+class 'pkg/TestSmartCasts$A$B' {
+   method '<init> ()V' {
+      2      79
+      3      79
+      4      79
+   }
+
+   method 'testB ()Ljava/lang/String;' {
+      0      81
+      1      81
+      2      81
+   }
+}
+
+class 'pkg/TestSmartCasts$A$C' {
+   method '<init> ()V' {
+      2      85
+      3      85
+      4      85
+   }
+
+   method 'testC ()Ljava/lang/String;' {
+      0      87
+      1      87
+      2      87
+   }
+}
+
+class 'pkg/TestSmartCasts$X$DefaultImpls' {
+   method 'woo (Lpkg/TestSmartCasts$X;Ljava/lang/Iterable;)Ljava/lang/String;' {
+      6      100
+      7      100
+   }
+}
+
+Lines mapping:
+5 <-> 101
+8 <-> 80
+9 <-> 82
+11 <-> 86
+12 <-> 88
+15 <-> 77
+19 <-> 5
+20 <-> 5
+21 <-> 6
+24 <-> 8
+25 <-> 11
+26 <-> 12
+27 <-> 16
+28 <-> 20
+31 <-> 26
+35 <-> 31
+36 <-> 31
+39 <-> 31
+43 <-> 35
+44 <-> 36
+45 <-> 37
+48 <-> 40
+49 <-> 41
+50 <-> 42
+51 <-> 43
+54 <-> 46
+55 <-> 47
+60 <-> 52
+64 <-> 56
+66 <-> 57
+67 <-> 58
+68 <-> 59
+69 <-> 60
+70 <-> 61
+73 <-> 64
+74 <-> 65
+75 <-> 67
+76 <-> 67
+78 <-> 67
+83 <-> 72
+84 <-> 72
+87 <-> 72
+Not mapped:
+65
