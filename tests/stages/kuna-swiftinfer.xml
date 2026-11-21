@@ -20,8 +20,14 @@
     The fixture `swift_infer_elf` is a stripped swiftc 6.3 build of
     `swift_infer_elf.swift` (recipe in the fixtures README): 0x24b0 is the
     partial-apply forwarder of `makeAdder`'s closure, 0x2840 is `usePair`, which
-    reads both words `split` returns. Pass 1 (`option swiftcall off`) is the
-    BUG, pass 2 (the default) the FIX.
+    reads both words `split` returns. The fixture `swift_pairret_elf` (recipe
+    in the same README) holds a stripped `CustomStringConvertible.description`
+    witness at 0x2140 that returns one string literal per path in rdx:rax: a
+    function's own two-word result built by a `PIECE` of its words takes
+    `swift.pair` as the return's input type (`TypeOpReturn::getInputLocal`,
+    `pair_return_type`), where it was an `undefined16` returned through
+    `*(unsigned __int128 *)v1`. Pass 1 (`option swiftcall off`) is the BUG,
+    pass 2 (the default) the FIX.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -41,6 +47,14 @@ c3
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_pairret_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>option swiftcall off</com>
+  <com>read symbols</com>
+  <com>load addr 0x2140</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_infer_elf</com>
   <com>option swiftmetadata on</com>
   <com>read symbols</com>
@@ -50,12 +64,24 @@ c3
   <com>load addr 0x2840</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_pairret_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x2140</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="swiftcall off: the closure reads an uninitialised r13" min="1" max="1">int8 v2; // r13</stringmatch>
 <stringmatch name="swiftcall off: the pair is a 128-bit integer split apart" min="1" max="1">return SUB168\(v1,0\) - SUB168\(v1,8\);</stringmatch>
 <stringmatch name="swiftcall on: the closure takes its context as swiftself" min="1" max="1">int8 sub_24b0\(void \*swiftself\)</stringmatch>
 <stringmatch name="swiftcall on: the context is read through swiftself" min="1" max="1">return \(\(int8 \*\)swiftself\)\[2\] \+ 1;</stringmatch>
-<stringmatch name="swiftcall on: the two-word result is a swift.pair" min="1" max="1">swift\.pair v1; // rdx:rax</stringmatch>
+<stringmatch name="swiftcall on: the two-word call result (and the getter's first returned pair) is a swift.pair" min="2" max="2">swift\.pair v1; // rdx:rax</stringmatch>
 <stringmatch name="swiftcall on: its words are read as fields" min="1" max="1">return v1\._0 - v1\._1;</stringmatch>
+<stringmatch name="swiftcall off: the returned string is a 128-bit integer" min="1" max="1">undefined16 .pairfix\.Key:Swift\.CustomStringConvertible.\.description\.getter</stringmatch>
+<stringmatch name="swiftcall off: each path returns the join through a byte array" min="3" max="3">return \*\(unsigned __int128 \*\)v[0-9];</stringmatch>
+<stringmatch name="swiftcall on: the getter returns a swift.pair" min="1" max="1">swift\.pair .pairfix\.Key:Swift\.CustomStringConvertible.\.description\.getter\(char \*self\)</stringmatch>
+<stringmatch name="swiftcall on: the literal is written to the object field" min="1" max="1">v[0-9]\._1 = \(unsigned long\)"hasNextPage";</stringmatch>
+<stringmatch name="swiftcall on: each path returns its pair" min="3" max="3">return v[0-9];</stringmatch>
 </decompilertest>
