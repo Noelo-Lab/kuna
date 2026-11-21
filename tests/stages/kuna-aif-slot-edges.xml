@@ -32,4 +32,8 @@
 <stringmatch name="AIF slots #8: known code in the sixth byte rules out the adjusted entry" min="0" max="0">0x40601e sub_40601e</stringmatch>
 <stringmatch name="AIF slots #9: known code immediately after the first slot permits the adjusted entry" min="1" max="1">0x40701e sub_40701e</stringmatch>
 <stringmatch name="AIF slots #10: exhausting the body limit does not plant an entry inside padding" min="0" max="0">0x40e98a sub_40e98a</stringmatch>
+<stringmatch name="AIF slots #11: a seven-byte instruction cannot borrow the next section's first byte" min="0" max="0">0x418012 sub_418012</stringmatch>
+<stringmatch name="AIF slots #12: padding ending in a trap cannot plant its start or the unreached return" min="0" max="0">0x4190(12|18|1e|24) sub_</stringmatch>
+<stringmatch name="AIF slots #13: reachable padding can lead to a five-byte entry instruction" min="2" max="2">0x41903c sub_41903c</stringmatch>
+<stringmatch name="AIF slots #14: a padding-adjusted entry instruction must also fit its slot" min="0" max="0">0x41a01e sub_41a01e</stringmatch>
 </decompilertest>
