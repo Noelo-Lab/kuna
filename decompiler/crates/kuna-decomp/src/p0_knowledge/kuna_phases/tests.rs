@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_230() {
-    assert_eq!(kuna_num_settables(), 230);
-    assert_eq!(SETTABLE_TABLE.len(), 230);
+fn settable_count_is_231() {
+    assert_eq!(kuna_num_settables(), 231);
+    assert_eq!(SETTABLE_TABLE.len(), 231);
 }
 
 #[test]
-fn tier_counts_are_47_core_124_transform_59_analysis() {
+fn tier_counts_are_48_core_124_transform_59_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_47_core_124_transform_59_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (47, 124, 59));
+    assert_eq!((core, transform, analysis), (48, 124, 59));
 }
 
 #[test]
@@ -867,7 +867,7 @@ fn option_values_live_value_present_for_76() {
     // +1 for `opaquepredicate` (live_field = opaque_predicate).
     // +1 for `calleefilledarg` (live_field = callee_filled_arg).
     // +1 for `cstringconst` (live_field = cstring_const).
-    assert_eq!(with_live, 83);
+    assert_eq!(with_live, 84);
 }
 
 #[test]
@@ -1124,7 +1124,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `calltable`; its P1 row sits after `tailcallentry`.
     // +1 for `stubbinds`; its P1 row sits after `calltable`.
     // +1 for `cstringconst`; its P9 row sits after `globalref`.
-    assert_eq!(json.matches("},\n").count(), 229);
+    assert_eq!(json.matches("},\n").count(), 230);
     // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 
