@@ -50,6 +50,11 @@ the suite starts on the label alone. (It also always runs pre-merge on a fork PR
 *Run workflow*.) Run all four locally regardless: the workspace suite is the long pole in
 CI, so local failures are found far sooner.
 
+A PR labelled **`needs rebase`** no longer merges cleanly into main
+(`.github/workflows/conflicts.yml` sets and clears the label). Its green checks are stale;
+rebasing it is the author's job. Do not resolve its conflicts or review it until the label
+is gone.
+
 The workspace integration tests require built processor specs. Missing or
 unusable specs are failures, not skips; use the worktree symlink procedure below
 when reusing another checkout's build. Tests for optional external toolchains may
