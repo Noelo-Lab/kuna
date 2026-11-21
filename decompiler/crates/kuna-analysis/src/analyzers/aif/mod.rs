@@ -1071,13 +1071,27 @@ fn aif_candidates(
         // (kuna, `aifnoppad`) No entry starts on filler: filler in front of a known
         // function or zero fill is not probed, and an accept moves past padding.
         let filler = match &mut padding {
-            Some(runs) if probe_here => runs.classify(listing, decoder, gap_start),
+            Some(runs) if probe_here => runs.classify(listing, decoder, gap_start, stride.is_some()),
             _ => kuna_aifnoppad::Filler::No,
         };
         if probe_here && filler != kuna_aifnoppad::Filler::Refuse {
+            let entry_allowed = |at| stride.is_none_or(|width| {
+                if (gap_start..scan_end).contains(&at) {
+                    section_probe(section_start, at, scan_end, width).0
+                } else {
+                    at < gap_hi && entry_fits_slot(listing, at, width, windows)
+                }
+            });
+            let pool_end = literals.as_ref().and_then(|lits| lits.run_end(gap_start));
+            // A padding suffix has the same destination as the whole run. Check it
+            // before constructing its body, unless a literal pool supplies the entry.
+            let probe = match (pool_end, filler) {
+                (None, kuna_aifnoppad::Filler::Before(at)) if !entry_allowed(at) => Probe::Reject,
+                _ => probe_gap_start(decoder, listing, &hist, gap_start, gap_hi, aifcorroborate),
+            };
             // (kuna, `aifbracket`) A fragment of the enclosing known function is
             // refused but, like an `aif precise` refusal, consumes its body.
-            let probe = match probe_gap_start(decoder, listing, &hist, gap_start, gap_hi, aifcorroborate) {
+            let probe = match probe {
                 Probe::Accept(body) if bracket.is_some_and(|evidence| {
                     kuna_aifbracket::rejects(listing, decoder, evidence, gap_start, &body)
                 }) => Probe::Uncorroborated(body),
@@ -1086,7 +1100,6 @@ fn aif_candidates(
             // (kuna, `aifpoolslide`) A candidate on a literal-pool word plants its
             // accept on the code after the pool; it is refused, consuming its body,
             // when that is data, and rejected when its body never decoded there.
-            let pool_end = literals.as_ref().and_then(|lits| lits.run_end(gap_start));
             let mut probe = match (probe, pool_end) {
                 (Probe::Accept(body), Some(end))
                     if !literals.as_ref().is_some_and(|l| l.may_plant(end)) =>
@@ -1113,9 +1126,7 @@ fn aif_candidates(
                 }
                 // Padding, pools and a recovered prologue can all move the entry.
                 // Refuse an invalid destination before claiming any of its body.
-                if entry != gap_start && stride.is_some_and(|width| {
-                    !entry_fits_slot(listing, entry, width, windows)
-                }) {
+                if entry != gap_start && !entry_allowed(entry) {
                     probe = Probe::Reject;
                 }
             }
@@ -1190,7 +1201,9 @@ fn entry_fits_slot(
         if at < lo { return false; }
         end = end.min(hi);
     }
-    at >= base && section_probe(base, at, end, width).0
+    // A backward prologue can be in a different undefined gap.
+    let gap_end = listing.next_instruction_start_after(at).unwrap_or(u64::MAX);
+    at >= base && listing.is_undefined(at) && section_probe(base, at, end.min(gap_end), width).0
 }
 
 /// Membership and next probe, bounded so adjacent sections restart at their own origin.

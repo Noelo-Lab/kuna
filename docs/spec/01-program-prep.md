@@ -8798,9 +8798,11 @@ A processor spec can declare a positive byte width with
 `kuna.aif.sectionInstructionStride`. When the object provides section headers,
 the gap walk probes slots counted from each executable section's start, including
 address zero. A restricted decode window clips the walk while retaining the
-original section's slot positions. The first slot must fit in the available
-range. When padding, a literal pool or a recovered prologue moves the entry, AIF
-checks the adjusted address against its own section before claiming the body.
+original section's slot positions. The entire first slot must fit before the
+next decoded instruction and within the available section and decoder window.
+The same bounds apply when padding, a literal pool or a recovered prologue moves
+the entry. When padding supplies the destination, AIF tests that slot before
+validating the body of the run.
 A replacement processor spec that omits the width restores the ordinary policy.
 Segment-only and raw mappings carry no section
 origin, so the selected AIF mode supplies the ordinary cursor policy there.

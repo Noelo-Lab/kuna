@@ -537,3 +537,52 @@ fn a_rescan_through_the_shared_memo_decodes_nothing_again() {
     assert_eq!(fresh.reconcile(&listing, &listing, &mut repeated, &roots, &[], frame_policy()), replacements);
     assert!(repeated.decoded_addresses.is_empty(), "a rescan decoded {:x?} again", repeated.decoded_addresses);
 }
+
+#[test]
+fn invalid_padding_suffixes_do_not_validate_bodies() {
+    use crate::loadimage_object::ObjectLoadImage;
+    use kuna_decomp::architecture::Architecture;
+    use object::{Object, ObjectSection};
+
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut bytes = std::fs::read(root.join("tests/fixtures/aif_slot_edges_x86_64")).unwrap();
+    let file = object::File::parse(&*bytes).unwrap();
+    let padding = file.section_by_name(".long_padding").unwrap();
+    let end = padding.address() + padding.size();
+    let ret = end - 7; // The fixture ends with a one-byte NOP and a six-byte RET.
+    let (offset, size) = padding.file_range().unwrap();
+    let tail = (offset + size - 7) as usize;
+    let sla = std::fs::read(root.join("../../../specs/Ghidra/Processors/x86/data/languages/x86-64.sla")).unwrap();
+    for aligned in [false, true] {
+        if aligned {
+            bytes[tail..tail + 7].rotate_left(1); // Move only that NOP behind the RET.
+        }
+        let file = object::File::parse(&*bytes).unwrap();
+        let mut loader = ObjectLoadImage::from_bytes_silent("slots", &bytes).unwrap();
+        let mut engine = Sleigh::new(Box::new(Bytes(Vec::new())), Box::new(ContextInternal::new()));
+        engine.initialize_from_sla(&sla).unwrap();
+        for (name, value) in [("addrsize", 2), ("opsize", 1), ("longMode", 1)] {
+            engine.set_context_default(name, value);
+        }
+        engine.translate_base_mut().section_instruction_stride = core::num::NonZeroU32::new(6);
+        let space = Rc::clone(engine.base().manager().get_default_code_space().unwrap());
+        loader.attach_to_space(Rc::clone(&space));
+        engine.set_loader(Box::new(loader));
+        let arch = Architecture::new("x86:LE:64:default:gcc", engine);
+        let listing = Listing::build_without_image(&file, &arch, arch.translate(), &[file.entry()]);
+        assert!(listing.is_instruction_start(0x406023) && listing.is_instruction_start(0x407024));
+        for count in [256, 8500] {
+            let windows = [(ret - 6 * count, end)];
+            let mut decoder = GapDecoder::new(arch.translate(), Rc::clone(&space), &windows);
+            let policy = GapWalk { strict: true, corroborate: false, bracket: None, noppad: true, poolslide: None };
+            let entries = aif_candidates(&listing, &listing, &mut decoder, policy, &BTreeMap::new(), None, None);
+            if aligned {
+                assert_eq!(entries, [ret], "{count} padding instructions");
+                assert!(decoder.validation_steps > 0);
+            } else {
+                assert!(entries.is_empty(), "unexpected entries after {count} NOPs: {entries:x?}");
+                assert_eq!(decoder.validation_steps, 0, "off-grid run of {count} NOPs");
+            }
+        }
+    }
+}
