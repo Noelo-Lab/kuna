@@ -3505,7 +3505,12 @@ moves.
   (`seed_declared_libc_prototype`) is refused on ARM the same way. The signatures
   themselves are reduced from the platform's own C declarations (`gcc -aux-info`
   over the standard headers, GCC's builtin types for the FORTIFY `_chk` entry
-  points, the `<stdio.h>` `__REDIRECT` for the `__isoc99_*` aliases), never written
+  points, the `<stdio.h>` `__REDIRECT` for the `__isoc99_*` aliases, and
+  `<cxxabi.h>`/`<unwind.h>` for the nine C++ exception-runtime entry points a
+  landing pad calls: `__cxa_begin_catch`, `__cxa_end_catch`, `__cxa_throw`,
+  `__cxa_rethrow`, `__cxa_allocate_exception`, `__cxa_free_exception`,
+  `__cxa_get_exception_ptr`, `_Unwind_Resume` and ARM's `__cxa_end_cleanup`,
+  every pointer as `void *`), never written
   from memory, and any declaration with a slot whose width is not stable across
   ILP32/LP64 — `off_t`, `time_t`, `long long`, a `char` parameter — is **rejected
   rather than approximated**, because a wrong prototype is worse than a missing one:
@@ -5230,6 +5235,64 @@ moves.
   Each blob's first address is also recorded for constant-pointer recovery
   (chapter 05, `blobs`). `kuna blobs` runs the same scan as an inventory, with
   the functions that reference each file.
+- **Exception tables** (`ehtable`, always on, linked ELF only, inert without an
+  LSDA; `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_ehtable.rs
+  (EhTablePass)`): reads the call-site records of every function's
+  language-specific data area (LSDA) for the flow's `ehcatch` edges (chapter 02).
+  An LSDA is reached two ways: through an `.eh_frame` FDE whose CIE augmentation
+  carries `L` (`entry/mod.rs (scan_eh_frame_lsdas)`, the walk `eh_frame_full`
+  shares), or on ARM32 through a generic-model `.ARM.extab` entry (next
+  bullet). The LSDA is found by address in whichever section holds it, so
+  `.gcc_except_table` and `.ARM.extab` are read alike. Its header gives the
+  landing-pad base (the function start when omitted), the type table's
+  encoding and the offset of its **end**, and the call-site encoding and table
+  length. Each call-site record is a start and a length counted from the
+  function start, a landing pad, and an action. A landing pad of 0 means a
+  throw leaves the function, and the record is dropped. An action of 0 is a
+  cleanup-only pad. Otherwise `action - 1` is the offset of the first action
+  record, a signed type filter and a self-relative signed link to the next
+  one: a positive filter `n` is a catch clause naming the `n`th type-table
+  entry counted back from the table's end, a zero filter a cleanup and a
+  negative one an exception specification, neither of which is a handler. At
+  most 64 actions are followed per site. A type-table entry leads to a
+  `std::type_info` object, usually through a slot the dynamic linker fills,
+  and the caught type is named from, in order: the `_ZTI` symbol of a dynamic
+  relocation on the slot; an `_ZTI` symbol defined at the object; the object's
+  own name string (its second word), demangled as a type name
+  (`demangle/mod.rs (demangle_typeinfo_name)`), which survives stripping. A
+  null entry is `catch (...)`, and an entry that resolves to no name prints as
+  `...` too. An ARM32 entry is an `R_ARM_TARGET2` word behind an `absptr`
+  encoding byte: it is read as a self-relative offset to a GOT slot (the Linux
+  resolution) and, when nothing names that slot, to the object itself (the
+  bare-metal one). A malformed LSDA contributes nothing and the others still
+  decode. A record is kept when its start and its landing pad lie in
+  executable bytes and its range is under 16 MiB; the records are sorted by
+  start and one that overlaps an earlier record is dropped, so a call address
+  resolves to at most one record by binary search. Committed onto
+  `Architecture::eh_call_sites`, with the sorted landing pads on
+  `Architecture::eh_landing_pads`. A relocatable object is skipped: its
+  sections share address 0 until laid out.
+- **ARM EHABI unwind index** (ARM32 ELF only;
+  `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_armexidx.rs (scan)`):
+  an ARM32 ELF carries no `.eh_frame`. Its unwinder searches `.ARM.exidx`, a
+  table of 8-byte entries sorted by address: word 0 is a prel31 offset to a
+  function's first instruction, word 1 is `1` (`EXIDX_CANTUNWIND`), an inline
+  compact description (bit 31 set), or a prel31 offset to an `.ARM.extab`
+  entry. In the generic model that entry starts with a prel31 offset to its
+  personality routine (bit 31 clear), then one word-aligned run of unwind
+  opcodes whose first byte counts the additional words, then the LSDA the
+  previous bullet decodes. Every entry that can unwind is a function start,
+  bounded by the next entry's start, and joins the entry-discovery oracles
+  (the `.eh_frame` FDE oracle's counterpart, gated with them by `entry_disc`).
+  A `CANTUNWIND` entry only bounds its predecessor: the linker writes one at
+  the end of each code section. Bit 0 of a start is the Thumb bit, but a table
+  whose relocations were made against section symbols leaves it clear on Thumb
+  code, so the instruction set is decided per start: Thumb when the bit is set
+  or the address is not a multiple of four; otherwise A32 when nothing in the
+  image is known to be Thumb, Thumb when something is and no sized function
+  symbol has an even address, and **left out** when the image holds both,
+  because a start decoded in the wrong set is a function of garbage. A Thumb
+  start paints `TMode=1` over its own `[start, next start)` range.
 - **x87 intrinsics** (`x87intrinsics`, always on, i386 only;
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_x87intrinsics.rs
   (X87IntrinsicPass)`): binds the MSVC one-operand x87 math intrinsics to the
@@ -6856,7 +6919,9 @@ fuses the feasible subset of Ghidra's `EntryPointAnalyzer`,
 (2) `DT_INIT`/`DT_FINI` and the `INIT_ARRAY`/`FINI_ARRAY` pointer tables, carrying
 Ghidra-faithful names (`_INIT_<i>`/`_FINI_<i>`/`_DT_INIT`/`_DT_FINI`) through the
 `entry_names` overlay; (3) every `.eh_frame` FDE's `pcBegin` — the highest-value
-oracle on C/C++ binaries, since unwind data survives stripping; (4) the
+oracle on C/C++ binaries, since unwind data survives stripping — and on ARM32,
+which has no `.eh_frame`, the `.ARM.exidx` function starts whose instruction
+set is decided (`kuna_armexidx.rs (starts)`, the unwind-index bullet above); (4) the
 `_start`→`main` libc-start idiom (x86-64 PC-relative `lea rdi`, the
 AArch64/ARM/RISC-V PIE form that loads `main` indirectly through an
 `R_*_RELATIVE`-relocated GOT slot, and — for the non-PIE ARM form, which carries
@@ -7200,7 +7265,9 @@ by those passes.
 `.gcc_except_table` LSDA, decode the call-site table, and emit each landing pad as
 an entry; a catch/cleanup block is reached only by the unwinder, so nothing else
 can see it. CFI itself (`DW_CFA_*`) is deliberately not recovered — kuna's own
-frame analysis rebuilds the stack frame from the code.
+frame analysis rebuilds the stack frame from the code. This option only makes a
+pad a separate entry; `ehcatch` (chapter 02) is what joins a pad to the
+function that owns it, and it does not need this option.
 
 **(kuna) FDE interiors are not function starts** (`fdeinterior`, always on,
 DIV-61; `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_fdeinterior.rs`).

@@ -1542,6 +1542,45 @@ addl-flag on the condition's `CBRANCH` and emit the condition through the same
 parenthesization, short-circuiting and any comma-expression side effects are
 identical to the `if` form they replace.
 
+**(kuna) `try`/`catch` for a guarded call** (`ehcatch`, chapter 02;
+`printc.rs (PrintC::emit_block_if_try)`). The flow gives a call inside an
+exception-table record an edge to its landing pad, tested by the
+`__eh_catch(#record)` user-op. `emit_block_if` prints such an `if` as
+
+```c
+  try {
+    work(a0);
+  }
+  catch (int) {
+    v1 = __eh_exception();
+    ...
+  }
+```
+
+when four things hold (`eh_try_match`, `kuna_ehcatch.rs (try_statement)`): the
+output language is C; the `if` has no `else`; its condition block ends in one
+plain basic block (a leading run of statement blocks is allowed, a `&&`/`||`
+condition is not); and that block's `CBRANCH` is taken into the body exactly
+when the call throws, which is read off the condition by counting the boolean
+negations between the branch and the user-op against the branch's own flip.
+The guarded call is the last CALL or CALLIND before the user-op in that block,
+at the same address; its statement is the call's own, or, when the call's
+result is printed inside another expression (`v5 = (long *)operator new(0x20)`),
+the op that prints it, which must lie in the same block. The condition block's
+statements print as they always do, except that this statement is wrapped in
+`try { }`; the
+`if (cond)` header is replaced by `catch (clause)`, and the body, or the
+`goto` of an unstructured body, prints inside its braces. The clause is the
+record's caught types in handler order joined by ` | `, `...` standing for a
+catch-all, an unnamed type, and a cleanup-only pad. Several types share one
+pad, which dispatches on `__eh_selector()`; that comparison prints as the code
+it is. Every other shape keeps the plain `if`, in which the user-op prints
+with the same clause as its argument, `if (!__eh_catch(int)) return 0;`: an
+`if`/`else` (the handler and the normal path each have a tail), a condition
+whose body is the normal path, an `else if`. The `__eh_exception(T)` of a
+no-return call (chapter 02) prints its clause the same way
+(`printc.rs (op_callother_ir)`).
+
 The `infloopstyle while|do` option controls unconditional C loop spelling.
 By default an infinite-loop node emits `while (true) { ... }`; `do` restores
 `do { ... } while (true);`. A constant true condition has no side effects,

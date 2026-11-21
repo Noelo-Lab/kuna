@@ -2524,6 +2524,25 @@ impl<'a> CollapseStructure<'a> {
         self.exitleaf_facts.addr.get(&bb).copied()
     }
 
+    /// (kuna `ehcatch`) The out-edge of `bl` that is the exceptional edge of a
+    /// guarded call, when `bl` ends in that test. `ruleBlockIfNoExit` tries
+    /// that arm first, so a handler that leaves the function is the `if` body
+    /// and prints as the `catch` block.
+    fn eh_catch_arm(&self, bl: BlockId) -> Option<int4> {
+        if self.exitleaf_facts.eh_catch_arm.is_empty() {
+            return None;
+        }
+        if self.graph.block(bl).size_out() != 2 {
+            return None;
+        }
+        let test = self.graph.block(self.graph.get_exit_leaf(bl)?).get_copy()?;
+        let arm = *self.exitleaf_facts.eh_catch_arm.get(&test)?;
+        (0..2).find(|&i| {
+            let front = self.graph.get_front_leaf(self.graph.block(bl).get_out(i));
+            front.and_then(|leaf| self.graph.block(leaf).get_copy()) == Some(arm)
+        })
+    }
+
     /// (kuna, `option guardarm`) The order in which `ruleBlockIfNoExit` tries
     /// the two arms.  Upstream is out-index order, which is arbitrary once
     /// `negateCondition`'s `swapEdges` has re-oriented the block — and when
@@ -2535,6 +2554,9 @@ impl<'a> CollapseStructure<'a> {
     /// `if (c) A; B;` out in front of `B`.  Ties only; a single eligible arm is
     /// unaffected, so the vast majority of guards are untouched.
     fn ifnoexit_arm_order(&self, bl: BlockId) -> [int4; 2] {
+        if self.eh_catch_arm(bl) == Some(1) {
+            return [1, 0];
+        }
         if !self.guard_arm {
             return [0, 1];
         }
@@ -3065,10 +3087,15 @@ impl<'a> CollapseStructure<'a> {
             // Give the non-heads a pass first: once a body block folds, the body
             // collapses to a single back-edge clause and the head test hoists
             // into the `while` header on its own.
-            if self.loop_cond_hoist {
+            // (kuna `ehcatch`) The same pass also holds back the test of a
+            // guarded call whose handler arm has not collapsed yet, so the
+            // handler, not the normal path, becomes the `if` body once it has.
+            if self.loop_cond_hoist || !self.exitleaf_facts.eh_catch_arm.is_empty() {
                 while index < self.size() {
                     let bl = self.block_at(index);
-                    if !self.ifnoexit_is_loop_head(bl) && self.rule_block_if_no_exit(bl) {
+                    let held = (self.loop_cond_hoist && self.ifnoexit_is_loop_head(bl))
+                        || self.eh_catch_arm(bl).is_some_and(|i| !self.ifnoexit_arm_eligible(bl, i));
+                    if !held && self.rule_block_if_no_exit(bl) {
                         fullchange = true;
                         break;
                     }
@@ -3842,6 +3869,9 @@ impl Action for ActionBlockStructure {
             if want_addr {
                 let a = crate::block::block_get_start(&data.bblocks_ref().arena, bb);
                 exitleaf_facts.addr.insert(bb, a.get_offset());
+            }
+            if let Some(arm) = crate::kuna_ehcatch::catch_successor(data, bb) {
+                exitleaf_facts.eh_catch_arm.insert(bb, arm);
             }
             if data.bb_is_complex(bb) {
                 complex_blocks.insert(bb);

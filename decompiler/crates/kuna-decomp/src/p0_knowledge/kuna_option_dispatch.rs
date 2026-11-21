@@ -183,6 +183,11 @@ kuna_options! { self, p1;
     "tailcallframe" => on_off!(tail_call_frame, "Frame-teardown tail-call recovery"),
     "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
     "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
+    "ehcatch" => {
+        let (mode, msg) = crate::kuna_ehcatch::EhCatchMode::apply(p1)?;
+        self.eh_catch = mode;
+        Ok(msg)
+    },
     "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
     "linuxsyscall" => {
         let (mode, msg) = crate::kuna_linuxsyscall::OptionLinuxSyscall.apply(p1)?;

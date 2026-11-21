@@ -1577,6 +1577,9 @@ pub struct PrintC {
     /// only they reached.  Computed per function at the top of
     /// [`emit_function_body`](PrintC::emit_function_body).
     goto_rewrites: crate::p8_structure::kuna_gotonext::GotoRewrites,
+    /// (kuna `ehcatch`) The statement of the guarded call, which the condition
+    /// block being emitted wraps in `try { }`; taken when the statement prints.
+    eh_try_call: Option<OpId>,
     /// (kuna) Resolved `realtypes` rendering context for the function currently
     /// being printed — the `Architecture::realtypes` gate plus the data-model fact
     /// (`long` is 8 bytes) needed to relabel residual `TYPE_UNKNOWN` (`xunknownN`)
@@ -1673,6 +1676,7 @@ impl PrintC {
             commsorter: crate::comment::CommentSorter::new(),
             void_tail_return: None,
             goto_rewrites: Default::default(),
+            eh_try_call: None,
             rt_ctx: RealTypeCtx::OFF,
             out_lang: crate::kuna_lang::OutLang::C,
             eol_warns: Vec::new(),
@@ -4824,6 +4828,10 @@ impl PrintC {
             self.emit_block_if_ite(fd, arch, m);
             return;
         }
+        if let Some(t) = self.eh_try_match(fd, blk) {
+            self.emit_block_if_try(fd, arch, blk, t);
+            return;
+        }
         let size = fd.sblocks_ref().block(blk).get_size();
         let cond_block = fd.sblocks_ref().block(blk).get_block(0);
 
@@ -5017,6 +5025,78 @@ impl PrintC {
         if my_pending_indent >= 0 {
             self.emit.close_brace_indent(self.lang().kw_close_curly, my_pending_indent);
         }
+    }
+
+    /// (kuna `ehcatch`) Is `blk` an else-less `if` on the exceptional edge of a
+    /// guarded call, whose condition block ends in one plain basic block? Then it
+    /// prints as `try { call; } catch (T) { body }`.
+    fn eh_try_match(&self, fd: &Funcdata, blk: BlockId) -> Option<crate::kuna_ehcatch::TryStatement> {
+        let block = fd.sblocks_ref().block(blk);
+        if self.out_lang != crate::kuna_lang::OutLang::C
+            || block.get_size() != 2
+            || self.context.is_set(modifiers::PENDING_BRACE)
+        {
+            return None;
+        }
+        let mut cond = fd.sblocks_ref().block(block.get_block(0));
+        while cond.get_type() == crate::block::BlockType::Ls {
+            cond = fd.sblocks_ref().block(*cond.get_list().last()?);
+        }
+        if cond.get_type() != crate::block::BlockType::Copy {
+            return None;
+        }
+        crate::kuna_ehcatch::try_statement(fd, fd.bb_op_tail(cond.get_copy()?)?)
+    }
+
+    /// (kuna `ehcatch`) Emit the `try`/`catch` form [`Self::eh_try_match`] chose:
+    /// the condition block's statements with the guarded call inside `try { }`,
+    /// then `catch (T)` over the `if` body.
+    fn emit_block_if_try(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        blk: BlockId,
+        t: crate::kuna_ehcatch::TryStatement,
+    ) {
+        use crate::prettyprint::Emit;
+        let cond_block = fd.sblocks_ref().block(blk).get_block(0);
+        let style = self.output_brace(self.options.brace_ifelse);
+        self.context.push_mod();
+        self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH | modifiers::PENDING_BRACE);
+        self.context.push_mod();
+        self.context.set_mod(modifiers::NO_BRANCH);
+        let outer = self.eh_try_call.replace(t.statement);
+        self.emit_block(fd, arch, cond_block);
+        self.context.pop_mod();
+        self.emit_comment_block_tree(fd, cond_block);
+        self.emit.tag_line();
+        if std::mem::replace(&mut self.eh_try_call, outer).is_some() {
+            self.emit.print("try", SyntaxHighlight::KeywordColor);
+            let id = self.emit.open_brace_indent(self.lang().kw_open_curly, style);
+            self.emit.close_brace_indent(self.lang().kw_close_curly, id);
+            self.emit.tag_line();
+        }
+        let clause = arch.eh_call_sites.get(t.site).map_or_else(
+            || crate::kuna_ehcatch::CATCH_ALL.to_string(),
+            crate::kuna_ehcatch::EhCallSite::clause,
+        );
+        self.emit.print("catch", SyntaxHighlight::KeywordColor);
+        self.emit.spaces(1, 0);
+        self.emit.print(&format!("({clause})"), SyntaxHighlight::NoColor);
+        let id = self.emit.open_brace_indent(self.lang().kw_open_curly, style);
+        self.flush_eol_warnings();
+        if let Some(target) = fd.sblocks_ref().block(blk).get_if_goto_target() {
+            let gototype = fd.sblocks_ref().block(blk).get_if_goto_type();
+            self.emit.tag_line();
+            self.emit_goto_statement(fd, cond_block, target, gototype);
+        } else {
+            self.context.set_mod(modifiers::NO_BRANCH);
+            let id1 = self.emit.begin_block(0);
+            self.emit_block(fd, arch, fd.sblocks_ref().block(blk).get_block(1));
+            self.emit.end_block(id1);
+        }
+        self.emit.close_brace_indent(self.lang().kw_close_curly, id);
+        self.context.pop_mod();
     }
 
     /// (kuna braceelide, DIV-38) Does this if-body render braceless?  True when
@@ -5969,6 +6049,18 @@ impl PrintC {
             }
             if let Some(last) = self.emit_rust_array_init(fd, arch, inst) {
                 cur = fd.bb_op_next(last);
+            } else if self.eh_try_call == Some(inst) {
+                // (kuna ehcatch) the guarded call of a `try { } catch` statement.
+                self.eh_try_call = None;
+                use crate::prettyprint::Emit;
+                self.emit.print("try", SyntaxHighlight::KeywordColor);
+                let id = self
+                    .emit
+                    .open_brace_indent(self.lang().kw_open_curly, self.output_brace(self.options.brace_ifelse));
+                self.emit.tag_line();
+                self.emit_statement(fd, arch, inst);
+                self.flush_eol_warnings();
+                self.emit.close_brace_indent(self.lang().kw_close_curly, id);
             } else {
                 self.emit_statement(fd, arch, inst);
             }
@@ -7105,6 +7197,21 @@ impl PrintC {
                         if line {
                             let val = fd.vbank().get(vn).map(|v| v.get_offset()).unwrap_or(0);
                             self.push_constant_ir_fmt_sign(val, 4, op, display_format::FORCE_DEC, false);
+                        } else if in0_off == crate::userop::BUILTIN_EH_CATCH as u64
+                            || in0_off == crate::userop::BUILTIN_EH_EXCEPTION as u64
+                        {
+                            // (kuna ehcatch) the record index prints as its catch clause.
+                            let clause = crate::kuna_ehcatch::catch_site(fd, op)
+                                .and_then(|i| arch.eh_call_sites.get(i))
+                                .map_or_else(
+                                    || crate::kuna_ehcatch::CATCH_ALL.to_string(),
+                                    crate::kuna_ehcatch::EhCallSite::clause,
+                                );
+                            self.push_atom(&Atom::syntax(
+                                clause,
+                                TagType::TypeToken,
+                                crate::printlanguage::SyntaxHighlight::type_color,
+                            ));
                         } else {
                             self.push_vn_ir(fd, arch, vn, op);
                         }

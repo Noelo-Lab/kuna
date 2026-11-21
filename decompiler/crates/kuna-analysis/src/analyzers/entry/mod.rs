@@ -97,6 +97,8 @@ pub mod kuna_pemain;
 pub mod kuna_cortexmvectors;
 pub mod kuna_coldentry;
 pub mod kuna_fdeinterior;
+pub mod kuna_armexidx;
+pub mod kuna_ehtable;
 pub mod kuna_pdatainterior;
 pub mod kuna_pereloccode;
 mod macho_entry;
@@ -192,6 +194,8 @@ impl AnalysisPass for EntryDiscoveryPass {
         // without the region paint. Empty on any non-Cortex-M ARM object (and every
         // non-ARM arch); see `cortexm_thumb_paints`.
         out.context_paints.extend(cortexm_thumb_paints(ctx.file, false));
+        // ARM EHABI: the `.ARM.exidx` functions known to be Thumb.
+        out.context_paints.extend(kuna_armexidx::thumb_paints(ctx.file));
         // Ghidra-faithful names for the dynamic INIT/FINI entries (oracle 2 only),
         // restricted to the VMAs that actually survived into `out.entries` (a named
         // entry already covered by a funcsym is filtered out above, so its name is
@@ -496,6 +500,10 @@ fn collect_entries_with_pe_mode(file: &object::File, bytes: &[u8], pe_arm: bool)
             // (see `cortexm_vector_entries` / `cortexm_vector_table`).
             if file.architecture() == object::Architecture::Arm {
                 cand.extend(cortexm_vector_entries(file, false));
+                // Oracle 3 on ARM32: the `.ARM.exidx` function starts, the EHABI
+                // counterpart of the FDE `pcBegin`s (an ARM ELF carries no
+                // `.eh_frame`).
+                cand.extend(kuna_armexidx::starts(file));
             }
         }
         // PE: entry (AddressOfEntryPoint+ImageBase), `.pdata` RUNTIME_FUNCTION
@@ -1923,6 +1931,30 @@ pub fn scan_eh_frame_landing_pads(file: &object::File) -> Vec<u64> {
 
 fn scan_eh_frame_landing_pads_sized(file: &object::File, ptr_size: usize) -> Vec<u64> {
     let mut out: Vec<u64> = Vec::new();
+    // The `.gcc_except_table` bytes, read by VMA (the LSDA + call-site table live
+    // here, not in `.eh_frame`). Absent ⇒ no landing pads.
+    let Some(gcc) = file.section_by_name(".gcc_except_table") else {
+        return out;
+    };
+    let gcc_vma = gcc.address();
+    let Ok(gcc_data) = gcc.data() else {
+        return out;
+    };
+    let le = file.is_little_endian();
+    // Decode the `.gcc_except_table` LSDA of each FDE. lpStart defaults to the
+    // FDE's pcBegin when the LSDA omits its own lpStart.
+    for (pc_begin, lsda_ptr) in scan_eh_frame_lsdas(file, ptr_size) {
+        decode_lsda_landing_pads(gcc_data, gcc_vma, lsda_ptr, pc_begin, ptr_size, le, &mut out);
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// `(pcBegin, LSDA address)` of every `.eh_frame` FDE whose CIE augmentation
+/// carries an `L` and whose LSDA pointer is non-null, in section order.
+fn scan_eh_frame_lsdas(file: &object::File, ptr_size: usize) -> Vec<(u64, u64)> {
+    let mut out: Vec<(u64, u64)> = Vec::new();
     if !matches!(file.format(), object::BinaryFormat::Elf) {
         return out;
     }
@@ -1936,15 +1968,6 @@ fn scan_eh_frame_landing_pads_sized(file: &object::File, ptr_size: usize) -> Vec
     if data.is_empty() {
         return out;
     }
-    // The `.gcc_except_table` bytes, read by VMA (the LSDA + call-site table live
-    // here, not in `.eh_frame`). Absent ⇒ no landing pads.
-    let Some(gcc) = file.section_by_name(".gcc_except_table") else {
-        return out;
-    };
-    let gcc_vma = gcc.address();
-    let Ok(gcc_data) = gcc.data() else {
-        return out;
-    };
     let le = file.is_little_endian();
 
     // CIE-offset -> decoded augmentation (FDE encoding + LSDA encoding). A flat Vec
@@ -2038,17 +2061,11 @@ fn scan_eh_frame_landing_pads_sized(file: &object::File, ptr_size: usize) -> Vec
                 o = next; // no LSDA for this FDE.
                 continue;
             }
-            // Decode the `.gcc_except_table` LSDA at `lsda_ptr`. lpStart defaults to
-            // the FDE's pcBegin when the LSDA omits its own lpStart.
-            decode_lsda_landing_pads(
-                gcc_data, gcc_vma, lsda_ptr, pc_begin, ptr_size, le, &mut out,
-            );
+            out.push((pc_begin, lsda_ptr));
         }
         o = next;
     }
 
-    out.sort_unstable();
-    out.dedup();
     out
 }
 

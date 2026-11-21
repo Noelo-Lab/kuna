@@ -5890,6 +5890,17 @@ fn commit_analysis_output(
         prog.arch_mut().kernel_bug_sites = sites;
     }
 
+    // (kuna `ehcatch`) Park the exception tables' call-site records for the flow.
+    // Empty on every image without one.
+    if !out.eh_call_sites.is_empty() {
+        let mut pads: Vec<u64> = out.eh_call_sites.iter().map(|s| s.landing_pad).collect();
+        pads.sort_unstable();
+        pads.dedup();
+        let arch = prog.arch_mut();
+        arch.eh_landing_pads = pads;
+        arch.eh_call_sites = out.eh_call_sites.clone();
+    }
+
     // (kuna `poolextents`) Park the ARM32 literal-pool extents the Listing's
     // trusted instructions prove. Empty without the Listing; `funcboundflow`
     // gates their use at flow time.

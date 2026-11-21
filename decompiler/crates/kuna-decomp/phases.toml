@@ -1867,6 +1867,25 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "ehcatch"
+values = "off|catch|all"
+default = "catch"
+destructive = false
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "gh1645-eh-catch"
+summary = "On an ELF image with C++ exception tables (an `.eh_frame` LSDA in `.gcc_except_table`, or on ARM32 an `.ARM.extab` entry reached through `.ARM.exidx`), make a landing pad part of the function that owns it. A landing pad is entered only by the unwinder, so no instruction branches to it and the function used to print as its normal path alone: a `try`/`catch` lost its handler with no note that one existed. The analysis tier decodes every call-site record (guarded range, landing pad, action chain, caught types named from the type table's `std::type_info` objects) and parks them; at flow time a CALL or CALLIND inside a record gains an edge to its pad, through a stub that defines the two registers the unwinder loads (`__eh_exception()`, the exception object, and `__eh_selector()`, the handler selector) so the pad never reads the call's return value through them. An else-less `if` on that edge prints as `try { call; } catch (T) { handler }`, with `T` the caught type or `...` for a catch-all or an unnamed type and several types joined by ` | `; any other shape keeps the plain `if (__eh_catch(T))`. `catch` adds the edge only where the action chain holds a catch clause. `all` also follows cleanup-only pads (destructor calls ending in `_Unwind_Resume`), printed as `catch (...)`. `off` adds no edge and the function header says how many catch handlers are not shown. Applies on x86, x86-64, ARM32 and AArch64, where the unwinder's two registers are known; inert on an image without an exception table."
+use_when = "On by default. A C++ function that has a `try`/`catch` in its source prints only the code of the `try` body. Set `all` when the destructor calls an exception triggers matter (auditing resource release on the unwind path); expect a `catch (...)` after most calls in code with live locals. Set `off` to print the normal path only; the header then counts the hidden handlers."
+example = "option ehcatch all"
+source_decompiler = "kuna"
+inspiration = "GH-1645; Itanium C++ ABI exception handling tables (LSDA call-site, action and type tables); ARM EHABI .ARM.exidx/.ARM.extab"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "a function with try/catch prints only its normal path|the catch handler body is missing from the decompilation|__cxa_begin_catch is imported but never called in any decompiled function|a function returns a constant where the source returns the caught exception value|code after a call to a throwing function seems to ignore the failure case|ARM C++ function lost its exception handler"
+
+[[settable]]
 option = "cleanupcode"
 values = "on|off"
 default = "on"

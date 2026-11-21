@@ -431,6 +431,19 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// (kuna `ehcatch`) The exception-table record guarding the call at `call`:
+    /// its landing pad and, when the pad joins the function under the current
+    /// `ehcatch` mode, the edge to add. See [`kuna_ehcatch`](crate::kuna_ehcatch).
+    fn eh_call_site(&self, _call: &Address) -> Option<(u64, Option<crate::kuna_ehcatch::EhEdge>)> {
+        None
+    }
+
+    /// (kuna `ehcatch`) Is `addr` the landing pad of an exception-table record?
+    /// False under `ehcatch off`.
+    fn eh_landing_pad(&self, _addr: &Address) -> bool {
+        false
+    }
+
     /// (kuna) Is the direct BRANCH or bounded CBRANCH `op`, whose target is
     /// `dest`, an `-O2` tail call to another known function's entry (and so should
     /// be recovered as a `CALL` + `RETURN` rather than flow-followed into the
@@ -833,6 +846,8 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     /// the SAME entry must `cancel_inject_id` so the injection does not recurse.
     /// `None` outside a call-fixup injection (the user-op path passes NULL `fc`).
     injecting_entry: Option<Address>,
+    /// (kuna `ehcatch`) Catch pads met with `option ehcatch off`.
+    eh_hidden: std::collections::BTreeSet<u64>,
 }
 
 /// Apply explicit-flow and declared-extent precedence before consulting either
@@ -908,6 +923,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             overlap_watch: None,
             overlap_cbranch_target: None,
             injecting_entry: None,
+            eh_hidden: std::collections::BTreeSet::new(),
         }
     }
 
@@ -1678,18 +1694,28 @@ following this call as a branch"
                             &site,
                         );
                         self.follow_call_as_branch(curop, &destaddr, maxtime, &mut cursor, startbasic)?;
-                    } else if self.setup_call_specs(curop)? {
-                        // The C++ `--oiter` backs up to the op *after* the call —
-                        // the noreturn halt `checkForFlowModification` just inserted
-                        // via `opDeadInsertAfter` — so the next iteration picks up
-                        // the halt (NOT re-reads the call).  Re-derive the successor
-                        // of `curop` AFTER the insertion.
-                        cursor = self.dead_next(curop);
+                    } else {
+                        if self.setup_call_specs(curop)? {
+                            // The C++ `--oiter` backs up to the op *after* the call —
+                            // the noreturn halt `checkForFlowModification` just inserted
+                            // via `opDeadInsertAfter` — so the next iteration picks up
+                            // the halt (NOT re-reads the call).  Re-derive the successor
+                            // of `curop` AFTER the insertion.
+                            cursor = self.dead_next(curop);
+                        }
+                        cursor = self.eh_landing_edge(curop, cursor, startbasic)?;
+                    if cursor.is_none() {
+                        op = self.dead_tail();
+                    }
                     }
                 }
                 OpCode::CPUI_CALLIND => {
                     if self.setup_callind_specs(curop)? {
                         cursor = self.dead_next(curop);
+                    }
+                    cursor = self.eh_landing_edge(curop, cursor, startbasic)?;
+                    if cursor.is_none() {
+                        op = self.dead_tail();
                     }
                 }
                 OpCode::CPUI_CALLOTHER => {
@@ -1726,6 +1752,51 @@ following this call as a branch"
             }
         }
         Ok(op)
+    }
+
+    /// (kuna `ehcatch`) Add the exceptional edge out of `call` when an
+    /// exception-table record guards it. `next` is the op the walk visits after
+    /// the call: nothing, or the call's own no-return halt. Any other successor
+    /// leaves the call alone. Returns the op the walk visits next.
+    fn eh_landing_edge(
+        &mut self,
+        call: OpId,
+        next: Option<OpId>,
+        startbasic: &mut bool,
+    ) -> KunaResult<Option<OpId>> {
+        if self.is_flow_for_inline() || self.injectlist.last() == Some(&call) {
+            return Ok(next);
+        }
+        let Some(o) = self.data.obank().get(call) else {
+            return Ok(next);
+        };
+        if !matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
+            return Ok(next);
+        }
+        let addr = o.get_addr().clone();
+        let Some((pad, edge)) = self.env.eh_call_site(&addr) else {
+            return Ok(next);
+        };
+        let Some(edge) = edge else {
+            self.eh_hidden.insert(pad);
+            return Ok(next);
+        };
+        if let Some(halt) = next {
+            let is_halt = self.data.obank().get(halt).is_some_and(|h| h.code() == OpCode::CPUI_RETURN);
+            if !is_halt || self.dead_next(call) != Some(halt) || self.dead_next(halt).is_some() {
+                return Ok(next);
+            }
+            let enter = crate::kuna_ehcatch::plant_no_return(&mut self.data, call, halt, &edge)?;
+            self.new_address(enter, &edge.pad)?;
+            *startbasic = true;
+            return Ok(None);
+        }
+        let stub = crate::kuna_ehcatch::plant(&mut self.data, call, &edge)?;
+        for op in [stub.resume, stub.stub, stub.join] {
+            self.op_mark_start_basic(op);
+        }
+        self.new_address(stub.enter, &edge.pad)?;
+        Ok(None)
     }
 
     /// The Address held by a branch op's first input (its code reference).
@@ -2107,6 +2178,7 @@ truncating the fall-through here"
 
         self.overlap_cbranch_target = None; // (kuna overlapbranch) per-instruction
         let mut ends_in_call = false;
+        let mut call_before_pad = false;
         if let Some(firstop) = first_new {
             // (kuna retpushedhalf) The push/pop stack-maintenance shape is only
             // visible here: copy propagation later collapses the store and the
@@ -2120,6 +2192,9 @@ truncating the fall-through here"
                 super::kuna_atomicxadd::observe(&mut self.data, &insn_ops);
             }
             ends_in_call = self.pool_bound && self.ends_in_unconditional_call(&insn_ops);
+            call_before_pad = !self.is_flow_for_inline()
+                && self.env.eh_landing_pad(&(curaddr + step as i64))
+                && self.ends_in_unconditional_call(&insn_ops);
             let seq = self.data.obank().get(firstop).expect("process: stale firstop").get_seq_num().clone();
             if let Some(stat) = self.visited.get_mut(curaddr) {
                 stat.seqnum = seq;
@@ -2214,6 +2289,15 @@ truncating the fall-through here"
                 self.artificial_halt(curaddr, pcodeop_flags::noreturn)?;
                 self.data.warning(
                     "funcboundflow: the call's fall-through is this function's literal pool; truncating flow here",
+                    curaddr,
+                );
+                isfallthru = false;
+            } else if call_before_pad {
+                // (kuna ehcatch) Only the unwinder enters a landing pad, so a
+                // call whose fall-through is one does not return.
+                self.artificial_halt(curaddr, pcodeop_flags::noreturn)?;
+                self.data.warning(
+                    "ehcatch: the call's fall-through is an exception landing pad; truncating flow here",
                     curaddr,
                 );
                 isfallthru = false;
@@ -3035,6 +3119,14 @@ truncating the fall-through here"
         }
         if self.has_possible_unreachable() {
             // data.removeUnreachableBlocks(false, true);  -- STUB(W4): structuring.
+        }
+        if !self.eh_hidden.is_empty() {
+            let n = self.eh_hidden.len();
+            self.data.warning_header(&format!(
+                "{n} catch handler{} not shown (`--option ehcatch catch` adds {})",
+                if n == 1 { "" } else { "s" },
+                if n == 1 { "it" } else { "them" },
+            ));
         }
         Ok(())
     }

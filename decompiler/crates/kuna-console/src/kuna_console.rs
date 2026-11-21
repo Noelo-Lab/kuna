@@ -235,6 +235,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "syscallregs" => conf.syscall_regs.as_str(),
         // (kuna `linuxsyscall`) Three-valued, so it reports its own token.
         "linuxsyscall" => conf.linux_syscall.as_str(),
+        // (kuna `ehcatch`) Three-valued, so it reports its own token.
+        "ehcatch" => conf.eh_catch.as_str(),
         // (kuna `callmechanisms`) Three-valued, so it reports its own token.
         "callmechanisms" => conf.call_mechanism_mode.as_str(),
         // (kuna `rustabi`) Three-valued, so it reports its own token.

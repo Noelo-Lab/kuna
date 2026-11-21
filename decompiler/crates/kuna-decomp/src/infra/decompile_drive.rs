@@ -608,6 +608,50 @@ impl FlowEnvironment for ArchFlowEnv {
         Some((callother, site))
     }
 
+    /// (kuna `ehcatch`) Empty on an image without an exception table, so the
+    /// range lookup is the only cost. A cleanup-only record is reported only
+    /// under `ehcatch all`.
+    fn eh_call_site(&self, call: &Address) -> Option<(u64, Option<crate::kuna_ehcatch::EhEdge>)> {
+        use crate::kuna_ehcatch::EhCatchMode;
+        let arch = self.arch();
+        if arch.eh_call_sites.is_empty() {
+            return None;
+        }
+        let space = call.get_space()?;
+        if space.get_index() != arch.manage().get_default_code_space()?.get_index() {
+            return None;
+        }
+        let index = crate::kuna_ehcatch::site_at(&arch.eh_call_sites, call.get_offset())?;
+        let site = &arch.eh_call_sites[index];
+        match arch.eh_catch {
+            EhCatchMode::Off if site.catches.is_empty() => return None,
+            EhCatchMode::Off => return Some((site.landing_pad, None)),
+            EhCatchMode::Catch if site.catches.is_empty() => return None,
+            _ => {}
+        }
+        let (exception, selector) = crate::kuna_ehcatch::unwinder_registers(&arch.archid)?;
+        let storage = |name| {
+            let v = arch.get_register_varnode(name).ok()?;
+            Some((Address::new(v.space.clone()?, v.offset), v.size as int4))
+        };
+        let edge = crate::kuna_ehcatch::EhEdge {
+            pad: Address::new(space.clone(), site.landing_pad),
+            site: index,
+            exception: storage(exception)?,
+            selector: storage(selector)?,
+        };
+        Some((site.landing_pad, Some(edge)))
+    }
+
+    fn eh_landing_pad(&self, addr: &Address) -> bool {
+        let arch = self.arch();
+        arch.eh_catch != crate::kuna_ehcatch::EhCatchMode::Off
+            && arch.eh_landing_pads.binary_search(&addr.get_offset()).is_ok()
+            && arch.manage().get_default_code_space().is_some_and(|code| {
+                addr.get_space().is_some_and(|space| space.get_index() == code.get_index())
+            })
+    }
+
     fn is_tail_call_branch(
         &self,
         fd: &Funcdata,

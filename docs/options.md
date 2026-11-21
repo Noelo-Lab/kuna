@@ -68,6 +68,12 @@ Three tiers:
 | writes through pointers that are never assigned right after a short conditional jump | [`overlapbranch`](#overlapbranch----on--off-default-on) |
 | a bogus dat_<hex> global incremented once and never read | [`overlapbranch`](#overlapbranch----on--off-default-on) |
 | a comparison whose operands are unreadable CONCAT/subpiece salad in hand-written or obfuscated code | [`overlapbranch`](#overlapbranch----on--off-default-on) |
+| a function with try/catch prints only its normal path | [`ehcatch`](#ehcatch----off--catch--all-default-catch) |
+| the catch handler body is missing from the decompilation | [`ehcatch`](#ehcatch----off--catch--all-default-catch) |
+| __cxa_begin_catch is imported but never called in any decompiled function | [`ehcatch`](#ehcatch----off--catch--all-default-catch) |
+| a function returns a constant where the source returns the caught exception value | [`ehcatch`](#ehcatch----off--catch--all-default-catch) |
+| code after a call to a throwing function seems to ignore the failure case | [`ehcatch`](#ehcatch----off--catch--all-default-catch) |
+| ARM C++ function lost its exception handler | [`ehcatch`](#ehcatch----off--catch--all-default-catch) |
 | core::ptr::drop_in_place(...) calls all over a decompiled rust function | [`cleanupcode`](#cleanupcode----on--off-default-on-destructive-opt-in) |
 | drop glue and deallocation calls that are nowhere in the rust source | [`cleanupcode`](#cleanupcode----on--off-default-on-destructive-opt-in) |
 | Drop::drop / __rust_dealloc / RawVecInner::deallocate noise at every scope exit | [`cleanupcode`](#cleanupcode----on--off-default-on-destructive-opt-in) |
@@ -1006,6 +1012,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** A hand-written / obfuscated / anti-disassembly binary decompiles with a call to an address outside the image, stores through never-assigned pointers, or bogus `dat_<hex>` globals right after a short conditional jump. Off restores the upstream fall-through-wins decode. Inert on ordinary compiler output: the trigger needs a branch target strictly inside its own fall-through instruction, and the one compiler idiom that produces that (a conditional jump over a `LOCK` prefix) is excluded because both decodes end at the same address.
 - **Where / provenance:** P2/flow-classification · ida · correctness-fix · overlapping-anti-disassembly-sequence
 - **Example:** `option overlapbranch off`
+
+### `ehcatch` -- off | catch | all, default `catch`
+
+- **Symptoms:** a function with try/catch prints only its normal path; the catch handler body is missing from the decompilation; __cxa_begin_catch is imported but never called in any decompiled function; a function returns a constant where the source returns the caught exception value; code after a call to a throwing function seems to ignore the failure case; ARM C++ function lost its exception handler.
+- **What it does:** On an ELF image with C++ exception tables (an `.eh_frame` LSDA in `.gcc_except_table`, or on ARM32 an `.ARM.extab` entry reached through `.ARM.exidx`), make a landing pad part of the function that owns it. A landing pad is entered only by the unwinder, so no instruction branches to it and the function used to print as its normal path alone: a `try`/`catch` lost its handler with no note that one existed. The analysis tier decodes every call-site record (guarded range, landing pad, action chain, caught types named from the type table's `std::type_info` objects) and parks them; at flow time a CALL or CALLIND inside a record gains an edge to its pad, through a stub that defines the two registers the unwinder loads (`__eh_exception()`, the exception object, and `__eh_selector()`, the handler selector) so the pad never reads the call's return value through them. An else-less `if` on that edge prints as `try { call; } catch (T) { handler }`, with `T` the caught type or `...` for a catch-all or an unnamed type and several types joined by ` | `; any other shape keeps the plain `if (__eh_catch(T))`. `catch` adds the edge only where the action chain holds a catch clause. `all` also follows cleanup-only pads (destructor calls ending in `_Unwind_Resume`), printed as `catch (...)`. `off` adds no edge and the function header says how many catch handlers are not shown. Applies on x86, x86-64, ARM32 and AArch64, where the unwinder's two registers are known; inert on an image without an exception table.
+- **When to flip:** On by default. A C++ function that has a `try`/`catch` in its source prints only the code of the `try` body. Set `all` when the destructor calls an exception triggers matter (auditing resource release on the unwind path); expect a `catch (...)` after most calls in code with live locals. Set `off` to print the normal path only; the header then counts the hidden handlers.
+- **Where / provenance:** P2/flow-classification · kuna · structure-recovery · gh1645-eh-catch
+- **Example:** `option ehcatch all`
 
 ### `cleanupcode` -- on | off, default `on` (destructive opt-in)
 

@@ -146,6 +146,15 @@ pub const BUILTIN_MEMSET64: uint4 = 0x1000000d;
 /// (kuna) Built-in id for `builtin_memcmp`, the comparison a `repz cmpsb`
 /// computes (`repstring`).
 pub const BUILTIN_MEMCMP: uint4 = 0x1000000e;
+/// (kuna) Built-in id for `__eh_catch`, true on the exceptional edge out of a
+/// guarded call (`ehcatch`).
+pub const BUILTIN_EH_CATCH: uint4 = 0x1000000f;
+/// (kuna) Built-in id for `__eh_exception`, the exception object the unwinder
+/// hands a landing pad (`ehcatch`).
+pub const BUILTIN_EH_EXCEPTION: uint4 = 0x10000010;
+/// (kuna) Built-in id for `__eh_selector`, the handler selector the unwinder
+/// hands a landing pad (`ehcatch`).
+pub const BUILTIN_EH_SELECTOR: uint4 = 0x10000011;
 
 // ---------------------------------------------------------------------------
 // UserOpBase + UserPcodeOp hierarchy (userop.hh:47-318)
@@ -1070,6 +1079,13 @@ impl UserOpManage {
             }
             BUILTIN_KERNEL_BUG => UserPcodeOp::new_unspecialized(b"BUG", BUILTIN_KERNEL_BUG as int4),
             BUILTIN_KERNEL_WARN => UserPcodeOp::new_unspecialized(b"__WARN", BUILTIN_KERNEL_WARN as int4),
+            BUILTIN_EH_CATCH => UserPcodeOp::new_unspecialized(b"__eh_catch", BUILTIN_EH_CATCH as int4),
+            BUILTIN_EH_EXCEPTION => {
+                UserPcodeOp::new_unspecialized(b"__eh_exception", BUILTIN_EH_EXCEPTION as int4)
+            }
+            BUILTIN_EH_SELECTOR => {
+                UserPcodeOp::new_unspecialized(b"__eh_selector", BUILTIN_EH_SELECTOR as int4)
+            }
             _ => return Err(KunaError::lowlevel("Bad built-in userop id")),
         };
         self.builtinmap.insert(i, res);

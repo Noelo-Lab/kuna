@@ -340,6 +340,8 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         Box::new(crate::kernelbug::KernelBugPass),
         // (kuna `blobs`) Embedded images and archives, committed unless `blobs off`.
         Box::new(crate::blobs::BlobPass),
+        // (kuna `ehcatch`) The exception tables' call-site records; inert without one.
+        Box::new(crate::entry::kuna_ehtable::EhTablePass),
         // (kuna `thunkentry`) An MSVC incremental-link table's stubs and targets.
         Box::new(crate::listing::kuna_thunkentry::IncrementalLinkPass),
         // (kuna) The MSVC x87 one-operand intrinsics take ST0 and return in ST0.

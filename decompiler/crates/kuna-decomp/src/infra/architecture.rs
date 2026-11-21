@@ -1791,6 +1791,19 @@ pub struct Architecture {
     /// (`kuna_analysis::kernelbug`); flow renders each trap as `BUG()` or
     /// `__WARN(file,line)` ([`crate::kuna_kernelbug`]). Empty on every other image.
     pub kernel_bug_sites: Vec<crate::kuna_kernelbug::KernelBugSite>,
+    /// (kuna `ehcatch`) The call-site records of the image's exception tables,
+    /// sorted by start address with disjoint ranges. The analysis tier decodes
+    /// them (`kuna_analysis::entry::kuna_ehtable`); flow adds an exceptional
+    /// edge at each guarded call ([`crate::kuna_ehcatch`]). Empty on an image
+    /// without such tables.
+    pub eh_call_sites: Vec<crate::kuna_ehcatch::EhCallSite>,
+    /// (kuna `ehcatch`) The landing pads of `eh_call_sites`, sorted. Only the
+    /// unwinder enters one, so a call that falls through into one does not
+    /// return.
+    pub eh_landing_pads: Vec<u64>,
+    /// (kuna) `option ehcatch off|catch|all`: which landing pads join their
+    /// function.
+    pub eh_catch: crate::kuna_ehcatch::EhCatchMode,
     /// (kuna) Gate the FID fingerprint matcher (`fid`), a Listing/xref consumer;
     /// default **off**. The kuna analog of Ghidra's FID identification analyzer:
     /// over the built Listing it fingerprints each function with the byte-exact
@@ -2647,6 +2660,9 @@ impl Architecture {
             error_noreturn_callsites: Vec::new(),
             dos_exit_sites: Vec::new(),
             kernel_bug_sites: Vec::new(),
+            eh_call_sites: Vec::new(),
+            eh_landing_pads: Vec::new(),
+            eh_catch: crate::kuna_ehcatch::EhCatchMode::Off, // (kuna) option ehcatch; reset_defaults sets the shipped default
             analysis_fid: false,
             analysis_fid_strict: false,
             analysis_flirt: false,
@@ -2766,6 +2782,7 @@ impl Architecture {
         self.tail_call_frame = true; // (kuna) DIV-109 default-on: REMOVES CODE. A direct jmp preceded by a teardown of exactly the entry block's frame is a tail call even when the callee was never discovered. Byte-identical (0/675) on the datatest corpus; restore the flow-into-the-callee decode with `option tailcallframe off`
         self.funcbound_flow = true; // (kuna) DIV-67 default-on: REMOVES CODE. Truncates a fall-through that reaches another known function's entry (a function ending in an unnamed static no-return `exit`/`abort`/`die()` wrapper) instead of decoding the next function's body into it. Byte-identical (0/675) on the datatest corpus; restore upstream flow-into-callee with `option funcboundflow off`
         self.overlap_branch = true; // (kuna) DIV-106 default-on: REMOVES CODE. Ends a conditional branch's fall-through in a halt when the branch's own target lies strictly inside that fall-through instruction's encoding (the anti-disassembly junk-lead-byte overlap), instead of letting the bogus decode swallow the target and desynchronise the stream. Two real instruction starts cannot sit at `next` and strictly inside `next`, so the trigger never matches well-formed code and is byte-identical (0/675) on the datatest corpus; restore the fall-through-wins decode with `option overlapbranch off`
+        self.eh_catch = crate::kuna_ehcatch::EhCatchMode::Catch; // (kuna) default `catch`: a call inside an exception-table call-site record that has a catch clause gains an edge to its landing pad, so the handler prints as `try { } catch (T) { }`. Inert on an image without an exception table (0/675 datatests); `option ehcatch all` also follows cleanup-only pads, `off` restores the normal-path-only body
         self.remove_cleanup_code = true; // (kuna) DIV-81 default-on: REMOVES CODE. Deletes the Rust drop/deallocate call sites (`core::ptr::drop_in_place`, `Drop::drop`, `alloc::raw_vec::RawVecInner::deallocate`, `__rust_dealloc`) and the argument setup that only feeds them. Structurally inert outside a Rust binary (no C ELF resolves a call to one of those names), so byte-identical (0/675) on the datatest corpus; keep the drop glue with `option cleanupcode off`
         self.switch_selector_guard = false; // (kuna) option switchselector, default-off: re-rolling a parameter-dispatch cascade into a switch is the better default; ON narrows `loweredswitch` to cascades whose selector the function itself computes
         self.msvc_str_append = false; // (kuna) option msvcstrappend, default-off: it deletes the inlined fast path's stores and renames the grow call, and no MSVC C++ corpus in the tree can measure it
@@ -4760,8 +4777,9 @@ impl Architecture {
     /// front-loaded here).
     fn register_string_builtins(&mut self) -> KunaResult<()> {
         use crate::userop::{
-            BUILTIN_KERNEL_BUG, BUILTIN_KERNEL_WARN, BUILTIN_MEMCMP, BUILTIN_MEMCPY, BUILTIN_MEMSET,
-            BUILTIN_MEMSET16, BUILTIN_MEMSET32, BUILTIN_MEMSET64,
+            BUILTIN_EH_CATCH, BUILTIN_EH_EXCEPTION, BUILTIN_EH_SELECTOR, BUILTIN_KERNEL_BUG,
+            BUILTIN_KERNEL_WARN, BUILTIN_MEMCMP, BUILTIN_MEMCPY, BUILTIN_MEMSET, BUILTIN_MEMSET16,
+            BUILTIN_MEMSET32, BUILTIN_MEMSET64,
             BUILTIN_STRINGDATA, BUILTIN_STRLEN, BUILTIN_STRNCPY, BUILTIN_SYSCALL_ERROR,
             BUILTIN_VOLATILE_READ, BUILTIN_VOLATILE_WRITE, BUILTIN_WCSNCPY,
         };
@@ -4804,6 +4822,10 @@ impl Architecture {
             for id in [BUILTIN_MEMSET16, BUILTIN_MEMSET32, BUILTIN_MEMSET64, BUILTIN_MEMCMP] {
                 userops.register_builtin(id, &adapter)?;
             }
+            // (kuna ehcatch) the exceptional edge and the unwinder's two registers.
+            userops.register_builtin(BUILTIN_EH_CATCH, &adapter)?;
+            userops.register_builtin(BUILTIN_EH_EXCEPTION, &adapter)?;
+            userops.register_builtin(BUILTIN_EH_SELECTOR, &adapter)?;
             Ok(())
         })();
         self.userops = userops;
