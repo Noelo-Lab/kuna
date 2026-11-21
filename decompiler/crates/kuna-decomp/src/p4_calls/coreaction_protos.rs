@@ -1448,6 +1448,7 @@ impl Action for ActionActiveParam {
         let count = if bootstrap { ready_calls.len() } else { data.num_calls() as usize };
         let mut ready = ready_calls.into_iter();
         let mut finalized = false;
+        let mut first_calls = None;
         for position in 0..count {
             let idx = if bootstrap { ready.next().expect("checked call") } else { position as int4 };
             if !bootstrap && !self.check_call_trials(data, &mut aliascheck, &mut held, idx) {
@@ -1484,7 +1485,7 @@ impl Action for ActionActiveParam {
                 fc.get_active_input().set_stack_arg_gap(true);
                 // (kuna) `passthrough`: a register this caller hands on untouched
                 // is not a run of empty slots in front of a later argument.
-                let forwarded_neutral = data.get_arch().pass_through;
+                let forwarded_neutral = crate::p4_calls::kuna_passthrough::neutral_scope(data, &fc, &mut first_calls);
                 fc.get_active_input().set_forwarded_neutral(forwarded_neutral);
                 let reads = fc.callee_reg_model().is_some_and(|m| fc.proto().has_matching_model(m));
                 fc.get_active_input().set_callee_reads_registers(reads);
