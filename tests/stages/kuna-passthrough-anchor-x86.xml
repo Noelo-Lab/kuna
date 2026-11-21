@@ -1,0 +1,59 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A frame local in the outgoing-argument area does not anchor a run of
+    forwarded registers.
+
+        d3: push %rbx; mov %rsi,%rbx; lea msg(%rip),%rdi; sub $0x30,%rsp
+            movq $f1,(%rsp); movq $f2,0x8(%rsp); movq $f3,0x10(%rsp)
+            movq $f4,0x18(%rsp); xor %eax,%eax; call xprintf
+            movdqa (%rsp),%xmm0; movdqa 0x10(%rsp),%xmm1
+            xor %edx,%edx; xor %ecx,%ecx; xor %r8d,%r8d; xor %r9d,%r9d
+            call take; add $0x30,%rsp; pop %rbx; ret
+
+    is the shape of mirai's `main` (decbench O2): six function pointers
+    stored at [rsp] before the first call, `xprintf("DEBUG MODE YO\n")`, and
+    reloaded after it.  rsi..r9 are the function's own incoming registers,
+    untouched at the call, so `passthrough`'s chain rule
+    (kuna-passthrough-fwdchain.xml) kept them out of the inactive run, and the
+    active stack slots behind them anchored it: the call printed
+    `xprintf(msg,a1,a2,a3,a4,a5,f1,f2,f3,f4)` and d3 gained five parameters.
+    With every argument register in front of it forwarded, a stack slot holding
+    a constant the function stored is a local, not an argument the forwarded
+    registers lead up to (kuna_passthrough.rs, ends_rescued_run); where the
+    reload is already linked to the slot, as in mirai, survives_call says so
+    as well.  `xprintf` saves rsi..r9 for its va_list and `take` is outside
+    the image.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring", option `passthrough`.
+    Both passes print the option-off call.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+534889f3488d3d770000004883ec3048c704247e10400048c74424087f104000
+48c74424108010400048c74424188110400031c0e820000000660f6f0424660f
+6f4c241031d231c94531c04531c9e8adef0f004883c4305bc34883ec58488974
+2408488954241048894c24184c894424204c894c24280fb6074883c458c3c3c3
+c3c34445425547204d4f444520594f0a00
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="d3"/>
+<symbol space="ram" offset="0x401059" name="xprintf"/>
+<symbol space="ram" offset="0x40107e" name="f1"/>
+<symbol space="ram" offset="0x40107f" name="f2"/>
+<symbol space="ram" offset="0x401080" name="f3"/>
+<symbol space="ram" offset="0x401081" name="f4"/>
+<symbol space="ram" offset="0x500000" name="take"/>
+</binaryimage>
+<script>
+  <com>option passthrough off</com>
+  <com>lo fu d3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option passthrough on</com>
+  <com>lo fu d3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="passthrough-anchor-x86 #1: the frame locals are no arguments of the first call" min="2" max="2">  xprintf\(0x401082\);</stringmatch>
+<stringmatch name="passthrough-anchor-x86 #2: d3 gains no parameter from the forwarded registers" min="2" max="2">void d3\(void\)</stringmatch>
+</decompilertest>

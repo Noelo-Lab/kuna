@@ -2268,7 +2268,9 @@ mod tests {
         // and kuna-passthrough-fwdchain / forwarded registers in front of a live one are not an inactive chain (option passthrough)
         // and kuna-passthrough-fwdchain-arm / gcc ARM's push {r3,lr} invents no argument under that rule
         // and kuna-passthrough-calltarget / the register an indirect call jumps through stays an argument below a live one
-        assert_eq!(count, 850, "corpus file count drifted");
+        // and kuna-passthrough-anchor-arm / a canary wipe, a restored alignment slot or a float kept across the call anchors no forwarded run
+        // and kuna-passthrough-anchor-x86 / a frame local in the outgoing-argument area anchors no forwarded run
+        assert_eq!(count, 852, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

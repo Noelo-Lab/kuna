@@ -7336,17 +7336,7 @@ register after the last active trial is still dropped (`k(a,b,fp){ fp(a+1,b); }`
 stays `(*a2)(a0 + 1)`: nothing after `x0` was set up), a stack slot is never
 neutral (an untouched incoming stack argument says nothing about the callee's
 list), and the function's own input recovery has `inputparamgap` for the same
-shape. The later register must be set up *for* the call: an active register
-trial the function reads again after the call, through the INDIRECT heritage planted at
-it (`kuna_passthrough::survives_call`, recorded on the trial by
-`check_input_trial_use`), is caller state the callee happens not to clobber,
-and the forwarded registers in front of it count as upstream counts them.
-gcc's `-fipa-ra` keeps a value in a caller-saved register across a call to a
-static function it knows leaves it alone: `expandload_zext`'s `f` computes
-`r8`, calls `sink`, and returns `r8d`, so `rsi`, `rdx` and `rcx` stay a chain
-of three and `sink` keeps its one argument
-(`kuna-cli/tests/decompile_all_cli.rs`
-`a_zero_extended_narrow_load_round_trips_through_the_printed_c`).
+shape.
 
 The rule is held to registers that *are* the function's input in front of an
 argument the callee takes, because without those limits it reads incidental
@@ -7383,15 +7373,60 @@ functions, most of them by inventing arguments. Each call site gets a
   value across a call to a known `void g(void)` in `rcx` (AArch64 `x3`), read
   after the call, which scores as an active fourth argument, and the canary
   wipe in front of a tail call to a four-argument function reads as its fifth
-  and sixth.
+  and sixth;
+- it refuses a trial that is not set up *for* the call, recorded on the trial
+  by `check_input_trial_use`. That is storage the function reads again after
+  the call (`kuna_passthrough::survives_call`): every INDIRECT heritage put on
+  the trial's bytes at the call counts, whether it reads the value before the
+  call (a callee the analysis knows leaves it alone) or creates a new one (a
+  register the model kills), and whether it covers the trial exactly or a
+  wider range (a 16-byte reload of two 8-byte slots); its output is followed
+  through further INDIRECTs and MULTIEQUALs, and a CALL or RETURN reading it is
+  no read, since heritage hands every later call of unknown prototype and
+  every RETURN the range anyway. gcc's `-fipa-ra` keeps `expandload_zext`'s
+  result in `r8` across `call sink` and returns it, so `rsi`, `rdx` and `rcx`
+  stay a chain of three and `sink` keeps its one argument
+  (`kuna-cli/tests/decompile_all_cli.rs`
+  `a_zero_extended_narrow_load_round_trips_through_the_printed_c`); it keeps
+  crazyflie's `s14`/`s15` across `bl` to a `bx lr` callee and subtracts them
+  after it, where the INDIRECT is a creation and the 13 untouched float
+  registers in front of them were printed as arguments; and mirai's `main`
+  reloads the six function pointers it stored at `[rsp]` before its first
+  call. It is also the zero gcc's stack-protector epilogue wipes the canary
+  register with (`kuna_passthrough::set_before_branch`: a constant, through
+  COPYs, written in a block that ends in a branch one of whose other
+  successors makes a call, and not in the call's own block): ARM's
+  `eors ip,r3,ip; mov r3,#0; bne __stack_chk_fail` leaves no inactive register
+  in front of r3 for the rule above to see. And it is a register reloaded
+  from the frame (`has_frame_reload`, from `kuna_reloadarg`): FreeRTOS
+  `xTaskIncrementTick` is `push {r3,lr}; ...; ldmia sp!,{r3,lr}; b.w part`
+  at a call no other call precedes, and the r3 the pop restores is the
+  function's own alignment slot, not a fourth argument behind r0..r2;
+- the trial the rescued run ends at may not be a stack slot holding a
+  constant the function stored there (`kuna_passthrough::ends_rescued_run`,
+  recorded on the trial by `check_input_trial_use`): with every argument
+  register in front of it forwarded, it is a frame local in the
+  outgoing-argument area, not an argument the forwarded registers lead up to.
+  mirai's `main` stores its function pointers there before
+  `xprintf("DEBUG MODE YO\n")` and printed eleven arguments and five
+  parameters; where the reload after the call is not yet linked to the slot
+  when the trial is scored, `survives_call` cannot see it and this test is
+  what refuses the slot. A constant stack slot after an active register is
+  unaffected (bzip2's `BZ2_bzWriteClose64(a,b,c,d,NULL,e,NULL)`).
 
 `tests/stages/kuna-passthrough-fwdchain-arm.xml` pins both ARM shapes and the
 `i9` case of `tests/stages/kuna-passthrough-fwdchain.xml` the IPA shape, each
-printing the empty call in both passes.
+printing the empty call in both passes. `tests/stages/kuna-passthrough-anchor-arm.xml`
+pins the canary wipe, the restored alignment slot and the floats kept across
+the call, and `tests/stages/kuna-passthrough-anchor-x86.xml` the frame locals.
 
 One trial is scored inactive before any of this, with the option on or off: the
 register an indirect call jumps through (`kuna_passthrough::is_call_target`:
-the trial's Varnode is the CALLIND's input 0). `onlyOpUse` takes the matched
+the trial's Varnode is the CALLIND's input 0). The jump target is never an
+argument on the strength of the jump itself, even with `--option passthrough
+off`: reading it as one prints an argument the bytes do not pass, so this is a
+strict correctness fix and has no flag; `passthrough off` does not bring back
+upstream's reading of it. `onlyOpUse` takes the matched
 call's read of the trial slot as the parameter use and never asks about slot 0,
 so `mov r9,0x401020; cmovz r9,r8; jmp r9` scored `r9` an active sixth argument
 of the call it is the target of, and a tail jump through `r8` read `r8` as its

@@ -1,0 +1,98 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:Cortex">
+<!--
+    Three active registers that are not set up for the call they reach, each
+    behind a run of forwarded registers that `passthrough`'s chain rule
+    (kuna-passthrough-fwdchain.xml) lets through.  Each one anchored the run,
+    so the forwarded registers became arguments too, and the function gained
+    the parameters they read.
+
+        s3g:  ...; ldr r3,[sp,#36]; eors.w ip,r3,ip; mov.w r3,#0;
+              bne fail; add sp,#40; ldmia.w sp!,{r4,lr}; b.w g3
+        fail: bl __stack_chk_fail
+        tick: push {r3,lr}; ldr r3,=susp; ldr r3,[r3]; cbz r3,1f; ...
+           1: ldmia.w sp!,{r3,lr}; b.w part
+        fin:  vldr s14,[r0]; push {r3,lr}; vmov.f32 s15,s0;
+              vldr s0,[r0,#4]; bl dur; vsub.f32 s15,s15,s14; ...
+
+    from `long s3g(long a,long b,long c){ volatile char buf[32];
+    buf[glob&31]=1; return g3(a,b,c); }` (-fstack-protector-strong),
+    `unsigned tick(void){ if (!susp) return part(); pend++; hook(); return 0; }`
+    and `static float dur(float d){ return d; }  int fin(struct traj *t,float
+    x){ return x - t->t_begin >= dur(t->duration); }` (gcc 12 -O2 -mthumb
+    -march=armv7e-m -mfloat-abi=hard -mfpu=fpv4-sp-d16).
+
+    - s3g: the stack-protector epilogue wipes the canary register r3 with
+      zero before the branch to __stack_chk_fail; that zero reached both calls
+      and printed `__stack_chk_fail(a0,a1,a2,0)`.  A constant written in a
+      block that ends in a branch whose other side makes a call is not set up
+      for the call (kuna_passthrough.rs, set_before_branch).
+    - tick: r3 is the alignment slot of `push {r3,lr}`, restored by the pop
+      in front of the tail jump, and printed `part(a0,a1,a2,a3)` (FreeRTOS
+      O2 xTaskIncrementTick has this shape).  A register reloaded from the
+      frame does not anchor the run (has_frame_reload).
+    - fin: gcc keeps s14 and s15 across the call to the local `bx lr`, which
+      it knows clobbers nothing, and subtracts them after it; s1..s13 were the
+      forwarded run, and the call printed fifteen invented float arguments
+      (crazyflie O2-noinline piecewise_compressed_is_finished).  The call's
+      INDIRECT on s14 creates a new value instead of reading the old one, and
+      survives_call now counts any INDIRECT of the call on the trial's
+      storage whose output the function reads.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring", option `passthrough`
+    (kuna_passthrough.rs, anchors_neutral_run).  `g3` is `bx ip`, a tail jump
+    the callee probe cannot see through, and `part` and `hook` are outside the
+    image.  Both passes print what the option-off pass prints.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+10b5114bdff844e01b6803f01f038ab028336b444ff0010cdef800e0cdf824e0
+4ff0000e03f824cc084bd3f800c0099b93ea0c0c4ff0000304d10ab0bde81040
+1ff0debf1ff0e4ff000004000400040008b5074b1b683bb1064a136801331360
+1ff0e6ff002008bdbde808401ff0d8bf080004000c000400704700bf90ed007a
+08b5f0ee407a90ed010afff7f5ff77eec77af4eec07af1ee10faacbf01200020
+08bd00bf
+</bytechunk>
+<bytechunk space="ram" offset="0x30000" readonly="true">6047</bytechunk>
+<bytechunk space="ram" offset="0x30010" readonly="true">fee7</bytechunk>
+<symbol space="ram" offset="0x10000" name="s3g"/>
+<symbol space="ram" offset="0x10050" name="tick"/>
+<symbol space="ram" offset="0x10078" name="dur"/>
+<symbol space="ram" offset="0x1007c" name="fin"/>
+<symbol space="ram" offset="0x30000" name="g3"/>
+<symbol space="ram" offset="0x30010" name="__stack_chk_fail"/>
+<symbol space="ram" offset="0x30020" name="part"/>
+<symbol space="ram" offset="0x30030" name="hook"/>
+</binaryimage>
+<script>
+  <com>set context TMode 1 [ram,0x10000] [ram,0x100a3]</com>
+  <com>set context TMode 1 [ram,0x30000] [ram,0x30001]</com>
+  <com>set context TMode 1 [ram,0x30010] [ram,0x30011]</com>
+  <com>option passthrough off</com>
+  <com>lo fu s3g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu tick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fin</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option passthrough on</com>
+  <com>lo fu s3g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu tick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fin</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="passthrough-anchor-arm #1: the canary wipe is no argument of the call it reaches" min="2" max="2">  __stack_chk_fail\(\); // no-return</stringmatch>
+<stringmatch name="passthrough-anchor-arm #2: s3g gains no parameter from the canary wipe" min="2" max="2">void s3g\(void\)</stringmatch>
+<stringmatch name="passthrough-anchor-arm #3: the r3 the pop restores is no argument of the tail jump" min="2" max="2">v1 = part\(\); // tail-call</stringmatch>
+<stringmatch name="passthrough-anchor-arm #4: tick gains no parameter from the alignment slot" min="2" max="2">unsigned int tick\(void\)</stringmatch>
+<stringmatch name="passthrough-anchor-arm #5: floats kept across the call are no arguments of it" min="2" max="2">v1 = \(float4\)dur\(\(\(unsigned int \*\)a0\)\[1\]\);</stringmatch>
+<stringmatch name="passthrough-anchor-arm #6: fin keeps its one parameter" min="2" max="2">bool fin\(void \*a0\)</stringmatch>
+</decompilertest>
