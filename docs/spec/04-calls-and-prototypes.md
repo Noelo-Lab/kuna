@@ -7336,8 +7336,8 @@ register after the last active trial is still dropped (`k(a,b,fp){ fp(a+1,b); }`
 stays `(*a2)(a0 + 1)`: nothing after `x0` was set up), a stack slot is never
 neutral (an untouched incoming stack argument says nothing about the callee's
 list), and the function's own input recovery has `inputparamgap` for the same
-shape. The later register must be set up *for* the call: an active trial the
-function reads again after the call, through the INDIRECT heritage planted at
+shape. The later register must be set up *for* the call: an active register
+trial the function reads again after the call, through the INDIRECT heritage planted at
 it (`kuna_passthrough::survives_call`, recorded on the trial by
 `check_input_trial_use`), is caller state the callee happens not to clobber,
 and the forwarded registers in front of it count as upstream counts them.
