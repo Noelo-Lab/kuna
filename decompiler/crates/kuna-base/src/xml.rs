@@ -2262,7 +2262,8 @@ mod tests {
         // and kuna-maxlinewidth / option maxlinewidth breaks plain-text lines
         // and kuna-postinc / a pointer step after its dereference prints *p++
         // and kuna-returndupcalls / gcc -Os cross-jumped call tails split per path
-        assert_eq!(count, 844, "corpus file count drifted");
+        // and kuna-panicloc / a Rust panic Location record is typed and named after its position (option panicloc)
+        assert_eq!(count, 845, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

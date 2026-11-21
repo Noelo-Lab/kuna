@@ -452,6 +452,8 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // off` drops the facts at the read-symbols boundary.
     if compiler.is_rust() {
         passes.push(Box::new(crate::strings::kuna_strrecords::StrRecordPass::rust()));
+        // (kuna `panicloc`) The panic `Location` records, typed and named.
+        passes.push(Box::new(crate::strings::kuna_panicloc::PanicLocationPass));
     }
 
     // S1 PE/Mach-O import-slot call binding (PeImportCallPass): paint
@@ -1813,8 +1815,9 @@ mod tests {
 
     /// Compilers with no language pack select the same pass set. Go carries its
     /// two Go-only passes (the next test), and Rust appends `fatstrrecords`
-    /// (the `&str`-record string pass) — exactly one pass, at the end, so the
-    /// base set is byte-identical underneath.
+    /// (the `&str`-record string pass) then `panicloc` (the panic `Location`
+    /// records) — exactly two passes, at the end, so the base set is
+    /// byte-identical underneath.
     #[test]
     fn non_go_compilers_have_same_pass_ids() {
         let base = ids(&passes_for(Compiler::Gcc, NON_PE));
@@ -1826,12 +1829,13 @@ mod tests {
         assert_eq!(&swift[..base.len()], &base[..], "Swift set is the base set + extras");
         let rust = ids(&passes_for(Compiler::Rustc, NON_PE));
         assert_eq!(&rust[..base.len()], &base[..], "Rust set is the base set + extras");
-        assert_eq!(rust.last(), Some(&"fatstrrecords"), "Rust appends the record pass");
-        assert_eq!(rust.len(), base.len() + 1, "Rust adds exactly one pass");
+        assert_eq!(&rust[base.len()..], &["fatstrrecords", "panicloc"], "Rust appends the record and Location passes");
         // No compiler without a string-record arm carries the record pass
-        // (Go carries it too — the next test).
-        for c in [Compiler::Gcc, Compiler::Clang, Compiler::Swift, Compiler::Unknown] {
-            assert!(!ids(&passes_for(c, NON_PE)).contains(&"fatstrrecords"), "{c:?} must not carry fatstrrecords");
+        // (Go carries it too — the next test), and only Rust the Location pass.
+        for c in [Compiler::Gcc, Compiler::Clang, Compiler::Swift, Compiler::Unknown, Compiler::Go] {
+            let set = ids(&passes_for(c, NON_PE));
+            assert!(c == Compiler::Go || !set.contains(&"fatstrrecords"), "{c:?} must not carry fatstrrecords");
+            assert!(!set.contains(&"panicloc"), "{c:?} must not carry panicloc");
         }
     }
 

@@ -684,6 +684,9 @@ Three tiers:
 | go result parameters appear as inputs | [`godwarfsig`](#godwarfsig----on--off-default-on) |
 | a CVF Fortran PE32 image keeps a .trace section but its routines print as sub_<addr> | [`cvftrace`](#cvftrace----on--lines--off-default-on) |
 | CVF source file and line comments are missing | [`cvftrace`](#cvftrace----on--lines--off-default-on) |
+| a rust panic call passes a bare address as its last argument | [`panicloc`](#panicloc----on--off-default-on) |
+| panic_bounds_check shows a hex constant instead of a source location | [`panicloc`](#panicloc----on--off-default-on) |
+| rust unwrap_failed or expect_failed location argument is an unnamed address | [`panicloc`](#panicloc----on--off-default-on) |
 | comparison constant off by one versus upstream ghidra (x <= 9 vs x < 10) | [`compareform`](#compareform----canonical--original-default-original) |
 | need the analysis-canonical compare form to diff against upstream ghidra output | [`compareform`](#compareform----canonical--original-default-original) |
 | &base[index] rendering unwanted; consumer expects raw pointer arithmetic | [`arraynotation`](#arraynotation----on--off-default-on) |
@@ -2307,6 +2310,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On by default (`on`): on a PE32 i386 image that carries a `.trace` section, each traced routine that kuna already discovered as a `sub_<addr>` placeholder takes its Fortran name (`FROM_TRACE` instead of `sub_10001000`). It only renames: no function is created at a traced address, a function another source named (export, COFF symbol, PDB, FID, `--define-function`) keeps its name and gains no alias, a trace name already used by any function, data symbol or alias elsewhere is skipped, and a name the trace gives two addresses (or an address it gives two names) is dropped entirely. Names must be Fortran identifiers (letters, digits, `_`, `$`; at most 127 bytes) or the whole record is declined, as it is for an unknown opcode, a file index past its table, a routine outside the record's code range, a truncated record or an incremental-link type-11 record. When a size cap (16 MiB section, 65,536 file names, 262,144 facts) stops decoding, one `[kuna cvftrace]` note goes to stderr. Set `lines` to also emit each statement's `minimal.for:7` comment, the CVF counterpart of `dwarf_lines` and opt-in for the same reason. Inert everywhere else: nothing is read unless the container is PE, the machine is i386 and a `.trace` section exists. Set `off` to keep the generic names.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-cvftrace
 - **Example:** `option cvftrace lines`
+
+### `panicloc` -- on | off, default `on`
+
+- **Symptoms:** a rust panic call passes a bare address as its last argument; panic_bounds_check shows a hex constant instead of a source location; rust unwrap_failed or expect_failed location argument is an unnamed address.
+- **What it does:** Rust images only (the pass is registered for a rustc-detected image and inert everywhere else): type and name the panic `Location` records. Every panic site passes `&'static core::panic::Location { file: &str, line: u32, col: u32 }`, which rustc emits in read-only data, so a bounds check read `panic_bounds_check(a2,a1,0x51150)`. A record is recognized by shape: the file pointer (the R_*_RELATIVE addend on a PIE) reaches read-only text of 1..=0x1000 bytes ending in `.rs` (a trailing NUL counted in the length, as rustc 1.89 emits, is dropped), 1 <= line <= 0xffffff and 1 <= col <= 0xfff (columns are 1-based). Each record becomes a data symbol typed `core::panic::Location` (the `&str` file field included) and named after its position (`panic_loc_src_main_rs_10_5`), and the file name becomes a bounded string of exact length.
+- **When to flip:** On by default for Rust binaries: panic and bounds-check calls show the source position they report. Turn it off to see the raw record addresses.
+- **Where / provenance:** P1/external-refinement · kuna · type-inference · kuna-panicloc
+- **Example:** `option panicloc off`
 
 ## Core rendering defaults
 

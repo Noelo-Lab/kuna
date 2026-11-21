@@ -1834,6 +1834,9 @@ pub struct Architecture {
     /// (output-changing: it adds named data and function symbols);
     /// `--option itaniumrtti on` enables it.
     pub analysis_itaniumrtti: bool,
+    /// (kuna `panicloc`) Rust images only: type and name the panic `Location`
+    /// records (`kuna-analysis` `strings/kuna_panicloc.rs`). Default on.
+    pub analysis_panicloc: bool,
     /// (kuna) The Aggressive Instruction Finder gap-walk (`aif`), the third
     /// Listing/xref consumer; default **off**. The kuna analog of Ghidra's
     /// `AggressiveInstructionFinderAnalyzer` (which ships `setDefaultEnablement(false)`
@@ -2640,6 +2643,7 @@ impl Architecture {
             analysis_flirt: false,
             analysis_rtti: false,
             analysis_itaniumrtti: false,
+            analysis_panicloc: false,
             analysis_aif: crate::kuna_aif::AifMode::Off,
             analysis_aifpoolslide: true,
             analysis_tailcallentry: false,
@@ -2989,6 +2993,7 @@ impl Architecture {
         self.analysis_fid_strict = false;
         self.analysis_flirt = false;
         self.analysis_rtti = true; // MSVC RTTI / vftable recovery (PE-only pass)
+        self.analysis_panicloc = true; // (kuna) default-on, Rust images only: the pass is registered for a rustc-detected image and the XML datatest path never runs an analysis pass (0/675)
         self.analysis_itaniumrtti = true; // (kuna, NOVEL) Itanium RTTI / vtable recovery (ELF-only pass)
         self.analysis_aif = crate::kuna_aif::AifMode::Off; // Aggressive Instruction Finder gap-walk default-off; `aggressive` sets `strict`
         // (kuna, GH-299) AIF bracketed-candidate reject -- default-ON; inert without `aif`.
