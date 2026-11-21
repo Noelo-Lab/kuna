@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4920,
-    4920
+    4925,
+    4925
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2746,6 +2746,11 @@
     "data:UCOMISS unordered #7: nanignore none keeps the guards",
     "data:UCOMISS unordered #8: no ordered spelling of an unordered flag",
     "data:UCOMISS unordered #9: an isnan test beside an exact jbe stays",
+    "data:UEFI #1: off, the boot-services call is an offset off an untyped word",
+    "data:UEFI #2: on, the entry carries the specification's prototype",
+    "data:UEFI #3: on, the boot-services table is read as a member",
+    "data:UEFI #4: on, the service is a member call and its GUID argument is named",
+    "data:UEFI #5: on, the protocol GUIDs of the install call are named",
     "data:UNSIGNED-BYTE-VM-SELECTOR #1: the selector declaration remains",
     "data:UNSIGNED-BYTE-VM-SELECTOR #2: the recovered switch remains",
     "data:UNSIGNED-BYTE-VM-SELECTOR #3: the low case remains",

@@ -235,6 +235,20 @@ list, and `functions` with no member re-runs itself once per object member
 (`--member=NAME`) and joins the listings with a `member:` prefix on each name.
 Commands never see the archive, so a member loads exactly as its `.o` does.
 
+The same resolution covers a tar archive (plain or gzip-compressed), a zip
+archive and a U-Boot FIT image, whose member tables come from
+`decompiler/crates/kuna-analysis/src/loader/firmware/bundles.rs (Bundle::parse)`
+(chapter [01](01-program-prep.md)). A member is named by
+its stored path or its FIT `/images` node name and is decoded only when it is
+selected or tested for being an object. A FIT with no member named selects the
+image its default configuration boots, else its only image with a load
+address. A selected FIT image that states a load address and is not an object
+file is not staged by this module: `resolve` returns its flat image
+(`Resolved::Flat`) and `decompiler/crates/kuna-cli/src/rawfront.rs (prepare)`
+lays it out as it does a U-Boot legacy image. A tar or zip archive with no
+object member and no member named is passed through untouched, so the loader
+reports it as it did before these formats were recognized.
+
 Text decompilation owns its C and optional region-output files for the entire
 console run, including a discovery retry. Each file is privately created and
 its initial writing handle is closed before launching the console. Scope exit

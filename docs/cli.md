@@ -1564,6 +1564,79 @@ failed function stays a per-function `error` record and never aborts the batch
 (its text now carries the real panic message instead of `panic with non-string
 payload`).
 
+### Raw Cortex-M dumps
+
+A headerless Cortex-M flash dump needs none of `--target`, `--base`, `--isa`
+or `--entry`. Before `decompile`, `decompile-all`, `decompile-project` and
+`functions` parse their arguments, the binary (the first argument) is probed
+for a Cortex-M vector table (`kuna_analysis::loader::firmware::cortexm`): an
+initial stack pointer in SRAM, Thumb handler pointers into the Code region, and
+IRQ vectors up to the first word that is neither zero nor such a pointer. The
+base is the 0x1000-aligned address the most (handler, dummy-handler instruction)
+pairs vote for, else the first common flash base that holds every handler. The
+run then gets `--raw-image --target ARM:LE:32:Cortex --base <base> --isa
+thumb`, every handler as an `--entry` (unless an `--entry`/`--addr` was given),
+a `--define-function <addr>=<Name>_Handler` per handler (`IRQ<n>_Handler`,
+`Default_Handler` for a target several IRQs share), and the two Device memory
+regions of the ARMv7-M/ARMv8-M map (`0x40000000+0x20000000`,
+`0xe0000000+0x20000000`) as `--assert volatile`, so a peripheral
+read-modify-write survives. A line on stderr reports what was found. An
+explicit `--base` turns the probe off; an explicit `--target` other than a
+32-bit little-endian ARM one does too. Object files (ELF, PE, TE, Mach-O,
+archives) are never probed.
+
+```sh
+$ kuna decompile-all stm32.bin
+[kuna firmware] Cortex-M vector table: base 0x8000000, initial SP 0x20005000, 4 handlers, reset 0x8000174
+// Function: Default_Handler @ 0x80000e0
+...
+```
+
+**`--svd FILE`** (the same four subcommands) imports a CMSIS-SVD device
+description (`kuna_analysis::loader::firmware::svd`): each peripheral becomes a
+structure `<NAME>_Type` (registers as members, clusters flattened into
+`<cluster>_<register>`, `dim` arrays expanded, overlapping alternates dropped,
+gaps as reserved bytes; a `derivedFrom` peripheral reuses its base's type),
+declared at its base address as a typed global with a volatile range over its
+registers, and each `<interrupt>` names the Cortex-M handler of that IRQ
+`<NAME>_IRQHandler`. The access then reads `USART1.DR = 0x78;` instead of
+`dat_40011004 = 0x78;`. The file is read before the binary; an unreadable or
+malformed one is an argument error.
+
+```sh
+$ kuna decompile-all stm32.bin --svd STM32F401.svd
+[kuna firmware] Cortex-M vector table: base 0x8000000, ...
+[kuna firmware] SVD STM32F401: 52 peripherals, 85 interrupts
+```
+
+### Firmware containers
+
+A file that is not an object file is also tried as a firmware container
+(`kuna_analysis::loader::firmware::containers`) by the same four subcommands.
+Each is flattened into a staged raw image (removed when the run ends) and
+given the arguments its header states:
+
+| container | recognized by | processor | base / entries |
+|---|---|---|---|
+| U-Boot legacy uImage | magic `27 05 19 56` | `ih_arch` (ARM, AArch64, x86, MIPS with the byte order that finds more `jr ra`, PowerPC, SH, SPARC, m68k, Xtensa, RISC-V) | `ih_load`, `ih_ep` (odd ARM entry: Thumb); gzip payloads inflated |
+| Intel HEX | every line a checksummed `:` record | `--target` or the Cortex-M probe | lowest address; type 03/05 records |
+| Motorola S-record | every line a checksummed `S0`-`S9` record | `--target` or the Cortex-M probe | lowest address; S7/S8/S9 |
+| ESP32 / ESP8266 app image | `E9`, segment table | chip id: Xtensa (ESP32, S2, S3, ESP8266) or RISC-V (C2, C3, C6, H2, P4) | lowest segment; header entry |
+| uClinux bFLT v4 | `bFLT` | ColdFire unless `--target` | 0; header entry; GOT and relocations rebased past the 64-byte header |
+| Qualcomm MBN / SBL / GPT image | SBL codeword, MBN header, `EFI PART` | the wrapped ELF's | the ELF is loaded as is |
+| MediaTek `md1img` | chained `0x58881688` section headers | MIPS32 LE (a nanoMIPS `md1rom` is reported: no SLEIGH spec decodes it) | `md1rom` at 0x90000000; `md1_dbginfo` (LZMA) symbols name functions |
+| PC BIOS / flash image | the last 16 bytes are a far jump to segment F000+, a near jump or a backward short jump (after `nop`/`wbinvd`) | `x86:LE:16:Real Mode` | the last 128 KiB below 1 MiB, entry F000:FFF0 (a 64 KiB image is segment F000, see the real-mode rule above); with `--target x86:LE:32:...` the whole flash ending at 4 GiB |
+
+A flat image whose processor the container does not state is probed for a
+Cortex-M vector table like a raw dump, at the container's base.
+
+```sh
+$ kuna decompile-all stm32.hex --svd STM32F401.svd
+[kuna firmware] Intel HEX: 516 bytes at 0x8000000, target (from --target or the vector table), entries []
+[kuna firmware] Cortex-M vector table: base 0x8000000, initial SP 0x20005000, 4 handlers, reset 0x8000174
+[kuna firmware] SVD STM32F401: 52 peripherals, 85 interrupts
+```
+
 ## `kuna decompile-all` / `kuna functions` — whole binary, machine-readable
 
 ```bash
@@ -4073,6 +4146,28 @@ packer's trailer), to total exactly the original file size, and to reproduce **b
 of the packer's own Adler-32 checksums (a flipped literal byte
 decodes to a wrong image of exactly the right length; only the checksum catches it).
 
+### A UEFI firmware image
+
+A file that holds a UEFI firmware volume (`_FVH` at offset 0x28 of an
+8-byte-aligned header anywhere in it: a whole SPI flash image, `OVMF.fd`, a
+bare `.fv`) is unpacked into its executable modules. Every volume is walked
+FV -> FFS file -> section, into nested volumes and through the compressed
+sections: EDK2's LZMA (also its x86-BCJ variant) and CRC32 GUID-defined
+sections, EFI 1.1 standard compression sections, and EDK2 Tiano GUID-defined
+sections (a standard section that fails as EFI 1.1 is retried as Tiano, which
+some vendors store there). Each PE32 or TE section is written as `<UI
+name>.efi` / `.te` (the file GUID when there is no UI section) into
+`<binary>.modules/` or `-o DIR`; `--list` only lists them, and `--json`
+reports volumes, modules (file, GUID, name, FFS type, size) and the sections
+it could not decode (a Brotli section is reported, not decoded). Each module
+is then an ordinary EFI image for the other subcommands.
+
+```sh
+$ kuna unpack OVMF.fd --list | tail -2
+SECURITY_CORE          DF1CCEF6-F301-4A63-9661-FC6030DCC880    45824  SecMain.efi
+107 modules in 5 volumes
+```
+
 ### A dyld shared cache
 
 ```bash
@@ -4864,7 +4959,7 @@ missing. Like
 `kernelcache`, the option applies to the whole invocation and overrides
 `KUNA_KERNELCACHE_BOOT`.
 
-## `--member NAME` — one member of an `ar` archive
+## `--member NAME` — one member of an archive
 
 A static library (`libfoo.a`) is an `ar` archive of relocatable objects, and
 every kuna surface works on one of them. Pass the archive as the binary and name
@@ -4929,6 +5024,54 @@ this. `--member`
 applies to `decompile`, `decompile-all`, `decompile-project`,
 `decompile-graph`, `functions`, `disassemble`, `raw-pcode`, `read`, `xrefs`,
 `strings`, `crypto` and `blobs`; `kuna fid build` reads a whole archive itself.
+
+### tar, zip and U-Boot FIT inputs
+
+A tar archive (plain or gzip-compressed), a zip archive and a U-Boot FIT image
+take the same spellings. A member is named by the path the archive stores, or
+by the name of its `/images` node in a FIT:
+
+```
+$ kuna functions objs.tar --member
+sq.o	1064
+notes.txt	14
+lib/cube.o	1064
+$ kuna decompile objs.zip --member lib/cube.o cube
+$ kuna decompile objs.tar.gz:sq.o sq
+$ kuna decompile objs.zip cube            # the member defining cube
+```
+
+Zip members are read from the central directory, stored or deflated (other
+methods and encrypted members are listed, and refused when selected); an
+inflated member is checked against its size and CRC-32. Tar members are the
+regular files, under their `ustar` prefix, GNU long name or pax `path`.
+
+A FIT listing adds what each image node states, and `--json` carries the same
+as `type`, `arch`, `os`, `compression`, `load` and `entry`:
+
+```
+$ kuna functions fit.itb --member
+kernel-1	100	type=kernel	arch=arm64	os=linux	compression=gzip	load=0x80080000	entry=0x8008000c
+fdt-1	137	type=flat_dt	arch=arm64	compression=none
+$ kuna decompile-all fit.itb
+note: fit.itb: using member kernel-1 of the default configuration
+[kuna firmware] U-Boot FIT image: 100 bytes at 0x80080000, target AARCH64:LE:64:v8A, entries [8008000c]
+```
+
+With no member named, a FIT loads the `kernel` (else the `firmware`) of its
+default configuration, else its only image with a load address. An image with
+a `load` property that is not itself an object file is loaded as a raw image
+at that address, with the processor its `arch` names and its `entry` as the
+entry point, exactly as a U-Boot legacy image is (`decompile`,
+`decompile-all`, `decompile-project` and `functions`, with the FIT as the
+first argument); `gzip` data is inflated, and an image under another
+compression is listed and refused when selected. Image data may be inline or
+external (`data-offset`, `data-position`).
+
+A tar or zip archive that holds no object file is left to the loader unless a
+member is named, so it fails as it did before. A gzip stream that is not a
+tar, and a device tree with no `/images` node, are not archives. A decoded member is
+limited to 1 GiB.
 
 ## `kuna fid` — function identification by fingerprint
 
