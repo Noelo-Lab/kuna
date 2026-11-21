@@ -52,34 +52,41 @@ impl AnalysisPass for StubBindsPass {
 
 /// `(stub, name)` for every `S_SYMBOL_STUBS` entry the indirect-symbol walk
 /// left unnamed whose slot carries an addend-free chained bind, sorted by stub.
+/// The chains are walked only when the walk left some stub unnamed.
 pub(crate) fn stub_binds(file: &object::File, bytes: &[u8]) -> Vec<(u64, String)> {
     let object::File::MachO64(macho) = file else { return Vec::new() };
-    let fixups = resolve_chained_fixups(file, bytes);
-    if fixups.binds().next().is_none() {
-        return Vec::new();
-    }
     let decode: fn(&[u8], u64) -> Option<u64> = match file.architecture() {
         object::Architecture::Aarch64 => a64_stub_slot,
         object::Architecture::X86_64 => x64_stub_slot,
         _ => return Vec::new(),
     };
+    let sections: Vec<StubSection> = stub_sections(macho).collect();
+    if sections.is_empty() {
+        return Vec::new();
+    }
     let named: HashSet<u64> =
         super::macho_stubs::resolve_macho_imports(file, bytes).into_iter().map(|i| i.addr).collect();
-    let mut out = Vec::new();
-    for section in stub_sections(macho) {
+    let mut unnamed = Vec::new();
+    for section in &sections {
         let (base, stride) = (section.address(), section.stride);
         let Ok(data) = section.data() else { continue };
         for (i, stub) in data.chunks_exact(stride).enumerate() {
             let Some(addr) = (i as u64).checked_mul(stride as u64).and_then(|o| base.checked_add(o)) else {
                 break;
             };
-            if named.contains(&addr) {
-                continue;
+            if !named.contains(&addr) {
+                unnamed.push((addr, stub));
             }
-            let Some(name) = decode(stub, addr).and_then(|slot| bind_name(&fixups, slot)) else { continue };
-            out.push((addr, name));
         }
     }
+    if unnamed.is_empty() {
+        return Vec::new();
+    }
+    let fixups = resolve_chained_fixups(file, bytes);
+    let mut out: Vec<(u64, String)> = unnamed
+        .into_iter()
+        .filter_map(|(addr, stub)| Some((addr, decode(stub, addr).and_then(|slot| bind_name(&fixups, slot))?)))
+        .collect();
     out.sort_unstable();
     out
 }
