@@ -2265,8 +2265,10 @@ mod tests {
         // and kuna-panicloc / a Rust panic Location record is typed and named after its position (option panicloc)
         // and kuna-gotypenames / Go type descriptors and itabs named as the linker spells them, go1.16 on
         // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
+        // and kuna-callresultuse / an unknown callee's result read untouched by the next call is its argument (option callresultuse)
+        // and kuna-callresultuse-armtail / by default a tail call after another call takes no arguments (option callresultuse off)
         // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
-        assert_eq!(count, 848, "corpus file count drifted");
+        assert_eq!(count, 850, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

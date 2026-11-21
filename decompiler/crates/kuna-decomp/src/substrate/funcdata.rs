@@ -569,6 +569,10 @@ pub struct Funcdata {
     kuna_forced_return: Vec<(Address, int4)>,
     /// (kuna `voidret`) The pieces of that storage whose RETURN read was planted.
     kuna_forced_return_planted: Vec<(Address, int4)>,
+    /// (kuna `callresultuse`) The result register whose RETURN read was planted
+    /// so a call-to-call hand-off is heritaged; its return trial is settled by
+    /// `kuna_callresultuse::settle_planted`.
+    kuna_callresultuse_planted: Option<(Address, int4)>,
     /// (kuna `voidret`) A reader keeps this function's float return as another
     /// type, so the float-register vote on the return is withdrawn.
     kuna_float_return_withdrawn: bool,
@@ -877,6 +881,7 @@ impl Funcdata {
             kuna_callret_data: std::rc::Rc::new(Vec::new()),
             kuna_forced_return: Vec::new(),
             kuna_forced_return_planted: Vec::new(),
+            kuna_callresultuse_planted: None,
             kuna_float_return_withdrawn: false,
             kuna_float_bits_return: false,
             kuna_callee_returns: std::collections::BTreeMap::new(),
@@ -1564,6 +1569,17 @@ impl Funcdata {
     /// (kuna `voidret`) The pieces of that storage whose RETURN read was planted.
     pub fn kuna_forced_return_planted(&self) -> &[(Address, int4)] {
         &self.kuna_forced_return_planted
+    }
+
+    /// (kuna `callresultuse`) Record the result register whose RETURN read was
+    /// planted.
+    pub fn kuna_note_callresultuse_planted(&mut self, addr: Address, size: int4) {
+        self.kuna_callresultuse_planted = Some((addr, size));
+    }
+
+    /// (kuna `callresultuse`) The result register whose RETURN read was planted.
+    pub fn kuna_callresultuse_planted(&self) -> Option<&(Address, int4)> {
+        self.kuna_callresultuse_planted.as_ref()
     }
 
     /// (kuna `voidret`) Score the forced return storage (see the field).
@@ -4504,6 +4520,7 @@ impl Funcdata {
         self.indexed_guard_indirects.borrow_mut().clear();
         self.guard_only_seen.borrow_mut().clear();
         self.kuna_forced_return_planted.clear();
+        self.kuna_callresultuse_planted = None;
         self.kuna_float_pair_halves.clear();
         self.kuna_forced_claims.clear();
         self.kuna_zext_word = None;

@@ -1,0 +1,48 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:Cortex">
+<!--
+    kuna: option `callresultuse` is off by default, because on most code the
+    register an unknown callee leaves untouched is not the next call's
+    argument.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring", the ancestor walk
+    behind a call's input trials (Funcdata::ancestorOpUse,
+    p4_calls/kuna_callresultuse.rs).
+
+    Source (gcc 12.2 -O2 -mthumb -march=armv7-m -mfloat-abi=soft; g and h are
+    external, linked at 0x20000 and 0x20002, `bx lr` and `bx ip`):
+
+        void g(int);
+        void h(void);
+        void t1(void) { g(6); h(); }
+
+        t1:  push {r3, lr}; movs r0, #6; bl g; pop.w {r3, lr}; b.w h
+
+    r0 at `b.w h` is whatever g left, and h takes nothing.  With
+    callresultuse on by default the r0 trial at h was scored as g's result,
+    and the alignment push of r3 and the r1/r2 holes between them followed:
+    `t1(a0,a1,a2,a3)` printed `v2 = g(6); h((int)v2,(int)(v2 >> 0x20),v1,a3);`.
+    The default keeps upstream's reading: `g(6); h();` and `void t1(void)`.
+-->
+<bytechunk space="ram" offset="0x10000">
+08b506200ff0fcffbde808400ff0f9bf
+</bytechunk>
+<bytechunk space="ram" offset="0x20000">
+70476047
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="t1"/>
+<symbol space="ram" offset="0x20000" name="g"/>
+<symbol space="ram" offset="0x20002" name="h"/>
+</binaryimage>
+<script>
+  <com>set context TMode 1 [ram,0x10000] [ram,0x1000f]</com>
+  <com>set context TMode 1 [ram,0x20000] [ram,0x20003]</com>
+  <com>lo fu t1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLRESULTUSE-ARMTAIL #1: by default the tail call after another call takes no arguments" min="1" max="1">^  h\(\); // tail-call</stringmatch>
+<stringmatch name="CALLRESULTUSE-ARMTAIL #2: by default g keeps its one argument" min="1" max="1">^  g\(6\);</stringmatch>
+<stringmatch name="CALLRESULTUSE-ARMTAIL #3: by default t1 gains no parameter" min="1" max="1">^void t1\(void\)</stringmatch>
+</decompilertest>

@@ -9565,6 +9565,112 @@ goes from `char` to `unsigned long`, its reader only renumbered; and dash's
 `hashvar` and bash -O0's `pshash_getbucket`, which compute a pointer in 32 bits,
 return 64-bit values (a `char *` for bash).
 
+### (kuna) `callresultuse` — an unknown callee's result read by the next call or the RETURN
+
+`voidret` above recovers `call g; ret` from the callers: a wrapper is `void`
+until some caller in the image reads its result. The Objective-C and Swift
+code of an iOS app hands results on without that evidence. `bl allKeys; bl
+objc_retainAutoreleasedReturnValue; mov x2,x21; bl containsObject:` reads
+each message's `x0` as the next receiver, and the callees are imports, so no
+caller inside the image reads `x0` after them. Every such hand-off was lost:
+`allKeys(a); objc_retainAutoreleasedReturnValue(); containsObject:()`,
+receiver and argument gone; over 300 functions of such an app's main binary,
+668 call sites printed with no argument at all.
+
+Three things in upstream's recovery conspire. A register an unknown callee
+may return is modelled at the call by an INDIRECT creation
+(`Heritage::guardCalls`, `heritage.cc:1522`), and `ancestor_op_use`
+(`funcdata_varnode.cc:1963`) refuses such a value as a trial for the next
+call's input or the function's RETURN ("an indirectCreation is an indication
+of an output trial, this should not count as an only use"), as it refuses a
+CALL's output when the callee's prototype is known. The refusal is a design
+choice: `call g; ret` is both `void f(void) { g(); }` and `T f(void) { return
+g(); }`. Second, `only_op_use` (`funcdata_varnode.cc:1851`) refuses a
+Varnode two different callees read: the retained object saved in `x22`,
+handed to `containsObject:` and later to `objc_release` is one Varnode after
+copy propagation, and `checkCallDoubleUse` allows the double use only for the
+same callee. Third, heritage visits only a range some op reads or writes, so
+`bl g; bl g2` with `x0` handed straight on is never heritaged there: the
+first call gets no output trial and the second no input trial.
+
+With the option on (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callresultuse.rs`,
+`off|on|all`, default `off`, see below), a trial whose root is a call result on every path
+(`kuna_callresultuse.rs (call_result_root)`: through MULTIEQUALs, COPYs and
+the INDIRECT effects of later calls, every definition is a CALL or CALLIND's
+output or a creation whose range is a possible output of the callee's model,
+whose effect is a call, and whose callee's result is not settled elsewhere
+(`kuna_callresultuse.rs (callee_result_elsewhere)`: a locked `void` output, a
+locked output in other storage, or under `protoorder types` a stated result
+in other storage, as hard-float ARM's `double dfi(double, float, int)` returns
+in `d0` and clobbers the `r0` the next call reads; a stated recovery with no
+result is `void` when `passthrough` records results),
+`kuna_callresultuse.rs (scores_def)`) is scored like any other value as the
+next call's input: `ancestor_op_use` accepts the creation or the output as a
+use (`Funcdata::ancestor_op_step`, the `memo.call_result_root` arm), and
+`only_op_use` lets another call read the same value in an argument slot
+(`kuna_callresultuse.rs (scoring_argument)`). Only the output model's first
+general-purpose register counts (`x0`, `rax`, `r0`;
+`kuna_callresultuse.rs (first_result_register)`): the second register of a
+pair (`x1`, `rdx`) is never a result on its own, and a float result (`d0`) is
+left to the stricter reading, since a receiver or an argument handed on is a
+pointer. A root the function computes itself on another path keeps the strict
+reading: `statuscmp`'s `fnstsw ax` on one arm and a call's `ax` on the other
+is a scratch register, not a return, and the datatest that collapses it to
+`val2 <= val1` is unchanged.
+
+So the hand-off is heritaged at all, `kuna_callresultuse.rs (plant)` gives
+the RETURNs a read of that register the way `voidret` plants the storage a
+caller reads, when the function makes a call, its output is not locked,
+nothing names the register, it is not a stated input of a first call
+(`passthrough` then claims it as the function's own parameter handed
+through), and `voidret` has not planted there already. The planted trial is
+settled by `kuna_callresultuse.rs (settle_planted)` once the value at each
+RETURN is known: inactive under `on`, and under `all` active only when every
+live RETURN hands back a call result on every path, since the read an
+untouched input register reaches would otherwise make it active, as a read
+of an input does (`scale_err`: `oflow`'s `r0` on one exit, the function's own
+`r0` beside the `s0` it converts on the other, printed `return a1`). A trial
+the function's own value in another storage class competes with is yielded
+to it (`kuna_callresultuse.rs (yield_to_own_value)`, `passthrough`'s
+`returns_own_value`).
+
+The RETURN keeps upstream's strict reading under `on`: `bl g; cbz x0,L; ...;
+L: ret` is `long h(long a) { long r = g(a); if (r) *p = 1; return r; }` and
+`void h(long a) { if (g(a)) *p = 1; }` alike, and a store of the result
+before the `ret` is the body of as many `void` functions as of returning
+ones. `all` (`kuna_callresultuse.rs (scoring_return)`) takes a result that
+reaches every live RETURN untouched for the return value, the reading a
+reader who takes an untouched `x0` at the `ret` for the result makes. Over 675 datatest assertions nothing
+changes. On the 300 app functions, `on` changes 101: 240 call sites gain an
+argument, 217 of them the argument a signature-aware reader shows and 23 one
+more (`swift_release_x8` and `swift_retain_x8` thunks whose argument is `x8`,
+in the image and settled by a full `decompile-all`); the argument-less call
+sites fall from 668 to 298, and no function changes between `void` and a
+return. `all` takes `void` from 203 functions to 65: 86 of the 139 the reader
+returns from now return, and 56 return where the reader has `void`, 53 of
+them Swift functions ending in an ARC release whose `void` only a runtime
+signature table knows. `decompile-all` of an 834 KiB framework takes the
+same time to within the noise.
+
+The option is off by default because the reading is right where results are
+handed from message to message and wrong in most other code. In C, `bl g;
+bl h` with `x0` untouched is far more often `g(); h();`, two calls of which
+the second takes nothing, than `h(g())`. Over 12 AArch64 builds of bzip2,
+zlib, dash and gzip (clang 21 at O0, O2 and O2 `-fno-inline`), `on` changed
+141 of 3,202 functions; of the 276 arguments it added at calls to in-image
+functions whose DWARF gives their parameter count, 275 were false
+(`cadvise(void)`, `onint(void)`, `yylex(void)`, `flush_outbuf(void)`), and 8
+`void` functions became returning (dash's `flushall`, gzip's `warning`).
+Once the first register is active at a call, upstream's
+contiguity rules follow it: gcc's ARM `push {r3,lr}; bl g; pop.w {r3,lr};
+b.w h`, from `void t1(void) { g(6); h(); }`, gave `h` the pair `r1:r0`, the
+leftover `r2` and the reloaded `r3`, and `t1` four parameters
+(`tests/stages/kuna-callresultuse-armtail.xml` pins the default). On x86-64
+`rax` is no argument register, but a `mov rcx,rax` temporary at a gcc -O0
+variadic call was taken for a trailing argument (`fprintf(stream,fmt,v1,fmt)`).
+With the option off every function decompiles as it did before the option
+existed.
+
 ### Raw caller reads prove a return outside callee-first settling (`kuna_callerreads.rs`)
 
 `kuna decompile` decompiles one function, so no caller of it is decompiled

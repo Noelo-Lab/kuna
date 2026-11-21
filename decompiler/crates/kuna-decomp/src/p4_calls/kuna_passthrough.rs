@@ -515,7 +515,7 @@ pub(crate) fn is_injected_noop(data: &Funcdata, op: OpId) -> bool {
 /// A register no op of the function touches reaches such a call as the
 /// function's own input; at any other call it may be a clobber, or the return
 /// value, of the call before it.
-fn first_calls(data: &Funcdata) -> Vec<OpId> {
+pub(crate) fn first_calls(data: &Funcdata) -> Vec<OpId> {
     let n = data.bblocks_get_size();
     let is_call = |op: OpId| {
         data.obank().get(op).map(|o| matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)).unwrap_or(false)
@@ -1094,7 +1094,7 @@ pub fn keep_tail_return_whole(data: &Funcdata, active: &mut crate::fspec::ParamA
 /// value; and a value that is zero at every RETURN ([`is_zero`]), which is also
 /// what `-fzero-call-used-regs` leaves in every call-used register the function
 /// does not return in (openssh's `call f; ...; pxor %xmm0,%xmm0; ret`).
-fn returns_own_value(data: &Funcdata, active: &crate::fspec::ParamActive, claimed: &[int4]) -> bool {
+pub(crate) fn returns_own_value(data: &Funcdata, active: &crate::fspec::ParamActive, claimed: &[int4]) -> bool {
     let proto = data.get_func_proto();
     let Some(out) = proto.has_model().then(|| proto.model().output_list()).flatten() else { return false };
     let class = |t: &crate::fspec::ParamTrial| {
