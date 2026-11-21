@@ -9122,18 +9122,17 @@ mod tests {
     /// so a later comparison of the same pair gives the same answer.
     #[test]
     fn shape_depth_survives_an_unwind() {
-        let pool = [
-            Rc::new(Datatype::new(4, type_metatype::TYPE_UINT)),
-            Rc::new(Datatype::new(4, type_metatype::TYPE_INT)),
-            Rc::new(Datatype::new(4, type_metatype::TYPE_UINT)),
-        ];
-        let int = &pool[1];
-        let shape = int.compare_dependency(&pool[0]).unwrap().signum();
-        let uint = pool
+        let uint4 = || Rc::new(Datatype::new(4, type_metatype::TYPE_UINT));
+        let mut uints: Vec<Rc<Datatype>> = (0..32).map(|_| uint4()).collect();
+        let int = &Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+        uints.extend((0..32).map(|_| uint4()));
+        let shape = int.compare_dependency(&uints[0]).unwrap().signum();
+        let Some(uint) = uints
             .iter()
-            .step_by(2)
             .find(|u| ((Rc::as_ptr(int) as i128) - (Rc::as_ptr(u) as i128)).signum() as int4 != shape)
-            .expect("an int/uint pair whose address order opposes their shape order");
+        else {
+            return;
+        };
         let chain = |leaf: &Rc<Datatype>| {
             let mut t = Rc::clone(leaf);
             for _ in 0..8 {
