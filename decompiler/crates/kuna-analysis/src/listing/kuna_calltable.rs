@@ -87,6 +87,7 @@ pub fn scan(file: &object::File, listing: &Listing, arch: &Architecture, transla
         preserved: &preserved,
         settled: true,
         named: Some(&named),
+        compact: false,
     };
     let exec = listing.exec_ranges().to_vec();
     let arm = object::Object::architecture(file) == object::Architecture::Arm;

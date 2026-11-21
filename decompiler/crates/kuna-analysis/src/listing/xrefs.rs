@@ -871,6 +871,7 @@ fn descend(
         preserved: &preserved,
         settled: false,
         named: Some(&named),
+        compact: file.architecture() == object::Architecture::Aarch64,
     };
     let arm = file.architecture() == object::Architecture::Arm;
     let pic_image = pool.as_ref().map(|pool| kuna_picpool::Image {

@@ -1,0 +1,44 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    AArch64 system-register names and Apple's proprietary instructions
+    (SLEIGH spec fix, no option).
+
+    Issue: the AARCH64 spec named about 300 system registers; every other MRS/MSR,
+    including Apple's implementation-defined ones (HID0_EL1, SPRR_CONFIG_EL1,
+    GXF_STATUS_EL1, ...), lifted to UnkSytemRegRead(3,0,0xf,0,0). Apple's
+    instructions in the 0x0020xxxx space did not decode at all: WKDMC was a
+    `NotYetImplemented` placeholder and GENTER a bad-instruction halt, so an
+    iOS kernelcache function stopped at its first GENTER.
+
+    Stage / sub-stage: P1 decode-table. `AARCH64_sysregs.sinc` /
+    `AARCH64_sysregs_cop.sinc` add 1,609 registers (LLVM's architectural
+    table and the Asahi m1n1 Apple table); `AARCH64_apple.sinc` decodes
+    MUL53LO/HI, WKDMC/D, GENTER, GEXIT and SDSB as opaque pcodeops.
+
+      mrs  x0, s3_0_c15_c0_0      ; HID0_EL1 (Apple)
+      mrs  x1, s3_0_c0_c6_2       ; ID_AA64ISAR2_EL1 (architectural)
+      add  x0, x0, x1
+      msr  s3_6_c15_c1_0, x0      ; SPRR_CONFIG_EL1 (Apple)
+      wkdmc x0, x1
+      genter #0
+      ret
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+00f038d5410638d50000018b00f11ed52008200020142000c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="sysregs"/>
+</binaryimage>
+<script>
+  <com>lo fu sysregs</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SYSREGS #1: an Apple implementation-defined register reads by name" min="1" max="1">= hid0_el1;</stringmatch>
+<stringmatch name="SYSREGS #2: an architectural register missing from the hand-written set reads by name" min="1" max="1">= id_aa64isar2_el1;</stringmatch>
+<stringmatch name="SYSREGS #3: an Apple register writes by name" min="1" max="1">sprr_config_el1 = </stringmatch>
+<stringmatch name="SYSREGS #4: WKDMC decodes" min="1" max="1">__wkdmc\(</stringmatch>
+<stringmatch name="SYSREGS #5: GENTER decodes and flow continues to the return" min="1" max="1">__genter\(0\);</stringmatch>
+<stringmatch name="SYSREGS #6: no unknown system register is left" min="0" max="0">UnkSytemReg</stringmatch>
+</decompilertest>

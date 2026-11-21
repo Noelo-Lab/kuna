@@ -92,6 +92,10 @@ tag operation is now a user op producing the tagged pointer (`AddPtrTag`,
 `ExcludePtrTag`, `LoadPtrTag`, `StorePtrTag`), without the alignment-fault
 branch. That digest was regenerated with `slacomp`, which reproduces the
 previous AArch64 digest on the previous sources.
+It also includes the system registers of `AARCH64_sysregs.sinc`, their
+`CopReg` constructors and the Apple instructions of `AARCH64_apple.sinc`.
+That digest was regenerated with `slacomp`, which reproduces the previous
+AArch64 digest on the previous sources.
 
 The RISC-V entry includes the Zcmp/Zcmt constructors (`riscv.zc.sinc`), the
 `Zcmp` context bit and the `c.fsdsp` guard on it. Its digest was regenerated

@@ -174,6 +174,40 @@ pub(super) fn delta_targets(
     out
 }
 
+/// The case addresses of a compact table: `width`-byte entries, sign- or
+/// zero-extended, shifted left by `shift` and added to `base` (AArch64
+/// `ldrb/ldrh w, [table, idx]; adr x, base; add x, x, w, (s|u)xt? #2; br x`).
+#[allow(clippy::too_many_arguments)]
+pub(super) fn compact_targets(
+    table: u64,
+    base: u64,
+    (width, shift, signed): (u32, u32, bool),
+    from: u64,
+    pool: &PoolImage,
+    exec: &[(u64, u64)],
+    cases: Option<usize>,
+    max_entries: usize,
+) -> Vec<u64> {
+    let Some(&section) = exec.iter().find(|&&(lo, hi)| from >= lo && from < hi) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for i in 0..cases.unwrap_or(max_entries).min(max_entries) as u64 {
+        let Some(at) = table.checked_add(i * u64::from(width)) else { break };
+        let Some(raw) = pool.uword_at(at, width) else { break };
+        let value = if signed { sign_extend(raw, width) } else { raw };
+        let word = base.wrapping_add(value << shift);
+        if !in_range(&[section], word) {
+            break;
+        }
+        out.push(word);
+    }
+    if out.len() < MIN_ENTRIES {
+        out.clear();
+    }
+    out
+}
+
 /// How far back the dispatch chain may reach. gcc and MSVC usually establish
 /// the base one to five instructions ahead of the jump, but gcc -O2 hoists it
 /// out of a loop into a callee-saved register, as far as the prologue: diff's
@@ -211,6 +245,8 @@ pub(super) struct Reach<'a> {
     /// (kuna `calltable`) Whether code names an address, decoded or not: a
     /// table with no range check ends before the next table it runs into.
     pub named: Option<&'a dyn Fn(u64) -> bool>,
+    /// Read compact tables: shifted byte/halfword/word entries added to a base.
+    pub compact: bool,
 }
 
 impl Reach<'_> {
@@ -286,16 +322,22 @@ pub(super) fn register_targets(
         }
     }
     let table = match dispatch {
-        Some(Val::Case { table, base }) => (table, Some(base)),
-        Some(Val::Entry { table, width }) if width == pool.ptr_width() => (table, None),
+        Some(Val::Case { table, base }) => (table, Some(base), None),
+        Some(Val::Entry { table, width }) if width == pool.ptr_width() => (table, None, None),
+        Some(Val::ScaledCase { table, width, shift, signed, base }) if reach.compact => {
+            (table, Some(base), Some((width, shift, signed)))
+        }
         _ => return TableRead { gap, ..TableRead::default() },
     };
     // Read only now, on a jump that really does index a table: without the
     // switch's own case count there is nothing to stop the scan at the end of
     // it, and a delta table's neighbour reads as more cases.
     let read = |limit: usize| match table {
-        (table, Some(base)) => delta_targets(table, base, from, pool, exec, Some(limit), max_entries),
-        (table, None) => targets(table, from, pool, exec, Some(limit), max_entries),
+        (table, Some(base), Some(scale)) => {
+            compact_targets(table, base, scale, from, pool, exec, Some(limit), max_entries)
+        }
+        (table, Some(base), None) => delta_targets(table, base, from, pool, exec, Some(limit), max_entries),
+        (table, None, _) => targets(table, from, pool, exec, Some(limit), max_entries),
     };
     // A masked index bounds the table whatever the nearest check compares:
     // clang guards `switch (x & 3)` under `if (y <= 200)` with the `cmp $0xc8`,
@@ -715,7 +757,7 @@ fn dispatch_slice(
             }
             relevant = true;
             need.retain(|n| !keys_overlap(*n, key));
-            if !models(op) {
+            if !models(op, reach.compact) {
                 continue;
             }
             for input in &op.ins {
@@ -754,7 +796,7 @@ fn dispatch_slice(
 /// nothing before that multiply can change what the table is. A multiply by
 /// one is the exception: it is how x86 SLEIGH spells an unscaled index, and
 /// gcc -O0 puts the table base in that slot (`mov (%rdx,%rax,1),%eax`).
-fn models(op: &FullOp) -> bool {
+fn models(op: &FullOp, compact: bool) -> bool {
     match op.opcode {
         OpCode::CPUI_COPY
         | OpCode::CPUI_INT_ADD
@@ -763,6 +805,9 @@ fn models(op: &FullOp) -> bool {
         | OpCode::CPUI_INT_SEXT
         | OpCode::CPUI_LOAD => true,
         OpCode::CPUI_INT_MULT => op.ins.iter().any(|vn| is_constant(vn) && vn.offset == 1),
+        OpCode::CPUI_INT_LEFT => {
+            compact && op.ins.get(1).is_some_and(|vn| is_constant(vn) && (1..=3).contains(&vn.offset))
+        }
         _ => false,
     }
 }
@@ -790,6 +835,13 @@ pub(super) enum Val {
     Halves { table: u64, width: u32 },
     /// `base` plus a doubled entry: the case address of a `tbb`/`tbh`.
     Short { table: u64, width: u32, base: u64 },
+    /// A sign-extended byte or halfword entry.
+    SignedEntry { table: u64, width: u32 },
+    /// An entry shifted left by `shift`: an AArch64 `add x, base, w, lsl #2`
+    /// compact-table offset in instructions.
+    Scaled { table: u64, width: u32, shift: u32, signed: bool },
+    /// `base` plus a scaled entry: the case address of a compact table.
+    ScaledCase { table: u64, width: u32, shift: u32, signed: bool, base: u64 },
 }
 
 /// A varnode's identity, in the two classes the fold models — the same split
@@ -904,8 +956,21 @@ pub(super) fn fold(
                     c & mask(width)
                 }))
             }
-            v @ (Val::Entry { .. } | Val::Case { .. } | Val::Halves { .. }) => Some(v),
-            Val::Indexed(_) | Val::Short { .. } => None,
+            Val::Entry { table, width: width @ (1 | 2) }
+                if op.opcode == OpCode::CPUI_INT_SEXT && op.ins.first()?.size == width =>
+            {
+                Some(Val::SignedEntry { table, width })
+            }
+            v @ (Val::Entry { .. }
+            | Val::Case { .. }
+            | Val::Halves { .. }
+            | Val::SignedEntry { .. }
+            | Val::Scaled { .. }) => Some(v),
+            Val::Indexed(_) | Val::Short { .. } | Val::ScaledCase { .. } => None,
+        },
+        OpCode::CPUI_INT_LEFT => match (get(0)?, get(1)?) {
+            (v, Val::Const(shift @ 1..=3)) => scaled(v, shift as u32),
+            _ => None,
         },
         OpCode::CPUI_INT_ADD => {
             let out = op.out.as_ref()?.size;
@@ -928,8 +993,12 @@ pub(super) fn fold(
                 | (Some(Val::Const(base)), Some(Val::Halves { table, width })) => {
                     Some(Val::Short { table, width, base })
                 }
-                (Some(Val::Const(a) | Val::Indexed(a)), Some(Val::Entry { width: 1 | 2, .. }))
-                | (Some(Val::Entry { width: 1 | 2, .. }), Some(Val::Const(a) | Val::Indexed(a))) => {
+                (Some(Val::Scaled { table, width, shift, signed }), Some(Val::Const(base)))
+                | (Some(Val::Const(base)), Some(Val::Scaled { table, width, shift, signed })) => {
+                    Some(Val::ScaledCase { table, width, shift, signed, base })
+                }
+                (Some(Val::Const(a) | Val::Indexed(a)), Some(Val::Entry { width: 1 | 2, .. } | Val::SignedEntry { .. }))
+                | (Some(Val::Entry { width: 1 | 2, .. } | Val::SignedEntry { .. }), Some(Val::Const(a) | Val::Indexed(a))) => {
                     Some(Val::Indexed(a))
                 }
                 // A constant plus something the fold does not know is the array
@@ -974,6 +1043,15 @@ pub(super) fn fold(
                 _ => None,
             }
         }
+        _ => None,
+    }
+}
+
+/// A table entry shifted left by `shift` bits, or `None` for anything else.
+fn scaled(v: Val, shift: u32) -> Option<Val> {
+    match v {
+        Val::Entry { table, width } => Some(Val::Scaled { table, width, shift, signed: false }),
+        Val::SignedEntry { table, width } => Some(Val::Scaled { table, width, shift, signed: true }),
         _ => None,
     }
 }

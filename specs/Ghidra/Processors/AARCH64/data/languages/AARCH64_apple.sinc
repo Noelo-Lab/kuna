@@ -1,0 +1,57 @@
+#
+# Apple-proprietary instructions in the unallocated 0x0020xxxx space, decoded
+# for every AArch64 image (they are permanently undefined elsewhere). Each is
+# an opaque pcodeop over its register operands; the semantics are Apple's and
+# undocumented.
+#   bits 15..10 = 0/1  MUL53LO/MUL53HI Vd, Vn    (53-bit multiplies)
+#               = 2/3  WKDMC/WKDMD Xd, Xn        (WKdm page compress/decompress)
+#               = 4    AMX                       (AARCH64_AMXext.sinc)
+#               = 5    GEXIT, GENTER #imm5, SDSB #imm5 (bits 9..5 = 0, 1, 3)
+#
+
+define pcodeop __mul53lo;
+define pcodeop __mul53hi;
+define pcodeop __wkdmc;
+define pcodeop __wkdmd;
+define pcodeop __gexit;
+define pcodeop __genter;
+define pcodeop __sdsb;
+
+with : ImmS_ImmR_TestSet=1 {
+
+:mul53lo Rd_VPR128, Rn_VPR128 is b_2431=0x00 & b_1623=0x20 & b_1015=0 & Rd_VPR128 & Rn_VPR128
+{
+	Rd_VPR128 = __mul53lo(Rd_VPR128, Rn_VPR128);
+}
+
+:mul53hi Rd_VPR128, Rn_VPR128 is b_2431=0x00 & b_1623=0x20 & b_1015=1 & Rd_VPR128 & Rn_VPR128
+{
+	Rd_VPR128 = __mul53hi(Rd_VPR128, Rn_VPR128);
+}
+
+:wkdmc Rd_GPR64, Rn_GPR64 is b_2431=0x00 & b_1623=0x20 & b_1015=2 & Rd_GPR64 & Rn_GPR64
+{
+	Rd_GPR64 = __wkdmc(Rd_GPR64, Rn_GPR64);
+}
+
+:wkdmd Rd_GPR64, Rn_GPR64 is b_2431=0x00 & b_1623=0x20 & b_1015=3 & Rd_GPR64 & Rn_GPR64
+{
+	Rd_GPR64 = __wkdmd(Rd_GPR64, Rn_GPR64);
+}
+
+:gexit is b_2431=0x00 & b_1623=0x20 & b_1015=5 & b_0509=0 & b_0004=0
+{
+	__gexit();
+}
+
+:genter "#"^b_0004 is b_2431=0x00 & b_1623=0x20 & b_1015=5 & b_0509=1 & b_0004
+{
+	__genter(b_0004:1);
+}
+
+:sdsb "#"^b_0004 is b_2431=0x00 & b_1623=0x20 & b_1015=5 & b_0509=3 & b_0004
+{
+	__sdsb(b_0004:1);
+}
+
+} # end with ImmS_ImmR_TestSet=1

@@ -3975,3 +3975,35 @@ deletes a real call and the stack-overflow fault its page touches can raise.
 Through an arm64e `__auth_ptr` slot (`adrp x16; ldr x16,[x16,#off]; blraaz x16`,
 named by `authptrcall`) the same walk matches, since the slot carries the
 import's function symbol. `off` keeps the call.
+
+## AArch64 system registers and Apple instructions
+
+The AARCH64 SLEIGH spec names about 300 system registers by hand. Any other
+`MRS`/`MSR` lifted to `UnkSytemRegRead(op0, op1, CRn, CRm, op2)` or
+`UnkSytemRegWrite(..., Xt)`, so a read of `ID_AA64ISAR2_EL1` printed as
+`UnkSytemRegRead(3,0,0,6,2)`. `AARCH64_sysregs.sinc` defines 1,609 more as
+8-byte registers at `register:0x8000`, volatile like the hand-written ones (the
+`AARCH64.pspec` volatile ranges cover them), and `AARCH64_sysregs_cop.sinc` adds
+a `CopReg` constructor for each. The names come from two public tables: LLVM's
+AArch64 system-register table, read back by disassembling every `MRS`/`MSR`
+encoding with all features enabled, and the Apple implementation-defined
+registers of the Asahi Linux m1n1 project (`HID*`, `SPRR_*`, `GXF_*`, `CTRR_*`,
+`PMC*`, ...). Where the read and write names of one encoding differ, each
+direction gets its own constructor. The new constructors sit after the
+hand-written ones and before the `sreg(...)` fallback, so no existing name
+changes and an encoding neither table knows still lifts to the `UnkSytemReg`
+user-ops. A read of `HID0_EL1` prints `v = hid0_el1;`, the way `tpidrro_el0`
+always printed.
+
+`AARCH64_apple.sinc` decodes Apple's instructions in the unallocated
+`0x0020xxxx` space, in every AArch64 language: the words are permanently
+undefined on other cores, and an Apple arm64 image that is not arm64e loads
+with the generic `v8A` language. The group is in bits 15..10:
+`MUL53LO`/`MUL53HI Vd, Vn` (0, 1), `WKDMC`/`WKDMD Xd, Xn` (2, 3; they replace
+two `NotYetImplemented` placeholders), AMX (4, `AARCH64_AMXext.sinc`, still only
+in the AppleSilicon language), and in group 5 `GEXIT`, `GENTER #imm5` and
+`SDSB #imm5` (bits 9..5 = 0, 1, 3). Each lifts to an opaque user-op over its
+register operands, because the semantics are not documented. A kernel function
+that used to stop at its first `GENTER` with a bad-instruction halt now decodes
+through it. These are decode-table corrections with no option. Pinned by
+`tests/stages/kuna-a64-sysregs.xml`.

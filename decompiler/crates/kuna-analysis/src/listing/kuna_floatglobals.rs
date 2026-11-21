@@ -496,6 +496,7 @@ fn switch_targets(
             preserved: &ctx.preserved,
             settled: false,
             named: None,
+            compact: ctx.arch.archid.starts_with("AARCH64"),
         },
     );
     if read.unbounded {
