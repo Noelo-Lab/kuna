@@ -10609,6 +10609,17 @@ table again once its own queue drains and walks the cases as its own: it reaches
 the dispatch by falling into it, and it is the function the cold fragment
 belongs to.
 
+With all five, the 51 binaries miss 156 direct call sites instead of 3,913 —
+none at `-O0` outside tar and e2fsck — and the call graph gains 1,868 edges and
+loses three, two of which were jumps from a table read past its end. What is
+left is a selector the code never range-checks because its type cannot exceed
+the table (tar's `parse_expression` switches on a token type held in a byte,
+whose table is followed directly by another one, so there is no safe place to
+stop), and AArch64's byte and halfword tables scaled by four (`ldrb w11,
+[x9,x8]; add x10,x10,x11,lsl #2; br x10`), whose entries the fold does not
+compose, and a range check on another value than the selector with no mask to
+overrule it.
+
 *Predecessor edges.* (kuna; `decompiler/crates/kuna-analysis/src/listing/kuna_switchflow.rs
 (register_targets)`) The slice steps back by address and stops at the first
 instruction that does not fall through, so a base hoisted above a `jmp` never
@@ -10660,17 +10671,6 @@ xrefs` puts them in `coverage.notes`: for `--from` a function, the ones inside
 it; for a `--to` that found nothing, every one in the image, since the
 reference asked about may sit in a case body the walk never decoded. A miss
 is no longer silent.
-
-With all five, the 51 binaries miss 156 direct call sites instead of 3,913 —
-none at `-O0` outside tar and e2fsck — and the call graph gains 1,868 edges and
-loses three, two of which were jumps from a table read past its end. What is
-left is a selector the code never range-checks because its type cannot exceed
-the table (tar's `parse_expression` switches on a token type held in a byte,
-whose table is followed directly by another one, so there is no safe place to
-stop), and AArch64's byte and halfword tables scaled by four (`ldrb w11,
-[x9,x8]; add x10,x10,x11,lsl #2; br x10`), whose entries the fold does not
-compose, and a range check on another value than the selector with no mask to
-overrule it.
 
 A complete call graph is not a better one for every consumer. Case bodies are
 where an interpreter recurses, so the new edges merge recursive functions into
