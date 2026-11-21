@@ -1,0 +1,39 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    A byte-masked compact jump table that is its function's last, assembled
+    from decompiler/crates/kuna-analysis/tests/fixtures/switchnext_aarch64.s
+    (the .text and .rodata of switchnext_aarch64).
+
+    `name_of` indexes tab_names (3 halfwords at 0x110dc) with `x0 & 0xff`,
+    so the basic model reads 256 rows. The rows past its three are
+    next_kind's table (0x110e2) and the zero bytes after it, measured from
+    name_of's base: 0x18 lands in next_kind, 0 back on name_of's first
+    case, so the run-on cut keeps every row. With switchextent (default on)
+    the table ends where next_kind's table, the next function's, begins:
+    three cases. Off, the rows from next_kind's table print as phantom cases
+    returning next_kind's 0x28.
+-->
+<bytechunk space="ram" offset="0x10000">
+081c40921f2003d5a98600108a0000102b7968784a090b8b40011fd6c0038052c0035fd6e0038052c0035fd600048052c0035fd61f0c0071e8040054080000b0088903918a000010095960784a09098b40011fd61f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d500058052c0035fd620058052c0035fd640058052c0035fd660058052c0035fd600008012c0035fd6
+</bytechunk>
+<bytechunk space="ram" offset="0x110dc">
+00000200040018001a001c001e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="name_of"/>
+<symbol space="ram" offset="0x10034" name="next_kind"/>
+</binaryimage>
+<script>
+  <com>load function name_of</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option switchextent off</com>
+  <com>load function name_of</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="switchnext #1: the byte-masked table ends at the next function's table: cases 0 to 2 only (option on), with case 1 and 2 again off" min="5" max="5">case [0-2]:</stringmatch>
+<stringmatch name="switchnext #2: next_kind's code is not a case of name_of with the option on; off, its rows print as phantom cases" min="1" max="1">return 0x28;</stringmatch>
+<stringmatch name="switchnext #3: no phantom case 3 with the option on" min="1" max="1">case 3:</stringmatch>
+</decompilertest>
