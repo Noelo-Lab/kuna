@@ -319,6 +319,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
+    "switchextent" => on_off!(switch_extent, "Unchecked jump table ends at the function's next table"),
     "constselectjump" => {
         let (mode, msg) = crate::kuna_constselectjump::OptionConstSelectJump.apply(p1)?;
         self.const_select_jump = mode;

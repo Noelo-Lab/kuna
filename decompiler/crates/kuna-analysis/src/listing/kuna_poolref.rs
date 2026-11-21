@@ -205,6 +205,29 @@ impl<'a> PoolImage<'a> {
         })
     }
 
+    /// The `width`-byte (1, 2 or 4) word at `vma` in a read-only section, sign-
+    /// or zero-extended: an entry of a relative jump table.
+    pub(super) fn sword_at(&self, vma: u64, width: u32, signed: bool) -> Option<i64> {
+        let b = self.bytes_at(vma, width)?;
+        let raw = match (width, self.little_endian) {
+            (1, _) => u64::from(b[0]),
+            (2, true) => u64::from(u16::from_le_bytes(b.try_into().ok()?)),
+            (2, false) => u64::from(u16::from_be_bytes(b.try_into().ok()?)),
+            (4, true) => u64::from(u32::from_le_bytes(b.try_into().ok()?)),
+            (4, false) => u64::from(u32::from_be_bytes(b.try_into().ok()?)),
+            _ => return None,
+        };
+        let bits = 8 * width;
+        Some(if signed && raw >> (bits - 1) == 1 { (raw | (u64::MAX << bits)) as i64 } else { raw as i64 })
+    }
+
+    /// The `[lo, hi)` range of the read-only section holding `vma`.
+    pub(super) fn section_of(&self, vma: u64) -> Option<(u64, u64)> {
+        let i = self.ro.partition_point(|&(lo, _, _)| lo <= vma).checked_sub(1)?;
+        let (lo, hi, _) = self.ro[i];
+        (vma < hi).then_some((lo, hi))
+    }
+
     /// The `width` bytes of read-only image content at `vma`.
     pub(super) fn bytes_at(&self, vma: u64, width: u32) -> Option<&'a [u8]> {
         let i = self.ro.partition_point(|&(lo, _, _)| lo <= vma).checked_sub(1)?;

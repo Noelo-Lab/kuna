@@ -157,6 +157,10 @@ pub struct DirectiveSymbol {
 }
 
 pub struct Funcdata {
+    /// (kuna `switchextent`) The jump tables the function's extent dispatches
+    /// through, sorted, once a flow with a computed jump decoded it
+    /// (`p2_lift/kuna_switchextent.rs`).
+    pub(crate) kuna_extent_tables: Option<std::rc::Rc<Vec<u64>>>,
     pub(crate) kuna_x87_empty_returns: Vec<Address>,
     pub(crate) kuna_fpu_trunc_views: Vec<OpId>,
     /// Boolean properties associated with \b this function (C++ `flags`)
@@ -772,6 +776,7 @@ impl Funcdata {
 
         Ok(Funcdata {
             kuna_fpu_trunc_views: Vec::new(),
+            kuna_extent_tables: None,
             kuna_x87_empty_returns: Vec::new(),
             flags: 0,
             clean_up_index: 0,
