@@ -1,0 +1,112 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A">
+<!--
+    A return type stated for a callee keeps every argument its callers pass in
+    the return register. P3 heritage (`p3_dataflow/heritage.rs` guard_calls, no
+    option).
+
+    On AArch64, 32-bit ARM and PowerPC the return register is also the first
+    argument register. Upstream guard_calls skips a call whose own output covers
+    the heritaged range exactly, so once a qualified `map return f::%x0` locks
+    the output while the inputs are still recovered, no input trial was planted
+    at that register. The copy into it before the call (`mov w0,w20`) was then
+    dead, and the trial added later read an older value: a saved argument
+    printed as the previous call's null result and a real `0` as the caller's
+    own incoming register.
+
+    The script loads return_hint_caller_{aarch64,arm,ppc32,x86_64}.so (source
+    return_hint_caller.c, recipe in the fixtures README), states the return of
+    alloc_node and alloc_sub (for PowerPC32 only alloc_node, through its PIC call stub at 0x560),
+    and decompiles their three callers. x86-64 returns in RAX, which is no
+    argument register, and is the control.
+
+    Assert #1: the real zero stays the first call's argument.
+    Assert #2: the index kept in a callee-saved register reaches both calls.
+    Assert #3: the pointer kept in a callee-saved register reaches alloc_sub.
+    Assert #4: no call takes the register's earlier value.
+    Assert #5 (control): with f's return stated, f in `p = g(); q = f();`
+    still takes no argument, although x0 holds g's result at the call
+    (return_hint_noarg_aarch64.so, source return_hint_noarg.c).
+    Assert #6 (control): nor does f in `return f() + a;`, where x0 still
+    holds the caller's own argument at the call.
+
+    No upstream issue: reported against an AArch64 shared library. On the
+    unpatched tree #1 to #4 fail (each AArch64, ARM and PowerPC32 call prints the
+    register's earlier value) and the x86-64 control, #5 and #6 pass; with the
+    fix all six pass.
+-->
+  <bytechunk space="ram" offset="0x1000" readonly="true">c0035fd6</bytechunk>
+  <symbol space="ram" offset="0x1000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/return_hint_caller_aarch64.so</com>
+  <com>read symbols</com>
+  <com>map return 0x3e0::%x0 void *</com>
+  <com>map return 0x420::%x0 void *</com>
+  <com>load function add_default</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function add_node</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function add_sub</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/return_hint_caller_arm.so</com>
+  <com>read symbols</com>
+  <com>map return 0x258::%r0 void *</com>
+  <com>map return 0x26c::%r0 void *</com>
+  <com>load function add_default</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function add_node</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function add_sub</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/return_hint_caller_ppc32.so</com>
+  <com>read symbols</com>
+  <com>map return 0x560::%r3 void *</com>
+  <com>load function add_default</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function add_node</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/return_hint_caller_x86_64.so</com>
+  <com>read symbols</com>
+  <com>map return 0x10b0::%RAX void *</com>
+  <com>map return 0x10e0::%RAX void *</com>
+  <com>load function add_default</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function add_node</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function add_sub</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/return_hint_noarg_aarch64.so</com>
+  <com>read symbols</com>
+  <com>map return f::%x0 long</com>
+  <com>load function h</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function k</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="kuna-returnhintcaller #1: a real zero stays the first argument" min="4" max="4">= (alloc_node|sub_560)\(0,a0\);</stringmatch>
+<stringmatch name="kuna-returnhintcaller #2: the saved index reaches the call" min="8" max="8">= (alloc_node|sub_560)\(a1,a0\);</stringmatch>
+<stringmatch name="kuna-returnhintcaller #3: the saved pointer reaches the call" min="3" max="3">alloc_sub\(a2,a3,a1\)</stringmatch>
+<stringmatch name="kuna-returnhintcaller #4: no call takes the register's earlier value" min="0" max="0">(alloc_node|sub_560)\(a0,a0\)|alloc_sub\(0,a3,a1\)</stringmatch>
+<stringmatch name="kuna-returnhintcaller #5: a stated return gives a callee that takes nothing no argument" min="1" max="1">return v1 \+ f\(\);</stringmatch>
+<stringmatch name="kuna-returnhintcaller #6: a callee that takes nothing gets no argument from the caller's own input" min="1" max="1">return f\(\) \+ a0;</stringmatch>
+</decompilertest>
