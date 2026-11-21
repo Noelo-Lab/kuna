@@ -598,6 +598,10 @@ Three tiers:
 | memcpy and printf in a static binary have no names | [`flirt`](#flirt----on--off-default-off) |
 | msvc c++ class names missing and vftables left as unnamed data | [`rtti`](#rtti----on--off-default-on) |
 | no Class::vftable or RTTI_ labels in a windows pe with polymorphic classes | [`rtti`](#rtti----on--off-default-on) |
+| an EFI driver entry point takes two undefined8 parameters | [`uefi`](#uefi----on--off-default-on) |
+| a UEFI boot service call renders as (**(code **)(*(long *)(param_2 + 0x60) + 0x140))(...) | [`uefi`](#uefi----on--off-default-on) |
+| a protocol GUID in .data is an unnamed 16-byte blob | [`uefi`](#uefi----on--off-default-on) |
+| a DXE core's static boot-services table is raw words | [`uefi`](#uefi----on--off-default-on) |
 | gcc/clang c++ class names missing and vtables left as unnamed DAT_ data | [`itaniumrtti`](#itaniumrtti----on--off-default-on) |
 | no Class::vtable or typeinfo labels in a stripped elf or mach-o with polymorphic classes | [`itaniumrtti`](#itaniumrtti----on--off-default-on) |
 | virtual dispatch slot resolves to sub_<addr> with no class | [`itaniumrtti`](#itaniumrtti----on--off-default-on) |
@@ -2146,6 +2150,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On by default: a Windows PE built by MSVC (or clang -target ...-windows-msvc) carrying polymorphic C++ classes gets its C++ class names recovered and the RTTI/vftable metadata graph labelled (the raw .rdata bytes / unnamed DAT_* vtable become `Box`/`Shape` class names + `<Class>::vftable` / `<Class>::RTTI_*` labels). Inert on every non-PE image and on a PE with no shared type_info vftable. Flip off to see the raw .rdata without the recovered labels.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-rtti
 - **Example:** `option rtti on`
+
+### `uefi` -- on | off, default `on`
+
+- **Symptoms:** an EFI driver entry point takes two undefined8 parameters; a UEFI boot service call renders as (**(code **)(*(long *)(param_2 + 0x60) + 0x140))(...); a protocol GUID in .data is an unnamed 16-byte blob; a DXE core's static boot-services table is raw words.
+- **What it does:** UEFI module markup for a PE image whose Subsystem is an EFI application, boot driver, runtime driver or ROM (10..13). The entry point gets the locked prototype EFI_STATUS _ModuleEntryPoint(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable). EFI_SYSTEM_TABLE, EFI_BOOT_SERVICES, EFI_RUNTIME_SERVICES, EFI_DXE_SERVICES, EFI_PEI_SERVICES, the console text protocols and EFI_GUID are built from the UEFI and PI specifications with natural alignment for the image's pointer width, and every service member is a typed function pointer, so `SystemTable->BootServices->LocateProtocol(&guid, 0, &iface)` renders as a member call with its arguments. Every 16-byte value in a data section equal to a GUID declared in the EDK2 package files (965 names, gEfiLoadedImageProtocolGuid and the rest) is named and typed EFI_GUID. A service table the module defines statically (the DXE, PEI and SMM cores) is found by its EFI_TABLE_HEADER signature (IBI SYST, BOOTSERV, RUNTSERV, DXE_SERV, PEI SERV) and typed. The ARM PEI-services getters (Thumb `mrc p15,0,r0,c13,c0,2; bx lr`, the A32 form, and AArch64 `mrs x0, tpidr_el0; ret`) are named ArmReadTpidrurw and return EFI_PEI_SERVICES **. A typed data fact of this pass outranks a string literal the string scan found inside it (a table signature reads as text).
+- **When to flip:** On by default; it only acts on EFI-subsystem PE images, so every other input is byte-identical. Flip off to see the module without the EFI types: the entry then takes two untyped words and every service call is an indirect call through an offset.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-uefi
+- **Example:** `option uefi off`
 
 ### `itaniumrtti` -- on | off, default `on`
 

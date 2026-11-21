@@ -1752,6 +1752,59 @@ it, and a walk that publishes nothing leaves the context partition as it found
 it. A wholly Thumb image can opt into the explicit `--isa thumb` range paint
 instead.
 
+(kuna) **Firmware front ends.** `decompiler/crates/kuna-analysis/src/loader/firmware/`
+holds the probes that turn a headerless firmware file into raw-image arguments.
+`cortexm.rs (probe)` reads a Cortex-M vector table: word 0 an initial stack
+pointer in `0x10000000..0x40000000` (SRAM or a CCM/TCM alias), the fifteen
+system words zero or odd pointers below `0x20000000` with Reset non-zero
+(reserved slots are not checked, since NXP parts keep a checksum there), then
+IRQ words to the first word that is neither, at most 496, trailing zeros
+trimmed. The base is voted: every 2-byte-aligned dummy handler after the table
+(`bx lr`, `b .`, `b.w .`, `nop; b .`) and every handler target give the
+candidate `target - offset` when it is 0x1000-aligned, and the most-voted
+candidate wins with at least 15 votes; else the first of 0x08000000, 0,
+0x400000, 0x10000, 0x8000, 0x10000000 that holds every handler; else the page
+below the lowest handler. Handlers are named `<Exception>_Handler` and
+`IRQ<n>_Handler`, a target several IRQs share is `Default_Handler`. The CLI
+(`decompiler/crates/kuna-cli/src/rawfront.rs (prepare)`) turns the table into
+`--raw-image` arguments before a subcommand parses its own, so the engine sees
+an ordinary raw load; the probe runs only on a file whose magic no object
+loader claims, and an explicit `--base` or a non-ARM `--target` turns it off. `svd.rs (parse)` reads a CMSIS-SVD device with the kuna XML
+reader: peripherals (`derivedFrom` reusing the base's registers and type),
+clusters, `dim`/`dimIncrement`/`dimIndex` expansion, register sizes inherited
+from the peripheral or device, and `<interrupt>` names. `Peripheral::c_struct`
+lays a peripheral out as a C structure, dropping a register that overlaps an
+earlier one and padding gaps. The CLI's `--svd FILE` asserts the structure
+(`typedef`), the peripheral as a typed global at its base (`data`) and its
+register range as volatile, and names the IRQ handlers the vector table found
+from the interrupts. `uefifv.rs (walk)` walks UEFI PI firmware volumes for `kuna unpack`:
+FV header (`_FVH`, extended header), FFS files (24- or 32-byte headers, 8-byte
+alignment, erase polarity from the volume attributes), sections (4-byte
+alignment, extended sizes), nested volumes in `FIRMWARE_VOLUME_IMAGE` sections
+and RAW files, standard compression sections stored uncompressed or in the
+EFI 1.1 format (`tiano.rs (decompress)`, a port of EDK2
+`BaseTools/Source/C/Common/Decompress.c` with the 4-bit position set, retried
+with the 5-bit Tiano set), and GUID-defined sections for EDK2 LZMA (the
+13-byte LZMA-alone header in front of a raw LZMA1 stream, decoded by the UPX
+decoder of `decompiler/crates/kuna-analysis/src/upx/lzma.rs` behind its own
+two-byte property prefix), LZMA with the x86 BCJ filter (decoded as the LZMA
+SDK `x86_Convert`), Tiano and CRC32. Every PE32/TE section is a module named
+by the file's UI section. `containers.rs (detect)` reads U-Boot
+legacy images, Intel HEX, Motorola S-records, ESP32/ESP8266 application images,
+uClinux bFLT v4 (rebasing GOT entries and relocations past the 64-byte header,
+as `binfmt_flat` does), Qualcomm MBN/SBL wrappers, MediaTek `md1img` (the
+`md1rom` section at 0x90000000 as MIPS32 LE, the LZMA-alone `md1_dbginfo`
+symbol records as function names, a nanoMIPS ROM reported because no SLEIGH
+spec decodes it) and PC BIOS images (a reset vector in the last 16 bytes; the
+last 128 KiB mapped below 1 MiB and entered at F000:FFF0, so a 64 KiB image is
+segment F000 under the raw-image code-segment rule above, or with a 32-bit
+target the whole flash ending at 4 GiB), and returns either one flat image
+(lowest to highest loaded address, gaps filled, at most 256 MiB; an ESP image
+whose segments span more keeps the segments in the entry's 16 MiB window) with
+the processor, base and entries its header states, or the ELF it wraps. The
+CLI stages the flat image in a temporary directory and loads it as a raw image;
+a flat image without a processor is probed for a Cortex-M table at its base.
+
 PE entry discovery and Listing seeds normalize the low bit according to the
 selected decoder before deduplication and naming. A 32-bit ARM decoder clears
 the Thumb bit; a non-ARM override preserves an odd address even when the header
@@ -4024,6 +4077,38 @@ moves.
   spellings the libc tables carry are `__stdcall` WinSock exports and keep the
   default. Only where the default model's `extrapop` is unknown and the spec
   registers a `__cdecl` model of its own, so x86-64 and every ELF are untouched.
+- **(kuna) UEFI module markup** (`uefi`, default on,
+  `decompiler/crates/kuna-analysis/src/analyzers/uefi/mod.rs (UefiPass)`):
+  a PE image whose optional-header `Subsystem` is 10..13 (EFI application, boot
+  service driver, runtime driver, ROM) is a UEFI module, and its entry point is
+  `EFI_STATUS _ModuleEntryPoint(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE
+  *SystemTable)`. The pass names the entry (as a symbol, and as a rename of the
+  engine placeholder the PE entry already carries) and parks that prototype on
+  it by address. The EFI types are built in Rust from the UEFI and PI
+  specifications (`decompiler/crates/kuna-analysis/src/analyzers/uefi/types.rs`):
+  `EFI_GUID`, `EFI_TABLE_HEADER`, `EFI_SYSTEM_TABLE`, `EFI_BOOT_SERVICES`,
+  `EFI_RUNTIME_SERVICES`, `EFI_DXE_SERVICES`, `EFI_PEI_SERVICES`, the console
+  text protocols and `EFI_CONFIGURATION_TABLE`, laid out with natural alignment
+  at the image's pointer width, with `EFI_STATUS`/`EFI_TPL`/`EFI_HANDLE`/
+  `EFI_EVENT`/`EFI_PHYSICAL_ADDRESS` as typedefs and every service member a
+  function pointer with its specification prototype, so a boot-services call
+  renders as `(*v1->LocateProtocol)(&guid,NULL,&iface)`. A `This` parameter is
+  `VOID *`, because a completed structure cannot hold a pointer to itself. Three
+  data facts follow. Every 16-byte value at 4-byte alignment in a data section
+  that equals a GUID declared in the EDK2 package files
+  (`decompiler/crates/kuna-analysis/src/analyzers/uefi/guids.txt`, 965 names
+  from edk2-stable202505, excluding values with eight or more zero bytes such as
+  `gZeroGuid`) becomes an `EFI_GUID` named after it, with a numeric suffix on a
+  repeat. Every 8-byte-aligned `EFI_TABLE_HEADER` signature in a data section
+  (`IBI SYST`, `BOOTSERV`, `RUNTSERV`, `DXE_SERV`, `PEI SERV`) types the table a
+  core module defines statically (`mBootServices`, ...). Every ARM PEI-services
+  getter (Thumb `mrc p15,0,r0,c13,c0,2; bx lr`, the A32 form, AArch64 `mrs x0,
+  tpidr_el0; ret`) in a code section becomes `ArmReadTpidrurw` returning
+  `EFI_PEI_SERVICES **`. A typed data fact outranks a string literal the string
+  scan found inside it (a table's signature reads as text), so the commit
+  (`decompiler/crates/kuna-console/src/engine.rs (commit_analysis_output)`)
+  skips such a string. The pass does not track the values the entry stores into
+  `gBS`/`gST`/`gRT`; those globals keep the type their first store implies.
 - **(kuna) Declared names** (`declaredlibcproto`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/mod.rs (declared_libc_prototype)`,
   consulted from `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declare_function)`):
