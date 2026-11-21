@@ -1007,7 +1007,13 @@ fn aif_candidates(
     } else {
         listing.first_undefined_after(0)
     };
-    let restricted = decoder.exec_ranges != listing.exec_ranges();
+    // Touching or overlapping decoder windows describe one set of available
+    // bytes. Only an actual section boundary restarts the grid.
+    let restricted = (decoder.exec_ranges != listing.exec_ranges()).then(|| {
+        crate::listing::xrefs::range_union(decoder.exec_ranges.iter().copied()
+            .filter(|&(lo, hi)| lo < hi).collect())
+    });
+    let windows = restricted.as_deref();
     let mut section_start = 0;
     let mut scan_end = 0;
     let mut gap_hi = u64::MAX;
@@ -1033,19 +1039,15 @@ fn aif_candidates(
             // The listing owns the section boundaries. A caller may restrict
             // speculative decoding to disjoint windows within that listing.
             let Some((base, section_end)) = listing.range_containing_or_after(gap_start) else { break };
-            let end = if restricted {
-                let Some(&(_, hi)) = decoder.exec_ranges.iter()
-                    .find(|&&(lo, hi)| lo <= gap_start && gap_start < hi) else {
-                    let next = decoder.exec_ranges.iter()
-                        .filter(|&&(lo, hi)| gap_start < lo && lo < hi)
-                        .map(|&(lo, _)| lo).min();
-                    cursor = next.and_then(|lo| listing.first_undefined_at_or_after(lo));
+            let mut end = section_end;
+            if let Some(windows) = windows {
+                let Some((lo, hi)) = next_window(windows, gap_start) else { break };
+                if gap_start < lo {
+                    cursor = listing.first_undefined_at_or_after(lo);
                     continue;
-                };
-                section_end.min(hi)
-            } else {
-                section_end
-            };
+                }
+                end = end.min(hi);
+            }
             section_start = base;
             scan_end = gap_hi.min(end);
         }
@@ -1085,7 +1087,7 @@ fn aif_candidates(
             // accept on the code after the pool; it is refused, consuming its body,
             // when that is data, and rejected when its body never decoded there.
             let pool_end = literals.as_ref().and_then(|lits| lits.run_end(gap_start));
-            let probe = match (probe, pool_end) {
+            let mut probe = match (probe, pool_end) {
                 (Probe::Accept(body), Some(end))
                     if !literals.as_ref().is_some_and(|l| l.may_plant(end)) =>
                 {
@@ -1096,23 +1098,33 @@ fn aif_candidates(
                 (_, Some(_)) => Probe::Reject,
                 (probe, None) => probe,
             };
+            let mut entry = gap_start;
+            if let Probe::Accept(body) = &mut probe {
+                entry = match (pool_end, filler) {
+                    (Some(end), _) => end,
+                    (None, kuna_aifnoppad::Filler::Before(at)) if body.contains(&at) => at,
+                    _ => gap_start,
+                };
+                if roots.is_none() && entry == gap_start {
+                    if let Some(prefix) = kuna_sparcprologue::prefix(decoder, listing, &claimed, entry) {
+                        body.extend([prefix, prefix + 4]);
+                        entry = prefix;
+                    }
+                }
+                // Padding, pools and a recovered prologue can all move the entry.
+                // Refuse an invalid destination before claiming any of its body.
+                if entry != gap_start && stride.is_some_and(|width| {
+                    !entry_fits_slot(listing, entry, width, windows)
+                }) {
+                    probe = Probe::Reject;
+                }
+            }
             if let (Some(lits), Probe::Accept(body) | Probe::Uncorroborated(body)) = (&mut literals, &probe) {
                 lits.add_body(listing, decoder, body);
             }
             match probe
             {
-                Probe::Accept(mut body) => {
-                    let mut entry = match (pool_end, filler) {
-                        (Some(end), _) => end,
-                        (None, kuna_aifnoppad::Filler::Before(at)) if body.contains(&at) => at,
-                        _ => gap_start,
-                    };
-                    if roots.is_none() && entry == gap_start {
-                        if let Some(prefix) = kuna_sparcprologue::prefix(decoder, listing, &claimed, entry) {
-                            body.extend([prefix, prefix + 4]);
-                            entry = prefix;
-                        }
-                    }
+                Probe::Accept(body) => {
                     if let Some(bodies) = &mut bodies {
                         bodies.insert(entry, body.iter().copied().filter(|&at| at >= entry)
                             .map(|at| (at, decoder.recorded(at))).collect());
@@ -1161,11 +1173,31 @@ fn aif_candidates(
     accepted.into_iter().collect()
 }
 
+/// First sorted, disjoint decoder window containing or following `at`.
+fn next_window(windows: &[(u64, u64)], at: u64) -> Option<(u64, u64)> {
+    windows.get(windows.partition_point(|&(_, hi)| hi <= at)).copied()
+}
+
+fn entry_fits_slot(
+    listing: &Listing,
+    at: u64,
+    width: core::num::NonZeroU32,
+    windows: Option<&[(u64, u64)]>,
+) -> bool {
+    let Some((base, mut end)) = listing.range_containing_or_after(at) else { return false };
+    if let Some(windows) = windows {
+        let Some((lo, hi)) = next_window(windows, at) else { return false };
+        if at < lo { return false; }
+        end = end.min(hi);
+    }
+    at >= base && section_probe(base, at, end, width).0
+}
+
 /// Membership and next probe, bounded so adjacent sections restart at their own origin.
 fn section_probe(base: u64, at: u64, end: u64, stride: core::num::NonZeroU32) -> (bool, u64) {
     let width = u64::from(stride.get());
     let offset = (at - base) % width;
-    (offset == 0, at.saturating_add(width - offset).min(end))
+    (offset == 0 && end - at >= width, at.saturating_add(width - offset).min(end))
 }
 
 /// The outcome of one gap-start probe. `Uncorroborated` is `aif precise`'s
@@ -1678,9 +1710,12 @@ mod tests {
         let stride = core::num::NonZeroU32::new(6).unwrap();
         assert_eq!(section_probe(0x1000, 0x1000, 0x100b, stride), (true, 0x1006));
         assert_eq!(section_probe(0x1000, 0x1002, 0x100b, stride), (false, 0x1006));
-        assert_eq!(section_probe(0x1000, 0x1006, 0x100b, stride), (true, 0x100b));
+        assert_eq!(section_probe(0x1000, 0x1006, 0x100b, stride), (false, 0x100b));
+        assert_eq!(section_probe(0x1000, 0x1006, 0x100c, stride), (true, 0x100c));
         assert_eq!(section_probe(0x100b, 0x100b, 0x1020, stride), (true, 0x1011));
         assert_eq!(section_probe(0x100b, 0x1011, 0x1020, stride), (true, 0x1017));
+        assert_eq!(section_probe(u64::MAX - 5, u64::MAX - 5, u64::MAX, stride), (false, u64::MAX));
+        assert_eq!(section_probe(u64::MAX - 6, u64::MAX - 6, u64::MAX, stride), (true, u64::MAX));
         assert_eq!(section_probe(u64::MAX - 2, u64::MAX - 1, u64::MAX, stride), (false, u64::MAX));
     }
 

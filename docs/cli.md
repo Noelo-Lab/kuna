@@ -2327,8 +2327,10 @@ Behaviors specific to `decompile-all`:
   of every executable section may declare their size in its processor spec,
   for example `<property key="kuna.aif.sectionInstructionStride" value="6"/>`
   inside `<properties>`. AIF then probes section-relative slots in the gap
-  walk, including the first slot at address zero. With only executable segment
-  or raw mapping bounds, AIF keeps the cursor policy of the selected mode.
+  walk, including the first slot at address zero. A discovered entry must start
+  a complete slot in its own section, including after a padding adjustment.
+  With only executable segment or raw mapping bounds, AIF keeps the cursor
+  policy of the selected mode.
   Symbol and explicit function entries keep their usual admission rules.
   Omitted `--mode` first resolves the size-based `auto` policy. `--mode fast`
   names and disables the three exhaustive program-wide decode/discovery options
