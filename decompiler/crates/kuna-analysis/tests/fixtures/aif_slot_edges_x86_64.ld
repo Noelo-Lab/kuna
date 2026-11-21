@@ -14,4 +14,10 @@ SECTIONS {
     . = 0x405006;
     .shift_short : { *(.shift_short) } :code
     .shift_tail : { *(.shift_tail) } :code
+    . = 0x406006;
+    .overlap : { *(.overlap) } :code
+    . = 0x407006;
+    .abutting : { *(.abutting) } :code
+    . = 0x408006;
+    .long_padding : { *(.long_padding) } :code
 }

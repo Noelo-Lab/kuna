@@ -1,5 +1,5 @@
 # GNU binutils 2.47.20260726. Stripped ELF SHA-256:
-# 60f42216be41ed6cd008afa19641de927f4df16c051eb8032680e2c738ea4bf8
+# 021d9d97261f587f2ac8fb2c1098d00bdb2304713aa83eeec2dc3a608f0c3d64
 # Build from this directory:
 # as --64 aif_slot_edges_x86_64.S -o edges.o
 # ld --build-id=none -T aif_slot_edges_x86_64.ld edges.o -o edges
@@ -19,6 +19,8 @@
 .text
 .globl _start
 _start:
+call inside_slot
+call following_slot
 .set i, 0
 .rept 64
 .byte 0x2e,0xe8
@@ -32,9 +34,14 @@ mov40
 add2
 ret6
 .endr
-.rept 32
+.rept 16
 nop6
 mov40
+ret6
+.endr
+.rept 16
+nop6
+nop6
 ret6
 .endr
 
@@ -80,4 +87,33 @@ shifted_split_data:
 .byte 0x2e,0xb8,40,0,0      # adjusted entry is aligned but its slot is short
 .section .shift_tail,"ax"
 .byte 0
+ret6
+
+.section .overlap,"ax"
+.fill 12,1,0
+nop6
+nop6
+.type overlapping_data,@object
+overlapping_data:
+.byte 0x2e,0x36,0x3e,0x26,0xf3
+.type inside_slot,@function
+inside_slot:
+.byte 0xc3                  # direct target occupies the sixth byte
+
+.section .abutting,"ax"
+.fill 12,1,0
+nop6
+nop6
+.type abutting_function,@function
+abutting_function:
+mov40
+.type following_slot,@function
+following_slot:
+.byte 0xc3                  # direct target starts just after the slot
+
+.section .long_padding,"ax"
+.rept 8500
+nop6
+.endr
+.byte 0x90                  # every six-byte NOP leads to the same off-grid return
 ret6

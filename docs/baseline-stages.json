@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4945,
-    4945
+    4948,
+    4948
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -37,6 +37,7 @@
     "data:AGGREGATEFIELDS: an unchanged single-field record returns whole",
     "data:AGGREGATEFIELDS: the nested member names each field once",
     "data:AGGREGATEFIELDS: the nested member walk never appends the inner field twice",
+    "data:AIF slots #10: exhausting the body limit does not plant an entry inside padding",
     "data:AIF slots #1: a one-byte padding shift never creates an off-grid entry",
     "data:AIF slots #2: a five-byte section tail cannot supply a six-byte first slot",
     "data:AIF slots #3: an exact-fit first slot is found with the fixture processor",
@@ -44,6 +45,8 @@
     "data:AIF slots #5: a full padding slot advances to the aligned function entry",
     "data:AIF slots #6: an aligned padding destination also needs a complete first slot",
     "data:AIF slots #7: both inventories contain the executable entry",
+    "data:AIF slots #8: known code in the sixth byte rules out the adjusted entry",
+    "data:AIF slots #9: known code immediately after the first slot permits the adjusted entry",
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
     "data:ALIASOVERLAP #2: the 8-byte indexed read is a local ahead of the element store",
     "data:ALIASOVERLAP #3: only the adjacent-byte stores keep the read folded",

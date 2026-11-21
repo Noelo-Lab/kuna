@@ -2333,7 +2333,8 @@ Behaviors specific to `decompile-all`:
   for example `<property key="kuna.aif.sectionInstructionStride" value="6"/>`
   inside `<properties>`. AIF then probes section-relative slots in the gap
   walk, including the first slot at address zero. A discovered entry must start
-  a complete slot in its own section, including after a padding adjustment.
+  a complete slot of undefined bytes in its own section, including after a
+  padding adjustment.
   With only executable segment or raw mapping bounds, AIF keeps the cursor
   policy of the selected mode.
   Symbol and explicit function entries keep their usual admission rules.

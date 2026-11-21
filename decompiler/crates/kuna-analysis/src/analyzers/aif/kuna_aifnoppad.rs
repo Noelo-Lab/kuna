@@ -60,6 +60,7 @@ pub(super) enum Filler {
 #[derive(Clone, Copy)]
 enum RunEnd {
     Entry,
+    BeyondValidationLimit,
     Code(u64),
     Other,
 }
@@ -76,9 +77,8 @@ impl PaddingRuns {
         PaddingRuns { wide: decoder.code_space.get_addr_size() > 4, ends: HashMap::new() }
     }
 
-    /// Classify the gap candidate at `entry`. A padding run is read no further
-    /// than the validity walk follows a candidate.
-    pub(super) fn classify(&mut self, listing: &Listing, decoder: &mut GapDecoder, entry: u64) -> Filler {
+    /// Classify the gap candidate at `entry` with bounded lookahead.
+    pub(super) fn classify(&mut self, listing: &Listing, decoder: &mut GapDecoder, entry: u64, section_slots: bool) -> Filler {
         let Some(first) = decoder.probe(entry) else { return Filler::No };
         if is_zero_fill(&first) {
             return Filler::Refuse;
@@ -95,7 +95,14 @@ impl PaddingRuns {
             if listing.function_at(at).is_some() {
                 break RunEnd::Entry;
             }
-            if run.len() == super::MAX_FOLLOW_INSNS || !listing.is_undefined(at) {
+            // With a declared grid we need the actual destination. Once two
+            // validation windows are all padding, no start in the first window
+            // can reach it. Leave the second window open for shorter suffixes.
+            if section_slots && run.len() == 2 * super::MAX_FOLLOW_INSNS {
+                run.truncate(super::MAX_FOLLOW_INSNS);
+                break RunEnd::BeyondValidationLimit;
+            }
+            if (!section_slots && run.len() == super::MAX_FOLLOW_INSNS) || !listing.is_undefined(at) {
                 break RunEnd::Other;
             }
             match decoder.probe(at) {
@@ -109,7 +116,7 @@ impl PaddingRuns {
         };
         self.ends.extend(run.into_iter().map(|at| (at, end)));
         match end {
-            RunEnd::Entry => Filler::Refuse,
+            RunEnd::Entry | RunEnd::BeyondValidationLimit => Filler::Refuse,
             RunEnd::Code(at) => Filler::Before(at),
             RunEnd::Other => Filler::No,
         }

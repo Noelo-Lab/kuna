@@ -29,4 +29,7 @@
 <stringmatch name="AIF slots #5: a full padding slot advances to the aligned function entry" min="1" max="1">0x402030 sub_402030</stringmatch>
 <stringmatch name="AIF slots #6: an aligned padding destination also needs a complete first slot" min="0" max="0">0x40501[28] sub_40501[28]</stringmatch>
 <stringmatch name="AIF slots #7: both inventories contain the executable entry" min="2" max="2">0x401000 sub_401000</stringmatch>
+<stringmatch name="AIF slots #8: known code in the sixth byte rules out the adjusted entry" min="0" max="0">0x40601e sub_40601e</stringmatch>
+<stringmatch name="AIF slots #9: known code immediately after the first slot permits the adjusted entry" min="1" max="1">0x40701e sub_40701e</stringmatch>
+<stringmatch name="AIF slots #10: exhausting the body limit does not plant an entry inside padding" min="0" max="0">0x40e98a sub_40e98a</stringmatch>
 </decompilertest>
