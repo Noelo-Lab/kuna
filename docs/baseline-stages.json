@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4873,
-    4873
+    4882,
+    4882
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3907,6 +3907,15 @@
     "data:logical shift retains unsigned destination",
     "data:loop initial and backedge definitions share a family",
     "data:low address outside pointer inference range still folds",
+    "data:loweredswitch linear #1: by default the linear chain stays nested ifs",
+    "data:loweredswitch linear #2: with linear both chains re-roll into a switch",
+    "data:loweredswitch linear #3: the if/else-if chain's three values become cases",
+    "data:loweredswitch linear #4: the chain's fall-out is the switch default",
+    "data:loweredswitch tree #1: by default the twenty-case tree stays nested ifs",
+    "data:loweredswitch tree #2: with tree it re-rolls into one switch",
+    "data:loweredswitch tree #3: all twenty case values are labels",
+    "data:loweredswitch tree #4: the first and last cases keep their bodies",
+    "data:loweredswitch tree #5: values outside the cases reach the default",
     "data:malformed second headers and excess pairs leave the entire prototype inferred",
     "data:marker has no executable trap",
     "data:mipsgot-local #1: c_add calls add64",

@@ -2257,7 +2257,9 @@ mod tests {
         // and kuna-protoorder-tailcallees / a single decompile states its tail callees' prototypes first
         // and kuna-typevote / a variable left undefinedN takes the type its ops vote for (option typevote)
         // and kuna-gotonext / a goto to the statement that runs next is left out, a loop or switch exit prints break (option gotonext)
-        assert_eq!(count, 839, "corpus file count drifted");
+        // and kuna-loweredswitch-linear / loweredswitch linear re-rolls a linear equality chain
+        // and kuna-loweredswitch-tree / loweredswitch tree re-rolls a twenty-case compare tree
+        assert_eq!(count, 841, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
