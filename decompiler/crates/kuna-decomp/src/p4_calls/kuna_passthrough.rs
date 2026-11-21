@@ -1277,6 +1277,9 @@ pub fn is_call_target(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
 /// [`neutral_in_chain`] to read.
 pub fn survives_call(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
     let Some(v) = data.vbank().get(vn) else { return false };
+    if v.get_space().get_type() != spacetype::IPTR_PROCESSOR {
+        return false;
+    }
     v.descend_iter().any(|d| {
         data.obank().get(d).is_some_and(|o| {
             o.code() == OpCode::CPUI_INDIRECT
