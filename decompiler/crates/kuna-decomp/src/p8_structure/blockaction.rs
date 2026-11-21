@@ -3763,9 +3763,13 @@ impl Action for ActionBlockStructure {
     fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         // C++ blockaction.cc:2170.
         if data.sblocks_get_size() != 0 {
-            crate::p8_structure::kuna_condstmts::record_hits(data);
-            return 0; // Already structured
+            if !crate::p2_lift::kuna_pushan::restructure_settled(data) {
+                crate::p8_structure::kuna_condstmts::record_hits(data);
+                return 0; // Already structured
+            }
+            data.sblocks_clear();
         }
+        crate::p2_lift::kuna_pushan::unflip_structure(data);
         data.install_switch_defaults();
         // Cross-arena copy: mirror every bblocks BlockBasic into sblocks as a
         // BlockCopy leaf (the copy's `copy` field points back at the bblocks block
@@ -3788,9 +3792,10 @@ impl Action for ActionBlockStructure {
                     // `negateCondition`s the region structurer recorded (the same
                     // CBRANCH `boolean_flip`/`fallthru_true` toggle the
                     // CollapseStructure path applies via `take_pending_flips`).
-                    for bb in flips {
+                    for &bb in &flips {
                         data.block_basic_negate_lastop(bb);
                     }
+                    crate::p2_lift::kuna_pushan::record_structure_flips(data, &flips);
                     // Structured by the region structurer; report a single change so
                     // the ActionPool sees progress (spirit of `getChangeCount() > 0`).
                     self.base_mut().count += 1;
@@ -3913,9 +3918,10 @@ impl Action for ActionBlockStructure {
         // recorded reflect topology changes the collapse committed before aborting.
         let flips = collapse.take_pending_flips();
         drop(collapse); // release the sblocks borrow before touching the obank
-        for bb in flips {
+        for &bb in &flips {
             data.block_basic_negate_lastop(bb);
         }
+        crate::p2_lift::kuna_pushan::record_structure_flips(data, &flips);
         if let Err(e) = collapse_res {
             // A still-un-ported collapse sub-stub (switch/node-creation) aborts;
             // surface it as "no change made" rather than taking down the run, the

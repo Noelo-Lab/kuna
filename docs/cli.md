@@ -617,6 +617,7 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `isolate [<func>::]<symbol>` | this local is its own variable: it is not merged with another |
 | `typedef <C declaration>` | intern a `struct`/`union`/`enum`/`typedef` so `type` can name it |
 | `data <addr> <C typedeclaration>` | a named, typed global at an address |
+| `import <slot> <name>` | the pointer word at `<slot>` holds the address of the external function `<name>` |
 | `comment [<func>::]<addr> <text>` | a comment rendered into the C at that instruction |
 | `flow [<func>::]<addr> branch\|call\|callreturn\|return` | the flow out of this instruction is not what kuna decided |
 | `callee [<func>::]<callsite> <name\|address>` | the indirect call at this instruction goes to this function |
@@ -1018,6 +1019,31 @@ second `callee` for the same call site replaces the first, which is reported
 rejected. A call site the function's flow never reaches is refused after the
 decompile, and the run exits non-zero. In the console the same fact is
 `override indirect <callsite> <name|address>`, given after `load function`.
+
+**`import` names a pointer slot the import table does not.** A call through an
+import slot prints the import's name because the loader read the name from the
+import table. A packer that rebuilds the table keeps the slots and drops the
+names: Themida leaves a protected PE's Import Address Table where the linker put
+it and lists one import per DLL, so every other call through it prints as
+`(*dat_403064)(&v4,0,0x10)`. The same holds for a table a program fills itself
+from `GetProcAddress` or `dlsym`, and for a dumped image. When you know what a
+slot holds, from the unprotected build, a debugger or a memory dump, say so:
+
+```console
+$ kuna decompile ./blaster_tiger_protected.exe 0x40134e --addr
+  (*dat_403064)(&v2,0,0x10);
+$ kuna decompile ./blaster_tiger_protected.exe 0x40134e --addr --assert 'import 0x403064 memset'
+  memset(&v2,0,0x10);
+```
+
+The slot becomes what an import table entry makes it: a function symbol named
+`<name>` at the slot, with the slot's pointer word marked as an external
+reference, so every call through it, in native code and in a devirtualized
+function alike, is a call to `<name>` with that name's built-in signature when
+kuna has one. Reads and writes of the slot itself still print it as data, it is
+not listed as a function body, and a symbol already at the slot is renamed. One
+directive names one slot; an `@FILE` of them restores a whole table. In the
+console the fact is `map import <slot> <name>`, given after `read symbols`.
 
 **A `call` override follows the RET-call chain it starts.** `push
 <continuation>; push <target>; ret` is a call written without a `call`

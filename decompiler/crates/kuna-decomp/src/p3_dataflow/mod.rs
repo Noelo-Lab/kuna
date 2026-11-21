@@ -66,6 +66,7 @@ pub mod kuna_x87truncate;
 pub mod kuna_opaquepredicate;
 pub mod kuna_cancelbytearithmetic;
 pub mod kuna_wideslice;
+pub mod kuna_pushanrules;
 pub mod kuna_devectorize;
 pub mod kuna_strlenscan;
 pub mod kuna_repstring;

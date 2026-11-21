@@ -47,6 +47,9 @@ mod archive_members_cli;
 #[path = "assert_callee.rs"]
 mod assert_callee;
 
+#[path = "assert_import.rs"]
+mod assert_import;
+
 #[path = "array_member_bits.rs"]
 mod array_member_bits;
 

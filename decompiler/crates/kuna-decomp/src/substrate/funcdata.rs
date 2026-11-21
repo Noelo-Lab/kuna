@@ -28,7 +28,7 @@
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
-use kuna_base::types::{int2, int4, uint4, uint8, uintm, Wrap};
+use kuna_base::types::{int2, int4, uint4, uint8, uintb, uintm, Wrap};
 
 use crate::block::{block_flags, BasicData, BlockGraph, BlockKind, FlowBlock};
 use crate::fspec::{FuncCallSpecs, FuncProto, ParamActive};
@@ -458,6 +458,19 @@ pub struct Funcdata {
     kuna_default_name_end: int4,
     /// Whether the naming pass records [`Self::kuna_name_snapshot`].
     kuna_record_names: bool,
+    /// (kuna pushan) Register ranges every external call of this devirtualized
+    /// function kills, over and above the prototype model's own effect list.
+    kuna_call_kills: Vec<(uintb, int4)>,
+    /// (kuna pushan) Register ranges every external call preserves.
+    kuna_call_preserves: Vec<(uintb, int4)>,
+    /// (kuna pushan) The lowest stack offset any external call is made at.
+    kuna_call_floor: Option<i64>,
+    /// (kuna pushan) The body is a devirtualized program, whose stack argument
+    /// trials are judged without the local-alias test and join half slots.
+    kuna_devirtualized: bool,
+    /// (kuna pushan) The blocks whose branch the last structuring of a
+    /// devirtualized body negated.
+    kuna_structure_flips: Vec<BlockId>,
     /// The numbering the naming pass handed out, by instance identity; see
     /// `kuna_stablenames::snapshot`.
     kuna_name_snapshot: Vec<(String, crate::kuna_stablenames::Keys)>,
@@ -852,6 +865,11 @@ impl Funcdata {
             kuna_prior_names: Default::default(),
             kuna_default_name_end: 1,
             kuna_record_names: false,
+            kuna_call_kills: Vec::new(),
+            kuna_call_preserves: Vec::new(),
+            kuna_call_floor: None,
+            kuna_devirtualized: false,
+            kuna_structure_flips: Vec::new(),
             kuna_name_snapshot: Vec::new(),
             kuna_directive_targets: std::collections::BTreeMap::new(),
             kuna_library_aliases: Vec::new(),
@@ -1154,6 +1172,38 @@ impl Funcdata {
 
     pub fn set_kuna_record_names(&mut self, on: bool) {
         self.kuna_record_names = on;
+    }
+    /// (kuna pushan) The register ranges every external call kills in this
+    /// function; empty outside a devirtualized body.
+    pub fn kuna_call_kills(&self) -> &[(uintb, int4)] {
+        &self.kuna_call_kills
+    }
+    pub fn kuna_set_call_kills(&mut self, kills: Vec<(uintb, int4)>) {
+        self.kuna_call_kills = kills;
+    }
+    pub fn kuna_call_preserves(&self) -> &[(uintb, int4)] {
+        &self.kuna_call_preserves
+    }
+    pub fn kuna_set_call_preserves(&mut self, keep: Vec<(uintb, int4)>) {
+        self.kuna_call_preserves = keep;
+    }
+    /// (kuna pushan) The lowest stack offset, from the entry stack pointer,
+    /// any external call of this devirtualized function is made at.
+    pub fn kuna_call_floor(&self) -> Option<i64> {
+        self.kuna_call_floor
+    }
+    pub fn kuna_set_call_floor(&mut self, floor: Option<i64>) {
+        self.kuna_call_floor = floor;
+    }
+    /// (kuna pushan) Whether the body is a devirtualized program.
+    pub fn kuna_devirtualized(&self) -> bool {
+        self.kuna_devirtualized
+    }
+    pub fn kuna_set_devirtualized(&mut self, on: bool) {
+        self.kuna_devirtualized = on;
+    }
+    pub fn kuna_structure_flips_mut(&mut self) -> &mut Vec<BlockId> {
+        &mut self.kuna_structure_flips
     }
 
     /// The numbering the naming pass recorded (empty unless asked to).
@@ -1943,6 +1993,15 @@ impl Funcdata {
     pub fn get_size(&self) -> int4 {
         self.size
     }
+    /// (kuna pushan) Override the declared body size; 0 lifts the flow range.
+    pub fn kuna_set_size(&mut self, size: int4) {
+        self.size = size;
+    }
+    /// (kuna pushan) Replace the architecture view of a function whose flow
+    /// has not been generated, after the symbol table it snapshots moved.
+    pub fn kuna_set_arch(&mut self, glb: ArchHandle) {
+        self.glb = glb;
+    }
     /// Get the program/architecture owning \b this function (C++ `getArch`).
     pub fn get_arch(&self) -> &ArchHandle {
         &self.glb
@@ -2412,6 +2471,12 @@ impl Funcdata {
     /// `heritage.deadRemovalAllowed(spc)`).
     pub fn dead_removal_allowed(&self, spc: &std::rc::Rc<kuna_base::space::AddrSpace>) -> bool {
         self.heritage.dead_removal_allowed(spc)
+    }
+
+    /// (kuna) The first heritage pass at which dead code may be removed in
+    /// every heritaged space.
+    pub fn deadcode_settled_pass(&self) -> int4 {
+        self.heritage.deadcode_settled_pass()
     }
 
     /// Record that dead code has been seen in a space (C++

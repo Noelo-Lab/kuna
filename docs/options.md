@@ -152,6 +152,10 @@ Three tiers:
 | a deep if/else tree on one variable with an equality test at every leaf where the source had a dense switch of 17 or more cases | [`loweredswitch`](#loweredswitch----on--off--linear--tree--all-default-on) |
 | binary-search cascade of constant compares where source had a switch | [`loweredswitch`](#loweredswitch----on--off--linear--tree--all-default-on) |
 | flip off to keep the compiler's lowered compare-tree rendering | [`loweredswitch`](#loweredswitch----on--off--linear--tree--all-default-on) |
+| a function decompiles to a two-line stub that tail-calls into an unnamed section of the binary | [`pushan`](#pushan----auto--on--off-default-auto) |
+| the decompiled body is an interpreter dispatch loop: fetches through a pointer into a high-entropy section, a rolling xor key, computed jumps through a handler table | [`pushan`](#pushan----auto--on--off-default-auto) |
+| VMProtect .vmp0/.vmp1 or renamed sections and pushfq/popfq register-save sequences at the function entry | [`pushan`](#pushan----auto--on--off-default-auto) |
+| hundreds of thousands of instructions reachable from one function with no recognizable program logic | [`pushan`](#pushan----auto--on--off-default-auto) |
 | values below an x87 call are read from the wrong register-stack positions after consecutive calls | [`callmechanisms`](#callmechanisms----off--auto--on-default-auto) |
 | a store the compiler spec says a callee always makes is missing after the call | [`callmechanisms`](#callmechanisms----off--auto--on-default-auto) |
 | a custom compiler spec's uponentry or uponreturn p-code has no effect on the output | [`callmechanisms`](#callmechanisms----off--auto--on-default-auto) |
@@ -1194,6 +1198,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default (DIV-4); the required binary-search-structure guard (a range/jle split) keeps it off hand-written linear if/else-if chains. Set OFF to restore the upstream if/else-if rendering of a lowered switch. Set `linear` when nested `if (v != 5) { if (v != 2) ...` tests on one variable stand for a small switch (clang lowers a three- or four-case switch that way); it is not the default because an if/else-if chain the author wrote re-rolls too. Set `tree` on a gcc -O0 binary whose dense switch of more than 16 cases prints as a deep if/else tree; the 16-case cap is the default because a very wide synthesized switch can leave the structurer with unstructured case edges. A switch installed for a function stays when the value is narrowed later in the same session, so compare `on` before the wider value. The exactness, every-head, signedness and value guards are the only way the re-roll runs and have no switch of their own.
 - **Where / provenance:** P2/switch-model · angr · structure-recovery · angr-LoweredSwitchSimplifier
 - **Example:** `option loweredswitch off`
+
+### `pushan` -- auto | on | off, default `auto`
+
+- **Symptoms:** a function decompiles to a two-line stub that tail-calls into an unnamed section of the binary; the decompiled body is an interpreter dispatch loop: fetches through a pointer into a high-entropy section, a rolling xor key, computed jumps through a handler table; VMProtect .vmp0/.vmp1 or renamed sections and pushfq/popfq register-save sequences at the function entry; hundreds of thousands of instructions reachable from one function with no recognizable program logic.
+- **What it does:** Devirtualize a function protected by a VM-based obfuscator (VMProtect, Themida). Port of Pushan (Sudhir et al., NDSS 2027; angr PR #7680): the interpreter is emulated symbolically without path constraints, every block keyed by native address and virtual program counter, so the protected program's own control flow is recovered as a flat graph -- constant guards prune, symbolic guards keep both sides, computed targets are enumerated by case-splitting their boolean atoms, and locations that differ where paths meet are symbolized in a further round until the graph is stable. The graph is emitted as synthetic p-code (bytecode fetches, key arithmetic and handler addresses folded to constants, obfuscated stack-pointer arithmetic rebuilt as sp+k) that the ordinary flow follower lifts, and the rest of the decompiler runs unchanged on it.
+- **When to flip:** auto (default) devirtualizes a function whose direct native flow (up to 4096 instructions) transfers into a separate executable section of at least 64 KiB -- the stub a protector leaves at the original entry; it costs nothing on an unprotected function. Set on to force the analysis on a function the stub heuristic misses (a Themida function whose body was replaced in place, a custom VM entered by a plain jump); set off to see the raw interpreter again or when the analysis runs long on a very large protected function.
+- **Where / provenance:** P2/flow-follow · angr · structure-recovery · pushan-devirtualization
+- **Example:** `option pushan on`
 
 ### `callmechanisms` -- off | auto | on, default `auto`
 

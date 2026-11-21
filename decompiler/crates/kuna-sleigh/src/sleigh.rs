@@ -1535,6 +1535,8 @@ pub struct Sleigh {
     /// The context commits of the most recent `one_instruction`.
     last_commits: RefCell<Vec<ContextCommitRecord>>,
     context_queries: std::cell::Cell<u64>,
+    /// (kuna) Synthetic instructions served instead of decoding bytes.
+    kuna_overlay: RefCell<Option<Rc<crate::kuna_pcodeoverlay::PcodeOverlay>>>,
 }
 
 /// A constructor decision reads only instruction bits (relative to the operand
@@ -1612,6 +1614,7 @@ impl Sleigh {
             primitive_operands: OnceCell::new(),
             last_commits: RefCell::new(Vec::new()),
             context_queries: std::cell::Cell::new(0),
+            kuna_overlay: RefCell::new(None),
         }
     }
 
@@ -2305,8 +2308,23 @@ impl SymbolWalkerChange for ParserWalkerChange<'_> {
 // ---------------------------------------------------------------------------
 
 impl Sleigh {
+    /// (kuna) Install (or clear) the synthetic p-code overlay.
+    pub fn set_pcode_overlay(&self, overlay: Option<Rc<crate::kuna_pcodeoverlay::PcodeOverlay>>) {
+        *self.kuna_overlay.borrow_mut() = overlay;
+    }
+
+    /// (kuna) The installed synthetic p-code overlay, if any.
+    pub fn pcode_overlay(&self) -> Option<Rc<crate::kuna_pcodeoverlay::PcodeOverlay>> {
+        self.kuna_overlay.borrow().clone()
+    }
+
     /// C++ `Translate::instructionLength`.
     pub fn instruction_length(&self, baseaddr: &Address) -> KunaResult<i32> {
+        if let Some(ov) = self.kuna_overlay.borrow().as_ref() {
+            if let Some(insn) = ov.get(baseaddr) {
+                return Ok(insn.length);
+            }
+        }
         let pos = self.obtain_context(baseaddr, ParseState::Disassembly)?;
         Ok(pos.get_length())
     }
@@ -2434,6 +2452,13 @@ impl Sleigh {
     ) -> KunaResult<i32> {
         mnemonic.clear();
         body.clear();
+        if let Some(ov) = self.kuna_overlay.borrow().as_ref() {
+            if let Some(insn) = ov.get(baseaddr) {
+                mnemonic.push_str(&insn.mnemonic);
+                body.push_str(&insn.body);
+                return Ok(insn.length);
+            }
+        }
         let result = (|| {
             let pos = self.obtain_context(baseaddr, ParseState::Disassembly)?;
             self.render_assembly(&pos, mnemonic, body)?;
@@ -2513,6 +2538,15 @@ impl Sleigh {
         mut reusable: Option<&mut Option<Vec<u32>>>,
     ) -> KunaResult<i32> {
         if let Some(key) = reusable.as_deref_mut() { *key = None; }
+        if let Some(ov) = self.kuna_overlay.borrow().as_ref() {
+            if let Some(insn) = ov.get(baseaddr) {
+                ov.emit(insn, emit, baseaddr);
+                if let Some(asm) = assembly {
+                    ov.emit_assembly(insn, asm, baseaddr);
+                }
+                return Ok(insn.length);
+            }
+        }
         let queries = self.context_queries.get();
         let alignment = self.base.base.get_alignment();
         // C++ `(baseaddr.getOffset() % alignment) != 0`; clippy prefers the
