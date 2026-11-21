@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4920,
-    4920
+    4976,
+    4976
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4016,6 +4016,7 @@
     "data:no call retains the old high return half",
     "data:no call retains the old low return half",
     "data:no fabricated zero multiplication",
+    "data:no literal is pieced from two arms' words",
     "data:no runtime print sink remains",
     "data:no shifted field store",
     "data:no unrecovered transfer",
@@ -4775,6 +4776,8 @@
     "data:the bounded local policy never leaves a pointer assigned to the Pair object",
     "data:the call never passes the ABI pointer",
     "data:the converted call uses variable-valued arguments",
+    "data:the csel-picked and switched literal of the first arm",
+    "data:the csel-picked and switched literal of the second arm",
     "data:the dead arm of the square test prints only when off",
     "data:the entry partition never loses the input",
     "data:the float rounding is never folded away",
@@ -4795,6 +4798,8 @@
     "data:the other valid relocation never supplies a contract",
     "data:the pointer member is written under the bounded policy and under stackviews",
     "data:the same machine body with separate scalar formals keeps their names",
+    "data:the second select's arms",
+    "data:the second select's other arm",
     "data:the split register delivers a scalar double parameter",
     "data:the stored empty literal",
     "data:the stored selected literal, paired through the store beside it",
