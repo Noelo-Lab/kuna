@@ -228,13 +228,17 @@ pub fn check_input_trial_use(
             data.get_call_specs(idx).carries_jump_target(t.get_address(), t.get_size())
         } {
             data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
+        } else if crate::p4_calls::kuna_passthrough::is_call_target(data, op, vn) {
+            data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_inactive();
         } else if {
             // (kuna) `passthrough`: a trial on a range the pass claimed is left
             // where the option-off run's hole-filling trial would start.
             let t = data.get_call_specs(idx).active_input().get_trial(i);
             crate::p4_calls::kuna_passthrough::claimed_range(data, t.get_address(), t.get_size())
         } {
-            data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_inactive();
+            let trial = data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i);
+            trial.mark_inactive();
+            trial.set_untouched();
         } else if {
             let t = data.get_call_specs(idx).active_input().get_trial(i);
             crate::p4_calls::kuna_swiftcall::stale_self(data, idx, slot, t.get_address(), t.get_size())
@@ -347,6 +351,36 @@ pub fn check_input_trial_use(
             } else {
                 // An ancestor is unaffected, an unusual input, or killed by a call
                 data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
+            }
+        }
+
+        // (kuna) `passthrough`: an inactive trial that is the function's own
+        // incoming register, untouched, is no evidence against a later one;
+        // an active stack trial holding one, an active trial not set up for
+        // the call, and a constant stored to a stack slot are no evidence for
+        // the forwarded ones in front of them.
+        {
+            let (addr, size, active, inactive) = {
+                let t = data.get_call_specs(idx).active_input().get_trial(i);
+                (t.get_address().clone(), t.get_size(), t.is_active(), !t.is_active() && !t.is_definitely_not_used())
+            };
+            if (inactive && crate::p4_calls::kuna_passthrough::forwarded_in_place(data, op, slot, &addr, size))
+                || (active && crate::p4_calls::kuna_passthrough::saves_own_register(data, op, slot, &addr))
+            {
+                data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).set_forwarded_input();
+            } else if active
+                && data.get_arch().pass_through
+                && (crate::p4_calls::kuna_passthrough::survives_call(data, op, vn)
+                    || crate::p4_calls::kuna_passthrough::set_before_branch(data, op, vn))
+            {
+                data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).set_live_past_call();
+            }
+            if active
+                && data.get_arch().pass_through
+                && crate::p4_calls::kuna_stackarggap::address_is_spacebase(&addr)
+                && crate::p4_calls::kuna_passthrough::holds_constant(data, vn)
+            {
+                data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).set_stored_constant();
             }
         }
 

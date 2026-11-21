@@ -2265,8 +2265,13 @@ mod tests {
         // and kuna-panicloc / a Rust panic Location record is typed and named after its position (option panicloc)
         // and kuna-gotypenames / Go type descriptors and itabs named as the linker spells them, go1.16 on
         // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
+        // and kuna-passthrough-fwdchain / forwarded registers in front of a live one are not an inactive chain (option passthrough)
+        // and kuna-passthrough-fwdchain-arm / gcc ARM's push {r3,lr} invents no argument under that rule
+        // and kuna-passthrough-calltarget / the register an indirect call jumps through stays an argument below a live one
+        // and kuna-passthrough-anchor-arm / a canary wipe, a restored alignment slot or a float kept across the call anchors no forwarded run
+        // and kuna-passthrough-anchor-x86 / a frame local in the outgoing-argument area anchors no forwarded run
         // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
-        assert_eq!(count, 848, "corpus file count drifted");
+        assert_eq!(count, 853, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

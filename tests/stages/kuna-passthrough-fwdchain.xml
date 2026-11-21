@@ -1,0 +1,111 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Perplexity iOS 26.46.0, DeviceKit (arm64 Mach-O, stripped):
+    `swift56override_swift_task_create_common` is
+
+        cmp  x5, #0x20
+        mov  w8, #0x20
+        csel x5, x5, x8, hi
+        br   x6
+
+    and kuna printed `(*a6)(); // jump-as-call` with the clamp gone: the call
+    took no arguments, so the `csel` had no reader and dead-code removal took
+    it.  Every Swift async `resume_parent` continuation and every vtable or
+    witness tail dispatch in the app had the same empty call.
+
+    Root cause (P4, active-input trial scoring).  The function never writes
+    x0..x4, so heritage names them nowhere and the call gets no trial for them;
+    buildTrialMap synthesizes an UNREFERENCED trial per slot, scored inactive.
+    ParamListStandard::forceInactiveChain (fspec.cc:1519, maxchain 2) reads a
+    run of more than two inactive slots as the end of the argument list and
+    demotes every later trial, the actively written x5 included.  The same
+    shape with three arguments, a run of two, recovered all three: the hole
+    was filled below the active trial.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring", option `passthrough`
+    (kuna_passthrough.rs, default on).  At a CALL SITE a REGISTER the function
+    hands on untouched (unreferenced, or the function's own input Varnode in
+    place) counts toward neither the run nor its end; the tail loop that
+    fills the holes below the last active trial takes it.  Off reproduces the
+    empty call.
+
+    The fixture is the construct re-assembled from `void f(long a,long b,long
+    c,long d,void (*fp)(long,long,long,long)) { if (d<=32) d=32; fp(a,b,c,d); }`
+    at clang -O2 (f4: `csel x3; br x4`), the same with a statement after the
+    call so the dispatch is a `blr` (m5, five arguments), the three-argument
+    shape that always recovered (f3, a run of two), and `k(a,b,fp){ fp(a+1,b); }`
+    (k: `add x0; br x2`), whose forwarded x1 stands AFTER the last active
+    register and must stay dropped in both passes.
+
+    i9 is the shape gcc's IPA register allocation leaves at a call to a local
+    function it knows clobbers nothing: `ldr x3, [x9]; bl g1` with x0..x2 the
+    function's own parameters, all four read after the call.  g1 is `ret`,
+    a callee that takes no register, so x3 is not an argument the forwarded
+    registers lead up to and the call stays `g1()` in both passes (the
+    unguarded rule printed `g1(a0,a1,a2,dat_2000)`).
+-->
+<bytechunk space="ram" offset="0x100000">
+7f8000f10804805263c0889a80001fd6fd7bbfa9fd0300919f8000f108048052
+84c0889aa0003fd608090090a9008052095902f9fd7bc1a8c0035fd65f8000f1
+0804805242c0889a60001fd60004009140001fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="f4"/>
+<symbol space="ram" offset="0x100010" name="m5"/>
+<symbol space="ram" offset="0x10003c" name="f3"/>
+<bytechunk space="ram" offset="0x100100">
+c0035fd6fd7bbfa9fd030091090084d2230140f9fbffff970000038b0000018b
+0000028bfd7bc1a8c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x10004c" name="k"/>
+<symbol space="ram" offset="0x100100" name="g1"/>
+<symbol space="ram" offset="0x100104" name="i9"/>
+</binaryimage>
+<script>
+  <com>option passthrough off</com>
+  <com>lo fu f4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu k</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu i9</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option passthrough on</com>
+  <com>lo fu f4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu k</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu i9</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="passthrough-fwdchain #1: off, the tail jump takes no arguments and the clamp is gone" min="1" max="1">\(\*a4\)\(\); // jump-as-call</stringmatch>
+<stringmatch name="passthrough-fwdchain #2: off, the blr takes no arguments" min="1" max="1">\(\*a5\)\(\);</stringmatch>
+<stringmatch name="passthrough-fwdchain #3: on, the tail jump passes the three forwarded registers and the clamped one" min="1" max="1">if \(a3 &lt;= 0x20\)
+    a3 = 0x20;
+  \(\*a4\)\(a0,a1,a2,a3\); // jump-as-call</stringmatch>
+<stringmatch name="passthrough-fwdchain #4: on, the blr passes the four forwarded registers and the clamped one" min="1" max="1">if \(a4 &lt;= 0x20\)
+    a4 = 0x20;
+  \(\*a5\)\(a0,a1,a2,a3,a4\);</stringmatch>
+<stringmatch name="passthrough-fwdchain #5: the three-argument shape recovers in both passes" min="2" max="2">\(\*a3\)\(a0,a1,a2\); // jump-as-call</stringmatch>
+<stringmatch name="passthrough-fwdchain #6: a forwarded register after the last active one stays dropped in both passes" min="2" max="2">\(\*a2\)\(a0 \+ 1\); // jump-as-call</stringmatch>
+<stringmatch name="passthrough-fwdchain #7: no pass invents a trailing argument" min="0" max="0">\(\*a2\)\(a0 \+ 1,a1\)</stringmatch>
+<stringmatch name="passthrough-fwdchain #8: a register the callee does not take is no argument the forwarded ones lead up to" min="2" max="2">  g1\(\);</stringmatch>
+</decompilertest>

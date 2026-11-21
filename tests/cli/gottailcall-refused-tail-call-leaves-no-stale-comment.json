@@ -4,7 +4,10 @@
   "cmd": [
     "{{KUNA}}",
     "decompile-all",
-    "{{BIN}}"
+    "{{BIN}}",
+    "--option",
+    "passthrough",
+    "off"
   ],
   "cwd": "{{WORK}}",
   "env": {
@@ -33,6 +36,6 @@
       "\\(a4 \\+ 1\\); // tail-call"
     ]
   },
-  "notes": "x86-64 -fno-plt: fwd5 jumps through five's GOT slot and is redone once five is filed, but that tail call passes four of five's five arguments (the caller writes r8 itself), so the check refuses it and the caller is decompiled again with five's body copied in. The refused tail call's warning must not survive the redo as a `// tail-call` on the copied-in body.",
-  "probe_id": "p-aa58b5a8c34d"
+  "notes": "x86-64 -fno-plt: fwd5 jumps through five's GOT slot and is redone once five is filed. With passthrough off the tail call passes four of five's arguments (the caller writes r8 itself), so the check refuses it and the caller is redone with five's body copied in; the refused call's warning must not survive as a `// tail-call` on that body. The default accepts the call (gottailcall-fwd-registers-*).",
+  "probe_id": "p-45f00f45c7c1"
 }
