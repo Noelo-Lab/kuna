@@ -21,6 +21,12 @@ caller builds in `x8` for a hidden `pacda` is not the next call's first
 argument, with the modifier computed and folded to a constant. A tagged
 address and a result buffer in `x8` are the controls.
 
+`kuna-aif-slot-edges.xml` loads one ELF with stock x86-64 and with a six-byte
+instruction grid. It checks padded entries and first instructions ending at
+or crossing the section boundary. The datatest runner includes the corpus's
+`specs/` directory in its normal language search. The fixture language reuses
+the stock x86-64 decoder and GCC calling convention.
+
 `ghangr-go-paniccheck-return.xml` checks that a returning Go panic helper
 falls through to the terminal `runtime.gopanic` call. It also checks the
 helper's conditional throw and shows the caller's sentinel with the known

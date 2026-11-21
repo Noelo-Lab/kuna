@@ -2564,7 +2564,7 @@ pub(super) fn in_range(ranges: &[(u64, u64)], vma: u64) -> bool {
 
 /// The same address set as `ranges`, as the sorted, disjoint spans [`in_range`]
 /// searches: overlapping and touching ranges are merged.
-pub(super) fn range_union(mut ranges: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
+pub(crate) fn range_union(mut ranges: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
     ranges.sort_unstable();
     let mut out: Vec<(u64, u64)> = Vec::with_capacity(ranges.len());
     for (lo, hi) in ranges {
