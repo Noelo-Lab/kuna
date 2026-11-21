@@ -66,3 +66,93 @@ fn an_address_still_answers_for_that_address() {
         (Some(3), vec![SLOT])
     );
 }
+
+#[test]
+fn a_name_follows_only_the_slot_bound_to_its_definition() {
+    for (fixture, name, stub, slot, caller) in [
+        ("pltlocal_aarch64.so", "timer_helper", 0x10380, 0x30468, 0x1032c),
+        ("dataptrs_arch_ppc32_bssplt.so", "audit_export", 0x2064, 0x2064, 0x2f4),
+        ("dataptrs_arch_ppc64_elfv1.so", "audit_export", 0x3e0, 0x2018, 0x4d4),
+    ] {
+        let file = common::fixture(fixture);
+        let (out, err, code) = common::run_kuna(&["xrefs", &file, "--to", name, "--kind", "call", "--json"]);
+        assert_eq!(code, 0, "{err}");
+        let doc: Value = serde_json::from_str(&out).unwrap();
+        let expected = if stub == slot { vec![stub] } else { vec![stub, slot] };
+        assert_eq!(aliases(&doc), expected, "{fixture}");
+        assert_eq!(doc["count"], 1, "{doc}");
+        assert_eq!(doc["xrefs"][0]["from_address"], caller);
+        assert_eq!(doc["xrefs"][0]["to_address"], stub);
+    }
+}
+
+#[test]
+fn an_unbound_name_or_a_stub_without_a_forwarding_jump_is_not_an_alias() {
+    use object::{Object, ObjectSection};
+    let original = std::fs::read(common::fixture("pltlocal_aarch64.so")).unwrap();
+    let file = object::File::parse(original.as_slice()).unwrap();
+    let section = |name| file.section_by_name(name).unwrap().file_range().unwrap().0 as usize;
+    let symbol = section(".dynsym") + 2 * 24;
+    let plt = section(".plt");
+    let rela = section(".rela.plt");
+    let path = common::scratch_file("export-plt-control", "so");
+    for (offset, before, after) in [
+        // Undefined dynsym entry still names the stub; .symtab retains the named body.
+        (symbol + 6, vec![6, 0], vec![0, 0]),
+        // The jump slot binds the other definition, which shares the displayed name.
+        (rela + 12, 2u32.to_le_bytes().to_vec(), 3u32.to_le_bytes().to_vec()),
+        // Loading the correct slot and returning instead of jumping through it.
+        (plt + 44, 0xd61f0220u32.to_le_bytes().to_vec(), 0xd65f03c0u32.to_le_bytes().to_vec()),
+    ] {
+        let mut bytes = original.clone();
+        assert_eq!(bytes[offset..offset + before.len()], before);
+        bytes[offset..offset + after.len()].copy_from_slice(&after);
+        if offset == rela + 12 {
+            bytes.copy_within(symbol..symbol + 4, symbol + 24);
+        }
+        std::fs::write(&path, bytes).unwrap();
+        let (out, err, code) = common::run_kuna(&["xrefs", path.to_str().unwrap(), "--to", "timer_helper",
+            "--kind", "call", "--json"]);
+        assert_eq!(code, 0, "{err}");
+        let doc: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(doc["target"]["address"], 0x10344, "{doc}");
+        assert!(aliases(&doc).is_empty(), "{doc}");
+        assert_eq!(doc["count"], 0, "{doc}");
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn ppc32_absolute_stubs_keep_same_named_definitions_separate_in_each_mode() {
+    let mut elf = std::fs::read(common::fixture("dataptrs_arch_ppc32.so")).unwrap();
+    // Replace the four-word PIC stub by lis/lwz/mtctr/bctr through its fixed slot.
+    for (at, word) in elf[0x3fc..0x40c].chunks_exact_mut(4).zip([
+        0x3d600003u32, 0x816b04e4, 0x7d6903a6, 0x4e800420,
+    ]) {
+        at.copy_from_slice(&word.to_be_bytes());
+    }
+    let path = common::scratch_file("absolute-export-plt", "so");
+    for bound in [true, false] {
+        if !bound {
+            // Select dynsym[2] in the JMP_SLOT; copy dynsym[1]'s name to it.
+            elf[0x278..0x27c].copy_from_slice(&0x215u32.to_be_bytes());
+            elf.copy_within(0x164..0x168, 0x174);
+        }
+        std::fs::write(&path, &elf).unwrap();
+        for mode in ["off", "on", "abi"] {
+            let (out, err, code) = common::run_kuna(&["xrefs", path.to_str().unwrap(), "--to",
+                "audit_export", "--kind", "call", "--option", "ppc32picimports", mode, "--json"]);
+            assert_eq!(code, 0, "{err}");
+            let doc: Value = serde_json::from_str(&out).unwrap();
+            assert_eq!(doc["target"]["address"], 0x1035c);
+            assert_eq!(doc["count"], u64::from(bound), "{doc}");
+            if bound {
+                assert_eq!(aliases(&doc), [0x103fc, 0x304e4]);
+                assert_eq!(doc["xrefs"][0]["from_address"], 0x103e4);
+            } else {
+                assert!(aliases(&doc).is_empty(), "{doc}");
+            }
+        }
+    }
+    std::fs::remove_file(path).unwrap();
+}
