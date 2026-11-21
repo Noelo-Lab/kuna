@@ -11,6 +11,7 @@ pub(crate) mod kuna_fieldextract;
 pub mod kuna_partialconcat;
 pub mod kuna_partialaccess;
 pub mod kuna_widelocal;
+pub mod kuna_postinc; // (kuna `postinc`) `*p++` for a pointer step after its dereference
 pub mod prettyprint;
 pub mod printjava;
 pub mod cast;

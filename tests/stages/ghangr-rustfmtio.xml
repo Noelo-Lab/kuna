@@ -16,6 +16,7 @@
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_io_x86_64</com>
   <com>option listing on</com>
   <com>read symbols</com>
+  <com>option protoorder off</com>
   <com>option setlanguage rust-language</com>
   <com>option rustfmt on</com>
   <com>load function write_unsigned</com>

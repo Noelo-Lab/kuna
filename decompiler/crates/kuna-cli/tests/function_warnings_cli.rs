@@ -257,3 +257,23 @@ fn both_warning_styles_report_the_same_warnings() {
         json!({"kind": "return-dupe", "message": message, "line": 1, "address": 0x140001b30u64})
     );
 }
+
+/// `maxlinewidth` breaks plain text only: a `--json` record keeps one statement
+/// per line, so its warnings and line mappings still address its code.
+#[test]
+fn a_line_width_leaves_json_records_on_their_lines() {
+    let pe = common::fixture("explicit_branch_assertion_pe_i386.exe");
+    let args = ["decompile-all", &pe, "--json", "--addr", "0x418764", "--addr", "0x406de0", "--addr", "0x44a0c6"];
+    let plain = document(&args);
+    let narrow = document(&[&args[..], &["--option", "maxlinewidth", "40"]].concat());
+    assert_eq!(narrow["functions"], plain["functions"]);
+    assert!(narrow["functions"].as_array().unwrap().iter().any(|f| !placed(f).is_empty()), "{narrow}");
+
+    let (unbroken, _, code) = common::run_kuna(&["decompile", &pe, "0x406de0"]);
+    assert_eq!(code, 0);
+    let (broken, stderr, code) = common::run_kuna(&["decompile", &pe, "0x406de0", "--option", "maxlinewidth", "40"]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(broken.lines().count() > unbroken.lines().count(), "{broken}");
+    let words = |text: &str| text.split_whitespace().collect::<String>();
+    assert_eq!(words(&broken), words(&unbroken));
+}

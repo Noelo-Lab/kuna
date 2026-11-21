@@ -1,0 +1,65 @@
+<decompilertest>
+<!--
+    On arm64e the blended modifier of a hidden pointer signing was printed as
+    the next call's first argument.  clang builds the modifier in x8 and
+    moves it to x16:
+
+      mov x8,x19; movk x8,#0xaea0,lsl #48; mov x16,x8; pacda x17,x16
+
+    AARCH64.pspec leaves ShowPAC at 0, so `pacda x17,x16` lifts to a copy of
+    x17 and does not read x16.  The value in x8 then has one reader left, the
+    call that follows, and x8 is the `hiddenret` input entry of
+    AARCH64_apple.cspec: trial scoring made it active and it sorted ahead of
+    x0, so a three-argument call printed four.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring" (kuna_hiddenretarg.rs,
+    always on).  On arm64e a value whose bits 48..55 are known and are neither
+    all clear nor all set is not an address, so it is not a result buffer and
+    the trial is rescored no-use.
+
+    clang -target arm64e-apple-ios16.0, hand-written; `swap` is outside the
+    image, so its body proves nothing:
+
+      swap_signed  ldr x17,[x0]; mov x8,x19; movk x8,#0xaea0,lsl #48;
+                   mov x16,x8; pacda x17,x16; mov x1,x17; mov x0,#0;
+                   mov x2,x19; bl swap
+      swap_global  the same with x9 = adr slot in place of x19, so the
+                   modifier folds to the constant 0xaea0000000100100
+      tagged       mov x8,x1; movk x8,#0xae00,lsl #48; mov x0,#7; bl swap
+                   the control: bits 48..55 are clear, a tagged address
+      buffer       add x8,sp,#8; mov x0,#7; bl swap; ldr x0,[sp,#8]
+                   the control: a real result buffer
+
+    Before the fix swap_signed printed
+    `swap(a1 & 0xffffffffffff | 0xaea0000000000000,0,*a0,a1)` and swap_global
+    `swap(0xaea0000000100100,0,*a0,0x100100)`.
+-->
+<binaryimage arch="AARCH64:LE:64:AppleSilicon:default">
+<bytechunk space="ram" offset="0x100000" readonly="true">
+7f2303d5f44fbea9fd7b01a9fd430091f30301aa110040f9e80313aa08d4f5f2
+f00308aa110ac1dae10311aa000080d2e20313aa73000094fd7b41a9f44fc2a8
+ff0f5fd67f2303d5fd7bbfa9e80301aa08c0f5f2e00080d26a000094fd7bc1a8
+ff0f5fd67f2303d5ffc300d1fd7b02a9e8230091e00080d262000094e00740f9
+fd7b42a9ffc30091ff0f5fd67f2303d5fd7bbfa969030010110040f9e80309aa
+08d4f5f2f00308aa110ac1dae10311aa000080d2e20309aa52000094fd7bc1a8
+ff0f5fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="swap_signed"/>
+<symbol space="ram" offset="0x100044" name="tagged"/>
+<symbol space="ram" offset="0x100064" name="buffer"/>
+<symbol space="ram" offset="0x10008c" name="swap_global"/>
+<symbol space="ram" offset="0x100200" name="swap"/>
+</binaryimage>
+<script>
+  <com>lo fu swap_signed</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu swap_global</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu tagged</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu buffer</com>  <com>decompile</com>  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="pacmodifier #1: the signing call takes its three arguments" min="1" max="1">swap\(0,\*a0,a1\);</stringmatch>
+<stringmatch name="pacmodifier #2: so does the one whose modifier folds to a constant" min="1" max="1">swap\(0,\*a0,0x100100\);</stringmatch>
+<stringmatch name="pacmodifier #3: no blended modifier is an argument" min="0" max="0">0xaea0</stringmatch>
+<stringmatch name="pacmodifier #4: a tagged address in x8 is still passed" min="1" max="1">swap\(a1 &amp; 0xffffffffffff \| 0xae00000000000000,7\);</stringmatch>
+<stringmatch name="pacmodifier #5: a result buffer in x8 is still passed" min="1" max="1">swap\([a-z][a-z0-9]*,7\);</stringmatch>
+</decompilertest>
