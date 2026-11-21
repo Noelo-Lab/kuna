@@ -10675,6 +10675,88 @@ stop), and AArch64's byte and halfword tables scaled by four (`ldrb w11,
 compose, and a range check on another value than the selector with no mask to
 overrule it.
 
+*Predecessor edges.* (kuna; `decompiler/crates/kuna-analysis/src/listing/kuna_switchflow.rs
+(register_targets)`) The slice steps back by address and stops at the first
+instruction that does not fall through, so a base hoisted above a `jmp` never
+reaches it, and the sixteen-instruction search for the range check has the
+same wall. Three shapes every x86-64 compiler emits lost whole switches to that
+— every call their case bodies make, with `coverage.unwalked` and `notes`
+empty: a base hoisted out of a loop above an `if/else` whose first arm ends in
+`jmp` (clang `-O2`, MSVC `/O2`; the slice stops at the `jmp` seven
+instructions short of the `lea`), two switches sharing one hoisted `LEA
+RBP,[__ImageBase]` where the first switch's case bodies end in `jmp` or `ret`
+before the second dispatch (MSVC: the second switch read 0 of 8), and a range
+check more than sixteen instructions above the jump. Once a body's queue has
+drained, every dispatch in it that the linear read declined is read again over
+the body's own **predecessor edges** — each decoded instruction's fall-through
+and branch targets, and the case edges of the switches it has read, the edges
+the walk already follows forward. The value a register holds on entry to an
+instruction is what each decoded predecessor leaves in it, met: asked on
+demand from the `BRANCHIND`'s input back through the ops that define what it
+still wants, folded through the slice's own four values, with a call killing
+what the calling convention does not preserve. Predecessors that agree keep
+the value, ones that disagree make it unknown, and a predecessor the walk has
+not decoded — the back edge of a loop whose latch only the case bodies reach
+— contributes nothing, as the linear slice never saw it either. The range
+check is found on **every path** of predecessors up from the dispatch: on
+each, the nearest conditional branch, whether the path leaves it by its
+fall-through or by its taken side, read by the same rule as before. clang
+`-O3` copies a switch's check into both arms of an `if/else` above the
+dispatch's block, `cmp $7,%r15d; jbe disp` in one and `cmp $7,%r15d; ja
+default` falling into it in the other; a join takes the largest count of its
+paths. A check the path leaves by its taken side that sends its constant
+itself away (`cmp $5,%edi; jb disp`, where `jbe` would keep 5) is declined,
+since the count rule states one case more than such a check admits. Each
+check must compare the **selector**: the addend of the sum that addresses
+the table itself (the sum the table's load reads from, or one whose constant
+is the table), which the fold could not value, followed up the path through
+copies, extensions and arithmetic with a constant (the steps the masked index
+is followed by), must reach the comparison still naming a register it reads,
+or be loaded from the address the comparison loads from (gcc's `cmpb
+$0x78,(%rax,%rcx); ja; movzbl (%rax,%rcx),%edi`) with no store, call or write
+to that address's registers in between; a register the calling convention
+does not preserve is a different value past a call. Any other constant plus
+unknown on the way is no index: a field's address (`mov 8(%rdi),%eax`) is
+one, and its base register is what a comparison of another field (`cmpl
+$0x800,4(%rdi)`) reads. The function's entry, a path that comes back to
+itself, more than 64 predecessors visited, a conditional branch that is no
+range check and a comparison of another value all bound nothing. Without that
+test the far reach read
+comparisons the slice never could as table sizes: Rust's `write_char` matches
+an enum discriminant loaded from memory with no range check, seventeen
+instructions under `cmp $0x800,%esi; jae` on the code point, and that read
+as 2,049 cases ran through the next tables into the middle of other
+functions, whose own dispatches it then decoded and read wrongly in turn
+(cargo: 34 such reads among 139, 219 references lost). An index masked by
+`and $m` caps the count at `m + 1` here as in the slice. Only a range-checked
+table is read this way (the unchecked call-table read stays with the slice),
+and only by the walk of the function whose extent holds the dispatch: a
+body that reaches another function's dispatch through an edge into its
+middle leaves it to that function's walk, which reads it linearly once the
+code falling into it is decoded. A function with no declined dispatch pays
+nothing; one read decodes at most 512 instructions, each once,
+and a jump that is no switch — a tail call through a pointer, a virtual
+dispatch — declines at the first definition the fold does not model, as the
+slice does. On the issue's repro (Clang 21/22 `-O2 -fPIE -pie`, MSVC 19.50
+`/O2`) all four functions read 8 of 8 case helpers where three read 0 of 8 or 8
+of 16; on gcc 15 `-O2` the hoisted-loop shape stays unread, because gcc keeps
+the base in a caller-saved `%r8` across calls whose bodies it has seen
+(`-fipa-ra`), which no model of the default calling convention admits. On bash
+`kuna strings` owns 29 more literals (1,031 to 1,060) at the same 0.43 s;
+`kuna xrefs` on a 14.5 MB libavcodec goes from 5.49 s to 5.61 s.
+
+*What is left is said.* (kuna; `decompiler/crates/kuna-cli/src/xrefs.rs
+(unresolved_jumps_note)`) Every decoded computed jump on a register or a
+loaded temporary that neither read resolved to a switch or a call table is
+recorded (`XrefIndex::unresolved_computed_jumps`; a jump through a pointer
+slot — `jmp *slot(%rip)`, a PLT entry, or crt's `mov slot(%rip),%rax; jmp
+*%rax`, which the fold reads as a slot and never a table — and a trap's
+`BRANCHIND` on what its own `CALLOTHER` yields are not ones), and `kuna
+xrefs` puts them in `coverage.notes`: for `--from` a function, the ones inside
+it; for a `--to` that found nothing, every one in the image, since the
+reference asked about may sit in a case body the walk never decoded. A miss
+is no longer silent.
+
 A complete call graph is not a better one for every consumer. Case bodies are
 where an interpreter recurses, so the new edges merge recursive functions into
 larger strongly connected components of `decompile-all`'s callee-first plan, and

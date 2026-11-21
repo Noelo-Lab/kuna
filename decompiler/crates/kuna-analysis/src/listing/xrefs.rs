@@ -87,6 +87,7 @@ use super::kuna_pltstub::PltStubs;
 use super::kuna_poolref::PoolImage;
 use super::kuna_regcarry::{self, Machine as CarryMachine};
 use super::kuna_calltable;
+use super::kuna_switchflow;
 use super::kuna_switchtable;
 use super::model::{FlowKind, FlowType, RawOp};
 #[path = "kuna_prefixreuse.rs"]
@@ -186,6 +187,9 @@ pub struct XrefIndex {
     /// The targets of decoded direct calls and branches that lie outside the
     /// sections the walk decodes.
     stopped: BTreeSet<u64>,
+    /// (kuna) `switchflow`: the decoded computed jumps on a register that the
+    /// walk read no table at ([`XrefIndex::unresolved_computed_jumps`]).
+    unresolved_jumps: BTreeSet<u64>,
 }
 
 /// Every decoded instruction and its intra-function successors, so each entry's
@@ -574,6 +578,27 @@ impl XrefIndex {
     /// the two can never name different functions.
     pub fn has_indirect_calls(&self, entry: u64) -> bool {
         self.indirect_callers.contains(&entry)
+    }
+
+    /// (kuna) `switchflow`: every decoded computed **jump** on a register the
+    /// walk resolved to no table — a switch whose base or range check it could
+    /// not read, or a tail call through a pointer — in address order. The code
+    /// such a jump reaches may be undecoded, so a consumer reading an empty
+    /// answer can say so rather than report it as dead. A jump through a
+    /// data-space slot (a forwarding veneer, a PLT entry) is not one.
+    pub fn unresolved_computed_jumps(&self) -> impl Iterator<Item = u64> + '_ {
+        self.unresolved_jumps.iter().copied()
+    }
+
+    /// The [`unresolved_computed_jumps`](Self::unresolved_computed_jumps) the
+    /// function entered at `entry` contains, by the ownership rule
+    /// [`Self::refs_from_function`] uses.
+    pub fn unresolved_computed_jumps_in(&self, entry: u64) -> Vec<u64> {
+        self.unresolved_jumps
+            .iter()
+            .copied()
+            .filter(|&at| self.function_containing(at) == Some(entry))
+            .collect()
     }
 }
 
@@ -1227,6 +1252,11 @@ fn descend(
         // (kuna) `switchtable`: the dispatches this body's decoding filled the gap
         // above, to read again once it drains.
         let mut woken: Vec<(u64, _, VarnodeData)> = Vec::new();
+        // (kuna) `switchflow`: this body's intra-function edges as `(to, from)`,
+        // and the dispatches the linear read declined, read over those edges
+        // once the body drains. See [`super::kuna_switchflow`].
+        let mut body_edges: Vec<(u64, u64)> = Vec::new();
+        let mut pending: Vec<(u64, _, VarnodeData)> = Vec::new();
         // Only collected when a base exists: the admission rule needs the whole
         // body before any of it can be attributed (`kuna_picbase::scope`), and
         // buffering it costs nothing on the overwhelmingly common `None` path.
@@ -1271,14 +1301,40 @@ fn descend(
                 }
                 if read.unbounded || (read.cases.is_empty() && read.stated.is_none()) {
                     if let Some(gap) = read.gap {
-                        waiting.entry(gap).or_default().push((vma, mode, branch));
+                        waiting.entry(gap).or_default().push((vma, mode, branch.clone()));
+                    }
+                    if !read.unbounded && !pending.iter().any(|&(at, ..)| at == vma) {
+                        pending.push((vma, mode, branch));
                     }
                     continue;
                 }
+                pending.retain(|&(at, ..)| at != vma);
                 let text = if read.cases.is_empty() { String::new() } else { assembly(translate, vma, &code_space) };
-                st.take_switch(vma, entry, &read.cases, read.stated, max_entries, &text);
+                st.take_switch(vma, entry, &read.cases, read.stated, max_entries, &text, &mut body_edges);
                 picpool.cases(vma, &read.cases);
                 insn_queue.extend(read.cases.iter().map(|&target| (target, mode)));
+            }
+            if insn_queue.is_empty() && !pending.is_empty() {
+                let edges = kuna_switchflow::Edges::new(body_edges.clone());
+                for (vma, mode, branch) in std::mem::take(&mut pending) {
+                    if st.funcs.range(..=vma).next_back() != Some(&entry) {
+                        continue;
+                    }
+                    let read = kuna_switchflow::register_targets(
+                        translate, &code_space, data_space.as_ref(), &st.decoded, vma, &branch,
+                        p, &exec, &reach, &edges,
+                    );
+                    if read.cases.is_empty() {
+                        continue;
+                    }
+                    for sites in waiting.values_mut() {
+                        sites.retain(|&(at, ..)| at != vma);
+                    }
+                    let text = assembly(translate, vma, &code_space);
+                    st.take_switch(vma, entry, &read.cases, read.stated, max_entries, &text, &mut body_edges);
+                    picpool.cases(vma, &read.cases);
+                    insn_queue.extend(read.cases.iter().map(|&target| (target, mode)));
+                }
             }
             insn_queue.pop_front()
         }) {
@@ -1366,6 +1422,12 @@ fn descend(
                 flow.insns.push((vma, len, c.fall_through.is_some()));
                 if !c.flow.is_call {
                     flow.jumps.extend(c.flows.iter().map(|&to| (vma, to)));
+                }
+            }
+            if pool.is_some() {
+                body_edges.extend(c.fall_through.map(|to| (to, vma)));
+                if !c.flow.is_call {
+                    body_edges.extend(c.flows.iter().map(|&to| (to, vma)));
                 }
             }
             let formed = pcform.as_ref().map_or_else(Formed::default, |p| p.formed(vma, len));
@@ -1489,6 +1551,14 @@ fn descend(
                     if let (Some(gap), Some(branch)) = (a32.gap, branch) {
                         waiting.entry(gap).or_default().push((vma, mode, branch.clone()));
                     }
+                    // A jump on a register or a loaded temporary; not a trap
+                    // (`ud2`), which branches on what its own `CALLOTHER` yields.
+                    if let Some(b) = branch.filter(|b| kuna_switchtable::key_of(b, data_space.as_ref()).is_some()) {
+                        let trap = cap.ops().iter().any(|o| o.opcode == OpCode::CPUI_CALLOTHER && o.out.as_ref() == Some(b));
+                        if !trap {
+                            st.computed_jumps.insert(vma);
+                        }
+                    }
                     let unpredicated = c.flows.is_empty();
                     let mut unbounded = false;
                     for &(base, kind) in &drefs {
@@ -1526,6 +1596,9 @@ fn descend(
                         }
                         (cases, stated) = (read.cases, read.stated);
                         unbounded = read.unbounded;
+                        if read.slot {
+                            st.computed_jumps.remove(&vma);
+                        }
                     }
                     // A dispatch that names no address rendered nothing above,
                     // and a row whose instruction column is blank does not say
@@ -1552,9 +1625,12 @@ fn descend(
                             }
                         }
                     } else if !unbounded {
-                        st.take_switch(vma, entry, &cases, stated, max_entries, &text);
+                        st.take_switch(vma, entry, &cases, stated, max_entries, &text, &mut body_edges);
                         picpool.cases(vma, &cases);
                         insn_queue.extend(cases.iter().map(|&target| (target, mode)));
+                        if let Some(branch) = branch.filter(|_| unpredicated && cases.is_empty() && stated.is_none()) {
+                            pending.push((vma, mode, branch.clone()));
+                        }
                     }
                 }
             }
@@ -1947,6 +2023,8 @@ struct State {
     /// VMAs of the decoded `CALLIND` instructions; folded onto their containing
     /// function in [`State::finish`].
     indirect_call_sites: BTreeSet<u64>,
+    /// (kuna) `switchflow`: VMAs of the decoded computed jumps on a register.
+    computed_jumps: BTreeSet<u64>,
     flow: Option<FlowGraph>,
     switches: Vec<SwitchTable>,
     /// (kuna) `picpool`: instructions a recovered frame's walk refused to enter.
@@ -1970,6 +2048,7 @@ impl State {
             decoded: HashSet::new(),
             funcs: seeds.clone(),
             indirect_call_sites: BTreeSet::new(),
+            computed_jumps: BTreeSet::new(),
             flow: keep_flow.then(|| FlowGraph {
                 seeds: seeds.iter().copied().collect(),
                 ..FlowGraph::default()
@@ -1982,8 +2061,9 @@ impl State {
     }
 
     /// (kuna) `switchtable`: record the computed jump at `vma` in `function` as a
-    /// switch over `cases` (stating `stated` of them) and file a `Jump` to each
-    /// case body.
+    /// switch over `cases` (stating `stated` of them), file a `Jump` to each
+    /// case body, and add the case edges to the body's `edges`.
+    #[allow(clippy::too_many_arguments)]
     fn take_switch(
         &mut self,
         vma: u64,
@@ -1992,7 +2072,9 @@ impl State {
         stated: Option<usize>,
         max_entries: usize,
         text: &str,
+        edges: &mut Vec<(u64, u64)>,
     ) {
+        edges.extend(cases.iter().map(|&to| (to, vma)));
         let over = stated.is_some_and(|n| n > max_entries);
         if !cases.is_empty() || over {
             self.switches.push(SwitchTable {
@@ -2065,6 +2147,16 @@ impl State {
             .iter()
             .filter_map(|from| owner(*from))
             .collect();
+        // A dispatch read as a switch or a call table is resolved; the rest
+        // are the jumps whose targets the walk never saw.
+        let resolved: HashSet<u64> = self
+            .switches
+            .iter()
+            .map(|s| s.dispatch)
+            .chain(refs.iter().filter(|r| r.kind == XrefKind::Call).map(|r| r.from))
+            .collect();
+        let unresolved_jumps: BTreeSet<u64> =
+            self.computed_jumps.iter().copied().filter(|at| !resolved.contains(at)).collect();
         let insns = self.decoded.len();
         let mut veneers_of_slot: BTreeMap<u64, Vec<u64>> = BTreeMap::new();
         for (&entry, v) in &veneers {
@@ -2085,6 +2177,7 @@ impl State {
             flow: self.flow,
             switches: self.switches,
             stopped: BTreeSet::new(),
+            unresolved_jumps,
         }
     }
 }
@@ -2144,6 +2237,7 @@ fn empty() -> XrefIndex {
         flow: None,
         switches: Vec::new(),
         stopped: BTreeSet::new(),
+        unresolved_jumps: BTreeSet::new(),
     }
 }
 
@@ -3052,6 +3146,7 @@ mod tests {
             decoded: HashSet::from([0x1030, 0x1102, 0x1200]),
             funcs: BTreeSet::from([0x1000, 0x1030, 0x1180]),
             indirect_call_sites: BTreeSet::new(),
+            computed_jumps: BTreeSet::new(),
             flow: None,
             switches: Vec::new(),
             refused: HashSet::new(),
@@ -3112,6 +3207,7 @@ mod tests {
             decoded: HashSet::from([0x1188]),
             funcs: BTreeSet::from([0x1000, 0x1030, 0x1180]),
             indirect_call_sites: BTreeSet::from([0x1188]),
+            computed_jumps: BTreeSet::new(),
             flow: None,
             switches: Vec::new(),
             refused: HashSet::new(),
@@ -3146,6 +3242,7 @@ mod tests {
             decoded: insns.iter().map(|&(vma, _, _)| vma).collect(),
             funcs: BTreeSet::from([0x1000, 0x2000, 0x3000]),
             indirect_call_sites: BTreeSet::new(),
+            computed_jumps: BTreeSet::new(),
             flow: Some(FlowGraph {
                 insns,
                 jumps: vec![(0x2006, 0x3000), (0x1001, 0x2004)],

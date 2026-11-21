@@ -16,6 +16,16 @@
 //! RDX,[__ImageBase]; MOV ECX,[RDX+RBX*4+0x2000]; ADD RCX,RDX`, base != table),
 //! where each case body holds a direct `CALL` nothing else in the image reaches.
 //!
+//! `switchtable_flow_x86_64` and `pe_switchshared_x86_64.exe` (GH-1824) hold
+//! the dispatches whose base or range check lies beyond a linear walk back
+//! from the jump: a base hoisted out of a loop above an `if/else` whose first
+//! arm ends in `jmp`, two switches sharing one base where the first switch's
+//! case bodies end in `jmp`, a range check more than sixteen instructions up,
+//! a check clang copies into both arms above the dispatch's block, and a
+//! selector compared in memory and loaded again for the dispatch. The
+//! reference walk reads them over the function's predecessor edges
+//! (`listing/kuna_switchflow.rs`).
+//!
 //! Each fixture is one `dispatch` whose four cases push a distinct literal and
 //! whose default arm pushes a fifth. The default arm is the control: it is
 //! reached by the `JA` and was always attributed correctly, so a run where only
@@ -440,4 +450,188 @@ fn a_function_called_only_from_a_case_body_has_its_dispatcher_as_caller() {
         }
     }
     assert!(wrong.is_empty(), "case-body callees without their dispatcher:\n{}", wrong.join("\n"));
+}
+
+/// One dispatch of `switchtable_flow_x86_64` or `pe_switchshared_x86_64.exe`
+/// (GH-1824): the base or the range check is out of the linear slice's reach,
+/// and each case body calls or tail-jumps to a function nothing else reaches.
+struct Flow {
+    shape: &'static str,
+    fixture: &'static str,
+    dispatch: u64,
+    branch: u64,
+    cases: [u64; 4],
+    callees: [u64; 4],
+}
+
+const FLOW: [Flow; 7] = [
+    Flow {
+        shape: "base hoisted out of the loop, above an if/else whose first arm ends in jmp",
+        fixture: "switchtable_flow_x86_64",
+        dispatch: 0x100000,
+        branch: 0x10003a,
+        cases: [0x10003c, 0x100043, 0x10004a, 0x100051],
+        callees: [0x100132, 0x100138, 0x10013e, 0x100144],
+    },
+    Flow {
+        shape: "the first of two switches sharing one base (read by the slice as before)",
+        fixture: "switchtable_flow_x86_64",
+        dispatch: 0x100064,
+        branch: 0x10007e,
+        cases: [0x100080, 0x100087, 0x10008e, 0x100095],
+        callees: [0x10014a, 0x100150, 0x100156, 0x10015c],
+    },
+    Flow {
+        shape: "the second of two switches sharing one base, behind the first's case jmps",
+        fixture: "switchtable_flow_x86_64",
+        dispatch: 0x100064,
+        branch: 0x1000ae,
+        cases: [0x1000b0, 0x1000b7, 0x1000be, 0x1000c5],
+        callees: [0x100162, 0x100168, 0x10016e, 0x100174],
+    },
+    Flow {
+        shape: "the range check twenty-two instructions above the jump",
+        fixture: "switchtable_flow_x86_64",
+        dispatch: 0x1000cc,
+        branch: 0x10011d,
+        cases: [0x10011f, 0x100121, 0x100123, 0x100125],
+        callees: [0x10017a, 0x100180, 0x100186, 0x10018c],
+    },
+    Flow {
+        shape: "clang -O3: the range check copied into both arms above the dispatch's block",
+        fixture: "switchtable_flow_x86_64",
+        dispatch: 0x100201,
+        branch: 0x100239,
+        cases: [0x10023b, 0x100242, 0x100249, 0x100250],
+        callees: [0x1002b3, 0x1002b9, 0x1002bf, 0x1002c5],
+    },
+    Flow {
+        shape: "the selector compared in memory and loaded again from the same address",
+        fixture: "switchtable_flow_x86_64",
+        dispatch: 0x10025b,
+        branch: 0x100291,
+        cases: [0x100293, 0x10029a, 0x1002a1, 0x1002a8],
+        callees: [0x1002cb, 0x1002d1, 0x1002d7, 0x1002dd],
+    },
+    Flow {
+        shape: "MSVC: the second switch through a shared LEA RDI,[__ImageBase]",
+        fixture: "pe_switchshared_x86_64.exe",
+        dispatch: 0x140001080,
+        branch: 0x140001103,
+        cases: [0x140001110, 0x140001120, 0x140001130, 0x140001140],
+        callees: [0x140001040, 0x140001050, 0x140001060, 0x140001070],
+    },
+];
+
+/// Each dispatch reaches exactly its four cases over the predecessor edges,
+/// and the first switch of the shared-base pair still reads as it did.
+#[test]
+fn a_dispatch_beyond_the_linear_slice_reaches_exactly_its_cases() {
+    let mut wrong = Vec::new();
+    for fx in FLOW {
+        let idx = index_of(fx.fixture);
+        let mut jumps: Vec<u64> = idx
+            .refs_from_instruction(fx.branch)
+            .iter()
+            .filter(|r| r.kind == XrefKind::Jump)
+            .map(|r| r.to)
+            .collect();
+        jumps.sort_unstable();
+        if jumps != fx.cases {
+            wrong.push(format!("{}: {jumps:#x?}", fx.shape));
+        }
+    }
+    assert!(wrong.is_empty(), "dispatches that do not reach exactly their cases:\n{}", wrong.join("\n"));
+}
+
+/// The GH-1824 symptom: a function called only from such a case body has its
+/// dispatcher as caller, and `kuna xrefs --to` it no longer answers nothing.
+#[test]
+fn a_callee_behind_a_hoisted_base_or_far_guard_has_its_dispatcher_as_caller() {
+    let mut wrong = Vec::new();
+    for fx in FLOW {
+        let idx = index_of(fx.fixture);
+        for callee in fx.callees {
+            let owners: Vec<Option<u64>> = idx
+                .refs_to(callee)
+                .iter()
+                .filter(|r| matches!(r.kind, XrefKind::Call | XrefKind::Jump))
+                .map(|r| idx.function_containing(r.from))
+                .collect();
+            if owners != [Some(fx.dispatch)] {
+                wrong.push(format!("{}: {callee:#x} reached from {owners:#x?}", fx.shape));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "case-body callees without their dispatcher:\n{}", wrong.join("\n"));
+}
+
+/// A miss is never silent: every range-checked computed jump of the flow
+/// fixtures is read, and the ones with no bound — `unrelated_guard`'s
+/// unchecked dispatch at `0x1001ad` and `field_guard`'s at `0x100300`, and the
+/// tail jump through a register in
+/// `callproto_x86_64`'s `report` (`jmp r8` at `0x13b0`, no table) — are
+/// reported as unresolved.
+#[test]
+fn an_unread_computed_jump_is_reported_and_a_read_one_is_not() {
+    for (fixture, unread) in [("switchtable_flow_x86_64", &[0x1001ad, 0x100300][..]), ("pe_switchshared_x86_64.exe", &[])] {
+        let idx = index_of(fixture);
+        let left: Vec<u64> = idx.unresolved_computed_jumps().collect();
+        assert_eq!(left, unread, "{fixture}: {left:#x?}");
+    }
+    let idx = index_of("callproto_x86_64");
+    assert_eq!(idx.unresolved_computed_jumps_in(0x1370), [0x13b0]);
+}
+
+/// A comparison of another value is no range check. `unrelated_guard`
+/// dispatches on a discriminant loaded from memory, unchecked, under `cmp
+/// $0x800,%esi; jae` and with its base above a `jmp`: read as 2,049 cases its
+/// table ran on into `next_table`'s, filed jumps into the middle of
+/// `next_table` and took its dispatch, whose own four cases were lost.
+#[test]
+fn a_comparison_of_another_value_bounds_no_table() {
+    let idx = index_of("switchtable_flow_x86_64");
+    assert_eq!(jumps_from(&idx, 0x1001ad), Vec::<u64>::new());
+    assert_eq!(jumps_from(&idx, 0x1001d2), [0x1001d4, 0x1001d6, 0x1001d8, 0x1001da]);
+    assert_eq!(idx.function_containing(0x1001d2), Some(0x1001bd));
+}
+
+/// The jump edges filed at the instruction `at`, sorted.
+fn jumps_from(idx: &XrefIndex, at: u64) -> Vec<u64> {
+    let mut to: Vec<u64> =
+        idx.refs_from_instruction(at).iter().filter(|r| r.kind == XrefKind::Jump).map(|r| r.to).collect();
+    to.sort_unstable();
+    to
+}
+
+/// A comparison of another field of the same struct is no range check.
+/// `field_guard` dispatches on the field at `8(%rdi)` under `cmpl
+/// $0x800,4(%rdi); jae`: the field's address, a constant plus an unknown, was
+/// taken for the table's index, whose base register the comparison reads, and
+/// the 2,049 cases ran on into `field_next`'s table and took its dispatch.
+#[test]
+fn a_comparison_of_another_field_bounds_no_table() {
+    let idx = index_of("switchtable_flow_x86_64");
+    assert_eq!(jumps_from(&idx, 0x100300), Vec::<u64>::new());
+    assert_eq!(jumps_from(&idx, 0x100325), [0x100327, 0x100329, 0x10032b, 0x10032d]);
+    assert_eq!(idx.function_containing(0x100325), Some(0x100310));
+}
+
+/// clang -O3 copies the range check into both arms above the dispatch's
+/// block (`dup_guard`): one arm branches into it on `jbe`, the other falls
+/// into it past `ja`. Every path into the block checks the selector, so the
+/// join is bounded.
+#[test]
+fn a_check_copied_into_both_arms_bounds_the_join() {
+    let idx = index_of("switchtable_flow_x86_64");
+    assert_eq!(jumps_from(&idx, 0x100239), [0x10023b, 0x100242, 0x100249, 0x100250]);
+}
+
+/// `mem_guard` compares the selector in memory and loads it again from the
+/// same address for the dispatch (`cmpb $3,(%r12,%rbx); ja; movzbl
+/// (%r12,%rbx),%eax`), as gcc does for a `switch` on a byte of an array.
+#[test]
+fn a_selector_loaded_where_the_comparison_loads_is_bounded() {
+    let idx = index_of("switchtable_flow_x86_64");
+    assert_eq!(jumps_from(&idx, 0x100291), [0x100293, 0x10029a, 0x1002a1, 0x1002a8]);
 }
