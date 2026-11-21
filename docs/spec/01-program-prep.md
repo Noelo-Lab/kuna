@@ -8798,13 +8798,16 @@ A processor spec can declare a positive byte width with
 `kuna.aif.sectionInstructionStride`. When the object provides section headers,
 the gap walk probes slots counted from each executable section's start, including
 address zero. A restricted decode window clips the walk while retaining the
-original section's slot positions. The entire first slot must fit before the
-next decoded instruction and within the available section and decoder window.
-The decoded instruction at the published entry must fit in that first slot.
+original section's slot positions. The entire first slot must be available in
+the section and decoder window. Known instruction extents cover their bytes
+even when another decode starts inside them or they cross a section boundary.
+The entry instruction's own encoding must fit in the slot. On a delay-slot
+processor the body walk still consumes the branch and its delay slot together.
 The same bounds apply when padding, a literal pool or a recovered prologue moves
 the entry. When padding supplies the destination, AIF tests that slot before
 validating the body of the run. The body must reach the destination before AIF
-publishes it, including when a trap appears among the padding instructions.
+publishes it. A straight padding path ending at a trap is refused even when
+zero fill follows the trap.
 A replacement processor spec that omits the width restores the ordinary policy.
 Segment-only and raw mappings carry no section
 origin, so the selected AIF mode supplies the ordinary cursor policy there.

@@ -481,6 +481,9 @@ pub trait Translate: RegisterLookup {
     /// \param res is the resulting vector of user op names
     fn get_user_op_names(&self, res: &mut Vec<String>);
 
+    /// Whether a lift can consume delay slots beyond the instruction's encoding.
+    fn may_have_delay_slots(&self) -> bool { true }
+
     /// \brief Get the length of a machine instruction
     ///
     /// This method decodes an instruction at a specific address just enough

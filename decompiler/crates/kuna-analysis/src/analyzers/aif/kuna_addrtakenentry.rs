@@ -525,7 +525,7 @@ mod tests {
 
     fn insn(mnemonic: &str, operands: &str) -> super::ProbedInsn {
         super::ProbedInsn {
-            len: 1, kind: crate::listing::FlowKind::Fallthrough, is_call: false, is_terminal: false,
+            len: 1, encoded_len: 1, kind: crate::listing::FlowKind::Fallthrough, is_call: false, is_terminal: false,
             fall_through: None, flows: Vec::new(), mnemonic: std::rc::Rc::from(mnemonic),
             operands: operands.to_string(), reusable: None,
         }
