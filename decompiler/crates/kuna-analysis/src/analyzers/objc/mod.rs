@@ -57,6 +57,8 @@ pub mod kuna_objccats;
 mod kuna_objccache;
 pub mod kuna_objcdirect;
 pub mod kuna_objcivars;
+mod kuna_objcruntime;
+mod kuna_objcblocks;
 pub mod kuna_objcprops;
 pub mod kuna_objcprotos;
 pub mod kuna_objcrefs;
@@ -125,6 +127,7 @@ impl AnalysisPass for ObjcMetadataPass {
             None => HashMap::new(),
         };
         let mut selectors = kuna_objcrefs::Selectors::with_sdk(sdk);
+        out.prototypes_at.extend(kuna_objcruntime::prototypes(ctx.file, ctx.bytes, ctx.arch, &tctx));
 
         // Walk `__objc_classlist`: an array of `class_t*` (stride = ptr size). The
         // classes are read first so every instance layout is known before any
@@ -187,13 +190,21 @@ impl AnalysisPass for ObjcMetadataPass {
         let protocols = kuna_objcprotos::protocols(&img, ctx.file);
         for proto in &protocols {
             for m in &proto.methods {
-                selectors.record(&m.selector, m.types.as_deref());
+                selectors.record_declared(&m.selector, m.types.as_deref());
             }
             for (sel, enc) in &proto.properties {
-                selectors.record(sel, Some(enc));
+                selectors.record_declared(sel, Some(enc));
             }
         }
 
+        let mut table = kuna_decomp::kuna_objcresolve::ObjcClassTable::default();
+        for (class, name) in &classes {
+            let shown = display_class_name(name);
+            table.class_at.insert(class.addr, shown.clone());
+            table.classes.entry(shown).or_default().superclass =
+                classt::superclass_name(&img, class.addr).map(|s| display_class_name(&s));
+        }
+        out.objc_classes = Some(table);
         for (class, name) in &classes {
             out.symbols.push(SymFact {
                 addr: class.addr,
@@ -236,6 +247,20 @@ impl AnalysisPass for ObjcMetadataPass {
             }
         }
         let refs = kuna_objcrefs::emit(&img, ctx.file, ctx.arch, &tctx, &mut selectors, &mut out);
+        let globals = kuna_objcblocks::emit(&img, ctx.file, &tctx, &mut out);
+        {
+            use object::ObjectSymbol;
+            let mut creators: Vec<(u64, String)> = out.fid_names.iter().map(|f| (f.addr, f.name.clone())).collect();
+            creators.extend(ctx.file.symbols().filter(|s| s.kind() == object::SymbolKind::Text && s.address() != 0).filter_map(|s| {
+                let name = s.name().ok()?;
+                Some((s.address(), name.strip_prefix('_').unwrap_or(name).to_string()))
+            }));
+            kuna_objcblocks::stack_blocks(&img, ctx.file, ctx.bytes, &tctx, &creators, &globals, &mut out);
+        }
+        if let Some(table) = out.objc_classes.as_mut() {
+            table.selector_at.extend(selectors.strings.iter().map(|(va, s)| (*va, s.clone())));
+            table.selref_at.extend(selectors.slots.iter().map(|(va, s)| (*va, s.clone())));
+        }
 
         // A chained slot holds its packed fixup word until `dynrelocs` unpacks it
         // at load.
@@ -298,6 +323,11 @@ impl ObjcMetadataPass {
             // own sub_*/FUN_* placeholder with the ObjC method name, never a real
             // symbol.
             out.fid_names.push(FidMatch { addr: m.imp, name: label.clone(), by_signature: false });
+            let owner = class.split('(').next().unwrap_or(class);
+            if let Some(table) = out.objc_classes.as_mut() {
+                let shown_owner = display_class_name(owner);
+                table.classes.entry(shown_owner).or_default().methods.insert((kind == '+', m.selector.clone()), (label.clone(), m.imp));
+            }
 
             // The typed prototype from the ObjC type encoding (PR-O2): `i20@0:8i16`
             // → `int -[Greeter greet:](id self, SEL _cmd, int n)`. Keyed by the

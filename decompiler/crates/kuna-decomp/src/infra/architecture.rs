@@ -569,6 +569,29 @@ pub struct Architecture {
     /// `break;`, and keep switch fall-thru chains in case order
     /// (`p8_structure/kuna_gotonext.rs`). Default on.
     pub goto_next: bool,
+    /// (kuna `objcarc`) Install the Objective-C ARC call-fixups
+    /// (`p2_lift/kuna_objcarc.rs`): retain/autorelease pass-throughs become
+    /// copies, releases vanish, `objc_storeStrong` is its store. Default on;
+    /// read by the analysis-tier call-fixup installer like `msvc_ftol`.
+    pub objc_arc: bool,
+    /// (kuna `objcresolve`) Type a message send's result by its receiver
+    /// (`[Foo alloc]` is a `Foo *`) and name the method a send whose receiver's
+    /// class is known reaches (`-[Foo bar:]`). Default on.
+    pub objc_resolve: bool,
+    /// (kuna `objcresolve call`) Also decompile again with each resolved send's
+    /// CALL sent to the method, so it carries the method's prototype.
+    pub objc_resolve_call: bool,
+    /// (kuna `oslog`) Print decoded os_log buffer arguments at the call.
+    pub os_log_args: bool,
+    /// (kuna) The image's Objective-C classes, methods and selector strings,
+    /// handed over by the ObjC analysis commit; empty on every other image.
+    pub kuna_objc_classes: Rc<crate::kuna_objcresolve::ObjcClassTable>,
+    /// (kuna `objcresolve`) Message sends a first decompile resolved, by call
+    /// site: the IMP the second decompile's CALL goes to instead of the runtime
+    /// entry point (`FlowInfo::setup_call_specs`), and for an `objc_msgSend$<sel>`
+    /// stub site the prototype the call keeps (the stub's shape, `self` typed).
+    pub kuna_objc_retargets: std::collections::HashMap<u64, u64>,
+    pub kuna_objc_site_pieces: std::collections::HashMap<u64, crate::fspec::PrototypePieces>,
     /// (kuna tee-O2 tail-jumps) Recover a direct `jmp` to another function's
     /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
     /// flowing into the callee (`option tailcalljump on|direct`).
@@ -1730,6 +1753,9 @@ pub struct Architecture {
     /// `None` (the XML `<binaryimage>` bootstrap) falls back to the language id.
     /// See [`crate::kuna_formatstring::target_vararg_abi`].
     pub format_vararg_abi: Option<crate::kuna_formatstring::VarargAbi>,
+    /// (kuna `varargstackargs`) Per-run cache of the callee `va_start` probe,
+    /// keyed by the callee's `(space index, entry offset)`.
+    pub kuna_darwin_variadic_cache: std::collections::HashMap<(int4, uintb), bool>,
     /// (kuna) Gate the Listing/xref disassembly tier (`listing`); default
     /// **off**. When on (real-ELF path only), a program-wide recursive-descent
     /// disassembly Listing/xref model is built once at load and shared read-only
@@ -2411,6 +2437,13 @@ impl Architecture {
             image_windows_user: false, // (kuna) a load-time fact; set by the console's `load file`
             chkstk_darwin: false, // (kuna) option chkstkdarwin; reset_defaults sets the shipped default
             type_vote: false, // (kuna) option typevote; reset_defaults sets the shipped default
+            objc_arc: false, // (kuna) option objcarc; reset_defaults sets the shipped default
+            objc_resolve: false, // (kuna) option objcresolve; reset_defaults sets the shipped default
+            objc_resolve_call: false,
+            os_log_args: false, // (kuna) option oslog; reset_defaults sets the shipped default
+            kuna_objc_classes: Rc::new(Default::default()),
+            kuna_objc_retargets: Default::default(),
+            kuna_objc_site_pieces: Default::default(),
             tail_call_jumps: false,
             tail_call_tables: false, // (kuna) option tailcalljump; reset_defaults sets the shipped default
             tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
@@ -2637,6 +2670,7 @@ impl Architecture {
             format_override_callpoints: std::collections::BTreeSet::new(),
             kuna_callee_overrides: std::collections::BTreeMap::new(),
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
+            kuna_darwin_variadic_cache: std::collections::HashMap::new(),
             analysis_listing: false,
             analysis_fast_funcdisc: false,
             analysis_lazyfuncs: false,
@@ -2761,6 +2795,10 @@ impl Architecture {
         self.struct_headless = crate::kuna_structheadless::StructHeadlessMode::Off; // (kuna) structheadless default `off`: a closed function's parameter read at two or more constant offsets, none of them zero, is declared `struct_N *` with filler over the bytes before its first access; `option structheadless closed` turns it on
         self.chkstk_darwin = true; // (kuna) default-on, Darwin AArch64 only (`image_apple` and an AArch64 language): inert unless a call reaches `___chkstk_darwin`; 0/675 datatests
         self.type_vote = true; // (kuna) default-on: presentation only, types variables that would print undefinedN; signatures unchanged; 0/675 datatests
+        self.objc_arc = true; // (kuna) default-on: inert unless the image names an ObjC ARC runtime entry point (0/675 datatests carry one); `option objcarc off` shows the calls again
+        self.objc_resolve = true; // (kuna) default-on: inert unless the ObjC analysis handed over a class table (0/675 datatests)
+        self.objc_resolve_call = false; // (kuna) `objcresolve call` decompiles a function with resolved sends twice
+        self.os_log_args = true; // (kuna) default-on: inert unless a call reaches an os_log entry point (0/675 datatests)
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
         self.tail_call_tables = true; // (kuna) GH-781 default `tailcalljump on`: a veneer whose one destination is another function's entry is a tail call when the destination is outside a declared extent, or the callee's prototype is stated and its return value (if any) reaches a stated output. 0/675 byte-identical on the datatest corpus; `option tailcalljump direct` restores the flow into the destination
         self.tail_call_frame = true; // (kuna) DIV-109 default-on: REMOVES CODE. A direct jmp preceded by a teardown of exactly the entry block's frame is a tail call even when the callee was never discovered. Byte-identical (0/675) on the datatest corpus; restore the flow-into-the-callee decode with `option tailcallframe off`
@@ -3543,6 +3581,8 @@ impl Architecture {
         // (kuna) carry the duplicate-declaration collapse gate so `emit_local_var_decls`
         // (which reads the ArchContext `arch`) sees `option dedupvardecls`.
         ctx.dedup_var_decls = self.dedup_var_decls;
+        ctx.objc_resolve = self.objc_resolve;
+        ctx.kuna_objc_classes = Rc::clone(&self.kuna_objc_classes);
         // (kuna GH-558) carry the comparison-presentation gate so the
         // `compareform canonical|original` option reaches
         // `ActionPresentCompareForm` via `glb` (the ArchContext read site).
@@ -4512,12 +4552,24 @@ impl Architecture {
             .map(|s| s.get_addr_size() as int4)
             .unwrap_or(0);
         let resolve = |nm: &[u8]| self.translate.probe_register_varnode(nm).is_some();
-        if !crate::kuna_msvcftol::language_is_x86_32(resolve, code_addr_size) {
-            return Ok(());
-        }
         let manager = self.translate.manager_rc();
         let mut registry = IdRegistry::with_base_ids();
         crate::pcodeinject::register_ids(&mut registry);
+        if let Some(xml) = crate::kuna_objcarc::payload_xml(resolve, code_addr_size) {
+            crate::kuna_objcarc::decode_payload(&xml, |root| {
+                let mut decoder = XmlDecode::new_with_root(&manager, &registry, root, 0);
+                self.pcodeinjectlib.decode_inject(
+                    b" : kuna objc arc helpers",
+                    b"",
+                    crate::pcodeinject::CALLFIXUP_TYPE,
+                    &mut decoder,
+                )?;
+                Ok(())
+            })?;
+        }
+        if !crate::kuna_msvcftol::language_is_x86_32(resolve, code_addr_size) {
+            return Ok(());
+        }
         crate::kuna_msvcftol::decode_payload(|root| {
             let mut decoder = XmlDecode::new_with_root(&manager, &registry, root, 0);
             self.pcodeinjectlib.decode_inject(

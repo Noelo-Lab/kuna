@@ -1,0 +1,62 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    By-value aggregates in Objective-C type encodings, and global blocks.
+
+    Issue: an ivar or argument whose encoding is a struct by value
+    (`{CGRect={CGPoint=dd}{CGSize=dd}}`) or an array (`[4i]`) decoded to a void
+    placeholder, so `-[Shape area]` read `*(double *)&self->frame[0x10] *
+    *(double *)&self->frame[0x18]`, `-[Shape countAt:]` indexed
+    `self->counts[(arg1 & 3) * 4]` by hand, and `-[Shape setFrame:]` lost its
+    prototype altogether (`void f(unsigned long a0, ..., struct_0 *a4)`). A
+    global block literal in `__const` was an anonymous word and its invoke
+    function a `sub_`.
+
+    Fix: `encoding.rs` decodes `{...}` through `struct_type` (the quoted member
+    names an ivar encoding carries, nested structs flattened) and `[n T]` to an
+    array; `kuna_objcblocks.rs` types every `_NSConcreteGlobalBlock` literal as
+    `Block_layout`, names its invoke `block_invoke_<addr>` and types it from the
+    descriptor's signature.
+
+    Pass 1 (`objc off`) is the bug; pass 2 (`objc on`) the fix: `(self->frame).width
+    * (self->frame).height`, `self->counts[arg1 & 3]`, `CGRect arg1` placed in
+    d0..d3, `long block_invoke_10000071c(Block_layout *block,long arg1)`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_structs_arm64</com>
+  <com>option objc off</com>
+  <com>read symbols</com>
+  <com>load addr 0x10000071c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_structs_arm64</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load addr 0x1000006f8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1000006e0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000704</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x10000071c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="OBJCSTRUCTS #1: objc off, the block invoke is an anonymous function" min="1" max="1">sub_10000071c\(</stringmatch>
+<stringmatch name="OBJCSTRUCTS #2: the struct ivar reads by field" min="1" max="1">\(self->frame\)\.width \* \(self->frame\)\.height</stringmatch>
+<stringmatch name="OBJCSTRUCTS #3: the by-value struct argument is a CGRect" min="1" max="1">-\[Shape setFrame:\]\(Shape \*self,objc_selector \*_cmd,CGRect arg1\)</stringmatch>
+<stringmatch name="OBJCSTRUCTS #4: the struct argument is copied field by field" min="1" max="1">\(self->frame\)\.height = arg1\.height;</stringmatch>
+<stringmatch name="OBJCSTRUCTS #5: the array ivar indexes by element" min="1" max="1">self->counts\[arg1 &amp; 3\]</stringmatch>
+<stringmatch name="OBJCSTRUCTS #6: the global block's invoke is named and typed from the descriptor signature" min="1" max="1">block_invoke_10000071c\(Block_layout \*block,int8 arg1\)</stringmatch>
+</decompilertest>

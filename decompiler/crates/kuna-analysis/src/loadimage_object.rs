@@ -915,8 +915,14 @@ impl ObjectLoadImage {
         let mut sections: Vec<SectionInfo> = Vec::new();
         let mut section_metadata: Vec<ObjectSectionMetadata> = Vec::new();
         let mut data_object_rows: Vec<(u64, u64)> = Vec::new();
+        let readonly_segments = crate::loader::format::macho::readonly_segments(&file);
         for sec in file.sections() {
-            let flags = fmt.section_bits(sec.name().unwrap_or(""), sec.kind(), sec.flags());
+            let mut flags = fmt.section_bits(sec.name().unwrap_or(""), sec.kind(), sec.flags());
+            if flags & section_flags::NOLOAD == 0
+                && crate::loader::format::macho::in_readonly_segment(&readonly_segments, &sec)
+            {
+                flags |= section_flags::READONLY;
+            }
             sections.push(SectionInfo { vma: sec.address(), size: sec.size(), flags });
             if flags & section_flags::UNALLOC == 0
                 && crate::loader::kuna_globalref::holds_program_objects(

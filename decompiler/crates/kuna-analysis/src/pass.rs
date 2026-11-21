@@ -372,6 +372,10 @@ pub struct TrackedRegFact {
 pub struct CallFixupFact {
     /// The matched function's installed name (e.g. `mcount`, `__fentry__`).
     pub func_name: String,
+    /// The function's entry when the pass knows it (a Mach-O import stub, whose
+    /// FunctionSymbol keeps its `sub_` name under a display alias); `None` resolves
+    /// by name.
+    pub addr: Option<u64>,
 }
 
 /// A function the FID matcher re-identified by full-hash fingerprint: at `addr`,
@@ -515,6 +519,11 @@ pub struct AnalysisOutput {
     /// method): an unlocked hint on its first argument register, typed
     /// `Class *` under `objcivars`.
     pub objc_self_hints: Vec<InputHintFact>,
+    /// (kuna `objcresolve`) The image's Objective-C class table —
+    /// each class's own methods by selector, its superclass, its `class_t`
+    /// address, every selector string's address — for the engine to type and
+    /// resolve message sends by receiver. Produced only by the `objc` pass.
+    pub objc_classes: Option<kuna_decomp::kuna_objcresolve::ObjcClassTable>,
     /// (kuna) Address ranges holding an **external reference** — an import slot
     /// whose contents the dynamic loader fills in with the address of a function
     /// living in another image (a PE IAT entry or a typed Mach-O lazy/non-lazy
@@ -881,6 +890,9 @@ impl AnalysisOutput {
         self.const_ranges.extend(other.const_ranges);
         self.objc_self_types.extend(other.objc_self_types);
         self.objc_self_hints.extend(other.objc_self_hints);
+        if other.objc_classes.is_some() {
+            self.objc_classes = other.objc_classes;
+        }
         self.externref.extend(other.externref);
         self.import_slot_names.extend(other.import_slot_names);
         self.strings.extend(other.strings);

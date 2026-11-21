@@ -83,5 +83,5 @@ c0035fd6
 <stringmatch name="OBJCTYPES #5: objcivars reads a field through the class-typed ivar" min="1" max="1">v1 = self->inner->count;</stringmatch>
 <stringmatch name="OBJCTYPES #6: the getter returns the typed ivar" min="1" max="1">return self->inner;</stringmatch>
 <stringmatch name="OBJCTYPES #7: the setter takes the class" min="1" max="1">void -\[Holder setInner:\]\(Holder \*self,objc_selector \*_cmd,Base \*arg1\)</stringmatch>
-<stringmatch name="OBJCTYPES #8: a send to the typed ivar" min="1" max="1">objc_msgSend\(self->inner,sel_count\)</stringmatch>
+<stringmatch name="OBJCTYPES #8: a send to the typed ivar" min="1" max="1">-\[Base count\]\(self->inner,sel_count\)</stringmatch>
 </decompilertest>

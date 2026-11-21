@@ -1475,7 +1475,8 @@ impl Action for ActionActiveParam {
                 // variable arguments live on the stack, so the empty register
                 // slots before them are the ABI's doing and not evidence that
                 // the recovery has run past the argument list.
-                let vararg_split = fc.is_dotdotdot();
+                let vararg_split = fc.is_dotdotdot()
+                    || crate::p4_calls::kuna_darwinvarargs::is_variadic_callee(data, fc.get_entry_address());
                 fc.get_active_input().set_vararg_stack_split(vararg_split);
                 // (kuna) `stackarggap`: tell `fillinMap` that an argument
                 // register this caller never wrote ends the argument list when
@@ -1494,6 +1495,7 @@ impl Action for ActionActiveParam {
                 // arguments are arguments whatever the positional rules made
                 // of the gap in front of them.
                 crate::p4_calls::kuna_formattail::keep_declared_trials(&mut fc);
+                crate::p4_calls::kuna_darwinvarargs::keep_stack_tail(&mut fc, data);
                 let fixup = build_input_from_trials(&mut fc, data);
                 if let Some(p) = fixup.rescue {
                     pending_rescue.push(p);

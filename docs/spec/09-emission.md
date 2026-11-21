@@ -5426,3 +5426,66 @@ the one printed right before the step in the same block. `v = *p; p = &p[1];`
 prints `v = *p++;`, `*d = c; d = &d[1];` prints `*d++ = c;`. A step that goes
 through a copy the loop also compares (`v2 = &a0[1]; v1 += *a0; a0 = v2;`) is
 left as it is (`tests/stages/kuna-postinc.xml`).
+
+### Apple unified-logging calls (`oslog`)
+
+`oslog` (default on) uses
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_oslog.rs` to print an Apple
+`os_log` call with its arguments. The macros do not pass the arguments
+themselves: the caller packs them into a stack buffer and passes its address and
+size, `_os_log_impl(dso, log, type, format, buffer, size)`. Byte 0 of the buffer
+holds summary flags and byte 1 the argument count; each argument follows as a
+descriptor byte (the argument kind in the high nibble, its privacy in the low
+one), a size byte and the value bytes. Read raw, a log statement is a constant
+header store, one store per argument and the call,
+`v1 = 0x4000100; v8 = v2; _os_log_impl(0x100000000,v3,0,"fmt %d",&v1,8);`.
+
+The callee is identified by its name with leading underscores removed:
+`os_log_impl` and its `error`, `fault` and `debug` variants (buffer and size in
+the fifth and sixth argument), `os_signpost_emit_with_name_impl` (seventh and
+eighth), and the kernel's variadic `os_log_internal`, which takes no buffer.
+The buffer must resolve to a constant stack offset and the size to a constant of
+at most 1024 bytes. The bytes are read only from the pre-call inputs of the
+stack INDIRECT effects of that exact call, the same evidence the Rust print-argument recovery (`kuna_rustfmtargs.rs`) uses
+for its descriptor cells. An input's constant bytes are read through copies,
+zero extensions, PIECE and AND/OR with a constant mask, so a header written as
+a partial store into a wider frame slot still reads. Every buffer byte must be
+covered exactly once. The header, every descriptor and every size byte must be
+constant; there are at most 48 items, each of width 1, 2, 4 or 8, and the items
+must end exactly at the size. Anything else keeps the raw call.
+
+An item whose bytes are all constant prints as that constant. Otherwise the
+cells inside its slot must hold one value: a single cell of exactly the slot,
+or cells that are byte pieces (SUBPIECE, also through a whole-byte logical
+right shift) of one variable of the slot's width at the matching offsets, the
+form an unaligned or split frame store takes. That variable prints in the
+buffer's place when it still holds the value at the call: it is a constant, it
+is a variable no other instance of its high-level variable assigns, or no
+statement between the store and the call in their block assigns it (the call's
+own INDIRECT effects excepted). Otherwise a single exact cell prints as the
+frame variable it is, and a multi-cell value refuses the decode.
+
+A store into the buffer is not printed when it only fills it: it is the COPY or
+SUBPIECE that defines the cell, its output has no reader but the call's effect,
+and that effect is read by nothing but later calls' effects and merges of them.
+Header and descriptor stores are hidden under the same rule. The variable the
+store wrote keeps its declaration. The call prints as
+`_os_log_impl(&__mh_execute_header,v3,0,"fmt %d",v2)`: the first four inputs,
+then the items, then nothing for the buffer and size.
+
+The first argument is the image's `__dso_handle`, the address of its Mach-O
+header. On these calls, and on `os_log_internal`, a constant first argument
+that is exactly the address of a global symbol named `__mh_*` or `__dso_handle`
+prints as `&` and that name. A stripped image (the kernel) keeps no such symbol,
+so a constant whose loaded bytes are a 64-bit Mach-O header (`0xfeedfacf`) is
+named after the symbol the linker defines for its file type:
+`__mh_execute_header`, `__mh_dylib_header`, `__mh_dylinker_header`,
+`__mh_bundle_header`, else `__dso_handle`. No other constant is renamed, because
+the same value (`0x100000000` is also `1 << 32`) is an ordinary number
+elsewhere.
+
+Only C output is affected. Turning the option off restores the raw call, the
+buffer stores and the header address. On iOS 16.4.1 `trustd` the decode
+succeeds at 398 of 404 log calls; the rest store an argument the decode cannot
+attribute to one variable at the call (an implied expression split across
+cells) and keep the raw form.

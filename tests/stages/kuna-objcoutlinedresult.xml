@@ -1,0 +1,48 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Outlined `objc_retain_x<N>` returns in x0, not x<N> (`option objc on`, `objcarc on|off`).
+
+    Issue: clang's outlined retain takes the object in x19 and returns the retained
+    object in x0, the way every call-site reads it: `bl objc_retain_x19; mov x20, x0`.
+    The prototype declared the result in x19, so the copy into x20 took whatever x0
+    held before the call. A Swift view controller's `viewDidLoad` therefore passed its
+    superclass call the metatype from the type-metadata accessor where `self` was meant.
+
+    Fixture `macho_objc_outlined_retain_arm64` (source `.s` beside it, hand-written
+    because clang does not outline ARC retains from source here): the entry keeps
+    `self` in x19, calls an accessor that clobbers x0, builds the objc_super and
+    calls `bl _objc_retain_x19`, then `mov x20, x0` and calls the callee with it.
+
+    Pass 1 (default): the call's argument is the entry's `self` (`a0`), the retain is
+    hidden. Pass 2 (`objcarc off`): the retain is shown with its argument and result,
+    `objc_retain_x19(a0)`, and the call takes that result.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_outlined_retain_arm64</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load addr 0x1000004c4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_outlined_retain_arm64</com>
+  <com>option objc on</com>
+  <com>option objcarc off</com>
+  <com>read symbols</com>
+  <com>load addr 0x1000004c4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="OUTLINEDRET #1: default passes the entry's self to the callee, not the accessor's metadata" min="1" max="1">_holder_vtable7\(a0\);</stringmatch>
+<stringmatch name="OUTLINEDRET #2: default never passes the accessor's result to the callee" min="0" max="0">_holder_vtable7\(\(void \*\)_holder_type_accessor\(\)\)</stringmatch>
+<stringmatch name="OUTLINEDRET #3: the entry takes its self as the parameter the call forwards" min="2" max="2">_holder_viewDidLoad\([^)]*a0\)</stringmatch>
+<stringmatch name="OUTLINEDRET #4: off shows the retain with its argument and the result the call takes" min="1" max="1">_holder_vtable7\(objc_retain_x19\(a0\)\);</stringmatch>
+</decompilertest>

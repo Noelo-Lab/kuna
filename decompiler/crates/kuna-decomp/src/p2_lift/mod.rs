@@ -40,6 +40,7 @@ pub mod kuna_entryretdispatch; // (kuna) recover an entry-point push/push/ret di
 pub mod kuna_pushimmediateret; // (kuna) recover a one-store push-immediate/ret tail transfer as a branch
 pub mod kuna_overlapbranch; // (kuna) a conditional branch target inside its own fall-through instruction (anti-disassembly overlap)
 pub mod kuna_msvcftol; // (kuna) MSVC __ftol family call-fixup: recover the x87 (ST0) argument
+pub mod kuna_objcarc; // (kuna) hide Objective-C ARC bookkeeping calls through call-fixups
 pub mod kuna_cortexmpriv; // (kuna) fold the Cortex-M isCurrentModePrivileged() guard around MRS/MSR
 pub mod kuna_cleanupcode; // (kuna) oxidizer CleanupCodeRemover: delete rust drop/dealloc call sites
 pub mod kuna_gomorestack; // (kuna) fold the Go stack-growth entry guard (docs/multilang.md W2)
