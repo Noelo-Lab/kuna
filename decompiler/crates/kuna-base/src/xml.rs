@@ -2280,7 +2280,7 @@ mod tests {
         // and kuna-thunknames / a placeholder jump thunk is named after its target (option thunknames)
         // and kuna-swifthelpers / Swift instantiation helpers and lazy witness table accessors (option swifthelpers)
         // and kuna-bytestorewidth / a constant word store into a byte array keeps its width (bytestorewidth)
-        assert_eq!(count, 861, "corpus file count drifted");
+        assert_eq!(count, 862, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
