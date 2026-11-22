@@ -7,6 +7,7 @@ use common::process;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{Architecture, BinaryFormat, Endianness, FileFlags, SectionKind, SymbolFlags, SymbolKind, SymbolScope};
 use std::process::Command;
+use crate::common::process::Capped;
 
 /// The source of every image, built with `clang --target=<triple> -O2` (and
 /// gcc -m32 -O2 for the `_g` functions), checked against the printed C under
@@ -209,7 +210,7 @@ fn a_high_word_built_from_the_low_word_or_beside_the_argument_round_trips() {
                     "{cc} {level} rejected the printed C ({arch}):\n{}\n{text}",
                     String::from_utf8_lossy(&out.stderr)
                 );
-                let run = Command::new(&exe).output().expect("run the round trip");
+                let run = Command::new(&exe).capped_output().expect("run the round trip");
                 assert!(
                     run.status.success(),
                     "{arch} printed and built by {cc} {level} computes a different value:\n{}\n{text}",

@@ -5,6 +5,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 /// `(base, memset)` of the four builds of `fixtures/stack_struct.c` in
 /// `tests/stages/kuna-stackstruct.xml`: gcc -O0, gcc -O2, clang -O0, clang -O2.
@@ -190,7 +191,7 @@ int main(void) {{
                 "{cc} {optimization}: {}\n{code}",
                 String::from_utf8_lossy(&compiled.stderr)
             );
-            let run = Command::new(&executable).output().unwrap();
+            let run = Command::new(&executable).capped_output().unwrap();
             assert!(run.status.success(), "{cc} {optimization}: {code}");
         }
     }

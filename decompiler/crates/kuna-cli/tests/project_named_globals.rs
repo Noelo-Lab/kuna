@@ -2,6 +2,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[test]
 #[cfg(target_os = "linux")]
@@ -157,7 +158,7 @@ int main(int argc, char **argv) {{
             assert!(
                 Command::new(&executable)
                     .arg(&binary)
-                    .status()
+                    .capped_status()
                     .unwrap()
                     .success(),
                 "{cc} {opt}"
@@ -295,7 +296,7 @@ int main(int argc,char **argv) {{
             assert!(
                 Command::new(&executable)
                     .arg(&binary)
-                    .status()
+                    .capped_status()
                     .unwrap()
                     .success(),
                 "{compiler} {level}: global pointers did not relocate"
@@ -413,7 +414,7 @@ int main(int argc, char **argv) {{
                 .output()
                 .unwrap();
             assert!(built.status.success(), "{cc} {opt}: {}\n{header}", String::from_utf8_lossy(&built.stderr));
-            let ran = Command::new(&executable).arg(&binary).status().unwrap();
+            let ran = Command::new(&executable).arg(&binary).capped_status().unwrap();
             assert!(ran.success(), "{cc} {opt}: {ran}\n{header}");
         }
     }

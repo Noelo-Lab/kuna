@@ -2,9 +2,10 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 use crate::common;
 use std::process::{Command, Output};
+use crate::common::process::Capped;
 
 fn checked(command: &mut Command) -> Output {
-    let output = command.output().expect("start fixture command");
+    let output = command.capped_output().expect("start fixture command");
     assert!(
         output.status.success(),
         "{command:?}: {:?}\n{}\n{}",
@@ -124,7 +125,7 @@ fn declared_pointer_writes_survive_a_restored_frame_base() {
                     command.arg("sample.s");
                 }
                 checked(command.arg("-o").arg(&executable));
-                match Command::new(&executable).output() {
+                match Command::new(&executable).capped_output() {
                     Ok(output) => assert!(
                         output.status.success(),
                         "{compiler} {optimization} regenerated={regenerated}: {:?}",

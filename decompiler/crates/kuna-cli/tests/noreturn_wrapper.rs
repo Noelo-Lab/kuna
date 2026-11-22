@@ -7,6 +7,7 @@ use std::process::Command;
 
 use object::{Object, ObjectSymbol, SymbolKind};
 use serde_json::Value;
+use crate::common::process::Capped;
 
 struct Fixture {
     image: PathBuf,
@@ -120,7 +121,7 @@ fn native_exit(native: &Path, argument: Option<&str>, expected: i32) {
     if let Some(argument) = argument {
         command.arg(argument);
     }
-    assert_eq!(command.status().unwrap().code(), Some(expected));
+    assert_eq!(command.capped_status().unwrap().code(), Some(expected));
 }
 
 fn check_emitted(doc: &Value) {

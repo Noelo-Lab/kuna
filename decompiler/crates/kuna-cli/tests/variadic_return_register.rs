@@ -13,6 +13,7 @@ use object::{
     SymbolScope,
 };
 use std::process::Command;
+use crate::common::process::Capped;
 
 const SOURCE: &str = r#"
 int s_w1(int k) { return (int)vr(k, k + 1, (double)k); }
@@ -423,7 +424,7 @@ int main(void) {{
                 "{stem} {cc} {level}: {}\n{printed}",
                 String::from_utf8_lossy(&compile.stderr)
             );
-            let status = Command::new(&exe).status().unwrap();
+            let status = Command::new(&exe).capped_status().unwrap();
             assert!(status.success(), "{stem} {cc} {level}: {status}\n{printed}");
         }
     }

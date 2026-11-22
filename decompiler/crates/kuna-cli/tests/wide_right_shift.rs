@@ -2,6 +2,7 @@
 
 use crate::common;
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[test]
 fn zero_extended_right_shifts_keep_the_original_count_range() {
@@ -145,7 +146,7 @@ int main(void) {{
                     "{compiler} {input_level} -> {output_level}: {}\n{bodies}",
                     String::from_utf8_lossy(&compiled.stderr)
                 );
-                let ran = Command::new(&executable).output().unwrap();
+                let ran = Command::new(&executable).capped_output().unwrap();
                 assert!(
                     ran.status.success(),
                     "{compiler} {input_level} -> {output_level}: {}\n{bodies}",

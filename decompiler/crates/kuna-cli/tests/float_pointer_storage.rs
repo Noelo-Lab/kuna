@@ -2,10 +2,11 @@
 #![cfg(all(target_os = "linux", target_pointer_width = "64"))]
 use crate::common;
 use std::process::Command;
+use crate::common::process::Capped;
 
 fn checked(command: &mut Command) {
     let output = command
-        .output()
+        .capped_output()
         .expect("start compiler or differential driver");
     assert!(
         output.status.success(),

@@ -3,6 +3,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[test]
 fn emitted_signed_stack_index_matches_the_stored_word() {
@@ -70,7 +71,7 @@ int main(void) {{
                 "{compiler} {optimization}: {}",
                 String::from_utf8_lossy(&compiled.stderr)
             );
-            let run = Command::new(&executable).output().unwrap();
+            let run = Command::new(&executable).capped_output().unwrap();
             assert!(
                 run.status.success(),
                 "{compiler} {optimization}: {}",

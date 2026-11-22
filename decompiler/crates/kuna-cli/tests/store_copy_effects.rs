@@ -2,6 +2,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 const FUNCTIONS: &str = "s7,s_repeat,s_alias,s_read,s_branch,s_dead,s_two";
 const WANT: &str = "s7 1 92 4 9\ns_repeat 94 94 4 3 7 11\ns_alias 92 92 4 13 9\ns_other 13 92 4 81 9\ns_read 81 92 4 9\ns_branch 1 92 4 9\ns_else 1 68 0 17\ns_dead 92 92 9\ns_two 64 64 4 21\ns_distinct 92 92 4 9\n";
@@ -151,7 +152,7 @@ int main(void) {{
                 let compile = Command::new(cc).args(["-std=c11", level])
                     .arg(&source).arg("-o").arg(&exe).output().unwrap();
                 assert!(compile.status.success(), "{}\n{body}", String::from_utf8_lossy(&compile.stderr));
-                assert!(Command::new(&exe).status().unwrap().success(), "{cc} {level}: {body}");
+                assert!(Command::new(&exe).capped_status().unwrap().success(), "{cc} {level}: {body}");
             }
         }
     }

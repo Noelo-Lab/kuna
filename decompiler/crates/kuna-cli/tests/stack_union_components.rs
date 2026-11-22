@@ -3,9 +3,10 @@
 use crate::common;
 use std::io::Write;
 use std::process::{Command, Stdio};
+use crate::common::process::Capped;
 
 fn checked(command: &mut Command) {
-    let output = command.output().expect("run compiler or native comparison");
+    let output = command.capped_output().expect("run compiler or native comparison");
     assert!(
         output.status.success(),
         "{command:?}\n{}\n{}",

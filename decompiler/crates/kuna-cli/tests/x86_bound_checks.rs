@@ -2,6 +2,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[test]
 fn repeated_bounds_checks_keep_signed_comparisons_and_live_registers() {
@@ -117,7 +118,7 @@ int main(void) {
                 String::from_utf8_lossy(&built.stderr)
             );
             assert!(
-                Command::new(&executable).status().unwrap().success(),
+                Command::new(&executable).capped_status().unwrap().success(),
                 "{cc} {opt}\n{code}"
             );
         }

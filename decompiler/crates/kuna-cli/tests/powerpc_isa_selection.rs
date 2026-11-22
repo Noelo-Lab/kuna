@@ -9,6 +9,7 @@ use object::{
 };
 use std::path::Path;
 use std::process::Command;
+use crate::common::process::Capped;
 
 fn image(endian: Endianness, abi: u32, vector_abi: bool) -> Vec<u8> {
     let mut object = Object::new(BinaryFormat::Elf, Architecture::PowerPc64, endian);
@@ -110,7 +111,7 @@ fn check_selection_semantics(code: &str) {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        Command::new(&executable).status().unwrap().success(),
+        Command::new(&executable).capped_status().unwrap().success(),
         "{code}"
     );
     std::fs::remove_file(source).unwrap();

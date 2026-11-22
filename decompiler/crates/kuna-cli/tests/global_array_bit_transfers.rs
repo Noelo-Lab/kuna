@@ -3,6 +3,7 @@ use crate::common;
 use common::process;
 use object::{Object, ObjectSection};
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[test]
 fn floating_transfers_through_named_byte_arrays_recompile_and_keep_bits() {
@@ -179,7 +180,7 @@ int main(void) {{
                 "{compiler} {optimization}: {}\n{code}",
                 String::from_utf8_lossy(&built.stderr)
             );
-            let result = Command::new(&executable).output().unwrap();
+            let result = Command::new(&executable).capped_output().unwrap();
             assert!(
                 result.status.success(),
                 "{compiler} {optimization}: {result:?}\n{code}"

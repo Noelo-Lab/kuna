@@ -6,6 +6,7 @@ use object::{
     Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope,
 };
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[derive(Clone, Copy, Debug)]
 enum Case {
@@ -168,7 +169,7 @@ int main(void) {{
                         String::from_utf8_lossy(&compile.stderr)
                     );
                     assert!(
-                        Command::new(&exe).status().unwrap().success(),
+                        Command::new(&exe).capped_status().unwrap().success(),
                         "{case:?} full={full} {cc} {level}: {printed}"
                     );
                 }
@@ -304,7 +305,7 @@ int main(void) {{
                     String::from_utf8_lossy(&compile.stderr)
                 );
                 assert!(
-                    Command::new(&exe).status().unwrap().success(),
+                    Command::new(&exe).capped_status().unwrap().success(),
                     "{target} {cc} {level}: {printed}"
                 );
             }
@@ -648,7 +649,7 @@ int main(int argc, char **argv) {{
                 .filter(|(k, _)| {
                     !Command::new(&exe)
                         .arg(k.to_string())
-                        .status()
+                        .capped_status()
                         .unwrap()
                         .success()
                 })

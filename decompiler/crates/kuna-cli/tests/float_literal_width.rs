@@ -3,10 +3,11 @@
 use crate::common;
 use object::{Object, ObjectSection};
 use std::process::Command;
+use crate::common::process::Capped;
 
 fn checked(command: &mut Command) {
     let output = command
-        .output()
+        .capped_output()
         .expect("start compiler or native comparison");
     assert!(
         output.status.success(),

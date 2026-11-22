@@ -2,6 +2,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[test]
 fn address_qualified_register_parameters_and_returns_reach_the_caller() {
@@ -142,7 +143,7 @@ int main(void) {{
                         "{}",
                         String::from_utf8_lossy(&output.stderr)
                     );
-                    assert!(Command::new(&executable).status().unwrap().success());
+                    assert!(Command::new(&executable).capped_status().unwrap().success());
                     ran = true;
                 }
             }

@@ -5,6 +5,7 @@ use crate::common;
 use common::process;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use crate::common::process::Capped;
 
 const FUNCTIONS: &str = "above,at_least,not_above,not_at_least,pick,not_above_pair,above_two,nan_or_huge,ordered_below_pair";
 
@@ -105,7 +106,7 @@ fn float_compare_flags_keep_their_unordered_case() {
         for level in ["-O0", "-O2"] {
             let executable = dir.join(format!("printed-{cc}{level}"));
             compile(cc, level, &[&emitted, &driver], &executable);
-            let run = Command::new(&executable).output().unwrap();
+            let run = Command::new(&executable).capped_output().unwrap();
             assert!(
                 run.status.success(),
                 "{cc} {level}: printed C disagrees with the binary\n{}\n{printed}",

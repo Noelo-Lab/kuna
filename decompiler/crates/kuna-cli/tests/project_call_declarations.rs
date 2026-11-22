@@ -2,6 +2,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[test]
 fn explicit_fixed_and_variadic_import_declarations_recompile() {
@@ -189,7 +190,7 @@ _sample:
                         "{}",
                         String::from_utf8_lossy(&built.stderr)
                     );
-                    let result = Command::new(&executable).output().unwrap();
+                    let result = Command::new(&executable).capped_output().unwrap();
                     assert!(
                         result.status.success(),
                         "{compiler} {optimization}: {result:?}"
@@ -277,7 +278,7 @@ int main(void) {{
                 "{}",
                 String::from_utf8_lossy(&built.stderr)
             );
-            let result = Command::new(&executable).output().unwrap();
+            let result = Command::new(&executable).capped_output().unwrap();
             assert!(
                 result.status.success(),
                 "{compiler} {optimization}: {result:?}"

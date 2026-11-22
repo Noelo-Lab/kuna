@@ -15,6 +15,7 @@ use std::process::Command;
 
 use crate::common;
 use common::process;
+use crate::common::process::Capped;
 
 /// The C of `function` in `fixture` with `extra` arguments under `directives`,
 /// after checking that every directive applied and both surfaces printed the
@@ -259,7 +260,7 @@ fn a_library_name_never_shadows_a_type_and_the_printed_c_runs() {
                 .output()
                 .expect("spawn the C compiler");
             assert!(out.status.success(), "{cc} {level} rejected the printed C:\n{}\n{text}", String::from_utf8_lossy(&out.stderr));
-            let run = Command::new(&exe).env("TZ", "UTC").output().expect("run the round trip");
+            let run = Command::new(&exe).env("TZ", "UTC").capped_output().expect("run the round trip");
             assert!(run.status.success(), "{cc} {level}: the printed stamp computes a different value:\n{}\n{text}", String::from_utf8_lossy(&run.stdout));
         }
     }

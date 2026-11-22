@@ -6,6 +6,7 @@ use object::{
     Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope,
 };
 use std::process::Command;
+use crate::common::process::Capped;
 
 fn image(userland: bool) -> Vec<u8> {
     let words = [
@@ -256,7 +257,7 @@ fn system_call_reloads_the_memory_it_may_replace() {
             "{text}\n{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(Command::new(&binary).status().unwrap().success(), "{text}");
+        assert!(Command::new(&binary).capped_status().unwrap().success(), "{text}");
     }
 }
 
@@ -295,7 +296,7 @@ fn pointer_values_are_saved_before_each_memory_changing_call() {
             "{text}\n{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(Command::new(&binary).status().unwrap().success(), "{text}");
+        assert!(Command::new(&binary).capped_status().unwrap().success(), "{text}");
     }
 }
 
@@ -323,7 +324,7 @@ fn the_kernel_observes_a_store_overwritten_after_the_call() {
         "{text}\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(Command::new(&binary).status().unwrap().success(), "{text}");
+    assert!(Command::new(&binary).capped_status().unwrap().success(), "{text}");
 }
 
 #[test]
@@ -361,7 +362,7 @@ fn returned_lengths_are_saved_before_reading_the_final_buffer() {
                 "{text}\n{}",
                 String::from_utf8_lossy(&output.stderr)
             );
-            assert!(Command::new(&binary).status().unwrap().success(), "{text}");
+            assert!(Command::new(&binary).capped_status().unwrap().success(), "{text}");
         }
     }
 }

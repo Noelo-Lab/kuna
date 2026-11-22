@@ -7,6 +7,7 @@ use object::{
     SymbolScope,
 };
 use std::process::Command;
+use crate::common::process::Capped;
 
 fn caller(low_word: bool) -> Vec<u8> {
     let mut image = write::Object::new(BinaryFormat::Elf, Architecture::Sparc, Endianness::Big);
@@ -132,7 +133,7 @@ int main(void) {{
                 String::from_utf8_lossy(&built.stderr)
             );
             assert!(
-                Command::new(&executable).status().unwrap().success(),
+                Command::new(&executable).capped_status().unwrap().success(),
                 "{cc} {opt}: {body}"
             );
         }
@@ -190,7 +191,7 @@ int main(void) {{
             String::from_utf8_lossy(&built.stderr)
         );
         assert!(
-            Command::new(&executable).status().unwrap().success(),
+            Command::new(&executable).capped_status().unwrap().success(),
             "{cc}: {body}"
         );
         checked += 1;
@@ -311,7 +312,7 @@ int main(void) {{
                         "{level} explicit={explicit} {cc} {opt}: {}\n{bodies}",
                         String::from_utf8_lossy(&built.stderr)
                     );
-                    let ran = Command::new(&executable).output().unwrap();
+                    let ran = Command::new(&executable).capped_output().unwrap();
                     assert!(
                         ran.status.success(),
                         "{level} explicit={explicit} {cc} {opt}: {:?}\n{}\n{bodies}",

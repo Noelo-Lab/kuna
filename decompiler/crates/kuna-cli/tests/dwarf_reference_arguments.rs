@@ -2,6 +2,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 const SOURCE: &str = r#"
 subroutine offset_sample(sample, bias, output)
@@ -220,7 +221,7 @@ int main(void) {
                     String::from_utf8_lossy(&result.stderr)
                 );
                 assert!(
-                    Command::new(&exe).status().unwrap().success(),
+                    Command::new(&exe).capped_status().unwrap().success(),
                     "{compiler} {level}\n{code}"
                 );
             }

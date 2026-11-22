@@ -1,6 +1,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[test]
 fn an_impure_getter_observes_the_global_before_the_later_store() {
@@ -111,7 +112,7 @@ fn an_impure_getter_observes_the_global_before_the_later_store() {
                         .arg("-o")
                         .arg(&exe),
                 );
-                let result = Command::new(&exe).output().unwrap();
+                let result = Command::new(&exe).capped_output().unwrap();
                 assert!(result.status.success(), "{cc} {opt}: {code}");
             }
         }
@@ -188,7 +189,7 @@ fn a_vector_copy_captures_both_halves_before_an_aliasing_global_store() {
                     .arg("-o")
                     .arg(&exe),
             );
-            let result = Command::new(&exe).output().unwrap();
+            let result = Command::new(&exe).capped_output().unwrap();
             assert!(result.status.success(), "{cc} {opt}: {code}");
         }
     }

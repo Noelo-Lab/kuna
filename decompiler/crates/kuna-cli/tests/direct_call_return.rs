@@ -2,6 +2,7 @@ use crate::common;
 
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 const ASM: &str = include_str!("fixtures/direct_call_return.S");
 const DRIVER: &str = r#"
@@ -119,7 +120,7 @@ fn terminal_failure_call_preserves_the_pre_call_result() {
     );
     process::required_output(&mut Command::new(&native));
     assert_eq!(
-        Command::new(&native).arg("fail").status().unwrap().code(),
+        Command::new(&native).arg("fail").capped_status().unwrap().code(),
         Some(75)
     );
 
@@ -167,7 +168,7 @@ fn terminal_failure_call_preserves_the_pre_call_result() {
             );
             process::required_output(&mut Command::new(&exe));
             assert_eq!(
-                Command::new(&exe).arg("fail").status().unwrap().code(),
+                Command::new(&exe).arg("fail").capped_status().unwrap().code(),
                 Some(75)
             );
         }

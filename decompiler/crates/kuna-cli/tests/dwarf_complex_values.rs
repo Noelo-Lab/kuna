@@ -2,6 +2,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 const SOURCE: &str = r#"#include <complex.h>
 float complex pass_pair(float complex z) { return z; }
@@ -111,7 +112,7 @@ fn complex_values_and_imported_exponential_round_trip() {
                 String::from_utf8_lossy(&output.stderr)
             );
             assert!(
-                Command::new(&executable).status().unwrap().success(),
+                Command::new(&executable).capped_status().unwrap().success(),
                 "{compiler} {level}\n{code}"
             );
         }

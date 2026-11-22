@@ -4,6 +4,7 @@ use common::process;
 
 use std::path::PathBuf;
 use std::process::Command;
+use crate::common::process::Capped;
 
 /// An x86-64 executable whose single segment maps `body` at 0x401000.
 fn elf(body: &[u8]) -> Vec<u8> {
@@ -297,7 +298,7 @@ int main(int argc, char **argv) {{
                 "{cc} {level}: {}\n{printed}",
                 String::from_utf8_lossy(&compile.stderr)
             );
-            let run = Command::new(&exe).arg(&binary).output().unwrap();
+            let run = Command::new(&exe).arg(&binary).capped_output().unwrap();
             assert!(
                 run.status.success(),
                 "{cc} {level}: {} {}\n{printed}",
@@ -873,7 +874,7 @@ int main(int argc, char **argv) {{
                 "{cc} {level}: {}\n{printed}",
                 String::from_utf8_lossy(&compile.stderr)
             );
-            let run = Command::new(&exe).arg(&binary).output().unwrap();
+            let run = Command::new(&exe).arg(&binary).capped_output().unwrap();
             assert!(
                 run.status.success(),
                 "{cc} {level}: {} {}\n{printed}",

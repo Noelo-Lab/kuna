@@ -7,6 +7,7 @@ use object::{
     SymbolScope,
 };
 use std::process::Command;
+use crate::common::process::Capped;
 
 // The stage bytes were built at -O2 from these source operations:
 // bits32: union { unsigned u; float f; } v = {.u = x ^ 0x80000000u}; return v.f;
@@ -188,7 +189,7 @@ int main(void) {{
                         "{name} {cc} {level}: {}\n{printed}",
                         String::from_utf8_lossy(&compile.stderr)
                     );
-                    let status = Command::new(&exe).status().unwrap();
+                    let status = Command::new(&exe).capped_status().unwrap();
                     assert!(status.success(), "{name} {cc} {level}: {status}\n{printed}");
                 }
             }
@@ -237,7 +238,7 @@ fn main() {{ unsafe {{
                     String::from_utf8_lossy(&compile.stderr)
                 );
                 assert!(
-                    Command::new(&exe).status().unwrap().success(),
+                    Command::new(&exe).capped_status().unwrap().success(),
                     "{name} rustc {level}: {rust}"
                 );
             }
@@ -305,7 +306,7 @@ int main(void) {{
                 String::from_utf8_lossy(&compile.stderr)
             );
             assert!(
-                Command::new(&exe).status().unwrap().success(),
+                Command::new(&exe).capped_status().unwrap().success(),
                 "{cc} {level}: {printed}"
             );
         }

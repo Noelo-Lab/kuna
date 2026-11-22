@@ -3,6 +3,7 @@ use crate::common;
 use common::process;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use crate::common::process::Capped;
 
 /// Assemble Windows fixtures with Clang so no Windows linker is required.
 fn build_image(source: &Path) -> Option<PathBuf> {
@@ -114,7 +115,7 @@ int main(void) {{
                     String::from_utf8_lossy(&built.stderr)
                 );
                 assert!(
-                    Command::new(&executable).status().unwrap().success(),
+                    Command::new(&executable).capped_status().unwrap().success(),
                     "{cc} {level}\n{code}"
                 );
             }
@@ -267,7 +268,7 @@ __attribute__((force_align_arg_pointer)) void _start(void) {{
                     String::from_utf8_lossy(&output.stderr)
                 );
                 assert!(
-                    Command::new(&executable).status().unwrap().success(),
+                    Command::new(&executable).capped_status().unwrap().success(),
                     "{cc} {level}\n{code}"
                 );
             }

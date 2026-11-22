@@ -4,6 +4,7 @@ use crate::common;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
+use crate::common::process::Capped;
 
 const FUNCTIONS: &str = "flip_first_and_add,flip_second_and_add,integer_to_float";
 const ASSERTIONS: &[&str] = &[
@@ -23,7 +24,7 @@ fn fixture(name: &str) -> PathBuf {
 
 fn required(command: &mut Command) {
     let output = command
-        .output()
+        .capped_output()
         .unwrap_or_else(|error| panic!("cannot run {command:?}: {error}"));
     assert!(
         output.status.success(),

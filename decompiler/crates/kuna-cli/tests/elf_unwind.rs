@@ -2,6 +2,7 @@ use crate::common;
 use kuna_analysis::analyzers::entry::kuna_fdeinterior::{eligible_fde_bodies, scan_fde_bodies};
 use kuna_analysis::analyzers::entry::{scan_eh_frame_landing_pads, scan_eh_frame_starts};
 use std::process::Command;
+use crate::common::process::Capped;
 #[path = "fixtures/elf_unwind_fixture.rs"]
 mod fixture;
 
@@ -56,7 +57,7 @@ fn pc_read_keeps_the_complete_body_and_result() {
         common::process::required_output(
             Command::new("cc").args(["-O2", c.to_str().unwrap(), "-o", exe.to_str().unwrap()]),
         );
-        assert!(Command::new(&exe).status().unwrap().success());
+        assert!(Command::new(&exe).capped_status().unwrap().success());
         for file in [c, exe] {
             std::fs::remove_file(file).unwrap();
         }

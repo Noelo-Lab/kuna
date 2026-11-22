@@ -1,6 +1,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 fn check_guarded_stack_read(target: &str, code: &str, qualifier: &str, preloaded: bool) {
     let image = common::scratch_file("guarded-local-read", "bin");
@@ -77,7 +78,7 @@ fn check_guarded_stack_read(target: &str, code: &str, qualifier: &str, preloaded
                     .arg(&exe),
             );
             assert!(
-                Command::new(&exe).status().unwrap().success(),
+                Command::new(&exe).capped_status().unwrap().success(),
                 "{cc} {opt}: {decompiled}"
             );
         }

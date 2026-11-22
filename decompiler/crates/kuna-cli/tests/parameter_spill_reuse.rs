@@ -2,9 +2,10 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 use crate::common;
 use std::process::{Command, Output};
+use crate::common::process::Capped;
 
 fn checked(command: &mut Command) -> Output {
-    let output = command.output().expect("start fixture command");
+    let output = command.capped_output().expect("start fixture command");
     assert!(
         output.status.success(),
         "{command:?}\n{}\n{}",
@@ -118,7 +119,7 @@ fn declared_preserved_input_does_not_hide_a_reused_stack_local() {
             checked(command.arg("-o").arg(&executable));
             executables.push(executable);
         }
-        let original = match Command::new(&executables[0]).output() {
+        let original = match Command::new(&executables[0]).capped_output() {
             Ok(output) => output,
             Err(error) if error.raw_os_error() == Some(8) => {
                 eprintln!("Kernel cannot execute i386 ELF; generated C compiled successfully");

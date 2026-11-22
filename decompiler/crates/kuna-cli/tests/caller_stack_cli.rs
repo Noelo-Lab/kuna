@@ -3,6 +3,7 @@ use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use crate::common::process::Capped;
 
 const FUNCTIONS: [&str; 5] = [
     "caller_first",
@@ -91,7 +92,7 @@ fn roundtrip(source: &Path, original: Option<&Path>) {
                 String::from_utf8_lossy(&output.stderr)
             );
             let output = Command::new(exe)
-                .output()
+                .capped_output()
                 .expect("run caller-stack roundtrip");
             assert!(output.status.success(), "{compiler} {opt}: {output:?}");
             assert_eq!(
@@ -226,7 +227,7 @@ fn typed_object_pointers_keep_the_caller_address() {
                     String::from_utf8_lossy(&output.stderr)
                 );
                 let output = Command::new(exe)
-                    .output()
+                    .capped_output()
                     .expect("run typed caller address");
                 assert!(output.status.success(), "{compiler} {opt}: {output:?}");
             }

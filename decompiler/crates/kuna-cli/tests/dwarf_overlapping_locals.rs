@@ -3,6 +3,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 const SOURCE: &str = r#"
 function sample_f(initial) result(answer)
@@ -198,7 +199,7 @@ int main(void) {{
                 String::from_utf8_lossy(&built.stderr)
             );
             assert!(
-                Command::new(&executable).status().unwrap().success(),
+                Command::new(&executable).capped_status().unwrap().success(),
                 "{compiler} {level}: overlapping writes were lost"
             );
         }

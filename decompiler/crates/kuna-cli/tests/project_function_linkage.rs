@@ -2,6 +2,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[test]
 #[cfg(target_os = "linux")]
@@ -129,7 +130,7 @@ int main(int argc, char **argv) {{
                 assert!(
                     Command::new(&executable)
                         .arg(&binary)
-                        .status()
+                        .capped_status()
                         .unwrap()
                         .success(),
                     "{compiler} {opt}"

@@ -3,6 +3,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 const ASSEMBLY: &str = r#"
 .text
@@ -145,7 +146,7 @@ __attribute__((noreturn,force_align_arg_pointer)) void _start(void) {{
                 Command::new(&executable)
             };
             assert!(
-                run.status().unwrap().success(),
+                run.capped_status().unwrap().success(),
                 "{compiler} {level}: native x87 result mismatch\n{code}"
             );
         }

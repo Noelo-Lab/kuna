@@ -4,6 +4,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 fn emitted_frame(mutable: bool, options: &[&str]) -> String {
     let hex = include_str!("fixtures/contiguous_byte_frame.hex").trim();
@@ -62,6 +63,10 @@ fn emitted_frame_preserves_bytes_and_object_bounds() {
         .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
         .collect();
     assert!(!compilers.is_empty(), "a C compiler is required");
+    let compilers: Vec<_> = compilers
+        .into_iter()
+        .filter(|cc| process::sanitizer_runs(cc, &["-fsanitize=address,undefined"]))
+        .collect();
     for mutable in [false, true] {
         let code = emitted_frame(mutable, &[]);
         let pieces = regex::Regex::new(r"(\w+)\._0_4_ = ([^;\n]+);").unwrap();
@@ -120,7 +125,7 @@ int main(void) {{
                     "{cc} {optimization}: {}\n{code}",
                     String::from_utf8_lossy(&compiled.stderr)
                 );
-                let run = Command::new(&executable).output().unwrap();
+                let run = Command::new(&executable).capped_output().unwrap();
                 assert!(
                     run.status.success(),
                     "{cc} {optimization} mutable={mutable}: {}\n{code}",
