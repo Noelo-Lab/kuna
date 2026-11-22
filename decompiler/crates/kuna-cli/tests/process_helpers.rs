@@ -136,7 +136,7 @@ fn fake_compiler(program: &str) -> std::path::PathBuf {
 
 #[cfg(unix)]
 #[test]
-fn a_sanitizer_runtime_that_hangs_is_unusable() {
+fn only_a_sanitizer_runtime_that_hangs_is_skipped() {
     let hanging = fake_compiler("exec sleep 600");
     let start = Instant::now();
     assert!(!process::probe_sanitizer(
@@ -152,8 +152,14 @@ fn a_sanitizer_runtime_that_hangs_is_unusable() {
         Duration::from_secs(30)
     ));
     let failing = fake_compiler("exit 1");
-    assert!(!process::probe_sanitizer(
+    assert!(process::probe_sanitizer(
         &failing,
+        &["-fsanitize=address"],
+        Duration::from_secs(30)
+    ));
+    let missing = common::scratch_file("absent-sanitizer-compiler", "sh");
+    assert!(process::probe_sanitizer(
+        &missing,
         &["-fsanitize=address"],
         Duration::from_secs(30)
     ));

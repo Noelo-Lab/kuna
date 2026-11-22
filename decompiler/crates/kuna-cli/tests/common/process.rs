@@ -123,10 +123,12 @@ fn reap(child: &mut Child, cap: Duration, poll_interval: Duration) -> Option<Exi
     }
 }
 
-/// Whether `compiler` builds and runs a trivial program with `flags`, which
-/// carry its `-fsanitize=` selection; probed once per process. Some ASan
-/// runtimes (Apple clang 17 on Darwin 25) hang at start-up before `main`, so
-/// such a compiler is as unusable for a sanitizer round trip as a missing one.
+/// Whether a trivial program `compiler` builds with `flags`, which carry its
+/// `-fsanitize=` selection, gets past start-up; probed once per process. Some
+/// ASan runtimes (Apple clang 17 on Darwin 25) hang before `main`, so such a
+/// compiler is as unusable for a sanitizer round trip as a missing one. Only
+/// that hang skips: a build that fails or a program that exits non-zero keeps
+/// the round trip, which then reports the failure itself.
 pub fn sanitizer_runs(compiler: &str, flags: &[&str]) -> bool {
     static PROBES: OnceLock<Mutex<HashMap<(String, Vec<String>), bool>>> = OnceLock::new();
     let key = (
@@ -139,13 +141,14 @@ pub fn sanitizer_runs(compiler: &str, flags: &[&str]) -> bool {
     }
     let usable = probe_sanitizer(Path::new(compiler), flags, ASAN_PROBE_CAP);
     if !usable {
-        eprintln!("skipping {compiler} {flags:?}: its sanitizer runtime cannot run a trivial program");
+        eprintln!("skipping {compiler} {flags:?}: a trivial program built with it hangs at start-up");
     }
     probes.insert(key, usable);
     usable
 }
 
-/// One uncached `sanitizer_runs` probe whose trivial program may run for `cap`.
+/// One uncached `sanitizer_runs` probe: false only when the trivial program
+/// built and was still running after `cap`.
 pub fn probe_sanitizer(compiler: &Path, flags: &[&str], cap: Duration) -> bool {
     let source = super::scratch_file("sanitizer-probe", "c");
     let executable = source.with_extension("exe");
@@ -157,7 +160,7 @@ pub fn probe_sanitizer(compiler: &Path, flags: &[&str], cap: Duration) -> bool {
         .arg(&executable)
         .capped_output()
         .is_ok_and(|output| output.status.success());
-    let ran = built
+    let hung = built
         && output_with_timeout(
             Command::new(&executable)
                 .env("ASAN_OPTIONS", "detect_leaks=0")
@@ -165,8 +168,8 @@ pub fn probe_sanitizer(compiler: &Path, flags: &[&str], cap: Duration) -> bool {
             cap,
             Duration::from_millis(20),
         )
-        .is_some_and(|output| output.status.success());
+        .is_none();
     let _ = std::fs::remove_file(&source);
     let _ = std::fs::remove_file(&executable);
-    ran
+    !hung
 }
