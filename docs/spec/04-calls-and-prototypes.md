@@ -9673,6 +9673,28 @@ selector stub's call, which already carries the result its method types
 give, says yes, and so does a C callee in the image that reads its first
 argument.
 
+On AArch64 the Objective-C and Swift runtime's entry points are known by
+name (`kuna_callresultuse.rs (runtime_entry)`), since their stubs say
+nothing. The ARC calls (`objc_retain`, `objc_release`,
+`objc_retainAutoreleasedReturnValue`, ...; clang's ARC specification,
+"Runtime support"), the Swift runtime's (`swift_retain`,
+`swift_bridgeObjectRelease`, ...), a message send's receiver
+(`objc_msgSend`, `objc_msgSendSuper2`, the `objc_msgSend$<selector>`
+stubs), `objc_sync_enter`, `objc_sync_exit` and `objc_exception_throw`
+take their object in `x0`: as the next callee they say yes. The
+register-specific entry points `objc_retain_x<N>`, `objc_release_x<N>`,
+`swift_retain_x<N>` and `swift_release_x<N>` take it in `x<N>`: libobjc's
+begin `ands x0, x<N>, x<N>`, and libswiftCore's return `function(ptr)` with
+`ptr` moved from `x<N>` (`swift/Runtime/CustomRRABI.h`), so neither reads
+`x0` and as the next callee they say no. As the callee behind the value, a
+release (and `objc_exception_throw`) says no. A retain returns its object,
+but that says nothing of the next call: Swift code goes on with the object
+it passed, and leaves the result in `x0` for a callee that takes nothing
+there (`swift_bridgeObjectRetain(v8); Foundation.Locale.current.getter(v7)`,
+or `objc_retainAutoreleasedReturnValue(..)` before
+`URL._bridgeToObjectiveC()`, whose `self` is in `x20`). `tests/stages/kuna-callresultuse-runtime.xml`
+pins both ends.
+
 So the hand-off is heritaged at all, `kuna_callresultuse.rs (plant)` gives
 the RETURNs a read of that register the way `voidret` plants the storage a
 caller reads, when the function makes a call, its output is not locked,
@@ -9702,26 +9724,22 @@ reader who takes an untouched `x0` at the `ret` for the result makes, and
 prints it `int _pb_decode_bool(...)` with `return v2;`.
 
 Forced on, the option moves none of the 675 datatest assertions and none of
-the 4,951 stage assertions. On an iOS app's main binary (Apple options on),
-`on` changes 14 of a 91-function sample and 21 of a 300-function one; a
-result of a void runtime release (`swift_bridgeObjectRelease`,
-`swift_release_x<N>`, `objc_release_x<N>`) handed to the next call, which
-the reading without the evidence rule printed 38 and 110 times there, is
-left once in the smaller sample. What is still wrong there is the other end:
-a register-specific entry point (`objc_release_x19`, `swift_release_x8`)
-takes its object in `x19` or `x8`, its stub says nothing, and a value a call
-with a stated result left in `x0` before it is printed as its argument, 8
-times in one 1,015-line function (17 such arguments with the option off, 25
-on, 87 without the evidence rule); only a prototype of the entry point
-settles that. The ARC calls printed with no argument fall from 111 to 42
-and from 54 to 2: a message sent through `objc_msgSend` or
-`objc_msgSendSuper2` declares no result type, and its hand-off to
-`objc_retainAutoreleasedReturnValue` waits for a prototype of either. In
-the app's AppAuthCore framework (705 functions, selector stubs) they fall
-from 642 to 14, and the app's nanopb framework does not change. Over
-clang 22 arm64 builds of bzip2 and zlib at O0 and O2, nothing changes; the
-reading without the evidence rule added four arguments there, all to
-bzip2's `cadvise(void)`.
+the stage assertions. On an iOS app's main binary (Apple options on), `on`
+changes 17 of a 91-function sample and 23 of a 300-function one. No result
+of a void runtime release (`swift_bridgeObjectRelease`, `swift_release_x<N>`,
+`objc_release_x<N>`) is handed to the next call, where the reading without
+the evidence rule printed 38 and 110, and no register-specific entry point
+takes a value a call left in `x0` (the reading before the runtime entry
+points were known printed 8 in one 1,015-line function, `objc_release_x19(
+CGRectGetMinY(..))` among them). The ARC calls printed with no argument fall
+from 121 to 12 and from 77 to 23; the ones left take a value the function
+loaded, not a call's result. In the app's AppAuthCore framework (705
+functions, selector stubs) they fall from 644 to 15, and the app's nanopb
+framework does not change. A register-specific entry point printed with no
+argument (118 and 310 times there, on or off) takes `x<N>`, which no call
+result is; only its prototype names it. Over clang 22 arm64 builds of bzip2
+and zlib at O0 and O2, nothing changes; the reading without the evidence
+rule added four arguments there, all to bzip2's `cadvise(void)`.
 
 The option is off by default because, without that rule, the reading was
 right where results are handed from message to message and wrong in most

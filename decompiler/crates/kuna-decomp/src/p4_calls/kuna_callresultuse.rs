@@ -41,7 +41,8 @@
 //! there, or whose body never reads the register, ends the hand-off.  An
 //! import with no prototype handing to another says nothing either way, and
 //! `bl g; bl h` between two of them is far more often `g(); h();` than
-//! `h(g())`.  The RETURNs get a read of the register when nothing else names
+//! `h(g())`.  On AArch64 the Objective-C and Swift runtime's entry points
+//! say by their name which register they take ([`runtime_entry`]).  The RETURNs get a read of the register when nothing else names
 //! it ([`plant`]), so the hand-off is heritaged at all; that trial is settled
 //! by [`settle_planted`].  The RETURN keeps the strict reading: `bl g; cbz
 //! x0,L; ...; L: ret` is `long h(long a) { long r = g(a); if (r) *p = 1;
@@ -155,6 +156,9 @@ fn returns_value(data: &Funcdata, fc: &crate::fspec::FuncCallSpecs, addr: &Addre
         let void = fc.proto().get_output_type().is_none_or(|t| t.get_metatype() == type_metatype::TYPE_VOID);
         return if void || disjoint(&out.get_address(), out.get_size(), addr, size) { Evidence::No } else { Evidence::Yes };
     }
+    if let Some(rr) = runtime_entry(fc.get_name()).filter(|_| in_x0(data, addr)) {
+        return rr.result;
+    }
     // `protoorder types` states the callee's recovery without locking it;
     // its result storage is recorded only with `passthrough` on.
     match data.kuna_protoorder_types(fc.get_entry_address()).map(|s| s.result.as_ref()) {
@@ -171,6 +175,9 @@ fn returns_value(data: &Funcdata, fc: &crate::fspec::FuncCallSpecs, addr: &Addre
 /// [`CalleeEntryDead::proves_input`](crate::p4_calls::kuna_calleedeadarg::CalleeEntryDead::proves_input)),
 /// and a stated recovery does by the registers it lists.
 fn takes_argument(data: &Funcdata, fc: &crate::fspec::FuncCallSpecs, addr: &Address, size: int4) -> Evidence {
+    if let Some(rr) = runtime_entry(fc.get_name()).filter(|_| in_x0(data, addr)) {
+        return if rr.input == 0 { Evidence::Yes } else { Evidence::No };
+    }
     let entry = fc.get_entry_address();
     if let Some(facts) = data.kuna_callee_entry_dead(entry) {
         if facts.never_takes(addr, size) {
@@ -185,6 +192,92 @@ fn takes_argument(data: &Funcdata, fc: &crate::fspec::FuncCallSpecs, addr: &Addr
         Some(s) if s.arity_sound => Evidence::No,
         _ => Evidence::Unknown,
     }
+}
+
+/// An Objective-C or Swift runtime entry point on AArch64, known by its
+/// name: the `x` register it takes its object in, and what its result in
+/// `x0` says of a hand-off ([`returns_value`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RuntimeEntry {
+    input: u32,
+    result: Evidence,
+}
+
+/// The runtime entry point `name` (a Mach-O `_` prefix allowed) is.  Those
+/// that take their object in `x0`: the ARC runtime's (`objc_retain`,
+/// `objc_retainAutoreleasedReturnValue`, ...; clang's ARC specification,
+/// "Runtime support"), the Swift runtime's (`swift_retain`,
+/// `swift_bridgeObjectRelease`, ...; `swift/Runtime/HeapObject.h`), a
+/// message send's receiver (`objc_msgSend`, `objc_msgSendSuper2`, and the
+/// `objc_msgSend$<selector>` stubs, which load the selector into `x1` and
+/// branch to `objc_msgSend`), and `objc_sync_enter`, `objc_sync_exit` and
+/// `objc_exception_throw`.  The register-specific ones, `objc_retain_x<N>`,
+/// `objc_release_x<N>`, `swift_retain_x<N>` and `swift_release_x<N>`, take it
+/// in `x<N>` and call the `x0` entry point with it: libobjc's begin `ands x0,
+/// x<N>, x<N>` and libswiftCore's `function##_x##reg` returns `function(ptr)`
+/// with `ptr` moved from `x<N>` (`swift/Runtime/CustomRRABI.h`), so neither
+/// reads `x0`.
+///
+/// A release returns nothing, and `objc_exception_throw` does not return.
+/// What else these return says nothing of the next call: a retain returns
+/// its object, but Swift code goes on with the object it passed and leaves
+/// the result in `x0` for a callee that takes nothing there
+/// (`swift_bridgeObjectRetain(v8); Foundation.Locale.current.getter(v7)`;
+/// `objc_retainAutoreleasedReturnValue(..)` before `URL._bridgeToObjectiveC()`,
+/// whose `self` is in `x20`).
+fn runtime_entry(name: &str) -> Option<RuntimeEntry> {
+    use Evidence::{No, Unknown};
+    const X0: [(&str, Evidence); 25] = [
+        ("objc_retain", Unknown),
+        ("objc_release", No),
+        ("objc_autorelease", Unknown),
+        ("objc_retainAutorelease", Unknown),
+        ("objc_retainAutoreleasedReturnValue", Unknown),
+        ("objc_claimAutoreleasedReturnValue", Unknown),
+        ("objc_unsafeClaimAutoreleasedReturnValue", Unknown),
+        ("objc_autoreleaseReturnValue", Unknown),
+        ("objc_retainAutoreleaseReturnValue", Unknown),
+        ("objc_retainBlock", Unknown),
+        ("objc_sync_enter", Unknown),
+        ("objc_sync_exit", Unknown),
+        ("objc_exception_throw", No),
+        ("swift_retain", Unknown),
+        ("swift_release", No),
+        ("swift_retain_n", Unknown),
+        ("swift_release_n", No),
+        ("swift_bridgeObjectRetain", Unknown),
+        ("swift_bridgeObjectRelease", No),
+        ("swift_bridgeObjectRetain_n", Unknown),
+        ("swift_bridgeObjectRelease_n", No),
+        ("swift_unknownObjectRetain", Unknown),
+        ("swift_unknownObjectRelease", No),
+        ("swift_unknownObjectRetain_n", Unknown),
+        ("swift_unknownObjectRelease_n", No),
+    ];
+    let name = name.strip_prefix('_').unwrap_or(name);
+    if let Some(&(_, result)) = X0.iter().find(|(n, _)| *n == name) {
+        return Some(RuntimeEntry { input: 0, result });
+    }
+    if matches!(name, "objc_msgSend" | "objc_msgSendSuper2") || name.starts_with("objc_msgSend$") {
+        return Some(RuntimeEntry { input: 0, result: Unknown });
+    }
+    let (base, reg) = name.rsplit_once("_x")?;
+    let result = match base {
+        "objc_retain" | "swift_retain" => Unknown,
+        "objc_release" | "swift_release" => No,
+        _ => return None,
+    };
+    let input = reg.parse::<u32>().ok().filter(|&n| n <= 28 && reg.bytes().all(|b| b.is_ascii_digit()))?;
+    Some(RuntimeEntry { input, result })
+}
+
+/// Is `addr` the start of the register named `x0`, as on AArch64, where the
+/// runtime entry points [`runtime_entry`] knows live?
+fn in_x0(data: &Funcdata, addr: &Address) -> bool {
+    let (Some(space), Some(lookup)) = (addr.get_space(), data.get_arch().manage().register_lookup()) else {
+        return false;
+    };
+    lookup.get_exact_register_name(space, addr.get_offset(), 8) == "x0"
 }
 
 /// Is `root` a call result on every path: its definition, through
@@ -467,3 +560,7 @@ fn result_register(data: &Funcdata) -> Option<(Address, int4)> {
     })?;
     Some((Address::new(Rc::clone(entry.get_space()), entry.get_base()), entry.get_size()))
 }
+
+#[cfg(test)]
+#[path = "kuna_callresultuse/tests.rs"]
+mod tests;
