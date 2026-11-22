@@ -24,7 +24,7 @@
       8
     ]
   },
-  "implementation_acceptance": "One real16-byte backing passed to a full-width native observer, without a scalar adapter; source and destination evaluated at original points.",
+  "implementation_acceptance": "One real 16-byte backing passed to a full-width native observer, without a scalar adapter; source and destination evaluated at original points.",
   "exclusions": [
     "Loop folding and larger interval unions",
     "Go ABI zero authority",

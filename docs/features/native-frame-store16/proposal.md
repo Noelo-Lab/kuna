@@ -134,16 +134,17 @@ that contained low/high/byte writes keep their order and leave other bytes intac
 
 Retain the existing local-stack-view refusal tests, native-width stages and
 C/Rust isolation controls. Run the complete repository gates and relevant Python
-tooling before a commit, preserve the vendored675 baseline, regenerate the actual
-stage ledger only after the new complete run, and measure the default-path speed
-impact with matched tools. No speed or runtime result is claimed by this proposal.
+tooling before a commit, preserve the vendored 675-assertion baseline, regenerate
+the actual stage ledger only after the new complete run, and measure the
+default-path speed impact with matched tools. No speed or runtime result is
+claimed by this proposal.
 
 ## Relation to Go stack-clear parity
 
-The pinned Go1.27.1 stack-clear test expects zero-filled extents200 and264 with
+The pinned Go 1.27.1 stack-clear test expects zero-filled extents 200 and 264 with
 its counted loops removed. It separately requires a proved zero source at every
 store, a stride/count/tail union, and preservation of later overwrites. The
 narrow XMM15 return proof and this physical-store proof address different facts.
 This proposal neither admits the parameterless pinned main to that classifier
-nor proves the larger loop, joins its adjacent stores, changes the256-byte
+nor proves the larger loop, joins its adjacent stores, changes the 256-byte
 metadata cap, or implements other standard-library idioms. G19 remains open.

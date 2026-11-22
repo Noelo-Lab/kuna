@@ -33,7 +33,7 @@ return observe16((unsigned char *)&v1);
 Raw p-code reports a single LOAD16 and STORE16. Final variable metadata instead
 reports two eight-byte stack objects. Passing `&v1` does not expose a sixteen-byte
 C object containing `v2`. When the emitted body is compiled against an inline
-observer with the exact machine reads, GCC 12.2 warns that `v2` is unused and
+observer with the exact machine reads, GCC 11.4 warns that `v2` is unused and
 produces `mov (%rdi),%rax; xor (%rsp),%rax`. A reference with an actual
 sixteen-byte byte array produces `mov (%rdi),%rax; xor 8(%rdi),%rax`.
 Compilation is static evidence of the lost storage relationship, not a native
