@@ -64,6 +64,8 @@ code also reaches (`case 0x43: case 0x46: goto`), in `g` they left the switch
 (`break;`). The off run keeps `f`'s labels. `h` checks that `jumptablemax`
 caps a guarded table's distinct arms, not its entries: an 1100-entry
 range-checked table with four arms prints as a switch, not as `jump-as-call`.
+`p` (clang -O2) keeps its hole labels: the arm before them ends in a jump to
+the code after the switch that prints as nothing, so it runs into them.
 
 `kuna-switchmerge-split.xml` checks two more `switchmerge` rules on AArch64
 tables. In `k` a range test splits the selector between two range-checked

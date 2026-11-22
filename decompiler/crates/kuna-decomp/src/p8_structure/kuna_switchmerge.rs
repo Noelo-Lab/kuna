@@ -367,7 +367,7 @@ fn default_reaches(fd: &Funcdata, facts: &PrintFacts<'_>, sw: BlockId, start: Bl
             _ if blk.size_out() == 1 => 0,
             _ => return false,
         };
-        if out < 0 || out >= blk.size_out() {
+        if out < 0 || out >= blk.size_out() || blk.is_back_edge_out(out) {
             return false;
         }
         bb = blk.get_out(out);
@@ -467,17 +467,6 @@ fn unlabelled_start(graph: &BlockGraph, blk: BlockId) -> Option<BlockId> {
     b.get_copy()
 }
 
-/// Does the printed code of `blk` never run past its end?
-fn ends_in_jump(graph: &BlockGraph, blk: BlockId) -> bool {
-    let b = graph.block(blk);
-    match b.get_type() {
-        BlockType::Goto => true,
-        BlockType::Ls => b.get_list().last().is_some_and(|&l| ends_in_jump(graph, l)),
-        BlockType::Copy | BlockType::Basic => b.size_out() == 0,
-        _ => false,
-    }
-}
-
 /// The constant `c` of an `if (v == c)` with no else, whose condition block
 /// prints only its branch and whose then-arm runs exactly for `c`.
 fn guard_value(fd: &Funcdata, facts: &PrintFacts<'_>, sw: BlockId, blk: BlockId) -> Option<uintb> {
@@ -534,7 +523,7 @@ fn fold_guards(fd: &Funcdata, facts: &PrintFacts<'_>, mut arms: Vec<PlannedCase>
             return arms;
         }
         match d.checked_sub(1).map(|p| arms[p]) {
-            Some(prev) if prev.guard.is_some_and(|(g, _)| !ends_in_jump(graph, graph.block(g).get_block(1))) => return arms,
+            Some(prev) if prev.guard.is_some_and(|(g, _)| runs_past_end(fd, graph.block(g).get_block(1))) => return arms,
             Some(prev) if prev.guard.is_none() && falls_through(fd, prev) => return arms,
             _ => {}
         }

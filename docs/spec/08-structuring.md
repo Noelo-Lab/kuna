@@ -1312,7 +1312,8 @@ structured tree, outer switches first, the plan lists the arms to print:
   entry labelled with the value or else the default edge (none when the
   table has an unrecovered label or a label on two edges). It stops with no
   drop at a block that prints a statement other than its branch, a block it
-  has seen, a test of anything else, or after 256 blocks. A varnode is the
+  has seen, a back edge (which could reach a `switch` whose printed labels
+  no longer match its table), a test of anything else, or after 256 blocks. A varnode is the
   selector when it is the switch's selector or an explicit varnode of the
   same HighVariable: the walk passes no printed statement, so no assignment
   to that variable runs between the `switch` and the test. Holes of a table
@@ -1325,7 +1326,8 @@ structured tree, outer switches first, the plan lists the arms to print:
   `c`, the plan prints `case c: S` right before `default:` and `default:`
   prints the rest of its list. `S` runs for `c` and then falls into the rest,
   as after the `if`. The arm before `default:` must not fall into it, and a
-  second `case` follows only an `S` that ends in a jump or a return. When
+  second `case` follows only an `S` whose printed code cannot run past its
+  end (the rule below). When
   nothing is left of a last `default:` arm, it is not printed.
 - Last, innermost first, an `if` with an else whose two branches each print
   as a switch on the same selector (a switch not merged elsewhere, or an
