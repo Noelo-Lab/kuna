@@ -2276,6 +2276,9 @@ mod tests {
         // and kuna-switchmerge-values / a hole the default code sends to the same place prints no label, and a 1100-entry table is a switch
         // and kuna-switchmerge-split / a range split between two switches, and an == test heading default, print as one switch
         // and kuna-jumptableslots / a guarded table indexed by x >> 8 past jumptablemax stays a computed call
+        // and kuna-cachereturn / a lazy accessor returns the value of its cache cell (option cachereturn)
+        // and kuna-thunknames / a placeholder jump thunk is named after its target (option thunknames)
+        // and kuna-swifthelpers / Swift instantiation helpers and lazy witness table accessors (option swifthelpers)
         // and kuna-rangefold / a test or mask a dominating branch's range decides
         // and kuna-pow2select, kuna-pow2select-aarch64 / a signed division or remainder by 2^k written as a select
         // and kuna-cmpmerge / two comparisons of the same operands merge into one
@@ -2283,7 +2286,7 @@ mod tests {
         // and kuna-mba, kuna-mba-groups / mixed boolean-arithmetic expressions simplify
         // and kuna-copyrun, kuna-copyrunself / an unrolled element-copy run prints as memcpy
         // and kuna-alloca / a dynamic stack allocation prints as alloca(n)
-        assert_eq!(count, 869, "corpus file count drifted");
+        assert_eq!(count, 872, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

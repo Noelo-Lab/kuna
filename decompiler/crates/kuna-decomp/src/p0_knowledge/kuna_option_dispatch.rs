@@ -431,6 +431,11 @@ kuna_options! { self, p1;
         self.mixed_tail_ret = val;
         Ok(msg)
     },
+    "cachereturn" => {
+        let (val, msg) = crate::p4_calls::kuna_cachereturn::OptionCacheReturn.apply(p1)?;
+        self.cache_return = val;
+        Ok(msg)
+    },
     "varargsharedfloat" => on_off!(vararg_shared_float, "variadic doubles that also feed an earlier argument"),
     "calloverlap" => {
         let (val, msg) =
@@ -971,6 +976,7 @@ kuna_options! { self, p1;
     },
     "calltable" => on_off!(analysis_calltable, "Call-table recovery and the call-table vs switch vote"),
     "stubbinds" => on_off!(analysis_stubbinds, "Stripped Mach-O stubs named from their slot's chained bind"),
+    "thunknames" => on_off!(analysis_thunknames, "Placeholder jump thunks named j_<target>"),
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
     "panicloc" => on_off!(analysis_panicloc, "Rust panic Location record pass"),
     "swiftmetadata" => on_off!(analysis_swiftmetadata, "Swift runtime-metadata recovery pass"),
@@ -986,6 +992,7 @@ kuna_options! { self, p1;
     },
     "blobs" => on_off!(analysis_blobs, "Embedded image and archive data symbols"),
     "swifttypes" => on_off!(analysis_swifttypes, "Swift type layouts from static metadata"),
+    "swifthelpers" => on_off!(analysis_swifthelpers, "Swift instantiation helpers and lazy witness table accessors"),
     "objcivars" => {
         let val = on_or_off(p1)?;
         self.analysis_objcivars = val;
@@ -994,6 +1001,8 @@ kuna_options! { self, p1;
         Ok(format!("Objective-C instance layouts turned {}", if val { "on" } else { "off" }))
     },
     "swiftcall" => on_off!(analysis_swiftcall, "Swift calling convention on methods and witnesses"),
+    "swiftobjcthunk" => on_off!(analysis_swiftobjcthunk, "Swift vtable slot names from @objc thunks"),
+    "valuewitness" => on_off!(analysis_valuewitness, "Swift value witness functions and tables"),
     "objcsdk" => {
         let path = crate::kuna_objcsdk::parse_option_value(p1).map_err(KunaError::parse)?;
         crate::kuna_objcsdk::set_objcsdk_env(path.as_deref().and_then(|p| p.to_str()));
