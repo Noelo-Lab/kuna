@@ -24,5 +24,10 @@ Stock can recover the physical RAX return in a single-function view. A
 batched view can retain the call and lose the result. An explicit pointer
 prototype for the wrapper preserves it on both entry paths. Declaring
 only the runtime helper can still leave a selected batched wrapper void.
+On main `760a27b63` neither loss reproduces with this fixture: on Go 1.22.10
+the single-function run and `decompile-all --functions` selections print
+`func NewRegistry() uint64`, the whole-image run prints `*runtime.hmap`, and
+declaring only the helper gives `unsafe.Pointer`. Go 1.27.2 prints the
+runtime-private `*internal/runtime/maps.Map`. None of them names `Registry`.
 The [proposal](proposal.md) keeps physical result recovery and Go spelling
 grounded in the same verified allocation.
