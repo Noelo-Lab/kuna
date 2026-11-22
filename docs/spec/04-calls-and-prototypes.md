@@ -7111,10 +7111,18 @@ low byte the complete entry walk reads for a value that reaches something
 the body leaves untouched before a direct call, one that call's target takes:
 `reads_through_calls` is taken for an unstated callee too, and an unstated
 target's take is the same run of the default model's registers read off its
-own body. A register the body only spills, alone or in a multi-register
-store, ends the run, so a variadic callee's register-save prologue
-(`mov %rsi,0x28(%rsp)`, `sw $a1,4($sp)`, `stp x2,x3,[sp,#16]`) gives it no
-tail. A body the walk cannot finish -- an import, a thunk, a body past the
+own body. A register the body only spills with a single ARM or AArch64
+store, or in a multi-register store on ARM, ends the run. A run that reaches
+the model's last general-purpose argument register is no list at all, the
+`RegisterFileFull` decline a stated list gets: gcc's x86-64 variadic
+register-save prologue (`mov %rsi,0x28(%rsp)` .. `mov %r9,0x48(%rsp)`) and
+clang's AArch64 one (`stp x1,x2,[x29,#-120]` .. `stur x7,[x29,#-72]`) read
+every register after the named ones, and so does, through the call, every
+function that reaches such a callee on an error path: without the decline
+gcc -O2's `int g(long x) { return f(x) + 3; }`, whose `f` calls a variadic
+`err` when `x > 5`, printed `f(a0,a1,a2,a3,a4,a5)`, and a single-function
+decompile of x86-64 and AArch64 dash gave `stalloc`, `growstackblock` and
+`setstackmark` six or eight arguments. A body the walk cannot finish -- an import, a thunk, a body past the
 budget -- states nothing, as before. The argument is as wide as the body reads
 it on a little-endian register file; on a big-endian one it is the whole
 register. All of the evidence above applies unchanged, with two additions,
@@ -7129,10 +7137,10 @@ as it was -- the terms `calleearitycut` and `calleearityscratch` bound a
 body-read run on. `twice(a, b) { return ins16(a, b) * 2; }` on ARM is `push
 {r11,lr}; bl ins16`, and kuna printed `twice(void) { v1 = sub_400020(); ... }`;
 gcc -O2's x86-64 `returns_word` passes `edi` to `whole` the same way, a PowerPC
-or MIPS caller forwards `r3`..`r6` or `a0`..`a3` to `add64`, and a PowerPC
-`c_pass` hands them to a `pass` that hands them to `add64`. A MIPS `c_unal`
-that forwards `a0`..`a3` and reads its fifth argument at `40($sp)` comes out
-with five parameters instead of a never-written local.
+caller forwards `r3`..`r6` to `add64`, and a PowerPC `c_pass` hands them to a
+`pass` that hands them to `add64`. A MIPS caller forwarding `a0`..`a3` fills
+the o32 register file and is left as it was, as are an ARM caller forwarding
+`r0`..`r3` and the `__sread`/`__sseek` newlib wrappers that do.
 
 **The rule only adds.** Every other rule decides a call's argument list first,
 exactly as with the option off, and `passthrough` extends the result. That order

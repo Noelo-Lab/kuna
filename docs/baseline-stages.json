@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4996,
-    4996
+    5001,
+    5001
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3009,7 +3009,9 @@
     "data:bejoin mips #3: realeof and both return the bool in $2",
     "data:bejoin mips #4: nothing is shifted into the high word",
     "data:bejoin residue #10: a sign test of a whole wrapper reads its high word",
+    "data:bejoin residue #10b: on MIPS wrap forwards all four argument registers, which states no arity",
     "data:bejoin residue #11: bejoinpass off reads the first register as the low word",
+    "data:bejoin residue #11b: bejoinpass off on MIPS, the same low-word read",
     "data:bejoin residue #12: a pair stored with std is read, so keep is not proven",
     "data:bejoin residue #13: a discarded volatile reload beside the int is not proven",
     "data:bejoin residue #1: a widened argument reloaded after a call returns 8 bytes",
@@ -4215,6 +4217,8 @@
     "data:passthrough #2: off, the function that tests the result never names rdi either, and has no parameter",
     "data:passthrough #2b: on, it forwards rdi too",
     "data:passthrough #3: off passes nothing; on passes the registers each unstated callee's body reads",
+    "data:passthrough #4: a callee whose error path calls a variadic takes only the register its body reads",
+    "data:passthrough #4b: and not the five the variadic's register-save prologue stores",
     "data:persistcalls #10: persistcalls on drops the guard of small's that only passes a value on",
     "data:persistcalls #11: revisit reads u0 again after the call with the option off and on",
     "data:persistcalls #12: revisit compares the two reads with the option off and on",
@@ -4364,7 +4368,8 @@
     "data:relocobj #1: PPC32 add64 returns its sum high word first",
     "data:relocobj #1b: PPC32 store reads add64's pair r3 high",
     "data:relocobj #1c: both stores call add64 and store sink64's high word at its address",
-    "data:relocobj #1d: both stores call add64",
+    "data:relocobj #1d: the PPC32 store forwards add64 its four argument registers",
+    "data:relocobj #1e: the MIPS store calls add64 too, with no arguments: a0..a3 fill the register file and state no arity",
     "data:relocobj #2: PPC32 PIC callint calls extint",
     "data:relocobj #3: MIPS32 store reads add64's pair $2 high",
     "data:relocobj #3b: MIPS32 callint calls extint and reads sink32",
@@ -4791,7 +4796,7 @@
     "data:tail callbacks and clobbered stack aliases retain returning continuations",
     "data:tail callees #1: with nothing stated the thunk drops the tail call's result",
     "data:tail callees #2: the thunk returns the tail call's result",
-    "data:tail callees #3: with nothing stated the forwarder drops the argument it passes through",
+    "data:tail callees #3: with nothing stated the forwarder passes the argument helper's body reads, but not its result",
     "data:tail callees #4: the forwarder passes its third argument through",
     "data:tail callees #5: the forwarder takes the three parameters its callee reads",
     "data:tee-O2 tail-jumps #1: indirect-jump-as-call marker (pass 1 off only)",

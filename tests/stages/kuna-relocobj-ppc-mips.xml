@@ -81,7 +81,8 @@
 <stringmatch name="relocobj #1: PPC32 add64 returns its sum high word first" min="1" max="1">return CONCAT44\(a2 \+ a0 \+ \(uint4\)CARRY4\(a3,a1\),a3 \+ a1\);</stringmatch>
 <stringmatch name="relocobj #1b: PPC32 store reads add64's pair r3 high" min="1" max="1">unsigned long long v1; // r3:r4</stringmatch>
 <stringmatch name="relocobj #1c: both stores call add64 and store sink64's high word at its address" min="2" max="2">dat_402000 = \(int4\)\(\(uint8\)v1 &gt;&gt; 0x20\);</stringmatch>
-<stringmatch name="relocobj #1d: both stores call add64" min="2" max="2">v1 = add64\(a0,a1,a2,a3\);</stringmatch>
+<stringmatch name="relocobj #1d: the PPC32 store forwards add64 its four argument registers" min="1" max="1">v1 = add64\(a0,a1,a2,a3\);</stringmatch>
+<stringmatch name="relocobj #1e: the MIPS store calls add64 too, with no arguments: a0..a3 fill the register file and state no arity" min="1" max="1">v1 = add64\(\);</stringmatch>
 <stringmatch name="relocobj #2: PPC32 PIC callint calls extint" min="1" max="1">v1 = extint\(\);</stringmatch>
 <stringmatch name="relocobj #3: MIPS32 store reads add64's pair $2 high" min="1" max="1">unsigned long long v1; // v0:v1</stringmatch>
 <stringmatch name="relocobj #3b: MIPS32 callint calls extint and reads sink32" min="1" max="1">return extint\(\) \+ dat_402020;</stringmatch>
