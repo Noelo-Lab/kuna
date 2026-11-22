@@ -3646,7 +3646,11 @@ moves.
   64)` printed `memset_s(v1,0x40,0)`. With the rows each call takes exactly its
   declared arguments: a Thumb `memcpy_s` no longer takes the `r3` its caller
   pushed for alignment as a fifth one, and `sprintf_s` prints its format
-  string. On a large AArch64 shared library that imports them, every printed
+  string. The rows are not seeded at the PLT stub of a name the image itself
+  defines: a library that carries its own `memset_s(void *, int)` or
+  `strcpy_s(char *, const char *)` and calls it through its stub would be
+  handed the declared count (`memset_s(v1,0x40,a2,a3)`), so its calls keep
+  what call recovery finds. On a large AArch64 shared library that imports them, every printed
   `memset_s`, `memcpy_s` and `strncpy_s` call has four arguments, where 577 of
   627, 329 of 489 and 6 of 376 had three, six or two. The `int` result has the
   effect any `int`-returning row already has (`puts`, `fclose`): 28 `void`

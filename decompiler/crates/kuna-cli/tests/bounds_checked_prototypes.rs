@@ -97,3 +97,34 @@ fn an_undeclared_spelling_keeps_its_inferred_arguments() {
         std::fs::remove_file(image).unwrap();
     }
 }
+
+/// How many arguments each printed call to `callee` passes.
+fn arities(out: &str, callee: &str) -> Vec<usize> {
+    let open = format!("{callee}(");
+    out.match_indices(&open)
+        .map(|(at, _)| {
+            let args = &out[at + open.len()..];
+            let args = &args[..args.find(')').unwrap_or(args.len())];
+            if args.trim().is_empty() { 0 } else { args.split(',').count() }
+        })
+        .collect()
+}
+
+/// A library that defines its own `memset_s` and `strcpy_s`, each with a
+/// parameter list of its own, calls them through their PLT stubs: no row is
+/// seeded there, so neither call is handed arguments its definition never
+/// takes (`memset_s(v1,0x40,a2,a3)`, `strcpy_s(a0,a1,a2)`).
+#[test]
+fn a_bounds_checked_name_the_image_defines_takes_no_declared_arguments() {
+    let rebuilt = rebuild("boundschecked_own_aarch64.s", "aarch64", false);
+    for image in std::iter::once(common::fixture("boundschecked_own_aarch64.so")).chain(rebuilt.clone()) {
+        let out = decompile(&image, "clear_obj");
+        assert!(out.contains("memset_s(v1,0x40);"), "{image}\n{out}");
+        let out = decompile(&image, "copy_name");
+        let calls = arities(&out, "strcpy_s");
+        assert!(!calls.is_empty() && calls.iter().all(|&n| n <= 2), "{image}\n{out}");
+    }
+    if let Some(image) = rebuilt {
+        std::fs::remove_file(image).unwrap();
+    }
+}
