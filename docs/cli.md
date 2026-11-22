@@ -2319,7 +2319,12 @@ Behaviors specific to `decompile-all`:
   the loader resolved names at. Callable slots in PE IATs, Mach-O symbol-pointer
   sections, and similar data areas remain in `kuna functions`, remain installed
   for named calls and prototypes, and remain reachable through explicit `--addr`;
-  they are not automatically decoded as function bodies. The slot test is what
+  they are not automatically decoded as function bodies. A Mach-O slot whose
+  import's mangling names a data object (a Swift type's metadata or descriptor, a
+  witness table, an Objective-C class, a C++ vtable or static member) is not in
+  `kuna functions` at all: it is named in the symbol table only, as an ELF GOT
+  data slot is, and that name selects the slot as a data object (`kuna xrefs
+  --to OBJC_CLASS_$_NSObject`, `kuna read`). The slot test is what
   covers a packed PE that keeps its whole import directory inside its one
   `CODE|EXECUTE` section, where the section flags cannot tell the two apart.
   Analysis-discovered entries inside executable sections join
