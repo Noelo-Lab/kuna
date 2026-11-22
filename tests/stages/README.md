@@ -53,9 +53,10 @@ second `if (x)` stayed.
 and read only through a pointer the function keeps in a local (gcc -O0 stores
 `p = &st[0]` and reloads it for each `p[i]`). Before the fix the indexed
 LOAD got no guard on the stack's first heritage pass, so the store and the
-`if` around it were removed from the two functions that read through `p`.
-Each of the three functions now keeps both, and `p` does not survive as a
-variable.
+`if` around it were removed from the two functions that read through `p`,
+and a gcc -O0 `va_arg` loop lost the prologue's stores to the register save
+area it reads through the `va_list`. All of them are now kept, and `p` does
+not survive as a variable.
 
 `kuna-switchmerge.xml` checks option `switchmerge`: two AArch64 range-checked
 jump tables on one selector, the second reached when the first's range check

@@ -998,12 +998,14 @@ looks dead and is deleted, and the result reads a slot nothing wrote.
 of the space that has no reader yet continues from every unlinked read of that
 slot (same offset and size), with the offset and traversal flag it had when it
 was written. gcc -O0 keeps `p = &a[0]` in a local and reloads it for each
-`p[i]`; Tigress pushes `&locals[k]` on its virtual stack and pops it for every
-access. On the space's first pass those reads are not yet linked to the write,
+`p[i]`, and reads a `va_arg` through the `reg_save_area` pointer `va_start`
+stores in the `va_list`; Tigress pushes `&locals[k]` on its virtual stack and
+pops it for every access. On the space's first pass those reads are not yet linked to the write,
 so upstream stops at the spill and the LOAD through the reloaded pointer gets no
 guard. A slot written directly and read only through that pointer then has no
 reader, so the store is deleted, and so is any branch that guarded only such
-stores: the `if (a > 5) st[1] |= 0x78;` before an indexed loop over `st`.
+stores: the `if (a > 5) st[1] |= 0x78;` before an indexed loop over `st`, or
+the prologue's register saves a `va_arg` loop reads.
 A LOAD reached through a spill gets a guard marked `LoadGuard::through_spill`;
 a STORE does not, because the rerun after renaming finds it through the linked
 slot, as upstream does. In the pass that found it, a spill guard the value-set
