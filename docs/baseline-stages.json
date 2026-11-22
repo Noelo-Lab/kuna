@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4967,
-    4967
+    4971,
+    4971
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1490,6 +1490,10 @@
     "data:KUNA-GLOBALREF #6: a value the function also divides by keeps the cast in both passes",
     "data:KUNA-GLOBALREF #7: the direct read beside the named buffer is unchanged",
     "data:KUNA-GLOBALREF #8: the buffer the function also reads as a long is never named by address",
+    "data:KUNA-GUARDEDLOOP #1: append's walk tests at the top inside the guard (default)",
+    "data:KUNA-GUARDEDLOOP #2: drain's loop is a while loop with no guard (default)",
+    "data:KUNA-GUARDEDLOOP #3: guardedloop off keeps both do-while loops",
+    "data:KUNA-GUARDEDLOOP #4: guardedloop off keeps drain's guard",
     "data:KUNA-LIBCWIDEN #1: the faccessat wrapper's path is never a width-only integer",
     "data:KUNA-LIBCWIDEN #2: faccessat's declaration types it",
     "data:KUNA-LIBCWIDEN #3: neither of renameat's names stays an integer",

@@ -3094,6 +3094,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "guardedloop"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P8"
+subphase = "loop-refinement"
+strength = "HARD"
+rewind = "P8"
+issue = "kuna-guardedloop"
+summary = "Print a guarded do-while as a while loop. When a do-while sits in an arm of an if, behind only assignments that call nothing and store nothing, and the if's condition implies the loop's test on entry (the same compare once each variable those assignments write is replaced by its right-hand side, ops compared op by op, variables by HighVariable, k <= x against a constant read as k - 1 < x, == against != and < against >= with the senses swapped; or a < b for a test a != b), the test prints at the top: while (c) body. When the if has no else, the loop ends the arm, the assignments read no memory, no value they write is read after the if's skip edge and the condition is the test itself, the if goes too and its condition block's statements stand before the assignments. A goto into the assignments or to the loop's first block keeps the do-while. C output only."
+use_when = "Turn on where the source has while (c) or for loops and kuna prints if (c) { do { ... } while (c); }: the guard clang adds when it rotates a loop. looprotate rewrites the same shape on the CFG when the tail's test is a pure function of the loop-carried values; this one also takes tests that read memory or values the body computes."
+example = "option guardedloop on"
+source_decompiler = "kuna"
+inspiration = "clang loop rotation: cmark llist append prints if (head) { v3 = head; do { v2 = v3; v3 = *v2; } while (v3); } for while (t->next) t = t->next"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "if (c) { do { ... } while (c); } where the source has while (c)|a guarded do-while whose test reads memory"
+live_field = "guarded_loop"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "regionlooprefine"
 values = "on|off"
 default = "on"

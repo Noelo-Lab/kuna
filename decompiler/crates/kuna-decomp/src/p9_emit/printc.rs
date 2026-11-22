@@ -5775,6 +5775,10 @@ impl PrintC {
     }
 
     fn emit_block_do_while_c(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        if fd.sblocks_ref().block(blk).get_flags() & crate::block::block_flags::f_kuna_top_test != 0 {
+            self.emit_block_top_tested_c(fd, arch, blk);
+            return;
+        }
         // dowhile block NEVER prints the final branch.
         self.context.push_mod();
         self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
@@ -5801,6 +5805,30 @@ impl PrintC {
         // (kuna warnstyle, DIV-39) body/condition warnings still pending land
         // at the end of the `} while (cond);` line.
         self.flush_eol_warnings();
+        self.context.pop_mod();
+    }
+
+    /// (kuna `guardedloop`) A do-while whose test runs first on entry anyway:
+    /// `while (block0-branch) { block0-body }`.
+    fn emit_block_top_tested_c(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        self.context.push_mod();
+        self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
+        self.emit_any_label_statement(fd, blk);
+        self.emit.tag_line();
+        self.emit.tag_op(self.lang().kw_while, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+        self.emit.spaces(1, 0);
+        let body = fd.sblocks_ref().block(blk).get_block(0);
+        self.context.push_mod();
+        self.context.set_mod(modifiers::ONLY_BRANCH);
+        self.emit_block(fd, arch, body);
+        self.context.pop_mod();
+        let id = self.emit.open_brace_indent(self.lang().kw_open_curly, self.output_brace(self.options.brace_loop));
+        self.flush_eol_warnings();
+        self.context.set_mod(modifiers::NO_BRANCH);
+        let id2 = self.emit.begin_block(0);
+        self.emit_block(fd, arch, body);
+        self.emit.end_block(id2);
+        self.emit.close_brace_indent(self.lang().kw_close_curly, id);
         self.context.pop_mod();
     }
 

@@ -541,3 +541,8 @@ fixture source is `decompiler/crates/kuna-cli/tests/fixtures/assert_callee.c`.
 `kuna-rust-process-exit.xml` preserves exit status and preceding stores while
 removing dead trap flow after a known Rust standard-library process exit.
 Different namespaces and a longer similarly named function retain their callers.
+
+`kuna-guardedloop.xml` checks `guardedloop`: clang's guarded do-while prints as
+a while loop. `append`'s list walk tests at the top inside its guard, as code
+after the loop runs only when the guard holds; `drain`'s guard, the loop test
+itself (a load of `s->end`), goes. With the option off both stay do-while loops.

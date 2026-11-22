@@ -1,0 +1,58 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna-guardedloop: a guarded do-while prints as a while loop
+    (option guardedloop).
+
+    Source (clang -O2 -fno-inline -fno-vectorize -fno-unroll-loops, x86-64):
+      struct node *append(struct node *head, struct node *n)
+        { struct node *t = head; if (!head) return n;
+          while (t-&gt;next) t = t-&gt;next; t-&gt;next = n; return head; }
+      void drain(struct st *s)
+        { while (s-&gt;cur != s-&gt;end) s-&gt;cur = step(s, s-&gt;cur); step(s, s-&gt;end); }
+
+    clang tests each loop condition once in front of the loop and again at
+    its bottom.  The tests read memory, so looprotate leaves both loops.
+
+    Stage: P8, ActionGuardedLoop on the final tree.  append's guard is the
+    loop test on the value the assignment before the loop gives the walk
+    pointer, so the loop prints as while (v1); the guard stays, as code
+    after the loop runs only when it holds.  drain's guard is its loop test
+    (a load of s-&gt;end on each side), the loop ends the guard's arm and the
+    variables the guard reads are the loop's own, so the guard goes too.
+
+    Pass 1 (default) prints two while loops and no do-while; pass 2
+    (guardedloop off) the guards and the do-while loops.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+4885ff741a4889f84889fa0f1f4400004889d1488b124885d275f5488931c34889f0c3666666662e0f1f840000000000488b07488d480148890f4801f048ffc0c36666666666662e0f1f840000000000534889fb488b4708483b4710741766904889df4889c6e8c5ffffff48894308483b431075eb4889df4889c65be9afffffff6666666666662e0f1f840000000000ebfe
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="append"/>
+<symbol space="ram" offset="0x401030" name="step"/>
+<symbol space="ram" offset="0x401050" name="drain"/>
+<symbol space="ram" offset="0x401090" name="_start"/>
+</binaryimage>
+<script>
+  <com>lo fu append</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu drain</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option guardedloop off</com>
+  <com>lo fu append</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu drain</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-GUARDEDLOOP #1: append's walk tests at the top inside the guard (default)" min="1" max="1">if \(a0\) \{
+v1 = a0;
+while \(v1\) \{</stringmatch>
+<stringmatch name="KUNA-GUARDEDLOOP #2: drain's loop is a while loop with no guard (default)" min="1" max="1">v1 = a0\[1\];
+while \(v1 != a0\[2\]\) \{</stringmatch>
+<stringmatch name="KUNA-GUARDEDLOOP #3: guardedloop off keeps both do-while loops" min="2" max="2">do \{</stringmatch>
+<stringmatch name="KUNA-GUARDEDLOOP #4: guardedloop off keeps drain's guard" min="1" max="1">if \(v1 != a0\[2\]\) \{</stringmatch>
+</decompilertest>

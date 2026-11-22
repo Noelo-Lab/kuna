@@ -840,6 +840,8 @@ pub struct ArchContext {
     pub goto_sink: bool,
     /// (kuna) `looprotate` — a guarded do-while loop becomes a while loop.
     pub loop_rotate: bool,
+    /// (kuna) `guardedloop` — a guarded do-while prints as a while loop (C output only).
+    pub guarded_loop: bool,
     /// (kuna) `switchguardmerge` — merge an equality guard into its switch.
     pub switch_guard_merge: bool,
     /// (kuna) `retsplitlimit`, read by `Funcdata::return_split_apply`.
@@ -1666,6 +1668,7 @@ impl ArchContext {
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
             goto_sink: false,            // gotosink (live value copied from the Architecture)
             loop_rotate: false,          // looprotate (live value copied from the Architecture)
+            guarded_loop: false,         // guardedloop (live value copied from the Architecture)
             switch_guard_merge: false,   // switchguardmerge (live value copied from the Architecture)
             ret_split_limit: None,       // retsplitlimit (the ArchSeam carries the real default)
             simd_shuffle_userops: Vec::new(),

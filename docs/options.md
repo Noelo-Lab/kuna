@@ -240,6 +240,8 @@ Three tiers:
 | label_N: ... goto label_N; at the end of a statement run instead of a loop | [`gotosink`](#gotosink----on--off-default-on) |
 | if (n > 0) { i = 0; do { ... } while (i != n); } instead of a for loop | [`looprotate`](#looprotate----on--off-default-on) |
 | a while loop prints as an if around a do-while | [`looprotate`](#looprotate----on--off-default-on) |
+| if (c) { do { ... } while (c); } where the source has while (c) | [`guardedloop`](#guardedloop----on--off-default-on) |
+| a guarded do-while whose test reads memory | [`guardedloop`](#guardedloop----on--off-default-on) |
 | goto-heavy multi-exit loop where angr recovers a clean while/for with break/continue | [`regionlooprefine`](#regionlooprefine----on--off-default-on) |
 | irreducible or multi-latch loop falls back to raw gotos instead of folding | [`regionlooprefine`](#regionlooprefine----on--off-default-on) |
 | secondary loop exits rendered as gotos rather than break statements | [`regionlooprefine`](#regionlooprefine----on--off-default-on) |
@@ -1404,6 +1406,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On (default). Flip off to see the guard and the do-while the compiler emitted.
 - **Where / provenance:** P8/loop-refinement · kuna · presentation-default · kuna-looprotate
 - **Example:** `option looprotate off`
+
+### `guardedloop` -- on | off, default `on`
+
+- **Symptoms:** if (c) { do { ... } while (c); } where the source has while (c); a guarded do-while whose test reads memory.
+- **What it does:** Print a guarded do-while as a while loop. When a do-while sits in an arm of an if, behind only assignments that call nothing and store nothing, and the if's condition implies the loop's test on entry (the same compare once each variable those assignments write is replaced by its right-hand side, ops compared op by op, variables by HighVariable, k <= x against a constant read as k - 1 < x, == against != and < against >= with the senses swapped; or a < b for a test a != b), the test prints at the top: while (c) body. When the if has no else, the loop ends the arm, the assignments read no memory, no value they write is read after the if's skip edge and the condition is the test itself, the if goes too and its condition block's statements stand before the assignments. A goto into the assignments or to the loop's first block keeps the do-while. C output only.
+- **When to flip:** Turn on where the source has while (c) or for loops and kuna prints if (c) { do { ... } while (c); }: the guard clang adds when it rotates a loop. looprotate rewrites the same shape on the CFG when the tail's test is a pure function of the loop-carried values; this one also takes tests that read memory or values the body computes.
+- **Where / provenance:** P8/loop-refinement · kuna · presentation-default · kuna-guardedloop
+- **Example:** `option guardedloop on`
 
 ### `regionlooprefine` -- on | off, default `on`
 

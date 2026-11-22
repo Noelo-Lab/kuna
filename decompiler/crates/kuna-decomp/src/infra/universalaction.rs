@@ -901,6 +901,10 @@ pub fn universal_sched(
             // becomes an if around it.
             act!(crate::p8_structure::kuna_gotosink::ActionGotoSink::boxed("blockrecovery")),
 act!(crate::p8_structure::kuna_crossjumptail::ActionCrossJumpTail::boxed("blockrecovery")),
+            // (kuna) guardedloop (option `guardedloop`): a do-while behind a guard
+            // that is its own test on entry prints as a while loop, without the guard
+            // when the code between writes only variables the arm alone writes.
+            act!(crate::p8_structure::kuna_guardedloop::ActionGuardedLoop::boxed("blockrecovery")),
             act!(crate::p6_variables::kuna_paramcopyhoist::ActionParamCopyHoist::boxed("merge")),
             act!(ActionPrototypeWarnings::boxed("protorecovery")),
             act!(ActionStop::boxed("base")),

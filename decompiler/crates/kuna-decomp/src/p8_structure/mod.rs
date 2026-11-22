@@ -15,6 +15,7 @@ pub mod kuna_gotolabel;
 pub mod kuna_gotonext;
 pub mod kuna_gotosink;
 pub mod kuna_gotoreduce;
+pub mod kuna_guardedloop;
 pub mod kuna_ifelseflatten;
 pub mod kuna_ifnoexit;
 pub mod kuna_iteboolean;

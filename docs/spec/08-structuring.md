@@ -1728,3 +1728,30 @@ while-do, and the for recovery (`analyzeforloops`) a `for`: clang -O2
 on x86-64 (do-whiles 181 to 159, fors 34 to 46), 26 on AArch64, 13 in ld.so.
 A pointer loop whose guard is `1 <= n` and whose tail is `p != p0 + n`, and a
 loop whose guard reads a 32-bit `n` while the tail compares 64 bits, are left.
+
+**Guarded loops** (`guardedloop`, default on, C output only; kuna;
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_guardedloop.rs (ActionGuardedLoop)`,
+in the block-recovery group after `crossjumptail`): the rotations `looprotate`
+leaves, mostly because the loop test reads memory or a value the body computes,
+print as `if (g) { I; do B while (c); }`. On the final tree, a do-while in an arm
+of a `BlockIf` whose arm before the loop holds only basic blocks with no call,
+STORE or branch (the assignments `I`) prints as `while (c) B` (block flag
+`f_kuna_top_test`, printed by `emit_block_top_tested_c`) when the guard implies
+`c` on entry. `Compare::same` matches the two expressions op by op: a variable of
+`c` that `I` writes is replaced by the right-hand side of its last assignment,
+other variables match by HighVariable, constants by value and size. A test is
+taken apart into a relation and two operands, BOOL_NEGATEs folded into the
+sense and `k <= x` / `x <= k` against a constant written `k - 1 < x` / `x < k + 1`
+when that does not wrap; the guard implies `c` when the two relations are equal
+(`==`/`!=` with the operands in either order), or when the guard is `a < b` and
+`c` is `a != b`. Both forms run the same code: the first test holds, and every
+later test runs where the bottom test ran, as nothing runs between a latch and
+its head. When the `if` has no else, the loop ends the arm, `I` reads no memory,
+the guard is equivalent to `c` (calls allowed: the loop's first test then makes
+the guard's one call) and no value of a variable `I` writes is read on a path
+from the guard's skip edge before that variable is written again, the guard
+goes too: the `BlockIf` becomes a list, so its condition block prints its
+statements and `I` runs on the skipped path. A goto into `I` or to the loop's
+first block keeps the do-while. cmark O2ni (clang -O2 -fno-inline, arm64): 12
+functions change, GED -45 (9625 to 9580), do-whiles 151 to 133, while loops 45
+to 63; `finalize_document` prints `while (v2 != v3) { ... }` with no guard.

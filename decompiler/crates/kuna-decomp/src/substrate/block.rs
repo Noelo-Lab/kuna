@@ -189,6 +189,8 @@ pub mod block_flags {
     pub const f_delayed_donothing: uint4 = 0x80000;
     /// Has the final transform been run
     pub const f_final_transform: uint4 = 0x100000;
+    /// (kuna `guardedloop`) A do-while that prints its test at the top
+    pub const f_kuna_top_test: uint4 = 0x200000;
 }
 
 /// Boolean properties on edges (C++ `FlowBlock::edge_flags`,

@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_236() {
-    assert_eq!(kuna_num_settables(), 236);
-    assert_eq!(SETTABLE_TABLE.len(), 236);
+fn settable_count_is_237() {
+    assert_eq!(kuna_num_settables(), 237);
+    assert_eq!(SETTABLE_TABLE.len(), 237);
 }
 
 #[test]
-fn tier_counts_are_48_core_129_transform_59_analysis() {
+fn tier_counts_are_48_core_130_transform_59_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_48_core_129_transform_59_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (48, 129, 59));
+    assert_eq!((core, transform, analysis), (48, 130, 59));
 }
 
 #[test]
@@ -264,7 +264,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_80() {
+fn option_values_live_value_present_for_81() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -872,7 +872,8 @@ fn option_values_live_value_present_for_80() {
     // +1 for `looprotate`.
     // +1 for `switchguardmerge`.
     // +1 for `switchtrim`.
-    assert_eq!(with_live, 89);
+    // +1 for `guardedloop`.
+    assert_eq!(with_live, 90);
 }
 
 #[test]
@@ -1134,7 +1135,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `looprotate`.
     // +1 for `switchguardmerge`.
     // +1 for `switchtrim`.
-    assert_eq!(json.matches("},\n").count(), 235);
+    // +1 for `guardedloop`.
+    assert_eq!(json.matches("},\n").count(), 236);
     // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 
