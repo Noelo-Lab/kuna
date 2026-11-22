@@ -1,0 +1,78 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Kuna GH-1649: embedded images and archives (`blobs on|off`, default on).
+
+    Issue: a PNG, JPEG, GIF, zip or gzip stored in `.rodata` was visible only as
+    the string fragments of its header (`PNG`, `IHDR`, `IDATx`), and a function
+    returning it printed a bare address: `return 0x3c0;`.
+
+    Stage / sub-stage: P1 program prep. The `blobs` pass
+    (`kuna-analysis/src/analyzers/blobs`) finds each magic number in the mapped
+    sections and keeps a candidate only when its container structure walks to
+    its end, which gives the exact length. The commit
+    (`kuna-console/src/kuna_blobdata.rs`) plants `<kind>_<addr>` typed
+    `unsigned char[length]` and drops the string facts inside the file. A
+    constant equal to a file's first address is weighed as a pointer even below
+    the pointer lower bound and with a mask-like bit pattern (`0x3c0`).
+
+    Fixture: `decompiler/crates/kuna-analysis/tests/fixtures/embedded_blobs_x86_64.so`,
+    a stripped shared object built from `embedded_blobs_x86_64.c` (recipe in the
+    file): six arrays, each returned by one function. Five are whole files
+    (PNG 69 bytes, GIF 47, JPEG 331, zip 297, gzip 86); `broken` is the PNG cut
+    before its IEND chunk.
+
+    Two passes. Off: #1-#2 the PNG and the zip are bare addresses. Default: #3-#7
+    each whole file is returned by name, #8 the functions return a byte pointer,
+    #9 the truncated PNG stays a bare address in both passes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/embedded_blobs_x86_64.so</com>
+  <com>option blobs off</com>
+  <com>read symbols</com>
+  <com>load function get_logo</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function get_archive</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function get_broken</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/embedded_blobs_x86_64.so</com>
+  <com>read symbols</com>
+  <com>load function get_logo</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function get_icon</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function get_photo</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function get_archive</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function get_packed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function get_broken</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="blobs off #1: the PNG is a bare address" min="1" max="1">^  return 0x3c0;$</stringmatch>
+<stringmatch name="blobs off #2: the zip is a bare address" min="1" max="1">^  return 0x590;$</stringmatch>
+<stringmatch name="blobs #3: the PNG is returned by name" min="1" max="1">^  return png_3c0;$</stringmatch>
+<stringmatch name="blobs #4: the GIF is returned by name" min="1" max="1">^  return gif_410;$</stringmatch>
+<stringmatch name="blobs #5: the JPEG is returned by name" min="1" max="1">^  return jpeg_440;$</stringmatch>
+<stringmatch name="blobs #6: the zip is returned by name" min="1" max="1">^  return zip_590;$</stringmatch>
+<stringmatch name="blobs #7: the gzip is returned by name" min="1" max="1">^  return gzip_6c0;$</stringmatch>
+<stringmatch name="blobs #8: each named file is a byte pointer" min="5" max="5">^uint1 \* get_[a-z]+\(</stringmatch>
+<stringmatch name="blobs #9: the truncated PNG is not a file in either pass" min="2" max="2">^  return 0x720;$</stringmatch>
+</decompilertest>

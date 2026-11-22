@@ -1144,10 +1144,20 @@ fn is_pointer(
                     return None;
                 }
             }
+            OpCode::CPUI_CALLOTHER => {
+                if !glb.rep_string || crate::kuna_repstring::input_type(data, op, slot).is_none() {
+                    return None;
+                }
+            }
             _ => return None,
         }
         // Make sure the constant is in the expected range for a pointer.
-        if spc.get_pointer_lower_bound() > vn_offset {
+        // (kuna `blobs`) The first byte of an embedded file is an address even
+        // in the low page a shared object's read-only data starts in, and
+        // even when its value has the bit pattern of a mask.
+        let blob_start = glb.blob_entries.contains(&vn_offset)
+            && crate::kuna_inferfuncentry::entry_escape_applies(opc, numeric.contains(&vn_offset));
+        if spc.get_pointer_lower_bound() > vn_offset && !blob_start {
             return None;
         }
         if spc.get_pointer_upper_bound() < vn_offset {
@@ -1157,6 +1167,7 @@ fn is_pointer(
         // divergence keeps single-bit values that are EXACT function entries; reuse
         // kuna_is_function_entry (no re-special-casing).
         if bit_transitions(vn_offset, vn_size) < 3
+            && !blob_start
             && !(crate::kuna_inferfuncentry::entry_escape_applies(
                 opc,
                 numeric.contains(&vn_offset),
@@ -2427,7 +2438,16 @@ fn dc_last_chance_load(data: &mut Funcdata, worklist: &mut Vec<VarnodeId>) -> bo
     res
 }
 
+/// How many Varnodes the sweep of [`deadcode_apply`] visits between reads of
+/// the per-function deadline.
+const SWEEP_DEADLINE_STRIDE: usize = 256;
+
 /// C++ `ActionDeadCode::apply` (coreaction.cc:4146).
+///
+/// (kuna decompile-all watchdog) The sweep gives up once the per-function
+/// budget is spent: destroying an operation unlinks it from the reader list of
+/// each input, which is linear in that list, so a function whose dead
+/// operations all read one Varnode sweeps in quadratic time.
 fn deadcode_apply(data: &mut Funcdata) -> ApplyResult {
     let mut worklist: Vec<VarnodeId> = Vec::new();
 
@@ -2577,9 +2597,10 @@ fn deadcode_apply(data: &mut Funcdata) -> ApplyResult {
 
     // 6. Sweep: remove dead ops, replace never-consumed values, reconcile.
     let mut total_change = policy_changes;
+    let mut budget_spent = false;
     for spc in &spaces {
         let spc = Rc::clone(spc);
-        if !spc.does_deadcode() {
+        if budget_spent || !spc.does_deadcode() {
             continue;
         }
         if !data.dead_removal_allowed(&spc) {
@@ -2587,7 +2608,13 @@ fn deadcode_apply(data: &mut Funcdata) -> ApplyResult {
         }
         let ids = data.vbank().loc_space_ids(&spc);
         let mut changecount = 0i32;
-        for vn in ids {
+        for (visited, vn) in ids.into_iter().enumerate() {
+            if visited % SWEEP_DEADLINE_STRIDE == 0
+                && crate::decompile_drive::deadline_passed_in("action deadcode")
+            {
+                budget_spent = true;
+                break;
+            }
             // The varnode may already be gone (a prior neverConsumed/opDestroy
             // in this loop removed it); skip stale ids.
             let written = match data.vbank().get(vn) {

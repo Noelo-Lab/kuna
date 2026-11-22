@@ -255,6 +255,22 @@ determines how aggressive the merge may be:
   (`varmap.rs (ScopeLocal::has_isolated_symbols)`) because
   `set_symbol_isolated` is the only route the `ISOLATE` dispflag has into a
   function-local scope. Neither shortcut changes an answer.
+
+  An isolation stated on one decompile has to hold in the next, which builds
+  its Symbols again. A register local's isolated Symbol is seeded with its
+  use point and keeps the flag. A stack local's Symbol is rebuilt by the frame
+  layout, and a parameter's Symbol does not exist until after the merges have
+  run, so neither can carry a flag to the merge. `kuna_isolated.rs (carried)`
+  records the storage and width of each isolated Symbol that is a parameter or
+  holds its storage for the whole function, the replay hands the set to the
+  next decompile with the previous numbering (`kuna_stablenames.rs (carry)`),
+  and `kuna_isolated.rs (holds)` answers the isolated test for a variable that
+  holds the function input or the address-tied storage of one. The set is
+  empty unless an `isolate` named such a local, and the test then costs one
+  emptiness check. With `isolate a0`, a parameter whose register the function
+  goes on to reuse (`a0 *= 3;`) keeps its value and the product gets its own
+  local (`v2 = a0 * 3;`); `tests/stages/kuna-assert-format-isolate.xml` pins
+  both, and that the isolation survives a later rename and decompile.
 - `merge.rs (Merge::merge_test_speculative)` — additionally: nothing
   persistent, no inputs, nothing address-tied. Purely cosmetic merges never
   touch storage that has an ABI or memory identity.
@@ -278,7 +294,12 @@ secondary test:
   provably the same value (`merge.rs (MergeIntersect::test_block_intersection)`,
   through `decompiler/crates/kuna-decomp/src/p6_variables/funcdata_merge.rs
   (MergeContext for Funcdata)` to `Varnode::copy_shadow`); overlap-group pieces
-  are tested at their relative offsets with partial shadows.
+  are tested at their relative offsets with partial shadows. A partial shadow
+  between two constants compares the smaller one with the larger one truncated
+  by the relative byte offset; a constant wider than 8 bytes holds zero above
+  bit 63, so a truncation of 8 or more bytes compares against 0
+  (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+  (Funcdata::find_subpiece_shadow)`).
 - If the covers are disjoint but exactly one high is address-tied, the
   *untied-call* test runs (`merge.rs
   (MergeIntersect::test_untied_call_intersection)`): a non-persistent tied

@@ -1,0 +1,37 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A">
+<!--
+    `itaniumrtti` on Mach-O (classic LC_DYLD_INFO binds): P1 external refinement, option
+    itaniumrtti (default on). The script loads the committed
+    itaniumrtti_macho/libshapes_arm64_classic.dylib (clang++ and ld64.lld, source and
+    commands beside it). make() stores Circle's or Square's vptr; both
+    classes' typeinfos are local, reached only through LC_DYLD_INFO bind opcodes naming
+    __si_class_type_info and name pointers with bit 63 set.
+
+    Assert #1 is the off pass: the vptr constants are raw addresses.
+    Asserts #2-#3 are the on pass: both resolve to the recovered vtables.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c0035fd6</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/itaniumrtti_macho/libshapes_arm64_classic.dylib</com>
+  <com>option itaniumrtti off</com>
+  <com>read symbols</com>
+  <com>load function _make</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/itaniumrtti_macho/libshapes_arm64_classic.dylib</com>
+  <com>option itaniumrtti on</com>
+  <com>read symbols</com>
+  <com>load function _make</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ITANIUMRTTI-MACHO-CLASSIC #1: off leaves the vptr stores as addresses" min="1" max="1">v\d+ = 0x40a0;</stringmatch>
+<stringmatch name="ITANIUMRTTI-MACHO-CLASSIC #2: on names Square's vptr" min="1" max="1">v\d+ = Square_vptr;</stringmatch>
+<stringmatch name="ITANIUMRTTI-MACHO-CLASSIC #3: on names Circle's vptr" min="1" max="1">v\d+ = Circle_vptr;</stringmatch>
+</decompilertest>

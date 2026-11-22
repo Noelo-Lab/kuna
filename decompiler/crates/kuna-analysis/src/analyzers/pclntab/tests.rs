@@ -224,6 +224,12 @@ fn go118_ignores_buildid_sentinel_name() {
 // --- go1.16 (64-bit LE) decode (absolute entries, no textStart) --------------
 
 fn build_go116_image(_header_vma: u64, funcs: &[(u64, &str)]) -> Vec<u8> {
+    build_go116_image_end(funcs, None)
+}
+
+/// [`build_go116_image`] with the closing `ftab[nfunc]` entry when `etext` is
+/// given.
+fn build_go116_image_end(funcs: &[(u64, &str)], etext: Option<u64>) -> Vec<u8> {
     let names: Vec<&str> = funcs.iter().map(|&(_, n)| n).collect();
     let (nametab, name_offs) = build_nametab(&names);
 
@@ -233,7 +239,7 @@ fn build_go116_image(_header_vma: u64, funcs: &[(u64, &str)]) -> Vec<u8> {
     let functab_off = funcname_off + nametab.len() as u64;
     let nfunc = funcs.len() as u64;
     // functab entry = (entry: u64, funcoff: u64) = 16 bytes.
-    let funcs_blob_off = functab_off + nfunc * 16;
+    let funcs_blob_off = functab_off + (nfunc + etext.is_some() as u64) * 16;
     let func_stride = 16u64; // _func: entry(u64) @0, nameoff(i32) @8
 
     let mut blob = Vec::new();
@@ -254,6 +260,10 @@ fn build_go116_image(_header_vma: u64, funcs: &[(u64, &str)]) -> Vec<u8> {
         push_u64_le(&mut blob, entry);
         let funcoff = (funcs_blob_off - functab_off) + i as u64 * func_stride;
         push_u64_le(&mut blob, funcoff);
+    }
+    if let Some(end) = etext {
+        push_u64_le(&mut blob, end);
+        push_u64_le(&mut blob, 0);
     }
     // the _func structs: entry(u64) @0, nameoff(i32) @8
     for (i, &(entry, _)) in funcs.iter().enumerate() {
@@ -284,6 +294,12 @@ fn decodes_go116_64bit_le_absolute_entries() {
 // --- go1.2 legacy (64-bit LE) decode -----------------------------------------
 
 fn build_go12_image(_header_vma: u64, funcs: &[(u64, &str)]) -> Vec<u8> {
+    build_go12_image_end(funcs, None)
+}
+
+/// [`build_go12_image`] with the closing `ftab[nfunc]` entry when `etext` is
+/// given.
+fn build_go12_image_end(funcs: &[(u64, &str)], etext: Option<u64>) -> Vec<u8> {
     // go1.2 layout: 8-byte header, nfunc(u64) @8, then functab (entry,funcoff)
     // pairs @16. Names live in the pclntab blob itself (funcname base = blob base);
     // nameoff in each _func indexes the whole blob. _func: entry(u64) @0,
@@ -293,7 +309,7 @@ fn build_go12_image(_header_vma: u64, funcs: &[(u64, &str)]) -> Vec<u8> {
 
     let nfunc = funcs.len() as u64;
     let functab_off = 16u64;
-    let funcs_blob_off = functab_off + nfunc * 16;
+    let funcs_blob_off = functab_off + (nfunc + etext.is_some() as u64) * 16;
     let func_stride = 16u64;
     // The nametab is placed AFTER the _func structs; nameoff indexes the whole
     // blob (relative to blob base = header_vma).
@@ -308,6 +324,10 @@ fn build_go12_image(_header_vma: u64, funcs: &[(u64, &str)]) -> Vec<u8> {
         push_u64_le(&mut blob, entry);
         let funcoff = funcs_blob_off + i as u64 * func_stride;
         push_u64_le(&mut blob, funcoff);
+    }
+    if let Some(end) = etext {
+        push_u64_le(&mut blob, end);
+        push_u64_le(&mut blob, 0);
     }
     // _func structs
     for (i, &(entry, _)) in funcs.iter().enumerate() {
@@ -897,4 +917,80 @@ fn pe_is_go_only_with_its_own_buildinfo_and_readonly_table() {
     let mut bare = b"\xff Go buildinf:\0".to_vec();
     bare.resize(0x100, 0);
     assert!(!detect(&build_pe(&text, &rd, &bare)).is_golang());
+}
+
+// --- wiped magic: the table is read from `moduledata` -------------------------
+
+/// The head of the `moduledata` describing the table `h` at `header_vma`
+/// (parsed before its magic is wiped), with `text` and the functab's own PC
+/// bounds.
+fn moduledata_for(h: &PcHeader, header_vma: u64, text: u64, minpc: u64, maxpc: u64) -> Vec<u8> {
+    let mut w = [0u64; 24];
+    w[0] = header_vma;
+    let (ftab, pc) = if h.ver == GoVer::Go12 { (3, 10) } else { (16, 20) };
+    if h.ver != GoVer::Go12 {
+        w[1] = h.funcname_vma;
+        w[13] = h.functab_vma;
+    }
+    w[ftab..ftab + 3].copy_from_slice(&[h.functab_vma, h.nfunc + 1, h.nfunc + 1]);
+    w[pc..pc + 4].copy_from_slice(&[minpc, maxpc, text, maxpc]);
+    w.iter().flat_map(|x| x.to_le_bytes()).collect()
+}
+
+#[test]
+fn wiped_magic_table_is_read_from_moduledata() {
+    let (table_vma, data_vma, text) = (0x50_0000u64, 0x60_0008u64, 0x40_1000u64);
+    let abs = [(text + 0x10, "main.main"), (text + 0x80, "main.compute")];
+    for (mut blob, ver) in [
+        (build_go118_image_end(text, &[(0x10, "main.main"), (0x80, "main.compute")], Some(0x300)), GoVer::Go118),
+        (build_go116_image_end(&abs, Some(text + 0x300)), GoVer::Go116),
+        (build_go12_image_end(&abs, Some(text + 0x300)), GoVer::Go12),
+    ] {
+        let intact = blob.clone();
+        let img = ImageBytes::from_spans(vec![(table_vma, intact.as_slice())]);
+        let h = parse_header(&img, table_vma).expect("intact header parses");
+        let want = decode_functions(&img, &h);
+        assert_eq!(want.len(), 2, "{ver:?}");
+
+        // Words of other data lead the record, so the scan has to step to it.
+        let mut data = vec![0x11u8; 16];
+        data.extend(moduledata_for(&h, table_vma, text, text + 0x10, text + 0x300));
+        blob[..8].fill(0);
+        let img = ImageBytes::from_spans(vec![(table_vma, blob.as_slice())]);
+        assert!(parse_header(&img, table_vma).is_none(), "{ver:?}: the wiped header no longer parses");
+        let (vma, got) = kuna_gomoduledata::scan(&img, data_vma, &data, 8, End::Little).expect("record found");
+        assert_eq!((vma, got.ver), (table_vma, ver));
+        assert_eq!(decode_functions(&img, &got), want, "{ver:?}");
+        assert_eq!(functab_end(&img, &got), Some(text + 0x300), "{ver:?}");
+
+        // A record whose bounds the functab does not bear out is not one.
+        let off = data.len() - 24 * 8 + if ver == GoVer::Go12 { 11 } else { 21 } * 8;
+        data[off..off + 8].copy_from_slice(&(text + 0x2f0).to_le_bytes());
+        assert!(kuna_gomoduledata::scan(&img, data_vma, &data, 8, End::Little).is_none(), "{ver:?}");
+    }
+}
+
+#[test]
+fn pe_wiped_magic_is_still_go_and_decoded() {
+    let probe = build_go118_image_end(0, &PE_FUNCS, Some(0x300));
+    let (text_vma, rdata_vma, _) = pe_vmas(0x400, probe.len(), 0x200);
+    let mut table = build_go118_image_end(text_vma, &PE_FUNCS, Some(0x300));
+    let h = {
+        let img = ImageBytes::from_spans(vec![(rdata_vma, table.as_slice())]);
+        parse_header(&img, rdata_vma).expect("intact header parses")
+    };
+    let mut data = buildinfo("go1.21.3");
+    data.extend(moduledata_for(&h, rdata_vma, text_vma, text_vma + 0x10, text_vma + 0x300));
+    data.resize(0x200, 0);
+    table[..4].fill(0);
+    let bytes = build_pe(&[0xc3; 0x400], &table, &data);
+    let file = object::File::parse(&bytes[..]).expect("hand-built PE must parse");
+    assert_eq!(crate::sourcelang::detect_compiler(&file, &bytes), crate::sourcelang::Compiler::Go);
+    assert_eq!(locate_header(&file, &ImageBytes::new(&file)), Some(rdata_vma));
+    let (funcs, end) = recover_go_table(&file);
+    assert_eq!(
+        funcs,
+        PE_FUNCS.iter().map(|&(o, n)| GoFunc { addr: text_vma + o as u64, name: n.into() }).collect::<Vec<_>>()
+    );
+    assert_eq!(end, Some(text_vma + 0x300));
 }

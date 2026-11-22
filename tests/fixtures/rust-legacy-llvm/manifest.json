@@ -1,0 +1,79 @@
+[
+  {
+    "path": "llvm.elf",
+    "sha256": "b99cbdcedc09bc86bf72bef04f28350244eeedb0eeeaa183b76be8efbb00d131",
+    "symbols": [
+      {
+        "name": "_ZN3std2rt19lang_start_internal28_$u7b$$u7b$closure$u7d$$u7d$17hf421b6f6b8a4a2f4E.llvm.9325873435131735662",
+        "address": "0x401000"
+      }
+    ],
+    "executed": false
+  },
+  {
+    "path": "ordinary.elf",
+    "sha256": "32c67005d9d8bc13e139e85b99948277014b6472ae4fdb0ab4a9e40bb38d80d7",
+    "symbols": [
+      {
+        "name": "_ZN3std2rt19lang_start_internal28_$u7b$$u7b$closure$u7d$$u7d$17hf421b6f6b8a4a2f4E",
+        "address": "0x401000"
+      }
+    ],
+    "executed": false
+  },
+  {
+    "path": "cpp.elf",
+    "sha256": "d0da61eca483596ef1098c9952702851e23b04a898a4c673055e668d1aef2c4d",
+    "symbols": [
+      {
+        "name": "_ZN4demo3fooE.llvm.9325873435131735662",
+        "address": "0x401000"
+      }
+    ],
+    "executed": false
+  },
+  {
+    "path": "uppercase.elf",
+    "sha256": "bde350bed3e0917d2064514513d7f7d8ad4e018e62a0fe65168b4fd1240e3dec",
+    "symbols": [
+      {
+        "name": "_ZN4demo17hABCDEF0123456789E.llvm.9325873435131735662",
+        "address": "0x401000"
+      }
+    ],
+    "executed": false
+  },
+  {
+    "path": "uppercase-bare.elf",
+    "sha256": "536f28f6b068b33de8f696530819d4487ab7609acf36fbc70c712586582af4a5",
+    "symbols": [
+      {
+        "name": "_ZN4demo17hABCDEF0123456789E",
+        "address": "0x401000"
+      }
+    ],
+    "executed": false
+  },
+  {
+    "path": "malformed.elf",
+    "sha256": "8b81a4d790ec77e7c608e0765ca7017b5d99a2d45f500419b77aebbc91a7f9af",
+    "symbols": [
+      {
+        "name": "_ZN999bad17h0123456789abcdefE.llvm.9325873435131735662",
+        "address": "0x401000"
+      }
+    ],
+    "executed": false
+  },
+  {
+    "path": "invalid-suffix.elf",
+    "sha256": "4aca7c8dc29e5c7ae379815b0aee1e1b78d8ee45129f7556bd6a2323a3f80301",
+    "symbols": [
+      {
+        "name": "_ZN4demo4keep17h0123456789abcdefE.llvm.bad",
+        "address": "0x401000"
+      }
+    ],
+    "executed": false
+  }
+]

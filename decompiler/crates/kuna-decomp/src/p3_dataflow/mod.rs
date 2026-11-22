@@ -63,10 +63,12 @@ pub mod kuna_pointeestorekeep;
 pub mod kuna_constspaceload;
 pub mod kuna_simdlane;
 pub mod kuna_x87truncate;
+pub mod kuna_opaquepredicate;
 pub mod kuna_cancelbytearithmetic;
 pub mod kuna_wideslice;
 pub mod kuna_devectorize;
 pub mod kuna_strlenscan;
+pub mod kuna_repstring;
 pub mod kuna_narrowload; // (kuna) a narrow LOAD keeps its own width
 pub mod kuna_regnarrow;
 pub(crate) mod kuna_volatileload;

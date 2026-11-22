@@ -490,7 +490,8 @@ fn snapshot_unit_with_go(
         }
         if let Some(loc) = entry.attr_value(gimli::DW_AT_location) {
             snap.has_location = true;
-            snap.addr_location = simple_addr_location(&loc, unit.encoding().address_size);
+            snap.addr_location = simple_addr_location(&loc, unit.encoding().address_size)
+                .or_else(|| indexed_addr_location(dwarf, unit, &loc));
             snap.fbreg_location = simple_fbreg_location(&loc);
             if snap.tag == gimli::DW_TAG_formal_parameter && kuna_dwarfbyref::is_fortran(language) {
                 let entry = parent_off
@@ -543,6 +544,31 @@ fn simple_addr_location(loc: &gimli::AttributeValue<Reader<'_>>, address_size: u
         return None;
     }
     gimli::Reader::read_address(&mut expr.0, address_size).ok()
+}
+
+/// Decode a `DW_AT_location` that is a single DWARF 5 `DW_OP_addrx <index>` (or
+/// its GNU split-DWARF predecessor `DW_OP_GNU_addr_index`), returning the VMA
+/// the unit's `.debug_addr` table holds at that index.
+fn indexed_addr_location<'a>(
+    dwarf: &gimli::Dwarf<Reader<'a>>,
+    unit: &gimli::Unit<Reader<'a>>,
+    loc: &gimli::AttributeValue<Reader<'a>>,
+) -> Option<u64> {
+    use gimli::Reader as _;
+    let mut operand = match loc {
+        gimli::AttributeValue::Exprloc(e) => e.0,
+        gimli::AttributeValue::Block(b) => *b,
+        _ => return None,
+    };
+    let opcode = gimli::DwOp(operand.read_u8().ok()?);
+    if opcode != gimli::DW_OP_addrx && opcode != gimli::DW_OP_GNU_addr_index {
+        return None;
+    }
+    let index = usize::try_from(operand.read_uleb128().ok()?).ok()?;
+    if !operand.is_empty() {
+        return None;
+    }
+    dwarf.address(unit, gimli::DebugAddrIndex(index)).ok()
 }
 
 /// DWARF 2 uses a single plus-uconst expression where later versions use a
@@ -1093,6 +1119,17 @@ impl AnalysisPass for DwarfPass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
+        let mut out = Self::run_generic(ctx);
+        if let Some(facts) = kuna_godwarfsig::capture_arm64_compressed(ctx) {
+            out.go_dwarf.push(facts);
+        }
+        out
+    }
+}
+
+impl DwarfPass {
+    #[inline(never)]
+    fn run_generic(ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
         if let Some(facts) = kuna_godwarfsig::capture_compressed(ctx) {
             out.go_dwarf.push(facts);
