@@ -48,6 +48,24 @@ _retain_first:
 	ldp	x29, x30, [sp], #16
 	ret
 
+	.globl _bridge_swap
+	.p2align 2
+// void *bridge_swap(void *a, void *b): retains bridge object a through x22,
+// releases bridge object b through x23, returns the retain's result (x0).
+_bridge_swap:
+	stp	x29, x30, [sp, #-32]!
+	stp	x23, x22, [sp, #16]
+	add	x29, sp, #0
+	mov	x22, x0
+	mov	x23, x1
+	bl	_swift_bridgeObjectRetain_x22
+	mov	x22, x0
+	bl	_swift_bridgeObjectRelease_x23
+	mov	x0, x22
+	ldp	x23, x22, [sp, #16]
+	ldp	x29, x30, [sp], #32
+	ret
+
 	.globl _main
 	.p2align 2
 _main:

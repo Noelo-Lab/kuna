@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5000,
-    5000
+    5002,
+    5002
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4792,6 +4792,8 @@
     "data:the allocation returns the object",
     "data:the allocation takes the metadata",
     "data:the bounded local policy never leaves a pointer assigned to the Pair object",
+    "data:the bridge-object release through x23 takes its argument",
+    "data:the bridge-object retain through x22 takes its argument",
     "data:the call never passes the ABI pointer",
     "data:the converted call uses variable-valued arguments",
     "data:the csel-picked and switched literal of the first arm",
