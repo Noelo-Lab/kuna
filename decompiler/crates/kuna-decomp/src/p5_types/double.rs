@@ -342,7 +342,7 @@ pub struct SplitVarnode {
 
 impl SplitVarnode {
     /// Construct an uninitialized SplitVarnode (C++ default ctor).
-    fn empty() -> SplitVarnode {
+    pub(crate) fn empty() -> SplitVarnode {
         SplitVarnode {
             lo: None,
             hi: None,
@@ -373,7 +373,7 @@ impl SplitVarnode {
     }
 
     /// (Re)initialize as a constant (C++ `initPartial(int4 sz,uintb v)`).
-    fn init_partial_const(&mut self, sz: int4, v: uintb) {
+    pub(crate) fn init_partial_const(&mut self, sz: int4, v: uintb) {
         self.val = v;
         self.wholesize = sz;
         self.lo = None;
@@ -387,7 +387,7 @@ impl SplitVarnode {
     /// `initPartial(int4 sz,Varnode *l,Varnode *h)`).
     ///
     /// `l` is required (the C++ dereferences it); `h` may be null (implied zero).
-    fn init_partial_pieces(&mut self, data: &Funcdata, sz: int4, l: Option<VarnodeId>, h: Option<VarnodeId>) {
+    pub(crate) fn init_partial_pieces(&mut self, data: &Funcdata, sz: int4, l: Option<VarnodeId>, h: Option<VarnodeId>) {
         let l = l.expect("init_partial: lo piece is required");
         match h {
             None => {
@@ -1437,7 +1437,7 @@ fn create_shift_op(
 
 /// Check that a double-precision compare op's inputs are compatible (C++
 /// `prepareBoolOp`).
-fn prepare_bool_op(
+pub(crate) fn prepare_bool_op(
     data: &Funcdata,
     in1: &mut SplitVarnode,
     in2: &mut SplitVarnode,
@@ -1454,7 +1454,7 @@ fn prepare_bool_op(
 
 /// Rewrite a double-precision boolean op in place, replacing inputs with unified
 /// Varnodes and updating the opcode (C++ `replaceBoolOp`).
-fn replace_bool_op(
+pub(crate) fn replace_bool_op(
     data: &mut Funcdata,
     boolop: OpId,
     in1: &mut SplitVarnode,
@@ -1694,6 +1694,9 @@ fn apply_rule_in(in_: &SplitVarnode, data: &mut Funcdata) -> int4 {
                     }
                     let mut lessconstform = LessConstForm::new();
                     if lessconstform.apply_rule(in_, workop, workishi, data) {
+                        return 1;
+                    }
+                    if crate::kuna_borrowcompare::apply_rule(in_, workop, workishi, data) {
                         return 1;
                     }
                 }

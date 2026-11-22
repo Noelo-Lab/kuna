@@ -3752,6 +3752,58 @@ whole would exceed 8 bytes as a constant (the `uintb` precision bound, `double.r
 form verifies before rewriting, a wrong fuse is designed out rather than
 detected after.
 
+**Branchless borrow compares.** `decompiler/crates/kuna-decomp/src/p5_types/kuna_borrowcompare.rs (apply_rule)`
+is one more form, tried from the low-word compare of a split value next to
+`LessThreeWay` and `LessConstForm`. A 64-bit `a < b` on a 32-bit target is
+often not a branch cascade but a subtract with borrow: the low words are
+compared (`cmp`/`subs`), the high words subtracted with that borrow
+(`sbb`/`sbcs`), and the condition read off the flags of the second step. After
+simplification it is a boolean tree over the high words and the borrow
+`c = alo < blo` (or its complement `blo <= alo`, the carry of a target with a
+carry flag). The form collects the boolean ops the borrow reaches, flattens
+the tree (an XOR tree of `!=`/`==`/`^^`/`!`, or an OR of literals after De
+Morgan), and reads each operand of a leaf compare as a linear sum of varnodes
+and the borrow (through ADD, SUB, constant MULT, 2COMP, NEGATE, COPY and the
+zero extension of the borrow). It rewrites the root as one compare of the two
+wholes when the leaves are exactly one of these shapes, with `d = ahi - bhi`:
+
+- signed: `SBORROW(ahi,bhi)`, `SBORROW(d,c)` and `d - c s< 0`, each once, XORed
+  (the overflow and sign flags of the borrowing subtract), where `d s< c`
+  stands for the last two; that is `a s< b`;
+- unsigned: `ahi < bhi || d < c` (borrow out), which is `a < b`, or
+  `bhi < ahi || d < 1 - c` (carry out), which is `a >= b`.
+
+A negated tree gives the complementary compare with its operands swapped
+(`b s<= a`). A high word of `b` that is the constant 0 lets the terms that
+vanish with it be absent (`ahi s< c` is `a s< b`, `ahi < c` is `a < b`). The
+high word of `b` is read off the leaves, so `b` may be a constant, a split
+value or two unrelated words, which `find_create_whole` joins. Every leaf must
+be accounted for, so a tree with any other term is left alone.
+
+**Pairing input words.** Neither form fires when the two words are separate
+parameters, because nothing marks them as pieces of one value: with no
+prototype, a `long long` parameter on i386 or 32-bit ARM is recovered as two
+`int` parameters and its compare prints as an `SBORROW4` chain. With option
+`pairparam` (default on),
+`kuna_borrowcompare.rs (RuleDoubleInputPair)` fires on the low-word compare or
+carry `c` (`INT_LESS`, `INT_LESSEQUAL`, `INT_CARRY`) when one of its operands is
+an unlocked input, the input word directly above it (same size, next address
+in the space's byte order) is an unlocked input too, the function writes
+neither word (a compiler that reuses an argument slot, or a call that may
+change it, leaves 4-byte writes that a joined parameter could only print as
+partial stores into it), the prototype model accepts the two words as one
+parameter (`possible_input_param` on the joined
+storage: a stack slot, not two separate argument registers such as ARM's r0
+and r1, which only a declared prototype can join), and that word appears with coefficient +-1 in the same
+linear sum as `c` among the values `c` reaches (or in the difference of a
+compare's operands). Propagating the low word's borrow or carry into the high
+word is what makes the two words one value. The rule merges the pair with
+`combine_input_varnodes` and marks the two SUBPIECEs it leaves as
+double-precision pieces; `RuleDoubleIn` then folds the arithmetic or compare,
+and `ActionInputPrototype` reports one 8-byte parameter. The rule does nothing
+when the function's prototype is locked, since the declaration already decides
+the inputs. `off` keeps the two parameters.
+
 ## 5.6 kuna extensions & the late rewrite families
 
 The remaining `p5_types` passes are the late aggregate rewrites: they run in

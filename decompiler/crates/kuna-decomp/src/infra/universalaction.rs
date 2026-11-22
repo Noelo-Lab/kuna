@@ -481,6 +481,7 @@ pub fn universal_sched(
         rrow!("piecepathology", "protorecovery", crate::ruleaction_8::RulePiecePathology),
         rrow!("doubleload", "doubleload", crate::double::RuleDoubleLoad::new("doubleload")),
         rrow!("doublestore", "doubleprecis", crate::double::RuleDoubleStore::new("doubleprecis")),
+        rrow!("doubleinputpair", "doubleprecis", crate::kuna_borrowcompare::RuleDoubleInputPair::new("doubleprecis")),
         rrow!("doublein", "doubleprecis", crate::double::RuleDoubleIn::new("doubleprecis")),
         rrow!("doubleout", "doubleprecis", crate::double::RuleDoubleOut::new("doubleprecis")),
         rrow!("stackprobeloop", "analysis", crate::kuna_stackprobeloop::RuleStackProbeLoop::new("analysis")),

@@ -1,0 +1,77 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+<!--
+    A 64-bit compare on a 32-bit target, and a long long stack parameter.
+
+    The low words are compared (cmp) and the high words subtracted with that
+    borrow (sbb); the result is read off the flags (setl, setb). Lifted, a
+    signed compare is the XOR of SBORROW4(ahi,bhi), SBORROW4(ahi-bhi,c) and
+    the sign of ahi-bhi-c, with c = alo < blo, and an unsigned one is
+    ahi < bhi || ahi-bhi < c. kuna_borrowcompare folds either back into one
+    compare of the two wholes, also with a declared prototype. With no
+    prototype each long long arrived as two int parameters; option pairparam
+    joins two stack words a borrow or carry links into one parameter.
+
+    Built from this source with
+      clang -target i386-linux-gnu -O2 -fno-inline -c t64.c
+    (.text, 0xf1 bytes):
+      long long add64(long long a, long long b) { return a + b; }
+      int lt64(long long a, long long b) { return a < b; }
+      int ltu64(unsigned long long a, unsigned long long b) { return a < b; }
+      int eq64(long long a, long long b) { return a == b; }
+      long long shl64(long long a, int n) { return a << n; }
+      int lt_const(long long a) { return a < 100000LL; }
+      long long pick(long long a, long long b) { return a < b ? b : a; }
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+8b44240c034424048b54241013542408c36666666666662e0f1f840000000000
+8b4424043b44240c8b4424081b4424100f9cc00fb6c0c3660f1f840000000000
+8b4424043b44240c8b4424081b4424100f92c00fb6c0c3660f1f840000000000
+8b4c24048b54240833542410334c240c31c009d10f94c0c30f1f840000000000
+560fb64c24108b4424088b54240c89c6d3e60fa5c231c0f6c1200f45d60f44c6
+5ec366666666662e0f1f8400000000008b442408817c2404a086010083d8000f
+9cc00fb6c0c3662e0f1f84000000000057568b4c240c8b7424108b4424148b54
+241839c889d719f70f4cc10f4cd65e5fc3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="add64"/>
+<symbol space="ram" offset="0x100020" name="lt64"/>
+<symbol space="ram" offset="0x100040" name="ltu64"/>
+<symbol space="ram" offset="0x1000b0" name="lt_const"/>
+<symbol space="ram" offset="0x1000d0" name="pick"/>
+</binaryimage>
+<script>
+  <com>lo fu add64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lt64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ltu64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lt_const</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option pairparam off</com>
+  <com>lo fu lt64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern int ltu64(unsigned long long a,unsigned long long b);</com>
+  <com>lo fu ltu64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PAIR64 #1: a long long sum takes two long long parameters" min="1" max="1">int8 add64\(int8 a0,int8 a1\)</stringmatch>
+<stringmatch name="PAIR64 #2: the signed borrow chain folds to one compare" min="1" max="1">bool lt64\(int8 a0,int8 a1\)</stringmatch>
+<stringmatch name="PAIR64 #3: the signed and the unsigned compare" min="2" max="2">return a0 &lt; a1;</stringmatch>
+<stringmatch name="PAIR64 #4: the unsigned borrow out folds to one unsigned compare" min="1" max="1">bool ltu64\(uint8 a0,uint8 a1\)</stringmatch>
+<stringmatch name="PAIR64 #5: a compare with a constant whose high word is 0" min="1" max="1">return a0 &lt; 100000;</stringmatch>
+<stringmatch name="PAIR64 #6: a borrow compare that guards a branch" min="1" max="1">if \(a1 &lt; a0\)</stringmatch>
+<stringmatch name="PAIR64 #7: pairparam off keeps two int parameters and the borrow chain" min="1" max="1">SBORROW4</stringmatch>
+<stringmatch name="PAIR64 #8: with a declared prototype the unsigned compare folds whatever pairparam says" min="1" max="1">return \(uint4\)\(a &lt; b\);</stringmatch>
+<stringmatch name="PAIR64 #9: no CONCAT44 is left" min="0" max="0">CONCAT44</stringmatch>
+</decompilertest>

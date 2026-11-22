@@ -2624,6 +2624,28 @@ tier = "transform"
 symptoms = "a uint8_t loop counter prints as unsigned int v with v = v + 1 & 0xff|a byte loaded with ldrb is declared unsigned int and used as an index|an int local prints as unsigned long on x86-64 though every value is a zero-extended 32-bit result"
 
 [[settable]]
+option = "pairparam"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P4"
+subphase = "prototype-source"
+strength = "HARD"
+rewind = "P3"
+issue = "pairparam"
+summary = "Join two adjacent input words into one 8-byte parameter when a borrow or carry links them."
+use_when = "On by default."
+example = "option pairparam off"
+live_field = "pair_params"
+live_true = "on"
+live_false = "off"
+source_decompiler = "kuna"
+inspiration = "32-bit targets: a long long parameter recovered as two int parameters"
+change_kind = "new-analysis"
+tier = "transform"
+symptoms = "a long long parameter on i386 or 32-bit ARM prints as two int parameters"
+
+[[settable]]
 option = "regsigned"
 values = "on|off"
 default = "off"

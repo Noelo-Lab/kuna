@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4994,
-    4994
+    5003,
+    5003
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2027,6 +2027,15 @@
     "data:PACFLOW #5: the FPAC-less failure check folds away (no brk, no compare)",
     "data:PACFLOW #6: no hidden PAC op surfaces as a user op",
     "data:PACFLOW #7: the braaz call still passes its argument",
+    "data:PAIR64 #1: a long long sum takes two long long parameters",
+    "data:PAIR64 #2: the signed borrow chain folds to one compare",
+    "data:PAIR64 #3: the signed and the unsigned compare",
+    "data:PAIR64 #4: the unsigned borrow out folds to one unsigned compare",
+    "data:PAIR64 #5: a compare with a constant whose high word is 0",
+    "data:PAIR64 #6: a borrow compare that guards a branch",
+    "data:PAIR64 #7: pairparam off keeps two int parameters and the borrow chain",
+    "data:PAIR64 #8: with a declared prototype the unsigned compare folds whatever pairparam says",
+    "data:PAIR64 #9: no CONCAT44 is left",
     "data:PARAMETER-ALIAS #1: the input stays in the signature",
     "data:PARAMETER-ALIAS #2: entry comparisons read the input",
     "data:PARAMETER-ALIAS #3: the later local retains both assigned values",

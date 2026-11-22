@@ -891,6 +891,10 @@ pub struct Architecture {
     /// part at that width (option `regnarrow`).  See
     /// [`crate::p3_dataflow::kuna_regnarrow`].
     pub narrow_locals: bool,
+    /// (kuna) Join two adjacent input words a borrow or carry chain links into
+    /// one double-precision input (option `pairparam`).  See
+    /// [`crate::p5_types::kuna_borrowcompare::RuleDoubleInputPair`].
+    pub pair_params: bool,
     /// (kuna) Make a call to a callee that returns a narrow value zero-extended
     /// read that value (option `narrowret`).  See
     /// [`crate::p4_calls::kuna_narrowret`].
@@ -2543,6 +2547,7 @@ impl Architecture {
             narrow_args: true,
             narrow_args_callers: true,
             narrow_locals: true,
+            pair_params: true,
             narrow_ret: true,
             narrow_signed: false,
             vararg_shared_float: false,
@@ -2876,6 +2881,7 @@ impl Architecture {
         self.narrow_args = true; // (kuna) option narrowargs default-on: a register parameter whose uses read only its low 1, 2 or 4 bytes is declared that wide, and a callee's stated narrow parameter caps how much of the argument its callers consume (0/675 datatests)
         self.narrow_signed = false; // (kuna) option regsigned default-off: rebuilding a sign-extended register-local web at its low 1, 2 or 4 bytes moves decbench type_match by +0 to +4 perfect functions and adds casts elsewhere
         self.narrow_locals = true; // (kuna) option regnarrow default-on: a register-local web whose values the nonzero-bit analysis proves fit a low 1, 2 or 4 bytes, entered only through zero extensions, masks, constants and copies, is rebuilt at that width
+        self.pair_params = true; // (kuna) option pairparam default-on: two adjacent input words a borrow or carry chain links are one 8-byte parameter
         self.narrow_ret = true; // (kuna) option narrowret default-on: a call to a callee that returns a narrow value zero-extended reads that value
         self.vararg_shared_float = false; // (kuna) default-off: the register-choice reading holds only for -O0 code (post-RA scheduling defeats it at -O1+)
         self.call_overlap = crate::kuna_calloverlap::LEVEL_AUTO;
@@ -3695,6 +3701,7 @@ impl Architecture {
         ctx.kuna_custom_reg_models = Rc::clone(&self.kuna_custom_reg_models);
         ctx.narrow_args = self.narrow_args; // narrowargs
         ctx.narrow_locals = self.narrow_locals; // regnarrow
+        ctx.pair_params = self.pair_params; // pairparam
         ctx.narrow_ret = self.narrow_ret; // narrowret
         ctx.narrow_signed = self.narrow_signed; // regsigned
         ctx.vararg_shared_float = self.vararg_shared_float; // varargsharedfloat

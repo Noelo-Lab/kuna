@@ -171,6 +171,7 @@ Three tiers:
 | a uint8_t loop counter prints as unsigned int v with v = v + 1 & 0xff | [`regnarrow`](#regnarrow----on--off-default-on) |
 | a byte loaded with ldrb is declared unsigned int and used as an index | [`regnarrow`](#regnarrow----on--off-default-on) |
 | an int local prints as unsigned long on x86-64 though every value is a zero-extended 32-bit result | [`regnarrow`](#regnarrow----on--off-default-on) |
+| a long long parameter on i386 or 32-bit ARM prints as two int parameters | [`pairparam`](#pairparam----on--off-default-on) |
 | a signed char loaded with ldrsb is declared int | [`regsigned`](#regsigned----on--off-default-off) |
 | a short counter prints as int with (int)(short) casts at every use | [`regsigned`](#regsigned----on--off-default-off) |
 | an int local prints as long on x86-64 though every value is a movsxd | [`regsigned`](#regsigned----on--off-default-off) |
@@ -1274,6 +1275,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default. The tell it fixes is a byte or halfword local printed `unsigned int` on ARM firmware (`v = v + 1 & 0xff`, `v = (unsigned int)*p` used as an index), or an `unsigned` counter printed `unsigned long` on x86-64 whose every value is a zero-extended 32-bit result. Set it off to get the register-wide declarations back, or when a local the source declares `int` or as an enum is only ever loaded from a byte field (an enum kept in a `uint8_t`, a `numRows` read from a `uint16_t`): the binary cannot tell the two apart. The p-code computes the same values either way. Measured with decbench's published type_match: 96 ARM firmware slices 3,232 -> 3,279 perfect functions (mean .3068 -> .3105; 492 functions better, 106 worse), the 96-binary nightly optimized sample 2,315 -> 2,337, the 444-slice x86-64 set 1,903 -> 1,905; the functions that lose a perfect score declare an enum or `int` the body only loads from a byte field.
 - **Where / provenance:** P3/simplification-quiescence · kuna · type-inference · ty17-narrow-register-locals
 - **Example:** `option regnarrow on`
+
+### `pairparam` -- on | off, default `on`
+
+- **Symptoms:** a long long parameter on i386 or 32-bit ARM prints as two int parameters.
+- **What it does:** Join two adjacent input words into one 8-byte parameter when a borrow or carry links them.
+- **When to flip:** On by default.
+- **Where / provenance:** P4/prototype-source · kuna · new-analysis · pairparam
+- **Example:** `option pairparam off`
 
 ### `regsigned` -- on | off, default `off`
 

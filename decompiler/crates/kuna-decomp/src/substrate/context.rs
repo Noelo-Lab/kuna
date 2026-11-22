@@ -1055,6 +1055,10 @@ pub struct ArchContext {
     /// (kuna) narrow a register-local web whose values fit a low part
     /// (`regnarrow`). Read by [`crate::kuna_regnarrow`].
     pub narrow_locals: bool,
+    /// (kuna) join two adjacent input words a borrow or carry links into one
+    /// double-precision input (`pairparam`). Read by
+    /// [`crate::kuna_borrowcompare::RuleDoubleInputPair`].
+    pub pair_params: bool,
     /// (kuna) a call reads the narrow value its callee returns zero-extended
     /// (`narrowret`). Read by [`crate::kuna_narrowret`].
     pub narrow_ret: bool,
@@ -1740,6 +1744,7 @@ impl ArchContext {
             kuna_custom_reg_models: Rc::default(),
             narrow_args: true,
             narrow_locals: true,
+            pair_params: true,
             narrow_ret: true,
             narrow_signed: false,
             vararg_shared_float: false,  // varargsharedfloat (default-off)

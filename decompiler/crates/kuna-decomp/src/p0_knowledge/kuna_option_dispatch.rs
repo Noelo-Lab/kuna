@@ -400,6 +400,10 @@ kuna_options! { self, p1;
         self.narrow_locals = on_or_off(p1)?;
         Ok(format!("Narrow register local recovery turned {p1}"))
     },
+    "pairparam" => {
+        self.pair_params = on_or_off(p1)?;
+        Ok(format!("Double-precision input pairing turned {p1}"))
+    },
     "narrowret" => {
         self.narrow_ret = on_or_off(p1)?;
         Ok(format!("Narrow call result recovery turned {p1}"))
