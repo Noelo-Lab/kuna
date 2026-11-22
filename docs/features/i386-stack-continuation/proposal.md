@@ -57,3 +57,13 @@ this boundary into ordinary source. Remaining machine state, including
 the example's EBP change, is outside an ESP-only observation. The linked
 PE witness also requires independent segment-effect evidence. This
 proposal introduces neither a source rewrite nor a new runtime option.
+
+## Open questions from review
+
+The first step is a read-only record with no consumer, and every existing
+output must stay byte-identical. It therefore cannot carry the two-pass
+stage test that `docs/agents.md` requires (option off shows the bug, the
+default shows the fix), or a one-pass test pinning fixed output, because
+nothing in it changes the reproduction's output. Should the first
+implementation ship together with its first consumer, or expose the record
+through an existing CLI or JSON surface that a test can check?
