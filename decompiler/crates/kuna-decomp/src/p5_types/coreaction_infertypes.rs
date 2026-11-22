@@ -1411,6 +1411,8 @@ fn propagate_int_add(
         Some(alttype)
     } else if inslot == -1 {
         None // Don't propagate pointer types output -> input
+    } else if crate::kuna_valuewitness::outside_header(data, op, inslot, &alttype) {
+        None
     } else {
         propagate_add_in2_out(data, alttype, op, inslot)
     }

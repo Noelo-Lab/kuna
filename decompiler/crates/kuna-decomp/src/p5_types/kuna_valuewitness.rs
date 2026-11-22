@@ -91,6 +91,24 @@ pub fn keeps_offset(data: &Funcdata, op: OpId, slot: i32) -> bool {
             .is_some_and(|t| t.get_name() == METADATA)
 }
 
+/// Whether the `INT_ADD` `op` adds to its input `slot`, typed `ptr`, a
+/// constant outside the 16-byte header `ptr`'s `swift.type_metadata` lays
+/// out: the sum points at a field offset or generic argument, not at another
+/// metadata record, so the pointer type does not propagate to it.
+pub fn outside_header(data: &Funcdata, op: OpId, slot: i32, ptr: &Rc<Datatype>) -> bool {
+    if !data.get_arch().analysis_valuewitness
+        || !ptr.get_ptr_to().is_some_and(|t| t.get_name() == METADATA)
+    {
+        return false;
+    }
+    data.obank()
+        .get(op)
+        .filter(|o| o.code() == OpCode::CPUI_INT_ADD)
+        .and_then(|o| o.get_in(1 - slot))
+        .and_then(|c| data.vbank().get(c))
+        .is_some_and(|c| c.is_constant() && !(0..16).contains(&(c.get_offset() as i64)))
+}
+
 /// Whether `addr` is the word before another value: `meta + -8`.
 fn below_metadata(data: &Funcdata, addr: VarnodeId) -> bool {
     let Some(op) = data
