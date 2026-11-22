@@ -63,6 +63,13 @@ const PE_MAC_NORETURN_LIST: &str = include_str!("../../data/PeMacFunctionsThatDo
 /// `debug/stack_chk_fail_local.c` declares `__stack_chk_fail_local` `noreturn`.
 const IMPORT_NORETURN: &[&str] = &["__stack_chk_fail_local"];
 
+/// The Swift runtime's exported entry points that never return
+/// (`SWIFT_NORETURN` in `swift/Runtime/Error.h`, `NoReturn` in
+/// `swift/Runtime/RuntimeFunctions.def`), matched on a Swift image in any format:
+/// `try!` failing ends in `swift_unexpectedError`.
+const SWIFT_NORETURN: &[&str] =
+    &["swift_unexpectedError", "swift_errorInMain", "swift_onceClosureDestroyedError"];
+
 /// Port of `NoReturnFunctionAnalyzer` ("Known"): flag every imported/defined
 /// function whose name matches the shipped ELF no-return list.
 ///
@@ -196,7 +203,7 @@ fn scan_noreturn(file: &object::File, bytes: &[u8], compiler: Compiler) -> Analy
     // a PE still flags `exit`/`abort`). The names are format-neutral; only *which*
     // shipped list applies differs — the kuna analog of
     // noReturnFunctionConstraints.xml's per-executable-format arms.
-    let (exact, wildcard) = match file.format() {
+    let (mut exact, wildcard) = match file.format() {
         object::BinaryFormat::Elf => {
             let (mut e, mut w) = parse_list(ELF_NORETURN_LIST);
             // Per-compiler source language (ELF only): append the matching list,
@@ -207,7 +214,7 @@ fn scan_noreturn(file: &object::File, bytes: &[u8], compiler: Compiler) -> Analy
                 // Go: the runtime.gopanic/throw/goexit/… exact-name list.
                 Compiler::Go => Some(crate::sourcelang::golang_noreturn_list()),
                 // No per-compiler arm for the ELF format (Gcc/Clang/Unknown;
-                // Swift has no vendored list yet, so it takes the generic set).
+                // Swift adds `SWIFT_NORETURN` below, in every format).
                 Compiler::Gcc | Compiler::Clang | Compiler::Swift | Compiler::Unknown => None,
             } {
                 let (extra_exact, extra_wildcard) = parse_list(list);
@@ -223,6 +230,9 @@ fn scan_noreturn(file: &object::File, bytes: &[u8], compiler: Compiler) -> Analy
         // Any other (unsupported) format: no list, no facts.
         _ => return out,
     };
+    if compiler == Compiler::Swift {
+        exact.extend(SWIFT_NORETURN.iter().map(|n| n.to_string()));
+    }
     let mut seen = std::collections::HashSet::new();
     let rust_exit = file.format() == object::BinaryFormat::Elf && compiler == Compiler::Rustc;
     let mut emit = |out: &mut AnalysisOutput, addr: u64, n: String| {

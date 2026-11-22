@@ -19,7 +19,10 @@
     `swift_stdlib_macho.s` against the iOS 16.5 libswiftCore) reports an
     unimplemented initializer from `report_rect`, whose declared rectangle
     rides in `d0`..`d3` and is otherwise unused, and reads the major version
-    off the triple in `os_major`.
+    off the triple in `os_major`. `try_value` is a `try!` that fails into
+    `swift_unexpectedError` (`SWIFT_NORETURN` in `swift/Runtime/Error.h`),
+    with a `return 7` after the call that is never reached; `free_box_scaled`
+    deallocates a box with a double live across `swift_deallocBox`.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -37,9 +40,18 @@ c3
   <com>load addr 0x100004080</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load addr 0x1000040b0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1000040e8</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="the report takes the two names, their lengths and the flags" min="1" max="1">_swift_stdlib_reportUnimplementedInitializer\("Frame",5,"init\(frame:\)",0xc,0\);</stringmatch>
 <stringmatch name="the version triple is the struct" min="1" max="1">swift\.NSOperatingSystemVersion v1;</stringmatch>
 <stringmatch name="the major version is its first field" min="1" max="1">return v1\.majorVersion;</stringmatch>
+<stringmatch name="the failed try! does not return" min="1" max="1">swift_unexpectedError\(a0,"Lib\.swift",9,1,0x2a\); // no-return</stringmatch>
+<stringmatch name="nothing after swift_unexpectedError is reached" min="0" max="0">return 7;</stringmatch>
+<stringmatch name="the box is the one argument" min="1" max="1">swift_deallocBox\(a1\);</stringmatch>
 </decompilertest>

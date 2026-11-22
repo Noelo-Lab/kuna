@@ -1,5 +1,6 @@
 // swift_stdlib_macho.s: callers of the standard library's C entry points
-// (stdlib/public/SwiftShims/swift/shims/AssertionReporting.h, FoundationShims.h).
+// (stdlib/public/SwiftShims/swift/shims/AssertionReporting.h, FoundationShims.h),
+// and of the runtime's swift_unexpectedError and swift_deallocBox.
 // Built against the iOS 16.5 SDK with
 //   clang -target arm64-apple-ios16.0 -isysroot $SDK -fuse-ld=lld -nostdlib -Wl,-e,_main \
 //     -o swift_stdlib_macho swift_stdlib_macho.s \
@@ -73,6 +74,43 @@ _retain_object:
 	ldp	x29, x30, [sp], #16
 	ret
 
+	.globl _try_value
+	.p2align 2
+// long try_value(void *error, long value): `try!` on a call that threw `error`
+// traps in swift_unexpectedError; the instructions after the call are never
+// reached.
+_try_value:
+	cbz	x0, Lok
+	stp	x29, x30, [sp, #-16]!
+	add	x29, sp, #0
+	adrp	x1, l_file@PAGE
+	add	x1, x1, l_file@PAGEOFF
+	mov	w2, #9
+	mov	w3, #1
+	mov	w4, #42
+	bl	_swift_unexpectedError
+	mov	x0, #7
+	ldp	x29, x30, [sp], #16
+	ret
+Lok:
+	mov	x0, x1
+	ret
+
+	.globl _free_box_scaled
+	.p2align 2
+// double free_box_scaled(void *box, double scale): deallocates the box with
+// scale live across the call.
+_free_box_scaled:
+	stp	x29, x30, [sp, #-32]!
+	str	d8, [sp, #16]
+	add	x29, sp, #0
+	fmov	d8, d0
+	bl	_swift_deallocBox
+	fmul	d0, d8, d8
+	ldr	d8, [sp, #16]
+	ldp	x29, x30, [sp], #32
+	ret
+
 	.globl _main
 	.p2align 2
 _main:
@@ -84,4 +122,6 @@ l_class:
 	.asciz	"Frame"
 l_init:
 	.asciz	"init(frame:)"
+l_file:
+	.asciz	"Lib.swift"
 .subsections_via_symbols

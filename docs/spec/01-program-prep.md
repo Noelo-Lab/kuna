@@ -6430,6 +6430,17 @@ every other binary's pass list is byte-identical to before the pass existed):
   `v1[0]` reads `v1.majorVersion`. The stage test
   `tests/stages/kuna-swiftstdlib.xml` runs `swift_stdlib_macho`, assembled
   the same way.
+  The rest of the compiler's list of runtime calls
+  (`include/swift/Runtime/RuntimeFunctions.def`) is in the table as well, for
+  every entry whose arguments all ride in the platform's argument registers:
+  the typed allocators (`swift_allocObjectTyped`, `swift_deallocBox`, …), the
+  array and `swift_cvw_*` layout-string value witnesses, the metatype casts,
+  the class-metadata initializers and the non-atomic reference counting. The
+  three runtime entry points that never return (`swift_unexpectedError`, which
+  a failed `try!` calls, `swift_errorInMain` and
+  `swift_onceClosureDestroyedError`) are no-return functions on a Swift image
+  in every format (`loader/noreturn.rs` `SWIFT_NORETURN`), so the code after
+  the call is not printed as reachable.
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the

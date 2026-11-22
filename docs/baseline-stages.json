@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5002,
-    5002
+    5005,
+    5005
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4037,6 +4037,7 @@
     "data:nonzero overwrite survives",
     "data:noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)",
     "data:noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)",
+    "data:nothing after swift_unexpectedError is reached",
     "data:null syntax is not a recovered identifier",
     "data:nullable-relocations #1: weak binding is tested",
     "data:nullable-relocations #2: imported call keeps its argument",
@@ -4792,6 +4793,7 @@
     "data:the allocation returns the object",
     "data:the allocation takes the metadata",
     "data:the bounded local policy never leaves a pointer assigned to the Pair object",
+    "data:the box is the one argument",
     "data:the bridge-object release through x23 takes its argument",
     "data:the bridge-object retain through x22 takes its argument",
     "data:the call never passes the ABI pointer",
@@ -4800,6 +4802,7 @@
     "data:the csel-picked and switched literal of the second arm",
     "data:the dead arm of the square test prints only when off",
     "data:the entry partition never loses the input",
+    "data:the failed try! does not return",
     "data:the float rounding is never folded away",
     "data:the function body is kept",
     "data:the function pointer signature never keeps the ABI pointer",
