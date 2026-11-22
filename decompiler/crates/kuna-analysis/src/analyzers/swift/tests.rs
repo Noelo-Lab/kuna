@@ -65,6 +65,7 @@ fn folded_functions_are_named_without_a_false_owner() {
     let namer = Namer {
         md: &md,
         imports: &imports,
+        objc_members: Default::default(),
         memo: Default::default(),
         code: vec![(0x1000, 0x2000)],
         bodies: Vec::new(),
@@ -178,6 +179,7 @@ fn a_claim_needs_a_plausible_function_start() {
         let namer = Namer {
             md: &md,
             imports: &imports,
+            objc_members: Default::default(),
             memo: Default::default(),
             code: vec![(0x1000, 0x2000)],
             bodies,
@@ -212,6 +214,7 @@ fn fixture_claims_are_outside_stated_bodies() {
         let namer = Namer {
             md: &md,
             imports: &imports,
+            objc_members: Default::default(),
             memo: Default::default(),
             code: file
                 .sections()
@@ -224,7 +227,8 @@ fn fixture_claims_are_outside_stated_bodies() {
             budget: std::cell::Cell::new(usize::MAX),
         };
         let mut out = AnalysisOutput::default();
-        namer.emit(&mut out);
+        let records = namer.claim_records();
+        namer.finish(records, &mut out);
         out
     };
     let checked = names(&bytes, usize::MAX);
@@ -244,6 +248,7 @@ fn repeated_names_take_the_next_free_suffix() {
     let namer = Namer {
         md: &md,
         imports: &imports,
+        objc_members: Default::default(),
         memo: Default::default(),
         code: vec![(0x1000, 0x100000)],
         bodies: Vec::new(),
@@ -350,6 +355,7 @@ fn names(bytes: &[u8], budget: usize) -> AnalysisOutput {
     let namer = Namer {
         md: &md,
         imports: &imports,
+        objc_members: Default::default(),
         memo: Default::default(),
         code: file
             .sections()
@@ -362,7 +368,8 @@ fn names(bytes: &[u8], budget: usize) -> AnalysisOutput {
         budget: std::cell::Cell::new(budget),
     };
     let mut out = AnalysisOutput::default();
-    namer.emit(&mut out);
+    let records = namer.claim_records();
+    namer.finish(records, &mut out);
     out
 }
 
