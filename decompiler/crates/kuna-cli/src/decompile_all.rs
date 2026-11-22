@@ -55,6 +55,8 @@ use crate::paths;
 /// `decompile-project` reuses the same parse via its own wrapper).
 pub(crate) struct Args {
     pub(crate) binary: String,
+    /// Explicitly trusted, hashed Rust banks; consumed once before target selection.
+    pub(crate) apply_rust_signatures: Option<String>,
     pub(crate) json: bool,
     /// `--functions a,b,c`: restrict to these names (None ⇒ CODE-backed entries).
     pub(crate) names: Option<Vec<String>>,
@@ -160,6 +162,7 @@ impl Args {
     pub(crate) fn serial() -> Self {
         Self {
             binary: String::new(),
+            apply_rust_signatures: None,
             json: false,
             names: None,
             addrs: Vec::new(),
@@ -597,6 +600,9 @@ fn summary_text(
     }
     for h in &summary.runtime {
         let _ = writeln!(out, "runtime\t{}\t{}", h.id, h.hint);
+        for (name, version) in h.crates.iter().flatten() {
+            let _ = writeln!(out, "crate\t{name}\t{version}");
+        }
     }
     crate::limits::write_text(&mut out, &summary.limits, display_address);
     out
@@ -1057,6 +1063,8 @@ pub(crate) fn pool_config<'a>(
 /// Emit `text`, then report a discovery failure (stdout before stderr, as
 /// `kuna decompile` orders them) and answer with the run's verdict.
 /// Report every rejected assertion on stderr, and say whether there was one.
+/// A `--types` declaration the C grammar declined is reported too but is not
+/// counted: a header is loaded as far as it parses, under `--assert-strict` too.
 ///
 /// The human surface has no `assertions[]` to read, and a directive that was
 /// silently dropped is the failure mode this plane exists to end -- so a
@@ -1066,6 +1074,12 @@ pub(crate) fn report_rejected_assertions(
 ) -> bool {
     let mut any = false;
     for outcome in outcomes.iter().filter(|o| o.status == "rejected") {
+        let reason = outcome.detail.as_deref().unwrap_or("no reason given");
+        let reason = reason.lines().next().unwrap_or(reason);
+        if let Some(declaration) = kuna_console::kuna_cheader::origin(&outcome.directive) {
+            eprintln!("warning: --types {declaration}: rejected: {reason}");
+            continue;
+        }
         any = true;
         let reason = outcome.detail.as_deref().unwrap_or("no reason given");
         if outcome.fatal {
@@ -1394,7 +1408,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
         decompile_entries_callee_first(&mut prog, args, targets, explicit)
     } else {
         note_custom_inert(&prog, targets.len());
-        decompile_entries(&mut prog, args, targets, /* pointer_arguments= */ true)
+        decompile_entries(&mut prog, args, targets, /* pointer_arguments= */ true, !whole)
     };
     Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes(), interior, declared })
 }
@@ -1443,12 +1457,15 @@ pub(crate) fn parse_max_fn_memory(v: &str) -> Result<u64, String> {
 /// instead of hanging the whole batch.
 ///
 /// `pointer_arguments` is whether the returned batch reconciles scalar
-/// addresses with the parameter declarations printed in it.
+/// addresses with the parameter declarations printed in it.  `tail_callees`
+/// (a selection with no callee-first order behind it) has each function state
+/// its tail callees' prototypes first, as `kuna decompile` does.
 pub(crate) fn decompile_entries(
     prog: &mut ConsoleProgram,
     args: &Args,
     targets: Vec<FunctionEntry>,
     pointer_arguments: bool,
+    tail_callees: bool,
 ) -> Vec<FuncResult> {
     arm_fn_budgets(prog, args);
     let opts = DecompileOptions {
@@ -1458,7 +1475,10 @@ pub(crate) fn decompile_entries(
         want_pointer_arguments: pointer_arguments,
         ..DecompileOptions::default()
     };
-    kuna_console::project::decompile_targets_with(prog, targets, &opts)
+    prog.arch_mut().kuna_tail_callee_batch = tail_callees;
+    let funcs = kuna_console::project::decompile_targets_with(prog, targets, &opts);
+    prog.arch_mut().kuna_tail_callee_batch = false;
+    funcs
 }
 
 /// (kuna `protoorder`) Whether this run takes the callee-first order, and
@@ -1718,7 +1738,11 @@ pub(crate) fn load_program(
     args: &Args,
     defaults: DriverDefaults,
 ) -> Result<ConsoleProgram, String> {
-    load_program_with_rust_profiles(args, defaults, None)
+    let request = args.apply_rust_signatures.as_deref().map(|path| {
+        crate::rust_signatures::validate_application(args)?;
+        crate::rust_signatures::load(std::path::Path::new(path)).map(|(request, _)| request)
+    }).transpose()?;
+    load_program_with_rust_profiles(args, defaults, request)
 }
 
 fn load_program_with_rust_profiles(
@@ -1739,7 +1763,7 @@ fn load_program_with_rust_profiles(
         &args.options,
         args.slice.as_deref(),
         jobs::decode_lanes(args),
-        defaults.functions_inventory(),
+        defaults.functions_inventory() && args.apply_rust_signatures.is_none(),
     );
 
     let spec_roots = spec_roots(args.sleighpath.as_deref());
@@ -1796,7 +1820,7 @@ fn load_program_with_rust_profiles(
     let non_x86_64 = !prog.arch().archid.starts_with("x86:LE:64:");
     for (name, value) in driver_default_options_for_arch(
         non_x86_64,
-        defaults.decompiles(),
+        defaults.decompiles() || args.apply_rust_signatures.is_some(),
         defaults.wants_listing(),
         &args.options,
     ) {
@@ -1828,7 +1852,11 @@ fn load_program_with_rust_profiles(
     }
     replay_worker_arm_frames(&mut prog, args)?;
     if let Some(request) = request {
-        prog.request_rust_profiles(request);
+        if args.apply_rust_signatures.is_some() {
+            prog.request_rust_signature_names(request);
+        } else {
+            prog.request_rust_profiles(request);
+        }
     }
     prog.commit_pending_analysis()
         .map_err(|e| format!("read symbols (analysis commit) failed: {}", e.explain()))?;
@@ -1867,7 +1895,9 @@ pub(crate) fn name_miss_hint(error: &EntryLookupError) -> Option<String> {
 /// Build the target [`FunctionEntry`] list from the filters: `--addr` entries
 /// (the canonical record at that address, else a record named via the symbol
 /// table / `name_function`), `--functions` names or aliases, or — with no filter
-/// — every CODE-backed entry, each exactly once.
+/// — every CODE-backed entry, each exactly once. Among several selectors, one
+/// naming a bodyless import slot is reported on stderr and skipped; a lone one,
+/// or a run left with nothing to decompile after the skips, is an error.
 pub(crate) fn resolve_targets(
     prog: &ConsoleProgram,
     args: &Args,
@@ -1891,6 +1921,16 @@ fn resolve_targets_with_policy(
     require_body: bool,
 ) -> Result<Vec<FunctionEntry>, String> {
     let mut targets: Vec<FunctionEntry> = Vec::new();
+    let selectors = args.addrs.len() + args.names.as_ref().map_or(0, Vec::len);
+    let mut skipped = 0usize;
+    let mut skip_import = |error: &EntryLookupError| -> bool {
+        if selectors < 2 || !matches!(error, EntryLookupError::BodylessImport { .. }) {
+            return false;
+        }
+        eprintln!("warning: {error}; skipped");
+        skipped += 1;
+        true
+    };
 
     // Resolve every address form through the program's shared selector model.
     // `args.entry_seeds` is deliberately not here: a raw image's `--entry`
@@ -1910,7 +1950,11 @@ fn resolve_targets_with_policy(
         } else {
             prog.resolve_entry(&selector)
         };
-        targets.push(entry.map_err(|error| error.to_string())?);
+        match entry {
+            Ok(entry) => targets.push(entry),
+            Err(error) if skip_import(&error) => {}
+            Err(error) => return Err(error.to_string()),
+        }
     }
 
     // `--functions a,b,c`: intersect names with the enumerated set.  An ALIAS
@@ -1940,9 +1984,18 @@ fn resolve_targets_with_policy(
                         None => eprintln!("warning: no function named {want:?} in {}", args.binary),
                     }
                 }
+                Err(error) if skip_import(&error) => {}
                 Err(error) => return Err(error.to_string()),
             }
         }
+    }
+    if targets.is_empty() && skipped > 0 {
+        return Err(if skipped == selectors {
+            "every selector names an import slot; nothing to decompile"
+        } else {
+            "no selector names a function body; nothing to decompile"
+        }
+        .to_string());
     }
 
     // Dedup the explicitly-selected targets by entry offset: `--addr 0xX` and
@@ -2890,6 +2943,7 @@ pub(crate) fn parse_args_with_filters(
     let triageable = cmd == "decompile-all" || cmd == "functions";
     let mut filters = Filters::default();
     let mut binary: Option<String> = None;
+    let mut apply_rust_signatures: Option<String> = None;
     let mut json = false;
     let mut names: Option<Vec<String>> = None;
     let mut addrs: Vec<EntrySelector> = Vec::new();
@@ -2902,6 +2956,8 @@ pub(crate) fn parse_args_with_filters(
     let mut func_decls: Vec<crate::funcdecl::FuncDecl> = Vec::new();
     let mut assertions: Vec<kuna_console::assertions::Directive> = Vec::new();
     let mut assert_strict = false;
+    let mut types: Vec<String> = Vec::new();
+    let mut types_cpp: Option<String> = None;
     let mut mode: Option<String> = None;
     let mut slice: Option<String> = None;
     let mut target: Option<String> = None;
@@ -2937,8 +2993,14 @@ pub(crate) fn parse_args_with_filters(
         let a = argv[i].as_str();
         match a {
             "--json" => json = true,
+            "--apply-rust-signatures" if matches!(cmd, "functions" | "decompile") => {
+                let value = take(argv, &mut i, "--apply-rust-signatures")?;
+                if apply_rust_signatures.replace(value).is_some() {
+                    return Err("duplicate --apply-rust-signatures".into());
+                }
+            }
             "--no-vars" => no_vars = true,
-            "--omit" if cmd == "decompile-all" => omit.add(&take(argv, &mut i, "--omit")?)?,
+            "--omit" if matches!(cmd, "decompile-all" | "decompile") => omit.add(&take(argv, &mut i, "--omit")?)?,
             "--functions" => {
                 let v = take(argv, &mut i, "--functions")?;
                 names = Some(v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect());
@@ -2963,6 +3025,8 @@ pub(crate) fn parse_args_with_filters(
                 assertions.extend(crate::assertdecl::parse_flag(&v)?);
             }
             "--assert-strict" => assert_strict = true,
+            "--types" => types.push(take(argv, &mut i, "--types")?),
+            "--types-cpp" => types_cpp = Some(take(argv, &mut i, "--types-cpp")?),
             "--jobs" if jobs_flag => {
                 let v = take(argv, &mut i, "--jobs")?;
                 (jobs, jobs_auto) = jobs::parse_jobs(&v)?;
@@ -2991,9 +3055,7 @@ pub(crate) fn parse_args_with_filters(
                 jobs_synth = Some(jobs::SynthWorker::parse(&take(argv, &mut i, "--jobs-synth")?)?);
             }
             "--max-fn-seconds"
-                if cmd == "decompile-all"
-                    || cmd == "decompile-project"
-                    || cmd == "decompile-graph" =>
+                if matches!(cmd, "decompile" | "decompile-all" | "decompile-project" | "decompile-graph") =>
             {
                 let v = take(argv, &mut i, "--max-fn-seconds")?;
                 max_fn_seconds = Some(
@@ -3003,9 +3065,7 @@ pub(crate) fn parse_args_with_filters(
                 );
             }
             "--max-fn-memory"
-                if cmd == "decompile-all"
-                    || cmd == "decompile-project"
-                    || cmd == "decompile-graph" =>
+                if matches!(cmd, "decompile" | "decompile-all" | "decompile-project" | "decompile-graph") =>
             {
                 max_fn_memory = Some(parse_max_fn_memory(&take(argv, &mut i, "--max-fn-memory")?)?);
             }
@@ -3082,7 +3142,11 @@ pub(crate) fn parse_args_with_filters(
     }
 
     let binary = binary.ok_or_else(|| format!("{cmd} requires <binary>"))?;
+    let assertions = crate::assertdecl::with_types(&types, types_cpp.as_deref(), assertions)?;
     if filters.rust_signature_manifest.is_some() {
+        if apply_rust_signatures.is_some() {
+            return Err("--rust-signature-manifest and --apply-rust-signatures are exclusive".into());
+        }
         if !filters.summary || !json {
             return Err("--rust-signature-manifest requires functions --summary --json".into());
         }
@@ -3167,13 +3231,13 @@ pub(crate) fn parse_args_with_filters(
     let ResolvedMode { name: concrete_mode, options: merged } =
         mode_and_options_for_binary(mode.as_deref(), &binary, options)?;
     options = merged;
-    if names.is_none() && !addrs.is_empty() && !explicit_fast_funcdisc {
+    if names.is_none() && !addrs.is_empty() && !explicit_fast_funcdisc && apply_rust_signatures.is_none() {
         options.push(("fast_funcdisc".into(), "off".into()));
     }
     let whole_binary = batch && names.is_none() && addrs.is_empty();
     let max_fn_seconds = max_fn_seconds
         .unwrap_or_else(|| default_fn_budget_seconds(concrete_mode, whole_binary));
-    let decompiles = matches!(cmd, "decompile-all" | "decompile-project" | "decompile-graph");
+    let decompiles = matches!(cmd, "decompile" | "decompile-all" | "decompile-project" | "decompile-graph");
     let max_fn_memory = if decompiles { max_fn_memory } else { Some(0) };
     // The pool re-execs this binary, so a policy it cannot express is one the
     // shards would silently drop rather than honour. Pool-only: on `functions`
@@ -3239,9 +3303,9 @@ pub(crate) fn parse_args_with_filters(
         }
     }
 
-    Ok((
-        Args {
+    let args = Args {
             binary,
+            apply_rust_signatures,
             json,
             names,
             addrs,
@@ -3273,9 +3337,11 @@ pub(crate) fn parse_args_with_filters(
             jobs_pointerargs,
             jobs_synth,
             jobs_objects,
-        },
-        filters,
-    ))
+        };
+    if args.apply_rust_signatures.is_some() {
+        crate::rust_signatures::validate_application(&args)?;
+    }
+    Ok((args, filters))
 }
 
 fn parse_count(v: &str, flag: &str) -> Result<u64, String> {
@@ -3381,6 +3447,7 @@ fn usage_functions() {
          \x20               [--mode auto|reliable|aggressive|fast] [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \x20               [--raw-image --target T --base VMA (--entry|--addr VMA)..]\n\
          \x20               [--rust-signature-manifest PATH (requires --summary --json)]\n\
+         \x20               [--apply-rust-signatures PATH (trusted manifest; --jobs 1)]\n\
          \n\
          List every function kuna discovers in a binary as `<addr>\\t<name>` (or\n\
          --json: {{binary,count,total,functions:[{{name,address,address_hex,aliases,size}}]}}).\n\
@@ -3928,6 +3995,28 @@ mod triage_tests {
         assert_eq!(SortKey::parse("name").unwrap(), SortKey::Name);
         assert!(SortKey::parse("entropy").is_err());
         assert_eq!(SortKey::default(), SortKey::Addr);
+    }
+
+    #[test]
+    fn rust_signature_application_keeps_discovery_independent_of_selection() {
+        let common = ["--mode", "reliable", "--apply-rust-signatures", "trusted.json"];
+        let (inventory, _) = parse("functions", &common).unwrap();
+        let flags: Vec<_> = common.into_iter().chain(["--addr", "0x1000"]).collect();
+        let (addressed, _) = parse("decompile", &flags).unwrap();
+        assert_eq!(inventory.options, addressed.options);
+        assert_eq!(addressed.apply_rust_signatures.as_deref(), Some("trusted.json"));
+        for extra in [
+            vec!["--jobs", "2"], vec!["--jobs", "auto"],
+            vec!["--apply-rust-signatures", "second.json"],
+            vec!["--summary", "--json", "--rust-signature-manifest", "report.json"],
+            vec!["--assert", "bytes 0x1000 90"],
+        ] {
+            let flags: Vec<_> = common.into_iter().chain(extra).collect();
+            assert!(parse("functions", &flags).is_err(), "{flags:?}");
+        }
+        for command in ["decompile-all", "decompile-project", "decompile-graph"] {
+            assert!(parse(command, &common).is_err(), "{command}");
+        }
     }
 
     #[test]

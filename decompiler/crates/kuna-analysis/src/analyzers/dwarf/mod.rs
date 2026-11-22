@@ -111,6 +111,7 @@ use object::{Object, ObjectSection};
 use kuna_base::types::uint4;
 use kuna_decomp::dtype::{type_metatype, Datatype, TypeFactory};
 use kuna_decomp::fspec::PrototypePieces;
+use kuna_decomp::kuna_symbolnamechars::{sanitize_symbol_name, symbolnamechars_mode, NameChars};
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase, SymFact, SymKind};
 
@@ -332,6 +333,18 @@ impl DieSnap {
     }
 }
 
+/// A `DW_AT_name` as the pass carries it: the `symbolnamechars` structural set is
+/// escaped here, where the string is first read, so a struct tag, member,
+/// enumerator or typedef name cannot restructure emitted C any more than a
+/// symbol name can. A unit DIE's name is a path, not an identifier, and is kept.
+fn die_name(raw: &str, depth: isize, escape: bool) -> String {
+    if escape && depth != 0 {
+        sanitize_symbol_name(raw, NameChars::Safe).into_owned()
+    } else {
+        raw.to_string()
+    }
+}
+
 /// Snapshot every DIE in `unit` into an offset-keyed map (plus the ordered
 /// top-level offsets). Mirrors building Ghidra's `DebugInfoEntry` tree before
 /// `DWARFFunctionImporter.importFunctions()` walks it.
@@ -361,6 +374,7 @@ fn snapshot_unit_with_go(
     // Parent stack of (offset, depth) to attach children to their parent.
     let mut stack: Vec<(usize, isize)> = Vec::new();
     let mut language = None;
+    let escape_names = symbolnamechars_mode() != NameChars::Off;
     let mut cursor = unit.entries();
     loop {
         let entry = match cursor.next_dfs() {
@@ -414,7 +428,7 @@ fn snapshot_unit_with_go(
         if let Some(val) = entry.attr_value(gimli::DW_AT_name) {
             if let Ok(s) = dwarf.attr_string(unit, val) {
                 if let Ok(s) = std::str::from_utf8(s.slice()) {
-                    snap.name = s.to_string();
+                    snap.name = die_name(s, depth, escape_names);
                 }
             }
         }
@@ -490,7 +504,8 @@ fn snapshot_unit_with_go(
         }
         if let Some(loc) = entry.attr_value(gimli::DW_AT_location) {
             snap.has_location = true;
-            snap.addr_location = simple_addr_location(&loc, unit.encoding().address_size);
+            snap.addr_location = simple_addr_location(&loc, unit.encoding().address_size)
+                .or_else(|| indexed_addr_location(dwarf, unit, &loc));
             snap.fbreg_location = simple_fbreg_location(&loc);
             if snap.tag == gimli::DW_TAG_formal_parameter && kuna_dwarfbyref::is_fortran(language) {
                 let entry = parent_off
@@ -543,6 +558,31 @@ fn simple_addr_location(loc: &gimli::AttributeValue<Reader<'_>>, address_size: u
         return None;
     }
     gimli::Reader::read_address(&mut expr.0, address_size).ok()
+}
+
+/// Decode a `DW_AT_location` that is a single DWARF 5 `DW_OP_addrx <index>` (or
+/// its GNU split-DWARF predecessor `DW_OP_GNU_addr_index`), returning the VMA
+/// the unit's `.debug_addr` table holds at that index.
+fn indexed_addr_location<'a>(
+    dwarf: &gimli::Dwarf<Reader<'a>>,
+    unit: &gimli::Unit<Reader<'a>>,
+    loc: &gimli::AttributeValue<Reader<'a>>,
+) -> Option<u64> {
+    use gimli::Reader as _;
+    let mut operand = match loc {
+        gimli::AttributeValue::Exprloc(e) => e.0,
+        gimli::AttributeValue::Block(b) => *b,
+        _ => return None,
+    };
+    let opcode = gimli::DwOp(operand.read_u8().ok()?);
+    if opcode != gimli::DW_OP_addrx && opcode != gimli::DW_OP_GNU_addr_index {
+        return None;
+    }
+    let index = usize::try_from(operand.read_uleb128().ok()?).ok()?;
+    if !operand.is_empty() {
+        return None;
+    }
+    dwarf.address(unit, gimli::DebugAddrIndex(index)).ok()
 }
 
 /// DWARF 2 uses a single plus-uconst expression where later versions use a
@@ -1093,6 +1133,17 @@ impl AnalysisPass for DwarfPass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
+        let mut out = Self::run_generic(ctx);
+        if let Some(facts) = kuna_godwarfsig::capture_arm64_compressed(ctx) {
+            out.go_dwarf.push(facts);
+        }
+        out
+    }
+}
+
+impl DwarfPass {
+    #[inline(never)]
+    fn run_generic(ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
         if let Some(facts) = kuna_godwarfsig::capture_compressed(ctx) {
             out.go_dwarf.push(facts);
@@ -1302,6 +1353,14 @@ fn signed_bit_offset<R: gimli::Reader>(v: &gimli::AttributeValue<R>) -> Option<i
 mod tests {
     use super::*;
     use kuna_decomp::dtype::TypeFactoryImpl;
+
+    #[test]
+    fn die_names_escape_the_structural_set_below_the_unit() {
+        assert_eq!(die_name("a*/b\n", 1, true), "a_x2a_x2fb_x0a");
+        assert_eq!(die_name("vec<char *>::at", 3, true), "vec<char *>::at");
+        assert_eq!(die_name("a*/b\n", 1, false), "a*/b\n");
+        assert_eq!(die_name("src//unit's.c", 0, true), "src//unit's.c");
+    }
 
     #[test]
     fn a_bit_offset_reads_negative_in_either_producer_spelling() {

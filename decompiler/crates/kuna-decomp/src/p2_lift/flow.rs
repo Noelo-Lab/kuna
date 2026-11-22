@@ -164,6 +164,11 @@ pub struct VisitStat {
     pub size: int4,
 }
 
+/// (kuna) Second stagings one flow spends on re-entered dispatch tables. Each
+/// finds one more target with a partial decompile of the function so far, so
+/// a longer chain keeps what it has and says so.
+const KUNA_MAX_REENTRY_STAGES: usize = 128;
+
 /// The flow's instruction-boundary map (C++ `FlowInfo::visited`).  A type alias
 /// so the jump-table recovery's partial-clone seeding signatures stay readable.
 /// (`Address` is logically immutable as a key — its interior is a memoized space
@@ -380,6 +385,12 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// (kuna `--assert callee`) Did the caller state where the indirect jump at
+    /// `site` goes? See [`kuna_calleeoverride`](crate::kuna_calleeoverride).
+    fn stated_callee_site(&self, _fd: &Funcdata, _site: &Address) -> bool {
+        false
+    }
+
     /// (kuna `msvcsig`) Does `entry` carry a locked MSVC prototype? Such a callee's
     /// copied prototype gets the stack adjustment its parameter list implies, as
     /// `ActionDefaultParams` gives a declared callee it seeds itself
@@ -499,6 +510,12 @@ pub trait FlowEnvironment {
     /// select. See [`crate::p4_calls::kuna_calleereginputs`].
     fn query_call_register_model(&self, _entry: &Address) -> Option<std::rc::Rc<crate::fspec::ProtoModel>> {
         None
+    }
+
+    /// How many of EAX, ECX and EDX the function at the direct-call `entry`
+    /// reads before writing them. See [`crate::p4_calls::kuna_calleereginputs`].
+    fn query_call_arg_registers(&self, _entry: &Address) -> u8 {
+        0
     }
 
     /// The extrapop the returns of the function at the direct-call `entry`
@@ -2099,6 +2116,9 @@ truncating the fall-through here"
                 insn_ops.push(next);
             }
             crate::kuna_retpushedhalf::observe_instruction(&mut self.data, &insn_ops);
+            if flowoverride == crate::overrides::flow_type::NONE {
+                super::kuna_atomicxadd::observe(&mut self.data, &insn_ops);
+            }
             ends_in_call = self.pool_bound && self.ends_in_unconditional_call(&insn_ops);
             let seq = self.data.obank().get(firstop).expect("process: stale firstop").get_seq_num().clone();
             if let Some(stat) = self.visited.get_mut(curaddr) {
@@ -2549,6 +2569,30 @@ truncating the fall-through here"
         Ok(())
     }
 
+    /// (kuna) Plant the RETURN a dispatch reaches when its target is the
+    /// caller's return address, at an address no instruction is decoded from.
+    /// `false` when an instruction is already decoded there: the caller-return
+    /// destination cannot be represented and must be dropped.
+    fn kuna_return_stub(&mut self, addr: &Address) -> KunaResult<bool> {
+        if let Some(stat) = self.visited.get(addr) {
+            let planted = self.data.obank().find_op(&stat.seqnum).and_then(|op| self.data.obank().get(op))
+                .is_some_and(|op| op.code() == OpCode::CPUI_RETURN && op.get_in(0)
+                    .and_then(|v| self.data.vbank().get(v)).is_some_and(|v| v.is_constant() && v.get_offset() == 0)
+                    && stat.size == 1);
+            return Ok(planted);
+        }
+        let op = self.data.new_op(1, addr.clone());
+        let retop = self.env.resolve_typeop(OpCode::CPUI_RETURN);
+        self.data.op_set_opcode(op, retop);
+        let zero = self.data.new_constant(1, 0);
+        self.data.op_set_input(op, zero, 0)?;
+        self.op_mark_start_basic(op);
+        self.op_mark_start_instruction(op);
+        let seqnum = self.data.obank().get(op).expect("return stub").get_seq_num().clone();
+        self.visited.insert(addr.clone(), VisitStat { seqnum, size: 1 });
+        Ok(true)
+    }
+
     /// Fill-in artificial HALT p-code for `unprocessed` addresses (C++
     /// `fillinBranchStubs`, `flow.cc:891`).
     fn fillin_branch_stubs(&mut self) -> KunaResult<()> {
@@ -2828,22 +2872,109 @@ truncating the fall-through here"
         run_pipeline: &mut JtPipelineFn<'_>,
     ) -> KunaResult<()> {
         self.generate_ops()?;
+        let reentry = self.data.get_arch().const_select_jump.admits_reentry();
+        let mut provisional = std::collections::BTreeSet::new();
+        let mut followed = std::collections::HashSet::new();
+        let mut stages = 0usize;
+        let mut pending_retry = std::collections::BTreeSet::new();
+        let mut exhausted = std::collections::BTreeSet::new();
         loop {
             while !self.tablelist.is_empty() {
                 let new_tables = self.recover_jump_tables(run_pipeline)?;
                 self.tablelist.clear();
+                let mark = self.data.obank().get_uniq_id();
+                let mut new_edges = Vec::new();
                 for jt_idx in new_tables {
                     let indop = match self.data.get_jump_table(jt_idx as int4).get_indirect_op() {
                         Some(op) => op,
                         None => continue,
                     };
+                    if let Some(stub) = self.data.get_jump_table(jt_idx as int4).kuna_return_default().cloned() {
+                        if !self.kuna_return_stub(&stub)? {
+                            self.data.get_jump_table_mut(jt_idx as int4).kuna_drop_return_default();
+                            let address = self.data.obank().get(indop).expect("dispatch op").get_addr().clone();
+                            self.data.warning("Indirect jump caller return overlaps decoded code", &address);
+                        }
+                    }
                     let num = self.data.get_jump_table(jt_idx as int4).num_entries();
                     for i in 0..num {
                         let addr = self.data.get_jump_table(jt_idx as int4).get_address_by_index(i);
-                        self.new_address(indop, &addr)?;
+                        if !self.data.get_jump_table(jt_idx as int4).kuna_is_reentered() || followed.insert((
+                            indop,
+                            addr.get_space().map(|s| s.get_index()),
+                            addr.get_offset(),
+                        )) {
+                            if reentry && self.seen_instruction(&addr)
+                                && self.data.get_jump_table(jt_idx as int4).kuna_return_default() != Some(&addr) {
+                                if let Ok(to) = self.target(&addr) { new_edges.push((indop, to)); }
+                            }
+                            self.new_address(indop, &addr)?;
+                        }
                     }
                     while !self.addrlist.is_empty() {
                         self.fallthru()?;
+                    }
+                    if reentry
+                        && num == 1
+                        && !self.data.get_jump_table(jt_idx as int4).is_override()
+                        && !self.outofbounds.contains(
+                            &self.data.get_jump_table(jt_idx as int4).get_address_by_index(0),
+                        )
+                    {
+                        provisional.insert(indop);
+                    }
+                }
+                if reentry {
+                    new_edges.extend(crate::kuna_indirectreturn::reentry_edges(
+                        &self.data, mark, |to| self.target(to).ok(), |op| self.fallthru_op(op)));
+                }
+                let dispatches: std::collections::BTreeSet<OpId> = provisional.iter().copied()
+                    .filter(|&op| self.data.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_BRANCHIND)
+                        && self.data.find_jump_table_index(op).is_some())
+                    .collect();
+                let relevant = if new_edges.is_empty() || dispatches.is_empty() {
+                    Default::default()
+                } else {
+                    crate::kuna_indirectreturn::reaching_edges(&self.data, &dispatches, &new_edges,
+                        |to| self.target(to).ok(), |op| self.fallthru_op(op))
+                };
+                for (op, edges) in relevant {
+                    let Some(idx) = self.data.find_jump_table_index(op) else { continue };
+                    let address = self.data.obank().get(op).unwrap().get_addr().clone();
+                    let mut exact = true;
+                    let mut added = false;
+                    for (from, to) in edges {
+                        if self.data.obank().get(to).unwrap().get_addr() != &address {
+                            exact = false;
+                            continue;
+                        }
+                        let value = crate::kuna_returnbranch::target_on_edge(
+                            &self.data, from, op, |index| self.env.is_isa_mode_switch(index));
+                        let result = value.and_then(|value| {
+                            let target = Address::new(address.get_space()?.clone(), value);
+                            if self.outofbounds.contains(&target)
+                                || self.data.get_arch().get_load_image_value(&target, 1).is_err()
+                            { return None; }
+                            let limit = self.data.get_arch().max_jumptable_size as usize;
+                            self.data.get_jump_table_mut(idx as int4)
+                                .kuna_extend_flow_target(target, limit)
+                        });
+                        match result { Some(new) => added |= new, None => exact = false }
+                    }
+                    if !exact { pending_retry.insert(op); }
+                    if added { self.tablelist.push(op); }
+                }
+                if self.tablelist.is_empty() {
+                    for op in std::mem::take(&mut pending_retry) {
+                        let Some(idx) = self.data.find_jump_table_index(op) else { continue };
+                        if stages < KUNA_MAX_REENTRY_STAGES {
+                            stages += 1;
+                            self.data.get_jump_table_mut(idx as int4).kuna_retry_flow();
+                            self.tablelist.push(op);
+                        } else if exhausted.insert(op) {
+                            let address = self.data.obank().get(op).unwrap().get_addr().clone();
+                            self.data.warning("Re-entered indirect jump may have more targets", &address);
+                        }
                     }
                 }
             }
@@ -3165,6 +3296,7 @@ truncating the fall-through here"
         }
         if !indirect && !callee.is_invalid() {
             fc.set_callee_reg_model(self.env.query_call_register_model(&callee));
+            fc.set_callee_arg_registers(self.env.query_call_arg_registers(&callee));
             fc.set_callee_purge(self.env.query_call_extra_pop(&callee));
             let call_at = self.data.obank().get(op).map(|o| o.get_addr().clone());
             if let Some(call_at) = call_at {
@@ -3897,7 +4029,14 @@ truncating the fall-through here"
         for op in table_ops {
             let at = self.data.obank().get(op).map_or(0, |o| o.get_addr().get_offset());
             let _scope = crate::decompile_drive::JumpTableScope::enter(at);
-            let mode = if crate::decompile_drive::deadline_passed_in("jump-table recovery") {
+            if !for_inline && self.is_stated_tail_call(op) {
+                self.stated_tail_call(op)?;
+                continue;
+            }
+            let retried = self.data.find_jump_table_index(op).filter(|&idx| {
+                self.data.get_jump_table(idx as int4).kuna_keeps_recovered_targets()
+            });
+            let mut mode = if crate::decompile_drive::deadline_passed_in("jump-table recovery") {
                 Ok(None)
             } else {
                 let mode = self.data.recover_jump_table_flow(
@@ -3909,6 +4048,79 @@ truncating the fall-through here"
                 );
                 crate::decompile_drive::deadline_passed_in("jump-table recovery");
                 mode
+            };
+            // (kuna `switchextent`) A table nothing bounded: decode the
+            // function's extent once, name its jump tables, and when it has
+            // another table to end this one at, try again with that bound
+            // (`kuna_switchextent.rs`).
+            // A table that is its function's last and whose rows run on asked
+            // for the next functions' tables too, on either attempt.
+            let mut wanted = self.data.kuna_later_wanted.take();
+            let mut rounds = 0;
+            while rounds < 2
+                && matches!(mode, Ok(None) | Err(RecoveryMode::FailNormal))
+                && retried.is_none()
+                && (self.data.kuna_extent_tables.is_none() || wanted.is_some())
+                && self.data.get_arch().switch_extent
+                && !crate::decompile_drive::deadline_passed_in("jump-table recovery")
+            {
+                rounds += 1;
+                let entry = self.data.get_address().clone();
+                let end = self.data.get_arch().function_entry_after(&entry);
+                let mut bounded = false;
+                if self.data.kuna_extent_tables.is_none() {
+                    let arch = self.data.get_arch();
+                    let tables = std::rc::Rc::new(super::kuna_switchextent::function_tables(
+                        self.env.translate(),
+                        self.env.mapped_flow_image(),
+                        &entry,
+                        end,
+                        super::kuna_switchextent::enum_calls(arch, self.env.translate(), &entry).as_ref(),
+                    ));
+                    if let Some(partial) = shared_partial.as_mut() {
+                        partial.kuna_extent_tables = Some(std::rc::Rc::clone(&tables));
+                    }
+                    bounded = tables.tables.len() >= 2 || !tables.cases.is_empty();
+                    self.data.kuna_extent_tables = Some(tables);
+                }
+                if let Some(table) = wanted {
+                    let arch = self.data.get_arch();
+                    let space = entry.get_space().cloned();
+                    let next_entry = |at: u64| {
+                        let s = space.as_ref()?;
+                        arch.function_entry_after(&Address::new(std::rc::Rc::clone(s), at))
+                    };
+                    let later = std::rc::Rc::new(end.map_or_else(Vec::new, |end| {
+                        super::kuna_switchextent::later_tables(
+                            self.env.translate(), self.env.mapped_flow_image(), &entry, end, table, next_entry,
+                        )
+                    }));
+                    if let Some(partial) = shared_partial.as_mut() {
+                        partial.kuna_later_tables = Some(std::rc::Rc::clone(&later));
+                    }
+                    self.data.kuna_later_tables = Some(later);
+                    bounded = true;
+                }
+                if bounded {
+                    mode = self.data.recover_jump_table_flow(
+                        op,
+                        record,
+                        &visited_snapshot,
+                        run_pipeline,
+                        &mut shared_partial,
+                    );
+                }
+                wanted = self.data.kuna_later_wanted.take();
+            }
+            let mode = match (mode, retried) {
+                (Ok(Some(idx)), _) => Ok(Some(idx)),
+                (_, Some(idx)) => {
+                    self.data.get_jump_table_mut(idx as int4).mark_complete();
+                    let addr = self.data.obank().get(op).expect("dispatch op").get_addr().clone();
+                    self.data.warning("Re-entered indirect jump may have more targets", &addr);
+                    continue;
+                }
+                (failed, None) => failed,
             };
             match mode {
                 Ok(Some(jt_idx)) => {
@@ -3943,6 +4155,29 @@ truncating the fall-through here"
             }
         }
         Ok(new_tables)
+    }
+
+    /// (kuna `--assert callee`) Is the BRANCHIND `op` a jump the caller stated
+    /// the destination function of? It is a tail call, not a switch.
+    fn is_stated_tail_call(&self, op: OpId) -> bool {
+        self.data
+            .obank()
+            .get(op)
+            .is_some_and(|o| self.env.stated_callee_site(&self.data, o.get_addr()))
+    }
+
+    /// (kuna `--assert callee`) Turn the stated BRANCHIND `op` into a call to the
+    /// stated callee followed by a return, or by nothing when the callee never
+    /// returns, as a direct tail call to it is built.
+    fn stated_tail_call(&mut self, op: OpId) -> KunaResult<()> {
+        self.data.op_set_opcode_code(op, OpCode::CPUI_CALLIND);
+        if self.setup_callind_specs(op)? {
+            return Ok(());
+        }
+        let addr = self.data.obank().get(op).expect("stated tail call: stale op").get_addr().clone();
+        let truncop = self.artificial_halt(&addr, 0)?;
+        self.data.op_dead_insert_after(truncop, op);
+        Ok(())
     }
 
     /// Convert a BRANCHIND that could not be recovered into a call or return

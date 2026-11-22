@@ -761,3 +761,22 @@ fn guard_range_retry_keeps_both_wrapped_bounds() {
     model.calc_range(&fd, input, &mut range);
     assert_eq!((range.get_min(), range.get_end(), range.get_size()), (58, 62, 4));
 }
+
+/// A caller-return destination that would sit on decoded code is dropped, and
+/// the constant targets keep their model.
+#[test]
+fn a_dropped_return_destination_keeps_the_constant_targets() {
+    let ram = ram_of(&build_manager());
+    let mut jt = JumpTable::new(Address::new(ram.clone(), 0x1004));
+    jt.kuna_push_entry(Address::new(ram.clone(), 0x1040), 0, 0x1040);
+    jt.addresstable.push(Address::new(ram.clone(), 0x1005));
+    jt.jmodel = Some(Box::new(crate::kuna_constselectjump::JumpModelConstSelect::from_flow_targets(
+        vec![0x1040], Some(0x1005))));
+    assert_eq!(jt.kuna_return_default(), Some(&Address::new(ram.clone(), 0x1005)));
+    jt.kuna_drop_return_default();
+    assert!(jt.kuna_return_default().is_none());
+    let offsets: Vec<_> = jt.address_table().iter().map(|a| a.get_offset()).collect();
+    assert_eq!(offsets, [0x1040]);
+    jt.kuna_drop_return_default();
+    assert_eq!(jt.address_table().len(), 1);
+}

@@ -90,6 +90,20 @@ pub struct StringFact {
     pub len: u32,
 }
 
+/// (kuna `blobs`) An embedded image or archive: `len` bytes at `addr` that
+/// walk as one whole file of `kind`. The commit plants it as `<kind>_<addr>`,
+/// an `unsigned char[len]`, wherever no symbol already covers the address.
+/// Produced by [`crate::analyzers::blobs`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BlobFact {
+    /// Virtual address of the file's first byte.
+    pub addr: u64,
+    /// The file's exact length in bytes.
+    pub len: u64,
+    /// Which container it is.
+    pub kind: crate::analyzers::blobs::BlobKind,
+}
+
 /// A Mach-O Core Foundation constant string (`__cfstring` entry). The entry is a
 /// `CFString` struct (isa, flags, char pointer, length); `bytes` is the UTF-8 of
 /// the string its char pointer targets, already resolved through chained fixups
@@ -259,6 +273,28 @@ pub struct SwiftTypeFacts {
     pub regs: Option<(&'static str, &'static str)>,
 }
 
+/// (kuna `swifthelpers`) The facts the Swift helper arm produces, kept apart
+/// so the commit can drop them whole under `option swifthelpers off`: the
+/// helper and accessor names, the caches they fill and their prototypes.
+#[derive(Default, Clone, Debug)]
+pub struct SwiftHelperFacts {
+    pub symbols: Vec<SymFact>,
+    pub fid_names: Vec<FidMatch>,
+    pub typed_data: Vec<TypedDataFact>,
+    pub prototypes_at: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
+}
+
+/// (kuna `valuewitness`) The value-witness arm's facts, kept apart so the
+/// commit can drop them whole under `option valuewitness off`: the witness
+/// functions' names and prototypes, and the tables `swifttypes` did not
+/// type through static metadata (committed only when it is on too).
+#[derive(Default, Clone, Debug)]
+pub struct SwiftWitnessFacts {
+    pub names: Vec<SymFact>,
+    pub prototypes: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
+    pub typed_data: Vec<TypedDataFact>,
+}
+
 /// The function at `func_addr` follows the cspec prototype model `model`,
 /// its signature otherwise unknown: its parameters, and the arguments of
 /// every direct call to it, are recovered under that model.
@@ -410,6 +446,8 @@ pub struct AnalysisOutput {
     pub ppc32_pic_slots: Vec<kuna_decomp::kuna_ppc32piccalls::ImportSlot>,
     /// `(addr, name, kind)` -> seed `Database::add_function` / symbol map.
     pub symbols: Vec<SymFact>,
+    /// Unique AMD64 Go function-table entry of the blocking status receive helper.
+    pub go_chanrecv2: Option<u64>,
     /// Named, sized data globals (the symbol-table / DWARF data objects). Mapped
     /// into the global scope with an `undefined<size>` type so a memory access of
     /// the object renders its NAME (`max_width`) not `dat_<addr>`. See
@@ -495,6 +533,10 @@ pub struct AnalysisOutput {
     /// Objective-C method whose class got an instance struct. Applied to the
     /// matching entry of [`Self::prototypes`] at the commit when the gate is on.
     pub objc_self_types: Vec<(String, std::rc::Rc<kuna_decomp::dtype::Datatype>)>,
+    /// The `self` of each Objective-C method only a symbol names (a direct
+    /// method): an unlocked hint on its first argument register, typed
+    /// `Class *` under `objcivars`.
+    pub objc_self_hints: Vec<InputHintFact>,
     /// (kuna) Address ranges holding an **external reference** — an import slot
     /// whose contents the dynamic loader fills in with the address of a function
     /// living in another image (a PE IAT entry or a typed Mach-O lazy/non-lazy
@@ -511,6 +553,9 @@ pub struct AnalysisOutput {
     /// the import, but never registered in the function inventory: the slot is a
     /// pointer word, not a function.
     pub import_slot_names: Vec<(u64, String)>,
+    /// (kuna `machodataslots`) The [`Self::import_slot_names`] slots whose import
+    /// is a data object, so the slot's own value is the object's address.
+    pub data_import_slots: Vec<u64>,
     /// Detected NUL-terminated string literals (a typed `char[N]` per address).
     pub strings: Vec<StringFact>,
     /// (kuna `fatstr`) Length-BOUNDED string literals recovered from static
@@ -535,6 +580,9 @@ pub struct AnalysisOutput {
     /// types each entry an opaque `struct __CFString` and pre-seeds the
     /// `StringManager`, so a reference renders the literal. Produced by [`crate::analyzers::cfstring`].
     pub cfstrings: Vec<CFStringFact>,
+    /// (kuna `blobs`) Embedded images and archives, each a whole file with an
+    /// exact length. Produced by [`crate::analyzers::blobs`].
+    pub blobs: Vec<BlobFact>,
     /// Library-function prototypes to seed onto matching FunctionSymbols (the kuna
     /// analog of Ghidra's `ApplyDataArchiveAnalyzer` / `.gdt` archives). Each is
     /// parked on its named callee via `set_function_prototype_pieces`, so a caller
@@ -629,6 +677,9 @@ pub struct AnalysisOutput {
     /// [`FidMatch::by_signature`] guesses at the same address and are never
     /// committed on their own.
     pub signature_vetoes: Vec<FidMatch>,
+    /// (kuna `calltable`) Discovered (not symbol) entries that sit on a switch
+    /// case no call reaches; the commit drops them from the entry stream.
+    pub case_entries: Vec<u64>,
     /// What became of each `.fid` database the FID pass was configured with
     /// (loaded, missing, unreadable, invalid, incompatible). Produced only by
     /// [`crate::fid::FidPass`] when `kuna_fid_db` names a database.
@@ -644,6 +695,8 @@ pub struct AnalysisOutput {
     pub cpp_dwarf: CppDwarfFacts,
     /// Go DWARF signatures, with type interning deferred until the commit gate.
     pub go_dwarf: Vec<crate::dwarf::kuna_godwarfsig::Facts>,
+    /// Exact linked pointer method statements, intersected with Go DWARF at commit.
+    pub go_pointer_methods: std::collections::BTreeMap<u64, crate::gotypes::kuna_pointermethods::LinkedMethod>,
     /// (kuna `cppsig`) The prototypes recovered from the MANGLED SYMBOL, split by
     /// how certain the pass is that argument 0 is an implicit `this`. Held apart
     /// for the same reason as [`Self::cpp_dwarf`] — the producing pass runs at
@@ -668,6 +721,20 @@ pub struct AnalysisOutput {
     pub go_itabs: Vec<SymFact>,
     /// (kuna `swifttypes`) The Swift type-layout facts. See [`SwiftTypeFacts`].
     pub swift_types: SwiftTypeFacts,
+    /// (kuna `swiftobjcthunk`) Each function the Swift metadata pass named
+    /// after an `@objc` member, `(addr, member name, positional name)`: the
+    /// commit boundary renames it back to the positional
+    /// `Class.vtable#N.kind` when the gate is off.
+    pub swift_positional_names: Vec<(u64, String, String)>,
+    /// (kuna `swifthelpers`) The Swift helper facts. See [`SwiftHelperFacts`].
+    pub swift_helpers: SwiftHelperFacts,
+    /// (kuna `valuewitness`) The value-witness facts. See [`SwiftWitnessFacts`].
+    pub swift_witnesses: SwiftWitnessFacts,
+    /// (kuna `swiftmetadata`) Each local Swift enum's metadata accessor and
+    /// the enum's case count from its descriptor: the exact bound of a
+    /// `swift_getEnumCaseMultiPayload` result, which indexes the enum's
+    /// `switch` table with no range check (`p2_lift/kuna_switchextent.rs`).
+    pub swift_enum_cases: Vec<(u64, u32)>,
     /// (kuna `formatstring static`) Per-call-site prototype overrides the
     /// LOAD-TIME format-string resolver recovered — a printf/scanf-family call
     /// whose format constant the image itself answers for. Committed onto
@@ -759,6 +826,13 @@ impl AnalysisOutput {
         self.cpp_sig.msvc.iter_mut().for_each(|(_, p, _)| fix_proto(p));
         self.cpp_sig.msvc_byval.iter_mut().for_each(|(_, d)| fix_proto(&mut d.pieces));
         self.format_sites.iter_mut().for_each(|f| fix_proto(&mut f.pieces));
+        let helpers = &mut self.swift_helpers;
+        helpers.symbols.iter_mut().for_each(|s| {
+            if s.kind == SymKind::Data { fix_data(&mut s.name); } else { fix(&mut s.name); }
+        });
+        helpers.fid_names.iter_mut().for_each(|f| fix(&mut f.name));
+        helpers.typed_data.iter_mut().for_each(|d| fix_data(&mut d.name));
+        helpers.prototypes_at.iter_mut().for_each(|(_, p)| fix_proto(p));
     }
 }
 
@@ -826,10 +900,12 @@ impl AnalysisOutput {
     /// Fold another output into this one (concatenation; dedup is the driver's job).
     pub fn merge(&mut self, other: AnalysisOutput) {
         self.symbols.extend(other.symbols);
+        self.go_chanrecv2 = self.go_chanrecv2.or(other.go_chanrecv2);
         self.data_objects.extend(other.data_objects);
         self.typed_data.extend(other.typed_data);
         self.go_type_globals.extend(other.go_type_globals);
         self.go_itabs.extend(other.go_itabs);
+        self.swift_enum_cases.extend(other.swift_enum_cases);
         self.swift_types.typed_data.extend(other.swift_types.typed_data);
         self.swift_types.prototypes.extend(other.swift_types.prototypes);
         self.swift_types.param_locks.extend(other.swift_types.param_locks);
@@ -837,6 +913,14 @@ impl AnalysisOutput {
         self.swift_types.input_hints.extend(other.swift_types.input_hints);
         self.swift_types.no_self.extend(other.swift_types.no_self);
         self.swift_types.regs = self.swift_types.regs.or(other.swift_types.regs);
+        self.swift_positional_names.extend(other.swift_positional_names);
+        self.swift_helpers.symbols.extend(other.swift_helpers.symbols);
+        self.swift_helpers.fid_names.extend(other.swift_helpers.fid_names);
+        self.swift_helpers.typed_data.extend(other.swift_helpers.typed_data);
+        self.swift_helpers.prototypes_at.extend(other.swift_helpers.prototypes_at);
+        self.swift_witnesses.names.extend(other.swift_witnesses.names);
+        self.swift_witnesses.prototypes.extend(other.swift_witnesses.prototypes);
+        self.swift_witnesses.typed_data.extend(other.swift_witnesses.typed_data);
         self.entries.extend(other.entries);
         self.fde_bodies.extend(other.fde_bodies);
         self.fde_interior_entries.extend(other.fde_interior_entries);
@@ -851,13 +935,16 @@ impl AnalysisOutput {
         self.readonly.extend(other.readonly);
         self.const_ranges.extend(other.const_ranges);
         self.objc_self_types.extend(other.objc_self_types);
+        self.objc_self_hints.extend(other.objc_self_hints);
         self.externref.extend(other.externref);
         self.import_slot_names.extend(other.import_slot_names);
+        self.data_import_slots.extend(other.data_import_slots);
         self.strings.extend(other.strings);
         self.bounded_strings.extend(other.bounded_strings);
         self.wide_strings.extend(other.wide_strings);
         self.wide_strings32.extend(other.wide_strings32);
         self.cfstrings.extend(other.cfstrings);
+        self.blobs.extend(other.blobs);
         self.prototypes.extend(other.prototypes);
         self.prototypes_at.extend(other.prototypes_at);
         self.arm_float_prototypes.extend(other.arm_float_prototypes);
@@ -873,12 +960,14 @@ impl AnalysisOutput {
         self.comments.extend(other.comments);
         self.fid_names.extend(other.fid_names);
         self.signature_vetoes.extend(other.signature_vetoes);
+        self.case_entries.extend(other.case_entries);
         self.fid_databases.extend(other.fid_databases);
         self.fallback_names.extend(other.fallback_names);
         self.cpp_dwarf.symbols.extend(other.cpp_dwarf.symbols);
         self.cpp_dwarf.locals.extend(other.cpp_dwarf.locals);
         self.cpp_dwarf.prototypes.extend(other.cpp_dwarf.prototypes);
         self.go_dwarf.extend(other.go_dwarf);
+        self.go_pointer_methods.extend(other.go_pointer_methods);
         self.cpp_sig.proven.extend(other.cpp_sig.proven);
         self.cpp_sig.inferred.extend(other.cpp_sig.inferred);
         self.cpp_sig.msvc.extend(other.cpp_sig.msvc);

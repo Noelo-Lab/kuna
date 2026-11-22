@@ -1,0 +1,53 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A call argument narrowed before its callee's prototype was known panicked
+    non-zero mask analysis with a shift overflow.
+
+    `f` calls through `p->fn`, whose type gives the call one 8-byte parameter
+    only after type recovery has started.  By then subvariable flow has
+    replaced the 8-byte RDI the call read with the 2-byte sum it holds, while
+    the call's trial for RDI still says 8 bytes.  Forcing the prototype reused
+    the 2-byte Varnode for the 8-byte parameter through SUBPIECE(sum:2, 0):8,
+    RuleSubNormal folded the shift below it into SUBPIECE(v1, -6), and
+    getNZMaskLocal shifted by 8 * -6.
+
+    Stage / sub-stage: P4 late prototype restriction
+    (`FuncCallSpecs::transfer_locked_input`), reached from
+    `ActionDeindirect`.  A strict correctness fix: no option, one pass.  An
+    input narrower than its parameter fails the restriction, so the function
+    restarts with the call's inputs locked and the argument stays 8 bytes.
+
+    Source (GNU as, the .text bytes verbatim below):
+
+        f:  mov %rdi,%rcx
+            xor %edx,%edx
+            movzwl (%rsi),%eax
+            test $0xfff,%ax
+            setne %dl
+            shr $0xc,%ax
+            lea (%rax,%rdx,1),%rdi
+            and $0x1f,%edi
+            sub $8,%rsp
+            call *(%rcx)
+            add $8,%rsp
+            ret
+
+    #1 proves f decompiles and the argument is the zero-extended sum; #2
+    proves the call goes through the typed field.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4889f931d20fb70666a9ff0f0f95c266c1e80c488d3c1083e71f4883ec08ff114883c408c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="f"/>
+</binaryimage>
+<script>
+  <com>parse line struct Ops { int8 (*fn)(int8); };</com>
+  <com>parse line extern int8 f(Ops *p,uint2 *q);</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="NARROWED-CALL-INPUT #1: the argument is the sum widened to the parameter" min="1" max="1">\(uint8\)\(\(uint4\)\(v1 >> 0xc\) \+ \(uint4\)\(\(v1 &amp; 0xfff\) != 0\)\)\);</stringmatch>
+<stringmatch name="NARROWED-CALL-INPUT #2: the call goes through the typed field" min="1" max="1">v2 = p->fn;</stringmatch>
+</decompilertest>

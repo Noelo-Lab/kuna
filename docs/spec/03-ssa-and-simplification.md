@@ -1482,10 +1482,11 @@ throwaway per-call `RestartLog`
 (RestartLog)`) that is dropped on return — diagnostic plumbing not yet wired to
 the Architecture-owned log — and neither fires during a jump-table
 sub-decompilation (the `is_jumptable_recovery_on` guards at the call sites —
-the sub-query must not mutate P0, §0.7). The console `deadcode delay` command
-exists but is an unwired stub (`kuna-console/src/ifacedecomp.rs
-(IfcDeadcodedelay)` returns engine-unavailable); the only live writer of the
-Override is `Heritage::bump_deadcode_delay`.
+the sub-query must not mutate P0, §0.7). The console `deadcode delay <space> <n>` command
+(`kuna-console/src/ifacedecomp.rs (IfcDeadcodedelay)`) sets a space's delay for
+all functions when no function is loaded; the per-function form is refused
+because the console rebuilds the Funcdata (and its Override) on `decompile`, so
+the only live writer of the Override is `Heritage::bump_deadcode_delay`.
 
 (kuna early restart) Upstream finishes the pass that asked for
 the restart: every later mainloop iteration, the merges and the structuring of
@@ -1704,6 +1705,19 @@ and must share the same eight-byte source typed as an eight-byte float.
 Different sources, changed low slices, wider floats, incompatible types and
 other unary operations decline. These are strict value-correctness repairs
 with no inference option; they add no floating-status or exception model.
+
+**One-destination switches.** `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_4.rs
+(RuleSwitchSingle)` rewrites a BRANCHIND whose block has one out-edge and
+whose recovered jump table is labelled into a BRANCH to the table's first
+address, then drops the table and the structured-block graph so no `switch`
+is emitted. A header warning (`Switch with 1 destination removed at <addr>`,
+plus `: N cases all go to same destination` when every entry matches) is
+added unless the table has one entry and the switch value is a constant
+(`tests/stages/kuna-switchsingle.xml`). Unlike upstream, a one-entry table
+over a computed value is left alone: kuna's table recovery can keep only the
+entries its guards prove reachable, so a single kept entry is not proof that
+the dispatch has one destination. This is a strict fix with no option: a
+`switch` with one `default:` arm states a selection the code does not make.
 
 **Ordered floating-point condition negation.** The shared
 `decompiler/crates/kuna-num/src/opcodes.rs (get_booleanflip)` table returns no
@@ -3118,13 +3132,16 @@ and splices the block out of the graph
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
 (Funcdata::remove_from_flow_split)`). The action loops over all blocks until a
 full round makes no change, and refuses to run at all while unreachable blocks
-exist. One kuna conservatism: the per-space "has heritage run yet" array the
-removability test consults is hard-wired to *false*
-(`condexe.rs (ConditionalExecution::build_heritage_array)` — a port seam never
-re-wired to the live `Funcdata::num_heritage_passes`), so an iblock op whose
-output has **no readers** is always refused rather than trusted once its space
-is heritaged; strictly conservative relative to upstream (a collapse is missed,
-never wrongly taken). `condexe.rs (RuleOrPredicate)` (oppool1, group
+exist. An iblock op whose output has **no readers** is removable only once
+its space has had at least one heritage pass: before that, the missing readers
+may simply not be linked yet. `condexe.rs (ConditionalExecution::build_heritage_array)`
+records that per space from `Funcdata::num_heritage_passes`, as upstream. Most
+such ops fall to dead-code removal first. They still reach the test when the
+space's dead-code delay outlasts its heritage delay (the console
+`deadcode delay` command, `tests/stages/kuna-condexe-heritage.xml`), and on
+ARM predicated code: a `moveq`/`movne` pair ahead of the re-tested branch
+(u-boot `env_attr_lookup`) now collapses into the guarded block.
+`condexe.rs (RuleOrPredicate)` (oppool1, group
 `conditionalexe`) handles the value-form of the same redundancy: an INT_OR
 (or INT_XOR) where one operand is provably zero along the path that reaches it (the
 `MultiPredicate` zero-slot analysis) collapses to a COPY of the other operand.
@@ -3443,6 +3460,98 @@ loop with `~v3 - 1`. `kuna-cli/tests/strlenscan_round_trip.rs` prints gcc 9
 x86-64 ones beside the source, with buffers whose bytes past the terminator are
 not zero, to check each printed function computes the same values.
 
+**Inline copies, fills and compares** (`option repstring`, default **on**) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_repstring.rs
+(ActionRepString)`, in the fullloop tail right after `strlenscan`. On x86 a
+copy, fill or compare a compiler inlines (gcc and clang at `-Os`, gcc's
+`-minline-all-stringops`, MSVC with `/Oi`) is one `rep movs`, `rep stos` or
+`repz cmpsb`, which SLEIGH lifts the same way as the scan above: a head `H`
+that leaves when the count is zero and otherwise enters a body `B` that returns
+to `H`. The action matches the pair on SSA when every op of `H` and `B` sits at
+one instruction address, `H` is entered from one block outside and from `B`,
+and `B` is entered only from `H`. `H` must hold only its branch, the zero test
+of the count (`n == 0` taking the exit or `n != 0` taking the body) and phis.
+No other target lifts an instruction to this shape, so the action is inert
+there.
+
+*Copies and fills.* `B` leaves only to `H`, and `H`'s phis are the count, the
+destination and, for a copy, the source. `B` must step the count down by one
+and each pointer up by the element width `w` (1, 2, 4 or 8; the steps are read
+through COPYs, `INT_ADD`, `INT_SUB` and `PTRADD`, so a pointer that steps down
+because the direction flag is set does not match), store one element through
+the destination, and either load that element through the source (`movs`) or
+store a value defined before the loop (`stos`). Nothing outside the loop may
+read a value `B` computes. A destination in the function's own frame (the stack
+pointer plus a constant, through copies) is declined: the builtin is placed
+after heritage, so the frame locations it writes would have no definition at
+it, and the merge could fold a value stored into the buffer after the fill into
+a variable that held it before. A frame location heritage did guard the element
+store with (an `INDIRECT` on the store and a phi in `H`, for an address-taken
+local a heap destination might alias) is kept: the rewrite gives it an
+`INDIRECT` on the builtin, so a read of it after the loop still sees the write.
+The rewrite places the builtin in `H` before its branch, over the values
+entering the loop: `builtin_memcpy(dst, src, n * w)` for a copy;
+`builtin_memset(dst, c, n * w)` for a fill whose value has the same byte
+throughout (`stosb` always, a constant such as 0); and
+`builtin_memset16`/`32`/`64(dst, value, n)`, whose count is in elements, for
+any other fill of 2-, 4- or 8-byte elements. It points every read after the
+loop of the count at 0 and of a pointer at the pointer plus `n * w`, and removes
+the edge into `B`; the next mainloop pass deletes the unreachable body and the
+single-input phis. `rep movs` is defined for a destination that overlaps its
+source ahead of it, as an LZ77 decoder's match copy does on purpose, and
+`memcpy` is not; the rewrite cannot tell the two apart, which is what the
+option is for.
+
+*Compares.* `B` leaves two ways, back to `H` and out. It must step the count
+down by one and two pointers up by one, load one byte through each, and
+otherwise compute only pure values; that it returns to `H` exactly while the
+two bytes are equal is checked by evaluating its branch for all 65536 byte
+pairs, which is what makes the instruction a `repz cmpsb` (a `repnz`, or a
+compare of wider elements, keeps its loop). The first operand `a` is the
+pointer whose byte a subtraction or ordered compare in `B` reads first, so the
+carry flag reads `a[i] < b[i]`. `r = builtin_memcmp(a, b, n)` is placed in `H`.
+Every value the code after the loop reads is then restated in terms of `r`, by
+evaluation rather than by flag name. A value `B` computes is seen after the
+loop only for the first pair that differs, and over all 65280 such pairs it
+must be one constant (the zero flag, 0), `x < y` (the carry flag, `r < 0`) or
+`x > y` (`0 < r`). A flag `H` merges is seen when the count ran out, as its
+value for an equal pair, which must be the same for all 256; and since a zero
+count leaves the flags as they were, the flag must also enter the loop holding
+that constant (gcc emits `cmp eax, eax` before the instruction so that it
+does), unless the count enters as a non-zero constant and the flag is read only
+on the way out of `H`. A loop whose final count or pointers are read, or any
+value that fits none of these, is left alone. When both ways out reach one
+block, each of its phis becomes one expression (`r == 0` for the zero flag, `r
+< 0` for the carry flag) and the edge into `B` is removed; otherwise `H`'s
+branch is retargeted from the zero count to `r == 0` and `B`'s back edge is
+removed, so `B` is what runs when the blocks differ.
+
+The builtins keep the call flag, so they stay ordered against the loads, stores
+and calls around them, as `strlen` does. `p5_types/coreaction_infertypes.rs
+(input_type_local)` asks `kuna_repstring::input_type` for their pointer
+operands: `void *` for a copy or fill, a pointer to the element for
+`builtin_memset16`/`32`/`64`, and `char *` for a compare, so that a constant
+operand prints as the string it points at (`builtin_memcmp(a0,"-",2) == 0` for
+gcc's inlined `strcmp(s, "-") == 0`). Those same operands count as pointer
+readers when a constant address is named: `ActionConstantPtr`
+(`p9_emit/coreaction_render.rs (is_pointer)`) binds one that lands exactly on a
+global symbol, as it does for the `COPY` into the destination register the loop
+read it through, so a fill of `buf` prints `builtin_memset(buf,0,0x1118)` rather
+than `builtin_memset((void *)0x4042c0,0,0x1118)`, and `globalref` (09-emission
+§9.9) names an unnamed one `&dat_<addr>`, since passing that address as a
+`void *` operand converts exactly as the cast did.
+`tests/stages/kuna-repstring.xml` and `kuna-repstring-i386.xml` run gcc 15
+`-Os -minline-all-stringops` builds of
+`kuna-analysis/tests/fixtures/repstring.c` in both passes: fills of a mixed
+word, of zero words and of a byte, a copy, a copy whose final pointer is
+returned, compares used for equality, for order and with a run-time length, a
+compare with no flags set up before it, and a compare whose final pointer is
+returned, which keeps its loop; the x86-64 file adds a gcc 15 `-O2` fill of a
+global `map address` names, which prints `builtin_memset(gfill,0,0x80)`.
+`kuna-cli/tests/repstring_round_trip.rs`
+compiles the printed x86-64 functions beside the source and checks they compute
+the same values.
+
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs
 (RuleConstSpaceLoad)`, oppool1, fires on LOAD. *Pattern:* a LOAD whose space
@@ -3498,6 +3607,65 @@ upward rounding keeps the opaque operation; out-of-range and NaN operands, which
 x87 converts to the integer indefinite value when invalid is masked, take
 `FLOAT_TRUNC`'s unspecified result, as for `FISTTP`. Not settable: the rewrite
 is the conversion the instruction performs under that control word.
+
+**opaquepredicate** —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_opaquepredicate.rs
+(RuleOpaquePredicate)`, oppool1, fires on INT_EQUAL, INT_NOTEQUAL, INT_LESS and
+INT_LESSEQUAL. With `option opaquepredicate on` (default off, on in the
+`aggressive` preset, which `auto` selects for inputs under 500 KiB) a comparison that has the same result for every input is
+replaced by a `COPY` of that result, and constant-branch removal then deletes
+the arm that never runs. Control-flow obfuscation plants such comparisons in
+front of real code: `x * (x + 1)` is always even, `x * x` is 0 or 1 modulo 4,
+`(x | y) - (x & y)` always equals `x ^ y`. The rule folds only on an exact
+proof, of which there are three.
+
+*Low bits.* Bit `i` of a sum, difference, product, negation, left shift by a
+constant, or bitwise operation depends only on bits `0..=i` of its operands,
+and `COPY`, `INT_ZEXT`, `INT_SEXT` and a `SUBPIECE` at offset 0 keep the low
+bits of their operand. Each side of the comparison must be a constant or a
+value reduced to at most its low 8 bits — `INT_AND` with a constant mask, or
+`INT_REM` by a constant power of two — possibly under zero extensions. The
+operand of that reduction is read through the operations above; any other
+definition is an *input*, and at most two distinct inputs are allowed. The
+comparison is then a function of the low `k` bits of the inputs, where `k` is
+the width of the widest mask, and it is evaluated for all `2^k` or `4^k`
+assignments, stopping at the first two that disagree. A signed remainder
+(`INT_SREM` by a power of two) takes the sign of its dividend, so only whether
+it is zero follows from the low bits: it is admitted in an `INT_EQUAL` or
+`INT_NOTEQUAL` against zero, and elsewhere only while every assignment makes
+it zero.
+
+*Low bits that always differ.* For `INT_EQUAL` and `INT_NOTEQUAL` whose sides
+are both read through the same operations without a mask, the low four bits of
+the two sides are evaluated for every assignment of the low four bits of the
+inputs. If they differ every time the sides are never equal (`x * (x + 1)` is
+even, `2 * y + 1` is odd). This proof can only show inequality.
+
+*Linear combination of bitwise terms.* For `INT_EQUAL` and `INT_NOTEQUAL` each
+side is read as a sum, difference or negation of terms, each optionally
+multiplied or left-shifted by a constant, where a term is a constant or an
+expression built from `INT_AND`, `INT_OR`, `INT_XOR` and `INT_NEGATE` over the
+inputs with no constant other than zero and all ones. Such a sum takes the
+value its per-bit truth table dictates in every bit position, so the two sides
+differ by one constant for every input exactly when they do with each input set
+to all zeros or all ones. The rule evaluates those assignments (four for two
+inputs); if the difference is the same constant in all of them, the equality
+is always true (difference zero) or always false. An operation that does not
+fit the layer it is met in — a product of two inputs, an `INT_AND` with a mask
+— is itself taken as an input, which only makes the claim proven stronger.
+
+*Bounds.* A free Varnode, a value wider than 8 bytes, a third input, or a
+tree of more than 48 operations proves nothing, and the comparison is left as
+it is. The rule does not fire inside jump-table recovery: the recovery copy of
+the function has no edges back from the table's targets yet, so an index
+initialized by `xor ebx,ebx` and counted up by the cases reads as the constant
+0 there, and folding the `ebx == 9` half of a `cmp ebx,9; ja` guard would cut
+the last entry from the recovered table. A comparison that some assignment
+distinguishes, such as `x * (x + 2) & 1`, is left alone too. Nothing restricts the rule to obfuscated code: `x * 8 == 0x3f`
+folds on the same proof, including when it is one half of a flag-derived
+`<=`. The option is off by default because the predicate is part
+of what the binary does: with it folded, the output no longer shows that the
+function was obfuscated or which blocks the bogus edges reached.
 
 **flagcompare** (GH-1276 / GH-8777) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_flagcompare.rs`, two rules

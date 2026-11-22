@@ -1,0 +1,91 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A">
+<!--
+    Jump thunks named after the function they jump to
+    (`option thunknames on|off`, default on).
+
+    A function whose first instruction is a direct unconditional branch is a
+    jump thunk: a linker branch island, an identical-code-folding forwarder,
+    an outlined tail call. Without a symbol of its own it stays
+    `sub_<addr>`, and every call through it is anonymous although its target
+    is named.
+
+    Stage / sub-stage: P1 environment-binding.
+    kuna-console engine/kuna_thunknames.rs decodes the first instruction of
+    every discovered entry and, after every other name source, renames a
+    placeholder thunk `j_<target>`; a thunk to a thunk becomes `j_j_<target>`.
+    Each thunk also takes its target's prototype, so the callers' first
+    argument is typed `long *` from release_box's DWARF.
+
+    The XML wrapper only supplies the harness architecture. Both passes clear
+    it, load thunknames_aarch64 and take the `mode fast` inventory. The
+    fixture is a static AArch64 ELF built from thunknames_aarch64.c:
+    release_box(long *, long) has a DWARF prototype, the unnamed thunk at
+    0x21019c is `b release_box`, the one at 0x2101a0 is `b 0x21019c`, and
+    drop_box / drop_two call them with bl, passing their own first argument.
+
+    Pass 1 (`option thunknames off`) reproduces the bug: both calls render
+    sub_<addr>() and the callers' argument stays untyped. Pass 2 is the
+    shipped default.
+
+    Passes 3 and 4 (off, then the default) load thunknames_mips, built from
+    thunknames_mips.S: two symbol-less `j release_box` entries, 0x4000e0
+    with a nop in its delay slot and 0x4000e8 with `addiu $a0,$a0,16`
+    there. The delay slot is part of the branch, so only the first is a
+    thunk; the second adjusts its argument and keeps its placeholder.
+
+    Assertions span the combined output of both passes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/thunknames_aarch64</com>
+  <com>mode fast</com>
+  <com>option thunknames off</com>
+  <com>read symbols</com>
+  <com>load function drop_box</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function drop_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/thunknames_aarch64</com>
+  <com>mode fast</com>
+  <com>read symbols</com>
+  <com>load function drop_box</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function drop_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/thunknames_mips</com>
+  <com>mode fast</com>
+  <com>option thunknames off</com>
+  <com>read symbols</com>
+  <com>load function mips_caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/thunknames_mips</com>
+  <com>mode fast</com>
+  <com>read symbols</com>
+  <com>load function mips_caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="THUNKNAMES #1: off, the call through the thunk is anonymous" min="1" max="1">return sub_21019c\(a0,1\) \+ 3;</stringmatch>
+<stringmatch name="THUNKNAMES #2: off, the call through the thunk chain is anonymous" min="1" max="1">sub_2101a0\(a0,2\);</stringmatch>
+<stringmatch name="THUNKNAMES #3: off, the callers' argument is untyped" min="2" max="2">void drop_two\(unsigned long a0\)|long drop_box\(unsigned long a0\)</stringmatch>
+<stringmatch name="THUNKNAMES #4: on, the thunk is named after its target" min="1" max="1">return j_release_box\(a0,1\) \+ 3;</stringmatch>
+<stringmatch name="THUNKNAMES #5: on, a thunk to a thunk is named after that thunk" min="1" max="1">j_j_release_box\(a0,2\);</stringmatch>
+<stringmatch name="THUNKNAMES #6: on, the thunks carry release_box's prototype into the callers" min="2" max="2">void drop_two\(long \*a0\)|long drop_box\(long \*a0\)</stringmatch>
+<stringmatch name="THUNKNAMES #7: on, a MIPS j with a nop delay slot is a thunk" min="1" max="1">j_release_box\(a0,1\);</stringmatch>
+<stringmatch name="THUNKNAMES #8: a MIPS j whose delay slot adjusts the argument is never a thunk" min="2" max="2">sub_4000e8\(a0,2\);</stringmatch>
+</decompilertest>

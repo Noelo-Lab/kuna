@@ -44,6 +44,9 @@ use object::SymbolKind;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, NoReturnFact, Phase};
 use crate::sourcelang::Compiler;
 
+#[path = "kuna_rustnoreturn.rs"]
+mod kuna_rustnoreturn;
+
 /// The known-no-return name list, extended from Ghidra
 /// `Ghidra/Features/Base/data/ElfFunctionsThatDoNotReturn`.
 const ELF_NORETURN_LIST: &str = include_str!("../../data/ElfFunctionsThatDoNotReturn");
@@ -221,8 +224,12 @@ fn scan_noreturn(file: &object::File, bytes: &[u8], compiler: Compiler) -> Analy
         _ => return out,
     };
     let mut seen = std::collections::HashSet::new();
+    let rust_exit = file.format() == object::BinaryFormat::Elf && compiler == Compiler::Rustc;
     let mut emit = |out: &mut AnalysisOutput, addr: u64, n: String| {
-        if name_matches(&n, &exact, &wildcard) && seen.insert((addr, n.clone())) {
+        if (name_matches(&n, &exact, &wildcard)
+            || (rust_exit && kuna_rustnoreturn::process_exit(&n)))
+            && seen.insert((addr, n.clone()))
+        {
             out.noreturn.push(NoReturnFact { addr, name: n });
         }
     };
@@ -607,6 +614,32 @@ mod tests {
 
         // an ordinary Rust function (no panic/abort) is never flagged
         assert!(!name_matches("ZN5nostd1m12rusty_helper17h76f46bb3af543e7bE", &e_rust, &w_rust));
+    }
+
+    #[test]
+    fn rust_process_exit_keeps_its_address_and_refuses_returning_names() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/fixtures/rust-process-exit/linux-amd64"
+        );
+        let bytes = std::fs::read(path).expect("read authored Rust process exit fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse authored Rust ELF");
+        assert_eq!(crate::sourcelang::detect_compiler(&file, &bytes), Compiler::Rustc);
+        let exit = file.symbols().find(|symbol| {
+            symbol.name().is_ok_and(|name| name.starts_with("_ZN3std7process4exit17h"))
+        }).expect("fixture has the standard process exit function");
+        let rust = scan_noreturn(&file, &bytes, Compiler::Rustc);
+        assert!(rust.noreturn.iter().any(|fact| {
+            fact.addr == exit.address() && fact.name == exit.name().unwrap()
+        }));
+        for name in ["exit_choice", "returning_names", "_ZN3std7process11exit_status17h0123456789abcdefE"] {
+            assert!(!rust.noreturn.iter().any(|fact| fact.name == name));
+        }
+        assert!(!rust.noreturn.iter().any(|fact| fact.name.contains("lookalike")));
+        for compiler in [Compiler::Gcc, Compiler::Clang, Compiler::Go, Compiler::Unknown] {
+            let other = scan_noreturn(&file, &bytes, compiler);
+            assert!(!other.noreturn.iter().any(|fact| fact.addr == exit.address()));
+        }
     }
 
     /// The Golang no-return list must match a `runtime.*` panic/throw/exit symbol

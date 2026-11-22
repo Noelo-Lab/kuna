@@ -6,7 +6,9 @@
 //! (trie, CRC, tail bytes, instruction bits) is the `flirt-sig` crate; this
 //! module adds the reference names and the rounds:
 //!
-//! 1. walk the byte trie over the first `pattern_len` bytes at the entry;
+//! 1. walk the byte trie over the first `pattern_len` bytes at the entry
+//!    (a function that ends the section sooner is matched by the modules that
+//!    fit in what is left);
 //! 2. at a leaf, a module matches when the CRC-16 of the `crc_len` bytes after
 //!    the prefix, its tail bytes (offsets after the CRC region) and its
 //!    expected instruction bits agree;
@@ -26,6 +28,9 @@
 //! The signature files are named by `KUNA_FLIRT_SIGS` (`:`-separated files or
 //! directories).
 
+pub mod kuna_flirtpat;
+pub mod kuna_flirtsig;
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use object::read::{Object, ObjectSection};
@@ -34,6 +39,7 @@ use crate::listing::Listing;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, FidMatch, Phase};
 use flirt_sig::{Endian, Matcher, Module, Signature, FLAG_STARTUP};
 
+pub mod kuna_elf_data_names;
 pub mod kuna_rustprofiles;
 
 /// The environment variable that lists the `.sig` files.
@@ -256,7 +262,7 @@ fn match_all_inner(
             let mut best: BTreeMap<String, i32> = BTreeMap::new();
             for s in sigs {
                 let pattern_len = usize::from(s.signature().header.pattern_len);
-                for m in s.match_at(code) {
+                for m in modules_at(s, code, pattern_len) {
                     let unnamed_ok = sites && last && m.length as usize > pattern_len;
                     if !reference_ok(m, ea, image, listing, &known, unnamed_ok) {
                         continue;
@@ -327,6 +333,21 @@ fn match_all_inner(
         report.retain(|_, name| !refused.contains(name));
     }
     named
+}
+
+/// The modules whose bytes match at an entry. A pattern is as long as the trie
+/// is deep, padded with variable bytes past the end of a shorter function, so
+/// for an entry closer than that to the end of its section the walk runs over
+/// zero-padded code and keeps only the modules that end inside the section.
+fn modules_at<'a>(s: &Matcher<'a>, code: &[u8], pattern_len: usize) -> Vec<&'a Module> {
+    if code.is_empty() || code.len() >= pattern_len {
+        return s.match_at(code);
+    }
+    let mut padded = code.to_vec();
+    padded.resize(pattern_len, 0);
+    let mut found = s.match_at(&padded);
+    found.retain(|m| m.length as usize <= code.len());
+    found
 }
 
 /// Whether the entry is a bare return, after a landing pad if it starts with one
