@@ -2119,6 +2119,12 @@ const NO_WRITE_BLOCKS: usize = 8;
 /// [`JumpBasicModel::narrow_readonly_selector_domain`] emulates: any 16-bit index.
 const MAX_SELECTOR_INPUTS: uintb = 1 << 16;
 
+/// (kuna) The most selector values per table slot a guard-bounded table
+/// longer than `jumptablemax` may admit.  An index that is the selector reads
+/// one slot per value; one derived from it (`x >> 8`) reads one slot for many
+/// values, each of which would print as its own `case` label.
+const GUARDED_VALUES_PER_SLOT: usize = 4;
+
 /// (kuna) Whether `a` and `b` hold the same value: the same varnode, equal
 /// constants, or outputs of the same pure op over inputs holding the same
 /// values, at most `depth` ops deep.  Two LOADs through equal addresses are
@@ -6500,17 +6506,24 @@ impl JumpTable {
             self.build_checked_addresses(fd)?;
         }
         // (kuna) A guard-bounded table may be longer than `jumptablemax`; the
-        // cap then applies to the code it reaches.
+        // cap then applies to the code it reaches and to the slots it reads.
         let max_table_size = fd.get_arch().max_jumptable_size as usize;
-        if self.addresstable.len() > max_table_size
-            && self.addresstable.iter().collect::<std::collections::BTreeSet<_>>().len() > max_table_size
-        {
-            return Err(KunaError::lowlevel(format!(
-                "Could not recover jumptable at {:?}. Too many branches",
-                self.opaddress
-            )));
+        let values = self.addresstable.len();
+        if values > max_table_size {
+            let targets = self.addresstable.iter().collect::<std::collections::BTreeSet<_>>().len();
+            if targets > max_table_size || values > GUARDED_VALUES_PER_SLOT * self.read_slots().max(targets) {
+                return Err(KunaError::lowlevel(format!(
+                    "Could not recover jumptable at {:?}. Too many branches",
+                    self.opaddress
+                )));
+            }
         }
         Ok(())
+    }
+
+    /// (kuna) The distinct table entries the emulated values read.
+    fn read_slots(&self) -> usize {
+        self.row_loads.as_ref().map_or(0, |rows| rows.reached.iter().map(|t| t.num.max(0) as usize).sum())
     }
 
     /// Build the address table from the model and sanity-check it (the body
