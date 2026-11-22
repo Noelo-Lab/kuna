@@ -69,6 +69,7 @@
 <symbol space="ram" offset="0x10000120" name="ld_sum"/>
 </binaryimage>
 <script>
+  <com>option typevote off</com>
   <com>lo fu ld_ll</com>
   <com>decompile</com>
   <com>print C</com>

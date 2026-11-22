@@ -222,7 +222,7 @@ pub(super) fn collect<'v>(
     if targets.is_empty() && slots.is_empty() && data.is_empty() {
         return Vec::new();
     }
-    let names = Names::new(cache, index);
+    let names = Names::for_image(cache, index);
     let mut out = Vec::new();
     for &target in &targets {
         if let Some(name) = names.call_target(target) {
@@ -385,7 +385,7 @@ const MAX_DATA_EXTENT: u64 = 0x1_0000;
 const MIN_DATA_SIZE: u64 = 8;
 
 /// Symbol names by address across the whole cache, built per image on demand.
-struct Names<'a> {
+pub(super) struct Names<'a> {
     cache: &'a DyldCache,
     ranges: Vec<(u64, u64, usize)>,
     /// The names the rebuilt image imports: its undefined symbols.
@@ -399,17 +399,8 @@ struct Names<'a> {
 
 impl<'a> Names<'a> {
     /// Every image's segment ranges; an alias (an entry sharing another's
-    /// header address) adds none of its own. `index` is the image being
-    /// rebuilt, whose undefined symbols are the names it imports.
-    fn new(cache: &'a DyldCache, index: usize) -> Names<'a> {
-        const N_TYPE: u8 = 0x0e;
-        let imports = cache
-            .image_symbols(index)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|s| s.is_external() && s.n_type & N_TYPE == 0 && !s.name.is_empty())
-            .map(|s| s.name)
-            .collect();
+    /// header address) adds none of its own. No name counts as imported.
+    pub(super) fn new(cache: &'a DyldCache) -> Names<'a> {
         let mut seen = std::collections::HashSet::new();
         let mut ranges: Vec<(u64, u64, usize)> = (0..cache.images().len())
             .filter(|&i| seen.insert(cache.images()[i].address))
@@ -424,7 +415,22 @@ impl<'a> Names<'a> {
             })
             .collect();
         ranges.sort_unstable();
-        Names { cache, ranges, imports, images: RefCell::default(), stub_work: std::cell::Cell::new(cache.total_len.max(MIN_STUB_WORK)) }
+        Names { cache, ranges, imports: Default::default(), images: RefCell::default(), stub_work: std::cell::Cell::new(cache.total_len.max(MIN_STUB_WORK)) }
+    }
+
+    /// [`Names::new`] for rebuilding image `index`, whose undefined symbols
+    /// are the names it imports.
+    fn for_image(cache: &'a DyldCache, index: usize) -> Names<'a> {
+        const N_TYPE: u8 = 0x0e;
+        let mut names = Names::new(cache);
+        names.imports = cache
+            .image_symbols(index)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|s| s.is_external() && s.n_type & N_TYPE == 0 && !s.name.is_empty())
+            .map(|s| s.name)
+            .collect();
+        names
     }
 
     fn image_at(&self, addr: u64) -> Option<usize> {
@@ -464,6 +470,22 @@ impl<'a> Names<'a> {
         let mut starts: Vec<u64> = by_addr.keys().copied().collect();
         starts.sort_unstable();
         ImageNames { by_addr, aliases, starts, symbols, indirect }
+    }
+
+    /// The image holding `addr`, with `addr`. For an address no image holds,
+    /// `through_stubs` follows the stub there to the image holding its target,
+    /// with that target.
+    pub(super) fn owner(&self, mut addr: u64, through_stubs: bool) -> Option<(u64, usize)> {
+        for _ in 0..=MAX_STUB_HOPS {
+            if let Some(index) = self.image_at(addr) {
+                return Some((addr, index));
+            }
+            if !through_stubs {
+                return None;
+            }
+            addr = follow_stub(self.cache, addr)?;
+        }
+        None
     }
 
     /// The symbol that holds `addr` in the image owning it: one starting there

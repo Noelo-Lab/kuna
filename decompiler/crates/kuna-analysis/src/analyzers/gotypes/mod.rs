@@ -23,9 +23,9 @@
 //! harvested type (the metadata declares none), and any caller-signature
 //! recovery. Named non-struct types (a `type MyInt int`) are also skipped —
 //! a bare alias adds no layout knowledge.
-//! Little-endian images: Go 1.18–1.25 32-bit typelinks layouts, and both
-//! typelinks and newer descriptor regions on 64-bit targets. Big-endian images
-//! and 32-bit descriptor regions remain unsupported.
+//! Little-endian 32-bit images use typelinks on Go 1.18–1.26 and consecutive
+//! descriptors on Go 1.27. Little-endian 64-bit targets support both layouts
+//! (typelinks from go1.16 on).
 //!
 //! ## Locating moduledata without symbols
 //!
@@ -37,11 +37,11 @@
 //!    `len == cap`, sane length) — true of every moduledata since go1.16;
 //! 2. within the following window, the type metadata VALIDATES AGAINST
 //!    ITSELF, in whichever of its two historical forms is present. Through
-//!    go1.25: a `(types, etypes)` pair plus a `typelinks` slice
+//!    go1.26: a `(types, etypes)` pair plus a `typelinks` slice
 //!    (`len == cap`, sampled entries decode as plausible `_type` records
-//!    inside `[types, etypes)`). From go1.26: the slice is gone — moduledata
+//!    inside `[types, etypes)`). From go1.27: the slice is gone — moduledata
 //!    carries `types, typedesclen, etypes` and the records sit consecutively
-//!    in `[types + 8, types + typedesclen)`, enumerated by advancing each
+//!    in `[types + ptrSize, types + typedesclen)`, enumerated by advancing each
 //!    record's own descriptor size (`internal/abi.Type::DescriptorSize`),
 //!    accepted only when the walk decodes back to back. Field positions are
 //!    NOT hardcoded — runtime field order drifts release to release — the
@@ -54,8 +54,9 @@
 //! 48 bytes on 64-bit: `size @0`, `ptrbytes @8`, `hash @16`, `tflag @20`,
 //! `align @21`, `fieldalign @22`, `kind @23`, `equal @24`, `gcdata @32`,
 //! `nameOff(i32) @40`, `ptrToThis(i32) @44`. Names resolve at
-//! `types + nameOff`: a flags byte, a varint length, then the bytes
-//! (`tflagExtraStar` prefixes a `*` to strip). A struct type continues with
+//! `types + nameOff`: a flags byte, a varint length (a big-endian `u16`
+//! through go1.16), then the bytes (`tflagExtraStar` prefixes a `*` to
+//! strip). A struct type continues with
 //! `pkgPath (ptr) @48`, `fields slice @56`: each field is
 //! `{name (ptr), typ (ptr), offset (uintptr)}`, 24 bytes, since go1.19.
 //! Go1.18 stores `offset << 1 | embedded` in that final word instead.
@@ -82,13 +83,14 @@ use kuna_decomp::kuna_langfacet::LangFacet;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 use crate::pclntab::locate_header;
 use kuna_layout::GoImage;
-use crate::loader::gobuildinfo::{buildinfo_blob, version_from_blob};
+use crate::loader::gobuildinfo::{buildinfo_blob, go_version};
 
 mod kuna_structorder;
 mod kuna_layout;
 mod kuna_fieldtypes;
 mod kuna_itabs;
 mod kuna_typeglobals;
+pub mod kuna_pointermethods;
 use kuna_fieldtypes::field_type;
 
 /// Go `kind` byte values (`internal/abi.Kind`), masked by [`KIND_MASK`].
@@ -119,13 +121,14 @@ const KIND_STRUCT: u8 = 25;
 const KIND_UNSAFEPTR: u8 = 26;
 
 /// `tflag` bits (`internal/abi.TFlag`).
+const TFLAG_UNCOMMON: u8 = 0x1;
 const TFLAG_EXTRA_STAR: u8 = 0x2;
 const TFLAG_NAMED: u8 = 0x4;
 
-/// The `_type` base record size on a 64-bit target.
-const TYPE_BASE: u64 = 48;
+/// `internal/abi.UncommonType`: `{PkgPath i32, Mcount u16, Xcount u16, Moff u32, _ u32}`.
+const UNCOMMON_SIZE: u64 = 16;
 
-/// How far past the moduledata anchor the window scan looks, in 8-byte words.
+/// How far past the moduledata anchor the window scan looks, in target words.
 /// The fields phase 1 needs (`types`/`etypes`/`typelinks`) have sat within the
 /// first ~50 words of moduledata on every release since go1.16; 96 leaves room
 /// for two more releases of growth without scanning unrelated globals.
@@ -142,8 +145,8 @@ struct GoType {
 }
 
 /// The located metadata: the type blob bounds and the reachable `_type`
-/// record offsets — from the `typelinks` slice (go1.18..go1.25) or from the
-/// descriptor-region walk that replaced it (go1.26+).
+/// record offsets — from the `typelinks` slice (go1.18..go1.26) or from the
+/// descriptor-region walk that replaced it (go1.27+).
 struct TypeMeta {
     types: u64,
     etypes: u64,
@@ -160,21 +163,28 @@ fn mapped(img: &GoImage, vma: u64) -> bool {
     img.read(vma, 1).is_some()
 }
 
-/// Decode a Go name record at `vma` (go1.17+ encoding): a flags byte, a varint
-/// length, then the UTF-8 bytes. Returns `None` on any malformation.
+/// Decode a Go name record at `vma`: a flags byte, the length (a varint since
+/// go1.17, a big-endian `u16` before — `img.u16_names`), then the UTF-8
+/// bytes. Returns `None` on any malformation.
 fn read_go_name(img: &GoImage, vma: u64) -> Option<String> {
     let _flags = img.read(vma, 1)?[0];
     let mut len: usize = 0;
-    let mut shift = 0u32;
     let mut cur = vma + 1;
-    for _ in 0..4 {
-        let b = img.read(cur, 1)?[0];
-        cur += 1;
-        len |= ((b & 0x7f) as usize) << shift;
-        if b & 0x80 == 0 {
-            break;
+    if img.u16_names {
+        let b = img.read(cur, 2)?;
+        len = usize::from(u16::from_be_bytes([b[0], b[1]]));
+        cur += 2;
+    } else {
+        let mut shift = 0u32;
+        for _ in 0..4 {
+            let b = img.read(cur, 1)?[0];
+            cur += 1;
+            len |= ((b & 0x7f) as usize) << shift;
+            if b & 0x80 == 0 {
+                break;
+            }
+            shift += 7;
         }
-        shift += 7;
     }
     if len == 0 || len > 512 {
         return None;
@@ -281,49 +291,43 @@ fn locate_type_meta(img: &GoImage, anchor: u64) -> Option<TypeMeta> {
     None
 }
 
-/// The go1.26+ `_type` descriptor stride: records sit consecutively in
-/// `[types + 8, types + typedesclen)` and a walker advances by each record's
+/// The go1.27+ `_type` descriptor stride: records sit consecutively in
+/// `[types + ptrSize, types + typedesclen)` and a walker advances by each record's
 /// own descriptor size (`internal/abi.Type::DescriptorSize`, go1.27.2) — the
 /// per-kind wrapper, an optional `UncommonType` (+ its methods), and the
 /// kind's trailing arrays, in that memory order. `None` for a stride this
 /// phase cannot trust; the caller stops the walk there (conservative: keep
 /// what already decoded).
 fn descriptor_stride(img: &GoImage, t: &GoType) -> Option<u64> {
-    if img.word_size != 8 {
-        return None;
-    }
-    const UNCOMMON_SIZE: u64 = 16; // {PkgPath i32, Mcount u16, Xcount u16, Moff u32, _ u32}
+    let width = img.word_size;
+    let type_base = img.type_base();
     const METHOD_SIZE: u64 = 16; // 4 x i32
-    const TFLAG_UNCOMMON: u8 = 0x1;
     let slice_len = |at: u64| -> Option<u64> {
-        let len = word(img, at + 8)?;
-        let cap = word(img, at + 16)?;
+        let len = word(img, at + width)?;
+        let cap = word(img, at + 2 * width)?;
         (len == cap && len <= 1_000_000).then_some(len)
     };
     let (base, add): (u64, u64) = match t.kind {
-        KIND_ARRAY => (TYPE_BASE + 24, 0),
-        KIND_CHAN => (TYPE_BASE + 16, 0),
+        KIND_ARRAY => (type_base + 3 * width, 0),
+        KIND_CHAN => (type_base + 2 * width, 0),
         KIND_FUNC => {
-            // InCount u16 @ +48, OutCount u16 @ +50 (top bit = variadic).
-            let b = img.read(t.vma + TYPE_BASE, 4)?;
+            let b = img.read(t.vma + type_base, 4)?;
             let inc = u16::from_le_bytes(b[0..2].try_into().unwrap()) as u64;
             let outc = (u16::from_le_bytes(b[2..4].try_into().unwrap()) & 0x7fff) as u64;
             if inc + outc > 512 {
                 return None;
             }
-            (TYPE_BASE + 8, (inc + outc) * 8)
+            (type_base + width, (inc + outc) * width)
         }
         KIND_INTERFACE => {
-            // PkgPath Name (ptr) @ +48, Methods slice @ +56; Imethod = 8.
-            (TYPE_BASE + 8 + 24, slice_len(t.vma + TYPE_BASE + 8)? * 8)
+            (type_base + 4 * width, slice_len(t.vma + type_base + width)? * 8)
         }
-        KIND_MAP => (TYPE_BASE + 88, 0), // Key,Elem,Group,Hasher,GroupSize,KeysOff,KeyStride,ElemsOff,ElemStride,ElemOff,Flags+pad
-        KIND_POINTER | KIND_SLICE => (TYPE_BASE + 8, 0),
+        KIND_MAP => (type_base + 11 * width, 0),
+        KIND_POINTER | KIND_SLICE => (type_base + width, 0),
         KIND_STRUCT => {
-            // PkgPath Name (ptr) @ +48, Fields slice @ +56; StructField = 24.
-            (TYPE_BASE + 8 + 24, slice_len(t.vma + TYPE_BASE + 8)? * 24)
+            (type_base + 4 * width, slice_len(t.vma + type_base + width)? * 3 * width)
         }
-        _ => (TYPE_BASE, 0), // plain kinds (bool..complex128, string, unsafeptr)
+        _ => (type_base, 0),
     };
     let uncommon = if t.tflag & TFLAG_UNCOMMON != 0 {
         // Mcount u16 sits at uncommon + 4.
@@ -340,7 +344,7 @@ fn descriptor_stride(img: &GoImage, t: &GoType) -> Option<u64> {
     (stride <= 1_048_576).then_some(stride)
 }
 
-/// Locate the go1.26+ type metadata: the moduledata triple
+/// Locate the go1.27+ type metadata: the moduledata triple
 /// `types, typedesclen, etypes` (the middle word bounds the consecutive
 /// descriptor region that replaced the `typelinks` slice), then enumerate the
 /// records by walking that region with [`descriptor_stride`]. Cross-validated
@@ -348,17 +352,16 @@ fn descriptor_stride(img: &GoImage, t: &GoType) -> Option<u64> {
 /// (`types + typedesclen <= etypes`), both bounds must map, and the walk must
 /// decode records back to back — a divergence stops it conservatively.
 fn locate_type_meta_descriptors(img: &GoImage, anchor: u64) -> Option<TypeMeta> {
-    if img.word_size != 8 {
-        return None;
-    }
+    let width = img.word_size;
     for i in 0..MODULEDATA_WINDOW_WORDS {
-        let Some(types) = word(img, anchor + i * 8) else { break };
-        let Some(typedesclen) = word(img, anchor + (i + 1) * 8) else { break };
-        let Some(etypes) = word(img, anchor + (i + 2) * 8) else { break };
+        let Some(types) = word(img, anchor + i * width) else { break };
+        let Some(typedesclen) = word(img, anchor + (i + 1) * width) else { break };
+        let Some(etypes) = word(img, anchor + (i + 2) * width) else { break };
+        let Some(end) = types.checked_add(typedesclen) else { continue };
         if types == 0
             || typedesclen == 0
             || typedesclen >= 0x1000_0000
-            || types + typedesclen > etypes
+            || end > etypes
             || etypes - types >= 0x1000_0000
             || !mapped(img, types)
             || !mapped(img, etypes - 1)
@@ -366,19 +369,21 @@ fn locate_type_meta_descriptors(img: &GoImage, anchor: u64) -> Option<TypeMeta> 
             continue;
         }
         // Walk the descriptor region; require a run of decoding records.
-        let end = types + typedesclen;
-        let mut td = types + 8;
+        let mut td = types + width;
         let mut offsets: Vec<u32> = Vec::new();
         while td < end && offsets.len() < GOTYPES_MAX_TYPELINKS {
-            td = (td + 7) & !7;
+            let Some(aligned) = td.checked_add(width - 1) else { break };
+            td = aligned & !(width - 1);
             if td >= end {
                 break;
             }
             let off = (td - types) as u32;
-            let Some(t) = read_type(img, types, etypes, off) else { break };
+            let Some(t) = read_type(img, types, end, off) else { break };
             let Some(stride) = descriptor_stride(img, &t) else { break };
+            let Some(next) = td.checked_add(stride) else { break };
+            if next > end { break; }
             offsets.push(off);
-            td += stride;
+            td = next;
         }
         // Accept only a walk that looks like the real region: several records
         // and no early divergence (reached the end or the cap).
@@ -695,20 +700,26 @@ impl AnalysisPass for GoTypesPass {
         if !ctx.file.is_little_endian() {
             return AnalysisOutput::default();
         }
-        let version = buildinfo_blob(ctx.file).and_then(version_from_blob);
-        if !ctx.file.is_64() && !matches!(version, Some((1, 18..=25))) {
+        let mut img = GoImage::new(ctx.file);
+        let version = buildinfo_blob(ctx.file).and_then(|b| go_version(b, |vma, len| img.bytes.read(vma, len)));
+        let modern_32_bit = !ctx.file.is_64() && version == Some((1, 27));
+        if !ctx.file.is_64() && !modern_32_bit && !matches!(version, Some((1, 18..=26))) {
             return AnalysisOutput::default();
         }
-        let img = GoImage::new(ctx.file);
+        img.u16_names = matches!(version, Some((1, ..=16)));
         let Some(header_vma) = locate_header(ctx.file, &img.bytes) else {
             return AnalysisOutput::default();
         };
         let Some(anchor) = locate_moduledata(ctx.file, &img, header_vma) else {
             return AnalysisOutput::default();
         };
-        let Some(meta) = locate_type_meta(&img, anchor)
-            .or_else(|| locate_type_meta_descriptors(&img, anchor))
-        else {
+        let meta = match img.word_size {
+            4 if modern_32_bit => locate_type_meta_descriptors(&img, anchor),
+            4 => locate_type_meta(&img, anchor),
+            _ => locate_type_meta(&img, anchor)
+                .or_else(|| locate_type_meta_descriptors(&img, anchor)),
+        };
+        let Some(meta) = meta else {
             return AnalysisOutput::default();
         };
         let tf = ctx.arch.types();
@@ -725,7 +736,10 @@ impl AnalysisPass for GoTypesPass {
             .map(|s| s.address())
             .collect();
         let itabs = kuna_itabs::collect(&img, &meta, anchor, &occupied);
-        AnalysisOutput { go_type_globals: globals, go_itabs: itabs, ..Default::default() }
+        let go_pointer_methods = kuna_pointermethods::collect(
+            ctx.file, &img, &meta, header_vma, anchor, version,
+        ).unwrap_or_default();
+        AnalysisOutput { go_type_globals: globals, go_itabs: itabs, go_pointer_methods, ..Default::default() }
     }
 }
 

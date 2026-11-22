@@ -113,6 +113,41 @@ impl<'a> PoolImage<'a> {
         Some(word)
     }
 
+    /// Every pointer-aligned, pointer-sized word of the read-only image.
+    pub(super) fn words(&self) -> impl Iterator<Item = u64> + '_ {
+        let ptr = self.ptr as usize;
+        self.ro.iter().flat_map(move |&(lo, hi, data)| {
+            let len = ((hi - lo) as usize).min(data.len());
+            let lead = (ptr - (lo as usize % ptr)) % ptr;
+            data[..len].get(lead..).unwrap_or(&[]).chunks_exact(ptr).map(move |b| match (ptr, self.little_endian) {
+                (8, true) => u64::from_le_bytes(b.try_into().unwrap()),
+                (8, false) => u64::from_be_bytes(b.try_into().unwrap()),
+                (_, true) => u64::from(u32::from_le_bytes(b.try_into().unwrap())),
+                (_, false) => u64::from(u32::from_be_bytes(b.try_into().unwrap())),
+            })
+        })
+    }
+
+    /// Every pointer-aligned read-only address a 32-bit window of `file`'s code
+    /// spells: what an instruction names as a displacement or a pool word,
+    /// whether or not anything decoded it.
+    pub(super) fn code_named(&self, file: &object::File) -> std::collections::HashSet<u64> {
+        let ptr = u64::from(self.ptr);
+        let (lo, hi) = (self.ro[0].0, self.ro[self.ro.len() - 1].1);
+        let mut out = std::collections::HashSet::new();
+        for sec in file.sections().filter(|s| s.kind() == SectionKind::Text) {
+            let Ok(data) = sec.data() else { continue };
+            for b in data.windows(4) {
+                let b: [u8; 4] = b.try_into().unwrap();
+                let v = u64::from(if self.little_endian { u32::from_le_bytes(b) } else { u32::from_be_bytes(b) });
+                if v % ptr == 0 && v >= lo && v < hi && self.contains_bytes(v, ptr) {
+                    out.insert(v);
+                }
+            }
+        }
+        out
+    }
+
     /// The target's pointer width in bytes, which is also the stride of any
     /// array of pointers in the image (`kuna_switchtable`'s table).
     pub(super) fn ptr_width(&self) -> u32 {
@@ -168,6 +203,29 @@ impl<'a> PoolImage<'a> {
             (2, false) => u64::from(u16::from_be_bytes(b.try_into().ok()?)),
             _ => return None,
         })
+    }
+
+    /// The `width`-byte (1, 2 or 4) word at `vma` in a read-only section, sign-
+    /// or zero-extended: an entry of a relative jump table.
+    pub(super) fn sword_at(&self, vma: u64, width: u32, signed: bool) -> Option<i64> {
+        let b = self.bytes_at(vma, width)?;
+        let raw = match (width, self.little_endian) {
+            (1, _) => u64::from(b[0]),
+            (2, true) => u64::from(u16::from_le_bytes(b.try_into().ok()?)),
+            (2, false) => u64::from(u16::from_be_bytes(b.try_into().ok()?)),
+            (4, true) => u64::from(u32::from_le_bytes(b.try_into().ok()?)),
+            (4, false) => u64::from(u32::from_be_bytes(b.try_into().ok()?)),
+            _ => return None,
+        };
+        let bits = 8 * width;
+        Some(if signed && raw >> (bits - 1) == 1 { (raw | (u64::MAX << bits)) as i64 } else { raw as i64 })
+    }
+
+    /// The `[lo, hi)` range of the read-only section holding `vma`.
+    pub(super) fn section_of(&self, vma: u64) -> Option<(u64, u64)> {
+        let i = self.ro.partition_point(|&(lo, _, _)| lo <= vma).checked_sub(1)?;
+        let (lo, hi, _) = self.ro[i];
+        (vma < hi).then_some((lo, hi))
     }
 
     /// The `width` bytes of read-only image content at `vma`.

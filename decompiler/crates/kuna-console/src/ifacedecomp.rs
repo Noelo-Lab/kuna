@@ -3422,26 +3422,13 @@ decomp_command!(
         let prog = dcp.conf.as_ref().expect("conf present when fd present");
         let (callpoint, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
         let fd = dcp.fd.as_ref().expect("fd present");
-        let mut found = false;
-        for i in 0..fd.num_calls() {
-            let op = fd.get_call_specs(i).get_op();
-            if let Some(o) = fd.obank().get(op) {
-                if o.get_addr() == &callpoint {
-                    found = true;
-                    break;
-                }
-            }
-        }
-        if !found {
-            return Err(IfaceError::execution("No call is made at this address"));
+        if !crate::kuna_callproto::has_call_at(fd, &callpoint) {
+            return Err(IfaceError::execution(crate::kuna_callproto::NO_CALL));
         }
         // C++ parse_protopieces(pieces,s,dcp->conf) — the remainder of the line.
         s.skip_ws();
         let decl = s.rest().trim().to_string();
-        let (addr_size, word_size) = prog.arch().data_org();
-        let org = crate::grammar::DataOrg { addr_size, word_size };
-        let pieces = crate::grammar::parse_protopieces(&decl, prog.arch().types(), org)
-            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        let pieces = crate::kuna_callproto::parse(prog, &decl).map_err(IfaceError::execution)?;
         // C++ builds a FuncProto (setInternal + setPieces) and
         // insertProtoOverride(callpoint, newproto).  The W4 `applyPrototype` consume
         // (FlowInfo::queryCall) is still stubbed (LOSS-031 neighborhood), so the
@@ -3584,11 +3571,24 @@ decomp_command!(
     /// C++ `IfcDeadcodedelay`: `deadcode delay <space> <delay>`.
     IfcDeadcodedelay,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        let _dcp = dcp_mut(status)?;
-        let _name = s.read_token();
-        // C++ resolves the space ("Bad space: <name>") and reads the delay int
-        // ("Need delay integer") before applying it.
-        Err(engine_unavailable("Architecture::getSpaceByName + setDeadcodeDelay"))
+        let dcp = dcp_mut(status)?;
+        let name = s.read_token();
+        let delay: int4 = s.read_token().parse().unwrap_or(-1);
+        let prog = dcp.conf.as_mut().ok_or_else(|| IfaceError::execution("No image loaded"))?;
+        let manage = prog.arch().manage();
+        let spc = manage
+            .get_space_by_name(&name)
+            .cloned()
+            .ok_or_else(|| IfaceError::parse(format!("Bad space: {name}")))?;
+        if delay == -1 {
+            return Err(IfaceError::parse("Need delay integer"));
+        }
+        if dcp.fd.is_some() {
+            return Err(engine_unavailable("per-function deadcode delay across the console IR rebuild"));
+        }
+        manage.set_deadcode_delay(&spc, delay);
+        status.out("Successfully overrided deadcode delay for all functions\n");
+        Ok(())
     }
 );
 

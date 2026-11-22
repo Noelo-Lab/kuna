@@ -149,6 +149,18 @@ fn a_selected_member_leaves_no_staging_files() {
 }
 
 #[test]
+fn blobs_reads_a_selected_member() {
+    let dir = tempfile::tempdir().unwrap();
+    let image = common::repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/embedded_blobs_x86_64.so");
+    let lib = dir.path().join("libb.a");
+    write_archive(&lib, "!<arch>\n", &[("blobs.so/", &std::fs::read(image).unwrap())]);
+    let (stdout, stderr, code) = kuna(&["blobs", &format!("{}:blobs.so", lib.display()), "--no-xrefs"]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stdout.starts_with("# 5 embedded blobs in "), "{stdout}");
+    assert!(stdout.contains("0x3c0\tpng\t69\t.rodata"), "{stdout}");
+}
+
+#[test]
 fn a_name_stored_twice_is_selected_by_its_occurrence() {
     let scratch = tempfile::tempdir().unwrap();
     let lib = scratch.path().join("libdup.a");

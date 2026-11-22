@@ -172,11 +172,17 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::in_force();
         return Some(Cow::Owned(choice.as_str().to_string()));
     }
+    if option == "kernelcache-boot" {
+        let _load = conf.load_scope();
+        let choice = kuna_decomp::kuna_kernelcacheboot::KernelcacheBoot::in_force();
+        return Some(Cow::Owned(choice.as_str().into_owned()));
+    }
     Some(Cow::Borrowed(match option {
         "bytearrayc" => on_off(conf.print().options.bytearray_c),
         "partialaccess" => on_off(conf.print().options.partial_access),
         "infloopstyle" => if conf.print().options.inf_loop_top { "while" } else { "do" },
         "loopcontinue" => on_off(conf.loop_continue),
+        "postinc" => on_off(conf.post_increment),
         "compareform" => {
             if conf.present_lessequal {
                 "original"
@@ -191,6 +197,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "callarrayextent" => on_off(conf.call_array_extent),
         "stackstruct" => on_off(conf.stack_struct),
         "globalarrayanchor" => on_off(conf.global_array_anchor),
+        "opaquepredicate" => on_off(conf.opaque_predicate),
         "memsetrecover" => on_off(conf.memset_recover),
         "rodatastring" => on_off(conf.rodata_string),
         "returnpair" => {
@@ -262,7 +269,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "stackviews" => on_off(conf.stack_views),
         "v850indirectbranch" => on_off(conf.v850_indirect_branch),
         "switchmodbound" => on_off(conf.switch_modulo_bound),
-        "constselectjump" => on_off(conf.const_select_jump),
+        "constselectjump" => conf.const_select_jump.as_str(),
         "switchsharedcase" => on_off(conf.switch_shared_case),
         "realtypes" => on_off(conf.realtypes),
         // (kuna `calloverlap`) Report the selected overlap policy.
@@ -288,6 +295,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
             (true, true) => "glibc",
         },
         "strings" => on_off(conf.analysis_strings),
+        "blobs" => on_off(conf.analysis_blobs),
         "widestrings" => on_off(conf.analysis_widestrings),
         "widestrings32" => on_off(conf.analysis_widestrings32),
         "entry_disc" => on_off(conf.analysis_entry_disc),

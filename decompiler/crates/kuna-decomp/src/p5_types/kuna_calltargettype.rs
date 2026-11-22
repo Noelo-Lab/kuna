@@ -268,7 +268,7 @@ fn prints_as_address(data: &Funcdata, vn: VarnodeId) -> bool {
 
 /// The pointer to a function returning the type of `op`'s output (`void` when it
 /// has none) and taking the types of its arguments, or `None` when one of them
-/// has no C spelling.
+/// has no C spelling.  A prototype stated at the call gives the types instead.
 fn call_type(data: &mut Funcdata, tlst: &dyn TypeFactory, op: OpId) -> Option<Rc<Datatype>> {
     let (out, args, target) = {
         let o = data.obank().get(op)?;
@@ -304,6 +304,18 @@ fn call_type(data: &mut Funcdata, tlst: &dyn TypeFactory, op: OpId) -> Option<Rc
         pieces.innames.push(String::new());
     }
     let nargs = pieces.intypes.len();
+    if let Some(stated) = stated_pieces(data, op) {
+        let fixed = stated.intypes.len();
+        let arity = if stated.first_var_arg_slot >= 0 { fixed <= nargs } else { fixed == nargs };
+        let returned = stated.outtype.iter().filter(|t| t.get_metatype() != type_metatype::TYPE_VOID);
+        if !arity || !returned.chain(&stated.intypes).all(|t| spellable(t, t.get_size())) {
+            return None;
+        }
+        pieces.outtype = stated.outtype.or(pieces.outtype);
+        pieces.intypes = stated.intypes;
+        pieces.innames.truncate(fixed);
+        pieces.first_var_arg_slot = stated.first_var_arg_slot;
+    }
     if clobber_is_read(data, op) {
         return None;
     }
@@ -317,7 +329,7 @@ fn call_type(data: &mut Funcdata, tlst: &dyn TypeFactory, op: OpId) -> Option<Rc
         None => tlst.get_type_code_proto(&pieces),
     }
     .ok()?;
-    if !passes_like_the_call(data, op, code.get_code_prototype()?, nargs, out) {
+    if !passes_like_the_call(data, op, code.get_code_prototype()?, pieces.intypes.len(), out) {
         return None;
     }
     let size = data.vbank().get(target)?.get_size();
@@ -349,12 +361,24 @@ fn clobber_is_read(data: &Funcdata, op: OpId) -> bool {
 /// and return the result in the storage the call `op` uses?  A
 /// value in the other register class -- a `float` held as an `unsigned int` in
 /// `xmm0` or `s0`, a `double`'s bits in `rdi` -- or a record returned through
-/// memory compiles to a call that passes or reads something else.
+/// memory compiles to a call that passes or reads something else.  A call whose
+/// prototype was stated at the call recovered no storage; the storage its
+/// stated parameters were given stands in.
 fn passes_like_the_call(data: &Funcdata, op: OpId, built: &FuncProto, nargs: usize, out: Option<VarnodeId>) -> bool {
     let Some(fc) = data.get_call_specs_index(op).map(|i| data.get_call_specs(i)) else {
         return false;
     };
-    let storage = fc.final_input_storage();
+    let locked: Vec<(Address, int4)>;
+    let storage = if fc.is_input_locked() {
+        let proto = fc.proto();
+        locked = (0..proto.num_params())
+            .filter_map(|i| proto.get_param(i))
+            .map(|p| (p.get_address(), p.get_size()))
+            .collect();
+        &locked[..]
+    } else {
+        fc.final_input_storage()
+    };
     if built.num_params() as usize != nargs || storage.len() != nargs {
         return false;
     }
@@ -378,6 +402,19 @@ fn passes_like_the_call(data: &Funcdata, op: OpId, built: &FuncProto, nargs: usi
     params && result
 }
 
+/// The prototype declared at the call `op` itself (`override prototype`, the
+/// `callproto` assertion), not read from a callee or a format string.  Its
+/// target is still the untyped value the call goes through, and the
+/// declaration is the type that value is called as.
+fn stated_pieces(data: &Funcdata, op: OpId) -> Option<PrototypePieces> {
+    let at = data.obank().get(op)?.get_addr();
+    let overrides = data.get_override();
+    if overrides.is_format_call(at) {
+        return None;
+    }
+    overrides.find_proto_override(at)?.pieces().cloned()
+}
+
 /// The indirect calls a high is the target of, with the type each one states.
 type Group = Vec<(OpId, Rc<Datatype>)>;
 
@@ -390,7 +427,7 @@ pub fn retype_call_targets(data: &mut Funcdata) {
     let ops: Vec<OpId> = (0..data.num_calls())
         .filter(|&i| {
             let fc = data.get_call_specs(i);
-            !fc.is_input_locked() && !fc.is_dotdotdot()
+            (!fc.is_input_locked() && !fc.is_dotdotdot()) || stated_pieces(data, fc.get_op()).is_some()
         })
         .map(|i| data.get_call_specs(i).get_op())
         .collect();

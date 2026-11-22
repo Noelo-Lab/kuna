@@ -46,6 +46,7 @@ const IMAGE_COMMANDS: &[&str] = &[
     "xrefs",
     "strings",
     "crypto",
+    "blobs",
 ];
 
 /// What `--member` asked for.
@@ -373,6 +374,9 @@ pub(crate) fn resolve(sub: &str, argv: &mut Vec<String>) -> Result<Resolved, Str
             None => Ok(Resolved::Run(None)),
         };
     };
+    if argv.iter().any(|arg| arg == "--apply-rust-signatures") {
+        return Err("--apply-rust-signatures requires a standalone linked ELF image; archive inputs and member selection are unsupported".into());
+    }
     let bytes = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
     let members = members(&path, &bytes)?;
     let name = match request {
