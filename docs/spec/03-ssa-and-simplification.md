@@ -1814,7 +1814,11 @@ records the low input's size as the bytes consumed of every unlocked RETURN it
 reaches (`FuncProto::set_return_bytes_consumed`), and of each argument slot of
 an unlocked call whose inputs are settled (`set_input_bytes_consumed`). Dead
 code then consumes only those bytes and sub-variable flow trims the RETURN to
-the call's value, so the function returns `int`-width on every path. Upstream
+the call's value, so the function returns `int`-width on every path. Where
+another path returns all of the register, which a function returning the
+call's `int` unextended does only when it returns nothing (gnulib's `void
+version_etc_arn` leaves an unrelated 8-byte value in rax on one path), the return
+keeps its width and the call's path prints as the zero-extended `int`. Upstream
 Ghidra also fires on a low input computed by any unary or binary op, and on a
 high input that is a SUBPIECE of the function's own input or of a clobber.
 Those arms are not ported: the upper half of an input register is a value the

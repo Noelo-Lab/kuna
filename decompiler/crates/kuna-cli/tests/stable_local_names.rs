@@ -582,7 +582,7 @@ fn a_suffixed_name_reaches_the_local_shown_under_it() {
     assert!(code.contains("  char ch; // stack - 0x1") && code.contains("read(0,&ch,1)"), "{code}");
 }
 
-/// Of two locals given one name whose storage overlaps (`eax` within `rax`),
+/// Of two locals given one name whose storage overlaps (both in `eax`),
 /// the print a directive reads declares the pair once, so it cannot say which
 /// one the next decompile shows unsuffixed: a directive naming either is
 /// rejected, in either order of the renames, and never reaches the other.
@@ -590,7 +590,7 @@ fn a_suffixed_name_reaches_the_local_shown_under_it() {
 fn a_shared_name_the_print_cannot_tell_apart_is_rejected() {
     for given in [["name v3 dup", "name v2 dup"], ["name v2 dup", "name v3 dup"]] {
         let plain = decompile_in("sharednames_x86_64", "sprint_status", &[], &given);
-        assert!(plain.contains("  unsigned int dup; // eax") && plain.contains("  char *dup_1; // rax"), "{given:?}:\n{plain}");
+        assert!(plain.contains("  unsigned int dup; // eax") && plain.contains("  int dup_1; // eax"), "{given:?}:\n{plain}");
         for shown in ["dup", "dup_1"] {
             let directive = format!("name {shown} zzq");
             let (code, rows) = outcomes("sharednames_x86_64", "sprint_status", &[given[0], given[1], &directive]);
