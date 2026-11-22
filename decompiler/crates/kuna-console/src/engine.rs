@@ -6076,7 +6076,7 @@ fn commit_analysis_output(
 
     // 3'''. (kuna `thunknames`) A placeholder jump thunk takes its target's name
     //       behind `j_`, after every other name source has named the targets.
-    kuna_thunknames::commit(prog, code_space, &jump_thunks)?;
+    let renamed_thunks = kuna_thunknames::commit(prog, code_space, &jump_thunks)?;
 
     // 4. Detected string literals: place a typelocked `char[len]` data symbol at
     //    each (the kuna analog of `DataUtilities.createData` for an ASCII string),
@@ -6725,6 +6725,10 @@ fn commit_analysis_output(
             &fact.text,
         );
     }
+
+    // 10. (kuna `thunknames`) A renamed jump thunk takes its target's prototype,
+    //     after every prototype stream above has parked its own.
+    kuna_thunknames::inherit_prototypes(prog, code_space, &jump_thunks, &renamed_thunks);
 
     Ok(())
 }

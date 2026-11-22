@@ -2775,7 +2775,14 @@ funcsym stream:
   `j_<target>` when its target's function has a name that is not a
   placeholder. A thunk to a thunk is named in the next round (`j_j_<name>`),
   for at most four rounds; a name already in use takes the first free `_<n>`
-  suffix, in thunk address order within a round. Under `lazyfuncs` only the
+  suffix, in thunk address order within a round. After every prototype
+  stream has run, each renamed thunk also takes what its chain's target
+  carries for a call to it: the parked prototype and the bound prototype model (each
+  only where the thunk has none of its own), and the target's Swift `self`
+  classification, so a call through the thunk is typed as a call to the
+  target. A thunk with a name of its own (`cmp3: jmp memcmp`) keeps its
+  own prototype recovery, since its source signature need not be the
+  target's. Under `lazyfuncs` only the
   thunks whose chain ends at an entry some fact names are made functions
   eagerly. Indirect stubs (`adrp; ldr; br`, arm64e `braa`) are named by the
   stub passes above, not here.

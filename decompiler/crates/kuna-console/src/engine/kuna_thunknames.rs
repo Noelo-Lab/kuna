@@ -12,9 +12,13 @@
 //! `j_<target>` when its target carries a name that is not a placeholder itself. A
 //! thunk to a thunk is named in the next round, after its target (`j_j_<name>`),
 //! for at most [`MAX_CHAIN_HOPS`] rounds. A name already in use takes the first
-//! free `_<n>` suffix, in thunk address order within a round.
+//! free `_<n>` suffix, in thunk address order within a round. Once every
+//! prototype stream has run, [`inherit_prototypes`] gives each renamed thunk
+//! the prototype, prototype model and Swift `self` classification of its
+//! chain's target. A thunk with a name of its own keeps its own prototype
+//! recovery: its source signature need not be the target's.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use kuna_decomp::database::SymbolId;
 
@@ -63,7 +67,8 @@ pub(super) fn commit(
     prog: &mut ConsoleProgram,
     code_space: &Rc<AddrSpace>,
     jumps: &BTreeMap<u64, u64>,
-) -> KunaResult<()> {
+) -> KunaResult<BTreeSet<u64>> {
+    let mut renamed = BTreeSet::new();
     for _ in 0..MAX_CHAIN_HOPS {
         let mut names: Vec<(SymbolId, Address, String)> = Vec::new();
         for (&thunk, &target) in jumps {
@@ -92,10 +97,70 @@ pub(super) fn commit(
                 .find(|name| !name_taken(prog, name))
                 .expect("an unbounded suffix range has a free name");
             prog.arch_mut().symboltab.rename_symbol(sid, &name)?;
+            renamed.insert(addr.get_offset());
             prog.register_symbol(&name, addr);
         }
     }
-    Ok(())
+    Ok(renamed)
+}
+
+/// Every `renamed` thunk of `jumps` takes what its chain's target carries for a
+/// call to it: the parked prototype and the bound prototype model (each only where the
+/// thunk has none of its own), and the target's Swift `self` classification. A
+/// call through the thunk is then typed as a call to the target.
+pub(super) fn inherit_prototypes(
+    prog: &mut ConsoleProgram,
+    code_space: &Rc<AddrSpace>,
+    jumps: &BTreeMap<u64, u64>,
+    renamed: &BTreeSet<u64>,
+) {
+    let space = code_space.get_index();
+    let mut models = (*prog.arch().loader_proto_models).clone();
+    let mut abi = prog.arch().loader_swift_abi.as_deref().map(|abi| kuna_decomp::kuna_swiftcall::SwiftAbi {
+        self_reg: abi.self_reg.clone(),
+        error_reg: abi.error_reg.clone(),
+        call: Rc::clone(&abi.call),
+        throws: Rc::clone(&abi.throws),
+        maybe_self: abi.maybe_self.clone(),
+        no_self: abi.no_self.clone(),
+    });
+    for &thunk in renamed {
+        let Some(target) = jumps.get(&thunk).and_then(|&first| chain_end(jumps, thunk, first)) else {
+            continue;
+        };
+        if let Some(model) = models.get(&(space, target)).cloned() {
+            models.entry((space, thunk)).or_insert(model);
+        }
+        if let Some(abi) = abi.as_mut() {
+            if abi.maybe_self.contains(&(space, target)) {
+                abi.maybe_self.insert((space, thunk));
+            }
+            if abi.no_self.contains(&(space, target)) {
+                abi.no_self.insert((space, thunk));
+            }
+        }
+        let symboltab = &prog.arch().symboltab;
+        let Some((sid, _)) = symboltab.find_function_across_scopes(&Address::new(Rc::clone(code_space), thunk))
+        else {
+            continue;
+        };
+        if symboltab.function_proto_pieces_of(sid).is_some() {
+            continue;
+        }
+        let Some(mut pieces) = symboltab
+            .find_function_across_scopes(&Address::new(Rc::clone(code_space), target))
+            .and_then(|(target_sid, _)| symboltab.function_proto_pieces_of(target_sid))
+            .cloned()
+        else {
+            continue;
+        };
+        pieces.name = symboltab.symbol(sid).get_name().to_string();
+        prog.arch_mut().symboltab.set_function_proto_pieces(sid, pieces);
+    }
+    prog.arch_mut().loader_proto_models = Rc::new(models);
+    if let Some(abi) = abi {
+        prog.arch_mut().loader_swift_abi = Some(Rc::new(abi));
+    }
 }
 
 /// The last address of the jump chain from `thunk`, or `None` when the chain

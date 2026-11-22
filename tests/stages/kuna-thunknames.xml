@@ -14,15 +14,19 @@
     kuna-console engine/kuna_thunknames.rs decodes the first instruction of
     every discovered entry and, after every other name source, renames a
     placeholder thunk `j_<target>`; a thunk to a thunk becomes `j_j_<target>`.
+    Each thunk also takes its target's prototype, so the callers' first
+    argument is typed `long *` from release_box's DWARF.
 
     The XML wrapper only supplies the harness architecture. Both passes clear
-    it, load thunknames_aarch64 and take the `mode fast` inventory (static AArch64 ELF; source
-    thunknames_aarch64.S): release_box is named, the unnamed thunk at
-    0x210130 is `b release_box`, the one at 0x210134 is `b 0x210130`, and
-    drop_box / drop_two call them with bl.
+    it, load thunknames_aarch64 and take the `mode fast` inventory. The
+    fixture is a static AArch64 ELF built from thunknames_aarch64.c:
+    release_box(long *, long) has a DWARF prototype, the unnamed thunk at
+    0x21019c is `b release_box`, the one at 0x2101a0 is `b 0x21019c`, and
+    drop_box / drop_two call them with bl, passing their own first argument.
 
     Pass 1 (`option thunknames off`) reproduces the bug: both calls render
-    sub_<addr>(). Pass 2 is the shipped default.
+    sub_<addr>() and the callers' argument stays untyped. Pass 2 is the
+    shipped default.
 
     Assertions span the combined output of both passes.
 -->
@@ -55,8 +59,10 @@ c0035fd6
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="THUNKNAMES #1: off, the call through the thunk is anonymous" min="1" max="1">sub_210130\(</stringmatch>
-<stringmatch name="THUNKNAMES #2: off, the call through the thunk chain is anonymous" min="1" max="1">sub_210134\(</stringmatch>
-<stringmatch name="THUNKNAMES #3: on, the thunk is named after its target" min="1" max="1">[^_]j_release_box\(</stringmatch>
-<stringmatch name="THUNKNAMES #4: on, a thunk to a thunk is named after that thunk" min="1" max="1">j_j_release_box\(</stringmatch>
+<stringmatch name="THUNKNAMES #1: off, the call through the thunk is anonymous" min="1" max="1">return sub_21019c\(a0,1\) \+ 3;</stringmatch>
+<stringmatch name="THUNKNAMES #2: off, the call through the thunk chain is anonymous" min="1" max="1">sub_2101a0\(a0,2\);</stringmatch>
+<stringmatch name="THUNKNAMES #3: off, the callers' argument is untyped" min="2" max="2">void drop_two\(unsigned long a0\)|long drop_box\(unsigned long a0\)</stringmatch>
+<stringmatch name="THUNKNAMES #4: on, the thunk is named after its target" min="1" max="1">return j_release_box\(a0,1\) \+ 3;</stringmatch>
+<stringmatch name="THUNKNAMES #5: on, a thunk to a thunk is named after that thunk" min="1" max="1">j_j_release_box\(a0,2\);</stringmatch>
+<stringmatch name="THUNKNAMES #6: on, the thunks carry release_box's prototype into the callers" min="2" max="2">void drop_two\(long \*a0\)|long drop_box\(long \*a0\)</stringmatch>
 </decompilertest>
