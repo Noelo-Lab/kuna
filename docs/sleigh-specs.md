@@ -22,7 +22,7 @@ A module lives in `specs/Ghidra/Processors/<P>/data/languages/`:
 | `.ldefs` | one `<language>` per variant: its id, `.sla`, `.pspec` and the `.cspec` of each compiler | yes |
 | `.pspec` | the program counter, context register defaults, volatile (MMIO) ranges | yes |
 | `.cspec` | data sizes, stack pointer, return address, calling conventions, callee-saved registers | yes |
-| `.dwarf` (optional) | DWARF register numbering | yes |
+| `.dwarf` (optional) | DWARF register numbering and the CFA offset, which Ghidra reads | no; kuna's DWARF analyzer keeps the one value it uses (`call_frame_cfa`) in code |
 
 A language id is `processor:endian:size:variant`, and a target adds the compiler id:
 `Cortus:LE:32:APS3:default`. kuna finds modules by scanning every `.ldefs` under its
@@ -48,12 +48,15 @@ links to it silently decodes with the changed spec.
 
 To look at what a constructor produces, `kuna raw-pcode <binary> <addr> --count N`
 prints each instruction's bytes, disassembly and p-code before any analysis
-(`docs/cli.md`). A headerless firmware image loads with `--raw-image --target <id>
---base <vma>`; `specs/Ghidra/Processors/Cortus/README.md` shows a full example.
+(`docs/cli.md`). `raw-pcode` needs an object file. A headerless firmware image loads
+only into `decompile`, `decompile-all`, `decompile-project` and `functions`, with
+`--raw-image --target <id> --base <vma>`; `specs/Ghidra/Processors/Cortus/README.md`
+shows a full example.
 
 ## Adding a module Ghidra does not have
 
-Cortus APS3 (`d3617d648`) is the reference: four files, a README, and one stage test.
+Cortus APS3 is the reference: four files and a README (`d3617d648`), and one stage
+test (#730).
 
 1. **Write the module and a README next to `data/`.** Say where the instruction set
    came from. Cortus's was recovered from firmware because no opcode table is public,
@@ -118,9 +121,9 @@ From strongest to weakest:
 
 | oracle | what it checks | the PR reports |
 |---|---|---|
-| execution: QEMU, Unicorn, or a binutils-gdb `sim/` simulator | registers, flags and memory after each instruction | instruction forms whose state matches from random inputs, and why each of the rest differs (#1703 compares 1,047 s390x forms against Unicorn) |
+| execution: QEMU, Unicorn, or a binutils-gdb `sim/` simulator | registers, flags and memory after each instruction | instruction forms whose state matches from random inputs, and why each of the rest differs (the s390x proposal #1703 compared 1,047 forms against Unicorn) |
 | a reference CPU core in MAME | the same, through MAME's debugger | the same |
-| a reference disassembler (`objdump`, `llvm-objdump`) | decode and operand syntax only | mnemonic agreement over real code or assembler-generated vectors (#1700, #1703) |
+| a reference disassembler (`objdump`, `llvm-objdump`) | decode and operand syntax only | mnemonic agreement over real code or assembler-generated vectors (the proposals #1700 and #1703) |
 | the ISA manual alone | nothing automatic | hand-checked instruction vectors |
 
 A disassembler oracle does not check flags, carry and borrow, delay slots or bank
@@ -142,7 +145,8 @@ even when the semantics of the other constructors do not change. To update an en
 1. Show that the compiler you use reproduces the current digest on the unmodified
    sources.
 2. Regenerate the digest on the changed sources with the same compiler.
-3. Say in `tests/golden/README.md` which entries changed, why, and with which compiler.
+3. Say in `decompiler/crates/kuna-slacomp/tests/golden/README.md` which entries changed,
+   why, and with which compiler.
 
 ```sh
 cargo test --manifest-path decompiler/Cargo.toml --release -p kuna-slacomp --test compiler_parity
