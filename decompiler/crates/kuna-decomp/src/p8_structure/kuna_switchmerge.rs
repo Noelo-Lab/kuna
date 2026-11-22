@@ -18,6 +18,10 @@
 //! * An arm that only jumps to the code the `default:` arm runs prints no
 //!   labels, since `default:` covers its values; when `default:` is that jump
 //!   and another arm holds the code, the arm holding the code prints `default:`.
+//!   An arm that jumps or breaks elsewhere prints no labels either when the
+//!   `default:` code sends each of its values there before printing anything
+//!   ([`default_reaches`]: its tests and switches on the selector, decided
+//!   with the value).
 //!
 //! An arm moves or goes away only when the arm printed before it cannot fall
 //! into it.  The goto census reads [`SwitchPlans::hosts`], so a `break;` inside
@@ -25,9 +29,12 @@
 //! only for the C switch form; other languages print every arm.
 
 use crate::block::{block_flags, BlockGraph, BlockType, CaseOrder};
-use crate::context::BlockId;
+use crate::context::{BlockId, VarnodeId};
 use crate::funcdata::Funcdata;
+use crate::op::pcodeop_flags;
+use kuna_base::address::calc_mask;
 use kuna_base::types::{int4, uintb};
+use kuna_num::opcodes::OpCode;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// One printed arm: case `index` of the switch `owner`.
@@ -68,6 +75,10 @@ pub(crate) struct PrintFacts<'a> {
     pub prints_nothing: &'a dyn Fn(BlockId) -> bool,
     /// The labels a switch prints; `None` when two arms print the same value.
     pub labels: &'a dyn Fn(BlockId) -> Option<LabelSet>,
+    /// The label values case `index` of a switch prints.
+    pub arm_labels: &'a dyn Fn(BlockId, usize) -> Vec<uintb>,
+    /// Does a basic block print no statement besides its branch?
+    pub block_prints_nothing: &'a dyn Fn(BlockId) -> bool,
 }
 
 struct Planner<'a> {
@@ -108,7 +119,7 @@ fn falls_through(fd: &Funcdata, e: PlannedCase) -> bool {
 }
 
 /// The selector varnode the switch header prints: in0 of its BRANCHIND.
-fn selector(fd: &Funcdata, sw: BlockId) -> Option<crate::context::VarnodeId> {
+fn selector(fd: &Funcdata, sw: BlockId) -> Option<VarnodeId> {
     let jt = fd.get_jump_table(fd.sblocks_ref().block(sw).switch_jt_index()? as int4);
     if jt.kuna_lowered_var().is_some() {
         return None;
@@ -241,8 +252,116 @@ impl Planner<'_> {
     }
 }
 
-/// Leave out the arms that only repeat what `default:` does.
-fn fold_default(fd: &Funcdata, arms: Vec<PlannedCase>, dropped: &mut BTreeSet<(BlockId, BlockId)>) -> Vec<PlannedCase> {
+/// The value of `vn` as the printed code computes it when the selector
+/// (`is_selector`) holds `value`, through the expression the printer inlines.
+fn eval_with(fd: &Funcdata, vn: VarnodeId, is_selector: &dyn Fn(VarnodeId) -> bool, value: uintb, depth: u32) -> Option<uintb> {
+    let v = fd.vbank().get(vn)?;
+    let mask = calc_mask(v.get_size());
+    if is_selector(vn) {
+        return Some(value & mask);
+    }
+    if v.is_constant() {
+        return Some(v.get_offset() & mask);
+    }
+    if !v.is_implied() || depth == 0 {
+        return None;
+    }
+    let op = fd.obank().get(v.get_def()?)?;
+    let input = |slot| eval_with(fd, op.get_in(slot)?, is_selector, value, depth - 1);
+    let in_size = fd.vbank().get(op.get_in(0)?)?.get_size();
+    let out = match op.code() {
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST => input(0)?,
+        opc => {
+            let behave = fd.get_arch().op_behavior(opc)?;
+            let eval = op.get_eval_type();
+            if eval & pcodeop_flags::unary != 0 && op.num_input() == 1 {
+                behave.evaluate_unary(v.get_size(), in_size, input(0)?).ok()?
+            } else if eval & pcodeop_flags::binary != 0 && op.num_input() == 2 {
+                behave.evaluate_binary(v.get_size(), in_size, input(0)?, input(1)?).ok()?
+            } else {
+                return None;
+            }
+        }
+    };
+    Some(out & mask)
+}
+
+/// Does the code the `default:` arm prints, entered with the selector of `sw`
+/// holding `value`, reach the basic block `target` before it prints a
+/// statement?  Each branch on the way is decided with `value`: a test of the
+/// selector, or a switch on it.
+fn default_reaches(fd: &Funcdata, facts: &PrintFacts<'_>, sw: BlockId, start: BlockId, target: BlockId, value: uintb) -> bool {
+    const MAX_STEPS: usize = 256;
+    let Some(sel) = selector(fd, sw).filter(|&s| fd.vbank().get(s).is_some_and(|v| !v.is_implied())) else {
+        return false;
+    };
+    let high = fd.vbank().get(sel).and_then(|v| v.get_high());
+    let is_selector = |vn: VarnodeId| {
+        vn == sel || fd.vbank().get(vn).is_some_and(|v| !v.is_implied() && high.is_some() && v.get_high() == high)
+    };
+    let graph = fd.bblocks_ref();
+    let mut bb = start;
+    let mut seen = BTreeSet::new();
+    for _ in 0..MAX_STEPS {
+        if bb == target {
+            return true;
+        }
+        if !seen.insert(bb) || !(facts.block_prints_nothing)(bb) {
+            return false;
+        }
+        let blk = graph.block(bb);
+        let tail = fd.bb_op_tail(bb).and_then(|op| Some((op, fd.obank().get(op)?)));
+        let out = match tail {
+            Some((_, op)) if op.code() == OpCode::CPUI_CBRANCH => {
+                let Some(taken) = op.get_in(1).and_then(|c| eval_with(fd, c, &is_selector, value, 8)) else {
+                    return false;
+                };
+                if (taken != 0) != op.is_boolean_flip() { 1 } else { 0 }
+            }
+            Some((id, op)) if op.code() == OpCode::CPUI_BRANCHIND => {
+                let Some(jt) = fd.find_jump_table_index(id).map(|j| fd.get_jump_table(j as int4)) else {
+                    return false;
+                };
+                let Some(x) = op.get_in(0).filter(|_| jt.kuna_lowered_var().is_none()).and_then(|i| eval_with(fd, i, &is_selector, value, 8)) else {
+                    return false;
+                };
+                let mask = calc_mask(fd.vbank().get(op.get_in(0).unwrap()).map_or(0, |v| v.get_size()));
+                match jt.kuna_out_for_label(x, mask) {
+                    Some(o) => o,
+                    None => return false,
+                }
+            }
+            _ if blk.size_out() == 1 => 0,
+            _ => return false,
+        };
+        if out < 0 || out >= blk.size_out() {
+            return false;
+        }
+        bb = blk.get_out(out);
+    }
+    false
+}
+
+/// Does every value arm `e` prints go, through the `default:` arm starting at
+/// the leaf `dstart`, to the code the arm jumps to?
+fn values_reach_default(fd: &Funcdata, facts: &PrintFacts<'_>, e: PlannedCase, dstart: BlockId) -> bool {
+    let graph = fd.sblocks_ref();
+    let (Some(target), Some(start)) = (arm_start(fd, e).and_then(|t| graph.block(t).get_copy()), graph.block(dstart).get_copy()) else {
+        return false;
+    };
+    let values = (facts.arm_labels)(e.owner, e.index);
+    !values.is_empty() && values.iter().all(|&h| default_reaches(fd, facts, e.owner, start, target, h))
+}
+
+/// Leave out the arms that only repeat what `default:` does: an arm that jumps
+/// where `default:` starts, or whose every value the `default:` code sends,
+/// before it prints anything, to where the arm jumps.
+fn fold_default(
+    fd: &Funcdata,
+    facts: &PrintFacts<'_>,
+    arms: Vec<PlannedCase>,
+    dropped: &mut BTreeSet<(BlockId, BlockId)>,
+) -> Vec<PlannedCase> {
     let Some(d) = arms.iter().position(|&e| case_of(fd, e).isdefault) else {
         return arms;
     };
@@ -253,7 +372,10 @@ fn fold_default(fd: &Funcdata, arms: Vec<PlannedCase>, dropped: &mut BTreeSet<(B
     }
     let is_jump = |e: PlannedCase| {
         let c = case_of(fd, e);
-        !c.isdefault && c.gototype == block_flags::f_goto_goto && arm_start(fd, e) == target
+        !c.isdefault
+            && (c.gototype == block_flags::f_goto_goto && arm_start(fd, e) == target
+                || (c.gototype == block_flags::f_goto_goto || c.gototype == block_flags::f_break_goto)
+                    && target.is_some_and(|t| values_reach_default(fd, facts, e, t)))
     };
     let code_arm = if dc.gototype != 0 {
         arms.iter().position(|&e| {
@@ -303,7 +425,7 @@ pub(crate) fn switch_plans(fd: &Funcdata, root: BlockId, facts: &PrintFacts<'_>)
             _ => arms.extend((0..blk.switch_caseblocks().len()).map(|i| PlannedCase::new(sw, i))),
         }
         let n = blk.switch_caseblocks().len();
-        let arms = fold_default(fd, arms, &mut out.dropped);
+        let arms = fold_default(fd, facts, arms, &mut out.dropped);
         let identity = arms.len() == n && arms.iter().enumerate().all(|(i, &e)| e == PlannedCase::new(sw, i));
         if !identity {
             out.plans.insert(sw, arms);

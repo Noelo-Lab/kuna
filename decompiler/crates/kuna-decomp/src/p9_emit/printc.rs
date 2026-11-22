@@ -4348,6 +4348,13 @@ impl PrintC {
             let facts = crate::p8_structure::kuna_switchmerge::PrintFacts {
                 prints_nothing: &|head| self.header_prints_nothing(fd, head),
                 labels: &|sw| self.switch_label_set(fd, arch, sw),
+                arm_labels: &|sw, index| {
+                    let case = &fd.sblocks_ref().block(sw).switch_caseblocks()[index];
+                    (0..self.switch_case_label_count(fd, sw, case))
+                        .map(|i| self.switch_case_label(fd, arch, sw, case, i).0)
+                        .collect()
+                },
+                block_prints_nothing: &|bb| self.ops_print_nothing(fd, bb),
             };
             crate::p8_structure::kuna_switchmerge::switch_plans(fd, sroot, &facts)
         } else {
@@ -5594,9 +5601,12 @@ impl PrintC {
         while graph.block(head).get_type() == crate::block::BlockType::MultiGoto && graph.block(head).get_size() == 1 {
             head = graph.block(head).get_block(0);
         }
-        let Some(bb) = graph.block(head).get_copy() else {
-            return false;
-        };
+        graph.block(head).get_copy().is_some_and(|bb| self.ops_print_nothing(fd, bb))
+    }
+
+    /// (kuna `switchmerge`) Does the basic block `bb` print no statement
+    /// besides its branch?
+    pub(crate) fn ops_print_nothing(&self, fd: &Funcdata, bb: BlockId) -> bool {
         let mut cur = fd.bb_op_head(bb);
         while let Some(inst) = cur {
             cur = fd.bb_op_next(inst);

@@ -6054,6 +6054,27 @@ impl JumpTable {
         self.label[index as usize]
     }
 
+    /// (kuna `switchmerge`) The out-edge of the BRANCHIND that the switch
+    /// value `value` takes, comparing labels under `mask`: the edge of the
+    /// entry labelled `value`, else the default edge.  `None` when entries
+    /// with that label go to different edges, or no edge is known.
+    pub fn kuna_out_for_label(&self, value: uintb, mask: uintb) -> Option<int4> {
+        if self.label.len() != self.addresstable.len() || self.label.contains(&NO_LABEL) {
+            return None;
+        }
+        let mut out = None;
+        for ip in self.block2addr.iter() {
+            if self.label[ip.address_index as usize] & mask != value & mask {
+                continue;
+            }
+            if out.is_some_and(|o| o != ip.block_position) {
+                return None;
+            }
+            out = Some(ip.block_position);
+        }
+        out.or((self.default_block >= 0).then_some(self.default_block))
+    }
+
     /// Force a given basic-block to be a switch destination
     /// (C++ `JumpTable::addBlockToSwitch`, `jumptable.cc:2663`).
     pub fn add_block_to_switch(&mut self, fd: &Funcdata, bl: BlockId, lab: uintb) -> KunaResult<()> {

@@ -56,6 +56,15 @@ the first table's holes jump to the default code (`case 0x43: case 0x46:` and
 an inner `default: goto` before); in `g` they go to the second table. The off
 run keeps the nested form.
 
+`kuna-switchmerge-values.xml` checks two rules for jump tables. Under option
+`switchmerge`, an AArch64 table whose holes go where its `default:` code sends
+them (through `x == 0x60` and `x == 0x70` tests that fail for the hole values)
+prints no label for the holes: in `f` the holes jumped to a block the default
+code also reaches (`case 0x43: case 0x46: goto`), in `g` they left the switch
+(`break;`). The off run keeps `f`'s labels. `h` checks the `jumptablemax`
+default: an 1100-entry range-checked table prints as a switch, not as
+`jump-as-call`.
+
 `kuna-switchsingle.xml` checks that a jump table whose four entries all name one
 block becomes straight-line code with the "all go to same destination" warning
 instead of a `switch` with only a `default` arm.

@@ -1302,6 +1302,22 @@ structured tree, outer switches first, the plan lists the arms to print:
   `goto` and another arm holds the code, the `default:` arm and the jumps are
   left out and the arm holding the code prints `default:` in place of its
   labels.
+- An arm that is only a `goto` or a `break;` also prints no labels when every
+  value it lists reaches its target through the `default:` code before that
+  code prints a statement. For each value the walk starts at the basic block
+  the `default:` arm prints first and decides each branch with the value: a
+  `CBRANCH` whose condition the printer inlines from the selector and
+  constants (`==`, `!=`, ranges, masks, casts; evaluated with the ops'
+  `OpBehavior`), or a `BRANCHIND` on the selector, whose out-edge is the
+  entry labelled with the value or else the default edge (none when the
+  table has an unrecovered label or a label on two edges). It stops with no
+  drop at a block that prints a statement other than its branch, a block it
+  has seen, a test of anything else, or after 256 blocks. A varnode is the
+  selector when it is the switch's selector or an explicit varnode of the
+  same HighVariable: the walk passes no printed statement, so no assignment
+  to that variable runs between the `switch` and the test. Holes of a table
+  whose `default:` is an `==` chain or a range test that leads to the next
+  table go away this way.
 
 An arm moves or is left out only when the arm printed before it does not fall
 into it. The census reads the plan: a left-out jump keeps no label alive, and

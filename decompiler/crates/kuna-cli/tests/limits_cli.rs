@@ -67,7 +67,7 @@ fn the_summary_flags_a_switch_over_jumptablemax_and_a_body_over_maxinstruction()
 fn nothing_is_flagged_under_the_default_budgets() {
     let bin = fixture();
     let out = run_kuna(&["functions", &bin, "--summary", "--json"]);
-    assert!(out.contains(r#""limits":{"maxinstruction":100000,"jumptablemax":1024,"over":[]}"#), "{out}");
+    assert!(out.contains(r#""limits":{"maxinstruction":100000,"jumptablemax":16384,"over":[]}"#), "{out}");
 }
 
 /// The plain listing never walks the image for `limits`; a selection that

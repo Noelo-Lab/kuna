@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4945,
-    4945
+    4950,
+    4950
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2597,6 +2597,11 @@
     "data:SWITCHUNROLLEDSENSE #1: by default the switch closes after 0x67, the last value both guards allow",
     "data:SWITCHUNROLLEDSENSE #2: only switchmultipred off reads row 5, past the guard",
     "data:SWITCHUNROLLEDSENSE #3: switchmultipred off still sends flow into an instruction interior",
+    "data:SWITCHVALUES #1: a hole label prints only in h and the unmerged f",
+    "data:SWITCHVALUES #2: f, g, h and the unmerged f keep their six value labels",
+    "data:SWITCHVALUES #3: the hole arm's jump is gone from f",
+    "data:SWITCHVALUES #4: h prints its table as a switch",
+    "data:SWITCHVALUES #5: no dispatch prints as a computed call",
     "data:SYMBOLNAMEBOUND #1: the scope path keeps 255 components verbatim and folds the rest into one",
     "data:SYMBOLNAMEBOUND #2: the CALL resolves to the same folded name rather than sub_addr, so the resolve path applies the identical bound",
     "data:SYMBOLNAMEBOUND #3: the binary's ORIGINAL 1000-component name still addresses the function",
