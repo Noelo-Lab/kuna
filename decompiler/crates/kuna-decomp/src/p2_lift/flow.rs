@@ -2928,12 +2928,11 @@ truncating the fall-through here"
                         && !table.is_override()
                         && table.address_table().iter().all(|addr| !self.outofbounds.contains(addr))
                     {
-                        if let Some(entries) = loaded {
-                            for (entry, through_load) in entries {
-                                load_bypasses.insert(entry, (indop, through_load));
-                            }
-                        } else {
+                        if loaded.is_none() || num == 1 {
                             provisional.insert(indop);
+                        }
+                        for (entry, through_load) in loaded.into_iter().flatten() {
+                            load_bypasses.insert(entry, (indop, through_load));
                         }
                     }
                 }
@@ -2951,6 +2950,9 @@ truncating the fall-through here"
                     crate::kuna_indirectreturn::reaching_edges(&self.data, &dispatches, &new_edges,
                         |to| self.target(to).ok(), |op| self.fallthru_op(op))
                 };
+                for (op, edges) in relevant.iter_mut() {
+                    edges.retain(|edge| load_bypasses.get(&edge.1).is_none_or(|&(owner, _)| owner != *op));
+                }
                 let mut through_load: BTreeMap<OpId, Vec<(OpId, OpId)>> = BTreeMap::new();
                 for &edge in &new_edges {
                     if let Some(&(op, loads_target)) = load_bypasses.get(&edge.1) {
@@ -2982,22 +2984,28 @@ truncating the fall-through here"
                     let mut added = false;
                     for (from, to) in edges {
                         let indexed = load_bypasses.get(&to).is_some_and(|&(owner, _)| owner == op);
-                        if indexed {
-                            // Even an exact destination says nothing about the value
-                            // of the original index on this incoming edge.
-                            if load_bypasses[&to].1 && self.data.obank().get(from)
-                                .is_some_and(|branch| branch.code() == OpCode::CPUI_CBRANCH)
-                            {
-                                guarded_indexed.insert(op);
-                            } else {
-                                open_indexed.insert(op);
-                            }
-                        } else if self.data.obank().get(to).unwrap().get_addr() != &address {
+                        if !indexed && self.data.obank().get(to).unwrap().get_addr() != &address {
                             exact = false;
                             continue;
                         }
                         let value = crate::kuna_returnbranch::target_on_edge(
                             &self.data, from, op, indexed.then_some(to), |index| self.env.is_isa_mode_switch(index));
+                        if indexed {
+                            // Even an exact destination says nothing about the value
+                            // of the original index on this incoming edge. An unproved
+                            // one through the load is revalidated by a full recovery.
+                            let through = load_bypasses[&to].1;
+                            if through && self.data.obank().get(from)
+                                .is_some_and(|branch| branch.code() == OpCode::CPUI_CBRANCH)
+                            {
+                                guarded_indexed.insert(op);
+                            } else if through && value.is_none() {
+                                exact = false;
+                                continue;
+                            } else {
+                                open_indexed.insert(op);
+                            }
+                        }
                         if !reentry && !indexed {
                             let known = self.data.get_jump_table(idx as int4).address_table();
                             exact &= value.is_some_and(|v| known.iter().any(|a| {

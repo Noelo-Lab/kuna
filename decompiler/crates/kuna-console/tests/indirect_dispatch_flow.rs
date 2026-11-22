@@ -131,3 +131,55 @@ fn every_dispatch_left_at_the_retry_cap_is_warned() {
     assert!(sizes.iter().all(|&n| (2..80).contains(&n)), "both chains need more than the cap: {sizes:?}");
     assert_eq!(warnings(&program), 2);
 }
+
+/// Follow flow over a raw x86-64 image loaded and entered at 0x2000.
+fn x86_flow(hex: &str) -> kuna_decomp::funcdata::Funcdata {
+    let bytes: Vec<u8> = (0..hex.len()).step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+        .collect();
+    let path = crate::common::scratch_file("x86-dispatch", "bin");
+    std::fs::write(&path, bytes).unwrap();
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let mut program = bootstrap_from_raw(
+        path.to_str().unwrap(),
+        "x86:LE:64:default:gcc",
+        0x2000,
+        &[0x2000],
+        None,
+        &[root.join("specs").to_string_lossy().into_owned()],
+    )
+    .unwrap();
+    program.commit_pending_analysis().unwrap();
+    let space = program.arch().manage().get_default_code_space().unwrap().clone();
+    let fd = build_and_follow_flow(program.arch_mut(), "loop", Address::new(space, 0x2000), 0).unwrap();
+    std::fs::remove_file(path).unwrap();
+    fd
+}
+
+#[test]
+fn an_unguarded_table_reentered_through_its_load_keeps_its_cases() {
+    // top: movzbl (%rdi),%eax; add $1,%rdi; and $3,%eax; jmp *0x2040(,%rax,8)
+    // Three cases jump back to top and one returns, as in a bytecode loop.
+    let fd = x86_flow(concat!(
+        "31d20fb6074883c70183e003ff24c54020000089d0c383c203ebe783f205ebe2",
+        "6bd207ebdd000000000000000000000000000000000000000000000000000000",
+        "132000000000000016200000000000001b200000000000002020000000000000",
+    ));
+    assert_eq!(fd.num_jump_tables(), 1);
+    assert_eq!(fd.get_jump_table(0).num_entries(), 4);
+    assert!(open_cases(&fd).is_empty());
+}
+
+#[test]
+fn a_loaded_singleton_reentered_before_its_guard_keeps_an_indirect_exit() {
+    // mov $0x2040,%ecx; guard: cmp $1,%edi; ja done; load (%rcx,%rax,8); jmp *%rax.
+    // The first case moves the base to the third row and jumps back to the
+    // guard. The zero second row ends the first recovery after one target.
+    let fd = x86_flow(concat!(
+        "b94020000083ff01771b89f8488b04c1ffe0c70607000000b950200000ebe6c7",
+        "0617000000c30000000000000000000000000000000000000000000000000000",
+        "122000000000000000000000000000001f20000000000000",
+    ));
+    assert_eq!(fd.num_jump_tables(), 0);
+    assert_eq!(open_cases(&fd), [1]);
+}

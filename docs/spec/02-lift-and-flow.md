@@ -2054,6 +2054,12 @@ edge from a sibling switch can share the guarded table without re-entering it.
 If a conditional re-entry repeats the range check, the finished flow graph
 can retain the table. Each incoming selector must have a proved range, and
 every value must read the original rows and reach a known destination.
+An unconditional edge through the load that proves no target, such as a loop
+back to an unguarded byte-indexed or masked dispatch, instead stages the table
+again like a provisional dispatch: a full recovery that still reaches every
+known destination keeps the switch. A single-target table that reads its
+destination from memory is also provisional, so a re-entry before its load,
+such as a jump back to its range check, stages it again.
 After each round of table following,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_indirectreturn.rs (reentry_edges)`
 collects the new direct branches and fallthroughs into previously decoded
