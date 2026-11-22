@@ -91,7 +91,9 @@ fn same(a: &VarnodeData, b: &VarnodeData) -> bool {
 /// Does the body at `entry` read the register `reg` before writing it, other
 /// than to store it (directly or through a temporary its instruction copies it
 /// to, as an AArch64 `stp` does)? Every path from the entry is walked up to its
-/// first call, return, indirect branch or write of the register; a body the
+/// first return, indirect branch, trap or write of the register; a call does
+/// not end a path, since every convention preserves `reg` across it (a call
+/// that does not return is followed by a trap on Apple targets). A body the
 /// walk cannot cover within [`MAX_PROBE`] instructions answers no.
 fn probe_reads<T: kuna_sleigh::translate::Translate + ?Sized>(tr: &T, entry: &Address, reg: &VarnodeData) -> bool {
     let hits = |v: &VarnodeData| {
@@ -169,11 +171,7 @@ fn probe_reads<T: kuna_sleigh::translate::Translate + ?Sized>(tr: &T, entry: &Ad
                     }
                     next.push(target);
                 }
-                OpCode::CPUI_BRANCHIND
-                | OpCode::CPUI_RETURN
-                | OpCode::CPUI_CALL
-                | OpCode::CPUI_CALLIND
-                | OpCode::CPUI_CALLOTHER => next.clear(),
+                OpCode::CPUI_BRANCHIND | OpCode::CPUI_RETURN | OpCode::CPUI_CALLOTHER => next.clear(),
                 _ => {}
             }
         }

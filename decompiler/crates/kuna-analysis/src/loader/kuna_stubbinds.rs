@@ -54,6 +54,18 @@ impl AnalysisPass for StubBindsPass {
 /// left unnamed whose slot carries an addend-free chained bind, sorted by stub.
 /// The chains are walked only when the walk left some stub unnamed.
 pub(crate) fn stub_binds(file: &object::File, bytes: &[u8]) -> Vec<(u64, String)> {
+    stub_bind_symbols(file, bytes)
+        .into_iter()
+        .map(|(addr, name)| {
+            let name = crate::demangle::demangle_name(&name).unwrap_or(name);
+            (addr, name)
+        })
+        .collect()
+}
+
+/// [`stub_binds`] with the import names as the binds spell them, one leading
+/// `_` stripped and not demangled.
+pub(crate) fn stub_bind_symbols(file: &object::File, bytes: &[u8]) -> Vec<(u64, String)> {
     let object::File::MachO64(macho) = file else { return Vec::new() };
     let decode: fn(&[u8], u64) -> Option<u64> = match file.architecture() {
         object::Architecture::Aarch64 => a64_stub_slot,
@@ -117,15 +129,12 @@ fn stub_sections<'data, 'file>(
     })
 }
 
-/// The import name of the addend-free bind on `slot`, demangled.
+/// The import name of the addend-free bind on `slot`.
 fn bind_name(fixups: &ChainedFixups, slot: u64) -> Option<String> {
     let bind = fixups.bind_at(slot).filter(|bind| bind.addend == 0)?;
     let name = std::str::from_utf8(&bind.name).ok()?;
     let name = name.strip_prefix('_').unwrap_or(name);
-    if name.is_empty() {
-        return None;
-    }
-    Some(crate::demangle::demangle_name(name).unwrap_or_else(|| name.to_string()))
+    (!name.is_empty()).then(|| name.to_string())
 }
 
 /// The slot an arm64 stub at `pc` jumps through: fold `adrp`, `add` and the

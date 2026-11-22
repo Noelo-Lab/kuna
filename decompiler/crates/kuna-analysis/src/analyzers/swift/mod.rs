@@ -90,11 +90,12 @@ impl AnalysisPass for SwiftMetadataPass {
                 elf_relative_relocs(ctx.file),
             );
         }
-        let mut imports: HashMap<u64, String> =
-            crate::loader::format::resolve_imports(ctx.file, ctx.bytes)
-                .into_iter()
-                .filter_map(|s| String::from_utf8(s.name).ok().map(|n| (s.addr, n)))
-                .collect();
+        let resolved = crate::loader::format::resolve_imports(ctx.file, ctx.bytes);
+        let import_calls = import_call_targets(ctx.file, ctx.bytes, &resolved);
+        let mut imports: HashMap<u64, String> = resolved
+            .into_iter()
+            .filter_map(|s| String::from_utf8(s.name).ok().map(|n| (s.addr, n)))
+            .collect();
         if ctx.file.format() == object::BinaryFormat::MachO {
             for (slot, name) in crate::loader::macho_stubs::resolve_macho_data_import_slots(ctx.file, ctx.bytes) {
                 if let Ok(name) = String::from_utf8(name) {
@@ -199,10 +200,40 @@ impl AnalysisPass for SwiftMetadataPass {
                 .filter(|s| s.kind() == object::SymbolKind::Text && s.is_definition())
                 .filter_map(|s| Some((s.address(), s.name().ok()?.to_string())))
                 .collect();
-            kuna_swiftcall::bind(&types, regs, &symbols, &mut out);
+            kuna_swiftcall::bind(&types, regs, &symbols, &import_calls, &mut out);
         }
         out
     }
+}
+
+/// The imports a call enters through code of this image (a Mach-O stub, an
+/// ELF PLT entry), by that code's address, sorted.
+fn import_call_targets(
+    file: &object::File,
+    bytes: &[u8],
+    resolved: &[crate::loader::format::ImportSym],
+) -> Vec<(u64, String)> {
+    let code: Vec<(u64, u64)> = file
+        .sections()
+        .filter(|s| match s.flags() {
+            object::SectionFlags::MachO { flags } => {
+                flags & (object::macho::S_ATTR_PURE_INSTRUCTIONS | object::macho::S_ATTR_SOME_INSTRUCTIONS) != 0
+            }
+            _ => s.kind() == object::SectionKind::Text,
+        })
+        .map(|s| (s.address(), s.address().saturating_add(s.size())))
+        .collect();
+    let mut out: Vec<(u64, String)> = resolved
+        .iter()
+        .filter(|s| s.kind == crate::loader::format::ImportSymKind::Import)
+        .filter(|s| code.iter().any(|&(lo, hi)| s.addr >= lo && s.addr < hi))
+        .filter_map(|s| Some((s.addr, String::from_utf8(s.name.clone()).ok()?)))
+        .collect();
+    // A stripped image's stubs keep their imports in the chained binds only.
+    out.extend(crate::loader::kuna_stubbinds::stub_bind_symbols(file, bytes));
+    out.sort();
+    out.dedup();
+    out
 }
 
 /// An ELF's relocated pointer slots (`R_*_RELATIVE`, the addend the loader

@@ -2606,6 +2606,22 @@ llvm-strip --strip-all -o swift_infer_elf swift_infer_syms_elf
 
 SHA-256: `27e0e70757ea530825ba3e489f012c93566fa02f730e99b928ed951bd65ab162`.
 
+### `swift_self_elf` — `swiftself` read after a call, and an imported mutating method (`swiftcall`)
+
+`swift_self_elf` (x86-64 ELF, 10 KB, stripped) is the fixture for
+`tests/stages/kuna-swiftself.xml`. Its source `swift_self_elf.swift` returns an
+escaping closure from `makeReader`, whose partial-apply forwarder (0x2250) calls
+`opaque` before it reads the captured `Box` through r13; `label` (0x24b0) appends
+to a local `String` through the imported `String.append(_:)`, which takes the
+string's address in r13. Built with the swiftly 6.4.2 toolchain:
+
+```bash
+swiftc -O -module-name selffix -parse-as-library swift_self_elf.swift -o swift_self_syms_elf
+llvm-strip --strip-all -o swift_self_elf swift_self_syms_elf
+```
+
+SHA-256: `e358a5be499c6448e3b81ac339f267a4e6dcf3b409536b3264629a64e26b6d05`.
+
 ### `swift_call_helper_elf` — a mutating struct call after a runtime helper (`swiftcall`)
 
 `swift_call_helper_elf` (x86-64 ELF, 17 KB, with symbols) is the fixture for the

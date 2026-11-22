@@ -1,0 +1,59 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    swiftself read after a call, and the self of an imported Swift method
+    (`option swiftcall on|off`).
+
+    Issue: a function the metadata did not bind took swiftself (r13 / x20)
+    only when its body read the register before its first call, so a closure
+    that calls a function first read its context as an uninitialised local
+    (`int8 v3; // r13`). A call to an imported Swift method such as
+    `String.append(_:)` kept the C model, so the address of the string it
+    appends to, passed in swiftself, was dropped.
+
+    Stage / sub-stage: P4 prototype recovery. `p4_calls/kuna_swiftinfer.rs
+    (probe_reads)` walks past calls, which preserve the register; the
+    `swiftcall` arm (`kuna-analysis analyzers/swift/kuna_swiftcall.rs (bind)`)
+    binds the Swift model to the stub of every import whose symbol demangles
+    to a method.
+
+    The fixture `swift_self_elf` is a stripped swiftc 6.4.2 build of
+    `swift_self_elf.swift` (recipe in the fixtures README): 0x2250 is the
+    partial-apply forwarder of `makeReader`'s closure, 0x24b0 is `label`.
+    Pass 1 (`option swiftcall off`) is the BUG, pass 2 (the default) the FIX.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_self_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>option swiftcall off</com>
+  <com>read symbols</com>
+  <com>load addr 0x2250</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x24b0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_self_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x2250</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x24b0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="swiftcall off: the closure reads r13 after a call as an uninitialised local" min="1" max="1">int8 v3; // r13</stringmatch>
+<stringmatch name="swiftcall off: String.append loses the string it appends to" min="1" max="1">Swift\.String\.append\(_:\)\(0x7320," s"\);</stringmatch>
+<stringmatch name="swiftcall on: a closure that calls first takes its context as swiftself" min="1" max="1">int8 sub_2250\(void \*swiftself\)</stringmatch>
+<stringmatch name="swiftcall on: the context is read after the call" min="1" max="1">return v1 \+ \(\(int8 \*\)swiftself\)\[2\];</stringmatch>
+<stringmatch name="swiftcall on: String.append is passed the string's address" min="1" max="1">Swift\.String\.append\(_:\)\(&amp;v2,0x7320," s"\);</stringmatch>
+</decompilertest>

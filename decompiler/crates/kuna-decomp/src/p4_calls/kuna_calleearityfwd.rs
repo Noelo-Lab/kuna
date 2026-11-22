@@ -53,7 +53,8 @@
 //! search, the promotion plan and every one of its refusals are
 //! [`calleearity`](crate::p4_calls::kuna_calleearity)'s, unchanged: register
 //! storage only, real Varnodes only, all-or-nothing, never subtractive, and only
-//! a call that recovered nothing at all.  This option adds no new way to promote
+//! a call that recovered nothing at all (a Swift `self` alone counting as
+//! nothing, and kept first).  This option adds no new way to promote
 //! a trial; it only lets the existing one see the sites that come after.
 //!
 //! Two further limits are this module's own:
@@ -94,6 +95,9 @@ pub struct PendingRescue {
     op: OpId,
     entry: Address,
     candidates: Vec<(Address, int4, VarnodeId)>,
+    /// (kuna `swiftcall`) The Swift `self` the call already passes, which
+    /// stays its first argument.
+    swift_self: Option<(Address, int4)>,
 }
 
 /// Capture a call site that is about to render with an empty argument list.
@@ -113,9 +117,15 @@ pub fn capture_empty_call(fc: &FuncCallSpecs, data: &Funcdata) -> Option<Pending
     }
     let active = fc.active_input();
     let mut candidates: Vec<(Address, int4, VarnodeId)> = Vec::new();
+    let mut swift_self = None;
     for i in 0..active.get_num_trials() {
         let t = active.get_trial(i);
         if t.is_used() {
+            // (kuna `swiftcall`) A Swift `self` alone is no recovered list.
+            if swift_self.is_none() && crate::p4_calls::kuna_swiftcall::is_self_storage(data, t.get_address(), t.get_size()) {
+                swift_self = Some((t.get_address().clone(), t.get_size()));
+                continue;
+            }
             return None; // this site recovered something; not ours to speak to
         }
         if t.is_definitely_not_used() || t.is_unref() {
@@ -144,7 +154,7 @@ pub fn capture_empty_call(fc: &FuncCallSpecs, data: &Funcdata) -> Option<Pending
     if candidates.is_empty() {
         return None;
     }
-    Some(PendingRescue { op, entry: fc.get_entry_address().clone(), candidates })
+    Some(PendingRescue { op, entry: fc.get_entry_address().clone(), candidates, swift_self })
 }
 
 /// Retry every captured call site now that the pass has finalized all of them.
@@ -164,8 +174,9 @@ pub fn rescue_pending(data: &mut Funcdata, pending: &[PendingRescue]) -> int4 {
 /// Rewrite one captured call's input list from a now-final sibling, or leave it
 /// alone.  Returns whether the call gained arguments.
 fn rescue_one(data: &mut Funcdata, p: &PendingRescue) -> bool {
+    let passed: int4 = 1 + int4::from(p.swift_self.is_some());
     match data.obank().get(p.op) {
-        Some(o) if !o.is_dead() && o.code() == OpCode::CPUI_CALL && o.num_input() == 1 => {}
+        Some(o) if !o.is_dead() && o.code() == OpCode::CPUI_CALL && o.num_input() == passed => {}
         _ => return false,
     }
     let witness = best_witness_for(&p.entry, p.op, data);
@@ -188,8 +199,13 @@ fn rescue_one(data: &mut Funcdata, p: &PendingRescue) -> bool {
         .collect();
     let Some(mut promote) = plan_promotions(&witness, &views) else { return false };
     promote.sort_unstable();
-    let Some(in0) = data.obank().get(p.op).and_then(|o| o.get_in(0)) else { return false };
-    let mut newparam = vec![in0];
+    let Some(mut newparam) = data.obank().get(p.op).map(|o| (0..passed).filter_map(|i| o.get_in(i)).collect::<Vec<_>>())
+    else {
+        return false;
+    };
+    if newparam.len() != passed as usize {
+        return false;
+    }
     for i in &promote {
         let (_, _, vn) = p.candidates[*i as usize];
         if data.vbank().get(vn).is_none() {
@@ -197,17 +213,19 @@ fn rescue_one(data: &mut Funcdata, p: &PendingRescue) -> bool {
         }
         newparam.push(vn);
     }
-    if newparam.len() < 2 || data.op_set_all_input(p.op, &newparam).is_err() {
+    if newparam.len() <= passed as usize || data.op_set_all_input(p.op, &newparam).is_err() {
         return false;
     }
     // Record where the arguments lived so a later rescue can witness this site.
     if let Some(idx) = data.get_call_specs_index(p.op) {
-        let storage: Vec<(Address, int4)> = promote
+        let storage: Vec<(Address, int4)> = p
+            .swift_self
             .iter()
-            .map(|i| {
+            .cloned()
+            .chain(promote.iter().map(|i| {
                 let (addr, size, _) = &p.candidates[*i as usize];
                 (addr.clone(), *size)
-            })
+            }))
             .collect();
         data.get_call_specs_mut(idx).set_final_input_storage(storage);
     }

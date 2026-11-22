@@ -114,7 +114,14 @@ pub(crate) fn witness_storage(data: &Funcdata, fc: &FuncCallSpecs) -> Option<Vec
     if o.is_dead() || o.code() != OpCode::CPUI_CALL {
         return None;
     }
-    let storage = fc.final_input_storage();
+    // (kuna `swiftcall`) A sibling's `swiftself` says nothing about this
+    // call's: the register is a section of its own, decided per call.
+    let storage: Vec<(Address, int4)> = fc
+        .final_input_storage()
+        .iter()
+        .filter(|(a, s)| !crate::p4_calls::kuna_swiftcall::is_self_storage(data, a, *s))
+        .cloned()
+        .collect();
     if storage.is_empty() {
         return None;
     }
@@ -123,7 +130,7 @@ pub(crate) fn witness_storage(data: &Funcdata, fc: &FuncCallSpecs) -> Option<Vec
     }) {
         return None;
     }
-    Some(storage.to_vec())
+    Some(storage)
 }
 
 /// The richest usable witness for `fc`: another call spec to the same entry

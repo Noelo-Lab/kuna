@@ -2279,7 +2279,8 @@ mod tests {
         // and kuna-swiftglobals / a Swift global typed from its storage symbol
         // and kuna-swiftinfer / an unbound function that reads swiftself is Swift; a two-word result is a pair
         // and kuna-swiftnames / Swift accessors, witnesses, value witnesses and helpers named from code shape
-        assert_eq!(count, 860, "corpus file count drifted");
+        // and kuna-swiftself / swiftself read after a call; an imported Swift method takes its self
+        assert_eq!(count, 861, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
