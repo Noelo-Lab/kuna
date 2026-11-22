@@ -33,17 +33,25 @@
 //! in the first general-purpose result register, its output or an INDIRECT
 //! creation marked a possible output ([`call_result_root`]), is scored like
 //! any other value as the next call's input, and another call reading the same
-//! value as an argument does not refuse it ([`scoring_argument`]).  The
-//! RETURNs get a read of the register when nothing else names it ([`plant`]),
-//! so the hand-off is heritaged at all; that trial is settled by
-//! [`settle_planted`].  The RETURN keeps the strict reading: `bl g; cbz x0,L;
-//! ...; L: ret` is `long h(long a) { long r = g(a); if (r) *p = 1; return r; }`
-//! and `void h(long a) { if (g(a)) *p = 1; }` alike, and only the callers
-//! decide it (`voidret`).  `all`: a result that reaches every live RETURN
-//! untouched is the return value too ([`scoring_return`]), the reading a
-//! reader who takes an untouched `x0` at the `ret` for the result makes.  A root the function computes itself on
-//! another path, or beside a value the function returns in another storage
-//! class ([`yield_to_own_value`]), keeps the strict reading in every mode.
+//! value as an argument does not refuse it ([`scoring_argument`]), when one
+//! end of the hand-off says it is one: the next callee takes an argument in
+//! the register (its body reads it on entry, or its stated recovery lists
+//! it), or every callee behind the value returns one there (a locked or stated
+//! output).  Neither end may say no: a callee whose prototype returns nothing
+//! there, or whose body never reads the register, ends the hand-off.  An
+//! import with no prototype handing to another says nothing either way, and
+//! `bl g; bl h` between two of them is far more often `g(); h();` than
+//! `h(g())`.  The RETURNs get a read of the register when nothing else names
+//! it ([`plant`]), so the hand-off is heritaged at all; that trial is settled
+//! by [`settle_planted`].  The RETURN keeps the strict reading: `bl g; cbz
+//! x0,L; ...; L: ret` is `long h(long a) { long r = g(a); if (r) *p = 1;
+//! return r; }` and `void h(long a) { if (g(a)) *p = 1; }` alike, and only the
+//! callers decide it (`voidret`).  `all`: a result that reaches every live
+//! RETURN untouched is the return value too ([`scoring_return`]), the reading
+//! a reader who takes an untouched `x0` at the `ret` for the result makes.  A
+//! root the function computes itself on another path, or beside a value the
+//! function returns in another storage class ([`yield_to_own_value`]), keeps
+//! the strict reading in every mode.
 
 use std::rc::Rc;
 
@@ -99,13 +107,83 @@ impl OptionCallResultUse {
 }
 
 /// Is the trial rooted at `root` for `opmatch` (a CALL or CALLIND input, or
-/// a RETURN) one a call result satisfies: [`call_result_root`] for a call,
+/// a RETURN) one a call result satisfies: [`scoring_argument`] for a call,
 /// [`scoring_return`] for a RETURN?
 pub fn scores_trial(data: &Funcdata, root: VarnodeId, opmatch: OpId) -> bool {
     match data.obank().get(opmatch).map(|o| o.code()) {
         Some(OpCode::CPUI_RETURN) => scoring_return(data, opmatch, root),
-        Some(OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) => call_result_root(data, root),
+        Some(OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) => scoring_argument(data, opmatch, root),
         _ => false,
+    }
+}
+
+/// What the evidence says about one end of a hand-off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Evidence {
+    /// The callee returns a value in the register, or takes one there.
+    Yes,
+    /// It does not.
+    No,
+    /// Nothing says.
+    Unknown,
+}
+
+/// The call spec of the CALL or CALLIND `call`.
+fn spec_of(data: &Funcdata, call: OpId) -> Option<&crate::fspec::FuncCallSpecs> {
+    (0..data.num_calls()).map(|i| data.get_call_specs(i)).find(|fc| fc.get_op() == call)
+}
+
+fn disjoint(a: &Address, asize: int4, b: &Address, bsize: int4) -> bool {
+    let a_end = a.get_offset().wrapping_add(asize.max(0) as u64);
+    let b_end = b.get_offset().wrapping_add(bsize.max(0) as u64);
+    a.get_space().map(|s| s.get_index()) != b.get_space().map(|s| s.get_index())
+        || a_end <= b.get_offset()
+        || b_end <= a.get_offset()
+}
+
+/// Does the callee of `fc` return a value in `[addr, addr+size)`? `No` for a
+/// prototype with its output locked and no return value, or one returned in
+/// other storage (a `double` in `d0` on hard-float ARM, whose `r0` the call
+/// also clobbers), and the same of a recovery `protoorder` stated; `Yes` for
+/// a locked or stated output there. A body is not asked: one that never
+/// writes the register preserves it and leaves no creation at the call
+/// (`calleepreserves`), and one that writes it on some path returns a value
+/// there as far as its bytes say.
+fn returns_value(data: &Funcdata, fc: &crate::fspec::FuncCallSpecs, addr: &Address, size: int4) -> Evidence {
+    if fc.proto().is_output_locked() {
+        let out = fc.proto().get_output();
+        let void = fc.proto().get_output_type().is_none_or(|t| t.get_metatype() == type_metatype::TYPE_VOID);
+        return if void || disjoint(&out.get_address(), out.get_size(), addr, size) { Evidence::No } else { Evidence::Yes };
+    }
+    // `protoorder types` states the callee's recovery without locking it;
+    // its result storage is recorded only with `passthrough` on.
+    match data.kuna_protoorder_types(fc.get_entry_address()).map(|s| s.result.as_ref()) {
+        Some(Some((out_addr, out_size))) if disjoint(out_addr, *out_size, addr, size) => Evidence::No,
+        Some(Some(_)) => Evidence::Yes,
+        Some(None) if data.get_arch().pass_through => Evidence::No,
+        _ => Evidence::Unknown,
+    }
+}
+
+/// Does the callee of `fc` take an argument in `[addr, addr+size)`? Its body
+/// says so when the bounded entry decode covered it
+/// ([`CalleeEntryDead::never_takes`](crate::p4_calls::kuna_calleedeadarg::CalleeEntryDead::never_takes),
+/// [`CalleeEntryDead::proves_input`](crate::p4_calls::kuna_calleedeadarg::CalleeEntryDead::proves_input)),
+/// and a stated recovery does by the registers it lists.
+fn takes_argument(data: &Funcdata, fc: &crate::fspec::FuncCallSpecs, addr: &Address, size: int4) -> Evidence {
+    let entry = fc.get_entry_address();
+    if let Some(facts) = data.kuna_callee_entry_dead(entry) {
+        if facts.never_takes(addr, size) {
+            return Evidence::No;
+        }
+        if facts.proves_input(addr, size) {
+            return Evidence::Yes;
+        }
+    }
+    match data.kuna_protoorder_types(entry) {
+        Some(s) if s.inputs.iter().any(|(a, sz, _)| !disjoint(a, *sz, addr, size)) => Evidence::Yes,
+        Some(s) if s.arity_sound => Evidence::No,
+        _ => Evidence::Unknown,
     }
 }
 
@@ -115,90 +193,68 @@ pub fn scores_trial(data: &Funcdata, root: VarnodeId, opmatch: OpId) -> bool {
 /// in the function itself (`fnstsw ax` on one arm, a call's `ax` on the other)
 /// is not, and keeps the strict reading.  Off with the option.
 pub fn call_result_root(data: &Funcdata, root: VarnodeId) -> bool {
-    data.get_arch().call_result_use != CallResultUse::Off && walk_call_results(data, root)
+    data.get_arch().call_result_use != CallResultUse::Off && walk_call_results(data, root).is_some()
 }
 
 /// Does every definition behind `root` end at a call result [`scores_def`]
-/// accepts, and at least one?
-fn walk_call_results(data: &Funcdata, root: VarnodeId) -> bool {
+/// accepts, and at least one? With the answer, whether every one of those
+/// callees is known to return a value there ([`returns_value`]).
+fn walk_call_results(data: &Funcdata, root: VarnodeId) -> Option<bool> {
     let mut seen = crate::kuna_fasthash::FxHashSet::default();
     let mut stack = vec![root];
     let mut any = false;
+    let mut known = true;
     while let Some(vn) = stack.pop() {
         if !seen.insert(vn) {
             continue;
         }
-        let Some(def) = data.vbank().get(vn).and_then(|v| v.get_def()) else { return false };
-        let Some(op) = data.obank().get(def) else { return false };
+        let def = data.vbank().get(vn).and_then(|v| v.get_def())?;
+        let op = data.obank().get(def)?;
         match op.code() {
             OpCode::CPUI_MULTIEQUAL => stack.extend((0..op.num_input()).filter_map(|i| op.get_in(i))),
             OpCode::CPUI_COPY => stack.extend(op.get_in(0)),
             OpCode::CPUI_INDIRECT if !op.is_indirect_creation() => stack.extend(op.get_in(0)),
-            _ if scores_def(data, def) => any = true,
-            _ => return false,
+            _ => {
+                known &= scores_def(data, def)? == Evidence::Yes;
+                any = true;
+            }
         }
     }
-    any
+    any.then_some(known)
 }
 
 /// Is `def` a call's result in the first result register: the CALL or
 /// CALLIND itself when the callee's output is known, or else the INDIRECT
 /// creation of a register the callee may have left its result in (a creation
 /// whose zero input is not an "indirect zero", the range being a possible
-/// output of the callee's model, and whose effect is a CALL or CALLIND)?
-fn scores_def(data: &Funcdata, def: OpId) -> bool {
-    let Some(op) = data.obank().get(def) else { return false };
-    let Some(out) = op.get_out().and_then(|v| data.vbank().get(v)) else { return false };
-    let first_register = first_result_register(data, out.get_addr(), out.get_size());
+/// output of the callee's model, whose effect is a CALL or CALLIND, and whose
+/// callee is not known to return nothing there)? With it, what says the
+/// callee returns a value ([`returns_value`]).
+fn scores_def(data: &Funcdata, def: OpId) -> Option<Evidence> {
+    let op = data.obank().get(def)?;
+    let out = op.get_out().and_then(|v| data.vbank().get(v))?;
+    if !first_result_register(data, out.get_addr(), out.get_size()) {
+        return None;
+    }
     match op.code() {
-        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => first_register,
+        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => Some(Evidence::Yes),
         OpCode::CPUI_INDIRECT if op.is_indirect_creation() => {
             let possible_output = op
                 .get_in(0)
                 .and_then(|v| data.vbank().get(v))
                 .is_some_and(|v| !v.is_indirect_zero());
-            possible_output
-                && first_register
-                && crate::kuna_retcallhalf::created_by_call(data, op)
-                && !callee_result_elsewhere(data, op, out.get_addr(), out.get_size())
+            if !possible_output || !crate::kuna_retcallhalf::created_by_call(data, op) {
+                return None;
+            }
+            let iop = op.get_in(1).and_then(|v| data.vbank().get(v))?;
+            let call = OpId::from(slotmap::KeyData::from_ffi(iop.get_offset()));
+            let evidence = spec_of(data, call).map_or(Evidence::Unknown, |fc| {
+                returns_value(data, fc, out.get_addr(), out.get_size())
+            });
+            (evidence != Evidence::No).then_some(evidence)
         }
-        _ => false,
+        _ => None,
     }
-}
-
-/// Is the call `creation` is the effect of one whose callee's output is
-/// settled somewhere other than `[addr, addr+size)`: a prototype with its
-/// output locked and no return value, or one returned in other storage (a
-/// `double` in `d0` on hard-float ARM, whose `r0` the call also clobbers)?
-/// The register the creation stands for is then not a result.
-fn callee_result_elsewhere(data: &Funcdata, creation: &crate::op::PcodeOp, addr: &Address, size: int4) -> bool {
-    let Some(iop) = creation.get_in(1).and_then(|v| data.vbank().get(v)) else { return false };
-    let call = OpId::from(slotmap::KeyData::from_ffi(iop.get_offset()));
-    let end = addr.get_offset().wrapping_add(size.max(0) as u64);
-    (0..data.num_calls()).any(|i| {
-        let fc = data.get_call_specs(i);
-        if fc.get_op() != call {
-            return false;
-        }
-        let disjoint = |out_addr: &Address, out_size: int4| {
-            let out_end = out_addr.get_offset().wrapping_add(out_size.max(0) as u64);
-            out_addr.get_space().map(|s| s.get_index()) != addr.get_space().map(|s| s.get_index())
-                || out_end <= addr.get_offset()
-                || end <= out_addr.get_offset()
-        };
-        if fc.proto().is_output_locked() {
-            let out = fc.proto().get_output();
-            return fc.proto().get_output_type().is_none_or(|t| t.get_metatype() == type_metatype::TYPE_VOID)
-                || disjoint(&out.get_address(), out.get_size());
-        }
-        // `protoorder types` states the callee's recovery without locking it;
-        // its result storage is recorded only with `passthrough` on.
-        match data.kuna_protoorder_types(fc.get_entry_address()).map(|s| s.result.as_ref()) {
-            Some(Some((out_addr, out_size))) => disjoint(out_addr, *out_size),
-            Some(None) => data.get_arch().pass_through,
-            None => false,
-        }
-    })
 }
 
 /// Does `[addr, addr+size)` lie in the output model's first general-purpose
@@ -248,12 +304,14 @@ fn every_return_hands_back_a_call_result(data: &Funcdata, slot: int4) -> bool {
         .peekable();
     rets.peek().is_some()
         && rets.all(|r| {
-            data.obank().get(r).and_then(|o| o.get_in(slot)).is_some_and(|vn| walk_call_results(data, vn))
+            data.obank().get(r).and_then(|o| o.get_in(slot)).is_some_and(|vn| walk_call_results(data, vn).is_some())
         })
 }
 
 /// Is `opmatch` a CALL or CALLIND scoring `root`, a call result on every path
-/// ([`call_result_root`])?  `only_op_use` then lets another call read the
+/// ([`call_result_root`]), handed on as the callee's argument: the callee
+/// takes one there ([`takes_argument`]), or says nothing and every callee
+/// behind `root` returns one there ([`returns_value`])?  `only_op_use` then lets another call read the
 /// same value as an argument: `x = [a allKeys]; [x containsObject:k];
 /// objc_release(x)` passes the retained object to two callees, and upstream
 /// refuses a Varnode two different callees read (`checkCallDoubleUse` allows
@@ -261,8 +319,17 @@ fn every_return_hands_back_a_call_result(data: &Funcdata, slot: int4) -> bool {
 /// a call produced and the function went on to hand around is a value, not
 /// a register two callees happened to share.
 pub fn scoring_argument(data: &Funcdata, opmatch: OpId, root: VarnodeId) -> bool {
-    data.obank().get(opmatch).is_some_and(|o| matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND))
-        && call_result_root(data, root)
+    if data.get_arch().call_result_use == CallResultUse::Off
+        || !data.obank().get(opmatch).is_some_and(|o| matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND))
+    {
+        return false;
+    }
+    let Some(producers_known) = walk_call_results(data, root) else { return false };
+    let Some(vn) = data.vbank().get(root) else { return false };
+    let consumer = spec_of(data, opmatch).map_or(Evidence::Unknown, |fc| {
+        takes_argument(data, fc, vn.get_addr(), vn.get_size())
+    });
+    consumer == Evidence::Yes || (consumer == Evidence::Unknown && producers_known)
 }
 
 /// Is `op`'s use of `vn` one a returned call result may also have before the
@@ -299,7 +366,7 @@ pub fn yield_to_own_value(data: &Funcdata, active: &mut crate::fspec::ParamActiv
                     data.obank()
                         .get(r)
                         .and_then(|o| o.get_in(t.get_slot()))
-                        .is_some_and(|vn| walk_call_results(data, vn))
+                        .is_some_and(|vn| walk_call_results(data, vn).is_some())
                 })
         })
         .collect();

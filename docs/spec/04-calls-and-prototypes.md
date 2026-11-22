@@ -9637,7 +9637,7 @@ With the option on (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callresultu
 the INDIRECT effects of later calls, every definition is a CALL or CALLIND's
 output or a creation whose range is a possible output of the callee's model,
 whose effect is a call, and whose callee's result is not settled elsewhere
-(`kuna_callresultuse.rs (callee_result_elsewhere)`: a locked `void` output, a
+(`kuna_callresultuse.rs (returns_value)`: a locked `void` output, a
 locked output in other storage, or under `protoorder types` a stated result
 in other storage, as hard-float ARM's `double dfi(double, float, int)` returns
 in `d0` and clobbers the `r0` the next call reads; a stated recovery with no
@@ -9655,6 +9655,23 @@ pointer. A root the function computes itself on another path keeps the strict
 reading: `statuscmp`'s `fnstsw ax` on one arm and a call's `ax` on the other
 is a scratch register, not a return, and the datatest that collapses it to
 `val2 <= val1` is unchanged.
+
+A hand-off also needs one end of it to say it is one
+(`kuna_callresultuse.rs (scoring_argument)`): the next callee takes an
+argument in the register, by its body (the bounded entry decode reads it
+before writing it, `CalleeEntryDead::proves_input`) or by a recovery
+`protoorder` stated, or every callee behind the value returns one there, by
+a locked or stated output (`kuna_callresultuse.rs (takes_argument)`,
+`kuna_callresultuse.rs (returns_value)`). Neither end may say no: a body
+that never reads the register (`CalleeEntryDead::never_takes`), a stated
+recovery that lists no argument there, or a prototype that returns nothing
+there ends it. Two calls nothing is known of hand nothing on, since in C
+`bl g; bl h` between two of them is far more often `g(); h();` than
+`h(g())`, and in Swift the second is often a runtime entry point that takes
+its object in another register (`swift_release_x8`). An Objective-C
+selector stub's call, which already carries the result its method types
+give, says yes, and so does a C callee in the image that reads its first
+argument.
 
 So the hand-off is heritaged at all, `kuna_callresultuse.rs (plant)` gives
 the RETURNs a read of that register the way `voidret` plants the storage a
@@ -9676,38 +9693,54 @@ The RETURN keeps upstream's strict reading under `on`: `bl g; cbz x0,L; ...;
 L: ret` is `long h(long a) { long r = g(a); if (r) *p = 1; return r; }` and
 `void h(long a) { if (g(a)) *p = 1; }` alike, and a store of the result
 before the `ret` is the body of as many `void` functions as of returning
-ones. `all` (`kuna_callresultuse.rs (scoring_return)`) takes a result that
+ones. nanopb's `pb_decode_bool` is that shape (`bl pb_decode_varint32_eof;
+cbz w0,L; ...; L: ret`, the source `return false` / `return true` folded
+into the callee's `w0`), has no caller in the image, and stays `void` under
+`on`. `all` (`kuna_callresultuse.rs (scoring_return)`) takes a result that
 reaches every live RETURN untouched for the return value, the reading a
-reader who takes an untouched `x0` at the `ret` for the result makes. Over 675 datatest assertions nothing
-changes. On the 300 app functions, `on` changes 101: 240 call sites gain an
-argument, 217 of them the argument a signature-aware reader shows and 23 one
-more (`swift_release_x8` and `swift_retain_x8` thunks whose argument is `x8`,
-in the image and settled by a full `decompile-all`); the argument-less call
-sites fall from 668 to 298, and no function changes between `void` and a
-return. `all` takes `void` from 203 functions to 65: 86 of the 139 the reader
-returns from now return, and 56 return where the reader has `void`, 53 of
-them Swift functions ending in an ARC release whose `void` only a runtime
-signature table knows. `decompile-all` of an 834 KiB framework takes the
-same time to within the noise.
+reader who takes an untouched `x0` at the `ret` for the result makes, and
+prints it `int _pb_decode_bool(...)` with `return v2;`.
 
-The option is off by default because the reading is right where results are
-handed from message to message and wrong in most other code. In C, `bl g;
-bl h` with `x0` untouched is far more often `g(); h();`, two calls of which
-the second takes nothing, than `h(g())`. Over 12 AArch64 builds of bzip2,
-zlib, dash and gzip (clang 21 at O0, O2 and O2 `-fno-inline`), `on` changed
-141 of 3,202 functions; of the 276 arguments it added at calls to in-image
-functions whose DWARF gives their parameter count, 275 were false
-(`cadvise(void)`, `onint(void)`, `yylex(void)`, `flush_outbuf(void)`), and 8
-`void` functions became returning (dash's `flushall`, gzip's `warning`).
-Once the first register is active at a call, upstream's
-contiguity rules follow it: gcc's ARM `push {r3,lr}; bl g; pop.w {r3,lr};
-b.w h`, from `void t1(void) { g(6); h(); }`, gave `h` the pair `r1:r0`, the
-leftover `r2` and the reloaded `r3`, and `t1` four parameters
-(`tests/stages/kuna-callresultuse-armtail.xml` pins the default). On x86-64
-`rax` is no argument register, but a `mov rcx,rax` temporary at a gcc -O0
-variadic call was taken for a trailing argument (`fprintf(stream,fmt,v1,fmt)`).
-With the option off every function decompiles as it did before the option
-existed.
+Forced on, the option moves none of the 675 datatest assertions and none of
+the 4,951 stage assertions. On an iOS app's main binary (Apple options on),
+`on` changes 14 of a 91-function sample and 21 of a 300-function one; a
+result of a void runtime release (`swift_bridgeObjectRelease`,
+`swift_release_x<N>`, `objc_release_x<N>`) handed to the next call, which
+the reading without the evidence rule printed 38 and 110 times there, is
+left once in the smaller sample. What is still wrong there is the other end:
+a register-specific entry point (`objc_release_x19`, `swift_release_x8`)
+takes its object in `x19` or `x8`, its stub says nothing, and a value a call
+with a stated result left in `x0` before it is printed as its argument, 8
+times in one 1,015-line function (17 such arguments with the option off, 25
+on, 87 without the evidence rule); only a prototype of the entry point
+settles that. The ARC calls printed with no argument fall from 111 to 42
+and from 54 to 2: a message sent through `objc_msgSend` or
+`objc_msgSendSuper2` declares no result type, and its hand-off to
+`objc_retainAutoreleasedReturnValue` waits for a prototype of either. In
+the app's AppAuthCore framework (705 functions, selector stubs) they fall
+from 642 to 14, and the app's nanopb framework does not change. Over
+clang 22 arm64 builds of bzip2 and zlib at O0 and O2, nothing changes; the
+reading without the evidence rule added four arguments there, all to
+bzip2's `cadvise(void)`.
+
+The option is off by default because, without that rule, the reading was
+right where results are handed from message to message and wrong in most
+other code. In C, `bl g; bl h` with `x0` untouched is far more often `g();
+h();`, two calls of which the second takes nothing, than `h(g())`. Over 12
+AArch64 builds of bzip2, zlib, dash and gzip (clang 21 at O0, O2 and O2
+`-fno-inline`), it changed 141 of 3,202 functions; of the 276 arguments it
+added at calls to in-image functions whose DWARF gives their parameter
+count, 275 were false (`cadvise(void)`, `onint(void)`, `yylex(void)`,
+`flush_outbuf(void)`), and 8 `void` functions became returning (dash's
+`flushall`, gzip's `warning`). Once the first register is active at a call,
+upstream's contiguity rules follow it: gcc's ARM `push {r3,lr}; bl g; pop.w
+{r3,lr}; b.w h`, from `void t1(void) { g(6); h(); }`, gave `h` the pair
+`r1:r0`, the leftover `r2` and the reloaded `r3`, and `t1` four parameters
+(`tests/stages/kuna-callresultuse-armtail.xml` pins the default, and holds
+with the option on). On x86-64 `rax` is no argument register, but a `mov
+rcx,rax` temporary at a gcc -O0 variadic call was taken for a trailing
+argument (`fprintf(stream,fmt,v1,fmt)`). With the option off every function
+decompiles as it did before the option existed.
 
 ### Raw caller reads prove a return outside callee-first settling (`kuna_callerreads.rs`)
 
