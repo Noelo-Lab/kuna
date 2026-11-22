@@ -1487,6 +1487,9 @@ impl Action for ActionActiveParam {
                 let reads = fc.callee_reg_model().is_some_and(|m| fc.proto().has_matching_model(m));
                 fc.get_active_input().set_callee_reads_registers(reads);
                 crate::kuna_armfloatargs::mark_single_floats(&mut fc, data);
+                // (kuna) `calleefilledarg`: an unfilled register the callee
+                // loads itself is no slot, and ends no argument list.
+                crate::p4_calls::kuna_calleefilledarg::mark(&mut fc, data);
                 let written = crate::kuna_armfloatargs::written_inputs(&fc, data);
                 // resolveModel(activeinput) + deriveInputMap(activeinput): resolve
                 // the model and fill in the trial → parameter map.

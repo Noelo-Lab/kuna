@@ -19,6 +19,8 @@ real ELF parser.
 | `ppc32_stack_chk_local_le.o` | built from `ppc32_stack_chk_local_le.s` (`llvm-mc -triple=powerpcle-unknown-linux-gnu -filetype=obj ppc32_stack_chk_local_le.s -o ppc32_stack_chk_local_le.o`, Ubuntu LLVM version 21.1.8), SHA-256 `a944a1c90b2f535ec424c48d3c8a49680c657530e65b521c1309080ad4393cf8` | ELF32 little-endian PowerPC relocatable object; defines global function r6; has an R_PPC_REL24 relocation against undefined symbol __stack_chk_fail_local; r3 is set (mulli 3,3,3) before the branch to the call; read by `kuna-cli/tests/stack_chk_fail_local.rs` and `tests/stages/kuna-stackchklocal.xml` |
 | `ppc32_stack_chk_local_linked_be.so`, `ppc32_stack_chk_local_linked_le.so` | built from `ppc32_stack_chk_local_linked.s` (`llvm-mc -triple=powerpc-unknown-linux-gnu -filetype=obj ppc32_stack_chk_local_linked.s -o p.o`; `ld.lld -shared -z max-page-size=0x1000 p.o -o ppc32_stack_chk_local_linked_be.so`, and the same with `-triple=powerpcle-unknown-linux-gnu` for `_le.so`, Ubuntu LLVM version 21.1.8), SHA-256 `4b6d867f6ecfd2a62083ed9ff0e2ec1688148f99b27c5b6702b1b0b5d1d49533` (BE) and `9e19f6d135cc8aa73e697bb5d557d7cd9bd2c463c151eca45190a2f7c79ae7e3` (LE) | linked ELF32 PowerPC shared objects, 1696 bytes each; readelf -s: r6 at 0x11c4 with size 52 (GLOBAL), the same body as `ppc32_stack_chk_local_*.o`, its `bl` resolved to __stack_chk_fail_local at 0x11f8 with size 16 (LOCAL HIDDEN, in .symtab only), whose body ends in `bl` to the `__stack_chk_fail` PLT call stub at 0x1208; __stack_chk_fail is the only .dynsym import; read by `kuna-cli/tests/stack_chk_fail_local.rs` and `tests/stages/kuna-stackchklocal.xml`; that cargo test also rebuilds both from `ppc32_stack_chk_local_linked.s` when `llvm-mc` and `ld.lld` are installed and checks the rebuilt images the same way |
 | `prefixed_noreturn_aarch64` | built from `prefixed_noreturn_aarch64.s` (`llvm-mc -triple=aarch64 -filetype=obj prefixed_noreturn_aarch64.s -o p.o`; `ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e probe p.o -o prefixed_noreturn_aarch64`, Ubuntu LLVM version 21.1.8), SHA-256 `e9445cf6d2489b9ea65a2de7e8baa44b97e6b85a3bad858adbfa390d1b92b4fb` | linked AArch64 ELF, about 5 KB; readelf -s: probe at 0x10000 with size 28, plain at 0x10020 with size 28; the last instruction of probe is `bl stub___stack_chk_fail` at 0x10018, followed by 4 zero bytes outside the symbol; the last instruction of plain is `bl __stack_chk_fail`; keeps_count and keeps_exit call mystack_chk_fail_count and handle_exit, then return 9; all four callees are defined FUNC symbols whose body is a bare ret; read by `kuna decompile-all` when checking the `<prefix>__` proxy rule in `p2_lift/kuna_noreturn_externmatch.rs`, and by `tests/stages/kuna-prefixed-noreturn.xml` |
+| `switchextent_aarch64` | built from `switchextent_aarch64.s` (`llvm-mc -triple=aarch64 -filetype=obj switchextent_aarch64.s -o s.o`; `ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e guarded s.o -o switchextent_aarch64`, LLVM 22.1.8), SHA-256 `6aaa64b4350413649b2dbc506eb17ecb8f77d87907eaed3104e2ea14325ee3f1` | linked AArch64 ELF, 5.5 KB; readelf -s: guarded at 0x10000, entering at 0x10048, pick at 0x10088, unchecked at 0x10090, last at 0x10118. Compact jump tables (`adr` base, byte or halfword offsets, `lsl #2`) in `.rodata` at 0x11158: `guarded` behind `cmp w0,#3; b.hi`; `entering` whose `cmp w0,#2; b.ls` branches into the dispatch block; `unchecked` dispatching twice on `pick`'s result through `tab_first` (3 halfwords at 0x11160) and `tab_second` (4 at 0x11166), nothing bounding either; `last` through `tab_last` (2 at 0x1116e) followed by a byte array it reads. `switchextent` (`listing/kuna_switchextent.rs`, `p2_lift/kuna_switchextent.rs`): the first unchecked table ends at the function's second; a function's last table, and one followed only by data it reads, stay computed calls. `tests/stages/kuna-switchextent-a64.xml` is the stage test; `kuna-cli/tests/switchextent_cli.rs` decompiles each and reads the walk's jump references |
+| `switchnext_aarch64` | built from `switchnext_aarch64.s` (`llvm-mc -triple=aarch64 -filetype=obj switchnext_aarch64.s -o sn.o`; `ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e name_of sn.o -o switchnext_aarch64`, LLVM 22.1.8), SHA-256 `3e272923fd2d109c54867ffbc3a6aedede106441b66b2839e018fca35b4d6373` | linked AArch64 ELF, 5.5 KB; readelf -s: name_of at 0x10000, next_kind at 0x10034. `name_of` indexes `tab_names` (3 halfwords at 0x110dc) with `x0 & 0xff` and no range check, and its table is its function's last; `next_kind`'s table follows at 0x110e2, then zero bytes. `switchextent` (`p2_lift/kuna_switchextent.rs`, `later_tables`): the byte-masked table ends at the next function's table, three cases instead of phantom cases with next_kind's code. `tests/stages/kuna-switchnext-a64.xml` is the stage test |
 | `prefixed_noreturn_x86_64` | built from `prefixed_noreturn_x86_64.s` (`llvm-mc -triple=x86_64 -filetype=obj prefixed_noreturn_x86_64.s -o p.o`; `ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e probe p.o -o prefixed_noreturn_x86_64`, Ubuntu LLVM version 21.1.8), SHA-256 `d5f4ac84405e3477912a680d046da42c76950c566204cb1895a3f66c6bd0028d` | linked x86_64 ELF, about 5 KB; readelf -s: probe at 0x10000 with size 20, plain at 0x10018 with size 20; the last instruction of probe is `call stub___stack_chk_fail`, followed by 4 zero bytes outside the symbol; the last instruction of plain is `call __stack_chk_fail`; keeps_count and keeps_exit call mystack_chk_fail_count and handle_exit, then return 9; all four callees are defined FUNC symbols whose body is a bare ret; read by `kuna decompile-all` when checking the `<prefix>__` proxy rule in `p2_lift/kuna_noreturn_externmatch.rs`, and by `tests/stages/kuna-prefixed-noreturn.xml` |
 | `rust_minimal_dwarf_names_x86_64` | Rust minimal DWARF plus a genuine imported libc `write`; reproduction in `rust_minimal_dwarf.build.sh` | Rust's namespaced four-argument `write` retains its identity and all four arguments. |
 | `rust_minimal_dwarf_x86_64`, `rust_full_dwarf_x86_64` | Two-function static ELFs built with rustc 1.90.0 minimal/full debug information; source and reproduction script: `rust_minimal_dwarf.rs`, `rust_minimal_dwarf.build.sh` | Minimal DWARF preserves the computed argument to `add_input`; full DWARF retains the named `u64` parameter and return type. |
@@ -1409,6 +1411,48 @@ LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin
 `$s4main10countWords2ofS2i_tF`. The `_OBJC_CLASS_$__TtC4main7Greeter` data
 symbol keeps the linker's spelling either way.
 
+### `macho_cstringconst_arm64` — short literals nothing types `char *` (`cstringconst`)
+
+`macho_cstringconst_arm64` (arm64 dylib at base 0, ~50 KB, from
+`macho_cstringconst.c`) passes string literals where nothing gives them a
+character-pointer type: `emit` passes `" ("` to a call through an untyped
+function pointer whose other call site passes an integer in that slot, and
+`choose` picks between `".SH"` and what an untyped callee returns, then passes
+the choice to the same pointer. The literals are shorter than the string pass's
+minimum and, at base 0, below the pointer lower bound, so they print as `0x610`
+and `0x613` unless `cstringconst` reads them from the `__cstring` section
+(`kuna-console/tests/verify_cstringconst.rs`). Built with clang 20 and `ld64.lld`:
+
+```bash
+clang -target arm64-apple-macos11 -O1 -fno-inline -c macho_cstringconst.c -o m.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+         -dylib -install_name @rpath/cs.dylib -o macho_cstringconst_arm64 m.o
+llvm-strip -x macho_cstringconst_arm64
+```
+
+**Pinned VMAs:** `_emit`@`0x508`, `_choose`@`0x55c`, `__cstring`@`0x610` (`" ("`
+at `0x610`, `".SH"` at `0x613`).
+
+`macho_cstringconst_guard_arm64` (arm64 dylib at base 0, ~50 KB, from
+`macho_cstringconst_guard.c`) passes integers that land inside `__cstring`
+without being literals: `sized` hands `setvbuf`, which declares a `size_t`,
+`0x58b` (the first byte of `"hello world"`), and `mid` passes `0x58d` (two
+bytes into it) through the untyped `sink`; `lit` passes the literals `"id"` and
+`"hello world"` to the same pointer. With `cstringconst` on, the two integers
+stay integers and `lit`'s arguments print as literals. Built with clang 21 and
+the rustup `ld64.lld` (LLD 20.1.8), SHA-256
+`26d6d99dcaf49a04d3c42ba8587a1827e7775bc9d53b593d65eeae49b7d7e8cb`:
+
+```bash
+clang -target arm64-apple-macos11 -O1 -fno-inline -c macho_cstringconst_guard.c -o m.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+         -dylib -install_name @rpath/csg.dylib -o macho_cstringconst_guard_arm64 m.o
+llvm-strip -x macho_cstringconst_guard_arm64
+```
+
+**Pinned VMAs:** `_sized`@`0x510`, `_mid`@`0x520`, `_lit`@`0x538`,
+`__cstring`@`0x588` (`"id"` at `0x588`, `"hello world"` at `0x58b`).
+
 ### `macho_gotdata` — data imports read through `__got` (`importdata`)
 
 `macho_gotdata` (arm64, ~50 KB) reads two imported **data** symbols through
@@ -1512,6 +1556,27 @@ they decompile as `namefix.Board.width.getter`,
 `___swift_instantiateConcreteTypeFromMangledName`, …, where the records
 alone give `namefix.Board.vtable#0.getter`,
 `<namefix.Dot:namefix.Shape>.requirement#0.getter`, `sub_10000262c`, ….
+
+### `macho_dataslots_arm64` — data-import slots by their mangling (`machodataslots`)
+`macho_dataslots_arm64` (arm64, ~50 KB, from `macho_dataslots.c`) reads, through
+`__got` slots, three imported data objects whose mangling says what they are — an
+Objective-C class object (`_OBJC_CLASS_$_NSObject`), a Swift type's metadata
+(`_$sSSN`), a C++ static data member (`__ZNSt3__15ctypeIcE2idE`) — plus the plain
+C `imported_counter`, and `main` calls `imported_call` through its stub. The
+indirect-symbol walk names every slot; the three marked ones are not function
+inventory entries, and `importdata` renders each read as the import
+(`kuna-console/tests/verify_machodataslots.rs`). Built with clang 20 and `ld64.lld`:
+```bash
+clang -target arm64-apple-macos11 -O1 -c macho_dataslots.c -o m.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+         -e _main -o macho_dataslots_arm64 m.o
+llvm-strip -x macho_dataslots_arm64
+```
+**Pinned VMAs:** `_read_objc_class`@`0x100000510`, `_read_swift_metadata`@`0x100000520`,
+`_read_cpp_static_member`@`0x100000530`, `_read_counter`@`0x100000540`, the stub
+`imported_call`@`0x100000554`; `__got` slots `OBJC_CLASS_$_NSObject`@`0x100004000`,
+`$sSSN`@`0x100004008`, `std::__1::ctype<char>::id`@`0x100004010`,
+`imported_counter`@`0x100004018`.
 
 ### `swift_metadata_elf` — a stripped Swift executable (`swiftmetadata`)
 
