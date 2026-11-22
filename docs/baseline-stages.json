@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4938,
-    4938
+    4943,
+    4943
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -236,6 +236,11 @@
     "data:C++ namespace target",
     "data:C++ nested namespace target",
     "data:C++ other namespace target",
+    "data:CACHERETURN #1: off, the accessors print void",
+    "data:CACHERETURN #2: on, get_cached returns the cell",
+    "data:CACHERETURN #3: on, get_slot returns the cell behind its parameter",
+    "data:CACHERETURN #4: on, the two-RETURN accessor returns the cell",
+    "data:CACHERETURN #5: the void control stays void in both passes",
     "data:CALL-ARRAY-EXTENT #10: indexed parent retains room for every store",
     "data:CALL-ARRAY-EXTENT #11: return reads the copied word in shared storage",
     "data:CALL-ARRAY-EXTENT #12: loop-carried pointer declines",
