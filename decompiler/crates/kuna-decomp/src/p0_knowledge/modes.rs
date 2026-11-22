@@ -633,6 +633,10 @@ mod tests {
             // preset sweep or speed measurement needed before changing the
             // default output for every aggressive-mode decompile.
             "bytearrayc",
+            // `funcchunks` changes the body FID hashes and the inventory size of
+            // `kuna functions`; it has no preset sweep or speed measurement of the
+            // chunk walk over whole binaries yet.
+            "funcchunks",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();

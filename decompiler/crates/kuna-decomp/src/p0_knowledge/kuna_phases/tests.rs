@@ -1130,8 +1130,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `stubbinds`; its P1 row sits after `calltable`.
     // +1 for `cstringconst`; its P9 row sits after `globalref`.
     // +1 for `switchextent`; its P2 row sits after `switchmodbound`.
-    assert_eq!(json.matches("},
-").count(), 235);
+    assert_eq!(json.matches("},\n").count(), 235);
     // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 

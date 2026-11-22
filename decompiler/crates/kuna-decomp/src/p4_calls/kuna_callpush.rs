@@ -21,7 +21,9 @@
 //! * the stored value is a constant, one pointer word wide, that lies within
 //!   15 bytes (the longest x86 instruction) after the instruction's own address;
 //! * a CALL or CALLIND follows it in the same basic block at the same
-//!   instruction address, so both ops came from one `call` instruction;
+//!   instruction address, so both ops came from one `call` instruction (or the
+//!   helper builtin `helperroles` rewrote that CALL into, as `strcpy` for
+//!   `memcpy(d, s, strlen(s) + 1)`);
 //! * that call's destination is not the stored address: `call $+5; pop` reads
 //!   the pushed word back, and it is the one idiom whose caller does;
 //! * the pointer is the stack pointer register as that same instruction wrote
@@ -120,8 +122,8 @@ pub fn is_call_push(data: &Funcdata, op: OpId) -> bool {
     RuleLoadVarnode::check_spacebase(data, op).is_none()
 }
 
-/// The CALL/CALLIND that follows `op` in its block at the same instruction
-/// address, if any.
+/// The CALL/CALLIND (or helper builtin CALLOTHER) that follows `op` in its
+/// block at the same instruction address, if any.
 fn same_insn_call(data: &Funcdata, op: OpId) -> Option<OpId> {
     let addr = data.obank().get(op)?.get_addr().clone();
     let mut cur = data.obank().get(op)?.basic_neighbours().1;
@@ -131,6 +133,9 @@ fn same_insn_call(data: &Funcdata, op: OpId) -> Option<OpId> {
             return None;
         }
         if matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
+            return Some(n);
+        }
+        if o.code() == OpCode::CPUI_CALLOTHER && super::kuna_helperrole::role_of(data, n).is_some() {
             return Some(n);
         }
         cur = o.basic_neighbours().1;

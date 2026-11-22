@@ -5041,7 +5041,10 @@ matches only when every one of these holds
 (`kuna_callpush.rs (is_call_push)`): the stored value is a constant one
 pointer word wide lying at most 15 bytes (the longest x86 instruction) past the
 instruction's own address; a CALL or CALLIND follows the STORE in the same
-basic block at the same instruction address, so both came from one `call`; that
+basic block at the same instruction address, so both came from one `call` (or
+the helper builtin CALLOTHER `helperroles` rewrote that CALL into: `RuleStrcpyChain`
+runs in `oppool1`, so `memcpy(d, s, strlen(s) + 1)` is already a `strcpy` builtin
+when this rule sees its push); that
 call's destination is not the stored address (`call 1f; 1: pop` reads the
 pushed word back, and is the one idiom whose caller does); the pointer, through
 COPY and CAST, is the stack pointer register as that same instruction wrote it;
