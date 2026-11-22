@@ -6045,7 +6045,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   a stripped Swift binary keeps its reflection sections, and they name much of
   its code. The pass reads `__swift5_types` / `swift5_type_metadata` (the nominal
   type context descriptors: kind, parent chain, name, metadata accessor, field
-  descriptor, and for a class the trailing vtable and override table),
+  descriptor, for a class the trailing vtable and override table, and for an
+  enum its case count: the payload cases in the low 24 bits of the word at
+  +20 plus the empty cases at +24, which `AnalysisOutput::swift_enum_cases`
+  hands to the engine keyed by the enum's metadata accessor, so that chapter
+  2's `switchextent` bounds the enum's `switch` tables),
   `__swift5_protos` (protocol descriptors with their requirement rows),
   `__swift5_proto` (conformance descriptors: protocol, conforming type, witness
   table pattern, resilient witnesses) and `__swift5_fieldmd` (field descriptors),
