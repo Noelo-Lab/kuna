@@ -430,6 +430,11 @@ kuna_options! { self, p1;
         self.mixed_tail_ret = val;
         Ok(msg)
     },
+    "cachereturn" => {
+        let (val, msg) = crate::p4_calls::kuna_cachereturn::OptionCacheReturn.apply(p1)?;
+        self.cache_return = val;
+        Ok(msg)
+    },
     "varargsharedfloat" => on_off!(vararg_shared_float, "variadic doubles that also feed an earlier argument"),
     "calloverlap" => {
         let (val, msg) =
@@ -640,6 +645,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
+    "switchmerge" => on_off!(switchmerge, "nested-switch merge and default-hole folding"),
     "gotonext" => on_off!(goto_next, "goto-to-next suppression"),
     "importdata" => on_off!(import_data, "import-slot data-read rendering"),
     "castimplied" => on_off!(cast_implied, "C-implied cast elision"),

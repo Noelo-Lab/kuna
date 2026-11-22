@@ -743,7 +743,16 @@ the second channel a name arrives through as well: an analysis pass's recovered
 name (a DWARF `DW_AT_name`, a Go `pclntab` entry, a PDB public symbol) is
 sanitized in `kuna-analysis`'s pass driver
 (`decompiler/crates/kuna-analysis/src/pass.rs (AnalysisOutput::sanitize_names)`)
-before the commit boundary of §1.4 sees it. Like the other gates consumed inside
+before the commit boundary of §1.4 sees it. That driver renames the facts that
+carry a name of their own — symbols, prototypes and their parameters, locals —
+but a struct or union tag, a member, an enumerator and a typedef live inside the
+datatype a fact merely points at, so the DWARF pass escapes the `safe` set where
+it first reads a `DW_AT_name`
+(`decompiler/crates/kuna-analysis/src/analyzers/dwarf/mod.rs (die_name)`), for
+every DIE below the unit; the unit's own name is a path and stays verbatim. Under
+`ident` those type-side names keep the `safe` spelling, because folding them
+further could merge two distinct types onto one interned name; under `off` they
+are verbatim like every other name. Like the other gates consumed inside
 `load file` it is carried by a process environment variable. Print-time
 sanitizing would be the wrong seam: §0.4 explains that the string in the symbol
 table is the key `kuna decompile <name>` and `load function` are passed, so a
@@ -916,7 +925,15 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   non-empty section out above `0x400000` (`RELOC_BASE`, matching CLE so addresses
   line up with angr's), apply the relocations, rebase defined symbols, and bind
   each undefined extern to a synthetic call target in an extern area above the
-  sections so calls render by name. COMMON symbols instead reserve their
+  sections so calls render by name. A section header's size is a claim the file
+  need not back, so the layout allocates zero-fill only for data — `SHT_NOBITS`
+  storage and a data extent past the end of the file — and at most 256 MiB of it
+  per object (`reloc_object.rs (ZERO_FILL_LIMIT)`); code is laid out at the bytes
+  the file holds, because absent bytes are not instructions. A section cut short
+  this way is laid out at its reduced size, one left with no bytes is dropped,
+  and each is named on the loader's diagnostic line. The analyzer tier's
+  rebased view (`kuna_relocrebase.rs (rebased_view)`) writes the same reduced
+  sizes into its section headers, so no pass scans the declared extent. COMMON symbols instead reserve their
   full size (ELF `st_size`, COFF symbol value), using the ELF alignment carried
   by `st_value` or a 16-byte synthetic alignment for COFF, in a separate synthetic
   area after the maximum undefined-symbol slot extent. Their addresses are
@@ -5995,7 +6012,31 @@ every other binary's pass list is byte-identical to before the pass existed):
     `v = objc_msgSend$bounds(view); objc_msgSend$setFrame:(view, v.x, v.y, v.width, v.height)`.
     Only nested by-value structs are flattened into their leaf members; a
     pointer member is one pointer-sized field whatever it points to
-    (`{S=^{T=ii}q}` has two members, a pointer and a `q`).
+    (`{S=^{T=ii}q}` has two members, a pointer and a `q`). The leaves keep their
+    C offsets: each member is aligned to its size (at most a pointer's), a
+    nested struct to its widest member and padded to a multiple of it, and the
+    struct's size is padded the same way, so `{S={T=iC}C}` puts the last `C` at
+    8 and `{Tri=iii}` is 12 bytes, not 16. A layout with a bitfield member
+    (`b3`), whose packing the encoding does not give, is not laid out at all.
+    A pointer to a named struct whose layout the encoding spells (`^{S=Q^@}`,
+    from the image's metadata or from the headers) is a pointer to that struct
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/encoding.rs (struct_type_at)`),
+    with the member names the encoding carries (`{S="count"Q"items"^@}`) and
+    `[N T]` members as arrays; an anonymous or empty layout (`^{?=Q}`,
+    `^{__CFString=}`) stays `void *`. The header reader spells a pointer to a
+    `typedef struct { … } Name;` that way, member names included
+    (`(NSFastEnumerationState *)` is
+    `^{NSFastEnumerationState="state"Q"itemsPtr"^@"mutationsPtr"^Q"extra"[5Q]}`),
+    a pointer to a struct it cannot lay out (a bitfield, a nested definition,
+    no body) as `^v` and never as a class pointer, a pointer to a scalar with its
+    pointee (`NSInteger *` is `^q`), an array parameter (`id [_Nonnull]`) as a
+    pointer to its element, and the lightweight generic parameters of an
+    `@interface Name<K, V>` as `id` (so `NSDictionary`'s `(K [])` spelling of
+    `countByEnumeratingWithState:objects:count:` agrees with `NSEnumerator.h`'s
+    `(id [])`). The typelocked struct pointer then types the stack object whose
+    address the caller passes (P6 `gatherOpen`), so a for-in loop's eight words
+    of enumeration state are one `NSFastEnumerationState` local and the loop
+    reads `state.itemsPtr[i]` and `*state.mutationsPtr`.
     System V x86-64 has no such registers past two eightbytes (it passes a
     larger struct on the stack), so a selector with such an argument or return
     gets no prototype there
@@ -6055,7 +6096,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   a stripped Swift binary keeps its reflection sections, and they name much of
   its code. The pass reads `__swift5_types` / `swift5_type_metadata` (the nominal
   type context descriptors: kind, parent chain, name, metadata accessor, field
-  descriptor, and for a class the trailing vtable and override table),
+  descriptor, for a class the trailing vtable and override table, and for an
+  enum its case count: the payload cases in the low 24 bits of the word at
+  +20 plus the empty cases at +24, which `AnalysisOutput::swift_enum_cases`
+  hands to the engine keyed by the enum's metadata accessor, so that chapter
+  2's `switchextent` bounds the enum's `switch` tables),
   `__swift5_protos` (protocol descriptors with their requirement rows),
   `__swift5_proto` (conformance descriptors: protocol, conforming type, witness
   table pattern, resilient witnesses) and `__swift5_fieldmd` (field descriptors),
@@ -10831,7 +10876,9 @@ function's jump tables are emitted back to back in one read-only section, so
 the table runs to the lowest table of the same function above it, found by
 decoding the function's extent (its entry to the next known entry, or a MiB)
 linearly and naming the table of each computed jump the fold proves reads
-one (`decompiler/crates/kuna-analysis/src/listing/kuna_switchextent.rs`).
+one (`decompiler/crates/kuna-analysis/src/listing/kuna_switchextent.rs`);
+what an instruction writes after a branch inside its own p-code (an AArch64
+`csel`/`csinc`) is unknown to the fold, as in chapter 2's extent decode.
 A function's last table has no such bound and is not read: an object the
 function merely reads may sit anywhere in the section, and a bound taken
 from one could run the table on into another function's, whose entries are
