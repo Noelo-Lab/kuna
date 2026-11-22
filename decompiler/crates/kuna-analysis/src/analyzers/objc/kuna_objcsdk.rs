@@ -25,6 +25,7 @@
 //! its class (`@"UIView"`) but classes do not count as a disagreement: two
 //! declarations naming different classes keep the selector with neither.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -177,6 +178,12 @@ struct Types {
     /// `typedef` name → its raw declared type text (`double`, `NSString *`,
     /// `enum:NSInteger`), resolved on demand.
     typedefs: HashMap<String, String>,
+    /// Struct name or tag → the member declarations between its braces.
+    struct_bodies: HashMap<String, String>,
+    /// Struct name → the pointee encoding [`Types::record`] gave it, so each
+    /// layout is read once and a struct reached through its own members ends
+    /// at `v`.
+    records: RefCell<HashMap<String, String>>,
 }
 
 impl Types {
@@ -221,6 +228,13 @@ impl Types {
                     } else {
                         format!("struct {tag}")
                     };
+                    if let (Some(open), Some(close)) = (rest.find('{'), rest.rfind('}')) {
+                        let body = rest[open + 1..close].to_string();
+                        if !tag.is_empty() {
+                            self.struct_bodies.insert(tag.to_string(), body.clone());
+                        }
+                        self.struct_bodies.insert(name.clone(), body);
+                    }
                     self.typedefs.insert(name, value);
                 }
                 continue;
@@ -250,6 +264,10 @@ impl Types {
         if depth > 16 {
             return None;
         }
+        // A parameter declared as an array (`id [_Nonnull]`) is a pointer to its element.
+        if let Some(k) = text.find('[').filter(|_| text.trim_end().ends_with(']')) {
+            return self.encode(&format!("{} *", &text[..k]), depth + 1);
+        }
         let toks = tokens(text);
         let toks = drop_macros(&toks);
         let toks: Vec<&str> = toks
@@ -272,12 +290,15 @@ impl Types {
         }
         let base_text = base.join(" ");
         if stars > 0 {
+            let record = (stars == 1).then(|| self.record(&base_text, depth)).flatten();
             return Some(match (base_text.as_str(), stars) {
                 ("char" | "unsigned char" | "signed char", 1) => "*".to_string(),
                 ("void", 1) => "^v".to_string(),
                 (b, 1) if b == "id" || b == "instancetype" => "^@".to_string(),
+                (_, 1) if record.is_some() => format!("^{}", record.unwrap_or_default()),
                 (b, 1) if is_class_name(b) => format!("@\"{b}\""),
                 (b, 1) if self.typedefs.get(b).is_some_and(|t| is_class_name(t)) => format!("@\"{}\"", self.typedefs[b]),
+                (b, 1) if scalar(b).is_some() => format!("^{}", scalar(b).unwrap_or_default()),
                 _ => "^v".to_string(),
             });
         }
@@ -294,18 +315,68 @@ impl Types {
     }
 }
 
+impl Types {
+    /// The pointee encoding of a pointer to `name` when `name` is a struct:
+    /// its layout with member names (`{NSFastEnumerationState="state"Q…}`),
+    /// or `v` when a member cannot be encoded. `None` when `name` is no struct.
+    fn record(&self, name: &str, depth: usize) -> Option<String> {
+        let tagged = self.typedefs.get(name).and_then(|t| t.strip_prefix("struct ")).unwrap_or(name);
+        if !self.struct_bodies.contains_key(tagged) && !self.typedefs.get(name).is_some_and(|t| t.starts_with("struct ")) {
+            return None;
+        }
+        if let Some(done) = self.records.borrow().get(name) {
+            return Some(done.clone());
+        }
+        self.records.borrow_mut().insert(name.to_string(), "v".to_string());
+        let layout = self.struct_bodies.get(tagged).and_then(|body| self.layout(body, depth));
+        let enc = layout.map(|members| format!("{{{name}={members}}}")).unwrap_or_else(|| "v".to_string());
+        self.records.borrow_mut().insert(name.to_string(), enc.clone());
+        Some(enc)
+    }
+
+    /// `"name"T` for every member of a struct body, `None` for a member this
+    /// reader cannot encode (a bitfield, a nested definition, a union) or an
+    /// empty body.
+    fn layout(&self, body: &str, depth: usize) -> Option<String> {
+        let mut out = String::new();
+        for member in body.split(';').map(str::trim).filter(|m| !m.is_empty()) {
+            if member.contains(['{', '(', ':', ',']) {
+                return None;
+            }
+            let toks = tokens(member);
+            let toks = drop_macros(&toks);
+            let (count, toks) = match toks[..] {
+                [ref head @ .., "[", n, "]"] => (Some(n.parse::<u32>().ok().filter(|&n| n > 0)?), head),
+                _ => (None, &toks[..]),
+            };
+            let (name, ty) = toks.split_last()?;
+            if !is_ident(name) || ty.is_empty() {
+                return None;
+            }
+            let enc = self.encode(&ty.join(" "), depth + 1)?;
+            match count {
+                Some(n) => out.push_str(&format!("\"{name}\"[{n}{enc}]")),
+                None => out.push_str(&format!("\"{name}\"{enc}")),
+            }
+        }
+        (!out.is_empty()).then_some(out)
+    }
+}
+
 /// `@interface`/`@protocol` bodies: every method and property declaration,
 /// recorded by selector.
 fn scan_declarations(text: &str, types: &Types, out: &mut HashMap<String, Option<String>>) {
     let mut in_body = false;
     let mut depth = 0i32;
     let mut stmt = String::new();
+    let mut generics: Vec<String> = Vec::new();
     for line in text.lines() {
         let t = line.trim();
         if t.starts_with("@interface") || t.starts_with("@protocol") && !t.contains(';') {
             in_body = true;
             depth = t.matches('{').count() as i32 - t.matches('}').count() as i32;
             stmt.clear();
+            generics = generic_parameters(t);
             continue;
         }
         if t.starts_with("@end") {
@@ -331,7 +402,7 @@ fn scan_declarations(text: &str, types: &Types, out: &mut HashMap<String, Option
         if !t.ends_with(';') {
             continue;
         }
-        let s = std::mem::take(&mut stmt);
+        let s = erase_generics(&std::mem::take(&mut stmt), &generics);
         let s = s.trim().trim_end_matches(';').trim();
         if s.starts_with('-') || s.starts_with('+') {
             if let Some((sel, enc)) = method(s, types) {
@@ -343,6 +414,38 @@ fn scan_declarations(text: &str, types: &Types, out: &mut HashMap<String, Option
             }
         }
     }
+}
+
+/// The lightweight generic parameters of an `@interface Name<K, __covariant V>`
+/// line (`K`, `V`), which stand for `id` in its declarations.
+fn generic_parameters(line: &str) -> Vec<String> {
+    let Some(rest) = line.strip_prefix("@interface") else { return Vec::new() };
+    let rest = rest.trim_start();
+    let name_end = rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(rest.len());
+    let Some(list) = rest[name_end..].trim_start().strip_prefix('<').and_then(|l| l.split_once('>')).map(|(l, _)| l) else {
+        return Vec::new();
+    };
+    list.split(',').filter_map(|p| p.split_whitespace().last()).filter(|p| is_ident(p)).map(str::to_string).collect()
+}
+
+/// `text` with every whole-word generic parameter replaced by `id`.
+fn erase_generics(text: &str, generics: &[String]) -> String {
+    if generics.is_empty() {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut word = String::new();
+    for c in text.chars().chain(std::iter::once(' ')) {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            word.push(c);
+            continue;
+        }
+        out.push_str(if generics.iter().any(|g| *g == word) { "id" } else { &word });
+        word.clear();
+        out.push(c);
+    }
+    out.pop();
+    out
 }
 
 /// Agreement is judged with class names erased; the first full spelling is
@@ -688,6 +791,56 @@ mod tests {
         assert_eq!(get("setTitle:").as_deref(), Some("v@:@\"NSString\""), "a typed-enum string");
         assert_eq!(sigs.get("setOpaqueThing:"), Some(&None), "an unknown struct is not guessed");
         assert_eq!(get("convertRect:").as_deref(), Some("{CGRect={CGPoint=dd}{CGSize=dd}}@:{CGRect={CGPoint=dd}{CGSize=dd}}"));
+        assert_eq!(
+            get("countByEnumeratingWithState:objects:count:").as_deref(),
+            Some("Q@:^{NSFastEnumerationState=\"state\"Q\"itemsPtr\"^@\"mutationsPtr\"^Q\"extra\"[5Q]}^@Q"),
+            "a struct pointer carries the struct's layout, an array parameter is a pointer"
+        );
+    }
+
+    /// A struct reached through its own member is a `void *` there, a struct
+    /// whose body this reader cannot spell is pointed to as `void`, and a
+    /// typedef'd struct is never taken for a class.
+    #[test]
+    fn struct_pointers_carry_their_layout() {
+        let text = strip_comments(concat!(
+            "typedef struct Node { struct Node *next; int value; } Node;\n",
+            "typedef struct { int bits : 3; } Packed;\n",
+            "typedef struct _Zone Zone;\n",
+            "@interface W\n",
+            "- (void)link:(Node *)node;\n",
+            "- (void)pack:(Packed *)p;\n",
+            "- (void)zone:(Zone *)z;\n",
+            "- (void)count:(NSInteger *)n;\n",
+            "@end\n",
+        ));
+        let mut types = Types::default();
+        types.scan_typedefs(&text);
+        let mut out = HashMap::new();
+        scan_declarations(&text, &types, &mut out);
+        let get = |s: &str| out.get(s).cloned().flatten();
+        assert_eq!(get("link:").as_deref(), Some("v@:^{Node=\"next\"^v\"value\"i}"));
+        assert_eq!(get("pack:").as_deref(), Some("v@:^v"));
+        assert_eq!(get("zone:").as_deref(), Some("v@:^v"));
+        assert_eq!(get("count:").as_deref(), Some("v@:^q"));
+    }
+
+    /// A lightweight generic parameter is `id`: an array of it is `^@`, so
+    /// the generic and the plain declaration of one selector agree.
+    #[test]
+    fn generic_parameters_are_id() {
+        let text = strip_comments(concat!(
+            "@protocol E\n- (void)fill:(id _Nullable [_Nonnull])buffer;\n@end\n",
+            "@interface Box<K, __covariant V> (Cat) <E>\n",
+            "- (void)fill:(K _Nullable [_Nonnull])buffer;\n",
+            "- (nullable V)first;\n",
+            "@end\n",
+        ));
+        let types = Types::default();
+        let mut out = HashMap::new();
+        scan_declarations(&text, &types, &mut out);
+        assert_eq!(out["fill:"].as_deref(), Some("v@:^@"));
+        assert_eq!(out["first"].as_deref(), Some("@@:"));
     }
 
     #[test]

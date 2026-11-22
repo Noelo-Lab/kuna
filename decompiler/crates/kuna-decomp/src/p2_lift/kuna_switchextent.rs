@@ -150,7 +150,8 @@ pub fn function_tables(
     let Some(space) = entry.get_space().cloned() else { return ExtentTables::default() };
     let lo = entry.get_offset();
     let end = end.unwrap_or(u64::MAX).min(lo.saturating_add(MAX_EXTENT));
-    let mut fold = Fold { vals: Vec::new(), tables: BTreeSet::new(), cases: BTreeMap::new(), calls };
+    let mut fold =
+        Fold { vals: Vec::new(), tables: BTreeSet::new(), cases: BTreeMap::new(), calls, at: u64::MAX, joined: false };
     let mut at = lo;
     while at < end {
         let addr = Address::new(std::rc::Rc::clone(&space), at);
@@ -230,10 +231,19 @@ struct Fold<'a> {
     tables: BTreeSet<u64>,
     cases: BTreeMap<u64, u64>,
     calls: Option<&'a EnumCalls<'a>>,
+    /// The instruction the last op belonged to, and whether a branch inside
+    /// it already passed: what that instruction writes after the branch
+    /// joins two values (`csel` picks one of its operands), so it is unknown.
+    at: u64,
+    joined: bool,
 }
 
 impl PcodeEmit for Fold<'_> {
-    fn dump(&mut self, _addr: &Address, opc: OpCode, outvar: Option<&VarnodeData>, vars: &[VarnodeData]) {
+    fn dump(&mut self, addr: &Address, opc: OpCode, outvar: Option<&VarnodeData>, vars: &[VarnodeData]) {
+        if addr.get_offset() != self.at {
+            self.at = addr.get_offset();
+            self.joined = false;
+        }
         if opc == OpCode::CPUI_BRANCHIND {
             match vars.first().and_then(|vn| self.value_of(vn)) {
                 Some(Val::Relative { table, cases }) => {
@@ -259,7 +269,12 @@ impl PcodeEmit for Fold<'_> {
             }
             return;
         }
-        let folded = self.fold(opc, outvar, vars);
+        if matches!(opc, OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH)
+            && vars.first().and_then(|vn| vn.space.as_ref()).is_some_and(|s| s.get_type() == spacetype::IPTR_CONSTANT)
+        {
+            self.joined = true;
+        }
+        let folded = if self.joined { None } else { self.fold(opc, outvar, vars) };
         if let Some(vn) = outvar {
             self.set(vn, folded);
         }
