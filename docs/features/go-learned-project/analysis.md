@@ -68,6 +68,12 @@ The call at `0x47db40` is followed by `TEST AL,AL` and `SETNE AL`. Seed
 low-byte test returns false. The fresh output's full-word comparison is true.
 The producer has no user prototype in the reproduction.
 
+`--option godwarfsig off` stands in for an image without DWARF. With the
+default options this unstripped image already prints
+`return byte(int8(produce(seed))) != 0x0` in a fresh run, because `godwarfsig`
+states the producer's `uint64` result. A `-ldflags='-s -w'` build of the same
+source reproduces the fresh `return produce(a1) != 0x0` with default options.
+
 `decompile-project` already chooses the serial callee-first driver for an
 explicit `protoorder types` selection. The ordered C project trace confirms
 that the producer participated, while its emitted C and header carry no
