@@ -5675,6 +5675,8 @@ fn commit_analysis_output(
             arch.symboltab.add_function(scope, &addr, &base, min_size, type_code)?;
         }
     }
+    let code_space_index = code_space.get_index();
+    prog.arch_mut().data_import_slots.extend(out.data_import_slots.iter().map(|&slot| (code_space_index, slot)));
 
     // 1a. Named data globals with a known byte size (`out.data_objects`, the DWARF
     //     top-level variables). Mapped into the global scope with an

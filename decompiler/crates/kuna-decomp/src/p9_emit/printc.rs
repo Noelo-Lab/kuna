@@ -11142,6 +11142,17 @@ impl PrintC {
             );
             return;
         }
+        if let Some(name) = arch.import_data.then(|| import_slot_address(fd, arch, vn, op)).flatten() {
+            self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+            self.push_atom(&Atom::with_op_vn(
+                name,
+                TagType::VarToken,
+                crate::printlanguage::SyntaxHighlight::global_color,
+                op_key(op),
+                vn_key(vn),
+            ));
+            return;
+        }
         // HighVariable name resolution (C++ `pushSymbolDetail`: `high->getSymbol()`
         // -> `pushSymbol` -> `sym->getDisplayName()`).  The merged tree binds the
         // angr default name directly on the HighVariable (`ActionNameVars` ->
@@ -12686,6 +12697,39 @@ fn import_slot_name(fd: &Funcdata, mut vn: VarnodeId) -> Option<String> {
         return None;
     }
     fd.get_arch().query_function(v.get_addr()).map(|(name, _, _)| name)
+}
+
+/// The import whose address `op` reads when `vn` is the slot of a data import
+/// itself, not a pointer through it: the loader fills the slot with the import's
+/// address, so a read of the value it was loaded with, before or after a call,
+/// is `&import`.
+fn import_slot_address(fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId) -> Option<String> {
+    let v = fd.vbank().get(vn)?;
+    let slot = v.get_addr();
+    let space = slot.get_space()?.get_index();
+    if !(v.is_persist() && arch.data_import_slots.contains(&(space, slot.get_offset())))
+        || fd.obank().get(op)?.get_out() == Some(vn)
+        || !holds_loaded_value(fd, vn, 8)
+    {
+        return None;
+    }
+    fd.get_arch().query_function(v.get_addr()).map(|(name, _, _)| name)
+}
+
+/// Is `vn` the slot's value at entry, carried only across calls (`INDIRECT`)
+/// and joins (`MULTIEQUAL`), never a value the function stored into it?
+fn holds_loaded_value(fd: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    let Some(v) = fd.vbank().get(vn) else { return false };
+    let Some(def) = v.get_def().filter(|_| v.is_written()) else { return true };
+    let Some(o) = fd.obank().get(def) else { return false };
+    depth > 0
+        && match o.code() {
+            OpCode::CPUI_INDIRECT => o.get_in(0).is_some_and(|i| holds_loaded_value(fd, i, depth - 1)),
+            OpCode::CPUI_MULTIEQUAL => {
+                (0..o.num_input()).all(|k| o.get_in(k).is_some_and(|i| i == vn || holds_loaded_value(fd, i, depth - 1)))
+            }
+            _ => false,
+        }
 }
 
 /// Does a printed op other than a `LOAD` through `vn` (directly or through

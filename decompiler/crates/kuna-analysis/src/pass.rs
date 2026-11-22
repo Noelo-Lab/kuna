@@ -540,6 +540,9 @@ pub struct AnalysisOutput {
     /// the import, but never registered in the function inventory: the slot is a
     /// pointer word, not a function.
     pub import_slot_names: Vec<(u64, String)>,
+    /// (kuna `machodataslots`) The [`Self::import_slot_names`] slots whose import
+    /// is a data object, so the slot's own value is the object's address.
+    pub data_import_slots: Vec<u64>,
     /// Detected NUL-terminated string literals (a typed `char[N]` per address).
     pub strings: Vec<StringFact>,
     /// (kuna `fatstr`) Length-BOUNDED string literals recovered from static
@@ -895,6 +898,7 @@ impl AnalysisOutput {
         }
         self.externref.extend(other.externref);
         self.import_slot_names.extend(other.import_slot_names);
+        self.data_import_slots.extend(other.data_import_slots);
         self.strings.extend(other.strings);
         self.bounded_strings.extend(other.bounded_strings);
         self.wide_strings.extend(other.wide_strings);

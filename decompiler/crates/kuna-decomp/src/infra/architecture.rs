@@ -1258,6 +1258,10 @@ pub struct Architecture {
     /// the import itself, instead of a dereference of the anonymous slot. Default
     /// **on**.
     pub import_data: bool,
+    /// (kuna `importdata`) `(space index, offset)` of each import slot whose
+    /// import is a data object (`machodataslots`): a read of the slot's own
+    /// value renders `&<import>`.
+    pub data_import_slots: std::collections::BTreeSet<(int4, uintb)>,
     /// (kuna `castimplied`) Leave out a cast C's own conversion rules already
     /// perform: a value-preserving integer widening passed to a trusted
     /// parameter, assigned to or returned as exactly its type, or stacked under
@@ -2595,6 +2599,7 @@ impl Architecture {
             voidtailreturn: false, // (kuna) option voidtailreturn; reset_defaults sets the shipped default
             goto_next: false, // (kuna) option gotonext; reset_defaults sets the shipped default
             import_data: false,
+            data_import_slots: std::collections::BTreeSet::new(),
             cast_implied: false, // (kuna) option castimplied; reset_defaults sets the shipped default
             cast_sign: false, // (kuna) option castsign; reset_defaults sets the shipped default
             cast_ternary: false, // (kuna) option castternary; reset_defaults sets the shipped default

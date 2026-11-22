@@ -1710,6 +1710,25 @@ llvm-strip -x macho_dataslots_arm64
 `$sSSN`@`0x100004008`, `std::__1::ctype<char>::id`@`0x100004010`,
 `imported_counter`@`0x100004018`.
 
+### `macho_dataslotaddr_arm64` — data-import addresses passed on (`importdata`)
+
+`macho_dataslotaddr_arm64` (arm64, ~50 KB, from `macho_dataslotaddr.c`) loads two
+`__got` slots, an Objective-C class object (`_OBJC_CLASS_$_NSObject`) and a Swift
+protocol witness table (`_$s7SwiftUI5ColorVAA4ViewAAWP`), and passes the two
+addresses to an imported call without dereferencing them; `importdata` renders each
+as `&<import>` (`kuna-console/tests/verify_machodataslots.rs`). Built with clang 22
+and `ld64.lld`:
+
+```bash
+clang -target arm64-apple-macos11 -O1 -c macho_dataslotaddr.c -o m.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+         -e _main -o macho_dataslotaddr_arm64 m.o
+llvm-strip -x macho_dataslotaddr_arm64
+```
+
+**Pinned VMAs:** `_pass_addresses`@`0x100000510`; `__got` slots
+`$s7SwiftUI5ColorVAA4ViewAAWP`@`0x100004000`, `OBJC_CLASS_$_NSObject`@`0x100004008`.
+
 ### `swift_metadata_elf` — a stripped Swift executable (`swiftmetadata`)
 
 `swift_metadata_elf` (x86-64 ELF, 14 KB) is the Swift runtime-metadata fixture
