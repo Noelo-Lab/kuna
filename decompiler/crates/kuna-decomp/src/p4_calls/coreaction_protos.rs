@@ -1864,7 +1864,9 @@ impl Action for ActionReturnRecovery {
                     let t = active.get_trial(i);
                     (t.get_address().clone(), t.get_size())
                 };
-                if crate::p4_calls::kuna_passthrough::returns_tail_result(data, vn, &taddr, tsize) {
+                if crate::p4_calls::kuna_passthrough::returns_tail_result(data, vn, &taddr, tsize)
+                    || crate::p4_calls::kuna_cachereturn::returns_cached(data, &return_ops, slot, &taddr, tsize)
+                {
                     active.get_trial_mut(i).mark_active();
                     self.base.count += 1;
                     continue;

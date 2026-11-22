@@ -2276,7 +2276,8 @@ mod tests {
         // and kuna-switchmerge-values / a hole the default code sends to the same place prints no label, and a 1100-entry table is a switch
         // and kuna-switchmerge-split / a range split between two switches, and an == test heading default, print as one switch
         // and kuna-jumptableslots / a guarded table indexed by x >> 8 past jumptablemax stays a computed call
-        assert_eq!(count, 858, "corpus file count drifted");
+        // and kuna-cachereturn / a lazy accessor returns the value of its cache cell (option cachereturn)
+        assert_eq!(count, 859, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -430,6 +430,11 @@ kuna_options! { self, p1;
         self.mixed_tail_ret = val;
         Ok(msg)
     },
+    "cachereturn" => {
+        let (val, msg) = crate::p4_calls::kuna_cachereturn::OptionCacheReturn.apply(p1)?;
+        self.cache_return = val;
+        Ok(msg)
+    },
     "varargsharedfloat" => on_off!(vararg_shared_float, "variadic doubles that also feed an earlier argument"),
     "calloverlap" => {
         let (val, msg) =
