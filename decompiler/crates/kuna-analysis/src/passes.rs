@@ -882,13 +882,15 @@ pub fn run_listing_consumers_replaying_observed(
     // have no recognizable prologue (Ghidra's disassembler-driven recursive descent).
     // betaflight STM32F405: the walk grows 1 -> 1470 discovered functions (Ghidra 1822).
     // Gated by the same flag, so x86-64 (funcstart_patterns off) is unchanged.
+    let mut pattern_roots = std::collections::BTreeSet::new();
     if arch.analysis_listing && arch.analysis_funcstart_patterns {
         let execs = crate::entry::executable_sections(&file);
-        seeds.extend(
+        pattern_roots.extend(
             crate::entry::full_pattern_starts(&file)
                 .into_iter()
                 .filter(|&vma| crate::entry::in_executable_section(&execs, vma)),
         );
+        seeds.extend(&pattern_roots);
         // (kuna `armdiscseed`) ...and with the entries the LOAD-TIME oracles already
         // committed, which `listing_seeds` cannot see. It rebuilds the seed set from
         // `collect_entries`, so an entry recovered by a standalone pass beside that
@@ -1203,17 +1205,18 @@ pub fn run_listing_consumers_replaying_observed(
             let raw = crate::aif::raw_thumb_prologue_seeds(
                 &file, &listing, translate, std::rc::Rc::clone(code_space), listing.exec_ranges(),
             );
-            if !raw.is_empty() {
-                let before = seeds.len();
-                seeds.extend(raw);
+            seeds.sort_unstable();
+            seeds.dedup();
+            let added: Vec<u64> =
+                raw.into_iter().filter(|root| seeds.binary_search(root).is_err()).collect();
+            if !added.is_empty() {
+                pattern_roots.extend(&added);
+                seeds.extend(added);
                 seeds.sort_unstable();
-                seeds.dedup();
-                if seeds.len() != before {
-                    listing = crate::listing::Listing::build_with_meta_planned_without_image(
-                        &file, arch, translate, &seeds, &funcsym_seeds,
-                        &seed_names, detail, plan,
-                    );
-                }
+                listing = crate::listing::Listing::build_with_meta_planned_without_image(
+                    &file, arch, translate, &seeds, &funcsym_seeds,
+                    &seed_names, detail, plan,
+                );
             }
         }
     }
@@ -1260,6 +1263,26 @@ pub fn run_listing_consumers_replaying_observed(
                     );
                 }
             }
+        }
+    }
+    // A start only a byte pattern found, which the Listing enters by straight-line
+    // flow from a function it already has, is that function's shrink-wrapped
+    // prologue: the routine tested and returned before saving LR.
+    if !frames_recovered {
+        pattern_roots.retain(|root| seeds.binary_search(root).is_ok());
+        for root in committed_entries {
+            pattern_roots.remove(root);
+        }
+        let entered: std::collections::BTreeSet<u64> =
+            crate::aif::kuna_frameflow::entered(&listing, &pattern_roots)
+                .into_iter()
+                .filter(|&root| listing.refs_to(root).iter().all(|r| r.kind != crate::listing::RefKind::Call))
+                .collect();
+        if !entered.is_empty() {
+            seeds.retain(|root| !entered.contains(root));
+            listing = crate::listing::Listing::build_with_meta_planned_without_image(
+                &file, arch, translate, &seeds, &funcsym_seeds, &seed_names, detail, plan,
+            );
         }
     }
     // (kuna, ARM discovery Stage 3b) `ptrentry` — pointer-referenced entries. Stage

@@ -9362,6 +9362,23 @@ pass the strict valid-subroutine probe. It keeps the entries the Thumb scan and 
 gap walk would have reported (see the ARM reference walks later in §1.6), and when it validates
 no frame at all the Thumb scan runs exactly as with the option off.
 
+A start that only a byte pattern found, either a `<patternpairs>` prologue or the
+raw Thumb scan, is withdrawn after the code-pointer-table scan when the Listing
+enters it by straight-line flow
+(`decompiler/crates/kuna-analysis/src/passes.rs`, the rule of
+`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_frameflow.rs` that frame
+recovery already applies to its roots). The instruction just before the start must
+be a non-call that falls through or conditionally branches into it, on a run that
+begins at a function entry or a branch target, and no call may target the start.
+GCC shrink-wraps Thumb code: the routine tests its argument, returns with `bx lr`,
+and only then runs `push {r4, lr}`. Scanned on its own, that `push` looks like a
+function entry, and the routine it belongs to ended there with a `funcboundflow`
+warning, leaving two near-empty halves. A start that the load-time passes
+committed (a vector-table handler, a symbol) is never withdrawn, and the rule does
+not run when frame recovery rebuilt the Listing. On stripped Cleanflight
+O2-noinline it withdraws 25 of 2,679 starts, none of them a symbol of the
+unstripped image; `Handle_USBAsynchXfer` (0x803b95c) is whole again.
+
 **Pointer-referenced entries** (`ptrentry`, on by default, ARM-only; kuna;
 `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_ptrentry.rs`) re-admits
 what the second of those throws away. Measurement over the ARM Cortex-M corpus

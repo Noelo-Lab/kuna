@@ -97,6 +97,8 @@ mod arm_frame_retain;
 mod arm_frame_pool;
 #[path = "arm_frame_switch.rs"]
 mod arm_frame_switch;
+#[path = "thumb_shrinkwrap_split.rs"]
+mod thumb_shrinkwrap_split;
 
 #[path = "arm_interwork_cli.rs"]
 mod arm_interwork_cli;
