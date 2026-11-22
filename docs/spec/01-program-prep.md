@@ -916,7 +916,15 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   non-empty section out above `0x400000` (`RELOC_BASE`, matching CLE so addresses
   line up with angr's), apply the relocations, rebase defined symbols, and bind
   each undefined extern to a synthetic call target in an extern area above the
-  sections so calls render by name. COMMON symbols instead reserve their
+  sections so calls render by name. A section header's size is a claim the file
+  need not back, so the layout allocates zero-fill only for data — `SHT_NOBITS`
+  storage and a data extent past the end of the file — and at most 256 MiB of it
+  per object (`reloc_object.rs (ZERO_FILL_LIMIT)`); code is laid out at the bytes
+  the file holds, because absent bytes are not instructions. A section cut short
+  this way is laid out at its reduced size, one left with no bytes is dropped,
+  and each is named on the loader's diagnostic line. The analyzer tier's
+  rebased view (`kuna_relocrebase.rs (rebased_view)`) writes the same reduced
+  sizes into its section headers, so no pass scans the declared extent. COMMON symbols instead reserve their
   full size (ELF `st_size`, COFF symbol value), using the ELF alignment carried
   by `st_value` or a 16-byte synthetic alignment for COFF, in a separate synthetic
   area after the maximum undefined-symbol slot extent. Their addresses are
