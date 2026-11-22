@@ -2810,7 +2810,11 @@ name is on two functions: the export's body and the stub. A name selects the bod
 veneer whose slot the image's own dynamic relocations bind to that body (the
 relocation's symbol is defined in the image at the body's address). The callers
 through the stub are then the export's callers, and `target.aliases` lists the
-stub and its GOT slot. The join is the relocation, never the shared name. An
+stub and its GOT slot. The join is the relocation, never the shared name. On ARM,
+AArch64, PowerPC32 (absolute stubs and the executable BSS PLT) and PowerPC64 ELFv1
+the stub is recognized by its instruction shape and the slot it loads. Thumb
+interworking prefixes, `--long-plt` and PAC (`autia1716`) entries and PowerPC32
+secure-PLT PIC stubs are not joined; query the stub's address for those. An
 **address** still answers for that address alone: `--to <body>` stays at the direct
 references, and `--to <stub>` lists only its slot as an alias.
 
