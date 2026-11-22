@@ -129,10 +129,29 @@ fn arm_start(fd: &Funcdata, e: PlannedCase) -> Option<BlockId> {
     graph.get_front_leaf(start)
 }
 
-/// Does the arm print as code that runs on into the next printed arm?
+/// Can the arm's printed code run on into the next printed arm?
 fn falls_through(fd: &Funcdata, e: PlannedCase) -> bool {
     let c = case_of(fd, e);
-    c.gototype == 0 && !c.isexit && fd.sblocks_ref().block(c.block).size_out() > 0
+    c.gototype == 0 && !c.isexit && runs_past_end(fd, c.block)
+}
+
+/// Can the printed code of `blk` run past its end?  It cannot when it ends in
+/// a leaf whose basic block has no successor, or in a `BlockGoto` whose jump
+/// prints (the goto census leaves out a jump to the block printed next).  The
+/// leaf's own block is read, not its structured edges, since a duplicated
+/// tail leaf carries none.
+fn runs_past_end(fd: &Funcdata, blk: BlockId) -> bool {
+    let graph = fd.sblocks_ref();
+    let b = graph.block(blk);
+    match b.get_type() {
+        BlockType::Ls => b.get_list().last().is_none_or(|&l| runs_past_end(fd, l)),
+        BlockType::Goto => {
+            let target = b.get_goto_target().and_then(|t| graph.get_front_leaf(t));
+            target.is_none() || b.get_parent().and_then(|p| graph.next_printed_flow_after(p, blk)) == target
+        }
+        BlockType::Copy => b.get_copy().is_none_or(|bb| fd.bblocks_ref().block(bb).size_out() > 0),
+        _ => true,
+    }
 }
 
 /// The selector varnode the switch header prints: in0 of its BRANCHIND.
