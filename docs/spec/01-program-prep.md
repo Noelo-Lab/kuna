@@ -2588,6 +2588,40 @@ funcsym stream:
   stop that fold. The same holds for a local GOT entry (`RELATIVE` to an in-image
   object) inside RELRO, which the fold above already renders as the object. A
   local entry outside RELRO stays a dereference for the reason given above.
+- **Mach-O data-import slots** (kuna, `machodataslots`, committed under
+  `importdata`, default on;
+  `decompiler/crates/kuna-analysis/src/loader/kuna_machodataslots.rs`): the
+  Mach-O counterpart. The indirect-symbol walk (`macho_stubs.rs`) names every
+  `__got` / `__la_symbol_ptr` entry after the import it holds and hands each to
+  the function-symbol stream, so a call through the slot resolves and the slot
+  is a canonical inventory entry (chapter [00](00-overview.md)). A symbol-pointer
+  slot of a data object is a pointer word too, but never a callable one, and it
+  was listed as a size-0 function all the same: 7,865 of a 72 MB Swift app's
+  270,680 entries were `__got` words. The walk keeps out of the import stream
+  every slot whose import's *mangling* says it is data (`is_data_import`): an
+  Objective-C class, metaclass, ivar-offset, protocol or exception-type object
+  by its `_OBJC_*_$_` prefix; a Swift symbol by the kind at the top of its
+  demangling tree (`kuna_swift::is_data_symbol`: type metadata, a nominal type,
+  protocol, conformance, opaque-type, method, property or enum-case descriptor,
+  a witness table, a cache, a field offset, an async or coro function-pointer
+  record, a variable's storage; an accessor, thunk, constructor or metadata
+  accessor is code); an Itanium C++ symbol whose encoding carries no parameter
+  list (a static data member, a vtable, typeinfo, guard variable). A plain C
+  import carries no such mark and stays a callable slot, as before. The slot is
+  still an import slot (`import_slots`, so `peimportcall` paints it `externref`),
+  and the pass names it for its import exactly as `elfgotimports` names a
+  `GLOB_DAT` slot — a symbol-table `FunctionSymbol`, demangled and sanitized as
+  the function stream spells it, never an inventory entry — so `PrintC::op_load`
+  renders the read as the import: `return OBJC_CLASS_$_NSObject;`,
+  `return Swift.String.type_metadata;`. The app above lists 2,541 fewer entries;
+  no other entry moves. The Swift metadata reader (`analyzers/swift`) still
+  resolves a relative pointer through such a slot to the import it holds, so a
+  witness of an imported protocol keeps its name on an image whose binds are
+  classic `LC_DYLD_INFO` opcodes rather than chained fixups. The slot's name,
+  like an ELF GOT data slot's, is a data alias (`lookup_data_alias`), so
+  `kuna xrefs --to` and `kuna read` select the slot by the import's name. The
+  walk runs on every read of the import stream, so each demangled
+  classification is memoized per thread.
 - **In-code literal pools** (kuna, `litpoolconst`, always on, DIV-136,
   `decompiler/crates/kuna-decomp/src/p1_partition/kuna_litpoolconst.rs`): the
   third user of the same "constant by construction, not by policy" exception, and
@@ -10830,6 +10864,41 @@ Without this, the walk stopped at the dispatch and followed only `b default`.
 GCC 14 no longer emits either form from C in ARM state (it compresses the table
 to bytes, `ldrb rN,[rT,rN]; add pc,pc,rN,lsl #2`); that form is not read. Thumb
 `ldr pc` tables are not read either: their PC is 4 bytes ahead, not 8.
+
+**AArch64 compact tables** (`decompiler/crates/kuna-analysis/src/listing/kuna_a64switch.rs`,
+always on) are read in both walks by the register-chain fold above. clang and
+gcc lower an AArch64 `switch` to a table of byte, halfword or word offsets in
+`__const`/`.rodata`, each scaled to instructions and added to an `adr` base
+(`adrp`/`add` table; `adr` base; `ldrh w13,[x11,x10,lsl #1]`; `add
+x12,x12,x13,lsl #2`; `br x12`; gcc's `add x0,x1,w0,sxtb #2` reads a byte back
+signed). The fold's narrow table word, shifted left by one to three (`lsl #2`,
+or a multiply by two or four) and added to a constant, is the case address
+(`kuna_switchtable.rs (Val::Relative)`), and the dispatch slice follows a
+constant left shift so the entry's `lsl #2` reaches the load. The count comes
+from the range check, read the way the delta-table read reads one, with one
+more shape: when the instruction before the dispatch's block does not fall
+through, the check may be the branch *into* the block (`cmp w9,#0xb; b.ls
+dispatch`, clang's second table of a `switch` over two value ranges), found
+among the decoded instructions above the block head and read with the taken
+arm as the in-range one (`kuna_switchtable.rs (entering_guard)`). In the
+Listing walk every aligned word of the executable ranges counts as decoded
+for that search: AArch64 instructions are four bytes, so the code above a
+dispatch reads the same whether the walk reached it yet or not. A table with
+no range check at all is read when `switchextent` (default on) bounds it: a
+function's jump tables are emitted back to back in one read-only section, so
+the table runs to the lowest table of the same function above it, found by
+decoding the function's extent (its entry to the next known entry, or a MiB)
+linearly and naming the table of each computed jump the fold proves reads
+one (`decompiler/crates/kuna-analysis/src/listing/kuna_switchextent.rs`).
+A function's last table has no such bound and is not read: an object the
+function merely reads may sit anywhere in the section, and a bound taken
+from one could run the table on into another function's, whose entries are
+plausible code addresses measured from the wrong base. The cases are the
+dispatcher's own successors, so no gap entry is planted on them: cmark-gfm's
+re2c scanner `_scan_html_block_start` listed as 104 bytes plus five `sub_`
+functions is one function of 4,484 bytes, and the framework's 442 functions
+are 407, the 35 case bodies gone; the Swift `AssetItem` copy helper of a
+13 KB iOS app function keeps its 27-case enum dispatch.
 
 (kuna, GH-299) **Bounded i386 switch coverage** (`x86listingswitch`, default-off;
 `decompiler/crates/kuna-analysis/src/listing/kuna_x86listingswitch.rs`) extends
