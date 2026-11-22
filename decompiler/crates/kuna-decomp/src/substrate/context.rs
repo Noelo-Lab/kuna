@@ -937,6 +937,10 @@ pub struct ArchContext {
     /// [`Architecture::char_ptr`](crate::architecture::Architecture).  The rule
     /// lives in [`kuna_charptr`](crate::p5_types::kuna_charptr).
     pub char_ptr: bool,
+    /// (kuna `valuewitness`) Type a Swift value witness table loaded through
+    /// type metadata. Copied from
+    /// [`Architecture::analysis_valuewitness`](crate::architecture::Architecture).
+    pub analysis_valuewitness: bool,
     /// (kuna `elemptr`) Declare a pointer used only as an array of one element
     /// type as that pointer; option `elemptr on|off`.  Copied from
     /// [`Architecture::elem_ptr`](crate::architecture::Architecture).  The rule
@@ -1691,6 +1695,7 @@ impl ArchContext {
             cast_index: false, // (kuna) option castindex
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void, // (kuna) option ptrfromuse (default void)
             char_ptr: false, // (kuna) option charptr (default off)
+            analysis_valuewitness: true, // (kuna) option valuewitness
             elem_ptr: false, // (kuna) option elemptr, copied from Architecture
             elem_ptr_ranges: std::rc::Rc::new(Vec::new()), // (kuna) elemptr
             libctypes: false, // (kuna) option libctypes, copied from Architecture

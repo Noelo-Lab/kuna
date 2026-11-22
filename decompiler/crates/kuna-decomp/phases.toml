@@ -5316,6 +5316,25 @@ tier = "analysis"
 symptoms = "a swift class method in a stripped app is named vtable#N.method|a swift property accessor prints as vtable#N.getter or vtable#N.setter|a call on a swift class instance prints the slot number instead of the method"
 
 [[settable]]
+option = "valuewitness"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P1"
+subphase = "external-refinement"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-analysis-valuewitness"
+summary = "The value-witness arm of the Swift metadata pass (inert unless swiftmetadata is on). Every Swift struct and enum has a value witness table in the word before its type metadata: the functions the runtime calls to copy, move and destroy a value whose layout the caller does not know (initializeBufferWithCopyOfBuffer, destroy, initializeWithCopy, assignWithCopy, initializeWithTake, assignWithTake, getEnumTagSinglePayload, storeEnumTagSinglePayload), then size, stride, flags and extra-inhabitant count, and for an enum getEnumTag, destructiveProjectEnumData and destructiveInjectEnumTag. A stripped image keeps the tables, so each local struct's and enum's table is found - through the static metadata a non-generic accessor returns, the incomplete metadata a type with singleton initialization records, or the value witnesses of a generic type's metadata pattern, each checked against the descriptor before it is read - and each function in it is named the way the demangler spells a value-witness symbol (Module.Point.initializeWithCopy_value_witness; a body the linker folded across types after the first type, .merged#N) and given its runtime prototype (void *initializeWithCopy(void *dest, void *src, swift.type_metadata *self), void destroy(void *object, swift.type_metadata *self), unsigned int getEnumTagSinglePayload(void *value, unsigned int emptyCases, swift.type_metadata *self), ...) bound by address. A table the loader binds to another image (the runtime's builtin tables for trivial layouts) names nothing. With swifttypes on the tables are typed swift.value_witness_table, whose function slots are pointers of those signatures, and in the decompiler a word loaded from p - 8 that is itself read at a table offset (0 to 0x70) votes swift.value_witness_table *, so a witness call through any metadata pointer renders as a call of the named slot and the layout reads as vwt->size instead of offsets. The vote needs the interned table type, which only the Swift pass creates, so other code is unchanged. Default-ON because it is inert unless swiftmetadata is on, the XML corpus never runs the pass (0/675)."
+use_when = "Off to see value witness functions as sub_<addr> with recovered prototypes and witness calls as offsets off *(p + -8). On (default) when swiftmetadata is on: Module.T.destroy_value_witness and friends named and prototyped, vwt->initializeWithCopy(dest, src, meta) at the call sites."
+example = "option valuewitness off"
+source_decompiler = "kuna"
+inspiration = "The Swift ABI value witness table (swift/include/swift/ABI/ValueWitness.def, Metadata.h TargetValueWitnessTable and the generic value metadata pattern; docs/ABI/TypeMetadata.rst) and the demangler's value-witness symbols (Mangling.rst, w* operators)"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "swift value witness functions are unnamed sub_ functions|calls through *(metadata - 8) render as raw offsets|a witness function's arity is wrong"
+
+[[settable]]
 option = "pdb"
 values = "on|off"
 default = "on"

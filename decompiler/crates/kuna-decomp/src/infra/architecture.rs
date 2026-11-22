@@ -1970,6 +1970,12 @@ pub struct Architecture {
     /// named by its selector or property. Default-on; inert unless
     /// `swiftmetadata` is on.
     pub analysis_swiftobjcthunk: bool,
+    /// (kuna) Gate the value-witness arm of the metadata pass
+    /// (`valuewitness`): each local struct's and enum's value witness
+    /// functions named and prototyped, and a load of a value's witness table
+    /// through its metadata typed `swift.value_witness_table *`. Default-on;
+    /// inert unless `swiftmetadata` is on.
+    pub analysis_valuewitness: bool,
     /// (kuna) The calling convention the analysis tier bound to a function
     /// without declaring its signature, by entry `(space index, offset)`.
     /// The function's own parameters, and those of every direct call to it,
@@ -2715,6 +2721,7 @@ impl Architecture {
             analysis_objcivars: true,
             analysis_swiftcall: true,
             analysis_swiftobjcthunk: true,
+            analysis_valuewitness: true,
             loader_proto_models: Rc::default(),
             loader_input_hints: std::collections::BTreeMap::new(),
             loader_swift_abi: None,
@@ -3076,6 +3083,7 @@ impl Architecture {
         self.analysis_objcivars = true; // (kuna) ObjC instance structs + typed self + ivar offset fold; inert unless objc is on
         self.analysis_swiftcall = true; // Swift calling convention default-on, inert unless swiftmetadata is on
         self.analysis_swiftobjcthunk = true; // Swift slot names from @objc thunks default-on, inert unless swiftmetadata is on
+        self.analysis_valuewitness = true; // Swift value witnesses default-on, inert unless swiftmetadata is on
         self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
         self.macho_arm64e = true; // arm64e Apple-Silicon spec selection (arm64e Mach-O only)
     }
@@ -3656,6 +3664,7 @@ impl Architecture {
         ctx.cast_index = self.cast_index && self.print.out_lang() == crate::kuna_lang::OutLang::C; // (kuna) castindex
         ctx.ptr_from_use = self.ptr_from_use; // (kuna) ptrfromuse
         ctx.char_ptr = self.char_ptr; // (kuna) charptr
+        ctx.analysis_valuewitness = self.analysis_valuewitness; // (kuna) valuewitness
         ctx.elem_ptr = self.elem_ptr; // (kuna) elemptr
         ctx.elem_ptr_ranges = std::rc::Rc::clone(&self.globalref_ranges); // (kuna) elemptr
         ctx.libctypes = self.analysis_libctypes; // (kuna) libctypes (kuna_libcfit)

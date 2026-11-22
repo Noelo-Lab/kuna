@@ -37,6 +37,7 @@ use kuna_decomp::dtype::{Datatype, TypeFactory, TypeField, type_metatype};
 use kuna_decomp::fspec::PrototypePieces;
 
 use super::Namer;
+use super::kuna_swiftwitness::{HAS_ENUM_WITNESSES, WITNESSES, witness_pointer};
 use super::descriptors::{
     Context,
     ContextKind,
@@ -828,31 +829,51 @@ impl<'a> Types<'a> {
         self.interned_struct("swift.class_metadata", &fields, f + 40)
     }
 
+    /// The layout of the table at `table`: `swift.enum_value_witness_table`
+    /// when its flags say it has the enum witnesses.
+    pub fn table_struct_at(&self, table: u64) -> Option<Rc<Datatype>> {
+        let flags = self.reader.img.read_u32(table.checked_add(80)?)?;
+        if flags & HAS_ENUM_WITNESSES != 0 {
+            self.enum_witness_table_struct()
+        } else {
+            self.witness_table_struct()
+        }
+    }
+
+    /// `swift.enum_value_witness_table`: the value witness table, then the
+    /// three enum witnesses.
+    pub fn enum_witness_table_struct(&self) -> Option<Rc<Datatype>> {
+        let fields = self.witness_table_fields(WITNESSES.len())?;
+        self.interned_struct("swift.enum_value_witness_table", &fields, 112)
+    }
+
     /// `swift.value_witness_table`.
     pub fn witness_table_struct(&self) -> Option<Rc<Datatype>> {
+        let fields = self.witness_table_fields(8)?;
+        self.interned_struct("swift.value_witness_table", &fields, 88)
+    }
+
+    /// The layout words and the first `witnesses` functions of a table,
+    /// each function slot a pointer of the witness's signature.
+    fn witness_table_fields(&self, witnesses: usize) -> Option<Vec<(i32, &'static str, Rc<Datatype>)>> {
         let ptr = self.void_ptr()?;
         let word = self.tf.get_base(8, type_metatype::TYPE_UINT).ok()?;
         let u32t = self.tf.get_base(4, type_metatype::TYPE_UINT).ok()?;
-        let names = [
-            "initializeBufferWithCopyOfBuffer",
-            "destroy",
-            "initializeWithCopy",
-            "assignWithCopy",
-            "initializeWithTake",
-            "assignWithTake",
-            "getEnumTagSinglePayload",
-            "storeEnumTagSinglePayload",
-        ];
-        let mut fields: Vec<(i32, &str, Rc<Datatype>)> = names
+        let meta = self.metadata_struct().and_then(|t| self.pointer_to(t))?;
+        let mut fields: Vec<(i32, &'static str, Rc<Datatype>)> = WITNESSES[..witnesses]
             .iter()
             .enumerate()
-            .map(|(i, n)| (8 * i as i32, *n, Rc::clone(&ptr)))
+            .map(|(i, (n, off))| {
+                let f = witness_pointer(self.tf, i, &meta).unwrap_or_else(|| Rc::clone(&ptr));
+                (*off as i32, *n, f)
+            })
             .collect();
         fields.push((64, "size", Rc::clone(&word)));
         fields.push((72, "stride", word));
         fields.push((80, "flags", Rc::clone(&u32t)));
         fields.push((84, "extraInhabitantCount", u32t));
-        self.interned_struct("swift.value_witness_table", &fields, 88)
+        fields.sort_by_key(|f| f.0);
+        Some(fields)
     }
 
     /// Build every static layout, type the metadata records, the accessors
@@ -866,7 +887,6 @@ impl<'a> Types<'a> {
         addrs.sort_unstable();
         let metadata_t = self.metadata_struct();
         let class_metadata_t = self.class_metadata_struct();
-        let vwt_t = self.witness_table_struct();
         let long = self.tf.get_base(8, type_metatype::TYPE_INT).ok();
         for addr in addrs {
             let Some(ctx) = self.md.contexts.get(&addr) else {
@@ -907,7 +927,7 @@ impl<'a> Types<'a> {
                 });
             }
             if ctx.kind != ContextKind::Class {
-                if let (Some(w), Some(t)) = (self.local_witness_table(meta), vwt_t.clone()) {
+                if let Some((w, t)) = self.local_witness_table(meta).and_then(|w| Some((w, self.table_struct_at(w)?))) {
                     out.swift_types.typed_data.push(TypedDataFact {
                         addr: w,
                         name: format!("{path}.value_witness_table"),

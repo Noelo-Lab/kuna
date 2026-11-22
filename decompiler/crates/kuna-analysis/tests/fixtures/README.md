@@ -2707,6 +2707,28 @@ SHA-256: `1ba763c5d3b5707bba6d8fc58f3125312745f30e8e8d63eb05ea5e6dd39c3e93`.
 `$s7leaffix4tickyS2iF`@`0x2800`, `$s7leaffix7CounterV4bumpyyAA4StepOF`@`0x27c0`.
 With `swiftmetadata on` the call decompiles as `leaffix.Counter.bump(_:)(a0,v1,0)`.
 
+### `swift_witness_elf` — value witness tables of a struct, an enum and a generic struct (`valuewitness`)
+
+`swift_witness_elf` (x86-64 ELF PIE, 15 KB, stripped) is the fixture of
+`kuna-console/tests/verify_valuewitness.rs`. Its source `swift_witness_elf.swift`
+holds `Pair` (a struct with a reference), `Shape` (a multi-payload enum, so
+its table has the enum witnesses), the generic `Holder<T>`, whose table is in
+its metadata pattern, and `swapIn<T>`, which moves and copies a `T` through
+its metadata argument's table. Built with swiftc 6.4.2:
+
+```bash
+swiftc -O -module-name witfix swift_witness_elf.swift -o w
+llvm-strip --strip-all w -o swift_witness_elf
+```
+
+SHA-256: `fd04bf395eddf3f020d11d9c07832e41f561fbba30f579e48d430a3cdaecca26`.
+
+**Pinned VMAs** (from the same link before stripping): `$s6witfix4PairVwxx`
+(destroy) `0x2970`, `$s6witfix5ShapeOwug` (getEnumTag) `0x2cc0`,
+`$s6witfix6HolderVwtk` (initializeWithTake) `0x2ec0`, and `witfix.swapIn<A>`
+`0x3580`, which decompiles as `(*v1->initializeWithTake)(v2,a0,a2)` and
+`(*v1->initializeWithCopy)(a0,a1,a2)`.
+
 ### `swift_call_free_elf` — a mutating struct call after a module function (`swiftcall`)
 
 `swift_call_free_elf` (x86-64 ELF, 18 KB, with symbols) is the fixture for the

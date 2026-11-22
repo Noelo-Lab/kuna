@@ -993,6 +993,7 @@ kuna_options! { self, p1;
     },
     "swiftcall" => on_off!(analysis_swiftcall, "Swift calling convention on methods and witnesses"),
     "swiftobjcthunk" => on_off!(analysis_swiftobjcthunk, "Swift vtable slot names from @objc thunks"),
+    "valuewitness" => on_off!(analysis_valuewitness, "Swift value witness functions and tables"),
     "objcsdk" => {
         let path = crate::kuna_objcsdk::parse_option_value(p1).map_err(KunaError::parse)?;
         crate::kuna_objcsdk::set_objcsdk_env(path.as_deref().and_then(|p| p.to_str()));
