@@ -4888,7 +4888,7 @@ synthetic `pushan_vm_x86_64` fixture, a push/ret-dispatched stack-machine
 interpreter in a 64 KiB `.vmp0` whose bytecode computes `arg0 == 0 ? 7 :
 arg0 + 5` with a cmov-selected virtual branch. With `off`, the function is an
 empty body. With the default, the virtual branch and both returns are
-recovered. `tests/stages/kuna-pushan-sound.xml` decompiles sixteen
+recovered. `tests/stages/kuna-pushan-sound.xml` decompiles seventeen
 hand-written programs of the `pushan_vm2_x86_64` fixture, each aimed at a way
 the recovered program could say something false: loops whose exit tests need
 more than two observed counter values (a `setl` the JZ selects on by `cmov`,
@@ -4898,8 +4898,11 @@ and a local a call writes, a read-only table indexed by the loop counter, a
 writable global read before and after a call, stores through a pointer
 argument on two paths and in a loop, two programs the header reports as
 incomplete (a loop that grows the stack, a virtual jump through an argument),
-and two virtual exits into one native epilogue, one of them an instruction
-ahead of it, whose call the recovered program makes once.
+two virtual exits into one native epilogue, one of them an instruction
+ahead of it, whose call the recovered program makes once, and a virtual branch
+whose handler computes the next VPC from the low bit of a flag a join merged
+and from a comparison (`f_sel`), which splits over the merge symbol's two
+recorded values.
 `tests/stages/kuna-pushan-interp.xml` runs two passes over the
 `pushan_interp_x86_64` fixture (gcc -O0 from its committed C source), six
 functions that are their own interpreters of one virtual program with a loop

@@ -9,8 +9,9 @@ earlier, correlated branches, two branches to one label, values live across a
 native call, a local a call writes through its address, a read-only table and
 a stack array indexed by a loop counter, a branch on a mutable global, stores
 through a pointer argument on two paths, a loop that grows the stack, a
-virtual jump through an argument, and two virtual exits into one native
-epilogue, one of them an instruction ahead of it.  Every program sits
+virtual jump through an argument, two virtual exits into one native
+epilogue, one of them an instruction ahead of it, and a virtual branch that
+selects its target arithmetically on a flag a join merged and a comparison.  Every program sits
 in its own 256-byte block of seeded random filler (entropy above 7 bits/byte).
 Regenerate with `python3 pushan_vm2_x86_64.py` (needs GNU as/ld)."""
 import os, random, subprocess, tempfile
@@ -20,6 +21,7 @@ rng = random.Random(7681)
 codes = rng.sample(range(1, 256), len(OPS))
 OP = dict(zip(OPS, codes))
 OP["LEAVE"] = min(set(range(1, 256)) - set(codes))
+OP["SEL"] = min(set(range(1, 256)) - set(codes) - {OP["LEAVE"]})
 A0, A1 = 0, 8
 
 
@@ -33,7 +35,7 @@ def asm(lines):
         if isinstance(item, str):
             return 0
         op = item[0]
-        return {"LDCTX": 2, "STCTX": 2, "LEAV": 2, "LDIMM": 5, "JZ": 2, "JMP": 2}.get(op, 1)
+        return {"LDCTX": 2, "STCTX": 2, "LEAV": 2, "LDIMM": 5, "JZ": 2, "JMP": 2, "SEL": 3}.get(op, 1)
     labels, pc = {}, 0
     for it in lines:
         if isinstance(it, str):
@@ -53,6 +55,12 @@ def asm(lines):
             d = labels[args[0]] - (len(out) + 1)
             assert -128 <= d < 128
             out.append(d & 0xff)
+        elif op == "SEL":
+            end = len(out) + 2
+            for lab in args:
+                d = labels[lab] - end
+                assert -128 <= d < 128
+                out.append(d & 0xff)
     return out
 
 
@@ -157,6 +165,16 @@ PROGRAMS = {
     "f_epi": [("LDCTX", A0), ("JZ", "Z"),
               ("LDCTX", A0), ("LDIMM", 5), ("ADD",), ldimm_sym("f_epi_tail"), ("LEAVE",),
               "Z", ("LDIMM", 7), ldimm_sym("f_epi_inc"), ("LEAVE",)],
+    # x = a0 < 5 (as 1 or 0 on two paths that join); c = a1 < 3;
+    # if (x) { if (c) return 2; return 1; } return 3;   (SEL picks its target
+    # arithmetically from the low bit of x and from c, as VMProtect's vJCC does)
+    "f_sel": [("LDCTX", A0), ("LDIMM", 5), ("LT",), ("JZ", "E"),
+              ("LDIMM", 1), ("STCTX", V(0)), ("JMP", "J"),
+              "E", ("LDIMM", 0), ("STCTX", V(0)),
+              "J", ("LDCTX", A1), ("LDIMM", 3), ("LT",), ("LDCTX", V(0)), ("SEL", "T", "F"),
+              ("LDIMM", 1), ("EXIT",),
+              "T", ("LDIMM", 2), ("EXIT",),
+              "F", ("LDIMM", 3), ("EXIT",)],
 }
 
 NAMES = list(PROGRAMS)
@@ -220,6 +238,9 @@ def source(blocks):
             "    add rsp, 8", "    ret",
             "h_leave:", "    pop rcx", "    pop rax", "    mov rsp, rbp", "    pop rdi", "    pop rsi", "    pop rbp",
             "    pop rbx", "    add rsp, 8", "    jmp rcx",
+            "h_sel:", "    pop rax", "    pop rdx", "    movsx rcx, byte ptr [rsi]", "    movsx r8, byte ptr [rsi+1]",
+            "    add rsi, 2", "    and eax, 1", "    neg rax", "    neg rdx", "    and rcx, rdx", "    and rcx, rax",
+            "    not rax", "    and r8, rax", "    add rsi, rcx", "    add rsi, r8", "    jmp dispatch",
             ".p2align 8", "handlers:"]
     handler = {c: "h_" + o.lower() for o, c in OP.items()}
     for i in range(256):
