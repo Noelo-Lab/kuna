@@ -8,6 +8,9 @@
 //! register holding a constant stays known over a short straight-line run, so
 //! an AArch64 `adrp`/`add`/`ldrsw` read of an inline jump table counts. The
 //! `aif` consumer drops a gap entry whose first instruction spans one of them.
+//! An ARM PC-relative literal load is not counted: the word it reads is a
+//! literal-pool word, which `poolentry` and `aifpoolslide` own, and its target
+//! can be the first word of a real function the Listing never decoded.
 
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -19,6 +22,7 @@ use kuna_sleigh::translate::Translate;
 
 use super::xrefs::{decode, FullCapture};
 use super::Listing;
+use crate::aif::kuna_poolentry::{literal_target, DecodeMode};
 
 /// Every address the decoded code reads or writes as data.
 ///
@@ -31,6 +35,7 @@ pub fn data_targets(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
     data_space: &Rc<AddrSpace>,
+    mode: &DecodeMode,
 ) -> BTreeSet<u64> {
     let mut out = BTreeSet::new();
     let is_data = |vn: &VarnodeData| vn.space.as_ref().is_some_and(|s| Rc::ptr_eq(s, data_space));
@@ -55,6 +60,10 @@ pub fn data_targets(
             bases.clear();
         }
         next_vma = vma.checked_add(u64::from(insn.len.max(1)));
+        if literal_target(vma, &insn.operands, mode).is_some() && mode.pc_delta(vma).is_some() {
+            bases.clear();
+            continue;
+        }
         if decode(translate, vma, code_space, &mut cap).is_none() {
             bases.clear();
             continue;

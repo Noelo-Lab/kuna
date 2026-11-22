@@ -2158,6 +2158,17 @@ fn same_value_through(fd: &Funcdata, a: VarnodeId, b: VarnodeId, depth: u32, loa
         })
 }
 
+/// (kuna `switchextent`) What [`JumpBasicModel::kuna_next_table_rows`] makes
+/// of an unguarded table's rows.
+enum NextTableRows {
+    /// Keep the rows the earlier checks left.
+    Keep,
+    /// Keep this many leading rows.
+    Cut(usize),
+    /// Fail the check so the flow decodes the next functions and retries.
+    Ask,
+}
+
 /// The basic jump-table model (C++ `JumpBasic`, the instance methods).
 ///
 /// Recovers a straight-line index-range model for the switch: the normalized
@@ -3201,6 +3212,15 @@ impl JumpBasicModel {
                 self.mark_foldable_guards(fd);
                 return Ok(true);
             }
+            // (kuna `switchextent`) No guard at all: the table ends where the
+            // function's next jump table begins (`kuna_switchextent.rs`).
+            if unbounded
+                && fd.get_arch().switch_extent
+                && self.kuna_try_extent_bound_table(fd, maxtablesize)
+            {
+                self.mark_foldable_guards(fd);
+                return Ok(true);
+            }
             if unbounded && fd.get_arch().switch_trim && self.kuna_try_trimmed_table(fd, maxtablesize) {
                 return Ok(true);
             }
@@ -3387,6 +3407,49 @@ impl JumpBasicModel {
         // [0, bound) over the bound-result width, step 1.
         jr.set_range(CircleRange::new(0, bound, vsize, 1));
         jr.set_start_vn(bound_out);
+        jr.set_start_op(startop);
+        true
+    }
+
+    /// (kuna `switchextent`) Re-bound a table no guard reaches to `[0, N)`
+    /// when the function's next jump table lies `N` entries past this one's
+    /// start in the same load-image section (`p2_lift/kuna_switchextent.rs`).
+    /// The melded path must hold one LOAD whose address is a constant table
+    /// plus an index scaled by the entry width; that index becomes the
+    /// range's start.
+    fn kuna_try_extent_bound_table(&mut self, fd: &Funcdata, maxtablesize: uint4) -> bool {
+        let Some(tables) = fd.kuna_extent_tables.as_ref() else { return false };
+        let loads: Vec<OpId> = (0..self.path_meld.num_ops())
+            .filter_map(|i| self.path_meld.get_op(i))
+            .filter(|&op| fd.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_LOAD))
+            .collect();
+        let [load] = loads[..] else { return false };
+        let Some((table, stride, index)) = crate::kuna_switchextent::table_read(fd, load) else { return false };
+        let width = fd.obank().get(load).and_then(|o| o.get_out()).and_then(|vn| fd.vbank().get(vn)).map(|v| v.get_size());
+        if width != Some(stride as int4) {
+            return false;
+        }
+        let Some(&next) = tables.iter().find(|&&t| t > table) else { return false };
+        let Some(space) = fd.get_address().get_space().cloned() else { return false };
+        if !fd.get_arch().in_section_of(&Address::new(Rc::clone(&space), table), &Address::new(space, next)) {
+            return false;
+        }
+        let count = (next - table) / stride;
+        if count < 2 || count > uintb::from(maxtablesize) {
+            return false;
+        }
+        let Some(pos) = (0..self.path_meld.num_common_varnode()).find(|&i| self.path_meld.get_varnode(i) == index) else {
+            return false;
+        };
+        let Some(startop) = self.path_meld.get_earliest_op(pos) else { return false };
+        let Some(vsize) = fd.vbank().get(index).map(|v| v.get_size()) else { return false };
+        if vsize < 8 && count > 1u64 << (8 * vsize) {
+            return false;
+        }
+        self.varnode_index = pos;
+        let jr = self.jrange_range_mut();
+        jr.set_range(CircleRange::new(0, count, vsize, 1));
+        jr.set_start_vn(index);
         jr.set_start_op(startop);
         true
     }
@@ -5160,6 +5223,15 @@ impl JumpModel for JumpBasicModel {
             if let Some(own) = Self::own_rows(fd, &addresstable[..i]) {
                 i = own;
                 self.run_on = true;
+            } else {
+                match self.kuna_next_table_rows(fd, &addresstable[..i]) {
+                    NextTableRows::Cut(rows) => {
+                        i = rows;
+                        self.run_on = true;
+                    }
+                    NextTableRows::Ask => return Ok(false),
+                    NextTableRows::Keep => {}
+                }
             }
         }
         if i != addresstable.len() {
@@ -5294,6 +5366,62 @@ impl JumpBasicModel {
         }
         self.jrange = Some(Box::new(exact));
         self.rebuild = true;
+    }
+
+    /// (kuna `switchextent`) Where an unguarded table whose rows leave the
+    /// function and that the run-on cut keeps whole ends: at the lowest jump
+    /// table above it, of this function or of the next ones
+    /// (`kuna_switchextent::later_tables`). A jump-table partial asks the flow
+    /// for the next functions' tables first ([`NextTableRows::Ask`]).
+    fn kuna_next_table_rows(&self, fd: &Funcdata, rows: &[Address]) -> NextTableRows {
+        if !fd.get_arch().switch_extent || self.is_model2 {
+            return NextTableRows::Keep;
+        }
+        let entry = fd.get_address();
+        let Some(owner) = fd.get_arch().function_owner(entry) else { return NextTableRows::Keep };
+        if rows.iter().all(|row| owner(row.get_offset()) == Some(entry.get_offset())) {
+            return NextTableRows::Keep;
+        }
+        let Some((table, stride)) = self.kuna_table_read(fd) else { return NextTableRows::Keep };
+        let Some(later) = fd.kuna_later_tables.as_ref() else {
+            if fd.is_jumptable_recovery_on() {
+                fd.kuna_later_wanted.set(Some(table));
+                return NextTableRows::Ask;
+            }
+            return NextTableRows::Keep;
+        };
+        let own = fd.kuna_extent_tables.as_deref().map_or(&[][..], Vec::as_slice);
+        let space = entry.get_space().cloned();
+        let next = own
+            .iter()
+            .chain(later.iter())
+            .copied()
+            .filter(|&t| t > table)
+            .filter(|&t| {
+                space.as_ref().is_some_and(|s| {
+                    let (a, b) = (Address::new(Rc::clone(s), table), Address::new(Rc::clone(s), t));
+                    fd.get_arch().in_section_of(&a, &b)
+                })
+            })
+            .min();
+        match next.map(|next| ((next - table) / stride) as usize) {
+            Some(n) if n >= 2 && n < rows.len() => NextTableRows::Cut(n),
+            _ => NextTableRows::Keep,
+        }
+    }
+
+    /// (kuna `switchextent`) The `(table, stride)` of the one LOAD on the
+    /// melded path, when it reads a constant table at an index scaled by its
+    /// entry width.
+    fn kuna_table_read(&self, fd: &Funcdata) -> Option<(u64, u64)> {
+        let loads: Vec<OpId> = (0..self.path_meld.num_ops())
+            .filter_map(|i| self.path_meld.get_op(i))
+            .filter(|&op| fd.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_LOAD))
+            .collect();
+        let [load] = loads[..] else { return None };
+        let (table, stride, _) = crate::kuna_switchextent::table_read(fd, load)?;
+        let width = fd.obank().get(load)?.get_out().and_then(|vn| fd.vbank().get(vn)).map(|v| v.get_size());
+        (width == Some(stride as int4)).then_some((table, stride))
     }
 
     /// (kuna `switchrunon`) How many leading rows of an unguarded table belong

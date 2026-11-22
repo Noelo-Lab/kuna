@@ -101,7 +101,7 @@ const RELIABLE_OVERRIDES: &[(&str, &str)] = &[];
 /// (`returndup` since DIV-54, `pdb` since DIV-129, the presentation defaults
 /// `partialaccess`, `voidtailreturn`, `importdata`, `calltargettype` and
 /// `libcnames`, and the target-gated passes -- `rtti`=PE,
-/// `itaniumrtti`=ELF-with-RTTI, `objc`/`macho-arm64e`=Mach-O,
+/// `itaniumrtti`=ELF/Mach-O-with-RTTI, `objc`/`macho-arm64e`=Mach-O,
 /// `sparcstructret`=SPARC, `v850indirectbranch`=V850, the ARM entry and
 /// hard-float passes -- all inert off their target): the preset owns the option
 /// outright, so a user `--option returndup off` earlier on the command line is
@@ -142,6 +142,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("switchguardbound", "on"), // speed-expensive
     ("unrolledguard", "on"),    // speed-expensive
     ("globalarrayanchor", "on"),
+    ("opaquepredicate", "on"),
     ("sparcstructret", "on"), // SPARC-idiom-gated; no-op off-SPARC
     ("v850indirectbranch", "on"), // V850-gated (kuna_v850indbranch::applies); no-op off-V850
     ("regionedgeorder", "on"),
@@ -230,7 +231,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("fid", "on"),
     ("flirt", "on"),         // inert without KUNA_FLIRT_SIGS
     ("rtti", "on"),          // PE-only; no-op off-PE
-    ("itaniumrtti", "on"),   // ELF-only, and inert without __cxxabiv1 typeinfo relocs
+    ("itaniumrtti", "on"),   // ELF and Mach-O, inert without __cxxabiv1 typeinfo anchors
     // The speculative gap-walk ("may create bad code") with the aligned gap cursor
     // (GH-299). Every number in its catalog row was measured under this preset,
     // and the aligned cursor is a net win in BOTH directions there (mid-body
@@ -632,6 +633,10 @@ mod tests {
             // preset sweep or speed measurement needed before changing the
             // default output for every aggressive-mode decompile.
             "bytearrayc",
+            // `funcchunks` changes the body FID hashes and the inventory size of
+            // `kuna functions`; it has no preset sweep or speed measurement of the
+            // chunk walk over whole binaries yet.
+            "funcchunks",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();

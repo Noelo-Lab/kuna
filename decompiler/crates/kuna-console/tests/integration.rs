@@ -348,11 +348,17 @@ mod verify_swiftcall;
 #[path = "verify_importdata.rs"]
 mod verify_importdata;
 
+#[path = "verify_cstringconst.rs"]
+mod verify_cstringconst;
+
 #[path = "verify_cfstring.rs"]
 mod verify_cfstring;
 
 #[path = "verify_elfgotimports.rs"]
 mod verify_elfgotimports;
+
+#[path = "verify_machodataslots.rs"]
+mod verify_machodataslots;
 
 #[path = "verify_object_formats.rs"]
 mod verify_object_formats;
@@ -568,8 +574,8 @@ mod mips_weak_imports;
 #[path = "indirect_dispatch_flow.rs"]
 mod indirect_dispatch_flow;
 
-#[path = "verify_funcchunks.rs"]
-mod verify_funcchunks;
-
 #[path = "verify_immutable_got.rs"]
 mod verify_immutable_got;
+
+#[path = "verify_funcchunks.rs"]
+mod verify_funcchunks;
