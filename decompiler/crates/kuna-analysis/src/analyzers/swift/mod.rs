@@ -29,6 +29,7 @@
 
 pub mod descriptors;
 pub mod kuna_swiftcall;
+pub mod kuna_swiftoutlined;
 pub mod kuna_swifttypes;
 pub mod kuna_swiftwitness;
 
@@ -151,6 +152,11 @@ impl AnalysisPass for SwiftMetadataPass {
             .arch
             .analysis_valuewitness
             .then(|| kuna_swiftwitness::claim(&reader, &md, ctx.file.architecture(), &namer));
+        let helpers = (ctx.arch.analysis_valuewitness && ctx.file.architecture() == object::Architecture::Aarch64)
+            .then(|| {
+                let entries = crate::analyzers::entry::collect_entries(ctx.file, ctx.bytes);
+                kuna_swiftoutlined::claim(&reader, &md, &namer, &entries)
+            });
         let mut metadata_ptr = None;
         if ctx.arch.analysis_swifttypes {
             let mut types = kuna_swifttypes::Types::new(
@@ -179,8 +185,16 @@ impl AnalysisPass for SwiftMetadataPass {
             }
             metadata_ptr = types.metadata_struct().and_then(|t| types.pointer_to(t));
         }
-        if let Some(w) = &witnesses {
-            kuna_swiftwitness::prototypes(w, &namer, ctx.arch.types(), metadata_ptr, &mut out);
+        let tf = ctx.arch.types();
+        let meta = metadata_ptr.or_else(|| {
+            let void = tf.get_type_void().ok()?;
+            tf.get_type_pointer(tf.get_size_of_pointer(), void, 1).ok()
+        });
+        if let (Some(w), Some(meta)) = (&witnesses, &meta) {
+            kuna_swiftwitness::prototypes(w, &namer, tf, meta, &mut out);
+        }
+        if let (Some(h), Some(meta)) = (&helpers, &meta) {
+            kuna_swiftoutlined::prototypes(h, &namer, tf, meta, &mut out);
         }
         namer.finish(records, &mut out);
         out
@@ -250,9 +264,11 @@ fn member_after_protocol(name: &str) -> Option<String> {
 }
 
 /// Whether a claim's name is a value witness's
-/// (`Module.Point.destroy_value_witness`).
+/// (`Module.Point.destroy_value_witness`) or an outlined helper's
+/// (`Module.Point.outlined_destroy`, `outlined_destroy.merged`).
 fn is_value_witness(name: &str) -> bool {
-    name.ends_with("_value_witness")
+    let name = name.strip_suffix(".merged").unwrap_or(name);
+    name.ends_with("_value_witness") || kuna_swiftoutlined::is_helper_name(name)
 }
 
 /// The bytes of names the pass builds beyond the image's own length. A
