@@ -20,7 +20,9 @@ real ELF parser.
 | `ppc32_stack_chk_local_linked_be.so`, `ppc32_stack_chk_local_linked_le.so` | built from `ppc32_stack_chk_local_linked.s` (`llvm-mc -triple=powerpc-unknown-linux-gnu -filetype=obj ppc32_stack_chk_local_linked.s -o p.o`; `ld.lld -shared -z max-page-size=0x1000 p.o -o ppc32_stack_chk_local_linked_be.so`, and the same with `-triple=powerpcle-unknown-linux-gnu` for `_le.so`, Ubuntu LLVM version 21.1.8), SHA-256 `4b6d867f6ecfd2a62083ed9ff0e2ec1688148f99b27c5b6702b1b0b5d1d49533` (BE) and `9e19f6d135cc8aa73e697bb5d557d7cd9bd2c463c151eca45190a2f7c79ae7e3` (LE) | linked ELF32 PowerPC shared objects, 1696 bytes each; readelf -s: r6 at 0x11c4 with size 52 (GLOBAL), the same body as `ppc32_stack_chk_local_*.o`, its `bl` resolved to __stack_chk_fail_local at 0x11f8 with size 16 (LOCAL HIDDEN, in .symtab only), whose body ends in `bl` to the `__stack_chk_fail` PLT call stub at 0x1208; __stack_chk_fail is the only .dynsym import; read by `kuna-cli/tests/stack_chk_fail_local.rs` and `tests/stages/kuna-stackchklocal.xml`; that cargo test also rebuilds both from `ppc32_stack_chk_local_linked.s` when `llvm-mc` and `ld.lld` are installed and checks the rebuilt images the same way |
 | `prefixed_noreturn_aarch64` | built from `prefixed_noreturn_aarch64.s` (`llvm-mc -triple=aarch64 -filetype=obj prefixed_noreturn_aarch64.s -o p.o`; `ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e probe p.o -o prefixed_noreturn_aarch64`, Ubuntu LLVM version 21.1.8), SHA-256 `e9445cf6d2489b9ea65a2de7e8baa44b97e6b85a3bad858adbfa390d1b92b4fb` | linked AArch64 ELF, about 5 KB; readelf -s: probe at 0x10000 with size 28, plain at 0x10020 with size 28; the last instruction of probe is `bl stub___stack_chk_fail` at 0x10018, followed by 4 zero bytes outside the symbol; the last instruction of plain is `bl __stack_chk_fail`; keeps_count and keeps_exit call mystack_chk_fail_count and handle_exit, then return 9; all four callees are defined FUNC symbols whose body is a bare ret; read by `kuna decompile-all` when checking the `<prefix>__` proxy rule in `p2_lift/kuna_noreturn_externmatch.rs`, and by `tests/stages/kuna-prefixed-noreturn.xml` |
 | `switchextent_aarch64` | built from `switchextent_aarch64.s` (`llvm-mc -triple=aarch64 -filetype=obj switchextent_aarch64.s -o s.o`; `ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e guarded s.o -o switchextent_aarch64`, LLVM 22.1.8), SHA-256 `6aaa64b4350413649b2dbc506eb17ecb8f77d87907eaed3104e2ea14325ee3f1` | linked AArch64 ELF, 5.5 KB; readelf -s: guarded at 0x10000, entering at 0x10048, pick at 0x10088, unchecked at 0x10090, last at 0x10118. Compact jump tables (`adr` base, byte or halfword offsets, `lsl #2`) in `.rodata` at 0x11158: `guarded` behind `cmp w0,#3; b.hi`; `entering` whose `cmp w0,#2; b.ls` branches into the dispatch block; `unchecked` dispatching twice on `pick`'s result through `tab_first` (3 halfwords at 0x11160) and `tab_second` (4 at 0x11166), nothing bounding either; `last` through `tab_last` (2 at 0x1116e) followed by a byte array it reads. `switchextent` (`listing/kuna_switchextent.rs`, `p2_lift/kuna_switchextent.rs`): the first unchecked table ends at the function's second; a function's last table, and one followed only by data it reads, stay computed calls. `tests/stages/kuna-switchextent-a64.xml` is the stage test; `kuna-cli/tests/switchextent_cli.rs` decompiles each and reads the walk's jump references |
+| `swiftenumcase_aarch64` | built from `swiftenumcase_aarch64.s` (`llvm-mc -triple=aarch64 -filetype=obj swiftenumcase_aarch64.s -o s.o`; `ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e dispatch s.o -o swiftenumcase_aarch64`, LLVM 22.1.8), SHA-256 `8314072f915b6b377b72c78678e16d2e435e9b8d82f0bdc0c6060889420ae2bd` | linked AArch64 ELF, 5.5 KB; readelf -s: dispatch at 0x10000, consume at 0x1006c, Shape_accessor at 0x10074, swift_getEnumCaseMultiPayload at 0x10080. `dispatch` keeps `Shape_accessor`'s result in x20 across a call, passes it to `swift_getEnumCaseMultiPayload` and indexes `tab_shape` (3 halfwords at 0x11088, `adr` base, `lsl #2`) with the case, no range check and no table after it; four halfwords follow. `swift5_type_metadata` names `shape_descriptor` (0x110a4), an enum descriptor whose accessor is Shape_accessor with 2 payload cases and 1 empty case. `switchextent` (`p2_lift/kuna_switchextent.rs`, `enum_calls`): the table has the enum's three cases; off, or with `swiftmetadata` off, it stays a computed call. `kuna-cli/tests/switchextent_cli.rs` decompiles it |
 | `switchnext_aarch64` | built from `switchnext_aarch64.s` (`llvm-mc -triple=aarch64 -filetype=obj switchnext_aarch64.s -o sn.o`; `ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e name_of sn.o -o switchnext_aarch64`, LLVM 22.1.8), SHA-256 `3e272923fd2d109c54867ffbc3a6aedede106441b66b2839e018fca35b4d6373` | linked AArch64 ELF, 5.5 KB; readelf -s: name_of at 0x10000, next_kind at 0x10034. `name_of` indexes `tab_names` (3 halfwords at 0x110dc) with `x0 & 0xff` and no range check, and its table is its function's last; `next_kind`'s table follows at 0x110e2, then zero bytes. `switchextent` (`p2_lift/kuna_switchextent.rs`, `later_tables`): the byte-masked table ends at the next function's table, three cases instead of phantom cases with next_kind's code. `tests/stages/kuna-switchnext-a64.xml` is the stage test |
+| `switchnextcsel_aarch64` | built from `switchnextcsel_aarch64.s` (`llvm-mc -triple=aarch64 -filetype=obj switchnextcsel_aarch64.s -o snc.o`; `ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e name_of snc.o -o switchnextcsel_aarch64`, Ubuntu LLVM version 21.1.8), SHA-256 `44f8d810fdda21275d7a0e336e798ba9d4b5f829bf5448781d0cad2b4c721ddf` | linked AArch64 ELF, 5.1 KB; readelf -s: name_of at 0x10000, pick at 0x10034. `name_of` indexes `tab_names` (3 bytes at 0x11084) with `x0 & 0xff` and no range check, and its table is its function's last; `pick`'s byte table follows at 0x11087, its index picked by a `csel`/`csinc` chain over constants and added to the table's address before the load. `switchextent` (`p2_lift/kuna_switchextent.rs`, `later_tables`): the extent fold takes a value written after a branch inside one instruction as unknown, so it names pick's table and name_of ends at it, three cases instead of phantom ones. `tests/stages/kuna-switchnextcsel-a64.xml` is the stage test |
 | `prefixed_noreturn_x86_64` | built from `prefixed_noreturn_x86_64.s` (`llvm-mc -triple=x86_64 -filetype=obj prefixed_noreturn_x86_64.s -o p.o`; `ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e probe p.o -o prefixed_noreturn_x86_64`, Ubuntu LLVM version 21.1.8), SHA-256 `d5f4ac84405e3477912a680d046da42c76950c566204cb1895a3f66c6bd0028d` | linked x86_64 ELF, about 5 KB; readelf -s: probe at 0x10000 with size 20, plain at 0x10018 with size 20; the last instruction of probe is `call stub___stack_chk_fail`, followed by 4 zero bytes outside the symbol; the last instruction of plain is `call __stack_chk_fail`; keeps_count and keeps_exit call mystack_chk_fail_count and handle_exit, then return 9; all four callees are defined FUNC symbols whose body is a bare ret; read by `kuna decompile-all` when checking the `<prefix>__` proxy rule in `p2_lift/kuna_noreturn_externmatch.rs`, and by `tests/stages/kuna-prefixed-noreturn.xml` |
 | `rust_minimal_dwarf_names_x86_64` | Rust minimal DWARF plus a genuine imported libc `write`; reproduction in `rust_minimal_dwarf.build.sh` | Rust's namespaced four-argument `write` retains its identity and all four arguments. |
 | `rust_minimal_dwarf_x86_64`, `rust_full_dwarf_x86_64` | Two-function static ELFs built with rustc 1.90.0 minimal/full debug information; source and reproduction script: `rust_minimal_dwarf.rs`, `rust_minimal_dwarf.build.sh` | Minimal DWARF preserves the computed argument to `add_input`; full DWARF retains the named `u64` parameter and return type. |
@@ -1581,6 +1583,25 @@ llvm-strip -x macho_dataslots_arm64
 `$sSSN`@`0x100004008`, `std::__1::ctype<char>::id`@`0x100004010`,
 `imported_counter`@`0x100004018`.
 
+### `macho_dataslotaddr_arm64` — data-import addresses passed on (`importdata`)
+
+`macho_dataslotaddr_arm64` (arm64, ~50 KB, from `macho_dataslotaddr.c`) loads two
+`__got` slots, an Objective-C class object (`_OBJC_CLASS_$_NSObject`) and a Swift
+protocol witness table (`_$s7SwiftUI5ColorVAA4ViewAAWP`), and passes the two
+addresses to an imported call without dereferencing them; `importdata` renders each
+as `&<import>` (`kuna-console/tests/verify_machodataslots.rs`). Built with clang 22
+and `ld64.lld`:
+
+```bash
+clang -target arm64-apple-macos11 -O1 -c macho_dataslotaddr.c -o m.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+         -e _main -o macho_dataslotaddr_arm64 m.o
+llvm-strip -x macho_dataslotaddr_arm64
+```
+
+**Pinned VMAs:** `_pass_addresses`@`0x100000510`; `__got` slots
+`$s7SwiftUI5ColorVAA4ViewAAWP`@`0x100004000`, `OBJC_CLASS_$_NSObject`@`0x100004008`.
+
 ### `swift_metadata_elf` — a stripped Swift executable (`swiftmetadata`)
 
 `swift_metadata_elf` (x86-64 ELF, 14 KB) is the Swift runtime-metadata fixture
@@ -1733,6 +1754,37 @@ alone `style` reads `objc_msgSend$setAlpha:();`; with `option objcsdk
 decompiler/crates/kuna-analysis/tests/fixtures/objc_sdk` it reads
 `objc_msgSend$setAlpha:(a1,a0);`, `v1 = objc_msgSend$frame(a1);` as a `CGRect` and
 `objc_msgSend$setFrame:(a1,v1.x,v1.y,v1.width + 10.0,v1.height);`.
+
+### `macho_objc_forin_arm64` + `objc_sdk/Enumeration.h` — a struct passed by address
+
+`macho_objc_forin_arm64` (arm64, ~50 KB) is the fixture for struct-pointer
+parameters read from headers (`analyzers/objc/kuna_objcsdk.rs`,
+`analyzers/objc/encoding.rs`, stage test `tests/stages/kuna-objcforin.xml`).
+Source `macho_objc_forin.m`: a root class `Bag` **declared and never implemented**
+and one function `visit_all` whose `for (id item in bag)` loop sends
+`countByEnumeratingWithState:objects:count:` with the address of the stack
+enumeration state, every send routed through a linker stub (the `.s` is `clang -S`
+output with each `adrp/ldr x1` selref load dropped and each `bl _objc_msgSend`
+replaced by `bl "_objc_msgSend$<sel>"`). `objc_sdk/Enumeration.h` is a
+**hand-written** stand-in for the SDK's fast-enumeration declarations (no Apple
+text): the state as a `typedef struct { ... } NSFastEnumerationState;` and the
+selector with an array parameter.
+
+```bash
+clang -target arm64-apple-macos11 -fno-objc-arc -O1 -S macho_objc_forin.m -o macho_objc_forin_arm64.s
+# edit: route every send through `_objc_msgSend$<sel>` (drop the selref loads)
+clang -target arm64-apple-macos11 -c macho_objc_forin_arm64.s -o forin.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains -objc_stubs_fast \
+         -undefined dynamic_lookup -x -e _main -o macho_objc_forin_arm64 forin.o
+```
+
+**Pinned VMAs:** `_visit_all`@`0x100000550`, `__objc_stubs`@`0x100000680`
+(`countByEnumeratingWithState:objects:count:` first, then `visit:`). With `objc on`
+alone the state is eight loose words and the element reads
+`*(unsigned long *)(v6 + v5 * 8)`; with `option objcsdk
+decompiler/crates/kuna-analysis/tests/fixtures/objc_sdk` it is one
+`NSFastEnumerationState v1` and the loop reads `v1.itemsPtr[v5]` and
+`*v1.mutationsPtr`.
 
 ### `macho_objc_types_arm64` — declarations typed by class
 
