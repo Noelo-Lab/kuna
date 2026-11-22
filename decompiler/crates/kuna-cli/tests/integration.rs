@@ -34,6 +34,9 @@ mod array_record;
 #[path = "aif_lea_padding.rs"]
 mod aif_lea_padding;
 
+#[path = "switchextent_cli.rs"]
+mod switchextent_cli;
+
 #[path = "ambiguous_selector_cli.rs"]
 mod ambiguous_selector_cli;
 

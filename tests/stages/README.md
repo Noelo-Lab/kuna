@@ -4,6 +4,18 @@
 argument was narrowed to two bytes before the field's prototype was forced on
 the call: the function decompiles and passes the sum widened to the parameter.
 
+`kuna-calleefilledarg.xml` checks that a call to a stub that loads one of its
+own argument registers (`adrp x1; ldr x1,[x1]; ... br x16`, the Objective-C
+selector-stub shape) keeps the receiver, a stack address, a buffer and a count
+the caller staged after that register, and that the stack object's loads after
+the call are not folded. A stub that does not fill the register keeps the
+one-argument positional rendering, and `option calleefilledarg off` restores it.
+
+`kuna-calleefilledarg-ctramp.xml` checks that a C function that fills `rdi`
+and `rsi` and tail-calls through a function pointer keeps the positional rule:
+the `idiv` remainder a clang -O0 caller leaves in `rdx` is not passed to it.
+Only an `objc_msgSend$<sel>` selector stub steps over the register it fills.
+
 `kuna-pacmodifier-arg-a64e.xml` checks that the blended modifier an arm64e
 caller builds in `x8` for a hidden `pacda` is not the next call's first
 argument, with the modifier computed and folded to a constant. A tagged
