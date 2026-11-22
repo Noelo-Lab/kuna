@@ -23,7 +23,35 @@
   <com>option outlang go</com>
   <com>load function main.pair</com><com>decompile</com><com>print C</com>
   <com>load function main.zeroPair</com><com>decompile</com><com>print C</com>
+  <com>echo Go result outputs begin</com>
   <com>load function main.highPair</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-int-error-results/contracts</com>
+  <com>option godwarfsig off</com><com>read symbols</com>
+  <com>option outlang c</com>
+  <com>load function main.forward</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-int-error-results/contracts</com>
+  <com>option godwarfsig on</com><com>read symbols</com>
+  <com>option outlang c</com>
+  <com>load function main.check</com><com>decompile</com><com>print C</com>
+  <com>load function main.forward</com><com>decompile</com><com>print C</com>
+  <com>load function main.modernForward</com><com>decompile</com><com>print C</com>
+  <com>load function main.consume</com><com>decompile</com><com>print C</com>
+  <com>echo Go result outputs end</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-pair-signedness/linux-amd64</com>
+  <com>option godwarfsig on</com><com>read symbols</com>
+  <com>option outlang go</com>
+  <com>echo Go signedness pairs begin</com>
+  <com>load function main.Retype</com><com>decompile</com><com>print C</com>
+  <com>load function main.MergeRetype</com><com>decompile</com><com>print C</com>
+  <com>echo Go signedness pairs end</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-pair-signedness/linux-amd64</com>
+  <com>option godwarfsig off</com><com>read symbols</com>
+  <com>option outlang go</com>
+  <com>load function main.Retype</com><com>decompile</com><com>print C</com>
 </script>
 <stringmatch name="Go DWARF signatures off retain the register byte carrier" min="1" max="1">func pair\(a0 int64, a1 int64\) \[16\]byte</stringmatch>
 <stringmatch name="Go paired signatures preserve both source integer results" min="2" max="2">func pair\(a int64, b int64\) \(int64, int64\)</stringmatch>
@@ -32,5 +60,72 @@
 <stringmatch name="Go paired returns project both fields" min="4" max="4">return v1.result0,v1.result1</stringmatch>
 <stringmatch name="Go paired nested call evaluates outside adapter parameter scope" min="1" max="1">\}\(pair\(a,b\)\).result0</stringmatch>
 <stringmatch name="Go pair zero carrier becomes two integer fields" min="1" max="1">struct \{ result0 uint64; result1 uint64 \}\{0x0,0\}</stringmatch>
-<stringmatch name="Go high pair stores each named result field" min="1" max="1">  v1\.result1 = a$</stringmatch>
+<!-- Check the original high pair and the int/error contract in one marked
+     group. The latter covers the option-off call, three carriers, both
+     forwarders, nil and typed nil, and the caller's separate table/data tests. -->
+<stringmatch name="Go high pair stores each named result field" min="1" max="1">^\s*Go result outputs begin$
+^\s*$
+^// main\.highPair$
+^func highPair\(a uint64\) \(uint64, uint64\) \{$
+^  var v1 struct \{ result0 uint64; result1 uint64 \}(?: // [^()]*)?$
+^\s*$
+^  v1\.result1 = a$
+^  v1\.result0 = 0x0$
+^  return v1\.result0,v1\.result1$
+^\}$
+^\s*$
+^void main\.forward\(void\)$
+^\{$
+^  main\.check\(\);$
+^\}$
+^\s*$
+^__kuna_go_int_error_result main\.check\(int8 n\)$
+^\{$
+^  __kuna_go_int_error_result v1;(?: // [^()]*)?$
+^  __kuna_go_int_error_result v2;(?: // [^()]*)?$
+^\s*$
+^  if \(n == -2\) \{$
+^    v1\.error_tab = &amp;dat_403030;$
+^    v1\.result0 = 0x11;$
+^    v1\.error_data = NULL;$
+^    return v1;$
+^  \}$
+^  if \(0 &lt;= n\)$
+^    return \(__kuna_go_int_error_result\)ZEXT824\(n \+ 1ULL\);$
+^  v2\.error_tab = &amp;dat_403030;$
+^  v2\.result0 = 0x17;$
+^  v2\.error_data = &amp;dat_403050;$
+^  return v2;$
+^\}$
+^\s*$
+^__kuna_go_int_error_result main\.forward\(int8 n\)$
+^\{$
+^  return main\.check\(n\);$
+^\}$
+^\s*$
+^__kuna_go_int_error_result main\.modernForward\(int8 n\)$
+^\{$
+^  return main\.check\(n\);$
+^\}$
+^\s*$
+^int8 main\.consume\(int8 n\)$
+^\{$
+^  int8 v1;(?: // [^()]*)?$
+^  __kuna_go_int_error_result v2;(?: // [^()]*)?$
+^\s*$
+^  v2 = main\.forward\(n\);$
+^  v1 = v2\.result0;$
+^  if \(v2\.error_tab\) \{$
+^    if \(\(v2\.error_tab == &amp;dat_403030\) &amp;&amp; \(!v2\.error_data\)\)$
+^      return v1 \+ 100;$
+^    v1 \+= 200;$
+^  \}$
+^  return v1;$
+^\}$
+^\s*Go result outputs end$</stringmatch>
+<stringmatch name="Go pair signedness conversion constructs matching field types" min="2" max="2">func\(v struct \{ result0 int64; result1 uint64 \}\) struct \{ result0 uint64; result1 int64 \} \{ return struct \{ result0 uint64; result1 int64 \}\{uint64\(v\.result0\), int64\(v\.result1\)\} \}</stringmatch>
+<stringmatch name="Go pair signedness conversion evaluates each source once" min="2" max="2">Mixed\(a,b,pick\)</stringmatch>
+<stringmatch name="Go pair signedness control keeps the correctly typed alternate results" min="1" max="1">v1\.result0,v1\.result1 = Reorder\(a,b,pick\)</stringmatch>
+<stringmatch name="Go pair signedness off keeps the raw call separate" min="1" max="1">^func Retype\(\) \{$
+^  Mixed\(\)$</stringmatch>
 </decompilertest>

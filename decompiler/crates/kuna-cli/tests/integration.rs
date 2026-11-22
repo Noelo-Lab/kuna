@@ -32,6 +32,9 @@ mod array_record;
 #[path = "aif_lea_padding.rs"]
 mod aif_lea_padding;
 
+#[path = "switchextent_cli.rs"]
+mod switchextent_cli;
+
 #[path = "ambiguous_selector_cli.rs"]
 mod ambiguous_selector_cli;
 
@@ -177,6 +180,8 @@ mod coldentry_source_boundary;
 mod compact_switch_cli;
 #[path = "switch_self_loop_cli.rs"]
 mod switch_self_loop_cli;
+#[path = "indirect_dispatch.rs"]
+mod indirect_dispatch;
 
 #[path = "contiguous_byte_frame.rs"]
 mod contiguous_byte_frame;
@@ -222,6 +227,9 @@ mod decompile_graph_cli;
 
 #[path = "decompile_json_cli.rs"]
 mod decompile_json_cli;
+
+#[path = "tail_callee_batch_cli.rs"]
+mod tail_callee_batch_cli;
 
 #[path = "function_warnings_cli.rs"]
 mod function_warnings_cli;
@@ -276,6 +284,9 @@ mod fid_cli;
 
 #[path = "fid_db_status_cli.rs"]
 mod fid_db_status_cli;
+
+#[path = "flirt_make_cli.rs"]
+mod flirt_make_cli;
 
 #[path = "float_unordered_compare.rs"]
 mod float_unordered_compare;
@@ -681,6 +692,8 @@ mod windows_stack_argument_alignment;
 mod imported_data_identifiers;
 #[path = "dwarf_linkage_calls.rs"]
 mod dwarf_linkage_calls;
+#[path = "dwarf_name_chars.rs"]
+mod dwarf_name_chars;
 #[path = "project_named_globals.rs"]
 mod project_named_globals;
 #[path = "x87_register_payload.rs"]
@@ -833,6 +846,10 @@ mod integer_field_extract;
 mod go_store_value;
 #[path = "go_pointer_arithmetic.rs"]
 mod go_pointer_arithmetic;
+#[path = "go_stack_abi.rs"]
+mod go_stack_abi;
+#[path = "call_table_cli.rs"]
+mod call_table_cli;
 
 #[path = "rust_integer_conversions.rs"]
 mod rust_integer_conversions;
@@ -908,3 +925,9 @@ mod nullable_relocations;
 
 #[path = "call_site_prototype.rs"]
 mod call_site_prototype;
+
+#[path = "xrefs_immutable_got.rs"]
+mod xrefs_immutable_got;
+
+#[path = "types_header.rs"]
+mod types_header;
