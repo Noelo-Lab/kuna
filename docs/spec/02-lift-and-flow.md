@@ -4478,14 +4478,17 @@ comparison is never decided by sampling the comparison itself.
 pointer where the platform puts one. A 32-bit Windows process without
 `IMAGE_FILE_LARGE_ADDRESS_AWARE` in its file header has its whole user address
 space below 2 GiB, and a 64-bit one below 128 TiB
-(`PushanTarget::user_stack_clear_bits`: bit 31, or bits 47 to 63). When the
+(`PushanTarget::user_stack_clear_bits`: bit 31, or bits 47 to 63). An image
+whose PE subsystem is native (a driver) runs on a kernel stack, where neither
+holds, so it gets no such bits, and neither does an image whose headers cannot
+be read. When the
 identity test fails over every stack pointer and the stack pointer is among
 the variables, it is run once more with those bits clear (the quick points
 already sample the stack pointer that way, so they are a necessary condition
 of both runs). An answer found only then is counted
-(`ExprArena::sp_bound_used`), and the header then says the function "assumes
-the stack lies where the platform puts a user-mode stack". No other target
-gets the second run. The entry stack pointer's low 16 bits stay known as
+(`ExprArena::sp_bound_used`) in the exploration log. The header does not
+mention it: for a user-mode image the bound is the operating system's
+guarantee, not a guess about one run. No other target gets the second run. The entry stack pointer's low 16 bits stay known as
 before (above), so every identity is one under that assumption as well.
 Themida derives its image base by XOR-swapping it through the stack pointer,
 so a register written by such an XOR is stored as the constant. The constant

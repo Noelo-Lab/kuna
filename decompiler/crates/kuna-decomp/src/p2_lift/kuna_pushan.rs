@@ -281,20 +281,32 @@ impl<'a> ArchTarget<'a> {
         literal_len(&buf, addr, self.ram.get_addr_size() as usize, |a| self.section_of(a).is_some(), refs)
     }
 
-    /// The PE file header's `IMAGE_FILE_LARGE_ADDRESS_AWARE` flag, read from
-    /// the headers mapped at the image base (set when they cannot be read).
-    fn large_address_aware(&self) -> bool {
+    /// The bits a user-mode stack address never has set, from the PE headers
+    /// mapped at the image base: bit 31 for a 32-bit image without
+    /// `IMAGE_FILE_LARGE_ADDRESS_AWARE`, bits 47 to 63 for a 64-bit one. None
+    /// for a native-subsystem image (a driver runs on a kernel stack) or when
+    /// the headers cannot be read.
+    fn pe_user_stack_clear_bits(&self) -> u128 {
         let base = self.sections.iter().map(|s| s.start).min().unwrap_or(0) & !0xffff;
         let mut mz = [0u8; 0x40];
         if !self.read_bytes(base, &mut mz) || &mz[..2] != b"MZ" {
-            return true;
+            return 0;
         }
         let pe = base + u32::from_le_bytes([mz[0x3c], mz[0x3d], mz[0x3e], mz[0x3f]]) as u64;
-        let mut hdr = [0u8; 0x18];
+        let mut hdr = [0u8; 0x5e];
         if !self.read_bytes(pe, &mut hdr) || &hdr[..4] != b"PE\0\0" {
-            return true;
+            return 0;
         }
-        u16::from_le_bytes([hdr[0x16], hdr[0x17]]) & 0x0020 != 0
+        const SUBSYSTEM_NATIVE: u16 = 1;
+        if u16::from_le_bytes([hdr[0x5c], hdr[0x5d]]) == SUBSYSTEM_NATIVE {
+            return 0;
+        }
+        let large = u16::from_le_bytes([hdr[0x16], hdr[0x17]]) & 0x0020 != 0;
+        match self.ptr_size() {
+            8 => 0xffff_8000_0000_0000,
+            4 if !large => 0x8000_0000,
+            _ => 0,
+        }
     }
 
     /// Highest mapped address, for placing the synthetic range.
@@ -414,13 +426,10 @@ impl PushanTarget for ArchTarget<'_> {
         Some(p.intypes.iter().map(|t| (t.get_size().max(0) as u32 + 3) & !3).sum())
     }
     fn user_stack_clear_bits(&self) -> u128 {
-        if !self.windows {
-            return 0;
-        }
-        match self.ptr_size() {
-            8 => 0xffff_8000_0000_0000,
-            4 if !self.large_address_aware() => 0x8000_0000,
-            _ => 0,
+        if self.windows {
+            self.pe_user_stack_clear_bits()
+        } else {
+            0
         }
     }
     fn noreturn_interrupt(&self, vector: u64) -> bool {
