@@ -22,14 +22,23 @@
 //! and then a call), and such an override has no vtable slot, so the slot it
 //! calls is some other method.
 //!
+//! An optimized thunk can hold its member's body inlined, and that body can
+//! call another member of the class directly, so the slot a thunk calls is
+//! only taken as its own where nothing points elsewhere: no own slot of a kind
+//! the selector names lost its implementation (a member inlined everywhere,
+//! its thunk included, leaves its slot empty), and no other implementation of the class
+//! calls the hit directly (a member whose thunk inlined it but whose own body
+//! survives calls what the thunk calls). An implementation that carries a
+//! Swift symbol keeps the name the symbol gives it.
+//!
 //! The name belongs to the method descriptor, so a subclass's override of
 //! the slot takes it too. A slot two thunks name differently stays unnamed.
 //! arm64 only: the scan reads `bl`/`b` targets up to the next stated function
-//! start (at most [`MAX_THUNK_INSNS`] instructions).
+//! start (at most [`MAX_THUNK_INSNS`] instructions in a thunk).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
-use object::{Object, ObjectSection};
+use object::{Object, ObjectSection, ObjectSymbol};
 
 use super::descriptors::{Context, ContextKind, Metadata, MethodKind, Target};
 use crate::objc::sections::MachoImage;
@@ -38,6 +47,9 @@ use crate::objc::{classt, kuna_objcprops, methods};
 /// The longest thunk body scanned. A bridging thunk retains, converts and
 /// releases each argument around one call; none comes near this.
 pub const MAX_THUNK_INSNS: u64 = 128;
+
+/// The longest implementation body scanned for its direct calls.
+const MAX_BODY_INSNS: u64 = 1 << 16;
 
 /// The Swift class metadata's `Description` word, after the five `class_t`
 /// words and the Swift class fields (64-bit `ClassMetadata`).
@@ -56,6 +68,25 @@ struct Slot {
     instance: bool,
 }
 
+/// The member names [`members`] finds: by method descriptor, and the
+/// implementations that keep their positional name because a Swift symbol
+/// names them.
+#[derive(Default)]
+pub struct Members {
+    names: HashMap<u64, String>,
+    symbolized: HashSet<u64>,
+}
+
+impl Members {
+    /// The member name of `descriptor` for its implementation at `imp`.
+    pub fn get(&self, descriptor: u64, imp: u64) -> Option<&String> {
+        if self.symbolized.contains(&imp) {
+            return None;
+        }
+        self.names.get(&descriptor)
+    }
+}
+
 /// The member name of every method descriptor an `@objc` thunk reaches,
 /// keyed by the descriptor's address.
 pub fn members(
@@ -64,9 +95,9 @@ pub fn members(
     img: &MachoImage,
     md: &Metadata,
     imports: &HashMap<u64, String>,
-) -> HashMap<u64, String> {
+) -> Members {
     if file.architecture() != object::Architecture::Aarch64 || img.ptr_size() != 8 {
-        return HashMap::new();
+        return Members::default();
     }
     let classes: Vec<Class> = img
         .classlists(file)
@@ -76,7 +107,7 @@ pub fn members(
         .filter_map(|class_ptr| swift_class(file, img, md, class_ptr))
         .collect();
     if classes.is_empty() {
-        return HashMap::new();
+        return Members::default();
     }
     let mut starts = crate::analyzers::entry::macho_function_starts(file, bytes);
     for c in &classes {
@@ -92,8 +123,9 @@ pub fn members(
     };
     let mut found: BTreeMap<u64, Option<String>> = BTreeMap::new();
     for c in &classes {
+        let called = called_by_slots(img, &starts, c);
         for t in &c.thunks {
-            let Some((slot, member)) = thunk_member(&sends, &starts, c, t) else {
+            let Some((slot, member)) = thunk_member(&sends, &starts, c, t, &called) else {
                 continue;
             };
             found
@@ -106,33 +138,81 @@ pub fn members(
                 .or_insert(Some(member));
         }
     }
-    found
-        .into_iter()
-        .filter_map(|(d, m)| Some((d, m?)))
-        .collect()
+    let symbolized = file
+        .symbols()
+        .filter(|s| s.kind() == object::SymbolKind::Text && s.is_definition())
+        .filter(|s| {
+            s.name().is_ok_and(|n| {
+                ["_$s", "$s", "_$S", "$S", "_T0"]
+                    .iter()
+                    .any(|p| n.starts_with(p))
+            })
+        })
+        .map(|s| s.address())
+        .collect();
+    Members {
+        names: found
+            .into_iter()
+            .filter_map(|(d, m)| Some((d, m?)))
+            .collect(),
+        symbolized,
+    }
+}
+
+/// Every implementation another implementation of `c` calls or branches to
+/// directly.
+fn called_by_slots(img: &MachoImage, starts: &[u64], c: &Class) -> HashSet<u64> {
+    let mut out = HashSet::new();
+    for &f in c.slots.keys() {
+        out.extend(
+            call_targets(img, starts, f, MAX_BODY_INSNS)
+                .into_iter()
+                .filter(|&t| t != f && c.slots.contains_key(&t)),
+        );
+    }
+    out
 }
 
 /// The slot `t` calls and the member its selector names there, when the
 /// thunk reaches exactly one of the class's slots and sends no Objective-C
 /// message itself. A thunk that sends one (`super.layoutSubviews()`) has the
 /// body of an override of an inherited Objective-C method inlined, which has
-/// no vtable slot: the slot it calls is some other method.
-fn thunk_member(sends: &Sends, starts: &[u64], c: &Class, t: &Thunk) -> Option<(u64, String)> {
+/// no vtable slot: the slot it calls is some other method. Where an own slot
+/// of a kind the selector names has no implementation, or another
+/// implementation of the class calls the hit (`called`), the hit may be what
+/// an inlined body calls, and names nothing.
+fn thunk_member(
+    sends: &Sends,
+    starts: &[u64],
+    c: &Class,
+    t: &Thunk,
+    called: &HashSet<u64>,
+) -> Option<(u64, String)> {
+    let (kinds, member) = own_member(t, &c.props);
+    if c.empty.iter().any(|&(k, instance)| {
+        kinds.contains(&k) && (k == MethodKind::Init || instance != t.class_method)
+    }) {
+        return None;
+    }
     let mut hit: Option<Slot> = None;
-    for target in call_targets(sends.img, starts, t.imp) {
+    for target in call_targets(sends.img, starts, t.imp, MAX_THUNK_INSNS) {
         if sends.is_message_send(target) {
             return None;
         }
         let Some(s) = c.slots.get(&target) else {
             continue;
         };
-        if hit.is_some_and(|h| h.descriptor != s.descriptor) {
+        if called.contains(&target) || hit.is_some_and(|h| h.descriptor != s.descriptor) {
             return None;
         }
         hit = Some(*s);
     }
     let slot = hit?;
-    Some((slot.descriptor, member_name(slot, t, &c.props)?))
+    let instance = slot.instance || slot.kind == MethodKind::Init;
+    if instance == t.class_method || !kinds.contains(&slot.kind) {
+        return None;
+    }
+    Some((slot.descriptor, member))
 }
 
 /// Where an image's calls send an Objective-C message: a selector stub in
@@ -212,6 +292,8 @@ struct Class {
     props: Vec<Property>,
     thunks: Vec<Thunk>,
     slots: HashMap<u64, Slot>,
+    /// The kind and instance-ness of each own slot with no implementation.
+    empty: Vec<(MethodKind, bool)>,
 }
 
 /// The class at `class_ptr` when it is a Swift class whose metadata names a
@@ -235,6 +317,12 @@ fn swift_class(
         props: Vec::new(),
         thunks: Vec::new(),
         slots: slots(md, ctx),
+        empty: ctx
+            .vtable
+            .iter()
+            .filter(|e| e.impl_addr.is_none())
+            .map(|e| (e.kind, e.instance))
+            .collect(),
     };
     let meta = classt::metaclass_ro(img, class.isa);
     for (ro, class_method) in [(Some(class.ro), false), (meta, true)] {
@@ -311,11 +399,11 @@ fn slots(md: &Metadata, ctx: &Context) -> HashMap<u64, Slot> {
 }
 
 /// The `bl` and `b` targets of the arm64 code at `imp`, up to the next
-/// function start in `starts` or [`MAX_THUNK_INSNS`] instructions.
-fn call_targets(img: &MachoImage, starts: &[u64], imp: u64) -> Vec<u64> {
+/// function start in `starts` or `max` instructions.
+fn call_targets(img: &MachoImage, starts: &[u64], imp: u64, max: u64) -> Vec<u64> {
     let next = starts.partition_point(|&s| s <= imp);
     let end = starts.get(next).copied().unwrap_or(u64::MAX);
-    let n = (end.saturating_sub(imp) / 4).min(MAX_THUNK_INSNS);
+    let n = (end.saturating_sub(imp) / 4).min(max);
     let Some(code) = img.read(imp, (n * 4) as usize) else {
         return Vec::new();
     };
@@ -330,33 +418,20 @@ fn call_targets(img: &MachoImage, starts: &[u64], imp: u64) -> Vec<u64> {
     out
 }
 
-/// The member `thunk`'s selector names for `slot`, when its kind and the
-/// selector agree: an accessor of a listed property, or a method or
-/// initializer by selector.
-fn member_name(slot: Slot, thunk: &Thunk, props: &[Property]) -> Option<String> {
-    let instance = slot.instance || slot.kind == MethodKind::Init;
-    if instance == thunk.class_method {
-        return None;
-    }
+/// The slot kinds `thunk` can be the entry point of and the member name it
+/// gives one: an accessor of a listed property, else a method or (an
+/// instance `init…` selector) an initializer, by selector.
+fn own_member(thunk: &Thunk, props: &[Property]) -> (&'static [MethodKind], String) {
     let sel = thunk.selector.as_str();
-    let property = |setter: bool| {
-        props
-            .iter()
-            .filter(|p| p.instance == slot.instance)
-            .find(|p| {
-                if setter {
-                    p.setter.as_deref() == Some(sel)
-                } else {
-                    p.getter == sel
-                }
-            })
-            .map(|p| p.name.as_str())
-    };
-    match slot.kind {
-        MethodKind::Getter => property(false).map(|p| format!("{p}.getter")),
-        MethodKind::Setter => property(true).map(|p| format!("{p}.setter")),
-        MethodKind::Method => Some(sel.to_string()),
-        MethodKind::Init if sel.starts_with("init") => Some(sel.to_string()),
-        _ => None,
+    let mine = || props.iter().filter(|p| p.instance != thunk.class_method);
+    if let Some(p) = mine().find(|p| p.getter == sel) {
+        return (&[MethodKind::Getter], format!("{}.getter", p.name));
     }
+    if let Some(p) = mine().find(|p| p.setter.as_deref() == Some(sel)) {
+        return (&[MethodKind::Setter], format!("{}.setter", p.name));
+    }
+    if sel.starts_with("init") && !thunk.class_method {
+        return (&[MethodKind::Init, MethodKind::Method], sel.to_string());
+    }
+    (&[MethodKind::Method], sel.to_string())
 }

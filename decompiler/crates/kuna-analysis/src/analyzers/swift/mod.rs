@@ -131,7 +131,7 @@ impl AnalysisPass for SwiftMetadataPass {
         let objc_members = if ctx.file.format() == object::BinaryFormat::MachO {
             kuna_swiftobjcthunk::members(ctx.file, ctx.bytes, &img, &md, &imports)
         } else {
-            HashMap::new()
+            Default::default()
         };
         // Only a code address may be named as a function: a base-protocol
         // or associated-type witness row points at data.
@@ -273,7 +273,7 @@ pub struct Namer<'a> {
     imports: &'a HashMap<u64, String>,
     /// The member name an `@objc` thunk gives a method descriptor
     /// ([`kuna_swiftobjcthunk::members`]), by descriptor address.
-    objc_members: HashMap<u64, String>,
+    objc_members: kuna_swiftobjcthunk::Members,
     memo: std::cell::RefCell<HashMap<u64, Option<String>>>,
     code: Vec<(u64, u64)>,
     /// The function bodies the image states
@@ -491,12 +491,12 @@ impl Namer<'_> {
                     for e in &ctx.vtable {
                         if let Some(f) = e.impl_addr {
                             let getter = e.kind == descriptors::MethodKind::Getter && e.instance;
-                            self.claim_slot(f, self.slot_name(&path, e), &path, None, getter);
+                            self.claim_slot(f, self.slot_name(&path, e, f), &path, None, getter);
                         }
                     }
                     for o in &ctx.overrides {
                         let Some(f) = o.impl_addr else { continue };
-                        if let Some(name) = self.override_name(&path, o) {
+                        if let Some(name) = self.override_name(&path, o, f) {
                             let getter = name.0.ends_with(".getter");
                             self.claim_slot(f, name, &path, None, getter);
                         }
@@ -672,7 +672,7 @@ impl Namer<'_> {
             .position(|(addr, _)| *addr == requirement)
     }
 
-    fn override_name(&self, class_path: &str, o: &descriptors::OverrideEntry) -> Option<(String, Option<String>)> {
+    fn override_name(&self, class_path: &str, o: &descriptors::OverrideEntry, f: u64) -> Option<(String, Option<String>)> {
         match o.method {
             Target::Slot(slot) => {
                 let desc = import_name(self.imports, slot, "method_descriptor")?;
@@ -685,16 +685,16 @@ impl Namer<'_> {
                 };
                 let base = self.md.contexts.get(&b)?;
                 let e = base.vtable.iter().find(|e| e.addr == m)?;
-                Some(self.slot_name(class_path, e))
+                Some(self.slot_name(class_path, e, f))
             }
         }
     }
 
     /// `Class.member` with its positional name for a slot an `@objc` thunk
-    /// names, else `Class.vtable#N.kind` alone.
-    fn slot_name(&self, class_path: &str, e: &descriptors::VTableEntry) -> (String, Option<String>) {
+    /// names at implementation `f`, else `Class.vtable#N.kind` alone.
+    fn slot_name(&self, class_path: &str, e: &descriptors::VTableEntry, f: u64) -> (String, Option<String>) {
         let positional = format!("{class_path}.vtable#{}.{}", e.index, e.kind.tag());
-        match self.objc_members.get(&e.addr) {
+        match self.objc_members.get(e.addr, f) {
             Some(member) => (format!("{class_path}.{member}"), Some(positional)),
             None => (positional, None),
         }
