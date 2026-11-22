@@ -1,5 +1,6 @@
 use super::kuna_ppcaputarget::{language_id_when, notes_when};
 use crate::loadimage_object::ObjectLoadImage;
+use kuna_decomp::kuna_ppcapu::Mode;
 use kuna_sleigh::loadimage::LoadImage;
 use object::{write::Object, Architecture, BinaryFormat, Endianness, FileFlags, SectionKind};
 
@@ -62,22 +63,23 @@ fn embedded_powerpc_keeps_generic_registers_without_an_spe_requirement() {
                 variant,
             );
         }
-        for (apus, variant) in [
-            (None, "isel"),
-            (Some(&[0x0040_0001][..]), "isel"),
-            (Some(&[0x0041_0001, 0x0042_0001, 0x0043_0001][..]), "isel"),
-            (Some(&[0x0040_0001, 0x0101_0001][..]), "e500"),
-            (Some(&[0x0100_0001][..]), "e500"),
+        for (flags, apus, variant) in [
+            (0x8000_0000, None, "isel"),
+            (0x8000_0000, Some(&[0x0040_0001][..]), "isel"),
+            (0x8000_0000, Some(&[0x0041_0001, 0x0042_0001, 0x0043_0001][..]), "isel"),
+            (0x8000_0000, Some(&[0x0040_0001, 0x0101_0001][..]), "e500"),
+            (0x8000_0000, Some(&[0x0100_0001][..]), "e500"),
+            (0, Some(&[0x0100_0001][..]), "e500"),
         ] {
-            let bytes = image(Architecture::PowerPc, little, 0x8000_0000, apus);
+            let bytes = image(Architecture::PowerPc, little, flags, apus);
             let file = object::File::parse(&bytes[..]).unwrap();
-            assert_eq!(
-                language_id_when(&file, true),
-                Some(format!("PowerPC:{endian}:32:{variant}:default"))
-            );
+            let id = |variant: &str| Some(format!("PowerPC:{endian}:32:{variant}:default"));
+            assert_eq!(language_id_when(&file, Mode::On), id(variant));
+            let isel = if variant == "e500" { "isel" } else { variant };
+            assert_eq!(language_id_when(&file, Mode::Isel), id(isel));
             assert!(notes_when(&file, "PowerPC", false, true).is_empty());
-            assert_eq!(language_id_when(&file, false), None);
-            check_default(&bytes, little, variant);
+            assert_eq!(language_id_when(&file, Mode::Off), None);
+            check_default(&bytes, little, isel);
         }
     }
 }
@@ -111,7 +113,9 @@ fn unsupported_or_malformed_apus_keep_the_generic_decoder_with_a_note() {
         cases.push(bytes);
         for bytes in cases {
             let file = object::File::parse(&bytes[..]).unwrap();
-            assert_eq!(language_id_when(&file, true), None);
+            for mode in [Mode::Isel, Mode::On] {
+                assert_eq!(language_id_when(&file, mode), None);
+            }
             let notes = notes_when(&file, "PowerPC:BE:32:default:default", false, true);
             assert_eq!(notes.len(), 1);
             assert!(notes[0].contains("APU"), "{notes:?}");

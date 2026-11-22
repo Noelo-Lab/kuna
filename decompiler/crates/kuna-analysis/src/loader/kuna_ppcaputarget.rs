@@ -1,5 +1,7 @@
 //! PowerPC APU requirements do not generally identify an exclusive processor.
-//! Shared ISEL keeps the generic register and calling-convention model.
+//! Shared ISEL keeps the generic register and calling-convention model; SPE
+//! selects e500 only under `ppcapu on`.
+use kuna_decomp::kuna_ppcapu::Mode;
 use object::{Architecture, FileFlags, Object, ObjectSection};
 
 fn word(bytes: &[u8], little: bool) -> Option<u32> {
@@ -91,16 +93,19 @@ pub(crate) fn language_ids() -> impl Iterator<Item = String> {
 }
 
 pub(crate) fn language_id(file: &object::File<'_>) -> Option<String> {
-    language_id_when(file, kuna_decomp::kuna_ppcapu::ppcapu_enabled())
+    language_id_when(file, kuna_decomp::kuna_ppcapu::ppcapu_mode())
 }
 
 /// An unclassifiable note keeps the generic decoder; [`notes`] reports it.
-pub(super) fn language_id_when(file: &object::File<'_>, enabled: bool) -> Option<String> {
-    if !enabled || !applies(file) {
+pub(super) fn language_id_when(file: &object::File<'_>, mode: Mode) -> Option<String> {
+    if mode == Mode::Off || !applies(file) {
         return None;
     }
     let endian = if file.is_little_endian() { "LE" } else { "BE" };
-    let variant = powerpc_variant(file).ok().flatten()?;
+    let variant = match powerpc_variant(file).ok().flatten()? {
+        "e500" if mode != Mode::On => "isel",
+        variant => variant,
+    };
     Some(format!("PowerPC:{endian}:32:{variant}:default"))
 }
 
@@ -109,7 +114,7 @@ pub(crate) fn notes(file: &object::File<'_>, language: &str, explicit: bool) -> 
         file,
         language,
         explicit,
-        kuna_decomp::kuna_ppcapu::ppcapu_enabled(),
+        kuna_decomp::kuna_ppcapu::ppcapu_mode() != Mode::Off,
     )
 }
 

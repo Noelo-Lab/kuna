@@ -830,14 +830,12 @@ kuna_options! { self, p1;
         Ok(format!("PPC32 PIC import recovery {}", mode.as_str()))
     },
     "ppcapu" => {
-        let val = on_or_off(p1)?;
-        self.analysis_ppcapu = val;
-        self.load_options_mut().ppcapu = val;
-        crate::kuna_ppcapu::set_ppcapu_env(val);
-        Ok(format!(
-            "PowerPC APU-note language selection turned {}",
-            if val { "on" } else { "off" }
-        ))
+        let mode = crate::kuna_ppcapu::Mode::parse(p1)
+            .ok_or_else(|| KunaError::parse("Expected ppcapu isel|on|off"))?;
+        self.analysis_ppcapu = mode;
+        self.load_options_mut().ppcapu = mode;
+        mode.set_env();
+        Ok(format!("PowerPC APU-note language selection {}", mode.as_str()))
     },
     "ifuncfpret" => {
         let val = on_or_off(p1)?;

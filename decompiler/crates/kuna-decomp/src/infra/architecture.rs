@@ -1640,9 +1640,9 @@ pub struct Architecture {
     /// (the PLT map is baked at `load file`); this bool is for catalog visibility.
     pub analysis_ifuncfpret: bool,
     /// (kuna) Gate embedded PowerPC ELF language selection (`ppcapu`); default
-    /// on. Read through the [`crate::kuna_ppcapu`] **env var** (the language is
-    /// chosen at `load file`); this bool is for catalog visibility.
-    pub analysis_ppcapu: bool,
+    /// `isel`. Read through the [`crate::kuna_ppcapu`] **env var** (the language
+    /// is chosen at `load file`); this field is for catalog visibility.
+    pub analysis_ppcapu: crate::kuna_ppcapu::Mode,
     /// (kuna `goabi`) Select the vendored golang compiler spec for a Go image
     /// (the catalog-visible mirror of the `KUNA_GOABI` load-time env gate).
     pub analysis_goabi: bool,
@@ -2674,7 +2674,7 @@ impl Architecture {
             analysis_ppc32picimports: Default::default(),
             ppc32_pic_imports: Default::default(),
             analysis_ifuncfpret: true, // (kuna) option ifuncfpret, default on (x86-64 IRELATIVE slots only)
-            analysis_ppcapu: true,
+            analysis_ppcapu: Default::default(),
             analysis_goabi: false, // (kuna) option goabi; reset_defaults sets the shipped default (auto)
             analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars::Off,
             analysis_dwarf: false,

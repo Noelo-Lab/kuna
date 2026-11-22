@@ -15,7 +15,7 @@ use kuna_decomp::{
 #[derive(Clone, Copy)]
 enum Encoding {
     DefaultOn,
-    ExplicitOn,
+    PpcApu,
     SymbolNameChars,
     Trimmed,
     LibcTypes,
@@ -29,7 +29,7 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
     Some(match name {
         "ppc32picimports" => (kuna_decomp::kuna_ppc32picimports::ENV, Ppc32Pic),
         "ifuncfpret" => (kuna_ifuncfpret::IFUNCFPRET_ENV, DefaultOn),
-        "ppcapu" => (kuna_ppcapu::PPCAPU_ENV, ExplicitOn),
+        "ppcapu" => (kuna_ppcapu::PPCAPU_ENV, PpcApu),
         "kernelcache" => (kuna_kernelcache::KERNELCACHE_ENV, Kernelcache),
         "kernelcache-boot" => (kuna_decomp::kuna_kernelcacheboot::KERNELCACHE_BOOT_ENV, Trimmed),
         "goabi" => (kuna_goabi::GOABI_ENV, DefaultOn),
@@ -52,12 +52,7 @@ impl Encoding {
         let off = matches!(token.as_str(), "off" | "0" | "false");
         Some(match self {
             Self::DefaultOn => if off { "off" } else { "on" }.into(),
-            Self::ExplicitOn => if matches!(token.as_str(), "on" | "1" | "true" | "") {
-                "on"
-            } else {
-                "off"
-            }
-            .into(),
+            Self::PpcApu => kuna_ppcapu::Mode::from_env_value(value).as_str().into(),
             Self::SymbolNameChars => kuna_symbolnamechars::NameChars::parse(value)
                 .unwrap_or_default()
                 .as_str()
@@ -283,6 +278,7 @@ mod tests {
                 vec![
                     (" TRUE ", Some("on")),
                     ("", Some("on")),
+                    (" ISEL ", Some("isel")),
                     ("yes", Some("off")),
                     ("invalid", Some("off")),
                 ],

@@ -345,7 +345,7 @@ fn decompile(path: &std::path::Path, function: &str, args: &[&str]) -> (String, 
 }
 
 #[test]
-fn spe_requirements_select_e500_by_default() {
+fn spe_requirements_select_e500_only_under_ppcapu_on() {
     let path = common::scratch_file("powerpc-apu-option", "o");
     for little in [false, true] {
         let endian = if little { "LE" } else { "BE" };
@@ -353,17 +353,25 @@ fn spe_requirements_select_e500_by_default() {
         let (text, _) = decompile(&path, "caller", &[]);
         assert!(text.contains("add3(a0,2,3)"), "{text}");
         let e500 = format!("PowerPC:{endian}:32:e500:default");
+        let isel = format!("PowerPC:{endian}:32:isel:default");
         for function in ["caller", "touch"] {
             assert_eq!(
                 decompile(&path, function, &[]).0,
+                decompile(&path, function, &["--target", &isel]).0,
+                "{function}"
+            );
+            assert_eq!(
+                decompile(&path, function, &["--option", "ppcapu", "on"]).0,
                 decompile(&path, function, &["--target", &e500]).0,
                 "{function}"
             );
         }
         let (touch, _) = decompile(&path, "touch", &["--option", "ppcapu", "on"]);
         assert!(!touch.contains("vector"), "{touch}");
-        let (touch, _) = decompile(&path, "touch", &["--option", "ppcapu", "off"]);
-        assert!(touch.contains("vector"), "{touch}");
+        for mode in ["isel", "off"] {
+            let (touch, _) = decompile(&path, "touch", &["--option", "ppcapu", mode]);
+            assert!(touch.contains("vector"), "{touch}");
+        }
     }
     std::fs::remove_file(path).unwrap();
 }
