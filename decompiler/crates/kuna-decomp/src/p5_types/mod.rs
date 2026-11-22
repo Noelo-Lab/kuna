@@ -33,6 +33,7 @@ pub mod kuna_floatglobals; // (kuna) a global the program only moves through flo
 pub mod kuna_floatbits; // (kuna) a helper that only works on a float's bits keeps the float
 pub mod kuna_zextreturn; // (kuna) a return the convention zero-extends only when unsigned is unsigned
 pub mod kuna_ptrfromuse; // (kuna) type a dereferenced-only function input as a pointer
+pub mod kuna_valuewitness; // (kuna) a Swift value witness table load through metadata is typed
 pub mod kuna_libcfit; // (kuna) a libc aggregate vote declines where the caller reads past its end
 pub mod kuna_pebnames; // (kuna) type the Windows TEB segment base so PEB/TEB field reads are named
 pub mod kuna_structmerge; // (kuna) merge a synthesized record with the claims of a sibling reader

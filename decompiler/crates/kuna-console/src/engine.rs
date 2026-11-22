@@ -5492,6 +5492,17 @@ fn commit_analysis_output(
     //     deferred shape: on, the typed metadata records and the accessor
     //     prototypes fold into their streams (the register-pinned parameters
     //     are parked at step 7b); off, all three are dropped.
+    // 0a. (kuna `valuewitness`) The value witness functions' names and
+    //     prototypes, and the tables typed beside the static ones: on, they
+    //     fold into their streams; off, they are dropped.
+    let witnesses = std::mem::take(&mut out.swift_witnesses);
+    if prog.arch().analysis_valuewitness {
+        out.symbols.extend(witnesses.names);
+        out.prototypes_at.extend(witnesses.prototypes);
+        if prog.arch().analysis_swifttypes {
+            out.typed_data.extend(witnesses.typed_data);
+        }
+    }
     if prog.arch().analysis_swifttypes {
         let swift = std::mem::take(&mut out.swift_types);
         out.typed_data.extend(swift.typed_data);

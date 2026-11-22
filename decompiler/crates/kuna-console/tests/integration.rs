@@ -339,6 +339,8 @@ mod verify_objc;
 mod verify_swiftmetadata;
 #[path = "verify_swifttypes.rs"]
 mod verify_swifttypes;
+#[path = "verify_valuewitness.rs"]
+mod verify_valuewitness;
 #[path = "verify_swiftcall.rs"]
 mod verify_swiftcall;
 

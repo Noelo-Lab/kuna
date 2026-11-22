@@ -284,6 +284,17 @@ pub struct SwiftHelperFacts {
     pub prototypes_at: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
 }
 
+/// (kuna `valuewitness`) The value-witness arm's facts, kept apart so the
+/// commit can drop them whole under `option valuewitness off`: the witness
+/// functions' names and prototypes, and the tables `swifttypes` did not
+/// type through static metadata (committed only when it is on too).
+#[derive(Default, Clone, Debug)]
+pub struct SwiftWitnessFacts {
+    pub names: Vec<SymFact>,
+    pub prototypes: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
+    pub typed_data: Vec<TypedDataFact>,
+}
+
 /// The function at `func_addr` follows the cspec prototype model `model`,
 /// its signature otherwise unknown: its parameters, and the arguments of
 /// every direct call to it, are recovered under that model.
@@ -709,6 +720,8 @@ pub struct AnalysisOutput {
     pub swift_types: SwiftTypeFacts,
     /// (kuna `swifthelpers`) The Swift helper facts. See [`SwiftHelperFacts`].
     pub swift_helpers: SwiftHelperFacts,
+    /// (kuna `valuewitness`) The value-witness facts. See [`SwiftWitnessFacts`].
+    pub swift_witnesses: SwiftWitnessFacts,
     /// (kuna `formatstring static`) Per-call-site prototype overrides the
     /// LOAD-TIME format-string resolver recovered — a printf/scanf-family call
     /// whose format constant the image itself answers for. Committed onto
@@ -890,6 +903,9 @@ impl AnalysisOutput {
         self.swift_helpers.fid_names.extend(other.swift_helpers.fid_names);
         self.swift_helpers.typed_data.extend(other.swift_helpers.typed_data);
         self.swift_helpers.prototypes_at.extend(other.swift_helpers.prototypes_at);
+        self.swift_witnesses.names.extend(other.swift_witnesses.names);
+        self.swift_witnesses.prototypes.extend(other.swift_witnesses.prototypes);
+        self.swift_witnesses.typed_data.extend(other.swift_witnesses.typed_data);
         self.entries.extend(other.entries);
         self.fde_bodies.extend(other.fde_bodies);
         self.fde_interior_entries.extend(other.fde_interior_entries);

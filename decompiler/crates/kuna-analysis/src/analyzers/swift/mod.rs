@@ -31,6 +31,7 @@ pub mod descriptors;
 pub mod kuna_swiftcall;
 pub mod kuna_swifthelpers;
 pub mod kuna_swifttypes;
+pub mod kuna_swiftwitness;
 
 #[cfg(test)]
 mod tests;
@@ -146,7 +147,12 @@ impl AnalysisPass for SwiftMetadataPass {
             claims: Default::default(),
             budget: std::cell::Cell::new(NAME_BYTES.saturating_add(ctx.bytes.len())),
         };
-        namer.emit(&mut out);
+        let records = namer.claim_records();
+        let witnesses = ctx
+            .arch
+            .analysis_valuewitness
+            .then(|| kuna_swiftwitness::claim(&reader, &md, ctx.file.architecture(), &namer));
+        let mut metadata_ptr = None;
         if ctx.arch.analysis_swifttypes || ctx.arch.analysis_swifthelpers {
             let mut types = kuna_swifttypes::Types::new(
                 &md,
@@ -160,22 +166,29 @@ impl AnalysisPass for SwiftMetadataPass {
             if ctx.arch.analysis_swifthelpers {
                 kuna_swifthelpers::emit(&types, ctx.file, &mut out);
             }
-            if !ctx.arch.analysis_swifttypes {
-                return out;
-            }
-            types.locate_all();
-            let regs = kuna_swifttypes::Registers::for_arch(ctx.file.architecture());
-            types.emit(regs.as_ref(), &mut out);
-            if let (true, Some(regs)) = (ctx.arch.analysis_swiftcall, regs.as_ref()) {
-                let symbols: Vec<(u64, String)> = ctx
-                    .file
-                    .symbols()
-                    .filter(|s| s.kind() == object::SymbolKind::Text && s.is_definition())
-                    .filter_map(|s| Some((s.address(), s.name().ok()?.to_string())))
-                    .collect();
-                kuna_swiftcall::bind(&types, regs, &symbols, &mut out);
+            if ctx.arch.analysis_swifttypes {
+                types.locate_all();
+                let regs = kuna_swifttypes::Registers::for_arch(ctx.file.architecture());
+                types.emit(regs.as_ref(), &mut out);
+                if let (true, Some(regs)) = (ctx.arch.analysis_swiftcall, regs.as_ref()) {
+                    let symbols: Vec<(u64, String)> = ctx
+                        .file
+                        .symbols()
+                        .filter(|s| s.kind() == object::SymbolKind::Text && s.is_definition())
+                        .filter_map(|s| Some((s.address(), s.name().ok()?.to_string())))
+                        .collect();
+                    kuna_swiftcall::bind(&types, regs, &symbols, &mut out);
+                }
+                if let Some(w) = &witnesses {
+                    kuna_swiftwitness::type_tables(w, &types, &mut out);
+                }
+                metadata_ptr = types.metadata_struct().and_then(|t| types.pointer_to(t));
             }
         }
+        if let Some(w) = &witnesses {
+            kuna_swiftwitness::prototypes(w, &namer, ctx.arch.types(), metadata_ptr, &mut out);
+        }
+        namer.finish(records, &mut out);
         out
     }
 }
@@ -240,6 +253,12 @@ fn member_after_protocol(name: &str) -> Option<String> {
         return None;
     }
     Some(member.to_string())
+}
+
+/// Whether a claim's name is a value witness's
+/// (`Module.Point.destroy_value_witness`).
+fn is_value_witness(name: &str) -> bool {
+    name.ends_with("_value_witness")
 }
 
 /// The bytes of names the pass builds beyond the image's own length. A
@@ -410,11 +429,16 @@ impl Namer<'_> {
         let Some(claims) = claims.get(&addr) else {
             return false;
         };
-        let owner = &claims[0].owner;
-        claims.iter().any(|c| &c.owner != owner || !c.getter)
+        let mut claims = claims.iter().filter(|c| !is_value_witness(&c.name));
+        let Some(first) = claims.next() else {
+            return false;
+        };
+        !first.getter || claims.any(|c| c.owner != first.owner || !c.getter)
     }
 
-    fn emit(&self, out: &mut AnalysisOutput) {
+    /// Claim every function the records name; the records' own data
+    /// symbols are returned for [`Namer::finish`].
+    fn claim_records(&self) -> Vec<SymFact> {
         let mut data: Vec<SymFact> = Vec::new();
         let mut contexts: Vec<&Context> = self.md.contexts.values().collect();
         contexts.sort_by_key(|c| c.addr);
@@ -570,6 +594,11 @@ impl Namer<'_> {
                 witness(*f, member, getter);
             }
         }
+        data
+    }
+
+    /// Name every claimed function, then the records.
+    fn finish(&self, data: Vec<SymFact>, out: &mut AnalysisOutput) {
         self.resolve_claims(out);
         // Dedup by address: the first (lowest-addressed descriptor) wins.
         let mut seen = std::collections::HashSet::new();
@@ -586,17 +615,25 @@ impl Namer<'_> {
     /// (`<T:P>.requirement#10.merged#4`); witnesses of one protocol member
     /// from different types name it after the member alone
     /// (`<*:Swift.RawRepresentable>.init(rawValue:)`, a later such body
-    /// `.2`, `.3`, …); anything else keeps the engine placeholder.
+    /// `.2`, `.3`, …); value witnesses of different types are named after
+    /// the first (`Module.A.destroy_value_witness.merged#3`); anything
+    /// else keeps the engine placeholder. A value witness names only a
+    /// function no other record claims, into the `valuewitness` facts.
     fn resolve_claims(&self, out: &mut AnalysisOutput) {
         let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut next: HashMap<String, usize> = HashMap::new();
-        for (&addr, claims) in self.claims.borrow().iter() {
+        for (&addr, all) in self.claims.borrow().iter() {
+            let (witnesses, claims): (Vec<&Claim>, Vec<&Claim>) = all.iter().partition(|c| is_value_witness(&c.name));
+            let witness_only = claims.is_empty();
+            let claims = if witness_only { witnesses } else { claims };
             let mut names: Vec<&str> = claims.iter().map(|c| c.name.as_str()).collect();
             names.sort_unstable();
             names.dedup();
             let mut name = if names.len() == 1 {
                 names[0].to_string()
-            } else if claims.iter().all(|c| c.owner == claims[0].owner) {
+            } else if claims.iter().all(|c| c.owner == claims[0].owner)
+                || claims.iter().all(|c| is_value_witness(&c.name))
+            {
                 format!("{}.merged#{}", names[0], names.len())
             } else if let Some((proto, member)) = claims[0]
                 .requirement
@@ -618,11 +655,16 @@ impl Namer<'_> {
                     }
                 }
             }
-            out.symbols.push(SymFact {
+            let sym = SymFact {
                 addr,
                 name: name.clone(),
                 kind: SymKind::Function,
-            });
+            };
+            if witness_only {
+                out.swift_witnesses.names.push(sym);
+                continue;
+            }
+            out.symbols.push(sym);
             out.fid_names.push(FidMatch { addr, name, by_signature: false });
         }
     }

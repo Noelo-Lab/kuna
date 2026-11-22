@@ -34,7 +34,9 @@
     defaults) is the FIX: the helper call names the cache after
     `hf.Box<hf.Unit>`, the accessor is
     `<hf.Box<hf.Unit>:hf.Shape>.lazy_protocol_witness_table_accessor`
-    with its cache, and the accessor result is a `swift.type_metadata *`.
+    with its cache, and the accessor results are `swift.type_metadata *`,
+    also in `hf.wrap(_:)`, which loads the value witness table below one
+    (`valuewitness`).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c0035fd6
@@ -67,6 +69,9 @@ c0035fd6
   <com>load addr 0x11ab8</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load addr 0x1198c</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="swifthelpers off: the helper call is anonymous and passes a bare constant" min="1" max="1">v2 = sub_112e4\(0x31da0\);</stringmatch>
@@ -79,4 +84,6 @@ c0035fd6
 <stringmatch name="swifthelpers on: the Abstract helper is named too" min="1" max="1">__swift_instantiateConcreteTypeFromMangledNameAbstract\(&amp;hf\.Box&lt;hf\.Unit&gt;\.type_metadata_demangling_cache\)</stringmatch>
 <stringmatch name="swifttypes on: the helper result is a metadata pointer" min="2" max="2">swift\.type_metadata \*v2; // x0</stringmatch>
 <stringmatch name="swifttypes on: a generic accessor's result is a metadata pointer" min="1" max="1">swift\.type_metadata \*v1; // x0 \| x19</stringmatch>
+<stringmatch name="swifttypes on: a result whose value witness table is loaded is typed too" min="1" max="1">swift\.type_metadata \*self; // x0 \| x23</stringmatch>
+<stringmatch name="swifttypes on: the table below it stays a byte offset" min="1" max="1">v5 = \(\(swift\.value_witness_table \*\*\)self\)\[-1\];</stringmatch>
 </decompilertest>

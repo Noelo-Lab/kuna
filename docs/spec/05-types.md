@@ -2130,10 +2130,11 @@ helper (`__swift_instantiateConcreteTypeFromMangledName…`) to
 Such a callee returns the metadata first whatever arguments it takes, so the
 result is a stated fact while the arguments stay recovered. It refuses a
 result wider or narrower than a pointer, one joined through a phi with a
-value of other provenance, and one that is the base of an address
-computation (`+ c`, `- c`, a `PTRSUB`/`PTRADD`): the value witness table 8
-bytes below the record and the field offsets past it would otherwise print
-as elements of the 16-byte record. Off Swift images it is inert: no callee
+value of other provenance. A read outside the 16-byte record (the value
+witness table word below it, a field offset vector or generic argument past
+it) would print as an element of an array of records, so the client runs
+only while `valuewitness` is on, which keeps every such offset off a
+`swift.type_metadata *` a byte offset (`kuna_valuewitness::keeps_offset`). Off Swift images it is inert: no callee
 carries those names and the record is not interned.
 
 **(kuna) The interface type-word guard.** A Go interface value is a two-word
