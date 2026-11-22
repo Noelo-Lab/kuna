@@ -365,7 +365,8 @@ impl XrefIndex {
     }
 
     /// [`refs_to`](Self::refs_to) over every member of `class`, minus the
-    /// members' own forwarding jumps; `class` is an [`alias_class`](Self::alias_class)
+    /// members' own forwarding jumps and any value that merely equals an ELF PLT
+    /// stub's or slot's address; `class` is an [`alias_class`](Self::alias_class)
     /// or an [`export_alias_class`](Self::export_alias_class).
     pub fn refs_to_class(&self, class: &BTreeSet<u64>) -> Vec<&Xref> {
         if class.len() == 1 {
@@ -377,17 +378,21 @@ impl XrefIndex {
         // veneer's exact instruction range and nothing wider: ordered containment
         // would swallow whatever code happens to follow the veneer in memory
         // before the next known entry, which is a real caller.
+        let stubs: Vec<_> = class.iter().filter_map(|m| self.export_plt.get(m)).flatten()
+            .filter(|s| class.contains(&s.entry) && class.contains(&s.slot))
+            .collect();
         let bodies: Vec<(u64, u64)> = class
             .iter()
             .filter_map(|m| self.veneers.get(m).map(|v| (*m, v.end)))
-            .chain(class.iter().filter_map(|m| self.export_plt.get(m)).flatten()
-                .filter(|s| class.contains(&s.entry) && class.contains(&s.slot))
-                .map(|s| (s.entry, s.end)))
+            .chain(stubs.iter().map(|s| (s.entry, s.end)))
             .collect();
         let mut rows: Vec<&Xref> = Vec::new();
         for &member in class {
+            let stub_member = stubs.iter().any(|s| s.entry == member || s.slot == member);
             for r in self.refs_to(member) {
-                if bodies.iter().any(|&(lo, hi)| r.from >= lo && r.from < hi) {
+                if bodies.iter().any(|&(lo, hi)| r.from >= lo && r.from < hi)
+                    || (stub_member && r.kind == XrefKind::Data)
+                {
                     continue;
                 }
                 rows.push(r);

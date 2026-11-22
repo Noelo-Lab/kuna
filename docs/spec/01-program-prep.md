@@ -9676,7 +9676,9 @@ the plain class. A named query also checks ARM and AArch64 PLT code, PowerPC32
 absolute and executable BSS PLT entries, and PowerPC64 ELFv1 descriptor stubs.
 The stub must reach the slot relocated against that definition. On ELFv1 the
 symbol names a validated descriptor whose entry is the queried function. The
-stub’s own slot access is excluded from the caller list.
+stub’s own slot access is excluded from the caller list, and so is a `data`
+row whose value merely equals the stub’s or slot’s address (an immediate or a
+page base in position-independent code), which a query by that address still lists.
 
 An x86-64 ELF memory-indirect call can have a proven local target through an
 immutable GOT slot. `decompiler/crates/kuna-analysis/src/listing/kuna_gotcall.rs`

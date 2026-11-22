@@ -156,3 +156,24 @@ fn ppc32_absolute_stubs_keep_same_named_definitions_separate_in_each_mode() {
     }
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn a_value_equal_to_the_stub_address_is_not_a_reference_to_the_export() {
+    let mut elf = std::fs::read(common::fixture("dataptrs_arch_ppc32_bssplt.so")).unwrap();
+    // audit_target's `addi r9,r9,7` becomes `li r9,0x2064`, the BSS PLT entry's address.
+    assert_eq!(elf[0x244..0x248], 0x39290007u32.to_be_bytes());
+    elf[0x244..0x248].copy_from_slice(&0x39202064u32.to_be_bytes());
+    let path = common::scratch_file("export-plt-immediate", "so");
+    std::fs::write(&path, &elf).unwrap();
+    let rows = |spec: &str| -> Vec<(u64, String)> {
+        let (out, err, code) = common::run_kuna(&["xrefs", path.to_str().unwrap(), "--to", spec, "--json"]);
+        assert_eq!(code, 0, "{err}");
+        let doc: Value = serde_json::from_str(&out).unwrap();
+        doc["xrefs"].as_array().unwrap().iter()
+            .map(|r| (r["from_address"].as_u64().unwrap(), r["kind"].as_str().unwrap().to_string()))
+            .collect()
+    };
+    assert_eq!(rows("audit_export"), [(0x2f4, "call".to_string())]);
+    assert_eq!(rows("0x2064"), [(0x244, "data".to_string()), (0x2f4, "call".to_string())]);
+    std::fs::remove_file(path).unwrap();
+}
