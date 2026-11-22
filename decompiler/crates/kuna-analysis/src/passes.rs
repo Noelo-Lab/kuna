@@ -416,6 +416,14 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         passes.push(Box::new(crate::loader::kuna_elfgotimports::ElfGotImportPass));
     }
 
+    // S1 Mach-O data-import slots (MachODataImportPass): name each symbol-pointer
+    // slot holding a data import (type metadata, a witness table, a class object)
+    // for its import and paint it `externref`, so `importdata` renders a read
+    // through it as the import. Committed only when `importdata` is on.
+    if format == object::BinaryFormat::MachO {
+        passes.push(Box::new(crate::loader::kuna_machodataslots::MachODataImportPass));
+    }
+
     // S1 Go pclntab function-name recovery (GoPclntabPass): when the binary is Go
     // (`detect_compiler == Go`, via `.go.buildinfo`/`.note.go.buildid` — the same
     // gate the Go no-return list uses), parse the embedded `pclntab` and emit a
@@ -2002,7 +2010,7 @@ mod tests {
         assert!(macho.contains(&"objc"), "Mach-O must carry the objc pass");
         // Compare the format-neutral base after dropping each format's gated
         // additions: `elfgotimports` for ELF and `peimportcall`, `authptrcall`,
-        // `stubbinds`, `cfstrings` and `objc` for Mach-O. Both carry `itaniumrtti`.
+        // `stubbinds`, `cfstrings`, `objc` and `machodataslots` for Mach-O. Both carry `itaniumrtti`.
         let elf_neutral: Vec<&str> = elf
             .iter()
             .copied()
@@ -2011,7 +2019,7 @@ mod tests {
         let macho_neutral: Vec<&str> = macho
             .iter()
             .copied()
-            .filter(|&p| !matches!(p, "peimportcall" | "authptrcall" | "stubbinds" | "cfstrings" | "objc"))
+            .filter(|&p| !matches!(p, "peimportcall" | "authptrcall" | "stubbinds" | "cfstrings" | "objc" | "machodataslots"))
             .collect();
         assert_eq!(
             macho_neutral, elf_neutral,

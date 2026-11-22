@@ -2432,6 +2432,78 @@ the case targets.
    does not read them back. The function then decodes its own body only:
    0x14000a040 prints its four cases in 0.7 s.
 
+   **The function's next table (`kuna_switchextent.rs`, `switchextent`,
+   default on).** A table whose selector the compiler knows to be in range
+   has no guard and a selector wider than a byte: Swift's `switch` over a
+   multi-payload enum indexes a halfword offset table straight with the case
+   `swift_getEnumCaseMultiPayload` returned, and clang does the same for a C
+   `switch` whose `default` is `__builtin_unreachable()`. The range then
+   exceeds `jumptablemax` before any row is read, the basic model declines,
+   and the dispatch prints as a computed call that ends the function's flow:
+   a 13 KB Swift copy helper decompiled to its first 500 lines. The entries
+   of such a table are offsets and say nothing about where it ends; the
+   table after it does. A function's jump tables are emitted together, back
+   to back in one read-only section, so a table runs exactly to the lowest
+   table of the same function above it. When a table's recovery fails
+   outright (no model, or the basic model's normal failure) and the function
+   has not been scanned yet, the flow decodes the function's extent once
+   (`flow.rs (FlowInfo::recover_jump_tables)` over
+   `decompiler/crates/kuna-decomp/src/p2_lift/kuna_switchextent.rs
+   (function_tables)`: its entry to the next known function entry,
+   `context.rs (ArchContext::function_entry_after)`, or a MiB), folds every
+   register through the small lattice the dispatch shapes need and names
+   the table of each computed jump the fold proves reads one, sorted on the
+   function (`Funcdata::kuna_extent_tables`, shared with the recovery
+   partial). With two or more tables named, the recovery runs once more:
+   when the basic model finds the range unbounded and every other fallback
+   declines, `jumptable.rs (JumpBasicModel::kuna_try_extent_bound_table)`
+   takes the melded path's one LOAD, reads its address as a constant table
+   plus an index scaled by the entry width (`kuna_switchextent.rs
+   (table_read)`), and re-bounds the range to `[0, N)` on that index with
+   `N` the entries that fit before the next table, at least two and at most
+   `jumptablemax`, and only when the next table lies in the same load-image
+   section (`context.rs (ArchContext::in_section_of)`), as the discovery
+   Listing requires; the rows then pass the run-on cut above like any
+   unguarded table's. A function whose extent names fewer than two tables,
+   or a dispatch retried after an earlier recovery, is not re-run, so a
+   recovery that fails for its own reasons costs one extent scan and no
+   second pipeline. A function's last table has
+   no such bound and is left as it was: an object the function merely reads
+   may sit anywhere in the section, and a bound taken from one could run the
+   table on into another function's, whose entries are plausible code
+   addresses measured from the wrong base. The discovery Listing applies the
+   same rule when it reads an AArch64 compact table with no range check
+   (chapter 1, `kuna_a64switch.rs`).
+
+   A table that a mask bounds only to its selector's width is the other
+   half of the same shape. A Swift enum's string switch masks the case
+   with `and x8, x0, #0xff` and reads 256 halfword rows, and when the table
+   is its function's last the rows past its own cases are the next
+   functions' tables measured from the wrong base: they land all over the
+   next functions and back inside this one, so the run-on cut, which keeps
+   every row until the first that leaves the function, keeps them all and
+   the 45-case switch printed 1,200 lines of phantom cases. When the run-on
+   cut leaves an unguarded table whose rows leave the function,
+   `jumptable.rs (JumpBasicModel::kuna_next_table_rows)` reads its table and
+   stride as above and ends it at the lowest jump table above it in the same
+   section, of this function or of the next ones, when that leaves at least
+   two rows. The next functions' tables come from the flow: the sanity check
+   inside the recovery partial records the table it wants
+   (`Funcdata::kuna_later_wanted`) and fails, and
+   `flow.rs (FlowInfo::recover_jump_tables)` decodes the extents after this
+   function (`kuna_switchextent.rs (later_tables)`: function by function, at
+   most 32, until one dispatches through a table above the one asked
+   about), stores their tables on the function (`Funcdata::kuna_later_tables`)
+   and runs the recovery once more. When no known function follows, the
+   list is empty and the recovery still runs once more, so the table ends
+   at the function's own next table or keeps its rows as before. The
+   request can also come from the retry the function's own tables bound
+   (a row of the bounded table lies in the next known function); the flow
+   then answers it in a second round. Either way the request never leaves
+   a table unrecovered. A table whose rows all stay
+   inside the function costs nothing, and the decode runs only for a table
+   already unguarded and leaving the function.
+
    **Guards that leave the top open (always on).**
    `jumptable.rs (JumpBasicModel::analyze_guards)` records the
    conditional branches on the path just before the dispatch as guards

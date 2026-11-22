@@ -207,6 +207,9 @@ pub struct CalleeEntryDead {
     /// in a register survives one of these provably. Read by
     /// [`resolve_forward_transfer`].
     opaque_cuts: Vec<ByteSet>,
+    /// How many of [`Self::opaque_cuts`] are an indirect jump (`BRANCHIND`).
+    /// Read by [`Self::is_trampoline`].
+    jumps: usize,
     /// The subset of [`Self::cuts`] taken at a DIRECT call, with the target's
     /// entry address. Naming the target is not the same as accounting for what
     /// is forwarded to it — the callee's own recovery only accounted for a
@@ -488,6 +491,24 @@ impl CalleeEntryDead {
             && self.takes_none(idx, off, end)
     }
 
+    /// Is this body a trampoline: every path it has leaves through an indirect
+    /// jump (through a GOT slot or a register), none returns, calls or runs a
+    /// user op, and nothing is read before it is written? What such a body
+    /// writes is its own business; every other register goes to the real
+    /// target untouched. Read by [`crate::p4_calls::kuna_calleefilledarg`].
+    pub fn is_trampoline(&self) -> bool {
+        self.complete
+            && !self.lost
+            && self.skipped.is_none()
+            && !self.cuts.is_empty()
+            && self.cuts.len() == self.jumps
+            && self.named_cuts.is_empty()
+            && self.trap_cuts.is_empty()
+            && self.returning_opaque == 0
+            && self.reads.is_empty()
+            && self.return_reads.is_empty()
+    }
+
     /// Does some path reach a system call with a byte of `[addr, addr+size)`
     /// still holding the caller's value, so the kernel may read it?
     pub fn traps_unwritten(&self, addr: &Address, size: int4) -> bool {
@@ -614,6 +635,7 @@ impl CalleeEntryDead {
             reads,
             cuts: cuts.into_iter().map(|c| c.into_iter().collect()).collect(),
             opaque_cuts: Vec::new(),
+            jumps: 0,
             named_cuts: Vec::new(),
             returning_opaque: 0,
             return_reads: Vec::new(),
@@ -1254,6 +1276,7 @@ pub fn probe_entry_with<T: kuna_sleigh::translate::Translate + ?Sized>(
         res.stored_read_bytes.clear();
         res.cuts.clear();
         res.opaque_cuts.clear();
+        res.jumps = 0;
         res.named_cuts.clear();
         res.returning_opaque = 0;
         res.return_reads.clear();
@@ -1557,6 +1580,7 @@ fn step_instruction(
                 let returns = op.opc == OpCode::CPUI_CALLOTHER
                     && !emit.internal_flow
                     && note_returning_user_op(res, &emit.ops[k + 1..]);
+                res.jumps += usize::from(op.opc == OpCode::CPUI_BRANCHIND);
                 res.opaque_cuts.push(cur.clone());
                 res.cuts.push(cur);
                 if returns {
