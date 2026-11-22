@@ -229,13 +229,26 @@ fn load_address(data: &Funcdata, before: &[OpId], load: OpId) -> Option<(Varnode
     }
     match defined_before(data, before, addr) {
         Some((add, rest)) => {
-            let a = data.obank().get(add)?;
-            if a.code() != OpCode::CPUI_INT_ADD {
+            if data.obank().get(add)?.code() != OpCode::CPUI_INT_ADD {
                 return Some((addr, 0));
             }
-            Some((a.get_in(0)?, constant_before(data, rest, a.get_in(1)?)?))
+            let (base, off) = add_parts(data, add)?;
+            Some((base, constant_before(data, rest, off)?))
         }
         None => Some((addr, 0)),
+    }
+}
+
+/// The base and the offset input of the INT_ADD `add`: the lifter puts the
+/// constant of `call *0x20(%r12)` first and that of `mov 0x10(%r12),%rax`
+/// second.
+fn add_parts(data: &Funcdata, add: OpId) -> Option<(VarnodeId, VarnodeId)> {
+    let a = data.obank().get(add)?;
+    let (x, y) = (a.get_in(0)?, a.get_in(1)?);
+    if data.vbank().get(x)?.is_constant() {
+        Some((y, x))
+    } else {
+        Some((x, y))
     }
 }
 
@@ -310,10 +323,12 @@ fn spilled_value<'a>(
         };
         let a = data.obank().get(addr)?;
         let same = a.code() == OpCode::CPUI_INT_ADD
-            && a.get_in(0)
-                .and_then(|b| data.vbank().get(b))
-                .is_some_and(|b| b.get_addr() == &base_addr)
-            && constant_before(data, rest, a.get_in(1)?) == Some(off);
+            && add_parts(data, addr).is_some_and(|(b, c)| {
+                data.vbank()
+                    .get(b)
+                    .is_some_and(|b| b.get_addr() == &base_addr)
+                    && constant_before(data, rest, c) == Some(off)
+            });
         if same {
             return Some((o.get_in(2)?, rest));
         }
