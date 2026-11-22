@@ -9414,8 +9414,10 @@ function entry, and the routine it belongs to ended there with a `funcboundflow`
 warning, leaving two near-empty halves. A start that a load-time pass committed is
 never withdrawn. That covers every `<patternpairs>` start, which the deferred
 `funcstart_patterns` pass commits before the walk, as well as vector-table handlers
-and symbols. The rule does not run when frame recovery rebuilt the Listing. On
-stripped Cleanflight O2-noinline it withdraws 25 of 2,679 starts, none of them a
+and symbols. The rule does not run when frame recovery rebuilt the Listing. The
+rebuild that withdraws a start reuses every decode of the raw-scan rebuild
+(`decompiler/crates/kuna-analysis/src/listing/kuna_decodememo.rs`), so it walks the
+image again without decoding it again. On stripped Cleanflight O2-noinline it withdraws 25 of 2,679 starts, none of them a
 symbol of the unstripped image; `Handle_USBAsynchXfer` (0x803b95c) is whole again.
 Over the 92 distinct stripped ARM firmware images of DecBench (O0, O2 and
 O2-noinline) it withdraws 398 of 42,937 starts, each inside the symbol of the

@@ -1199,6 +1199,7 @@ pub fn run_listing_consumers_replaying_observed(
         }
     }
     let mut thumb_roots = std::collections::BTreeSet::new();
+    let mut thumb_memo = None;
     if arch.analysis_listing && arch.analysis_funcstart_patterns && !frames_recovered {
         if let Some(code_space) = arch.manage().get_default_code_space() {
             let raw = crate::aif::raw_thumb_prologue_seeds(
@@ -1212,9 +1213,11 @@ pub fn run_listing_consumers_replaying_observed(
                 thumb_roots.extend(&added);
                 seeds.extend(added);
                 seeds.sort_unstable();
-                listing = crate::listing::Listing::build_with_meta_planned_without_image(
+                let memo = thumb_memo
+                    .insert(crate::listing::kuna_decodememo::DecodeMemo::new(listing.exec_ranges()));
+                listing = crate::listing::Listing::build_tracking_frames_without_image(
                     &file, arch, translate, &seeds, &funcsym_seeds,
-                    &seed_names, detail, plan,
+                    &seed_names, detail, plan, None, Some(memo),
                 );
             }
         }
@@ -1278,8 +1281,9 @@ pub fn run_listing_consumers_replaying_observed(
                 .collect();
         if !entered.is_empty() {
             seeds.retain(|root| !entered.contains(root));
-            listing = crate::listing::Listing::build_with_meta_planned_without_image(
+            listing = crate::listing::Listing::build_tracking_frames_without_image(
                 &file, arch, translate, &seeds, &funcsym_seeds, &seed_names, detail, plan,
+                None, thumb_memo.as_ref(),
             );
         }
     }
