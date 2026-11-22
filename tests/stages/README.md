@@ -65,6 +65,13 @@ code also reaches (`case 0x43: case 0x46: goto`), in `g` they left the switch
 default: an 1100-entry range-checked table prints as a switch, not as
 `jump-as-call`.
 
+`kuna-switchmerge-split.xml` checks two more `switchmerge` rules on AArch64
+tables. In `k` a range test splits the selector between two range-checked
+tables whose defaults both jump to the same code; it prints as one switch with
+both tables' labels and one `default:`. In `m` the default arm starts with
+`if (x == 0x60) return ...;`, which prints as `case 0x60:`. The off run keeps
+the `if` forms.
+
 `kuna-switchsingle.xml` checks that a jump table whose four entries all name one
 block becomes straight-line code with the "all go to same destination" warning
 instead of a `switch` with only a `default` arm.

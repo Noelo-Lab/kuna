@@ -1318,6 +1318,28 @@ structured tree, outer switches first, the plan lists the arms to print:
   to that variable runs between the `switch` and the test. Holes of a table
   whose `default:` is an `==` chain or a range test that leads to the next
   table go away this way.
+- After that, while the `default:` arm (plain code, not a jump) starts with
+  an `if (v == c) S` that has no else, whose condition block prints only its
+  branch and whose test is `INT_EQUAL`/`INT_NOTEQUAL` of the selector and a
+  constant `c` that no arm lists, with the then-branch reached exactly for
+  `c`, the plan prints `case c: S` right before `default:` and `default:`
+  prints the rest of its list. `S` runs for `c` and then falls into the rest,
+  as after the `if`. The arm before `default:` must not fall into it, and a
+  second `case` follows only an `S` that ends in a jump or a return. When
+  nothing is left of a last `default:` arm, it is not printed.
+- Last, innermost first, an `if` with an else whose two branches each print
+  as a switch on the same selector (a switch not merged elsewhere, or an
+  `if` this rule already prints as one) prints as one switch: the first
+  branch's arms, then the second's. Every label of each branch must route
+  from the condition block to that branch under the value walk above, the
+  label sets must be disjoint with the same size and sign, no owner switch
+  may have a table entry to its exit, every header must print nothing, and
+  the condition block and both branches must carry no label. The defaults
+  must do the same: both absent or `break;`, or the same jump; the second's
+  is left out. The first branch's last arm and the arm before the second
+  branch's default must not fall through. The second switch and the
+  switches merged into it are hosted by the first, so `break;` still leaves
+  to the block after the `if`.
 
 An arm moves or is left out only when the arm printed before it does not fall
 into it. The census reads the plan: a left-out jump keeps no label alive, and

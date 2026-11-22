@@ -2272,7 +2272,8 @@ mod tests {
         // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
         // and kuna-switchmerge / a search tree of jump tables prints as one switch (option switchmerge)
         // and kuna-switchmerge-values / a hole the default code sends to the same place prints no label, and a 1100-entry table is a switch
-        assert_eq!(count, 854, "corpus file count drifted");
+        // and kuna-switchmerge-split / a range split between two switches, and an == test heading default, print as one switch
+        assert_eq!(count, 855, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

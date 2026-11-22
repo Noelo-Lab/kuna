@@ -4432,7 +4432,10 @@ impl PrintC {
             BlockType::Copy => self.emit_block_copy(fd, arch, blk),
             BlockType::Basic => self.emit_block_basic(fd, arch, blk),
             BlockType::Ls => self.emit_block_ls(fd, arch, blk),
-            BlockType::If => self.emit_block_if(fd, arch, blk),
+            BlockType::If => match self.switch_plans.ifs.get(&blk) {
+                Some(&sw) => self.emit_block_switch(fd, arch, sw),
+                None => self.emit_block_if(fd, arch, blk),
+            },
             BlockType::Graph => self.emit_block_graph(fd, arch, blk),
             BlockType::Goto => self.emit_block_goto(fd, arch, blk),
             BlockType::WhileDo => self.emit_block_while_do(fd, arch, blk),
@@ -5450,7 +5453,11 @@ impl PrintC {
             self.emit_switch_case(fd, arch, *arm);
             let id = self.emit.start_indent();
             let case = fd.sblocks_ref().block(owner).switch_caseblocks()[arm.index].clone();
-            if case.gototype != 0 {
+            if let Some((guard, _)) = arm.guard {
+                let id2 = self.emit.begin_block(0);
+                self.emit_block(fd, arch, fd.sblocks_ref().block(guard).get_block(1));
+                self.emit.end_block(id2);
+            } else if case.gototype != 0 {
                 self.emit.tag_line();
                 let gototype = self.goto_rewrites.case_gototype(owner, case.block, case.gototype);
                 let head = fd.sblocks_ref().block(owner).get_block(0);
@@ -5493,7 +5500,10 @@ impl PrintC {
         // The case block's first op — used only for markup tagging.
         let firstop = self.case_first_op(fd, case.block);
 
-        if case.isdefault || arm.as_default {
+        if let Some((_, value)) = arm.guard {
+            let (_, sz, signed) = self.switch_case_label(fd, arch, blk, &case, 0);
+            self.emit_numeric_case_label(value, sz, signed, None);
+        } else if case.isdefault || arm.as_default {
             // default: (the label value is informational; default emits no value).
             // C++ `emit->tagCaseLabel(..., op, ...)` with op = the case's first op —
             // `opref = firstop->getTime()`, the `<ast>` `<seqnum uniq>`.
@@ -5577,13 +5587,17 @@ impl PrintC {
         }
         let n = fd.sblocks_ref().block(blk).switch_caseblocks().len();
         (0..n)
-            .map(|index| crate::p8_structure::kuna_switchmerge::PlannedCase { owner: blk, index, as_default: false, skip: 0 })
+            .map(|index| crate::p8_structure::kuna_switchmerge::PlannedCase::new(blk, index))
             .collect()
     }
 
     /// (kuna `switchmerge`) Print a switch arm from the `skip`th block of its
     /// list, keeping the trailing jump of a `BlockGoto` around the list.
     fn emit_arm_rest(&mut self, fd: &Funcdata, arch: &Architecture, caseblk: BlockId, skip: usize) {
+        let (list, _) = crate::p8_structure::kuna_switchmerge::arm_list(fd.sblocks_ref(), caseblk);
+        if list.is_empty() {
+            return;
+        }
         if fd.sblocks_ref().block(caseblk).get_type() == crate::block::BlockType::Goto {
             self.emit_block_goto_from(fd, arch, caseblk, skip);
         } else {
