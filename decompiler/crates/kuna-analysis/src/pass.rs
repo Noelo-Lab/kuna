@@ -273,6 +273,28 @@ pub struct SwiftTypeFacts {
     pub regs: Option<(&'static str, &'static str)>,
 }
 
+/// (kuna `swifthelpers`) The facts the Swift helper arm produces, kept apart
+/// so the commit can drop them whole under `option swifthelpers off`: the
+/// helper and accessor names, the caches they fill and their prototypes.
+#[derive(Default, Clone, Debug)]
+pub struct SwiftHelperFacts {
+    pub symbols: Vec<SymFact>,
+    pub fid_names: Vec<FidMatch>,
+    pub typed_data: Vec<TypedDataFact>,
+    pub prototypes_at: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
+}
+
+/// (kuna `valuewitness`) The value-witness arm's facts, kept apart so the
+/// commit can drop them whole under `option valuewitness off`: the witness
+/// functions' names and prototypes, and the tables `swifttypes` did not
+/// type through static metadata (committed only when it is on too).
+#[derive(Default, Clone, Debug)]
+pub struct SwiftWitnessFacts {
+    pub names: Vec<SymFact>,
+    pub prototypes: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
+    pub typed_data: Vec<TypedDataFact>,
+}
+
 /// The function at `func_addr` follows the cspec prototype model `model`,
 /// its signature otherwise unknown: its parameters, and the arguments of
 /// every direct call to it, are recovered under that model.
@@ -703,6 +725,15 @@ pub struct AnalysisOutput {
     pub go_itabs: Vec<SymFact>,
     /// (kuna `swifttypes`) The Swift type-layout facts. See [`SwiftTypeFacts`].
     pub swift_types: SwiftTypeFacts,
+    /// (kuna `swiftobjcthunk`) Each function the Swift metadata pass named
+    /// after an `@objc` member, `(addr, member name, positional name)`: the
+    /// commit boundary renames it back to the positional
+    /// `Class.vtable#N.kind` when the gate is off.
+    pub swift_positional_names: Vec<(u64, String, String)>,
+    /// (kuna `swifthelpers`) The Swift helper facts. See [`SwiftHelperFacts`].
+    pub swift_helpers: SwiftHelperFacts,
+    /// (kuna `valuewitness`) The value-witness facts. See [`SwiftWitnessFacts`].
+    pub swift_witnesses: SwiftWitnessFacts,
     /// (kuna `swiftmetadata`) Each local Swift enum's metadata accessor and
     /// the enum's case count from its descriptor: the exact bound of a
     /// `swift_getEnumCaseMultiPayload` result, which indexes the enum's
@@ -800,6 +831,13 @@ impl AnalysisOutput {
         self.cpp_sig.msvc.iter_mut().for_each(|(_, p, _)| fix_proto(p));
         self.cpp_sig.msvc_byval.iter_mut().for_each(|(_, d)| fix_proto(&mut d.pieces));
         self.format_sites.iter_mut().for_each(|f| fix_proto(&mut f.pieces));
+        let helpers = &mut self.swift_helpers;
+        helpers.symbols.iter_mut().for_each(|s| {
+            if s.kind == SymKind::Data { fix_data(&mut s.name); } else { fix(&mut s.name); }
+        });
+        helpers.fid_names.iter_mut().for_each(|f| fix(&mut f.name));
+        helpers.typed_data.iter_mut().for_each(|d| fix_data(&mut d.name));
+        helpers.prototypes_at.iter_mut().for_each(|(_, p)| fix_proto(p));
     }
 }
 
@@ -881,6 +919,14 @@ impl AnalysisOutput {
         self.swift_types.input_hints.extend(other.swift_types.input_hints);
         self.swift_types.no_self.extend(other.swift_types.no_self);
         self.swift_types.regs = self.swift_types.regs.or(other.swift_types.regs);
+        self.swift_positional_names.extend(other.swift_positional_names);
+        self.swift_helpers.symbols.extend(other.swift_helpers.symbols);
+        self.swift_helpers.fid_names.extend(other.swift_helpers.fid_names);
+        self.swift_helpers.typed_data.extend(other.swift_helpers.typed_data);
+        self.swift_helpers.prototypes_at.extend(other.swift_helpers.prototypes_at);
+        self.swift_witnesses.names.extend(other.swift_witnesses.names);
+        self.swift_witnesses.prototypes.extend(other.swift_witnesses.prototypes);
+        self.swift_witnesses.typed_data.extend(other.swift_witnesses.typed_data);
         self.entries.extend(other.entries);
         self.fde_bodies.extend(other.fde_bodies);
         self.fde_interior_entries.extend(other.fde_interior_entries);

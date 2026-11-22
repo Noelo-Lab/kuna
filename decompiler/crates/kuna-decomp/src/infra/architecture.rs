@@ -848,6 +848,10 @@ pub struct Architecture {
     /// its return value too (option `mixedtailret`).  See
     /// [`crate::p4_calls::kuna_mixedtailret`].
     pub mixed_tail_ret: bool,
+    /// (kuna) A return register that holds one memory cell's value on every
+    /// path is the return value (option `cachereturn`).  See
+    /// [`crate::p4_calls::kuna_cachereturn`].
+    pub cache_return: bool,
     /// (kuna) Recover whole scalar VFP returns and double arguments on an ARM
     /// image that states the VFP calling convention (option `armfloatreturn`).
     /// See [`crate::p4_calls::kuna_armfloatreturn`].
@@ -1903,6 +1907,8 @@ pub struct Architecture {
     /// (kuna) Name a stripped Mach-O stub from the chained bind on its slot
     /// (`stubbinds`). Default on; Mach-O only.
     pub analysis_stubbinds: bool,
+    /// (kuna) Name a placeholder jump thunk `j_<target>` (`thunknames`). Default on.
+    pub analysis_thunknames: bool,
     /// (kuna) Gate the Mach-O Objective-C metadata recovery pass (`objc`); default
     /// **off**. The kuna analog of Ghidra's `ObjcTypeMetadataAnalyzer`
     /// (name-recovery half): when the binary is a Mach-O, walk the `__objc_*`
@@ -1944,6 +1950,12 @@ pub struct Architecture {
     /// typed metadata records, accessor prototypes and the register-pinned
     /// `self` of getters. Default-on; inert unless `swiftmetadata` is on.
     pub analysis_swifttypes: bool,
+    /// (kuna) Gate the Swift helper arm of the metadata pass
+    /// (`swifthelpers`): the instantiation helpers and lazy witness table
+    /// accessors named from their bodies, and the caches they fill named
+    /// after the type each call asks for. Default-on; inert unless
+    /// `swiftmetadata` is on.
+    pub analysis_swifthelpers: bool,
     /// (kuna `swifttypes`) Register-pinned parameters the analysis tier
     /// declared, by function entry: `(slot, name, storage + type)`, the
     /// shape of a console `map param`. The decompile drive seeds a
@@ -1959,6 +1971,17 @@ pub struct Architecture {
     /// `__swiftcall` model with their `self` named and typed. Default-on;
     /// inert unless `swiftmetadata` is on.
     pub analysis_swiftcall: bool,
+    /// (kuna) Gate the `@objc`-thunk arm of the Swift metadata pass
+    /// (`swiftobjcthunk`): a vtable slot an Objective-C entry point calls is
+    /// named by its selector or property. Default-on; inert unless
+    /// `swiftmetadata` is on.
+    pub analysis_swiftobjcthunk: bool,
+    /// (kuna) Gate the value-witness arm of the metadata pass
+    /// (`valuewitness`): each local struct's and enum's value witness
+    /// functions named and prototyped, and a load of a value's witness table
+    /// through its metadata typed `swift.value_witness_table *`. Default-on;
+    /// inert unless `swiftmetadata` is on.
+    pub analysis_valuewitness: bool,
     /// (kuna) The calling convention the analysis tier bound to a function
     /// without declaring its signature, by entry `(space index, offset)`.
     /// The function's own parameters, and those of every direct call to it,
@@ -2514,6 +2537,7 @@ impl Architecture {
             narrow_ext: crate::kuna_narrowext::NarrowExtMode::Off, // (kuna) option narrowext; reset_defaults sets the shipped default
             pass_through: true, // (kuna) option passthrough; reset_defaults sets the shipped default
             mixed_tail_ret: false, // (kuna) option mixedtailret; reset_defaults sets the shipped default
+            cache_return: true, // (kuna) option cachereturn; reset_defaults sets the shipped default
             readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             persist_calls: Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT),
             narrow_args: true,
@@ -2690,6 +2714,7 @@ impl Architecture {
             analysis_tailcallentry: false,
             analysis_calltable: false,
             analysis_stubbinds: false,
+            analysis_thunknames: false,
             analysis_objc: false,
             analysis_swiftmetadata: false,
             analysis_cfstrings: false,
@@ -2698,9 +2723,12 @@ impl Architecture {
             analysis_blobs: false,
             blob_entries: Rc::default(),
             analysis_swifttypes: true,
+            analysis_swifthelpers: true,
             loader_param_locks: std::collections::BTreeMap::new(),
             analysis_objcivars: true,
             analysis_swiftcall: true,
+            analysis_swiftobjcthunk: true,
+            analysis_valuewitness: true,
             loader_proto_models: Rc::default(),
             loader_input_hints: std::collections::BTreeMap::new(),
             loader_swift_abi: None,
@@ -2915,6 +2943,7 @@ impl Architecture {
         self.narrow_ext = crate::kuna_narrowext::NarrowExtMode::Abi; // (kuna) option narrowext default `abi`: a narrow integer argument or return value is extended as the RISC-V and LoongArch procedure-call standards state
         self.arm_float_return = true; // (kuna) option armfloatreturn: default-ON; inert unless the ELF states the VFP procedure-call standard
         self.pass_through = true; // (kuna) option passthrough default-on: over 574 slices in 25 projects (the 444-slice decbench corpus plus 130 slices of 17 disjoint projects) 4,107 of 4,346 gained parameters are DWARF-confirmed, NONE contradicted, 239 thunks DWARF does not describe, 0 parameters and 0 call arguments lost; the return arm is 5,458 of 5,615 confirmed, its 157 misses all the undecidable `void` tail-call wrapper; docs/features/passthrough/dwarf-confirmation.md
+        self.cache_return = true; // (kuna) option cachereturn default-on: a lazy accessor's cache-cell return, Swift images only; 0/675 datatests
         self.mixed_tail_ret = false; // (kuna) option mixedtailret default-off: a void guard that leaves the value it tested in the return register beside a tail call compiles to the same bytes; see the phases.toml row
         self.kuna_calleeargs = true;
         self.arg_clobber = true; // (kuna) option argclobber default-on: the drop now needs the callee's own RECOVERED prototype to say the register is free (`protoorder` parks it), so it is inert wherever no callee was decompiled first; 0/675 datatest assertions, PARITY OK on stages, no scored type_match change, measured in docs/features/argclobber/record.json
@@ -3050,6 +3079,7 @@ impl Architecture {
         self.analysis_aifpoolslide = true;
         self.analysis_tailcallentry = true; // tail-call function-entry recovery (ARM-only, needs listing)
         self.analysis_calltable = true; // call tables and the call-table vs switch vote (needs listing)
+        self.analysis_thunknames = true; // (kuna) placeholder jump thunks named j_<target>
         self.analysis_stubbinds = true; // (kuna) stripped Mach-O stubs named from their slot's chained bind (Mach-O-only pass)
         self.analysis_objc = true; // Mach-O Objective-C metadata recovery (Mach-O-only pass)
         self.analysis_swiftmetadata = true; // Swift runtime-metadata recovery (inert without swift5_* sections)
@@ -3057,8 +3087,11 @@ impl Architecture {
         self.cfstrings_annotate = false;
         self.analysis_blobs = true; // (kuna) embedded image/archive data symbols; real-binary-path only
         self.analysis_swifttypes = true; // Swift type layouts default-on, inert unless swiftmetadata is on
+        self.analysis_swifthelpers = true; // Swift helper names default-on, inert unless swiftmetadata is on
         self.analysis_objcivars = true; // (kuna) ObjC instance structs + typed self + ivar offset fold; inert unless objc is on
         self.analysis_swiftcall = true; // Swift calling convention default-on, inert unless swiftmetadata is on
+        self.analysis_swiftobjcthunk = true; // Swift slot names from @objc thunks default-on, inert unless swiftmetadata is on
+        self.analysis_valuewitness = true; // Swift value witnesses default-on, inert unless swiftmetadata is on
         self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
         self.macho_arm64e = true; // arm64e Apple-Silicon spec selection (arm64e Mach-O only)
     }
@@ -3570,6 +3603,7 @@ impl Architecture {
         ctx.go_bool = self.go_bool;
         ctx.go_write_barrier = self.go_write_barrier;
         ctx.go_new_type = self.go_new_type;
+        ctx.swift_metadata_results = self.analysis_swifttypes;
         ctx.ptrauth_trap_userop = self
             .ptrauth_trap
             .then(|| self.userops.get_op_by_name(crate::kuna_ptrauthtrap::BREAKPOINT_USEROP))
@@ -3639,6 +3673,7 @@ impl Architecture {
         ctx.cast_index = self.cast_index && self.print.out_lang() == crate::kuna_lang::OutLang::C; // (kuna) castindex
         ctx.ptr_from_use = self.ptr_from_use; // (kuna) ptrfromuse
         ctx.char_ptr = self.char_ptr; // (kuna) charptr
+        ctx.analysis_valuewitness = self.analysis_valuewitness; // (kuna) valuewitness
         ctx.elem_ptr = self.elem_ptr; // (kuna) elemptr
         ctx.elem_ptr_ranges = std::rc::Rc::clone(&self.globalref_ranges); // (kuna) elemptr
         ctx.libctypes = self.analysis_libctypes; // (kuna) libctypes (kuna_libcfit)
@@ -3651,6 +3686,7 @@ impl Architecture {
         ctx.arg_clobber = self.arg_clobber; // argclobber
         ctx.pass_through = self.pass_through; // passthrough
         ctx.mixed_tail_ret = self.mixed_tail_ret; // mixedtailret
+        ctx.cache_return = self.cache_return; // cachereturn
         ctx.readonly_calls = self.readonly_calls;
         ctx.persist_calls = self.persist_calls;
         // (kuna `calleereginputs custom`) a function's own evaluation sees the
