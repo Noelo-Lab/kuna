@@ -629,6 +629,9 @@ pub struct LoadGuard {
     /// register after the function moved it by a non-constant amount, so the
     /// op addresses dynamically allocated stack, not the frame.
     pub dynamic_stack: bool,
+    /// (kuna) The pointer was reloaded from a stack slot it was spilled to
+    /// (`Heritage::discover_indexed_stack_pointers`).
+    pub through_spill: bool,
 }
 
 impl LoadGuard {
@@ -644,6 +647,7 @@ impl LoadGuard {
             step: 0,
             analysis_state: 0,
             dynamic_stack: false,
+            through_spill: false,
         }
     }
 
@@ -889,6 +893,9 @@ pub struct Heritage {
     /// re-declaring the field.
     #[allow(dead_code)]
     load_copy_ops: Vec<crate::context::OpId>,
+    /// (kuna) Stack slots `discover_indexed_stack_pointers` saw a stack
+    /// pointer spilled to: (offset, size).
+    pointer_spills: Vec<(uintb, int4)>,
     /// (kuna) `calleeprotostack` — the local-alias checker this pass answers
     /// "can a pointer reach this stack slot?" with, gathered at most once per
     /// pass.  See [`crate::p4_calls::kuna_calleeprotostack`].
@@ -985,6 +992,7 @@ impl Heritage {
             indexed_store_bounds: Default::default(),
             deadline: None,
             load_copy_ops: Vec::new(),
+            pointer_spills: Vec::new(),
             protostack_alias: None,
             protostack_frame_reload: None,
             global_call_ranges: Default::default(),
@@ -1185,6 +1193,7 @@ impl Heritage {
         self.load_reads.clear();
         self.load_guard.clear();
         self.store_guard.clear();
+        self.pointer_spills.clear();
         self.store_frame_unresolved = None;
         self.store_frame_guarded = false;
         self.protostack_frame_reload = None;
@@ -5527,6 +5536,12 @@ impl Heritage {
     /// The C++ holds a live `list<PcodeOp*>::const_iterator` inside each
     /// `StackNode`; here each node snapshots its Varnode's descendant op list
     /// (read-only during the walk) and an index cursor — the same DFS order.
+    ///
+    /// (kuna) A path value written to a slot of the space with no reader yet
+    /// (a spilled stack pointer) continues, once the walk is done, from the
+    /// slot's unlinked reads, which this pass's renaming has not yet tied to
+    /// the write; LOADs reached that way are guarded, STOREs are left to the
+    /// rerun after renaming.
     fn discover_indexed_stack_pointers(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
@@ -5544,6 +5559,7 @@ impl Heritage {
             traversals: uint4,
             descend: Vec<crate::context::OpId>,
             iter: usize,
+            spilled: bool,
         }
 
         // We mark Varnodes independently of the depth-first path to avoid
@@ -5551,6 +5567,7 @@ impl Heritage {
         let mut marked_vn: Vec<crate::context::VarnodeId> = Vec::new();
         let mut path: Vec<StackNode> = Vec::new();
         let mut unknown_stack_storage = false;
+        let mut spills: Vec<(uintb, int4, uintb, uint4)> = Vec::new();
 
         let num_sb = spc.num_spacebase();
         for i in 0..num_sb {
@@ -5568,11 +5585,30 @@ impl Heritage {
             };
             let descend: Vec<crate::context::OpId> =
                 fd.vbank().get(sp_input).expect("sp_input vn").descend_iter().collect();
-            path.push(StackNode { vn: sp_input, offset: 0, traversals: 0, descend, iter: 0 });
+            path.push(StackNode { vn: sp_input, offset: 0, traversals: 0, descend, iter: 0, spilled: false });
 
             while let Some(cur) = path.last_mut() {
                 if cur.iter >= cur.descend.len() {
                     path.pop();
+                    while path.is_empty() {
+                        let Some((slot, size, offset, traversals)) = spills.pop() else { break };
+                        if self.pointer_spills.contains(&(slot, size)) {
+                            continue;
+                        }
+                        self.pointer_spills.push((slot, size));
+                        let at = Address::new(Rc::clone(spc), slot);
+                        let reads: Vec<crate::context::VarnodeId> = fd
+                            .vbank()
+                            .iter_loc_size_addr(size, &at)
+                            .filter(|&r| fd.vbank().get(r).is_some_and(|v| !v.is_written() && !v.is_mark() && !v.has_no_descend()))
+                            .collect();
+                        for r in reads {
+                            let descend = fd.vbank().get(r).expect("spill read").descend_iter().collect();
+                            fd.vbank_mut().get_mut(r).expect("spill read").set_mark();
+                            marked_vn.push(r);
+                            path.push(StackNode { vn: r, offset, traversals, descend, iter: 0, spilled: true });
+                        }
+                    }
                     continue;
                 }
                 let op = cur.descend[cur.iter];
@@ -5580,6 +5616,7 @@ impl Heritage {
                 let cur_vn = cur.vn;
                 let cur_offset = cur.offset;
                 let cur_traversals = cur.traversals;
+                let cur_spilled = cur.spilled;
 
                 let out_vn = fd.obank().get(op).and_then(|o| o.get_out());
                 if let Some(ov) = out_vn {
@@ -5606,12 +5643,16 @@ impl Heritage {
                                 traversals: $newtrav,
                                 descend: d,
                                 iter: 0,
+                                spilled: cur_spilled,
                             });
                             marked_vn.push(ov);
                         } else if fd.vbank().get(ov).map(|v| v.get_space().get_type()).unwrap_or(spacetype::IPTR_CONSTANT)
                             == spacetype::IPTR_SPACEBASE
                         {
                             unknown_stack_storage = true;
+                            if let Some(v) = fd.vbank().get(ov).filter(|v| Rc::ptr_eq(v.get_space(), spc)) {
+                                spills.push((v.get_offset(), v.get_size(), $newoff, $newtrav));
+                            }
                         }
                     }};
                 }
@@ -5698,13 +5739,19 @@ impl Heritage {
                         // If ANY path had a traversal (non-constant ADD or MULTIEQUAL),
                         // THIS path must too (the other elements have one path through).
                         if cur_traversals != 0 {
+                            let before = self.load_guard.len();
                             self.generate_load_guard(fd, cur_offset, op, spc);
+                            if self.load_guard.len() > before {
+                                if let Some(guard) = self.load_guard.last_mut() {
+                                    guard.through_spill = cur_spilled;
+                                }
+                            }
                         }
                     }
                     OpCode::CPUI_STORE => {
                         // Make sure the STORE pointer comes from our path.
                         let in1 = fd.obank().get(op).and_then(|o| o.get_in(1));
-                        if in1 == Some(cur_vn) {
+                        if in1 == Some(cur_vn) && !cur_spilled {
                             if cur_traversals != 0 {
                                 self.generate_store_guard(fd, cur_offset, op, spc);
                                 if let Some(guard) = self.store_guard.last_mut().filter(|g| g.op == op) {
@@ -6044,6 +6091,31 @@ impl Heritage {
         fd.op_destroy(op);
     }
 
+    /// (kuna) The last offset whose writes a LOAD guard forces.  A guard
+    /// found through a spilled pointer, in the pass that found it, with no
+    /// range from the value-set analysis, stops below the lowest slot above
+    /// its base that a stack pointer was spilled to: that slot is another
+    /// local, not the object the pointer addresses.
+    fn spill_guard_maximum(&self, guard: &LoadGuard) -> uintb {
+        if !guard.through_spill || guard.is_range_locked() {
+            return guard.maximum_offset;
+        }
+        self.pointer_spills
+            .iter()
+            .map(|&(slot, _)| slot)
+            .filter(|&slot| slot > guard.minimum_offset)
+            .min()
+            .map_or(guard.maximum_offset, |slot| guard.maximum_offset.min(slot - 1))
+    }
+
+    /// (kuna) After the pass that found them, guards reached through a spill
+    /// force their full range, as the guard upstream finds after renaming.
+    fn end_spill_guards(&mut self) {
+        for guard in self.load_guard.iter_mut() {
+            guard.through_spill = false;
+        }
+    }
+
     /// Mark the boundary of artificial ops introduced by load guards (C++
     /// `Heritage::handleNewLoadCopies`, `heritage.cc:695`).
     ///
@@ -6055,6 +6127,7 @@ impl Heritage {
     /// the sink list is empty and this is the faithful early return.)
     fn handle_new_load_copies(&mut self, fd: &mut crate::funcdata::Funcdata) {
         if self.load_copy_ops.is_empty() {
+            self.end_spill_guards();
             return;
         }
         let mut copy_sinks = std::mem::take(&mut self.load_copy_ops);
@@ -6070,7 +6143,7 @@ impl Heritage {
                 load_ranges.insert_range(
                     Rc::clone(&guard.spc),
                     guard.minimum_offset,
-                    guard.maximum_offset,
+                    self.spill_guard_maximum(guard),
                 );
             }
             for (spc, first, last) in &self.global_load_ranges {
@@ -6101,6 +6174,7 @@ impl Heritage {
             self.propagate_copy_away(fd, op);
         }
         self.load_reads.clear();
+        self.end_spill_guards();
         // (marks on the remaining artificial COPYs die with the local set.)
         // We have handled all the load guard COPY ops (list stays cleared).
     }

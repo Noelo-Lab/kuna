@@ -993,7 +993,27 @@ guard covers) is flagged the same way. GCC reads a spilled `int`'s low byte
 through `(fp+0x7fb)|3` on SPARC64; which byte depends on the pointer's
 runtime low bits, so it is an indexed access at the pointer's offset.
 Upstream stops at the OR: the LOAD gets no guard, the spill
-looks dead and is deleted, and the result reads a slot nothing wrote. A guard
+looks dead and is deleted, and the result reads a slot nothing wrote.
+**Spilled stack pointers** (always on, kuna): a path value written to a slot
+of the space that has no reader yet continues from every unlinked read of that
+slot (same offset and size), with the offset and traversal flag it had when it
+was written. gcc -O0 keeps `p = &a[0]` in a local and reloads it for each
+`p[i]`; Tigress pushes `&locals[k]` on its virtual stack and pops it for every
+access. On the space's first pass those reads are not yet linked to the write,
+so upstream stops at the spill and the LOAD through the reloaded pointer gets no
+guard. A slot written directly and read only through that pointer then has no
+reader, so the store is deleted, and so is any branch that guarded only such
+stores: the `if (a > 5) st[1] |= 0x78;` before an indexed loop over `st`.
+A LOAD reached through a spill gets a guard marked `LoadGuard::through_spill`;
+a STORE does not, because the rerun after renaming finds it through the linked
+slot, as upstream does. In the pass that found it, a spill guard the value-set
+analysis left unbounded forces writes only below the lowest slot above its
+base that a stack pointer was spilled to
+(`heritage.rs (Heritage::spill_guard_maximum)`). That slot is another local, and
+forcing it would keep the spilled pointers alive as variables (the
+intermediate pointers of the `dupptr` datatest). Later passes force the guard's
+whole window (`heritage.rs (Heritage::end_spill_guards)`), as for the guard
+upstream's rerun records. A guard
 is born covering the **entire space**
 (`LoadGuard::set`: minimum 0, maximum the space's highest offset). A STORE
 whose pointer is still a free varnode cannot be classified yet: it is

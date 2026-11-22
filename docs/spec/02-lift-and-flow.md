@@ -5013,14 +5013,18 @@ recorded values.
 `tests/stages/kuna-pushan-interp.xml` runs two passes over the
 `pushan_interp_x86_64` fixture (gcc -O0 from its committed C source), six
 functions that are their own interpreters of one virtual program with a loop
-and a branch. With `off`, the switch-dispatched one decompiles to its
+and a branch, and a seventh that interprets a second program in Tigress's
+style, every variable reached through its slot's address pushed on the
+virtual stack. With `off`, the switch-dispatched one decompiles to its
 interpreter. With the default, switch dispatch over writable and read-only
 bytecode, threaded code copied by `memcpy` into a stack-probed local or by an
 inline `rep movsq` that leaves no copy loop behind, and two
 programs interleaved through `pc[sel]` recover the loop and the branch, only
 the writable ones carry the bytecode clause, the interleaved one says it
 follows its first program, and bytecode the function patches with its
-argument is reported incomplete.
+argument is reported incomplete. The Tigress-style program keeps its stores
+to `st` and the branch around one of them, which only a loop through `&st[0]`
+plus a computed offset reads (chapter 03's spilled stack pointers).
 The expression arena and the state have unit tests in
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanexpr/tests.rs` and
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanstate/tests.rs`, and

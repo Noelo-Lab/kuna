@@ -2282,7 +2282,8 @@ mod tests {
         // and kuna-pushan / a VM-protected entry stub devirtualized (option pushan)
         // and kuna-pushan-sound / a devirtualized body says nothing false about its program
         // and kuna-pushan-interp / an in-function bytecode interpreter devirtualized (option pushan)
-        assert_eq!(count, 864, "corpus file count drifted");
+        // and kuna-spillptr-loadguard / a LOAD through a spilled stack pointer is guarded
+        assert_eq!(count, 865, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

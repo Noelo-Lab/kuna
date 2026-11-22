@@ -23,9 +23,21 @@
    sw_patched   switch dispatch whose bytecode the function patches with its
                 argument when that is 0x55: the patched opcode decides a
                 dispatch no exploration can, and the header must say so
+   tg_indexed   switch dispatch in Tigress's style: every access to a virtual
+                variable goes through the address of its slot in a char
+                `locals` array, pushed on a stack of unions, as Tigress's
+                `local`, `load` and `store` instructions do.  Its program
+                writes st[1] under a branch and reads st[1..3] only through
+                &st[0] plus a computed offset (Tigress's `state[local1]`):
 
-   `./pushan_interp_x86_64 A...` prints the five results for a = argc (each
-   46 for a = 1).
+                    st[0..3] = a, a + 1, a + 2, a + 3;
+                    if (5 < a) st[1] |= 0x78;
+                    s = 0;
+                    for (i = 1; i < 4; i++) s += *(long *)((char *)&st[0] + i * 8);
+                    return s;
+
+   `./pushan_interp_x86_64 A...` prints the six results for a = argc (46
+   for a = 1, tg_indexed 9; 66 and 144 for a = 6).
 
    Build (gcc 11, Ubuntu 22.04 defaults: PIE, stack-clash protection; the
    copy is a memcpy call, as gcc emits for Tigress's 81 KB array, rather than
@@ -70,6 +82,27 @@ unsigned char wv_code[2][64] = {
     { PUSH, 1, 0, 0, 0, STV, 3, LDV, 3, PUSH, 3, 0, 0, 0, ADD, STV, 3, JMP, (unsigned char)-12 },
 };
 
+/* tg_indexed's program: st[0..3] at locals + 16..47, s at locals + 0, i at
+   locals + 8.  T_CONST takes a 4-byte immediate, T_LOCAL a byte offset into
+   locals, T_BRF and T_GOTO a branch offset in bytes. */
+enum { T_ARG = RET + 1, T_CONST, T_LOCAL, T_LOAD, T_STORE, T_ADD, T_MUL, T_OR, T_LT, T_INDEX, T_BRF, T_GOTO, T_RET };
+unsigned char tg_code[] = {
+    T_ARG, T_LOCAL, 16, T_STORE,
+    T_ARG, T_CONST, 1, 0, 0, 0, T_ADD, T_LOCAL, 24, T_STORE,
+    T_ARG, T_CONST, 2, 0, 0, 0, T_ADD, T_LOCAL, 32, T_STORE,
+    T_ARG, T_CONST, 3, 0, 0, 0, T_ADD, T_LOCAL, 40, T_STORE,
+    T_CONST, 5, 0, 0, 0, T_ARG, T_LT, T_BRF, 12,
+    T_LOCAL, 24, T_LOAD, T_CONST, 120, 0, 0, 0, T_OR, T_LOCAL, 24, T_STORE,
+    T_CONST, 0, 0, 0, 0, T_LOCAL, 0, T_STORE,
+    T_CONST, 1, 0, 0, 0, T_LOCAL, 8, T_STORE,
+    /* L: */ T_LOCAL, 8, T_LOAD, T_CONST, 4, 0, 0, 0, T_LT, T_BRF, 34,
+    T_LOCAL, 0, T_LOAD, T_LOCAL, 16, T_LOCAL, 8, T_LOAD, T_CONST, 8, 0, 0, 0, T_MUL, T_INDEX, T_LOAD, T_ADD,
+    T_LOCAL, 0, T_STORE,
+    T_LOCAL, 8, T_LOAD, T_CONST, 1, 0, 0, 0, T_ADD, T_LOCAL, 8, T_STORE,
+    T_GOTO, (unsigned char)-45,
+    /* E: */ T_LOCAL, 0, T_LOAD, T_RET,
+};
+
 #define SWITCH_BODY(PC, SP, VARS)                                             \
     switch (*PC) {                                                            \
     case PUSH: *++SP = *(int *)(PC + 1); PC += 5; break;                      \
@@ -107,6 +140,31 @@ long sw_patched(long a)
         pt_code[21] = (unsigned char)a;
     for (;;)
         SWITCH_BODY(pc, sp, vars)
+}
+
+union tg_node { long l; void *p; };
+
+long tg_indexed(long a)
+{
+    char locals[64];
+    union tg_node stack[16], *sp = stack;
+    unsigned char *pc = tg_code;
+    for (;;)
+        switch (*pc) {
+        case T_ARG: (sp + 1)->l = a; sp++; pc += 1; break;
+        case T_CONST: (sp + 1)->l = *(int *)(pc + 1); sp++; pc += 5; break;
+        case T_LOCAL: (sp + 1)->p = locals + pc[1]; sp++; pc += 2; break;
+        case T_LOAD: sp->l = *(long *)sp->p; pc += 1; break;
+        case T_STORE: *(long *)sp->p = (sp - 1)->l; sp -= 2; pc += 1; break;
+        case T_ADD: (sp - 1)->l = (sp - 1)->l + sp->l; sp--; pc += 1; break;
+        case T_MUL: (sp - 1)->l = (sp - 1)->l * sp->l; sp--; pc += 1; break;
+        case T_OR: (sp - 1)->l = (sp - 1)->l | sp->l; sp--; pc += 1; break;
+        case T_LT: (sp - 1)->l = (sp - 1)->l < sp->l; sp--; pc += 1; break;
+        case T_INDEX: (sp - 1)->p = (char *)(sp - 1)->p + sp->l; sp--; pc += 1; break;
+        case T_BRF: pc += 2; if (!sp->l) pc += (signed char)pc[-1]; sp--; break;
+        case T_GOTO: pc += 2 + (signed char)pc[1]; break;
+        case T_RET: return sp->l;
+        }
 }
 
 long wv_woven(long a)
@@ -170,6 +228,6 @@ h_RET: return *sp;
 int main(int argc, char **argv)
 {
     long a = argc;
-    printf("%ld %ld %ld %ld %ld\n", sw_writable(a), sw_readonly(a), wv_woven(a), th_copied(a), th_inline(a));
+    printf("%ld %ld %ld %ld %ld %ld\n", sw_writable(a), sw_readonly(a), wv_woven(a), th_copied(a), th_inline(a), tg_indexed(a));
     return 0;
 }
