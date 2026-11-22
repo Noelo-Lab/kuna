@@ -6993,6 +6993,19 @@ u64)`, which only forwards `a0`..`a3` to a `jalr`, printed `void c_add(void)`,
 and zlib `adler32`'s `jr $t9` tail call printed no arguments. ARM's `r0 = r0`
 is no return-only register, so nothing else moves.
 
+A return-only register is one that overlaps no argument register at all
+(`kuna_passthrough.rs (return_only)`, the model's input list contains no part
+of it). AArch64's 16-byte `q0` is a possible output but no input entry,
+while its low half `d0` is the first float argument; clang clears a local
+struct through it (`movi v0.2d,#0; stp q0,q0,[sp]`) just before calling a
+function that fills the struct, and the test took the write for SysV's vector
+count. The call then counted as set up for a variadic callee and kept only
+the argument the function wrote: nanopb's `pb_get_encoded_size(size_t *,
+const pb_msgdesc_t *, const void *)` forwards `x1` and `x2` to `pb_encode`
+and printed `void _pb_get_encoded_size(unsigned long *a0)` with `_pb_encode(&v1)`;
+now `_pb_encode(&v1,a1,a2)` and three parameters
+(`tests/cli/passthrough-q0-zeroing-is-not-a-variadic-setup.json`).
+
 The argument is as wide as the callee's body reads it — the narrowest of the
 trial, the stated parameter and the widest body read starting at `R` — so a
 parameter recovered as `rdi` but read as `edi` is passed, and becomes the

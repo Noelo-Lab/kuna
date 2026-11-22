@@ -322,10 +322,12 @@ fn stated_registers(data: &Funcdata, entry: &Address) -> Option<Vec<Address>> {
 
 /// Does `[addr, addr+size)` hold nothing a call takes but something it gives
 /// back -- the return register on a convention that passes no argument in it?
+/// A range that only overlaps an argument register is not one: AArch64's `q0`,
+/// zeroed by `movi v0.16b,#0` to clear a local struct, holds `d0`.
 fn return_only(proto: &crate::fspec::FuncProto, addr: &Address, size: int4) -> bool {
     is_register(addr)
         && proto.characterize_as_output(addr, size) != crate::fspec::Containment::NoContainment
-        && !proto.possible_input_param(addr, size)
+        && proto.model().characterize_as_input_param(addr, size) == crate::fspec::Containment::NoContainment
 }
 
 /// Did the caller set call spec `idx` up as a variadic call?

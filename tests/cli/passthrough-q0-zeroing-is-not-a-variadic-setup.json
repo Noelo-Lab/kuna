@@ -1,0 +1,38 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/passthrough_q0zero_aarch64",
+    "binary_sha256": "0d025a43b501ac22a656a92369b15d91bc06c997cecd9bb6ad52d20966fef7bc",
+    "binary_size": 1224,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/passthrough_q0zero_aarch64",
+    "selector": "encoded_size",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "encoded_size\\(unsigned long \\*a0,int \\*a1,void \\*a2\\)",
+      "encode\\(&v1,a1,a2\\)"
+    ],
+    "stdout_absent": [
+      "encode\\(&v1\\)"
+    ]
+  },
+  "notes": "encoded_size clears its local struct through q0 (movi v0.2d,#0; stp q0,q0,[sp]) and forwards x1 and x2 untouched to encode, which reads both. The q0 write overlaps the argument register d0, so it is not a variadic call's vector count and passthrough hands both registers on."
+}
