@@ -75,3 +75,14 @@ This proposal covers the authored AMD64 Go scalar case through C export and
 console restore. Interactive console save, Rust global declarations,
 language-owned composite types and standalone recovery without a restored
 fact remain outside the initial format.
+
+## Open questions from review
+
+This adds a large new surface for one fact kind: a `decompile-project
+--save-session` flag, a console `restore` command and a versioned JSON
+schema. It is limited to serial C export with an explicit `protoorder
+types`, which is not the default (`cycles` is). A single-function `kuna
+decompile` already bootstraps its direct callees' recovered parameter types
+on AArch64 targets with `<prefersplit>` (`docs/cli.md`). Would extending
+that bootstrap to a direct callee's result width fix the fresh view with
+no sidecar?
