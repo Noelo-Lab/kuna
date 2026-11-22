@@ -670,6 +670,7 @@ impl<'a> Explorer<'a> {
 
     /// Run exploration rounds to the symbolization fixpoint.
     pub fn run(&mut self) -> FlatCfg {
+        self.arena.deadline = Some(self.started + std::time::Duration::from_secs(self.config.max_seconds));
         if self.probe && self.data_vpc.is_none() {
             let found = self.probe_interpreter();
             self.data_vpc = found.cells.first().copied();
@@ -713,6 +714,7 @@ impl<'a> Explorer<'a> {
             }
             prev_nodes = n;
         }
+        self.arena.deadline = None;
         self.stats.converged = self.new_syms == 0 && self.new_splits == 0 && !self.stats.cut_short;
         self.stats.nodes = cfg.nodes.len();
         self.stats.insns = cfg.nodes.iter().map(|n| n.insns.len()).sum();
@@ -726,6 +728,22 @@ impl<'a> Explorer<'a> {
                 .count();
         }
         cfg
+    }
+
+    /// The exploration's time budget is spent: the round in progress is the
+    /// last, cut short.  Checked between nodes and inside a node's
+    /// instructions and merge, so no single step runs on past the budget (a
+    /// case split stops at the same instant, [`ExprArena::deadline`]).
+    fn out_of_time(&mut self) -> bool {
+        if !self.timed_out && self.started.elapsed().as_secs() < self.config.max_seconds {
+            return false;
+        }
+        if !self.timed_out {
+            self.log.push(format!("time budget of {}s exhausted", self.config.max_seconds));
+        }
+        self.timed_out = true;
+        self.stats.cut_short = true;
+        true
     }
 
     /// The last round runs with every recorded location fully unknown and
@@ -771,10 +789,7 @@ impl<'a> Explorer<'a> {
                 self.stats.cut_short = true;
                 break;
             }
-            if self.started.elapsed().as_secs() >= self.config.max_seconds {
-                self.log.push(format!("time budget of {}s exhausted", self.config.max_seconds));
-                self.timed_out = true;
-                self.stats.cut_short = true;
+            if self.out_of_time() {
                 break;
             }
             self.emulate_node(&mut cfg, &mut worklist, &mut emu, id);
@@ -888,6 +903,9 @@ impl<'a> Explorer<'a> {
             }
             let mut kept = Vec::with_capacity(diffs.len());
             for d in diffs {
+                if self.out_of_time() {
+                    return id;
+                }
                 let (a, b) = match d.loc.loc {
                     Loc::Reg { off } => (entry.read_reg(&mut self.arena, off, d.loc.size), state.read_reg(&mut self.arena, off, d.loc.size)),
                     Loc::Mem { base, off } => (
@@ -928,6 +946,9 @@ impl<'a> Explorer<'a> {
                 _ => false,
             };
             for (d, a, b) in diffs {
+                if self.out_of_time() {
+                    return id;
+                }
                 let sides = [a, b].map(|v| self.side_values(v, key, &d.loc));
                 if let Loc::Reg { off } = d.loc.loc {
                     if vpc_keyed && vpc_reg.is_some_and(|r| off >= r && off < r + self.abi.ptr_size as u64) {
@@ -1120,6 +1141,10 @@ impl<'a> Explorer<'a> {
         let mut exit;
         let native = !ctx.in_vm && !self.target.is_foreign_code(addr);
         loop {
+            if !insns.is_empty() && self.out_of_time() {
+                exit = Exit::Halt("exploration budget exhausted inside the node".into());
+                break;
+            }
             if native && !insns.is_empty() && self.native_starts.contains(&addr) {
                 exit = Exit::Fallthrough(addr);
                 break;

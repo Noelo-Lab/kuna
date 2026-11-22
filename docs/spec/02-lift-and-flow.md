@@ -4378,7 +4378,14 @@ what the program wrote and not every bytecode byte its path fetched. A
 symbolic fill is stored, so reads of the same bytes at different widths
 agree. Values live in a hash-consed DAG
 (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanexpr.rs (ExprArena)`)
-that normalizes every node as it is built. Constants fold.
+that normalizes every node as it is built. Constants fold. Every
+constructor remembers its result by its operands (`ExprArena::memo`; a
+division by zero, which makes a fresh unknown, is not remembered). The rules
+recurse into the arms of selects and into the terms of sums, and Themida's
+handlers build selects and masked sums over the same subterms many levels
+deep, so without the memo one 18-instruction handler on the plain Themida loop
+sample made 569 million constructor calls (269 s) while adding 88 nodes; with
+it, the whole exploration takes 3 s. The memo starts over after 2^21 entries.
 ADD/SUB/negate/multiply-by-constant chains collapse to one linear normal form
 over their non-linear atoms, so the interpreter's key arithmetic and
 obfuscated stack offsets cancel structurally. A known-bits lattice prunes masks,
@@ -4740,7 +4747,15 @@ translator (`set_pcode_overlay`), which serves an overlay instruction's p-code
 and listing text before decoding any bytes. It also clears the function's
 declared extent, and the flow follower's mapped-byte checks accept overlay
 addresses. The function gets a header warning with the node, instruction and
-round counts, and an instruction budget of at least 4,000,000. A second header
+round counts, and an instruction budget of at least 4,000,000. The exploration
+itself has a wall-clock budget (120 s, `KUNA_PUSHAN_SECONDS`;
+`Explorer::out_of_time`). It is checked between nodes, before each instruction
+of a node, and at each location a merge compares, and a case split gives up at
+the same instant (`ExprArena::deadline`, cleared when the exploration ends so
+the emitter's splits never depend on the clock). No single step therefore runs
+past the budget by more than one instruction or one substitution. The round
+in progress is then the last: a node stopped inside ends there as a path not
+followed. A second header
 warning (`PushanProgram::caveats`) says what the recovered program may miss or
 get wrong: computed jumps left unresolved, paths not followed, an exploration
 cut short by its budget or ending without its fixpoint, paths joined at another

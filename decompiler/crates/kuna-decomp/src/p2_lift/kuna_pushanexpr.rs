@@ -154,7 +154,28 @@ pub struct ExprArena {
     var_memo: BTreeMap<(VarKind, u8), ExprId>,
     unknown_tag: u64,
     probe_memo: BTreeMap<ExprId, Option<(Option<VarId>, i128)>>,
+    /// Each constructor's result by its operands ([`ExprArena::memo`]).
+    op_memo: crate::kuna_fasthash::FxHashMap<OpKey, ExprId>,
+    /// After this instant a case split gives up (the exploration's budget).
+    pub deadline: Option<std::time::Instant>,
 }
+
+/// A constructor call: the rules recurse into the arms of selects and the
+/// terms of sums, so a DAG that shares subterms is otherwise walked once per
+/// path through it.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum OpKey {
+    Bin(OpCode, ExprId, ExprId, u8),
+    Un(OpCode, ExprId, u8),
+    Sub(ExprId, u8, u8),
+    Ite(ExprId, ExprId, ExprId),
+    AndK(ExprId, u128, u8),
+    Or(ExprId, ExprId, u8),
+    Xor(ExprId, ExprId, u8),
+}
+
+/// Constructor results remembered before the memo starts over.
+const OP_MEMO_LIMIT: usize = 1 << 21;
 
 impl Default for ExprArena {
     fn default() -> Self {
@@ -172,11 +193,31 @@ impl ExprArena {
             var_memo: BTreeMap::new(),
             unknown_tag: 0,
             probe_memo: BTreeMap::new(),
+            op_memo: Default::default(),
+            deadline: None,
         }
     }
 
     pub fn len(&self) -> usize {
         self.nodes.len()
+    }
+
+    /// `build()`, or its result for the same call before.  A call that made
+    /// a fresh unknown (a division by zero) is not remembered: two such
+    /// unknowns must stay different values.
+    fn memo(&mut self, key: OpKey, build: impl FnOnce(&mut Self) -> ExprId) -> ExprId {
+        if let Some(&r) = self.op_memo.get(&key) {
+            return r;
+        }
+        let tag = self.unknown_tag;
+        let r = build(self);
+        if self.unknown_tag == tag {
+            if self.op_memo.len() >= OP_MEMO_LIMIT {
+                self.op_memo.clear();
+            }
+            self.op_memo.insert(key, r);
+        }
+        r
     }
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
@@ -344,6 +385,10 @@ impl ExprArena {
     }
 
     pub fn mk_un(&mut self, opc: OpCode, a: ExprId, out: u8) -> ExprId {
+        self.memo(OpKey::Un(opc, a, out), |s| s.mk_un_raw(opc, a, out))
+    }
+
+    fn mk_un_raw(&mut self, opc: OpCode, a: ExprId, out: u8) -> ExprId {
         let asz = self.size(a);
         if let Some(c) = self.is_const(a) {
             if let Some(v) = fold_un(opc, out, c, asz) {
@@ -400,6 +445,10 @@ impl ExprArena {
     }
 
     pub fn mk_subpiece(&mut self, x: ExprId, off: u8, out: u8) -> ExprId {
+        self.memo(OpKey::Sub(x, off, out), |s| s.mk_subpiece_raw(x, off, out))
+    }
+
+    fn mk_subpiece_raw(&mut self, x: ExprId, off: u8, out: u8) -> ExprId {
         let xs = self.size(x);
         if off as u32 + out as u32 > xs as u32 {
             // Reading past the operand: p-code pads with zero.
@@ -520,6 +569,10 @@ impl ExprArena {
     }
 
     pub fn mk_ite(&mut self, c: ExprId, a: ExprId, b: ExprId) -> ExprId {
+        self.memo(OpKey::Ite(c, a, b), |s| s.mk_ite_raw(c, a, b))
+    }
+
+    fn mk_ite_raw(&mut self, c: ExprId, a: ExprId, b: ExprId) -> ExprId {
         if a == b {
             return a;
         }
@@ -555,6 +608,10 @@ impl ExprArena {
     }
 
     pub fn mk_bin(&mut self, opc: OpCode, a: ExprId, b: ExprId, out: u8) -> ExprId {
+        self.memo(OpKey::Bin(opc, a, b, out), |s| s.mk_bin_raw(opc, a, b, out))
+    }
+
+    fn mk_bin_raw(&mut self, opc: OpCode, a: ExprId, b: ExprId, out: u8) -> ExprId {
         let asz = self.size(a);
         let bsz = self.size(b);
         if let (Some(x), Some(y)) = (self.is_const(a), self.is_const(b)) {
@@ -707,6 +764,10 @@ impl ExprArena {
     }
 
     fn mk_and_const(&mut self, x: ExprId, c: u128, out: u8) -> ExprId {
+        self.memo(OpKey::AndK(x, c, out), |s| s.mk_and_const_raw(x, c, out))
+    }
+
+    fn mk_and_const_raw(&mut self, x: ExprId, c: u128, out: u8) -> ExprId {
         if let Some(v) = self.is_const(x) {
             return self.cst(out, v & c);
         }
@@ -820,6 +881,10 @@ impl ExprArena {
     }
 
     fn mk_or(&mut self, a: ExprId, b: ExprId, out: u8) -> ExprId {
+        self.memo(OpKey::Or(a, b, out), |s| s.mk_or_raw(a, b, out))
+    }
+
+    fn mk_or_raw(&mut self, a: ExprId, b: ExprId, out: u8) -> ExprId {
         let a = self.resize(a, out);
         let b = self.resize(b, out);
         if let Some(r) = self.fold2(CPUI_INT_OR, a, b, out) {
@@ -873,6 +938,10 @@ impl ExprArena {
     }
 
     fn mk_xor(&mut self, a: ExprId, b: ExprId, out: u8) -> ExprId {
+        self.memo(OpKey::Xor(a, b, out), |s| s.mk_xor_raw(a, b, out))
+    }
+
+    fn mk_xor_raw(&mut self, a: ExprId, b: ExprId, out: u8) -> ExprId {
         let a = self.resize(a, out);
         let b = self.resize(b, out);
         if let Some(r) = self.fold2(CPUI_INT_XOR, a, b, out) {
@@ -1969,6 +2038,9 @@ impl ExprArena {
         *budget -= total;
         let mut results = Vec::with_capacity(total);
         for bitsv in 0..total {
+            if self.deadline.is_some_and(|d| std::time::Instant::now() >= d) {
+                return None;
+            }
             let mut map = BTreeMap::new();
             for (i, a) in atoms.iter().enumerate() {
                 let k = self.cst(1, ((bitsv >> i) & 1) as u128);

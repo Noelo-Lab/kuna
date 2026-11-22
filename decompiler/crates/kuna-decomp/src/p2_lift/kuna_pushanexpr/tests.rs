@@ -481,3 +481,33 @@ fn a_stack_pointer_test_that_holds_only_high_up_is_no_constant() {
     let back = a.mk_bin(CPUI_INT_XOR, swapped, sp, 8);
     assert_eq!(a.affine_probe(back), Some((None, 0x1_4000_0000)));
 }
+
+#[test]
+fn constructors_remember_results_but_not_fresh_unknowns() {
+    let mut a = ExprArena::new();
+    let x = reg(&mut a, 0, 8);
+    let y = reg(&mut a, 8, 8);
+    let z = reg(&mut a, 0x10, 8);
+    // Selects sharing their arms 40 levels deep: a mask distributes into each
+    // level once, not once per path (2^40 of them).
+    let w = reg(&mut a, 0x18, 8);
+    let mut e = w;
+    for i in 0..40u128 {
+        let k = a.cst(8, i);
+        let c = a.mk_bin(CPUI_INT_EQUAL, y, k, 1);
+        let d = a.mk_bin(CPUI_INT_EQUAL, z, k, 1);
+        let inner = a.mk_ite(d, e, x);
+        e = a.mk_ite(c, e, inner);
+    }
+    let m = a.cst(8, 0xff);
+    let masked = a.mk_bin(CPUI_INT_AND, e, m, 8);
+    assert!(matches!(a.kind(masked), ExprKind::Ite(..)));
+    assert_eq!(a.possible_bits(masked) & !0xff, 0);
+    assert_eq!(a.mk_bin(CPUI_INT_AND, e, m, 8), masked);
+    // A division by zero is a fresh unknown each time.
+    let one = a.cst(4, 1);
+    let zero = a.cst(4, 0);
+    let u1 = a.mk_bin(CPUI_INT_DIV, one, zero, 4);
+    let u2 = a.mk_bin(CPUI_INT_DIV, one, zero, 4);
+    assert_ne!(u1, u2);
+}
