@@ -1,9 +1,11 @@
 //! A FID table needs an upper bound on the index the jump actually uses.
 //! Listing's discovery heuristics deliberately make no such guarantee.
 
+use std::collections::HashSet;
+
 use super::{
     decode, delta_targets, is_constant, key_of, keys_overlap, mask, previous, AddrSpace,
-    FullCapture, FullOp, HashSet, Key, OpCode, PoolImage, Rc, Translate, VarnodeData,
+    FullCapture, FullOp, Key, OpCode, PoolImage, Rc, Translate, VarnodeData,
     MAX_GUARD_INSNS,
 };
 
@@ -20,6 +22,7 @@ pub(in crate::listing) fn targets(
     exec: &[(u64, u64)],
     max_entries: usize,
 ) -> Option<(u64, Vec<u64>)> {
+    let is_decoded = |vma| decoded.contains(&vma);
     let mut cap = FullCapture::default();
     let mut suffix = [0; MAX_GUARD_INSNS];
     let mut at = from;
@@ -36,14 +39,14 @@ pub(in crate::listing) fn targets(
         *suffix.get_mut(suffix_len)? = at;
         suffix_len += 1;
         end = Some(at);
-        at = previous(decoded, at)?;
+        at = previous(&is_decoded, at)?;
     };
     let (branch, guard) = cap.ops().split_last()?;
     let [dest, condition] = branch.ins.as_slice() else { return None };
     if !dest.space.as_ref().is_some_and(|s| Rc::ptr_eq(s, code_space)) {
         return None;
     }
-    let start = previous(decoded, guard_at)?;
+    let start = previous(&is_decoded, guard_at)?;
     let mut writer_cap = FullCapture::default();
     let len = decode(translate, start, code_space, &mut writer_cap)?;
     if start.checked_add(u64::from(len)) != Some(guard_at) {

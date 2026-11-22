@@ -234,6 +234,26 @@ impl<'a> PoolImage<'a> {
         (image.fill_span(&mut bytes, vma) == 0).then_some(bytes)
     }
 
+    /// The `width`-byte (1, 2 or 4) word at `vma` in a read-only section, sign-
+    /// or zero-extended: an entry of a relative jump table.
+    pub(super) fn sword_at(&self, vma: u64, width: u32, signed: bool) -> Option<i64> {
+        let raw = match (width, self.little_endian) {
+            (1 | 2, _) => self.uword_at(vma, width)?,
+            (4, true) => u64::from(u32::from_le_bytes(self.read_word(vma)?)),
+            (4, false) => u64::from(u32::from_be_bytes(self.read_word(vma)?)),
+            _ => return None,
+        };
+        let bits = 8 * width;
+        Some(if signed && raw >> (bits - 1) == 1 { (raw | (u64::MAX << bits)) as i64 } else { raw as i64 })
+    }
+
+    /// The `[lo, hi)` range of the read-only section holding `vma`.
+    pub(super) fn section_of(&self, vma: u64) -> Option<(u64, u64)> {
+        let i = self.ro.partition_point(|&(lo, _, _)| lo <= vma).checked_sub(1)?;
+        let (lo, hi, _) = self.ro[i];
+        (vma < hi).then_some((lo, hi))
+    }
+
     /// The `width` bytes of read-only image content at `vma`.
     pub(super) fn bytes_at(&self, vma: u64, width: u32) -> Option<&'a [u8]> {
         let i = self.ro.partition_point(|&(lo, _, _)| lo <= vma).checked_sub(1)?;
@@ -282,6 +302,19 @@ mod tests {
 
     fn ro32() -> PoolImage<'static> {
         PoolImage::from_ranges(vec![(0x1000, 0x100c, &POOL[..])], 4, true).unwrap()
+    }
+
+    #[test]
+    fn relative_words_use_loaded_bytes_and_stay_in_the_read_only_range() {
+        use crate::loadimage_object::ObjectLoadImage;
+        use kuna_sleigh::loadimage::LoadImage;
+
+        let bytes = include_bytes!("../../tests/fixtures/arm_thumb_abi_linked.elf");
+        let image = ObjectLoadImage::from_bytes_silent("fixture", bytes).unwrap();
+        let pool = PoolImage::from_loaded(vec![(0x400000, 0x400024)], image.shared_bytes().unwrap(), 4, true).unwrap();
+        assert_eq!(pool.sword_at(0x400020, 2, true), Some(-8184));
+        assert_eq!(pool.sword_at(0x400020, 2, false), Some(0xe008));
+        assert_eq!(pool.sword_at(0x400022, 4, true), None);
     }
 
     #[test]

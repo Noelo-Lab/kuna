@@ -157,6 +157,16 @@ pub struct DirectiveSymbol {
 }
 
 pub struct Funcdata {
+    /// (kuna `switchextent`) The jump tables the function's extent dispatches
+    /// through, and those a Swift enum's case indexes, once a flow with a
+    /// computed jump decoded it (`p2_lift/kuna_switchextent.rs`).
+    pub(crate) kuna_extent_tables: Option<std::rc::Rc<crate::kuna_switchextent::ExtentTables>>,
+    /// (kuna `switchextent`) The tables of the functions after this one, once
+    /// a table that is the function's last asked for them.
+    pub(crate) kuna_later_tables: Option<std::rc::Rc<Vec<u64>>>,
+    /// (kuna `switchextent`) The table whose sanity check asked the flow for
+    /// [`Self::kuna_later_tables`], shared with the jump-table partial.
+    pub(crate) kuna_later_wanted: std::rc::Rc<std::cell::Cell<Option<u64>>>,
     pub(crate) kuna_x87_empty_returns: Vec<Address>,
     pub(crate) kuna_fpu_trunc_views: Vec<OpId>,
     /// Boolean properties associated with \b this function (C++ `flags`)
@@ -772,6 +782,9 @@ impl Funcdata {
 
         Ok(Funcdata {
             kuna_fpu_trunc_views: Vec::new(),
+            kuna_extent_tables: None,
+            kuna_later_tables: None,
+            kuna_later_wanted: std::rc::Rc::default(),
             kuna_x87_empty_returns: Vec::new(),
             flags: 0,
             clean_up_index: 0,
@@ -1261,6 +1274,16 @@ impl Funcdata {
     ) -> Option<&crate::kuna_calleedeadarg::CalleeEntryDead> {
         let sp = entry.get_space()?;
         self.kuna_callee_entry_dead.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
+    }
+
+    /// (kuna `calleefilledarg`) The same probe, shared, for a `ParamActive` to
+    /// hold through `fillinMap`.
+    pub fn kuna_callee_entry_dead_shared(
+        &self,
+        entry: &Address,
+    ) -> Option<std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>> {
+        let sp = entry.get_space()?;
+        self.kuna_callee_entry_dead.get(&(sp.get_index(), entry.get_offset())).cloned()
     }
 
     /// (kuna `hiddenretarg`) Remember the leaves of a value vetoed from a call.
@@ -5718,10 +5741,7 @@ impl<'a> FuncdataCoverCtx<'a> {
             table
         });
         if let Some(&Some(bid)) = usize::try_from(index).ok().and_then(|at| table.get(at)) {
-            debug_assert!((0..n)
-                .map(|i| self.fd.bblocks_get_block(i))
-                .find(|&b| self.fd.bblocks.block(b).get_index() == index)
-                .is_some_and(|b| b == bid));
+            debug_assert_eq!(self.fd.bblocks.block(bid).get_index(), index);
             return bid;
         }
         for i in 0..n {

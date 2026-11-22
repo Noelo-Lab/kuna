@@ -2388,6 +2388,53 @@ the import only while some other printed statement still reads that local: when
 every read of it is such a load, the loads keep `*v2`, so naming the import never
 leaves the local's assignment dead.
 
+The slot's own value, used without a dereference, is the import's address: Swift
+passes a witness table, type metadata or a conformance descriptor to the runtime
+this way (`swift_getWitnessTable(conformance, type, args)`), and Objective-C a class
+object as a message receiver. With the option on, `PrintC::push_vn_explicit`
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (import_slot_address)`)
+renders a read of a Mach-O import slot whose import is a data object (the slots
+`machodataslots` classifies from the import's mangling, chapter
+[01](01-program-prep.md)) as `&<import>` instead of `dat_<slot>`, named by the same
+`query_function` lookup. A function import's slot keeps its name, so a test of a weak
+function's address still reads the slot. It does so only for the value the loader
+put there: a read whose varnode is a function input, or comes from one through call
+side effects (`INDIRECT`) and joins (`MULTIEQUAL`); a value the function stored into
+the slot keeps the slot name. So do a read narrower than the slot and a read by an
+operator C does not apply to a pointer (a mask, a shift, a multiply or a division:
+`dat_<slot> | 1`, never `&<import> | 1`); an addition stays `&<import> + 8`.
+
+(kuna `cstringconst`, default on) A pointer-wide constant inside a string-literal
+section prints as the literal there, whatever type it reaches the printer with
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_cstringconst.rs`). `pushConstant`
+renders a constant as a quoted string only when its type is a pointer to a
+character type, and `ActionConstantPtr` gives it that type only when a global
+symbol covers the address; the string pass plants `char[N]` at literals of four
+characters or more, so a short literal in the middle of a `__cstring` section
+(`" ("`, `".SH"`, `")"`) has none, and a constant that reaches the printer as an
+argument of a call through an untyped function pointer, or as a `void *` chosen
+between a literal and what an untyped callee returns, printed as the integer
+`0x28abe` or the address `&dat_28a62`. The linker says what those bytes are: a
+Mach-O `__cstring` section (type `S_CSTRING_LITERALS`) holds nothing but
+NUL-terminated string literals, and the bootstrap records its range on the
+`Architecture` (`cstring_ranges`; empty on every other image, so the XML
+datatest corpus never reaches it). An ELF `SHF_STRINGS|SHF_MERGE` section is not
+taken: rustc gives a whole `.rodata` those flags with records inside it (the
+`panicloc` fixture's `core::panic::Location`). `PrintC::push_vn_explicit_ir` consults
+`literal_char` at two points: in the pointer arm, beside the `cfstrings` check,
+for a pointer-typed constant whose pointee is not a character type; and ahead of
+the integer path for a constant that is an argument of a call (`call_literal_char`:
+slot 1 and up, reached directly or through a few copies and phis), since a value
+compared, added or stored may be a plain integer that equals an address. The
+integer arm also needs the constant to land on the first byte of a literal (the
+section's first byte, or the byte after a NUL) and the callee's prototype not to
+lock that argument to a scalar type: in a dylib at base 0 a `size_t` like the
+`0x4000` of `setvbuf(fp, NULL, 0, 0x4000)` can fall inside `__cstring`, and
+would otherwise print as the tail of whatever literal holds that byte. Both
+reach `push_ptr_char_constant_ir`, which reads and escapes the bytes as for a
+`char *` constant and declines when they are not a string. Off keeps the
+integer or address.
+
 (kuna) **The ghidra-mode third style (Phase 3, DIV-77).** The ghidra-mode
 process sets a separate `name_style_ghidra` flag alongside (not instead of)
 the angr default; the resolver `Architecture::kuna_name_style` /
