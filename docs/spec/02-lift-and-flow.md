@@ -1087,13 +1087,15 @@ spec, and input recovery marks a trial on it unused
 own address, never an argument.
 
 In every other case, unless the GOT-slot rule below takes it, the old behaviour
-stays: the follower walks into the callee as a one-case `switch`, because
-`RuleSwitchSingle`, which upstream uses to collapse that switch, is a stub
-here. That copied-in body is wrong in structure, but it still shows the
-callee's return value and the arguments it reads, which a call with no
-stated prototype would lose: a single-function decompile cannot recover a
-tail call's arguments or return value without one. The same holds for a
-multi-entry table whose entries all name one function.
+stays: the follower walks into the callee through the table, and
+`RuleSwitchSingle` (03 §3.2) then turns the jump into a direct branch, so the
+callee's body is copied in as straight-line code. That copied-in body stands
+in for a call, but it still shows the callee's return value and the arguments
+it reads, which a call with no stated prototype would lose: a single-function
+decompile cannot recover a tail call's arguments or return value without
+one. The same holds for a multi-entry table whose entries all name one
+function. Only a one-entry table whose index is not a constant keeps its
+one-case `switch`.
 Outside a declared extent a callee with no prototype is still tail-called and
 is printed with whatever arguments the function's own registers show and no
 return value, exactly as a direct `b f` there is. A destination that is not a
@@ -1108,9 +1110,8 @@ A position-independent tail call loads its target from a GOT slot and jumps
 through it: MIPS `lw $t9,%call16(f)($gp); jr $t9`, x86-64 `-fno-plt`
 `jmp *f@GOTPCREL(%rip)`. Jump-table recovery reads the slot, so it is the
 one-destination computed jump above, and with no stated prototype the
-function printed `switch(0x1340) {` around `f`'s copied-in body, or, when
-the slot names an extern of a relocatable object, `switch(0x402000) { case
-0x402000: halt_missing(); }` with the call's arguments gone. Under
+function printed `f`'s copied-in body, or, when the slot names an extern of
+a relocatable object, `halt_missing();` with the call's arguments gone. Under
 `tailcalljump on`, the GOT-slot rule adds two cases to the `call_states_the_body`
 test that `decompile_drive.rs (ArchFlowEnv::is_tail_call_table)` hands
 `kuna_tailcalljump.rs (kuna_is_tail_call_table)`:
@@ -1153,13 +1154,16 @@ pair is refused and the caller is decompiled again with the copied-in body.
 Each flow of a callee-first run first drops the function's earlier
 recovered-tail-call warnings (`kuna_gottailcall.rs (clear_stale_warnings)`),
 and every tail call the new flow takes warns again, so a refused tail call
-leaves no `// tail-call` on the switch the redo follows.
+leaves no `// tail-call` on the body the redo copies in.
 
 The reference walk behind the callee-first plan does not see these jumps. A
 MIPS `$gp` slot is not a constant it reads, and an x86 `jmp [slot]` is an
 edge to the slot, not to the function. So the callee is often planned after
 its caller. `kuna_gottailcall.rs (record)` therefore also files every caller
-whose flow followed a one-destination table into a callee not yet filed.
+whose flow followed a one-destination table into a callee not yet filed. The
+flow notes each such table as it declines the tail call
+(`kuna_gottailcall.rs (followed)`), because `RuleSwitchSingle` drops the
+table before the function is finished.
 Once one of the callees it copied in is filed, every other one the plan
 holds has been decompiled, and voidret's redos of the round are settled,
 `kuna_gottailcall.rs (due)` names that caller, and
@@ -1174,7 +1178,7 @@ callee-first run. A single-function `kuna decompile`, `--jobs N`, `protoorder
 off` and a run narrowed past the callee file nothing and keep the copied-in
 body. `tailcalljump off` keeps the copied-in body for these jumps too.
 `tests/stages/kuna-gottailcall.xml` pins the extern arm, with
-an unmapped non-function and a real one-case switch as controls, and
+an unmapped non-function and a jump to the function's own code as controls, and
 `tests/cli/gottailcall-*.json` pin the callee-first arm on an x86-64
 `-fno-plt` library and a MIPS PIC object.
 
@@ -2399,6 +2403,78 @@ the case targets.
    does not read them back. The function then decodes its own body only:
    0x14000a040 prints its four cases in 0.7 s.
 
+   **The function's next table (`kuna_switchextent.rs`, `switchextent`,
+   default on).** A table whose selector the compiler knows to be in range
+   has no guard and a selector wider than a byte: Swift's `switch` over a
+   multi-payload enum indexes a halfword offset table straight with the case
+   `swift_getEnumCaseMultiPayload` returned, and clang does the same for a C
+   `switch` whose `default` is `__builtin_unreachable()`. The range then
+   exceeds `jumptablemax` before any row is read, the basic model declines,
+   and the dispatch prints as a computed call that ends the function's flow:
+   a 13 KB Swift copy helper decompiled to its first 500 lines. The entries
+   of such a table are offsets and say nothing about where it ends; the
+   table after it does. A function's jump tables are emitted together, back
+   to back in one read-only section, so a table runs exactly to the lowest
+   table of the same function above it. When a table's recovery fails
+   outright (no model, or the basic model's normal failure) and the function
+   has not been scanned yet, the flow decodes the function's extent once
+   (`flow.rs (FlowInfo::recover_jump_tables)` over
+   `decompiler/crates/kuna-decomp/src/p2_lift/kuna_switchextent.rs
+   (function_tables)`: its entry to the next known function entry,
+   `context.rs (ArchContext::function_entry_after)`, or a MiB), folds every
+   register through the small lattice the dispatch shapes need and names
+   the table of each computed jump the fold proves reads one, sorted on the
+   function (`Funcdata::kuna_extent_tables`, shared with the recovery
+   partial). With two or more tables named, the recovery runs once more:
+   when the basic model finds the range unbounded and every other fallback
+   declines, `jumptable.rs (JumpBasicModel::kuna_try_extent_bound_table)`
+   takes the melded path's one LOAD, reads its address as a constant table
+   plus an index scaled by the entry width (`kuna_switchextent.rs
+   (table_read)`), and re-bounds the range to `[0, N)` on that index with
+   `N` the entries that fit before the next table, at least two and at most
+   `jumptablemax`, and only when the next table lies in the same load-image
+   section (`context.rs (ArchContext::in_section_of)`), as the discovery
+   Listing requires; the rows then pass the run-on cut above like any
+   unguarded table's. A function whose extent names fewer than two tables,
+   or a dispatch retried after an earlier recovery, is not re-run, so a
+   recovery that fails for its own reasons costs one extent scan and no
+   second pipeline. A function's last table has
+   no such bound and is left as it was: an object the function merely reads
+   may sit anywhere in the section, and a bound taken from one could run the
+   table on into another function's, whose entries are plausible code
+   addresses measured from the wrong base. The discovery Listing applies the
+   same rule when it reads an AArch64 compact table with no range check
+   (chapter 1, `kuna_a64switch.rs`).
+
+   A table that a mask bounds only to its selector's width is the other
+   half of the same shape. A Swift enum's string switch masks the case
+   with `and x8, x0, #0xff` and reads 256 halfword rows, and when the table
+   is its function's last the rows past its own cases are the next
+   functions' tables measured from the wrong base: they land all over the
+   next functions and back inside this one, so the run-on cut, which keeps
+   every row until the first that leaves the function, keeps them all and
+   the 45-case switch printed 1,200 lines of phantom cases. When the run-on
+   cut leaves an unguarded table whose rows leave the function,
+   `jumptable.rs (JumpBasicModel::kuna_next_table_rows)` reads its table and
+   stride as above and ends it at the lowest jump table above it in the same
+   section, of this function or of the next ones, when that leaves at least
+   two rows. The next functions' tables come from the flow: the sanity check
+   inside the recovery partial records the table it wants
+   (`Funcdata::kuna_later_wanted`) and fails, and
+   `flow.rs (FlowInfo::recover_jump_tables)` decodes the extents after this
+   function (`kuna_switchextent.rs (later_tables)`: function by function, at
+   most 32, until one dispatches through a table above the one asked
+   about), stores their tables on the function (`Funcdata::kuna_later_tables`)
+   and runs the recovery once more. When no known function follows, the
+   list is empty and the recovery still runs once more, so the table ends
+   at the function's own next table or keeps its rows as before. The
+   request can also come from the retry the function's own tables bound
+   (a row of the bounded table lies in the next known function); the flow
+   then answers it in a second round. Either way the request never leaves
+   a table unrecovered. A table whose rows all stay
+   inside the function costs nothing, and the decode runs only for a table
+   already unguarded and leaving the function.
+
    **Guards that leave the top open (always on).**
    `jumptable.rs (JumpBasicModel::analyze_guards)` records the
    conditional branches on the path just before the dispatch as guards
@@ -2924,6 +3000,35 @@ of either shape with a `goto` to a label it never declares, which is tolerated f
 the first head, as before, but never introduced by a later one. A record's
 dispatch value is then subject to the value check like any other. Measured
 byte-identical on the 675-assertion datatest corpus when the check was introduced.
+
+### Linear chains and wider trees — `loweredswitch linear|tree|all`, opt-in
+
+`kuna_loweredswitch.rs (recover_cascade)` records a cascade only after it has
+seen a range node, because a chain of equality tests with no binary-search
+split reads as a hand-written if/else-if, and it takes three to sixteen cases
+(the cap keeps the structurer from being handed a switch so wide that some case
+edges end up as unstructured gotos). Two values of the option widen that.
+
+`linear` also accepts a chain with no range node. clang lowers a switch of
+three or four cases exactly that way, and an if/else-if chain on one variable
+is a switch in all but syntax. The chain still needs three to sixteen cases.
+Each case body must be entered only from the chain and be dominated by the
+chain head: a chain the compiler copied into two paths keeps its ifs, since
+re-rolling one copy would split what the two share. With no range comparison to
+prove the signedness of the labels, an extension on the path to the selector
+decides it; with none, no case value may have the sign bit set, so every label
+prints the same either way. It is not the default because the author's own
+if/else-if chain re-rolls too.
+
+`tree` moves the limits of a cascade that does have a range node to two and
+sixty-four cases. gcc at -O0 lowers a sparse switch to a compare tree with no
+jump table whatever its size, so a switch of seventeen or more cases otherwise
+stays a deep if/else tree. A linear chain is not affected.
+
+`all` is both. Every other check of the recovery still applies under each
+value: one shared default sink, the value check, the exactness check and the
+every-head rule. The re-roll is installed through the same restart, so a switch
+installed for a function stays if the value is narrowed later in the session.
 
 ### Bound extensions: rescuing an unboundable table
 

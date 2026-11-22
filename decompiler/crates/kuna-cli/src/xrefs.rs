@@ -322,7 +322,7 @@ fn query(args: &XrefArgs) -> Result<String, String> {
             if index.is_function_entry(target.addr) || names.at(target.addr).is_some() {
                 index.refs_from_function(target.addr)
             } else {
-                index.refs_from_instruction(target.addr).iter().collect()
+                index.refs_from_instruction(target.addr)
             }
         }
     };
@@ -1009,7 +1009,7 @@ fn result_json(
                         "to_function".into(),
                         optional_function_json(owning_function(prog, index, names, r.to)),
                     ),
-                    ("instruction".into(), Json::Str(r.instruction.clone())),
+                    ("instruction".into(), Json::Str(r.instruction.to_string())),
                 ])
             })
             .collect(),

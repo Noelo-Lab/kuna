@@ -2249,7 +2249,35 @@ mod tests {
         // and kuna-strcpychain / memcpy(d, s, strlen(s) + 1) prints as strcpy(d, s) (option helperroles)
         // and kuna-objectview / a TE or raw image runs the object-file analysis passes over a rebuilt view (option objectview)
         // and kuna-aifdataveto / a gap entry the code reads as data is not a function (option aif)
-        assert_eq!(count, 831, "corpus file count drifted");
+        // and kuna-restart-warnings / a restart drops the warnings of the pass it discards
+        // and kuna-narrowed-call-input / a call argument narrowed before its prototype is forced stays valid
+        // and kuna-extrapop-function / option extrapop <n> <name> sets a named function's extrapop
+        // and kuna-condexe-heritage / condexe removes a re-test whose block holds unread ops
+        // and kuna-dwarf-addrx / a DWARF 5 DW_OP_addrx global takes its name on both byte orders
+        // and kuna-pacmodifier-arg-a64e / a hidden signing's modifier is not a call argument
+        // and kuna-objcdirect / an Objective-C direct method's receiver is its class
+        // and kuna-itaniumrtti-macho / Itanium RTTI on a Mach-O through chained-fixup binds
+        // and kuna-itaniumrtti-macho-classic / and through classic LC_DYLD_INFO binds
+        // and kuna-typeorder / distinct types order by id and shape before heap address
+        // and kuna-loopcontinue-while / a jump to a do-while's own test prints as continue
+        // and kuna-switchsingle / a jump table whose entries all name one block is a direct branch
+        // and kuna-protoorder-tailcallees / a single decompile states its tail callees' prototypes first
+        // and kuna-typevote / a variable left undefinedN takes the type its ops vote for (option typevote)
+        // and kuna-gotonext / a goto to the statement that runs next is left out, a loop or switch exit prints break (option gotonext)
+        // and kuna-loweredswitch-linear / loweredswitch linear re-rolls a linear equality chain
+        // and kuna-loweredswitch-tree / loweredswitch tree re-rolls a twenty-case compare tree
+        // and kuna-maxlinewidth / option maxlinewidth breaks plain-text lines
+        // and kuna-postinc / a pointer step after its dereference prints *p++
+        // and kuna-returndupcalls / gcc -Os cross-jumped call tails split per path
+        // and kuna-panicloc / a Rust panic Location record is typed and named after its position (option panicloc)
+        // and kuna-gotypenames / Go type descriptors and itabs named as the linker spells them, go1.16 on
+        // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
+        // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
+        // and kuna-calleefilledarg / an objc_msgSend$ selector stub keeps the arguments staged after x1 (option calleefilledarg)
+        // and kuna-calleefilledarg-ctramp / a C trampoline that fills rsi keeps the positional rule
+        // and kuna-switchextent-a64 / an unchecked AArch64 table ends at the function's next table (option switchextent)
+        // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
+        assert_eq!(count, 859, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
