@@ -1729,6 +1729,25 @@ llvm-strip -x macho_dataslotaddr_arm64
 **Pinned VMAs:** `_pass_addresses`@`0x100000510`; `__got` slots
 `$s7SwiftUI5ColorVAA4ViewAAWP`@`0x100004000`, `OBJC_CLASS_$_NSObject`@`0x100004008`.
 
+### `macho_objcsdksend_arm64` — sends to an imported class (`objcresolve`, `objcsdk`)
+
+`macho_objcsdksend_arm64` (arm64, ~50 KB, from `macho_objcsdksend.c`) loads the
+`__got` slot of `_OBJC_CLASS_$_KNumber`, a class it only imports, and sends it
+`numberWithLongLong:` and `numberWithInt:`, then `stringValue` to the first
+result, through lld's `objc_msgSend$<sel>` stubs. `objc_sdk_sends/KNumber.h` is
+a hand-written header declaring `KNumber : KValue : KObject` for `objcsdk`
+(`tests/stages/kuna-objcsdksend.xml`). Built with clang 22 and `ld64.lld`:
+
+```bash
+clang -target arm64-apple-macos11 -O1 -c macho_objcsdksend.c -o m.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+         -e _main -o macho_objcsdksend_arm64 m.o
+llvm-strip -x macho_objcsdksend_arm64
+```
+
+**Pinned VMAs:** `_send_to_import`@`0x100000600`; `__got` slot
+`OBJC_CLASS_$_KNumber`@`0x100004008`.
+
 ### `swift_metadata_elf` — a stripped Swift executable (`swiftmetadata`)
 
 `swift_metadata_elf` (x86-64 ELF, 14 KB) is the Swift runtime-metadata fixture

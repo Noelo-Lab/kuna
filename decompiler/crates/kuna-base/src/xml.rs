@@ -2279,7 +2279,8 @@ mod tests {
         // and kuna-objcstubagree / an objc_msgSend$<sel> stub is typed only from declarations that agree on its registers
         // and kuna-oslog / an os_log call prints its decoded arguments; __oslogstring literals print as strings
         // and kuna-darwinvarargs / an undeclared variadic callee on Apple arm64 keeps its stack-passed arguments
-        assert_eq!(count, 861, "corpus file count drifted");
+        // and kuna-objcsdksend / a send to a class the image only imports resolves from the SDK headers
+        assert_eq!(count, 862, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

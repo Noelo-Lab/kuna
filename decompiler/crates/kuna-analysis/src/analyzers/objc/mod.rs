@@ -69,7 +69,7 @@ pub mod sections;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use object::read::Object;
+use object::read::{Object, ObjectSymbol};
 
 use crate::pass::{
     AnalysisCtx, AnalysisOutput, AnalysisPass, ConstGate, ConstRange, DataObjectFact, FidMatch, Phase,
@@ -123,10 +123,10 @@ impl AnalysisPass for ObjcMetadataPass {
         let (ptr_size, word_size) = ctx.arch.data_org();
         let tctx = TypeCtx::new(ctx.arch.types(), ptr_size, word_size);
         let sdk = match kuna_decomp::kuna_objcsdk::sdk_path() {
-            Some(root) => kuna_objcsdk::signatures(&root, &kuna_objcsdk::linked_frameworks(ctx.file, ctx.bytes)),
-            None => HashMap::new(),
+            Some(root) => kuna_objcsdk::read(&root, &kuna_objcsdk::linked_frameworks(ctx.file, ctx.bytes)),
+            None => kuna_objcsdk::Sdk::default(),
         };
-        let mut selectors = kuna_objcrefs::Selectors::with_sdk(sdk);
+        let mut selectors = kuna_objcrefs::Selectors::with_sdk(sdk.signatures);
         out.prototypes_at.extend(kuna_objcruntime::prototypes(ctx.file, ctx.bytes, ctx.arch, &tctx));
 
         // Walk `__objc_classlist`: an array of `class_t*` (stride = ptr size). The
@@ -204,6 +204,7 @@ impl AnalysisPass for ObjcMetadataPass {
             table.classes.entry(shown).or_default().superclass =
                 classt::superclass_name(&img, class.addr).map(|s| display_class_name(&s));
         }
+        add_sdk_classes(&mut table, sdk.classes, ctx.file, &tctx);
         out.objc_classes = Some(table);
         for (class, name) in &classes {
             out.symbols.push(SymFact {
@@ -273,6 +274,47 @@ impl AnalysisPass for ObjcMetadataPass {
     }
 }
 
+/// (kuna `objcresolve`) The SDK classes a send of this image can reach: every
+/// class it imports (`_OBJC_CLASS_$_NSNumber`) or subclasses, with their
+/// superclasses. Their records are declared so a result typed by one of them,
+/// or by a class one of their methods returns, is that class's pointer.
+fn add_sdk_classes(
+    table: &mut kuna_decomp::kuna_objcresolve::ObjcClassTable,
+    mut sdk: HashMap<String, kuna_decomp::kuna_objcresolve::ObjcClass>,
+    file: &object::File,
+    tctx: &TypeCtx,
+) {
+    use kuna_decomp::kuna_objcresolve::ObjcReturn;
+    use object::read::{Object, ObjectSymbol};
+    if sdk.is_empty() {
+        return;
+    }
+    let mut wanted: Vec<String> = table.classes.values().filter_map(|c| c.superclass.clone()).collect();
+    for symbol in file.symbols().filter(|s| s.is_undefined()) {
+        let Ok(name) = symbol.name() else { continue };
+        if let Some(class) = name.trim_start_matches('_').strip_prefix("OBJC_CLASS_$_") {
+            wanted.push(class.to_string());
+        }
+    }
+    let mut returned = std::collections::BTreeSet::new();
+    while let Some(name) = wanted.pop() {
+        if table.classes.contains_key(&name) {
+            continue;
+        }
+        let Some(class) = sdk.remove(&name) else { continue };
+        wanted.extend(class.superclass.clone());
+        returned.extend(class.methods.values().filter_map(|m| match &m.returns {
+            Some(ObjcReturn::Class(c)) => Some(c.clone()),
+            _ => None,
+        }));
+        returned.insert(name.clone());
+        table.classes.insert(name, class);
+    }
+    for class in &returned {
+        tctx.opaque_ptr(class);
+    }
+}
+
 impl ObjcMetadataPass {
     /// Emit the rename + function/selector symbols + (PR-O2) the typed prototype
     /// for one method list. `kind` is `-` (instance) or `+` (class); `class` is the
@@ -326,7 +368,8 @@ impl ObjcMetadataPass {
             let owner = class.split('(').next().unwrap_or(class);
             if let Some(table) = out.objc_classes.as_mut() {
                 let shown_owner = display_class_name(owner);
-                table.classes.entry(shown_owner).or_default().methods.insert((kind == '+', m.selector.clone()), (label.clone(), m.imp));
+                let method = kuna_decomp::kuna_objcresolve::ObjcMethod { label: label.clone(), imp: m.imp, returns: None };
+                table.classes.entry(shown_owner).or_default().methods.insert((kind == '+', m.selector.clone()), method);
             }
 
             // The typed prototype from the ObjC type encoding (PR-O2): `i20@0:8i16`
@@ -510,7 +553,7 @@ mod tests {
     #[test]
     fn walks_macho_objc_arm64_chained_fixups() {
         use crate::loader::format::macho::resolve_chained_fixups;
-        use object::read::Object;
+        use object::read::{Object, ObjectSymbol};
 
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/macho_objc_arm64");
         let bytes = std::fs::read(path).expect("read macho_objc_arm64 fixture");

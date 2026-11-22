@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5005,
-    5005
+    5011,
+    5011
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1952,7 +1952,7 @@
     "data:OBJCREFS #5: on names the stub after its selector",
     "data:OBJCREFS #6: the stub's prototype pins the argument past the selector register",
     "data:OBJCREFS #7: a chained bind slot is named from its import",
-    "data:OBJCREFS #8: the super send's selector slot folds to the selector",
+    "data:OBJCREFS #8: the super send's selector slot folds to the selector (objcresolve names the superclass method it reaches)",
     "data:OBJCREFS #9: the super class slot folds to the class",
     "data:OBJCRESOLVE #10: call, the send to the typed ivar goes to the method",
     "data:OBJCRESOLVE #11: call, the stub send to self goes to the method with self typed (no cast)",
@@ -1974,6 +1974,12 @@
     "data:OBJCSDK #7: a CGRect argument is spread over its members",
     "data:OBJCSDK #8: a two-argument method keeps both",
     "data:OBJCSDK #9: the stub itself returns the struct",
+    "data:OBJCSDKSEND #1: off, the class send is the runtime stub",
+    "data:OBJCSDKSEND #2: off, the undeclared factory's result is untyped",
+    "data:OBJCSDKSEND #3: default, the class send to the imported class names the declared method",
+    "data:OBJCSDKSEND #4: default, the send to its result resolves along the superclass chain",
+    "data:OBJCSDKSEND #5: default, a factory of the class returns the class",
+    "data:OBJCSDKSEND #6: an undeclared selector keeps the runtime stub",
     "data:OBJCSTRUCTS #1: objc off, the block invoke is an anonymous function",
     "data:OBJCSTRUCTS #2: the struct ivar reads by field",
     "data:OBJCSTRUCTS #3: the by-value struct argument is a CGRect",

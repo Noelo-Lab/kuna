@@ -6205,6 +6205,35 @@ every other binary's pass list is byte-identical to before the pass existed):
     the runtime entry point. The stage test `tests/stages/kuna-objcresolve.xml`
     runs both fixtures with the option off, on and `call`.
 
+    Classes the image only imports come from the SDK headers `objcsdk` names
+    (`kuna-analysis/src/analyzers/objc/kuna_objcsdk.rs (read)`, `mod.rs
+    (add_sdk_classes)`). Each `@interface` gives its class a superclass and
+    the methods and properties it declares (a category's are merged into its
+    class; `@property (class)` is a class method), each with its declared
+    result when that is `instancetype` or a class pointer. The table takes the
+    classes the image imports (an undefined `_OBJC_CLASS_$_<name>`) or
+    subclasses, closed over their superclasses, and declares an opaque record
+    for each of them and for every class one of their methods returns, so a
+    result typed by one is `NSURL *` without an interned layout. A method of
+    such a class has no IMP: it names the callee (`+[NSNumber
+    numberWithLongLong:]`) and is never retargeted. The engine adds the class
+    receivers the loader binds: a `machodataslots` data import slot named
+    `_OBJC_CLASS_$_<name>` (`engine.rs (commit_analysis_output)`) is a class
+    receiver while it holds the value the loader put there (the same test as
+    `importdata`'s `&<import>`). A class send then types its result from the
+    declaration along the chain (`instancetype` is the receiver class, a class
+    pointer that class), or, undeclared, from a factory selector whose leading
+    noun, before `With`, is the class name's tail case-insensitively
+    (`numberWithInt:` on `NSNumber`, `stringWithFormat:` on
+    `NSMutableString`); an instance send takes its declared result the same
+    way. `objc_msgSendSuper2(&super, sel)` is looked up from the superclass of
+    the sending method's class (its label `-[Foo bar]` names it), `[super
+    init…]` returns that class, and a super send is never retargeted either,
+    since its first argument is the `objc_super`. On a 390-function sample of
+    a 72 MB iOS app this resolves 64 more sends (64 to 128) and types 14 more
+    results as class pointers; `tests/stages/kuna-objcsdksend.xml` runs a
+    fixture that sends to an imported class with the option off and on.
+
   Decoding every method's encoding asks the type factory for `objc_object *`
   once per argument, and the factory finds a type by name with a linear scan of
   every type it holds; with thousands of class structs interned that scan is no

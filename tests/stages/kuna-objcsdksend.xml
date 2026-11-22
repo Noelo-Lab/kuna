@@ -1,0 +1,56 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Objective-C message sends to a class the image only imports, resolved and
+    typed from the SDK declarations (`option objcresolve`, `option objcsdk`).
+
+    Issue: an app reaches a Foundation class through a __got slot bound to
+    `_OBJC_CLASS_$_<name>`. `objcresolve` knew only the image's own classes,
+    so `[KNumber numberWithLongLong:v]` printed
+    `objc_msgSend$numberWithLongLong:(&OBJC_CLASS_$_KNumber,v)`, the send to its
+    result `objc_msgSend$stringValue(...)`, and an undeclared factory's result
+    `[KNumber numberWithInt:7]` an untyped `unsigned long`.
+
+    Fix: the ObjC analysis adds the classes the image imports or subclasses,
+    with their superclasses, from the headers `objcsdk` names; a data import
+    slot bound to a class object is a class receiver. The class send resolves
+    to `+[KNumber numberWithLongLong:]`, the instance send along the superclass
+    chain to `-[KValue stringValue]`, and a factory whose leading noun is the
+    class's (`numberWith...` on `KNumber`) returns `KNumber *`.
+    The fixture header objc_sdk_sends/KNumber.h is hand-written.
+
+    Pass 1 (`objcresolve off`): the runtime stubs and `unsigned long v2`.
+    Pass 2 (default): the methods and `KNumber *v2`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>option objcsdk decompiler/crates/kuna-analysis/tests/fixtures/objc_sdk_sends</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objcsdksend_arm64</com>
+  <com>option objc on</com>
+  <com>option objcresolve off</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000600</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objcsdksend_arm64</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000600</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option objcsdk off</com>
+  <com>quit</com>
+</script>
+<stringmatch name="OBJCSDKSEND #1: off, the class send is the runtime stub" min="1" max="1">objc_msgSend\$numberWithLongLong:\(&amp;OBJC_CLASS_\$_KNumber,</stringmatch>
+<stringmatch name="OBJCSDKSEND #2: off, the undeclared factory's result is untyped" min="1" max="1">unsigned long v2;</stringmatch>
+<stringmatch name="OBJCSDKSEND #3: default, the class send to the imported class names the declared method" min="1" max="1">\+\[KNumber numberWithLongLong:\]\(&amp;OBJC_CLASS_\$_KNumber,</stringmatch>
+<stringmatch name="OBJCSDKSEND #4: default, the send to its result resolves along the superclass chain" min="1" max="1">-\[KValue stringValue\]\(</stringmatch>
+<stringmatch name="OBJCSDKSEND #5: default, a factory of the class returns the class" min="1" max="1">KNumber \*v2;</stringmatch>
+<stringmatch name="OBJCSDKSEND #6: an undeclared selector keeps the runtime stub" min="2" max="2">objc_msgSend\$numberWithInt:\(</stringmatch>
+</decompilertest>

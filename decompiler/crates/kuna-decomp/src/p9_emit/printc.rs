@@ -12718,7 +12718,7 @@ fn import_slot_address(fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: Op
 
 /// Is `vn` the slot's value at entry, carried only across calls (`INDIRECT`)
 /// and joins (`MULTIEQUAL`), never a value the function stored into it?
-fn holds_loaded_value(fd: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+pub(crate) fn holds_loaded_value(fd: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
     let Some(v) = fd.vbank().get(vn) else { return false };
     let Some(def) = v.get_def().filter(|_| v.is_written()) else { return true };
     let Some(o) = fd.obank().get(def) else { return false };

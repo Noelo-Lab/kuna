@@ -28,12 +28,20 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use kuna_decomp::kuna_objcresolve::{ObjcClass, ObjcMethod, ObjcReturn};
 use object::read::macho::{LoadCommandVariant, MachHeader};
 use object::FileKind;
 
-/// `selector → type encoding` for every declaration under `root` that this
-/// image's frameworks reach; `None` marks a selector declared two ways.
-pub fn signatures(root: &Path, frameworks: &[String]) -> HashMap<String, Option<String>> {
+/// What the headers under `root` that this image's frameworks reach declare.
+#[derive(Default)]
+pub struct Sdk {
+    /// `selector → type encoding`; `None` marks a selector declared two ways.
+    pub signatures: HashMap<String, Option<String>>,
+    /// Every `@interface` (categories merged into their class), by name.
+    pub classes: HashMap<String, kuna_decomp::kuna_objcresolve::ObjcClass>,
+}
+
+pub fn read(root: &Path, frameworks: &[String]) -> Sdk {
     let mut texts = Vec::new();
     for path in headers(root, frameworks) {
         if let Ok(text) = std::fs::read_to_string(&path) {
@@ -44,11 +52,11 @@ pub fn signatures(root: &Path, frameworks: &[String]) -> HashMap<String, Option<
     for text in &texts {
         types.scan_typedefs(text);
     }
-    let mut out: HashMap<String, Option<String>> = HashMap::new();
+    let mut sdk = Sdk::default();
     for text in &texts {
-        scan_declarations(text, &types, &mut out);
+        scan_declarations(text, &types, &mut sdk);
     }
-    out
+    sdk
 }
 
 /// The frameworks a Mach-O links (`UIKit` for
@@ -296,13 +304,15 @@ impl Types {
 
 /// `@interface`/`@protocol` bodies: every method and property declaration,
 /// recorded by selector.
-fn scan_declarations(text: &str, types: &Types, out: &mut HashMap<String, Option<String>>) {
+fn scan_declarations(text: &str, types: &Types, sdk: &mut Sdk) {
     let mut in_body = false;
+    let mut class: Option<String> = None;
     let mut depth = 0i32;
     let mut stmt = String::new();
     for line in text.lines() {
         let t = line.trim();
         if t.starts_with("@interface") || t.starts_with("@protocol") && !t.contains(';') {
+            class = t.strip_prefix("@interface").and_then(|rest| interface(rest, &mut sdk.classes));
             in_body = true;
             depth = t.matches('{').count() as i32 - t.matches('}').count() as i32;
             stmt.clear();
@@ -333,16 +343,57 @@ fn scan_declarations(text: &str, types: &Types, out: &mut HashMap<String, Option
         }
         let s = std::mem::take(&mut stmt);
         let s = s.trim().trim_end_matches(';').trim();
-        if s.starts_with('-') || s.starts_with('+') {
-            if let Some((sel, enc)) = method(s, types) {
-                record(out, sel, enc);
-            }
+        let declared: Vec<(bool, String, Option<String>, Option<ObjcReturn>)> = if s.starts_with('-') || s.starts_with('+') {
+            method(s, types).map(|(sel, enc, ret)| (s.starts_with('+'), sel, enc, ret)).into_iter().collect()
         } else if let Some(rest) = s.strip_prefix("@property") {
-            for (sel, enc) in property(rest.trim(), types) {
-                record(out, sel, enc);
+            property(rest.trim(), types)
+        } else {
+            Vec::new()
+        };
+        for (class_method, sel, enc, returns) in declared {
+            if let Some(c) = class.as_ref().and_then(|c| sdk.classes.get_mut(c)) {
+                let label = format!("{}[{} {sel}]", if class_method { '+' } else { '-' }, class.as_deref().unwrap_or(""));
+                c.methods.entry((class_method, sel.clone())).or_insert(ObjcMethod { label, imp: 0, returns });
             }
+            record(&mut sdk.signatures, sel, enc);
         }
     }
+}
+
+/// `@interface` text after the keyword: the class it declares (registered in
+/// `classes`, its superclass recorded when this is the primary interface), or
+/// `None` for one that is not an identifier.
+fn interface(rest: &str, classes: &mut HashMap<String, ObjcClass>) -> Option<String> {
+    let rest = rest.trim_start();
+    let end = rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(rest.len());
+    let name = &rest[..end];
+    if !is_ident(name) {
+        return None;
+    }
+    let mut tail = rest[end..].trim_start();
+    if tail.starts_with('<') {
+        tail = tail.find('>').map_or("", |k| tail[k + 1..].trim_start());
+    }
+    let entry = classes.entry(name.to_string()).or_default();
+    if let Some(sup) = tail.strip_prefix(':') {
+        let sup = sup.trim_start();
+        let sup = &sup[..sup.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(sup.len())];
+        if is_ident(sup) {
+            entry.superclass = Some(sup.to_string());
+        }
+    }
+    Some(name.to_string())
+}
+
+/// The result a declared return type names: `instancetype`, or a pointer to a
+/// class (`NSNumber *`, a typedef of one).
+fn returns(ret: &str, types: &Types) -> Option<ObjcReturn> {
+    if tokens(ret).contains(&"instancetype") {
+        return Some(ObjcReturn::Instancetype);
+    }
+    let enc = types.encode(ret, 0)?;
+    let class = enc.strip_prefix("@\"")?.strip_suffix('"')?;
+    Some(ObjcReturn::Class(class.to_string()))
 }
 
 /// Agreement is judged with class names erased; the first full spelling is
@@ -382,7 +433,7 @@ fn erase_classes(enc: &str) -> String {
 
 /// `- (ret)part:(T)name part2:(T2)name2 …` → the selector and its encoding,
 /// `None` when a type does not encode (the selector is still claimed).
-fn method(s: &str, types: &Types) -> Option<(String, Option<String>)> {
+fn method(s: &str, types: &Types) -> Option<(String, Option<String>, Option<ObjcReturn>)> {
     let b = s.as_bytes();
     let mut i = 1;
     skip_ws(b, &mut i);
@@ -427,25 +478,30 @@ fn method(s: &str, types: &Types) -> Option<(String, Option<String>)> {
     }
     // A declaration with a type this reader cannot spell still claims its
     // selector, so another class's spelling of it is not taken for this one.
-    let Some(mut enc) = types.encode(&ret, 0) else { return Some((sel, None)) };
+    let result = returns(&ret, types);
+    let Some(mut enc) = types.encode(&ret, 0) else { return Some((sel, None, result)) };
     for e in encs {
-        let Some(e) = e else { return Some((sel, None)) };
+        let Some(e) = e else { return Some((sel, None, result)) };
         enc.push_str(&e);
     }
-    Some((sel, Some(enc)))
+    Some((sel, Some(enc), result))
 }
 
 /// `(attrs) T name` → the getter (and, unless `readonly`, the setter).
-fn property(rest: &str, types: &Types) -> Vec<(String, Option<String>)> {
+/// Each entry is `(class property?, selector, encoding, declared result)`.
+fn property(rest: &str, types: &Types) -> Vec<(bool, String, Option<String>, Option<ObjcReturn>)> {
     let b = rest.as_bytes();
     let mut i = 0;
     let attrs = if b.first() == Some(&b'(') { paren_group(b, &mut i).unwrap_or_default() } else { String::new() };
     let mut readonly = false;
+    let mut class_property = false;
     let mut getter = None;
     let mut setter = None;
     for a in attrs.split(',').map(str::trim) {
         if a == "readonly" {
             readonly = true;
+        } else if a == "class" {
+            class_property = true;
         } else if let Some(g) = a.strip_prefix("getter=") {
             getter = Some(g.trim().to_string());
         } else if let Some(s) = a.strip_prefix("setter=") {
@@ -468,13 +524,14 @@ fn property(rest: &str, types: &Types) -> Vec<(String, Option<String>)> {
         return Vec::new();
     }
     let enc = types.encode(&ty, 0);
-    let mut out = vec![(getter.unwrap_or_else(|| name.clone()), enc.as_ref().map(|e| format!("{e}@:")))];
+    let getter = getter.unwrap_or_else(|| name.clone());
+    let mut out = vec![(class_property, getter, enc.as_ref().map(|e| format!("{e}@:")), returns(&ty, types))];
     if !readonly {
         let setter = setter.unwrap_or_else(|| {
             let mut c = name.chars();
             format!("set{}{}", c.next().map(|f| f.to_ascii_uppercase()).unwrap_or_default(), c.as_str())
         });
-        out.push((format!("{setter}:"), enc.map(|e| format!("v@:{e}"))));
+        out.push((class_property, format!("{setter}:"), enc.map(|e| format!("v@:{e}")), None));
     }
     out
 }
@@ -668,7 +725,7 @@ mod tests {
     /// structs and class pointers, and an unknown type leaves the selector out.
     #[test]
     fn reads_the_fixture_header() {
-        let sigs = signatures(&fixture_dir(), &[]);
+        let sigs = read(&fixture_dir(), &[]).signatures;
         let get = |s: &str| sigs.get(s).cloned().flatten();
         assert_eq!(get("setAlpha:").as_deref(), Some("v@:d"));
         assert_eq!(get("alpha").as_deref(), Some("d@:"));
@@ -722,8 +779,9 @@ mod tests {
         let mut types = Types::default();
         types.scan_typedefs(&text);
         assert!(!types.typedefs.contains_key("Name") && !types.typedefs.contains_key("Caf"));
-        let mut out = HashMap::new();
-        scan_declarations(&text, &types, &mut out);
+        let mut sdk = Sdk::default();
+        scan_declarations(&text, &types, &mut sdk);
+        let out = sdk.signatures;
         assert_eq!(out.get("setAlpha:"), Some(&None));
         assert_eq!(out.get("setBeta:").cloned().flatten().as_deref(), Some("v@:d"));
         assert_eq!(out.get("setTitle:").cloned().flatten().as_deref(), Some("v@:@\"NSString\""));
@@ -748,8 +806,9 @@ mod tests {
         ));
         let mut types = Types::default();
         types.scan_typedefs(&text);
-        let mut out = HashMap::new();
-        scan_declarations(&text, &types, &mut out);
+        let mut sdk = Sdk::default();
+        scan_declarations(&text, &types, &mut sdk);
+        let out = sdk.signatures;
         let get = |s: &str| out.get(s).cloned();
         assert_eq!(get("setBlock:"), Some(Some("v@:@?".to_string())));
         assert_eq!(get("setNullableBlock:"), Some(Some("v@:@?".to_string())));
@@ -759,6 +818,25 @@ mod tests {
         assert_eq!(get("hook"), Some(None));
         assert_eq!(get("setHook:"), Some(None));
         assert_eq!(get("done"), Some(Some("@?@:".to_string())));
+    }
+
+    /// Each `@interface` gives its class a superclass (a category adds methods
+    /// only) and every declaration its declared result.
+    #[test]
+    fn interfaces_give_classes_their_superclass_and_results() {
+        let sdk = read(&fixture_dir().with_file_name("objc_sdk_sends"), &[]);
+        let class = |c: &str| &sdk.classes[c];
+        assert_eq!(class("KNumber").superclass.as_deref(), Some("KValue"));
+        assert_eq!(class("KValue").superclass.as_deref(), Some("KObject"));
+        assert_eq!(class("KObject").superclass, None);
+        let method = |c: &str, cm: bool, s: &str| class(c).methods.get(&(cm, s.to_string())).map(|m| (m.label.clone(), m.returns.clone()));
+        assert_eq!(
+            method("KNumber", true, "numberWithLongLong:"),
+            Some(("+[KNumber numberWithLongLong:]".to_string(), Some(ObjcReturn::Class("KNumber".into()))))
+        );
+        assert_eq!(method("KValue", false, "stringValue").and_then(|m| m.1), Some(ObjcReturn::Class("KString".into())));
+        assert_eq!(method("KObject", true, "alloc").and_then(|m| m.1), Some(ObjcReturn::Instancetype));
+        assert_eq!(method("KNumber", false, "longLongValue"), Some(("-[KNumber longLongValue]".to_string(), None)));
     }
 
     #[test]

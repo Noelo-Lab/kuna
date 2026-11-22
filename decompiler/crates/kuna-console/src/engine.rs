@@ -6392,8 +6392,12 @@ fn commit_analysis_output(
         if prog.arch().analysis_objcivars { out.objc_self_types.into_iter().collect() } else { Default::default() };
     // (kuna `objcresolve`) The ObjC class table the engine types
     // and resolves message sends with; it rides the `objc` gate like the labels.
-    if let Some(table) = out.objc_classes {
+    if let Some(mut table) = out.objc_classes {
         if prog.arch().analysis_objc {
+            let data_slots: std::collections::HashSet<u64> = out.data_import_slots.iter().copied().collect();
+            table.class_slot_at.extend(out.import_slot_names.iter().filter(|(slot, _)| data_slots.contains(slot)).filter_map(
+                |(slot, name)| Some((*slot, name.trim_start_matches('_').strip_prefix("OBJC_CLASS_$_")?.to_string())),
+            ));
             prog.arch_mut().kuna_objc_classes = Rc::new(table);
         }
     }
