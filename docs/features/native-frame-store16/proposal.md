@@ -148,3 +148,14 @@ narrow XMM15 return proof and this physical-store proof address different facts.
 This proposal neither admits the parameterless pinned main to that classifier
 nor proves the larger loop, joins its adjacent stores, changes the 256-byte
 metadata cap, or implements other standard-library idioms. G19 remains open.
+
+## Open questions from review
+
+The escaped-address gate looks inverted. Keeping one 16-byte object for the
+footprint of a single STORE16 is never less faithful than two split
+eight-byte locals, whatever the callee reads, because the program wrote
+those 16 contiguous bytes before passing their address. A callee contract
+would be needed to justify splitting the footprint, not to keep it whole.
+As written, the gate requires a contract that the proposal says is not
+available, so its own witness stays unfixed. Can the escaped use be
+admitted without a callee contract?
