@@ -34,6 +34,8 @@
 
     `bail` prints `ExitProcess(a0)`, not `ExitProcess()`: `win32sigs` (DIV-141)
     supplies the import's one-UINT prototype, which is what the source declares.
+    Likewise the bound `objc_msgSend` takes the receiver and selector its
+    `(self, op, ...)` declaration fixes (`analyzers/objc/kuna_objcruntime.rs`).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -64,6 +66,6 @@ c3
 <stringmatch name="PEIMPORTCALL #4: bail never calls the raw slot pointer" min="0" max="0">\(\*dat_140005038\)\(\);</stringmatch>
 <stringmatch name="PEIMPORTCALL #5: bail ends at the bound no-return import" min="1" max="1">ExitProcess\(a0\); // no-return</stringmatch>
 <stringmatch name="PEIMPORTCALL #6: a Mach-O non-lazy import slot is never left anonymous" min="0" max="0">\(\*dat_100001000\)\(\);</stringmatch>
-<stringmatch name="PEIMPORTCALL #7: the Mach-O import slot is bound to objc_msgSend" min="1" max="1">objc_msgSend\(\);</stringmatch>
+<stringmatch name="PEIMPORTCALL #7: the Mach-O import slot is bound to objc_msgSend" min="1" max="1">objc_msgSend\(a0,a1\);</stringmatch>
 <stringmatch name="PEIMPORTCALL #8: ordinary ObjC message-reference data stays anonymous" min="1" max="1">\(\*dat_100002000\)\(\);</stringmatch>
 </decompilertest>

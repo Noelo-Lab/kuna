@@ -1636,6 +1636,29 @@ offset variables). With `objc on` the categories render `-[Base(Extra) greet:]` 
 `-[Sub x]` reads `(int8)self + (int8)Sub::x`; with `objc off` the category methods
 are `sub_10000083c`… and the ivar load is `dat_100008388`.
 
+### `macho_objc_varargs_arm64` — runtime entry points declared variadic
+
+`macho_objc_varargs_arm64` (arm64, 50,512 bytes, SHA-256
+`657e470c2af90d516c359fedd537bf14ed94fa121b6b65a8d4780c8aa5478305`) is the fixture
+for the runtime prototypes in `analyzers/objc/kuna_objcruntime.rs`. Source
+`macho_objc_varargs.m`: root class `View` with `-initWithFrame:` taking a four-double
+`Rect`; `Panel : View` sends `[super initWithFrame:(Rect){8.0, 16.0, width, height}]`
+from `-initWithWidth:height:`; the C function `report` calls
+`NSLog(@"Error %@ parsing token payload %@", error, payload)`, whose two variadic
+values go on the stack. Built with clang and LLD 22.1.8:
+
+```bash
+clang -target arm64-apple-macos11 -fno-objc-arc -O1 -c macho_objc_varargs.m -o va.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+         -undefined dynamic_lookup -x -e _main -o macho_objc_varargs_arm64 va.o
+```
+
+**Pinned VMAs:** `-[Panel initWithWidth:height:]`@`0x1000007b8`, `_report`@`0x1000007fc`.
+With `objc on` they read `objc_msgSendSuper2(&v1,sel_initWithFrame_,8.0,16.0,arg1,arg2)`
+and `NSLog(CFSTR("Error %@ parsing token payload %@"),a0,a1)`; without the
+prototypes the doubles came first and `NSLog` had only its format.
+`kuna-cli/tests/objc_varargs_cli.rs` pins both.
+
 ### `macho_objc_sdk_arm64` + `objc_sdk/Widget.h` — signatures from headers
 
 `macho_objc_sdk_arm64` (arm64, ~50 KB) is the fixture for the `objcsdk` header

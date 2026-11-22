@@ -40,7 +40,10 @@
     with no dead `x1` argument; the slot loads fold, so the super send reads
     `sel_greet_` with `_OBJC_CLASS_$_Derived` in the super struct and `_tag`
     sends to `_OBJC_CLASS_$_Derived`; the bind slot `classRef_Remote` has no
-    static value and keeps its name.
+    static value and keeps its name. `objc_msgSendSuper2` is declared
+    `(void *, void *, ...)` (`analyzers/objc/kuna_objcruntime.rs`), so the
+    method's `int` argument is the open tail's whole `x2`, which the method's
+    own `int4 arg1` fills: `(uint8)(uint4)arg1`.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c0035fd6
@@ -89,7 +92,7 @@ c0035fd6
 <stringmatch name="OBJCREFS #5: on names the stub after its selector" min="1" max="1">objc_msgSend\$count\(a0\)</stringmatch>
 <stringmatch name="OBJCREFS #6: the stub's prototype pins the argument past the selector register" min="1" max="1">objc_msgSend\$greet:\(a0,5\)</stringmatch>
 <stringmatch name="OBJCREFS #7: a chained bind slot is named from its import" min="1" max="1">objc_msgSend\(classRef_Remote,sel</stringmatch>
-<stringmatch name="OBJCREFS #8: the super send's selector slot folds to the selector" min="1" max="1">objc_msgSendSuper2\(&amp;v1,sel_greet_,arg1\)</stringmatch>
+<stringmatch name="OBJCREFS #8: the super send's selector slot folds to the selector" min="1" max="1">objc_msgSendSuper2\(&amp;v1,sel_greet_,\(uint8\)\(uint4\)arg1\)</stringmatch>
 <stringmatch name="OBJCREFS #9: the super class slot folds to the class" min="1" max="1">v2 = _OBJC_CLASS_\$_Derived;</stringmatch>
 <stringmatch name="OBJCREFS #10: a classref receiver folds" min="1" max="1">objc_msgSend\$tag\(\(objc_object \*\)_OBJC_CLASS_\$_Derived\)</stringmatch>
 <stringmatch name="OBJCREFS #11: a plain send's selref folds" min="1" max="1">objc_msgSend\(a0,sel_greet_,2\)</stringmatch>

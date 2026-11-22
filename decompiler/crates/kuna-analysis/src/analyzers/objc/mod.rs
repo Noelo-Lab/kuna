@@ -60,6 +60,7 @@ pub mod kuna_objcivars;
 pub mod kuna_objcprops;
 pub mod kuna_objcprotos;
 pub mod kuna_objcrefs;
+mod kuna_objcruntime;
 pub mod kuna_objcsdk;
 pub mod methods;
 pub mod sections;
@@ -236,6 +237,7 @@ impl AnalysisPass for ObjcMetadataPass {
             }
         }
         let refs = kuna_objcrefs::emit(&img, ctx.file, ctx.arch, &tctx, &mut selectors, &mut out);
+        kuna_objcruntime::emit(&crate::analyzers::protos::resolved_import_addrs(ctx.file, ctx.bytes), &tctx, &mut out);
 
         // A chained slot holds its packed fixup word until `dynrelocs` unpacks it
         // at load.

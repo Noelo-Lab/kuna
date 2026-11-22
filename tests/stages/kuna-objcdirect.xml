@@ -18,7 +18,9 @@
 
     `macho_objc_direct.m`: `Label { isa; int flags; Label *next; }` with the
     direct `-[Label bump:]` and `+[Label scale:]` and the listed
-    `-[Label flags]`.
+    `-[Label flags]`. The class method's receiver is passed to the generic
+    `objc_msgSend(void *, void *, ...)`, so it may read `void *self`; it must
+    never read `Label *` or `objc_object *`.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c0035fd6
@@ -44,6 +46,6 @@ c0035fd6
 <stringmatch name="OBJCDIRECT #1: a direct instance method takes self as its class and no _cmd" min="1" max="1">-\[Label bump:\]\(Label \*self,int4 a1\)</stringmatch>
 <stringmatch name="OBJCDIRECT #2: its ivar accesses are fields" min="1" max="1">self->flags = self->flags \+ a1;</stringmatch>
 <stringmatch name="OBJCDIRECT #3: a field read through an ivar of the class" min="1" max="1">return self->next->flags;</stringmatch>
-<stringmatch name="OBJCDIRECT #4: a direct class method's receiver is named, not typed as an instance" min="1" max="1">\+\[Label scale:\]\([a-z0-9 ]+ self,int4 a1\)</stringmatch>
+<stringmatch name="OBJCDIRECT #4: a direct class method's receiver is named, not typed as an instance" min="1" max="1">\+\[Label scale:\]\((void \*|[a-z0-9 ]+ )self,int4 a1\)</stringmatch>
 <stringmatch name="OBJCDIRECT #5: a listed method keeps its encoding's prototype" min="1" max="1">int4 -\[Label flags\]\(Label \*self,objc_selector \*_cmd\)</stringmatch>
 </decompilertest>

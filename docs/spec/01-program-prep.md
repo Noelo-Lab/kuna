@@ -5791,6 +5791,31 @@ every other binary's pass list is byte-identical to before the pass existed):
     wrote as an argument: `objc_msgSend$greet:(obj, 5)`. A selector no local
     method defines, or whose arguments would need the stack, keeps the untyped
     call-site inference.
+  - the C entry points a send or a log goes through, `objc_msgSend`,
+    `objc_msgSendSuper`, `objc_msgSendSuper2` and `NSLog`, each get the
+    shape their header declares: the fixed parameters (the receiver or the
+    `objc_super *`, then the `SEL`; the format) followed by `...`, on the
+    image's resolved import addresses
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcruntime.rs (emit)`,
+    kuna, no option: it rides `objc`). Unprototyped, a call was recovered from its
+    register trials in the model's entry order, which on AArch64 lists `d0..d7`
+    before `x0`, so `[super initWithFrame:r]` printed
+    `objc_msgSendSuper2(r.x,r.y,r.width,r.height,&sup,sel_initWithFrame_)`; and
+    Apple's AArch64 convention puts every variadic value on the stack, past the
+    seven `x` registers left unused, where the unprototyped trials stop, so
+    `NSLog(fmt, err, payload)` printed with its format alone. With `...` the open
+    tail is taken from the same trials after the fixed parameters:
+    `objc_msgSendSuper2(&sup,sel_initWithFrame_,r.x,r.y,r.width,r.height)`,
+    `NSLog(CFSTR("Error %@ parsing token payload %@"),v4,v2)`. A send's return
+    stays recovered from the call site, since the method decides it. Each fixed
+    parameter is an unnamed `void *`, so the declaration neither renames nor
+    retypes the caller's variables (a class method's receiver is a class, not
+    an `objc_object *`). An int-sized method argument in the tail is the whole
+    register the call passes, `(uint8)(uint4)arg1`, as a declared variadic tail
+    is everywhere (`ActionDeadCode` consumes a locked prototype's inputs in
+    full). An
+    import-less definition of the same name (libobjc itself) keeps what its
+    body says.
 
   The rebase slots of the three ref sections are also reported constant
   (`AnalysisOutput::const_ranges`). dyld fills them once before any code runs
