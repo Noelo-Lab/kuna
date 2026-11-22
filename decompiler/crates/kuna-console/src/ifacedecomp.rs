@@ -2386,24 +2386,34 @@ decomp_command!(
         // re-decompile loop, which used to live only here.
         prog.arch_mut().kuna_prior_names = prior_names;
         prog.arch_mut().kuna_record_names = true;
-        let step = crate::decompile_step::decompile_one_prefollowed(
-            prog.arch_mut(),
-            &name,
-            entry,
-            size,
-            &crate::decompile_step::DecompileSeed {
-                purpose: kuna_decomp::decompile_drive::DrivePurpose::SingleFunction,
-                mapped_symbols: &mapped_symbols,
-                usepoint_symbols: &usepoint_symbols,
-                dynamic_symbols: &dynamic_symbols,
-                object_assertions: &object_assertions,
-                pending_proto: pending_proto.as_ref(),
-                flow_overrides: &flow_overrides,
-                mapped_params: &mapped_params,
-            },
-            &proto_overrides,
-            prefollowed,
-        );
+        let step = {
+            let dcp = dcp_mut(status)?;
+            let (arch, extent) = prog.arch_and_declared_extents();
+            crate::decompile_step::decompile_one_prefollowed(
+                arch,
+                &name,
+                entry,
+                size,
+                &crate::decompile_step::DecompileSeed {
+                    purpose: kuna_decomp::decompile_drive::DrivePurpose::SingleFunction,
+                    mapped_symbols: &mapped_symbols,
+                    usepoint_symbols: &usepoint_symbols,
+                    dynamic_symbols: &dynamic_symbols,
+                    object_assertions: &object_assertions,
+                    pending_proto: pending_proto.as_ref(),
+                    flow_overrides: &flow_overrides,
+                    mapped_params: &mapped_params,
+                },
+                &proto_overrides,
+                prefollowed,
+                &|vma, callee| {
+                    (!dcp.pending_flow_overrides.contains_key(callee)
+                        && !dcp.pending_proto_overrides.contains_key(callee)
+                        && !dcp.pending_param_maps.contains_key(callee))
+                    .then(|| extent(vma))
+                },
+            )
+        };
         prog.arch_mut().kuna_prior_names = Default::default();
         prog.arch_mut().kuna_record_names = false;
         let result = step.result;

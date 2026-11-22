@@ -2813,6 +2813,31 @@ pointer slot the zero exists for, and choosing a segment for it would hand a bod
 to exactly those. The analyzer tier already degrades this way for entry point
 discovery, which is where the shape comes from.
 
+(kuna) **Raw-image extents can end before the next entry.** The loader's
+synthetic CODE range includes both instructions and data. On non-real-mode raw
+images, `decompiler/crates/kuna-analysis/src/listing/kuna_rawextent.rs (measure)`
+reads instruction lengths and successors from the existing raw Listing,
+retained even with `PARTITION_ONLY`. It follows direct branches and
+fall-throughs, including paths that leave the clip and come back; ordinary
+calls contribute their continuation, not their callee. A completed walk
+shortens the contiguous span to the end of the last reached instruction in the
+clip, counting any gaps before it. An unresolved jump (even if its conditional
+skip is known), missing or truncated instruction, unproved successor (including
+a transfer outside the mapped bytes) leaves the original clip intact. The same
+fallback applies after 16,384 visits per entry or when the address-ordered
+walks exhaust their shared budget of four times the number of decoded Listing
+instructions. A mapped entry-only `--define-function` or `--assert function`
+declaration is a descent root. Raw discovery previews assertion addresses
+without applying the directives early; the normal assertion order and explicit
+extent precedence are unchanged.
+
+The walk uses the target's decoded Listing, not an independent ISA guess or
+second decode. The non-real-mode discovery sweep rolls back context writes
+before descent, and a whole-image ARM `--isa` choice is protected while allowing
+local decoder context such as Thumb IT state. The extent pass does not recover
+mixed-mode regions, switch targets, or trailing literal pools. Object-backed
+images keep their section-based extents.
+
 (kuna #1288) **On an x86 real-mode raw image the extent ends where the function's
 flow does** (always on;
 `decompiler/crates/kuna-analysis/src/listing/kuna_rawextent.rs (measure)`). An
@@ -2857,11 +2882,8 @@ bounded by it, so the C is unchanged. Over 72 DOS executables (MS-DOS 1.25 to
 4.0 tools, FreeDOS, DAZZLE) 3,112 of 7,956 functions shrink, none grows, and
 965,898 bytes are no longer attributed to a function whose flow reaches none of
 them; for every shrunk function, no address of the decompiler's own p-code for
-it lies between the new end and the clip. It is x86 real mode only: an image with a section table
-already says which bytes are code (over stripped x86-64 ELF the clip's overshoot
-is alignment padding, 694 of 1,093 functions; MSVC lays a switch table out after
-its function in `.text`, and ARM a literal pool, both bytes of the function), and
-another raw language would need its own table and literal-pool readers.
+it lies between the new end and the clip. The DOS exit and indirect-table rules
+are specific to x86 real mode.
 
 Naming a pointer slot is not by itself enough to bind a call *through* it. An ELF
 PLT stub and a Mach-O `__stubs` entry are code, so the call is direct and the name

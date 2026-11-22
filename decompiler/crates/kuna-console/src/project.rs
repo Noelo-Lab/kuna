@@ -514,6 +514,36 @@ pub fn decompile_entry(
     out.expect("decompile_pulled emits exactly one result per target")
 }
 
+/// A hidden callee drive cannot replay another function's local directives.
+/// Program-scoped prototypes and byte/data assertions are already installed.
+fn raw_return_override_owners(prog: &ConsoleProgram) -> Vec<u64> {
+    use crate::assertions::Body;
+    use crate::engine::{EntryLookupError, EntrySelector};
+
+    let mut owners = Vec::new();
+    if !prog.arch().kuna_raw_thumb_call_returns.is_empty() {
+        for directive in prog.assertions() {
+            let name = match &directive.body {
+                Body::Flow { func: Some(name), .. }
+                | Body::Callee { func: Some(name), .. }
+                | Body::CallProto { func: Some(name), .. }
+                | Body::Type { func: Some(name), .. } => name,
+                _ => continue,
+            };
+            match prog.resolve_entry(&EntrySelector::Name(name.clone())) {
+                Ok(entry) => owners.push(entry.addr.get_offset()),
+                Err(EntryLookupError::Ambiguous { candidates, .. }) => {
+                    owners.extend(candidates.into_iter().map(|entry| entry.addr.get_offset()));
+                }
+                Err(_) => {}
+            }
+        }
+    }
+    owners.sort_unstable();
+    owners.dedup();
+    owners
+}
+
 /// The pull/push form of [`decompile_targets`]: take targets from `next` until
 /// it returns `None`, handing each finished [`FuncResult`] to `sink` before the
 /// next target is decompiled.
@@ -560,6 +590,7 @@ pub fn decompile_pulled(
         prog.arch_mut().print_mut().options.set_struct_defs(false);
     }
     let mut hints: Option<CalleeHintContext> = None;
+    let raw_return_override_owners = raw_return_override_owners(prog);
     while let Some(FunctionEntry {
         name,
         addr: entry,
@@ -733,23 +764,28 @@ pub fn decompile_pulled(
         flow_ovr.extend(seed.flow_overrides.iter().cloned());
         let replay = crate::assertions::has_symbol_scoped(prog, &name, single_target);
         prog.arch_mut().kuna_record_names = replay;
-        let step = crate::decompile_step::decompile_one(
-            prog.arch_mut(),
-            &name,
-            entry.clone(),
-            declared,
-            &crate::decompile_step::DecompileSeed {
-                purpose: kuna_decomp::decompile_drive::DrivePurpose::Batch,
-                mapped_symbols: &mapped,
-                usepoint_symbols: &[],
-                dynamic_symbols: &[],
-                object_assertions: &[],
-                pending_proto: seed.pending_proto.as_ref(),
-                flow_overrides: &flow_ovr,
-                mapped_params: &seed.mapped_params,
-            },
-            &seed.proto_overrides,
-        );
+        let step = {
+            let (arch, extent) = prog.arch_and_declared_extents();
+            crate::decompile_step::decompile_one_prefollowed(
+                arch,
+                &name,
+                entry.clone(),
+                declared,
+                &crate::decompile_step::DecompileSeed {
+                    purpose: kuna_decomp::decompile_drive::DrivePurpose::Batch,
+                    mapped_symbols: &mapped,
+                    usepoint_symbols: &[],
+                    dynamic_symbols: &[],
+                    object_assertions: &[],
+                    pending_proto: seed.pending_proto.as_ref(),
+                    flow_overrides: &flow_ovr,
+                    mapped_params: &seed.mapped_params,
+                },
+                &seed.proto_overrides,
+                None,
+                &|vma, _| raw_return_override_owners.binary_search(&vma).is_err().then(|| extent(vma)),
+            )
+        };
         prog.arch_mut().kuna_record_names = false;
         // (kuna `--assert`) The symbol-scoped second pass. `name`/`type` name a
         // LOCAL, and a local does not exist until a decompile has produced it --
@@ -768,24 +804,29 @@ pub fn decompile_pulled(
                     let carried_objects = kuna_decomp::kuna_stackobjectasserts::specs(&fd).to_vec();
                     let carried_params = crate::kuna_paramasserts::carried(&fd, &seed.mapped_params);
                     prog.arch_mut().kuna_prior_names = kuna_decomp::kuna_stablenames::carry(&fd);
-                    let second = crate::decompile_step::decompile_one(
-                        prog.arch_mut(),
-                        &name,
-                        entry,
-                        declared,
-                        &crate::decompile_step::DecompileSeed {
-                            purpose: kuna_decomp::decompile_drive::DrivePurpose::Batch,
-                            mapped_symbols: &carried,
-                            usepoint_symbols: &carried_usepoint,
-                            dynamic_symbols: &carried_dynamic,
-                            object_assertions: &carried_objects,
-                            pending_proto: seed.pending_proto.as_ref(),
-                            flow_overrides: &flow_ovr,
-                            mapped_params: &carried_params,
-                        },
-                        &seed.proto_overrides,
-                    )
-                    .result;
+                    let second = {
+                        let (arch, extent) = prog.arch_and_declared_extents();
+                        crate::decompile_step::decompile_one_prefollowed(
+                            arch,
+                            &name,
+                            entry,
+                            declared,
+                            &crate::decompile_step::DecompileSeed {
+                                purpose: kuna_decomp::decompile_drive::DrivePurpose::Batch,
+                                mapped_symbols: &carried,
+                                usepoint_symbols: &carried_usepoint,
+                                dynamic_symbols: &carried_dynamic,
+                                object_assertions: &carried_objects,
+                                pending_proto: seed.pending_proto.as_ref(),
+                                flow_overrides: &flow_ovr,
+                                mapped_params: &carried_params,
+                            },
+                            &seed.proto_overrides,
+                            None,
+                            &|vma, _| raw_return_override_owners.binary_search(&vma).is_err().then(|| extent(vma)),
+                        )
+                        .result
+                    };
                     prog.arch_mut().kuna_prior_names = Default::default();
                     replayed = expected;
                     second

@@ -1506,9 +1506,10 @@ $ kuna functions fw.bin --json --raw-image \
 `decompile-all` decompiles the discovered inventory, not just the seed. `--addr`
 still does both, so it remains the way to narrow a raw run to named addresses.
 A function no direct call reaches and no seed names is still undiscovered;
-`--define-function` asserts it. Named `--functions`, section-relative selectors,
-`--slice`, `--summary`, and `--reachable-from` are rejected. Support is limited
-to `decompile` (text and JSON), `decompile-all`, `functions`, and
+`--define-function` or `--assert function` declares it. A mapped declaration
+with no explicit end also seeds discovery. Named `--functions`, section-relative
+selectors, `--slice`, `--summary`, and `--reachable-from` are rejected. Support
+is limited to `decompile` (text and JSON), `decompile-all`, `functions`, and
 `decompile-project`; `decompile-graph`, `disassemble`/`read`, `xrefs`, and
 `strings` require object metadata. A headerless file used without `--raw-image`
 reports the required raw-image command shape, including when its first byte is
@@ -1517,6 +1518,11 @@ console filenames preserve paths containing whitespace; the interactive spelling
 is `load raw <target> <base> <entry[,entry...]> <filename>`, where the target may
 be quoted too, as the DOS target needs: `load raw "x86:LE:16:Real Mode:default"
 0x0 0x70 dazzle.exe`.
+
+For raw Thumb, a discovered caller that reads `r0` can help recover a
+wrapper's return value even when only the wrapper is selected. This uses
+decoded call sites, not call-like bytes found only by the sweep. Explicit
+prototypes still take precedence.
 
 **Failure contract (DIV-45).** A function whose decompile pipeline aborts is
 *loud*:
@@ -2134,7 +2140,16 @@ sectionless ELF; a corrupt one the loader recovers from the program headers) is 
 against its executable load segments instead, so the last entry of a segment runs to
 the end of that segment rather than to the end of a `.text` — looser, but still an
 upper bound, where every entry used to report `0` and `--min-size 1` discarded the
-whole binary. An MS-DOS executable or a `--raw-image` x86 real-mode program has no
+whole binary.
+
+For a headerless image outside x86 real mode, raw discovery
+can shorten the clip to the end of the last instruction reached within it.
+The size still includes gaps between reached instructions. If a reachable
+path cannot be resolved from the decoded instructions or the extent walk runs
+out of visits, the clip is kept. An explicit extent from `--define-function` or
+`--assert function` takes precedence.
+
+An MS-DOS executable or a `--raw-image` x86 real-mode program has no
 section table, and its one CODE range is the whole load module, data segments
 included, so there the extent ends where the function's flow does: from the entry to
 the end of the last instruction reached from it before the next entry, calls not

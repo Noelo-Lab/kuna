@@ -4128,9 +4128,14 @@ truncating the fall-through here"
         }
         self.data.op_set_opcode_code(op, OpCode::CPUI_CALLIND);
         self.setup_callind_specs(op)?;
-        // The no-return / thunk fc bookkeeping (fc->setBadJumpTable / setNoReturn /
-        // setInternal) is the W4 FuncCallSpecs surface -- STUB(W4); the op-code
-        // change to CALLIND is the load-bearing CFG effect.
+        if let Some(idx) = self.data.get_call_specs_index(op) {
+            let spec = self.data.get_call_specs_mut(idx);
+            if spec.get_entry_address().is_invalid() {
+                // This CALLIND stands in for an unresolved jump, not a call
+                // the instruction lifted or a tail transfer to a known target.
+                spec.set_bad_jump_table(true);
+            }
+        }
         // Create an artificial return after the call.
         let return_type = if mode == RecoveryMode::FailCallother {
             pcodeop_flags::noreturn
@@ -4146,7 +4151,6 @@ truncating the fall-through here"
             }
             RecoveryMode::FailThunk => {}
             _ => {
-                // fc->setBadJumpTable(true) is the STUB(W4) FuncCallSpecs surface.
                 self.data.warning("Treating indirect jump as call", &addr);
             }
         }

@@ -114,7 +114,7 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
     let stated = if arch.symboltab.function_proto_pieces_across_scopes(entry).is_some() {
         None
     } else {
-        recovered_return(data)
+        recovered_return(data, false)
     };
     match stated {
         Some(s) => {
@@ -126,18 +126,17 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
     }
 }
 
-/// The function's own recovered return value, or `None` when it returns
-/// nothing, has no recovered prototype, returns something other than a
-/// scalar or pointer, or leaves some live path returning a value it never
-/// computed ([`crate::kuna_returnuncomputed::every_return_computes`]).
-fn recovered_return(data: &Funcdata) -> Option<StatedReturn> {
+/// The computed output of a recovered prototype. A scoped, full-word caller
+/// read can use untyped four-byte storage without making a type assertion.
+pub(crate) fn recovered_return(data: &Funcdata, allow_untyped_word: bool) -> Option<StatedReturn> {
     let proto = data.get_func_proto();
     if !proto.has_store() || !proto.has_model() || proto.is_model_unknown() {
         return None;
     }
     let out = proto.get_output();
     let ct = out.get_type()?;
-    if !states(ct) || ct.get_size() != out.get_size() {
+    let untyped_word = allow_untyped_word && ct.get_size() == 4 && ct.get_metatype() == type_metatype::TYPE_UNKNOWN;
+    if (!untyped_word && !states(ct)) || ct.get_size() != out.get_size() {
         return None;
     }
     let addr = out.get_address();

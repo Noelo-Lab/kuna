@@ -1858,15 +1858,19 @@ fn load_program_with_rust_profiles(
             prog.request_rust_profiles(request);
         }
     }
+    if args.raw_image {
+        crate::funcdecl::apply(&mut prog, &args.func_decls)?;
+    }
     prog.commit_pending_analysis()
         .map_err(|e| format!("read symbols (analysis commit) failed: {}", e.explain()))?;
-    // AFTER the commit: a caller-declared boundary is an assertion that outranks
-    // whatever discovery decided about the same address.
-    crate::funcdecl::apply(&mut prog, &args.func_decls)?;
-    // The `--assert` plane, same slot and for the same reason: a caller-declared
-    // fact outranks whatever discovery decided about it. The program-scoped
-    // directives take effect here; the function- and symbol-scoped ones are
-    // dispatched by the decompile loop (`kuna_console::assertions`).
+    // Object-backed declarations override the facts committed by discovery.
+    if !args.raw_image {
+        crate::funcdecl::apply(&mut prog, &args.func_decls)?;
+    }
+    // Keep the program-scoped assertions in caller order after discovery;
+    // raw discovery previews only function root addresses, not the directives'
+    // effects. The function- and symbol-scoped ones are dispatched by the
+    // decompile loop (`kuna_console::assertions`).
     if !args.assertions.is_empty() {
         kuna_console::assertions::apply_program_scoped(&mut prog);
     }

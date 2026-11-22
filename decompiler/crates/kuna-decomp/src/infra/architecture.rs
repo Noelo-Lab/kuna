@@ -413,6 +413,8 @@ pub struct Architecture {
     /// (kuna `callerreads`) Every direct call the Listing walked, as `(callee
     /// entry, address the call returns to)`, sorted. Empty without the Listing.
     pub kuna_call_returns: Vec<(u64, u64)>,
+    /// Raw Thumb call continuations, with the caller's containing entry.
+    pub kuna_raw_thumb_call_returns: Vec<(u64, u64, u64)>,
     /// (kuna `boolbyte`) Offer `bool` as a `getLocalType` candidate for a byte
     /// whose every read is a truth test.  Implementation:
     /// [`kuna_boolbyte`](crate::p5_types::kuna_boolbyte).
@@ -2373,6 +2375,7 @@ impl Architecture {
             kuna_float_scan_batch: false,
             kuna_settle_caller_reads: false,
             kuna_call_returns: Vec::new(),
+            kuna_raw_thumb_call_returns: Vec::new(),
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             arm_constant_shift: crate::p9_emit::kuna_armconstantshift::ConstShiftMode::Off,
             wrap_add: false,

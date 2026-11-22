@@ -107,8 +107,8 @@ pub(crate) fn parse_flag(value: &str) -> Result<Vec<FuncDecl>, String> {
 
 /// Apply the declarations to a loaded program (the in-process surfaces).
 ///
-/// Runs AFTER the analysis commit, so a declaration outranks whatever discovery
-/// decided about the same address — that is the whole point of the flag.
+/// Object-backed programs apply declarations after discovery. On a raw image
+/// entry-only declarations also seed the discovery walk.
 pub(crate) fn apply(
     prog: &mut kuna_console::engine::ConsoleProgram,
     decls: &[FuncDecl],

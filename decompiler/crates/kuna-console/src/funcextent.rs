@@ -13,9 +13,8 @@
 //! `[entry, min(next_entry, end_of_containing_code_section))` — the same
 //! reconstruction `kuna_analysis`'s FID extent generator
 //! (`analyzers/fid/extent.rs`) and `noreturn_disc` already use where they need a
-//! body from an entry-keyed model. It reuses the entry list and the loader's
-//! section table, both already in hand, so the cheap inventory call stays cheap:
-//! no decode, no Listing, no per-function work beyond a binary search.
+//! body from an entry-keyed model. For object-backed images it needs only the
+//! entry list and the loader's section table, not a decode.
 //!
 //! # What the number means
 //!
@@ -46,12 +45,11 @@
 //!
 //! # Where the code range holds data too
 //!
-//! An MS-DOS executable or a `--raw-image` x86 real-mode program has no section
-//! table: its one CODE range is the whole load module, DGROUP and far data
-//! segments included, so the clip ran a function that data follows on to the
-//! next entry. There the raw discovery measures where each entry's flow ends
-//! (`kuna_analysis::listing::kuna_rawextent`) and [`bound_by_flow`] cuts the
-//! clip there; an address past its function's flow has no extent.
+//! A headerless raw image or an MS-DOS executable has no section table to
+//! separate code and data. Raw discovery measures flow ends where it can
+//! (`kuna_analysis::listing::kuna_rawextent`) and [`bound_by_flow`] shortens
+//! the clip there. An unmeasured entry keeps the clip; an address past a
+//! measured flow end has no extent.
 //!
 //! # LOSS
 //!
@@ -122,7 +120,7 @@ pub(crate) fn spans(sections: &[(u64, u64, u32)], segments: &[(u64, u64, u32)]) 
 /// single-target paths (`--addr` on an address the enumeration does not know),
 /// where there is no bulk pass to piggyback on.
 pub(crate) fn extent_at(entry: u64, ascending_entries: &[u64], code: &[CodeSpan]) -> u64 {
-    let next = ascending_entries.iter().copied().find(|&e| e > entry);
+    let next = ascending_entries.get(ascending_entries.partition_point(|&e| e <= entry)).copied();
     clip(entry, next, code)
 }
 

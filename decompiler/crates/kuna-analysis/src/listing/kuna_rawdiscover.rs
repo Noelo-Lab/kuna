@@ -32,11 +32,13 @@
 //! sweep its relocations ([`super::kuna_mzsweep`]). `--define-function`
 //! remains the way to assert a boundary neither oracle found.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
+use kuna_base::address::Address;
 use kuna_base::space::AddrSpace;
 use kuna_decomp::architecture::Architecture;
+use kuna_decomp::kuna_fasthash::FxHashSet;
 use kuna_sleigh::translate::Translate;
 
 use crate::listing::classify::classify;
@@ -48,18 +50,19 @@ use crate::listing::{Listing, ListingDetail};
 
 /// What [`discover`] finds in a raw image.
 pub struct RawDiscovery {
-    /// Every function entry, sorted.
+    /// Sorted entries to install now, excluding assertion-only roots.
     pub entries: Vec<u64>,
     /// The DOS exits of the code the descent decoded ([`kuna_dosexit`]).
     pub dos_exits: DosExits,
-    /// Where each entry's flow ends ([`kuna_rawextent`]), on x86 real mode.
+    /// Proven flow bounds from [`kuna_rawextent`]; absent entries keep the clip.
     pub flow_ends: Option<BTreeMap<u64, u64>>,
+    /// Direct Thumb calls as (callee, continuation, containing caller entry), sorted.
+    pub call_returns: Vec<(u64, u64, u64)>,
 }
 
 /// Every function entry a raw image yields: the seeds, the targets of every
 /// direct call in the executable bytes, and the direct-call closure of both,
-/// with the DOS exits of the code the descent decoded and, on x86 real mode,
-/// where each entry's flow ends.
+/// with the DOS exits and any flow ends the raw Listing can measure.
 ///
 /// A seed is never dropped, so the inventory can only grow; an image whose
 /// seeds reach no call and whose gaps hold no code returns exactly what the
@@ -70,19 +73,44 @@ pub struct RawDiscovery {
 /// than walked into the void. `mz`, an MS-DOS executable's evidence, holds the
 /// sweep to the calls [`super::kuna_mzsweep`] keeps and the targets that open
 /// with code.
+///
+/// `assertion_roots` also seed descent and extent measurement but do not supply
+/// synthetic symbols unless ordinary discovery would find them too.
 pub fn discover(
     arch: &Architecture,
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
     exec_ranges: &[(u64, u64)],
     seeds: &[u64],
+    assertion_roots: BTreeSet<u64>,
     mz: Option<&MzEvidence>,
 ) -> RawDiscovery {
     if seeds.is_empty() || exec_ranges.is_empty() {
-        return RawDiscovery { entries: seeds.to_vec(), dos_exits: DosExits::default(), flow_ends: None };
+        return RawDiscovery {
+            entries: seeds.to_vec(),
+            dos_exits: DosExits::default(),
+            flow_ends: None,
+            call_returns: Vec::new(),
+        };
     }
+    let real_mode = kuna_dosexit::is_real_mode(&arch.archid);
+    let explicit_arm_isa = !real_mode && arch.input_arm_isa_override;
+    // Keep the whole-image ISA choice fixed, but let IT state propagate within
+    // each decode walk.
+    let _isa_scope = if explicit_arm_isa {
+        translate.decode_context_scope().inspect(|scope| {
+            let _ = scope.protect_variable(b"TMode");
+        })
+    } else {
+        None
+    };
+    let thumb = explicit_arm_isa
+        && arch.with_context_db(|db| {
+            db.get_variable_value(b"TMode", &Address::new(Rc::clone(code_space), seeds[0])).ok()
+        }) == Some(1);
     let mut roots: Vec<u64> = seeds.to_vec();
     roots.extend(crate::loader::kuna_realmodecs::without_commits(arch, translate, || {
+        let _scope = if real_mode { None } else { translate.decode_context_scope() };
         let swept = sweep_call_targets(translate, code_space, exec_ranges, mz);
         match mz {
             Some(mz) => swept
@@ -97,10 +125,16 @@ pub fn discover(
     }));
     roots.sort_unstable();
     roots.dedup();
+    let mut deferred = assertion_roots;
+    deferred.retain(|entry| roots.binary_search(entry).is_err());
+    let ordinary_start = deferred.len();
+    if ordinary_start != 0 {
+        // The Listing's LIFO walk should decode ordinary roots first.
+        drop(roots.splice(..0, deferred.iter().copied()));
+    }
 
-    // One descent over the union of the seeds and the swept roots. Only the
-    // function partition is read back, so the disassembly text and the
-    // reference model are not built.
+    // One descent over all roots. PARTITION_ONLY retains instruction lengths
+    // and flow edges without disassembly text or cross-reference indexes.
     let listing = Listing::build_raw(
         arch,
         translate,
@@ -116,7 +150,39 @@ pub fn discover(
     out.dedup();
     let dos_exits = kuna_dosexit::analyze(arch, translate, code_space, &listing);
     let flow_ends = kuna_rawextent::measure(arch, translate, code_space, &listing, &out, &dos_exits);
-    RawDiscovery { entries: out, dos_exits, flow_ends }
+    if !deferred.is_empty() {
+        // An ordinary reachable call can also discover an assertion root that
+        // was not found by the sweep (for example, at a different alignment).
+        remove_discovered_roots(&listing, &roots[ordinary_start..], &mut deferred);
+        out.retain(|entry| !deferred.contains(entry));
+    }
+    let call_returns = if thumb {
+        super::kuna_callerreads::raw_call_returns(&listing)
+    } else {
+        Vec::new()
+    };
+    RawDiscovery { entries: out, dos_exits, flow_ends, call_returns }
+}
+
+fn remove_discovered_roots(listing: &Listing, roots: &[u64], deferred: &mut BTreeSet<u64>) {
+    let mut pending = roots.to_vec();
+    let mut seen = FxHashSet::default();
+    while let Some(vma) = pending.pop() {
+        if !seen.insert(vma) {
+            continue;
+        }
+        let Some(insn) = listing.instruction_at(vma) else { continue };
+        if insn.flow.is_call {
+            for target in &insn.flows {
+                deferred.remove(target);
+            }
+            if deferred.is_empty() {
+                break;
+            }
+        }
+        pending.extend(insn.flows.iter().copied());
+        pending.extend(insn.fall_through);
+    }
 }
 
 /// Decode `exec_ranges` end to end and return the target of every direct call.
@@ -133,9 +199,9 @@ pub fn discover(
 /// register contributes nothing, because there is no address to contribute.
 /// Targets outside `exec_ranges` are dropped.
 ///
-/// [`discover`] runs it with x86 real-mode segment commits masked off
-/// ([`crate::loader::kuna_realmodecs::without_commits`]): a branch decoded from
-/// data must not move the segment the code after its target decodes in.
+/// [`discover`] isolates the sweep's context writes so that decodes from data
+/// cannot change the context the descent starts in. The real-mode path instead
+/// keeps its existing `realCS` write mask ([`crate::loader::kuna_realmodecs`]).
 fn sweep_call_targets(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,

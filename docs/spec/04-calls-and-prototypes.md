@@ -9611,8 +9611,7 @@ call graph, it settles returns from its decompiled callers and skips this raw
 check. Other batches use the raw evidence just as a single-function run does.
 For example, a selected function can return an indirect call's result because
 an unselected direct caller reads its return register. Float global scanning
-still follows batch size. A run without the Listing (the XML corpora, a raw
-image) has no call to read. A function nothing calls directly, or whose callers
+still follows batch size. A function nothing calls directly, or whose callers
 all ignore the register, stays `void`. Over every function
 of gzip, dash and diff at -O2 (941), 17 change, each from `void` to the value its
 callers use: dash's `ckmalloc`, `ckrealloc` and diff's `xrealloc` return their
@@ -9621,6 +9620,35 @@ return what they tail-call or call, and nine PLT stubs return the import's resul
 (`v1 = (*dat_17e58)(); return v1;` for `lseek`). Each prints the signature
 `decompile-all` prints. Only a function whose callers read it pays for a second
 drive.
+
+On a headerless Thumb image, the partition walk retains unconditional direct
+calls and their decoded continuations without constructing a cross-reference
+model or counting call-like bytes found only by the linear sweep
+(`decompiler/crates/kuna-analysis/src/listing/kuna_callerreads.rs
+(raw_call_returns)`). Predicated calls provide no evidence: execution can reach
+their continuation without calling the function. With `protoorder` on, a
+discovered caller that consumes the whole `r0` word before overwriting it or
+reaching another call can justify a redo, even when only the wrapper is
+selected. Only instructions reached from one caller entry supply evidence.
+The probe checks the full instruction width against that caller's declared
+bound. A `bl` followed by an ordinary
+`pop {..., pc}` often needs more than that read: a raw image does not say
+whether the unknown callee returns an integer or floating-point value in `r0`.
+With `callrettype` on, the redo can temporarily use the proved return storage of
+up to four local direct callees, at most 512 instructions each, without
+recursing or changing their stored prototypes. A candidate is the last direct
+call on a return's block or its single-predecessor chain (at most four blocks).
+It must itself recover a value in the same storage on every ordinary return
+within any caller-declared byte extent. If the isolated drive cannot apply a
+callee-specific directive, it does not use that callee as evidence.
+A computed but untyped full word qualifies without inferring a source type.
+The forced SSA trial still has to reach every reachable ordinary return.
+Incomplete flow supplies no value, including an unresolved indirect jump that
+the flow builder renders as a call and synthetic return. A genuine indirect
+call or an explicitly resolved tail transfer is not such a jump. A killed or
+unassigned register and a locked `void` return supply no value either. Any write
+after the call supplies its own value rather than forwarding the call result.
+Other headerless targets do not file this caller evidence.
 
 An explicitly freed x87 ST0 is not an inferred return value. Before SSA, a
 must-empty analysis records ordinary returns reached with ST0 empty on every

@@ -1,36 +1,14 @@
-//! (kuna #1288) Where a function of an x86 real-mode raw image ends.
+//! Bound raw-image function extents by their decoded control flow.
 //!
-//! The inventory measures a function as the clip from its entry to the next
-//! entry or the end of its CODE section (`kuna-console/src/funcextent.rs`).
-//! That is an honest bound where the section table says which bytes are code.
-//! An MS-DOS executable and a `--raw-image` real-mode program have no section
-//! table: the loader publishes the whole load module as one CODE range, its
-//! DGROUP and far data segments included, so a function that data follows ran
-//! on to the next entry. On the unpacked DAZZLE.EXE of issue #1288 a 28-byte
-//! function in front of DGROUP measured 12,174 bytes, and `kuna disassemble`
-//! listed DGROUP as its instructions.
+//! A raw loader's CODE range includes data, so clipping at the next entry or
+//! range end can attribute that data to a preceding function. [`measure`]
+//! shortens the clip only when the raw Listing accounts for the function's
+//! flow. The extent remains contiguous and counts any holes before the last
+//! reached instruction. The walk follows branches outside the clip as well:
+//! they can lead back into it.
 //!
-//! [`measure`] ends each entry where its flow does, over the descent the raw
-//! discovery already decoded: at the end of the last instruction its flow
-//! reaches between the entry and the next entry, so the span is still
-//! contiguous from the entry and can only be shorter than the clip. The flow
-//! is followed wherever it goes short of another entry, since a path can leave
-//! the span and come back into it, and only what it reaches in the span
-//! counts. A fall-through or jump into another entry ends the path, where the
-//! decompiler bounds the fall-through and prints the jump as a tail call, but
-//! a conditional branch into one is followed on, as the decompiler's flow
-//! follows it. Calls are not entered (the callee is another function) and fall
-//! through unless the callee is no-return; a DOS exit
-//! ([`super::kuna_dosexit`]) has no successor. A branch through a `cs:` table
-//! that lies in the span, which the descent leaves unresolved, reaches the
-//! table's words that name an address in the span, decoded here when the
-//! descent did not decode them; a branch through a fixed word (`jmp
-//! [0x2ef2]`) leaves the function, as the decompiler's tail call does; any
-//! other computed branch has targets nothing names, so its entry is left
-//! unmeasured and keeps the clip. An address a path reaches that does not
-//! decode counts by its first byte. Bytes between reached instructions stay
-//! in the span (a switch table in the body); a table after the last
-//! instruction does not.
+//! x86 real mode keeps its DOS-specific rules, including no-return exits and
+//! the recovery of a `cs:` table or fixed-word indirect tail call from p-code.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -47,10 +25,9 @@ use kuna_sleigh::translate::Translate;
 use crate::listing::classify::classify;
 use crate::listing::decode::decode_one;
 use crate::listing::kuna_dosexit::{self, DosExits, Op};
-use crate::listing::Listing;
+use crate::listing::{FlowKind, Listing};
 
-/// The exclusive end of every measured entry's flow, keyed by entry, or `None`
-/// when the language is not x86 real mode.
+/// Exclusive flow ends keyed by entry; an unmeasured entry keeps its clip.
 ///
 /// `entries` is the whole inventory, ascending.
 pub fn measure(
@@ -62,7 +39,8 @@ pub fn measure(
     exits: &DosExits,
 ) -> Option<BTreeMap<u64, u64>> {
     if !kuna_dosexit::is_real_mode(&arch.archid) {
-        return None;
+        let ends = measure_listing(listing, entries);
+        return (!ends.is_empty()).then_some(ends);
     }
     let walk = Walk {
         arch,
@@ -96,6 +74,96 @@ pub fn measure(
 /// The most instructions one entry's walk visits before it gives up and the
 /// entry keeps its clip.
 const MAX_VISITS: usize = 1 << 14;
+
+/// Allow modest shared flow between entries, but not an unbounded number of
+/// repeated walks over the same suffix. One pass over disjoint bodies uses
+/// at most one visit per decoded instruction.
+const LISTING_VISIT_MULTIPLIER: usize = 4;
+
+/// Use only the raw Listing's instruction and flow records. In particular, a
+/// missing target is not a reason to try a fresh decode in a different context.
+fn measure_listing(listing: &Listing, entries: &[u64]) -> BTreeMap<u64, u64> {
+    let ranges = listing.exec_ranges();
+    let mut ends = BTreeMap::new();
+    let mut seen = FxHashSet::default();
+    let mut pending = Vec::new();
+    let mut remaining = listing.num_instructions().saturating_mul(LISTING_VISIT_MULTIPLIER);
+    for (i, &entry) in entries.iter().enumerate() {
+        if remaining == 0 {
+            break;
+        }
+        let Some(&(_, hi)) = ranges.iter().find(|&&(lo, hi)| (lo..hi).contains(&entry)) else {
+            continue;
+        };
+        let bound = entries.get(i + 1).map_or(hi, |&next| hi.min(next));
+        if let Some(end) = listing_end(listing, entry, bound, &mut seen, &mut pending, &mut remaining) {
+            ends.insert(entry, end);
+        }
+    }
+    ends
+}
+
+/// Return a shorter end only after all paths close in the decoded graph.
+fn listing_end(
+    listing: &Listing,
+    entry: u64,
+    bound: u64,
+    seen: &mut FxHashSet<u64>,
+    pending: &mut Vec<u64>,
+    remaining: &mut usize,
+) -> Option<u64> {
+    seen.clear();
+    pending.clear();
+    pending.push(entry);
+    let mut end = entry;
+    while let Some(vma) = pending.pop() {
+        if !seen.insert(vma) {
+            continue;
+        }
+        if seen.len() > MAX_VISITS || *remaining == 0 {
+            return None;
+        }
+        *remaining -= 1;
+        let insn = listing.instruction_at(vma)?;
+        let next = vma.checked_add(u64::from(insn.len))?;
+        if insn.len == 0
+            || !listing.exec_ranges().iter().any(|&(lo, hi)| lo <= vma && next <= hi)
+        {
+            return None;
+        }
+        if vma < bound {
+            end = end.max(next);
+            if end >= bound {
+                return None;
+            }
+        }
+
+        let flow = insn.flow;
+        if flow.is_call {
+            // For a predicated call the classifier already removed its skip
+            // to the next instruction from the target list.
+            let call_only = match flow.kind {
+                FlowKind::Call => insn.flows.len() == 1,
+                FlowKind::ComputedCall => insn.flows.is_empty(),
+                _ => false,
+            };
+            if !call_only || flow.is_terminal || (flow.is_jump && !flow.is_conditional) {
+                return None;
+            }
+            pending.push(insn.fall_through?);
+            continue;
+        }
+        if flow.is_computed
+            || (!flow.is_terminal && insn.flows.is_empty() && insn.fall_through.is_none())
+            || (flow.is_conditional && insn.fall_through.is_none() && !insn.flows.contains(&next))
+        {
+            return None;
+        }
+        pending.extend(insn.flows.iter().copied());
+        pending.extend(insn.fall_through);
+    }
+    Some(end)
+}
 
 /// The most words read from one table, as [`super::kuna_dosexit`] reads.
 const MAX_TABLE: u64 = 256;
