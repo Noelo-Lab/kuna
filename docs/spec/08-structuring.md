@@ -1303,8 +1303,13 @@ structured tree, outer switches first, the plan lists the arms to print:
   left out and the arm holding the code prints `default:` in place of its
   labels.
 
-An arm moves or is left out only when the arm printed before it does not fall
-into it. The census reads the plan: a left-out jump keeps no label alive, and
+An arm moves or is left out only when the arm printed before it cannot run
+into it. That is read from the printed code, not the case's structured edges:
+the arm before must end in a `break;`, in a jump that prints, or in a leaf
+whose basic block has no successor. A jump to the arm after it in the
+switch's own order prints as nothing, and a tail the cross-jump reverter
+duplicated into the arm carries no edges; both run into the next arm. The
+census reads the plan: a left-out jump keeps no label alive, and
 the target of a `break;` inside a merged switch is the block after the switch
 that is printed. The plan only changes which arm a value is printed under,
 never which code runs for it. It applies to the C switch form only.
