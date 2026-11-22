@@ -2425,8 +2425,15 @@ the case targets.
    register through the small lattice the dispatch shapes need and names
    the table of each computed jump the fold proves reads one, sorted on the
    function (`Funcdata::kuna_extent_tables`, shared with the recovery
-   partial). With two or more tables named, the recovery runs once more:
-   when the basic model finds the range unbounded and every other fallback
+   partial). An instruction that branches inside its own p-code (AArch64
+   `csel`/`csinc` lift to a conditional branch over one copy) joins two
+   values, so the fold takes what it writes after the branch as unknown,
+   not as its last copy: a dispatch that picks its index with a `csel`
+   over constants and adds it to the table's address before the load
+   otherwise reads as a load from one address, its table is never named,
+   and the table before it runs on into it. With
+   two or more tables named, the recovery runs once more: when the basic
+   model finds the range unbounded and every other fallback
    declines, `jumptable.rs (JumpBasicModel::kuna_try_extent_bound_table)`
    takes the melded path's one LOAD, reads its address as a constant table
    plus an index scaled by the entry width (`kuna_switchextent.rs
