@@ -6230,8 +6230,8 @@ every other binary's pass list is byte-identical to before the pass existed):
     the sending method's class (its label `-[Foo bar]` names it), `[super
     init…]` returns that class, and a super send is never retargeted either,
     since its first argument is the `objc_super`. On a 390-function sample of
-    a 72 MB iOS app this resolves 64 more sends (64 to 128) and types 14 more
-    results as class pointers; `tests/stages/kuna-objcsdksend.xml` runs a
+    a 72 MB iOS app this resolves 64 more sends (64 to 128) and types 12 more
+    locals as class pointers (108 to 120); `tests/stages/kuna-objcsdksend.xml` runs a
     fixture that sends to an imported class with the option off and on.
 
   Decoding every method's encoding asks the type factory for `objc_object *`
