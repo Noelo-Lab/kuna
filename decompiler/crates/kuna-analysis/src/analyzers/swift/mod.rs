@@ -146,6 +146,13 @@ impl AnalysisPass for SwiftMetadataPass {
             budget: std::cell::Cell::new(NAME_BYTES.saturating_add(ctx.bytes.len())),
         };
         namer.emit(&mut out);
+        out.swift_enum_cases = md
+            .contexts
+            .values()
+            .filter(|c| c.kind == ContextKind::Enum && c.num_cases > 0)
+            .filter_map(|c| Some((c.accessor?, c.num_cases)))
+            .collect();
+        out.swift_enum_cases.sort_unstable();
         if ctx.arch.analysis_swifttypes {
             let mut types = kuna_swifttypes::Types::new(
                 &md,
