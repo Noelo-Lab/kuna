@@ -1968,6 +1968,9 @@ pub struct Architecture {
     /// (kuna `swiftcall`) The Swift registers and the throwing model
     /// ([`crate::kuna_swiftcall`]).
     pub loader_swift_abi: Option<Rc<crate::kuna_swiftcall::SwiftAbi>>,
+    /// (kuna `swiftmetadata`) Each local Swift enum's case count by its
+    /// metadata accessor's entry offset (`p2_lift/kuna_switchextent.rs`).
+    pub loader_swift_enum_cases: Rc<std::collections::BTreeMap<u64, u32>>,
     /// (kuna) Gate the PE PDB metadata recovery pass (`pdb`); default **off**. The
     /// kuna analog of Ghidra's `PdbUniversalAnalyzer` (the pure-Java PDB analyzer;
     /// the MS-DIA `PdbAnalyzer` is Windows-native and out of scope) — the
@@ -2696,6 +2699,7 @@ impl Architecture {
             loader_proto_models: Rc::default(),
             loader_input_hints: std::collections::BTreeMap::new(),
             loader_swift_abi: None,
+            loader_swift_enum_cases: Rc::default(),
             analysis_pdb: true,
             macho_arm64e: false,
 
@@ -3846,6 +3850,7 @@ impl Architecture {
             };
         ctx.bound_proto_models = Rc::clone(&self.loader_proto_models);
         ctx.swift_abi = self.loader_swift_abi.clone();
+        ctx.swift_enum_cases = Rc::clone(&self.loader_swift_enum_cases);
         ctx.virtual_this = crate::p4_calls::kuna_calleereginputs::virtual_this(self);
         // Carry the constant-pointer-inference config (C++ `glb->infer_pointers`)
         // and the ordered inferable-pointer spaces (C++ `glb->inferPtrSpaces`,

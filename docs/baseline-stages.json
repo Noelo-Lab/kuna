@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4946,
-    4946
+    4947,
+    4947
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4721,6 +4721,7 @@
     "data:switchnext #3: no phantom case 3 with the option on",
     "data:switchnext #4: last_two, the last function, still recovers its table when no function follows: its case 1 returns 0x33",
     "data:switchnext #5: disp, whose bounded table has a row in the next function, keeps its second switch: case 2 returns 0x16",
+    "data:switchnext #6: last_two's tab_a ends at tab_b, so neither table is a computed call",
     "data:switchnextcsel #1: the byte-masked table ends at pick's table: cases 0 to 2",
     "data:switchnextcsel #2: no phantom case 3",
     "data:switchnextcsel #3: name_of ends in its switch, not a computed call",
