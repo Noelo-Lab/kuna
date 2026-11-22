@@ -6,13 +6,16 @@
      for the stack and asks for a restart, which re-follows flow and analyses
      main again. The pass stops after that heritage and the restart begins at
      once, where upstream finishes the doomed pass first; the body and the IR
-     are the ones upstream's order leaves.
+     are the ones upstream's order leaves. The script turns calloverlap off:
+     by default the calls take the float arguments their callees read
+     (kuna-calleefloatreads.xml), and main no longer restarts.
 -->
 </binaryimage>
 <script>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatret_wrap_gcc_O2</com>
   <com>read symbols</com>
+  <com>option calloverlap off</com>
   <com>load function main</com>
   <com>decompile</com>
   <com>print C</com>
