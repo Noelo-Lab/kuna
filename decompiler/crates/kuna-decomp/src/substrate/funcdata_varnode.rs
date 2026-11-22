@@ -2954,6 +2954,8 @@ pub(crate) struct AncestorRealistic {
     /// thus an invalid input — that path must `pop_fail`
     /// (funcdata_varnode.cc:2086).
     trial_killed_by_call: bool,
+    /// The op whose input the walk scores (a CALL or a RETURN).
+    reader: Option<OpId>,
     /// Accumulated trial mutations (the C++ mutates `trial` in place during the
     /// walk; collected here and applied by the caller after `execute`).
     set_ind_create_formed: bool,
@@ -2981,6 +2983,7 @@ impl AncestorRealistic {
             allow_failing_path: false,
             trial_size: 0,
             trial_killed_by_call: false,
+            reader: None,
             set_ind_create_formed: false,
             set_cond_exe_effect: false,
             input_fail_reader: None,
@@ -3131,7 +3134,11 @@ impl AncestorRealistic {
                     // marks every non-spacebase (register) trial killedbycall, so
                     // a register argument backtracing through a prior call's
                     // clobber INDIRECT is rejected here.
-                    if self.trial_killed_by_call {
+                    if self.trial_killed_by_call
+                        && !self.reader.is_some_and(|reader| {
+                            crate::p4_calls::kuna_calleepreserves::preserved_for_reader(fd, op, reader)
+                        })
+                    {
                         return AncestorCmd::PopFail;
                     }
                 }
@@ -3380,6 +3387,7 @@ impl AncestorRealistic {
         self.allow_failing_path = allow_fail;
         self.trial_size = trial_size;
         self.trial_killed_by_call = trial_killed_by_call;
+        self.reader = Some(op);
         self.marked_vn.clear();
         self.state_stack.clear();
         self.multi_depth = 0;

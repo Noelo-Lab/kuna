@@ -129,13 +129,37 @@ fn a_scratch_only_helper_that_spills_is_a_body() {
     );
 }
 
-/// A body that writes no memory is what a stub, a placeholder and an entry
+/// A body that touches no memory is what a stub, a placeholder and an entry
 /// decoded at the wrong address all decode to, and its silence is not evidence.
 #[test]
-fn a_body_that_stores_nothing_is_not_a_body() {
+fn a_body_that_touches_no_memory_is_not_a_body() {
     let mut fd = build_fd();
     let (fc, entry) = build_call(&mut fd, 0x2000);
     fd.kuna_set_callee_ret_writes(&entry, probe_summary(&fd, 19, false));
+    let rax = Address::new(space(&fd, "ram"), 0x00);
+    assert!(!callee_preserves_range(&fd, &fc, &rax, 8));
+}
+
+/// A leaf that loads through its argument and returns the result stores
+/// nothing, and is still a body: `mov rax,rsi; add rax,[rdi]; ret`.
+#[test]
+fn a_scratch_only_helper_that_loads_is_a_body() {
+    let mut fd = build_fd();
+    let (fc, entry) = build_call(&mut fd, 0x2000);
+    let summary = Rc::unwrap_or_clone(probe_summary(&fd, 4, false)).reading_offstack_memory();
+    fd.kuna_set_callee_ret_writes(&entry, Rc::new(summary));
+    let rax = Address::new(space(&fd, "ram"), 0x00);
+    assert!(callee_preserves_range(&fd, &fc, &rax, 8));
+}
+
+/// A leaf that reads only its own stack arguments is not admitted on that
+/// read: `mov eax,[esp+4]; imul eax,eax,7; ret`.
+#[test]
+fn a_helper_that_reads_only_its_stack_is_not_a_body() {
+    let mut fd = build_fd();
+    let (fc, entry) = build_call(&mut fd, 0x2000);
+    let summary = Rc::unwrap_or_clone(probe_summary(&fd, 3, false)).reading_memory();
+    fd.kuna_set_callee_ret_writes(&entry, Rc::new(summary));
     let rax = Address::new(space(&fd, "ram"), 0x00);
     assert!(!callee_preserves_range(&fd, &fc, &rax, 8));
 }

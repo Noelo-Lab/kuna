@@ -402,6 +402,10 @@ pub struct CalleeReturnWrites {
     /// [`Self::proves_untouched_for`].
     through_mode_switch: bool,
     reads_nonreturn_memory: bool,
+    /// Did the body read memory not addressed from the stack pointer: a
+    /// `LOAD` through another pointer, or a direct operand (x86's
+    /// `mov eax,[rip+X]` lifts to a `ram` varnode)?
+    reads_offstack_memory: bool,
     writes_stack_outside_return: bool,
 }
 
@@ -457,6 +461,12 @@ impl CalleeReturnWrites {
         self.reads_nonreturn_memory
     }
 
+    /// Did the body read memory other than its own stack frame and incoming
+    /// stack arguments, through a `LOAD` or a direct memory operand?
+    pub fn reads_offstack_memory(&self) -> bool {
+        self.reads_offstack_memory
+    }
+
     pub fn stack_pointer_preserved_until_return(&self) -> bool {
         !self.writes_stack_outside_return
     }
@@ -501,6 +511,7 @@ impl CalleeReturnWrites {
             return_targets: Vec::new(),
             through_mode_switch: false,
             reads_nonreturn_memory: false,
+            reads_offstack_memory: false,
             writes_stack_outside_return: false,
         }
     }
@@ -508,6 +519,14 @@ impl CalleeReturnWrites {
     #[cfg(test)]
     pub fn reading_memory(mut self) -> Self {
         self.reads_nonreturn_memory = true;
+        self
+    }
+
+    /// This summary, as a walk that loaded through a pointer other than the
+    /// stack pointer would leave it.
+    #[cfg(test)]
+    pub fn reading_offstack_memory(mut self) -> Self {
+        self.reads_offstack_memory = true;
         self
     }
 
@@ -544,6 +563,7 @@ impl CalleeReturnWrites {
             return_targets: Vec::new(),
             through_mode_switch: false,
             reads_nonreturn_memory: false,
+            reads_offstack_memory: false,
             writes_stack_outside_return: false,
         }
     }
@@ -595,6 +615,10 @@ struct ProbeEmit {
     return_targets: Vec<(int4, u64, int4)>,
     store_spaces: Vec<int4>,
     loads: Vec<(kuna_num::pcoderaw::VarnodeData, kuna_num::pcoderaw::VarnodeData)>,
+    /// The stack-pointer registers, and the temporaries this instruction
+    /// computed from them.
+    stack: Vec<kuna_num::pcoderaw::VarnodeData>,
+    offstack_read: bool,
     return_inputs: Vec<kuna_num::pcoderaw::VarnodeData>,
     targets: Vec<Address>,
     ends_flow: bool,
@@ -704,6 +728,21 @@ impl kuna_sleigh::translate::PcodeEmit for ProbeEmit {
                 }
             }
         }
+        if !matches!(opc, OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH | OpCode::CPUI_CALL) {
+            self.offstack_read |= vars.iter().any(|v| {
+                v.space.as_ref().is_some_and(|sp| sp.get_type() == spacetype::IPTR_PROCESSOR && sp.get_name() != "register")
+            });
+        }
+        let from_stack = match opc {
+            OpCode::CPUI_COPY | OpCode::CPUI_INT_SUB => &vars[..vars.len().min(1)],
+            OpCode::CPUI_INT_ADD => vars,
+            _ => &[],
+        };
+        if let Some(o) = outvar.filter(|o| o.space.as_ref().is_some_and(|sp| sp.get_type() == spacetype::IPTR_INTERNAL)) {
+            if from_stack.iter().any(|v| self.stack.iter().any(|sp| Self::same_storage(sp, v))) {
+                self.stack.push(o.clone());
+            }
+        }
         match opc {
             // The vector of an `INT imm8` reaches the `swi` user-op through an
             // internal temp, so the constant has to be carried that far.
@@ -776,6 +815,7 @@ impl kuna_sleigh::translate::PcodeEmit for ProbeEmit {
             // (`Varnode::getSpaceFromConst`).
             OpCode::CPUI_LOAD => {
                 if let (Some(out), Some(ptr)) = (outvar, vars.get(1)) {
+                    self.offstack_read |= !self.stack.iter().any(|sp| Self::same_storage(sp, ptr));
                     self.loads.push((out.clone(), ptr.clone()));
                 } else { self.unresolved = true; }
             }
@@ -837,6 +877,7 @@ pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>
         return_targets: Vec::new(),
         through_mode_switch: false,
         reads_nonreturn_memory: false,
+        reads_offstack_memory: false,
         writes_stack_outside_return: false,
     };
     let Some(entry_space) = entry.get_space() else {
@@ -868,6 +909,7 @@ pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>
         }
         budget -= 1;
         let mut emit = ProbeEmit {
+            stack: return_stack.clone(),
             fastfail_swi: userops.fastfail_swi,
             mode_switch: userops.mode_switch,
             ..ProbeEmit::default()
@@ -880,6 +922,7 @@ pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>
             }
         };
         res.reads_nonreturn_memory |= !emit.loads.is_empty() && !emit.return_only_memory_reads(&return_stack);
+        res.reads_offstack_memory |= emit.offstack_read;
         res.writes_stack_outside_return |= emit.changes_stack_outside_return(&return_stack);
         res.call_facts.extend(emit.resolve_calls(&no_return));
         res.instructions += 1;

@@ -1,5 +1,10 @@
 # Stage-model issue testcases
 
+`kuna-calleepreservesargs.xml` checks registers a leaf callee leaves alone:
+an argument register set once before two calls of a leaf that reads it, and a
+killed-by-call register kept across a leaf that only reads memory. Its control
+leaves a stale register off a callee that never reads it.
+
 `kuna-narrowed-call-input.xml` checks a call through a typed field whose
 argument was narrowed to two bytes before the field's prototype was forced on
 the call: the function decompiles and passes the sum widened to the parameter.
