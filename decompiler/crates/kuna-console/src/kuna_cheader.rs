@@ -209,8 +209,9 @@ fn split_declarations(file: &str, text: &str) -> Vec<Chunk> {
     let mut parens = 0usize;
     let mut body = 0usize;
     let mut continued = false;
+    let mut read = Tail::default();
     for raw in text.split('\n') {
-        line += 1;
+        line = line.saturating_add(1);
         let directive = continued || raw.trim_start().starts_with('#');
         if directive {
             if !continued {
@@ -236,14 +237,15 @@ fn split_declarations(file: &str, text: &str) -> Vec<Chunk> {
                 }
                 continue;
             }
-            if cur.trim().is_empty() {
+            if cur.is_empty() {
                 if c.is_whitespace() {
                     continue;
                 }
                 start = (file.clone(), line);
+                read = Tail::default();
             }
             match c {
-                '{' if braces == 0 && parens == 0 && opens_body(&cur) => body = 1,
+                '{' if braces == 0 && parens == 0 && read.opens_body(&cur) => body = 1,
                 '{' if braces == 0 && is_linkage_block(&cur) => cur.clear(),
                 '{' => {
                     braces += 1;
@@ -263,22 +265,50 @@ fn split_declarations(file: &str, text: &str) -> Vec<Chunk> {
                     cur.push(c);
                 }
                 ';' if braces == 0 && parens == 0 => flush(&mut out, &mut cur, &start),
+                _ if c.is_whitespace() && cur.ends_with(char::is_whitespace) => {}
                 _ => cur.push(c),
             }
         }
-        cur.push(' ');
+        if !cur.is_empty() && !cur.ends_with(char::is_whitespace) {
+            cur.push(' ');
+        }
     }
     flush(&mut out, &mut cur, &start);
     out
 }
 
-/// Does a `{` after `cur` open a function body (rather than a record that
-/// carries an attribute before its brace)?
-fn opens_body(cur: &str) -> bool {
-    cur.trim_end().ends_with(')') && undecorated(&words(cur)).last().is_some_and(|t| t == ")")
+/// How much of the declaration being cut [`Tail::opens_body`] has read, and
+/// whether its last undecorated token there was `)`.
+#[derive(Default)]
+struct Tail {
+    read: usize,
+    paren: bool,
 }
 
+impl Tail {
+    /// Does a `{` after `cur` open a function body (rather than a record that
+    /// carries an attribute before its brace)? Asked only where every group is
+    /// closed, so what an earlier call read keeps its reading and only the text
+    /// added since is tokenized: a declaration is read once, not once per brace.
+    fn opens_body(&mut self, cur: &str) -> bool {
+        if !cur.trim_end().ends_with(')') {
+            return false;
+        }
+        if let Some(last) = undecorated(&words(&cur[self.read..])).last() {
+            self.paren = last == ")";
+        }
+        self.read = cur.len();
+        self.paren
+    }
+}
+
+/// `extern "C"` (or `"C++"`) before a `{`. Longer text is never one, which
+/// keeps the check constant-time however long the declaration grows.
 fn is_linkage_block(cur: &str) -> bool {
+    let cur = cur.trim();
+    if cur.len() > 256 {
+        return false;
+    }
     let mut words = cur.split_whitespace();
     words.next() == Some("extern")
         && words.next().is_some_and(|w| w.starts_with('"'))
@@ -379,8 +409,79 @@ fn join(toks: &[String]) -> String {
     out
 }
 
-/// A C integer literal with its suffix, or a one-character constant.
-fn literal(toks: &[String], at: &mut usize) -> Option<i128> {
+/// The type of an integer constant expression, as C's literal and conversion
+/// rules give it. `long` is 32 bits wide on some targets and 64 on others, so a
+/// `long` or `unsigned long` value is kept only while it means the same on both.
+#[derive(Clone, Copy, PartialEq)]
+enum Ty {
+    Int,
+    UInt,
+    Long,
+    ULong,
+    LLong,
+    ULLong,
+}
+
+impl Ty {
+    /// `v` converted to this type as C converts it, or `None` where C leaves
+    /// that undefined or the answer depends on the width of `long`.
+    fn value(self, v: i128) -> Option<i128> {
+        match self {
+            Ty::Int | Ty::Long => i32::try_from(v).ok().map(i128::from),
+            Ty::UInt => Some(v.rem_euclid(1 << 32)),
+            Ty::ULong => u32::try_from(v).ok().map(i128::from),
+            Ty::LLong => i64::try_from(v).ok().map(i128::from),
+            Ty::ULLong => Some(v.rem_euclid(1 << 64)),
+        }
+    }
+
+    fn unsigned(self) -> bool {
+        matches!(self, Ty::UInt | Ty::ULong | Ty::ULLong)
+    }
+
+    fn rank(self) -> u8 {
+        self as u8 / 2
+    }
+
+    /// The type the usual arithmetic conversions give `a` and `b`, where it is
+    /// the same on every target.
+    fn common(a: Ty, b: Ty) -> Option<Ty> {
+        if a.unsigned() == b.unsigned() {
+            return Some(if a.rank() >= b.rank() { a } else { b });
+        }
+        let (u, s) = if a.unsigned() { (a, b) } else { (b, a) };
+        if u.rank() >= s.rank() {
+            Some(u)
+        } else {
+            (s == Ty::LLong && u == Ty::UInt).then_some(s)
+        }
+    }
+
+    /// The type named by a cast's keywords; `char` and `short` are not read.
+    fn named(words: &[String]) -> Option<Ty> {
+        let count = |w: &str| words.iter().filter(|t| *t == w).count();
+        let unsigned = match (count("unsigned"), count("signed")) {
+            (0, _) => false,
+            (1, 0) => true,
+            _ => return None,
+        };
+        if count("char") + count("short") > 0 || count("int") > 1 {
+            return None;
+        }
+        Some(match (count("long"), unsigned) {
+            (0, false) => Ty::Int,
+            (0, true) => Ty::UInt,
+            (1, false) => Ty::Long,
+            (1, true) => Ty::ULong,
+            (2, false) => Ty::LLong,
+            (2, true) => Ty::ULLong,
+            _ => return None,
+        })
+    }
+}
+
+/// A C integer literal or one-character constant, with the type C gives it.
+fn literal(toks: &[String], at: &mut usize) -> Option<(i128, Ty)> {
     let tok = toks.get(*at)?.as_str();
     if tok == "'" {
         let c = toks.get(*at + 1)?;
@@ -388,24 +489,40 @@ fn literal(toks: &[String], at: &mut usize) -> Option<i128> {
             return None;
         }
         *at += 3;
-        return Some(i128::from(c.as_bytes()[0]));
+        return Some((i128::from(c.as_bytes()[0]), Ty::Int));
     }
     let digits = tok.trim_end_matches(['u', 'U', 'l', 'L']);
     let lower = digits.to_ascii_lowercase();
-    let value = if let Some(hex) = lower.strip_prefix("0x") {
-        i128::from_str_radix(hex, 16).ok()?
+    let (value, decimal) = if let Some(hex) = lower.strip_prefix("0x") {
+        (i128::from_str_radix(hex, 16).ok()?, false)
     } else if let Some(bin) = lower.strip_prefix("0b") {
-        i128::from_str_radix(bin, 2).ok()?
+        (i128::from_str_radix(bin, 2).ok()?, false)
     } else if lower.len() > 1 && lower.starts_with('0') {
-        i128::from_str_radix(&lower[1..], 8).ok()?
+        (i128::from_str_radix(&lower[1..], 8).ok()?, false)
     } else {
-        lower.parse().ok()?
+        (lower.parse().ok()?, true)
+    };
+    let types: &[Ty] = match (tok[digits.len()..].to_ascii_lowercase().as_str(), decimal) {
+        ("", true) => &[Ty::Int],
+        ("", false) => &[Ty::Int, Ty::UInt],
+        ("u", _) => &[Ty::UInt],
+        ("l", _) => &[Ty::Long],
+        ("ul" | "lu", _) => &[Ty::ULong],
+        ("ll", true) => &[Ty::LLong],
+        ("ll", false) => &[Ty::LLong],
+        ("ull" | "llu", _) => &[Ty::ULLong],
+        _ => return None,
     };
     *at += 1;
-    Some(value)
+    let ty = types.iter().find(|t| t.value(value) == Some(value))?;
+    Some((value, *ty))
 }
 
-/// An integer constant expression over literals and already-seen enumerators.
+/// An integer constant expression over literals and already-seen enumerators,
+/// evaluated as C evaluates it, with a signed `<<` that wraps as GCC and Clang
+/// define it. `None` for what C leaves undefined (signed overflow, a shift by
+/// the width or more, a division by zero), for an answer that depends on the
+/// target, and for a value the C grammar cannot read back (above `i64::MAX`).
 /// `min` is the lowest binary precedence this call may consume.
 fn constant(
     toks: &[String],
@@ -413,7 +530,7 @@ fn constant(
     min: u8,
     known: &BTreeMap<String, i128>,
     depth: u8,
-) -> Option<i128> {
+) -> Option<(i128, Ty)> {
     if depth > 32 {
         return None;
     }
@@ -421,12 +538,12 @@ fn constant(
     let mut left = match tok {
         "-" | "+" | "~" | "!" => {
             *at += 1;
-            let v = constant(toks, at, 10, known, depth + 1)?;
+            let (v, ty) = constant(toks, at, 10, known, depth + 1)?;
             match tok {
-                "-" => v.checked_neg()?,
-                "~" => !v,
-                "!" => i128::from(v == 0),
-                _ => v,
+                "-" => (ty.value(-v)?, ty),
+                "~" => (ty.value(!v)?, ty),
+                "!" => (i128::from(v == 0), Ty::Int),
+                _ => (v, ty),
             }
         }
         "(" => {
@@ -435,8 +552,15 @@ fn constant(
                 matches!(t.as_str(), "int" | "long" | "short" | "char" | "signed" | "unsigned")
             });
             if cast && close > *at + 1 {
+                let ty = Ty::named(&toks[*at + 1..close])?;
                 *at = close + 1;
-                constant(toks, at, 10, known, depth + 1)?
+                let (v, _) = constant(toks, at, 10, known, depth + 1)?;
+                let v = match ty {
+                    Ty::Int => i128::from(v as i32),
+                    Ty::LLong => i128::from(v as i64),
+                    _ => ty.value(v)?,
+                };
+                (v, ty)
             } else {
                 *at += 1;
                 let v = constant(toks, at, 0, known, depth + 1)?;
@@ -449,7 +573,7 @@ fn constant(
         }
         name if is_identifier(name) => {
             *at += 1;
-            *known.get(name)?
+            (Ty::Int.value(*known.get(name)?)?, Ty::Int)
         }
         _ => literal(toks, at)?,
     };
@@ -474,17 +598,31 @@ fn constant(
         }
         *at += width;
         let right = constant(toks, at, prec + 1, known, depth + 1)?;
-        left = match op {
-            "<<" => left.checked_shl(u32::try_from(right).ok()?)?,
-            ">>" => left.checked_shr(u32::try_from(right).ok()?)?,
-            "|" => left | right,
-            "^" => left ^ right,
-            "&" => left & right,
-            "+" => left.checked_add(right)?,
-            "-" => left.checked_sub(right)?,
-            "*" => left.checked_mul(right)?,
-            "/" => left.checked_div(right)?,
-            _ => left.checked_rem(right)?,
+        let ((a, ty), (b, _)) = (left, right);
+        left = if op == "<<" || op == ">>" {
+            let bits = if matches!(ty, Ty::LLong | Ty::ULLong) { 64 } else { 32 };
+            let n = u32::try_from(b).ok().filter(|n| *n < bits)?;
+            let v = match (op, ty) {
+                (">>", _) => a >> n,
+                ("<<", Ty::Int) => i128::from((a as i32 as u32).wrapping_shl(n) as i32),
+                ("<<", Ty::LLong) => i128::from((a as i64 as u64).wrapping_shl(n) as i64),
+                _ => ty.value(a << n)?,
+            };
+            (v, ty)
+        } else {
+            let ty = Ty::common(ty, right.1)?;
+            let (a, b) = (ty.value(a)?, ty.value(b)?);
+            let v = match op {
+                "|" => a | b,
+                "^" => a ^ b,
+                "&" => a & b,
+                "+" => a + b,
+                "-" => a - b,
+                "*" => a.checked_mul(b)?,
+                "/" => a.checked_div(b)?,
+                _ => ty.value(a.checked_div(b)?).and(a.checked_rem(b))?,
+            };
+            (ty.value(v)?, ty)
         };
     }
 }
@@ -492,8 +630,15 @@ fn constant(
 /// The value of `toks` when all of it is one constant expression.
 fn whole_constant(toks: &[String], known: &BTreeMap<String, i128>) -> Option<i128> {
     let mut at = 0;
-    let value = constant(toks, &mut at, 0, known, 0)?;
-    (at == toks.len()).then_some(value)
+    let (value, _) = constant(toks, &mut at, 0, known, 0)?;
+    (at == toks.len() && i64::try_from(value).is_ok()).then_some(value)
+}
+
+/// Is `toks` one literal the C grammar reads as C does? A binary literal is
+/// not (the grammar stops at its `b`), nor is an enumerator name.
+fn read_as_written(toks: &[String]) -> bool {
+    let [tok] = toks else { return false };
+    tok.starts_with(|c: char| c.is_ascii_digit()) && !tok[1..].starts_with(['b', 'B'])
 }
 
 fn push_value(out: &mut Vec<String>, value: i128) {
@@ -508,12 +653,13 @@ fn push_value(out: &mut Vec<String>, value: i128) {
 /// `known` carries enumerator values across the declarations of one load.
 fn fold_constants(toks: Vec<String>, known: &mut BTreeMap<String, i128>) -> Vec<String> {
     let mut out = Vec::with_capacity(toks.len());
+    let closers = closers(&toks);
     let mut i = 0;
     while i < toks.len() {
         let tok = toks[i].as_str();
         let close = match tok {
-            "[" => matching(&toks, i, "[", "]"),
-            "{" if enum_opens(&toks, i) => matching(&toks, i, "{", "}"),
+            "[" => closers[i],
+            "{" if enum_opens(&toks, i) => closers[i],
             _ => None,
         };
         let Some(close) = close else {
@@ -526,13 +672,38 @@ fn fold_constants(toks: Vec<String>, known: &mut BTreeMap<String, i128>) -> Vec<
         if tok == "{" {
             fold_enumerators(inner, known, &mut out);
         } else {
-            match whole_constant(inner, known).filter(|_| inner.len() > 1) {
+            match whole_constant(inner, known).filter(|_| !read_as_written(inner)) {
                 Some(value) => push_value(&mut out, value),
                 None => out.extend(inner.iter().cloned()),
             }
         }
         out.push(toks[close].clone());
         i = close + 1;
+    }
+    out
+}
+
+/// For each `[` and `{`, the index of the token that closes it: [`matching`]
+/// for every group in one pass.
+fn closers(toks: &[String]) -> Vec<Option<usize>> {
+    let mut out = vec![None; toks.len()];
+    let (mut squares, mut braces) = (Vec::new(), Vec::new());
+    for (i, tok) in toks.iter().enumerate() {
+        match tok.as_str() {
+            "[" => squares.push(i),
+            "{" => braces.push(i),
+            "]" => {
+                if let Some(open) = squares.pop() {
+                    out[open] = Some(i);
+                }
+            }
+            "}" => {
+                if let Some(open) = braces.pop() {
+                    out[open] = Some(i);
+                }
+            }
+            _ => {}
+        }
     }
     out
 }
@@ -555,7 +726,7 @@ fn fold_enumerators(inner: &[String], known: &mut BTreeMap<String, i128>, out: &
                 let value = whole_constant(&item[2..], known);
                 out.push("=".into());
                 match value {
-                    Some(value) if item.len() > 3 => push_value(out, value),
+                    Some(value) if !read_as_written(&item[2..]) => push_value(out, value),
                     _ => out.extend(item[2..].iter().cloned()),
                 }
                 value
@@ -573,16 +744,20 @@ fn fold_enumerators(inner: &[String], known: &mut BTreeMap<String, i128>, out: &
 }
 
 /// Spell an unsized array parameter (`char *argv[]`) as the pointer it is.
-fn pointer_parameters(mut decl: Vec<String>) -> Vec<String> {
-    let mut i = 2;
-    while i < decl.len() {
-        if decl[i] == "]" && decl[i - 1] == "[" && is_identifier(&decl[i - 2]) {
-            decl.drain(i - 1..=i);
-            decl.insert(i - 2, "*".into());
+fn pointer_parameters(decl: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(decl.len());
+    let mut toks = decl.into_iter().peekable();
+    while let Some(tok) = toks.next() {
+        let bare = tok == "[" && toks.peek().is_some_and(|t| t == "]");
+        if bare && out.last().is_some_and(|t| is_identifier(t)) {
+            toks.next();
+            let name = out.pop().unwrap_or_default();
+            out.extend(["*".to_string(), name]);
+        } else {
+            out.push(tok);
         }
-        i += 1;
     }
-    decl
+    out
 }
 
 /// The directive body one declaration states, or `None` for a declaration that

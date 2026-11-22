@@ -1,0 +1,36 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+  <bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+  <symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-pointer-method-topology/method-elf</com>
+  <com>read symbols</com><com>option outlang go</com>
+  <com>load function main.(*Meter).Apply</com><com>decompile</com><com>print C</com>
+  <com>load function main.Forward</com><com>decompile</com><com>print C</com>
+  <com>load function main.ForwardShadow</com><com>decompile</com><com>print C</com>
+  <com>load function main.(*Meter).Pretend</com><com>decompile</com><com>print C</com>
+  <com>load function main.Apply</com><com>decompile</com><com>print C</com>
+  <com>load function main.Forward</com>
+  <com>override prototype 0x401037 uint8 explicit(void *raw);</com>
+  <com>decompile</com><com>print C</com>
+  <com>map prototype main.(*Meter).Apply uint8 Apply(void *raw,uint8 count);</com>
+  <com>load function main.(*Meter).Apply</com><com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="Go linked pointer method binds the receiver and preserves its field effects" min="1" max="1">^func \(m \*Meter\) Apply\(delta uint64\) uint64 \{$
+^  delta = \(\*m\)\.Total \+ \(\*m\)\.Base \+ delta$
+^  \(\*m\)\.Total = delta$
+^  return delta$
+^\}$</stringmatch>
+<stringmatch name="Go direct method expression preserves both original arguments" min="1" max="1">^  return \(\*Meter\)\.Apply\(m,delta\)$</stringmatch>
+<stringmatch name="Go method call uses the typed receiver when a parameter shadows its type" min="1" max="1">^func ForwardShadow\(Meter \*Meter, delta uint64\) uint64 \{$
+^  return Meter\.Apply\(delta\)$
+^\}$</stringmatch>
+<stringmatch name="A receiver-looking symbol without Go method metadata stays a free function" min="1" max="1">^// main\.\(\*Meter\)\.Pretend$
+^func Pretend\(m \*Meter, delta uint64\) uint64 \{$</stringmatch>
+<stringmatch name="The ordinary Go function with the same basename stays a free function" min="1" max="1">^// main\.Apply$
+^func Apply\(m \*Meter, delta uint64\) uint64 \{$</stringmatch>
+<stringmatch name="Go method display leaves the explicit function declaration in authority" min="1" max="1">^func Apply\(raw unsafe\.Pointer, count uint64\) uint64 \{$</stringmatch>
+<stringmatch name="Go method display leaves an explicit per-call prototype in authority" min="1" max="1">^  return _kuna_ident_282a4d6574657229\.Apply\(unsafe\.Pointer\(m\)\)$</stringmatch>
+</decompilertest>

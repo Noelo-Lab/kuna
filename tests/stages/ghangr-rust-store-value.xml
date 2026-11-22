@@ -33,9 +33,9 @@
   <com>decompile</com>
   <com>print C</com>
 </script>
-<stringmatch name="Rust signed byte store converts unsigned arithmetic" min="1" max="1">\(\*p\)\.s8 = \(b \+ a\) as i8</stringmatch>
-<stringmatch name="Rust unsigned short store converts signed arithmetic" min="1" max="1">\(\*p\)\.u16 = \(b \+ a\) as u16</stringmatch>
+<stringmatch name="Rust signed byte store converts unsigned arithmetic" min="1" max="1">\(\*p\)\.s8 = u8::wrapping_add\(b,a\) as i8</stringmatch>
+<stringmatch name="Rust unsigned short store converts signed arithmetic" min="1" max="1">\(\*p\)\.u16 = i16::wrapping_add\(b,a\) as u16</stringmatch>
 <stringmatch name="Rust signed word store converts bitwise expression" min="1" max="1">\(\*p\)\.s32 = \(a as u32 \^ 1\) as i32</stringmatch>
 <stringmatch name="Rust side effect store converts returned value once" min="1" max="1">\(\*counted_destination\(p\)\)\.s64 = v1 as i64</stringmatch>
-<stringmatch name="Rust direct signed store converts unsigned arithmetic" min="1" max="1">\*p = \(a \+ b\) as i64</stringmatch>
+<stringmatch name="Rust direct signed store converts unsigned arithmetic" min="1" max="1">\*p = u64::wrapping_add\(a,b\) as i64</stringmatch>
 </decompilertest>

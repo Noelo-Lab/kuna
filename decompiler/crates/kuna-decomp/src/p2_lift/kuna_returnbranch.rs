@@ -264,6 +264,54 @@ pub(crate) fn computed_target(
     false
 }
 
+/// An exact local proof of the target after following `from` back into a
+/// dispatch instruction: the run from `from`'s block start, then the dispatch
+/// instruction's own operations before the jump, through [`Prefix`]. Unknown
+/// inputs never become known; longer or nonlocal paths use SSA recovery.
+pub(crate) fn target_on_edge(
+    data: &Funcdata,
+    from: OpId,
+    dispatch: OpId,
+    mode_switch: impl Fn(u64) -> bool,
+) -> Option<u64> {
+    let mut run = Vec::new();
+    let mut cursor = from;
+    loop {
+        let op = data.obank().get(cursor)?;
+        run.push(cursor);
+        if op.is_block_start() {
+            break;
+        }
+        if run.len() >= 256 {
+            return None;
+        }
+        cursor = data.obank().dead_prev(cursor)?;
+    }
+    run.reverse();
+    let address = data.obank().get(dispatch)?.get_addr().clone();
+    let mut slot = Vec::new();
+    let mut cursor = dispatch;
+    while let Some(prev) = data.obank().dead_prev(cursor) {
+        if data.obank().get(prev)?.get_addr() != &address {
+            break;
+        }
+        slot.push(prev);
+        if slot.len() >= 64 {
+            return None;
+        }
+        cursor = prev;
+    }
+    slot.reverse();
+    let mut prefix = Prefix { data, known: Vec::new(), previous: None, mode_switch };
+    for id in run.into_iter().chain(slot) {
+        let code = data.obank().get(id)?.code();
+        if (id != from && transfers_control(code)) || !prefix.execute(id) {
+            return None;
+        }
+    }
+    prefix.input(dispatch, 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -708,5 +756,26 @@ mod tests {
              &[(false, 0x28, 8), (false, 0x18, 8), (true, 0, 8)]);
         let ret = emit(&mut fd, 0x1008, OpCode::CPUI_RETURN, None, &[(false, 0x10, 8)]);
         assert!(!proves(&fd, ret, |_| false), "unknown space");
+    }
+
+    #[test]
+    fn local_edge_constants_stop_at_unknown_values_calls_and_partial_writes() {
+        for case in ["constant", "unknown", "call", "partial", "store-other", "store-same"] {
+            let mut fd = function();
+            let dispatch = emit(&mut fd, 0x1000, OpCode::CPUI_BRANCHIND, None, &[(false, 0x10, 8)]);
+            let start = emit(&mut fd, 0x1020, OpCode::CPUI_COPY, Some((0x10, 8)),
+                             &[(case != "unknown", if case == "unknown" { 0x18 } else { 0x1040 }, 8)]);
+            fd.obank_mut().get_mut(start).unwrap().set_flag(crate::op::pcodeop_flags::startbasic);
+            match case {
+                "call" => { emit(&mut fd, 0x1024, OpCode::CPUI_CALL, None, &[(true, 0x2000, 8)]); }
+                "partial" => { emit(&mut fd, 0x1024, OpCode::CPUI_COPY, Some((0x12, 1)), &[(true, 0, 1)]); }
+                "store-other" => { emit(&mut fd, 0x1024, OpCode::CPUI_STORE, None, &[(true, 7, 8), (false, 0x18, 8), (true, 0, 8)]); }
+                "store-same" => { emit(&mut fd, 0x1024, OpCode::CPUI_STORE, None, &[(true, 2, 8), (false, 0x18, 8), (true, 0, 8)]); }
+                _ => {}
+            }
+            let edge = emit(&mut fd, 0x1028, OpCode::CPUI_BRANCH, None, &[(true, 0x1000, 8)]);
+            let proved = matches!(case, "constant" | "store-other");
+            assert_eq!(target_on_edge(&fd, edge, dispatch, |_| false), proved.then_some(0x1040), "{case}");
+        }
     }
 }
