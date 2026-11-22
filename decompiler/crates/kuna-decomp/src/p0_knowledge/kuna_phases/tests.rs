@@ -520,6 +520,8 @@ fn option_values_live_value_present_for_76() {
                             // (kuna) `uefi` is an analysis-tier gate read console-side at the
                             // analysis COMMIT boundary, like `itaniumrtti`.
                             | "uefi"
+                            // (kuna) `cortexmscs` is read console-side the same way as `uefi`.
+                            | "cortexmscs"
                             | "earlyreturn"
                             | "switchreturn"
                             | "loopbreak_recovery"
