@@ -1,0 +1,50 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Swift string literals compared for equality (`option fatstr`).
+
+    Issue: `s == "iPod5,1"` compares the string's two words with the
+    literal's (`x0 == count && x1 == object`) before it calls the runtime
+    compare. The rule decoded the literal where the runtime call takes both
+    words, but the inline test printed the object word as a raw constant:
+    `a1 == 0xe700000000000000` beside `"iPod5,1"` in the call.
+
+    Stage / sub-stage: P5 const-pointer, `RuleSwiftString`
+    (`kuna-decomp/src/p5_types/kuna_swiftstr.rs`): an object word compared by
+    `INT_EQUAL` / `INT_NOTEQUAL` is paired with the count word compared in the
+    same block or in the branch of the one block that leads to it, when the
+    two compared values are one string's two words (a call takes them as
+    consecutive inputs).
+
+    Fixture `macho_swift_strcmp_arm64` (arm64 Mach-O, swiftc 6.4.2 -O,
+    stripped; source `macho_swift_strcmp.swift`): 0x100000778 `model`, three
+    `if s == "..."` tests. Pass 1 (`fatstr off`) shows the raw object words;
+    pass 2 (the default) shows each literal in the inline test too.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_swift_strcmp_arm64</com>
+  <com>option fatstr off</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000778</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_swift_strcmp_arm64</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000778</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="fatstr off: the compared object words are constants" min="2" max="2">a1 == -0x1900000000000000</stringmatch>
+<stringmatch name="the first literal: its test and its call share a line" min="1" max="1">"iPod5,1"</stringmatch>
+<stringmatch name="the 9-byte literal: its test and its call share a line" min="1" max="1">"iPhone3,1"</stringmatch>
+<stringmatch name="the third literal: its test and its call" min="2" max="2">"iPad2,1"</stringmatch>
+<stringmatch name="the object word compared inline is the literal" min="1" max="1">a1 == "iPod5,1"</stringmatch>
+</decompilertest>

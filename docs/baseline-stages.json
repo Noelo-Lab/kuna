@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4999,
-    4999
+    5004,
+    5004
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3521,6 +3521,7 @@
     "data:exported return tokens and callee outputs retain their continuations",
     "data:fatstr auto: the returned small string is its text",
     "data:fatstr auto: the stored small string is its text",
+    "data:fatstr off: the compared object words are constants",
     "data:fatstr off: the selected object words are constants",
     "data:fatstr off: the small string's object word is a constant (on: it is the text)",
     "data:fatstr off: the stored empty string is a constant",
@@ -4792,6 +4793,7 @@
     "data:tee-O2 tail-jumps #3: tail call resolves to named setlocale (pass 2 on only)",
     "data:tee-O2 tail-jumps #4: the recovered tail call is logged (pass 2 on only)",
     "data:terminal call has a local contract",
+    "data:the 9-byte literal: its test and its call share a line",
     "data:the Handle view reaches its helper under the bounded policy and under stackviews",
     "data:the Pair view reaches its helper under the bounded policy and under stackviews",
     "data:the allocation returns the object",
@@ -4803,6 +4805,7 @@
     "data:the csel-picked and switched literal of the second arm",
     "data:the dead arm of the square test prints only when off",
     "data:the entry partition never loses the input",
+    "data:the first literal: its test and its call share a line",
     "data:the float rounding is never folded away",
     "data:the function body is kept",
     "data:the function pointer signature never keeps the ABI pointer",
@@ -4818,6 +4821,7 @@
     "data:the no-return import ends refs only with the option abi",
     "data:the non-dominated value reaches the split callee",
     "data:the null store targets the pointer slot",
+    "data:the object word compared inline is the literal",
     "data:the other valid relocation never supplies a contract",
     "data:the pointer member is written under the bounded policy and under stackviews",
     "data:the same machine body with separate scalar formals keeps their names",
@@ -4828,6 +4832,7 @@
     "data:the stored selected literal, paired through the store beside it",
     "data:the switch's 15-byte literal",
     "data:the switch's 8-byte literal",
+    "data:the third literal: its test and its call",
     "data:the whole-register object is gone",
     "data:transaction hint remains explicit",
     "data:transient helper spill leaves the complete caller buffer",

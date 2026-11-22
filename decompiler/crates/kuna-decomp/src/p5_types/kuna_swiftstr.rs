@@ -19,11 +19,12 @@
 //! word is `0xd000…` (ASCII) or `0x1000…` (not) over the byte count.
 //!
 //! The rule finds an object word among a `STORE`'s value, a `COPY`'s source,
-//! a `CALL`'s or `RETURN`'s inputs or a `PIECE`'s high half, pairs it with the
-//! count word the same code writes beside it (the slot eight bytes below in
-//! the same block, the input before it, the low half; for a word copied into
-//! a register, the partner its consumers take beside it, traced back along
-//! the same branch arms), decodes the literal, and replaces the
+//! a `CALL`'s or `RETURN`'s inputs, a `PIECE`'s high half or an equality's
+//! operands, pairs it with the count word the same code writes beside it (the
+//! slot eight bytes below in the same block, the input before it, the low
+//! half; for a word copied into a register, the partner its consumers take
+//! beside it, traced back along the same branch arms; for a compared word,
+//! the count compared beside it), decodes the literal, and replaces the
 //! object word with the bounded literal
 //! ([`Funcdata::get_internal_string`], the `fatstr` mechanism), so the text
 //! prints where the constant did. The count word is left as it is: the code
@@ -196,6 +197,10 @@ enum Slot {
         op: OpId,
         index: int4,
     },
+    Compare {
+        op: OpId,
+        index: int4,
+    },
 }
 
 /// `(base, offset)` of an address expression: a constant, or a chain of
@@ -276,6 +281,7 @@ fn slot_of(data: &Funcdata, op: OpId, index: int4) -> Option<Slot> {
         OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN | OpCode::CPUI_PIECE => {
             Slot::Input { op, index }
         }
+        OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => Slot::Compare { op, index },
         _ => return None,
     })
 }
@@ -307,6 +313,7 @@ fn partner(data: &Funcdata, op: OpId, slot: Slot, object: u64) -> Option<u64> {
         |o: OpId, i: int4| -> Option<u64> { constant_of(data, data.obank().get(o)?.get_in(i)?) };
     match slot {
         Slot::Flow { out } => flow_partner(data, out, object),
+        Slot::Compare { op, index } => compare_partner(data, op, index, object),
         Slot::Input { op, index } => {
             let o = data.obank().get(op)?;
             // A piece is `PIECE(high, low)`; a call or return lists the
@@ -368,6 +375,135 @@ fn adjacent_values(data: &Funcdata, op: OpId, slot: Slot) -> Vec<VarnodeId> {
             }
             cur = step(id);
         }
+    }
+    found
+}
+
+/// A varnode with the `COPY`s and `INDIRECT`s that pass it on peeled off.
+fn root_of(data: &Funcdata, mut vn: VarnodeId) -> VarnodeId {
+    for _ in 0..MAX_FLOW_DEPTH {
+        let Some(def) = data
+            .vbank()
+            .get(vn)
+            .and_then(|v| v.get_def())
+            .and_then(|d| data.obank().get(d))
+        else {
+            break;
+        };
+        if !matches!(def.code(), OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT) {
+            break;
+        }
+        match def.get_in(0) {
+            Some(src) if !data.vbank().get(src).is_some_and(|s| s.is_constant()) => vn = src,
+            _ => break,
+        }
+    }
+    vn
+}
+
+/// Is `(low, high)` one `Swift.String`'s two words: does some call or
+/// return take them as consecutive inputs, or a `PIECE` join them? Both are
+/// compared as roots, past the copies that move them between registers.
+fn string_halves(data: &Funcdata, low: VarnodeId, high: VarnodeId) -> bool {
+    let (low, high) = (root_of(data, low), root_of(data, high));
+    let mut work = vec![high];
+    let mut visits = 0usize;
+    while let Some(vn) = work.pop() {
+        visits += 1;
+        if visits > MAX_FLOW_VISITS {
+            return false;
+        }
+        let Some(v) = data.vbank().get(vn) else {
+            return false;
+        };
+        let is_low = |l: Option<VarnodeId>| l.is_some_and(|l| root_of(data, l) == low);
+        for u in v.descend_iter().filter_map(|user| data.obank().get(user)) {
+            let joined = match u.code() {
+                OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT => {
+                    if u.get_in(0) == Some(vn) {
+                        work.extend(u.get_out());
+                    }
+                    false
+                }
+                OpCode::CPUI_PIECE => u.get_in(0) == Some(vn) && is_low(u.get_in(1)),
+                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN => (2..u.num_input())
+                    .any(|i| u.get_in(i) == Some(vn) && is_low(u.get_in(i - 1))),
+                _ => false,
+            };
+            if joined {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// The `(value, constant)` an `INT_EQUAL` / `INT_NOTEQUAL` compares, the
+/// boolean `vn` is or negates.
+fn compared_constant(data: &Funcdata, mut vn: VarnodeId) -> Option<(VarnodeId, u64)> {
+    for _ in 0..4 {
+        let def = data.obank().get(data.vbank().get(vn)?.get_def()?)?;
+        match def.code() {
+            OpCode::CPUI_BOOL_NEGATE => vn = def.get_in(0)?,
+            OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => {
+                let (a, b) = (def.get_in(0)?, def.get_in(1)?);
+                let (value, c) = if data.vbank().get(b)?.is_constant() {
+                    (a, b)
+                } else {
+                    (b, a)
+                };
+                return Some((value, constant_of(data, c)?));
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// The count word compared beside the object word input `index` of the
+/// equality `op`: a string's equality test compares both words (`x0 == count
+/// && x1 == object`), the count in the same block or in the branch of the
+/// block that alone leads to it. The compared values must be the two words
+/// of one string ([`string_halves`]), and every such count must agree.
+fn compare_partner(data: &Funcdata, op: OpId, index: int4, object: u64) -> Option<u64> {
+    let o = data.obank().get(op)?;
+    let high = o.get_in(1 - index)?;
+    let block = o.get_parent()?;
+    let mut conditions: Vec<VarnodeId> = Vec::new();
+    let mut cur = data.op_previous_op(op);
+    for _ in 0..MAX_SCAN {
+        let Some(id) = cur else { break };
+        let Some(p) = data.obank().get(id) else { break };
+        if p.get_parent() != Some(block) {
+            break;
+        }
+        if matches!(p.code(), OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL) {
+            conditions.extend(p.get_out());
+        }
+        cur = data.op_previous_op(id);
+    }
+    let graph = data.bblocks_ref();
+    let here = graph.block(block);
+    if here.size_in() == 1 {
+        let pred = here.get_in(0);
+        if let Some(branch) = data.bb_op_tail(pred).and_then(|t| data.obank().get(t)) {
+            if branch.code() == OpCode::CPUI_CBRANCH {
+                conditions.extend(branch.get_in(1));
+            }
+        }
+    }
+    let mut found: Option<u64> = None;
+    for cond in conditions {
+        let Some((low, word)) = compared_constant(data, cond) else {
+            continue;
+        };
+        if low == high || word == object || !string_halves(data, low, high) {
+            continue;
+        }
+        if found.is_some_and(|w| w != word) {
+            return None;
+        }
+        found = Some(word);
     }
     found
 }
@@ -468,28 +604,8 @@ fn flow_partner(data: &Funcdata, out: VarnodeId, object: u64) -> Option<u64> {
 /// `MULTIEQUAL` of `path` (last first), a partner that is itself a
 /// `MULTIEQUAL` of the same block is replaced by its input on the same arm.
 fn trace_arm(data: &Funcdata, mut vn: VarnodeId, path: &FlowPath) -> Option<u64> {
-    let peel = |mut vn: VarnodeId| -> VarnodeId {
-        for _ in 0..MAX_FLOW_DEPTH {
-            let Some(def) = data
-                .vbank()
-                .get(vn)
-                .and_then(|v| v.get_def())
-                .and_then(|d| data.obank().get(d))
-            else {
-                break;
-            };
-            if !matches!(def.code(), OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT) {
-                break;
-            }
-            match def.get_in(0) {
-                Some(src) if !data.vbank().get(src).is_some_and(|s| s.is_constant()) => vn = src,
-                _ => break,
-            }
-        }
-        vn
-    };
     for &(phi, slot) in path.iter().rev() {
-        vn = peel(vn);
+        vn = root_of(data, vn);
         let block = data.obank().get(phi)?.get_parent();
         let def = data
             .vbank()
@@ -679,6 +795,8 @@ impl Rule for RuleSwiftString {
             OpCode::CPUI_CALLIND,
             OpCode::CPUI_RETURN,
             OpCode::CPUI_PIECE,
+            OpCode::CPUI_INT_EQUAL,
+            OpCode::CPUI_INT_NOTEQUAL,
         ]
     }
 
@@ -702,6 +820,7 @@ impl Rule for RuleSwiftString {
         let slots: Vec<int4> = match o.code() {
             OpCode::CPUI_STORE => vec![2],
             OpCode::CPUI_COPY | OpCode::CPUI_PIECE => vec![0],
+            OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => vec![0, 1],
             _ => (1..o.num_input()).collect(),
         };
         let Some(spc) = data.get_arch().manage().get_default_data_space().cloned() else {
