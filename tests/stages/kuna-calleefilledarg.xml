@@ -1,0 +1,83 @@
+<decompilertest>
+<!--
+    A stub that loads one of its own argument registers lost every argument
+    the caller staged after that register.  An Objective-C image linked with
+    -objc_stubs_fast sends each message through a __objc_stubs entry that
+    loads the selector into x1 and jumps to objc_msgSend:
+
+      objc_msgSend$countByEnumeratingWithState:objects:count:
+                 adrp x1,...; ldr x1,[x1,#off]; adrp x16,...; ldr x16,[x16,#off]; br x16
+
+    and the caller leaves x1 alone (the last call killed it) while it stages
+    the real arguments in x2, x3 and x4:
+
+      walk       mov x1,x19; bl prep; mov x0,x19; mov x2,sp; add x3,sp,#0x40;
+                 mov w4,#0x10; bl objc_msgSend$countBy...
+
+    x2, x3 and x4 score active, x1 scores definitely-not-used, and
+    ParamListStandard::forceNoUse (fspec.cc:1623) reads the positional rule
+    of the convention - the first register nobody fills ends the list - and
+    turned the three active trials inactive, so the call printed
+    `objc_msgSend$countBy...(a0)`: the address of the stack object never
+    reached the call,
+    the object's zero initialiser folded through it, and the loop read
+    `*(unsigned long *)(v3 * 8)`.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring"
+    (kuna_calleefilledarg.rs, option calleefilledarg, default on).  At a
+    call to an Objective-C selector stub, a register the stub's body writes
+    on every path from its entry before anything could read it, that the
+    caller never filled, is no parameter slot: the positional rule steps over
+    it and the slots after it are scored on their own.  A C callee keeps the
+    rule (kuna-calleefilledarg-ctramp.xml).
+
+    Hand-written AArch64; `prep` is declared so its call kills x1 outright
+    at the first send (at the second, inside the loop, x1 is a phi and the
+    positional rule's hole filling applies either way).  walk_plain is the
+    control: count_plain (`adrp x16; ldr x16; br x16`) does not fill x1, so
+    the positional rule stands and the first call keeps one argument.
+    `option calleefilledarg off` restores that rendering for walk.
+-->
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<bytechunk space="ram" offset="0x100004000" readonly="true">
+ffc303d1f6570ca9f44f0da9fd7b0ea9fd830391f30300aa00e4004fe00301ad
+e00300ade10313aa5e000094e00313aae2030091e30301910402805251000094
+600300b4f40300aae80b40f9150140f908000014e00313aae2030091e3030191
+0402805247000094f40300aa000200b4160080d207000014e80740f9007976f8
+4a000094d60600919f0216eb40feff54e80b40f9080140f91f0115ebe0feff54
+e00313aa42000094f4ffff17fd7b4ea9f44f4da9f6574ca9ffc30391c0035fd6
+ffc303d1f6570ca9f44f0da9fd7b0ea9fd830391f30300aa00e4004fe00301ad
+e00300ade10313aa2e000094e00313aae2030091e30301910402805226000094
+600300b4f40300aae80b40f9150140f908000014e00313aae2030091e3030191
+040280521c000094f40300aa000200b4160080d207000014e80740f9007976f8
+1a000094d60600919f0216eb40feff54e80b40f9080140f91f0115ebe0feff54
+e00313aa12000094f4ffff17fd7b4ea9f44f4da9f6574ca9ffc30391c0035fd6
+21000090210040f930000090100640f900021fd630000090100640f900021fd6
+010080d2c0035fd6c0035fd6c0035fd6000080d2c0035fd6
+</bytechunk>
+<bytechunk space="ram" offset="0x100008000" readonly="true">
+3412000000000000b041000001000000
+</bytechunk>
+<symbol space="ram" offset="0x100004000" name="walk"/>
+<symbol space="ram" offset="0x1000040c0" name="walk_plain"/>
+<symbol space="ram" offset="0x100004180" name="objc_msgSend$countByEnumeratingWithState:objects:count:"/>
+<symbol space="ram" offset="0x100004194" name="count_plain"/>
+<symbol space="ram" offset="0x1000041a0" name="prep"/>
+<symbol space="ram" offset="0x1000041a8" name="use"/>
+<symbol space="ram" offset="0x1000041ac" name="mutation"/>
+<symbol space="ram" offset="0x1000041b0" name="target"/>
+</binaryimage>
+<script>
+  <com>parse line extern void prep(void *o);</com>
+  <com>lo fu walk</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu walk_plain</com>  <com>decompile</com>  <com>print C</com>
+  <com>option calleefilledarg off</com>
+  <com>lo fu walk</com>  <com>decompile</com>  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="calleefilledarg #1: the stub call keeps the receiver, the state address, the buffer and the count" min="2" max="2">objc_msgSend\$countByEnumeratingWithState:objects:count:\(a0,&amp;v1,v2,0x10\);</stringmatch>
+<stringmatch name="calleefilledarg #2: the state's mutation pointer is read after the call, not folded" min="1" max="1">v4 = \*v7;</stringmatch>
+<stringmatch name="calleefilledarg #3: the control stub does not fill x1, so the positional rule stands" min="1" max="1">count_plain\(a0\);</stringmatch>
+<stringmatch name="calleefilledarg #4: off restores the one-argument call and the folded state read" min="2" max="2">objc_msgSend\$countByEnumeratingWithState:objects:count:\(a0\);</stringmatch>
+<stringmatch name="calleefilledarg #5: off folds the items pointer through the call" min="1" max="1">\*\(unsigned long \*\)\(v3 \* 8\)</stringmatch>
+</decompilertest>

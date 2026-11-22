@@ -3418,6 +3418,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // (kuna) ELF GOT data imports: the slot names + externref paint exist only
         // to let `importdata` render a read through the slot, so they share its gate.
         "elfgotimports" => arch.import_data,
+        "machodataslots" => arch.import_data,
         // (kuna) The measured libc signature extension — the ~200 prototypes the
         // 27-entry base table does not carry, seeded onto IMPORTED names only. The
         // facts are computed at LOAD and COMMITTED only when this gate is on, so
@@ -5147,6 +5148,10 @@ pub(crate) fn bootstrap_object(
         &kuna_sleigh::loadimage::LoadImage::get_segments(&loader),
     );
     let globalref_ranges: Vec<(u64, u64)> = loader.data_object_ranges().to_vec();
+    let cstring_ranges: Vec<(u64, u64)> =
+        kuna_decomp::kuna_cstringconst::literal_sections(
+            loader.section_metadata().iter().map(|s| (s.name.as_str(), s.kind.as_str(), s.vma, s.size)),
+        );
 
     // (kuna `bejoin callers`) The exception-table sections, at the addresses
     // the loader maps them to (an object's synthetic layout, relocated), so
@@ -5373,6 +5378,8 @@ pub(crate) fn bootstrap_object(
 
     // (kuna `globalref`) ... and the sections a program's data objects live in.
     prog.arch_mut().globalref_ranges = std::rc::Rc::new(globalref_ranges);
+    // (kuna `cstringconst`) ... and the sections that hold only string literals.
+    prog.arch_mut().cstring_ranges = std::rc::Rc::new(cstring_ranges);
 
     // NB: the analysis-pass facts are committed later, gated, in
     // `commit_analysis_passes` (called from `IfcReadSymbols`), after the per-pass
@@ -5537,7 +5544,9 @@ fn commit_analysis_output(
         kuna_signature_names::SignatureNames::collect(prog, &out, zero_size_data_names);
 
     // Keep lookup identities even when richer debug information wins the map;
-    // a spelling shared by several objects resolves to its lowest address.
+    // a spelling shared by several objects resolves to its lowest address. A
+    // data import is looked up by the name of the `externref` slot holding it.
+    let externref_slots: std::collections::HashSet<u64> = out.externref.iter().map(|&(first, _)| first).collect();
     let aliases: Vec<(String, u64)> = prog
         .loader_data_objects
         .iter()
@@ -5546,6 +5555,12 @@ fn commit_analysis_output(
         .chain(out.symbols.iter().filter(|s| s.kind == SymKind::Data).map(|s| (s.name.clone(), s.addr)))
         .chain(out.data_objects.iter().map(|d| (d.name.clone(), d.addr)))
         .chain(out.typed_data.iter().map(|d| (d.name.clone(), d.addr)))
+        .chain(
+            out.import_slot_names
+                .iter()
+                .filter(|(slot, _)| externref_slots.contains(slot))
+                .map(|(slot, name)| (name.clone(), *slot)),
+        )
         .collect();
     for (name, address) in aliases {
         let slot = prog.data_name_aliases.entry(name).or_insert(address);

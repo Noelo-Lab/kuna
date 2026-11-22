@@ -2685,6 +2685,9 @@ impl Funcdata {
             }
         }
         partial.truncated_flow_clone(self)?;
+        partial.kuna_extent_tables = self.kuna_extent_tables.clone();
+        partial.kuna_later_tables = self.kuna_later_tables.clone();
+        partial.kuna_later_wanted = std::rc::Rc::clone(&self.kuna_later_wanted);
         Ok(partial)
     }
 
