@@ -191,8 +191,9 @@ fn layout(
 
 /// The type of one leaf member and its alignment: a scalar or pointer aligned
 /// to its size, an array `[N T]` of `N` elements aligned to its element.
+/// `None` for a bitfield (`b3`), whose packing the encoding does not give.
 fn member_type(code: &str, tctx: &TypeCtx, depth: usize) -> Option<(Rc<Datatype>, i32)> {
-    if depth > MAX_STRUCT_DEPTH {
+    if depth > MAX_STRUCT_DEPTH || code.starts_with('b') {
         return None;
     }
     if let Some(body) = code.strip_prefix('[').and_then(|b| b.strip_suffix(']')) {
@@ -782,6 +783,8 @@ mod tests {
         assert_eq!(struct_type("{Tagged=Cd}", &tctx).unwrap().get_field(1).unwrap().offset, 8);
         let rect = struct_type("{CGRect={CGPoint=dd}{CGSize=dd}}", &tctx).unwrap();
         assert_eq!((rect.get_size(), rect.get_field(3).unwrap().offset), (32, 24));
+        let packed = decode_ivar_type("^{Packed=b8b4b20[8S]}", &tctx).unwrap();
+        assert_eq!(packed.get_ptr_to().unwrap().get_metatype(), type_metatype::TYPE_VOID, "bitfields are not laid out");
     }
 
     /// A struct reached through a chain of pointers deeper than the cap stops

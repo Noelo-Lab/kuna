@@ -5989,7 +5989,8 @@ every other binary's pass list is byte-identical to before the pass existed):
     C offsets: each member is aligned to its size (at most a pointer's), a
     nested struct to its widest member and padded to a multiple of it, and the
     struct's size is padded the same way, so `{S={T=iC}C}` puts the last `C` at
-    8 and `{Tri=iii}` is 12 bytes, not 16.
+    8 and `{Tri=iii}` is 12 bytes, not 16. A layout with a bitfield member
+    (`b3`), whose packing the encoding does not give, is not laid out at all.
     A pointer to a named struct whose layout the encoding spells (`^{S=Q^@}`,
     from the image's metadata or from the headers) is a pointer to that struct
     (`decompiler/crates/kuna-analysis/src/analyzers/objc/encoding.rs (struct_type_at)`),
