@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4947,
-    4947
+    4954,
+    4954
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2562,6 +2562,13 @@
     "data:SWITCHGUARDRELOAD #3: no row past the guard sends flow into an instruction interior",
     "data:SWITCHGUARDRELOAD #4: the dispatch is a switch, not a computed call",
     "data:SWITCHGUARDRELOAD #5: the neighbouring table keeps its own eight rows",
+    "data:SWITCHMERGE #1: f and g print one switch each, the unmerged f two",
+    "data:SWITCHMERGE #2: no hole of either table prints a label",
+    "data:SWITCHMERGE #3: one default arm per merged switch, two in the unmerged f",
+    "data:SWITCHMERGE #4: no arm jumps to the default code",
+    "data:SWITCHMERGE #5: the second table's labels land in the merged switch",
+    "data:SWITCHMERGE #6: the default code prints once per function",
+    "data:SWITCHMERGE #7: the label only the left-out jump reached is gone",
     "data:SWITCHRUNON #1: pick prints",
     "data:SWITCHRUNON #2: pick keeps its own four cases",
     "data:SWITCHRUNON #3: the cut table prints no case past 3",

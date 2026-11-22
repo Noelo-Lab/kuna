@@ -49,6 +49,13 @@ whose block holds unread flag writes once the register space has had a heritage
 pass (`deadcode delay register 50` keeps those writes alive). Before the fix the
 second `if (x)` stayed.
 
+`kuna-switchmerge.xml` checks option `switchmerge`: two AArch64 range-checked
+jump tables on one selector, the second reached when the first's range check
+fails, print as one `switch` whose holes take the one `default:` arm. In `f`
+the first table's holes jump to the default code (`case 0x43: case 0x46:` and
+an inner `default: goto` before); in `g` they go to the second table. The off
+run keeps the nested form.
+
 `kuna-switchsingle.xml` checks that a jump table whose four entries all name one
 block becomes straight-line code with the "all go to same destination" warning
 instead of a `switch` with only a `default` arm.
