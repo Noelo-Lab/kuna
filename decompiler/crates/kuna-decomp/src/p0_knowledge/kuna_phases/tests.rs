@@ -44,9 +44,9 @@ fn group_count_is_39() {
 }
 
 #[test]
-fn subphase_count_is_48() {
-    assert_eq!(kuna_num_subphases(), 48);
-    assert_eq!(SUBPHASE_TABLE.len(), 48);
+fn subphase_count_is_49() {
+    assert_eq!(kuna_num_subphases(), 49);
+    assert_eq!(SUBPHASE_TABLE.len(), 49);
 }
 
 #[test]
@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_234() {
-    assert_eq!(kuna_num_settables(), 234);
-    assert_eq!(SETTABLE_TABLE.len(), 234);
+fn settable_count_is_237() {
+    assert_eq!(kuna_num_settables(), 237);
+    assert_eq!(SETTABLE_TABLE.len(), 237);
 }
 
 #[test]
-fn tier_counts_are_48_core_126_transform_60_analysis() {
+fn tier_counts_are_50_core_127_transform_60_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_48_core_126_transform_60_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (48, 126, 60));
+    assert_eq!((core, transform, analysis), (50, 127, 60));
 }
 
 #[test]
@@ -310,9 +310,6 @@ fn option_values_live_value_present_for_76() {
         // (kuna) The libgcc `__divdi3` contract -- an analysis-pass gate read
         // console-side via kuna_live_value, like `libcsigs`. Default-off.
         "libgccsigs",
-        // (kuna) Static TLS naming -- an analysis-pass gate read console-side via
-        // kuna_live_value. Default-on.
-        "tlsnames",
         // (kuna) The Go `_type` descriptor globals -- an analysis-pass commit
         // gate (`analysis_go_type_globals`) read console-side via
         // kuna_live_value, like `libgccsigs`. Default-on.
@@ -515,6 +512,9 @@ fn option_values_live_value_present_for_76() {
                             | "ifelseflatten"
                             | "crossjumprevert"
                             | "dedupitetail"
+                            // (kuna) `tlsnames` is an analysis-pass gate read console-side
+                            // via kuna_live_value, so it has no codegen live reader.
+                            | "tlsnames"
                             | "iteregion"
                             | "iteexpr"
                             | "iteboolean"
@@ -868,11 +868,14 @@ fn option_values_live_value_present_for_76() {
     // +1 for `postinc` (live_field = post_increment).
     // +1 for `panicloc` (live_field = analysis_panicloc).
     // +1 for `opaquepredicate` (live_field = opaque_predicate).
-    // +1 for `trapaftercall`.
-    // +1 for `retpolinethunk`.
-    // +1 for `vastart`.
-    // +1 for `vaarg`.
-    assert_eq!(with_live, 86);
+    // +1 for `calleefilledarg` (live_field = callee_filled_arg).
+    // +1 for `cstringconst` (live_field = cstring_const).
+    // +1 for `switchextent` (live_field = switch_extent).
+    // +1 for `trapaftercall` (live_field = trap_after_call).
+    // +1 for `retpolinethunk` (live_field = retpoline_thunk).
+    // +1 for `vastart` (live_field = va_start).
+    // +1 for `vaarg` (live_field = va_arg).
+    assert_eq!(with_live, 89);
 }
 
 #[test]
@@ -1128,12 +1131,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `opaquepredicate`; its P3 row sits after `globalarrayanchor`.
     // +1 for `calltable`; its P1 row sits after `tailcallentry`.
     // +1 for `stubbinds`; its P1 row sits after `calltable`.
-    // +1 for `trapaftercall`.
-    // +1 for `retpolinethunk`.
-    // +1 for `tlsnames`.
-    // +1 for `vastart`.
-    // +1 for `vaarg`.
-    assert_eq!(json.matches("},\n").count(), 233);
+    // +1 for `cstringconst`; its P9 row sits after `globalref`.
+    // +1 for `switchextent`; its P2 row sits after `switchmodbound`.
+    assert_eq!(json.matches("},\n").count(), 236);
+    // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 
 #[test]

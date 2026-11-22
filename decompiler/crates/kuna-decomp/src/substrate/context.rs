@@ -346,8 +346,15 @@ impl GlobalQuery {
     /// `space_index`: the function whose body holds `offset` as far as the
     /// symbol table can tell. The sorted entries are built on first use.
     pub fn function_entry_at_or_before(&self, space_index: int4, offset: u64) -> Option<u64> {
+        let starts = self.function_starts(space_index)?;
+        let after = starts.partition_point(|&start| start <= offset);
+        after.checked_sub(1).map(|at| starts[at])
+    }
+
+    /// The sorted function entries of `space_index`, built on first use.
+    fn function_starts(&self, space_index: int4) -> Option<&[u64]> {
         let index = self.index_for_space(space_index)?;
-        let starts = index.function_starts.get_or_init(|| {
+        Some(index.function_starts.get_or_init(|| {
             let mut starts: Vec<u64> = index
                 .interval_order
                 .iter()
@@ -357,9 +364,13 @@ impl GlobalQuery {
                 .collect();
             starts.dedup();
             starts
-        });
-        let after = starts.partition_point(|&start| start <= offset);
-        after.checked_sub(1).map(|at| starts[at])
+        }))
+    }
+
+    /// The entry of the first function symbol after `offset` in `space_index`.
+    pub fn function_entry_after(&self, space_index: int4, offset: u64) -> Option<u64> {
+        let starts = self.function_starts(space_index)?;
+        starts.get(starts.partition_point(|&start| start <= offset)).copied()
     }
 
     fn index_for_space(&self, space_index: int4) -> Option<&GlobalSpaceIndex> {
@@ -748,6 +759,8 @@ pub struct ArchContext {
     pub retsysreg_cop_userops: Vec<kuna_base::types::uint4>,
     /// Retain register trials carrying proven stack addresses.
     pub stack_addr_arg_trial: bool,
+    /// (kuna) `option calleefilledarg`.
+    pub callee_filled_arg: bool,
     /// (kuna) `option bejoin`: when may a two-register value join with its
     /// high word in the first register where the ABI puts it?  Read by
     /// [`crate::p4_calls::kuna_bejoin::mode`].
@@ -1387,6 +1400,10 @@ pub struct ArchContext {
     /// architecture.  Read by `JumpBasic::recoverModel` before
     /// `kunaTryModuloBoundTable`.  `false` (default off / upstream byte-identical).
     pub switch_modulo_bound: bool,
+    /// (kuna) End a jump table no range check bounds at the next jump table
+    /// its function dispatches through (`option switchextent`,
+    /// `p2_lift/kuna_switchextent.rs`), shared from the real architecture.
+    pub switch_extent: bool,
     /// (kuna `lazyfuncs`) The entry starts the commit installed as names only,
     /// sorted, so the run-on cut (`kuna_switchrunon`) sees the same functions
     /// with the option on.
@@ -1603,6 +1620,7 @@ impl ArchContext {
             retsysreg_userops: Vec::new(),
             retsysreg_cop_userops: Vec::new(),
             stack_addr_arg_trial: false,
+            callee_filled_arg: true,
             // (kuna) `option bejoin`; the real value is copied from the engine
             // Architecture in `build_arch_handle`.
             be_join: crate::kuna_bejoin::BeJoinMode::Off,
@@ -1796,6 +1814,7 @@ impl ArchContext {
             alias_block_level: 2, // Architecture default: block structs and arrays
             funcptr_align: 0,
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
+            switch_extent: false, // (kuna) option switchextent; the real architecture carries the shipped default
             lazy_entry_starts: Rc::default(),
             const_select_jump: crate::kuna_constselectjump::ConstSelectMode::Off, // (kuna) constant-select indirect branch; reset_defaults sets the shipped default
             highslice_guard: false,
@@ -2357,6 +2376,22 @@ impl ArchContext {
             let after = parked.partition_point(|&start| start <= offset);
             named.max(after.checked_sub(1).map(|at| parked[at]))
         })
+    }
+
+    /// (kuna `switchextent`) The first known function entry above `addr`'s
+    /// offset in its space, over the same functions [`Self::function_owner`]
+    /// sees.
+    pub fn function_entry_after(&self, addr: &Address) -> Option<u64> {
+        let query = self.effective_global_query(addr)?;
+        let space_index = addr.get_space()?.get_index();
+        let offset = addr.get_offset();
+        let named = query.function_entry_after(space_index, offset);
+        let at = self.lazy_entry_starts.partition_point(|&start| start <= offset);
+        let parked = self.lazy_entry_starts.get(at).copied();
+        match (named, parked) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
     }
 
     /// (kuna `switchrunon`) Whether `b` lies in the load-image section that

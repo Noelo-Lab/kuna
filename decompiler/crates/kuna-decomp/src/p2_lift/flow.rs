@@ -4083,7 +4083,7 @@ truncating the fall-through here"
             let retried = self.data.find_jump_table_index(op).filter(|&idx| {
                 self.data.get_jump_table(idx as int4).kuna_keeps_recovered_targets()
             });
-            let mode = if crate::decompile_drive::deadline_passed_in("jump-table recovery") {
+            let mut mode = if crate::decompile_drive::deadline_passed_in("jump-table recovery") {
                 Ok(None)
             } else {
                 let mode = self.data.recover_jump_table_flow(
@@ -4096,6 +4096,64 @@ truncating the fall-through here"
                 crate::decompile_drive::deadline_passed_in("jump-table recovery");
                 mode
             };
+            // (kuna `switchextent`) A table nothing bounded: decode the
+            // function's extent once, name its jump tables, and when it has
+            // another table to end this one at, try again with that bound
+            // (`kuna_switchextent.rs`).
+            // A table that is its function's last and whose rows run on asked
+            // for the next functions' tables too, on either attempt.
+            let mut wanted = self.data.kuna_later_wanted.take();
+            let mut rounds = 0;
+            while rounds < 2
+                && matches!(mode, Ok(None) | Err(RecoveryMode::FailNormal))
+                && retried.is_none()
+                && (self.data.kuna_extent_tables.is_none() || wanted.is_some())
+                && self.data.get_arch().switch_extent
+                && !crate::decompile_drive::deadline_passed_in("jump-table recovery")
+            {
+                rounds += 1;
+                let entry = self.data.get_address().clone();
+                let end = self.data.get_arch().function_entry_after(&entry);
+                let mut bounded = false;
+                if self.data.kuna_extent_tables.is_none() {
+                    let tables = std::rc::Rc::new(super::kuna_switchextent::function_tables(
+                        self.env.translate(), self.env.mapped_flow_image(), &entry, end,
+                    ));
+                    if let Some(partial) = shared_partial.as_mut() {
+                        partial.kuna_extent_tables = Some(std::rc::Rc::clone(&tables));
+                    }
+                    bounded = tables.len() >= 2;
+                    self.data.kuna_extent_tables = Some(tables);
+                }
+                if let Some(table) = wanted {
+                    let arch = self.data.get_arch();
+                    let space = entry.get_space().cloned();
+                    let next_entry = |at: u64| {
+                        let s = space.as_ref()?;
+                        arch.function_entry_after(&Address::new(std::rc::Rc::clone(s), at))
+                    };
+                    let later = std::rc::Rc::new(end.map_or_else(Vec::new, |end| {
+                        super::kuna_switchextent::later_tables(
+                            self.env.translate(), self.env.mapped_flow_image(), &entry, end, table, next_entry,
+                        )
+                    }));
+                    if let Some(partial) = shared_partial.as_mut() {
+                        partial.kuna_later_tables = Some(std::rc::Rc::clone(&later));
+                    }
+                    self.data.kuna_later_tables = Some(later);
+                    bounded = true;
+                }
+                if bounded {
+                    mode = self.data.recover_jump_table_flow(
+                        op,
+                        record,
+                        &visited_snapshot,
+                        run_pipeline,
+                        &mut shared_partial,
+                    );
+                }
+                wanted = self.data.kuna_later_wanted.take();
+            }
             let mode = match (mode, retried) {
                 (Ok(Some(idx)), _) => Ok(Some(idx)),
                 (_, Some(idx)) => {

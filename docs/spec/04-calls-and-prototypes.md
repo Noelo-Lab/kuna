@@ -254,6 +254,31 @@ existing treatment. Ordinary call alias handling then preserves output loads
 and their dependent conditions. A stack address may be incidental, so a known
 interface should use a declared prototype instead of this inference.
 
+With `calleefilledarg on` (default), the selector register is not a parameter
+slot of an Objective-C selector stub. `ParamListStandard::forceNoUse` applies
+the positional rule of every register convention at each call: the first
+register nobody fills ends the argument list, so a trial scored
+definitely-not-used turns every trial after it inactive. A Mach-O image linked
+with `-objc_stubs_fast` sends each message through an `objc_msgSend$<sel>` stub
+(the linker's name for it, which the `objc` analyzer also gives it in a stripped
+image) that loads the selector into `x1` (`rsi`) and jumps through a GOT slot to
+`objc_msgSend`; the caller leaves that register alone and stages the method's
+real arguments in `x2` (`rdx`) onward. At a direct call to a callee so named
+whose body agrees -- the entry-liveness probe `calleedeadarg` caches for every
+direct call shows every path leaving through an indirect jump, none returning,
+calling or running a user op, nothing read on entry, and the register written on
+every path before anything could read it -- a definitely-not-used register
+trial, and a hole `buildTrialMap` backfills on such a register, are stepped over
+by `forceNoUse` and never materialised by `forceInactiveChain`'s hole filling:
+the slots after it are scored on their own evidence. The chain rule is
+untouched. The name is what keeps a C callee out: `void tramp2(void) {
+g_fp(g_x, 1); }` also fills `rdi` and `rsi` and jumps through a register, but a
+C callee takes its parameters in order, so the `idiv` remainder a clang -O0
+caller leaves in `rdx` is no argument of it, and the cascade is what keeps it
+off the call. A trial the caller's evidence scored anything else, a stack trial,
+an indirect call, every other callee, and a stub the probe could not cover keep
+the positional rule; outside Objective-C images the option is inert.
+
 
 ```yaml
 Anchors:

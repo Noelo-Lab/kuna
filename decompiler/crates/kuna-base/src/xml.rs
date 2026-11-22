@@ -2274,7 +2274,11 @@ mod tests {
         // and kuna-vaarg-gcc / gcc va_arg reads through a va_list pointer print as va_arg(ap, T)
         // and kuna-vaarg-loop-clang / clang va_arg loops on a promoted and a parameter va_list
         // and kuna-vaarg-loop-gcc / gcc va_arg loops whose tail is copied into each arm
-        assert_eq!(count, 856, "corpus file count drifted");
+        // and kuna-calleefilledarg / an objc_msgSend$ selector stub keeps the arguments staged after x1 (option calleefilledarg)
+        // and kuna-calleefilledarg-ctramp / a C trampoline that fills rsi keeps the positional rule
+        // and kuna-switchextent-a64 / an unchecked AArch64 table ends at the function's next table (option switchextent)
+        // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
+        assert_eq!(count, 860, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
