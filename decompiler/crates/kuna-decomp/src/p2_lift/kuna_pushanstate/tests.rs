@@ -202,3 +202,50 @@ fn a_copy_reads_its_source_lazily_until_overwritten_or_forgotten() {
     s.clobber_mutable(&img, 1);
     assert!(s.copies.iter().all(|c| c.base.is_some()));
 }
+
+#[test]
+fn a_merged_decision_splits_over_its_recorded_constants() {
+    use super::super::kuna_pushanemu::{split_over_symbols, symbol_pin, SymValues};
+    use kuna_num::opcodes::OpCode::*;
+    let mut a = ExprArena::new();
+    let mut s = State::new(false, (0x200, 0x216));
+    let locs = vec![(SymLoc { loc: Loc::Reg { off: 0x30 }, size: 4 }, (0xffff_fffe, 0))];
+    let made = s.symbolize_known(&mut a, 9, &locs);
+    let flag = made[0].1;
+    let fv = a.as_var(flag).unwrap();
+    let x = s.read_reg(&mut a, 0, 4);
+    let z = a.cst(4, 0);
+    let c = a.mk_bin(CPUI_INT_EQUAL, x, z, 1);
+    let zc = a.mk_un(CPUI_INT_ZEXT, c, 4);
+    let one = a.cst(4, 1);
+    // vpc = 0x1000 + 0x40 * (flag ? (x == 0) : 1): a virtual branch whose
+    // decision a join merged into `flag`
+    let sel = a.mk_subpiece(flag, 0, 1);
+    let pick = a.mk_ite(sel, zc, one);
+    let k = a.cst(4, 0x40);
+    let scaled = a.mk_bin(CPUI_INT_MULT, pick, k, 4);
+    let base = a.cst(4, 0x1000);
+    let vpc = a.mk_bin(CPUI_INT_ADD, base, scaled, 4);
+    assert!(a.case_split(vpc).is_none_or(|cs| cs.iter().any(|(_, e)| a.is_const(*e).is_none())));
+    let values: SymValues = Default::default();
+    assert!(split_over_symbols(&mut a, &values, vpc).is_none(), "no recorded constants: no split");
+    values.borrow_mut().insert(fv, [0u128, 1].into_iter().collect());
+    let cases = split_over_symbols(&mut a, &values, vpc).expect("split");
+    let mut got: Vec<(u128, u128, Option<bool>)> = cases
+        .iter()
+        .map(|(assign, e)| {
+            let (sym, kc) = symbol_pin(&mut a, &values, assign[0].0).expect("pin first");
+            assert_eq!(sym, flag);
+            (a.is_const(kc).unwrap(), a.is_const(*e).unwrap(), assign.get(1).map(|(atom, v)| {
+                assert_eq!(*atom, c);
+                *v
+            }))
+        })
+        .collect();
+    got.sort();
+    assert_eq!(got, vec![(0, 0x1040, None), (1, 0x1000, Some(false)), (1, 0x1040, Some(true))]);
+    // a value set over the limit is left unsplit
+    let many: std::collections::BTreeSet<u128> = (0..17).collect();
+    values.borrow_mut().insert(fv, many);
+    assert!(split_over_symbols(&mut a, &values, vpc).is_none());
+}

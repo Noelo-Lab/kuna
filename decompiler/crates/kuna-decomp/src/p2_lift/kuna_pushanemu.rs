@@ -506,6 +506,42 @@ impl<'a> Emulator<'a> {
         Some(result)
     }
 
+    /// A load at an address decided by merge symbols with recorded
+    /// constants and boolean atoms ([`split_over_symbols`]: a virtual
+    /// branch whose decision was merged at a join): one read per concrete
+    /// address, selected by the disjunction of the cases that reach it.
+    fn symbol_split_load(&mut self, state: &mut State, arena: &mut ExprArena, addr: ExprId, size: u8) -> Option<ExprId> {
+        let cases = split_over_symbols(arena, &self.sym_values, addr)?;
+        if cases.len() > MAX_SPLIT_ASSIGNMENTS {
+            return None;
+        }
+        let mut groups: Vec<(i128, Vec<ExprId>)> = Vec::new();
+        for (assign, a) in &cases {
+            let (None, off) = arena.affine_probe(*a)? else { return None };
+            let cond = assignment_cond(arena, assign);
+            match groups.iter_mut().find(|(k, _)| *k == off) {
+                Some((_, conds)) => conds.push(cond),
+                None => groups.push((off, vec![cond])),
+            }
+        }
+        if groups.len() > MAX_INDEXED_VALUES {
+            return None;
+        }
+        let mut vals: Vec<ExprId> = Vec::with_capacity(groups.len());
+        for (off, _) in &groups {
+            vals.push(self.read_data(state, arena, None, *off, size));
+        }
+        let mut result = vals[vals.len() - 1];
+        for i in (0..groups.len() - 1).rev() {
+            let mut cond = groups[i].1[0];
+            for c in &groups[i].1[1..] {
+                cond = arena.mk_bin(CPUI_INT_OR, cond, *c, 1);
+            }
+            result = arena.mk_ite(cond, vals[i], result);
+        }
+        Some(result)
+    }
+
     pub fn load(&mut self, state: &mut State, arena: &mut ExprArena, space: Space, addr: ExprId, size: u8) -> ExprId {
         match space {
             Space::Register => {
@@ -568,6 +604,9 @@ impl<'a> Emulator<'a> {
             }
         }
         if let Some(v) = self.indexed_load(state, arena, addr, size) {
+            return v;
+        }
+        if let Some(v) = self.symbol_split_load(state, arena, addr, size) {
             return v;
         }
         state.unknown_loads += 1;
@@ -963,6 +1002,77 @@ pub fn assignment_cond(arena: &mut ExprArena, assign: &[(ExprId, bool)]) -> Expr
         acc = arena.mk_bin(CPUI_INT_AND, acc, lit, 1);
     }
     acc
+}
+
+/// Most combinations of recorded constants [`split_over_symbols`] enumerates.
+const MAX_SYMBOL_CASES: usize = 16;
+
+/// The values `e` takes over every recorded constant of each merge symbol
+/// it depends on whose constants are all the values its location held
+/// (`sym_values`), and then over the boolean atoms that remain: each case
+/// assigns `sym == k` true for its constants, followed by the atoms'
+/// assignment.  `None` when `e` depends on no such symbol, when the
+/// constants combine into more than [`MAX_SYMBOL_CASES`] cases, or when a
+/// case stays symbolic without atoms to split.
+pub fn split_over_symbols(arena: &mut ExprArena, sym_values: &SymValues, e: ExprId) -> Option<Vec<(Vec<(ExprId, bool)>, ExprId)>> {
+    let syms: Vec<(VarId, Vec<u128>)> = {
+        let known = sym_values.borrow();
+        arena.free_vars(e).into_iter().filter_map(|v| known.get(&v).filter(|vals| !vals.is_empty()).map(|vals| (v, vals.iter().copied().collect()))).collect()
+    };
+    if syms.is_empty() {
+        return None;
+    }
+    let mut total = 1usize;
+    for (_, vals) in &syms {
+        total = total.checked_mul(vals.len()).filter(|t| *t <= MAX_SYMBOL_CASES)?;
+    }
+    let exprs: Vec<ExprId> = syms.iter().map(|(v, _)| arena.var_expr(*v)).collect::<Option<_>>()?;
+    let mut out = Vec::new();
+    'combo: for idx in 0..total {
+        let mut rest = idx;
+        let mut map = BTreeMap::new();
+        let mut pins = Vec::with_capacity(syms.len());
+        for ((_, vals), &ve) in syms.iter().zip(&exprs) {
+            let k = arena.cst(arena.size(ve), vals[rest % vals.len()]);
+            rest /= vals.len();
+            let atom = arena.mk_bin(CPUI_INT_EQUAL, ve, k, 1);
+            match arena.is_const(atom) {
+                Some(0) => continue 'combo,
+                Some(_) => {}
+                None => pins.push((atom, true)),
+            }
+            map.insert(ve, k);
+        }
+        let v = arena.substitute(e, &map);
+        for (assign, r) in arena.case_split(v)? {
+            let mut a = pins.clone();
+            a.extend(assign);
+            out.push((a, r));
+        }
+    }
+    (!out.is_empty()).then_some(out)
+}
+
+/// The merge symbol and constant an atom of [`split_over_symbols`] pins:
+/// the atom depends on one symbol with recorded constants and holds for
+/// exactly one of them.
+pub fn symbol_pin(arena: &mut ExprArena, sym_values: &SymValues, atom: ExprId) -> Option<(ExprId, ExprId)> {
+    let vars = arena.free_vars(atom);
+    let [v] = vars.iter().copied().collect::<Vec<_>>()[..] else { return None };
+    let vals: Vec<u128> = sym_values.borrow().get(&v)?.iter().copied().collect();
+    let x = arena.var_expr(v)?;
+    let mut hit = None;
+    for k in vals {
+        let kc = arena.cst(arena.size(x), k);
+        let map = BTreeMap::from([(x, kc)]);
+        let r = arena.substitute(atom, &map);
+        match arena.is_const(r)? {
+            0 => {}
+            _ if hit.is_none() => hit = Some(kc),
+            _ => return None,
+        }
+    }
+    hit.map(|k| (x, k))
 }
 
 /// `state := c ? taken : state`, location by location.

@@ -4488,6 +4488,22 @@ exit and the VPC of each arm. When every assignment gives the same VPC,
 there is no fork: that constant replaces the VPC expression throughout the
 state, so the next handler fetches from a concrete VPC instead of carrying a
 select whose value only a case split knows.
+The deciding value may be a merge symbol rather than an atom: a virtual branch
+on a flag that a join merged (VMProtect's hunatcha: a 0/1 stack slot recorded
+at a join after an external call) leaves the VPC an `ite` over a byte of that
+symbol. When the VPC does not reduce to constants under its atoms, it is split
+over every recorded constant of each symbol it depends on whose location was
+never opened, and then over the atoms that remain
+(`kuna_pushanemu.rs (split_over_symbols)`, at most 16 combinations of
+constants), as `Explorer::enumerate_symbol_target` does for one symbol in a
+target. Each case's assignment includes the atom `sym == k`. In an arm where
+such an atom holds on every assignment that reaches it, the symbol itself is
+replaced by `k` in the arm's state. A load whose address splits this way into
+concrete addresses is read once per address and becomes a select over the
+reads (`Emulator::symbol_split_load`), which extends `indexed_load` to several
+symbols and to atoms left after the substitution. A symbol whose location was
+opened is never enumerated: a fetch or dispatch decided by it stays
+unresolved, and the function carries the incomplete warning.
 
 A node that ends in a native conditional reads each successor's context from
 that successor's own state (`Explorer::emulate_node`). A conditional that only

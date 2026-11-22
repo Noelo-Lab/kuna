@@ -25,7 +25,7 @@ use std::rc::Rc;
 
 use kuna_num::opcodes::OpCode;
 
-use super::kuna_pushanemu::{merge_ite, Emulator, Exit, InsnTrace, LiftedInsn, PushanTarget, SymValues, VpcSource, FETCH_WINDOW};
+use super::kuna_pushanemu::{merge_ite, split_over_symbols, symbol_pin, Emulator, Exit, InsnTrace, LiftedInsn, PushanTarget, SymValues, VpcSource, FETCH_WINDOW};
 use super::kuna_pushanexpr::{ExprArena, ExprId, VarId, VarKind};
 use super::kuna_pushanstate::{Loc, PushanImage, State, SymLoc};
 
@@ -1469,7 +1469,12 @@ impl<'a> Explorer<'a> {
         if self.arena.is_const(v).is_some() {
             return None;
         }
-        let cases = self.arena.case_split(v)?;
+        // A VPC still symbolic under its atoms may be decided by merge
+        // symbols whose recorded constants are all they held.
+        let cases = match self.arena.case_split(v) {
+            Some(cs) if cs.iter().all(|(_, e)| self.arena.is_const(*e).is_some()) => cs,
+            _ => split_over_symbols(&mut self.arena, &self.sym_values, v)?,
+        };
         let mut groups: Vec<(u64, Vec<Vec<(ExprId, bool)>>)> = Vec::new();
         for (assign, e) in &cases {
             let c = self.arena.is_const(*e)? as u64;
@@ -1509,6 +1514,9 @@ impl<'a> Explorer<'a> {
                 let Some(first) = value_in(&assigns[0]) else { continue };
                 if assigns.iter().all(|as_| value_in(as_) == Some(first)) {
                     map.insert(*a, self.arena.cst(1, first as u128));
+                    if let Some((sym, k)) = first.then(|| symbol_pin(&mut self.arena, &self.sym_values, *a)).flatten() {
+                        map.insert(sym, k);
+                    }
                 }
             }
             // Whatever else the arm assumes, the virtual PC itself is `c` on it.
