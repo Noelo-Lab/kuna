@@ -29,7 +29,7 @@
       "classes_with_a_named_slot_function": 173,
       "method": "regular expressions over decompile-all output, main plus #1606"
     },
-    "pr1756_branch_ac6bc6239": {
+    "pr1756_branch_a94030b13": {
       "probe_shapes_on_vs_names": "byte-identical",
       "probe_shapes_on_with_type_v3_Circle": "(v3.vptr)->vfn_2)(&v3,a0)",
       "vfunc_2_on_with_this_Shape": "((int *)this)[2] * a1",

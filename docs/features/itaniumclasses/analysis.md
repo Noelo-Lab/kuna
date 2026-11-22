@@ -136,7 +136,7 @@ Read from the PR descriptions and code, not run:
 | Vtable object | no | `C_vtable` of type `C_vtbl` |
 | Targets | ELF; not shared objects with symbolic vtable relocations | arm64 XNU kernels and kexts |
 
-Measured on the #1756 branch (`ac6bc6239`, release build), on the fixture:
+Measured on the #1756 branch (`a94030b13`, release build; the same on the earlier head `ac6bc6239`), on the fixture:
 
 | Run | `probe_shapes` | `Shape::vfunc_2` |
 |---|---|---|
