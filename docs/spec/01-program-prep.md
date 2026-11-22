@@ -6309,8 +6309,12 @@ every other binary's pass list is byte-identical to before the pass existed):
   conformance's type replaced by the concrete one so two instantiations of
   one generic conformance keep apart names. The names follow the
   metadata pass's label-gated rename; a body that does not decode to these
-  shapes and a call whose arguments are not constants are left alone, and
-  the facts are held apart (`AnalysisOutput::swift_helpers`) so `option
+  shapes and a call whose arguments are not constants are left alone. Both
+  shapes are the shrink-wrapped ones, the cache test before any frame setup:
+  a helper that saves its frame first and branches back to the epilogue
+  after the runtime call, or an accessor that opens with `stp x29, x30`
+  (swiftc 6.0's aarch64 output, and an Xcode-built macOS app), is not
+  recognised. The facts are held apart (`AnalysisOutput::swift_helpers`) so `option
   swifthelpers off` drops them at commit. On a 72 MB third-party iOS app the
   arm names 278 helper copies (one pair per statically linked package), 818
   lazy accessors and 18,549 caches, for about 0.4 s of load time in a dev
