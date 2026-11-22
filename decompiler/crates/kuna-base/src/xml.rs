@@ -2266,6 +2266,10 @@ mod tests {
         // and kuna-gotypenames / Go type descriptors and itabs named as the linker spells them, go1.16 on
         // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
         // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
+        // and kuna-calleefilledarg / an objc_msgSend$ selector stub keeps the arguments staged after x1 (option calleefilledarg)
+        // and kuna-calleefilledarg-ctramp / a C trampoline that fills rsi keeps the positional rule
+        // and kuna-switchextent-a64 / an unchecked AArch64 table ends at the function's next table (option switchextent)
+        // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
         // and kuna-objcarc / Objective-C ARC bookkeeping calls are hidden as the copies and stores they stand for
         // and kuna-objcoutlinedresult / an outlined objc_retain_x<N> returns in x0
         // and kuna-objcstructs / by-value structs and arrays in Objective-C type encodings, global block literals
@@ -2275,7 +2279,7 @@ mod tests {
         // and kuna-objcstubagree / an objc_msgSend$<sel> stub is typed only from declarations that agree on its registers
         // and kuna-oslog / an os_log call prints its decoded arguments; __oslogstring literals print as strings
         // and kuna-darwinvarargs / an undeclared variadic callee on Apple arm64 keeps its stack-passed arguments
-        assert_eq!(count, 857, "corpus file count drifted");
+        assert_eq!(count, 861, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

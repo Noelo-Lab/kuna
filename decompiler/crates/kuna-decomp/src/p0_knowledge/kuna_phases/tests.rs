@@ -44,9 +44,9 @@ fn group_count_is_39() {
 }
 
 #[test]
-fn subphase_count_is_48() {
-    assert_eq!(kuna_num_subphases(), 48);
-    assert_eq!(SUBPHASE_TABLE.len(), 48);
+fn subphase_count_is_49() {
+    assert_eq!(kuna_num_subphases(), 49);
+    assert_eq!(SUBPHASE_TABLE.len(), 49);
 }
 
 #[test]
@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_232() {
-    assert_eq!(kuna_num_settables(), 232);
-    assert_eq!(SETTABLE_TABLE.len(), 232);
+fn settable_count_is_235() {
+    assert_eq!(kuna_num_settables(), 235);
+    assert_eq!(SETTABLE_TABLE.len(), 235);
 }
 
 #[test]
-fn tier_counts_are_46_core_127_transform_59_analysis() {
+fn tier_counts_are_48_core_128_transform_59_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_46_core_127_transform_59_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (46, 127, 59));
+    assert_eq!((core, transform, analysis), (48, 128, 59));
 }
 
 #[test]
@@ -867,9 +867,12 @@ fn option_values_live_value_present_for_76() {
     // +1 for `postinc` (live_field = post_increment).
     // +1 for `panicloc` (live_field = analysis_panicloc).
     // +1 for `opaquepredicate` (live_field = opaque_predicate).
+    // +1 for `calleefilledarg` (live_field = callee_filled_arg).
+    // +1 for `cstringconst` (live_field = cstring_const).
+    // +1 for `switchextent` (live_field = switch_extent).
     // +1 for `objcarc` (live_field = objc_arc).
     // +1 for `oslog` (live_field = os_log_args).
-    assert_eq!(with_live, 84);
+    assert_eq!(with_live, 87);
 }
 
 #[test]
@@ -1125,10 +1128,13 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `opaquepredicate`; its P3 row sits after `globalarrayanchor`.
     // +1 for `calltable`; its P1 row sits after `tailcallentry`.
     // +1 for `stubbinds`; its P1 row sits after `calltable`.
+    // +1 for `cstringconst`; its P9 row sits after `globalref`.
+    // +1 for `switchextent`; its P2 row sits after `switchmodbound`.
     // +1 for `objcarc`; its P2 row sits after `chkstkdarwin`.
     // +1 for `objcresolve`; its P5 row sits after `objcarc`.
     // +1 for `oslog`; its P9 row sits after `objcresolve`.
-    assert_eq!(json.matches("},\n").count(), 231);
+    assert_eq!(json.matches("},\n").count(), 234);
+    // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 
 #[test]
