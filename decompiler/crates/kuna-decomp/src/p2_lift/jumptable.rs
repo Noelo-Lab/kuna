@@ -6123,6 +6123,13 @@ impl JumpTable {
         Ok(count)
     }
 
+    /// (kuna) The address indices of every entry targeting `bl`, in the order
+    /// [`get_index_by_block`](Self::get_index_by_block) counts them.
+    pub fn kuna_indices_by_block(&self, fd: &Funcdata, bl: BlockId) -> KunaResult<Vec<int4>> {
+        let pos = self.block2_position(fd, bl)?;
+        Ok(self.block2addr.iter().filter(|ip| ip.block_position == pos).map(|ip| ip.address_index).collect())
+    }
+
     /// Get the index of the i-th address table entry corresponding to the given
     /// block (C++ `JumpTable::getIndexByBlock`, `jumptable.cc:2635`).
     pub fn get_index_by_block(&self, fd: &Funcdata, bl: BlockId, i: int4) -> KunaResult<int4> {

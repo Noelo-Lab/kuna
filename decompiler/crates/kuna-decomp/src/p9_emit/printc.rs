@@ -4350,9 +4350,7 @@ impl PrintC {
                 labels: &|sw| self.switch_label_set(fd, arch, sw),
                 arm_labels: &|sw, index| {
                     let case = &fd.sblocks_ref().block(sw).switch_caseblocks()[index];
-                    (0..self.switch_case_label_count(fd, sw, case))
-                        .map(|i| self.switch_case_label(fd, arch, sw, case, i).0)
-                        .collect()
+                    self.switch_case_labels(fd, arch, sw, case).into_iter().map(|l| l.0).collect()
                 },
                 block_prints_nothing: &|bb| self.ops_print_nothing(fd, bb),
             };
@@ -5561,12 +5559,43 @@ impl PrintC {
             }
             _ => case.label,
         };
+        let (sz, mask, signed) = self.switch_label_form(fd, arch, blk);
+        (val & mask, sz, signed)
+    }
+
+    /// (kuna `switchmerge`) Every label of a non-default case arm, as
+    /// [`switch_case_label`](PrintC::switch_case_label) gives them for
+    /// `0..switch_case_label_count`, reading the table once instead of once per
+    /// label.
+    pub(crate) fn switch_case_labels(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        blk: BlockId,
+        case: &crate::block::CaseOrder,
+    ) -> Vec<(uintb, int4, bool)> {
+        let n = self.switch_case_label_count(fd, blk, case) as usize;
+        let raw: Vec<uintb> = match (fd.sblocks_ref().block(blk).switch_jt_index(), case.basicblock) {
+            (Some(j), Some(bb)) => {
+                let jt = fd.get_jump_table(j as int4);
+                let indices = jt.kuna_indices_by_block(fd, bb).unwrap_or_default();
+                (0..n).map(|i| jt.get_label_by_index(indices.get(i).copied().unwrap_or(0))).collect()
+            }
+            _ => vec![case.label; n],
+        };
+        let (sz, mask, signed) = self.switch_label_form(fd, arch, blk);
+        raw.into_iter().map(|val| (val & mask, sz, signed)).collect()
+    }
+
+    /// The byte size, value mask and signedness every label of switch `blk`
+    /// prints with.
+    fn switch_label_form(&self, fd: &Funcdata, arch: &Architecture, blk: BlockId) -> (int4, uintb, bool) {
         let sz = self.switch_var_size(fd, blk);
-        let Some(j) = jt_index else {
-            return (val, sz, false);
+        let Some(j) = fd.sblocks_ref().block(blk).switch_jt_index() else {
+            return (sz, uintb::MAX, false);
         };
         let jt = fd.get_jump_table(j as int4);
-        let val = if jt.kuna_lowered_var().is_none() { val & calc_mask(sz) } else { val };
+        let mask = if jt.kuna_lowered_var().is_none() { calc_mask(sz) } else { uintb::MAX };
         let text_signed = self.lang().caps.signed_text_byte;
         let lowered = jt.get_indirect_op().and_then(|op| lowered_switch_label_form(fd, arch, op, text_signed));
         let signed = match lowered {
@@ -5577,7 +5606,7 @@ impl PrintC {
                 .and_then(|op| native_switch_label_signedness(fd, arch, op, text_signed))
                 .unwrap_or(jt.kuna_has_signed_labels()),
         };
-        (val, sz, signed)
+        (sz, mask, signed)
     }
 
     /// (kuna `switchmerge`) The arms `emit_block_switch_c` prints for `blk`.
@@ -5649,8 +5678,7 @@ impl PrintC {
         let mut values = std::collections::BTreeSet::new();
         let mut form = None;
         for case in fd.sblocks_ref().block(sw).switch_caseblocks().iter().filter(|c| !c.isdefault) {
-            for i in 0..self.switch_case_label_count(fd, sw, case) {
-                let (val, sz, signed) = self.switch_case_label(fd, arch, sw, case, i);
+            for (val, sz, signed) in self.switch_case_labels(fd, arch, sw, case) {
                 if form.is_some_and(|f| f != (sz, signed)) || !values.insert(val) {
                     return None;
                 }
