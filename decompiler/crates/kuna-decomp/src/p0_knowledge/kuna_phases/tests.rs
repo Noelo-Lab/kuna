@@ -56,9 +56,9 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_234() {
-    assert_eq!(kuna_num_settables(), 234);
-    assert_eq!(SETTABLE_TABLE.len(), 234);
+fn settable_count_is_235() {
+    assert_eq!(kuna_num_settables(), 235);
+    assert_eq!(SETTABLE_TABLE.len(), 235);
 }
 
 #[test]
@@ -1135,7 +1135,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `switchextent`; its P2 row sits after `switchmodbound`.
     // +1 for `switchmerge`; its P8 row sits after `gotonext`.
     // +1 each for `swifthelpers` and `valuewitness`.
-    assert_eq!(json.matches("},\n").count(), 233);
+    assert_eq!(json.matches("},\n").count(), 234);
     // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 
