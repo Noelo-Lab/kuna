@@ -414,32 +414,32 @@ impl PrintC {
         }
         let group = self.emit.begin_func_proto();
         self.emit.print("func ", SyntaxHighlight::KeywordColor);
+        let proto = fd.get_func_proto();
+        let mut first = 0;
+        if arch.analysis_godwarfsig && fd.kuna_go_receiver.as_ref().is_some_and(|receiver| {
+            receiver.symbol == display && receiver.matches(arch, proto)
+                && arch.symboltab.go_pointer_receiver(fd.get_address()).is_some()
+        }) {
+            if let Some(receiver) = proto.get_param(0) {
+                let paren = self.emit.open_paren("(", 0);
+                self.emit_go_parameter(arch, receiver, 0, markup);
+                self.emit.close_paren(")", paren);
+                self.emit.print(" ", SyntaxHighlight::NoColor);
+                first = 1;
+            }
+        }
         self.emit
             .tag_func_name(&name, SyntaxHighlight::FuncnameColor, markup);
         let paren = self.emit.open_paren("(", 0);
-        let proto = fd.get_func_proto();
         if proto.has_store() {
-            for i in 0..proto.num_params() {
+            for i in first..proto.num_params() {
                 let Some(param) = proto.get_param(i) else {
                     continue;
                 };
-                if i > 0 {
+                if i > first {
                     self.emit.print(", ", SyntaxHighlight::NoColor);
                 }
-                let name = if param.get_name().is_empty() {
-                    crate::database::kuna_materialized_param_name(arch.name_style_angr, i, "")
-                } else {
-                    param.get_name().to_string()
-                };
-                self.remember_go_parameter(i, &name);
-                self.emit
-                    .tag_variable(&identifier(&name), SyntaxHighlight::VarColor, markup);
-                self.emit.print(" ", SyntaxHighlight::NoColor);
-                let ty = param
-                    .get_type()
-                    .map(|t| declarator_parts(t, self.rt_ctx.clone()).0)
-                    .unwrap_or("any".into());
-                self.emit.tag_type(&ty, SyntaxHighlight::TypeColor, markup);
+                self.emit_go_parameter(arch, param, i, markup);
             }
             if proto.is_dotdotdot() {
                 if proto.num_params() > 0 {
@@ -463,6 +463,24 @@ impl PrintC {
             self.emit.end_return_type(ret);
         }
         self.emit.end_func_proto(group);
+    }
+
+    fn emit_go_parameter(
+        &mut self, arch: &Architecture, param: &dyn crate::fspec::ProtoParameter,
+        index: i32, markup: &MarkupRef,
+    ) {
+        let name = if param.get_name().is_empty() {
+            crate::database::kuna_materialized_param_name(arch.name_style_angr, index, "")
+        } else {
+            param.get_name().to_string()
+        };
+        self.remember_go_parameter(index, &name);
+        self.emit.tag_variable(&identifier(&name), SyntaxHighlight::VarColor, markup);
+        self.emit.print(" ", SyntaxHighlight::NoColor);
+        let ty = param.get_type()
+            .map(|ty| declarator_parts(ty, self.rt_ctx.clone()).0)
+            .unwrap_or("any".into());
+        self.emit.tag_type(&ty, SyntaxHighlight::TypeColor, markup);
     }
 
     pub(crate) fn emit_var_decl_go(
@@ -899,6 +917,46 @@ impl PrintC {
         fd.vn_type_read_facing(vn, op)
     }
 
+    /// Go pointer arithmetic needs the address of the array itself.
+    fn go_array_element_base(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        base: VarnodeId,
+        op: OpId,
+    ) -> Option<(VarnodeId, OpId)> {
+        let value = fd.vbank().get(base)?;
+        let def = value.get_def()?;
+        let projection = fd.obank().get(def)?;
+        if !value.is_implied()
+            || value.is_volatile()
+            || projection.code() != kuna_num::opcodes::OpCode::CPUI_PTRSUB
+        {
+            return None;
+        }
+        let referent = projection.get_in(0)?;
+        let offset = fd.vbank().get(projection.get_in(1)?)?;
+        if !offset.is_constant()
+            || offset.get_offset() != 0
+            || fd.vbank().get(referent)?.get_size() != value.get_size()
+        {
+            return None;
+        }
+        let from = self.go_value_type(fd, arch, referent, def);
+        let to = self.go_value_type(fd, arch, base, op);
+        if [&from, &to].iter().any(|ty| {
+            ty.get_metatype() != type_metatype::TYPE_PTR
+                || ty.is_formal_pointer_rel()
+                || ty.get_word_size() != Some(1)
+                || ty.get_size() != value.get_size()
+        }) {
+            return None;
+        }
+        let array = from.get_ptr_to()?;
+        let width = array.get_array_base()?.get_size();
+        (width > 0 && width == to.get_ptr_to()?.get_size()).then_some((referent, def))
+    }
+
     pub(crate) fn op_go_ptradd(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         let Some(operation) = fd.obank().get(op) else {
             return;
@@ -914,7 +972,10 @@ impl PrintC {
             return;
         };
         let target = fd.vn_type_def_facing(output);
-        let source = self.go_value_type(fd, arch, base, op);
+        let (base, base_read) = self
+            .go_array_element_base(fd, arch, base, op)
+            .unwrap_or((base, op));
+        let source = self.go_value_type(fd, arch, base, base_read);
         let value = self
             .context
             .is_set(modifiers::PRINT_LOAD_VALUE | modifiers::PRINT_STORE_VALUE);
@@ -933,7 +994,7 @@ impl PrintC {
         ) {
             self.push_go_call("uintptr", op);
         }
-        self.push_vn_ir_m(fd, arch, base, op, mods);
+        self.push_vn_ir_m(fd, arch, base, base_read, mods);
         self.push_op(&tokens::MULTIPLY, Some(op_key(op)));
         self.push_vn_ir_m(fd, arch, index, op, mods);
         self.push_vn_ir_m(fd, arch, scale, op, mods);
@@ -1072,6 +1133,7 @@ impl PrintC {
         }
         if GO_SPELLER.declarator(&self.rt_ctx, target).0
             != GO_SPELLER.declarator(&self.rt_ctx, &source).0
+            && !self.push_go_pair_conversion(fd, value, op, &source, target)
         {
             self.push_go_conversion(target, &source, op);
         }

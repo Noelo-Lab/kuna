@@ -52,6 +52,7 @@
 <symbol space="ram" offset="0x10090" name="cp"/>
 </binaryimage>
 <script>
+  <com>option typevote off</com>
   <com>lo fu cll</com>
   <com>decompile</com>
   <com>print C</com>

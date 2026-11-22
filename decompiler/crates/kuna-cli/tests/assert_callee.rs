@@ -41,8 +41,20 @@ fn a_stated_indirect_jump_is_a_tail_call() {
     let out = kuna(&["decompile", "dispatch", "--assert", "callee dispatch::0x1457 handle_open"]);
     let stdout = text(&out.stdout);
     assert!(out.status.success(), "{stdout}\n{}", text(&out.stderr));
-    assert!(stdout.contains("  handle_open(a0,a2);"), "{stdout}");
+    assert!(stdout.contains("  return handle_open(a0,a2);"), "{stdout}");
     assert!(!stdout.contains("switch"), "{stdout}");
+    let off = kuna(&[
+        "decompile",
+        "dispatch",
+        "--assert",
+        "callee dispatch::0x1457 handle_open",
+        "--option",
+        "protoorder",
+        "off",
+    ]);
+    let off = text(&off.stdout);
+    assert!(off.contains("  handle_open(a0,a2);"), "{off}");
+    assert!(!off.contains("return handle_open"), "{off}");
 }
 
 #[test]
