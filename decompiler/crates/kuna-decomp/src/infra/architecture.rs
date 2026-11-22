@@ -1798,9 +1798,8 @@ pub struct Architecture {
     /// database (named by the `kuna_fid_db` env var), renaming a matched
     /// `FUN_*`/`sub_*` placeholder back to its library name — the capability that
     /// re-identifies a function in a STRIPPED binary (e.g. `sub_4017c0` →
-    /// `kuna_crc32`). Reads the Listing (`--option listing on` builds it) and is a
-    /// no-op without the Listing AND without a configured DB. Default-off, real-ELF
-    /// path only ⇒ every parity gate is byte-identical.
+    /// `kuna_crc32`). Reads the Listing and does nothing without a configured DB.
+    /// On raw images the existing discovery partition supplies the Listing.
     pub analysis_fid: bool,
     /// Require matching specific hash and instruction count for FID renames.
     pub analysis_fid_strict: bool,

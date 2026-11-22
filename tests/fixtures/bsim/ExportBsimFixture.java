@@ -10,6 +10,8 @@
 //   (cd "$tmp" && rm -f bsim.rep/{idata,versioned}/~*.bak &&
 //     python3 -m zipfile -c "$root/tests/fixtures/bsim/stock-project.zip" bsim.gpr bsim.rep)
 //   cp "$tmp/reference.gzf" tests/fixtures/bsim/reference.gzf
+// To regenerate unnamed.gzf, repeat in a new scratch project with output
+// "$tmp/unnamed.gzf" and append --placeholders-only. Copy just that archive.
 // The ZIP compresses the stock project marker and saved pages; it is not a Ghidra export.
 import java.io.File;
 import java.nio.file.Files;
@@ -19,12 +21,14 @@ import ghidra.app.script.GhidraScript;
 import ghidra.app.util.bin.ByteArrayProvider;
 import ghidra.app.util.importer.ProgramLoader;
 import ghidra.app.util.opinion.ElfLoader;
+import ghidra.program.model.symbol.SourceType;
 
 public class ExportBsimFixture extends GhidraScript {
     @Override public void run() throws Exception {
         var args = getScriptArgs();
-        if (args.length != 2) {
-            throw new IllegalArgumentException("expected input executable and GZF output path");
+        boolean placeholdersOnly = args.length == 3 && args[2].equals("--placeholders-only");
+        if (args.length != 2 && !placeholdersOnly) {
+            throw new IllegalArgumentException("expected input, GZF output and optional --placeholders-only");
         }
         // Feed bytes, not a file-backed provider: even deleted DB records can retain an FSRL.
         try (var source = new ByteArrayProvider("prog", Files.readAllBytes(Path.of(args[0])));
@@ -41,6 +45,14 @@ public class ExportBsimFixture extends GhidraScript {
                     currentProgram.setExecutablePath("prog");
                     addFunction(0x401000, "project_scale_a");
                     addFunction(0x401020, "project_scale_b");
+                    if (placeholdersOnly) {
+                        currentProgram.getFunctionManager().getFunctionAt(toAddr(0x401000))
+                            .setName(null, SourceType.DEFAULT);
+                        currentProgram.getFunctionManager().getFunctionAt(toAddr(0x401020))
+                            .setName("sub_401020", SourceType.USER_DEFINED);
+                        currentProgram.getFunctionManager().getFunctionAt(toAddr(0x401090))
+                            .setName(null, SourceType.DEFAULT);
+                    }
                 }
                 loaded.getPrimary().save(monitor).packFile(new File(args[1]), monitor);
             }

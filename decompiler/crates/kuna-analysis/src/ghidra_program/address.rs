@@ -1,6 +1,13 @@
 use super::*;
 
 const PROGRAM_INFO: &str = "Program Information.";
+const PROGRAM_DB_VERSION: &str = "32";
+
+pub(super) struct ProgramInfo {
+    layout: Layout,
+    language_id: String,
+    image_base: u64,
+}
 
 pub(super) struct Metadata {
     pub(super) layout: Layout,
@@ -10,11 +17,11 @@ pub(super) struct Metadata {
     pub(super) executable_sha256: String,
 }
 
-impl Metadata {
+impl ProgramInfo {
     pub(super) fn read(db: &Database<'_>, used: &mut HashSet<i32>) -> KunaResult<Self> {
         let program = require_table(db, "Program", 0, (Str, "Key"), &[(Str, "Value")])?;
         let mut language_id = None;
-        let mut image_base = 0;
+        let mut image_offset = None;
         let mut version = None;
         db.visit_program_strings(program, used, |key, mut columns| {
             let Some(FieldValue::Str(value)) = columns.pop() else {
@@ -22,20 +29,37 @@ impl Metadata {
             };
             match key {
                 "Language ID" => language_id = value,
-                "Image Offset" => image_base = parse_hex(value.as_deref(), "Program Image Offset")?,
+                "Image Offset" => image_offset = Some(value),
                 "DB Version" => version = value,
                 _ => {}
             }
             Ok(())
         })?;
-        if version.as_deref() != Some("32") {
-            return Err(bad("unsupported Program DB Version (expected 32 for Ghidra 12.1.2)"));
+        let version = version.ok_or_else(|| bad("missing Program DB Version"))?;
+        if version != PROGRAM_DB_VERSION {
+            return Err(bad(format_args!(
+                "unsupported Program DB Version {version:?}; only saved version {PROGRAM_DB_VERSION} \
+                 (Ghidra 12.1.2) is supported"
+            )));
         }
+        let image_base = match image_offset {
+            Some(offset) => parse_hex(offset.as_deref(), "Program Image Offset")?,
+            None => 0,
+        };
         let language_id = language_id.ok_or_else(|| bad("missing Program Language ID"))?;
         let layout = Layout::from_language(&language_id)?;
         if image_base > layout.mask() {
             return Err(bad("unsupported address map: image base is outside the default space"));
         }
+        Ok(Self { layout, language_id, image_base })
+    }
+}
+
+impl Metadata {
+    pub(super) fn read(
+        db: &Database<'_>, used: &mut HashSet<i32>, program: ProgramInfo,
+    ) -> KunaResult<Self> {
+        let ProgramInfo { layout, language_id, image_base } = program;
 
         let properties = require_table(db, "Property Table", 0, (Str, "Property Name"), &[
             (Str, "Value"), (Byte, "Type"),

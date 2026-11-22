@@ -54,6 +54,8 @@ pub struct RawDiscovery {
     pub dos_exits: DosExits,
     /// Where each entry's flow ends ([`kuna_rawextent`]), on x86 real mode.
     pub flow_ends: Option<BTreeMap<u64, u64>>,
+    /// The instruction/function partition, when there was anything to walk.
+    pub listing: Option<Listing>,
 }
 
 /// Every function entry a raw image yields: the seeds, the targets of every
@@ -79,7 +81,12 @@ pub fn discover(
     mz: Option<&MzEvidence>,
 ) -> RawDiscovery {
     if seeds.is_empty() || exec_ranges.is_empty() {
-        return RawDiscovery { entries: seeds.to_vec(), dos_exits: DosExits::default(), flow_ends: None };
+        return RawDiscovery {
+            entries: seeds.to_vec(),
+            dos_exits: DosExits::default(),
+            flow_ends: None,
+            listing: None,
+        };
     }
     let mut roots: Vec<u64> = seeds.to_vec();
     roots.extend(crate::loader::kuna_realmodecs::without_commits(arch, translate, || {
@@ -116,7 +123,7 @@ pub fn discover(
     out.dedup();
     let dos_exits = kuna_dosexit::analyze(arch, translate, code_space, &listing);
     let flow_ends = kuna_rawextent::measure(arch, translate, code_space, &listing, &out, &dos_exits);
-    RawDiscovery { entries: out, dos_exits, flow_ends }
+    RawDiscovery { entries: out, dos_exits, flow_ends, listing: Some(listing) }
 }
 
 /// Decode `exec_ranges` end to end and return the target of every direct call.

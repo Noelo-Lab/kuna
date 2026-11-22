@@ -22,7 +22,7 @@ const MAX_DATABASE_BYTES: usize = 1024 * 1024 * 1024;
 
 pub(super) fn run(argv: &[OsString]) -> i32 {
     if matches!(argv, [arg] if arg == "--help" || arg == "-h") {
-        println!("Usage: {USAGE}\n\nImport a closed or copied local Ghidra 12.1.2 snapshot, without changing it.\nProfiles: 32, 64, 64_32, nosize, jvm, dalvik (default: derive per binary).\nImport continues after errors; incomplete signing or any error exits nonzero.");
+        println!("Usage: {USAGE}\n\nImport a closed or copied local Ghidra 12.1.2 snapshot without changing it.\nMigrates named functions from backed linked ELF, PE, Mach-O, and relocatable ELF inputs.\nProfiles: 32, 64, 64_32, nosize, jvm, dalvik (default: derive per binary).\nImport continues after errors; incomplete signing or any error exits nonzero.");
         return 0;
     }
     let options = match Options::parse(argv) {
@@ -36,13 +36,14 @@ pub(super) fn run(argv: &[OsString]) -> i32 {
         Ok(items) => items,
         Err(error) => vec![Item { item: "source or store".into(), status: Status::Error { error } }],
     };
-    let (mut imported, mut incomplete, mut failed) = (0, 0, 0);
+    let (mut imported, mut incomplete, mut skipped, mut failed) = (0, 0, 0, 0);
     for item in &items {
         match &item.status {
             Status::Imported { snapshot_complete, .. } => {
                 imported += 1;
                 incomplete += usize::from(!snapshot_complete);
             }
+            Status::Skipped { .. } => skipped += 1,
             Status::Error { .. } => failed += 1,
         }
     }
@@ -52,6 +53,7 @@ pub(super) fn run(argv: &[OsString]) -> i32 {
             store: options.store.to_string_lossy(),
             imported,
             incomplete,
+            skipped,
             failed,
             items: &items,
         };
@@ -68,8 +70,8 @@ pub(super) fn run(argv: &[OsString]) -> i32 {
         for Item { item, status } in items {
             match status {
                 Status::Imported {
-                    display_name, profile, sha256, outcome, version, signed, considered,
-                    executable_complete, inserted, updated, unchanged, kept_published, first_failure, ..
+                    display_name, profile, sha256, outcome, version, signed, considered, skipped_unnamed,
+                    inserted, updated, unchanged, kept_published, first_failure, ..
                 } => {
                     let version = version.map_or_else(String::new, |v| format!(" (saved version {v})"));
                     let outcome = match outcome {
@@ -77,18 +79,21 @@ pub(super) fn run(argv: &[OsString]) -> i32 {
                         ImportOutcome::Updated => "updated",
                         ImportOutcome::AlreadyPresent => "already_present",
                     };
-                    let native_coverage = if executable_complete { "complete" } else { "incomplete" };
                     println!("{item:?}{version}: {outcome} {display_name:?}, {profile}, SHA-256 {sha256}, \
-                        {signed}/{considered} saved function(s) signed; store: {inserted} added, {updated} updated, \
-                        {unchanged} unchanged, {kept_published} published kept; native coverage {native_coverage}");
+                        {signed}/{considered} named function(s) signed, {skipped_unnamed} unnamed skipped; \
+                        store: {inserted} added, {updated} updated, \
+                        {unchanged} unchanged, {kept_published} published kept");
                     if let Some(failure) = first_failure {
                         eprintln!("import-ghidra: {item:?}: incomplete snapshot signing coverage; first failure: {failure}");
                     }
                 }
+                Status::Skipped { skipped_unnamed } => {
+                    println!("{item:?}: skipped (no eligible named functions; {skipped_unnamed} unnamed skipped)");
+                }
                 Status::Error { error } => eprintln!("import-ghidra: {item:?}: {error}"),
             }
         }
-        println!("import-ghidra: {imported} program(s) accepted, {incomplete} incomplete, {failed} error(s)");
+        println!("import-ghidra: {imported} program(s) accepted, {incomplete} incomplete, {skipped} skipped, {failed} error(s)");
     }
     if failed == 0 && incomplete == 0 { 0 } else { 1 }
 }
@@ -145,6 +150,7 @@ struct Report<'a> {
     store: Cow<'a, str>,
     imported: usize,
     incomplete: usize,
+    skipped: usize,
     failed: usize,
     items: &'a [Item],
 }
@@ -167,6 +173,7 @@ enum Status {
         outcome: ImportOutcome,
         signed: usize,
         considered: usize,
+        skipped_unnamed: usize,
         snapshot_complete: bool,
         executable_complete: bool,
         inserted: usize,
@@ -176,6 +183,7 @@ enum Status {
         #[serde(skip_serializing_if = "Option::is_none")]
         first_failure: Option<String>,
     },
+    Skipped { skipped_unnamed: usize },
     Error { error: String },
 }
 
@@ -212,10 +220,13 @@ fn import_one(
     profile: Option<LshProfile>,
 ) -> Result<Status, String> {
     let bytes = read_database(&database.path, MAX_DATABASE_BYTES)?;
-    let ghidra_program::ProgramSnapshot { original, functions, language_id } =
+    let ghidra_program::ProgramSnapshot { original, functions, skipped_unnamed, language_id } =
         ghidra_program::read(&bytes, MAX_DATABASE_BYTES, MAX_ARTIFACT_BYTES as usize)
             .map_err(|e| at(&database.path, e.explain()))?;
     drop(bytes);
+    if functions.is_empty() {
+        return Ok(Status::Skipped { skipped_unnamed });
+    }
 
     // The signer takes a pathname. Keep a uniquely created private file alive
     // through signing, and never derive its on-disk name from snapshot metadata.
@@ -238,6 +249,7 @@ fn import_one(
         outcome: result.outcome,
         signed,
         considered: coverage.considered,
+        skipped_unnamed,
         snapshot_complete: coverage.first_failure.is_none(),
         executable_complete: merge.executable_complete,
         inserted: merge.inserted,

@@ -1,9 +1,11 @@
+use std::collections::BTreeMap;
 use std::ops::Range;
 
-use object::{BinaryFormat, Object, ObjectKind, ObjectSection, ObjectSegment, SectionFlags, SegmentFlags};
+use object::{Architecture, BinaryFormat, Object, ObjectKind, ObjectSection, ObjectSegment, SectionFlags, SegmentFlags};
 use sha2::{Digest, Sha256};
 
 use super::address::check_image_base;
+use super::elf_sections::{CodePatch, SectionMap};
 use super::*;
 
 // ChainedBuffer.XOR_MASK_BYTES in Ghidra 12.1.2. The root length's high bit
@@ -21,24 +23,45 @@ const STORAGE_XOR: [u8; 128] = [
 
 pub(super) struct Image {
     pub(super) original: Vec<u8>,
-    slide: i128,
-    code: Vec<Range<u64>>,
+    entries: EntryMap,
     external: Option<Range<u64>>,
 }
 
+enum EntryMap {
+    Linked { slide: i128, code: Vec<Range<u64>> },
+    Sections(SectionMap),
+}
+
 impl Image {
-    pub(super) fn relocate_entries(&self, functions: &mut Vec<ProgramFunction>) -> KunaResult<()> {
+    pub(super) fn project_entries(&self, functions: &mut Vec<ProgramFunction>) -> KunaResult<()> {
         if let Some(external) = &self.external {
-            functions.retain(|function| !external.contains(&function.address));
+            functions.retain(|function| {
+                !matches!(function.location, ProgramEntry::LinkedAddress(addr) if external.contains(&addr))
+            });
         }
-        for function in functions {
-            let index = self.code.partition_point(|range| range.end <= function.address);
-            if self.code.get(index).is_none_or(|range| !range.contains(&function.address)) {
-                return Err(bad(format_args!(
-                    "saved function {:#x} has no verified original executable file backing", function.address,
-                )));
+        for function in &mut *functions {
+            let ProgramEntry::LinkedAddress(address) = function.location else {
+                return Err(bad("invalid unprojected function entry"));
+            };
+            let missing = || bad(format_args!(
+                "saved function {address:#x} has no verified original executable file backing",
+            ));
+            function.location = match &self.entries {
+                EntryMap::Linked { slide, code } => {
+                    let index = code.partition_point(|range| range.end <= address);
+                    if code.get(index).is_none_or(|range| !range.contains(&address)) {
+                        return Err(missing());
+                    }
+                    ProgramEntry::LinkedAddress(native_address(address, *slide)?)
+                }
+                EntryMap::Sections(map) => map.entry(address).ok_or_else(missing)?,
+            };
+        }
+        if matches!(self.entries, EntryMap::Sections(_)) {
+            functions.sort_unstable_by_key(|function| function.location);
+            if functions.windows(2).any(|pair| pair[0].location == pair[1].location) {
+                return Err(bad("duplicate projected ELF section function entries"));
             }
-            function.address = native_address(function.address, self.slide)?;
         }
         Ok(())
     }
@@ -106,14 +129,136 @@ pub(super) fn read(
         return Err(bad("original File Bytes do not match the Executable SHA256 (sliced or corrupt import)"));
     }
 
-    let executable = object::File::parse(original.as_slice())
-        .ok()
-        .filter(|file| {
-            matches!(file.format(), BinaryFormat::Elf | BinaryFormat::Pe | BinaryFormat::MachO)
-                && matches!(file.kind(), ObjectKind::Executable | ObjectKind::Dynamic)
-        })
-        .ok_or_else(|| bad("unsupported original executable layout; cannot verify file backing"))?;
-    let mut slide = 0;
+    let executable = parse_original_image(&original)?;
+    let relocatable = executable.kind() == ObjectKind::Relocatable;
+    let track_uninitialized = relocatable && executable.architecture() == Architecture::Arm;
+    let saved = read_memory(db, map, used, file.key, size, relocatable, track_uninitialized)?;
+    let (entries, ranges, patches) = if relocatable {
+        let (sections, code) = SectionMap::read(&executable, size, max_original_size, &saved.file)?;
+        let patches = sections.relocations(db, map, used, &executable, &original, metadata, &saved)?;
+        (EntryMap::Sections(sections), code, patches)
+    } else {
+        let slide = linked_slide(&executable, metadata)?;
+        let (code, ranges) = linked_ranges(&executable, slide, size, &saved)?;
+        (EntryMap::Linked { slide, code }, ranges, Vec::new())
+    };
+    // Every layered chain overlays the corresponding original chain. Unstored
+    // slots inherit original data, and non-executable changes are irrelevant.
+    let chunk_size = chunk_size.ok_or_else(|| bad("missing original File Bytes chains"))?;
+    let mut start = 0usize;
+    for id in layered_ids {
+        let end = start.saturating_add(chunk_size).min(size);
+        let expected = LayerExpectation {
+            original: &original[start..end], start, ranges: &ranges, patches: &patches,
+            relocatable: matches!(entries, EntryMap::Sections(_)),
+        };
+        expected.check(db, id, used)?;
+        start = end;
+    }
+    Ok(Image { original, entries, external: saved.external })
+}
+
+struct LayerExpectation<'a> {
+    original: &'a [u8],
+    start: usize,
+    ranges: &'a [Range<usize>],
+    patches: &'a [CodePatch],
+    relocatable: bool,
+}
+
+impl LayerExpectation<'_> {
+    fn check(&self, db: &Database<'_>, id: i32, used: &mut HashSet<i32>) -> KunaResult<()> {
+        let mut next = self.start;
+        db.visit_file_layer(id, self.original.len(), used, &STORAGE_XOR, |offset, stored, xor| {
+            let start = self.start + offset;
+            self.inherited(next..start)?;
+            self.stored(start, stored, xor)?;
+            next = start + stored.len();
+            Ok(())
+        })?;
+        self.inherited(next..self.start + self.original.len())
+    }
+
+    fn patches(&self, range: Range<usize>) -> impl Iterator<Item = &CodePatch> {
+        let index = self.patches.partition_point(|patch| patch.end() <= range.start);
+        self.patches[index..].iter().take_while(move |patch| patch.offset < range.end)
+    }
+
+    fn inherited(&self, range: Range<usize>) -> KunaResult<()> {
+        // An omitted block only equals the expected layer if it does not
+        // omit any bytes the stock relocation would have changed.
+        for patch in self.patches(range.clone()) {
+            let lo = range.start.max(patch.offset);
+            let hi = range.end.min(patch.end());
+            if self.original[lo - self.start..hi - self.start] != patch.bytes()[lo - patch.offset..hi - patch.offset] {
+                return Err(relocation_mismatch(lo..hi));
+            }
+        }
+        Ok(())
+    }
+
+    fn stored(&self, start: usize, stored: &[u8], xor: &[u8]) -> KunaResult<()> {
+        for range in intersections(self.ranges, &(start..start + stored.len())) {
+            let mut next = range.start;
+            for patch in self.patches(range.clone()) {
+                let lo = range.start.max(patch.offset);
+                let hi = range.end.min(patch.end());
+                self.unchanged(next..lo, start, stored, xor)?;
+                if !equal_layer(stored, xor, lo - start, &patch.bytes()[lo - patch.offset..hi - patch.offset]) {
+                    return Err(relocation_mismatch(lo..hi));
+                }
+                next = hi;
+            }
+            self.unchanged(next..range.end, start, stored, xor)?;
+        }
+        Ok(())
+    }
+
+    fn unchanged(&self, range: Range<usize>, start: usize, stored: &[u8], xor: &[u8]) -> KunaResult<()> {
+        if equal_layer(stored, xor, range.start - start, &self.original[range.start - self.start..range.end - self.start]) {
+            return Ok(());
+        }
+        let reason = if self.relocatable { " without a verified stock ELF relocation" } else { "" };
+        Err(bad(format_args!(
+            "layered File Bytes changes executable bytes{reason} in file range {:#x}..{:#x}", range.start, range.end,
+        )))
+    }
+}
+
+fn equal_layer(stored: &[u8], xor: &[u8], offset: usize, expected: &[u8]) -> bool {
+    let actual = &stored[offset..offset + expected.len()];
+    if xor.is_empty() {
+        actual == expected
+    } else {
+        actual.iter().zip(expected).enumerate().all(|(i, (&a, &b))| a ^ xor[(offset + i) % xor.len()] == b)
+    }
+}
+
+fn relocation_mismatch(range: Range<usize>) -> KunaError {
+    bad(format_args!(
+        "layered File Bytes disagrees with the verified stock ELF relocation in file range {:#x}..{:#x}",
+        range.start, range.end,
+    ))
+}
+
+fn parse_original_image(bytes: &[u8]) -> KunaResult<object::File<'_>> {
+    let unsupported = || bad("unsupported original executable layout; cannot verify file backing");
+    let file = object::File::parse(bytes).map_err(|_| unsupported())?;
+    if file.format() == BinaryFormat::Elf && file.kind() == ObjectKind::Relocatable {
+        if file.segments().next().is_some() {
+            return Err(bad("unsupported relocatable ELF (ET_REL) with loadable segments"));
+        }
+        return Ok(file);
+    }
+    if !matches!(file.format(), BinaryFormat::Elf | BinaryFormat::Pe | BinaryFormat::MachO)
+        || !matches!(file.kind(), ObjectKind::Executable | ObjectKind::Dynamic)
+    {
+        return Err(unsupported());
+    }
+    Ok(file)
+}
+
+fn linked_slide(executable: &object::File<'_>, metadata: &Metadata) -> KunaResult<i128> {
     match executable.format() {
         BinaryFormat::Pe => check_image_base(executable.relative_address_base(), metadata.image_base)?,
         BinaryFormat::Elf => {
@@ -122,25 +267,13 @@ pub(super) fn read(
             if executable.kind() == ObjectKind::Dynamic {
                 // Stock Ghidra normally maps zero-based PIE and shared objects at
                 // 0x100000. Accept only a uniform offset verified below.
-                slide = i128::from(metadata.image_base) - i128::from(native_base);
-            } else {
-                check_image_base(native_base, metadata.image_base)?;
+                return Ok(i128::from(metadata.image_base) - i128::from(native_base));
             }
+            check_image_base(native_base, metadata.image_base)?;
         }
         _ => {}
     }
-
-    let ranges = executable_file_ranges(db, map, used, file.key, size, &executable, slide)?;
-    // Every layered chain overlays the corresponding original chain. Unstored
-    // slots inherit original data, and non-executable changes are irrelevant.
-    let chunk_size = chunk_size.ok_or_else(|| bad("missing original File Bytes chains"))?;
-    let mut start = 0usize;
-    for id in layered_ids {
-        let end = start.saturating_add(chunk_size).min(size);
-        db.check_file_layer(id, &original[start..end], start, &ranges.file, used, &STORAGE_XOR)?;
-        start = end;
-    }
-    Ok(Image { original, slide, code: ranges.code, external: ranges.external })
+    Ok(0)
 }
 
 fn chain_ids(bytes: &[u8]) -> KunaResult<impl ExactSizeIterator<Item = i32> + '_> {
@@ -154,13 +287,28 @@ fn chain_ids(bytes: &[u8]) -> KunaResult<impl ExactSizeIterator<Item = i32> + '_
     Ok(ids.iter().copied().map(i32::from_be_bytes))
 }
 
-struct ExecutableRanges {
-    file: Vec<Range<usize>>,
-    code: Vec<Range<u64>>,
-    external: Option<Range<u64>>,
+pub(super) struct SavedMemory {
+    pub(super) file: Vec<SavedFileRange>,
+    pub(super) external: Option<Range<u64>>,
+    pub(super) uninitialized: Vec<SavedUninitialized>,
+}
+
+pub(super) struct SavedUninitialized {
+    pub(super) name: String,
+    pub(super) range: Range<u64>,
+    pub(super) artificial: bool,
+}
+
+pub(super) struct SavedFileRange {
+    pub(super) project: Range<u64>,
+    pub(super) file: Range<usize>,
+    pub(super) executable: bool,
 }
 
 struct MemoryBlock {
+    name: Option<String>,
+    artificial: bool,
+    unbacked_code: u64,
     range: Range<u64>,
     executable: bool,
     external: bool,
@@ -261,22 +409,19 @@ fn check_disjoint(ranges: &mut [Range<u64>]) -> KunaResult<()> {
     Ok(())
 }
 
-fn executable_file_ranges(
+fn read_memory(
     db: &Database<'_>, map: &AddressMap, used: &mut HashSet<i32>, file_id: i64, size: usize,
-    native: &object::File<'_>, slide: i128,
-) -> KunaResult<ExecutableRanges> {
-    let native_code = native_code_file_ranges(native, size)?;
-    // Check native executable offsets even if the saved block is non-executable,
-    // missing, or maps different File Bytes there.
-    let mut ranges: Vec<_> = native_code.values().flatten().cloned().collect();
+    relocatable: bool,
+    track_uninitialized: bool,
+) -> KunaResult<SavedMemory> {
     let table = require_table(db, "Memory Blocks", 3, (Long, "Key"), &[
         (Str, "Name"), (Str, "Comments"), (Str, "Source Name"), (Byte, "Flags"),
         (Long, "Start Address"), (Long, "Length"), (Int, "Segment"),
     ])?;
     let mut blocks = BTreeMap::new();
-    db.visit_records(table, used, |record| {
+    db.visit_records(table, used, |mut record| {
         let [FieldValue::Str(name), _, _, FieldValue::Byte(flags), FieldValue::Long(address),
-            FieldValue::Long(length), FieldValue::Int(segment)] = record.columns.as_slice()
+            FieldValue::Long(length), FieldValue::Int(segment)] = record.columns.as_mut_slice()
         else {
             return Err(bad("invalid Memory Blocks record"));
         };
@@ -289,8 +434,13 @@ fn executable_file_ranges(
                 return Err(bad("unsupported segmented memory block"));
             }
             let executable = *flags & MEMORY_EXECUTE != 0;
-            let external = !executable && *flags & MEMORY_ARTIFICIAL != 0 && name.as_deref() == Some("EXTERNAL");
-            blocks.insert(record.key, MemoryBlock { range: address..end, executable, external });
+            let artificial = *flags & MEMORY_ARTIFICIAL != 0;
+            let external = !executable && artificial && name.as_deref() == Some("EXTERNAL");
+            blocks.insert(record.key, MemoryBlock {
+                name: if track_uninitialized && !external { name.take() } else { None },
+                range: address..end, executable, artificial, external,
+                unbacked_code: if relocatable && executable { end - address } else { 0 },
+            });
         }
         Ok(())
     })?;
@@ -302,7 +452,8 @@ fn executable_file_ranges(
     ])?;
     let mut mapped = Vec::new();
     let mut external = None;
-    let mut code = Vec::new();
+    let mut uninitialized = Vec::new();
+    let mut file = Vec::new();
     db.visit_records(table, used, |record| {
         let [FieldValue::Long(parent), FieldValue::Byte(kind), FieldValue::Long(len),
             FieldValue::Long(sub_offset), FieldValue::Int(source), FieldValue::Long(file_offset)] =
@@ -310,7 +461,7 @@ fn executable_file_ranges(
         else {
             return Err(bad("invalid Sub Memory Blocks record"));
         };
-        let Some(block) = blocks.get(parent) else { return Ok(()) };
+        let Some(block) = blocks.get_mut(parent) else { return Ok(()) };
         let len = u64::try_from(*len).ok().filter(|&len| len != 0)
             .ok_or_else(|| bad("invalid saved memory sub-block length"))?;
         let project_start = u64::try_from(*sub_offset).ok().and_then(|offset| block.range.start.checked_add(offset))
@@ -318,36 +469,70 @@ fn executable_file_ranges(
         let project_end = project_start.checked_add(len).filter(|&end| end <= block.range.end)
             .ok_or_else(|| bad("saved memory sub-block exceeds its parent block"))?;
         mapped.push(project_start..project_end);
-        if *kind == SUB_BLOCK_UNINITIALIZED && block.external && (project_start..project_end) == block.range {
-            // Stock ELF's imported-function thunks occupy an artificial,
-            // uninitialized block even though their symbols use default RAM.
-            if external.replace(project_start..project_end).is_some() {
+        if *kind == SUB_BLOCK_UNINITIALIZED && !block.executable && (project_start..project_end) == block.range {
+            if let Some(name) = block.name.take() {
+                uninitialized.push(SavedUninitialized {
+                    name, range: block.range.clone(), artificial: block.artificial,
+                });
+            }
+            if block.external && external.replace(block.range.clone()).is_some() {
                 return Err(bad("multiple synthetic EXTERNAL blocks"));
             }
         }
         if *kind != SUB_BLOCK_FILE_BYTES {
+            if relocatable && block.executable {
+                return Err(bad("saved executable ELF memory has no original File Bytes backing"));
+            }
             return Ok(());
         }
         if i64::from(*source) != file_id {
             return Err(bad("saved memory sub-block references an unknown File Bytes record"));
         }
+        if relocatable && block.executable {
+            block.unbacked_code = block.unbacked_code.checked_sub(len)
+                .ok_or_else(|| bad("saved executable ELF memory sub-blocks overlap"))?;
+        }
         let start = usize::try_from(*file_offset).map_err(|_| bad("invalid saved memory file offset"))?;
         let end = usize::try_from(len).ok().and_then(|len| start.checked_add(len))
             .filter(|end| *end <= size).ok_or_else(|| bad("saved memory sub-block exceeds File Bytes"))?;
+        file.push(SavedFileRange {
+            project: project_start..project_end,
+            file: start..end,
+            executable: block.executable,
+        });
+        Ok(())
+    })?;
+    if blocks.values().any(|block| block.unbacked_code != 0) {
+        return Err(bad("saved executable ELF memory has incomplete File Bytes backing"));
+    }
+    check_disjoint(&mut mapped)?;
+    Ok(SavedMemory { file, external, uninitialized })
+}
+
+fn linked_ranges(
+    native: &object::File<'_>, slide: i128, size: usize, saved: &SavedMemory,
+) -> KunaResult<(Vec<Range<u64>>, Vec<Range<usize>>)> {
+    let native_code = native_code_file_ranges(native, size)?;
+    // Check native executable offsets even if the saved block is non-executable,
+    // missing, or maps different File Bytes there.
+    let mut ranges: Vec<_> = native_code.values().flatten().cloned().collect();
+    let mut code = Vec::new();
+    for block in &saved.file {
+        let project_start = block.project.start;
+        let start = block.file.start;
+        let end = block.file.end;
         if block.executable {
-            if !native_maps_range(native, native_address(project_start, slide)?, start as u64, len) {
+            if !native_maps_range(native, native_address(project_start, slide)?, start as u64, (end - start) as u64) {
                 return Err(bad(format_args!(
                     "unsupported project layout: executable sub-block at {project_start:#x} \
                      maps file bytes {start:#x}..{end:#x} differently from the original"
                 )));
             }
-            ranges.push(start..end);
+            ranges.push(block.file.clone());
         }
-        append_verified_ranges(&native_code, slide, project_start, start..end, &mut code);
-        Ok(())
-    })?;
-    check_disjoint(&mut mapped)?;
-    if let Some(external) = &external {
+        append_verified_ranges(&native_code, slide, project_start, block.file.clone(), &mut code);
+    }
+    if let Some(external) = &saved.external {
         let overlaps_code = native_code.iter().any(|(bias, ranges)| {
             let project_bias = *bias + slide;
             ranges.iter().any(|range| {
@@ -361,7 +546,7 @@ fn executable_file_ranges(
     }
     merge_ranges(&mut ranges);
     merge_ranges(&mut code);
-    Ok(ExecutableRanges { file: ranges, code, external })
+    Ok((code, ranges))
 }
 
 fn append_verified_ranges(
@@ -396,6 +581,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn elf_relocatable_original_uses_file_section_provenance() {
+        let bytes = include_bytes!("../../tests/fixtures/fid_lib_x86_64.o");
+        let original = parse_original_image(bytes).unwrap();
+        let text = original.section_by_name(".text").unwrap();
+        let (offset, len) = text.file_range().unwrap();
+        let base = 0x100100;
+        let (sections, _) = SectionMap::read(&original, bytes.len(), bytes.len(), &[SavedFileRange {
+            project: base..base + len,
+            file: offset as usize..(offset + len) as usize,
+            executable: true,
+        }]).unwrap();
+        let image = Image { original: Vec::new(), entries: EntryMap::Sections(sections), external: None };
+        let function = || ProgramFunction { location: ProgramEntry::LinkedAddress(base), name: "f".into() };
+        let mut one = vec![function()];
+        image.project_entries(&mut one).unwrap();
+        assert_eq!(one[0].location, ProgramEntry::ElfSection { section_index: text.index().0, offset: 0 });
+        let err = image.project_entries(&mut vec![function(), function()]).unwrap_err();
+        assert!(err.explain().contains("duplicate projected ELF section function entries"));
+    }
+
+    #[test]
     fn file_bytes_chain_ids_require_the_binary_coded_nonnull_int_array() {
         let ids = [4, 0, 0, 0, 0, 7, 0, 1, 0, 0];
         assert!(chain_ids(&ids).unwrap().eq([7, 65536]));
@@ -408,16 +614,20 @@ mod tests {
     fn fixed_base_entries_require_original_bytes_at_the_same_address() {
         let native = BTreeMap::from([(0x40_0000, std::iter::once(0x1000..0x1200).collect())]);
         let saved = 0x40_1000;
-        let mut image = Image { original: Vec::new(), slide: 0, code: Vec::new(), external: None };
-        let function = || ProgramFunction { address: saved, name: "main".into() };
-        assert!(image.relocate_entries(&mut vec![function()]).is_err());
+        let function = || ProgramFunction { location: ProgramEntry::LinkedAddress(saved), name: "main".into() };
+        let image = |code| Image {
+            original: Vec::new(), entries: EntryMap::Linked { slide: 0, code }, external: None,
+        };
+        assert!(image(Vec::new()).project_entries(&mut vec![function()]).is_err());
 
-        append_verified_ranges(&native, 0, saved, 0x1001..0x1100, &mut image.code);
-        assert!(image.relocate_entries(&mut vec![function()]).is_err());
+        let mut code = Vec::new();
+        append_verified_ranges(&native, 0, saved, 0x1001..0x1100, &mut code);
+        assert!(image(code).project_entries(&mut vec![function()]).is_err());
 
-        append_verified_ranges(&native, 0, saved, 0x1000..0x1100, &mut image.code);
+        let mut code = Vec::new();
+        append_verified_ranges(&native, 0, saved, 0x1000..0x1100, &mut code);
         let mut entries = vec![function()];
-        image.relocate_entries(&mut entries).unwrap();
+        image(code).project_entries(&mut entries).unwrap();
         assert_eq!(entries, [function()]);
     }
 
@@ -425,17 +635,63 @@ mod tests {
     fn pie_entry_is_rebased_only_from_a_verified_file_mapping() {
         let image = Image {
             original: Vec::new(),
-            slide: 0x10_0000,
-            code: std::iter::once(0x10_1000..0x10_1200).collect(),
+            entries: EntryMap::Linked { slide: 0x10_0000, code: std::iter::once(0x10_1000..0x10_1200).collect() },
             external: Some(0x10_5000..0x10_5010),
         };
-        let mut inside = vec![
-            ProgramFunction { address: 0x10_1129, name: "main".into() },
-            ProgramFunction { address: 0x10_5000, name: "__libc_start_main".into() },
-        ];
-        image.relocate_entries(&mut inside).unwrap();
-        assert_eq!(inside, [ProgramFunction { address: 0x1129, name: "main".into() }]);
-        let mut outside = vec![ProgramFunction { address: 0x10_1200, name: "patched".into() }];
-        assert!(image.relocate_entries(&mut outside).is_err());
+        let function = |address, name: &str| ProgramFunction {
+            location: ProgramEntry::LinkedAddress(address), name: name.into(),
+        };
+        let mut inside = vec![function(0x10_1129, "main"), function(0x10_5000, "__libc_start_main")];
+        image.project_entries(&mut inside).unwrap();
+        assert_eq!(inside, [function(0x1129, "main")]);
+        let mut outside = vec![function(0x10_1200, "patched")];
+        assert!(image.project_entries(&mut outside).is_err());
+    }
+
+    #[test]
+    fn elf_relocatable_layer_requires_exact_relocation_across_stored_blocks() {
+        let patch = CodePatch { offset: 0x11, bytes: [4, 5, 0, 6], width: 4 };
+        let range = 0x10..0x16;
+        let expected = LayerExpectation {
+            original: &[9, 0, 0, 0, 0, 8], start: 0x10,
+            ranges: std::slice::from_ref(&range), patches: std::slice::from_ref(&patch),
+            relocatable: true,
+        };
+        assert!(expected.stored(0x10, &[9, 4, 5], &[]).is_ok());
+        assert!(expected.stored(0x13, &[7, 14, 15], &[7, 8]).is_ok());
+        assert!(expected.inherited(0x13..0x14).is_ok());
+        assert!(expected.inherited(0x13..0x15).is_err());
+        assert!(expected.stored(0x13, &[0, 0, 8], &[]).unwrap_err().explain()
+            .contains("disagrees with the verified stock ELF relocation"));
+        assert!(expected.stored(0x13, &[0, 6, 7], &[]).unwrap_err().explain()
+            .contains("changes executable bytes without a verified stock ELF relocation"));
+
+        let next_chain = LayerExpectation { original: &[0, 0, 8], start: 0x13, ..expected };
+        assert!(next_chain.stored(0x13, &[0, 6, 8], &[]).is_ok());
+        assert!(next_chain.inherited(0x13..0x15).is_err());
+    }
+
+    #[test]
+    fn halfword_relocation_does_not_cover_the_next_instruction() {
+        let patch = CodePatch { offset: 0x10, bytes: [3, 4, 0, 0], width: 2 };
+        let range = 0x10..0x14;
+        let expected = LayerExpectation {
+            original: &[1, 2, 5, 6], start: 0x10,
+            ranges: std::slice::from_ref(&range), patches: std::slice::from_ref(&patch),
+            relocatable: true,
+        };
+        assert!(expected.stored(0x10, &[3, 4, 5, 6], &[]).is_ok());
+        assert!(expected.stored(0x10, &[3, 4, 0, 0], &[]).unwrap_err().explain()
+            .contains("changes executable bytes without a verified stock ELF relocation"));
+    }
+
+    #[test]
+    fn elf_relocatable_saved_project_ranges_are_disjoint() {
+        let mut adjacent = [0x1080..0x1084, 0x1070..0x1080];
+        check_disjoint(&mut adjacent).unwrap();
+        assert_eq!(adjacent, [0x1070..0x1080, 0x1080..0x1084]);
+        let mut overlap = [0x100..0x120, 0x11f..0x130];
+        assert!(check_disjoint(&mut overlap).unwrap_err().explain()
+            .contains("overlapping saved memory mappings"));
     }
 }

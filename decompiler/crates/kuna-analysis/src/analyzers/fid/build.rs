@@ -124,7 +124,7 @@ pub fn build_records(
             }
         }
         let extent = match crate::fid::extent::decode_extent(
-            arch, translate, address, next, &code_space, &switches,
+            arch, translate, address, next, None, &code_space, &switches,
         ) {
             Ok(extent) => extent,
             Err(reason) => {

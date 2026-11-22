@@ -7,7 +7,7 @@ use std::time::Instant;
 use kuna_analysis::bsim::corpus::CorpusExecutable;
 use kuna_analysis::bsim::lshweights::LshProfile;
 use kuna_analysis::bsim::signature::{BsimSignature, sign_function_with_settings};
-use kuna_analysis::ghidra_program::ProgramFunction;
+use kuna_analysis::ghidra_program::{ProgramEntry, ProgramFunction};
 use kuna_analysis::loader::macho_fat::{fat_slice_range, is_fat, slice_pref};
 use kuna_bsim_server::{MachOSlice, MAX_ARTIFACT_BYTES, MAX_NAME_BYTES, MAX_QUERY_FEATURES, PublishRequest};
 use kuna_console::engine::{Bootstrap, ConsoleProgram, EntrySelector, FunctionEntry};
@@ -24,23 +24,40 @@ pub(super) fn sign_import(
     display_name: String,
 ) -> Result<(LshProfile, CorpusExecutable, SigningCoverage), String> {
     if functions.is_empty() {
-        return Err("project has no saved function entries".into());
+        return Err("project has no named saved function entries".into());
     }
     let mut image = PreparedImage::load(binary, requested_profile, Some(language_id))?;
     let sections = image.program.sections();
     let mut coverage = SigningCoverage { considered: functions.len(), first_failure: None };
     let mut signed = Vec::new();
     for stored in functions {
-        let result = image.program.resolve_entry(&EntrySelector::Numeric(stored.address))
-            .map_err(|err| format!("stored entry {:#x}: {err}", stored.address))
+        let selector = match stored.location {
+            ProgramEntry::LinkedAddress(address) => EntrySelector::Numeric(address),
+            ProgramEntry::ElfSection { section_index, offset } =>
+                EntrySelector::SectionIndexOffset { section_index, offset },
+        };
+        let result = image.program.resolve_entry(&selector)
+            .map_err(|err| format!("saved entry {:x?}: {err}", stored.location))
             .and_then(|mut entry| {
                 let prog = &image.program;
                 let offset = entry.addr.get_offset();
-                if prog.output_code_offset(offset) != stored.address
+                let exact = match stored.location {
+                    ProgramEntry::LinkedAddress(address) => prog.output_code_offset(offset) == address,
+                    ProgramEntry::ElfSection { section_index, offset } =>
+                        entry.object_location.as_ref().is_some_and(|location| {
+                            let arm_mode_bit = u64::from(prog.is_arm32());
+                            location.section_index == section_index
+                                && location.offset & !arm_mode_bit == offset
+                        }),
+                };
+                if !exact
                     || !prog.is_body_entry(offset)
                     || (!sections.is_empty() && !in_executable_section(offset, &sections))
                 {
-                    return Err(format!("stored entry {:#x} is not executable in the original image", stored.address));
+                    return Err(format!(
+                        "saved entry {:x?} does not resolve to the same executable location in the original image",
+                        stored.location
+                    ));
                 }
                 entry.name = stored.name;
                 image.sign_entry(entry)
@@ -342,9 +359,9 @@ mod tests {
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/fid/callees/prog");
         let binary = fixture.to_str().unwrap();
         let entries = || vec![
-            ProgramFunction { address: 0x401000, name: "saved_scale".to_owned() },
-            ProgramFunction { address: 0, name: "outside_image".to_owned() },
-            ProgramFunction { address: 0x401020, name: "x".repeat(MAX_NAME_BYTES + 1) },
+            ProgramFunction { location: ProgramEntry::LinkedAddress(0x401000), name: "saved_scale".to_owned() },
+            ProgramFunction { location: ProgramEntry::LinkedAddress(0), name: "outside_image".to_owned() },
+            ProgramFunction { location: ProgramEntry::LinkedAddress(0x401020), name: "x".repeat(MAX_NAME_BYTES + 1) },
         ];
         let (_, executable, coverage) = sign_import(
             binary, "x86:LE:64:default", entries(), None, "project".to_owned(),
@@ -352,7 +369,8 @@ mod tests {
         assert_eq!(executable.functions[0].name, "saved_scale");
         assert_eq!(executable.functions.len(), 1);
         assert_eq!(coverage.considered, 3);
-        assert!(coverage.first_failure.is_some_and(|error| error.contains("0x0:") || error.contains("0x0 is")));
+        let failure = coverage.first_failure.as_deref().expect("skipped entries must be reported");
+        assert!(failure.starts_with("saved entry LinkedAddress(0)"), "{failure}");
         assert!(!executable.complete);
 
         for saved in ["AARCH64:LE:64:v8A", "x86:LE:64:compat32"] {

@@ -17,7 +17,16 @@ from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
 ARCHIVE = ROOT / 'tests/fixtures/bsim/reference.gzf'
+UNNAMED_ARCHIVE = ROOT / 'tests/fixtures/bsim/unnamed.gzf'
 PROJECT = ROOT / 'tests/fixtures/bsim/stock-project.zip'
+RELOCATABLE_ARCHIVE = ROOT / 'tests/fixtures/bsim/relocatable.gzf'
+PATCHED_RELOCATABLE_ARCHIVE = ROOT / 'tests/fixtures/bsim/relocatable-patched.gzf'
+RELOCATABLE_OBJECT = ROOT / 'tests/fixtures/bsim/relocatable.o'
+ARM_RELOCATABLE_ARCHIVE = ROOT / 'tests/fixtures/bsim/relocatable-arm.gzf'
+ARM_RELOCATABLE_OBJECT = ROOT / 'decompiler/crates/kuna-analysis/tests/fixtures/arm_thumb_le32.o'
+ARM_RELOCATIONS_OBJECT = ROOT / 'tests/fixtures/bsim/arm-relocations.o'
+ARM_RELOCATIONS_ARCHIVE = ROOT / 'tests/fixtures/bsim/arm-relocations.gzf'
+PATCHED_ARM_RELOCATIONS_ARCHIVE = ROOT / 'tests/fixtures/bsim/arm-relocations-patched.gzf'
 ORIGINAL = ROOT / 'tests/fixtures/fid/callees/prog'
 OBJECT = ROOT / 'decompiler/crates/kuna-analysis/tests/fixtures/fid_lib_x86_64.o'
 UNIVERSAL = ROOT / 'decompiler/crates/kuna-analysis/tests/fixtures/macho_fat'
@@ -75,6 +84,18 @@ def check_archive(kuna, server, scratch, env):
     assert report['imported'] == 1 and report['failed'] == report['incomplete'] == 0, report
     (item,) = report['items']
     assert item['sha256'] == sha256 and item['snapshot_complete'] and not item['executable_complete'], item
+
+    text = command(env, server, 'import-ghidra', ARCHIVE, '--store', store)
+    assert f"{item['signed']}/{item['considered']} named function(s) signed" in text.stdout, text.stdout
+    assert f"{item['skipped_unnamed']} unnamed skipped" in text.stdout, text.stdout
+    assert 'native coverage' not in text.stdout and not text.stderr, text
+
+    skipped_store = scratch / 'unnamed-store'
+    skipped = json.loads(command(env, server, 'import-ghidra', UNNAMED_ARCHIVE,
+                                 '--store', skipped_store, '--json').stdout)
+    assert skipped['skipped'] == 1 and skipped['imported'] == skipped['failed'] == 0, skipped
+    assert skipped['items'][0]['status'] == 'skipped' and skipped['items'][0]['skipped_unnamed'] == 3, skipped
+    assert not (skipped_store / 'binaries' / sha256).exists(), skipped
 
     with server_url(server, store, env) as origin:
         query = json.loads(command(env, kuna, 'bsim', 'query', ORIGINAL, '--address', '0x401000',
@@ -177,6 +198,93 @@ def check_project_migration(kuna, server, scratch, store, env, digest, published
     assert persisted == expected, persisted
 
 
+def check_relocatable_migration(kuna, server, scratch, env):
+    store = scratch / 'relocatable-store'
+    original = RELOCATABLE_OBJECT.read_bytes()
+    digest = hashlib.sha256(original).hexdigest()
+    report = json.loads(command(env, server, 'import-ghidra', RELOCATABLE_ARCHIVE,
+                                '--store', store, '--json').stdout)
+    assert report['imported'] == 1 and report['failed'] == report['incomplete'] == 0, report
+    (item,) = report['items']
+    assert item['snapshot_complete'] and not item['executable_complete'], item
+    assert item['considered'] == item['signed'] == 2 and item['sha256'] == digest, item
+    assert (store / 'binaries' / digest).read_bytes() == original
+
+    rejected_store = scratch / 'patched-relocatable-store'
+    rejected = json.loads(command(env, server, 'import-ghidra', PATCHED_RELOCATABLE_ARCHIVE,
+                                  '--store', rejected_store, '--json', status=1).stdout)
+    assert rejected['failed'] == 1 and rejected['imported'] == rejected['incomplete'] == 0, rejected
+    assert 'disagrees with the verified stock ELF relocation' in rejected['items'][0]['error'], rejected
+    assert not (rejected_store / 'binaries' / digest).exists(), rejected
+
+    with server_url(server, store, env) as origin:
+        hits = []
+        for suffix in ('a', 'b'):
+            query = json.loads(command(env, kuna, 'bsim', 'query', RELOCATABLE_OBJECT,
+                                       '--name', f'original_rel_{suffix}', '--server', origin,
+                                       '--json').stdout)
+            (hit,) = [row for row in query['matches'] if row['sha256'] == digest
+                      and row['address'] == query['function']['address']]
+            assert hit['name'] == f'project_rel_{suffix}', hit
+            assert abs(hit['similarity'] - 1.0) < 1e-9, hit
+            hits.append(hit)
+
+        assert hits[0]['address'] != hits[1]['address'], hits
+        comparison = json.loads(command(
+            env, kuna, 'bsim', 'compare', RELOCATABLE_OBJECT, '--name', 'original_rel_a',
+            '--server', origin, '--match-id', hits[1]['match_id'], '--json',
+        ).stdout)
+        reference = comparison['reference']
+        assert reference['identity_verified'] and reference['sha256'] == digest, comparison
+        assert reference['address'] == hits[1]['address'], comparison
+        assert comparison['match']['name'] == 'project_rel_b', comparison
+        assert all(comparison[side]['code']['complete'] for side in ('source', 'reference')), comparison
+        assert comparison['diff'], comparison
+
+
+def check_thumb_relocation(kuna, server, scratch, env):
+    store = scratch / 'thumb-relocatable-store'
+    original = ARM_RELOCATABLE_OBJECT.read_bytes()
+    digest = hashlib.sha256(original).hexdigest()
+    report = json.loads(command(env, server, 'import-ghidra', ARM_RELOCATABLE_ARCHIVE,
+                                '--store', store, '--json').stdout)
+    assert report['imported'] == 1 and report['failed'] == report['incomplete'] == 0, report
+    assert (store / 'binaries' / digest).read_bytes() == original
+    with server_url(server, store, env) as origin:
+        query = json.loads(command(env, kuna, 'bsim', 'query', ARM_RELOCATABLE_OBJECT,
+                                   '--name', 'thumb_add', '--server', origin, '--json').stdout)
+        (hit,) = [row for row in query['matches'] if row['sha256'] == digest
+                  and row['address'] == query['function']['address']]
+        assert hit['name'] == 'project_thumb_add' and abs(hit['similarity'] - 1.0) < 1e-9, hit
+
+
+def check_stock_arm_relocations(kuna, server, scratch, env):
+    store = scratch / 'stock-arm-relocations'
+    original = ARM_RELOCATIONS_OBJECT.read_bytes()
+    digest = hashlib.sha256(original).hexdigest()
+    report = json.loads(command(env, server, 'import-ghidra', ARM_RELOCATIONS_ARCHIVE,
+                                '--store', store, '--json').stdout)
+    assert report['imported'] == 1 and report['failed'] == report['incomplete'] == 0, report
+    (item,) = report['items']
+    assert item['sha256'] == digest and item['signed'] == item['considered'] > 0, item
+    assert (store / 'binaries' / digest).read_bytes() == original
+
+    with server_url(server, store, env) as origin:
+        query = json.loads(command(env, kuna, 'bsim', 'query', ARM_RELOCATIONS_OBJECT,
+                                   '--name', 'fixture_arm_relocations', '--server', origin,
+                                   '--json').stdout)
+        (hit,) = [row for row in query['matches'] if row['sha256'] == digest
+                  and row['address'] == query['function']['address']]
+        assert hit['name'] == 'project_arm_relocations' and abs(hit['similarity'] - 1.0) < 1e-9, hit
+
+    rejected_store = scratch / 'patched-stock-arm-relocations'
+    rejected = json.loads(command(env, server, 'import-ghidra', PATCHED_ARM_RELOCATIONS_ARCHIVE,
+                                  '--store', rejected_store, '--json', status=1).stdout)
+    assert rejected['failed'] == 1 and rejected['imported'] == rejected['incomplete'] == 0, rejected
+    assert 'disagrees with the verified stock ELF relocation' in rejected['items'][0]['error'], rejected
+    assert not (rejected_store / 'binaries' / digest).exists(), rejected
+
+
 def check_publication(kuna, server, scratch, env):
     env = env | {
         'KUNA_BSIM_SERVER_TOKEN': 'fixture-reader',
@@ -197,6 +305,7 @@ def check_publication(kuna, server, scratch, env):
 
         initial = match('kuna_crc32')
         assert initial['name'] == 'kuna_crc32', initial
+        assert initial['similarity'] == 1.0, initial
         publish = [kuna, 'bsim', 'push', OBJECT, '--server', origin, '--name', 'kuna_crc32',
                    '--rename', 'reviewed_crc32', '--json']
         read_only = env | {'KUNA_BSIM_SERVER_WRITE_TOKEN': env['KUNA_BSIM_SERVER_TOKEN']}
@@ -301,13 +410,16 @@ def main():
         os.chdir(scratch)
         try:
             check_archive(kuna, server, scratch, env)
+            check_relocatable_migration(kuna, server, scratch, env)
+            check_thumb_relocation(kuna, server, scratch, env)
+            check_stock_arm_relocations(kuna, server, scratch, env)
             check_publication(kuna, server, scratch, env)
             check_universal(kuna, server, scratch, env)
             if args.embedded:
                 check_embedded_server_specs(kuna, server, scratch, env)
         finally:
             os.chdir(previous)
-    print('Ghidra migration, native and universal Mach-O import, publish, C diff, and tamper rejection passed')
+    print('Ghidra linked and relocatable migration, native and universal Mach-O import, publish, C diff, and tamper rejection passed')
 
 
 if __name__ == '__main__':

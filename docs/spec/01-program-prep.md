@@ -938,7 +938,8 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   and preserve its delay-slot arguments. The relocation encoder handles generic
   absolute, relative, PLT-relative, and image-offset fields at 8/16/32/64 bits in
   the object's byte order, plus the instruction fields and ABI formulas for ARM
-  `CALL`/`JUMP24`/Thumb branches/`REL32`/`PREL31`, AArch64 branch/page/low-12
+  `CALL`/`JUMP24`, Thumb branches, PC-relative literal loads and address
+  materialization, `MOVW`/`MOVT`, `REL32`/`PREL31`, AArch64 branch/page/low-12
   forms, PowerPC `REL24`/`PLTREL24`/`LOCAL24PC`/`ADDR24` calls (32- and 64-bit;
   a `-fPIC` object's `PLTREL24` addend locates the caller's `.got2` for the
   linker's call stub and is not added to the target), the 14-bit conditional
@@ -1077,8 +1078,13 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   cross-state jump cannot make that transition in place, so it is left
   untouched and reported as requiring a linker veneer instead of being encoded
   as a branch in the wrong instruction set. Untyped and undefined targets do
-  not infer state from their synthetic slot address. AArch64 branch, page, and
-  low-12 relocations preserve the instruction's opcode/register fields, while
+  not infer state from their synthetic slot address. Thumb literal loads and ADR
+  use the aligned PC base and check the range and scale of their instruction
+  immediate. Narrow branches use the signed halfword displacement; `MOVW`/`MOVT`
+  split the resolved absolute address. These are the ELF ABI rules for Kuna's
+  own load image, not the replay rules used to verify saved Ghidra relocations.
+  AArch64 branch, page, and low-12 relocations preserve the instruction's
+  opcode/register fields, while
   PowerPC64 `REL24` and TOC-family relocations preserve big-endian instruction
   layout and DS-form low bits. SPARC `WDISP30` and `WPLT30` rewrite the 30-bit
   word displacement of a `call`, computing `S + A - P` modulo 2³² so a call
@@ -6354,6 +6360,10 @@ every other binary's pass list is byte-identical to before the pass existed):
   removed both wrong names. Renames are only through the placeholder label
   gate: the stripped-static-library recovery (`sub_4017c0` → `kuna_crc32`) with no
   way to clobber a real name.
+  On raw images, FID uses the caller's SLEIGH target, base, and explicit entry
+  seeds (and ARM32 ISA). Both lookup and automatic naming use the raw
+  partition's instruction boundaries and reject extents that leave the mapped
+  image rather than hashing loader padding.
   The database builder bounds linear decoding by both the next entry and a
   nonzero symbol size when one exists; ARM32 odd symbols decode as Thumb at
   their even address in a scoped context. Unsized symbols still use the next
@@ -6509,10 +6519,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   Ingest deduplicates by the MD5 of the bytes passed to the loader before
   normalization, resumes incomplete entries, and replaces the corpus atomically
   under a writer lock. On Unix it syncs the containing directory after replacement.
-  `query.rs` excludes undefined scores and applies the similarity floor before
-  the limit. Verified: a corpus of 1084 functions from a real static
-  binary, queried with the function at `0x4017c0`, returns exactly that function
-  at similarity 1.000 among 1084 considered; a hand computation from
+  Local and native server queries exclude undefined scores and clamp finite
+  cosine scores to `[0, 1]` before applying the similarity floor and limit.
+  This removes round-off without changing significance. In a corpus of 1084
+  functions from a real static binary, querying `0x4017c0` returned that
+  function at similarity 1.000; a hand computation from
   `lshweights_32.xml`'s own constants reproduces the reported significance
   exactly (2.810343 for a disjoint pair). Similarity is a measure of **shape**:
   structurally identical PLT stubs score 1.0 against each other, so a match is a
@@ -6533,10 +6544,33 @@ every other binary's pass list is byte-identical to before the pass existed):
   import reads Ghidra 12.1.2 Program databases through
   `decompiler/crates/kuna-analysis/src/ghidra_program.rs`, extracts original
   bytes and compatible entries, and signs only entries backed by verified
-  original file bytes. The client neither reads Program databases nor
-  connects to Ghidra Server. Native imports discover function entries from
-  Kuna's loader and analysis. Universal Mach-O references keep the original
-  container digest and record the indexed slice. Compare validates the slice
+  original file bytes. It checks the saved Program DB version before decoding
+  dependent table schemas. Version 32 is required. A linked image uses its
+  verified native address mapping. For ELF `ET_REL`, executable File Bytes
+  project through the unique original section index and relative offset into
+  Kuna's synthetic object address space. All saved executable sub-blocks must
+  have original file backing. The artifact size limit also caps the sum of
+  original allocated section sizes, including zero-fill sections.
+  Linked code bytes must be unchanged. An ELF object may carry a saved
+  executable relocation only when the loader result can be recomputed
+  exactly from the original relocation and the verified saved mappings.
+  Relocation type, original symbol index and stored width must agree with
+  the saved applied relocation record. A supported relocation that changes
+  the original bytes must have a matching applied record. x86-64 `PC32` and
+  `PLT32` require file-backed targets. Little-endian ARM/Thumb supports stock
+  branch, literal load, `MOVW`/`MOVT` and data relocation encodings.
+  Where an ARM target has no file backing, the importer checks the original
+  ELF's zero-fill sections and the stock external/common slot allocation
+  against saved memory block ranges. It does not derive targets from
+  relocated instruction bytes.
+  Bytes outside those fields must match the original; bytes inside must
+  match the recomputed result. Signing uses Kuna's own layout and relocations.
+  It skips default-source function names and address placeholders. Skipped
+  entries do not overwrite native names and do not count as signing failures.
+  The client neither reads Program databases nor connects to Ghidra Server.
+  Native imports discover function entries from Kuna's loader and analysis.
+  Universal Mach-O references keep the original container digest and record
+  the indexed slice. Compare validates the slice
   against the verified container and loads it without consulting the client's
   slice preference. Ghidra snapshot coverage is independent of
   native executable completeness. Saved entries take precedence over

@@ -1,39 +1,52 @@
 //! Read an immutable Ghidra 12.1.2 ProgramDB snapshot without a Ghidra runtime.
 
 mod address;
+mod elf_arm_targets;
+mod elf_relocation_arm;
+mod elf_sections;
 mod file_bytes;
 
 #[expect(clippy::disallowed_types, reason = "database buffer ownership")]
 use std::collections::HashSet;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use kuna_base::error::{KunaError, KunaResult};
 
-use crate::fid::ghidradb::{Database, FieldValue, TableRef};
+use crate::fid::ghidradb::{Database, FieldValue, PROGRAM_SYMBOLS_VERSION, TableRef};
 use crate::fid::ghidrafid::{is_packed, unpack_bounded};
 use crate::fid::schema::FieldType::{self, Binary, Bool, Byte, Int, Long, Str};
 
-use self::address::{AddressMap, Layout, Metadata};
+use self::address::{AddressMap, Metadata, ProgramInfo};
 
 /// Original executable bytes and functions stored in the default address space.
 #[derive(Debug)]
 pub struct ProgramSnapshot {
     pub original: Vec<u8>,
     pub functions: Vec<ProgramFunction>,
+    /// Default-space functions omitted because they have no meaningful saved name.
+    pub skipped_unnamed: usize,
     /// Saved processor language, without a compiler specification or display version.
     pub language_id: String,
 }
 
-/// A Ghidra function entry in the original image's address space and its unqualified name.
+/// A Ghidra function entry in the original image and its unqualified name.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ProgramFunction {
-    pub address: u64,
+    pub location: ProgramEntry,
     pub name: String,
+}
+
+/// Original coordinates, independent of the saved program's load addresses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ProgramEntry {
+    LinkedAddress(u64),
+    ElfSection { section_index: usize, offset: u64 },
 }
 
 const TABLES: &[&str] = &[
     "Program", "Property Table", "File Bytes", "ADDRESS MAP", "Overlay Spaces", "Function Data",
-    "Symbols", "Thunk Functions", "Memory Blocks", "Sub Memory Blocks",
+    "Symbols", "Memory Blocks", "Sub Memory Blocks",
+    "Relocations",
 ];
 
 /// Read a raw `.gbf` or packed `.gzf` Ghidra 12.1.2 ProgramDB. The original
@@ -53,14 +66,15 @@ pub fn read(
     } else {
         bytes
     };
-    let db = Database::parse_program(raw, TABLES)?;
-    let mut used = db.occupied_buffers();
-    let metadata = Metadata::read(&db, &mut used)?;
+    let (db, mut used, program) = Database::parse_program(raw, TABLES, ProgramInfo::read)?;
+    let metadata = Metadata::read(&db, &mut used, program)?;
     let map = AddressMap::read(&db, &metadata, &mut used)?;
     let file = file_bytes::read(&db, &metadata, &map, &mut used, raw.len(), max_original_size)?;
-    let mut functions = read_functions(&db, &map, &mut used)?;
-    file.relocate_entries(&mut functions)?;
-    Ok(ProgramSnapshot { original: file.original, functions, language_id: metadata.language_id })
+    let (mut functions, skipped_unnamed) = read_functions(&db, &map, &mut used)?;
+    file.project_entries(&mut functions)?;
+    Ok(ProgramSnapshot {
+        original: file.original, functions, skipped_unnamed, language_id: metadata.language_id,
+    })
 }
 
 fn bad(message: impl std::fmt::Display) -> KunaError {
@@ -76,30 +90,27 @@ fn require_table<'a>(
 ) -> KunaResult<&'a TableRef> {
     let table = db.table(name).ok_or_else(|| bad(format_args!("missing {name} table")))?;
     let schema = &table.schema;
-    if table.version != version
-        || (schema.key_field, schema.key_name.as_str()) != key
+    if table.version != version {
+        return Err(bad(format_args!(
+            "unsupported {name} schema (v{}); expected v{version}", table.version
+        )));
+    }
+    if (schema.key_field, schema.key_name.as_str()) != key
         || !schema.fields.iter().copied().zip(schema.field_names.iter().map(String::as_str))
             .eq(columns.iter().copied())
     {
-        return Err(bad(format_args!("unsupported {name} schema (v{})", table.version)));
+        return Err(bad(format_args!("unsupported {name} schema (v{version}): field layout differs")));
     }
     Ok(table)
 }
 
+const SYMBOL_SOURCE_MASK: i8 = 0x0b;
 const DEFAULT_SOURCE: i8 = 2;
 const FUNCTION_SYMBOL: i8 = 5;
 
-struct FunctionSymbol {
-    address: Option<u64>,
-    name: Option<String>,
-    default_name: bool,
-    external_address: Option<String>,
-    thunk: Option<i64>,
-}
-
 fn read_functions(
     db: &Database<'_>, map: &AddressMap, used: &mut HashSet<i32>,
-) -> KunaResult<Vec<ProgramFunction>> {
+) -> KunaResult<(Vec<ProgramFunction>, usize)> {
     let table = require_table(db, "Function Data", 3, (Long, "ID"), &[
         (Long, "Return DataType ID"), (Int, "StackPurge"), (Int, "StackReturnOffset"),
         (Int, "StackLocalSize"), (Byte, "Flags"), (Byte, "Calling Convention ID"),
@@ -111,16 +122,17 @@ fn read_functions(
         Ok(())
     })?;
 
-    let table = require_table(db, "Symbols", 4, (Long, "Key"), &[
+    let table = require_table(db, "Symbols", PROGRAM_SYMBOLS_VERSION, (Long, "Key"), &[
         (Str, "Name"), (Long, "Address"), (Long, "Namespace"), (Byte, "Symbol Type"),
         (Byte, "Flags"), (Long, "Locator Hash"), (Long, "Primary"), (Long, "Datatype"),
         (Int, "Variable Offset"), (Str, "ExtOrigImportName"), (Str, "ExtProgAddr"),
         (Str, "Comment"), (Str, "LibPath"),
     ])?;
-    let mut symbols = BTreeMap::new();
+    let mut functions = Vec::new();
+    let mut skipped_unnamed = 0;
     db.visit_program_symbols(table, used, |mut record| {
         let [FieldValue::Str(name), FieldValue::Long(key), FieldValue::Long(_),
-            FieldValue::Byte(kind), FieldValue::Byte(flags), FieldValue::Str(external_address)] =
+            FieldValue::Byte(kind), FieldValue::Byte(flags)] =
             record.columns.as_mut_slice()
         else {
             return Err(bad("invalid Symbols record"));
@@ -131,72 +143,40 @@ fn read_functions(
         if !function_ids.remove(&record.key) {
             return Err(bad(format_args!("function symbol {} has no Function Data", record.key)));
         }
-        let address = map.decode(*key)?;
-        let default_name = *flags & 3 == DEFAULT_SOURCE;
-        if !default_name && name.as_ref().is_none_or(String::is_empty) {
-            return Err(bad(format_args!("function symbol {} has no explicit name", record.key)));
-        }
-        symbols.insert(record.key, FunctionSymbol {
-            address, name: name.take(), default_name, thunk: None,
-            external_address: if (*key as u64) >> 60 == 5 { external_address.take() } else { None },
-        });
+        let Some(address) = map.decode(*key)? else { return Ok(()) };
+        let Some(name) = saved_name(*flags, name.take()) else {
+            skipped_unnamed += 1;
+            return Ok(());
+        };
+        functions.push(ProgramFunction { location: ProgramEntry::LinkedAddress(address), name });
         Ok(())
     })?;
     if let Some(id) = function_ids.first() {
         return Err(bad(format_args!("Function Data {id} has no function symbol")));
     }
 
-    let table = require_table(db, "Thunk Functions", 0, (Long, "ID"), &[(Long, "Linked Function ID")])?;
-    db.visit_records(table, used, |record| {
-        let [FieldValue::Long(target)] = record.columns.as_slice() else {
-            return Err(bad("invalid Thunk Functions record"));
-        };
-        if !symbols.contains_key(target) {
-            return Err(bad(format_args!("missing thunk target {target}")));
-        }
-        let thunk = symbols.get_mut(&record.key).ok_or_else(|| bad("missing thunk function"))?;
-        thunk.thunk = Some(*target);
-        Ok(())
-    })?;
-
-    let mut functions = Vec::new();
-    for (&id, symbol) in &symbols {
-        if let Some(address) = symbol.address {
-            let name = display_name(id, &symbols, map.layout)?;
-            functions.push(ProgramFunction { address, name });
-        }
-    }
-    functions.sort_unstable_by_key(|function| function.address);
-    if functions.windows(2).any(|pair| pair[0].address == pair[1].address) {
+    functions.sort_unstable_by_key(|function| function.location);
+    if functions.windows(2).any(|pair| pair[0].location == pair[1].location) {
         return Err(bad("ambiguous function entries in the default address space"));
     }
-    Ok(functions)
+    Ok((functions, skipped_unnamed))
 }
 
-// FunctionSymbol.doGetName: explicit names win. A chain of default thunks
-// inherits the terminal name, with the prefix only for a default non-thunk.
-fn display_name(id: i64, symbols: &BTreeMap<i64, FunctionSymbol>, layout: Layout) -> KunaResult<String> {
-    let mut current = id;
-    for _ in 0..symbols.len() {
-        let symbol = &symbols[&current];
-        if !symbol.default_name {
-            return symbol.name.clone().ok_or_else(|| bad("missing explicit function name"));
-        }
-        if let Some(target) = symbol.thunk {
-            current = target;
-            continue;
-        }
-        let thunk_prefix = if id == current { "" } else { "thunk_" };
-        if let Some(address) = symbol.address {
-            let digits = usize::from(layout.bits.div_ceil(4).min(8));
-            return Ok(format!("{thunk_prefix}FUN_{address:0digits$x}"));
-        }
-        if let Some(external) = symbol.external_address.as_deref().filter(|addr| !addr.is_empty()) {
-            return Ok(format!("{thunk_prefix}EXT_FUN_{}", external.replace(':', "_")));
-        }
-        return Err(bad(format_args!("unsupported default name for thunk target {current}")));
+fn saved_name(flags: i8, name: Option<String>) -> Option<String> {
+    if flags & SYMBOL_SOURCE_MASK == DEFAULT_SOURCE {
+        return None;
     }
-    Err(bad(format_args!("cyclic thunk chain for function {id}")))
+    name.filter(|name| !name.is_empty() && !is_placeholder(name))
+}
+
+fn is_placeholder(name: &str) -> bool {
+    let name = name.strip_prefix("thunk_").unwrap_or(name);
+    ["FUN_", "EXT_FUN_", "LAB_", "sub_", "func_"].iter().any(|prefix| {
+        name.strip_prefix(prefix).is_some_and(|suffix| {
+            let digits = suffix.strip_prefix("0x").unwrap_or(suffix);
+            !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_hexdigit())
+        })
+    })
 }
 
 #[cfg(test)]
@@ -212,11 +192,41 @@ mod tests {
         assert_eq!(snapshot.language_id, "x86:LE:64:default");
         assert_eq!(snapshot.original, STOCK_ORIGINAL);
         assert!(snapshot.functions.contains(&ProgramFunction {
-            address: 0x401000, name: "project_scale_a".into(),
+            location: ProgramEntry::LinkedAddress(0x401000), name: "project_scale_a".into(),
         }));
         assert!(snapshot.functions.contains(&ProgramFunction {
-            address: 0x401020, name: "project_scale_b".into(),
+            location: ProgramEntry::LinkedAddress(0x401020), name: "project_scale_b".into(),
         }));
+    }
+
+    #[test]
+    fn saved_names_ignore_default_provenance_and_numeric_placeholders() {
+        for name in ["FUN_00401000", "thunk_FUN_00401000", "sub_401000", "func_0x401000", ""] {
+            assert_eq!(saved_name(3, Some(name.into())), None, "{name}");
+        }
+        assert_eq!(saved_name(DEFAULT_SOURCE | 4, Some("inherited_thunk_name".into())), None);
+        for (source, name) in [(0, "sub_process"), (1, "entry"), (3, "FUN_validation"), (8, "ai_name")] {
+            assert_eq!(saved_name(source, Some(name.into())).as_deref(), Some(name));
+        }
+    }
+
+    #[test]
+    fn saved_program_version_is_checked_before_sparse_symbols() {
+        let mut raw = unpack_bounded(STOCK_GZF, 2 << 20).unwrap();
+        let symbols = b"\0\0\0\x07Symbols\0\0\0\x04";
+        let offset = raw.windows(symbols.len()).position(|span| span == symbols).unwrap();
+        raw[offset + symbols.len() - 1] = 3;
+        let error = read(&raw, raw.len(), STOCK_ORIGINAL.len()).unwrap_err();
+        assert!(error.explain().contains("unsupported Symbols schema (v3)"));
+
+        let program_version = b"\0\0\0\x0aDB Version\0\0\0\x0232";
+        let offset = raw.windows(program_version.len()).position(|span| span == program_version).unwrap();
+        let end = offset + program_version.len();
+        raw[end - 2..end].copy_from_slice(b"28");
+        let error = read(&raw, raw.len(), STOCK_ORIGINAL.len()).unwrap_err();
+        assert!(error.explain().contains(
+            "unsupported Program DB Version \"28\"; only saved version 32 (Ghidra 12.1.2) is supported"
+        ));
     }
 
     #[test]

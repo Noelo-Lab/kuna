@@ -35,9 +35,6 @@
 #[expect(clippy::disallowed_types, reason = "bounded B-tree ownership checks")]
 use std::collections::HashSet;
 
-#[cfg(feature = "ghidra-program")]
-use std::ops::Range;
-
 use kuna_base::error::{KunaError, KunaResult};
 
 use super::schema::{FieldType, Schema};
@@ -220,6 +217,52 @@ pub struct TableRef {
     pub record_count: i32,
 }
 
+struct TableDescriptor {
+    name: String,
+    version: i32,
+    root_buffer_id: i32,
+    key_type: u8,
+    field_types: Vec<u8>,
+    field_names: String,
+    record_count: i32,
+}
+
+pub(crate) const PROGRAM_SYMBOLS_VERSION: i32 = 4;
+
+impl TableDescriptor {
+    fn decode(self, program: bool) -> KunaResult<TableRef> {
+        let unsupported = |reason: &str| KunaError::bad_data(format!(
+            "ghidra db: unsupported {} schema (v{}): {reason}", self.name, self.version
+        ));
+        let mut field_types = self.field_types.as_slice();
+        if program && self.name == "Symbols" {
+            if self.version != PROGRAM_SYMBOLS_VERSION {
+                return Err(unsupported("expected the Ghidra 12.1.2 Symbols schema (v4)"));
+            }
+            // Schema encodes the sparse column indices from a HashSet.
+            let (columns, extension) = field_types.split_at_checked(13)
+                .ok_or_else(|| unsupported("short field-type list"))?;
+            let valid = extension.strip_prefix(&[0xff, 1]).is_some_and(|indices| {
+                indices.len() == 8 && (5..=12).all(|i| indices.contains(&i))
+            });
+            if !valid {
+                return Err(unsupported("invalid sparse column list"));
+            }
+            field_types = columns;
+        }
+        let schema = Schema::decode(self.version, self.key_type, field_types, &self.field_names)
+            .map_err(|error| if program { unsupported(error.explain()) } else { error })?;
+        Ok(TableRef {
+            name: self.name,
+            version: self.version,
+            root_buffer_id: self.root_buffer_id,
+            schema,
+            indexed_column: -1,
+            record_count: self.record_count,
+        })
+    }
+}
+
 /// A view over a raw Ghidra database file (`db.DBHandle` on disk).
 pub struct Database<'a> {
     data: &'a [u8],
@@ -235,17 +278,37 @@ impl<'a> Database<'a> {
     /// Parse a raw buffer file (`LocalBufferFile`). `Err` for a file that is not
     /// a Ghidra database, is truncated, or whose master table cannot be read.
     pub fn parse(data: &'a [u8]) -> KunaResult<Self> {
-        Self::parse_tables(data, None)
+        let (mut db, tables) = Self::parse_tables(data, None, |table| table.decode(false))?;
+        db.tables = tables;
+        Ok(db)
     }
 
-    /// Parse only the ProgramDB tables consumed by the snapshot reader. Keep
-    /// checking ownership of every declared root, including skipped tables.
+    /// Check the saved Program metadata before interpreting version-dependent
+    /// schemas. All declared roots are still checked, including skipped tables.
     #[cfg(feature = "ghidra-program")]
-    pub(crate) fn parse_program(data: &'a [u8], tables: &[&str]) -> KunaResult<Self> {
-        Self::parse_tables(data, Some(tables))
+    pub(crate) fn parse_program<T>(
+        data: &'a [u8],
+        tables: &[&str],
+        read_program: impl FnOnce(&Self, &mut HashSet<i32>) -> KunaResult<T>,
+    ) -> KunaResult<(Self, HashSet<i32>, T)> {
+        let (mut db, mut tables) = Self::parse_tables(data, Some(tables), Ok)?;
+        db.tables.reserve_exact(tables.len());
+        if let Some(index) = tables.iter().position(|table| table.name == "Program") {
+            db.tables.push(tables.swap_remove(index).decode(true)?);
+        }
+        let mut used = db.occupied_buffers();
+        let program = read_program(&db, &mut used)?;
+        for table in tables {
+            db.tables.push(table.decode(true)?);
+        }
+        Ok((db, used, program))
     }
 
-    fn parse_tables(data: &'a [u8], program_tables: Option<&[&str]>) -> KunaResult<Self> {
+    fn parse_tables<T>(
+        data: &'a [u8],
+        program_tables: Option<&[&str]>,
+        decode: impl FnMut(TableDescriptor) -> KunaResult<T>,
+    ) -> KunaResult<(Self, Vec<T>)> {
         if data.len() < 32 {
             return Err(KunaError::bad_data("ghidra db: file shorter than its header"));
         }
@@ -302,9 +365,10 @@ impl<'a> Database<'a> {
         };
         db.parms = db.read_db_parms()?;
         let mut used = HashSet::from([0]); // DBParms is already owned.
-        (db.tables, db.table_roots) = db.read_master_table(&mut used, program_tables)?;
+        let (tables, roots) = db.read_master_table(&mut used, program_tables, decode)?;
+        db.table_roots = roots;
         db.master_buffers = used;
-        Ok(db)
+        Ok((db, tables))
     }
 
     /// The payload of user buffer `id` (block `id + 1`, prefix stripped).
@@ -467,57 +531,29 @@ impl<'a> Database<'a> {
         Ok(len)
     }
 
-    /// A File Bytes overlay may omit data blocks: those inherit the original.
-    /// Reject changes only in selected executable byte ranges.
+    /// Visit the stored blocks of a File Bytes overlay. Omitted blocks
+    /// inherit the original, and the caller decides which bytes to verify.
     #[cfg(feature = "ghidra-program")]
-    pub(crate) fn check_file_layer(
+    pub(crate) fn visit_file_layer(
         &self,
         id: i32,
-        original: &[u8],
-        file_offset: usize,
-        ranges: &[Range<usize>],
+        len: usize,
         used: &mut HashSet<i32>,
         xor: &[u8],
+        mut visit: impl FnMut(usize, &[u8], &[u8]) -> KunaResult<()>,
     ) -> KunaResult<()> {
         let first = self.claim_buffer(id, used, false)?;
         let encoded_len = first.i32(1)?;
-        let len = (encoded_len & i32::MAX) as usize;
-        if len == 0 || len != original.len() {
+        if len == 0 || (encoded_len & i32::MAX) as usize != len {
             return Err(KunaError::bad_data("ghidra db: invalid layered File Bytes length"));
         }
         let xor = if encoded_len < 0 { xor } else { &[] };
-        let compare = |_: &mut (), offset: usize, stored: &[u8]| {
-            let start = offset + file_offset;
-            let end = start + stored.len();
-            for range in &ranges[ranges.partition_point(|range| range.end <= start)..] {
-                if range.start >= end {
-                    break;
-                }
-                let lo = range.start.saturating_sub(start);
-                let hi = range.end.min(end) - start;
-                let expected = &original[offset + lo..offset + hi];
-                let actual = &stored[lo..hi];
-                let unchanged = if xor.is_empty() {
-                    actual == expected
-                } else {
-                    actual.iter().zip(expected).enumerate().all(|(i, (&a, &b))| {
-                        a ^ xor[(lo + i) % xor.len()] == b
-                    })
-                };
-                if !unchanged {
-                    return Err(KunaError::bad_data(format!(
-                        "ghidra program: layered File Bytes changes executable bytes in file range {:#x}..{:#x}",
-                        start + lo, start + hi,
-                    )));
-                }
-            }
-            Ok(())
-        };
         match NodeType::from_byte(first.u8(0)?)? {
-            NodeType::ChainedBufferData => compare(&mut (), 0, first.bytes(5, len)?),
-            NodeType::ChainedBufferIndex => {
-                self.walk_indexed_chain(first, len, used, true, &mut (), |_| Ok(()), compare)
-            }
+            NodeType::ChainedBufferData => visit(0, first.bytes(5, len)?, xor),
+            NodeType::ChainedBufferIndex => self.walk_indexed_chain(
+                first, len, used, true, &mut (), |_| Ok(()),
+                |(), offset, bytes| visit(offset, bytes, xor),
+            ),
             _ => Err(KunaError::bad_data("ghidra db: invalid layered File Bytes root")),
         }
     }
@@ -576,11 +612,12 @@ impl<'a> Database<'a> {
         }
     }
 
-    fn read_master_table(
+    fn read_master_table<T>(
         &self,
         used: &mut HashSet<i32>,
-        _program_tables: Option<&[&str]>,
-    ) -> KunaResult<(Vec<TableRef>, HashSet<i32>)> {
+        program_tables: Option<&[&str]>,
+        mut decode: impl FnMut(TableDescriptor) -> KunaResult<T>,
+    ) -> KunaResult<(Vec<T>, HashSet<i32>)> {
         let root = self.parm(PARM_MASTER_TABLE_ROOT)?;
         if root < 0 {
             return Err(KunaError::bad_data("ghidra db: no master table root"));
@@ -590,16 +627,14 @@ impl<'a> Database<'a> {
         let mut roots = HashSet::new();
         let mut names = HashSet::new();
         self.visit_tree(root, &schema, None, None, used, |rec| {
-            let [FieldValue::Str(Some(name)), FieldValue::Int(version),
+            let Ok([FieldValue::Str(Some(name)), FieldValue::Int(version),
                 FieldValue::Int(root_buffer_id), FieldValue::Byte(key_type),
                 FieldValue::Binary(Some(field_types)), FieldValue::Str(Some(field_names)),
-                FieldValue::Int(indexed_column), FieldValue::Long(_), FieldValue::Int(record_count)] =
-                rec.columns.as_slice()
+                FieldValue::Int(indexed_column), FieldValue::Long(_), FieldValue::Int(record_count)]) =
+                <[_; 9]>::try_from(rec.columns)
             else {
                 return Err(KunaError::bad_data("ghidra db: invalid master-table record"));
             };
-            let (version, root_buffer_id, indexed_column, record_count) =
-                (*version, *root_buffer_id, *indexed_column, *record_count);
             if root_buffer_id >= 0
                 && (root_buffer_id == 0 || root_buffer_id as usize >= self.buffer_count
                     || !roots.insert(root_buffer_id))
@@ -620,38 +655,18 @@ impl<'a> Database<'a> {
                     "ghidra db: invalid primary table metadata for {name:?}"
                 )));
             }
-            #[cfg(feature = "ghidra-program")]
-            let field_types = if let Some(program_tables) = _program_tables {
-                if !program_tables.contains(&name.as_str()) {
-                    return Ok(());
-                }
-                if name == "Symbols" && version == 4 {
-                    // SymbolDatabaseAdapterV4 stores only columns 5–12 sparsely.
-                    let (dense_types, extension) = field_types.split_at_checked(13)
-                        .ok_or_else(|| KunaError::bad_data("ghidra db: short Symbols v4 schema"))?;
-                    // Schema encodes the extension's indices from a HashSet.
-                    let valid = extension.strip_prefix(&[0xff, 1]).is_some_and(|indices| {
-                        indices.len() == 8 && (5..=12).all(|i| indices.contains(&i))
-                    });
-                    if !valid {
-                        return Err(KunaError::bad_data("ghidra db: unsupported sparse Symbols v4 schema"));
-                    }
-                    dense_types
-                } else {
-                    field_types
-                }
-            } else {
-                field_types
-            };
-            let schema = Schema::decode(version, *key_type as u8, field_types, field_names)?;
-            tables.push(TableRef {
-                name: name.clone(),
+            if program_tables.is_some_and(|tables| !tables.contains(&name.as_str())) {
+                return Ok(());
+            }
+            tables.push(decode(TableDescriptor {
+                name,
                 version,
                 root_buffer_id,
-                schema,
-                indexed_column,
+                key_type: key_type as u8,
+                field_types,
+                field_names,
                 record_count,
-            });
+            })?);
             Ok(())
         })?;
         if !roots.is_disjoint(used) {
@@ -951,8 +966,7 @@ fn append_chain_block(output: &mut Vec<u8>, bytes: &[u8], xor: &[u8]) {
     }
 }
 
-/// Decode columns within one record span. For Symbols v4, return the dense
-/// fields and external program address, while validating the entire sparse tail.
+/// Decode dense columns, and validate but do not retain the Symbols v4 sparse tail.
 fn read_record(
     schema: &Schema,
     buf: &Buf<'_>,
@@ -963,7 +977,7 @@ fn read_record(
         return Err(KunaError::bad_data("ghidra db: record shorter than the table schema"));
     }
     let mut off = 0;
-    let mut out = Vec::with_capacity(dense + usize::from(sparse_from.is_some()));
+    let mut out = Vec::with_capacity(dense);
     for &field in &schema.fields[..dense] {
         out.push(read_field(buf, &mut off, field)?);
     }
@@ -972,7 +986,6 @@ fn read_record(
         let count = usize::from(buf.u8(off)?);
         off += 1;
         let mut next_column = dense;
-        let mut external_address = None;
         for _ in 0..count {
             let column = usize::from(buf.u8(off)?);
             off += 1;
@@ -981,11 +994,7 @@ fn read_record(
             }
             next_column = column + 1;
             let field = schema.fields[column];
-            if column == 10 {
-                let (text, next) = buf.string(off)?;
-                external_address = text;
-                off = next;
-            } else if let Some(len) = field.fixed_size() {
+            if let Some(len) = field.fixed_size() {
                 buf.bytes(off, len)?;
                 off += len;
             } else if field == FieldType::Str {
@@ -995,7 +1004,6 @@ fn read_record(
                 return Err(KunaError::bad_data("ghidra db: unsupported sparse Symbols field type"));
             }
         }
-        out.push(FieldValue::Str(external_address));
     }
     if off != buf.data.len() {
         return Err(KunaError::bad_data("ghidra db: record length does not match the table schema"));

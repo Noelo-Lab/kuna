@@ -6,9 +6,10 @@
 //! module classifies those entries and applies the ABI formula without touching
 //! opcode bits outside the relocation field.
 //!
-//! Supported instruction families are ARM `CALL`/`JUMP24`, Thumb call/jump,
-//! `REL32`, and `PREL31`; AArch64 branch, ADRP page, ADD low-12, and scaled load/
-//! store low-12 forms; PowerPC (32- and 64-bit) `REL24`/`PLTREL24`/`LOCAL24PC`
+//! Supported instruction families are ARM `CALL`/`JUMP24`, Thumb branches,
+//! literals, ADR and MOVW/MOVT, `REL32`, and `PREL31`; AArch64 branch, ADRP page,
+//! ADD low-12 and scaled load/store low-12 forms; PowerPC (32- and 64-bit)
+//! `REL24`/`PLTREL24`/`LOCAL24PC`
 //! and `ADDR24` branches, the 14-bit conditional-branch forms, the absolute,
 //! PC-relative (`REL16`) and TOC-relative 16-bit halves, TOC64, and the
 //! unaligned and PC-relative data words; and SPARC
@@ -23,6 +24,10 @@
 //! its range or section, or dependent on a linker veneer or missing TOC.
 
 use object::{elf, Architecture, Relocation, RelocationEncoding, RelocationFlags, RelocationKind};
+
+#[path = "reloc_arm_thumb.rs"]
+mod arm_thumb;
+use arm_thumb::ThumbRelocation;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum RelocationFailure {
@@ -55,6 +60,7 @@ impl RelocationFailure {
 enum Specific {
     ArmBranch24,
     ArmThumbBranch24,
+    Thumb(ThumbRelocation),
     ArmPrel31,
     PcRelativeData,
     Aarch64Branch26,
@@ -164,6 +170,7 @@ impl RelocationSpec {
     /// relocation, which is not a call but still needs an extern function slot.
     pub fn targets_code(self) -> bool {
         self.is_call()
+            || matches!(self.specific, Specific::Thumb(kind) if kind.targets_code())
             || matches!(
                 self.specific,
                 Specific::ArmBranch24
@@ -211,6 +218,8 @@ fn classify_info(
         }
         (Architecture::Arm, Some(elf::R_ARM_REL32)) => Some((Specific::PcRelativeData, false)),
         (Architecture::Arm, Some(elf::R_ARM_PREL31)) => Some((Specific::ArmPrel31, false)),
+        (Architecture::Arm, Some(kind)) => ThumbRelocation::from_type(kind)
+            .map(|kind| (Specific::Thumb(kind), false)),
 
         (Architecture::Aarch64, Some(elf::R_AARCH64_CALL26)) => {
             Some((Specific::Aarch64Branch26, true))
@@ -345,6 +354,7 @@ fn classify_info(
 
     if let Some((specific, call)) = specific {
         let width = match specific {
+            Specific::Thumb(kind) => kind.width(),
             Specific::Ppc64Toc16 { .. } | Specific::PpcHalf16 { .. } => 2,
             Specific::Ppc64Toc64 | Specific::BpfCall => 8,
             Specific::BpfImm64 => 16,
@@ -434,6 +444,7 @@ fn apply_info(
             spec.call,
             target_thumb,
         ),
+        Specific::Thumb(kind) => kind.apply(field, little_endian, reloc, symbol, place, target_thumb),
         Specific::ArmPrel31 => arm_prel31(field, little_endian, reloc, symbol, place),
         Specific::PcRelativeData => pc_relative_data(field, little_endian, reloc, symbol, place),
         Specific::Aarch64Branch26 => aarch64_branch26(field, little_endian, reloc, symbol, place),

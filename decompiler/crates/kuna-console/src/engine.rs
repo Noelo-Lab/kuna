@@ -61,6 +61,7 @@ use kuna_analysis::loadimage_object::{is_arm32_language, ObjectLoadImage, PE_MAC
 use kuna_analysis::loadimage_mz::{is_mz_dos_image, MzImage, MZ_LANGUAGE};
 use kuna_analysis::flirt::kuna_rustprofiles::{ImageReport as RustProfileReport, Request as RustProfileRequest};
 use kuna_analysis::loadimage_te::{is_te_image, TeLoadImage, TE_PROBE_LEN};
+use kuna_analysis::listing::{kuna_rawdiscover::RawDiscovery, Listing};
 use kuna_sleigh::loadimage_xml::LoadImageXml;
 use kuna_sleigh::loadimage_xml::register_loadimage_xml_ids;
 use kuna_sleigh::translate::register_translate_ids;
@@ -2870,6 +2871,43 @@ impl ConsoleProgram {
         }
     }
 
+    fn raw_discovery(&self, code_space: &Rc<AddrSpace>, for_fid: bool) -> RawDiscovery {
+        let exec: Vec<(u64, u64)> = self
+            .sections()
+            .into_iter()
+            .filter(|(_, _, flags)| flags & section_flags::CODE != 0)
+            .map(|(addr, size, _)| (addr, addr.saturating_add(size)))
+            .collect();
+        let seeds: Vec<u64> =
+            self.pending_synthetic_entries.iter().map(|addr| addr.get_offset()).collect();
+        let arch = self.arch();
+        let translate = arch.translate();
+        // Speculative sweep decodes must not replace the caller's ARM ISA or
+        // leave decode commits that would alter a later function's hash.
+        let scope = if for_fid { translate.decode_context_scope() } else { None };
+        if arch.input_arm_isa_override {
+            if let Some(scope) = &scope {
+                // An ARM-only language may have no TMode to protect.
+                let _ = scope.protect_variable(b"TMode");
+            }
+        }
+        kuna_analysis::listing::kuna_rawdiscover::discover(
+            arch, translate, code_space, &exec, &seeds, self.mz_evidence.as_ref(),
+        )
+    }
+
+    /// Obtain the raw discovery partition for FID lookup before committing
+    /// analysis. The entries and byte ranges are those validated by bootstrap.
+    pub fn pending_raw_listing_for_fid(&self) -> KunaResult<Listing> {
+        if self.container != ProgramContainer::Raw || self.mz_evidence.is_some() {
+            return Err(KunaError::lowlevel("FID raw discovery requires a headerless image"));
+        }
+        let code_space = self.analysis_code_space.as_ref()
+            .ok_or_else(|| KunaError::lowlevel("no pending raw code space"))?;
+        self.raw_discovery(code_space, true).listing
+            .ok_or_else(|| KunaError::lowlevel("no pending raw entries to discover"))
+    }
+
     /// (kuna `rawdiscover`) Extend [`Self::pending_synthetic_entries`] with every
     /// function the headerless-image discovery finds: the targets of every direct
     /// call in the executable bytes, plus the direct-call closure of those and
@@ -2887,27 +2925,24 @@ impl ConsoleProgram {
         let Some(code_space) = self.analysis_code_space.clone() else {
             return Vec::new();
         };
-        let exec: Vec<(u64, u64)> = self
-            .sections()
-            .into_iter()
-            .filter(|(_, _, flags)| flags & section_flags::CODE != 0)
-            .map(|(addr, size, _)| (addr, addr.saturating_add(size)))
-            .collect();
-        let seeds: Vec<u64> =
-            self.pending_synthetic_entries.iter().map(|addr| addr.get_offset()).collect();
-        let known: BTreeSet<u64> = seeds.iter().copied().collect();
-        let found = {
-            let arch = self.arch();
-            let mz = self.mz_evidence.as_ref();
-            kuna_analysis::listing::kuna_rawdiscover::discover(
-                arch,
-                arch.translate(),
-                &code_space,
-                &exec,
-                &seeds,
-                mz,
-            )
+        let fid_db = if self.arch().analysis_listing && self.arch().analysis_fid
+            && self.mz_evidence.is_none()
+        {
+            kuna_analysis::fid::configured_database_path()
+        } else {
+            None
         };
+        let found = self.raw_discovery(&code_space, fid_db.is_some());
+        if let (Some(listing), Some(path)) = (found.listing, fid_db) {
+            let mut out = kuna_analysis::fid::FidPass::run_raw(self.arch(), &listing, &path);
+            out.sanitize_names(kuna_decomp::kuna_symbolnamechars::symbolnamechars_mode());
+            // The normal commit applies the label gate after the synthetic
+            // entries have been installed, then exposes the database report.
+            self.pending_analysis.push(("fid", out));
+        }
+        let known: BTreeSet<u64> = self.pending_synthetic_entries.iter()
+            .map(|addr| addr.get_offset())
+            .collect();
         for &vma in &found.entries {
             if known.contains(&vma) {
                 continue;

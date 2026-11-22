@@ -98,8 +98,8 @@ and 18 tags**.
    separate SLEIGH tree or a Java runtime.
    The BSim server and its signer read their bundled specs in memory.
    Smoke tests check the version, single-binary decompilation, and a native
-   BSim round trip with only the two release executables and test inputs,
-   without a separate SLEIGH tree. (`decomp_test_dbg` is not shipped — the
+   BSim round trip with linked and relocatable Ghidra fixtures, using only
+   the two release executables and test inputs. (`decomp_test_dbg` is not shipped — the
    datatest harness only makes sense inside the repo.) The `kuna_ghidra`
    binaries are not in the archives: each row uploads its binary as a
    `ghidra-bin-<platform>` workflow artifact for the **ghidra-ext** job.

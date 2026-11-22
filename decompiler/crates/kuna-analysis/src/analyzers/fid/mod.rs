@@ -29,8 +29,8 @@
 //! exactly one name ([`pick_unique_name`], conservative; never guesses on a tie) —
 //! emits a [`crate::pass::FidMatch`]. The engine's commit seam then **renames** the
 //! function (only if it still carries an engine `FUN_*`/`sub_*` placeholder — the
-//! label gate). Default-OFF, real-ELF path only, inert without the Listing AND
-//! without a DB — so the parity oracles are structurally untouched.
+//! label gate). Default-OFF, inert without the Listing AND without a DB — so
+//! the parity oracles are structurally untouched.
 //!
 //! The database path is read from the `kuna_fid_db` environment variable; a real `--fidb
 //! <path>` flag is a deferred follow-on (`docs/history/fid-design.md` §7.2). Absent / empty
@@ -49,15 +49,18 @@ pub mod schema;
 pub mod skipper;
 mod kuna_fidstrict;
 
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use kuna_base::address::Address;
+use kuna_decomp::architecture::Architecture;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, FidMatch, Phase};
 use crate::fid::db::FidRecord;
 use crate::fid::kuna_fidapply::LoadedFid;
 use crate::fid::hash::{FidHashQuad, FidHasher, InsnFingerprint, NoRelocations};
 use crate::fid::skipper::{InstructionSkipper, X86InstructionSkipper};
+use crate::listing::Listing;
 
 /// The environment variable naming the `.fid` fingerprint database to match
 /// against. A loader-tier env gate: the DB source is
@@ -90,51 +93,64 @@ impl AnalysisPass for FidPass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
-        let mut out = AnalysisOutput::default();
-        // Listing-dependent: a no-op when the Listing is absent (the `--option
-        // listing on` flag is off). Keeps the pass inert by default even if its own
-        // gate is flipped on without the Listing.
         let Some(listing) = ctx.listing else {
-            return out;
+            return AnalysisOutput::default();
         };
-        let Some(path) = fid_db_path() else {
-            return out;
+        let Some(path) = configured_database_path() else {
+            return AnalysisOutput::default();
         };
-        let (report, db) = kuna_fidapply::open_any(&path, ctx.arch);
-        out.fid_databases.push(report);
-        if let LoadedFid::None = db {
-            return out;
-        }
-
-        for (&entry, _) in listing.functions() {
-            let Ok(quad) = fingerprint_function(listing, ctx.arch, entry) else {
-                continue;
-            };
-            let records = db.find_by_full_hash(quad.full_hash);
-            let selection = match &db {
-                LoadedFid::Ghidra(_) => pick_ghidra_name(records, &quad),
-                _ => pick_unique_name(records).map(|name| {
-                    (name, !ctx.arch.analysis_fid_strict || kuna_fidstrict::supports_rename(records, &quad))
-                }),
-            };
-            let Some((name, strict_evidence)) = selection else {
-                continue;
-            };
-            let fact = FidMatch { addr: entry, name: name.to_owned(), by_signature: true };
-            if ctx.arch.analysis_fid_strict && !strict_evidence {
-                out.signature_vetoes.push(fact);
-            } else {
-                out.fid_names.push(fact);
-            }
-        }
-
-        out
+        match_listing(ctx.arch, listing, &path, fingerprint_function)
     }
 }
 
-/// The `.fid` database the load names: `LoadOptions::fid_db`, else
-/// [`FID_DB_ENV`]. `None` when neither names one.
-fn fid_db_path() -> Option<std::path::PathBuf> {
+impl FidPass {
+    /// Run after the raw discovery walk. The caller checks the listing and FID
+    /// gates; no object metadata or relocations are available on this path.
+    pub fn run_raw(arch: &Architecture, listing: &Listing, path: &Path) -> AnalysisOutput {
+        match_listing(arch, listing, path, fingerprint_raw_function)
+    }
+}
+
+fn match_listing(
+    arch: &Architecture,
+    listing: &Listing,
+    path: &Path,
+    fingerprint: impl Fn(&Listing, &Architecture, u64) -> Result<FidHashQuad, &'static str>,
+) -> AnalysisOutput {
+    let mut out = AnalysisOutput::default();
+    let (report, db) = kuna_fidapply::open_any(path, arch);
+    out.fid_databases.push(report);
+    if let LoadedFid::None = db {
+        return out;
+    }
+
+    for (&entry, _) in listing.functions() {
+        let Ok(quad) = fingerprint(listing, arch, entry) else {
+            continue;
+        };
+        let records = db.find_by_full_hash(quad.full_hash);
+        let selection = match &db {
+            LoadedFid::Ghidra(_) => pick_ghidra_name(records, &quad),
+            _ => pick_unique_name(records).map(|name| {
+                (name, !arch.analysis_fid_strict || kuna_fidstrict::supports_rename(records, &quad))
+            }),
+        };
+        let Some((name, strict_evidence)) = selection else {
+            continue;
+        };
+        let fact = FidMatch { addr: entry, name: name.to_owned(), by_signature: true };
+        if arch.analysis_fid_strict && !strict_evidence {
+            out.signature_vetoes.push(fact);
+        } else {
+            out.fid_names.push(fact);
+        }
+    }
+
+    out
+}
+
+/// The configured database path: `LoadOptions::fid_db`, else [`FID_DB_ENV`].
+pub fn configured_database_path() -> Option<PathBuf> {
     use kuna_decomp::kuna_loadoptions::{env, scoped};
     scoped(|o| o.fid_db.clone()).unwrap_or_else(env::fid_db)
 }
@@ -146,15 +162,47 @@ fn fid_db_path() -> Option<std::path::PathBuf> {
 /// The extent's end bound is the next discovered entry, exactly as the builder
 /// bounds a symbolized function.
 pub fn fingerprint_function(
-    listing: &crate::listing::Listing,
-    arch: &kuna_decomp::architecture::Architecture,
+    listing: &Listing,
+    arch: &Architecture,
     entry: u64,
+) -> Result<FidHashQuad, &'static str> {
+    fingerprint(listing, arch, entry, None)
+}
+
+/// Fingerprint a raw function using its mapped byte range and the architecture's
+/// configured context. Restore decoder context before trying another root.
+pub fn fingerprint_raw_function(
+    listing: &Listing,
+    arch: &Architecture,
+    entry: u64,
+) -> Result<FidHashQuad, &'static str> {
+    let mapped_range = listing
+        .exec_ranges()
+        .iter()
+        .copied()
+        .find(|&(lo, hi)| lo <= entry && entry < hi)
+        .ok_or("extent_outside_image")?;
+    if !listing.is_instruction_start(entry) {
+        return Err("extent_decode_failed");
+    }
+    let scope = arch.translate().decode_context_scope().ok_or("unsupported_translator")?;
+    if arch.input_arm_isa_override {
+        let _ = scope.protect_variable(b"TMode");
+    }
+    fingerprint(listing, arch, entry, Some(mapped_range))
+}
+
+fn fingerprint(
+    listing: &Listing,
+    arch: &Architecture,
+    entry: u64,
+    mapped_range: Option<(u64, u64)>,
 ) -> Result<FidHashQuad, &'static str> {
     let space = arch.manage().get_default_code_space().ok_or("no_code_space")?;
     let translate = arch.translate().as_sleigh().ok_or("unsupported_translator")?;
     let end = listing.next_function_after(entry).map(|f| f.entry);
     let switches = std::cell::OnceCell::new();
-    let extent = extent::decode_extent(arch, translate, entry, end, space, &switches)?;
+    let extent = extent::decode_extent(arch, translate, entry, end, mapped_range, space, &switches)?;
     if extent.len() < hash::SHORT_HASH_CODE_UNIT_LENGTH as usize {
         return Err("too_short");
     }

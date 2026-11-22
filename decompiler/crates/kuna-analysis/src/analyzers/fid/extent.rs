@@ -59,9 +59,11 @@ pub(crate) fn decode_extent(
     translate: &dyn Translate,
     entry: u64,
     end: Option<u64>,
+    mapped_range: Option<(u64, u64)>,
     code_space: &Rc<AddrSpace>,
     switches: &OnceCell<Option<BoundedSwitches>>,
 ) -> Result<Vec<ExtentInsn>, &'static str> {
+    let outside_image = |addr| mapped_range.is_some_and(|(lo, hi)| addr < lo || addr >= hi);
     let mut extent = Vec::new();
     let mut seen = HashSet::new();
     let mut pending = vec![entry];
@@ -72,6 +74,12 @@ pub(crate) fn decode_extent(
     let mut work = MAX_EXTENT_WORK;
     loop {
         while let Some(vma) = pending.pop() {
+            // The raw loader pads a partial read at EOF with zeroes. Do not
+            // accept those bytes as part of an instruction or invent a body
+            // boundary when a live path would run out of the mapped image.
+            if outside_image(vma) {
+                return Err("extent_outside_image");
+            }
             if is_other_entry(entry, vma, end) || !seen.insert(vma) {
                 continue;
             }
@@ -79,7 +87,11 @@ pub(crate) fn decode_extent(
             let dec = decode_one(translate, vma, code_space, false, false)
                 .map_err(|_| "extent_decode_failed")?;
             let len = dec.len;
-            if len == 0 || vma.checked_add(u64::from(len)).is_none_or(|e| end.is_some_and(|n| e > n)) {
+            let insn_end = vma.checked_add(u64::from(len)).ok_or("extent_decode_failed")?;
+            if mapped_range.is_some_and(|(_, hi)| insn_end > hi) {
+                return Err("extent_outside_image");
+            }
+            if len == 0 || end.is_some_and(|n| insn_end > n) {
                 return Err("extent_decode_failed");
             }
             let cls = classify(&dec.ops, vma, len);
@@ -115,6 +127,9 @@ pub(crate) fn decode_extent(
         for dispatch in dispatches.drain(..) {
             work = work.checked_sub(1).ok_or("extent_limit")?;
             if let Some((start, targets)) = tables.prove_targets(arch, translate, code_space, &seen, dispatch) {
+                if targets.iter().copied().any(outside_image) {
+                    return Err("extent_outside_image");
+                }
                 if targets.iter().any(|&target| is_other_entry(entry, target, end)) {
                     return Err("unresolved_computed_jump");
                 }

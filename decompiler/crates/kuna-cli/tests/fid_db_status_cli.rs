@@ -257,3 +257,51 @@ fn ghidra_raw_and_packed_filter_libraries_and_respect_rename_policy() {
         assert_eq!(queries[1]["candidates"][0]["ghidra_flags"], 17);
     }
 }
+
+#[test]
+fn raw_x86_fid_report_and_rename_respect_ghidra_policy() {
+    use object::{Object, ObjectSection};
+
+    let scratch = tempfile::tempdir().unwrap();
+    let bytes = std::fs::read(binary()).unwrap();
+    let file = object::File::parse(&*bytes).unwrap();
+    let text = file.section_by_name(".text").unwrap();
+    assert_eq!(text.address(), 0x401000);
+    let raw = scratch.path().join("x86.bin");
+    std::fs::write(&raw, text.data().unwrap()).unwrap();
+    let raw = raw.to_str().unwrap();
+    let db = common::fixture("fid_audit_ghidra.fidb");
+    let mapping = ["--raw-image", "--target", "x86:LE:64:default", "--base", "0x8000"];
+    let list = |db: &Path| {
+        let mut args = vec!["functions", raw, "--json", "--entry", "0x8020",
+            "--option", "listing", "on", "--option", "fid", "on"];
+        args.extend(mapping);
+        let output = kuna(Some(db), &args);
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert_eq!(output.status.code(), Some(0), "{stderr}");
+        (serde_json::from_slice::<Value>(&output.stdout).unwrap(), stderr)
+    };
+    let (analysis, _) = list(Path::new(&db));
+    assert_eq!(names(&analysis), ["audit_mix", "sub_8020"]);
+    assert_eq!(only_report(&analysis)["status"], "loaded");
+    assert_eq!(only_report(&analysis)["records"], 3);
+
+    let missing = scratch.path().join("missing.fid");
+    let (analysis, stderr) = list(&missing);
+    assert_eq!(names(&analysis), ["sub_8000", "sub_8020"]);
+    assert_eq!(only_report(&analysis)["status"], "missing");
+    assert!(stderr.contains("warning: FID database"), "{stderr}");
+
+    let mut args = vec!["fid", "query", raw, "--db", &db, "--json", "--addr", "0x8000", "--addr", "0x8020"];
+    args.extend(mapping);
+    let output = kuna(None, &args);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let doc: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let queries = doc["queries"].as_array().unwrap();
+    assert_eq!(queries[0]["database_format"], "ghidra_fid");
+    assert_eq!(queries[0]["status"], "ambiguous");
+    assert_eq!(queries[0]["candidates"].as_array().unwrap().len(), 2);
+    assert_eq!(queries[0]["candidates"][0]["name"], "audit_mix");
+    assert_eq!(queries[1]["status"], "single_candidate");
+    assert_eq!(queries[1]["candidates"][0]["name"], "audit_fold");
+}

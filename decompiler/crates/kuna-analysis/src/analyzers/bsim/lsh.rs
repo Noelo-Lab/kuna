@@ -321,7 +321,21 @@ pub fn score_candidate(
     }
     let mut data = VectorCompare::default();
     let similarity = query.compare(candidate, &mut data);
-    if !similarity.is_finite() || similarity < min_similarity {
+    if !similarity.is_finite() {
+        return None;
+    }
+    // Rounded norms can put an exact match just below 1. Check entry equality
+    // only if the merge found every occurrence on both sides.
+    let similarity = if similarity < 1.0
+        && data.intersectcount == data.acount
+        && data.intersectcount == data.bcount
+        && query.entries == candidate.entries
+    {
+        1.0
+    } else {
+        similarity.clamp(0.0, 1.0)
+    };
+    if similarity < min_similarity {
         return None;
     }
     let significance = calculate_significance(factory, &mut data);
@@ -450,13 +464,20 @@ mod tests {
     #[test]
     fn an_identical_pair_is_maximally_significant() {
         let f = unit_factory();
-        let v = LshCosineVector::from_features(&[1, 2, 3, 4], &f, &empty_idf());
-        let (sim, sig) = score_candidate(&f, &v, &v, 0.7).expect("self match");
-        assert!((sim - 1.0).abs() < 1e-12);
-        // No flips and no size difference, so significance is the dot product
-        // plus the addend.
-        assert!(sig > 0.0, "self significance {sig}");
-        assert_eq!(sig, self_significance(&f, &v));
+        let idf = empty_idf();
+        for features in [&[1, 2][..], &[1, 2, 3][..]] {
+            let a = LshCosineVector::from_features(features, &f, &idf);
+            let b = a.clone();
+            let (sim, sig) = score_candidate(&f, &a, &b, 1.0).expect("exact match");
+            assert_eq!(sim, 1.0);
+            assert!(score_candidate(&f, &a, &b, 1.0 + f64::EPSILON).is_none());
+            // No flips or size difference: significance is the dot product plus the addend.
+            assert_eq!(sig, features.len() as f64 + f.addend());
+        }
+
+        let a = LshCosineVector::from_features(&[1, 2, 3], &f, &idf);
+        let b = LshCosineVector::from_features(&[1, 2, 4], &f, &idf);
+        assert!(score_candidate(&f, &a, &b, 1.0).is_none());
     }
 
     #[test]

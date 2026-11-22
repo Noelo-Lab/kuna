@@ -1509,8 +1509,9 @@ A function no direct call reaches and no seed names is still undiscovered;
 `--define-function` asserts it. Named `--functions`, section-relative selectors,
 `--slice`, `--summary`, and `--reachable-from` are rejected. Support is limited
 to `decompile` (text and JSON), `decompile-all`, `functions`, and
-`decompile-project`; `decompile-graph`, `disassemble`/`read`, `xrefs`, and
-`strings` require object metadata. A headerless file used without `--raw-image`
+`decompile-project`; `fid query` also accepts a raw image with explicit mapping.
+`decompile-graph`, `disassemble`/`read`, `xrefs`, and `strings` require object
+metadata. A headerless file used without `--raw-image`
 reports the required raw-image command shape, including when its first byte is
 `<`; only a parsed document containing `<binaryimage>` is treated as XML. Quoted
 console filenames preserve paths containing whitespace; the interactive spelling
@@ -4956,7 +4957,8 @@ An executable with no signatures is not stored. To add a different build
 with the same filename, pass `--name`.
 
 `query` signs the function at `--address`/`--name` and reports matches best
-first, each with **similarity** and **significance**. The floor
+first, each with **similarity** (0 to 1 for local and native server queries)
+and **significance**. The floor
 (`--min-similarity`, default 0.7) is applied before `--max-matches` (default 10),
 so a strong match is never crowded out by a weak one taken first. A query that
 finds nothing says which floor it used and how many functions it considered, so
@@ -5001,14 +5003,36 @@ are always the highest-ranked ones. JSON reports this with `truncated`.
 The importer reads closed or consistently copied Ghidra 12.1.2 projects
 (`.gpr` together with its `.rep`, or the `.rep` directly) and individual
 packed Program archives (`.gzf`). It imports the saved original executable
-and compatible function entries/names, not the full analysis database or
+and compatible named functions, not the full analysis database or
 types or analysis overrides. The original must be a linked ELF, PE, or
-Mach-O image with verifiable file backing, and its inferred instruction
-language must match the project language. For ELF PIE and shared objects,
-the importer translates a verified uniform load offset. Code changes,
-including loader relocations that rewrite executable bytes, are rejected.
+Mach-O image or a relocatable ELF object with verifiable file backing.
+Its inferred instruction language must match the project language.
+For ELF PIE and shared objects, the importer verifies a uniform load offset.
+For relocatable ELF, it maps each saved entry through its backed file bytes
+to an original executable section index and offset. Kuna resolves that pair
+in its own object layout; it does not reuse Ghidra's synthetic addresses.
+For relocatable ELF, the importer accepts only byte-exact stock relocations
+it can recompute from the original object and the verified saved layout.
+For x86-64, this covers `PC32` and `PLT32` against file-backed targets.
+For little-endian ARM, this covers selected data and Thumb instruction
+relocations, including targets in zero-fill sections and stock synthetic
+external and common symbol slots. Other changes to executable bytes,
+including user patches at relocation sites, are rejected. Raw images
+are not supported. The saved Program DB version must be 32; upgrade and save
+a copy of an older project in Ghidra 12.1.2 before retrying.
 The latest snapshot takes precedence over inferred native names, but never
 over explicit publications. Import reports what it added, updated, or kept.
+Re-import to refresh eligible signatures after a loader update. It updates
+matching entries without removing addresses absent from the new snapshot.
+Default Ghidra names and address placeholders such as `FUN_00401000` and
+`sub_401000` are not imported. Imported and analysis-assigned names are eligible
+if they are not placeholders. `skipped_unnamed` counts these omissions;
+`considered` counts named functions eligible for signing. A valid program with
+no eligible functions is reported as `skipped`, not as an import failure.
+In JSON output, `snapshot_complete` means all eligible saved functions were
+signed. `executable_complete` reports complete native function-discovery
+coverage in the store, not whether the original executable bytes are intact.
+A Ghidra import can succeed with `executable_complete: false`.
 If some functions cannot be signed, it keeps the successful signatures,
 reports the first failure, and exits nonzero. Use a local store directory
 that only trusted operators can modify.
@@ -5207,11 +5231,25 @@ reports full-hash candidates without renaming. Addresses are hex, `0x` optional.
 Kuna accepts its own `.fid` files and Ghidra `.fidbf` or `.fidb` databases.
 For Ghidra databases, only compatible libraries contribute candidates.
 
+For a raw image, supply the SLEIGH target and the address of file offset zero.
+The `--addr` values seed discovery. Raw ARM32 also requires `--isa arm|thumb`;
+an odd Thumb pointer selects its underlying even address.
+
+```bash
+kuna fid query ./rom.bin --db ./library.fidb --addr 0x329 --raw-image \
+  --target ARM:LE:32:v7 --base 0 --isa thumb --json
+```
+
+For automatic naming of the raw function inventory, supply the same mapping to
+`kuna functions`, an explicit `--entry`, `--option listing on --option fid on`,
+and the database in `kuna_fid_db`.
+
 For one address, the JSON root contains `binary`, `database`, `requested_address`,
 `address`, `entry_source`, `instruction_boundary`, `identity_verified`, `status`
 and `candidates`. `requested_address` is the input; for an ARM32 Thumb pointer
 `address` has its low bit cleared. `entry_source` is `discovered` when the initial
 Listing already has a function there, or `user_supplied` when the query adds it.
+Raw query addresses are always `user_supplied` seeds.
 `instruction_boundary` is `instruction_start`, `inside_instruction`, `undecoded`,
 or `non_executable`, according to the initial Listing. These are analysis facts,
 not proof that the address is a function entry.
@@ -5238,19 +5276,19 @@ Malformed or incompatible input is an error.
 For multiple addresses the root is `{binary, database, queries}`; `queries`
 contains results in input order, including duplicate addresses. An address that
 cannot be queried has `status: "error"` and a `reason`; a database or binary
-error fails the command. One address retains the single-result JSON shape. The
-input and database are loaded once, and discovered functions share the Listing.
-Other addresses get separate Listings, and each query uses a scoped decode
-context to avoid changing another result; each such address therefore costs one
-more walk of the whole image. The query's Listing is seeded from the container
-alone, so `kuna functions` can name entries it reports as `user_supplied`. The
+error fails the command. One address retains the single-result JSON shape. For a
+raw image, addresses share one partition seeded by the whole batch; an invalid
+raw seed fails the load. For an object image, discovered functions share the
+initial Listing; each added entry needs a separate Listing and a scoped decode
+context. The initial Listing is seeded from the container alone, so
+`kuna functions` can name entries the query reports as `user_supplied`. The
 Listing uses a contiguous-entry approximation and does not account for
 relocations; relocatable query targets are unsupported.
 
-Exit codes: `0` the document was written (whatever each `status`); `1` the binary
-or database could not be read or loaded (a relocatable object included), the
-database language differs, or the single queried address is not a decodable
-entry; `2` a malformed command line, with the usage block.
+Exit codes: `0` the document was written; inspect each `status`, including
+`unavailable` for an in-range raw seed that cannot be fingerprinted. `1` the
+binary or database could not be loaded, a raw seed is out of range, or a single
+linked-image address could not be decoded as an entry. `2` malformed command line.
 
 ## `kuna flirt make` — write FLIRT `.pat` and `.sig` files
 
