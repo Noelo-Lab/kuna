@@ -531,6 +531,12 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// The stack bytes the caller removes right after the direct call at
+    /// `call_at`. See [`crate::p4_calls::kuna_calleepurge`].
+    fn query_call_cleanup(&self, _call_at: &Address) -> u32 {
+        0
+    }
+
     /// The stack bytes the caller removes right after the indirect call at
     /// `call_at`. See [`crate::p4_calls::kuna_calleereginputs`].
     fn query_callind_cleanup(&self, _call_at: &Address) -> u32 {
@@ -3308,6 +3314,9 @@ truncating the fall-through here"
             fc.set_callee_returns_purge(self.env.query_call_returns_extra_pop(&callee));
             let call_at = self.data.obank().get(op).map(|o| o.get_addr().clone());
             if let Some(call_at) = call_at {
+                if fc.settled_purge().is_some_and(|p| p > 4) {
+                    fc.set_caller_cleanup(self.env.query_call_cleanup(&call_at));
+                }
                 let args = self.env.query_call_stack_arg_bytes(&callee, &call_at);
                 fc.set_callee_stack_arg_bytes(args);
                 if args.is_none() {

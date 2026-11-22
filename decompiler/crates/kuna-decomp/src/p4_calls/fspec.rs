@@ -6950,6 +6950,10 @@ pub struct FuncCallSpecs {
     /// (kuna) The extrapop the direct callee's returns' constants state where
     /// its own returns prove none. See [`crate::p4_calls::kuna_calleepurge`].
     callee_returns_purge: Option<int4>,
+    /// (kuna) The stack bytes the caller removes right after the direct call,
+    /// recorded where the callee pops above its return address. See
+    /// [`crate::p4_calls::kuna_calleepurge::shares_cleanup`].
+    caller_cleanup: u32,
     /// (kuna `calleeargs`) The stack-argument bytes the direct callee reads. See
     /// [`crate::p4_calls::kuna_calleestackargs`].
     callee_stack_arg_bytes: Option<crate::p4_calls::kuna_calleepurge::StackArgs>,
@@ -7004,6 +7008,7 @@ impl FuncCallSpecs {
             callee_arg_registers: 0,
             callee_purge: None,
             callee_returns_purge: None,
+            caller_cleanup: 0,
             callee_stack_arg_bytes: None,
             callee_moves_stack: false,
             callee_stack_window: None,
@@ -7045,6 +7050,7 @@ impl FuncCallSpecs {
         res.callee_arg_registers = self.callee_arg_registers;
         res.callee_purge = self.callee_purge;
         res.callee_returns_purge = self.callee_returns_purge;
+        res.caller_cleanup = self.caller_cleanup;
         res.callee_stack_arg_bytes = self.callee_stack_arg_bytes;
         res.callee_moves_stack = self.callee_moves_stack;
         res.callee_stack_window = self.callee_stack_window;
@@ -7441,6 +7447,23 @@ impl FuncCallSpecs {
     /// its returns prove none.
     pub fn set_callee_returns_purge(&mut self, extrapop: Option<int4>) {
         self.callee_returns_purge = extrapop;
+    }
+
+    /// The extrapop the direct callee's returns' constants state where its
+    /// returns prove none.
+    pub fn callee_returns_purge(&self) -> Option<int4> {
+        self.callee_returns_purge
+    }
+
+    /// Record the stack bytes the caller removes right after the direct call.
+    pub fn set_caller_cleanup(&mut self, bytes: u32) {
+        self.caller_cleanup = bytes;
+    }
+
+    /// The stack bytes the caller removes right after the direct call, where
+    /// the callee pops above its return address.
+    pub fn caller_cleanup(&self) -> u32 {
+        self.caller_cleanup
     }
 
     /// The extrapop the direct callee's returns prove, or else state by their

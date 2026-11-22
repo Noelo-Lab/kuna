@@ -107,12 +107,39 @@ pub fn callee_returns_extra_pop(arch: &Architecture, entry: &Address) -> Option<
 }
 
 /// Does every call in `data` have a pop its prototype states or its callee's
-/// returns prove or state?
+/// returns prove or state? One only the returns' constants state counts where
+/// no call [`shares_cleanup`].
 pub fn every_pop_settled(data: &crate::funcdata::Funcdata) -> bool {
-    (0..data.num_calls()).all(|i| {
+    let mut stated = false;
+    let all = (0..data.num_calls()).all(|i| {
         let fc = data.get_call_specs(i);
-        fc.get_extra_pop() != EXTRAPOP_UNKNOWN || fc.settled_purge().is_some()
-    })
+        if fc.get_extra_pop() != EXTRAPOP_UNKNOWN || fc.callee_purge().is_some() {
+            return true;
+        }
+        stated = true;
+        fc.callee_returns_purge().is_some()
+    });
+    all && !(stated && shares_cleanup(data))
+}
+
+/// Does a direct call in `data` pop arguments above its return address and
+/// leave its caller more to remove right after it? Delphi passes a nested
+/// routine its parent's frame (`push ebp; push x; call f; pop ecx` to a `ret
+/// 4`), GCC before 4.7 a hidden return pointer the callee pops (`ret 4`,
+/// `add esp,4`). With every pop exact the solve gives such a call only the
+/// slots its callee pops, so a pop the returns' constants state does not
+/// settle the function.
+pub fn shares_cleanup(data: &crate::funcdata::Funcdata) -> bool {
+    data.call_specs().iter().any(|fc| fc.caller_cleanup() > 0)
+}
+
+/// The stack bytes the caller removes right after the direct call at
+/// `call_at`, on x86-32 under a default model that leaves extrapop unknown.
+pub fn call_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
+    if !applies(arch) || call_at.is_invalid() {
+        return 0;
+    }
+    caller_cleanup(arch, call_at)
 }
 
 /// (`calleeargs`) The stack bytes the callee of the direct call at `call_at`

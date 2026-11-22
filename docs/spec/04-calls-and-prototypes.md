@@ -1825,7 +1825,17 @@ that machinery.
   solver's "pops only the return address" for every `__stdcall` and
   `__thiscall` callee, which shifts each later stack offset by the arguments
   the callee popped, so later calls lose stack arguments and locals whose
-  address is taken alias outgoing-argument slots.
+  address is taken alias outgoing-argument slots. A pop only the returns'
+  constants state does not settle a function in which some direct call's
+  callee pops above its return address and the caller then removes more
+  right after the call (`kuna_calleepurge.rs (shares_cleanup)`, from the
+  cleanup `FuncCallSpecs` records at flow time). Delphi passes a nested
+  routine its parent's frame that way (`push ebp; push x; call f; pop ecx` to
+  a `ret 4`), and GCC before 4.7 a hidden return pointer (`ret 4`, then `add
+  esp,4`). With every pop exact the solve gives such a call only the slots
+  its callee pops, and the slot the caller removes is dropped from its
+  arguments, so such a function keeps the solver's answer unless its pops are
+  all stated or proven.
 - **`ActionFuncLink`** (`coreaction_protos.rs (ActionFuncLink)`) arms each
   call site. Unlocked or varargs prototype → input recovery on
   (`init_active_input`). Locked prototype → one pre-marked trial per declared

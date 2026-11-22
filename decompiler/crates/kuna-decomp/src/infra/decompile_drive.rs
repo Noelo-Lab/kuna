@@ -169,6 +169,9 @@ impl FlowEnvironment for ArchFlowEnv {
     fn query_call_returns_extra_pop(&self, entry: &Address) -> Option<int4> {
         crate::p4_calls::kuna_calleepurge::callee_returns_extra_pop(self.arch(), entry)
     }
+    fn query_call_cleanup(&self, call_at: &Address) -> u32 {
+        crate::p4_calls::kuna_calleepurge::call_cleanup(self.arch(), call_at)
+    }
     fn query_callind_cleanup(&self, call_at: &Address) -> u32 {
         crate::p4_calls::kuna_calleereginputs::callind_cleanup(self.arch(), call_at)
     }
