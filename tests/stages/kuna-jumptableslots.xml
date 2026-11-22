@@ -1,0 +1,41 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    jumptablemax: a guard-bounded table longer than the cap is read to its
+    guard's bound only when each table slot it reads stands for at most four
+    selector values.
+
+    Source (gcc 11 -O2 -fPIC, x86-64):
+      int wide(unsigned int x) {
+        switch (x >> 8) { case 0: return 11; case 3: return x * 3 + 1; ...
+                          case 40: return x + 400; }
+        return 7;
+      }
+    gcc guards the original value (`cmp $0x28ff,%edi; ja`) and indexes a
+    41-entry table of 32-bit displacements with `x >> 8`, so the guard admits
+    0x2900 values of x over 41 slots.
+
+    Fixed: the table stays a computed call (`// jump-as-call` behind
+    `if (x <= 0x28ff)`), as with every table past jumptablemax before the
+    guard bound.
+    Before: a switch on x with 2560 case labels, one per value of x.
+-->
+<bytechunk space="ram" offset="0x1100" readonly="true">
+f30f1efa89f8c1e80881ffff2800007717488d15e80e0000486304824801d03effe0660f1f440000b807000000c366908d447f01c30f1f0089f883f055c36690b878000000c3662e0f1f8400000000008d47f7c30f1f4000b8c9000000c366908d04fd0000000029f8c3660f1f440000b839010000c3662e0f1f8400000000008d8790010000c3660f1f840000000000b80b000000c3662e0f1f840000000000b825000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x2000" readonly="true">
+90f1ffff28f1ffff28f1ffff30f1ffff28f1ffff28f1ffff28f1ffffa0f1ffff28f1ffff38f1ffff28f1ffff28f1ffff40f1ffff28f1ffff28f1ffff50f1ffff28f1ffff28f1ffff28f1ffff28f1ffff58f1ffff28f1ffff28f1ffff28f1ffff28f1ffff28f1ffff60f1ffff28f1ffff28f1ffff28f1ffff28f1ffff70f1ffff28f1ffff28f1ffff28f1ffff28f1ffff28f1ffff28f1ffff28f1ffff28f1ffff80f1ffff
+</bytechunk>
+<symbol space="ram" offset="0x1100" name="wide"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 wide(uint4 x);</com>
+  <com>lo fu wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="JUMPTABLESLOTS #1: the 41-slot table indexed by x &gt;&gt; 8 stays a computed call" min="1" max="1">// jump-as-call</stringmatch>
+<stringmatch name="JUMPTABLESLOTS #2: no value of x prints as its own case label" min="0" max="0">case </stringmatch>
+<stringmatch name="JUMPTABLESLOTS #3: the guard on x still prints" min="1" max="1">x &lt;= 0x28ff</stringmatch>
+</decompilertest>
