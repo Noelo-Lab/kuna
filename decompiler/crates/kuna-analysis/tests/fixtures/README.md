@@ -1686,6 +1686,37 @@ decompiler/crates/kuna-analysis/tests/fixtures/objc_sdk` it reads
 `objc_msgSend$setAlpha:(a1,a0);`, `v1 = objc_msgSend$frame(a1);` as a `CGRect` and
 `objc_msgSend$setFrame:(a1,v1.x,v1.y,v1.width + 10.0,v1.height);`.
 
+### `macho_objc_forin_arm64` + `objc_sdk/Enumeration.h` — a struct passed by address
+
+`macho_objc_forin_arm64` (arm64, ~50 KB) is the fixture for struct-pointer
+parameters read from headers (`analyzers/objc/kuna_objcsdk.rs`,
+`analyzers/objc/encoding.rs`, stage test `tests/stages/kuna-objcforin.xml`).
+Source `macho_objc_forin.m`: a root class `Bag` **declared and never implemented**
+and one function `visit_all` whose `for (id item in bag)` loop sends
+`countByEnumeratingWithState:objects:count:` with the address of the stack
+enumeration state, every send routed through a linker stub (the `.s` is `clang -S`
+output with each `adrp/ldr x1` selref load dropped and each `bl _objc_msgSend`
+replaced by `bl "_objc_msgSend$<sel>"`). `objc_sdk/Enumeration.h` is a
+**hand-written** stand-in for the SDK's fast-enumeration declarations (no Apple
+text): the state as a `typedef struct { ... } NSFastEnumerationState;` and the
+selector with an array parameter.
+
+```bash
+clang -target arm64-apple-macos11 -fno-objc-arc -O1 -S macho_objc_forin.m -o macho_objc_forin_arm64.s
+# edit: route every send through `_objc_msgSend$<sel>` (drop the selref loads)
+clang -target arm64-apple-macos11 -c macho_objc_forin_arm64.s -o forin.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains -objc_stubs_fast \
+         -undefined dynamic_lookup -x -e _main -o macho_objc_forin_arm64 forin.o
+```
+
+**Pinned VMAs:** `_visit_all`@`0x100000550`, `__objc_stubs`@`0x100000680`
+(`countByEnumeratingWithState:objects:count:` first, then `visit:`). With `objc on`
+alone the state is eight loose words and the element reads
+`*(unsigned long *)(v6 + v5 * 8)`; with `option objcsdk
+decompiler/crates/kuna-analysis/tests/fixtures/objc_sdk` it is one
+`NSFastEnumerationState v1` and the loop reads `v1.itemsPtr[v5]` and
+`*v1.mutationsPtr`.
+
 ### `macho_objc_types_arm64` — declarations typed by class
 
 `macho_objc_types_arm64` (arm64, ~50 KB) is the fixture for class-typed
