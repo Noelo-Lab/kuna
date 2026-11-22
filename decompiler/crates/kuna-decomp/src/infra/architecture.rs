@@ -1907,6 +1907,8 @@ pub struct Architecture {
     /// (kuna) Name a stripped Mach-O stub from the chained bind on its slot
     /// (`stubbinds`). Default on; Mach-O only.
     pub analysis_stubbinds: bool,
+    /// (kuna) Name a placeholder jump thunk `j_<target>` (`thunknames`). Default on.
+    pub analysis_thunknames: bool,
     /// (kuna) Gate the Mach-O Objective-C metadata recovery pass (`objc`); default
     /// **off**. The kuna analog of Ghidra's `ObjcTypeMetadataAnalyzer`
     /// (name-recovery half): when the binary is a Mach-O, walk the `__objc_*`
@@ -2695,6 +2697,7 @@ impl Architecture {
             analysis_tailcallentry: false,
             analysis_calltable: false,
             analysis_stubbinds: false,
+            analysis_thunknames: false,
             analysis_objc: false,
             analysis_swiftmetadata: false,
             analysis_cfstrings: false,
@@ -3056,6 +3059,7 @@ impl Architecture {
         self.analysis_aifpoolslide = true;
         self.analysis_tailcallentry = true; // tail-call function-entry recovery (ARM-only, needs listing)
         self.analysis_calltable = true; // call tables and the call-table vs switch vote (needs listing)
+        self.analysis_thunknames = true; // (kuna) placeholder jump thunks named j_<target>
         self.analysis_stubbinds = true; // (kuna) stripped Mach-O stubs named from their slot's chained bind (Mach-O-only pass)
         self.analysis_objc = true; // Mach-O Objective-C metadata recovery (Mach-O-only pass)
         self.analysis_swiftmetadata = true; // Swift runtime-metadata recovery (inert without swift5_* sections)

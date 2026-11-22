@@ -639,6 +639,9 @@ Three tiers:
 | anonymous sub_ calls into Swift stdlib or runtime from a SwiftPM framework | [`stubbinds`](#stubbinds----on--off-default-on) |
 | llvm-otool -I shows LOCAL ABSOLUTE for a __stubs entry whose slot has a chained bind | [`stubbinds`](#stubbinds----on--off-default-on) |
 | kuna names fewer imports than the chained-fixups import table lists | [`stubbinds`](#stubbinds----on--off-default-on) |
+| a call to a one-instruction b thunk prints sub_<addr> although the thunk's target is named | [`thunknames`](#thunknames----on--off-default-on) |
+| a function whose whole body is a tail call to a named function is called sub_<addr> | [`thunknames`](#thunknames----on--off-default-on) |
+| arm64 Swift image shows many 4-byte sub_ functions | [`thunknames`](#thunknames----on--off-default-on) |
 | go function parameters missing or void while the body reads rax/rbx locals that are never assigned | [`goabi`](#goabi----auto--off-default-auto) |
 | a go function returning two values loses the second and the statements computing it | [`goabi`](#goabi----auto--off-default-auto) |
 | go output full of unassigned register-commented locals | [`goabi`](#goabi----auto--off-default-auto) |
@@ -2231,6 +2234,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default): a stripped SwiftPM framework's `sub_fc80(0x28)` becomes `Swift._StringGuts.grow(_:)(0x28)`. Flip off to see the stubs as the symbol table alone names them, or when auditing what the indirect-symbol table says.
 - **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-analysis-stubbinds
 - **Example:** `--option stubbinds off`
+
+### `thunknames` -- on | off, default `on`
+
+- **Symptoms:** a call to a one-instruction b thunk prints sub_<addr> although the thunk's target is named; a function whose whole body is a tail call to a named function is called sub_<addr>; arm64 Swift image shows many 4-byte sub_ functions.
+- **What it does:** Name a jump thunk after the function it jumps to. A function whose first instruction is a direct unconditional branch to another function's entry and does nothing else is a thunk: a linker's branch island or identical-code-folding forwarder, a compiler's outlined tail call. A delay slot is part of its branch, so a MIPS `j f; addiu a0,a0,16` (a `this` adjustor) is not one. An arm64 Swift image holds thousands of one-instruction `b <target>` thunks, and each stayed `sub_<addr>`, so every call through one printed an anonymous name although its target is known. With this on, the commit decodes the first instruction of every discovered entry. After every other name source has run, a thunk still named `sub_<addr>` is renamed `j_<target>`, where the target is the end of its thunk chain (at most four jumps) and has a name that is not `sub_` itself. A name already in use takes the first free `_<n>` suffix, in thunk address order. Each renamed thunk also takes its target's prototype, prototype model and Swift `self` classification where it has none of its own, so a call through it is typed as a call to the target; a thunk with a name of its own keeps its own prototype recovery. A thunk to an unnamed function, a thunk that already has a name, and a branch to its own entry are not renamed. Any architecture; the arm64 `adrp; ldr; br` and arm64e `braa` import stubs are named by the stub passes, not here.
+- **When to flip:** On (default): a call through an arm64 branch thunk prints `j_swift_release(v1)` instead of `sub_10004c66c(v1)`, with the target's argument types. Flip off to keep thunks as `sub_<addr>`.
+- **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-analysis-thunknames
+- **Example:** `--option thunknames off`
 
 ### `goabi` -- auto | off, default `auto`
 

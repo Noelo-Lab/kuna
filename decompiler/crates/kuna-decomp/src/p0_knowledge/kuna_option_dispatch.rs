@@ -968,6 +968,7 @@ kuna_options! { self, p1;
     },
     "calltable" => on_off!(analysis_calltable, "Call-table recovery and the call-table vs switch vote"),
     "stubbinds" => on_off!(analysis_stubbinds, "Stripped Mach-O stubs named from their slot's chained bind"),
+    "thunknames" => on_off!(analysis_thunknames, "Placeholder jump thunks named j_<target>"),
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
     "panicloc" => on_off!(analysis_panicloc, "Rust panic Location record pass"),
     "swiftmetadata" => on_off!(analysis_swiftmetadata, "Swift runtime-metadata recovery pass"),

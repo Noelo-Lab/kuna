@@ -1070,6 +1070,26 @@ is `sub_100000520` from the indirect-symbol walk and `__chkstk_darwin` from the 
 on `0x100004000`; `tests/stages/kuna-stubbinds.xml` is the two-pass stage test.
 SHA-256 `3431ceec04e811d5c7a04b8b21d9f346077bb5faed9e7191f66610fcc25829f3`.
 
+`thunknames_aarch64` (static AArch64 ELF, 3 KB; source `thunknames_aarch64.c`,
+rebuild with `clang --target=aarch64-linux-gnu -O1 -g -c -o tn.o thunknames_aarch64.c`
+then `clang --target=aarch64-linux-gnu -nostdlib -static -fuse-ld=lld
+-Wl,-e,drop_box -Wl,--build-id=none -o thunknames_aarch64 tn.o`) holds two
+symbol-less `b` thunks: `0x21019c` jumps to `release_box` (DWARF prototype
+`long (long *, long)`), `0x2101a0` jumps to `0x21019c`, and `drop_box` /
+`drop_two` call them. Pins `thunknames` (`kuna-console/src/engine/kuna_thunknames.rs`);
+`tests/stages/kuna-thunknames.xml` is the two-pass stage test.
+SHA-256 `e845b50d98652a01219b518126a06d3c8c9fd2ef42ee3a24b3c3570f1a9f49a5`.
+
+`thunknames_mips` (static MIPS32 little-endian ELF, 1 KB; source
+`thunknames_mips.S`, rebuild with `mipsel-linux-gnu-gcc -mno-abicalls -fno-pic
+-c -o tm.o thunknames_mips.S` then `mipsel-linux-gnu-ld -static -e mips_caller
+--build-id=none -o thunknames_mips tm.o`, GNU binutils 2.38) holds two
+symbol-less `j release_box` entries: `0x4000e0` has a `nop` in its delay slot
+(a thunk, renamed `j_release_box`) and `0x4000e8` has `addiu $a0,$a0,16` there
+(a `this` adjustor, left `sub_4000e8`). `mips_caller` calls both. Pins the
+delay-slot rule of `thunknames`; `tests/stages/kuna-thunknames.xml` passes 3-4.
+SHA-256 `a5ea1f23af005151f08ffc647131b4bfc64ec586c6b94b3248ff1009d2791136`.
+
 `chkstkdarwin_macho_arm64e` (arm64e, 33 KB) reaches the probe through an
 `__auth_ptr` slot, the way an arm64e link calls it: `_big_e` with
 `adrp x16; ldr x16,[x16,#off]; blraaz x16` and `_vla_e` with
