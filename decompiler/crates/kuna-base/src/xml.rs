@@ -2276,12 +2276,15 @@ mod tests {
         // and kuna-switchmerge-values / a hole the default code sends to the same place prints no label, and a 1100-entry table is a switch
         // and kuna-switchmerge-split / a range split between two switches, and an == test heading default, print as one switch
         // and kuna-jumptableslots / a guarded table indexed by x >> 8 past jumptablemax stays a computed call
+        // and kuna-cachereturn / a lazy accessor returns the value of its cache cell (option cachereturn)
+        // and kuna-thunknames / a placeholder jump thunk is named after its target (option thunknames)
+        // and kuna-swifthelpers / Swift instantiation helpers and lazy witness table accessors (option swifthelpers)
         // and kuna-dex / a DEX file's constant pool, entry copies and sparse switches
         // and kuna-dex-javanew / an allocation and its <init> call as new T(args)
         // and kuna-dex-javatry + kuna-dex-javactor / DEX try/catch and constructors as Java
         // and kuna-dex-apk + kuna-dex-containers / an APK's classes*.dex files mapped one after another,
         // compact DEX, ODEX, VDEX and OAT-embedded DEX
-        assert_eq!(count, 864, "corpus file count drifted");
+        assert_eq!(count, 867, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
