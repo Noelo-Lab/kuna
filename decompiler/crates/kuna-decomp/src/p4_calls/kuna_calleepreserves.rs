@@ -157,7 +157,13 @@ pub fn callee_preserves_range(
         return false;
     }
     body_departs_from_convention(data, fc, w)
-        || crate::p4_calls::kuna_calleescratchbody::scratch_body_is_a_body(data, w)
+        || crate::p4_calls::kuna_calleescratchbody::scratch_body_is_a_body(
+            data,
+            w,
+            crate::kuna_rustabi::call_model(fc.proto())
+                .and_then(|m| m.input_opt())
+                .is_some_and(|i| i.possible_param(addr, size)),
+        )
 }
 
 /// Does the register value `indop` carries across an earlier direct call reach

@@ -73,6 +73,9 @@
 //!   read of the leaf's own stack arguments (`mov eax,[esp+4]`) does not
 //!   count: every i386 leaf does it, and a register it then leaves alone
 //!   reaches the caller's return as a high word it never meant to return.
+//!   And the read admits the body only for a register the call's convention
+//!   passes an argument in: a kept `RAX`, or an i386 cdecl `EDX`, carries
+//!   nothing a later call takes and only reaches the caller's return.
 //! * **The body wrote a register other than the stack pointer.** Every `RET`
 //!   writes the stack pointer, so a summary carrying only it is the vacuous
 //!   one, not a description of work — the same exclusion the shipped gate and
@@ -109,8 +112,9 @@ pub const ELEM_CALLEESCRATCHBODY: ElementId = ElementId::new("calleescratchbody"
 /// discriminators; this only refuses the shapes too short to have either.
 const MIN_HELPER_INSTRUCTIONS: u32 = 2;
 
-/// Did this body do work no stub can fake — a memory access other than its own
-/// return-address pop, plus a register write that is not the stack pointer?
+/// Did this body do work no stub can fake — a memory write, or, for an
+/// argument register (`loads_count`), a memory read off its own stack — plus a
+/// register write that is not the stack pointer?
 ///
 /// The second half of [`crate::p4_calls::kuna_calleepreserves`]'s
 /// positive-evidence gate, for the callee that clobbers only what the
@@ -118,11 +122,12 @@ const MIN_HELPER_INSTRUCTIONS: u32 = 2;
 pub fn scratch_body_is_a_body(
     data: &Funcdata,
     w: &crate::kuna_rustabi::CalleeReturnWrites,
+    loads_count: bool,
 ) -> bool {
     if w.instruction_count() < MIN_HELPER_INSTRUCTIONS {
         return false;
     }
-    if w.store_spaces().is_empty() && !w.reads_offstack_memory() {
+    if w.store_spaces().is_empty() && !(loads_count && w.reads_offstack_memory()) {
         return false;
     }
     let manage = data.get_arch().manage();
