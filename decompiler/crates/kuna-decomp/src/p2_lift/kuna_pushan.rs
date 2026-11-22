@@ -281,6 +281,22 @@ impl<'a> ArchTarget<'a> {
         literal_len(&buf, addr, self.ram.get_addr_size() as usize, |a| self.section_of(a).is_some(), refs)
     }
 
+    /// The PE file header's `IMAGE_FILE_LARGE_ADDRESS_AWARE` flag, read from
+    /// the headers mapped at the image base (set when they cannot be read).
+    fn large_address_aware(&self) -> bool {
+        let base = self.sections.iter().map(|s| s.start).min().unwrap_or(0) & !0xffff;
+        let mut mz = [0u8; 0x40];
+        if !self.read_bytes(base, &mut mz) || &mz[..2] != b"MZ" {
+            return true;
+        }
+        let pe = base + u32::from_le_bytes([mz[0x3c], mz[0x3d], mz[0x3e], mz[0x3f]]) as u64;
+        let mut hdr = [0u8; 0x18];
+        if !self.read_bytes(pe, &mut hdr) || &hdr[..4] != b"PE\0\0" {
+            return true;
+        }
+        u16::from_le_bytes([hdr[0x16], hdr[0x17]]) & 0x0020 != 0
+    }
+
     /// Highest mapped address, for placing the synthetic range.
     pub fn highest_mapped(&self) -> u64 {
         self.sections.iter().map(|s| s.end).max().unwrap_or(0)
@@ -396,6 +412,16 @@ impl PushanTarget for ArchTarget<'_> {
             return Some(0);
         }
         Some(p.intypes.iter().map(|t| (t.get_size().max(0) as u32 + 3) & !3).sum())
+    }
+    fn user_stack_clear_bits(&self) -> u128 {
+        if !self.windows {
+            return 0;
+        }
+        match self.ptr_size() {
+            8 => 0xffff_8000_0000_0000,
+            4 if !self.large_address_aware() => 0x8000_0000,
+            _ => 0,
+        }
     }
     fn noreturn_interrupt(&self, vector: u64) -> bool {
         self.windows && vector == super::kuna_fastfailnoreturn::FASTFAIL_VECTOR as u64
@@ -681,6 +707,10 @@ impl PushanProgram {
         if s.halts > 0 {
             out.push(format!("{} path{} not followed", s.halts, if s.halts == 1 { "" } else { "s" }));
         }
+        if s.misplaced_tail_calls > 0 {
+            let n = s.misplaced_tail_calls;
+            out.push(format!("{n} jump{} to another function with the stack away from its entry depth", if n == 1 { "" } else { "s" }));
+        }
         if s.cut_short {
             out.push("exploration cut short by its budget".into());
         } else if !s.converged {
@@ -817,6 +847,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
         log.push(format!("section {:#x}-{:#x} flags={:#x}{}", s.start, s.end, s.flags, if Some((s.start, s.end)) == target.entry_section { " (entry)" } else { "" }));
     }
     log.push(format!("string literals: {:x?}", strings));
+    log.push(format!("user stack clear bits: {:#x}", target.user_stack_clear_bits()));
     log.push(format!(
         "{} nodes ({} in VM), {} instructions, {} symbolized, {} unresolved, {} halts, {} rounds; emitted {} insns/{} ops, {} folded, {} sp-rematerialized, {} dead, {} privatized",
         explorer.stats.nodes,

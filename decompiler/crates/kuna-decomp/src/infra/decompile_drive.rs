@@ -1075,11 +1075,12 @@ fn generate_flow_once(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcd
     };
     if let Some(p) = &pushan {
         fd.warning_header(&format!(
-            "pushan: devirtualized VM-protected function ({} nodes, {} instructions, {} rounds{}{})",
+            "pushan: devirtualized VM-protected function ({} nodes, {} instructions, {} rounds{}{}{})",
             p.stats.nodes,
             p.stats.insns,
             p.stats.rounds,
             if p.stats.writable_bytecode { "; assumes its bytecode in writable memory is what the file holds" } else { "" },
+            if p.stats.user_stack_assumed > 0 { "; assumes the stack lies where the platform puts a user-mode stack" } else { "" },
             if p.stats.woven > 1 { format!("; follows the first of {} interleaved bytecode programs", p.stats.woven) } else { String::new() }
         ));
         if let Some(c) = p.caveats() {

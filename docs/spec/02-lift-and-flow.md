@@ -4392,18 +4392,89 @@ obfuscated stack offsets cancel structurally. A known-bits lattice prunes masks,
 pushes them through shifts, and distributes truncations and zero-extensions
 over disjoint sums, which is how a `pushfq` flags word or a De Morgan mask
 over it stays decidable. A comparison of two offsets from the same pointer
-base is decided by the offsets. Mixed boolean-arithmetic rewrites of the
-stack pointer that the normal form does not see are checked by a probe
-(`ExprArena::affine_probe`). The expression is evaluated with its one
-variable set to three values that differ in the variable's unknown bits. If
-it moves by the same amount as the variable each time, it is `var + d`, and a
-stack-pointer write is stored in that form. If it gives the same value each
-time, it is that constant. A variable with at most two unknown bits (a merged
-loop counter seen only as 0 and 1 has one) is evaluated at each of its
-possible values instead. Three probe points masked by its known bits would
-coincide, and a select between two bytecode addresses over that counter would
-pass for `counter + 0x47444c`, sending the next bytecode fetch into a region
-that does not exist.
+base is decided by the offsets. A zero-extended negated flag is one minus the
+zero-extended flag in the normal form (`zext(b ^ 1) == 1 - zext(b)`, when the
+second node exists), so a `pushf` word of a result and the word of its
+complement, which Themida adds up into a context offset, cancel. Mixed
+boolean-arithmetic rewrites of the stack pointer that the normal form does not
+see are checked by a probe (`ExprArena::affine_probe`). An expression over one
+variable is evaluated with it set to three values that differ in the
+variable's unknown bits. If it moves by the same amount as the variable each
+time, it is `var + d`, and a stack-pointer write is stored in that form. If it
+gives the same value each time, it is that constant. A variable with at most
+two unknown bits (a merged loop counter seen only as 0 and 1 has one) is
+evaluated at each of its possible values instead. Three probe points masked by
+its known bits would coincide, and a select between two bytecode addresses
+over that counter would pass for `counter + 0x47444c`, sending the next
+bytecode fetch into a region that does not exist. Without boolean atoms the
+three-point answer stands only if the identity test below agrees, and an
+expression over several variables goes to the identity test alone.
+
+**Identity by evaluation.** Themida computes every stack and context address
+from the entry stack pointer and other entry registers through identities such
+as `(y & M) | (N - (~y & N)) == y` (with `N == ~M`) and
+`(x | K) - (x & ~K) == K`, with flags words of junk arithmetic mixed in and
+cancelled again. Such an address has several variables and is not linear, so
+the normal form sees nothing and every load and store through it went to an
+unknown location, the exit's return target with them. `ExprArena::identity_probe`
+decides whether `e == base + k` for one of `e`'s variables, or `e == k`, by
+evaluating the DAG at 96 points that assign every input at once (one pass over
+the nodes in id order, operands before users; `eval_samples`). The inputs are
+the variables (their known bits kept, the rest drawn) and the innermost
+boolean atoms (comparisons and flags whose operands hold no other atom), each
+drawn as a free bit of its own instead of computed from its operands. The
+identity must then hold whatever the comparisons say, which asks for more than
+the program needs but never less, and a guard on program data that holds at
+one value only (`x == 5`) cannot hide behind samples that never hit that value.
+20 of the points are structured: for every 8, 16, 32 and 64-bit lane of each
+input, and for the whole value, all zeros, all ones, `0111..1` and `1000..0`
+below random upper bits. The other 76 draw every open bit uniformly. The points
+are fixed by the input's id and the point's index through splitmix64 under a
+fixed seed, so two runs decide alike. When the inputs have at most 8 open bits
+in total, every assignment is evaluated and the answer is exact. Otherwise a
+wrong `yes` needs the difference `g = e - base - k` to vanish at all 96 points.
+If `g` is nonzero on a fraction `d` of the inputs, the 76 uniform points all
+miss with probability `(1 - d)^76`: below 2^-76 for `d = 1/2` (any difference
+in one bit position, a parity, one flag), 4 * 10^-5 for a conjunction of three
+independent flags, 0.7% for four. The structured points catch the small sets
+obfuscated arithmetic does produce: a constant offset that carries or borrows
+across a lane or the sign bit, such as a 64-bit pointer advanced in its low
+half only, which uniform draws find with probability 2^-28 and the lane's
+all-ones point always. What no finite test excludes is a value that differs at
+a few inputs far from any edge, an arithmetic encoding of `x == c` for a magic
+`c` or a conjunction of many independent conditions. A concrete run under a
+preconstrained stack pointer (the original's) is exact for its one stack value
+and says nothing about the others either. The expression's values at 4 further
+points, with atoms computed from their operands, are cached per node
+(`ExprArena::quick_vals`, at most 2^22 entries), and a value they already rule
+out (neither constant nor any variable of its width plus a constant, found
+through a map from each variable's differences) costs no walk of its
+expression, so the probe on every XOR into a register stays cheap. An
+identity found this way is used where the normal form's would be: load and
+store addresses, stack-pointer writes, `frame + k` rematerialization in the
+emitter. When paths meet, two values of a location are the same when their
+difference is the constant 0 by this test (`Explorer::same_on_stack`), so a
+frame pointer that each path rebuilt through a different identity is not
+symbolized. A guard, a load or store address and a computed target first have
+each atom an identity decides replaced by its outcome (`ExprArena::decide_atoms`):
+`x == y` when `x - y` is a constant, and an ordered comparison when both sides
+are constants or one pointer plus constants. An opaque predicate built from
+these identities then folds, and only through the identity of its operands: a
+comparison is never decided by sampling the comparison itself.
+
+**The platform's user-mode stack.** Some identities hold only for a stack
+pointer where the platform puts one. A 32-bit Windows process without
+`IMAGE_FILE_LARGE_ADDRESS_AWARE` in its file header has its whole user address
+space below 2 GiB, and a 64-bit one below 128 TiB
+(`PushanTarget::user_stack_clear_bits`: bit 31, or bits 47 to 63). When the
+identity test fails over every stack pointer and the stack pointer is among
+the variables, it is run once more with those bits clear (the quick points
+already sample the stack pointer that way, so they are a necessary condition
+of both runs). An answer found only then is counted
+(`ExprArena::sp_bound_used`), and the header then says the function "assumes
+the stack lies where the platform puts a user-mode stack". No other target
+gets the second run. The entry stack pointer's low 16 bits stay known as
+before (above), so every identity is one under that assumption as well.
 Themida derives its image base by XOR-swapping it through the stack pointer,
 so a register written by such an XOR is stored as the constant. The constant
 reading is only taken over the entry stack pointer, whose value is a
@@ -4527,7 +4598,16 @@ back into native code over a return address the interpreter has pushed (its
 `push ret; jmp f` call form). A jump to another function's entry is a tail
 call. A computed target that is not code but was read from a data slot of the
 image is a call through that slot (an import or GOT entry). It is a call when
-the interpreter pushed a return address, and a tail call through the slot otherwise. The emitted call loads the slot and
+the interpreter pushed a return address, and a tail call through the slot otherwise.
+A tail call leaves the caller's return address on top of the stack, so either
+one is taken only with the stack pointer at its entry value
+(`Explorer::misplaced_tail_call`). Anywhere else something was pushed that the
+emulation could not place, typically the return address of a call whose push
+went through an address it could not resolve, and ending the path there would
+drop the rest of the function in silence (the plain Themida backdoor sample
+lost everything after `WSAStartup` that way). The exit is then kept
+unresolved, and the header counts it: "N jumps to another function with the
+stack away from its entry depth". The emitted call loads the slot and
 calls what it holds, so it is named the way a native `call [slot]` is: by the import symbol at the slot. Themida keeps the
 program's import slots but rebuilds the import directory with one import per DLL, so most of them carry no name; an
 `import <slot> <name>` assertion (00, *Caller assertions*) supplies it. `Explorer::apply_call_summary` models a call that is not followed. The return

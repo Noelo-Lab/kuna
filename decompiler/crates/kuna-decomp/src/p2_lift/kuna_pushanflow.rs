@@ -154,6 +154,12 @@ pub struct Stats {
     pub writable_bytecode: bool,
     /// Computed jumps of an in-function interpreter the exploration decided.
     pub data_dispatches: usize,
+    /// Jumps to another function the exploration kept as calls it could not
+    /// follow: the stack pointer was not at its entry value there.
+    pub misplaced_tail_calls: usize,
+    /// Identities that held only for a stack pointer within the platform's
+    /// user-mode range ([`ExprArena::sp_bound`]).
+    pub user_stack_assumed: usize,
     /// Interleaved bytecode programs found; only the first is followed.
     pub woven: usize,
     /// `rep movs` copies modelled ([`Explorer::rep_copy`]).
@@ -442,6 +448,8 @@ impl<'a> Explorer<'a> {
         self.arena.mark_pointer(sp);
         let sp_var = self.arena.as_var(sp).expect("sp is a variable");
         self.sp0 = Some(sp_var);
+        let clear = self.target.user_stack_clear_bits() & super::kuna_pushanexpr::mask(ps);
+        self.arena.sp_bound = (clear != 0).then_some((sp_var, clear));
         let ret = st.read_mem(&mut self.arena, self.target, Some(sp_var), 0, ps);
         self.retaddr = Some(ret);
         if let Some(df) = self.abi.df {
@@ -764,6 +772,7 @@ impl<'a> Explorer<'a> {
     fn explore_round(&mut self) -> FlatCfg {
         self.stats.unresolved = 0;
         self.stats.halts = 0;
+        self.stats.misplaced_tail_calls = 0;
         self.stats.unmerged = 0;
         self.stats.cut_short = false;
         self.node_addrs.clear();
@@ -816,6 +825,7 @@ impl<'a> Explorer<'a> {
             }
         }
         self.stats.writable_bytecode |= emu.fetched_writable;
+        self.stats.user_stack_assumed = self.arena.sp_bound_used;
         self.stats.copy_read_unfolded = emu.copy_read_unfolded || self.copy_escaped;
         if let Some(n) = emu.copy_read_note.take() {
             self.log.push(n);
@@ -1389,9 +1399,21 @@ impl<'a> Explorer<'a> {
     /// stack is (the interpreter rebuilds a saved stack address through
     /// different arithmetic on two paths).  angr compares merged values under
     /// its stack-pointer preconstraint, so such a pair is never a difference.
+    /// Their difference is tested for the constant 0 by the identity test
+    /// over every variable; values with comparisons in them that it does not
+    /// equate still get the older two-point test over the stack pointer.
     fn same_on_stack(&mut self, a: ExprId, b: ExprId) -> bool {
         if self.arena.is_const(a).is_some() || self.arena.is_const(b).is_some() {
             return false;
+        }
+        if self.arena.size(a) == self.arena.size(b) {
+            let d = self.arena.mk_bin(OpCode::CPUI_INT_SUB, a, b, self.arena.size(a));
+            if self.arena.is_const(d) == Some(0) || self.arena.identity_probe(d) == Some((None, 0)) {
+                return true;
+            }
+            if self.arena.bool_atoms(a).is_empty() && self.arena.bool_atoms(b).is_empty() {
+                return false;
+            }
         }
         let Some(sp) = self.sp0.and_then(|v| self.arena.var_expr(v)) else { return false };
         let low: u128 = if self.abi.ptr_size == 8 { 0xFFF8 } else { 0xFFFC };
@@ -1948,6 +1970,7 @@ impl<'a> Explorer<'a> {
         ctx: VmCtx,
         is_ret: bool,
     ) -> NodeExit {
+        let t = self.arena.decide_atoms(t);
         if let Some(c) = self.arena.is_const(t) {
             return self.jump_to(cfg, worklist, id, c as u64, state, ctx);
         }
@@ -1962,7 +1985,7 @@ impl<'a> Explorer<'a> {
                 atoms.len()
             );
             for a in atoms.iter().take(12) {
-                let _ = writeln!(tr.borrow_mut(), "          atom {}", self.arena.fmt(*a).chars().take(1500).collect::<String>());
+                let _ = writeln!(tr.borrow_mut(), "          atom {a} {}", self.arena.fmt(*a).chars().take(1500).collect::<String>());
             }
             let vars = self.arena.free_vars(t);
             let _ = writeln!(tr.borrow_mut(), "          free vars: {:?}", vars.iter().map(|v| format!("{v}:{:?}", self.arena.var_info(*v).kind)).collect::<Vec<_>>());
@@ -1980,6 +2003,12 @@ impl<'a> Explorer<'a> {
             ));
         };
         let mut by_target: BTreeMap<u64, Vec<Vec<(ExprId, bool)>>> = BTreeMap::new();
+        if let Some(tr) = &self.config.trace {
+            use std::io::Write;
+            for (assign, e) in cases.iter().take(64) {
+                let _ = writeln!(tr.borrow_mut(), "          case {:?} -> {}", assign.iter().map(|(a, v)| (*a, *v)).collect::<Vec<_>>(), self.arena.fmt(*e).chars().take(200).collect::<String>());
+            }
+        }
         for (assign, e) in &cases {
             let Some(c) = self.arena.is_const(*e) else {
                 // A case that only fails through an unknown born while folding
@@ -2157,6 +2186,10 @@ impl<'a> Explorer<'a> {
                         let ret_node = self.reach(cfg, worklist, key, state, ctx, Some(id));
                         return NodeExit::Call { target: None, ret: ret_node, slot: Some(slot) };
                     }
+                    if let Some(why) = self.misplaced_tail_call(&mut state) {
+                        self.stats.misplaced_tail_calls += 1;
+                        return NodeExit::Unresolved(format!("jump through import slot {slot:#x} {why}"));
+                    }
                     return NodeExit::TailCallSlot(slot);
                 }
             }
@@ -2199,6 +2232,10 @@ impl<'a> Explorer<'a> {
                 }
             }
             if self.target_is_function(c) {
+                if let Some(why) = self.misplaced_tail_call(&mut state) {
+                    self.stats.misplaced_tail_calls += 1;
+                    return NodeExit::Unresolved(format!("jump to function {c:#x} {why}"));
+                }
                 return NodeExit::TailCall(c);
             }
         }
@@ -2211,6 +2248,20 @@ impl<'a> Explorer<'a> {
         };
         let key = NodeKey::at(c, ctx.ctx);
         NodeExit::Branch(self.reach(cfg, worklist, key, state, ctx, Some(id)))
+    }
+
+    /// Why a jump to another function is no tail call: a tail call leaves
+    /// the caller's return address on top of the stack, so the stack pointer
+    /// is back at its entry value.  Anywhere else something the emulation
+    /// could not place was pushed (the return address of a call whose push
+    /// went to an unknown address), and ending the path there would drop the
+    /// rest of the function without a word.
+    fn misplaced_tail_call(&mut self, state: &mut State) -> Option<String> {
+        match self.sp_depth(state) {
+            Some(0) => None,
+            Some(d) => Some(format!("with the stack pointer at its entry value {d:+}")),
+            None => Some("with the stack pointer not relative to its entry value".into()),
+        }
     }
 
     /// The interpreter hands control back to the function's own code at `c`

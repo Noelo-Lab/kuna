@@ -10,8 +10,11 @@ native call, a local a call writes through its address, a read-only table and
 a stack array indexed by a loop counter, a branch on a mutable global, stores
 through a pointer argument on two paths, a loop that grows the stack, a
 virtual jump through an argument, two virtual exits into one native
-epilogue, one of them an instruction ahead of it, and a virtual branch that
-selects its target arithmetically on a flag a join merged and a comparison.  Every program sits
+epilogue, one of them an instruction ahead of it, a virtual branch that
+selects its target arithmetically on a flag a join merged and a comparison,
+and arguments read at addresses rebuilt through mixed boolean-arithmetic
+identities with an exit behind an opaque predicate on the stack pointer.
+Every program sits
 in its own 256-byte block of seeded random filler (entropy above 7 bits/byte).
 Regenerate with `python3 pushan_vm2_x86_64.py` (needs GNU as/ld)."""
 import os, random, subprocess, tempfile
@@ -22,6 +25,7 @@ codes = rng.sample(range(1, 256), len(OPS))
 OP = dict(zip(OPS, codes))
 OP["LEAVE"] = min(set(range(1, 256)) - set(codes))
 OP["SEL"] = min(set(range(1, 256)) - set(codes) - {OP["LEAVE"]})
+OP["LDCTXM"], OP["EXITO"], OP["EXITS"] = sorted(set(range(1, 256)) - set(codes) - {OP["LEAVE"], OP["SEL"]})[:3]
 A0, A1 = 0, 8
 
 
@@ -35,7 +39,7 @@ def asm(lines):
         if isinstance(item, str):
             return 0
         op = item[0]
-        return {"LDCTX": 2, "STCTX": 2, "LEAV": 2, "LDIMM": 5, "JZ": 2, "JMP": 2, "SEL": 3}.get(op, 1)
+        return {"LDCTX": 2, "STCTX": 2, "LEAV": 2, "LDCTXM": 2, "LDIMM": 5, "JZ": 2, "JMP": 2, "SEL": 3}.get(op, 1)
     labels, pc = {}, 0
     for it in lines:
         if isinstance(it, str):
@@ -47,7 +51,7 @@ def asm(lines):
             continue
         op, *args = it
         out.append(OP[op])
-        if op in ("LDCTX", "STCTX", "LEAV"):
+        if op in ("LDCTX", "STCTX", "LEAV", "LDCTXM"):
             out.append(args[0] & 0xff)
         elif op == "LDIMM":
             out += list((args[0] & 0xffffffff).to_bytes(4, "little"))
@@ -175,6 +179,15 @@ PROGRAMS = {
               ("LDIMM", 1), ("EXIT",),
               "T", ("LDIMM", 2), ("EXIT",),
               "F", ("LDIMM", 3), ("EXIT",)],
+    # return a0 + a1;   (Themida-style handlers: each argument is read at an
+    # address rebuilt from the frame pointer and rdx through a mixed
+    # boolean-arithmetic identity, and the exit tests an opaque predicate on
+    # the stack pointer whose other arm jumps to `fin`)
+    "f_mba": [("LDCTXM", A0), ("LDCTXM", A1), ("ADD",), ("EXITO",)],
+    # return a0;   (but the exit tests bit 16 of the stack pointer, which no
+    # identity decides, and its other arm jumps to `fin` with the
+    # interpreter's frame on the stack)
+    "f_spbit": [("LDCTX", A0), ("EXITS",)],
 }
 
 NAMES = list(PROGRAMS)
@@ -241,6 +254,26 @@ def source(blocks):
             "h_sel:", "    pop rax", "    pop rdx", "    movsx rcx, byte ptr [rsi]", "    movsx r8, byte ptr [rsi+1]",
             "    add rsi, 2", "    and eax, 1", "    neg rax", "    neg rdx", "    and rcx, rdx", "    and rcx, rax",
             "    not rax", "    and r8, rax", "    add rsi, rcx", "    add rsi, r8", "    jmp dispatch",
+            # y = rbp + disp as (y & M) | (N - (~y & N)) with N = ~M, plus
+            # (rdx ^ rbx) + 2 * (rdx & rbx) - rdx - rbx, which is 0 whatever
+            # the two registers hold
+            "h_ldctxm:", "    movsx rax, byte ptr [rsi]", "    add rsi, 1", "    lea rcx, [rbp+rax]",
+            "    movabs r8, 0x5a3cc3a5f00f0ff0", "    mov rax, rcx", "    and rax, r8", "    not rcx",
+            "    movabs r9, 0xa5c33c5a0ff0f00f", "    and rcx, r9", "    sub r9, rcx", "    or rax, r9",
+            "    mov r10, rdx", "    xor r10, rbx", "    mov r11, rdx", "    and r11, rbx", "    add r11, r11",
+            "    add r10, r11", "    sub r10, rdx", "    sub r10, rbx", "    add rax, r10",
+            "    push qword ptr [rax]", "    jmp dispatch",
+            # the exit compares the stack pointer with its own rebuilt form,
+            # mixed with the same zero over the result and rbx
+            "h_exito:", "    pop rax", "    mov rcx, rsp", "    movabs r8, 0x5a3cc3a5f00f0ff0", "    mov rdx, rcx",
+            "    and rdx, r8", "    not rcx", "    movabs r9, 0xa5c33c5a0ff0f00f", "    and rcx, r9", "    sub r9, rcx",
+            "    or rdx, r9", "    mov r10, rax", "    xor r10, rbx", "    mov r11, rax", "    and r11, rbx",
+            "    add r11, r11", "    add r10, r11", "    sub r10, rax", "    sub r10, rbx", "    add rdx, r10",
+            "    cmp rdx, rsp", "    jne h_bogus",
+            "    mov rsp, rbp", "    pop rdi", "    pop rsi", "    pop rbp", "    pop rbx", "    add rsp, 8", "    ret",
+            "h_exits:", "    pop rax", "    test esp, 0x10000", "    jnz h_bogus",
+            "    mov rsp, rbp", "    pop rdi", "    pop rsi", "    pop rbp", "    pop rbx", "    add rsp, 8", "    ret",
+            "h_bogus:", "    jmp fin",
             ".p2align 8", "handlers:"]
     handler = {c: "h_" + o.lower() for o, c in OP.items()}
     for i in range(256):

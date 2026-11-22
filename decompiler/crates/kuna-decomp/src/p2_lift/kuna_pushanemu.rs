@@ -82,6 +82,12 @@ pub trait PushanTarget: PushanImage {
     }
     /// A software interrupt with this vector never returns (Windows `int 0x29`, `__fastfail`).
     fn noreturn_interrupt(&self, vector: u64) -> bool;
+    /// The top bits of the stack pointer the platform keeps clear for user
+    /// code (a 32-bit Windows process without the large-address flag lives
+    /// below 2 GiB; a 64-bit one below 128 TiB), as a mask of those bits.
+    fn user_stack_clear_bits(&self) -> u128 {
+        0
+    }
 }
 
 /// Shannon entropy (bits per byte) of a window.
@@ -570,6 +576,11 @@ impl<'a> Emulator<'a> {
             }
             return v;
         }
+        // An opaque predicate an identity decides is no select.
+        let decided = arena.decide_atoms(addr);
+        if decided != addr {
+            return self.load(state, arena, space, decided, size);
+        }
         // An address decided by boolean atoms (a conditional jump's next
         // bytecode pointer): one load per distinct destination, selected by
         // the disjunction of the assignments that reach it.
@@ -656,6 +667,10 @@ impl<'a> Emulator<'a> {
             }
             state.write_mem(base, off, val, size);
             return;
+        }
+        let decided = arena.decide_atoms(addr);
+        if decided != addr {
+            return self.store(state, arena, space, decided, val);
         }
         if let Some(cases) = arena.case_split(addr) {
             let mut groups: Vec<((Option<VarId>, i128), Vec<ExprId>)> = Vec::new();
@@ -782,6 +797,7 @@ impl<'a> Emulator<'a> {
                     let t = op.ins[0].clone();
                     let raw = self.read_vn(state, arena, &op.ins[1]);
                     let c = self.as_bool(arena, raw);
+                    let c = arena.decide_atoms(c);
                     // A CBRANCH has no output: its slot records the decision.
                     trace.op_out[pc] = Some(c);
                     let relative = self.vn_space(&t) == Space::Const;

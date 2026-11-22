@@ -511,3 +511,154 @@ fn constructors_remember_results_but_not_fresh_unknowns() {
     let u2 = a.mk_bin(CPUI_INT_DIV, one, zero, 4);
     assert_ne!(u1, u2);
 }
+
+/// Themida's stack arithmetic: `y = sp - k` rebuilt as `(y & M) | (N - (~y & N))`
+/// with `M | N` all ones, mixed with a second register that cancels.
+#[test]
+fn identity_probe_sees_through_two_variable_mba() {
+    let mut a = ExprArena::new();
+    let sp = a.var_of_known(VarKind::InitReg { offset: 0x10 }, 4, false, (0x3, 0xfffc));
+    a.mark_pointer(sp);
+    let ecx = reg(&mut a, 0x4, 4);
+    let k = a.cst(4, 0xfffffc6c);
+    let y = a.mk_bin(CPUI_INT_ADD, sp, k, 4);
+    let (m, n) = (a.cst(4, 0xb46baf2b), a.cst(4, 0x4b9450d4));
+    let ym = a.mk_bin(CPUI_INT_AND, y, m, 4);
+    let ny = a.mk_un(CPUI_INT_NEGATE, y, 4);
+    let nyn = a.mk_bin(CPUI_INT_AND, ny, n, 4);
+    let rest = a.mk_bin(CPUI_INT_SUB, n, nyn, 4);
+    let back = a.mk_bin(CPUI_INT_OR, ym, rest, 4);
+    // ecx | K minus ecx & ~K is K, whatever ecx holds
+    let kk = a.cst(4, 0x00ff_00f0);
+    let nk = a.cst(4, !0x00ff_00f0u32 as u128);
+    let hi = a.mk_bin(CPUI_INT_OR, ecx, kk, 4);
+    let lo = a.mk_bin(CPUI_INT_AND, ecx, nk, 4);
+    let junk = a.mk_bin(CPUI_INT_SUB, hi, lo, 4);
+    let both = a.mk_bin(CPUI_INT_ADD, back, junk, 4);
+    let sp_var = a.as_var(sp);
+    assert_eq!(a.affine(back), None, "{}", a.fmt(back));
+    assert_eq!(a.identity_probe(back), Some((sp_var, -0x394)), "{}", a.fmt(back));
+    assert_eq!(a.identity_probe(junk), Some((None, 0x00ff_00f0)), "{}", a.fmt(junk));
+    assert_eq!(a.affine_probe(both), Some((sp_var, -0x394 + 0x00ff_00f0)), "{}", a.fmt(both));
+    // x + y == (x ^ y) + 2 * (x & y): two variables, the second subtracted again
+    let x = reg(&mut a, 0x0, 4);
+    let xy = a.mk_bin(CPUI_INT_XOR, x, ecx, 4);
+    let and = a.mk_bin(CPUI_INT_AND, x, ecx, 4);
+    let two = a.cst(4, 2);
+    let and2 = a.mk_bin(CPUI_INT_MULT, and, two, 4);
+    let sum = a.mk_bin(CPUI_INT_ADD, xy, and2, 4);
+    let only_x = a.mk_bin(CPUI_INT_SUB, sum, ecx, 4);
+    assert_eq!(a.affine(only_x), None, "{}", a.fmt(only_x));
+    let zero = a.mk_bin(CPUI_INT_SUB, only_x, x, 4);
+    assert_eq!(a.identity_probe(zero), Some((None, 0)), "{}", a.fmt(zero));
+    assert_eq!(a.identity_probe(only_x), Some((a.as_var(x), 0)), "{}", a.fmt(only_x));
+    // but the sum itself is no single base plus a constant
+    assert_eq!(a.identity_probe(sum), None, "{}", a.fmt(sum));
+}
+
+#[test]
+fn identity_probe_rejects_near_identities() {
+    let mut a = ExprArena::new();
+    let x = reg(&mut a, 0x0, 4);
+    // an alignment mask is no offset
+    let al = a.cst(4, 0xffff_fff0);
+    let aligned = a.mk_bin(CPUI_INT_AND, x, al, 4);
+    assert_eq!(a.identity_probe(aligned), None, "{}", a.fmt(aligned));
+    // x + 0x10 everywhere but where the low 31 bits carry into bit 31 (2^-28 of all x)
+    let low = a.cst(4, 0x7fff_ffff);
+    let top = a.cst(4, 0x8000_0000);
+    let k = a.cst(4, 0x10);
+    let xl = a.mk_bin(CPUI_INT_AND, x, low, 4);
+    let xl = a.mk_bin(CPUI_INT_ADD, xl, k, 4);
+    let xt = a.mk_bin(CPUI_INT_AND, x, top, 4);
+    let carry31 = a.mk_bin(CPUI_INT_OR, xl, xt, 4);
+    assert_eq!(a.identity_probe(carry31), None, "{}", a.fmt(carry31));
+    // a 64-bit pointer advanced in its low half only (wrong once the low 32 bits carry)
+    let rsp = a.var_of_known(VarKind::InitReg { offset: 0x20 }, 8, false, (0x7, 0xfff8));
+    let lo = a.mk_subpiece(rsp, 0, 4);
+    let hi = a.mk_subpiece(rsp, 4, 4);
+    let k8 = a.cst(4, 0x18);
+    let lo2 = a.mk_bin(CPUI_INT_ADD, lo, k8, 4);
+    let halves = a.mk_piece(hi, lo2);
+    assert_eq!(a.identity_probe(halves), None, "{}", a.fmt(halves));
+    // the same advance within the known low bits never carries: an identity
+    let k4 = a.cst(4, 0x4);
+    let lo3 = a.mk_bin(CPUI_INT_ADD, lo, k4, 4);
+    let halves2 = a.mk_piece(hi, lo3);
+    assert_eq!(a.affine(halves2), None, "{}", a.fmt(halves2));
+    assert_eq!(a.identity_probe(halves2), Some((a.as_var(rsp), 4)), "{}", a.fmt(halves2));
+    // a select on program data is never sampled: it may hold at one value only
+    let five = a.cst(4, 5);
+    let eq = a.mk_bin(CPUI_INT_EQUAL, x, five, 1);
+    let x4 = a.mk_bin(CPUI_INT_ADD, x, k4, 4);
+    let sel = a.mk_ite(eq, x4, x);
+    assert_eq!(a.identity_probe(sel), None, "{}", a.fmt(sel));
+}
+
+#[test]
+fn identity_probe_is_exhaustive_over_few_free_bits() {
+    let mut a = ExprArena::new();
+    // two 2-bit counters: c1 * c2 - c2 * c1 is 0, c1 & c2 is not constant
+    let c1 = a.var_of_known(VarKind::Merged { node: 1, tag: 1 }, 4, false, (0xffff_fffc, 0));
+    let c2 = a.var_of_known(VarKind::Merged { node: 1, tag: 2 }, 4, false, (0xffff_fffc, 0));
+    let both = a.mk_bin(CPUI_INT_AND, c1, c2, 4);
+    assert_eq!(a.identity_probe(both), None, "{}", a.fmt(both));
+    let three = a.cst(4, 3);
+    let or3 = a.mk_bin(CPUI_INT_OR, both, three, 4);
+    assert_eq!(a.identity_probe(or3), Some((None, 3)), "{}", a.fmt(or3));
+    // deterministic: a second arena built the same way answers the same
+    let mut b = ExprArena::new();
+    let d1 = b.var_of_known(VarKind::Merged { node: 1, tag: 1 }, 4, false, (0xffff_fffc, 0));
+    let d2 = b.var_of_known(VarKind::Merged { node: 1, tag: 2 }, 4, false, (0xffff_fffc, 0));
+    let bb = b.mk_bin(CPUI_INT_AND, d1, d2, 4);
+    assert_eq!(b.identity_probe(bb), None);
+    assert_eq!((0..ID_SAMPLES).map(|i| a.sample_value(0, i)).collect::<Vec<_>>(), (0..ID_SAMPLES).map(|i| b.sample_value(0, i)).collect::<Vec<_>>());
+}
+
+/// A flags word pushed by `pushf` and mixed back out through
+/// `(w ^ K) + 2 * (w & K) - w == K`: the value is constant whatever the
+/// flags are, which only treating the atoms as free inputs shows.
+#[test]
+fn identity_probe_cancels_flag_words_over_free_atoms() {
+    let mut a = ExprArena::new();
+    let sp = a.var_of_known(VarKind::InitReg { offset: 0x10 }, 4, false, (0x3, 0xfffc));
+    a.mark_pointer(sp);
+    let ret = a.var(VarInfo::new(VarKind::CallResult { site: 0x401376 }, 4, false));
+    let k = a.cst(4, 0x1c);
+    let zero = a.cst(4, 0);
+    let x = a.mk_bin(CPUI_INT_ADD, sp, ret, 4);
+    let sum = a.mk_bin(CPUI_INT_ADD, x, k, 4);
+    let flags = [
+        (a.mk_bin(CPUI_INT_CARRY, x, k, 1), 0x1u128),
+        (a.mk_bin(CPUI_INT_EQUAL, sum, zero, 1), 0x40),
+        (a.mk_bin(CPUI_INT_SLESS, sum, zero, 1), 0x80),
+        (a.mk_bin(CPUI_INT_SCARRY, x, k, 1), 0x800),
+    ];
+    let rr = a.mk_bin(CPUI_INT_ADD, ret, ret, 4);
+    let flags2 = [
+        (a.mk_bin(CPUI_INT_CARRY, ret, ret, 1), 0x1u128),
+        (a.mk_bin(CPUI_INT_EQUAL, rr, zero, 1), 0x40),
+        (a.mk_bin(CPUI_INT_SLESS, rr, zero, 1), 0x80),
+    ];
+    // two flags words added: their bits overlap, so no disjoint-sum rule applies
+    let mut word = a.cst(4, 0x202);
+    for (f, w) in flags.into_iter().chain(flags2) {
+        let z = a.mk_un(CPUI_INT_ZEXT, f, 4);
+        let wc = a.cst(4, w);
+        let t = a.mk_bin(CPUI_INT_MULT, z, wc, 4);
+        word = a.mk_bin(CPUI_INT_ADD, word, t, 4);
+    }
+    let key = a.cst(4, 0xef7f_e5be);
+    let xk = a.mk_bin(CPUI_INT_XOR, word, key, 4);
+    let ak = a.mk_bin(CPUI_INT_AND, word, key, 4);
+    let two = a.cst(4, 2);
+    let ak2 = a.mk_bin(CPUI_INT_MULT, ak, two, 4);
+    let s1 = a.mk_bin(CPUI_INT_ADD, xk, ak2, 4);
+    let back = a.mk_bin(CPUI_INT_SUB, s1, word, 4);
+    assert_eq!(a.affine(back), None, "{}", a.fmt(back));
+    assert_eq!(a.identity_probe(back), Some((None, 0xef7f_e5beu32 as i32 as i128)), "{}", a.fmt(back));
+    // the word itself depends on the flags
+    assert_eq!(a.identity_probe(word), None, "{}", a.fmt(word));
+    let addr = a.mk_bin(CPUI_INT_ADD, back, sp, 4);
+    assert_eq!(a.affine_probe(addr), Some((a.as_var(sp), 0xef7f_e5beu32 as i32 as i128)), "{}", a.fmt(addr));
+}

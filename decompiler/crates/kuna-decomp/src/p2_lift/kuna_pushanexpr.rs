@@ -144,6 +144,16 @@ impl Lin {
 }
 
 pub struct ExprArena {
+    /// Each node's values at the [`QUICK_LANES`] quick sample points, its
+    /// atoms computed from their operands (None: a division by zero).
+    quick: crate::kuna_fasthash::FxHashMap<ExprId, Option<[u128; QUICK_LANES]>>,
+    /// Variables by size and the differences of their quick values.
+    quick_sig: crate::kuna_fasthash::FxHashMap<(u8, [u128; QUICK_LANES - 1]), VarId>,
+    /// The stack pointer and the bits of it the platform keeps clear
+    /// (a user-mode stack's top bits), which the identity test may assume.
+    pub sp_bound: Option<(VarId, u128)>,
+    /// Identity decisions that held only with [`Self::sp_bound`] assumed.
+    pub sp_bound_used: usize,
     nodes: Vec<Expr>,
     /// (known-zero, known-one) bit masks per node.
     known: Vec<(u128, u128)>,
@@ -186,6 +196,10 @@ impl Default for ExprArena {
 impl ExprArena {
     pub fn new() -> Self {
         ExprArena {
+            quick: Default::default(),
+            quick_sig: Default::default(),
+            sp_bound: None,
+            sp_bound_used: 0,
             nodes: Vec::new(),
             known: Vec::new(),
             intern: BTreeMap::new(),
@@ -1497,11 +1511,29 @@ impl ExprArena {
                 l.c = l.c.wrapping_sub(1);
                 l
             }
+            // zext(b ^ 1) == 1 - zext(b) for a boolean b: a flags word and its
+            // complement (`pushf` of a result and of its inverse) cancel.
+            ExprKind::Un(CPUI_INT_ZEXT, a) if self.zext_of_not(*a, self.size(e)).is_some() => {
+                let zb = self.zext_of_not(*a, self.size(e)).unwrap_or(e);
+                let mut l = Lin { terms: BTreeMap::new(), c: 1 };
+                l.terms.insert(zb, -1);
+                l
+            }
             _ => {
                 atom.terms.insert(e, 1);
                 atom
             }
         }
+    }
+
+    /// `zext(b)` to `size`, when `a` is `b ^ 1` for a boolean `b` and that
+    /// node already exists (a term only cancels against one that does).
+    fn zext_of_not(&self, a: ExprId, size: u8) -> Option<ExprId> {
+        let ExprKind::Bin(CPUI_INT_XOR, b, one) = self.kind(a) else { return None };
+        if self.is_const(*one) != Some(1) || !self.is_bool(*b) {
+            return None;
+        }
+        self.intern.get(&(ExprKind::Un(CPUI_INT_ZEXT, *b), size)).copied()
     }
 
     fn build_linear(&mut self, l: Lin, size: u8) -> ExprId {
@@ -1595,15 +1627,22 @@ impl ExprArena {
     /// The points differ in the bits of the variable that are not known; a
     /// variable with at most four possible values is evaluated at each of
     /// them instead, so a select over it is never read as `var + d`.
-    /// This is how angr's concretizing solver sees through mixed
-    /// boolean-arithmetic rewrites of the stack pointer, without fixing the
-    /// pointer's value.
+    /// Without boolean atoms that answer must also pass
+    /// [`identity_probe`](Self::identity_probe), which alone decides an
+    /// expression over several variables; the cached quick points reject
+    /// most expressions before either runs.  This is how angr's concretizing
+    /// solver sees through mixed boolean-arithmetic rewrites of the stack
+    /// pointer, without fixing the pointer's value.
     pub fn affine_probe(&mut self, e: ExprId) -> Option<(Option<VarId>, i128)> {
         if let Some(r) = self.affine(e) {
             return Some(r);
         }
         if let Some(r) = self.probe_memo.get(&e) {
             return *r;
+        }
+        if !self.quick_candidate(e) {
+            self.probe_memo.insert(e, None);
+            return None;
         }
         let vars = self.free_vars(e);
         let r = if vars.len() == 1 {
@@ -1663,11 +1702,406 @@ impl ExprArena {
                     None
                 }
             }
+        } else if vars.len() > 1 && self.size(e) >= 4 {
+            self.identity_probe(e)
         } else {
             None
         };
+        // A one-variable answer from the few probe points stands only if the
+        // full identity test agrees (where it applies: no boolean atoms).
+        let r = match r {
+            Some(x) if vars.len() == 1 && self.bool_atoms(e).is_empty() => (self.identity_probe(e) == Some(x)).then_some(x),
+            r => r,
+        };
         self.probe_memo.insert(e, r);
         r
+    }
+
+    // -- identity by evaluation -----------------------------------------------
+
+    /// The value of input `x` at sample point `i` of the identity test: in
+    /// the bits `free` leaves open (the rest is `ones`), a structured pattern
+    /// (every fourth sample among the first [`ID_STRUCTURED`] * 4) or a
+    /// pseudo-random word, both fixed by `seed` and `i` alone.  The structured
+    /// patterns put each 8/16/32/64-bit lane of the value at the edges where a
+    /// carry or a borrow crosses it: all zeros, all ones, `0111..1` and
+    /// `1000..0`, with random bits above the lane.
+    fn sample_bits(seed: u64, i: usize, size: u8, free: u128, ones: u128) -> u128 {
+        let r = sample_word(seed, i);
+        let raw = if i % 4 == 0 && i / 4 < ID_STRUCTURED {
+            let slot = (i / 4 + (sample_word(seed, usize::MAX) as usize)) % ID_STRUCTURED;
+            let n = bits(size);
+            let (w, kind) = if slot < 4 { (n, slot) } else { (8u32 << ((slot - 4) / 4), (slot - 4) % 4) };
+            if w > n {
+                r
+            } else {
+                let low = lowmask(w);
+                let edge = match kind {
+                    0 => 0,
+                    1 => low,
+                    2 => low >> 1,
+                    _ => 1u128 << (w - 1),
+                };
+                (r & !low) | edge
+            }
+        } else {
+            r
+        };
+        (raw & free) | ones
+    }
+
+    /// Variable `v` at sample `i`: its known bits, the rest sampled.
+    pub fn sample_value(&self, v: VarId, i: usize) -> u128 {
+        let (free, ones) = self.input_bits(v as ExprId, true, None);
+        Self::sample_bits(v as u64, i, self.vars[v as usize].size, free, ones)
+    }
+
+    /// The open bits and the known one bits of an input: a variable (by id;
+    /// `clear` holds bits one variable keeps clear) or a boolean atom (by
+    /// node, always one open bit).
+    fn input_bits(&self, x: ExprId, is_var: bool, clear: Option<(VarId, u128)>) -> (u128, u128) {
+        if !is_var {
+            return (1, 0);
+        }
+        let info = &self.vars[x as usize];
+        let m = if info.boolean { 1 } else { mask(info.size) };
+        let cleared = clear.filter(|(v, _)| *v == x).map_or(0, |(_, b)| b);
+        (m & !(info.known.0 | info.known.1 | cleared), info.known.1 & m)
+    }
+
+    /// `e`'s values at the quick sample points (cached per node, operands
+    /// first): the variables at points of their own, the stack pointer
+    /// within [`Self::sp_bound`], atoms computed from their operands.  A
+    /// necessary condition of every identity the test can find, so a value
+    /// these points already rule out costs no walk of its expression.
+    fn quick_vals(&mut self, e: ExprId) -> Option<[u128; QUICK_LANES]> {
+        if let Some(r) = self.quick.get(&e) {
+            return *r;
+        }
+        if self.quick.len() > QUICK_MAX {
+            self.quick.clear();
+        }
+        let mut stack = vec![(e, false)];
+        while let Some((x, ready)) = stack.pop() {
+            if self.quick.contains_key(&x) {
+                continue;
+            }
+            let kids: [Option<ExprId>; 3] = match self.kind(x) {
+                ExprKind::Const(_) | ExprKind::Var(_) => [None, None, None],
+                ExprKind::Un(_, a) | ExprKind::SubPiece(a, _) => [Some(*a), None, None],
+                ExprKind::Bin(_, a, b) | ExprKind::Piece(a, b) => [Some(*a), Some(*b), None],
+                ExprKind::Ite(c, a, b) => [Some(*c), Some(*a), Some(*b)],
+            };
+            if !ready {
+                stack.push((x, true));
+                for k in kids.into_iter().flatten() {
+                    if !self.quick.contains_key(&k) {
+                        stack.push((k, false));
+                    }
+                }
+                continue;
+            }
+            let get = |q: &crate::kuna_fasthash::FxHashMap<ExprId, Option<[u128; QUICK_LANES]>>, k: Option<ExprId>| k.and_then(|k| q.get(&k).copied().flatten());
+            let size = self.size(x);
+            let m = mask(size);
+            let mut out = [0u128; QUICK_LANES];
+            let ok = match self.kind(x).clone() {
+                ExprKind::Const(c) => {
+                    out = [c & m; QUICK_LANES];
+                    true
+                }
+                ExprKind::Var(v) => {
+                    let (free, ones) = self.input_bits(v as ExprId, true, self.sp_bound);
+                    for (j, o) in out.iter_mut().enumerate() {
+                        *o = Self::sample_bits(v as u64, ID_SAMPLES + 1 + j, self.vars[v as usize].size, free, ones) & m;
+                    }
+                    let info = &self.vars[v as usize];
+                    if !info.boolean && info.size == size {
+                        let sig = [1, 2, 3].map(|j| out[j].wrapping_sub(out[0]) & m);
+                        self.quick_sig.entry((size, sig)).or_insert(v);
+                    }
+                    true
+                }
+                ExprKind::Un(opc, a) => match get(&self.quick, kids[0]) {
+                    Some(va) => (0..QUICK_LANES).all(|j| fold_un(opc, size, va[j], self.size(a)).map(|r| out[j] = r).is_some()),
+                    None => false,
+                },
+                ExprKind::Bin(opc, a, b) => match (get(&self.quick, kids[0]), get(&self.quick, kids[1])) {
+                    (Some(va), Some(vb)) => (0..QUICK_LANES).all(|j| fold_bin(opc, size, va[j], self.size(a), vb[j], self.size(b)).map(|r| out[j] = r).is_some()),
+                    _ => false,
+                },
+                ExprKind::SubPiece(_, off) => match get(&self.quick, kids[0]) {
+                    Some(va) => {
+                        for j in 0..QUICK_LANES {
+                            out[j] = (va[j] >> (8 * off as u32)) & m;
+                        }
+                        true
+                    }
+                    None => false,
+                },
+                ExprKind::Piece(_, l) => match (get(&self.quick, kids[0]), get(&self.quick, kids[1])) {
+                    (Some(vh), Some(vl)) => {
+                        for j in 0..QUICK_LANES {
+                            out[j] = ((vh[j] << bits(self.size(l))) | vl[j]) & m;
+                        }
+                        true
+                    }
+                    _ => false,
+                },
+                ExprKind::Ite(..) => match (get(&self.quick, kids[0]), get(&self.quick, kids[1]), get(&self.quick, kids[2])) {
+                    (Some(vc), Some(va), Some(vb)) => {
+                        for j in 0..QUICK_LANES {
+                            out[j] = if vc[j] & 1 == 1 { va[j] } else { vb[j] };
+                        }
+                        true
+                    }
+                    _ => false,
+                },
+            };
+            self.quick.insert(x, ok.then_some(out));
+        }
+        self.quick.get(&e).copied().flatten()
+    }
+
+    /// The quick points allow `e` to be a constant or one variable plus a constant.
+    fn quick_candidate(&mut self, e: ExprId) -> bool {
+        let Some(q) = self.quick_vals(e) else { return true };
+        let size = self.size(e);
+        let m = mask(size);
+        if q.iter().all(|x| *x == q[0]) {
+            return true;
+        }
+        let sig = [1, 2, 3].map(|j| q[j].wrapping_sub(q[0]) & m);
+        self.quick_sig.contains_key(&(size, sig))
+    }
+
+    /// The values of `e` at the first `n` sample points, its variables and
+    /// the boolean atoms `atoms` all inputs ([`Self::sample_value`]; an atom
+    /// is drawn as a free bit, not computed from its operands), or at every
+    /// assignment of the inputs' open bits when `exhaustive`.  Also each
+    /// variable's values.  None when the expression spans more than
+    /// [`ID_MAX_NODES`] nodes or a sample divides by zero.
+    #[allow(clippy::too_many_arguments)]
+    fn eval_samples(&self, e: ExprId, vars: &[VarId], atoms: &[ExprId], n: usize, exhaustive: bool, clear: Option<(VarId, u128)>) -> Option<(Vec<u128>, Vec<Vec<u128>>)> {
+        let atom_set: std::collections::HashSet<ExprId> = atoms.iter().copied().collect();
+        let mut nodes: Vec<ExprId> = Vec::new();
+        let mut seen: std::collections::HashSet<ExprId> = std::collections::HashSet::new();
+        let mut stack = vec![e];
+        while let Some(x) = stack.pop() {
+            if !seen.insert(x) {
+                continue;
+            }
+            if seen.len() > ID_MAX_NODES {
+                return None;
+            }
+            nodes.push(x);
+            if atom_set.contains(&x) {
+                continue;
+            }
+            match self.kind(x) {
+                ExprKind::Const(_) | ExprKind::Var(_) => {}
+                ExprKind::Un(_, a) | ExprKind::SubPiece(a, _) => stack.push(*a),
+                ExprKind::Bin(_, a, b) | ExprKind::Piece(a, b) => {
+                    stack.push(*a);
+                    stack.push(*b);
+                }
+                ExprKind::Ite(c, a, b) => {
+                    stack.push(*c);
+                    stack.push(*a);
+                    stack.push(*b);
+                }
+            }
+        }
+        // Operands are interned before the nodes over them: ascending ids are
+        // a topological order.
+        nodes.sort_unstable();
+        let inputs: Vec<(ExprId, bool)> = vars.iter().map(|v| (*v as ExprId, true)).chain(atoms.iter().map(|a| (*a, false))).collect();
+        let mut in_vals: Vec<Vec<u128>> = Vec::with_capacity(inputs.len());
+        if exhaustive {
+            let opens: Vec<(u128, u128)> = inputs.iter().map(|(x, v)| self.input_bits(*x, *v, clear)).collect();
+            let total: u32 = opens.iter().map(|(f, _)| f.count_ones()).sum();
+            let n = 1usize << total;
+            let mut shift = 0u32;
+            for (f, ones) in &opens {
+                let w = f.count_ones();
+                in_vals.push((0..n).map(|a| deposit(((a >> shift) as u128) & lowmask(w), *f) | ones).collect());
+                shift += w;
+            }
+        } else {
+            for (x, is_var) in &inputs {
+                let (free, ones) = self.input_bits(*x, *is_var, clear);
+                let (seed, size) = if *is_var { (*x as u64, self.vars[*x as usize].size) } else { ((1u64 << 40) | *x as u64, 1) };
+                in_vals.push((0..n).map(|i| Self::sample_bits(seed, i, size, free, ones)).collect());
+            }
+        }
+        let n = in_vals.first().map(|x| x.len()).unwrap_or(n);
+        let pos: std::collections::HashMap<ExprId, usize> = nodes.iter().enumerate().map(|(i, x)| (*x, i)).collect();
+        let var_pos: std::collections::HashMap<VarId, usize> = vars.iter().enumerate().map(|(i, v)| (*v, i)).collect();
+        let atom_pos: std::collections::HashMap<ExprId, usize> = atoms.iter().enumerate().map(|(i, a)| (*a, vars.len() + i)).collect();
+        let mut vals = vec![0u128; nodes.len() * n];
+        for (k, &x) in nodes.iter().enumerate() {
+            let size = self.size(x);
+            let m = mask(size);
+            let base = k * n;
+            if let Some(&ai) = atom_pos.get(&x) {
+                vals[base..base + n].copy_from_slice(&in_vals[ai]);
+                continue;
+            }
+            match self.kind(x) {
+                ExprKind::Const(c) => vals[base..base + n].fill(*c & m),
+                ExprKind::Var(v) => {
+                    let src = &in_vals[*var_pos.get(v)?];
+                    for j in 0..n {
+                        vals[base + j] = src[j] & m;
+                    }
+                }
+                ExprKind::Un(opc, a) => {
+                    let (pa, asz) = (pos[a] * n, self.size(*a));
+                    for j in 0..n {
+                        vals[base + j] = fold_un(*opc, size, vals[pa + j], asz)?;
+                    }
+                }
+                ExprKind::Bin(opc, a, b) => {
+                    let (pa, asz) = (pos[a] * n, self.size(*a));
+                    let (pb, bsz) = (pos[b] * n, self.size(*b));
+                    for j in 0..n {
+                        vals[base + j] = fold_bin(*opc, size, vals[pa + j], asz, vals[pb + j], bsz)?;
+                    }
+                }
+                ExprKind::SubPiece(a, off) => {
+                    let pa = pos[a] * n;
+                    for j in 0..n {
+                        vals[base + j] = (vals[pa + j] >> (8 * *off as u32)) & m;
+                    }
+                }
+                ExprKind::Piece(h, l) => {
+                    let (ph, pl, ls) = (pos[h] * n, pos[l] * n, bits(self.size(*l)));
+                    for j in 0..n {
+                        vals[base + j] = ((vals[ph + j] << ls) | vals[pl + j]) & m;
+                    }
+                }
+                ExprKind::Ite(c, a, b) => {
+                    let (pc, pa, pb) = (pos[c] * n, pos[a] * n, pos[b] * n);
+                    for j in 0..n {
+                        vals[base + j] = if vals[pc + j] & 1 == 1 { vals[pa + j] } else { vals[pb + j] };
+                    }
+                }
+            }
+        }
+        let root = pos[&e] * n;
+        in_vals.truncate(vars.len());
+        Some((vals[root..root + n].to_vec(), in_vals))
+    }
+
+    /// `e == base + k` for one of its variables, or `e == k`, decided by
+    /// evaluating `e` at [`ID_SAMPLES`] points that assign every input at
+    /// once (exhaustively when the inputs have at most
+    /// [`ID_EXHAUSTIVE_BITS`] open bits): its variables, and its innermost
+    /// boolean atoms (comparisons and flags whose operands hold no other
+    /// atom) as free bits of their own.  Treating an atom as free asks for
+    /// more than the program needs (the identity must hold whatever the
+    /// comparison says), and spares the test a guard on program data that
+    /// holds at one value only, which no sample of its operands would hit.
+    /// The spec (02-lift-and-flow 2.11) argues the error probability.
+    pub fn identity_probe(&mut self, e: ExprId) -> Option<(Option<VarId>, i128)> {
+        let size = self.size(e);
+        if let Some(c) = self.is_const(e) {
+            return Some((None, sext(c, size)));
+        }
+        if size < 2 || !self.quick_candidate(e) {
+            return None;
+        }
+        let vars: Vec<VarId> = self.free_vars(e).into_iter().collect();
+        if vars.is_empty() {
+            return None;
+        }
+        let atoms: Vec<ExprId> = self.leaf_atoms(e).into_iter().filter(|a| self.as_var(*a).is_none()).collect();
+        if let Some(r) = self.identity_pass(e, &vars, &atoms, None) {
+            return Some(r);
+        }
+        // Over the stack the platform gives user code (its top bits clear).
+        let bound = self.sp_bound.filter(|(v, _)| vars.contains(v))?;
+        let r = self.identity_pass(e, &vars, &atoms, Some(bound))?;
+        self.sp_bound_used += 1;
+        Some(r)
+    }
+
+    /// `e` with each comparison atom whose outcome an identity decides
+    /// replaced by that outcome: `x == y` where `x - y` is a constant, and
+    /// `x < y` (signed or not) where both sides are one pointer plus
+    /// constants (no wrap, as [`Self::pointer_relative_compare`] assumes) or
+    /// both constants.  An opaque predicate built from mixed
+    /// boolean-arithmetic identities folds this way; a comparison on program
+    /// data stays.
+    pub fn decide_atoms(&mut self, e: ExprId) -> ExprId {
+        if self.is_const(e).is_some() {
+            return e;
+        }
+        let mut map = BTreeMap::new();
+        for a in self.leaf_atoms(e) {
+            let ExprKind::Bin(opc, x, y) = self.kind(a).clone() else { continue };
+            let size = self.size(x);
+            let v = match opc {
+                CPUI_INT_EQUAL => {
+                    let d = self.mk_bin(CPUI_INT_SUB, x, y, size);
+                    match self.identity_probe(d) {
+                        Some((None, k)) => Some((k as u128 & mask(size) == 0) as u128),
+                        _ => None,
+                    }
+                }
+                CPUI_INT_LESS | CPUI_INT_SLESS | CPUI_INT_CARRY | CPUI_INT_SCARRY | CPUI_INT_SBORROW => {
+                    match (self.identity_probe(x), self.identity_probe(y)) {
+                        (Some((None, cx)), Some((None, cy))) => fold_bin(opc, 1, cx as u128 & mask(size), size, cy as u128 & mask(size), size),
+                        (Some((Some(bx), cx)), Some((Some(by), cy)))
+                            if bx == by && self.vars[bx as usize].pointer && matches!(opc, CPUI_INT_LESS | CPUI_INT_SLESS) && cx.abs() < (1i128 << 32) && cy.abs() < (1i128 << 32) =>
+                        {
+                            Some((cx < cy) as u128)
+                        }
+                        _ => None,
+                    }
+                }
+                _ => None,
+            };
+            if let Some(v) = v {
+                let k = self.cst(1, v);
+                map.insert(a, k);
+            }
+        }
+        if map.is_empty() {
+            return e;
+        }
+        self.substitute(e, &map)
+    }
+
+    /// One run of [`Self::identity_probe`], with one variable's `clear` bits held zero.
+    fn identity_pass(&self, e: ExprId, vars: &[VarId], atoms: &[ExprId], clear: Option<(VarId, u128)>) -> Option<(Option<VarId>, i128)> {
+        let size = self.size(e);
+        let open_bits: u32 = vars.iter().map(|v| self.input_bits(*v as ExprId, true, clear).0.count_ones()).sum::<u32>() + atoms.len() as u32;
+        let exhaustive = open_bits <= ID_EXHAUSTIVE_BITS;
+        let m = mask(size);
+        let mut found = None;
+        for n in if exhaustive { &[0usize][..] } else { &[ID_QUICK, ID_SAMPLES][..] } {
+            let (ev, var_vals) = self.eval_samples(e, vars, atoms, *n, exhaustive, clear)?;
+            found = None;
+            if ev.iter().all(|x| *x == ev[0]) {
+                found = Some((None, ev[0]));
+            } else {
+                for (vi, v) in vars.iter().enumerate() {
+                    let info = &self.vars[*v as usize];
+                    if info.size != size || info.boolean {
+                        continue;
+                    }
+                    let bv = &var_vals[vi];
+                    let d = ev[0].wrapping_sub(bv[0]) & m;
+                    if ev.iter().zip(bv).all(|(x, b)| x.wrapping_sub(*b) & m == d) {
+                        found = Some((Some(*v), d));
+                        break;
+                    }
+                }
+            }
+            found?;
+        }
+        found.map(|(b, d)| (b, sext(d, size)))
     }
 
     // -- known bits -----------------------------------------------------------
@@ -2159,6 +2593,37 @@ impl ExprArena {
 
 /// Longest rendering [`ExprArena::fmt`] builds.
 const MAX_FMT: usize = 8192;
+
+/// Lanes of the cached quick evaluation ([`ExprArena::quick_vals`]).
+const QUICK_LANES: usize = 4;
+/// Cached quick evaluations kept before the cache starts over.
+const QUICK_MAX: usize = 1 << 22;
+/// Sample points of [`ExprArena::identity_probe`]; the first [`ID_QUICK`] are
+/// a filter evaluated before the rest.
+pub const ID_SAMPLES: usize = 96;
+const ID_QUICK: usize = 8;
+/// Structured patterns ([`ExprArena::sample_value`]): 4 edges of the whole
+/// value, 4 of each 8/16/32/64-bit lane.
+const ID_STRUCTURED: usize = 20;
+/// Variables with at most this many free bits in total are tested at every assignment.
+const ID_EXHAUSTIVE_BITS: u32 = 8;
+/// Largest expression (distinct nodes) the identity test evaluates.
+const ID_MAX_NODES: usize = 1 << 16;
+const ID_SEED: u64 = 0x5eed_9e37_79b9_7f4a;
+
+/// The fixed pseudo-random word of sample `i` for variable `v` (splitmix64).
+fn sample_word(v: u64, i: usize) -> u128 {
+    let mix = |mut z: u64| {
+        z = z.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        z ^ (z >> 31)
+    };
+    let s = ID_SEED ^ v.wrapping_mul(0xd6e8_feb8_6659_fd93) ^ (i as u64).rotate_left(32);
+    let lo = mix(s);
+    let hi = mix(lo ^ 0xa076_1d64_78bd_642f);
+    ((hi as u128) << 64) | lo as u128
+}
 
 /// The low bits of `v` spread, in order, over the set bits of `m`.
 fn deposit(mut v: u128, mut m: u128) -> u128 {
