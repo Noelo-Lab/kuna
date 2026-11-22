@@ -406,8 +406,7 @@ impl PushanTarget for ArchTarget<'_> {
     fn copy_routine(&self, addr: u64) -> bool {
         let a = Address::new(Rc::clone(&self.ram), addr);
         let Some((sid, _)) = self.arch.symboltab.find_function_across_scopes(&a) else { return false };
-        let name = &self.arch.symboltab.symbol(sid).name;
-        matches!(name.split('@').next().unwrap_or(""), "memcpy" | "memmove" | "__memcpy_chk" | "__memmove_chk")
+        copy_routine_name(&self.arch.symboltab.symbol(sid).name)
     }
     fn bytecode_like(&self, addr: u64) -> bool {
         if self.section_of(addr).is_none() {
@@ -990,7 +989,7 @@ pub fn interpreter_after_flow(arch: &mut Architecture, fd: &Funcdata) -> bool {
         return false;
     }
     let started = std::time::Instant::now();
-    if !has_computed_jump(fd) {
+    if !interpreter_shape(arch, fd) {
         if let Ok(path) = std::env::var("KUNA_PUSHAN_PROBE_LOG") {
             if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
                 let _ = writeln!(f, "{entry:#x} scan {:.3}ms", started.elapsed().as_secs_f64() * 1000.0);
@@ -998,15 +997,20 @@ pub fn interpreter_after_flow(arch: &mut Architecture, fd: &Funcdata) -> bool {
         }
         return false;
     }
+    let mut lap = [0f64; 3];
     let found = {
         let Some(target) = ArchTarget::new(arch, entry) else { return false };
+        lap[0] = started.elapsed().as_secs_f64() * 1000.0;
         let Some(abi) = abi_for(arch, &target) else { return false };
         let mut probe = Explorer::new(&target, abi, Config::default(), entry);
-        !probe.probe_interpreter().cells.is_empty()
+        lap[1] = started.elapsed().as_secs_f64() * 1000.0;
+        let r = !probe.probe_interpreter().cells.is_empty();
+        lap[2] = target.lifts.borrow().len() as f64;
+        r
     };
     if let Ok(path) = std::env::var("KUNA_PUSHAN_PROBE_LOG") {
         if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-            let _ = writeln!(f, "{entry:#x} found={found} {:.3}ms", started.elapsed().as_secs_f64() * 1000.0);
+            let _ = writeln!(f, "{entry:#x} found={found} target={:.3} setup={:.3} lifts={} {:.3}ms", lap[0], lap[1], lap[2], started.elapsed().as_secs_f64() * 1000.0);
         }
     }
     if !found {
@@ -1021,25 +1025,63 @@ pub fn interpreter_after_flow(arch: &mut Architecture, fd: &Funcdata) -> bool {
     }
 }
 
-/// The flow kept a computed jump: a BRANCHIND, or one it could not recover
-/// and treats as a call (a CALLIND with an artificial RETURN at its address).
-fn has_computed_jump(fd: &Funcdata) -> bool {
+/// The plain flow has an in-function interpreter's shape: a computed jump
+/// inside a cycle of the flow graph (a switch dispatch in its loop), or a jump
+/// the flow could not recover and treats as a call (a CALLIND with an
+/// artificial RETURN at its address: threaded code) in a function that copies
+/// memory (a call to a `memcpy`-like routine, or a `rep movs`, which branches
+/// back to itself).
+fn interpreter_shape(arch: &Architecture, fd: &Funcdata) -> bool {
+    let mut jumps = Vec::new();
     let mut calls = BTreeSet::new();
     let mut returns = BTreeSet::new();
+    let mut copies = false;
     for o in fd.obank().iter_alive() {
         let Some(op) = fd.obank().get(o) else { continue };
+        let at = op.get_addr().get_offset();
+        let target = op.get_in(0).and_then(|v| fd.vbank().get(v)).filter(|v| v.get_space().get_name() != "const").map(|v| v.get_offset());
         match op.code() {
-            OpCode::CPUI_BRANCHIND => return true,
+            OpCode::CPUI_BRANCHIND => jumps.extend(op.get_parent()),
             OpCode::CPUI_CALLIND => {
-                calls.insert(op.get_addr().get_offset());
+                calls.insert(at);
             }
             OpCode::CPUI_RETURN => {
-                returns.insert(op.get_addr().get_offset());
+                returns.insert(at);
             }
+            OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH if target == Some(at) => copies = true,
             _ => {}
         }
     }
-    calls.intersection(&returns).next().is_some()
+    for i in 0..fd.num_calls() {
+        let entry = fd.get_call_specs(i).get_entry_address();
+        if !entry.is_invalid() {
+            if let Some((sid, _)) = arch.symboltab.find_function_across_scopes(entry) {
+                copies |= copy_routine_name(&arch.symboltab.symbol(sid).name);
+            }
+        }
+    }
+    jumps.iter().any(|b| in_cycle(fd, *b)) || (copies && calls.intersection(&returns).next().is_some())
+}
+
+/// Block `b` is reachable from its own successors.
+fn in_cycle(fd: &Funcdata, b: crate::context::BlockId) -> bool {
+    let graph = fd.bblocks_ref();
+    let mut seen = BTreeSet::new();
+    let mut work: Vec<crate::context::BlockId> = (0..graph.block(b).size_out()).map(|i| graph.block(b).get_out(i)).collect();
+    while let Some(x) = work.pop() {
+        if x == b {
+            return true;
+        }
+        if seen.insert(x) {
+            work.extend((0..graph.block(x).size_out()).map(|i| graph.block(x).get_out(i)));
+        }
+    }
+    false
+}
+
+/// A C library routine with `memcpy`'s contract (destination, source, count).
+fn copy_routine_name(name: &str) -> bool {
+    matches!(name.split('@').next().unwrap_or(""), "memcpy" | "memmove" | "__memcpy_chk" | "__memmove_chk")
 }
 
 /// Point the function at its synthetic program: the flow follower lifts the

@@ -341,12 +341,12 @@ const REGION_TAG: u64 = 0x7e00_0000_0000_0000;
 /// copy of its bytecode on the stack.
 const STACK_VPC_TAG: u64 = 0x7d00_0000_0000_0000;
 /// Most instructions [`Explorer::probe_interpreter`] runs.
-const PROBE_RUN_INSNS: usize = 8192;
+const PROBE_RUN_INSNS: usize = 4096;
 /// Most times the probe runs one instruction.
-const PROBE_VISITS: u32 = 256;
+const PROBE_VISITS: u32 = 64;
 /// Instructions the probe runs without loading a bytecode pointer from a cell
 /// before it gives up.
-const PROBE_IDLE_INSNS: usize = 1024;
+const PROBE_IDLE_INSNS: usize = 512;
 /// Fetches at distinct places a computed jump needs to be a dispatch.
 const PROBE_DISPATCHES: usize = 4;
 

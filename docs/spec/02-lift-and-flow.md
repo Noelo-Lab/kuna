@@ -3980,11 +3980,17 @@ region's `push imm; call vm_entry`. The sections come from the loader
 that is the function's own body (Tigress `Virtualize`: a `switch` or a
 threaded `goto *pc` over bytecode in the image, no protector section) has no
 such entry. `auto` looks for one only after the plain flow has been followed,
-and only in a function whose flow kept a computed jump: a BRANCHIND, or a jump
-the flow could not recover and treats as a call (a CALLIND with an artificial
-RETURN at its address, `kuna_pushan.rs (has_computed_jump)`). Every other
-function pays one scan of its ops, and a front-end whose translator is not
-SLEIGH (Ghidra's, which cannot serve the overlay) pays nothing. For a candidate,
+and only in a function whose plain flow has an interpreter's shape
+(`kuna_pushan.rs (interpreter_shape)`). Either a computed jump lies in a cycle
+of the flow graph, as a switch dispatch does inside its loop, or the function
+copies memory (a call to a `memcpy`-like routine, or a `rep movs`) and has a
+jump the flow could not recover and treats as a call (a CALLIND with an
+artificial RETURN at its address), as threaded code over a copied array
+shows. A tail call through a pointer, or a `switch` outside a loop, is not a
+candidate. Every other function pays one scan of its ops, and a front-end
+whose translator is not SLEIGH (Ghidra's, which cannot serve the overlay)
+pays nothing. Threaded code over bytecode that is not copied (its array a
+global) is therefore found under `on` only. For a candidate,
 `kuna_pushan.rs (interpreter_after_flow)` runs the interpreter probe described
 below. When the probe finds a dispatch and the exploration decides at least one
 computed jump of the interpreter, the program is cached and the flow is followed
@@ -4084,7 +4090,7 @@ dispatch) or through the handler address the bytecode holds (`direct`
 dispatch, threaded code). The VPC is that local, a stack slot, and the
 bytecode sits in writable `.data` with low entropy, so none of the protector
 rules above applies. `Explorer::probe_interpreter` finds it before the first
-round. It is a concrete run from the entry of at most 8192 instructions. Every
+round. It is a concrete run from the entry of at most 4096 instructions. Every
 byte of file data (a loaded section that is neither code nor uninitialized)
 reads as the file holds it, writable or not, and an undecided branch is followed
 on its fall-through side. The run records each pointer-sized load from a memory
@@ -4093,8 +4099,9 @@ file data or into a copy of file data on the stack (see the copy model below).
 A later load within 16 bytes past such a pointer is a fetch through the cell.
 A computed jump to code that a fetch preceded is a dispatch event. A computed
 jump with no fetch before it (an ordinary `switch`), a return, an
-instruction run 256 times, or 1024 instructions without a bytecode pointer
-loaded from a cell end the probe. The cell is the VPC once one computed
+instruction run 64 times (gcc's stack probe for a 256 KiB frame runs 64
+times), or 512 instructions without a bytecode pointer loaded from a cell end
+the probe. The cell is the VPC once one computed
 jump has seen fetches through it at 4 different places, and gone to at least two
 targets. The explorer then keeps that cell as the VPC for the whole
 exploration (`Explorer::data_vpc`). At the end of every block, wherever the
