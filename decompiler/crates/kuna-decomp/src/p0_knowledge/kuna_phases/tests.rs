@@ -518,6 +518,9 @@ fn option_values_live_value_present_for_76() {
                             // like `foldcallret` above it declares no
                             // `live_field`, so the catalog suppresses `current`.
                             | "indirectonly"
+                            // (kuna) `callresultuse` declares no `live_field`: its mode is read
+                            // at the call trials, not from a printer flag, so `current` is suppressed.
+                            | "callresultuse"
                             | "gotoreduce"
                             | "ifelseflatten"
                             | "crossjumprevert"
