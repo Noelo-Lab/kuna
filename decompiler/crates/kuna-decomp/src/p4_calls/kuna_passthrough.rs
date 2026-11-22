@@ -733,7 +733,11 @@ fn claim_untouched_registers_mode(data: &mut Funcdata, pass: ClaimPass) {
 /// call slot through that call's non-creating INDIRECT, and inside a loop
 /// through a MULTIEQUAL that joins the incoming Varnode with the value the loop
 /// carries back past the call. Followed through MULTIEQUAL, COPY and
-/// non-creating INDIRECT, every source must be that one incoming Varnode.
+/// non-creating INDIRECT, every source must be that one incoming Varnode, and
+/// each INDIRECT must guard a direct call whose decoded callee body is proven
+/// never to write the register ([`call_leaves_alone`]): the convention lets any
+/// other call clobber it, and a register that survives only on paper is no
+/// argument.
 pub fn forwarded_own_input(data: &Funcdata, vn: VarnodeId, addr: &Address, size: int4) -> bool {
     let mut todo = vec![vn];
     let mut seen = vec![vn];
@@ -754,7 +758,9 @@ pub fn forwarded_own_input(data: &Funcdata, vn: VarnodeId, addr: &Address, size:
         let ins: Vec<VarnodeId> = match op.code() {
             OpCode::CPUI_MULTIEQUAL => (0..op.num_input()).filter_map(|i| op.get_in(i)).collect(),
             OpCode::CPUI_COPY => op.get_in(0).into_iter().collect(),
-            OpCode::CPUI_INDIRECT if !op.is_indirect_creation() => op.get_in(0).into_iter().collect(),
+            OpCode::CPUI_INDIRECT if !op.is_indirect_creation() && call_leaves_alone(data, op, addr, size) => {
+                op.get_in(0).into_iter().collect()
+            }
             _ => return false,
         };
         for next in ins {
@@ -768,6 +774,25 @@ pub fn forwarded_own_input(data: &Funcdata, vn: VarnodeId, addr: &Address, size:
         }
     }
     found
+}
+
+/// Is the INDIRECT `ind` guarding a direct call (not a PLT stub) whose callee's
+/// fully decoded body is proven never to write `addr:size`
+/// ([`crate::kuna_rustabi::CalleeReturnWrites::proves_untouched_for`])?
+fn call_leaves_alone(data: &Funcdata, ind: &crate::op::PcodeOp, addr: &Address, size: int4) -> bool {
+    let Some(iop) = ind.get_in(1).and_then(|i| data.vbank().get(i)) else { return false };
+    let call = OpId::from(slotmap::KeyData::from_ffi(iop.get_offset()));
+    if !data.obank().get(call).is_some_and(|o| !o.is_dead() && o.code() == OpCode::CPUI_CALL) {
+        return false;
+    }
+    let Some(idx) = data.get_call_specs_index(call) else { return false };
+    let fc = data.get_call_specs(idx);
+    let entry = fc.get_entry_address();
+    !entry.is_invalid()
+        && fc.plt_stub().is_none()
+        && data
+            .kuna_callee_ret_writes(entry)
+            .is_some_and(|w| w.proves_untouched_for(crate::kuna_rustabi::call_model(fc.proto()), addr, size))
 }
 
 /// The function's own incoming Varnode at `addr:size`, if it is still unread
