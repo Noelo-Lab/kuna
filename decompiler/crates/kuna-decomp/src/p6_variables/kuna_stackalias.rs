@@ -14,7 +14,7 @@ use std::collections::BTreeSet;
 /// Whether this Varnode is a physical write in this function's frame space.
 pub fn holds_store(fd: &Funcdata, id: VarnodeId) -> bool {
     if crate::kuna_localstackviews::publication(fd, id) { return true; }
-    let full = fd.get_arch().stack_alias_deadstore || fd.get_arch().stack_views || fd.stack_frame_published;
+    let full = fd.get_arch().stack_alias_deadstore || fd.get_arch().stack_views || fd.stack_frame_published.is_some();
     if !full && !crate::kuna_localstackviews::active(fd) && fd.stack_parameter_store_extents.values().all(|&width| width > 4) {
         return false;
     }
@@ -23,7 +23,8 @@ pub fn holds_store(fd: &Funcdata, id: VarnodeId) -> bool {
     };
     fd.vbank().get(id).is_some_and(|v| {
         v.is_stack_store()
-            && (full || crate::kuna_stackparamviews::preserves_range(fd, v.get_addr(), v.get_size())
+            && (held_by_policy(fd, v)
+                || crate::kuna_stackparamviews::preserves_range(fd, v.get_addr(), v.get_size())
                 || crate::kuna_localstackviews::preserves_range(fd, v.get_addr(), v.get_size()))
             && v.get_space().get_index() == scope.get_space_id().get_index()
             && !v.has_no_local_alias()
@@ -34,15 +35,29 @@ pub fn holds_store(fd: &Funcdata, id: VarnodeId) -> bool {
     })
 }
 
+/// The option policies hold every frame write; a published frame address holds the
+/// writes that reach at or above the lowest published byte, which a reader of the
+/// published pointer can address.
+fn held_by_policy(fd: &Funcdata, v: &crate::varnode::Varnode) -> bool {
+    if fd.get_arch().stack_alias_deadstore || fd.get_arch().stack_views {
+        return true;
+    }
+    fd.stack_frame_published.is_some_and(|low| {
+        let bits = 64 - 8 * v.get_space().get_addr_size().clamp(1, 8);
+        let start = ((v.get_offset() << bits) as i64) >> bits;
+        start.saturating_add(i64::from(v.get_size())) > low
+    })
+}
+
 /// Compute once per dead-code pass. A later full overwrite before any memory
 /// observer kills only the earlier store's potentially aliased bytes.
 /// A frame address written to memory outside the frame escapes, so the
-/// alias-checked frame stores stay live in every policy.
+/// alias-checked frame stores at or above it stay live in every policy.
 pub fn prepare(fd: &mut Funcdata) -> i32 {
-    if !fd.stack_frame_published && crate::kuna_localstackviews::frame_published(fd) {
-        fd.stack_frame_published = true;
+    if let Some(low) = crate::kuna_localstackviews::frame_published(fd) {
+        fd.stack_frame_published = Some(fd.stack_frame_published.map_or(low, |old| old.min(low)));
     }
-    let full = fd.get_arch().stack_alias_deadstore || fd.get_arch().stack_views || fd.stack_frame_published;
+    let full = fd.get_arch().stack_alias_deadstore || fd.get_arch().stack_views || fd.stack_frame_published.is_some();
     if !full && !crate::kuna_localstackviews::active(fd) && fd.stack_parameter_store_extents.values().all(|&width| width > 4) {
         return 0;
     }
@@ -59,7 +74,8 @@ pub fn prepare(fd: &mut Funcdata) -> i32 {
             continue;
         };
         if !v.is_stack_store() || v.has_no_local_alias()
-            || (!full && !crate::kuna_stackparamviews::preserves_range(fd, v.get_addr(), v.get_size())
+            || (!held_by_policy(fd, v)
+                && !crate::kuna_stackparamviews::preserves_range(fd, v.get_addr(), v.get_size())
                 && !crate::kuna_localstackviews::preserves_range(fd, v.get_addr(), v.get_size()))
         {
             continue;

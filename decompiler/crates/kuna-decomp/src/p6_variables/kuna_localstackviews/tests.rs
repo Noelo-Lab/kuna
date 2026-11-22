@@ -607,7 +607,7 @@ fn frame_publication_excludes_stores_into_frame_based_slots() {
         fd.op_set_input(op, space, 0).unwrap();
         fd.op_set_input(op, destination, 1).unwrap();
         fd.op_set_input(op, local, 2).unwrap();
-        assert_eq!(frame_published(&fd), destination_kind == "param", "{destination_kind}");
+        assert_eq!(frame_published(&fd), (destination_kind == "param").then_some(-32), "{destination_kind}");
     }
 }
 

@@ -293,15 +293,13 @@ fn published_input(fd: &Funcdata, id: OpId) -> Option<(i32, VarnodeId)> {
     }
 }
 
-/// Whether a live COPY, STORE or volatile write stores a frame address outside this frame.
+/// The lowest frame offset a live COPY, STORE or volatile write stores outside this frame.
 /// A STORE through a pointer whose every origin is the frame base writes another frame slot.
-pub(crate) fn frame_published(fd: &Funcdata) -> bool {
-    let frame = |input| crate::kuna_stackranges::frame_address(fd, input).is_some();
-    let into_frame = |id| {
-        fd.obank().get(id).is_some_and(|op| {
-            op.code() == OpCode::CPUI_STORE
-                && op.get_in(1).is_some_and(|to| crate::kuna_stackranges::frame_based(fd, to))
-        })
+pub(crate) fn frame_published(fd: &Funcdata) -> Option<i64> {
+    let frame = |input| crate::kuna_stackranges::frame_address(fd, input).map(|address| address.first);
+    let into_frame = |op: &crate::op::PcodeOp| {
+        op.code() == OpCode::CPUI_STORE
+            && op.get_in(1).is_some_and(|to| crate::kuna_stackranges::frame_based(fd, to))
     };
     let volatile_write = |op: &crate::op::PcodeOp| {
         op.code() == OpCode::CPUI_CALLOTHER
@@ -309,12 +307,21 @@ pub(crate) fn frame_published(fd: &Funcdata) -> bool {
                 code.is_constant()
                     && code.get_offset() == crate::userop::BUILTIN_VOLATILE_WRITE as u64
             })
-            && op.get_in(2).is_some_and(frame)
     };
-    fd.obank().iter_alive().any(|id| {
-        (published_input(fd, id).is_some_and(|(_, input)| frame(input)) && !into_frame(id))
-            || fd.obank().get(id).is_some_and(volatile_write)
-    })
+    fd.obank()
+        .iter_alive()
+        .filter_map(|id| {
+            let op = fd.obank().get(id)?;
+            if volatile_write(op) {
+                return frame(op.get_in(2)?);
+            }
+            let (_, input) = published_input(fd, id)?;
+            if into_frame(op) {
+                return None;
+            }
+            frame(input)
+        })
+        .min()
 }
 
 fn collect(fd: &mut Funcdata) {

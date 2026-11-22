@@ -3134,9 +3134,14 @@ The same hold is always on, independent of the option, for a function that
 publishes a frame address: a live COPY of a frame address into persistent
 storage, a STORE of one outside the stack space, or a `write_volatile` user op
 whose value is one. Storing the address is the escape, so the frame stores a
-later reader can reach through the reloaded pointer stay live. `prepare`
-records the fact once it is seen and keeps it for the rest of the function's
-analysis. Without it, a frame whose bounded local view admission is refused
+later reader can reach through the reloaded pointer stay live. A reader of the
+published pointer reaches the published object and the frame above it, so the
+hold covers only frame writes that reach at or above the lowest published byte
+(`kuna_stackalias.rs (held_by_policy)`); a write below it keeps the option's
+default. Otherwise MSVC's `push ecx`, which allocates a local below the SEH
+record it then links into `fs:[0]`, kept a dead store of ECX live and made ECX
+a parameter. `prepare` records the lowest published offset seen in any pass
+and keeps it for the rest of the function's analysis. Without it, a frame whose bounded local view admission is refused
 (§6, `kuna_localstackviews.rs`) printed reads through `object_pair` of a local
 that was never written, and an x86 SEH registration record linked into
 `fs:[0]` lost its handler and state fields. Frames whose address only reaches
