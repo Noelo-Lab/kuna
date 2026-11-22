@@ -28,3 +28,9 @@ P1's nominal input proof and the effective function and call-site
 declarations. Host-compiled Go observers compared the proposed byte read
 and representative calls with the stock output on both compiler versions.
 The [proposal](proposal.md) defines the first supported cases.
+
+The open draft #1474 proposed a separate `gostringargs` option for the same
+string-input contract. Its repro, `func Length(s string) uint64`, now prints
+`func Length(s_data *byte, s_len int64) uint64` with `return uint64(s_len)`:
+`godwarfsig` already names the two words, and this proposal takes the next step
+as a refinement of `godwarfsig` rather than a new option.
