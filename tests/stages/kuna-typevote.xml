@@ -1,0 +1,39 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+<!--
+    kuna-typevote: a value the type passes leave undefined takes the type its
+    uses vote for (option typevote).
+
+    The ghdec-subright image: put_u32_be(char *a0, uint4 a1) stores the four
+    bytes of a1 big-endian. The parameter is declared uint4, but the
+    instances the shifts read are left undefined4, so each shift printed a
+    cast back to the declared type: *a0 = (char)((uint4)a1 >> 0x18).
+
+    Stage: merge, ActionTypeVote: every op on a variable left undefinedN
+    votes (logical shifts and zero extension unsigned, arithmetic shifts and
+    signed compares signed, other integer ops numeric); the instances take
+    the voted type, so the casts go.
+
+    Pass 1 (default) prints the shifts without casts; pass 2 (typevote off)
+    with them.
+-->
+<bytechunk space="ram" offset="0x100000">
+8b4424048b54240889d1c1e918880889d1c1e910884801887002885003c38b442408f7642404
+89d0c1e803c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="put_u32_be"/>
+<symbol space="ram" offset="0x10001e" name="mulhi_shift"/>
+</binaryimage>
+<script>
+  <com>option castnarrow off</com>
+  <com>lo fu put_u32_be</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option typevote off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-TYPEVOTE #1: the voted shifts need no cast (default)" min="1" max="1">\*a0 = \(char\)\(a1 &gt;&gt; 0x18\);</stringmatch>
+<stringmatch name="KUNA-TYPEVOTE #2: typevote off casts the undefined instances" min="3" max="3">\(uint4\)a1 &gt;&gt;</stringmatch>
+</decompilertest>

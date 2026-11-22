@@ -116,7 +116,7 @@ fn resolve_site(data: &Funcdata, op: OpId, slot: int4) -> Option<(Address, Rc<Da
     if sym_off != 0 {
         return None;
     }
-    let spelled = name.strip_prefix("type:")?;
+    let spelled = harvest_spelling(name.strip_prefix("type:")?);
     if spelled.is_empty() {
         return None;
     }
@@ -157,6 +157,21 @@ fn resolve_site(data: &Funcdata, op: OpId, slot: int4) -> Option<(Address, Rc<Da
     }
     let ptr = tlst.get_type_pointer(out_size, record, wordsize).ok()?;
     Some((o.get_addr().clone(), ptr))
+}
+
+/// The harvest's spelling of a descriptor symbol's type. A named type's
+/// symbol qualifies it with the full import path (`internal/poll.FD`,
+/// `p/geom.Box[q/store.T]`) while the harvest interns the reflection
+/// spelling, whose qualifier is the last path element (`poll.FD`,
+/// `geom.Box[q/store.T]`), so the directory part before the type arguments is
+/// dropped. A composite spelling (`*T`, `[]T`, `[4]T`, `map[K]V`, `func(..)`)
+/// is returned whole: it names no interned struct, so the site is refused.
+fn harvest_spelling(full: &str) -> &str {
+    let head = &full[..full.find('[').unwrap_or(full.len())];
+    match head.rfind('/') {
+        Some(i) if !head.contains(['*', '(', ' ']) => &full[i + 1..],
+        _ => full,
+    }
 }
 
 /// The constant address the descriptor argument carries: the Varnode itself,
