@@ -6355,7 +6355,10 @@ every other binary's pass list is byte-identical to before the pass existed):
   common table) in type inference, and pointer arithmetic leaves a
   constant offset off a `swift.type_metadata *` that falls outside its 16-byte
   header (the `-8`, and the field offsets and generic arguments past it) a
-  byte offset instead of rewriting it to `meta[-1].field` or `meta[1].kind`. A witness call then prints as
+  byte offset instead of rewriting it to `meta[-1].field` or `meta[1].kind`,
+  and type inference does not carry the metadata pointer type to such a sum,
+  so a generic argument reads as `((long *)meta)[2]`, not as the `kind` of a
+  record at `meta + 0x10`. A witness call then prints as
   `(*(*(swift.value_witness_table **)(meta + -8))->initializeWithCopy)(dest,src,meta)`
   and an allocation as `->size`. The vote looks the table type up by name and
   only the Swift pass interns it, so code without Swift metadata is unchanged.
