@@ -29,22 +29,51 @@ pub(super) fn collect(
     if candidates.is_empty() {
         return BTreeMap::new();
     }
+    let mut definitions = Vec::new();
+    for symbol in file.symbols().chain(file.dynamic_symbols()) {
+        if symbol.is_definition() {
+            let Some(stop) = symbol.address().checked_add(symbol.size()) else {
+                return BTreeMap::new();
+            };
+            definitions.push((symbol.address(), stop, symbol));
+        }
+    }
+    definitions.sort_by_key(|(start, _, _)| *start);
+    let symbol_reach = prefix_reach(definitions.iter().map(|(_, stop, _)| *stop));
+    let mut relocations = Vec::new();
+    for section in file.sections() {
+        if !matches!(section.flags(), object::SectionFlags::Elf { sh_flags }
+            if sh_flags & u64::from(object::elf::SHF_ALLOC) != 0)
+        {
+            continue;
+        }
+        for (start, relocation) in section.relocations() {
+            let stop = (relocation.size() != 0)
+                .then(|| start.checked_add(u64::from(relocation.size()).div_ceil(8)))
+                .flatten();
+            let Some(stop) = stop else {
+                return BTreeMap::new();
+            };
+            relocations.push((start, stop));
+        }
+    }
+    relocations.sort_unstable();
+    let relocation_reach = prefix_reach(relocations.iter().map(|(_, stop)| *stop));
     let image = super::kuna_rustfmtio::Image::new(file, bytes);
     candidates
         .into_iter()
         .filter_map(|address| {
             let end = address.checked_add(BODY.len() as u64)?;
-            let mut exact = false;
-            for symbol in file.symbols().chain(file.dynamic_symbols()) {
-                if !symbol.is_definition() {
-                    continue;
-                }
-                let start = symbol.address();
-                let stop = start.checked_add(symbol.size())?;
-                if start >= end || (start < address && stop <= address) {
-                    continue;
-                }
-                if start != address
+            let first = definitions.partition_point(|(start, _, _)| *start < address);
+            if first > 0 && symbol_reach[first - 1] > address {
+                return None;
+            }
+            let last = definitions.partition_point(|(start, _, _)| *start < end);
+            if first == last {
+                return None;
+            }
+            for (start, _, symbol) in &definitions[first..last] {
+                if *start != address
                     || symbol.kind() != SymbolKind::Text
                     || symbol.size() != BODY.len() as u64
                     || symbol
@@ -57,29 +86,23 @@ pub(super) fn collect(
                 {
                     return None;
                 }
-                exact = true;
             }
-            if !exact {
+            let before = relocations.partition_point(|(start, _)| *start < end);
+            if before > 0 && relocation_reach[before - 1] > address {
                 return None;
-            }
-            for section in file.sections() {
-                if !matches!(section.flags(), object::SectionFlags::Elf { sh_flags }
-                    if sh_flags & u64::from(object::elf::SHF_ALLOC) != 0)
-                {
-                    continue;
-                }
-                for (start, relocation) in section.relocations() {
-                    if relocation.size() == 0 {
-                        return None;
-                    }
-                    let stop = start.checked_add(u64::from(relocation.size()).div_ceil(8))?;
-                    if start < end && address < stop {
-                        return None;
-                    }
-                }
             }
             let span = image.unrelocated_code(address, BODY.len())?;
             (span.bytes == BODY).then_some((address, span))
+        })
+        .collect()
+}
+
+/// Running maximum of interval ends, in start order.
+fn prefix_reach(stops: impl Iterator<Item = u64>) -> Vec<u64> {
+    stops
+        .scan(0u64, |reach, stop| {
+            *reach = (*reach).max(stop);
+            Some(*reach)
         })
         .collect()
 }
@@ -192,6 +215,12 @@ mod tests {
         changed[alias + 8..alias + 16].copy_from_slice(&profile().address.to_le_bytes());
         changed[alias + 16..alias + 24].copy_from_slice(&(BODY.len() as u64).to_le_bytes());
         assert!(profiles(&changed).is_empty());
+        let mut covering = NATIVE.to_vec();
+        covering[alias + 8..alias + 16].copy_from_slice(&(profile().address - 1).to_le_bytes());
+        covering[alias + 16..alias + 24].copy_from_slice(&2u64.to_le_bytes());
+        assert!(profiles(&covering).is_empty());
+        covering[alias + 16..alias + 24].copy_from_slice(&1u64.to_le_bytes());
+        assert_eq!(profiles(&covering).len(), 1);
     }
 
     #[test]
