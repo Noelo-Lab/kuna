@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4994,
-    4994
+    4998,
+    4998
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2987,6 +2987,10 @@
     "data:armfloatreturn #7: off loses the parameter of a float return converted from a double",
     "data:armfloatreturn #8: on keeps the float return in s0 and takes the double parameter",
     "data:armfloatreturn #9: off loses the double parameter of an integer function",
+    "data:armshiftguard #1: only the default ShiftValue keeps the range guard",
+    "data:armshiftguard #2: a count masked by 0x1f prints the plain shift",
+    "data:armshiftguard #3: a count from a 5-bit field prints the plain shift",
+    "data:armshiftguard #4: off prints the unproven count as a plain shift",
     "data:backing initialization reads the actual ABI parameter",
     "data:backward BLX #1: retains the call",
     "data:backward BLX #2: no invented store",

@@ -2,10 +2,11 @@
 //!
 //! ARM masks a register LSL count to its low eight bits and returns zero when
 //! that value is at least the operand width. C leaves an equal-or-larger shift
-//! undefined, so the C printer needs a range guard. This module keeps the
-//! architecture/opcode selection and the proof that printing both the guard
-//! and the shift will not repeat an effect; [`crate::p9_emit::printc::PrintC`]
-//! owns only the token emission.
+//! undefined, so the C printer needs a range guard unless the count's known
+//! bits keep it below 32 (or `armshiftguard off` drops it). This module keeps
+//! the architecture/opcode selection, the range proof, and the proof that
+//! printing both the guard and the shift will not repeat an effect;
+//! [`crate::p9_emit::printc::PrintC`] owns only the token emission.
 
 use std::rc::Rc;
 
@@ -25,6 +26,8 @@ pub(crate) struct ArmRegisterLslPlan {
     /// Keeping the conditional's arms signed preserves signed consumers such
     /// as `INT_SRIGHT` and `INT_SLESS` after the shift itself is made unsigned.
     pub(crate) signed_result_type: Option<Rc<Datatype>>,
+    /// Whether the conditional `< 32u` guard is printed around the shift.
+    pub(crate) guarded: bool,
 }
 
 /// Select a variable ARM `CPUI_INT_LEFT` whose inputs can safely appear twice
@@ -47,12 +50,11 @@ pub(crate) fn plan_arm_register_lsl(
         fd.vbank().get(count)?,
         fd.vbank().get(o.get_out()?)?,
     );
-    if count_v.is_constant()
-        || lhs_v.get_size() != 4
-        || out_v.get_size() != 4
-        || !operand_is_repeatable(fd, lhs, 16)
-        || !operand_is_repeatable(fd, count, 16)
-    {
+    if count_v.is_constant() || lhs_v.get_size() != 4 || out_v.get_size() != 4 {
+        return None;
+    }
+    let guarded = arch.arm_shift_guard && count_v.get_nz_mask() >= 32;
+    if guarded && !(operand_is_repeatable(fd, lhs, 16) && operand_is_repeatable(fd, count, 16)) {
         return None;
     }
 
@@ -76,6 +78,7 @@ pub(crate) fn plan_arm_register_lsl(
         lhs_type,
         count_type,
         signed_result_type,
+        guarded,
     })
 }
 

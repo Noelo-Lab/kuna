@@ -6889,7 +6889,17 @@ impl PrintC {
             lhs_type,
             count_type,
             signed_result_type,
+            guarded,
         } = plan;
+        if !guarded {
+            self.emit_constant_lsl(fd, arch, op, crate::p9_emit::kuna_constantshift::ConstantLslPlan {
+                lhs,
+                count,
+                unsigned_type: lhs_type,
+                signed_result_type,
+            });
+            return;
+        }
         self.push_op(&tokens::CONDITIONAL, Some(op_key(op)));
         self.push_op(&tokens::LESS_THAN, Some(op_key(op)));
         self.push_cast_open(&count_type, op);

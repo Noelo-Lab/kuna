@@ -5798,6 +5798,28 @@ tier = "core"
 symptoms = "a signed ARM value is shifted left by a constant in the emitted C|UBSan reports a left shift of a negative value in recompiled ARM output|a signed ARM shift overflows into the sign bit in recompiled output|UBSan reports a left shift of a negative 64-bit value in recompiled output|a sign-extended 32-bit value shifted left into the sign bit of a 64-bit result"
 
 [[settable]]
+option = "armshiftguard"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P9"
+subphase = "cast-policy"
+strength = "HARD"
+rewind = "P9"
+issue = "arm-register-lsl-guard"
+summary = "Print a variable ARM LSL whose count is not proven below 32 as `(unsigned int)c < 32u ? x << c : 0` (on), the ARM result for counts 32 through 255, or as the plain shift `x << c` (off). A count whose known bits keep it below 32 (masked by 0x1f or less, or a right shift of a narrow field) prints the plain shift either way."
+use_when = "Turn off when the counts are known to stay below the operand width (bit masks such as `1 << channel` in firmware) and the guard only adds a branch per shift; leave on when the output must keep ARM's result for an out-of-range count. Default on: off changes 0/675 datatest assertions but drops ARM's result for counts 32 through 255, which the register-shift stage tests pin. On nine ARM firmware projects (13,792 functions), off lowered the summed control-flow graph edit distance from 149,426 to 147,028 (194 functions better, 53 worse)."
+example = "option armshiftguard off"
+source_decompiler = "kuna"
+inspiration = "Firmware bit-mask helpers whose every `1 << n` printed as a conditional expression, adding a branch to the function's control-flow graph."
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "`< 32u ?` conditional around every variable shift in ARM output|a bit mask `1 << n` prints as a ternary|ARM firmware control flow has an extra branch per shift"
+live_field = "arm_shift_guard"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "wrapadd"
 values = "on|off"
 default = "off"

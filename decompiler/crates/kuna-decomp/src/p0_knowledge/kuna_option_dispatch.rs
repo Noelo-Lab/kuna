@@ -48,6 +48,7 @@ kuna_options! { self, p1;
         self.arm_constant_shift = mode;
         Ok(msg)
     },
+    "armshiftguard" => on_off!(arm_shift_guard, "ARM register-count shift range guard"),
     "rustarrayzero" => on_off!(rust_array_zero, "Rust byte-array zero values"),
     "arraynotation" => {
         let (val, msg) = crate::kuna_arraynotation::OptionArrayNotation.apply(p1)?;

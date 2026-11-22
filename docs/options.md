@@ -899,6 +899,9 @@ Three tiers:
 | a signed ARM shift overflows into the sign bit in recompiled output | [`armconstshift`](#armconstshift----off--on--all-default-off) |
 | UBSan reports a left shift of a negative 64-bit value in recompiled output | [`armconstshift`](#armconstshift----off--on--all-default-off) |
 | a sign-extended 32-bit value shifted left into the sign bit of a 64-bit result | [`armconstshift`](#armconstshift----off--on--all-default-off) |
+| `< 32u ?` conditional around every variable shift in ARM output | [`armshiftguard`](#armshiftguard----on--off-default-on) |
+| a bit mask `1 << n` prints as a ternary | [`armshiftguard`](#armshiftguard----on--off-default-on) |
+| ARM firmware control flow has an extra branch per shift | [`armshiftguard`](#armshiftguard----on--off-default-on) |
 | UBSan reports a signed integer overflow in a recompiled 32-bit addition | [`wrapadd`](#wrapadd----on--off-default-off) |
 | a sign-extended 32-bit sum differs from the binary at INT32_MAX in recompiled output | [`wrapadd`](#wrapadd----on--off-default-off) |
 | (long)(a + 1) where the machine wraps at 32 bits | [`wrapadd`](#wrapadd----on--off-default-off) |
@@ -2793,6 +2796,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Turn on when the emitted C must be free of signed-shift undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary; use `all` for 64-bit code on any architecture. Off by default because the conversion adds a cast pair to every ARM sign-bit test such as `x << 0x18 < 0`, which firmware uses for nearly every register flag check, and to every scaled 64-bit index.
 - **Where / provenance:** P9/cast-policy · kuna · correctness-fix · arm-fixed-signed-lsl
 - **Example:** `option armconstshift on`
+
+### `armshiftguard` -- on | off, default `on`
+
+- **Symptoms:** `< 32u ?` conditional around every variable shift in ARM output; a bit mask `1 << n` prints as a ternary; ARM firmware control flow has an extra branch per shift.
+- **What it does:** Print a variable ARM LSL whose count is not proven below 32 as `(unsigned int)c < 32u ? x << c : 0` (on), the ARM result for counts 32 through 255, or as the plain shift `x << c` (off). A count whose known bits keep it below 32 (masked by 0x1f or less, or a right shift of a narrow field) prints the plain shift either way.
+- **When to flip:** Turn off when the counts are known to stay below the operand width (bit masks such as `1 << channel` in firmware) and the guard only adds a branch per shift; leave on when the output must keep ARM's result for an out-of-range count. Default on: off changes 0/675 datatest assertions but drops ARM's result for counts 32 through 255, which the register-shift stage tests pin. On nine ARM firmware projects (13,792 functions), off lowered the summed control-flow graph edit distance from 149,426 to 147,028 (194 functions better, 53 worse).
+- **Where / provenance:** P9/cast-policy · kuna · presentation-default · arm-register-lsl-guard
+- **Example:** `option armshiftguard off`
 
 ### `wrapadd` -- on | off, default `off`
 

@@ -1602,6 +1602,16 @@ and emitted-form checks are in `tests/stages/kuna-arm-register-shift.xml`; signe
 comparison and ASR consumers are in
 `tests/stages/kuna-arm-register-shift-signed.xml`.
 
+The guard is omitted when the count's non-zero mask is below 32, since the
+count then cannot reach 32: a count masked by `0x1f` or less, or a right shift
+that leaves at most five bits (`word >> 0x1b`). The shift still prints through
+the unsigned conversion and the signed result cast, with each operand once, so
+the repeatability proof is not required. Option `armshiftguard` (P9,
+cast-policy, default `on`) controls the unproven counts: `off` prints them the
+same plain way, `(uint4)x << (count & 0xff)`, which matches ARM only for counts
+below 32 and drops the conditional's branch from the control-flow graph. Both
+cases are pinned in `tests/stages/kuna-armshiftguard.xml`.
+
 **(kuna) Fixed ARM LSL with a signed operand in C.** A constant-count 32-bit
 `INT_LEFT` still computes the low 32 bits when its declared operand is signed.
 C11 instead makes a negative signed shiftee or signed overflow undefined,

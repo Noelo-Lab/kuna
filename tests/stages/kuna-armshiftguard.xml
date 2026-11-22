@@ -1,0 +1,43 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v5t:default">
+<!--
+    kuna armshiftguard: a register-controlled ARM LSL uses the low eight
+    count bits, so the C printer guards it with `count < 32u ? ... : 0u`
+    (kuna-arm-register-shift.xml). P9 emission / cast-policy.
+    ShiftMasked (`and r1,r1,#0x1f; mov r0,r0,lsl r1; bx lr`) and ShiftField
+    (`mov r1,r1,lsr #27; mov r0,r0,lsl r1; bx lr`) have counts whose known
+    bits keep them below 32, so they print the plain shift with no guard in
+    every mode. ShiftValue (`mov r0,r0,lsl r1; bx lr`) keeps the guard by
+    default and prints the plain shift under `option armshiftguard off`.
+-->
+<bytechunk space="ram" offset="0x10000">1f1001e21001a0e11eff2fe1</bytechunk>
+<bytechunk space="ram" offset="0x10020">a11da0e11001a0e11eff2fe1</bytechunk>
+<bytechunk space="ram" offset="0x10040">1001a0e11eff2fe1</bytechunk>
+<symbol space="ram" offset="0x10000" name="ShiftMasked"/>
+<symbol space="ram" offset="0x10020" name="ShiftField"/>
+<symbol space="ram" offset="0x10040" name="ShiftValue"/>
+</binaryimage>
+<script>
+  <com>parse line extern uint4 ShiftMasked(uint4 value, uint4 count);</com>
+  <com>parse line extern uint4 ShiftField(uint4 value, uint4 word);</com>
+  <com>parse line extern uint4 ShiftValue(uint4 value, uint4 count);</com>
+  <com>load function ShiftMasked</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ShiftField</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ShiftValue</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option armshiftguard off</com>
+  <com>load function ShiftValue</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="armshiftguard #1: only the default ShiftValue keeps the range guard" min="1" max="1">&lt; 32u \?</stringmatch>
+<stringmatch name="armshiftguard #2: a count masked by 0x1f prints the plain shift" min="1" max="1">return \(uint4\)value\s*&lt;&lt;\s*\(count &amp; 0x1f\);</stringmatch>
+<stringmatch name="armshiftguard #3: a count from a 5-bit field prints the plain shift" min="1" max="1">return \(uint4\)value\s*&lt;&lt;\s*\(word &gt;&gt; 0x1b\);</stringmatch>
+<stringmatch name="armshiftguard #4: off prints the unproven count as a plain shift" min="1" max="1">return \(uint4\)value\s*&lt;&lt;\s*\(count &amp; 0xff\);</stringmatch>
+</decompilertest>
