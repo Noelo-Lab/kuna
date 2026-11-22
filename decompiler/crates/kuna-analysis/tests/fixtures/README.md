@@ -2614,6 +2614,25 @@ function pointer or a `TQn_` / `TYn_` suffix).
 
 SHA-256: `855697099f5d2e5eca602686f72c9182bfb402ab278b98a303c53de7691bf44e`.
 
+### `swift_runon_elf` — a flow that runs on into an async body (`swiftcall`)
+
+`swift_runon_elf` (x86-64 ELF, 19 KB, symbols kept so the console knows both
+entries) is the fixture for `tests/stages/kuna-swiftasyncextent.xml`. The Swift
+source `swift_runon_elf.swift` gives the image its metadata (a class, an
+`async` function) and calls the two assembly functions of
+`swift_runon_elf.s`: `kuna_pick`, which returns 0 or branches past the
+prologue of `kuna_alloc`, and `kuna_alloc`, which calls `swift_task_alloc` and
+stores the result through r14. Built with the swiftly 6.4.2 toolchain:
+
+```bash
+clang -c swift_runon_elf.s -o runon_asm.o
+swiftc -O -parse-as-library -module-name runon swift_runon_elf.swift runon_asm.o -o swift_runon_elf
+```
+
+**Pinned VMAs:** `kuna_pick`@`0x2c90`, `kuna_alloc`@`0x2ca0`.
+
+SHA-256: `e41ef366f553c61e7fc9e3dcdf65d2011ec053b1f57232cf73344b60d6100553` (a rebuild differs in its build ID and a few other identifier bytes; the pinned VMAs hold).
+
 ### `swift_infer_elf` — Swift functions the metadata does not bind (`swiftcall`)
 
 `swift_infer_elf` (x86-64 ELF, 11 KB, stripped) is the fixture for

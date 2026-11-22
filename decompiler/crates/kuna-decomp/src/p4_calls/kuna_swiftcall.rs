@@ -115,12 +115,22 @@ const ASYNC_CALLEES: [&str; 12] = [
 /// `swift_willThrow` means it throws, a call to the task runtime's
 /// suspension entry points means it is `async` — the shape a stripped
 /// image keeps when no name says so. `callee_name` names the function a
-/// direct call enters.
+/// direct call enters. Only the calls inside the function's own extent,
+/// its entry up to the next known entry, count: a flow that ran on into
+/// another function's body (a jump table read past its end) says nothing
+/// about this one's convention.
 pub fn callee_evidence(data: &Funcdata, callee_name: impl Fn(&Address) -> Option<String>) -> (bool, bool) {
     let (mut is_async, mut throws) = (false, false);
+    let start = data.get_address().get_offset();
+    let end = data.get_arch().function_entry_after(data.get_address()).unwrap_or(u64::MAX);
     for i in 0..data.num_calls() {
-        let entry = data.get_call_specs(i).get_entry_address();
+        let call = data.get_call_specs(i);
+        let entry = call.get_entry_address();
         if entry.is_invalid() {
+            continue;
+        }
+        let at = data.obank().get(call.get_op()).map(|op| op.get_addr().get_offset());
+        if at.is_some_and(|a| a < start || a >= end) {
             continue;
         }
         let Some(name) = callee_name(entry) else {

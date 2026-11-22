@@ -1,0 +1,48 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A function whose flow runs on into another function's body is not made
+    `async` by that body's calls to the task runtime.
+
+    Issue: a function the metadata does not bind is `async` when it calls
+    the task runtime's entry points (`swift_task_alloc`, `swift_task_switch`,
+    ...). The calls were taken from the whole recovered flow, so a plain
+    function whose flow reached into an async neighbour (a jump table read
+    past its end, a branch into a shared tail) got that neighbour's
+    `async_context` as its first parameter. Seen on an arm64 iOS app: an
+    enum-to-string switch whose unchecked byte-indexed table ran on into
+    unrelated code printed as `sub_102cafa90(swift.type_metadata
+    *async_context,...)`.
+
+    Stage / sub-stage: P4 prototype models (`kuna_swiftcall.rs`
+    `callee_evidence`): only the calls between the function's entry and
+    the next known entry count.
+
+    Assertions: `kuna_pick` (0x2c90) branches past the prologue of
+    `kuna_alloc` (0x2ca0), so its flow holds that function's call to
+    `swift_task_alloc` and the store through r14 after it; it takes the
+    selector alone. `kuna_alloc` itself calls `swift_task_alloc` and
+    keeps its context.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_runon_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x2c90</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x2ca0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="a run-on into an async body does not make the function async" min="1" max="1">void \* kuna_pick\(int4 a0\)</stringmatch>
+<stringmatch name="the run-on still reaches the neighbour's call" min="2" max="2">swift_task_alloc\(0x40\)</stringmatch>
+<stringmatch name="the async neighbour keeps its context" min="1" max="1">kuna_alloc\(swift\.AsyncContext \*async_context\)</stringmatch>
+</decompilertest>

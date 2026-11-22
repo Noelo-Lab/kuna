@@ -2280,7 +2280,8 @@ mod tests {
         // and kuna-swiftinfer / an unbound function that reads swiftself is Swift; a two-word result is a pair
         // and kuna-swiftnames / Swift accessors, witnesses, value witnesses and helpers named from code shape
         // and kuna-swiftconcurrency / the Swift concurrency runtime's prototypes and an async context read from the body
-        assert_eq!(count, 861, "corpus file count drifted");
+        // and kuna-swiftasyncextent / a flow that runs on into an async body does not make the function async
+        assert_eq!(count, 862, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

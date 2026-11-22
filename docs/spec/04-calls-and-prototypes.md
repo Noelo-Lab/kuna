@@ -4885,7 +4885,14 @@ is `async`, as is one whose body reads the `swiftasync` register (below),
 and the metadata's binding is upgraded to the matching model —
 `__swiftasynccall` with a nameless `async_context` hint on the `swiftasync`
 register — so a stripped image's resume partials take their context
-(`tests/stages/kuna-swiftasync.xml`, the stripped `swift_sigs_elf`).
+(`tests/stages/kuna-swiftasync.xml`, the stripped `swift_sigs_elf`). Only the
+calls inside the function's own extent count, from its entry up to the next
+known entry (`Architecture::function_entry_after`): a flow that ran on into
+another function's body — an unchecked jump table read past its last case, a
+branch into a neighbour's shared tail — holds that function's calls, which say
+nothing about this one's convention, and a plain function would otherwise take
+the neighbour's `async_context` (`tests/stages/kuna-swiftasyncextent.xml`,
+`swift_runon_elf`).
 
 The concurrency runtime itself is declared
 (`decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swiftconcurrency.rs`,
