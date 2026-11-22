@@ -2704,11 +2704,13 @@ classified:
   is left to the other rules too: newlib's ARM `__ieee754_fmodf` spills `s1` with `vstr` and reloads it
   as an integer, a read the entry walk does not count, and activating `s0`
   alone would have turned `fmodf`'s `__ieee754_fmodf(a0,a1)` into
-  `__ieee754_fmodf(a0)`. A float trial this rule activates does not count as
-  the call having recovered something for `calleearitybody`, which still plans
-  the whole list off the same body: crazyflie's `plan_current_goal` passes
-  `piecewise_eval_reversed` a struct-return pointer in `r0`, `traj` in `r1` and
-  `t` in `s0`, and keeps all three. A variadic callee is left alone: one that reads the model's last
+  `__ieee754_fmodf(a0)`. One shape still loses arguments to the early
+  activation: a call whose every trial the caller's scoring refuses (each the
+  caller's own incoming value) is one `calleearitybody` plans whole off the
+  callee's body, and an activated float makes it a call that recovered
+  something, so crazyflie's `plan_current_goal` passes
+  `piecewise_eval_reversed` only `t` in `s0`, not the struct-return pointer in
+  `r0` or `traj` in `r1`. A variadic callee is left alone: one that reads the model's last
   float argument register (a register-save prologue saves `xmm0`-`xmm7`) or that
   reads, on entry, a general register that carries the return value and no
   argument (SysV `test %al,%al` on the vector-register count). Two other gates

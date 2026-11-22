@@ -539,14 +539,6 @@ pub fn build_input_from_trials(
             .find(|t| t.is_used());
         t.is_some_and(|t| crate::p4_calls::kuna_swiftcall::is_self_storage(data, t.get_address(), t.get_size()))
     };
-    // (kuna `calleefloatreads`) A call passing only the float registers its
-    // callee's body reads is, for the callee-body rule, one that recovered
-    // nothing: that rule plans the whole list off the same body.
-    let only_float_reads = newparam.len() >= 2
-        && (0..fc.active_input().get_num_trials())
-            .map(|i| fc.active_input().get_trial(i))
-            .filter(|t| t.is_used())
-            .all(|t| crate::p4_calls::kuna_calleefloatreads::reads(data, fc, t.get_address(), t.get_size()));
     let pending = if newparam.len() < 2 {
         PendingCallFixup {
             rescue: crate::p4_calls::kuna_calleearityfwd::capture_empty_call(fc, data),
@@ -555,7 +547,7 @@ pub fn build_input_from_trials(
             pass_through,
             read_arg,
         }
-    } else if only_self || only_float_reads {
+    } else if only_self {
         PendingCallFixup {
             rescue: None,
             extend: crate::p4_calls::kuna_calleearitylive::capture_partial_call(fc, data),
