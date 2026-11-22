@@ -4449,7 +4449,10 @@ a few inputs far from any edge, an arithmetic encoding of `x == c` for a magic
 preconstrained stack pointer (the original's) is exact for its one stack value
 and says nothing about the others either. The expression's values at 4 further
 points, with atoms computed from their operands, are cached per node
-(`ExprArena::quick_vals`, at most 2^22 entries), and a value they already rule
+(`ExprArena::quick_vals`, at most 2^22 entries). The full test walks at most
+4096 distinct nodes; a larger expression is no identity to it (the emitter
+probes every op of an exploration that can reach 24,000 nodes, and at 2^16
+nodes hunatcha_themida spent its whole 600 s budget there). A value the quick points already rule
 out (neither constant nor any variable of its width plus a constant, found
 through a map from each variable's differences) costs no walk of its
 expression, so the probe on every XOR into a register stays cheap. An

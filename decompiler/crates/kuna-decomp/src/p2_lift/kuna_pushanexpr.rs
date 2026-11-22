@@ -2625,7 +2625,7 @@ const ID_STRUCTURED: usize = 20;
 /// Variables with at most this many free bits in total are tested at every assignment.
 const ID_EXHAUSTIVE_BITS: u32 = 8;
 /// Largest expression (distinct nodes) the identity test evaluates.
-const ID_MAX_NODES: usize = 1 << 16;
+const ID_MAX_NODES: usize = 1 << 12;
 const ID_SEED: u64 = 0x5eed_9e37_79b9_7f4a;
 
 /// The fixed pseudo-random word of sample `i` for variable `v` (splitmix64).
