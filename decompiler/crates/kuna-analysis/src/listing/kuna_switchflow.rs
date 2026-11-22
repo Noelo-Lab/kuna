@@ -64,7 +64,7 @@ use super::kuna_poolref::PoolImage;
 use super::kuna_switchtable::{
     self, boundary_leaves, delta_targets, feeders, fold, guard_cases, is_constant, key_of, keys_overlap,
     leaves_registers_unknown, leaving_branch, mask_limit, survives, targets, value_of, value_of_key,
-    Key, Reach, TableRead, Val, MAX_GUARD_INSNS,
+    Key, Reach, TableRead, Val, MAX_GUARD_INSNS, MIN_ENTRIES,
 };
 use super::xrefs::{decode, FullCapture, FullOp};
 
@@ -72,8 +72,9 @@ use super::xrefs::{decode, FullCapture, FullOp};
 /// function above its dispatch on gcc's `diff`, with room over.
 const MAX_FLOW_INSNS: usize = 512;
 
-/// How many instructions the range-check search visits.
-const MAX_GUARD_FLOW_INSNS: usize = 64;
+/// How many instructions the range-check search visits: a hundred-instruction
+/// block between the check and the jump fits, with room for the paths of a join.
+const MAX_GUARD_FLOW_INSNS: usize = 256;
 
 /// The intra-function edges of one walked body, as `(to, from)`.
 pub(super) struct Edges(Vec<(u64, u64)>);
@@ -350,9 +351,10 @@ fn bound_into(
 /// states, from the comparison in the branch itself or in the nearest
 /// instruction falling into it that writes what the condition reads, with the
 /// registers that comparison reads and the instructions above `p` down to it.
-/// `entering`: the dispatch is on the branch's taken side. There a check that
-/// sends its constant itself away (`cmp $5,%edi; jb disp`) is declined, as
-/// [`guard_cases`] would count one case too many.
+/// `entering`: the dispatch is on the branch's taken side. A check that sends
+/// its constant itself away from the dispatch (`cmp $5,%edi; jb disp`, or
+/// MSVC's `cmp ecx,5; jae default`: cases 0 to 4) states one case fewer than
+/// [`guard_cases`] counts.
 fn guard_at(
     flow: &mut Flow,
     p: u64,
@@ -368,7 +370,10 @@ fn guard_at(
     let reads = regs(reads);
     let count = |writer: &[FullOp], feeding: &[usize]| {
         let n = guard_cases(writer, feeding, ops, at, data, max_entries, entering)?;
-        (!entering || !boundary_leaves(writer, feeding, ops, at, data, entering)).then_some(n)
+        if boundary_leaves(writer, feeding, ops, at, data, entering) {
+            return n.checked_sub(1).filter(|&n| n >= MIN_ENTRIES);
+        }
+        Some(n)
     };
     if let Some(n) = count(&[], &feeding) {
         return Some((n, reads, Vec::new()));
@@ -473,7 +478,53 @@ fn selects(flow: &mut Flow, path: &[u64], (vma, upto, mut key): (u64, usize, Key
             key = next;
         }
     }
-    loaded.is_none() && names(key)
+    loaded.is_none() && (names(key) || path.last().is_some_and(|&at| copied_above(flow, at, key, compared)))
+}
+
+/// Is `key` a copy of a register in `compared` made in the straight-line code
+/// just above the comparison at `cmp`? MSVC copies the selector before its
+/// check and indexes the table by the copy (`mov r10d,ecx; cmp ecx,8; jae
+/// default; ... mov ecx,[rdx+r10*4+rvas]`). The copy may be a zero or sign
+/// extension or a chain of them; a write to `compared` between it and the
+/// comparison, any other write to `key`, a call or a block start is no copy.
+fn copied_above(flow: &mut Flow, cmp: u64, mut key: Key, compared: &[Key]) -> bool {
+    let data = flow.data;
+    let mut cur = cmp;
+    for _ in 0..MAX_GUARD_INSNS {
+        let preds: Vec<u64> = flow.edges.preds(cur).collect();
+        let &[w] = preds.as_slice() else { return false };
+        let Some(insn) = flow.insn(w) else { return false };
+        if w.wrapping_add(u64::from(insn.0)) != cur || !kuna_switchtable::falls_through(&insn.1) {
+            return false;
+        }
+        for op in insn.1.iter().rev() {
+            if leaves_registers_unknown(op.opcode) {
+                return false;
+            }
+            let Some(out) = op.out.as_ref().and_then(|vn| key_of(vn, data)) else { continue };
+            let input = op.ins.first().and_then(|vn| key_of(vn, data));
+            if !keys_overlap(out, key) {
+                if compared.iter().any(|c| keys_overlap(*c, out)) {
+                    return false;
+                }
+                continue;
+            }
+            if out != key {
+                if op.opcode == OpCode::CPUI_INT_ZEXT && input == Some(key) {
+                    continue;
+                }
+                return false;
+            }
+            let copy = matches!(op.opcode, OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT);
+            let Some(src) = input.filter(|_| copy) else { return false };
+            if compared.iter().any(|c| keys_overlap(*c, src)) {
+                return true;
+            }
+            key = src;
+        }
+        cur = w;
+    }
+    false
 }
 
 /// The address op `j` of `ops` loads from, spelled over the registers and

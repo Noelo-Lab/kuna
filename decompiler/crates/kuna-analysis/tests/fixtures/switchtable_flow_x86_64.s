@@ -404,6 +404,304 @@ field_next:
 	leaf	t_fn_2, 0x92
 	leaf	t_fn_3, 0x93
 
+# MSVC /O2: the selector copied before its range check (`mov r10d,ecx; cmp
+# ecx,8; jae default`), the compared register reused above the dispatch and
+# the table indexed by the copy.
+	.globl	copied_guard
+	.type	copied_guard, @function
+copied_guard:
+	mov	%edi, %r10d
+	mov	%esi, %r9d
+	cmp	$0x3, %edi
+	ja	.Lcg_out
+	add	$0x1, %edi
+	xor	$0x2, %edi
+	add	$0x3, %edi
+	xor	$0x4, %edi
+	add	$0x5, %edi
+	xor	$0x6, %edi
+	add	$0x7, %edi
+	xor	$0x8, %edi
+	add	$0x9, %edi
+	xor	$0xa, %edi
+	add	$0xb, %edi
+	xor	$0xc, %edi
+	add	$0xd, %edi
+	xor	$0xe, %edi
+	add	$0xf, %edi
+	xor	$0x10, %edi
+	add	$0x11, %edi
+	xor	$0x12, %edi
+	add	$0x13, %edi
+	xor	$0x14, %edi
+	lea	.Lcg_jt(%rip), %rcx
+	movslq	(%rcx,%r10,4), %rax
+	add	%rcx, %rax
+	jmp	*%rax
+.Lcg_c0:
+	jmp	t_cg_0
+.Lcg_c1:
+	jmp	t_cg_1
+.Lcg_c2:
+	jmp	t_cg_2
+.Lcg_c3:
+	jmp	t_cg_3
+.Lcg_out:
+	mov	%r9d, %eax
+	ret
+	.size	copied_guard, .-copied_guard
+
+# The negative: the same copy, but the compared register is written between
+# it and the comparison, so the check is of another value and bounds nothing.
+	.globl	copied_clobbered
+	.type	copied_clobbered, @function
+copied_clobbered:
+	mov	%edi, %r10d
+	mov	%esi, %edi
+	cmp	$0x3, %edi
+	ja	.Lcc_out
+	add	$0x1, %edi
+	xor	$0x2, %edi
+	add	$0x3, %edi
+	xor	$0x4, %edi
+	add	$0x5, %edi
+	xor	$0x6, %edi
+	add	$0x7, %edi
+	xor	$0x8, %edi
+	add	$0x9, %edi
+	xor	$0xa, %edi
+	add	$0xb, %edi
+	xor	$0xc, %edi
+	add	$0xd, %edi
+	xor	$0xe, %edi
+	add	$0xf, %edi
+	xor	$0x10, %edi
+	add	$0x11, %edi
+	xor	$0x12, %edi
+	add	$0x13, %edi
+	xor	$0x14, %edi
+	lea	.Lcc_jt(%rip), %rcx
+	movslq	(%rcx,%r10,4), %rax
+	add	%rcx, %rax
+	jmp	*%rax
+.Lcc_c0:
+	jmp	t_cc_0
+.Lcc_c1:
+	jmp	t_cc_1
+.Lcc_out:
+	ret
+	.size	copied_clobbered, .-copied_clobbered
+
+# A check entered by its taken side with a strict bound (`cmp $4,%edi; jb
+# disp`: cases 0 to 3), the base hoisted above an if/else whose first arm
+# ends in `jmp`. The table is followed by `jb_next`'s, so a fifth case would
+# be a jump into it.
+	.globl	jb_guard
+	.type	jb_guard, @function
+jb_guard:
+	push	%rbx
+	push	%r12
+	mov	%edi, %r12d
+	lea	.Ljb_jt(%rip), %rbx
+	test	$0x1, %sil
+	jne	.Ljb_odd
+	call	branch_b
+	jmp	.Ljb_merge
+.Ljb_odd:
+	call	branch_a
+.Ljb_merge:
+	cmp	$0x4, %r12d
+	jb	.Ljb_disp
+	jmp	.Ljb_out
+.Ljb_disp:
+	mov	%r12d, %eax
+	movslq	(%rbx,%rax,4), %rax
+	add	%rbx, %rax
+	jmp	*%rax
+.Ljb_c0:
+	call	t_jb_0
+	jmp	.Ljb_out
+.Ljb_c1:
+	call	t_jb_1
+	jmp	.Ljb_out
+.Ljb_c2:
+	call	t_jb_2
+	jmp	.Ljb_out
+.Ljb_c3:
+	call	t_jb_3
+.Ljb_out:
+	pop	%r12
+	pop	%rbx
+	ret
+	.size	jb_guard, .-jb_guard
+
+# The control for `jb_guard`: a switch the slice reads, whose table follows
+# `jb_guard`'s.
+	.globl	jb_next
+	.type	jb_next, @function
+jb_next:
+	cmp	$0x3, %edi
+	ja	.Ljn_out
+	mov	%edi, %eax
+	lea	.Ljn_jt(%rip), %rcx
+	movslq	(%rcx,%rax,4), %rax
+	add	%rcx, %rax
+	jmp	*%rax
+.Ljn_c0:
+	jmp	t_jn_0
+.Ljn_c1:
+	jmp	t_jn_1
+.Ljn_c2:
+	jmp	t_jn_2
+.Ljn_c3:
+	jmp	t_jn_3
+.Ljn_out:
+	ret
+	.size	jb_next, .-jb_next
+
+# The range check a hundred straight-line instructions above the jump.
+	.globl	long_guard
+	.type	long_guard, @function
+long_guard:
+	cmp	$0x3, %edi
+	ja	.Llg_out
+	add	$0x1, %esi
+	xor	$0x2, %esi
+	add	$0x3, %esi
+	xor	$0x4, %esi
+	add	$0x5, %esi
+	xor	$0x6, %esi
+	add	$0x7, %esi
+	xor	$0x8, %esi
+	add	$0x9, %esi
+	xor	$0xa, %esi
+	add	$0xb, %esi
+	xor	$0xc, %esi
+	add	$0xd, %esi
+	xor	$0xe, %esi
+	add	$0xf, %esi
+	xor	$0x10, %esi
+	add	$0x11, %esi
+	xor	$0x12, %esi
+	add	$0x13, %esi
+	xor	$0x14, %esi
+	add	$0x15, %esi
+	xor	$0x16, %esi
+	add	$0x17, %esi
+	xor	$0x18, %esi
+	add	$0x19, %esi
+	xor	$0x1a, %esi
+	add	$0x1b, %esi
+	xor	$0x1c, %esi
+	add	$0x1d, %esi
+	xor	$0x1e, %esi
+	add	$0x1f, %esi
+	xor	$0x20, %esi
+	add	$0x21, %esi
+	xor	$0x22, %esi
+	add	$0x23, %esi
+	xor	$0x24, %esi
+	add	$0x25, %esi
+	xor	$0x26, %esi
+	add	$0x27, %esi
+	xor	$0x28, %esi
+	add	$0x29, %esi
+	xor	$0x2a, %esi
+	add	$0x2b, %esi
+	xor	$0x2c, %esi
+	add	$0x2d, %esi
+	xor	$0x2e, %esi
+	add	$0x2f, %esi
+	xor	$0x30, %esi
+	add	$0x31, %esi
+	xor	$0x32, %esi
+	add	$0x33, %esi
+	xor	$0x34, %esi
+	add	$0x35, %esi
+	xor	$0x36, %esi
+	add	$0x37, %esi
+	xor	$0x38, %esi
+	add	$0x39, %esi
+	xor	$0x3a, %esi
+	add	$0x3b, %esi
+	xor	$0x3c, %esi
+	add	$0x3d, %esi
+	xor	$0x3e, %esi
+	add	$0x3f, %esi
+	xor	$0x40, %esi
+	add	$0x41, %esi
+	xor	$0x42, %esi
+	add	$0x43, %esi
+	xor	$0x44, %esi
+	add	$0x45, %esi
+	xor	$0x46, %esi
+	add	$0x47, %esi
+	xor	$0x48, %esi
+	add	$0x49, %esi
+	xor	$0x4a, %esi
+	add	$0x4b, %esi
+	xor	$0x4c, %esi
+	add	$0x4d, %esi
+	xor	$0x4e, %esi
+	add	$0x4f, %esi
+	xor	$0x50, %esi
+	add	$0x51, %esi
+	xor	$0x52, %esi
+	add	$0x53, %esi
+	xor	$0x54, %esi
+	add	$0x55, %esi
+	xor	$0x56, %esi
+	add	$0x57, %esi
+	xor	$0x58, %esi
+	add	$0x59, %esi
+	xor	$0x5a, %esi
+	add	$0x5b, %esi
+	xor	$0x5c, %esi
+	add	$0x5d, %esi
+	xor	$0x5e, %esi
+	add	$0x5f, %esi
+	xor	$0x60, %esi
+	add	$0x61, %esi
+	xor	$0x62, %esi
+	add	$0x63, %esi
+	xor	$0x64, %esi
+	mov	%edi, %eax
+	lea	.Llg_jt(%rip), %rcx
+	movslq	(%rcx,%rax,4), %rax
+	add	%rcx, %rax
+	jmp	*%rax
+.Llg_c0:
+	jmp	t_lg_0
+.Llg_c1:
+	jmp	t_lg_1
+.Llg_c2:
+	jmp	t_lg_2
+.Llg_c3:
+	jmp	t_lg_3
+.Llg_out:
+	mov	%esi, %eax
+	ret
+	.size	long_guard, .-long_guard
+
+	leaf	t_cg_0, 0xa0
+	leaf	t_cg_1, 0xa1
+	leaf	t_cg_2, 0xa2
+	leaf	t_cg_3, 0xa3
+	leaf	t_cc_0, 0xa8
+	leaf	t_cc_1, 0xa9
+	leaf	t_jb_0, 0xb0
+	leaf	t_jb_1, 0xb1
+	leaf	t_jb_2, 0xb2
+	leaf	t_jb_3, 0xb3
+	leaf	t_jn_0, 0xb8
+	leaf	t_jn_1, 0xb9
+	leaf	t_jn_2, 0xba
+	leaf	t_jn_3, 0xbb
+	leaf	t_lg_0, 0xc0
+	leaf	t_lg_1, 0xc1
+	leaf	t_lg_2, 0xc2
+	leaf	t_lg_3, 0xc3
+
 	.section .rodata
 	.align 4
 .Lli_jt:
@@ -453,4 +751,27 @@ field_next:
 	.long	.Lfn_c1-.Lfn_jt
 	.long	.Lfn_c2-.Lfn_jt
 	.long	.Lfn_c3-.Lfn_jt
+.Lcg_jt:
+	.long	.Lcg_c0-.Lcg_jt
+	.long	.Lcg_c1-.Lcg_jt
+	.long	.Lcg_c2-.Lcg_jt
+	.long	.Lcg_c3-.Lcg_jt
+.Lcc_jt:
+	.long	.Lcc_c0-.Lcc_jt
+	.long	.Lcc_c1-.Lcc_jt
+.Ljb_jt:
+	.long	.Ljb_c0-.Ljb_jt
+	.long	.Ljb_c1-.Ljb_jt
+	.long	.Ljb_c2-.Ljb_jt
+	.long	.Ljb_c3-.Ljb_jt
+.Ljn_jt:
+	.long	.Ljn_c0-.Ljn_jt
+	.long	.Ljn_c1-.Ljn_jt
+	.long	.Ljn_c2-.Ljn_jt
+	.long	.Ljn_c3-.Ljn_jt
+.Llg_jt:
+	.long	.Llg_c0-.Llg_jt
+	.long	.Llg_c1-.Llg_jt
+	.long	.Llg_c2-.Llg_jt
+	.long	.Llg_c3-.Llg_jt
 	.section .note.GNU-stack,"",@progbits

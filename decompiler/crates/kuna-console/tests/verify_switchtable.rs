@@ -464,7 +464,7 @@ struct Flow {
     callees: [u64; 4],
 }
 
-const FLOW: [Flow; 7] = [
+const FLOW: [Flow; 10] = [
     Flow {
         shape: "base hoisted out of the loop, above an if/else whose first arm ends in jmp",
         fixture: "switchtable_flow_x86_64",
@@ -512,6 +512,30 @@ const FLOW: [Flow; 7] = [
         branch: 0x100291,
         cases: [0x100293, 0x10029a, 0x1002a1, 0x1002a8],
         callees: [0x1002cb, 0x1002d1, 0x1002d7, 0x1002dd],
+    },
+    Flow {
+        shape: "MSVC: the selector copied before its check, the table indexed by the copy",
+        fixture: "switchtable_flow_x86_64",
+        dispatch: 0x100354,
+        branch: 0x1003a9,
+        cases: [0x1003ab, 0x1003b0, 0x1003b5, 0x1003ba],
+        callees: [0x1005f3, 0x1005f9, 0x1005ff, 0x100605],
+    },
+    Flow {
+        shape: "a check entered by its taken side with a strict bound (cmp $4; jb disp)",
+        fixture: "switchtable_flow_x86_64",
+        dispatch: 0x100424,
+        branch: 0x100455,
+        cases: [0x100457, 0x10045e, 0x100465, 0x10046c],
+        callees: [0x100617, 0x10061d, 0x100623, 0x100629],
+    },
+    Flow {
+        shape: "a hundred and four straight-line instructions between the range check and the jump",
+        fixture: "switchtable_flow_x86_64",
+        dispatch: 0x1004a1,
+        branch: 0x1005e6,
+        cases: [0x1005e8, 0x1005ea, 0x1005ec, 0x1005ee],
+        callees: [0x100647, 0x10064d, 0x100653, 0x100659],
     },
     Flow {
         shape: "MSVC: the second switch through a shared LEA RDI,[__ImageBase]",
@@ -568,13 +592,16 @@ fn a_callee_behind_a_hoisted_base_or_far_guard_has_its_dispatcher_as_caller() {
 
 /// A miss is never silent: every range-checked computed jump of the flow
 /// fixtures is read, and the ones with no bound — `unrelated_guard`'s
-/// unchecked dispatch at `0x1001ad` and `field_guard`'s at `0x100300`, and the
+/// unchecked dispatch at `0x1001ad`, `field_guard`'s at `0x100300` and
+/// `copied_clobbered`'s at `0x100417`, and the
 /// tail jump through a register in
 /// `callproto_x86_64`'s `report` (`jmp r8` at `0x13b0`, no table) — are
 /// reported as unresolved.
 #[test]
 fn an_unread_computed_jump_is_reported_and_a_read_one_is_not() {
-    for (fixture, unread) in [("switchtable_flow_x86_64", &[0x1001ad, 0x100300][..]), ("pe_switchshared_x86_64.exe", &[])] {
+    for (fixture, unread) in
+        [("switchtable_flow_x86_64", &[0x1001ad, 0x100300, 0x100417][..]), ("pe_switchshared_x86_64.exe", &[])]
+    {
         let idx = index_of(fixture);
         let left: Vec<u64> = idx.unresolved_computed_jumps().collect();
         assert_eq!(left, unread, "{fixture}: {left:#x?}");
@@ -634,4 +661,23 @@ fn a_check_copied_into_both_arms_bounds_the_join() {
 fn a_selector_loaded_where_the_comparison_loads_is_bounded() {
     let idx = index_of("switchtable_flow_x86_64");
     assert_eq!(jumps_from(&idx, 0x100291), [0x100293, 0x10029a, 0x1002a1, 0x1002a8]);
+}
+
+/// A copy of the selector is the selector only while the compared register
+/// still holds what was copied: `copied_clobbered` copies `%edi` into `%r10d`,
+/// then overwrites `%edi` before `cmp $3,%edi`, so that check bounds nothing.
+#[test]
+fn a_copy_of_a_register_compared_after_it_changed_bounds_no_table() {
+    let idx = index_of("switchtable_flow_x86_64");
+    assert_eq!(jumps_from(&idx, 0x100417), Vec::<u64>::new());
+}
+
+/// `cmp $4,%r12d; jb disp` sends 4 itself to the default: the table has four
+/// cases, and `jb_next`'s table right after it is not read as a fifth.
+#[test]
+fn a_strict_check_entered_by_its_taken_side_states_its_constant() {
+    let idx = index_of("switchtable_flow_x86_64");
+    assert_eq!(jumps_from(&idx, 0x100455), [0x100457, 0x10045e, 0x100465, 0x10046c]);
+    assert_eq!(jumps_from(&idx, 0x10048a), [0x10048c, 0x100491, 0x100496, 0x10049b]);
+    assert_eq!(idx.function_containing(0x10048a), Some(0x100475));
 }

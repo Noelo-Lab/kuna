@@ -10704,22 +10704,26 @@ fall-through or by its taken side, read by the same rule as before. clang
 `-O3` copies a switch's check into both arms of an `if/else` above the
 dispatch's block, `cmp $7,%r15d; jbe disp` in one and `cmp $7,%r15d; ja
 default` falling into it in the other; a join takes the largest count of its
-paths. A check the path leaves by its taken side that sends its constant
-itself away (`cmp $5,%edi; jb disp`, where `jbe` would keep 5) is declined,
-since the count rule states one case more than such a check admits. Each
+paths. A check that sends its constant itself away from the dispatch (`cmp
+$5,%edi; jb disp` by its taken side, MSVC's `cmp ecx,5; jae default` by its
+fall-through, where `jbe`/`ja` would keep 5) states one case fewer than the
+count rule reads: cases 0 to 4. Each
 check must compare the **selector**: the addend of the sum that addresses
 the table itself (the sum the table's load reads from, or one whose constant
 is the table), which the fold could not value, followed up the path through
 copies, extensions and arithmetic with a constant (the steps the masked index
-is followed by), must reach the comparison still naming a register it reads,
-or be loaded from the address the comparison loads from (gcc's `cmpb
+is followed by), must reach the comparison still naming a register it reads, or a
+copy of one made in the straight-line code just above the comparison (MSVC
+copies the selector before its check and indexes the table by the copy:
+`mov r10d,ecx; cmp ecx,8; jae default; ...; mov ecx,[rdx+r10*4+rvas]`, with
+no write to `ecx` between the copy and the comparison), or be loaded from the address the comparison loads from (gcc's `cmpb
 $0x78,(%rax,%rcx); ja; movzbl (%rax,%rcx),%edi`) with no store, call or write
 to that address's registers in between; a register the calling convention
 does not preserve is a different value past a call. Any other constant plus
 unknown on the way is no index: a field's address (`mov 8(%rdi),%eax`) is
 one, and its base register is what a comparison of another field (`cmpl
 $0x800,4(%rdi)`) reads. The function's entry, a path that comes back to
-itself, more than 64 predecessors visited, a conditional branch that is no
+itself, more than 256 predecessors visited, a conditional branch that is no
 range check and a comparison of another value all bound nothing. Without that
 test the far reach read
 comparisons the slice never could as table sizes: Rust's `write_char` matches
