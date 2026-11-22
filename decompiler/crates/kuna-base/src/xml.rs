@@ -2272,7 +2272,7 @@ mod tests {
         // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
         // and kuna-uefi / an EFI-subsystem PE gets the UEFI entry prototype, table types and GUID names
         // and kuna-cortexmscs / Cortex-M System Control Space registers are members of typed volatile globals
-        assert_eq!(count, 854, "corpus file count drifted");
+        assert_eq!(count, 863, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
