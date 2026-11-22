@@ -6989,9 +6989,16 @@ at a direct, unlocked, non-variadic CALL is an argument when all of these hold:
   rule sees it, so `check_input_trial_use` scores such a trial inactive, as it
   scores the plain input, when the callee's statement has a parameter there.
   The call printed `add_pair()` while `add_pair(S *)` was recovered in the same
-  run. Over gcc -O2 -fno-inline builds of bzip2, gzip, grep, find and libcmark
-  this gives 37 of 121 such calls their argument (fixture
-  `passthrough_loopfwd_x86_64`).
+  run (fixture `passthrough_loopfwd_x86_64`). Each INDIRECT on the way must
+  guard a direct call, not a PLT stub, whose decoded callee body is proven never
+  to write the register (`call_leaves_alone`, the callee-write probe
+  `calleepreserves` reads). The convention lets any other call clobber an
+  argument register, and the cspec gives that clobber an unknown effect, so the
+  non-creating INDIRECT says nothing about whether the value survived. Without
+  the proof, AArch64 C code gained parameters nobody passes: dash `killcmd`
+  became `killcmd(int, void *, unsigned long a2)` forwarding `x2` past `kill`
+  and `strerror` to `sh_warnx`, whose `va_start` save reads `x2` (fixture
+  `passthrough_clobbered_aarch64`).
 
 The variadic-call test itself reads the writing instruction's own ops as its own:
 `xor %eax,%eax` reads the register it zeroes, as its operand and again in `ZF =
