@@ -148,3 +148,57 @@ fn mutable_memory_is_not_the_file_and_calls_overwrite_it() {
     let ro = s.read_mem(&mut a, &img, None, 0x1000, 4);
     assert!(a.is_const(ro).is_some());
 }
+
+#[test]
+fn file_reads_see_writable_bytes_and_drop_cached_symbols() {
+    let mut a = ExprArena::new();
+    let mut s = State::new(false, (0x200, 0x216));
+    let img = DataImage;
+    // an ordinary read of writable memory caches the entry-value symbol
+    let g = s.read_mem(&mut a, &img, None, 0x1810, 2);
+    assert!(a.is_const(g).is_none());
+    // a fetch through the VPC reads the file's bytes all the same
+    let f = s.read_mem_file(&mut a, &img, None, 0x1810, 2);
+    assert_eq!(a.is_const(f), Some(0x1110));
+    // and a byte the path wrote reads what it wrote
+    let k = a.cst(1, 0x55);
+    s.write_mem(None, 0x1811, k, 1);
+    let w = s.read_mem_file(&mut a, &img, None, 0x1810, 2);
+    assert_eq!(a.is_const(w), Some(0x5510));
+}
+
+#[test]
+fn a_copy_reads_its_source_lazily_until_overwritten_or_forgotten() {
+    let mut a = ExprArena::new();
+    let mut s = State::new(false, (0x200, 0x216));
+    let img = DataImage;
+    let rsp = a.var_of(VarKind::InitReg { offset: 0x20 }, 8, false);
+    let sp = a.as_var(rsp);
+    // a byte the path wrote to the source before the copy is copied too
+    let k = a.cst(1, 0x99);
+    s.write_mem(None, 0x1802, k, 1);
+    assert!(s.copy_in(sp, -0x400, 0x1800, 0x100));
+    assert_eq!(s.copies.len(), 1);
+    assert_eq!(s.copy_source(sp, -0x3ff), Some(0x1801));
+    assert_eq!(s.copy_source(sp, -0x300), None);
+    // the unwritten destination reads the (writable) source's entry value,
+    // and its file bytes through a fetch
+    let src = s.read_mem(&mut a, &img, None, 0x1804, 4);
+    assert_eq!(s.read_mem(&mut a, &img, sp, -0x3fc, 4), src);
+    let f = s.read_mem_file(&mut a, &img, sp, -0x400, 4);
+    assert_eq!(a.is_const(f), Some(0x0399_0100));
+    // a store over the copy wins, and forgetting part of it keeps the rest
+    let w = a.cst(4, 7);
+    s.write_mem(sp, -0x3f0, w, 4);
+    assert_eq!(s.read_mem(&mut a, &img, sp, -0x3f0, 4), w);
+    s.forget_copies(sp, -0x380, -0x370);
+    assert_eq!(s.copies.len(), 2);
+    assert_eq!(s.copy_source(sp, -0x378), None);
+    assert_eq!(s.copy_source(sp, -0x36f), Some(0x1891));
+    // a copy out of another copy's concrete destination is refused
+    assert!(s.copy_in(None, 0x1900, 0x1800, 0x10));
+    assert!(!s.copy_in(sp, -0x800, 0x1900, 0x10));
+    // an external call drops a concrete destination in mutable memory
+    s.clobber_mutable(&img, 1);
+    assert!(s.copies.iter().all(|c| c.base.is_some()));
+}
