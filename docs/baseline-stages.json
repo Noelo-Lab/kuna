@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4957,
-    4957
+    4960,
+    4960
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1389,6 +1389,9 @@
     "data:JUMPTABLEMAX #2: every case of the table is a case label",
     "data:JUMPTABLEMAX #3: `option jumptablemax 2` refuses the four-case table and the dispatch prints as a call",
     "data:JUMPTABLEMAX #4: the lower cap prints no case label, so the one `case 0:` is the default pass",
+    "data:JUMPTABLESLOTS #1: the 41-slot table indexed by x >> 8 stays a computed call",
+    "data:JUMPTABLESLOTS #2: no value of x prints as its own case label",
+    "data:JUMPTABLESLOTS #3: the guard on x still prints",
     "data:Joined callback both fields come from one invocation",
     "data:Joined callback both fields remain live",
     "data:Joined callback callee side effect remains intact",

@@ -2361,6 +2361,14 @@ the case targets.
    bounds the arms the structurer sees: clang lowers one sparse switch into
    range-checked tables of several thousand entries that reach a few hundred
    arms, while a switch with thousands of distinct arms stays a computed call.
+   Such a table also fails when it admits more than four values per table slot
+   (`GUARDED_VALUES_PER_SLOT`): the slots are the distinct entries its
+   emulated values load (`JumpTable::read_slots`), or its distinct addresses
+   when it loads none. A table indexed by the selector reads one slot per
+   value, but gcc guards the original value and indexes with one derived from
+   it (`if (x <= 0x28ff) goto tbl[x >> 8]`: 0x2900 values over 41 slots), and
+   every value would print as its own `case` label. Tables of at most
+   `max_jumptable_size` entries are not affected.
 5. **Enumeration.** `jumptable.rs (JumpBasicModel::build_addresses_basic)`
    emulates the meld path once per in-range value on the one-path syntax-tree
    emulator (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_emulatefunction.rs

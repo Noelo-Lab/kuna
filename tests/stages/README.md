@@ -74,6 +74,11 @@ both tables' labels and one `default:`. In `m` the default arm starts with
 `if (x == 0x60) return ...;`, which prints as `case 0x60:`. The off run keeps
 the `if` forms.
 
+`kuna-jumptableslots.xml` checks the slot bound on a guard-bounded table past
+`jumptablemax`. gcc -O2 guards `x <= 0x28ff` and indexes a 41-entry table with
+`x >> 8`, so the guard admits 0x2900 values over 41 slots. The table stays a
+computed call instead of a switch with a `case` label for each value of `x`.
+
 `kuna-switchsingle.xml` checks that a jump table whose four entries all name one
 block becomes straight-line code with the "all go to same destination" warning
 instead of a `switch` with only a `default` arm.
