@@ -6562,7 +6562,12 @@ every other binary's pass list is byte-identical to before the pass existed):
   register tracker that accepts only the forms such a helper uses (frame
   setup and teardown, register moves, `mov #imm`, `adrp`/`add`/`adr`, a load
   through a constant page, the `-8` table load, the slot load, one call for
-  the metadata and the witness call or tail jump, `ret`); the metadata must
+  the metadata and the witness call, `ret`). The helper must return the
+  address it was given (its `dest` for a copy or take), as swiftc's helpers
+  do: a value witness function of the same shape (the `destroy` of a struct
+  whose one non-trivial field is resilient calls that field's witness and
+  returns nothing) is not a helper of the field's type, and a function the
+  witness tables or a record already claim is skipped. The metadata must
   come from an accessor call with request 0 (a local type's accessor, or an
   import whose symbol is a type metadata accessor), a local type's static
   metadata (kind and descriptor checked), a pointer slot (a bound import's

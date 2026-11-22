@@ -24,9 +24,11 @@
 //! the value it returns, and the accessor a merged one takes).
 //!
 //! The body is decoded by a small register tracker over the few instruction
-//! forms the helpers use; any other instruction, a second call, or an
-//! argument that does not line up with the witness's signature leaves the
-//! function alone. The metadata must come from a local type's accessor, an
+//! forms the helpers use; any other instruction, a second call, an argument
+//! that does not line up with the witness's signature, or a body that does
+//! not return the address it was given (a value witness function of the
+//! same shape) leaves the function alone, as does a function another record
+//! already claims. The metadata must come from a local type's accessor, an
 //! imported type metadata accessor, a local type's static metadata, or an
 //! argument. arm64 only.
 
@@ -79,7 +81,8 @@ enum Val {
     Loaded(u64),
     Meta,
     Table,
-    Witness,
+    /// The witness at this table offset.
+    Witness(u64),
     Result,
 }
 
@@ -114,8 +117,7 @@ pub fn recognise(words: &[u32], pc: u64) -> Option<Helper> {
     }
     let mut source = None;
     let mut witness: Option<(u64, Vec<Val>)> = None;
-    let mut slot = 0;
-    let mut tail = false;
+    let mut done = false;
     for (i, &w) in words.iter().enumerate().take(MAX_BODY) {
         let here = pc.wrapping_add(4 * i as u64);
         let rd = (w & 31) as usize;
@@ -127,12 +129,13 @@ pub fn recognise(words: &[u32], pc: u64) -> Option<Helper> {
         ) && rn == 31
         {
             if w & 0x0040_0000 != 0 {
-                // A reload of saved registers: the callee-saved ones keep
-                // what they held, and x29/x30 are not tracked.
+                // A reload of saved registers: they hold the caller's values.
                 let rt2 = ((w >> 10) & 31) as usize;
                 if rd < 19 || rt2 < 19 {
                     return None;
                 }
+                regs[rd] = Val::Unknown;
+                regs[rt2] = Val::Unknown;
             }
             continue;
         }
@@ -195,10 +198,7 @@ pub fn recognise(words: &[u32], pc: u64) -> Option<Helper> {
         if w & 0xffc0_0000 == 0xf940_0000 {
             let off = ((w >> 10) & 0xfff) as u64 * 8;
             regs[rd] = match regs[rn] {
-                Val::Table if witness.is_none() => {
-                    slot = off;
-                    Val::Witness
-                }
+                Val::Table if witness.is_none() => Val::Witness(off),
                 Val::Const(page) => Val::Loaded(page.wrapping_add(off)),
                 _ => return None,
             };
@@ -213,8 +213,11 @@ pub fn recognise(words: &[u32], pc: u64) -> Option<Helper> {
         };
         if let Some(through) = call {
             match through {
-                Some(Val::Witness) => {
-                    witness = Some((slot, regs[..3].to_vec()));
+                Some(Val::Witness(off)) => {
+                    if witness.is_some() {
+                        return None;
+                    }
+                    witness = Some((off, regs[..3].to_vec()));
                     regs[0] = Val::Result;
                 }
                 _ => {
@@ -228,8 +231,9 @@ pub fn recognise(words: &[u32], pc: u64) -> Option<Helper> {
                         (Some(Val::Arg(a)), Val::Const(0)) => Source::Argument(a),
                         (None, Val::Arg(a)) => {
                             let mut args = vec![a];
-                            if let Val::Arg(b) = regs[1] {
-                                args.push(b);
+                            match regs[1] {
+                                Val::Arg(b) if b != a => args.push(b),
+                                _ => {}
                             }
                             Source::Forwarded(target, args)
                         }
@@ -243,14 +247,13 @@ pub fn recognise(words: &[u32], pc: u64) -> Option<Helper> {
             }
             continue;
         }
-        if w & 0xffff_fc1f == 0xd61f_0000 && regs[rn] == Val::Witness && witness.is_none() {
-            witness = Some((slot, regs[..3].to_vec()));
-            tail = true;
-            break;
-        }
         if w == 0xd65f_03c0 {
+            done = true;
             break;
         }
+        return None;
+    }
+    if !done {
         return None;
     }
     let (slot, args) = witness?;
@@ -275,9 +278,11 @@ pub fn recognise(words: &[u32], pc: u64) -> Option<Helper> {
     if values.iter().any(|v| consumed.contains(v)) {
         return None;
     }
-    let returns = match (tail, regs[0]) {
-        (true, _) | (false, Val::Result) => None,
-        (false, Val::Arg(a)) if values.contains(&a) => Some(a),
+    // swiftc's helper returns the address it was given (`dest` for a copy
+    // or take); a value witness function, which returns the witness's result
+    // or nothing, is not one.
+    let returns = match regs[0] {
+        Val::Arg(a) if a == values[0] => Some(a),
         _ => return None,
     };
     Some(Helper {
@@ -345,7 +350,7 @@ pub fn claim(reader: &Reader, md: &Metadata, namer: &Namer, entries: &[u64]) -> 
         .collect();
     let mut out = Helpers::default();
     for &f in entries {
-        if !namer.is_code(f) {
+        if !namer.is_code(f) || namer.claims.borrow().contains_key(&f) {
             continue;
         }
         let Some(bytes) = [MAX_BODY * 4, 64, 32]
