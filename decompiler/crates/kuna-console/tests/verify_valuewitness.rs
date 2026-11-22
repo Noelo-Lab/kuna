@@ -146,6 +146,14 @@ fn witness_calls_through_metadata_are_named() {
 }
 
 #[test]
+fn a_generic_argument_table_read_at_its_counts_is_the_common_table() {
+    let c = decompile(load(true), 0x2f60);
+    assert!(c.contains("swift.value_witness_table *v1;"), "{c}");
+    assert!(c.contains("v1->extraInhabitantCount"), "{c}");
+    assert!(!c.contains("enum_value_witness_table"), "{c}");
+}
+
+#[test]
 fn valuewitness_off_names_and_types_nothing() {
     let prog = load(false);
     for &(vma, name) in WITNESSES {
