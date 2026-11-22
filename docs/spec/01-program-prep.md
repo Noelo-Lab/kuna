@@ -2770,7 +2770,10 @@ funcsym stream:
   call; one `b <target>` on arm64). No loader names it, so it stays
   `sub_<addr>` and every call through it is anonymous. While committing the
   entries, the engine decodes the first instruction of every discovered entry
-  and keeps each direct unconditional branch to another address. After every
+  and keeps each direct unconditional branch to another address whose p-code
+  is that one BRANCH. A delay slot is part of its branch, so a MIPS `j f`
+  whose slot holds `addiu $a0,$a0,16` (a `this` adjustor) is not a thunk,
+  while `j f; nop` is. After every
   other name source, a thunk still named by a placeholder is renamed
   `j_<target>` when its target's function has a name that is not a
   placeholder. A thunk to a thunk is named in the next round (`j_j_<name>`),
