@@ -29,6 +29,7 @@
 
 pub mod descriptors;
 pub mod kuna_swiftcall;
+pub mod kuna_swiftobjcthunk;
 pub mod kuna_swifttypes;
 pub mod kuna_swiftwitness;
 
@@ -128,6 +129,11 @@ impl AnalysisPass for SwiftMetadataPass {
             bind_slots: &bind_slots,
         };
         let md = reader.read_all(ctx.file, names, ctx.bytes.len());
+        let objc_members = if ctx.file.format() == object::BinaryFormat::MachO {
+            kuna_swiftobjcthunk::members(ctx.file, ctx.bytes, &img, &md, &imports)
+        } else {
+            Default::default()
+        };
         // Only a code address may be named as a function: a base-protocol
         // or associated-type witness row points at data.
         let code: Vec<(u64, u64)> = ctx
@@ -139,6 +145,7 @@ impl AnalysisPass for SwiftMetadataPass {
         let namer = Namer {
             md: &md,
             imports: &imports,
+            objc_members,
             memo: Default::default(),
             code,
             bodies: crate::analyzers::entry::stated_function_bodies(ctx.file, ctx.bytes),
@@ -281,6 +288,9 @@ const NAME_BYTES: usize = 16 << 20;
 #[derive(Clone, Debug)]
 pub struct Claim {
     pub name: String,
+    /// The slot's positional name (`Class.vtable#N.kind`) when `name` is the
+    /// member an `@objc` thunk gives it.
+    pub positional: Option<String>,
     pub owner: String,
     pub requirement: Option<(String, String)>,
     pub getter: bool,
@@ -297,6 +307,9 @@ fn insn_align(file: &object::File) -> u64 {
 pub struct Namer<'a> {
     md: &'a Metadata,
     imports: &'a HashMap<u64, String>,
+    /// The member name an `@objc` thunk gives a method descriptor
+    /// ([`kuna_swiftobjcthunk::members`]), by descriptor address.
+    objc_members: kuna_swiftobjcthunk::Members,
     memo: std::cell::RefCell<HashMap<u64, Option<String>>>,
     code: Vec<(u64, u64)>,
     /// The function bodies the image states
@@ -408,6 +421,19 @@ impl Namer<'_> {
         requirement: Option<(String, String)>,
         getter: bool,
     ) {
+        self.claim_slot(addr, (name, None), owner, requirement, getter);
+    }
+
+    /// [`Self::claim`] with the positional name of a slot an `@objc` thunk
+    /// names ([`Self::slot_name`]).
+    fn claim_slot(
+        &self,
+        addr: u64,
+        (name, positional): (String, Option<String>),
+        owner: &str,
+        requirement: Option<(String, String)>,
+        getter: bool,
+    ) {
         if !self.is_code(addr)
             || addr % self.insn_align != 0
             || crate::analyzers::entry::inside_body(&self.bodies, addr)
@@ -425,6 +451,7 @@ impl Namer<'_> {
             .or_default()
             .push(Claim {
                 name,
+                positional,
                 owner: owner.to_string(),
                 requirement,
                 getter,
@@ -505,20 +532,14 @@ impl Namer<'_> {
                     for e in &ctx.vtable {
                         if let Some(f) = e.impl_addr {
                             let getter = e.kind == descriptors::MethodKind::Getter && e.instance;
-                            self.claim(
-                                f,
-                                format!("{path}.vtable#{}.{}", e.index, e.kind.tag()),
-                                &path,
-                                None,
-                                getter,
-                            );
+                            self.claim_slot(f, self.slot_name(&path, e, f), &path, None, getter);
                         }
                     }
                     for o in &ctx.overrides {
                         let Some(f) = o.impl_addr else { continue };
-                        if let Some(name) = self.override_name(&path, o) {
-                            let getter = name.ends_with(".getter");
-                            self.claim(f, name, &path, None, getter);
+                        if let Some(name) = self.override_name(&path, o, f) {
+                            let getter = name.0.ends_with(".getter");
+                            self.claim_slot(f, name, &path, None, getter);
                         }
                     }
                 }
@@ -630,13 +651,45 @@ impl Namer<'_> {
     /// else keeps the engine placeholder. A value witness names only a
     /// function no other record claims, into the `valuewitness` facts.
     fn resolve_claims(&self, out: &mut AnalysisOutput) {
+        let names = self.resolved(|c| &c.name);
+        if self.claims.borrow().values().flatten().any(|c| c.positional.is_some()) {
+            let positional: HashMap<u64, String> = self
+                .resolved(|c| c.positional.as_ref().unwrap_or(&c.name))
+                .into_iter()
+                .map(|(addr, name, _)| (addr, name))
+                .collect();
+            for (addr, name, _) in &names {
+                if let Some(p) = positional.get(addr).filter(|p| *p != name) {
+                    out.swift_positional_names.push((*addr, name.clone(), p.clone()));
+                }
+            }
+        }
+        for (addr, name, witness_only) in names {
+            let sym = SymFact {
+                addr,
+                name: name.clone(),
+                kind: SymKind::Function,
+            };
+            if witness_only {
+                out.swift_witnesses.names.push(sym);
+                continue;
+            }
+            out.symbols.push(sym);
+            out.fid_names.push(FidMatch { addr, name, by_signature: false });
+        }
+    }
+
+    /// The name [`Self::resolve_claims`] gives each claimed function, each
+    /// claim named by `name_of`, and whether only value witnesses claim it.
+    fn resolved(&self, name_of: impl Fn(&Claim) -> &String) -> Vec<(u64, String, bool)> {
+        let mut out = Vec::new();
         let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut next: HashMap<String, usize> = HashMap::new();
         for (&addr, all) in self.claims.borrow().iter() {
             let (witnesses, claims): (Vec<&Claim>, Vec<&Claim>) = all.iter().partition(|c| is_value_witness(&c.name));
             let witness_only = claims.is_empty();
             let claims = if witness_only { witnesses } else { claims };
-            let mut names: Vec<&str> = claims.iter().map(|c| c.name.as_str()).collect();
+            let mut names: Vec<&str> = claims.iter().map(|c| name_of(c).as_str()).collect();
             names.sort_unstable();
             names.dedup();
             let mut name = if names.len() == 1 {
@@ -665,18 +718,9 @@ impl Namer<'_> {
                     }
                 }
             }
-            let sym = SymFact {
-                addr,
-                name: name.clone(),
-                kind: SymKind::Function,
-            };
-            if witness_only {
-                out.swift_witnesses.names.push(sym);
-                continue;
-            }
-            out.symbols.push(sym);
-            out.fid_names.push(FidMatch { addr, name, by_signature: false });
+            out.push((addr, name, witness_only));
         }
+        out
     }
 
     fn requirement_index(&self, protocol: Target, requirement: u64) -> Option<usize> {
@@ -690,12 +734,12 @@ impl Namer<'_> {
             .position(|(addr, _)| *addr == requirement)
     }
 
-    fn override_name(&self, class_path: &str, o: &descriptors::OverrideEntry) -> Option<String> {
+    fn override_name(&self, class_path: &str, o: &descriptors::OverrideEntry, f: u64) -> Option<(String, Option<String>)> {
         match o.method {
             Target::Slot(slot) => {
                 let desc = import_name(self.imports, slot, "method_descriptor")?;
                 let member = member_after_protocol(&desc)?;
-                Some(format!("{class_path}.{member}"))
+                Some((format!("{class_path}.{member}"), None))
             }
             Target::Direct(m) => {
                 let Target::Direct(b) = o.base_class else {
@@ -703,8 +747,18 @@ impl Namer<'_> {
                 };
                 let base = self.md.contexts.get(&b)?;
                 let e = base.vtable.iter().find(|e| e.addr == m)?;
-                Some(format!("{class_path}.vtable#{}.{}", e.index, e.kind.tag()))
+                Some(self.slot_name(class_path, e, f))
             }
+        }
+    }
+
+    /// `Class.member` with its positional name for a slot an `@objc` thunk
+    /// names at implementation `f`, else `Class.vtable#N.kind` alone.
+    fn slot_name(&self, class_path: &str, e: &descriptors::VTableEntry, f: u64) -> (String, Option<String>) {
+        let positional = format!("{class_path}.vtable#{}.{}", e.index, e.kind.tag());
+        match self.objc_members.get(e.addr, f) {
+            Some(member) => (format!("{class_path}.{member}"), Some(positional)),
+            None => (positional, None),
         }
     }
 }
