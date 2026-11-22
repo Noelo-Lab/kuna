@@ -5489,6 +5489,20 @@ fn commit_analysis_output(
     out.symbols.extend(go_prototypes.iter().map(|fact| kuna_analysis::pass::SymFact {
         addr: fact.entry, name: fact.pieces.name.clone(), kind: SymKind::Function,
     }));
+    // 0a'. (kuna `swiftobjcthunk`) Off, every function the Swift metadata
+    //      pass named after an `@objc` member takes its positional name back.
+    let positional = std::mem::take(&mut out.swift_positional_names);
+    if !prog.arch().analysis_swiftobjcthunk && !positional.is_empty() {
+        let back: HashMap<u64, (String, String)> =
+            positional.into_iter().map(|(addr, member, slot)| (addr, (member, slot))).collect();
+        let rename = |addr: u64, name: &mut String| {
+            if let Some((_, slot)) = back.get(&addr).filter(|(member, _)| member == name) {
+                *name = slot.clone();
+            }
+        };
+        out.symbols.iter_mut().for_each(|s| rename(s.addr, &mut s.name));
+        out.fid_names.iter_mut().for_each(|f| rename(f.addr, &mut f.name));
+    }
     // 0b. (kuna `swifttypes`) The Swift type-layout arm's facts, the same
     //     deferred shape: on, the typed metadata records and the accessor
     //     prototypes fold into their streams (the register-pinned parameters
