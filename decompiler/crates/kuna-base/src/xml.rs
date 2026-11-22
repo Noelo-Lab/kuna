@@ -2271,7 +2271,7 @@ mod tests {
         // and kuna-switchextent-a64 / an unchecked AArch64 table ends at the function's next table (option switchextent)
         // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
         // and kuna-uefi / an EFI-subsystem PE gets the UEFI entry prototype, table types and GUID names
-        assert_eq!(count, 853, "corpus file count drifted");
+        assert_eq!(count, 862, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
