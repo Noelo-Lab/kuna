@@ -6297,6 +6297,52 @@ every other binary's pass list is byte-identical to before the pass existed):
   `swift_call_syms_elf` on, and `swift_call_native_elf` on, where a C function
   uses r12 as an ordinary variable and a class witness of a class-bound
   protocol takes the reference.
+- **Swift value witnesses** (`valuewitness`, the value-witness arm of the pass
+  above, default-on and inert unless `swiftmetadata` is on;
+  `decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swiftwitness.rs`,
+  `decompiler/crates/kuna-decomp/src/p5_types/kuna_valuewitness.rs`): the word
+  before a struct's or enum's type metadata points at its value witness table,
+  the functions the runtime and generic code call to copy, move and destroy a
+  value whose layout they do not know (`initializeBufferWithCopyOfBuffer`,
+  `destroy`, `initializeWithCopy`, `assignWithCopy`, `initializeWithTake`,
+  `assignWithTake`, `getEnumTagSinglePayload`, `storeEnumTagSinglePayload`),
+  then `size`, `stride`, `flags` and `extraInhabitantCount`, and when the flags
+  carry `HasEnumWitnesses` `getEnumTag`, `destructiveProjectEnumData` and
+  `destructiveInjectEnumTag`. A stripped image keeps the tables, so the arm
+  finds each local struct's and enum's table — through the static metadata a
+  non-generic accessor returns, the incomplete metadata a singleton-initialized
+  type's descriptor points at, or the value witnesses of a generic type's
+  default instantiation pattern — checking that the metadata's kind and
+  descriptor are the type's before it reads the word before it. A slot the
+  loader binds to another image (the runtime's builtin tables for trivial
+  layouts, `$sBi64_WV` and kin) names nothing. Each function in a local table
+  is named the way the demangler spells the value-witness symbol
+  (`Module.Point.destroy_value_witness`); a body several types' tables share
+  is named after the first with `.merged#N`, and a function another record
+  claims (a method, an accessor) keeps that claim. A function that is one
+  witness and nothing else gets its runtime prototype (`swift/ABI/ValueWitness.def`)
+  bound by address: `void *initializeWithCopy(void *dest, void *src,
+  swift.type_metadata *self)`, `void destroy(void *object, swift.type_metadata
+  *self)`, `unsigned int getEnumTagSinglePayload(void *value, unsigned int
+  emptyCases, swift.type_metadata *self)` and so on. With `swifttypes` on, the
+  layout arm types each table `swift.value_witness_table` (or
+  `swift.enum_value_witness_table` when it has the enum witnesses), whose
+  function slots are pointers of those signatures, and the decompiler types the
+  table where code loads it: an 8-byte LOAD from `p + -8` whose result is read
+  at a table offset votes `swift.value_witness_table *` (the enum layout when a
+  read is past offset 0x58) in type inference, and pointer arithmetic leaves a
+  `-8` off a `swift.type_metadata *` a byte offset instead of rewriting it to
+  `meta[-1].field`. A witness call then prints as
+  `(*(*(swift.value_witness_table **)(meta + -8))->initializeWithCopy)(dest,src,meta)`
+  and an allocation as `->size`. The vote looks the table type up by name and
+  only the Swift pass interns it, so code without Swift metadata is unchanged.
+  The witness facts ride in `AnalysisOutput::swift_witnesses`, which the commit
+  drops under `option valuewitness off`. On a large third-party iOS app (268k
+  functions) the arm names 27,667 functions, up from none, and load time is
+  unchanged.
+  The crate test `kuna-console/tests/verify_valuewitness.rs` runs the stripped
+  swiftc-built `swift_witness_elf` (a struct, an enum and a generic struct, and
+  a generic function that moves a `T`) with the arm on and off.
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the

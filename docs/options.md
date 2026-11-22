@@ -682,6 +682,9 @@ Three tiers:
 | calls to swift methods drop the self they pass | [`swiftcall`](#swiftcall----on--off-default-on) |
 | a try? error path or a do/catch after a throwing call folds away | [`swiftcall`](#swiftcall----on--off-default-on) |
 | swift struct mutating methods write through an untyped register | [`swiftcall`](#swiftcall----on--off-default-on) |
+| swift value witness functions are unnamed sub_ functions | [`valuewitness`](#valuewitness----on--off-default-on) |
+| calls through *(metadata - 8) render as raw offsets | [`valuewitness`](#valuewitness----on--off-default-on) |
+| a witness function's arity is wrong | [`valuewitness`](#valuewitness----on--off-default-on) |
 | stripped windows pe functions stay FUN_<addr> although a matching .pdb exists | [`pdb`](#pdb----on--off-default-on) |
 | pdb symbol names not applied to a pe | [`pdb`](#pdb----on--off-default-on) |
 | a .pdb beside the exe is ignored | [`pdb`](#pdb----on--off-default-on) |
@@ -2318,6 +2321,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off to see a swiftmetadata-named binary under the C model: methods without self, calls without the self they pass, and try? error paths folded away. On (default) when swiftmetadata is on: self typed in methods, initializers, accessors and witnesses, passed at direct calls, and the error a throwing call returns tested where the binary tests it.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-swiftcall
 - **Example:** `option swiftcall off`
+
+### `valuewitness` -- on | off, default `on`
+
+- **Symptoms:** swift value witness functions are unnamed sub_ functions; calls through *(metadata - 8) render as raw offsets; a witness function's arity is wrong.
+- **What it does:** The value-witness arm of the Swift metadata pass (inert unless swiftmetadata is on). Every Swift struct and enum has a value witness table in the word before its type metadata: the functions the runtime calls to copy, move and destroy a value whose layout the caller does not know (initializeBufferWithCopyOfBuffer, destroy, initializeWithCopy, assignWithCopy, initializeWithTake, assignWithTake, getEnumTagSinglePayload, storeEnumTagSinglePayload), then size, stride, flags and extra-inhabitant count, and for an enum getEnumTag, destructiveProjectEnumData and destructiveInjectEnumTag. A stripped image keeps the tables, so each local struct's and enum's table is found - through the static metadata a non-generic accessor returns, the incomplete metadata a type with singleton initialization records, or the value witnesses of a generic type's metadata pattern, each checked against the descriptor before it is read - and each function in it is named the way the demangler spells a value-witness symbol (Module.Point.initializeWithCopy_value_witness; a body the linker folded across types after the first type, .merged#N) and given its runtime prototype (void *initializeWithCopy(void *dest, void *src, swift.type_metadata *self), void destroy(void *object, swift.type_metadata *self), unsigned int getEnumTagSinglePayload(void *value, unsigned int emptyCases, swift.type_metadata *self), ...) bound by address. A table the loader binds to another image (the runtime's builtin tables for trivial layouts) names nothing. With swifttypes on the tables are typed swift.value_witness_table, whose function slots are pointers of those signatures, and in the decompiler a word loaded from p - 8 that is itself read at a table offset (0 to 0x70) votes swift.value_witness_table *, so a witness call through any metadata pointer renders as a call of the named slot and the layout reads as vwt->size instead of offsets. The vote needs the interned table type, which only the Swift pass creates, so other code is unchanged. Default-ON because it is inert unless swiftmetadata is on, the XML corpus never runs the pass (0/675).
+- **When to flip:** Off to see value witness functions as sub_<addr> with recovered prototypes and witness calls as offsets off *(p + -8). On (default) when swiftmetadata is on: Module.T.destroy_value_witness and friends named and prototyped, vwt->initializeWithCopy(dest, src, meta) at the call sites.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-valuewitness
+- **Example:** `option valuewitness off`
 
 ### `pdb` -- on | off, default `on`
 
