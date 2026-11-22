@@ -66,8 +66,8 @@ pub fn is_prelinked(bytes: &[u8]) -> bool {
 
 /// Unwrap a container and select the fileset entries `choice` names, or rebase
 /// a pre-fileset kernelcache and cut its chosen kexts out. Any other input
-/// comes back unchanged. No other file is read, so pointers into a linked
-/// collection stay unresolved.
+/// comes back unchanged. No other file is read, so pointers
+/// into a linked collection stay unresolved.
 pub fn peel(bytes: Vec<u8>, choice: &KernelcacheChoice) -> Result<Peeled, String> {
     peel_linked(bytes, choice, &LinkSearch::none())
 }

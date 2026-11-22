@@ -326,7 +326,8 @@ pub(super) fn extract(
         let image = merge::merge(bytes, &all, &chosen)?;
         let note = format!(
             "MH_FILESET: loaded {shown} as one image ({applied} chained-fixup pointers rebased, \
-             {branch} branch-stub segments mapped)"
+             {branch} branch-stub segments mapped{})",
+            linked.notes.iter().map(|c| format!(", {c}")).collect::<String>()
         );
         return Ok((image, note, signed, map));
     }
@@ -566,10 +567,10 @@ fn apply_fixups(
     let mut segs = segments(bytes, 0).ok_or("malformed MH_FILESET segments")?;
     segs.retain(|s| s.filesize > 0);
     segs.sort_by_key(|s| s.vmaddr);
-    let (rebases, targets, signed): (Vec<(u64, u64)>, Vec<(u64, u8, u64)>, SignedImage) = {
+    let (rebases, signed, targets): (Vec<(u64, u64)>, SignedImage, Vec<(u64, u8, u64)>) = {
         let file = object::File::parse(&*bytes).map_err(|e| format!("MH_FILESET: {e}"))?;
         let fixups = resolve_chained_fixups(&file, bytes);
-        (fixups.rebases().collect(), fixups.linked_targets().collect(), signed_image(bytes, all, &fixups))
+        (fixups.rebases().collect(), signed_image(bytes, all, &fixups), fixups.linked_targets().collect())
     };
     let linked = if targets.is_empty() { linked::Linked::default() } else { linked::resolve(bytes, &targets, search) };
     let mut write = |va: u64, target: u64| {

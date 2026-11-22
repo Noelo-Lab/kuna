@@ -1597,6 +1597,7 @@ impl RemoteScope {
                 is_function,
                 func_inject_id,
                 func_no_return,
+                func_extra_pop: None,
             });
             // Mark the range answered so no interior address re-queries.
             st.answered.insert_range(Rc::clone(spc), first, last);

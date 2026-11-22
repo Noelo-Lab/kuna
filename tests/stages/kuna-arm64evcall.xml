@@ -111,7 +111,7 @@ c0035fd6
 <stringmatch name="ARM64EVCALL #4: off leaves the far slot (offset added from a register) anonymous" min="1" max="1">\(\*a0 \+ 0x100\)\)\(\);</stringmatch>
 <stringmatch name="ARM64EVCALL #5: on calls the one method the far slot holds" min="1" max="1">^  _C_m\(\);</stringmatch>
 <stringmatch name="ARM64EVCALL #6: off leaves the Swift class method call anonymous" min="1" max="1">\(\*v1 \+ 0x58\)\)\(\);</stringmatch>
-<stringmatch name="ARM64EVCALL #7: on calls the Swift method its class metadata holds" min="1" max="1">^  _S_m2\(\); // jump-as-call</stringmatch>
+<stringmatch name="ARM64EVCALL #7: on calls the Swift method its class metadata holds" min="1" max="1">^  (return )?_S_m2\(\); // jump-as-call</stringmatch>
 <stringmatch name="ARM64EVCALL #8: off leaves the slot-0 calls anonymous (image and kernel)" min="2" max="2">\(\*\*\(code \*\*\)\*a0\)\(\); // jump-as-call</stringmatch>
 <stringmatch name="ARM64EVCALL #9: on the kernel calls the method both entries' vtables hold" min="1" max="1">^  Base_m0\(\);</stringmatch>
 <stringmatch name="ARM64EVCALL #10: on the kernel names the kext's override among the candidates" min="1" max="1">virtual call to one of 2 methods: Base_m1, sub_fffffff007007800</stringmatch>

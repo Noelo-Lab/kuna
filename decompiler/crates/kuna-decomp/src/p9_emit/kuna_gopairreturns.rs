@@ -11,6 +11,8 @@ use crate::printc::{op_key, op_token, tokens, PrintC};
 use crate::printlanguage::{Atom, OpToken, SyntaxHighlight, TagType, TokenType};
 use kuna_num::opcodes::OpCode;
 
+pub(crate) use carrier::is_zero_word_carrier;
+
 pub(crate) fn fields(cx: &SpellCtx, ty: &Datatype) -> Option<[Rc<Datatype>; 2]> {
     if ty.get_metatype() != type_metatype::TYPE_STRUCT {
         return None;
@@ -119,6 +121,43 @@ fn forwarded_call(
 }
 
 impl PrintC {
+    pub(crate) fn push_go_pair_conversion(
+        &mut self,
+        fd: &Funcdata,
+        value: VarnodeId,
+        op: OpId,
+        source: &Datatype,
+        target: &Datatype,
+    ) -> bool {
+        let Some((source, target)) = fields(&self.rt_ctx, source).zip(fields(&self.rt_ctx, target))
+        else {
+            return false;
+        };
+        let [low, high] = names(&target);
+        if source.iter().chain(&target).any(|field| {
+            !matches!(
+                field.get_metatype(),
+                type_metatype::TYPE_INT | type_metatype::TYPE_UINT
+            )
+        })
+            || names(&source) == [low, high]
+            || fd.vbank().get(value).is_none_or(|node| {
+                node.get_size() != 16 || node.is_constant() || node.is_volatile()
+            })
+        {
+            return false;
+        }
+        let from = storage(&source);
+        let to = storage(&target);
+        self.push_go_call(
+            &format!(
+                "func(v {from}) {to} {{ return {to}{{{low}(v.result0), {high}(v.result1)}} }}"
+            ),
+            op,
+        );
+        true
+    }
+
     pub(crate) fn push_go_pair_extract(
         &mut self,
         fd: &Funcdata,

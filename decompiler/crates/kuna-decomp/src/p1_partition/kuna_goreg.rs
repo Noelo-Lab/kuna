@@ -77,30 +77,30 @@ impl GoLayout {
         }
     }
 
-    /// The layout [`GOVERSION_ENV`] states, else the baseline.
-    pub fn from_env() -> GoLayout {
-        let Ok(v) = std::env::var(GOVERSION_ENV) else { return GoLayout::baseline() };
-        let mut it = v.trim().split('.');
-        match (it.next().and_then(|t| t.parse().ok()), it.next().and_then(|t| t.parse().ok())) {
-            (Some(maj), Some(min)) => GoLayout::from_version(maj, min),
-            _ => GoLayout::baseline(),
-        }
-    }
-
     /// `runtime.gobuf`'s byte size under this layout.
     pub fn gobuf_size(self) -> int4 {
         self.gobuf_words * 8
     }
 }
 
+/// Whether a Go image built by `version` passes arguments in registers on
+/// the golang-cspec architecture `archid`: from go1.17 on amd64 and go1.18 on
+/// arm64. An unknown version counts as a register-ABI release.
+pub fn register_abi(archid: &str, version: Option<(u16, u16)>) -> bool {
+    let first = if archid.starts_with("AARCH64:") { (1, 18) } else { (1, 17) };
+    version.is_none_or(|v| v >= first)
+}
+
 /// The goroutine register for a golang-cspec architecture, by SLEIGH language
 /// id — the values the vendored `*.register.info` files state
-/// (`<current_goroutine register=…/>`). `None` for every non-golang id and for
-/// golang ids with no pinned register (x86-32 Go reaches `g` through TLS).
-pub fn goroutine_register(archid: &str) -> Option<&'static str> {
+/// (`<current_goroutine register=…/>`). `None` for every non-golang id, for
+/// golang ids with no pinned register (x86-32 Go reaches `g` through TLS), and
+/// for an image older than the register ABI, where `g` lives in thread-local
+/// storage and the register is an ordinary one.
+pub fn goroutine_register(archid: &str, version: Option<(u16, u16)>) -> Option<&'static str> {
     // The compiler field is the id's last `:` token; only the golang cspec
     // carries these models, and only goabi composes it.
-    if !archid.ends_with(":golang") {
+    if !archid.ends_with(":golang") || !register_abi(archid, version) {
         return None;
     }
     if archid.starts_with("x86:LE:64:") {
@@ -374,13 +374,22 @@ mod tests {
 
     #[test]
     fn goroutine_register_is_golang_gated() {
-        assert_eq!(goroutine_register("x86:LE:64:default:golang"), Some("R14"));
-        assert_eq!(goroutine_register("AARCH64:LE:64:v8A:golang"), Some("x28"));
+        assert_eq!(goroutine_register("x86:LE:64:default:golang", None), Some("R14"));
+        assert_eq!(goroutine_register("AARCH64:LE:64:v8A:golang", None), Some("x28"));
         // The C cspec, a non-Go image, never names one.
-        assert_eq!(goroutine_register("x86:LE:64:default:gcc"), None);
+        assert_eq!(goroutine_register("x86:LE:64:default:gcc", None), None);
         // x86-32 Go reaches `g` through TLS: golang cspec, no pinned register.
-        assert_eq!(goroutine_register("x86:LE:32:default:golang"), None);
-        assert_eq!(goroutine_register(""), None);
+        assert_eq!(goroutine_register("x86:LE:32:default:golang", None), None);
+        assert_eq!(goroutine_register("", None), None);
+    }
+
+    #[test]
+    fn no_goroutine_register_before_the_register_abi() {
+        let (amd64, arm64) = ("x86:LE:64:default:golang", "AARCH64:LE:64:v8A:golang");
+        assert_eq!(goroutine_register(amd64, Some((1, 16))), None);
+        assert_eq!(goroutine_register(amd64, Some((1, 17))), Some("R14"));
+        assert_eq!(goroutine_register(arm64, Some((1, 17))), None);
+        assert_eq!(goroutine_register(arm64, Some((1, 18))), Some("x28"));
     }
 
     #[test]

@@ -510,6 +510,22 @@ pub(crate) fn locate_header(file: &object::File, img: &ImageBytes) -> Option<u64
     kuna_gomoduledata::locate(file, img).map(|(vma, _)| vma).or(first)
 }
 
+/// The newest Go release that wrote the pclntab format of the image's named
+/// table section, for the two formats older than go1.18: go1.15 for the go1.2
+/// layout, go1.17 for the go1.16 one. `None` for a newer format, which says
+/// nothing the callers act on, and for an image with no named table.
+pub(crate) fn format_last_release(file: &object::File, img: &ImageBytes) -> Option<(u16, u16)> {
+    let (ver, ..) = [".gopclntab", ".data.rel.ro.gopclntab", "gopclntab", "__gopclntab"]
+        .iter()
+        .filter_map(|name| img.read(file.section_by_name(name)?.address(), 8))
+        .find_map(probe_header)?;
+    match ver {
+        GoVer::Go12 => Some((1, 15)),
+        GoVer::Go116 => Some((1, 17)),
+        GoVer::Go118 => None,
+    }
+}
+
 /// `true` when a read-only data section of `file` holds a pclntab whose table
 /// resolves and whose `moduledata` points back at it — the image's OWN Go
 /// metadata, as opposed to Go bytes it merely carries (a dropper's embedded
@@ -618,6 +634,59 @@ fn recover_go_header(file: &object::File, img: &ImageBytes) -> Option<(PcHeader,
     Some((h, header_vma))
 }
 
+/// Exact Go 1.20-family function entries for the linked method-table reader.
+pub(crate) struct MethodEntries<'a> {
+    bytes: ImageBytes<'a>,
+    header: PcHeader,
+    rows: &'a [u8],
+}
+
+impl<'a> MethodEntries<'a> {
+    pub(crate) fn new(file: &'a object::File<'a>, anchor: u64, text: u64) -> Option<Self> {
+        let bytes = ImageBytes::new(file);
+        let (header, at) = recover_go_header(file, &bytes)?;
+        if at != anchor || header.text_start != text || header.end != End::Little
+            || header.ptr_size != 8 || bytes.read(at, 4)? != [0xf1, 0xff, 0xff, 0xff]
+            || !(1..=2_000_000).contains(&header.nfunc)
+        {
+            return None;
+        }
+        let rows = bytes.read(header.functab_vma, header.nfunc as usize * 8)?;
+        if rows.windows(16).step_by(8).any(|pair|
+            rd_u32(pair, End::Little) >= rd_u32(&pair[8..], End::Little))
+        {
+            return None;
+        }
+        Some(Self { bytes, header, rows })
+    }
+
+    pub(crate) fn ordinary_name(&self, entry: u64) -> Option<String> {
+        let relative = u32::try_from(entry.checked_sub(self.header.text_start)?).ok()?;
+        let row = |i: u64| self.rows.get(i as usize * 8..i as usize * 8 + 8);
+        let offset = |bytes: &[u8]| rd_u32(bytes, End::Little);
+        let (mut low, mut high) = (0, self.header.nfunc);
+        while low < high {
+            let mid = low + (high - low) / 2;
+            if offset(row(mid)?) < relative { low = mid + 1; } else { high = mid; }
+        }
+        if low == self.header.nfunc {
+            return None;
+        }
+        let entry = row(low)?;
+        if offset(entry) != relative {
+            return None;
+        }
+        let record = self.header.funcdata_base.checked_add(offset(&entry[4..]) as u64)?;
+        let record = self.bytes.read(record, 42)?;
+        if offset(record) != relative || record[40] != 0 || record[41] != 0 {
+            return None;
+        }
+        let name = i32::from_le_bytes(record[4..8].try_into().ok()?);
+        let at = self.header.funcname_vma.checked_add(u64::try_from(name).ok()?)?;
+        self.bytes.read_cstr(at, 512)
+    }
+}
+
 /// The closing functab entry (`ftab[nfunc]`): the PC one past the module's last
 /// function.
 fn functab_end(img: &ImageBytes, h: &PcHeader) -> Option<u64> {
@@ -710,6 +779,16 @@ impl AnalysisPass for GoPclntabPass {
             .into_iter().filter(|f| exec_end(&exec, f.addr).is_some()).collect();
         funcs.sort_unstable_by_key(|f| f.addr);
         out.models = kuna_goabi0::model_facts(ctx, &funcs, &h, header_vma);
+        if ctx.arch.archid == "x86:LE:64:default:golang"
+            && ctx.file.format() == object::BinaryFormat::Elf
+        {
+            let mut receive = funcs.iter().filter(|f| f.name == "runtime.chanrecv2");
+            if let Some(first) = receive.next() {
+                if receive.next().is_none() && funcs.iter().filter(|f| f.addr == first.addr).count() == 1 {
+                    out.go_chanrecv2 = Some(first.addr);
+                }
+            }
+        }
         let addrs: Vec<u64> = funcs.iter().map(|f| f.addr).collect();
         for (i, f) in funcs.into_iter().enumerate() {
             // The next entry (the functab's closing `etext` for the last function) is
@@ -730,6 +809,7 @@ impl AnalysisPass for GoPclntabPass {
 
 mod kuna_goabi0;
 pub(crate) mod kuna_goabi0_leaf;
+pub(crate) mod kuna_gomcall;
 mod kuna_gomoduledata;
 pub mod kuna_gonoreturn;
 

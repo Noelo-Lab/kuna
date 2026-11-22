@@ -36,6 +36,7 @@ pub mod context;
 pub mod decode;
 pub mod kuna_accesswidth;
 pub mod kuna_callbackentry;
+pub mod kuna_calltable;
 pub mod kuna_callerreads;
 pub mod kuna_poolextents;
 pub mod kuna_entrythumbflow;
@@ -57,9 +58,12 @@ mod kuna_pcform;
 mod kuna_picbase;
 mod kuna_picpool;
 mod kuna_poolref;
+mod kuna_gotcall;
 mod kuna_regcarry;
 mod kuna_ppclocalentry;
 mod kuna_pltstub;
+mod kuna_a64switch;
+mod kuna_switchextent;
 mod kuna_switchtable;
 mod kuna_thumbswitch;
 mod kuna_a32switch;
@@ -475,6 +479,8 @@ impl Listing {
         );
         let a32_pool = kuna_a32switch::applies(file, arch).then(|| kuna_poolref::PoolImage::new(file)).flatten();
         let a32_tables = a32_pool.as_ref().map(|pool| kuna_a32switch::A32Tables::new(arch, pool));
+        let a64_pool = kuna_a64switch::applies(file).then(|| kuna_poolref::PoolImage::new(file)).flatten();
+        let a64_tables = a64_pool.as_ref().map(|pool| kuna_a64switch::A64Tables::new(arch, pool, seeds));
         let x86_tables = arch
             .analysis_x86listingswitch
             .then(|| kuna_x86listingswitch::X86Tables::new(file, arch))
@@ -498,6 +504,7 @@ impl Listing {
             resumed,
             tables.as_ref(),
             a32_tables.as_ref(),
+            a64_tables.as_ref(),
             x86_tables.as_ref(),
             memo,
         );
@@ -576,6 +583,7 @@ impl Listing {
             detail,
             /* want_stack_callbacks = */ false,
             &WalkPlan::serial(),
+            None,
             None,
             None,
             None,

@@ -44,9 +44,9 @@ fn group_count_is_39() {
 }
 
 #[test]
-fn subphase_count_is_48() {
-    assert_eq!(kuna_num_subphases(), 48);
-    assert_eq!(SUBPHASE_TABLE.len(), 48);
+fn subphase_count_is_49() {
+    assert_eq!(kuna_num_subphases(), 49);
+    assert_eq!(SUBPHASE_TABLE.len(), 49);
 }
 
 #[test]
@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_227() {
-    assert_eq!(kuna_num_settables(), 227);
-    assert_eq!(SETTABLE_TABLE.len(), 227);
+fn settable_count_is_237() {
+    assert_eq!(kuna_num_settables(), 237);
+    assert_eq!(SETTABLE_TABLE.len(), 237);
 }
 
 #[test]
-fn tier_counts_are_45_core_122_transform_60_analysis() {
+fn tier_counts_are_48_core_126_transform_63_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_45_core_122_transform_60_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (45, 122, 60));
+    assert_eq!((core, transform, analysis), (48, 126, 63));
 }
 
 #[test]
@@ -401,6 +401,12 @@ fn option_values_live_value_present_for_76() {
         // codegen live reader (read console-side via kuna_live_value), same as the
         // gates around it. Default-off, ARM-only.
         "tailcallentry",
+        // (kuna) Call tables: an analysis-pass gate read console-side, like
+        // `tailcallentry` above. Default-on.
+        "calltable",
+        // (kuna) Stripped Mach-O stub naming: an analysis-pass gate read
+        // console-side, like `calltable` above. Default-on.
+        "stubbinds",
         // (kuna) ARM literal-pool inference — an analysis-pass gate with no codegen
         // live reader (read console-side via kuna_live_value), same as
         // `tailcallentry` above. Default-off, ARM-only.
@@ -415,6 +421,8 @@ fn option_values_live_value_present_for_76() {
         // with no codegen live reader (read console-side via kuna_live_value), like
         // the gates around it. Default-on, Mach-O-only.
         "cfstrings",
+        // (kuna) Embedded image and archive data symbols: a commit-side gate.
+        "blobs",
         // (kuna) IOKit class and vtable recovery -- an analysis-pass gate on XNU
         // images, read console-side. Default-on.
         "iokitclasses",
@@ -422,8 +430,6 @@ fn option_values_live_value_present_for_76() {
         "xnutables",
         // (kuna) arm64e virtual-call resolution -- the same console-side gate.
         "arm64evcall",
-        // (kuna) Embedded image and archive data symbols: a commit-side gate.
-        "blobs",
         // (kuna) The Swift type-layout arm's gate, read inside that pass.
         "swifttypes",
         // (kuna) Objective-C instance layouts — same commit-side gate as `objc`.
@@ -592,6 +598,11 @@ fn option_values_live_value_present_for_76() {
                             // reason.  Its live value is
                             // `Architecture::arm_constant_shift`.
                             | "armconstshift"
+                            // (kuna) `constselectjump` takes a MODE
+                            // (`off|reentry|on`) over an enum field, for the
+                            // same reason.  Its live value is
+                            // `Architecture::const_select_jump`.
+                            | "constselectjump"
                             // (kuna) `declorder` takes a MODE (`natural|name`)
                             // over an enum field, for the same reason.  Its live
                             // value is `Architecture::decl_order`.
@@ -854,7 +865,17 @@ fn option_values_live_value_present_for_76() {
     // 75 -> 76: +1 for `wrapadd` (live_field = wrap_add).
     // +1 for `acleintrinsics` (live_field = acle_intrinsics).
     // +1 for `repstring` (live_field = rep_string).
-    assert_eq!(with_live, 80);
+    // -1: `constselectjump` became three-valued (off|reentry|on) over an
+    // enum field with no `live_field`.
+    // +1 for `typevote` (live_field = type_vote).
+    // +1 for `gotonext` (live_field = goto_next).
+    // +1 for `postinc` (live_field = post_increment).
+    // +1 for `panicloc` (live_field = analysis_panicloc).
+    // +1 for `opaquepredicate` (live_field = opaque_predicate).
+    // +1 for `calleefilledarg` (live_field = callee_filled_arg).
+    // +1 for `cstringconst` (live_field = cstring_const).
+    // +1 for `switchextent` (live_field = switch_extent).
+    assert_eq!(with_live, 87);
 }
 
 #[test]
@@ -1104,13 +1125,19 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `chkstkdarwin`, its P2 row after `msvcftol`.
     // +1 for `calleeargs`; its P4 row sits after `argclobber`.
     // +1 for `acleintrinsics`; its P9 row sits after `cortexmpriv`.
-    // +1 for `iokitclasses`, beside `cfstrings`.
-    // +1 for `xnutables`, beside `iokitclasses`.
-    // +1 for `arm64evcall`, beside `iokitclasses`.
     // +1 for `kernelcache-boot`; its P1 row sits after `kernelcache`.
     // +1 for `blobs`; its P1 row sits after `strings`.
     // +1 for `repstring`; its P3 row sits after `strlenscan`.
-    assert_eq!(json.matches("},\n").count(), 226);
+    // +1 for `opaquepredicate`; its P3 row sits after `globalarrayanchor`.
+    // +1 for `calltable`; its P1 row sits after `tailcallentry`.
+    // +1 for `stubbinds`; its P1 row sits after `calltable`.
+    // +1 for `cstringconst`; its P9 row sits after `globalref`.
+    // +1 for `switchextent`; its P2 row sits after `switchmodbound`.
+    // +1 for `iokitclasses`, beside `cfstrings`.
+    // +1 for `xnutables`, beside `iokitclasses`.
+    // +1 for `arm64evcall`, beside `iokitclasses`.
+    assert_eq!(json.matches("},\n").count(), 236);
+    // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 
 #[test]
