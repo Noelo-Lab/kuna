@@ -676,6 +676,11 @@ pub(super) const LIBC_EXT: &[(&str, Sig)] = &[
     ("strncpy_s", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::Size, Ty::CharPtr, Ty::Size], vararg: -1 }),
 ];
 
+/// The bounds-checked rows of [`LIBC_EXT`], which a program often defines for
+/// itself under the same spelling and a parameter list of its own.
+const BOUNDS_CHECKED: &[&str] =
+    &["memcpy_s", "memmove_s", "memset_s", "sprintf_s", "strcat_s", "strcpy_s", "strncat_s", "strncpy_s"];
+
 /// (kuna `armfloatreturn`) The C99 `<math.h>` functions (and glibc's `sincos`)
 /// a hard-float ARM image imports, laid out by the widened VFP model once the
 /// option applies: a `double` in `d0`, a `float` in `s0`, `long` 4 bytes. Seeded
@@ -797,7 +802,13 @@ impl AnalysisPass for LibcSigsPass {
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
         seed_named_prototypes(&mut out, &imported, LIBC_EXT, types, word_size, super::L);
-        seed_resolved_prototypes(&mut out, &resolved, LIBC_EXT, types, word_size, super::L);
+        let defined = super::defined_function_names(ctx.file, ctx.bytes);
+        let stubs: Vec<_> = resolved
+            .iter()
+            .filter(|(name, _)| !(BOUNDS_CHECKED.contains(&name.as_str()) && defined.contains(name)))
+            .cloned()
+            .collect();
+        seed_resolved_prototypes(&mut out, &stubs, LIBC_EXT, types, word_size, super::L);
         let complex_max = crate::analyzers::dwarf::kuna_dwarfcomplex::max_size(
             ctx.file.format(),
             ctx.file.architecture(),
@@ -972,6 +983,9 @@ mod tests {
         }
         for name in ["strcpy_s", "strcat_s"] {
             assert!(matches!(get(name).params[..], [Ty::CharPtr, Ty::Size, Ty::CharPtr]), "{name}");
+        }
+        for name in BOUNDS_CHECKED {
+            get(name);
         }
         let sprintf_s = get("sprintf_s");
         assert!(matches!(sprintf_s.params[..], [Ty::CharPtr, Ty::Size, Ty::CharPtr]));
