@@ -10,6 +10,7 @@
   <com>option gobounds off</com>
   <com>load function main.stringLen</com><com>decompile</com><com>print C</com>
   <com>load function main.stringIndex</com><com>decompile</com><com>print C</com>
+  <com>load function main.twoStringBits</com><com>decompile</com><com>print C</com>
   <com>clear architecture</com>
   <com>load file tests/fixtures/go-dwarf-signatures/compressed</com>
   <com>option godwarfsig on</com><com>read symbols</com><com>option outlang go</com>
@@ -27,6 +28,18 @@
   <com>load function main.forwardString</com><com>decompile</com><com>print C</com>
   <com>override prototype 0x401240 uint8 stringBits(void)</com>
   <com>decompile</com><com>print C</com>
+  <com>load function main.twoStringBits</com><com>decompile</com><com>print C</com>
+  <com>load function main.shiftedTwoStrings</com><com>decompile</com><com>print C</com>
+  <com>load function main.twoStringWrongOrder</com><com>decompile</com><com>print C</com>
+  <com>load function main.twoStringShortSecond</com><com>decompile</com><com>print C</com>
+  <com>load function main.twoStringWrongKind</com><com>decompile</com><com>print C</com>
+  <com>load function main.twoStringCollision</com><com>decompile</com><com>print C</com>
+  <com>load function main.threeStringPairs</com><com>decompile</com><com>print C</com>
+  <com>load function main.twoStringForward</com><com>decompile</com><com>print C</com>
+  <com>override prototype 0x401280 uint8 twoStringBits(void)</com>
+  <com>decompile</com><com>print C</com>
+  <com>map prototype main.twoStringBits uint8 twoStringBits(uint1 *first,int8 firstLen,uint1 *second,int8 secondLen);</com>
+  <com>load function main.twoStringBits</com><com>decompile</com><com>print C</com>
   <com>map prototype main.stringLen int8 stringLen(uint1 *manualData,int8 manualLen);</com>
   <com>load function main.stringLen</com><com>decompile</com><com>print C</com>
 </script>
@@ -62,4 +75,20 @@ runtime.panicIndex\(.*\) // no-return
 func stringLen\(manualData \*byte, manualLen int64\) int64 \{
 return manualLen$
 </stringmatch>
+<stringmatch name="two string import off retains all inferred words" min="1" max="1">^func twoStringBits\(a0 uint64, a1 uint64, a2 uint64, a3 uint64\) uint64</stringmatch>
+<stringmatch name="two verified strings retain all four typed physical words" min="1" max="1">
+^func twoStringBits\(a_data \*byte, a_len int64, b_data \*byte, b_len int64\) uint64 \{$
+^  return uint64\(uintptr\(unsafe.Pointer\(a_data\)\)\) \^ uint64\(a_len\) \^ uint64\(uintptr\(unsafe.Pointer\(b_data\)\)\) \^ uint64\(b_len\)$
+</stringmatch>
+<stringmatch name="two verified string pairs retain physical argument order at a call" min="1" max="1">
+^func twoStringForward\(a_data \*byte, a_len int64, b_data \*byte, b_len int64\) uint64 \{$
+^  return twoStringBits\(a_data,a_len,b_data,b_len\)$
+</stringmatch>
+<stringmatch name="two strings advance past the scalar without consuming the float bank" min="1" max="1">
+^func shiftedTwoStrings\(bias int64, a_data \*byte, a_len int64, factor float64, b_data \*byte, b_len int64\) int64 \{$
+^  return a_len \+ b_len$
+</stringmatch>
+<stringmatch name="malformed second headers and excess pairs leave the entire prototype inferred" min="5" max="5">^func (twoString(WrongOrder|ShortSecond|WrongKind|Collision)|threeStringPairs)\(a0 uint64, a1 uint64, a2 uint64, a3 uint64[^\)]*\) uint64</stringmatch>
+<stringmatch name="explicit site authority overrides the words of both source strings" min="1" max="1">return twoStringBits\(\)$</stringmatch>
+<stringmatch name="explicit function authority replaces the names of both source strings" min="1" max="1">^func twoStringBits\(first \*byte, firstLen int64, second \*byte, secondLen int64\) uint64</stringmatch>
 </decompilertest>

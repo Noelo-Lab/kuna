@@ -11,6 +11,7 @@ pub(crate) mod kuna_fieldextract;
 pub mod kuna_partialconcat;
 pub mod kuna_partialaccess;
 pub mod kuna_widelocal;
+pub mod kuna_postinc; // (kuna `postinc`) `*p++` for a pointer step after its dereference
 pub mod prettyprint;
 pub mod printjava;
 pub mod cast;
@@ -66,6 +67,7 @@ pub mod kuna_armregistershift; // (kuna) defined C for ARM register-controlled L
 pub mod kuna_armconstantshift;
 pub(crate) mod kuna_acleintrinsics; // (kuna) AArch64 barrier, hint and memory-tagging user ops as ACLE intrinsics
 pub mod kuna_emptystrconst;
+pub mod kuna_cstringconst;
 pub mod kuna_cfstr; // (kuna) CFSTR("...") for a Mach-O __cfstring entry
 pub mod kuna_swiftstrobj; // (kuna) a Swift string object is not a pointer to the bytes it lands on
 pub mod kuna_renderfault; // (kuna) test-only: panic one function's render partway through
@@ -83,9 +85,12 @@ pub mod kuna_namedglobals;
 pub mod kuna_globalref; // (kuna) a constant address used as a pointer prints as its global
 pub mod kuna_namespaces; // (kuna) which namespaces print in front of a name
 pub mod kuna_funcptrnames;
+pub(crate) mod kuna_rustfuncptr;
 pub mod kuna_lang; // (kuna) the output-language plane: profile + capabilities
 pub mod kuna_langtypes; // (kuna) the type-spelling seam (TypeSpeller + SpellCtx)
 pub(crate) mod kuna_gopairreturns;
+mod kuna_gozerorecord;
+mod kuna_gostringindex;
 pub(crate) mod kuna_goatomicreturn;
 pub mod kuna_langc; // (kuna) the c-language policy objects (CSpeller)
 pub mod kuna_rustfmt;
@@ -103,11 +108,13 @@ pub mod kuna_langgo;
 pub(crate) mod kuna_gopointerarith;
 pub(crate) mod kuna_goorderedcompare;
 pub mod kuna_gopackage;
+mod kuna_gomethod;
 pub(crate) mod kuna_gobyteview;
 pub(crate) mod kuna_gobyteextract;
 pub mod kuna_rusttypes; // (kuna) the rust-language type speller
 pub(crate) mod kuna_rustextend;
 pub(crate) mod kuna_rustuserop;
+mod kuna_rustoption;
 pub mod kuna_ctypes; // (kuna) valid per-architecture C spelling of the core types
 pub mod coreaction_render;
 pub mod kuna_srcmap; // (kuna) the token-level source map of a rendered function
