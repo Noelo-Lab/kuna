@@ -6497,6 +6497,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   question a fingerprint cannot answer. The feature list comes from
   `kuna_decomp::signature` with settings from the chosen weights profile:
   the standard profiles use `0x49`; the size-independent profile uses `0x4d`.
+  Kuna bundles compatible default weights as data, independent of any external
+  installation; explicitly supplied weights still take precedence.
   The rest is a port of Ghidra's `generic/lsh`. `lshweights.rs` validates the
   TF/IDF tables and stores the IDF values in Ghidra's open-addressing probe
   table (smallest power of two ≥ size, doubled)
@@ -6519,10 +6521,34 @@ every other binary's pass list is byte-identical to before the pass existed):
   Ghidra's `normalize` action and the database's stored signature settings.
   Kuna encodes unsigned feature groups as hexadecimal term count and hash;
   PostgreSQL uses `lshvector` to find candidate vectors and rank them with its
-  own weights before resolving them to function rows. For code comparison,
-  `decompiler/crates/kuna-cli/src/bsim/reference.rs` asks the configured
-  GhydraMCP worker to open a stored repository version read-only and verify its
-  executable MD5 and function entry before comparing its C with Kuna's output.
+  own weights before resolving them to function rows. This is compatibility
+  with an existing stock server-side index, not a local runtime prerequisite.
+  `decompiler/crates/kuna-cli/src/bsim/reference.rs` prepares C with Kuna for
+  a pair of entries. For a PostgreSQL match, the caller supplies the reference
+  executable and Kuna verifies its indexed MD5. For a native Kuna BSim match,
+  Kuna validates the match entry and reads the executable from the configured
+  service, not from a URL in the match. It verifies SHA-256 before loading.
+  `decompiler/crates/kuna-bsim-server/src/` stores original bytes keyed by
+  SHA-256 and serves signature matches scoped to one weight profile. A local
+  import reads Ghidra 12.1.2 Program databases through
+  `decompiler/crates/kuna-analysis/src/ghidra_program.rs`, extracts original
+  bytes and compatible entries, and signs only entries backed by verified
+  original file bytes. The client neither reads Program databases nor
+  connects to Ghidra Server. Native imports discover function entries from
+  Kuna's loader and analysis. Universal Mach-O references keep the original
+  container digest and record the indexed slice. Compare validates the slice
+  against the verified container and loads it without consulting the client's
+  slice preference. Ghidra snapshot coverage is independent of
+  native executable completeness. Saved entries take precedence over
+  inferred entries; explicit publications take precedence over both.
+  An authenticated `push` sends one original image and one named entry under
+  a dedicated writer credential. An isolated worker signs the upload under
+  memory and wall-time limits. Both native import and the signing worker mount
+  bundled SLEIGH specs in memory, without a filesystem cache. The service
+  updates only the record for that profile, image digest, and loaded entry.
+  The client verifies the returned
+  digest against its upload. Query responses preserve rank when the wire size
+  limit truncates the result.
 - **FLIRT** (`flirt`, default-off, Listing-gated, signatures via `KUNA_FLIRT_SIGS`;
   `decompiler/crates/kuna-analysis/src/analyzers/flirt/mod.rs (FlirtPass)`): names
   library functions from IDA FLIRT `.sig` files (versions 5 to 11; raw, deflate,

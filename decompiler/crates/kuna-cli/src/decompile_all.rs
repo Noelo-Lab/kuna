@@ -1741,10 +1741,12 @@ pub(crate) fn load_program(
     load_program_with_source(args, defaults, None)
 }
 
+pub(crate) type SourceObserver<'a> = &'a mut dyn FnMut(&[u8]);
+
 pub(crate) fn load_program_with_source(
     args: &Args,
     defaults: DriverDefaults,
-    observe_source: Option<&mut dyn FnMut(&[u8])>,
+    observe_source: Option<SourceObserver<'_>>,
 ) -> Result<ConsoleProgram, String> {
     let request = args.apply_rust_signatures.as_deref().map(|path| {
         crate::rust_signatures::validate_application(args)?;
@@ -1757,7 +1759,7 @@ fn load_program_with_rust_profiles(
     args: &Args,
     defaults: DriverDefaults,
     request: Option<kuna_analysis::flirt::kuna_rustprofiles::Request>,
-    observe_source: Option<&mut dyn FnMut(&[u8])>,
+    observe_source: Option<SourceObserver<'_>>,
 ) -> Result<ConsoleProgram, String> {
     let binary = std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?
@@ -1777,7 +1779,7 @@ fn load_program_with_rust_profiles(
 
     let spec_roots = spec_roots(args.sleighpath.as_deref());
     let target = args.target.as_deref().unwrap_or("");
-    let mut prog = if args.raw_image {
+    let prog = if args.raw_image {
         // (kuna `--jobs`) A raw image's discovery (`rawdiscover`) is a serial
         // sweep and descent, not the lane-parallel object walk, so the decode
         // lanes have nothing to run. Say so, rather than accept the flag and do
@@ -1826,7 +1828,36 @@ fn load_program_with_rust_profiles(
         };
         format!("{msg}{raw_hint}")
     })?;
+    finish_program_load(prog, args, defaults, request, &binary)
+}
 
+pub(crate) fn load_bsim_reference(
+    bytes: Vec<u8>,
+    indexed: &kuna_bsim_server::StoredFunction,
+) -> Result<ConsoleProgram, String> {
+    let roots = spec_roots(None);
+    let slice = indexed.macho_slice.map(|slice| (slice.offset, slice.size));
+    let program = Bootstrap::new(&roots).indexed_image(bytes, slice)
+        .map_err(|error| format!("could not load the verified BSim reference: {}", error.explain()))?;
+    let arch = program.arch();
+    let language = kuna_decomp::kuna_langfamily::language_id(&arch.archid);
+    let compiler = arch.compiler_spec_id();
+    if language != indexed.architecture || compiler != Some(indexed.compiler.as_str()) {
+        return Err(format!(
+            "verified BSim reference loaded as {language} / {compiler:?}, indexed as {} / {:?}",
+            indexed.architecture, indexed.compiler,
+        ));
+    }
+    finish_program_load(program, &Args::serial(), DriverDefaults::Decompile, None, "BSim reference")
+}
+
+fn finish_program_load(
+    mut prog: ConsoleProgram,
+    args: &Args,
+    defaults: DriverDefaults,
+    request: Option<kuna_analysis::flirt::kuna_rustprofiles::Request>,
+    binary: &str,
+) -> Result<ConsoleProgram, String> {
     let non_x86_64 = !prog.arch().archid.starts_with("x86:LE:64:");
     for (name, value) in driver_default_options_for_arch(
         non_x86_64,
@@ -1881,8 +1912,8 @@ fn load_program_with_rust_profiles(
         kuna_console::assertions::apply_program_scoped(&mut prog);
     }
     if args.jobs_worker.is_none() {
-        crate::funcdecl::warn_unmapped(&prog, &binary);
-        crate::fid::report::warn(&prog, &binary);
+        crate::funcdecl::warn_unmapped(&prog, binary);
+        crate::fid::report::warn(&prog, binary);
     }
     crate::kuna_allocrelease::after_analysis();
     if args.jobs_worker.is_none() {

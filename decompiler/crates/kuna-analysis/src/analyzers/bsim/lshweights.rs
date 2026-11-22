@@ -510,6 +510,18 @@ impl LshProfile {
         }
     }
 
+    /// Load the stock Ghidra 12.1.2 weight data embedded in Kuna.
+    pub fn bundled_weights(self) -> KunaResult<LshWeights> {
+        let xml: &[u8] = match self {
+            Self::Size32 => include_bytes!("weights/lshweights_32.xml"),
+            Self::Size64 => include_bytes!("weights/lshweights_64.xml"),
+            Self::Size64With32Abi => include_bytes!("weights/lshweights_64_32.xml"),
+            Self::NoSize => include_bytes!("weights/lshweights_nosize.xml"),
+            Self::Jvm | Self::Dalvik => include_bytes!("weights/lshweights_cpool.xml"),
+        };
+        LshWeights::parse(xml)
+    }
+
     /// Default profile for a full Ghidra language ID.
     pub fn for_language(language: &str) -> Option<Self> {
         let mut fields = language.split(':');
@@ -669,6 +681,24 @@ mod tests {
         assert!(LshProfile::NoSize.admits_settings(0x4d));
         assert!(!LshProfile::NoSize.admits_settings(0x49));
         assert!(!LshProfile::Size64.admits_settings(0x4d));
+    }
+
+    #[test]
+    fn each_bundled_profile_loads_its_stock_weights() {
+        for (profile, settings, hash) in [
+            (LshProfile::Size32, 0x49, 0x0a12_0351),
+            (LshProfile::Size64, 0x49, 0x1523_1688),
+            (LshProfile::Size64With32Abi, 0x49, 0x0e97_eee9),
+            (LshProfile::NoSize, 0x4d, 0x2611_1c79),
+            (LshProfile::Jvm, 0x49, 0x056b_3354),
+            (LshProfile::Dalvik, 0x49, 0x056b_3354),
+        ] {
+            let w = profile.bundled_weights().unwrap();
+            assert_eq!(w.settings, settings, "{profile:?}");
+            assert!(profile.admits_settings(settings as u32), "{profile:?}");
+            assert_eq!(w.idf.declared_size(), 1000, "{profile:?}");
+            assert_eq!(w.idf.get_count(hash), 1, "{profile:?}");
+        }
     }
 
     #[test]

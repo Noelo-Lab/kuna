@@ -46,8 +46,8 @@ fn collect(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {
     }
 }
 
-fn main() {
-    println!("cargo:rerun-if-changed=build.rs");
+pub(super) fn generate() {
+    println!("cargo:rerun-if-changed=build_embedded_specs.rs");
     if env::var_os("CARGO_FEATURE_EMBED_SPECS").is_none() {
         return;
     }

@@ -200,3 +200,39 @@ fn a_malformed_corpus_is_reported_not_panicked_on() {
     std::fs::write(&old, b"KBSM\x01\0\0\0").unwrap();
     assert_error(kuna(&["bsim", "info", old.to_str().unwrap()]), "rebuild");
 }
+
+#[test]
+fn local_bsim_builds_and_queries_without_external_weights() {
+    let scratch = tempfile::tempdir().unwrap();
+    let path = scratch.path().join("standalone.kbsm");
+    let corpus = path.to_str().unwrap();
+    let bin = binary();
+    let invoke = |argv: &[&str]| {
+        successful(kuna_command().env("PATH", scratch.path()).args(argv).output().unwrap())
+    };
+
+    invoke(&["bsim", "build", &bin, "-o", corpus, "--max-functions", "1"]);
+    let result = invoke(&["bsim", "query", &bin, "--corpus", corpus, "--address",
+        "0x401000", "--json"]);
+    let doc: Value = serde_json::from_slice(&result.stdout).unwrap();
+    let top = &doc["matches"][0];
+    assert_eq!(top["address"], "0x401000");
+    assert!((top["similarity"].as_f64().unwrap() - 1.0).abs() < 1e-9, "{doc}");
+    assert!(top["significance"].as_f64().unwrap() > 0.0, "{doc}");
+}
+
+#[test]
+fn offline_compare_decompiles_both_entries_without_database() {
+    let scratch = tempfile::tempdir().unwrap();
+    let bin = binary();
+    let result = successful(kuna_command().env("PATH", scratch.path())
+        .env_remove("KUNA_BSIM_POSTGRES")
+        .args(["bsim", "compare", &bin, "--address", "0x401000", "--reference", &bin,
+            "--reference-address", "0x401020", "--json"])
+        .output().unwrap());
+    let doc: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert!(doc["match"].is_null(), "{doc}");
+    let diff = doc["diff"].as_str().unwrap();
+    assert!(diff.lines().any(|line| line.starts_with("- ") && line.contains("return")), "{doc}");
+    assert!(diff.lines().any(|line| line.starts_with("+ ") && line.contains("return")), "{doc}");
+}

@@ -271,58 +271,110 @@ fn take_text(value: Option<FieldValue>, field: &str) -> KunaResult<String> {
     }
 }
 
-/// True when `bytes` start with the packed-container magic at its fixed offset.
+const JAVA_STREAM_HEADER: &[u8] = &[0xac, 0xed, 0, 5];
+
+// ObjectOutputStream emits TC_BLOCKDATA for up to 255 bytes and
+// TC_BLOCKDATALONG otherwise, draining at most 1024 bytes at a time.
+fn java_block(bytes: &[u8]) -> Option<(&[u8], &[u8])> {
+    let (len, data) = match bytes {
+        [0x77, len, data @ ..] => (usize::from(*len), data),
+        [0x7a, a, b, c, d, data @ ..] => (
+            usize::try_from(i32::from_be_bytes([*a, *b, *c, *d])).ok()?,
+            data,
+        ),
+        _ => return None,
+    };
+    data.split_at_checked(len).filter(|(block, _)| !block.is_empty())
+}
+
+/// True when `bytes` start with an ItemSerializer object stream.
 pub fn is_packed(bytes: &[u8]) -> bool {
-    // ItemSerializer.MAGIC_NUMBER_POS = 6, size 8, big-endian.
-    bytes.len() >= 14 && {
-        let mut magic = [0u8; 8];
-        magic.copy_from_slice(&bytes[6..14]);
-        u64::from_be_bytes(magic) == PACKED_MAGIC
+    first_packed_block(bytes).is_some()
+}
+
+fn first_packed_block(bytes: &[u8]) -> Option<(&[u8], &[u8])> {
+    let (block, rest) = java_block(bytes.strip_prefix(JAVA_STREAM_HEADER)?)?;
+    Some((block.strip_prefix(&PACKED_MAGIC.to_be_bytes())?, rest))
+}
+
+struct JavaHeader<'a> {
+    block: &'a [u8],
+    rest: &'a [u8],
+}
+
+impl<'a> JavaHeader<'a> {
+    fn take(&mut self, len: usize) -> KunaResult<&'a [u8]> {
+        if self.block.is_empty() {
+            (self.block, self.rest) = java_block(self.rest)
+                .ok_or_else(|| KunaError::bad_data("ghidra fid: missing or truncated Java data block"))?;
+        }
+        let (head, tail) = self.block.split_at(len.min(self.block.len()));
+        self.block = tail;
+        Ok(head)
+    }
+
+    fn read<const N: usize>(&mut self) -> KunaResult<[u8; N]> {
+        let mut bytes = [0u8; N];
+        let mut remaining = bytes.as_mut_slice();
+        while !remaining.is_empty() {
+            let chunk = self.take(remaining.len())?;
+            remaining[..chunk.len()].copy_from_slice(chunk);
+            remaining = &mut remaining[chunk.len()..];
+        }
+        Ok(bytes)
+    }
+
+    fn skip_utf(&mut self) -> KunaResult<()> {
+        let mut remaining = usize::from(u16::from_be_bytes(self.read()?));
+        while remaining != 0 {
+            remaining -= self.take(remaining)?.len();
+        }
+        Ok(())
     }
 }
 
 /// Read a Ghidra `ItemSerializer` packed file's single payload entry.
 ///
-/// The header is written with bare `ObjectOutputStream` primitives (`writeLong`,
-/// `writeInt`, `writeUTF`), so its layout is fixed: magic(8),
-/// formatVersion(4), UTF item name, UTF content type, fileType(4),
-/// length(8). The payload follows as a **streamed** zip member: a local file
-/// header, the deflate stream, and a data descriptor — no central directory, so
-/// it must be read here rather than through a zip archive reader.
+/// The metadata is Java block data containing a magic(8), formatVersion(4),
+/// UTF item name, UTF content type, fileType(4), and length(8). After the
+/// final block comes a streamed zip member: a local file header, the deflate
+/// stream, and a data descriptor, without a central directory.
 pub fn unpack(bytes: &[u8]) -> KunaResult<Vec<u8>> {
-    if !is_packed(bytes) {
-        return Err(KunaError::bad_data("ghidra fid: not a packed database file"));
-    }
-    let mut off = 14;
-    let version = read_be_i32(bytes, off)?;
+    const MAX_PAYLOAD: usize = 1 << 31;
+    unpack_bounded(bytes, MAX_PAYLOAD)
+}
+
+pub(crate) fn unpack_bounded(bytes: &[u8], max_payload: usize) -> KunaResult<Vec<u8>> {
+    let (block, rest) = first_packed_block(bytes)
+        .ok_or_else(|| KunaError::bad_data("ghidra fid: not a packed database file"))?;
+    let mut header = JavaHeader { block, rest };
+    let version = i32::from_be_bytes(header.read()?);
     if version != PACKED_FORMAT_VERSION {
         return Err(KunaError::bad_data(format!(
             "ghidra fid: packed format version {version} != {PACKED_FORMAT_VERSION}"
         )));
     }
-    off += 4;
-    // writeUTF: u16 byte length then modified-UTF-8 bytes.
-    let name_len = read_be_u16(bytes, off)? as usize;
-    off += 2 + name_len;
-    let type_len = read_be_u16(bytes, off)? as usize;
-    off += 2 + type_len;
-    off += 4; // file type
-    let payload_len = read_be_i64(bytes, off)?;
-    off += 8;
+    header.skip_utf()?;
+    header.skip_utf()?;
+    let _: [u8; 4] = header.read()?; // file type
+    let payload_len = i64::from_be_bytes(header.read()?);
+    if !header.block.is_empty() {
+        return Err(KunaError::bad_data("ghidra fid: extra Java header bytes"));
+    }
+    let bytes = header.rest;
 
     // Local file header: signature(4) version(2) flags(2) method(2) time(2)
     // date(2) crc(4) csize(4) usize(4) nameLen(2) extraLen(2) then name+extra.
-    let sig = bytes
-        .get(off..off + 4)
+    let sig = bytes.get(..4)
         .ok_or_else(|| KunaError::bad_data("ghidra fid: truncated zip header"))?;
     if sig != [0x50, 0x4b, 0x03, 0x04] {
         return Err(KunaError::bad_data("ghidra fid: packed payload is not a zip member"));
     }
     // Zip local-header fields are little-endian, unlike the Java header above.
-    let method = read_le_u16(bytes, off + 8)?;
-    let entry_name_len = read_le_u16(bytes, off + 26)? as usize;
-    let entry_extra_len = read_le_u16(bytes, off + 28)? as usize;
-    let data_off = off + 30 + entry_name_len + entry_extra_len;
+    let method = read_le_u16(bytes, 8)?;
+    let entry_name_len = read_le_u16(bytes, 26)? as usize;
+    let entry_extra_len = read_le_u16(bytes, 28)? as usize;
+    let data_off = 30 + entry_name_len + entry_extra_len;
     let data = bytes
         .get(data_off..)
         .ok_or_else(|| KunaError::bad_data("ghidra fid: truncated zip member"))?;
@@ -330,16 +382,17 @@ pub fn unpack(bytes: &[u8]) -> KunaResult<Vec<u8>> {
     // `payload_len` is untrusted. Validate it before it can steer an allocation,
     // and bound the inflation to it: a decompression bomb or an absurd declared
     // length must be a parse error, never an allocation abort.
-    const MAX_PAYLOAD: usize = 1 << 31;
     let declared = usize::try_from(payload_len).map_err(|_| {
         KunaError::bad_data(format!("ghidra fid: packed payload length {payload_len} out of range"))
     })?;
-    if declared == 0 || declared > MAX_PAYLOAD {
+    if declared == 0 || declared > max_payload {
         return Err(KunaError::bad_data(format!(
-            "ghidra fid: packed payload length {declared} out of range"
+            "ghidra fid: packed payload length {declared} out of range (limit {max_payload})"
         )));
     }
-    let mut out = Vec::with_capacity(declared.min(data.len()));
+    let mut out = Vec::new();
+    out.try_reserve_exact(declared.min(data.len()))
+        .map_err(|_| KunaError::bad_data("ghidra fid: cannot allocate packed payload"))?;
     match method {
         0 => {
             let stored = data.get(..declared)
@@ -375,29 +428,15 @@ fn read_le_u16(b: &[u8], off: usize) -> KunaResult<u16> {
     Ok(u16::from_le_bytes([s[0], s[1]]))
 }
 
-fn read_be_u16(b: &[u8], off: usize) -> KunaResult<u16> {
-    let s = b.get(off..off + 2).ok_or_else(|| KunaError::bad_data("ghidra fid: short header"))?;
-    Ok(u16::from_be_bytes([s[0], s[1]]))
-}
-
-fn read_be_i32(b: &[u8], off: usize) -> KunaResult<i32> {
-    let s = b.get(off..off + 4).ok_or_else(|| KunaError::bad_data("ghidra fid: short header"))?;
-    Ok(i32::from_be_bytes([s[0], s[1], s[2], s[3]]))
-}
-
-fn read_be_i64(b: &[u8], off: usize) -> KunaResult<i64> {
-    let s = b.get(off..off + 8).ok_or_else(|| KunaError::bad_data("ghidra fid: short header"))?;
-    Ok(i64::from_be_bytes([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The packed-container magic sits at `ItemSerializer.MAGIC_NUMBER_POS`.
     #[test]
     fn packed_detection_reads_the_magic_at_its_offset() {
         let mut bytes = vec![0u8; 32];
+        bytes[..4].copy_from_slice(JAVA_STREAM_HEADER);
+        bytes[4..6].copy_from_slice(&[0x77, 8]);
         bytes[6..14].copy_from_slice(&PACKED_MAGIC.to_be_bytes());
         assert!(is_packed(&bytes));
         bytes[6] = 0;
@@ -411,6 +450,8 @@ mod tests {
     #[test]
     fn a_packed_file_without_a_zip_member_is_an_error() {
         let mut bytes = vec![0u8; 200];
+        bytes[..4].copy_from_slice(JAVA_STREAM_HEADER);
+        bytes[4..6].copy_from_slice(&[0x77, 28]);
         bytes[6..14].copy_from_slice(&PACKED_MAGIC.to_be_bytes());
         bytes[14..18].copy_from_slice(&PACKED_FORMAT_VERSION.to_be_bytes());
         // Two empty UTF strings (name and content type).
@@ -431,6 +472,40 @@ mod tests {
     const PACKED_FIXTURE: &[u8] = include_bytes!("../../../tests/fixtures/fid_audit_ghidra.fidb");
     const METADATA_FIXTURE: &[u8] =
         include_bytes!("../../../tests/fixtures/fid_audit_ghidra_metadata.fidbf");
+
+    #[test]
+    fn packed_header_handles_short_long_and_split_object_stream_blocks() {
+        // Keep the real ItemSerializer zip payload; write the metadata in
+        // stock ObjectOutputStream framing with a variable-length item name.
+        let zip_start = 6 + usize::from(PACKED_FIXTURE[5]);
+        let expected = unpack(PACKED_FIXTURE).unwrap();
+        for name_len in [220u16, 221, 988, 989, 990, 2048] {
+            let mut metadata = Vec::new();
+            metadata.extend_from_slice(&PACKED_MAGIC.to_be_bytes());
+            metadata.extend_from_slice(&PACKED_FORMAT_VERSION.to_be_bytes());
+            metadata.extend_from_slice(&name_len.to_be_bytes());
+            metadata.resize(metadata.len() + usize::from(name_len), b'n');
+            metadata.extend_from_slice(b"\0\x07Program");
+            metadata.extend_from_slice(&0i32.to_be_bytes());
+            metadata.extend_from_slice(&(expected.len() as i64).to_be_bytes());
+
+            let mut packed = JAVA_STREAM_HEADER.to_vec();
+            for block in metadata.chunks(1024) {
+                if let Ok(len) = u8::try_from(block.len()) {
+                    packed.extend_from_slice(&[0x77, len]);
+                } else {
+                    packed.push(0x7a);
+                    packed.extend_from_slice(&(block.len() as u32).to_be_bytes());
+                }
+                packed.extend_from_slice(block);
+            }
+            packed.extend_from_slice(&PACKED_FIXTURE[zip_start..]);
+            assert!(is_packed(&packed), "name length {name_len}");
+            assert_eq!(unpack_bounded(&packed, expected.len()).unwrap(), expected);
+            assert!(unpack_bounded(&packed, expected.len() - 1).unwrap_err()
+                .explain().contains("out of range"));
+        }
+    }
 
     #[test]
     fn stock_raw_and_packed_resolve_shared_overflow_names() {

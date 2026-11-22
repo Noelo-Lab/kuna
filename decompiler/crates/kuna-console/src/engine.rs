@@ -617,7 +617,7 @@ pub struct ConsoleProgram {
     /// datatest path (no Listing tier), so the gated build is a structural no-op
     /// there. Empty/`None` when the listing flag is off ⇒ zero cost.
     analysis_image:
-        Option<(String, kuna_analysis::image_bytes::ImageBytes, kuna_analysis::loader::ImportProofMemo)>,
+        Option<(Option<String>, kuna_analysis::image_bytes::ImageBytes, kuna_analysis::loader::ImportProofMemo)>,
     /// (kuna `armframes`) The whole-image frame recovery: set before the commit,
     /// it is replayed instead of searched; after it, the record that commit made.
     arm_frames: Option<kuna_analysis::aif::kuna_framereplay::ArmFrameReplay>,
@@ -3127,8 +3127,7 @@ impl ConsoleProgram {
                 };
                 let _import_proofs =
                     kuna_analysis::loader::ImportProofScope::resume(&bytes, Some(import_proofs));
-                let image_path = std::path::Path::new(&path);
-                let image_path = image_path.exists().then_some(image_path);
+                let image_path = path.as_deref().map(Path::new).filter(|path| path.exists());
                     // Deferred entry-discovery passes FIRST: their entries must be
                     // in `merged` before `committed_entry_seeds` is read below, which
                     // is what hands the load-time inventory to the Listing walk as
@@ -4563,8 +4562,69 @@ pub(crate) fn bootstrap_image(
         }
         bootstrap_mz_bytes(path, &bytes, target, languages, isa)
     } else {
-        bootstrap_object(path, target, languages, isa, options, from_env, observe_source)
+        bootstrap_object(ObjectInput::Disk(path, observe_source), target, languages, isa, options, from_env)
     }
+}
+
+/// Recognize a self-contained executable from bytes. A recorded fat Mach-O
+/// range lets native BSim replay one indexed slice; uploads pass no range.
+/// Neither path can enter dyld, firmware, or fileset expansion.
+pub(crate) fn bootstrap_standalone_image(
+    bytes: Vec<u8>,
+    languages: &(impl Languages + ?Sized),
+    macho_slice: Option<(u64, u64)>,
+) -> KunaResult<ConsoleProgram> {
+    use object::FileKind;
+    let options = LoadOptions {
+        kernelcache: kuna_decomp::kuna_kernelcache::KernelcacheChoice::Off,
+        kernelcache_boot: kuna_decomp::kuna_kernelcacheboot::KernelcacheBoot::Off,
+        dyldcrossrefs: false,
+        ..LoadOptions::default()
+    };
+    let _load = options.enter();
+    let bytes: kuna_analysis::image_bytes::ImageBytes = if let Some((offset, size)) = macho_slice {
+        let slice = kuna_analysis::loader::macho_fat::fat_slice_by_range(&bytes, offset, size)
+            .ok_or_else(|| KunaError::lowlevel("indexed Mach-O slice range is not in the input fat table"))?;
+        if !matches!(FileKind::parse(slice), Ok(FileKind::MachO32 | FileKind::MachO64)) {
+            return Err(KunaError::lowlevel("indexed fat slice is not a thin Mach-O image"));
+        }
+        check_standalone_macho(slice)?;
+        let slice = std::sync::Arc::<[u8]>::from(slice);
+        drop(bytes);
+        slice.into()
+    } else {
+        if is_te_image(&bytes) {
+            return bootstrap_te_bytes("upload", &bytes, "", languages, None);
+        }
+        if is_mz_dos_image(&bytes) {
+            return bootstrap_mz_bytes("upload", &bytes, "", languages, None);
+        }
+        match FileKind::parse(bytes.as_slice()) {
+            Ok(FileKind::Elf32 | FileKind::Elf64 | FileKind::Pe32 | FileKind::Pe64
+                | FileKind::Coff | FileKind::CoffBig) => {}
+            Ok(FileKind::MachO32 | FileKind::MachO64) => check_standalone_macho(&bytes)?,
+            // The shared parser recognizes bare THUMB COFF even though FileKind
+            // doesn't. It has no container expansion or secondary I/O.
+            Err(_) if bytes.starts_with(&object::pe::IMAGE_FILE_MACHINE_THUMB.to_le_bytes()) => {}
+            _ => return Err(KunaError::lowlevel("expected a standalone executable image")),
+        }
+        bytes.into()
+    };
+    bootstrap_object(ObjectInput::Standalone(bytes), "", languages, None, &options, false)
+}
+
+fn check_standalone_macho(bytes: &[u8]) -> KunaResult<()> {
+    const FILESET: u32 = object::macho::MH_FILESET;
+    let kind = bytes.get(12..16).ok_or_else(|| KunaError::lowlevel("truncated Mach-O header"))?;
+    if kind == FILESET.to_le_bytes() || kind == FILESET.to_be_bytes() {
+        return Err(KunaError::lowlevel("Mach-O filesets are not standalone images"));
+    }
+    Ok(())
+}
+
+pub(crate) enum ObjectInput<'path, 'observe> {
+    Disk(&'path str, Option<&'observe mut dyn FnMut(&[u8])>),
+    Standalone(kuna_analysis::image_bytes::ImageBytes),
 }
 
 /// Put a load's options in force on this thread: `options` for an
@@ -4911,26 +4971,31 @@ pub fn bootstrap_from_object_with_isa(
 /// non-Go image). An explicit-options load leaves the environment alone and
 /// never reads it. The options are in force from the first byte read.
 pub(crate) fn bootstrap_object(
-    path: &str,
+    input: ObjectInput<'_, '_>,
     target: &str,
     languages: &(impl Languages + ?Sized),
     isa: Option<ArmIsa>,
     options: &LoadOptions,
     from_env: bool,
-    observe_source: Option<&mut dyn FnMut(&[u8])>,
 ) -> KunaResult<ConsoleProgram> {
     let _caller = enter_load(options, from_env);
     let target = kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or("");
     let registry = build_registry();
 
-    let mapped = if observe_source.is_none() {
+    let disk_path = match &input {
+        ObjectInput::Disk(path, _) => Some(*path),
+        ObjectInput::Standalone(_) => None,
+    };
+    let path = disk_path.unwrap_or("upload");
+    let mapped = if matches!(&input, ObjectInput::Disk(_, None)) {
         kuna_analysis::image_bytes::ImageBytes::map_thin_macho(path)?
     } else {
         None
     };
-    let (bytes, load_notes) = match mapped {
-        Some(bytes) => (bytes, Vec::new()),
-        None => {
+    let (bytes, load_notes) = match (input, mapped) {
+        (_, Some(bytes)) => (bytes, Vec::new()),
+        (ObjectInput::Standalone(bytes), None) => (bytes, Vec::new()),
+        (ObjectInput::Disk(_, observe_source), None) => {
             // Read the image bytes once: reused for the loader AND the analysis-pass
             // object::File view (the analyzers need a parsed object the loader drops).
             let bytes = match kuna_analysis::loader::kuna_dyldcache::read_selected_image(Path::new(path)) {
@@ -5110,6 +5175,7 @@ pub(crate) fn bootstrap_object(
         // `.sla` is loaded and the loadimage attached (above), so a flag-gated
         // `Listing::build` can decode through it. Default-off ⇒ unused.
         sleigh.base().unwrap().translate(),
+        disk_path.map(Path::new).filter(|path| path.is_file()),
     );
     pending_analysis.extend(input_isa_stash(input_context_paints));
     let mut nullable = std::collections::BTreeMap::<u64, Vec<_>>::new();
@@ -5344,7 +5410,7 @@ pub(crate) fn bootstrap_object(
     }
     let proof_memo = import_proofs.memo();
     drop(import_proofs);
-    prog.analysis_image = Some((path.to_string(), bytes, proof_memo));
+    prog.analysis_image = Some((disk_path.map(str::to_owned), bytes, proof_memo));
     prog.loader_data_objects = loader_data_objects;
     prog.loader_data_exports = loader_data_exports;
     prog.import_slots = crate::kuna_importslots::ImportSlots::new(import_slots);

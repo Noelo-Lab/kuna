@@ -4972,19 +4972,113 @@ the top with a high score — a function at `0x411440` in one build matched the
 same source compiled at `0x411430` in the next, at similarity 1.000, while
 unrelated functions in that corpus scored 0.71–0.73.
 
-Both `build` and local `query` use Ghidra's `lshweights_*.xml` files from
-`Ghidra/Features/BSim/data`. Kuna looks for the selected profile in
-`--weights <dir>`, then `KUNA_BSIM_WEIGHTS`, then beside the corpus.
-The profile's signature settings must match the corpus.
+Kuna bundles the default weights for each local profile. To override them,
+use `--weights <dir>`, set `KUNA_BSIM_WEIGHTS`, or put the selected profile's
+`lshweights_*.xml` beside the corpus, in that order. Its signature settings
+must match the corpus. No Ghidra installation is needed.
+
+### Serve and import a reference library
+
+`kuna-bsim-server` stores BSim signatures and the original executable bytes
+needed to compare a match. It runs without PostgreSQL, Java, or Ghidra.
+
+```bash
+kuna-bsim-server import-ghidra /backups/library.gpr --store ./library --json
+kuna-bsim-server --store ./library --bind 127.0.0.1:8787
+kuna bsim query new.exe --server http://127.0.0.1:8787 --address 0x401010 --json
+kuna bsim compare new.exe --address 0x401010 \
+    --server http://127.0.0.1:8787 --match-id "$MATCH_ID" --json
+```
+
+Set `MATCH_ID` to the `match_id` printed by the query. Kuna fetches the indexed
+function's original executable from the same origin, verifies the SHA-256,
+and decompiles both entries locally. The service does not store or return
+decompiled code. Files with the same name but different bytes remain distinct.
+Queries send feature hashes, not the source executable.
+Results may be truncated to fit the response limit; the returned matches
+are always the highest-ranked ones. JSON reports this with `truncated`.
+
+The importer reads closed or consistently copied Ghidra 12.1.2 projects
+(`.gpr` together with its `.rep`, or the `.rep` directly) and individual
+packed Program archives (`.gzf`). It imports the saved original executable
+and compatible function entries/names, not the full analysis database or
+types or analysis overrides. The original must be a linked ELF, PE, or
+Mach-O image with verifiable file backing, and its inferred instruction
+language must match the project language. For ELF PIE and shared objects,
+the importer translates a verified uniform load offset. Code changes,
+including loader relocations that rewrite executable bytes, are rejected.
+The latest snapshot takes precedence over inferred native names, but never
+over explicit publications. Import reports what it added, updated, or kept.
+If some functions cannot be signed, it keeps the successful signatures,
+reports the first failure, and exits nonzero. Use a local store directory
+that only trusted operators can modify.
+The store syncs directory updates on Unix. On Windows, publication uses
+atomic replacement but does not promise recovery after power loss.
+The server uses bundled weights. `--profile` selects a profile for import
+or a query where the default is not appropriate.
+
+Plain HTTP is limited to numeric loopback addresses. To serve a non-loopback
+address, supply `--tls-cert` and `--tls-key` (PEM), and set
+`KUNA_BSIM_SERVER_TOKEN` on the server and client through a credential
+manager. Kuna uses its system trust roots; set `SSL_CERT_FILE` for a private
+CA. The server rejects unauthenticated requests when a token is set.
+For untrusted networks, use an ingress that limits connection and TLS
+handshake rates before forwarding traffic to the service.
+
+To index binaries without a Ghidra project, import the original files directly:
+
+```bash
+kuna-bsim-server import module.o app.exe --store ./library --json
+```
+
+Kuna discovers functions, uses names from the object when available, and
+stores signatures and the original bytes. `.o` functions use Kuna's loaded
+addresses so separate sections with the same raw offset stay distinct.
+For a universal Mach-O, import indexes one slice and stores the whole file.
+Set `KUNA_MACHO_SLICE=arm64` to select the ARM slice instead of the default
+when both are present. Compare verifies the whole file and reopens the
+indexed slice regardless of the client's local slice preference.
+The JSON match includes the slice's file offset and size. A store accepts
+one slice per original file and weights profile.
+
+To publish one finished function, set a separate `KUNA_BSIM_SERVER_WRITE_TOKEN`
+on the server and the publishing client. The server is read-only when this
+token is absent. A read token cannot publish.
+
+```bash
+kuna bsim push app.exe --server http://127.0.0.1:8787 \
+    --address 0x401010 --rename parse_record --json
+```
+
+Use `--name` instead of `--address` to select by an existing symbol.
+Without `--rename`, the server uses Kuna's resolved function name. A bounded
+worker from the same server binary signs the selected function from the
+upload, without consulting other executable files. A push replaces only
+that entry in the same executable and profile; other entries stay intact.
+Release builds load the server's bundled SLEIGH specs directly from the
+binary, without an on-disk spec cache.
+Give write tokens only to trusted publishers. The worker is resource-limited,
+not an OS privilege sandbox; run the server under a dedicated unprivileged
+account and reserve at least 2 GiB of memory for the worker in addition to
+the server's own working set.
+The client verifies the acknowledgement against the exact bytes it sent.
+The returned `match_id` is ready for `kuna bsim compare`. If the client
+reports an unknown outcome, check the entry or retry the same publication.
+
+From a checkout, run `make binaries specs test-bsim-native` to test Ghidra
+migration, native import, authenticated publication, and automatic comparison.
+The regression uses checked-in Ghidra 12.1.2 data and needs no Java or Ghidra.
 
 ### Query a PostgreSQL BSim database
 
 Set `KUNA_BSIM_POSTGRES` to a PostgreSQL connection string or URI supplied by
 your credential manager. For example, `host=bsim.example.org dbname=bsim
-user=bsim_reader` specifies the endpoint and identity without a password. Use
-a database role with read access to the BSim tables and permission to execute
-the `lshvector` functions. TCP connections require TLS with hostname and
-certificate verification against the system trust store; Unix sockets also work.
+user=bsim_reader` specifies the endpoint and identity without a password. This
+mode reads an existing BSim schema and uses its server-side `lshvector` index.
+Use a role with read access to the BSim tables and permission to execute the
+`lshvector` functions. No Ghidra application or bridge runs on the Kuna side.
+TCP connections require TLS with hostname and certificate verification
+against the system trust store; Unix sockets also work.
 Connection startup, including TLS and authentication, has a 10-second deadline.
 
 ```bash
@@ -5000,34 +5094,29 @@ does not prove the database has no similar functions. PostgreSQL BSim layout
 rather than searching with fallback weights. H2, Elasticsearch and remote
 ingest are not supported.
 
-### Compare against a Ghidra Server match
+### Compare against a local reference binary
 
-Use a `match_id` from the same database with `reference_available: true`.
-Set `KUNA_BSIM_REFERENCE_URL` to an authorized GhydraMCP worker base URL (HTTPS,
-or HTTP on loopback). The worker must have a read-enabled repository profile
-for the indexed `ghidra://` location. If an HTTPS gateway requires a bearer
-token, supply it through `KUNA_BSIM_REFERENCE_TOKEN`, not the URL.
-For a private HTTPS CA, use the system trust store or set `SSL_CERT_FILE`.
+Kuna decompiles both functions and emits a unified C diff. Supply the reference
+binary and its function address for an offline comparison:
 
 ```bash
-kuna bsim compare app.exe --address 0x401010 --match-id 42 \
-    --reference-profile ghidra-reader --json
+kuna bsim compare app.exe --address 0x401010 \
+    --reference old.exe --reference-address 0x401020 --json
 ```
 
-The worker opens the stored reference read-only, verifies executable MD5 and
-function address, and returns Ghidra's C. `--version N` pins the repository
-version; otherwise the worker resolves the latest stored version and reports
-its number. The JSON contains both C bodies and a unified text diff. If either
-body is unavailable or truncated at 1,000 lines, `diff` is null. A text diff
-is not a semantic comparison. This command does not apply names or types,
-check out files, or change the worker's active program.
+To compare against an existing PostgreSQL match, replace `--reference-address`
+with `--match-id ID` from the same database. Kuna uses the indexed function
+address and verifies the reference binary's MD5. Obtain the binary separately;
+Kuna does not connect to a Ghidra Server or download files from a `repository_url`.
+If either decompilation is unavailable or truncated at 1,000 lines, `diff` is
+null. A text diff does not establish semantic equivalence.
 
 To run the remote regression test on Linux, build Kuna and the SLEIGH specs
 with `make`, then run `python3 scripts/test_bsim_remote.py /path/to/ghidra-source`.
 The test uses PostgreSQL 16 server tools and headers, an x86-64 C toolchain
 with `objcopy`, and OpenSSL.
-It starts a temporary PostgreSQL instance with Ghidra's `lshvector` extension
-and a loopback HTTPS reference worker.
+It starts a temporary PostgreSQL instance with the stock `lshvector` extension
+to test interoperability; it does not need a Ghidra application or worker.
 
 ## `kuna fid` — function identification by fingerprint
 

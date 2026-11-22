@@ -5,7 +5,7 @@
 //! subcommands run the decompiler console and the SLEIGH compiler, so `kuna
 //! decompile` and `kuna specs` re-enter the running binary rather than look for
 //! siblings. A release build also carries the SLEIGH tree inside itself
-//! ([`crate::embedded_specs`]), which makes the one file a complete install.
+//! ([`kuna_console::embedded_specs`]), which makes the one file a complete install.
 //!
 //! A build without the embedded tree finds one in either of two layouts:
 //!
@@ -121,7 +121,7 @@ pub fn specs_dir() -> PathBuf {
     if let Some(root) = env_path("KUNA_ROOT") {
         return root.join("specs");
     }
-    if let Some(Ok(dir)) = crate::embedded_specs::tree() {
+    if let Some(Ok(dir)) = kuna_console::embedded_specs::tree() {
         return dir.clone();
     }
     let dirs = specs_search_dirs();
@@ -142,7 +142,7 @@ pub fn require_specs_dir() -> Result<PathBuf, String> {
             ));
         }
     }
-    let unpack = match crate::embedded_specs::tree() {
+    let unpack = match kuna_console::embedded_specs::tree() {
         Some(Err(e)) => format!(" (the SLEIGH tree built into kuna could not be unpacked: {e})"),
         _ => String::new(),
     };

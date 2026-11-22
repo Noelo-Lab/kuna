@@ -141,14 +141,14 @@ fn query(binary: &str, db_path: &str, addresses: &[u64]) -> Result<serde_json::V
         };
         let run = || {
             if is_discovered {
-                fid_candidate(binary, db_path, &db, format, lang, &baseline, &prog, addr)
+                fid_candidate((binary, db_path), &db, format, lang, &baseline, &prog, addr)
             } else {
                 let mut seeds = base_seeds.clone();
                 seeds.push(addr);
                 seeds.sort_unstable();
                 seeds.dedup();
                 let listing = Listing::build(&file, &image, arch, arch.translate(), &seeds);
-                fid_candidate(binary, db_path, &db, format, lang, &listing, &prog, addr)
+                fid_candidate((binary, db_path), &db, format, lang, &listing, &prog, addr)
             }
         };
         let result = if thumb {
@@ -205,8 +205,7 @@ pub(super) fn package_results(
 }
 
 fn fid_candidate(
-    binary: &str,
-    db_path: &str,
+    (binary, db_path): (&str, &str),
     db: &LoadedFid,
     database_format: &'static str,
     lang: &str,
@@ -318,8 +317,7 @@ mod tests {
         ));
         let query = || {
             fid_candidate(
-                path,
-                "test.fid",
+                (path, "test.fid"),
                 &db,
                 "kuna_fid",
                 "ARM:LE:32:v8",

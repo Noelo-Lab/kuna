@@ -1,29 +1,27 @@
-//! Compare local C against a single versioned Ghidra Server function.
+//! Compare Kuna-decompiled C from local or verified remote executables.
 
-use std::net::IpAddr;
-use std::time::Duration;
-
+use kuna_console::engine::{ConsoleProgram, EntrySelector, FunctionEntry};
 use kuna_console::project::{decompile_targets_with, DecompileOptions};
-use percent_encoding::percent_decode_str;
-use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde::Serialize;
 use similar::TextDiff;
-use ureq::tls::{Certificate, RootCerts, TlsConfig};
-use url::Url;
 
-use super::{corpus_io, parse_address, postgres};
+use super::{corpus_io, parse_address, postgres, server_client};
 
 const MAX_CODE_LINES: usize = 1000;
-const MAX_RESPONSE_BYTES: u64 = 8 * 1024 * 1024;
 
 struct Args<'a> {
     binary: &'a str,
     address: Option<&'a str>,
     name: Option<&'a str>,
-    id: i64,
-    profile: &'a str,
-    version: i32,
+    reference: Option<&'a str>,
+    selector: ReferenceSelector<'a>,
     json: bool,
+}
+
+enum ReferenceSelector<'a> {
+    Address(u64),
+    MatchId(i64),
+    Server { url: &'a str, id: server_client::MatchId<'a> },
 }
 
 pub(super) fn cmd_compare(argv: &[String]) -> i32 {
@@ -37,15 +35,15 @@ pub(super) fn cmd_compare(argv: &[String]) -> i32 {
     match compare(&args) {
         Ok(out) => crate::output::emit_with_status(&out, 0),
         Err(err) => {
-            eprintln!("kuna bsim compare: {err}");
+            eprintln!("kuna bsim compare: {}", super::TerminalText(&err));
             1
         }
     }
 }
 
 fn parse(argv: &[String]) -> Result<Args<'_>, String> {
-    let (mut binary, mut address, mut name, mut id, mut profile) = (None, None, None, None, None);
-    let mut version = -1;
+    let (mut binary, mut address, mut name, mut reference, mut entry, mut match_id, mut server) =
+        (None, None, None, None, None, None, None);
     let mut json = false;
     let mut iter = argv.iter().map(String::as_str);
     while let Some(flag) = iter.next() {
@@ -53,12 +51,13 @@ fn parse(argv: &[String]) -> Result<Args<'_>, String> {
         match flag {
             "--address" => address = Some(value()?),
             "--name" => name = Some(value()?),
-            "--match-id" => id = value()?.parse::<i64>().ok().filter(|&x| x > 0),
-            "--reference-profile" => profile = Some(value()?),
-            "--version" => {
-                version = value()?.parse::<i32>().ok().filter(|&v| v > 0)
-                    .ok_or_else(|| "--version requires a positive stored version".to_owned())?;
+            "--reference" if reference.is_none() => reference = Some(value()?),
+            "--reference-address" if entry.is_none() && match_id.is_none() => {
+                entry = Some(parse_address(value()?)?);
             }
+            "--match-id" if entry.is_none() && match_id.is_none() => match_id = Some(value()?),
+            "--reference-address" | "--match-id" => return Err(REFERENCE_SELECTOR_ERROR.into()),
+            "--server" if server.is_none() => server = Some(value()?),
             "--json" => json = true,
             s if !s.starts_with('-') && binary.is_none() => binary = Some(s),
             _ => return Err(format!("unexpected argument {flag:?}")),
@@ -67,19 +66,35 @@ fn parse(argv: &[String]) -> Result<Args<'_>, String> {
     if address.is_some() == name.is_some() {
         return Err("choose one source function with --address or --name".into());
     }
+    let selector = match (entry, match_id, server) {
+        (Some(entry), None, None) if reference.is_some() => ReferenceSelector::Address(entry),
+        (Some(_), None, None) => return Err("--reference-address requires a local --reference binary".into()),
+        (None, Some(id), None) if reference.is_some() => {
+            let id = id.parse::<i64>().ok().filter(|&id| id > 0)
+                .ok_or("--match-id requires a positive PostgreSQL match ID when --server is absent")?;
+            ReferenceSelector::MatchId(id)
+        }
+        (None, Some(_), None) => return Err("a PostgreSQL match ID requires --reference".into()),
+        (None, Some(id), Some(url)) if reference.is_none() => {
+            ReferenceSelector::Server { url, id: server_client::MatchId::parse(id)? }
+        }
+        (_, _, Some(_)) => return Err("--server requires --match-id and forbids --reference".into()),
+        _ => return Err(REFERENCE_SELECTOR_ERROR.into()),
+    };
     Ok(Args {
         binary: binary.ok_or_else(|| "a source binary is required".to_owned())?,
         address,
         name,
-        id: id.ok_or_else(|| "--match-id requires a positive PostgreSQL match ID".to_owned())?,
-        profile: profile.filter(|p| !p.trim().is_empty())
-            .ok_or_else(|| "--reference-profile is required".to_owned())?,
-        version,
+        reference,
+        selector,
         json,
     })
 }
 
-#[derive(Deserialize, Serialize)]
+const REFERENCE_SELECTOR_ERROR: &str =
+    "choose exactly one reference selector: --reference-address or --match-id";
+
+#[derive(Serialize)]
 struct Code {
     text: Option<String>,
     complete: bool,
@@ -87,7 +102,7 @@ struct Code {
 }
 
 impl Code {
-    fn local(text: Option<String>, error: Option<String>) -> Self {
+    fn from_decompilation(text: Option<String>, error: Option<String>) -> Self {
         if error.is_some() {
             return Self { text: None, complete: false, error };
         }
@@ -95,7 +110,7 @@ impl Code {
             return Self {
                 text: None,
                 complete: false,
-                error: Some("local decompilation did not return code".into()),
+                error: Some("decompilation did not return code".into()),
             };
         };
         let error = text.match_indices('\n').nth(MAX_CODE_LINES - 1)
@@ -103,7 +118,7 @@ impl Code {
             .filter(|&end| end < text.len())
             .map(|end| {
                 text.truncate(end);
-                format!("local code exceeds {MAX_CODE_LINES} lines")
+                format!("decompiled code exceeds {MAX_CODE_LINES} lines")
             });
         Self { text: Some(text), complete: error.is_none(), error }
     }
@@ -115,206 +130,210 @@ impl Code {
 
 fn code_diff(source: &Code, reference: &Code) -> Option<String> {
     Some(TextDiff::from_lines(source.complete_text()?, reference.complete_text()?)
-        .unified_diff().header("kuna", "ghidra").to_string())
+        .unified_diff().header("source", "reference").to_string())
 }
 
-#[derive(Deserialize, Serialize)]
-struct Program {
-    name: String,
-    md5: String,
-    language: String,
-    compiler: String,
-}
-
-#[derive(Deserialize, Serialize)]
+#[derive(Serialize)]
 struct Function {
     name: String,
     address: String,
-    prototype: String,
-}
-
-#[derive(Deserialize, Serialize)]
-struct Snapshot {
-    program: Program,
-    function: Function,
     code: Code,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Serialize)]
 struct Reference {
-    #[serde(skip_serializing)]
-    match_id: String,
+    binary: String,
+    executable_md5: Option<String>,
     identity_verified: bool,
-    profile: String,
-    path: String,
-    version: i32,
-    snapshot: Snapshot,
-}
-
-#[derive(Deserialize)]
-struct Response {
-    success: bool,
-    result: Reference,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sha256: Option<String>,
+    #[serde(flatten)]
+    function: Function,
 }
 
 fn compare(args: &Args<'_>) -> Result<String, String> {
-    let base = std::env::var("KUNA_BSIM_REFERENCE_URL")
-        .map_err(|_| "set KUNA_BSIM_REFERENCE_URL to the GhydraMCP worker base URL".to_owned())?;
-    let endpoint = worker_endpoint(&base)?;
-    let mut prog = corpus_io::load_corpus_program(args.binary)?;
-    let entry = corpus_io::select_entry(&prog, args.address, args.name)?;
-    let addr = format!("0x{:x}", prog.output_code_offset(entry.addr.get_offset()));
-    let selected_name = entry.name.clone();
-    let options = DecompileOptions { single_target: true, ..DecompileOptions::default() };
-    let (name, local_code) = match decompile_targets_with(&mut prog, vec![entry], &options).pop() {
-        Some(local) => (local.name, Code::local(local.code, local.error)),
-        None => (selected_name, Code::local(None, Some("local decompilation did not return a function".into()))),
+    let (reference, matched) = resolve_reference(args)?;
+    let source = {
+        let mut prog = corpus_io::load_corpus_program(args.binary)?;
+        let entry = corpus_io::select_entry(&prog, args.address, args.name)?;
+        decompile_entry(&mut prog, entry)
     };
-    let matched = {
-        let mut client = postgres::connect()?;
-        let mut tx = postgres::read_only(&mut client)?;
-        postgres::matched_function(&mut tx, args.id)?
-    };
-    let reference = fetch(endpoint, args, &matched)?;
-    let reference_code = &reference.snapshot.code;
-    let diff = code_diff(&local_code, reference_code);
+    let reference_code = &reference.function.code;
+    let diff = code_diff(&source.code, reference_code);
     if args.json {
-        return Ok(format!("{:#}\n", json!({
-            "binary": args.binary,
-            "source": { "name": name, "address": addr, "code": local_code },
-            "match": matched,
-            "reference": reference,
-            "diff": diff,
-        })));
+        #[derive(Serialize)]
+        struct Comparison<'a> {
+            binary: &'a str,
+            source: Function,
+            #[serde(rename = "match")]
+            matched: Option<serde_json::Value>,
+            reference: Reference,
+            diff: Option<String>,
+        }
+        let mut out = serde_json::to_string_pretty(&Comparison {
+            binary: args.binary, source, matched, reference, diff,
+        }).map_err(|err| err.to_string())?;
+        out.push('\n');
+        return Ok(out);
     }
     let evidence = match diff {
         Some(diff) if diff.is_empty() => "Decompiled C is textually identical.\n".to_owned(),
         Some(diff) => diff,
         None => format!(
-            "C diff unavailable: {}\n\n--- Kuna C ---\n{}\n--- Ghidra C ---\n{}\n",
-            local_code.error.as_deref().or(reference_code.error.as_deref()).unwrap_or("incomplete code"),
-            local_code.text.as_deref().unwrap_or("(no code returned)"),
+            "C diff unavailable: {}\n\n--- Source C ---\n{}\n--- Reference C ---\n{}\n",
+            source.code.error.as_deref().or(reference_code.error.as_deref()).unwrap_or("incomplete code"),
+            source.code.text.as_deref().unwrap_or("(no code returned)"),
             reference_code.text.as_deref().unwrap_or("(no code returned)"),
         ),
     };
-    Ok(format!("{name} @ {addr} vs {} @ {} ({} at version {})\n{evidence}",
-        reference.snapshot.function.name, reference.snapshot.function.address,
-        reference.path, reference.version))
+    let verified = if reference.sha256.is_some() {
+        "; SHA-256 verified"
+    } else if reference.identity_verified {
+        "; MD5 verified"
+    } else {
+        ""
+    };
+    Ok(format!("{} @ {} vs {} @ {} [{}{verified}]\n{evidence}",
+        super::TerminalText(&source.name), source.address,
+        super::TerminalText(&reference.function.name), reference.function.address,
+        super::TerminalText(&reference.binary)))
 }
 
-fn worker_endpoint(base: &str) -> Result<Url, String> {
-    let mut url = Url::parse(base).map_err(|_| "invalid KUNA_BSIM_REFERENCE_URL".to_owned())?;
-    let loopback = url.host_str().is_some_and(|host| host == "localhost" ||
-        host.trim_matches(['[', ']']).parse::<IpAddr>().is_ok_and(|addr| addr.is_loopback()));
-    if url.host().is_none() || !(url.scheme() == "https" || (url.scheme() == "http" && loopback))
-        || !url.username().is_empty() || url.password().is_some()
-        || url.query().is_some() || url.fragment().is_some()
-    {
-        return Err("reference worker URL must use HTTPS or loopback HTTP, without credentials, query or fragment".into());
-    }
-    url.path_segments_mut().map_err(|()| "invalid reference worker URL")?
-        .pop_if_empty().extend(["repositories", "inspect-match"]);
-    Ok(url)
-}
-
-fn reference_path_matches(repository: &Url, resolved: &str) -> bool {
-    // The worker returns the decoded path relative to the repository root,
-    // not the full URL path beginning with the repository name.
-    let Some((repository_name, indexed_path)) = repository.path().strip_prefix('/')
-        .and_then(|path| path.split_once('/')) else {
-        return false;
-    };
-    let Some(resolved) = resolved.strip_prefix('/') else {
-        return false;
-    };
-    !repository_name.is_empty() && !resolved.is_empty()
-        && percent_decode_str(indexed_path).decode_utf8().is_ok_and(|indexed| indexed == resolved)
-}
-
-fn reference_address_matches(resolved: &str, indexed: &str) -> bool {
-    // Native snapshots report `space::0xOFFSET`, but the BSim index stores
-    // only the offset. The worker verifies which address space to use.
-    let Some((space, address)) = resolved.split_once("::") else {
-        return false;
-    };
-    let Some(hex) = address.strip_prefix("0x") else {
-        return false;
-    };
-    !space.trim().is_empty() && !space.contains(':') && !space.chars().any(char::is_control)
-        && (1..=16).contains(&hex.len()) && hex.bytes().all(|b| b.is_ascii_hexdigit())
-        && parse_address(indexed).is_ok_and(|indexed| parse_address(address) == Ok(indexed))
-}
-
-fn fetch(mut endpoint: Url, args: &Args<'_>, matched: &postgres::RemoteMatch) -> Result<Reference, String> {
-    let repository = matched.repository_url.as_ref()
-        .ok_or_else(|| "the selected BSim match has no usable Ghidra Server reference".to_owned())?;
-    // The worker uses this UUID as a request correlation ID, not an access grant.
-    let request_id = uuid::Uuid::new_v4().to_string();
-    endpoint.query_pairs_mut().extend_pairs([
-        ("profile", args.profile),
-        ("match_id", &request_id),
-        ("repository_url", repository.as_str()),
-        ("executable_md5", &matched.executable_md5),
-        ("address", &matched.address),
-        ("function", &matched.name),
-        ("version", &args.version.to_string()),
-        ("max_code_lines", &MAX_CODE_LINES.to_string()),
-    ]);
-    let mut config = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(90)))
-        .max_redirects(0).max_redirects_will_error(true).proxy(None);
-    if endpoint.scheme() == "https" {
-        let native = rustls_native_certs::load_native_certs();
-        if native.certs.is_empty() {
-            return Err("could not load native CA certificates for the reference worker (check TLS trust)".into());
+fn resolve_reference(args: &Args<'_>) -> Result<(Reference, Option<serde_json::Value>), String> {
+    match &args.selector {
+        ReferenceSelector::Address(address) => {
+            let path = args.reference.expect("explicit address requires local reference");
+            let mut prog = corpus_io::load_corpus_program(path)?;
+            let entry = resolve_entry(&prog, *address, false)?;
+            Ok((Reference {
+                binary: path.into(),
+                executable_md5: None,
+                identity_verified: false,
+                sha256: None,
+                function: decompile_entry(&mut prog, entry),
+            }, None))
         }
-        let roots = RootCerts::from(native.certs.into_iter()
-            .map(|cert| Certificate::from_der(cert.as_ref()).to_owned()));
-        config = config.tls_config(TlsConfig::builder().root_certs(roots).build());
+        ReferenceSelector::MatchId(id) => {
+            let matched = {
+                let mut client = postgres::connect()?;
+                let mut tx = postgres::read_only(&mut client)?;
+                postgres::matched_function(&mut tx, *id)?
+            };
+            let address = parse_address(&matched.address)?;
+            let path = args.reference.expect("a PostgreSQL match ID requires local reference");
+            let (mut prog, md5) = corpus_io::load_corpus_program_with_md5(path)?;
+            if !md5.eq_ignore_ascii_case(&matched.executable_md5) {
+                return Err(format!(
+                    "reference executable MD5 mismatch for BSim match {}: expected {}, got {md5}",
+                    matched.match_id, matched.executable_md5,
+                ));
+            }
+            let entry = resolve_entry(&prog, address, true)?;
+            let reference = Reference {
+                binary: path.into(),
+                executable_md5: Some(md5),
+                identity_verified: true,
+                sha256: None,
+                function: decompile_entry(&mut prog, entry),
+            };
+            Ok((reference, Some(to_json(matched)?)))
+        }
+        ReferenceSelector::Server { url, id } => {
+            let client = server_client::Client::new(url)?;
+            let matched = client.function(id)?;
+            use md5::{Digest, Md5};
+            let bytes = client.download(id)?;
+            let md5 = kuna_base::hex_lower(&Md5::digest(&bytes));
+            if !md5.eq_ignore_ascii_case(&matched.md5) {
+                return Err("Kuna BSim reference metadata MD5 does not match the downloaded binary".into());
+            }
+            let mut prog = crate::decompile_all::load_bsim_reference(bytes, &matched)?;
+            let entry = resolve_entry(&prog, id.address, true)?;
+            if !prog.any_executable_entry(std::slice::from_ref(&entry)) {
+                return Err(format!("indexed entry {:#x} is not executable in the downloaded binary", id.address));
+            }
+            let reference = Reference {
+                binary: matched.executable.clone(),
+                executable_md5: Some(md5),
+                identity_verified: true,
+                sha256: Some(matched.sha256.clone()),
+                function: decompile_entry(&mut prog, entry),
+            };
+            let mut matched = to_json(matched)?;
+            matched["match_id"] = id.to_string().into();
+            matched["address"] = format!("{:#x}", id.address).into();
+            Ok((reference, Some(matched)))
+        }
     }
-    let agent: ureq::Agent = config.build().into();
-    let mut request = agent.get(endpoint.as_str());
-    if let Ok(token) = std::env::var("KUNA_BSIM_REFERENCE_TOKEN") {
-        let value = ureq::http::HeaderValue::from_str(&format!("Bearer {token}"))
-            .map_err(|_| "invalid KUNA_BSIM_REFERENCE_TOKEN".to_owned())?;
-        request = request.header("Authorization", value);
+}
+
+fn resolve_entry(prog: &ConsoleProgram, address: u64, exact: bool) -> Result<FunctionEntry, String> {
+    let entry = prog.resolve_entry(&EntrySelector::Numeric(address))
+        .map_err(|err| format!("reference: {err}"))?;
+    if exact && prog.output_code_offset(entry.addr.get_offset()) != address {
+        return Err(format!("reference does not resolve to indexed entry {address:#x}"));
     }
-    let mut response = request.call().map_err(|err| match err {
-        ureq::Error::StatusCode(status) => format!("reference worker rejected the request (HTTP {status})"),
-        _ => "reference worker connection failed (check endpoint and TLS trust)".to_owned(),
-    })?;
-    let data = response.body_mut().with_config().limit(MAX_RESPONSE_BYTES).read_to_vec()
-        .map_err(|_| "could not read bounded reference worker response".to_owned())?;
-    let Response { success, result } = serde_json::from_slice(&data)
-        .map_err(|_| "invalid GhydraMCP reference response".to_owned())?;
-    if !success || !result.identity_verified || result.match_id != request_id || result.profile != args.profile
-        || !result.snapshot.program.md5.eq_ignore_ascii_case(&matched.executable_md5)
-        || !reference_path_matches(repository, &result.path)
-        || !reference_address_matches(&result.snapshot.function.address, &matched.address)
-        || result.version < 1 || (args.version != -1 && result.version != args.version)
-    {
-        return Err("reference worker did not verify the selected match identity and version".into());
+    Ok(entry)
+}
+
+fn to_json(value: impl Serialize) -> Result<serde_json::Value, String> {
+    serde_json::to_value(value).map_err(|err| err.to_string())
+}
+
+fn decompile_entry(prog: &mut ConsoleProgram, entry: FunctionEntry) -> Function {
+    let options = DecompileOptions { single_target: true, ..DecompileOptions::default() };
+    let result = decompile_targets_with(prog, vec![entry], &options)
+        .pop().expect("one decompile target returns one result");
+    Function {
+        name: result.name,
+        address: format!("{:#x}", result.address),
+        code: Code::from_decompilation(result.code, result.error),
     }
-    Ok(result)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
-    fn unavailable_local_code_is_incomplete_and_has_no_diff() {
+    fn parse_requires_one_reference_selector_and_a_binary() {
+        fn args(tail: &[&str]) -> Vec<String> {
+            ["source", "--name", "main"].into_iter().chain(tail.iter().copied())
+                .map(str::to_owned).collect()
+        }
+
+        let argv = args(&["--reference", "ref", "--reference-address", "0x16"]);
+        let offline = parse(&argv).unwrap();
+        assert_eq!(offline.reference, Some("ref"));
+        assert!(matches!(offline.selector, ReferenceSelector::Address(0x16)));
+        let argv = args(&["--reference", "ref", "--match-id", "42"]);
+        assert!(matches!(parse(&argv).unwrap().selector, ReferenceSelector::MatchId(42)));
+        for bad in [
+            &["--reference", "ref"][..],
+            &["--reference-address", "16"],
+            &["--reference", "ref", "--reference-address", "16", "--match-id", "42"],
+            &["--reference", "ref", "--match-id", "42", "--match-id", "43"],
+            &["--reference", "ref", "--match-id", "0"],
+            &["--reference", "ref", "--reference-address", "badhex"],
+        ] {
+            assert!(parse(&args(bad)).is_err(), "accepted {bad:?}");
+        }
+    }
+
+    #[test]
+    fn unavailable_code_is_incomplete_and_has_no_diff() {
         let reference = Code { text: Some("int ref(void) {}\n".into()), complete: true, error: None };
-        let source = Code::local(None, Some("local decompilation failed".into()));
+        let source = Code::from_decompilation(None, Some("decompilation failed".into()));
         assert_eq!(code_diff(&source, &reference), None);
         assert_eq!(json!(source), json!({
-            "text": null, "complete": false, "error": "local decompilation failed"
+            "text": null, "complete": false, "error": "decompilation failed"
         }));
 
-        let empty = Code::local(Some(" \n".into()), None);
+        let empty = Code::from_decompilation(Some(" \n".into()), None);
         assert_eq!(code_diff(&empty, &reference), None);
         assert_eq!(json!(empty), json!({
-            "text": null, "complete": false, "error": "local decompilation did not return code"
+            "text": null, "complete": false, "error": "decompilation did not return code"
         }));
     }
 
@@ -322,10 +341,11 @@ mod tests {
     fn complete_code_at_line_limit_can_be_compared_but_truncated_code_cannot() {
         let text = "line\n".repeat(MAX_CODE_LINES);
         let over_limit = format!("{text}tail");
-        let source = Code::local(Some(text), None);
-        let truncated = Code::local(Some(over_limit), None);
+        let source = Code::from_decompilation(Some(text), None);
+        let truncated = Code::from_decompilation(Some(over_limit), None);
         assert_eq!(code_diff(&source, &source).as_deref(), Some(""));
         assert_eq!(code_diff(&truncated, &source), None);
+        assert_eq!(code_diff(&source, &truncated), None);
         assert_eq!(truncated.text, source.text);
     }
 }

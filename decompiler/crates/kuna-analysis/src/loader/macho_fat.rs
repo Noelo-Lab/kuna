@@ -102,25 +102,56 @@ impl SlicePref {
 /// the named arch is present, else the deterministic default. Returns `None` for
 /// a non-fat input, an unparsable fat header, or a fat with no usable slice.
 pub fn select_fat_slice(bytes: &[u8], pref: SlicePref) -> Option<&[u8]> {
-    match FileKind::parse(bytes) {
-        Ok(FileKind::MachOFat32) => {
-            let fat = MachOFatFile32::parse(bytes).ok()?;
-            select_fat_arch(fat.arches(), pref).and_then(|a| a.data(bytes).ok())
-        }
-        Ok(FileKind::MachOFat64) => {
-            let fat = MachOFatFile64::parse(bytes).ok()?;
-            select_fat_arch(fat.arches(), pref).and_then(|a| a.data(bytes).ok())
-        }
-        _ => None,
-    }
+    selected_fat_slice(bytes, pref).map(|(_, slice)| slice)
 }
 
 /// Where [`select_fat_slice`]'s slice starts in `bytes`, so a reader of the
 /// slice can name offsets in the file it was handed. `None` wherever
 /// [`select_fat_slice`] is.
 pub fn fat_slice_offset(bytes: &[u8], pref: SlicePref) -> Option<u64> {
-    let slice = select_fat_slice(bytes, pref)?;
-    Some((slice.as_ptr() as usize - bytes.as_ptr() as usize) as u64) // cast: a sub-slice's index
+    fat_slice_range(bytes, pref).map(|(offset, _)| offset)
+}
+
+/// The selected table entry's `(offset, size)` in the original universal file.
+pub fn fat_slice_range(bytes: &[u8], pref: SlicePref) -> Option<(u64, u64)> {
+    selected_fat_slice(bytes, pref).map(|(range, _)| range)
+}
+
+fn selected_fat_slice(bytes: &[u8], pref: SlicePref) -> Option<((u64, u64), &[u8])> {
+    fn select<'a, Fat: FatArch>(
+        arches: &[Fat],
+        bytes: &'a [u8],
+        pref: SlicePref,
+    ) -> Option<((u64, u64), &'a [u8])> {
+        let arch = select_fat_arch(arches, pref)?;
+        let range = arch.file_range();
+        if range.1 == 0 {
+            return None;
+        }
+        Some((range, arch.data(bytes).ok()?))
+    }
+    match FileKind::parse(bytes).ok()? {
+        FileKind::MachOFat32 => select(MachOFatFile32::parse(bytes).ok()?.arches(), bytes, pref),
+        FileKind::MachOFat64 => select(MachOFatFile64::parse(bytes).ok()?.arches(), bytes, pref),
+        _ => None,
+    }
+}
+
+/// Reopen a recorded slice only when its full range occurs in the fat table
+/// and is backed by the original bytes. Does not consult an arch preference.
+pub fn fat_slice_by_range(bytes: &[u8], offset: u64, size: u64) -> Option<&[u8]> {
+    if size == 0 {
+        return None;
+    }
+    fn find<'a, Fat: FatArch>(arches: &[Fat], bytes: &'a [u8], range: (u64, u64)) -> Option<&'a [u8]> {
+        arches.iter().find(|arch| arch.file_range() == range)?.data(bytes).ok()
+    }
+    let range = (offset, size);
+    match FileKind::parse(bytes).ok()? {
+        FileKind::MachOFat32 => find(MachOFatFile32::parse(bytes).ok()?.arches(), bytes, range),
+        FileKind::MachOFat64 => find(MachOFatFile64::parse(bytes).ok()?.arches(), bytes, range),
+        _ => None,
+    }
 }
 
 /// The environment variable carrying a `--slice <arch>` fat-slice override to
@@ -272,8 +303,42 @@ mod tests {
         assert_eq!(peel_fat_image(stub.clone(), SlicePref::default()), stub);
     }
 
-    // The selection *policy* (override-wins, then x86-64 → arm64 → first) is
-    // exercised end-to-end on the real 2-slice `macho_fat` fixture by the console
-    // gate (`verify_macho_fat`), where actual `FatArch` records are present; here
-    // we cover the pure token-parse + non-fat-reject logic that needs no binary.
+    #[test]
+    fn indexed_range_replays_one_of_two_slices_with_the_same_cpu_type() {
+        let arm64: &[u8] = include_bytes!("../../tests/fixtures/macho_imports_arm64");
+        let arm64e: &[u8] = include_bytes!("../../tests/fixtures/macho_arm64e");
+        assert_eq!(&arm64[4..8], &arm64e[4..8]);
+        assert_ne!(&arm64[8..12], &arm64e[8..12]);
+        let mut fat = vec![0; 48];
+        fat[..4].copy_from_slice(&object::macho::FAT_MAGIC.to_be_bytes());
+        fat[4..8].copy_from_slice(&2u32.to_be_bytes());
+        let mut ranges = [(0, 0); 2];
+        for (i, thin) in [arm64, arm64e].into_iter().enumerate() {
+            let offset = fat.len().next_multiple_of(1 << 14);
+            let header = 8 + i * 20;
+            for field in 0..2 {
+                let pos = field * 4;
+                let word = u32::from_le_bytes(thin[4 + pos..8 + pos].try_into().unwrap());
+                fat[header + pos..header + pos + 4].copy_from_slice(&word.to_be_bytes());
+            }
+            fat[header + 8..header + 12].copy_from_slice(&(offset as u32).to_be_bytes());
+            fat[header + 12..header + 16].copy_from_slice(&(thin.len() as u32).to_be_bytes());
+            fat[header + 16..header + 20].copy_from_slice(&14u32.to_be_bytes());
+            fat.resize(offset, 0);
+            fat.extend_from_slice(thin);
+            ranges[i] = (offset as u64, thin.len() as u64);
+        }
+
+        assert_eq!(fat_slice_range(&fat, SlicePref::parse("arm64")), Some(ranges[0]));
+        let (offset, size) = ranges[1];
+        assert_eq!(fat_slice_by_range(&fat, offset, size), Some(arm64e));
+        assert!(fat_slice_by_range(&fat, offset, size - 1).is_none());
+        assert!(fat_slice_by_range(&fat, offset - 1, size).is_none());
+        fat.truncate(fat.len() - 1);
+        assert!(fat_slice_by_range(&fat, offset, size).is_none());
+
+        fat[20..24].fill(0); // First table entry's size.
+        assert!(fat_slice_range(&fat, SlicePref::parse("arm64")).is_none());
+        assert!(fat_slice_by_range(&fat, ranges[0].0, 0).is_none());
+    }
 }

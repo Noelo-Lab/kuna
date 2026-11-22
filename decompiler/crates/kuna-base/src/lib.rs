@@ -33,3 +33,14 @@ pub mod notes;
 pub mod crc32;
 pub mod compression;
 pub mod filemanage;
+
+/// Encode bytes as lowercase hexadecimal, with two digits per byte.
+pub fn hex_lower(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut text = String::with_capacity(bytes.len() * 2);
+    for &byte in bytes {
+        text.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        text.push(char::from(DIGITS[usize::from(byte & 15)]));
+    }
+    text
+}

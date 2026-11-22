@@ -979,11 +979,11 @@ only when `KUNA_DECOMP_DBG` or `KUNA_SLACOMP` names one. The child is still a
 separate process, which keeps the per-run memory limit and crash isolation the
 console had as its own binary. A release `kuna` also carries the compiled SLEIGH
 tree (cargo feature `embed-specs`, an `include_bytes!` table that
-`decompiler/crates/kuna-cli/build.rs` generates from every file under `specs/`
+`decompiler/crates/kuna-console/build_embedded_specs.rs` generates from every file under `specs/`
 except the SLEIGH sources). The engine reads specs only through plain `std::fs`
 path reads — the same contract the WASI front-end relies on — so the table is
 unpacked rather than read in place
-(`decompiler/crates/kuna-cli/src/embedded_specs.rs (unpack)`): into
+(`decompiler/crates/kuna-console/src/embedded_specs.rs (unpack)`): into
 `specs-<id>` under the per-user cache directory, falling back to the system temp
 directory, where `<id>` hashes every path and byte of the table. Each unpack is
 written to a private staging directory and renamed into place only after its

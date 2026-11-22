@@ -25,14 +25,13 @@ const MATCH_JOINS: &str = "
 #[derive(Serialize)]
 pub(super) struct RemoteMatch {
     pub(super) match_id: String,
-    pub(super) name: String,
+    name: String,
     pub(super) address: String,
-    pub(super) executable: String,
+    executable: String,
     pub(super) executable_md5: String,
     architecture: Option<String>,
     compiler: Option<String>,
-    pub(super) repository_url: Option<url::Url>,
-    reference_available: bool,
+    repository_url: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -330,8 +329,9 @@ fn remote_match(row: &Row) -> Result<RemoteMatch, String> {
     let executable_md5 = get_text(4)?;
     let repository = row.get::<_, Option<&str>>(7);
     let path = row.get::<_, Option<&str>>(8);
-    let repository_url = (executable_md5.len() == 32 && executable_md5.bytes().all(|b| b.is_ascii_hexdigit()))
-        .then(|| repository_url(repository?, path, &executable)).flatten();
+    let repository_url = repository
+        .and_then(|repository| repository_url(repository, path, &executable))
+        .map(String::from);
     Ok(RemoteMatch {
         match_id: row.get::<_, i64>(0).to_string(),
         name: get_text(1)?,
@@ -340,7 +340,6 @@ fn remote_match(row: &Row) -> Result<RemoteMatch, String> {
         executable_md5,
         architecture: row.get(5),
         compiler: row.get(6),
-        reference_available: repository_url.is_some(),
         repository_url,
     })
 }

@@ -11,8 +11,9 @@ use kuna_decomp::kuna_loadoptions::{self, LoadOptions, LoadScope};
 
 use crate::engine::{
     arm_isa_from_env, bootstrap_image, bootstrap_mz_bytes, bootstrap_object,
-    bootstrap_raw_image, bootstrap_te, bootstrap_te_bytes, bootstrap_xml_image, classify_file,
-    xml_root_image, ArmIsa, ConsoleProgram, FileInput, Languages,
+    bootstrap_raw_image, bootstrap_standalone_image, bootstrap_te, bootstrap_te_bytes,
+    bootstrap_xml_image, classify_file, xml_root_image, ArmIsa, ConsoleProgram, FileInput,
+    Languages, ObjectInput,
 };
 
 /// Where a [`Bootstrap`] finds its languages: spec roots (a slice, array or
@@ -114,16 +115,15 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
         let isa = self.resolved_isa()?;
         match self.options {
             Some(options) => {
-                bootstrap_object(path, self.target, self.languages, isa, options, false, None)
+                bootstrap_object(ObjectInput::Disk(path, None), self.target, self.languages, isa, options, false)
             }
             None => bootstrap_object(
-                path,
+                ObjectInput::Disk(path, None),
                 self.target,
                 self.languages,
                 isa,
                 &LoadOptions::from_env(),
                 true,
-                None,
             ),
         }
     }
@@ -157,6 +157,22 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
                 observe,
             ),
         }
+    }
+
+    /// Load one self-contained executable from bytes, with fixed load defaults.
+    /// Unlike disk loading, this does not unwrap containers, consult the load
+    /// environment, or look for debug information or other companion files.
+    pub fn standalone_image(&self, bytes: Vec<u8>) -> KunaResult<ConsoleProgram> {
+        bootstrap_standalone_image(bytes, self.languages, None)
+    }
+
+    /// As [`Self::standalone_image`], but allow a thin Mach-O whose exact
+    /// `(offset, size)` must be present in the supplied universal image's fat
+    /// table. No arch preference or external file is consulted.
+    pub fn indexed_image(
+        &self, bytes: Vec<u8>, macho_slice: Option<(u64, u64)>,
+    ) -> KunaResult<ConsoleProgram> {
+        bootstrap_standalone_image(bytes, self.languages, macho_slice)
     }
 
     /// Load any input `load file` accepts: a real image as [`Bootstrap::image`]

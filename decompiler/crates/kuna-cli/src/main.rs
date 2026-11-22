@@ -14,7 +14,6 @@ mod decompile_all;
 mod decompile_project;
 mod decompile_graph;
 mod disassemble;
-mod embedded_specs;
 mod fid;
 mod flirt;
 mod followimages;

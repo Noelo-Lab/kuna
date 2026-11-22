@@ -9,7 +9,7 @@
 //! # Layout
 //!
 //! - [`lshweights`] — the TF/IDF weight tables and the corpus-frequency lookup,
-//!   loaded from Ghidra's `lshweights_*.xml`.
+//!   loaded from bundled stock data or an external `lshweights_*.xml` file.
 //! - [`lsh`] — the sparse weighted vector, its comparison, and the significance
 //!   formula.
 //!

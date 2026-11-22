@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
-"""Exercise Kuna against a temporary native PostgreSQL BSim index and HTTPS worker."""
+"""Exercise Kuna against a temporary PostgreSQL BSim index."""
 
 import argparse
 from collections import Counter
 from contextlib import contextmanager
 from hashlib import md5
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import os
 from pathlib import Path
 import socket
-import ssl
 import subprocess
 from tempfile import TemporaryDirectory
-from threading import Thread
-from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 from xml.etree import ElementTree
 
@@ -142,47 +138,14 @@ def fixture_db(root, ghidra, headers):
             return run('psql', '-h', root, '-p', port, '-U', 'bsim_admin', '-d', 'postgres',
                        '-X', '-v', 'ON_ERROR_STOP=1', input=sql)
 
-        weights = ElementTree.parse(bsim/'data/lshweights_32.xml')
+        weights = ElementTree.parse(ROOT/'decompiler/crates/kuna-analysis/src/analyzers/bsim/weights/lshweights_32.xml')
         password = initialize(root, extension, weights, psql)
         yield f'host=localhost hostaddr=127.0.0.1 port={port} dbname=postgres user=bsim_reader password={password}', password, psql
     finally:
         run('pg_ctl', '-D', data, '-w', '-m', 'fast', 'stop')
 
 
-class Worker(BaseHTTPRequestHandler):
-    def do_GET(self):
-        parsed = urlsplit(self.path)
-        q = {k: v[0] for k, v in parse_qs(parsed.query).items()}
-        expected = {'profile': 'bsim-reader', 'repository_url': REPOSITORY, 'executable_md5': MD5,
-                    'function': 'FUN_00411440', 'address': ADDRESS, 'max_code_lines': '1000'}
-        if parsed.path != '/repositories/inspect-match' or any(q.get(k) != v for k, v in expected.items()):
-            self.send_error(400)
-            return
-        version = int(q['version'])
-        payload = json.dumps({'success': True, 'result': {
-            'match_id': q['match_id'], 'identity_verified': True, 'profile': 'bsim-reader',
-            'path': '/wrong/WallaceSrc.exe' if version == 10 else '/Reference Builds/WallaceSrc.exe',
-            'version': version,
-            'snapshot': {
-                'program': {'name': 'WallaceSrc.exe', 'md5': '0' * 32 if version == 8 else MD5,
-                            'language': 'x86:LE:32:default', 'compiler': 'windows'},
-                'function': {'name': expected['function'], 'address': 'ram::0x0' if version == 11 else f'ram::{ADDRESS}',
-                             'prototype': 'int ref(void)'},
-                'code': {'text': 'int ref(void) { return 7; }\n', 'complete': version != 9,
-                         'error': 'truncated' if version == 9 else None},
-            },
-        }}).encode()
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Content-Length', str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
-
-    def log_message(self, *_):
-        pass
-
-
-def check(kuna, binary, branches, root, env, password, psql):
+def check(kuna, binary, branches, env, password, psql):
     def invoke(command, *args, source=binary, address=ADDRESS, timeout=45, **override):
         result = subprocess.run([kuna, 'bsim', command, source, '--address', address, '--json', *args],
                                 env={**env, **override}, capture_output=True, text=True, timeout=timeout)
@@ -195,7 +158,7 @@ def check(kuna, binary, branches, root, env, password, psql):
     match, = doc['matches']
     assert doc['features'] == len(FEATURES) and doc['truncated'], doc
     assert match['similarity'] == 1 and abs(match['significance'] - 28.720363158781602) < 1e-9, match
-    assert match['match_id'] == '42' and match['repository_url'] == REPOSITORY and match['reference_available'], match
+    assert match['match_id'] == '42' and match['repository_url'] == REPOSITORY, match
     wrong_host = env['KUNA_BSIM_POSTGRES'].replace('host=localhost ', 'host=untrusted.invalid ')
     refused = invoke('query', '--postgres', KUNA_BSIM_POSTGRES=wrong_host)
     assert refused.returncode == 1 and 'TLS trust' in refused.stderr and not refused.stdout, refused.stderr
@@ -245,45 +208,29 @@ def check(kuna, binary, branches, root, env, password, psql):
     )
     print('Invalid PostgreSQL BSim loader configuration rejected')
 
-    with HTTPServer(('127.0.0.1', 0), Worker) as worker:
-        tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        tls.load_cert_chain(root/'server.crt', root/'server.key')
-        worker.socket = tls.wrap_socket(worker.socket, server_side=True)
-        env['KUNA_BSIM_REFERENCE_URL'] = f'https://localhost:{worker.server_port}'
-        env.pop('KUNA_BSIM_REFERENCE_TOKEN', None)
-        thread = Thread(target=worker.serve_forever)
-        thread.start()
-        try:
-            def compare(version, **override):
-                return invoke('compare', '--match-id', match['match_id'], '--reference-profile', 'bsim-reader',
-                              '--version', str(version), **override)
+    debug, stripped = branches
+    def compare(reference, source=stripped, address=BRANCH_ADDRESS):
+        return invoke('compare', '--match-id', '44', '--reference', reference,
+                      source=source, address=address)
 
-            good = compare(7)
-            assert good.returncode == 0, good.stderr
-            doc = json.loads(good.stdout)
-            assert doc['reference']['version'] == 7 and '+int ref(void)' in doc['diff'], doc
-            for version in (8, 10, 11):
-                bad = compare(version)
-                assert bad.returncode == 1 and 'did not verify' in bad.stderr and not bad.stdout, bad.stderr
-            bad = compare(7, KUNA_BSIM_REFERENCE_URL=f'https://127.0.0.1:{worker.server_port}')
-            assert bad.returncode == 1 and 'TLS trust' in bad.stderr and not bad.stdout, bad.stderr
-            partial = compare(9)
-            assert partial.returncode == 0, partial.stderr
-            doc = json.loads(partial.stdout)
-            assert doc['diff'] is None and doc['reference']['snapshot']['code']['text'], doc
+    good = compare(debug)
+    assert good.returncode == 0, good.stderr
+    doc = json.loads(good.stdout)
+    assert doc['reference']['identity_verified'] and doc['diff'] is not None, doc
+    assert doc['match']['match_id'] == '44', doc
 
-            imports = ROOT/'decompiler/crates/kuna-analysis/tests/fixtures/pe_iatincode_i386.exe'
-            unavailable = compare(7, source=imports, address='0x401000')
-            assert unavailable.returncode == 0, unavailable.stderr
-            doc = json.loads(unavailable.stdout)
-            assert doc['source']['address'] == '0x401000', doc
-            code = doc['source']['code']
-            assert code['text'] is None and not code['complete'] and 'IAT slot' in code['error'], doc
-            assert doc['diff'] is None and doc['reference']['snapshot']['code']['complete'], doc
-        finally:
-            worker.shutdown()
-            thread.join()
-    print('Repository HTTPS, C diff, executable identity rejection, and truncated-code handling passed')
+    wrong = compare(stripped)
+    assert wrong.returncode == 1 and 'MD5' in wrong.stderr and not wrong.stdout, wrong.stderr
+
+    imports = ROOT/'decompiler/crates/kuna-analysis/tests/fixtures/pe_iatincode_i386.exe'
+    unavailable = compare(debug, source=imports, address='0x401000')
+    assert unavailable.returncode == 0, unavailable.stderr
+    doc = json.loads(unavailable.stdout)
+    assert doc['source']['address'] == '0x401000', doc
+    code = doc['source']['code']
+    assert code['text'] is None and not code['complete'] and 'IAT slot' in code['error'], doc
+    assert doc['diff'] is None and doc['reference']['code']['complete'], doc
+    print('Local matched binary comparison, MD5 verification, and incomplete-code handling passed')
 
 
 def main():
@@ -299,7 +246,7 @@ def main():
         root = Path(directory)
         branches = branch_fixture(root)
         with fixture_db(root, args.ghidra_source.resolve(), headers) as (conninfo, password, psql):
-            check(args.kuna.resolve(), binary, branches, root, {**os.environ, 'SLEIGHHOME': str(ROOT/'specs'),
+            check(args.kuna.resolve(), binary, branches, {**os.environ, 'SLEIGHHOME': str(ROOT/'specs'),
                   'SSL_CERT_FILE': str(root/'ca.crt'), 'KUNA_BSIM_POSTGRES': conninfo}, password, psql)
 
 

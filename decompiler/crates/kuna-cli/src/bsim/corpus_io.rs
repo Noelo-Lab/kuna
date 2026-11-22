@@ -135,12 +135,7 @@ fn build(
     requested_profile: Option<LshProfile>,
     weights_dir: Option<&str>,
 ) -> Result<BuildSummary, String> {
-    let mut md5 = None;
-    let mut prog = load_corpus_program_with_source(binary, Some(&mut |bytes| {
-        use md5::{Digest, Md5};
-        md5 = Some(format!("{:032x}", u128::from_be_bytes(Md5::digest(bytes).into())));
-    }))?;
-    let md5 = md5.ok_or("loaded image did not supply executable bytes")?;
+    let (mut prog, md5) = load_corpus_program_with_md5(binary)?;
     let arch_id = kuna_decomp::kuna_langfamily::language_id(&prog.arch().archid).to_owned();
     let cspec = prog.arch().compiler_spec_id()
         .ok_or("binary has no resolved compiler spec")?.to_owned();
@@ -365,11 +360,13 @@ fn write_corpus(out: &Path, corpus: &BsimCorpus) -> Result<(), String> {
     pending.map_err(|e| format!("replace {}: {e}", out.display()))
 }
 
-/// Query either a local corpus or a native PostgreSQL BSim database.
+/// Query a local corpus, PostgreSQL BSim, or a native Kuna BSim server.
 pub(super) fn cmd_query(argv: &[String]) -> i32 {
     let mut binary: Option<String> = None;
     let mut corpus_path: Option<String> = None;
     let mut postgres = false;
+    let mut server = None;
+    let mut server_profile = None;
     let mut address: Option<String> = None;
     let mut name: Option<String> = None;
     let mut weights_dir: Option<String> = None;
@@ -388,6 +385,20 @@ pub(super) fn cmd_query(argv: &[String]) -> i32 {
                 }
             },
             "--postgres" => postgres = true,
+            "--server" => match take_value(argv, &mut i, flag) {
+                Ok(v) => server = Some(v),
+                Err(e) => {
+                    eprintln!("kuna bsim query: {e}");
+                    return 2;
+                }
+            },
+            "--profile" => match take_value(argv, &mut i, flag).ok().and_then(|v| LshProfile::from_name(&v)) {
+                Some(profile) => server_profile = Some(profile),
+                None => {
+                    eprintln!("kuna bsim query: --profile requires a recognized BSim profile");
+                    return 2;
+                }
+            },
             "--address" => match take_value(argv, &mut i, flag) {
                 Ok(v) => address = Some(v),
                 Err(e) => {
@@ -442,11 +453,14 @@ pub(super) fn cmd_query(argv: &[String]) -> i32 {
         eprintln!("kuna bsim query: a <binary> is required");
         return 2;
     };
-    if postgres == corpus_path.is_some() || (postgres && weights_dir.is_some()) {
-        eprintln!("kuna bsim query: choose --corpus <file> [--weights <dir>] or --postgres");
+    if usize::from(postgres) + usize::from(corpus_path.is_some()) + usize::from(server.is_some()) != 1
+        || (corpus_path.is_none() && weights_dir.is_some())
+        || (server.is_none() && server_profile.is_some())
+    {
+        eprintln!("kuna bsim query: choose --corpus <file> [--weights <dir>], --postgres, or --server <url> [--profile PROFILE]");
         return 2;
     }
-    if postgres && address.is_some() && name.is_some() {
+    if (postgres || server.is_some()) && address.is_some() && name.is_some() {
         eprintln!("kuna bsim query: choose --address or --name, not both");
         return 2;
     }
@@ -465,6 +479,13 @@ pub(super) fn cmd_query(argv: &[String]) -> i32 {
     let selected = (address.as_deref(), name.as_deref());
     let result = if let Some(path) = corpus_path {
         run_query_cli(&binary, &path, selected.0, selected.1, weights_dir.as_deref(), &options)
+    } else if let Some(server) = server {
+        let max = kuna_bsim_server::MAX_MATCHES;
+        if !(0.0..=1.0).contains(&options.min_similarity) || !(1..=max).contains(&options.max_matches) {
+            eprintln!("kuna bsim query: Kuna server requires similarity 0..=1 and max matches 1..={max}");
+            return 2;
+        }
+        run_server_query(&binary, &server, selected, server_profile, &options)
     } else {
         if !(0.0..=1.0).contains(&options.min_similarity) || !(1..=10_000).contains(&options.max_matches) {
             eprintln!("kuna bsim query: PostgreSQL requires similarity 0..=1 and max matches 1..=10000");
@@ -485,7 +506,7 @@ pub(super) fn cmd_query(argv: &[String]) -> i32 {
             }
         }
         Err(e) => {
-            eprintln!("kuna bsim query: {e}");
+            eprintln!("kuna bsim query: {}", super::TerminalText(&e));
             1
         }
     }
@@ -534,6 +555,87 @@ fn run_query_cli(
             "significance": m.significance,
         })).collect::<Vec<_>>(),
         "reason": result.empty_reason(options.min_similarity),
+    }))
+}
+
+fn run_server_query(
+    binary: &str,
+    server: &str,
+    selected: (Option<&str>, Option<&str>),
+    requested: Option<LshProfile>,
+    options: &QueryOptions,
+) -> Result<serde_json::Value, String> {
+    use super::server_client::{Client, MatchId};
+    use kuna_bsim_server::{QueryFilters, QueryRequest};
+
+    let mut prog = load_corpus_program(binary)?;
+    let entry = select_entry(&prog, selected.0, selected.1)?;
+    let offset = entry.addr.get_offset();
+    if !prog.is_body_entry(offset) {
+        return Err("selected entry does not have a local function body".into());
+    }
+    let language = kuna_decomp::kuna_langfamily::language_id(&prog.arch().archid);
+    let client = Client::new(server)?;
+    let profiles = client.profiles()?;
+    let profile = requested.or_else(|| LshProfile::for_language(language).filter(|default| {
+        profiles.profiles.iter().any(|info| info.executables != 0 && info.profile == default.name())
+    })).or_else(|| {
+        profiles.profiles.iter().filter(|info| info.executables != 0).find_map(|info| {
+            LshProfile::from_name(&info.profile).filter(|p| p.admits(language))
+        })
+    }).or_else(|| LshProfile::for_language(language))
+        .ok_or_else(|| format!("Kuna BSim server has no profile for {language}"))?;
+    check_language(profile, language)?;
+    let info = profiles.profiles.iter().find(|info| info.profile == profile.name())
+        .ok_or_else(|| format!("Kuna BSim server does not provide profile {}", profile.name()))?;
+    if !profile.admits_settings(info.settings) {
+        return Err("Kuna BSim server returned unsupported signature settings".into());
+    }
+    let sig = sign_one(&mut prog, &entry, info.settings).map_err(|e| e.describe())?;
+    let feature_count = sig.features.len();
+    let query = QueryRequest {
+        profile: info.profile.clone(),
+        settings: info.settings,
+        features: sig.features,
+        min_similarity: options.min_similarity,
+        max_matches: options.max_matches,
+        filters: QueryFilters::default(),
+    };
+    let response = client.query(&query)?;
+    let matches = response.matches.iter().map(|hit| {
+        let hit_function = &hit.function;
+        let match_id = MatchId { profile, sha256: &hit_function.sha256, address: hit_function.address };
+        let mut value = json!({
+            "match_id": match_id.to_string(),
+            "name": hit_function.name,
+            "address": format!("{:#x}", hit_function.address),
+            "executable": hit_function.executable,
+            "architecture": hit_function.architecture,
+            "compiler": hit_function.compiler,
+            "executable_md5": hit_function.md5,
+            "sha256": hit_function.sha256,
+            "complete": hit_function.complete,
+            "similarity": hit.similarity,
+            "significance": hit.significance,
+        });
+        if let Some(slice) = hit_function.macho_slice.as_ref() {
+            value["macho_slice"] = json!(slice);
+        }
+        value
+    }).collect::<Vec<_>>();
+    Ok(json!({
+        "binary": binary,
+        "backend": "kuna-bsim-server",
+        "function": { "name": sig.name, "address": format!("{:#x}", prog.output_code_offset(offset)) },
+        "features": feature_count,
+        "min_similarity": response.min_similarity,
+        "profile": info.profile,
+        "settings": format!("{:#x}", info.settings),
+        "considered": response.considered,
+        "incomplete_executables": response.incomplete_executables,
+        "truncated": response.truncated,
+        "reason": matches.is_empty().then_some("no indexed Kuna BSim match exceeded the thresholds"),
+        "matches": matches,
     }))
 }
 
@@ -619,16 +721,16 @@ fn print_text(value: &serde_json::Value) {
             idx + 1,
             m["similarity"].as_f64().unwrap_or(0.0),
             m["significance"].as_f64().unwrap_or(0.0),
-            m["name"].as_str().unwrap_or("?"),
-            m["address"].as_str().unwrap_or("?"),
-            m["executable"].as_str().unwrap_or("?"),
+            super::TerminalText(m["name"].as_str().unwrap_or("?")),
+            super::TerminalText(m["address"].as_str().unwrap_or("?")),
+            super::TerminalText(m["executable"].as_str().unwrap_or("?")),
         );
         if let Some(id) = m["match_id"].as_str() {
-            println!("     match ID: {id}");
+            println!("     match ID: {}", super::TerminalText(id));
         }
     }
     if value["truncated"].as_bool() == Some(true) {
-        println!("  (more matches qualified than returned; raise --max-matches)");
+        println!("  (more matches qualified than returned)");
     }
 }
 
@@ -648,9 +750,24 @@ fn load_weights(dir: Option<&str>, corpus: &Path, profile: LshProfile) -> Result
     let dir = dir.map(PathBuf::from)
         .or_else(|| std::env::var_os("KUNA_BSIM_WEIGHTS").filter(|v| !v.is_empty()).map(PathBuf::from));
     let path = dir.as_deref().unwrap_or_else(|| corpus_dir(corpus)).join(profile.weights_file());
-    let bytes = fs::read(&path).map_err(|e| {
-        format!("cannot read weight table {}: {e}; pass --weights <dir> or set KUNA_BSIM_WEIGHTS", path.display())
-    })?;
+    let bytes = match fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            // Do not hide broken symlinks or other unreadable adjacent overrides.
+            if dir.is_none()
+                && e.kind() == io::ErrorKind::NotFound
+                && matches!(fs::symlink_metadata(&path), Err(e) if e.kind() == io::ErrorKind::NotFound)
+            {
+                return profile.bundled_weights().map_err(|e| {
+                    format!("bundled weight table {}: {}", profile.weights_file(), e.explain())
+                });
+            }
+            return Err(format!(
+                "cannot read weight table {}: {e}; pass --weights <dir> or set KUNA_BSIM_WEIGHTS",
+                path.display()
+            ));
+        }
+    };
     LshWeights::parse(&bytes).map_err(|e| format!("{}: {}", path.display(), e.explain()))
 }
 
@@ -730,9 +847,20 @@ pub(super) fn load_corpus_program(binary: &str) -> Result<kuna_console::engine::
     load_corpus_program_with_source(binary, None)
 }
 
+pub(super) fn load_corpus_program_with_md5(
+    binary: &str,
+) -> Result<(kuna_console::engine::ConsoleProgram, String), String> {
+    use md5::{Digest, Md5};
+    let mut md5 = None;
+    let prog = load_corpus_program_with_source(binary, Some(&mut |bytes| {
+        md5 = Some(format!("{:032x}", u128::from_be_bytes(Md5::digest(bytes).into())));
+    }))?;
+    Ok((prog, md5.ok_or("loaded image did not supply executable bytes")?))
+}
+
 fn load_corpus_program_with_source(
     binary: &str,
-    observe_source: Option<&mut dyn FnMut(&[u8])>,
+    observe_source: Option<crate::decompile_all::SourceObserver<'_>>,
 ) -> Result<kuna_console::engine::ConsoleProgram, String> {
     let mut args = crate::decompile_all::Args::serial();
     args.binary = binary.to_string();

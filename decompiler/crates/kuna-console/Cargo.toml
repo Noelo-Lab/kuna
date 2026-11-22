@@ -23,6 +23,9 @@ kuna-analysis.workspace = true
 object.workspace = true
 unicode-ident = "1"
 
+[features]
+embed-specs = []
+
 [dev-dependencies]
 object = { workspace = true, features = ["write"] }
 # The register<->global over-merge render gate (`tests/verify_global_regmerge.rs`)
