@@ -224,6 +224,9 @@ pub struct Emulator<'a> {
     noreturn_target: Option<ExprId>,
     /// Stores whose address the emulation could not place, ignored.
     pub dropped_stores: usize,
+    /// Stack-pointer writes that are no variable plus a constant: what is
+    /// pushed or popped after one has no place the emulation knows.
+    pub lost_sp: usize,
     /// An in-function interpreter's virtual PC: a load within
     /// [`FETCH_WINDOW`] of the bytecode pointer it holds reads the file.
     pub vpc: Option<VpcSource>,
@@ -261,6 +264,7 @@ impl<'a> Emulator<'a> {
             sym_values: Default::default(),
             noreturn_target: None,
             dropped_stores: 0,
+            lost_sp: 0,
             vpc: None,
             fetched_writable: false,
             trust_file: false,
@@ -390,7 +394,10 @@ impl<'a> Emulator<'a> {
                         let k = arena.cst(size, d as u128);
                         arena.mk_bin(CPUI_INT_ADD, base, k, size)
                     }
-                    _ => e,
+                    _ => {
+                        self.lost_sp += 1;
+                        e
+                    }
                 }
             }
             _ if self.vn_space(vn) == Space::Register && matches!(arena.kind(e), ExprKind::Bin(CPUI_INT_XOR, _, _)) => match arena.affine_probe(e) {

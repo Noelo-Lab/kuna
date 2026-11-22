@@ -1750,7 +1750,15 @@ impl<'a> Emitter<'a> {
         }
         let Some(Some(v)) = trace.op_out.get(i).copied() else { return Self::raw(op) };
         if self.conf.fold_constants {
-            if let Some(c) = self.arena.is_const(v) {
+            // A value that is a constant only through an identity (the
+            // junk arithmetic Themida weaves into real values) folds too.
+            let folded = self.arena.is_const(v).or_else(|| {
+                (op.opc != CPUI_LOAD && out_vn.size <= 8).then(|| self.arena.identity_probe(v)).flatten().and_then(|r| match r {
+                    (None, c) => Some(c as u128 & super::kuna_pushanexpr::mask(out_vn.size as u8)),
+                    _ => None,
+                })
+            });
+            if let Some(c) = folded {
                 if op.opc == CPUI_COPY && op.ins[0].space.as_ref().map(classify_space) == Some(Space::Const) {
                     return Self::raw(op);
                 }

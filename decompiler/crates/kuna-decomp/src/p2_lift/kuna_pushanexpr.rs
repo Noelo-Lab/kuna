@@ -154,6 +154,8 @@ pub struct ExprArena {
     pub sp_bound: Option<(VarId, u128)>,
     /// Identity decisions that held only with [`Self::sp_bound`] assumed.
     pub sp_bound_used: usize,
+    /// The first few of those expressions, for the exploration log.
+    pub sp_bound_notes: Vec<String>,
     nodes: Vec<Expr>,
     /// (known-zero, known-one) bit masks per node.
     known: Vec<(u128, u128)>,
@@ -200,6 +202,7 @@ impl ExprArena {
             quick_sig: Default::default(),
             sp_bound: None,
             sp_bound_used: 0,
+            sp_bound_notes: Vec::new(),
             nodes: Vec::new(),
             known: Vec::new(),
             intern: BTreeMap::new(),
@@ -1996,12 +1999,13 @@ impl ExprArena {
     /// `e == base + k` for one of its variables, or `e == k`, decided by
     /// evaluating `e` at [`ID_SAMPLES`] points that assign every input at
     /// once (exhaustively when the inputs have at most
-    /// [`ID_EXHAUSTIVE_BITS`] open bits): its variables, and its innermost
-    /// boolean atoms (comparisons and flags whose operands hold no other
-    /// atom) as free bits of their own.  Treating an atom as free asks for
-    /// more than the program needs (the identity must hold whatever the
-    /// comparison says), and spares the test a guard on program data that
-    /// holds at one value only, which no sample of its operands would hit.
+    /// [`ID_EXHAUSTIVE_BITS`] open bits): its variables, and every boolean
+    /// atom it reads ([`Self::bool_atoms`]: comparisons and flags, a
+    /// comparison over other comparisons included) as a free bit of its
+    /// own.  Treating an atom as free asks for more than the program needs
+    /// (the identity must hold whatever the comparison says), and spares the
+    /// test a guard on program data that holds at one value only, which no
+    /// sample of its operands would hit.
     /// The spec (02-lift-and-flow 2.11) argues the error probability.
     pub fn identity_probe(&mut self, e: ExprId) -> Option<(Option<VarId>, i128)> {
         let size = self.size(e);
@@ -2015,7 +2019,7 @@ impl ExprArena {
         if vars.is_empty() {
             return None;
         }
-        let atoms: Vec<ExprId> = self.leaf_atoms(e).into_iter().filter(|a| self.as_var(*a).is_none()).collect();
+        let atoms: Vec<ExprId> = self.bool_atoms(e).into_iter().filter(|a| self.as_var(*a).is_none()).collect();
         if let Some(r) = self.identity_pass(e, &vars, &atoms, None) {
             return Some(r);
         }
@@ -2023,6 +2027,10 @@ impl ExprArena {
         let bound = self.sp_bound.filter(|(v, _)| vars.contains(v))?;
         let r = self.identity_pass(e, &vars, &atoms, Some(bound))?;
         self.sp_bound_used += 1;
+        if self.sp_bound_notes.len() < 8 {
+            let note = format!("{:?} = {}", r, self.fmt(e).chars().take(600).collect::<String>());
+            self.sp_bound_notes.push(note);
+        }
         Some(r)
     }
 

@@ -27,7 +27,7 @@ use kuna_num::opcodes::OpCode;
 
 use super::kuna_pushanemu::{merge_ite, split_over_symbols, symbol_pin, Emulator, Exit, InsnTrace, LiftedInsn, PushanTarget, SymValues, VpcSource, FETCH_WINDOW};
 use super::kuna_pushanexpr::{ExprArena, ExprId, VarId, VarKind};
-use super::kuna_pushanstate::{Loc, PushanImage, State, SymLoc};
+use super::kuna_pushanstate::{Diff, Loc, PushanImage, State, SymLoc};
 
 pub type NodeId = u32;
 
@@ -145,6 +145,8 @@ pub struct Stats {
     pub unmerged: usize,
     /// Stores to an address the emulation could not place, ignored.
     pub dropped_stores: usize,
+    /// Stack-pointer writes no identity placed ([`Emulator::lost_sp`]).
+    pub lost_sp: usize,
     /// The last round recorded nothing new (the symbolization fixpoint).
     pub converged: bool,
     /// The exploration stopped at the node limit or the time budget.
@@ -803,6 +805,7 @@ impl<'a> Explorer<'a> {
             }
             self.emulate_node(&mut cfg, &mut worklist, &mut emu, id);
             self.stats.dropped_stores = emu.dropped_stores;
+            self.stats.lost_sp = emu.lost_sp;
             if let Some(t) = &self.config.trace {
                 use std::io::Write;
                 let n = &cfg.nodes[id as usize];
@@ -826,6 +829,9 @@ impl<'a> Explorer<'a> {
         }
         self.stats.writable_bytecode |= emu.fetched_writable;
         self.stats.user_stack_assumed = self.arena.sp_bound_used;
+        for n in std::mem::take(&mut self.arena.sp_bound_notes) {
+            self.log.push(format!("identity over the user-mode stack range only: {n}"));
+        }
         self.stats.copy_read_unfolded = emu.copy_read_unfolded || self.copy_escaped;
         if let Some(n) = emu.copy_read_note.take() {
             self.log.push(n);
@@ -954,6 +960,10 @@ impl<'a> Explorer<'a> {
                     self.keys_vpc(v, key.ctx)
                 }
                 _ => false,
+            };
+            let diffs = match vpc_cell.filter(|_| vpc_keyed) {
+                Some(cell) => self.outside_vpc_cell(&mut entry, &mut state, diffs, cell),
+                None => diffs,
             };
             for (d, a, b) in diffs {
                 if self.out_of_time() {
@@ -1099,6 +1109,43 @@ impl<'a> Explorer<'a> {
         }
         worklist.push_back(id);
         id
+    }
+
+    /// The differences of a merge outside the VPC cell, which the key names:
+    /// a slot only partly in the cell is narrowed to its bytes outside it.
+    /// Themida keeps a branch handler's condition byte right after the cell,
+    /// and dropping the whole slot drops the branch.
+    fn outside_vpc_cell(&mut self, entry: &mut State, state: &mut State, diffs: Vec<(Diff, ExprId, ExprId)>, cell: Cell) -> Vec<(Diff, ExprId, ExprId)> {
+        let (cb, ca) = cell;
+        let ce = ca + self.abi.ptr_size as i128;
+        let mut out = Vec::with_capacity(diffs.len());
+        for (d, a, b) in diffs {
+            let Loc::Mem { base, off } = d.loc.loc else {
+                out.push((d, a, b));
+                continue;
+            };
+            let end = off + d.loc.size as i128;
+            if base != cb || end <= ca || ce <= off {
+                out.push((d, a, b));
+                continue;
+            }
+            for (lo, hi) in [(off, ca.min(end)), (ce.max(off), end)] {
+                if lo >= hi {
+                    continue;
+                }
+                let len = (hi - lo) as u8;
+                let x = entry.read_mem(&mut self.arena, self.target, base, lo, len);
+                let y = state.read_mem(&mut self.arena, self.target, base, lo, len);
+                if super::kuna_pushanstate::same_value(&mut self.arena, x, y) {
+                    continue;
+                }
+                let ((zx, ox), (zy, oy)) = (self.arena.known_bits(x), self.arena.known_bits(y));
+                let (cx, cy) = (self.arena.is_const(x), self.arena.is_const(y));
+                let loc = SymLoc { loc: Loc::Mem { base, off: lo }, size: len };
+                out.push((Diff { loc, values: cx.zip(cy), entry_const: cx, incoming_const: cy, known: (zx & zy, ox & oy) }, x, y));
+            }
+        }
+        out
     }
 
     /// `key` at the incoming stack depth.  Paths that reach one handler with

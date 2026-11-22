@@ -4420,9 +4420,10 @@ unknown location, the exit's return target with them. `ExprArena::identity_probe
 decides whether `e == base + k` for one of `e`'s variables, or `e == k`, by
 evaluating the DAG at 96 points that assign every input at once (one pass over
 the nodes in id order, operands before users; `eval_samples`). The inputs are
-the variables (their known bits kept, the rest drawn) and the innermost
-boolean atoms (comparisons and flags whose operands hold no other atom), each
-drawn as a free bit of its own instead of computed from its operands. The
+the variables (their known bits kept, the rest drawn) and every boolean atom
+the value reads (`ExprArena::bool_atoms`: comparisons and flags, one over
+other comparisons included), each drawn as a free bit of its own instead of
+computed from its operands. The
 identity must then hold whatever the comparisons say, which asks for more than
 the program needs but never less, and a guard on program data that holds at
 one value only (`x == 5`) cannot hide behind samples that never hit that value.
@@ -4452,7 +4453,12 @@ through a map from each variable's differences) costs no walk of its
 expression, so the probe on every XOR into a register stays cheap. An
 identity found this way is used where the normal form's would be: load and
 store addresses, stack-pointer writes, `frame + k` rematerialization in the
-emitter. When paths meet, two values of a location are the same when their
+emitter, and the emitter's constant folding, where an op whose value is a
+constant only through an identity (junk arithmetic woven into a real value) is
+emitted as that constant. A stack-pointer write that is no variable plus a
+constant by any test leaves every later push and pop without a place, and the
+header counts it: "N stack pointer writes the emulation could not place".
+When paths meet, two values of a location are the same when their
 difference is the constant 0 by this test (`Explorer::same_on_stack`), so a
 frame pointer that each path rebuilt through a different identity is not
 symbolized. A guard, a load or store address and a computed target first have
@@ -4507,9 +4513,15 @@ those locations, which is the paper's two-valued VIP/key handling.
 state is compared with the node's recorded entry state
 (`State::diff_constants`). Following angr's merge rule, every location whose
 value differs is recorded against the node's key. A location is an aligned
-8-byte slot. A slot that is symbolic on both sides and differs in only one
-half is narrowed to that half, down to one byte, so a narrow variable sharing
-a slot with an unchanged neighbour does not take the neighbour with it. Each
+8-byte slot. Two values are the same when they are one node or when the
+identity test finds their difference to be the constant 0
+(`kuna_pushanstate.rs (same_value)`). A slot that is symbolic on both sides
+and holds a byte that is the same on both is split into halves, down to one
+byte, and only the halves that differ are recorded, so a narrow variable
+sharing a slot with an unchanged neighbour does not take the neighbour with
+it, and a byte each path rebuilt through a different identity (Themida keeps
+the top byte of the frame pointer in a context slot whose low bytes hold
+junk that differs every loop iteration) survives the merge. Each
 recorded location keeps the constants it was seen to hold (up to 32) and the
 bits all of them agreed on. A side that is not a constant contributes the
 constants its atoms decide, nothing when it is the location's own symbol, and
@@ -4523,7 +4535,11 @@ its known bits replaces) cannot be named again, so a node such memory reached wi
 different contents starts with all of it forgotten, and so does mutable
 memory at a node that paths reached after different external calls. The VPC
 register or cell is part of the key and is not symbolized while the incoming
-path's VPC is the value the key names (`Explorer::keys_vpc`); a key carried
+path's VPC is the value the key names (`Explorer::keys_vpc`). A slot only partly
+inside the cell is narrowed to its bytes outside it
+(`Explorer::outside_vpc_cell`): Themida's branch handler sets a condition byte
+right after the cell on one arm only, and dropping the whole slot with the
+cell dropped the branch (curl's `if (p)` after `malloc`). A key carried
 forward past a block that left no readable VPC symbolizes it like any other
 location, so a path the key cannot tell apart is not dropped. The next round starts over. At a recorded node, each recorded
 location becomes a fresh symbol that carries the agreed known bits. The fixpoint

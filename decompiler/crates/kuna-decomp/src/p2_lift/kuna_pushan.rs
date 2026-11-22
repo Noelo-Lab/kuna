@@ -719,6 +719,9 @@ impl PushanProgram {
         if s.unmerged > 0 {
             out.push(format!("{} path{} joined at another stack depth unmerged", s.unmerged, if s.unmerged == 1 { "" } else { "s" }));
         }
+        if s.lost_sp > 0 {
+            out.push(format!("{} stack pointer write{} the emulation could not place", s.lost_sp, if s.lost_sp == 1 { "" } else { "s" }));
+        }
         if s.dropped_stores > 0 {
             out.push(format!("{} store{} to unresolved addresses not modelled", s.dropped_stores, if s.dropped_stores == 1 { "" } else { "s" }));
         }
@@ -836,8 +839,12 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
     placeholders.push((super::kuna_pushanemit::undef_register(&conf, return_reg), ptr));
     call_kills.extend(placeholders.iter().copied());
     let (overlay, emit_stats) = emit(&cfg, &mut explorer.arena, &target, &conf, entry);
+    explorer.stats.user_stack_assumed = explorer.arena.sp_bound_used;
     let strings = string_constants(&target, &overlay);
     let mut log = std::mem::take(&mut explorer.log);
+    for n in std::mem::take(&mut explorer.arena.sp_bound_notes) {
+        log.push(format!("identity over the user-mode stack range only (emission): {n}"));
+    }
     if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
         if let Some(l) = status.lines().find(|l| l.starts_with("VmHWM:")) {
             log.push(format!("peak rss after emission: {}", l.trim_start_matches("VmHWM:").trim()));

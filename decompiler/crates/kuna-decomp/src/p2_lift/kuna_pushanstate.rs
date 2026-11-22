@@ -495,7 +495,9 @@ impl State {
     /// target's register and stack-word size); a slot symbolic on both sides
     /// whose difference sits in one half only is narrowed to that half (down
     /// to a byte), so a narrow variable sharing a slot with an unchanged
-    /// neighbour does not take the neighbour with it.
+    /// neighbour does not take the neighbour with it.  Values are compared
+    /// by [`same_value`]: a byte each path rebuilt through a different
+    /// identity is unchanged, and a slot holding one is split around it.
     pub fn diff_constants(&mut self, other: &mut State, arena: &mut ExprArena, image: &dyn PushanImage, word: u8) -> Vec<Diff> {
         let mut out = Vec::new();
         let w = word.max(1) as i128;
@@ -529,14 +531,16 @@ impl State {
             while let Some((off, size)) = todo.pop() {
                 let a = self.read_reg(arena, off as u64, size);
                 let b = other.read_reg(arena, off as u64, size);
-                if a == b {
+                if same_value(arena, a, b) {
                     continue;
                 }
                 let h = size / 2;
                 let split = size > 1 && arena.is_const(a).is_none() && arena.is_const(b).is_none() && {
-                    let lo_same = self.read_reg(arena, off as u64, h) == other.read_reg(arena, off as u64, h);
-                    let hi_same = self.read_reg(arena, (off + h as i128) as u64, h) == other.read_reg(arena, (off + h as i128) as u64, h);
-                    lo_same || hi_same
+                    (0..size as u64).any(|i| {
+                        let x = self.read_reg(arena, off as u64 + i, 1);
+                        let y = other.read_reg(arena, off as u64 + i, 1);
+                        same_value(arena, x, y)
+                    })
                 };
                 if split {
                     todo.push((off + h as i128, h));
@@ -555,15 +559,16 @@ impl State {
                 while let Some((off, size)) = todo.pop() {
                     let a = self.read_mem(arena, image, base, off, size);
                     let b = other.read_mem(arena, image, base, off, size);
-                    if a == b {
+                    if same_value(arena, a, b) {
                         continue;
                     }
                     let h = size / 2;
                     let split = size > 1 && arena.is_const(a).is_none() && arena.is_const(b).is_none() && {
-                        let lo_same = self.read_mem(arena, image, base, off, h) == other.read_mem(arena, image, base, off, h);
-                        let hi_same =
-                            self.read_mem(arena, image, base, off + h as i128, h) == other.read_mem(arena, image, base, off + h as i128, h);
-                        lo_same || hi_same
+                        (0..size as i128).any(|i| {
+                            let x = self.read_mem(arena, image, base, off + i, 1);
+                            let y = other.read_mem(arena, image, base, off + i, 1);
+                            same_value(arena, x, y)
+                        })
                     };
                     if split {
                         todo.push((off + h as i128, h));
@@ -696,6 +701,24 @@ fn loc_tag(l: &Loc) -> u64 {
         Loc::Reg { off } => off.wrapping_mul(0x100000001b3),
         Loc::Mem { base, off } => (*off as u64).wrapping_mul(0x9E3779B97F4A7C15) ^ base.map(|b| b as u64 + 1).unwrap_or(0).rotate_left(40),
     }
+}
+
+/// `a` and `b` are the same value whatever the inputs: the same node, or two
+/// expressions whose difference the identity test finds to be the constant
+/// 0 ([`ExprArena::identity_probe`]).
+pub fn same_value(arena: &mut ExprArena, a: ExprId, b: ExprId) -> bool {
+    if a == b {
+        return true;
+    }
+    if arena.is_const(a).is_some() && arena.is_const(b).is_some() {
+        return false;
+    }
+    let size = arena.size(a);
+    let w = size.max(2);
+    let x = arena.resize(a, w);
+    let y = arena.resize(b, w);
+    let d = arena.mk_bin(kuna_num::opcodes::OpCode::CPUI_INT_SUB, x, y, w);
+    arena.is_const(d) == Some(0) || arena.identity_probe(d) == Some((None, 0))
 }
 
 #[cfg(test)]
