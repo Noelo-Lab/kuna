@@ -2431,7 +2431,8 @@ the case targets.
    not as its last copy: a Swift dispatch that picks its index with a
    `csel` over constants otherwise reads as a load from one address, its
    table is never named, and the table before it runs on into it. With
-   two or more tables named, the recovery runs once more: when the basic model finds the range unbounded and every other fallback
+   two or more tables named, the recovery runs once more: when the basic
+   model finds the range unbounded and every other fallback
    declines, `jumptable.rs (JumpBasicModel::kuna_try_extent_bound_table)`
    takes the melded path's one LOAD, reads its address as a constant table
    plus an index scaled by the entry width (`kuna_switchextent.rs

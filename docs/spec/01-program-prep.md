@@ -10821,7 +10821,9 @@ function's jump tables are emitted back to back in one read-only section, so
 the table runs to the lowest table of the same function above it, found by
 decoding the function's extent (its entry to the next known entry, or a MiB)
 linearly and naming the table of each computed jump the fold proves reads
-one (`decompiler/crates/kuna-analysis/src/listing/kuna_switchextent.rs`).
+one (`decompiler/crates/kuna-analysis/src/listing/kuna_switchextent.rs`);
+what an instruction writes after a branch inside its own p-code (an AArch64
+`csel`/`csinc`) is unknown to the fold, as in chapter 2's extent decode.
 A function's last table has no such bound and is not read: an object the
 function merely reads may sit anywhere in the section, and a bound taken
 from one could run the table on into another function's, whose entries are
