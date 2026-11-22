@@ -133,3 +133,240 @@ fn table_read(data: &Funcdata, op: OpId, vn: VarnodeId) -> Option<u64> {
         _ => None,
     }
 }
+
+/// The tables' layouts when the Swift metadata pass interned them, the
+/// value witness table's and the enum one's.
+pub fn tables(arch: &crate::context::ArchContext) -> Option<(Rc<Datatype>, Option<Rc<Datatype>>)> {
+    if !arch.analysis_valuewitness {
+        return None;
+    }
+    let types = arch.types()?;
+    let table = types.find_by_name(TABLE).ok().flatten()?;
+    Some((table, types.find_by_name(ENUM_TABLE).ok().flatten()))
+}
+
+/// The function's ops in address order, for [`call_prototype`].
+pub fn ordered_ops(data: &Funcdata) -> Vec<OpId> {
+    let mut ops: Vec<OpId> = data.obank().iter_alive().collect();
+    ops.sort_by(|a, b| {
+        let seq = |o: &OpId| data.obank().get(*o).map(|o| o.get_seq_num().clone());
+        seq(a).cmp(&seq(b))
+    });
+    ops
+}
+
+/// The prototype of the value witness slot the indirect call `op` calls
+/// through, read off the lifted ops: its target is loaded at a table offset
+/// from a word itself loaded from `p + -8`, in one block or a run of blocks
+/// with one way in. `ActionDefaultParams` gives it to the call before
+/// parameter recovery, so type recovery never has to force it (which would
+/// cost a restart once the call's inputs are fixed).
+pub fn call_prototype(
+    data: &Funcdata,
+    op: OpId,
+    ops: &[OpId],
+    (table, enum_table): &(Rc<Datatype>, Option<Rc<Datatype>>),
+) -> Option<Rc<crate::fspec::FuncProto>> {
+    if data.obank().get(op)?.code() != OpCode::CPUI_CALLIND {
+        return None;
+    }
+    let pos = ops.iter().position(|&o| o == op)?;
+    let off = slot_offset(data, &ops[..pos], op)?;
+    let owner = if off < TABLE_SIZE {
+        Some(table)
+    } else {
+        enum_table.as_ref()
+    };
+    let proto = slot_prototype(owner?, off)?;
+    crate::kuna_typedcallabi::admit(data, proto)
+}
+
+/// Whether `code` is the function type of a value witness table slot.
+pub fn is_slot_code(arch: &crate::context::ArchContext, code: &Rc<Datatype>) -> bool {
+    let Some((table, enum_table)) = tables(arch) else {
+        return false;
+    };
+    std::iter::once(&table).chain(enum_table.as_ref()).any(|t| {
+        (0..).map_while(|i| t.get_field(i)).any(|f| {
+            f.field_type
+                .get_ptr_to()
+                .is_some_and(|p| Rc::ptr_eq(&p, code))
+        })
+    })
+}
+
+/// The prototype of the function-pointer field at `off` of `table`.
+fn slot_prototype(table: &Rc<Datatype>, off: u64) -> Option<Rc<crate::fspec::FuncProto>> {
+    let field = (0..)
+        .map_while(|i| table.get_field(i))
+        .find(|f| f.offset as u64 == off)?;
+    field.field_type.get_ptr_to()?.get_code_prototype().cloned()
+}
+
+/// The table offset the CALLIND `call` loads its target from, read off the
+/// lifted ops before it.
+fn slot_offset(data: &Funcdata, before: &[OpId], call: OpId) -> Option<u64> {
+    let target = data.obank().get(call)?.get_in(0)?;
+    let (load, rest) = defined_before(data, before, target)?;
+    let (base, off) = load_address(data, rest, load)?;
+    if !(0..ENUM_TABLE_SIZE).contains(&off) || off % 8 != 0 {
+        return None;
+    }
+    let (table, rest) = defined_before(data, rest, base)?;
+    let (_, below) = load_address(data, rest, table)?;
+    (below as i64 == -8).then_some(off)
+}
+
+/// The LOAD `load` reads `base + off`: the base storage's varnode and `off`.
+fn load_address(data: &Funcdata, before: &[OpId], load: OpId) -> Option<(VarnodeId, u64)> {
+    let o = data.obank().get(load)?;
+    if o.code() != OpCode::CPUI_LOAD {
+        return None;
+    }
+    let addr = o.get_in(1)?;
+    if data.vbank().get(addr)?.is_constant() {
+        return None;
+    }
+    match defined_before(data, before, addr) {
+        Some((add, rest)) => {
+            let a = data.obank().get(add)?;
+            if a.code() != OpCode::CPUI_INT_ADD {
+                return Some((addr, 0));
+            }
+            Some((a.get_in(0)?, constant_before(data, rest, a.get_in(1)?)?))
+        }
+        None => Some((addr, 0)),
+    }
+}
+
+/// The constant `vn` holds: itself, or the constant the last write before
+/// copied into it.
+fn constant_before(data: &Funcdata, before: &[OpId], vn: VarnodeId) -> Option<u64> {
+    let v = data.vbank().get(vn)?;
+    if v.is_constant() {
+        return Some(v.get_offset());
+    }
+    let (op, _) = defined_before(data, before, vn)?;
+    let o = data.obank().get(op)?;
+    let c = data.vbank().get(o.get_in(0)?).filter(|c| c.is_constant())?;
+    (o.code() == OpCode::CPUI_COPY).then(|| c.get_offset())
+}
+
+/// The op among `before` that defines `vn`'s value, through register COPYs,
+/// and the ops before it.
+fn defined_before<'a>(
+    data: &Funcdata,
+    before: &'a [OpId],
+    vn: VarnodeId,
+) -> Option<(OpId, &'a [OpId])> {
+    let (mut op, mut rest) = written_before(data, before, vn)?;
+    for _ in 0..6 {
+        let o = data.obank().get(op)?;
+        let input = match o.code() {
+            OpCode::CPUI_COPY => o.get_in(0)?,
+            OpCode::CPUI_LOAD => match spilled_value(data, rest, op) {
+                Some((value, earlier)) => {
+                    rest = earlier;
+                    value
+                }
+                None => break,
+            },
+            _ => break,
+        };
+        if data.vbank().get(input)?.is_constant() {
+            break;
+        }
+        (op, rest) = written_before(data, rest, input)?;
+    }
+    Some((op, rest))
+}
+
+/// The value the LOAD `load` reads back from where a STORE before it left
+/// it (a spill and its reload: the same base storage, not written between,
+/// and the same offset), and the ops before that STORE.
+fn spilled_value<'a>(
+    data: &Funcdata,
+    before: &'a [OpId],
+    load: OpId,
+) -> Option<(VarnodeId, &'a [OpId])> {
+    let (base, off) = load_address(data, before, load)?;
+    let base_vn = data.vbank().get(base)?;
+    let (base_addr, base_size) = (base_vn.get_addr().clone(), base_vn.get_size());
+    for (k, &id) in before.iter().enumerate().rev() {
+        let o = data.obank().get(id)?;
+        let writes_base = o
+            .get_out()
+            .and_then(|out| data.vbank().get(out))
+            .is_some_and(|out| out.get_addr() == &base_addr && out.get_size() == base_size);
+        if writes_base || o.is_branch() && o.code() != OpCode::CPUI_CBRANCH {
+            return None;
+        }
+        if o.code() != OpCode::CPUI_STORE {
+            continue;
+        }
+        let rest = &before[..k];
+        let Some((addr, _)) = written_before(data, rest, o.get_in(1)?) else {
+            continue;
+        };
+        let a = data.obank().get(addr)?;
+        let same = a.code() == OpCode::CPUI_INT_ADD
+            && a.get_in(0)
+                .and_then(|b| data.vbank().get(b))
+                .is_some_and(|b| b.get_addr() == &base_addr)
+            && constant_before(data, rest, a.get_in(1)?) == Some(off);
+        if same {
+            return Some((o.get_in(2)?, rest));
+        }
+    }
+    None
+}
+
+/// Whether the block `start` opens has one way in, from the block `prev`
+/// (the op just before it) ends.
+fn falls_into(data: &Funcdata, start: OpId, prev: Option<OpId>) -> bool {
+    let parent = |op: OpId| data.obank().get(op).and_then(|o| o.get_parent());
+    let (Some(bl), Some(pb)) = (parent(start), prev.and_then(parent)) else {
+        return false;
+    };
+    let block = data.bblocks_ref().block(bl);
+    block.size_in() == 1 && block.get_in(0) == pb
+}
+
+/// Whether the default calling convention keeps `addr` across a call.
+fn survives_calls(data: &Funcdata, addr: &kuna_base::address::Address, size: i32) -> bool {
+    data.get_arch()
+        .default_fp()
+        .is_some_and(|model| model.has_effect(addr, size) == crate::fspec::effect_type::UNAFFECTED)
+}
+
+/// The last op among `before` writing the storage `vn` reads, and the ops
+/// before it; `None` past the start of a block with another way in, an
+/// unconditional branch, or a call that may change the storage.
+fn written_before<'a>(
+    data: &Funcdata,
+    before: &'a [OpId],
+    vn: VarnodeId,
+) -> Option<(OpId, &'a [OpId])> {
+    let v = data.vbank().get(vn)?;
+    let (addr, size) = (v.get_addr().clone(), v.get_size());
+    for (k, &id) in before.iter().enumerate().rev() {
+        let o = data.obank().get(id)?;
+        if o.is_branch() && o.code() != OpCode::CPUI_CBRANCH {
+            return None;
+        }
+        if o.is_call() && !survives_calls(data, &addr, size) {
+            return None;
+        }
+        let writes = o
+            .get_out()
+            .and_then(|out| data.vbank().get(out))
+            .is_some_and(|out| out.get_addr() == &addr && out.get_size() == size);
+        if writes {
+            return Some((id, &before[..k]));
+        }
+        if o.is_block_start() && !falls_into(data, id, before[..k].last().copied()) {
+            return None;
+        }
+    }
+    None
+}

@@ -6337,6 +6337,15 @@ every other binary's pass list is byte-identical to before the pass existed):
   `(*(*(swift.value_witness_table **)(meta + -8))->initializeWithCopy)(dest,src,meta)`
   and an allocation as `->size`. The vote looks the table type up by name and
   only the Swift pass interns it, so code without Swift metadata is unchanged.
+  A witness call takes the slot's prototype before parameter recovery, so type
+  recovery does not have to force it later (which costs a restart once the
+  call's inputs are fixed): `ActionDefaultParams` reads the call's lifted
+  p-code back from its target, through register copies, spills and reloads,
+  calls that keep the register, and blocks with one way in, to a load at a
+  table offset from a word loaded from `p + -8`, and copies the slot's
+  prototype, input-locked. A slot call the walk misses and type recovery finds
+  after the inputs are fixed keeps the inputs already recovered and does not
+  restart the function.
   The witness facts ride in `AnalysisOutput::swift_witnesses`, which the commit
   drops under `option valuewitness off`. On a large third-party iOS app (268k
   functions) the arm names 27,667 functions, up from none, and load time is
