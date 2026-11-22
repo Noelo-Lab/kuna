@@ -9,6 +9,15 @@
 //! `destroy value witness for witfix.Pair`, ...); `witfix.swapIn<A>` is at
 //! 0x3580.
 //!
+//! Outlined helpers: `tests/fixtures/swift_outlined_macho` -- an arm64 iOS
+//! dylib built from `swift_outlined_macho.swift` with swiftc 6.4.2 (`-O
+//! -module-name witfix -emit-library -target arm64-apple-ios17.0`) and
+//! `llvm-strip -x`. From the unstripped build: `outlined destroy of
+//! witfix.Slot` at 0x53f8, `merged outlined init with copy of witfix.Stamp`
+//! at 0x4918 and `merged outlined init with take of witfix.Stamp` at 0x4970;
+//! `outlined init with copy of Foundation.URL?` at 0x4a40 fetches its
+//! metadata through the instantiation helper and is left alone.
+//!
 //! Two-state: with `valuewitness` off none of it happens.
 
 use std::path::PathBuf;
@@ -55,12 +64,16 @@ const WITNESSES: &[(u64, &str)] = &[
 ];
 
 fn load(on: bool) -> ConsoleProgram {
+    load_fixture("swift_witness_elf", on)
+}
+
+fn load_fixture(fixture: &str, on: bool) -> ConsoleProgram {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../..")
         .canonicalize()
         .unwrap();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures/swift_witness_elf");
+    let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures").join(fixture);
     assert!(bin.exists(), "missing fixture {bin:?}");
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
@@ -163,4 +176,39 @@ fn valuewitness_off_names_and_types_nothing() {
     }
     let c = decompile(prog, 0x3580);
     assert!(!c.contains("->initializeWithCopy"), "{c}");
+}
+
+/// `(VMA, name)` of the outlined helpers the arm names.
+const HELPERS: &[(u64, &str)] = &[
+    (0x53f8, "witfix.Slot.outlined_destroy"),
+    (0x4918, "outlined_init_with_copy.merged"),
+    (0x4970, "outlined_init_with_take.merged"),
+];
+
+#[test]
+fn outlined_helpers_are_named_from_their_bodies() {
+    let prog = load_fixture("swift_outlined_macho", true);
+    for &(vma, want) in HELPERS {
+        assert_eq!(name_at(&prog, vma), want, "0x{vma:x}");
+    }
+    assert!(!name_at(&prog, 0x4a40).contains("outlined"));
+}
+
+#[test]
+fn an_outlined_helper_has_the_prototype_its_body_states() {
+    let c = decompile(load_fixture("swift_outlined_macho", true), 0x4918);
+    assert!(
+        c.contains("void * outlined_init_with_copy.merged(void *src,void *dest,swift.type_metadata *(*accessor)("),
+        "{c}"
+    );
+    let c = decompile(load_fixture("swift_outlined_macho", true), 0x53f8);
+    assert!(c.contains("void * witfix.Slot.outlined_destroy(void *value)"), "{c}");
+}
+
+#[test]
+fn valuewitness_off_names_no_outlined_helper() {
+    let prog = load_fixture("swift_outlined_macho", false);
+    for &(vma, name) in HELPERS {
+        assert_ne!(name_at(&prog, vma), name, "0x{vma:x}");
+    }
 }
