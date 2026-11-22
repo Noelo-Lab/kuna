@@ -294,8 +294,15 @@ fn published_input(fd: &Funcdata, id: OpId) -> Option<(i32, VarnodeId)> {
 }
 
 /// Whether a live COPY, STORE or volatile write stores a frame address outside this frame.
+/// A STORE through a pointer whose every origin is the frame base writes another frame slot.
 pub(crate) fn frame_published(fd: &Funcdata) -> bool {
     let frame = |input| crate::kuna_stackranges::frame_address(fd, input).is_some();
+    let into_frame = |id| {
+        fd.obank().get(id).is_some_and(|op| {
+            op.code() == OpCode::CPUI_STORE
+                && op.get_in(1).is_some_and(|to| crate::kuna_stackranges::frame_based(fd, to))
+        })
+    };
     let volatile_write = |op: &crate::op::PcodeOp| {
         op.code() == OpCode::CPUI_CALLOTHER
             && op.get_in(0).and_then(|id| fd.vbank().get(id)).is_some_and(|code| {
@@ -305,7 +312,7 @@ pub(crate) fn frame_published(fd: &Funcdata) -> bool {
             && op.get_in(2).is_some_and(frame)
     };
     fd.obank().iter_alive().any(|id| {
-        published_input(fd, id).is_some_and(|(_, input)| frame(input))
+        (published_input(fd, id).is_some_and(|(_, input)| frame(input)) && !into_frame(id))
             || fd.obank().get(id).is_some_and(volatile_write)
     })
 }

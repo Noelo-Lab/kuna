@@ -147,6 +147,46 @@ pub(crate) fn frame_address(fd: &Funcdata, value: VarnodeId) -> Option<FrameAddr
     walk(fd, value, &mut 64)
 }
 
+/// Whether every origin of `value` is the input spacebase, through copies, phis and
+/// pointer arithmetic with any offset: a frame slot whose offset need not be bounded,
+/// such as an `alloca` area or a cursor into a local array.
+pub(crate) fn frame_based(fd: &Funcdata, value: VarnodeId) -> bool {
+    fn based(
+        fd: &Funcdata,
+        value: VarnodeId,
+        memo: &mut std::collections::BTreeMap<VarnodeId, bool>,
+        budget: &mut usize,
+    ) -> bool {
+        if let Some(&known) = memo.get(&value) {
+            return known;
+        }
+        let Some(left) = budget.checked_sub(1) else {
+            return false;
+        };
+        *budget = left;
+        memo.insert(value, true);
+        let result = fd.vbank().get(value).is_some_and(|vn| {
+            if vn.is_spacebase() && vn.is_input() {
+                return true;
+            }
+            let Some(op) = vn.get_def().and_then(|id| fd.obank().get(id)) else {
+                return false;
+            };
+            let mut input = |slot| op.get_in(slot).is_some_and(|i| based(fd, i, memo, budget));
+            match op.code() {
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => input(0),
+                OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB | OpCode::CPUI_INT_SUB => input(0),
+                OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_AND => input(0) || input(1),
+                OpCode::CPUI_MULTIEQUAL => (0..op.num_input()).all(input),
+                _ => false,
+            }
+        });
+        memo.insert(value, result);
+        result
+    }
+    based(fd, value, &mut std::collections::BTreeMap::new(), &mut 64)
+}
+
 /// Pointer choices and unresolved pointer arms cannot prove frame disjointness.
 pub(crate) fn may_alias(fd: &Funcdata, value: VarnodeId, start: u64, size: i32) -> bool {
     let Some(space) = fd.get_arch().manage().get_stack_space() else {

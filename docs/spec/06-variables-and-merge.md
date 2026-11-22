@@ -3140,7 +3140,12 @@ analysis. Without it, a frame whose bounded local view admission is refused
 (§6, `kuna_localstackviews.rs`) printed reads through `object_pair` of a local
 that was never written, and an x86 SEH registration record linked into
 `fs:[0]` lost its handler and state fields. Frames whose address only reaches
-calls or other frame slots keep the option's default.
+calls or other frame slots keep the option's default. A STORE counts as a frame
+slot when every origin of its destination pointer is the frame base, through
+copies, phis and pointer arithmetic with any offset
+(`kuna_stackranges.rs (frame_based)`): an `alloca` area that receives
+outgoing variadic arguments, or a cursor into a local `iovec` array, is not a
+publication.
 
 The policy excludes proved `NoLocalAlias` spills and computes potentially aliased
 bytes before each dead-code pass. A bounded control-flow search follows every
