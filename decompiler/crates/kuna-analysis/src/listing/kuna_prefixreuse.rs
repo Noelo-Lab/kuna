@@ -20,11 +20,7 @@ pub(super) fn discard_bodies(
     partition.retain(|(at, _)| !removed.contains(at));
     spans.retain(|at, _| !removed.contains(at));
     state.decoded.retain(|at| !removed.contains(at));
-    state.by_source.retain(|at, _| !removed.contains(at));
-    state.by_target.retain(|_, refs| {
-        refs.retain(|r| !removed.contains(&r.from));
-        !refs.is_empty()
-    });
+    state.refs.retain(|r| !removed.contains(&r.from));
     state.indirect_call_sites.retain(|at| !removed.contains(at));
     state.carry.discard(&removed);
     state.skips.retain(|(from, _, _, _)| !removed.contains(from));

@@ -16,6 +16,7 @@
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-cli/tests/fixtures/assert_callee_x86_64.elf</com>
   <com>read symbols</com>
+  <com>option protoorder off</com>
   <com>load function twice</com>
   <com>decompile</com>
   <com>print C</com>

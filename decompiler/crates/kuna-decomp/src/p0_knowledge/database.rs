@@ -582,6 +582,10 @@ pub enum SymbolKind {
         /// (`IfcFixupApply`).  `-1` = no fixup.  Parked here for the same reason as
         /// `inline_func` (the lazily-built `Funcdata`/`FuncProto` is W5).
         inject_id: int4,
+        /// `FuncProto::extrapop` for this function (C++
+        /// `getFuncProto().setExtraPop(expop)`), set by `option extrapop <n>
+        /// <name>` (`OptionExtraPop`).  `None` = the prototype model's value.
+        extra_pop: Option<int4>,
         /// The parsed, source-declared prototype pieces for this function (C++
         /// `parse line extern <decl>` → `Architecture::setPrototype` →
         /// `queryFunction(name)->getFuncProto()`), parked on the FunctionSymbol so a
@@ -2253,6 +2257,7 @@ impl Database {
             inline_func: false,
             no_return: false,
             inject_id: -1,
+            extra_pop: None,
             proto_pieces: None,
             pointer_receiver: None,
         };
@@ -2879,6 +2884,27 @@ impl Database {
         }
     }
 
+    /// Set the `FuncProto::extrapop` for a FunctionSymbol (C++
+    /// `fd->getFuncProto().setExtraPop(expop)` reached via `OptionExtraPop::apply`).
+    /// No-op on a non-Function symbol.
+    pub fn set_function_extra_pop(&mut self, sid: SymbolId, expop: int4) {
+        self.kuna_gen += 1;
+        if let SymbolKind::Function { extra_pop, .. } = &mut self.symbols[sid].kind {
+            *extra_pop = Some(expop);
+        }
+    }
+
+    /// The extrapop parked on the FunctionSymbol at `addr` (any scope), if set.
+    pub fn function_extra_pop_across_scopes(&self, addr: &Address) -> Option<int4> {
+        match self.find_function_across_scopes(addr) {
+            Some((sid, _)) => match self.symbols[sid].kind {
+                SymbolKind::Function { extra_pop, .. } => extra_pop,
+                _ => None,
+            },
+            None => None,
+        }
+    }
+
     /// Set the `FuncProto::injectid` for a FunctionSymbol (C++
     /// `fd->getFuncProto().setInjectId(injectid)` reached via `IfcFixupApply`).
     /// No-op on a non-Function symbol.
@@ -3463,6 +3489,10 @@ impl Database {
                             sym.kind,
                             SymbolKind::Function { no_return: true, .. }
                         ),
+                        func_extra_pop: match sym.kind {
+                            SymbolKind::Function { extra_pop, .. } => extra_pop,
+                            _ => None,
+                        },
                     });
                 }
             }

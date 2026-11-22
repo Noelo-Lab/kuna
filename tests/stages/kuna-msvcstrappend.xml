@@ -288,6 +288,7 @@ c4505bc3cccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 <symbol space="ram" offset="0x1400013a0" name="near_miss"/>
 </binaryimage>
 <script>
+  <com>option postinc off</com>
   <com>option msvcstrappend on</com>
   <com>lo fu build_password</com>
   <com>decompile</com>

@@ -1063,6 +1063,8 @@ pub(crate) fn pool_config<'a>(
 /// Emit `text`, then report a discovery failure (stdout before stderr, as
 /// `kuna decompile` orders them) and answer with the run's verdict.
 /// Report every rejected assertion on stderr, and say whether there was one.
+/// A `--types` declaration the C grammar declined is reported too but is not
+/// counted: a header is loaded as far as it parses, under `--assert-strict` too.
 ///
 /// The human surface has no `assertions[]` to read, and a directive that was
 /// silently dropped is the failure mode this plane exists to end -- so a
@@ -1072,6 +1074,12 @@ pub(crate) fn report_rejected_assertions(
 ) -> bool {
     let mut any = false;
     for outcome in outcomes.iter().filter(|o| o.status == "rejected") {
+        let reason = outcome.detail.as_deref().unwrap_or("no reason given");
+        let reason = reason.lines().next().unwrap_or(reason);
+        if let Some(declaration) = kuna_console::kuna_cheader::origin(&outcome.directive) {
+            eprintln!("warning: --types {declaration}: rejected: {reason}");
+            continue;
+        }
         any = true;
         let reason = outcome.detail.as_deref().unwrap_or("no reason given");
         if outcome.fatal {
@@ -1400,7 +1408,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
         decompile_entries_callee_first(&mut prog, args, targets, explicit)
     } else {
         note_custom_inert(&prog, targets.len());
-        decompile_entries(&mut prog, args, targets, /* pointer_arguments= */ true)
+        decompile_entries(&mut prog, args, targets, /* pointer_arguments= */ true, !whole)
     };
     Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes(), interior, declared })
 }
@@ -1449,12 +1457,15 @@ pub(crate) fn parse_max_fn_memory(v: &str) -> Result<u64, String> {
 /// instead of hanging the whole batch.
 ///
 /// `pointer_arguments` is whether the returned batch reconciles scalar
-/// addresses with the parameter declarations printed in it.
+/// addresses with the parameter declarations printed in it.  `tail_callees`
+/// (a selection with no callee-first order behind it) has each function state
+/// its tail callees' prototypes first, as `kuna decompile` does.
 pub(crate) fn decompile_entries(
     prog: &mut ConsoleProgram,
     args: &Args,
     targets: Vec<FunctionEntry>,
     pointer_arguments: bool,
+    tail_callees: bool,
 ) -> Vec<FuncResult> {
     arm_fn_budgets(prog, args);
     let opts = DecompileOptions {
@@ -1464,7 +1475,10 @@ pub(crate) fn decompile_entries(
         want_pointer_arguments: pointer_arguments,
         ..DecompileOptions::default()
     };
-    kuna_console::project::decompile_targets_with(prog, targets, &opts)
+    prog.arch_mut().kuna_tail_callee_batch = tail_callees;
+    let funcs = kuna_console::project::decompile_targets_with(prog, targets, &opts);
+    prog.arch_mut().kuna_tail_callee_batch = false;
+    funcs
 }
 
 /// (kuna `protoorder`) Whether this run takes the callee-first order, and
@@ -1881,7 +1895,9 @@ pub(crate) fn name_miss_hint(error: &EntryLookupError) -> Option<String> {
 /// Build the target [`FunctionEntry`] list from the filters: `--addr` entries
 /// (the canonical record at that address, else a record named via the symbol
 /// table / `name_function`), `--functions` names or aliases, or — with no filter
-/// — every CODE-backed entry, each exactly once.
+/// — every CODE-backed entry, each exactly once. Among several selectors, one
+/// naming a bodyless import slot is reported on stderr and skipped; a lone one,
+/// or a run left with nothing to decompile after the skips, is an error.
 pub(crate) fn resolve_targets(
     prog: &ConsoleProgram,
     args: &Args,
@@ -1905,6 +1921,16 @@ fn resolve_targets_with_policy(
     require_body: bool,
 ) -> Result<Vec<FunctionEntry>, String> {
     let mut targets: Vec<FunctionEntry> = Vec::new();
+    let selectors = args.addrs.len() + args.names.as_ref().map_or(0, Vec::len);
+    let mut skipped = 0usize;
+    let mut skip_import = |error: &EntryLookupError| -> bool {
+        if selectors < 2 || !matches!(error, EntryLookupError::BodylessImport { .. }) {
+            return false;
+        }
+        eprintln!("warning: {error}; skipped");
+        skipped += 1;
+        true
+    };
 
     // Resolve every address form through the program's shared selector model.
     // `args.entry_seeds` is deliberately not here: a raw image's `--entry`
@@ -1924,7 +1950,11 @@ fn resolve_targets_with_policy(
         } else {
             prog.resolve_entry(&selector)
         };
-        targets.push(entry.map_err(|error| error.to_string())?);
+        match entry {
+            Ok(entry) => targets.push(entry),
+            Err(error) if skip_import(&error) => {}
+            Err(error) => return Err(error.to_string()),
+        }
     }
 
     // `--functions a,b,c`: intersect names with the enumerated set.  An ALIAS
@@ -1954,9 +1984,18 @@ fn resolve_targets_with_policy(
                         None => eprintln!("warning: no function named {want:?} in {}", args.binary),
                     }
                 }
+                Err(error) if skip_import(&error) => {}
                 Err(error) => return Err(error.to_string()),
             }
         }
+    }
+    if targets.is_empty() && skipped > 0 {
+        return Err(if skipped == selectors {
+            "every selector names an import slot; nothing to decompile"
+        } else {
+            "no selector names a function body; nothing to decompile"
+        }
+        .to_string());
     }
 
     // Dedup the explicitly-selected targets by entry offset: `--addr 0xX` and
@@ -2917,6 +2956,8 @@ pub(crate) fn parse_args_with_filters(
     let mut func_decls: Vec<crate::funcdecl::FuncDecl> = Vec::new();
     let mut assertions: Vec<kuna_console::assertions::Directive> = Vec::new();
     let mut assert_strict = false;
+    let mut types: Vec<String> = Vec::new();
+    let mut types_cpp: Option<String> = None;
     let mut mode: Option<String> = None;
     let mut slice: Option<String> = None;
     let mut target: Option<String> = None;
@@ -2984,6 +3025,8 @@ pub(crate) fn parse_args_with_filters(
                 assertions.extend(crate::assertdecl::parse_flag(&v)?);
             }
             "--assert-strict" => assert_strict = true,
+            "--types" => types.push(take(argv, &mut i, "--types")?),
+            "--types-cpp" => types_cpp = Some(take(argv, &mut i, "--types-cpp")?),
             "--jobs" if jobs_flag => {
                 let v = take(argv, &mut i, "--jobs")?;
                 (jobs, jobs_auto) = jobs::parse_jobs(&v)?;
@@ -3099,6 +3142,7 @@ pub(crate) fn parse_args_with_filters(
     }
 
     let binary = binary.ok_or_else(|| format!("{cmd} requires <binary>"))?;
+    let assertions = crate::assertdecl::with_types(&types, types_cpp.as_deref(), assertions)?;
     if filters.rust_signature_manifest.is_some() {
         if apply_rust_signatures.is_some() {
             return Err("--rust-signature-manifest and --apply-rust-signatures are exclusive".into());

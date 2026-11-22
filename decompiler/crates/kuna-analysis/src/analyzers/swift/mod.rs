@@ -89,6 +89,13 @@ impl AnalysisPass for SwiftMetadataPass {
                 .into_iter()
                 .filter_map(|s| String::from_utf8(s.name).ok().map(|n| (s.addr, n)))
                 .collect();
+        if ctx.file.format() == object::BinaryFormat::MachO {
+            for (slot, name) in crate::loader::macho_stubs::resolve_macho_data_import_slots(ctx.file, ctx.bytes) {
+                if let Ok(name) = String::from_utf8(name) {
+                    imports.entry(slot).or_insert(name);
+                }
+            }
+        }
         // A chained-fixup Mach-O binds other images' descriptors into `__const`
         // slots the indirect-symbol table does not list; an ELF binds them
         // through GOT slots whose dynamic relocations name the symbol.
