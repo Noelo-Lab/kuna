@@ -37,6 +37,7 @@
 <script>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/relocobj_ppc32_O2.o</com>
+  <com>option typevote off</com>
   <com>read symbols</com>
   <com>lo fu add64</com>
   <com>decompile</com>
@@ -46,12 +47,14 @@
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/relocobj_ppc32_pic_O2.o</com>
+  <com>option typevote off</com>
   <com>read symbols</com>
   <com>lo fu callint</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/relocobj_mips32_O2.o</com>
+  <com>option typevote off</com>
   <com>read symbols</com>
   <com>lo fu store</com>
   <com>decompile</com>
@@ -61,12 +64,14 @@
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/relocobj_mipsel_pic_O2.o</com>
+  <com>option typevote off</com>
   <com>read symbols</com>
   <com>lo fu wrap</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/relocobj_ppc64_O2.o</com>
+  <com>option typevote off</com>
   <com>read symbols</com>
   <com>lo fu store</com>
   <com>decompile</com>

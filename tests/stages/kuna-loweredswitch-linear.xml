@@ -1,0 +1,70 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `loweredswitch linear`: a linear chain of equality tests on one variable.
+
+    loweredswitch re-rolls a compare cascade only when it has a binary-search
+    range split, because a linear chain of equality tests reads as a hand-written
+    if/else-if.  clang -O2 lowers a three-case switch to exactly such a chain.
+    With `loweredswitch linear` a linear chain of three to sixteen cases re-rolls
+    too, when every case body is entered only from the chain and the chain head
+    dominates it, and its labels print the same signed or unsigned.
+
+    Stage / sub-stage: P2 "switch-model", option `loweredswitch on|linear`.
+
+    clang 22.1 -O2 -fno-pie -nostartfiles -static (x86-64) of
+
+        __attribute__((noinline)) int sink(int x) { return x * 7 + 3; }
+        int sw3(int x, int *p) {
+          switch (x) {
+          case 1: p[0] = sink(1); break;
+          case 2: p[1] = sink(2); break;
+          case 5: p[2] = sink(3); break;
+          default: p[3] = 0; break;
+          }
+          return p[4];
+        }
+        int chain(int x, int *p) {
+          if (x == 3) p[0] = sink(7);
+          else if (x == 9) p[1] = sink(8);
+          else if (x == 11) p[2] = sink(9);
+          return p[4];
+        }
+
+    Pass 1 is the default (`on`), pass 2 sets `loweredswitch linear`.
+-->
+<bytechunk space="ram" offset="0x401000">
+f30f1efa8d04fd0000000029f883c003c36666666666662e0f1f840000000000f30f1efa534889f383ff05742783ff02741383ff01752cbf01000000e8bfffff
+ff8903eb25bf02000000e8b1ffffff894304eb16bf03000000e8a2ffffff894308eb07c7430c000000008b43105bc390f30f1efa534889f383ff0b742783ff09
+741383ff03752abf07000000e86fffffff8903eb1cbf08000000e861ffffff894304eb0dbf09000000e852ffffff8943088b43105bc3662e0f1f840000000000
+f30f1efac3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="sink"/>
+<symbol space="ram" offset="0x401020" name="sw3"/>
+<symbol space="ram" offset="0x401070" name="chain"/>
+</binaryimage>
+<script>
+  <com>lo fu sw3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu chain</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option loweredswitch linear</com>
+  <com>lo fu sw3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu chain</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="loweredswitch linear #1: by default the linear chain stays nested ifs" min="1" max="1">^  if \(a0 != 5\) \{</stringmatch>
+<stringmatch name="loweredswitch linear #2: with linear both chains re-roll into a switch" min="2" max="2">^  switch\(a0\) \{</stringmatch>
+<stringmatch name="loweredswitch linear #3: the if/else-if chain's three values become cases" min="1" max="1">^    case 9:$
+^      a1\[1\] = sink\(8\);$
+^      break;$
+^    case 0xb:$</stringmatch>
+<stringmatch name="loweredswitch linear #4: the chain's fall-out is the switch default" min="1" max="1">^    default:$
+^      a1\[3\] = 0;$</stringmatch>
+</decompilertest>

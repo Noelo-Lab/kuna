@@ -254,6 +254,31 @@ existing treatment. Ordinary call alias handling then preserves output loads
 and their dependent conditions. A stack address may be incidental, so a known
 interface should use a declared prototype instead of this inference.
 
+With `calleefilledarg on` (default), the selector register is not a parameter
+slot of an Objective-C selector stub. `ParamListStandard::forceNoUse` applies
+the positional rule of every register convention at each call: the first
+register nobody fills ends the argument list, so a trial scored
+definitely-not-used turns every trial after it inactive. A Mach-O image linked
+with `-objc_stubs_fast` sends each message through an `objc_msgSend$<sel>` stub
+(the linker's name for it, which the `objc` analyzer also gives it in a stripped
+image) that loads the selector into `x1` (`rsi`) and jumps through a GOT slot to
+`objc_msgSend`; the caller leaves that register alone and stages the method's
+real arguments in `x2` (`rdx`) onward. At a direct call to a callee so named
+whose body agrees -- the entry-liveness probe `calleedeadarg` caches for every
+direct call shows every path leaving through an indirect jump, none returning,
+calling or running a user op, nothing read on entry, and the register written on
+every path before anything could read it -- a definitely-not-used register
+trial, and a hole `buildTrialMap` backfills on such a register, are stepped over
+by `forceNoUse` and never materialised by `forceInactiveChain`'s hole filling:
+the slots after it are scored on their own evidence. The chain rule is
+untouched. The name is what keeps a C callee out: `void tramp2(void) {
+g_fp(g_x, 1); }` also fills `rdi` and `rsi` and jumps through a register, but a
+C callee takes its parameters in order, so the `idiv` remainder a clang -O0
+caller leaves in `rdx` is no argument of it, and the cascade is what keeps it
+off the call. A trial the caller's evidence scored anything else, a stack trial,
+an indirect call, every other callee, and a stub the probe could not cover keep
+the positional rule; outside Objective-C images the option is inert.
+
 
 ```yaml
 Anchors:
@@ -1717,7 +1742,16 @@ that machinery.
   (ActionStackPtrFlow)`, its home by port history) and, per-function, to
   `option extrapop`
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs
-  (OptionExtraPop)`).
+  (OptionExtraPop)`). With a function name, `option extrapop <n> <name>`
+  parks `n` on that FunctionSymbol
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
+  (Database::set_function_extra_pop)`). `ActionDefaultParams` copies it into
+  every call spec that targets the function, as upstream copies the callee's
+  own prototype, and the function's own prototype takes it when it is
+  decompiled (`tests/stages/kuna-extrapop-function.xml`). The prototype
+  `ArchContext::query_function` returns carries it too, so a call through a
+  register or an import slot that resolves to the function pops the same
+  bytes.
   On x86-32 under a compiler spec whose default model leaves extrapop unknown
   (`x86win.cspec`'s `__stdcall`, and with it `__thiscall`/`__fastcall` callees
   the image does not declare), a direct call whose prototype states no extrapop
@@ -2474,7 +2508,7 @@ classified:
   calls by the user op the language's `svc` lowers to, the one `syscallregs`
   names.
 
-  Where the body does not settle it, two facts about the value do. First, a
+  Where the body does not settle it, facts about the value do. First, a
   value already vetoed from another call is vetoed here too. clang -O0
   computes a comparison into `w8` ahead of two calls on different paths
   (`if (pg < 1) return corrupt(4321); if (pagecount(bt) == 0) ...`). The value
@@ -2497,6 +2531,27 @@ classified:
   null-page rule cannot see a callee that takes a small number in `x8` by its
   own convention behind an import, such as the OCaml runtime's `caml_allocN`
   reached through a PLT stub. That number is dropped (`caml_allocN()`).
+
+  On arm64e (the `AARCH64:LE:64:AppleSilicon` language) a third fact answers:
+  a value that is not an address is not a result buffer. The processor ignores
+  the top byte of a pointer, and bits 48..55 extend bit 55 with the
+  pointer-authentication code kept in them, so in an address a store can go
+  through they are all clear (user) or all set (kernel). A value whose every leaf
+  has those eight bits known, through copies and ANDs and ORs with constants,
+  and neither all clear nor all set, is vetoed. This is the blended modifier
+  of a signing. clang builds it in `x8` and moves it to `x16`
+  (`mov x8,x19; movk x8,#0xaea0,lsl #48; mov x16,x8; pacda x17,x16`), and the
+  hidden `pacda` lifts to a copy of `x17` that does not read `x16`
+  ([02](02-lift-and-flow.md)). The call that follows is then the modifier's
+  only reader, and a three-argument `OSCompareAndSwapPtr` printed as
+  `OSCompareAndSwapPtr(0xaea0fff00a64e488,0,v1,&gAKS)`. `x8` is the only
+  register this reaches: `x16` and `x17` are not input entries. A modifier
+  whose discriminator has a low byte of `0x00` or `0xff` has the bits of a
+  tagged address and is left to the other rules, as is one made of the
+  storage address alone. The rule is not applied to other AArch64 languages,
+  where a 52-bit address space gives bits 48..51 to the address.
+  `tests/stages/kuna-pacmodifier-arg-a64e.xml` covers both forms of the
+  modifier and the two controls.
 
   Dropping the entry leaves no hole in `x0..x7`. Only a register entry is
   vetoed: not SPARC's `[sp+64]` stack slot, and not one that shares storage
@@ -4139,7 +4194,15 @@ for a recovered one. Then it tries to merge the discovered callee prototype **in
 when the models are compatible (same or aliased `ProtoModel`, `is_compatible`),
 varargs only while input recovery is still active, and — for locked callee
 prototypes — when the existing argument Varnodes can be re-mapped onto the
-locked storage (`transfer_locked_input`/`transfer_locked_output`). Success
+locked storage (`transfer_locked_input`/`transfer_locked_output`). (kuna) An
+argument Varnode is re-mapped only if it is still at least as wide as the
+parameter it would become. A trial keeps the width it was recorded with, but
+subvariable flow may since have narrowed the Varnode a call reads (an unlocked
+call lets a zero-extended 16-bit sum replace the 64-bit register it filled), and
+`build_param` can only truncate: upstream re-maps the narrow Varnode anyway and
+emits a `SUBPIECE` whose output is wider than its input. Such a site fails the
+restriction and restarts, and the restart builds the call with its inputs
+locked, so nothing narrows them. Success
 commits the new input/output lists directly. For a locked variadic prototype,
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargtransfer.rs
 (pending_trials)` preserves existing trials outside the fixed parameters before
@@ -6766,6 +6829,45 @@ output would depend on how the chunks fell. A `--jobs` run under the default is
 not refused; it states nothing and says so on stderr, since its call-argument
 types can then differ from the serial run's, and `--option protoorder off` on
 both makes them byte-identical.
+
+A single-function `kuna decompile` does state two kinds of callee before its own
+pipeline finishes. The callees its call sites pass preferred-split storage to are
+described with `option protoorder`'s use guidance. The other kind is the callees
+it tail-calls. For a thunk that is all tail call (`xor esi,esi; jmp target`)
+nothing in the function reads the return register after the call, so the call
+kept no output and the thunk printed `void thunk(a0) { target(a0,0); }`, while
+every caller used the value and `decompile-all` printed `return target(a0,NULL)`.
+A forwarder (`add esi,1; jmp helper`) lost the third argument it passes through
+untouched in `EDX` the same way. Before the pipeline runs, the drive finds each
+CALL the flow made from a tail jump (a CALL with an artificial `RETURN` at its
+own address), decompiles those callees in a nested drive
+(`decompile_drive.rs (bootstrap_tail_callees)`), and states each one's recovered
+prototype as a callee-first run parks it: the types, the arity where it is
+sound, the output and the forwarded inputs. At most four callees are tried, and
+a callee of more than 512 instructions stops while its flow is followed and
+states nothing, which bounds the cost: over 40 tail-calling functions of gawk,
+decompiled one at a time, the bound costs 2.0% more user-mode instructions and
+keeps 261 of the 265 output lines the unbounded bootstrap changes, where no
+bound costs 11.0%. The nested drives do not recurse, and declared or
+already-stated callees are skipped. `protoorder off` decompiles the function
+from its own body alone.
+
+A `decompile-all` that selects part of the binary (`--addr`, `--functions`,
+`--limit` and the triage filters) and `kuna decompile --json` have no
+callee-first order behind them either: `callee_first_decision` takes that order
+only for a whole-program run, and only a callee inside the batch can state
+anything. Their batch drive ran without this bootstrap, so a tail call to a
+callee with no declaration lost every argument it forwards: for an AArch64
+forwarder `ldr x8,[x3]; cbz x8,L; b target` the selected function printed
+`target(); // tail-call` while `kuna decompile` printed
+`target(a0,a1,a2,a3,a4); // tail-call`. Such a batch now runs the same
+bootstrap for each of its functions (`Architecture::kuna_tail_callee_batch`,
+set around the loop by `decompile_entries`), under the same two bounds, and a
+callee stated for one function of the batch is not decompiled again for the
+next. A whole-program run, callee-first or not, does not run it. Over the first
+3000 functions of git 2.54 (x86-64, `decompile-all --limit 3000`) the bootstrap
+changes 133 of the 703 tail-call lines and costs 2.8% more user-mode
+instructions; with no instruction bound it costs 5.0% and changes one line more.
 
 ### (kuna) `passthrough` — the register a function forwards to a callee that reads it
 
