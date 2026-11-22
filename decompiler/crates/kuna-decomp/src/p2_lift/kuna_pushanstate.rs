@@ -36,6 +36,41 @@ pub trait PushanImage {
     }
 }
 
+/// The image as the file holds it, writable memory included: what a fetch
+/// through an in-function interpreter's virtual PC reads.
+pub struct FileImage<'a>(pub &'a dyn PushanImage);
+
+impl PushanImage for FileImage<'_> {
+    fn read_bytes(&self, addr: u64, buf: &mut [u8]) -> bool {
+        self.0.read_bytes(addr, buf)
+    }
+    fn is_writable(&self, addr: u64) -> bool {
+        self.0.is_writable(addr)
+    }
+    fn is_mutable(&self, _addr: u64) -> bool {
+        false
+    }
+}
+
+/// `len` bytes of image memory at `src` copied into `[off, off + len)` of
+/// the region of `base` by an external copy routine: an unwritten byte of the
+/// destination reads what the source held when it was copied (at external
+/// call epoch `epoch`), so a large copy costs one record, not one cell per byte.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct CopyRegion {
+    pub base: Option<VarId>,
+    pub off: i128,
+    pub len: u64,
+    pub src: u64,
+    pub epoch: Option<u64>,
+}
+
+impl CopyRegion {
+    fn end(&self) -> i128 {
+        self.off + self.len as i128
+    }
+}
+
 /// A byte-granular store (one register file, one temporary file, or one memory region).
 #[derive(Clone, Default, Debug)]
 pub struct ByteStore {
@@ -261,6 +296,8 @@ pub struct State {
     /// The last external call emulated on this path (a number unique to that
     /// emulation): unwritten mutable memory holds what that call left there.
     pub global_epoch: Option<u64>,
+    /// Copies of image memory made by external copy routines, oldest first.
+    pub copies: Vec<CopyRegion>,
 }
 
 /// Most granules [`State::stack_stores`] records between two calls.
@@ -278,6 +315,7 @@ impl State {
             unknown_loads: 0,
             stack_stores: Vec::new(),
             global_epoch: None,
+            copies: Vec::new(),
         }
     }
 
@@ -349,34 +387,10 @@ impl State {
     ) -> ExprId {
         let be = self.big_endian;
         let epoch = self.global_epoch;
-        let region = self.mem.entry(base).or_default();
-        region.read_with(arena, off, size, be, &mut |a, o, len| {
-            if base.is_none() {
-                let addr = o as u64;
-                let concrete = (o as u64 as i128) == o;
-                if concrete && (image.is_mutable(addr) || image.is_mutable(addr.wrapping_add(len as u64 - 1))) {
-                    if let Some(site) = epoch {
-                        return a.var_of(VarKind::CallOutputAt { epoch: site, offset: o }, len, false);
-                    }
-                    return a.var_of(VarKind::InitMem { base, offset: o }, len, false);
-                }
-                let mut buf = vec![0u8; len as usize];
-                if concrete && image.read_bytes(addr, &mut buf) {
-                    let mut v: u128 = 0;
-                    if be {
-                        for b in &buf {
-                            v = (v << 8) | *b as u128;
-                        }
-                    } else {
-                        for b in buf.iter().rev() {
-                            v = (v << 8) | *b as u128;
-                        }
-                    }
-                    return a.cst(len, v);
-                }
-            }
-            a.var_of(VarKind::InitMem { base, offset: o }, len, false)
-        })
+        let State { mem, copies, .. } = self;
+        let copies: &[CopyRegion] = copies;
+        let region = mem.entry(base).or_default();
+        region.read_with(arena, off, size, be, &mut |a, o, len| fill_mem(a, image, be, base, o, len, epoch, copies))
     }
 
     /// An external call may have written any mutable memory: the stored
@@ -386,7 +400,84 @@ impl State {
         if let Some(region) = self.mem.get_mut(&None) {
             region.bytes.retain(|o, _| u64::try_from(*o).is_ok_and(|a| !image.is_mutable(a)));
         }
+        self.copies.retain(|c| c.base.is_some() || (0..c.len).step_by(0x1000).chain([c.len - 1]).all(|i| !image.is_mutable((c.off as u64).wrapping_add(i))));
         self.global_epoch = Some(epoch);
+    }
+
+    /// Model `memcpy(base + off, src, len)` from concrete image memory: the
+    /// destination's stored bytes are replaced by what the source holds now
+    /// (the bytes this path wrote there, copied; the rest read lazily through
+    /// a [`CopyRegion`]). False, with nothing changed, when the source
+    /// overlaps another copy's concrete destination.
+    pub fn copy_in(&mut self, base: Option<VarId>, off: i128, src: u64, len: u64) -> bool {
+        let (s0, s1) = (src as i128, src as i128 + len as i128);
+        if len == 0 || self.copies.iter().any(|c| c.base.is_none() && c.off < s1 && s0 < c.end()) {
+            return false;
+        }
+        let written: Vec<(i128, ByteVal)> = self.mem.get(&None).map(|r| r.bytes.range(s0..s1).map(|(o, v)| (*o - s0 + off, *v)).collect()).unwrap_or_default();
+        self.forget_copies(base, off, off + len as i128);
+        let region = self.mem.entry(base).or_default();
+        region.bytes.retain(|o, _| *o < off || *o >= off + len as i128);
+        region.bytes.extend(written);
+        self.copies.push(CopyRegion { base, off, len, src, epoch: self.global_epoch });
+        true
+    }
+
+    /// Drop the copies' claim on `[lo, hi)` of the region of `base`, whose
+    /// contents are being forgotten (a copy partly inside keeps the rest).
+    pub fn forget_copies(&mut self, base: Option<VarId>, lo: i128, hi: i128) {
+        if !self.copies.iter().any(|c| c.base == base && c.off < hi && lo < c.end()) {
+            return;
+        }
+        let mut kept = Vec::with_capacity(self.copies.len() + 1);
+        for c in self.copies.drain(..) {
+            if c.base != base || c.end() <= lo || hi <= c.off {
+                kept.push(c);
+                continue;
+            }
+            if c.off < lo {
+                kept.push(CopyRegion { len: (lo - c.off) as u64, ..c });
+            }
+            if hi < c.end() {
+                kept.push(CopyRegion { off: hi, len: (c.end() - hi) as u64, src: c.src + (hi - c.off) as u64, ..c });
+            }
+        }
+        self.copies = kept;
+    }
+
+    /// Read memory as the file holds it, writable memory included: a byte the
+    /// path wrote reads what it wrote, and an unwritten byte reads the file
+    /// (directly or through a copy), even where an earlier read cached the
+    /// symbol of its value at entry.
+    pub fn read_mem_file(&mut self, arena: &mut ExprArena, image: &dyn PushanImage, base: Option<VarId>, off: i128, size: u8) -> ExprId {
+        let stale: Vec<i128> = (off..off + size as i128).filter(|o| self.cached_fill(arena, base, *o)).collect();
+        if let Some(region) = self.mem.get_mut(&base) {
+            for o in stale {
+                region.bytes.remove(&o);
+            }
+        }
+        self.read_mem(arena, &FileImage(image), base, off, size)
+    }
+
+    /// The byte at `base + o` holds only the cached symbol of an unwritten
+    /// image byte's value (its own address, or its copy's source).
+    fn cached_fill(&self, arena: &ExprArena, base: Option<VarId>, o: i128) -> bool {
+        let Some(bv) = self.mem.get(&base).and_then(|r| r.bytes.get(&o)) else { return false };
+        let at = match arena.var_kind(bv.expr) {
+            Some(VarKind::InitMem { base: None, offset }) | Some(VarKind::CallOutputAt { offset, .. }) => offset,
+            _ => return false,
+        };
+        let size = arena.size(bv.expr);
+        let byte = at + if self.big_endian { (size - 1 - bv.idx) as i128 } else { bv.idx as i128 };
+        match base {
+            None => byte == o,
+            Some(_) => self.copy_source(base, o).is_some_and(|s| s as i128 == byte),
+        }
+    }
+
+    /// The image address the unwritten byte at `base + off` was copied from.
+    pub fn copy_source(&self, base: Option<VarId>, off: i128) -> Option<u64> {
+        self.copies.iter().rev().find(|c| c.base == base && c.off <= off && off < c.end()).map(|c| c.src + (off - c.off) as u64)
     }
 
     pub fn write_mem(&mut self, base: Option<VarId>, off: i128, e: ExprId, size: u8) {
@@ -553,6 +644,51 @@ impl State {
     pub fn mem_bytes(&self) -> usize {
         self.mem.values().map(|r| r.len()).sum()
     }
+}
+
+/// The value of `len` unwritten bytes at `base + o`: a copy's source as it
+/// was when copied, the image where its bytes cannot have changed, and
+/// otherwise the stable symbol of their entry value (or of what the last
+/// external call left in mutable memory).
+#[allow(clippy::too_many_arguments)]
+fn fill_mem(a: &mut ExprArena, image: &dyn PushanImage, be: bool, base: Option<VarId>, o: i128, len: u8, epoch: Option<u64>, copies: &[CopyRegion]) -> ExprId {
+    if let Some(c) = copies.iter().rev().find(|c| c.base == base && c.off < o + len as i128 && o < c.end()) {
+        if c.off <= o && o + len as i128 <= c.end() {
+            let src = c.src as i128 + (o - c.off);
+            return fill_mem(a, image, be, None, src, len, c.epoch, &[]);
+        }
+        let bytes: Vec<ExprId> = (0..len as i128).map(|i| fill_mem(a, image, be, base, o + i, 1, epoch, copies)).collect();
+        let mut acc = bytes[0];
+        for b in &bytes[1..] {
+            acc = if be { a.mk_piece(acc, *b) } else { a.mk_piece(*b, acc) };
+        }
+        return acc;
+    }
+    if base.is_none() {
+        let addr = o as u64;
+        let concrete = (o as u64 as i128) == o;
+        if concrete && (image.is_mutable(addr) || image.is_mutable(addr.wrapping_add(len as u64 - 1))) {
+            if let Some(site) = epoch {
+                return a.var_of(VarKind::CallOutputAt { epoch: site, offset: o }, len, false);
+            }
+            return a.var_of(VarKind::InitMem { base, offset: o }, len, false);
+        }
+        let mut buf = vec![0u8; len as usize];
+        if concrete && image.read_bytes(addr, &mut buf) {
+            let mut v: u128 = 0;
+            if be {
+                for b in &buf {
+                    v = (v << 8) | *b as u128;
+                }
+            } else {
+                for b in buf.iter().rev() {
+                    v = (v << 8) | *b as u128;
+                }
+            }
+            return a.cst(len, v);
+        }
+    }
+    a.var_of(VarKind::InitMem { base, offset: o }, len, false)
 }
 
 fn loc_tag(l: &Loc) -> u64 {

@@ -397,6 +397,15 @@ impl PushanTarget for ArchTarget<'_> {
     fn noreturn_interrupt(&self, vector: u64) -> bool {
         self.windows && vector == super::kuna_fastfailnoreturn::FASTFAIL_VECTOR as u64
     }
+    fn file_data(&self, addr: u64) -> bool {
+        self.section_of(addr).is_some_and(|s| s.flags & (section_flags::CODE | section_flags::NOLOAD | section_flags::UNALLOC) == 0)
+    }
+    fn copy_routine(&self, addr: u64) -> bool {
+        let a = Address::new(Rc::clone(&self.ram), addr);
+        let Some((sid, _)) = self.arch.symboltab.find_function_across_scopes(&a) else { return false };
+        let name = &self.arch.symboltab.symbol(sid).name;
+        matches!(name.split('@').next().unwrap_or(""), "memcpy" | "memmove" | "__memcpy_chk" | "__memmove_chk")
+    }
     fn bytecode_like(&self, addr: u64) -> bool {
         if self.section_of(addr).is_none() {
             return false;
@@ -699,6 +708,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
     let mut call_kills = abi.clobbers.clone();
     call_kills.push((abi.return_reg, ptr));
     let mut explorer = Explorer::new(&target, abi, Config::default(), entry);
+    explorer.probe = detect_vm_entry(&target, entry).is_none();
     let cfg = explorer.run();
     let m = arch.manage();
     let ram = Rc::clone(&target.ram);
@@ -947,6 +957,62 @@ pub fn prepare_flow(arch: &mut Architecture, fd: &mut Funcdata) -> Option<Rc<Pus
             None
         }
     }
+}
+
+/// `auto` on a function whose plain flow has a computed jump: probe it for an
+/// interpreter that is the function's own body
+/// ([`Explorer::probe_interpreter`]) and, when one is found and its
+/// exploration decides a dispatch, cache the devirtualized program, so the
+/// caller follows the flow again from it. Every other function pays one scan
+/// of its ops.
+pub fn interpreter_after_flow(arch: &mut Architecture, fd: &Funcdata) -> bool {
+    if arch.pushan_mode != MODE_AUTO || fd.kuna_devirtualized() {
+        return false;
+    }
+    let entry = fd.get_address().get_offset();
+    if arch.pushan_cache.contains_key(&entry) {
+        return false;
+    }
+    if !has_computed_jump(fd) {
+        return false;
+    }
+    let found = {
+        let Some(target) = ArchTarget::new(arch, entry) else { return false };
+        let Some(abi) = abi_for(arch, &target) else { return false };
+        let mut probe = Explorer::new(&target, abi, Config::default(), entry);
+        !probe.probe_interpreter().cells.is_empty()
+    };
+    if !found {
+        return false;
+    }
+    match devirtualize(arch, entry) {
+        Ok(p) if p.stats.vm_nodes > 0 && p.stats.data_dispatches > 0 => {
+            arch.pushan_cache.insert(entry, Rc::new(p));
+            true
+        }
+        _ => false,
+    }
+}
+
+/// The flow kept a computed jump: a BRANCHIND, or one it could not recover
+/// and treats as a call (a CALLIND with an artificial RETURN at its address).
+fn has_computed_jump(fd: &Funcdata) -> bool {
+    let mut calls = BTreeSet::new();
+    let mut returns = BTreeSet::new();
+    for o in fd.obank().iter_alive() {
+        let Some(op) = fd.obank().get(o) else { continue };
+        match op.code() {
+            OpCode::CPUI_BRANCHIND => return true,
+            OpCode::CPUI_CALLIND => {
+                calls.insert(op.get_addr().get_offset());
+            }
+            OpCode::CPUI_RETURN => {
+                returns.insert(op.get_addr().get_offset());
+            }
+            _ => {}
+        }
+    }
+    calls.intersection(&returns).next().is_some()
 }
 
 /// Point the function at its synthetic program: the flow follower lifts the

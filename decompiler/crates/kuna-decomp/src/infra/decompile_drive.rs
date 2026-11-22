@@ -1031,6 +1031,21 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
 /// publishing the flow's buffered comments.
 #[allow(clippy::mutable_key_type)]
 fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
+    let comments = fd.pending_comment_count();
+    let mut data = generate_flow_once(arch, fd)?;
+    // (kuna pushan) An interpreter that is the function's own body is only
+    // seen once its plain flow shows a computed jump; the flow is then
+    // followed again from the devirtualized program.
+    if crate::kuna_pushan::interpreter_after_flow(arch, &data) {
+        data.clear();
+        data.truncate_pending_comments(comments);
+        data = generate_flow_once(arch, data)?;
+    }
+    Ok(data)
+}
+
+#[allow(clippy::mutable_key_type)]
+fn generate_flow_once(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
     let _load = arch.load_scope();
     crate::kuna_mipsunaligned::paint(arch);
     crate::kuna_memtag::paint(arch, fd.get_address());
@@ -1060,8 +1075,12 @@ fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> 
     };
     if let Some(p) = &pushan {
         fd.warning_header(&format!(
-            "pushan: devirtualized VM-protected function ({} nodes, {} instructions, {} rounds)",
-            p.stats.nodes, p.stats.insns, p.stats.rounds
+            "pushan: devirtualized VM-protected function ({} nodes, {} instructions, {} rounds{}{})",
+            p.stats.nodes,
+            p.stats.insns,
+            p.stats.rounds,
+            if p.stats.writable_bytecode { "; assumes its bytecode in writable memory is what the file holds" } else { "" },
+            if p.stats.woven > 1 { format!("; follows the first of {} interleaved bytecode programs", p.stats.woven) } else { String::new() }
         ));
         if let Some(c) = p.caveats() {
             fd.warning_header(&c);

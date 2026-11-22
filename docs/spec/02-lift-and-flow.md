@@ -3976,8 +3976,22 @@ is not explored for calling them. That covers
 both the stub a protector leaves at a whole-function entry and an SDK-marked
 region's `push imm; call vm_entry`. The sections come from the loader
 (`ArchTarget::new`, falling back to segments), so a raw image or an XML
-`<binaryimage>` reports none, and `auto` never fires on it. `on` skips the detection and devirtualizes the requested
-function. Under both values, an exploration that never reaches a block inside
+`<binaryimage>` reports none, and `auto` never fires on it. An interpreter
+that is the function's own body (Tigress `Virtualize`: a `switch` or a
+threaded `goto *pc` over bytecode in the image, no protector section) has no
+such entry. `auto` looks for one only after the plain flow has been followed,
+and only in a function whose flow kept a computed jump: a BRANCHIND, or a jump
+the flow could not recover and treats as a call (a CALLIND with an artificial
+RETURN at its address, `kuna_pushan.rs (has_computed_jump)`). Every other
+function pays one scan of its ops. For a candidate,
+`kuna_pushan.rs (interpreter_after_flow)` runs the interpreter probe described
+below. When the probe finds a dispatch and the exploration decides at least one
+computed jump of the interpreter, the program is cached and the flow is followed
+again from it (`decompile_drive.rs (generate_flow)`). An ordinary `switch`
+stops the probe at its first computed jump, since no fetch through a pointer
+cell precedes it. `on` skips the detection and devirtualizes the requested
+function, probing for an in-function interpreter first when the function does
+not enter a protector section. Under both values, an exploration that never reaches a block inside
 the interpreter (`vm_nodes == 0`) is discarded and the plain flow is used, so a
 false detection costs one exploration and changes nothing. `off` always uses
 the plain flow. A successful result is cached per entry on the architecture
@@ -4062,6 +4076,96 @@ run its own copy of the rest of the run, and the paths would never join.
 The starts are kept over every round. A start found inside a run that was
 already emulated forces another round, in which that run ends there.
 
+**In-function interpreters.** A Tigress-virtualized function is its own
+interpreter: its prologue points a local at the bytecode, and a loop fetches an
+opcode through that local and dispatches on it, through a jump table (`switch`
+dispatch) or through the handler address the bytecode holds (`direct`
+dispatch, threaded code). The VPC is that local, a stack slot, and the
+bytecode sits in writable `.data` with low entropy, so none of the protector
+rules above applies. `Explorer::probe_interpreter` finds it before the first
+round. It is a concrete run from the entry of at most 8192 instructions. Every
+byte of file data (a loaded section that is neither code nor uninitialized)
+reads as the file holds it, writable or not, and an undecided branch is followed
+on its fall-through side. The run records each pointer-sized load from a memory
+cell (a slot of the entry stack, or a concrete address) whose value points into
+file data or into a copy of file data on the stack (see the copy model below).
+A later load within 16 bytes past such a pointer is a fetch through the cell.
+A computed jump to code that a fetch preceded is a dispatch event. A computed
+jump with no fetch before it (an ordinary `switch`), a return, or an
+instruction run 256 times ends the probe. The cell is the VPC once one computed
+jump has seen fetches through it at 4 different places, and gone to at least two
+targets. The explorer then keeps that cell as the VPC for the whole
+exploration (`Explorer::data_vpc`). At the end of every block, wherever the
+cell holds a bytecode pointer, the block's successors are in the interpreter,
+keyed by that pointer. A pointer into file data keys by its address. A pointer
+into a stack copy keys by its tagged stack offset (`Explorer::data_vpc_key`).
+Elsewhere (the prologue before the cell is set) the context carries over. A
+computed jump in the interpreter's context is its dispatch, never a call
+through a pushed return address (`Explorer::jump_to`).
+
+A fetch through the VPC reads the file's bytes even in a writable section
+(`kuna_pushanemu.rs (Emulator::through_vpc)`). The rule is narrow: the load
+must lie within 16 bytes of the pointer the VPC cell holds when the load runs,
+and that pointer must point into file data or a copy of it. Every other read of
+writable memory, the virtualized program's own globals included, stays the
+symbol of its entry value, as above. A byte the path wrote reads what it wrote
+(self-modifying bytecode is not read from the file). A symbol an earlier
+ordinary read cached for the same byte is dropped (`State::read_mem_file`). The
+emitter folds such a fetch to its constant, which is what removes the
+bytecode from the output. Because the image value of writable memory is not a
+fact, the header warning of a function whose fetches read writable memory says
+that the recovered body assumes its bytecode in writable memory is what the
+file holds. A function whose bytecode is in read-only memory reads it from
+the image anyway and gets no such clause.
+
+The copy model. Tigress's `direct` dispatch keeps its threaded code in a local
+array, which gcc fills from an initializer in `.data` with `memcpy` (81 KB in
+one sample), and the entries are handler addresses fixed by
+`R_X86_64_RELATIVE` relocations whose addends the linker also stores in the
+file. A call to a routine with `memcpy`'s contract, named `memcpy`, `memmove`,
+`__memcpy_chk` or `__memmove_chk` (`ArchTarget::copy_routine`), that copies a
+constant count of at most 16 MiB out of file data to the entry stack or a
+concrete address, is modelled as a copy (`Explorer::copy_arguments`,
+`State::copy_in`). The destination's stored bytes are replaced: what the path had
+written to the source is copied, and the rest of the destination reads the
+source lazily through one `CopyRegion` record, as the source read at the time
+of the call. A large copy therefore costs one record per state, not one cell
+per byte. The copy is forgotten wherever its destination is
+(`State::forget_copies`): a store over a symbolic index, the frame below the
+stack pointer after a VM exit, an external call for a concrete destination
+in mutable memory, and a node that paths reach with different copies, which
+starts without them. Where two sides of a merged conditional disagree on a
+copy, the merged state keeps only the copies both sides have. The rest of the
+call is summarized as usual and stays in the program.
+
+The direct dispatch also starts with gcc's stack probe for its large frame
+(`sub rsp, 0x1000; or [rsp], 0; cmp rsp, r11; jne`). A decided jump of the
+function's own code back to an earlier instruction of the node, after which
+the stack pointer sits at another constant depth than it did there, repeats
+inside the node (`Explorer::moves_stack_back_to`), as a `rep` instruction in
+the protector does. Keying each iteration at its own depth would exhaust the
+four depths kept apart per address and join the rest unmerged.
+
+Interleaved programs. Tigress can run bogus functions in the same interpreter,
+round-robin with the real one: each has its own VPC and virtual stack
+(`pc[select]`, `sp[select]`), and a selector register advances after every
+instruction. Keying by every VPC would build the product of the programs'
+graphs, and keying by the running program's VPC alone leaves the other VPC a
+merged symbol whose dispatch no enumeration decides. The probe therefore
+reports every cell fetched through at the dispatch. Cells a fixed stride apart
+are the VPCs of interleaved programs. The selector is every register, or
+4-byte slot of the entry stack, that holds the index of the fetched cell
+wherever the straight run into the dispatch starts, on every turn the probe saw
+there (`Explorer::infer_selector`). The explorer pins those locations to the
+index of the program dispatched first, there and in every state reaching that
+address (`Explorer::apply_pin`), as Pushan's Tigress driver pins the selector
+register. Every turn then runs the first program, the key holds its VPC alone,
+and the recovered graph is that program's own. This assumes the other
+programs neither end the function first nor touch the first program's data.
+The header warning says that the body follows the first of the interleaved
+programs. Without a selector to pin, the other programs' dispatches stay
+unresolved and the header reports the exploration as incomplete.
+
 An instruction that branches back to itself (an x86 `rep` prefix) is handled
 by where it lives (`Explorer::emulate_node`). In the protector's code, with a
 decided count, it repeats inside its node, one instance per iteration, as
@@ -4090,7 +4194,8 @@ either (`PushanImage::is_mutable`): its image contents are only the value it
 starts the process with, and another function may have changed it, so it reads
 the stable symbol of its entry value, and the MSVC `/GS` cookie, a global flag
 tested by the program, a counter or a pointer table read there stays a
-variable instead of the number the file happens to hold. An import slot (a
+variable instead of the number the file happens to hold. The one exception is
+a fetch through an in-function interpreter's VPC, above. An import slot (a
 function symbol at the address, as in a Themida image's writable `.idata`)
 still reads the image, because a call through it is recognized by the pointer
 the slot holds, and the protector's own sections are code and read the image
@@ -4327,7 +4432,8 @@ with these edits:
 - Folding. A data op whose result the emulation fixed to a constant becomes a
   COPY of that constant, which removes the bytecode fetches, key arithmetic and
   handler addresses. The exception is a load from writable memory, which stays
-  a load, because the image value there is not a fact.
+  a load, because the image value there is not a fact, unless it was a fetch
+  through an in-function interpreter's VPC (`AccessRecord::trusted`).
 - Stack-pointer rematerialization. The entry trampoline saves the entry stack
   pointer in a frame register, placed past the witness slots. A register result
   equal to the entry stack pointer plus a constant is rebuilt as `frame + k`

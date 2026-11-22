@@ -60,6 +60,16 @@ pub trait PushanTarget: PushanImage {
     /// `addr` lies in a mapped region that looks like VM bytecode: the paper's
     /// test, a 256-byte window with Shannon entropy above 5 bits per byte.
     fn bytecode_like(&self, addr: u64) -> bool;
+    /// `addr` lies in data the file holds: a loaded section that is neither
+    /// code nor uninitialized (where an in-function interpreter's bytecode lives).
+    fn file_data(&self, addr: u64) -> bool {
+        self.is_mapped(addr) && !self.is_executable(addr)
+    }
+    /// The code at `addr` is a C library routine with `memcpy`'s contract
+    /// (destination, source, byte count; only the destination is written).
+    fn copy_routine(&self, _addr: u64) -> bool {
+        false
+    }
     /// A software interrupt with this vector never returns (Windows `int 0x29`, `__fastfail`).
     fn noreturn_interrupt(&self, vector: u64) -> bool;
 }
@@ -119,7 +129,19 @@ pub struct AccessRecord {
     pub addr: Option<u64>,
     pub size: u8,
     pub is_store: bool,
+    /// A load through the virtual PC that read the file's bytes.
+    pub trusted: bool,
 }
+
+/// Where an in-function interpreter keeps its virtual PC.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum VpcSource {
+    Reg(u64),
+    Cell(Option<VarId>, i128),
+}
+
+/// Bytes on either side of the virtual PC a fetch through it may read.
+pub const FETCH_WINDOW: i128 = 16;
 
 /// How control leaves an instruction.
 #[derive(Clone, Debug)]
@@ -183,6 +205,15 @@ pub struct Emulator<'a> {
     noreturn_target: Option<ExprId>,
     /// Stores whose address the emulation could not place, ignored.
     pub dropped_stores: usize,
+    /// An in-function interpreter's virtual PC: a load within
+    /// [`FETCH_WINDOW`] of the bytecode pointer it holds reads the file.
+    pub vpc: Option<VpcSource>,
+    /// Some fetch through `vpc` read writable memory as the file holds it.
+    pub fetched_writable: bool,
+    /// Every read of file data reads it as the file holds it (the
+    /// interpreter probe's concrete run).
+    pub trust_file: bool,
+    last_trusted: bool,
 }
 
 /// Symbol -> the constants its location held where paths met.
@@ -204,7 +235,57 @@ impl<'a> Emulator<'a> {
             sym_values: Default::default(),
             noreturn_target: None,
             dropped_stores: 0,
+            vpc: None,
+            fetched_writable: false,
+            trust_file: false,
+            last_trusted: false,
         }
+    }
+
+    /// A read of `size` bytes at `base + off` is a fetch through the virtual
+    /// PC: the VPC holds a pointer into file data (or into a copy of it)
+    /// within [`FETCH_WINDOW`] bytes of the access.
+    fn through_vpc(&mut self, state: &mut State, arena: &mut ExprArena, base: Option<VarId>, off: i128, size: u8) -> bool {
+        let Some(src) = self.vpc else { return false };
+        let ps = self.target.ptr_size();
+        let v = match src {
+            VpcSource::Reg(r) => state.read_reg(arena, r, ps),
+            VpcSource::Cell(b, o) => state.read_mem(arena, self.target, b, o, ps),
+        };
+        let Some((vb, p)) = arena.affine(v) else { return false };
+        if vb != base || off < p - FETCH_WINDOW || off + size as i128 > p + FETCH_WINDOW {
+            return false;
+        }
+        match base {
+            None => u64::try_from(p).is_ok_and(|a| self.target.file_data(a)),
+            Some(_) => state.copy_source(base, p).is_some_and(|a| self.target.file_data(a)),
+        }
+    }
+
+    /// Read `size` bytes at `base + off`, through the virtual PC as the file
+    /// holds them when [`Self::through_vpc`] says the load is a fetch.
+    fn read_data(&mut self, state: &mut State, arena: &mut ExprArena, base: Option<VarId>, off: i128, size: u8) -> ExprId {
+        if self.trust_file {
+            let file = match base {
+                None => u64::try_from(off).is_ok_and(|a| self.target.file_data(a)),
+                Some(_) => state.copy_source(base, off).is_some(),
+            };
+            if file {
+                return state.read_mem_file(arena, self.target, base, off, size);
+            }
+        }
+        if self.through_vpc(state, arena, base, off, size) {
+            self.last_trusted = true;
+            let src = match base {
+                None => u64::try_from(off).ok(),
+                Some(_) => state.copy_source(base, off),
+            };
+            if src.is_some_and(|a| self.target.is_mutable(a) || self.target.is_mutable(a.wrapping_add(size as u64 - 1))) {
+                self.fetched_writable = true;
+            }
+            return state.read_mem_file(arena, self.target, base, off, size);
+        }
+        state.read_mem(arena, self.target, base, off, size)
     }
 
     fn vn_space(&self, vn: &VarnodeData) -> Space {
@@ -404,7 +485,7 @@ impl<'a> Emulator<'a> {
         }
         if let Some((base, off)) = arena.affine_probe(addr) {
             let from_image = base.is_none() && !state.mem_written(None, off, size);
-            let v = state.read_mem(arena, self.target, base, off, size);
+            let v = self.read_data(state, arena, base, off, size);
             if from_image && size == self.target.ptr_size() {
                 if let Some(c) = arena.is_const(v) {
                     self.image_loads.insert(c as u64, off as u64);
@@ -435,7 +516,7 @@ impl<'a> Emulator<'a> {
             if ok && groups.len() <= MAX_SPLIT_CASES {
                 let mut vals: Vec<ExprId> = Vec::with_capacity(groups.len());
                 for ((base, off), _) in &groups {
-                    vals.push(state.read_mem(arena, self.target, *base, *off, size));
+                    vals.push(self.read_data(state, arena, *base, *off, size));
                 }
                 let mut result = vals[vals.len() - 1];
                 for i in (0..groups.len() - 1).rev() {
@@ -559,13 +640,10 @@ impl<'a> Emulator<'a> {
         }
         let upward = terms.iter().all(|(_, c)| !super::kuna_pushanexpr::sign(*c, size));
         for b in bases {
+            let (lo, hi) = if arena.var_info(b).pointer { (if upward { k } else { i128::MIN }, 0) } else { (i128::MIN, i128::MAX) };
+            state.forget_copies(Some(b), lo, hi);
             let Some(region) = state.mem.get_mut(&Some(b)) else { continue };
-            if arena.var_info(b).pointer {
-                let lo = if upward { k } else { i128::MIN };
-                region.remove_where(|o| o >= lo && o < 0);
-            } else {
-                region.remove_where(|_| true);
-            }
+            region.remove_where(|o| o >= lo && o < hi);
         }
         true
     }
@@ -730,8 +808,15 @@ impl<'a> Emulator<'a> {
                         addr: arena.is_const(addr).map(|c| c as u64),
                         size,
                         is_store: false,
+                        trusted: false,
                     });
+                    self.last_trusted = false;
                     let v = if out.size > MAX_SIZE as u32 { self.unknown(arena, size, "wide load") } else { self.load(state, arena, space, addr, size) };
+                    if self.last_trusted {
+                        if let Some(a) = trace.accesses.last_mut() {
+                            a.trusted = true;
+                        }
+                    }
                     trace.op_out[pc] = Some(v);
                     self.write_vn(state, arena, &out, v);
                 }
@@ -750,6 +835,7 @@ impl<'a> Emulator<'a> {
                         addr: arena.is_const(addr).map(|c| c as u64),
                         size: op.ins[2].size.min(MAX_SIZE as u32) as u8,
                         is_store: true,
+                        trusted: false,
                     });
                     if op.ins[2].size <= MAX_SIZE as u32 {
                         self.store(state, arena, space, addr, val);
@@ -875,4 +961,7 @@ pub fn merge_ite(state: &mut State, taken: &mut State, arena: &mut ExprArena, im
     state.unknown_loads = state.unknown_loads.max(taken.unknown_loads);
     state.unknown_stores = state.unknown_stores.max(taken.unknown_stores);
     state.merge_stores(taken);
+    if state.copies != taken.copies {
+        state.copies.retain(|c| taken.copies.contains(c));
+    }
 }

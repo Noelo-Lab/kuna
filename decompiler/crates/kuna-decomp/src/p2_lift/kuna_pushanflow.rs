@@ -24,11 +24,14 @@ use std::rc::Rc;
 
 use kuna_num::opcodes::OpCode;
 
-use super::kuna_pushanemu::{merge_ite, Emulator, Exit, InsnTrace, LiftedInsn, PushanTarget, SymValues};
+use super::kuna_pushanemu::{merge_ite, Emulator, Exit, InsnTrace, LiftedInsn, PushanTarget, SymValues, VpcSource, FETCH_WINDOW};
 use super::kuna_pushanexpr::{ExprArena, ExprId, VarId, VarKind};
 use super::kuna_pushanstate::{Loc, PushanImage, State, SymLoc};
 
 pub type NodeId = u32;
+
+/// A memory cell: its symbolic base (None for a concrete address) and offset.
+pub type Cell = (Option<VarId>, i128);
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct NodeKey {
@@ -49,9 +52,10 @@ impl NodeKey {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct VmCtx {
     pub vpc_reg: Option<u64>,
-    /// A concrete memory cell holding the VPC (Themida's VM context); it
-    /// takes precedence over `vpc_reg`.
-    pub vpc_cell: Option<u64>,
+    /// A memory cell holding the VPC, as a base (None: a concrete address)
+    /// and an offset: Themida's VM context, or an in-function interpreter's
+    /// local; it takes precedence over `vpc_reg`.
+    pub vpc_cell: Option<Cell>,
     pub ctx: Option<u64>,
     pub in_vm: bool,
     /// A far value the VPC register took without a fetch, followed once it
@@ -130,6 +134,13 @@ pub struct Stats {
     pub converged: bool,
     /// The exploration stopped at the node limit or the time budget.
     pub cut_short: bool,
+    /// An in-function interpreter's fetch read bytecode from writable
+    /// memory as the file holds it.
+    pub writable_bytecode: bool,
+    /// Computed jumps of an in-function interpreter the exploration decided.
+    pub data_dispatches: usize,
+    /// Interleaved bytecode programs found; only the first is followed.
+    pub woven: usize,
 }
 
 pub struct Config {
@@ -244,6 +255,8 @@ pub struct Explorer<'a> {
     forget_fresh: BTreeSet<NodeKey>,
     /// Nodes that paths reached after different external calls.
     fresh_epoch: BTreeSet<NodeKey>,
+    /// Nodes that paths reached with different copies of image memory.
+    forget_copies: BTreeSet<NodeKey>,
     /// Symbolized locations some path reached with a value that is not one
     /// of a few constants: their recorded constants are not all they hold.
     sym_open: BTreeSet<(NodeKey, SymLoc)>,
@@ -261,6 +274,24 @@ pub struct Explorer<'a> {
     new_syms: usize,
     started: std::time::Instant,
     pub timed_out: bool,
+    /// The memory cell an in-function interpreter keeps its virtual PC in
+    /// ([`Explorer::probe_interpreter`]).
+    pub data_vpc: Option<Cell>,
+    /// Probe for an in-function interpreter before the first round.
+    pub probe: bool,
+    /// The selector of interleaved bytecode programs, pinned to the first
+    /// program's index wherever the run into the dispatch starts.
+    pub pin: Option<(u64, Vec<(Loc, u128)>)>,
+}
+
+/// What [`Explorer::probe_interpreter`] found.
+#[derive(Default, Debug)]
+pub struct Interpreter {
+    /// The VPC cell of each interleaved program, the one dispatched first leading.
+    pub cells: Vec<Cell>,
+    /// The run start into the dispatch and the selector locations with the
+    /// first program's index.
+    pub pin: Option<(u64, Vec<(Loc, u128)>)>,
 }
 
 const VPC_MAX_DISP: i128 = 16;
@@ -286,6 +317,15 @@ const MAX_PUSHED_WORDS: i128 = 16;
 const MAX_STACK_DEPTHS: usize = 4;
 /// Salt of the context a re-entered interpreter region starts with.
 const REGION_TAG: u64 = 0x7e00_0000_0000_0000;
+/// Salt of the key of an in-function interpreter's VPC that points into a
+/// copy of its bytecode on the stack.
+const STACK_VPC_TAG: u64 = 0x7d00_0000_0000_0000;
+/// Most instructions [`Explorer::probe_interpreter`] runs.
+const PROBE_RUN_INSNS: usize = 8192;
+/// Most times the probe runs one instruction.
+const PROBE_VISITS: u32 = 256;
+/// Fetches at distinct places a computed jump needs to be a dispatch.
+const PROBE_DISPATCHES: usize = 4;
 
 /// A call leaving the interpreter: where it goes and where it comes back.
 #[derive(Clone, Copy, Debug)]
@@ -339,6 +379,7 @@ impl<'a> Explorer<'a> {
             arm_ctxs: Vec::new(),
             forget_fresh: BTreeSet::new(),
             fresh_epoch: BTreeSet::new(),
+            forget_copies: BTreeSet::new(),
             sym_open: BTreeSet::new(),
             own_syms: BTreeMap::new(),
             call_epochs: 0,
@@ -351,6 +392,9 @@ impl<'a> Explorer<'a> {
             new_syms: 0,
             started: std::time::Instant::now(),
             timed_out: false,
+            data_vpc: None,
+            probe: true,
+            pin: None,
         }
     }
 
@@ -386,8 +430,216 @@ impl<'a> Explorer<'a> {
         st
     }
 
+    /// Look for an interpreter that is the function's own body (no protector
+    /// section): a short concrete run from the entry, with every byte of file
+    /// data read as the file holds it and every undecided branch taken on its
+    /// fall-through side, that reaches one computed jump at least
+    /// [`PROBE_DISPATCHES`] times, each right after a fetch within
+    /// [`FETCH_WINDOW`] bytes of a pointer loaded from one memory cell (a
+    /// stack slot or a concrete address), the pointer at a different place
+    /// in file data, or in a copy of file data on the stack, each time, and
+    /// the jump going to at least two places. That cell is the virtual PC.
+    /// The run stops at the first computed jump not preceded by such a fetch
+    /// (an ordinary `switch`), at a return, after [`PROBE_RUN_INSNS`]
+    /// instructions or when one instruction ran [`PROBE_VISITS`] times.
+    ///
+    /// Several cells fetched through at one dispatch, each a fixed stride
+    /// from the next, are the VPCs of interleaved bytecode programs (Tigress
+    /// runs bogus functions round-robin with the real one, `pc[select]`).
+    /// The selector is then every register or entry-stack slot that, where
+    /// the straight run into the dispatch starts, holds the index of the cell
+    /// the turn fetches through, on every turn: [`Interpreter::pin`].
+    pub fn probe_interpreter(&mut self) -> Interpreter {
+        let ps = self.abi.ptr_size;
+        let saved = (self.escapes.clone(), self.call_epochs);
+        let mut state = self.initial_state();
+        let mut emu = Emulator::new(self.target);
+        emu.track_sp = Some((self.abi.sp, ps));
+        emu.trust_file = true;
+        let mut addr = self.entry_addr;
+        let mut loads: Vec<(Cell, Option<VarId>, i128)> = Vec::new();
+        let mut fetched: Vec<(Cell, i128)> = Vec::new();
+        let mut seen: BTreeMap<(u64, Cell), (BTreeSet<i128>, BTreeSet<u64>, usize)> = BTreeMap::new();
+        let mut visits: BTreeMap<u64, u32> = BTreeMap::new();
+        let mut turns: Vec<(u64, u64, Vec<(Loc, u128)>, Vec<Cell>)> = Vec::new();
+        let mut run = (addr, Vec::new());
+        let mut order = 0usize;
+        let mut found: Option<u64> = None;
+        for _ in 0..PROBE_RUN_INSNS {
+            let n = visits.entry(addr).or_insert(0);
+            *n += 1;
+            if *n > PROBE_VISITS {
+                break;
+            }
+            let Ok(insn) = self.target.lift(addr) else { break };
+            let mut trace = InsnTrace::default();
+            let exit = emu.exec_insn(&mut state, &mut self.arena, &insn, &mut trace);
+            if !trace.forked {
+                for a in trace.accesses.iter().filter(|a| !a.is_store) {
+                    let Some(at) = self.arena.affine_probe(a.addr_expr) else { continue };
+                    if at.0.is_some() && at.0 != self.sp0 {
+                        continue;
+                    }
+                    if let Some(&(cell, _, p)) = loads.iter().rev().find(|(c, b, p)| *c != at && *b == at.0 && at.1 >= *p && at.1 < *p + FETCH_WINDOW) {
+                        if !fetched.contains(&(cell, p)) {
+                            fetched.push((cell, p));
+                        }
+                    }
+                    if a.size != ps {
+                        continue;
+                    }
+                    let Some(v) = trace.op_out.get(a.op_index).copied().flatten() else { continue };
+                    if let Some((vb, p)) = self.arena.affine(v) {
+                        if self.bytecode_pointer(&state, vb, p) {
+                            loads.retain(|(c, _, _)| *c != at);
+                            loads.push((at, vb, p));
+                        }
+                    }
+                }
+            }
+            let computed = flow_op(&insn).is_some_and(|op| op.opc == OpCode::CPUI_BRANCHIND);
+            addr = match exit {
+                Exit::Fallthrough(n) => n,
+                Exit::CondJump { fallthrough, .. } => fallthrough,
+                Exit::Jump(t) => {
+                    let Some(c) = self.arena.is_const(t).map(|c| c as u64) else { break };
+                    if computed {
+                        if fetched.is_empty() || !self.target.is_executable(c) {
+                            break;
+                        }
+                        for &(cell, p) in &fetched {
+                            let e = seen.entry((insn.addr, cell)).or_insert_with(|| (BTreeSet::new(), BTreeSet::new(), order));
+                            order += 1;
+                            e.0.insert(p);
+                            e.1.insert(c);
+                        }
+                        let last: Vec<Cell> = fetched.last().map(|f| f.0).into_iter().collect();
+                        turns.push((insn.addr, run.0, std::mem::take(&mut run.1), last));
+                        fetched.clear();
+                        loads.clear();
+                        if found.is_none() {
+                            if let Some(((d, _), _)) = seen.iter().find(|(_, (p, t, _))| p.len() >= PROBE_DISPATCHES && t.len() >= 2) {
+                                found = Some(*d);
+                            }
+                        }
+                        if found.is_some() && turns.len() >= 3 * PROBE_DISPATCHES {
+                            break;
+                        }
+                    }
+                    run = (c, self.small_locations(&mut state));
+                    c
+                }
+                Exit::Call { target, fallthrough } => {
+                    let tc = self.arena.is_const(target).map(|c| c as u64);
+                    self.apply_call_summary(&mut state, insn.addr, Callee { target: tc, slot: None, ret: Some(fallthrough) });
+                    fallthrough
+                }
+                _ => break,
+            };
+        }
+        (self.escapes, self.call_epochs) = saved;
+        self.last_pop = None;
+        self.last_clobbers = None;
+        let Some(d) = found else { return Interpreter::default() };
+        let mut cells: Vec<(usize, Cell)> = seen.iter().filter(|((a, _), (p, _, _))| *a == d && p.len() >= 2).map(|((_, c), (_, _, o))| (*o, *c)).collect();
+        cells.sort();
+        let cells: Vec<Cell> = cells.into_iter().map(|(_, c)| c).collect();
+        let pin = if cells.len() > 1 { self.infer_selector(d, &cells, &turns) } else { None };
+        self.log.push(format!("in-function interpreter: dispatch at {d:#x}, virtual PC cells {:x?}, selector {:x?}", cells.iter().map(|c| c.1).collect::<Vec<_>>(), pin));
+        Interpreter { cells, pin }
+    }
+
+    /// The registers and 4-byte entry-stack slots holding a small constant
+    /// (an index below 16).
+    fn small_locations(&mut self, state: &mut State) -> Vec<(Loc, u128)> {
+        let mut out = Vec::new();
+        for r in self.abi.gprs.clone() {
+            if r == self.abi.sp || !state.regs.has_any(r as i128, 4) {
+                continue;
+            }
+            let v = state.read_reg(&mut self.arena, r, 4);
+            if let Some(c) = self.arena.is_const(v).filter(|c| *c < 16) {
+                out.push((Loc::Reg { off: r }, c));
+            }
+        }
+        let mut offs: Vec<i128> = state.mem_offsets(self.sp0).into_iter().map(|o| o.div_euclid(4) * 4).collect();
+        offs.dedup();
+        for o in offs {
+            let v = state.read_mem(&mut self.arena, self.target, self.sp0, o, 4);
+            if let Some(c) = self.arena.is_const(v).filter(|c| *c < 16) {
+                out.push((Loc::Mem { base: self.sp0, off: o }, c));
+            }
+        }
+        out
+    }
+
+    /// The selector of interleaved programs dispatched at `d` through
+    /// `cells` (one per program, a fixed stride apart): the run start most
+    /// turns enter the dispatch from, and every location that holds the
+    /// fetched cell's index there on each such turn, to be pinned to the
+    /// index of the program dispatched first.
+    fn infer_selector(&self, d: u64, cells: &[Cell], turns: &[(u64, u64, Vec<(Loc, u128)>, Vec<Cell>)]) -> Option<(u64, Vec<(Loc, u128)>)> {
+        let mut sorted: Vec<Cell> = cells.to_vec();
+        sorted.sort_by_key(|c| c.1);
+        let stride = sorted[1].1 - sorted[0].1;
+        if stride <= 0 || sorted.iter().any(|c| c.0 != sorted[0].0) || sorted.windows(2).any(|w| w[1].1 - w[0].1 != stride) {
+            return None;
+        }
+        let index = |c: &Cell| ((c.1 - sorted[0].1) / stride) as u128;
+        let mut heads: BTreeMap<u64, usize> = BTreeMap::new();
+        for t in turns.iter().filter(|t| t.0 == d) {
+            *heads.entry(t.1).or_insert(0) += 1;
+        }
+        let (&h, _) = heads.iter().max_by_key(|(_, n)| **n)?;
+        let at_h: Vec<&(u64, u64, Vec<(Loc, u128)>, Vec<Cell>)> = turns.iter().filter(|t| t.0 == d && t.1 == h && t.3.len() == 1).collect();
+        if at_h.len() < 2 * cells.len() || cells.iter().any(|c| !at_h.iter().any(|t| t.3[0] == *c)) {
+            return None;
+        }
+        let locs: Vec<(Loc, u128)> = at_h[0]
+            .2
+            .iter()
+            .map(|(l, _)| *l)
+            .filter(|l| at_h.iter().all(|t| t.2.iter().any(|(m, v)| m == l && *v == index(&t.3[0]))))
+            .map(|l| (l, index(&cells[0])))
+            .collect();
+        (!locs.is_empty()).then_some((h, locs))
+    }
+
+    /// `base + p` points into file data, or into a copy of file data on the
+    /// entry stack: where an in-function interpreter's bytecode lives.
+    fn bytecode_pointer(&self, state: &State, base: Option<VarId>, p: i128) -> bool {
+        match base {
+            None => u64::try_from(p).is_ok_and(|a| self.target.file_data(a)),
+            Some(_) => base == self.sp0 && state.copy_source(base, p).is_some_and(|a| self.target.file_data(a)),
+        }
+    }
+
+    /// The key of an in-function interpreter's VPC value: a pointer into file
+    /// data is its address, one into a stack copy its tagged stack offset,
+    /// and a select over a few constants in file data their hash.
+    fn data_vpc_key(&mut self, state: &State, v: ExprId) -> Option<u64> {
+        if let Some((b, p)) = self.arena.affine(v) {
+            if !self.bytecode_pointer(state, b, p) {
+                return None;
+            }
+            return Some(if b.is_none() { p as u64 } else { STACK_VPC_TAG ^ p as u64 });
+        }
+        let vals: Vec<u64> = self.arena.possible_values(v).filter(|vs| vs.len() <= MAX_VPC_FORK)?.into_iter().map(|c| c as u64).collect();
+        vals.iter().all(|c| self.bytecode_pointer(state, None, *c as i128)).then(|| vpc_key(&vals))
+    }
+
     /// Run exploration rounds to the symbolization fixpoint.
     pub fn run(&mut self) -> FlatCfg {
+        if self.probe && self.data_vpc.is_none() {
+            let found = self.probe_interpreter();
+            self.data_vpc = found.cells.first().copied();
+            if let Some(pin) = found.pin {
+                self.stats.woven = found.cells.len();
+                self.pin = Some(pin);
+            } else if found.cells.len() > 1 {
+                self.log.push("interleaved bytecode programs without a selector to pin: other programs' dispatches stay unresolved".into());
+            }
+        }
         let mut cfg = FlatCfg { nodes: Vec::new(), index: BTreeMap::new(), entry: 0, escapes: Vec::new(), sym_sources: BTreeMap::new() };
         let mut prev_nodes = usize::MAX;
         for round in 0..self.config.max_rounds {
@@ -426,6 +678,13 @@ impl<'a> Explorer<'a> {
         self.stats.insns = cfg.nodes.iter().map(|n| n.insns.len()).sum();
         self.stats.vm_nodes = cfg.nodes.iter().filter(|n| n.entry_ctx.in_vm).count();
         self.stats.symbolized = self.to_symbolize.values().map(|s| s.len()).sum();
+        if self.data_vpc.is_some() {
+            self.stats.data_dispatches = cfg
+                .nodes
+                .iter()
+                .filter(|n| matches!(n.exit, NodeExit::Branch(_)) && n.insns.last().and_then(|i| flow_op(i)).is_some_and(|op| op.opc == OpCode::CPUI_BRANCHIND))
+                .count();
+        }
         cfg
     }
 
@@ -465,6 +724,7 @@ impl<'a> Explorer<'a> {
         emu.track_sp = Some((self.abi.sp, self.abi.ptr_size));
         emu.watch_base = if self.config.trace.is_some() { self.sp0 } else { None };
         emu.stack_base = if self.abi.stack_args > 0 { self.sp0 } else { None };
+        emu.vpc = self.data_vpc.map(|(b, o)| VpcSource::Cell(b, o));
         while let Some(id) = worklist.pop_front() {
             if cfg.nodes.len() > self.config.max_nodes {
                 self.log.push("node limit reached".into());
@@ -500,6 +760,7 @@ impl<'a> Explorer<'a> {
                 );
             }
         }
+        self.stats.writable_bytecode |= emu.fetched_writable;
         cfg
     }
 
@@ -513,6 +774,7 @@ impl<'a> Explorer<'a> {
         ctx: VmCtx,
         from: Option<NodeId>,
     ) -> NodeId {
+        self.apply_pin(&mut state, key.addr);
         let key = self.at_depth(key, &mut state);
         if let Some(&id) = cfg.index.get(&key) {
             let node = &mut cfg.nodes[id as usize];
@@ -595,12 +857,21 @@ impl<'a> Explorer<'a> {
             if entry.global_epoch != state.global_epoch && self.fresh_epoch.insert(key) {
                 self.new_syms += 1;
             }
+            // Paths that copied different image memory disagree on every
+            // unwritten byte of the copies: the node starts without them.
+            if entry.copies != state.copies && self.forget_copies.insert(key) {
+                self.new_syms += 1;
+            }
             // The VPC is part of the key and never symbolized, as long as the
             // incoming path's VPC is the one the key names.
             let vpc_keyed = match (vpc_reg, vpc_cell) {
-                (_, Some(a)) => {
-                    let v = state.read_mem(&mut self.arena, self.target, None, a as i128, self.abi.ptr_size);
-                    self.keys_vpc(v, key.ctx)
+                (_, Some((b, a))) => {
+                    let v = state.read_mem(&mut self.arena, self.target, b, a, self.abi.ptr_size);
+                    if self.data_vpc == Some((b, a)) {
+                        key.ctx.is_some() && self.data_vpc_key(&state, v) == key.ctx
+                    } else {
+                        self.keys_vpc(v, key.ctx)
+                    }
                 }
                 (Some(r), None) => {
                     let v = state.read_reg(&mut self.arena, r, self.abi.ptr_size);
@@ -620,8 +891,8 @@ impl<'a> Explorer<'a> {
                         continue;
                     }
                 }
-                if let Loc::Mem { base: None, off } = d.loc.loc {
-                    if vpc_keyed && vpc_cell.is_some_and(|a| off < a as i128 + self.abi.ptr_size as i128 && a as i128 <= off + d.loc.size as i128 - 1) {
+                if let Loc::Mem { base, off } = d.loc.loc {
+                    if vpc_keyed && vpc_cell.is_some_and(|(b, a)| b == base && off < a + self.abi.ptr_size as i128 && a <= off + d.loc.size as i128 - 1) {
                         continue;
                     }
                 }
@@ -699,6 +970,9 @@ impl<'a> Explorer<'a> {
         if self.fresh_epoch.contains(&key) {
             self.call_epochs += 1;
             state.clobber_mutable(self.target, self.call_epochs);
+        }
+        if self.forget_copies.contains(&key) {
+            state.copies.clear();
         }
         if let Some(locs) = self.to_symbolize.get(&key) {
             let with_known: Vec<(SymLoc, (u128, u128))> =
@@ -813,6 +1087,7 @@ impl<'a> Explorer<'a> {
                     break;
                 }
             };
+            self.apply_pin(&mut state, addr);
             if !insns.is_empty() && !self.target.is_foreign_code(addr) && branches_to_itself(&insn) {
                 exit = Exit::Jump(self.arena.cst(self.abi.ptr_size, addr as u128));
                 break;
@@ -874,6 +1149,10 @@ impl<'a> Explorer<'a> {
                 match self.arena.is_const(*t).map(|c| c as u64) {
                     Some(c) if c == here && ctx.in_vm && self.target.is_foreign_code(here) && insns.len() < self.config.max_block_insns => continue,
                     Some(c) if c == after && repeated => exit = Exit::Fallthrough(after),
+                    Some(c) if native && insns.len() < self.config.max_block_insns && self.moves_stack_back_to(&mut state, &insns, &traces, c) => {
+                        addr = c;
+                        continue;
+                    }
                     _ => {}
                 }
             }
@@ -937,6 +1216,40 @@ impl<'a> Explorer<'a> {
         node.exit = node_exit;
         node.exit_locs = exit_locs;
         node.vpc_fork = vpc_fork;
+    }
+
+    /// Where the run into an interleaved interpreter's dispatch starts, set
+    /// its selector to the first program's index, so every turn runs that
+    /// program and the node key holds its VPC alone (Pushan pins Tigress's
+    /// selector the same way).
+    fn apply_pin(&mut self, state: &mut State, addr: u64) {
+        let Some((h, locs)) = &self.pin else { return };
+        if *h != addr {
+            return;
+        }
+        for (l, v) in locs.clone() {
+            let c = self.arena.cst(4, v);
+            match l {
+                Loc::Reg { off } => state.write_reg(off, c, 4),
+                Loc::Mem { base, off } => state.write_mem(base, off, c, 4),
+            }
+        }
+    }
+
+    /// A decided jump of the function's own code back to `c`, an earlier
+    /// instruction of the node, after which the stack pointer sits at another
+    /// constant depth than it did there: a stack probe (`sub rsp, 0x1000; or
+    /// [rsp], 0; cmp rsp, r11; jne`), which repeats inside the node, one
+    /// instance per iteration, since keying each iteration at its own depth
+    /// would exhaust [`MAX_STACK_DEPTHS`].
+    fn moves_stack_back_to(&mut self, state: &mut State, insns: &[Rc<LiftedInsn>], traces: &[InsnTrace], c: u64) -> bool {
+        let Some(j) = insns.iter().position(|i| i.addr == c) else { return false };
+        let Some(Some(before)) = traces.get(j).and_then(|t| t.sp_before.first().copied()) else { return false };
+        let now = state.read_reg(&mut self.arena, self.abi.sp, self.abi.ptr_size);
+        match (self.arena.affine(before), self.arena.affine(now)) {
+            (Some((Some(a), x)), Some((Some(b), y))) => Some(a) == self.sp0 && a == b && x != y,
+            _ => false,
+        }
     }
 
     /// Two values built over the entry stack pointer that agree wherever the
@@ -1132,7 +1445,7 @@ impl<'a> Explorer<'a> {
         fuse_signed_compares(&mut self.arena, &mut atoms, &mut targets);
         self.pending_locs = self.locate_vars(state, &atoms);
         let holder = match (ctx.vpc_cell, ctx.vpc_reg) {
-            (Some(a), _) => Some(Loc::Mem { base: None, off: a as i128 }),
+            (Some((base, off)), _) => Some(Loc::Mem { base, off }),
             (None, Some(r)) => Some(Loc::Reg { off: r }),
             _ => None,
         };
@@ -1161,6 +1474,20 @@ impl<'a> Explorer<'a> {
     /// context is inherited.
     fn successor_ctx(&mut self, state: &mut State, traces: &[InsnTrace], ctx: VmCtx, insns: &[Rc<LiftedInsn>]) -> VmCtx {
         let ps = self.abi.ptr_size;
+        if let Some(cell) = self.data_vpc {
+            // An in-function interpreter: the cell is the VPC wherever it
+            // holds a bytecode pointer; elsewhere the context carries over.
+            let v = state.read_mem(&mut self.arena, self.target, cell.0, cell.1, ps);
+            let mut next = ctx;
+            if let Some(key) = self.data_vpc_key(state, v) {
+                next.vpc_cell = Some(cell);
+                next.vpc_reg = None;
+                next.ctx = Some(key);
+                next.in_vm = true;
+                next.pending_vpc = None;
+            }
+            return next;
+        }
         let mut fetch_regs: BTreeMap<u64, usize> = BTreeMap::new();
         let mut touched: Vec<u64> = Vec::new();
         let mut fetches: Vec<u64> = Vec::new();
@@ -1190,7 +1517,7 @@ impl<'a> Explorer<'a> {
                 *fetch_regs.entry(reg).or_insert(0) += 1;
             }
         }
-        let mut cell = ctx.vpc_cell.filter(|a| self.cell_values(state, *a, false).is_some());
+        let mut cell = ctx.vpc_cell.and_then(|(b, a)| if b.is_none() { Some(a as u64) } else { None }).filter(|a| self.cell_values(state, *a, false).is_some());
         if cell.is_none() {
             for &(a, v) in &cell_loads {
                 if self.written(state, a, ps) && fetches.iter().any(|f| f.abs_diff(v) <= VPC_MAX_DISP as u64) && self.cell_values(state, a, true).is_some() {
@@ -1202,7 +1529,7 @@ impl<'a> Explorer<'a> {
         let mut next = ctx;
         if let Some(a) = cell {
             let vals = self.cell_values(state, a, false).unwrap_or_default();
-            next.vpc_cell = Some(a);
+            next.vpc_cell = Some((None, a as i128));
             next.vpc_reg = None;
             next.ctx = Some(vpc_key(&vals));
             next.in_vm = true;
@@ -1299,8 +1626,8 @@ impl<'a> Explorer<'a> {
 
     /// The VPC's current value, from its memory cell or its register.
     fn vpc_expr(&mut self, state: &mut State, ctx: &VmCtx) -> Option<ExprId> {
-        if let Some(a) = ctx.vpc_cell {
-            return Some(state.read_mem(&mut self.arena, self.target, None, a as i128, self.abi.ptr_size));
+        if let Some((b, a)) = ctx.vpc_cell {
+            return Some(state.read_mem(&mut self.arena, self.target, b, a, self.abi.ptr_size));
         }
         ctx.vpc_reg.map(|r| state.read_reg(&mut self.arena, r, self.abi.ptr_size))
     }
@@ -1703,8 +2030,10 @@ impl<'a> Explorer<'a> {
         // computed jump or return with a return into itself pushed.  A
         // direct jump is the interpreter's own handler chain (VMProtect
         // ultra lays handlers over the protected function's bytes).
-        let pushed = self.pushed_return_address(&mut state);
-        let native = !self.target.is_foreign_code(c)
+        let interp = self.data_vpc.is_some() && ctx.in_vm;
+        let pushed = if interp { None } else { self.pushed_return_address(&mut state) };
+        let native = !interp
+            && !self.target.is_foreign_code(c)
             && (self.target_is_function(c)
                 || !self.target.bytecode_like(c)
                 || (!self.direct_exit && !self.handler_fragment(c) && pushed.is_some_and(|r| r != c && self.target.is_foreign_code(r))));
@@ -1773,6 +2102,7 @@ impl<'a> Explorer<'a> {
     fn forget_below_sp(&mut self, state: &mut State) {
         let Some(depth) = self.sp_depth(state) else { return };
         let red = if self.abi.ptr_size == 8 { 128 } else { 0 };
+        state.forget_copies(self.sp0, i128::MIN, depth - red);
         if let Some(region) = state.mem.get_mut(&self.sp0) {
             region.remove_where(|o| o < depth - red);
         }
@@ -1875,9 +2205,13 @@ impl<'a> Explorer<'a> {
         if self.config.trace.is_some() {
             self.log.push(format!("call at {site:#x}: pops {pop}"));
         }
+        let copy = callee.target.or(callee.slot).filter(|a| self.target.copy_routine(*a)).and_then(|_| self.copy_arguments(state));
         let args: Vec<(u64, u8)> = self.abi.args.iter().copied().filter(|(o, _)| *o != self.abi.sp).collect();
         let mut values: Vec<ExprId> = args.iter().map(|&(off, size)| state.read_reg(&mut self.arena, off, size)).collect();
         values.retain(|v| !matches!(self.arena.var_kind(*v), Some(VarKind::CallClobber { .. })));
+        if let Some((dst, src, _, _)) = copy {
+            values.retain(|v| *v != dst && *v != src);
+        }
         // Stack-passed arguments sit above the return address: the ABI's
         // window, and every word a callee-cleanup callee pops.
         let sp = state.read_reg(&mut self.arena, self.abi.sp, ps);
@@ -1912,6 +2246,21 @@ impl<'a> Explorer<'a> {
                 _ => {}
             }
         }
+        if let Some((dst, _, s, n)) = copy {
+            if let Some((b, o)) = self.arena.affine_probe(dst) {
+                if b == self.sp0 || b.is_none() {
+                    if b == self.sp0 {
+                        self.escapes.insert(o);
+                    }
+                    if !state.copy_in(b, o, s, n) {
+                        state.forget_copies(b, o, o + n as i128);
+                        if let Some(region) = state.mem.get_mut(&b) {
+                            region.remove_where(|x| x >= o && x < o + n as i128);
+                        }
+                    }
+                }
+            }
+        }
         self.call_epochs += 1;
         state.clobber_mutable(self.target, self.call_epochs);
         let kept = |off: u64, size: u8| scan.as_ref().is_some_and(|s| s.closed && !s.writes.iter().any(|&(o, n)| o < off + size as u64 && off < o + n as u64));
@@ -1941,6 +2290,30 @@ impl<'a> Explorer<'a> {
             }
         };
         state.write_reg(self.abi.sp, nsp, ps);
+    }
+
+    /// The arguments of a `memcpy`-like call that copies a constant number of
+    /// bytes (at most 16 MiB) out of file data to the stack or a concrete
+    /// address: (destination value, source value, source address, count).
+    fn copy_arguments(&mut self, state: &mut State) -> Option<(ExprId, ExprId, u64, u64)> {
+        let ps = self.abi.ptr_size;
+        let regs: Vec<(u64, u8)> = self.abi.args.iter().copied().filter(|(o, _)| *o != self.abi.sp).collect();
+        let sp = state.read_reg(&mut self.arena, self.abi.sp, ps);
+        let (sb, so) = self.arena.affine_probe(sp)?;
+        let mut vals = Vec::with_capacity(3);
+        for k in 0..3usize {
+            vals.push(match regs.get(k) {
+                Some(&(off, size)) => state.read_reg(&mut self.arena, off, size),
+                None => state.read_mem(&mut self.arena, self.target, sb, so + ps as i128 * (1 + k - regs.len()) as i128, ps),
+            });
+        }
+        let (Some((None, s)), Some(n)) = (self.arena.affine(vals[1]), self.arena.is_const(vals[2])) else { return None };
+        let (s, n) = (u64::try_from(s).ok()?, n as u64);
+        let dst = self.arena.affine_probe(vals[0])?;
+        if n == 0 || n > 1 << 24 || !(dst.0.is_none() || dst.0 == self.sp0) || !self.target.file_data(s) || !self.target.file_data(s + n - 1) {
+            return None;
+        }
+        Some((vals[0], vals[1], s, n))
     }
 
     /// The stack pointer a callee in the image returns with, when emulating
@@ -2288,6 +2661,13 @@ fn vpc_key(vals: &[u64]) -> u64 {
         h = h.wrapping_mul(0x100000001b3).wrapping_add(*x);
     }
     h
+}
+
+/// The last control-flow op of `insn`.
+fn flow_op(insn: &LiftedInsn) -> Option<&super::kuna_pushanemu::RawOp> {
+    insn.ops.iter().rev().find(|op| {
+        matches!(op.opc, OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN)
+    })
 }
 
 /// Whether `insn` branches back to its own start (an x86 `rep` prefix).

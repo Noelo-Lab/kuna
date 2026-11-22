@@ -1668,6 +1668,13 @@ impl<'a> Emitter<'a> {
         let ptr = self.conf.ptr_size as u32;
         match loc {
             Loc::Reg { off } => self.vn(&self.conf.register, off, ptr),
+            Loc::Mem { base: Some(b), off } if Some(b) == self.conf.sp0 => {
+                let a = self.scratch(0, ptr);
+                out.push(self.frame_op(a.clone(), off));
+                let t = self.scratch(1, ptr);
+                out.push(OverlayOp { opc: CPUI_LOAD, out: Some(t.clone()), ins: vec![self.cst(self.conf.ram.get_index() as u64, ptr), a] });
+                t
+            }
             Loc::Mem { off, .. } => {
                 let a = off as u64;
                 if let Some(&r) = self.private.get(&a) {
@@ -1744,10 +1751,12 @@ impl<'a> Emitter<'a> {
                     return Self::raw(op);
                 }
                 if op.opc == CPUI_LOAD {
-                    // A load from writable memory keeps its load: the image value is not a fact.
+                    // A load from writable memory keeps its load: the image
+                    // value is not a fact, except for a fetch through an
+                    // in-function interpreter's VPC, read as the file holds it.
                     if let Some(acc) = trace.accesses.iter().find(|a| a.op_index == i) {
                         if let Some(a) = acc.addr {
-                            if self.target.is_writable(a) {
+                            if self.target.is_writable(a) && !acc.trusted {
                                 return Self::raw(op);
                             }
                         }
