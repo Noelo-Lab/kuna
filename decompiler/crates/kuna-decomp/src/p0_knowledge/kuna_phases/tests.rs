@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_234() {
-    assert_eq!(kuna_num_settables(), 234);
-    assert_eq!(SETTABLE_TABLE.len(), 234);
+fn settable_count_is_240() {
+    assert_eq!(kuna_num_settables(), 240);
+    assert_eq!(SETTABLE_TABLE.len(), 240);
 }
 
 #[test]
-fn tier_counts_are_48_core_125_transform_61_analysis() {
+fn tier_counts_are_50_core_125_transform_65_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_48_core_125_transform_61_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (48, 125, 61));
+    assert_eq!((core, transform, analysis), (50, 125, 65));
 }
 
 #[test]
@@ -1135,7 +1135,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `switchextent`; its P2 row sits after `switchmodbound`.
     // +1 for `uefi`; its P1 row sits after `rtti`.
     // +1 for `esprom`; its P1 row sits after `uefi`.
-    assert_eq!(json.matches("},\n").count(), 233);
+    assert_eq!(json.matches("},\n").count(), 239);
     // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 

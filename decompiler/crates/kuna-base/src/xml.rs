@@ -2272,7 +2272,7 @@ mod tests {
         // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
         // and kuna-uefi / an EFI-subsystem PE gets the UEFI entry prototype, table types and GUID names
         // and kuna-esprom / an Espressif application image gets its chip's mask-ROM names and memory map
-        assert_eq!(count, 854, "corpus file count drifted");
+        assert_eq!(count, 863, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
