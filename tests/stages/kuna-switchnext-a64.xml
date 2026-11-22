@@ -1,0 +1,120 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    A byte-masked compact jump table that is its function's last, assembled
+    from decompiler/crates/kuna-analysis/tests/fixtures/switchnext_aarch64.s
+    (the .text and .rodata of switchnext_aarch64).
+
+    `name_of` indexes tab_names (3 halfwords at 0x110dc) with `x0 & 0xff`,
+    so the basic model reads 256 rows. The rows past its three are
+    next_kind's table (0x110e2) and the zero bytes after it, measured from
+    name_of's base: 0x18 lands in next_kind, 0 back on name_of's first
+    case, so the run-on cut keeps every row. With switchextent (default on)
+    the table ends where next_kind's table, the next function's, begins:
+    three cases. Off, the rows from next_kind's table print as phantom cases
+    returning next_kind's 0x28.
+
+    `last_two` (0x20008, after `first_fn` at 0x20000) is the last known
+    function: its own `x0 & 0xff` table tab_a (signed halfwords, `ldrsh`,
+    at 0x2107c) is followed by a range-checked table and then by negative
+    rows, which reach back into first_fn, so its sanity check asks the flow
+    for the next functions' tables. None follows, and the flow still runs
+    the recovery once more: last_two stays a switch, not one computed call.
+    The extent scan names both of last_two's tables, so tab_a ends at tab_b
+    (three rows, its third the second dispatch) and tab_b's four range-checked
+    cases print as the second switch.
+    Assembled with llvm-mc -triple=aarch64 and ld.lld -Ttext=0x20000:
+        first_fn: mov w0, #7; ret
+        last_two: and x8, x0, #0xff; adrp x9, tab_a; add x9, x9, :lo12:tab_a
+                  adr x10, La; ldrsh w11, [x9, x8, lsl #1]
+                  add x10, x10, w11, sxtw #2; br x10
+        La:  mov w0, #50; ret
+        La1: mov w0, #51; ret
+        La2: cmp w1, #3; b.hi Ld; adrp x9, tab_b; add x9, x9, :lo12:tab_b
+             adr x10, Lb; ldrh w11, [x9, w1, uxtw #1]
+             add x10, x10, x11, lsl #2; br x10
+        Lb .. Lb3: mov w0, #60 .. #63; ret      Ld: mov w0, #-1; ret
+        tab_a: .hword 0, 2, 4
+        tab_b: .hword 0, 2, 4, 6, 0xfff8, 0xfffa, 0xfff9, 0xfffb; .space 512
+
+    `disp` (0x8000) indexes tab1 (0x9078) with all of w0 and no range check,
+    so switchextent ends tab1 at disp's next table, tab2, three rows. Its
+    row 2 is `inner` (0x8068), the known function after disp, so the
+    recovery bounded that way asks for the next functions' tables in turn,
+    and the flow answers that too: disp keeps both switches. Assembled with
+    llvm-mc -triple=aarch64 and ld.lld -Ttext=0x8000:
+        disp: adrp x9, tab1; add x9, x9, :lo12:tab1; adr x10, L1
+              ldrh w11, [x9, w0, uxtw #1]; add x10, x10, x11, lsl #2; br x10
+        L1:  mov w0, #10; ret
+        L1a: mov w0, #11; b L2s
+        L2s: cmp w1, #2; b.hi L2d; adrp x9, tab2; add x9, x9, :lo12:tab2
+             adr x10, L2; ldrh w11, [x9, w1, uxtw #1]
+             add x10, x10, x11, lsl #2; br x10
+        L2 .. L2b: mov w0, #20 .. #22; ret      L2d: mov w0, #-1; ret
+        inner: mov w0, #12; ret                 after: mov w0, #99; ret
+        tab1: .hword 0, 2, (inner - L1) / 4
+        tab2: .hword 0, 2, 4; .space 64
+-->
+<bytechunk space="ram" offset="0x10000">
+081c40921f2003d5a98600108a0000102b7968784a090b8b40011fd6c0038052c0035fd6e0038052c0035fd600048052c0035fd61f0c0071e8040054080000b0088903918a000010095960784a09098b40011fd61f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d500058052c0035fd620058052c0035fd640058052c0035fd660058052c0035fd600008012c0035fd6
+</bytechunk>
+<bytechunk space="ram" offset="0x110dc">
+00000200040018001a001c001e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="name_of"/>
+<symbol space="ram" offset="0x10034" name="next_kind"/>
+<bytechunk space="ram" offset="0x20000">
+e0008052c0035fd6081c40921f2003d5698300108a0000102b79e8784ac92b8b40011fd640068052c0035fd660068052c0035fd63f0c0071e8010054090000b0
+290902918a0000102b5961784a090b8b40011fd680078052c0035fd6a0078052c0035fd6c0078052c0035fd6e0078052c0035fd600008012c0035fd6
+</bytechunk>
+<bytechunk space="ram" offset="0x2107c">
+0000020004000000020004000600f8fffafff9fffbff000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x20000" name="first_fn"/>
+<symbol space="ram" offset="0x20008" name="last_two"/>
+<bytechunk space="ram" offset="0x8000">
+1f2003d5a98300108a0000102b5960784a090b8b40011fd640018052c0035fd660018052010000143f080071a8010054090000b029f901918a0000102b596178
+4a090b8b40011fd680028052c0035fd6a0028052c0035fd6c0028052c0035fd600008012c0035fd680018052c0035fd6600c8052c0035fd6
+</bytechunk>
+<bytechunk space="ram" offset="0x9078">
+00000200140000000200040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x8000" name="disp"/>
+<symbol space="ram" offset="0x8068" name="inner"/>
+<symbol space="ram" offset="0x8070" name="after"/>
+</binaryimage>
+<script>
+  <com>load function name_of</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option switchextent off</com>
+  <com>load function name_of</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option switchextent on</com>
+  <com>load function last_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function disp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="switchnext #1: the byte-masked table ends at the next function's table: cases 0 to 2 only (option on), with case 1 and 2 again off" min="5" max="5">case [0-2]:
+return 0x(1e|1f|20);</stringmatch>
+<stringmatch name="switchnext #2: next_kind's code is not a case of name_of with the option on; off, its rows print as phantom cases" min="1" max="1">return 0x28;</stringmatch>
+<stringmatch name="switchnext #3: no phantom case 3 with the option on" min="1" max="1">case 3:
+case 4:</stringmatch>
+<stringmatch name="switchnext #4: last_two, the last function, still recovers its table when no function follows: its case 1 returns 0x33" min="1" max="1">return 0x33;</stringmatch>
+<stringmatch name="switchnext #6: last_two's tab_a ends at tab_b, so neither table is a computed call" min="0" max="0">jump-as-call</stringmatch>
+<stringmatch name="switchnext #5: disp, whose bounded table has a row in the next function, keeps its second switch: case 2 returns 0x16" min="1" max="1">return 0x16;</stringmatch>
+</decompilertest>

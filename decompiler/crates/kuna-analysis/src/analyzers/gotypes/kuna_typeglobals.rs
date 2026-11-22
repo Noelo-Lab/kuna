@@ -19,6 +19,16 @@
 //! struct/map/func descriptor's kind-specific tail belongs to the next
 //! consumer — so the mapped extent never overlaps the following record.
 //!
+//! The symbol is spelled as the linker spells it ([`linker_name`]): a named
+//! type's qualifier is the full import path from `uncommontype.pkgPath`
+//! (`type:internal/poll.FD`, where the name record holds `poll.FD`), and a
+//! pointer, slice, array or map spelling is rebuilt from its elements' so the
+//! qualifier reaches it. The located records (typelinks, or the go1.27+
+//! descriptor region) are the roots of a walk over the type graph
+//! ([`reachable`]): the types a listed type is built from — a struct's
+//! field types, a slice's element, a func's parameters — have descriptors
+//! of their own that allocation and reflection sites name just as often.
+//!
 //! Name vocabulary: the harvest's `name_ok` is for INTERNED shells and
 //! demands a dotted package path; a global name only has to print safely, so
 //! unnamed composites (`[]uint8`, `map[string]int`) are kept — their spelled
@@ -27,7 +37,7 @@
 //! or non-graphic byte is dropped: a symbol with interior whitespace breaks
 //! the C document it is printed into.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use super::*;
 use crate::pass::TypedDataFact;
@@ -88,40 +98,150 @@ pub(super) fn typedesc_shell(
     tf.set_fields_struct_raw(&ct, fields, Vec::new(), 4 * w + 16, w, 0).ok()
 }
 
+/// The most descriptors one image's graph walk visits. The walk reaches every
+/// descriptor the typelinks' types refer to, several times the typelink count
+/// on a large image; the ceiling only bounds a corrupt graph.
+const WALK_MAX: usize = 200_000;
+
+/// The descriptor at `vma`, when it lies inside the type blob.
+fn descriptor_at(img: &GoImage, meta: &TypeMeta, vma: u64) -> Option<GoType> {
+    let in_blob =
+        vma >= meta.types && vma.checked_add(img.type_base()).is_some_and(|end| end <= meta.etypes);
+    in_blob.then(|| read_type(img, meta.types, meta.etypes, (vma - meta.types) as u32)).flatten()
+}
+
+/// The descriptor a 32-bit `typeOff` at `at` names (`0` is "none").
+fn descriptor_off(img: &GoImage, meta: &TypeMeta, at: u64) -> Option<u64> {
+    let off = i32::from_le_bytes(img.read(at, 4)?.try_into().ok()?);
+    (off > 0).then(|| meta.types.checked_add(off as u64)).flatten()
+}
+
+/// The descriptors `t` refers to: `ptrToThis`, then per kind the element and
+/// key (array, chan, map, pointer, slice), the parameters and results (func),
+/// the method types (interface) and the field types (struct).
+fn edges(img: &GoImage, meta: &TypeMeta, t: &GoType) -> Vec<u64> {
+    let (w, base) = (img.word_size, t.vma + img.type_base());
+    let mut next: Vec<u64> = descriptor_off(img, meta, base - 4).into_iter().collect();
+    match t.kind {
+        KIND_ARRAY | KIND_MAP => next.extend([word(img, base), word(img, base + w)].into_iter().flatten()),
+        KIND_CHAN | KIND_POINTER | KIND_SLICE => next.extend(word(img, base)),
+        KIND_FUNC => {
+            if let Some(b) = img.read(base, 4) {
+                let n = u64::from(u16::from_le_bytes([b[0], b[1]]))
+                    + u64::from(u16::from_le_bytes([b[2], b[3]]) & 0x7fff);
+                let params = base + w + if t.tflag & TFLAG_UNCOMMON != 0 { UNCOMMON_SIZE } else { 0 };
+                next.extend((0..n.min(512)).filter_map(|k| word(img, params + k * w)));
+            }
+        }
+        KIND_INTERFACE => {
+            if let Some((ptr, len)) = plausible_slice(img, base + w, 4096) {
+                next.extend((0..len).filter_map(|k| descriptor_off(img, meta, ptr + k * 8 + 4)));
+            }
+        }
+        KIND_STRUCT => {
+            if let Some((ptr, len)) = plausible_slice(img, base + w, 4096) {
+                next.extend((0..len).filter_map(|k| word(img, ptr + k * 3 * w + w)));
+            }
+        }
+        _ => {}
+    }
+    next
+}
+
+/// Every descriptor reachable from the located records through [`edges`],
+/// keyed by VMA. The typelinks (and the go1.27+ descriptor region) list the
+/// types interface conversion reaches; the types those are built from — a
+/// struct's field types, a slice's element, a function's parameters — have
+/// descriptors of their own that allocation and reflection sites name just as
+/// often, and the walk is what reaches them.
+pub(super) fn reachable(img: &GoImage, meta: &TypeMeta) -> BTreeMap<u64, GoType> {
+    let mut records: BTreeMap<u64, GoType> = BTreeMap::new();
+    let mut queue: VecDeque<u64> = meta.offsets.iter().map(|&o| meta.types + u64::from(o)).collect();
+    while let Some(vma) = queue.pop_front() {
+        if records.len() >= WALK_MAX || records.contains_key(&vma) {
+            continue;
+        }
+        let Some(t) = descriptor_at(img, meta, vma) else { continue };
+        queue.extend(edges(img, meta, &t));
+        records.insert(vma, t);
+    }
+    records
+}
+
+/// The `uncommontype.pkgPath` of a named type: the import path of the package
+/// that declares it. The uncommon record follows the kind's own record; map
+/// descriptors, whose record changed size with the swiss-table maps, are not
+/// read.
+fn pkg_path(img: &GoImage, meta: &TypeMeta, t: &GoType) -> Option<String> {
+    if t.tflag & TFLAG_UNCOMMON == 0 || t.tflag & TFLAG_NAMED == 0 {
+        return None;
+    }
+    let w = img.word_size;
+    let record = match t.kind {
+        KIND_ARRAY => 3 * w,
+        KIND_CHAN => 2 * w,
+        KIND_FUNC | KIND_POINTER | KIND_SLICE => w,
+        KIND_INTERFACE | KIND_STRUCT => 4 * w,
+        KIND_MAP => return None,
+        _ => 0,
+    };
+    let at = descriptor_off(img, meta, t.vma + img.type_base() + record)?;
+    read_go_name(img, at)
+}
+
+/// `t`'s name as the linker spells it: the package qualifier is the full
+/// import path (`internal/poll.FD`, where the name record holds `poll.FD`),
+/// taken from `pkgPath`; pointer, slice, array and map names are rebuilt from
+/// their elements' so the qualifier reaches them too. Any other spelling
+/// (a func or chan type, an anonymous struct) is the record's own.
+pub(super) fn linker_name(img: &GoImage, meta: &TypeMeta, t: &GoType) -> String {
+    linker_name_depth(img, meta, t, 8)
+}
+
+fn linker_name_depth(img: &GoImage, meta: &TypeMeta, t: &GoType, depth: u32) -> String {
+    let base = t.vma + img.type_base();
+    let child = |at: u64| {
+        word(img, at)
+            .filter(|_| depth > 0)
+            .and_then(|e| descriptor_at(img, meta, e))
+            .map(|e| linker_name_depth(img, meta, &e, depth - 1))
+    };
+    if t.tflag & TFLAG_NAMED == 0 {
+        let composed = match t.kind {
+            KIND_POINTER => child(base).map(|e| format!("*{e}")),
+            KIND_SLICE => child(base).map(|e| format!("[]{e}")),
+            KIND_ARRAY => word(img, base + 2 * img.word_size).zip(child(base)).map(|(n, e)| format!("[{n}]{e}")),
+            KIND_MAP => child(base).zip(child(base + img.word_size)).map(|(k, e)| format!("map[{k}]{e}")),
+            _ => None,
+        };
+        return composed.unwrap_or_else(|| t.name.clone());
+    }
+    let Some(path) = pkg_path(img, meta, t) else { return t.name.clone() };
+    let short = path.rsplit('/').next().unwrap_or(&path);
+    match t.name.strip_prefix(short).and_then(|r| r.strip_prefix('.')) {
+        Some(rest) if path != short => format!("{path}.{rest}"),
+        _ => t.name.clone(),
+    }
+}
+
 /// Walk the located metadata once more and produce one [`TypedDataFact`] per
-/// decodable, printable descriptor: the record's VMA, the linker-style
-/// `type:<name>` symbol, and the `go.typedesc` shell. Pointer records keep
-/// their decoded `*` prefix (their name genuinely starts with it), and a
-/// pointer's pointee joins even without its own typelink — the pair
-/// `type:main.Point` / `type:*main.Point` is how the blob stores them.
-/// Deduplicated by VMA, emitted in address order.
+/// reachable, printable descriptor: the record's VMA, the linker-style
+/// `type:<name>` symbol ([`linker_name`]), and the `go.typedesc` shell.
+/// Pointer records keep their decoded `*` prefix (their name genuinely starts
+/// with it), and a pointer's pointee joins even without its own typelink —
+/// the pair `type:main.Point` / `type:*main.Point` is how the blob stores
+/// them. Deduplicated by VMA, emitted in address order.
 pub(super) fn collect(tf: &dyn TypeFactory, img: &GoImage, meta: &TypeMeta) -> Vec<TypedDataFact> {
     let Some(desc) = typedesc_shell(tf, img.word_size as int4) else {
         return Vec::new();
     };
-    let mut records: BTreeMap<u64, GoType> = BTreeMap::new();
-    for &off in &meta.offsets {
-        let Some(t) = read_type(img, meta.types, meta.etypes, off) else { continue };
-        if t.kind == KIND_POINTER {
-            if let Some(elem) = word(img, t.vma + img.type_base()) {
-                if elem >= meta.types
-                    && elem.checked_add(img.type_base()).is_some_and(|end| end <= meta.etypes)
-                {
-                    if let Some(p) = read_type(img, meta.types, meta.etypes, (elem - meta.types) as u32)
-                    {
-                        records.entry(p.vma).or_insert(p);
-                    }
-                }
-            }
-        }
-        records.entry(t.vma).or_insert(t);
-    }
-    records
+    reachable(img, meta)
         .into_values()
-        .filter(|t| global_name_ok(&t.name))
-        .map(|t| TypedDataFact {
-            addr: t.vma,
-            name: format!("{NAME_PREFIX}{}", t.name),
+        .map(|t| (t.vma, linker_name(img, meta, &t)))
+        .filter(|(_, name)| global_name_ok(name))
+        .map(|(addr, name)| TypedDataFact {
+            addr,
+            name: format!("{NAME_PREFIX}{name}"),
             type_: std::rc::Rc::clone(&desc),
         })
         .collect()

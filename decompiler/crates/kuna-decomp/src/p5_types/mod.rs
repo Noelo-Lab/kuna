@@ -3,6 +3,7 @@
 //! Stage-aligned module group; declared flatly at the crate root via re-export in
 //! `lib.rs` so public paths (`kuna_decomp::<module>`) are unchanged.
 
+pub mod kuna_typevote;
 pub mod funcdata_union;
 pub mod kuna_thumbfuncptr;
 pub mod kuna_inferfuncentry;
@@ -32,6 +33,7 @@ pub mod kuna_floatglobals; // (kuna) a global the program only moves through flo
 pub mod kuna_floatbits; // (kuna) a helper that only works on a float's bits keeps the float
 pub mod kuna_zextreturn; // (kuna) a return the convention zero-extends only when unsigned is unsigned
 pub mod kuna_ptrfromuse; // (kuna) type a dereferenced-only function input as a pointer
+pub mod kuna_valuewitness; // (kuna) a Swift value witness table load through metadata is typed
 pub mod kuna_libcfit; // (kuna) a libc aggregate vote declines where the caller reads past its end
 pub mod kuna_pebnames; // (kuna) type the Windows TEB segment base so PEB/TEB field reads are named
 pub mod kuna_structmerge; // (kuna) merge a synthesized record with the claims of a sibling reader
@@ -39,6 +41,7 @@ pub mod kuna_structheadless; // (kuna) a closed function's parameter read only p
 pub mod kuna_fieldtype; // (kuna) a synthesized field some access holds as a pointer is declared as that pointer
 pub mod kuna_structsynth; // (kuna) synthesize a struct type from a pointer parameter's constant-offset dereferences
 pub mod kuna_sitetypelock; // (kuna) per-call-site output type lock: a client-asserted call-result type that survives to the declaration
+pub mod kuna_swiftmetaresult; // (kuna `swifttypes`) type a Swift metadata accessor call's result
 pub mod kuna_gonewtype; // (kuna) type a runtime.newobject result from its descriptor argument (docs/multilang.md, Go pack)
 pub mod kuna_varargfloat; // (kuna) a variadic argument in a floating-point register is a double
 pub mod kuna_typequal; // (kuna) C type qualifiers on their own type layer
