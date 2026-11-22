@@ -1960,18 +1960,24 @@ pub fn scoring_return(data: &Funcdata, opmatch: crate::context::OpId) -> bool {
 
 /// Is `op`'s use of `vn` one a returned value may also have: a branch on it
 /// (`if (r > 7) gj++; return r;`), a store of it as the stored value (`*p = r;
-/// return r;`; a copy into a global, `gi = r`, is the same store), or a RETURN
+/// return r;`; a copy into a global, `gi = r`, is the same store), a RETURN
 /// handing it back in another register (`lea 1(%rax),%edx` leaves `x + 1` in
-/// `edx`, which the callers do not read)?  Upstream's `onlyOpUse` refuses all
-/// three, to tell a value passed in a register from a variable that happens to
-/// sit there. A load or store through the value, and a call reading it (the
-/// stream pointer of a `getc` loop, the message of an `error` call), still
-/// refuse it.
+/// `edx`, which the callers do not read), or an index added to another
+/// variable (`p[len - 1]`: what the sum reaches is not the value's own use)?
+/// Upstream's `onlyOpUse` refuses all four, to tell a value passed in a
+/// register from a variable that happens to sit there. A load or store through
+/// the value or the value plus a constant, and a call reading it (the stream
+/// pointer of a `getc` loop, the message of an `error` call), still refuse it.
 pub fn returned_use(data: &Funcdata, op: crate::context::OpId, vn: crate::context::VarnodeId) -> bool {
     use kuna_num::opcodes::OpCode;
     data.obank().get(op).is_some_and(|o| match o.code() {
         OpCode::CPUI_CBRANCH | OpCode::CPUI_RETURN => true,
         OpCode::CPUI_STORE => o.get_in(2) == Some(vn) && o.get_in(1) != Some(vn),
+        OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB => (0..2)
+            .filter_map(|k| o.get_in(k))
+            .filter(|&k| k != vn)
+            .filter_map(|k| data.vbank().get(k))
+            .any(|k| !k.is_constant()),
         _ => false,
     })
 }

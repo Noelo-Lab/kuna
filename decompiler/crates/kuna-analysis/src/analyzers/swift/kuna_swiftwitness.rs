@@ -271,22 +271,16 @@ pub fn prototypes(
     w: &Witnesses,
     namer: &Namer,
     tf: &dyn TypeFactory,
-    metadata_ptr: Option<Rc<Datatype>>,
+    meta: &Rc<Datatype>,
     out: &mut AnalysisOutput,
 ) {
-    let Some(meta) = metadata_ptr.or_else(|| {
-        let void = tf.get_type_void().ok()?;
-        tf.get_type_pointer(tf.get_size_of_pointer(), void, 1).ok()
-    }) else {
-        return;
-    };
     let claims = namer.claims.borrow();
     for (&f, slots) in &w.functions {
         let i = slots[0];
         if slots.iter().any(|&s| s != i) || claims.get(&f).is_none_or(|c| c.len() != slots.len()) {
             continue;
         }
-        if let Some(p) = prototype(tf, i, claims[&f][0].name.clone(), &meta) {
+        if let Some(p) = prototype(tf, i, claims[&f][0].name.clone(), meta) {
             out.swift_witnesses.prototypes.push((f, p));
         }
     }

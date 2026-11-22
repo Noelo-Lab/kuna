@@ -2753,6 +2753,30 @@ SHA-256: `fd04bf395eddf3f020d11d9c07832e41f561fbba30f579e48d430a3cdaecca26`.
 `0x3580`, which decompiles as `(*v1->initializeWithTake)(v2,a0,a2)` and
 `(*v1->initializeWithCopy)(a0,a1,a2)`.
 
+### `swift_outlined_macho` — outlined value-witness helpers (`valuewitness`)
+
+`swift_outlined_macho` (arm64 iOS Mach-O dylib, 71 KB, local symbols stripped)
+is the second fixture of `kuna-console/tests/verify_valuewitness.rs`. Its source
+`swift_outlined_macho.swift` holds structs and an enum that carry resilient
+Foundation values (`Date`, `URL`, `UUID`), so swiftc copies, moves and destroys
+them through outlined helpers that call one value witness. Built with swiftc
+6.4.2 and the iOS 17 SDK:
+
+```bash
+swiftc -O -module-name witfix -emit-library -target arm64-apple-ios17.0 \
+  swift_outlined_macho.swift -o w.dylib
+llvm-strip -x w.dylib -o swift_outlined_macho
+```
+
+SHA-256: `15bbaa6a68ffb0a4f1d9a8475d3780a10c271a2ac303d5b2fb4e61f6b022aaf2`.
+
+**Pinned VMAs** (from the same link before stripping): `outlined destroy of
+witfix.Slot` `0x53f8`, `merged outlined init with copy of witfix.Stamp`
+`0x4918`, `merged outlined init with take of witfix.Stamp` `0x4970`, and
+`outlined init with copy of Foundation.URL?` `0x4a40`, which fetches its
+metadata through `__swift_instantiateConcreteTypeFromMangledName` and stays
+unnamed.
+
 ### `swift_call_free_elf` — a mutating struct call after a module function (`swiftcall`)
 
 `swift_call_free_elf` (x86-64 ELF, 18 KB, with symbols) is the fixture for the

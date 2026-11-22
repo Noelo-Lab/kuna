@@ -6977,7 +6977,28 @@ at a direct, unlocked, non-variadic CALL is an argument when all of these hold:
   RETURN beside the incoming `x0` it forwards; heritage splits `x0` into `w0`
   and its high word, the call's argument is their `PIECE`, and kuna printed
   `int wi(void) { return geti(); }`. A callee returning a full `x0` (a `long`)
-  left the register whole and was forwarded already.
+  left the register whole and was forwarded already. The value may also reach
+  the call past earlier calls that leave the register alone
+  (`forwarded_own_input`): through copies, phis and the non-creating INDIRECTs
+  of those calls, every source must be that one input Varnode. gcc keeps an
+  argument in `rdi` across a call to a function it knows does not write it
+  (bzip2 `generateMTFValues` calling `add_pair_to_block(s)` in a loop); inside
+  a loop heritage joins the incoming `rdi` with the `rdi` carried back past the
+  call. `AncestorRealistic` reads that INDIRECT as a register killed by a call
+  and marks the trial definitely not used, which frees its data flow before this
+  rule sees it, so `check_input_trial_use` scores such a trial inactive, as it
+  scores the plain input, when the callee's statement has a parameter there.
+  The call printed `add_pair()` while `add_pair(S *)` was recovered in the same
+  run (fixture `passthrough_loopfwd_x86_64`). Each INDIRECT on the way must
+  guard a direct call, not a PLT stub, whose decoded callee body is proven never
+  to write the register (`call_leaves_alone`, the callee-write probe
+  `calleepreserves` reads). The convention lets any other call clobber an
+  argument register, and the cspec gives that clobber an unknown effect, so the
+  non-creating INDIRECT says nothing about whether the value survived. Without
+  the proof, AArch64 C code gained parameters nobody passes: dash `killcmd`
+  became `killcmd(int, void *, unsigned long a2)` forwarding `x2` past `kill`
+  and `strerror` to `sh_warnx`, whose `va_start` save reads `x2` (fixture
+  `passthrough_clobbered_aarch64`).
 
 The variadic-call test itself reads the writing instruction's own ops as its own:
 `xor %eax,%eax` reads the register it zeroes, as its operand and again in `ZF =
@@ -9347,7 +9368,13 @@ on, or handed back in another register (`kuna_voidret.rs (returned_use)`,
 `kuna_voidret.rs (scoring_return)`): `gi = a * 3; return gi;` stores the `eax`
 it returns, `if (r > 7) gj++; return r;` tests it, and `x = *p; gi = x + 1; gj
 = x; return x;` leaves `x + 1` in `edx`, a register the callers do not read.
-Upstream's `onlyOpUse` refuses all three, to tell a value passed in a register
+It may also be added to another variable, which makes it an index:
+gnulib's `base_len` (`for (len = strlen (name); 1 < len && name[len - 1] ==
+'/'; len--) continue; return len;`) loads through `name + len - 1`, and what
+that sum reaches is not a use of `len` itself. An addition of a constant
+still carries the value on, so a load or store through the value plus a
+constant refuses it as before.
+Upstream's `onlyOpUse` refuses all four, to tell a value passed in a register
 from a variable that happens to sit there; with a caller reading the register
 that question is settled, and the refusal printed `void f(int a0) { gi = a0 *
 3; }` beside `printf("%d\n", f(2))`, and gnulib's `xmalloc` (`p = malloc(n);
