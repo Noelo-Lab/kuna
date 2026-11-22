@@ -246,7 +246,7 @@ pub fn function_xrefs(prog: &ConsoleProgram, file: &object::File, entry: u64) ->
             address: caller.unwrap_or(r.from),
             site: r.from,
             kind: r.kind.as_str(),
-            instruction: r.instruction.clone(),
+            instruction: r.instruction.to_string(),
         });
     }
     for r in index.refs_from_function(entry) {
@@ -255,7 +255,7 @@ pub fn function_xrefs(prog: &ConsoleProgram, file: &object::File, entry: u64) ->
             address: r.to,
             site: r.from,
             kind: r.kind.as_str(),
-            instruction: r.instruction.clone(),
+            instruction: r.instruction.to_string(),
         };
         match r.kind {
             XrefKind::Call | XrefKind::Jump => out.callees.push(row),
@@ -416,7 +416,7 @@ impl UseWalk {
                 address: function.unwrap_or(r.from),
                 site: r.from,
                 kind: r.kind.as_str(),
-                instruction: r.instruction.clone(),
+                instruction: r.instruction.to_string(),
             },
             via: via.map(|slot| (slot, self.data.get(&slot).cloned())),
         }

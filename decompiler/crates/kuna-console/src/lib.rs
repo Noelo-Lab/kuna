@@ -50,11 +50,14 @@ mod kuna_buildstamp_fingerprint;
 pub mod assertions;
 mod kuna_qualifiedstorage;
 pub mod assertsyntax;
+mod kuna_callproto;
+pub mod kuna_cheader;
 pub mod grammar;
 pub mod rulecompile;
 pub mod unify;
 
 mod kuna_projectfunctionnames;
 
+mod kuna_blobdata;
 mod kuna_dataidentifiers;
 mod kuna_stringoverlaps;

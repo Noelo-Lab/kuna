@@ -101,7 +101,7 @@ fn type_headers_and_slices_use_32_bit_words() {
     assert_eq!((t.kind, t.size, t.name.as_str()), (KIND_INT, 4, "int"));
     assert_eq!(plausible_slice(&img, 0x1050, 2), Some((0x1000, 2)));
     assert!(read_type(&img, 0x1000, 0x101f, 0).is_none());
-    assert!(descriptor_stride(&img, &t).is_none(), "newer 32-bit descriptor regions are not guessed");
+    assert_eq!(descriptor_stride(&img, &t), Some(32));
 }
 
 #[test]
@@ -109,6 +109,13 @@ fn go_name_encoding_decodes_and_refuses() {
     let data = [0u8, 3, b'a', b'b', b'c', 0, 0];
     let spans = vec![(0x1000u64, data.to_vec())];
     let img = img_of(&spans);
+    assert_eq!(read_go_name(&img, 0x1000).as_deref(), Some("abc"));
+    // go1.16 and earlier: a big-endian u16 length.
+    let old = [0u8, 0, 3, b'a', b'b', b'c', 0];
+    let spans = vec![(0x1000u64, old.to_vec())];
+    let mut img = img_of(&spans);
+    assert_eq!(read_go_name(&img, 0x1000), None, "a u16 length is not a varint");
+    img.u16_names = true;
     assert_eq!(read_go_name(&img, 0x1000).as_deref(), Some("abc"));
     // zero length refused; unmapped refused.
     let zero = vec![0u8, 0];
@@ -236,7 +243,7 @@ fn phase1_name_vocabulary() {
     assert!(!name_ok(""), "empty");
 }
 
-/// Build the go1.26+ shape: NO typelinks slice — the records sit consecutively
+/// Build the go1.27+ shape: NO typelinks slice — the records sit consecutively
 /// in `[types + 8, types + typedesclen)` and moduledata carries the
 /// `types, typedesclen, etypes` triple. Returns `(spans, anchor, types)`.
 fn synth_descriptors() -> (Vec<(u64, Vec<u8>)>, u64, u64) {
@@ -292,7 +299,7 @@ fn synth_descriptors() -> (Vec<(u64, Vec<u8>)>, u64, u64) {
         blob[f + 16..f + 24].copy_from_slice(&off.to_le_bytes());
     }
 
-    // moduledata: pcHeader*, funcnametab slice, pad, then the 1.26+ triple.
+    // moduledata: pcHeader*, funcnametab slice, pad, then the 1.27+ triple.
     let mut md = Vec::new();
     md.extend_from_slice(&H.to_le_bytes());
     md.extend_from_slice(&T.to_le_bytes());
@@ -336,6 +343,62 @@ fn descriptor_stride_matches_the_abi_math() {
     assert_eq!(descriptor_stride(&img, &point), Some(80 + 2 * 24), "struct base + fields");
     let ptr = read_type(&img, types, etypes, 0xb8).expect("ptr");
     assert_eq!(descriptor_stride(&img, &ptr), Some(56), "pointer wrapper");
+}
+
+#[test]
+fn go127_descriptor_walk_uses_32_bit_wrappers_and_record_boundaries() {
+    const T: u64 = 0x100000;
+    const M: u64 = 0x300000;
+    const NAME: i32 = 0x3f0;
+    let wrappers = [
+        (KIND_ARRAY, 44),
+        (KIND_CHAN, 40),
+        (KIND_FUNC, 64), // 36-byte wrapper, uncommon, and 3 type pointers
+        (KIND_INTERFACE, 56),
+        (KIND_MAP, 76),
+        (KIND_POINTER, 36),
+        (KIND_SLICE, 36),
+        (KIND_STRUCT, 72),
+        (KIND_INT, 32),
+    ];
+    let mut blob = vec![0u8; 0x400];
+    let mut offsets = Vec::new();
+    let mut at = 4;
+    for (kind, width) in wrappers {
+        offsets.push(at as u32);
+        blob[at..at + 4].copy_from_slice(&4u32.to_le_bytes());
+        blob[at + 15] = kind;
+        blob[at + 24..at + 28].copy_from_slice(&NAME.to_le_bytes());
+        match kind {
+            KIND_FUNC => {
+                blob[at + 12] = 1;
+                blob[at + 32..at + 34].copy_from_slice(&2u16.to_le_bytes());
+                blob[at + 34..at + 36].copy_from_slice(&0x8001u16.to_le_bytes());
+            }
+            KIND_INTERFACE | KIND_STRUCT => {
+                let count: u32 = if kind == KIND_INTERFACE { 1 } else { 2 };
+                blob[at + 40..at + 44].copy_from_slice(&count.to_le_bytes());
+                blob[at + 44..at + 48].copy_from_slice(&count.to_le_bytes());
+            }
+            _ => {}
+        }
+        at += width;
+    }
+    blob[NAME as usize..NAME as usize + 5].copy_from_slice(b"\0\x03int");
+    let mut moduledata = vec![0u8; 96 * 4];
+    moduledata[20..24].copy_from_slice(&(T as u32).to_le_bytes());
+    moduledata[24..28].copy_from_slice(&(at as u32).to_le_bytes());
+    moduledata[28..32].copy_from_slice(&((T + 0x400) as u32).to_le_bytes());
+    {
+        let mut img = GoImage::from_spans(vec![(T, &blob), (M, &moduledata)]);
+        img.word_size = 4;
+        let region = locate_type_meta_descriptors(&img, M).expect("32-bit descriptor region");
+        assert_eq!(region.offsets, offsets);
+    }
+    moduledata[24..28].copy_from_slice(&((at - 4) as u32).to_le_bytes());
+    let mut img = GoImage::from_spans(vec![(T, &blob), (M, &moduledata)]);
+    img.word_size = 4;
+    assert!(locate_type_meta_descriptors(&img, M).is_none(), "a partial last record");
 }
 
 #[test]
@@ -522,6 +585,60 @@ fn descriptor_globals_name_and_type_every_printable_record() {
     }
 }
 
+#[test]
+fn descriptor_globals_follow_type_edges_and_spell_import_paths() {
+    let (mut spans, anchor, types, _) = synth();
+    {
+        let blob = &mut spans[0].1;
+        // `poll.FD` @ +0xc0: a named struct of a sub-package, no fields, with
+        // an uncommon record whose pkgPath names `internal/poll`; its
+        // ptrToThis is the pointer record below.
+        let s = 0xc0;
+        blob[s..s + 8].copy_from_slice(&16u64.to_le_bytes());
+        blob[s + 20] = TFLAG_NAMED | TFLAG_UNCOMMON;
+        blob[s + 23] = KIND_STRUCT;
+        blob[s + 40..s + 44].copy_from_slice(&0x250i32.to_le_bytes());
+        blob[s + 44..s + 48].copy_from_slice(&0x140i32.to_le_bytes());
+        blob[s + 80..s + 84].copy_from_slice(&0x260i32.to_le_bytes());
+        blob[0x250..0x259].copy_from_slice(b"\0\x07poll.FD");
+        blob[0x260..0x26f].copy_from_slice(b"\0\x0dinternal/poll");
+        // `*poll.FD` @ +0x140, reached only through ptrToThis.
+        let p = 0x140;
+        blob[p..p + 8].copy_from_slice(&8u64.to_le_bytes());
+        blob[p + 23] = KIND_POINTER;
+        blob[p + 40..p + 44].copy_from_slice(&0x270i32.to_le_bytes());
+        blob[p + 48..p + 56].copy_from_slice(&(types + 0xc0).to_le_bytes());
+        blob[0x270..0x27a].copy_from_slice(b"\0\x08*poll.FD");
+    }
+    {
+        // Typelinks: main.Point and poll.FD only — `int` is reached through
+        // main.Point's field types, `*poll.FD` through ptrToThis.
+        let links = &mut spans[1].1;
+        links.clear();
+        links.extend_from_slice(&0x60i32.to_le_bytes());
+        links.extend_from_slice(&0xc0i32.to_le_bytes());
+    }
+    let img = img_of(&spans);
+    let meta = locate_type_meta(&img, anchor).expect("triple validates");
+    assert_eq!(meta.offsets, vec![0x60, 0xc0]);
+    let tf = kuna_decomp::dtype::TypeFactoryImpl::new();
+    tf.set_default_alignment_map();
+    tf.set_max_basetype_size(8);
+    tf.setup_sizes(Some(8), 8, 8);
+    tf.cache_core_types().unwrap();
+    let facts = kuna_typeglobals::collect(&tf, &img, &meta);
+    let named: Vec<(u64, &str)> = facts.iter().map(|f| (f.addr, f.name.as_str())).collect();
+    assert_eq!(
+        named,
+        vec![
+            (types, "type:int"),
+            (types + 0x60, "type:main.Point"),
+            (types + 0xc0, "type:internal/poll.FD"),
+            (types + 0x140, "type:*internal/poll.FD"),
+        ]
+    );
+}
+
 // --- itab consumer (kuna_itabs) ---------------------------------------------
 
 /// Build a types blob with a named concrete struct (`main.Point` @ +0x60) and
@@ -616,8 +733,8 @@ fn locate_itablinks_slice_follows_pointers() {
 }
 
 #[test]
-fn locate_itab_region_walks_the_go126_contiguous_region() {
-    // go1.26+ form: two consecutive itab records walked by Size(), located via
+fn locate_itab_region_walks_the_go127_contiguous_region() {
+    // go1.27+ form: two consecutive itab records walked by Size(), located via
     // an (itaboffset, itabsize) pair in the moduledata window.
     let (spans0, types, etypes, _itab0, inter, concrete) = synth_itab_blob();
     const R: u64 = 0x270000; // contiguous itab region

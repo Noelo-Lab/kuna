@@ -25,7 +25,7 @@
 //!   (`helper: svc #0; ret`, whose kernel reads the caller's syscall number)
 //!   keeps it, whatever the value.
 //!
-//! Where the body does not settle it, two facts about the value do. A value
+//! Where the body does not settle it, facts about the value do. A value
 //! already vetoed from another call is vetoed here too: freeing it there leaves
 //! this call its only reader, and the double-use rule that kept it off this
 //! call would otherwise no longer see the first one (clang -O0 computes a
@@ -40,6 +40,15 @@
 //! a small number in `x8` by its own convention through an import the walk
 //! cannot read (the OCaml runtime's `caml_allocN` through a PLT stub), and drops
 //! that number.
+//!
+//! On arm64e a third fact answers: a value whose bits 48..55 are known and are
+//! neither all clear nor all set is not an address. The top byte is ignored and
+//! the bits below it down to the address width extend bit 55, with the
+//! pointer-authentication code kept there, so no pointer the callee could store
+//! through has them mixed. This is the blended modifier `mov x8,x19; movk
+//! x8,#0xaea0,lsl #48; mov x16,x8; pacda x17,x16` leaves in `x8`: the hidden
+//! `pacda` lifts to a copy of `x17` (spec chapter 02) and does not read `x16`,
+//! so the modifier's only remaining reader is the call that follows.
 //!
 //! The entry is its own resource section, so dropping it leaves no hole in
 //! `x0..x7`. A `hiddenret` entry sharing storage with an ordinary input entry
@@ -61,6 +70,9 @@ const NULL_PAGE: u64 = 0x1000;
 
 /// How many value-preserving links [`null_page_constant`] follows.
 const MAX_DEPTH: u32 = 8;
+
+/// Bits 48..55 of a 64-bit value: on arm64e every address has them all equal.
+const ADDRESS_SIGN_BITS: u64 = 0x00ff_0000_0000_0000;
 
 /// Does `model` take a hidden-return pointer in a register of space `reg_idx`?
 pub fn has_register_hidden_return(model: &ProtoModel, reg_idx: int4) -> bool {
@@ -161,13 +173,57 @@ fn frame_address(data: &Funcdata, vn: VarnodeId) -> bool {
     false
 }
 
+/// Known bits as `(known, value)`.
+type Bits = (u64, u64);
+
+fn and_bits((ka, va): Bits, (kb, vb): Bits) -> Bits {
+    ((ka & kb) | (ka & !va) | (kb & !vb), va & vb)
+}
+
+fn or_bits((ka, va): Bits, (kb, vb): Bits) -> Bits {
+    ((ka & kb) | (ka & va) | (kb & vb), (ka & va) | (kb & vb))
+}
+
+/// Are bits 48..55 all known, and neither all clear nor all set?
+fn mixed_address_sign((known, value): Bits) -> bool {
+    let sign = value & ADDRESS_SIGN_BITS;
+    known & ADDRESS_SIGN_BITS == ADDRESS_SIGN_BITS && sign != 0 && sign != ADDRESS_SIGN_BITS
+}
+
+/// The known bits of `vn`, through copies and ANDs and ORs, [`MAX_DEPTH`]
+/// links deep.
+fn known_bits(data: &Funcdata, vn: VarnodeId, depth: u32) -> Bits {
+    let Some(v) = data.vbank().get(vn) else { return (0, 0) };
+    if v.is_constant() {
+        return (u64::MAX, v.get_offset());
+    }
+    let Some(op) = v.get_def().and_then(|d| data.obank().get(d)).filter(|_| depth < MAX_DEPTH) else {
+        return (0, 0);
+    };
+    let input = |i| op.get_in(i).map_or((0, 0), |x| known_bits(data, x, depth + 1));
+    match op.code() {
+        OpCode::CPUI_COPY => input(0),
+        OpCode::CPUI_INT_AND => and_bits(input(0), input(1)),
+        OpCode::CPUI_INT_OR => or_bits(input(0), input(1)),
+        _ => (0, 0),
+    }
+}
+
+/// Is `vn` a 64-bit arm64e value that cannot be an address?
+fn not_an_arm64e_address(data: &Funcdata, vn: VarnodeId) -> bool {
+    data.get_arch().arm64e
+        && data.vbank().get(vn).is_some_and(|v| v.get_size() == 8)
+        && mixed_address_sign(known_bits(data, vn, 0))
+}
+
 /// Can the hidden-return value with `leaves` not be a result buffer of this call?
 ///
 /// The callee's own body decides first: one that never takes `[addr, addr+size)`
 /// vetoes, and one that reads it or reaches a system call with it unwritten
 /// keeps it. Otherwise a value already vetoed from another call is vetoed here
 /// too, since freeing it there must not make it this call's argument, and so is
-/// a value whose every leaf is a constant in the null page.
+/// a value whose every leaf is a constant in the null page or, on arm64e, not an
+/// address.
 fn not_a_result_buffer(
     data: &Funcdata,
     call: &FuncCallSpecs,
@@ -188,7 +244,8 @@ fn not_a_result_buffer(
         data.vbank().get(*l).is_some_and(|v| v.is_constant() && v.get_offset() < NULL_PAGE)
     };
     leaves.iter().any(|&l| data.kuna_hiddenret_vetoed(l))
-        || (!leaves.is_empty() && leaves.iter().all(null_page))
+        || (!leaves.is_empty()
+            && (leaves.iter().all(null_page) || leaves.iter().all(|&l| not_an_arm64e_address(data, l))))
 }
 
 /// Rescore trial `trial` of call `call_idx` no-use when it is an ACTIVE trial on

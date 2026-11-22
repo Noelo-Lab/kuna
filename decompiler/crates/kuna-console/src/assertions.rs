@@ -28,6 +28,7 @@
 //!   comment [<func>::]<addr> <text>        comment instruction  P9
 //!   flow [<func>::]<addr> <flowkind>       override flow        P2 flow-classification
 //!   callee [<func>::]<addr> <name|addr>    override indirect    P2 flow-classification
+//!   callproto [<func>::]<callsite> <decl>  override prototype   P4 prototype-source
 //!   function <start>[-<end>][=<name>]      function bounds      P1  (= --define-function)
 //!   readonly <addr>+<size>                 readonly             P1 code-data-partition
 //!   volatile <addr>+<size>                 volatile             P1 code-data-partition
@@ -60,7 +61,7 @@
 //! * **Program-scoped** (`function`, `typedef`, `prototype`, `data`) is applied
 //!   by [`apply_program_scoped`] right after the analysis commit, so a declared
 //!   fact outranks whatever discovery decided.
-//! * **Function-scoped** (`param`, `return`, `comment`, `flow`, `callee`) is turned into
+//! * **Function-scoped** (`param`, `return`, `comment`, `flow`, `callee`, `callproto`) is turned into
 //!   decompile SEEDS by [`function_seed`] — the facts the drive consumes at flow
 //!   time.  `flow` is the sharpest of them: it reclassifies the flow out of one
 //!   instruction (`branch`, `call`, `callreturn`, `return`), which is how a
@@ -68,7 +69,10 @@
 //!   indirect `call *%rdx` that never returns, a tail call kuna read as a call,
 //!   a jump into a neighbour.  `callee` states where one indirect call goes,
 //!   so the flow builds it as a direct call to that function
-//!   ([`crate::kuna_calleeoverride`]).
+//!   ([`crate::kuna_calleeoverride`]).  `callproto` states the arguments and
+//!   return of ONE call instruction ([`crate::kuna_callproto`]), which is what
+//!   a call through a pointer or a variadic callback needs: no callee symbol
+//!   carries its signature.  An address no call is at is rejected.
 //! * **Symbol-scoped** (`name`, `type`, `format`, `isolate`) can only be applied AFTER a decompile:
 //!   a local like `v2` does not exist until one has run (`rename v2 buf` before
 //!   the first decompile answers `No symbol named: v2`, which is precisely the
@@ -127,6 +131,9 @@ pub enum Body {
     /// `callee [<func>::]<callsite> <name|address>` — the indirect call at this
     /// instruction goes to this function.
     Callee { func: Option<String>, addr: u64, callee: String },
+    /// `callproto [<func>::]<callsite> <C declaration>` — the prototype of the
+    /// one call made by the instruction at this address.
+    CallProto { func: Option<String>, addr: u64, decl: String },
     /// `name [<func>::]<symbol> <newname>` — rename a local.
     Name { func: Option<String>, symbol: String, newname: String },
     /// `type [<func>::]<symbol> <C type>` — retype a local.
@@ -183,6 +190,7 @@ impl Body {
             Body::Comment { .. } => ("comment", "P9", "external-refinement"),
             Body::Flow { .. } => ("flow", "P2", "flow-classification"),
             Body::Callee { .. } => ("callee", "P2", "flow-classification"),
+            Body::CallProto { .. } => ("callproto", "P4", "prototype-source"),
             Body::Name { .. } => ("name", "P9", "naming-policy"),
             Body::Type { .. } => ("type", "P5", "type-propagation"),
             Body::Format { .. } => ("format", "P9", "literal-format"),
@@ -202,6 +210,7 @@ impl Body {
             | Body::Comment { func, .. }
             | Body::Flow { func, .. }
             | Body::Callee { func, .. }
+            | Body::CallProto { func, .. }
             | Body::Name { func, .. }
             | Body::Type { func, .. }
             | Body::Format { func, .. }
@@ -219,6 +228,7 @@ impl Body {
                 | Body::Comment { .. }
                 | Body::Flow { .. }
                 | Body::Callee { .. }
+                | Body::CallProto { .. }
                 | Body::Name { .. }
                 | Body::Type { .. }
                 | Body::Format { .. }
@@ -952,6 +962,9 @@ pub struct FunctionSeed {
     /// `override flow` facts, in the drive's `flow_overrides` shape: the flow
     /// type forced at each named instruction.
     pub flow_overrides: Vec<(Address, uint4)>,
+    /// `override prototype` facts, in the drive's `proto_overrides` shape: the
+    /// prototype forced onto the call at each named instruction.
+    pub proto_overrides: Vec<(Address, PrototypePieces)>,
 }
 
 /// Build the [`FunctionSeed`] for the function `name` entered at `entry`, and
@@ -989,7 +1002,39 @@ pub fn function_seed(
         };
         prog.set_assertion_outcome(i, outcome);
     }
+    if directives.iter().any(|d| matches!(d.body, Body::CallProto { .. })) {
+        let outcomes = prog.assertion_outcomes();
+        let applied = |i: usize| outcomes.get(i).is_some_and(|o| o.status == "applied");
+        for i in restated_call_prototypes(&directives, applied, |d| binds_to(&d.body, name, single)) {
+            prog.set_assertion_outcome(i, restated(&directives[i]));
+        }
+    }
     seed
+}
+
+/// The `callproto` directives a later one replaces: of those `binds` and
+/// `applied` accept, every one a later one names the same call site after.  A
+/// call keeps the newest prototype stated for it, as the console's `override
+/// prototype` does.
+pub fn restated_call_prototypes(
+    directives: &[Directive],
+    applied: impl Fn(usize) -> bool,
+    binds: impl Fn(&Directive) -> bool,
+) -> Vec<usize> {
+    let sites: Vec<Option<u64>> = directives
+        .iter()
+        .enumerate()
+        .map(|(i, d)| match d.body {
+            Body::CallProto { addr, .. } if applied(i) && binds(d) => Some(addr),
+            _ => None,
+        })
+        .collect();
+    (0..sites.len()).filter(|&i| sites[i].is_some() && sites[i + 1..].contains(&sites[i])).collect()
+}
+
+/// The outcome of a `callproto` a later one for the same call replaced.
+pub fn restated(directive: &Directive) -> Outcome {
+    directive.rejected("a later callproto states this call again, and that one is applied")
 }
 
 /// Downgrade the outcome of every `flow` directive bound to `name` that the flow
@@ -1088,6 +1133,34 @@ pub fn restated_callee(directive: &Directive) -> Outcome {
     directive.rejected("a later callee states this call site again, and that one is applied")
 }
 
+/// Reject every `callproto` directive bound to `name` whose address no call of
+/// the decompiled function is at.  [`function_seed`] recorded `applied` when it
+/// seeded it; which instructions call is known only once flow has followed.
+pub fn record_unbound_call_prototypes(
+    prog: &mut ConsoleProgram,
+    name: &str,
+    single: bool,
+    fd: &Funcdata,
+) {
+    if !prog.assertions().iter().any(|d| matches!(d.body, Body::CallProto { .. })) {
+        return;
+    }
+    let directives = prog.assertions().to_vec();
+    for (i, directive) in directives.iter().enumerate() {
+        let Body::CallProto { addr, .. } = &directive.body else { continue };
+        if !binds_to(&directive.body, name, single)
+            || prog.assertion_outcomes().get(i).is_none_or(|o| o.status != "applied")
+        {
+            continue;
+        }
+        let Ok(at) = code_addr(prog, *addr) else { continue };
+        if !crate::kuna_callproto::has_call_at(fd, &at) {
+            let outcome = directive.rejected(crate::kuna_callproto::NO_CALL);
+            prog.set_assertion_outcome(i, outcome);
+        }
+    }
+}
+
 fn seed_one(
     prog: &mut ConsoleProgram,
     body: &Body,
@@ -1169,6 +1242,13 @@ fn seed_one(
         Body::Callee { addr, callee, .. } => {
             let at = code_addr(prog, *addr)?;
             crate::kuna_calleeoverride::plant(prog, entry, &at, callee)
+        }
+        Body::CallProto { addr, decl, .. } => {
+            let at = code_addr(prog, *addr)?;
+            let pieces = crate::kuna_callproto::parse(prog, decl)?;
+            seed.proto_overrides.retain(|(site, _)| site != &at);
+            seed.proto_overrides.push((at, pieces));
+            Ok(())
         }
         _ => Err("internal: not a function-scoped directive".into()),
     }
