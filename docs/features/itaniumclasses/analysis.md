@@ -22,10 +22,10 @@ extern "C" int probe_shapes(int scale) {
 ```c
   long v3 [3]; // rax | stack - 0x38
 
-  sub_14ea(v3,2,5);
+  shapes::Circle::Circle(v3,2,5);
   v1 = (**(int (**)(void *,unsigned int))(v3[0] + 0x10))(v3,a0);
   v2 = (**(int (**)(void *))(v3[0] + 0x18))(v3);
-  shapes::Circle::vfunc_0(v3);
+  shapes::Circle::~Circle(v3);
 ```
 
 and the method `Shape::area`:
@@ -135,6 +135,21 @@ Read from the PR descriptions and code, not run:
 | `this` | not typed on a stripped image | unlocked `C *` hint on `x0` |
 | Vtable object | no | `C_vtable` of type `C_vtbl` |
 | Targets | ELF; not shared objects with symbolic vtable relocations | arm64 XNU kernels and kexts |
+
+Measured on the #1756 branch (`ac6bc6239`, release build), on the fixture:
+
+| Run | `probe_shapes` | `Shape::vfunc_2` |
+|---|---|---|
+| `itaniumrtti names` | vptr arithmetic, `long v3 [3]` | `((int *)a0)[2] * a1` |
+| `itaniumrtti on` | byte-identical to `names` | byte-identical to `names` |
+| `on` + `--assert 'type v3 Circle'` | `(v3.vptr)->vfn_2)(&v3,a0)`, `Circle v3` | |
+| `on` + prototype `int vfunc_2(Shape *this,int a1)` | | `((int *)this)[2] * a1` |
+
+`on` builds `Circle`, `Shape` and their `_vtbl` types, but nothing gives an
+object one of them, so the output does not change. A receiver typed with
+#1756's variable-length `Shape` prints no worse than an untyped one, unlike
+the too-small fixed struct above; it gains a field name only with a size. The
+fixture's vtable slots are all `R_X86_64_RELATIVE` relocations.
 
 On a stripped ELF the gap is the size, the fields and the receiver. The table
 for slot types above still holds: #1756's prototypes come from known prototypes,

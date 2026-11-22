@@ -16,6 +16,7 @@
     "Vtable types, slot names and slot prototypes are #1756's; this adds the class size, the fields and the receiver on ELF.",
     "A class size is set only with operator delete/new evidence that covers every observed access through this: a too-small struct prints worse than none.",
     "The receiver is an unlocked input hint, not a locked prototype: locking one parameter fixes the arity.",
+    "The hint goes on every attributed class, sized or not: #1756's variable-length structure prints no worse than an untyped receiver.",
     "The hint and vtable-object commit is shared with #1810's IOKit commit, not duplicated."
   ],
   "measurements": {
@@ -27,6 +28,12 @@
       "of_those_with_untyped_receiver": 290,
       "classes_with_a_named_slot_function": 173,
       "method": "regular expressions over decompile-all output, main plus #1606"
+    },
+    "pr1756_branch_ac6bc6239": {
+      "probe_shapes_on_vs_names": "byte-identical",
+      "probe_shapes_on_with_type_v3_Circle": "(v3.vptr)->vfn_2)(&v3,a0)",
+      "vfunc_2_on_with_this_Shape": "((int *)this)[2] * a1",
+      "fixture_vtable_slot_relocations": "all R_X86_64_RELATIVE"
     }
   }
 }

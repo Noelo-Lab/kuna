@@ -9,7 +9,8 @@ its members, constructors and destructors, and a typed vtable object.
 
 What neither does is type anything on a stripped ELF. #1756 types no `this`
 there, so its vtable types reach a call site only where a symbol already gave
-the receiver a class type. #1810 gets the size and the fields from IOKit's
+the receiver a class type. Measured on the #1756 branch, `itaniumrtti on`
+leaves the example below byte-identical to `names`. #1810 gets the size and the fields from IOKit's
 `OSMetaClass` registration and `kalloc_type` signature, which an ELF does not
 have. This proposal is the ELF half: find the size and the fields of an Itanium
 class from the code, and commit the `this` hint and the vtable object that #1810
@@ -20,12 +21,13 @@ because a typed receiver changes every C++ function's output.
 
 ## Before and after
 
-`kuna decompile itaniumrtti_x86_64.so probe_shapes` on main:
+`kuna decompile itaniumrtti_x86_64.so probe_shapes`, on main and on the #1756
+branch with `itaniumrtti names` or `on` alike:
 
 ```c
   long v3 [3]; // rax | stack - 0x38
 
-  sub_14ea(v3,2,5);
+  shapes::Circle::Circle(v3,2,5);
   v1 = (**(int (**)(void *,unsigned int))(v3[0] + 0x10))(v3,a0);
   v2 = (**(int (**)(void *))(v3[0] + 0x18))(v3);
 ```
@@ -39,16 +41,20 @@ int shapes::Shape::vfunc_2(void *a0,int a1)
 }
 ```
 
-Target, reproduced on main by declaring the types by hand (`analysis.md`). The
-field and slot names will be the ones #1756 gives (`vptr`, `vfn_<i>`):
+Target. The first half is measured on the #1756 branch with `itaniumrtti on`
+and only `--assert 'type v3 Circle'` added, so #1756's own `Circle` and
+`Circle_vtbl` are used; this proposal supplies that connection:
 
 ```c
   Circle v3; // rax | stack - 0x38
 
   shapes::Circle::Circle(&v3,2,5);
-  v1 = (*(int (*)(void *,unsigned int))(v3.base.vptr)->vfunc_2)(&v3,a0);
-  v2 = (*(int (*)(void *))(v3.base.vptr)->vfunc_3)(&v3);
+  v1 = (*(int (*)(void *,unsigned int))(v3.vptr)->vfn_2)(&v3,a0);
+  v2 = (*(int (*)(void *))(v3.vptr)->vfn_3)(&v3);
 ```
+
+The second half needs the size and the fields as well (reproduced on main by
+declaring the types by hand, `analysis.md`):
 
 ```c
 int shapes::Shape::vfunc_2(Shape *this,int a1)
@@ -57,10 +63,8 @@ int shapes::Shape::vfunc_2(Shape *this,int a1)
 }
 ```
 
-Not yet measured: the output of `probe_shapes` on the #1756 branch itself. The
-fixture is a shared object, and #1756 leaves out shared objects whose vtable
-slots are symbolic relocations; whether that applies here decides how much of
-the target #1756 already reaches.
+The fixture's vtable slots are all `R_X86_64_RELATIVE`, so #1756's exclusion of
+shared objects with symbolic slot relocations does not apply to it.
 
 ## Option surface
 
@@ -90,7 +94,10 @@ refinement extends the option it refines). `names` and `off` are unchanged.
    for the class whose vtable holds it first (the defining class), and on
    constructors and destructors where #1606 names them. The register is the
    ABI's first integer parameter (`RDI` on x86-64, `x0` on AArch64), not a fixed
-   `x0` as in #1810's IOKit commit. Only for a class with a size; see question 1.
+   `x0` as in #1810's IOKit commit. This is for every attributed class, sized or
+   not: on #1756's variable-length structure, `this` typed `Shape *` prints the
+   access as `((int *)this)[2] * a1`, the same as without a type (measured with
+   a locked prototype standing in for the hint). The size only adds field names.
 4. **The vtable objects**: the slots from a constructor's vptr store become a data
    object `C_vtable` of type `C_vtbl`, as #1810 does for IOKit, so the store
    prints `this->vptr = &C_vtable` instead of a cast.
@@ -129,8 +136,8 @@ the `itaniumrtti` row in `phases.toml`.
 
 - `tests/stages/kuna-itaniumclasses.xml`, two passes on the existing fixture:
   `names` shows the vptr arithmetic and the `void *` receiver, `on` shows the
-  named slot and `this->field_0x8`. A class without size evidence and a folded
-  slot function are the negatives.
+  named slot and `this->field_0x8`. A class without size evidence (typed `this`,
+  no fields) and a folded slot function (no hint) are the negatives.
 - An oracle against unstripped, DWARF-carrying twins of the same sources: every
   emitted size equals DWARF's `DW_AT_byte_size`, every field offset is a member
   offset or lies inside one, and no hint names a class the function is not a
@@ -145,11 +152,7 @@ the `itaniumrtti` row in `phases.toml`.
 
 ## Questions for review
 
-1. A class without size evidence keeps #1756's variable-length structure. Should
-   its functions still get the `this` hint? `analysis.md` shows a too-small fixed
-   struct printing worse than none; whether a variable-length one avoids that has
-   not been measured, so the proposal withholds the hint until it is.
-2. Is moving #1810's hint and vtable-object commit into a shared place acceptable,
+1. Is moving #1810's hint and vtable-object commit into a shared place acceptable,
    or should the ELF commit stand on its own?
-3. Fields from the observed accesses, or fixed 8-byte fields as the IOKit layout
+2. Fields from the observed accesses, or fixed 8-byte fields as the IOKit layout
    uses where no signature names the bytes?
