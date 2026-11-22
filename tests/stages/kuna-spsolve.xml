@@ -24,6 +24,8 @@
     block the other path enters with twelve more bytes reserved.
 
     Pass 1 (`option spsolve off`) reproduces the bug; pass 2 is the default.
+    Pass 3 states `option extrapop 4 mk`: the solve keeps a stated extrapop,
+    so caller_sret prints as in pass 1.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -56,10 +58,14 @@ c3
   <com>load function caller_die</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option extrapop 4 mk</com>
+  <com>load function caller_sret</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="SPSOLVE #1: off, the stack pointer is a variable in two functions; on, in none" min="2" max="2">; // esp</stringmatch>
-<stringmatch name="SPSOLVE #2: off, the first call to the aggregate-returning callee loses its arguments" min="1" max="1">  mk\(\);</stringmatch>
+<stringmatch name="SPSOLVE #1: off, the stack pointer is a variable in two functions; on, in none; with a stated extrapop 4 for mk, in caller_sret again" min="3" max="3">; // esp</stringmatch>
+<stringmatch name="SPSOLVE #2: off, and on with a stated extrapop 4 for mk, the first call to the aggregate-returning callee loses its arguments" min="2" max="2">  mk\(\);</stringmatch>
 <stringmatch name="SPSOLVE #3: on, it takes the result buffer and the value" min="1" max="1">  mk\(v[0-9]+,a0\);</stringmatch>
 <stringmatch name="SPSOLVE #4: on, the second call takes the other buffer" min="1" max="1">    mk\(v[0-9]+,v1\);</stringmatch>
 <stringmatch name="SPSOLVE #5: off, the call both paths reach takes nothing; on, the first buffer" min="1" max="1">return sum\(v[0-9]+\) \+ v1;</stringmatch>

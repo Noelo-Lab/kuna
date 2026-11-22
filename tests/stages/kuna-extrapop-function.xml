@@ -18,9 +18,6 @@
     k calls g through ecx; the deindirected call takes the same
     extrapop, so [esp+8] after it is k's second argument.
 
-    `option spsolve off`: spsolve reads g's `ret 8` and applies extrapop 12
-    on its own, so pass 1 would already print `g(1,2); return a0;`.
-
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 6a026a01e8170000008b442404c39090909090909090909090909090909090908b442404c20800909090909090909090
@@ -31,7 +28,6 @@
 <symbol space="ram" offset="0x100030" name="k"/>
 </binaryimage>
 <script>
-  <com>option spsolve off</com>
   <com>lo fu f</com>
   <com>decompile</com>
   <com>print C</com>

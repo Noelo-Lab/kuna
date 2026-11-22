@@ -1815,9 +1815,10 @@ that machinery.
   the callee popped, so later calls lose stack arguments and locals whose
   address is taken alias outgoing-argument slots.
   On x86-32 under a compiler spec whose default model *states* its extrapop
-  (`x86gcc.cspec`'s `__cdecl`, extrapop 4, so ELF and other GCC-convention
-  images), the constant is planted after every call and nothing checks it.
-  `option spsolve` (default on) checks it first
+  (`x86gcc.cspec`'s `__cdecl`, extrapop 4), the constant is planted after
+  every call and nothing checks it. In a loaded ELF image
+  (`Architecture::image_elf`, a load-time fact) `option spsolve` (default on)
+  checks it first
   (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_spsolve.rs (settle)`).
   Two kinds of call break the constant. A callee that pops more than its
   return address: a function returning an aggregate pops the hidden result
@@ -1850,7 +1851,10 @@ that machinery.
   `kuna_calleepurge.rs` described above, asked for at flow time through
   `kuna_spsolve.rs (callee_returns)`) contributes that constant instead of an
   unknown, and so does a callee whose reached returns all pop only the return
-  address when code of the caller's own block follows the call.
+  address when code of the caller's own block follows the call. A callee whose
+  extrapop `option extrapop <n> <name>` states contributes that value, which
+  the call spec already carries, and the pass never changes it
+  (`kuna_spsolve.rs (stated)`).
 
   With every call unknown at zero the system usually holds; then only the
   proven extrapops are applied and nothing else changes. Otherwise each
@@ -1891,7 +1895,10 @@ that machinery.
   unknowns, a feasibility test over 128 rows or 256 columns, and arithmetic
   that leaves 64 bits change nothing. Under a model whose extrapop is unknown
   (`x86win.cspec`) the pass is inert and `ActionStackPtrFlow`'s solver keeps
-  its role. `option spsolve off` restores the planted constants and the
+  its role. Under the XML `<binaryimage>` bootstrap it is inert too: there the
+  stated model is the whole contract, as it is for Ghidra's decompiler when
+  no analysis has recorded a callee's `RET n` in its prototype, and a callee
+  that pops its arguments is described with `option extrapop <n> <name>`. `option spsolve off` restores the planted constants and the
   decoded fall-throughs.
 - **`ActionFuncLink`** (`coreaction_protos.rs (ActionFuncLink)`) arms each
   call site. Unlocked or varargs prototype → input recovery on

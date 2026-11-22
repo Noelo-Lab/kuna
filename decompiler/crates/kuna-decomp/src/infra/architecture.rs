@@ -558,6 +558,10 @@ pub struct Architecture {
     /// FACT, not an option: written once at `load file` and the thing `option
     /// linuxsyscall auto` tests.  The XML `<binaryimage>` bootstrap never sets it.
     pub image_linux_elf: bool,
+    /// (kuna) Is the image an ELF?  A FACT, not an option: written once at
+    /// `load file` and the target gate of `option spsolve`.  The XML
+    /// `<binaryimage>` bootstrap never sets it.
+    pub image_elf: bool,
     /// (kuna) Is the image an Apple container (Mach-O, fat Mach-O or a dyld
     /// shared cache)?  A FACT, not an option: written once at `load file` and
     /// the target gate of `option chkstkdarwin`.  The XML `<binaryimage>`
@@ -576,7 +580,7 @@ pub struct Architecture {
     /// `break;`, and keep switch fall-thru chains in case order
     /// (`p8_structure/kuna_gotonext.rs`). Default on.
     pub goto_next: bool,
-    /// (kuna `spsolve`) On x86-32 under a compiler spec whose default model
+    /// (kuna `spsolve`) In an x86-32 ELF under a compiler spec whose default model
     /// states its extrapop, solve each function's stack-pointer deltas for the
     /// calls that pop arguments or do not return
     /// (`p4_calls/kuna_spsolve.rs`). Default on.
@@ -2423,6 +2427,7 @@ impl Architecture {
             syscall_regs: crate::kuna_syscallregs::SyscallRegsMode::Off, // (kuna) option syscallregs; reset_defaults sets the shipped default
             image_os_userland: false, // (kuna) a load-time fact; set by the console's `load file`
             image_linux_elf: false, // (kuna) a load-time fact; set by the console's `load file`
+            image_elf: false, // (kuna) a load-time fact; set by the console's `load file`
             image_apple: false, // (kuna) a load-time fact; set by the console's `load file`
             peb_names: crate::kuna_pebnames::PebNamesMode::Off, // (kuna) option pebnames; reset_defaults sets the shipped default
             struct_synth: crate::kuna_structsynth::StructSynthMode::Off, // (kuna) option structsynth; reset_defaults sets the shipped default
@@ -2786,7 +2791,7 @@ impl Architecture {
         self.struct_headless = crate::kuna_structheadless::StructHeadlessMode::Off; // (kuna) structheadless default `off`: a closed function's parameter read at two or more constant offsets, none of them zero, is declared `struct_N *` with filler over the bytes before its first access; `option structheadless closed` turns it on
         self.chkstk_darwin = true; // (kuna) default-on, Darwin AArch64 only (`image_apple` and an AArch64 language): inert unless a call reaches `___chkstk_darwin`; 0/675 datatests
         self.type_vote = true; // (kuna) default-on: presentation only, types variables that would print undefinedN; signatures unchanged; 0/675 datatests
-        self.sp_solve = true; // (kuna) default-on, x86-32 under a default model with a stated extrapop: inert unless a function's stack-pointer deltas disagree or a direct callee's returns pop arguments; 0/675 datatests
+        self.sp_solve = true; // (kuna) default-on, a loaded x86-32 ELF under a default model with a stated extrapop: inert unless a function's stack-pointer deltas disagree or a direct callee's returns pop arguments; 0/675 datatests
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
         self.tail_call_tables = true; // (kuna) GH-781 default `tailcalljump on`: a veneer whose one destination is another function's entry is a tail call when the destination is outside a declared extent, or the callee's prototype is stated and its return value (if any) reaches a stated output. 0/675 byte-identical on the datatest corpus; `option tailcalljump direct` restores the flow into the destination
         self.tail_call_frame = true; // (kuna) DIV-109 default-on: REMOVES CODE. A direct jmp preceded by a teardown of exactly the entry block's frame is a tail call even when the callee was never discovered. Byte-identical (0/675) on the datatest corpus; restore the flow-into-the-callee decode with `option tailcallframe off`

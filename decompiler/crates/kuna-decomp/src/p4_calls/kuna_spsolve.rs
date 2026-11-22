@@ -117,10 +117,11 @@ pub struct CalleeReturns {
     pub most: Option<int4>,
 }
 
-/// `option spsolve` on its target: x86-32 under a default model that states
-/// its extrapop.
+/// `option spsolve` on its target: a loaded x86-32 ELF under a default model
+/// that states its extrapop.
 pub fn applies(arch: &Architecture) -> bool {
     arch.sp_solve
+        && arch.image_elf
         && arch.archid.starts_with("x86:LE:32:")
         && arch.default_fp().is_some_and(|m| m.get_extra_pop() != EXTRAPOP_UNKNOWN)
 }
@@ -692,6 +693,9 @@ fn classify(data: &Funcdata) -> Vec<Site> {
             if model == EXTRAPOP_UNKNOWN || calls_through_userop(data, fc.get_op()) {
                 return Site::Opaque;
             }
+            if stated(data, i) {
+                return Site::Fixed(i64::from(model));
+            }
             let returns = fc.callee_returns();
             if let Some(ep) = returns.and_then(|r| r.proven) {
                 return Site::Fixed(i64::from(ep));
@@ -705,6 +709,14 @@ fn classify(data: &Funcdata) -> Vec<Site> {
             }
         })
         .collect()
+}
+
+/// Has `option extrapop <n> <name>` stated the extrapop of the callee of call
+/// spec `i`? The call spec already carries it (`ActionDefaultParams`,
+/// `ArchContext::query_function`), and the solve keeps it.
+fn stated(data: &Funcdata, i: int4) -> bool {
+    let entry = data.get_call_specs(i).get_entry_address();
+    !entry.is_invalid() && data.get_arch().query_function_extra_pop(entry).is_some()
 }
 
 /// Is `op` an indirect call whose target a user-defined p-code operation of
@@ -1016,7 +1028,7 @@ pub fn settle(data: &mut Funcdata, sp: &Address, size: int4) -> bool {
     for i in 0..data.num_calls() {
         let fc = data.get_call_specs(i);
         let model = fc.get_extra_pop();
-        if model == EXTRAPOP_UNKNOWN {
+        if model == EXTRAPOP_UNKNOWN || stated(data, i) {
             continue;
         }
         let proven = fc.callee_returns().and_then(|r| r.proven);
