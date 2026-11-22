@@ -6331,8 +6331,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   table where code loads it: an 8-byte LOAD from `p + -8` whose result is read
   at a table offset votes `swift.value_witness_table *` (the enum layout when a
   read is past offset 0x58) in type inference, and pointer arithmetic leaves a
-  `-8` off a `swift.type_metadata *` a byte offset instead of rewriting it to
-  `meta[-1].field`. A witness call then prints as
+  constant offset off a `swift.type_metadata *` that falls outside its 16-byte
+  header (the `-8`, and the field offsets and generic arguments past it) a
+  byte offset instead of rewriting it to `meta[-1].field` or `meta[1].kind`. A witness call then prints as
   `(*(*(swift.value_witness_table **)(meta + -8))->initializeWithCopy)(dest,src,meta)`
   and an allocation as `->size`. The vote looks the table type up by name and
   only the Swift pass interns it, so code without Swift metadata is unchanged.

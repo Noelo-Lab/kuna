@@ -14,10 +14,11 @@
 //! from `meta - 8` votes `swift.value_witness_table *` -- provided the word is
 //! itself read at a table offset; `swift.enum_value_witness_table *` when one
 //! read is past the common part -- and field rendering does the rest:
-//! `vwt->initializeWithCopy(a0, a1, meta)`, `alloca(vwt->size)`. A `meta - 8`
-//! off a pointer typed `swift.type_metadata *` stays a byte offset instead of
-//! becoming `meta[-1].field`: the word before the metadata is not a metadata
-//! field. In code of any other language the layouts are never interned and
+//! `vwt->initializeWithCopy(a0, a1, meta)`, `alloca(vwt->size)`. A constant
+//! offset off a pointer typed `swift.type_metadata *` that falls outside its
+//! 16-byte header (`meta - 8`, the field offsets and generic arguments after
+//! it) stays a byte offset instead of becoming `meta[-1].field` or
+//! `meta[1].kind`: those words are not header fields. In code of any other language the layouts are never interned and
 //! nothing changes.
 
 use std::rc::Rc;
@@ -65,8 +66,10 @@ pub fn output_vote(data: &Funcdata, vn: VarnodeId) -> Option<Rc<Datatype>> {
     types.get_type_pointer(8, table, 1).ok()
 }
 
-/// Whether `RulePtrArith` must leave the `p + -8` at `op` alone: `p` (input
-/// `slot`) points at Swift type metadata.
+/// Whether `RulePtrArith` must leave the `p + c` at `op` alone: `p` (input
+/// `slot`) points at Swift type metadata and `c` falls outside its common
+/// 16-byte header (the value witness table before it, the field offsets and
+/// generic arguments after it), which the header's layout does not describe.
 pub fn keeps_offset(data: &Funcdata, op: OpId, slot: i32) -> bool {
     if !data.get_arch().analysis_valuewitness {
         return false;
@@ -77,11 +80,11 @@ pub fn keeps_offset(data: &Funcdata, op: OpId, slot: i32) -> bool {
     let (Some(base), Some(off)) = (o.get_in(slot), o.get_in(1 - slot)) else {
         return false;
     };
-    let is_minus8 = data
+    let outside = data
         .vbank()
         .get(off)
-        .is_some_and(|c| c.is_constant() && c.get_offset() as i64 == -8);
-    is_minus8
+        .is_some_and(|c| c.is_constant() && !(0..16).contains(&(c.get_offset() as i64)));
+    outside
         && data
             .vn_type_read_facing(base, op)
             .get_ptr_to()
