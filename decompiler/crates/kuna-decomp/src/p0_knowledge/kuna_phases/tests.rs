@@ -517,6 +517,9 @@ fn option_values_live_value_present_for_76() {
                             | "iteboolean"
                             | "returndup"
                             | "rettriangle"
+                            // (kuna) `uefi` is an analysis-tier gate read console-side at the
+                            // analysis COMMIT boundary, like `itaniumrtti`.
+                            | "uefi"
                             | "earlyreturn"
                             | "switchreturn"
                             | "loopbreak_recovery"
