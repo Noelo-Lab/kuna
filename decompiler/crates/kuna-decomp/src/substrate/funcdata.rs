@@ -475,6 +475,8 @@ pub struct Funcdata {
     kuna_call_preserves: Vec<(uintb, int4)>,
     /// (kuna pushan) The lowest stack offset any external call is made at.
     kuna_call_floor: Option<i64>,
+    /// (kuna pushan) Entry-stack offsets whose address a call received.
+    kuna_call_escapes: Vec<i64>,
     /// (kuna pushan) The body is a devirtualized program, whose stack argument
     /// trials are judged without the local-alias test and join half slots.
     kuna_devirtualized: bool,
@@ -881,6 +883,7 @@ impl Funcdata {
             kuna_call_kills: Vec::new(),
             kuna_call_preserves: Vec::new(),
             kuna_call_floor: None,
+            kuna_call_escapes: Vec::new(),
             kuna_devirtualized: false,
             kuna_structure_flips: Vec::new(),
             kuna_name_snapshot: Vec::new(),
@@ -1207,6 +1210,16 @@ impl Funcdata {
     }
     pub fn kuna_set_call_floor(&mut self, floor: Option<i64>) {
         self.kuna_call_floor = floor;
+    }
+    /// (kuna pushan) The entry-stack offsets whose address the exploration
+    /// saw handed to an external call: the local-alias mapping counts each as
+    /// a pointer into the frame, whether or not the store that passed it
+    /// survives in the body.
+    pub fn kuna_call_escapes(&self) -> &[i64] {
+        &self.kuna_call_escapes
+    }
+    pub fn kuna_set_call_escapes(&mut self, escapes: Vec<i64>) {
+        self.kuna_call_escapes = escapes;
     }
     /// (kuna pushan) Whether the body is a devirtualized program.
     pub fn kuna_devirtualized(&self) -> bool {

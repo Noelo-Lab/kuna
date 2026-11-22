@@ -4644,18 +4644,34 @@ under the System V convention every other x86-64 image uses, ECX/EDX on x86)
 gets a call-clobber symbol, except a register that a callee in the image never
 writes, when its code was read to every return without calling out. The
 return address is popped, together with the arguments the callee removes
-itself (the stack purge below). The 16 bytes behind
-every pointer argument become unknown, because a `scanf("%d", &v)` writes
-`v`, and `v`'s old constant must not decide the branch that tests it. An
-argument register that still holds an earlier call's clobber symbol was never
-set by the program and points at nothing; taking it for a pointer would open
-a fresh memory region in every later state for each call site.
-On x86 the eight stack words above the return address are treated as
-possible pointer arguments too, and so is every word the callee pops
-(`CreateProcessA` pops ten, the last its `PROCESS_INFORMATION` pointer). Every entry-stack offset handed to a call this
-way is recorded as escaped, over all rounds. Every byte of mutable memory is
-the call's output, as above (`State::clobber_mutable`), because the callee
-may change it. Emulation continues at the return address. On a Windows image
+itself (the stack purge below). A call the exploration does not enter may
+write every location whose address its caller could have given it
+(`State::clobber_call`), and a read after the call is a different value from
+a read before it. The pointers it may have are the argument registers and the
+words of its outgoing argument area: 16 stack words above the return address,
+past the 0x20 bytes of home space on Windows x86-64, or more when the callee
+pops more (`CreateProcessA` pops ten, the last its `PROCESS_INFORMATION`
+pointer). Every entry-stack offset found there is recorded as escaped, over
+all rounds, and a round that escapes a new offset is followed by another, so
+the calls emulated before it in the round also see it. The call then leaves
+its output in every byte of mutable image memory, in every region under a
+symbolic base other than the entry stack pointer (a pointer argument, or one
+reachable from it through memory, may point anywhere into any of them: libpng's
+`png_inflate` writes `*output_size_ptr`, the caller's pointer parameter passed
+in its seventh stack slot), and in the frame from the lowest escaped local up
+to the return address, and from the lowest escaped incoming stack argument up
+(the same bytes the emitter keeps alive across a call). Stored bytes there are
+dropped and unwritten ones read as that call's output. Only the return address
+and the frame below every escaped offset keep their values: no address the
+callee received reaches them. Before, only the 16 bytes behind each pointer
+argument changed and, on x86-64, no stack-passed argument was looked at, so
+libpng's `if (*a3 != size) ret = Z_DATA_ERROR` after `png_inflate` folded away,
+and with it the `png_chunk_benign_error` call behind `a1 - a2 != avail` (the
+local whose address `png_inflate` got in its fifth slot). A
+`scanf("%d", &v)` writes `v` the same way: `v` escaped. An argument register that still holds an earlier call's clobber
+symbol was never set by the program and points at nothing; taking it for a
+pointer would open a fresh memory region in every later state for each call
+site. Emulation continues at the return address. On a Windows image
 (`ThreadBlock`) the segment register that addresses the thread block is
 fixed to a synthetic TEB, with a PEB, process heap and image base behind it,
 holding the values an ordinary undebugged process sees. The protector's TEB
@@ -4893,7 +4909,18 @@ floor is the lowest call's stack pointer rather than each call's own. A
 call's slots above the floor can hold arguments pushed for a later call, and
 cutting their flow at every call shortens the covers the variable merge
 compares, which merges values the program keeps apart (a call's result with a
-loop temporary). After block generation,
+loop temporary). The exploration's escaped frame offsets are stored on the
+`Funcdata` as well (`Funcdata::kuna_call_escapes`), and no stack slot from the
+lowest escaped local up to the return address gets `nolocalalias`
+(`kuna_pushan.rs (frame_escaped)`, consulted by `syncVarnodesWithSymbols`), so
+`RuleIndirectCollapse` keeps the INDIRECT each call puts on such a slot and a
+read after the call is not folded to the value stored before it. The store
+that handed the call the slot's address is often not taken as an argument
+(such calls print without arguments), so it has no reader and is gone before
+the alias analysis runs, which then sees no pointer to the slot and marks it
+unaliased: libpng's
+`if (r == 1 && a1 - a2 != avail_in) png_chunk_benign_error(...)` after
+`png_inflate` disappeared that way even with the exploration fixed. After block generation,
 `kuna_pushan.rs (mark_undefined_copies)` marks every COPY out of a placeholder
 register as an incidental copy, so the parameter analysis walks through it to
 the placeholder itself, an input nothing wrote, instead of taking it as a real
@@ -4995,7 +5022,7 @@ synthetic `pushan_vm_x86_64` fixture, a push/ret-dispatched stack-machine
 interpreter in a 64 KiB `.vmp0` whose bytecode computes `arg0 == 0 ? 7 :
 arg0 + 5` with a cmov-selected virtual branch. With `off`, the function is an
 empty body. With the default, the virtual branch and both returns are
-recovered. `tests/stages/kuna-pushan-sound.xml` decompiles seventeen
+recovered. `tests/stages/kuna-pushan-sound.xml` decompiles twenty
 hand-written programs of the `pushan_vm2_x86_64` fixture, each aimed at a way
 the recovered program could say something false: loops whose exit tests need
 more than two observed counter values (a `setl` the JZ selects on by `cmov`,
@@ -5009,7 +5036,9 @@ two virtual exits into one native epilogue, one of them an instruction
 ahead of it, whose call the recovered program makes once, and a virtual branch
 whose handler computes the next VPC from the low bit of a flag a join merged
 and from a comparison (`f_sel`), which splits over the merge symbol's two
-recorded values.
+recorded values, and a call to a function of the image that writes a local
+whose address it got in a stack-passed argument and a field 32 bytes past its
+pointer argument (`f_out`), both tested after it.
 `tests/stages/kuna-pushan-interp.xml` runs two passes over the
 `pushan_interp_x86_64` fixture (gcc -O0 from its committed C source), six
 functions that are their own interpreters of one virtual program with a loop

@@ -5,11 +5,11 @@
     The script loads the synthetic static x86-64 ELF
     decompiler/crates/kuna-analysis/tests/fixtures/pushan_vm2_x86_64
     (generator pushan_vm2_x86_64.py): one stack-machine interpreter in its own
-    64 KiB executable section .vmp0 and twenty protected functions, each an
+    64 KiB executable section .vmp0 and twenty-one protected functions, each an
     entry stub `push key; jmp vm_entry` whose key selects a hand-written
     bytecode program whose decompilation is known.  Each program targets a
     way the devirtualizer could print something false about the program;
-    nineteen are decompiled here (f_arr's stack array, read back at a constant
+    twenty are decompiled here (f_arr's stack array, read back at a constant
     index after a loop fills it, is lost by the decompiler's own stack alias
     analysis, as it is in native code whose array pointer round-trips through
     the stack).
@@ -62,6 +62,12 @@
     identity decides, and the other arm jumps to `fin` with the interpreter's
     frame still pushed: that path is no tail call, and the header says so
     instead of ending the function there in silence.
+    f_out (#26, #27): v = 5 and x = a0[4], then ext7, a function of the
+    image the exploration does not enter, gets &v as its seventh argument on
+    the stack and a0 in RDI, and writes v and a0[4] (32 bytes past the
+    pointer).  Both tests after the call stay: the call may write every frame
+    slot at or above an address it was handed in any argument slot and every
+    byte behind a pointer, so neither read is the value from before it.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -129,6 +135,9 @@ c3
   <com>load function f_spbit</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load function f_out</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="PUSHAN-SOUND #1: f_sum, the loop exits on i &lt; 10" min="1" max="1">\(SBORROW8\(v3,10\) &amp;&amp; v1\)\) break;</stringmatch>
@@ -156,7 +165,7 @@ return 4;</stringmatch>
 <stringmatch name="PUSHAN-SOUND #17: f_deep, the unmerged join is reported" min="1" max="1">pushan: incomplete: 1 path joined at another stack depth unmerged</stringmatch>
 <stringmatch name="PUSHAN-SOUND #18: f_ijmp, the unresolved jump is reported" min="1" max="1">pushan: incomplete: 1 unresolved computed jump</stringmatch>
 <stringmatch name="PUSHAN-SOUND #19: only those two and f_spbit are incomplete" min="3" max="3">pushan: incomplete</stringmatch>
-<stringmatch name="PUSHAN-SOUND #20: every function is devirtualized" min="19" max="19">pushan: devirtualized VM-protected function</stringmatch>
+<stringmatch name="PUSHAN-SOUND #20: every function is devirtualized" min="20" max="20">pushan: devirtualized VM-protected function</stringmatch>
 <stringmatch name="PUSHAN-SOUND #21: f_epi's shared native epilogue calls fin once, f_spbit's unfollowed arm once, f_mba never" min="2" max="2">fin\(</stringmatch>
 <stringmatch name="PUSHAN-SOUND #22: f_epi, the exit ahead of the epilogue keeps its add" min="1" max="1">a0 = 8;</stringmatch>
 <stringmatch name="PUSHAN-SOUND #23: f_sel, the branch on the merged flag keeps all three returns" min="1" max="1">return 2;
@@ -165,4 +174,10 @@ return 1;
 return 3;</stringmatch>
 <stringmatch name="PUSHAN-SOUND #24: f_mba, the arguments read through the identity are added" min="1" max="1">return a0 \+ a1;</stringmatch>
 <stringmatch name="PUSHAN-SOUND #25: f_spbit, the jump away from the entry depth is reported" min="1" max="1">pushan: incomplete: 1 jump to another function with the stack away from its entry depth</stringmatch>
+<stringmatch name="PUSHAN-SOUND #26: f_out, the local the call writes through its stack argument is re-read" min="1" max="1">ext7\(\);
+if \(v[0-9]+ != 5\)
+return 1;</stringmatch>
+<stringmatch name="PUSHAN-SOUND #27: f_out, the field the call writes 32 bytes past its pointer argument is re-read" min="1" max="1">if \(v[0-9]+ == \(\(int8 \*\)v[0-9]+\)\[4\]\)
+return 3;
+return 2;</stringmatch>
 </decompilertest>

@@ -12,8 +12,10 @@ through a pointer argument on two paths, a loop that grows the stack, a
 virtual jump through an argument, two virtual exits into one native
 epilogue, one of them an instruction ahead of it, a virtual branch that
 selects its target arithmetically on a flag a join merged and a comparison,
-and arguments read at addresses rebuilt through mixed boolean-arithmetic
-identities with an exit behind an opaque predicate on the stack pointer.
+arguments read at addresses rebuilt through mixed boolean-arithmetic
+identities with an exit behind an opaque predicate on the stack pointer, and
+a call that writes through a pointer passed on the stack and through a pointer
+argument past its first 16 bytes.
 Every program sits
 in its own 256-byte block of seeded random filler (entropy above 7 bits/byte).
 Regenerate with `python3 pushan_vm2_x86_64.py` (needs GNU as/ld)."""
@@ -26,6 +28,7 @@ OP = dict(zip(OPS, codes))
 OP["LEAVE"] = min(set(range(1, 256)) - set(codes))
 OP["SEL"] = min(set(range(1, 256)) - set(codes) - {OP["LEAVE"]})
 OP["LDCTXM"], OP["EXITO"], OP["EXITS"] = sorted(set(range(1, 256)) - set(codes) - {OP["LEAVE"], OP["SEL"]})[:3]
+OP["CALL7"] = min(set(range(1, 256)) - set(OP.values()))
 A0, A1 = 0, 8
 
 
@@ -188,6 +191,18 @@ PROGRAMS = {
     # identity decides, and its other arm jumps to `fin` with the
     # interpreter's frame on the stack)
     "f_spbit": [("LDCTX", A0), ("EXITS",)],
+    # v = 5; x = a0[4]; ext7(a0, 0, 0, 0, 0, 0, &v);
+    # if (v != 5) return 1; if (a0[4] != x) return 2; return 3;
+    # (ext7 writes v through its seventh argument, passed on the stack, and
+    # a0[4] through its first, 32 bytes past the pointer)
+    "f_out": [("LDIMM", 5), ("STCTX", V(3)),
+              ("LDCTX", A0), ("LDIMM", 32), ("ADD",), ("LD",), ("STCTX", V(1)),
+              ("LDCTX", A0), ("LEAV", V(3)), ("CALL7",), ("STCTX", V(0)),
+              ("LDCTX", V(3)), ("LDIMM", 5), ("EQ",), ("JZ", "A"),
+              ("LDCTX", A0), ("LDIMM", 32), ("ADD",), ("LD",), ("LDCTX", V(1)), ("EQ",), ("JZ", "B"),
+              ("LDIMM", 3), ("EXIT",),
+              "A", ("LDIMM", 1), ("EXIT",),
+              "B", ("LDIMM", 2), ("EXIT",)],
 }
 
 NAMES = list(PROGRAMS)
@@ -222,6 +237,9 @@ def source(blocks):
             "    mov qword ptr [rdi], 9", "    xor eax, eax", "    ret", ".size setv, .-setv",
             ".globl fin", ".type fin,@function", "fin:",
             "    lea rax, [rdi+rdi*2]", "    ret", ".size fin, .-fin",
+            ".globl ext7", ".type ext7,@function", "ext7:",
+            "    mov rax, qword ptr [rsp+8]", "    mov qword ptr [rax], 9", "    mov qword ptr [rdi+32], 7",
+            "    xor eax, eax", "    ret", ".size ext7, .-ext7",
             ".section .rodata,\"a\",@progbits", ".p2align 3", ".globl tbl", "tbl:", "    .quad 1, 2, 300, 4",
             ".section .data,\"aw\",@progbits", ".p2align 3", ".globl g_flag", "g_flag:", "    .quad 0",
             ".globl g_side", "g_side:", "    .quad 0",
@@ -274,6 +292,9 @@ def source(blocks):
             "h_exits:", "    pop rax", "    test esp, 0x10000", "    jnz h_bogus",
             "    mov rsp, rbp", "    pop rdi", "    pop rsi", "    pop rbp", "    pop rbx", "    add rsp, 8", "    ret",
             "h_bogus:", "    jmp fin",
+            "h_call7:", "    pop rax", "    pop rdi", "    push rsi", "    push rax", "    xor esi, esi", "    xor edx, edx",
+            "    xor ecx, ecx", "    xor r8d, r8d", "    xor r9d, r9d", "    call ext7", "    add rsp, 8", "    pop rsi",
+            "    push rax", "    jmp dispatch",
             ".p2align 8", "handlers:"]
     handler = {c: "h_" + o.lower() for o, c in OP.items()}
     for i in range(256):

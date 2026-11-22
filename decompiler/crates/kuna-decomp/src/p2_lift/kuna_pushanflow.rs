@@ -210,6 +210,10 @@ pub struct Abi {
     pub df: Option<u64>,
     /// Stack slots above the return address an external call may read as arguments.
     pub stack_args: u8,
+    /// The outgoing argument area of an external call, in words above the
+    /// return address: the callee's home space, then its stack arguments.
+    pub call_home_words: u8,
+    pub call_arg_words: u8,
     /// The program counter register (written by call/return emulation only).
     pub pc: Option<(u64, u8)>,
     /// System flags with their normal user-mode values at entry (TF=0, IF=1,
@@ -255,6 +259,8 @@ pub struct Explorer<'a> {
     image_ptrs: BTreeMap<u64, u64>,
     /// Entry-stack offsets passed to external calls, over every round.
     escapes: BTreeSet<i128>,
+    /// Offsets that escaped for the first time this round.
+    new_escapes: usize,
     /// Locations recorded by the last select built, for its node.
     pending_locs: Option<(Vec<(VarId, Loc, i128)>, Option<i128>)>,
     /// The VPC holder and per-target VPCs of the last virtual-PC fork.
@@ -401,6 +407,7 @@ impl<'a> Explorer<'a> {
             sym_sources: BTreeMap::new(),
             image_ptrs: BTreeMap::new(),
             escapes: BTreeSet::new(),
+            new_escapes: 0,
             pending_locs: None,
             pending_vpc_fork: None,
             callees: BTreeMap::new(),
@@ -700,6 +707,7 @@ impl<'a> Explorer<'a> {
             }
             self.new_syms = 0;
             self.new_splits = 0;
+            self.new_escapes = 0;
             if self.timed_out {
                 break;
             }
@@ -719,13 +727,16 @@ impl<'a> Explorer<'a> {
             if self.new_splits > 0 {
                 self.log.push(format!("round {}: {} native blocks split", round + 1, self.new_splits));
             }
-            if self.new_syms == 0 && self.new_splits == 0 && (n == prev_nodes || round > 0) {
+            if self.new_escapes > 0 {
+                self.log.push(format!("round {}: {} frame offsets newly escaped", round + 1, self.new_escapes));
+            }
+            if self.new_syms == 0 && self.new_splits == 0 && self.new_escapes == 0 && (n == prev_nodes || round > 0) {
                 break;
             }
             prev_nodes = n;
         }
         self.arena.deadline = None;
-        self.stats.converged = self.new_syms == 0 && self.new_splits == 0 && !self.stats.cut_short;
+        self.stats.converged = self.new_syms == 0 && self.new_splits == 0 && self.new_escapes == 0 && !self.stats.cut_short;
         self.stats.nodes = cfg.nodes.len();
         self.stats.insns = cfg.nodes.iter().map(|n| n.insns.len()).sum();
         self.stats.vm_nodes = cfg.nodes.iter().filter(|n| n.entry_ctx.in_vm).count();
@@ -1058,7 +1069,7 @@ impl<'a> Explorer<'a> {
         }
         if self.fresh_epoch.contains(&key) {
             self.call_epochs += 1;
-            state.clobber_mutable(self.target, self.call_epochs);
+            self.clobber_call(&mut state);
         }
         if self.forget_copies.contains(&key) {
             state.copies.clear();
@@ -2428,13 +2439,38 @@ impl<'a> Explorer<'a> {
         (self.target.is_mapped(c) && self.target.is_executable(c)).then_some(c)
     }
 
+    /// What an external call may have written (`State::clobber_call`): all
+    /// mutable image memory and every symbolic region, and the frame an
+    /// escaped frame address reaches.  An address of a local may reach any
+    /// local at or above it, up to the return address; one of the incoming
+    /// stack arguments reaches every argument at or above it.  The return
+    /// address and the frame below every escaped offset are kept: no address
+    /// the callee received reaches them.
+    fn clobber_call(&mut self, state: &mut State) {
+        let Some(frame) = self.sp0 else {
+            state.clobber_mutable(self.target, self.call_epochs);
+            return;
+        };
+        let ps = self.abi.ptr_size as i128;
+        let mut ranges = Vec::new();
+        if let Some(&lo) = self.escapes.iter().find(|o| **o < 0) {
+            ranges.push((lo, 0));
+        }
+        if let Some(&lo) = self.escapes.iter().find(|o| **o >= ps) {
+            ranges.push((lo, i128::MAX));
+        }
+        state.clobber_call(self.target, self.call_epochs, frame, ranges);
+    }
+
     /// Model an external call: a fresh return value, clobbered registers, the
-    /// return address popped, mutable memory left as the call's output
-    /// ([`State::clobber_mutable`]), and the memory its pointer arguments
-    /// reach made unknown (a
-    /// `scanf("%d", &v)` writes `v`; its old constant must not decide the
-    /// branch that tests it).  An argument register still holding an earlier
-    /// call's clobber was never set and points at nothing.
+    /// return address popped, and everything the callee could reach through a
+    /// pointer its caller gave it left as the call's output
+    /// ([`Explorer::clobber_call`]): a `scanf("%d", &v)` writes `v`, and
+    /// `png_inflate` writes through the pointers in its stack-passed
+    /// arguments.  The pointers are the argument registers and the outgoing
+    /// argument area's words; every frame offset among them escapes.  An
+    /// argument register still holding an earlier call's clobber was never
+    /// set and points at nothing.
     fn apply_call_summary(&mut self, state: &mut State, site: u64, callee: Callee) {
         let ps = self.abi.ptr_size;
         let scan = callee.target.filter(|c| Some(*c) != callee.ret).and_then(|c| self.scan_callee(c));
@@ -2451,14 +2487,20 @@ impl<'a> Explorer<'a> {
         if let Some((dst, src, _, _)) = copy {
             values.retain(|v| *v != dst && *v != src);
         }
-        // Stack-passed arguments sit above the return address: the ABI's
-        // window, and every word a callee-cleanup callee pops.
+        // Stack-passed arguments sit above the return address and the
+        // callee's home space: the outgoing argument area, and every word a
+        // callee-cleanup callee pops.
         let sp = state.read_reg(&mut self.arena, self.abi.sp, ps);
         if let Some((sb, so)) = self.arena.affine_probe(sp) {
-            for k in 1..=(self.abi.stack_args as i128).max(pop as i128 / ps as i128) {
+            let home = self.abi.call_home_words as i128;
+            let last = (home + self.abi.call_arg_words as i128).max(pop as i128 / ps as i128);
+            for k in 1 + home..=last {
                 values.push(state.read_mem(&mut self.arena, self.target, sb, so + k * ps as i128, ps));
             }
         }
+        // Every frame offset handed over escapes before the call is applied,
+        // so the call may already write all the frame an escaped address reaches.
+        let mut pointers: Vec<(Option<VarId>, i128)> = Vec::new();
         for v in values {
             if self.config.trace.is_some() {
                 self.log.push(format!("call at {site:#x}: arg {} affine={:?}", self.arena.fmt(v), self.arena.affine(v)));
@@ -2468,45 +2510,35 @@ impl<'a> Explorer<'a> {
                     self.copy_escaped = true;
                 }
             }
-            match self.arena.affine_probe(v) {
-                Some((Some(base), o)) => {
-                    if Some(base) == self.sp0 {
-                        self.escapes.insert(o);
-                    }
-                    for k in 0..(CALL_POINTEE_BYTES / ps as i128) {
-                        let u = self.arena.var(super::kuna_pushanexpr::VarInfo::new(VarKind::CallOutput { site }, ps, false));
-                        state.write_mem(Some(base), o + k * ps as i128, u, ps);
-                    }
+            if let Some((b, o)) = self.arena.affine_probe(v) {
+                if b.is_some() && b == self.sp0 && self.escapes.insert(o) {
+                    self.new_escapes += 1;
                 }
-                Some((None, a)) => {
-                    let a = a as u64;
-                    if self.target.is_mapped(a) && self.target.is_writable(a) {
-                        for k in 0..(CALL_POINTEE_BYTES / ps as i128) {
-                            let u = self.arena.var(super::kuna_pushanexpr::VarInfo::new(VarKind::CallOutput { site }, ps, false));
-                            state.write_mem(None, a as i128 + k * ps as i128, u, ps);
-                        }
-                    }
-                }
-                _ => {}
+                pointers.push((b, o));
             }
         }
-        if let Some((dst, _, s, n)) = copy {
-            if let Some((b, o)) = self.arena.affine_probe(dst) {
-                if b == self.sp0 || b.is_none() {
-                    if b == self.sp0 {
-                        self.escapes.insert(o);
-                    }
-                    if !state.copy_in(b, o, s, n) {
-                        state.forget_copies(b, o, o + n as i128);
-                        if let Some(region) = state.mem.get_mut(&b) {
-                            region.remove_where(|x| x >= o && x < o + n as i128);
-                        }
-                    }
+        let copy_dst = copy.and_then(|(dst, _, s, n)| self.arena.affine_probe(dst).map(|(b, o)| (b, o, s, n))).filter(|(b, ..)| *b == self.sp0 || b.is_none());
+        if let Some((b, o, _, _)) = copy_dst {
+            if b == self.sp0 && self.escapes.insert(o) {
+                self.new_escapes += 1;
+            }
+        }
+        for &(b, o) in &pointers {
+            if b.is_none() && self.target.is_mapped(o as u64) && self.target.is_writable(o as u64) {
+                for k in 0..(CALL_POINTEE_BYTES / ps as i128) {
+                    let u = self.arena.var(super::kuna_pushanexpr::VarInfo::new(VarKind::CallOutput { site }, ps, false));
+                    state.write_mem(None, o + k * ps as i128, u, ps);
                 }
             }
+        }
+        if let Some(c) = copy_dst.filter(|c| c.0.is_none()) {
+            place_copy(state, c);
         }
         self.call_epochs += 1;
-        state.clobber_mutable(self.target, self.call_epochs);
+        self.clobber_call(state);
+        if let Some(c) = copy_dst.filter(|c| c.0.is_some()) {
+            place_copy(state, c);
+        }
         let kept = |off: u64, size: u8| scan.as_ref().is_some_and(|s| s.closed && !s.writes.iter().any(|&(o, n)| o < off + size as u64 && off < o + n as u64));
         let mut clobbered: Vec<(u64, u8)> = Vec::new();
         if !kept(self.abi.return_reg, ps) {
@@ -2881,6 +2913,17 @@ fn covers(outer: &SymLoc, inner: &SymLoc) -> bool {
         _ => return false,
     };
     o0 <= i0 && i0 + inner.size as i128 <= o0 + outer.size as i128
+}
+
+/// A copy routine's effect on its destination (`State::copy_in`, or the
+/// destination forgotten when the copy cannot be modelled).
+fn place_copy(state: &mut State, (b, o, s, n): (Option<VarId>, i128, u64, u64)) {
+    if !state.copy_in(b, o, s, n) {
+        state.forget_copies(b, o, o + n as i128);
+        if let Some(region) = state.mem.get_mut(&b) {
+            region.remove_where(|x| x >= o && x < o + n as i128);
+        }
+    }
 }
 
 /// The context a call's return continues in.  The interpreter exits to

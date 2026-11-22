@@ -1328,7 +1328,7 @@ impl Funcdata {
             });
 
             let mut ct: Option<Rc<crate::dtype::Datatype>> = None;
-            let fl: uint4;
+            let mut fl: uint4;
             // Whether the resolved SymbolEntry is a join-piece sub-entry (precislo/
             // precishi extra-flags, NOT `mapped`) — the extra maps `Scope::addMap`
             // registers per piece of a join-address Symbol (database.cc:1161-1180).
@@ -1382,6 +1382,9 @@ impl Funcdata {
                 }
             }
 
+            if crate::p2_lift::kuna_pushan::frame_escaped(self, &ex_addr, ex_size) {
+                fl &= !varnode_flags::nolocalalias;
+            }
             if self.sync_varnodes_with_symbol(&group, fl, ct.as_ref(), entry_is_join_piece) {
                 update_occurred = true;
             }

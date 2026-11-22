@@ -67,9 +67,11 @@ pub enum VarKind {
     CallClobber { site: u64, offset: u64 },
     /// Memory an external call may have written through a pointer argument.
     CallOutput { site: u64 },
-    /// Mutable memory at a concrete address after the external call that
-    /// opened `epoch` (one per emulated call).
-    CallOutputAt { epoch: u64, offset: i128 },
+    /// Memory an external call may have written, read after the call that
+    /// opened `epoch` (one per emulated call): mutable image memory at a
+    /// concrete address (`base` None), or `base + offset` behind a symbolic
+    /// base ([`State::clobber_call`](super::kuna_pushanstate::State::clobber_call)).
+    CallOutputAt { epoch: u64, base: Option<VarId>, offset: i128 },
     /// A location that held different constants on two paths into a node.
     Merged { node: u32, tag: u64 },
     /// Anything the emulator does not model.
@@ -2566,7 +2568,8 @@ impl ExprArena {
                     VarKind::CallResult { site } => write!(s, "ret@{:x}", site),
                     VarKind::CallClobber { site, offset } => write!(s, "clobber{:x}@{:x}", offset, site),
                     VarKind::CallOutput { site } => write!(s, "out@{:x}", site),
-                    VarKind::CallOutputAt { epoch, offset } => write!(s, "out#{}[{:#x}]", epoch, offset),
+                    VarKind::CallOutputAt { epoch, base: None, offset } => write!(s, "out#{}[{:#x}]", epoch, offset),
+                    VarKind::CallOutputAt { epoch, base: Some(b), offset } => write!(s, "out#{}[v{}+{:#x}]", epoch, b, offset),
                     VarKind::Merged { node, tag } => write!(s, "sym{}_{:x}", node, tag),
                     VarKind::Unknown { tag } => write!(s, "unk{}", tag),
                 };

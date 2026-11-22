@@ -70,6 +70,9 @@ pub struct PushanProgram {
     /// Registers (offset, size) every external call leaves untouched: the
     /// interpreter's own memory, privatized by the emitter.
     pub call_preserves: Vec<(u64, u32)>,
+    /// Entry-stack offsets whose address the program handed to an external
+    /// call (in a register or an outgoing stack slot), over every round.
+    pub escapes: Vec<i64>,
     pub overlay: Rc<PcodeOverlay>,
     /// Read-only string literals the program refers to by a constant pointer:
     /// (address, bytes including the terminator).
@@ -627,6 +630,8 @@ fn abi_for(arch: &Architecture, target: &ArchTarget<'_>) -> Option<Abi> {
         df: reg("DF").map(|r| r.0),
         pc: reg(if x64 { "RIP" } else { "EIP" }),
         stack_args: if x64 { 0 } else { 8 },
+        call_home_words: if x64 && target.teb.is_some() { 4 } else { 0 },
+        call_arg_words: 16,
         fixed_flags: [("TF", 0u8), ("IF", 1), ("NT", 0), ("RF", 0), ("VM", 0), ("AC", 0), ("VIF", 0), ("VIP", 0), ("ID", 0), ("IOPL", 0)]
             .iter()
             .filter_map(|(n, v)| reg(n).map(|r| (r.0, *v)))
@@ -912,6 +917,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
             let mut keys: Vec<(usize, &super::kuna_pushanflow::NodeKey)> =
                 explorer.to_symbolize.iter().map(|(k, v)| (v.len(), k)).collect();
             keys.sort_by(|a, b| b.0.cmp(&a.0));
+            let _ = writeln!(f, "escaped frame offsets: {:?}", cfg.escapes);
             let _ = writeln!(f, "symbolized keys: {}", keys.len());
             for (n, k) in keys.iter().take(12) {
                 let _ = writeln!(f, "  key {:#x}/{:?}: {} locations", k.addr, k.ctx.map(|c| format!("{c:#x}")), n);
@@ -967,7 +973,8 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
         }
     }
     let call_preserves = emit_stats.private_regs.into_iter().chain(emit_stats.frame_reg).chain(emit_stats.slot_regs).collect();
-    Ok(PushanProgram { entry, call_kills, placeholders, call_preserves, overlay: Rc::new(overlay), strings, stats: explorer.stats.clone(), emit_stats, log })
+    let escapes = cfg.escapes.iter().filter_map(|&o| i64::try_from(o).ok()).collect();
+    Ok(PushanProgram { entry, call_kills, placeholders, call_preserves, escapes, overlay: Rc::new(overlay), strings, stats: explorer.stats.clone(), emit_stats, log })
 }
 
 fn describe_exit(e: &NodeExit) -> String {
@@ -1180,6 +1187,7 @@ fn adopt(arch: &mut Architecture, p: &PushanProgram, fd: &mut Funcdata) {
     fd.kuna_set_call_kills(p.call_kills.iter().map(|&(o, s)| (o, s as int4)).collect());
     fd.kuna_set_call_preserves(p.call_preserves.iter().map(|&(o, s)| (o, s as int4)).collect());
     fd.kuna_set_call_floor(p.emit_stats.call_floor.map(|k| k as i64));
+    fd.kuna_set_call_escapes(p.escapes.clone());
     fd.kuna_set_devirtualized(true);
 }
 
@@ -1278,6 +1286,24 @@ pub fn call_frame_kills(fd: &Funcdata, addr: &Address, size: int4) -> bool {
     let off = addr.get_offset();
     let signed = if bits >= 64 { off as i64 as i128 } else { ((off << (64 - bits)) as i64 >> (64 - bits)) as i128 };
     signed + size as i128 <= floor as i128
+}
+
+/// Is the stack range `addr:size` of a devirtualized body reachable from a
+/// frame address the exploration saw handed to an external call (at or above
+/// the lowest such offset, below the return address)?  Such a slot never gets
+/// `nolocalalias`, so the INDIRECT a call puts on it stays and a read after the
+/// call is not the value stored before it, even when the store that passed the
+/// address was dead and is gone.  Consulted by `syncVarnodesWithSymbols`.
+pub fn frame_escaped(fd: &Funcdata, addr: &Address, size: int4) -> bool {
+    let Some(&lo) = fd.kuna_call_escapes().iter().filter(|o| **o < 0).min() else { return false };
+    let Some(spc) = addr.get_space() else { return false };
+    if !fd.kuna_devirtualized() || spc.get_type() != kuna_base::space::spacetype::IPTR_SPACEBASE {
+        return false;
+    }
+    let bits = 8 * spc.get_addr_size() as u32;
+    let off = addr.get_offset();
+    let signed = if bits >= 64 { off as i64 as i128 } else { ((off << (64 - bits)) as i64 >> (64 - bits)) as i128 };
+    signed + size.max(1) as i128 > lo as i128 && signed < 0
 }
 
 /// Does every call inside a devirtualized body leave `addr:size` untouched?

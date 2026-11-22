@@ -278,3 +278,36 @@ fn a_value_rebuilt_through_an_identity_is_no_difference() {
     s3.write_reg(0x30, off, 4);
     assert_eq!(s1.diff_constants(&mut s3, &mut a, &img, 4).len(), 1);
 }
+
+#[test]
+fn a_call_overwrites_symbolic_regions_and_the_escaped_frame() {
+    let mut a = ExprArena::new();
+    let mut s = State::new(false, (0x200, 0x216));
+    let img = DataImage;
+    let sp = a.var_of(VarKind::InitReg { offset: 0x20 }, 8, false);
+    let frame = a.as_var(sp).unwrap();
+    let p = a.var_of(VarKind::InitReg { offset: 0x08 }, 8, false);
+    let pv = a.as_var(p).unwrap();
+    // a field behind a pointer parameter, read and written before the call
+    let field = s.read_mem(&mut a, &img, Some(pv), 0x400, 4);
+    let k = a.cst(4, 7);
+    s.write_mem(Some(pv), 0x10, k, 4);
+    // a local whose address escaped, one below it, and the return address
+    let five = a.cst(8, 5);
+    s.write_mem(Some(frame), -0x90, five, 8);
+    s.write_mem(Some(frame), -0x140, five, 8);
+    let ret = s.read_mem(&mut a, &img, Some(frame), 0, 8);
+    s.clobber_call(&img, 3, frame, vec![(-0x90, 0)]);
+    let field2 = s.read_mem(&mut a, &img, Some(pv), 0x400, 4);
+    assert_ne!(field2, field, "an unwritten field is the call's output");
+    let stored = s.read_mem(&mut a, &img, Some(pv), 0x10, 4);
+    assert!(a.is_const(stored).is_none(), "a stored field is dropped");
+    let local = s.read_mem(&mut a, &img, Some(frame), -0x90, 8);
+    assert!(a.is_const(local).is_none(), "the escaped local may be written");
+    assert_eq!(s.read_mem(&mut a, &img, Some(frame), -0x140, 8), five, "the frame below every escaped offset stays");
+    assert_eq!(s.read_mem(&mut a, &img, Some(frame), 0, 8), ret, "the return address stays");
+    // a read straddling the range's lower end is pieced together
+    let low = s.read_mem(&mut a, &img, Some(frame), -0x94, 8);
+    assert!(a.is_const(low).is_none());
+    assert_eq!(s.read_mem(&mut a, &img, Some(pv), 0x400, 4), field2, "one call's output is one value");
+}

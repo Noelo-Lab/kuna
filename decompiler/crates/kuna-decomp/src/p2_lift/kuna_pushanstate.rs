@@ -298,6 +298,10 @@ pub struct State {
     pub global_epoch: Option<u64>,
     /// Copies of image memory made by external copy routines, oldest first.
     pub copies: Vec<CopyRegion>,
+    /// Besides mutable image memory, what the last external call may have
+    /// written ([`State::clobber_call`]): every region under a symbolic base
+    /// other than the frame base, and the frame bytes in these ranges.
+    pub call_frame: Option<(VarId, Vec<(i128, i128)>)>,
 }
 
 /// Most granules [`State::stack_stores`] records between two calls.
@@ -316,6 +320,7 @@ impl State {
             stack_stores: Vec::new(),
             global_epoch: None,
             copies: Vec::new(),
+            call_frame: None,
         }
     }
 
@@ -387,10 +392,11 @@ impl State {
     ) -> ExprId {
         let be = self.big_endian;
         let epoch = self.global_epoch;
-        let State { mem, copies, .. } = self;
+        let State { mem, copies, call_frame, .. } = self;
         let copies: &[CopyRegion] = copies;
+        let frame = call_frame.as_ref();
         let region = mem.entry(base).or_default();
-        region.read_with(arena, off, size, be, &mut |a, o, len| fill_mem(a, image, be, base, o, len, epoch, copies))
+        region.read_with(arena, off, size, be, &mut |a, o, len| fill_mem(a, image, be, base, o, len, epoch, copies, frame))
     }
 
     /// An external call may have written any mutable memory: the stored
@@ -402,6 +408,29 @@ impl State {
         }
         self.copies.retain(|c| c.base.is_some() || (0..c.len).step_by(0x1000).chain([c.len - 1]).all(|i| !image.is_mutable((c.off as u64).wrapping_add(i))));
         self.global_epoch = Some(epoch);
+    }
+
+    /// An external call (`epoch`) may have written everything its caller
+    /// could have handed it a pointer to: all mutable image memory, the
+    /// region under every symbolic base but the frame base `frame` (a
+    /// pointer argument, or one reachable from it, may point anywhere into
+    /// any of them), and the frame bytes in `ranges` (those an escaped frame
+    /// address reaches).  Their stored bytes are dropped and their unwritten
+    /// bytes read as that call's output.
+    pub fn clobber_call(&mut self, image: &dyn PushanImage, epoch: u64, frame: VarId, ranges: Vec<(i128, i128)>) {
+        self.clobber_mutable(image, epoch);
+        let symbolic: Vec<VarId> = self.mem.keys().filter_map(|b| b.filter(|v| *v != frame)).collect();
+        for b in symbolic {
+            self.forget_copies(Some(b), i128::MIN, i128::MAX);
+            self.mem.remove(&Some(b));
+        }
+        for &(lo, hi) in &ranges {
+            self.forget_copies(Some(frame), lo, hi);
+            if let Some(region) = self.mem.get_mut(&Some(frame)) {
+                region.remove_where(|o| o >= lo && o < hi);
+            }
+        }
+        self.call_frame = Some((frame, ranges));
     }
 
     /// Model `memcpy(base + off, src, len)` from concrete image memory: the
@@ -464,7 +493,7 @@ impl State {
     fn cached_fill(&self, arena: &ExprArena, base: Option<VarId>, o: i128) -> bool {
         let Some(bv) = self.mem.get(&base).and_then(|r| r.bytes.get(&o)) else { return false };
         let at = match arena.var_kind(bv.expr) {
-            Some(VarKind::InitMem { base: None, offset }) | Some(VarKind::CallOutputAt { offset, .. }) => offset,
+            Some(VarKind::InitMem { base: None, offset }) | Some(VarKind::CallOutputAt { base: None, offset, .. }) => offset,
             _ => return false,
         };
         let size = arena.size(bv.expr);
@@ -649,17 +678,28 @@ impl State {
 }
 
 /// The value of `len` unwritten bytes at `base + o`: a copy's source as it
-/// was when copied, the image where its bytes cannot have changed, and
-/// otherwise the stable symbol of their entry value (or of what the last
-/// external call left in mutable memory).
+/// was when copied, the image where its bytes cannot have changed, what the
+/// last external call left in memory it may have written (mutable image
+/// memory, symbolic regions and the reachable frame, `frame`), and
+/// otherwise the stable symbol of their entry value.
 #[allow(clippy::too_many_arguments)]
-fn fill_mem(a: &mut ExprArena, image: &dyn PushanImage, be: bool, base: Option<VarId>, o: i128, len: u8, epoch: Option<u64>, copies: &[CopyRegion]) -> ExprId {
+fn fill_mem(
+    a: &mut ExprArena,
+    image: &dyn PushanImage,
+    be: bool,
+    base: Option<VarId>,
+    o: i128,
+    len: u8,
+    epoch: Option<u64>,
+    copies: &[CopyRegion],
+    frame: Option<&(VarId, Vec<(i128, i128)>)>,
+) -> ExprId {
     if let Some(c) = copies.iter().rev().find(|c| c.base == base && c.off < o + len as i128 && o < c.end()) {
         if c.off <= o && o + len as i128 <= c.end() {
             let src = c.src as i128 + (o - c.off);
-            return fill_mem(a, image, be, None, src, len, c.epoch, &[]);
+            return fill_mem(a, image, be, None, src, len, c.epoch, &[], None);
         }
-        let bytes: Vec<ExprId> = (0..len as i128).map(|i| fill_mem(a, image, be, base, o + i, 1, epoch, copies)).collect();
+        let bytes: Vec<ExprId> = (0..len as i128).map(|i| fill_mem(a, image, be, base, o + i, 1, epoch, copies, frame)).collect();
         let mut acc = bytes[0];
         for b in &bytes[1..] {
             acc = if be { a.mk_piece(acc, *b) } else { a.mk_piece(*b, acc) };
@@ -671,7 +711,7 @@ fn fill_mem(a: &mut ExprArena, image: &dyn PushanImage, be: bool, base: Option<V
         let concrete = (o as u64 as i128) == o;
         if concrete && (image.is_mutable(addr) || image.is_mutable(addr.wrapping_add(len as u64 - 1))) {
             if let Some(site) = epoch {
-                return a.var_of(VarKind::CallOutputAt { epoch: site, offset: o }, len, false);
+                return a.var_of(VarKind::CallOutputAt { epoch: site, base, offset: o }, len, false);
             }
             return a.var_of(VarKind::InitMem { base, offset: o }, len, false);
         }
@@ -688,6 +728,20 @@ fn fill_mem(a: &mut ExprArena, image: &dyn PushanImage, be: bool, base: Option<V
                 }
             }
             return a.cst(len, v);
+        }
+    }
+    if let (Some(b), Some(site), Some((f, ranges))) = (base, epoch, frame) {
+        let end = o + len as i128;
+        if b != *f || ranges.iter().any(|&(lo, hi)| lo <= o && end <= hi) {
+            return a.var_of(VarKind::CallOutputAt { epoch: site, base, offset: o }, len, false);
+        }
+        if len > 1 && ranges.iter().any(|&(lo, hi)| lo < end && o < hi) {
+            let bytes: Vec<ExprId> = (0..len as i128).map(|i| fill_mem(a, image, be, base, o + i, 1, epoch, copies, frame)).collect();
+            let mut acc = bytes[0];
+            for x in &bytes[1..] {
+                acc = if be { a.mk_piece(acc, *x) } else { a.mk_piece(*x, acc) };
+            }
+            return acc;
         }
     }
     a.var_of(VarKind::InitMem { base, offset: o }, len, false)
