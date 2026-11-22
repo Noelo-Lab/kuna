@@ -894,6 +894,10 @@ Three tiers:
 | switch case falls into the next case through a goto | [`gotonext`](#gotonext----on--off-default-on) |
 | case N: label_X: right after a goto label_X; | [`gotonext`](#gotonext----on--off-default-on) |
 | an if arm ends in a goto to the statement after the if | [`gotonext`](#gotonext----on--off-default-on) |
+| default: switch(v) { on the same variable as the enclosing switch | [`switchmerge`](#switchmerge----on--off-default-on) |
+| many case labels that only goto the code default: runs | [`switchmerge`](#switchmerge----on--off-default-on) |
+| one source switch printed as several nested switches | [`switchmerge`](#switchmerge----on--off-default-on) |
+| case N: goto label_X; next to default: label_X: | [`switchmerge`](#switchmerge----on--off-default-on) |
 
 ## Toggleable transforms
 
@@ -2762,6 +2766,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: 0/675 datatest assertions move. Flip off to print every `BlockGoto` jump and to sort switch cases by the chains `grab_case_basic` recorded.
 - **Where / provenance:** P8/goto-quality · ghidra · presentation-default · kuna-gotonext
 - **Example:** `option gotonext off`
+
+### `switchmerge` -- on | off, default `on`
+
+- **Symptoms:** default: switch(v) { on the same variable as the enclosing switch; many case labels that only goto the code default: runs; one source switch printed as several nested switches; case N: goto label_X; next to default: label_X:.
+- **What it does:** Print a compiler's search tree of jump tables as the one C `switch` it came from, and leave out the `case N:` labels of jump-table holes. A sparse source switch compiles to several tables on the same selector: each table's range guard sends the values it does not cover to the next table, and its holes go to the source's `default:` code. The structurer nests the tables (`default: switch (v) { ... }`, or a `default:` arm that runs one table's switch and then the next) and prints every hole as `case N: goto label_X;` next to the `default:` arm that reaches the same code. `kuna_switchmerge` plans each C switch's printed arms on the final structured tree: a `default:` arm that starts with a switch on the same selector (same HighVariable, nothing printed before its `switch`, no label on it, no value listed twice, and leaving the way the arm leaves) is replaced by that switch's arms; an inner switch followed by more code in the arm must have no `default:` and no arm that leaves it, and that code stays the `default:` arm. A switch with a table entry that goes straight to its exit is never merged into, because that value would print no label and take the merged `default:`. Then an arm that is only a `goto` to the code `default:` runs prints no labels; when `default:` is that `goto` and another arm holds the code, that arm prints `default:`. An arm moves or goes away only when the arm printed before it cannot fall into it, and the goto census places `break;` and labels for the printed switch. C output only.
+- **When to flip:** On by default: 0/675 datatest assertions move. Flip off to print each jump table as its own switch and every hole as a `case` label, for example to read the table layout the compiler emitted.
+- **Where / provenance:** P8/goto-quality · kuna · presentation-default · kuna-switchmerge
+- **Example:** `option switchmerge off`
 
 ## Programmatic use
 

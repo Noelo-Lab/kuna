@@ -1266,6 +1266,49 @@ target leaf against the case blocks before the sort, and the jump between
 the two cases is then a fall-through the census leaves out. Off restores
 both the printing of every jump and the recorded chains.
 
+### switchmerge — one switch for a search tree of jump tables
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_switchmerge.rs
+(switch_plans)`, read by the C printer
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (PrintC::emit_block_switch_c)`)
+and by the goto census. A compiler lowers a sparse source `switch` into a
+search tree of jump tables on one selector: a table's range guard sends the
+values it does not cover to the next table, and the table's holes go to the
+source's `default:` code. The structurer gives each table its own
+`BlockSwitch`, nested in the `default:` arm of the one before it, and prints
+each hole as a `case N:` of an arm that only jumps to the code `default:`
+runs.
+
+*Transform:* at the top of body emission, for each C switch on the final
+structured tree, outer switches first, the plan lists the arms to print:
+
+- When the `default:` arm starts with a `BlockSwitch` on the same selector
+  (the same varnode or the same HighVariable), that switch's arms take the
+  place of the `default:` arm. The inner switch must print nothing before its
+  `switch` (only implied ops in its header block), carry no label, and list no
+  value the merged switch already lists. If the inner switch is the whole arm,
+  its own `default:` becomes the merged one; it
+  must have no jump-table entry that goes to its exit, and the arm must leave
+  the switch or not leave at all, so a `break;` in it still goes to the same
+  place. If the inner switch is the first block of a list (also inside a
+  `BlockGoto`), it must have no `default:` arm, no arm that leaves it and no
+  `break;` that leaves it; its unlisted values reach the rest of the list,
+  which stays the `default:` arm and prints from the next block.
+- A switch that has a jump-table entry going straight to its exit is not
+  merged into: that value prints no label, and in the merged switch it would
+  take the `default:` arm.
+- Then, when `default:` is code, an arm that is only a `goto` to the first
+  block of that code prints no labels. When `default:` is itself such a
+  `goto` and another arm holds the code, the `default:` arm and the jumps are
+  left out and the arm holding the code prints `default:` in place of its
+  labels.
+
+An arm moves or is left out only when the arm printed before it does not fall
+into it. The census reads the plan: a left-out jump keeps no label alive, and
+the target of a `break;` inside a merged switch is the block after the switch
+that is printed. The plan only changes which arm a value is printed under,
+never which code runs for it. It applies to the C switch form only.
+
 ### returndup — the whole-block duplicator (angr `ReturnDuplicatorHigh`)
 
 `decompiler/crates/kuna-decomp/src/p8_structure/kuna_returndup.rs
