@@ -1,0 +1,18 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+  <bytechunk space="ram" offset="0x100000" readonly="true">90</bytechunk>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/rust-option-returned/option-amd64</com>
+  <com>read symbols</com>
+  <com>option setlanguage rust-language</com>
+  <com>load function inspect_returned</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Rust returned Option uses the full typed call as the pattern scrutinee" min="1" max="1">if let ::core::option::Option::Some\(_\) = provide_tagged\(value\)</stringmatch>
+<stringmatch name="Rust returned Option calls its producer once" min="1" max="1">provide_tagged\(value\)</stringmatch>
+<stringmatch name="Rust returned Option does not access a tag field" min="0" max="0">provide_tagged\(value\)\.tag</stringmatch>
+<stringmatch name="Rust returned Option retains both branch callback values" min="2" max="2">^ +option_(?:present\(0x3d\)|absent\(0x49\));$</stringmatch>
+</decompilertest>

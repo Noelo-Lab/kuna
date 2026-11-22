@@ -1,0 +1,49 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    The receiver of an Objective-C direct method.
+
+    Issue: a method declared `__attribute__((objc_direct))` is called as a C
+    function. No `method_list_t` lists it, it takes no `_cmd` and it has no
+    type encoding; only its symbol says it is a method. The `objc` pass typed
+    `self` from the method lists alone, so in a direct method the receiver
+    was whatever inference made of the first argument and an ivar read
+    printed `((int4 *)a0)[2]` (in a framework, where the folded offset
+    variable is all that names the ivar, `((objc_object **)a0)[0x56]`).
+
+    Fix (`analyzers/objc/kuna_objcdirect.rs`): every method symbol whose
+    address no method list gave hints its first argument register as `self`,
+    typed `<Class> *` for an instance method under `objcivars`. The hint is
+    unlocked, so the other parameters are recovered as before.
+
+    `macho_objc_direct.m`: `Label { isa; int flags; Label *next; }` with the
+    direct `-[Label bump:]` and `+[Label scale:]` and the listed
+    `-[Label flags]`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_direct_arm64</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load addr 0x1000006e0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1000006fc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000728</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="OBJCDIRECT #1: a direct instance method takes self as its class and no _cmd" min="1" max="1">-\[Label bump:\]\(Label \*self,int4 a1\)</stringmatch>
+<stringmatch name="OBJCDIRECT #2: its ivar accesses are fields" min="1" max="1">self->flags = self->flags \+ a1;</stringmatch>
+<stringmatch name="OBJCDIRECT #3: a field read through an ivar of the class" min="1" max="1">return self->next->flags;</stringmatch>
+<stringmatch name="OBJCDIRECT #4: a direct class method's receiver is named, not typed as an instance" min="1" max="1">\+\[Label scale:\]\([a-z0-9 ]+ self,int4 a1\)</stringmatch>
+<stringmatch name="OBJCDIRECT #5: a listed method keeps its encoding's prototype" min="1" max="1">int4 -\[Label flags\]\(Label \*self,objc_selector \*_cmd\)</stringmatch>
+</decompilertest>

@@ -147,6 +147,7 @@ use crate::context::{OpId, VarnodeId};
 use crate::fspec::FuncCallSpecs;
 use crate::funcdata::Funcdata;
 use crate::p0_knowledge::options::on_or_off;
+use crate::varnode::Varnode;
 
 /// Marshaling element `<passthrough>` (kuna 4000+ range).
 pub const ELEM_PASSTHROUGH: ElementId = ElementId::new("passthrough", 4177);
@@ -460,6 +461,24 @@ pub(crate) fn touched(data: &Funcdata, addr: &Address, size: int4) -> bool {
 /// [`touched`], with the two sides of an injected no-op ([`is_injected_noop`])
 /// not counted.
 fn touched_by(data: &Funcdata, addr: &Address, size: int4, past_noops: bool) -> bool {
+    register_touch(data, addr, size, |v| {
+        !past_noops
+            || match v.get_def() {
+                Some(def) => !is_injected_noop(data, def),
+                None => {
+                    v.descend_iter().next().is_none()
+                        || v.descend_iter().any(|op| !is_injected_noop(data, op))
+                }
+            }
+    })
+}
+
+fn register_touch(
+    data: &Funcdata,
+    addr: &Address,
+    size: int4,
+    counts: impl Fn(&Varnode) -> bool,
+) -> bool {
     let off = addr.get_offset();
     let end = off.wrapping_add(size as u64);
     let lo = Address::new(
@@ -468,18 +487,10 @@ fn touched_by(data: &Funcdata, addr: &Address, size: int4, past_noops: bool) -> 
     );
     let hi = addr + size as i64;
     data.vbank().iter_loc_addr_range(&lo, &hi).any(|id| {
-        data.vbank()
-            .get(id)
-            .map(|v| {
-                let voff = v.get_offset();
-                let noop = past_noops
-                    && match v.get_def() {
-                        Some(def) => is_injected_noop(data, def),
-                        None => v.descend_iter().next().is_some() && v.descend_iter().all(|op| is_injected_noop(data, op)),
-                    };
-                !noop && voff < end && off < voff.wrapping_add(v.get_size() as u64)
-            })
-            .unwrap_or(false)
+        data.vbank().get(id).is_some_and(|v| {
+            let voff = v.get_offset();
+            voff < end && off < voff.wrapping_add(v.get_size() as u64) && counts(v)
+        })
     })
 }
 
@@ -554,7 +565,7 @@ fn first_calls(data: &Funcdata) -> Vec<OpId> {
 /// call no other call can precede ([`first_calls`]), where the read is the
 /// function's own input. Inert with the option off.
 pub fn claim_untouched_registers(data: &mut Funcdata) {
-    claim_untouched_registers_mode(data, false)
+    claim_untouched_registers_mode(data, ClaimPass::Initial)
 }
 
 /// (kuna callee-contract) [`claim_untouched_registers`] re-run after a callee's
@@ -566,29 +577,77 @@ pub fn claim_untouched_registers(data: &mut Funcdata) {
 /// actual input Varnode here: `capture` recognises that as the forwarded input
 /// it is, exactly as the pre-link run would have.
 pub fn claim_untouched_registers_late(data: &mut Funcdata) {
-    claim_untouched_registers_mode(data, true)
+    claim_untouched_registers_mode(data, ClaimPass::Bootstrap)
 }
 
-fn claim_untouched_registers_mode(data: &mut Funcdata, late: bool) {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ClaimPass {
+    Initial,
+    Bootstrap,
+    GoStackGuard,
+}
+
+/// Re-offer untouched input registers after the Go stack-growth spill arm is gone.
+pub(crate) fn claim_after_go_stack_guard(data: &mut Funcdata) {
+    let proto = data.get_func_proto();
+    if !data.get_arch().pass_through
+        || !data.get_arch().source_lang.is_go()
+        || data.get_heritage_pass() != 0
+        || data.num_calls() != 1
+        || !go_register_model(proto)
+        || proto.is_input_locked()
+        || proto.is_dotdotdot()
+        || data
+            .get_arch()
+            .manage()
+            .register_lookup()
+            .and_then(|lookup| lookup.probe_register("RAX"))
+            .is_none_or(|reg| reg.size != 8)
+    {
+        return;
+    }
+    let call = data.get_call_specs(0);
+    if go_register_model(call.proto()) && !call.get_entry_address().is_invalid() {
+        claim_untouched_registers_mode(data, ClaimPass::GoStackGuard);
+    }
+}
+
+fn go_register_model(proto: &crate::fspec::FuncProto) -> bool {
+    proto.has_model() && proto.get_model_name() == "abi-internal"
+}
+
+fn claim_untouched_registers_mode(data: &mut Funcdata, pass: ClaimPass) {
     if !data.get_arch().pass_through {
         return;
     }
-    let variadic = reads_the_vararg_count(data);
-    data.kuna_set_passthrough_variadic(variadic);
-    if variadic {
+    let after_go_stack_guard = pass == ClaimPass::GoStackGuard;
+    if !after_go_stack_guard {
+        data.kuna_set_passthrough_variadic(reads_the_vararg_count(data));
+    }
+    if data.kuna_passthrough_variadic() {
         return;
     }
-    let returned_call_result = stated_tail_return(data).map(|(pieces, producers, beside_own)| {
-        let pieces: Vec<_> = pieces.into_iter().map(|(a, s)| (touched(data, &a, s), a, s)).collect();
-        (pieces, producers, beside_own)
-    });
-    let vararg: Vec<OpId> = (0..data.num_calls())
-        .filter(|&i| set_up_as_variadic(data, i))
-        .map(|i| data.get_call_specs(i).get_op())
-        .collect();
-    data.kuna_set_passthrough_vararg_calls(vararg);
+    let returned_call_result = if after_go_stack_guard {
+        None
+    } else {
+        stated_tail_return(data).map(|(pieces, producers, beside_own)| {
+            let pieces = pieces.into_iter().map(|(a, s)| (touched(data, &a, s), a, s)).collect();
+            (pieces, producers, beside_own)
+        })
+    };
+    if !after_go_stack_guard {
+        let vararg: Vec<OpId> = (0..data.num_calls())
+            .filter(|&i| set_up_as_variadic(data, i))
+            .map(|i| data.get_call_specs(i).get_op())
+            .collect();
+        data.kuna_set_passthrough_vararg_calls(vararg);
+    }
     let first = first_calls(data);
-    let mut claims = if late { data.kuna_passthrough_claims().to_vec() } else { Vec::new() };
+    let mut claims = if pass == ClaimPass::Initial {
+        Vec::new()
+    } else {
+        data.kuna_passthrough_claims().to_vec()
+    };
     for idx in 0..data.num_calls() {
         if !data.get_call_specs(idx).is_input_active() || !first.contains(&data.get_call_specs(idx).get_op()) {
             continue;
@@ -607,12 +666,25 @@ fn claim_untouched_registers_mode(data: &mut Funcdata, late: bool) {
             if data.get_call_specs(idx).active_input().which_trial(&addr, stated_size) >= 0 {
                 continue;
             }
-            let claimed = claims.iter().any(|c| c.addr == addr && c.size == size);
-            if !claimed && touched(data, &addr, stated_size) {
-                continue;
+            if after_go_stack_guard {
+                if size != 8
+                    || stated_size != 8
+                    || !general_purpose(data.get_call_specs(idx).proto(), &addr, size)
+                    || overlaps_claim(&claims, &addr, size)
+                    || register_touch(data, &addr, size, |v| {
+                        v.is_written() || v.descend_iter().next().is_some()
+                    })
+                {
+                    continue;
+                }
+            } else {
+                let claimed = claims.iter().any(|c| c.addr == addr && c.size == size);
+                if !claimed && touched(data, &addr, stated_size) {
+                    continue;
+                }
             }
             let nin = data.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
-            let vn = if late {
+            let vn = if pass == ClaimPass::Bootstrap {
                 match own_input_varnode(data, &addr, size) {
                     Some(vn) => vn,
                     None => {
@@ -653,6 +725,74 @@ fn claim_untouched_registers_mode(data: &mut Funcdata, late: bool) {
         claim_tail_return(data, &mut claims, ret);
     }
     data.kuna_set_passthrough_claims(claims);
+}
+
+/// Is `vn`, read by a call, the function's own incoming register `addr:size`
+/// carried past earlier calls that leave it alone? gcc keeps a register across
+/// a call to a function it knows does not write it, so heritage reaches the
+/// call slot through that call's non-creating INDIRECT, and inside a loop
+/// through a MULTIEQUAL that joins the incoming Varnode with the value the loop
+/// carries back past the call. Followed through MULTIEQUAL, COPY and
+/// non-creating INDIRECT, every source must be that one incoming Varnode, and
+/// each INDIRECT must guard a direct call whose decoded callee body is proven
+/// never to write the register ([`call_leaves_alone`]): the convention lets any
+/// other call clobber it, and a register that survives only on paper is no
+/// argument.
+pub fn forwarded_own_input(data: &Funcdata, vn: VarnodeId, addr: &Address, size: int4) -> bool {
+    let mut todo = vec![vn];
+    let mut seen = vec![vn];
+    let mut found = false;
+    while let Some(cur) = todo.pop() {
+        let Some(v) = data.vbank().get(cur) else { return false };
+        if v.get_size() != size {
+            return false;
+        }
+        if v.is_input() {
+            if v.get_addr() != addr {
+                return false;
+            }
+            found = true;
+            continue;
+        }
+        let Some(op) = v.get_def().and_then(|d| data.obank().get(d)) else { return false };
+        let ins: Vec<VarnodeId> = match op.code() {
+            OpCode::CPUI_MULTIEQUAL => (0..op.num_input()).filter_map(|i| op.get_in(i)).collect(),
+            OpCode::CPUI_COPY => op.get_in(0).into_iter().collect(),
+            OpCode::CPUI_INDIRECT if !op.is_indirect_creation() && call_leaves_alone(data, op, addr, size) => {
+                op.get_in(0).into_iter().collect()
+            }
+            _ => return false,
+        };
+        for next in ins {
+            if !seen.contains(&next) {
+                if seen.len() >= 64 {
+                    return false;
+                }
+                seen.push(next);
+                todo.push(next);
+            }
+        }
+    }
+    found
+}
+
+/// Is the INDIRECT `ind` guarding a direct call (not a PLT stub) whose callee's
+/// fully decoded body is proven never to write `addr:size`
+/// ([`crate::kuna_rustabi::CalleeReturnWrites::proves_untouched_for`])?
+fn call_leaves_alone(data: &Funcdata, ind: &crate::op::PcodeOp, addr: &Address, size: int4) -> bool {
+    let Some(iop) = ind.get_in(1).and_then(|i| data.vbank().get(i)) else { return false };
+    let call = OpId::from(slotmap::KeyData::from_ffi(iop.get_offset()));
+    if !data.obank().get(call).is_some_and(|o| !o.is_dead() && o.code() == OpCode::CPUI_CALL) {
+        return false;
+    }
+    let Some(idx) = data.get_call_specs_index(call) else { return false };
+    let fc = data.get_call_specs(idx);
+    let entry = fc.get_entry_address();
+    !entry.is_invalid()
+        && fc.plt_stub().is_none()
+        && data
+            .kuna_callee_ret_writes(entry)
+            .is_some_and(|w| w.proves_untouched_for(crate::kuna_rustabi::call_model(fc.proto()), addr, size))
 }
 
 /// The function's own incoming Varnode at `addr:size`, if it is still unread
@@ -1187,7 +1327,8 @@ pub fn capture(fc: &mut FuncCallSpecs, data: &Funcdata) -> Option<PendingPassThr
             .vbank()
             .get(vn)
             .map(|v| v.is_input() && !v.is_written() && *v.get_addr() == addr && v.get_size() == size)
-            .unwrap_or(false);
+            .unwrap_or(false)
+            || forwarded_own_input(data, vn, &addr, size);
         if !own_input && !crate::kuna_armfloatargs::is_forwarded_input(data, vn, &addr, size) && !reassembled(data, vn, &addr, size) {
             continue;
         }
@@ -1256,6 +1397,7 @@ fn extend_one(data: &mut Funcdata, p: &PendingPassThrough) -> bool {
             .get(vn)
             .filter(|v| {
                 (v.is_input() && *v.get_addr() == addr)
+                    || forwarded_own_input(data, vn, &addr, v.get_size())
                     || crate::kuna_armfloatargs::is_forwarded_input(data, vn, &addr, width)
                     || reassembled(data, vn, &addr, v.get_size())
             })

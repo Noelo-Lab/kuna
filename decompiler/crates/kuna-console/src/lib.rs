@@ -33,9 +33,11 @@ pub mod project_stream;
 pub mod classify;
 pub mod funcextent;
 pub mod codedata;
+pub mod kuna_calleeoverride;
 pub mod kuna_retcallchain;
 pub mod kuna_console;
 pub mod kuna_hightarget;
+pub mod kuna_constformat;
 pub mod kuna_callwide;
 pub mod kuna_declaredbytes;
 pub mod kuna_lazyfuncs;
@@ -48,11 +50,14 @@ mod kuna_buildstamp_fingerprint;
 pub mod assertions;
 mod kuna_qualifiedstorage;
 pub mod assertsyntax;
+mod kuna_callproto;
+pub mod kuna_cheader;
 pub mod grammar;
 pub mod rulecompile;
 pub mod unify;
 
 mod kuna_projectfunctionnames;
 
+mod kuna_blobdata;
 mod kuna_dataidentifiers;
 mod kuna_stringoverlaps;

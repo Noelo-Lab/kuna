@@ -76,6 +76,9 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
         if let Some(ty) = crate::kuna_roundingops::output_type(data, op) {
             return ty;
         }
+        if let Some(ty) = crate::kuna_repstring::output_type(data, op) {
+            return ty;
+        }
         let in0_off = o
             .get_in(0)
             .and_then(|v| data.vbank().get(v))
@@ -159,6 +162,9 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
             return ty;
         }
         if let Some(ty) = crate::kuna_roundingops::input_type(data, op, slot) {
+            return ty;
+        }
+        if let Some(ty) = crate::kuna_repstring::input_type(data, op, slot) {
             return ty;
         }
     }
@@ -508,6 +514,9 @@ fn build_localtypes(data: &mut Funcdata) {
         let ct = if from_seed { ct } else { crate::kuna_regnarrow::unsigned_vote(data, vn, &ct).unwrap_or(ct) };
         // (kuna `narrowargs callers`) A parameter its callers narrow takes their extension's type.
         let ct = if from_seed { ct } else { crate::kuna_callerargs::input_vote(data, vn, &ct).unwrap_or(ct) };
+        // (kuna `valuewitness`) The word before Swift type metadata, read at
+        // a table offset, is the value witness table. See `kuna_valuewitness`.
+        let ct = if from_seed { ct } else { crate::kuna_valuewitness::output_vote(data, vn).unwrap_or(ct) };
         // (kuna `ptrfromuse`) A function input whose only memory role is to be a
         // LOAD/STORE base has no pointer candidate in the fold above, because
         // `TypeOpIntAdd` votes `int<N>` for it and refuses to carry the pointer
@@ -1402,6 +1411,8 @@ fn propagate_int_add(
         Some(alttype)
     } else if inslot == -1 {
         None // Don't propagate pointer types output -> input
+    } else if crate::kuna_valuewitness::outside_header(data, op, inslot, &alttype) {
+        None
     } else {
         propagate_add_in2_out(data, alttype, op, inslot)
     }

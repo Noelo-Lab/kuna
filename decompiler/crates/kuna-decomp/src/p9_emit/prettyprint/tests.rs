@@ -487,6 +487,30 @@ mod engine {
     }
 
     #[test]
+    fn label_line_fires_the_pending_brace_like_the_plain_emitter() {
+        let spc = Rc::new(ConstantSpace::new());
+        let drive = |e: &mut dyn Emit| {
+            let doc = e.begin_document();
+            let func = e.begin_function();
+            e.print("else", SyntaxHighlight::KeywordColor);
+            e.set_pending_brace(BraceStyle::SameLine);
+            e.tag_line_indent(0);
+            e.tag_label("label_1", SyntaxHighlight::NoColor, &spc, 0x10);
+            e.print(":", SyntaxHighlight::NoColor);
+            let inner = e.pending_brace_indent_id();
+            assert!(inner >= 0, "the label's line break opens the else brace");
+            e.close_brace_indent("}", inner);
+            e.end_function(func);
+            e.end_document(doc);
+        };
+        let mut plain = EmitNoMarkup::new();
+        drive(&mut plain);
+        let pretty = run(100, |e| drive(e));
+        assert_eq!(pretty, plain.output());
+        assert_eq!(pretty, "else {\nlabel_1:\n}");
+    }
+
+    #[test]
     fn emits_markup_follows_lowlevel() {
         let mut pp = EmitPrettyPrint::new();
         assert!(!pp.emits_markup());

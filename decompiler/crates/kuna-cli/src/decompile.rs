@@ -1,7 +1,7 @@
 //! `kuna decompile` — the Rust port of `kuna/decompile.py`, plus its
 //! machine-readable mode.
 //!
-//! The TEXT surface drives `decomp_dbg` with the same console command language
+//! The ordinary TEXT surface drives `decomp_dbg` with the same console command language
 //! the datatests use (`load file` / `read symbols` / `option` /
 //! `load function` | `load addr` / `decompile` / `openfile write <tmp>` /
 //! `print C` / `closefile`), capturing the decompiled C through the bulk-output
@@ -11,11 +11,12 @@
 //! `--json` answers the same question in `decompile-all`'s record shape: a
 //! `functions` array holding the one function that was asked for, with its
 //! address, size, variables, line mappings and per-record `error`. It is not a
-//! second dialect and not a second implementation — [`run_json`] routes the
+//! second dialect and not a second implementation — [`run_in_process`] routes the
 //! selection through `decompile_all`'s own parser, decompile loop and
 //! serializer, so an agent parses ONE shape whichever command it reached for.
 //! That path loads the binary in-process rather than spawning `decomp_dbg`,
 //! which is why the `decomp_dbg`-only flags are refused rather than ignored.
+//! Explicit Rust signature application uses this same in-process path for text.
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -431,12 +432,23 @@ fn assertion_outcomes(
     selected: Option<&str>,
 ) -> Vec<kuna_console::assertions::Outcome> {
     use kuna_console::assertions::Outcome;
-    directives
+    let failures = command_failures(out);
+    let refusals: String = out
+        .lines()
+        .filter(|raw| console_text(raw.trim()).starts_with("Rejected "))
+        .flat_map(|raw| [raw, "\n"])
+        .collect();
+    let out = refusals.as_str();
+    let mut outcomes: Vec<Outcome> = directives
         .iter()
         .map(|directive| {
             let (kind, phase, subphase) = directive.body.coords();
             let (detail, fatal) = match crate::assertdecl::console_form(directive, selected) {
-                Ok(form) => match command_failure(out, &form.line) {
+                Ok(form) => match failures
+                    .get(form.line.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| Some(SCRIPT_NOT_REACHED.into()))
+                {
                     Some(reason) => (Some(reason), false),
                     // The console line itself ran clean, which for a DEFERRED
                     // directive says only that it was taken: an `override flow`
@@ -461,39 +473,51 @@ fn assertion_outcomes(
                 fatal,
             }
         })
-        .collect()
+        .collect();
+    let applied: Vec<bool> = outcomes.iter().map(|o| o.status == "applied").collect();
+    let binds = |d: &kuna_console::assertions::Directive| crate::assertdecl::console_form(d, selected).is_ok();
+    for i in kuna_console::assertions::restated_callees(directives, |i| applied[i], binds) {
+        outcomes[i] = kuna_console::assertions::restated_callee(&directives[i]);
+    }
+    for i in kuna_console::assertions::restated_call_prototypes(directives, |i| applied[i], binds) {
+        outcomes[i] = kuna_console::assertions::restated(&directives[i]);
+    }
+    outcomes
+}
+
+/// Every command the transcript echoes, with the first diagnostic the console
+/// printed for it (`None` when it ran clean).  One pass, so a run that carries
+/// a header's worth of directives does not rescan the transcript for each.
+fn command_failures(out: &str) -> std::collections::BTreeMap<&str, Option<String>> {
+    let mut failures: std::collections::BTreeMap<&str, Option<String>> = Default::default();
+    let mut current: Option<&str> = None;
+    for raw in out.lines() {
+        let trimmed = raw.trim();
+        let text = console_text(trimmed);
+        if trimmed.starts_with(CONSOLE_PROMPT) {
+            failures.entry(text).or_default();
+            current = Some(text);
+            continue;
+        }
+        let Some(command) = current.filter(|_| !text.is_empty()) else { continue };
+        let reason = CONSOLE_DIAGNOSTICS
+            .iter()
+            .filter_map(|prefix| text.strip_prefix(prefix).map(str::trim))
+            .find(|reason| !reason.is_empty());
+        if let (Some(reason), Some(slot @ None)) = (reason, failures.get_mut(command)) {
+            *slot = Some(reason.to_string());
+        }
+    }
+    failures
 }
 
 /// The diagnostic the console printed for the command `line`, or `None` when it
 /// ran clean.  `Some` for a command whose echo never appears at all — a script
 /// that stopped early did not apply it.
 fn command_failure(out: &str, line: &str) -> Option<String> {
-    let mut in_command = false;
-    let mut seen = false;
-    for raw in out.lines() {
-        let trimmed = raw.trim();
-        let text = console_text(trimmed);
-        if trimmed.starts_with(CONSOLE_PROMPT) {
-            in_command = text == line;
-            seen |= in_command;
-            continue;
-        }
-        if !in_command || text.is_empty() {
-            continue;
-        }
-        for prefix in CONSOLE_DIAGNOSTICS {
-            if let Some(reason) = text.strip_prefix(prefix) {
-                let reason = reason.trim();
-                if !reason.is_empty() {
-                    return Some(reason.to_string());
-                }
-            }
-        }
-    }
-    if seen {
-        None
-    } else {
-        Some(SCRIPT_NOT_REACHED.into())
+    match command_failures(out).remove(line) {
+        Some(reason) => reason,
+        None => Some(SCRIPT_NOT_REACHED.into()),
     }
 }
 
@@ -546,6 +570,14 @@ fn print_command_failure(out: &str) -> Option<String> {
         Some(reason) if reason != SCRIPT_NOT_REACHED => Some(reason),
         _ => None,
     }
+}
+
+/// The engine's panic, as `<location> <message>`, read off its stderr.
+fn engine_panic(stderr: &str) -> Option<String> {
+    let mut lines = stderr.lines();
+    let at = lines.find_map(|line| line.split_once("panicked at ").map(|(_, at)| at.trim()))?;
+    let message = lines.next().map(str::trim).unwrap_or_default();
+    Some(format!("{} {message}", at.trim_end_matches(':')).trim_end().to_string())
 }
 
 /// The function the console last announced (`Decompiling <name>`), so a failure
@@ -716,7 +748,8 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             &engine.path,
             pinned_by,
         );
-        for note in stderr_text.lines().filter(|line| line.starts_with("[kuna target] ")) {
+        let forwarded = |line: &&str| line.starts_with("[kuna target] ") || line.starts_with("[kuna] MH_FILESET: ");
+        for note in stderr_text.lines().filter(forwarded) {
             kuna_base::notes::say_once(&binary, note);
         }
         let combined = format!("{stdout_text}\n{stderr_text}");
@@ -775,6 +808,10 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             if let Some(reason) = print_command_failure(&stdout_text) {
                 let func = decompiling_name(&stdout_text).unwrap_or_else(|| args.target.clone());
                 return Err((format!("decompilation failed for {func} in {binary}: {reason}"), false));
+            }
+            if let Some(panic) = engine_panic(&stderr_text) {
+                let func = decompiling_name(&stdout_text).unwrap_or_else(|| args.target.clone());
+                return Err((format!("decompiler panicked on {func} in {binary}: {panic}"), false));
             }
             return Err((
                 format!(
@@ -918,12 +955,13 @@ fn note_budget_flag(msg: &str) {
 
 /// Entry point for `kuna decompile`: parse the command line, then render either
 /// the text surface ([`run`], a `decomp_dbg` subprocess) or, with `--json`, the
-/// `decompile-all` record shape for the one selected function ([`run_json`]).
+/// `decompile-all` record shape for the one selected function ([`run_in_process`]).
 pub fn main(argv: &[String]) -> Result<i32, String> {
     let mut binary: Option<String> = None;
     let mut target: Option<String> = None;
     let mut addr = false;
     let mut json = false;
+    let mut apply_rust_signatures: Option<String> = None;
     let mut bfd_target: Option<String> = None;
     let mut raw = false;
     let mut regions = false;
@@ -939,6 +977,8 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
     let mut func_decls: Vec<crate::funcdecl::FuncDecl> = Vec::new();
     let mut assertions: Vec<kuna_console::assertions::Directive> = Vec::new();
     let mut assert_strict = false;
+    let mut types: Vec<String> = Vec::new();
+    let mut types_cpp: Option<String> = None;
     let mut decomp_dbg: Option<String> = None;
     let mut engine: Option<String> = None;
     let mut sleighpath: Option<String> = None;
@@ -956,6 +996,12 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
         match a {
             "--addr" => addr = true,
             "--json" => json = true,
+            "--apply-rust-signatures" => {
+                let value = take_value(argv, &mut i, "--apply-rust-signatures")?;
+                if apply_rust_signatures.replace(value).is_some() {
+                    return Err("duplicate --apply-rust-signatures".into());
+                }
+            }
             "--no-vars" => {
                 record_flag = Some("--no-vars");
                 forwarded.push(a.into());
@@ -1009,6 +1055,14 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
                 assert_strict = true;
                 forwarded.push("--assert-strict".into());
             }
+            "--types" => {
+                types.push(take_value(argv, &mut i, "--types")?);
+                forwarded.extend(argv[i - 1..=i].iter().cloned());
+            }
+            "--types-cpp" => {
+                types_cpp = Some(take_value(argv, &mut i, "--types-cpp")?);
+                forwarded.extend(argv[i - 1..=i].iter().cloned());
+            }
             "--decomp-dbg" => decomp_dbg = Some(take_value(argv, &mut i, "--decomp-dbg")?),
             "--max-fn-memory" => {
                 let value = take_value(argv, &mut i, "--max-fn-memory")?;
@@ -1054,6 +1108,9 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
             return Err("decompile requires <binary> and <func>".into());
         }
     };
+    if apply_rust_signatures.is_some() && engine.is_some() {
+        return Err("--engine is not supported with --apply-rust-signatures".into());
+    }
     // Honor `--engine cpp|rust` like the Python tools: set `KUNA_ENGINE`.  In the
     // Rust-only world `rust` is already the default and `cpp` would fail to
     // resolve, but the flag is accepted (and exported) for compatibility with
@@ -1084,7 +1141,10 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
         return Err("--base requires --raw-image".into());
     }
 
-    if json {
+    if json || apply_rust_signatures.is_some() {
+        if !json && record_flag.is_some() {
+            return Err("--omit and --no-vars require --json".into());
+        }
         // Refused, not ignored: each of these is a `decomp_dbg` transcript the
         // in-process JSON path never produces, and silently dropping half a
         // request is the failure mode `--json` exists to end.
@@ -1095,11 +1155,14 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
             ("--decomp-dbg", decomp_dbg.is_some()),
         ] {
             if requested {
-                return Err(format!("{flag} is not supported with --json"));
+                let request = if apply_rust_signatures.is_some() { "--apply-rust-signatures" } else { "--json" };
+                return Err(format!("{flag} is not supported with {request}"));
             }
         }
-        return Ok(run_json(&JsonRequest {
+        return Ok(run_in_process(&SingleRequest {
             binary: &binary,
+            json,
+            apply_rust_signatures: apply_rust_signatures.as_deref(),
             target: &target,
             by_address: addr,
             forwarded: &forwarded,
@@ -1115,6 +1178,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
     if let Some(flag) = record_flag {
         return Err(format!("{flag} selects --json record keys; add --json"));
     }
+    let assertions = crate::assertdecl::with_types(&types, types_cpp.as_deref(), assertions)?;
 
     // (kuna outlang, DIV-80) The auto policy -- follow the binary when the caller
     // named no language. See `decompile_all::detected_output_language`.
@@ -1166,6 +1230,7 @@ fn usage() {
          \x20                     [--option N V].. [--kassert ARGS].. \\\n\
          \x20                     [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                     [--assert DIRECTIVE|@FILE].. [--assert-strict] \\\n\
+         \x20                     [--types FILE.h|DIR].. [--types-cpp CC] \\\n\
          \x20                     [--isa auto|arm|thumb] [--slice ARCH] [--target T] \\\n\
          \x20                     [--sleighpath D] [--decomp-dbg P] [--max-fn-memory MiB]\n\
          \x20                     [--max-fn-seconds N] [--raw-image --target T --base VMA]\n\
@@ -1180,6 +1245,11 @@ fn usage() {
          stack_objects -- and types) and lists them in a top-level `omitted` array;\n\
          name and address always stay.  --no-vars skips the variable extraction\n\
          and leaves `variables` empty, as on decompile-all.\n\
+         \n\
+         --apply-rust-signatures PATH trusts an explicit hashed Rust signature manifest;\n\
+         only a complete unique profile and both-bank name/address agreement propose names.\n\
+         It shares the in-process load for text and JSON and refuses byte overlays,\n\
+         image-selection overrides and transcript-only controls.\n\
          \n\
          --option NAME VALUE (repeatable) flips one phase-model decision for this run;\n\
          `kuna catalog` lists them and `kuna docs options` explains the tiers.\n\
@@ -1201,14 +1271,26 @@ fn usage() {
          \n\
          --assert <directive | @file> (repeatable) states a fact the engine could not\n\
          derive.  The vocabulary is function, typedef, prototype, data, param, return,\n\
-         name, type, comment, flow, readonly, volatile, bytes -- for instance\n\
-         `prototype login int login(char *user,char *pw)`, `type v2 char[16]`,\n\
+         name, type, format, isolate, comment, flow, callee, callproto, readonly, volatile,\n\
+         bytes -- for instance `prototype login int login(char *user,char *pw)`,\n\
+         `type v2 char[16]`,\n\
          `name v2 credbuf`, `readonly 0x404028+8`, `flow 0x1405 return`.\n\
+         `format <addr> hex|dec|oct|bin|char [<value>]` sets the form the constant\n\
+         read at <addr> is printed in; `isolate <symbol>` keeps a local from being\n\
+         merged with another.\n\
          `bytes <addr> <hex|@FILE>` overlays recovered plaintext -- what a packer\n\
          writes over itself -- onto the loaded image; the file on disk is untouched.\n\
          @FILE holds one per line with `#` comments, which is what makes an override\n\
          durable across invocations.  A directive the engine declines is reported and\n\
          the run still succeeds; --assert-strict makes it exit 1 instead.\n\
+         \n\
+         --types <file.h | dir> (repeatable) loads C declarations for this run: each\n\
+         function declaration is the prototype of the function or import of that\n\
+         name, and each struct, union, enum and typedef is defined for `type` and\n\
+         `data`.  The text must be preprocessed C; --types-cpp CC runs `CC -E` over\n\
+         each header first (kuna runs no preprocessor otherwise).  A declaration\n\
+         that does not parse is reported with its file and line and the rest still\n\
+         apply; an --assert on the same function wins over the header.\n\
          \n\
          --sleighpath D and --decomp-dbg P override where this run reads the compiled\n\
          SLEIGH tree and which engine binary it drives; without them both are found\n\
@@ -1218,12 +1300,14 @@ fn usage() {
     );
 }
 
-// --- the --json surface ------------------------------------------------------
+// --- the shared one-function in-process surface ------------------------------
 
-/// What `--json` needs from the parsed command line: the selection, plus every
+/// The shared in-process request: output form, selection, and every
 /// flag `decompile-all` also understands.
-struct JsonRequest<'a> {
+struct SingleRequest<'a> {
     binary: &'a str,
+    json: bool,
+    apply_rust_signatures: Option<&'a str>,
     target: &'a str,
     by_address: bool,
     /// The `--option` / `--language` tokens, in argv order.
@@ -1245,8 +1329,14 @@ struct JsonRequest<'a> {
 /// and the per-function watchdog budget then all resolve exactly once, in the
 /// parser that owns them, instead of being re-derived here where they would
 /// drift.
-fn run_json(req: &JsonRequest) -> i32 {
-    let mut argv: Vec<String> = vec![req.binary.to_string(), "--json".into()];
+fn run_in_process(req: &SingleRequest) -> i32 {
+    let mut argv: Vec<String> = vec![req.binary.to_string()];
+    if req.json {
+        argv.push("--json".into());
+    }
+    if let Some(path) = req.apply_rust_signatures {
+        argv.extend(["--apply-rust-signatures".into(), path.into()]);
+    }
     if req.by_address {
         argv.push("--addr".into());
         argv.push(if looks_like_addr(req.target) {
@@ -1276,7 +1366,8 @@ fn run_json(req: &JsonRequest) -> i32 {
         }
     }
 
-    let args = match decompile_all::parse_args(&argv, "decompile-all") {
+    let command = if req.apply_rust_signatures.is_some() { "decompile" } else { "decompile-all" };
+    let args = match decompile_all::parse_args(&argv, command) {
         Ok(args) => args,
         Err(e) => {
             eprintln!("error: {e}");
@@ -1288,10 +1379,10 @@ fn run_json(req: &JsonRequest) -> i32 {
     // it has to reconcile against a prose stderr line — the missing error channel
     // is half of why this flag exists. The verdict follows the document, matching
     // `run`'s stdout-then-stderr ordering.
-    let (text, failure) = match decompile_json(&args, req.target) {
+    let (text, failure) = match decompile_one(&args, req.target) {
         Ok(answered) => answered,
         Err((message, declared)) => (
-            decompile_all::render_result_json(
+            if req.json { decompile_all::render_result_json(
                 &args.binary,
                 &[],
                 &args.options,
@@ -1300,7 +1391,7 @@ fn run_json(req: &JsonRequest) -> i32 {
                 &Default::default(),
                 &declared,
                 args.omit,
-            ),
+            ) } else { String::new() },
             Some(message),
         ),
     };
@@ -1312,15 +1403,15 @@ fn run_json(req: &JsonRequest) -> i32 {
 }
 
 /// Load once, resolve the one selected function, decompile it, and render the
-/// document.
+/// requested text or JSON document.
 ///
-/// Returns the JSON text plus the failure the caller reports on stderr and exits
+/// Returns the rendered text plus the failure the caller reports on stderr and exits
 /// `1` on. A function whose pipeline aborted is a failed run here — `decompile`
 /// was asked about exactly that function — so `--json` cannot turn the text
 /// surface's non-zero verdict into a success; the reason is in the document too,
 /// as the record's `error` and as the run-level one. A failure keeps the
 /// declarations' notes for the document that reports it.
-fn decompile_json(
+fn decompile_one(
     args: &AllArgs,
     target: &str,
 ) -> Result<(String, Option<String>), (String, crate::funcdecl::Declared)> {
@@ -1349,7 +1440,7 @@ fn decompile_json(
         return Err((message, declared));
     }
 
-    let funcs = decompile_all::decompile_entries(&mut prog, args, targets, false);
+    let funcs = decompile_all::decompile_entries(&mut prog, args, targets, false, true);
     let assertions = prog.assertion_outcomes();
     let mut failure = funcs.iter().find_map(|f| {
         f.error.as_ref().map(|reason| {
@@ -1367,7 +1458,7 @@ fn decompile_json(
     if failure.is_none() && decompile_all::any_refused_assertion(&assertions) {
         failure = Some(format!("--assert directive refused by the pipeline in {}", args.binary));
     }
-    let text = decompile_all::render_result_json(
+    let text = if args.json { decompile_all::render_result_json(
         &args.binary,
         &funcs,
         &args.options,
@@ -1376,7 +1467,11 @@ fn decompile_json(
         &interior,
         &declared,
         args.omit,
-    );
+    ) } else {
+        funcs.iter().filter_map(|function| function.code.as_deref()).map(|code| {
+            if code.ends_with('\n') { code.to_string() } else { format!("{code}\n") }
+        }).collect::<String>()
+    };
     if failure.is_none() && args.assert_strict && rejected {
         failure = Some(format!("--assert directive rejected in {}", args.binary));
     }
@@ -1385,6 +1480,16 @@ fn decompile_json(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn engine_panic_is_read_off_stderr() {
+        let stderr = "note\n\nthread 'main' (7) panicked at crates/x/src/y.rs:885:9:\nattempt to shift left with overflow\nstack backtrace:\n";
+        assert_eq!(
+            super::engine_panic(stderr).as_deref(),
+            Some("crates/x/src/y.rs:885:9 attempt to shift left with overflow")
+        );
+        assert_eq!(super::engine_panic("Decompilation complete\n"), None);
+    }
+
     #[test]
     fn temporary_output_paths_have_independent_owned_lifetimes() {
         let first = super::temp_path("kuna_c_test_", ".c").unwrap();
@@ -2088,6 +2193,38 @@ Execution error: No symbol named: v9
         assert_eq!(report[0].status, "applied");
         assert_eq!(report[1].status, "rejected");
         assert_eq!(report[1].detail.as_deref(), Some("No symbol named: v9"));
+    }
+
+    /// Two `callproto` directives for one call: the console keeps the later
+    /// prototype, so the earlier is rejected rather than reported applied. A later
+    /// one the console refused replaces nothing.
+    #[test]
+    fn a_restated_call_prototype_rejects_the_earlier_one() {
+        let parse = |specs: &[&str]| -> Vec<_> {
+            specs.iter().map(|spec| crate::assertdecl::parse_one(spec).expect("parses")).collect()
+        };
+        let directives =
+            parse(&["callproto 0x13b0 void f(char *)", "callproto report::0x13b0 void g(char *, int)"]);
+        let transcript = "\
+[decomp]> override prototype 0x13b0 void f(char *);
+Successfully added override
+[decomp]> override prototype 0x13b0 void g(char *, int);
+Successfully added override
+";
+        let report = super::assertion_outcomes(transcript, &directives, Some("report"));
+        assert_eq!(report[0].status, "rejected");
+        assert!(report[0].detail.as_deref().unwrap_or_default().contains("later callproto"));
+        assert_eq!(report[1].status, "applied");
+        let directives = parse(&["callproto 0x13b0 void f(char *)", "callproto 0x13b0 void g(nosuch)"]);
+        let transcript = "\
+[decomp]> override prototype 0x13b0 void f(char *);
+Successfully added override
+[decomp]> override prototype 0x13b0 void g(nosuch);
+Execution error: Syntax error
+";
+        let report = super::assertion_outcomes(transcript, &directives, Some("report"));
+        assert_eq!(report[0].status, "applied");
+        assert_eq!(report[1].status, "rejected");
     }
 
     /// A script that never reached a directive did not apply it, and saying so is
