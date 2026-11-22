@@ -4455,10 +4455,10 @@ through a map from each variable's differences) costs no walk of its
 expression, so the probe on every XOR into a register stays cheap. An
 identity found this way is used where the normal form's would be: load and
 store addresses, stack-pointer writes, `frame + k` rematerialization in the
-emitter, and the emitter's constant folding, where an op whose value is a
-constant only through an identity (junk arithmetic woven into a real value) is
-emitted as that constant (over every stack pointer only: the folding never
-assumes the platform's stack range below). A stack-pointer write that is no variable plus a
+emitter. The emitter's constant folding stays with constants the normal form
+found: folding an op whose value is constant only by this test (junk woven
+into a real value) cleans Themida output, but it also rewrote 9 of 30 Tigress
+samples' outputs in ways not verified, so it is not done. A stack-pointer write that is no variable plus a
 constant by any test leaves every later push and pop without a place, and the
 header counts it: "N stack pointer writes the emulation could not place".
 When paths meet, two values of a location are the same when their

@@ -2017,12 +2017,6 @@ impl ExprArena {
     /// sample of its operands would hit.
     /// The spec (02-lift-and-flow 2.11) argues the error probability.
     pub fn identity_probe(&mut self, e: ExprId) -> Option<(Option<VarId>, i128)> {
-        self.identity_probe_within(e, true)
-    }
-
-    /// [`Self::identity_probe`], with the second run over the platform's
-    /// user-mode stack only when `bounded`.
-    pub fn identity_probe_within(&mut self, e: ExprId, bounded: bool) -> Option<(Option<VarId>, i128)> {
         let size = self.size(e);
         if let Some(c) = self.is_const(e) {
             return Some((None, sext(c, size)));
@@ -2039,7 +2033,7 @@ impl ExprArena {
             return Some(r);
         }
         // Over the stack the platform gives user code (its top bits clear).
-        let bound = self.sp_bound.filter(|(v, _)| bounded && vars.contains(v))?;
+        let bound = self.sp_bound.filter(|(v, _)| vars.contains(v))?;
         let r = self.identity_pass(e, &vars, &atoms, Some(bound))?;
         self.sp_bound_used += 1;
         if self.sp_bound_notes.len() < 8 {
