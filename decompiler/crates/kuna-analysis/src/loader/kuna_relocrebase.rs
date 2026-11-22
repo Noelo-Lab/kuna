@@ -450,6 +450,8 @@ pub fn retain_in_image(out: &mut AnalysisOutput, view: &RebasedView) {
     let keep_range = |&(lo, hi): &(u64, u64)| view.contains(lo) && (hi <= lo || view.contains(hi - 1));
 
     out.symbols.retain(|s| keep(s.addr));
+    out.go_chanrecv2 = out.go_chanrecv2.filter(|&addr| keep(addr));
+    out.go_pointer_methods.retain(|&addr, _| keep(addr));
     out.data_objects.retain(|d| keep(d.addr));
     out.entries.retain(|&a| keep(a));
     out.fde_bodies.retain(keep_range);

@@ -1,0 +1,6 @@
+Repository-authored x86-64 PIE. Regenerate with python3 immutable_got_calls.py.
+The builder never executes the output. No external binary bytes or source.
+through_got reads a RELATIVE relocation in a full-RELRO GOT slot; through_mutable
+reads a writable .data slot whose target main changes; through_carried loads the
+GOT slot in a separate instruction and is outside this narrow resolution rule.
+The native authored program checks exact results and callback counts.

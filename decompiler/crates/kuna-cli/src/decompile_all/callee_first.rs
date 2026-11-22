@@ -108,6 +108,7 @@ pub(crate) fn decompile_callee_first(
         Ok(graph) => super::custom_reg_callers::analyze(prog, graph, &args.binary, args.slice_pref()),
         _ => super::custom_reg_callers::CustomRegPlan::empty(),
     };
+    let previous_settling = std::mem::replace(&mut prog.arch_mut().kuna_settle_caller_reads, graph.is_ok());
     drop(graph);
     crate::kuna_allocrelease::after_analysis();
     {
@@ -149,6 +150,7 @@ pub(crate) fn decompile_callee_first(
         }
     }
     converge_element_globals_callee_first(prog, &targets, &plan, &base, &mut slots);
+    prog.arch_mut().kuna_settle_caller_reads = previous_settling;
     prog.arch_mut().kuna_gottailcall = Default::default();
     kuna_decomp::kuna_elemptr::stop(prog.arch_mut());
     let mut results: Vec<FuncResult> = slots.into_results();

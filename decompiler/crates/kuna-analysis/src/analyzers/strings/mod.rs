@@ -41,6 +41,7 @@
 //! and ≥4 chars is accepted) — harmless for real string literals, which all pass.
 //! Recorded in `docs/missing-analyses.md` / `docs/history/analysis-port-log.md`.
 
+pub mod kuna_panicloc;
 pub mod kuna_ptrslot;
 pub mod kuna_stringinv;
 pub mod kuna_utf8strings;

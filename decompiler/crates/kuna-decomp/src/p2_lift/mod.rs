@@ -18,6 +18,7 @@ pub mod kuna_switchguardbound;
 pub mod kuna_switchguardrange;
 pub mod kuna_switchsharedcase;
 pub mod kuna_switchrunon; // (kuna) an unguarded jump table stops where its rows leave the function
+pub mod kuna_switchextent; // (kuna) an unguarded jump table ends at the function's next table
 pub mod kuna_constselectjump; // (kuna) recover a BRANCHIND whose destination is selected between constants
 pub mod kuna_sparcstructret;
 pub mod kuna_stackprobeloop;
@@ -67,8 +68,13 @@ pub mod kuna_rustprobestack;
 pub mod kuna_chkstkdarwin; // (kuna) remove the Darwin AArch64 stack probe so the registers it preserves survive it
 
 pub(crate) mod kuna_highslice_guard;
+pub mod kuna_calleeoverride; // (kuna) a caller-stated destination for an indirect call
 pub mod kuna_stubtailcall; // (kuna) a loader-proven lazy-binding stub flows as a tail call
 
 pub mod kuna_ppcpcread;
 
+pub mod kuna_indirectreturn;
+
 pub mod kuna_nullable_reloc;
+
+pub(crate) mod kuna_atomicxadd;

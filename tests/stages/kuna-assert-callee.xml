@@ -1,0 +1,42 @@
+<decompilertest>
+<!--
+  kuna #1644: a reader who knows where an indirect call goes can state it.
+  Stage / sub-stage: P2 flow-classification (the per-function Override store's
+  indirect-call redirect, consumed by FlowInfo::setup_callind_specs).
+  P0 assertion: `override indirect <callsite> <name|address>` (the console
+  spelling of `kuna decompile ... &#45;&#45;assert 'callee <callsite> <name|address>'`).
+  Fixture: decompiler/crates/kuna-cli/tests/fixtures/assert_callee.c.
+  #1-#2 are the output without the statement; #3-#5 are the stated calls;
+  #6-#7 are the stated tail call once its callee is marked no-return.
+  The refusals (a direct call, a non-call, a non-function) end a console
+  script, so decompiler/crates/kuna-cli/tests/assert_callee.rs pins them.
+-->
+<binaryimage arch="x86:LE:64:default:gcc"/>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/assert_callee_x86_64.elf</com>
+  <com>read symbols</com>
+  <com>option protoorder off</com>
+  <com>load function twice</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>override indirect 0x147a handle_open</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function dispatch</com>
+  <com>override indirect 0x1457 0x1430</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option noreturn handle_open</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ASSERTCALLEE #1: unstated, the call goes through the table" min="1" max="1">v1 = .*table\[\(a1 &amp; 3\) \* 8UL\]\)\(a0,a2\);</stringmatch>
+<stringmatch name="ASSERTCALLEE #2: the direct call is the only named one" min="2" max="2">return handle_open\(a0,1\) \+ v1;</stringmatch>
+<stringmatch name="ASSERTCALLEE #3: the stated indirect call is a direct call" min="1" max="1">v1 = handle_open\(a0,a2\);</stringmatch>
+<stringmatch name="ASSERTCALLEE #4: the stated indirect jump is a tail call" min="1" max="1">^  handle_open\(a0,a2\);$</stringmatch>
+<stringmatch name="ASSERTCALLEE #5: no switch is recovered from the stated jump" min="0" max="0">switch|halt_missing</stringmatch>
+<stringmatch name="ASSERTCALLEE #6: a stated tail call to a no-return callee ends the function" min="1" max="1">^  handle_open\(a0,a2\); // no-return$</stringmatch>
+<stringmatch name="ASSERTCALLEE #7: no return follows the no-return tail call" min="0" max="0">^  return;</stringmatch>
+</decompilertest>
