@@ -123,6 +123,9 @@ pub struct PendingBodyArgs {
     /// (kuna `swiftcall`) The call already passes a Swift `self` and nothing
     /// else; the body's plan covers that trial like any other.
     swift_self: bool,
+    /// (kuna `calleefloatreads`) How many float trials the call already passes
+    /// because the callee's body reads them; the plan covers them too.
+    float_reads: int4,
 }
 
 /// Is `addr` in the `register` space the callee-body summary answers for?
@@ -157,9 +160,12 @@ pub fn capture_lone_call(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingB
     let active = fc.active_input();
     let mut trials: Vec<BodyTrial> = Vec::new();
     let mut swift_self = false;
+    let mut float_reads = 0;
     for i in 0..active.get_num_trials() {
         let t = active.get_trial(i);
-        if t.is_used() {
+        if t.is_used() && crate::p4_calls::kuna_calleefloatreads::reads(data, fc, t.get_address(), t.get_size()) {
+            float_reads += 1;
+        } else if t.is_used() {
             if swift_self || !crate::kuna_swiftcall::is_self_storage(data, t.get_address(), t.get_size()) {
                 return None; // this site recovered something; not ours to speak to
             }
@@ -208,7 +214,7 @@ pub fn capture_lone_call(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingB
     if !trials.first().map(|t| is_register(&t.addr)).unwrap_or(false) {
         return None;
     }
-    Some(PendingBodyArgs { op, entry, trials, swift_self })
+    Some(PendingBodyArgs { op, entry, trials, swift_self, float_reads })
 }
 
 /// Which of this call's trials the callee's body claims as arguments, or `None`
@@ -316,7 +322,10 @@ fn recover_one(data: &mut Funcdata, p: &PendingBodyArgs) -> bool {
     // `num_input() == 1` is also what defers to the sibling rules: a call
     // `calleearityfwd` already rescued is no longer empty and is not touched.
     match data.obank().get(p.op) {
-        Some(o) if !o.is_dead() && o.code() == OpCode::CPUI_CALL && o.num_input() == 1 + p.swift_self as int4 => {}
+        Some(o)
+            if !o.is_dead()
+                && o.code() == OpCode::CPUI_CALL
+                && o.num_input() == 1 + p.swift_self as int4 + p.float_reads => {}
         _ => return false,
     }
     let Some(idx) = data.get_call_specs_index(p.op) else { return false };

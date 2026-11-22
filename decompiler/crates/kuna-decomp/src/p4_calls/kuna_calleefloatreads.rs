@@ -70,7 +70,7 @@ pub fn read_width(data: &Funcdata, call: &FuncCallSpecs, addr: &Address, size: i
         .iter()
         .filter(float)
         .any(|e| e.get_size() < size && e.justified_contain(addr, e.get_size()) == 0);
-    if narrower && width != size {
+    if (narrower && width != size) || next_slot_only_stored(probe, entries, addr, size) {
         return None;
     }
     let saves_all = entries.iter().filter(float).last().is_some_and(|e| {
@@ -78,6 +78,23 @@ pub fn read_width(data: &Funcdata, call: &FuncCallSpecs, addr: &Address, size: i
         probe.reads_low_byte(&last, e.get_size(), true, false)
     });
     (!saves_all && !tests_vector_count(probe, call)).then_some(width)
+}
+
+/// Does the callee only store the model float slot after `[addr, addr+size)`
+/// of the same width? newlib's ARM `__ieee754_fmodf` spills `s1` with `vstr`
+/// and reloads it as an integer: an argument the entry decode does not count,
+/// so activating `s0` alone would end the list the callee-body rules fill
+/// whole (`fmodf(x,y)` calling it with both).
+fn next_slot_only_stored(probe: &CalleeEntryDead, entries: &[ParamEntry], addr: &Address, size: int4) -> bool {
+    let same: Vec<&ParamEntry> = entries
+        .iter()
+        .filter(|e| e.get_type() == type_class::TYPECLASS_FLOAT && e.get_size() == size)
+        .collect();
+    let Some(i) = same.iter().position(|e| e.justified_contain(addr, size) == 0) else { return false };
+    same.get(i + 1).is_some_and(|e| {
+        let at = Address::new(std::rc::Rc::clone(e.get_space()), e.get_base());
+        probe.reads_low_byte(&at, size, true, false) && !probe.reads_low_byte(&at, size, false, false)
+    })
 }
 
 /// The argument a call takes from the heritaged range `[addr, addr+size)` that
