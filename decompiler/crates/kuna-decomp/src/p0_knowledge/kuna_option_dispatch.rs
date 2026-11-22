@@ -103,6 +103,7 @@ kuna_options! { self, p1;
     "globalwidth" => on_off!(analysis_globalwidth, "Data-object typing from access width"),
     "indexrescale" => on_off!(index_rescale, "Byte offsets rescaled to element indexes"),
     "globalarrayanchor" => on_off!(global_array_anchor, "Global array anchor preservation"),
+    "opaquepredicate" => on_off!(opaque_predicate, "Constant-comparison folding"),
     "signedness" => {
         let (val, msg) = crate::kuna_typeround::OptionSignedness.apply(p1)?;
         self.signedness = val;
@@ -174,6 +175,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "chkstkdarwin" => on_off!(chkstk_darwin, "Darwin stack-probe call removal"),
+    "typevote" => on_off!(type_vote, "Type vote for leftover undefined variables"),
     "tailcalljump" => {
         let (jumps, tables, msg) = crate::kuna_tailcalljump::tail_call_mode(p1)?;
         self.tail_call_jumps = jumps;
@@ -192,6 +194,7 @@ kuna_options! { self, p1;
     "msvcstrappend" => on_off!(msvc_str_append, "MSVC std::string inlined append collapsing"),
     "switchselector" => on_off!(switch_selector_guard, "Lowered-switch in-function-selector restriction"),
     "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
+    "calleefilledarg" => on_off!(callee_filled_arg, "Callee-filled argument slots"),
     "callwide" => {
         let enabled = on_or_off(p1)?;
         self.kuna_callwide.clear();
@@ -318,7 +321,12 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
-    "constselectjump" => on_off!(const_select_jump, "Constant-select indirect branch recovery"),
+    "switchextent" => on_off!(switch_extent, "Unchecked jump table ends at the function's next table"),
+    "constselectjump" => {
+        let (mode, msg) = crate::kuna_constselectjump::OptionConstSelectJump.apply(p1)?;
+        self.const_select_jump = mode;
+        Ok(msg)
+    },
     "switchguardbound" => on_off!(switch_guard_bound, "Switch CBRANCH-guard index bound"),
     "highsliceguard" => on_off!(highslice_guard, "High-byte slice jump-table guard"),
     "switchsharedcase" => on_off!(switch_shared_case, "Switch loop-carried-guard table"),
@@ -343,8 +351,10 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "loweredswitch" => {
-        let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
-        self.recover_lowered_switch = val;
+        let (mode, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
+        self.recover_lowered_switch = mode.enabled();
+        self.lowered_switch_linear = mode.linear();
+        self.lowered_switch_tree = mode.tree();
         Ok(msg)
     },
     "nulterminator" => {
@@ -476,6 +486,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "loopcontinue" => on_off!(loop_continue, "Secondary loop-latch continue recovery"),
+    "postinc" => on_off!(post_increment, "Pointer steps folded into *p++"),
     "regionlooprefine" => on_off!(
         region_loop_refine,
         "Region structurer multi-exit/irreducible loop-successor refinement"
@@ -545,9 +556,10 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "returndup" => {
-        let (val, msg) =
+        let (val, calls, msg) =
             crate::p8_structure::kuna_returndup::OptionReturnDup.apply(p1)?;
         self.duplicate_shared_returns = val;
+        self.duplicate_call_returns = calls;
         Ok(msg)
     },
     "rettriangle" => {
@@ -630,6 +642,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
+    "gotonext" => on_off!(goto_next, "goto-to-next suppression"),
     "importdata" => on_off!(import_data, "import-slot data-read rendering"),
     "castimplied" => on_off!(cast_implied, "C-implied cast elision"),
     "castsign" => on_off!(cast_sign, "signed declarations for signed-only locals"),
@@ -661,6 +674,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "charptr" => on_off!(char_ptr, "character-pointer evidence"),
+    "cstringconst" => on_off!(cstring_const, "string-literal rendering of constants inside a string-literal section"),
     "elemptr" => {
         let (val, msg) = crate::p5_types::kuna_elemptr::OptionElemPtr.apply(p1)?;
         self.elem_ptr = val;
@@ -956,7 +970,10 @@ kuna_options! { self, p1;
     "tailcallentry" => {
         on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")
     },
+    "calltable" => on_off!(analysis_calltable, "Call-table recovery and the call-table vs switch vote"),
+    "stubbinds" => on_off!(analysis_stubbinds, "Stripped Mach-O stubs named from their slot's chained bind"),
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
+    "panicloc" => on_off!(analysis_panicloc, "Rust panic Location record pass"),
     "swiftmetadata" => on_off!(analysis_swiftmetadata, "Swift runtime-metadata recovery pass"),
     "cfstrings" => {
         let (pass, annotate) = match p1 {

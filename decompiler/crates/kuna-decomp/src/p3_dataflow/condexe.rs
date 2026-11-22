@@ -40,9 +40,6 @@
 //!   - **`Funcdata::opSetOpcode`** (W6 `glb->inst[opc]`): the rule needs the
 //!     resolved [`crate::context::TypeOp`] for a target opcode; the W6 op-info table
 //!     is not present, so [`resolve_typeop`] surfaces a stub `Err`.  // STUB(W6)
-//!   - **`Funcdata::numHeritagePasses`** (W7 heritage): `buildHeritageArray`
-//!     queries per-space heritage progress; the W7 `Heritage` subsystem is not
-//!     present, so it reports "no pass yet" (every space `false`).  // STUB(W7)
 //!
 //! These deferrals are recorded as losses; the verify-path content — the genuine
 //! algorithmic novelty of this file — is complete.
@@ -180,13 +177,7 @@ impl ConditionalExecution {
             if !spc.is_heritaged() {
                 continue;
             }
-            // STUB(W7): numHeritagePasses queries the W7 Heritage subsystem, which
-            // is not present at this item's boundary.  Treated as "no pass yet"
-            // (every heritaged space stays false); the heritage-gated guard in
-            // test_removability is then conservative (refuses to remove ops whose
-            // output has no descendants).  Recorded as a loss.
-            let num_heritage_passes = 0; // STUB(W7): fd.num_heritage_passes(spc)
-            if num_heritage_passes > 0 {
+            if fd.num_heritage_passes(&spc).is_ok_and(|n| n > 0) {
                 self.heritageyes[index as usize] = true;
             }
         }

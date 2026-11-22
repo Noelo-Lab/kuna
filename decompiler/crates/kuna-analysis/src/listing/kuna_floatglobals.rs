@@ -482,11 +482,11 @@ fn switch_targets(
     let Some(branch) = ops.iter().find(|o| o.opcode == OpCode::CPUI_BRANCHIND).and_then(|o| o.ins.first()) else {
         return Vec::new();
     };
-    kuna_switchtable::register_targets(
+    let read = kuna_switchtable::register_targets(
         ctx.translate,
         ctx.code,
         Some(ctx.data),
-        decoded,
+        &|a| decoded.contains(&a),
         vma,
         branch,
         pool,
@@ -494,9 +494,15 @@ fn switch_targets(
         &super::kuna_switchtable::Reach {
             max_entries,
             preserved: &ctx.preserved,
+            settled: false,
+            named: None,
+            next_table: None,
         },
-    )
-    .cases
+    );
+    if read.unbounded {
+        return Vec::new();
+    }
+    read.cases
 }
 
 /// The case bodies of a computed jump through a table: `tbb [pc, r3]`,

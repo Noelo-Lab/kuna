@@ -12,6 +12,13 @@ const RECOVERED: &str = "_ZN4core3ptr4read17h0123456789abcdefE";
 const ENTRY: u64 = 0x400100;
 
 fn fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    fixture_with_comment(COMMENT)
+}
+
+fn fixture_with_comment(
+    comment: &[u8],
+) -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    assert!(comment.len() <= 0x40);
     let temp = tempfile::tempdir().unwrap();
     let binary = temp.path().join("authored.elf");
     let mut bytes = vec![0u8; 0x300];
@@ -57,7 +64,7 @@ fn fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
         (0x260, 40),
         (0x270, 16),
         (0x298, 0x140),
-        (0x2a0, COMMENT.len() as u64),
+        (0x2a0, comment.len() as u64),
         (0x2b0, 1),
         (0x2d8, 0x180),
         (0x2e0, names.len() as u64),
@@ -68,7 +75,7 @@ fn fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
     bytes[0x100..0x128].fill(0x90);
     bytes[0x100..0x104].copy_from_slice(&[0x55, 0x48, 0x89, 0xe5]);
     bytes[0x126..0x128].copy_from_slice(&[0x5d, 0xc3]);
-    bytes[0x140..0x140 + COMMENT.len()].copy_from_slice(COMMENT);
+    bytes[0x140..0x140 + comment.len()].copy_from_slice(comment);
     bytes[0x180..0x180 + names.len()].copy_from_slice(names);
     std::fs::write(&binary, bytes).unwrap();
     let mut signature: Vec<u8> = (0..TINY.len())
@@ -163,6 +170,80 @@ fn requested_profiles_preserve_normal_summary_and_ignore_summary_filters() {
             plain, requested,
             "report request changed inventory, names, or normal summary"
         );
+    }
+}
+
+#[test]
+fn stable_comment_profile_hint_preserves_matches_selection_and_provenance() {
+    let cases: &[(&[u8], bool, Option<&str>)] = &[
+        (b"rustc version 1.93.0\0", true, Some("exact_version")),
+        (b"rustc version 1.93.1\0", true, Some("same_minor")),
+        (
+            b"rustc version 1.98.1\0",
+            true,
+            Some("newer_than_available"),
+        ),
+        (b"rustc version 1.90.1\0", true, None),
+        (b"rustc version 2.0.0\0", true, None),
+        (b"rustc version 1.93.1\0rustc version 1.98.1\0", true, None),
+        (COMMENT, true, None),
+        (b"rustc version 1.93.1\0", false, None),
+    ];
+    for &(comment, pair, basis) in cases {
+        let (temp, binary, manifest) = fixture_with_comment(comment);
+        let mut inputs: Value = serde_json::from_slice(&std::fs::read(&manifest).unwrap()).unwrap();
+        let candidate = json!({"version": "1.93.0", "optimization": 3});
+        inputs["candidates"].as_array_mut().unwrap().push(candidate);
+        for (index, bank) in ["inline", "no-inline"].iter().enumerate() {
+            if !pair && index == 1 {
+                break;
+            }
+            let mut signature = inputs["signatures"][index].clone();
+            let name = format!("second-{bank}.sig");
+            std::fs::copy(
+                temp.path().join(format!("{bank}.sig")),
+                temp.path().join(&name),
+            )
+            .unwrap();
+            signature["path"] = json!(name);
+            signature["version"] = json!("1.93.0");
+            inputs["signatures"].as_array_mut().unwrap().push(signature);
+        }
+        std::fs::write(&manifest, inputs.to_string()).unwrap();
+
+        let result = summary(
+            &binary,
+            &["--rust-signature-manifest", manifest.to_str().unwrap()],
+        );
+        let report = &result["rust_signature_profile"];
+        assert!(report["selected_profile"].is_null());
+        let records: Vec<_> = comment
+            .split(|&byte| byte == 0)
+            .filter(|record| !record.is_empty())
+            .map(|record| std::str::from_utf8(record).unwrap())
+            .collect();
+        assert_eq!(
+            result["compiler_provenance"]["rustc_records"],
+            json!(records)
+        );
+        if pair {
+            assert_eq!(report["status"], "ambiguous");
+            assert_eq!(report["tied_profiles"].as_array().unwrap().len(), 2);
+            assert_eq!(report["candidates"][0]["score"], 1);
+            assert_eq!(report["candidates"][1]["score"], 1);
+        } else {
+            assert_eq!(report["status"], "incomplete");
+        }
+        match basis {
+            Some(basis) => assert_eq!(
+                report["comment_profile_hint"],
+                json!({
+                    "profile": {"version":"1.93.0", "optimization":3},
+                    "basis": basis,
+                })
+            ),
+            None => assert!(report.get("comment_profile_hint").is_none()),
+        }
     }
 }
 
@@ -757,4 +838,106 @@ fn application_refuses_archive_fanout_and_member_paths_before_loading() {
         args.extend(["--apply-rust-signatures", manifest]);
         refuse(&args, &["standalone linked elf"]);
     }
+}
+
+#[test]
+fn installed_corpus_check_validates_the_default_and_explicit_paths() {
+    let (temp, image, manifest) = fixture();
+    let data = temp.path().join("user-data");
+    let install_base = if cfg!(target_os = "macos") {
+        data.join("Library/Application Support")
+    } else {
+        data.clone()
+    };
+    let installed = install_base.join("kuna/rust-signatures/x86_64/linux/manifest.json");
+    let specs = common::repo_root().join("specs");
+    let run = |args: &[&str], code| {
+        let result = std::process::Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .env("HOME", &data)
+            .env("LOCALAPPDATA", &data)
+            .env("XDG_DATA_HOME", &data)
+            .env("SLEIGHHOME", &specs)
+            .env("KUNA_SPECS", &specs)
+            .args(args)
+            .output()
+            .unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(code),
+            "{args:?}: {:?}",
+            result.stderr
+        );
+        serde_json::from_slice::<Value>(&result.stdout).unwrap()
+    };
+    let check = |path: Option<&std::path::Path>, code| {
+        let mut args = vec!["rust-signatures", "check", "--json"];
+        if let Some(path) = path {
+            args.extend(["--manifest", path.to_str().unwrap()]);
+        }
+        run(&args, code)
+    };
+    let plain_args = [
+        "functions",
+        image.to_str().unwrap(),
+        "--summary",
+        "--json",
+        "--option",
+        "flirt",
+        "off",
+    ];
+    let mut report_args = plain_args.to_vec();
+    report_args.extend(["--rust-signature-manifest", manifest.to_str().unwrap()]);
+    assert_eq!(check(None, 1)["status"], "absent");
+    assert!(!data.exists());
+    let plain = run(&plain_args, 0);
+    let report = run(&report_args, 0);
+    assert_eq!(report["rust_signature_profile"]["status"], "unique");
+
+    let parent = installed.parent().unwrap();
+    std::fs::create_dir_all(parent).unwrap();
+    for bank in ["inline.sig", "no-inline.sig"] {
+        std::fs::copy(temp.path().join(bank), parent.join(bank)).unwrap();
+    }
+    std::fs::copy(&manifest, &installed).unwrap();
+    let ready = check(None, 0);
+    assert_eq!(ready["status"], "ready");
+    assert_eq!(
+        ready["manifest_path"],
+        installed.canonicalize().unwrap().to_string_lossy().as_ref()
+    );
+    assert_eq!(ready["inventory"]["profile_count"], 1);
+    assert_eq!(ready["inventory"]["verified_bank_count"], 2);
+    assert_eq!(
+        ready["inventory"]["manifest_sha256"],
+        report["rust_signature_profile"]["provenance"]["manifest_sha256"]
+    );
+    assert_eq!(run(&plain_args, 0), plain);
+    assert_eq!(run(&report_args, 0), report);
+    assert_eq!(
+        check(Some(&manifest), 0)["manifest_path"],
+        manifest.canonicalize().unwrap().to_string_lossy().as_ref()
+    );
+    let missing = temp.path().join("absent.json");
+    let absent = check(Some(&missing), 1);
+    assert_eq!(absent["status"], "absent");
+    assert_eq!(absent["manifest_path"], missing.to_string_lossy().as_ref());
+
+    let mut changed: Value = serde_json::from_slice(&std::fs::read(&manifest).unwrap()).unwrap();
+    let bad = temp.path().join("bad.json");
+    changed["signatures"][1]["sha256"] = json!("0".repeat(64));
+    std::fs::write(&bad, changed.to_string()).unwrap();
+    let invalid = check(Some(&bad), 1);
+    assert_eq!(invalid["status"], "invalid");
+    assert!(invalid["reason"]
+        .as_str()
+        .unwrap()
+        .contains("SHA-256 mismatch"));
+    changed["signatures"].as_array_mut().unwrap().pop();
+    std::fs::write(&installed, changed.to_string()).unwrap();
+    let partial = check(None, 1);
+    assert_eq!(partial["status"], "incomplete");
+    assert_eq!(partial["inventory"]["verified_bank_count"], 1);
+
+    assert_eq!(run(&plain_args, 0), plain);
+    assert_eq!(run(&report_args, 0), report);
 }

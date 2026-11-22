@@ -78,8 +78,8 @@ use kuna_base::types::{int4, int8, uint4, uintb};
 use crate::dtype::type_metatype;
 use crate::options::{BraceStyle, NamespaceStrategy};
 use crate::prettyprint::{
-    BraceStyle as EmitBraceStyle, Emit, EmitBase, EmitMarkup, EmitNoMarkup, MarkupProvenance,
-    MarkupRef, SyntaxHighlight,
+    BraceStyle as EmitBraceStyle, Emit, EmitBase, EmitMarkup, EmitNoMarkup, EmitPrettyPrint,
+    LowLevel, MarkupProvenance, MarkupRef, SyntaxHighlight,
 };
 use crate::printlanguage::{
     format_binary, modifiers, most_natural_base, parentheses, unicode_needs_escape, Atom, OpToken,
@@ -240,6 +240,8 @@ pub mod tokens {
     pub static CONDITIONAL: OpToken = op_token("?", ":", 3, 16, false, TokenType::Binary, 1, 0);
     /// The assignment operator `=` (printc.cc:57).
     pub static ASSIGNMENT: OpToken = op_token("=", "", 2, 14, false, TokenType::Binary, 1, 5);
+    /// (kuna `postinc`) `p++`, a postfix around its one operand and a blank.
+    pub static POST_INCREMENT: OpToken = op_token("", "++", 2, 66, false, TokenType::Postsurround, 0, 0);
     /// The comma operator `,` for parameter lists (printc.cc:58).
     pub static COMMA: OpToken = op_token(",", "", 2, 2, true, TokenType::Binary, 0, 0);
     /// The `new` operator (printc.cc:59).
@@ -1286,6 +1288,9 @@ pub enum PrintEmit {
     NoMarkup(EmitNoMarkup),
     /// The packed clang token-markup back-end (ghidra-mode `decompileAt`).
     Markup(EmitMarkup),
+    /// The line-breaking printer over the plain-text back-end, active once
+    /// `option maxlinewidth` sets a line size.
+    Pretty(Box<EmitPrettyPrint>),
 }
 
 /// Forward one [`Emit`] call to whichever [`PrintEmit`] variant is active — the
@@ -1295,18 +1300,34 @@ macro_rules! pe_forward {
         match $self {
             PrintEmit::NoMarkup(e) => e.$method($($arg),*),
             PrintEmit::Markup(e) => e.$method($($arg),*),
+            PrintEmit::Pretty(e) => e.$method($($arg),*),
         }
     };
 }
 
 impl PrintEmit {
+    /// The plain-text sink, directly or under the line-breaking printer.
+    fn plain_mut(&mut self) -> Option<&mut EmitNoMarkup> {
+        match self {
+            PrintEmit::NoMarkup(e) => Some(e),
+            PrintEmit::Pretty(e) => match e.lowlevel_mut() {
+                LowLevel::NoMarkup(s) => Some(s),
+                LowLevel::Markup(_) => None,
+            },
+            PrintEmit::Markup(_) => None,
+        }
+    }
     /// Reset the active back-end's output buffer (C++ `Emit::setOutputStream`),
     /// dispatched to the concrete leaf (both leaves clear their owned sink).
     /// Type-divergent (not on the [`Emit`] trait): the leaves' sinks differ.
     pub fn set_output_stream(&mut self) {
         match self {
-            PrintEmit::NoMarkup(e) => e.set_output_stream(),
             PrintEmit::Markup(e) => e.set_output_stream(),
+            _ => {
+                if let Some(s) = self.plain_mut() {
+                    s.set_output_stream();
+                }
+            }
         }
     }
     /// Borrow the accumulated plain text (the `EmitNoMarkup` standalone
@@ -1316,33 +1337,31 @@ impl PrintEmit {
         match self {
             PrintEmit::NoMarkup(e) => e.output(),
             PrintEmit::Markup(_) => "",
+            PrintEmit::Pretty(e) => e.output(),
         }
     }
     /// Take ownership of the accumulated packed markup bytes (the `EmitMarkup`
     /// `doc_function_markup` return); empty on the plain-text leaf.
     pub fn take_markup_bytes(&mut self) -> Vec<u8> {
         match self {
-            PrintEmit::NoMarkup(_) => Vec::new(),
             PrintEmit::Markup(e) => e.take_output(),
+            _ => Vec::new(),
         }
     }
     /// Take the structured associations captured by the markup leaf.
     pub fn take_markup_provenance(&mut self) -> MarkupProvenance {
         match self {
-            PrintEmit::NoMarkup(_) => MarkupProvenance::default(),
             PrintEmit::Markup(e) => e.take_provenance(),
+            _ => MarkupProvenance::default(),
         }
     }
     /// Take the root statement associations captured by the plain-text leaf.
     pub fn take_plain_statement_provenance(&mut self) -> MarkupProvenance {
-        match self {
-            PrintEmit::NoMarkup(e) => e.take_statement_provenance(),
-            PrintEmit::Markup(_) => MarkupProvenance::default(),
-        }
+        self.plain_mut().map(|e| e.take_statement_provenance()).unwrap_or_default()
     }
     /// Enable or disable the plain-text statement-root sidecar.
     pub fn set_plain_statement_provenance(&mut self, val: bool) {
-        if let PrintEmit::NoMarkup(e) = self {
+        if let Some(e) = self.plain_mut() {
             e.set_capture_statement_provenance(val);
         }
     }
@@ -1355,14 +1374,18 @@ impl PrintEmit {
     /// Take the tokens captured by the markup leaf.
     pub fn take_markup_tokens(&mut self) -> Vec<crate::prettyprint::EmitToken> {
         match self {
-            PrintEmit::NoMarkup(_) => Vec::new(),
             PrintEmit::Markup(e) => e.take_tokens(),
+            _ => Vec::new(),
         }
     }
     /// Whether the plain-text statement-root sidecar is active.
     pub fn captures_plain_statement_provenance(&self) -> bool {
         match self {
             PrintEmit::NoMarkup(e) => e.captures_statement_provenance(),
+            PrintEmit::Pretty(e) => match e.lowlevel() {
+                LowLevel::NoMarkup(s) => s.captures_statement_provenance(),
+                LowLevel::Markup(_) => false,
+            },
             PrintEmit::Markup(_) => false,
         }
     }
@@ -1518,6 +1541,9 @@ pub struct PrintC {
     /// `<function>` document.  A concrete enum (not `Box<dyn Emit>`), so the
     /// ~260 `self.emit.<method>()` sites stay static (see [`PrintEmit`]).
     pub(crate) emit: PrintEmit,
+    /// The `option maxlinewidth` line size for plain-text output; `None` (the
+    /// kuna default) prints each statement on one line.
+    plain_line_size: Option<int4>,
     /// (kuna) Scoped raw pointer to the [`Funcdata`] currently being emitted,
     /// live ONLY for the duration of [`emit_function_document`](PrintC::emit_function_document).
     /// Lets the fd-free RPN leaf emitters ([`emit_atom`](PrintC::emit_atom) /
@@ -1547,6 +1573,10 @@ pub struct PrintC {
     /// [`emit_function_body`](PrintC::emit_function_body) and cleared after, so it
     /// is live only for that function's emission.
     void_tail_return: Option<OpId>,
+    /// (kuna `gotonext`) The gotos left out or printed as `break;`, and the labels
+    /// only they reached.  Computed per function at the top of
+    /// [`emit_function_body`](PrintC::emit_function_body).
+    goto_rewrites: crate::p8_structure::kuna_gotonext::GotoRewrites,
     /// (kuna) Resolved `realtypes` rendering context for the function currently
     /// being printed — the `Architecture::realtypes` gate plus the data-model fact
     /// (`long` is 8 bytes) needed to relabel residual `TYPE_UNKNOWN` (`xunknownN`)
@@ -1635,12 +1665,14 @@ impl PrintC {
             name: CAPABILITY_NAME.to_string(),
             flat: false,
             emit: PrintEmit::NoMarkup(EmitNoMarkup::new()),
+            plain_line_size: None,
             emit_fd: None,
             revpol: Vec::new(),
             nodepend: Vec::new(),
             pending: 0,
             commsorter: crate::comment::CommentSorter::new(),
             void_tail_return: None,
+            goto_rewrites: Default::default(),
             rt_ctx: RealTypeCtx::OFF,
             out_lang: crate::kuna_lang::OutLang::C,
             eol_warns: Vec::new(),
@@ -1700,6 +1732,9 @@ impl PrintC {
         self.name = name.to_string();
         self.out_lang =
             crate::kuna_lang::OutLang::from_print_name(name).unwrap_or(crate::kuna_lang::OutLang::C);
+        if self.plain_line_size.is_some() && !self.emit.emits_markup() {
+            self.emit = self.plain_emit();
+        }
     }
 
     /// The active output language.
@@ -1818,8 +1853,7 @@ impl PrintC {
         self.emit.close_brace_indent("}", id);
         self.emit.tag_line();
         self.emit.end_function(id1);
-
-        // After the C++ flush the bound ostream holds the text.
+        self.emit.flush().expect("PrintC::docFunction: emit flush");
         self.emit.output_str().to_string()
     }
 
@@ -1845,12 +1879,52 @@ impl PrintC {
     pub fn set_hide_implied_exts(&mut self, val: bool) {
         self.options.set_hide_implied_exts(val);
     }
-    /// C++ `glb->print->setMaxLineSize(val)` (options.cc:524).
-    pub fn set_max_line_size(&mut self, _val: int4) -> KunaResult<()> {
-        // STUB(W8 prettyprint): EmitNoMarkup ignores line size; EmitPrettyPrint
-        // honours it.  Recorded so the option succeeds (the C++ validates the
-        // range inside Emit::setMaxLineSize; the no-markup path is unbounded).
+    /// C++ `glb->print->setMaxLineSize(val)` (options.cc:524). Plain-text output
+    /// goes through [`EmitPrettyPrint`] from here on, which breaks lines longer
+    /// than `val`; the markup back-end is left unbroken.
+    pub fn set_max_line_size(&mut self, val: int4) -> KunaResult<()> {
+        EmitPrettyPrint::new().set_max_line_size_pretty(val)?;
+        self.plain_line_size = Some(val);
+        if !self.emit.emits_markup() {
+            self.emit = self.plain_emit();
+        }
         Ok(())
+    }
+    /// Print unbroken lines until [`Self::restore_line_size`], for a render
+    /// whose records (warning lines, line mappings, call-argument positions)
+    /// address its text line by line. Returns the line size to restore.
+    pub fn suspend_line_size(&mut self) -> Option<int4> {
+        let size = self.plain_line_size.take();
+        if size.is_some() && !self.emit.emits_markup() {
+            self.emit = self.plain_emit();
+        }
+        size
+    }
+    /// Undo [`Self::suspend_line_size`].
+    pub fn restore_line_size(&mut self, size: Option<int4>) {
+        if size.is_some() {
+            self.plain_line_size = size;
+            if !self.emit.emits_markup() {
+                self.emit = self.plain_emit();
+            }
+        }
+    }
+    /// A fresh plain-text back-end honoring [`Self::plain_line_size`] for C
+    /// output only (Go ends a statement at a line break; Rust and Go print
+    /// unbroken), carrying the current indent increment.
+    fn plain_emit(&self) -> PrintEmit {
+        let mut emit = match self.plain_line_size.filter(|_| self.out_lang == crate::kuna_lang::OutLang::C) {
+            Some(size) => {
+                let mut pretty = EmitPrettyPrint::new();
+                pretty
+                    .set_max_line_size_pretty(size)
+                    .expect("plain_line_size was validated when set");
+                PrintEmit::Pretty(Box::new(pretty))
+            }
+            None => PrintEmit::NoMarkup(EmitNoMarkup::new()),
+        };
+        emit.set_indent_increment(self.emit.get_indent_increment());
+        emit
     }
     /// C++ `glb->print->setIndentIncrement(val)` (options.cc:541).
     pub fn set_indent_increment(&mut self, val: int4) {
@@ -1858,9 +1932,7 @@ impl PrintC {
     }
     /// C++ `glb->print->setLineCommentIndent(val)` (options.cc:559).
     pub fn set_line_comment_indent(&mut self, val: int4) -> KunaResult<()> {
-        // C++ PrintLanguage::setLineCommentIndent validates against maxlinesize;
-        // the EmitNoMarkup max is unbounded, so any non-negative value is valid.
-        self.context.set_line_comment_indent(val, int4::MAX)
+        self.context.set_line_comment_indent(val, self.plain_line_size.unwrap_or(int4::MAX))
     }
     /// C++ `glb->print->getHeaderComment()` (options.cc:583).
     pub fn header_comment_flags(&self) -> uint4 {
@@ -1915,13 +1987,17 @@ impl PrintC {
     /// inplaceops, conventionprinting, nocastprinting, hideimpliedexts, the
     /// four brace formats — plus the kuna rendering toggles, whose
     /// construction defaults ARE the shipped defaults) and the emitter's
-    /// indent increment (Java default 2).  `max_line_size` and
-    /// `comment_style` are recorded-no-op stubs with no state to reset;
-    /// everything context-held (integer format, comment indent/flags,
-    /// namespace strategy, language) is reset by the caller's fresh
-    /// [`PrintContext`](crate::printlanguage::PrintContext).
+    /// indent increment (Java default 2), and the plain-text line size (back
+    /// to unbroken lines).  `comment_style` is a recorded-no-op stub with no
+    /// state to reset; everything context-held (integer format, comment
+    /// indent/flags, namespace strategy, language) is reset by the caller's
+    /// fresh [`PrintContext`](crate::printlanguage::PrintContext).
     pub fn reset_wire_option_defaults(&mut self) {
         self.options = PrintCOptions::new();
+        self.plain_line_size = None;
+        if !self.emit.emits_markup() {
+            self.emit = self.plain_emit();
+        }
         self.emit.set_indent_increment(2);
     }
 
@@ -2180,7 +2256,7 @@ impl PrintC {
     /// (C++ passes the `PcodeOp *`): `opref = op->getTime()`, the `<ast>`
     /// `<seqnum uniq>`. Gated on the markup back-end or an explicitly requested
     /// plain statement sidecar, so the ordinary plain-text path does no lookup.
-    fn op_markup(&self, fd: &Funcdata, op: OpId) -> MarkupRef {
+    pub(crate) fn op_markup(&self, fd: &Funcdata, op: OpId) -> MarkupRef {
         if !self.emit.emits_markup()
             && !self.emit.captures_plain_statement_provenance()
         {
@@ -2508,13 +2584,13 @@ impl PrintC {
     /// datatest path NEVER calls this, so `emit` stays `NoMarkup` and the
     /// 675-assertion byte output is untouched.
     pub fn set_markup(&mut self, val: bool) {
-        let increment = self.emit.get_indent_increment();
         self.emit = if val {
-            PrintEmit::Markup(EmitMarkup::new())
+            let mut markup = PrintEmit::Markup(EmitMarkup::new());
+            markup.set_indent_increment(self.emit.get_indent_increment());
+            markup
         } else {
-            PrintEmit::NoMarkup(EmitNoMarkup::new())
+            self.plain_emit()
         };
-        self.emit.set_indent_increment(increment);
     }
 
     /// Emit the ghidra-mode `decompileAt` clang token-markup `<function>` document
@@ -2742,25 +2818,43 @@ impl PrintC {
         // ScopeLocal symbol walk is the W4 surface; we emit from the named
         // HighVariables directly (the `kuna_name` stand-in), which is the same set
         // of locals the scope would declare.
-        let _emitted_decls = self.emit_local_var_decls(fd, arch);
-        self.emit_indirect_input_aliases(fd);
-        crate::kuna_renderfault::check(fd.get_address().get_offset());
-        if fd.sblocks_get_size() != 0 {
-            self.emit_function_body(fd, arch);
+        let atomic_return = if self.out_lang == crate::kuna_lang::OutLang::Go
+            && !self.signature_param_names.values().any(|name| name == "atomic" || name == "unsafe")
+        {
+            super::kuna_goatomicreturn::plan(fd, arch)
         } else {
-            // No structured tree: keep the brace-matched shell and name the real
-            // cause.  A caught pipeline abort discards the analyzed Funcdata, so
-            // what is being rendered is the previous, un-decompiled one — that is
-            // a pipeline failure (the driver stamped its reason), NOT structuring
-            // declining on analyzed IR.
-            self.emit.tag_line();
-            let warning = match fd.kuna_pipeline_failure() {
-                Some(reason) => format!("WARNING: decompilation failed: {reason}"),
-                None => "WARNING: structured blocks unavailable (structuring declined)".to_string(),
-            };
-            let text = format!("/* {warning} */");
-            self.emit.print(&text, SyntaxHighlight::CommentColor);
-            self.record_warning(crate::kuna_functionwarnings::Warning::new(None, &warning), &text);
+            None
+        };
+        if let Some(plan) = atomic_return {
+            crate::kuna_renderfault::check(fd.get_address().get_offset());
+            if let Some(block) = fd.obank().get(plan.atomic).and_then(|op| op.get_parent()) {
+                self.commsorter.setup_block_list(fd.bblocks_ref().block(block).get_index());
+            }
+            self.emit.reset_pending_fired();
+            self.emit_comment_group(fd, Some(plan.atomic));
+            self.emit_go_atomic_return(fd, arch, &plan);
+            self.emit_comment_group(fd, None);
+        } else {
+            let _emitted_decls = self.emit_local_var_decls(fd, arch);
+            self.emit_indirect_input_aliases(fd);
+            crate::kuna_renderfault::check(fd.get_address().get_offset());
+            if fd.sblocks_get_size() != 0 {
+                self.emit_function_body(fd, arch);
+            } else {
+                // No structured tree: keep the brace-matched shell and name the real
+                // cause.  A caught pipeline abort discards the analyzed Funcdata, so
+                // what is being rendered is the previous, un-decompiled one — that is
+                // a pipeline failure (the driver stamped its reason), NOT structuring
+                // declining on analyzed IR.
+                self.emit.tag_line();
+                let warning = match fd.kuna_pipeline_failure() {
+                    Some(reason) => format!("WARNING: decompilation failed: {reason}"),
+                    None => "WARNING: structured blocks unavailable (structuring declined)".to_string(),
+                };
+                let text = format!("/* {warning} */");
+                self.emit.print(&text, SyntaxHighlight::CommentColor);
+                self.record_warning(crate::kuna_functionwarnings::Warning::new(None, &warning), &text);
+            }
         }
         // (kuna warnstyle, DIV-39) drain any slug still pending from a
         // construct with no closer flush point onto the last body line, so no
@@ -2769,6 +2863,7 @@ impl PrintC {
         self.emit.close_brace_indent("}", id);
         self.emit.tag_line();
         self.emit.end_function(id1);
+        self.emit.flush().expect("PrintC::docFunction: emit flush");
         // (kuna) Retire the scoped fd pointer (see the field doc): it is valid
         // only for this call's dynamic extent.
         self.emit_fd = None;
@@ -4244,9 +4339,15 @@ impl PrintC {
         } else {
             None
         };
+        self.goto_rewrites = if arch.goto_next && matches!(self.lang().forms.switch, crate::kuna_lang::SwitchForm::CSwitch) {
+            crate::p8_structure::kuna_gotonext::goto_rewrites(fd.sblocks_ref(), sroot, arch.recover_loop_break)
+        } else {
+            Default::default()
+        };
         self.assign_label_names(fd, sroot);
         self.emit_block_graph(fd, arch, sroot);
         self.void_tail_return = None;
+        self.goto_rewrites = Default::default();
         self.label_names.clear();
     }
 
@@ -4265,7 +4366,7 @@ impl PrintC {
         while let Some(b) = stack.pop() {
             let blk = sb.block(b);
             if blk.get_type() == BlockType::Copy {
-                if blk.is_unstructured_target() {
+                if blk.is_unstructured_target() && !self.goto_rewrites.labels.contains(&b) {
                     targets.push(b);
                 }
                 continue;
@@ -4350,6 +4451,15 @@ impl PrintC {
                 .block(blk)
                 .get_condition_opcode()
                 .unwrap_or(OpCode::CPUI_BOOL_AND);
+
+            if self.out_lang == crate::kuna_lang::OutLang::Go
+                && opc == OpCode::CPUI_BOOL_AND
+                && crate::p9_emit::kuna_goorderedcompare::redundant_right(fd, arch, b0, b1).is_some()
+                && !self.cond_block_emits_statements(fd, b1)
+            {
+                self.emit_block(fd, arch, b0);
+                return;
+            }
 
             let id = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
             self.emit_block(fd, arch, b0);
@@ -4445,7 +4555,7 @@ impl PrintC {
         }
         // Structured: only print labels for unstructured-jump targets that are
         // t_copy leaves.
-        if !fd.sblocks_ref().block(bl).is_unstructured_target() {
+        if !fd.sblocks_ref().block(bl).is_unstructured_target() || self.goto_rewrites.labels.contains(&bl) {
             return;
         }
         if fd.sblocks_ref().block(bl).get_type() != BlockType::Copy {
@@ -4795,14 +4905,16 @@ impl PrintC {
         self.emit.spaces(1, 0);
         self.context.push_mod();
         self.context.set_mod(modifiers::ONLY_BRANCH);
-        self.emit_block(fd, arch, cond_block);
+        if !self.emit_rust_option_condition(fd, arch, cond_block) {
+            self.emit_block(fd, arch, cond_block);
+        }
         self.context.pop_mod();
 
         // If the if has an unstructured-branch target, emit a goto/break/continue
         // instead of a braced body.
         let goto_target = fd.sblocks_ref().block(blk).get_if_goto_target();
         if let Some(target) = goto_target {
-            let gototype = fd.sblocks_ref().block(blk).get_if_goto_type();
+            let gototype = self.goto_rewrites.gototype(blk, fd.sblocks_ref().block(blk).get_if_goto_type());
             // (kuna outlang) C's one-line `if (cond) goto L;` needs no braces; a
             // language that requires block braces gets `if cond { goto-form }`.
             if self.lang().caps.brace_elision {
@@ -4929,7 +5041,9 @@ impl PrintC {
         // Would emit_any_label_statement print a `label_xxx:` line?
         if !fd.sblocks_ref().block(body).is_label_bump_up() {
             if let Some(front) = fd.sblocks_ref().get_front_leaf(body) {
-                if fd.sblocks_ref().block(front).is_unstructured_target() {
+                if fd.sblocks_ref().block(front).is_unstructured_target()
+                    && !self.goto_rewrites.labels.contains(&front)
+                {
                     return false;
                 }
             }
@@ -5303,6 +5417,7 @@ impl PrintC {
             if gototype != 0 {
                 self.emit.tag_line();
                 let caseblk = fd.sblocks_ref().block(blk).switch_caseblocks()[i].block;
+                let gototype = self.goto_rewrites.case_gototype(blk, caseblk, gototype);
                 self.emit_goto_statement(fd, switch_block, caseblk, gototype);
             } else {
                 let caseblk = fd.sblocks_ref().block(blk).switch_caseblocks()[i].block;
@@ -5497,21 +5612,22 @@ impl PrintC {
     /// C++ `PrintC::emitBlockGoto` (printc.cc:2915): emit the block's body
     /// (no_branch) then the trailing `goto`/`break`/`continue` statement.
     ///
-    /// STUB(W7): `BlockGoto::gotoPrints` consults `getParent()->nextFlowAfter` to
-    /// suppress a `goto` to the very next printed block; `nextFlowAfter` is not
-    /// yet ported, so the goto is always emitted when a target is present (an
-    /// over-emit, never an under-emit — a redundant `goto LAB_x;` to the
-    /// fallthrough where C++ would drop it).  Recorded as a loss.
+    /// `BlockGoto::gotoPrints` is honoured under option `gotonext`
+    /// ([`goto_rewrites`](PrintC::goto_rewrites)); off, the goto is emitted whenever
+    /// a target is present.
     fn emit_block_goto(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         self.context.push_mod();
         self.context.set_mod(modifiers::NO_BRANCH);
         let inner = fd.sblocks_ref().block(blk).get_block(0);
         self.emit_block(fd, arch, inner);
         self.context.pop_mod();
-        // gotoPrints(): emit the trailing goto unless it targets the next block.
+        if self.goto_rewrites.silent.contains(&blk) {
+            self.flush_eol_warnings();
+            return;
+        }
         if let Some(target) = fd.sblocks_ref().block(blk).get_goto_target() {
             self.emit.tag_line();
-            let gototype = fd.sblocks_ref().block(blk).get_goto_type();
+            let gototype = self.goto_rewrites.gototype(blk, fd.sblocks_ref().block(blk).get_goto_type());
             self.emit_goto_statement(fd, inner, target, gototype);
             // (kuna warnstyle, DIV-39) pending block warnings land after the
             // trailing goto/break/continue.
@@ -5973,7 +6089,8 @@ impl PrintC {
             return false;
         }
         if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts
-            && (crate::kuna_rustsigned::plan(fd, op).is_some()
+            && (self.rust_wrapping_plan(fd, arch, op).is_some()
+                || crate::kuna_rustsigned::plan(fd, op).is_some()
                 || self.rust_integer_binary_plan(fd, arch, op).is_some())
         {
             return false;
@@ -6162,7 +6279,7 @@ impl PrintC {
     /// else `None` at the top of an expression (printc.cc:2579 passes `(PcodeOp *)0`).
     /// Only `opIntSext`/`opIntZext` consume it (the extension-cast-implied test,
     /// printc.cc:806-830); every other override ignores it.
-    fn op_push_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) {
+    pub(crate) fn op_push_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) {
         let opc = fd.obank().get(op).expect("op_push_ir: stale op").code();
         // (kuna truthycond, DIV-37) CONDITION_CONTEXT only survives through the
         // boolean-preserving operators; any other operator's operands are value
@@ -6325,7 +6442,9 @@ impl PrintC {
                     self.emit.spaces(1, 0);
                     if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
                         if self.out_lang == crate::kuna_lang::OutLang::Go {
-                            if self.rt_ctx.go_pair_types.is_none() || !self.push_go_pair_return(fd, arch, vn, op) {
+                            let emitted_pair = self.rt_ctx.go_pair_types.is_some()
+                                && self.push_go_pair_return(fd, arch, vn, op);
+                            if !emitted_pair && !self.push_go_zero_record_return(fd, vn, op) {
                                 if let Some(target) = fd.get_func_proto().get_output_type() {
                                     self.push_go_value_as(fd, arch, vn, op, target);
                                 } else { self.push_vn_ir(fd, arch, vn, op); }
@@ -6492,6 +6611,7 @@ impl PrintC {
             return;
         }
         if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts {
+            if self.op_rust_wrapping(fd, arch, op) { return; }
             if self.op_rust_integer_binary(fd, arch, tok, op) { return; }
             if let Some(plan) = crate::kuna_rustsigned::plan(fd, op) {
                 self.emit_rust_signed_text(fd, arch, tok, op, plan);
@@ -6727,6 +6847,11 @@ impl PrintC {
 
     /// C++ `PrintLanguage::opUnary` over the IR (printlanguage.cc:573).
     fn op_unary_ir(&mut self, fd: &Funcdata, arch: &Architecture, tok: &'static OpToken, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts
+            && self.op_rust_wrapping(fd, arch, op)
+        {
+            return;
+        }
         self.push_op(tok, Some(op_key(op)));
         if let Some(v0) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
             self.push_vn_ir(fd, arch, v0, op);
@@ -6847,6 +6972,12 @@ impl PrintC {
     /// next layer).
     fn op_func_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         let opc = fd.obank().get(op).expect("op_func_ir: stale op").code();
+        if opc == OpCode::CPUI_FLOAT_NAN
+            && self.out_lang == crate::kuna_lang::OutLang::Go
+            && self.op_go_float_nan(fd, arch, op)
+        {
+            return;
+        }
         let name = func_operator_name(fd, op, opc);
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
         // The name is pushed as an *operator* token (C++ `optoken`, no_color).
@@ -6930,32 +7061,29 @@ impl PrintC {
             Some(v) => fd.vbank().get(v).map(|vn| vn.get_offset()).unwrap_or(0),
             None => 0,
         };
-        let display = arch
-            .userops
-            .get_op(in0_off as u32)
-            .map(|u| u.get_display())
-            .unwrap_or(0);
+        let rust = self.out_lang == crate::kuna_lang::OutLang::Rust;
+        let userop = if rust {
+            u32::try_from(in0_off)
+                .ok()
+                .and_then(|index| arch.userops.get_op(index))
+        } else {
+            arch.userops.get_op(in0_off as u32)
+        };
+        let display = userop.map_or(0, |op| op.get_display());
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         if display == 0 {
-            let acle = arch.userops.get_op(in0_off as u32).and_then(|u| {
+            let acle = userop.and_then(|u| {
                 crate::kuna_acleintrinsics::intrinsic(fd, arch, op, u.get_name())
             });
             if let Some(call) = acle {
                 self.push_acle_intrinsic(fd, arch, op, &call);
                 return;
             }
-            // Functional syntax: for CALLOTHER the operator name resolves to the
-            // userop's name (the base getOperatorName), or the generic
-            // `CALLOTHER[index]` fallback.
-            let mut nm = match arch.userops.get_op(in0_off as u32) {
-                Some(u) => String::from_utf8_lossy(u.get_name()).into_owned(),
-                None => format!("CALLOTHER[{:#x}]", in0_off),
+            let nm = match (rust, userop) {
+                (true, op) => crate::kuna_rustuserop::operator_name(op.map(|u| u.get_name()), in0_off),
+                (false, Some(op)) => String::from_utf8_lossy(op.get_name()).into_owned(),
+                (false, None) => format!("CALLOTHER[{:#x}]", in0_off),
             };
-            if self.out_lang == crate::kuna_lang::OutLang::Rust
-                && crate::kuna_rustuserop::raw_keyword(&nm)
-            {
-                nm.insert_str(0, "r#");
-            }
             self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
             self.push_atom(&Atom::with_op(
                 nm,
@@ -8602,29 +8730,30 @@ impl PrintC {
         }
 
         // Direct CALL: the callee name from the fspec annotation.
-        let name = self.call_callee_name(fd, op);
-        for scope in self.call_scope_prefix(fd, arch, op, &name) {
-            self.push_op(&tokens::SCOPE, None);
-            self.push_atom(&Atom::syntax(
-                scope,
-                TagType::Syntax,
-                crate::printlanguage::SyntaxHighlight::global_color,
+        let first_argument = self.push_go_direct_method(fd, arch, op).unwrap_or_else(|| {
+            let name = self.call_callee_name(fd, op);
+            for scope in self.call_scope_prefix(fd, arch, op, &name) {
+                self.push_op(&tokens::SCOPE, None);
+                self.push_atom(&Atom::syntax(
+                    scope,
+                    TagType::Syntax,
+                    crate::printlanguage::SyntaxHighlight::global_color,
+                ));
+            }
+            self.push_atom(&Atom::with_op(
+                name,
+                TagType::FuncToken,
+                crate::printlanguage::SyntaxHighlight::funcname_color,
+                op_key(op),
             ));
-        }
-        self.push_atom(&Atom::with_op(
-            name,
-            TagType::FuncToken,
-            crate::printlanguage::SyntaxHighlight::funcname_color,
-            op_key(op),
-        ));
-        // count = numInput - 1 (no hidden-this: skip = -1).  The argument Varnodes
-        // are in[1..].
-        let count = nin - 1;
+            1
+        });
+        let count = nin - first_argument;
         if count > 0 {
             for _ in 0..(count - 1) {
                 self.push_op(&tokens::COMMA, Some(op_key(op)));
             }
-            for i in 1..nin {
+            for i in first_argument..nin {
                 if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
                     self.pointer_candidate = if self.pointer_record.is_some() && !self.emit.emits_markup() {
                         let view = PointerView { pc: self, fd };
@@ -8645,6 +8774,44 @@ impl PrintC {
             ));
         }
         self.push_call_result_close(result_conversion, op);
+    }
+
+    fn push_go_direct_method(
+        &mut self, fd: &Funcdata, arch: &Architecture, op: OpId,
+    ) -> Option<i32> {
+        use super::kuna_langgo::identifier;
+
+        if self.out_lang != crate::kuna_lang::OutLang::Go {
+            return None;
+        }
+        let method = super::kuna_gomethod::direct_method(fd, arch, op)?;
+        let shadowed = self.signature_param_names.values().any(|name| name == &method.type_name)
+            || self.declared_locals.iter().any(|local| identifier(&local.name) == method.type_name);
+        let (name, first_argument) = if shadowed {
+            let receiver = fd.vbank().get(method.receiver)?;
+            if receiver.is_implied() || receiver.is_constant() {
+                return None;
+            }
+            let ty = receiver.get_high()
+                .and_then(|high| self.declared_local(high))
+                .and_then(|local| local.ty.clone())
+                .or_else(|| declared_variable_type(fd, method.receiver))?;
+            if !method.has_selector_type(&ty) {
+                return None;
+            }
+            self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
+            self.push_vn_ir(fd, arch, method.receiver, op);
+            (method.member, 2)
+        } else {
+            (format!("(*{}).{}", method.type_name, method.member), 1)
+        };
+        self.push_atom(&Atom::with_op(
+            name,
+            TagType::OpToken,
+            crate::printlanguage::SyntaxHighlight::funcname_color,
+            op_key(op),
+        ));
+        Some(first_argument)
     }
 
     fn emit_indirect_input_aliases(&mut self, fd: &Funcdata) {
@@ -8966,6 +9133,17 @@ impl PrintC {
     /// as an explicit `*ptr`.  A statement LOAD through the byte-copy helper copies
     /// straight into its printed destination member's scalar type.
     fn op_load_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::Go {
+            if let Some(view) = super::kuna_gostringindex::prove(fd, op) {
+                self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
+                self.push_go_call("unsafe.String", op);
+                self.push_op(&tokens::COMMA, Some(op_key(op)));
+                self.push_vn_ir(fd, arch, view.data, op);
+                self.push_vn_ir(fd, arch, view.len, op);
+                self.push_vn_ir(fd, arch, view.index, op);
+                return;
+            }
+        }
         if self.out_lang == crate::kuna_lang::OutLang::C {
             if let Some(mut access) = crate::kuna_stackmem::access(fd, op) {
                 if self.stmt_op == Some(op) {
@@ -8992,6 +9170,9 @@ impl PrintC {
             ));
             return;
         }
+        if self.push_post_increment(fd, arch, op, ptr) {
+            return;
+        }
         let usearray = self.check_array_deref(fd, ptr) || self.is_value_indirect_input(fd, ptr);
         let mut m = self.context.mods();
         if usearray && !self.context.is_set(modifiers::FORCE_POINTER) {
@@ -9000,6 +9181,19 @@ impl PrintC {
             self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
         }
         self.push_vn_ir_m(fd, arch, ptr, op, m);
+    }
+
+    /// (kuna `postinc`) `*ptr++` for a LOAD or STORE `kuna_postinc` marked.
+    fn push_post_increment(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, ptr: VarnodeId) -> bool {
+        let marked = fd.obank().get(op).is_some_and(|o| o.get_addlflags() & crate::op::pcodeop_addlflags::kuna_postinc != 0);
+        if !marked {
+            return false;
+        }
+        self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+        self.push_op(&tokens::POST_INCREMENT, Some(op_key(op)));
+        self.push_vn_explicit_ir(fd, arch, ptr, op);
+        self.push_atom(&Atom::syntax("", TagType::BlankToken, crate::printlanguage::SyntaxHighlight::no_color));
+        true
     }
 
     fn storage_load_member_type(
@@ -9053,6 +9247,12 @@ impl PrintC {
             None => return,
         };
         let val = fd.obank().get(op).and_then(|o| o.get_in(2));
+        if self.push_post_increment(fd, arch, op, ptr) {
+            if let Some(val) = val {
+                self.push_vn_ir_m(fd, arch, val, op, mods);
+            }
+            return;
+        }
         let usearray = self.check_array_deref(fd, ptr) || self.is_value_indirect_input(fd, ptr);
         let mut m = mods;
         if usearray && !self.context.is_set(modifiers::FORCE_POINTER) {
@@ -10733,8 +10933,14 @@ impl PrintC {
                 // are indexed, never that they end at a zero byte.
                 if !v.is_synthetic_literal() && off != 0 && !crate::kuna_elemptr::reaches_element_pointer(fd, vn) {
                     if let Some(sub) = ct.get_ptr_to() {
-                        // (kuna `cfstrings`) An entry reads as its string whatever its type.
-                        let sub = if sub.is_char_print() { Some(sub) } else { cfstring_char(arch, off) };
+                        // (kuna `cfstrings`) An entry reads as its string whatever its type,
+                        // and so does a literal (kuna `cstringconst`).
+                        let sub = if sub.is_char_print() {
+                            Some(sub)
+                        } else {
+                            cfstring_char(arch, off)
+                                .or_else(|| crate::kuna_cstringconst::literal_char(arch, off, ct.get_size()))
+                        };
                         if let Some(sub) = sub {
                             // point = op->getAddr() (the using op's address; used only
                             // by a segmented resolver — flat spaces ignore it).
@@ -10830,6 +11036,17 @@ impl PrintC {
                     self.push_cast_close(&ct);
                 }
                 return;
+            }
+            // (kuna `cstringconst`) A constant at the start of a literal that a
+            // call takes as an argument its prototype does not declare a scalar
+            // reads as the literal.
+            if !v.is_synthetic_literal() && self.out_lang == crate::kuna_lang::OutLang::C {
+                if let Some(sub) = crate::kuna_cstringconst::call_literal_char(arch, fd, op, vn, off, sz) {
+                    let point = fd.obank().get(op).map(|o| o.get_addr().clone()).unwrap_or_default();
+                    if self.push_ptr_char_constant_ir(arch, off, sz, &sub, &point, op, vn, None) {
+                        return;
+                    }
+                }
             }
             // Integer path.  Inside `push_integer` (printc.cc:1376) the varnode
             // high's equate-Symbol format OVERRIDES the read-facing type's format
@@ -11666,14 +11883,21 @@ impl PrintC {
             // whole-symbol cover the C++ `setSymbol` records for a size-matching
             // entry) is also a bare-name render, so `off <= 0` covers both.
             if sym_off <= 0 {
-                if self.out_lang == crate::kuna_lang::OutLang::C
+                if matches!(self.out_lang, crate::kuna_lang::OutLang::C | crate::kuna_lang::OutLang::Rust)
                     && sym_type.as_ref().is_some_and(|ty| ty.get_metatype() == crate::dtype::type_metatype::TYPE_CODE)
                 {
                     if let Some(address) = spacebase_unnamed_address(arch, fd, op, &ct, in1const, ptr_size) {
                         let point = fd.obank().get(op).map(|o| o.get_addr().clone()).unwrap_or_default();
-                        if let Some(prefix) = crate::kuna_funcptrnames::prefix(
-                            fd, arch, &address, &point, &name, self.context.namespace_strategy(),
-                        ) {
+                        let prefix = if self.out_lang == crate::kuna_lang::OutLang::Rust {
+                            crate::kuna_rustfuncptr::prefix(
+                                fd, arch, &address, &point, &name, self.context.namespace_strategy(),
+                            )
+                        } else {
+                            crate::kuna_funcptrnames::prefix(
+                                fd, arch, &address, &point, &name, self.context.namespace_strategy(),
+                            )
+                        };
+                        if let Some(prefix) = prefix {
                             for scope in prefix {
                                 self.push_op(&tokens::SCOPE, None);
                                 self.push_atom(&Atom::syntax(
@@ -13851,6 +14075,9 @@ fn to_emit_hl(hl: crate::printlanguage::SyntaxHighlight) -> SyntaxHighlight {
 
 #[path = "kuna_rustarrayinit.rs"]
 mod kuna_rustarrayinit;
+
+#[path = "kuna_rustoption_niche.rs"]
+mod kuna_rustoption_niche;
 
 #[cfg(test)]
 mod tests;

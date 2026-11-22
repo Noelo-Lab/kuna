@@ -5,6 +5,7 @@
 
 pub mod kuna_indexrescale;
 pub mod kuna_vtabletypes;
+pub mod kuna_typevote;
 pub mod funcdata_union;
 pub mod kuna_thumbfuncptr;
 pub mod kuna_inferfuncentry;
