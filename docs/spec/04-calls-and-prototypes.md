@@ -7613,6 +7613,70 @@ other path stay `void`. The default run prints them all as before: `void`, and
 the scrubbed build's `xmm0`. An AArch64 object built in the test covers `keep`,
 `fwd` and a `cmp w0,#7; b.eq` return there.
 
+### (kuna) `cachereturn` — a function that returns its cache cell
+
+(kuna) `cachereturn` (default **on**, Swift images only,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_cachereturn.rs`) takes a
+return trial that `ancestorOpUse` refuses because the value is a memory cell's
+contents on every path:
+
+```text
+void *get(void) { void *v = g; if (v) return v; v = make(); g = v; return v; }
+
+ldr x0,[x19]; cbnz x0,L; bl make; str x0,[x19]; L: ...; ret     (clang -O2 arm64)
+```
+
+At the RETURN, x0 is the load of `g` on one path and `make`'s result, stored
+into `g`, on the other. The load also feeds the branch and the result also
+feeds the store, so upstream scores both as incidental and the function prints
+`void get(void) { if (!g) g = make(); }` while its callers use the result.
+Swift's lazy protocol-witness-table accessors, its type-metadata caches and its
+mangled-name type cache have this shape (`ldr x0,[cell]; cbz x0,1f; ret; 1:
+... bl swift_getWitnessTable; stlr x0,[cell]; ret`).
+
+In `ActionReturnRecovery`, beside `passthrough`'s tail-call arm, on an image
+whose source language is Swift (the `sourcelang` fact), a trial in an output
+register of the model whose output is not locked is marked active when, at
+every live RETURN, every value reaching the trial's input through MULTIEQUAL,
+COPY and an INDIRECT that does not create it is either
+
+- the output of a LOAD of the trial's size, or
+- a call's result of the trial's size (the CALL's output, or the INDIRECT the
+  call creates for an output not yet recovered) that a STORE writes as its
+  value,
+
+at least one of each, every LOAD and STORE in the same space and through one
+pointer: the same Varnode once COPYs are stripped, the same constant (also an
+INT_ADD or PTRSUB of constants not yet folded, the `adrp` page plus its
+offset), or the same INT_ADD, PTRSUB or PTRADD of such pointers. A cell behind
+a parameter (`*slot`) qualifies; a pointer computed from the stack pointer
+does not. The two refusals keep the rule to a cache: a value updated in place
+(`x = *p; if (x) *p = x - n;`, its stored value an arithmetic result) leaves
+the cell's value in the register of a `void` function, and so does a register
+spilled to the stack and reloaded (Go's `morestack` path spills `x0` to
+`[sp+8]` and reloads it before re-entering the function).
+
+**What it costs, and why only Swift.** The bytes cannot tell the accessor from
+a `void` function that tests the cell in the return register and leaves the
+stored value there. LLVM AArch64 tests a `void` function's cell in a scratch
+register (`ldr x8,[g]`), which does not match, but gcc AArch64, clang ARM32 and
+gcc MIPS compile `void init(void) { if (!g) g = make(); }` to the accessor's
+exact bytes: in gcc -O2 AArch64 builds of bash and coreutils, 10 of the 11
+functions the rule would change are `void` initializers and grow-on-demand
+helpers (`initialize_aliases`, `add_temp_dir`). A Swift image is LLVM-compiled,
+and its accessors are the compiler's own, so the rule acts there only; force
+`option sourcelang swift` on a Swift binary whose language signals were
+stripped. Only a cell read through a LOAD counts: x86-64 reads a global
+straight from its address (`mov rax,[g]` lifts to a COPY of the global's ram
+Varnode), so x86-64 accessors of a global keep upstream's reading.
+`option cachereturn off` restores upstream's reading everywhere.
+
+Stage test `tests/stages/kuna-cachereturn.xml`: with `option sourcelang swift`,
+clang -O2 arm64 `get_cached` and `get_slot` and a hand-written two-RETURN
+accessor print `void` with the option off and return the cell with it on; with
+`option sourcelang c` they print `void` at the default; `void ensure(void) {
+if (!g) g = make(); }` stays `void` in every pass.
+
 ### (kuna) A declared value forwarded in its own register to a variadic call (`kuna_varargforward.rs`)
 
 (kuna) The forwarded-value rule

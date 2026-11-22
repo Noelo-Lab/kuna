@@ -2265,15 +2265,21 @@ mod tests {
         // and kuna-panicloc / a Rust panic Location record is typed and named after its position (option panicloc)
         // and kuna-gotypenames / Go type descriptors and itabs named as the linker spells them, go1.16 on
         // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
-        // and kuna-callresultuse / an unknown callee's result read untouched by the next call is its argument (option callresultuse)
-        // and kuna-callresultuse-armtail / by default a tail call after another call takes no arguments (option callresultuse off)
         // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
         // and kuna-calleefilledarg / an objc_msgSend$ selector stub keeps the arguments staged after x1 (option calleefilledarg)
         // and kuna-calleefilledarg-ctramp / a C trampoline that fills rsi keeps the positional rule
         // and kuna-switchextent-a64 / an unchecked AArch64 table ends at the function's next table (option switchextent)
         // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
-        // and kuna-callresultuse-runtime / a runtime entry point says by its name which register it takes (option callresultuse)
-        assert_eq!(count, 855, "corpus file count drifted");
+        // and kuna-objcforin / an SDK struct pointer parameter types the stack object passed to it (option objcsdk)
+        // and kuna-switchnextcsel-a64 / a csel-picked next table still ends a byte-masked last table (option switchextent)
+        // and kuna-switchmerge / a search tree of jump tables prints as one switch (option switchmerge)
+        // and kuna-switchmerge-values / a hole the default code sends to the same place prints no label, and a 1100-entry table is a switch
+        // and kuna-switchmerge-split / a range split between two switches, and an == test heading default, print as one switch
+        // and kuna-jumptableslots / a guarded table indexed by x >> 8 past jumptablemax stays a computed call
+        // and kuna-cachereturn / a lazy accessor returns the value of its cache cell (option cachereturn)
+        // and kuna-thunknames / a placeholder jump thunk is named after its target (option thunknames)
+        // and kuna-swifthelpers / Swift instantiation helpers and lazy witness table accessors (option swifthelpers)
+        assert_eq!(count, 864, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

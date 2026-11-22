@@ -158,9 +158,9 @@ pub struct DirectiveSymbol {
 
 pub struct Funcdata {
     /// (kuna `switchextent`) The jump tables the function's extent dispatches
-    /// through, sorted, once a flow with a computed jump decoded it
-    /// (`p2_lift/kuna_switchextent.rs`).
-    pub(crate) kuna_extent_tables: Option<std::rc::Rc<Vec<u64>>>,
+    /// through, and those a Swift enum's case indexes, once a flow with a
+    /// computed jump decoded it (`p2_lift/kuna_switchextent.rs`).
+    pub(crate) kuna_extent_tables: Option<std::rc::Rc<crate::kuna_switchextent::ExtentTables>>,
     /// (kuna `switchextent`) The tables of the functions after this one, once
     /// a table that is the function's last asked for them.
     pub(crate) kuna_later_tables: Option<std::rc::Rc<Vec<u64>>>,
