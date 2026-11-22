@@ -2276,7 +2276,11 @@ mod tests {
         // and kuna-swiftnames / Swift accessors, witnesses, value witnesses and helpers named from code shape
         // and kuna-swiftrrregs / the Swift runtime's register-specific retain and release entry points
         // and kuna-swiftstdlib / the Swift standard library's C entry points carry their shims-header signatures
-        assert_eq!(count, 858, "corpus file count drifted");
+        // and kuna-calleefilledarg / an objc_msgSend$ selector stub keeps the arguments staged after x1 (option calleefilledarg)
+        // and kuna-calleefilledarg-ctramp / a C trampoline that fills rsi keeps the positional rule
+        // and kuna-switchextent-a64 / an unchecked AArch64 table ends at the function's next table (option switchextent)
+        // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
+        assert_eq!(count, 862, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
