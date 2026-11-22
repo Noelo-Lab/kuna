@@ -556,7 +556,9 @@ const PIN_FAILLOG_DIFF_CEILING: [f64; 3] = [0.09, 0.12, 0.15];
 // 0x272a/0x2731, then write 0x6288 before 0x6278 as the binary does at
 // 0x2738/0x273f. The former early 0x6278 assignment and global reread become
 // one local capture; the extra line preserves the actual memory-write order.
-const PIN_FAILLOG_C_LINES: [usize; 3] = [281, 34, 92];
+// sub_2620 281 -> 286 with `crossjumprevert` past one block (crossjumptail): the
+// gotos into shared statement runs become copies of the runs on each path.
+const PIN_FAILLOG_C_LINES: [usize; 3] = [286, 34, 92];
 // Tokens Java's `getC()` cleaner REWRITES (`IllegalCharCppTransformer`).
 // Phase 3 measured 57/10/24 (whole rendered declarators like
 // `"unsigned long *"` as single `<type>` tokens, received by scripts/exports

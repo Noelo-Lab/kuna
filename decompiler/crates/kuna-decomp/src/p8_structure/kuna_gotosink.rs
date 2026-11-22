@@ -208,7 +208,7 @@ pub(crate) fn gotosink_apply(data: &mut Funcdata) -> i32 {
 
 /// Clear the label of each leaf in `heads` that no plain goto (not a `break`
 /// or `continue`) reaches any more.
-fn release_labels(data: &mut Funcdata, heads: &[BlockId]) {
+pub(crate) fn release_labels(data: &mut Funcdata, heads: &[BlockId]) {
     let graph = data.sblocks_ref();
     let mut still = std::collections::BTreeSet::new();
     let mut stack = vec![data.sblocks_root()];

@@ -2487,6 +2487,31 @@ impl BlockGraph {
         self.arena[dest].list.push(node);
     }
 
+    /// (kuna `crossjumptail`) A new node of `kind` with no parent and no components.
+    pub fn kuna_new_node(&mut self, kind: BlockKind) -> BlockId {
+        self.arena.insert(FlowBlock::new_kind(kind))
+    }
+
+    /// (kuna `crossjumptail`) Append `node` to the components of `parent`.
+    pub fn kuna_push_component(&mut self, parent: BlockId, node: BlockId) {
+        self.arena[node].parent = Some(parent);
+        self.arena[parent].list.push(node);
+    }
+
+    /// (kuna `crossjumptail`) A copy of the print tree under `id`: the same basic
+    /// blocks, jump targets and edges, without the labels of the original.
+    pub fn kuna_clone_subtree(&mut self, id: BlockId) -> BlockId {
+        let mut copy = self.arena[id].clone();
+        copy.clear_flag(block_flags::f_unstructured_targ | block_flags::f_label_bumpup | block_flags::f_interior_gotoin);
+        let members = std::mem::take(&mut copy.list);
+        let node = self.arena.insert(copy);
+        for m in members {
+            let c = self.kuna_clone_subtree(m);
+            self.kuna_push_component(node, c);
+        }
+        node
+    }
+
     pub fn kuna_flatten_ifelse(&mut self, if_id: BlockId) -> bool {
         // Must still be a 3-component BlockIf.
         if self.arena[if_id].get_type() != BlockType::If || self.arena[if_id].get_size() != 3 {

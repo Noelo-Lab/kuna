@@ -9,6 +9,7 @@ pub mod kuna_clonephiorder;
 pub mod kuna_condfold;
 pub mod kuna_condstmts;
 pub mod kuna_crossjumpreverter;
+pub mod kuna_crossjumptail;
 pub mod kuna_dedupitetail;
 pub mod kuna_gotolabel;
 pub mod kuna_gotonext;

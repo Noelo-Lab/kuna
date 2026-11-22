@@ -1,0 +1,90 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:AppleSilicon:default">
+<!--
+    kuna `crossjumprevert`, past one block (`ActionCrossJumpTail`, P8
+    "goto-quality"): after `gotosink`, a goto to a shared run of statements is
+    rewritten when flow after the run is known.  The run is copied after the
+    jump when both paths reach the same place, the code after the jumping
+    `if` becomes its else arm when that converges instead, and a run that
+    ends the body of the jump's innermost loop is copied before a
+    `continue;`.  Pass 1 is the default, pass 2 has `option crossjumprevert
+    off`.
+
+    The bytes are houdini_escape_href, S_normalize_code,
+    cmark_strbuf_normalize_whitespace, cmark_strbuf_truncate and
+    cmark_node_own of swift-cmark 0.29.0.gfm.13 (BSD-2-Clause), built by
+    clang for arm64-apple-ios at -O2 -fno-inline.
+-->
+<bytechunk space="ram" offset="0x75c4">
+287ca10a091440b91f01096b8a000054081400b9090440f93f492838c0035fd6
+</bytechunk>
+<bytechunk space="ram" offset="0x770c">
+f657bda9f44f01a9fd7b02a9fd830091f30300aa081440b91f0500710b030054150080d214008052160080520a000014690640f92a6975382ac9343894060011
+b5060091691680b9f60308aabf0209eb8a010054680640f90069f5386c0000941f000071e8079f1a40feff34b6fe0737690640f90a048052f0ffff1714008052
+e00313aae10314aafd7b42a9f44f41a9f657c3a889ffff17
+</bytechunk>
+<bytechunk space="ram" offset="0x8cd0">
+ffc301d1fc6f01a9fa6702a9f85f03a9f65704a9f44f05a9fd7b06a9fd830191a8048052e83700395f0400718b070054f30302aaf40301aaf50300aa09008052
+f803022a39300e501f2003d576f111501f2003d517f111101f2003d53af011701f2003d507000014e00315aae10316aa9df9ff97690700113f01136b0a050054
+e803092a2a0500117f020a6b7bc6891ae90308aa8a6a69383c6b6a38bc000034290500913f0118eb63ffff5402000014fb0309aa7f03086bad0000546203084b
+8102088be00315aa6df9ff979c020035884a7b381f9d007180fcff541f99007181000054e00315aae10317aae1ffff1709fd44d3496b6938e93b0039080d4092
+486b6838e83f0039e1370091e00315aa620080525af9ff97d7ffff1720008052fd7b46a9f44f45a9f65744a9f85f43a9fa6742a9fc6f41a9ffc30191c0035fd6
+</bytechunk>
+<bytechunk space="ram" offset="0xcf50">
+081440b91f0500712b060054f44fbea9fd7b01a9fd430091090080d208008052010080520a0440f90d0000140b0480524bc92138210400110a0440f94b696938
+7f810071eb079f1a6801082a290500910b1480b93f010beb6a0100544b6969387f29007140feff547f35007121feff544b01098b6b0540397f29007181fdff54
+eeffff17e8010036080440f9090140393f8100716101005408c1218b08f15f381f810071e1000054f30300aaf40301aa2100805278e9ff97e00313aa810a0051
+fd7b41a9f44fc2a86be9ff170100805269e9ff17
+</bytechunk>
+<bytechunk space="ram" offset="0xded4">
+600200b4fa67bba9f85f01a9f65702a9f44f03a9fd7b04a9fd03019130ffff97f30300aa44ffff971f04007121010054e00313aafd7b44a9f44f43a9f65742a9
+f85f41a9fa67c5a838ffff17c0035fd6f40300aa15009812d600905237008052380380521924805211000014680240f901400291f40300aae00308aa1d000094
+e00314aa09148052680240f90100098be00308aa17000094e00313aa26ffff97f40300aa1f04007140fcff54e00313aa68ffff979f0a007101ffff5408c84079
+091280520a01150b5f210071c8000054ea22ca1a5f01186a81fdff545f01196a61fcff541f01166b00fdff54ebffff17
+</bytechunk>
+<symbol space="ram" offset="0x75c4" name="cmark_strbuf_truncate"/>
+<symbol space="ram" offset="0x770c" name="cmark_strbuf_normalize_whitespace"/>
+<symbol space="ram" offset="0x8cd0" name="houdini_escape_href"/>
+<symbol space="ram" offset="0xcf50" name="S_normalize_code"/>
+<symbol space="ram" offset="0xded4" name="cmark_node_own"/>
+</binaryimage>
+<script>
+  <com>lo fu houdini_escape_href</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu S_normalize_code</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cmark_strbuf_normalize_whitespace</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cmark_node_own</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option crossjumprevert off</com>
+  <com>lo fu houdini_escape_href</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu S_normalize_code</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cmark_strbuf_normalize_whitespace</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cmark_node_own</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="KUNA-CROSSJUMPTAIL #1: the jump to the shared call prints only with the option off" min="1" max="1">goto label_8d40;</stringmatch>
+<stringmatch name="KUNA-CROSSJUMPTAIL #2: by default the arm that jumped ends in its own copy of the call" min="1" max="1">^        v4 = 0x2cb44;$
+^        sub_73b4\(a0,v4\);$
+^      \}$
+^      else \{$</stringmatch>
+<stringmatch name="KUNA-CROSSJUMPTAIL #3: by default the arm into the store run gets its own copy of the store" min="1" max="1">^        if \(\*\(char \*\)\(v4 \+ v3 \+ 1\) != '\\n'\) \{$
+^          v5 = ' ';$
+^          \*\(char \*\)\(v4 \+ v2\) = v5;$</stringmatch>
+<stringmatch name="KUNA-CROSSJUMPTAIL #4: the jump to the call ending the loop body is a copy and continue by default" min="1" max="1">^          v3 = sub_dc08\(v2\);$
+^          continue;$</stringmatch>
+<stringmatch name="KUNA-CROSSJUMPTAIL #5: one goto by default and six with the option off" min="7" max="7">goto label_</stringmatch>
+<stringmatch name="KUNA-CROSSJUMPTAIL #6: one label by default and six with the option off" min="7" max="7">^label_</stringmatch>
+</decompilertest>
