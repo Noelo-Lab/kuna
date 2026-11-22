@@ -347,6 +347,66 @@ fn guarded_float_branch_preserves_polarity_and_shared_conditions() {
     }
 }
 
+/// ARM `le` (`Z || N != V`) and `gt` (`!Z && N == V`) after `vcmp`/`fcmp`, and `gt` with only
+/// one operand guarded, which no single comparison spells.
+#[test]
+fn arm_flag_conditions_fold_to_their_exact_comparison() {
+    for (case, expect) in [
+        ("le", Some((OpCode::CPUI_BOOL_NEGATE, OpCode::CPUI_FLOAT_LESS))),
+        ("gt", Some((OpCode::CPUI_COPY, OpCode::CPUI_FLOAT_LESS))),
+        ("gt_one_guard", None),
+    ] {
+        let mut fd = build_fd();
+        let a = mk_input(&mut fd, 0x10, 8);
+        let b = mk_input(&mut fd, 0x20, 8);
+        let mut ops = Vec::new();
+        let mut written = |fd: &mut Funcdata, code, inputs: &[VarnodeId]| {
+            let op = mk_op(fd, inputs.len() as int4, 0x100, code);
+            fd.op_set_all_input(op, inputs).unwrap();
+            ops.push(op);
+            (op, fd.new_unique_out(1, op).unwrap())
+        };
+        let (_, n) = written(&mut fd, OpCode::CPUI_FLOAT_LESS, &[a, b]);
+        let (_, z) = written(&mut fd, OpCode::CPUI_FLOAT_EQUAL, &[a, b]);
+        let (nan_a, guard_a) = written(&mut fd, OpCode::CPUI_FLOAT_NAN, &[a]);
+        let v = if case == "gt_one_guard" {
+            guard_a
+        } else {
+            let (_, guard_b) = written(&mut fd, OpCode::CPUI_FLOAT_NAN, &[b]);
+            written(&mut fd, OpCode::CPUI_BOOL_OR, &[guard_a, guard_b]).1
+        };
+        let (root, value) = if case == "le" {
+            let (_, ne) = written(&mut fd, OpCode::CPUI_INT_NOTEQUAL, &[n, v]);
+            written(&mut fd, OpCode::CPUI_BOOL_OR, &[z, ne])
+        } else {
+            let (_, not_z) = written(&mut fd, OpCode::CPUI_BOOL_NEGATE, &[z]);
+            let (_, same) = written(&mut fd, OpCode::CPUI_INT_EQUAL, &[n, v]);
+            written(&mut fd, OpCode::CPUI_BOOL_AND, &[not_z, same])
+        };
+        let ret = mk_op(&mut fd, 1, 0x110, OpCode::CPUI_RETURN);
+        fd.op_set_all_input(ret, &[value]).unwrap();
+        let block_root = fd.bblocks_ref().root.unwrap();
+        let block = fd.bblocks_mut().new_block_basic(block_root);
+        for op in ops.into_iter().chain([ret]) {
+            fd.op_insert_end(op, block);
+        }
+        let folded =
+            crate::p3_dataflow::kuna_floatnegation::fold_nan_consumers(&mut fd, nan_a);
+        let Some((root_code, compare_code)) = expect else {
+            assert!(!folded, "{case}");
+            continue;
+        };
+        assert!(folded, "{case}");
+        assert_eq!(code_of(&fd, root), root_code, "{case}");
+        let inner = fd.obank().get(root).unwrap().get_in(0).unwrap();
+        let op = fd.vbank().get(inner).unwrap().get_def().unwrap();
+        let op = fd.obank().get(op).unwrap();
+        assert_eq!(op.code(), compare_code, "{case}");
+        assert_eq!(op.get_in(0), Some(b), "{case}");
+        assert_eq!(op.get_in(1), Some(a), "{case}");
+    }
+}
+
 #[test]
 fn boolnegate_negative_unwritten_input() {
     let mut fd = build_fd();

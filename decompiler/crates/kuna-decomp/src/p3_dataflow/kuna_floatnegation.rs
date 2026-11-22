@@ -116,6 +116,22 @@ fn or_leaves(data: &Funcdata, vn: VarnodeId, depth: usize, leaves: &mut Vec<Varn
     true
 }
 
+fn same_value(data: &Funcdata, x: VarnodeId, y: VarnodeId) -> bool {
+    let (x, y) = (copied_value(data, x), copied_value(data, y));
+    functional_equality(x, y, data.vbank(), data.obank()) || same_instruction_read(data, x, y)
+}
+
+fn non_nan_constant(data: &Funcdata, vn: VarnodeId) -> bool {
+    data.vbank().get(copied_value(data, vn)).is_some_and(|v| {
+        v.is_constant()
+            && v.get_size() <= 8
+            && data
+                .get_arch()
+                .get_float_format(v.get_size())
+                .is_some_and(|fmt| fmt.op_nan(v.get_offset()) == 0)
+    })
+}
+
 /// The exact complement of a guarded root: `lhs code rhs`.
 struct Complement {
     code: OpCode,
@@ -165,10 +181,7 @@ fn guarded_complement(data: &Funcdata, root: VarnodeId) -> Option<Complement> {
     let Some((mut code, a, b, leaf)) = comparison else {
         return None;
     };
-    let same = |x, y| {
-        let (x, y) = (copied_value(data, x), copied_value(data, y));
-        functional_equality(x, y, data.vbank(), data.obank()) || same_instruction_read(data, x, y)
-    };
+    let same = |x, y| same_value(data, x, y);
     if let Some((x, y)) = equality {
         if code != OpCode::CPUI_FLOAT_LESS
             || !(same(a, x) && same(b, y) || same(a, y) && same(b, x))
@@ -182,18 +195,7 @@ fn guarded_complement(data: &Funcdata, root: VarnodeId) -> Option<Complement> {
     }
     for input in [a, b] {
         let guarded = guards.iter().any(|&g| same(g, input));
-        let non_nan_constant = data
-            .vbank()
-            .get(copied_value(data, input))
-            .is_some_and(|v| {
-                v.is_constant()
-                    && v.get_size() <= 8
-                    && data
-                        .get_arch()
-                        .get_float_format(v.get_size())
-                        .is_some_and(|fmt| fmt.op_nan(v.get_offset()) == 0)
-            });
-        if !guarded && !non_nan_constant {
+        if !guarded && !non_nan_constant(data, input) {
             return None;
         }
     }
@@ -424,6 +426,274 @@ pub(crate) fn fold_nan_consumers(data: &mut Funcdata, nan: OpId) -> bool {
             }
         }
         changed |= fold_guarded_root(data, root);
+    }
+    changed || fold_exact_conditions(data, nan)
+}
+
+/// How `a` compares with `b`; an unordered outcome says which operands are NaN.
+#[derive(Clone, Copy, PartialEq)]
+enum Order {
+    Less,
+    Equal,
+    Greater,
+    Unordered(bool, bool),
+}
+
+impl Order {
+    fn swapped(self) -> Order {
+        match self {
+            Order::Less => Order::Greater,
+            Order::Greater => Order::Less,
+            Order::Unordered(na, nb) => Order::Unordered(nb, na),
+            o => o,
+        }
+    }
+}
+
+fn is_float_compare(code: OpCode) -> bool {
+    matches!(
+        code,
+        OpCode::CPUI_FLOAT_LESS
+            | OpCode::CPUI_FLOAT_LESSEQUAL
+            | OpCode::CPUI_FLOAT_EQUAL
+            | OpCode::CPUI_FLOAT_NOTEQUAL
+    )
+}
+
+fn is_condition_node(code: OpCode) -> bool {
+    matches!(
+        code,
+        OpCode::CPUI_COPY
+            | OpCode::CPUI_BOOL_NEGATE
+            | OpCode::CPUI_BOOL_AND
+            | OpCode::CPUI_BOOL_OR
+            | OpCode::CPUI_BOOL_XOR
+            | OpCode::CPUI_INT_AND
+            | OpCode::CPUI_INT_OR
+            | OpCode::CPUI_INT_XOR
+            | OpCode::CPUI_INT_EQUAL
+            | OpCode::CPUI_INT_NOTEQUAL
+    )
+}
+
+const CONDITION_DEPTH: usize = 8;
+const VALUE_DEPTH: usize = 14;
+const VALUE_NODES: usize = 96;
+
+fn is_value_node(code: OpCode) -> bool {
+    is_condition_node(code)
+        || matches!(
+            code,
+            OpCode::CPUI_INT_ZEXT
+                | OpCode::CPUI_SUBPIECE
+                | OpCode::CPUI_INT_LEFT
+                | OpCode::CPUI_INT_RIGHT
+                | OpCode::CPUI_INT_NEGATE
+        )
+}
+
+fn first_compare(data: &Funcdata, vn: VarnodeId, depth: usize) -> Option<OpId> {
+    let id = data.vbank().get(vn)?.get_def()?;
+    let op = data.obank().get(id)?;
+    if is_float_compare(op.code()) {
+        return Some(id);
+    }
+    if depth == 0 || !is_value_node(op.code()) {
+        return None;
+    }
+    (0..op.num_input()).find_map(|i| first_compare(data, op.get_in(i)?, depth - 1))
+}
+
+/// The value of an expression over comparisons of `a` with `b` and NaN tests of them, also
+/// through the bit packing a status register (ARM's FPSCR) puts the flags through.
+fn eval_value(
+    data: &Funcdata,
+    vn: VarnodeId,
+    a: VarnodeId,
+    b: VarnodeId,
+    order: Order,
+    depth: usize,
+    budget: &mut usize,
+) -> Option<u64> {
+    if depth == 0 || *budget == 0 {
+        return None;
+    }
+    *budget -= 1;
+    let v = data.vbank().get(vn)?;
+    let size = v.get_size();
+    if !(1..=8).contains(&size) {
+        return None;
+    }
+    let mask = u64::MAX >> (64 - 8 * size as u32);
+    if v.is_constant() {
+        return Some(v.get_offset() & mask);
+    }
+    let op = data.obank().get(v.get_def()?)?;
+    let code = op.code();
+    if code == OpCode::CPUI_FLOAT_NAN {
+        let x = op.get_in(0)?;
+        let (na, nb) = match order {
+            Order::Unordered(na, nb) => (na, nb),
+            _ => (false, false),
+        };
+        return if same_value(data, x, a) {
+            Some(na as u64)
+        } else if same_value(data, x, b) {
+            Some(nb as u64)
+        } else {
+            None
+        };
+    }
+    if is_float_compare(code) {
+        let (x, y) = (op.get_in(0)?, op.get_in(1)?);
+        let order = if same_value(data, x, a) && same_value(data, y, b) {
+            order
+        } else if same_value(data, x, b) && same_value(data, y, a) {
+            order.swapped()
+        } else {
+            return None;
+        };
+        return Some(match code {
+            OpCode::CPUI_FLOAT_LESS => order == Order::Less,
+            OpCode::CPUI_FLOAT_LESSEQUAL => matches!(order, Order::Less | Order::Equal),
+            OpCode::CPUI_FLOAT_EQUAL => order == Order::Equal,
+            _ => order != Order::Equal,
+        } as u64);
+    }
+    if !is_value_node(code) {
+        return None;
+    }
+    let mut arg = |i| eval_value(data, op.get_in(i)?, a, b, order, depth - 1, budget);
+    let x = arg(0)?;
+    let value = match code {
+        OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT => x,
+        OpCode::CPUI_BOOL_NEGATE => x ^ 1,
+        OpCode::CPUI_INT_NEGATE => !x,
+        _ => {
+            let y = arg(1)?;
+            let shift = u32::try_from(y).unwrap_or(u32::MAX);
+            match code {
+                OpCode::CPUI_BOOL_AND | OpCode::CPUI_INT_AND => x & y,
+                OpCode::CPUI_BOOL_OR | OpCode::CPUI_INT_OR => x | y,
+                OpCode::CPUI_BOOL_XOR | OpCode::CPUI_INT_XOR => x ^ y,
+                OpCode::CPUI_INT_EQUAL => (x == y) as u64,
+                OpCode::CPUI_INT_NOTEQUAL => (x != y) as u64,
+                OpCode::CPUI_SUBPIECE => x.checked_shr(shift.saturating_mul(8)).unwrap_or(0),
+                OpCode::CPUI_INT_LEFT => x.checked_shl(shift).unwrap_or(0),
+                _ => x.checked_shr(shift).unwrap_or(0),
+            }
+        }
+    };
+    Some(value & mask)
+}
+
+/// The single comparison, possibly negated, that a condition over `a` and `b` equals for every
+/// ordering of them, NaNs included: `Z || N != V` after an ARM `vcmp` is exactly `!(b < a)`.
+fn exact_condition(data: &Funcdata, root: VarnodeId) -> Option<(Complement, bool)> {
+    let leaf = first_compare(data, root, VALUE_DEPTH)?;
+    let op = data.obank().get(leaf)?;
+    let (a, b) = (op.get_in(0)?, op.get_in(1)?);
+    if same_value(data, a, b) {
+        return None;
+    }
+    let (nan_a, nan_b) = (!non_nan_constant(data, a), !non_nan_constant(data, b));
+    let mut unordered = Vec::with_capacity(3);
+    if nan_a {
+        unordered.push(Order::Unordered(true, false));
+    }
+    if nan_b {
+        unordered.push(Order::Unordered(false, true));
+    }
+    if nan_a && nan_b {
+        unordered.push(Order::Unordered(true, true));
+    }
+    let first = *unordered.first()?;
+    let eval = |order| {
+        let mut budget = VALUE_NODES;
+        match eval_value(data, root, a, b, order, VALUE_DEPTH, &mut budget)? {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        }
+    };
+    let un = eval(first)?;
+    for &order in &unordered[1..] {
+        if eval(order)? != un {
+            return None;
+        }
+    }
+    let truth = [eval(Order::Less)?, eval(Order::Equal)?, eval(Order::Greater)?, un];
+    let (code, swap, negate) = match truth {
+        [true, false, false, false] => (OpCode::CPUI_FLOAT_LESS, false, false),
+        [true, true, false, false] => (OpCode::CPUI_FLOAT_LESSEQUAL, false, false),
+        [false, false, true, false] => (OpCode::CPUI_FLOAT_LESS, true, false),
+        [false, true, true, false] => (OpCode::CPUI_FLOAT_LESSEQUAL, true, false),
+        [false, true, false, false] => (OpCode::CPUI_FLOAT_EQUAL, false, false),
+        [true, false, true, true] => (OpCode::CPUI_FLOAT_NOTEQUAL, false, false),
+        [false, true, true, true] => (OpCode::CPUI_FLOAT_LESS, false, true),
+        [false, false, true, true] => (OpCode::CPUI_FLOAT_LESSEQUAL, false, true),
+        [true, true, false, true] => (OpCode::CPUI_FLOAT_LESS, true, true),
+        [true, false, false, true] => (OpCode::CPUI_FLOAT_LESSEQUAL, true, true),
+        _ => return None,
+    };
+    let (lhs, rhs) = if swap { (b, a) } else { (a, b) };
+    Some((Complement { code, lhs, rhs, leaf }, negate))
+}
+
+/// Rewrite the outermost conditions a NaN test feeds into the one comparison each equals
+/// exactly, before `nanignore` drops the test.
+fn fold_exact_conditions(data: &mut Funcdata, nan: OpId) -> bool {
+    let Some(out) = data.obank().get(nan).and_then(|op| op.get_out()) else {
+        return false;
+    };
+    let mut roots = Vec::new();
+    let mut seen = vec![out];
+    let mut pending = vec![(out, 0)];
+    while let Some((vn, depth)) = pending.pop() {
+        let mut outer = false;
+        for reader in data.vbank().get(vn).unwrap().descend_iter() {
+            let op = data.obank().get(reader).unwrap();
+            if !is_condition_node(op.code()) {
+                continue;
+            }
+            let Some(next) = op.get_out() else { continue };
+            if data.vbank().get(next).unwrap().get_size() != 1 {
+                continue;
+            }
+            outer = true;
+            if depth < CONDITION_DEPTH && seen.len() < 32 && !seen.contains(&next) {
+                seen.push(next);
+                pending.push((next, depth + 1));
+            }
+        }
+        if !outer && vn != out {
+            roots.push(vn);
+        }
+    }
+    let mut changed = false;
+    for root in roots {
+        let v = data.vbank().get(root).unwrap();
+        let Some(def) = v.get_def() else { continue };
+        let mut readers = v.descend_iter().peekable();
+        if readers.peek().is_none()
+            || readers.any(|id| packs_bits(data, data.obank().get(id).unwrap()))
+        {
+            continue;
+        }
+        drop(readers);
+        let Some((c, negate)) = exact_condition(data, root) else {
+            continue;
+        };
+        let result = complement_at_leaf(data, &c);
+        let code = if negate {
+            OpCode::CPUI_BOOL_NEGATE
+        } else {
+            OpCode::CPUI_COPY
+        };
+        data.op_set_opcode(def, crate::typeop::seam_type_op_for(code));
+        data.op_set_all_input(def, &[result])
+            .expect("exact condition rewrite");
+        changed = true;
     }
     changed
 }
