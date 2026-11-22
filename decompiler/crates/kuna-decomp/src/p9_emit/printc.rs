@@ -8824,7 +8824,9 @@ impl PrintC {
             }
         }
         if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.recovers() {
-            if let Some(plan) = super::kuna_rustfmtargs::recover(fd, arch, op) {
+            if let Some(plan) = super::kuna_rustfmtargs::recover(fd, arch, op)
+                .or_else(|| super::kuna_rustfmtconstructor::recover(fd, arch, op))
+            {
                 self.push_rust_format_plan(fd, arch, op, plan);
                 return;
             }

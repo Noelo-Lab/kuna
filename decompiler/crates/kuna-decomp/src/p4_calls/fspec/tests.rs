@@ -1969,10 +1969,32 @@ fn func_call_specs_resolve_and_abort_spacebase_relative() {
     assert!(r.is_err());
     // The offset was read off refvn (stack, 0x10) before the error.
     assert_eq!(fc.get_spacebase_offset(), 0x10);
+    assert_eq!(fc.verified_spacebase_offset(), None);
 
     // abort with no placeholder slot is a no-op (slot stays -1).
     fc.abort_spacebase_relative(&mut fd);
     assert_eq!(fc.get_stack_placeholder_slot(), -1);
+}
+
+#[test]
+fn formatting_frame_proof_requires_canonical_success_and_does_not_survive_clone() {
+    let mgr = fcs_manager();
+    let (mut fd, mut fc, phvn) = build_call_with_placeholder(&mgr);
+    fc.set_stack_placeholder_slot(1);
+    fc.resolve_spacebase_relative(&mut fd, phvn).unwrap();
+    assert_eq!(fc.verified_spacebase_offset(), Some(0x10));
+    assert_eq!(fc.clone_for_op(fc.get_op()).verified_spacebase_offset(), None);
+
+    let (mut fd, mut fc, phvn) = build_call_with_placeholder(&mgr);
+    let load = fd.vbank().get(phvn).unwrap().get_def().unwrap();
+    let ram = fcs_ram(&fd);
+    let foreign = fd.vbank_mut().create(8, Address::new(ram, 0x10),
+        Rc::new(Datatype::new(8, type_metatype::TYPE_UNKNOWN)));
+    fd.op_set_input(load, foreign, 0).unwrap();
+    fc.set_stack_placeholder_slot(1);
+    fc.resolve_spacebase_relative(&mut fd, phvn).unwrap();
+    assert_eq!(fc.get_spacebase_offset(), 0x10);
+    assert_eq!(fc.verified_spacebase_offset(), None);
 }
 
 #[test]

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4994,
-    4994
+    5001,
+    5001
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2876,6 +2876,7 @@
     "data:a tagged address does not become a float",
     "data:adjacent arguments preserve empty separating pieces",
     "data:adjacent object does not steal array reference",
+    "data:all descriptors retain the exact primitive callback",
     "data:all first case values retained",
     "data:all five functions remain",
     "data:all forty-one cases retained",
@@ -3404,6 +3405,8 @@
     "data:condstmts #2: the default prints the loads as statements of their own (pass 1 only)",
     "data:condstmts #3: off, the loads fold into a comma chain inside the condition (pass 2 only)",
     "data:constructed reloads and omitted mapped callers retain their returns",
+    "data:constructor output provenance is retained for every explicit constructor case",
+    "data:constructor recovery preserves one producer invocation in every case",
     "data:constspaceload #1: the non-zero immediate vmov.i32 q8,#1 folds to all four of its 32-bit lanes",
     "data:constspaceload #2: the zero immediate vmov.i32 q9,#0 becomes two whole 8-byte zero slots",
     "data:constspaceload #3: no lane reads near-null memory",
@@ -4102,6 +4105,7 @@
     "data:off and nondefault specifications retain the runtime sink",
     "data:off and unknown Debug preserve the runtime sink",
     "data:off and unverified flag/frame calls remain",
+    "data:off changed body and unsupported version retain stderr runtime calls",
     "data:off empty and dynamic formatting preserve runtime writes",
     "data:off keeps the bitwise identity",
     "data:off keeps the comparison of an even product with an odd sum",
@@ -4150,6 +4154,7 @@
     "data:ordinary effectful helper remains",
     "data:ordinary interior use selects its offset view",
     "data:ordinary pointer retains its address",
+    "data:ordinary stdout keeps its destination and words",
     "data:other namespace address",
     "data:outlang #1: pass 1 keeps the C switch statement",
     "data:outlang #2: pass 1 keeps C case labels",
@@ -4617,7 +4622,9 @@
     "data:static format off and dynamic counts preserve runtime sinks",
     "data:static formats retain repeated indices",
     "data:static unicode fill alignment width precision",
+    "data:stderr constructor and ordinary path each recover exact Display words",
     "data:stderr pair preserves narrow signed and wide unsigned types",
+    "data:stdout constructor stays outside the first stderr slice",
     "data:store order: division call precedes the later global write",
     "data:store order: exactly one global write per function",
     "data:store order: final call remains after both writes",

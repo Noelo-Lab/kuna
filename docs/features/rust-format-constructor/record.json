@@ -1,0 +1,54 @@
+{
+  "proposal": false,
+  "status": "bounded implementation; repository gates run",
+  "option": "rustfmt",
+  "new_option": false,
+  "change_kind": "bounded refinement of existing formatting recovery",
+  "parent": "c6509ee05e23bab12327910b292284dafe002e1f",
+  "parent_tree": "f4d8994c53befb4b3e03db5cbfdff4874db91d76",
+  "owning_phase": "P9 emission, with a P0 per-image protected constructor profile supplied by analysis",
+  "first_acceptance": "Rust1.93.1 AMD64 SysV: one complete Arguments::new CALL return, low/high words to stderr, one u64 Display descriptor",
+  "prerequisite": "Prove actual call-entry RSP and non-overlap of both exact scratch-store ranges with descriptor, live payload, and template. Refuse unknown frame relations.",
+  "return_owner_guard": "Both sink inputs must be exact-width offsets 0/8 of the same 16-byte direct-CALL SSA owner; reject mixed, swapped, partial, redefined or ambiguous owners and conflicting explicit call authority.",
+  "observed_evidence": {
+    "engine_parent": "ca4cca67afac570698648031932fb7aaca8e2171",
+    "cli_sha256": "7b0b3ce31c0d3f04c046217548a3a774fcaaf7f758cd0fd075609a09bba9043e",
+    "isolated_predicates": 7,
+    "passed": 5,
+    "failed": 2,
+    "current_main_qualification": "Formatting source unchanged; only intervening LLVM-suffix recovery; no suffix on authored symbols. Not an exact-main runtime result."
+  },
+  "constructor_profile": {
+    "symbol": "_ZN4core3fmt9Arguments3new17h99e5e85dc223a5f8E",
+    "size": 17,
+    "bytes": "4889f24889f848894424f048895424f8c3",
+    "entry_rsp_store_ranges": [
+      [
+        -16,
+        -8
+      ],
+      [
+        -8,
+        0
+      ]
+    ],
+    "input_to_return_word_mapping": [
+      0,
+      1
+    ]
+  },
+  "unchanged_corpus": {
+    "inherited_stage_keys": 4702,
+    "candidate_xml_files": 808,
+    "expected_new_stage_keys": 7,
+    "catalog_rows": 222
+  },
+  "speed_status": "collector indexes symbol and relocation extents once per image; 4,000 constructor copies scan in 3 ms (0.78 s before indexing); C images do not run it",
+  "parity_status": "partial authored red only; pinned Hexyl, nominal Debug types, phi transport and format-result typing remain open",
+  "candidate_validation": "built and gated; rustc 1.93.1 output at opt-level 0, 1, 2, 3, s and z reaches no call site of this route (O0 fills the descriptor through an out-of-line Argument::new_display; O1 and up inline Arguments::new)",
+  "production_changes": true,
+  "cargo_started": true,
+  "specimen_execution": false,
+  "publication": false,
+  "approved_proposal_pr": 1773
+}

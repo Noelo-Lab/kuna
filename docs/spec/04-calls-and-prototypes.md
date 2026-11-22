@@ -4154,6 +4154,14 @@ is silently dropped by the final input rewrite (`funcdata_callsite.rs
 never registered as trials at all: `Heritage::guard_calls` skips spacebase
 ranges while `get_spacebase_offset()` still reads `OFFSET_UNKNOWN`.
 
+The bounded Rust formatting-constructor consumer additionally requires
+`FuncCallSpecs::verified_spacebase_offset()`. This fact is set only after
+successful resolution in the caller's canonical stack space. An error or a
+non-stack reference does not establish it, even if the legacy raw offset was
+recorded. A call-spec clone must resolve its own fact. The existing raw-offset
+consumers and their behavior are unchanged; P9 uses the stronger fact to compare
+the constructor's exact scratch ranges with the live descriptor and payload.
+
 That final rewrite only runs where the call spec recovered its own arguments. A
 call whose callee carries a **declared** prototype is input-locked before
 `ActionFuncLink` ever registers a trial (§4.2), so no later pass rewrites its

@@ -99,6 +99,7 @@ pub mod kuna_rustfmtargs;
 pub mod kuna_rustfmtstr;
 pub mod kuna_rustfmtwrite;
 pub mod kuna_rustfmtio;
+pub mod kuna_rustfmtconstructor;
 pub mod kuna_rustfmtflags;
 pub(crate) mod kuna_rustfmtresult;
 pub(crate) mod kuna_rustfmtpanic;

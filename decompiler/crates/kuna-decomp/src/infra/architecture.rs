@@ -713,6 +713,7 @@ pub struct Architecture {
     pub rust_string_writer_methods: std::collections::BTreeMap<u64, crate::kuna_rustfmtwrite::WriterMethod>,
     pub rust_fmt_write_relro: Option<(u64, u64)>,
     pub rust_io_writer_profiles: std::collections::BTreeMap<u64, crate::kuna_rustfmtio::WriterProfile>,
+    pub rust_fmt_constructors: std::collections::BTreeMap<u64, crate::kuna_rustfmtio::ImageSpan>,
     /// (kuna) The per-run `option sourcelang` override (`None` = auto).  Kept
     /// apart from the fact so `option sourcelang auto` restores the detected
     /// verdict and the catalog `current` reports the option, not the image.
@@ -2498,6 +2499,7 @@ impl Architecture {
             rust_string_writer_methods: std::collections::BTreeMap::new(),
             rust_fmt_write_relro: None,
             rust_io_writer_profiles: std::collections::BTreeMap::new(),
+            rust_fmt_constructors: std::collections::BTreeMap::new(),
             source_lang_detected: Default::default(), // (kuna) a load-time fact; set by the console's `load file`
             go_chanrecv2: None,
             go_chanrecv_status_sites: Default::default(),

@@ -89,6 +89,22 @@ pub(crate) fn recover_inputs_at(
     array_slot: i32,
     kind: MacroKind,
 ) -> Option<Plan> {
+    recover_inputs(fd, arch, id, template_slot, array_slot, kind, false)
+}
+
+pub(crate) fn recover_single_default_at(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Plan> {
+    recover_inputs(fd, arch, id, 1, 2, MacroKind::Print(true), true)
+}
+
+fn recover_inputs(
+    fd: &Funcdata,
+    arch: &Architecture,
+    id: OpId,
+    template_slot: i32,
+    array_slot: i32,
+    kind: MacroKind,
+    single_default: bool,
+) -> Option<Plan> {
     if !arch.rust_fmt.recovers()
         || arch.source_lang() != crate::kuna_sourcelang::SourceLang::Rust
         || !matches!(arch.rustc_stable_version, Some((1, 93, 0 | 1)))
@@ -136,6 +152,9 @@ pub(crate) fn recover_inputs_at(
         position = end;
         Some(bytes)
     })?;
+    if single_default && !decoded.is_single_default() {
+        return None;
+    }
     let (arguments, formatters) = primitive_arguments(fd, arch, id, array, decoded.count)?;
     let (name, literal) = decoded.render(kind, &formatters)?;
     Some(Plan {
@@ -394,6 +413,15 @@ fn decode_template(
 }
 
 impl Template {
+    fn is_single_default(&self) -> bool {
+        let mut arguments = self.pieces.iter().filter_map(|piece| match piece {
+            Piece::Argument(index, options) => Some((*index, *options)),
+            Piece::Literal(_) => None,
+        });
+        self.count == 1 && !self.indexed
+            && arguments.next() == Some((0, Options::default())) && arguments.next().is_none()
+    }
+
     fn render(
         mut self,
         kind: MacroKind,
@@ -459,6 +487,18 @@ mod tests {
             bytes = &bytes[n..];
             Some(value)
         })
+    }
+
+    #[test]
+    fn constructor_slice_requires_one_unindexed_default_placeholder() {
+        assert!(decode(b"\x08value = \xc0\x01\n\0").unwrap().is_single_default());
+        assert!(!decode(b"\xc0\xc0\0").unwrap().is_single_default());
+        assert!(!decode(b"\xc8\0\0\0").unwrap().is_single_default());
+        let mut template = decode(b"\xc0\0").unwrap();
+        if let Piece::Argument(_, options) = &mut template.pieces[0] {
+            *options = Options::decode(0xc1, |_| Some(0x6020_0020u32.to_le_bytes().to_vec())).unwrap();
+        }
+        assert!(!template.is_single_default());
     }
 
     #[test]

@@ -5252,6 +5252,7 @@ pub(crate) fn bootstrap_object(
         sleigh.base_mut().unwrap().rust_string_writer_methods = metadata.writers.methods;
         sleigh.base_mut().unwrap().rust_fmt_write_relro = metadata.writers.relro;
         sleigh.base_mut().unwrap().rust_io_writer_profiles = metadata.io_writers;
+        sleigh.base_mut().unwrap().rust_fmt_constructors = metadata.constructors;
     }
     // (kuna `pebnames`) The same kind of one-bit image fact: is this a Windows
     // GUI/console PE, whose segment base holds a user-mode TEB?  `option pebnames

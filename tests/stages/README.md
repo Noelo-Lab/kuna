@@ -21,6 +21,11 @@ caller builds in `x8` for a hidden `pacda` is not the next call's first
 argument, with the modifier computed and folded to a constant. A tagged
 address and a result buffer in `x8` are the controls.
 
+`ghangr-rustfmtconstructor.xml` checks one exact Rust Arguments constructor
+return to stderr, preserves its once-only producer and constructor, and retains
+stdout, option-off, body/version refusals and ordinary optimized formatting.
+The fixtures are independently authored, non-executable static input.
+
 `ghangr-go-paniccheck-return.xml` checks that a returning Go panic helper
 falls through to the terminal `runtime.gopanic` call. It also checks the
 helper's conditional throw and shows the caller's sentinel with the known

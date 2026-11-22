@@ -11693,6 +11693,17 @@ LowerHex, UpperHex, Octal, Binary, LowerExp and UpperExp retain exact type and
 trait identity; the Display-only map is derived from these facts without another
 object parse. Unknown or conflicting aliases invalidate the shared address.
 
+The same walk can retain the complete seventeen-byte AMD64
+`core::fmt::Arguments::new` body in `Architecture::rust_fmt_constructors` through
+`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/kuna_rustfmtconstructor.rs`.
+The full unambiguous symbol and exact symbol size, single executable immutable
+mapped extent, complete relocation coverage and absence of overlapping relocations
+are required. Conflicting aliases, an extra tail, changed instructions or mapping
+overlays reject the profile. The protected bytes are rechecked against the current
+loader by P9. This image fact describes the actual two-word return and two scratch
+stores; it does not authorize transport without P9's version, ABI, current frame,
+live descriptor, effect and whole-owner checks. No prototype is inferred or changed.
+
 ### MIPS lazy-binding imports
 
 `decompiler/crates/kuna-analysis/src/loader/kuna_mipsstubs.rs` validates each

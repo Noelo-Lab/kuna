@@ -5046,6 +5046,48 @@ original setup statements and IR remain intact, and C output is unchanged.
 Generic reference formatters and specialized sinks remain explicit. Other
 integer traits and width/precision are decoded by the extension below.
 
+### One returned Rust formatting descriptor
+
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtconstructor.rs` extends
+`rustfmt on/all` to the exact Rust 1.93.1 AMD64 SysV `Arguments::new` profile
+retained by P0. It accepts only a direct standard stderr sink with two eight-byte
+inputs and no result. The inputs must be bounded, width-preserving COPY/CAST
+chains ending in offsets zero and eight of the same complete sixteen-byte CALL
+output. The constructor's locked, complete `core::fmt::Arguments` output must
+agree with its SSA owner and physical RDX:RAX storage; inputs occupy RDI/RSI.
+Explicit per-call target/prototype overrides refuse this recovery. Conflicting
+function contracts, hidden returns, alternate owners and unsupported outputs
+also remain explicit. A sink with an unlocked empty parameter store can instead
+use the existing finalized call-input storage: exactly two eight-byte words in
+RDI/RSI order, with inactive successful input recovery, a known model and zero
+parameter shift. Missing, stale, partial, reordered or conflicting stored input
+facts refuse the transport; no prototype or ABI fact is synthesized.
+
+The constructor is retained, including its scratch stores. Its resolved
+`FuncCallSpecs::verified_spacebase_offset()` supplies the actual callee-entry frame
+origin S, as used by translated callee effects. On this near-CALL profile that
+origin already includes the pushed return address. Unknown origins refuse.
+Checked, aligned frame ranges prove that the exact stores [S-16,S) and return
+slot [S,S+8) overlap neither the sixteen-byte descriptor nor the live eight-byte
+payload; descriptor and payload are also distinct. Both objects lie wholly in the
+caller-owned local interval [S+8, entry-SP), and the sink has the same verified
+call-entry offset. Storage below the current caller SP, outside its local frame,
+or across a changed sink frame refuses recovery. Their addresses derive from
+the canonical input stack spacebase, while the immutable template is a constant
+mapped data-space range. The existing decoder validates every template byte and
+each pre-constructor stack INDIRECT cell. The first slice permits one unindexed
+default u64 Display placeholder only, under its existing full callback identity.
+
+Constructor and sink must occur in order in one basic block. Intervening stores,
+loads, calls, volatile or persistent values, stack assignments and unknown effects
+refuse recovery. Pure word transport and non-creation INDIRECT effects belonging
+to those two calls are permitted. The existing macro printer uses the same live
+payload pointer at the sink. No IR, call, descriptor setup or unrelated result
+use is removed or reevaluated. Changed loader bytes or readonly properties reject
+the protected profile at consumption. Constructor-to-stdout, `rustfmt off`, C
+and Go retain their existing rendering. Specialized sinks, custom Debug types,
+other constructors, phi transport and nominal aggregate printing remain separate.
+
 ### Static Rust integer format specifications
 
 The same `rustfmt on` recovery extends primitive arguments through

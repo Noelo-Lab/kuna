@@ -6889,6 +6889,7 @@ pub struct FuncCallSpecs {
     /// Relative offset of the stack-pointer at the time of this call (C++
     /// `stackoffset`).
     stackoffset: uintb,
+    stackoffset_verified: bool,
     /// Slot containing the temporary stack-tracing placeholder, or -1 if unused
     /// (C++ `stackPlaceholderSlot`).
     stack_placeholder_slot: int4,
@@ -6982,6 +6983,7 @@ impl FuncCallSpecs {
             has_fd: false,
             effective_extrapop: EXTRAPOP_UNKNOWN, // ProtoModel::extrapop_unknown
             stackoffset: OFFSET_UNKNOWN,
+            stackoffset_verified: false,
             stack_placeholder_slot: -1,
             paramshift: 0,
             match_call_count: 0,
@@ -7111,6 +7113,11 @@ impl FuncCallSpecs {
     /// `getSpacebaseOffset`).
     pub fn get_spacebase_offset(&self) -> uintb {
         self.stackoffset
+    }
+
+    /// Callee-entry offset resolved successfully in this caller's canonical stack space.
+    pub(crate) fn verified_spacebase_offset(&self) -> Option<uintb> {
+        (self.stackoffset_verified && self.stackoffset != OFFSET_UNKNOWN).then_some(self.stackoffset)
     }
     /// Determine the side-effect of \b this call on a memory range, first
     /// translating a stack address into the callee's spacebase point of view
@@ -7894,6 +7901,7 @@ impl FuncCallSpecs {
         data: &mut Funcdata,
         phvn: VarnodeId,
     ) -> KunaResult<()> {
+        self.stackoffset_verified = false;
         let refvn_id = {
             let phv = data.vbank().get(phvn).expect("resolveSpacebaseRelative: stale phvn");
             let def = phv.get_def().expect("resolveSpacebaseRelative: phvn not written");
@@ -7905,6 +7913,9 @@ impl FuncCallSpecs {
         };
         let refvn = data.vbank().get(refvn_id).expect("resolveSpacebaseRelative: stale refvn");
         let spacebase = Rc::clone(refvn.get_space());
+        let canonical = spacebase.get_type() == spacetype::IPTR_SPACEBASE
+            && data.get_arch().manage().get_stack_space()
+                .is_some_and(|stack| Rc::ptr_eq(stack, &spacebase));
         // STUB(w6-fspec-3 W4): when spacebase is not IPTR_SPACEBASE the C++ emits
         // data.warningHeader("This function may have set the stack pointer");
         // warningHeader is a W4 Funcdata surface, so the warning is not emitted here.
@@ -7918,6 +7929,7 @@ impl FuncCallSpecs {
                 .get_in(self.stack_placeholder_slot);
             if in_at_slot == Some(phvn) {
                 self.abort_spacebase_relative(data);
+                self.stackoffset_verified = canonical;
                 return Ok(());
             }
         }
@@ -7951,6 +7963,7 @@ impl FuncCallSpecs {
             }
             self.stackoffset = self.stackoffset.wsub(addr.get_offset());
             self.stackoffset = spacebase.wrap_offset(self.stackoffset);
+            self.stackoffset_verified = canonical;
             return Ok(());
         }
         Err(KunaError::lowlevel("Unresolved stack placeholder"))
