@@ -4663,7 +4663,11 @@ to the return address, and from the lowest escaped incoming stack argument up
 (the same bytes the emitter keeps alive across a call). Stored bytes there are
 dropped and unwritten ones read as that call's output. Only the return address
 and the frame below every escaped offset keep their values: no address the
-callee received reaches them. Before, only the 16 bytes behind each pointer
+callee received reaches them. Entered past a native prologue, the caller's
+return address sits above the entry stack pointer, inside that range when an
+incoming-area local escaped; a jump through such a slot the function never
+wrote is still the return (`Explorer::is_caller_slot`), whether or not a call
+may have written it since (the Dolphin and Tiger `just_if` builds). Before, only the 16 bytes behind each pointer
 argument changed and, on x86-64, no stack-passed argument was looked at, so
 libpng's `if (*a3 != size) ret = Z_DATA_ERROR` after `png_inflate` folded away,
 and with it the `png_chunk_benign_error` call behind `a1 - a2 != avail` (the
@@ -4910,17 +4914,27 @@ call's slots above the floor can hold arguments pushed for a later call, and
 cutting their flow at every call shortens the covers the variable merge
 compares, which merges values the program keeps apart (a call's result with a
 loop temporary). The exploration's escaped frame offsets are stored on the
-`Funcdata` as well (`Funcdata::kuna_call_escapes`), and no stack slot from the
-lowest escaped local up to the return address gets `nolocalalias`
-(`kuna_pushan.rs (frame_escaped)`, consulted by `syncVarnodesWithSymbols`), so
-`RuleIndirectCollapse` keeps the INDIRECT each call puts on such a slot and a
-read after the call is not folded to the value stored before it. The store
-that handed the call the slot's address is often not taken as an argument
-(such calls print without arguments), so it has no reader and is gone before
-the alias analysis runs, which then sees no pointer to the slot and marks it
-unaliased: libpng's
-`if (r == 1 && a1 - a2 != avail_in) png_chunk_benign_error(...)` after
-`png_inflate` disappeared that way even with the exploration fixed. After block generation,
+`Funcdata` as well (`Funcdata::kuna_call_escapes`). The store that handed a
+call such an address is often not taken as an argument (those calls print
+without arguments), so it has no reader and is gone before the alias
+analysis runs, which then sees no pointer to the slot. Each escaped offset is
+therefore added to the local-alias mapping's alias list
+(`restructure_varnode`), as a native pointer to the slot would be, so the
+symbols at and above it keep their aliases (as far as the mapping lets an
+alias reach: type-locked arrays and unmapped gaps stop it). A symbol that
+starts below an escaped address but holds it is still marked unaliased by
+that mapping, so a slot holding an escaped address never gets
+`nolocalalias` (`kuna_pushan.rs (holds_escape)`), and neither does an
+unmapped slot from the lowest escaped local up to the return address
+(`kuna_pushan.rs (frame_escaped)`), both in `syncVarnodesWithSymbols`.
+`RuleIndirectCollapse` then keeps the INDIRECT each call puts on such a
+slot, and a read after the call is not folded to the value stored before it:
+libpng's `if (r == 1 && a1 - a2 != avail_in) png_chunk_benign_error(...)`
+after `png_inflate` disappeared that way even with the exploration fixed
+(the read was of an 8-byte symbol starting 4 bytes below `avail_in`).
+Refusing `nolocalalias` to every slot up to the return address instead also
+kept the interpreter's dead pushes there (pushed flags words, a stub's key),
+which then printed as assignments. After block generation,
 `kuna_pushan.rs (mark_undefined_copies)` marks every COPY out of a placeholder
 register as an incidental copy, so the parameter analysis walks through it to
 the placeholder itself, an input nothing wrote, instead of taking it as a real

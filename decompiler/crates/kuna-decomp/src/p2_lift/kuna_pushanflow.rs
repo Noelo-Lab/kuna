@@ -2004,13 +2004,21 @@ impl<'a> Explorer<'a> {
         }
     }
 
-    /// `t` is the untouched initial contents of a stack slot above the entry
-    /// stack pointer: entered past a native prologue (Themida virtualizes
-    /// from inside the function), the return address sits there.
+    /// `t` is the contents of a stack slot above the entry stack pointer the
+    /// function never wrote: entered past a native prologue (Themida
+    /// virtualizes from inside the function), the return address sits there.
+    /// A call that may have written the slot (an escaped local of the
+    /// function sits below it, [`Explorer::clobber_call`]) leaves it the
+    /// caller's slot all the same.
     fn is_caller_slot(&self, t: ExprId) -> bool {
         let Some(v) = self.arena.as_var(t) else { return false };
         let info = self.arena.var_info(v);
-        info.size == self.abi.ptr_size && matches!(info.kind, VarKind::InitMem { base, offset } if base.is_some() && base == self.sp0 && offset > 0 && offset % self.abi.ptr_size as i128 == 0)
+        let ps = self.abi.ptr_size as i128;
+        info.size == self.abi.ptr_size
+            && match info.kind {
+                VarKind::InitMem { base, offset } | VarKind::CallOutputAt { base, offset, .. } => base.is_some() && base == self.sp0 && offset > 0 && offset % ps == 0,
+                _ => false,
+            }
     }
 
     fn target_is_function(&self, addr: u64) -> bool {

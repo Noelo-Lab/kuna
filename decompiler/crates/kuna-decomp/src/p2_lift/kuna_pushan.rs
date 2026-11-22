@@ -1288,22 +1288,37 @@ pub fn call_frame_kills(fd: &Funcdata, addr: &Address, size: int4) -> bool {
     signed + size as i128 <= floor as i128
 }
 
-/// Is the stack range `addr:size` of a devirtualized body reachable from a
-/// frame address the exploration saw handed to an external call (at or above
-/// the lowest such offset, below the return address)?  Such a slot never gets
-/// `nolocalalias`, so the INDIRECT a call puts on it stays and a read after the
-/// call is not the value stored before it, even when the store that passed the
-/// address was dead and is gone.  Consulted by `syncVarnodesWithSymbols`.
-pub fn frame_escaped(fd: &Funcdata, addr: &Address, size: int4) -> bool {
-    let Some(&lo) = fd.kuna_call_escapes().iter().filter(|o| **o < 0).min() else { return false };
-    let Some(spc) = addr.get_space() else { return false };
-    if !fd.kuna_devirtualized() || spc.get_type() != kuna_base::space::spacetype::IPTR_SPACEBASE {
-        return false;
+/// The signed entry-stack offset of `addr`, when it is a stack address of a
+/// devirtualized body with escaped frame offsets.
+fn escape_offset(fd: &Funcdata, addr: &Address) -> Option<i128> {
+    let spc = addr.get_space()?;
+    if !fd.kuna_devirtualized() || fd.kuna_call_escapes().is_empty() || spc.get_type() != kuna_base::space::spacetype::IPTR_SPACEBASE {
+        return None;
     }
     let bits = 8 * spc.get_addr_size() as u32;
     let off = addr.get_offset();
-    let signed = if bits >= 64 { off as i64 as i128 } else { ((off << (64 - bits)) as i64 >> (64 - bits)) as i128 };
-    signed + size.max(1) as i128 > lo as i128 && signed < 0
+    Some(if bits >= 64 { off as i64 as i128 } else { ((off << (64 - bits)) as i64 >> (64 - bits)) as i128 })
+}
+
+/// Is the stack range `addr:size` of a devirtualized body at or above the
+/// lowest local whose address the exploration saw handed to an external call
+/// (below the return address)?  An unmapped slot there never gets
+/// `nolocalalias`.  Consulted by `syncVarnodesWithSymbols`.
+pub fn frame_escaped(fd: &Funcdata, addr: &Address, size: int4) -> bool {
+    let Some(&lo) = fd.kuna_call_escapes().iter().filter(|o| **o < 0).min() else { return false };
+    let Some(off) = escape_offset(fd, addr) else { return false };
+    off + size.max(1) as i128 > lo as i128 && off < 0
+}
+
+/// Does the stack range `addr:size` of a devirtualized body hold an address
+/// the exploration saw handed to an external call?  The local-alias mapping
+/// counts each such address as a pointer into the frame (the store that
+/// passed it is often gone from the body), but marks a symbol that starts
+/// below the address unaliased; that slot never gets `nolocalalias` either.
+/// Consulted by `syncVarnodesWithSymbols`.
+pub fn holds_escape(fd: &Funcdata, addr: &Address, size: int4) -> bool {
+    let Some(off) = escape_offset(fd, addr) else { return false };
+    fd.kuna_call_escapes().iter().any(|&o| off <= o as i128 && (o as i128) < off + size.max(1) as i128)
 }
 
 /// Does every call inside a devirtualized body leave `addr:size` untouched?
