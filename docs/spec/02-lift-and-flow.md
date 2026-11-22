@@ -4392,10 +4392,12 @@ obfuscated stack offsets cancel structurally. A known-bits lattice prunes masks,
 pushes them through shifts, and distributes truncations and zero-extensions
 over disjoint sums, which is how a `pushfq` flags word or a De Morgan mask
 over it stays decidable. A comparison of two offsets from the same pointer
-base is decided by the offsets. A zero-extended negated flag is one minus the
-zero-extended flag in the normal form (`zext(b ^ 1) == 1 - zext(b)`, when the
-second node exists), so a `pushf` word of a result and the word of its
-complement, which Themida adds up into a context offset, cancel. Mixed
+base is decided by the offsets. A sum holding both a zero-extended flag and the
+zero-extended negated flag rewrites the second (`zext(b ^ 1) == 1 - zext(b)`),
+so a `pushf` word of a result and the word of its complement, which Themida
+adds up into a context offset, cancel. Rewriting every negated flag that way
+on its own would hide the power-of-two terms the mask rules over flags words
+look for (VMProtect's `popf` words stopped folding). Mixed
 boolean-arithmetic rewrites of the stack pointer that the normal form does not
 see are checked by a probe (`ExprArena::affine_probe`). An expression over one
 variable is evaluated with it set to three values that differ in the
@@ -4455,7 +4457,8 @@ identity found this way is used where the normal form's would be: load and
 store addresses, stack-pointer writes, `frame + k` rematerialization in the
 emitter, and the emitter's constant folding, where an op whose value is a
 constant only through an identity (junk arithmetic woven into a real value) is
-emitted as that constant. A stack-pointer write that is no variable plus a
+emitted as that constant (over every stack pointer only: the folding never
+assumes the platform's stack range below). A stack-pointer write that is no variable plus a
 constant by any test leaves every later push and pop without a place, and the
 header counts it: "N stack pointer writes the emulation could not place".
 When paths meet, two values of a location are the same when their
@@ -4516,12 +4519,14 @@ value differs is recorded against the node's key. A location is an aligned
 8-byte slot. Two values are the same when they are one node or when the
 identity test finds their difference to be the constant 0
 (`kuna_pushanstate.rs (same_value)`). A slot that is symbolic on both sides
-and holds a byte that is the same on both is split into halves, down to one
-byte, and only the halves that differ are recorded, so a narrow variable
-sharing a slot with an unchanged neighbour does not take the neighbour with
-it, and a byte each path rebuilt through a different identity (Themida keeps
-the top byte of the frame pointer in a context slot whose low bytes hold
-junk that differs every loop iteration) survives the merge. Each
+and differs in only one half is narrowed to that half, down to one byte, so a
+narrow variable sharing a slot with an unchanged neighbour does not take the
+neighbour with it. The halves are compared as nodes: splitting a slot around
+a byte that is the same value through two different identities would keep the
+top byte of Themida's frame pointer (saved in a context slot whose low bytes
+hold junk that differs every loop iteration) through a loop merge, but costs
+VMProtect samples symbolization rounds (blaster_ultra_vmp: 5 to 9, +70% time),
+so it is not done; that Themida exit stays unresolved and says so. Each
 recorded location keeps the constants it was seen to hold (up to 32) and the
 bits all of them agreed on. A side that is not a constant contributes the
 constants its atoms decide, nothing when it is the location's own symbol, and

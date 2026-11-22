@@ -1753,7 +1753,7 @@ impl<'a> Emitter<'a> {
             // A value that is a constant only through an identity (the
             // junk arithmetic Themida weaves into real values) folds too.
             let folded = self.arena.is_const(v).or_else(|| {
-                (op.opc != CPUI_LOAD && out_vn.size <= 8).then(|| self.arena.identity_probe(v)).flatten().and_then(|r| match r {
+                (op.opc != CPUI_LOAD && out_vn.size <= 8).then(|| self.arena.identity_probe_within(v, false)).flatten().and_then(|r| match r {
                     (None, c) => Some(c as u128 & super::kuna_pushanexpr::mask(out_vn.size as u8)),
                     _ => None,
                 })

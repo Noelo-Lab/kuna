@@ -250,37 +250,31 @@ fn a_merged_decision_splits_over_its_recorded_constants() {
     assert!(split_over_symbols(&mut a, &values, vpc).is_none());
 }
 
-/// Two paths rebuild a slot's top byte through different identities and
-/// leave different junk below it: only the junk is a difference.
+/// Two paths rebuild a register through different identities: no difference.
 #[test]
-fn a_byte_rebuilt_through_an_identity_is_no_difference() {
+fn a_value_rebuilt_through_an_identity_is_no_difference() {
     use kuna_num::opcodes::OpCode::*;
     let mut a = ExprArena::new();
     let img = NoImage;
     let sp = a.var_of_known(VarKind::InitReg { offset: 0x10 }, 4, false, (0x3, 0xfffc));
-    let junk1 = a.var(super::super::kuna_pushanexpr::VarInfo::new(VarKind::CallResult { site: 1 }, 4, false));
-    let junk2 = a.var(super::super::kuna_pushanexpr::VarInfo::new(VarKind::CallResult { site: 2 }, 4, false));
-    // top byte of sp - 4, once plainly, once as (y & M) | (N - (~y & N))
     let k = a.cst(4, 0xffff_fffc);
     let y = a.mk_bin(CPUI_INT_ADD, sp, k, 4);
-    let top1 = a.mk_subpiece(y, 3, 1);
     let (m, n) = (a.cst(4, 0xb46b_af2b), a.cst(4, 0x4b94_50d4));
     let ym = a.mk_bin(CPUI_INT_AND, y, m, 4);
     let ny = a.mk_un(CPUI_INT_NEGATE, y, 4);
     let nyn = a.mk_bin(CPUI_INT_AND, ny, n, 4);
     let rest = a.mk_bin(CPUI_INT_SUB, n, nyn, 4);
     let back = a.mk_bin(CPUI_INT_OR, ym, rest, 4);
-    let top2 = a.mk_subpiece(back, 3, 1);
-    assert_ne!(top1, top2);
-    let low1 = a.mk_subpiece(junk1, 0, 3);
-    let low2 = a.mk_subpiece(junk2, 0, 3);
-    let v1 = a.mk_piece(top1, low1);
-    let v2 = a.mk_piece(top2, low2);
+    assert_ne!(y, back);
     let mut s1 = State::new(false, (0x200, 0x216));
     let mut s2 = s1.clone();
-    s1.write_reg(0x30, v1, 4);
-    s2.write_reg(0x30, v2, 4);
-    let d = s1.diff_constants(&mut s2, &mut a, &img, 4);
-    assert!(!d.is_empty());
-    assert!(d.iter().all(|d| matches!(d.loc.loc, Loc::Reg { off } if off + d.loc.size as u64 <= 0x33)), "{d:?}");
+    s1.write_reg(0x30, y, 4);
+    s2.write_reg(0x30, back, 4);
+    assert!(s1.diff_constants(&mut s2, &mut a, &img, 4).is_empty());
+    // a value that differs stays a difference
+    let one = a.cst(4, 1);
+    let off = a.mk_bin(CPUI_INT_ADD, back, one, 4);
+    let mut s3 = s1.clone();
+    s3.write_reg(0x30, off, 4);
+    assert_eq!(s1.diff_constants(&mut s3, &mut a, &img, 4).len(), 1);
 }

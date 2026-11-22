@@ -1514,14 +1514,6 @@ impl ExprArena {
                 l.c = l.c.wrapping_sub(1);
                 l
             }
-            // zext(b ^ 1) == 1 - zext(b) for a boolean b: a flags word and its
-            // complement (`pushf` of a result and of its inverse) cancel.
-            ExprKind::Un(CPUI_INT_ZEXT, a) if self.zext_of_not(*a, self.size(e)).is_some() => {
-                let zb = self.zext_of_not(*a, self.size(e)).unwrap_or(e);
-                let mut l = Lin { terms: BTreeMap::new(), c: 1 };
-                l.terms.insert(zb, -1);
-                l
-            }
             _ => {
                 atom.terms.insert(e, 1);
                 atom
@@ -1530,7 +1522,7 @@ impl ExprArena {
     }
 
     /// `zext(b)` to `size`, when `a` is `b ^ 1` for a boolean `b` and that
-    /// node already exists (a term only cancels against one that does).
+    /// node exists.
     fn zext_of_not(&self, a: ExprId, size: u8) -> Option<ExprId> {
         let ExprKind::Bin(CPUI_INT_XOR, b, one) = self.kind(a) else { return None };
         if self.is_const(*one) != Some(1) || !self.is_bool(*b) {
@@ -1541,10 +1533,27 @@ impl ExprArena {
 
     fn build_linear(&mut self, l: Lin, size: u8) -> ExprId {
         let m = mask(size);
+        // zext(b ^ 1) == 1 - zext(b) for a boolean b, when both terms are in
+        // the sum: a flags word and the word of its complement cancel.
+        let mut l = l;
+        let pairs: Vec<(ExprId, ExprId)> = l
+            .terms
+            .keys()
+            .filter_map(|t| match self.kind(*t) {
+                ExprKind::Un(CPUI_INT_ZEXT, a) => self.zext_of_not(*a, self.size(*t)).filter(|zb| l.terms.contains_key(zb)).map(|zb| (*t, zb)),
+                _ => None,
+            })
+            .collect();
+        for (t, zb) in pairs {
+            if let Some(k) = l.terms.remove(&t) {
+                let e = l.terms.entry(zb).or_insert(0);
+                *e = e.wrapping_sub(k);
+                l.c = l.c.wrapping_add(k);
+            }
+        }
         // A 0/1-valued term with a "negative" coefficient is rewritten on its
         // complement with a positive one (-k*b == k*(1-b) - k), so masks see a
         // sum of disjoint positive bits.
-        let mut l = l;
         let flips: Vec<(ExprId, i128)> = l
             .terms
             .iter()
@@ -2008,6 +2017,12 @@ impl ExprArena {
     /// sample of its operands would hit.
     /// The spec (02-lift-and-flow 2.11) argues the error probability.
     pub fn identity_probe(&mut self, e: ExprId) -> Option<(Option<VarId>, i128)> {
+        self.identity_probe_within(e, true)
+    }
+
+    /// [`Self::identity_probe`], with the second run over the platform's
+    /// user-mode stack only when `bounded`.
+    pub fn identity_probe_within(&mut self, e: ExprId, bounded: bool) -> Option<(Option<VarId>, i128)> {
         let size = self.size(e);
         if let Some(c) = self.is_const(e) {
             return Some((None, sext(c, size)));
@@ -2024,7 +2039,7 @@ impl ExprArena {
             return Some(r);
         }
         // Over the stack the platform gives user code (its top bits clear).
-        let bound = self.sp_bound.filter(|(v, _)| vars.contains(v))?;
+        let bound = self.sp_bound.filter(|(v, _)| bounded && vars.contains(v))?;
         let r = self.identity_pass(e, &vars, &atoms, Some(bound))?;
         self.sp_bound_used += 1;
         if self.sp_bound_notes.len() < 8 {

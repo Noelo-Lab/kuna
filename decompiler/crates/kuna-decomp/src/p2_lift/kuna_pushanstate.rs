@@ -495,9 +495,9 @@ impl State {
     /// target's register and stack-word size); a slot symbolic on both sides
     /// whose difference sits in one half only is narrowed to that half (down
     /// to a byte), so a narrow variable sharing a slot with an unchanged
-    /// neighbour does not take the neighbour with it.  Values are compared
-    /// by [`same_value`]: a byte each path rebuilt through a different
-    /// identity is unchanged, and a slot holding one is split around it.
+    /// neighbour does not take the neighbour with it.  A slot whose two
+    /// values are the same by [`same_value`] (each path rebuilt it through a
+    /// different identity) is no difference.
     pub fn diff_constants(&mut self, other: &mut State, arena: &mut ExprArena, image: &dyn PushanImage, word: u8) -> Vec<Diff> {
         let mut out = Vec::new();
         let w = word.max(1) as i128;
@@ -536,11 +536,9 @@ impl State {
                 }
                 let h = size / 2;
                 let split = size > 1 && arena.is_const(a).is_none() && arena.is_const(b).is_none() && {
-                    (0..size as u64).any(|i| {
-                        let x = self.read_reg(arena, off as u64 + i, 1);
-                        let y = other.read_reg(arena, off as u64 + i, 1);
-                        same_value(arena, x, y)
-                    })
+                    let lo_same = self.read_reg(arena, off as u64, h) == other.read_reg(arena, off as u64, h);
+                    let hi_same = self.read_reg(arena, (off + h as i128) as u64, h) == other.read_reg(arena, (off + h as i128) as u64, h);
+                    lo_same || hi_same
                 };
                 if split {
                     todo.push((off + h as i128, h));
@@ -564,11 +562,10 @@ impl State {
                     }
                     let h = size / 2;
                     let split = size > 1 && arena.is_const(a).is_none() && arena.is_const(b).is_none() && {
-                        (0..size as i128).any(|i| {
-                            let x = self.read_mem(arena, image, base, off + i, 1);
-                            let y = other.read_mem(arena, image, base, off + i, 1);
-                            same_value(arena, x, y)
-                        })
+                        let lo_same = self.read_mem(arena, image, base, off, h) == other.read_mem(arena, image, base, off, h);
+                        let hi_same =
+                            self.read_mem(arena, image, base, off + h as i128, h) == other.read_mem(arena, image, base, off + h as i128, h);
+                        lo_same || hi_same
                     };
                     if split {
                         todo.push((off + h as i128, h));
