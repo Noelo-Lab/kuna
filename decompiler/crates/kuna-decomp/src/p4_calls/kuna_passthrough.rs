@@ -327,18 +327,29 @@ pub(crate) fn general_arg_registers(model: &crate::fspec::ProtoModel) -> Vec<(Ad
 /// byte for a value that reaches something, or, for a register the body does
 /// not touch before a direct call, `through` shows that call's target taking
 /// it ([`crate::p4_calls::kuna_calleedeadarg::reads_through_calls`]).
+///
+/// A run that reaches the last register is no arity claim and comes back
+/// empty, the `RegisterFileFull` decline `protoorder` applies to a stated
+/// list: gcc's x86-64 variadic prologue saves `rsi`..`r9` one store each, and
+/// clang's AArch64 one saves `x1`..`x7`, so the run of a variadic callee, and
+/// of every function that reaches one on an error path, is the whole file.
 pub(crate) fn taken_run(
     dead: &crate::kuna_calleedeadarg::CalleeEntryDead,
     through: Option<&crate::kuna_calleedeadarg::CalleeEntryDead>,
     regs: &[(Address, int4)],
 ) -> Vec<(Address, int4)> {
-    regs.iter()
+    let run: Vec<(Address, int4)> = regs
+        .iter()
         .take_while(|(a, s)| {
             dead.reads_low_byte(a, *s, false, true)
                 || through.is_some_and(|t| t.proves_input(a, *s) && !dead.proves_read(a, *s))
         })
         .cloned()
-        .collect()
+        .collect();
+    if run.len() == regs.len() {
+        return Vec::new();
+    }
+    run
 }
 
 /// [`body_registers`] with the argument register the run stops at, if any.
