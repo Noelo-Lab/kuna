@@ -13,9 +13,10 @@
 //! values are dropped.
 //!
 //! Each is declared as `<objc/message.h>`, `objc-abi.h` and
-//! `<Foundation/NSObjCRuntime.h>` declare it: the fixed parameters, then `...`. The method arguments of a send are then the call's open tail, taken
-//! from the same register and stack trials as before but placed after the
-//! receiver and the selector. The return is left to recovery for the sends,
+//! `<Foundation/NSObjCRuntime.h>` declare it: the fixed parameters, then `...`.
+//! The method arguments of a send are then the call's open tail, taken from
+//! the same register and stack trials as before but placed after the receiver
+//! and the selector. The return is left to recovery for the sends,
 //! since the method decides whether it comes back in `x0`, `d0` or nowhere.
 //! Address-keyed on the image's resolved imports, so a definition of the same
 //! name (the runtime itself) keeps what its body says.
@@ -27,8 +28,8 @@ use crate::pass::AnalysisOutput;
 
 /// What one entry point declares before its `...`. Every fixed parameter is
 /// an unnamed `void *`: a receiver may be an instance or a class, and a typed
-/// or named parameter would retype and rename the caller's variables (a class
-/// method's receiver would become `objc_object *`).
+/// or named parameter would rename the caller's variables and type a class
+/// method's receiver as `objc_object *`.
 #[derive(Clone, Copy)]
 enum Fixed {
     /// `id self, SEL op`.

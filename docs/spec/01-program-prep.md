@@ -5824,15 +5824,21 @@ every other binary's pass list is byte-identical to before the pass existed):
     tail is taken from the same trials after the fixed parameters:
     `objc_msgSendSuper2(&sup,sel_initWithFrame_,r.x,r.y,r.width,r.height)`,
     `NSLog(CFSTR("Error %@ parsing token payload %@"),v4,v2)`. A send's return
-    stays recovered from the call site, since the method decides it. Each fixed
-    parameter is an unnamed `void *`, so the declaration neither renames nor
-    retypes the caller's variables (a class method's receiver is a class, not
-    an `objc_object *`). An int-sized method argument in the tail is the whole
-    register the call passes, `(uint8)(uint4)arg1`, as a declared variadic tail
-    is everywhere (`ActionDeadCode` consumes a locked prototype's inputs in
-    full). An
-    import-less definition of the same name (libobjc itself) keeps what its
-    body says.
+    stays recovered from the call site, since the method decides it, so a
+    function that ends in a tail-call send is recovered `void`. Each fixed
+    parameter is an unnamed `void *`: the declaration renames none of the
+    caller's variables and never types a receiver as an instance (a class
+    method's receiver is not an `objc_object *`), but a variable passed only as
+    a receiver reads `void *`, and an integer-typed value passed straight in,
+    such as the result of a runtime call with no prototype (`objc_retain`,
+    `swift_getInitializedObjCClass`) or of a nested send, is cast to it. An
+    int-sized method argument in the tail is the whole register the call passes,
+    `(uint8)(uint4)arg1`, as a declared variadic tail is everywhere
+    (`ActionDeadCode` consumes a locked prototype's inputs in full). In `-O0`
+    code a dead local spilled just past the outgoing argument area cannot be
+    told from one more stack argument, so an `NSLog` there can read a trailing
+    argument its format does not have. An import-less definition of the same
+    name (libobjc itself) keeps what its body says.
 
   The rebase slots of the three ref sections are also reported constant
   (`AnalysisOutput::const_ranges`). dyld fills them once before any code runs
