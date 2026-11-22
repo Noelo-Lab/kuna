@@ -1033,6 +1033,10 @@ impl<'a> Emitter<'a> {
         // executed path (loops unrolled) and drop the resolved branches.  A
         // forked instruction keeps its original op list and relative flow.
         let linear = trace.is_some_and(|t| !t.forked && !t.path.is_empty());
+        if trace.is_some_and(|t| t.elided) {
+            // A copy only the folded VPC fetches read: interpreter machinery.
+            return (vec![self.nop_op()], vec![None]);
+        }
         let order: Vec<usize> = if linear { trace.unwrap().path.clone() } else { (0..insn.ops.len()).collect() };
         for i in order {
             let op = &insn.ops[i];

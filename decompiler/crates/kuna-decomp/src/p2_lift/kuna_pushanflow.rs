@@ -141,6 +141,11 @@ pub struct Stats {
     pub data_dispatches: usize,
     /// Interleaved bytecode programs found; only the first is followed.
     pub woven: usize,
+    /// `rep movs` copies modelled ([`Explorer::rep_copy`]).
+    pub rep_copies: usize,
+    /// The last round read a copy's destination other than through a
+    /// folded VPC fetch.
+    pub copy_read_unfolded: bool,
 }
 
 pub struct Config {
@@ -167,6 +172,7 @@ impl Default for Config {
 }
 
 /// ABI facts the exploration needs from the architecture.
+#[derive(Clone)]
 pub struct Abi {
     pub ptr_size: u8,
     pub sp: u64,
@@ -282,6 +288,8 @@ pub struct Explorer<'a> {
     /// The selector of interleaved bytecode programs, pinned to the first
     /// program's index wherever the run into the dispatch starts.
     pub pin: Option<(u64, Vec<(Loc, u128)>)>,
+    /// Model a `rep movs` of file data as a copy ([`Explorer::rep_copy`]).
+    pub rep_copies: bool,
 }
 
 /// What [`Explorer::probe_interpreter`] found.
@@ -395,6 +403,7 @@ impl<'a> Explorer<'a> {
             data_vpc: None,
             probe: true,
             pin: None,
+            rep_copies: true,
         }
     }
 
@@ -447,8 +456,8 @@ impl<'a> Explorer<'a> {
     /// from the next, are the VPCs of interleaved bytecode programs (Tigress
     /// runs bogus functions round-robin with the real one, `pc[select]`).
     /// The selector is then every register or entry-stack slot that, where
-    /// the straight run into the dispatch starts, holds the index of the cell
-    /// the turn fetches through, on every turn: [`Interpreter::pin`].
+    /// the straight run that loads the fetched cell starts, holds the index of
+    /// that cell, on every turn: [`Interpreter::pin`].
     pub fn probe_interpreter(&mut self) -> Interpreter {
         let ps = self.abi.ptr_size;
         let saved = (self.escapes.clone(), self.call_epochs);
@@ -457,8 +466,9 @@ impl<'a> Explorer<'a> {
         emu.track_sp = Some((self.abi.sp, ps));
         emu.trust_file = true;
         let mut addr = self.entry_addr;
-        let mut loads: Vec<(Cell, Option<VarId>, i128)> = Vec::new();
+        let mut loads: Vec<(Cell, Option<VarId>, i128, u64, Vec<(Loc, u128)>)> = Vec::new();
         let mut fetched: Vec<(Cell, i128)> = Vec::new();
+        let mut last_head: Option<(u64, Vec<(Loc, u128)>)> = None;
         let mut seen: BTreeMap<(u64, Cell), (BTreeSet<i128>, BTreeSet<u64>, usize)> = BTreeMap::new();
         let mut visits: BTreeMap<u64, u32> = BTreeMap::new();
         let mut turns: Vec<(u64, u64, Vec<(Loc, u128)>, Vec<Cell>)> = Vec::new();
@@ -472,6 +482,10 @@ impl<'a> Explorer<'a> {
                 break;
             }
             let Ok(insn) = self.target.lift(addr) else { break };
+            if self.rep_copy(&mut state, &insn) {
+                addr = insn.addr.wrapping_add(insn.len as u64);
+                continue;
+            }
             let mut trace = InsnTrace::default();
             let exit = emu.exec_insn(&mut state, &mut self.arena, &insn, &mut trace);
             if !trace.forked {
@@ -480,10 +494,11 @@ impl<'a> Explorer<'a> {
                     if at.0.is_some() && at.0 != self.sp0 {
                         continue;
                     }
-                    if let Some(&(cell, _, p)) = loads.iter().rev().find(|(c, b, p)| *c != at && *b == at.0 && at.1 >= *p && at.1 < *p + FETCH_WINDOW) {
-                        if !fetched.contains(&(cell, p)) {
-                            fetched.push((cell, p));
+                    if let Some((cell, _, p, h, vals)) = loads.iter().rev().find(|(c, b, p, _, _)| *c != at && *b == at.0 && at.1 >= *p && at.1 < *p + FETCH_WINDOW) {
+                        if !fetched.contains(&(*cell, *p)) {
+                            fetched.push((*cell, *p));
                         }
+                        last_head = Some((*h, vals.clone()));
                     }
                     if a.size != ps {
                         continue;
@@ -491,8 +506,8 @@ impl<'a> Explorer<'a> {
                     let Some(v) = trace.op_out.get(a.op_index).copied().flatten() else { continue };
                     if let Some((vb, p)) = self.arena.affine(v) {
                         if self.bytecode_pointer(&state, vb, p) {
-                            loads.retain(|(c, _, _)| *c != at);
-                            loads.push((at, vb, p));
+                            loads.retain(|(c, _, _, _, _)| *c != at);
+                            loads.push((at, vb, p, run.0, run.1.clone()));
                         }
                     }
                 }
@@ -514,7 +529,8 @@ impl<'a> Explorer<'a> {
                             e.1.insert(c);
                         }
                         let last: Vec<Cell> = fetched.last().map(|f| f.0).into_iter().collect();
-                        turns.push((insn.addr, run.0, std::mem::take(&mut run.1), last));
+                        let (h, vals) = last_head.take().unwrap_or_default();
+                        turns.push((insn.addr, h, vals, last));
                         fetched.clear();
                         loads.clear();
                         if found.is_none() {
@@ -574,8 +590,8 @@ impl<'a> Explorer<'a> {
     }
 
     /// The selector of interleaved programs dispatched at `d` through
-    /// `cells` (one per program, a fixed stride apart): the run start most
-    /// turns enter the dispatch from, and every location that holds the
+    /// `cells` (one per program, a fixed stride apart): the start of the run
+    /// that loads the cell on most turns, and every location that holds the
     /// fetched cell's index there on each such turn, to be pinned to the
     /// index of the program dispatched first.
     fn infer_selector(&self, d: u64, cells: &[Cell], turns: &[(u64, u64, Vec<(Loc, u128)>, Vec<Cell>)]) -> Option<(u64, Vec<(Loc, u128)>)> {
@@ -761,6 +777,7 @@ impl<'a> Explorer<'a> {
             }
         }
         self.stats.writable_bytecode |= emu.fetched_writable;
+        self.stats.copy_read_unfolded = emu.copy_read_unfolded;
         cfg
     }
 
@@ -1088,6 +1105,14 @@ impl<'a> Explorer<'a> {
                 }
             };
             self.apply_pin(&mut state, addr);
+            if self.rep_copy(&mut state, &insn) {
+                let next = insn.addr.wrapping_add(insn.len as u64);
+                insns.push(insn);
+                traces.push(InsnTrace { elided: true, ..InsnTrace::default() });
+                exit = Exit::Fallthrough(next);
+                addr = next;
+                continue;
+            }
             if !insns.is_empty() && !self.target.is_foreign_code(addr) && branches_to_itself(&insn) {
                 exit = Exit::Jump(self.arena.cst(self.abi.ptr_size, addr as u128));
                 break;
@@ -1105,6 +1130,9 @@ impl<'a> Explorer<'a> {
                 );
             }
             exit = emu.exec_insn(&mut state, &mut self.arena, &insn, &mut trace);
+            if trace.forked && emu.insn_copy_reads > 0 {
+                emu.copy_read_unfolded = true;
+            }
             if let Some(t) = &self.config.trace {
                 use std::io::Write;
                 for n in &trace.notes {
@@ -1216,6 +1244,53 @@ impl<'a> Explorer<'a> {
         node.exit = node_exit;
         node.exit_locs = exit_locs;
         node.vpc_fork = vpc_fork;
+    }
+
+    /// A `rep movs` of the function's own code that copies a constant count
+    /// of elements out of file data (direction flag clear) to the entry
+    /// stack or a concrete address, as gcc inlines a small `memcpy` (Tigress's
+    /// threaded-code array): one [`State::copy_in`], the count register
+    /// cleared and both pointers advanced past the copy, in place of one
+    /// emulated iteration per element. The emitter leaves the instruction
+    /// out when only VPC fetches it folds read the copy.
+    fn rep_copy(&mut self, state: &mut State, insn: &LiftedInsn) -> bool {
+        if !self.rep_copies || self.target.is_foreign_code(insn.addr) {
+            return false;
+        }
+        let m = insn.asm.to_ascii_uppercase();
+        let w: u64 = match m.split_whitespace().next() {
+            Some("MOVSB.REP") => 1,
+            Some("MOVSW.REP") => 2,
+            Some("MOVSD.REP") => 4,
+            Some("MOVSQ.REP") => 8,
+            _ => return false,
+        };
+        let ps = self.abi.ptr_size;
+        let (Some(&cx), Some(&si), Some(&di)) = (self.abi.gprs.get(1), self.abi.gprs.get(6), self.abi.gprs.get(7)) else { return false };
+        if let Some(df) = self.abi.df {
+            let d = state.read_reg(&mut self.arena, df, 1);
+            if self.arena.is_const(d) != Some(0) {
+                return false;
+            }
+        }
+        let (n, src, dst) = (state.read_reg(&mut self.arena, cx, ps), state.read_reg(&mut self.arena, si, ps), state.read_reg(&mut self.arena, di, ps));
+        let Some(n) = self.arena.is_const(n).map(|n| n as u64).filter(|n| *n > 0 && n * w <= 1 << 24) else { return false };
+        let len = n * w;
+        let Some((None, s)) = self.arena.affine(src) else { return false };
+        let Some((b, d)) = self.arena.affine_probe(dst) else { return false };
+        let Ok(s) = u64::try_from(s) else { return false };
+        if !(b.is_none() || b == self.sp0) || !self.target.file_data(s) || !self.target.file_data(s + len - 1) || !state.copy_in(b, d, s, len) {
+            return false;
+        }
+        let zero = self.arena.cst(ps, 0);
+        state.write_reg(cx, zero, ps);
+        let k = self.arena.cst(ps, len as u128);
+        let s2 = self.arena.mk_bin(OpCode::CPUI_INT_ADD, src, k, ps);
+        let d2 = self.arena.mk_bin(OpCode::CPUI_INT_ADD, dst, k, ps);
+        state.write_reg(si, s2, ps);
+        state.write_reg(di, d2, ps);
+        self.stats.rep_copies += 1;
+        true
     }
 
     /// Where the run into an interleaved interpreter's dispatch starts, set

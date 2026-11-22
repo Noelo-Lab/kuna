@@ -177,6 +177,9 @@ pub struct InsnTrace {
     /// The op indices executed, in order (internal loops unrolled).  Empty
     /// when the instruction forked.
     pub path: Vec<usize>,
+    /// The instruction was a `rep movs` the exploration modelled as a copy
+    /// (`Explorer::rep_copy`) instead of running it.
+    pub elided: bool,
 }
 
 const MAX_SPLIT_CASES: usize = 4;
@@ -213,6 +216,11 @@ pub struct Emulator<'a> {
     /// Every read of file data reads it as the file holds it (the
     /// interpreter probe's concrete run).
     pub trust_file: bool,
+    /// Some read of a copy's destination was not a fetch through the VPC
+    /// that the emitter folds to a constant: the copy is part of the program.
+    pub copy_read_unfolded: bool,
+    /// Reads of a copy's destination in the current instruction.
+    pub insn_copy_reads: u32,
     last_trusted: bool,
 }
 
@@ -238,6 +246,8 @@ impl<'a> Emulator<'a> {
             vpc: None,
             fetched_writable: false,
             trust_file: false,
+            copy_read_unfolded: false,
+            insn_copy_reads: 0,
             last_trusted: false,
         }
     }
@@ -265,6 +275,18 @@ impl<'a> Emulator<'a> {
     /// Read `size` bytes at `base + off`, through the virtual PC as the file
     /// holds them when [`Self::through_vpc`] says the load is a fetch.
     fn read_data(&mut self, state: &mut State, arena: &mut ExprArena, base: Option<VarId>, off: i128, size: u8) -> ExprId {
+        let copied = (0..size as i128).any(|i| state.copy_source(base, off + i).is_some());
+        let v = self.read_data_inner(state, arena, base, off, size);
+        if copied {
+            self.insn_copy_reads += 1;
+            if !self.last_trusted || arena.is_const(v).is_none() {
+                self.copy_read_unfolded = true;
+            }
+        }
+        v
+    }
+
+    fn read_data_inner(&mut self, state: &mut State, arena: &mut ExprArena, base: Option<VarId>, off: i128, size: u8) -> ExprId {
         if self.trust_file {
             let file = match base {
                 None => u64::try_from(off).is_ok_and(|a| self.target.file_data(a)),
@@ -656,6 +678,7 @@ impl<'a> Emulator<'a> {
         trace.sp_before = vec![None; insn.ops.len()];
         trace.forked = false;
         trace.path.clear();
+        self.insn_copy_reads = 0;
         self.notes.clear();
         self.noreturn_target = None;
         let mut visited = vec![false; insn.ops.len() + 1];

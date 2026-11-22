@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4944,
-    4944
+    4954,
+    4954
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2130,6 +2130,16 @@
     "data:PUSHAN #4: auto, the virtual JZ is a test of the argument",
     "data:PUSHAN #5: auto, the taken arm returns its constant",
     "data:PUSHAN #6: auto, the fall-through arm returns the virtual ADD",
+    "data:PUSHAN-INTERP #10: auto, th_inline has no copy loop",
+    "data:PUSHAN-INTERP #1: off, sw_writable is its interpreter, its VPC pointed at sw_code",
+    "data:PUSHAN-INTERP #2: auto, every interpreter is devirtualized",
+    "data:PUSHAN-INTERP #3: auto, writable bytecode is an assumption",
+    "data:PUSHAN-INTERP #4: auto, the virtual loop",
+    "data:PUSHAN-INTERP #5: auto, the virtual branch",
+    "data:PUSHAN-INTERP #6: auto, the sum is returned",
+    "data:PUSHAN-INTERP #7: auto, th_copied keeps its memcpy",
+    "data:PUSHAN-INTERP #8: auto, wv_woven follows its first program",
+    "data:PUSHAN-INTERP #9: auto, sw_patched is incomplete",
     "data:PUSHAN-SOUND #10: f_glob, the global is tested",
     "data:PUSHAN-SOUND #11: f_gcall, the global is re-read after the call",
     "data:PUSHAN-SOUND #12: f_ptr, the stored field is tested after the join",

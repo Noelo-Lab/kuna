@@ -2267,7 +2267,8 @@ mod tests {
         // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
         // and kuna-pushan / a VM-protected entry stub devirtualized (option pushan)
         // and kuna-pushan-sound / a devirtualized body says nothing false about its program
-        assert_eq!(count, 849, "corpus file count drifted");
+        // and kuna-pushan-interp / an in-function bytecode interpreter devirtualized (option pushan)
+        assert_eq!(count, 850, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

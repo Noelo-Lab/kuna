@@ -707,9 +707,17 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
     let return_reg = abi.return_reg;
     let mut call_kills = abi.clobbers.clone();
     call_kills.push((abi.return_reg, ptr));
-    let mut explorer = Explorer::new(&target, abi, Config::default(), entry);
-    explorer.probe = detect_vm_entry(&target, entry).is_none();
-    let cfg = explorer.run();
+    let probe = detect_vm_entry(&target, entry).is_none();
+    let mut explorer = Explorer::new(&target, abi.clone(), Config::default(), entry);
+    explorer.probe = probe;
+    let mut cfg = explorer.run();
+    if explorer.stats.rep_copies > 0 && explorer.stats.copy_read_unfolded {
+        // A copied array the program itself reads: run the copies.
+        explorer = Explorer::new(&target, abi, Config::default(), entry);
+        explorer.probe = probe;
+        explorer.rep_copies = false;
+        cfg = explorer.run();
+    }
     let m = arch.manage();
     let ram = Rc::clone(&target.ram);
     let const_space = Rc::clone(m.get_constant_space().ok_or("no constant space")?);

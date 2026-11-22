@@ -4136,7 +4136,17 @@ stack pointer after a VM exit, an external call for a concrete destination
 in mutable memory, and a node that paths reach with different copies, which
 starts without them. Where two sides of a merged conditional disagree on a
 copy, the merged state keeps only the copies both sides have. The rest of the
-call is summarized as usual and stays in the program.
+call is summarized as usual and stays in the program. gcc copies a smaller
+array inline with `rep movsq`. A `rep movs` of the function's own code with a
+constant count, the direction flag clear, a source in file data and a
+destination on the entry stack or at a concrete address is the same copy
+(`Explorer::rep_copy`): the count register is cleared and both pointers
+advance past it, in place of one emulated iteration per element. When the last
+round read the copy only through VPC fetches that fold to constants, the
+emitter leaves the instruction out, since no op of the recovered program reads
+what it wrote. Otherwise the function is explored again with every `rep movs`
+run as an instruction, and the copied array stays a loop of the program
+(`kuna_pushanemu.rs (Emulator::copy_read_unfolded)`).
 
 The direct dispatch also starts with gcc's stack probe for its large frame
 (`sub rsp, 0x1000; or [rsp], 0; cmp rsp, r11; jne`). A decided jump of the
@@ -4155,8 +4165,9 @@ merged symbol whose dispatch no enumeration decides. The probe therefore
 reports every cell fetched through at the dispatch. Cells a fixed stride apart
 are the VPCs of interleaved programs. The selector is every register, or
 4-byte slot of the entry stack, that holds the index of the fetched cell
-wherever the straight run into the dispatch starts, on every turn the probe saw
-there (`Explorer::infer_selector`). The explorer pins those locations to the
+where the straight run that loads the cell starts (the loop head before the
+dispatch, which may branch further through a second table), on every turn the
+probe saw there (`Explorer::infer_selector`). The explorer pins those locations to the
 index of the program dispatched first, there and in every state reaching that
 address (`Explorer::apply_pin`), as Pushan's Tigress driver pins the selector
 register. Every turn then runs the first program, the key holds its VPC alone,
@@ -4705,6 +4716,17 @@ argument on two paths and in a loop, two programs the header reports as
 incomplete (a loop that grows the stack, a virtual jump through an argument),
 and two virtual exits into one native epilogue, one of them an instruction
 ahead of it, whose call the recovered program makes once.
+`tests/stages/kuna-pushan-interp.xml` runs two passes over the
+`pushan_interp_x86_64` fixture (gcc -O0 from its committed C source), six
+functions that are their own interpreters of one virtual program with a loop
+and a branch. With `off`, the switch-dispatched one decompiles to its
+interpreter. With the default, switch dispatch over writable and read-only
+bytecode, threaded code copied by `memcpy` into a stack-probed local or by an
+inline `rep movsq` that leaves no copy loop behind, and two
+programs interleaved through `pc[sel]` recover the loop and the branch, only
+the writable ones carry the bytecode clause, the interleaved one says it
+follows its first program, and bytecode the function patches with its
+argument is reported incomplete.
 The expression arena and the state have unit tests in
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanexpr/tests.rs` and
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanstate/tests.rs`, and
