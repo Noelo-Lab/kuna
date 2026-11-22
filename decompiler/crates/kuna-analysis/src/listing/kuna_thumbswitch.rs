@@ -107,7 +107,7 @@ impl<'a> HalfwordTables<'a> {
         let mut index: Option<Key> = None;
         for op in cap.ops() {
             if op.opcode == OpCode::CPUI_BRANCHIND {
-                let Some(Val::Short { table, width, base }) =
+                let Some(Val::Relative { table, width, signed: false, shift: 1, base }) =
                     op.ins.first().and_then(|vn| value_of(vn, &vals, data))
                 else {
                     return (Vec::new(), None);

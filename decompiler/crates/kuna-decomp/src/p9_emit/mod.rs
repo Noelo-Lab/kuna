@@ -11,6 +11,7 @@ pub(crate) mod kuna_fieldextract;
 pub mod kuna_partialconcat;
 pub mod kuna_partialaccess;
 pub mod kuna_widelocal;
+pub mod kuna_postinc; // (kuna `postinc`) `*p++` for a pointer step after its dereference
 pub mod prettyprint;
 pub mod printjava;
 pub mod cast;
@@ -66,6 +67,7 @@ pub mod kuna_armregistershift; // (kuna) defined C for ARM register-controlled L
 pub mod kuna_armconstantshift;
 pub(crate) mod kuna_acleintrinsics; // (kuna) AArch64 barrier, hint and memory-tagging user ops as ACLE intrinsics
 pub mod kuna_emptystrconst;
+pub mod kuna_cstringconst;
 pub mod kuna_cfstr; // (kuna) CFSTR("...") for a Mach-O __cfstring entry
 pub mod kuna_swiftstrobj; // (kuna) a Swift string object is not a pointer to the bytes it lands on
 pub mod kuna_renderfault; // (kuna) test-only: panic one function's render partway through

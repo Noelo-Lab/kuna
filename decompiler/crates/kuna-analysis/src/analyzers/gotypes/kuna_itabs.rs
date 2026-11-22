@@ -46,7 +46,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use super::*;
 use crate::pass::{SymFact, SymKind};
-use super::kuna_typeglobals::global_name_ok;
+use super::kuna_typeglobals::{global_name_ok, linker_name};
 
 /// The linker-style itab symbol prefix (go1.21+ colon spelling, matching the
 /// `type:` form the descriptor globals use).
@@ -205,7 +205,8 @@ pub(super) fn walk_itab_region(img: &GoImage, types: u64, etypes: u64, start: u6
 
 /// Produce one name-only [`SymFact`] per located itab: its VMA and the
 /// linker-style `go:itab.<concrete>,<interface>` data symbol, built from the
-/// two descriptor names. Deliberately a NAME, not a typed-data fact: an itab
+/// two descriptors' linker names ([`linker_name`]: `go:itab.*internal/poll.FD,io.Writer`).
+/// Deliberately a NAME, not a typed-data fact: an itab
 /// address is used polymorphically (passed to `getitab`, compared, stored into
 /// an interface word), so locking its global to a struct type demotes those
 /// uses and HIDES the symbol a reference would otherwise render — exactly how
@@ -231,12 +232,11 @@ pub(super) fn collect(
             continue;
         }
         let Some((concrete, inter)) = read_itab(img, meta.types, meta.etypes, vma) else { continue };
-        if !global_name_ok(&concrete.name) || !global_name_ok(&inter.name) {
+        let (concrete, inter) = (linker_name(img, meta, &concrete), linker_name(img, meta, &inter));
+        if !global_name_ok(&concrete) || !global_name_ok(&inter) {
             continue;
         }
-        by_vma
-            .entry(vma)
-            .or_insert_with(|| format!("{NAME_PREFIX}{},{}", concrete.name, inter.name));
+        by_vma.entry(vma).or_insert_with(|| format!("{NAME_PREFIX}{concrete},{inter}"));
     }
     by_vma
         .into_iter()
