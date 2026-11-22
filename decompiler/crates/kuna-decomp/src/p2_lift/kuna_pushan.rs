@@ -196,6 +196,8 @@ pub struct ArchTarget<'a> {
     userops: Vec<String>,
     /// Entropy of each 256-byte block, computed on demand.
     entropy: RefCell<BTreeMap<u64, f64>>,
+    /// Entropy of the window around each address [`PushanTarget::bytecode_near`] tested.
+    near_entropy: RefCell<BTreeMap<u64, f64>>,
     /// A Windows image (`int 0x29` is `__fastfail`).
     windows: bool,
 }
@@ -256,6 +258,7 @@ impl<'a> ArchTarget<'a> {
             lifts: RefCell::new(BTreeMap::new()),
             userops,
             entropy: RefCell::new(BTreeMap::new()),
+            near_entropy: RefCell::new(BTreeMap::new()),
             windows,
         })
     }
@@ -419,6 +422,23 @@ impl PushanTarget for ArchTarget<'_> {
         let mut buf = [0u8; 256];
         let h = if self.read_bytes(block, &mut buf) { super::kuna_pushanemu::entropy(&buf) } else { 0.0 };
         self.entropy.borrow_mut().insert(block, h);
+        h >= BYTECODE_ENTROPY
+    }
+    fn bytecode_near(&self, addr: u64) -> bool {
+        let Some(s) = self.section_of(addr) else { return false };
+        if let Some(h) = self.near_entropy.borrow().get(&addr) {
+            return *h >= BYTECODE_ENTROPY;
+        }
+        let start = if addr < s.start.saturating_add(128) {
+            addr
+        } else if addr.saturating_add(128) > s.end {
+            addr.saturating_sub(256).max(s.start)
+        } else {
+            addr - 128
+        };
+        let mut buf = [0u8; 256];
+        let h = if self.read_bytes(start, &mut buf) { super::kuna_pushanemu::entropy(&buf) } else { return self.bytecode_like(addr) };
+        self.near_entropy.borrow_mut().insert(addr, h);
         h >= BYTECODE_ENTROPY
     }
 }

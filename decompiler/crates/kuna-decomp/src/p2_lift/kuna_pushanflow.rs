@@ -1612,14 +1612,14 @@ impl<'a> Explorer<'a> {
                         cell_loads.push((addr, c as u64));
                     }
                 }
-                if self.target.bytecode_like(addr) {
+                if self.target.bytecode_near(addr) {
                     fetches.push(addr);
                 }
                 let Some((reg, disp)) = a.via else { continue };
                 if disp.abs() > VPC_MAX_DISP || !self.abi.gprs.contains(&reg) {
                     continue;
                 }
-                if !self.target.bytecode_like(addr) {
+                if !self.target.bytecode_near(addr) {
                     continue;
                 }
                 *fetch_regs.entry(reg).or_insert(0) += 1;
@@ -1766,7 +1766,7 @@ impl<'a> Explorer<'a> {
     /// (angr's test excludes only the data sections); when `strict`, also
     /// high-entropy (bytecode rather than a table).
     fn vpc_like(&mut self, state: &mut State, c: u64, strict: bool) -> bool {
-        self.target.is_mapped(c) && !self.target.is_writable(c) && (!strict || self.target.bytecode_like(c)) && !self.written(state, c, 1)
+        self.target.is_mapped(c) && !self.target.is_writable(c) && (!strict || self.target.bytecode_near(c)) && !self.written(state, c, 1)
     }
 
     /// Some byte of `[a, a + len)` holds a value other than the image's

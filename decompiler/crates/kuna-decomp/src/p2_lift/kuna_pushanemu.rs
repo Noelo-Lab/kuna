@@ -60,6 +60,12 @@ pub trait PushanTarget: PushanImage {
     /// `addr` lies in a mapped region that looks like VM bytecode: the paper's
     /// test, a 256-byte window with Shannon entropy above 5 bits per byte.
     fn bytecode_like(&self, addr: u64) -> bool;
+    /// The same test over the 256 bytes around `addr` (128 on each side,
+    /// shifted to stay inside its section), as angr's VIP finder reads the
+    /// window: a fetch near the end of a bytecode region still passes.
+    fn bytecode_near(&self, addr: u64) -> bool {
+        self.bytecode_like(addr)
+    }
     /// `addr` lies in data the file holds: a loaded section that is neither
     /// code nor uninitialized (where an in-function interpreter's bytecode lives).
     fn file_data(&self, addr: u64) -> bool {

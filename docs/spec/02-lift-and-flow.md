@@ -4160,8 +4160,16 @@ from the state at the end of each block. A VPC value must point into a
 section of the image that is not writable (angr excludes only the data
 sections; VMProtect may place bytecode in `.pdata`), at bytes no path has
 written, inside a 256-byte window whose byte entropy is at least 5.0 bits (the paper's bytecode test,
-`bytecode_like`). The value must be a constant or one of at most four
-possible values. A value that fails the test (a register that held the
+`bytecode_near`). The window is the one angr's `find_vip` reads: 128 bytes on
+each side of the value, moved to start at the value or to end at it where it
+would cross the section's start or end. A window aligned to 256 bytes fails at
+the tail of a bytecode region that zero padding follows: zlib's last virtual
+block under VMProtect ends 0x80 bytes before the zeros of `.pdata`, where an
+aligned window measures 4.35 bits and a centred one 5.9, so the switch to
+that block's VPC register went unseen and the walk kept a handler pointer as
+its VPC. Whether a jump target is compiled code or the protector's
+(`Explorer::jump_to`) is still decided on the aligned block (`bytecode_like`).
+The value must be a constant or one of at most four possible values. A value that fails the test (a register that held the
 bytecode pointer earlier in the block and now holds a scratch number, the
 interpreter's writable context area, an unpacked handler table) never keys a
 node.
