@@ -2471,6 +2471,35 @@ the case targets.
    same rule when it reads an AArch64 compact table with no range check
    (chapter 1, `kuna_a64switch.rs`).
 
+   A table that a mask bounds only to its selector's width is the other
+   half of the same shape. A Swift enum's string switch masks the case
+   with `and x8, x0, #0xff` and reads 256 halfword rows, and when the table
+   is its function's last the rows past its own cases are the next
+   functions' tables measured from the wrong base: they land all over the
+   next functions and back inside this one, so the run-on cut, which keeps
+   every row until the first that leaves the function, keeps them all and
+   the 45-case switch printed 1,200 lines of phantom cases. When the run-on
+   cut leaves an unguarded table whose rows leave the function,
+   `jumptable.rs (JumpBasicModel::kuna_next_table_rows)` reads its table and
+   stride as above and ends it at the lowest jump table above it in the same
+   section, of this function or of the next ones, when that leaves at least
+   two rows. The next functions' tables come from the flow: the sanity check
+   inside the recovery partial records the table it wants
+   (`Funcdata::kuna_later_wanted`) and fails, and
+   `flow.rs (FlowInfo::recover_jump_tables)` decodes the extents after this
+   function (`kuna_switchextent.rs (later_tables)`: function by function, at
+   most 32, until one dispatches through a table above the one asked
+   about), stores their tables on the function (`Funcdata::kuna_later_tables`)
+   and runs the recovery once more. When no known function follows, the
+   list is empty and the recovery still runs once more, so the table ends
+   at the function's own next table or keeps its rows as before. The
+   request can also come from the retry the function's own tables bound
+   (a row of the bounded table lies in the next known function); the flow
+   then answers it in a second round. Either way the request never leaves
+   a table unrecovered. A table whose rows all stay
+   inside the function costs nothing, and the decode runs only for a table
+   already unguarded and leaving the function.
+
    **Guards that leave the top open (always on).**
    `jumptable.rs (JumpBasicModel::analyze_guards)` records the
    conditional branches on the path just before the dispatch as guards

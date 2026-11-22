@@ -27,6 +27,17 @@
 //! measured from the wrong base. The run-on cut (`kuna_switchrunon`) still
 //! applies to the rows a bound admits.
 //!
+//! A table a mask bounds only to its selector's width (the `and x8, x0,
+//! #0xff` in front of a Swift enum's 45-case string switch) reads 256 rows,
+//! and when it is its function's last table the rows past its own cases are
+//! the next functions' tables measured from the wrong base. Those rows land
+//! all over the next functions and back inside this one, so the run-on cut
+//! keeps them. The sanity check of such a table, whose rows leave the
+//! function, then asks the flow for the next functions' tables
+//! ([`later_tables`]: the extents after this one, until one dispatches
+//! through a table above it) and ends the table at the lowest table above
+//! it, of this function or of a later one.
+//!
 //! The same rule reads the table in the discovery Listing
 //! (`kuna-analysis/src/listing/kuna_switchextent.rs`), so the case bodies are
 //! the dispatcher's own code there too and no gap entry is planted on them.
@@ -77,6 +88,39 @@ pub fn function_tables(
         }
     }
     fold.tables.into_iter().collect()
+}
+
+/// How many functions after this one [`later_tables`] decodes before it
+/// gives up on finding a table above the one it bounds.
+const MAX_LATER_FUNCTIONS: usize = 32;
+
+/// The tables of the first functions after `end` (this function's end) whose
+/// extents dispatch through a table above `above`, sorted: the bound of a
+/// table that is its function's last, since the linker lays the next
+/// functions' tables out after it. `next_entry` names the known entry after
+/// an offset.
+pub fn later_tables(
+    translate: &dyn Translate,
+    image: Option<&dyn ImageBytes>,
+    entry: &Address,
+    end: u64,
+    above: u64,
+    next_entry: impl Fn(u64) -> Option<u64>,
+) -> Vec<u64> {
+    let Some(space) = entry.get_space().cloned() else { return Vec::new() };
+    let mut lo = end;
+    for _ in 0..MAX_LATER_FUNCTIONS {
+        let hi = next_entry(lo);
+        let tables = function_tables(translate, image, &Address::new(std::rc::Rc::clone(&space), lo), hi);
+        if tables.iter().any(|&t| t > above) {
+            return tables;
+        }
+        match hi {
+            Some(hi) if hi > lo => lo = hi,
+            _ => break,
+        }
+    }
+    Vec::new()
 }
 
 /// What the fold knows about a register: enough to tell a table read from
