@@ -6552,6 +6552,45 @@ every other binary's pass list is byte-identical to before the pass existed):
   drops under `option valuewitness off`. On a large third-party iOS app (268k
   functions) the arm names 27,667 functions, up from none, and load time is
   unchanged.
+  On arm64 the arm also names the outlined value-witness helpers
+  (`kuna-analysis/src/analyzers/swift/kuna_swiftoutlined.rs`). swiftc
+  copies, moves and destroys a value of a type whose layout is only known at
+  run time through a small helper per type and operation: fetch the type's
+  metadata, load the table from the word before it, call one witness
+  (`destroy`, `initializeWithCopy`, `assignWithCopy`, `initializeWithTake`,
+  `assignWithTake`), hand the value back. Each function start is decoded by a
+  register tracker that accepts only the forms such a helper uses (frame
+  setup and teardown, register moves, `mov #imm`, `adrp`/`add`/`adr`, a load
+  through a constant page, the `-8` table load, the slot load, one call for
+  the metadata and the witness call, `ret`). The helper must return the
+  address it was given (its `dest` for a copy or take), as swiftc's helpers
+  do: a value witness function of the same shape (the `destroy` of a struct
+  whose one non-trivial field is resilient calls that field's witness and
+  returns nothing) is not a helper of the field's type, and a function the
+  witness tables or a record already claim is skipped. The metadata must
+  come from an accessor call with request 0 (a local type's accessor, or an
+  import whose symbol is a type metadata accessor), a local type's static
+  metadata (kind and descriptor checked), a pointer slot (a bound import's
+  type metadata, or a rebased pointer to local static metadata), an accessor
+  passed as an argument, or a call with the helper's own arguments (a merged
+  helper's instantiation call). The witness's value arguments must be the
+  helper's arguments and its metadata argument the fetched metadata. The
+  helper is named the way the demangler spells the symbol,
+  `Module.T.outlined_destroy`, `Module.T.outlined_init_with_copy`,
+  `outlined_init_with_take`, `outlined_assign_with_copy`,
+  `outlined_assign_with_take`; one whose type is its caller's choice (the
+  linker merged the helpers of several types) is `outlined_destroy.merged`
+  and so on. Its prototype is the one the body states: `void *f(void *value)`
+  for a destroy, `void *f(void *src, void *dest)` for the others (the
+  arguments in the order the helper takes them, the value it returns), plus
+  the `swift.type_metadata *(*accessor)(unsigned long)` or the instantiation
+  arguments a merged helper takes. A helper whose metadata comes from
+  `__swift_instantiateConcreteTypeFromMangledName` at a constant cache is
+  left unnamed: its type is in the mangled name the cache points at. On the
+  same app the arm names 3,024 helpers (2,697 with their type, 327 merged),
+  and 210 calls in a 390-function sample print as named helper calls. The
+  stripped arm64 dylib `swift_outlined_macho` covers a per-type helper, two
+  merged ones and one fed by the instantiation helper.
   The crate test `kuna-console/tests/verify_valuewitness.rs` runs the stripped
   swiftc-built `swift_witness_elf` (a struct, an enum and a generic struct, and
   a generic function that moves a `T`) with the arm on and off.
