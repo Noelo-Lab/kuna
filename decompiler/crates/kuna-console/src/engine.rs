@@ -31,6 +31,7 @@
 //! is precisely what `readLoaderSymbols` reads).
 
 mod lazy_inventory;
+mod kuna_thunknames;
 mod kuna_signature_names;
 
 use std::borrow::Cow;
@@ -5789,8 +5790,16 @@ fn commit_analysis_output(
     //    site and the printer rendered `sub_<addr>` (DIV-59).
     // (kuna `lazyfuncs`) On, an entry keeps its NAME but no `Function` is created here.
     let lazy_funcs = prog.arch().analysis_lazyfuncs;
+    let jump_thunks = if prog.arch().analysis_thunknames {
+        kuna_thunknames::jump_thunks(prog.arch(), code_space, &out.entries)
+    } else {
+        Default::default()
+    };
     let eager = if lazy_funcs {
-        crate::kuna_lazyfuncs::fact_entries(&out)
+        let mut eager = crate::kuna_lazyfuncs::fact_entries(&out);
+        let named_thunks = kuna_thunknames::thunks_to(&jump_thunks, &eager);
+        eager.extend(named_thunks);
+        eager
     } else {
         std::collections::HashSet::new()
     };
@@ -6064,6 +6073,10 @@ fn commit_analysis_output(
         prog.arch_mut().symboltab.rename_symbol(sid, &m.name)?;
         prog.register_symbol(&m.name, addr);
     }
+
+    // 3'''. (kuna `thunknames`) A placeholder jump thunk takes its target's name
+    //       behind `j_`, after every other name source has named the targets.
+    kuna_thunknames::commit(prog, code_space, &jump_thunks)?;
 
     // 4. Detected string literals: place a typelocked `char[len]` data symbol at
     //    each (the kuna analog of `DataUtilities.createData` for an ASCII string),

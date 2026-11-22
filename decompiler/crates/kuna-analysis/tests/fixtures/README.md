@@ -1068,6 +1068,15 @@ is `sub_100000520` from the indirect-symbol walk and `__chkstk_darwin` from the 
 on `0x100004000`; `tests/stages/kuna-stubbinds.xml` is the two-pass stage test.
 SHA-256 `3431ceec04e811d5c7a04b8b21d9f346077bb5faed9e7191f66610fcc25829f3`.
 
+`thunknames_aarch64` (static AArch64 ELF, 1 KB; source `thunknames_aarch64.S`,
+rebuild with `clang --target=aarch64-linux-gnu -nostdlib -static -fuse-ld=lld
+-Wl,-e,drop_box -Wl,--build-id=none -o thunknames_aarch64 thunknames_aarch64.S`)
+holds two symbol-less `b` thunks: `0x210130` jumps to `release_box`, `0x210134`
+jumps to `0x210130`, and `drop_box` / `drop_two` call them. Pins `thunknames`
+(`kuna-console/src/engine/kuna_thunknames.rs`); `tests/stages/kuna-thunknames.xml`
+is the two-pass stage test.
+SHA-256 `fde9cbcfd3d8e58176b1628f0857b32b12fc17de9a1da71d461d0a8c141ecdba`.
+
 `chkstkdarwin_macho_arm64e` (arm64e, 33 KB) reaches the probe through an
 `__auth_ptr` slot, the way an arm64e link calls it: `_big_e` with
 `adrp x16; ldr x16,[x16,#off]; blraaz x16` and `_vla_e` with

@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_232() {
-    assert_eq!(kuna_num_settables(), 232);
-    assert_eq!(SETTABLE_TABLE.len(), 232);
+fn settable_count_is_233() {
+    assert_eq!(kuna_num_settables(), 233);
+    assert_eq!(SETTABLE_TABLE.len(), 233);
 }
 
 #[test]
-fn tier_counts_are_48_core_125_transform_59_analysis() {
+fn tier_counts_are_48_core_125_transform_60_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_48_core_125_transform_59_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (48, 125, 59));
+    assert_eq!((core, transform, analysis), (48, 125, 60));
 }
 
 #[test]
@@ -407,6 +407,9 @@ fn option_values_live_value_present_for_76() {
         // (kuna) Stripped Mach-O stub naming: an analysis-pass gate read
         // console-side, like `calltable` above. Default-on.
         "stubbinds",
+        // (kuna) Jump-thunk naming: a commit gate read console-side, like
+        // `stubbinds` above. Default-on.
+        "thunknames",
         // (kuna) ARM literal-pool inference — an analysis-pass gate with no codegen
         // live reader (read console-side via kuna_live_value), same as
         // `tailcallentry` above. Default-off, ARM-only.
@@ -1124,9 +1127,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `opaquepredicate`; its P3 row sits after `globalarrayanchor`.
     // +1 for `calltable`; its P1 row sits after `tailcallentry`.
     // +1 for `stubbinds`; its P1 row sits after `calltable`.
+    // +1 for `thunknames`; its P1 row sits after `stubbinds`.
     // +1 for `cstringconst`; its P9 row sits after `globalref`.
     // +1 for `switchextent`; its P2 row sits after `switchmodbound`.
-    assert_eq!(json.matches("},\n").count(), 231);
+    assert_eq!(json.matches("},\n").count(), 232);
     // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 
