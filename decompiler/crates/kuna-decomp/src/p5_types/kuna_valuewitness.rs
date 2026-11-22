@@ -113,22 +113,34 @@ fn below_metadata(data: &Funcdata, addr: VarnodeId) -> bool {
     }
 }
 
-/// The end of the table word `op` reads through `vn` (offset + 8), when it
-/// is a load through `vn` or through `vn` plus an offset inside a table.
+/// The end of the table bytes `op` reads through `vn` (offset plus the
+/// width read), when it is a load through `vn` or through `vn` plus an
+/// offset inside a table. The width matters: `flags` and
+/// `extraInhabitantCount` are 4-byte words that end inside the common table.
 fn table_read(data: &Funcdata, op: OpId, vn: VarnodeId) -> Option<u64> {
     let o = data.obank().get(op)?;
+    let width = |load: &crate::op::PcodeOp| {
+        load.get_out()
+            .and_then(|v| data.vbank().get(v))
+            .map(|v| v.get_size() as u64)
+    };
     match o.code() {
-        OpCode::CPUI_LOAD if o.get_in(1) == Some(vn) => Some(8),
+        OpCode::CPUI_LOAD if o.get_in(1) == Some(vn) => width(o),
         OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRSUB if o.get_in(0) == Some(vn) => {
             let c = data.vbank().get(o.get_in(1)?).filter(|c| c.is_constant())?;
             let off = c.get_offset();
+            if off >= ENUM_TABLE_SIZE {
+                return None;
+            }
             let out = o.get_out()?;
-            let loaded = data.vbank().get(out)?.descend_iter().any(|r| {
-                data.obank()
-                    .get(r)
-                    .is_some_and(|r| r.code() == OpCode::CPUI_LOAD && r.get_in(1) == Some(out))
-            });
-            (off < ENUM_TABLE_SIZE && loaded).then_some(off + 8)
+            data.vbank()
+                .get(out)?
+                .descend_iter()
+                .filter_map(|r| data.obank().get(r))
+                .filter(|r| r.code() == OpCode::CPUI_LOAD && r.get_in(1) == Some(out))
+                .filter_map(|r| width(r))
+                .max()
+                .map(|w| off + w)
         }
         _ => None,
     }
