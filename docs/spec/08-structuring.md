@@ -1021,7 +1021,9 @@ body; when `G` is `if (c) goto L;` or ends the only arm of an `if` and flow
 after that `if`'s list is the flow after `R`, the list's later members become
 the `if`'s else arm and `R` is copied in place of the jump (when `L` is a
 later member of the same list, the members in between are the else arm and
-nothing is copied); when `R` runs to the end of the body of `G`'s innermost
+nothing is copied); the end of a switch case that ends in `break;` counts as
+the switch's exit, so a case that jumps into a run ending another such case
+gets a copy and ends in `break;` too; when `R` runs to the end of the body of `G`'s innermost
 loop (`loopcontinue` on, and for a do-while only when the output language's
 `continue;` runs the test, `do_while_continue`), `R` is copied before the
 jump, which prints `continue;`. `R` is the shortest such run, at most 12
@@ -1032,8 +1034,8 @@ with no switch in between, prints `break;`. The copies are new print-tree
 nodes over the same basic blocks (`BlockGraph::kuna_clone_subtree`), so no
 p-code changes; a label no plain goto reaches any more is released. On the
 clang `-O2 -fno-inline` arm64 cmark build (593 functions) the gotos drop from
-168 to 136 and the GED sum to the source from 6199 to 6148 (without
-`cmark_utf8proc_case_fold`), with 0/675 datatest assertions moved.
+168 to 110 (26 of them the switch-case jumps of `cmark_utf8proc_case_fold`),
+with 0/675 datatest assertions moved.
 
 ### ifelseflatten — guard-clause flattening (angr `IfElseFlattener`)
 

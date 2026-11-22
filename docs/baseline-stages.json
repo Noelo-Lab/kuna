@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4965,
-    4965
+    4967,
+    4967
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1473,8 +1473,10 @@
     "data:KUNA-CROSSJUMPTAIL #2: by default the arm that jumped ends in its own copy of the call",
     "data:KUNA-CROSSJUMPTAIL #3: by default the arm into the store run gets its own copy of the store",
     "data:KUNA-CROSSJUMPTAIL #4: the jump to the call ending the loop body is a copy and continue by default",
-    "data:KUNA-CROSSJUMPTAIL #5: one goto by default and six with the option off",
-    "data:KUNA-CROSSJUMPTAIL #6: one label by default and six with the option off",
+    "data:KUNA-CROSSJUMPTAIL #5: a switch case that jumped into a later case's call ends in its own call and break by default",
+    "data:KUNA-CROSSJUMPTAIL #6: the jumps between switch cases print only with the option off",
+    "data:KUNA-CROSSJUMPTAIL #7: three gotos by default and eleven with the option off",
+    "data:KUNA-CROSSJUMPTAIL #8: three labels by default and ten with the option off",
     "data:KUNA-DECLAREDLIBCPROTO #1: the declared name renders",
     "data:KUNA-DECLAREDLIBCPROTO #2: the callee never falls back to its anonymous name",
     "data:KUNA-DECLAREDLIBCPROTO #3: the arguments never go untyped",

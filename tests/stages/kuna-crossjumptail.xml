@@ -8,11 +8,12 @@
     `if` becomes its else arm when that converges instead, and a run that
     ends the body of the jump's innermost loop is copied before a
     `continue;`.  Pass 1 is the default, pass 2 has `option crossjumprevert
-    off`.
+    off`.  A switch case that jumps into a run ending another case that
+    leaves the switch gets a copy of the run and leaves the switch too.
 
     The bytes are houdini_escape_href, S_normalize_code,
-    cmark_strbuf_normalize_whitespace, cmark_strbuf_truncate and
-    cmark_node_own of swift-cmark 0.29.0.gfm.13 (BSD-2-Clause), built by
+    cmark_strbuf_normalize_whitespace, cmark_strbuf_truncate,
+    cmark_node_own and parse_inline (with its case table) of swift-cmark 0.29.0.gfm.13 (BSD-2-Clause), built by
     clang for arm64-apple-ios at -O2 -fno-inline.
 -->
 <bytechunk space="ram" offset="0x75c4">
@@ -30,6 +31,23 @@ e803092a2a0500117f020a6b7bc6891ae90308aa8a6a69383c6b6a38bc000034290500913f0118eb
 8102088be00315aa6df9ff979c020035884a7b381f9d007180fcff541f99007181000054e00315aae10317aae1ffff1709fd44d3496b6938e93b0039080d4092
 486b6838e83f0039e1370091e00315aa620080525af9ff97d7ffff1720008052fd7b46a9f44f45a9f65744a9f85f43a9fa6742a9fc6f41a9ffc30191c0035fd6
 </bytechunk>
+<bytechunk space="ram" offset="0xa98c">
+ff8301d1fa6701a9f85f02a9f65703a9f44f04a9fd7b05a9fd430191f50303aaf30302aaf40301aaf60300aa392040b9e00301aa7e020094f70300aa180080d2
+1f80017188110054e803172a895b0d101f2003d58a0000102b6968384a090b8b40011fd6a32a0a53e00316aae10314aae20317aa52060094f80300aa7e000014
+bf060e72200f0054982240b908070011882200b980220091e10318aa22008052a1020094e40300aae50301aae00314aa21009852e20318aae30318aa59040094
+f80300aa6c000014982240b908070011882200b9200311501f2003d596020094e40300aae50301aae00314aa21009852e20318aae30318aa4a040094f80300aa
+e00314aa0100805244000014e00314aae10315aa52050094f80300aa56000014a12a0a53e00314aa66060094f80300aa51000014e00314aa18050094f80300aa
+4d000014e00314aa21008052590800941f6c017181060054e00314aa41008052540800941f780171e0050054982240b9080b0011882200b960fe10101f2003d5
+6d020094e40300aae50301aa03070011e00314aa21009852e20318aa21040094f80300aae00314aa210080521b000014e00316aae10314aa05070094f80300aa
+2d000014e00314aa21008052390800941f6c017181020054982240b9080b0011882200b900fb10701f2003d552020094e40300aae50301aa03070011e00314aa
+21009852e20318aa06040094f80300aae00314aa41008052e20318aacb06009415000014180080d213000014a12a0a53e00314aa91060094f80300aa0e000014
+e00314aae10315aa4d040094f80300aa09000014e00316aae10314aa90040094f80300aa04000014e00314aa15040094f80300aa882240b91f01196be1060054
+f80600b5e00316aae10313aae20317aae30314aa1c080094f80300aa000600b5e00316aae10314aae20315aa31080094f60300aa972240b90200176bc1010054
+c8060011882200b980220091e10316aa2200805214020094e40300aae50301aae00314aa21009852e20316aae30316aa1800001480220091e10317aa0a020094
+f80300aaf90301aae00700a9962200b9bf060e7221010054e00314aac4010094001c00138902009480000034e003009112ffff97f86740a9c3060051e00314aa
+21009852e20317aae40318aae50319aab4030094f80300aa980000b4e00313aae10318aa1b08009437008052e00317aafd7b45a9f44f44a9f65743a9f85f42a9
+fa6741a9ff830191c0035fd6
+</bytechunk>
 <bytechunk space="ram" offset="0xcf50">
 081440b91f0500712b060054f44fbea9fd7b01a9fd430091090080d208008052010080520a0440f90d0000140b0480524bc92138210400110a0440f94b696938
 7f810071eb079f1a6801082a290500910b1480b93f010beb6a0100544b6969387f29007140feff547f35007121feff544b01098b6b0540397f29007181fdff54
@@ -42,9 +60,14 @@ f85f41a9fa67c5a838ffff17c0035fd6f40300aa15009812d6009052370080523803805219248052
 e00314aa09148052680240f90100098be00308aa17000094e00313aa26ffff97f40300aa1f04007140fcff54e00313aa68ffff979f0a007101ffff5408c84079
 091280520a01150b5f210071c8000054ea22ca1a5f01186a81fdff545f01196a61fcff541f01166b00fdff54ebffff17
 </bytechunk>
+<bytechunk space="ram" readonly="true" offset="0x25548">
+c284848484848484848407848407848484848484848484848484848484848484843800848484340084840084842f72848484848484848484848484842a848484
+848484848484848484848484848484848484848484848484848484197c53580077
+</bytechunk>
 <symbol space="ram" offset="0x75c4" name="cmark_strbuf_truncate"/>
 <symbol space="ram" offset="0x770c" name="cmark_strbuf_normalize_whitespace"/>
 <symbol space="ram" offset="0x8cd0" name="houdini_escape_href"/>
+<symbol space="ram" offset="0xa98c" name="parse_inline"/>
 <symbol space="ram" offset="0xcf50" name="S_normalize_code"/>
 <symbol space="ram" offset="0xded4" name="cmark_node_own"/>
 </binaryimage>
@@ -61,6 +84,9 @@ e00314aa09148052680240f90100098be00308aa17000094e00313aa26ffff97f40300aa1f040071
   <com>lo fu cmark_node_own</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu parse_inline</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option crossjumprevert off</com>
   <com>lo fu houdini_escape_href</com>
   <com>decompile</com>
@@ -74,6 +100,9 @@ e00314aa09148052680240f90100098be00308aa17000094e00313aa26ffff97f40300aa1f040071
   <com>lo fu cmark_node_own</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu parse_inline</com>
+  <com>decompile</com>
+  <com>print C</com>
 </script>
 <stringmatch name="KUNA-CROSSJUMPTAIL #1: the jump to the shared call prints only with the option off" min="1" max="1">goto label_8d40;</stringmatch>
 <stringmatch name="KUNA-CROSSJUMPTAIL #2: by default the arm that jumped ends in its own copy of the call" min="1" max="1">^        v4 = 0x2cb44;$
@@ -85,6 +114,10 @@ e00314aa09148052680240f90100098be00308aa17000094e00313aa26ffff97f40300aa1f040071
 ^          \*\(char \*\)\(v4 \+ v2\) = v5;$</stringmatch>
 <stringmatch name="KUNA-CROSSJUMPTAIL #4: the jump to the call ending the loop body is a copy and continue by default" min="1" max="1">^          v3 = sub_dc08\(v2\);$
 ^          continue;$</stringmatch>
-<stringmatch name="KUNA-CROSSJUMPTAIL #5: one goto by default and six with the option off" min="7" max="7">goto label_</stringmatch>
-<stringmatch name="KUNA-CROSSJUMPTAIL #6: one label by default and six with the option off" min="7" max="7">^label_</stringmatch>
+<stringmatch name="KUNA-CROSSJUMPTAIL #5: a switch case that jumped into a later case's call ends in its own call and break by default" min="1" max="1">^      v7 = 0;$
+^      sub_c6d4\(a1,v7,v10\);$
+^      break;$</stringmatch>
+<stringmatch name="KUNA-CROSSJUMPTAIL #6: the jumps between switch cases print only with the option off" min="2" max="2">goto label_aba4;</stringmatch>
+<stringmatch name="KUNA-CROSSJUMPTAIL #7: three gotos by default and eleven with the option off" min="14" max="14">goto label_</stringmatch>
+<stringmatch name="KUNA-CROSSJUMPTAIL #8: three labels by default and ten with the option off" min="13" max="13">^label_</stringmatch>
 </decompilertest>

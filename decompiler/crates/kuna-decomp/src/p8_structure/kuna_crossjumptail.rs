@@ -8,7 +8,9 @@
 //! its list (or a whole `if` arm) is rewritten when flow after `R` is known:
 //!
 //! * **Converged.**  The flow after `G` (were it a fall-through) is the flow
-//!   after `R`: `R` is copied after `G`'s body and the jump goes.
+//!   after `R`: `R` is copied after `G`'s body and the jump goes.  The end of
+//!   a switch case that ends in `break;` is the switch's exit, and so is the
+//!   end of the case `G` ends, which then ends in `break;` too.
 //! * **Else arm.**  `G` is `if (c) goto L;`, or ends the only arm of an `if`
 //!   standing at index `i` of a list, and flow after that list is the flow after
 //!   `R`: the list's components after `i` become the `if`'s else arm and `R` is
@@ -101,12 +103,6 @@ fn run_start(graph: &BlockGraph, leaf: BlockId) -> Option<(BlockId, usize)> {
     }
 }
 
-/// Where flow goes after the last member of `list`.
-fn flow_after_list(graph: &BlockGraph, list: BlockId) -> Option<BlockId> {
-    let last = *graph.block(list).get_list().last()?;
-    graph.next_flow_after(list, last)
-}
-
 fn flow_after(graph: &BlockGraph, id: BlockId) -> Option<BlockId> {
     graph.next_flow_after(graph.block(id).get_parent()?, id)
 }
@@ -167,9 +163,59 @@ fn run_cost(data: &Funcdata, id: BlockId, header: &[OpId]) -> Option<(usize, usi
     }
 }
 
+/// Where flow goes: a leaf, or out of a switch through a case that ends in `break;`.
+#[derive(Clone, Copy, PartialEq)]
+enum Dest {
+    Leaf(BlockId),
+    SwitchExit(BlockId),
+}
+
+/// Where flow goes after `child` of `parent`, as [`BlockGraph::next_flow_after`],
+/// except that the end of a case that exits its switch reaches that switch's
+/// exit.  With `site`, the case that `child` ends (through last list members
+/// only) counts as exiting: rewriting the jump that ends it makes it so.
+/// Returns the switch and that case block alongside.
+fn dest(
+    graph: &BlockGraph,
+    mut parent: BlockId,
+    mut child: BlockId,
+    site: bool,
+) -> Option<(Dest, Option<BlockId>)> {
+    loop {
+        let p = graph.block(parent);
+        match p.get_type() {
+            BlockType::Switch => {
+                let case = p.switch_caseblocks().iter().find(|c| c.block == child)?;
+                return if case.isexit {
+                    Some((Dest::SwitchExit(parent), None))
+                } else if site && case.gototype == 0 {
+                    Some((Dest::SwitchExit(parent), Some(child)))
+                } else {
+                    graph
+                        .next_flow_after(parent, child)
+                        .map(|l| (Dest::Leaf(l), None))
+                };
+            }
+            BlockType::Ls | BlockType::Graph if p.get_list().last() == Some(&child) => {
+                child = parent;
+                parent = p.get_parent()?;
+            }
+            BlockType::If if !site && graph.block(parent).get_block(0) != child => {
+                child = parent;
+                parent = p.get_parent()?;
+            }
+            _ => {
+                return graph
+                    .next_flow_after(parent, child)
+                    .map(|l| (Dest::Leaf(l), None));
+            }
+        }
+    }
+}
+
 enum Plan {
-    /// Copy `R` after `G`'s body.
-    Converged(usize),
+    /// Copy `R` after `G`'s body; mark the case `G` ended as exiting its switch.
+    Converged(usize, Option<(BlockId, BlockId)>),
     /// Move the members after the carrier into its else arm, then copy `R`.
     ElseArm {
         carrier: BlockId,
@@ -281,7 +327,7 @@ fn plan(
     } else {
         graph.block(rl).get_list()[..=k].to_vec()
     };
-    let site_flow = flow_after(graph, g);
+    let site = dest(graph, graph.block(g).get_parent()?, g, true);
     let carried = carrier(graph, g);
     if let Some((c, list, at)) = carried {
         if c != g && list == rl && k > at + 1 {
@@ -297,7 +343,9 @@ fn plan(
             ));
         }
     }
-    let rest_flow = carried.and_then(|(_, list, _)| flow_after_list(graph, list));
+    let rest_flow = carried.and_then(|(_, list, _)| {
+        dest(graph, list, *graph.block(list).get_list().last()?, false).map(|(d, _)| d)
+    });
     let (mut ops, mut calls) = (0, 0);
     for m in k..members.len() {
         if contains(graph, members[m], g) {
@@ -309,9 +357,13 @@ fn plan(
         if ops > MAX_RUN_OPS || calls > MAX_RUN_CALLS {
             return None;
         }
-        let after = graph.next_flow_after(rl, members[m]);
-        if after.is_some() && after == site_flow {
-            return Some((rl, k, Plan::Converged(m)));
+        let after = dest(graph, rl, members[m], false).map(|(d, _)| d);
+        if let Some((d, case)) = site.filter(|(d, _)| Some(*d) == after) {
+            let mark = match (d, case) {
+                (Dest::SwitchExit(s), Some(c)) => Some((s, c)),
+                _ => None,
+            };
+            return Some((rl, k, Plan::Converged(m, mark)));
         }
         if let Some((c, list, at)) = carried {
             if after.is_some() && after == rest_flow && !contains(graph, list, members[k]) {
@@ -382,9 +434,17 @@ fn apply_once(data: &mut Funcdata, gates: Gates) -> Option<BlockId> {
     let graph = data.sblocks_mut();
     let leaf = graph.get_front_leaf(jump_target(graph, g)?)?;
     match plan {
-        Plan::Converged(m) => {
+        Plan::Converged(m, mark) => {
             let run = copy_run(graph, rl, k, m);
             replace_jump(graph, g, run);
+            if let Some((s, c)) = mark {
+                let case = graph
+                    .block_mut(s)
+                    .switch_caseblocks_mut()?
+                    .iter_mut()
+                    .find(|o| o.block == c)?;
+                case.isexit = true;
+            }
         }
         Plan::ElseArm {
             carrier,
