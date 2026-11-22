@@ -2342,6 +2342,16 @@ impl JumpBasicModel {
         }
     }
 
+    /// (kuna) Does a guard of the switch, rather than the selector's width,
+    /// bound the table to at most [`MAX_SELECTOR_INPUTS`] entries?  Such a
+    /// table may pass `jumptablemax`; [`JumpTable::recover_addresses`] then
+    /// caps its distinct destinations instead.
+    fn guard_bounds_table(&self, fd: &Funcdata) -> bool {
+        let size = self.jrange().get_size();
+        let vn = self.path_meld.get_varnode(self.varnode_index);
+        size <= MAX_SELECTOR_INPUTS && !self.selectguards.is_empty() && size < Self::width_range(fd, vn).0.get_size()
+    }
+
     /// Mutable access to the base [`JumpValuesRange`] of `jrange` (both model 1
     /// `JumpValuesRange` and model 2 `JumpValuesRangeDefault` set the same base
     /// fields via `set_range`/`set_start_vn`/`set_start_op`).
@@ -3131,7 +3141,7 @@ impl JumpBasicModel {
         self.find_normalized(fd, parent, -1, matchsize, maxtablesize, indop)?;
         self.narrow_readonly_selector_domain(fd, maxtablesize);
         self.skip_stranding_variable(fd, indop, matchsize, maxtablesize);
-        let unbounded = self.jrange().get_size() > maxtablesize as uintb;
+        let unbounded = self.jrange().get_size() > maxtablesize as uintb && !self.guard_bounds_table(fd);
         self.rows_rejected = !unbounded
             && !self.can_label_rows(fd, indop)
             && !self.label_by_deeper_variable(fd, indop, maxtablesize);
@@ -6488,6 +6498,17 @@ impl JumpTable {
         if self.jmodel.as_mut().is_some_and(|model| model.take_rebuild()) {
             self.loadpoints.truncate(first_load);
             self.build_checked_addresses(fd)?;
+        }
+        // (kuna) A guard-bounded table may be longer than `jumptablemax`; the
+        // cap then applies to the code it reaches.
+        let max_table_size = fd.get_arch().max_jumptable_size as usize;
+        if self.addresstable.len() > max_table_size
+            && self.addresstable.iter().collect::<std::collections::BTreeSet<_>>().len() > max_table_size
+        {
+            return Err(KunaError::lowlevel(format!(
+                "Could not recover jumptable at {:?}. Too many branches",
+                self.opaddress
+            )));
         }
         Ok(())
     }

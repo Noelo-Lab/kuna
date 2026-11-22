@@ -96,9 +96,9 @@ use super::xrefs::{decode, in_range, FullCapture, FullOp};
 pub(super) const MIN_ENTRIES: usize = 2;
 
 /// The largest table read when the caller names no ceiling: the engine's own
-/// default (`Architecture::max_jumptable_size`, 16384). The walk passes the live
+/// default (`Architecture::max_jumptable_size`, 1024). The walk passes the live
 /// `jumptablemax` instead, so raising it for a giant switch reaches this tier too.
-pub(super) const DEFAULT_MAX_ENTRIES: usize = 16384;
+pub(super) const DEFAULT_MAX_ENTRIES: usize = 1024;
 
 /// The case bodies the computed jump at `from` dispatches to through a table at
 /// `base`, or empty when `base` does not front one.

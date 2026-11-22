@@ -61,9 +61,9 @@ run keeps the nested form.
 them (through `x == 0x60` and `x == 0x70` tests that fail for the hole values)
 prints no label for the holes: in `f` the holes jumped to a block the default
 code also reaches (`case 0x43: case 0x46: goto`), in `g` they left the switch
-(`break;`). The off run keeps `f`'s labels. `h` checks the `jumptablemax`
-default: an 1100-entry range-checked table prints as a switch, not as
-`jump-as-call`.
+(`break;`). The off run keeps `f`'s labels. `h` checks that `jumptablemax`
+caps a guarded table's distinct arms, not its entries: an 1100-entry
+range-checked table with four arms prints as a switch, not as `jump-as-call`.
 
 `kuna-switchmerge-split.xml` checks two more `switchmerge` rules on AArch64
 tables. In `k` a range test splits the selector between two range-checked

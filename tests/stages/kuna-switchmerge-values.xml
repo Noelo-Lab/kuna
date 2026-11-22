@@ -1,7 +1,8 @@
 <decompilertest>
 <binaryimage arch="AARCH64:LE:64:v8A:default">
 <!--
-    switchmerge with value-aware holes, and a jump table longer than jumptablemax.
+    switchmerge with value-aware holes, and a guarded jump table longer than
+    jumptablemax.
 
     Authored AArch64 (clang -c of hand-written assembly). f and g range-check
     w0 against 0x41..0x48 and index an eight-entry table; an out-of-range value
@@ -15,7 +16,8 @@
     1100 labels.
     Before: f printed `case 0x43: case 0x46: goto label_...;`, g
     `case 0x43: case 0x46: break;`, and h `jump-as-call` (the table is longer
-    than jumptablemax 1024). Option switchmerge off keeps f's labels.
+    than jumptablemax 1024, though its guard bounds it and it reaches four
+    arms). Option switchmerge off keeps f's labels.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 a10300b4080401511f1d0071a8000054a90400102a79a8b829010a8b20011fd61f800171000200541fc001710002005411000014200080521900001440008052170000148000805215000014a000805213000014e000805211000014000180520f000014200180520d000014400180520b0000140004001100001952200000b9027c001b220400b94200000b220800b940041c52200c00b9c0035fd600781f53c0035fd690ffffff98ffffffd0ffffffa0ffffffa8ffffffd0ffffffb0ffffffb8ffffff

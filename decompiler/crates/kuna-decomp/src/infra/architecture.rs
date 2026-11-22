@@ -2931,7 +2931,7 @@ impl Architecture {
         self.alias_block_level = 2; // Block structs and arrays by default
         self.split_datatype_config =
             split_datatype::OPTION_STRUCT | split_datatype::OPTION_ARRAY | split_datatype::OPTION_POINTER;
-        self.max_jumptable_size = 16384; // (kuna) upstream ships 1024, which refuses range-checked tables longer than that
+        self.max_jumptable_size = 1024;
 
         // (kuna) Analysis-pass gates — default-on (matching Ghidra's default-on
         // analyzers), except addrtable which Ghidra ships off. Bound to the

@@ -81,7 +81,7 @@ fn reset_defaults_internal_matches_cpp() {
     assert_eq!(arch.max_basetype_size, 10);
     assert_eq!(arch.flowoptions, flow_flags::error_toomanyinstructions);
     assert_eq!(arch.max_instructions, 100000);
-    assert_eq!(arch.max_jumptable_size, 16384);
+    assert_eq!(arch.max_jumptable_size, 1024);
     assert_eq!(arch.alias_block_level, 2);
     assert_eq!(
         arch.split_datatype_config,
@@ -445,13 +445,13 @@ fn arch_option_context_proto_model_registry() {
     assert!(format!("{err}").contains("Unknown function name"));
 }
 
-/// (kuna) `jumptablemax`: ships at 16384, takes a positive decimal
+/// (kuna) `jumptablemax`: ships at upstream's 1024, takes a positive decimal
 /// count, and refuses anything else rather than reading a prefix of it.
 #[test]
-fn jumptablemax_defaults_to_16384_and_parses_strictly() {
+fn jumptablemax_defaults_to_1024_and_parses_strictly() {
     let mut arch = Architecture::new("t", bare_sleigh());
     arch.reset_defaults_internal();
-    assert_eq!(arch.max_jumptable_size, 16384);
+    assert_eq!(arch.max_jumptable_size, 1024);
     arch.set_kuna_option("jumptablemax", "100000").unwrap();
     assert_eq!(arch.max_jumptable_size, 100000);
     for bad in ["", "0", "wide", "12abc", "1.5", "-5", "+5", "0x10", "4294967296"] {

@@ -2344,18 +2344,23 @@ the case targets.
    done (`LoadImage::read_window`, `LoadImage::restore_read_window`), so the
    table built afterwards reads exactly what it would have read without it.
 4. **Accept or rescue.** If the chosen range exceeds `max_jumptable_size`
-   (16384, `architecture.rs (reset_defaults_internal)`, where upstream ships 1024:
-   clang emits range-checked tables longer than 1024 entries for one sparse
-   switch, and reading a table costs about 0.1 s per 8000 entries, while a
-   2-byte selector with no range check stays over the cap; settable per run as the
+   (1024, `architecture.rs (reset_defaults_internal)`; settable per run as the
    catalogued `option jumptablemax <n>`: upstream's `OptionJumpTableMax`, parsed
    strictly by `Architecture::set_kuna_option`, so anything but a positive
    decimal count is refused; the analysis tier's switch-table read takes the
-   same field, see chapter 01), the four kuna bound
+   same field, see chapter 01) and no guard of the switch bounds it (kuna:
+   `JumpBasicModel::guard_bounds_table` accepts a range of at most 65536
+   entries, narrower than the selector's width, when `analyze_guards`
+   recorded a guard; upstream refuses every range over the cap), the four kuna bound
    extensions below get one chance each, in order; if none installs a bound the
    model is declined, model 2 is tried, and then recovery fails with
    `"Could not recover jumptable ... Too many branches"`
-   (`jumptable.rs (JumpTable::recover_addresses)`).
+   (`jumptable.rs (JumpTable::recover_addresses)`). A guard-bounded table
+   longer than the cap fails the same way after enumeration when its entries
+   reach more than `max_jumptable_size` distinct addresses, so the cap still
+   bounds the arms the structurer sees: clang lowers one sparse switch into
+   range-checked tables of several thousand entries that reach a few hundred
+   arms, while a switch with thousands of distinct arms stays a computed call.
 5. **Enumeration.** `jumptable.rs (JumpBasicModel::build_addresses_basic)`
    emulates the meld path once per in-range value on the one-path syntax-tree
    emulator (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_emulatefunction.rs

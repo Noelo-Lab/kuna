@@ -10687,7 +10687,7 @@ from `char *(char *,int *)` to `unsigned long(unsigned long,unsigned long)`,
 off` those functions come out the same with the option on and off.
 
 (kuna) Both reads stop at the engine's own jump-table ceiling,
-`Architecture::max_jumptable_size` — 16384 unless `option jumptablemax <n>` sets
+`Architecture::max_jumptable_size` — 1024 unless `option jumptablemax <n>` raises
 it — so one value decides how far a switch is followed in both tiers. A range
 check that states more cases than the ceiling is not a reason to decline: the
 first `jumptablemax` entries are still read and walked, and the walk records the
@@ -10923,7 +10923,7 @@ plain `kuna functions --json` listing pay nothing for it. `kuna functions
 exceeds `maxinstruction`, and list each truncated switch under the function whose
 extent contains its dispatch. On the MSVC state machine that motivated it (a
 16.6 MB function dispatching through a 90,781-entry image-base-relative table),
-the default walk reads 16384 entries and reports the switch; with `jumptablemax
+the default walk reads 1024 entries and reports the switch; with `jumptablemax
 100000` it reads the whole table, and the body the cases reach is over the
 100000-instruction budget.
 

@@ -2,8 +2,7 @@
 <binaryimage arch="x86:LE:64:default:gcc">
 <!--
     jumptablemax: the most entries one jump table may have (upstream's
-    OptionJumpTableMax, Architecture::max_jumptable_size; upstream ships 1024,
-    kuna 16384).
+    OptionJumpTableMax, Architecture::max_jumptable_size, shipped at 1024).
     Jump-table recovery refuses a switch whose range check admits more cases
     than the cap, and the dispatch then prints as a computed call.
 
@@ -11,13 +10,13 @@
     0x100000): a four-case switch behind `cmp $3,%edi; ja default`, lowered
     through a table of 32-bit displacements (lea jt(%rip); movslq; add; jmp).
 
-    Pass 1 (default 16384, asserts #1/#2): the four cases are recovered.
+    Pass 1 (default 1024, asserts #1/#2): the four cases are recovered.
     Pass 2 (`option jumptablemax 2`, asserts #3/#4): four cases exceed the cap,
         recovery declines, and the dispatch prints as `// jump-as-call`.
 
     Stage model: P2 / switch-model, tier transform, change_kind opt-in-tool.
-    No datatest has a table past 1024 entries, so the kuna default moves none
-    (675/675 datatests, stages PARITY OK).
+    The default is upstream's constant, so it is byte-identical (675/675
+    datatests, stages PARITY OK).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 83ff03772a89ff488d1532000000486304ba4801d0ffe0b80a000000c3b814000000c3b81e000000c3b828000000c331c0c366662e0f1f8400000000000f1f00d7ffffffddffffffe3ffffffe9ffffff
