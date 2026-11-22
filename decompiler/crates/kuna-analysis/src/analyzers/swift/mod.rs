@@ -29,6 +29,7 @@
 
 pub mod descriptors;
 pub mod kuna_swiftcall;
+pub mod kuna_swifthelpers;
 pub mod kuna_swifttypes;
 
 #[cfg(test)]
@@ -146,7 +147,7 @@ impl AnalysisPass for SwiftMetadataPass {
             budget: std::cell::Cell::new(NAME_BYTES.saturating_add(ctx.bytes.len())),
         };
         namer.emit(&mut out);
-        if ctx.arch.analysis_swifttypes {
+        if ctx.arch.analysis_swifttypes || ctx.arch.analysis_swifthelpers {
             let mut types = kuna_swifttypes::Types::new(
                 &md,
                 &reader,
@@ -156,6 +157,12 @@ impl AnalysisPass for SwiftMetadataPass {
                 ctx.file.architecture(),
                 ctx.file.format() == object::BinaryFormat::MachO,
             );
+            if ctx.arch.analysis_swifthelpers {
+                kuna_swifthelpers::emit(&types, ctx.file, &mut out);
+            }
+            if !ctx.arch.analysis_swifttypes {
+                return out;
+            }
             types.locate_all();
             let regs = kuna_swifttypes::Registers::for_arch(ctx.file.architecture());
             types.emit(regs.as_ref(), &mut out);

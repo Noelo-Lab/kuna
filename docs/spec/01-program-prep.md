@@ -6244,6 +6244,61 @@ every other binary's pass list is byte-identical to before the pass existed):
   vtable getters and 2,821 witness getters, for about 0.1 s and 3 MB over the
   naming arm. The stage test `tests/stages/kuna-swifttypes.xml` runs the
   stripped swiftc-built `swift_types_elf` with the arm off and on.
+  The arm also types the result of every call to an accessor that no
+  prototype covers (a local generic or runtime-initialized type's, an
+  imported `…Ma` stub's) and of every call to an instantiation helper the
+  helper arm below names: an accessor returns the metadata first whatever
+  arguments it takes, and a generic type's accessor takes its generic
+  arguments after the request, which an import's name does not tell, so
+  only the result is locked, at the call site, through the per-site output
+  type lock (`kuna-decomp/src/p5_types/kuna_swiftmetaresult.rs`, a
+  `sitetypelock` client, 05), and the arguments stay recovered. A result
+  that is a register pair, that joins another value through a phi, or that
+  is the base of an address computation (the value witness table 8 bytes
+  below the record, the field offset vector past it, which as a
+  `swift.type_metadata *` would print as an element of the 16-byte record)
+  is left untyped.
+- **Swift helpers** (`swifthelpers`, the helper arm of the pass above,
+  default-on and inert unless `swiftmetadata` is on; arm64 only;
+  `decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swifthelpers.rs`):
+  swiftc emits two kinds of function into every image that uses generic
+  types, and a stripped image leaves them `sub_`. The arm reads every `bl`
+  target in the text once and recognises them by their bodies.
+  `__swift_instantiateConcreteTypeFromMangledName` (and its `Abstract`
+  twin) tests a cache word and otherwise makes its one call, to
+  `swift_getTypeByMangledNameInContext2` (`…InMetadataState2`), with a
+  mangled name found through a 32-bit relative offset (`add xD, xB, wN,
+  sxtw`). The register `xB` is based on says where the name record is: the
+  cache word itself (the one-argument form, which holds the offset and the
+  negated length until it is filled) or the second argument (the
+  two-argument form Apple's toolchain emits). Runtime calls are recognised
+  by the import a stub or PLT entry jumps to, a stripped stub decoded to
+  its slot. The helper is named, given the prototype `void *f(void *cache[,
+  void *name])`, and at every call whose arguments are `adrp`/`add` or
+  `adr` constants the mangled name is demangled, its symbolic references
+  resolved through the descriptor table as for field types above, and the
+  cache word named after the type as the image's own `…MD` symbol would be
+  (`hf.Box<hf.Unit>.type_metadata_demangling_cache`, typed as a metadata
+  pointer). A lazy protocol witness table accessor opens with `adrp; ldr
+  x0, [cache]; cbz x0; ret`, then makes a call for the concrete type's
+  metadata, moves its result to x1 and calls `swift_getWitnessTable` with a
+  conformance descriptor in x0 (local, or loaded from a `__got` slot). The
+  type comes from that call (an instantiation helper call read as above, a
+  local non-generic type's accessor, an imported `…Ma`), the protocol from
+  the descriptor, and the function is named
+  `<T:P>.lazy_protocol_witness_table_accessor` with the prototype `void
+  *f(void)`, its cache `<T:P>.lazy_protocol_witness_table_cache`, the
+  conformance's type replaced by the concrete one so two instantiations of
+  one generic conformance keep apart names. The names follow the
+  metadata pass's label-gated rename; a body that does not decode to these
+  shapes and a call whose arguments are not constants are left alone, and
+  the facts are held apart (`AnalysisOutput::swift_helpers`) so `option
+  swifthelpers off` drops them at commit. On a 72 MB third-party iOS app the
+  arm names 278 helper copies (one pair per statically linked package), 818
+  lazy accessors and 18,549 caches, for about 0.4 s of load time in a dev
+  build. The stage test
+  `tests/stages/kuna-swifthelpers.xml` runs the stripped
+  `swift_helpers_arm64_elf` with both arms off and on.
 - **Swift calling convention** (`swiftcall`, the calling-convention arm of the
   pass above, default-on and inert unless `swiftmetadata` and `swifttypes` are
   on, which the `aggressive` preset does and `auto` selects for any binary

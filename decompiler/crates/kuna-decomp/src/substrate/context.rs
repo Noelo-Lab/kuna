@@ -801,6 +801,10 @@ pub struct ArchContext {
     /// (kuna) `option gonewtype`; read by [`crate::p5_types::kuna_gonewtype`].
     /// Copied from the engine `Architecture` in `build_arch_handle`.
     pub go_new_type: bool,
+    /// (kuna `swifttypes`) Type Swift metadata accessor call results; read by
+    /// [`crate::p5_types::kuna_swiftmetaresult`]. Copied from the engine
+    /// `Architecture` in `build_arch_handle`.
+    pub swift_metadata_results: bool,
     /// (kuna) The `SoftwareBreakpoint` user-op id when `option ptrauthtrap`
     /// is on; read by [`crate::p2_lift::kuna_ptrauthtrap`].
     pub ptrauth_trap_userop: Option<kuna_base::types::uint4>,
@@ -1637,6 +1641,7 @@ impl ArchContext {
             go_write_barrier: 1,
             // (kuna) `option gonewtype` default on; copied the same way.
             go_new_type: true,
+            swift_metadata_results: false,
             ptrauth_trap_userop: None,
             arm64e: false,
             // (kuna) angr-style default naming is default-on (Architecture::reset).

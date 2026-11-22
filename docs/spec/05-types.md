@@ -2121,6 +2121,21 @@ deletes no statement. Off Go images it is structurally inert: the callee name,
 the `type:` symbol and the interned record only exist where the Go harvest
 ran.
 
+The second client, the call-site arm of [`swifttypes`](../options.md)
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_swiftmetaresult.rs
+(contribute)`), locks the result of every call to a Swift type metadata
+accessor (a callee named `….type_metadata_accessor`) or to an instantiation
+helper (`__swift_instantiateConcreteTypeFromMangledName…`) to
+`swift.type_metadata *`, the record the metadata pass interned (chapter 01).
+Such a callee returns the metadata first whatever arguments it takes, so the
+result is a stated fact while the arguments stay recovered. It refuses a
+result wider or narrower than a pointer, one joined through a phi with a
+value of other provenance, and one that is the base of an address
+computation (`+ c`, `- c`, a `PTRSUB`/`PTRADD`): the value witness table 8
+bytes below the record and the field offsets past it would otherwise print
+as elements of the 16-byte record. Off Swift images it is inert: no callee
+carries those names and the record is not interned.
+
 **(kuna) The interface type-word guard.** A Go interface value is a two-word
 `(type, data)` pair, and a `&type:T` descriptor global — the type word — is
 passed to the runtime and stdlib `any`-taking functions

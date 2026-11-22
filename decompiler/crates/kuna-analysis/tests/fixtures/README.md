@@ -2549,6 +2549,27 @@ arm64 instruction loads into a temporary before comparing. With `swiftmetadata
 on` both keep their error path: `doCatch` releases the error and calls `altv`,
 and `select_error` returns 7 when x21 is set.
 
+### `swift_helpers_arm64_elf` — swiftc's instantiation helpers and a lazy witness table accessor (`swifthelpers`)
+
+`swift_helpers_arm64_elf` (arm64 ELF shared object, 9.4 KB, SHA-256
+`005e06b621d27ab324be83d286e4267236d8101837544a1bbd9eb92c01f1e1b6`) is built from
+`swift_helpers_arm64_elf.swift` with the x86-64 Linux swiftc 6.4.2 toolchain,
+compiled as its own minimal standard library like `swift_call_arm64_elf`:
+
+```bash
+swiftc -frontend -c -parse-stdlib -module-name hf \
+  -target aarch64-unknown-linux-gnu -O swift_helpers_arm64_elf.swift -o hx.o
+ld.lld -shared -o hx.so hx.o          # LLD 22.1.8
+llvm-objcopy --strip-all hx.so swift_helpers_arm64_elf
+```
+
+`hf.useBox(_:)` (`0x1194c`) calls `__swift_instantiateConcreteTypeFromMangledName`
+(`0x112e4`, the one-argument form) on the cache at `0x31da0` for `hf.Box<hf.Unit>`
+and the lazy witness table accessor of `hf.Box<hf.Unit> : hf.Shape` (`0x11328`,
+cache `0x31e30`), which calls the `Abstract` helper (`0x11388`). Stripping
+removes all of their names. `hf.pair(_:)` (`0x11ab8`) keeps the result of the
+generic `hf.Cell` metadata accessor for two `swift_allocObject` calls.
+
 ### `swift_call_leaf_elf` — a mutating struct call after a Swift leaf call (`swiftcall`)
 
 `swift_call_leaf_elf` (x86-64 ELF, 18 KB, with symbols) is the fixture for the
