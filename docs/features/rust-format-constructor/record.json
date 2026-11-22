@@ -1,6 +1,6 @@
 {
   "proposal": false,
-  "status": "approved bounded implementation draft; gates pending",
+  "status": "bounded implementation; repository gates run",
   "option": "rustfmt",
   "new_option": false,
   "change_kind": "bounded refinement of existing formatting recovery",
@@ -43,11 +43,11 @@
     "expected_new_stage_keys": 7,
     "catalog_rows": 222
   },
-  "speed_status": "pending implementation; no candidate measurements",
+  "speed_status": "collector indexes symbol and relocation extents once per image; 4,000 constructor copies scan in 3 ms (0.78 s before indexing); C images do not run it",
   "parity_status": "partial authored red only; pinned Hexyl, nominal Debug types, phi transport and format-result typing remain open",
-  "candidate_validation": "source-only; no Cargo yet",
+  "candidate_validation": "built and gated; rustc 1.93.1 output at opt-level 0, 1, 2, 3, s and z reaches no call site of this route (O0 fills the descriptor through an out-of-line Argument::new_display; O1 and up inline Arguments::new)",
   "production_changes": true,
-  "cargo_started": false,
+  "cargo_started": true,
   "specimen_execution": false,
   "publication": false,
   "approved_proposal_pr": 1773

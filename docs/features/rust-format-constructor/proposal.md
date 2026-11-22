@@ -2,8 +2,8 @@
 
 The bounded implementation follows the approved docs-first proposal #1773.
 It transports a complete image-verified callee profile into P9 under the existing
-`rustfmt on/all` option. The requirements below remain the acceptance contract;
-implementation gates are pending. No new option is introduced.
+`rustfmt on/all` option. The requirements below remain the acceptance contract.
+No new option is introduced.
 
 ## First profile and consumer
 
@@ -105,8 +105,7 @@ Never execute the analyzed fixtures or pinned upstream binaries.
 Before publication, run the four repository gates, tools and lint; measure a
 small serial paired CPU sweep with the same frozen source/spec/compiler inputs.
 Keep collection restricted to exact named constructors on the supported target;
-all other images should pay only the existing target/name filter. The original public proposal snapshot is unchanged. This implementation draft
-has not yet run Cargo, benchmarks or publication.
+all other images should pay only the existing target/name filter.
 
 The implemented sink also accepts an unlocked empty parameter store only when
 existing `final_input_storage` proves the two eight-byte RDI/RSI inputs in order.

@@ -1,11 +1,15 @@
 # One Rust formatting constructor before stderr
 
-The bounded implementation is now prepared on actual main
-`c6509ee05e23bab12327910b292284dafe002e1f`, following approved proposal #1773.
-Its exact stock executable reproduces the same five passing and two failing
-predicates below. The candidate adds the seven-predicate stage but preserves the
-4702-key parent ledger until an actual run. Compilation, native validation and
-speed measurements remain pending. The original public proposal is untouched.
+The bounded implementation was prepared on main
+`c6509ee05e23bab12327910b292284dafe002e1f`, following proposal #1773, and adds
+the seven-predicate stage `tests/stages/ghangr-rustfmtconstructor.xml`. It is
+built and gated. Its only positive route is the authored assembly caller below:
+no call site in rustc 1.93.1 output at opt-level 0, 1, 2, 3, s or z reaches it.
+At O0 the descriptor is filled from an out-of-line `Argument::new_display` return,
+and from O1 up `Arguments::new` is inlined, so the existing recovery applies. The
+collector sorts symbol and relocation extents once per image, so its cost is
+linear in the symbol table and not in the number of monomorphized constructor
+copies.
 
 The call-frame prerequisite uses a narrow successful-resolution fact on
 `FuncCallSpecs`: only the caller's canonical stack space can establish the
