@@ -61,6 +61,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_noreturn_v0_x86_64</com>
+  <com>option panicloc off</com>
   <com>option noreturn_known off</com>
   <com>read symbols</com>
   <com>load function opt</com>
@@ -74,6 +75,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_noreturn_v0_x86_64</com>
+  <com>option panicloc off</com>
   <com>read symbols</com>
   <com>load function opt</com>
   <com>decompile</com>
@@ -86,6 +88,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_noreturn_pie_x86_64</com>
+  <com>option panicloc off</com>
   <com>read symbols</com>
   <com>load function opt</com>
   <com>decompile</com>

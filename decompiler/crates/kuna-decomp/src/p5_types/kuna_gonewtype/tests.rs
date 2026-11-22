@@ -123,3 +123,16 @@ fn contribute_gates_on_the_option_and_on_resolution() {
     contribute(&mut data);
     assert!(!data.get_override().has_output_typelocks());
 }
+
+#[test]
+fn harvest_spelling_drops_only_a_named_types_directory() {
+    assert_eq!(harvest_spelling("main.Point"), "main.Point");
+    assert_eq!(harvest_spelling("internal/poll.FD"), "poll.FD");
+    assert_eq!(
+        harvest_spelling("example.com/p/geom.Box[*example.com/q/store.T]"),
+        "geom.Box[*example.com/q/store.T]"
+    );
+    for composite in ["*internal/poll.FD", "[]*a/store.T", "[4]a/store.T", "map[string]a/store.T", "func(a/store.T)"] {
+        assert_eq!(harvest_spelling(composite), composite);
+    }
+}
