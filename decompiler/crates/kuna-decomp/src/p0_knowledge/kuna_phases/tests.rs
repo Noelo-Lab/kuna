@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_236() {
-    assert_eq!(kuna_num_settables(), 236);
-    assert_eq!(SETTABLE_TABLE.len(), 236);
+fn settable_count_is_237() {
+    assert_eq!(kuna_num_settables(), 237);
+    assert_eq!(SETTABLE_TABLE.len(), 237);
 }
 
 #[test]
-fn tier_counts_are_50_core_125_transform_61_analysis() {
+fn tier_counts_are_50_core_125_transform_62_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_50_core_125_transform_61_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (50, 125, 61));
+    assert_eq!((core, transform, analysis), (50, 125, 62));
 }
 
 #[test]
@@ -1141,7 +1141,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `switchmerge`; its P8 row sits after `gotonext`.
     // +1 for `cachereturn`; its P4 row sits after `mixedtailret`.
     // +1 for `swiftobjcthunk`; its P1 row sits after `swiftcall`.
-    assert_eq!(json.matches("},\n").count(), 235);
+    assert_eq!(json.matches("},\n").count(), 236);
     // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 
