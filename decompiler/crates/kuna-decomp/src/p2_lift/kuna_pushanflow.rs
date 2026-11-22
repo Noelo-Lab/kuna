@@ -797,7 +797,13 @@ impl<'a> Explorer<'a> {
             }
         }
         self.stats.writable_bytecode |= emu.fetched_writable;
-        self.stats.copy_read_unfolded = emu.copy_read_unfolded || std::mem::take(&mut self.copy_escaped);
+        self.stats.copy_read_unfolded = emu.copy_read_unfolded || self.copy_escaped;
+        if let Some(n) = emu.copy_read_note.take() {
+            self.log.push(n);
+        }
+        if std::mem::take(&mut self.copy_escaped) {
+            self.log.push("a pointer into a copy reached a call".into());
+        }
         cfg
     }
 
@@ -1151,6 +1157,7 @@ impl<'a> Explorer<'a> {
             exit = emu.exec_insn(&mut state, &mut self.arena, &insn, &mut trace);
             if trace.forked && emu.insn_copy_reads > 0 {
                 emu.copy_read_unfolded = true;
+                emu.copy_read_note.get_or_insert_with(|| format!("copy read in the forked instruction at {:#x}", insn.addr));
             }
             if let Some(t) = &self.config.trace {
                 use std::io::Write;
@@ -1275,7 +1282,7 @@ impl<'a> Explorer<'a> {
     /// instruction out when only VPC fetches it folds read the copy and no
     /// pointer into it reached a call.
     fn rep_copy(&mut self, state: &mut State, insn: &LiftedInsn, probing: bool) -> bool {
-        if !self.rep_copies || (!probing && self.data_vpc.is_none()) || self.target.is_foreign_code(insn.addr) {
+        if !probing && (!self.rep_copies || self.data_vpc.is_none()) || self.target.is_foreign_code(insn.addr) {
             return false;
         }
         let m = insn.asm.to_ascii_uppercase();
@@ -2320,8 +2327,8 @@ impl<'a> Explorer<'a> {
             if self.config.trace.is_some() {
                 self.log.push(format!("call at {site:#x}: arg {} affine={:?}", self.arena.fmt(v), self.arena.affine(v)));
             }
-            if let Some((b, o)) = self.arena.affine(v) {
-                if state.copies.iter().any(|c| c.base == b && c.off <= o && o <= c.off + c.len as i128) {
+            if let Some((b, o)) = self.arena.affine(v).filter(|_| !callee.target.is_some_and(|t| self.target.noreturn_function(t))) {
+                if state.copies.iter().any(|c| c.base == b && c.off <= o && o < c.off + c.len as i128) {
                     self.copy_escaped = true;
                 }
             }

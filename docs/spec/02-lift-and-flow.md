@@ -3983,7 +3983,8 @@ such entry. `auto` looks for one only after the plain flow has been followed,
 and only in a function whose flow kept a computed jump: a BRANCHIND, or a jump
 the flow could not recover and treats as a call (a CALLIND with an artificial
 RETURN at its address, `kuna_pushan.rs (has_computed_jump)`). Every other
-function pays one scan of its ops. For a candidate,
+function pays one scan of its ops, and a front-end whose translator is not
+SLEIGH (Ghidra's, which cannot serve the overlay) pays nothing. For a candidate,
 `kuna_pushan.rs (interpreter_after_flow)` runs the interpreter probe described
 below. When the probe finds a dispatch and the exploration decides at least one
 computed jump of the interpreter, the program is cached and the flow is followed
@@ -4145,7 +4146,8 @@ destination on the entry stack or at a concrete address is the same copy
 (`Explorer::rep_copy`): the count register is cleared and both pointers
 advance past it, in place of one emulated iteration per element. When the last
 round read the copy only through VPC fetches that fold to constants, and no
-pointer into it reached a call, the emitter leaves the instruction out, since
+pointer into it reached a call that may return (a register left pointing into
+the copy at `__stack_chk_fail` does not count), the emitter leaves the instruction out, since
 no op of the recovered program reads what it wrote. Otherwise the function is explored again with every `rep movs`
 run as an instruction, and the copied array stays a loop of the program
 (`kuna_pushanemu.rs (Emulator::copy_read_unfolded)`).

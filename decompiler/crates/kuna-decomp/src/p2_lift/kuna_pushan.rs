@@ -400,6 +400,9 @@ impl PushanTarget for ArchTarget<'_> {
     fn file_data(&self, addr: u64) -> bool {
         self.section_of(addr).is_some_and(|s| s.flags & (section_flags::CODE | section_flags::NOLOAD | section_flags::UNALLOC) == 0)
     }
+    fn noreturn_function(&self, addr: u64) -> bool {
+        self.arch.symboltab.function_is_no_return_across_scopes(&Address::new(Rc::clone(&self.ram), addr))
+    }
     fn copy_routine(&self, addr: u64) -> bool {
         let a = Address::new(Rc::clone(&self.ram), addr);
         let Some((sid, _)) = self.arch.symboltab.find_function_across_scopes(&a) else { return false };
@@ -713,10 +716,14 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
     let mut cfg = explorer.run();
     if explorer.stats.rep_copies > 0 && explorer.stats.copy_read_unfolded {
         // A copied array the program itself reads: run the copies.
+        let mut first = std::mem::take(&mut explorer.log);
+        first.push("a rep movs copy is read outside folded VPC fetches: explored again with the copies run".into());
         explorer = Explorer::new(&target, abi, Config::default(), entry);
         explorer.probe = probe;
         explorer.rep_copies = false;
         cfg = explorer.run();
+        first.append(&mut explorer.log);
+        explorer.log = first;
     }
     let m = arch.manage();
     let ram = Rc::clone(&target.ram);
@@ -972,9 +979,10 @@ pub fn prepare_flow(arch: &mut Architecture, fd: &mut Funcdata) -> Option<Rc<Pus
 /// ([`Explorer::probe_interpreter`]) and, when one is found and its
 /// exploration decides a dispatch, cache the devirtualized program, so the
 /// caller follows the flow again from it. Every other function pays one scan
-/// of its ops.
+/// of its ops; a front-end whose translator is not SLEIGH (Ghidra's), which
+/// cannot serve the overlay, pays nothing.
 pub fn interpreter_after_flow(arch: &mut Architecture, fd: &Funcdata) -> bool {
-    if arch.pushan_mode != MODE_AUTO || fd.kuna_devirtualized() {
+    if arch.pushan_mode != MODE_AUTO || fd.kuna_devirtualized() || arch.translate().as_sleigh().is_none() {
         return false;
     }
     let entry = fd.get_address().get_offset();

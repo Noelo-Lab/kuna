@@ -70,6 +70,10 @@ pub trait PushanTarget: PushanImage {
     fn copy_routine(&self, _addr: u64) -> bool {
         false
     }
+    /// The function at `addr` is known never to return (`__stack_chk_fail`).
+    fn noreturn_function(&self, _addr: u64) -> bool {
+        false
+    }
     /// A software interrupt with this vector never returns (Windows `int 0x29`, `__fastfail`).
     fn noreturn_interrupt(&self, vector: u64) -> bool;
 }
@@ -221,6 +225,8 @@ pub struct Emulator<'a> {
     pub copy_read_unfolded: bool,
     /// Reads of a copy's destination in the current instruction.
     pub insn_copy_reads: u32,
+    /// What first set [`Self::copy_read_unfolded`], for the log.
+    pub copy_read_note: Option<String>,
     last_trusted: bool,
 }
 
@@ -248,6 +254,7 @@ impl<'a> Emulator<'a> {
             trust_file: false,
             copy_read_unfolded: false,
             insn_copy_reads: 0,
+            copy_read_note: None,
             last_trusted: false,
         }
     }
@@ -280,6 +287,9 @@ impl<'a> Emulator<'a> {
         if copied {
             self.insn_copy_reads += 1;
             if !self.last_trusted || arena.is_const(v).is_none() {
+                if self.copy_read_note.is_none() {
+                    self.copy_read_note = Some(format!("copy read at {off:#x} outside a folded fetch: {}", arena.fmt(v)));
+                }
                 self.copy_read_unfolded = true;
             }
         }
