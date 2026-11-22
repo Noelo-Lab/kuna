@@ -522,11 +522,13 @@ COPY itself; `decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
 respecting cover, up to the COPY as well. A call, or a statement whose result a
 printed statement between them reads (`n = v & 1;` ahead of a loop over
 `v = strtoul(...)`), keeps its place, and the header goes without it.
-`blockaction.rs (ActionNormalizeBranches)` remains a non-mutating compatibility
-action in the `jumptable` and `normalize` groups. It preserves its registration
-and initialized-root check, but does not traverse branches or allocate unused
-flip lists. Branch opcodes, operands, flags and edge order remain unchanged;
-removing this discarded analysis does not enable branch normalization.
+`blockaction.rs (ActionNormalizeBranches)` runs in the `jumptable` and
+`normalize` action groups, not the C-emitting `decompile` group. When a
+two-successor conditional branch is the only user of a predicate that can be
+complemented to its canonical form, the action rewrites the predicate, swaps
+the true and false successors, and toggles the fallthrough polarity. The
+branch still reaches the same destination for each input. BSim hashes both
+the normalized predicate and the successor order.
 
 **The label invariant.** An emitted `goto label_X;` without a `label_X:` in
 the same function is not C, so the set of blocks

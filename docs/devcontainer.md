@@ -63,6 +63,7 @@ docker run --rm -v "$(pwd)":/workspaces/kuna -w /workspaces/kuna kuna-dev \
     bash -lc 'make test-stages'  # stage-model corpus       -> PARITY OK
 docker run --rm -v "$(pwd)":/workspaces/kuna -w /workspaces/kuna kuna-dev \
     bash -lc 'make rust-test'    # full cargo workspace suite
+```
 
 ### PE fixtures outside the dev container
 
@@ -87,7 +88,6 @@ The MinGW binutils come from `nix-shell`, which is why the script is Nix-specifi
 Two further prerequisites are separate: 32-bit **ELF** fixtures (`clang -m32`)
 need a 32-bit `libgcc`, and a few tests compare against a specific `gcc` code
 generation.
-```
 
 `decompiler/target/` is gitignored, so building inside the mounted worktree leaves the host
 tree clean of artifacts (the `target/` produced is the host's own and is never committed).

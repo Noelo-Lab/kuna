@@ -15,7 +15,7 @@
 #
 # The shims are:
 #
-#   clang  — sends `--target=*windows-gnu` to an UNWRAPPED clang and everything
+#   clang  — sends Windows GNU targets to an unwrapped clang and everything
 #            else to the normal (wrapped) clang, so native fixtures keep their
 #            libc headers.
 #   ld     — dispatches to the x86_64 or i686 MinGW `ld` by the emulation named on
@@ -40,19 +40,11 @@ command -v clang >/dev/null 2>&1 || fail "clang is required"
 # plain `command -v` resolves it; nothing is left to guess from store hashes.
 cross_ld() {
     local pkg=$1 prefix=$2
-    # `nix-shell -p <cross gcc>` puts the gcc *wrapper* on PATH, whose linker
-    # forwards to the real binutils. Use the binutils package itself, so the shim
-    # invokes `ld` directly (a wrapper would re-add its own emulation flags).
-    nix-shell -p "$pkg" --run "true" >/dev/null 2>&1 || return 1
-    local real
-    real=$(ls -d /nix/store/*-"$prefix"-binutils-[0-9]* 2>/dev/null \
-        | grep -v '\.drv$' | grep -v wrapper | head -1)
-    [[ -n "$real" ]] || return 1
-    echo "$real/bin/$prefix"-ld
+    nix-shell -p "$pkg" --run "command -v $prefix-ld"
 }
 
-x64_ld=$(cross_ld pkgsCross.mingwW64.stdenv.cc x86_64-w64-mingw32)
-x86_ld=$(cross_ld pkgsCross.mingw32.stdenv.cc i686-w64-mingw32)
+x64_ld=$(cross_ld pkgsCross.mingwW64.buildPackages.binutils-unwrapped x86_64-w64-mingw32)
+x86_ld=$(cross_ld pkgsCross.mingw32.buildPackages.binutils-unwrapped i686-w64-mingw32)
 [[ -x "${x64_ld:-}" ]] || fail "no x86_64 MinGW ld (is pkgsCross.mingwW64 available?)"
 [[ -x "${x86_ld:-}" ]] || fail "no i686 MinGW ld (is pkgsCross.mingw32 available?)"
 
@@ -79,8 +71,16 @@ shim=$(mktemp -d "${TMPDIR:-/tmp}/kuna-pe-test-env.XXXXXX")
 
 {
     printf '#!/bin/sh\n'
-    printf 'for a in "$@"; do case "$a" in *windows-gnu*) exec %s "$@" ;; esac; done\n' "$raw"
-    printf 'exec %s "$@"\n' "$wrapper"
+    printf 'target= next=\n'
+    printf 'for arg do\n'
+    printf '  if [ "$next" ]; then target=$arg; next=; continue; fi\n'
+    printf '  case "$arg" in\n'
+    printf '    -target|--target) next=1 ;;\n'
+    printf '    --target=*) target=${arg#*=} ;;\n'
+    printf '  esac\n'
+    printf 'done\n'
+    printf 'case "$target" in *-windows-gnu) exec %q "$@" ;; esac\n' "$raw"
+    printf 'exec %q "$@"\n' "$wrapper"
 } > "$shim/clang"
 
 # Dispatch on the EMULATION the command line names, never on a substring of any
@@ -89,12 +89,12 @@ shim=$(mktemp -d "${TMPDIR:-/tmp}/kuna-pe-test-env.XXXXXX")
 {
     printf '#!/bin/sh\n'
     printf 'for a in "$@"; do\n'
-    printf '  case "$a" in *i386pep*) exec %s "$@" ;; *i386pe) exec %s "$@" ;; esac\n' "$x64_ld" "$x86_ld"
+    printf '  case "$a" in i386pep|-mi386pep) exec %q "$@" ;; i386pe|-mi386pe) exec %q "$@" ;; esac\n' "$x64_ld" "$x86_ld"
     printf 'done\n'
-    printf 'exec %s "$@"\n' "$system_ld"
+    printf 'exec %q "$@"\n' "$system_ld"
 } > "$shim/ld"
 
 chmod +x "$shim/clang" "$shim/ld"
 
-echo "export PATH=\"$shim:\$PATH\""
+printf 'export PATH=%q:$PATH\n' "$shim"
 echo "pe-test-env: shims at $shim" >&2

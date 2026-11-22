@@ -83,9 +83,7 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: linux-x86_64
-          # Fully static (musl): no glibc dependency, runs on any Linux. kuna
-          # pulls no C via a `cc`-crate dep, so the musl target links
-          # self-contained -- `rustup target add` is the only setup needed.
+          # Fully static Linux build; ring's TLS code also needs a musl C compiler.
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             name: linux-x86_64-musl
@@ -114,6 +112,13 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustup target add ${{ matrix.target }}
+
+      - name: Install the musl C compiler
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          echo "CC_x86_64_unknown_linux_musl=musl-gcc" >> "$GITHUB_ENV"
 
       # The one third-party action here (same as pages.yml) — the de-facto
       # standard cargo cache.

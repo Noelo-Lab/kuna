@@ -16,29 +16,9 @@
 //!   reported rather than stored.
 //! - `Features/Decompiler/src/main/java/ghidra/app/decompiler/signature/SignatureResult.java`
 //!   — the `features` / `hasunimplemented` / `hasbaddata` shape.
-//!
-//! # What "no body" means here
-//!
-//! Ghidra asks the *program* whether a function has a body (`hasBody`). kuna
-//! reaches this module only after a function has been decompiled, so a function
-//! with no body never arrives; the equivalent refusal is an empty feature list,
-//! which this module reports as [`SignatureOutcome::NoFeatures`] instead of
-//! storing an unmatchable record.
 
 use kuna_decomp::funcdata::Funcdata;
-use kuna_decomp::signature::{get_settings, set_settings, sig_mods, GraphSigManager};
-
-/// The decompiler's signature settings BSim uses.
-///
-/// Ghidra takes the settings from the database's vector factory
-/// (`vectorFactory.getSettings()`), and the shipped `lshweights_*.xml` files all
-/// declare `settings="0x49"`. The engine reads the mode bits from `settings >> 2`
-/// (`GraphSigManager::sigmods`), so `0x49 >> 2 == 0x12`, which is
-/// `SIG_COLLAPSE_INDNOISE(0x2) | SIG_DONOTUSE_CONST(0x10)` — **not**
-/// `SIG_COLLAPSE_SIZE`, whose bit is clear. A run built against these weights
-/// therefore collapses indirect-copy noise and ignores constant values, and
-/// keeps size distinctions.
-pub const BSIM_SIG_SETTINGS: u32 = 0x49;
+use kuna_decomp::signature::GraphSigManager;
 
 /// One signed function, ready to be stored in a corpus.
 #[derive(Clone, Debug, PartialEq)]
@@ -47,6 +27,8 @@ pub struct BsimSignature {
     pub name: String,
     /// The function's entry address in its own program.
     pub address: u64,
+    /// The settings used to generate these feature hashes.
+    pub settings: u32,
     /// The decompiler's feature hashes, sorted ascending (as `u32`).
     pub features: Vec<u32>,
     /// The body contains unimplemented instructions.
@@ -63,8 +45,7 @@ impl BsimSignature {
         (&self.name, self.address)
     }
 
-    /// The feature count. A signature with none is refused by
-    /// [`sign_function`], so a stored record is never empty.
+    /// The feature count. Signing refuses an empty signature.
     pub fn num_features(&self) -> usize {
         self.features.len()
     }
@@ -91,30 +72,15 @@ impl SignatureOutcome {
     }
 }
 
-/// Which of BSim's signature settings the run uses.
-///
-/// A corpus is only comparable within one settings value, so the value travels
-/// with every record: two vectors built under different settings measure
-/// different things.
-pub fn settings_vector() -> u32 {
-    BSIM_SIG_SETTINGS
-}
-
-/// Generate the signature for a decompiled function.
-///
-/// Returns the record, or the reason the function cannot be signed. `features` is
-/// sorted ascending and de-duplicated only in the sense that repeats are kept —
-/// a repeated hash is that feature's term frequency, which the vector model
-/// consumes.
-pub fn sign_function(fd: &Funcdata, name: &str, address: u64) -> Result<BsimSignature, SignatureOutcome> {
-    // The settings are process-global and `GraphSigManager::new` reads them, so a
-    // BSim run must establish its own before the first function. Ghidra does the
-    // same through the vector factory (`newdecompiler.setSignatureSettings`).
-    if get_settings() != BSIM_SIG_SETTINGS {
-        set_settings(BSIM_SIG_SETTINGS);
-    }
-    let mut manager =
-        GraphSigManager::new().map_err(|e| SignatureOutcome::Refused(e.explain().to_string()))?;
+/// Generate features under the settings supplied by a BSim profile or database.
+pub fn sign_function_with_settings(
+    fd: &Funcdata,
+    name: &str,
+    address: u64,
+    settings: u32,
+) -> Result<BsimSignature, SignatureOutcome> {
+    let mut manager = GraphSigManager::with_settings(settings)
+        .map_err(|e| SignatureOutcome::Refused(e.explain().to_string()))?;
     manager
         .set_current_function(fd)
         .map_err(|e| SignatureOutcome::Refused(e.explain().to_string()))?;
@@ -126,19 +92,11 @@ pub fn sign_function(fd: &Funcdata, name: &str, address: u64) -> Result<BsimSign
     Ok(BsimSignature {
         name: name.to_string(),
         address,
+        settings,
         features,
         has_unimplemented: fd.has_unimplemented(),
         has_bad_data: fd.has_bad_data(),
     })
-}
-
-/// The engine setting in the form [`GraphSigManager::test_settings`] accepts: the
-/// mode bits shifted over the check bit, which is what `set_settings` wants.
-///
-/// Ghidra's database stores the whole `settings` integer (`0x49`); the engine's
-/// manager reads the mode bits from `settings >> 2` and validates the rest.
-pub fn engine_settings_value() -> u32 {
-    settings_vector()
 }
 
 /// True when `settings` is a value the engine accepts.
@@ -146,44 +104,18 @@ pub fn settings_are_valid(settings: u32) -> bool {
     GraphSigManager::test_settings(settings)
 }
 
-/// The signature-mode bits a BSim run asks for, named for a report.
-pub fn signature_modes() -> Vec<&'static str> {
-    let modes = BSIM_SIG_SETTINGS >> 2;
-    let mut out = Vec::new();
-    if modes & sig_mods::SIG_COLLAPSE_SIZE != 0 {
-        out.push("collapse-size");
-    }
-    if modes & sig_mods::SIG_COLLAPSE_INDNOISE != 0 {
-        out.push("collapse-indnoise");
-    }
-    if modes & sig_mods::SIG_DONOTUSE_CONST != 0 {
-        out.push("donotuse-const");
-    }
-    if modes & sig_mods::SIG_DONOTUSE_INPUT != 0 {
-        out.push("donotuse-input");
-    }
-    if modes & sig_mods::SIG_DONOTUSE_PERSIST != 0 {
-        out.push("donotuse-persist");
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn the_bsim_settings_match_the_shipped_weights_files() {
-        // Every `lshweights_*.xml` declares this, and the engine must accept it.
-        assert_eq!(settings_vector(), 0x49);
-        assert!(settings_are_valid(BSIM_SIG_SETTINGS));
-        // The mode bits `0x49` actually selects.
-        let modes = BSIM_SIG_SETTINGS >> 2;
-        assert_eq!(modes, 0x12);
-        assert_ne!(modes & sig_mods::SIG_COLLAPSE_INDNOISE, 0);
-        assert_ne!(modes & sig_mods::SIG_DONOTUSE_CONST, 0);
-        // `SIG_COLLAPSE_SIZE` is NOT among them; asserting it was a doc error.
-        assert_eq!(modes & sig_mods::SIG_COLLAPSE_SIZE, 0);
+    fn the_stock_profiles_select_different_size_modes() {
+        use kuna_decomp::signature::sig_mods::SIG_COLLAPSE_SIZE;
+        for settings in [0x49, 0x4d] {
+            assert!(settings_are_valid(settings));
+        }
+        assert_eq!((0x49 >> 2) & SIG_COLLAPSE_SIZE, 0);
+        assert_ne!((0x4d >> 2) & SIG_COLLAPSE_SIZE, 0);
     }
 
     #[test]
@@ -192,21 +124,11 @@ mod tests {
     }
 
     #[test]
-    fn the_mode_names_describe_what_the_run_asks_for() {
-        let modes = signature_modes();
-        assert!(modes.contains(&"collapse-indnoise"));
-        assert!(modes.contains(&"donotuse-const"));
-        // Settings `0x49` does NOT set: size collision, input and persist facts.
-        assert!(!modes.contains(&"collapse-size"));
-        assert!(!modes.contains(&"donotuse-input"));
-        assert!(!modes.contains(&"donotuse-persist"));
-    }
-
-    #[test]
     fn a_record_keys_on_name_and_address() {
         let sig = BsimSignature {
             name: "decode_packet".into(),
             address: 0x401000,
+            settings: 0x49,
             features: vec![1, 2, 3],
             has_unimplemented: false,
             has_bad_data: false,

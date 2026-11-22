@@ -114,7 +114,7 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
         let isa = self.resolved_isa()?;
         match self.options {
             Some(options) => {
-                bootstrap_object(path, self.target, self.languages, isa, options, false)
+                bootstrap_object(path, self.target, self.languages, isa, options, false, None)
             }
             None => bootstrap_object(
                 path,
@@ -123,6 +123,7 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
                 isa,
                 &LoadOptions::from_env(),
                 true,
+                None,
             ),
         }
     }
@@ -131,10 +132,20 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
     /// TE, a DOS `MZ`, or an object-format binary, as
     /// [`bootstrap_from_image`](crate::engine::bootstrap_from_image) does.
     pub fn image(&self, path: &str) -> KunaResult<ConsoleProgram> {
+        self.image_with_source(path, None)
+    }
+
+    /// As [`Self::image`], with an optional observer of the owned input bytes
+    /// before normalization. For dyld caches this is the extracted Mach-O.
+    pub fn image_with_source(
+        &self,
+        path: &str,
+        observe: Option<&mut dyn FnMut(&[u8])>,
+    ) -> KunaResult<ConsoleProgram> {
         let isa = self.resolved_isa()?;
         match self.options {
             Some(options) => {
-                bootstrap_image(path, self.target, self.languages, isa, options, false)
+                bootstrap_image(path, self.target, self.languages, isa, options, false, observe)
             }
             None => bootstrap_image(
                 path,
@@ -143,6 +154,7 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
                 isa,
                 &LoadOptions::from_env(),
                 true,
+                observe,
             ),
         }
     }
@@ -176,7 +188,7 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
     pub fn te(&self, path: &str) -> KunaResult<ConsoleProgram> {
         let isa = self.resolved_isa()?;
         let _load = self.enter();
-        bootstrap_te(path, self.target, self.languages, isa)
+        bootstrap_te(path, self.target, self.languages, isa, None)
     }
 
     /// Load a UEFI TE image from bytes already read from `path`, as

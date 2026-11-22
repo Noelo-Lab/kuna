@@ -215,3 +215,45 @@ fn query_uses_the_same_rule() {
     assert_eq!(other.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&other.stderr).contains("database language AARCH64:LE:64:v8A"));
 }
+
+#[test]
+fn ghidra_raw_and_packed_filter_libraries_and_respect_rename_policy() {
+    // Stock Ghidra's MakeFidAudit.java hashes the same stripped ELF used here.
+    for (fixture, compiler) in [
+        ("fid_audit_ghidra.fidbf", "gcc"),
+        ("fid_audit_ghidra.fidb", "gcc"),
+        ("fid_audit_ghidra_metadata.fidbf", "gcc,windows"),
+    ] {
+        let db = common::fixture(fixture);
+        let (analysis, stderr) = functions(Some(Path::new(&db)));
+        assert_eq!(names(&analysis), ["audit_mix", "sub_401020"], "{fixture}");
+        let report = only_report(&analysis);
+        assert_eq!(report["status"], "loaded", "{fixture}");
+        assert_eq!(report["language"], "x86:LE:64:compat32");
+        assert_eq!(report["compiler_spec"], compiler);
+        assert_eq!(report["records"], 3, "foreign library excluded");
+        assert!(!stderr.contains("FID database"), "{stderr}");
+
+        let query = kuna(None, &[
+            "fid", "query", &binary(), "--db", &db, "--addr", "0x401000",
+            "--addr", "0x401020", "--json",
+        ]);
+        assert!(query.status.success(), "{}", String::from_utf8_lossy(&query.stderr));
+        let document: Value = serde_json::from_slice(&query.stdout).unwrap();
+        let queries = document["queries"].as_array().unwrap();
+        assert_eq!(queries.len(), 2);
+        assert_eq!(queries[0]["database_format"], "ghidra_fid");
+        assert_eq!(queries[0]["status"], "ambiguous");
+        assert_eq!(queries[0]["identity_verified"], false);
+        let candidates = queries[0]["candidates"].as_array().unwrap();
+        assert_eq!(candidates.len(), 2, "foreign alias must not leak");
+        assert_eq!(candidates[0]["name"], "audit_mix");
+        assert_eq!(candidates[0]["ghidra_flags"], 1);
+        assert_eq!(candidates[1]["name"], "rejected_alias");
+        assert_eq!(candidates[1]["ghidra_flags"], 5);
+        assert_eq!(queries[1]["status"], "single_candidate");
+        assert_eq!(queries[1]["identity_verified"], false);
+        assert_eq!(queries[1]["candidates"][0]["name"], "audit_fold");
+        assert_eq!(queries[1]["candidates"][0]["ghidra_flags"], 17);
+    }
+}

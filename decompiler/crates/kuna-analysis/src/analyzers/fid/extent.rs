@@ -9,28 +9,28 @@
 //! instruction of disagreement makes the hashes differ and the lookup miss
 //! silently, so the shared definition is the whole point of this module.
 //!
-//! The definition is a **linear decode** from the entry to its end bound: every
-//! instruction in the function's address range, including blocks after a `ret`.
-//! Two other readings were measured wrong on real binaries:
-//!
-//! - the address clip `[entry, next_entry)` absorbed alignment padding and
-//!   interleaved code — a 347-code-unit extent for a 29-code-unit function, so
-//!   every lookup missed;
-//! - a control-flow walk stopping at the first `ret` hashed 9 code units of a
-//!   function whose body is 16, so a database built from an object stopped
-//!   matching its own linked program.
+//! Walk direct branches, fall-through and complete jump tables from the entry.
+//! This keeps reachable code after an earlier return without absorbing padding
+//! or interleaved code. The next function entry bounds the walk; an unresolved
+//! computed jump makes the whole fingerprint unavailable.
 //!
 //! # Origin (upstream Ghidra)
 //!
 //! - `Ghidra/Features/FunctionID/src/main/java/ghidra/feature/fid/hash/FunctionBodyFunctionExtentGenerator.java`
 //! - `.../hash/FunctionExtentGenerator.java` — the strategy interface.
 
+use std::cell::OnceCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 
+use kuna_base::space::AddrSpace;
+use kuna_decomp::architecture::Architecture;
+use kuna_num::opcodes::OpCode;
 use kuna_sleigh::translate::Translate;
 
 use crate::listing::classify::classify;
 use crate::listing::decode::decode_one;
+use crate::listing::BoundedSwitches;
 
 /// One decoded instruction in a function's extent.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,24 +43,8 @@ pub struct ExtentInsn {
     pub is_terminal: bool,
 }
 
-/// The extent definition **both** sides of a FID match use: the builder hashing a
-/// library function from its symbol and the lookup hashing the same function in a
-/// stripped image.
-///
-/// It is a **linear decode** from `entry` to `end` (exclusive), which is what
-/// Ghidra's `FunctionBodyFunctionExtentGenerator` hashes: every instruction in the
-/// function's address range, including the blocks after a `ret` that a
-/// flow-following walk would skip. Two earlier attempts were each wrong in a way
-/// the tests caught:
-///
-/// - the address clip `[entry, next_entry)` absorbed alignment padding, giving a
-///   347-code-unit extent for a 29-code-unit function, so every lookup missed;
-/// - a control-flow walk that stopped at the first `ret` hashed 9 code units of a
-///   function whose body is 16, so a database built from the object stopped
-///   matching its own linked program.
-///
-/// Decoding stops at an undecodable byte, at `end`, or when an instruction would
-/// cross `end`.
+const MAX_EXTENT_WORK: u32 = 1 << 20;
+
 /// True when `target` cannot belong to the body entered at `entry`: it lies at or
 /// past the end bound (another function's entry), or before `entry` itself. Such a
 /// branch is a tail call, not intra-function flow.
@@ -68,68 +52,107 @@ fn is_other_entry(entry: u64, target: u64, end: Option<u64>) -> bool {
     target < entry || end.is_some_and(|n| target >= n)
 }
 
-pub fn decode_extent(
+/// Return the complete, address-ordered instruction body, or a reason it cannot
+/// be fingerprinted. Callers can reuse the lazily loaded switch metadata.
+pub(crate) fn decode_extent(
+    arch: &Architecture,
     translate: &dyn Translate,
     entry: u64,
     end: Option<u64>,
-    code_space: &Rc<kuna_base::space::AddrSpace>,
-) -> Vec<ExtentInsn> {
-    // Flow-reachable decode, which is what `func.getBody()` is: start at the
-    // entry, follow each instruction's fall-through and its in-function branch
-    // targets, and stop at a terminal, an undecodable byte, or `end`. Reaching a
-    // block after a `ret` (a second exit selected by an earlier conditional
-    // jump) keeps it in the body; unreachable padding after the last terminal
-    // does not.
-    let mut seen: std::collections::BTreeMap<u64, ExtentInsn> = std::collections::BTreeMap::new();
-    let mut pending: Vec<u64> = vec![entry];
-    let mut visited: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
-    let mut guard = 1u32 << 20;
-    while let Some(vma) = pending.pop() {
-        if !visited.insert(vma) {
-            continue;
+    code_space: &Rc<AddrSpace>,
+    switches: &OnceCell<Option<BoundedSwitches>>,
+) -> Result<Vec<ExtentInsn>, &'static str> {
+    let mut extent = Vec::new();
+    let mut seen = HashSet::new();
+    let mut pending = vec![entry];
+    let mut dispatches = Vec::new();
+    let mut branch_entries = Vec::new();
+    let mut proven_chains = Vec::new();
+    let mut deferred = Vec::new();
+    let mut work = MAX_EXTENT_WORK;
+    loop {
+        while let Some(vma) = pending.pop() {
+            if is_other_entry(entry, vma, end) || !seen.insert(vma) {
+                continue;
+            }
+            work = work.checked_sub(1).ok_or("extent_limit")?;
+            let dec = decode_one(translate, vma, code_space, false, false)
+                .map_err(|_| "extent_decode_failed")?;
+            let len = dec.len;
+            if len == 0 || vma.checked_add(u64::from(len)).is_none_or(|e| end.is_some_and(|n| e > n)) {
+                return Err("extent_decode_failed");
+            }
+            let cls = classify(&dec.ops, vma, len);
+            extent.push(ExtentInsn {
+                addr: vma,
+                len,
+                is_call: cls.flow.is_call,
+                is_terminal: cls.flow.is_terminal,
+            });
+            if !cls.flow.is_terminal {
+                pending.extend(cls.fall_through);
+            }
+            branch_entries.extend(cls.flows.iter().copied());
+            if !cls.flow.is_call {
+                // A direct branch to another function is a tail transfer. For
+                // computed switches below, unknown ownership is not enough to
+                // omit a case and still claim a complete fingerprint.
+                pending.extend(cls.flows);
+            }
+            if dec.ops.iter().any(|op| op.opcode == OpCode::CPUI_BRANCHIND) {
+                dispatches.push(vma);
+            }
         }
-        if end.is_some_and(|n| vma >= n) {
-            continue;
-        }
-        if guard == 0 {
+        if dispatches.is_empty() {
             break;
         }
-        guard -= 1;
-        let Ok(dec) = decode_one(translate, vma, code_space, false, false) else {
-            continue; // an undecodable byte contributes nothing
-        };
-        let len = dec.len.max(1); // never advance by 0
-        if end.is_some_and(|n| vma.checked_add(u64::from(len)).is_none_or(|e| e > n)) {
-            continue;
-        }
-        let cls = classify(&dec.ops, vma, dec.len);
-        seen.insert(vma, ExtentInsn {
-            addr: vma,
-            len,
-            is_call: cls.flow.is_call,
-            is_terminal: cls.flow.is_terminal,
-        });
-        if !cls.flow.is_terminal {
-            if let Some(fall) = cls.fall_through {
-                pending.push(fall);
-            }
-        }
-        // Follow an in-function branch target. An unconditional `JMP` is NOT
-        // treated as external: a forward `JMP` to a shared epilogue or a jump into
-        // a loop header is ordinary intra-function flow, and skipping it truncated
-        // real bodies. A tail call is instead recognised by its DESTINATION — the
-        // target is another entry, which is exactly what Ghidra records as that
-        // other function's body — using the same `entries` set the end bound comes
-        // from.
-        if !cls.flow.is_call {
-            for target in &cls.flows {
-                if !is_other_entry(entry, *target, end) {
-                    pending.push(*target);
+
+        // The solver slices through already-decoded predecessors. Finish all
+        // direct paths first, and retry a pending dispatch if another switch
+        // opens up more of its predecessors.
+        let tables = switches.get_or_init(|| BoundedSwitches::from_loader(arch, code_space))
+            .as_ref().ok_or("unresolved_computed_jump")?;
+        for dispatch in dispatches.drain(..) {
+            work = work.checked_sub(1).ok_or("extent_limit")?;
+            if let Some((start, targets)) = tables.prove_targets(arch, translate, code_space, &seen, dispatch) {
+                if targets.iter().any(|&target| is_other_entry(entry, target, end)) {
+                    return Err("unresolved_computed_jump");
                 }
+                proven_chains.push((start, dispatch));
+                branch_entries.extend(targets.iter().copied());
+                for target in targets.into_iter().filter(|target| !seen.contains(target)) {
+                    if pending.len() >= work as usize {
+                        return Err("extent_limit");
+                    }
+                    pending.push(target);
+                }
+            } else {
+                deferred.push(dispatch);
             }
+        }
+        if pending.is_empty() && !deferred.is_empty() {
+            return Err("unresolved_computed_jump");
+        }
+        std::mem::swap(&mut dispatches, &mut deferred);
+    }
+    // The compare and dispatch must form one single-entry chain. Case bodies
+    // from a switch discovered later can introduce new incoming edges, so
+    // validate only after every reachable direct and computed edge is known.
+    if !proven_chains.is_empty() {
+        branch_entries.push(entry);
+        branch_entries.sort_unstable();
+        if proven_chains.into_iter().any(|(start, dispatch)| {
+            let after_start = branch_entries.partition_point(|&target| target <= start);
+            branch_entries.get(after_start).is_some_and(|&target| target <= dispatch)
+        }) {
+            return Err("unresolved_computed_jump");
         }
     }
-    seen.into_values().collect()
+    extent.sort_unstable_by_key(|insn| insn.addr);
+    if extent.windows(2).any(|pair| pair[0].addr + u64::from(pair[0].len) > pair[1].addr) {
+        return Err("extent_decode_failed");
+    }
+    Ok(extent)
 }
 
 #[cfg(test)]

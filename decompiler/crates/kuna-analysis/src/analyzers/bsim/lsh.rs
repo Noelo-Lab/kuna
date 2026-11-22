@@ -30,7 +30,7 @@
 //! other register's current value** (`reg1` mixes `reg2 >>> 24` and vice versa);
 //! getting that order wrong changes every vector identity.
 
-use super::lshweights::{short_t, IDFLookup, WeightFactory};
+use super::lshweights::{IDFLookup, WeightFactory};
 
 /// One distinct feature in a vector.
 ///
@@ -42,9 +42,9 @@ pub struct HashEntry {
     /// The 32-bit feature hash (signed, as Java's `int`).
     pub hash: i32,
     /// The stored term frequency minus one (`HashEntry.tf`).
-    tf: short_t,
+    tf: i16,
     /// The normalised IDF index (`HashEntry.idf`).
-    idf: short_t,
+    idf: i16,
     /// The feature's weight.
     pub coeff: f64,
 }
@@ -55,7 +55,7 @@ impl HashEntry {
     pub fn with_weight(hash: i32, term_count: i32, weight: f64) -> Self {
         HashEntry {
             hash,
-            tf: if term_count > 63 { 63 } else { (term_count - 1) as short_t },
+            tf: if term_count > 63 { 63 } else { (term_count - 1) as i16 },
             idf: 1,
             coeff: weight,
         }
@@ -64,18 +64,18 @@ impl HashEntry {
     /// A feature weighted from its term frequency and corpus frequency
     /// (`HashEntry(int,int,int,WeightFactory)`).
     pub fn weighted(hash: i32, term_count: i32, doc_count: i32, factory: &WeightFactory) -> Self {
-        let tf: short_t = if term_count > 63 { 63 } else { (term_count - 1) as short_t };
-        let idf: short_t = if doc_count > 511 { 511 } else { doc_count as short_t };
+        let tf = if term_count > 63 { 63 } else { (term_count - 1) as i16 };
+        let idf = if doc_count > 511 { 511 } else { doc_count as i16 };
         HashEntry { hash, tf, idf, coeff: factory.get_coeff(idf, tf) }
     }
 
     /// The term frequency, restored (`getTF`).
-    pub fn term_frequency(&self) -> short_t {
+    pub fn term_frequency(&self) -> i16 {
         self.tf + 1
     }
 
     /// The IDF index (`getIDF`).
-    pub fn idf_index(&self) -> short_t {
+    pub fn idf_index(&self) -> i16 {
         self.idf
     }
 }
@@ -139,11 +139,15 @@ impl LshCosineVector {
     /// (`LSHCosineVector(int[], WeightFactory, IDFLookup)`).
     ///
     /// The same hash may repeat; that is its term frequency.
-    pub fn from_features(feature: &[i32], factory: &WeightFactory, idf: &IDFLookup) -> Self {
-        let mut vector = LshCosineVector::new();
-        vector.install_features(feature, factory, idf);
-        vector.calc_length();
-        vector
+    pub fn from_features(feature: &[u32], factory: &WeightFactory, idf: &IDFLookup) -> Self {
+        let entries = feature
+            .chunk_by(|a, b| a == b)
+            .map(|group| {
+                let hash = group[0] as i32;
+                HashEntry::weighted(hash, group.len().min(64) as i32, idf.get_count(hash), factory)
+            })
+            .collect();
+        Self::from_entries(entries)
     }
 
     /// Install already-sorted hashes and weights (`setHashEntries`).
@@ -186,36 +190,9 @@ impl LshCosineVector {
         self.length = self.length.sqrt();
     }
 
-    /// `installFeatures`: group runs of equal hashes into one entry each, with
-    /// the corpus frequency looked up per distinct hash.
-    fn install_features(&mut self, feature: &[i32], factory: &WeightFactory, idf: &IDFLookup) {
-        if feature.is_empty() {
-            return;
-        }
-        let lookup_empty = idf.is_empty();
-        let mut entries = Vec::new();
-        let mut last = feature[0];
-        let mut count = 1;
-        let mut idf_count = if lookup_empty { 0 } else { idf.get_count(last) };
-        for &value in &feature[1..] {
-            if value != last {
-                entries.push(HashEntry::weighted(last, count, idf_count, factory));
-                last = value;
-                count = 1;
-                if !lookup_empty {
-                    idf_count = idf.get_count(last);
-                }
-            } else {
-                count += 1;
-            }
-        }
-        entries.push(HashEntry::weighted(last, count, idf_count, factory));
-        self.entries = entries;
-    }
-
     /// Cosine similarity against `other`, filling `data` (`compare`).
     ///
-    /// Returns 0 when either vector is empty. The merge walks both sorted arrays
+    /// Returns 0 when the combined norm is zero or non-finite. The merge walks both arrays
     /// once; the shared part of a hash contributes the **smaller** term frequency
     /// weighted by that side's coefficient, exactly as Ghidra accumulates it.
     pub fn compare(&self, other: &LshCosineVector, data: &mut VectorCompare) -> f64 {
@@ -223,7 +200,8 @@ impl LshCosineVector {
         let mut intersectcount = 0;
         let mut iter = 0usize;
         let mut iter2 = 0usize;
-        if !self.entries.is_empty() && !other.entries.is_empty() {
+        let norm = self.length * other.length;
+        if norm.is_finite() && norm > 0.0 {
             while iter < self.entries.len() && iter2 < other.entries.len() {
                 let hash1 = self.entries[iter].hash;
                 let hash2 = other.entries[iter2].hash;
@@ -248,7 +226,7 @@ impl LshCosineVector {
                 }
             }
             data.dotproduct = res;
-            res /= self.length * other.length;
+            res /= norm;
         } else {
             data.dotproduct = res;
         }
@@ -337,12 +315,17 @@ pub fn score_candidate(
     candidate: &LshCosineVector,
     min_similarity: f64,
 ) -> Option<(f64, f64)> {
-    let mut data = VectorCompare::default();
-    let similarity = query.compare(candidate, &mut data);
-    if similarity < min_similarity {
+    let norm = query.length * candidate.length;
+    if !min_similarity.is_finite() || !norm.is_finite() || norm <= 0.0 {
         return None;
     }
-    Some((similarity, calculate_significance(factory, &mut data)))
+    let mut data = VectorCompare::default();
+    let similarity = query.compare(candidate, &mut data);
+    if !similarity.is_finite() || similarity < min_similarity {
+        return None;
+    }
+    let significance = calculate_significance(factory, &mut data);
+    significance.is_finite().then_some((similarity, significance))
 }
 
 #[cfg(test)]
@@ -412,12 +395,24 @@ mod tests {
     }
 
     #[test]
+    fn zero_and_underflowed_norms_are_not_matches_even_at_zero_floor() {
+        let f = unit_factory();
+        let normal = LshCosineVector::from_features(&[1], &f, &empty_idf());
+        for coefficient in [0.0, 1e-200] {
+            let degenerate = LshCosineVector::from_entries(vec![HashEntry::with_weight(1, 1, coefficient)]);
+            assert!(score_candidate(&f, &degenerate, &normal, 0.0).is_none());
+            assert!(score_candidate(&f, &normal, &degenerate, 0.0).is_none());
+        }
+        assert!(score_candidate(&f, &normal, &normal, f64::NAN).is_none());
+    }
+
+    #[test]
     fn the_merge_orders_hashes_as_unsigned() {
         // `-1` is the LARGEST 32-bit value unsigned, though the smallest signed.
         // A feature list is therefore expected sorted by UNSIGNED hash, which is
         // how Ghidra stores it (`getSignatureVector` sorts the u32 values).
         let f = unit_factory();
-        let a = LshCosineVector::from_features(&[5, -1], &f, &empty_idf());
+        let a = LshCosineVector::from_features(&[5, u32::MAX], &f, &empty_idf());
         let b = LshCosineVector::from_features(&[5], &f, &empty_idf());
         let mut data = VectorCompare::default();
         a.compare(&b, &mut data);
@@ -429,7 +424,7 @@ mod tests {
     #[test]
     fn term_frequency_is_clamped_at_sixty_three() {
         let f = unit_factory();
-        let features = vec![7i32; 100];
+        let features = vec![7u32; 100];
         let v = LshCosineVector::from_features(&features, &f, &empty_idf());
         assert_eq!(v.num_entries(), 1);
         // Java stores `min(63, count-1)` and adds one back.

@@ -1,19 +1,22 @@
 //! `kuna bsim build | query | info` bodies.
 //!
-//! Build decompiles every function of one binary through the console's shared
-//! per-function decompile step (the same one every other surface runs), signs it
-//! with the decompiler's feature generator, and appends it to a corpus. Query does
-//! the same for the selected function and scores it against the corpus.
+//! Build and query sign normalized IR under the local corpus's fixed profile.
+
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
 use kuna_analysis::analyzers::bsim::corpus::{BsimCorpus, CorpusExecutable, IngestOutcome};
-use kuna_analysis::analyzers::bsim::lshweights::{weights_file_for, LshWeights};
+use kuna_analysis::analyzers::bsim::lshweights::{LshProfile, LshWeights};
 use kuna_analysis::analyzers::bsim::query::{query as run_query, MatchFilters, QueryOptions};
-use kuna_analysis::analyzers::bsim::signature::{sign_function, settings_vector};
+use kuna_analysis::analyzers::bsim::signature::{
+    sign_function_with_settings, BsimSignature, SignatureOutcome,
+};
 use serde_json::json;
 
 use crate::args::take_value;
 
-use super::{parse_address, parse_f64, parse_usize, resolve_weights, spec_roots};
+use super::{parse_address, parse_f64, parse_usize};
 
 /// `kuna bsim build <binary> -o <corpus.kbsm>`
 pub(super) fn cmd_build(argv: &[String]) -> i32 {
@@ -21,6 +24,8 @@ pub(super) fn cmd_build(argv: &[String]) -> i32 {
     let mut out: Option<String> = None;
     let mut name: Option<String> = None;
     let mut max_functions: Option<usize> = None;
+    let mut profile = None;
+    let mut weights_dir = None;
     let mut i = 0;
     while i < argv.len() {
         match argv[i].as_str() {
@@ -39,7 +44,29 @@ pub(super) fn cmd_build(argv: &[String]) -> i32 {
                 }
             },
             "--max-functions" => match parse_usize(argv, &mut i, "--max-functions") {
-                Ok(n) => max_functions = Some(n),
+                Ok(n) if n > 0 => max_functions = Some(n),
+                Ok(_) => {
+                    eprintln!("kuna bsim build: --max-functions must be positive");
+                    return 2;
+                }
+                Err(e) => {
+                    eprintln!("kuna bsim build: {e}");
+                    return 2;
+                }
+            },
+            "--profile" => match take_value(argv, &mut i, "--profile") {
+                Ok(v) if v == "nosize" => profile = Some(LshProfile::NoSize),
+                Ok(v) => {
+                    eprintln!("kuna bsim build: unknown --profile {v:?}; use nosize or omit --profile");
+                    return 2;
+                }
+                Err(e) => {
+                    eprintln!("kuna bsim build: {e}");
+                    return 2;
+                }
+            },
+            "--weights" => match take_value(argv, &mut i, "--weights") {
+                Ok(v) => weights_dir = Some(v),
                 Err(e) => {
                     eprintln!("kuna bsim build: {e}");
                     return 2;
@@ -63,17 +90,18 @@ pub(super) fn cmd_build(argv: &[String]) -> i32 {
         eprintln!("kuna bsim build: a <binary> and -o <corpus.kbsm> are required");
         return 2;
     };
-    match build(&binary, &out, name.as_deref(), max_functions) {
+    match build(&binary, Path::new(&out), name.as_deref(), max_functions, profile, weights_dir.as_deref()) {
         Ok(summary) => {
             println!(
                 "bsim build: signed {} of {} function(s) from {} into {}",
                 summary.signed, summary.considered, binary, out
             );
-            if summary.no_features > 0 {
-                println!("bsim build: {} function(s) had no features and were not stored", summary.no_features);
-            }
+            summary.skipped.report();
             if summary.capped {
-                println!("bsim build: stopped at --max-functions {}", summary.limit);
+                println!("bsim build: reached --max-functions {}; rerun with a higher cap or without it", max_functions.unwrap());
+            }
+            if summary.outcome == IngestOutcome::AlreadyPresent {
+                println!("bsim build: same content hash already in corpus; nothing added");
             }
             println!(
                 "bsim build: corpus now holds {} function(s) from {} executable(s)",
@@ -92,141 +120,256 @@ pub(super) fn cmd_build(argv: &[String]) -> i32 {
 struct BuildSummary {
     considered: usize,
     signed: usize,
-    no_features: usize,
+    skipped: SigningOmissions,
     capped: bool,
-    limit: usize,
+    outcome: IngestOutcome,
     corpus_functions: usize,
     corpus_executables: usize,
 }
 
 fn build(
     binary: &str,
-    out: &str,
+    out: &Path,
     name: Option<&str>,
     max_functions: Option<usize>,
+    requested_profile: Option<LshProfile>,
+    weights_dir: Option<&str>,
 ) -> Result<BuildSummary, String> {
-    // Load through the SAME driver every whole-binary surface uses. A bare
-    // `bootstrap_from_object` builds an architecture but runs none of the
-    // discovery passes, so the inventory it offers is whatever the loader
-    // happened to map (`function_entries_executable`) -- on a static binary that
-    // is the PLT stub range alone. `load_program` runs the discovery a corpus
-    // must cover, which is the list `kuna functions` prints.
-    let mut prog = load_corpus_program(binary)?;
-    let arch_id = kuna_decomp::kuna_langfamily::language_id(&prog.arch().archid).to_string();
-    let cspec = prog.arch().compiler_spec_id().unwrap_or_else(|| "unknown".to_string());
-    let bytes = std::fs::read(binary).map_err(|e| format!("read {binary}: {e}"))?;
-    let md5 = md5_hex(&bytes);
-    let exec_name = name.map(str::to_string).unwrap_or_else(|| basename(binary));
-
-    // The canonical inventory is the whole program: `function_entries_executable`
-    // reports only the entries whose bytes the *loader* mapped as code, which on
-    // a static binary is the PLT stub range and nothing else. A corpus must cover
-    // every function, so this uses the same list `kuna functions` prints.
-    let entries = prog.function_entries_canonical();
-    let limit = max_functions.unwrap_or(entries.len().max(1));
-    let mut corpus = if std::path::Path::new(out).exists() {
-        let existing = std::fs::read(out).map_err(|e| format!("read {out}: {e}"))?;
-        BsimCorpus::load(&existing).map_err(|e| format!("load {out}: {}", e.explain()))?
-    } else {
-        BsimCorpus::new(settings_vector(), arch_id.clone())
+    let mut md5 = None;
+    let mut prog = load_corpus_program_with_source(binary, Some(&mut |bytes| {
+        use md5::{Digest, Md5};
+        md5 = Some(format!("{:032x}", u128::from_be_bytes(Md5::digest(bytes).into())));
+    }))?;
+    let md5 = md5.ok_or("loaded image did not supply executable bytes")?;
+    let arch_id = kuna_decomp::kuna_langfamily::language_id(&prog.arch().archid).to_owned();
+    let cspec = prog.arch().compiler_spec_id()
+        .ok_or("binary has no resolved compiler spec")?.to_owned();
+    let exec_name = name.map(str::to_owned).unwrap_or_else(|| basename(binary));
+    let target = corpus_target(out)?;
+    // Lock a stable sidecar, not the corpus inode that the atomic rename
+    // replaces. Leave the sidecar in place for the next writer.
+    let _lock = lock_corpus(&target)?;
+    let existing = match fs::read(&target) {
+        Ok(data) => Some(BsimCorpus::load(&data).map_err(|e| format!("load {}: {}", out.display(), e.explain()))?),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+        Err(e) => return Err(format!("read {}: {e}", out.display())),
     };
-    if corpus.settings() != settings_vector() {
-        return Err(format!(
-            "corpus {out} was built with settings {:#x}, this run uses {:#x}; \
-             its stored vectors are not comparable",
-            corpus.settings(),
-            settings_vector()
-        ));
+    let profile = match &existing {
+        Some(corpus) => {
+            let profile = corpus.profile();
+            if requested_profile.is_some_and(|requested| requested != profile) {
+                return Err(format!("cannot change corpus profile {}; build a new corpus for nosize", profile.name()));
+            }
+            profile
+        }
+        None => requested_profile.or_else(|| LshProfile::for_language(&arch_id))
+            .ok_or_else(|| format!("no BSim weights profile supports {arch_id}"))?,
+    };
+    check_language(profile, &arch_id)?;
+    let weights = load_weights(weights_dir, out, profile)?;
+    let mut corpus = match existing {
+        Some(corpus) => {
+            corpus.check_weights(&weights).map_err(|e| e.explain().to_string())?;
+            corpus
+        }
+        None => BsimCorpus::new(weights.settings as u32, profile)
+            .map_err(|e| e.explain().to_string())?,
+    };
+    let previous = corpus.executables().iter().find(|e| e.md5 == md5);
+    if let Some(previous) = previous {
+        if previous.architecture != arch_id || previous.compiler != cspec {
+            return Err("executable's resolved language or compiler changed; rebuild the corpus".into());
+        }
+        if previous.complete {
+            return Ok(BuildSummary {
+                considered: 0,
+                signed: 0,
+                skipped: SigningOmissions::default(),
+                capped: false,
+                outcome: IngestOutcome::AlreadyPresent,
+                corpus_functions: corpus.function_count(),
+                corpus_executables: corpus.executables().len(),
+            });
+        }
+    } else if corpus.executables().iter().any(|e| e.name == exec_name) {
+        return Err(format!("{exec_name} is already in the corpus with different content; pass --name to store this build under another name"));
     }
+    let previous_count = previous.map_or(0, |e| e.functions.len());
+    let limit = max_functions.unwrap_or(usize::MAX);
 
+    // Use the same canonical inventory as `kuna functions`, excluding import
+    // pointer slots rather than trying to sign bytes that are not code.
+    let entries = prog.function_entries_canonical();
+    let mut skipped = SigningOmissions::default();
     let mut considered = 0usize;
-    let mut no_features = 0usize;
     let mut signed = Vec::new();
     let mut capped = false;
     for entry in entries {
-        if signed.len() >= limit {
+        let address = entry.addr.get_offset();
+        if previous.is_some_and(|e| e.function_at(address).is_some()) {
+            continue;
+        }
+        if !prog.is_body_entry(address) {
+            skipped.without_body += 1;
+            continue;
+        }
+        if previous_count + signed.len() >= limit {
             capped = true;
             break;
         }
         considered += 1;
-        let address = entry.addr.get_offset();
-        match sign_one(&mut prog, &entry, address) {
+        match sign_one(&mut prog, &entry, corpus.settings()) {
             Ok(sig) => signed.push(sig),
-            Err(_reason) => no_features += 1,
+            Err(SignFailure::Signature(SignatureOutcome::NoFeatures)) => skipped.no_features += 1,
+            Err(SignFailure::Normalize(reason)) => skipped.normalization.record(&entry.name, address, reason),
+            Err(SignFailure::Signature(SignatureOutcome::Refused(reason))) => skipped.refused.record(&entry.name, address, reason),
         }
+    }
+    if previous.is_none() && signed.is_empty() {
+        skipped.report();
+        return Err(format!("{exec_name}: no functions were signed; nothing stored"));
     }
 
     let exec = CorpusExecutable {
-        name: exec_name.clone(),
+        name: exec_name,
         architecture: arch_id,
         compiler: cspec,
         md5,
+        complete: !capped && skipped.normalization.count == 0 && skipped.refused.count == 0,
         functions: signed,
     };
     let signed_count = exec.functions.len();
-    let outcome = corpus.insert_executable(exec);
-    let (corpus_functions, corpus_executables) = (corpus.function_count(), corpus.executables().len());
+    let outcome = corpus.insert_executable(exec).map_err(|e| e.explain().to_string())?;
     match outcome {
-        IngestOutcome::Inserted => {
-            let data = corpus.serialize();
-            std::fs::write(out, data).map_err(|e| format!("write {out}: {e}"))?;
-        }
-        // BSim treats a repeat ingest as success: the corpus already has this
-        // exact executable, so there is nothing to write.
-        IngestOutcome::AlreadyPresent => {
-            println!("bsim build: {exec_name} is already in the corpus (same content hash); nothing added");
-        }
+        IngestOutcome::Inserted | IngestOutcome::Updated => write_corpus(&target, &corpus)?,
+        IngestOutcome::AlreadyPresent => {}
         IngestOutcome::NameCollision => {
-            return Err(format!(
-                "{exec_name} is already in the corpus with different content; \
-                 pass --name to store this build under another name"
-            ));
+            return Err("executable name is already present with different content; use --name".into());
         }
     }
     Ok(BuildSummary {
         considered,
         signed: signed_count,
-        no_features,
+        skipped,
         capped,
-        limit,
-        corpus_functions,
-        corpus_executables,
+        outcome,
+        corpus_functions: corpus.function_count(),
+        corpus_executables: corpus.executables().len(),
     })
 }
 
-/// Decompile one entry and sign it, using the console's shared decompile step.
+#[derive(Default)]
+struct FailureSummary {
+    count: usize,
+    first: Option<String>,
+}
+
+impl FailureSummary {
+    fn record(&mut self, function: &str, address: u64, reason: String) {
+        self.count += 1;
+        if self.first.is_none() {
+            self.first = Some(format!("{function} at 0x{address:x}: {reason}"));
+        }
+    }
+}
+
+#[derive(Default)]
+struct SigningOmissions {
+    without_body: usize,
+    no_features: usize,
+    normalization: FailureSummary,
+    refused: FailureSummary,
+}
+
+impl SigningOmissions {
+    fn report(&self) {
+        if self.without_body > 0 {
+            println!("bsim build: {} entry/entries without a local body were not stored", self.without_body);
+        }
+        if self.no_features > 0 {
+            println!("bsim build: {} function(s) had no features and were not stored", self.no_features);
+        }
+        for (stage, failure) in [("normalization failed", &self.normalization), ("signature generator refused", &self.refused)] {
+            if let Some(first) = &failure.first {
+                eprintln!("bsim build: incomplete ingest: {stage} for {} function(s); first: {first}", failure.count);
+            }
+        }
+    }
+}
+
+enum SignFailure {
+    Normalize(String),
+    Signature(SignatureOutcome),
+}
+
+impl SignFailure {
+    fn describe(&self) -> String {
+        match self {
+            Self::Normalize(reason) => format!("normalization failed ({reason})"),
+            Self::Signature(outcome) => outcome.describe(),
+        }
+    }
+}
+
+/// Match the normalize action Ghidra uses for feature extraction, not C emission.
 fn sign_one(
     prog: &mut kuna_console::engine::ConsoleProgram,
     entry: &kuna_console::engine::FunctionEntry,
-    address: u64,
-) -> Result<kuna_analysis::analyzers::bsim::signature::BsimSignature, String> {
-    let seed = kuna_console::decompile_step::DecompileSeed {
-        purpose: kuna_decomp::decompile_drive::DrivePurpose::Batch,
-        mapped_symbols: &[],
-        usepoint_symbols: &[],
-        dynamic_symbols: &[],
-        object_assertions: &[],
-        pending_proto: None,
-        flow_overrides: &[],
-        mapped_params: &[],
-    };
+    settings: u32,
+) -> Result<BsimSignature, SignFailure> {
+    let address = entry.addr.get_offset();
     let declared = prog.declared_extent(address);
-    let step = kuna_console::decompile_step::decompile_one(
-        prog.arch_mut(),
-        &entry.name,
-        entry.addr.clone(),
-        declared,
-        &seed,
-        &[],
-    );
-    let fd = step.result.map_err(|e| e.explain().to_string())?;
-    sign_function(&fd, &entry.name, address).map_err(|outcome| outcome.describe())
+    let fd = kuna_decomp::decompile_drive::normalize_function(
+        prog.arch_mut(), &entry.name, entry.addr.clone(), declared,
+    ).map_err(|e| SignFailure::Normalize(e.explain().to_string()))?;
+    sign_function_with_settings(&fd, &entry.name, address, settings).map_err(SignFailure::Signature)
 }
 
-/// `kuna bsim query <binary> --corpus <file>`
+fn corpus_dir(path: &Path) -> &Path {
+    path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."))
+}
+
+fn corpus_target(path: &Path) -> Result<PathBuf, String> {
+    match path.canonicalize() {
+        Ok(target) => Ok(target),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            let name = path.file_name().ok_or_else(|| format!("invalid corpus path {}", path.display()))?;
+            let dir = corpus_dir(path).canonicalize()
+                .map_err(|e| format!("open corpus directory for {}: {e}", path.display()))?;
+            Ok(dir.join(name))
+        }
+        Err(e) => Err(format!("resolve {}: {e}", path.display())),
+    }
+}
+
+fn lock_corpus(out: &Path) -> Result<File, String> {
+    let mut path = out.as_os_str().to_os_string();
+    path.push(".lock");
+    let path = PathBuf::from(path);
+    let lock = OpenOptions::new().read(true).write(true).create(true).truncate(false).open(&path)
+        .map_err(|e| format!("open corpus lock {}: {e}", path.display()))?;
+    lock.lock().map_err(|e| format!("lock {}: {e}", path.display()))?;
+    Ok(lock)
+}
+
+fn write_corpus(out: &Path, corpus: &BsimCorpus) -> Result<(), String> {
+    let pending = (|| -> io::Result<()> {
+        let mut pending = tempfile::NamedTempFile::new_in(corpus_dir(out))?;
+        pending.write_all(&corpus.serialize())?;
+        pending.as_file().sync_all()?;
+        pending.persist(out)?;
+        #[cfg(unix)]
+        File::open(corpus_dir(out))?.sync_all()?;
+        Ok(())
+    })();
+    pending.map_err(|e| format!("replace {}: {e}", out.display()))
+}
+
+/// Query either a local corpus or a native PostgreSQL BSim database.
 pub(super) fn cmd_query(argv: &[String]) -> i32 {
     let mut binary: Option<String> = None;
     let mut corpus_path: Option<String> = None;
+    let mut postgres = false;
     let mut address: Option<String> = None;
     let mut name: Option<String> = None;
     let mut weights_dir: Option<String> = None;
@@ -244,6 +387,7 @@ pub(super) fn cmd_query(argv: &[String]) -> i32 {
                     return 2;
                 }
             },
+            "--postgres" => postgres = true,
             "--address" => match take_value(argv, &mut i, flag) {
                 Ok(v) => address = Some(v),
                 Err(e) => {
@@ -294,10 +438,18 @@ pub(super) fn cmd_query(argv: &[String]) -> i32 {
         }
         i += 1;
     }
-    let (Some(binary), Some(corpus_path)) = (binary, corpus_path) else {
-        eprintln!("kuna bsim query: a <binary> and --corpus <file> are required");
+    let Some(binary) = binary else {
+        eprintln!("kuna bsim query: a <binary> is required");
         return 2;
     };
+    if postgres == corpus_path.is_some() || (postgres && weights_dir.is_some()) {
+        eprintln!("kuna bsim query: choose --corpus <file> [--weights <dir>] or --postgres");
+        return 2;
+    }
+    if postgres && address.is_some() && name.is_some() {
+        eprintln!("kuna bsim query: choose --address or --name, not both");
+        return 2;
+    }
     if address.is_none() && name.is_none() {
         eprintln!("kuna bsim query: pass --address <hex> or --name <symbol> to choose the function");
         return 2;
@@ -310,7 +462,17 @@ pub(super) fn cmd_query(argv: &[String]) -> i32 {
             .unwrap_or(kuna_analysis::analyzers::bsim::query::DEFAULT_MAX_MATCHES),
         filters: MatchFilters::default(),
     };
-    match run_query_cli(&binary, &corpus_path, address.as_deref(), name.as_deref(), weights_dir.as_deref(), &options) {
+    let selected = (address.as_deref(), name.as_deref());
+    let result = if let Some(path) = corpus_path {
+        run_query_cli(&binary, &path, selected.0, selected.1, weights_dir.as_deref(), &options)
+    } else {
+        if !(0.0..=1.0).contains(&options.min_similarity) || !(1..=10_000).contains(&options.max_matches) {
+            eprintln!("kuna bsim query: PostgreSQL requires similarity 0..=1 and max matches 1..=10000");
+            return 2;
+        }
+        run_postgres_query(&binary, selected.0, selected.1, &options)
+    };
+    match result {
         Ok(value) => {
             if json_out {
                 crate::output::emit_with_status(
@@ -340,31 +502,20 @@ fn run_query_cli(
     let corpus_bytes = std::fs::read(corpus_path).map_err(|e| format!("read {corpus_path}: {e}"))?;
     let corpus =
         BsimCorpus::load(&corpus_bytes).map_err(|e| format!("load {corpus_path}: {}", e.explain()))?;
-    let dir = resolve_weights(weights_dir, Some(corpus_path))?;
-    // Load through the SAME driver every whole-binary surface uses. A bare
-    // `bootstrap_from_object` builds an architecture but runs none of the
-    // discovery passes, so the inventory it offers is whatever the loader
-    // happened to map (`function_entries_executable`) -- on a static binary that
-    // is the PLT stub range alone. `load_program` runs the discovery a corpus
-    // must cover, which is the list `kuna functions` prints.
+    let profile = corpus.profile();
     let mut prog = load_corpus_program(binary)?;
-    let arch_id = kuna_decomp::kuna_langfamily::language_id(&prog.arch().archid).to_string();
-    let weights = load_weights(&dir, &arch_id, corpus.language())?;
+    let arch_id = kuna_decomp::kuna_langfamily::language_id(&prog.arch().archid);
+    check_language(profile, arch_id)?;
+    let weights = load_weights(weights_dir, Path::new(corpus_path), profile)?;
+    corpus.check_weights(&weights).map_err(|e| e.explain().to_string())?;
 
-    let entry = match (address, name) {
-        (Some(a), _) => {
-            let addr = parse_address(a)?;
-            prog.resolve_entry(&kuna_console::engine::EntrySelector::Numeric(addr))
-                .map_err(|e| e.to_string())?
-        }
-        (None, Some(n)) => prog
-            .resolve_entry(&kuna_console::engine::EntrySelector::Name(n.to_string()))
-            .map_err(|e| e.to_string())?,
-        (None, None) => return Err("no function selected".into()),
-    };
+    let entry = select_entry(&prog, address, name)?;
     let byte_address = entry.addr.get_offset();
-    let sig = sign_one(&mut prog, &entry, byte_address)?;
-    let result = run_query(&corpus, &weights, &sig, options);
+    if !prog.is_body_entry(byte_address) {
+        return Err("selected entry does not have a local function body".into());
+    }
+    let sig = sign_one(&mut prog, &entry, corpus.settings()).map_err(|e| e.describe())?;
+    let result = run_query(&corpus, &weights, &sig, options).map_err(|e| e.explain().to_string())?;
     Ok(json!({
         "binary": binary,
         "corpus": corpus_path,
@@ -372,7 +523,8 @@ fn run_query_cli(
         "features": sig.features.len(),
         "min_similarity": result.min_similarity,
         "considered": result.considered,
-        "skipped_settings": result.skipped_settings,
+        "profile": profile.name(),
+        "settings": format!("{:#x}", corpus.settings()),
         "truncated": result.truncated,
         "matches": result.matches.iter().map(|m| json!({
             "name": m.name,
@@ -385,6 +537,60 @@ fn run_query_cli(
     }))
 }
 
+fn run_postgres_query(
+    binary: &str,
+    address: Option<&str>,
+    name: Option<&str>,
+    options: &QueryOptions,
+) -> Result<serde_json::Value, String> {
+    use super::postgres;
+    let mut prog = load_corpus_program(binary)?;
+    let entry = select_entry(&prog, address, name)?;
+    let offset = entry.addr.get_offset();
+    let display_address = prog.output_code_offset(offset);
+    if !prog.is_body_entry(offset) {
+        return Err("selected entry does not have a local function body".into());
+    }
+    let mut client = postgres::connect()?;
+    let mut tx = postgres::read_only(&mut client)?;
+    let settings = postgres::settings(&mut tx)?;
+    let declared = prog.declared_extent(offset);
+    let fd = kuna_decomp::decompile_drive::normalize_function(
+        prog.arch_mut(), &entry.name, entry.addr, declared,
+    ).map_err(|e| e.explain().to_string())?;
+    let sig = kuna_analysis::analyzers::bsim::signature::sign_function_with_settings(
+        &fd, &entry.name, offset, settings,
+    ).map_err(|e| e.describe())?;
+    let (matches, truncated) = postgres::search(
+        &mut tx, &sig.features, options.min_similarity, options.max_matches,
+    )?;
+    let reason = matches.is_empty().then_some("no indexed BSim match exceeded the thresholds");
+    Ok(json!({
+        "binary": binary,
+        "backend": "postgres",
+        "function": { "name": sig.name, "address": format!("0x{display_address:x}") },
+        "features": sig.features.len(),
+        "min_similarity": options.min_similarity,
+        "truncated": truncated,
+        "matches": matches,
+        "reason": reason,
+    }))
+}
+
+pub(super) fn select_entry(
+    prog: &kuna_console::engine::ConsoleProgram,
+    address: Option<&str>,
+    name: Option<&str>,
+) -> Result<kuna_console::engine::FunctionEntry, String> {
+    use kuna_console::engine::EntrySelector;
+    let selector = match (address, name) {
+        (Some(address), _) => EntrySelector::Numeric(parse_address(address)?),
+        (None, Some(name)) => EntrySelector::Name(name.to_owned()),
+        (None, None) => return Err("no function selected".into()),
+    };
+    prog.resolve_entry(&selector).map_err(|e| e.to_string())
+}
+
 fn print_text(value: &serde_json::Value) {
     let func = &value["function"];
     println!(
@@ -393,10 +599,8 @@ fn print_text(value: &serde_json::Value) {
         func["address"].as_str().unwrap_or("?"),
         value["features"].as_u64().unwrap_or(0)
     );
-    println!(
-        "  threshold: similarity >= {:.2}",
-        value["min_similarity"].as_f64().unwrap_or(0.0)
-    );
+    let comparison = if value["backend"] == "postgres" { ">" } else { ">=" };
+    println!("  threshold: similarity {comparison} {:.2}", value["min_similarity"].as_f64().unwrap_or(0.0));
     let matches = value["matches"].as_array().map(Vec::as_slice).unwrap_or(&[]);
     if matches.is_empty() {
         if let Some(reason) = value["reason"].as_str() {
@@ -404,11 +608,11 @@ fn print_text(value: &serde_json::Value) {
         }
         return;
     }
-    println!(
-        "  matches: {} (of {} considered)",
-        matches.len(),
-        value["considered"].as_u64().unwrap_or(0)
-    );
+    if let Some(considered) = value["considered"].as_u64() {
+        println!("  matches: {} (of {considered} considered)", matches.len());
+    } else {
+        println!("  matches: {}", matches.len());
+    }
     for (idx, m) in matches.iter().enumerate() {
         println!(
             "  {}. {:.3} similarity, significance {:.3}: {} @ {} in {}",
@@ -419,22 +623,33 @@ fn print_text(value: &serde_json::Value) {
             m["address"].as_str().unwrap_or("?"),
             m["executable"].as_str().unwrap_or("?"),
         );
+        if let Some(id) = m["match_id"].as_str() {
+            println!("     match ID: {id}");
+        }
     }
     if value["truncated"].as_bool() == Some(true) {
         println!("  (more matches qualified than returned; raise --max-matches)");
     }
 }
 
-/// Load the weight table for a pair of languages from `dir`.
-fn load_weights(dir: &str, arch_id: &str, corpus_language: &str) -> Result<LshWeights, String> {
-    let Some(file) = weights_file_for(arch_id, corpus_language) else {
+fn check_language(profile: LshProfile, language: &str) -> Result<(), String> {
+    if !profile.admits(language) {
         return Err(format!(
-            "no weights table is defined for {arch_id} against {corpus_language}"
+            "language {language} is incompatible with corpus profile {}; choose a compatible corpus or rebuild native inputs with --profile nosize",
+            profile.name(),
         ));
-    };
-    let path = std::path::Path::new(dir).join(file);
-    let bytes = std::fs::read(&path).map_err(|e| {
-        format!("cannot read the weight table {}: {e}", path.display())
+    }
+    Ok(())
+}
+
+/// Resolve the exact file rather than inferring a weights directory from a
+/// different profile's file.
+fn load_weights(dir: Option<&str>, corpus: &Path, profile: LshProfile) -> Result<LshWeights, String> {
+    let dir = dir.map(PathBuf::from)
+        .or_else(|| std::env::var_os("KUNA_BSIM_WEIGHTS").filter(|v| !v.is_empty()).map(PathBuf::from));
+    let path = dir.as_deref().unwrap_or_else(|| corpus_dir(corpus)).join(profile.weights_file());
+    let bytes = fs::read(&path).map_err(|e| {
+        format!("cannot read weight table {}: {e}; pass --weights <dir> or set KUNA_BSIM_WEIGHTS", path.display())
     })?;
     LshWeights::parse(&bytes).map_err(|e| format!("{}: {}", path.display(), e.explain()))
 }
@@ -475,12 +690,13 @@ pub(super) fn cmd_info(argv: &[String]) -> i32 {
         let value = json!({
             "corpus": path,
             "settings": format!("{:#x}", corpus.settings()),
-            "language": corpus.language(),
+            "profile": corpus.profile().name(),
             "executables": corpus.executables().iter().map(|e| json!({
                 "name": e.name,
                 "architecture": e.architecture,
                 "compiler": e.compiler,
                 "md5": e.md5,
+                "complete": e.complete,
                 "functions": e.functions.len(),
             })).collect::<Vec<_>>(),
             "functions": corpus.function_count(),
@@ -488,36 +704,45 @@ pub(super) fn cmd_info(argv: &[String]) -> i32 {
         crate::output::emit_with_status(&format!("{}\n", serde_json::to_string_pretty(&value).unwrap()), 0)
     } else {
         println!(
-            "BSim corpus: {} (settings {:#x}, language {}, {} function(s))",
+            "BSim corpus: {} (settings {:#x}, profile {}, {} function(s))",
             path,
             corpus.settings(),
-            corpus.language(),
+            corpus.profile().name(),
             corpus.function_count()
         );
         for exec in corpus.executables() {
             println!(
-                "  {}\t{}\t{}\t{}\t{} function(s)",
+                "  {}\t{}\t{}\t{}\t{} function(s){}",
                 exec.name,
                 exec.architecture,
                 exec.compiler,
                 exec.md5,
-                exec.functions.len()
+                exec.functions.len(),
+                if exec.complete { "" } else { " (incomplete)" },
             );
         }
         0
     }
 }
 
-/// Load `binary` through the standard whole-binary driver, so discovery runs and
-/// the entry inventory is the one `kuna functions` reports.
-fn load_corpus_program(binary: &str) -> Result<kuna_console::engine::ConsoleProgram, String> {
+/// Load `binary` through the standard whole-binary driver for discovery.
+pub(super) fn load_corpus_program(binary: &str) -> Result<kuna_console::engine::ConsoleProgram, String> {
+    load_corpus_program_with_source(binary, None)
+}
+
+fn load_corpus_program_with_source(
+    binary: &str,
+    observe_source: Option<&mut dyn FnMut(&[u8])>,
+) -> Result<kuna_console::engine::ConsoleProgram, String> {
     let mut args = crate::decompile_all::Args::serial();
     args.binary = binary.to_string();
     // `Decompile`, not `Functions`: this surface decompiles every entry, and the
     // inventory-only bundle skips the analysis that produces the varnodes and
     // symbols a signature measures. With the wrong bundle every function signed
     // as if it were a bare stub.
-    crate::decompile_all::load_program(&args, crate::decompile_all::DriverDefaults::Decompile)
+    crate::decompile_all::load_program_with_source(
+        &args, crate::decompile_all::DriverDefaults::Decompile, observe_source,
+    )
 }
 
 fn basename(path: &str) -> String {
@@ -527,66 +752,26 @@ fn basename(path: &str) -> String {
         .unwrap_or_else(|| path.to_string())
 }
 
-/// The MD5 of a byte stream, lowercase hex (BSim's executable fingerprint).
-///
-/// BSim keys an executable by its MD5 (`ExecutableRecord`'s content hash) and
-/// deduplicates an ingest on it, so the field has to be MD5 rather than any
-/// modern digest: a corpus built by Ghidra and one built here agree on identity
-/// only if both hash the same way. RFC 1321, written out because the workspace
-/// has no MD5 dependency and this is the only place that needs one.
-fn md5_hex(bytes: &[u8]) -> String {
-    const S: [u32; 64] = [
-        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5,
-        9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6,
-        10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
-    ];
-    let k: Vec<u32> = (0..64)
-        .map(|i| ((i as f64 + 1.0).sin().abs() * 4294967296.0) as u32)
-        .collect();
-    let mut a0: u32 = 0x6745_2301;
-    let mut b0: u32 = 0xefcd_ab89;
-    let mut c0: u32 = 0x98ba_dcfe;
-    let mut d0: u32 = 0x1032_5476;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let mut message = bytes.to_vec();
-    let bit_len = (bytes.len() as u64).wrapping_mul(8);
-    message.push(0x80);
-    while message.len() % 64 != 56 {
-        message.push(0);
+    #[test]
+    fn signature_loader_keeps_the_observed_executable_when_path_changes() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let original = repo.join("tests/fixtures/fid/callees/prog");
+        let replacement = repo.join("decompiler/crates/kuna-analysis/tests/fixtures/x86listingswitch_i386");
+        let scratch = tempfile::tempdir().unwrap();
+        let path = scratch.path().join("program");
+        let prepared = scratch.path().join("replacement");
+        fs::copy(&original, &path).unwrap();
+        fs::copy(replacement, &prepared).unwrap();
+        let expected = fs::read(original).unwrap();
+        let prog = load_corpus_program_with_source(path.to_str().unwrap(), Some(&mut |bytes| {
+            assert_eq!(bytes, expected);
+            fs::rename(&prepared, &path).unwrap();
+        })).unwrap();
+        assert_eq!(kuna_decomp::kuna_langfamily::language_id(&prog.arch().archid), "x86:LE:64:default");
+        assert!(prog.is_body_entry(0x401000));
     }
-    message.extend_from_slice(&bit_len.to_le_bytes());
-
-    for chunk in message.chunks_exact(64) {
-        let m: Vec<u32> = (0..16)
-            .map(|i| u32::from_le_bytes([chunk[i * 4], chunk[i * 4 + 1], chunk[i * 4 + 2], chunk[i * 4 + 3]]))
-            .collect();
-        let (mut a, mut b, mut c, mut d) = (a0, b0, c0, d0);
-        for i in 0..64 {
-            let (f, g) = match i {
-                0..=15 => ((b & c) | (!b & d), i),
-                16..=31 => ((d & b) | (!d & c), (5 * i + 1) % 16),
-                32..=47 => (b ^ c ^ d, (3 * i + 5) % 16),
-                _ => (c ^ (b | !d), (7 * i) % 16),
-            };
-            let f2 = f
-                .wrapping_add(a)
-                .wrapping_add(k[i])
-                .wrapping_add(m[g]);
-            a = d;
-            d = c;
-            c = b;
-            b = b.wrapping_add(f2.rotate_left(S[i]));
-        }
-        a0 = a0.wrapping_add(a);
-        b0 = b0.wrapping_add(b);
-        c0 = c0.wrapping_add(c);
-        d0 = d0.wrapping_add(d);
-    }
-    let mut out = String::with_capacity(32);
-    for word in [a0, b0, c0, d0] {
-        for byte in word.to_le_bytes() {
-            out.push_str(&format!("{byte:02x}"));
-        }
-    }
-    out
 }

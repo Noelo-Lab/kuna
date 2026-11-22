@@ -18,15 +18,9 @@
 //! `SHF_ALLOC` section out above `RELOC_BASE`); the raw `object::File` symbol
 //! addresses are section-relative and would miss every instruction.
 //!
-//! A function's extent is the **address-contiguous clip** `[entry, end)`
-//! using the smaller of the next entry and the symbol end when a nonzero size
-//! is available; otherwise the next entry bounds the clip.
-//! It is reconstructed by
-//! a **linear decode** from `entry` through the live `Translate` (driving
-//! [`crate::listing::decode::decode_one`] + [`crate::listing::classify::classify`]
-//! for the per-instruction flow). This is independent of the Listing/xref tier's
-//! exec-range universe — which is computed from the *unrebased* `object::File`
-//! section addresses and so is wrong for an `ET_REL` `.o`.
+//! The builder and lookup share the reachable extent in [`crate::fid::extent`],
+//! bounded by the next function entry. Jump tables are read from the live,
+//! relocated load image, not raw section-relative object bytes.
 //!
 //! # Faithfulness to Ghidra's `hashAllTheFunctions`
 //!
@@ -38,6 +32,7 @@
 //! projection the PR4 matching pass uses, so a function fingerprints identically
 //! whether it is *built into* a DB here or *looked up* against one later.
 
+use std::cell::OnceCell;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -45,23 +40,12 @@ use kuna_decomp::architecture::Architecture;
 use kuna_sleigh::sleigh::{OpObject as SleighOpObject, Sleigh};
 use kuna_sleigh::translate::Translate;
 
-use crate::listing::classify::classify;
-use crate::listing::decode::decode_one;
 use crate::loadimage_object::ObjectLoadImage;
 use crate::fid::db::{FidRecord, FLAG_HAS_TERMINATOR};
 use crate::fid::hash::{
     FidHasher, InsnFingerprint, OpObject, OperandFingerprint, RelocationQuery,
 };
 use crate::fid::skipper::{InstructionSkipper, X86InstructionSkipper};
-
-/// One decoded instruction in a function's extent (the linear-decode result the
-/// fingerprint is assembled from).
-struct ExtentInsn {
-    addr: u64,
-    len: u32,
-    is_call: bool,
-    is_terminal: bool,
-}
 
 /// Build the FID records for every named, hashable function in `bytes` (a parsed
 /// object image).
@@ -104,7 +88,7 @@ pub fn build_records(
     // The relocation oracle for the 4-way scalar rule: a relocation overlapping
     // an operand's value bytes suppresses that scalar to the `0xfeeddead`
     // placeholder (so a relocatable reference does not leak into the hash).
-    let relocs = ObjectRelocations::from_object(&file);
+    let relocs = ObjectRelocations::from_object(&file, image);
 
     // The per-architecture skipper set (x86 ⇒ the NOP/alignment skipper; non-x86
     // ⇒ empty, never skips).
@@ -117,6 +101,7 @@ pub fn build_records(
 
     let mut records: Vec<FidRecord> = Vec::new();
     let mut seen: std::collections::HashSet<(u64, u64, String)> = std::collections::HashSet::new();
+    let switches = OnceCell::new();
 
     for (idx, (entry, name)) in funcs.iter().enumerate() {
         if name.is_empty() {
@@ -131,7 +116,6 @@ pub fn build_records(
         // sides the same extent.
         let address = if arm32 { *entry & !1 } else { *entry };
         let next = funcs.get(idx + 1).map(|(a, _)| if arm32 { *a & !1 } else { *a });
-        let end = next;
         let Some(_scope) = translate.context_scope() else { continue };
         if arm32 && entry & 1 != 0 {
             let addr = Address::new(Rc::clone(&code_space), address);
@@ -139,10 +123,20 @@ pub fn build_records(
                 continue;
             }
         }
-        let extent = crate::fid::extent::decode_extent(translate, address, end, &code_space);
-        if extent.len() < 4 {
+        let extent = match crate::fid::extent::decode_extent(
+            arch, translate, address, next, &code_space, &switches,
+        ) {
+            Ok(extent) => extent,
+            Err(reason) => {
+                if dbg {
+                    eprintln!("[fid] {name} @ {entry:#x}: {reason}, skip");
+                }
+                continue;
+            }
+        };
+        if extent.len() < crate::fid::hash::SHORT_HASH_CODE_UNIT_LENGTH as usize {
             if dbg {
-                eprintln!("[fid] {name} @ {entry:#x}: extent {} < 4, skip", extent.len());
+                eprintln!("[fid] {name} @ {entry:#x}: extent too short ({}), skip", extent.len());
             }
             continue;
         }
@@ -211,17 +205,13 @@ pub fn build_records(
             code_unit_size: quad.code_unit_size,
             specific_addl: quad.specific_addl_size,
             flags,
-            name: name.clone(),
+            name: name.as_str().into(),
         });
     }
 
     records
 }
 
-/// Linear-decode a function's extent: the contiguous instructions in
-/// `[entry, end)` (with `end = None` ⇒ stop at the first terminal or decode
-/// error). Each instruction is decoded once through `decode_one` and classified
-/// for its flow (`is_call` / `is_terminal`).
 /// Project a decoded [`InsnMask`](kuna_sleigh::sleigh::InsnMask) + the flow/address
 /// info into the hasher's [`InsnFingerprint`]. The field mapping is 1:1 (the
 /// hasher's `OpObject` mirrors the SLEIGH one); the only translation is the enum
@@ -267,59 +257,24 @@ fn map_op_object(o: SleighOpObject) -> OpObject {
     }
 }
 
-/// A [`RelocationQuery`] over a parsed object: holds the sorted load-VMA ranges
-/// covered by every relocation, rebased the same way [`crate::loader::reloc_object`]
-/// lays a relocatable object out (each `SHF_ALLOC` section at/above
-/// [`RELOC_BASE`](crate::loader::reloc_object::RELOC_BASE)). A query is a range
-/// overlap against that sorted set.
-///
-/// For a `.o` whose `.text` carries no relocations (a fully self-contained body —
-/// the FID fixture), this is empty and every query is `false`, exactly as
-/// `NoRelocations` would be — but it is *correct* for the general `.o` with
-/// `.rela.text` (an external call's `R_X86_64_PLT32` displacement), where the
-/// scalar must be suppressed.
+/// Sorted load-VMA ranges overlapped by relocations in the loaded object.
 struct ObjectRelocations {
     /// `(start_vma, end_vma_inclusive)` per relocation, sorted by `start_vma`.
     ranges: Vec<(u64, u64)>,
 }
 
 impl ObjectRelocations {
-    fn from_object(file: &object::File) -> Self {
+    fn from_object(file: &object::File, image: &ObjectLoadImage) -> Self {
         use object::read::{Object, ObjectSection};
         use object::SectionIndex;
-        use std::collections::HashMap;
 
-        const SHF_ALLOC: u64 = 0x2;
-        const RELOC_BASE: u64 = crate::loader::reloc_object::RELOC_BASE;
-
-        // Replicate the reloc_object layout pass-1 section→VMA map so a section-
-        // relative reloc offset maps to the same load VMA the loader assigned.
-        let mut vma_of: HashMap<SectionIndex, u64> = HashMap::new();
-        let mut cursor = RELOC_BASE;
-        for sec in file.sections() {
-            let sh_flags = match sec.flags() {
-                object::SectionFlags::Elf { sh_flags } => sh_flags,
-                _ => 0,
-            };
-            if sh_flags & SHF_ALLOC == 0 {
-                continue;
-            }
-            let align = sec.align().max(1);
-            let vma = align_up(cursor, align);
-            vma_of.insert(sec.index(), vma);
-            cursor = vma.wrapping_add(sec.size());
-        }
-
-        let mut ranges: Vec<(u64, u64)> = Vec::new();
-        for sec in file.sections() {
-            let Some(&sec_vma) = vma_of.get(&sec.index()) else {
-                continue; // a non-loaded section's relocs do not land in any body
-            };
+        let mut ranges = Vec::new();
+        for section in image.reloc_sections() {
+            let Ok(sec) = file.section_by_index(SectionIndex(section.index)) else { continue };
             for (offset, reloc) in sec.relocations() {
-                // The relocation patches `reloc.size()` bits at `sec_vma + offset`.
-                let start = sec_vma.wrapping_add(offset);
-                let nbytes = (reloc.size() as u64 / 8).max(1);
-                let end = start.wrapping_add(nbytes - 1);
+                let nbytes = (u64::from(reloc.size()) / 8).max(1);
+                let Some(start) = section.vma.checked_add(offset) else { continue };
+                let Some(end) = start.checked_add(nbytes - 1) else { continue };
                 ranges.push((start, end));
             }
         }
@@ -335,10 +290,3 @@ impl RelocationQuery for ObjectRelocations {
     }
 }
 
-/// `align_up(x, a)` for a power-of-two alignment (mirrors `reloc_object`).
-fn align_up(x: u64, align: u64) -> u64 {
-    if align <= 1 {
-        return x;
-    }
-    x.wrapping_add(align - 1) & !(align - 1)
-}

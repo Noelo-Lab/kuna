@@ -2085,6 +2085,8 @@ pub struct Architecture {
     /// the frontend did not supply it (then a name-only `unknown` default is
     /// seeded, as before).
     cspec_xml: Option<Vec<u8>>,
+    /// The resolved `.ldefs` compiler tag, including any catalog fallback.
+    compiler_spec_id: Option<String>,
     /// Raw processor-spec (`.pspec`) XML content, set by the frontend before
     /// [`init_post_engine`](Architecture::init_post_engine).  The C++
     /// `parseProcessorConfig` (architecture.cc:1176) decodes the
@@ -2701,6 +2703,7 @@ impl Architecture {
             evalfp_current_spec: None,
             default_return_addr: None,
             cspec_xml: None,
+            compiler_spec_id: None,
             pspec_xml: None,
             pspec_symbols: std::collections::HashMap::new(),
             coretypes_xml: None,
@@ -5434,24 +5437,15 @@ impl Architecture {
         self.cspec_xml = Some(xml);
     }
 
-    /// The compiler-spec id (`<compiler_spec id="...">`), when the frontend
-    /// supplied the `.cspec`.
-    ///
-    /// A corpus records this so two builds of the same source compare as the
-    /// same toolchain, which is what BSim's `ExecutableRecord` stores. `None`
-    /// when no cspec was supplied or it names no id.
-    pub fn compiler_spec_id(&self) -> Option<String> {
-        let xml = self.cspec_xml.as_ref()?;
-        let text = std::str::from_utf8(xml).ok()?;
-        let start = text.find("<compiler_spec")?;
-        let tag = &text[start..];
-        let end = tag.find('>')?;
-        let head = &tag[..end];
-        let id_at = head.find("id=\"")?;
-        let rest = &head[id_at + 4..];
-        let id_end = rest.find('"')?;
-        let id = &rest[..id_end];
-        (!id.is_empty()).then(|| id.to_string())
+    /// Record the compiler selected from the active language's `.ldefs`.
+    pub fn set_compiler_spec_id(&mut self, id: &str) {
+        self.compiler_spec_id = Some(id.to_owned());
+    }
+
+    /// The selected compiler ID, not necessarily the requested architecture
+    /// suffix if the language catalog used its default compiler.
+    pub fn compiler_spec_id(&self) -> Option<&str> {
+        self.compiler_spec_id.as_deref()
     }
 
     /// (kuna, Phase 3) Record the wire `<coretypes>` XML for the ghidra-mode

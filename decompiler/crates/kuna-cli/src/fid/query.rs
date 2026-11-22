@@ -1,7 +1,7 @@
-//! Read-only candidate lookup against a user-supplied kuna FID database.
-use kuna_analysis::fid::db::FidDatabase;
-use kuna_analysis::fid::ghidrafid::FidFile;
-use kuna_analysis::fid::kuna_fidapply::LoadedFid;
+//! Read-only, unverified candidate lookup against a Kuna or Ghidra FID database.
+use std::path::Path;
+
+use kuna_analysis::fid::kuna_fidapply::{open_any, FidDbStatus, LoadedFid};
 use kuna_analysis::fid::fingerprint_function;
 use kuna_analysis::listing::CodeUnit;
 use kuna_analysis::listing::Listing;
@@ -11,7 +11,7 @@ use object::Object;
 use serde_json::json;
 
 fn usage() {
-    eprintln!("usage: kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n--json emits {{binary, database, address, status, ...}} or {{binary, database, queries, ...}} for multiple addresses; addresses are hex (0x optional); single_candidate is an unverified name");
+    eprintln!("usage: kuna fid query <binary> --db <file.fid|file.fidbf|file.fidb> --addr <address> [--addr <address> ...] --json\n--json emits {{binary, database, address, status, ...}} or {{binary, database, queries, ...}} for multiple addresses; addresses are hex (0x optional); single_candidate is an unverified name");
 }
 
 pub(super) fn run(args: &[String]) -> i32 {
@@ -91,7 +91,6 @@ fn parse_args(args: &[String]) -> Result<(&str, &str, Vec<u64>), String> {
 }
 
 fn query(binary: &str, db_path: &str, addresses: &[u64]) -> Result<serde_json::Value, String> {
-    let db_bytes = std::fs::read(db_path).map_err(|e| format!("cannot read database: {e}"))?;
     let bytes = std::fs::read(binary).map_err(|e| format!("cannot read binary: {e}"))?;
     let file = object::File::parse(&*bytes).map_err(|e| format!("invalid binary: {e}"))?;
     if file.kind() == object::ObjectKind::Relocatable {
@@ -101,7 +100,19 @@ fn query(binary: &str, db_path: &str, addresses: &[u64]) -> Result<serde_json::V
         .map_err(|e| format!("bootstrap: {e}"))?;
     let arch = prog.arch();
     let lang = kuna_decomp::kuna_langfamily::language_id(&arch.archid);
-    let (db, format) = load_database(&db_bytes, arch, lang)?;
+    let (report, db) = open_any(Path::new(db_path), arch);
+    let format = match &db {
+        LoadedFid::Kuna(_) => "kuna_fid",
+        LoadedFid::Ghidra(_) => "ghidra_fid",
+        LoadedFid::None => {
+            let reason = report.reason.unwrap_or_default();
+            return Err(match report.status {
+                FidDbStatus::Missing | FidDbStatus::Unreadable => format!("cannot read database: {reason}"),
+                FidDbStatus::Invalid => format!("invalid database: {reason}"),
+                _ => reason,
+            });
+        }
+    };
     let image =
         ObjectLoadImage::from_bytes(binary, &bytes).map_err(|e| format!("load image: {e}"))?;
     let base_seeds = kuna_analysis::passes::listing_seeds(&file, &bytes);
@@ -193,22 +204,6 @@ pub(super) fn package_results(
     Ok(json!({"binary": binary, "database": database, "queries": queries}))
 }
 
-/// Load a database in either on-disk spelling (kuna `.fid`, Ghidra
-/// `.fidbf`/`.fidb`), refusing one that does not apply to the image language.
-fn load_database(
-    bytes: &[u8],
-    arch: &kuna_decomp::architecture::Architecture,
-    lang: &str,
-) -> Result<(LoadedFid, &'static str), String> {
-    if let Ok(db) = kuna_analysis::fid::db::FidDb::load(bytes) {
-        kuna_analysis::fid::kuna_fidapply::applies(db.lang_id(), arch)?;
-        return Ok((LoadedFid::Kuna(db), "kuna_fid"));
-    }
-    let ghidra = FidFile::load(bytes).map_err(|e| format!("invalid database: {e}"))?;
-    ghidra.applies_to_language(lang)?;
-    Ok((LoadedFid::Ghidra(ghidra), "ghidra_fid"))
-}
-
 fn fid_candidate(
     binary: &str,
     db_path: &str,
@@ -253,12 +248,16 @@ fn fid_candidate(
         .find_by_full_hash(quad.full_hash)
         .iter()
         .map(|r| {
-            json!({
-                "name": r.name, "specific_hash": format!("0x{:016x}", r.specific_hash),
+            let mut candidate = json!({
+                "name": r.name.as_ref(), "specific_hash": format!("0x{:016x}", r.specific_hash),
                 "specific_hash_matches": r.specific_hash == quad.specific_hash,
                 "code_unit_size": r.code_unit_size,
                 "code_unit_size_matches": r.code_unit_size == quad.code_unit_size,
-            })
+            });
+            if matches!(db, LoadedFid::Ghidra(_)) {
+                candidate["ghidra_flags"] = json!(r.flags);
+            }
+            candidate
         })
         .collect();
     candidates.sort_by(|a, b| {

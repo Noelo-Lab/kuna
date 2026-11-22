@@ -139,44 +139,33 @@ pub fn open_any(path: &Path, arch: &Architecture) -> (FidDbReport, LoadedFid) {
     // `truncated`) instead of a container mismatch the caller cannot act on.
     let looks_ghidra = super::ghidrafid::is_packed(&bytes)
         || (bytes.len() >= 8 && bytes[..8] == super::ghidradb::BUFFER_FILE_MAGIC.to_be_bytes());
-    if let Ok(db) = FidDb::load(&bytes) {
-        report.records = Some(db.record_count());
-        report.language = Some(db.lang_id().to_string());
-        report.compiler_spec = Some(db.cspec_id().to_string());
-        if let Err(reason) = applies(db.lang_id(), arch) {
-            report.status = FidDbStatus::Incompatible;
-            report.reason = Some(reason);
+    let loaded = if looks_ghidra {
+        FidFile::load(&bytes, |language| applies(language, arch).is_ok()).map(LoadedFid::Ghidra)
+    } else {
+        FidDb::load(&bytes).map(LoadedFid::Kuna)
+    };
+    let db = match loaded {
+        Ok(db) => db,
+        Err(error) => {
+            report.status = FidDbStatus::Invalid;
+            report.reason = Some(error.explain().to_owned());
             return (report, LoadedFid::None);
         }
-        return (report, LoadedFid::Kuna(db));
+    };
+    let (header, compatibility): (&dyn FidDatabase, _) = match &db {
+        LoadedFid::Kuna(db) => (db, applies(db.lang_id(), arch)),
+        LoadedFid::Ghidra(db) => (db, db.check_compatibility(language_id(&arch.archid))),
+        LoadedFid::None => unreachable!("the readers only return loaded databases"),
+    };
+    report.records = Some(header.record_count());
+    report.language = Some(header.lang_id().to_owned());
+    report.compiler_spec = Some(header.cspec_id().to_owned());
+    if let Err(reason) = compatibility {
+        report.status = FidDbStatus::Incompatible;
+        report.reason = Some(reason);
+        return (report, LoadedFid::None);
     }
-    match FidFile::load(&bytes) {
-        Ok(db) => {
-            report.records = Some(db.record_count());
-            report.language = Some(db.lang_id().to_string());
-            report.compiler_spec = Some(db.cspec_id().to_string());
-            let image_language = language_id(&arch.archid);
-            if let Err(reason) = db.applies_to_language(&image_language) {
-                report.status = FidDbStatus::Incompatible;
-                report.reason = Some(reason);
-                return (report, LoadedFid::None);
-            }
-            (report, LoadedFid::Ghidra(db))
-        }
-        Err(e) => {
-            if !looks_ghidra {
-                // Re-run the kuna loader for its specific diagnosis.
-                if let Err(kuna_err) = FidDb::load(&bytes) {
-                    report.status = FidDbStatus::Invalid;
-                    report.reason = Some(kuna_err.explain().to_string());
-                    return (report, LoadedFid::None);
-                }
-            }
-            report.status = FidDbStatus::Invalid;
-            report.reason = Some(e.explain().to_string());
-            (report, LoadedFid::None)
-        }
-    }
+    (report, db)
 }
 
 /// `Ok` when a database built for `db_language` applies to `arch`'s image;

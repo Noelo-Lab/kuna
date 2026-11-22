@@ -20,6 +20,8 @@
 //! numbers — similarity and significance — so a reader can judge the evidence
 //! rather than a verdict.
 
+use kuna_base::error::{KunaError, KunaResult};
+
 use super::corpus::BsimCorpus;
 use super::lsh::{score_candidate, BsimMatch, LshCosineVector};
 use super::lshweights::LshWeights;
@@ -87,8 +89,6 @@ pub struct QueryResult {
     pub matches: Vec<BsimMatch>,
     /// How many corpus functions were **considered** (passed the filters).
     pub considered: usize,
-    /// How many were skipped because their stored settings differ.
-    pub skipped_settings: usize,
     /// The floor that was applied.
     pub min_similarity: f64,
     /// True when more matches qualified than `max_matches` returned.
@@ -112,36 +112,37 @@ impl QueryResult {
 
 /// Query `corpus` for functions resembling `query`.
 ///
-/// `weights` must be the table matching the corpus's settings and language; a
-/// corpus whose settings differ from `weights` cannot be compared, and every such
-/// candidate is counted in [`QueryResult::skipped_settings`] rather than scored
-/// against the wrong scale.
+/// Both the weights and query signature must agree with the corpus settings.
 pub fn query(
     corpus: &BsimCorpus,
     weights: &LshWeights,
     query: &BsimSignature,
     options: &QueryOptions,
-) -> QueryResult {
-    let query_features = as_signed(&query.features);
-    let query_vector =
-        LshCosineVector::from_features(&query_features, &weights.factory, &weights.idf);
+) -> KunaResult<QueryResult> {
+    if !options.min_similarity.is_finite() {
+        return Err(KunaError::bad_data("bsim query: similarity floor must be finite"));
+    }
+    corpus.check_weights(weights)?;
+    if query.settings != corpus.settings() {
+        return Err(KunaError::bad_data(format!(
+            "bsim query: signature settings {:#x} do not match corpus settings {:#x}",
+            query.settings, corpus.settings(),
+        )));
+    }
+    let query_vector = LshCosineVector::from_features(&query.features, &weights.factory, &weights.idf);
+    if !query_vector.length().is_finite() || query_vector.length() == 0.0 {
+        return Err(KunaError::bad_data("bsim query: selected function has no scoreable weight"));
+    }
     let mut considered = 0usize;
-    let mut skipped_settings = 0usize;
     let mut scored: Vec<BsimMatch> = Vec::new();
-    let settings_match = corpus.settings() == weights.settings as u32;
 
     for (exec, candidate) in corpus.functions() {
         if !options.filters.admits(exec) {
             continue;
         }
         considered += 1;
-        if !settings_match {
-            skipped_settings += 1;
-            continue;
-        }
-        let candidate_features = as_signed(&candidate.features);
         let candidate_vector = LshCosineVector::from_features(
-            &candidate_features,
+            &candidate.features,
             &weights.factory,
             &weights.idf,
         );
@@ -170,23 +171,12 @@ pub fn query(
     });
     let truncated = scored.len() > options.max_matches;
     scored.truncate(options.max_matches);
-    QueryResult {
+    Ok(QueryResult {
         matches: scored,
         considered,
-        skipped_settings,
         min_similarity: options.min_similarity,
         truncated,
-    }
-}
-
-/// Convert a feature list to the signed `i32` hashes the vector model uses.
-///
-/// The signature generator sorts `u32` hashes ascending and Ghidra's
-/// `LSHCosineVector` compares them as unsigned, so the **bit pattern** is what
-/// matters; the value is carried as `i32` because that is what the Java code's
-/// `int` arithmetic does. `as i32` is a bit-preserving reinterpretation.
-pub fn as_signed(features: &[u32]) -> Vec<i32> {
-    features.iter().map(|&f| f as i32).collect()
+    })
 }
 
 #[cfg(test)]
@@ -206,6 +196,7 @@ mod tests {
 
     fn sig(name: &str, address: u64, features: &[u32]) -> BsimSignature {
         BsimSignature {
+            settings: 0x49,
             name: name.into(),
             address,
             features: features.to_vec(),
@@ -215,14 +206,15 @@ mod tests {
     }
 
     fn corpus_with(functions: Vec<BsimSignature>) -> BsimCorpus {
-        let mut corpus = BsimCorpus::new(0x49, "x86");
+        let mut corpus = BsimCorpus::new(0x49, super::super::lshweights::LshProfile::Size64).unwrap();
         corpus.insert_executable(CorpusExecutable {
             name: "app".into(),
             architecture: "x86:LE:64:default".into(),
             compiler: "gcc".into(),
             md5: "aa".into(),
+            complete: true,
             functions,
-        });
+        }).unwrap();
         corpus
     }
 
@@ -233,7 +225,7 @@ mod tests {
             sig("other", 0x10, &[100, 200, 300]),
             sig("target", 0x20, &[1, 2, 3, 4]),
         ]);
-        let result = query(&corpus, &w, &sig("q", 0, &[1, 2, 3, 4]), &QueryOptions::default());
+        let result = query(&corpus, &w, &sig("q", 0, &[1, 2, 3, 4]), &QueryOptions::default()).unwrap();
         assert_eq!(result.matches.len(), 1);
         assert_eq!(result.matches[0].name, "target");
         assert!((result.matches[0].similarity - 1.0).abs() < 1e-12);
@@ -245,7 +237,7 @@ mod tests {
         let w = unit_weights();
         let corpus = corpus_with(vec![sig("other", 0x10, &[100, 200, 300])]);
         let options = QueryOptions { min_similarity: 0.99, ..QueryOptions::default() };
-        let result = query(&corpus, &w, &sig("q", 0, &[1, 2, 3]), &options);
+        let result = query(&corpus, &w, &sig("q", 0, &[1, 2, 3]), &options).unwrap();
         assert!(result.matches.is_empty());
         let reason = result.empty_reason(0.99).expect("a reason");
         assert!(reason.contains("0.99"), "{reason}");
@@ -261,7 +253,7 @@ mod tests {
             sig("far", 0x30, &[1, 2, 3, 40, 50, 60]),
         ]);
         let options = QueryOptions { min_similarity: 0.0, ..QueryOptions::default() };
-        let result = query(&corpus, &w, &sig("q", 0, &[1, 2, 3, 4, 5, 6]), &options);
+        let result = query(&corpus, &w, &sig("q", 0, &[1, 2, 3, 4, 5, 6]), &options).unwrap();
         let names: Vec<&str> = result.matches.iter().map(|m| m.name.as_str()).collect();
         assert_eq!(names, ["exact", "close", "far"]);
         assert!(result.matches[0].similarity >= result.matches[1].similarity);
@@ -275,7 +267,7 @@ mod tests {
             (0..5u32).map(|i| sig(&format!("f{i}"), 0x10 + u64::from(i), &[1, 2, 3])).collect(),
         );
         let options = QueryOptions { min_similarity: 0.0, max_matches: 2, ..QueryOptions::default() };
-        let result = query(&corpus, &w, &sig("q", 0, &[1, 2, 3]), &options);
+        let result = query(&corpus, &w, &sig("q", 0, &[1, 2, 3]), &options).unwrap();
         assert_eq!(result.matches.len(), 2);
         assert!(result.truncated);
     }
@@ -283,52 +275,46 @@ mod tests {
     #[test]
     fn metadata_filters_narrow_the_scope() {
         let w = unit_weights();
-        let mut corpus = BsimCorpus::new(0x49, "x86");
+        let mut corpus = BsimCorpus::new(0x49, super::super::lshweights::LshProfile::Size64).unwrap();
         corpus.insert_executable(CorpusExecutable {
             name: "keep.exe".into(),
             architecture: "x86:LE:64:default".into(),
             compiler: "gcc".into(),
             md5: "aa".into(),
+            complete: true,
             functions: vec![sig("f", 0x10, &[1, 2, 3])],
-        });
+        }).unwrap();
         corpus.insert_executable(CorpusExecutable {
             name: "drop.exe".into(),
-            architecture: "x86:LE:32:default".into(),
+            architecture: "AARCH64:LE:64:v8A".into(),
             compiler: "msvc".into(),
             md5: "bb".into(),
+            complete: true,
             functions: vec![sig("f", 0x20, &[1, 2, 3])],
-        });
+        }).unwrap();
         let options = QueryOptions {
             min_similarity: 0.0,
             max_matches: 10,
             filters: MatchFilters { executable: Some("keep.exe".into()), ..Default::default() },
         };
-        let result = query(&corpus, &w, &sig("q", 0, &[1, 2, 3]), &options);
+        let result = query(&corpus, &w, &sig("q", 0, &[1, 2, 3]), &options).unwrap();
         assert_eq!(result.considered, 1);
         assert_eq!(result.matches.len(), 1);
         assert_eq!(result.matches[0].executable, "keep.exe");
     }
 
     #[test]
-    fn a_corpus_built_under_other_settings_is_not_scored() {
-        let w = unit_weights();
-        let mut corpus = corpus_with(vec![sig("f", 0x10, &[1, 2, 3])]);
-        // Rebuild under a different settings value.
-        let mut other = BsimCorpus::new(0x4d, "x86");
-        for exec in corpus.executables() {
-            other.insert_executable(exec.clone());
-        }
-        corpus = other;
-        let options = QueryOptions { min_similarity: 0.0, ..QueryOptions::default() };
-        let result = query(&corpus, &w, &sig("q", 0, &[1, 2, 3]), &options);
-        assert!(result.matches.is_empty());
-        assert_eq!(result.skipped_settings, 1);
-        assert_eq!(result.considered, 1);
-    }
-
-    #[test]
-    fn features_convert_to_signed_preserving_the_bit_pattern() {
-        let unsigned = [0u32, 1, 0x7fff_ffff, 0xffff_ffff];
-        assert_eq!(as_signed(&unsigned), vec![0i32, 1, i32::MAX, -1]);
+    fn settings_mismatches_are_errors_not_empty_searches() {
+        let mut w = unit_weights();
+        let corpus = corpus_with(vec![sig("f", 0x10, &[1, 2, 3])]);
+        let mut q = sig("q", 0, &[1, 2, 3]);
+        let options = QueryOptions::default();
+        w.settings = 0x4d;
+        let err = query(&corpus, &w, &q, &options).unwrap_err();
+        assert!(err.explain().contains("stored settings 0x49"));
+        w.settings = 0x49;
+        q.settings = 0x4d;
+        let err = query(&corpus, &w, &q, &options).unwrap_err();
+        assert!(err.explain().contains("signature settings 0x4d"));
     }
 }

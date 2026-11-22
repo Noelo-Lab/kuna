@@ -85,6 +85,7 @@ impl FieldType {
 pub struct Schema {
     pub version: i32,
     pub key_field: FieldType,
+    pub key_name: String,
     pub fields: Vec<FieldType>,
     pub field_names: Vec<String>,
 }
@@ -92,42 +93,45 @@ pub struct Schema {
 impl Schema {
     /// Decode a master-table record's schema columns.
     ///
-    /// `key_type` is the encoded key field byte (`getEncodedKeyFieldType`, the
-    /// `Field` type code in the low nibble), `field_types` the encoded column
-    /// types, and `packed_field_names` the `;`-separated list whose **first**
-    /// entry is the primary key's name and whose remainder are the column names
-    /// (`Schema.getPackedFieldNames` / `parseNames`).
+    /// `key_type` is the encoded key field byte (`getEncodedKeyFieldType`),
+    /// `field_types` the encoded column types. Index tables and field extensions
+    /// (such as sparse columns) have different encodings and are not supported.
+    /// `packed_field_names` is the `;`-terminated list whose first entry is
+    /// the primary key's name and whose remainder are the column names.
     pub fn decode(
         version: i32,
         key_type: u8,
         field_types: &[u8],
         packed_field_names: &str,
     ) -> KunaResult<Self> {
-        let key_field = FieldType::from_code(key_type & 0x0f)?;
-        let mut fields = Vec::with_capacity(field_types.len());
-        for &code in field_types {
-            fields.push(FieldType::from_code(code & 0x0f)?);
+        let key_field = FieldType::from_code(key_type)?;
+        let fields = field_types
+            .iter()
+            .map(|&code| FieldType::from_code(code))
+            .collect::<KunaResult<Vec<_>>>()?;
+        let packed = packed_field_names.strip_suffix(';').ok_or_else(|| {
+            KunaError::bad_data("ghidra db: schema field names are not terminated")
+        })?;
+        let mut names = packed.split(';');
+        let key_name = names.next().filter(|name| !name.is_empty()).ok_or_else(|| {
+            KunaError::bad_data("ghidra db: schema is missing its key name")
+        })?;
+        let bad_names = || KunaError::bad_data(
+            "ghidra db: schema column names do not match the encoded field types",
+        );
+        let mut field_names = Vec::with_capacity(fields.len());
+        for _ in &fields {
+            let name = names.next().filter(|name| !name.is_empty()).ok_or_else(bad_names)?;
+            field_names.push(name.to_owned());
         }
-        let mut names: Vec<String> = if packed_field_names.is_empty() {
-            Vec::new()
-        } else {
-            packed_field_names
-                .split(';')
-                .filter(|s| !s.is_empty())
-                .map(str::to_owned)
-                .collect()
-        };
-        if !names.is_empty() {
-            names.remove(0);
+        if names.next().is_some() {
+            return Err(bad_names());
         }
-        if names.len() != fields.len() {
-            return Err(KunaError::bad_data(format!(
-                "ghidra db: schema names {} columns but encodes {} field types",
-                names.len(),
-                fields.len()
-            )));
-        }
-        Ok(Self { version, key_field, fields, field_names: names })
+        Ok(Self { version, key_field, key_name: key_name.to_owned(), fields, field_names })
+    }
+
+    pub(super) fn columns(&self) -> impl DoubleEndedIterator<Item = (FieldType, &str)> {
+        self.fields.iter().copied().zip(self.field_names.iter().map(String::as_str))
     }
 
     /// The byte length of one record when every column is fixed-length; `None`
@@ -162,6 +166,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(schema.key_field, FieldType::Long);
+        assert_eq!(schema.key_name, "Function ID");
         assert_eq!(schema.fields.len(), 9);
         assert_eq!(schema.field_names[0], "Code Unit Size");
         assert_eq!(schema.column("Full Hash"), Some(1));
@@ -186,6 +191,13 @@ mod tests {
     }
 
     #[test]
+    fn empty_or_shifted_names_are_rejected() {
+        assert!(Schema::decode(6, 3, &[], "").is_err());
+        assert!(Schema::decode(6, 3, &[3], ";Key;Value;").is_err());
+        assert!(Schema::decode(6, 3, &[3], "Key;;Value;").is_err());
+    }
+
+    #[test]
     fn fixed_record_len_is_none_when_a_column_is_variable() {
         let schema = Schema::decode(6, 3, &[4], "Key;String Value;").unwrap();
         assert_eq!(schema.fixed_record_len(), None);
@@ -196,5 +208,7 @@ mod tests {
     #[test]
     fn an_unknown_field_type_code_is_rejected() {
         assert!(Schema::decode(1, 3, &[0x0e], "Key;Bad;").is_err());
+        assert!(Schema::decode(6, 0x13, &[3], "Key;Value;").is_err());
+        assert!(Schema::decode(6, 3, &[3, 0xff, 1, 0], "Key;Value;").is_err());
     }
 }

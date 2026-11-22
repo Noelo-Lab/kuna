@@ -21,8 +21,18 @@ object = { workspace = true, features = ["archive"] }
 regex.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
+md-5 = "0.11"
 sha2 = "0.11"
 tempfile = "3.27"
+tokio = { version = "1", features = ["rt", "time"] }
+tokio-postgres = "0.7"
+tokio-postgres-rustls = { version = "0.14", features = ["ring", "native-certs"] }
+rustls-native-certs = "0.8"
+ureq = { version = "3.5", default-features = false, features = ["rustls"] }
+percent-encoding = "2"
+url = { version = "2.5", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+similar = "2.7"
 
 [features]
 # Carry the compiled SLEIGH tree inside the binary (build.rs reads `specs/`, so

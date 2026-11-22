@@ -6425,19 +6425,20 @@ every other binary's pass list is byte-identical to before the pass existed):
   root), and a B-tree per table described by a master-table record carrying the
   table name, version, root buffer id, key type, encoded field types and packed
   column names. All integers are big-endian; the user payload starts five bytes
-  into its block; records are decoded from a node's leaf slots (fixed-length
-  entries, or variable-length entries with a record offset, rejecting indirect
-  chained-buffer storage); the packed column-name list begins with the primary
-  key's name, so it is dropped before the column names are paired with the
-  encoded field types. A `.fidbf` is that container verbatim; a `.fidb` is a
+  into its block. Leaves store fixed-length records inline and variable-length
+  records by offset, including indirect records backed by chained buffers.
+  The packed column-name list starts with the primary key name. Library schema
+  v6 accepts both the compiler-ID column and the newer `Library Metadata`
+  column; the compiler list before the colon is report metadata, not a filter.
+  A `.fidbf` stores that container directly. A `.fidb` starts with a
   Java-serialization header (magic, format version, item name, content type,
   file type, payload length) followed by a **streamed** deflate member with no
   central directory, so it is inflated from the local file header rather than
-  read as a zip archive. The adapter indexes `Functions Table` by full hash,
-  resolving each `Name ID` through `Strings Table` exactly as
-  `FidQueryService.findRecord` does, and reports each `Libraries Table` row as
-  the language the database applies to. Every read is bounds-checked: a foreign
-  or truncated file is an error, never a panic.
+  read as a zip archive. The adapter checks the required table schemas and
+  references, and bounds B-tree traversal by the physical database. It indexes
+  full hashes only from libraries compatible with the image. Automatic naming
+  enforces Ghidra's record restrictions and declines matches whose required
+  evidence is unavailable.
   (kuna) **The function extent Ghidra fingerprints**
   (`decompiler/crates/kuna-analysis/src/analyzers/fid/extent.rs (decode_extent)`):
   Ghidra hashes `func.getBody()`, the address set the FunctionManager recorded.
@@ -6446,10 +6447,13 @@ every other binary's pass list is byte-identical to before the pass existed):
   fingerprints a library function and the pass that fingerprints the same
   function in a stripped image. One instruction of disagreement makes the hashes
   differ and the lookup miss silently, so this shared definition is the point.
-  It is a flow-reachable decode from the entry: follow each instruction's
-  fall-through, follow a **conditional** branch target (the other arm of an
-  `if`), and stop at a terminal, an undecodable byte, or the end bound. Two other
-  readings were measured wrong on real binaries and are recorded here because
+  The walk follows fallthrough, in-body direct branches and proven switch
+  successors. For x86-64, the guard must bound the value used by the table load,
+  every entry must be readable, and no discovered path may enter after the
+  guard's comparison. Other indirect forms are left unresolved. The walk stops
+  at terminal instructions or the end bound and declines the fingerprint if
+  any indirect branch is unresolved.
+  Two other readings were measured wrong on real binaries and are recorded here because
   each looks reasonable: the address clip `[entry, next_entry)` absorbed
   alignment padding and interleaved code (a 347-code-unit extent for a
   29-code-unit function, so every lookup missed), and a decode that stopped at the
@@ -6467,10 +6471,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   instruction on one of them (139 instructions, zero differences in those four
   facts) — so their cause is **not established** and is an open gap, not an
   explained one.
-  **No false names**: of the functions kuna names from the stock
-  `vsOlder_x86` corpus, every one that Ghidra's own FID pass also names carries
-  the identical name. Every address both name carries the same name, so on the
-  measured overlap there is no disagreement, and the fidelity gap costs recall.
+  **Measured name agreement:** every address both tools named from the stock
+  `vsOlder_x86` corpus carried the same name. This does not validate names
+  emitted by only one tool.
 
   (kuna) **The instruction mask the hash consumes**
   (`decompiler/crates/kuna-sleigh/src/sleigh.rs (instruction_mask)`): the mask
@@ -6481,34 +6484,45 @@ every other binary's pass list is byte-identical to before the pass existed):
   `OperandSymbol.printList`, which descends into a subtable's print pieces so a
   memory operand reports its base register *and* its displacement scalar, and
   which promotes a sole constant handle to the address its constructor's result
-  template exports (`HandleTpl.fixPrintPiece`) — a branch target is a scalar until
-  that promotion, and Ghidra reports an `Address`. `FixedHandle.fixable`
-  therefore defaults to true, which is what makes that promotion possible. These
-  three (operand order, op-object recursion, and the promotion) are each
-  separately observable: with any one missing the hash matched the stock corpus
+  template exports (`HandleTpl.fixPrintPiece`). Attached names and nested literal
+  text contribute to the constructor's print list, not to the fingerprint's
+  operand objects. A branch target that is promoted is reported as an `Address`.
+  Operand order, op-object recursion, and promotion were separately observable:
+  with any one missing the hash matched the stock corpus
   for no function on a real MSVC binary, and with them it recovers the library
   names Ghidra's own analyzer reports for the same addresses.
 - **BSim** (`decompiler/crates/kuna-analysis/src/analyzers/bsim/`): function
   **similarity**, not identification. FID asks whether a function *is* a known
   library function; BSim asks which functions *look like* it, which is the one
-  question a fingerprint cannot answer. The feature list is the decompiler's
-  existing signature generator (`kuna_decomp::signature`, settings `0x49` — the
-  value every shipped `lshweights_*.xml` declares, whose mode bits are
-  `SIG_COLLAPSE_INDNOISE | SIG_DONOTUSE_CONST`); the rest is a port of Ghidra's
-  `generic/lsh`. `lshweights.rs` loads the TF/IDF tables, with `IDFLookup` kept
-  as Ghidra's open-addressing probe table (smallest power of two ≥ size, doubled)
+  question a fingerprint cannot answer. The feature list comes from
+  `kuna_decomp::signature` with settings from the chosen weights profile:
+  the standard profiles use `0x49`; the size-independent profile uses `0x4d`.
+  The rest is a port of Ghidra's `generic/lsh`. `lshweights.rs` validates the
+  TF/IDF tables and stores the IDF values in Ghidra's open-addressing probe
+  table (smallest power of two ≥ size, doubled)
   because that slot layout is what serialization observes; `lsh.rs` builds the
   sparse weighted vector and implements `calculateSignificance` with its flip
   and size-difference penalties; `corpus.rs` stores signatures in a
-  self-describing `KBSM` file, deduplicating an ingest by executable MD5 as BSim
-  does; `query.rs` scores and orders matches, applying the similarity floor
-  before the limit. Verified: a corpus of 1084 functions from a real static
+  self-describing `KBSM` file with one weights profile and settings per corpus.
+  Ingest deduplicates by the MD5 of the bytes passed to the loader before
+  normalization, resumes incomplete entries, and replaces the corpus atomically
+  under a writer lock. On Unix it syncs the containing directory after replacement.
+  `query.rs` excludes undefined scores and applies the similarity floor before
+  the limit. Verified: a corpus of 1084 functions from a real static
   binary, queried with the function at `0x4017c0`, returns exactly that function
   at similarity 1.000 among 1084 considered; a hand computation from
   `lshweights_32.xml`'s own constants reproduces the reported significance
   exactly (2.810343 for a disjoint pair). Similarity is a measure of **shape**:
   structurally identical PLT stubs score 1.0 against each other, so a match is a
   lead, never a verdict.
+  PostgreSQL queries (`decompiler/crates/kuna-cli/src/bsim/postgres.rs`) use
+  Ghidra's `normalize` action and the database's stored signature settings.
+  Kuna encodes unsigned feature groups as hexadecimal term count and hash;
+  PostgreSQL uses `lshvector` to find candidate vectors and rank them with its
+  own weights before resolving them to function rows. For code comparison,
+  `decompiler/crates/kuna-cli/src/bsim/reference.rs` asks the configured
+  GhydraMCP worker to open a stored repository version read-only and verify its
+  executable MD5 and function entry before comparing its C with Kuna's output.
 - **FLIRT** (`flirt`, default-off, Listing-gated, signatures via `KUNA_FLIRT_SIGS`;
   `decompiler/crates/kuna-analysis/src/analyzers/flirt/mod.rs (FlirtPass)`): names
   library functions from IDA FLIRT `.sig` files (versions 5 to 11; raw, deflate,

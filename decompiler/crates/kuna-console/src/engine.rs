@@ -3966,6 +3966,9 @@ fn build_engine_and_init(sleigh: &mut SleighArchitecture, db: &LanguageDatabase)
         // (`kuna_decodekit::EngineRecipe`).
         arch.set_decode_truncations(db.truncations(langindex));
         arch.set_language_families(kuna_decomp::kuna_langfamily::families(db));
+        let requested = arch.archid.rsplit_once(':').map_or("default", |(_, id)| id);
+        let compiler = db.descriptions()[langindex as usize].get_compiler(requested);
+        arch.set_compiler_spec_id(compiler.get_id());
     }
 
     // Hand the resolved compiler-spec (`.cspec`) XML to the architecture so
@@ -4548,15 +4551,19 @@ pub(crate) fn bootstrap_image(
     isa: Option<ArmIsa>,
     options: &LoadOptions,
     from_env: bool,
+    observe_source: Option<&mut dyn FnMut(&[u8])>,
 ) -> KunaResult<ConsoleProgram> {
     if file_is_te_image(path) {
         let _load = enter_load(options, from_env);
-        bootstrap_te(path, target, languages, isa)
+        bootstrap_te(path, target, languages, isa, observe_source)
     } else if let Some(bytes) = file_mz_dos_image(path) {
         let _load = enter_load(options, from_env);
+        if let Some(observe) = observe_source {
+            observe(&bytes);
+        }
         bootstrap_mz_bytes(path, &bytes, target, languages, isa)
     } else {
-        bootstrap_object(path, target, languages, isa, options, from_env)
+        bootstrap_object(path, target, languages, isa, options, from_env, observe_source)
     }
 }
 
@@ -4736,10 +4743,14 @@ pub(crate) fn bootstrap_te(
     target: &str,
     languages: &(impl Languages + ?Sized),
     isa: Option<ArmIsa>,
+    observe_source: Option<&mut dyn FnMut(&[u8])>,
 ) -> KunaResult<ConsoleProgram> {
     let bytes = std::fs::read(path).map_err(|error| {
         KunaError::lowlevel(format!("Unable to open TE image file: {path}: {error}"))
     })?;
+    if let Some(observe) = observe_source {
+        observe(&bytes);
+    }
     bootstrap_te_bytes(path, &bytes, target, languages, isa)
 }
 
@@ -4906,12 +4917,18 @@ pub(crate) fn bootstrap_object(
     isa: Option<ArmIsa>,
     options: &LoadOptions,
     from_env: bool,
+    observe_source: Option<&mut dyn FnMut(&[u8])>,
 ) -> KunaResult<ConsoleProgram> {
     let _caller = enter_load(options, from_env);
     let target = kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or("");
     let registry = build_registry();
 
-    let (bytes, load_notes) = match kuna_analysis::image_bytes::ImageBytes::map_thin_macho(path)? {
+    let mapped = if observe_source.is_none() {
+        kuna_analysis::image_bytes::ImageBytes::map_thin_macho(path)?
+    } else {
+        None
+    };
+    let (bytes, load_notes) = match mapped {
         Some(bytes) => (bytes, Vec::new()),
         None => {
             // Read the image bytes once: reused for the loader AND the analysis-pass
@@ -4921,6 +4938,9 @@ pub(crate) fn bootstrap_object(
                 None => std::fs::read(path)
                     .map_err(|e| KunaError::lowlevel(format!("Unable to open image file: {path}: {e}")))?,
             };
+            if let Some(observe) = observe_source {
+                observe(&bytes);
+            }
             // (kuna `kernelcache`) IMG4 / IM4P / LZFSE / complzss unwrapping and MH_FILESET
             // entry selection, ahead of every other normalization.
             let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::in_force();

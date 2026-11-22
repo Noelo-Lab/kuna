@@ -71,7 +71,7 @@ fn sites_name_prefix_modules_and_fid_disagreement_names_nothing() {
     use kuna_analysis::fid::db::FidDb;
     let alt = fixtures().join("fid/callees/lib_alt.fid");
     let mut records: Vec<_> = FidDb::load(&std::fs::read(alt).unwrap()).unwrap().records().into_iter().cloned().collect();
-    records.iter_mut().find(|r| r.name == "alt_scale").unwrap().specific_hash ^= 1;
+    records.iter_mut().find(|r| r.name.as_ref() == "alt_scale").unwrap().specific_hash ^= 1;
     let held = std::env::temp_dir().join(format!("kuna-fid-held-{}.fid", std::process::id()));
     std::fs::write(&held, FidDb::from_records("x86:LE:64:default", "gcc", records).serialize()).unwrap();
     let strict = names_with("on", "strict", Some(held.clone()));

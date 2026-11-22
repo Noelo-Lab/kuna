@@ -163,7 +163,7 @@ fn dedup_records(all: &mut Vec<FidRecord>) {
         )]
         let mut seen = std::collections::HashSet::new();
         all.iter()
-            .map(|r| seen.insert((r.full_hash, r.specific_hash, r.name.as_str())))
+            .map(|r| seen.insert((r.full_hash, r.specific_hash, r.name.as_ref())))
             .collect()
     };
     let mut keep = keep.into_iter();
@@ -283,7 +283,7 @@ mod tests {
             code_unit_size: 4,
             specific_addl: 2,
             flags: 0,
-            name: name.to_string(),
+            name: name.into(),
         }
     }
 

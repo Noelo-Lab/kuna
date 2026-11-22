@@ -945,10 +945,11 @@ impl HandleTpl {
     /// C++ `HandleTpl::fixPrintPiece`: promote a constant operand handle to the
     /// address its subtable template exports.
     ///
-    /// `Constructor.printList` calls this once per operand whose pieces produced
-    /// exactly one handle. A branch operand's handle is a constant until this
-    /// runs, which is why Ghidra reports an **Address** for a `JNZ` target while
-    /// the raw handle is a scalar.
+    /// `Constructor.printList` calls this when its printed operands contribute
+    /// just one handle. The walker must be positioned at that constructor:
+    /// `handle_index` and any handle references in this export are local to it.
+    /// For example, the raw `JNZ` operand handle is a scalar until the export
+    /// promotes it to an address.
     pub fn fix_print_piece(
         &self,
         hand: &mut FixedHandle,

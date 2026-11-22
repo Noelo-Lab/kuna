@@ -7,17 +7,12 @@
 //!
 //! # What of a Ghidra FID database kuna uses
 //!
-//! `FID`'s query seam is one indexed lookup: `FunctionsTable.findRecords` by
-//! `FULL_HASH_COL`, filtered by `FidQueryService` down to the records whose
-//! `codeUnitSize` matches. [`FidFile`] keeps exactly that: `full_hash` →
-//! [`FidRecord`] rows carrying the same five hash fields plus the resolved name.
-//!
-//! A Ghidra record's name lives in `Strings Table` behind `NAME_ID_COL`; the
-//! library joins to `Libraries Table` and supplies the language the database
-//! applies to. Records from an internal library and records from an external
-//! (imported) library are kept apart the way Ghidra keeps them: an external
-//! library's functions are *not* FID matches for an image's own code, so only
-//! records of libraries the image could have been built from are exposed.
+//! Read the primary function, string and library tables. The function's library
+//! determines whether its fingerprint is usable for the image language; only
+//! records from compatible libraries are indexed. The full flag byte accompanies
+//! each record so automatic naming can enforce Ghidra's restrictions.
+//! Both version-6 library schemas are supported. Compiler IDs are descriptive:
+//! the newer metadata column can list several or leave them unspecified.
 //!
 //! # Packed (`.fidb`) container
 //!
@@ -27,42 +22,56 @@
 //! `FOLDER_ITEM` entry. [`unpack`] reads that framing and inflates the entry;
 //! the raw `.fidbf` is the payload itself.
 
+#[expect(clippy::disallowed_types, reason = "FID lookup indices; input order is preserved")]
+use std::collections::HashMap;
 use std::io::Read;
+use std::sync::Arc;
 
 use kuna_base::error::{KunaError, KunaResult};
 
-use super::db::{FidDatabase, FidRecord, FLAG_HAS_TERMINATOR};
+use super::db::{FidDatabase, FidRecord};
 use super::ghidradb::{Database, FieldValue, TableRef};
+use super::schema::FieldType::{self, Byte, Int, Long, Short, Str};
+use super::schema::Schema;
 
-/// `FunctionsTable` column indices.
-const FN_CODE_UNIT_SIZE: usize = 0;
-const FN_FULL_HASH: usize = 1;
-const FN_SPECIFIC_ADDL: usize = 2;
-const FN_SPECIFIC_HASH: usize = 3;
-const FN_LIBRARY_ID: usize = 4;
-const FN_NAME_ID: usize = 5;
-const FN_FLAGS: usize = 8;
-
-/// `LibrariesTable` column indices.
-const LIB_FAMILY: usize = 0;
-const LIB_VERSION: usize = 1;
-const LIB_LANGUAGE_ID: usize = 4;
-
-/// `StringsTable` column index.
-const STRING_VALUE: usize = 0;
+const SCHEMA_VERSION: i32 = 6;
+const LEGACY_COMPILER_COLUMN: &str = "Ghidra Compiler Spec ID";
+const METADATA_COLUMN: &str = "Library Metadata";
+const LIBRARY_FIELDS: &[(FieldType, &str)] = &[
+    (Str, "Library Family Name"),
+    (Str, "Library Version"),
+    (Str, "Library Variant"),
+    (Str, "Ghidra Version"),
+    (Str, "Ghidra Language ID"),
+    (Int, "Ghidra Language Version"),
+    (Int, "Ghidra Language Minor Version"),
+];
+const FUNCTION_FIELDS: &[(FieldType, &str)] = &[
+    (Short, "Code Unit Size"),
+    (Long, "Full Hash"),
+    (Byte, "Specific Hash Additional Size"),
+    (Long, "Specific Hash"),
+    (Long, "Library ID"),
+    (Long, "Name ID"),
+    (Long, "Entry Point"),
+    (Long, "Domain Path ID"),
+    (Byte, "Flags"),
+];
 
 /// The `ItemSerializer` packed-file magic (`0x2e30212634e92c20`).
 pub const PACKED_MAGIC: u64 = 0x2e30_2126_34e9_2c20;
 /// The `ItemSerializer` format version.
 pub const PACKED_FORMAT_VERSION: i32 = 1;
 
-/// The `flags` bit Ghidra sets on a record whose body ended in a terminator.
-///
-/// Ghidra's `FunctionRecord` stores no such bit in `FLAGS_COL`; the column marks
-/// filtered records. kuna models a terminator flag on its own records, so a
-/// Ghidra record's flag byte is carried across verbatim and interpreted only
-/// where kuna set the same bit.
-const GHIDRA_TERMINATOR_BIT: u8 = FLAG_HAS_TERMINATOR;
+// Ghidra FunctionRecord flag definitions. AUTO_PASS affects Ghidra's score,
+// not eligibility; it never overrides any of the other restrictions.
+pub(super) const HAS_TERMINATOR: u8 = 0x01;
+pub(super) const AUTO_PASS: u8 = 0x02;
+pub(super) const AUTO_FAIL: u8 = 0x04;
+pub(super) const FORCE_SPECIFIC: u8 = 0x08;
+pub(super) const FORCE_RELATION: u8 = 0x10;
+pub(super) const KNOWN_FLAGS: u8 =
+    HAS_TERMINATOR | AUTO_PASS | AUTO_FAIL | FORCE_SPECIFIC | FORCE_RELATION;
 
 /// One library an image can be fingerprinted against.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -71,92 +80,112 @@ pub struct GhidraLibrary {
     pub family: String,
     pub version: String,
     pub language_id: String,
+    /// A legacy compiler ID or a comma-separated metadata list, empty if unrestricted.
+    pub compiler_spec_id: String,
 }
 
 /// A Ghidra FID database opened through kuna's [`FidDatabase`] surface.
 pub struct FidFile {
-    lang_id: String,
-    cspec_id: String,
+    compatible_library: Option<usize>,
     libraries: Vec<GhidraLibrary>,
-    by_full_hash: std::collections::HashMap<u64, Vec<FidRecord>>,
+    by_full_hash: HashMap<u64, Vec<FidRecord>>,
     n_records: usize,
 }
 
 impl FidFile {
-    /// Read a `.fidbf` or `.fidb` byte stream.
-    ///
-    /// The database language is the one every library record agrees on; a Ghidra
-    /// FID database built from several languages reports the first and keeps
-    /// each record's library, so a multi-language database applies to any of
-    /// them — [`applies_to_language`] is what a caller should consult.
-    pub fn load(bytes: &[u8]) -> KunaResult<Self> {
-        let raw = if is_packed(bytes) { unpack(bytes)? } else { bytes.to_vec() };
+    /// Read either Ghidra container and index only functions belonging to a
+    /// library that passes the image's language check.
+    pub(super) fn load(
+        bytes: &[u8],
+        mut applies_to_image: impl FnMut(&str) -> bool,
+    ) -> KunaResult<Self> {
+        let packed;
+        let raw = if is_packed(bytes) {
+            packed = unpack(bytes)?;
+            packed.as_slice()
+        } else {
+            bytes
+        };
         let db = Database::parse(raw)?;
-        let libs = db
-            .table("Libraries Table")
-            .ok_or_else(|| KunaError::bad_data("ghidra fid: no Libraries Table"))?;
-        let lib_rows = db.records(libs)?;
-        let mut libraries = Vec::with_capacity(lib_rows.len());
-        for rec in &lib_rows {
-            libraries.push(GhidraLibrary {
-                id: rec.key,
-                family: column_str(rec, LIB_FAMILY).unwrap_or_default().to_owned(),
-                version: column_str(rec, LIB_VERSION).unwrap_or_default().to_owned(),
-                language_id: column_str(rec, LIB_LANGUAGE_ID).unwrap_or_default().to_owned(),
-            });
-        }
-        let lang_id = libraries
-            .iter()
-            .find(|l| !l.language_id.is_empty())
-            .map(|l| l.language_id.clone())
-            .unwrap_or_default();
-        // Ghidra's FID files carry no single compiler spec; the library family is
-        // the closest comparable fact and is reported as such.
-        let cspec_id = libraries.first().map(|l| l.family.clone()).unwrap_or_default();
+        let libraries_table = require_table(&db, "Libraries Table", "Library ID", |schema| {
+            let mut columns = schema.columns();
+            matches!(columns.next_back(), Some((Str, LEGACY_COMPILER_COLUMN | METADATA_COLUMN)))
+                && columns.eq(LIBRARY_FIELDS.iter().copied())
+        })?;
+        let has_metadata = libraries_table.schema.field_names.last()
+            .is_some_and(|name| name == METADATA_COLUMN);
+        let strings_table = require_table(&db, "Strings Table", "String ID", |schema| {
+            schema.columns().eq([(Str, "String Value")])
+        })?;
+        let functions_table = require_table(&db, "Functions Table", "Function ID", |schema| {
+            schema.columns().eq(FUNCTION_FIELDS.iter().copied())
+        })?;
+        let mut used = db.occupied_buffers();
 
-        let names = read_strings(&db)?;
-        let functions = db
-            .table("Functions Table")
-            .ok_or_else(|| KunaError::bad_data("ghidra fid: no Functions Table"))?;
-        let records = db.records(functions)?;
+        let mut libraries = Vec::new();
+        let mut compatible_library = None;
+        let mut library_applies = HashMap::new();
+        db.visit_records(libraries_table, &mut used, |rec| {
+            let mut fields = rec.columns.into_iter();
+            let family = take_text(fields.next(), "library family")?;
+            let version = take_text(fields.next(), "library version")?;
+            let language_id = take_text(fields.nth(2), "library language ID")?;
+            let compiler_spec_id = library_compiler_spec(fields.nth(2), has_metadata)?;
+            if language_id.is_empty() {
+                return Err(KunaError::bad_data("ghidra fid: empty library language ID"));
+            }
+            let applies = applies_to_image(&language_id);
+            if applies && compatible_library.is_none() {
+                compatible_library = Some(libraries.len());
+            }
+            library_applies.insert(rec.key, applies);
+            libraries.push(GhidraLibrary { id: rec.key, family, version, language_id, compiler_spec_id });
+            Ok(())
+        })?;
 
-        let mut by_full_hash: std::collections::HashMap<u64, Vec<FidRecord>> =
-            std::collections::HashMap::new();
-        let mut n_records = 0usize;
-        for rec in records {
-            let Some(name_id) = rec.columns.get(FN_NAME_ID).and_then(FieldValue::as_i64) else {
-                continue;
+        let mut strings = HashMap::<_, Arc<str>>::new();
+        db.visit_records(strings_table, &mut used, |rec| {
+            let value = take_text(rec.columns.into_iter().next(), "string table value")?;
+            strings.insert(rec.key, Arc::from(value));
+            Ok(())
+        })?;
+
+        let mut by_full_hash = HashMap::<_, Vec<_>>::new();
+        let mut n_records = 0;
+        db.visit_records(functions_table, &mut used, |rec| {
+            let [FieldValue::Short(code_unit_size), FieldValue::Long(full_hash),
+                FieldValue::Byte(specific_addl), FieldValue::Long(specific_hash),
+                FieldValue::Long(library_id), FieldValue::Long(name_id), FieldValue::Long(_),
+                FieldValue::Long(domain_path_id), FieldValue::Byte(flags)] = rec.columns.as_slice()
+            else {
+                return Err(KunaError::bad_data("ghidra fid: invalid function record"));
             };
-            let Some(name) = names.get(&name_id) else { continue };
-            let Some(full_hash) = rec.columns.get(FN_FULL_HASH).and_then(FieldValue::as_i64) else {
-                continue;
-            };
-            let specific_hash =
-                rec.columns.get(FN_SPECIFIC_HASH).and_then(FieldValue::as_i64).unwrap_or(0);
-            let code_unit_size = rec
-                .columns
-                .get(FN_CODE_UNIT_SIZE)
-                .and_then(FieldValue::as_i64)
-                .unwrap_or(0) as i16;
-            let specific_addl = rec
-                .columns
-                .get(FN_SPECIFIC_ADDL)
-                .and_then(FieldValue::as_i64)
-                .unwrap_or(0) as u8;
-            let flags = rec.columns.get(FN_FLAGS).and_then(FieldValue::as_i64).unwrap_or(0) as u8;
-            let _library = rec.columns.get(FN_LIBRARY_ID).and_then(FieldValue::as_i64);
-            n_records += 1;
-            by_full_hash.entry(full_hash as u64).or_default().push(FidRecord {
-                full_hash: full_hash as u64,
-                specific_hash: specific_hash as u64,
-                code_unit_size,
-                specific_addl,
-                flags: flags & GHIDRA_TERMINATOR_BIT,
-                name: name.clone(),
-            });
-        }
-
-        Ok(Self { lang_id, cspec_id, libraries, by_full_hash, n_records })
+            let name = strings.get(name_id).filter(|name| !name.is_empty()).ok_or_else(|| {
+                KunaError::bad_data(format!("ghidra fid: function {} has invalid name reference {name_id}", rec.key))
+            })?;
+            if !strings.contains_key(domain_path_id) {
+                return Err(KunaError::bad_data(format!(
+                    "ghidra fid: function {} has missing domain path reference {domain_path_id}", rec.key
+                )));
+            }
+            let applies = library_applies.get(library_id).copied().ok_or_else(|| {
+                KunaError::bad_data(format!("ghidra fid: function {} has missing library reference {library_id}", rec.key))
+            })?;
+            if applies {
+                let full_hash = *full_hash as u64;
+                by_full_hash.entry(full_hash).or_default().push(FidRecord {
+                    full_hash,
+                    specific_hash: *specific_hash as u64,
+                    code_unit_size: *code_unit_size,
+                    specific_addl: *specific_addl as u8,
+                    flags: *flags as u8,
+                    name: Arc::clone(name),
+                });
+                n_records += 1;
+            }
+            Ok(())
+        })?;
+        Ok(Self { compatible_library, libraries, by_full_hash, n_records })
     }
 
     /// The libraries this database was built from.
@@ -164,43 +193,30 @@ impl FidFile {
         &self.libraries
     }
 
-    /// `Ok` when this database carries fingerprints for `language_id`.
-    pub fn applies_to_language(&self, language_id: &str) -> Result<(), String> {
-        if self.libraries.is_empty() {
-            return if self.lang_id.is_empty() {
-                Ok(())
-            } else if self.lang_id == language_id {
-                Ok(())
-            } else {
-                Err(format!(
-                    "database language {} differs from image language {language_id}",
-                    self.lang_id
-                ))
-            };
+    pub(super) fn check_compatibility(&self, image_language: &str) -> Result<(), String> {
+        if self.compatible_library.is_some() {
+            return Ok(());
         }
-        if self.libraries.iter().any(|l| l.language_id == language_id) {
-            Ok(())
-        } else {
-            let known: Vec<&str> = self
-                .libraries
-                .iter()
-                .map(|l| l.language_id.as_str())
-                .filter(|l| !l.is_empty())
-                .collect();
-            Err(format!(
-                "database has no library for language {language_id} (it carries {})",
-                known.join(", ")
-            ))
-        }
+        let mut supported: Vec<_> = self.libraries.iter().map(|l| l.language_id.as_str()).collect();
+        supported.sort_unstable();
+        supported.dedup();
+        let languages = if supported.is_empty() { "none".into() } else { supported.join(", ") };
+        Err(format!(
+            "database has no compatible library for image language {image_language} (it carries {languages})"
+        ))
+    }
+
+    fn representative_library(&self) -> Option<&GhidraLibrary> {
+        self.libraries.get(self.compatible_library.unwrap_or(0))
     }
 }
 
 impl FidDatabase for FidFile {
     fn lang_id(&self) -> &str {
-        &self.lang_id
+        self.representative_library().map_or("", |lib| lib.language_id.as_str())
     }
     fn cspec_id(&self) -> &str {
-        &self.cspec_id
+        self.representative_library().map_or("", |lib| lib.compiler_spec_id.as_str())
     }
     fn find_by_full_hash(&self, h: u64) -> &[FidRecord] {
         self.by_full_hash.get(&h).map(Vec::as_slice).unwrap_or(&[])
@@ -210,24 +226,49 @@ impl FidDatabase for FidFile {
     }
 }
 
-/// The `Strings Table` as `id -> value`.
-fn read_strings(db: &Database) -> KunaResult<std::collections::HashMap<i64, String>> {
-    let table = match db.table("Strings Table") {
-        Some(t) => t,
-        None => return Ok(std::collections::HashMap::new()),
-    };
-    let rows = db.records(table)?;
-    let mut out = std::collections::HashMap::with_capacity(rows.len());
-    for rec in rows {
-        if let Some(name) = column_str(&rec, STRING_VALUE) {
-            out.insert(rec.key, name.to_owned());
-        }
+/// Require the version, primary key, and ordered names and types we interpret.
+fn require_table<'db>(
+    db: &'db Database<'_>,
+    name: &str,
+    key: &str,
+    matches_columns: impl FnOnce(&Schema) -> bool,
+) -> KunaResult<&'db TableRef> {
+    let table = db.table(name)
+        .ok_or_else(|| KunaError::bad_data(format!("ghidra fid: missing {name}")))?;
+    let schema = &table.schema;
+    if schema.version != SCHEMA_VERSION || schema.key_field != Long || schema.key_name != key
+        || !matches_columns(schema)
+    {
+        return Err(KunaError::bad_data(format!(
+            "ghidra fid: incompatible {name} schema (version {})", schema.version
+        )));
     }
-    Ok(out)
+    Ok(table)
 }
 
-fn column_str(rec: &super::ghidradb::Record, index: usize) -> Option<&str> {
-    rec.columns.get(index).and_then(FieldValue::as_str)
+fn library_compiler_spec(value: Option<FieldValue>, has_metadata: bool) -> KunaResult<String> {
+    if has_metadata {
+        let Some(FieldValue::Str(metadata)) = value else {
+            return Err(KunaError::bad_data("ghidra fid: missing library metadata column"));
+        };
+        let mut metadata = metadata.unwrap_or_default();
+        if let Some(separator) = metadata.find(':') {
+            metadata.truncate(separator);
+        }
+        return Ok(metadata);
+    }
+    let compiler = take_text(value, "library compiler spec ID")?;
+    if compiler.is_empty() {
+        return Err(KunaError::bad_data("ghidra fid: empty library compiler spec ID"));
+    }
+    Ok(compiler)
+}
+
+fn take_text(value: Option<FieldValue>, field: &str) -> KunaResult<String> {
+    match value {
+        Some(FieldValue::Str(Some(value))) => Ok(value),
+        _ => Err(KunaError::bad_data(format!("ghidra fid: missing {field}"))),
+    }
 }
 
 /// True when `bytes` start with the packed-container magic at its fixed offset.
@@ -289,21 +330,22 @@ pub fn unpack(bytes: &[u8]) -> KunaResult<Vec<u8>> {
     // `payload_len` is untrusted. Validate it before it can steer an allocation,
     // and bound the inflation to it: a decompression bomb or an absurd declared
     // length must be a parse error, never an allocation abort.
-    if payload_len < 0 {
-        return Err(KunaError::bad_data("ghidra fid: negative packed payload length"));
-    }
-    let declared = payload_len as usize;
-    // A raw database is a fixed-block file, so its size is a whole number of
-    // blocks; refuse a declared size no such file could have before reserving.
     const MAX_PAYLOAD: usize = 1 << 31;
+    let declared = usize::try_from(payload_len).map_err(|_| {
+        KunaError::bad_data(format!("ghidra fid: packed payload length {payload_len} out of range"))
+    })?;
     if declared == 0 || declared > MAX_PAYLOAD {
         return Err(KunaError::bad_data(format!(
             "ghidra fid: packed payload length {declared} out of range"
         )));
     }
-    let mut out = Vec::with_capacity(declared.min(data.len().saturating_mul(1)));
+    let mut out = Vec::with_capacity(declared.min(data.len()));
     match method {
-        0 => out.extend_from_slice(data), // stored
+        0 => {
+            let stored = data.get(..declared)
+                .ok_or_else(|| KunaError::bad_data("ghidra fid: truncated stored zip member"))?;
+            out.extend_from_slice(stored);
+        }
         8 => {
             let inflater = flate2::read::DeflateDecoder::new(std::io::Cursor::new(data));
             // `take` bounds the read so a bomb cannot expand past the declared
@@ -348,12 +390,6 @@ fn read_be_i64(b: &[u8], off: usize) -> KunaResult<i64> {
     Ok(i64::from_be_bytes([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
 }
 
-/// Kept private to the module: what a [`TableRef`] is used for here.
-#[allow(dead_code)]
-fn schema_names(t: &TableRef) -> &[String] {
-    &t.schema.field_names
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -391,25 +427,103 @@ mod tests {
         assert!(!is_packed(&[0xffu8; 64]));
     }
 
-    /// A database whose libraries disagree with the image names each language it
-    /// does carry, so the caller sees what went wrong.
+    const RAW_FIXTURE: &[u8] = include_bytes!("../../../tests/fixtures/fid_audit_ghidra.fidbf");
+    const PACKED_FIXTURE: &[u8] = include_bytes!("../../../tests/fixtures/fid_audit_ghidra.fidb");
+    const METADATA_FIXTURE: &[u8] =
+        include_bytes!("../../../tests/fixtures/fid_audit_ghidra_metadata.fidbf");
+
     #[test]
-    fn applies_to_language_lists_the_languages_it_has() {
-        let db = FidFile {
-            lang_id: "x86:LE:64:default".into(),
-            cspec_id: "Visual Studio".into(),
-            libraries: vec![GhidraLibrary {
-                id: 1,
-                family: "Visual Studio".into(),
-                version: "2019".into(),
-                language_id: "x86:LE:64:default".into(),
-            }],
-            by_full_hash: std::collections::HashMap::new(),
-            n_records: 0,
-        };
-        assert!(db.applies_to_language("x86:LE:64:default").is_ok());
-        let err = db.applies_to_language("x86:LE:32:default").unwrap_err();
-        assert!(err.contains("x86:LE:32:default"), "{err}");
-        assert!(err.contains("x86:LE:64:default"), "{err}");
+    fn stock_raw_and_packed_resolve_shared_overflow_names() {
+        let expected_name = format!("kuna::audit::{}probe", "nested_template::".repeat(300));
+        for bytes in [RAW_FIXTURE, PACKED_FIXTURE] {
+            let db = FidFile::load(bytes, |lang| lang == "AARCH64:LE:64:v8A").unwrap();
+            assert_eq!(db.record_count(), 2);
+            let mix = &db.find_by_full_hash(0x25d1_0671_fc24_68cf)[0].name;
+            let fold = &db.find_by_full_hash(0xeecb_018e_b729_863b)[0].name;
+            assert_eq!(mix.as_ref(), expected_name.as_str());
+            assert!(Arc::ptr_eq(mix, fold));
+        }
+
+        let expected_path = format!("/fixture/{}input", "generated/".repeat(2400));
+        let raw = Database::parse(RAW_FIXTURE).unwrap();
+        let strings = raw.records(raw.table("Strings Table").unwrap()).unwrap();
+        assert!(strings.iter().any(|r| r.columns[0].as_str() == Some(expected_path.as_str())));
+    }
+
+    #[test]
+    fn v6_library_metadata_reports_only_the_compiler_list() {
+        for (language, compilers, count) in [
+            ("x86:LE:64:compat32", "gcc,windows", 3),
+            ("x86:LE:32:default", "default", 1),
+            ("AARCH64:LE:64:v8A", "", 2),
+        ] {
+            let db = FidFile::load(METADATA_FIXTURE, |lang| lang == language).unwrap();
+            assert_eq!(db.lang_id(), language);
+            assert_eq!(db.cspec_id(), compilers);
+            assert_eq!(db.record_count(), count);
+        }
+        assert_eq!(library_compiler_spec(Some(FieldValue::Str(None)), true).unwrap(), "");
+        assert!(library_compiler_spec(Some(FieldValue::Str(None)), false).is_err());
+    }
+
+    #[test]
+    fn an_incompatible_image_gets_no_candidates() {
+        let db = FidFile::load(RAW_FIXTURE, |_| false).unwrap();
+        let err = db.check_compatibility("MIPS:BE:32:default").unwrap_err();
+        assert!(err.contains("MIPS:BE:32:default"), "{err}");
+        assert!(err.contains("x86:LE:64:compat32"), "{err}");
+        assert_eq!(db.record_count(), 0);
+        assert!(db.find_by_full_hash(0x25d1_0671_fc24_68cf).is_empty());
+    }
+
+    #[test]
+    fn records_and_metadata_follow_the_selected_library() {
+        let db = FidFile::load(RAW_FIXTURE, |lang| lang == "x86:LE:32:default").unwrap();
+        assert!(db.check_compatibility("x86:LE:32:default").is_ok());
+        assert_eq!(db.lang_id(), "x86:LE:32:default");
+        assert_eq!(db.cspec_id(), "default");
+        assert_eq!(db.record_count(), 1);
+        let records = db.find_by_full_hash(0x25d1_0671_fc24_68cf);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].name.as_ref(), "foreign_alias");
+        assert!(db.find_by_full_hash(0xeecb_018e_b729_863b).is_empty());
+    }
+
+    #[test]
+    fn required_tables_columns_and_references_cannot_disappear_silently() {
+        for (before, after, error) in [
+            (b"Strings Table".as_slice(), b"Missing Table".as_slice(), "missing Strings Table"),
+            (b"Domain Path ID", b"Wrong  Path ID", "incompatible Functions Table schema"),
+            (
+                b"Ghidra Compiler Spec ID",
+                b"Ghidra Compiler Spec IX",
+                "incompatible Libraries Table schema",
+            ),
+        ] {
+            let mut bytes = RAW_FIXTURE.to_vec();
+            let mut rest = bytes.as_mut_slice();
+            while let Some(offset) = rest.windows(before.len()).position(|s| s == before) {
+                let start = offset + before.len();
+                rest[offset..start].copy_from_slice(after);
+                rest = &mut rest[start..];
+            }
+            let err = FidFile::load(&bytes, |_| true).err().expect("malformed schema");
+            assert!(err.explain().contains(error), "{}", err.explain());
+        }
+
+        let db = Database::parse(RAW_FIXTURE).unwrap();
+        let root = db.table("Functions Table").unwrap().root_buffer_id as usize;
+        let block = i32::from_be_bytes(RAW_FIXTURE[20..24].try_into().unwrap()) as usize;
+        let first_row = (root + 1) * block + 5 + 13;
+        for (offset, error) in [
+            (27, "library reference"),
+            (35, "name reference"),
+            (51, "domain path reference"),
+        ] {
+            let mut bytes = RAW_FIXTURE.to_vec();
+            bytes[first_row + offset..first_row + offset + 8].fill(0);
+            let err = FidFile::load(&bytes, |_| false).err().expect("dangling reference");
+            assert!(err.explain().contains(error), "{}", err.explain());
+        }
     }
 }

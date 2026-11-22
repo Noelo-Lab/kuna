@@ -623,7 +623,11 @@ impl GraphSigManager {
     /// Returns an error when the settings are invalid (the C++
     /// `throw LowlevelError("Bad signature settings")`).
     pub fn new() -> KunaResult<GraphSigManager> {
-        let setting = get_settings();
+        Self::with_settings(get_settings())
+    }
+
+    /// Construct with the search corpus's settings, without changing global state.
+    pub fn with_settings(setting: u32) -> KunaResult<GraphSigManager> {
         if !Self::test_settings(setting) {
             return Err(KunaError::lowlevel("Bad signature settings"));
         }

@@ -27,9 +27,13 @@
 //!   `.../db/LongKeyInteriorNode.java` — leaf and interior node layouts.
 //! - `.../db/DBRecord.java` plus `Field.java`/`StringField.java`/… — the
 //!   schema-driven record encoding.
+//! - `.../db/ChainedBuffer.java` — the overflow storage for large records.
 //!
 //! Every read here is bounds-checked and every structural surprise is an
 //! `Err`: a foreign or corrupt database must fail to load, never panic.
+
+#[expect(clippy::disallowed_types, reason = "bounded B-tree ownership checks")]
+use std::collections::HashSet;
 
 use kuna_base::error::{KunaError, KunaResult};
 
@@ -123,8 +127,11 @@ impl<'a> Buf<'a> {
     /// A `StringField`: `i32` byte length followed by UTF-8, or `-1` for null.
     fn string(&self, off: usize) -> KunaResult<(Option<String>, usize)> {
         let len = self.i32(off)?;
-        if len < 0 {
+        if len == -1 {
             return Ok((None, off + 4));
+        }
+        if len < 0 {
+            return Err(KunaError::bad_data("ghidra db: invalid string length"));
         }
         let len = len as usize;
         let raw = self.bytes(off + 4, len)?;
@@ -137,8 +144,11 @@ impl<'a> Buf<'a> {
     /// A `BinaryField`: `i32` byte length followed by the bytes, or `-1` for null.
     fn binary(&self, off: usize) -> KunaResult<(Option<Vec<u8>>, usize)> {
         let len = self.i32(off)?;
-        if len < 0 {
+        if len == -1 {
             return Ok((None, off + 4));
+        }
+        if len < 0 {
+            return Err(KunaError::bad_data("ghidra db: invalid binary field length"));
         }
         let len = len as usize;
         Ok((Some(self.bytes(off + 4, len)?.to_vec()), off + 4 + len))
@@ -203,23 +213,25 @@ pub struct TableRef {
     pub record_count: i32,
 }
 
-/// A memory-mapped Ghidra database file (`db.DBHandle` on disk).
-pub struct Database {
-    data: Vec<u8>,
+/// A view over a raw Ghidra database file (`db.DBHandle` on disk).
+pub struct Database<'a> {
+    data: &'a [u8],
     block_size: usize,
     buffer_count: usize,
     parms: Vec<i32>,
     tables: Vec<TableRef>,
+    master_buffers: HashSet<i32>,
+    table_roots: HashSet<i32>,
 }
 
-impl Database {
+impl<'a> Database<'a> {
     /// Parse a raw buffer file (`LocalBufferFile`). `Err` for a file that is not
     /// a Ghidra database, is truncated, or whose master table cannot be read.
-    pub fn parse(data: Vec<u8>) -> KunaResult<Self> {
+    pub fn parse(data: &'a [u8]) -> KunaResult<Self> {
         if data.len() < 32 {
             return Err(KunaError::bad_data("ghidra db: file shorter than its header"));
         }
-        let head = Buf::new(&data);
+        let head = Buf::new(data);
         let magic = head.i64(0)?;
         if magic as u64 != BUFFER_FILE_MAGIC {
             return Err(KunaError::bad_data(format!(
@@ -233,7 +245,7 @@ impl Database {
             )));
         }
         let block_size = head.i32(20)?;
-        if block_size <= BUFFER_PREFIX_SIZE as i32 {
+        if block_size < 32 {
             return Err(KunaError::bad_data(format!("ghidra db: block size {block_size} too small")));
         }
         let block_size = block_size as usize;
@@ -244,6 +256,7 @@ impl Database {
             )));
         }
         let buffer_count = data.len() / block_size - 1;
+        let head = Buf::new(&data[..block_size]);
 
         let parm_count = head.i32(28)?;
         if parm_count < 0 {
@@ -260,25 +273,110 @@ impl Database {
             }
         }
 
-        let mut db = Database { data, block_size, buffer_count, parms: Vec::new(), tables: Vec::new() };
+        let mut db = Database {
+            data,
+            block_size,
+            buffer_count,
+            parms: Vec::new(),
+            tables: Vec::new(),
+            master_buffers: HashSet::new(),
+            table_roots: HashSet::new(),
+        };
         db.parms = db.read_db_parms()?;
-        db.tables = db.read_master_table()?;
+        let mut used = HashSet::from([0]); // DBParms is already owned.
+        (db.tables, db.table_roots) = db.read_master_table(&mut used)?;
+        db.master_buffers = used;
         Ok(db)
     }
 
     /// The payload of user buffer `id` (block `id + 1`, prefix stripped).
-    fn buffer(&self, id: i32) -> KunaResult<Buf<'_>> {
+    fn buffer(&self, id: i32) -> KunaResult<Buf<'a>> {
         if id < 0 || id as usize >= self.buffer_count {
             return Err(KunaError::bad_data(format!(
                 "ghidra db: buffer id {id} outside 0..{}",
                 self.buffer_count
             )));
         }
-        let start = (id as usize + 1) * self.block_size + BUFFER_PREFIX_SIZE;
-        let end = (id as usize + 2) * self.block_size;
-        Ok(Buf::new(self.data.get(start..end).ok_or_else(|| {
-            KunaError::bad_data(format!("ghidra db: buffer {id} payload outside the file"))
-        })?))
+        let start = (id as usize + 1) * self.block_size;
+        let block = Buf::new(&self.data[start..start + self.block_size]);
+        if block.u8(0)? != 0 || block.i32(1)? != id {
+            return Err(KunaError::bad_data(format!(
+                "ghidra db: invalid prefix for allocated buffer {id}"
+            )));
+        }
+        Ok(Buf::new(&block.data[BUFFER_PREFIX_SIZE..]))
+    }
+
+    fn claim_buffer(
+        &self,
+        id: i32,
+        used: &mut HashSet<i32>,
+        allow_table_root: bool,
+    ) -> KunaResult<Buf<'a>> {
+        let buf = self.buffer(id)?;
+        if (!allow_table_root && self.table_roots.contains(&id)) || !used.insert(id) {
+            return Err(KunaError::bad_data(format!("ghidra db: repeated buffer {id}")));
+        }
+        Ok(buf)
+    }
+
+    /// Read a VarRecNode overflow record. Unlike general-purpose DBBuffers,
+    /// these are written in full and never use obfuscation or sparse storage.
+    fn chained_record<'b>(
+        &self,
+        id: i32,
+        used: &mut HashSet<i32>,
+        scratch: &'b mut Vec<u8>,
+    ) -> KunaResult<&'b [u8]>
+    where
+        'a: 'b,
+    {
+        let first = self.claim_buffer(id, used, false)?;
+        let len = first.i32(1)?;
+        if len <= 0 {
+            return Err(KunaError::bad_data("ghidra db: invalid chained record length or obfuscation"));
+        }
+        let len = len as usize;
+        match NodeType::from_byte(first.u8(0)?)? {
+            NodeType::ChainedBufferData => return first.bytes(5, len),
+            NodeType::ChainedBufferIndex => {}
+            _ => return Err(KunaError::bad_data("ghidra db: invalid chained record root")),
+        }
+
+        let data_space = first.data.len() - 1;
+        let indexes_per_buffer = (first.data.len() - 9) / 4;
+        let data_count = len.div_ceil(data_space);
+        let index_count = data_count.div_ceil(indexes_per_buffer);
+        // Every output byte must come from a distinct physical buffer claimed
+        // by this record. Bound the allocation by the file before trusting len.
+        if data_count + index_count - 1 > self.buffer_count - used.len() {
+            return Err(KunaError::bad_data("ghidra db: chained record exceeds remaining file buffers"));
+        }
+        scratch.clear();
+        scratch.try_reserve_exact(len)
+            .map_err(|_| KunaError::bad_data("ghidra db: cannot allocate chained record"))?;
+        let mut index = first;
+        let mut remaining = data_count;
+        loop {
+            let entries = remaining.min(indexes_per_buffer);
+            for slot in 0..entries {
+                let data = self.claim_buffer(index.i32(9 + slot * 4)?, used, false)?;
+                if NodeType::from_byte(data.u8(0)?)? != NodeType::ChainedBufferData {
+                    return Err(KunaError::bad_data("ghidra db: invalid chained record data node"));
+                }
+                scratch.extend_from_slice(data.bytes(1, (len - scratch.len()).min(data_space))?);
+            }
+            remaining -= entries;
+            if remaining == 0 {
+                // Ghidra may leave stale links and slots after shrinking a
+                // record; only the index entries implied by len are live.
+                return Ok(scratch);
+            }
+            index = self.claim_buffer(index.i32(5)?, used, false)?;
+            if NodeType::from_byte(index.u8(0)?)? != NodeType::ChainedBufferIndex {
+                return Err(KunaError::bad_data("ghidra db: invalid chained record index node"));
+            }
+        }
     }
 
     /// Decode the `DBParms` block (user buffer 0): node type `CHAINED_BUFFER_DATA`,
@@ -293,15 +391,11 @@ impl Database {
             return Err(KunaError::bad_data("ghidra db: unsupported DBParms version"));
         }
         let data_len = buf.i32(1)?;
-        if data_len < 1 {
-            return Err(KunaError::bad_data("ghidra db: empty DBParms block"));
+        if data_len < 1 || (data_len - 1) % 4 != 0 {
+            return Err(KunaError::bad_data("ghidra db: invalid DBParms length"));
         }
-        // `data_len` is untrusted: clamp the derived count to what the payload can
-        // actually hold before reserving, so a corrupt length cannot request a
-        // huge allocation. The per-parameter read below is still bounds-checked.
-        let declared = (data_len as usize - 1) / 4;
-        let available = buf.data.len().saturating_sub(6) / 4;
-        let count = declared.min(available);
+        buf.bytes(5, data_len as usize)?;
+        let count = (data_len as usize - 1) / 4;
         let mut out = Vec::with_capacity(count);
         for i in 0..count {
             out.push(buf.i32(6 + i * 4)?);
@@ -323,6 +417,7 @@ impl Database {
         Schema {
             version: 0,
             key_field: FieldType::Long,
+            key_name: String::new(),
             fields: vec![
                 FieldType::Str,
                 FieldType::Int,
@@ -338,38 +433,61 @@ impl Database {
         }
     }
 
-    fn read_master_table(&self) -> KunaResult<Vec<TableRef>> {
+    fn read_master_table(&self, used: &mut HashSet<i32>) -> KunaResult<(Vec<TableRef>, HashSet<i32>)> {
         let root = self.parm(PARM_MASTER_TABLE_ROOT)?;
         if root < 0 {
             return Err(KunaError::bad_data("ghidra db: no master table root"));
         }
         let schema = Self::master_schema();
         let mut tables = Vec::new();
-        for rec in self.table_records(root, &schema, None, 0)? {
-            let name = rec.columns.first().and_then(FieldValue::as_str).unwrap_or("").to_owned();
-            let version = rec.columns.get(1).and_then(FieldValue::as_i64).unwrap_or(0) as i32;
-            let root_buffer_id = rec.columns.get(2).and_then(FieldValue::as_i64).unwrap_or(-1) as i32;
-            let key_type = rec.columns.get(3).and_then(FieldValue::as_i64).unwrap_or(0) as u8;
-            let field_types = rec.columns.get(4).and_then(FieldValue::as_binary).unwrap_or(&[]).to_vec();
-            let field_names = rec.columns.get(5).and_then(FieldValue::as_str).unwrap_or("");
-            let indexed_column = rec.columns.get(6).and_then(FieldValue::as_i64).unwrap_or(-1) as i32;
-            let record_count = rec.columns.get(8).and_then(FieldValue::as_i64).unwrap_or(0) as i32;
-            // Index tables (indexed_column >= 0) carry the indexed table's name
-            // but an `IndexKey` schema; only primary tables are interesting here.
-            if indexed_column >= 0 {
-                continue;
+        let mut roots = HashSet::new();
+        let mut names = HashSet::new();
+        self.visit_tree(root, &schema, None, used, |rec| {
+            let [FieldValue::Str(Some(name)), FieldValue::Int(version),
+                FieldValue::Int(root_buffer_id), FieldValue::Byte(key_type),
+                FieldValue::Binary(Some(field_types)), FieldValue::Str(Some(field_names)),
+                FieldValue::Int(indexed_column), FieldValue::Long(_), FieldValue::Int(record_count)] =
+                rec.columns.as_slice()
+            else {
+                return Err(KunaError::bad_data("ghidra db: invalid master-table record"));
+            };
+            let (version, root_buffer_id, indexed_column, record_count) =
+                (*version, *root_buffer_id, *indexed_column, *record_count);
+            if root_buffer_id >= 0
+                && (root_buffer_id == 0 || root_buffer_id as usize >= self.buffer_count
+                    || !roots.insert(root_buffer_id))
+            {
+                return Err(KunaError::bad_data(format!(
+                    "ghidra db: invalid or repeated table root {root_buffer_id} for {name}"
+                )));
             }
-            let schema = Schema::decode(version, key_type, &field_types, field_names)?;
+            // Index tables share a primary table's name but use an IndexKey schema.
+            if indexed_column >= 0 {
+                return Ok(());
+            }
+            if name.is_empty() || !names.insert(name.clone()) || indexed_column != -1
+                || record_count < 0 || root_buffer_id < -1
+                || (root_buffer_id == -1 && record_count != 0)
+            {
+                return Err(KunaError::bad_data(format!(
+                    "ghidra db: invalid primary table metadata for {name:?}"
+                )));
+            }
+            let schema = Schema::decode(version, *key_type as u8, field_types, field_names)?;
             tables.push(TableRef {
-                name,
+                name: name.clone(),
                 version,
                 root_buffer_id,
                 schema,
                 indexed_column,
                 record_count,
             });
+            Ok(())
+        })?;
+        if !roots.is_disjoint(used) {
+            return Err(KunaError::bad_data("ghidra db: table root reuses a master table buffer"));
         }
-        Ok(tables)
+        Ok((tables, roots))
     }
 
     /// The table with `name` (primary tables only).
@@ -384,121 +502,156 @@ impl Database {
 
     /// Read every record of `table` in key order.
     pub fn records(&self, table: &TableRef) -> KunaResult<Vec<Record>> {
-        if table.root_buffer_id < 0 {
-            return Ok(Vec::new());
-        }
-        self.table_records(table.root_buffer_id, &table.schema, None, 0)
+        let mut records = Vec::new();
+        self.visit_records(table, &mut self.occupied_buffers(), |record| {
+            records.push(record);
+            Ok(())
+        })?;
+        Ok(records)
     }
 
-    /// The fixed record length for a `LONGKEY_FIXED_REC_NODE` table, computed
-    /// from its schema; `None` for variable-length records.
-    fn table_records(
+    /// Seed the ownership set for a scan of one or more primary tables.
+    pub(super) fn occupied_buffers(&self) -> HashSet<i32> {
+        self.master_buffers.clone()
+    }
+
+    pub(super) fn visit_records(
+        &self,
+        table: &TableRef,
+        used: &mut HashSet<i32>,
+        visit: impl FnMut(Record) -> KunaResult<()>,
+    ) -> KunaResult<()> {
+        let expected = usize::try_from(table.record_count)
+            .map_err(|_| KunaError::bad_data("ghidra db: negative table record count"))?;
+        if table.root_buffer_id == -1 && expected == 0 {
+            return Ok(());
+        }
+        self.visit_tree(table.root_buffer_id, &table.schema, Some(expected), used, visit)
+    }
+
+    fn visit_tree(
         &self,
         root: i32,
         schema: &Schema,
-        fixed_len: Option<usize>,
-        depth: u32,
-    ) -> KunaResult<Vec<Record>> {
-        if depth > 64 {
-            return Err(KunaError::bad_data("ghidra db: B-tree deeper than 64 levels"));
+        expected: Option<usize>,
+        used: &mut HashSet<i32>,
+        mut visit: impl FnMut(Record) -> KunaResult<()>,
+    ) -> KunaResult<()> {
+        if schema.key_field != FieldType::Long {
+            return Err(KunaError::bad_data("ghidra db: only long primary keys are supported"));
         }
-        let buf = self.buffer(root)?;
-        let node = NodeType::from_byte(buf.u8(0)?)?;
-        let key_count = buf.i32(1)?;
-        if key_count < 0 {
-            return Err(KunaError::bad_data("ghidra db: negative key count"));
-        }
-        let key_count = key_count as usize;
-        let mut out = Vec::new();
-        match node {
-            NodeType::LongKeyInterior => {
-                // | type(1) | keyCount(4) | Key0(8) ID0(4) | ...
-                for i in 0..key_count {
-                    let base = 5 + i * 12;
-                    let child = buf.i32(base + 8)?;
-                    out.extend(self.table_records(child, schema, fixed_len, depth + 1)?);
-                }
+        let fixed_len = schema.fixed_record_len();
+        let mut last_key = None;
+        let mut count = 0;
+        let mut scratch = Vec::new();
+        self.walk_leaves(root, 0, used, &mut |_, buf, node, key_count, used| {
+            let (entry_size, variable) = match (node, fixed_len) {
+                (NodeType::LongKeyFixedRec, Some(len)) => (8 + len, false),
+                (NodeType::LongKeyVarRec, None) => (13, true),
+                _ => return Err(KunaError::bad_data("ghidra db: leaf does not match table schema")),
+            };
+            // Each entry needs its own bytes. Variable records additionally occupy
+            // disjoint slices following the entry array, packed in reverse order.
+            validate_entries(&buf, 13, entry_size, key_count)?;
+            count += key_count;
+            if expected.is_some_and(|n| count > n) {
+                return Err(KunaError::bad_data("ghidra db: more records than the table declares"));
             }
-            NodeType::LongKeyVarRec => {
-                // | type(1) | keyCount(4) | prev(4) | next(4) |
-                //   KeyN(8) RecOffsetN(4) IndFlagN(1) ... | free | RecN ... Rec0 |
-                for i in 0..key_count {
-                    let base = 13 + i * 13;
-                    let key = buf.i64(base)?;
-                    let rec_off = buf.i32(base + 8)?;
-                    let indirect = buf.u8(base + 12)? != 0;
-                    if indirect {
-                        return Err(KunaError::bad_data(
-                            "ghidra db: indirect (chained-buffer) record storage is not supported",
-                        ));
-                    }
-                    if rec_off < 0 {
-                        return Err(KunaError::bad_data("ghidra db: negative record offset"));
-                    }
-                    let columns = read_record(schema, &buf, rec_off as usize, None)?;
-                    out.push(Record { key, columns });
+            let metadata_end = 13 + key_count * entry_size;
+            let mut data_end = buf.data.len();
+            for i in 0..key_count {
+                let base = 13 + i * entry_size;
+                let key = buf.i64(base)?;
+                if last_key.is_some_and(|previous| key <= previous) {
+                    return Err(KunaError::bad_data("ghidra db: out-of-order or duplicate key"));
                 }
-            }
-            NodeType::LongKeyFixedRec => {
-                let len = match fixed_len {
-                    Some(len) => len,
-                    None => schema.fixed_record_len().ok_or_else(|| {
-                        KunaError::bad_data(
-                            "ghidra db: fixed-record node in a variable-length table",
-                        )
-                    })?,
+                last_key = Some(key);
+                let data = if variable {
+                    let offset = buf.i32(base + 8)? as usize;
+                    if offset < metadata_end || offset >= data_end {
+                        return Err(KunaError::bad_data("ghidra db: overlapping or invalid record offset"));
+                    }
+                    let data = &buf.data[offset..data_end];
+                    data_end = offset;
+                    if buf.u8(base + 12)? != 0 {
+                        let id = data.try_into().map(i32::from_be_bytes).map_err(|_| {
+                            KunaError::bad_data("ghidra db: invalid chained record reference span")
+                        })?;
+                        self.chained_record(id, used, &mut scratch)?
+                    } else {
+                        data
+                    }
+                } else {
+                    buf.bytes(base + 8, entry_size - 8)?
                 };
-                let entry = 8 + len;
-                for i in 0..key_count {
-                    let base = 13 + i * entry;
-                    let key = buf.i64(base)?;
-                    let columns = read_record(schema, &buf, base + 8, Some(len))?;
-                    out.push(Record { key, columns });
-                }
+                let columns = read_record(schema, &Buf::new(data))?;
+                visit(Record { key, columns })?;
             }
-            other => {
-                return Err(KunaError::bad_data(format!(
-                    "ghidra db: unsupported B-tree node {other:?} in a long-key table"
-                )))
-            }
-        }
-        Ok(out)
-    }
-
-    /// Every buffer id reachable from `root` that is a leaf, used by tests and
-    /// diagnostics.
-    pub fn leaf_buffers(&self, root: i32) -> KunaResult<Vec<i32>> {
-        let mut leaves = Vec::new();
-        self.collect_leaves(root, &mut leaves, 0)?;
-        Ok(leaves)
-    }
-
-    fn collect_leaves(&self, id: i32, out: &mut Vec<i32>, depth: u32) -> KunaResult<()> {
-        if depth > 64 {
-            return Err(KunaError::bad_data("ghidra db: B-tree deeper than 64 levels"));
-        }
-        let buf = self.buffer(id)?;
-        match NodeType::from_byte(buf.u8(0)?)? {
-            NodeType::LongKeyInterior => {
-                let n = buf.i32(1)?;
-                for i in 0..n.max(0) {
-                    self.collect_leaves(buf.i32(5 + i as usize * 12 + 8)?, out, depth + 1)?;
-                }
-            }
-            _ => out.push(id),
+            Ok(())
+        })?;
+        if expected.is_some_and(|n| count != n) {
+            return Err(KunaError::bad_data("ghidra db: fewer records than the table declares"));
         }
         Ok(())
     }
+
+    /// Every buffer id reachable from `root` that is a leaf.
+    pub fn leaf_buffers(&self, root: i32) -> KunaResult<Vec<i32>> {
+        let mut leaves = Vec::new();
+        self.walk_leaves(root, 0, &mut HashSet::new(), &mut |id, _, _, _, _| {
+            leaves.push(id);
+            Ok(())
+        })?;
+        Ok(leaves)
+    }
+
+    fn walk_leaves(
+        &self,
+        id: i32,
+        depth: u32,
+        visited: &mut HashSet<i32>,
+        visit: &mut impl FnMut(i32, Buf<'a>, NodeType, usize, &mut HashSet<i32>) -> KunaResult<()>,
+    ) -> KunaResult<()> {
+        if depth > 64 {
+            return Err(KunaError::bad_data("ghidra db: B-tree deeper than 64 levels"));
+        }
+        let buf = self.claim_buffer(id, visited, depth == 0)?;
+        let node = NodeType::from_byte(buf.u8(0)?)?;
+        let key_count = usize::try_from(buf.i32(1)?)
+            .map_err(|_| KunaError::bad_data("ghidra db: negative key count"))?;
+        match node {
+            NodeType::LongKeyInterior => {
+                validate_entries(&buf, 5, 12, key_count)?;
+                for i in 0..key_count {
+                    self.walk_leaves(buf.i32(5 + i * 12 + 8)?, depth + 1, visited, visit)?;
+                }
+                Ok(())
+            }
+            NodeType::LongKeyVarRec | NodeType::LongKeyFixedRec => {
+                let min_entry = if node == NodeType::LongKeyVarRec { 13 } else { 8 };
+                validate_entries(&buf, 13, min_entry, key_count)?;
+                visit(id, buf, node, key_count, visited)
+            }
+            other => Err(KunaError::bad_data(format!(
+                "ghidra db: unsupported B-tree node {other:?} in a long-key table"
+            ))),
+        }
+    }
 }
 
-/// Decode one record's columns per `schema`, starting at `off`.
-fn read_record(
-    schema: &Schema,
-    buf: &Buf<'_>,
-    mut off: usize,
-    fixed_len: Option<usize>,
-) -> KunaResult<Vec<FieldValue>> {
-    let start = off;
+fn validate_entries(buf: &Buf<'_>, start: usize, len: usize, count: usize) -> KunaResult<()> {
+    if start > buf.data.len() || count == 0 || count > (buf.data.len() - start) / len {
+        return Err(KunaError::bad_data("ghidra db: invalid B-tree key count"));
+    }
+    Ok(())
+}
+
+/// Decode one record's columns per `schema` within its own buffer span.
+fn read_record(schema: &Schema, buf: &Buf<'_>) -> KunaResult<Vec<FieldValue>> {
+    if schema.fields.len() > buf.data.len() {
+        return Err(KunaError::bad_data("ghidra db: record shorter than the table schema"));
+    }
+    let mut off = 0;
     let mut out = Vec::with_capacity(schema.fields.len());
     for &field in &schema.fields {
         let value = match field {
@@ -551,13 +704,8 @@ fn read_record(
         };
         out.push(value);
     }
-    if let Some(len) = fixed_len {
-        if off - start != len {
-            return Err(KunaError::bad_data(format!(
-                "ghidra db: record decoded to {} bytes, schema says {len}",
-                off - start
-            )));
-        }
+    if off != buf.data.len() {
+        return Err(KunaError::bad_data("ghidra db: record length does not match the table schema"));
     }
     Ok(out)
 }
@@ -566,11 +714,17 @@ fn read_record(
 mod tests {
     use super::*;
 
+    const BLOCK: usize = 512;
+    const PAYLOAD: usize = BLOCK - BUFFER_PREFIX_SIZE;
+
+    fn payload(id: usize) -> usize {
+        (id + 1) * BLOCK + BUFFER_PREFIX_SIZE
+    }
+
     /// Build a minimal Ghidra buffer file: header, `DBParms`, a master table
     /// holding one `Strings Table` record, and one leaf node of that table.
     fn synthetic_db() -> Vec<u8> {
-        const BLOCK: usize = 512;
-        const BUFFERS: usize = 4; // 0 = DBParms, 1 = master, 2 = strings leaf
+        const BUFFERS: usize = 4; // 0 = DBParms, 1 = master, 3 = strings leaf
         let mut file = vec![0u8; BLOCK * (BUFFERS + 1)];
         let be32 = |v: i32| v.to_be_bytes();
         // Block 0: header.
@@ -579,8 +733,10 @@ mod tests {
         file[20..24].copy_from_slice(&be32(BLOCK as i32));
         file[24..28].copy_from_slice(&be32(-1)); // first free index
         file[28..32].copy_from_slice(&be32(0)); // no header parameters
-        // `Database::buffer(id)` reads block `id + 1`, prefix stripped.
-        let payload = |id: usize| (id + 1) * BLOCK + BUFFER_PREFIX_SIZE;
+        for id in 0..BUFFERS {
+            let p = payload(id);
+            file[p - 4..p].copy_from_slice(&be32(id as i32));
+        }
         // DBParms (user buffer 0): data node, version 1, one parameter.
         let p = payload(0);
         file[p] = 9; // CHAINED_BUFFER_DATA_NODE
@@ -622,6 +778,10 @@ mod tests {
         file[o..o + 8].copy_from_slice(&i64::MIN.to_be_bytes()); // max key
         o += 8;
         file[o..o + 4].copy_from_slice(&be32(1)); // record count
+        let rec_end = o + 4;
+        let packed_rec_off = BLOCK - BUFFER_PREFIX_SIZE - (rec_end - (m + rec_off));
+        file.copy_within(m + rec_off..rec_end, m + packed_rec_off);
+        file[m + 21..m + 25].copy_from_slice(&be32(packed_rec_off as i32));
         // Strings leaf (user buffer 3): one record.
         let s = payload(3);
         file[s] = 1;
@@ -629,16 +789,108 @@ mod tests {
         file[s + 5..s + 9].copy_from_slice(&be32(-1));
         file[s + 9..s + 13].copy_from_slice(&be32(-1));
         file[s + 13..s + 21].copy_from_slice(&42i64.to_be_bytes());
-        file[s + 21..s + 25].copy_from_slice(&be32(30));
-        file[s + 25] = 0;
-        let mut so = s + 30;
-        put_str(&mut file, &mut so, "kuna_reader_test");
+        let name = "kuna_reader_test";
+        let mut so = (s + BLOCK - BUFFER_PREFIX_SIZE) - (4 + name.len());
+        file[s + 21..s + 25].copy_from_slice(&be32((so - s) as i32));
+        put_str(&mut file, &mut so, name);
         file
+    }
+
+    fn indexed_string_db() -> (Vec<u8>, String) {
+        // Enough data nodes to require a second index node at this block size.
+        let name = "nested_模板::".repeat(5000) + "probe";
+        let mut record = Vec::with_capacity(4 + name.len());
+        record.extend((name.len() as i32).to_be_bytes());
+        record.extend_from_slice(name.as_bytes());
+        let data_space = PAYLOAD - 1;
+        let entries_per_index = (PAYLOAD - 9) / 4;
+        let data_count = record.len().div_ceil(data_space);
+        assert!(data_count > entries_per_index && data_count <= 2 * entries_per_index);
+
+        let mut file = synthetic_db();
+        const FIRST_INDEX: usize = 4;
+        const SECOND_INDEX: usize = 5;
+        const FIRST_DATA: usize = 6;
+        file.resize((FIRST_DATA + data_count + 1) * BLOCK, 0);
+        for id in FIRST_INDEX..FIRST_DATA + data_count {
+            let p = payload(id);
+            file[p - 4..p].copy_from_slice(&(id as i32).to_be_bytes());
+        }
+        let s = payload(3);
+        file[s + 21..s + 25].copy_from_slice(&((PAYLOAD - 4) as i32).to_be_bytes());
+        file[s + 25] = 1;
+        file[s + PAYLOAD - 4..s + PAYLOAD].copy_from_slice(&(FIRST_INDEX as i32).to_be_bytes());
+
+        let first = payload(FIRST_INDEX);
+        let second = payload(SECOND_INDEX);
+        file[first] = 8;
+        file[first + 1..first + 5].copy_from_slice(&(record.len() as i32).to_be_bytes());
+        file[first + 5..first + 9].copy_from_slice(&(SECOND_INDEX as i32).to_be_bytes());
+        file[second] = 8;
+        file[second + 1..second + 5].copy_from_slice(&(-1i32).to_be_bytes());
+        file[second + 5..second + 9].copy_from_slice(&(-1i32).to_be_bytes());
+        for (n, chunk) in record.chunks(data_space).enumerate() {
+            let id = FIRST_DATA + n;
+            let data = payload(id);
+            file[data] = 9;
+            file[data + 1..data + 1 + chunk.len()].copy_from_slice(chunk);
+            let index = if n < entries_per_index { first } else { second };
+            let entry = index + 9 + 4 * (n % entries_per_index);
+            file[entry..entry + 4].copy_from_slice(&(id as i32).to_be_bytes());
+        }
+        (file, name)
+    }
+
+    #[test]
+    fn a_record_spans_multiple_index_and_data_nodes() {
+        let (mut bytes, name) = indexed_string_db();
+        // The length, not a potentially stale terminal link, defines the chain.
+        let terminal_next = payload(5) + 5;
+        bytes[terminal_next..terminal_next + 4].copy_from_slice(&4i32.to_be_bytes());
+        let db = Database::parse(&bytes).unwrap();
+        let records = db.records(db.table("Strings Table").unwrap()).unwrap();
+        assert_eq!(records[0].columns[0].as_str(), Some(name.as_str()));
+    }
+
+    #[test]
+    fn a_shortened_record_can_retain_its_index_node() {
+        let (mut bytes, _) = indexed_string_db();
+        let name = "nested_模板::";
+        let first = payload(4);
+        let data = payload(6);
+        bytes[first + 1..first + 5].copy_from_slice(&(4 + name.len() as i32).to_be_bytes());
+        bytes[data + 1..data + 5].copy_from_slice(&(name.len() as i32).to_be_bytes());
+        let db = Database::parse(&bytes).unwrap();
+        let records = db.records(db.table("Strings Table").unwrap()).unwrap();
+        assert_eq!(records[0].columns[0].as_str(), Some(name));
+    }
+
+    #[test]
+    fn overflow_chains_require_live_distinct_buffers_and_exact_lengths() {
+        let (bytes, _) = indexed_string_db();
+        let first = payload(4);
+        let data = payload(6);
+        let string_len = i32::from_be_bytes(bytes[data + 1..data + 5].try_into().unwrap());
+        for (offset, value, expected) in [
+            (first + 1, i32::MAX, "remaining file buffers"),
+            (first + 5, 4, "repeated buffer"),
+            (first + 9, -1, "outside"),
+            (first + 13, 6, "repeated buffer"),
+            (first + 13, 3, "repeated buffer"),
+            (data + 1, string_len - 1, "record length does not match"),
+        ] {
+            let mut bytes = bytes.clone();
+            bytes[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
+            let db = Database::parse(&bytes).unwrap();
+            let err = db.records(db.table("Strings Table").unwrap()).unwrap_err();
+            assert!(err.explain().contains(expected), "{}", err.explain());
+        }
     }
 
     #[test]
     fn a_synthetic_buffer_file_reads_its_table_and_records() {
-        let db = Database::parse(synthetic_db()).expect("parse");
+        let bytes = synthetic_db();
+        let db = Database::parse(&bytes).expect("parse");
         let table = db.table("Strings Table").expect("table");
         assert_eq!(table.schema.field_names, ["String Value"]);
         let records = db.records(table).expect("records");
@@ -649,12 +901,57 @@ mod tests {
 
     #[test]
     fn a_foreign_file_is_rejected_rather_than_panicking() {
-        assert!(Database::parse(vec![0u8; 64]).is_err());
+        assert!(Database::parse(&[0u8; 64]).is_err());
         let mut bad = synthetic_db();
         bad[0] = 0; // break the magic
-        assert!(Database::parse(bad).is_err());
+        assert!(Database::parse(&bad).is_err());
         let mut short = synthetic_db();
         short.truncate(40);
-        assert!(Database::parse(short).is_err());
+        assert!(Database::parse(&short).is_err());
+    }
+
+    #[test]
+    fn record_walk_and_leaf_listing_reject_reused_nodes() {
+        let node = 4 * BLOCK + BUFFER_PREFIX_SIZE;
+        for child in [2i32, 3] {
+            let mut bytes = synthetic_db();
+            // Buffer 2 contains the genuine leaf, but the root either repeats
+            // its child or links to itself.
+            bytes.copy_within(node..5 * BLOCK, node - BLOCK);
+            bytes[node] = 0;
+            bytes[node + 1..node + 5].copy_from_slice(&2i32.to_be_bytes());
+            for slot in [13, 25] {
+                bytes[node + slot..node + slot + 4].copy_from_slice(&child.to_be_bytes());
+            }
+            let db = Database::parse(&bytes).unwrap();
+            assert!(db.leaf_buffers(3).unwrap_err().explain().contains("repeated"));
+            assert!(db.records(db.table("Strings Table").unwrap())
+                .unwrap_err().explain().contains("repeated"));
+        }
+    }
+
+    #[test]
+    fn primary_table_scans_share_buffer_ownership() {
+        let bytes = synthetic_db();
+        let db = Database::parse(&bytes).unwrap();
+        let table = db.table("Strings Table").unwrap();
+        let mut used = db.occupied_buffers();
+        db.visit_records(table, &mut used, |_| Ok(())).unwrap();
+        let error = db.visit_records(table, &mut used, |_| Ok(())).unwrap_err();
+        assert!(error.explain().contains("repeated"));
+    }
+
+    #[test]
+    fn table_record_counts_and_spans_are_validated() {
+        let mut bytes = synthetic_db();
+        let db = Database::parse(&bytes).unwrap();
+        let mut table = db.table("Strings Table").unwrap().clone();
+        table.record_count = 2;
+        assert!(db.records(&table).unwrap_err().explain().contains("fewer records"));
+
+        let node = 4 * BLOCK + BUFFER_PREFIX_SIZE;
+        bytes[node + 21..node + 25].copy_from_slice(&13i32.to_be_bytes());
+        let db = Database::parse(&bytes).unwrap();
+        assert!(db.records(db.table("Strings Table").unwrap()).is_err());
     }
 }

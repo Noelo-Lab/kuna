@@ -116,7 +116,7 @@ fn run(mode: Mode) -> Run {
                 if matches!(mode, Mode::Strict) {
                     // Flip every bit: no query can produce this, so `strict` must
                     // decline and `on` must still rename.
-                    let crc = records.iter_mut().find(|r| r.name == "kuna_crc32").unwrap();
+                    let crc = records.iter_mut().find(|r| r.name.as_ref() == "kuna_crc32").unwrap();
                     crc.specific_hash ^= 0xffff_ffff_ffff_ffff;
                 }
                 db = std::env::temp_dir().join(format!("kuna-fid-strict-{}.fid", std::process::id()));

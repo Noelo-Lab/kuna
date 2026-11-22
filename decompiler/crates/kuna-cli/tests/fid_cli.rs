@@ -64,7 +64,7 @@ fn archive_members_keep_the_vendored_database_and_leave_no_staging_files() {
     let result: serde_json::Value = serde_json::from_slice(&query.stdout).unwrap();
     assert!(result["candidates"].as_array().unwrap().iter().any(|c| c["name"] == "kuna_strlen"));
     let records = kuna_analysis::fid::db::FidDb::load(&std::fs::read(output).unwrap()).unwrap();
-    let mut names: Vec<_> = records.records().iter().map(|record| record.name.as_str()).collect();
+    let mut names: Vec<_> = records.records().iter().map(|record| record.name.as_ref()).collect();
     names.sort_unstable();
     assert_eq!(names, ["kuna_crc32", "kuna_memset", "kuna_strlen"]);
     assert!(std::fs::read_dir(staging).unwrap().next().is_none());
@@ -164,7 +164,7 @@ fn query_reports_candidates_collisions_and_invalid_databases() {
 
     let db = FidDb::load(&std::fs::read(fixture).unwrap()).unwrap();
     let mut records: Vec<_> = db.records().into_iter().cloned().collect();
-    let mut collision = records.iter().find(|r| r.name == "kuna_crc32").unwrap().clone();
+    let mut collision = records.iter().find(|r| r.name.as_ref() == "kuna_crc32").unwrap().clone();
     collision.name = "other_candidate".into();
     records.push(collision);
     let path = scratch.path().join("collision.fid");
@@ -216,7 +216,7 @@ fn thumb_pointers_use_the_discovered_mode_and_isolate_batch_context() {
         .env("SLEIGHHOME", root.join("specs")).output().unwrap();
     assert!(build.status.success(), "{}", String::from_utf8_lossy(&build.stderr));
     let parsed = FidDb::load(&std::fs::read(&db).unwrap()).unwrap();
-    assert!(parsed.records().iter().any(|record| record.name == "thumb_probe"));
+    assert!(parsed.records().iter().any(|record| record.name.as_ref() == "thumb_probe"));
     let call = |addresses: &[&str]| {
         let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
         command.args(["fid", "query"]).arg(&binary).arg("--db").arg(&db);

@@ -24,7 +24,7 @@ use std::fmt::Write as _;
 use kuna_analysis::loader::macho_fat::SlicePref;
 use kuna_base::address::Address;
 use kuna_console::engine::{
-    bootstrap_from_image_with_isa, bootstrap_from_raw, ArmIsa, ConsoleProgram, EntryLookupError,
+    bootstrap_from_raw, ArmIsa, Bootstrap, ConsoleProgram, EntryLookupError,
     EntrySelector, FunctionEntry, ObjectLocation,
 };
 // The decompile loop + result shape live in the shared decompile-project core
@@ -1261,7 +1261,7 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
         None => (None, None),
     };
     let loaded = match request {
-        Some(request) => load_program_with_rust_profiles(args, DriverDefaults::Functions, Some(request))
+        Some(request) => load_program_with_rust_profiles(args, DriverDefaults::Functions, Some(request), None)
             .map(|prog| {
                 let all = prog.function_entries_canonical();
                 (prog, all)
@@ -1738,17 +1738,26 @@ pub(crate) fn load_program(
     args: &Args,
     defaults: DriverDefaults,
 ) -> Result<ConsoleProgram, String> {
+    load_program_with_source(args, defaults, None)
+}
+
+pub(crate) fn load_program_with_source(
+    args: &Args,
+    defaults: DriverDefaults,
+    observe_source: Option<&mut dyn FnMut(&[u8])>,
+) -> Result<ConsoleProgram, String> {
     let request = args.apply_rust_signatures.as_deref().map(|path| {
         crate::rust_signatures::validate_application(args)?;
         crate::rust_signatures::load(std::path::Path::new(path)).map(|(request, _)| request)
     }).transpose()?;
-    load_program_with_rust_profiles(args, defaults, request)
+    load_program_with_rust_profiles(args, defaults, request, observe_source)
 }
 
 fn load_program_with_rust_profiles(
     args: &Args,
     defaults: DriverDefaults,
     request: Option<kuna_analysis::flirt::kuna_rustprofiles::Request>,
+    observe_source: Option<&mut dyn FnMut(&[u8])>,
 ) -> Result<ConsoleProgram, String> {
     let binary = std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?
@@ -1798,7 +1807,8 @@ fn load_program_with_rust_profiles(
             &spec_roots,
         )
     } else {
-        bootstrap_from_image_with_isa(&binary, target, &spec_roots, args.isa)
+        Bootstrap::new(&spec_roots).target(target).arm_isa(args.isa)
+            .image_with_source(&binary, observe_source)
     }
     .map_err(|e| {
         let detail = e.explain();

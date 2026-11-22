@@ -2134,103 +2134,62 @@ impl Sleigh {
     }
 }
 
-/// Collect the op-objects Ghidra reports for one operand, per
-/// `SleighInstructionPrototype.getOpObjects` → `OperandSymbol.printList`.
-///
-/// Two shapes, exactly as Ghidra:
-///
-/// - the operand's defining symbol is a `SubtableSymbol`: `Constructor.printList`
-///   walks that constructor's print pieces and appends every `\nX` operand's
-///   handles in print order (never the subtable's own handle), so a memory
-///   operand reports its base register and its displacement scalar;
-/// - otherwise the operand contributes its own resolved handle.
-fn collect_operand_objects(
-    table: &SymbolTable,
-    state: &[ConstructState],
-    ct_state: &ConstructState,
-    slot: usize,
-    is_code_address: bool,
-    whole_operand: bool,
-    promote: &mut dyn FnMut(&mut FixedHandle, ConstructorRef, usize),
-    out: &mut Vec<OpObject>,
-) {
-    let mut handles: Vec<FixedHandle> = Vec::new();
-    collect_operand_handles(table, state, ct_state, slot, promote, &mut handles, 0);
-    for hand in &handles {
-        classify_handle_into(hand, is_code_address, whole_operand, out);
-    }
-}
-
-/// `OperandSymbol.printList` → `Constructor.printList`: descend into a
-/// subtable's print pieces, taking each nested operand's handle; otherwise this
-/// operand contributes its own resolved handle.
-///
-/// The containing constructor promotes a handle when, across its pieces, exactly
-/// one operand produced handles and that operand produced exactly one
-/// (`opSymbolCnt == 1 && lastHandle != null`). Doing that at each level is what
-/// reports a branch target as an `Address` rather than a raw scalar.
+/// Collect printed handles and report whether the operand contributes anything
+/// to Ghidra's print list, including text that is not an operand object.
 fn collect_operand_handles(
-    table: &SymbolTable,
-    state: &[ConstructState],
-    ct_state: &ConstructState,
+    walker: &mut ParserWalker<'_>,
     slot: usize,
-    promote: &mut dyn FnMut(&mut FixedHandle, ConstructorRef, usize),
     out: &mut Vec<FixedHandle>,
-    depth: u32,
-) {
-    if depth > 32 {
-        return;
-    }
-    let Some(&ci) = ct_state.resolve.get(slot) else { return };
-    let child = &state[ci];
-    let defining_is_subtable = ct_state
-        .ct
-        .and_then(|ct| table.get_constructor(ct).ok())
-        .and_then(|c| c.get_operand(slot as i32).ok())
+) -> KunaResult<bool> {
+    let node = &walker.ctx.state[walker.point()];
+    let Some(&child_idx) = node.resolve.get(slot) else { return Ok(false) };
+    let table = walker.table;
+    let defining = operand_symbol(table, walker.get_constructor_inner()?, slot as i32)?
+        .get_defining_symbol()
         .and_then(|id| table.find_symbol_by_id(id))
-        .and_then(|sym| match sym.kind() {
-            SymbolKind::Operand(op) => op.get_defining_symbol(),
-            _ => None,
-        })
-        .and_then(|id| table.find_symbol_by_id(id))
-        .is_some_and(|sym| matches!(sym.kind(), SymbolKind::Subtable(_)));
-
-    if !(defining_is_subtable && child.ct.is_some()) {
-        out.push(child.hand.clone());
-        return;
-    }
-    // `Constructor.printList` iterates the constructor's PRINT PIECES and takes
-    // each `\nX` operand placeholder in that order — it does not use
-    // `getOpsPrintOrder`, so pieces before the first whitespace still count.
-    let printed: Vec<usize> = child
-        .ct
-        .and_then(|ct| table.get_constructor(ct).ok())
-        .map(|c| {
-            c.get_print_pieces()
-                .iter()
-                .filter(|piece| piece.first() == Some(&b'\n') && piece.len() >= 2)
-                .map(|piece| usize::from(piece[1] - b'A'))
-                .collect::<Vec<usize>>()
-        })
-        .filter(|v: &Vec<usize>| !v.is_empty())
-        .unwrap_or_else(|| (0..child.resolve.len()).collect());
-    let mut batches: Vec<(usize, Vec<FixedHandle>)> = Vec::new();
-    for idx in printed {
-        let mut handles: Vec<FixedHandle> = Vec::new();
-        collect_operand_handles(table, state, child, idx, promote, &mut handles, depth + 1);
-        if !handles.is_empty() {
-            batches.push((idx, handles));
+        .map(|symbol| symbol.kind());
+    let handle = &walker.ctx.state[child_idx].hand;
+    match defining {
+        Some(SymbolKind::Name(name)) => {
+            return Ok(name.get_name_table().get(handle.offset_offset as usize)
+                .is_some_and(|token| !token.is_empty()));
+        }
+        Some(SymbolKind::Subtable(_)) => {}
+        _ => {
+            out.push(handle.clone());
+            return Ok(true);
         }
     }
-    if batches.len() == 1 && batches[0].1.len() == 1 {
-        if let Some(ct) = child.ct {
-            let (idx, handles) = &mut batches[0];
-            promote(&mut handles[0], ct, *idx);
+    walker.push_operand_inner(slot as i32)?;
+    let constructor = table.get_constructor(walker.get_constructor_inner()?)?;
+    let start = out.len();
+    let mut last_slot = 0;
+    let mut contributing_operands = 0;
+    let mut has_text = false;
+    for piece in constructor.get_print_pieces() {
+        if let [b'\n', index, ..] = piece.as_slice() {
+            let idx = usize::from(index - b'A');
+            if collect_operand_handles(walker, idx, out)? {
+                contributing_operands += 1;
+                last_slot = idx;
+            }
+        } else if !piece.is_empty() {
+            has_text = true;
         }
     }
-    for (_, handles) in batches {
-        out.extend(handles);
+    // Text contributes when printed through an operand, but not when it is a
+    // literal print piece of this constructor.
+    if contributing_operands == 1 && out.len() - start == 1 {
+        if let Some(result) = constructor
+            .get_templ()
+            .and_then(|t| walker.engine.base.templates.get(t))
+            .and_then(|t| t.get_result())
+        {
+            result.fix_print_piece(&mut out[start], walker, last_slot as i32);
+        }
     }
+    walker.pop_operand_inner();
+    Ok(has_text || contributing_operands != 0)
 }
 
 /// Classify a resolved operand [`FixedHandle`] (Pcode state) into [`OpObject`]s
@@ -2531,6 +2490,9 @@ impl Sleigh {
             let root_off = mnemonic_off;
             let ct = table.get_constructor(ctref)?;
             let slots: Vec<i32> = ct.get_ops_print_order();
+            let mut walker = ParserWalker::new(&pos, table, self);
+            walker.cur.to_mut().point = Some(mnemonic_idx);
+            let mut handles = Vec::new();
             for slot in slots {
                 let opid = ct.get_operand(slot)?;
                 let opsym = table
@@ -2568,28 +2530,7 @@ impl Sleigh {
                     }
                 }
 
-                // Ghidra's `getOpObjects` is `OperandSymbol.printList`: a handle
-                // whose defining symbol is a subtable recurses into that
-                // subtable's print pieces and collects **every** leaf handle, so
-                // one memory operand can report both its base register and its
-                // displacement scalar. Collecting only the operand's own handle
-                // dropped those objects and the hash missed.
-                let mut objects: Vec<OpObject> = Vec::new();
-                let mut promote = |hand: &mut FixedHandle, ct: ConstructorRef, idx: usize| {
-                    if let Some(result) = table
-                        .get_constructor(ct)
-                        .ok()
-                        .and_then(|c| c.get_templ())
-                        .and_then(|t| self.base.templates.get(t))
-                        .and_then(|t| t.get_result())
-                    {
-                        // A fresh walker has a null point; `baseState()` is what
-                        // Ghidra does before any handle query on it.
-                        let mut walker = ParserWalker::new(&pos, table, self);
-                        walker.base_state();
-                        result.fix_print_piece(hand, &walker, idx as i32);
-                    }
-                };
+                collect_operand_handles(&mut walker, slot as usize, &mut handles)?;
                 // Ghidra's `getOpType` works from the operand's resolved handle:
                 // the operand is a scalar when that handle is a raw constant.
                 // Propagate that one decision to every leaf collected below.
@@ -2598,16 +2539,10 @@ impl Sleigh {
                     .get(slot as usize)
                     .and_then(|&ci| pos.state[ci].hand.space.as_ref())
                     .is_some_and(|sp| sp.get_type() == spacetype::IPTR_CONSTANT);
-                collect_operand_objects(
-                    table,
-                    &pos.state,
-                    root,
-                    slot as usize,
-                    op.is_code_address(),
-                    whole_operand,
-                    &mut promote,
-                    &mut objects,
-                );
+                let mut objects = Vec::new();
+                for hand in handles.drain(..) {
+                    classify_handle_into(&hand, op.is_code_address(), whole_operand, &mut objects);
+                }
                 operands.push(OperandView { value_mask, objects });
             }
         }

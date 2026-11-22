@@ -31,8 +31,8 @@ use std::rc::Rc;
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::xml::{DocumentStorage, Element};
 
-/// The empty-slot marker in Ghidra's probe table (`0xffffffff` as `int`).
-const IDF_EMPTY: i32 = -1;
+/// Generous ceiling relative to the stock 1,000-entry tables.
+const MAX_IDF_HASHES: usize = 1 << 16;
 
 /// Feature weighting tables, loaded from a `lshweights_*.xml`.
 ///
@@ -97,7 +97,7 @@ impl Default for WeightFactory {
 impl WeightFactory {
     /// The coefficient for a feature: `idfweight[i] * tfweight[t]`
     /// (`WeightFactory.getCoeff`).
-    pub fn get_coeff(&self, i: short_t, t: short_t) -> f64 {
+    pub fn get_coeff(&self, i: i16, t: i16) -> f64 {
         let i = (i as usize).min(self.idf_weight.len() - 1);
         let t = (t as usize).min(self.tf_weight.len() - 1);
         self.idf_weight[i] * self.tf_weight[t]
@@ -180,52 +180,71 @@ impl WeightFactory {
         let mut out = WeightFactory::default();
         out.scale = parse_attr_f64(el, "scale")?;
         out.addend = parse_attr_f64(el, "addend")?;
+        if !out.scale.is_finite() || out.scale <= 0.0 || !out.addend.is_finite() {
+            return Err(KunaError::bad_data("lsh weights: scale must be positive and addend finite"));
+        }
         let scale_sqrt = out.scale.sqrt();
-        let mut idf = Vec::with_capacity(IDF_WEIGHT_SIZE);
-        let mut tf = Vec::with_capacity(TF_WEIGHT_SIZE);
+        let (mut idf, mut tf) = (0, 0);
+        let mut seen = 0u8;
         for child in el.get_children() {
+            let name = child.get_name();
             let text = std::str::from_utf8(child.get_content())
                 .map_err(|_| KunaError::bad_data("lsh weights: non-UTF-8 weight value"))?;
             let value: f64 = text
                 .trim()
                 .parse()
                 .map_err(|_| KunaError::bad_data(format!("lsh weights: bad number {text:?}")))?;
-            match child.get_name() {
+            if !value.is_finite() || value < 0.0 {
+                return Err(KunaError::bad_data(format!("lsh weights: invalid <{name}> value")));
+            }
+            let (slot, bit, value) = match name {
                 // Ghidra stores the idf values pre-divided by sqrt(scale).
-                "idf" => idf.push(value * scale_sqrt),
-                "tf" => tf.push(value),
-                "weightnorm" => {
-                    out.weight_norm =
-                        value / out.scale;
+                "idf" if idf < IDF_WEIGHT_SIZE => {
+                    let slot = &mut out.idf_weight[idf];
+                    idf += 1;
+                    (slot, 0, value * scale_sqrt)
                 }
-                "probflip0" => out.prob_flip0 = value,
-                "probflip1" => out.prob_flip1 = value,
-                "probdiff0" => out.prob_diff0 = value,
-                "probdiff1" => out.prob_diff1 = value,
-                _ => {}
+                "tf" if tf < TF_WEIGHT_SIZE => {
+                    let slot = &mut out.tf_weight[tf];
+                    tf += 1;
+                    (slot, 0, value)
+                }
+                "idf" | "tf" => return Err(KunaError::bad_data(format!("lsh weights: too many <{name}> entries"))),
+                "weightnorm" => (&mut out.weight_norm, 1, value / out.scale),
+                "probflip0" => (&mut out.prob_flip0, 2, value),
+                "probflip1" => (&mut out.prob_flip1, 4, value),
+                "probdiff0" => (&mut out.prob_diff0, 8, value),
+                "probdiff1" => (&mut out.prob_diff1, 16, value),
+                _ => continue,
+            };
+            if seen & bit != 0 {
+                return Err(KunaError::bad_data(format!("lsh weights: duplicate <{name}>")));
+            }
+            if !value.is_finite() || (bit > 1 && !(value * out.scale).is_finite()) {
+                return Err(KunaError::bad_data(format!("lsh weights: <{name}> overflows after scaling")));
+            }
+            seen |= bit;
+            *slot = value;
+        }
+        if idf != IDF_WEIGHT_SIZE || tf != TF_WEIGHT_SIZE {
+            return Err(KunaError::bad_data(format!(
+                "lsh weights: expected {IDF_WEIGHT_SIZE} <idf> and {TF_WEIGHT_SIZE} <tf> entries, found {idf} and {tf}"
+            )));
+        }
+        for (index, name) in ["weightnorm", "probflip0", "probflip1", "probdiff0", "probdiff1"].into_iter().enumerate() {
+            if seen & (1 << index) == 0 {
+                return Err(KunaError::bad_data(format!("lsh weights: missing <{name}>")));
             }
         }
-        if idf.len() != IDF_WEIGHT_SIZE {
-            return Err(KunaError::bad_data(format!(
-                "lsh weights: {IDF_WEIGHT_SIZE} <idf> entries expected, found {}",
-                idf.len()
-            )));
+        let max_idf = out.idf_weight.iter().copied().fold(0.0, f64::max);
+        let max_tf = out.tf_weight.iter().copied().fold(0.0, f64::max);
+        if (max_idf * max_tf).powi(2) > f64::MAX / f64::from(u32::MAX) {
+            return Err(KunaError::bad_data("lsh weights: feature coefficients overflow the vector norm"));
         }
-        if tf.len() != TF_WEIGHT_SIZE {
-            return Err(KunaError::bad_data(format!(
-                "lsh weights: {TF_WEIGHT_SIZE} <tf> entries expected, found {}",
-                tf.len()
-            )));
-        }
-        out.idf_weight = idf;
-        out.tf_weight = tf;
         out.update_norms();
         Ok(out)
     }
 }
-
-/// A `short`-width index into the weight tables (`short` in Java).
-pub type short_t = i16;
 
 /// Parse a required `f64` attribute.
 fn parse_attr_f64(el: &Element, name: &str) -> KunaResult<f64> {
@@ -279,45 +298,62 @@ impl IDFLookup {
     }
 
     /// Grow to a table of `size` entries (`initializeTable`).
-    fn initialize_table(&mut self, size: usize) {
-        let mut mask = 1usize;
-        while mask < size {
-            mask <<= 1;
-        }
-        mask <<= 1;
-        self.slots = vec![None; mask];
-        self.mask = mask - 1;
+    fn initialize_table(&mut self, size: usize) -> KunaResult<()> {
+        let capacity = size
+            .checked_next_power_of_two()
+            .and_then(|n| n.checked_mul(2))
+            .filter(|_| size <= MAX_IDF_HASHES)
+            .ok_or_else(|| KunaError::bad_data("lsh idflookup: capacity exceeds the limit"))?;
+        self.slots = vec![None; capacity];
+        self.mask = capacity - 1;
         self.size = size;
+        Ok(())
     }
 
-    fn insert_hash(&mut self, hash: i32, count: i32) {
-        let mut val = (hash as usize) & self.mask;
-        while self.slots[val].is_some() {
-            val = (val + 1) & self.mask;
+    fn insert_hash(&mut self, hash: i32, count: i32) -> KunaResult<()> {
+        if hash == -1 || count < 0 {
+            return Err(KunaError::bad_data("lsh idflookup: invalid hash or negative count"));
         }
-        self.slots[val] = Some((hash, count));
+        let mut val = (hash as usize) & self.mask;
+        for _ in 0..self.slots.len() {
+            match self.slots[val] {
+                None => {
+                    self.slots[val] = Some((hash, count));
+                    return Ok(());
+                }
+                Some((existing, _)) if existing == hash => {
+                    return Err(KunaError::bad_data(format!("lsh idflookup: duplicate hash {hash:#x}")));
+                }
+                Some(_) => val = (val + 1) & self.mask,
+            }
+        }
+        Err(KunaError::bad_data("lsh idflookup: no free slot"))
     }
 
     /// Parse the `<idflookup>` element (`IDFLookup.restoreXml`).
     pub fn restore_xml(el: &Element) -> KunaResult<Self> {
         let mut out = IDFLookup::default();
-        // No `size` attribute means an empty table.
-        let Ok(raw_size) = el.get_attribute_value("size") else {
-            return Ok(out);
+        let size = match el.get_attribute_value("size") {
+            Ok(raw) => std::str::from_utf8(raw)
+                .ok()
+                .and_then(|text| text.trim().parse::<usize>().ok())
+                .ok_or_else(|| KunaError::bad_data("lsh idflookup: invalid size"))?,
+            Err(_) => 0,
         };
-        let size_text = std::str::from_utf8(raw_size)
-            .map_err(|_| KunaError::bad_data("lsh idflookup: non-UTF-8 size"))?;
-        let size: usize = size_text
-            .trim()
-            .parse()
-            .map_err(|_| KunaError::bad_data("lsh idflookup: bad size"))?;
+        let children = el.get_children();
+        if size != children.len() || size > MAX_IDF_HASHES {
+            return Err(KunaError::bad_data(format!(
+                "lsh idflookup: declared size {size}, found {} entries (maximum {MAX_IDF_HASHES})",
+                children.len(),
+            )));
+        }
         if size == 0 {
             return Ok(out);
         }
-        out.initialize_table(size);
-        for child in el.get_children() {
+        out.initialize_table(size)?;
+        for child in children {
             if child.get_name() != "hash" {
-                continue;
+                return Err(KunaError::bad_data("lsh idflookup: expected <hash>"));
             }
             let count_raw = child.get_attribute_value("count")?;
             let count_text = std::str::from_utf8(count_raw)
@@ -329,22 +365,21 @@ impl IDFLookup {
             let text = std::str::from_utf8(child.get_content())
                 .map_err(|_| KunaError::bad_data("lsh idflookup: non-UTF-8 hash"))?;
             let hash = parse_java_hex(text.trim())?;
-            out.insert_hash(hash, count);
+            out.insert_hash(hash, count)?;
         }
         Ok(out)
     }
 
     /// Build from `(hash, count)` pairs (`IDFLookup.set`).
-    pub fn from_pairs(pairs: &[(i32, i32)]) -> Self {
+    pub fn from_pairs(pairs: &[(i32, i32)]) -> KunaResult<Self> {
         let mut out = IDFLookup::default();
-        if pairs.is_empty() {
-            return out;
+        if !pairs.is_empty() {
+            out.initialize_table(pairs.len())?;
+            for &(hash, count) in pairs {
+                out.insert_hash(hash, count)?;
+            }
         }
-        out.initialize_table(pairs.len());
-        for &(hash, count) in pairs {
-            out.insert_hash(hash, count);
-        }
-        out
+        Ok(out)
     }
 
     /// Collapse to `(hash, count)` pairs in slot order (`IDFLookup.toArray`).
@@ -412,8 +447,11 @@ impl LshWeights {
         let mut idf = None;
         for child in root.get_children() {
             match child.get_name() {
-                "weightfactory" => factory = Some(WeightFactory::restore_xml(child)?),
-                "idflookup" => idf = Some(IDFLookup::restore_xml(child)?),
+                "weightfactory" if factory.is_none() => factory = Some(WeightFactory::restore_xml(child)?),
+                "idflookup" if idf.is_none() => idf = Some(IDFLookup::restore_xml(child)?),
+                "weightfactory" | "idflookup" => {
+                    return Err(KunaError::bad_data(format!("lsh weights: duplicate <{}>", child.get_name())));
+                }
                 _ => {}
             }
         }
@@ -426,40 +464,86 @@ impl LshWeights {
     }
 }
 
-/// The processor-size weights file name (`GenSignatures.getWeightsFile`).
-///
-/// Two languages compare with the size-symmetric file when their address sizes
-/// differ; otherwise each size has its own table. A language id is
-/// `processor:endian:size:variant`, so the third field is the address size.
-pub fn weights_file_for(language1: &str, language2: &str) -> Option<&'static str> {
-    let split1: Vec<&str> = language1.split(':').collect();
-    let split2: Vec<&str> = language2.split(':').collect();
-    if split1.len() < 3 || split2.len() < 3 {
-        return None;
+/// A single scoring profile pinned when a local corpus is created.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LshProfile {
+    Size32,
+    Size64,
+    Size64With32Abi,
+    NoSize,
+    Jvm,
+    Dalvik,
+}
+
+impl LshProfile {
+    /// The stable corpus profile name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Size32 => "32",
+            Self::Size64 => "64",
+            Self::Size64With32Abi => "64_32",
+            Self::NoSize => "nosize",
+            Self::Jvm => "jvm",
+            Self::Dalvik => "dalvik",
+        }
     }
-    if split1[0] == "Dalvik" || split1[0] == "JVM" {
-        return (split2[0] == split1[0]).then_some("lshweights_cpool.xml");
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "32" => Some(Self::Size32),
+            "64" => Some(Self::Size64),
+            "64_32" => Some(Self::Size64With32Abi),
+            "nosize" => Some(Self::NoSize),
+            "jvm" => Some(Self::Jvm),
+            "dalvik" => Some(Self::Dalvik),
+            _ => None,
+        }
     }
-    let size1 = split1[2];
-    let size2 = split2[2];
-    if size1 != size2 {
-        if !matches!(size1, "64" | "32") || !matches!(size2, "64" | "32") {
+
+    pub fn weights_file(self) -> &'static str {
+        match self {
+            Self::Size32 => "lshweights_32.xml",
+            Self::Size64 => "lshweights_64.xml",
+            Self::Size64With32Abi => "lshweights_64_32.xml",
+            Self::NoSize => "lshweights_nosize.xml",
+            Self::Jvm | Self::Dalvik => "lshweights_cpool.xml",
+        }
+    }
+
+    /// Default profile for a full Ghidra language ID.
+    pub fn for_language(language: &str) -> Option<Self> {
+        let mut fields = language.split(':');
+        let processor = fields.next()?;
+        let endian = fields.next()?;
+        let size = fields.next()?.parse::<u32>().ok()?;
+        let variant = fields.next()?;
+        if processor.is_empty() || endian.is_empty() || size == 0 || variant.is_empty() || fields.next().is_some() {
             return None;
         }
-        return Some("lshweights_nosize.xml");
+        Some(match (processor, size) {
+            ("JVM", _) => Self::Jvm,
+            ("Dalvik", _) => Self::Dalvik,
+            (_, 32) => Self::Size32,
+            (_, 64) if variant.contains("-32") => Self::Size64With32Abi,
+            (_, 64) => Self::Size64,
+            _ => Self::NoSize,
+        })
     }
-    match size1 {
-        "32" => Some("lshweights_32.xml"),
-        "64" => {
-            // A 64-bit language whose variant names a 32-bit ABI (x32) compares
-            // against the 32-bit weights.
-            if split1.len() > 3 && split1[3].contains("-32") {
-                Some("lshweights_64_32.xml")
-            } else {
-                Some("lshweights_64.xml")
-            }
+
+    /// A size-independent native corpus can mix sizes and processors, but
+    /// constant-pool languages have separate profiles.
+    pub fn admits(self, language: &str) -> bool {
+        match Self::for_language(language) {
+            Some(default) if self == Self::NoSize => !matches!(default, Self::Jvm | Self::Dalvik),
+            Some(default) => default == self,
+            None => false,
         }
-        _ => Some("lshweights_nosize.xml"),
+    }
+
+    pub fn admits_settings(self, settings: u32) -> bool {
+        use kuna_decomp::signature::sig_mods::SIG_COLLAPSE_SIZE;
+        let collapses_size = (settings >> 2) & SIG_COLLAPSE_SIZE != 0;
+        super::signature::settings_are_valid(settings) && collapses_size == (self == Self::NoSize)
     }
 }
 
@@ -483,8 +567,9 @@ mod tests {
         format!(
             "<weights settings=\"0x49\">\n\
              <weightfactory scale=\"2\" addend=\"1\">\n\
-             {idf}{tf}</weightfactory>\n\
-             <idflookup size=\"4\">\n\
+             <weightnorm>2</weightnorm><probflip0>1</probflip0><probflip1>1</probflip1>\
+             <probdiff0>1</probdiff0><probdiff1>1</probdiff1>{idf}{tf}</weightfactory>\n\
+             <idflookup size=\"2\">\n\
              <hash count=\"7\">0x10</hash>\n\
              <hash count=\"9\">0x20</hash>\n\
              </idflookup>\n</weights>\n"
@@ -516,9 +601,23 @@ mod tests {
     }
 
     #[test]
+    fn loaded_penalties_match_an_independent_significance_calculation() {
+        use super::super::lsh::{score_candidate, LshCosineVector};
+
+        let w = LshWeights::parse(mini().as_bytes()).unwrap();
+        let a = LshCosineVector::from_features(&[1, 2], &w.factory, &w.idf);
+        let b = LshCosineVector::from_features(&[1, 3, 4], &w.factory, &w.idf);
+        let (similarity, significance) = score_candidate(&w.factory, &a, &b, 0.0).unwrap();
+        // Equal coefficients; one shared hash, one flip, and one size difference.
+        assert!((similarity - 1.0 / 6.0f64.sqrt()).abs() < 1e-12);
+        let expected = 0.5 - 2.0 * (2.0 + 2.0 / 3.0) + 1.0;
+        assert!((significance - expected).abs() < 1e-12);
+    }
+
+    #[test]
     fn the_table_is_open_addressed_with_linear_probing() {
         // Capacity is the smallest power of two >= size, doubled, then masked.
-        let look = IDFLookup::from_pairs(&[(1, 5), (2, 6), (3, 7)]);
+        let look = IDFLookup::from_pairs(&[(1, 5), (2, 6), (3, 7)]).unwrap();
         assert_eq!(look.declared_size(), 3);
         assert_eq!(look.capacity() + 1, look.slots.len());
         assert_eq!(look.get_count(1), 5);
@@ -528,7 +627,7 @@ mod tests {
         // Round-tripping through the slot array preserves slot order.
         let pairs = look.to_pairs();
         assert_eq!(pairs.len(), 3);
-        let back = IDFLookup::from_pairs(&pairs);
+        let back = IDFLookup::from_pairs(&pairs).unwrap();
         assert_eq!(back.get_count(1), 5);
     }
 
@@ -538,7 +637,7 @@ mod tests {
         assert!(empty.is_empty());
         assert_eq!(empty.get_count(1234), 0);
         assert!(empty.to_pairs().is_empty());
-        assert!(IDFLookup::from_pairs(&[]).is_empty());
+        assert!(IDFLookup::from_pairs(&[]).unwrap().is_empty());
     }
 
     #[test]
@@ -553,29 +652,44 @@ mod tests {
     }
 
     #[test]
-    fn the_weights_file_follows_the_address_size() {
-        assert_eq!(
-            weights_file_for("x86:LE:32:default", "x86:LE:32:default"),
-            Some("lshweights_32.xml")
-        );
-        assert_eq!(
-            weights_file_for("x86:LE:64:default", "x86:LE:64:default"),
-            Some("lshweights_64.xml")
-        );
-        // Differing sizes fall back to the size-symmetric table.
-        assert_eq!(
-            weights_file_for("x86:LE:64:default", "x86:LE:32:default"),
-            Some("lshweights_nosize.xml")
-        );
-        // The x32 variant compares against 32-bit weights.
-        assert_eq!(
-            weights_file_for("x86:LE:64:x86-32", "x86:LE:64:default"),
-            Some("lshweights_64_32.xml")
-        );
-        // An unparsable id has no table.
-        assert_eq!(weights_file_for("x86:LE", "x86:LE"), None);
-        assert_eq!(weights_file_for("JVM:BE:32:default", "JVM:BE:32:default"), Some("lshweights_cpool.xml"));
-        assert_eq!(weights_file_for("JVM:BE:32:default", "Dalvik:LE:32:default"), None);
+    fn a_profile_is_shared_by_every_input_or_refuses_it() {
+        let x64 = "x86:LE:64:default";
+        let x32 = "x86:LE:32:default";
+        assert_eq!(LshProfile::for_language(x64), Some(LshProfile::Size64));
+        assert_eq!(LshProfile::for_language("x86:LE:64:x86-32"), Some(LshProfile::Size64With32Abi));
+        assert!(LshProfile::Size64.admits(x64));
+        assert!(LshProfile::Size64.admits("AARCH64:LE:64:v8A"));
+        assert!(!LshProfile::Size64.admits(x32));
+        assert!(LshProfile::NoSize.admits(x64));
+        assert!(LshProfile::NoSize.admits(x32));
+        assert!(LshProfile::NoSize.admits("z80:LE:16:default"));
+        assert!(!LshProfile::NoSize.admits("JVM:BE:32:default"));
+        assert!(!LshProfile::Jvm.admits("Dalvik:LE:32:default"));
+        assert!(!LshProfile::NoSize.admits("x86:LE"));
+        assert!(LshProfile::NoSize.admits_settings(0x4d));
+        assert!(!LshProfile::NoSize.admits_settings(0x49));
+        assert!(!LshProfile::Size64.admits_settings(0x4d));
+    }
+
+    #[test]
+    fn malformed_weight_documents_are_rejected() {
+        for (from, to, reason) in [
+            ("<probdiff0>1</probdiff0>", "", "missing <probdiff0>"),
+            ("<probdiff0>1</probdiff0>", "<probdiff0>NaN</probdiff0>", "invalid <probdiff0>"),
+            ("<probflip0>1</probflip0>", "<probflip0>-1</probflip0>", "invalid <probflip0>"),
+            ("<probflip0>1</probflip0>", "<probflip0>1e308</probflip0>", "overflows"),
+            ("<probflip1>1</probflip1>", "<probflip0>1</probflip0>", "duplicate <probflip0>"),
+            ("scale=\"2\"", "scale=\"0\"", "scale must be positive"),
+            ("size=\"2\"", "size=\"1\"", "declared size"),
+            ("size=\"2\"", "size=\"1000000000\"", "declared size"),
+            (" size=\"2\"", "", "declared size"),
+            ("0x20</hash>", "0x10</hash>", "duplicate hash"),
+            ("count=\"9\"", "count=\"-1\"", "negative count"),
+        ] {
+            let xml = mini().replace(from, to);
+            let err = LshWeights::parse(xml.as_bytes()).expect_err(reason);
+            assert!(err.explain().contains(reason), "{}", err.explain());
+        }
     }
 
     #[test]
