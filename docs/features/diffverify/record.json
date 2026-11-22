@@ -15,7 +15,7 @@
   "first_slice": "C1",
   "motivating_fix": "https://github.com/Noelo-Lab/kuna/pull/794",
   "optional_dependency": [
-    "https://github.com/Noelo-Lab/kuna/pull/1699"
+    "https://github.com/Noelo-Lab/kuna/issues/1641"
   ],
   "tiers": {
     "C": "concrete: SLEIGH emulation of the binary vs a new interpreter over the final Funcdata, from the same raw state; prototype claims checked against a typed contract (source, DWARF) when one exists, else PROTOTYPE_SUSPECT",
