@@ -108,7 +108,7 @@ pub fn rebased_view(file: &object::File, bytes: &[u8]) -> Option<RebasedView> {
     }
     let fmt = crate::loader::format::detect(file).ok()?;
     let layout = reloc_object::layout_relocatable(file, fmt.as_ref());
-    if layout.section_vma.is_empty() {
+    if layout.section_vma.is_empty() && layout.shortened.is_empty() {
         return None; // nothing was laid out; the loader itself has no image
     }
 
@@ -288,8 +288,9 @@ impl Order {
     }
 }
 
-/// Write each laid-out section's load VMA into its header address field, and (ELF
-/// only) shift each defined symbol's `st_value` by its section's VMA. Returns
+/// Write each laid-out section's load VMA into its header address field, the laid
+/// size of each section the layout shortened into its size field, and (ELF only)
+/// shift each defined symbol's `st_value` by its section's VMA. Returns
 /// `None` for a header shape this cannot patch, so the caller falls back to the
 /// unrebased view rather than emitting a half-patched image.
 fn patch_section_addresses(
@@ -309,6 +310,8 @@ fn patch_section_addresses(
 struct ElfShape {
     /// `sh_addr`'s offset inside a section header.
     sh_addr: usize,
+    /// `sh_size`'s offset inside a section header.
+    sh_size: usize,
     /// `st_value`'s offset inside a symbol table entry.
     st_value: usize,
     /// Width of both fields (4 on ELF32, 8 on ELF64).
@@ -330,9 +333,9 @@ fn patch_elf(file: &object::File, layout: &RelocLayout, out: &mut [u8]) -> Optio
         _ => return None,
     };
     let shape = if is64 {
-        ElfShape { sh_addr: 16, st_value: 8, width: 8 }
+        ElfShape { sh_addr: 16, sh_size: 32, st_value: 8, width: 8 }
     } else {
-        ElfShape { sh_addr: 12, st_value: 4, width: 4 }
+        ElfShape { sh_addr: 12, sh_size: 20, st_value: 4, width: 4 }
     };
     let (e_shoff, e_shentsize, e_shnum) = if is64 {
         (order.read(out, 0x28, 8)?, order.read(out, 0x3a, 2)? as usize, order.read(out, 0x3c, 2)? as usize)
@@ -340,7 +343,7 @@ fn patch_elf(file: &object::File, layout: &RelocLayout, out: &mut [u8]) -> Optio
         (order.read(out, 0x20, 4)?, order.read(out, 0x2e, 2)? as usize, order.read(out, 0x30, 2)? as usize)
     };
     let shoff = usize::try_from(e_shoff).ok()?;
-    if e_shentsize < shape.sh_addr + shape.width {
+    if e_shentsize < shape.sh_size + shape.width {
         return None;
     }
     if shoff.checked_add(e_shnum.checked_mul(e_shentsize)?)? > out.len() {
@@ -355,6 +358,14 @@ fn patch_elf(file: &object::File, layout: &RelocLayout, out: &mut [u8]) -> Optio
         }
         let at = shoff + i * e_shentsize + shape.sh_addr;
         order.write(out.get_mut(at..at + shape.width)?, vma);
+    }
+
+    for &(SectionIndex(i), size) in &layout.shortened {
+        if i >= e_shnum {
+            return None;
+        }
+        let at = shoff + i * e_shentsize + shape.sh_size;
+        order.write(out.get_mut(at..at + shape.width)?, size);
     }
 
     // (4) st_value <- section VMA + st_value, for every symbol defined in a
@@ -410,6 +421,7 @@ fn patch_coff(layout: &RelocLayout, out: &mut [u8]) -> Option<()> {
     const COFF_HEADER: usize = 20;
     const SECTION_HEADER: usize = 40;
     const VIRTUAL_ADDRESS: usize = 12;
+    const SIZE_OF_RAW_DATA: usize = 16;
     if out.len() < COFF_HEADER {
         return None;
     }
@@ -429,6 +441,12 @@ fn patch_coff(layout: &RelocLayout, out: &mut [u8]) -> Option<()> {
         }
         let vma = u32::try_from(vma).ok()?;
         write_uint(out, table + (n - 1) * SECTION_HEADER + VIRTUAL_ADDRESS, 4, vma as u64)?;
+    }
+    for &(SectionIndex(n), size) in &layout.shortened {
+        if n == 0 || n > nsections {
+            return None;
+        }
+        write_uint(out, table + (n - 1) * SECTION_HEADER + SIZE_OF_RAW_DATA, 4, size)?;
     }
     Some(())
 }

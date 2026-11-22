@@ -32,6 +32,9 @@ mod array_record;
 #[path = "aif_lea_padding.rs"]
 mod aif_lea_padding;
 
+#[path = "switchextent_cli.rs"]
+mod switchextent_cli;
+
 #[path = "ambiguous_selector_cli.rs"]
 mod ambiguous_selector_cli;
 
@@ -684,6 +687,8 @@ mod windows_stack_argument_alignment;
 mod imported_data_identifiers;
 #[path = "dwarf_linkage_calls.rs"]
 mod dwarf_linkage_calls;
+#[path = "dwarf_name_chars.rs"]
+mod dwarf_name_chars;
 #[path = "project_named_globals.rs"]
 mod project_named_globals;
 #[path = "x87_register_payload.rs"]
@@ -918,3 +923,6 @@ mod call_site_prototype;
 
 #[path = "xrefs_immutable_got.rs"]
 mod xrefs_immutable_got;
+
+#[path = "types_header.rs"]
+mod types_header;
