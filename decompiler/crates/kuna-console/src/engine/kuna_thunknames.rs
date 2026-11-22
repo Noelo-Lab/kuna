@@ -1,7 +1,9 @@
 //! (kuna `thunknames`) Name a placeholder jump thunk after the function it jumps to.
 //!
 //! A function whose first instruction is a direct unconditional branch to another
-//! function's entry is a jump thunk: its whole body is that branch. A linker emits
+//! function's entry, and does nothing else, is a jump thunk: its whole body is
+//! that branch. A delay slot belongs to its branch, so a MIPS `j f; addiu
+//! a0,a0,16` (a `this` adjustor) is not one. A linker emits
 //! them as branch islands and identical-code-folding forwarders, a compiler as
 //! outlined tail calls; on arm64 each is one `b <target>`. Left `sub_<addr>`, every
 //! call through one prints an anonymous name although its target is known.
@@ -27,7 +29,9 @@ use super::*;
 const MAX_CHAIN_HOPS: usize = 4;
 
 /// Every `(thunk, target)` among `entries`: an entry whose first instruction is a
-/// direct unconditional branch to another address.
+/// direct unconditional branch to another address and does nothing else. A
+/// delay slot is part of its branch, so MIPS `j f; addiu a0,a0,16` (a `this`
+/// adjustor) is not a thunk.
 pub(super) fn jump_thunks(
     arch: &Architecture,
     code_space: &Rc<AddrSpace>,
@@ -39,6 +43,9 @@ pub(super) fn jump_thunks(
             let insn =
                 kuna_analysis::listing::decode::decode_one(arch.translate(), vma, code_space, false, false)
                     .ok()?;
+            if insn.ops.len() != 1 {
+                return None;
+            }
             let flow = kuna_analysis::listing::classify::classify(&insn.ops, vma, insn.len);
             let target = match flow.flows.as_slice() {
                 [target] if *target != vma => *target,
@@ -114,6 +121,9 @@ pub(super) fn inherit_prototypes(
     jumps: &BTreeMap<u64, u64>,
     renamed: &BTreeSet<u64>,
 ) {
+    if renamed.is_empty() {
+        return;
+    }
     let space = code_space.get_index();
     let mut models = (*prog.arch().loader_proto_models).clone();
     let mut abi = prog.arch().loader_swift_abi.as_deref().map(|abi| kuna_decomp::kuna_swiftcall::SwiftAbi {
