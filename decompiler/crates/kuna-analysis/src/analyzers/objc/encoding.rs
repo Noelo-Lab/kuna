@@ -119,7 +119,7 @@ fn struct_type_at(encoding: &str, tctx: &TypeCtx, depth: usize) -> Option<Rc<Dat
     if let Some(t) = tctx.structs.borrow().get(name) {
         return Some(Rc::clone(t));
     }
-    let members = struct_fields_at(encoding, 0)?;
+    struct_fields_at(encoding, 0)?;
     let types = tctx.types;
     let shell = match types.find_by_name(name).ok().flatten() {
         Some(t) if t.get_metatype() == type_metatype::TYPE_STRUCT && !t.is_incomplete() => {
@@ -130,23 +130,63 @@ fn struct_type_at(encoding: &str, tctx: &TypeCtx, depth: usize) -> Option<Rc<Dat
         None => types.kuna_declare_record(name, false).ok()?,
     };
     let names = member_names(name);
-    let mut fields = Vec::new();
-    let mut offset = 0i32;
-    for (k, (named, code)) in members.iter().enumerate() {
-        let (ty, align) = member_type(code, tctx, depth)?;
-        let size = ty.get_size();
-        offset = offset.checked_add(align - 1)? / align * align;
-        let field = named
-            .clone()
-            .or_else(|| names.get(k).map(|n| n.to_string()))
-            .unwrap_or_else(|| format!("field_{k}"));
-        fields.push(TypeField::new(offset, offset, field, ty));
-        offset = offset.checked_add(size)?;
-    }
-    let size = offset.checked_add(tctx.ptr_size - 1)? / tctx.ptr_size * tctx.ptr_size;
-    let done = types.set_fields_struct_raw(&shell, fields, Vec::new(), size, tctx.ptr_size, 0).ok()?;
+    let (leaves, size, align) = layout(encoding, tctx, depth, 0)?;
+    let fields = leaves
+        .into_iter()
+        .enumerate()
+        .map(|(k, (named, ty, offset))| {
+            let field = named.or_else(|| names.get(k).map(|n| n.to_string())).unwrap_or_else(|| format!("field_{k}"));
+            TypeField::new(offset, offset, field, ty)
+        })
+        .collect();
+    let done = types.set_fields_struct_raw(&shell, fields, Vec::new(), size, align, 0).ok()?;
     tctx.structs.borrow_mut().insert(name.to_string(), Rc::clone(&done));
     Some(done)
+}
+
+/// The leaf members of a struct encoding at their C offsets, with the
+/// struct's size and alignment: each member aligned to its own alignment, a
+/// nested struct to its widest member's and padded to a multiple of it, the
+/// whole padded the same way (`{S={T=iC}C}` puts the last `C` at 8, and
+/// `{T=iii}` is 12 bytes).
+#[allow(clippy::type_complexity)]
+fn layout(
+    encoding: &str,
+    tctx: &TypeCtx,
+    depth: usize,
+    level: usize,
+) -> Option<(Vec<(Option<String>, Rc<Datatype>, i32)>, i32, i32)> {
+    if level > MAX_STRUCT_DEPTH {
+        return None;
+    }
+    let body = encoding.strip_prefix('{')?.strip_suffix('}')?;
+    let (_, members) = body.split_once('=')?;
+    let mut p = Parser::new(members);
+    p.named = members.starts_with('"');
+    let (mut out, mut offset, mut align) = (Vec::new(), 0i32, 1i32);
+    while !p.at_end() {
+        let name = p.member_name();
+        let (leaves, size, member_align) = if p.peek() == Some(b'{') {
+            let start = p.pos;
+            p.pos += 1;
+            p.skip_balanced(b'{', b'}');
+            layout(&members[start..p.pos], tctx, depth, level + 1)?
+        } else {
+            let (ty, a) = member_type(&p.type_text()?, tctx, depth)?;
+            let size = ty.get_size();
+            (vec![(name, ty, 0)], size, a)
+        };
+        offset = offset.checked_add(member_align - 1)? / member_align * member_align;
+        for (n, t, o) in leaves {
+            out.push((n, t, offset.checked_add(o)?));
+        }
+        offset = offset.checked_add(size)?;
+        align = align.max(member_align);
+    }
+    if out.is_empty() {
+        return None;
+    }
+    Some((out, offset.checked_add(align - 1)? / align * align, align))
 }
 
 /// The type of one leaf member and its alignment: a scalar or pointer aligned
@@ -725,6 +765,23 @@ mod tests {
         let opaque = decode_ivar_type("^{__Opaque=}", &tctx).unwrap();
         assert_eq!(opaque.get_ptr_to().unwrap().get_metatype(), type_metatype::TYPE_VOID);
         assert!(f.find_by_name("__Opaque").ok().flatten().is_none(), "an empty layout declares nothing");
+    }
+
+    /// Members sit at their C offsets: a nested struct is padded to its own
+    /// alignment before the next member, and a struct of 4-byte members is not
+    /// padded to a pointer.
+    #[test]
+    fn struct_layout_follows_c_alignment() {
+        let f = factory();
+        let tctx = TypeCtx::new(&f, 8, 1);
+        let outer = decode_ivar_type("^{Outer={Inner=iC}Ci}", &tctx).unwrap().get_ptr_to().unwrap();
+        let offsets: Vec<i32> = (0..4).map(|k| outer.get_field(k).unwrap().offset).collect();
+        assert_eq!((offsets, outer.get_size()), (vec![0, 4, 8, 12], 16));
+        assert_eq!(struct_type("{Tri=iii}", &tctx).unwrap().get_size(), 12);
+        assert_eq!(struct_type("{Three=CCC}", &tctx).unwrap().get_size(), 3);
+        assert_eq!(struct_type("{Tagged=Cd}", &tctx).unwrap().get_field(1).unwrap().offset, 8);
+        let rect = struct_type("{CGRect={CGPoint=dd}{CGSize=dd}}", &tctx).unwrap();
+        assert_eq!((rect.get_size(), rect.get_field(3).unwrap().offset), (32, 24));
     }
 
     /// A struct reached through a chain of pointers deeper than the cap stops

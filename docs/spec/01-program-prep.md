@@ -5985,7 +5985,11 @@ every other binary's pass list is byte-identical to before the pass existed):
     `v = objc_msgSend$bounds(view); objc_msgSend$setFrame:(view, v.x, v.y, v.width, v.height)`.
     Only nested by-value structs are flattened into their leaf members; a
     pointer member is one pointer-sized field whatever it points to
-    (`{S=^{T=ii}q}` has two members, a pointer and a `q`).
+    (`{S=^{T=ii}q}` has two members, a pointer and a `q`). The leaves keep their
+    C offsets: each member is aligned to its size (at most a pointer's), a
+    nested struct to its widest member and padded to a multiple of it, and the
+    struct's size is padded the same way, so `{S={T=iC}C}` puts the last `C` at
+    8 and `{Tri=iii}` is 12 bytes, not 16.
     A pointer to a named struct whose layout the encoding spells (`^{S=Q^@}`,
     from the image's metadata or from the headers) is a pointer to that struct
     (`decompiler/crates/kuna-analysis/src/analyzers/objc/encoding.rs (struct_type_at)`),
