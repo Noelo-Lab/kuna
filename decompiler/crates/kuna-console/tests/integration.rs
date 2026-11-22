@@ -28,6 +28,8 @@ mod setup_commands;
 mod verify_language_database;
 #[path = "verify_memoryspecs.rs"]
 mod verify_memoryspecs;
+#[path = "verify_cortexmdevice.rs"]
+mod verify_cortexmdevice;
 
 #[path = "verify_aarch64_plt.rs"]
 mod verify_aarch64_plt;

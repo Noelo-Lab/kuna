@@ -108,6 +108,8 @@ pub(crate) mod kuna_rexthunk;
 pub(crate) mod kuna_peordinal;
 // (kuna #1288) the PC memory a DOS program shares with the machine, volatile.
 pub mod kuna_pcmemory;
+// (kuna) The Device memory regions of an M-profile image, volatile.
+pub mod kuna_cortexmdevice;
 // (kuna `kernelcache`) IMG4/IM4P/LZFSE/complzss unwrapping and MH_FILESET entry
 // selection for Apple kernelcaches.
 pub mod kuna_kernelcache;

@@ -4521,6 +4521,9 @@ pub(crate) fn bootstrap_raw_image(
     let mut prog = empty_program(raw.into_sleigh(), registry, ProgramContainer::Raw, description);
     prog.pending_synthetic_entries = pending_synthetic_entries;
     prog.pending_analysis = input_isa_stash(input_context_paints);
+    if kuna_analysis::loader::kuna_cortexmdevice::is_m_profile(&arch_id, None) {
+        kuna_analysis::loader::kuna_cortexmdevice::paint_volatile(prog.arch_mut(), &code_space, &[(image_base, image_size, 0)]);
+    }
     prog.analysis_code_space = Some(code_space);
     prog.raw_address_units = Some((word_size, arm32));
     Ok(prog)
@@ -5056,6 +5059,7 @@ pub(crate) fn bootstrap_object(
         let entry = kuna_analysis::loadimage_object::arm_entry_thumb_hint(file, &bytes)?;
         Some(PendingEntryThumb { executable_ranges: loader.executable_ranges(), entry })
     }).flatten();
+    let m_profile = kuna_analysis::loader::kuna_cortexmdevice::is_m_profile(&arch_id, parsed.as_ref());
     drop(parsed);
     sleigh.base_mut().unwrap().mapped_flow_boundary_image =
         kuna_decomp::kuna_mappedflowboundary::eligible_elf(&bytes, &arch_id);
@@ -5352,6 +5356,10 @@ pub(crate) fn bootstrap_object(
         prog.loader_aliases.entry(vma).or_default().push(name);
     }
     prog.pending_entry_thumb = entry_thumb_walk;
+    if m_profile {
+        let mapped = prog.sections();
+        kuna_analysis::loader::kuna_cortexmdevice::paint_volatile(prog.arch_mut(), &code_space, &mapped);
+    }
     // conf->readLoaderSymbols("::"): install the ELF symbols as FunctionSymbols.
     // The deferred analysis commit at `read symbols` REQUIRES this to have run
     // first (no-return/callfixup address+name resolution finds the funcsyms).

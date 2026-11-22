@@ -28,6 +28,25 @@ pub fn thumb_only(file: &object::File<'_>) -> bool {
         })
 }
 
+/// Whether the build attributes state the M profile (`Tag_CPU_arch_profile`
+/// `'M'`).
+pub fn m_profile(file: &object::File<'_>) -> bool {
+    if file.format() != object::BinaryFormat::Elf
+        || file.architecture() != object::Architecture::Arm
+    {
+        return false;
+    }
+    file.sections()
+        .filter(|s| s.name() == Ok(".ARM.attributes"))
+        .any(|section| {
+            let Ok(data) = section.data() else {
+                return false;
+            };
+            file_attribute(data, file.is_little_endian(), TAG_CPU_ARCH_PROFILE, |v| v, None).flatten()
+                == Some(u32::from(b'M'))
+        })
+}
+
 pub fn vfp_args(file: &object::File<'_>) -> bool {
     if file.format() != object::BinaryFormat::Elf
         || file.architecture() != object::Architecture::Arm

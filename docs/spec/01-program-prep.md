@@ -2103,6 +2103,26 @@ their reads, a video-mode probe keeps its read of the EGA switches at 0x487,
 and the hard-disk parameter vectors at 0x104 and 0x118 are read where the code
 reads them.
 
+(kuna) **The Device memory of an M-profile image is volatile** (always on;
+`decompiler/crates/kuna-analysis/src/loader/kuna_cortexmdevice.rs (paint_volatile)`).
+The ARMv7-M and ARMv8-M memory maps make two regions Device memory on every
+part: the Peripheral region (0x40000000-0x5FFFFFFF), where a vendor maps its
+on-chip peripherals, and the System region (0xE0000000-0xFFFFFFFF), the Private
+Peripheral Bus with the NVIC, SysTick and System Control Block and the vendor
+system space above it. A load there may return a new value each time and every
+store has an effect, so read as ordinary memory the first of two writes to a
+peripheral register is deleted as a dead store, two reads of a data register
+merge, and a status-register poll is hoisted out of its loop. An image is
+M-profile when its language is `ARM:*:32:Cortex` or `ARM:*:32:v8-m`, or when it
+is an ARM ELF whose build attributes state `Tag_CPU_arch_profile` `'M'`. The ELF
+loader paints both regions `volatile` after it maps the sections and before any
+symbol is mapped (a symbol takes the property as it is mapped, see `--assert
+volatile`); a raw-image load under a Cortex-M language does the same. A range
+the image maps itself (a section linked into the Peripheral region, or a raw
+image based there) is left out, since its contents are the image's own. Only
+accesses whose address the decompiler resolves are affected: a register
+reached through a pointer held in a structure or passed as an argument is not.
+
 ## 1.3 Loader markup
 
 Import naming exists because a CALL into a linkage stub carries no symbol: without
