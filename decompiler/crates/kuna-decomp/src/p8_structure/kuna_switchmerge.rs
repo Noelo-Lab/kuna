@@ -257,7 +257,7 @@ impl Planner<'_> {
                 let s = list[skip];
                 let sb = graph.block(s);
                 if sb.get_type() != BlockType::Switch
-                    || sb.switch_caseblocks().iter().any(|c| c.isdefault || c.isexit)
+                    || sb.switch_caseblocks().iter().any(|c| c.isdefault || c.isexit || c.gototype == block_flags::f_break_goto)
                     || arm_breaks(graph, s)
                 {
                     break;
