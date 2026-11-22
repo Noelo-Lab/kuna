@@ -224,7 +224,8 @@ fn fixture_claims_are_outside_stated_bodies() {
             budget: std::cell::Cell::new(usize::MAX),
         };
         let mut out = AnalysisOutput::default();
-        namer.emit(&mut out);
+        let records = namer.claim_records();
+        namer.finish(records, &mut out);
         out
     };
     let checked = names(&bytes, usize::MAX);
@@ -362,7 +363,8 @@ fn names(bytes: &[u8], budget: usize) -> AnalysisOutput {
         budget: std::cell::Cell::new(budget),
     };
     let mut out = AnalysisOutput::default();
-    namer.emit(&mut out);
+    let records = namer.claim_records();
+    namer.finish(records, &mut out);
     out
 }
 
