@@ -20,8 +20,6 @@ mod funcdata_encode_e2e;
 #[path = "heritage_b3.rs"]
 mod heritage_b3;
 
-#[path = "options_md_fresh.rs"]
-mod options_md_fresh;
 
 #[path = "phase_codegen.rs"]
 mod phase_codegen;

@@ -310,9 +310,9 @@ Three layers, cheapest first:
 
 1. **Track separation.** `tooling` touches kuna-cli/console/analysis + `tests/cli/` +
    `docs/cli.md`; `quality` touches kuna-decomp + `phases.toml` + the counters +
-   `docs/options.md` + `docs/history.md` + `tests/stages/`. Disjoint sets.
+   `docs/history.md` + `tests/stages/`. Disjoint sets.
 2. **Named leases** with a TTL and a dead-pid reaper: `merge`, `counter:catalog`,
-   `counter:stages-corpus`, `file:phases.toml`, `file:docs/options.md`,
+   `counter:stages-corpus`, `file:phases.toml`,
    `cluster:<id>`. A lease exists where a *silent wrong merge* is possible — not where a
    trivial rebase would resolve it. Because every `quality` need needs the whole counter set,
    **at most one option-adding builder is ever in flight** with no special-casing, while

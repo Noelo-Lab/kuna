@@ -527,7 +527,7 @@ explicit-set masks and removing new split points on exit. Opening a scope does
 not copy the image's context database.
 
 Option defaults and flip guidance for every option named below live in the
-generated catalog ([docs/options.md](../options.md)); the rows are defined in
+generated catalog (`kuna docs options`); the rows are defined in
 `decompiler/crates/kuna-decomp/phases.toml` and the intentional
 default-divergences are DIV-3/4/13/14 in `docs/history.md`.
 

@@ -38,7 +38,7 @@ binaries into `decompiler/target/release/` and compiles the specs).
 |---|---|---|
 | `make test` | datatest corpus vs `docs/baseline.json` | **PARITY OK** (675/675) |
 | `make test-stages` | stage-issue corpus vs `docs/baseline-stages.json` | **PARITY OK** |
-| `make rust-test` | full cargo workspace suite + `docs/options.md` freshness | green |
+| `make rust-test` | full cargo workspace suite | green |
 | `make check-spec` | `docs/spec/` anchors + inline code paths resolve; each phase folder owned by exactly one chapter (`--strict` adds option-mention coverage) | green |
 
 CI runs all four (plus `kuna catalog --check`) on every push to main —
@@ -79,8 +79,8 @@ instead. `make rust-test` and `make test-tools` enforce this. Focused run:
   `kuna test --datatests --datatests-dir tests/stages --save-baseline docs/baseline-stages.json`.
   That file is only the sorted passing keys, one per line, so two branches adding different
   tests merge cleanly; on a conflict, re-record it on the merged tree rather than hand-merge.
-- `docs/options.md` is generated — after touching option metadata:
-  `decompiler/target/release/kuna catalog --markdown > docs/options.md`.
+- The option catalog is generated, never committed: `kuna docs options` prints it and
+  `make options-md` writes it to `docs/options.md` (gitignored) for local reading.
 - When doing builds and tests on a local system, always be aware of the total RAM available on the machine.
   You should always stay below 90% RAM usage. If you detect it occuring, kill it, then request help
   from the user and if it is ok to allow it.
@@ -192,7 +192,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 |---|---|
 | `docs/phases.md` | The phase model on one screen (P0–P9, Band B, feedback edges). |
 | `docs/spec/` | How any algorithm/pass actually works (start `00-overview.md`). |
-| `docs/options.md` | The generated option catalog (tiers, symptoms, flip guidance). |
+| `kuna docs options` | The generated option catalog (tiers, symptoms, flip guidance); `make options-md` writes it to `docs/options.md`. |
 | `docs/cli.md` | The full `kuna` CLI reference. |
 | `docs/pr-bodies.md` | How to write a PR body (read before opening or editing any PR). |
 | `docs/prepr.md` | Optional pre-PR helpers: a call-arity diff over real MSVC binaries, and a diff lint. |

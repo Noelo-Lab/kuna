@@ -402,7 +402,7 @@ bare name is the shim and the shim is what records the run.
 ## kuna -- your primary tool
 
 `kuna --help` lists its {n} subcommands: {subcommands}. `kuna docs` is the embedded manual and
-`kuna catalog --json` the full option surface; the repo's `docs/cli.md` and `docs/options.md`
+`kuna catalog --json` the full option surface; `kuna docs cli` and `kuna docs options`
 document both.
 
 That list is read out of the binary in this arena at build time, so it is the surface you

@@ -107,31 +107,14 @@ jobs:
       - name: kuna catalog --check
         run: ./decompiler/target/release/kuna catalog --check
 
-      # Shared-counter drift and ElementId collisions. Both are shapes that every
-      # other gate passes cleanly: a stale hard-coded settable count only fails
-      # whichever cargo test happens to assert it, and a duplicate ElementId fails
-      # nothing at all -- three separate ones (4110, 4122, 4132) reached main before
+      # Registry/catalog drift and ElementId collisions. A duplicate ElementId fails
+      # nothing else at all -- three separate ones (4110, 4122, 4132) reached main before
       # this step existed, the last created by two concurrent builders in one round
       # each grepping for "the next free id" and getting the same answer. Two options
       # sharing an id compare EQUAL (ElementId's PartialEq is an id comparison), so
       # the first code that dispatches on one takes the wrong branch silently.
       - name: shared counters and ElementId uniqueness
         run: PYTHONPATH=$PWD python3 -m scripts.repipe.counters --check
-
-      # `catalog --check` above proves options.md documents the same option SET;
-      # this proves it is the generator's exact bytes. That is the assertion in
-      # kuna-decomp/tests/options_md_fresh.rs, which lives in the workspace suite
-      # -- skipped on an internal PR. Forgetting to regenerate options.md after
-      # touching option metadata is a routine miss (AGENTS.md calls it out), so
-      # the cheap job carries it rather than deferring it to the push to main.
-      # Free: it reuses the release binary this job already built.
-      - name: docs/options.md is the generator's bytes
-        run: |
-          ./decompiler/target/release/kuna catalog --markdown > /tmp/options.generated.md
-          if ! diff -u docs/options.md /tmp/options.generated.md; then
-            echo "::error file=docs/options.md::stale -- regenerate with 'decompiler/target/release/kuna catalog --markdown > docs/options.md'"
-            exit 1
-          fi
 
       # The ghidra-mode differential harness (docs/ghidra-integration.md §11):
       # drives the full decompile-process wire protocol in-process against real

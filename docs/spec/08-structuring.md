@@ -19,7 +19,7 @@ the heaviest angr provenance: untagged prose is the Ghidra port; everything
 option-gated below is registered with `source_decompiler = "angr"` in
 `decompiler/crates/kuna-decomp/phases.toml` and tagged `(angr)` here. Option
 defaults, tiers, symptoms, and flip guidance for every option named below
-live in the generated catalog ([docs/options.md](../options.md)); this
+live in the generated catalog (`kuna docs options`); this
 chapter names only the divergence record that flipped a default
 (DIV-10/12/14/17/18/23/25 in `docs/history.md`).
 

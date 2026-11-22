@@ -3614,7 +3614,7 @@ and an agent writes:
   build, and every command answers `could not build an architecture for <binary>:
   Non-global scope has empty name` and emits nothing. (Answering with the reason
   attached is what DIV-90 gave the subprocess surface, which until then replaced
-  it with a fixed string — so this symptom, which `docs/options.md` publishes as
+  it with a fixed string — so this symptom, which the option catalog publishes as
   the trigger for the repair, was unmatchable from the surface an
   agent is most likely driving.) Symbol-name bytes are attacker-controlled data
   that no header check
@@ -3716,7 +3716,7 @@ and an agent writes:
   row order is preserved, required fields have explicit types, and duplicate or
   unknown fields are rejected. Live mappings must supply all three fields or
   none. The rendered catalog is
-  [docs/options.md](../options.md) and this spec never duplicates its metadata.
+  the option catalog (`kuna docs options`) and this spec never duplicates its metadata.
   Default CLI catalog discovery calls the static emitter in-process: no console
   subprocess, binary input or SLEIGH tree is needed. An explicit `--decomp-dbg`
   override, or a non-empty `KUNA_DECOMP_DBG` when the flag is absent, selects the
@@ -4141,7 +4141,7 @@ Conventions worth knowing before reading anything:
 - **`Funcdata` methods are phase-owned**: find the owning phase through the impl
   map (§0.3) rather than grepping one giant file.
 - Option metadata lives in the generated catalog
-  ([docs/options.md](../options.md)); the phase model at a glance in
+  (`kuna docs options`); the phase model at a glance in
   [docs/phases.md](../phases.md); intentional default divergences, their
   measurements, and the original derivation study in `docs/history.md`.
 

@@ -54,7 +54,6 @@ REL_BASELINE_STAGES = "docs/baseline-stages.json"
 KEEPBOTH_PATHS = (
     REL_BASELINE_STAGES,
     "tests/stages/README.md",
-    "docs/options.md",
     "decompiler/crates/kuna-decomp/phases.toml",
 )
 

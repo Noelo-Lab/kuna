@@ -21,7 +21,7 @@ folder's three scheduled passes are the glibc stack-guard transform of §7.3,
 the rustc security-check transform of §7.4 and the MSVC `/GS` transform of
 §7.5, which the schedule places back to back in fullloop's tail. Option defaults and flip guidance for
 every option named below live in the generated catalog
-([docs/options.md](../options.md)); the registry rows are in
+(`kuna docs options`); the registry rows are in
 `decompiler/crates/kuna-decomp/phases.toml` and the default divergences are
 DIV-12/DIV-14/DIV-82 in `docs/history.md`.
 
@@ -267,7 +267,7 @@ check, and the drive reports the budget. Without a budget nothing is polled.
 The folder's one scheduled, output-changing pass:
 `decompiler/crates/kuna-decomp/src/p7_regions/kuna_stackguard.rs
 (ActionStripStackGuard)`, the port of angr's `StackCanarySimplifier`
-(`option stackguard`, [docs/options.md](../options.md); registry row
+(`option stackguard`, the option catalog (`kuna docs options`); registry row
 P7/`edge-virtualization`, `source_decompiler = "angr"`). Scheduled in
 fullloop's tail (00-overview §0.6), in the `returnsplit` group immediately
 before `ActionReturnSplit`
@@ -361,7 +361,7 @@ The folder's second scheduled, output-changing pass:
 `decompiler/crates/kuna-decomp/src/p7_regions/kuna_securitycheck.rs
 (ActionRemoveSecurityCheck)`, the port of SEFCOM Oxidizer's
 `SecurityCheckRemover` (`option securitycheck`,
-[docs/options.md](../options.md); registry row P7/`edge-virtualization`,
+the option catalog (`kuna docs options`); registry row P7/`edge-virtualization`,
 `source_decompiler = "angr"`). It is scheduled in the same `returnsplit` group
 as §7.3, immediately after `ActionStripStackGuard`
 (`decompiler/crates/kuna-decomp/src/infra/universalaction.rs
@@ -447,7 +447,7 @@ exists. `tests/stages/oxidizer-securitycheck.xml` pins both directions.
 The folder's third scheduled, output-changing pass:
 `decompiler/crates/kuna-decomp/src/p7_regions/kuna_msvcstackguard.rs
 (ActionStripMsvcStackGuard)` — the Windows sibling of §7.3 (`option
-msvcstackguard`, [docs/options.md](../options.md); registry row
+msvcstackguard`, the option catalog (`kuna docs options`); registry row
 P7/`edge-virtualization`, `source_decompiler = "kuna"`, GH-468 finding 3).
 Registered in the same `returnsplit` group, immediately after
 `ActionStripStackGuard`.

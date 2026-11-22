@@ -367,7 +367,7 @@ fn usage_catalog() {
          summary,use_when,symptoms,..}}] (one element with --option NAME).  It and\n\
          `kuna docs --json` are the two array-rooted documents; every other --json\n\
          is an object.\n\
-         --markdown regenerates docs/options.md (tier-grouped, symptom-indexed).\n\
+         --markdown renders the option catalog (tier-grouped, symptom-indexed).\n\
          --check cross-checks the selected catalog against this binary's registered\n\
          option names and exits nonzero on drift; this is the CI gate.\n\
          --option NAME reports one row; --tier keeps one tier, in the table and\n\

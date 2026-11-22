@@ -299,8 +299,8 @@ against the convention until a parameter list emerges, §4.1–§4.2). Untagged
 prose describes the Ghidra-derived port; scheduling is chapter 00 §0.6 — the
 setup passes run once in the outer restart group, the trial passes co-evolve
 with SSA/dead-code/types inside mainloop (Band B), and the one-shot prototype
-fixation runs in the tail. Option metadata lives in the generated catalog,
-[`docs/options.md`](../options.md), and is not repeated here.
+fixation runs in the tail. Option metadata lives in the generated catalog
+(`kuna docs options`) and is not repeated here.
 
 ## 4.1 Prototype models
 
@@ -5234,7 +5234,7 @@ sweeps: the gate cannot distinguish a passively-live pair from a genuine
 found 3 of the 675 upstream assertions legitimately need the join — a global
 `single` default would truncate real wide returns. Flip it per function on the
 CONCAT-return symptom; the symptom table and flip guidance live in
-[`docs/options.md`](../options.md#returnpair).
+the option catalog (`kuna docs options`).
 
 ### (kuna) A return register tested on the same condition twice (`kuna_condexeret.rs`)
 

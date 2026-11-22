@@ -84,7 +84,7 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 ## Protocol
 
 ### 1. analyze — reproduce and localize the gap
-- Read `AGENTS.md`, `docs/phases.md`, `docs/history.md`, `docs/options.md`,
+- Read `AGENTS.md`, `docs/phases.md`, `docs/history.md`, the option catalog (`kuna docs options`),
   `tests/stages/README.md`, and the **loweredswitch** feature as the canonical template:
   `git log --oneline | grep loweredswitch`, then read
   `decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitch.rs`, its anchors in `coreaction*.rs` /
@@ -157,7 +157,6 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 - `kuna catalog --check`  → "catalog OK"
 - `kuna test --all --baseline docs/baseline.json`  → PARITY OK
 - `make test-stages`  → all pass
-- Regenerate `docs/options.md`: `kuna catalog --markdown > docs/options.md` (freshness-fenced by `make rust-test`)
 
 ### 7. docs + record
 - `docs/spec/`: update the chapter owning the phase you changed (find it via its `Anchors:` block); run `make check-spec`.

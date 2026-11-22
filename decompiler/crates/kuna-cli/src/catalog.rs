@@ -157,10 +157,9 @@ pub fn cmd_json(option: Option<&str>, tier: Option<&str>, pinned_by: Option<&str
     }
 }
 
-/// `--markdown`: the body of `docs/options.md`, rendered in-process straight
-/// from `SETTABLE_TABLE` (`kuna_phases::emit_catalog_markdown`) -- no live
-/// values, byte-stable, freshness-fenced by kuna-decomp's
-/// `tests/options_md_fresh.rs`.
+/// `--markdown`: the option catalog (`kuna docs options`), rendered in-process
+/// straight from `SETTABLE_TABLE` (`kuna_phases::emit_catalog_markdown`) -- no
+/// live values, byte-stable. `make options-md` writes it to `docs/options.md`.
 pub fn cmd_markdown(option: Option<&str>) -> i32 {
     if let Some(o) = option {
         eprintln!("error: --markdown renders the whole catalog (got --option {o}); use --json/--option for one row");

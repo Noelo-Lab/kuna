@@ -3,7 +3,7 @@
 Each `NNNN-<option>.toml` here is one `[[settable]]` row of the phase registry
 (`../phases.toml` holds the group, subphase and surface tables). `build.rs` reads
 the files in file-name order, and that order is the catalog order: `kuna catalog`,
-`docs/options.md`, `SETTABLE_TABLE`.
+`kuna docs options`, `SETTABLE_TABLE`.
 
 - **Adding an option:** create `NNNN-<option>.toml` with `NNNN` one past the
   highest number here. Two branches picking the same number is fine: the files

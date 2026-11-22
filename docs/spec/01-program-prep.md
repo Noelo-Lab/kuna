@@ -19,7 +19,7 @@ of the image (marked "always on" in its section) has no flag, and a refinement o
 a flagged pass rides its parent's flag (`funcdisc_recursive` rides
 `funcstart_patterns`; the DWARF layout, variant-part and discriminant-naming arms
 ride `dwarf`). Defaults, symptoms, and flip guidance live in the generated
-catalog, [`docs/options.md`](../options.md), and are not repeated here.
+catalog (`kuna docs options`) and are not repeated here.
 
 ## 1.1 The tier contract
 

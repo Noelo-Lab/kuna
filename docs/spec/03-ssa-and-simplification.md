@@ -28,7 +28,7 @@ rebuilt incrementally each mainloop iteration and the pools re-fire between
 rebuilds, until Band B reaches mutual quiescence.
 
 Option metadata (defaults, tiers, symptoms, flip guidance) for every option
-named below lives in the generated catalog ([docs/options.md](../options.md));
+named below lives in the generated catalog (`kuna docs options`);
 the rows are defined in `decompiler/crates/kuna-decomp/phases.toml` and the
 default-divergence measurements are DIV-2/DIV-3 in `docs/history.md`.
 
@@ -3462,7 +3462,7 @@ DIV-2/DIV-3 rows of `docs/history.md` carry the ablation evidence). With a
 gate off, the rule returns 0 unconditionally and output is byte-identical to
 upstream. The rules marked *always on* below carry no gate: their off value
 only reproduced an unfolded idiom, so they run unconditionally. Full option
-metadata: [docs/options.md](../options.md).
+metadata: the option catalog (`kuna docs options`).
 
 **globalarrayanchor** —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_globalarrayanchor.rs

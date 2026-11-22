@@ -148,7 +148,7 @@ investigating.
    Band B (P3–P6) as a mutual fixed point — one screen: `docs/phases.md`; per-pass
    algorithms: `docs/spec/` (each phase folder has exactly one owning chapter, found via
    its `Anchors:` header). Tools, in the order that usually works:
-   - **Symptom index**: `docs/options.md` opens with an "If the output shows… → try
+   - **Symptom index**: the option catalog (`kuna docs options`) opens with an "If the output shows… → try
      `option`" table. Caveat from practice: *the symptom's phase is often not the
      decision's phase* — wrong-looking constants in the C are usually destroyed in Band B,
      not mis-rendered at P9.
@@ -213,7 +213,7 @@ The artifact checklist (every item, or the gates fail opaquely):
    ```bash
    decompiler/target/release/kuna test --datatests --datatests-dir tests/stages --save-baseline docs/baseline-stages.json
    ```
-6. Regenerate the catalog doc: `decompiler/target/release/kuna catalog --markdown > docs/options.md`.
+6. Read the rendered row back with `kuna docs options` (the catalog is generated, not committed).
 7. Update the owning `docs/spec/` chapter; `make check-spec`.
 
 ## 4. Verify & ship

@@ -46,6 +46,14 @@ fn index() -> Vec<Value> {
 }
 
 fn source(topic: &str) -> String {
+    if topic == "options" {
+        let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args(["catalog", "--markdown"])
+            .output()
+            .expect("run kuna catalog --markdown");
+        assert!(out.status.success());
+        return String::from_utf8(out.stdout).unwrap();
+    }
     std::fs::read_to_string(repo_root().join(format!("docs/{topic}.md"))).unwrap()
 }
 

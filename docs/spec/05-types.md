@@ -34,7 +34,7 @@ the `stackstall` rule pools → block structure → constant-pointer recovery �
 `oppool2` pointer-arithmetic pool.
 
 Option defaults, tiers, and flip guidance for every option named below live in
-the generated catalog ([docs/options.md](../options.md)); the rows are defined
+the generated catalog (`kuna docs options`); the rows are defined
 in `decompiler/crates/kuna-decomp/phases.toml` and the type-phase default
 divergences are DIV-2 in `docs/history.md`. Untagged prose is the
 Ghidra-derived port; `(kuna)` marks kuna-original passes (each named with the
@@ -1761,7 +1761,7 @@ Three (kuna) escapes hook exactly here; the first two are always on:
   and `0x2000` is that image's `_DT_INIT`, so the bound printed as
   `if (_DT_INIT < v9)`, the other arm of the select as `v1 = _DT_INIT`, and the
   `uintmax_t` byte counter they bounded became `void *` — in `dump_remainder`,
-  and through [`protoorder`](../options.md) into its caller's stack variable.
+  and through `protoorder` into its caller's stack variable.
 
   `decompiler/crates/kuna-decomp/src/p5_types/kuna_inferfuncentry.rs
   (entry_escape_applies)` decides this, on two readings of the same value. The
@@ -1816,7 +1816,7 @@ Three (kuna) escapes hook exactly here; the first two are always on:
 binary keeps no record of the aggregate a pointer points at, so the lattice above
 gives a dereferenced parameter a pointee it can prove and stops there:
 `unsigned long *`, and every field read rendered as `*(unsigned int *)&a0[1]`.
-[`structsynth`](../options.md) (`off|param|locals|nest|all`, default `locals`) invents the missing
+`structsynth` (`off|param|locals|nest|all`, default `locals`) invents the missing
 layout from the accesses themselves.
 
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs
@@ -2092,7 +2092,7 @@ refusals leave a site exactly as it was: a call with no output Varnode, an
 output already type-locked (a mapped-symbol or DWARF lock outranks any
 client), and a size mismatch.
 
-The first client, [`gonewtype`](../options.md) (`on|off`, default on;
+The first client, `gonewtype` (`on|off`, default on;
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_gonewtype.rs (contribute)`),
 reads the allocation fact: for each call spec naming a Go allocator entry —
 `runtime.newobject(typ)`, or the size-class `runtime.mallocgc*` family
@@ -2121,7 +2121,7 @@ deletes no statement. Off Go images it is structurally inert: the callee name,
 the `type:` symbol and the interned record only exist where the Go harvest
 ran.
 
-The second client, the call-site arm of [`swifttypes`](../options.md)
+The second client, the call-site arm of `swifttypes`
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_swiftmetaresult.rs
 (contribute)`), locks the result of every call to a Swift type metadata
 accessor (a callee named `….type_metadata_accessor`) or to an instantiation
@@ -2188,7 +2188,7 @@ a constant reads. `sort`'s `fillbuf` then declares its buffer `long field_0x0`
 although the next load hands it to `memmove`, and `ls`'s `free_ent` declares the
 security context `long` beside `free` and `freecon`; every pointer use of such a
 field prints a cast back to what the program holds in it. With
-[`fieldtype`](../options.md) (`on|off`, default `off`) `structsynth` keeps every
+`fieldtype` (`on|off`, default `off`) `structsynth` keeps every
 access of the field's width with the value it loaded or stored
 (`Evidence::record_access`) and, once a base is accepted, asks
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_fieldtype.rs (pointer_fields)`
@@ -2460,7 +2460,7 @@ two ceilings it establishes (the reading function itself dereferences 1,469 of
 the 9,443 fields; every function taking a pointer to the same record dereferences
 5,922 between them), is `docs/features/structmerge/recall.md`.
 
-[`structmerge`](../options.md) (`off|siblings`, default `off`) spends the second
+`structmerge` (`off|siblings`, default `off`) spends the second
 number. When nothing held answers a freshly measured layout, the lookup looks for
 a held structure the layout was measured to AGREE with and mints the UNION of the
 two in place of the layout alone
@@ -2636,7 +2636,7 @@ is a valid place to define it, and the order is now the same every run and in
 every worker.
 
 The synthesized layout is printable rather than only inferable: the P9 option
-[`structdefs`](../options.md) prints the definition of every composite a
+`structdefs` prints the definition of every composite a
 function's C names reach, so `--option structdefs on --option structsynth param`
 puts `struct struct_0 { ... };` — filler members and all — above the function
 whose parameter this pass retyped, and carries the same text in the per-function
@@ -3784,7 +3784,7 @@ the writes to one call site is only sound if nothing observed the array
 half-written.
 
 **(kuna GH-9230/1537) Constant fill —**
-[`memsetrecover`](../options.md)**, default on** (DIV-2).
+`memsetrecover`**, default on** (DIV-2).
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_memsetsequence.rs
 (RuleMemsetCopy)` extends the same machinery to runs that spell no string: an
 unrolled or SIMD `memset`/`bzero` otherwise renders as dozens of
@@ -3803,7 +3803,7 @@ constructor; fixture-only construction and inspection helpers live with its
 unit tests. Both paths use the same fill predicate.
 
 **(kuna) Read-only string block copy —**
-[`rodatastring`](../options.md)**, default on** (DIV-113).
+`rodatastring`**, default on** (DIV-113).
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_rodatastring.rs
 (RuleRodataStringCopy)` covers the third shape of the same idiom: the whole
 literal already exists in read-only memory, so the compiler emits a BLOCK copy
@@ -3837,7 +3837,7 @@ output is byte-identical to `off` — the destination stack slices the run wrote
 survive as unread declarations, because the local variable map still sees the
 frame carved by the original wide stores.
 
-**Length-carried string literals (kuna, option [`fatstr`](../options.md),
+**Length-carried string literals (kuna, option `fatstr`,
 default auto; `docs/multilang.md` W3/W4).**
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_fatstr.rs (RuleFatStr)`
 covers the fourth shape: the string never reaches a frame at all, because a

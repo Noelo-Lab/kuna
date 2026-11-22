@@ -47,7 +47,7 @@ not emitted, an error that is silently swallowed, a flag that is missing. It liv
 **It does NOT change emitted C, so it does NOT need a `phases.d/` option row.** The rule in
 `docs/agents.md` is "a judgement call ships behind a named option; a fix does not" — a new
 subcommand is neither. Do not add an option. Do not touch `phases.toml`, `phases.d/`, `options.rs`,
-`docs/options.md`, `docs/history.md`, or any catalog counter. If you find yourself editing
+`docs/history.md`, or any catalog counter. If you find yourself editing
 `kuna_phases/tests.rs`, stop: you are on the wrong track or doing something the need did not
 ask for.
 
@@ -73,7 +73,7 @@ that option. Only a judgement call gets the full option ritual: one `kuna_<slug>
 owning phase folder, a fully-populated `[[settable]]` row, registration in
 `kuna_option_dispatch.rs`, an Architecture flag, a green `python -m scripts.repipe.counters --check`
 (no counts to bump; the catalog tallies are lower bounds), a two-pass `tests/stages/ghdec-<slug>.xml`, the
-stages baseline re-record, `docs/options.md` regeneration, the owning `docs/spec/` chapter,
+stages baseline re-record, the owning `docs/spec/` chapter,
 the ablation, and `scripts.pipeline.timeit`.
 
 Two standing requirements bite hardest here and are not optional:

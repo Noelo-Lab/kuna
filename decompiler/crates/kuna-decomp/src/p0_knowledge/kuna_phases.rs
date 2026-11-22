@@ -548,8 +548,7 @@ fn option_anchor(st: &KunaSettable) -> String {
 }
 
 /// Render the whole settable catalog as the tier-grouped Markdown document
-/// committed at `docs/options.md` (regenerate: `kuna catalog --markdown >
-/// docs/options.md`; freshness fenced by `tests/options_md_fresh.rs`).
+/// that `kuna catalog --markdown` and `kuna docs options` print.
 ///
 /// Built straight from [`SETTABLE_TABLE`] (no live values -- the document
 /// describes the shipped defaults). Sections run transform -> analysis ->
