@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4954,
-    4954
+    4969,
+    4969
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1389,6 +1389,9 @@
     "data:JUMPTABLEMAX #2: every case of the table is a case label",
     "data:JUMPTABLEMAX #3: `option jumptablemax 2` refuses the four-case table and the dispatch prints as a call",
     "data:JUMPTABLEMAX #4: the lower cap prints no case label, so the one `case 0:` is the default pass",
+    "data:JUMPTABLESLOTS #1: the 41-slot table indexed by x >> 8 stays a computed call",
+    "data:JUMPTABLESLOTS #2: no value of x prints as its own case label",
+    "data:JUMPTABLESLOTS #3: the guard on x still prints",
     "data:Joined callback both fields come from one invocation",
     "data:Joined callback both fields remain live",
     "data:Joined callback callee side effect remains intact",
@@ -2599,9 +2602,21 @@
     "data:SWITCHSINGLE #1: the one-destination switch is removed with its warning",
     "data:SWITCHSINGLE #2: no switch remains",
     "data:SWITCHSINGLE #3: the shared case body is the straight-line return",
+    "data:SWITCHSPLIT #1: k prints one switch, m one, the unmerged k two",
+    "data:SWITCHSPLIT #2: only the unmerged k prints the range split",
+    "data:SWITCHSPLIT #3: one default jump in k, two in the unmerged k",
+    "data:SWITCHSPLIT #4: m prints the equality test as a case",
+    "data:SWITCHSPLIT #5: only the unmerged m prints the equality test",
+    "data:SWITCHSPLIT #6: m returns once for 0x60 in each run",
     "data:SWITCHUNROLLEDSENSE #1: by default the switch closes after 0x67, the last value both guards allow",
     "data:SWITCHUNROLLEDSENSE #2: only switchmultipred off reads row 5, past the guard",
     "data:SWITCHUNROLLEDSENSE #3: switchmultipred off still sends flow into an instruction interior",
+    "data:SWITCHVALUES #1: a hole label prints only in h and the unmerged f",
+    "data:SWITCHVALUES #2: f, g, h and the unmerged f keep their six value labels",
+    "data:SWITCHVALUES #3: the hole arm's jump is gone from f",
+    "data:SWITCHVALUES #4: h prints its table as a switch",
+    "data:SWITCHVALUES #5: no dispatch prints as a computed call",
+    "data:SWITCHVALUES #6: p keeps the hole labels that the arm before them runs into",
     "data:SYMBOLNAMEBOUND #1: the scope path keeps 255 components verbatim and folds the rest into one",
     "data:SYMBOLNAMEBOUND #2: the CALL resolves to the same folded name rather than sub_addr, so the resolve path applies the identical bound",
     "data:SYMBOLNAMEBOUND #3: the binary's ORIGINAL 1000-component name still addresses the function",

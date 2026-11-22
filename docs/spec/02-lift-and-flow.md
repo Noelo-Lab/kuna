@@ -2348,11 +2348,27 @@ the case targets.
    catalogued `option jumptablemax <n>`: upstream's `OptionJumpTableMax`, parsed
    strictly by `Architecture::set_kuna_option`, so anything but a positive
    decimal count is refused; the analysis tier's switch-table read takes the
-   same field, see chapter 01), the four kuna bound
+   same field, see chapter 01) and no guard of the switch bounds it (kuna:
+   `JumpBasicModel::guard_bounds_table` accepts a range of at most 65536
+   entries, narrower than the selector's width, when `analyze_guards`
+   recorded a guard; upstream refuses every range over the cap), the four kuna bound
    extensions below get one chance each, in order; if none installs a bound the
    model is declined, model 2 is tried, and then recovery fails with
    `"Could not recover jumptable ... Too many branches"`
-   (`jumptable.rs (JumpTable::recover_addresses)`).
+   (`jumptable.rs (JumpTable::recover_addresses)`). A guard-bounded table
+   longer than the cap fails the same way after enumeration when its entries
+   reach more than `max_jumptable_size` distinct addresses, so the cap still
+   bounds the arms the structurer sees: clang lowers one sparse switch into
+   range-checked tables of several thousand entries that reach a few hundred
+   arms, while a switch with thousands of distinct arms stays a computed call.
+   Such a table also fails when it admits more than four values per table slot
+   (`GUARDED_VALUES_PER_SLOT`): the slots are the distinct entries its
+   emulated values load (`JumpTable::read_slots`), or its distinct addresses
+   when it loads none. A table indexed by the selector reads one slot per
+   value, but gcc guards the original value and indexes with one derived from
+   it (`if (x <= 0x28ff) goto tbl[x >> 8]`: 0x2900 values over 41 slots), and
+   every value would print as its own `case` label. Tables of at most
+   `max_jumptable_size` entries are not affected.
 5. **Enumeration.** `jumptable.rs (JumpBasicModel::build_addresses_basic)`
    emulates the meld path once per in-range value on the one-path syntax-tree
    emulator (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_emulatefunction.rs

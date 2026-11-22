@@ -4348,6 +4348,11 @@ impl PrintC {
             let facts = crate::p8_structure::kuna_switchmerge::PrintFacts {
                 prints_nothing: &|head| self.header_prints_nothing(fd, head),
                 labels: &|sw| self.switch_label_set(fd, arch, sw),
+                arm_labels: &|sw, index| {
+                    let case = &fd.sblocks_ref().block(sw).switch_caseblocks()[index];
+                    self.switch_case_labels(fd, arch, sw, case).into_iter().map(|l| l.0).collect()
+                },
+                block_prints_nothing: &|bb| self.ops_print_nothing(fd, bb),
             };
             crate::p8_structure::kuna_switchmerge::switch_plans(fd, sroot, &facts)
         } else {
@@ -4425,7 +4430,10 @@ impl PrintC {
             BlockType::Copy => self.emit_block_copy(fd, arch, blk),
             BlockType::Basic => self.emit_block_basic(fd, arch, blk),
             BlockType::Ls => self.emit_block_ls(fd, arch, blk),
-            BlockType::If => self.emit_block_if(fd, arch, blk),
+            BlockType::If => match self.switch_plans.ifs.get(&blk) {
+                Some(&sw) => self.emit_block_switch(fd, arch, sw),
+                None => self.emit_block_if(fd, arch, blk),
+            },
             BlockType::Graph => self.emit_block_graph(fd, arch, blk),
             BlockType::Goto => self.emit_block_goto(fd, arch, blk),
             BlockType::WhileDo => self.emit_block_while_do(fd, arch, blk),
@@ -5443,7 +5451,11 @@ impl PrintC {
             self.emit_switch_case(fd, arch, *arm);
             let id = self.emit.start_indent();
             let case = fd.sblocks_ref().block(owner).switch_caseblocks()[arm.index].clone();
-            if case.gototype != 0 {
+            if let Some((guard, _)) = arm.guard {
+                let id2 = self.emit.begin_block(0);
+                self.emit_block(fd, arch, fd.sblocks_ref().block(guard).get_block(1));
+                self.emit.end_block(id2);
+            } else if case.gototype != 0 {
                 self.emit.tag_line();
                 let gototype = self.goto_rewrites.case_gototype(owner, case.block, case.gototype);
                 let head = fd.sblocks_ref().block(owner).get_block(0);
@@ -5486,7 +5498,10 @@ impl PrintC {
         // The case block's first op — used only for markup tagging.
         let firstop = self.case_first_op(fd, case.block);
 
-        if case.isdefault || arm.as_default {
+        if let Some((_, value)) = arm.guard {
+            let (_, sz, signed) = self.switch_case_label(fd, arch, blk, &case, 0);
+            self.emit_numeric_case_label(value, sz, signed, None);
+        } else if case.isdefault || arm.as_default {
             // default: (the label value is informational; default emits no value).
             // C++ `emit->tagCaseLabel(..., op, ...)` with op = the case's first op —
             // `opref = firstop->getTime()`, the `<ast>` `<seqnum uniq>`.
@@ -5544,12 +5559,43 @@ impl PrintC {
             }
             _ => case.label,
         };
+        let (sz, mask, signed) = self.switch_label_form(fd, arch, blk);
+        (val & mask, sz, signed)
+    }
+
+    /// (kuna `switchmerge`) Every label of a non-default case arm, as
+    /// [`switch_case_label`](PrintC::switch_case_label) gives them for
+    /// `0..switch_case_label_count`, reading the table once instead of once per
+    /// label.
+    pub(crate) fn switch_case_labels(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        blk: BlockId,
+        case: &crate::block::CaseOrder,
+    ) -> Vec<(uintb, int4, bool)> {
+        let n = self.switch_case_label_count(fd, blk, case) as usize;
+        let raw: Vec<uintb> = match (fd.sblocks_ref().block(blk).switch_jt_index(), case.basicblock) {
+            (Some(j), Some(bb)) => {
+                let jt = fd.get_jump_table(j as int4);
+                let indices = jt.kuna_indices_by_block(fd, bb).unwrap_or_default();
+                (0..n).map(|i| jt.get_label_by_index(indices.get(i).copied().unwrap_or(0))).collect()
+            }
+            _ => vec![case.label; n],
+        };
+        let (sz, mask, signed) = self.switch_label_form(fd, arch, blk);
+        raw.into_iter().map(|val| (val & mask, sz, signed)).collect()
+    }
+
+    /// The byte size, value mask and signedness every label of switch `blk`
+    /// prints with.
+    fn switch_label_form(&self, fd: &Funcdata, arch: &Architecture, blk: BlockId) -> (int4, uintb, bool) {
         let sz = self.switch_var_size(fd, blk);
-        let Some(j) = jt_index else {
-            return (val, sz, false);
+        let Some(j) = fd.sblocks_ref().block(blk).switch_jt_index() else {
+            return (sz, uintb::MAX, false);
         };
         let jt = fd.get_jump_table(j as int4);
-        let val = if jt.kuna_lowered_var().is_none() { val & calc_mask(sz) } else { val };
+        let mask = if jt.kuna_lowered_var().is_none() { calc_mask(sz) } else { uintb::MAX };
         let text_signed = self.lang().caps.signed_text_byte;
         let lowered = jt.get_indirect_op().and_then(|op| lowered_switch_label_form(fd, arch, op, text_signed));
         let signed = match lowered {
@@ -5560,7 +5606,7 @@ impl PrintC {
                 .and_then(|op| native_switch_label_signedness(fd, arch, op, text_signed))
                 .unwrap_or(jt.kuna_has_signed_labels()),
         };
-        (val, sz, signed)
+        (sz, mask, signed)
     }
 
     /// (kuna `switchmerge`) The arms `emit_block_switch_c` prints for `blk`.
@@ -5570,13 +5616,17 @@ impl PrintC {
         }
         let n = fd.sblocks_ref().block(blk).switch_caseblocks().len();
         (0..n)
-            .map(|index| crate::p8_structure::kuna_switchmerge::PlannedCase { owner: blk, index, as_default: false, skip: 0 })
+            .map(|index| crate::p8_structure::kuna_switchmerge::PlannedCase::new(blk, index))
             .collect()
     }
 
     /// (kuna `switchmerge`) Print a switch arm from the `skip`th block of its
     /// list, keeping the trailing jump of a `BlockGoto` around the list.
     fn emit_arm_rest(&mut self, fd: &Funcdata, arch: &Architecture, caseblk: BlockId, skip: usize) {
+        let (list, _) = crate::p8_structure::kuna_switchmerge::arm_list(fd.sblocks_ref(), caseblk);
+        if list.is_empty() {
+            return;
+        }
         if fd.sblocks_ref().block(caseblk).get_type() == crate::block::BlockType::Goto {
             self.emit_block_goto_from(fd, arch, caseblk, skip);
         } else {
@@ -5594,9 +5644,12 @@ impl PrintC {
         while graph.block(head).get_type() == crate::block::BlockType::MultiGoto && graph.block(head).get_size() == 1 {
             head = graph.block(head).get_block(0);
         }
-        let Some(bb) = graph.block(head).get_copy() else {
-            return false;
-        };
+        graph.block(head).get_copy().is_some_and(|bb| self.ops_print_nothing(fd, bb))
+    }
+
+    /// (kuna `switchmerge`) Does the basic block `bb` print no statement
+    /// besides its branch?
+    pub(crate) fn ops_print_nothing(&self, fd: &Funcdata, bb: BlockId) -> bool {
         let mut cur = fd.bb_op_head(bb);
         while let Some(inst) = cur {
             cur = fd.bb_op_next(inst);
@@ -5625,8 +5678,7 @@ impl PrintC {
         let mut values = std::collections::BTreeSet::new();
         let mut form = None;
         for case in fd.sblocks_ref().block(sw).switch_caseblocks().iter().filter(|c| !c.isdefault) {
-            for i in 0..self.switch_case_label_count(fd, sw, case) {
-                let (val, sz, signed) = self.switch_case_label(fd, arch, sw, case, i);
+            for (val, sz, signed) in self.switch_case_labels(fd, arch, sw, case) {
                 if form.is_some_and(|f| f != (sz, signed)) || !values.insert(val) {
                     return None;
                 }

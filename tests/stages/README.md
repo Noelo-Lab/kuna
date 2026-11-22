@@ -56,6 +56,29 @@ the first table's holes jump to the default code (`case 0x43: case 0x46:` and
 an inner `default: goto` before); in `g` they go to the second table. The off
 run keeps the nested form.
 
+`kuna-switchmerge-values.xml` checks two rules for jump tables. Under option
+`switchmerge`, an AArch64 table whose holes go where its `default:` code sends
+them (through `x == 0x60` and `x == 0x70` tests that fail for the hole values)
+prints no label for the holes: in `f` the holes jumped to a block the default
+code also reaches (`case 0x43: case 0x46: goto`), in `g` they left the switch
+(`break;`). The off run keeps `f`'s labels. `h` checks that `jumptablemax`
+caps a guarded table's distinct arms, not its entries: an 1100-entry
+range-checked table with four arms prints as a switch, not as `jump-as-call`.
+`p` (clang -O2) keeps its hole labels: the arm before them ends in a jump to
+the code after the switch that prints as nothing, so it runs into them.
+
+`kuna-switchmerge-split.xml` checks two more `switchmerge` rules on AArch64
+tables. In `k` a range test splits the selector between two range-checked
+tables whose defaults both jump to the same code; it prints as one switch with
+both tables' labels and one `default:`. In `m` the default arm starts with
+`if (x == 0x60) return ...;`, which prints as `case 0x60:`. The off run keeps
+the `if` forms.
+
+`kuna-jumptableslots.xml` checks the slot bound on a guard-bounded table past
+`jumptablemax`. gcc -O2 guards `x <= 0x28ff` and indexes a 41-entry table with
+`x >> 8`, so the guard admits 0x2900 values over 41 slots. The table stays a
+computed call instead of a switch with a `case` label for each value of `x`.
+
 `kuna-switchsingle.xml` checks that a jump table whose four entries all name one
 block becomes straight-line code with the "all go to same destination" warning
 instead of a `switch` with only a `default` arm.
