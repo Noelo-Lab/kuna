@@ -12,6 +12,8 @@
 //! - **Lookup**: a data-import slot's name selects the slot as a data object.
 //! - **`importdata` off**: the four reads are `*dat_<slot>`.
 //! - **`importdata` on** (default): they are the imports.
+//! - **Addresses** (`macho_dataslotaddr_arm64`, from `macho_dataslotaddr.c`): a
+//!   slot's own value passed on is `&<import>` when on, `dat_<slot>` when off.
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -40,9 +42,13 @@ fn repo_root() -> PathBuf {
 }
 
 fn boot() -> ConsoleProgram {
+    boot_fixture(BIN)
+}
+
+fn boot_fixture(bin: &str) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    let path = root.join("decompiler/crates/kuna-analysis/tests/fixtures").join(BIN);
+    let path = root.join("decompiler/crates/kuna-analysis/tests/fixtures").join(bin);
     assert!(path.exists(), "missing fixture {path:?}");
     bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs")
@@ -60,7 +66,11 @@ fn name_at(prog: &ConsoleProgram, vma: u64) -> String {
 
 /// Bootstrap, set `importdata`, commit, then decompile the function at `vma`.
 fn render(vma: u64, on: bool) -> String {
-    let mut prog = boot();
+    render_in(BIN, vma, on)
+}
+
+fn render_in(bin: &str, vma: u64, on: bool) -> String {
+    let mut prog = boot_fixture(bin);
     prog.arch_mut()
         .set_kuna_option("importdata", if on { "on" } else { "off" })
         .expect("importdata flips");
@@ -120,4 +130,16 @@ fn data_import_slot_reads_render_the_import_only_when_on() {
         assert!(off.contains(off_line), "0x{vma:x} importdata off must read `{off_line}`:\n{off}");
         assert!(on.contains(on_line), "0x{vma:x} importdata on must read `{on_line}`:\n{on}");
     }
+}
+
+#[test]
+fn data_import_slot_values_render_the_import_address_only_when_on() {
+    const PASS_ADDRESSES: u64 = 0x100000510;
+    let off = render_in("macho_dataslotaddr_arm64", PASS_ADDRESSES, false);
+    let on = render_in("macho_dataslotaddr_arm64", PASS_ADDRESSES, true);
+    assert!(off.contains("use_addresses(dat_100004008,dat_100004000);"), "importdata off:\n{off}");
+    assert!(
+        on.contains("use_addresses(&OBJC_CLASS_$_NSObject,&<SwiftUI.Color:SwiftUI.View>.protocol_witness_table);"),
+        "importdata on:\n{on}"
+    );
 }
