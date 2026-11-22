@@ -743,7 +743,16 @@ the second channel a name arrives through as well: an analysis pass's recovered
 name (a DWARF `DW_AT_name`, a Go `pclntab` entry, a PDB public symbol) is
 sanitized in `kuna-analysis`'s pass driver
 (`decompiler/crates/kuna-analysis/src/pass.rs (AnalysisOutput::sanitize_names)`)
-before the commit boundary of §1.4 sees it. Like the other gates consumed inside
+before the commit boundary of §1.4 sees it. That driver renames the facts that
+carry a name of their own — symbols, prototypes and their parameters, locals —
+but a struct or union tag, a member, an enumerator and a typedef live inside the
+datatype a fact merely points at, so the DWARF pass escapes the `safe` set where
+it first reads a `DW_AT_name`
+(`decompiler/crates/kuna-analysis/src/analyzers/dwarf/mod.rs (die_name)`), for
+every DIE below the unit; the unit's own name is a path and stays verbatim. Under
+`ident` those type-side names keep the `safe` spelling, because folding them
+further could merge two distinct types onto one interned name; under `off` they
+are verbatim like every other name. Like the other gates consumed inside
 `load file` it is carried by a process environment variable. Print-time
 sanitizing would be the wrong seam: §0.4 explains that the string in the symbol
 table is the key `kuna decompile <name>` and `load function` are passed, so a
