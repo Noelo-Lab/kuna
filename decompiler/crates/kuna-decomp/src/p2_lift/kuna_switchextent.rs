@@ -38,11 +38,18 @@
 //! through a table above it) and ends the table at the lowest table above
 //! it, of this function or of a later one.
 //!
+//! A Swift enum's table needs no neighbour. `swift_getEnumCaseMultiPayload`
+//! returns a case of the enum whose metadata it is given, and the enum's
+//! descriptor states its case count, which `swiftmetadata` records by the
+//! enum's metadata accessor. With [`enum_calls`] the extent decode follows an
+//! accessor's result into that call and the case it returns into a table,
+//! and the table is bounded by the count, also when it is the function's last.
+//!
 //! The same rule reads the table in the discovery Listing
 //! (`kuna-analysis/src/listing/kuna_switchextent.rs`), so the case bodies are
 //! the dispatcher's own code there too and no gap entry is planted on them.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use kuna_base::address::Address;
 use kuna_base::space::spacetype;
@@ -52,7 +59,8 @@ use kuna_num::pcoderaw::VarnodeData;
 use kuna_sleigh::loadimage::ImageBytes;
 use kuna_sleigh::translate::{PcodeEmit, Translate};
 
-use crate::context::{OpId, VarnodeId};
+use crate::context::{ArchContext, OpId, VarnodeId};
+use crate::fspec::effect_type;
 use crate::funcdata::Funcdata;
 
 /// How far past an entry the linear decode reaches when no known entry ends
@@ -60,21 +68,90 @@ use crate::funcdata::Funcdata;
 const MAX_EXTENT: u64 = 1 << 20;
 
 /// How many register values the fold carries: a dispatch chain needs the base
-/// and the entry, and a long run of constant materializations must not pile up.
+/// and the entry, and a long run of constant materializations must not pile
+/// up; past it the oldest value other than an enum's metadata or case is
+/// dropped.
 const MAX_TRACKED: usize = 16;
 
-/// The tables the computed jumps in `[entry, end)` dispatch through, sorted,
-/// from a linear decode with `translate` over `image` when the flow holds one.
+/// What a direct call's target is to [`function_tables`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Callee {
+    /// A local Swift enum's metadata accessor; the enum has this many cases.
+    EnumAccessor(u64),
+    /// `swift_getEnumCaseMultiPayload(value, metadata)`.
+    EnumCase,
+    Other,
+}
+
+/// What [`function_tables`] needs to follow a Swift enum's case into the
+/// table its `switch` indexes: the registers a call returns its result in and
+/// takes its second argument in, which registers a call preserves, and what
+/// each call target is.
+pub struct EnumCalls<'a> {
+    pub result: VarnodeData,
+    pub metadata: VarnodeData,
+    pub callee: Box<dyn Fn(u64) -> Callee + 'a>,
+    pub saved: Box<dyn Fn(&VarnodeData) -> bool + 'a>,
+}
+
+/// The [`EnumCalls`] of a function at `entry` under `arch`, when the image
+/// has local Swift enums and the language returns in `x0` / `RAX` and passes
+/// the second argument in `x1` / `RSI`.
+pub fn enum_calls<'a>(arch: &'a ArchContext, translate: &dyn Translate, entry: &Address) -> Option<EnumCalls<'a>> {
+    if arch.swift_enum_cases.is_empty() {
+        return None;
+    }
+    let (result, metadata) = [("x0", "x1"), ("RAX", "RSI")].into_iter().find_map(|(r, m)| {
+        Some((translate.get_register_data(r).ok()?, translate.get_register_data(m).ok()?))
+    })?;
+    let model = arch.default_fp()?;
+    let space = entry.get_space()?.clone();
+    Some(EnumCalls {
+        result,
+        metadata,
+        callee: Box::new(move |target| {
+            if let Some(&cases) = arch.swift_enum_cases.get(&target) {
+                return Callee::EnumAccessor(u64::from(cases));
+            }
+            let name = arch.function_name_at(&Address::new(std::rc::Rc::clone(&space), target));
+            match name {
+                Some(name) if name.trim_start_matches('_') == "swift_getEnumCaseMultiPayload" => Callee::EnumCase,
+                _ => Callee::Other,
+            }
+        }),
+        saved: Box::new(move |vn| {
+            let Some(space) = vn.space.clone() else { return false };
+            model.has_effect(&Address::new(space, vn.offset), vn.size as int4) == effect_type::UNAFFECTED
+        }),
+    })
+}
+
+/// The jump tables of one function's extent.
+#[derive(Default)]
+pub struct ExtentTables {
+    /// The table of every computed jump the fold proves reads one, sorted.
+    pub tables: Vec<u64>,
+    /// The tables indexed by a Swift enum's case, with the enum's case count:
+    /// `swift_getEnumCaseMultiPayload` returns a case of the enum whose
+    /// metadata it is given, so such a table has exactly that many entries.
+    pub cases: BTreeMap<u64, u64>,
+}
+
+/// The tables the computed jumps in `[entry, end)` dispatch through, from a
+/// linear decode with `translate` over `image` when the flow holds one;
+/// `calls`, when given, follows Swift enum cases into their tables.
 pub fn function_tables(
     translate: &dyn Translate,
     image: Option<&dyn ImageBytes>,
     entry: &Address,
     end: Option<u64>,
-) -> Vec<u64> {
-    let Some(space) = entry.get_space().cloned() else { return Vec::new() };
+    calls: Option<&EnumCalls>,
+) -> ExtentTables {
+    let Some(space) = entry.get_space().cloned() else { return ExtentTables::default() };
     let lo = entry.get_offset();
     let end = end.unwrap_or(u64::MAX).min(lo.saturating_add(MAX_EXTENT));
-    let mut fold = Fold { vals: Vec::new(), tables: BTreeSet::new() };
+    let mut fold =
+        Fold { vals: Vec::new(), tables: BTreeSet::new(), cases: BTreeMap::new(), calls, at: u64::MAX, joined: false };
     let mut at = lo;
     while at < end {
         let addr = Address::new(std::rc::Rc::clone(&space), at);
@@ -87,7 +164,7 @@ pub fn function_tables(
             _ => break,
         }
     }
-    fold.tables.into_iter().collect()
+    ExtentTables { tables: fold.tables.into_iter().collect(), cases: fold.cases }
 }
 
 /// How many functions after this one [`later_tables`] decodes before it
@@ -111,7 +188,7 @@ pub fn later_tables(
     let mut lo = end;
     for _ in 0..MAX_LATER_FUNCTIONS {
         let hi = next_entry(lo);
-        let tables = function_tables(translate, image, &Address::new(std::rc::Rc::clone(&space), lo), hi);
+        let tables = function_tables(translate, image, &Address::new(std::rc::Rc::clone(&space), lo), hi, None).tables;
         if tables.iter().any(|&t| t > above) {
             return tables;
         }
@@ -124,58 +201,126 @@ pub fn later_tables(
 }
 
 /// What the fold knows about a register: enough to tell a table read from
-/// anything else.
+/// anything else. `cases` on the table chain is the enum case count when the
+/// index is a Swift enum's case.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Val {
     /// Exactly this constant.
     Const(u64),
     /// This constant plus an unknown: an array address whose index is the
     /// selector.
-    Indexed(u64),
+    Indexed { base: u64, cases: Option<u64> },
     /// A `width`-byte word read out of the array at `table`.
-    Entry { table: u64, width: u32 },
+    Entry { table: u64, width: u32, cases: Option<u64> },
     /// An entry scaled to instructions.
-    Scaled { table: u64 },
+    Scaled { table: u64, cases: Option<u64> },
     /// A base plus a scaled or 32-bit entry: a case address.
-    Relative { table: u64 },
+    Relative { table: u64, cases: Option<u64> },
+    /// The metadata of an enum with `cases` cases, held in a register calls
+    /// preserve when `saved`.
+    Metadata { cases: u64, saved: bool },
+    /// A case of such an enum, possibly widened or scaled.
+    Case { cases: u64 },
 }
 
 /// A varnode's identity: its space, offset and size.
 type Key = (int4, u64, u32);
 
-struct Fold {
+struct Fold<'a> {
     vals: Vec<(Key, Val)>,
     tables: BTreeSet<u64>,
+    cases: BTreeMap<u64, u64>,
+    calls: Option<&'a EnumCalls<'a>>,
+    /// The instruction the last op belonged to, and whether a branch inside
+    /// it already passed: what that instruction writes after the branch
+    /// joins two values (`csel` picks one of its operands), so it is unknown.
+    at: u64,
+    joined: bool,
 }
 
-impl PcodeEmit for Fold {
-    fn dump(&mut self, _addr: &Address, opc: OpCode, outvar: Option<&VarnodeData>, vars: &[VarnodeData]) {
+impl PcodeEmit for Fold<'_> {
+    fn dump(&mut self, addr: &Address, opc: OpCode, outvar: Option<&VarnodeData>, vars: &[VarnodeData]) {
+        if addr.get_offset() != self.at {
+            self.at = addr.get_offset();
+            self.joined = false;
+        }
         if opc == OpCode::CPUI_BRANCHIND {
             match vars.first().and_then(|vn| self.value_of(vn)) {
-                Some(Val::Relative { table }) => {
+                Some(Val::Relative { table, cases }) => {
                     self.tables.insert(table);
+                    if let Some(cases) = cases {
+                        self.cases.insert(table, cases);
+                    }
                 }
-                Some(Val::Entry { table, width }) if vars.first().is_some_and(|vn| vn.size == width) => {
+                Some(Val::Entry { table, width, .. }) if vars.first().is_some_and(|vn| vn.size == width) => {
                     self.tables.insert(table);
                 }
                 _ => {}
             }
         }
         if matches!(opc, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER) {
-            self.vals.clear();
-        }
-        let folded = self.fold(opc, outvar, vars);
-        let Some(key) = outvar.and_then(key_of) else { return };
-        self.vals.retain(|(k, _)| !overlap(*k, key));
-        if let Some(val) = folded {
-            if self.vals.len() < MAX_TRACKED {
-                self.vals.push((key, val));
+            let result = if opc == OpCode::CPUI_CALL { self.call_result(vars) } else { None };
+            self.vals.retain(|(_, v)| matches!(v, Val::Metadata { saved: true, .. }));
+            if let Some((vn, val)) = result {
+                self.set(&vn, Some(val));
             }
+            if let Some(vn) = outvar {
+                self.set(vn, None);
+            }
+            return;
+        }
+        if matches!(opc, OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH)
+            && vars.first().and_then(|vn| vn.space.as_ref()).is_some_and(|s| s.get_type() == spacetype::IPTR_CONSTANT)
+        {
+            self.joined = true;
+        }
+        let folded = if self.joined { None } else { self.fold(opc, outvar, vars) };
+        if let Some(vn) = outvar {
+            self.set(vn, folded);
         }
     }
 }
 
-impl Fold {
+impl Fold<'_> {
+    fn set(&mut self, vn: &VarnodeData, val: Option<Val>) {
+        let Some(key) = key_of(vn) else { return };
+        self.vals.retain(|(k, _)| !overlap(*k, key));
+        let val = match val {
+            Some(Val::Metadata { cases, .. }) => {
+                Some(Val::Metadata { cases, saved: self.calls.is_some_and(|c| (c.saved)(vn)) })
+            }
+            v => v,
+        };
+        if let Some(val) = val {
+            if self.vals.len() >= MAX_TRACKED {
+                let oldest = self
+                    .vals
+                    .iter()
+                    .position(|(_, v)| !matches!(v, Val::Metadata { .. } | Val::Case { .. }))
+                    .unwrap_or(0);
+                self.vals.remove(oldest);
+            }
+            self.vals.push((key, val));
+        }
+    }
+
+    /// The result register of a direct call and what it holds after the
+    /// call: an enum's metadata from its accessor, or a case of the enum
+    /// whose metadata `swift_getEnumCaseMultiPayload` is given.
+    fn call_result(&self, vars: &[VarnodeData]) -> Option<(VarnodeData, Val)> {
+        let calls = self.calls?;
+        let target = vars.first()?;
+        let val = match (calls.callee)(target.offset) {
+            Callee::EnumAccessor(cases) => Val::Metadata { cases, saved: false },
+            Callee::EnumCase => match self.value_of(&calls.metadata)? {
+                Val::Metadata { cases, .. } => Val::Case { cases },
+                _ => return None,
+            },
+            Callee::Other => return None,
+        };
+        Some((calls.result.clone(), val))
+    }
+
     fn value_of(&self, vn: &VarnodeData) -> Option<Val> {
         let space = vn.space.as_ref()?;
         if space.get_type() == spacetype::IPTR_CONSTANT {
@@ -195,6 +340,7 @@ impl Fold {
             match v {
                 Val::Const(c) if low => Some(Val::Const(c & mask(key.2))),
                 Val::Entry { width, .. } if low && width <= key.2 => Some(v),
+                Val::Case { .. } if low => Some(v),
                 _ => None,
             }
         })
@@ -210,27 +356,30 @@ impl Fold {
                     let width = vars.first()?.size;
                     Some(Val::Const(if opc == OpCode::CPUI_INT_SEXT { sign_extend(c, width) } else { c }))
                 }
-                v @ (Val::Entry { .. } | Val::Scaled { .. }) => Some(v),
-                Val::Indexed(_) | Val::Relative { .. } => None,
+                v @ (Val::Entry { .. } | Val::Scaled { .. } | Val::Case { .. }) => Some(v),
+                Val::Indexed { .. } | Val::Relative { .. } | Val::Metadata { .. } => None,
             },
             OpCode::CPUI_INT_ADD => match (get(0), get(1)) {
                 (Some(Val::Const(a)), Some(Val::Const(b))) => Some(Val::Const(a.wrapping_add(b) & mask(out_size))),
-                (Some(Val::Const(a)), Some(Val::Indexed(b))) | (Some(Val::Indexed(a)), Some(Val::Const(b))) => {
-                    Some(Val::Indexed(a.wrapping_add(b)))
+                (Some(Val::Const(a)), Some(Val::Indexed { base, cases }))
+                | (Some(Val::Indexed { base, cases }), Some(Val::Const(a))) => {
+                    Some(Val::Indexed { base: a.wrapping_add(base), cases })
                 }
-                (Some(Val::Entry { table, width: 4 }), Some(Val::Const(_)))
-                | (Some(Val::Const(_)), Some(Val::Entry { table, width: 4 }))
-                | (Some(Val::Scaled { table }), Some(Val::Const(_)))
-                | (Some(Val::Const(_)), Some(Val::Scaled { table })) => Some(Val::Relative { table }),
+                (Some(Val::Const(base)), Some(Val::Case { cases })) | (Some(Val::Case { cases }), Some(Val::Const(base))) => {
+                    Some(Val::Indexed { base, cases: Some(cases) })
+                }
+                (Some(Val::Entry { table, width: 4, cases }), Some(Val::Const(_)))
+                | (Some(Val::Const(_)), Some(Val::Entry { table, width: 4, cases }))
+                | (Some(Val::Scaled { table, cases }), Some(Val::Const(_)))
+                | (Some(Val::Const(_)), Some(Val::Scaled { table, cases })) => Some(Val::Relative { table, cases }),
                 // A pointer-wide entry in a pointer-wide add: not a dispatch;
                 // a narrower one added to an unknown base is dropped too.
-                (Some(Val::Const(a) | Val::Indexed(a)), Some(Val::Entry { width: 1 | 2, .. }))
-                | (Some(Val::Entry { width: 1 | 2, .. }), Some(Val::Const(a) | Val::Indexed(a))) => {
-                    Some(Val::Indexed(a))
+                (Some(Val::Const(base) | Val::Indexed { base, .. }), Some(Val::Entry { width: 1 | 2, .. }))
+                | (Some(Val::Entry { width: 1 | 2, .. }), Some(Val::Const(base) | Val::Indexed { base, .. })) => {
+                    Some(Val::Indexed { base, cases: None })
                 }
-                (Some(Val::Const(a) | Val::Indexed(a)), None) | (None, Some(Val::Const(a) | Val::Indexed(a))) => {
-                    Some(Val::Indexed(a))
-                }
+                (Some(Val::Const(base) | Val::Indexed { base, .. }), None)
+                | (None, Some(Val::Const(base) | Val::Indexed { base, .. })) => Some(Val::Indexed { base, cases: None }),
                 _ => None,
             },
             OpCode::CPUI_INT_SUB => match (get(0)?, get(1)?) {
@@ -239,17 +388,21 @@ impl Fold {
             },
             OpCode::CPUI_INT_MULT => match (get(0)?, get(1)?) {
                 (v, Val::Const(1)) | (Val::Const(1), v) => Some(v),
-                (Val::Entry { table, width: 1 | 2 | 4 }, Val::Const(2 | 4))
-                | (Val::Const(2 | 4), Val::Entry { table, width: 1 | 2 | 4 }) => Some(Val::Scaled { table }),
+                (Val::Entry { table, width: 1 | 2 | 4, cases }, Val::Const(2 | 4))
+                | (Val::Const(2 | 4), Val::Entry { table, width: 1 | 2 | 4, cases }) => Some(Val::Scaled { table, cases }),
+                (v @ Val::Case { .. }, Val::Const(2 | 4 | 8)) | (Val::Const(2 | 4 | 8), v @ Val::Case { .. }) => Some(v),
                 _ => None,
             },
             OpCode::CPUI_INT_LEFT => match (get(0)?, get(1)?) {
-                (Val::Entry { table, width: 1 | 2 | 4 }, Val::Const(1..=3)) => Some(Val::Scaled { table }),
+                (Val::Entry { table, width: 1 | 2 | 4, cases }, Val::Const(1..=3)) => Some(Val::Scaled { table, cases }),
+                (v @ Val::Case { .. }, Val::Const(0..=3)) => Some(v),
                 _ => None,
             },
             OpCode::CPUI_LOAD => match get(1)? {
-                Val::Indexed(table) | Val::Relative { table } if matches!(out_size, 1 | 2 | 4 | 8) => {
-                    Some(Val::Entry { table, width: out_size })
+                Val::Indexed { base: table, cases } | Val::Relative { table, cases }
+                    if matches!(out_size, 1 | 2 | 4 | 8) =>
+                {
+                    Some(Val::Entry { table, width: out_size, cases })
                 }
                 _ => None,
             },
