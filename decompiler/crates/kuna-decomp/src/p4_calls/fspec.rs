@@ -6947,6 +6947,9 @@ pub struct FuncCallSpecs {
     /// (kuna) The extrapop the direct callee's own returns state. See
     /// [`crate::p4_calls::kuna_calleepurge`].
     callee_purge: Option<int4>,
+    /// (kuna) The extrapop the direct callee's returns' constants state where
+    /// its own returns prove none. See [`crate::p4_calls::kuna_calleepurge`].
+    callee_returns_purge: Option<int4>,
     /// (kuna `calleeargs`) The stack-argument bytes the direct callee reads. See
     /// [`crate::p4_calls::kuna_calleestackargs`].
     callee_stack_arg_bytes: Option<crate::p4_calls::kuna_calleepurge::StackArgs>,
@@ -7000,6 +7003,7 @@ impl FuncCallSpecs {
             callee_reg_model: None,
             callee_arg_registers: 0,
             callee_purge: None,
+            callee_returns_purge: None,
             callee_stack_arg_bytes: None,
             callee_moves_stack: false,
             callee_stack_window: None,
@@ -7040,6 +7044,7 @@ impl FuncCallSpecs {
         res.callee_reg_model = self.callee_reg_model.clone();
         res.callee_arg_registers = self.callee_arg_registers;
         res.callee_purge = self.callee_purge;
+        res.callee_returns_purge = self.callee_returns_purge;
         res.callee_stack_arg_bytes = self.callee_stack_arg_bytes;
         res.callee_moves_stack = self.callee_moves_stack;
         res.callee_stack_window = self.callee_stack_window;
@@ -7430,6 +7435,18 @@ impl FuncCallSpecs {
     /// Record the extrapop the direct callee's own returns state.
     pub fn set_callee_purge(&mut self, extrapop: Option<int4>) {
         self.callee_purge = extrapop;
+    }
+
+    /// Record the extrapop the direct callee's returns' constants state where
+    /// its returns prove none.
+    pub fn set_callee_returns_purge(&mut self, extrapop: Option<int4>) {
+        self.callee_returns_purge = extrapop;
+    }
+
+    /// The extrapop the direct callee's returns prove, or else state by their
+    /// constants.
+    pub fn settled_purge(&self) -> Option<int4> {
+        self.callee_purge.or(self.callee_returns_purge)
     }
 
     /// The stack-argument bytes the direct callee reads, if measured.

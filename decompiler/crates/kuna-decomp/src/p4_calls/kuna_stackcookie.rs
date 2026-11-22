@@ -71,7 +71,7 @@ fn cookie_slot(fc: &FuncCallSpecs, data: &Funcdata, seh: &mut Option<Vec<OpId>>)
         return None;
     }
     let read_end = fc.callee_stack_arg_bytes().map_or(0, |a| 4 + a.read as i64);
-    let popped = fc.callee_purge().map_or(0, i64::from);
+    let popped = fc.settled_purge().map_or(0, i64::from);
     let mut cut: Option<i64> = None;
     for (k, (addr, size)) in storage.iter().enumerate() {
         let start = addr.get_offset() as i64;

@@ -1773,7 +1773,18 @@ that machinery.
   or import call, a callee the walk cannot settle) leaves the stack pointer
   bounded but unplaced, so the callee's returns are then proven only by
   restoring it from a frame pointer the callee set itself (`mov esp,ebp`,
-  `leave`). The CRT helpers that move their caller's stack
+  `leave`). Where none restores it, the `RET`'s own constant still states
+  the extrapop (`kuna_calleepurge.rs (callee_returns_extra_pop)`, recorded on
+  the call spec apart from a proven one): a callee returns to its caller only once the stack pointer is
+  back at the return address, so `push [esp+4]; call [p]; add esp,4; ret 4`
+  pops 8 whatever `p` does. That reading needs every reached return to add the
+  same constant, every path followed, and no path that ran into a software
+  interrupt (`int3` padding after a call that does not return) or fell through
+  into another known function, where the return it reads could be the next
+  function's. Without it, the solver's guess for such a `__stdcall` callee
+  ("pops only the return address") leaves every later stack offset in the
+  caller four bytes per argument low, so a parameter read after the call reads
+  the slot below it. The CRT helpers that move their caller's stack
   (`_chkstk`/`_alloca_probe`, `__SEH_prolog4`/`__SEH_epilog4`,
   `__EH_prolog3`/`__EH_epilog3`) return with the stack pointer moved by their
   own arithmetic (`sub esp,eax`, `xchg esp,eax`) or loaded from the caller's
@@ -1799,8 +1810,9 @@ that machinery.
   `clear architecture`. Decoded instructions are shared between walks in a
   bounded cache, which a flush keeps.
 
-  A proven extrapop is applied only in a function where every call then has
-  one, stated by its prototype or proven by its callee
+  A proven extrapop, or one the returns' constants state, is applied only in
+  a function where every call then has one, stated by its prototype or proven
+  or stated by its callee's returns
   (`kuna_calleepurge.rs (every_pop_settled)`), so the solver is left nothing
   to guess. The solver's guesses for the calls it cannot read are coherent with
   each other rather than with the truth: an import's guess counts the pushes in

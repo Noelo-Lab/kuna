@@ -20,6 +20,13 @@
 //! proven extrapop, read the same way a bounded number of levels down; any
 //! other call leaves it unknown, so the callee's returns must restore it from a
 //! frame pointer the callee itself set. Every reachable return has to agree.
+//! When such a call leaves the stack pointer unplaced at a return, the
+//! return's own constant still states the pop (`ret 4` after `call [p]; add
+//! esp,4` pops 8), since a callee returns to its caller only from its return
+//! address: every reached return must pop the same, the walk must have
+//! followed every path, and no path may have run into a software interrupt or
+//! fallen through into another known function, where a return read past a call
+//! that does not return could be another function's.
 //!
 //! The CRT helpers that move their caller's stack (`_chkstk`/`_alloca_probe`,
 //! `__SEH_prolog4`/`__SEH_epilog4`, `__EH_prolog3`/`__EH_epilog3`) return with
@@ -88,12 +95,23 @@ pub fn callee_extra_pop(arch: &Architecture, entry: &Address) -> Option<int4> {
     }
 }
 
+/// The extrapop of the direct call target `entry` that its returns' own
+/// constants state where a call the walk cannot read leaves the stack pointer
+/// unplaced at them, so [`callee_extra_pop`] proves none.
+pub fn callee_returns_extra_pop(arch: &Architecture, entry: &Address) -> Option<int4> {
+    if !applies(arch) || entry.is_invalid() {
+        return None;
+    }
+    let s = summary(arch, entry, DEPTH);
+    if s.effect == Effect::Unknown { s.own_pop } else { None }
+}
+
 /// Does every call in `data` have a pop its prototype states or its callee's
-/// returns prove?
+/// returns prove or state?
 pub fn every_pop_settled(data: &crate::funcdata::Funcdata) -> bool {
     (0..data.num_calls()).all(|i| {
         let fc = data.get_call_specs(i);
-        fc.get_extra_pop() != EXTRAPOP_UNKNOWN || fc.callee_purge().is_some()
+        fc.get_extra_pop() != EXTRAPOP_UNKNOWN || fc.settled_purge().is_some()
     })
 }
 
@@ -288,7 +306,7 @@ pub struct Summary {
     /// The most any reached return adds to the stack pointer, whether or not
     /// the stack pointer was back at its entry value there.
     pub ret_pops: Option<int4>,
-    /// (`calleeargs`) What every reached return adds to the stack pointer, when
+    /// What every reached return adds to the stack pointer, when
     /// they agree and no path may have left the callee's own code: the walk
     /// followed every path, reached no software interrupt (`int3` padding
     /// after a call that does not return) and fell through into no other known
@@ -1077,7 +1095,7 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
         }
         if s.falls_through {
             let next = at.wrapping_add(*len);
-            if track && !strayed && !seen.contains_key(&next) {
+            if !strayed && !seen.contains_key(&next) {
                 strayed = next != entry.get_offset() && is_entry(arch, &space, next);
             }
             work.push((next, s.state));

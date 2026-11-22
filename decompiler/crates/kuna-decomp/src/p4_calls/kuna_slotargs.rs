@@ -255,7 +255,7 @@ pub fn backed(data: &Funcdata, call_op: OpId, proto: &FuncProto) -> bool {
                 if !fc.proto().has_model() {
                     break;
                 }
-                if pop == EXTRAPOP_UNKNOWN && op.code() == OpCode::CPUI_CALL && fc.callee_purge() == Some(ret) {
+                if pop == EXTRAPOP_UNKNOWN && op.code() == OpCode::CPUI_CALL && fc.settled_purge() == Some(ret) {
                     pop = ret;
                 }
                 if pop == EXTRAPOP_UNKNOWN {
