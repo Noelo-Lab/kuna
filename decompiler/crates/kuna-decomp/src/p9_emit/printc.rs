@@ -10949,8 +10949,14 @@ impl PrintC {
                 // are indexed, never that they end at a zero byte.
                 if !v.is_synthetic_literal() && off != 0 && !crate::kuna_elemptr::reaches_element_pointer(fd, vn) {
                     if let Some(sub) = ct.get_ptr_to() {
-                        // (kuna `cfstrings`) An entry reads as its string whatever its type.
-                        let sub = if sub.is_char_print() { Some(sub) } else { cfstring_char(arch, off) };
+                        // (kuna `cfstrings`) An entry reads as its string whatever its type,
+                        // and so does a literal (kuna `cstringconst`).
+                        let sub = if sub.is_char_print() {
+                            Some(sub)
+                        } else {
+                            cfstring_char(arch, off)
+                                .or_else(|| crate::kuna_cstringconst::literal_char(arch, off, ct.get_size()))
+                        };
                         if let Some(sub) = sub {
                             // point = op->getAddr() (the using op's address; used only
                             // by a segmented resolver — flat spaces ignore it).
@@ -11046,6 +11052,17 @@ impl PrintC {
                     self.push_cast_close(&ct);
                 }
                 return;
+            }
+            // (kuna `cstringconst`) A constant at the start of a literal that a
+            // call takes as an argument its prototype does not declare a scalar
+            // reads as the literal.
+            if !v.is_synthetic_literal() && self.out_lang == crate::kuna_lang::OutLang::C {
+                if let Some(sub) = crate::kuna_cstringconst::call_literal_char(arch, fd, op, vn, off, sz) {
+                    let point = fd.obank().get(op).map(|o| o.get_addr().clone()).unwrap_or_default();
+                    if self.push_ptr_char_constant_ir(arch, off, sz, &sub, &point, op, vn, None) {
+                        return;
+                    }
+                }
             }
             // Integer path.  Inside `push_integer` (printc.cc:1376) the varnode
             // high's equate-Symbol format OVERRIDES the read-facing type's format

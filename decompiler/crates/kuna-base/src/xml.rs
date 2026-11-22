@@ -2271,7 +2271,11 @@ mod tests {
         // and kuna-lanefuse / per-lane vector p-code and AVX-512 write masks fuse into one intrinsic (option lanefuse)
         // and kuna-x87depth / a discarded x87 call result no longer makes a void function return long double
         // and kuna-x87depth-warn / a non-float declared type the x87 stack depth contradicts is warned about
-        assert_eq!(count, 853, "corpus file count drifted");
+        // and kuna-calleefilledarg / an objc_msgSend$ selector stub keeps the arguments staged after x1 (option calleefilledarg)
+        // and kuna-calleefilledarg-ctramp / a C trampoline that fills rsi keeps the positional rule
+        // and kuna-switchextent-a64 / an unchecked AArch64 table ends at the function's next table (option switchextent)
+        // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
+        assert_eq!(count, 857, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

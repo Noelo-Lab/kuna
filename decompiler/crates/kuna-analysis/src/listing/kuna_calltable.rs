@@ -79,6 +79,14 @@ pub fn scan(file: &object::File, listing: &Listing, arch: &Architecture, transla
     let preserved = preserved_registers(arch);
     let named_set = std::cell::OnceCell::new();
     let named = |at: u64| named_set.get_or_init(|| pool.code_named(file)).contains(&at);
+    let exec = listing.exec_ranges().to_vec();
+    let entries: BTreeSet<u64> = listing.functions().map(|(&e, _)| e).collect();
+    let tables = super::kuna_switchextent::FunctionTables::new(&pool);
+    let next_table = |from: u64, table: u64| {
+        let lo = entries.range(..=from).next_back().copied()?;
+        let hi = entries.range(from + 1..).next().copied();
+        tables.next_after(translate, &code_space, data_space.as_ref(), &exec, lo, hi, table)
+    };
     let reach = Reach {
         max_entries: match arch.max_jumptable_size {
             0 => DEFAULT_MAX_ENTRIES,
@@ -87,10 +95,9 @@ pub fn scan(file: &object::File, listing: &Listing, arch: &Architecture, transla
         preserved: &preserved,
         settled: true,
         named: Some(&named),
+        next_table: arch.switch_extent.then_some(&next_table),
     };
-    let exec = listing.exec_ranges().to_vec();
     let arm = object::Object::architecture(file) == object::Architecture::Arm;
-    let entries: BTreeSet<u64> = listing.functions().map(|(&e, _)| e).collect();
     let mut calls: BTreeSet<u64> = BTreeSet::new();
     let mut cases: BTreeSet<u64> = BTreeSet::new();
     // An indexed call can only add an entry where a read-only word points at
@@ -116,7 +123,7 @@ pub fn scan(file: &object::File, listing: &Listing, arch: &Architecture, transla
         else {
             continue;
         };
-        let read = register_targets(translate, &code_space, data_space.as_ref(), &decoded, vma, target, &pool, &exec, &reach);
+        let read = register_targets(translate, &code_space, data_space.as_ref(), &|a| decoded.contains(&a), vma, target, &pool, &exec, &reach);
         let owner = listing.function_containing(vma).map(|f| f.entry);
         reads.push((insn.flow.is_call, owner, read));
     }

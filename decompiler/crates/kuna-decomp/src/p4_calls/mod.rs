@@ -43,6 +43,7 @@ pub mod kuna_directalias; // (kuna) a direct access at a known stack offset alia
 pub mod kuna_returnuncomputed;
 pub mod kuna_spillargtrial;
 pub mod kuna_stackaddrargtrial;
+pub mod kuna_calleefilledarg; // (kuna) a register the callee loads itself is no slot, and no evidence about the slots after it
 pub mod kuna_zeroidiomuse; // (kuna) a self-cancelling `xor r,r` is not a competing use of the value it eats
 pub mod kuna_varargstackargs; // (kuna) the variadic call's stack tail is its own fillinMap section
 pub mod kuna_argclobber; // (kuna) drop a trailing register argument a previous call's clobber put there
