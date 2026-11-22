@@ -37,6 +37,11 @@
         stale: push rbx ; mov rbx,rdi ; mov esi,7 ; call fill
                lea rdi,[rbx+1] ; call fill ; pop rbx ; ret
 
+    persistcalls_sem_x86_64's snipsys is the return-register control: a
+    void function that ends `syscall; jmp f1`, where f1 only increments
+    globals. A body that only reads memory keeps argument registers alive,
+    not RAX, so the syscall's RAX is not snipsys's return value.
+
     Stage: P3 heritage call guards and P4 argument recovery
     (kuna_calleepreserves.rs, kuna_calleescratchbody.rs). A strict fix with
     no option.
@@ -69,6 +74,12 @@ e89bffffff8b7b048903e891ffffff8943045bc3
   <com>lo fu pipe</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/persistcalls_sem_x86_64</com>
+  <com>read symbols</com>
+  <com>lo fu snipsys</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="CALLEEPRESERVESARGS #1: the zero set before the first reg call is set once" min="1" max="1">^  v2 = 0;$</stringmatch>
@@ -76,4 +87,5 @@ e89bffffff8b7b048903e891ffffff8943045bc3
 <stringmatch name="CALLEEPRESERVESARGS #3: the second mtf call is passed the 0x40 set before the first" min="1" max="1">^  a0\[1\] = mtf\(fd,a,0x40\);$</stringmatch>
 <stringmatch name="CALLEEPRESERVESARGS #4: no edx local is read without being assigned" min="0" max="0">// edx</stringmatch>
 <stringmatch name="CALLEEPRESERVESARGS #5: control, a register the next callee never reads is not its argument" min="1" max="1">^  fill\(a0 \+ 1\);$</stringmatch>
+<stringmatch name="CALLEEPRESERVESARGS #6: control, a load-only leaf keeps no RAX for a void caller to return" min="1" max="1">^void snipsys\(</stringmatch>
 </decompilertest>

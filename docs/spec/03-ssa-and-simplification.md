@@ -729,7 +729,15 @@ alone: at `-O2` it sets `EDX` once and passes it to two successive calls of
 such a leaf, although `x86-64-gcc.cspec` lists `RDX` as killed. Without the
 read arm the second call read an `EDX` with no definition. `ret`, `endbr64;
 ret`, a placeholder and an entry decoded at the wrong address neither store nor
-read memory. A leaf that touches no memory at all — `lea eax,[rdi+rsi]; ret` —
+read memory. The read arm admits the body only for a register the call's
+convention passes an argument in (`ParamListStandard::possible_param` of the
+call's model): `RAX` and i386 cdecl's `EAX`/`ECX`/`EDX` carry no argument, and a
+value one of them kept across a leaf only reaches the caller's return.
+persistcalls's `void snipsys` ends `syscall; jmp f1`, where `f1` only increments
+globals, and read the syscall's `RAX` as its return value (`unsigned long
+snipsys`); i386 stdcall wrappers that load `EDX` and then call a leaf that
+dereferences its stack argument returned `CONCAT44(edx, eax)` as an
+`unsigned long long`. A leaf that touches no memory at all — `lea eax,[rdi+rsi]; ret` —
 is still refused: its decode is indistinguishable from a constant-returning
 stub. And it must have
 written a register other than the stack pointer, which every `RET` writes, so

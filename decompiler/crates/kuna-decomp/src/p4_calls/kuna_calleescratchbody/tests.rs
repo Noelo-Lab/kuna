@@ -141,15 +141,18 @@ fn a_body_that_touches_no_memory_is_not_a_body() {
 }
 
 /// A leaf that loads through its argument and returns the result stores
-/// nothing, and is still a body: `mov rax,rsi; add rax,[rdi]; ret`.
+/// nothing (`mov rax,rsi; add rax,[rdi]; ret`). That read admits it only for
+/// a register the call's convention passes an argument in, and this model
+/// names none: `rax` stays killed, so a stale value cannot reach the caller's
+/// return as a result the function never computed.
 #[test]
-fn a_scratch_only_helper_that_loads_is_a_body() {
+fn a_scratch_only_helper_that_loads_keeps_no_non_argument_register() {
     let mut fd = build_fd();
     let (fc, entry) = build_call(&mut fd, 0x2000);
     let summary = Rc::unwrap_or_clone(probe_summary(&fd, 4, false)).reading_offstack_memory();
     fd.kuna_set_callee_ret_writes(&entry, Rc::new(summary));
     let rax = Address::new(space(&fd, "ram"), 0x00);
-    assert!(callee_preserves_range(&fd, &fc, &rax, 8));
+    assert!(!callee_preserves_range(&fd, &fc, &rax, 8));
 }
 
 /// A leaf that reads only its own stack arguments is not admitted on that

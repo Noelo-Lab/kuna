@@ -21,5 +21,5 @@
 <stringmatch name="earlyrestart #1: main prints" min="1" max="1">^unsigned long main\(unsigned long a0,int4 a1\)$</stringmatch>
 <stringmatch name="earlyrestart #2: the time-zone call prints" min="1" max="1">set_tz\(</stringmatch>
 <stringmatch name="earlyrestart #3: the live IR is upstream's" min="1" max="1">Count - pcode = 100</stringmatch>
-<stringmatch name="earlyrestart #4: the ops created after the restart are upstream's" min="1" max="1">Count - created = 1050</stringmatch>
+<stringmatch name="earlyrestart #4: the ops created after the restart are upstream's" min="1" max="1">Count - created = 1051</stringmatch>
 </decompilertest>
