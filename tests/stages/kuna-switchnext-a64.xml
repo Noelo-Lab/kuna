@@ -20,6 +20,9 @@
     rows, which reach back into first_fn, so its sanity check asks the flow
     for the next functions' tables. None follows, and the flow still runs
     the recovery once more: last_two stays a switch, not one computed call.
+    The extent scan names both of last_two's tables, so tab_a ends at tab_b
+    (three rows, its third the second dispatch) and tab_b's four range-checked
+    cases print as the second switch.
     Assembled with llvm-mc -triple=aarch64 and ld.lld -Ttext=0x20000:
         first_fn: mov w0, #7; ret
         last_two: and x8, x0, #0xff; adrp x9, tab_a; add x9, x9, :lo12:tab_a
@@ -109,7 +112,9 @@ e0008052c0035fd6081c40921f2003d5698300108a0000102b79e8784ac92b8b40011fd640068052
 <stringmatch name="switchnext #1: the byte-masked table ends at the next function's table: cases 0 to 2 only (option on), with case 1 and 2 again off" min="5" max="5">case [0-2]:
 return 0x(1e|1f|20);</stringmatch>
 <stringmatch name="switchnext #2: next_kind's code is not a case of name_of with the option on; off, its rows print as phantom cases" min="1" max="1">return 0x28;</stringmatch>
-<stringmatch name="switchnext #3: no phantom case 3 with the option on" min="1" max="1">case 3:</stringmatch>
+<stringmatch name="switchnext #3: no phantom case 3 with the option on" min="1" max="1">case 3:
+case 4:</stringmatch>
 <stringmatch name="switchnext #4: last_two, the last function, still recovers its table when no function follows: its case 1 returns 0x33" min="1" max="1">return 0x33;</stringmatch>
+<stringmatch name="switchnext #6: last_two's tab_a ends at tab_b, so neither table is a computed call" min="0" max="0">jump-as-call</stringmatch>
 <stringmatch name="switchnext #5: disp, whose bounded table has a row in the next function, keeps its second switch: case 2 returns 0x16" min="1" max="1">return 0x16;</stringmatch>
 </decompilertest>
