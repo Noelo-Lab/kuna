@@ -1,0 +1,18 @@
+[[settable]]
+option = "thunknames"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P1"
+subphase = "environment-binding"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-analysis-thunknames"
+summary = "Name a jump thunk after the function it jumps to. A function whose first instruction is a direct unconditional branch to another function's entry and does nothing else is a thunk: a linker's branch island or identical-code-folding forwarder, a compiler's outlined tail call. A delay slot is part of its branch, so a MIPS `j f; addiu a0,a0,16` (a `this` adjustor) is not one. An arm64 Swift image holds thousands of one-instruction `b <target>` thunks, and each stayed `sub_<addr>`, so every call through one printed an anonymous name although its target is known. With this on, the commit decodes the first instruction of every discovered entry. After every other name source has run, a thunk still named `sub_<addr>` is renamed `j_<target>`, where the target is the end of its thunk chain (at most four jumps) and has a name that is not `sub_` itself. A name already in use takes the first free `_<n>` suffix, in thunk address order. Each renamed thunk also takes its target's prototype, prototype model and Swift `self` classification where it has none of its own, so a call through it is typed as a call to the target; a thunk with a name of its own keeps its own prototype recovery. A thunk to an unnamed function, a thunk that already has a name, and a branch to its own entry are not renamed. Any architecture; the arm64 `adrp; ldr; br` and arm64e `braa` import stubs are named by the stub passes, not here."
+use_when = "On (default): a call through an arm64 branch thunk prints `j_swift_release(v1)` instead of `sub_10004c66c(v1)`, with the target's argument types. Flip off to keep thunks as `sub_<addr>`."
+example = "--option thunknames off"
+source_decompiler = "kuna"
+inspiration = "the Perplexity iOS 26.46.0 main binary: 32,542 functions start with a direct `b`, 375 of them to a named function"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "a call to a one-instruction b thunk prints sub_<addr> although the thunk's target is named|a function whose whole body is a tail call to a named function is called sub_<addr>|arm64 Swift image shows many 4-byte sub_ functions"

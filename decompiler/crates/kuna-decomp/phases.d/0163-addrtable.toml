@@ -1,0 +1,18 @@
+[[settable]]
+option = "addrtable"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P1"
+subphase = "code-data-partition"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-analysis-addrtable"
+summary = "Run the address-table analysis pass: scan .rodata/.data for a run of pointer-width values landing inside an executable section (an absolute address/jump table) and emit Data symbols + a readonly range. DISABLED by default (matches Ghidra AddressTableAnalyzer.setDefaultEnablement(false); the pointer-run scanner over-accepts)."
+use_when = "Off (default, parity + over-acceptance risk); flip on to recover absolute pointer tables in a stripped target."
+example = "option addrtable on"
+source_decompiler = "kuna"
+inspiration = "Ghidra AddressTableAnalyzer (default-off)"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "absolute function-pointer table in rodata never recognized|indirect calls through an unrecovered address table in a stripped target"

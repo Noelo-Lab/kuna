@@ -80,7 +80,8 @@ def parse_angr_settables():
     """Auto-detect ported angr features from phases.toml provenance."""
     if not os.path.exists(STAGES):
         return []
-    txt = open(STAGES).read()
+    rows = os.path.join(os.path.dirname(STAGES), "phases.d")
+    txt = "\n".join(open(p).read() for p in [STAGES] + [os.path.join(rows, n) for n in sorted(os.listdir(rows)) if n.endswith(".toml")])
     out = []
     for block in re.split(r"\n\[\[settable\]\]\n", txt):
         if re.search(r'source_decompiler\s*=\s*"angr"', block) is None:

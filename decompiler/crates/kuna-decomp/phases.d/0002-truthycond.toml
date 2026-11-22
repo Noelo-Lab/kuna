@@ -1,0 +1,18 @@
+[[settable]]
+option = "truthycond"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P9"
+subphase = "condition-form"
+strength = "HARD"
+rewind = "P9"
+issue = "kuna-cnorm-fmt"
+summary = "Render a boolean-context zero comparison in truthy form (if (x) / if (!p)) vs the explicit comparison (if (x != 0) / if (p == NULL))."
+use_when = "On by default (DIV-36): idiomatic C for if/while/for/ternary conditions and &&/||/! operands. Flip off to reproduce upstream Ghidra's explicit comparisons or to diff against Ghidra output. Float compares, enum-typed zeros, and equate-named zeros always keep the explicit form; value uses (v = (x != 0)) are never rewritten."
+example = "option truthycond off"
+source_decompiler = "kuna"
+inspiration = "user-reported readability issue on the angr fmt corpus binary (if (v8 != (char *)0x0) vs if (v8))"
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "if (x != 0) where idiomatic C reads if (x)|if (p == NULL) where if (!p) is wanted|explicit zero comparison in conditions unwanted|truthy condition rendering needs to match upstream ghidra for diffing"

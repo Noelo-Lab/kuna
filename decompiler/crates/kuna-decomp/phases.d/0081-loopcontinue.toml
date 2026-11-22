@@ -1,0 +1,18 @@
+[[settable]]
+option = "loopcontinue"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P8"
+subphase = "goto-quality"
+strength = "HARD"
+rewind = "P8"
+issue = "server-main-nested-retry-loops"
+summary = "Preserve secondary back-edges in single-entry natural loops as continues before CollapseStructure folds retry paths into nested loops. Keep the deepest latch structural; virtualize the others. After collapse, a goto to the first leaf of its innermost infinite loop becomes continue, as does a goto to a conditional loop's own test: a while-do's condition block (not a for, whose continue runs the iterate statement first) or a do-while's last leaf when it prints nothing but the test. Any other conditional loop resets this recovery scope. Head-tested loops, switch bodies, nested loop heads, and conditional retained latches are excluded."
+use_when = "A single source loop with early continues decompiles as nested infinite retry loops, as in a server accept/fork loop. Flip off to restore CollapseStructure's original loop-schema precedence."
+example = "option loopcontinue on"
+source_decompiler = "kuna"
+inspiration = "Natural-loop secondary-latch refinement, applied before the CollapseStructure fallback's greedy loop folds"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "one source loop emitted as multiple nested infinite loops|early continues emitted as retry loops|accept and fork retries obscure a server's main loop|goto label_N; inside a while loop where label_N: is the loop condition|a do-while body jumps to an empty label in front of the loop test"

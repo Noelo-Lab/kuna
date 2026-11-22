@@ -1,0 +1,18 @@
+[[settable]]
+option = "rustfmt"
+values = "off|on|all"
+default = "on"
+destructive = false
+phase = "P9"
+subphase = "literal-format"
+strength = "HARD"
+rewind = "P9"
+issue = "angr-rust-format-macros"
+summary = "On a rustc-built little-endian 64-bit image, render the standard library's formatting runtime calls as the source macros that produced them. `on` recovers print!, println!, eprint! and eprintln! at the exact std::io::stdio sinks, format! at alloc::fmt::format::format_inner (the hidden String destination is kept as std::ptr::write) and panic! at a non-returning core::panicking::panic_fmt with a constant caller location, for stable Rust 1.93.0/1.93.1 templates and for the piece-array fmt::Arguments layout of x86-64 ELF images built by stable Rust 1.89.0/1.90.0 or nightly 1.89.0 bf64d66bd. Arguments are literal-only messages (format braces escaped, exactly one final newline removed for the ln macros), primitive 8/16/32/64-bit integers under exact Display, Debug, hexadecimal, octal, binary and exponent formatter identities with static width, precision, alignment, Unicode fill, sign, alternate and zero-padding specifications, and string Display arguments proven by an exact forwarding body to core::fmt::Formatter::pad and two live stack words. `all` adds write!/writeln! into a verified String writer (exact core::fmt::write, a complete immutable String fmt::Write vtable; the one-byte result is kept as is_err()) and into Stdout (exact Rust 1.93.1 x86-64 ELF writer bodies and adapter callbacks; the reference-cell or promoted-inner receiver and the owned eight-byte io::Result word are kept). `off` keeps every runtime call. Template bytes must be readonly UTF-8 and descriptor cells complete; unknown compiler builds, sinks, callbacks and writers, dynamic counts, conflicting formatter aliases and unsupported layouts stay explicit. Descriptor setup, typed reads and surrounding IR are preserved. C and Go output are unchanged."
+use_when = "Leave `on` (default) to read verified Rust printing, format! and panic! as source macros. Set `off` to inspect the runtime sinks, encoded fmt::Arguments templates and stack descriptor arrays. Set `all` to also recover write!/writeln! into String and Stdout writers; it is not the default for speed: the String writer's study did not clear the small-C wall-time confidence bound and the Stdout writer's did not clear the Go-control CPU and wall-time confidence bounds. The scoped fmt::Write/io::Write imports and result bridges keep the writer contracts without changing function prototypes. Recompiled panic! uses the recovered source location, not the original binary's file and line; a recovered string argument assumes valid UTF-8 storage for its recorded length. Generic reference callbacks, floating-point and pointer formatting, and custom writers are not recovered."
+example = "option rustfmt all"
+source_decompiler = "angr"
+inspiration = "angr tests/analyses/decompiler/test_rust_decompiler.py::TestRustFormatMacrosTemplateLayout::test_format_macros and FormatMacroSimplifier; Rust 1.93 fmt::Arguments template encoding, FormattingOptions and alloc::fmt::format::format_inner"
+change_kind = "opt-in-tool"
+tier = "transform"
+symptoms = "Rust printing exposes std::io::stdio::_print with a pointer and odd integer|Rust print calls retain a runtime template pointer and stack formatter descriptor arrays|Rust integer or string String construction retains format_inner with an output pointer|Rust panic messages remain core::panicking::panic_fmt calls with opaque pointers|older Rust print calls retain a piece-array fmt::Arguments descriptor|Rust String or Stdout writes remain opaque core::fmt::write or write_fmt calls (set all)"

@@ -1,0 +1,18 @@
+[[settable]]
+option = "dwarf_lines"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P1"
+subphase = "external-refinement"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-analysis-dwarf-lines"
+summary = "Run the DWARF .debug_line source-line comment pass: parse the .debug_line program, map each instruction PC to its source file:line, and attach it as an instruction comment so the decompiled output carries the source location (the kuna analog of Ghidra's DWARFLineInfoCommentScript). DISABLED by default (it changes the output by adding /* file:line */ comment lines). Skips cleanly on a binary without .debug_line."
+use_when = "Off (default; byte-identical output). Flip on to annotate each decompiled instruction with its DWARF source file:line."
+example = "option dwarf_lines on"
+source_decompiler = "kuna"
+inspiration = "Ghidra DWARFLineInfoCommentScript (.debug_line)"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "no /* file:line */ source-location comments in the output|want each instruction annotated with its dwarf source line"

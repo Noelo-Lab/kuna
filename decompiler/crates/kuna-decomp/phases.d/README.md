@@ -1,0 +1,18 @@
+# settableTable: one file per option
+
+Each `NNNN-<option>.toml` here is one `[[settable]]` row of the phase registry
+(`../phases.toml` holds the group, subphase and surface tables). `build.rs` reads
+the files in file-name order, and that order is the catalog order: `kuna catalog`,
+`docs/options.md`, `SETTABLE_TABLE`.
+
+- **Adding an option:** create `NNNN-<option>.toml` with `NNNN` one past the
+  highest number here. Two branches picking the same number is fine: the files
+  differ by name, they merge without a conflict, and the name breaks the tie.
+- The file holds exactly one `[[settable]]` row (comments allowed), and
+  `<option>` in the file name must equal its `option` field; the build fails
+  otherwise.
+- Every field is required except the live-reader triple. `live_field` /
+  `live_true` / `live_false` give build.rs the typed `OptionValues` field and the
+  live-value mapping (`flag ? live_true : live_false`, the C++
+  `kunaLiveValue` ternary); an option with no live reader omits all three.
+- Renumbering an existing file reorders the catalog: only do it deliberately.

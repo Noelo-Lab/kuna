@@ -1,0 +1,18 @@
+[[settable]]
+option = "namestyle"
+values = "angr|ghidra"
+default = "angr"
+destructive = false
+phase = "P9"
+subphase = "naming-policy"
+strength = "HARD"
+rewind = "P9"
+issue = "angr-naming"
+summary = "Master default-name scheme: angr-style (locals vN, args aN, global data dat_<addr>, unnamed functions sub_<addr>, labels label_<addr>, plus a // rax / // stack - 0x10 source-location comment per local) vs upstream Ghidra (iVar/uVar/pcVar, param_N, <type>Ram<addr>, func_, code_)."
+use_when = "Set to ghidra to reproduce upstream Ghidra naming byte-for-byte; angr (default) makes default output read like the angr decompiler."
+example = "option namestyle ghidra"
+source_decompiler = "angr"
+inspiration = "angr decompiler default naming scheme (vN / aN / sub_<addr> / dat_<addr> / label_<addr>)"
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "iVar1/uVar2/param_1 ghidra-style names wanted instead of v1/a1 (set ghidra)|v-numbered locals and sub_/dat_/label_ names in the default output|byte-for-byte comparison against upstream ghidra naming"

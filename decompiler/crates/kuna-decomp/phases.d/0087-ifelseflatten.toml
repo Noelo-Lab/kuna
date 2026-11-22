@@ -1,0 +1,18 @@
+[[settable]]
+option = "ifelseflatten"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P8"
+subphase = "goto-quality"
+strength = "HARD"
+rewind = "P8"
+issue = "angr-IfElseFlattener"
+summary = "After structuring, flatten a 3-component `if/else` whose true-clause is statement-terminating (every endpoint returns / aborts / gotos away) by dropping the `else` and re-parenting the former else body as the `if`'s immediate follower (a print-tree edit of the structured `list`/`parent` — no p-code cloned). Mirrors angr's `IfElseFlattener`: `if (c) { ...return } else { body }` becomes `if (c) { ...return } body`, removing the syntactic `else` (and any residual goto/label it carried)."
+use_when = "kuna keeps an `else { ... }` whose matching `if`-branch always returns/aborts (or ends in a goto), so the `else` is redundant guard-clause noise — the early-return form angr emits. On by default (DIV-14); flip OFF to restore the upstream explicit-`else` rendering. The region structurer already flattens most clean diamonds, so this catches the residual terminating-if/non-terminating-else shapes the structurer (or the CollapseStructure fallback) left with an explicit `else`."
+example = "option ifelseflatten on"
+source_decompiler = "angr"
+inspiration = "test_ifelseflatten_iprule / test_ifelseflatten_clientloop; angr IfElseFlattener (region_simplifiers/ifelse.py); SAILR guard-clause flattening"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "else block kept although the matching if branch always returns or aborts|guard-clause body indented one level deeper than the source|redundant else after an early-return arm"

@@ -1,12 +1,12 @@
-"""Read decompiler/crates/kuna-decomp/phases.toml (groups, subphases, surfaces,
-settables). Uses tomllib when the interpreter has it; otherwise a line parser
+"""Read decompiler/crates/kuna-decomp/phases.toml (groups, subphases, surfaces)
+and its phases.d/ option rows (settables). Uses tomllib when the interpreter has it; otherwise a line parser
 covering the flat ``key = value`` subset phases.toml actually uses (quoted
 strings with escapes, booleans, integers) -- same precedent as
 scripts/check_test_layout.py, which must run on Python 3.10."""
 import re
 from pathlib import Path
 
-from scripts.paths import repo_root
+from scripts.paths import phases_text, repo_root
 
 try:
     import tomllib
@@ -64,7 +64,7 @@ def _fallback_parse(text: str) -> dict:
 
 def load(path: Path | None = None) -> dict:
     path = path or default_path()
-    text = path.read_text(encoding="utf-8")
+    text = phases_text(path)
     data = tomllib.loads(text) if tomllib else _fallback_parse(text)
     return {name: data.get(name, []) for name in TABLES}
 

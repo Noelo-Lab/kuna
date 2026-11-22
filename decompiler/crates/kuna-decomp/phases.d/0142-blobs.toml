@@ -1,0 +1,18 @@
+[[settable]]
+option = "blobs"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P1"
+subphase = "code-data-partition"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-1649-blobs"
+summary = "Plant a data symbol on every whole image or archive file stored in a mapped section: PNG, JPEG, GIF, BMP, ICO, zip, gzip, xz and zstd. A file counts only when its container structure walks to its end, which also gives the exact length (PNG chunks to IEND with every CRC-32, JPEG markers to EOI, GIF blocks to the trailer, the BMP header size against its pixel array, an ICO directory of PNG or DIB images, the zip end record and central directory, a gzip stream inflated to its trailer CRC-32, the xz footer and index CRC-32s, zstd frame and block headers); a truncated file is not one. Each is named <kind>_<addr> (png_2d0) and typed unsigned char[length], where no symbol already covers the address, and the string fragments the string pass finds inside it (PNG, IHDR, IDATx) are not planted. A constant equal to a file's first address is weighed as a pointer even below the pointer lower bound or with the bit pattern of a mask, unless the function also uses that value as a number, so a shared object whose read-only data starts in the first page still returns png_2d0 instead of 0x2d0. Real-image path only. `kuna blobs` lists the same files with the functions that reference them."
+use_when = "On (default) names embedded files and types them as byte arrays; off leaves their addresses as bare constants or dat_ globals and lets the string pass plant the header fragments. Flip off when a plain number in code that never touches the file prints as its name (return png_370; where 0x370 is a size): a file starting in the first page of a small shared object shares its address with ordinary constants."
+example = "option blobs off"
+source_decompiler = "kuna"
+inspiration = "Signature carving of embedded files (binwalk, file(1) magic), restricted to candidates whose container structure validates end to end"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "a function returns a bare address that points at an embedded PNG or JPEG|PNG, IHDR or IDATx show up as short string fragments in rodata|an embedded zip or gzip archive renders as dat_ globals with no length|a resource table of images is unnamed data"

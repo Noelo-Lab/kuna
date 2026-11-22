@@ -1,0 +1,18 @@
+[[settable]]
+option = "dwarf"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P1"
+subphase = "external-refinement"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-analysis-dwarf"
+summary = "Run the DWARF recovery analysis pass: recover function/global names and typed signatures from .debug_* sections (the kuna analog of Ghidra's DWARFAnalyzer). Skips cleanly on a non-DWARF binary. The pass also imports every aggregate's LAYOUT (DW_AT_byte_size plus the DW_TAG_member children at their DW_AT_data_member_location, bitfields included, size-suffixing a name a different-sized aggregate already holds) instead of a zero-size named shell, imports a DW_TAG_variant_part (a Rust tagged enum) as a struct of the DW_AT_discr tag plus a union of one payload facet per DW_TAG_variant with a variant NAME only where exactly one variant claims the bytes, and gives that tag member a synthesized <enum>::Discriminant type so discriminant tests print variant names; these three arms ran under the dwarfstructs, dwarfvariants and variantnames options before and now run whenever this pass does."
+use_when = "On (default) applies DWARF names/types; off ignores debug info (names/types come from symbols + inference only)."
+example = "option dwarf off"
+source_decompiler = "kuna"
+inspiration = "Ghidra DWARFAnalyzer"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "a -g binary still shows default names and inferred types|dwarf function/global names and typed signatures ignored"

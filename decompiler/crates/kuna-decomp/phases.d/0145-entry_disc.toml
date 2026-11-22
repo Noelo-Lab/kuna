@@ -1,0 +1,18 @@
+[[settable]]
+option = "entry_disc"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P1"
+subphase = "code-data-partition"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-analysis-entry"
+summary = "Run the entry-discovery analysis pass: find function entry points for stripped targets (e_entry, DT_INIT/FINI + INIT_ARRAY tables, .eh_frame FDE starts, the _start->main libc idiom, prologue patterns)."
+use_when = "On (default) discovers + names extra entry points; off limits functions to the symbol stream."
+example = "option entry_disc off"
+source_decompiler = "kuna"
+inspiration = "Ghidra EntryPointAnalyzer/FunctionStartAnalyzer/GccExceptionAnalyzer (.eh_frame)"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "a stripped binary yields almost no functions (symbol stream only)|functions discovered via e_entry/init_array/.eh_frame/prologues missing from the list"

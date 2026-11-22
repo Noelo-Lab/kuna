@@ -1,0 +1,18 @@
+[[settable]]
+option = "kernelcache-boot"
+values = "auto|off|<path>"
+default = "auto"
+destructive = false
+phase = "P1"
+subphase = "code-data-partition"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-kernelcache-boot"
+summary = "Apple kernel collections only: resolve the pointers a System or Auxiliary collection (macOS SystemKernelExtensions.kc, AuxiliaryKernelExtensions.kc) holds into the collections it was linked against. A DYLD_CHAINED_PTR_64_KERNEL_CACHE or X86_64_KERNEL_CACHE rebase names a cache level, and a target at level 0 (the boot collection) or 1 (the System collection) is an offset from the base of that other file, so the collection alone cannot say where it points: the slot would keep its packed chain word, and a call through it, or a vtable or metaclass pointer it holds, prints as a raw number. The collection's __PRELINK_INFO plist names each file it needs by UUID (_BootKCID, _PageableKCID). kuna reads the MH_FILESET files in the directory of the input (`auto`), or the file or directory the value names (a file may be an IMG4/IM4P container), takes the one whose LC_UUID or _PrelinkKCID is that UUID, writes base + offset into every such slot, and gives each target that a section symbol of the linked file defines inside code that symbol's name as an import of the loaded kext (the kernel's symbol before a kext's); a `__got`, `__auth_got` or `__auth_ptr` slot holding such an address is that import's slot, so a call through it is a call to the named function. A file with another UUID is never used. The load note counts, per level, the pointers rebased and functions named, or the pointers left unresolved and why. Inert on every input that is not a kernel collection pointing into another one. Loader-tier: read through the KUNA_KERNELCACHE_BOOT env var, because the image is built inside load file."
+use_when = "Auto (default): with BootKernelExtensions.kc copied next to AuxiliaryKernelExtensions.kc, a kext's calls into the kernel through its pointer slots print the kernel function's name. Give a path when the boot collection lives elsewhere (`--option kernelcache-boot /System/Library/KernelCollections`). Flip off to read no file but the input: the slots into other collections stay unresolved and the load note counts them."
+example = "--option kernelcache-boot /System/Library/KernelCollections/BootKernelExtensions.kc"
+source_decompiler = "kuna"
+inspiration = "xnu's kernel-collection fixup walk (basePointers indexed by cacheLevel) and the _BootKCID / _PageableKCID UUID checks OSKext makes before it accepts a System or Auxiliary collection; mach-o/fixup-chains.h dyld_chained_ptr_64_kernel_cache_rebase"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "a kext in an Auxiliary kernel collection calls the kernel through a raw number instead of a named function|pointers into the boot kernel collection read as packed chained-fixup words|vtable and metaclass pointers of a third-party kext are not addresses|AuxiliaryKernelExtensions.kc or SystemKernelExtensions.kc loads with unresolved kernel references"

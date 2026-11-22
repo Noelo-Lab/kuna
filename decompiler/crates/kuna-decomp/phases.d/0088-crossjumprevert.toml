@@ -1,0 +1,18 @@
+[[settable]]
+option = "crossjumprevert"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P8"
+subphase = "goto-quality"
+strength = "HARD"
+rewind = "P8"
+issue = "angr-CrossJumpReverter"
+summary = "After structuring, revert compiler cross-jumping (Irreducible Statement Condensing): rewrite `if (cond) goto T` into `if (cond) { <tail> }` when T is a small single-successor *non-return* basic block that falls through to a successor S, by duplicating that cross-jump tail inline (a print-tree copy of the same ops — no p-code cloned). Only fires when the if's own structured fall-through also converges on S (a next_flow_after convergence precondition), so duplication is semantics-preserving. Sibling of gotoreduce (return tails) for the non-return fall-through case."
+use_when = "Set on when kuna emits 1+ gotos to a shared, condensed *non-return* tail that angr's CrossJumpReverter renders goto-free (e.g. `else if (c) { f(); goto label; } ... else { label: v = *p; } if (v == 2) ...`). On by default (DIV-14); flip OFF to restore the upstream goto rendering. On, the bounded (one tail block, <=8 printed ops, no STORE, <=1 call) cross-jump tail is duplicated back into the goto source so both paths fall straight through and the goto/label vanish. Each duplication is logged (`crossjumprevert:`). Runs after gotoreduce (last deoptimization)."
+example = "option crossjumprevert on"
+source_decompiler = "angr"
+inspiration = "test_who_condensing_opt_reversion; SAILR CrossJumpReverter/ReturnDuplicatorLow (angr/analyses/decompiler/optimization_passes/cross_jump_reverter.py); who.o scan_entries"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "goto into the middle of a sibling branch's arm (compiler cross-jumping)|shared non-return tail reached by goto from an else-if chain|label planted inside an else block targeted from another branch"
