@@ -1,0 +1,61 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A call's declared return is as wide as the function that hands it back.
+
+    `libctypes_glibc_x86_64` (built from the `.c` beside it) inlines
+    `getc_unlocked`:
+
+        int next_byte(FILE *f) { return getc_unlocked(f); }
+
+        mov rax,[rdi+8]; cmp rax,[rdi+0x10]; jnc refill
+        lea rdx,[rax+1]; mov [rdi+8],rdx; movzx eax,byte [rax]; ret
+      refill:
+        sub rsp,8; call __uflow; add rsp,8; ret
+
+    The prototype table declares `int __uflow(FILE *)`, so the call writes
+    eax and the System V ABI leaves the upper half of rax undefined. Return
+    recovery reads rax whole at both RETURNs and accepts the 8-byte trial: the
+    refill path hands back PIECE(the call's clobber of rax's upper half, eax).
+    The function printed `unsigned long next_byte(FILE *a0)` (`uint8` under
+    the raw spelling), claiming 32 bits the machine never defines.
+
+    `RulePiecePathology` was a stub. It now recognizes that concatenation - a
+    call with a declared output, and the INDIRECT creation of the rest of its
+    register - and tells the RETURN that only the call's bytes are consumed, so
+    the return is the 4-byte value on every path.
+
+    Stage: P3 rule pool (`protorecovery`), feeding P4 return recovery and dead
+    code. A strict correctness fix with no option, so one pass: #1 is the
+    fixed prototype under the default `libctypes opaque` and under `libctypes
+    glibc` (#2 shows the second pass ran), #3 the old wide return. The script
+    restores `opaque`, because the option is process-wide.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>option libctypes opaque</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_glibc_x86_64</com>
+  <com>read symbols</com>
+  <com>load function next_byte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option libctypes glibc</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_glibc_x86_64</com>
+  <com>read symbols</com>
+  <com>load function next_byte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option libctypes opaque</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PIECEPATHOLOGY #1: in both passes the refill call's int is the 4-byte return" min="2" max="2">^uint4 next_byte\(FILE \*a0\)$</stringmatch>
+<stringmatch name="PIECEPATHOLOGY #2: the glibc pass ran, its field reads named" min="2" max="2">a0-&gt;_IO_read_ptr</stringmatch>
+<stringmatch name="PIECEPATHOLOGY #3: no return claims the undefined upper half of rax" min="0" max="0">^uint8 next_byte</stringmatch>
+<stringmatch name="PIECEPATHOLOGY #4: the refill path still returns the call" min="2" max="2">return __uflow\(a0\);</stringmatch>
+</decompilertest>
