@@ -6977,7 +6977,21 @@ at a direct, unlocked, non-variadic CALL is an argument when all of these hold:
   RETURN beside the incoming `x0` it forwards; heritage splits `x0` into `w0`
   and its high word, the call's argument is their `PIECE`, and kuna printed
   `int wi(void) { return geti(); }`. A callee returning a full `x0` (a `long`)
-  left the register whole and was forwarded already.
+  left the register whole and was forwarded already. The value may also reach
+  the call past earlier calls that leave the register alone
+  (`forwarded_own_input`): through copies, phis and the non-creating INDIRECTs
+  of those calls, every source must be that one input Varnode. gcc keeps an
+  argument in `rdi` across a call to a function it knows does not write it
+  (bzip2 `generateMTFValues` calling `add_pair_to_block(s)` in a loop); inside
+  a loop heritage joins the incoming `rdi` with the `rdi` carried back past the
+  call. `AncestorRealistic` reads that INDIRECT as a register killed by a call
+  and marks the trial definitely not used, which frees its data flow before this
+  rule sees it, so `check_input_trial_use` scores such a trial inactive, as it
+  scores the plain input, when the callee's statement has a parameter there.
+  The call printed `add_pair()` while `add_pair(S *)` was recovered in the same
+  run. Over gcc -O2 -fno-inline builds of bzip2, gzip, grep, find and libcmark
+  this gives 37 of 121 such calls their argument (fixture
+  `passthrough_loopfwd_x86_64`).
 
 The variadic-call test itself reads the writing instruction's own ops as its own:
 `xor %eax,%eax` reads the register it zeroes, as its operand and again in `ZF =
