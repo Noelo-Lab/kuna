@@ -2276,12 +2276,15 @@ mod tests {
         // and kuna-switchmerge-values / a hole the default code sends to the same place prints no label, and a 1100-entry table is a switch
         // and kuna-switchmerge-split / a range split between two switches, and an == test heading default, print as one switch
         // and kuna-jumptableslots / a guarded table indexed by x >> 8 past jumptablemax stays a computed call
+        // and kuna-cachereturn / a lazy accessor returns the value of its cache cell (option cachereturn)
+        // and kuna-thunknames / a placeholder jump thunk is named after its target (option thunknames)
+        // and kuna-swifthelpers / Swift instantiation helpers and lazy witness table accessors (option swifthelpers)
         // and kuna-mapglobals / a global read wider than its Symbol prints as _<symbol> with the overlap warning
         // and kuna-mapglobalsyms / the global scope keeps the data Symbols mapGlobals creates
         // and kuna-contextnames / loop counters and returned locals are named
         // and kuna-strcodelen / a Rust &str literal only code references is bounded by the length the code loads
         // and kuna-latecse / identical pure ops merge once the rules settle, and impliedrefs <n>:<w> inlines a small shared sum
-        assert_eq!(count, 863, "corpus file count drifted");
+        assert_eq!(count, 866, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
