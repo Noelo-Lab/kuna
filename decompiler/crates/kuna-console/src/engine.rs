@@ -6656,6 +6656,12 @@ fn commit_analysis_output(
     //     function Swift already hinted keeps that one.
     commit_input_hints(prog, code_space, &out.objc_self_hints);
 
+    // 7d. (kuna `swiftmetadata`) Each local Swift enum's case count by its
+    //     metadata accessor: the bound of the table its `switch` indexes
+    //     (`p2_lift/kuna_switchextent.rs`).
+    prog.arch_mut().loader_swift_enum_cases =
+        Rc::new(out.swift_enum_cases.iter().copied().collect());
+
     // 8. Call-fixups (the kuna analog of CallFixupAnalyzer's install loop): for
     //    each function the pass matched to a cspec call-fixup `<target>`, tag it
     //    with that fixup's inject id so the engine replaces the CALL with the fixup

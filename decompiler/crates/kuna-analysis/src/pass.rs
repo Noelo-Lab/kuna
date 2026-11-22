@@ -696,6 +696,11 @@ pub struct AnalysisOutput {
     pub go_itabs: Vec<SymFact>,
     /// (kuna `swifttypes`) The Swift type-layout facts. See [`SwiftTypeFacts`].
     pub swift_types: SwiftTypeFacts,
+    /// (kuna `swiftmetadata`) Each local Swift enum's metadata accessor and
+    /// the enum's case count from its descriptor: the exact bound of a
+    /// `swift_getEnumCaseMultiPayload` result, which indexes the enum's
+    /// `switch` table with no range check (`p2_lift/kuna_switchextent.rs`).
+    pub swift_enum_cases: Vec<(u64, u32)>,
     /// (kuna `formatstring static`) Per-call-site prototype overrides the
     /// LOAD-TIME format-string resolver recovered — a printf/scanf-family call
     /// whose format constant the image itself answers for. Committed onto
@@ -859,6 +864,7 @@ impl AnalysisOutput {
         self.typed_data.extend(other.typed_data);
         self.go_type_globals.extend(other.go_type_globals);
         self.go_itabs.extend(other.go_itabs);
+        self.swift_enum_cases.extend(other.swift_enum_cases);
         self.swift_types.typed_data.extend(other.swift_types.typed_data);
         self.swift_types.prototypes.extend(other.swift_types.prototypes);
         self.swift_types.param_locks.extend(other.swift_types.param_locks);

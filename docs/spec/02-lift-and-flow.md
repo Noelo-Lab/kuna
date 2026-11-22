@@ -2422,7 +2422,9 @@ the case targets.
    `decompiler/crates/kuna-decomp/src/p2_lift/kuna_switchextent.rs
    (function_tables)`: its entry to the next known function entry,
    `context.rs (ArchContext::function_entry_after)`, or a MiB), folds every
-   register through the small lattice the dispatch shapes need and names
+   register through the small lattice the dispatch shapes need (the newest
+   16 values: past that the oldest is dropped, so a long run of constants
+   early in a function does not hide its later tables) and names
    the table of each computed jump the fold proves reads one, sorted on the
    function (`Funcdata::kuna_extent_tables`, shared with the recovery
    partial). With two or more tables named, the recovery runs once more:
@@ -2445,6 +2447,28 @@ the case targets.
    addresses measured from the wrong base. The discovery Listing applies the
    same rule when it reads an AArch64 compact table with no range check
    (chapter 1, `kuna_a64switch.rs`).
+
+   A Swift enum's table needs no neighbour: its count is in the binary.
+   `swift_getEnumCaseMultiPayload(value, metadata)` returns a case of the
+   enum `metadata` describes, and the enum's context descriptor states its
+   payload cases (the low 24 bits of the word at offset 20) and its empty
+   cases (offset 24); their sum is exactly the table's length, also for a
+   function's last table. The `swiftmetadata` pass records each local enum's
+   case count by its metadata accessor
+   (`kuna-analysis/src/analyzers/swift/descriptors.rs`,
+   `AnalysisOutput::swift_enum_cases`), which the engine hands to the
+   architecture (`ArchContext::swift_enum_cases`). The extent scan then also
+   follows calls (`kuna_switchextent.rs (enum_calls)`): an accessor's result
+   register holds that enum's metadata, kept across later calls while it
+   sits in a register the default prototype preserves; a call to
+   `swift_getEnumCaseMultiPayload` whose second argument holds it returns a
+   case, which stays a case through copies, widening and scaling; and a
+   table indexed by one is recorded with the count
+   (`ExtentTables::cases`). The re-bound takes that count before the next
+   table's distance, and a function with such a table is re-run even when it
+   names only one. A metadata the function does not get from a local
+   accessor (a generic parameter, a value loaded from memory) gives no
+   count, and the table falls back to its next table.
 
    A table that a mask bounds only to its selector's width is the other
    half of the same shape. A Swift enum's string switch masks the case
