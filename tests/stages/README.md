@@ -349,6 +349,13 @@ correctness fix, exercised with defaults and `nanignore none`.
 GCC and Clang and checks NaN, signed zeros, infinities and finite values
 against the original functions.
 
+`kuna-framepublish-seh.xml` pins an MSVC SEH prologue that links its
+registration record into `fs:[0]` and allocates a local below it with
+`push ecx`. The frame publication holds only the frame writes at or above the
+published record, so the record's handler and state stores print and the
+garbage ECX store to the local does not make ECX a parameter. A strict fix
+with one pass.
+
 `kuna-globalorder.xml` pins issue [#871](https://github.com/Noelo-Lab/kuna/issues/871)
 and case-local global stores at the `indexaliasguard global` default: a
 computed global update stays after an aliasing load, and a switch's stores

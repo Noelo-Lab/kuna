@@ -1,0 +1,41 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    A published frame address holds only the frame writes a reader of the
+    published pointer can reach. MSVC's SEH prologue links a registration
+    record into fs:[0] (a frame publication) and allocates a local below it
+    with `push ecx`, whose garbage ECX is overwritten by `and [ebp-0x10],0`
+    before the local's address goes to a call:
+
+      0x401000  55 / 8b ec / 6a ff / 68 00 20 40 00     push ebp ; mov ebp,esp ; push -1 ; push handler
+      0x40100a  64 a1 00 00 00 00 / 50                  mov eax,fs:[0] ; push eax
+      0x401011  51                                      push ecx            ; the local at ebp-0x10
+      0x401012  8d 45 f4 / 64 a3 00 00 00 00            lea eax,[ebp-0xc] ; mov fs:[0],eax
+      0x40101b  83 65 f0 00                             and dword [ebp-0x10],0
+      0x40101f  8d 45 f0 / 50 / e8 18 00 00 00          push &local ; call 0x401040
+      0x401028  8b 45 f0 / 8b 4d f4                     mov eax,[ebp-0x10] ; mov ecx,[ebp-0xc]
+      0x40102e  64 89 0d 00 00 00 00                    mov fs:[0],ecx
+      0x401035  8b e5 / 5d / c3                         mov esp,ebp ; pop ebp ; ret
+      0x401040  c2 04 00                                ret 4
+
+    P6 dead-code holds (kuna_stackalias.rs held_by_policy): the publication
+    hold covers frame bytes at or above the lowest published byte (ebp-0xc,
+    the record), so the record's handler and state stores print, while the
+    `push ecx` store to ebp-0x10 keeps the default policy and is dropped.
+    Holding every aliased frame byte instead kept that store live, which made
+    ECX an input: `unsigned int seh_push_ecx(unsigned int a0)` with
+    `v2 = a0;`. Strict fix, one pass.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">558bec6aff680020400064a10000000050518d45f464a3000000008365f0008d45f050e8180000008b45f08b4df464890d000000008be55dc3ccccccccccccccc20400</bytechunk>
+<symbol space="ram" offset="0x401000" name="seh_push_ecx"/>
+<symbol space="ram" offset="0x401040" name="use_local"/>
+</binaryimage>
+<script>
+  <com>lo fu seh_push_ecx</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="FRAMEPUBLISH-SEH #1: the push-ecx local below the published record does not make ECX a parameter" min="1" max="1">^unsigned int seh_push_ecx\(void\)</stringmatch>
+<stringmatch name="FRAMEPUBLISH-SEH #2: the record's handler and state stores print" min="2" max="2"> = 0x402000;$| = 0xffffffff;$</stringmatch>
+</decompilertest>
