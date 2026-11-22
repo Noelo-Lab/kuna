@@ -2780,6 +2780,33 @@ funcsym stream:
   calls `os_unfair_lock_lock_with_options` through an island on iOS 16 and
   through `HomeKit`'s rewritten stub on iOS 14, and both render the name.
 
+- **Jump thunks** (kuna `thunknames`, default on,
+  `decompiler/crates/kuna-console/src/engine/kuna_thunknames.rs`): a function
+  whose first instruction is a direct unconditional branch is a thunk (a
+  linker branch island, an identical-code-folding forwarder, an outlined tail
+  call; one `b <target>` on arm64). No loader names it, so it stays
+  `sub_<addr>` and every call through it is anonymous. While committing the
+  entries, the engine decodes the first instruction of every discovered entry
+  and keeps each direct unconditional branch to another address whose p-code
+  is that one BRANCH. A delay slot is part of its branch, so a MIPS `j f`
+  whose slot holds `addiu $a0,$a0,16` (a `this` adjustor) is not a thunk,
+  while `j f; nop` is. After every
+  other name source, a thunk still named by a placeholder is renamed
+  `j_<target>` when its target's function has a name that is not a
+  placeholder. A thunk to a thunk is named in the next round (`j_j_<name>`),
+  for at most four rounds; a name already in use takes the first free `_<n>`
+  suffix, in thunk address order within a round. After every prototype
+  stream has run, each renamed thunk also takes what its chain's target
+  carries for a call to it: the parked prototype and the bound prototype model (each
+  only where the thunk has none of its own), and the target's Swift `self`
+  classification, so a call through the thunk is typed as a call to the
+  target. A thunk with a name of its own (`cmp3: jmp memcmp`) keeps its
+  own prototype recovery, since its source signature need not be the
+  target's. Under `lazyfuncs` only the
+  thunks whose chain ends at an entry some fact names are made functions
+  eagerly. Indirect stubs (`adrp; ldr; br`, arm64e `braa`) are named by the
+  stub passes above, not here.
+
 The import currency deliberately includes both executable linkage stubs and
 pointer slots in data sections: the latter must be function symbols so indirect
 calls resolve to a name and library prototype. They are not function bodies.
