@@ -7,25 +7,28 @@
     decompiler/crates/kuna-analysis/tests/fixtures/switchnextcsel_aarch64.s
     (the .text and .rodata of switchnextcsel_aarch64).
 
-    `name_of` indexes tab_names (3 bytes at 0x11080) with `x0 & 0xff`, so
+    `name_of` indexes tab_names (3 bytes at 0x11084) with `x0 & 0xff`, so
     the basic model reads 256 rows. The rows past its three are pick's table
-    (0x11083) and the bytes after it, measured from name_of's base: 1 and 3
+    (0x11087) and the bytes after it, measured from name_of's base: 1 and 3
     land inside name_of, 13 in pick, 0 on name_of's first case, so the
     run-on cut keeps every row and switchextent ends the table at the next
     function's table. pick's index is
         mov w9, #4; mov w10, #2; cmp w0, #3; csel w9, w10, w9, lo
         cmp w1, #0xff; csinc w8, w9, wzr, hs; cmp w2, #7; csel w8, wzr, w8, lo
-    Each csel/csinc lifts to a branch inside the instruction; the linear
-    decode that names pick's table must not take the last copy before it as
-    the value, or it reads `ldrb w11, [x9, x8]` as a load from one constant
-    address, finds no table in pick, and name_of keeps phantom cases running
-    its own case bodies' second instructions and pick's code.
+    and pick adds it to the table's address before the load
+    (`add x9, x9, x8; ldrb w11, [x9]`). Each csel/csinc lifts to a branch
+    inside the instruction; the linear decode that names pick's table must
+    not take the last copy before it as the value, or it reads the load as
+    one from a constant address, finds no table in pick, and name_of keeps
+    phantom cases running its own case bodies' second instructions and
+    pick's code.
 -->
 <bytechunk space="ram" offset="0x10000">
-081c40921f2003d5c98300108a0000102b6968384a090b8b40011fd6c0038052c0035fd6e0038052c0035fd600048052c0035fd6890080524a0080521f0c0071
-4931891a3ffc037128259f1a5f1c0071e833881a090000b0290d02918a0000102b6968384a090b8b40011fd61f2003d500058052c0035fd620058052c0035fd6
+081c40921f2003d5e98300108a0000102b6968384a090b8b40011fd6c0038052c0035fd6e0038052c0035fd600048052c0035fd6890080524a0080521f0c0071
+4931891a3ffc037128259f1a5f1c0071e833881a090000b0291d0291aa0000102901088b2b0140394a090b8b40011fd61f2003d500058052c0035fd620058052
+c0035fd6
 </bytechunk>
-<bytechunk space="ram" offset="0x11080">
+<bytechunk space="ram" offset="0x11084">
 00020401030103010d00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000

@@ -4,11 +4,12 @@
 // basic model reads 256 rows; the rows past its own three are pick's table
 // and the bytes after it: 1 and 3 land inside name_of, 13 in pick, 0 on
 // its first case, so the run-on cut keeps every row. pick's index comes
-// from a csel/csinc chain over constants (0, 1, 2 or 4); each of them
-// lifts to a p-code branch inside the instruction, so a linear fold that
-// takes the last copy as the value reads the chain as the constant 1 and
-// pick's table as a constant load. pick's table, right after tab_names,
-// ends name_of's.
+// from a csel/csinc chain over constants (0, 1, 2 or 4) and is added to the
+// table's address before the load; each csel/csinc lifts to a p-code
+// branch inside the instruction, so a linear fold that takes the last copy
+// as the value reads the chain as the constant 1, the address as one
+// constant and pick's table as a constant load. pick's table, right after
+// tab_names, ends name_of's.
     .text
     .globl name_of
     .type name_of, %function
@@ -47,7 +48,8 @@ pick:
     adrp    x9, tab_pick
     add     x9, x9, :lo12:tab_pick
     adr     x10, .Lp_base
-    ldrb    w11, [x9, x8]
+    add     x9, x9, x8
+    ldrb    w11, [x9]
     add     x10, x10, x11, lsl #2
     br      x10
 .Lp_base:
