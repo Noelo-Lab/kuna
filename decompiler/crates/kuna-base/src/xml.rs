@@ -2266,8 +2266,12 @@ mod tests {
         // and kuna-gotypenames / Go type descriptors and itabs named as the linker spells them, go1.16 on
         // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
         // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
+        // and kuna-calleefilledarg / an objc_msgSend$ selector stub keeps the arguments staged after x1 (option calleefilledarg)
+        // and kuna-calleefilledarg-ctramp / a C trampoline that fills rsi keeps the positional rule
+        // and kuna-switchextent-a64 / an unchecked AArch64 table ends at the function's next table (option switchextent)
+        // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
         // and kuna-wasm-module / a WebAssembly module loads as a flat image of register-form code
-        assert_eq!(count, 849, "corpus file count drifted");
+        assert_eq!(count, 853, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
