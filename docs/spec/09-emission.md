@@ -2400,7 +2400,9 @@ renders a read of a Mach-O import slot whose import is a data object (the slots
 function's address still reads the slot. It does so only for the value the loader
 put there: a read whose varnode is a function input, or comes from one through call
 side effects (`INDIRECT`) and joins (`MULTIEQUAL`); a value the function stored into
-the slot keeps the slot name.
+the slot keeps the slot name. So do a read narrower than the slot and a read by an
+operator C does not apply to a pointer (a mask, a shift, a multiply or a division:
+`dat_<slot> | 1`, never `&<import> | 1`); an addition stays `&<import> + 8`.
 
 (kuna `cstringconst`, default on) A pointer-wide constant inside a string-literal
 section prints as the literal there, whatever type it reaches the printer with
