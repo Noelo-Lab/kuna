@@ -1950,6 +1950,12 @@ pub struct Architecture {
     /// typed metadata records, accessor prototypes and the register-pinned
     /// `self` of getters. Default-on; inert unless `swiftmetadata` is on.
     pub analysis_swifttypes: bool,
+    /// (kuna) Gate the Swift helper arm of the metadata pass
+    /// (`swifthelpers`): the instantiation helpers and lazy witness table
+    /// accessors named from their bodies, and the caches they fill named
+    /// after the type each call asks for. Default-on; inert unless
+    /// `swiftmetadata` is on.
+    pub analysis_swifthelpers: bool,
     /// (kuna `swifttypes`) Register-pinned parameters the analysis tier
     /// declared, by function entry: `(slot, name, storage + type)`, the
     /// shape of a console `map param`. The decompile drive seeds a
@@ -2717,6 +2723,7 @@ impl Architecture {
             analysis_blobs: false,
             blob_entries: Rc::default(),
             analysis_swifttypes: true,
+            analysis_swifthelpers: true,
             loader_param_locks: std::collections::BTreeMap::new(),
             analysis_objcivars: true,
             analysis_swiftcall: true,
@@ -3080,6 +3087,7 @@ impl Architecture {
         self.cfstrings_annotate = false;
         self.analysis_blobs = true; // (kuna) embedded image/archive data symbols; real-binary-path only
         self.analysis_swifttypes = true; // Swift type layouts default-on, inert unless swiftmetadata is on
+        self.analysis_swifthelpers = true; // Swift helper names default-on, inert unless swiftmetadata is on
         self.analysis_objcivars = true; // (kuna) ObjC instance structs + typed self + ivar offset fold; inert unless objc is on
         self.analysis_swiftcall = true; // Swift calling convention default-on, inert unless swiftmetadata is on
         self.analysis_swiftobjcthunk = true; // Swift slot names from @objc thunks default-on, inert unless swiftmetadata is on
@@ -3595,6 +3603,7 @@ impl Architecture {
         ctx.go_bool = self.go_bool;
         ctx.go_write_barrier = self.go_write_barrier;
         ctx.go_new_type = self.go_new_type;
+        ctx.swift_metadata_results = self.analysis_swifttypes;
         ctx.ptrauth_trap_userop = self
             .ptrauth_trap
             .then(|| self.userops.get_op_by_name(crate::kuna_ptrauthtrap::BREAKPOINT_USEROP))

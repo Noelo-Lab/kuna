@@ -984,6 +984,7 @@ kuna_options! { self, p1;
     },
     "blobs" => on_off!(analysis_blobs, "Embedded image and archive data symbols"),
     "swifttypes" => on_off!(analysis_swifttypes, "Swift type layouts from static metadata"),
+    "swifthelpers" => on_off!(analysis_swifthelpers, "Swift instantiation helpers and lazy witness table accessors"),
     "objcivars" => {
         let val = on_or_off(p1)?;
         self.analysis_objcivars = val;

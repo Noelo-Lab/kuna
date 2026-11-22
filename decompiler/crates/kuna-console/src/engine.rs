@@ -5532,6 +5532,15 @@ fn commit_analysis_output(
     } else {
         out.swift_types = Default::default();
     }
+    // (kuna `swifthelpers`) The Swift helper arm's facts, the same deferred
+    // shape: on, they fold into their streams; off, they are dropped.
+    let helpers = std::mem::take(&mut out.swift_helpers);
+    if prog.arch().analysis_swifthelpers {
+        out.symbols.extend(helpers.symbols);
+        out.fid_names.extend(helpers.fid_names);
+        out.typed_data.extend(helpers.typed_data);
+        out.prototypes_at.extend(helpers.prototypes_at);
+    }
     // 0c. (kuna `gotypeglobals`) A Go image's `_type` descriptors as named,
     //     typed data globals, the same deferred shape: on, they fold into the
     //     typed-data stream and commit at arm 4b (`type:main.Point` of shell

@@ -29,6 +29,7 @@
 
 pub mod descriptors;
 pub mod kuna_swiftcall;
+pub mod kuna_swifthelpers;
 pub mod kuna_swiftobjcthunk;
 pub mod kuna_swifttypes;
 pub mod kuna_swiftwitness;
@@ -166,7 +167,7 @@ impl AnalysisPass for SwiftMetadataPass {
             .filter_map(|c| Some((c.accessor?, c.num_cases)))
             .collect();
         out.swift_enum_cases.sort_unstable();
-        if ctx.arch.analysis_swifttypes {
+        if ctx.arch.analysis_swifttypes || ctx.arch.analysis_swifthelpers {
             let mut types = kuna_swifttypes::Types::new(
                 &md,
                 &reader,
@@ -176,22 +177,27 @@ impl AnalysisPass for SwiftMetadataPass {
                 ctx.file.architecture(),
                 ctx.file.format() == object::BinaryFormat::MachO,
             );
-            types.locate_all();
-            let regs = kuna_swifttypes::Registers::for_arch(ctx.file.architecture());
-            types.emit(regs.as_ref(), &mut out);
-            if let (true, Some(regs)) = (ctx.arch.analysis_swiftcall, regs.as_ref()) {
-                let symbols: Vec<(u64, String)> = ctx
-                    .file
-                    .symbols()
-                    .filter(|s| s.kind() == object::SymbolKind::Text && s.is_definition())
-                    .filter_map(|s| Some((s.address(), s.name().ok()?.to_string())))
-                    .collect();
-                kuna_swiftcall::bind(&types, regs, &symbols, &mut out);
+            if ctx.arch.analysis_swifthelpers {
+                kuna_swifthelpers::emit(&types, ctx.file, &mut out);
             }
-            if let Some(w) = &witnesses {
-                kuna_swiftwitness::type_tables(w, &types, &mut out);
+            if ctx.arch.analysis_swifttypes {
+                types.locate_all();
+                let regs = kuna_swifttypes::Registers::for_arch(ctx.file.architecture());
+                types.emit(regs.as_ref(), &mut out);
+                if let (true, Some(regs)) = (ctx.arch.analysis_swiftcall, regs.as_ref()) {
+                    let symbols: Vec<(u64, String)> = ctx
+                        .file
+                        .symbols()
+                        .filter(|s| s.kind() == object::SymbolKind::Text && s.is_definition())
+                        .filter_map(|s| Some((s.address(), s.name().ok()?.to_string())))
+                        .collect();
+                    kuna_swiftcall::bind(&types, regs, &symbols, &mut out);
+                }
+                if let Some(w) = &witnesses {
+                    kuna_swiftwitness::type_tables(w, &types, &mut out);
+                }
+                metadata_ptr = types.metadata_struct().and_then(|t| types.pointer_to(t));
             }
-            metadata_ptr = types.metadata_struct().and_then(|t| types.pointer_to(t));
         }
         if let Some(w) = &witnesses {
             kuna_swiftwitness::prototypes(w, &namer, ctx.arch.types(), metadata_ptr, &mut out);
