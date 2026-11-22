@@ -2271,7 +2271,11 @@ mod tests {
         // and kuna-passthrough-anchor-arm / a canary wipe, a restored alignment slot or a float kept across the call anchors no forwarded run
         // and kuna-passthrough-anchor-x86 / a frame local in the outgoing-argument area anchors no forwarded run
         // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
-        assert_eq!(count, 853, "corpus file count drifted");
+        // and kuna-calleefilledarg / an objc_msgSend$ selector stub keeps the arguments staged after x1 (option calleefilledarg)
+        // and kuna-calleefilledarg-ctramp / a C trampoline that fills rsi keeps the positional rule
+        // and kuna-switchextent-a64 / an unchecked AArch64 table ends at the function's next table (option switchextent)
+        // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
+        assert_eq!(count, 857, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
