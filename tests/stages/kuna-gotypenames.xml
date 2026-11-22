@@ -1,0 +1,69 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    gotypeglobals: a Go image's type descriptors and itabs are named as the
+    linker names them, on every release the harvest decodes.
+
+    The script loads three stripped builds of tests/fixtures/go-type-names/main.go
+    (go1.16.15, go1.17.13 and go1.26.2, linux/amd64). main.mk allocates a
+    main.Point; main.main converts a *main.Point to the main.Shape interface;
+    internal/bisect.New allocates a Matcher; internal/poll.(*FD).Close returns
+    the errNetClosing error.
+
+    Asserts #1-#2 are the go1.16 image: its name records carry a u16 length
+    (the varint arrived in go1.17), so before this the harvest decoded nothing
+    there; now the itab store and the descriptor comparisons in
+    runtime.printany are named. Assert #3 is the go1.17 image: its build info
+    is the pointer form, whose version selects the packed struct-field
+    encoding, so main.Point is interned with its fields (before, the layout
+    was refused and the allocation typed struct_0). Asserts #4-#5 are the go1.26 image: a
+    sub-package type is spelled with its full import path, as the linker
+    spells the symbol (type:internal/bisect.Matcher, not
+    type:bisect.Matcher; go:itab.internal/poll.errNetClosing,error).
+    Assert #6 is the off pass of the same image: the allocation takes a bare
+    address.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-type-names/go1.16.15-amd64</com>
+  <com>read symbols</com>
+  <com>load function main.main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function runtime.printany</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-type-names/go1.17.13-amd64</com>
+  <com>read symbols</com>
+  <com>load function main.mk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-type-names/go1.26.2-amd64</com>
+  <com>read symbols</com>
+  <com>load function internal/bisect.New</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function internal/poll.(*FD).Close</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-type-names/go1.26.2-amd64</com>
+  <com>option gotypeglobals off</com>
+  <com>read symbols</com>
+  <com>load function internal/bisect.New</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="gotypenames #1: go1.16 names the itab of the interface conversion" min="1" max="1">dat_[0-9a-f]+ = go:itab\.\*main\.Point,main\.Shape;</stringmatch>
+<stringmatch name="gotypenames #2: go1.16 names the descriptors printany compares against" min="1" max="1">a0 == &amp;type:string</stringmatch>
+<stringmatch name="gotypenames #3: go1.17 interns the allocated struct with its fields" min="1" max="1">main\.Point \*v1; // rax</stringmatch>
+<stringmatch name="gotypenames #4: go1.26 spells the allocated type with its import path" min="1" max="1">runtime\.newobject\(&amp;type:internal/bisect\.Matcher\)</stringmatch>
+<stringmatch name="gotypenames #5: go1.26 spells the itab with its import path" min="1" max="1">= go:itab\.internal/poll\.errNetClosing,error;</stringmatch>
+<stringmatch name="gotypenames #6: off passes a bare descriptor address" min="1" max="1">runtime\.newobject\(0x4a29e0\)</stringmatch>
+</decompilertest>
