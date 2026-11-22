@@ -486,7 +486,7 @@ fn switch_targets(
         ctx.translate,
         ctx.code,
         Some(ctx.data),
-        decoded,
+        &|a| decoded.contains(&a),
         vma,
         branch,
         pool,
@@ -496,7 +496,7 @@ fn switch_targets(
             preserved: &ctx.preserved,
             settled: false,
             named: None,
-            compact: ctx.arch.archid.starts_with("AARCH64"),
+            next_table: None,
         },
     );
     if read.unbounded {

@@ -866,12 +866,21 @@ fn descend(
     let preserved = kuna_switchtable::preserved_registers(arch);
     let named_set = std::cell::OnceCell::new();
     let named = |at: u64| pool.as_ref().is_some_and(|p| named_set.get_or_init(|| p.code_named(file)).contains(&at));
+    // (kuna `switchextent`) A dispatch's function spans the seeds around it;
+    // its jump tables bound one no range check does (`kuna_switchextent`).
+    let function_tables = pool.as_ref().map(super::kuna_switchextent::FunctionTables::new);
+    let extent_entries = seed_set.clone();
+    let next_table = |from: u64, table: u64| {
+        let lo = extent_entries.range(..=from).next_back().copied()?;
+        let hi = extent_entries.range(from + 1..).next().copied();
+        function_tables.as_ref()?.next_after(translate, &code_space, data_space.as_ref(), &exec, lo, hi, table)
+    };
     let reach = kuna_switchtable::Reach {
         max_entries,
         preserved: &preserved,
         settled: false,
         named: Some(&named),
-        compact: file.architecture() == object::Architecture::Aarch64,
+        next_table: arch.switch_extent.then_some(&next_table),
     };
     let arm = file.architecture() == object::Architecture::Arm;
     let pic_image = pool.as_ref().map(|pool| kuna_picpool::Image {
@@ -1159,7 +1168,7 @@ fn descend(
                     left.sort_unstable_by_key(|&(vma, ..)| vma);
                     for (vma, _, branch) in left {
                         let read = kuna_switchtable::register_targets(
-                            translate, &code_space, data_space.as_ref(), &st.decoded, vma, &branch,
+                            translate, &code_space, data_space.as_ref(), &|a| st.decoded.contains(&a), vma, &branch,
                             pool.as_ref().unwrap(), &exec, &settled,
                         );
                         if !read.unbounded {
@@ -1184,7 +1193,7 @@ fn descend(
                 None if !call_sites.is_empty() && pool.is_some() => {
                     for (vma, callind) in std::mem::take(&mut call_sites) {
                         let read = kuna_switchtable::register_targets(
-                            translate, &code_space, data_space.as_ref(), &st.decoded, vma, &callind,
+                            translate, &code_space, data_space.as_ref(), &|a| st.decoded.contains(&a), vma, &callind,
                             pool.as_ref().unwrap(), &exec, &reach,
                         );
                         let run = kuna_calltable::call_table_run(read.cases, arm, |t| {
@@ -1555,7 +1564,7 @@ fn descend(
                 let callind = cap.ops().iter().find(|o| o.opcode == OpCode::CPUI_CALLIND).and_then(|o| o.ins.first());
                 if let (Some(p), Some(callind)) = (pool.as_ref(), callind) {
                     let mut read = kuna_switchtable::register_targets(
-                        translate, &code_space, data_space.as_ref(), &st.decoded, vma, callind, p, &exec, &reach,
+                        translate, &code_space, data_space.as_ref(), &|a| st.decoded.contains(&a), vma, callind, p, &exec, &reach,
                     );
                     if read.stated.is_none() && !read.cases.is_empty() {
                         call_sites.push((vma, callind.clone()));
@@ -2154,9 +2163,10 @@ fn branch_cases(
     reach: &kuna_switchtable::Reach,
     thumb_tables: Option<&super::kuna_thumbswitch::HalfwordTables<'_>>,
 ) -> kuna_switchtable::TableRead {
+    let decoded = |at: u64| decoded.contains(&at);
     let mut read = match branch {
         Some(branch) => kuna_switchtable::register_targets(
-            translate, code_space, data_space, decoded, vma, branch, pool, exec, reach,
+            translate, code_space, data_space, &decoded, vma, branch, pool, exec, reach,
         ),
         None => kuna_switchtable::TableRead::default(),
     };
@@ -2164,7 +2174,6 @@ fn branch_cases(
     // See [`super::kuna_thumbswitch`].
     if read.cases.is_empty() && read.stated.is_none() {
         if let Some(tables) = thumb_tables {
-            let decoded = |at: u64| decoded.contains(&at);
             (read.cases, read.stated) = tables.targets(translate, code_space, exec, &decoded, vma);
         }
     }
