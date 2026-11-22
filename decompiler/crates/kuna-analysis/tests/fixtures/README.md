@@ -1411,6 +1411,41 @@ LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin
 `$s4main10countWords2ofS2i_tF`. The `_OBJC_CLASS_$__TtC4main7Greeter` data
 symbol keeps the linker's spelling either way.
 
+### `macho_swift_objcthunk_arm64` — Swift vtable slots named from `@objc` thunks (`swiftobjcthunk`)
+
+`macho_swift_objcthunk_arm64` (arm64 iOS dylib, ~66 KB) is the fixture of
+`kuna-console/tests/verify_swiftobjcthunk.rs`. `macho_swift_objcthunk.swift`
+(classes `Replay` and `Sub`, `-Onone`) has `@objc` properties, an `@objc`
+method, an `@objc class func` and an override; `macho_swift_objcthunk_probe.swift`
+(`-O`) has a private class whose `doesNotRecognizeSelector:` thunk inlines the
+override (a `super` send) and calls the non-`@objc` `refresh()` directly.
+Built with swiftc 6.4.2 against the iPhoneOS 16.5 SDK. The SDK's Foundation
+overlay is not needed: a one-line `Foundation` module (`@_exported import
+ObjectiveC`) stands in for it, and `-resource-dir` points at a directory holding
+only the toolchain's `apinotes`, `clang` and `shims`, so the SDK's own Swift
+modules are used. Linked with `-x`, so no Swift function keeps a symbol; the
+pinned VMAs come from the same link without `-x`.
+
+```bash
+echo '@_exported import ObjectiveC' > Foundation.swift
+SW="swiftc -resource-dir $RD -target arm64-apple-ios16.0 -sdk $SDK"
+$SW -parse-as-library -emit-module -module-name Foundation Foundation.swift -emit-module-path mods/Foundation.swiftmodule
+$SW -I mods -Onone -parse-as-library -emit-object -module-name objcfix macho_swift_objcthunk.swift -o t.o
+$SW -I mods -O -parse-as-library -emit-object -module-name objcfix macho_swift_objcthunk_probe.swift -o probe.o
+ld64.lld -arch arm64 -platform_version ios 16.0 16.5 -dylib -o macho_swift_objcthunk_arm64 t.o probe.o \
+         -syslibroot $SDK -L$SDK/usr/lib/swift -L$SDK/usr/lib -lswiftCore -lobjc -lSystem \
+         -install_name @rpath/t.dylib -x
+```
+
+**Pinned VMAs:** `Replay.scrollView` getter/setter `0x4060`/`0x4130`, `Replay.count`
+getter/setter `0x428c`/`0x4340`, `Replay.addFrame(timestamp:label:)` `0x4410`,
+`Replay.make()` `0x4708`, `Sub.addFrame(timestamp:label:)` `0x49bc`,
+`Probe.refresh()` `0x4c10`. With `swiftmetadata` on they are named
+`objcfix.Replay.scrollView.getter`, …, `objcfix.Replay.addFrameWithTimestamp:label:`,
+`objcfix.Replay.make`, `objcfix.Sub.addFrameWithTimestamp:label:`, and
+`Probe.refresh()` stays `objcfix.Probe.vtable#3.method`; `--option swiftobjcthunk
+off` gives every one its positional `vtable#N.kind` name.
+
 ### `macho_cstringconst_arm64` — short literals nothing types `char *` (`cstringconst`)
 
 `macho_cstringconst_arm64` (arm64 dylib at base 0, ~50 KB, from

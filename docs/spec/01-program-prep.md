@@ -6297,6 +6297,44 @@ every other binary's pass list is byte-identical to before the pass existed):
   `swift_call_syms_elf` on, and `swift_call_native_elf` on, where a C function
   uses r12 as an ordinary variable and a class witness of a class-bound
   protocol takes the reference.
+- **Swift slot names from `@objc` thunks** (`swiftobjcthunk`, the naming arm
+  of `swiftmetadata` for Mach-O arm64, default-on and inert unless
+  `swiftmetadata` is on;
+  `decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swiftobjcthunk.rs`):
+  a Swift method descriptor carries no name, so in a stripped image the first
+  arm names a class's vtable slots by position (`Sentry.SentryOnDemandReplay.vtable#20.method`)
+  and every call through one prints that. An `@objc` member also has an
+  Objective-C entry point. For each `__objc_classlist` class whose `class_t`
+  data word carries a Swift bit (`FAST_IS_SWIFT_LEGACY|STABLE`) and whose
+  metadata `Description` word (offset 0x40) is a local class descriptor, the
+  arm reads the class's and metaclass's method lists and property lists. Each
+  method's IMP is a bridging thunk; its `bl`/`b` targets are read up to the
+  next stated function start (the load commands' and exports' function
+  starts, every IMP and every slot implementation; at most 128 instructions).
+  When the targets reach exactly one implementation the class's vtable or
+  override table lists, and none of them sends an Objective-C message (a call
+  into `__objc_stubs`, or a stub whose `adrp`/`ldr` (or arm64e `adrp`/`add`/`ldr`)
+  slot is bound to `objc_msgSend*`), the slot is named after the member, if
+  its kind fits the selector: a getter or setter after the property whose
+  accessor the selector is (`Class.isFullSession.getter`), a method after its
+  selector (`Class.addFrameWithTimestamp:label:`), an initializer after an
+  `init…` selector; an instance slot takes only a `-` method and a class slot
+  only a `+` one, while an initializer (whose descriptor is not an instance
+  member) takes a `-init…` method. The send check matters for an override of
+  an inherited Objective-C method (`layoutSubviews`): it has no vtable slot,
+  and when `-O` inlines its body into the thunk, the thunk sends to `super`
+  and then calls some other slot directly, which must not take its selector.
+  The name belongs to the method descriptor, so an override in a subclass
+  takes it too (`Sub.addFrameWithTimestamp:label:`); a slot two thunks name
+  differently keeps its position. The pass runs at load, before `option`
+  commands, so it records each renamed function's positional name
+  (`AnalysisOutput::swift_positional_names`), and the commit boundary
+  restores those names when the gate is off. On Perplexity for iOS (an 84 MB
+  arm64 app) the arm names 346 of the 1,723 positional slot implementations
+  (178 methods, 6 initializers, 87 getters, 75 setters) with no measurable
+  load cost. The crate test `kuna-console/tests/verify_swiftobjcthunk.rs`
+  runs the stripped fixture `macho_swift_objcthunk_arm64` with the arm on and
+  off.
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the
