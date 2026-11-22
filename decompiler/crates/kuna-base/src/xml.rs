@@ -2271,7 +2271,7 @@ mod tests {
         // and kuna-switchextent-a64 / an unchecked AArch64 table ends at the function's next table (option switchextent)
         // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
         // and kuna-opaquepredicate-proofs / narrow inputs, dominating branches, identical arms, never-written globals
-        assert_eq!(count, 853, "corpus file count drifted");
+        assert_eq!(count, 862, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
