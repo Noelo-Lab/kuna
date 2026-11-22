@@ -15,10 +15,12 @@
 
     The fixture `swift_rr_regs_macho` (arm64 Mach-O, assembled from
     `swift_rr_regs_macho.s` against the iOS 16.5 libswiftCore) imports
-    `swift_retain`, `swift_release_x20` and `swift_retain_x21`. `keep_first`
-    releases its second argument through `x20`; `retain_second` retains its
-    second argument through `x21` and stores the result, which the entry point
-    returns in `x0`.
+    `swift_retain`, `swift_release_x20`, `swift_retain_x21`,
+    `swift_bridgeObjectRetain_x22` and `swift_bridgeObjectRelease_x23`.
+    `keep_first` releases its second argument through `x20`; `retain_second`
+    retains its second argument through `x21` and stores the result, which the
+    entry point returns in `x0`; `bridge_swap` retains a bridge object through
+    `x22` and releases another through `x23`.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -35,9 +37,14 @@ c3
   <com>load addr 0x10000402c</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load addr 0x100004068</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="the release through x20 takes its argument" min="1" max="1">swift_release_x20\(a1\);</stringmatch>
 <stringmatch name="the retain through x21 takes its argument and returns in x0" min="1" max="1">\*a0 = \(unsigned long\)swift_retain_x21\(a1\);</stringmatch>
+<stringmatch name="the bridge-object retain through x22 takes its argument" min="1" max="1">= swift_bridgeObjectRetain_x22\(a0\);</stringmatch>
+<stringmatch name="the bridge-object release through x23 takes its argument" min="1" max="1">swift_bridgeObjectRelease_x23\(a1\);</stringmatch>
 <stringmatch name="the plain entry point is unchanged" min="1" max="1">swift_retain\(a0\);</stringmatch>
 </decompilertest>

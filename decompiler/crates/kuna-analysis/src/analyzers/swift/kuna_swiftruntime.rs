@@ -18,11 +18,12 @@
 //! would make a stale register an argument, and a parameter of the caller.
 //!
 //! On arm64 the runtime also exports a retain and a release per register
-//! (`swift/Runtime/CustomRRABI.h`): `swift_retain_x<N>` takes the object in
-//! `x<N>` and returns it in `x0`, `swift_release_x<N>` reads `x<N>` and returns
-//! nothing, so an optimized caller releases a value without moving it into
-//! `x0`. Outside every calling convention, those take their one parameter as
-//! explicit storage.
+//! (`swift/Runtime/CustomRRABI.h`, instantiated for `swift_retain`,
+//! `swift_release`, `swift_bridgeObjectRetain` and `swift_bridgeObjectRelease`):
+//! `swift_retain_x<N>` takes the object in `x<N>` and returns it in `x0`,
+//! `swift_release_x<N>` reads `x<N>` and returns nothing, so an optimized caller
+//! releases a value without moving it into `x0`. Outside every calling
+//! convention, those take their one parameter as explicit storage.
 
 use std::rc::Rc;
 
@@ -473,27 +474,35 @@ pub fn prototypes(tf: &dyn TypeFactory, ptr_size: i32) -> Vec<PrototypePieces> {
     out
 }
 
-/// The registers the runtime defines `swift_retain_x<N>` / `swift_release_x<N>`
-/// for (`CUSTOM_RR_ENTRYPOINTS_FOREACH_REG`): `x0` is the plain entry point,
+/// The registers the runtime defines its register-specific entry points for
+/// (`CUSTOM_RR_ENTRYPOINTS_FOREACH_REG`): `x0` is the plain entry point,
 /// `x16`/`x17` are call glue, `x18` is reserved, `x29`/`x30` the frame and
 /// link registers.
 pub const CUSTOM_RR_REGISTERS: [u32; 25] =
     [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28];
 
-/// `swift_retain_x19` → `(true, 19)`, `swift_release_x8` → `(false, 8)`; `None`
-/// for any other name, a register the runtime defines no entry point for included.
+/// The functions `CUSTOM_RR_ENTRYPOINTS_DEFINE_ENTRYPOINTS` instantiates
+/// (`HeapObject.cpp`, `SwiftObject.mm`), and whether each returns its object.
+pub const CUSTOM_RR_FUNCTIONS: [(&str, bool); 4] = [
+    ("swift_retain", true),
+    ("swift_release", false),
+    ("swift_bridgeObjectRetain", true),
+    ("swift_bridgeObjectRelease", false),
+];
+
+/// `swift_retain_x19` → `(true, 19)`, `swift_bridgeObjectRelease_x8` →
+/// `(false, 8)`; `None` for any other name, a register the runtime defines no
+/// entry point for included.
 pub fn custom_rr_register(name: &str) -> Option<(bool, u32)> {
-    let (retains, rest) = match name.strip_prefix("swift_retain_x") {
-        Some(rest) => (true, rest),
-        None => (false, name.strip_prefix("swift_release_x")?),
-    };
-    let n: u32 = rest.parse().ok()?;
-    CUSTOM_RR_REGISTERS.contains(&n).then_some((retains, n))
+    CUSTOM_RR_FUNCTIONS.iter().find_map(|&(function, retains)| {
+        let n: u32 = name.strip_prefix(function)?.strip_prefix("_x")?.parse().ok()?;
+        CUSTOM_RR_REGISTERS.contains(&n).then_some((retains, n))
+    })
 }
 
-/// The register-specific retain and release entry points: one `swift_retain_x<N>`
-/// (`void *obj @ x<N>`, the object back in `x0`) and one `swift_release_x<N>`
-/// (`void` of the same) per register in [`CUSTOM_RR_REGISTERS`].
+/// The register-specific entry points: per function in [`CUSTOM_RR_FUNCTIONS`]
+/// and register in [`CUSTOM_RR_REGISTERS`], `<function>_x<N>` taking
+/// `void *obj @ x<N>`, a retain giving the object back in `x0`.
 pub fn custom_rr_prototypes(arch: &Architecture, ptr_size: i32) -> Vec<PrototypePieces> {
     let types = Types { tf: arch.types(), ptr_size };
     let Some(obj) = types.of(Obj) else { return Vec::new() };
@@ -506,13 +515,12 @@ pub fn custom_rr_prototypes(arch: &Architecture, ptr_size: i32) -> Vec<Prototype
             flags: parameter_pieces_flags::TYPELOCK | parameter_pieces_flags::NAMELOCK,
         })
     };
-    let mut out = Vec::with_capacity(2 * CUSTOM_RR_REGISTERS.len());
+    let mut out = Vec::with_capacity(CUSTOM_RR_FUNCTIONS.len() * CUSTOM_RR_REGISTERS.len());
     for n in CUSTOM_RR_REGISTERS {
         let Some(input) = storage(&format!("x{n}")) else { continue };
-        for retains in [true, false] {
-            let family = if retains { "retain" } else { "release" };
+        for (function, retains) in CUSTOM_RR_FUNCTIONS {
             out.push(PrototypePieces {
-                name: format!("swift_{family}_x{n}"),
+                name: format!("{function}_x{n}"),
                 outtype: Some(if retains { Rc::clone(&obj) } else { Rc::clone(&void) }),
                 intypes: vec![Rc::clone(&obj)],
                 innames: vec!["obj".to_string()],
@@ -574,7 +582,10 @@ mod tests {
         assert_eq!(custom_rr_register("swift_retain_x29"), None, "the frame pointer");
         assert_eq!(custom_rr_register("swift_retain"), None);
         assert_eq!(custom_rr_register("swift_retain_xa"), None);
-        assert_eq!(custom_rr_register("swift_bridgeObjectRelease_x20"), None);
+        assert_eq!(custom_rr_register("swift_bridgeObjectRelease_x20"), Some((false, 20)));
+        assert_eq!(custom_rr_register("swift_bridgeObjectRetain_x1"), Some((true, 1)));
+        assert_eq!(custom_rr_register("swift_bridgeObjectRetain_x18"), None, "reserved");
+        assert_eq!(custom_rr_register("swift_retain_n_x1"), None);
         assert_eq!(CUSTOM_RR_REGISTERS.len(), 25);
     }
 }
