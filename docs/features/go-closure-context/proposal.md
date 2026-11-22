@@ -46,3 +46,13 @@ foreign pointers, ambiguous records, clobbered RDX and different entry
 offsets. The reference `applyAll` wrapper also needs an independently
 verified slice-input contract. Closure construction, escaping or
 mutable environments, and stripped inference require their own proofs.
+
+## Open questions from review
+
+The named-leaf admission requires "a matching load, multiply and return
+sequence", which is the body of the `main.scaled.func1` witness (`MOV
+RCX,[RDX+0x8]; IMUL RAX,RCX; RET`) rather than part of the closure
+contract. Keyed on that sequence, the gate admits the witness and refuses
+every closure that does anything else with its capture. Can admission rest
+on the compiler's `DW_AT_go_closure_offset`, the ABIInternal closure
+register and a load from `[RDX+offset]` alone, with the body left free?
