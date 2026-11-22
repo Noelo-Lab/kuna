@@ -212,7 +212,7 @@ pub struct Types<'a> {
     ambiguous: HashSet<String>,
     built: RefCell<HashMap<u64, Option<Rc<Datatype>>>>,
     in_progress: RefCell<HashSet<u64>>,
-    ptr_size: i32,
+    pub(super) ptr_size: i32,
 }
 
 /// What the pass did, for the report.
@@ -499,7 +499,7 @@ impl<'a> Types<'a> {
         header
     }
 
-    fn void_ptr(&self) -> Option<Rc<Datatype>> {
+    pub(super) fn void_ptr(&self) -> Option<Rc<Datatype>> {
         let void = self.tf.get_type_void().ok()?;
         self.tf.get_type_pointer(self.ptr_size, void, 1).ok()
     }
@@ -550,7 +550,7 @@ impl<'a> Types<'a> {
     }
 
     /// The node a symbolic reference in a mangled name at `base` stands for.
-    fn resolve(&self, base: u64, kind: u8, at: usize, value: u64) -> Option<NodeRef> {
+    pub(super) fn resolve(&self, base: u64, kind: u8, at: usize, value: u64) -> Option<NodeRef> {
         let here = base.wrapping_add(at as u64);
         let offset = value as u32 as i32 as i64 as u64;
         match kind {
@@ -569,7 +569,7 @@ impl<'a> Types<'a> {
 
     /// The demangler tree of a local context: `Type(Structure(Module,
     /// Identifier))` for a nominal type, a `Module` node for a module.
-    fn context_node(&self, addr: u64, depth: usize) -> Option<NodeRef> {
+    pub(super) fn context_node(&self, addr: u64, depth: usize) -> Option<NodeRef> {
         if depth > 32 {
             return None;
         }
@@ -1098,7 +1098,7 @@ impl<'a> Types<'a> {
 
 /// The type (or module) node an imported descriptor symbol names
 /// (`$s7SwiftUI4ViewPMp`, `$s10Foundation4DateVMn`, `$s7SwiftUIMXM`).
-fn imported_node(import: &str) -> Option<NodeRef> {
+pub(super) fn imported_node(import: &str) -> Option<NodeRef> {
     let tree =
         demangle_swift_tree(import).or_else(|| demangle_swift_tree(&format!("_{import}")))?;
     let top = tree.first()?;

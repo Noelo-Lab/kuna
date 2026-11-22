@@ -41,6 +41,7 @@ pub mod kuna_structheadless; // (kuna) a closed function's parameter read only p
 pub mod kuna_fieldtype; // (kuna) a synthesized field some access holds as a pointer is declared as that pointer
 pub mod kuna_structsynth; // (kuna) synthesize a struct type from a pointer parameter's constant-offset dereferences
 pub mod kuna_sitetypelock; // (kuna) per-call-site output type lock: a client-asserted call-result type that survives to the declaration
+pub mod kuna_swiftmetaresult; // (kuna `swifttypes`) type a Swift metadata accessor call's result
 pub mod kuna_gonewtype; // (kuna) type a runtime.newobject result from its descriptor argument (docs/multilang.md, Go pack)
 pub mod kuna_varargfloat; // (kuna) a variadic argument in a floating-point register is a double
 pub mod kuna_typequal; // (kuna) C type qualifiers on their own type layer
