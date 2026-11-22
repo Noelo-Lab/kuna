@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5011,
-    5011
+    5014,
+    5014
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1980,6 +1980,9 @@
     "data:OBJCSDKSEND #4: default, the send to its result resolves along the superclass chain",
     "data:OBJCSDKSEND #5: default, a factory of the class returns the class",
     "data:OBJCSDKSEND #6: an undeclared selector keeps the runtime stub",
+    "data:OBJCSDKSEND #7: off, a class through objc_opt_self stays the runtime stub",
+    "data:OBJCSDKSEND #8: default, objc_opt_self returns its class argument",
+    "data:OBJCSDKSEND #9: default, a join of two paths naming the same class is that class",
     "data:OBJCSTRUCTS #1: objc off, the block invoke is an anonymous function",
     "data:OBJCSTRUCTS #2: the struct ivar reads by field",
     "data:OBJCSTRUCTS #3: the by-value struct argument is a CGRect",

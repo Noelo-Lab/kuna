@@ -88,7 +88,8 @@ pub fn linked_frameworks(file: &object::File, bytes: &[u8]) -> Vec<String> {
 }
 
 /// The header files to read: an SDK root's linked frameworks (every framework
-/// when none is linked), or every `.h` under any other directory.
+/// when none is linked) and the runtime's own (`usr/include/objc`, where the
+/// root class `NSObject` is declared), or every `.h` under any other directory.
 fn headers(root: &Path, frameworks: &[String]) -> Vec<PathBuf> {
     let fw_root = root.join("System/Library/Frameworks");
     let mut out = Vec::new();
@@ -101,6 +102,7 @@ fn headers(root: &Path, frameworks: &[String]) -> Vec<PathBuf> {
         for dir in dirs {
             walk(&dir.join("Headers"), &mut out, 0);
         }
+        walk(&root.join("usr/include/objc"), &mut out, 0);
     } else {
         walk(root, &mut out, 0);
     }

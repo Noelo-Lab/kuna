@@ -159,28 +159,93 @@ fn selector_of(data: &Funcdata, vn: VarnodeId, depth: u32) -> Option<String> {
     }
 }
 
-/// The class a class-object receiver names: the constant address of a
-/// `class_t` of the image, or the value of a data import slot bound to
-/// `OBJC_CLASS_$_<name>`, through copies and casts.
+/// The class a class-object receiver names, from its value: the constant
+/// address of a `class_t` of the image, or a data import slot bound to
+/// `OBJC_CLASS_$_<name>` holding the loader's value, reached through copies,
+/// casts, a value a call leaves unchanged (`INDIRECT`), a join whose inputs
+/// all name the same class, and the runtime functions that return their
+/// argument (`objc_opt_self`, `objc_retain`…).
 fn class_of_constant(data: &Funcdata, vn: VarnodeId) -> Option<String> {
-    let arch = data.get_arch();
-    let mut vn = vn;
-    for _ in 0..5 {
-        if let Some(addr) = constant_address(data, vn, 0) {
-            return arch.kuna_objc_classes.class_at.get(&addr).cloned();
-        }
-        let v = data.vbank().get(vn)?;
-        if v.is_persist() && !v.is_constant() {
-            let class = arch.kuna_objc_classes.class_slot_at.get(&v.get_offset())?;
-            return crate::printc::holds_loaded_value(data, vn, 8).then(|| class.clone());
-        }
-        let d = data.obank().get(v.get_def()?)?;
-        if !matches!(d.code(), OpCode::CPUI_COPY | OpCode::CPUI_CAST) {
-            return None;
-        }
-        vn = d.get_in(0)?;
+    let mut seen = Vec::new();
+    match class_value(data, vn, &mut seen) {
+        ClassValue::Known(class) => Some(class),
+        ClassValue::Cycle | ClassValue::Unknown => None,
     }
-    None
+}
+
+/// What [`class_value`] found: a class, a join input that leads back to a join
+/// already being asked (it adds no class of its own), or nothing.
+enum ClassValue {
+    Known(String),
+    Cycle,
+    Unknown,
+}
+
+/// A join's class: the one every input that is not a cycle names.
+fn join_value(data: &Funcdata, inputs: &[VarnodeId], seen: &mut Vec<VarnodeId>) -> ClassValue {
+    let mut found: Option<String> = None;
+    for &x in inputs {
+        match class_value(data, x, seen) {
+            ClassValue::Known(c) if found.as_ref().is_none_or(|f| *f == c) => found = Some(c),
+            ClassValue::Cycle => {}
+            _ => return ClassValue::Unknown,
+        }
+    }
+    found.map_or(ClassValue::Cycle, ClassValue::Known)
+}
+
+/// The runtime functions that return their first argument.
+const IDENTITIES: [&str; 6] = [
+    "objc_opt_self",
+    "objc_retain",
+    "objc_retainAutorelease",
+    "objc_autorelease",
+    "objc_retainAutoreleasedReturnValue",
+    "objc_claimAutoreleasedReturnValue",
+];
+
+fn class_value(data: &Funcdata, vn: VarnodeId, seen: &mut Vec<VarnodeId>) -> ClassValue {
+    use ClassValue::*;
+    let arch = data.get_arch();
+    let table = &arch.kuna_objc_classes;
+    if let Some(addr) = constant_address(data, vn, 0) {
+        return table.class_at.get(&addr).cloned().map_or(Unknown, Known);
+    }
+    let Some(v) = data.vbank().get(vn) else { return Unknown };
+    if v.is_persist() && !v.is_constant() {
+        if let Some(class) = table.class_slot_at.get(&v.get_offset()) {
+            return if crate::printc::holds_loaded_value(data, vn, 8) { Known(class.clone()) } else { Unknown };
+        }
+    }
+    if seen.contains(&vn) {
+        return Cycle;
+    }
+    if seen.len() >= 32 {
+        return Unknown;
+    }
+    seen.push(vn);
+    let Some(def) = v.get_def() else { return Unknown };
+    let Some(d) = data.obank().get(def) else { return Unknown };
+    let input = |k: i32| d.get_in(k);
+    match d.code() {
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => {
+            input(0).map_or(Unknown, |x| class_value(data, x, seen))
+        }
+        OpCode::CPUI_MULTIEQUAL => {
+            let inputs: Vec<VarnodeId> = (0..d.num_input()).filter_map(|k| input(k as i32)).collect();
+            join_value(data, &inputs, seen)
+        }
+        OpCode::CPUI_CALL => {
+            let identity = data
+                .get_call_specs_index(def)
+                .is_some_and(|i| IDENTITIES.contains(&data.get_call_specs(i).get_name()));
+            match input(1) {
+                Some(x) if identity => class_value(data, x, seen),
+                _ => Unknown,
+            }
+        }
+        _ => Unknown,
+    }
 }
 
 /// The address a varnode names: a constant, `&sym` as `PTRSUB(0, addr)`, either

@@ -19,6 +19,11 @@
     class's (`numberWith...` on `KNumber`) returns `KNumber *`.
     The fixture header objc_sdk_sends/KNumber.h is hand-written.
 
+    The receiver is followed by its value: through `objc_opt_self` and the
+    other runtime functions returning their argument, a value a call leaves
+    alone, and a join whose inputs all name the class (`send_via_self`,
+    `send_joined`).
+
     Pass 1 (`objcresolve off`): the runtime stubs and `unsigned long v2`.
     Pass 2 (default): the methods and `KNumber *v2`.
 -->
@@ -37,11 +42,23 @@ c0035fd6
   <com>load addr 0x100000600</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load addr 0x100000660</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1000006ac</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objcsdksend_arm64</com>
   <com>option objc on</com>
   <com>read symbols</com>
   <com>load addr 0x100000600</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000660</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1000006ac</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option objcsdk off</com>
@@ -50,7 +67,10 @@ c0035fd6
 <stringmatch name="OBJCSDKSEND #1: off, the class send is the runtime stub" min="1" max="1">objc_msgSend\$numberWithLongLong:\(&amp;OBJC_CLASS_\$_KNumber,</stringmatch>
 <stringmatch name="OBJCSDKSEND #2: off, the undeclared factory's result is untyped" min="1" max="1">unsigned long v2;</stringmatch>
 <stringmatch name="OBJCSDKSEND #3: default, the class send to the imported class names the declared method" min="1" max="1">\+\[KNumber numberWithLongLong:\]\(&amp;OBJC_CLASS_\$_KNumber,</stringmatch>
-<stringmatch name="OBJCSDKSEND #4: default, the send to its result resolves along the superclass chain" min="1" max="1">-\[KValue stringValue\]\(</stringmatch>
+<stringmatch name="OBJCSDKSEND #4: default, the send to its result resolves along the superclass chain" min="3" max="3">-\[KValue stringValue\]\(</stringmatch>
 <stringmatch name="OBJCSDKSEND #5: default, a factory of the class returns the class" min="1" max="1">KNumber \*v2;</stringmatch>
 <stringmatch name="OBJCSDKSEND #6: an undeclared selector keeps the runtime stub" min="2" max="2">objc_msgSend\$numberWithInt:\(</stringmatch>
+<stringmatch name="OBJCSDKSEND #7: off, a class through objc_opt_self stays the runtime stub" min="1" max="1">objc_msgSend\$numberWithLongLong:\(objc_opt_self\(</stringmatch>
+<stringmatch name="OBJCSDKSEND #8: default, objc_opt_self returns its class argument" min="1" max="1">\+\[KNumber numberWithLongLong:\]\(objc_opt_self\(&amp;OBJC_CLASS_\$_KNumber\),a0\)</stringmatch>
+<stringmatch name="OBJCSDKSEND #9: default, a join of two paths naming the same class is that class" min="1" max="1">\+\[KNumber numberWithLongLong:\]\(self,a1\)</stringmatch>
 </decompilertest>

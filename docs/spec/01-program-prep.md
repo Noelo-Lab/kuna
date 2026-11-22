@@ -6220,7 +6220,15 @@ every other binary's pass list is byte-identical to before the pass existed):
     receivers the loader binds: a `machodataslots` data import slot named
     `_OBJC_CLASS_$_<name>` (`engine.rs (commit_analysis_output)`) is a class
     receiver while it holds the value the loader put there (the same test as
-    `importdata`'s `&<import>`). A class send then types its result from the
+    `importdata`'s `&<import>`). A receiver is followed by its value
+    (`class_value`): through copies and casts, a value a call leaves alone
+    (`INDIRECT`), a join whose inputs all name the same class (an input that
+    leads back to the join adds nothing), and the runtime functions that
+    return their argument (`objc_opt_self`, `objc_retain`, `objc_autorelease`
+    and the autoreleased-return claims), so Swift's
+    `[objc_opt_self(&OBJC_CLASS_$_NSBundle) mainBundle]` resolves. Besides the
+    linked frameworks, an SDK root's `usr/include/objc` is read for the root
+    class `NSObject`. A class send then types its result from the
     declaration along the chain (`instancetype` is the receiver class, a class
     pointer that class), or, undeclared, from a factory selector whose leading
     noun, before `With`, is the class name's tail case-insensitively
@@ -6230,8 +6238,8 @@ every other binary's pass list is byte-identical to before the pass existed):
     the sending method's class (its label `-[Foo bar]` names it), `[super
     init…]` returns that class, and a super send is never retargeted either,
     since its first argument is the `objc_super`. On a 390-function sample of
-    a 72 MB iOS app this resolves 64 more sends (64 to 128) and types 12 more
-    locals as class pointers (108 to 120); `tests/stages/kuna-objcsdksend.xml` runs a
+    a 72 MB iOS app this resolves 88 more sends (64 to 152) and types 13 more
+    locals as class pointers (108 to 121); `tests/stages/kuna-objcsdksend.xml` runs a
     fixture that sends to an imported class with the option off and on.
 
   Decoding every method's encoding asks the type factory for `objc_object *`
