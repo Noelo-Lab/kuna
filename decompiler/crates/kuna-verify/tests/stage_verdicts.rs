@@ -134,3 +134,17 @@ fn removed_checks_are_declared() {
     let v: Vec<_> = res.reports.iter().map(|r| (r.function.clone(), r.verdict.label())).collect();
     assert_eq!(of(&v, &["x30check", "x30forged"]), ["DIVERGES(ptrauth-trap)", "AGREES(256)"]);
 }
+
+/// C3 names the rule application after which `obj_global_reuse` differs: the
+/// `storevarnode` that turns the store at 0x4011ec into a varnode kuna drops.
+#[test]
+fn localize_names_the_store_rule() {
+    use kuna_verify::localize::{localize, Finding, Source};
+    let specs = repo().join("specs").to_string_lossy().into_owned();
+    let path = repo().join("tests/stages/kuna-stackviews.xml").to_string_lossy().into_owned();
+    let found = localize(&Source::Datatest(&path), &[specs], "obj_global_reuse", None, &Options::default()).unwrap();
+    let text = found.render();
+    let Finding::Rules { culprits, .. } = found.finding else { panic!("{text}") };
+    let latest = culprits.last().unwrap();
+    assert_eq!((latest.rule.as_str(), latest.addr), ("storevarnode", Some(0x4011ec)), "{text}");
+}

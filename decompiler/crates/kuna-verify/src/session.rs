@@ -28,6 +28,18 @@ fn dcp_mut(console: &mut IfaceStatus) -> Option<&mut IfaceDecompData> {
 /// A command that failed in a script that keeps going: its index and message.
 pub type Failure = (usize, String);
 
+/// The wall-clock budget of a capped decompile: without a rule some actions
+/// never settle.
+const CAPPED_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Rule applications counted, or one rule's limited, in one decompile: the
+/// `decompile`-th one [`run`] reports (`kuna_rulecap`). The run stops after it.
+pub struct Cap {
+    pub decompile: usize,
+    pub mode: kuna_decomp::kuna_rulecap::Mode,
+    pub result: Option<kuna_decomp::kuna_rulecap::Record>,
+}
+
 /// Run `commands`, calling `on_decompile` after every `decompile` that
 /// succeeds, however the line abbreviates it, except one after a failed
 /// `load`: the function it would decompile is the one loaded before. `conf` preloads a program (the datatest `<binaryimage>`). The first
@@ -39,6 +51,7 @@ pub fn run(
     conf: Option<ConsoleProgram>,
     spec_roots: &[String],
     keep_going: bool,
+    mut cap: Option<&mut Cap>,
     mut on_decompile: impl FnMut(&ConsoleProgram, &Funcdata),
 ) -> Result<(IfaceStatus, Vec<Failure>), String> {
     let mut console = ConsoleCommands::into_status(commands.clone());
@@ -55,8 +68,20 @@ pub fn run(
     let mut idx = 0usize;
     let mut failures = Vec::new();
     let mut stale = false;
-    while !console.is_stream_finished() {
+    let mut decompiles = 0usize;
+    let result = loop {
+        if console.is_stream_finished() {
+            break Ok(());
+        }
+        let capped = cap.as_deref().is_some_and(|c| c.decompile == decompiles);
+        if let Some(c) = cap.as_deref().filter(|_| capped) {
+            if let Some(prog) = dcp_mut(&mut console).and_then(|d| d.conf.as_mut()) {
+                prog.arch_mut().kuna_fn_budget = Some(CAPPED_BUDGET);
+            }
+            kuna_decomp::kuna_rulecap::arm(c.mode.clone());
+        }
         execute(&mut console);
+        let applied = capped.then(kuna_decomp::kuna_rulecap::disarm);
         let line = commands.get(idx).map(|s| s.trim().to_string()).unwrap_or_default();
         idx += 1;
         let command = console.last_command.first().cloned().unwrap_or_default();
@@ -72,7 +97,7 @@ pub fn run(
                 .collect();
             let msg = format!("`{line}` failed: {}", said.last().copied().unwrap_or("no message"));
             if !keep_going {
-                return Err(msg);
+                break Err(msg);
             }
             failures.push((idx - 1, msg));
             console.inerror = false;
@@ -82,16 +107,24 @@ pub fn run(
         } else if command == "decompile" && !stale {
             if let Some(d) = dcp(&console) {
                 if let (Some(prog), Some(fd)) = (d.conf.as_ref(), d.fd.as_ref()) {
+                    if let (Some(c), Some(a)) = (cap.as_deref_mut(), applied) {
+                        c.result = Some(a);
+                    }
                     on_decompile(prog, fd);
+                    decompiles += 1;
                 }
+            }
+            if capped {
+                break Ok(());
             }
         }
         console.optr.clear();
         if let Some(f) = console.fileoptr.as_mut() {
             f.contents.clear();
         }
-    }
-    Ok((console, failures))
+    };
+    kuna_decomp::kuna_rulecap::disarm();
+    result.map(|()| (console, failures))
 }
 
 /// [`run`], keeping only whether it succeeded.
@@ -101,7 +134,7 @@ pub fn drive(
     spec_roots: &[String],
     on_decompile: impl FnMut(&ConsoleProgram, &Funcdata),
 ) -> Result<(), String> {
-    run(commands, conf, spec_roots, false, on_decompile).map(|_| ())
+    run(commands, conf, spec_roots, false, None, on_decompile).map(|_| ())
 }
 
 pub fn load_lines(path: &str, options: &[(String, String)]) -> Vec<String> {
@@ -113,7 +146,7 @@ pub fn load_lines(path: &str, options: &[(String, String)]) -> Vec<String> {
 
 /// The entry address of every function with code in an object file.
 pub fn function_entries(path: &str, options: &[(String, String)], spec_roots: &[String]) -> Result<Vec<u64>, String> {
-    let (console, _) = run(load_lines(path, options), None, spec_roots, false, |_, _| {})?;
+    let (console, _) = run(load_lines(path, options), None, spec_roots, false, None, |_, _| {})?;
     let prog = dcp(&console).and_then(|d| d.conf.as_ref()).ok_or("no program loaded")?;
     Ok(prog
         .function_entries_executable()

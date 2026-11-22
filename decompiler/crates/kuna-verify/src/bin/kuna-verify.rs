@@ -3,6 +3,7 @@
 //! ```text
 //! kuna-verify check <binary> <function|0xaddr>... | --all  [--contract FILE.c] [--option NAME VALUE]...
 //! kuna-verify corpus <test.xml|dir>...  [--jobs N] [--baseline FILE] [--save-baseline FILE]
+//! kuna-verify localize <test.xml|binary> <function> [--pass N] [--option NAME VALUE]...
 //! common: [--runs N] [--seed S] [--budget OPS] [--json] [--sleighpath DIR]
 //! ```
 //!
@@ -21,12 +22,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 use std::time::Instant;
 
-use kuna_verify::{baseline, check_binary, check_datatest, session, Options, Row};
+use kuna_verify::{baseline, check_binary, check_datatest, localize, session, Options, Row};
 use serde_json::{json, Value};
 
 const USAGE: &str = "usage:
   kuna-verify check <binary> <function|0xaddr>... | --all  [--contract FILE.c] [--option NAME VALUE]...
   kuna-verify corpus <test.xml|dir>...  [--jobs N] [--baseline FILE] [--save-baseline FILE]
+  kuna-verify localize <test.xml|binary> <function> [--pass N] [--option NAME VALUE]...
 options: --runs N (256)  --seed S  --budget OPS (200000)  --json  --trace  --sleighpath DIR";
 
 struct Args {
@@ -40,6 +42,7 @@ struct Args {
     jobs: Option<usize>,
     baseline: Option<String>,
     save_baseline: Option<String>,
+    pass: Option<usize>,
     /// Flags a worker process gets again.
     forward: Vec<String>,
 }
@@ -56,6 +59,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         jobs: None,
         baseline: None,
         save_baseline: None,
+        pass: None,
         forward: Vec::new(),
     };
     let mut it = argv.iter();
@@ -93,6 +97,10 @@ fn parse(argv: &[String]) -> Result<Args, String> {
                 a.sleighpath = Some(v);
             }
             "--jobs" => a.jobs = Some(num(it.next(), "--jobs")? as usize),
+            "--pass" => {
+                let p = num(it.next(), "--pass")?;
+                a.pass = Some(usize::try_from(p).ok().filter(|&p| p > 0).ok_or("--pass counts from 1")?);
+            }
             "--baseline" => a.baseline = Some(it.next().ok_or("--baseline needs a file")?.clone()),
             "--save-baseline" => a.save_baseline = Some(it.next().ok_or("--save-baseline needs a file")?.clone()),
             "--json" => a.json = true,
@@ -412,6 +420,25 @@ fn report_baseline(c: &baseline::Changes, file: &str) -> ExitCode {
     }
 }
 
+/// Name the first rule application after which a decompile differs.
+fn run_localize(a: &Args) -> Result<ExitCode, String> {
+    let [target, function] = a.positional.as_slice() else {
+        return Err(USAGE.to_string());
+    };
+    let roots = spec_roots(a.sleighpath.as_deref());
+    let src = if target.ends_with(".xml") {
+        localize::Source::Datatest(target)
+    } else {
+        localize::Source::Binary { path: target, functions: vec![function.clone()], options: &a.options }
+    };
+    let found = localize::localize(&src, &roots, function, a.pass, &a.opts)?;
+    print!("{}", found.render());
+    Ok(match found.finding {
+        localize::Finding::NotDiffering(_) => ExitCode::SUCCESS,
+        _ => ExitCode::from(1),
+    })
+}
+
 /// `corpus`: the file count and the wall time of the whole run.
 fn print_summary(a: &Args, slowest: &[(f64, String)], rows: &[Row], corpus: Option<(usize, f64)>) {
     let mut counts: BTreeMap<&str, u32> = BTreeMap::new();
@@ -462,6 +489,7 @@ fn main() -> ExitCode {
         "check" => run_check(&a),
         "corpus" => run_corpus(&a),
         "shard" => run_shard(&a),
+        "localize" => run_localize(&a),
         _ => Err(USAGE.to_string()),
     });
     match result {

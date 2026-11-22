@@ -18,6 +18,7 @@ pub mod check;
 pub mod contract;
 pub mod divergence;
 pub mod graph;
+pub mod localize;
 pub mod machine;
 pub mod program;
 pub mod report;
@@ -46,7 +47,7 @@ pub fn check_binary(
     let mut failure = None;
     let script = session::binary_script(path, functions, options);
     let first = session::load_lines(path, options).len();
-    let (_, failures) = session::run(script, None, spec_roots, true, |prog, fd| {
+    let (_, failures) = session::run(script, None, spec_roots, true, None, |prog, fd| {
         let contract = match contract_source {
             Some((src, name)) => match contract::from_source(src, fd.get_name(), name, abi::c_sizes(prog)) {
                 Ok(c) => Some(c),

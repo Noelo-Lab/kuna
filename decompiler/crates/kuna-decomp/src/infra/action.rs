@@ -1351,9 +1351,16 @@ impl ActionPool {
             if far_only && !self.allrules[rl_idx].rule.walks_far() {
                 continue;
             }
+            let capped_at = crate::kuna_rulecap::armed().then(|| data.obank().get(op).map_or(0, |o| o.get_addr().get_offset()));
+            if capped_at.is_some() && !crate::kuna_rulecap::allows(&self.allrules[rl_idx].state.name) {
+                continue;
+            }
             self.allrules[rl_idx].state.count_tests += 1;
             let res = self.allrules[rl_idx].rule.apply_op(op, data);
             if res > 0 {
+                if let Some(addr) = capped_at {
+                    crate::kuna_rulecap::note(&self.allrules[rl_idx].state.name, addr);
+                }
                 far_only = false;
                 if self.allrules[rl_idx].rule.removes_dead_ops()
                     && data.obank().get(op).is_none_or(|o| o.is_dead())

@@ -160,6 +160,14 @@
       }
     }
   },
+  "c3": {
+    "results": "docs/features/diffverify/c3-results.md",
+    "command": "kuna-verify localize <test.xml|binary> <function> [--pass N]",
+    "corpus_differs": 113,
+    "named_a_rule": 15,
+    "action_level": 98,
+    "wall_seconds_12_jobs": 199
+  },
   "ci": {
     "baseline": "docs/baseline-verify.json",
     "make": "make verify-corpus",
