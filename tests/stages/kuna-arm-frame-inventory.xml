@@ -7,11 +7,9 @@
     The two authored ELF fixtures have generators beside them. The first keeps
     the existing AIF tail target at 0x1600 while adding its frame caller 0x1500.
     The second puts a loaded MOV-shaped literal before a caller's input copy.
-    armframes off omits the frame; aifpoolslide off loses the caller: the gap
-    walk accepts the literal as the entry and its body consumes the caller, and
-    aif's data veto then drops that entry (the literal is loaded as data), so
-    neither address is a function. The defaults recover the frame and
-    preserve a0.
+    armframes off omits the frame; aifpoolslide off reproduces the early entry
+    and return-zero defect (aif's data veto leaves ARM PC-relative literals to
+    aifpoolslide). The defaults recover the frame and preserve a0.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">1eff2fe1</bytechunk>
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
@@ -54,12 +52,15 @@
   <com>option aifpoolslide off</com>
   <com>read symbols</com>
   <com>functions</com>
+  <com>load function sub_80003fc</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="ARM-FRAME-INVENTORY #1: the disconnected frame is added only by default recovery" min="1" max="1">0x1500 sub_1500</stringmatch>
 <stringmatch name="ARM-FRAME-INVENTORY #2: the prior tail target survives both passes" min="2" max="2">0x1600 sub_1600</stringmatch>
 <stringmatch name="ARM-FRAME-INVENTORY #3: the literal-guarded caller begins at its own address" min="1" max="1">0x8000400 sub_8000400</stringmatch>
 <stringmatch name="ARM-FRAME-INVENTORY #4: the literal guard preserves the incoming value" min="1" max="1">return a0;</stringmatch>
-<stringmatch name="ARM-FRAME-INVENTORY #5: the literal the caller loads is never a function" min="0" max="0">0x80003fc sub_80003fc</stringmatch>
-<stringmatch name="ARM-FRAME-INVENTORY #6: without the guard the caller behind the literal is lost" min="1" max="1">0x8000400 sub_8000400</stringmatch>
+<stringmatch name="ARM-FRAME-INVENTORY #5: disabling the guard reproduces the literal entry" min="1" max="1">0x80003fc sub_80003fc</stringmatch>
+<stringmatch name="ARM-FRAME-INVENTORY #6: disabling the guard clobbers the incoming value" min="1" max="1">return 0;</stringmatch>
 </decompilertest>

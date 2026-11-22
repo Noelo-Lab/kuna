@@ -9070,8 +9070,12 @@ as a plausible function (a jump table whose entries read as `push rbp; mov
 rbp,rsp`), and the gap walk accepts it on its bytes alone. The decoded Listing
 says what the program does with those bytes: every `LOAD`/`STORE` through a
 constant or a constant plus something, and every direct data-space operand, is a
-data target. A gap entry whose first instruction spans one is dropped, and so is
-any other discovered (not symbol) entry that lands on one, at the commit. Only
+data target. An ARM PC-relative literal load is not: the word it reads is a
+literal-pool word, which `poolentry` and `aifpoolslide` below decide on, and a
+literal reference can resolve onto the first word of a real function the Listing
+never decoded (the SPLIT shape of `verify_poolentry.rs`). A gap entry whose first
+instruction spans a data target is dropped, and so is any other discovered (not
+symbol) entry that lands on one, at the commit. Only
 the entry's own first instruction is tested, so a function whose body holds an
 inline constant pool is kept. On stripped Lua (x86-64, AArch64), ld.so, llvm-nm
 and llvm-objdump it removes nothing; the function-shaped table in

@@ -6,6 +6,9 @@
 //! instructions use as data: a `LOAD`/`STORE` through a constant or a constant
 //! plus something (the constant), and every direct data-space operand. The
 //! `aif` consumer drops a gap entry whose first instruction spans one of them.
+//! An ARM PC-relative literal load is not counted: the word it reads is a
+//! literal-pool word, which `poolentry` and `aifpoolslide` own, and its target
+//! can be the first word of a real function the Listing never decoded.
 
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -17,6 +20,7 @@ use kuna_sleigh::translate::Translate;
 
 use super::xrefs::{decode, FullCapture};
 use super::Listing;
+use crate::aif::kuna_poolentry::{literal_target, DecodeMode};
 
 /// Every address the decoded code reads or writes as data.
 pub fn data_targets(
@@ -24,6 +28,7 @@ pub fn data_targets(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
     data_space: &Rc<AddrSpace>,
+    mode: &DecodeMode,
 ) -> BTreeSet<u64> {
     let mut out = BTreeSet::new();
     let is_data = |vn: &VarnodeData| vn.space.as_ref().is_some_and(|s| Rc::ptr_eq(s, data_space));
@@ -35,7 +40,10 @@ pub fn data_targets(
             && a.space.as_ref().zip(b.space.as_ref()).is_some_and(|(x, y)| Rc::ptr_eq(x, y))
     };
     let mut cap = FullCapture::default();
-    for (&vma, _) in listing.instructions() {
+    for (&vma, insn) in listing.instructions() {
+        if literal_target(vma, &insn.operands, mode).is_some() && mode.pc_delta(vma).is_some() {
+            continue;
+        }
         if decode(translate, vma, code_space, &mut cap).is_none() {
             continue;
         }

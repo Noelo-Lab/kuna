@@ -1338,7 +1338,9 @@ pub fn run_listing_consumers_replaying_observed(
             // or a variable, however well its bytes decode: the gap entries
             // and every other discovered entry the data targets cover go.
             if let Some(data) = arch.manage().get_default_data_space() {
-                let targets = crate::listing::kuna_aifdataveto::data_targets(&listing, translate, code_space, data);
+                let mode = crate::aif::kuna_poolentry::DecodeMode { arch, code_space: std::rc::Rc::clone(code_space) };
+                let targets =
+                    crate::listing::kuna_aifdataveto::data_targets(&listing, translate, code_space, data, &mode);
                 crate::listing::kuna_aifdataveto::without_data_entries(&listing, &targets, &mut aif_out.entries);
                 aif_out.data_vetoed = listing
                     .functions()
