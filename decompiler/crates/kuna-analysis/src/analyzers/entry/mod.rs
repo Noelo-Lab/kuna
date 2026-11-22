@@ -380,6 +380,15 @@ pub(crate) fn sized_function_bodies(file: &object::File) -> Vec<(u64, u64)> {
     out
 }
 
+/// Every function start a Mach-O states in its load commands and exports
+/// ([`macho_entry::macho_entry_candidates`]), sorted and deduplicated.
+pub(crate) fn macho_function_starts(file: &object::File, bytes: &[u8]) -> Vec<u64> {
+    let mut out = macho_entry::macho_entry_candidates(file, bytes);
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
 /// Is `vma` strictly inside one of the extents [`sized_function_bodies`] lists?
 pub(crate) fn inside_body(bodies: &[(u64, u64)], vma: u64) -> bool {
     let below = bodies.partition_point(|&(start, _)| start < vma);

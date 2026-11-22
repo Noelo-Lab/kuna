@@ -1070,6 +1070,26 @@ is `sub_100000520` from the indirect-symbol walk and `__chkstk_darwin` from the 
 on `0x100004000`; `tests/stages/kuna-stubbinds.xml` is the two-pass stage test.
 SHA-256 `3431ceec04e811d5c7a04b8b21d9f346077bb5faed9e7191f66610fcc25829f3`.
 
+`thunknames_aarch64` (static AArch64 ELF, 3 KB; source `thunknames_aarch64.c`,
+rebuild with `clang --target=aarch64-linux-gnu -O1 -g -c -o tn.o thunknames_aarch64.c`
+then `clang --target=aarch64-linux-gnu -nostdlib -static -fuse-ld=lld
+-Wl,-e,drop_box -Wl,--build-id=none -o thunknames_aarch64 tn.o`) holds two
+symbol-less `b` thunks: `0x21019c` jumps to `release_box` (DWARF prototype
+`long (long *, long)`), `0x2101a0` jumps to `0x21019c`, and `drop_box` /
+`drop_two` call them. Pins `thunknames` (`kuna-console/src/engine/kuna_thunknames.rs`);
+`tests/stages/kuna-thunknames.xml` is the two-pass stage test.
+SHA-256 `e845b50d98652a01219b518126a06d3c8c9fd2ef42ee3a24b3c3570f1a9f49a5`.
+
+`thunknames_mips` (static MIPS32 little-endian ELF, 1 KB; source
+`thunknames_mips.S`, rebuild with `mipsel-linux-gnu-gcc -mno-abicalls -fno-pic
+-c -o tm.o thunknames_mips.S` then `mipsel-linux-gnu-ld -static -e mips_caller
+--build-id=none -o thunknames_mips tm.o`, GNU binutils 2.38) holds two
+symbol-less `j release_box` entries: `0x4000e0` has a `nop` in its delay slot
+(a thunk, renamed `j_release_box`) and `0x4000e8` has `addiu $a0,$a0,16` there
+(a `this` adjustor, left `sub_4000e8`). `mips_caller` calls both. Pins the
+delay-slot rule of `thunknames`; `tests/stages/kuna-thunknames.xml` passes 3-4.
+SHA-256 `a5ea1f23af005151f08ffc647131b4bfc64ec586c6b94b3248ff1009d2791136`.
+
 `chkstkdarwin_macho_arm64e` (arm64e, 33 KB) reaches the probe through an
 `__auth_ptr` slot, the way an arm64e link calls it: `_big_e` with
 `adrp x16; ldr x16,[x16,#off]; blraaz x16` and `_vla_e` with
@@ -1412,6 +1432,73 @@ LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin
 `--option swiftdemangle off` they keep `-[_TtC4main7Greeter greet:]` and
 `$s4main10countWords2ofS2i_tF`. The `_OBJC_CLASS_$__TtC4main7Greeter` data
 symbol keeps the linker's spelling either way.
+
+### `macho_swift_objcthunk_arm64` — Swift vtable slots named from `@objc` thunks (`swiftobjcthunk`)
+
+`macho_swift_objcthunk_arm64` (arm64 iOS dylib, ~66 KB) is the fixture of
+`kuna-console/tests/verify_swiftobjcthunk.rs`. `macho_swift_objcthunk.swift`
+(classes `Replay` and `Sub`, `-Onone`) has `@objc` properties, an `@objc`
+method, an `@objc class func` and an override; `macho_swift_objcthunk_probe.swift`
+(`-O`) has a private class whose `doesNotRecognizeSelector:` thunk inlines the
+override (a `super` send) and calls the non-`@objc` `refresh()` directly.
+Built with swiftc 6.4.2 against the iPhoneOS 16.5 SDK. The SDK's Foundation
+overlay is not needed: a one-line `Foundation` module (`@_exported import
+ObjectiveC`) stands in for it, and `-resource-dir` points at a directory holding
+only the toolchain's `apinotes`, `clang` and `shims`, so the SDK's own Swift
+modules are used. Linked with `-x`, so no Swift function keeps a symbol; the
+pinned VMAs come from the same link without `-x`.
+
+```bash
+echo '@_exported import ObjectiveC' > Foundation.swift
+SW="swiftc -resource-dir $RD -target arm64-apple-ios16.0 -sdk $SDK"
+$SW -parse-as-library -emit-module -module-name Foundation Foundation.swift -emit-module-path mods/Foundation.swiftmodule
+$SW -I mods -Onone -parse-as-library -emit-object -module-name objcfix macho_swift_objcthunk.swift -o t.o
+$SW -I mods -O -parse-as-library -emit-object -module-name objcfix macho_swift_objcthunk_probe.swift -o probe.o
+ld64.lld -arch arm64 -platform_version ios 16.0 16.5 -dylib -o macho_swift_objcthunk_arm64 t.o probe.o \
+         -syslibroot $SDK -L$SDK/usr/lib/swift -L$SDK/usr/lib -lswiftCore -lobjc -lSystem \
+         -install_name @rpath/t.dylib -x
+```
+
+**Pinned VMAs:** `Replay.scrollView` getter/setter `0x4060`/`0x4130`, `Replay.count`
+getter/setter `0x428c`/`0x4340`, `Replay.addFrame(timestamp:label:)` `0x4410`,
+`Replay.make()` `0x4708`, `Sub.addFrame(timestamp:label:)` `0x49bc`,
+`Probe.refresh()` `0x4c10`. With `swiftmetadata` on they are named
+`objcfix.Replay.scrollView.getter`, …, `objcfix.Replay.addFrameWithTimestamp:label:`,
+`objcfix.Replay.make`, `objcfix.Sub.addFrameWithTimestamp:label:`, and
+`Probe.refresh()` stays `objcfix.Probe.vtable#3.method`; `--option swiftobjcthunk
+off` gives every one its positional `vtable#N.kind` name.
+
+### `macho_swift_objcthunk_inlined_arm64` — `@objc` thunks with inlined bodies (`swiftobjcthunk`)
+
+`macho_swift_objcthunk_inlined_arm64` (arm64 iOS dylib, ~66 KB) is the second
+fixture of `kuna-console/tests/verify_swiftobjcthunk.rs`, built from
+`macho_swift_objcthunk_inlined.swift` with `-O -wmo`, the release default. In
+`Gone` and `Kept` the `@objc tap()` thunk holds `tap`'s inlined body, a direct
+call to the non-`@objc` `handle()`; `Gone.tap`'s own slot is left empty, and
+`Kept.tap`'s survives (a subclass overrides it) as a branch to `handle()`.
+`Pure.run()` is not inlined into its thunk, and the public `Sym.act(_:)` keeps
+its exported symbol. No Apple SDK is needed: the source uses `-parse-stdlib`
+and a two-file stand-in for the `ObjectiveC` module, so the swift:6.0 image
+builds it byte-identically.
+
+```bash
+mkdir -p sdk/usr/include/objc
+printf '%s\n' 'typedef struct objc_class *Class;' '__attribute__((objc_root_class))' \
+  '@interface NSObject {' '  Class isa;' '}' '+ (instancetype)alloc;' '- (instancetype)init;' '@end' \
+  > sdk/usr/include/objc/NSObject.h
+printf 'module ObjectiveC [system] {\n  header "objc/NSObject.h"\n  export *\n}\n' > sdk/usr/include/module.modulemap
+D="docker run --rm -u $(id -u):$(id -g) -e HOME=$PWD -v $PWD:$PWD -w $PWD swift:6.0"
+$D swiftc -parse-stdlib -module-cache-path $PWD/mc -module-name objt -target arm64-apple-ios16.0 -sdk $PWD/sdk \
+   -Xfrontend -disable-implicit-concurrency-module-import -Xfrontend -disable-implicit-string-processing-module-import \
+   -O -wmo -parse-as-library -emit-object macho_swift_objcthunk_inlined.swift -o t.o
+$D ld64.lld -arch arm64 -platform_version ios 16.0 16.5 -dylib -undefined dynamic_lookup \
+   -install_name @rpath/objt.dylib -x -o macho_swift_objcthunk_inlined_arm64 t.o
+```
+
+**Pinned VMAs:** `Gone.handle()` `0x4000` and `Kept.handle()` `0x4054` stay
+`objt.Gone.vtable#3.method` / `objt.Kept.vtable#3.method` (not `tap`),
+`Pure.run()` `0x4118` is `objt.Pure.run`, and `Sym.act(_:)` `0x4280` keeps
+`objt.Sym.act(_:)` rather than the selector's `act:`.
 
 ### `macho_cstringconst_arm64` — short literals nothing types `char *` (`cstringconst`)
 
@@ -2601,6 +2688,27 @@ arm64 instruction loads into a temporary before comparing. With `swiftmetadata
 on` both keep their error path: `doCatch` releases the error and calls `altv`,
 and `select_error` returns 7 when x21 is set.
 
+### `swift_helpers_arm64_elf` — swiftc's instantiation helpers and a lazy witness table accessor (`swifthelpers`)
+
+`swift_helpers_arm64_elf` (arm64 ELF shared object, 9.4 KB, SHA-256
+`005e06b621d27ab324be83d286e4267236d8101837544a1bbd9eb92c01f1e1b6`) is built from
+`swift_helpers_arm64_elf.swift` with the x86-64 Linux swiftc 6.4.2 toolchain,
+compiled as its own minimal standard library like `swift_call_arm64_elf`:
+
+```bash
+swiftc -frontend -c -parse-stdlib -module-name hf \
+  -target aarch64-unknown-linux-gnu -O swift_helpers_arm64_elf.swift -o hx.o
+ld.lld -shared -o hx.so hx.o          # LLD 22.1.8
+llvm-objcopy --strip-all hx.so swift_helpers_arm64_elf
+```
+
+`hf.useBox(_:)` (`0x1194c`) calls `__swift_instantiateConcreteTypeFromMangledName`
+(`0x112e4`, the one-argument form) on the cache at `0x31da0` for `hf.Box<hf.Unit>`
+and the lazy witness table accessor of `hf.Box<hf.Unit> : hf.Shape` (`0x11328`,
+cache `0x31e30`), which calls the `Abstract` helper (`0x11388`). Stripping
+removes all of their names. `hf.pair(_:)` (`0x11ab8`) keeps the result of the
+generic `hf.Cell` metadata accessor for two `swift_allocObject` calls.
+
 ### `swift_call_leaf_elf` — a mutating struct call after a Swift leaf call (`swiftcall`)
 
 `swift_call_leaf_elf` (x86-64 ELF, 18 KB, with symbols) is the fixture for the
@@ -2619,6 +2727,28 @@ SHA-256: `1ba763c5d3b5707bba6d8fc58f3125312745f30e8e8d63eb05ea5e6dd39c3e93`.
 **Pinned VMAs:** `$s7leaffix4onceySiAA7CounterVz_SitF`@`0x2630`,
 `$s7leaffix4tickyS2iF`@`0x2800`, `$s7leaffix7CounterV4bumpyyAA4StepOF`@`0x27c0`.
 With `swiftmetadata on` the call decompiles as `leaffix.Counter.bump(_:)(a0,v1,0)`.
+
+### `swift_witness_elf` — value witness tables of a struct, an enum and a generic struct (`valuewitness`)
+
+`swift_witness_elf` (x86-64 ELF PIE, 15 KB, stripped) is the fixture of
+`kuna-console/tests/verify_valuewitness.rs`. Its source `swift_witness_elf.swift`
+holds `Pair` (a struct with a reference), `Shape` (a multi-payload enum, so
+its table has the enum witnesses), the generic `Holder<T>`, whose table is in
+its metadata pattern, and `swapIn<T>`, which moves and copies a `T` through
+its metadata argument's table. Built with swiftc 6.4.2:
+
+```bash
+swiftc -O -module-name witfix swift_witness_elf.swift -o w
+llvm-strip --strip-all w -o swift_witness_elf
+```
+
+SHA-256: `fd04bf395eddf3f020d11d9c07832e41f561fbba30f579e48d430a3cdaecca26`.
+
+**Pinned VMAs** (from the same link before stripping): `$s6witfix4PairVwxx`
+(destroy) `0x2970`, `$s6witfix5ShapeOwug` (getEnumTag) `0x2cc0`,
+`$s6witfix6HolderVwtk` (initializeWithTake) `0x2ec0`, and `witfix.swapIn<A>`
+`0x3580`, which decompiles as `(*v1->initializeWithTake)(v2,a0,a2)` and
+`(*v1->initializeWithCopy)(a0,a1,a2)`.
 
 ### `swift_call_free_elf` — a mutating struct call after a module function (`swiftcall`)
 
