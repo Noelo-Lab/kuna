@@ -1,9 +1,10 @@
 //! (kuna pushan) VPC-sensitive flat-CFG recovery.
 //!
 //! The paper's stage 1.  A node is a native address plus the virtual program
-//! counter the interpreter holds when it gets there, so every bytecode
-//! instruction's handler copy is its own block and the recovered graph is the
-//! protected program's control flow laid flat through the interpreter.  Each
+//! counter the interpreter holds when it gets there (and the register holding
+//! it, when it is one), so every bytecode instruction's handler copy is its
+//! own block and the recovered graph is the protected program's control flow
+//! laid flat through the interpreter.  Each
 //! node is emulated once per round ([`Emulator`]): a guard that folds to a
 //! constant prunes the other side, a symbolic guard keeps both, and a computed
 //! target is enumerated by case-splitting its boolean atoms.  When a later path
@@ -51,11 +52,14 @@ pub struct NodeKey {
     /// The stack pointer's offset from its entry value on entry (None when
     /// it is not relative to the entry stack pointer).
     pub sp: Option<i128>,
+    /// The register the path holds the virtual PC in, when it is one
+    /// (`VmCtx::vpc_reg` with no memory cell).
+    pub holder: Option<u64>,
 }
 
 impl NodeKey {
     pub fn at(addr: u64, ctx: Option<u64>) -> Self {
-        NodeKey { addr, ctx, sp: None }
+        NodeKey { addr, ctx, sp: None, holder: None }
     }
 }
 
@@ -818,7 +822,8 @@ impl<'a> Explorer<'a> {
         from: Option<NodeId>,
     ) -> NodeId {
         self.apply_pin(&mut state, key.addr);
-        let key = self.at_depth(key, &mut state);
+        let mut key = self.at_depth(key, &mut state);
+        key.holder = if ctx.vpc_cell.is_none() { ctx.vpc_reg } else { None };
         if let Some(&id) = cfg.index.get(&key) {
             let node = &mut cfg.nodes[id as usize];
             if let Some(f) = from {
@@ -2810,4 +2815,5 @@ pub fn key_tag(key: &NodeKey) -> u64 {
     key.addr.wrapping_mul(0x9E3779B97F4A7C15)
         ^ key.ctx.unwrap_or(0xFFFF_FFFF_FFFF_FFFF).rotate_left(29)
         ^ key.sp.map(|k| (k as u64).wrapping_mul(0xff51afd7ed558ccd)).unwrap_or(0)
+        ^ key.holder.map(|r| (r + 1).wrapping_mul(0xc4ceb9fe1a85ec53).rotate_left(13)).unwrap_or(0)
 }

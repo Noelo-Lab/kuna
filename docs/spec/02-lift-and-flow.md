@@ -4140,6 +4140,21 @@ merges only states at the same stack pointer, too. Up to 4 depths are kept
 apart per address and VPC. A further depth is reached at the first one and is
 not merged, so a path that grows the stack on every iteration cannot unroll a
 loop forever.
+Where the VPC lives in a register rather than a memory cell, that register is
+part of the key as well (`NodeKey::holder`). VMProtect 3 chooses the VPC
+register and the direction it reads bytecode in per virtual block, so two
+blocks can end at the same bytecode address from opposite sides, one reading
+upward through R8 and one downward through R9, and both reach the shared
+virtual-jump handler with the same VPC value. They are different instructions
+that jump to different blocks. Keyed alike, the second path would merge into
+the first, the first path's VPC register would be symbolized there, and the
+next fetch would read bytecode at a symbolic address and leave the dispatch
+unresolved (loop, SDL, libpng and the Ultra zlib under VMProtect). angr keeps
+them apart because it re-keys a block by the VPC it holds at the block's end
+(`updated_block_id_map` in `cfg_vm_deobfuscation.py`), by which point the
+virtual jump has fetched from its own target. All paths into one instruction
+of one virtual block hold the VPC in the same register, so the extra key part
+separates no paths that the VM itself joins.
 The VPC is found as angr's `find_vip` finds it (`Explorer::successor_ctx`),
 from the state at the end of each block. A VPC value must point into a
 section of the image that is not writable (angr excludes only the data
