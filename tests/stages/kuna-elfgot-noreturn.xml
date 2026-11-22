@@ -69,7 +69,7 @@ c3
 <stringmatch name="elfgot noreturn #2: the exit slot call ends the flow (x86-64 and AArch64)" min="2" max="2">^\s*exit\(2\); // no-return$</stringmatch>
 <stringmatch name="elfgot noreturn #3: no function runs on into the next entry" min="0" max="0">funcboundflow</stringmatch>
 <stringmatch name="elfgot noreturn #4: die joins the no-return set through its exit slot" min="1" max="1">^\s*die\("usage"\); // no-return$</stringmatch>
-<stringmatch name="elfgot noreturn #5: AArch64 die joins the no-return set through its exit slot" min="1" max="1">^\s*die\(0x[0-9a-f]+\); // no-return$</stringmatch>
+<stringmatch name="elfgot noreturn #5: AArch64 die joins the no-return set through its exit slot" min="1" max="1">^\s*die\("big"\); // no-return$</stringmatch>
 <stringmatch name="elfgot noreturn #6: the address of a bound slot stays an address" min="1" max="1">v1 = \(unsigned long \*\)0x3fd8;</stringmatch>
 <stringmatch name="elfgot noreturn #7: no slot address prints as a function name" min="0" max="0">= (lgetxattr|getxattr);</stringmatch>
 <stringmatch name="elfgot noreturn #8: the .data.rel.ro function-pointer table stays a table" min="1" max="1">&amp;classes\[</stringmatch>
