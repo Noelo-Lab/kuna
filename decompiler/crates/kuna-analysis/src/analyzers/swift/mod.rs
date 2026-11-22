@@ -189,6 +189,15 @@ impl AnalysisPass for SwiftMetadataPass {
             kuna_swiftwitness::prototypes(w, &namer, ctx.arch.types(), metadata_ptr, &mut out);
         }
         namer.finish(records, &mut out);
+        // A witness that carries a symbol (`__swift_memcpy16_8`) keeps it.
+        let named: std::collections::HashSet<u64> = ctx
+            .file
+            .symbols()
+            .filter(|s| s.kind() == object::SymbolKind::Text && s.is_definition())
+            .filter(|s| s.name().is_ok_and(|n| !n.is_empty() && !n.starts_with('<')))
+            .map(|s| s.address())
+            .collect();
+        out.swift_witnesses.names.retain(|s| !named.contains(&s.addr));
         out
     }
 }

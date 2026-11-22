@@ -91,6 +91,24 @@ pub fn keeps_offset(data: &Funcdata, op: OpId, slot: i32) -> bool {
             .is_some_and(|t| t.get_name() == METADATA)
 }
 
+/// Whether the `INT_ADD` `op` adds to its input `slot`, typed `ptr`, a
+/// constant outside the 16-byte header `ptr`'s `swift.type_metadata` lays
+/// out: the sum points at a field offset or generic argument, not at another
+/// metadata record, so the pointer type does not propagate to it.
+pub fn outside_header(data: &Funcdata, op: OpId, slot: i32, ptr: &Rc<Datatype>) -> bool {
+    if !data.get_arch().analysis_valuewitness
+        || !ptr.get_ptr_to().is_some_and(|t| t.get_name() == METADATA)
+    {
+        return false;
+    }
+    data.obank()
+        .get(op)
+        .filter(|o| o.code() == OpCode::CPUI_INT_ADD)
+        .and_then(|o| o.get_in(1 - slot))
+        .and_then(|c| data.vbank().get(c))
+        .is_some_and(|c| c.is_constant() && !(0..16).contains(&(c.get_offset() as i64)))
+}
+
 /// Whether `addr` is the word before another value: `meta + -8`.
 fn below_metadata(data: &Funcdata, addr: VarnodeId) -> bool {
     let Some(op) = data
@@ -113,22 +131,34 @@ fn below_metadata(data: &Funcdata, addr: VarnodeId) -> bool {
     }
 }
 
-/// The end of the table word `op` reads through `vn` (offset + 8), when it
-/// is a load through `vn` or through `vn` plus an offset inside a table.
+/// The end of the table bytes `op` reads through `vn` (offset plus the
+/// width read), when it is a load through `vn` or through `vn` plus an
+/// offset inside a table. The width matters: `flags` and
+/// `extraInhabitantCount` are 4-byte words that end inside the common table.
 fn table_read(data: &Funcdata, op: OpId, vn: VarnodeId) -> Option<u64> {
     let o = data.obank().get(op)?;
+    let width = |load: &crate::op::PcodeOp| {
+        load.get_out()
+            .and_then(|v| data.vbank().get(v))
+            .map(|v| v.get_size() as u64)
+    };
     match o.code() {
-        OpCode::CPUI_LOAD if o.get_in(1) == Some(vn) => Some(8),
+        OpCode::CPUI_LOAD if o.get_in(1) == Some(vn) => width(o),
         OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRSUB if o.get_in(0) == Some(vn) => {
             let c = data.vbank().get(o.get_in(1)?).filter(|c| c.is_constant())?;
             let off = c.get_offset();
+            if off >= ENUM_TABLE_SIZE {
+                return None;
+            }
             let out = o.get_out()?;
-            let loaded = data.vbank().get(out)?.descend_iter().any(|r| {
-                data.obank()
-                    .get(r)
-                    .is_some_and(|r| r.code() == OpCode::CPUI_LOAD && r.get_in(1) == Some(out))
-            });
-            (off < ENUM_TABLE_SIZE && loaded).then_some(off + 8)
+            data.vbank()
+                .get(out)?
+                .descend_iter()
+                .filter_map(|r| data.obank().get(r))
+                .filter(|r| r.code() == OpCode::CPUI_LOAD && r.get_in(1) == Some(out))
+                .filter_map(|r| width(r))
+                .max()
+                .map(|w| off + w)
         }
         _ => None,
     }
@@ -229,13 +259,26 @@ fn load_address(data: &Funcdata, before: &[OpId], load: OpId) -> Option<(Varnode
     }
     match defined_before(data, before, addr) {
         Some((add, rest)) => {
-            let a = data.obank().get(add)?;
-            if a.code() != OpCode::CPUI_INT_ADD {
+            if data.obank().get(add)?.code() != OpCode::CPUI_INT_ADD {
                 return Some((addr, 0));
             }
-            Some((a.get_in(0)?, constant_before(data, rest, a.get_in(1)?)?))
+            let (base, off) = add_parts(data, add)?;
+            Some((base, constant_before(data, rest, off)?))
         }
         None => Some((addr, 0)),
+    }
+}
+
+/// The base and the offset input of the INT_ADD `add`: the lifter puts the
+/// constant of `call *0x20(%r12)` first and that of `mov 0x10(%r12),%rax`
+/// second.
+fn add_parts(data: &Funcdata, add: OpId) -> Option<(VarnodeId, VarnodeId)> {
+    let a = data.obank().get(add)?;
+    let (x, y) = (a.get_in(0)?, a.get_in(1)?);
+    if data.vbank().get(x)?.is_constant() {
+        Some((y, x))
+    } else {
+        Some((x, y))
     }
 }
 
@@ -310,10 +353,12 @@ fn spilled_value<'a>(
         };
         let a = data.obank().get(addr)?;
         let same = a.code() == OpCode::CPUI_INT_ADD
-            && a.get_in(0)
-                .and_then(|b| data.vbank().get(b))
-                .is_some_and(|b| b.get_addr() == &base_addr)
-            && constant_before(data, rest, a.get_in(1)?) == Some(off);
+            && add_parts(data, addr).is_some_and(|(b, c)| {
+                data.vbank()
+                    .get(b)
+                    .is_some_and(|b| b.get_addr() == &base_addr)
+                    && constant_before(data, rest, c) == Some(off)
+            });
         if same {
             return Some((o.get_in(2)?, rest));
         }

@@ -140,8 +140,19 @@ fn a_value_witness_has_its_runtime_prototype() {
 #[test]
 fn witness_calls_through_metadata_are_named() {
     let c = decompile(load(true), 0x3580);
-    assert!(c.contains("->initializeWithTake)("), "{c}");
-    assert!(c.contains("->initializeWithCopy)("), "{c}");
+    assert!(c.contains("->initializeWithTake)(v2,a0,a2);"), "{c}");
+    assert!(c.contains("->initializeWithCopy)(a0,a1,a2);"), "{c}");
+    assert!(c.contains("(void *a0,void *a1,swift.type_metadata *a2)"), "{c}");
+}
+
+#[test]
+fn a_generic_arguments_table_is_the_common_table_read_off_a_byte_offset() {
+    let c = decompile(load(true), 0x2f60);
+    assert!(c.contains("swift.value_witness_table *v1;"), "{c}");
+    assert!(c.contains("v1->extraInhabitantCount"), "{c}");
+    assert!(!c.contains("enum_value_witness_table"), "{c}");
+    assert!(c.contains("*)self)[2] + -8)"), "{c}");
+    assert!(!c.contains("->kind"), "{c}");
 }
 
 #[test]
