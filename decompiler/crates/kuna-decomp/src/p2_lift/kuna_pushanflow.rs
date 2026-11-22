@@ -33,6 +33,17 @@ pub type NodeId = u32;
 /// A memory cell: its symbolic base (None for a concrete address) and offset.
 pub type Cell = (Option<VarId>, i128);
 
+/// Locations holding small constants (an interleaved interpreter's selector).
+pub type SmallLocs = Vec<(Loc, u128)>;
+
+/// Where an interleaved interpreter's selector is pinned: the address the
+/// run that loads the VPC cell starts at, and each location with its value.
+pub type Pin = (u64, SmallLocs);
+
+/// One dispatch the probe saw: the computed jump, the start of the run that
+/// loaded the cell fetched through last, the small constants there, and that cell.
+type Turn = (u64, u64, SmallLocs, Vec<Cell>);
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct NodeKey {
     pub addr: u64,
@@ -286,10 +297,12 @@ pub struct Explorer<'a> {
     /// Probe for an in-function interpreter before the first round.
     pub probe: bool,
     /// The selector of interleaved bytecode programs, pinned to the first
-    /// program's index wherever the run into the dispatch starts.
-    pub pin: Option<(u64, Vec<(Loc, u128)>)>,
+    /// program's index where the run that loads the VPC cell starts.
+    pub pin: Option<Pin>,
     /// Model a `rep movs` of file data as a copy ([`Explorer::rep_copy`]).
     pub rep_copies: bool,
+    /// A pointer into a copy's destination reached a call this round.
+    copy_escaped: bool,
 }
 
 /// What [`Explorer::probe_interpreter`] found.
@@ -297,9 +310,8 @@ pub struct Explorer<'a> {
 pub struct Interpreter {
     /// The VPC cell of each interleaved program, the one dispatched first leading.
     pub cells: Vec<Cell>,
-    /// The run start into the dispatch and the selector locations with the
-    /// first program's index.
-    pub pin: Option<(u64, Vec<(Loc, u128)>)>,
+    /// The selector to pin, when there are several programs.
+    pub pin: Option<Pin>,
 }
 
 const VPC_MAX_DISP: i128 = 16;
@@ -332,6 +344,9 @@ const STACK_VPC_TAG: u64 = 0x7d00_0000_0000_0000;
 const PROBE_RUN_INSNS: usize = 8192;
 /// Most times the probe runs one instruction.
 const PROBE_VISITS: u32 = 256;
+/// Instructions the probe runs without loading a bytecode pointer from a cell
+/// before it gives up.
+const PROBE_IDLE_INSNS: usize = 1024;
 /// Fetches at distinct places a computed jump needs to be a dispatch.
 const PROBE_DISPATCHES: usize = 4;
 
@@ -404,6 +419,7 @@ impl<'a> Explorer<'a> {
             probe: true,
             pin: None,
             rep_copies: true,
+            copy_escaped: false,
         }
     }
 
@@ -450,7 +466,8 @@ impl<'a> Explorer<'a> {
     /// the jump going to at least two places. That cell is the virtual PC.
     /// The run stops at the first computed jump not preceded by such a fetch
     /// (an ordinary `switch`), at a return, after [`PROBE_RUN_INSNS`]
-    /// instructions or when one instruction ran [`PROBE_VISITS`] times.
+    /// instructions, after [`PROBE_IDLE_INSNS`] without a bytecode pointer
+    /// loaded from a cell, or when one instruction ran [`PROBE_VISITS`] times.
     ///
     /// Several cells fetched through at one dispatch, each a fixed stride
     /// from the next, are the VPCs of interleaved bytecode programs (Tigress
@@ -466,23 +483,25 @@ impl<'a> Explorer<'a> {
         emu.track_sp = Some((self.abi.sp, ps));
         emu.trust_file = true;
         let mut addr = self.entry_addr;
-        let mut loads: Vec<(Cell, Option<VarId>, i128, u64, Vec<(Loc, u128)>)> = Vec::new();
+        type Seen = (BTreeSet<i128>, BTreeSet<u64>, usize);
+        let mut loads: Vec<(Cell, Option<VarId>, i128, Pin)> = Vec::new();
         let mut fetched: Vec<(Cell, i128)> = Vec::new();
-        let mut last_head: Option<(u64, Vec<(Loc, u128)>)> = None;
-        let mut seen: BTreeMap<(u64, Cell), (BTreeSet<i128>, BTreeSet<u64>, usize)> = BTreeMap::new();
+        let mut last_head: Option<Pin> = None;
+        let mut seen: BTreeMap<(u64, Cell), Seen> = BTreeMap::new();
         let mut visits: BTreeMap<u64, u32> = BTreeMap::new();
-        let mut turns: Vec<(u64, u64, Vec<(Loc, u128)>, Vec<Cell>)> = Vec::new();
+        let mut turns: Vec<Turn> = Vec::new();
         let mut run = (addr, Vec::new());
         let mut order = 0usize;
         let mut found: Option<u64> = None;
-        for _ in 0..PROBE_RUN_INSNS {
+        let mut promising = false;
+        for step in 0..PROBE_RUN_INSNS {
             let n = visits.entry(addr).or_insert(0);
             *n += 1;
-            if *n > PROBE_VISITS {
+            if *n > PROBE_VISITS || (step == PROBE_IDLE_INSNS && !promising) {
                 break;
             }
             let Ok(insn) = self.target.lift(addr) else { break };
-            if self.rep_copy(&mut state, &insn) {
+            if self.rep_copy(&mut state, &insn, true) {
                 addr = insn.addr.wrapping_add(insn.len as u64);
                 continue;
             }
@@ -494,11 +513,11 @@ impl<'a> Explorer<'a> {
                     if at.0.is_some() && at.0 != self.sp0 {
                         continue;
                     }
-                    if let Some((cell, _, p, h, vals)) = loads.iter().rev().find(|(c, b, p, _, _)| *c != at && *b == at.0 && at.1 >= *p && at.1 < *p + FETCH_WINDOW) {
+                    if let Some((cell, _, p, head)) = loads.iter().rev().find(|(c, b, p, _)| *c != at && *b == at.0 && at.1 >= *p && at.1 < *p + FETCH_WINDOW) {
                         if !fetched.contains(&(*cell, *p)) {
                             fetched.push((*cell, *p));
                         }
-                        last_head = Some((*h, vals.clone()));
+                        last_head = Some(head.clone());
                     }
                     if a.size != ps {
                         continue;
@@ -506,8 +525,9 @@ impl<'a> Explorer<'a> {
                     let Some(v) = trace.op_out.get(a.op_index).copied().flatten() else { continue };
                     if let Some((vb, p)) = self.arena.affine(v) {
                         if self.bytecode_pointer(&state, vb, p) {
-                            loads.retain(|(c, _, _, _, _)| *c != at);
-                            loads.push((at, vb, p, run.0, run.1.clone()));
+                            promising = true;
+                            loads.retain(|(c, _, _, _)| *c != at);
+                            loads.push((at, vb, p, run.clone()));
                         }
                     }
                 }
@@ -567,7 +587,7 @@ impl<'a> Explorer<'a> {
 
     /// The registers and 4-byte entry-stack slots holding a small constant
     /// (an index below 16).
-    fn small_locations(&mut self, state: &mut State) -> Vec<(Loc, u128)> {
+    fn small_locations(&mut self, state: &mut State) -> SmallLocs {
         let mut out = Vec::new();
         for r in self.abi.gprs.clone() {
             if r == self.abi.sp || !state.regs.has_any(r as i128, 4) {
@@ -594,7 +614,7 @@ impl<'a> Explorer<'a> {
     /// that loads the cell on most turns, and every location that holds the
     /// fetched cell's index there on each such turn, to be pinned to the
     /// index of the program dispatched first.
-    fn infer_selector(&self, d: u64, cells: &[Cell], turns: &[(u64, u64, Vec<(Loc, u128)>, Vec<Cell>)]) -> Option<(u64, Vec<(Loc, u128)>)> {
+    fn infer_selector(&self, d: u64, cells: &[Cell], turns: &[Turn]) -> Option<Pin> {
         let mut sorted: Vec<Cell> = cells.to_vec();
         sorted.sort_by_key(|c| c.1);
         let stride = sorted[1].1 - sorted[0].1;
@@ -607,11 +627,11 @@ impl<'a> Explorer<'a> {
             *heads.entry(t.1).or_insert(0) += 1;
         }
         let (&h, _) = heads.iter().max_by_key(|(_, n)| **n)?;
-        let at_h: Vec<&(u64, u64, Vec<(Loc, u128)>, Vec<Cell>)> = turns.iter().filter(|t| t.0 == d && t.1 == h && t.3.len() == 1).collect();
+        let at_h: Vec<&Turn> = turns.iter().filter(|t| t.0 == d && t.1 == h && t.3.len() == 1).collect();
         if at_h.len() < 2 * cells.len() || cells.iter().any(|c| !at_h.iter().any(|t| t.3[0] == *c)) {
             return None;
         }
-        let locs: Vec<(Loc, u128)> = at_h[0]
+        let locs: SmallLocs = at_h[0]
             .2
             .iter()
             .map(|(l, _)| *l)
@@ -777,7 +797,7 @@ impl<'a> Explorer<'a> {
             }
         }
         self.stats.writable_bytecode |= emu.fetched_writable;
-        self.stats.copy_read_unfolded = emu.copy_read_unfolded;
+        self.stats.copy_read_unfolded = emu.copy_read_unfolded || std::mem::take(&mut self.copy_escaped);
         cfg
     }
 
@@ -909,7 +929,7 @@ impl<'a> Explorer<'a> {
                     }
                 }
                 if let Loc::Mem { base, off } = d.loc.loc {
-                    if vpc_keyed && vpc_cell.is_some_and(|(b, a)| b == base && off < a + self.abi.ptr_size as i128 && a <= off + d.loc.size as i128 - 1) {
+                    if vpc_keyed && vpc_cell.is_some_and(|(b, a)| b == base && off < a + self.abi.ptr_size as i128 && a < off + d.loc.size as i128) {
                         continue;
                     }
                 }
@@ -1105,11 +1125,10 @@ impl<'a> Explorer<'a> {
                 }
             };
             self.apply_pin(&mut state, addr);
-            if self.rep_copy(&mut state, &insn) {
+            if self.rep_copy(&mut state, &insn, false) {
                 let next = insn.addr.wrapping_add(insn.len as u64);
                 insns.push(insn);
                 traces.push(InsnTrace { elided: true, ..InsnTrace::default() });
-                exit = Exit::Fallthrough(next);
                 addr = next;
                 continue;
             }
@@ -1251,10 +1270,12 @@ impl<'a> Explorer<'a> {
     /// stack or a concrete address, as gcc inlines a small `memcpy` (Tigress's
     /// threaded-code array): one [`State::copy_in`], the count register
     /// cleared and both pointers advanced past the copy, in place of one
-    /// emulated iteration per element. The emitter leaves the instruction
-    /// out when only VPC fetches it folds read the copy.
-    fn rep_copy(&mut self, state: &mut State, insn: &LiftedInsn) -> bool {
-        if !self.rep_copies || self.target.is_foreign_code(insn.addr) {
+    /// emulated iteration per element. Only in the probe and in the
+    /// exploration of an in-function interpreter. The emitter leaves the
+    /// instruction out when only VPC fetches it folds read the copy and no
+    /// pointer into it reached a call.
+    fn rep_copy(&mut self, state: &mut State, insn: &LiftedInsn, probing: bool) -> bool {
+        if !self.rep_copies || (!probing && self.data_vpc.is_none()) || self.target.is_foreign_code(insn.addr) {
             return false;
         }
         let m = insn.asm.to_ascii_uppercase();
@@ -2298,6 +2319,11 @@ impl<'a> Explorer<'a> {
         for v in values {
             if self.config.trace.is_some() {
                 self.log.push(format!("call at {site:#x}: arg {} affine={:?}", self.arena.fmt(v), self.arena.affine(v)));
+            }
+            if let Some((b, o)) = self.arena.affine(v) {
+                if state.copies.iter().any(|c| c.base == b && c.off <= o && o <= c.off + c.len as i128) {
+                    self.copy_escaped = true;
+                }
             }
             match self.arena.affine_probe(v) {
                 Some((Some(base), o)) => {

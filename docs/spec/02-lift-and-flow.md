@@ -4091,8 +4091,9 @@ cell (a slot of the entry stack, or a concrete address) whose value points into
 file data or into a copy of file data on the stack (see the copy model below).
 A later load within 16 bytes past such a pointer is a fetch through the cell.
 A computed jump to code that a fetch preceded is a dispatch event. A computed
-jump with no fetch before it (an ordinary `switch`), a return, or an
-instruction run 256 times ends the probe. The cell is the VPC once one computed
+jump with no fetch before it (an ordinary `switch`), a return, an
+instruction run 256 times, or 1024 instructions without a bytecode pointer
+loaded from a cell end the probe. The cell is the VPC once one computed
 jump has seen fetches through it at 4 different places, and gone to at least two
 targets. The explorer then keeps that cell as the VPC for the whole
 exploration (`Explorer::data_vpc`). At the end of every block, wherever the
@@ -4137,14 +4138,15 @@ in mutable memory, and a node that paths reach with different copies, which
 starts without them. Where two sides of a merged conditional disagree on a
 copy, the merged state keeps only the copies both sides have. The rest of the
 call is summarized as usual and stays in the program. gcc copies a smaller
-array inline with `rep movsq`. A `rep movs` of the function's own code with a
+array inline with `rep movsq`. In the probe and in the exploration of an
+in-function interpreter, a `rep movs` of the function's own code with a
 constant count, the direction flag clear, a source in file data and a
 destination on the entry stack or at a concrete address is the same copy
 (`Explorer::rep_copy`): the count register is cleared and both pointers
 advance past it, in place of one emulated iteration per element. When the last
-round read the copy only through VPC fetches that fold to constants, the
-emitter leaves the instruction out, since no op of the recovered program reads
-what it wrote. Otherwise the function is explored again with every `rep movs`
+round read the copy only through VPC fetches that fold to constants, and no
+pointer into it reached a call, the emitter leaves the instruction out, since
+no op of the recovered program reads what it wrote. Otherwise the function is explored again with every `rep movs`
 run as an instruction, and the copied array stays a loop of the program
 (`kuna_pushanemu.rs (Emulator::copy_read_unfolded)`).
 

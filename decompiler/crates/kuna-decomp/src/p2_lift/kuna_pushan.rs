@@ -981,7 +981,13 @@ pub fn interpreter_after_flow(arch: &mut Architecture, fd: &Funcdata) -> bool {
     if arch.pushan_cache.contains_key(&entry) {
         return false;
     }
+    let started = std::time::Instant::now();
     if !has_computed_jump(fd) {
+        if let Ok(path) = std::env::var("KUNA_PUSHAN_PROBE_LOG") {
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+                let _ = writeln!(f, "{entry:#x} scan {:.3}ms", started.elapsed().as_secs_f64() * 1000.0);
+            }
+        }
         return false;
     }
     let found = {
@@ -990,6 +996,11 @@ pub fn interpreter_after_flow(arch: &mut Architecture, fd: &Funcdata) -> bool {
         let mut probe = Explorer::new(&target, abi, Config::default(), entry);
         !probe.probe_interpreter().cells.is_empty()
     };
+    if let Ok(path) = std::env::var("KUNA_PUSHAN_PROBE_LOG") {
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+            let _ = writeln!(f, "{entry:#x} found={found} {:.3}ms", started.elapsed().as_secs_f64() * 1000.0);
+        }
+    }
     if !found {
         return false;
     }
