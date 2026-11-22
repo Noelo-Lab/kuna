@@ -140,8 +140,9 @@ fn a_value_witness_has_its_runtime_prototype() {
 #[test]
 fn witness_calls_through_metadata_are_named() {
     let c = decompile(load(true), 0x3580);
-    assert!(c.contains("->initializeWithTake)("), "{c}");
-    assert!(c.contains("->initializeWithCopy)("), "{c}");
+    assert!(c.contains("->initializeWithTake)(v2,a0,a2);"), "{c}");
+    assert!(c.contains("->initializeWithCopy)(a0,a1,a2);"), "{c}");
+    assert!(c.contains("(void *a0,void *a1,swift.type_metadata *a2)"), "{c}");
 }
 
 #[test]
