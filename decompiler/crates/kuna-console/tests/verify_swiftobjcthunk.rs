@@ -9,6 +9,11 @@
 //! the fixtures README). `Probe.refresh()` is not `@objc`; the `-O` thunk of
 //! `Probe`'s `doesNotRecognizeSelector:` override sends `super` and then calls
 //! it directly, so it must keep its positional name.
+//!
+//! Fixture: `tests/fixtures/macho_swift_objcthunk_inlined_arm64` (`-O -wmo`),
+//! whose `@objc` thunks hold their member's inlined body: the slot such a
+//! thunk calls is another method, which keeps its positional name, and a
+//! Swift symbol keeps the name it gives.
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -89,11 +94,18 @@ fn name_at(prog: &ConsoleProgram, vma: u64) -> String {
     }
 }
 
-fn run(on: bool) -> Vec<String> {
+/// `(VMA, reported name, the unlinked symbol)` in the `-O -wmo` fixture.
+const INLINED: &[(u64, &str, &str)] = &[
+    (0x4000, "objt.Gone.vtable#3.method", "$s4objt4GoneC6handleyyF"),
+    (0x4054, "objt.Kept.vtable#3.method", "$s4objt4KeptC6handleyyF"),
+    (0x4118, "objt.Pure.run", "$s4objt4PureC3runyyF"),
+    (0x4280, "objt.Sym.act(_:)", "$s4objt3SymC3actyySo8NSObjectCF"),
+];
+
+fn load(fixture: &str, on: bool) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    let bin =
-        root.join("decompiler/crates/kuna-analysis/tests/fixtures/macho_swift_objcthunk_arm64");
+    let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures").join(fixture);
     assert!(bin.exists(), "missing fixture {bin:?}");
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
@@ -105,6 +117,11 @@ fn run(on: bool) -> Vec<String> {
         .expect("swiftobjcthunk flips");
     prog.commit_pending_analysis()
         .expect("analysis commit succeeds");
+    prog
+}
+
+fn run(on: bool) -> Vec<String> {
+    let prog = load("macho_swift_objcthunk_arm64", on);
     PINNED
         .iter()
         .map(|&(vma, ..)| name_at(&prog, vma))
@@ -124,5 +141,18 @@ fn objc_thunks_name_swift_vtable_slots() {
             off[i], want_off,
             "swiftobjcthunk off keeps 0x{vma:x} positional ({symbol})"
         );
+    }
+}
+
+#[test]
+fn an_inlined_thunk_body_names_no_other_slot() {
+    let prog = load("macho_swift_objcthunk_inlined_arm64", true);
+    let entries = prog.function_entries_canonical();
+    for &(vma, want, symbol) in INLINED {
+        let got = entries
+            .iter()
+            .find(|e| e.addr.get_offset() == vma)
+            .map(|e| e.name.as_str());
+        assert_eq!(got, Some(want), "0x{vma:x} ({symbol})");
     }
 }

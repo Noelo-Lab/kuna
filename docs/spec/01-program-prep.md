@@ -6341,17 +6341,39 @@ every other binary's pass list is byte-identical to before the pass existed):
   an inherited Objective-C method (`layoutSubviews`): it has no vtable slot,
   and when `-O` inlines its body into the thunk, the thunk sends to `super`
   and then calls some other slot directly, which must not take its selector.
+  The same holds for any `@objc` member whose body `-O` inlines into its
+  thunk: under whole-module optimization the body's call to another member
+  of the class is direct (`@objc func tap() { handle() }` gives a thunk that
+  calls `handle()`), so the hit is only taken as the thunk's own slot when
+  nothing points elsewhere. If one of the class's own vtable slots of the kind
+  the thunk's selector names (a method or `init` selector: method or
+  initializer slots; a getter or setter selector: that accessor kind) has no
+  implementation, the member that owns it was inlined everywhere, its thunk
+  included, so the thunk names nothing; and a hit that another implementation
+  of the class calls or branches to directly (the member's own surviving body,
+  when a subclass override or public visibility keeps it, is a call to what the
+  thunk calls) names nothing either. A hit's kind must also be the selector's:
+  a property accessor's thunk never names a method slot. An implementation that
+  carries a Swift symbol (`_$s…`, say the exported symbol of a public method)
+  keeps the positional claim, so the symbol's own name (`act(_:)`) is reported
+  rather than the selector (`act:`). On the `-O -wmo` crate fixture
+  `macho_swift_objcthunk_inlined_arm64` the two `handle()` bodies keep
+  `vtable#3.method`; the cost is recall on whole-module builds, where a class
+  whose members were inlined away names none of that kind.
   The name belongs to the method descriptor, so an override in a subclass
   takes it too (`Sub.addFrameWithTimestamp:label:`); a slot two thunks name
   differently keeps its position. The pass runs at load, before `option`
   commands, so it records each renamed function's positional name
   (`AnalysisOutput::swift_positional_names`), and the commit boundary
   restores those names when the gate is off. On Perplexity for iOS (an 84 MB
-  arm64 app) the arm names 346 of the 1,723 positional slot implementations
-  (178 methods, 6 initializers, 87 getters, 75 setters) with no measurable
-  load cost. The crate test `kuna-console/tests/verify_swiftobjcthunk.rs`
+  arm64 app) the arm without the inlined-body checks named 346 of the 1,723
+  positional slot implementations (178 methods, 6 initializers, 87 getters,
+  75 setters) with no measurable load cost; with them, the OneSignal
+  frameworks' `OneSignalUser` names 13 of its 75 positional slots and
+  `OneSignalOSCore` 2 of 37, each a bridging thunk around a large body. The crate test `kuna-console/tests/verify_swiftobjcthunk.rs`
   runs the stripped fixture `macho_swift_objcthunk_arm64` with the arm on and
-  off.
+  off, and checks the inlined-body and symbol cases on
+  `macho_swift_objcthunk_inlined_arm64`.
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the

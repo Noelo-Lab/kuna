@@ -1446,6 +1446,38 @@ getter/setter `0x428c`/`0x4340`, `Replay.addFrame(timestamp:label:)` `0x4410`,
 `Probe.refresh()` stays `objcfix.Probe.vtable#3.method`; `--option swiftobjcthunk
 off` gives every one its positional `vtable#N.kind` name.
 
+### `macho_swift_objcthunk_inlined_arm64` — `@objc` thunks with inlined bodies (`swiftobjcthunk`)
+
+`macho_swift_objcthunk_inlined_arm64` (arm64 iOS dylib, ~66 KB) is the second
+fixture of `kuna-console/tests/verify_swiftobjcthunk.rs`, built from
+`macho_swift_objcthunk_inlined.swift` with `-O -wmo`, the release default. In
+`Gone` and `Kept` the `@objc tap()` thunk holds `tap`'s inlined body, a direct
+call to the non-`@objc` `handle()`; `Gone.tap`'s own slot is left empty, and
+`Kept.tap`'s survives (a subclass overrides it) as a branch to `handle()`.
+`Pure.run()` is not inlined into its thunk, and the public `Sym.act(_:)` keeps
+its exported symbol. No Apple SDK is needed: the source uses `-parse-stdlib`
+and a two-file stand-in for the `ObjectiveC` module, so the swift:6.0 image
+builds it byte-identically.
+
+```bash
+mkdir -p sdk/usr/include/objc
+printf '%s\n' 'typedef struct objc_class *Class;' '__attribute__((objc_root_class))' \
+  '@interface NSObject {' '  Class isa;' '}' '+ (instancetype)alloc;' '- (instancetype)init;' '@end' \
+  > sdk/usr/include/objc/NSObject.h
+printf 'module ObjectiveC [system] {\n  header "objc/NSObject.h"\n  export *\n}\n' > sdk/usr/include/module.modulemap
+D="docker run --rm -u $(id -u):$(id -g) -e HOME=$PWD -v $PWD:$PWD -w $PWD swift:6.0"
+$D swiftc -parse-stdlib -module-cache-path $PWD/mc -module-name objt -target arm64-apple-ios16.0 -sdk $PWD/sdk \
+   -Xfrontend -disable-implicit-concurrency-module-import -Xfrontend -disable-implicit-string-processing-module-import \
+   -O -wmo -parse-as-library -emit-object macho_swift_objcthunk_inlined.swift -o t.o
+$D ld64.lld -arch arm64 -platform_version ios 16.0 16.5 -dylib -undefined dynamic_lookup \
+   -install_name @rpath/objt.dylib -x -o macho_swift_objcthunk_inlined_arm64 t.o
+```
+
+**Pinned VMAs:** `Gone.handle()` `0x4000` and `Kept.handle()` `0x4054` stay
+`objt.Gone.vtable#3.method` / `objt.Kept.vtable#3.method` (not `tap`),
+`Pure.run()` `0x4118` is `objt.Pure.run`, and `Sym.act(_:)` `0x4280` keeps
+`objt.Sym.act(_:)` rather than the selector's `act:`.
+
 ### `macho_cstringconst_arm64` — short literals nothing types `char *` (`cstringconst`)
 
 `macho_cstringconst_arm64` (arm64 dylib at base 0, ~50 KB, from
