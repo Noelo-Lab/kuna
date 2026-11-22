@@ -9368,7 +9368,13 @@ on, or handed back in another register (`kuna_voidret.rs (returned_use)`,
 `kuna_voidret.rs (scoring_return)`): `gi = a * 3; return gi;` stores the `eax`
 it returns, `if (r > 7) gj++; return r;` tests it, and `x = *p; gi = x + 1; gj
 = x; return x;` leaves `x + 1` in `edx`, a register the callers do not read.
-Upstream's `onlyOpUse` refuses all three, to tell a value passed in a register
+It may also be added to another variable, which makes it an index:
+gnulib's `base_len` (`for (len = strlen (name); 1 < len && name[len - 1] ==
+'/'; len--) continue; return len;`) loads through `name + len - 1`, and what
+that sum reaches is not a use of `len` itself. An addition of a constant
+still carries the value on, so a load or store through the value plus a
+constant refuses it as before.
+Upstream's `onlyOpUse` refuses all four, to tell a value passed in a register
 from a variable that happens to sit there; with a caller reading the register
 that question is settled, and the refusal printed `void f(int a0) { gi = a0 *
 3; }` beside `printf("%d\n", f(2))`, and gnulib's `xmalloc` (`p = malloc(n);
