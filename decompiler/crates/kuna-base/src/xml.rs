@@ -2279,7 +2279,16 @@ mod tests {
         // and kuna-objcstubagree / an objc_msgSend$<sel> stub is typed only from declarations that agree on its registers
         // and kuna-oslog / an os_log call prints its decoded arguments; __oslogstring literals print as strings
         // and kuna-darwinvarargs / an undeclared variadic callee on Apple arm64 keeps its stack-passed arguments
-        assert_eq!(count, 861, "corpus file count drifted");
+        // and kuna-objcforin / an SDK struct pointer parameter types the stack object passed to it (option objcsdk)
+        // and kuna-switchnextcsel-a64 / a csel-picked next table still ends a byte-masked last table (option switchextent)
+        // and kuna-switchmerge / a search tree of jump tables prints as one switch (option switchmerge)
+        // and kuna-switchmerge-values / a hole the default code sends to the same place prints no label, and a 1100-entry table is a switch
+        // and kuna-switchmerge-split / a range split between two switches, and an == test heading default, print as one switch
+        // and kuna-jumptableslots / a guarded table indexed by x >> 8 past jumptablemax stays a computed call
+        // and kuna-cachereturn / a lazy accessor returns the value of its cache cell (option cachereturn)
+        // and kuna-thunknames / a placeholder jump thunk is named after its target (option thunknames)
+        // and kuna-swifthelpers / Swift instantiation helpers and lazy witness table accessors (option swifthelpers)
+        assert_eq!(count, 870, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

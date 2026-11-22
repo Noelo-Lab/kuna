@@ -100,12 +100,6 @@ pub mod kuna_fdeinterior;
 pub mod kuna_pdatainterior;
 pub mod kuna_pereloccode;
 mod macho_entry;
-
-/// Every Mach-O function start the loader knows (`LC_FUNCTION_STARTS`, the
-/// entry, the exports, the initializers), unsorted.
-pub(crate) fn macho_function_starts(file: &object::File, bytes: &[u8]) -> Vec<u64> {
-    macho_entry::macho_entry_candidates(file, bytes)
-}
 pub mod patterns;
 mod pe_entry;
 
@@ -383,6 +377,15 @@ pub(crate) fn sized_function_bodies(file: &object::File) -> Vec<(u64, u64)> {
         reach = reach.max(body.1);
         body.1 = reach;
     }
+    out
+}
+
+/// Every function start a Mach-O states in its load commands and exports
+/// ([`macho_entry::macho_entry_candidates`]), sorted and deduplicated.
+pub(crate) fn macho_function_starts(file: &object::File, bytes: &[u8]) -> Vec<u64> {
+    let mut out = macho_entry::macho_entry_candidates(file, bytes);
+    out.sort_unstable();
+    out.dedup();
     out
 }
 
