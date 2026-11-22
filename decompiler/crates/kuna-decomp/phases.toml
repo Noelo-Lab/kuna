@@ -2586,6 +2586,28 @@ tier = "transform"
 symptoms = "switch rendered as nested if/else-if compare tree over one variable|a three- or four-case switch renders as a chain of if (v != 3) { if (v != 2) ... } tests on one variable|a deep if/else tree on one variable with an equality test at every leaf where the source had a dense switch of 17 or more cases|binary-search cascade of constant compares where source had a switch|flip off to keep the compiler's lowered compare-tree rendering"
 
 [[settable]]
+option = "loweredswitchbits"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P2"
+subphase = "switch-model"
+strength = "HARD"
+rewind = "P2"
+issue = "kuna-loweredswitchbits"
+summary = "Re-roll a switch the compiler lowered to bit tests and offset range checks (`if (t - A <= N && (1 << (t - A)) & mask)`, several tests sharing one shift) on a selector of at most two bytes. When loweredswitch records nothing for a function, each condition block whose condition is a pure function of one such selector is evaluated on every selector value; walking from a head, every value lands on exactly one target, the target with the most values is the default and every other value is a case of the target it reaches. The cascade must hold a bit test, at most 64 cases and at least two case targets, and every block after the head must compute only its condition and be entered only from the cascade. The record goes through the loweredswitch install, which reads the register holding the selector at the head."
+use_when = "On by default: a switch on a 16-bit type tag or a char that clang lowered to a bit mask prints as a switch, as in the source. Set OFF to keep the compiler's bit-test rendering."
+example = "option loweredswitchbits off"
+source_decompiler = "kuna"
+inspiration = "clang switch lowering to bit tests (SwitchLowering bit-test clusters); cmark free_node_as prints `if (v1 - 0xc001 <= 0xb) { v2 = 1 << (v1 - 0xc001 & 0x1f); if (v2 & 0xc19) ...` for a switch on node->type"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "if ((1 << (x - K)) & MASK) bit tests on one selector where the source had a switch|a range check t - K <= N followed by a shift-and-mask test|flip off to keep the compiler's bit-test rendering"
+live_field = "lowered_switch_bits"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "callmechanisms"
 values = "off|auto|on"
 default = "auto"

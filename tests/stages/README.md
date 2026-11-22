@@ -546,3 +546,8 @@ Different namespaces and a longer similarly named function retain their callers.
 a while loop. `append`'s list walk tests at the top inside its guard, as code
 after the loop runs only when the guard holds; `drain`'s guard, the loop test
 itself (a load of `s->end`), goes. With the option off both stay do-while loops.
+
+`kuna-loweredswitchbits.xml` checks `loweredswitchbits`: cmark's `free_node_as`,
+a switch on the 16-bit node type that clang lowered to two bit masks and four
+equality tests, prints as the source's switch with all twelve labels. The off
+pass runs first, as an installed switch stays for the session.

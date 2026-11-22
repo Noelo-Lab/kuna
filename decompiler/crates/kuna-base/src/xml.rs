@@ -2277,7 +2277,8 @@ mod tests {
         // and kuna-switchtrim / an unguarded jump table ends where its layout ends
         // and kuna-crossjumptail / a goto to a shared statement run becomes a copy, an else arm or a continue
         // and kuna-guardedloop / a guarded do-while prints as a while loop
-        assert_eq!(count, 859, "corpus file count drifted");
+        // and kuna-loweredswitchbits / a switch lowered to bit tests re-rolls
+        assert_eq!(count, 860, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

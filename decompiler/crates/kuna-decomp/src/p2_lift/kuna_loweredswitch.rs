@@ -1219,7 +1219,7 @@ impl ActionLowerSwitchDetect {
         // variables are tried in the order they were created, and the first whose
         // cascade records wins; a Varnode's id is only the arena slot it reused.
         let Some(best) = var_count.values().copied().max().filter(|c| *c >= 2) else {
-            return 0;
+            return self.detect_bits(data);
         };
         let mut tied: Vec<(uint4, VarnodeId)> = var_count
             .iter()
@@ -1232,7 +1232,18 @@ impl ActionLowerSwitchDetect {
                 return 1; // a record was added (the C++ returns 0 to quiesce; see apply note)
             }
         }
-        0
+        self.detect_bits(data)
+    }
+
+    /// (kuna `loweredswitchbits`) Record a switch lowered to bit tests.
+    fn detect_bits(&mut self, data: &mut Funcdata) -> int4 {
+        if !data.get_arch().lowered_switch_bits {
+            return 0;
+        }
+        let Some(rec) = crate::p2_lift::kuna_loweredswitchbits::recover(data) else { return 0 };
+        self.store.borrow_mut().push(data, rec);
+        data.set_restart_pending(true);
+        1
     }
 
     /// Record the first cascade on `swvar` that recovers, and request a restart.

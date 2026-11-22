@@ -162,6 +162,9 @@ Three tiers:
 | a deep if/else tree on one variable with an equality test at every leaf where the source had a dense switch of 17 or more cases | [`loweredswitch`](#loweredswitch----on--off--linear--tree--all-default-on) |
 | binary-search cascade of constant compares where source had a switch | [`loweredswitch`](#loweredswitch----on--off--linear--tree--all-default-on) |
 | flip off to keep the compiler's lowered compare-tree rendering | [`loweredswitch`](#loweredswitch----on--off--linear--tree--all-default-on) |
+| if ((1 << (x - K)) & MASK) bit tests on one selector where the source had a switch | [`loweredswitchbits`](#loweredswitchbits----on--off-default-on) |
+| a range check t - K <= N followed by a shift-and-mask test | [`loweredswitchbits`](#loweredswitchbits----on--off-default-on) |
+| flip off to keep the compiler's bit-test rendering | [`loweredswitchbits`](#loweredswitchbits----on--off-default-on) |
 | values below an x87 call are read from the wrong register-stack positions after consecutive calls | [`callmechanisms`](#callmechanisms----off--auto--on-default-auto) |
 | a store the compiler spec says a callee always makes is missing after the call | [`callmechanisms`](#callmechanisms----off--auto--on-default-auto) |
 | a custom compiler spec's uponentry or uponreturn p-code has no effect on the output | [`callmechanisms`](#callmechanisms----off--auto--on-default-auto) |
@@ -1246,6 +1249,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default (DIV-4); the required binary-search-structure guard (a range/jle split) keeps it off hand-written linear if/else-if chains. Set OFF to restore the upstream if/else-if rendering of a lowered switch. Set `linear` when nested `if (v != 5) { if (v != 2) ...` tests on one variable stand for a small switch (clang lowers a three- or four-case switch that way); it is not the default because an if/else-if chain the author wrote re-rolls too. Set `tree` on a gcc -O0 binary whose dense switch of more than 16 cases prints as a deep if/else tree; the 16-case cap is the default because a very wide synthesized switch can leave the structurer with unstructured case edges. A switch installed for a function stays when the value is narrowed later in the same session, so compare `on` before the wider value. The exactness, every-head, signedness and value guards are the only way the re-roll runs and have no switch of their own.
 - **Where / provenance:** P2/switch-model · angr · structure-recovery · angr-LoweredSwitchSimplifier
 - **Example:** `option loweredswitch off`
+
+### `loweredswitchbits` -- on | off, default `on`
+
+- **Symptoms:** if ((1 << (x - K)) & MASK) bit tests on one selector where the source had a switch; a range check t - K <= N followed by a shift-and-mask test; flip off to keep the compiler's bit-test rendering.
+- **What it does:** Re-roll a switch the compiler lowered to bit tests and offset range checks (`if (t - A <= N && (1 << (t - A)) & mask)`, several tests sharing one shift) on a selector of at most two bytes. When loweredswitch records nothing for a function, each condition block whose condition is a pure function of one such selector is evaluated on every selector value; walking from a head, every value lands on exactly one target, the target with the most values is the default and every other value is a case of the target it reaches. The cascade must hold a bit test, at most 64 cases and at least two case targets, and every block after the head must compute only its condition and be entered only from the cascade. The record goes through the loweredswitch install, which reads the register holding the selector at the head.
+- **When to flip:** On by default: a switch on a 16-bit type tag or a char that clang lowered to a bit mask prints as a switch, as in the source. Set OFF to keep the compiler's bit-test rendering.
+- **Where / provenance:** P2/switch-model · kuna · structure-recovery · kuna-loweredswitchbits
+- **Example:** `option loweredswitchbits off`
 
 ### `callmechanisms` -- off | auto | on, default `auto`
 

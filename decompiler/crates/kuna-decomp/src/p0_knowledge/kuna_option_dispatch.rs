@@ -116,6 +116,7 @@ kuna_options! { self, p1;
     "gotosink" => on_off!(goto_sink, "goto sinking and backward-goto loops"),
     "looprotate" => on_off!(loop_rotate, "Guarded do-while loops rotated to while loops"),
     "guardedloop" => on_off!(guarded_loop, "Guarded do-while loops printed as while loops"),
+    "loweredswitchbits" => on_off!(lowered_switch_bits, "Switches lowered to bit tests re-rolled"),
     "switchguardmerge" => on_off!(switch_guard_merge, "Equality guards merged into their switch"),
     "retsplitlimit" => {
         let (val, msg) =

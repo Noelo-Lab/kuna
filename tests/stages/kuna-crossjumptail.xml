@@ -72,6 +72,8 @@ c2848484848484848484078484078484848484848484848484848484848484848438008484843400
 <symbol space="ram" offset="0xded4" name="cmark_node_own"/>
 </binaryimage>
 <script>
+  <!-- cmark_node_own's bit-test switch would re-roll and lose its jumps -->
+  <com>option loweredswitchbits off</com>
   <com>lo fu houdini_escape_href</com>
   <com>decompile</com>
   <com>print C</com>

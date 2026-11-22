@@ -3031,6 +3031,39 @@ the first head, as before, but never introduced by a later one. A record's
 dispatch value is then subject to the value check like any other. Measured
 byte-identical on the 675-assertion datatest corpus when the check was introduced.
 
+### (kuna) Bit-test lowerings — `option loweredswitchbits`, default on
+
+clang lowers a switch over a narrow selector with clustered labels into a range
+check on an offset copy of the selector and a test of a bit of a constant mask
+(`t - A <= N && (1 << (t - A)) & mask` on arm64, `bt` on x86), often several masks
+sharing one shift, plus equality tests for the outliers. `recover_cascade` reads
+only compares of the selector itself against a constant, so these stay `if`
+chains. When `ActionLowerSwitchDetect` records nothing for a function,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitchbits.rs (recover)`
+tries them.
+
+A condition block is one whose CBRANCH condition is computed by integer, boolean,
+extension and compare ops from constants and one selector of at most two bytes.
+From a head (a condition block no condition block on the same selector branches
+into) every selector value is evaluated through each block's condition with the
+ops' p-code behaviors: each block splits the values that reach it between its two
+edges, a condition block on the selector passes its share on, and any other block
+is a target that receives it. The target with the most values is the default; a
+target whose ops are the default's on the same inputs (constants by value,
+in-block values pairwise) with no successors joins it, so the compiler's copies
+of one `return` count once; every other value is a case of the target it reaches.
+The cascade must hold a shift by a selector-derived amount, at most 64 cases on
+at least two targets, and every block after the head must use only pure ops, be
+read only by the cascade and be entered only from it. The record names the
+register or stack varnode that holds the selector (or its narrowest zero or sign
+extension) and reads that storage at the head (`ValueCheck::read_home`), and the
+same restart install manufactures the switch. Because the evaluation covers
+every value, the switch routes each value where the tests did. A selector whose
+extension the simplified SSA keeps only in a temporary (x86 `movzwl` feeding the
+compares directly) has no storage to read and is left. Measured on cmark O2ni
+(clang -O2 -fno-inline, arm64): `free_node_as`, `cmark_node_own` and
+`cmark_node_set_literal` print their source switches, GED 9580 to 9536.
+
 ### Linear chains and wider trees — `loweredswitch linear|tree|all`, opt-in
 
 `kuna_loweredswitch.rs (recover_cascade)` records a cascade only after it has
