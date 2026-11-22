@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4981,
-    4981
+    4994,
+    4994
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -236,6 +236,11 @@
     "data:C++ namespace target",
     "data:C++ nested namespace target",
     "data:C++ other namespace target",
+    "data:CACHERETURN #1: off, and on a C image, the accessors print void",
+    "data:CACHERETURN #2: on a Swift image, get_cached returns the cell",
+    "data:CACHERETURN #3: on a Swift image, get_slot returns the cell behind its parameter",
+    "data:CACHERETURN #4: on a Swift image, the two-RETURN accessor returns the cell",
+    "data:CACHERETURN #5: the void control stays void in every pass",
     "data:CALL-ARRAY-EXTENT #10: indexed parent retains room for every store",
     "data:CALL-ARRAY-EXTENT #11: return reads the copied word in shared storage",
     "data:CALL-ARRAY-EXTENT #12: loop-carried pointer declines",
@@ -2729,6 +2734,14 @@
     "data:TERMDUP #4: at the shipped bound 2 a three-term expression is forced explicit and gets its own statement",
     "data:TERMDUP #5: the explicit sum is then read at both multiplicand positions by name",
     "data:TERMDUP #6: `option termdup 3` drops the statement and duplicates the three-term sum at both uses",
+    "data:THUNKNAMES #1: off, the call through the thunk is anonymous",
+    "data:THUNKNAMES #2: off, the call through the thunk chain is anonymous",
+    "data:THUNKNAMES #3: off, the callers' argument is untyped",
+    "data:THUNKNAMES #4: on, the thunk is named after its target",
+    "data:THUNKNAMES #5: on, a thunk to a thunk is named after that thunk",
+    "data:THUNKNAMES #6: on, the thunks carry release_box's prototype into the callers",
+    "data:THUNKNAMES #7: on, a MIPS j with a nop delay slot is a thunk",
+    "data:THUNKNAMES #8: a MIPS j whose delay slot adjusts the argument is never a thunk",
     "data:TIEDPHITRIM #10: upstream's merge is kept for accum_loop's computed loop value",
     "data:TIEDPHITRIM #11: xa11 keeps upstream's merge, the loop's x stored into buf[0] only after the loop",
     "data:TIEDPHITRIM #12: xa13 keeps upstream's merge, the loop's x stored into buf[0] only after the loop",
