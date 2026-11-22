@@ -312,14 +312,15 @@ pub(crate) fn frame_published(fd: &Funcdata) -> Option<i64> {
         .iter_alive()
         .filter_map(|id| {
             let op = fd.obank().get(id)?;
-            if volatile_write(op) {
-                return frame(op.get_in(2)?);
-            }
-            let (_, input) = published_input(fd, id)?;
-            if into_frame(op) {
-                return None;
-            }
-            frame(input)
+            let value = match op.code() {
+                OpCode::CPUI_COPY => op.get_in(0)?,
+                OpCode::CPUI_STORE => op.get_in(2)?,
+                _ if volatile_write(op) => return frame(op.get_in(2)?),
+                _ => return None,
+            };
+            let low = frame(value)?;
+            published_input(fd, id)?;
+            (!into_frame(op)).then_some(low)
         })
         .min()
 }
