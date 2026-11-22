@@ -743,7 +743,16 @@ the second channel a name arrives through as well: an analysis pass's recovered
 name (a DWARF `DW_AT_name`, a Go `pclntab` entry, a PDB public symbol) is
 sanitized in `kuna-analysis`'s pass driver
 (`decompiler/crates/kuna-analysis/src/pass.rs (AnalysisOutput::sanitize_names)`)
-before the commit boundary of §1.4 sees it. Like the other gates consumed inside
+before the commit boundary of §1.4 sees it. That driver renames the facts that
+carry a name of their own — symbols, prototypes and their parameters, locals —
+but a struct or union tag, a member, an enumerator and a typedef live inside the
+datatype a fact merely points at, so the DWARF pass escapes the `safe` set where
+it first reads a `DW_AT_name`
+(`decompiler/crates/kuna-analysis/src/analyzers/dwarf/mod.rs (die_name)`), for
+every DIE below the unit; the unit's own name is a path and stays verbatim. Under
+`ident` those type-side names keep the `safe` spelling, because folding them
+further could merge two distinct types onto one interned name; under `off` they
+are verbatim like every other name. Like the other gates consumed inside
 `load file` it is carried by a process environment variable. Print-time
 sanitizing would be the wrong seam: §0.4 explains that the string in the symbol
 table is the key `kuna decompile <name>` and `load function` are passed, so a
@@ -916,7 +925,15 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   non-empty section out above `0x400000` (`RELOC_BASE`, matching CLE so addresses
   line up with angr's), apply the relocations, rebase defined symbols, and bind
   each undefined extern to a synthetic call target in an extern area above the
-  sections so calls render by name. COMMON symbols instead reserve their
+  sections so calls render by name. A section header's size is a claim the file
+  need not back, so the layout allocates zero-fill only for data — `SHT_NOBITS`
+  storage and a data extent past the end of the file — and at most 256 MiB of it
+  per object (`reloc_object.rs (ZERO_FILL_LIMIT)`); code is laid out at the bytes
+  the file holds, because absent bytes are not instructions. A section cut short
+  this way is laid out at its reduced size, one left with no bytes is dropped,
+  and each is named on the loader's diagnostic line. The analyzer tier's
+  rebased view (`kuna_relocrebase.rs (rebased_view)`) writes the same reduced
+  sizes into its section headers, so no pass scans the declared extent. COMMON symbols instead reserve their
   full size (ELF `st_size`, COFF symbol value), using the ELF alignment carried
   by `st_value` or a 16-byte synthetic alignment for COFF, in a separate synthetic
   area after the maximum undefined-symbol slot extent. Their addresses are
