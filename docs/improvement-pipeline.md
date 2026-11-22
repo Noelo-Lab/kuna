@@ -182,7 +182,7 @@ investigating.
 ## 3. Implement: one option-gated feature
 
 Canonical template: `decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitch.rs`
-(+ its `phases.toml` row and `tests/stages/ghangr-loweredswitch.xml`). Model the code,
+(+ its `phases.d/` row and `tests/stages/ghangr-loweredswitch.xml`). Model the code,
 registration, and test on it. New logic lives in `kuna_<slug>.rs` inside the owning phase
 folder; edits to ported-core files only where an anchor demands it, each marked
 `// (kuna)`. Develop with the option **default-OFF** — default output stays
@@ -193,22 +193,15 @@ The artifact checklist (every item, or the gates fail opaquely):
 1. `decompiler/crates/kuna-decomp/src/<phase>/kuna_<slug>.rs` — the feature, early-return
    when its flag is off. Flag on the architecture struct, defaulted in its reset path.
    ElementId from the 4000+ range (grep for the current highest).
-2. `[[settable]]` row in `decompiler/crates/kuna-decomp/phases.toml` — **every field**,
+2. `[[settable]]` row in its own file `decompiler/crates/kuna-decomp/phases.d/NNNN-<slug>.toml`,
+   `NNNN` one past the highest there (`phases.d/README.md`) — **every field**,
    including the provenance contract (§below): `summary`, `use_when`, `values`+`example`,
    `tier`, `symptoms`, `source_decompiler`, `inspiration`, `change_kind`.
 3. Option name registered in `src/p0_knowledge/options.rs` (`KUNA_OPTION_NAMES`).
-4. **Bump the hard-coded catalog counts** (three places; grep the current total):
-   `src/p0_knowledge/kuna_phases/tests.rs` (count asserts),
-   `decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs` (count asserts **and** the
-   `tests/fixtures/phase_catalog.json` fixture — regenerate it with the console
-   `openfile write`/`phase catalog` recapture documented in that file's header), and the
-   `tests/stages/kuna-catalog.xml` stringmatch counts (bump whichever bucket the new
-   option's `source_decompiler`/`change_kind` lands in).
-   **After any rebase, re-derive these from a fresh capture and a green run — never from
-   arithmetic.** Two of them auto-merge *without a conflict* and are still wrong: an
-   identical `N → N+1` edit on both sides merges to `N+1` when the answer is `N+2`, and a
-   keep-both merge of `docs/baseline-stages.json` leaves a stale `data_footer`. Both were
-   hit for real; see `docs/decbench-loop.md` → *Shared counters in a busy queue*.
+4. **No counts to bump.** The catalog count tests compare against the registry, the
+   `catalog_bytecompat.rs` fixture pins six existing rows rather than the whole catalog, and
+   the `tests/stages/kuna-catalog.xml` tallies are lower bounds. Do not add a literal
+   registry-wide or corpus-wide total to any test: every PR in flight would edit it.
 5. **Two-pass stage test** `tests/stages/ghangr-<slug>.xml` (`ghdec-<slug>.xml` for
    decbench-derived fixes with no angr analog): pass 1 `option <slug> off` asserts the
    BUG, pass 2 `option <slug> on` asserts the FIX (as `ghangr-loweredswitch.xml` does —
@@ -227,7 +220,7 @@ The artifact checklist (every item, or the gates fail opaquely):
 
 **Ablation decides the default.** `kuna test` has no option flag — to measure the flip,
 temporarily set the option's default to ON (its architecture reset path + the
-`phases.toml` row's `default =`), `make binaries`, then run
+`phases.d/` row's `default =`), `make binaries`, then run
 `kuna test --all --baseline docs/baseline.json`; revert the flip if the table below says
 opt-in:
 
@@ -301,10 +294,10 @@ re-queues violations.
    when the change ships behind an option, one pass pinning the fixed output when it does
    not.
 3. **Output-changing ⇒ described; a judgement call ⇒ flaggable.** What a change does is
-   written in its `docs/spec/` chapter (and its `phases.toml` row when it has one). A change
+   written in its `docs/spec/` chapter (and its `phases.d/` row when it has one). A change
    whose outcome is a judgement — faithfulness vs readability, a speculative or destructive
    recovery, a speed trade, a heuristic scanner — sits behind a runtime `--option <name>`
-   (`phases.toml` settableTable + `kuna_option_dispatch.rs`). A **strict correctness fix**,
+   (a `phases.d/` settableTable row + `kuna_option_dispatch.rs`). A **strict correctness fix**,
    whose `off` value would only reproduce output that is false about the program, ships with
    no option and is always on. A **refinement** of an existing feature extends that feature's
    option (unconditional when the parent is on, or a new value), never a sibling flag. A
@@ -400,12 +393,12 @@ Callers retain their existing encoding, JSON layout, and permission choices.
 | `scripts/pipeline/prdemo.py` | real captured before/after markdown for the PR body. |
 | `scripts/pipeline/state.py` / `status.py` | flock-guarded claims/heartbeats/proposals; live observability. |
 | `scripts/decbench/` | the real-binary route: mine/triage/rescore/status/showcase (`docs/decbench-loop.md`). |
-| `scripts/port_status.py` | angr→kuna port coverage report (from `phases.toml` provenance + the sweep). |
+| `scripts/port_status.py` | angr→kuna port coverage report (from `phases.d/` provenance + the sweep). |
 | `tools/pipeline/` | headless drivers: `run.sh`, `worker.sh`, `worker_prompt.md`, `open_pr.sh`, `install_gh.sh`. |
 
 ## The provenance contract (what makes features LLM-discoverable)
 
-Every shipped option's `phases.toml` row must let the *next* agent discover and judge it
+Every shipped option's `phases.d/` row must let the *next* agent discover and judge it
 from `kuna catalog --json` alone: `summary` (WHAT), `use_when` (WHEN — the symptom),
 `values` + `example` (HOW), `tier` (`transform` = the on/off control surface | `core` |
 `analysis`), `symptoms` (2–5 output-shaped greppable phrases), plus provenance:

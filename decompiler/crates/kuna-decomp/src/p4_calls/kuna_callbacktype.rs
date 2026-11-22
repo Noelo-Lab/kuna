@@ -68,7 +68,7 @@
 //! declared parameter simply goes unread -- which is what a handler that
 //! ignores its signal number looks like in DWARF as well, so that shape is
 //! parked and the unused parameter is reported (see the option's row in
-//! `phases.toml` and chapter 04 of the spec).
+//! `phases.d/` and chapter 04 of the spec).
 //!
 //! The width halves are asked with or without a direct caller. A `struct ctx *`
 //! routine cast into `signal`'s `void (*)(int)` reads the whole register the

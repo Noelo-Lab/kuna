@@ -44,9 +44,9 @@ The need is a missing or broken *capability*: a subcommand that does not exist, 
 not emitted, an error that is silently swallowed, a flag that is missing. It lives in
 `decompiler/crates/kuna-cli/`, `kuna-console/` or `kuna-analysis/`.
 
-**It does NOT change emitted C, so it does NOT need a `phases.toml` option row.** The rule in
+**It does NOT change emitted C, so it does NOT need a `phases.d/` option row.** The rule in
 `docs/agents.md` is "a judgement call ships behind a named option; a fix does not" — a new
-subcommand is neither. Do not add an option. Do not touch `phases.toml`, `options.rs`,
+subcommand is neither. Do not add an option. Do not touch `phases.toml`, `phases.d/`, `options.rs`,
 `docs/options.md`, `docs/history.md`, or any catalog counter. If you find yourself editing
 `kuna_phases/tests.rs`, stop: you are on the wrong track or doing something the need did not
 ask for.
@@ -71,8 +71,8 @@ value would only reproduce C that is false about the program, ships always-on wi
 and a one-pass `tests/stages/ghdec-<slug>.xml`; a refinement of an existing option extends
 that option. Only a judgement call gets the full option ritual: one `kuna_<slug>.rs` in the
 owning phase folder, a fully-populated `[[settable]]` row, registration in
-`kuna_option_dispatch.rs`, an Architecture flag, **all four hard-coded catalog counters**
-(`python -m scripts.repipe.counters --fix`), a two-pass `tests/stages/ghdec-<slug>.xml`, the
+`kuna_option_dispatch.rs`, an Architecture flag, a green `python -m scripts.repipe.counters --check`
+(no counts to bump; the catalog tallies are lower bounds), a two-pass `tests/stages/ghdec-<slug>.xml`, the
 stages baseline re-record, `docs/options.md` regeneration, the owning `docs/spec/` chapter,
 the ablation, and `scripts.pipeline.timeit`.
 
@@ -120,7 +120,7 @@ quit
    `global add`, `dump` and `callgraph build` are confirmed examples. Porting it is real
    engine work: scope it honestly and take the `[PROPOSAL]` route rather than half-porting it.
 3. **There is no decision point at all.** Then the right shape is usually a new
-   `phases.toml` option (Track `quality`) rather than a new subcommand, because you are
+   `phases.d/` option (Track `quality`) rather than a new subcommand, because you are
    adding a *judgement call* to the pipeline, and those ship behind a named flag.
 
 Two design rules for anything in this family:

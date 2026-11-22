@@ -226,8 +226,9 @@ status), `failures` (`unit`, `data`, `data_errors`), `parity` (with `--baseline`
 `data.matched` lists the corpus files the harness ran: the whole corpus when no `--name`
 was given, so an empty corpus is `matched: []`. `unit.matched` lists the unit tests
 the harness reported running. `data` is `null` under `--unittests` and `unit` is `null`
-under `--datatests`. A saved baseline keeps its four fields only (`unit_footer`,
-`data_footer`, `passing`, `returncode`), so recording one never depends on `selection`.
+under `--datatests`. A saved baseline (`--save-baseline`) is only the sorted `passing`
+array, one key per line, so recording one never depends on `selection` and two branches
+that add different tests change different lines.
 
 A baseline must be a JSON object with one `passing` array containing only strings.
 Other metadata is optional. Malformed JSON, trailing non-whitespace content, a
@@ -4773,7 +4774,8 @@ kuna catalog --tier transform    # filter to the transform-tier control surface
 
 By default, reads the static catalog directly from the linked engine library, without
 starting `decomp_dbg` or loading SLEIGH specs. The single source of truth is
-`settableTable`, generated from `decompiler/crates/kuna-decomp/phases.toml`; the console's
+`settableTable`, generated from the one-file-per-option rows in
+`decompiler/crates/kuna-decomp/phases.d/`; the console's
 `phase catalog` command uses the same emitter. `--json` emits a JSON **array** with one
 object per option —
 `[{option,values,default,destructive_as_default,phase,subphase,strength,rewind,issue,summary,

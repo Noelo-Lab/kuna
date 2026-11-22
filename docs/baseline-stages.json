@@ -1,8 +1,4 @@
 {
-  "data_footer": [
-    5347,
-    5347
-  ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
     "data:64-bit unsigned merge retains signed conversion",
@@ -5351,7 +5347,5 @@
     "data:zeroloopfield #1: nl stores req2's type after the loop that zeroes req2",
     "data:zeroloopfield #2: no request field is copied out of another request",
     "data:zeroloopfield #3: neither type is stored from the temporary loaded before the loops, as main did"
-  ],
-  "returncode": 0,
-  "unit_footer": null
+  ]
 }

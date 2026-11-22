@@ -1,7 +1,7 @@
 //! Named kuna option handlers and the allowlist used by every frontend.
 //!
 //! Each declaration defines both the dispatch arm and its registered name.
-//! Catalog metadata remains in phases.toml and is checked against this list.
+//! Catalog metadata remains in phases.d/ and is checked against this list.
 
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::uint4;

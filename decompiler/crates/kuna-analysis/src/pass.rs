@@ -1043,7 +1043,7 @@ pub trait AnalysisPass {
     /// The phase this pass feeds (for ordering + `phase map` registry parity).
     fn phase(&self) -> Phase;
     /// Stable id used to gate the pass on/off as a settable assertion
-    /// (registered in `phases.toml`, flippable via `--option <id> on|off`).
+    /// (registered in `phases.d/`, flippable via `--option <id> on|off`).
     fn id(&self) -> &'static str;
     /// Gather facts. Pure over `ctx`; produces output, performs no engine mutation.
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput;

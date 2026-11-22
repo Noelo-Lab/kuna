@@ -44,7 +44,7 @@
 //! them at load (`bootstrap_from_object`) and commits the enabled subset into
 //! the engine's `Database`/tables at the `read symbols` boundary
 //! (`commit_pending_analysis`). Every pass is a phase-P1 settable option in
-//! `phases.toml` (`kuna catalog` lists them; `--option <id> on|off` gates the
+//! `kuna-decomp/phases.d/` (`kuna catalog` lists them; `--option <id> on|off` gates the
 //! commit, not the run).
 //!
 //! Lints are inherited from the workspace (`[lints] workspace = true`).

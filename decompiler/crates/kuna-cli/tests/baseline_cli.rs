@@ -6,9 +6,12 @@ use std::process::{Command, Output};
 use crate::common;
 
 fn run(document: &str, save_first: bool) -> Output {
-    let baseline = common::scratch_file("baseline", "json");
+    run_at(&common::scratch_file("baseline", "json"), document, save_first)
+}
+
+fn run_at(baseline: &std::path::Path, document: &str, save_first: bool) -> Output {
     let harness = common::scratch_file("passing-harness", "sh");
-    std::fs::write(&baseline, document).unwrap();
+    std::fs::write(baseline, document).unwrap();
     std::fs::write(
         &harness,
         "#!/bin/sh\nprintf 'Success -- example\\nTotal tests applied = 1\\nTotal passing tests = 1\\n'\n",
@@ -19,9 +22,9 @@ fn run(document: &str, save_first: bool) -> Output {
     cmd.args(["test", "--datatests", "--binary"])
         .arg(&harness)
         .arg("--baseline")
-        .arg(&baseline);
+        .arg(baseline);
     if save_first {
-        cmd.arg("--save-baseline").arg(&baseline);
+        cmd.arg("--save-baseline").arg(baseline);
     }
     cmd.output().expect("run parity command")
 }
@@ -78,4 +81,15 @@ fn saving_and_comparing_the_same_path_uses_the_new_record() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(String::from_utf8(out.stdout).unwrap().contains("PARITY OK"));
+}
+
+#[test]
+fn a_saved_baseline_holds_only_the_sorted_passing_keys() {
+    let baseline = common::scratch_file("saved-baseline", "json");
+    let out = run_at(&baseline, "{}", true);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        std::fs::read_to_string(&baseline).unwrap(),
+        "{\n  \"passing\": [\n    \"data:example\"\n  ]\n}"
+    );
 }

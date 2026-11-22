@@ -1682,7 +1682,7 @@ pub fn run_default_analyses(
 /// This is the per-run-gating entry: the console stashes the per-pass split at
 /// load and commits only the **enabled** passes' facts at `read symbols` (after
 /// the per-pass `--option <id> on|off` flags have been applied). The id is the
-/// pass's `id()` string, which doubles as its settable-option name (`phases.toml`
+/// pass's `id()` string, which doubles as its settable-option name (`kuna-decomp/phases.d/`
 /// + `KUNA_OPTION_NAMES`). A parse failure yields an empty list (additive, never
 /// fails). Pairs preserve pass order so the commit order is deterministic.
 pub fn run_default_analyses_per_pass(

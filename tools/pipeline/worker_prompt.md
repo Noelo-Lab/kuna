@@ -47,7 +47,7 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
    `// (kuna)` comment.
 2. **Never modify `docs/baseline.json`.** The loop must keep `kuna test --all --baseline docs/baseline.json`
    at PARITY OK without re-pinning. (You DO regenerate `docs/baseline-stages.json` to add your new stage test.)
-3. **ElementId** in the 4000+ range — grep the existing `kuna_*.rs` sources and `phases.toml`
+3. **ElementId** in the 4000+ range — grep the existing `kuna_*.rs` sources and `phases.d/`
    for the highest id already used and pick the next free one.
 4. **Decide first whether this is a FEATURE or a FIX.** A feature is a judgement call --
    faithfulness vs readability, a speculative or destructive recovery, a speed trade, a
@@ -59,8 +59,9 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
    A feature for one target (architecture, OS, format, source language) defaults on, is
    inert elsewhere, and its row names the target first. `docs/option-surface-study.md` has
    the decision record.
-   **For a feature, the option must be LLM-discoverable.** Add a `settableTable` row in
-   `decompiler/crates/kuna-decomp/phases.toml` with EVERY field populated, especially:
+   **For a feature, the option must be LLM-discoverable.** Add a `settableTable` row as its own
+   file `decompiler/crates/kuna-decomp/phases.d/NNNN-{{SLUG}}.toml` (`NNNN` one past the highest
+   there; `phases.d/README.md`) with EVERY field populated, especially:
    `source_decompiler="angr"`, `inspiration="{{TEST_NAME}}; <angr pass/class>; {{SELECTOR}}"`,
    `change_kind` ∈ correctness-fix|presentation-default|structure-recovery|opt-in-tool, plus `summary` (WHAT), — plus `tier` (transform if it restructures/duplicates/removes/inserts code; core if near-always-better rendering; analysis for prep passes) and `symptoms` (2–5 output-shaped phrases an LLM would grep for).
    `use_when` (the angr-vs-kuna symptom = WHEN), `example` (HOW). Register the option in
@@ -87,7 +88,7 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
   `tests/stages/README.md`, and the **loweredswitch** feature as the canonical template:
   `git log --oneline | grep loweredswitch`, then read
   `decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitch.rs`, its anchors in `coreaction*.rs` /
-  `universalaction.rs` / `options.rs` / `architecture.rs` / `phases.toml`, and
+  `universalaction.rs` / `options.rs` / `architecture.rs` / `phases.d/`, and
   `tests/stages/ghangr-loweredswitch.xml`.
 - Reproduce the gap: `{{KUNA_PY}} -m scripts.pipeline.compare --entry {{TEST_NAME}}` (read both
   decompilations and the metrics/signals). Confirm angr really is better and pin down the *one*
@@ -123,12 +124,8 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
   the `universalAction` registration (`coreaction*.rs` / `universalaction.rs`) and the option in
   `options.rs`, and add the `settableTable` row (rule 4). Gate the action to early-return when the
   flag is off so default output is byte-identical.
-- **Bump the hard-coded catalog counts** (adding an option changes them in THREE places; missing one
-  fails `make rust-test`/`make test-stages` opaquely): the count asserts in
-  `src/p0_knowledge/kuna_phases/tests.rs`; the count asserts AND the `tests/fixtures/phase_catalog.json`
-  fixture in `decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs` (regenerate the fixture with the
-  console recapture documented in that file's header); and the `tests/stages/kuna-catalog.xml` stringmatch
-  counts (bump whichever bucket your `source_decompiler`/`change_kind` lands in).
+- **No catalog counts to bump**: the count tests compare against the registry and the
+  `tests/stages/kuna-catalog.xml` tallies are lower bounds. Do not add a literal total anywhere.
 
 ### 4. build + test
 - `make binaries`. Then write `tests/stages/ghangr-{{SLUG}}.xml`: for a feature, a two-pass `decompilertest` — pass 1 with

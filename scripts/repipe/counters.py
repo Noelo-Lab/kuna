@@ -10,36 +10,30 @@ a fresh capture on the rebased tree, never by arithmetic.** There is deliberatel
 "base + mine + theirs" anywhere below -- every number is measured now, from phases.toml,
 from a live `kuna catalog --json`, and from the files on disk.
 
-The counters, how each is measured, and where each is hard-coded:
+The counters and how each is measured. None is hard-coded any more: the Rust tests compare
+against the registry (phases.toml + phases.d/) instead of a literal, so a new option or stage
+test edits no shared number. What is left to check here:
 
-    settables (127)         `[[settable]]` blocks in kuna-decomp/phases.toml
-                            -> kuna_phases/tests.rs   2 asserts + the test fn NAME
-                            -> catalog_bytecompat.rs  3 FIXTURE.matches asserts + the fn NAME
-    tiers (28/52/47)        row["tier"] tally from `kuna catalog --json`
-                            -> kuna_phases/tests.rs   the tuple assert + the test fn NAME
-    catalog buckets         field/value tallies over the same catalog rows
+    settables               `[[settable]]` rows in phases.toml + phases.d/, against the live
+                            `kuna catalog --json` (a stale binary disagrees)
+    tiers                   row["tier"] tally from `kuna catalog --json`; every row has one
+    catalog buckets         field/value tallies over the catalog rows
                             -> tests/stages/kuna-catalog.xml  per-bucket stringmatch min/max
-    stage corpus (222)      tests/datatests/*.xml + tests/stages/*.xml, non-recursive
-                            -> kuna-base/src/xml.rs   "corpus file count drifted"
-    next ElementId (4132)   max `ElementId::new(_, N)` for N >= 4000, plus one. No hard-coded
+                               (lower bounds: the derived tally must sit inside the range)
+    stage corpus            tests/datatests/*.xml + tests/stages/*.xml, reported only
+    next ElementId          max `ElementId::new(_, N)` for N >= 4000, plus one. No hard-coded
                             site: the convention is "grep for the current highest"
                             (docs/agents.md, docs/improvement-pipeline.md).
 
-The test function NAMES are checked as sites in their own right. They encode the number, no
-compiler or test run disagrees with a stale one, and `settable_count_is_117` guarding an
-`assert_eq!(..., 127)` is exactly the artifact a silent auto-merge leaves behind.
-
-`decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json` is NOT rewritten here. It
-is *captured bytes* -- guessing at them is how the byte-compat gate stops meaning anything.
-When it disagrees with the derived settable count this module reports an unfixable drift and
-prints the recapture recipe, read out of catalog_bytecompat.rs's own module header so the
-recipe cannot drift away from the gate that consumes it.
+`decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog_rows.json` is NOT rewritten here.
+It is *captured bytes* for six pinned rows; `--recipe` prints the recapture, read out of
+catalog_bytecompat.rs's own module header so it cannot drift away from the gate.
 
 CLI:
     python -m scripts.repipe.counters                     # check; exit 1 on drift
     python -m scripts.repipe.counters --rederive --json   # measure now, report; read-only
     python -m scripts.repipe.counters --fix               # rewrite every fixable site
-    python -m scripts.repipe.counters --recipe            # the phase_catalog.json recapture
+    python -m scripts.repipe.counters --recipe            # the phase_catalog_rows.json recapture
 """
 from __future__ import annotations
 
@@ -53,6 +47,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from . import config
+from .. import paths
 from ..atomic import atomic_text_writer
 
 CATALOG_TIMEOUT = int(os.environ.get("REPIPE_CATALOG_TIMEOUT", "300"))
@@ -63,11 +58,8 @@ ELEMENT_ID_BASE = int(os.environ.get("REPIPE_ELEMENT_ID_BASE", "4000"))
 CORPUS_DIRS = ("tests/datatests", "tests/stages")
 
 REL_PHASES_TOML = "decompiler/crates/kuna-decomp/phases.toml"
-REL_TESTS_RS = "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases/tests.rs"
 REL_BYTECOMPAT_RS = "decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs"
-REL_CATALOG_FIXTURE = "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json"
 REL_CATALOG_XML = "tests/stages/kuna-catalog.xml"
-REL_BASE_XML_RS = "decompiler/crates/kuna-base/src/xml.rs"
 
 TIERS = ("core", "transform", "analysis")
 
@@ -191,41 +183,17 @@ def rewrite_literal(path, pattern, expected) -> int:
 # (site id, repo-relative path, regex whose numbered groups hold the number(s),
 #  key into the derived dict supplying the expected value(s)).
 
-SITES = (
-    ("phases-tests.fn-name-settables", REL_TESTS_RS,
-     r"fn settable_count_is_(\d+)\(\)", "settables"),
-    ("phases-tests.kuna_num_settables", REL_TESTS_RS,
-     r"assert_eq!\(kuna_num_settables\(\), (\d+)\)", "settables"),
-    ("phases-tests.SETTABLE_TABLE-len", REL_TESTS_RS,
-     r"assert_eq!\(SETTABLE_TABLE\.len\(\), (\d+)\)", "settables"),
-    ("phases-tests.fn-name-tiers", REL_TESTS_RS,
-     r"fn tier_counts_are_(\d+)_core_(\d+)_transform_(\d+)_analysis\(\)", "tier_tuple"),
-    ("phases-tests.tier-tuple", REL_TESTS_RS,
-     r"assert_eq!\(\(core, transform, analysis\), \((\d+), (\d+), (\d+)\)\)", "tier_tuple"),
-    ("bytecompat.fn-name-settables", REL_BYTECOMPAT_RS,
-     r"fn fixture_has_all_(\d+)_settables\(\)", "settables"),
-    ("bytecompat.fixture-matches", REL_BYTECOMPAT_RS,
-     r'FIXTURE\.matches\("\\"(?:option|tier|symptoms)\\": "\)\.count\(\), (\d+)\)', "settables"),
-    ("phases-tests.catalog-json-records", REL_TESTS_RS,
-     r'assert_eq!\(json\.matches\("\},\\n"\)\.count\(\), (\d+)\)', "settables_minus_one"),
-    ("base-xml.corpus-count", REL_BASE_XML_RS,
-     r'assert_eq!\(count, (\d+), "corpus file count drifted"\)', "corpus_files"),
-)
+SITES = ()
 
 
 # --- derivation -------------------------------------------------------------
 
 def settables_from_phases_toml(repo=None) -> int:
-    """`grep -c '^\\[\\[settable\\]\\]' phases.toml` -- the authoritative per-option list."""
+    """`[[settable]]` rows in phases.toml + phases.d/ -- the authoritative per-option list."""
     p = path_of(REL_PHASES_TOML, repo)
     if not p.exists():
         raise DeriveError("phases.toml missing at {}".format(p))
-    n = 0
-    with open(p, "r", encoding="utf-8", errors="replace") as fh:
-        for line in fh:
-            if line.startswith("[[settable]]"):
-                n += 1
-    return n
+    return sum(1 for line in paths.phases_text(p).splitlines() if line.startswith("[[settable]]"))
 
 
 def catalog_rows(repo=None, kuna=None) -> list:
@@ -374,19 +342,11 @@ def derive(repo=None, kuna=None) -> dict:
     corpus = corpus_counts(repo=repo)
     toml_n = settables_from_phases_toml(repo=repo)
     eids = element_ids(repo=repo)
-    fixture = path_of(REL_CATALOG_FIXTURE, repo)
-    fixture_n = (fixture.read_text(encoding="utf-8").count('"option": ')
-                 if fixture.exists() else None)
     return {
         "repo": str(_root(repo)),
         "settables": len(rows),
-        # The static catalog JSON separates records with "},\n", so the last record
-        # has none: one fewer than the settable count. Its own site, because a
-        # regex that fixed it to `settables` would write the wrong number.
-        "settables_minus_one": len(rows) - 1,
         "settables_phases_toml": toml_n,
         "settables_catalog": len(rows),
-        "settables_fixture": fixture_n,
         "tiers": tiers,
         "tier_tuple": [tiers[t] for t in TIERS],
         "tier_order": list(TIERS),
@@ -435,18 +395,13 @@ def check(derived=None, repo=None, kuna=None) -> list:
                              "min={} max={} (derived {})".format(lo, hi, exp),
                              "a range containing {}".format(exp), False,
                              "deliberately loose bucket; widen it by hand"))
-
-    if d["settables_fixture"] is not None and d["settables_fixture"] != d["settables"]:
-        out.append(Drift("bytecompat.fixture-capture", REL_CATALOG_FIXTURE, 0, "settables",
-                         str(d["settables_fixture"]), str(d["settables"]), False,
-                         "captured bytes: recapture, never edit (see --recipe)"))
     return out
 
 
 # --- fixing -----------------------------------------------------------------
 
 def recapture_recipe(repo=None) -> str:
-    """The phase_catalog.json recapture, read out of catalog_bytecompat.rs's own header.
+    """The phase_catalog_rows.json recapture, read out of catalog_bytecompat.rs's own header.
 
     Reading it rather than restating it means the recipe cannot drift away from the gate
     that consumes the capture -- and the "no program loaded" condition, which is the part a
@@ -462,10 +417,10 @@ def recapture_recipe(repo=None) -> str:
         elif header:
             break
     doc = "\n".join(header)
-    idx = doc.find("## Regenerating the fixture")
+    idx = doc.find("## What is compared")
     body = doc[idx:] if idx >= 0 else doc
     fences = re.findall(r"```sh\n(.*?)```", body, re.S)
-    lead = ("Recapture decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json.\n"
+    lead = ("Recapture decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog_rows.json.\n"
             "It is CAPTURED BYTES, with NO PROGRAM LOADED so kunaLiveValue returns \"\" and no\n"
             "`current` field is emitted. Never hand-edit it, and never re-capture with a program\n"
             "loaded -- `current` is architecture-dependent and is not a byte contract.\n")
@@ -510,9 +465,8 @@ def fix(derived=None, repo=None, kuna=None):
 
 def _print_derived(d) -> None:
     e = d["element_ids"]
-    print("settables            {}   (phases.toml {} / catalog {} / fixture {})".format(
-        d["settables"], d["settables_phases_toml"], d["settables_catalog"],
-        d["settables_fixture"]))
+    print("settables            {}   (phases.toml + phases.d {} / catalog {})".format(
+        d["settables"], d["settables_phases_toml"], d["settables_catalog"]))
     print("tiers                ({}, {}, {})  core/transform/analysis".format(*d["tier_tuple"]))
     print("stage-corpus files   {}   ({})".format(
         d["corpus_files"],
@@ -539,7 +493,7 @@ def main(argv=None) -> int:
     ap.add_argument("--fix", action="store_true",
                     help="rewrite every fixable site to the derived value")
     ap.add_argument("--recipe", action="store_true",
-                    help="print the phase_catalog.json recapture recipe and exit")
+                    help="print the phase_catalog_rows.json recapture recipe and exit")
     ap.add_argument("--repo", default=None, help="repo root (default: config.repo_root())")
     ap.add_argument("--kuna", default=None, help="kuna binary (default: config.kuna_bin())")
     ap.add_argument("--json", action="store_true", help="machine-readable output")

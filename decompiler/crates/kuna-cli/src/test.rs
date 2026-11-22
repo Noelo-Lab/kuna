@@ -468,7 +468,7 @@ pub fn run_cmd(args: &TestArgs) -> i32 {
     passkeys.sort();
     let selection_errors = result.selection_errors();
 
-    // The baseline record (also the --save-baseline content).
+    // The run record (the --json body).
     let record_json = |passkeys: &[String]| -> Json {
         Json::Object(vec![
             ("unit_footer".into(), footer_json(result.unit.footer)),
@@ -485,7 +485,7 @@ pub fn run_cmd(args: &TestArgs) -> i32 {
         if !selection_errors.is_empty() {
             eprintln!("error: not writing baseline {path}: the test selection is incomplete");
         } else {
-            let body = dumps_indent2_sorted(&record_json(&passkeys));
+            let body = dumps_indent2_sorted(&baseline_json(&passkeys));
             match std::fs::write(path, body) {
                 Ok(()) => eprintln!(
                     "baseline written to {} ({} passing keys)",
@@ -641,6 +641,15 @@ pub fn run_cmd(args: &TestArgs) -> i32 {
     crate::output::emit_with_status(&text, rc)
 }
 
+/// The `--save-baseline` content: the sorted passing keys, one per line and nothing
+/// else, so two branches that each add tests touch different lines of the file.
+fn baseline_json(passkeys: &[String]) -> Json {
+    Json::Object(vec![(
+        "passing".into(),
+        Json::Array(passkeys.iter().map(|k| Json::Str(k.clone())).collect()),
+    )])
+}
+
 fn footer_json(f: Option<(i64, i64)>) -> Json {
     match f {
         Some((a, b)) => Json::Array(vec![
@@ -718,6 +727,13 @@ Total passing tests = 1
         assert!(keys.contains("data:A @dup2"));
         assert!(keys.contains("data:B"));
         assert_eq!(keys.len(), 3);
+    }
+
+    #[test]
+    fn saved_baseline_is_only_the_passing_keys() {
+        let keys = ["data:a".to_string(), "data:b".to_string()];
+        let want = "{\n  \"passing\": [\n    \"data:a\",\n    \"data:b\"\n  ]\n}";
+        assert_eq!(dumps_indent2_sorted(&baseline_json(&keys)), want);
     }
 
     #[test]
