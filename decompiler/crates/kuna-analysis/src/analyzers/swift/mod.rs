@@ -90,11 +90,25 @@ impl AnalysisPass for SwiftMetadataPass {
                 elf_relative_relocs(ctx.file),
             );
         }
-        let mut imports: HashMap<u64, String> =
-            crate::loader::format::resolve_imports(ctx.file, ctx.bytes)
-                .into_iter()
-                .filter_map(|s| String::from_utf8(s.name).ok().map(|n| (s.addr, n)))
-                .collect();
+        let resolved: Vec<(u64, String, bool)> = crate::loader::format::resolve_imports(ctx.file, ctx.bytes)
+            .into_iter()
+            .filter_map(|s| {
+                let import = s.kind == crate::loader::format::ImportSymKind::Import;
+                String::from_utf8(s.name).ok().map(|n| (s.addr, n, import))
+            })
+            .collect();
+        let stub_sections: Vec<(u64, u64)> = ctx
+            .file
+            .sections()
+            .filter(crate::analyzers::entry::is_executable)
+            .map(|s| (s.address(), s.address().saturating_add(s.size())))
+            .collect();
+        let import_stubs: Vec<(u64, String)> = resolved
+            .iter()
+            .filter(|(a, _, import)| *import && stub_sections.iter().any(|&(lo, hi)| (lo..hi).contains(a)))
+            .map(|(a, n, _)| (*a, n.clone()))
+            .collect();
+        let mut imports: HashMap<u64, String> = resolved.into_iter().map(|(a, n, _)| (a, n)).collect();
         if ctx.file.format() == object::BinaryFormat::MachO {
             for (slot, name) in crate::loader::macho_stubs::resolve_macho_data_import_slots(ctx.file, ctx.bytes) {
                 if let Ok(name) = String::from_utf8(name) {
@@ -199,7 +213,7 @@ impl AnalysisPass for SwiftMetadataPass {
                 .filter(|s| s.kind() == object::SymbolKind::Text && s.is_definition())
                 .filter_map(|s| Some((s.address(), s.name().ok()?.to_string())))
                 .collect();
-            kuna_swiftcall::bind(&types, regs, &symbols, &mut out);
+            kuna_swiftcall::bind(&types, regs, &symbols, &import_stubs, &mut out);
         }
         out
     }

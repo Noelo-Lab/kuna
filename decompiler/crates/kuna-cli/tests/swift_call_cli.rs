@@ -49,6 +49,20 @@ fn a_throwing_call_keeps_its_error_test() {
     assert!(!off.contains("swift_release"), "{off}");
 }
 
+/// A throwing function hands its own error register on to the throwing
+/// functions of another image it calls (no zeroing store before the call):
+/// the stub's mangled name says the callee throws, so each test after a call
+/// reads that call's error.
+#[test]
+fn a_call_to_a_throwing_import_keeps_its_error_test() {
+    let on = decompile("swift_call_import_elf", "0x3260", &[]);
+    assert_eq!(on.matches(" = swift_error();").count(), 3, "{on}");
+    assert!(on.contains("swift_release(v9);"), "{on}");
+    assert!(on.contains("v3 = (char *)0x7;"), "{on}");
+    let off = decompile("swift_call_import_elf", "0x3260", &["--option", "swiftcall", "off"]);
+    assert!(!off.contains("swift_release"), "{off}");
+}
+
 /// arm64 callers test x21 the way the rule must see: a debug build copies it
 /// and stores the copy before its `cbnz x21`, and a select compares it with an
 /// immediate zero the instruction loads into a temporary.

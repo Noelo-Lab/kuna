@@ -2649,6 +2649,24 @@ that their `__swiftcall_throws` rule stays off, so the zero stays a zero.
 `<nativefix.Impl:nativefix.ClassOnly>.requirement#0.getter` (`0xe70`) is the witness
 of a class-bound protocol on a class, whose `self` is the reference itself.
 
+### `swift_call_import_elf` — a throwing function calling throwing imports (`swiftcall`)
+
+`swift_call_import_elf` (x86-64 ELF shared object, 28 KB, SHA-256
+`23508896a240b3a1270dc6e34e4f687b747ab7300d635e2b37ed4976e573816a`) is built from
+`swift_call_import_elf.swift` with swiftc 6.4.2:
+
+```bash
+swiftc -O -module-name importfix -emit-library swift_call_import_elf.swift -o swift_call_import_elf
+```
+
+Its `DT_RUNPATH` was blanked after the build (the toolchain path overwritten with
+NULs in `.dynstr`); the checksum is of the blanked file. `Pair.init(from:)`'s
+specialization (`0x3260`) calls three throwing functions of the standard library
+through the PLT: the `Decoder.container(keyedBy:)` dispatch thunk and
+`KeyedDecodingContainer.decode(_:forKey:)` twice, the second under `try?`. Being
+a throwing function itself, it never zeroes r12: it spills the zero its own
+caller passed and reloads it into r12 before each call, then tests r12.
+
 ### `swift_call_arm64_elf` — arm64 callers that test x21 after a throwing call (`swiftcall`)
 
 `swift_call_arm64_elf` (arm64 ELF shared object, 11 KB, SHA-256

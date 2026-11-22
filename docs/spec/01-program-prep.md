@@ -6285,7 +6285,13 @@ every other binary's pass list is byte-identical to before the pass existed):
   function type, or an await/suspend resume partial of one) to
   `__swiftasynccall` / `__swiftasynccall_throws`, which also take the task's
   context in the `swiftasync` register (x22 / r14; hinted as
-  `swift.AsyncContext *async_context`). Where the whole signature of a
+  `swift.AsyncContext *async_context`). An import stub (a PLT entry or a
+  Mach-O `__stubs` entry, in a code section) whose symbol demangles to a
+  throwing function of another image that is not `async`, a protocol
+  requirement's dispatch thunk included, binds `__swiftcall_throws` with no
+  `self` type: a throwing function calls such imports with the error register
+  holding the zero its own caller passed, reloaded rather than stored, so the
+  zeroing-store rule of 04 §4.4 does not see the call. Where the whole signature of a
   symbol-named function maps to kuna types the arm declares its prototype
   instead of binding the model alone (§4, `swiftcall`). A static member of a struct or enum
   binds nothing: its metatype is thin and passed nowhere. Specializations,
