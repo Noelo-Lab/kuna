@@ -2700,7 +2700,15 @@ classified:
   ... }`) scored that input as no argument and printed `half()`. Where the model
   also has a narrower float slot at the same address (ARM `s0` inside `d0`) the
   callee must read the whole slot, so two floats read as the halves of `d0` stay
-  two words. A variadic callee is left alone: one that reads the model's last
+  two words. A callee that only stores the next float slot of the same width
+  is left to the other rules too: newlib's ARM `__ieee754_fmodf` spills `s1` with `vstr` and reloads it
+  as an integer, a read the entry walk does not count, and activating `s0`
+  alone would have turned `fmodf`'s `__ieee754_fmodf(a0,a1)` into
+  `__ieee754_fmodf(a0)`. A float trial this rule activates does not count as
+  the call having recovered something for `calleearitybody`, which still plans
+  the whole list off the same body: crazyflie's `plan_current_goal` passes
+  `piecewise_eval_reversed` a struct-return pointer in `r0`, `traj` in `r1` and
+  `t` in `s0`, and keeps all three. A variadic callee is left alone: one that reads the model's last
   float argument register (a register-save prologue saves `xmm0`-`xmm7`) or that
   reads, on entry, a general register that carries the return value and no
   argument (SysV `test %al,%al` on the vector-register count). Two other gates

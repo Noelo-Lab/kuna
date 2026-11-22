@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5007,
-    5007
+    5008,
+    5008
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3172,6 +3172,7 @@
     "data:calleefloatreads #11: twocalls passes its d0 to the first scale",
     "data:calleefloatreads #12: twocalls passes the computed double to the second scale",
     "data:calleefloatreads #13: a3 and a7 forward their d0 to half",
+    "data:calleefloatreads #14: a callee that reads s0 and only spills s1 is passed both",
     "data:calleefloatreads #1: off, neither setf call takes xmm0",
     "data:calleefloatreads #2: by default setf takes the loaded constant",
     "data:calleefloatreads #3: by default setf takes the float converted after the pxor",
