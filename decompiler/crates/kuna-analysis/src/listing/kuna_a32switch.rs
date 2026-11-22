@@ -120,7 +120,7 @@ impl<'a> A32Tables<'a> {
             if op.opcode == OpCode::CPUI_BRANCHIND {
                 let shape = op.ins.first().and_then(|vn| value_of(vn, &vals, data));
                 let words = match shape {
-                    Some(Val::Entry { table, width: 4 }) if table == base => true,
+                    Some(Val::Entry { table, width: 4, .. }) if table == base => true,
                     Some(Val::Indexed(table)) if table == base => false,
                     _ => return TableRead::default(),
                 };
@@ -143,7 +143,7 @@ impl<'a> A32Tables<'a> {
                 if targets.is_empty() {
                     return TableRead::default();
                 }
-                return TableRead { cases: targets, stated: Some(cases), gap: None };
+                return TableRead { cases: targets, stated: Some(cases), gap: None, unbounded: false };
             }
             if index.is_none()
                 && matches!(op.opcode, OpCode::CPUI_INT_LEFT | OpCode::CPUI_INT_MULT | OpCode::CPUI_INT_ADD)

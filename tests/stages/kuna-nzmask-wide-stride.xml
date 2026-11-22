@@ -42,7 +42,7 @@
   <com>decompile</com>
   <com>print C</com>
 </script>
-<stringmatch name="GH1661 #1: pick decompiles with the bit test as its guard" min="1" max="1">if \(0 &lt;= \(int8\)\(a0 &lt;&lt; 0x23\)\)</stringmatch>
+<stringmatch name="GH1661 #1: pick decompiles with the bit test as its guard" min="1" max="1">if \(\(int8\)\(a0 &lt;&lt; 0x23\) &lt;= -1\)</stringmatch>
 <stringmatch name="GH1661 #2: the clear-bit arm reaches a" min="1" max="1">return \*\(int4 \*\)\(a0 &amp; 0xffffffff\);</stringmatch>
 <stringmatch name="GH1661 #3: the set-bit arm reaches b" min="1" max="1">return \*\(int4 \*\)\(\(a0 &amp; 0xffffffff\) \+ 8\);</stringmatch>
 </decompilertest>

@@ -182,6 +182,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "partialaccess" => on_off(conf.print().options.partial_access),
         "infloopstyle" => if conf.print().options.inf_loop_top { "while" } else { "do" },
         "loopcontinue" => on_off(conf.loop_continue),
+        "postinc" => on_off(conf.post_increment),
         "compareform" => {
             if conf.present_lessequal {
                 "original"
@@ -196,6 +197,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "callarrayextent" => on_off(conf.call_array_extent),
         "stackstruct" => on_off(conf.stack_struct),
         "globalarrayanchor" => on_off(conf.global_array_anchor),
+        "opaquepredicate" => on_off(conf.opaque_predicate),
         "memsetrecover" => on_off(conf.memset_recover),
         "rodatastring" => on_off(conf.rodata_string),
         "returnpair" => {
