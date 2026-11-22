@@ -1558,6 +1558,9 @@ pub struct ArchContext {
     /// (kuna `swiftcall`) The Swift registers and the throwing model, when the
     /// image binds the Swift convention ([`crate::kuna_swiftcall`]).
     pub swift_abi: Option<Rc<crate::kuna_swiftcall::SwiftAbi>>,
+    /// (kuna `swiftmetadata`) Each local Swift enum's case count by its
+    /// metadata accessor's entry offset (`p2_lift/kuna_switchextent.rs`).
+    pub swift_enum_cases: Rc<std::collections::BTreeMap<u64, u32>>,
     /// (kuna `calleereginputs`) The `__thiscall` model, the ECX storage a
     /// virtual call reads its `this` from and EAX's, when the option applies.
     pub virtual_this: Option<(Rc<crate::fspec::ProtoModel>, kuna_base::address::Address, int4, kuna_base::address::Address)>,
@@ -1600,6 +1603,7 @@ impl ArchContext {
             callee_proto_models: Vec::new(),
             bound_proto_models: Rc::default(),
             swift_abi: None,
+            swift_enum_cases: Rc::default(),
             virtual_this: None,
             defaultfp: None,
             evalfp_current: None,
@@ -2384,6 +2388,18 @@ impl ArchContext {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
         }
+    }
+
+    /// (kuna `switchextent`) The name of the function symbol that starts at
+    /// `entry`, without building its prototype as [`Self::query_function`] does.
+    pub fn function_name_at(&self, entry: &Address) -> Option<String> {
+        let query = self.effective_global_query(entry)?;
+        let space_index = entry.get_space()?.get_index();
+        let name = query
+            .entries_starting_at(space_index, entry.get_offset())
+            .find(|e| e.is_function)
+            .map(|e| e.symbol_name.clone());
+        name
     }
 
     /// (kuna `switchrunon`) Whether `b` lies in the load-image section that

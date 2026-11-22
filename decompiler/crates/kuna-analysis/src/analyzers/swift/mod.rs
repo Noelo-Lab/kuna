@@ -152,6 +152,13 @@ impl AnalysisPass for SwiftMetadataPass {
             .analysis_valuewitness
             .then(|| kuna_swiftwitness::claim(&reader, &md, ctx.file.architecture(), &namer));
         let mut metadata_ptr = None;
+        out.swift_enum_cases = md
+            .contexts
+            .values()
+            .filter(|c| c.kind == ContextKind::Enum && c.num_cases > 0)
+            .filter_map(|c| Some((c.accessor?, c.num_cases)))
+            .collect();
+        out.swift_enum_cases.sort_unstable();
         if ctx.arch.analysis_swifttypes {
             let mut types = kuna_swifttypes::Types::new(
                 &md,

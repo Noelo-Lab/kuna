@@ -1230,11 +1230,19 @@ pub struct Architecture {
     /// one op across several leaves, and suppressing by identity would delete
     /// genuine mid-body early returns).
     pub voidtailreturn: bool,
+    /// (kuna `switchmerge`) Print a C `switch` whose `default:` arm is only
+    /// another switch on the same selector as one `switch`, and leave out the
+    /// labels of arms that jump to the code `default:` runs.
+    pub switchmerge: bool,
     /// (kuna `importdata`) Render a data read through a loader-marked import slot
     /// (a GOT / `__got` / `__auth_got` / IAT entry holding an import's address) as
     /// the import itself, instead of a dereference of the anonymous slot. Default
     /// **on**.
     pub import_data: bool,
+    /// (kuna `importdata`) `(space index, offset)` of each import slot whose
+    /// import is a data object (`machodataslots`): a read of the slot's own
+    /// value renders `&<import>`.
+    pub data_import_slots: std::collections::BTreeSet<(int4, uintb)>,
     /// (kuna `castimplied`) Leave out a cast C's own conversion rules already
     /// perform: a value-preserving integer widening passed to a trusted
     /// parameter, assigned to or returned as exactly its type, or stacked under
@@ -1970,6 +1978,9 @@ pub struct Architecture {
     /// (kuna `swiftcall`) The Swift registers and the throwing model
     /// ([`crate::kuna_swiftcall`]).
     pub loader_swift_abi: Option<Rc<crate::kuna_swiftcall::SwiftAbi>>,
+    /// (kuna `swiftmetadata`) Each local Swift enum's case count by its
+    /// metadata accessor's entry offset (`p2_lift/kuna_switchextent.rs`).
+    pub loader_swift_enum_cases: Rc<std::collections::BTreeMap<u64, u32>>,
     /// (kuna) Gate the PE PDB metadata recovery pass (`pdb`); default **off**. The
     /// kuna analog of Ghidra's `PdbUniversalAnalyzer` (the pure-Java PDB analyzer;
     /// the MS-DIA `PdbAnalyzer` is Windows-native and out of scope) — the
@@ -2566,8 +2577,10 @@ impl Architecture {
             realtypes: false,
             ctypes: false, // (kuna) option ctypes; reset_defaults sets the shipped default
             voidtailreturn: false, // (kuna) option voidtailreturn; reset_defaults sets the shipped default
+            switchmerge: false, // (kuna) option switchmerge; reset_defaults sets the shipped default
             goto_next: false, // (kuna) option gotonext; reset_defaults sets the shipped default
             import_data: false,
+            data_import_slots: std::collections::BTreeSet::new(),
             cast_implied: false, // (kuna) option castimplied; reset_defaults sets the shipped default
             cast_sign: false, // (kuna) option castsign; reset_defaults sets the shipped default
             cast_ternary: false, // (kuna) option castternary; reset_defaults sets the shipped default
@@ -2698,6 +2711,7 @@ impl Architecture {
             loader_proto_models: Rc::default(),
             loader_input_hints: std::collections::BTreeMap::new(),
             loader_swift_abi: None,
+            loader_swift_enum_cases: Rc::default(),
             analysis_pdb: true,
             macho_arm64e: false,
 
@@ -2884,6 +2898,7 @@ impl Architecture {
         self.ctypes = false; // (kuna) DIV-75: default-OFF in the catalog because the datatest corpus pins `int4`/`float8` spellings in 42 assertions; ON in the `aggressive` and `fast` presets and at every `auto` size, so valid C is the default RENDERING everywhere a real binary is decompiled
         self.goto_next = true; // (kuna) option gotonext default-on: upstream BlockGoto::gotoPrints; only the spelling of a jump changes; 0/675 datatests
         self.voidtailreturn = true; // (kuna) option voidtailreturn default-on (DIV-98); `option voidtailreturn off` restores the trailing `return;`
+        self.switchmerge = true; // (kuna) option switchmerge default-on; `option switchmerge off` prints every jump-table arm of every nested switch
         self.import_data = true; // (kuna) option importdata default-on; `option importdata off` keeps the `*dat_<slot>` dereference
         self.cast_implied = true; // (kuna) option castimplied default-on: leaves out only a value-preserving integer conversion C performs itself (argument to a type-locked parameter, assignment to a local or parameter declared that spelling, return, or under another conversion); 1/675 datatest assertion moved (Union #26, the intended form, pinned to upstream by a per-test opt-out), 10 stage assertions moved to the new form, speed within budget; docs/features/castimplied/default-on-evaluation.md
         self.cast_sign = true; // (kuna) option castsign default-on: a frame local or pointer index only ever compared signed, never an operand of + - * <<, and never met by a top-bit constant in == != & | ^, is declared signed; 0/675 datatest assertions and 0 stage assertions moved, test-cli unchanged, the 444-slice typesweep identical, casts 38,703 -> 38,602 on the census corpus, 41 functions fewer and 0 more; docs/features/castsign/default-on-evaluation.md
@@ -3850,6 +3865,7 @@ impl Architecture {
             };
         ctx.bound_proto_models = Rc::clone(&self.loader_proto_models);
         ctx.swift_abi = self.loader_swift_abi.clone();
+        ctx.swift_enum_cases = Rc::clone(&self.loader_swift_enum_cases);
         ctx.virtual_this = crate::p4_calls::kuna_calleereginputs::virtual_this(self);
         // Carry the constant-pointer-inference config (C++ `glb->infer_pointers`)
         // and the ordered inferable-pointer spaces (C++ `glb->inferPtrSpaces`,
