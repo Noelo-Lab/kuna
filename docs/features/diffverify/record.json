@@ -160,6 +160,12 @@
       }
     }
   },
+  "ci": {
+    "baseline": "docs/baseline-verify.json",
+    "make": "make verify-corpus",
+    "workflow_step": "parity gates: diffverify corpus vs docs/baseline-verify.json (non-gating)",
+    "regression": "a function that newly differs, or a file that can no longer be checked"
+  },
   "declared_divergences": [
     "returnpair-rdx-zero",
     "switchrunon-cut-row",

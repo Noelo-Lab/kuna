@@ -331,6 +331,22 @@ first, and S1 reuses C5's expressions.
 gate only once the `DIFFERS` set is empty or every entry is a declared divergence, with a
 baseline file like `docs/baseline.json`.
 
+That job exists: `make verify-corpus`, and a `continue-on-error` step of the parity-gates
+job in `.github/workflows/tests.yml`. Each function's verdict class over
+`tests/datatests` + `tests/stages` is pinned in `docs/baseline-verify.json`:
+- `AGREES`, `DIFFERS`, `DIVERGES(id)` or `UNKNOWN(reason)`;
+- no run count and no address, so the file changes only when a verdict does.
+
+A function that now differs, or a file that can no longer be checked, is an error
+annotation, and `make verify-corpus` exits 1. Every other change is a notice. The step
+uploads the verdict table and its own recording of the baseline. Re-record:
+`make verify-corpus VERIFY_ARGS='--save-baseline docs/baseline-verify.json'`.
+
+Each file is checked in a worker process of its own. A process that checked
+`kuna-ppc32picimports-abi` or `-reversed-save` before `kuna-ppc32picimports` decompiles
+`check` differently there: as `__stack_chk_fail();` instead of `sub_1800(); return 7;`.
+So verdicts that depended on how files were spread over workers now do not.
+
 ## Cost
 
 C1 measured Tier C (`c1-results.md` §5): 3.6 s of checking for 3,979 functions over both

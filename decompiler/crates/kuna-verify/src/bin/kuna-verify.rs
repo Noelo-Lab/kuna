@@ -2,29 +2,31 @@
 //!
 //! ```text
 //! kuna-verify check <binary> <function|0xaddr>... | --all  [--contract FILE.c] [--option NAME VALUE]...
-//! kuna-verify corpus <test.xml|dir>...  [--jobs N]
+//! kuna-verify corpus <test.xml|dir>...  [--jobs N] [--baseline FILE] [--save-baseline FILE]
 //! common: [--runs N] [--seed S] [--budget OPS] [--json] [--sleighpath DIR]
 //! ```
 //!
-//! `corpus --jobs N` runs N worker processes of this binary (`shard`), each
-//! printing one JSON line per file, so a file that crashes the engine costs
-//! only its own verdicts.
+//! `corpus --jobs N` checks N files at a time, each in a worker process of
+//! this binary (`shard`) that prints one JSON line, so a file's verdicts do
+//! not depend on the files checked before it and a crash costs only its own.
 //!
 //! Exit status: 1 when a function differs, 3 when a file could not be checked,
-//! 2 for a usage error, else 0.
+//! 2 for a usage error, else 0. With `--baseline`, 1 only for a regression
+//! against it: a function that now differs, or a file that now fails.
+//! Under GitHub Actions each change is also printed as an annotation.
 
 use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 use std::time::Instant;
 
-use kuna_verify::{check_binary, check_datatest, session, Options, Row};
+use kuna_verify::{baseline, check_binary, check_datatest, session, Options, Row};
 use serde_json::{json, Value};
 
 const USAGE: &str = "usage:
   kuna-verify check <binary> <function|0xaddr>... | --all  [--contract FILE.c] [--option NAME VALUE]...
-  kuna-verify corpus <test.xml|dir>...  [--jobs N]
+  kuna-verify corpus <test.xml|dir>...  [--jobs N] [--baseline FILE] [--save-baseline FILE]
 options: --runs N (256)  --seed S  --budget OPS (200000)  --json  --trace  --sleighpath DIR";
 
 struct Args {
@@ -36,6 +38,8 @@ struct Args {
     json: bool,
     all: bool,
     jobs: Option<usize>,
+    baseline: Option<String>,
+    save_baseline: Option<String>,
     /// Flags a worker process gets again.
     forward: Vec<String>,
 }
@@ -50,6 +54,8 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         json: false,
         all: false,
         jobs: None,
+        baseline: None,
+        save_baseline: None,
         forward: Vec::new(),
     };
     let mut it = argv.iter();
@@ -87,6 +93,8 @@ fn parse(argv: &[String]) -> Result<Args, String> {
                 a.sleighpath = Some(v);
             }
             "--jobs" => a.jobs = Some(num(it.next(), "--jobs")? as usize),
+            "--baseline" => a.baseline = Some(it.next().ok_or("--baseline needs a file")?.clone()),
+            "--save-baseline" => a.save_baseline = Some(it.next().ok_or("--save-baseline needs a file")?.clone()),
             "--json" => a.json = true,
             "--all" => a.all = true,
             "--trace" => {
@@ -226,67 +234,54 @@ fn parse_file_line(line: &str) -> Option<(usize, FileRows)> {
     Some((index, FileRows { rows, error }))
 }
 
-/// Run `files` across `jobs` worker processes; every file gets a result, a
-/// crashed worker's unfinished files an error.
+/// Run `files` across `jobs` threads, each file in a worker process of its
+/// own: a file's verdicts never depend on what the same process checked
+/// before it, and a crash costs only that file.
 fn run_workers(a: &Args, files: &[PathBuf], jobs: usize) -> Result<Vec<FileRows>, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let mut results: Vec<Option<FileRows>> = (0..files.len()).map(|_| None).collect();
-    let outputs = std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..jobs)
-            .map(|w| {
-                let items: Vec<String> = (w..files.len())
-                    .step_by(jobs)
-                    .map(|i| format!("{i}={}", files[i].to_string_lossy()))
-                    .collect();
-                let exe = exe.clone();
-                let forward = a.forward.clone();
-                scope.spawn(move || -> Result<(Vec<(usize, FileRows)>, String), String> {
-                    let mut child = Command::new(exe)
-                        .arg("shard")
-                        .args(&forward)
-                        .args(&items)
-                        .stdout(Stdio::piped())
-                        .stderr(Stdio::null())
-                        .spawn()
-                        .map_err(|e| e.to_string())?;
-                    let mut got = Vec::new();
-                    if let Some(stdout) = child.stdout.take() {
-                        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-                            if let Some(parsed) = parse_file_line(&line) {
-                                got.push(parsed);
-                            }
-                        }
-                    }
-                    let status = child.wait().map_err(|e| e.to_string())?;
-                    Ok((got, format!("worker exited ({status})")))
-                })
-            })
-            .collect();
-        handles.into_iter().map(|h| h.join().unwrap_or_else(|_| Err("worker thread panicked".into()))).collect::<Vec<_>>()
-    });
-    let mut exits = Vec::new();
-    for out in outputs {
-        let (got, exit) = out?;
-        for (i, rows) in got {
-            if let Some(slot) = results.get_mut(i) {
-                *slot = Some(rows);
-            }
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let results: Vec<std::sync::Mutex<Option<FileRows>>> = (0..files.len()).map(|_| std::sync::Mutex::new(None)).collect();
+    std::thread::scope(|scope| {
+        for _ in 0..jobs {
+            scope.spawn(|| loop {
+                let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let Some(file) = files.get(i) else { break };
+                let got = check_in_worker(&exe, &a.forward, i, file);
+                *results[i].lock().unwrap_or_else(|e| e.into_inner()) = Some(got);
+            });
         }
-        exits.push(exit);
-    }
+    });
     Ok(results
         .into_iter()
-        .enumerate()
-        .map(|(i, r)| {
-            r.unwrap_or_else(|| FileRows { rows: Vec::new(), error: Some(exits[i % jobs].clone()) })
-        })
+        .map(|r| r.into_inner().unwrap_or_else(|e| e.into_inner()).expect("every file is checked"))
         .collect())
+}
+
+fn check_in_worker(exe: &Path, forward: &[String], index: usize, file: &Path) -> FileRows {
+    let output = Command::new(exe)
+        .arg("shard")
+        .args(forward)
+        .arg(format!("{index}={}", file.to_string_lossy()))
+        .stderr(Stdio::null())
+        .output();
+    let output = match output {
+        Ok(o) => o,
+        Err(e) => return FileRows { rows: Vec::new(), error: Some(e.to_string()) },
+    };
+    let parsed = String::from_utf8_lossy(&output.stdout).lines().find_map(parse_file_line);
+    parsed
+        .map(|(_, rows)| rows)
+        .unwrap_or_else(|| FileRows { rows: Vec::new(), error: Some(format!("worker exited ({})", output.status)) })
 }
 
 fn run_corpus(a: &Args) -> Result<ExitCode, String> {
     if a.positional.is_empty() {
         return Err(USAGE.to_string());
     }
+    let base = match &a.baseline {
+        Some(f) => Some(baseline::parse(&std::fs::read_to_string(f).map_err(|e| format!("{f}: {e}"))?).map_err(|e| format!("{f}: {e}"))?),
+        None => None,
+    };
     let mut files = Vec::new();
     for p in &a.positional {
         let path = Path::new(p);
@@ -361,7 +356,60 @@ fn run_corpus(a: &Args) -> Result<ExitCode, String> {
     if !errors.is_empty() && !a.json {
         println!("file errors {}", errors.len());
     }
+    let now: baseline::Baseline = files
+        .iter()
+        .zip(&results)
+        .map(|(f, res)| {
+            let key = f.to_string_lossy().trim_start_matches("./").to_string();
+            let mut rows: Vec<(String, String)> = res.rows.iter().map(|r| (r.function.clone(), baseline::class(r))).collect();
+            if res.error.is_some() {
+                rows.push((String::new(), baseline::ERROR.to_string()));
+            }
+            (key, rows)
+        })
+        .collect();
+    if let Some(f) = &a.save_baseline {
+        std::fs::write(f, baseline::render(&now)).map_err(|e| format!("{f}: {e}"))?;
+        eprintln!("kuna-verify: baseline saved to {f}");
+        if base.is_none() {
+            return Ok(ExitCode::SUCCESS);
+        }
+    }
+    if let (Some(base), Some(f)) = (base, &a.baseline) {
+        return Ok(report_baseline(&baseline::compare(&base, &now), f));
+    }
     Ok(exit_code(&rows, errors.len()))
+}
+
+/// Print how the run compares with the baseline; 1 on a regression.
+fn report_baseline(c: &baseline::Changes, file: &str) -> ExitCode {
+    let actions = std::env::var_os("GITHUB_ACTIONS").is_some();
+    let groups = [
+        ("new DIFFERS or file errors", "error", &c.regressions),
+        ("no longer agree", "warning", &c.lost),
+        ("other changes", "notice", &c.other),
+    ];
+    eprintln!();
+    for (title, level, lines) in groups {
+        if lines.is_empty() {
+            continue;
+        }
+        eprintln!("{title} ({}):", lines.len());
+        for l in lines.iter() {
+            eprintln!("  {l}");
+            if actions {
+                println!("::{level} title=diffverify::{l}");
+            }
+        }
+    }
+    if c.regressions.is_empty() {
+        let note = if c.is_empty() { "" } else { "; re-record it if the changes are intended" };
+        eprintln!("BASELINE OK against {file}{note}");
+        ExitCode::SUCCESS
+    } else {
+        eprintln!("BASELINE REGRESSION against {file}: {} new", c.regressions.len());
+        ExitCode::from(1)
+    }
 }
 
 /// `corpus`: the file count and the wall time of the whole run.

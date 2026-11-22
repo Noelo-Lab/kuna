@@ -12,6 +12,7 @@
 //! Development only: the release binary does not link this crate.
 
 pub mod abi;
+pub mod baseline;
 pub mod calls;
 pub mod check;
 pub mod contract;
