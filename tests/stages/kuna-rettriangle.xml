@@ -41,8 +41,9 @@ f30f1efa554889e58b055d2e000083c0018905542e0000905dc3f30f1efa554889e54883ec08897d
 <symbol space="ram" offset="0x10b0" name="strcmp"/>
 </binaryimage>
 <script>
-  <!-- kuna: tailform default-on; this test pins the binary's own function-tail return layout -->
+  <!-- kuna: tailform default-on and guardarm default auto; this test pins the binary's own function-tail return layout and the out-index arm order -->
   <com>option tailform off</com>
+  <com>option guardarm off</com>
   <com>parse line extern int snprintf(char *s,unsigned long n,char *f,...);</com>
   <com>parse line extern int strcmp(char *a,char *b);</com>
   <com>lo fu finish</com>

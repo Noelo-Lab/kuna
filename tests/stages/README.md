@@ -1,5 +1,12 @@
 # Stage-model issue testcases
 
+`kuna-guardauto.xml` checks option `guardarm` (default `auto`) on two x86-64
+functions. In a gcc -O0 `unget`, whose parameters live in frame slots, the
+default prints the source's flat guard `if (c == -1 || ...) return -1;`, and
+`option guardarm off` nests the body under the negated guard instead. A gcc
+-O2 `backup` is not called unoptimized, so the default keeps its out-index arm
+order, and only `option guardarm on` lets its layout put the else arm first.
+
 `kuna-boolbranch.xml` checks option `boolbranch` on gcc -O0 x86-64: a `jle`
 over `mov $1`/`mov $0` returns through a kept `if` (fold: `return 0 < x;`), an
 if/else assignment of 1 and 0 keeps its branch, and a flag whose arm also

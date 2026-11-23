@@ -2304,7 +2304,8 @@ mod tests {
         // and kuna-tailform-noreturn / a call that does not return prints as the if body before the return
         // and kuna-expandload-opsize / a widened AND flag test keeps its op sizes
         // and kuna-switchcond / a folded switch is never printed where a condition belongs
-        assert_eq!(count, 892, "corpus file count drifted");
+        // and kuna-guardauto / the guardarm layout tie-break applies by default only to unoptimized code
+        assert_eq!(count, 893, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

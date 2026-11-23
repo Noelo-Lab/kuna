@@ -1415,6 +1415,42 @@ turns the expansion off with the other stack guards. A larger move, a move
 whose destination is not the stack pointer, one whose count is not a constant,
 and one no call takes as its arguments stay loops.
 
+Right after the first heritage pass, `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_unoptimized.rs
+(detect)` decides once per decompile whether the function's code is
+unoptimized and caches the verdict on the function for the later phases
+(chapter 08's `guardarm auto` reads it). An unoptimizing compiler gives every
+parameter a home in the frame and keeps no value in a callee-saved register;
+an optimizing one computes with the argument registers and keeps values live
+across calls in callee-saved registers. The evidence
+(`kuna_unoptimized.rs (evidence)`) comes from the raw frame accesses, which
+the stack's heritage has not yet turned into variables: an address is followed
+back through copies and constant additions (a constant may itself sit in a
+copied temporary, as ARM's `sub sp,#8` leaves it) to the entry stack pointer.
+An incoming register the prototype model could pass a parameter in is *live*
+when something computes with it, meaning any use but a move, a call argument, a
+merge, the preserved high part of a partial write or a store; it is *spilled*
+when its only uses are stores to slots of the function's own frame in the
+entry block and some frame load reads such a slot into a different register. A
+store to the caller's side of the entry stack pointer (a register parameter's
+home or save area, as PowerPC64 ELFv1 and Windows x64 provide) is neither:
+optimized code uses those slots too. A push and pop of the same
+register is a save and restore, not a reload, and a load made at a call
+instruction is the callee's stack argument. A callee-saved register is
+*reused* when its incoming value is stored to the frame and the body writes it
+with something other than a frame address, a reload from the frame or the
+return address a call sets. The function is unoptimized when no parameter
+register is live and either some is spilled while at most one callee-saved
+register is reused (an unoptimizing compiler uses one, at most, for a
+temporary that spans a call), or no parameter register reaches the frame at
+all, a frame pointer (a callee-saved register holding a frame address)
+addresses the frame and no callee-saved register is reused. Anything else,
+including a function with no parameters and no frame pointer, is not. The
+detector reads no symbol and no type. Measured against the O0 and O2 builds of
+the decbench projects (x86-64 gcc, ARM Thumb gcc and i386 mingw; three ARM
+projects whose O0 builds are themselves optimized left out), its precision is
+0.998 or better on each architecture and its recall 0.85 on x86-64, 0.73 on ARM and 0.79
+on i386 PE.
+
 The guard's second family guards a slot the function writes with any value,
 against indexed STOREs of any width. A stack range whose writes include one
 that is not an `INDIRECT` or `MULTIEQUAL` (`kuna_stackstoreguard.rs

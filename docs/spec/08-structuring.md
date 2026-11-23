@@ -100,9 +100,17 @@ Ghidra all write `if (!ok) fatal(); return v;` — the condition negated, the
 body re-parented one level deeper, and the fatal call demoted to the
 function's trailing fall-through.
 
-`guardarm on` (default-off opt-in) breaks **only that tie**, and by code
-layout: of the two eligible arms, the one whose first leaf lies earlier in the
-address space becomes the clause. An unoptimized compiler emits the taken
+`guardarm` breaks **only that tie**, and by code layout: of the two eligible
+arms, the one whose first leaf lies earlier in the address space becomes the
+clause. It takes `off`, `auto` and `on`; `auto`, the default, applies the
+layout only in a function chapter 03's detector calls unoptimized
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_unoptimized.rs (detect)`,
+read here through `is_unoptimized`), `on` in every function and `off` in
+none. An unoptimizing compiler emits blocks in source order, so its layout is
+the author's choice; an optimizing one moves cold paths and shares tails, so
+elsewhere the earlier arm says nothing about the source. On the decbench
+corpus the layout applied everywhere wins 279 and loses 58 exact matches at O0
+but loses 67 against 24 at O2; under `auto` the O2 output is unchanged. An unoptimized compiler emits the taken
 clause of `if (c) A; B;` in front of `B`, and emits the `then` side of an
 `if/else` in front of the `else` side, so the earlier arm is the source's
 `if` body in both shapes. A block with a single eligible arm is untouched, so
