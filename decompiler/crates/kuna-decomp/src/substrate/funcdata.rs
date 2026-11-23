@@ -167,6 +167,7 @@ pub struct Funcdata {
     /// (kuna `switchextent`) The table whose sanity check asked the flow for
     /// [`Self::kuna_later_tables`], shared with the jump-table partial.
     pub(crate) kuna_later_wanted: std::rc::Rc<std::cell::Cell<Option<u64>>>,
+    pub(crate) open_dispatch_returns: Vec<crate::p2_lift::kuna_opendispatch::ReturnGuard>,
     pub(crate) kuna_x87_empty_returns: Vec<Address>,
     /// (kuna `varargsave`) Set when the first heritage pass folded this
     /// function's variadic register-save prologue (`p4_calls/kuna_varargsave.rs`).
@@ -785,6 +786,7 @@ impl Funcdata {
         };
 
         Ok(Funcdata {
+            open_dispatch_returns: Vec::new(),
             kuna_fpu_trunc_views: Vec::new(),
             kuna_extent_tables: None,
             kuna_later_tables: None,
@@ -4437,6 +4439,7 @@ impl Funcdata {
         self.kuna_regsigned_values.clear();
 
         self.kuna_call_mechanisms = Default::default();
+        self.open_dispatch_returns.clear();
         self.kuna_fpu_trunc_views.clear();
         self.kuna_x87_empty_returns.clear();
         self.kuna_vararg_save = false;

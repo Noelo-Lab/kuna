@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5158,
-    5158
+    5159,
+    5159
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4457,6 +4457,7 @@
     "data:reentereddispatch #3: reentry reaches the third and fourth stores",
     "data:reentereddispatch #4: the caller return is a defined default case",
     "data:reentereddispatch #5: no dispatch is left incomplete or undefined",
+    "data:reentereddispatch #6: the callback transfers after the store",
     "data:refusals and foreign renderings retain LOCK",
     "data:refusals and foreign renderings retain UNLOCK",
     "data:regionstructure #1: the if/else diamond is structured (true clause), both passes",

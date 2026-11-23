@@ -151,9 +151,13 @@ impl PaddingRuns {
 
 /// Whether `insn` is an all-zero encoding.
 pub(super) fn is_zero_fill(insn: &ProbedInsn) -> bool {
-    let mnemonic = &*insn.mnemonic;
+    is_zero_fill_text(&insn.mnemonic, &insn.operands)
+}
+
+/// [`is_zero_fill`] over an instruction's disassembly text.
+pub(crate) fn is_zero_fill_text(mnemonic: &str, operands: &str) -> bool {
     let operands_are = |want: &str| {
-        insn.operands.chars().filter(|c| !c.is_whitespace()).map(|c| c.to_ascii_lowercase()).eq(want.chars())
+        operands.chars().filter(|c| !c.is_whitespace()).map(|c| c.to_ascii_lowercase()).eq(want.chars())
     };
     if mnemonic.eq_ignore_ascii_case("add") {
         operands_are("byteptr[eax],al") || operands_are("byteptr[rax],al")
@@ -167,7 +171,11 @@ pub(super) fn is_zero_fill(insn: &ProbedInsn) -> bool {
 /// Whether `insn` is alignment padding: `nop` of any width, `int3`, a `lea` of a
 /// register into itself, or a register self-move a function cannot open with.
 pub(super) fn is_padding(insn: &ProbedInsn, wide: bool) -> bool {
-    let mnemonic = &*insn.mnemonic;
+    is_padding_text(&insn.mnemonic, &insn.operands, wide)
+}
+
+/// [`is_padding`] over an instruction's disassembly text.
+pub(crate) fn is_padding_text(mnemonic: &str, operands: &str, wide: bool) -> bool {
     if ["nop", "nop.w", "int3"].iter().any(|m| mnemonic.eq_ignore_ascii_case(m)) {
         return true;
     }
@@ -175,7 +183,7 @@ pub(super) fn is_padding(insn: &ProbedInsn, wide: bool) -> bool {
     if !(moves || mnemonic.eq_ignore_ascii_case("lea")) {
         return false;
     }
-    let Some((dst, src)) = insn.operands.split_once(',') else { return false };
+    let Some((dst, src)) = operands.split_once(',') else { return false };
     let dst = dst.trim();
     if moves {
         return !wide && dst.eq_ignore_ascii_case(src.trim()) && !dst.eq_ignore_ascii_case("edi");
