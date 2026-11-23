@@ -1674,10 +1674,13 @@ conditional part, `option tailform <n>` lines (default 4):
   statements after the `if`. Neither path reaches the end of the function, so
   `X` still runs only when `c` holds: `if (0 <= n) return n; xalloc_die();`
   prints `if (0 > n) xalloc_die(); return n;`, as authors write it. The call
-  is one flow marks as not returning, the artificial `noreturn` halt planted
-  right after it that also gives the printer its `// no-return` note, with
-  nothing printed between the two
-  (`decompiler/crates/kuna-decomp/src/p8_structure/kuna_tailform/noreturn.rs (noreturn_block)`).
+  is one flow marks as not returning: the artificial `noreturn` halt planted
+  right after it, nothing printed between the two, and the call's address
+  carrying the warning the printer shows as `// no-return`, which
+  `Funcdata::warning` records (`Funcdata::kuna_noreturn_note`,
+  `decompiler/crates/kuna-decomp/src/p8_structure/kuna_tailform/noreturn.rs (noreturn_block)`).
+  A flow cut at the next function's entry (`funcboundflow`) plants the same
+  halt after a call kuna does not know to be fatal, and does not count.
   The search walks back from the call over other statements and over `if`s
   whose arm falls through (they join the new arm); it stops at an `if` with an
   `else` or a goto, and at one whose arm already ends in a call that does not
@@ -1734,8 +1737,8 @@ pass covers the top-level triangle in both directions, and `rettriangle` keeps
 deciding before structuring, including joins nested inside another construct.
 
 The no-return form, measured the same way against the size rule alone (main
-8d781e789), moves 268 more functions to an exact match at O2 (gained 278, lost
-10; FIT +215, CHECK +53) and 236 more at O0 (gained 261, lost 25; FIT +173,
+8d781e789), moves 266 more functions to an exact match at O2 (gained 276, lost
+10; FIT +213, CHECK +53) and 236 more at O0 (gained 261, lost 25; FIT +173,
 CHECK +63), re-spelling 544 and 587 sites. Void tails of any length are part of
 it (+88 and +84 over leaving them to the size rule), and so are arms with
 statements before their return (+141 and +129 over bare returns only). The same

@@ -6,8 +6,8 @@
 //! same statements on the same condition: `X` still runs only when `c` holds,
 //! because `T..; f();` never reaches it.  `X` is anything that leaves: a
 //! `return E` of any value, statements and a return, or a jump.  The call is
-//! the one flow marks as not returning (the halt it plants right after the
-//! call, the fact behind the printer's `// no-return` note).  No size
+//! one flow marks as not returning: the halt it plants right after the call
+//! and the warning the printer shows as `// no-return`.  No size
 //! threshold applies: authors write the fatal arm as the `if` body
 //! (`if (n < 0) xalloc_die(); return n;`) whatever its length.
 
@@ -116,7 +116,9 @@ fn rewrite(data: &mut Funcdata, cx: &mut Ctx, c: BlockId, list: &[BlockId], i: u
 }
 
 /// Whether basic block `bb` ends in the halt flow plants after a call to a
-/// subroutine that does not return, with nothing printed between the two.
+/// subroutine that does not return, with nothing printed between the two, and
+/// the call carries the warning the printer shows as `// no-return` (a flow
+/// cut at the next function's entry carries another one).
 fn noreturn_block(data: &Funcdata, bb: BlockId) -> bool {
     use crate::op::pcodeop_flags as f;
     let Some(op) = data.bb_op_tail(bb).and_then(|t| data.obank().get(t)) else {
@@ -133,7 +135,7 @@ fn noreturn_block(data: &Funcdata, bb: BlockId) -> bool {
     while let Some(p) = prev {
         let Some(o) = data.obank().get(p) else { return false };
         if matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER) {
-            return true;
+            return data.kuna_noreturn_note(o.get_addr());
         }
         if op_prints(data, p) {
             return false;

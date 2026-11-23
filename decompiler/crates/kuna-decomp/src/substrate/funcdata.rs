@@ -348,6 +348,8 @@ pub struct Funcdata {
     qlst: Vec<FuncCallSpecs>,
     /// Proofs belong to this entry's flow only, and are rebuilt after clear/restart.
     pub(crate) ppc32_pic_calls: std::collections::BTreeMap<u64, crate::kuna_ppc32piccalls::CallBinding>,
+    /// (kuna tailform) Where flow warned that a call does not return.
+    kuna_noreturn_notes: Vec<Address>,
     /// HighVariable merging engine (C++ `Merge covermerge`, `funcdata.hh:91`).
     ///
     /// The C++ `Funcdata` owns a single `Merge` whose `copyTrims` accumulator
@@ -846,6 +848,7 @@ impl Funcdata {
             heritage: crate::heritage::Heritage::new(),
             qlst: Vec::new(),
             ppc32_pic_calls: Default::default(),
+            kuna_noreturn_notes: Vec::new(),
             covermerge: None,
             cover_blocks: None,
             affecting_ops_revision: 0,
@@ -984,6 +987,7 @@ impl Funcdata {
     /// ([`Self::drain_pending_comments`]) and flushed by the decompile drive.
     pub fn warning(&mut self, txt: &str, ad: &Address) {
         let msg = self.warning_prefix() + txt;
+        self.kuna_note_noreturn(crate::architecture::comment_type::warning, ad, &msg);
         self.pending_comments.push((
             crate::architecture::comment_type::warning,
             ad.clone(),
@@ -1066,7 +1070,20 @@ impl Funcdata {
         ad: Address,
         txt: String,
     ) {
+        self.kuna_note_noreturn(tp, &ad, &txt);
         self.pending_comments.push((tp, ad, txt));
+    }
+
+    /// (kuna tailform) Remember a warning the printer shows as `// no-return`.
+    fn kuna_note_noreturn(&mut self, tp: kuna_base::types::uint4, ad: &Address, txt: &str) {
+        if tp == crate::architecture::comment_type::warning && crate::printc::warning_slug(txt) == "no-return" {
+            self.kuna_noreturn_notes.push(ad.clone());
+        }
+    }
+
+    /// (kuna tailform) Whether flow warned that the call at `ad` does not return.
+    pub fn kuna_noreturn_note(&self, ad: &Address) -> bool {
+        self.kuna_noreturn_notes.contains(ad)
     }
 
     /// (kuna) Record why the decompile pipeline aborted for this function.
@@ -4433,6 +4450,7 @@ impl Funcdata {
     pub fn clear(&mut self) {
         self.kuna_atomic_xadds.clear();
         self.ppc32_pic_calls.clear();
+        self.kuna_noreturn_notes.clear();
         self.kuna_regnarrow_runs = 0;
         self.kuna_regnarrow_values.clear();
         self.kuna_regnarrow_failed.clear();
