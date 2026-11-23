@@ -13,6 +13,7 @@ use object::{
     SymbolKind, SymbolScope,
 };
 use std::process::Command;
+use crate::common::process::Capped;
 
 /// An -O2 build: `.text`, the functions in it, and where each call to the
 /// undefined `ext` goes.
@@ -302,7 +303,7 @@ int main(void) {{
                     "{stem} {cc} {level}: {}\n{printed}",
                     String::from_utf8_lossy(&compile.stderr)
                 );
-                let status = Command::new(&exe).status().unwrap();
+                let status = Command::new(&exe).capped_status().unwrap();
                 assert!(status.success(), "{stem} {cc} {level}: {status}\n{printed}");
             }
         }
@@ -388,7 +389,7 @@ int main(void) {{
                 "{stem} {cc} {level}: {}\n{printed}",
                 String::from_utf8_lossy(&compile.stderr)
             );
-            let status = Command::new(&exe).status().unwrap();
+            let status = Command::new(&exe).capped_status().unwrap();
             assert!(status.success(), "{stem} {cc} {level}: {status}\n{printed}");
         }
     }

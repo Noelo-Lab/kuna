@@ -1807,9 +1807,13 @@ that grew by the floor while other workers filled the container can be
 stopped although it would have fit, and which one it is varies from run to
 run, but each such stop usually replaces a worker the kernel would have
 killed outright. A run outside a capped cgroup has no default. The resident set
-is `kuna_hostmem.rs (resident_bytes)`: `VmRSS` on Linux, and on Windows the
-larger of the working set and the private commit; a platform that reports no
-resident set (macOS) refuses a non-zero limit. Printing the function counts
+is `kuna_hostmem.rs (resident_bytes)`: `VmRSS` on Linux, on Windows the
+larger of the working set and the private commit, and on macOS the physical
+footprint (`proc_pid_rusage`'s `ri_phys_footprint`), which, unlike the resident
+size, drops when the allocator marks freed pages reusable, so a function is not
+charged for the freed transients of the one before it although macOS has no
+`malloc_trim`; a platform that reports no resident set refuses a non-zero
+limit. Printing the function counts
 against the same budget: the drive hands back what is left of its deadline
 with the function (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
 (Funcdata::render_budget)`), and whoever renders it publishes that, counted
@@ -3257,7 +3261,7 @@ runtime `on_or_off` parser.
 | env var | option | read at |
 |---|---|---|
 | `KUNA_IFUNCFPRET` | `ifuncfpret` | x86-64 IFUNC (`R_X86_64_IRELATIVE`) stub naming, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_ifuncfpret.rs (IFUNCFPRET_ENV)` |
-| `KUNA_PPCAPU` | `ppcapu` | PowerPC32 e500 selection from an SPE APU note, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_ppcapu.rs (PPCAPU_ENV)` |
+| `KUNA_PPCAPU` | `ppcapu` | PowerPC32 ELF selection from APU requirements and the embedded ABI flag, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_ppcapu.rs (PPCAPU_ENV)` |
 | `KUNA_CALLTARGETTYPE` | `calltargettype` | DWARF `DW_TAG_subroutine_type` import as a function prototype (on unless the option is set off, and never for Rust output), `decompiler/crates/kuna-decomp/src/p5_types/kuna_calltargettype.rs (CALLTARGETTYPE_ENV)` |
 | `KUNA_MACHO_SLICE` | `--slice` | Mach-O fat-binary slice peel, `decompiler/crates/kuna-console/src/engine.rs (select_macho_slice)` |
 | `KUNA_MACHO_ARM64E` | `macho-arm64e` | arm64e spec selection (on by default), `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_macho_arm64e.rs (MACHO_ARM64E_ENV)` |
@@ -4196,7 +4200,10 @@ takes the same windowed load. The straight-line walk never guesses: it stops at
 the first instruction that does not lift or that would cross the window or the
 end of mapped memory, and returns the lifted prefix, its exclusive end, the
 failure and exit status 1. A lift that includes a delay slot reports the
-combined byte span and the slot's operations in the same row.
+combined byte span and the slot's operations in the same row. On generic
+PowerPC64, a failed lift of a complete `isel` word within the window names
+the instruction and suggests the byte-order-matched A2ALT target. The error
+stays attached to the failed address in both straight-line and followed walks.
 
 The `--follow` walk (`raw_pcode/flow.rs`) reads each lift's successors with the
 rule `FlowInfo::xrefControlFlow` applies (`p2_lift/flow.rs`): a branch into the

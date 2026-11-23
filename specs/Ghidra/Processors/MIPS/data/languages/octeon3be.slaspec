@@ -4,6 +4,7 @@
 @define OCTEON ""
 @define OCTEONPLUS ""
 @define OCTEON2 ""
+@define OCTEON3 ""
 
 @include "mips.sinc"
 @include "mips32Instructions.sinc"
