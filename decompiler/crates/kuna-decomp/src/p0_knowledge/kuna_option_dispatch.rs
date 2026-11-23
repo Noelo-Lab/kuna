@@ -716,6 +716,11 @@ kuna_options! { self, p1;
     },
     "cortexmpriv" => on_off!(cortexmpriv, "Cortex-M privileged-mode guard folding"),
     "bytestorewidth" => on_off!(byte_store_width, "Byte-array constant store width"),
+    "boolbranch" => {
+        let (keep, msg) = crate::kuna_boolbranch::parse_bool_branch(p1)?;
+        self.bool_branch_keep = keep;
+        Ok(msg)
+    },
     "acleintrinsics" => on_off!(acle_intrinsics, "AArch64 ACLE intrinsics"),
     "dedupvardecls" => {
         let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;
