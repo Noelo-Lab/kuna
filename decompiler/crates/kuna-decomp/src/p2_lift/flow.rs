@@ -4131,8 +4131,6 @@ truncating the fall-through here"
         if let Some(idx) = self.data.get_call_specs_index(op) {
             let spec = self.data.get_call_specs_mut(idx);
             if spec.get_entry_address().is_invalid() {
-                // This CALLIND stands in for an unresolved jump, not a call
-                // the instruction lifted or a tail transfer to a known target.
                 spec.set_bad_jump_table(true);
             }
         }

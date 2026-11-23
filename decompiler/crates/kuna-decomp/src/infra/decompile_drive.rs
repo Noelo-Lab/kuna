@@ -1022,7 +1022,9 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
 }
 
 /// C++ `Funcdata::followFlow` through `startProcessing`'s sorting, without
-/// publishing the flow's buffered comments.
+/// publishing the flow's buffered comments. A bounded isolated callee drive
+/// (`with_caller_return_types`) fails when an instruction crosses its declared
+/// extent, where an ordinary drive still shows the clipped body.
 #[allow(clippy::mutable_key_type)]
 fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
     let _load = arch.load_scope();
@@ -1088,8 +1090,6 @@ fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> 
         }
         generated?;
     }
-    // A bounded isolated drive must not use even a partial instruction beyond
-    // the caller's extent. Normal decompilation may still show the clipped body.
     if flow.data.get_size() > 0
         && CONTRACT_DEPTH.with(|depth| depth.get() != 0)
         && flow.get_size() > flow.data.get_size()
@@ -1637,6 +1637,8 @@ fn bootstrap_tail_callees(arch: &mut Architecture, root: &Funcdata) {
 /// available to its forced redo. This does not lock a callee or publish a
 /// prototype: the redo scores the actual SSA value reaching every return.
 /// `callee_bound` declines drives whose directives cannot be applied in isolation.
+/// The callee drives run under a drive scope, so they publish nothing the
+/// wrapper's own redo would not.
 pub fn with_caller_return_types(
     arch: &mut Architecture,
     root: &Funcdata,
@@ -1658,8 +1660,6 @@ pub fn with_caller_return_types(
     entries.dedup_by(|a, b| a.get_entry_address() == b.get_entry_address());
     let mut statements = Vec::new();
     {
-        // Suppress the isolated callee drives' publication without changing
-        // what the actual wrapper redo publishes.
         let _scope = arch.kuna_drive_scope();
         for call in entries.into_iter().take(MAX_TAIL_CONTRACTS) {
             if deadline_passed() {

@@ -57,6 +57,9 @@ pub(super) fn raw_call_returns(listing: &Listing) -> Vec<(u64, u64, u64)> {
     out
 }
 
+/// The entry whose flow reaches each instruction, or `None` once a second
+/// entry reaches it, which makes its successors ambiguous too: each instruction
+/// is visited at most twice.
 fn raw_owners(listing: &Listing) -> kuna_decomp::kuna_fasthash::FxHashMap<u64, Option<u64>> {
     use std::collections::hash_map::Entry;
 
@@ -75,8 +78,6 @@ fn raw_owners(listing: &Listing) -> kuna_decomp::kuna_fasthash::FxHashMap<u64, O
                     if slot.get().is_none() || *slot.get() == owner {
                         continue;
                     }
-                    // After a second owner reaches a node, all its successors
-                    // are ambiguous too. Each instruction is visited at most twice.
                     slot.insert(None);
                     None
                 }

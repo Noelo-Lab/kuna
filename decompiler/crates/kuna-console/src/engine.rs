@@ -2892,9 +2892,10 @@ impl ConsoleProgram {
     /// the seeds.
     ///
     /// The raw loader supplies `--entry` and the synthetic `CODE` range for the
-    /// whole file. Mapped entry-only declarations also seed the walk. A seed is
-    /// never dropped, so an image whose bytes hold no direct call returns those
-    /// roots unchanged.
+    /// whole file. Mapped entry-only declarations also seed the walk, except on
+    /// a native MZ load, which applies both declaration spellings after its
+    /// normal commit. A seed is never dropped, so an image whose bytes hold no
+    /// direct call returns those roots unchanged.
     ///
     /// (kuna #1288) The DOS exits of a real-mode image are parked for the flow,
     /// and the functions they make no-return are returned for the caller to
@@ -2911,8 +2912,6 @@ impl ConsoleProgram {
             .collect();
         let mapped = |vma| exec.iter().any(|&(lo, hi)| (lo..hi).contains(&vma));
         let assertion_roots = if self.mz_evidence.is_none() {
-            // A native MZ load shares raw discovery but applies both CLI
-            // declaration spellings after its normal commit.
             let mut roots = crate::assertions::raw_discovery_roots(self);
             roots.retain(|&vma| mapped(vma));
             roots

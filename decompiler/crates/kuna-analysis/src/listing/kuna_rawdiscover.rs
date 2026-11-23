@@ -75,7 +75,10 @@ pub struct RawDiscovery {
 /// with code.
 ///
 /// `assertion_roots` also seed descent and extent measurement but do not supply
-/// synthetic symbols unless ordinary discovery would find them too.
+/// synthetic symbols unless ordinary discovery would find them too; they lead
+/// the roots so that the Listing's last-in-first-out walk decodes the ordinary
+/// roots first. An explicit ARM `--isa` keeps its whole-image `TMode` while
+/// the Thumb IT state still propagates within each decode walk.
 pub fn discover(
     arch: &Architecture,
     translate: &dyn Translate,
@@ -95,8 +98,6 @@ pub fn discover(
     }
     let real_mode = kuna_dosexit::is_real_mode(&arch.archid);
     let explicit_arm_isa = !real_mode && arch.input_arm_isa_override;
-    // Keep the whole-image ISA choice fixed, but let IT state propagate within
-    // each decode walk.
     let _isa_scope = if explicit_arm_isa {
         translate.decode_context_scope().inspect(|scope| {
             let _ = scope.protect_variable(b"TMode");
@@ -129,7 +130,6 @@ pub fn discover(
     deferred.retain(|entry| roots.binary_search(entry).is_err());
     let ordinary_start = deferred.len();
     if ordinary_start != 0 {
-        // The Listing's LIFO walk should decode ordinary roots first.
         drop(roots.splice(..0, deferred.iter().copied()));
     }
 
@@ -151,8 +151,6 @@ pub fn discover(
     let dos_exits = kuna_dosexit::analyze(arch, translate, code_space, &listing);
     let flow_ends = kuna_rawextent::measure(arch, translate, code_space, &listing, &out, &dos_exits);
     if !deferred.is_empty() {
-        // An ordinary reachable call can also discover an assertion root that
-        // was not found by the sweep (for example, at a different alignment).
         remove_discovered_roots(&listing, &roots[ordinary_start..], &mut deferred);
         out.retain(|entry| !deferred.contains(entry));
     }
@@ -164,6 +162,9 @@ pub fn discover(
     RawDiscovery { entries: out, dos_exits, flow_ends, call_returns }
 }
 
+/// Drop from `deferred` every assertion root an ordinary root's flow calls, so
+/// that a callee the sweep missed (at another alignment, say) is still
+/// installed as discovered.
 fn remove_discovered_roots(listing: &Listing, roots: &[u64], deferred: &mut BTreeSet<u64>) {
     let mut pending = roots.to_vec();
     let mut seen = FxHashSet::default();

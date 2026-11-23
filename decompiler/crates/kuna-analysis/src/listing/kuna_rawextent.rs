@@ -140,8 +140,6 @@ fn listing_end(
 
         let flow = insn.flow;
         if flow.is_call {
-            // For a predicated call the classifier already removed its skip
-            // to the next instruction from the target list.
             let call_only = match flow.kind {
                 FlowKind::Call => insn.flows.len() == 1,
                 FlowKind::ComputedCall => insn.flows.is_empty(),
