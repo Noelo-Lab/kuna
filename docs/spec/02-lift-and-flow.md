@@ -176,8 +176,11 @@ The 16-bit Thumb `stmia Rn!,{list}` always writes the base back, adding four
 bytes per listed register, and disassembles with the `!`. Upstream gave it
 `ldmia`'s rule, which skips the writeback when `Rn` is in the list, so after
 `stmia r0!,{r0,r1}` the base kept its entry value. `ldmia` keeps that rule,
-which is the architecture's for loads. This is a SLEIGH correctness repair,
-without an inference option.
+which is the architecture's for loads. The word `stmia` stores for a listed
+`Rn` is its entry value: the architecture defines that only when `Rn` is the
+lowest listed register and leaves it UNKNOWN otherwise, and the entry value
+is what QEMU stores there. This is a SLEIGH correctness repair, without an
+inference option.
 
 The SPARC floating-to-integer constructors use the integer result width:
 `fdtoi` and `fqtoi` write one 32-bit word through `fsrd`, while `fstox` and
