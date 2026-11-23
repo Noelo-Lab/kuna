@@ -2440,8 +2440,9 @@ Behaviors specific to `decompile-all`:
   value, `0` included, always wins; outside a capped cgroup there is no
   default, and a function the limit never stops is unchanged. It reads the
   resident set (`VmRSS` on Linux; on Windows the larger of the working set and
-  the private commit), so on a platform without one (macOS) a non-zero value
-  is refused. A function the limit stops usually has an
+  the private commit; on macOS the physical footprint, which drops as the
+  allocator marks freed pages reusable), so on a platform without one a
+  non-zero value is refused. A function the limit stops usually has an
   alternative that keeps some output: `--max-size N` leaves functions over N
   bytes out of the run, and `--option maxinstruction N` truncates their flow
   (see *The instruction budget*).

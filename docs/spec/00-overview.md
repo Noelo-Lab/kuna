@@ -1807,9 +1807,13 @@ that grew by the floor while other workers filled the container can be
 stopped although it would have fit, and which one it is varies from run to
 run, but each such stop usually replaces a worker the kernel would have
 killed outright. A run outside a capped cgroup has no default. The resident set
-is `kuna_hostmem.rs (resident_bytes)`: `VmRSS` on Linux, and on Windows the
-larger of the working set and the private commit; a platform that reports no
-resident set (macOS) refuses a non-zero limit. Printing the function counts
+is `kuna_hostmem.rs (resident_bytes)`: `VmRSS` on Linux, on Windows the
+larger of the working set and the private commit, and on macOS the physical
+footprint (`proc_pid_rusage`'s `ri_phys_footprint`), which, unlike the resident
+size, drops when the allocator marks freed pages reusable, so a function is not
+charged for the freed transients of the one before it although macOS has no
+`malloc_trim`; a platform that reports no resident set refuses a non-zero
+limit. Printing the function counts
 against the same budget: the drive hands back what is left of its deadline
 with the function (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
 (Funcdata::render_budget)`), and whoever renders it publishes that, counted
