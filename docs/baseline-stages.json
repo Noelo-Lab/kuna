@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5198,
-    5198
+    5209,
+    5209
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4986,6 +4986,17 @@
     "data:tail callees #3: with nothing stated the forwarder passes the argument helper's body reads, but not its result",
     "data:tail callees #4: the forwarder passes its third argument through",
     "data:tail callees #5: the forwarder takes the three parameters its callee reads",
+    "data:tailform #10: a guard looptest drops stays looptest's, so the loop prints top-tested in both passes",
+    "data:tailform #11: with looptest binary the long loop body moves behind a guard clause",
+    "data:tailform #1: off, a short void tail behind its own exit prints as a guard clause",
+    "data:tailform #2: on, the same tail is wrapped",
+    "data:tailform #3: off, a short tail before a constant return prints as a guard and a second return",
+    "data:tailform #4: on, the tail is wrapped and the return its block ends with printed once after the if",
+    "data:tailform #5: off, the arm repeats the final return",
+    "data:tailform #6: on, the arm falls through to the one return",
+    "data:tailform #7: off, a long void body is wrapped",
+    "data:tailform #8: on, the long body follows a guard clause",
+    "data:tailform #9: two different return values are left alone in both passes",
     "data:tee-O2 tail-jumps #1: indirect-jump-as-call marker (pass 1 off only)",
     "data:tee-O2 tail-jumps #2: unresolved GOT-pointer indirect call (pass 1 off only)",
     "data:tee-O2 tail-jumps #3: tail call resolves to named setlocale (pass 2 on only)",

@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_242() {
-    assert_eq!(kuna_num_settables(), 242);
-    assert_eq!(SETTABLE_TABLE.len(), 242);
+fn settable_count_is_243() {
+    assert_eq!(kuna_num_settables(), 243);
+    assert_eq!(SETTABLE_TABLE.len(), 243);
 }
 
 #[test]
-fn tier_counts_are_50_core_129_transform_63_analysis() {
+fn tier_counts_are_50_core_130_transform_63_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_50_core_129_transform_63_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (50, 129, 63));
+    assert_eq!((core, transform, analysis), (50, 130, 63));
 }
 
 #[test]
@@ -555,6 +555,9 @@ fn option_values_live_value_present_for_78() {
                             // (kuna) `retsplitlimit` takes `off|<n>`, an op count;
                             // its live value is `Architecture::ret_split_limit`.
                             | "retsplitlimit"
+                            // (kuna) `tailform` takes `off|on|<n>|<void>,<value>`;
+                            // its live value is `Architecture::tail_form`.
+                            | "tailform"
                             // (kuna) `narrowargs` takes `off|on|callers`; its
                             // live value is the pair `Architecture::narrow_args`
                             // and `Architecture::narrow_args_callers`.
@@ -1153,7 +1156,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 each for `swifthelpers` and `valuewitness`.
     // +1 for `bytestorewidth`; its P3 row sits after `globalarrayanchor`.
     // +1 for `boolbranch`; its P3 row sits after `bytestorewidth`.
-    assert_eq!(json.matches("},\n").count(), 241);
+    assert_eq!(json.matches("},\n").count(), 242);
     // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 

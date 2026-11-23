@@ -2298,7 +2298,7 @@ mod tests {
         // and kuna-varargsave / the x86-64 System V variadic register-save prologue
         // and kuna-boolbranch, kuna-boolbranch-thumb / a branch instruction selecting 1 or 0 keeps its if
         // and kuna-wsignload-a64 / AArch64 W-register sign-extending loads zero bits 63:32
-        assert_eq!(count, 885, "corpus file count drifted");
+        assert_eq!(count, 886, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

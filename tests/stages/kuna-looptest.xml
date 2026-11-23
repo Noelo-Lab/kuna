@@ -35,6 +35,8 @@
 <symbol space="ram" offset="0x100140" name="skip"/>
 </binaryimage>
 <script>
+  <!-- kuna: tailform default-on; this test pins the binary's own function-tail return layout -->
+  <com>option tailform off</com>
   <com>parse line extern void fill(int8 *a,int8 n,int8 v);</com>
   <com>parse line extern int8 drain(int8 n,int8 *a);</com>
   <com>parse line extern void zero16(int8 *a);</com>
