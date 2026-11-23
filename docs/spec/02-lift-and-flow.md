@@ -98,6 +98,20 @@ knows that an otherwise unproved target is a branch.
 Idempotent bitwise copies and the e500 zero extension of a four-byte address
 preserve its stack or incoming-return identity in an eight-byte register.
 
+Ordinary code never proves a constant LR, so the discovery round first runs
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppc32lrflow.rs (may_return_constant_lr)`,
+a single-state pass whose joins take the union of every path and context. It
+records only which bits of a location may be known zero or one, and which
+incoming-stack offset an address may have. Each operation over-approximates
+the proof's own transfer: a constant needs every input possibly constant, the
+partial-bit rules keep the bits they could know, calls and user operations
+forget what the proof forgets, a store to one known stack offset replaces that
+slot, and a store to an unknown offset may reach any slot. Temporaries are
+dropped on edges that leave an instruction; a temporary read after such a drop
+without being written again is unknown. If no LR return can see a fully known
+LR on any path, the round has no site, and the multi-state fixed point does
+not run.
+
 In 64-bit code spaces, SLEIGH display operands marked as code addresses retain
 that interpretation through their nested display subtables. Their evaluated bit patterns
 print as unsigned hexadecimal addresses even when bit 63 is set; ordinary

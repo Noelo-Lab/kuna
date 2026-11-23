@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
+use kuna_base::space::spacetype;
 use kuna_num::opcodes::OpCode;
 
 use crate::{
@@ -625,6 +626,415 @@ pub(crate) enum Classification {
     Changed,
 }
 
+/// What some context of [`sites`] may hold in one location: the bits it may
+/// know to be zero or one, and the incoming-stack offset of a stack address.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+struct May {
+    zeros: u64,
+    ones: u64,
+    stack: Offset,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum Offset {
+    #[default]
+    Never,
+    At(u32),
+    Any,
+}
+
+fn may_width(size: i32) -> u64 {
+    width_mask(size).unwrap_or(u64::MAX)
+}
+
+impl May {
+    fn constant(value: u64, size: i32) -> May {
+        let width = may_width(size);
+        May { zeros: !value & width, ones: value & width, stack: Offset::Never }
+    }
+
+    fn full(size: i32) -> May {
+        May { zeros: may_width(size), ones: may_width(size), stack: Offset::Never }
+    }
+
+    /// Whether some context may know every bit, i.e. hold a constant.
+    fn may_be_constant(self, size: i32) -> bool {
+        let width = may_width(size);
+        (self.zeros | self.ones) & width == width
+    }
+
+    fn join(self, other: May) -> May {
+        let stack = match (self.stack, other.stack) {
+            (Offset::Never, s) | (s, Offset::Never) => s,
+            (a, b) if a == b => a,
+            _ => Offset::Any,
+        };
+        May { zeros: self.zeros | other.zeros, ones: self.ones | other.ones, stack }
+    }
+}
+
+/// One state covering every context and path of [`sites`] at a program point.
+/// Joins take the union, so a fact absent here is absent from every context.
+/// `dropped` marks temporaries discarded at an instruction boundary.
+#[derive(Clone, Default)]
+struct MayState {
+    values: BTreeMap<Key, May>,
+    stack: BTreeMap<(u32, i32), May>,
+    anywhere: May,
+    image: bool,
+    dropped: bool,
+}
+
+impl MayState {
+    /// A temporary one side lacks is unknown there when that side dropped it.
+    fn join_from(&mut self, other: &MayState, unique: Option<i32>) -> bool {
+        let mut changed = false;
+        let mut merge = |slot: &mut May, value: May| {
+            let joined = slot.join(value);
+            changed |= joined != *slot;
+            *slot = joined;
+        };
+        let unknown = May { zeros: u64::MAX, ones: u64::MAX, stack: Offset::Any };
+        if let (true, Some(space)) = (other.dropped, unique) {
+            for (k, v) in self.values.range_mut((space, 0, i32::MIN)..=(space, u64::MAX, i32::MAX)) {
+                if !other.values.contains_key(k) {
+                    merge(v, unknown);
+                }
+            }
+        }
+        for (k, &v) in &other.values {
+            let fresh = !self.values.contains_key(k);
+            let slot = self.values.entry(*k).or_default();
+            merge(slot, v);
+            if fresh && self.dropped && Some(k.0) == unique {
+                merge(slot, unknown);
+            }
+        }
+        for (k, &v) in &other.stack {
+            merge(self.stack.entry(*k).or_default(), v);
+        }
+        merge(&mut self.anywhere, other.anywhere);
+        if other.image && !self.image {
+            self.image = true;
+            changed = true;
+        }
+        if other.dropped && !self.dropped {
+            self.dropped = true;
+            changed = true;
+        }
+        changed
+    }
+}
+
+/// The function being scanned and its fixed spaces.
+struct Scan<'a> {
+    data: &'a Funcdata,
+    big: bool,
+    unique: Option<i32>,
+    code_space: u64,
+}
+
+/// Over-approximates [`value`]: the exact key and every view it may read. A
+/// temporary missing after an instruction boundary is unknown.
+fn may_read(cx: &Scan<'_>, id: VarnodeId, state: &MayState) -> (May, Option<u64>) {
+    let v = cx.data.vbank().get(id).expect("raw flow varnode");
+    if v.is_constant() {
+        return (May::constant(v.get_offset(), v.get_size()), Some(v.get_offset()));
+    }
+    let temporary = v.get_space().get_type() == spacetype::IPTR_INTERNAL;
+    let (space, offset, size) = (v.get_space().get_index(), v.get_offset(), v.get_size());
+    let big = cx.big;
+    let mut may = May::default();
+    let mut found = false;
+    for (&(_, at, width), &stored) in state
+        .values
+        .range((space, offset.saturating_sub(8), i32::MIN)..=(space, offset, i32::MAX))
+    {
+        if at == offset && width == size {
+            may = may.join(stored);
+        } else if width <= 8 && size <= width && offset + size as u64 <= at + width as u64 {
+            let displacement = (offset - at) as i32;
+            let shift = if big { width - size - displacement } else { displacement };
+            let mask = may_width(size);
+            may = may.join(May {
+                zeros: (stored.zeros >> (shift * 8)) & mask,
+                ones: (stored.ones >> (shift * 8)) & mask,
+                stack: if shift == 0 && size >= 4 { stored.stack } else { Offset::Never },
+            });
+        } else {
+            continue;
+        }
+        found = true;
+    }
+    if temporary && !found && state.dropped {
+        may = May { zeros: u64::MAX, ones: u64::MAX, stack: Offset::Any };
+    }
+    (may, None)
+}
+
+/// Removing fewer overlapped keys than [`write`] only keeps extra facts. A
+/// written temporary stays present, even with no fact, so it reads as known.
+fn may_write(state: &mut MayState, (space, offset, size): Key, value: May, unique: Option<i32>) {
+    let end = offset.saturating_add(size as u64);
+    while let Some(k) = state
+        .values
+        .range((space, offset.saturating_sub(64), i32::MIN)..(space, end, i32::MIN))
+        .find(|(&(_, at, width), _)| at.saturating_add(width as u64) > offset)
+        .map(|(&k, _)| k)
+    {
+        state.values.remove(&k);
+    }
+    if value != May::default() || Some(space) == unique {
+        state.values.insert((space, offset, size), value);
+    }
+}
+
+/// Over-approximates [`pure`] followed by [`partial_bitwise`].
+fn may_pure(cx: &Scan<'_>, op: OpId, state: &MayState) -> May {
+    let data = cx.data;
+    use OpCode::{CPUI_INT_ADD, CPUI_INT_AND, CPUI_INT_OR, CPUI_INT_RIGHT, CPUI_INT_SUB, CPUI_INT_ZEXT};
+    let o = data.obank().get(op).expect("raw flow op");
+    let code = o.code();
+    let out_size = o.get_out().map_or(0, |out| key(data, out).2);
+    let count = o.num_input() as usize;
+    if count > 3 {
+        return May::full(out_size);
+    }
+    let mut keys = [(0, 0, 0); 3];
+    let mut read = [(May::default(), None); 3];
+    for i in 0..count {
+        let vn = o.get_in(i as i32).expect("raw op input");
+        keys[i] = key(data, vn);
+        read[i] = may_read(cx, vn, state);
+    }
+    let (inputs, keys) = (&read[..count], &keys[..count]);
+    let sizes = |i: usize| keys[i].2;
+    let width = may_width(out_size);
+    let same = count == 2 && keys[0] == keys[1];
+    let mut result = May::default();
+    if let Some(&(first, _)) = inputs.first() {
+        if code == OpCode::CPUI_COPY || code == CPUI_INT_ZEXT || (same && matches!(code, CPUI_INT_OR | CPUI_INT_AND)) {
+            result = result.join(first);
+            if code == CPUI_INT_ZEXT {
+                result.zeros |= width & !may_width(sizes(0));
+            }
+        }
+    }
+    if count > 0 && inputs.iter().enumerate().all(|(i, (may, _))| may.may_be_constant(sizes(i))) {
+        result = result.join(May::full(out_size));
+    }
+    if let [(a, _), (b, literal)] = inputs {
+        let b_constant = b.may_be_constant(sizes(1));
+        if b_constant && matches!(code, CPUI_INT_ADD | CPUI_INT_SUB | CPUI_INT_OR) && literal.is_none_or(|c| c == 0) {
+            result = result.join(*a);
+        }
+        if b_constant && matches!(code, CPUI_INT_ADD | CPUI_INT_SUB) && matches!(out_size, 4 | 8) {
+            let stack = match (a.stack, literal) {
+                (Offset::Never, _) => Offset::Never,
+                (Offset::At(at), Some(c)) if code == CPUI_INT_ADD => Offset::At(at.wrapping_add(*c as u32)),
+                (Offset::At(at), Some(c)) => Offset::At(at.wrapping_sub(*c as u32)),
+                _ => Offset::Any,
+            };
+            result = result.join(May { stack, ..May::default() });
+        }
+        let (za, oa, zb, ob) = (a.zeros & width, a.ones & width, b.zeros & width, b.ones & width);
+        let bits = match code {
+            CPUI_INT_AND => Some((za | zb, oa & ob)),
+            CPUI_INT_OR => Some((za & zb, oa | ob)),
+            CPUI_INT_RIGHT if b_constant => Some(match literal {
+                Some(s) if *s < 64 && *s < (out_size as u64) * 8 => {
+                    (((za >> s) | !(width >> s)) & width, (oa >> s) & width)
+                }
+                Some(_) => (width, 0),
+                None => (width, if oa != 0 { width } else { 0 }),
+            }),
+            _ => None,
+        };
+        if let Some((zeros, ones)) = bits {
+            result = result.join(May { zeros, ones, stack: Offset::Never });
+        }
+    }
+    result
+}
+
+/// Over-approximates [`transfer`] for every context the state covers.
+fn may_transfer(cx: &Scan<'_>, op: OpId, state: &mut MayState) {
+    let data = cx.data;
+    let o = data.obank().get(op).expect("raw flow op");
+    let space_of = |slot: i32, state: &MayState| {
+        may_read(cx, o.get_in(slot).expect("memory op space"), state).1.is_none_or(|s| s == cx.code_space)
+    };
+    match o.code() {
+        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+            let proto = data.get_call_specs_index(op).map(|i| data.get_call_specs(i).proto());
+            state.values.retain(|&(space, offset, size), _| {
+                let Some(space) = data.get_arch().manage().get_space(space) else {
+                    return false;
+                };
+                proto.is_some_and(|p| {
+                    p.has_effect(&Address::new(space.clone(), offset), size)
+                        == crate::fspec::effect_type::UNAFFECTED
+                })
+            });
+            state.stack.clear();
+            state.anywhere = May::default();
+            state.image = false;
+        }
+        OpCode::CPUI_CALLOTHER => *state = MayState::default(),
+        OpCode::CPUI_STORE => {
+            let stored = o.get_in(2).expect("STORE value");
+            let size = key(data, stored).2;
+            let (value, _) = may_read(cx, stored, state);
+            let address = may_read(cx, o.get_in(1).expect("STORE address"), state).0.stack;
+            match address {
+                Offset::At(offset) if space_of(0, state) => {
+                    state.stack.retain(|&(at, width), _| {
+                        at.wrapping_sub(offset) >= size as u32 && offset.wrapping_sub(at) >= width as u32
+                    });
+                    if value != May::default() {
+                        state.stack.insert((offset, size), value);
+                    }
+                }
+                Offset::Any if space_of(0, state) => state.anywhere = state.anywhere.join(value),
+                _ => {
+                    state.stack.clear();
+                    state.anywhere = May::default();
+                    state.image = false;
+                }
+            }
+        }
+        OpCode::CPUI_CBRANCH | OpCode::CPUI_BRANCHIND => {}
+        code => {
+            let Some(out) = o.get_out() else { return };
+            let out = key(data, out);
+            let value = if code == OpCode::CPUI_LOAD {
+                let mut value = May::default();
+                if space_of(0, state) {
+                    let (address, _) = may_read(cx, o.get_in(1).expect("LOAD address"), state);
+                    value = match address.stack {
+                        Offset::Never => value,
+                        Offset::At(at) => state.stack.get(&(at, out.2)).copied().unwrap_or_default(),
+                        Offset::Any => state
+                            .stack
+                            .iter()
+                            .filter(|(&(_, width), _)| width == out.2)
+                            .fold(value, |acc, (_, &v)| acc.join(v)),
+                    };
+                    if address.stack != Offset::Never {
+                        value = value.join(state.anywhere);
+                    }
+                    let address_size = key(data, o.get_in(1).expect("LOAD address")).2;
+                    if state.image && address.may_be_constant(address_size) {
+                        value = value.join(May::full(out.2));
+                    }
+                }
+                value
+            } else {
+                may_pure(cx, op, state)
+            };
+            may_write(state, out, value, cx.unique);
+        }
+    }
+}
+
+/// Whether some context of [`sites`] could reach an LR return with a known
+/// constant in LR. Only such a return becomes a first-round site; when this is
+/// false, `sites` would return no sites, so the fixed point is skipped.
+/// Temporaries are dropped on every edge that leaves an instruction. Blocks
+/// are revisited in reverse postorder until the union stops growing.
+fn may_return_constant_lr(data: &Funcdata, arch: &Architecture) -> bool {
+    let Some(lr) = link_register(arch) else { return false };
+    if !data.obank().iter_code(OpCode::CPUI_RETURN).any(|op| is_lr_return(data, op, lr)) {
+        return false;
+    }
+    let n = data.bblocks_get_size() as usize;
+    let (Some(r1), Some(space)) = (register(arch, "r1"), data.get_address().get_space()) else {
+        return false;
+    };
+    if n == 0 || n > 4096 {
+        return false;
+    }
+    let unique = arch.manage().get_unique_space().map(|s| s.get_index());
+    let cx = Scan { data, big: space.is_big_endian(), unique, code_space: space.get_index() as u64 };
+    let blocks: Vec<_> = (0..n).map(|i| data.bblocks_get_block(i as i32)).collect();
+    let indices: BTreeMap<_, _> = blocks.iter().enumerate().map(|(i, b)| (*b, i)).collect();
+    let mut initial = MayState { image: true, ..MayState::default() };
+    initial.values.insert(r1, May { stack: Offset::At(0), ..May::default() });
+    let mut inputs: Vec<Option<MayState>> = vec![None; n];
+    inputs[0] = Some(initial);
+    let mut order = vec![usize::MAX; n];
+    let mut post = Vec::with_capacity(n);
+    let mut seen = vec![false; n];
+    let mut walk = vec![(0usize, 0i32)];
+    seen[0] = true;
+    while let Some((b, j)) = walk.pop() {
+        let block = data.bblocks_ref().block(blocks[b]);
+        if j < block.size_out() {
+            walk.push((b, j + 1));
+            if let Some(&next) = indices.get(&block.get_out(j)) {
+                if !seen[next] {
+                    seen[next] = true;
+                    walk.push((next, 0));
+                }
+            }
+        } else {
+            post.push(b);
+        }
+    }
+    for (position, &b) in post.iter().rev().enumerate() {
+        order[b] = position;
+    }
+    let mut queue = BTreeSet::from([(order[0], 0usize)]);
+    let mut work = 0usize;
+    while let Some((_, i)) = queue.pop_first() {
+        let mut state = inputs[i].clone().expect("queued block has an input");
+        let ops = data.bb_ops(blocks[i]);
+        for &op in &ops {
+            work += 1;
+            if work > 1_000_000 {
+                return true;
+            }
+            if is_lr_return(data, op, lr) {
+                let input = data.obank().get(op).and_then(|o| o.get_in(0)).expect("LR return input");
+                if may_read(&cx, input, &state).0.may_be_constant(lr.2) {
+                    return true;
+                }
+            }
+            may_transfer(&cx, op, &mut state);
+        }
+        let last = ops.last().and_then(|&op| data.obank().get(op)).map(|o| o.get_addr().clone());
+        let block = data.bblocks_ref().block(blocks[i]);
+        let mut edges = Vec::with_capacity(block.size_out() as usize);
+        for j in 0..block.size_out() {
+            let Some(&next) = indices.get(&block.get_out(j)) else { return true };
+            let first = data.bb_op_head(blocks[next]).and_then(|op| data.obank().get(op)).map(|o| o.get_addr().clone());
+            edges.push((next, last.is_some() && last == first));
+        }
+        let mut across = if edges.iter().any(|&(_, within)| within) { state.clone() } else { std::mem::take(&mut state) };
+        if let Some(space) = unique {
+            let temporaries: Vec<Key> = across.values.range((space, 0, i32::MIN)..=(space, u64::MAX, i32::MAX)).map(|(&k, _)| k).collect();
+            for k in temporaries {
+                across.values.remove(&k);
+            }
+        }
+        across.dropped = true;
+        for (next, within) in edges {
+            let incoming = if within { &state } else { &across };
+            let changed = match &mut inputs[next] {
+                Some(prior) => prior.join_from(incoming, unique),
+                slot => {
+                    *slot = Some(incoming.clone());
+                    true
+                }
+            };
+            if changed {
+                queue.insert((order[next], next));
+            }
+        }
+    }
+    false
+}
+
 /// Recheck temporary decisions against the complete graph before publishing them.
 #[allow(clippy::mutable_key_type)]
 pub(crate) fn classify(
@@ -633,6 +1043,9 @@ pub(crate) fn classify(
     automatic: &BranchPlans,
     work: &mut usize,
 ) -> KunaResult<Classification> {
+    if automatic.is_empty() && !may_return_constant_lr(data, arch) {
+        return Ok(Classification::Sites(BranchPlans::new()));
+    }
     match sites(data, arch, automatic, work) {
         Some(result) => result,
         None if automatic.is_empty() => Ok(Classification::Sites(BranchPlans::new())),
