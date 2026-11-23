@@ -3287,6 +3287,53 @@ ARM predicated code: a `moveq`/`movne` pair ahead of the re-tested branch
 (or INT_XOR) where one operand is provably zero along the path that reaches it (the
 `MultiPredicate` zero-slot analysis) collapses to a COPY of the other operand.
 
+(kuna) **Which 0/1 selects fold into their condition** (`option boolbranch
+fold|keep`, default keep,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_boolbranch.rs (keeps_branch)`).
+`ruleaction_7.rs (RuleConditionalMove)` (group `conditionalexe`) turns a
+two-input MULTIEQUAL whose inputs are both boolean, under a CBRANCH root whose
+arms are single-predecessor blocks, into a boolean expression: `c || x` or
+`c && x` when one input is the constant, the condition itself (`zext(c)` or its
+negation) when the inputs are the constants `1` and `0`. Upstream does that
+whatever the binary did. For conditional execution it is right: a Thumb
+`ite hi; movhi r3,#1; movls r3,#0`, an x86 `cmovg` (`tmp = rm; if (!cc) goto
+inst_next; reg = tmp;` in SLEIGH) or an AArch64 `csel` lifts to a CBRANCH that
+skips the rest of its own instruction, and the source wrote `v = a > b`. For a
+branch instruction it erases an `if` the author wrote: unoptimized `if
+(fnmatch(p, s, FNM_CASEFOLD) == 0) return true; return false;` is a `jne` over two
+`mov` blocks, and printed as `return fnmatch(p,s,0x10) == 0;`. With `keep`, a
+select of the constants `1` and `0` stays a branch when its CBRANCH is a branch
+instruction, and the structurer prints the `if` (`if (!fnmatch(p,s,0x10)) return
+1; return 0;` once `returndup` splits the shared return; an assignment prints
+`v = c ? 1 : 0;` under `iteregion`). The test is the instruction address
+(`kuna_boolbranch.rs (is_branch_instruction)`): a conditional-execution guard
+falls through into the rest of its own instruction, so one arm block starts at
+the CBRANCH's address or still holds an op of it, while a branch instruction is
+the last op of its instruction and both arms begin at other instructions. The
+block's start address is what survives `ActionConditionalExe`: after it merges a
+Thumb `ite` pair into one diamond, both arms' COPYs can sit at the second
+instruction's address, and only the first arm's start still names the guard's
+instruction. Two kinds of branch instruction still fold, because a compiler
+emits them for a source with no `if`. A jump on the unordered result of a float
+comparison (`kuna_boolbranch.rs (branches_on_nan)`, a CBRANCH on `NAN(x)` or its
+negation): GCC materializes a float `!=` as `mov $1,%edi; ucomisd; jp 1f; cmove
+%eax,%edi`, which kept would print `v1 = 1; if (!NAN(a0)) v1 = 0;
+read_nan(v1);` (the vendored `nan.xml` datatest) instead of `read_nan(NAN(a0));`.
+And a flag the compiler sets with a jump and then only tests
+(`kuna_boolbranch.rs (arms_only_assign, only_tested)`): the arms assign the
+constant and do nothing else, and the select's value reaches, through copies,
+extensions, truncations and joins, only branches and boolean operations. GCC at
+`-O0` computes `__builtin_add_overflow` that way (`mov $0,%ecx; add; jno 1f; mov
+$1,%ecx; 1: test %cl,%cl`); kept, it would print `v = 0; if (SCARRY8(a,b)) v =
+1; if (v)` for a source with no `v`. A flag the author wrote keeps its branch
+when its arm does other work (`set = 1; noeval++;`) or the value is returned,
+stored or computed with. Selects of a boolean expression (the `c && x` forms) fold as before. `fold`
+is upstream's rule. On the decbench corpus the default turns 171 functions at
+`-O0` and 45 at `-O2` (ARM firmware whose compiler used a branch rather than an
+IT block) into exact matches of the source's control flow and loses 3, where the
+source wrote `return c ? 1 : 0;` or kept a flag the new output also shows
+(`tests/stages/kuna-boolbranch.xml`, `tests/stages/kuna-boolbranch-thumb.xml`).
+
 **Conditional constants.** `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
 (ActionConditionalConst)` (mainloop tail, wrapper over
 `decompiler/crates/kuna-decomp/src/p3_dataflow/condconst.rs (condconst_apply)`)
