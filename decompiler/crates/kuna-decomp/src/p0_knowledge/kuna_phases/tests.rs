@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_232() {
-    assert_eq!(kuna_num_settables(), 232);
-    assert_eq!(SETTABLE_TABLE.len(), 232);
+fn settable_count_is_238() {
+    assert_eq!(kuna_num_settables(), 238);
+    assert_eq!(SETTABLE_TABLE.len(), 238);
 }
 
 #[test]
-fn tier_counts_are_48_core_125_transform_59_analysis() {
+fn tier_counts_are_50_core_125_transform_63_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_48_core_125_transform_59_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (48, 125, 59));
+    assert_eq!((core, transform, analysis), (50, 125, 63));
 }
 
 #[test]
@@ -407,6 +407,9 @@ fn option_values_live_value_present_for_76() {
         // (kuna) Stripped Mach-O stub naming: an analysis-pass gate read
         // console-side, like `calltable` above. Default-on.
         "stubbinds",
+        // (kuna) Jump-thunk naming: a commit gate read console-side, like
+        // `stubbinds` above. Default-on.
+        "thunknames",
         // (kuna) ARM literal-pool inference — an analysis-pass gate with no codegen
         // live reader (read console-side via kuna_live_value), same as
         // `tailcallentry` above. Default-off, ARM-only.
@@ -425,10 +428,17 @@ fn option_values_live_value_present_for_76() {
         "blobs",
         // (kuna) The Swift type-layout arm's gate, read inside that pass.
         "swifttypes",
+        // (kuna) The Swift helper arm's gate, read inside the metadata pass.
+        "swifthelpers",
         // (kuna) Objective-C instance layouts — same commit-side gate as `objc`.
         "objcivars",
         // (kuna) The Swift calling-convention arm's gate, read inside that pass.
         "swiftcall",
+        // (kuna) The Swift @objc-thunk naming arm's gate, read at the commit.
+        "swiftobjcthunk",
+        // (kuna) The Swift value-witness arm's gate, read inside that pass and
+        // by the decompiler's witness-table vote (`ArchContext`).
+        "valuewitness",
         // (kuna) The Objective-C SDK header directory — a load-time env bridge
         // (`KUNA_OBJCSDK`, the sourcelang pattern); no codegen live reader.
         "objcsdk",
@@ -868,7 +878,9 @@ fn option_values_live_value_present_for_76() {
     // +1 for `calleefilledarg` (live_field = callee_filled_arg).
     // +1 for `cstringconst` (live_field = cstring_const).
     // +1 for `switchextent` (live_field = switch_extent).
-    assert_eq!(with_live, 85);
+    // +1 for `switchmerge` (live_field = switchmerge).
+    // +1 for `cachereturn` (live_field = cache_return).
+    assert_eq!(with_live, 87);
 }
 
 #[test]
@@ -1095,6 +1107,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `persistcalls`; its P3 row sits after `readonlycalls`.
     // +1 for `copywaves`; its P3 row sits after `deadwaves`.
     // +1 for `deadcascade`; its P3 row sits after `copywaves`.
+    // +1 for `valuewitness`; its P1 row sits after `swiftcall`.
     // +2 for `stubtailcall` (after `mappedflowboundary`) and `gotimportproto` (after `pltlocal`).
     // +1 for `aggregatefields`; its P5 row sits after `fieldtype`.
     // +1 for `ppcapu`; its P1 row sits after `ifuncfpret`.
@@ -1124,9 +1137,14 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `opaquepredicate`; its P3 row sits after `globalarrayanchor`.
     // +1 for `calltable`; its P1 row sits after `tailcallentry`.
     // +1 for `stubbinds`; its P1 row sits after `calltable`.
+    // +1 for `thunknames`; its P1 row sits after `stubbinds`.
     // +1 for `cstringconst`; its P9 row sits after `globalref`.
     // +1 for `switchextent`; its P2 row sits after `switchmodbound`.
-    assert_eq!(json.matches("},\n").count(), 231);
+    // +1 for `switchmerge`; its P8 row sits after `gotonext`.
+    // +1 for `cachereturn`; its P4 row sits after `mixedtailret`.
+    // +1 for `swiftobjcthunk`; its P1 row sits after `swiftcall`.
+    // +1 each for `swifthelpers` and `valuewitness`.
+    assert_eq!(json.matches("},\n").count(), 237);
     // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 

@@ -801,6 +801,10 @@ pub struct ArchContext {
     /// (kuna) `option gonewtype`; read by [`crate::p5_types::kuna_gonewtype`].
     /// Copied from the engine `Architecture` in `build_arch_handle`.
     pub go_new_type: bool,
+    /// (kuna `swifttypes`) Type Swift metadata accessor call results; read by
+    /// [`crate::p5_types::kuna_swiftmetaresult`]. Copied from the engine
+    /// `Architecture` in `build_arch_handle`.
+    pub swift_metadata_results: bool,
     /// (kuna) The `SoftwareBreakpoint` user-op id when `option ptrauthtrap`
     /// is on; read by [`crate::p2_lift::kuna_ptrauthtrap`].
     pub ptrauth_trap_userop: Option<kuna_base::types::uint4>,
@@ -937,6 +941,10 @@ pub struct ArchContext {
     /// [`Architecture::char_ptr`](crate::architecture::Architecture).  The rule
     /// lives in [`kuna_charptr`](crate::p5_types::kuna_charptr).
     pub char_ptr: bool,
+    /// (kuna `valuewitness`) Type a Swift value witness table loaded through
+    /// type metadata. Copied from
+    /// [`Architecture::analysis_valuewitness`](crate::architecture::Architecture).
+    pub analysis_valuewitness: bool,
     /// (kuna `elemptr`) Declare a pointer used only as an array of one element
     /// type as that pointer; option `elemptr on|off`.  Copied from
     /// [`Architecture::elem_ptr`](crate::architecture::Architecture).  The rule
@@ -986,6 +994,9 @@ pub struct ArchContext {
     /// (kuna) `mixedtailret`: a value returned beside a claimed tail-call
     /// result is returned too.  Read by [`crate::p4_calls::kuna_mixedtailret`].
     pub mixed_tail_ret: bool,
+    /// (kuna) `cachereturn`: a return register holding one memory cell's value
+    /// on every path is returned.  Read by [`crate::p4_calls::kuna_cachereturn`].
+    pub cache_return: bool,
     /// (kuna) `armfloatreturn` is on and the image states the ARM VFP calling
     /// convention.  Read by [`crate::p4_calls::kuna_armfloatreturn`].
     pub arm_float_return: bool,
@@ -1554,6 +1565,9 @@ pub struct ArchContext {
     /// (kuna `swiftcall`) The Swift registers and the throwing model, when the
     /// image binds the Swift convention ([`crate::kuna_swiftcall`]).
     pub swift_abi: Option<Rc<crate::kuna_swiftcall::SwiftAbi>>,
+    /// (kuna `swiftmetadata`) Each local Swift enum's case count by its
+    /// metadata accessor's entry offset (`p2_lift/kuna_switchextent.rs`).
+    pub swift_enum_cases: Rc<std::collections::BTreeMap<u64, u32>>,
     /// (kuna `calleereginputs`) The `__thiscall` model, the ECX storage a
     /// virtual call reads its `this` from and EAX's, when the option applies.
     pub virtual_this: Option<(Rc<crate::fspec::ProtoModel>, kuna_base::address::Address, int4, kuna_base::address::Address)>,
@@ -1596,6 +1610,7 @@ impl ArchContext {
             callee_proto_models: Vec::new(),
             bound_proto_models: Rc::default(),
             swift_abi: None,
+            swift_enum_cases: Rc::default(),
             virtual_this: None,
             defaultfp: None,
             evalfp_current: None,
@@ -1637,6 +1652,7 @@ impl ArchContext {
             go_write_barrier: 1,
             // (kuna) `option gonewtype` default on; copied the same way.
             go_new_type: true,
+            swift_metadata_results: false,
             ptrauth_trap_userop: None,
             arm64e: false,
             // (kuna) angr-style default naming is default-on (Architecture::reset).
@@ -1684,6 +1700,7 @@ impl ArchContext {
             cast_index: false, // (kuna) option castindex
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void, // (kuna) option ptrfromuse (default void)
             char_ptr: false, // (kuna) option charptr (default off)
+            analysis_valuewitness: true, // (kuna) option valuewitness
             elem_ptr: false, // (kuna) option elemptr, copied from Architecture
             elem_ptr_ranges: std::rc::Rc::new(Vec::new()), // (kuna) elemptr
             libctypes: false, // (kuna) option libctypes, copied from Architecture
@@ -1716,6 +1733,7 @@ impl ArchContext {
             narrow_ext: crate::kuna_narrowext::Rules::default(),
             pass_through: true, // (kuna) option passthrough (default on)
             mixed_tail_ret: false, // (kuna) option mixedtailret (default off)
+            cache_return: true, // (kuna) option cachereturn (default on)
             readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             persist_calls: Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT),
             kuna_custom_reg_callers: Rc::default(),
@@ -2379,6 +2397,18 @@ impl ArchContext {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
         }
+    }
+
+    /// (kuna `switchextent`) The name of the function symbol that starts at
+    /// `entry`, without building its prototype as [`Self::query_function`] does.
+    pub fn function_name_at(&self, entry: &Address) -> Option<String> {
+        let query = self.effective_global_query(entry)?;
+        let space_index = entry.get_space()?.get_index();
+        let name = query
+            .entries_starting_at(space_index, entry.get_offset())
+            .find(|e| e.is_function)
+            .map(|e| e.symbol_name.clone());
+        name
     }
 
     /// (kuna `switchrunon`) Whether `b` lies in the load-image section that

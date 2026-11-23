@@ -18,6 +18,7 @@
 //! the edges of a `BlockMultiGoto`, which always keep their labels.
 
 use crate::block::{block_flags, BlockGraph, BlockKind, BlockType};
+use crate::p8_structure::kuna_switchmerge::SwitchPlans;
 use crate::context::BlockId;
 use std::collections::BTreeSet;
 
@@ -54,8 +55,8 @@ impl GotoRewrites {
 }
 
 /// Where a `break;` at `id` would go: the block after the innermost loop or
-/// switch whose body holds `id`.
-fn break_target(graph: &BlockGraph, id: BlockId) -> Option<BlockId> {
+/// switch whose body holds `id`; a merged switch breaks out of its host.
+fn break_target(graph: &BlockGraph, plans: &SwitchPlans, id: BlockId) -> Option<BlockId> {
     let mut child = id;
     let mut cur = graph.block(id).get_parent()?;
     loop {
@@ -69,8 +70,9 @@ fn break_target(graph: &BlockGraph, id: BlockId) -> Option<BlockId> {
             _ => false,
         };
         if body {
-            let parent = blk.get_parent()?;
-            return graph.next_printed_flow_after(parent, cur);
+            let scope = plans.hosts.get(&cur).copied().unwrap_or(cur);
+            let parent = graph.block(scope).get_parent()?;
+            return graph.next_printed_flow_after(parent, scope);
         }
         child = cur;
         cur = blk.get_parent()?;
@@ -79,7 +81,8 @@ fn break_target(graph: &BlockGraph, id: BlockId) -> Option<BlockId> {
 
 /// The goto rewrites for the structured tree under `root`; `breaks` is option
 /// `loopbreak_recovery`, which also decides whether a jump prints as `break;`.
-pub(crate) fn goto_rewrites(graph: &BlockGraph, root: BlockId, breaks: bool) -> GotoRewrites {
+/// `plans` holds the switch arms the printer moves or leaves out.
+pub(crate) fn goto_rewrites(graph: &BlockGraph, root: BlockId, breaks: bool, plans: &SwitchPlans) -> GotoRewrites {
     let mut out = GotoRewrites::default();
     let mut released = BTreeSet::new();
     let mut kept = BTreeSet::new();
@@ -103,7 +106,7 @@ pub(crate) fn goto_rewrites(graph: &BlockGraph, root: BlockId, breaks: bool) -> 
             if t.is_some() && next == t {
                 out.silent.insert(id);
                 released.extend(t);
-            } else if breaks && t.is_some() && gototype == block_flags::f_goto_goto && break_target(graph, id) == t {
+            } else if breaks && t.is_some() && gototype == block_flags::f_goto_goto && break_target(graph, plans, id) == t {
                 out.breaks.insert(id);
                 released.extend(t);
             } else if gototype == block_flags::f_goto_goto {
@@ -118,10 +121,13 @@ pub(crate) fn goto_rewrites(graph: &BlockGraph, root: BlockId, breaks: bool) -> 
         }
         let cases = blk.switch_caseblocks();
         if cases.iter().any(|c| c.gototype == block_flags::f_goto_goto) {
-            let after = blk.get_parent().and_then(|par| graph.next_printed_flow_after(par, id));
+            let scope = plans.hosts.get(&id).copied().unwrap_or(id);
+            let after = graph.block(scope).get_parent().and_then(|par| graph.next_printed_flow_after(par, scope));
             for case in cases.iter().filter(|c| c.gototype == block_flags::f_goto_goto) {
                 let t = leaf(case.block);
-                if breaks && t.is_some() && after == t {
+                if plans.dropped.contains(&(id, case.block)) {
+                    released.extend(t);
+                } else if breaks && t.is_some() && after == t {
                     out.case_breaks.insert((id, case.block));
                     released.extend(t);
                 } else {

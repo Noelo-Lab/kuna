@@ -2388,6 +2388,22 @@ the import only while some other printed statement still reads that local: when
 every read of it is such a load, the loads keep `*v2`, so naming the import never
 leaves the local's assignment dead.
 
+The slot's own value, used without a dereference, is the import's address: Swift
+passes a witness table, type metadata or a conformance descriptor to the runtime
+this way (`swift_getWitnessTable(conformance, type, args)`), and Objective-C a class
+object as a message receiver. With the option on, `PrintC::push_vn_explicit`
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (import_slot_address)`)
+renders a read of a Mach-O import slot whose import is a data object (the slots
+`machodataslots` classifies from the import's mangling, chapter
+[01](01-program-prep.md)) as `&<import>` instead of `dat_<slot>`, named by the same
+`query_function` lookup. A function import's slot keeps its name, so a test of a weak
+function's address still reads the slot. It does so only for the value the loader
+put there: a read whose varnode is a function input, or comes from one through call
+side effects (`INDIRECT`) and joins (`MULTIEQUAL`); a value the function stored into
+the slot keeps the slot name. So do a read narrower than the slot and a read by an
+operator C does not apply to a pointer (a mask, a shift, a multiply or a division:
+`dat_<slot> | 1`, never `&<import> | 1`); an addition stays `&<import> + 8`.
+
 (kuna `cstringconst`, default on) A pointer-wide constant inside a string-literal
 section prints as the literal there, whatever type it reaches the printer with
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_cstringconst.rs`). `pushConstant`

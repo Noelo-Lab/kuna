@@ -21,6 +21,13 @@ caller builds in `x8` for a hidden `pacda` is not the next call's first
 argument, with the modifier computed and folded to a constant. A tagged
 address and a result buffer in `x8` are the controls.
 
+`kuna-aif-slot-edges.xml` compares stock and section-relative AIF inventories
+on stripped x86-64 and MIPS32 ELFs. The six-byte x86 grid covers padded
+entries, section boundaries, overlapping decodes and terminal padding before
+zero fill. The four-byte MIPS grid checks both direct and padding-adjusted
+entry candidates with delay slots. The fixture languages reuse the stock
+decoders and calling conventions through the stage corpus's `specs/` directory.
+
 `ghangr-go-paniccheck-return.xml` checks that a returning Go panic helper
 falls through to the terminal `runtime.gopanic` call. It also checks the
 helper's conditional throw and shows the caller's sentinel with the known
@@ -48,6 +55,36 @@ and sees the same pop.
 whose block holds unread flag writes once the register space has had a heritage
 pass (`deadcode delay register 50` keeps those writes alive). Before the fix the
 second `if (x)` stayed.
+
+`kuna-switchmerge.xml` checks option `switchmerge`: two AArch64 range-checked
+jump tables on one selector, the second reached when the first's range check
+fails, print as one `switch` whose holes take the one `default:` arm. In `f`
+the first table's holes jump to the default code (`case 0x43: case 0x46:` and
+an inner `default: goto` before); in `g` they go to the second table. The off
+run keeps the nested form.
+
+`kuna-switchmerge-values.xml` checks two rules for jump tables. Under option
+`switchmerge`, an AArch64 table whose holes go where its `default:` code sends
+them (through `x == 0x60` and `x == 0x70` tests that fail for the hole values)
+prints no label for the holes: in `f` the holes jumped to a block the default
+code also reaches (`case 0x43: case 0x46: goto`), in `g` they left the switch
+(`break;`). The off run keeps `f`'s labels. `h` checks that `jumptablemax`
+caps a guarded table's distinct arms, not its entries: an 1100-entry
+range-checked table with four arms prints as a switch, not as `jump-as-call`.
+`p` (clang -O2) keeps its hole labels: the arm before them ends in a jump to
+the code after the switch that prints as nothing, so it runs into them.
+
+`kuna-switchmerge-split.xml` checks two more `switchmerge` rules on AArch64
+tables. In `k` a range test splits the selector between two range-checked
+tables whose defaults both jump to the same code; it prints as one switch with
+both tables' labels and one `default:`. In `m` the default arm starts with
+`if (x == 0x60) return ...;`, which prints as `case 0x60:`. The off run keeps
+the `if` forms.
+
+`kuna-jumptableslots.xml` checks the slot bound on a guard-bounded table past
+`jumptablemax`. gcc -O2 guards `x <= 0x28ff` and indexes a 41-entry table with
+`x >> 8`, so the guard admits 0x2900 values over 41 slots. The table stays a
+computed call instead of a switch with a `case` label for each value of `x`.
 
 `kuna-switchsingle.xml` checks that a jump table whose four entries all name one
 block becomes straight-line code with the "all go to same destination" warning
@@ -356,6 +393,7 @@ readability defaults measured on the angr `fmt` corpus binary, DIV-34+ in
 | `kuna-dyldcacheobjc.xml` | Foundation out of an iOS 16.4 dyld shared cache (Noelo-Lab/kuna#1623): `objc on` typed no `self` and every `objc_msgSend$<sel>` stub stayed `sub_<addr>`. A cache's small method lists hold selectors and type strings as offsets from the cache's selector base (`0x40000000`/`0x20000000`) and carry two flags in the low bits of the entry size, the strings and selector reference targets live in libobjc's `__OBJC_RO` outside the image, and `baseMethods` with its low bit set is a relative list of lists. P1 external-refinement (`loader/kuna_dyldcache.rs`: the base from the ObjCOptimizationHeader, else libobjc's `objc_opt_t`; `analyzers/objc/kuna_objccache.rs` reads through the cache; `methods.rs`/`classt.rs` decode the flags and the list of lists) on the synthetic caches of `dyld_cache_objc.py` | `option objc on\|off` (no new settable) |
 | `kuna-objcdirect.xml` | UIKitCore out of an iOS 16.4 dyld shared cache: `-[UILabel _setAllowsDefaultTighteningForTruncation:]` printed its receiver as `objc_object *a0` and an ivar as `((objc_object **)a0)[0x56]`, where `objc off` at least showed `_OBJC_IVAR_$_UILabel._configuration`. The method is `objc_direct`: no method list names it, it takes no `_cmd`, and only its symbol says it is a method, so the pass never typed its `self` while still folding the offset variables it loads. P1 external-refinement (`analyzers/objc/kuna_objcdirect.rs` hints the first argument register of every method symbol no method list gave as `self`, typed `<Class> *` for an instance method under `objcivars`; the hint is unlocked, the other parameters are recovered) on `macho_objc_direct.m` | none (a correctness fix, always on under `objc`) |
 | `kuna-objcsdk.xml` | A 1.9 MB third-party iOS app: 2,897 of 25,084 `objc_msgSend$<sel>` calls rendered with no argument (`setHidden:();`), `setAlpha:` showed `0x3ff0000000000000`, `setFrame:` one word for a CGRect — a framework selector is declared nowhere in the image. P1 external-refinement (`analyzers/objc/kuna_objcsdk.rs` reads `@interface`/`@protocol` methods, `@property` getter/setter pairs and `typedef`s from a user-named SDK or header directory into runtime-style encodings; the stub prototype path pins scalars to x/d registers, spreads an HFA `CGRect` over `d0..d3`, returns the flat struct) | `option objcsdk <directory>\|off` (new kuna settable, env-bridged load-time) |
+| `kuna-objcforin.xml` | Perplexity iOS 26.46 (`-[SentryScope setAttributeValue:forKey:]`): every `for (x in c)` loop printed its `NSFastEnumerationState` as eight unrelated locals and read `state.itemsPtr[i]` as `*(objc_object **)(v6 + v5 * 8)`, because the header reader spelled `(NSFastEnumerationState *)` as a class pointer, could not spell the `(id [_Nonnull])` buffer or `NSDictionary`'s generic `(K [])`, and the decoder made any `^{...}` a `void *`, so the selector had no prototype. P1 external-refinement (`analyzers/objc/kuna_objcsdk.rs` lays out a pointer to a `typedef struct` with member names, an array parameter is a pointer, a generic parameter is `id`; `analyzers/objc/encoding.rs` decodes `^{Name=...}` to a pointer to that struct) → P6 `gatherOpen` types the stack object passed to the typelocked pointer | `option objcsdk <directory>\|off` (no new settable) |
 | `kuna-objctypes.xml` | with the `objcivars` structs only `self` was typed: a getter returned `objc_object *`, an ivar of a local class was `objc_object *`, and a field read through either stayed `*(int *)((long)v + 8)` although the property attribute (`T@"Base"`) and ivar encoding (`@"Base"`) name the class. P1 external-refinement (`analyzers/objc/kuna_objcprops.rs` reads every `property_list_t` into class-naming getter/setter encodings; `Selectors::record` keeps the class-naming spelling of agreeing declarations; the decoder resolves `@"Base"` to the layout's struct, declared-record completion included) → P5 field resolution through the typed pointer | `option objc on\|off`, `option objcivars on\|off` (no new settable) |
 | `kuna-opaquepointerretype.xml` | `probe` keeps `&frame[1]` in a saved register (ARM32 r4, PowerPC32 r29); `retype` to a pointer to a bodiless `struct Opaque` added a default one-byte frame range that split the array, the copy holding the address was propagated away, and the retype was refused with `int4 *v3` printed instead. P6 frame layout under the stable-names replay (`p6_variables/funcdata_spacebase.rs` `gather_open`): a value carrying a replayed retype's lock whose pointee has no size lays its range out by the pointee it was printed with (`kuna_stablenames.rs` `printed_pointee`) | always on (`retype` directive) |
 | `kuna-stackpointerretype.xml` | `probe` keeps `&frame[1]` in a saved register (ARM32 r4, PowerPC32 r29); `retype` to a 16-byte `Probe *` re-laid the frame as a `Probe` record, which turned the pointer's definition into a copy that was propagated into its readers: the C printed `consume(&v4)` and the retype was refused. P3 copy propagation (`p3_dataflow/ruleaction_3.rs` `RulePropagateCopy`) keeps a copy that is a definition the replayed retype's lock matched (`p6_variables/kuna_stablenames.rs` `is_retyped_definition`) | always on (`retype` directive) |

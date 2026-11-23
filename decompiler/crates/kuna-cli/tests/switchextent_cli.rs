@@ -51,3 +51,26 @@ fn the_reference_walk_files_a_jump_to_each_case() {
     assert!(jumps("0x100ec").is_empty(), "unchecked, last table");
     assert!(jumps("0x10138").is_empty(), "last");
 }
+
+/// `switchextent`: a Swift enum's table is bounded by the enum's case count
+/// from its descriptor, also when it is the function's last; the halfwords
+/// after it are not rows.
+#[test]
+fn a_swift_enum_table_has_its_enums_case_count() {
+    let binary = common::fixture("swiftenumcase_aarch64");
+    let decompile = |extra: &[&str]| {
+        let mut args = vec!["decompile", binary.as_str(), "dispatch"];
+        args.extend_from_slice(extra);
+        let (out, stderr, rc) = common::run_kuna(&args);
+        assert_eq!(rc, 0, "{stderr}");
+        out
+    };
+    let on = decompile(&[]);
+    assert!(on.contains("switch(swift_getEnumCaseMultiPayload(a0,v1) & 0xffffffff) {"), "{on}");
+    assert_eq!(on.matches("case ").count(), 3, "{on}");
+    assert!(!on.contains("// jump-as-call"), "{on}");
+    let off = decompile(&["--option", "switchextent", "off"]);
+    assert!(!off.contains("switch(") && off.contains("// jump-as-call"), "{off}");
+    let nometa = decompile(&["--option", "swiftmetadata", "off"]);
+    assert!(!nometa.contains("switch(") && nometa.contains("// jump-as-call"), "{nometa}");
+}

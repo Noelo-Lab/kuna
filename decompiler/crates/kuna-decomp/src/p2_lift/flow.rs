@@ -4074,13 +4074,18 @@ truncating the fall-through here"
                 let end = self.data.get_arch().function_entry_after(&entry);
                 let mut bounded = false;
                 if self.data.kuna_extent_tables.is_none() {
+                    let arch = self.data.get_arch();
                     let tables = std::rc::Rc::new(super::kuna_switchextent::function_tables(
-                        self.env.translate(), self.env.mapped_flow_image(), &entry, end,
+                        self.env.translate(),
+                        self.env.mapped_flow_image(),
+                        &entry,
+                        end,
+                        super::kuna_switchextent::enum_calls(arch, self.env.translate(), &entry).as_ref(),
                     ));
                     if let Some(partial) = shared_partial.as_mut() {
                         partial.kuna_extent_tables = Some(std::rc::Rc::clone(&tables));
                     }
-                    bounded = tables.len() >= 2;
+                    bounded = tables.tables.len() >= 2 || !tables.cases.is_empty();
                     self.data.kuna_extent_tables = Some(tables);
                 }
                 if let Some(table) = wanted {

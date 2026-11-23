@@ -118,6 +118,7 @@ impl AnalysisPass for MachODataImportPass {
             let Some(end) = slot.checked_add(width) else { continue };
             out.externref.push((slot, end));
             out.import_slot_names.push((slot, minted_name(&name)));
+            out.data_import_slots.push(slot);
         }
         out
     }
