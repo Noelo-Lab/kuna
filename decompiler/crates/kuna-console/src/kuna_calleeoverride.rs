@@ -82,6 +82,7 @@ pub fn plant(
     site: &Address,
     callee: &str,
 ) -> Result<(), String> {
+    crate::jump_targets::require_unstated(prog, site)?;
     check_site(prog.arch().translate(), site)?;
     let target = callee_entry(prog, callee)?;
     prog.arch_mut()

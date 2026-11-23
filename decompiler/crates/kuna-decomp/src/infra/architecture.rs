@@ -1767,6 +1767,9 @@ pub struct Architecture {
     /// function entry -> call site -> callee entry
     /// ([`crate::p2_lift::kuna_calleeoverride`]).
     pub kuna_callee_overrides: std::collections::BTreeMap<Address, std::collections::BTreeMap<Address, Address>>,
+    /// Complete sets of taken destinations stated for individual computed jumps.
+    pub stated_jump_targets: std::collections::BTreeMap<Address, crate::jumptable::StatedJump>,
+    pub runtime_code_relocation: bool,
     /// (kuna `formatstring`) Which variadic arguments the target passes exactly
     /// as named ones, which bounds what a closed printf/scanf override may
     /// declare. A FACT, written once at `load file` from the image's container;
@@ -2713,6 +2716,8 @@ impl Architecture {
             elfmain_main_decl: None,
             format_override_callpoints: std::collections::BTreeSet::new(),
             kuna_callee_overrides: std::collections::BTreeMap::new(),
+            stated_jump_targets: Default::default(),
+            runtime_code_relocation: false,
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
             analysis_listing: false,
             analysis_fast_funcdisc: false,

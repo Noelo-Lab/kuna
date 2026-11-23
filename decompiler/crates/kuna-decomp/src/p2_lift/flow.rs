@@ -400,6 +400,11 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// Complete set of taken targets supplied for this machine instruction.
+    fn stated_jump_targets(&self, _site: &Address) -> Option<&crate::jumptable::StatedJump> {
+        None
+    }
+
     /// (kuna `--assert callee`) Did the caller state where the indirect jump at
     /// `site` goes? See [`kuna_calleeoverride`](crate::kuna_calleeoverride).
     fn stated_callee_site(&self, _fd: &Funcdata, _site: &Address) -> bool {
@@ -1532,13 +1537,17 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 let branchind = self.env.resolve_typeop(OpCode::CPUI_BRANCHIND);
                 self.data.op_set_opcode(curop, branchind);
             }
-            if crate::kuna_returnbranch::computed_target(
-                &self.data,
-                curop,
-                &self.visited,
-                |index| self.env.is_isa_mode_switch(index),
-            ) && !self.env.defers_return_classification(&self.data, curop)
-            {
+            let computed_return = if self.env.defers_return_classification(&self.data, curop) {
+                // A stated PPC32 link-register jump already has its complete
+                // target set. Other LR returns still need the path-sensitive proof.
+                let ret = self.data.obank().get(curop).expect("deferred return");
+                self.env.stated_jump_targets(ret.get_addr()).is_some()
+            } else {
+                crate::kuna_returnbranch::computed_target(
+                    &self.data, curop, &self.visited, |index| self.env.is_isa_mode_switch(index),
+                )
+            };
+            if computed_return {
                 let branchind = self.env.resolve_typeop(OpCode::CPUI_BRANCHIND);
                 self.data.op_set_opcode(curop, branchind);
             }
@@ -4148,6 +4157,19 @@ truncating the fall-through here"
                 continue;
             };
             let _scope = crate::decompile_drive::JumpTableScope::enter(site.get_offset());
+            if let Some(targets) = self.env.stated_jump_targets(&site) {
+                let table = crate::jumptable::JumpTable::from_stated_targets(op, site.clone(), targets);
+                let idx = if let Some(idx) = self.data.link_jump_table(op) {
+                    self.data.jumpvec_mut()[idx] = table;
+                    idx
+                } else {
+                    let idx = self.data.jumpvec_mut().len();
+                    self.data.jumpvec_mut().push(table);
+                    idx
+                };
+                new_tables.push(idx);
+                continue;
+            }
             if !for_inline && self.is_stated_tail_call(op) {
                 self.stated_tail_call(op)?;
                 continue;

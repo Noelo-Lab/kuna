@@ -619,6 +619,7 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `data <addr> <C typedeclaration>` | a named, typed global at an address |
 | `comment [<func>::]<addr> <text>` | a comment rendered into the C at that instruction |
 | `flow [<func>::]<addr> branch\|call\|callreturn\|return` | the flow out of this instruction is not what kuna decided |
+| `jumptable <site> <target> [<target> ...]` | every taken destination of a computed branch, in hexadecimal code addresses |
 | `callee [<func>::]<callsite> <name\|address>` | the indirect call at this instruction goes to this function |
 | `callproto [<func>::]<callsite> <C declaration>` | the arguments and return of the one call made by the instruction at `<callsite>` |
 | `function <start>[-<end>][=<name>]` | the `--define-function` spelling, on this plane |
@@ -1023,6 +1024,45 @@ second `callee` for the same call site replaces the first, which is reported
 rejected. A call site the function's flow never reaches is refused after the
 decompile, and the run exits non-zero. In the console the same fact is
 `override indirect <callsite> <name|address>`, given after `load function`.
+
+**Known computed-branch destinations.** Use `jumptable SITE TARGET [TARGET ...]`
+when you know every taken destination of one computed jump. Supply hexadecimal
+code addresses in the default code space, using ELF/object byte VMAs or the
+selected raw target's address units. List only the taken destinations. The
+instruction's guard still determines whether its fall-through executes.
+The case values are the computed destination operand in addressable units.
+The list can be unordered and can repeat a destination.
+
+From a Kuna checkout, this example uses the linked fixture included with the tests.
+
+```sh
+image=tests/fixtures/stated-jump/dispatch.elf
+kuna decompile "$image" dispatch --assert 'jumptable 401009 401050 401020 401030'
+```
+
+The switch selects addresses `0x401020`, `0x401030` and `0x401050`. A guard
+miss returns 77. Repeat `--assert` to name additional sites, or put one
+directive per line in a file and pass `--assert @FILE` to either command.
+`decompile-all --jobs N` accepts a file containing only these directives.
+The console spelling is `override jumptable SITE TARGET [TARGET ...]`.
+
+Kuna checks that the site decodes to one indirect branch, every destination
+is mapped and instruction-aligned in code-space units, and the distinct count fits
+`jumptablemax`. Trap or exception-handler transfers are rejected. PowerPC classic CTR/LR
+branches discard the low two selector bits. For a classic PPC32 branch through
+LR, the directive identifies a computed jump even when the incoming LR value
+is unknown. Sites without a directive use ordinary return and jump recovery.
+AArch64 BR uses the lifted
+register value. A switch on a live pointer needs its runtime value, so the
+directive is rejected for a PIE, a shared object or another image whose code
+relocates at run time, and for a branch whose target encoding Kuna does not
+resolve (ARM32 interworking, AArch64 other than BR, PowerPC other than classic
+CTR/LR). The site then keeps ordinary recovery. Batch summaries report
+rejected image-wide assertions and honor `--assert-strict`.
+A conflicting second set is rejected and the first accepted set stays active.
+The JSON status `applied` records installation for this image. Each function
+uses the fact only when its flow reaches the site. As with other program
+assertions, `--assert-strict` makes a rejected fact fail the command.
 
 **A `call` override follows the RET-call chain it starts.** `push
 <continuation>; push <target>; ret` is a call written without a `call`
@@ -2628,9 +2668,10 @@ Behaviors specific to `decompile-all`:
     only write end its parent holds; end-of-pipe means the parent is gone by any
     route including SIGKILL, and the worker deletes the shared scratch directory
     (0700, holding the symbol inventory and every function's C) and exits.
-  - `--assert` and `--raw-image` are refused with `--jobs > 1` **on the pool
-    surfaces**: assertion outcomes are per-load state a pool cannot merge, and a
-    raw image's entry seeds are its load. `kuna functions --jobs N` spawns no
+  - With `--jobs > 1`, `decompile-all` can replay image-wide `jumptable`
+    assertions in every worker. Other assertions require one worker because
+    their outcomes depend on per-load state. The pool also requires an object
+    image because a raw image's entry seeds are its load. `kuna functions --jobs N` spawns no
     pool, so both combinations work there — the lanes read the parent's own
     overlaid bytes, and a raw image simply runs no discovery walk.
 
