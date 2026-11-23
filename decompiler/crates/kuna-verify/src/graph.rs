@@ -474,11 +474,11 @@ impl Run<'_, '_, '_> {
             Kind::StrayPhi => Err(Halt::Harness("MULTIEQUAL after a block's head".into())),
             Kind::Eval(opc) => {
                 let size = op.out.as_ref().map(|o| o.size).ok_or_else(|| Halt::Unsupported("op without output".into()))?;
-                let mut ins = Vec::with_capacity(op.ins.len());
+                let mut ins = crate::value::Inputs::default();
                 for a in &op.ins {
                     ins.push((self.value(a)?, a.size));
                 }
-                let v = eval(*opc, size, &ins).map_err(|h| match h {
+                let v = eval(*opc, size, ins.as_slice()).map_err(|h| match h {
                     Halt::Unsupported(s) if s == get_opname(*opc) => Halt::Unsupported(format!("{s} at {at:#x}")),
                     other => other,
                 })?;

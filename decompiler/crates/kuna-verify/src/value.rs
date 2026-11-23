@@ -213,6 +213,33 @@ fn same_size(opc: OpCode) -> bool {
     )
 }
 
+/// An op's input values and sizes, kept inline for the usual one to four
+/// inputs so evaluating an op allocates nothing.
+#[derive(Default)]
+pub struct Inputs {
+    inline: [(u128, u32); 4],
+    len: usize,
+    spill: Vec<(u128, u32)>,
+}
+
+impl Inputs {
+    pub fn push(&mut self, v: (u128, u32)) {
+        if self.len < self.inline.len() && self.spill.is_empty() {
+            self.inline[self.len] = v;
+            self.len += 1;
+        } else {
+            if self.spill.is_empty() {
+                self.spill.extend_from_slice(&self.inline[..self.len]);
+            }
+            self.spill.push(v);
+        }
+    }
+
+    pub fn as_slice(&self) -> &[(u128, u32)] {
+        if self.spill.is_empty() { &self.inline[..self.len] } else { &self.spill }
+    }
+}
+
 /// Evaluate a value-producing op. `ins` holds each input's value and size.
 pub fn eval(opc: OpCode, out_size: u32, ins: &[(u128, u32)]) -> Result<u128, Halt> {
     if out_size > MAX_SIZE || ins.iter().any(|&(_, s)| s > MAX_SIZE) {

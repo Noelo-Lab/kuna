@@ -801,11 +801,11 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit
             }
             opc => {
                 let out = op.out.as_ref().ok_or_else(|| Halt::Unsupported(get_opname(opc).to_string()))?;
-                let mut ins = Vec::with_capacity(op.ins.len());
+                let mut ins = crate::value::Inputs::default();
                 for vn in &op.ins {
                     ins.push((read(&mut m.state, vn)?, vn.size));
                 }
-                let v = eval(opc, out.size, &ins)?;
+                let v = eval(opc, out.size, ins.as_slice())?;
                 if opc == OpCode::CPUI_COPY {
                     let src = &op.ins[0];
                     if space(out).is_ok_and(|s| s.get_type() == spacetype::IPTR_INTERNAL) {
