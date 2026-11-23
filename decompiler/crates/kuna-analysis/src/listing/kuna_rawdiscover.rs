@@ -77,8 +77,9 @@ pub struct RawDiscovery {
 /// `assertion_roots` also seed descent and extent measurement but do not supply
 /// synthetic symbols unless ordinary discovery would find them too; they lead
 /// the roots so that the Listing's last-in-first-out walk decodes the ordinary
-/// roots first. An explicit ARM `--isa` keeps its whole-image `TMode` while
-/// the Thumb IT state still propagates within each decode walk; under
+/// roots first. The sweep decodes data as well as code, so its context writes
+/// are rolled back before the descent and an explicit ARM `--isa` mode is
+/// protected inside it; the descent's own writes (a real `blx`) persist. Under
 /// `--isa arm` a call target off a word boundary (a `blx` to Thumb, decoded in
 /// data) is not an entry, since the whole image decodes as ARM.
 pub fn discover(
@@ -100,13 +101,6 @@ pub fn discover(
     }
     let real_mode = kuna_dosexit::is_real_mode(&arch.archid);
     let explicit_arm_isa = !real_mode && arch.input_arm_isa_override;
-    let _isa_scope = if explicit_arm_isa {
-        translate.decode_context_scope().inspect(|scope| {
-            let _ = scope.protect_variable(b"TMode");
-        })
-    } else {
-        None
-    };
     let thumb = explicit_arm_isa
         && arch.with_context_db(|db| {
             db.get_variable_value(b"TMode", &Address::new(Rc::clone(code_space), seeds[0])).ok()
@@ -114,7 +108,15 @@ pub fn discover(
     let word_aligned = |target: &u64| !explicit_arm_isa || thumb || target % 4 == 0;
     let mut roots: Vec<u64> = seeds.to_vec();
     roots.extend(crate::loader::kuna_realmodecs::without_commits(arch, translate, || {
-        let _scope = if real_mode { None } else { translate.decode_context_scope() };
+        let _scope = if real_mode {
+            None
+        } else {
+            translate.decode_context_scope().inspect(|scope| {
+                if explicit_arm_isa {
+                    let _ = scope.protect_variable(b"TMode");
+                }
+            })
+        };
         let swept = sweep_call_targets(translate, code_space, exec_ranges, mz);
         match mz {
             Some(mz) => swept

@@ -2863,12 +2863,20 @@ section-based extents.
 A mapped entry-only `--define-function` or `--assert function` declaration is
 a raw descent root. Raw discovery previews assertion addresses without applying
 the directives early; the normal assertion order and explicit extent
-precedence are unchanged. The non-real-mode discovery sweep rolls back its
-context writes before the descent, and a whole-image ARM `--isa` choice is
-protected while local decoder context such as the Thumb IT state still
-propagates within each walk. Under `--isa arm` a swept or discovered call
-target off a word boundary (a `blx` to Thumb, decoded from data) is not an
-entry, since the whole image decodes as ARM.
+precedence are unchanged.
+
+The non-real-mode discovery sweep decodes the whole range, data included, so
+its context writes are rolled back before the descent, and an explicit ARM
+`--isa` mode is protected inside it: a `bx`, `blx` or `it` spelled by data no
+longer switches the decode mode for the bytes after it or leaves IT state on
+the code (crazyflie's `vec_cross_product`, decoded under a stale IT block,
+went from 16 parameters to its 3). The descent's own commits, such as the mode
+switch of a real `blx` into ARM-mode library code, persist as before: rolling
+those back as well left a static glibc Thumb image with bad-instruction output
+in 453 of its 891 functions, against 193 on main and 70 with the descent's
+commits kept. Under `--isa arm` a swept or discovered call target off a word
+boundary (a `blx` to Thumb, decoded from data) is not an entry, since the
+whole image decodes as ARM.
 
 (kuna #1288) **On an x86 real-mode raw image the extent ends where the function's
 flow does** (always on;
