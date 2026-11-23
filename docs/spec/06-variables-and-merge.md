@@ -4067,6 +4067,17 @@ push-style frame by a raise, and a push-style caller that defers a cleanup and
 lowers the stack for the next call's alignment fails the store test, since the
 alignment slots are never written.
 
+(kuna) The slots are measured from the stack pointer at the call read back
+through constant adjustments. A call whose pop its declaration states reaches
+the solver as an INDIRECT with an exact equation rather than an `INT_ADD`
+(chapter [04](04-calls-and-prototypes.md), `kuna_declaredpop`), so when the
+stack pointer at the next call is exactly the one that call left, it is no
+offset from anything. It is then measured from itself
+(`kuna_calleepopframe.rs (stated_result)`), as the `INT_ADD` form measured it
+from the stack pointer before the declared call. A function that defers a
+declared pop has no call whose pop the push-run walk above decides: every pop
+it guesses is a direct call's into its own image.
+
 A declared struct parameter split across registers and the entry stack can be
 spilled contiguously beside its incoming stack tail. The spill then crosses
 entry SP=0, so the ordinary local-only range cannot describe the whole object.

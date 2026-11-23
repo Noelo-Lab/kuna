@@ -23,6 +23,7 @@ fn only_o32_n32_and_n64_state_the_argument_rule() {
     assert!(mips_documented("MIPS:LE:64:64-32addr:o32"));
     assert!(!mips_documented("MIPS:LE:64:64-32addr:default"));
     assert!(!mips_documented("MIPS:LE:64:64-32addr:o64"));
+    assert!(!mips_documented("MIPS:BE:64:octeon-32addr:o64"));
     assert!(!mips_documented("MIPS:LE:32:default:eabi"));
     assert!(!mips_documented("MIPS:LE:32:default:windows"));
     for variant in ["octeon", "octeonplus", "octeon2", "octeon3"] {

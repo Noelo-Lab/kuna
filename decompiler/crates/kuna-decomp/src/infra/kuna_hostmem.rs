@@ -1,8 +1,8 @@
 //! (kuna decompile-all memory) What this process and its machine hold in
 //! memory, per platform: the process's resident set and its peak, and what a
 //! new process could still take ([`available`]). Linux reads `/proc` and the
-//! cgroup v2 tree, Windows asks `kernel32`, macOS asks `sysctl`/`getrusage`;
-//! an answer a platform cannot give is `None`.
+//! cgroup v2 tree, Windows asks `kernel32`, macOS asks `sysctl`/`getrusage`
+//! and `proc_pid_rusage`; an answer a platform cannot give is `None`.
 
 /// Test-only: the directory standing in for `/sys/fs/cgroup`.
 pub const CGROUP_ROOT_ENV: &str = "KUNA_CGROUP_ROOT";
@@ -26,7 +26,9 @@ use win as sys;
 
 /// The process's resident set in bytes: Linux `VmRSS`; on Windows the larger
 /// of the working set and the private commit ([`footprint`]), since commit is
-/// what an allocation is refused on.
+/// what an allocation is refused on; macOS `ri_phys_footprint`, which drops
+/// when the allocator marks freed pages reusable where the resident size
+/// keeps them.
 pub fn resident_bytes() -> Option<u64> {
     sys::resident()
 }
@@ -287,6 +289,16 @@ mod mac {
         rest: [i64; 13],
     }
 
+    const RUSAGE_INFO_V2: c_int = 2;
+
+    #[repr(C)]
+    struct RusageInfoV2 {
+        uuid: [u8; 16],
+        counters: [u64; 7],
+        phys_footprint: u64,
+        rest: [u64; 10],
+    }
+
     unsafe extern "C" {
         fn sysctlbyname(
             name: *const c_char,
@@ -296,6 +308,7 @@ mod mac {
             newlen: usize,
         ) -> c_int;
         fn getrusage(who: c_int, usage: *mut Rusage) -> c_int;
+        fn proc_pid_rusage(pid: c_int, flavor: c_int, buffer: *mut c_void) -> c_int;
     }
 
     fn sysctl<T: Copy + Default>(name: &CStr) -> Option<T> {
@@ -309,7 +322,12 @@ mod mac {
     }
 
     pub fn resident() -> Option<u64> {
-        None
+        // SAFETY: all-zero is a valid value of this plain-integer struct.
+        let mut info: RusageInfoV2 = unsafe { std::mem::zeroed() };
+        let pid = std::process::id() as c_int;
+        // SAFETY: RUSAGE_INFO_V2 fills one `struct rusage_info_v2`, which `RusageInfoV2` lays out.
+        let rc = unsafe { proc_pid_rusage(pid, RUSAGE_INFO_V2, (&raw mut info).cast()) };
+        (rc == 0).then_some(info.phys_footprint)
     }
 
     pub fn available() -> Option<super::Available> {
@@ -409,12 +427,21 @@ mod tests {
 
     #[test]
     fn this_platform_reports_what_the_pool_needs() {
-        if cfg!(any(target_os = "linux", windows)) {
-            assert!(resident_bytes().is_some_and(|b| b > 0));
-        }
         if cfg!(any(target_os = "linux", windows, target_os = "macos")) {
+            assert!(resident_bytes().is_some_and(|b| b > 0));
             assert!(peak_resident_bytes().is_some_and(|b| b > 0));
             assert!(available().is_some());
         }
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn the_macos_resident_set_follows_a_touched_allocation() {
+        const SIZE: usize = 256 << 20;
+        let before = resident_bytes().expect("macOS reports the resident set");
+        let block = std::hint::black_box(vec![1u8; SIZE]);
+        let during = resident_bytes().unwrap();
+        assert!(during >= before + SIZE as u64 / 2, "{before} -> {during}");
+        drop(block);
     }
 }

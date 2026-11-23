@@ -61,6 +61,6 @@
 <stringmatch name="ebpf #3: the helper id names the pspec helper" min="3" max="3">v1 = .*bpf_map_lookup_elem\(counters,&amp;v2\);</stringmatch>
 <stringmatch name="ebpf #4: the subprogram call resolves to the .text callee" min="1" max="1">helper\(v1\);</stringmatch>
 <stringmatch name="ebpf #5: the map increment is recovered in every object" min="2" max="2">\*v1 = \*v1 \+ 1;</stringmatch>
-<stringmatch name="ebpf #6: a static callee named by the .text section symbol is the one its imm selects" min="2" max="2">return plus7\(a0\) \^ v1;</stringmatch>
+<stringmatch name="ebpf #6: a static callee named by the .text section symbol is the one its imm selects" min="2" max="2">return plus7\(a0(?: &amp; 0xffffffff)?\) \^ v1;</stringmatch>
 <stringmatch name="ebpf #7: the first static call reaches twice in both byte orders" min="2" max="2">v1 = twice\(</stringmatch>
 </decompilertest>

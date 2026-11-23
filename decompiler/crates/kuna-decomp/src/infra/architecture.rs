@@ -1294,6 +1294,10 @@ pub struct Architecture {
     /// (`decompile_drive::is_injected_userop`), not at registration: the payload
     /// is installed at architecture bootstrap, before any `option` line.
     pub cortexmpriv: bool,
+    /// (kuna `bytestorewidth`) Keep a constant write into a byte array at its
+    /// native width unless its bytes read as text
+    /// ([`crate::p3_dataflow::kuna_bytestorewidth`]).
+    pub byte_store_width: bool,
     /// (kuna `acleintrinsics`) On AArch64, lift the memory-tagging instructions
     /// with their tag effect (`kuna_memtag`) and print the barrier, hint and
     /// memory-tagging user ops as ACLE intrinsics (`kuna_acleintrinsics`).
@@ -1639,10 +1643,10 @@ pub struct Architecture {
     /// (`tailcalljump`). Read through the [`crate::kuna_ifuncfpret`] **env var**
     /// (the PLT map is baked at `load file`); this bool is for catalog visibility.
     pub analysis_ifuncfpret: bool,
-    /// (kuna) Gate e500 selection from a PowerPC ELF APU note (`ppcapu`); default
-    /// off. Read through the [`crate::kuna_ppcapu`] **env var** (the language is
-    /// chosen at `load file`); this bool is for catalog visibility.
-    pub analysis_ppcapu: bool,
+    /// (kuna) Gate embedded PowerPC ELF language selection (`ppcapu`); default
+    /// `isel`. Read through the [`crate::kuna_ppcapu`] **env var** (the language
+    /// is chosen at `load file`); this field is for catalog visibility.
+    pub analysis_ppcapu: crate::kuna_ppcapu::Mode,
     /// (kuna `goabi`) Select the vendored golang compiler spec for a Go image
     /// (the catalog-visible mirror of the `KUNA_GOABI` load-time env gate).
     pub analysis_goabi: bool,
@@ -2607,6 +2611,7 @@ impl Architecture {
             cast_narrow: false, // (kuna) option castnarrow; reset_defaults sets the shipped default
             decl_order: crate::kuna_declorder::DeclOrder::Name, // (kuna) option declorder; reset_defaults sets the shipped default
             cortexmpriv: false, // (kuna) option cortexmpriv; reset_defaults sets the shipped default
+            byte_store_width: false, // (kuna) option bytestorewidth; reset_defaults sets the shipped default
             acle_intrinsics: false, // (kuna) option acleintrinsics; reset_defaults sets the shipped default
             cortexmpriv_inject: None, // (kuna) set by init_userops_and_fixups when the language declares the user-op
             present_lessequal: false,
@@ -2674,7 +2679,7 @@ impl Architecture {
             analysis_ppc32picimports: Default::default(),
             ppc32_pic_imports: Default::default(),
             analysis_ifuncfpret: true, // (kuna) option ifuncfpret, default on (x86-64 IRELATIVE slots only)
-            analysis_ppcapu: false, // (kuna) option ppcapu, default off (opt-in)
+            analysis_ppcapu: Default::default(),
             analysis_goabi: false, // (kuna) option goabi; reset_defaults sets the shipped default (auto)
             analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars::Off,
             analysis_dwarf: false,
@@ -2931,6 +2936,7 @@ impl Architecture {
         self.strlen_scan = true; // (kuna) option strlenscan default-on: an inline repnz scasb length prints as strlen; byte-identical on gcc 11 decbench output, 0/675 datatest assertions
         self.rep_string = true; // (kuna) option repstring default-on: an x86 rep movs/stos/cmpsb loop prints as a copy, fill or compare builtin; inert off x86, 0/675 datatest assertions
         self.cortexmpriv = true; // (kuna) DIV-99: default-ON; the fixup is registered only on a language that declares the user-op (ARM), so inert elsewhere; "the core is privileged" is a modelling judgement, so `off` audits unprivileged Thread-mode code
+        self.byte_store_width = false; // (kuna) option bytestorewidth: opt-in
         self.acle_intrinsics = true; // (kuna) option acleintrinsics default-on; reads the AArch64 `ShowMemTag` context and AArch64 user-op names only, so inert on every other target
         self.float_globals = true; // (kuna) option floatglobals default-on
         self.call_target_type = true; // (kuna) option calltargettype default-on; acts only with `ctypes` on, and `option calltargettype off` keeps the upstream `code *` spellings
@@ -3625,6 +3631,7 @@ impl Architecture {
         // so the live flag drives both the DIV default and the toggle).
         ctx.global_array_anchor = self.global_array_anchor;
         ctx.opaque_predicate = self.opaque_predicate;
+        ctx.byte_store_width = self.byte_store_width;
         ctx.ret_split_global = self.ret_split_global; // retsplitglobal
         ctx.ret_split_limit = self.ret_split_limit; // retsplitlimit
         // (kuna) resolve the byte-shuffle user-op ids ONCE per program, so the
@@ -5577,6 +5584,23 @@ impl Architecture {
                 None => return Ok(()), // no processor_spec: nothing to apply
             }
         };
+
+        // A replacement pspec describes the entire grid, including an absent property.
+        let mut section_stride = None;
+        if let Some(properties) = find_child(&pspec, "properties") {
+            for property in properties.get_children() {
+                if property.get_name() == "property"
+                    && attr_str(property, "key").as_deref() == Some("kuna.aif.sectionInstructionStride")
+                {
+                    let stride = attr_str(property, "value")
+                        .and_then(|value| value.parse::<core::num::NonZeroU32>().ok())
+                        .ok_or_else(|| KunaError::lowlevel("sectionInstructionStride requires a positive byte count"))?;
+                    section_stride = Some(stride);
+                }
+            }
+        }
+
+        self.translate.translate_base_mut().section_instruction_stride = section_stride;
 
         // C++ parseProcessorConfig dispatch — ELEM_REGISTER_DATA branch
         // (architecture.cc:1202 -> decodeRegisterData).  Seed the lanerecords

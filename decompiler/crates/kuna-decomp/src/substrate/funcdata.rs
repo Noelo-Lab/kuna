@@ -529,8 +529,8 @@ pub struct Funcdata {
     kuna_own_entry_dead: Option<std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>>,
     /// (kuna `passthrough`) The same probes with what each direct call's target
     /// takes added ([`crate::kuna_calleedeadarg::reads_through_calls`]), for the
-    /// callees `protoorder` stated a prototype for.  Read only by
-    /// [`crate::p4_calls::kuna_passthrough::stated_width`].
+    /// callees `protoorder` stated a prototype for and the ones it stated
+    /// nothing for.  Read only by `passthrough`.
     kuna_callee_entry_through: std::collections::HashMap<
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,

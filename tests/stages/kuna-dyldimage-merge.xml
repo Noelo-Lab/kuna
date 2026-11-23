@@ -42,5 +42,5 @@
 <stringmatch name="dyldimage merge #1: A+B loads the callee as a function of the same program" min="1" max="1">int4 _callee_add\(int4 a0,int4 a1\)</stringmatch>
 <stringmatch name="dyldimage merge #2: the callee's body decompiles from the second image's bytes" min="1" max="1">return a0 \+ a1;</stringmatch>
 <stringmatch name="dyldimage merge #3: the caller names its island call in both passes" min="2" max="2">v1 = callee_add\(\);</stringmatch>
-<stringmatch name="dyldimage merge #4: the caller's local symbols are read in both passes" min="2" max="2">_helper_local\(\);</stringmatch>
+<stringmatch name="dyldimage merge #4: the caller's local symbols are read in both passes" min="2" max="2">_helper_local\(a0\);</stringmatch>
 </decompilertest>
