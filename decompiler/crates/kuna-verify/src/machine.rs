@@ -296,6 +296,14 @@ impl Machine<'_, '_, '_> {
     }
 }
 
+/// How far past a call a callee may return: a delay slot (MIPS, SPARC) puts
+/// the return address one instruction further.
+const RETURN_SLACK: u64 = 8;
+
+/// How far from the call's a callee's stack pointer may be when it returns
+/// (`_chkstk`-style probes move it); further, it switched stacks.
+const STACK_SWITCH: u64 = 1 << 20;
+
 /// How the machine run ended.
 pub struct Outcome<'e, 'p> {
     pub state: State<'e, 'p>,
@@ -534,7 +542,8 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         }
         self.budget = if outer { steps + limit } else { budget.min(steps + limit) };
         self.in_callee = true;
-        let ran = exec(self, target, Mode::Opaque, 1);
+        let back = lift(self.env, at).ok().map(|i| (at.wrapping_add(i.len), call_sp));
+        let ran = exec(self, target, Mode::Opaque, 1, back);
         self.in_callee = !outer;
         let reads = if outer { self.state.frame_reads.take() } else { None };
         let live = if outer {
@@ -641,15 +650,22 @@ enum Mode {
 /// Execute from `entry` until a RETURN. `top` is the function itself: only its
 /// calls are recorded and compared, and only it has tail calls and an exit
 /// through the random return address. Anywhere else is a callee run for real.
-fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit, Halt> {
+/// `back` is where a callee should return, just past the call that entered
+/// it, and the stack pointer at that call. A callee that returns elsewhere,
+/// into other code of the image or on another stack (an RTOS's context switch
+/// to another thread, a `longjmp`), did not return to its caller, and the
+/// model cannot follow it. A return elsewhere on the same stack outside the
+/// image (a pointer authentication the model does not run, eBPF's `exit`) is
+/// taken as a return, as before.
+fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(u64, u64)>) -> Result<Exit, Halt> {
     let outer = m.state.in_callee_code;
     m.state.in_callee_code = mode != Mode::Top;
-    let exit = exec_body(m, entry, mode, depth);
+    let exit = exec_body(m, entry, mode, depth, back);
     m.state.in_callee_code = outer;
     exit
 }
 
-fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit, Halt> {
+fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(u64, u64)>) -> Result<Exit, Halt> {
     let top = mode == Mode::Top;
     if depth > MAX_DEPTH {
         return Err(Halt::Unsupported("calls nested too deep".into()));
@@ -745,6 +761,14 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit
                     return Ok(if top { Exit::Return } else { Exit::Leave });
                 }
                 if !top {
+                    if let Some((b, call_sp)) = back {
+                        let elsewhere = (target & !1).wrapping_sub(b & !1) > RETURN_SLACK;
+                        let sp = m.sp_value()?;
+                        let switched = sp.wrapping_sub(call_sp).wrapping_add(STACK_SWITCH) > 2 * STACK_SWITCH;
+                        if elsewhere && (switched || env.code_mapped(target & !1)) {
+                            return Err(Halt::Unsupported(format!("a callee returned to {target:#x}, not to {b:#x} after its call")));
+                        }
+                    }
                     return Ok(Exit::Return);
                 }
                 if tail(addr, target) {
@@ -793,7 +817,8 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit
                         m.followed.push((addr, target));
                     }
                     let inner = if mode == Mode::Opaque { Mode::Opaque } else { Mode::Inline };
-                    match exec(m, target, inner, depth + 1)? {
+                    let back = Some((addr.wrapping_add(insn.len), m.sp_value()?));
+                    match exec(m, target, inner, depth + 1, back)? {
                         Exit::NoReturn => return Ok(Exit::NoReturn),
                         Exit::Leave => return Ok(Exit::Leave),
                         Exit::Return => {}
@@ -988,6 +1013,6 @@ pub fn run<'e, 'p>(
             m.state.write(&register, off, 1, u128::from(b))?;
         }
     }
-    let exit = exec(&mut m, entry, Mode::Top, 0)?;
+    let exit = exec(&mut m, entry, Mode::Top, 0, None)?;
     Ok(m.finish(matches!(exit, Exit::NoReturn)))
 }
