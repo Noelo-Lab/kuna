@@ -1368,6 +1368,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // (kuna `bejoin evidence`) A call resolved mid-pass to a proven
         // callee read it unproven: run the pass again with its verdict.
         if !(reflow_requested && fd.has_restart_pending()) && !crate::kuna_bejoin::wide_callee_missed(arch, fd) {
+            crate::kuna_pushan::warn_unshown_escapes(arch, fd);
             drain_pipeline_comments(arch, fd);
             return Ok(total);
         }
@@ -1377,6 +1378,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
             // analyzed to print, so keep it and say more restarts were pending.
             fd.warning_header("Exceeded maximum restarts with more pending");
             fd.set_restart_pending(false);
+            crate::kuna_pushan::warn_unshown_escapes(arch, fd);
             drain_pipeline_comments(arch, fd);
             return Ok(total);
         }

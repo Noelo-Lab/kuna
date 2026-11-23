@@ -15,7 +15,9 @@ selects its target arithmetically on a flag a join merged and a comparison,
 arguments read at addresses rebuilt through mixed boolean-arithmetic
 identities with an exit behind an opaque predicate on the stack pointer, and
 a call that writes through a pointer passed on the stack and through a pointer
-argument past its first 16 bytes.
+argument past its first 16 bytes, and a call whose register arguments are
+the caller's own first argument, a constant and the address of a local the
+callee writes.
 Every program sits
 in its own 256-byte block of seeded random filler (entropy above 7 bits/byte).
 Regenerate with `python3 pushan_vm2_x86_64.py` (needs GNU as/ld)."""
@@ -29,6 +31,7 @@ OP["LEAVE"] = min(set(range(1, 256)) - set(codes))
 OP["SEL"] = min(set(range(1, 256)) - set(codes) - {OP["LEAVE"]})
 OP["LDCTXM"], OP["EXITO"], OP["EXITS"] = sorted(set(range(1, 256)) - set(codes) - {OP["LEAVE"], OP["SEL"]})[:3]
 OP["CALL7"] = min(set(range(1, 256)) - set(OP.values()))
+OP["CALL3"] = min(set(range(1, 256)) - set(OP.values()))
 A0, A1 = 0, 8
 
 
@@ -203,6 +206,13 @@ PROGRAMS = {
               ("LDIMM", 3), ("EXIT",),
               "A", ("LDIMM", 1), ("EXIT",),
               "B", ("LDIMM", 2), ("EXIT",)],
+    # v = 5; ext3(a0, 1, &v); return v == 5 ? 2 : 1;   (ext3 stores its second
+    # argument through its third, so v is 1 and the function returns 1)
+    "f_arg": [("LDIMM", 5), ("STCTX", V(3)),
+              ("LDCTX", A0), ("LDIMM", 1), ("LEAV", V(3)), ("CALL3",), ("STCTX", V(0)),
+              ("LDCTX", V(3)), ("LDIMM", 5), ("EQ",), ("JZ", "T"),
+              ("LDIMM", 2), ("EXIT",),
+              "T", ("LDIMM", 1), ("EXIT",)],
 }
 
 NAMES = list(PROGRAMS)
@@ -240,6 +250,8 @@ def source(blocks):
             ".globl ext7", ".type ext7,@function", "ext7:",
             "    mov rax, qword ptr [rsp+8]", "    mov qword ptr [rax], 9", "    mov qword ptr [rdi+32], 7",
             "    xor eax, eax", "    ret", ".size ext7, .-ext7",
+            ".globl ext3", ".type ext3,@function", "ext3:",
+            "    mov qword ptr [rdx], rsi", "    mov rax, rdi", "    ret", ".size ext3, .-ext3",
             ".section .rodata,\"a\",@progbits", ".p2align 3", ".globl tbl", "tbl:", "    .quad 1, 2, 300, 4",
             ".section .data,\"aw\",@progbits", ".p2align 3", ".globl g_flag", "g_flag:", "    .quad 0",
             ".globl g_side", "g_side:", "    .quad 0",
@@ -302,6 +314,10 @@ def source(blocks):
     out += [".p2align 8", "bytecode:"]
     for b in blocks:
         out.append("    .byte " + ",".join(str(x) for x in b))
+    # handlers added after the first programs sit past the bytecode, so the
+    # handler table and the bytecode keep their addresses
+    out += ["h_call3:", "    pop rdx", "    pop rax", "    pop rdi", "    mov rbx, rsi", "    mov rsi, rax",
+            "    call ext3", "    mov rsi, rbx", "    push rax", "    jmp dispatch"]
     out += [".p2align 4", "    .space 0x10000 - (. - vm_entry)", ""]
     return "\n".join(out)
 

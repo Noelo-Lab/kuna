@@ -86,6 +86,12 @@ pub struct EmitStats {
     pub frame_reg: Option<(u64, u32)>,
     /// The witness slots, which calls preserve.
     pub slot_regs: Option<(u64, u32)>,
+    /// The registers holding argument registers' entry values
+    /// ([`entry_register`]), which calls preserve.
+    pub entry_regs: Vec<(u64, u8)>,
+    /// Each external call's overlay address, with the entry-stack offsets of
+    /// the locals its arguments point at.
+    pub call_escapes: BTreeMap<u64, Vec<i64>>,
     /// The lowest stack pointer, relative to the entry one, any external call
     /// is made with: below it lie only the interpreter's scratch and the
     /// callees' frames, so every call overwrites it.
@@ -99,6 +105,23 @@ pub const UNDEF_BASE: u64 = 0x10000;
 /// The placeholder register standing in for an undefined `reg`.
 pub fn undef_register(conf: &EmitConfig, reg: u64) -> u64 {
     conf.slot_base + UNDEF_BASE + reg
+}
+
+/// Register-space offset, past the placeholders, of the registers holding
+/// the argument registers' entry values.
+pub const ENTRY_BASE: u64 = 0x20000;
+
+/// The register holding the value `reg` had when the function was entered.
+pub fn entry_register(conf: &EmitConfig, reg: u64) -> u64 {
+    conf.slot_base + ENTRY_BASE + reg
+}
+
+/// What [`Emitter::never_defined`] met on the way to a value's leaves.
+#[derive(Default)]
+struct Origins {
+    entry: bool,
+    leftover: bool,
+    partial: bool,
 }
 
 /// Where an emitted LOAD or STORE goes.
@@ -589,6 +612,8 @@ struct Emitter<'a> {
     private_accesses: BTreeSet<(u64, u32)>,
     /// The register, past the witness slots, holding the entry stack pointer.
     frame_reg: u64,
+    /// The argument registers some call reads the entry value of.
+    entry_regs: Vec<(u64, u8)>,
 }
 
 /// How many times the emitted path executes op `i` of `insn`.
@@ -623,6 +648,7 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
         private: BTreeMap::new(),
         private_accesses: BTreeSet::new(),
         frame_reg: 0,
+        entry_regs: Vec::new(),
     };
     em.assign_slots();
     em.frame_reg = conf.slot_base + 8 * (em.slots.len() + em.var_slots.len()) as u64;
@@ -739,7 +765,23 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
         }
         lens[idx] = at - base;
     }
-    fuse_chains(&mut overlay, cfg, conf, &lens);
+    em.entry_regs.sort_unstable();
+    if let Some(entry) = overlay.insns.get_mut(&entry_addr) {
+        let at = entry.ops.len() - 1;
+        for &(off, size) in em.entry_regs.iter().rev() {
+            let reg = em.vn(&conf.register, off, size as u32);
+            entry.ops.insert(at, OverlayOp { opc: CPUI_COPY, out: Some(em.entry_vn(off, size as u32)), ins: vec![reg] });
+        }
+    }
+    em.stats.entry_regs = em.entry_regs.iter().map(|&(off, size)| (entry_register(conf, off), size)).collect();
+    let addr = fuse_chains(&mut overlay, cfg, conf, &lens);
+    for (idx, node) in cfg.nodes.iter().enumerate() {
+        if let (NodeExit::Call { .. }, Some(esc)) = (&node.exit, &node.call_escapes) {
+            if !esc.is_empty() {
+                em.stats.call_escapes.insert(addr[idx] + lens[idx] - 1, esc.iter().filter_map(|&o| i64::try_from(o).ok()).collect());
+            }
+        }
+    }
     (overlay, em.stats)
 }
 
@@ -757,8 +799,8 @@ fn successors(exit: &NodeExit) -> Vec<NodeId> {
 /// Lay each run of nodes joined by an unconditional branch into a node no
 /// other path enters back to back, the branch dropped: the decompiler then
 /// reads one basic block where it would otherwise splice thousands (every
-/// splice restructures the whole graph).
-fn fuse_chains(overlay: &mut PcodeOverlay, cfg: &FlatCfg, conf: &EmitConfig, lens: &[u64]) {
+/// splice restructures the whole graph).  Returns each node's address.
+fn fuse_chains(overlay: &mut PcodeOverlay, cfg: &FlatCfg, conf: &EmitConfig, lens: &[u64]) -> Vec<u64> {
     let n = cfg.nodes.len();
     let mut indeg = vec![0u32; n];
     indeg[cfg.entry as usize] += 1;
@@ -823,6 +865,7 @@ fn fuse_chains(overlay: &mut PcodeOverlay, cfg: &FlatCfg, conf: &EmitConfig, len
         }
         overlay.insns.insert(at, insn);
     }
+    addr
 }
 
 impl<'a> Emitter<'a> {
@@ -1276,29 +1319,41 @@ impl<'a> Emitter<'a> {
     /// value, a call's leftovers, or a merge symbol that stood only for such
     /// values on every path into its node (a loop head where the
     /// interpreter's context slot carried a different call's leftovers each
-    /// time around)?
-    fn never_defined(&self, e: ExprId, reg: u64, seen: &mut BTreeSet<VarId>, depth: u32) -> bool {
+    /// time around)?  `o` records which of those it met.
+    fn never_defined(&self, e: ExprId, reg: u64, seen: &mut BTreeSet<VarId>, depth: u32, o: &mut Origins) -> bool {
         use super::kuna_pushanexpr::VarKind;
         if depth > 64 {
             return false;
         }
         match *self.arena.kind(e) {
             ExprKind::Var(v) => match self.arena.var_info(v).kind {
-                VarKind::InitReg { offset } => offset == reg,
-                VarKind::CallClobber { .. } => true,
+                VarKind::InitReg { offset } if offset == reg => {
+                    o.entry = true;
+                    true
+                }
+                VarKind::CallClobber { .. } => {
+                    o.leftover = true;
+                    true
+                }
                 VarKind::Merged { .. } => {
                     if !seen.insert(v) {
                         return true;
                     }
                     match self.cfg.sym_sources.get(&v) {
-                        Some(Some(srcs)) => srcs.iter().all(|s| self.never_defined(*s, reg, seen, depth + 1)),
+                        Some(Some(srcs)) => srcs.iter().all(|s| self.never_defined(*s, reg, seen, depth + 1, o)),
                         _ => false,
                     }
                 }
                 _ => false,
             },
-            ExprKind::Piece(h, l) => self.never_defined(h, reg, seen, depth + 1) && self.never_defined(l, reg, seen, depth + 1),
-            ExprKind::SubPiece(x, _) => self.never_defined(x, reg, seen, depth + 1),
+            ExprKind::Piece(h, l) => {
+                o.partial = true;
+                self.never_defined(h, reg, seen, depth + 1, o) && self.never_defined(l, reg, seen, depth + 1, o)
+            }
+            ExprKind::SubPiece(x, _) => {
+                o.partial = true;
+                self.never_defined(x, reg, seen, depth + 1, o)
+            }
             _ => false,
         }
     }
@@ -1307,30 +1362,51 @@ impl<'a> Emitter<'a> {
         self.vn(&self.conf.register, undef_register(self.conf, off), size)
     }
 
-    /// Before an external call, an argument register still holding its entry
-    /// value or a previous call's leftovers ([`Self::never_defined`]) is one
-    /// the program never defined:
-    /// it is rewritten as a read of a placeholder no instruction writes, which
-    /// the decompiler's parameter analysis rejects the way it rejects an
-    /// untouched register in native code.
+    fn entry_vn(&self, off: u64, size: u32) -> VarnodeData {
+        self.vn(&self.conf.register, entry_register(self.conf, off), size)
+    }
+
+    /// Before an external call, an argument register holding a previous
+    /// call's leftovers on some path into it, and nothing the program put
+    /// there on any ([`Self::never_defined`]), is one the program never
+    /// defined: it is rewritten as a read of a placeholder no instruction
+    /// writes, which the decompiler's parameter analysis rejects the way it
+    /// rejects a register a call clobbered in native code.  One holding its
+    /// entry value on every path is the caller's own value, which the program
+    /// may be passing on: it is rewritten as a read of that value, saved at
+    /// entry, so the parameter analysis sees what it sees in native code that
+    /// leaves the register alone (an argument only when a later one is).
     fn undefined_arguments(&mut self, node: &super::kuna_pushanflow::Node, out: &mut Vec<OverlayOp>) {
         let args: Vec<(u64, u8)> = self.conf.call_args.iter().copied().filter(|(o, _)| *o != self.conf.sp_reg).collect();
         for (off, size) in args {
             let Some(v) = self.exit_value(node, off, size) else { continue };
-            if self.never_defined(v, off, &mut BTreeSet::new(), 0) {
-                let dst = self.vn(&self.conf.register, off, size as u32);
-                out.push(OverlayOp { opc: CPUI_COPY, out: Some(dst), ins: vec![self.undef_vn(off, size as u32)] });
-                self.stats.undefined += 1;
+            let mut o = Origins::default();
+            if !self.never_defined(v, off, &mut BTreeSet::new(), 0, &mut o) {
+                continue;
             }
+            let src = if o.leftover || !o.entry {
+                self.undef_vn(off, size as u32)
+            } else if !o.partial && self.arena.size(v) == size {
+                if !self.entry_regs.contains(&(off, size)) {
+                    self.entry_regs.push((off, size));
+                }
+                self.entry_vn(off, size as u32)
+            } else {
+                continue;
+            };
+            let dst = self.vn(&self.conf.register, off, size as u32);
+            out.push(OverlayOp { opc: CPUI_COPY, out: Some(dst), ins: vec![src] });
+            self.stats.undefined += 1;
         }
     }
 
     /// The same for the return register at a return: a function that merely
-    /// restores the caller's register returns nothing.
+    /// restores the caller's register, or returns a call's leftovers, returns
+    /// nothing.
     fn undefined_return(&mut self, node: &super::kuna_pushanflow::Node, out: &mut Vec<OverlayOp>) {
         let (off, size) = (self.conf.return_reg, self.conf.ptr_size);
         let Some(v) = self.exit_value(node, off, size) else { return };
-        if self.never_defined(v, off, &mut BTreeSet::new(), 0) {
+        if self.never_defined(v, off, &mut BTreeSet::new(), 0, &mut Origins::default()) {
             let dst = self.vn(&self.conf.register, off, size as u32);
             out.push(OverlayOp { opc: CPUI_COPY, out: Some(dst), ins: vec![self.undef_vn(off, size as u32)] });
             self.stats.undefined += 1;

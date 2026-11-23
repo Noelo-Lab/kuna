@@ -4819,11 +4819,12 @@ with these edits:
   last copy of every context slot before each call then survived: hundreds of
   rebuilt flags words, saved virtual registers and bytecode constants.
 - Undefined-argument placeholders. Before an external call, an argument
-  register that still holds its entry value, or an earlier call's leftovers, is
-  one the program never defined. The same applies to the return register at a
-  return, when the function merely restores the caller's value. A merge
-  symbol counts as well when every value it stood for on the paths into its
-  node was such a value (`Emitter::never_defined`). Each round records, for
+  register that holds an earlier call's leftovers on some path into the call,
+  and on every other path its entry value or such leftovers, is one the
+  program never defined. The same applies to the return register at a
+  return, when the function merely restores the caller's value or returns a
+  call's leftovers. A merge symbol counts as well when every value it stood
+  for on the paths into its node was such a value (`Emitter::never_defined`). Each round records, for
   every merge symbol, the value its location held on each path that reached
   the node (`FlatCfg::sym_sources`, up to 64 values), and a cycle of symbols
   that only pass each other around adds nothing. That is the case in a loop
@@ -4835,8 +4836,23 @@ with these edits:
   fourth arguments. Such a read is
   rewritten as a read of a placeholder register (`undef_register`) that no
   instruction writes, so the parameter analysis rejects it the way it rejects
-  an untouched register in native code, instead of inventing a parameter or a
-  return value.
+  a register a call clobbered in native code, instead of inventing a parameter
+  or a return value.
+- Entry-value arguments. An argument register that holds its entry value
+  on every path into a call is the caller's own argument, which the program
+  may be passing on: zlib's `gz_read(state, ...)` calls `gz_load(state, buf,
+  n, &n)` with its own `state` still in RCX. It is rewritten as a read of a
+  register (`entry_register`) that the overlay's entry instruction sets from
+  the argument register and every call preserves, so the parameter analysis
+  sees exactly what it sees in native code that leaves the register alone:
+  a realistic but inactive argument, which becomes one when a later
+  argument does. An argument in a hole before a real one is then kept, as
+  is everything after it. Taken for a never-defined register before, it was
+  rejected as definitely unused, and the parameter list ended there:
+  `gz_load` printed with no argument at all, so the C let no call change
+  `n`, and `len -= n` after it read the byte count asked for instead of the
+  count read. A value built from the entry value without being it is left
+  as the program computed it.
 - Rebuilt select conditions. When the deciding atoms of an atom-labelled select
   read only variables whose homes are recorded at the node's exit (a register,
   or a stack slot addressed as `frame + k`), each atom is compiled from those
@@ -4938,7 +4954,17 @@ which then printed as assignments. After block generation,
 `kuna_pushan.rs (mark_undefined_copies)` marks every COPY out of a placeholder
 register as an incidental copy, so the parameter analysis walks through it to
 the placeholder itself, an input nothing wrote, instead of taking it as a real
-movement into the argument register.
+movement into the argument register. It marks every COPY into or out of an
+entry-value register the same way, so the walk reaches the function's own
+input, and the entry-value registers are among those every call preserves.
+Once the body is decompiled, `kuna_pushan.rs (warn_unshown_escapes)` takes
+the locals whose address a call left in the body receives (the offsets the
+last round saw in that call's argument registers and outgoing words,
+`Node::call_escapes`, keyed by the call's overlay address), counts those the
+body still reads or writes while no op of it computes their address, and the
+header says so ("N locals whose address a call receives printed as never
+passed"): printed that way, a local looks as if no call could change it,
+which is the claim the call model exists to avoid.
 
 **String literals.** A short string the program passes to a call (`"123"` to
 `strcmp`, `"cmd"` to `CreateProcessA`) would print as its address. The

@@ -115,6 +115,9 @@ pub struct Node {
     /// (every one the callee was not shown to keep; the return register is
     /// not among them).
     pub call_clobbers: Option<Vec<(u64, u8)>>,
+    /// For an external call: the entry-stack offsets of the locals its
+    /// arguments point at.
+    pub call_escapes: Option<Vec<i128>>,
     /// Where each variable of a select's deciding atoms lives when the node
     /// exits, as the constant it is offset by there, with the stack pointer's
     /// offset from its entry value there.
@@ -302,6 +305,7 @@ pub struct Explorer<'a> {
     /// What the last call summarized pops beyond its return address.
     last_pop: Option<u32>,
     last_clobbers: Option<Vec<(u64, u8)>>,
+    last_escapes: Option<Vec<i128>>,
     pub stats: Stats,
     pub log: Vec<String>,
     retaddr: Option<ExprId>,
@@ -427,6 +431,7 @@ impl<'a> Explorer<'a> {
             call_epochs: 0,
             last_pop: None,
             last_clobbers: None,
+            last_escapes: None,
             stats: Stats::default(),
             log: Vec::new(),
             retaddr: None,
@@ -597,6 +602,7 @@ impl<'a> Explorer<'a> {
         (self.escapes, self.call_epochs) = saved;
         self.last_pop = None;
         self.last_clobbers = None;
+        self.last_escapes = None;
         let Some(d) = found else { return Interpreter::default() };
         let mut cells: Vec<(usize, Cell)> = seen.iter().filter(|((a, _), (p, _, _))| *a == d && p.len() >= 2).map(|((_, c), (_, _, o))| (*o, *c)).collect();
         cells.sort();
@@ -1103,6 +1109,7 @@ impl<'a> Explorer<'a> {
         cfg.nodes.push(Node {
             call_pop: None,
             call_clobbers: None,
+            call_escapes: None,
             exit_locs: None,
             vpc_fork: None,
             key,
@@ -1358,11 +1365,14 @@ impl<'a> Explorer<'a> {
         self.pending_vpc_fork = None;
         let call_pop = if matches!(node_exit, NodeExit::Call { .. }) { self.last_pop.take() } else { None };
         let call_clobbers = if matches!(node_exit, NodeExit::Call { .. }) { self.last_clobbers.take() } else { None };
+        let call_escapes = if matches!(node_exit, NodeExit::Call { .. }) { self.last_escapes.take() } else { None };
         self.last_pop = None;
         self.last_clobbers = None;
+        self.last_escapes = None;
         let node = &mut cfg.nodes[id as usize];
         node.call_pop = call_pop;
         node.call_clobbers = call_clobbers;
+        node.call_escapes = call_escapes;
         node.insns = insns;
         node.traces = traces;
         node.exit = node_exit;
@@ -2424,6 +2434,7 @@ impl<'a> Explorer<'a> {
         cfg.nodes.push(Node {
             call_pop: None,
             call_clobbers: None,
+            call_escapes: None,
             exit_locs: None,
             vpc_fork: None,
             key: NodeKey::at(addr, Some(tag)),
@@ -2531,6 +2542,10 @@ impl<'a> Explorer<'a> {
                 self.new_escapes += 1;
             }
         }
+        let local = |b: Option<VarId>, o: i128| b.is_some() && b == self.sp0 && o < 0;
+        let mut escaped: Vec<i128> = pointers.iter().filter(|&&(b, o)| local(b, o)).map(|&(_, o)| o).collect();
+        escaped.extend(copy_dst.filter(|&(b, o, _, _)| local(b, o)).map(|(_, o, _, _)| o));
+        self.last_escapes = Some(escaped);
         for &(b, o) in &pointers {
             if b.is_none() && self.target.is_mapped(o as u64) && self.target.is_writable(o as u64) {
                 for k in 0..(CALL_POINTEE_BYTES / ps as i128) {

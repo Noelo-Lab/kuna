@@ -972,7 +972,13 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
             }
         }
     }
-    let call_preserves = emit_stats.private_regs.into_iter().chain(emit_stats.frame_reg).chain(emit_stats.slot_regs).collect();
+    let call_preserves = emit_stats
+        .private_regs
+        .into_iter()
+        .chain(emit_stats.frame_reg)
+        .chain(emit_stats.slot_regs)
+        .chain(emit_stats.entry_regs.iter().map(|&(o, s)| (o, s as u32)))
+        .collect();
     let escapes = cfg.escapes.iter().filter_map(|&o| i64::try_from(o).ok()).collect();
     Ok(PushanProgram { entry, call_kills, placeholders, call_preserves, escapes, overlay: Rc::new(overlay), strings, stats: explorer.stats.clone(), emit_stats, log })
 }
@@ -1191,27 +1197,28 @@ fn adopt(arch: &mut Architecture, p: &PushanProgram, fd: &mut Funcdata) {
     fd.kuna_set_devirtualized(true);
 }
 
-/// Mark every COPY out of a placeholder register as incidental, once the flow
-/// follower has built the ops. The parameter analysis then walks through the
-/// copy into the placeholder itself (an input nothing wrote, or a call's
-/// indirect creation) instead of taking the copy as a solid movement of a
-/// value into the argument register.
+/// Mark every COPY out of a placeholder register, and every COPY into or out
+/// of a register holding an argument register's entry value, as incidental,
+/// once the flow follower has built the ops. The parameter analysis then
+/// walks through the copy into its source instead of taking it as a solid
+/// movement of a value into the argument register: to the placeholder (an
+/// input nothing wrote, or a call's indirect creation), or to the function's
+/// own input, which counts as an argument only where a later one does.
 pub fn mark_undefined_copies(p: &PushanProgram, fd: &mut Funcdata) {
-    let is_placeholder = |off: u64, size: i32| p.placeholders.iter().any(|&(o, s)| off >= o && off + size as u64 <= o + s as u64);
+    let within = |set: &[(u64, u8)], off: u64, size: i32| set.iter().any(|&(o, s)| off >= o && off + size as u64 <= o + s as u64);
+    let entries = &p.emit_stats.entry_regs;
     let copies: Vec<crate::context::OpId> = fd.obank().iter_alive().filter(|&o| fd.obank().get(o).is_some_and(|op| op.code() == OpCode::CPUI_COPY)).collect();
     for op in copies {
-        let from = fd
-            .obank()
-            .get(op)
-            .and_then(|o| o.get_in(0))
-            .and_then(|v| fd.vbank().get(v))
-            .filter(|v| v.get_space().get_name() == "register")
-            .map(|v| (v.get_offset(), v.get_size()));
-        if let Some((off, size)) = from {
-            if is_placeholder(off, size) {
-                if let Some(o) = fd.obank_mut().get_mut(op) {
-                    o.set_additional_flag(crate::op::pcodeop_addlflags::incidental_copy);
-                }
+        let reg = |v: Option<crate::context::VarnodeId>| {
+            v.and_then(|v| fd.vbank().get(v)).filter(|v| v.get_space().get_name() == "register").map(|v| (v.get_offset(), v.get_size()))
+        };
+        let from = reg(fd.obank().get(op).and_then(|o| o.get_in(0)));
+        let to = reg(fd.obank().get(op).and_then(|o| o.get_out()));
+        let incidental = from.is_some_and(|(off, size)| within(&p.placeholders, off, size) || within(entries, off, size))
+            || to.is_some_and(|(off, size)| within(entries, off, size));
+        if incidental {
+            if let Some(o) = fd.obank_mut().get_mut(op) {
+                o.set_additional_flag(crate::op::pcodeop_addlflags::incidental_copy);
             }
         }
     }
@@ -1335,6 +1342,64 @@ pub fn call_preserves(fd: &Funcdata, addr: &Address, size: int4) -> bool {
     let lo = addr.get_offset();
     let hi = lo.saturating_add(size.max(0) as u64);
     keep.iter().any(|&(o, s)| o <= lo && hi <= o.saturating_add(s.max(0) as u64))
+}
+
+/// Warn when the decompiled body of a devirtualized function still reads or
+/// writes a local whose address an external call of the body receives (as
+/// the exploration saw it), while no op of the body computes that address:
+/// printed so, the local looks as if no call could change it.  Run once the
+/// body is decompiled.
+pub fn warn_unshown_escapes(arch: &Architecture, fd: &mut Funcdata) {
+    if !fd.kuna_devirtualized() {
+        return;
+    }
+    let Some(p) = arch.pushan_cache.get(&fd.get_address().get_offset()) else { return };
+    let mut escapes: BTreeSet<i64> = BTreeSet::new();
+    let mut taken: BTreeSet<i64> = BTreeSet::new();
+    for op in fd.obank().iter_alive() {
+        let Some(o) = fd.obank().get(op) else { continue };
+        match o.code() {
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                if let Some(e) = p.emit_stats.call_escapes.get(&o.get_addr().get_offset()) {
+                    escapes.extend(e.iter().copied());
+                }
+            }
+            OpCode::CPUI_PTRSUB | OpCode::CPUI_PTRADD | OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB => {
+                let Some(a) = o.get_out().and_then(|out| crate::kuna_stackranges::frame_address(fd, out)) else { continue };
+                if a.terms.is_empty() && a.first == a.last {
+                    taken.insert(a.first);
+                }
+            }
+            _ => {}
+        }
+    }
+    if escapes.is_empty() {
+        return;
+    }
+    let Some(stack) = fd.get_arch().manage().get_stack_space().cloned() else { return };
+    let bits = 8 * stack.get_addr_size() as u32;
+    let signed = |off: u64| -> i64 { if bits >= 64 { off as i64 } else { ((off << (64 - bits)) as i64) >> (64 - bits) } };
+    let unshown = escapes
+        .iter()
+        .filter(|&&e| {
+            !taken.contains(&e)
+                && fd.vbank().iter_loc().any(|vn| {
+                    fd.vbank().get(vn).is_some_and(|v| {
+                        let lo = signed(v.get_offset());
+                        v.get_space().get_index() == stack.get_index()
+                            && lo <= e
+                            && e < lo + v.get_size() as i64
+                            && (v.is_written() || !v.has_no_descend())
+                    })
+                })
+        })
+        .count();
+    if unshown > 0 {
+        fd.warning_header(&format!(
+            "pushan: incomplete: {unshown} local{} whose address a call receives printed as never passed",
+            if unshown == 1 { "" } else { "s" }
+        ));
+    }
 }
 
 /// Point the translator at `overlay`. Through the shared handle: taking the
