@@ -227,7 +227,7 @@ fn a_function_s_original_name_comment_is_not_a_warning() {
 fn both_warning_styles_report_the_same_warnings() {
     let pe = common::fixture("explicit_branch_assertion_pe_i386.exe");
     let mut args = vec!["decompile-all", &pe, "--json", "--omit", "line_mappings,variables,types"];
-    args.extend(["--addr", "0x418764", "--addr", "0x406de0", "--addr", "0x44a0c6"]);
+    args.extend(["--addr", "0x418764", "--addr", "0x406de0", "--addr", "0x44a0c6", "--option", "tailform", "off"]);
     let inline = document(&args);
     let workers = document(&[&args[..], &["--jobs", "2"]].concat());
     assert_eq!(workers["functions"], inline["functions"], "a --jobs worker's records carry them");
