@@ -881,8 +881,13 @@ fn resolve_target(
         if by_name { index.export_alias_class(file, addr) } else { index.alias_class(addr) };
     let name = name.or_else(|| name_at(prog, index, names, addr)).or(fallback);
     if by_name && prog.arch().analysis_ppc32picimports.scoped() {
-        class.extend(prog.arch().ppc32_pic_imports.values()
-            .filter(|s| Some(&s.name) == name.as_ref()).map(|s| s.address));
+        let slots = &prog.arch().ppc32_pic_imports;
+        if !slots.is_empty() && declared_function(file, addr).is_some() {
+            class.extend(kuna_analysis::loader::kuna_ppc32_imports::defined_slots(file, addr)
+                .filter(|slot| slots.contains_key(slot)));
+        } else {
+            class.extend(slots.values().filter(|s| Some(&s.name) == name.as_ref()).map(|s| s.address));
+        }
     }
     Target { addr, name, class, by_name }
 }
@@ -1125,7 +1130,7 @@ fn render_text(
     for a in aliases(target) {
         let (what, how) = if import.contains(&a) {
             ("import", "a forwarding veneer and the pointer slot it jumps through")
-        } else if index.veneer_slot(a).is_some() {
+        } else if index.veneer_slot(a).is_some() || index.is_export_stub(target.addr, a) {
             ("export", "its own PLT stub")
         } else {
             ("export", "the GOT slot its PLT stub jumps through")

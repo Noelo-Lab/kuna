@@ -173,6 +173,8 @@ pub struct XrefIndex {
     indirect_callers: BTreeSet<u64>,
     /// Forwarding veneers, keyed by function entry ([`veneer_at`]).
     veneers: BTreeMap<u64, Veneer>,
+    /// Verified ELF PLT stubs grouped by the function their relocation names.
+    export_plt: BTreeMap<u64, Vec<crate::loader::elf_plt::defined::Stub>>,
     /// The reverse of [`XrefIndex::veneers`]: a slot mapped to every veneer that
     /// forwards through it (normally one, but a program may emit several).
     veneers_of_slot: BTreeMap<u64, Vec<u64>>,
@@ -365,7 +367,8 @@ impl XrefIndex {
     }
 
     /// [`refs_to`](Self::refs_to) over every member of `class`, minus the
-    /// members' own forwarding jumps; `class` is an [`alias_class`](Self::alias_class)
+    /// members' own forwarding jumps and any value that merely equals an ELF PLT
+    /// stub's or slot's address; `class` is an [`alias_class`](Self::alias_class)
     /// or an [`export_alias_class`](Self::export_alias_class).
     pub fn refs_to_class(&self, class: &BTreeSet<u64>) -> Vec<&Xref> {
         if class.len() == 1 {
@@ -377,14 +380,21 @@ impl XrefIndex {
         // veneer's exact instruction range and nothing wider: ordered containment
         // would swallow whatever code happens to follow the veneer in memory
         // before the next known entry, which is a real caller.
+        let stubs: Vec<_> = class.iter().filter_map(|m| self.export_plt.get(m)).flatten()
+            .filter(|s| class.contains(&s.entry) && class.contains(&s.slot))
+            .collect();
         let bodies: Vec<(u64, u64)> = class
             .iter()
             .filter_map(|m| self.veneers.get(m).map(|v| (*m, v.end)))
+            .chain(stubs.iter().map(|s| (s.entry, s.end)))
             .collect();
         let mut rows: Vec<&Xref> = Vec::new();
         for &member in class {
+            let stub_member = stubs.iter().any(|s| s.entry == member || s.slot == member);
             for r in self.refs_to(member) {
-                if bodies.iter().any(|&(lo, hi)| r.from >= lo && r.from < hi) {
+                if bodies.iter().any(|&(lo, hi)| r.from >= lo && r.from < hi)
+                    || (stub_member && r.kind == XrefKind::Data)
+                {
                     continue;
                 }
                 rows.push(r);
@@ -427,6 +437,10 @@ impl XrefIndex {
     /// value, never a shared name, and an unrelocated or undefined slot adds nothing.
     pub fn export_alias_class(&self, file: &object::File, entry: u64) -> BTreeSet<u64> {
         let mut class = self.alias_class(entry);
+        for stub in self.export_plt.get(&entry).into_iter().flatten() {
+            class.insert(stub.entry);
+            class.extend(self.alias_class(stub.slot));
+        }
         let (Some(relocs), Some(symbols)) = (file.dynamic_relocations(), file.dynamic_symbol_table())
         else {
             return class;
@@ -444,6 +458,11 @@ impl XrefIndex {
             }
         }
         class
+    }
+
+    /// Whether a name query for this definition includes this ELF PLT entry.
+    pub fn is_export_stub(&self, definition: u64, address: u64) -> bool {
+        self.export_plt.get(&definition).is_some_and(|stubs| stubs.iter().any(|s| s.entry == address))
     }
 
     /// The fixed pointer slot the forwarding veneer at `entry` jumps through, or
@@ -1733,6 +1752,9 @@ fn descend(
     }
 
     let mut index = st.finish(veneers, preserve_bodies);
+    for stub in crate::loader::elf_plt::defined::stubs(file) {
+        index.export_plt.entry(stub.definition).or_default().push(stub);
+    }
     if !measure {
         index.flow = None;
     }
@@ -2101,6 +2123,7 @@ impl State {
             body_owners,
             indirect_callers,
             veneers,
+            export_plt: BTreeMap::new(),
             veneers_of_slot,
             insns,
             flow: self.flow,
@@ -2161,6 +2184,7 @@ fn empty() -> XrefIndex {
         body_owners: None,
         indirect_callers: BTreeSet::new(),
         veneers: BTreeMap::new(),
+        export_plt: BTreeMap::new(),
         veneers_of_slot: BTreeMap::new(),
         insns: 0,
         flow: None,
