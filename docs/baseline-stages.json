@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5233,
-    5233
+    5237,
+    5237
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2687,6 +2687,10 @@
     "data:SWITCH ARM ORDER #2: nothing prints after the no-return arm",
     "data:SWITCH ARM ORDER #3: a void function's tail switch prints no default: return;",
     "data:SWITCH ARM ORDER #4: voidtailreturn off keeps default: return;",
+    "data:SWITCHCOND #1: no if or while is left without its condition",
+    "data:SWITCHCOND #2: the switch prints once",
+    "data:SWITCHCOND #3: the inner loop runs inside its case",
+    "data:SWITCHCOND #4: the loop around the switch",
     "data:SWITCHGUARDRELOAD #1: the five legal rows of the reloaded-byte switch are recovered once each",
     "data:SWITCHGUARDRELOAD #2: the switch closes after row 4, the last row the guard allows",
     "data:SWITCHGUARDRELOAD #3: no row past the guard sends flow into an instruction interior",
