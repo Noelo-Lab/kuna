@@ -12,6 +12,7 @@ use common::process;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope};
 use std::process::Command;
+use crate::common::process::Capped;
 
 /// The images' source; each image names its functions without the `s_`.
 const SOURCE: &str = r#"
@@ -405,7 +406,7 @@ fn round_trip(image: &Image, text: &str) -> Result<(), String> {
             if !out.status.success() {
                 return Err(format!("{cc} {level} rejects the printed C:\n{}", String::from_utf8_lossy(&out.stderr)));
             }
-            let run = Command::new(&exe).output().expect("run the round trip");
+            let run = Command::new(&exe).capped_output().expect("run the round trip");
             if !run.status.success() {
                 return Err(format!("{cc} {level}:\n{}", String::from_utf8_lossy(&run.stdout)));
             }
