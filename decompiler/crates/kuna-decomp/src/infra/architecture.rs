@@ -3787,7 +3787,7 @@ impl Architecture {
         ctx.duplicate_shared_returns = self.duplicate_shared_returns; // returndup
         ctx.duplicate_call_returns = self.duplicate_call_returns; // returndup calls
         ctx.returndup_triangle = self.returndup_triangle; // rettriangle (one-block-if join)
-        ctx.tail_form = self.tail_form.map(|p| crate::p8_structure::kuna_tailform::TailFormPolicy { elide_void: self.voidtailreturn, ..p }); // tailform
+        ctx.tail_form = self.tail_form.map(|p| crate::p8_structure::kuna_tailform::TailFormPolicy { elide_void: self.voidtailreturn, loop_test: self.loop_test, ..p }); // tailform
         ctx.early_return = self.early_return; // earlyreturn
         ctx.switch_return = self.switch_return; // switchreturn
         ctx.recover_loop_break = self.recover_loop_break; // loopbreak_recovery

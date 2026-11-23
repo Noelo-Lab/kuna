@@ -28,7 +28,7 @@ fn a_long_wrapped_body_becomes_a_guard() {
 
 #[test]
 fn void_and_valued_tails_use_their_own_threshold() {
-    let p = TailFormPolicy { void_max: 1, value_max: 6, elide_void: true };
+    let p = TailFormPolicy { void_max: 1, value_max: 6, ..Default::default() };
     assert_eq!(decide(&site(TailShape::Guard, true, 2), &p), TailDecision::Leave);
     assert_eq!(decide(&site(TailShape::Guard, false, 6), &p), TailDecision::Wrap);
     assert_eq!(decide(&site(TailShape::Wrapped, true, 2), &p), TailDecision::Guard);

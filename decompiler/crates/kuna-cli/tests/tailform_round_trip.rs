@@ -19,6 +19,8 @@ const FUNCS: &[&str] = &[
     "keep_first",
     "pass_through",
     "replay",
+    "walk_list",
+    "walk_after",
     "first_value",
 ];
 
@@ -52,6 +54,9 @@ int main(void) {
     RUN(F(int, pass_through)(a, b), s_pass_through(a, b), 1);
     RUN(F(int, replay)(p), (s_replay(p), 0), 0);
     RUN(F(int, first_value)(p), s_first_value(p), 1);
+    struct item chain[3] = {{a, &chain[1]}, {b, &chain[2]}, {a + b, 0}}, *q = (i % 5 == 2) ? 0 : chain;
+    RUN(F(int, walk_list)(q), (s_walk_list(q), 0), 0);
+    RUN(F(int, walk_after)(q, b), (s_walk_after(q, b), 0), 0);
   }
   return bad != 0;
 }

@@ -38,6 +38,7 @@ use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyRes
 use crate::block::{block_flags, BlockKind, BlockType, FlowBlock};
 use crate::context::{BlockId, OpId, VarnodeId};
 use crate::funcdata::Funcdata;
+use crate::p8_structure::kuna_looptest::{loop_tests, LoopTestMode};
 
 /// Leaf flag: print the leaf without its tail `RETURN`.
 pub const F_RET_SKIP: uint4 = 0x4000_0000;
@@ -58,11 +59,18 @@ pub struct TailFormPolicy {
     pub value_max: u32,
     /// `voidtailreturn` is on: a void path's final bare `return;` is elided.
     pub elide_void: bool,
+    /// The `looptest` mode, whose plan owns the guard `if`s it drops.
+    pub loop_test: LoopTestMode,
 }
 
 impl Default for TailFormPolicy {
     fn default() -> Self {
-        TailFormPolicy { void_max: DEFAULT_MAX_LINES, value_max: DEFAULT_MAX_LINES, elide_void: true }
+        TailFormPolicy {
+            void_max: DEFAULT_MAX_LINES,
+            value_max: DEFAULT_MAX_LINES,
+            elide_void: true,
+            loop_test: LoopTestMode::Binary,
+        }
     }
 }
 
@@ -184,6 +192,8 @@ struct Ctx {
     policy: TailFormPolicy,
     top: BlockId,
     ours: Vec<BlockId>,
+    /// Guard `if`s the `looptest` plan drops in front of a loop.
+    claimed: Vec<BlockId>,
 }
 
 fn run(data: &mut Funcdata, policy: &TailFormPolicy) -> usize {
@@ -191,8 +201,12 @@ fn run(data: &mut Funcdata, policy: &TailFormPolicy) -> usize {
         return 0;
     };
     let void = returns_void(data);
-    let mut cx = Ctx { void, elide: void && policy.elide_void, policy: *policy, top, ours: Vec::new() };
+    let mut cx = Ctx { void, elide: void && policy.elide_void, policy: *policy, top, ours: Vec::new(), claimed: Vec::new() };
     let view = build_view(data, top);
+    if next_edit(data, &cx, &view.list, &view.conds).is_none() {
+        return 0;
+    }
+    cx.claimed = claimed_guards(data, policy.loop_test);
     let mut edits = 0;
     let start = next_edit(data, &cx, &view.list, &view.conds).is_some() && materialize(data, top, view);
     while start && edits < MAX_EDITS {
@@ -217,8 +231,24 @@ fn run(data: &mut Funcdata, policy: &TailFormPolicy) -> usize {
         if !materialize(data, top, view) {
             break;
         }
+        cx.claimed = claimed_guards(data, policy.loop_test);
     }
     edits
+}
+
+/// The guard `if`s the `looptest` plan of the current tree drops; this pass
+/// leaves them, and everything around them, to that plan.
+fn claimed_guards(data: &Funcdata, mode: LoopTestMode) -> Vec<BlockId> {
+    let Some(root) = data.sblocks_ref().root else { return Vec::new() };
+    if mode == LoopTestMode::Binary {
+        return Vec::new();
+    }
+    loop_tests(data, root, mode).guards.keys().copied().collect()
+}
+
+/// Whether `b` is, or holds, a guard the `looptest` plan claims.
+fn holds_claimed(data: &Funcdata, cx: &Ctx, b: BlockId) -> bool {
+    cx.claimed.contains(&b) || data.sblocks_ref().block(b).get_list().iter().any(|&c| holds_claimed(data, cx, c))
 }
 
 fn top_container(data: &Funcdata) -> Option<BlockId> {
@@ -340,7 +370,7 @@ fn next_edit(data: &Funcdata, cx: &Ctx, list: &[BlockId], conds: &[(BlockId, Blo
     }
     if let Final::Bare(r, key) = fin {
         let i = n - 2;
-        if !cx.void && plain_if(data, list[i]) {
+        if !cx.void && plain_if(data, list[i]) && !holds_claimed(data, cx, list[i]) {
             let clause = data.sblocks_ref().block(list[i]).get_block(1);
             if bare_return(data, clause).is_none() && terminal_returns(data, clause, key, true) > 0 {
                 return Some(Edit::Merge(i, key));
@@ -373,7 +403,7 @@ fn next_edit(data: &Funcdata, cx: &Ctx, list: &[BlockId], conds: &[(BlockId, Blo
             return None;
         }
         let tail = &list[i + 1..body_end];
-        if tail.iter().any(|&t| labelled(data, t) || truncated(data, t)) {
+        if cx.claimed.contains(&list[i]) || tail.iter().any(|&t| labelled(data, t) || truncated(data, t) || holds_claimed(data, cx, t)) {
             return None;
         }
         if !cx.void && tail.iter().any(|&t| has_return(data, t, matches!(fin, Final::Embedded(e, _) if e == t))) {
@@ -400,7 +430,7 @@ fn next_edit(data: &Funcdata, cx: &Ctx, list: &[BlockId], conds: &[(BlockId, Blo
 /// For a wrapped `if (c) { S }` right before the final bare return `r`, the
 /// printed lines of `S`.
 fn wrapped_site(data: &Funcdata, cx: &Ctx, ifb: BlockId, r: BlockId, conds: &[(BlockId, BlockId)]) -> Option<usize> {
-    if !plain_if(data, ifb) || cx.ours.contains(&ifb) {
+    if !plain_if(data, ifb) || cx.ours.contains(&ifb) || holds_claimed(data, cx, ifb) {
         return None;
     }
     let g = data.sblocks_ref();

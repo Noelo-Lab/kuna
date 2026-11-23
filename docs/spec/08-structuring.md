@@ -1620,6 +1620,13 @@ conditional part, `option tailform <n>` lines (default 4):
   the one return (`if (c) { f(); return 0; } return 0;` prints
   `if (c) f(); return 0;`).
 
+A guard `if` that the `looptest` plan (§8.3 looptest) drops in front of a loop
+belongs to that plan: the pass computes the plan on the tree it is editing
+(`kuna_tailform.rs (claimed_guards)`) and does not merge, wrap or guard such an
+`if`, nor wrap a tail or guard a body that holds one, so `while (p) { ... }`
+is not turned back into `if (!p) return; do { ... } while (p);`. With
+`option looptest binary` there is no plan and the pass decides those tails too.
+
 Neither direction touches a tail or body that holds a truncated flow
 (`kuna_tailform.rs (truncated)`): a decode-failure or `halt` return, or a
 no-return halt with no call before it, where flow was cut at the next function's

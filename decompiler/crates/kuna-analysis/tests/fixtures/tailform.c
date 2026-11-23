@@ -87,6 +87,30 @@ __attribute__((noipa)) void replay(struct item *p)
     hits = p->value;
 }
 
+/* A long loop body behind its NULL test, and a guard clause in front of
+   such a loop: `looptest` prints both loops top-tested and owns their guards. */
+__attribute__((noipa)) void walk_list(struct item *p)
+{
+    while (p) {
+        record(p->value);
+        record(p->value + 1);
+        record(p->value + 2);
+        note();
+        p = p->next;
+    }
+}
+
+__attribute__((noipa)) void walk_after(struct item *p, int k)
+{
+    if (k < 0)
+        return;
+    note();
+    while (p) {
+        record(p->value);
+        p = p->next;
+    }
+}
+
 /* Different return values: not a candidate. */
 __attribute__((noipa)) int first_value(struct item *p)
 {
@@ -108,6 +132,8 @@ int main(int argc, char **argv)
     keep_first(argc, argc - 2);
     replay(argc > 2 ? 0 : &it);
     first_value(argc > 3 ? 0 : &it);
+    walk_list(&it);
+    walk_after(&it, argc - 2);
     printf("%d %d\n", hits, ntrail);
     return 0;
 }
