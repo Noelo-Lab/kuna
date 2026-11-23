@@ -446,6 +446,9 @@ Three tiers:
 | memcpy copies 0x40 bytes into a local declared char v13[12] | [`stackstruct`](#stackstruct----on--off-default-off) |
 | negative index displacement hides a declared global array | [`globalarrayanchor`](#globalarrayanchor----on--off-default-off) |
 | indexed stores use an address immediately before an array | [`globalarrayanchor`](#globalarrayanchor----on--off-default-off) |
+| one native word store prints as four byte assignments into a char array | [`bytestorewidth`](#bytestorewidth----on--off-default-off) |
+| v1[1].preceding[0] = 3; followed by three = 0 assignments | [`bytestorewidth`](#bytestorewidth----on--off-default-off) |
+| a stack char array receives byte-by-byte copies of an integer constant | [`bytestorewidth`](#bytestorewidth----on--off-default-off) |
 | branch tests x * (x + 1) & 1 or another condition that never changes | [`opaquepredicate`](#opaquepredicate----on--off-default-off) |
 | dead arm guarded by an arithmetic identity is still printed | [`opaquepredicate`](#opaquepredicate----on--off-default-off) |
 | obfuscated function has bogus control flow behind always-true conditions | [`opaquepredicate`](#opaquepredicate----on--off-default-off) |
@@ -1858,6 +1861,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Enable when an indexed access is rendered with a literal address before the declared array or with a synthetic symbol instead of its declared array.
 - **Where / provenance:** P3/simplification-quiescence · kuna · opt-in-tool · mapped-array-negative-index-bias
 - **Example:** `option globalarrayanchor on`
+
+### `bytestorewidth` -- on | off, default `off`
+
+- **Symptoms:** one native word store prints as four byte assignments into a char array; v1[1].preceding[0] = 3; followed by three = 0 assignments; a stack char array receives byte-by-byte copies of an integer constant.
+- **What it does:** Keep a constant integer write into a byte array at its native width. Upstream `SplitDatatype` (`RuleSplitCopy`, `RuleSplitStore`) splits a constant COPY or STORE into one write per component of its destination type, which is what turns GCC's inlined `memcpy(buf, "abc", 4)` into `buf[0] = 'a'; ... buf[3] = '\0';` and lets the stack-string recovery join the pieces into `builtin_strncpy`. A 4-byte integer that lands in a byte array printed the same way, as four assignments of its bytes: `v1[1].preceding[0] = 3; v1[1].preceding[1] = 0; v1[1].preceding[2] = 0; v1[1].preceding[3] = 0;` for one `movl $0x3,0x18(%rax)` under a record view whose `char` array covers the field, and the same for a stack record whose leading `char` array a `strncpy` destination typed. With the option on, the write stays one access (`*(unsigned int *)v1[1].preceding = 3;`) when its destination range lies inside one array of one-byte integer or character elements, its bytes are not all equal, and they do not read as text: one is a control character other than NUL, tab, newline and carriage return (`3` is `03 00 00 00`), or a byte above 0x7f is no part of UTF-8 (`0x8000`, `-2`). The constant may also be the `INT_ZEXT` of a constant or the `PIECE` of two. Text, including a UTF-8 character cut at either end of the write, a zero or other one-byte fill, and a write into distinct one-byte record fields still split.
+- **When to flip:** Off by default, because byte content cannot tell an integer from a string chunk: `100` and the string tail `"d\0\0\0"` are the same bytes. Turn on when an integer that lands in a byte array (a mistyped or shifted record view, a stack record whose integer fields a `char` array swallowed) prints as one assignment per byte, to see the native store. With it on, an integer whose bytes read as text (`100`, `0x20`) still splits, and a stack string whose chunk holds an escape such as `\x1b` or a Latin-1 byte stays a series of wide stores instead of `builtin_strncpy`.
+- **Where / provenance:** P3/simplification-quiescence · kuna · opt-in-tool · kuna-byte-store-width
+- **Example:** `option bytestorewidth on`
 
 ### `opaquepredicate` -- on | off, default `off`
 

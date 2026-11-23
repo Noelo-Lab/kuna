@@ -12,6 +12,7 @@ pub(crate) mod kuna_loadguardreads;
 pub(crate) mod kuna_persistcalls;
 pub(crate) mod kuna_deadcascade;
 pub(crate) mod kuna_prunedssa;
+mod kuna_bytestorewidth;
 pub(crate) mod kuna_renamereads;
 pub mod subflow;
 mod kuna_constantbytes;

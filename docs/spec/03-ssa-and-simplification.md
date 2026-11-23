@@ -3031,6 +3031,40 @@ into the global stops printing, which drops the global's store. With nothing bet
 two, the split still happens at the COPY, as upstream does. This is a strict fix
 with no option (`tests/stages/kuna-aliasoverlap.xml` #5 to #8).
 
+**(kuna) Which constant integer writes into a byte array stay whole** (`option
+bytestorewidth on|off`, default off,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_bytestorewidth.rs
+(keeps_whole)`). Upstream splits a constant COPY or STORE into one write per
+component of its destination. Into a character array that is what makes GCC's
+inlined `memcpy(buf, "abc", 4)`, one `str w1,[x0]`, read as `buf[0] = 'a'; ...
+buf[3] = '\0';`, and what lets the stack-string recovery (chapter 05) join chunks
+into `builtin_strncpy`. A 4-byte integer that lands in a byte array printed the
+same way: one `movl $0x3,0x18(%rax)` through a record view whose `char` array
+covers offset 0x18 became `v1[1].preceding[0] = 3;` and three assignments of
+`0`, and a stack record whose leading `char` array a `strncpy` destination typed
+(so that its extent covers the integer fields after it) printed each field as
+four byte stores. A LOAD from the same address already prints as one access
+through a cast. With the option on, `SplitDatatype::split_copy` and
+`SplitDatatype::split_store` decline a constant write of two to eight bytes when
+its destination range lies inside one array of one-byte integer or character
+elements, its bytes are not all equal, and they do not read as text: one is a
+control character other than NUL, tab, newline and carriage return (`3` is
+`03 00 00 00`), or a byte above 0x7f is no part of UTF-8 in memory order (`0x8000`
+is `00 80 00 00`, `-2` is `fe ff ff ff`). The constant is the value itself or one
+of the forms the split itself evaluates, the `INT_ZEXT` of a constant and the
+`PIECE` of two. The write then prints at its own width
+(`*(unsigned int *)v1[1].preceding = 3;`). Text still splits, including a
+stack-string chunk that crosses the NUL between two strings (`"rld\0goo"`) or
+holds UTF-8 characters, whole or cut at either end. A zero or other one-byte fill
+still splits, because `memsetrecover` (above) joins those element stores into
+`builtin_memset`, and a write into distinct one-byte record fields still splits
+into its named fields. The option is off by default because byte content cannot
+tell an integer from a string chunk: `100` is the same bytes as the tail
+`"d\0\0\0"`. With it on, such an integer still splits, as does `0x80`, whose
+`80 00 00 00` can end a UTF-8 character, and a string chunk that holds an escape
+such as `\x1b` or a Latin-1 byte stays whole, which keeps the stack-string
+recovery from joining that string.
+
 ### (kuna) `regnarrow` — a register local at the width its values fit
 
 A `uint8_t` loop counter on ARM lives in a whole register and the compiler

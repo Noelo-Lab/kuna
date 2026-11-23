@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5088,
-    5088
+    5092,
+    5092
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3953,6 +3953,10 @@
     "data:kuna-boundschecked #2: memcpy_s keeps exactly its four arguments",
     "data:kuna-boundschecked #3: memmove_s, strncpy_s and strncat_s keep their counts",
     "data:kuna-boundschecked #4: sprintf_s prints its format string",
+    "data:kuna-bytestorewidth #1: by default the word store splits into bytes",
+    "data:kuna-bytestorewidth #2: option on keeps the word store's width",
+    "data:kuna-bytestorewidth #3: a text constant still splits into characters",
+    "data:kuna-bytestorewidth #4: named byte fields still split",
     "data:kuna-msvcstackguard #1: the entry-side cookie scramble is emitted only with the option off",
     "data:kuna-msvcstackguard #2: the checker call is emitted only with the option off",
     "data:kuna-msvcstackguard #3: the computation the function actually performs survives both passes",
