@@ -2295,7 +2295,8 @@ mod tests {
         // and kuna-framepublish-seh / a published SEH record holds only the frame writes at or above it
         // and kuna-switcharmorder / default and no-return switch arms print last, no default: return; at a void tail
         // and kuna-thumb-stmia-writeback / Thumb stmia writes its base back when the base is in the list
-        assert_eq!(count, 880, "corpus file count drifted");
+        // and kuna-wsignload-a64 / AArch64 W-register sign-extending loads zero bits 63:32
+        assert_eq!(count, 881, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

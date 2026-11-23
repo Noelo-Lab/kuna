@@ -1,5 +1,12 @@
 # Stage-model issue testcases
 
+`kuna-wsignload-a64.xml` checks that an AArch64 sign-extending byte or
+halfword load into a `W` register (`ldrsb`, `ldrsh`, `ldursb`, `ldursh` in
+the unsigned-offset, register, unscaled, pre- and post-index forms)
+sign-extends to 32 bits and zero-extends to 64: a result read as 64 bits
+prints `(uint4)p[2]`, not `(int8)p[2]`, and `ldursb w` is no longer a zero
+extension. The `X`-destination forms still sign-extend to 64 bits.
+
 `kuna-calleepreservesargs.xml` checks registers a leaf callee leaves alone:
 an argument register set once before two calls of a leaf that reads it, and a
 killed-by-call register kept across a leaf that only reads memory. Its control

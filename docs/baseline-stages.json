@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5160,
-    5160
+    5171,
+    5171
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2915,6 +2915,17 @@
     "data:WRAPSPLIT-BE #1: a store across the top reaches the read at sp",
     "data:WRAPSPLIT-BE #2: f returns the low half of a0",
     "data:WRAPSPLIT-BE #3: the word at -2 is the halfword below the top over the halfword at 0",
+    "data:WSIGNLOAD-A64 #10: lsh64: x destination still sign-extends",
+    "data:WSIGNLOAD-A64 #11: lsb_neg64: ldursb x still sign-extends",
+    "data:WSIGNLOAD-A64 #1: lsh: ldrsh w unsigned offset",
+    "data:WSIGNLOAD-A64 #2: lsb: ldrsb w unsigned offset",
+    "data:WSIGNLOAD-A64 #3: lsh_idx/lsb_idx: register offset",
+    "data:WSIGNLOAD-A64 #4: lsh_neg/lsb_neg: ldursh and ldursb w",
+    "data:WSIGNLOAD-A64 #5: lsh_pre: pre-index",
+    "data:WSIGNLOAD-A64 #6: lsb_post: post-index",
+    "data:WSIGNLOAD-A64 #7: tbl: the index is the 32-bit value",
+    "data:WSIGNLOAD-A64 #8: no 64-bit sign extension of a w load",
+    "data:WSIGNLOAD-A64 #9: no zero extension of ldursb w",
     "data:X87INTRINSICS #1: no intrinsic is called without its operand",
     "data:X87INTRINSICS #2: cos takes the scaled angle",
     "data:X87INTRINSICS #3: sin takes the same angle",
