@@ -78,7 +78,18 @@ fn a_one_block_if_before_a_constant_return_round_trips_through_the_printed_c() {
     for &(image, triangles) in IMAGES {
         let path = common::fixture(image);
         for opt in ["off", "on"] {
-            let args = ["decompile-all", path.as_str(), "--functions", funcs.as_str(), "--option", "rettriangle", opt];
+            let args = [
+                "decompile-all",
+                path.as_str(),
+                "--functions",
+                funcs.as_str(),
+                "--option",
+                "rettriangle",
+                opt,
+                "--option",
+                "tailform",
+                "off",
+            ];
             let (text, err, rc) = common::run_kuna(&args);
             assert_eq!(rc, 0, "{image} rettriangle {opt}: {err}");
             for name in triangles {

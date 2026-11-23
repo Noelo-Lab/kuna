@@ -2298,7 +2298,7 @@ mod tests {
         // and kuna-varargsave / the x86-64 System V variadic register-save prologue
         // and kuna-boolbranch, kuna-boolbranch-thumb / a branch instruction selecting 1 or 0 keeps its if
         // and kuna-ppc32picimports-abi-isolation / one file's load-time option never reaches the next file's loads
-        assert_eq!(count, 885, "corpus file count drifted");
+        assert_eq!(count, 886, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

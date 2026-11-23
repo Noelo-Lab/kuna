@@ -44,8 +44,10 @@ c0035fd6
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
 </binaryimage>
 <script>
+  <!-- kuna: tailform default-on; this test pins the binary's own function-tail return layout -->
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_sdk_arm64</com>
+  <com>option tailform off</com>
   <com>option partialaccess off</com>
   <com>option objc on</com>
   <com>read symbols</com>
@@ -55,6 +57,7 @@ c0035fd6
   <com>option objcsdk decompiler/crates/kuna-analysis/tests/fixtures/objc_sdk</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_sdk_arm64</com>
+  <com>option tailform off</com>
   <com>option objc on</com>
   <com>read symbols</com>
   <com>load function _style</com>

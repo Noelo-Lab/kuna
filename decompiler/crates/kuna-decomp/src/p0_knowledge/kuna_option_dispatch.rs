@@ -571,6 +571,11 @@ kuna_options! { self, p1;
         self.returndup_triangle = val;
         Ok(msg)
     },
+    "tailform" => {
+        let (val, msg) = crate::p8_structure::kuna_tailform::OptionTailForm.apply(p1)?;
+        self.tail_form = val;
+        Ok(msg)
+    },
     "earlyreturn" => {
         let (val, msg) =
             crate::p8_structure::kuna_earlyreturn::OptionEarlyReturn.apply(p1)?;
