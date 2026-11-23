@@ -2822,7 +2822,11 @@ name is on two functions: the export's body and the stub. A name selects the bod
 veneer whose slot the image's own dynamic relocations bind to that body (the
 relocation's symbol is defined in the image at the body's address). The callers
 through the stub are then the export's callers, and `target.aliases` lists the
-stub and its GOT slot. The join is the relocation, never the shared name. An
+stub and its GOT slot. The join is the relocation, never the shared name. On ARM,
+AArch64, PowerPC32 (absolute stubs and the executable BSS PLT) and PowerPC64 ELFv1
+the stub is recognized by its instruction shape and the slot it loads. Thumb
+interworking prefixes, `--long-plt` and PAC (`autia1716`) entries and PowerPC32
+secure-PLT PIC stubs are not joined; query the stub's address for those. An
 **address** still answers for that address alone: `--to <body>` stays at the direct
 references, and `--to <stub>` lists only its slot as an alias.
 
@@ -2893,7 +2897,8 @@ with the reason, so the text answer never reads as complete when it is not:
 ```json
 {"binary": "...", "direction": "to", "count": N,
  "target": {"name","address","address_hex",
-            "aliases": [{"name","address","address_hex"}]},
+            "aliases": [{"name","address","address_hex"}],
+            "call_destination_candidate": {"reason","call_site","call_site_hex"}},
  "coverage": {"decoded": true, "section": "__TEXT,__text",
               "code_section": true, "executable": true,
               "unwalked": [{"name","address","address_hex","section"}],
@@ -3015,6 +3020,15 @@ no such gap.
 | `executable` | The image maps that memory executable. `null` when it is in no section, or for a relocatable object. |
 | `unwalked` | The targets of decoded direct calls and branches that lie in executable memory not marked as code, that a symbol names, and that the walk did not decode. The references they make are in no answer; `--from` one decodes it. |
 | `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section; a `--to` answer gets one while `unwalked` is not empty, and when the image is one entry of a kernel collection and the address is in another entry or in none ([`--option kernelcache`](#--option-kernelcache-id--one-entry-of-an-apple-kernel-collection)). |
+
+An incoming JSON answer may include `target.call_destination_candidate`. It names
+the lowest-address decoded direct call site to the exact selected address. The
+reason `unflagged_executable_section` means the named destination is outside the
+function inventory and the walk stopped at its executable section, which has no
+instruction flags. Kuna omits the field for declared data, alias-only calls,
+indirect calls, and queries that filter out calls. This is evidence for an
+explicit follow-up; it does not establish a function body or add an inventory
+or project-export entry.
 
 ```
 $ kuna xrefs unflagged_macho_arm64 --to _goal
