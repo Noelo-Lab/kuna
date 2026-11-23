@@ -4968,17 +4968,13 @@ wrong: computed jumps left unresolved, paths not followed, an exploration cut
 short by its work budget, its memory bound, its node limit or its wall-clock
 limit (the warning names which) or ending without its fixpoint, paths joined at
 another stack depth without merging (their values never reached the node), and
-stores the emulation could not place. kuna's per-function watchdog
-(`--max-fn-seconds`, 120 s by default on `kuna decompile`) is not checked
-inside the exploration or the emission: the flow follower's first probe after
-them finds the budget spent, and the function prints no C at all
-(`per-function decompile budget exceeded (120 s) in flow following`). At the
-defaults that is what becomes of an exploration that runs into the work budget
-and of one that reaches its fixpoint late: on the test machine libpng_themida
-(fixpoint after 129 s), zlib_themida (fixpoint after 105 s, then about a
-minute of emission) and smt_no_solve_themida (work budget after 158 s) print
-nothing, as libpng_themida and zlib_themida did under the wall-clock budget. A
-larger `--max-fn-seconds` prints them.
+stores the emulation could not place. The exploration and the emission run
+off kuna's per-function watchdog (`--max-fn-seconds`, 120 s by default on
+`kuna decompile`): the time they take is added back to the drive's deadline
+(`decompile_drive.rs (uncharge)`) and left out of the flow time a later drive
+is charged, so the watchdog covers only the decompilation of the recovered
+program. Their own limits bound them instead; a function whose exploration
+ends at one of them still prints, with the warning.
 
 A function
 that is not devirtualized gets the overlay cleared. The program's call-kill

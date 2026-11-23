@@ -1018,6 +1018,14 @@ fn describe_exit(e: &NodeExit) -> String {
     }
 }
 
+/// [`devirtualize`] off the drive's clock ([`crate::decompile_drive::uncharge`]).
+fn devirtualize_unclocked(arch: &mut Architecture, entry: u64) -> Result<PushanProgram, String> {
+    let started = std::time::Instant::now();
+    let program = devirtualize(arch, entry);
+    crate::decompile_drive::uncharge(arch, started.elapsed());
+    program
+}
+
 /// Decide whether `fd` is devirtualized, install the overlay the flow follower
 /// will lift, and return the program.  Clears a stale overlay otherwise.
 pub fn prepare_flow(arch: &mut Architecture, fd: &mut Funcdata) -> Option<Rc<PushanProgram>> {
@@ -1047,7 +1055,7 @@ pub fn prepare_flow(arch: &mut Architecture, fd: &mut Funcdata) -> Option<Rc<Pus
             return None;
         }
     }
-    match devirtualize(arch, entry) {
+    match devirtualize_unclocked(arch, entry) {
         Ok(p) if p.stats.vm_nodes == 0 => {
             // Never entered an interpreter: the plain flow is the right answer.
             install(arch, None);
@@ -1111,7 +1119,7 @@ pub fn interpreter_after_flow(arch: &mut Architecture, fd: &Funcdata) -> bool {
     if !found {
         return false;
     }
-    match devirtualize(arch, entry) {
+    match devirtualize_unclocked(arch, entry) {
         Ok(p) if p.stats.vm_nodes > 0 && p.stats.data_dispatches > 0 => {
             arch.pushan_cache.insert(entry, Rc::new(p));
             true

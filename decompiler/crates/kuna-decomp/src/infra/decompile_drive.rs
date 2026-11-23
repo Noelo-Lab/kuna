@@ -898,10 +898,12 @@ pub fn build_and_follow_flow_within_budget(
     flow_overrides: &[(Address, kuna_base::types::uint4)],
 ) -> KunaResult<Funcdata> {
     let started = std::time::Instant::now();
+    let uncharged = FN_UNCHARGED.with(std::cell::Cell::get);
     let mut fd = within_flow_budget(arch, |arch| {
         build_and_follow_flow_with_override(arch, name, entry, size, flow_overrides)
     })?;
-    fd.set_flow_spent(started.elapsed());
+    let uncharged = FN_UNCHARGED.with(std::cell::Cell::get).saturating_sub(uncharged);
+    fd.set_flow_spent(started.elapsed().saturating_sub(uncharged));
     Ok(fd)
 }
 
@@ -3568,6 +3570,7 @@ thread_local! {
     static FN_TABLE_AT: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
     static FN_PROBES: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
     static FN_SPENT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static FN_UNCHARGED: std::cell::Cell<std::time::Duration> = const { std::cell::Cell::new(std::time::Duration::ZERO) };
 }
 
 /// How many [`budget_probe`] calls between clock reads.
@@ -3598,6 +3601,17 @@ fn fn_budget(arch: &Architecture) -> Option<std::time::Duration> {
 /// boundary interrupts, to give up early.
 pub(crate) fn deadline_passed() -> bool {
     FN_DEADLINE.with(|d| d.get().is_some_and(budget_spent))
+}
+
+/// (kuna pushan) Take `spent` off the running drive's clock. The exploration
+/// of a VM-protected function runs under its own work budget, so the
+/// per-function budget covers only the decompilation that follows it.
+pub(crate) fn uncharge(arch: &mut Architecture, spent: std::time::Duration) {
+    if let Some(deadline) = arch.kuna_fn_deadline.as_mut() {
+        *deadline += spent;
+    }
+    FN_DEADLINE.with(|d| d.set(d.get().map(|at| at + spent)));
+    FN_UNCHARGED.with(|u| u.set(u.get() + spent));
 }
 
 /// (kuna decompile-all watchdog) [`deadline_passed`] for a walk that recurses
