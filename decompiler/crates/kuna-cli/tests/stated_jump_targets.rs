@@ -409,3 +409,12 @@ fn unlabelable_branches_reject_the_directive_and_keep_the_function() {
     assert!(stderr.contains("rejected") && stderr.contains("interworking"), "{stderr}");
     assert!(body.contains("jump-as-call") && !body.contains("case "), "{body}");
 }
+
+#[test]
+fn summaries_leave_per_function_directives_to_the_decompile() {
+    let doc = json(run(
+        "decompile-all",
+        &["--summary", "--json", "--assert", "comment dispatch::401009 jump", "--assert-strict"],
+    ));
+    assert!(doc.get("assertions").is_none(), "{doc}");
+}

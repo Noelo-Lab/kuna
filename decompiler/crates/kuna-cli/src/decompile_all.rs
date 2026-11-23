@@ -428,7 +428,7 @@ fn summarize(
     largest.truncate(filters.largest_wanted());
 
     Summary {
-        assertions: prog.assertion_outcomes(),
+        assertions: prog.image_assertion_outcomes(),
         total: all.len(),
         entry,
         main: user_main(all),

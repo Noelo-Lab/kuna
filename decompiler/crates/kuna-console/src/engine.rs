@@ -2624,6 +2624,17 @@ impl ConsoleProgram {
             .collect()
     }
 
+    /// The report rows a run that decompiles nothing can settle: every
+    /// directive except the per-function ones only a decompile binds.
+    pub fn image_assertion_outcomes(&self) -> Vec<crate::assertions::Outcome> {
+        self.assertion_outcomes()
+            .into_iter()
+            .enumerate()
+            .filter(|(slot, _)| self.function_assertion_slots.binary_search(slot).is_err())
+            .map(|(_, outcome)| outcome)
+            .collect()
+    }
+
     /// Park a prototype for `func` (an `assert prototype` directive).
     pub fn set_pending_prototype(
         &mut self,
