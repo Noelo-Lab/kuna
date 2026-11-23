@@ -328,6 +328,8 @@ fn install_fake_switch(fd: &mut Funcdata, input_vn: VarnodeId, read_head_operand
         spine: Vec::new(),
         returns: Vec::new(),
         linear: false,
+        shape_without: None,
+        base_shape: false,
     };
     store.borrow_mut().push(fd, rec);
     store

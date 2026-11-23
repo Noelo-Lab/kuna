@@ -5543,14 +5543,21 @@ impl PrintC {
             self.emit_default_case_label(case.label, &case_markup);
         } else {
             // case <label>: — one line per index targeting this case.
+            let char_selector = lowered_char_selector(fd, blk);
             for i in 0..self.switch_case_label_count(fd, blk, &case) {
                 let (val, sz, signed) = self.switch_case_label(fd, arch, blk, &case, i);
-                self.emit_numeric_case_label(
-                    val,
-                    sz,
-                    signed,
-                    firstop.or_else(|| self.any_op(fd, case.block)),
-                );
+                let op = firstop.or_else(|| self.any_op(fd, case.block));
+                if let (Some((ct, vn)), Some(op)) = (char_selector.as_ref().filter(|_| val < 0x80), op) {
+                    self.emit.tag_line();
+                    self.emit.print(self.lang().kw_case, SyntaxHighlight::KeywordColor);
+                    self.emit.spaces(1, 0);
+                    self.push_char_constant_ir(fd, ct, val, op, *vn);
+                    self.recurse();
+                    self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
+                    self.emit.note_label();
+                    continue;
+                }
+                self.emit_numeric_case_label(val, sz, signed, op);
             }
         }
     }
@@ -12951,6 +12958,21 @@ fn sblocks_basic_head(fd: &Funcdata, bb: BlockId) -> Option<OpId> {
         BlockKind::Basic(b) => b.op_head,
         _ => None,
     }
+}
+
+/// (kuna `loweredswitch`) The selector of the re-rolled switch `blk` and its
+/// `char` type, when the selector is a one-byte character, or of no known type
+/// and so read as the `char` its equality compares read it as.
+fn lowered_char_selector(fd: &Funcdata, blk: BlockId) -> Option<(std::rc::Rc<crate::dtype::Datatype>, VarnodeId)> {
+    let jt = fd.get_jump_table(fd.sblocks_ref().block(blk).switch_jt_index()? as int4);
+    jt.kuna_lowered_var()?;
+    let op = jt.get_indirect_op()?;
+    let vn = fd.obank().get(op)?.get_in(0)?;
+    let mut ct = fd.vn_type_read_facing(vn, op);
+    if ct.get_metatype() == type_metatype::TYPE_UNKNOWN {
+        ct = crate::p5_types::coreaction_infertypes::input_type_local(fd, op, 0);
+    }
+    (ct.get_size() == 1 && ct.is_char_print()).then_some((ct, vn))
 }
 
 /// Tail op of an sblocks-arena basic block.

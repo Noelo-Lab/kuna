@@ -113,7 +113,10 @@ selects it and shares one `ret`; the switch is installed along the raw paths of
 the compare tree and every case returns its own string. `enable`'s chain of
 three tests with a body each re-rolls; the two-test chain in `two` stays an
 `if` unless `option loweredswitch linear` is set, and `option loweredswitch
-off` keeps the compiler's chain.
+off` keeps the compiler's chain. `colon` (openssh `misc.c`) keeps its loop: re-rolled,
+its arms continue the loop and the structurer lost the loop to gotos, so the
+switch is withdrawn. The selector stays `int`, and `kind`'s labels over a
+`char` print as character constants.
 
 `kuna-jumptableslots.xml` checks the slot bound on a guard-bounded table past
 `jumptablemax`. gcc -O2 guards `x <= 0x28ff` and indexes a 41-entry table with

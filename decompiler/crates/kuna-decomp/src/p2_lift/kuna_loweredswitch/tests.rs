@@ -851,6 +851,8 @@ fn sample_record(fd: &Funcdata) -> KunaLoweredSwitchRecord {
         spine: Vec::new(),
         returns: Vec::new(),
         linear: false,
+        shape_without: None,
+        base_shape: false,
     }
 }
 

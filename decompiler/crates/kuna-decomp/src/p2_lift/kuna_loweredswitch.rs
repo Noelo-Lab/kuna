@@ -153,6 +153,14 @@ pub struct KunaLoweredSwitchRecord {
     /// (kuna) The cascade is a linear chain of equality tests, whose case bodies
     /// must not be shared with anything outside it on the raw p-code either.
     pub linear: bool,
+    /// (kuna) What the function printed before the switch was installed
+    /// ([`kuna_loweredswitchkeep`](crate::p2_lift::kuna_loweredswitchkeep)).
+    pub shape_without: Option<crate::p2_lift::kuna_loweredswitchkeep::Shape>,
+    /// (kuna) The cascade is a binary-search tree with a compare-only head over
+    /// a register or stack selector, installed straight to its case bodies, on
+    /// the variable with the most compare-only blocks: the cascade the
+    /// recogniser took before it looked at heads holding other code.
+    pub base_shape: bool,
 }
 
 /// Side-table key: identifies a function without holding clearable handles
@@ -1085,6 +1093,12 @@ fn recover_cascade(
         return None;
     }
 
+    // A compare against the address of a symbol prints the symbol's name, which
+    // no case label can spell.
+    if case_vals_name_symbols(data, swvar, cases.keys()) {
+        return None;
+    }
+
     // The switch variable must live in stable storage (register/stack).
     let vspc = vn_space(data, swvar)?;
     let st = vspc.get_type();
@@ -1113,7 +1127,8 @@ fn recover_cascade(
         case_targets.push(tgt.clone());
     }
     // Equalities never decide signedness: without a range node or an extension
-    // on the path, every label must print the same signed or unsigned.
+    // on the path, every label must print the same signed or unsigned, and the
+    // labels are signed, as the `int` the compares read the selector as.
     let signed_labels = match proven_signedness {
         Some(signedness) => signedness.signed_labels(),
         None => {
@@ -1121,10 +1136,11 @@ fn recover_cascade(
             if case_vals.iter().any(|&v| v & sign_bit != 0) {
                 return None;
             }
-            false
+            true
         }
     };
 
+    let base_shape = saw_range && cmpmap.get(&startbb).is_some_and(|c| c.pure) && load_at.is_none() && !paths;
     Some(KunaLoweredSwitchRecord {
         branch_addr,
         var_addr,
@@ -1138,6 +1154,8 @@ fn recover_cascade(
         returns: if spine_addrs.is_empty() { Vec::new() } else { kuna_loweredswitchpath::returned_storage(data) },
         spine: spine_addrs,
         linear: !saw_range,
+        shape_without: None,
+        base_shape,
     })
 }
 
@@ -1167,6 +1185,18 @@ fn selector_defined_in_function(data: &Funcdata, swvar: VarnodeId) -> bool {
 /// A getopt-style loop tests the EOF sentinel (-1) before the real dispatch;
 /// that equality must stay an ordinary branch, so we advance past any leading
 /// `V == all-ones` guard.
+/// True when `swvar` is as wide as a code address and a case value is the
+/// address of a symbol or a known function.
+fn case_vals_name_symbols<'a>(data: &Funcdata, swvar: VarnodeId, vals: impl Iterator<Item = &'a uintb>) -> bool {
+    let glb = data.get_arch();
+    let Some(space) = data.get_address().get_space().cloned() else { return false };
+    if vn_size(data, swvar) != space.get_addr_size() as int4 {
+        return false;
+    }
+    let mut vals = vals;
+    vals.any(|&v| v >= 0x1000 && glb.symbol_starts_at(&Address::new(Rc::clone(&space), v)))
+}
+
 fn advance_past_guards(
     data: &Funcdata,
     mut head: BlockId,
@@ -1299,31 +1329,49 @@ impl ActionLowerSwitchDetect {
             *var_count.entry(var).or_insert(0) += 1;
         }
 
-        // Pick the switch variable: the Varnode with the most cascade nodes. Tied
-        // variables are tried in the order they were created, and the first whose
-        // cascade records wins; a Varnode's id is only the arena slot it reused.
-        let Some(best) = var_count.values().copied().max().filter(|c| *c >= 2) else {
-            return 0;
-        };
-        let mut tied: Vec<(uint4, VarnodeId)> = var_count
-            .iter()
-            .filter(|(_, count)| **count == best)
-            .map(|(var, _)| (data.vbank().get(*var).map_or(u32::MAX, |v| v.get_create_index()), *var))
-            .collect();
-        tied.sort_unstable();
-        for (_, swvar) in tied {
-            if self.record_cascade(data, &cmpmap, swvar) {
-                return 1; // a record was added (the C++ returns 0 to quiesce; see apply note)
+        // Pick the switch variable: the Varnode with the most cascade nodes, then
+        // the one with the most compare-only cascade nodes. Tied variables are
+        // tried in the order they were created, and the first whose cascade
+        // records wins; a Varnode's id is only the arena slot it reused.
+        let mut pure_count: BTreeMap<VarnodeId, int4> = BTreeMap::new();
+        for cn in cmpmap.values().filter(|cn| cn.pure) {
+            if let Some(v) = cn.var {
+                *pure_count.entry(v).or_insert(0) += 1;
+            }
+        }
+        let mut tried: BTreeSet<VarnodeId> = BTreeSet::new();
+        for counts in [&var_count, &pure_count] {
+            let Some(best) = counts.values().copied().max().filter(|c| *c >= 2) else {
+                continue;
+            };
+            let mut tied: Vec<(uint4, VarnodeId)> = counts
+                .iter()
+                .filter(|(var, count)| **count == best && !tried.contains(var))
+                .map(|(var, _)| (data.vbank().get(*var).map_or(u32::MAX, |v| v.get_create_index()), *var))
+                .collect();
+            tied.sort_unstable();
+            for (_, swvar) in tied {
+                tried.insert(swvar);
+                if self.record_cascade(data, &cmpmap, swvar, &pure_count) {
+                    return 1; // a record was added (the C++ returns 0 to quiesce; see apply note)
+                }
             }
         }
         0
     }
 
     /// Record the first cascade on `swvar` that recovers, and request a restart.
-    fn record_cascade(&mut self, data: &mut Funcdata, cmpmap: &BTreeMap<BlockId, CmpNode>, swvar: VarnodeId) -> bool {
+    fn record_cascade(
+        &mut self,
+        data: &mut Funcdata,
+        cmpmap: &BTreeMap<BlockId, CmpNode>,
+        swvar: VarnodeId,
+        pure_count: &BTreeMap<VarnodeId, int4>,
+    ) -> bool {
         // Find the head: a cascade node for swvar that no other cascade node
         // continues into.
         let mut is_child: BTreeSet<BlockId> = BTreeSet::new();
+        let mut is_pure_child: BTreeSet<BlockId> = BTreeSet::new();
         for (_, cn) in cmpmap.iter() {
             if cn.var != Some(swvar) {
                 continue;
@@ -1337,21 +1385,43 @@ impl ActionLowerSwitchDetect {
                 if let Some(sc) = cmpmap.get(&s) {
                     if sc.var == Some(swvar) && sc.pure {
                         is_child.insert(s);
+                        if cn.pure {
+                            is_pure_child.insert(s);
+                        }
                     }
                 }
             }
         }
         let spine: BTreeSet<BlockId> =
             cmpmap.iter().filter(|(_, cn)| cn.var == Some(swvar)).map(|(bl, _)| *bl).collect();
-        let heads = cascade_heads(&spine, &is_child);
-        for (i, root) in heads.into_iter().enumerate() {
+        // The variable a recogniser counting only compare-only blocks would pick.
+        let pure_best = pure_count.values().copied().max().unwrap_or(0);
+        let picked_by_pure = pure_count.get(&swvar).copied().unwrap_or(0) == pure_best && pure_best >= 2;
+        // The heads of the whole spine, then the heads of its compare-only part
+        // that a head holding other code ran into.
+        let mut heads = cascade_heads(&spine, &is_child);
+        let pure_spine: BTreeSet<BlockId> =
+            spine.iter().copied().filter(|bl| cmpmap.get(bl).is_some_and(|cn| cn.pure)).collect();
+        for h in cascade_heads(&pure_spine, &is_pure_child) {
+            if !heads.contains(&h) {
+                heads.push(h);
+            }
+        }
+        // A later head must not be entered from elsewhere; heads holding other
+        // code are ranked apart, so they never demote a compare-only head.
+        let mut earlier = [0usize; 2];
+        for root in heads {
+            let pure = cmpmap.get(&root).is_some_and(|cn| cn.pure);
+            let i = earlier[pure as usize];
+            earlier[pure as usize] += 1;
             let head = advance_past_guards(data, root, cmpmap, swvar);
             let spine: BTreeSet<BlockId> =
                 spine.iter().copied().filter(|bl| *bl == head || cmpmap.get(bl).is_some_and(|cn| cn.pure)).collect();
-            let rec = match recover_cascade(data, head, cmpmap, swvar) {
+            let mut rec = match recover_cascade(data, head, cmpmap, swvar) {
                 Some(r) => r,
                 None => continue,
             };
+            rec.base_shape &= picked_by_pure;
             if rec.spine.is_empty() && !record_is_exact(data, head, &spine, swvar, &rec) {
                 continue;
             }
@@ -1402,6 +1472,14 @@ impl Action for ActionLowerSwitchDetect {
         let _ = self.detect(data);
         0 // no op change; let the fullloop quiesce and the restart fire
     }
+}
+
+/// True when `op` is the `BRANCHIND` of a re-rolled switch whose labels are
+/// signed: its compares read the selector as a signed integer.
+pub(crate) fn reads_signed_selector(data: &Funcdata, op: OpId) -> bool {
+    (0..data.num_jump_tables()).map(|i| data.get_jump_table(i)).any(|jt| {
+        jt.kuna_lowered_var().is_some() && jt.get_indirect_op() == Some(op) && jt.kuna_has_signed_labels()
+    })
 }
 
 //===========================================================================

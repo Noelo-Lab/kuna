@@ -3255,7 +3255,15 @@ A cascade head may hold code of its own before its compare — the call whose
 result is dispatched on, a load of the selector, stores — because the install
 keeps the head block and only replaces its branch. Only blocks that hold nothing
 but a compare (`kuna_loweredswitch.rs (is_pure_compare_block)`) continue a
-cascade, since the install deletes those. A selector that the simplified graph
+cascade, since the install deletes those. Counting such heads changes which
+variable has the most compares and which compare-only block heads a tree, so
+detection first tries the variables with the most compares of any kind, then
+those with the most compare-only ones; and after the heads of the whole spine it
+tries the compare-only blocks that only a head holding code runs into (tar's
+`read_next_name` dispatches on a call's result with a loop test `v == 3` in the
+call's block ahead of the tree). The every-head rule counts the two kinds of head
+apart, so a failed head holding code never makes the compare-only head behind it
+a later one. A selector that the simplified graph
 holds in a temporary is the output of a load (an ARM `ldrb r3,[r3]` of
 `dev->bus->busType`); the record keeps the load's address and the install reads
 the head compare's operand only when that is the output of the same load, and
@@ -3309,6 +3317,54 @@ for the storage the function was seen to return, so the `edx` a `cmov` reads on
 one path is not repeated on the other path, where it would become a phantom
 second return register. Arms that repeat nothing and leave to the same block are
 one arm. Each value therefore runs exactly the operations it ran in the tree.
+
+### Keeping a re-rolled switch only when the function reads no worse (part of `loweredswitch`)
+
+A re-rolled switch is the same program as the compare tree it replaces, but the
+rest of the pipeline sees a different graph, and three things can come out
+worse. A switch whose arms continue an enclosing loop can leave the structurer
+without the loop: openssh's `colon` scans a string with a chain of tests on each
+character, and re-rolled it printed as a switch inside a `label: ... goto label;`
+skeleton. The same shape can make the structurer fold the switch into a loop or
+`if` condition, which prints `} while switch (...)`, not C. And a register the
+compare tree read and the switch does not can be taken for one more argument of
+a call or of the function (FreeRTOS `prvDeleteTCB` printed `vPortFree` with four
+arguments).
+
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitchkeep.rs (ActionLowerSwitchKeep)`
+runs at the end of every pass, once the structure and the prototypes are final.
+On the pass that recorded a switch, before it is installed, it records the
+function's `kuna_loweredswitchkeep.rs (Shape)`: the `goto`s the structured tree
+prints (the print-time census `kuna_gotonext.rs (goto_rewrites)` decides which
+jumps print), the loop and `if` conditions that end in a switch, the function's
+parameter count and return width, and the argument count of every call. On the
+pass with the switch installed it measures again and withdraws the switch,
+restarting the function as `option loweredswitch off` renders it, when a
+condition ends in a switch, when the parameter list, the width of a value the
+function already returned or the arguments of a call differ, or when the
+function prints more `goto`s. A loop the structurer loses prints its back edge
+as a `goto`, so the count catches `colon`; a loop that only the compare tree
+needed (a `do { ... } while (4 <= v)` around the dispatch) may go. The `goto`
+count does not apply to the binary-search tree with a compare-only head over a
+register selector, on the variable with the most compare-only compares: the
+cascade the recogniser always took, which reads better than its compare tree
+even with a goto or two.
+
+The switch also reads its selector the way the compares it replaced did. An
+equality compare reads its operands as `int`, and a chain of equality tests with
+no extension on the path records signed labels; the synthetic `BRANCHIND` of a
+switch with signed labels reads its selector as a signed integer of its size
+(`decompiler/crates/kuna-decomp/src/p5_types/coreaction_infertypes.rs (input_type_local)`),
+so `int nid` stays `int` instead of turning `unsigned int` once the compares are
+gone. Over a one-byte character selector, or a one-byte selector of no known
+type (a call's result, an untyped structure field), which the equality compares
+read as a `char`, the labels print as the character constants the compares
+printed (`case 'a':`), through
+`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (lowered_char_selector)`.
+A chain compared against the addresses of symbols (readline's
+`if (f == rl_reverse_search_history)`) is not re-rolled at all: the compares
+print the symbols' names, which no case label can spell
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitch.rs (case_vals_name_symbols)`).
 
 ### Bound extensions: rescuing an unboundable table
 
