@@ -41,6 +41,49 @@ pub struct Extension {
     pub boolean: bool,
 }
 
+/// Pointer-sized values passed to calls so far, and the bytes a callee
+/// given them can reach, as sorted, disjoint `[first, last]` ranges.
+#[derive(Clone, Debug, Default)]
+pub struct Escaped {
+    pointers: Vec<u64>,
+    reach: Vec<(u64, u64)>,
+}
+
+impl Escaped {
+    pub fn add(&mut self, env: &Env, pointers: impl Iterator<Item = u64>) {
+        let before = self.pointers.len();
+        self.pointers.extend(pointers);
+        self.pointers.sort_unstable();
+        self.pointers.dedup();
+        if self.pointers.len() == before {
+            return;
+        }
+        let mut reach = Vec::with_capacity(self.pointers.len());
+        for &p in &self.pointers {
+            env.reach_of(p, &mut reach);
+        }
+        self.reach = merge_ranges(reach);
+    }
+
+    pub fn reaches(&self, off: u64) -> bool {
+        let i = self.reach.partition_point(|r| r.0 <= off);
+        i > 0 && self.reach[i - 1].1 >= off
+    }
+}
+
+/// `[first, last]` ranges sorted, with overlapping and adjacent ones joined.
+fn merge_ranges(mut ranges: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
+    ranges.sort_unstable();
+    let mut out: Vec<(u64, u64)> = Vec::with_capacity(ranges.len());
+    for (first, last) in ranges {
+        match out.last_mut() {
+            Some(prev) if first <= prev.1.saturating_add(1) => prev.1 = prev.1.max(last),
+            _ => out.push((first, last)),
+        }
+    }
+    out
+}
+
 /// What a run needs to know about the program: its spaces, the stack layout,
 /// the image, and the argument extensions the calling convention promises.
 pub struct Env<'p> {
@@ -75,9 +118,12 @@ pub struct Env<'p> {
     /// The machine's system calls write the kernel's result registers.
     pub kernel: Cell<bool>,
     /// Image pages by base address; `None` for a page not mapped whole.
-    image: RefCell<HashMap<u64, Option<Box<[u8]>>>>,
+    image: RefCell<HashMap<u64, Option<Box<[u8]>>, BuildHasherDefault<Fast>>>,
+    /// The loader's segments and sections, `[first, last]`: no image byte lies
+    /// outside them. `None` when the loader lists no segments.
+    mapped: Option<Vec<(u64, u64)>>,
     /// Bytes of the pages not mapped whole.
-    image_bytes: RefCell<HashMap<u64, Option<u8>>>,
+    image_bytes: RefCell<HashMap<u64, Option<u8>, BuildHasherDefault<Fast>>>,
     /// Where a call to each target goes once thunks are followed.
     pub(crate) thunks: RefCell<HashMap<u64, u64>>,
     pub(crate) insns: RefCell<BTreeMap<u64, Rc<crate::machine::Insn>>>,
@@ -167,7 +213,13 @@ impl<'p> Env<'p> {
             .iter()
             .filter(|r| r.get_space().get_index() == ram.get_index() || r.get_space().get_index() == code.get_index())
             .map(|r| (r.get_first(), r.get_last()))
-            .collect();
+            .collect::<Vec<_>>();
+        let readonly = merge_ranges(readonly);
+        let segments = prog.segments();
+        let mapped = (!segments.is_empty()).then(|| {
+            let spans = segments.into_iter().chain(prog.sections()).filter(|&(_, size, _)| size > 0);
+            merge_ranges(spans.map(|(start, size, _)| (start, start.saturating_add(size - 1))).collect())
+        });
         let code_sections = prog
             .sections()
             .into_iter()
@@ -193,8 +245,9 @@ impl<'p> Env<'p> {
             ret_slot: 0,
             booleans: Vec::new(),
             kernel: Cell::new(true),
-            image: RefCell::new(HashMap::new()),
-            image_bytes: RefCell::new(HashMap::new()),
+            image: RefCell::new(HashMap::default()),
+            mapped,
+            image_bytes: RefCell::new(HashMap::default()),
             thunks: RefCell::new(HashMap::new()),
             insns: RefCell::new(BTreeMap::new()),
             stack: Rc::clone(stack),
@@ -210,7 +263,8 @@ impl<'p> Env<'p> {
 
     fn is_readonly(&self, addr: u64, size: u64) -> bool {
         let last = addr.wrapping_add(size.saturating_sub(1));
-        self.readonly.iter().any(|&(lo, hi)| addr >= lo && last <= hi && last >= addr)
+        let i = self.readonly.partition_point(|r| r.0 <= addr);
+        last >= addr && i > 0 && self.readonly[i - 1].1 >= last
     }
 
     pub fn code_mapped(&self, addr: u64) -> bool {
@@ -228,6 +282,12 @@ impl<'p> Env<'p> {
     /// does not map whole is read a byte at a time, as each byte is asked for:
     /// a random pointer lands in one far more often than in the image.
     fn image_byte(&self, addr: u64) -> Option<u8> {
+        if let Some(m) = &self.mapped {
+            let i = m.partition_point(|r| r.0 <= addr);
+            if i == 0 || m[i - 1].1 < addr {
+                return None;
+            }
+        }
         let page = addr & !(IMAGE_PAGE - 1);
         let at = (addr - page) as usize;
         let known = self.image.borrow().get(&page).map(|p| p.as_ref().map(|bytes| bytes[at]));
@@ -329,21 +389,29 @@ impl<'p> Env<'p> {
     /// a pointer that escaped into an earlier call, never read-only data. This
     /// is no more than kuna itself treats as changed by a call, so a value it
     /// keeps across one stays equal unless kuna is wrong to keep it.
-    pub fn callee_writable(&self, escaped: &[u64], space: &AddrSpace, off: u64) -> bool {
+    pub fn callee_writable(&self, escaped: &Escaped, space: &AddrSpace, off: u64) -> bool {
         if !self.is_memory(space) || self.is_readonly(off, 1) {
             return false;
         }
-        escaped.iter().any(|&p| self.reachable(p, off))
-            || (space.get_index() == self.ram.get_index() && !self.in_stack(off, 1) && self.image_byte(off).is_some())
+        escaped.reaches(off) || (space.get_index() == self.ram.get_index() && !self.in_stack(off, 1) && self.image_byte(off).is_some())
     }
 
-    /// Whether a callee given `p` reaches `off`: within the local object kuna
-    /// gives `p` when it points into the frame, else within a window past it.
-    fn reachable(&self, p: u64, off: u64) -> bool {
+    /// The bytes a callee given `p` reaches, `[first, last]`: the local object
+    /// kuna gives `p` when it points into the frame, else a window past it.
+    fn reach_of(&self, p: u64, out: &mut Vec<(u64, u64)>) {
         if self.in_stack(p, 1) {
-            return self.stack_object(p).is_some_and(|(start, end)| off >= start && off < end);
+            if let Some((start, end)) = self.stack_object(p).filter(|(s, e)| e > s) {
+                out.push((start, end - 1));
+            }
+            return;
         }
-        off.wrapping_sub(p) < ESCAPE_WINDOW
+        let last = p.wrapping_add(ESCAPE_WINDOW - 1);
+        if last >= p {
+            out.push((p, last));
+        } else {
+            out.push((p, u64::MAX));
+            out.push((0, last));
+        }
     }
 
     /// The `[start, end)` of the local symbol of kuna's that holds frame
@@ -367,7 +435,7 @@ impl<'p> Env<'p> {
 
     /// The byte at `off` with no write by a side since its last call: the
     /// initial state before any call, what the calls left after one.
-    pub fn base_byte(&self, run: u32, epoch: u32, escaped: &[u64], space: &AddrSpace, off: u64) -> u8 {
+    pub fn base_byte(&self, run: u32, epoch: u32, escaped: &Escaped, space: &AddrSpace, off: u64) -> u8 {
         if epoch > 0 && self.callee_writable(escaped, space, off) {
             self.clobbered_byte(run, epoch, space, off)
         } else {
@@ -457,7 +525,7 @@ pub struct State<'e, 'p> {
     /// Calls made so far.
     pub epoch: u32,
     /// Pointer-sized values passed to calls so far.
-    pub escaped: Vec<u64>,
+    pub escaped: Escaped,
     /// While a callee runs for real: what it does to memory, in order.
     pub log: Option<Vec<Event>>,
     /// This side read a byte of the function's own frame that nothing wrote:
@@ -579,7 +647,7 @@ pub struct Writes {
     /// those both sides pass are compared.
     pub objects: Vec<(u64, u64)>,
     pub epoch: u32,
-    pub escaped: Vec<u64>,
+    pub escaped: Escaped,
 }
 
 impl<'e, 'p> State<'e, 'p> {
@@ -592,7 +660,7 @@ impl<'e, 'p> State<'e, 'p> {
             unique: HashMap::default(),
             mem: BTreeMap::new(),
             epoch: 0,
-            escaped: Vec::new(),
+            escaped: Escaped::default(),
             log: None,
             read_uninitialized: false,
             saved: BTreeMap::new(),
@@ -857,9 +925,7 @@ impl<'e, 'p> State<'e, 'p> {
         }
         let size = u64::from(self.env.ram.get_addr_size()).min(8);
         let ptr_mask = if size >= 8 { u64::MAX } else { (1u64 << (size * 8)) - 1 };
-        self.escaped.extend(args.iter().map(|&a| a as u64 & ptr_mask).filter(|&p| p > 0xffff));
-        self.escaped.sort_unstable();
-        self.escaped.dedup();
+        self.escaped.add(self.env, args.iter().map(|&a| a as u64 & ptr_mask).filter(|&p| p > 0xffff));
         let env = self.env;
         let escaped = std::mem::take(&mut self.escaped);
         let manage = env.prog.arch().manage();
