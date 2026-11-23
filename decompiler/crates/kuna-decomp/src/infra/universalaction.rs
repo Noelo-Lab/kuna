@@ -870,6 +870,9 @@ pub fn universal_sched(
             // tail (shared prefix/suffix of statement-equivalent leaves across both
             // arms) by hoisting the shared blocks out of the `if`, emitting one copy.
             act!(crate::p8_structure::kuna_dedupitetail::ActionDedupIteTail::boxed("blockrecovery")),
+            // (kuna) tailform: choose the wrapped or guard form of each function-tail
+            // `if` by the size of its conditional tail (print-tree edit only).
+            act!(crate::p8_structure::kuna_tailform::ActionTailForm::boxed("blockrecovery")),
             // (kuna) angr ITERegionConverter (option `iteregion`, default-OFF — a
             // runtime choice).  After the tree is final + goto targets labelled,
             // mark a narrow two-arm assignment diamond (`if (c) v=A; else v=B;`,

@@ -38,6 +38,8 @@
 <symbol space="ram" offset="0x100100" name="wrapend"/>
 </binaryimage>
 <script>
+  <!-- kuna: tailform default-on; this test pins the binary's own function-tail return layout -->
+  <com>option tailform off</com>
   <com>parse line extern void down(int8 *a,int8 n);</com>
   <com>parse line extern void bytes(char *p,int4 n);</com>
   <com>parse line extern void step2(int8 *a,int8 n);</com>
