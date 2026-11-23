@@ -4372,7 +4372,13 @@ element), forgets what it may have overwritten (`Emulator::havoc_store`): the
 regions of the address's bases, and on the entry stack only the function's own
 frame from `k` upward, the index taken as non-negative when every index term
 scales up, below `k` too otherwise. An address with no base is an array in the
-image, and all mutable memory is forgotten. A constant fill from the image is not stored in the state,
+image, and all mutable memory is forgotten. A store whose address depends on
+the entry stack pointer or on another variable whose region the state holds,
+without that variable being one of the bases forgotten (the frame pointer
+under a merge symbol's byte, `(fp + k) ^ (x & 8)`), is lost
+(`Emulator::reaches_kept`, `AccessRecord::lost`): the exploration goes on
+reading what that memory held before it, and the header reports it once the
+body is decompiled (below). A constant fill from the image is not stored in the state,
 because it reads the same on every path, so a node's entry state holds only
 what the program wrote and not every bytecode byte its path fetched. A
 symbolic fill is stored, so reads of the same bytes at different widths
@@ -5086,6 +5092,19 @@ in the body". Such a body computes with a VM context cell as if it were a
 global of the program, which is what the exploration could not resolve (a
 Themida loop symbolized past its fixpoint), or holds the interpreter state the
 privatization had to leave in memory.
+`kuna_pushan.rs (warn_lost_stores)` finally counts the stores the exploration
+lost that lie on a path of the decompiled body: the emitter records the
+overlay address of every live instruction whose store was lost and not found
+dead in the overlay (`EmitStats::lost_stores`), and a store counts when a
+basic block the final function keeps covers that address. The block, not the
+store op, decides: a value the exploration read back from before the store is
+folded into the program as a constant, so the decompiler finds the store
+itself dead and removes it, and the body says something false with no trace
+of the store left. Code the decompiler removed counts nothing. A body with
+any such store carries "pushan: incomplete: N stores through an address the
+emulation could not place on a path of the body". An unplaced load needs no
+count: it reads an unknown, which the emitter never folds, so the overlay
+keeps the program's own load.
 
 **String literals.** A short string the program passes to a call (`"123"` to
 `strcmp`, `"cmd"` to `CreateProcessA`) would print as its address. The
@@ -5206,7 +5225,8 @@ argument selects (`f_ctxi`, whose stores stay and whose header reports the
 protector state left), and a local written through the interpreter's copy
 of its frame pointer, kept in an unaligned context cell beside one that the
 two arms of a branch set differently (`f_cell`, which returns the value
-written).
+written), and a local written at an address no identity places (`f_lost`,
+whose header reports the lost store).
 `tests/stages/kuna-pushan-interp.xml` runs two passes over the
 `pushan_interp_x86_64` fixture (gcc -O0 from its committed C source), six
 functions that are their own interpreters of one virtual program with a loop

@@ -151,6 +151,10 @@ pub struct AccessRecord {
     pub is_store: bool,
     /// A load through the virtual PC that read the file's bytes.
     pub trusted: bool,
+    /// A store the emulation placed nowhere while memory its address
+    /// depends on kept its contents ([`Emulator::reaches_kept`]): what it
+    /// wrote there is lost to the exploration.
+    pub lost: bool,
 }
 
 /// Where an in-function interpreter keeps its virtual PC.
@@ -247,6 +251,8 @@ pub struct Emulator<'a> {
     /// What first set [`Self::copy_read_unfolded`], for the log.
     pub copy_read_note: Option<String>,
     last_trusted: bool,
+    /// The store being executed was lost ([`AccessRecord::lost`]).
+    last_lost: bool,
 }
 
 /// Symbol -> the constants its location held where paths met.
@@ -276,6 +282,7 @@ impl<'a> Emulator<'a> {
             insn_copy_reads: 0,
             copy_read_note: None,
             last_trusted: false,
+            last_lost: false,
         }
     }
 
@@ -715,9 +722,22 @@ impl<'a> Emulator<'a> {
         }
         state.unknown_stores += 1;
         self.note(format!("unknown store address {}", arena.fmt(addr)));
-        if !self.havoc_store(state, arena, addr) {
+        let forgot = self.havoc_store(state, arena, addr);
+        if !forgot {
             self.dropped_stores += 1;
         }
+        self.last_lost = !forgot || self.reaches_kept(state, arena, addr);
+    }
+
+    /// The address of an unplaced store depends on a variable whose memory
+    /// the state keeps (the entry stack, or the region under a symbolic
+    /// base) without being one of the bases [`Self::havoc_store`] forgot:
+    /// the store may have written there, and the exploration goes on reading
+    /// what that memory held before it.
+    fn reaches_kept(&self, state: &State, arena: &ExprArena, addr: ExprId) -> bool {
+        let (terms, _) = arena.linear_terms(addr);
+        let bases: Vec<VarId> = terms.iter().filter(|(_, c)| *c == 1).filter_map(|(t, _)| arena.as_var(*t)).collect();
+        arena.free_vars(addr).into_iter().any(|v| !bases.contains(&v) && (Some(v) == self.stack_base || state.mem.contains_key(&Some(v))))
     }
 
     /// A store to an address over a symbolic index (`base + c * i + k`, an
@@ -915,6 +935,7 @@ impl<'a> Emulator<'a> {
                         size,
                         is_store: false,
                         trusted: false,
+                        lost: false,
                     });
                     self.last_trusted = false;
                     let v = if out.size > MAX_SIZE as u32 { self.unknown(arena, size, "wide load") } else { self.load(state, arena, space, addr, size) };
@@ -942,11 +963,18 @@ impl<'a> Emulator<'a> {
                         size: op.ins[2].size.min(MAX_SIZE as u32) as u8,
                         is_store: true,
                         trusted: false,
+                        lost: false,
                     });
+                    self.last_lost = false;
                     if op.ins[2].size <= MAX_SIZE as u32 {
                         self.store(state, arena, space, addr, val);
                     } else {
                         state.unknown_stores += 1;
+                    }
+                    if self.last_lost {
+                        if let Some(a) = trace.accesses.last_mut() {
+                            a.lost = true;
+                        }
                     }
                 }
                 _ => {

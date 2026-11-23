@@ -1372,6 +1372,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         if !(reflow_requested && fd.has_restart_pending()) && !crate::kuna_bejoin::wide_callee_missed(arch, fd) {
             crate::kuna_pushan::warn_unshown_escapes(arch, fd);
             crate::kuna_pushan::warn_protector_state(arch, fd);
+            crate::kuna_pushan::warn_lost_stores(arch, fd);
             drain_pipeline_comments(arch, fd);
             return Ok(total);
         }
@@ -1383,6 +1384,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
             fd.set_restart_pending(false);
             crate::kuna_pushan::warn_unshown_escapes(arch, fd);
             crate::kuna_pushan::warn_protector_state(arch, fd);
+            crate::kuna_pushan::warn_lost_stores(arch, fd);
             drain_pipeline_comments(arch, fd);
             return Ok(total);
         }

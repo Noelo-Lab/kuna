@@ -92,6 +92,9 @@ pub struct EmitStats {
     /// Each external call's overlay address, with the entry-stack offsets of
     /// the locals its arguments point at.
     pub call_escapes: BTreeMap<u64, Vec<i64>>,
+    /// The overlay addresses of the live instructions whose store the
+    /// emulation lost ([`AccessRecord::lost`](super::kuna_pushanemu::AccessRecord)).
+    pub lost_stores: BTreeSet<u64>,
     /// The lowest stack pointer, relative to the entry one, any external call
     /// is made with: below it lie only the interpreter's scratch and the
     /// callees' frames, so every call overwrites it.
@@ -614,6 +617,9 @@ struct Emitter<'a> {
     frame_reg: u64,
     /// The argument registers some call reads the entry value of.
     entry_regs: Vec<(u64, u8)>,
+    /// The positions, in the op list [`Self::rewrite_insn`] last returned, of
+    /// the stores the emulation lost.
+    lost_ops: Vec<usize>,
 }
 
 /// How many times the emitted path executes op `i` of `insn`.
@@ -649,6 +655,7 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
         private_accesses: BTreeSet::new(),
         frame_reg: 0,
         entry_regs: Vec::new(),
+        lost_ops: Vec::new(),
     };
     em.assign_slots();
     em.frame_reg = conf.slot_base + 8 * (em.slots.len() + em.var_slots.len()) as u64;
@@ -667,16 +674,20 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
     );
     let mut code: Vec<Vec<Vec<OverlayOp>>> = Vec::with_capacity(cfg.nodes.len());
     let mut refs: Vec<Vec<Vec<Option<MemRef>>>> = Vec::with_capacity(cfg.nodes.len());
+    let mut lost: Vec<Vec<Vec<usize>>> = Vec::with_capacity(cfg.nodes.len());
     for node in cfg.nodes.iter() {
         let mut insns = Vec::with_capacity(node.insns.len());
         let mut insn_refs = Vec::with_capacity(node.insns.len());
+        let mut insn_lost = Vec::with_capacity(node.insns.len());
         for (k, insn) in node.insns.iter().enumerate() {
             let (ops, r) = em.rewrite_insn(node, k, insn);
             insns.push(ops);
             insn_refs.push(r);
+            insn_lost.push(std::mem::take(&mut em.lost_ops));
         }
         code.push(insns);
         refs.push(insn_refs);
+        lost.push(insn_lost);
     }
     // Exits go in once every witness is known.
     for (idx, node) in cfg.nodes.iter().enumerate() {
@@ -699,6 +710,7 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
         em.stats.dead_ops = o;
     }
     let mut lens: Vec<u64> = vec![1; cfg.nodes.len()];
+    let mut lost_at: Vec<(usize, u64)> = Vec::new();
     for (idx, node) in cfg.nodes.iter().enumerate() {
         let base = syn_addr(conf, idx as NodeId);
         let n = node.insns.len();
@@ -750,6 +762,9 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
             if ops.is_empty() {
                 ops.push(em.nop_op());
             }
+            if !dead[idx][k] && lost[idx][k].iter().any(|&x| !dead_ops[idx][k][x]) {
+                lost_at.push((idx, at - base));
+            }
             em.stats.insns += 1;
             em.stats.ops += ops.len();
             overlay.insns.insert(
@@ -775,6 +790,7 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
     }
     em.stats.entry_regs = em.entry_regs.iter().map(|&(off, size)| (entry_register(conf, off), size)).collect();
     let addr = fuse_chains(&mut overlay, cfg, conf, &lens);
+    em.stats.lost_stores = lost_at.iter().map(|&(idx, rel)| addr[idx] + rel).collect();
     for (idx, node) in cfg.nodes.iter().enumerate() {
         if let (NodeExit::Call { .. }, Some(esc)) = (&node.exit, &node.call_escapes) {
             if !esc.is_empty() {
@@ -1276,6 +1292,9 @@ impl<'a> Emitter<'a> {
         }
         let mut refs: Vec<Option<MemRef>> = vec![None; out.len()];
         for (pos, i) in mem_ops {
+            if out[pos].opc == CPUI_STORE && trace.is_some_and(|t| t.accesses.iter().any(|a| a.op_index == i && a.lost)) {
+                self.lost_ops.push(pos);
+            }
             let repeats = order_count(trace, insn, i);
             refs[pos] = Some(if repeats > 1 { MemRef::Unknown } else { self.mem_ref(trace, i) });
         }

@@ -986,8 +986,9 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
                                 };
                                 let _ = writeln!(
                                     f,
-                                    "         {} via={:?} addr={}{sym}",
+                                    "         {}{} via={:?} addr={}{sym}",
                                     if a.is_store { "store" } else { "load" },
+                                    if a.lost { " (lost)" } else { "" },
                                     a.via.map(|(r, d)| format!("reg{r:x}{d:+}")),
                                     a.addr.map(|x| format!("{x:#x}")).unwrap_or_else(|| "sym".into())
                                 );
@@ -1545,6 +1546,36 @@ pub fn warn_protector_state(arch: &Architecture, fd: &mut Funcdata) {
             (r, w) => format!("{} and {}", part(r, "read"), part(w, "write")),
         };
         fd.warning_header(&format!("pushan: incomplete: {what} of the protector's own memory left in the body"));
+    }
+}
+
+/// Warn when a store the exploration lost ([`EmitStats::lost_stores`]:
+/// placed nowhere, while memory its address depends on kept its contents)
+/// lies on a path of the decompiled body: every value the exploration read
+/// from that memory after it, and folded into the program, may be the one
+/// from before it, and the store itself may be found dead once those reads
+/// are folded.  A store counts when a basic block the final function keeps
+/// covers its instruction, so a store in removed code counts nothing.  Run
+/// once the body is decompiled.
+pub fn warn_lost_stores(arch: &Architecture, fd: &mut Funcdata) {
+    if !fd.kuna_devirtualized() {
+        return;
+    }
+    let Some(p) = arch.pushan_cache.get(&fd.get_address().get_offset()) else { return };
+    let Some(space) = fd.get_address().get_space().cloned() else { return };
+    if p.emit_stats.lost_stores.is_empty() {
+        return;
+    }
+    let blocks = fd.bblocks_ref();
+    let covers: Vec<&kuna_base::address::RangeList> = (0..fd.bblocks_get_size())
+        .filter_map(|i| match blocks.block(fd.bblocks_get_block(i)).kind() {
+            crate::block::BlockKind::Basic(bd) => Some(&bd.cover),
+            _ => None,
+        })
+        .collect();
+    let n = p.emit_stats.lost_stores.iter().filter(|&&a| covers.iter().any(|c| c.in_range(&Address::new(space.clone(), a), 1))).count();
+    if n > 0 {
+        fd.warning_header(&format!("pushan: incomplete: {n} store{} through an address the emulation could not place on a path of the body", if n == 1 { "" } else { "s" }));
     }
 }
 
