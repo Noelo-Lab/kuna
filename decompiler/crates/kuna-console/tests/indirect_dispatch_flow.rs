@@ -68,20 +68,26 @@ fn four_hundred_steps_use_two_full_recovery_stages() {
 }
 
 #[test]
-fn failed_real_retry_keeps_its_target_and_warns() {
-    let (program, fd) = flow(
+fn failed_real_retry_keeps_its_target_and_indirect_exit() {
+    let (_, fd) = flow(
         "tests/fixtures/indirect-flow-closure/retry-failure-64.bin",
         false,
     );
-    assert_eq!(fd.num_jump_tables(), 1);
-    let table = fd.get_jump_table(0);
-    assert_eq!(table.num_entries(), 1);
-    assert_eq!(table.get_recover_count(), 2);
-    let op = fd.obank().get(table.get_indirect_op().unwrap()).unwrap();
-    assert_eq!(op.code(), OpCode::CPUI_BRANCHIND);
-    assert!(program.arch().commentdb.comments().iter().any(|c| c
-        .text
-        .contains("Re-entered indirect jump may have more targets")));
+    assert_eq!(fd.num_jump_tables(), 0);
+    assert_eq!(open_cases(&fd), [1]);
+}
+
+/// Count direct case edges at each remaining indirect call. A return guard
+/// uses a p-code-relative target and does not represent a local case.
+fn open_cases(fd: &kuna_decomp::funcdata::Funcdata) -> Vec<usize> {
+    fd.obank().iter_alive().filter(|&id| fd.obank().get(id).unwrap().code() == OpCode::CPUI_CALLIND).map(|id| {
+        let site = fd.obank().get(id).unwrap().get_addr();
+        fd.obank().iter_at(site).filter(|(_, id)| {
+            let op = fd.obank().get(*id).unwrap();
+            op.code() == OpCode::CPUI_CBRANCH && op.get_in(0)
+                .and_then(|vn| fd.vbank().get(vn)).is_some_and(|v| !v.is_constant())
+        }).count()
+    }).collect()
 }
 
 #[test]
@@ -91,12 +97,12 @@ fn ordinary_register_closure_needs_only_the_reentry_value() {
     assert_eq!(fd.num_jump_tables(), 1);
     assert_eq!(fd.get_jump_table(0).num_entries(), 3);
     let (_, fd) = flow(path, true);
-    assert_eq!(fd.get_jump_table(0).num_entries(), 1, "off keeps upstream's first target");
+    assert_eq!(open_cases(&fd), [1], "off follows the first case and calls through other values");
 }
 
 fn warnings(program: &kuna_console::engine::ConsoleProgram) -> usize {
     program.arch().commentdb.comments().iter()
-        .filter(|c| c.text.contains("Re-entered indirect jump may have more targets"))
+        .filter(|c| c.text.contains("Indirect jump recovery limit reached"))
         .count()
 }
 
@@ -120,10 +126,123 @@ fn unrelated_single_target_jumps_spend_no_retry_budget() {
 #[test]
 fn every_dispatch_left_at_the_retry_cap_is_warned() {
     let (program, fd) = flow("tests/fixtures/indirect-flow-closure/two-chains-64.bin", false);
-    let sizes: Vec<_> = entries(&fd).into_iter().filter(|&n| n > 1).collect();
+    let sizes = open_cases(&fd);
     assert_eq!(sizes.len(), 2, "{sizes:?}");
-    assert!(sizes.iter().all(|&n| n < 80), "both chains need more than the cap: {sizes:?}");
+    assert!(sizes.iter().all(|&n| (2..80).contains(&n)), "both chains need more than the cap: {sizes:?}");
     assert_eq!(warnings(&program), 2);
+}
+
+/// Follow flow over a raw x86-64 image loaded and entered at 0x2000.
+fn x86_flow(hex: &str) -> kuna_decomp::funcdata::Funcdata {
+    let bytes: Vec<u8> = (0..hex.len()).step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+        .collect();
+    let path = crate::common::scratch_file("x86-dispatch", "bin");
+    std::fs::write(&path, bytes).unwrap();
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let mut program = bootstrap_from_raw(
+        path.to_str().unwrap(),
+        "x86:LE:64:default:gcc",
+        0x2000,
+        &[0x2000],
+        None,
+        &[root.join("specs").to_string_lossy().into_owned()],
+    )
+    .unwrap();
+    program.commit_pending_analysis().unwrap();
+    let space = program.arch().manage().get_default_code_space().unwrap().clone();
+    let fd = build_and_follow_flow(program.arch_mut(), "loop", Address::new(space, 0x2000), 0).unwrap();
+    std::fs::remove_file(path).unwrap();
+    fd
+}
+
+#[test]
+fn an_unguarded_table_reentered_through_its_load_keeps_its_cases() {
+    // top: movzbl (%rdi),%eax; add $1,%rdi; and $3,%eax; jmp *0x2040(,%rax,8)
+    // Three cases jump back to top and one returns, as in a bytecode loop.
+    let fd = x86_flow(concat!(
+        "31d20fb6074883c70183e003ff24c54020000089d0c383c203ebe783f205ebe2",
+        "6bd207ebdd000000000000000000000000000000000000000000000000000000",
+        "132000000000000016200000000000001b200000000000002020000000000000",
+    ));
+    assert_eq!(fd.num_jump_tables(), 1);
+    assert_eq!(fd.get_jump_table(0).num_entries(), 4);
+    assert!(open_cases(&fd).is_empty());
+}
+
+#[test]
+fn a_loaded_singleton_reentered_before_its_guard_keeps_an_indirect_exit() {
+    // mov $0x2040,%ecx; guard: cmp $1,%edi; ja done; load (%rcx,%rax,8); jmp *%rax.
+    // The first case moves the base to the third row and jumps back to the
+    // guard. The zero second row ends the first recovery after one target.
+    let fd = x86_flow(concat!(
+        "b94020000083ff01771b89f8488b04c1ffe0c70607000000b950200000ebe6c7",
+        "0617000000c30000000000000000000000000000000000000000000000000000",
+        "122000000000000000000000000000001f20000000000000",
+    ));
+    assert_eq!(fd.num_jump_tables(), 0);
+    assert_eq!(open_cases(&fd), [1]);
+}
+
+#[test]
+fn a_goto_again_dispatch_with_masked_or_constant_indices_keeps_its_table() {
+    // d: jmp *0x2060(,%rdx,8). Two cases fetch the next byte, mask it with & 3
+    // and jump back to d; one sets the index to the constant 3. Every value
+    // reads one of the four recovered rows, so the switch stays closed.
+    let fd = x86_flow(concat!(
+        "31c00fb61783e203ff24d56020000083c0010fb657014883c70183e203ebe983",
+        "c002ba03000000ebdfc301c00fb657014883c70183e203ebcf00000000000000",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "0f200000000000001f2000000000000029200000000000002a20000000000000",
+    ));
+    assert_eq!(fd.num_jump_tables(), 1);
+    assert_eq!(fd.get_jump_table(0).num_entries(), 4);
+    assert!(open_cases(&fd).is_empty());
+}
+
+#[test]
+fn a_case_that_points_the_fetch_at_a_constant_address_keeps_its_table() {
+    // top: movzbl (%rdi),%eax; add $1,%rdi; and $3,%eax; jmp *0x2040(,%rax,8).
+    // Case 2 sets %rdi to 0x2100 and jumps back to top. That fetch reads data
+    // at a proven address, not a row; the masked index still reads a row.
+    let fd = x86_flow(concat!(
+        "31d20fb6074883c70183e003ff24c54020000089d0c383c203ebe7bf00210000",
+        "ebe06bd207ebdb00000000000000000000000000000000000000000000000000",
+        "132000000000000016200000000000001b200000000000002220000000000000",
+    ));
+    assert_eq!(fd.num_jump_tables(), 1);
+    assert_eq!(fd.get_jump_table(0).num_entries(), 4);
+    assert!(open_cases(&fd).is_empty());
+}
+
+#[test]
+fn an_odd_only_index_keeps_its_table() {
+    // top: movzbl (%rdi),%edx; add $1,%rdi; and $3,%edx; or $1,%edx;
+    // movzbl %dl,%edx; jmp *0x2040(,%rdx,8). Only rows 1 and 3 are reachable.
+    // Enumerating the last zero extension also tries 0, which reads row 0.
+    let fd = x86_flow(concat!(
+        "31f60fb6174883c70183e20383ca010fb6d2ff24d54020000089f0c383c603eb",
+        "e100000000000000000000000000000000000000000000000000000000000000",
+        "02200000000000001c2000000000000002200000000000001920000000000000",
+    ));
+    assert_eq!(fd.num_jump_tables(), 1);
+    assert!(open_cases(&fd).is_empty());
+}
+
+#[test]
+fn a_case_that_moves_the_table_base_opens_the_dispatch() {
+    // top: movzbl (%rdi),%eax; add $1,%rdi; and $3,%eax; jmp *(%rcx,%rax,8)
+    // with %rcx = 0x2060. Case 0 sets %rcx to a second table at 0x2080 and
+    // jumps back to top, so the next dispatch reads rows outside the first table.
+    let fd = x86_flow(concat!(
+        "b96020000031d20fb6074883c70183e003ff24c1b98020000083c203ebe983c2",
+        "05ebe489d0c36bd207ebdcb864000000c3000000000000000000000000000000",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "14200000000000001e20000000000000232000000000000026200000000000002b",
+        "200000000000002b200000000000002b200000000000002b20000000000000",
+    ));
+    assert_eq!(fd.num_jump_tables(), 0);
+    assert!(!open_cases(&fd).is_empty());
 }
 
 #[test]
@@ -224,19 +343,19 @@ fn failed_retry_uses_a_compatible_multistage_hint() {
         let fd = restart_with_hint(&mut program, fd, at(0x40000c), vec![
             at(if compatible { 0x400014 } else { 0x400018 }), at(0x400028),
         ]);
+        if !compatible {
+            assert_eq!(fd.num_jump_tables(), 0);
+            assert_eq!(open_cases(&fd), [1]);
+            continue;
+        }
         let jt = fd.get_jump_table(0);
         assert_eq!(jt.get_recover_count(), 2);
-        let expected = if compatible {
-            vec![0x400014, 0x400028]
-        } else {
-            vec![0x400014]
-        };
         assert_eq!(
             jt.address_table()
                 .iter()
                 .map(Address::get_offset)
                 .collect::<Vec<_>>(),
-            expected
+            vec![0x400014, 0x400028]
         );
     }
 }

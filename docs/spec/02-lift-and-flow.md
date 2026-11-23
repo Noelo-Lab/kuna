@@ -2122,7 +2122,50 @@ A dispatcher loop jumps through one register, and each step's code loads the
 next step's address and jumps back. Flow recovers the dispatch's first target
 before that code is decoded, so upstream keeps a one-entry table and drops every
 later step. Under `reentry` (and `on`), a recovered in-bounds, non-override
-singleton table is provisional. After each round of table following,
+single-target table is provisional. A multi-target dispatch is also provisional
+when the jump forwards its target operand directly or through the transfer
+instruction's copies and alignment mask. For a table that reads its destinations
+from memory, an edge into the dispatch block can bypass the incoming range
+check, change the table base, or skip the load entirely. Flow compares the
+actual jump operand against its known destinations on these paths. It can
+also follow a local target supplied by the edge, including a target read
+from a proven constant address in immutable memory. For an edge through the
+load, flow checks whether a recovered case can reach its source. An acyclic
+edge from a sibling switch can share the guarded table without re-entering it.
+If a conditional re-entry repeats the range check, the finished flow graph
+can retain the table. Each incoming selector must have a proved range, and
+every value must read the original rows and reach a known destination.
+Before any of that, `decompiler/crates/kuna-decomp/src/p2_lift/kuna_returnbranch.rs (classify_indexed_edge)`
+replays the edge: the run from its block, after any call on it, then the
+suffix, reading immutable rows from the image.
+- If the replay proves nothing, it enumerates a bounded operation on the
+  index side of the row load: an AND with a mask below 1024 (only values
+  inside the mask), or a one-byte load or zero extension. Up to three such
+  operations are tried, nearest the jump first; one whose values disagree
+  passes to the next.
+- A conditional edge keeps only the values that take it.
+- When every value reads a recovered row and reaches a recovered destination,
+  the edge is part of the table, and the switch stays closed. Examples are a
+  bytecode loop that fetches and masks its next opcode, a `goto` back to the
+  dispatch with a re-masked or constant index, and a guard the edge
+  re-evaluates.
+- When a replay's row load, the load nearest the jump on the target's
+  dependencies, reads outside the rows, or the replay proves a target no row
+  supplies, the dispatch is opened. An example is a case that loads a new
+  table base. Other loads on the way are data, such as a bytecode fetch
+  through a pointer a case set to a constant address, or a global state
+  variable. They never open the dispatch; one outside the memory recovery
+  reached leaves the replay unproved. An enumerated operation opens it only
+  when every value it can carry escapes: a mask wider than the table, or a
+  zero the code cannot produce, may be unreachable.
+- When the replay cannot tell, an edge through the load keeps the recovered
+  table, as upstream does. Examples are a base or index register set outside
+  the run.
+- A row whose target lies inside its own dispatch suffix is the table itself.
+- A table that reads its destinations from memory is provisional only when it
+  has one target. A single-target table re-entered before its load, such as by
+  a jump back to its range check, is staged again.
+After each round of table following,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_indirectreturn.rs (reentry_edges)`
 collects the new direct branches and fallthroughs into previously decoded
 instructions, reading only the dead list's tail: flow appends what it
@@ -2153,14 +2196,33 @@ selector for case labels, including distinct values with the same byte address.
 When the original operands are unavailable and conversion can lose bits, flow
 requests SSA recovery. Any other reaching edge
 requests a full recovery once the locally proved frontier drains. At most 128
-such retries run per flow; every dispatch still pending when they run out
-keeps its targets and carries `Re-entered indirect jump may have more targets`,
-once each. A retry admits the constant-select model whatever `constselectjump`
-says except `off`, because the re-entry already shows the targets are one
-function's. A retry's failed second stage keeps the old model and targets and
-reports that warning unless a validated multistage hint covers the restored
-singleton. Outside re-entry a failed second stage restores its model silently. `off` records no provisional table and restores
-upstream's flow.
+such retries run per flow. A successful retry must account for the local
+targets already followed. If it omits one, the union of the known targets
+stays reachable. A failed re-entry retry adopts a validated multistage hint
+instead when the hint covers the restored singleton. With `off`, flow skips discovery of additional local
+targets for a register dispatcher. In all three modes, an indexed bypass uses
+the computed address and can reveal a local case outside the original range.
+
+When recovery fails, is disabled, or exhausts its retries, flow keeps the
+unresolved dispatch until table following finishes. At the original jump it
+captures the computed operand once, after the instruction's side effects.
+It branches directly to each distinct known destination on equality and
+uses the ordinary indirect tail call and return for the remaining values.
+These operations share the jump instruction's address and require no unused
+instruction address for the call. An explicit table override retains its
+declared targets.
+
+For a transfer that may also return, the first SSA pass identifies the incoming
+return register or an entry-block load of the return at the initial stack
+pointer before any possible memory overwrite. A store to a proven disjoint
+entry-stack byte range preserves the saved return; an unknown pointer or even
+a partial overlap ends the proof. It follows the selector
+through copies, identity operations, merges and the transfer's own alignment
+mask. An incoming return address takes a separate conditional return. A
+parallel merge carries that decision and a defined selector on each edge,
+so a callback may use any address value and other uses of the original
+selector keep their definitions. Each SSA operand and edge in this walk is
+visited a bounded number of times, including loop-carried merges.
 
 A re-entered dispatch can also receive the caller's return address, and not
 always last: an early exit can reach it before the later steps are decoded.
@@ -2170,8 +2232,7 @@ the table ceiling. The return becomes the table's last, unlabelled address: a
 synthetic RETURN that `FlowInfo::kuna_return_stub` plants one byte past the
 jump, where no instruction is decoded, and that the table marks as its default
 case. If an instruction is already decoded there, the return destination is
-dropped with `Indirect jump caller return overlaps decoded code` rather than
-flowing into that instruction. Whatever the dispatcher block does, including a
+handled by the conditional return of an open dispatch. Whatever the dispatcher block does, including a
 delay-slot update, runs before that return exactly as it does before each case.
 Out-of-bounds or unmapped destinations retain one placeholder and do not make a
 singleton table provisional. The original transfer's mask is recorded from raw
