@@ -522,6 +522,22 @@ COPY itself; `decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
 respecting cover, up to the COPY as well. A call, or a statement whose result a
 printed statement between them reads (`n = v & 1;` ahead of a loop over
 `v = strtoul(...)`), keeps its place, and the header goes without it.
+Upstream sorts the arms of a switch by label, and the `default:` arm sorts under
+whatever label its table entry carries, so it prints first or between two cases.
+An arm whose code ends in a call that does not return prints nothing that stops
+it, so the arm printed after it reads as the code it falls into — `default:
+die(...);` followed by `case 1: return "[*]";` shows an edge the program does not
+have, and a reader takes it at its word. After the sort,
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_switchcaseorder.rs
+(order_cases)` keeps the label order and every fall-through chain together and
+moves the arms that would read wrong: the group holding `default:` after the
+other arms (the order authors write), and an arm whose last basic block has no
+successor and ends in a call rather than a return
+(`kuna_switchcaseorder.rs (ends_unstopped)`) after all of those. Only the last of
+several such arms can end the switch, so each of the others is printed with a
+`break;` after its call (as in the `usage(0); break;` of a getopt loop). This is
+a correctness fix with no option: no order it changes printed anything the
+program does.
 `blockaction.rs (ActionNormalizeBranches)` remains a non-mutating compatibility
 action in the `jumptable` and `normalize` groups. It preserves its registration
 and initialized-root check, but does not traverse branches or allocate unused
