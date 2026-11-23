@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5237,
-    5237
+    5246,
+    5246
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -5025,6 +5025,15 @@
     "data:tailform #7: off, a long void body is wrapped",
     "data:tailform #8: on, the long body follows a guard clause",
     "data:tailform #9: two different return values are left alone in both passes",
+    "data:tailform no-return #1: off, scaled returns inside the if and ends in exit",
+    "data:tailform no-return #2: on, scaled's two-statement fatal arm is the if body",
+    "data:tailform no-return #3: on, pick tests the merged fatal condition and returns after it",
+    "data:tailform no-return #4: on, the fatal test after lookup's loop is the if body",
+    "data:tailform no-return #5: off, store's store and return are the if body",
+    "data:tailform no-return #6: on, store tests the fatal arm and stores after it",
+    "data:tailform no-return #7: every call to abort and exit is printed in both passes",
+    "data:tailform no-return #8: off, pick returns inside the if and abort ends it",
+    "data:tailform no-return #9: off, lookup returns inside the if after its loop and abort ends it",
     "data:tee-O2 tail-jumps #1: indirect-jump-as-call marker (pass 1 off only)",
     "data:tee-O2 tail-jumps #2: unresolved GOT-pointer indirect call (pass 1 off only)",
     "data:tee-O2 tail-jumps #3: tail call resolves to named setlocale (pass 2 on only)",
