@@ -78,7 +78,7 @@ use kuna_sleigh::translate::{AssemblyEmit, PcodeEmit, Translate};
 use object::read::{Object, ObjectSection, ObjectSegment, ObjectSymbol, ObjectSymbolTable};
 use object::SectionKind;
 
-use super::classify::classify;
+use super::classify::{absolute_branch_target, classify};
 use super::context::ContextPainter;
 use super::kuna_pcform::{Formed, PcForm};
 use super::kuna_picbase::{self, Ctx as PicCtx, PicBase};
@@ -173,6 +173,8 @@ pub struct XrefIndex {
     indirect_callers: BTreeSet<u64>,
     /// Forwarding veneers, keyed by function entry ([`veneer_at`]).
     veneers: BTreeMap<u64, Veneer>,
+    /// Verified ELF PLT stubs grouped by the function their relocation names.
+    export_plt: BTreeMap<u64, Vec<crate::loader::elf_plt::defined::Stub>>,
     /// The reverse of [`XrefIndex::veneers`]: a slot mapped to every veneer that
     /// forwards through it (normally one, but a program may emit several).
     veneers_of_slot: BTreeMap<u64, Vec<u64>>,
@@ -186,6 +188,8 @@ pub struct XrefIndex {
     /// The targets of decoded direct calls and branches that lie outside the
     /// sections the walk decodes.
     stopped: BTreeSet<u64>,
+    /// Lowest decoded direct call site for each focused, out-of-section target.
+    stopped_direct_calls: BTreeMap<u64, u64>,
 }
 
 /// Every decoded instruction and its intra-function successors, so each entry's
@@ -363,7 +367,8 @@ impl XrefIndex {
     }
 
     /// [`refs_to`](Self::refs_to) over every member of `class`, minus the
-    /// members' own forwarding jumps; `class` is an [`alias_class`](Self::alias_class)
+    /// members' own forwarding jumps and any value that merely equals an ELF PLT
+    /// stub's or slot's address; `class` is an [`alias_class`](Self::alias_class)
     /// or an [`export_alias_class`](Self::export_alias_class).
     pub fn refs_to_class(&self, class: &BTreeSet<u64>) -> Vec<&Xref> {
         if class.len() == 1 {
@@ -375,14 +380,21 @@ impl XrefIndex {
         // veneer's exact instruction range and nothing wider: ordered containment
         // would swallow whatever code happens to follow the veneer in memory
         // before the next known entry, which is a real caller.
+        let stubs: Vec<_> = class.iter().filter_map(|m| self.export_plt.get(m)).flatten()
+            .filter(|s| class.contains(&s.entry) && class.contains(&s.slot))
+            .collect();
         let bodies: Vec<(u64, u64)> = class
             .iter()
             .filter_map(|m| self.veneers.get(m).map(|v| (*m, v.end)))
+            .chain(stubs.iter().map(|s| (s.entry, s.end)))
             .collect();
         let mut rows: Vec<&Xref> = Vec::new();
         for &member in class {
+            let stub_member = stubs.iter().any(|s| s.entry == member || s.slot == member);
             for r in self.refs_to(member) {
-                if bodies.iter().any(|&(lo, hi)| r.from >= lo && r.from < hi) {
+                if bodies.iter().any(|&(lo, hi)| r.from >= lo && r.from < hi)
+                    || (stub_member && r.kind == XrefKind::Data)
+                {
                     continue;
                 }
                 rows.push(r);
@@ -425,6 +437,10 @@ impl XrefIndex {
     /// value, never a shared name, and an unrelocated or undefined slot adds nothing.
     pub fn export_alias_class(&self, file: &object::File, entry: u64) -> BTreeSet<u64> {
         let mut class = self.alias_class(entry);
+        for stub in self.export_plt.get(&entry).into_iter().flatten() {
+            class.insert(stub.entry);
+            class.extend(self.alias_class(stub.slot));
+        }
         let (Some(relocs), Some(symbols)) = (file.dynamic_relocations(), file.dynamic_symbol_table())
         else {
             return class;
@@ -442,6 +458,11 @@ impl XrefIndex {
             }
         }
         class
+    }
+
+    /// Whether a name query for this definition includes this ELF PLT entry.
+    pub fn is_export_stub(&self, definition: u64, address: u64) -> bool {
+        self.export_plt.get(&definition).is_some_and(|stubs| stubs.iter().any(|s| s.entry == address))
     }
 
     /// The fixed pointer slot the forwarding veneer at `entry` jumps through, or
@@ -527,6 +548,12 @@ impl XrefIndex {
     /// pointed at and stopped short of.
     pub fn undecoded_flow_targets(&self) -> impl Iterator<Item = u64> + '_ {
         self.stopped.iter().copied().filter(|to| !self.decoded.contains(to))
+    }
+
+    /// A direct call site the walk decoded for an out-of-section focus address.
+    /// Call rows through import slots and inferred indirect calls cannot set it.
+    pub fn stopped_direct_call_site(&self, vma: u64) -> Option<u64> {
+        self.stopped_direct_calls.get(&vma).copied()
     }
 
     /// How many distinct instructions the walk decoded.
@@ -789,14 +816,8 @@ fn descend(
         return empty();
     };
 
-    let exec: Vec<(u64, u64)> = {
-        let mut r: Vec<(u64, u64)> = crate::entry::executable_sections(file)
-            .into_iter()
-            .map(|(lo, hi, _data)| (lo, hi))
-            .collect();
-        r.sort_unstable();
-        r
-    };
+    let coverage = super::ExecutableCoverage::from_object(file);
+    let exec = &coverage.ranges;
     // A relocatable object is laid out synthetically by the loader, so the raw
     // `object` view's section addresses are pre-link and describe a different
     // address space than the seeds live in (`reloc_object::is_synthetically_laid_out`).
@@ -941,7 +962,7 @@ fn descend(
     let mut frame_cache = crate::aif::ArmFrames::default();
     let mut frame_partition = None;
     let mut walk_context = super::kuna_walkcontext::WalkContext::new(
-        prologues, translate, arch, &code_space, &exec,
+        prologues, translate, arch, &code_space, exec,
     );
     if arch.analysis_listing && arch.input_arm_isa_override {
         if let Some(context) = &mut walk_context {
@@ -979,6 +1000,7 @@ fn descend(
     // as a callee first stops at it, as it always has.
     let mut admitted: HashSet<u64> = HashSet::new();
     let mut stopped: BTreeSet<u64> = BTreeSet::new();
+    let mut stopped_direct_calls = BTreeMap::<u64, u64>::new();
 
     loop {
         // Drain known entries first, then merge recovered roots and focus addresses
@@ -988,7 +1010,7 @@ fn descend(
             Some(entry) => entry,
             None if prologues && !prologues_done => {
                 prologues_done = true;
-                let mut listing = partition_listing(&partition, &st.funcs, &exec);
+                let mut listing = partition_listing(&partition, &st.funcs, &coverage);
                 if gapwalk {
                     render_fingerprints(
                         &mut listing, &st.funcs, arch, translate, &code_space,
@@ -996,7 +1018,7 @@ fn descend(
                     );
                 }
                 let frames = crate::aif::raw_arm_frames(
-                    file, &listing, arch, translate, Rc::clone(&code_space), &exec, true, None,
+                    file, &listing, arch, translate, Rc::clone(&code_space), exec, true, None,
                 );
                 let found = frames.roots.clone();
                 frame_cache = frames;
@@ -1051,7 +1073,7 @@ fn descend(
                         let original = frame_partition.as_ref().unwrap();
                         let candidates = frame_candidates.iter().copied()
                             .filter(|root| st.funcs.contains(root)).collect();
-                        let mut corpus = partition_listing(&partition, &st.funcs, &exec);
+                        let mut corpus = partition_listing(&partition, &st.funcs, &coverage);
                         render_fingerprints(
                             &mut corpus, &st.funcs, arch, translate, &code_space,
                             &partition, fingerprint_contexts.as_ref(),
@@ -1132,6 +1154,7 @@ fn descend(
                         focused.clear();
                         admitted.clear();
                         stopped.clear();
+                        stopped_direct_calls.clear();
                         walked.clear();
                         if let Some(context) = &mut walk_context { context.reset(); }
                         partition.clear();
@@ -1151,10 +1174,10 @@ fn descend(
                         &code_space,
                         &partition,
                         &st.funcs,
-                        &exec,
+                        &coverage,
                         fingerprint_contexts.as_ref(),
                         frame_partition.as_ref(),
-                        Some(&crate::aif::kuna_aifbracket::BracketEvidence::from_object(file, &exec)),
+                        Some(&crate::aif::kuna_aifbracket::BracketEvidence::from_object(file, exec)),
                     );
                     pending_focus.extend(found.into_iter().rev());
                     continue;
@@ -1252,7 +1275,7 @@ fn descend(
                 let mut read = kuna_switchtable::TableRead::default();
                 if let Some(tables) = &a32_tables {
                     let decoded = |at: u64| st.decoded.contains(&at);
-                    read = tables.targets(translate, &code_space, &exec, &decoded, vma);
+                    read = tables.targets(translate, &code_space, exec, &decoded, vma);
                 }
                 let predicated = a32_tables.is_some() && is_predicated(translate, &code_space, vma);
                 if read.cases.is_empty() && read.stated.is_none() && read.gap.is_none() && !predicated {
@@ -1264,7 +1287,7 @@ fn descend(
                         vma,
                         Some(&branch),
                         p,
-                        &exec,
+                        exec,
                         &reach,
                         thumb_tables.as_ref(),
                     );
@@ -1437,6 +1460,7 @@ fn descend(
 
             for &target in &c.flows {
                 let kind = if c.flow.is_call { XrefKind::Call } else { XrefKind::Jump };
+                let outside_walk = sections_are_runtime && !in_range(&exec_set, target);
                 if condition == Some(target) {
                     condition = None;
                     if c.fall_through.is_none() {
@@ -1444,8 +1468,17 @@ fn descend(
                     }
                 } else if condskip || Some(target) != skip {
                     st.file(vma, target, kind, &text);
+                    if outside_walk && c.flow.is_call && focus.contains(&target)
+                        && raw.iter().any(|op| {
+                            op.opcode == OpCode::CPUI_CALL && absolute_branch_target(op) == Some(target)
+                        })
+                    {
+                        stopped_direct_calls.entry(target)
+                            .and_modify(|site| *site = (*site).min(vma))
+                            .or_insert(vma);
+                    }
                 }
-                if sections_are_runtime && !in_range(&exec_set, target) {
+                if outside_walk {
                     stopped.insert(target);
                 }
                 if c.flow.is_call {
@@ -1478,7 +1511,7 @@ fn descend(
                 if let Some(p) = pool.as_ref() {
                     let a32 = a32_tables.as_ref().map_or_else(kuna_switchtable::TableRead::default, |tables| {
                         let decoded = |at: u64| st.decoded.contains(&at);
-                        tables.decoded_targets(translate, &code_space, &exec, &decoded, vma, cap.ops(), len)
+                        tables.decoded_targets(translate, &code_space, exec, &decoded, vma, cap.ops(), len)
                     });
                     let branch = cap
                         .ops()
@@ -1497,7 +1530,7 @@ fn descend(
                                 base,
                                 vma,
                                 p,
-                                &exec,
+                                exec,
                                 None,
                                 max_entries,
                             ));
@@ -1515,7 +1548,7 @@ fn descend(
                             vma,
                             branch,
                             p,
-                            &exec,
+                            exec,
                             &reach,
                             thumb_tables.as_ref(),
                         );
@@ -1713,10 +1746,14 @@ fn descend(
     }
 
     let mut index = st.finish(veneers, preserve_bodies);
+    for stub in crate::loader::elf_plt::defined::stubs(file) {
+        index.export_plt.entry(stub.definition).or_default().push(stub);
+    }
     if !measure {
         index.flow = None;
     }
     index.stopped = stopped;
+    index.stopped_direct_calls = stopped_direct_calls;
     index
 }
 
@@ -1746,7 +1783,7 @@ fn gap_entries(
     code_space: &Rc<AddrSpace>,
     partition: &[(u64, u32)],
     funcs: &BTreeSet<u64>,
-    exec: &[(u64, u64)],
+    coverage: &super::ExecutableCoverage,
     contexts: Option<&super::kuna_fingerprintcontext::FingerprintContexts>,
     frame: Option<&super::Listing>,
     bracket: Option<&crate::aif::kuna_aifbracket::BracketEvidence>,
@@ -1754,7 +1791,7 @@ fn gap_entries(
     if funcs.len() < AIF_MIN_FUNCTIONS || partition.is_empty() {
         return Vec::new();
     }
-    let mut listing = partition_listing(partition, funcs, exec);
+    let mut listing = partition_listing(partition, funcs, coverage);
     let _probe = crate::aif::arm_gap_probe_scope(translate);
     render_fingerprints(&mut listing, funcs, arch, translate, code_space, partition, contexts);
     let poolslide = (arch.analysis_aifpoolslide && crate::loadimage_object::is_arm32_language(&arch.archid))
@@ -1830,7 +1867,7 @@ fn partition_covers(partition: &BTreeMap<u64, u32>, vma: u64) -> bool {
 fn partition_listing(
     partition: &[(u64, u32)],
     funcs: &BTreeSet<u64>,
-    exec: &[(u64, u64)],
+    coverage: &super::ExecutableCoverage,
 ) -> super::Listing {
     let mut insns = super::kuna_insnstore::InstructionStore::default();
     for &(addr, len) in partition {
@@ -1865,7 +1902,7 @@ fn partition_listing(
                 )
             })
             .collect(),
-        exec.to_vec(),
+        coverage.clone(),
     )
 }
 
@@ -2080,11 +2117,13 @@ impl State {
             body_owners,
             indirect_callers,
             veneers,
+            export_plt: BTreeMap::new(),
             veneers_of_slot,
             insns,
             flow: self.flow,
             switches: self.switches,
             stopped: BTreeSet::new(),
+            stopped_direct_calls: BTreeMap::new(),
         }
     }
 }
@@ -2139,11 +2178,13 @@ fn empty() -> XrefIndex {
         body_owners: None,
         indirect_callers: BTreeSet::new(),
         veneers: BTreeMap::new(),
+        export_plt: BTreeMap::new(),
         veneers_of_slot: BTreeMap::new(),
         insns: 0,
         flow: None,
         switches: Vec::new(),
         stopped: BTreeSet::new(),
+        stopped_direct_calls: BTreeMap::new(),
     }
 }
 
@@ -2570,7 +2611,7 @@ pub(super) fn in_range(ranges: &[(u64, u64)], vma: u64) -> bool {
 
 /// The same address set as `ranges`, as the sorted, disjoint spans [`in_range`]
 /// searches: overlapping and touching ranges are merged.
-pub(super) fn range_union(mut ranges: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
+pub(crate) fn range_union(mut ranges: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
     ranges.sort_unstable();
     let mut out: Vec<(u64, u64)> = Vec::with_capacity(ranges.len());
     for (lo, hi) in ranges {

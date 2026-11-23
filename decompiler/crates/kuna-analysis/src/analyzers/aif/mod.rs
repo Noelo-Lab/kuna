@@ -201,6 +201,7 @@ struct GapDecoder<'a> {
     code_space: Rc<AddrSpace>,
     exec_ranges: &'a [(u64, u64)],
     prior_partition: Option<&'a Listing>,
+    measure_encoded_len: bool,
     /// `vma -> Some(insn)` on a good decode, `vma -> None` on an undecodable byte
     /// (so a re-probe is cached too).
     cache: BTreeMap<u64, Option<Rc<ProbedInsn>>>,
@@ -271,7 +272,10 @@ impl LinearRun {
 /// A speculatively-decoded instruction (the gap-probe analog of [`crate::listing::Insn`]).
 #[derive(Clone, PartialEq, Eq)]
 struct ProbedInsn {
+    /// Traversal and occupied bytes, including executed delay slots.
     len: u32,
+    /// Width of the first encoding for section-slot admission.
+    encoded_len: u32,
     kind: FlowKind,
     is_call: bool,
     is_terminal: bool,
@@ -290,6 +294,7 @@ impl<'a> GapDecoder<'a> {
     ) -> Self {
         GapDecoder {
             translate, code_space, exec_ranges, prior_partition: None, cache: BTreeMap::new(),
+            measure_encoded_len: translate.translate_base().section_instruction_stride.is_some() && translate.may_have_delay_slots(),
             spare: None, frame_instructions: None, memo: None, full_capture: None, keep_ops: true,
             frame_probe: false, prologue_starts: None, straight_line: None, scratch: Decoded::default(), mnemonics: Vec::new(),
             visited: HashSet::new(), worklist: Vec::new(), linear_run: None, linear_events: VecDeque::new(),
@@ -367,10 +372,13 @@ impl<'a> GapDecoder<'a> {
         }
     }
 
-    fn recorded(&self, at: u64) -> Rc<ProbedInsn> {
+    fn recorded_instruction(&self, at: u64) -> Option<&Rc<ProbedInsn>> {
         self.cache.get(&at).and_then(Option::as_ref)
             .or_else(|| self.frame_instructions.as_ref().and_then(|insns| insns.get(&at)))
-            .cloned().expect("validated instruction has a decode record")
+    }
+
+    fn recorded(&self, at: u64) -> Rc<ProbedInsn> {
+        self.recorded_instruction(at).cloned().expect("validated instruction has a decode record")
     }
 
     /// The shared memo's record for `vma`, in this decoder's form.
@@ -379,7 +387,8 @@ impl<'a> GapDecoder<'a> {
         let (translate, space) = (self.translate, Rc::clone(&self.code_space));
         memo.recall(translate, &space, vma, |m| {
             Rc::new(ProbedInsn {
-                len: m.len, kind: m.flow.kind, is_call: m.flow.is_call, is_terminal: m.flow.is_terminal,
+                // The memo only certifies lifts confined to this instruction.
+                len: m.len, encoded_len: m.len, kind: m.flow.kind, is_call: m.flow.is_call, is_terminal: m.flow.is_terminal,
                 fall_through: m.fall_through, flows: m.flows.to_vec(), mnemonic: self.intern_mnemonic(m.mnemonic),
                 operands: m.operands.to_string(), reusable: Some(Rc::clone(m.reusable)),
             })
@@ -399,6 +408,12 @@ impl<'a> GapDecoder<'a> {
 
     fn decode_uncached(&mut self, vma: u64) -> Option<Rc<ProbedInsn>> {
         if !self.in_exec(vma) { return None; }
+        // Measure in the incoming context, before the lift applies any commits.
+        // Without delay slots the lift already returns the encoded length.
+        let encoded_len = if self.measure_encoded_len {
+            let addr = kuna_base::address::Address::new(Rc::clone(&self.code_space), vma);
+            self.translate.instruction_length(&addr).ok().and_then(|len| u32::try_from(len).ok()).filter(|&len| len != 0)
+        } else { None };
         let mut reusable = if let Some(capture) = &mut self.full_capture {
             crate::listing::kuna_decodereuse::capture(self.translate, vma, &self.code_space,
                 &mut self.scratch, capture, self.keep_ops).ok()?
@@ -419,9 +434,13 @@ impl<'a> GapDecoder<'a> {
         let mnemonic = self.intern_mnemonic(&text);
         self.scratch.mnemonic = text;
         let decoded = &self.scratch;
+        // The traversal extent is a conservative upper bound if a separate
+        // length could not be obtained.
+        let encoded_len = encoded_len.unwrap_or(decoded.len);
         if let Some(mut spare) = self.spare.take() {
             let record = Rc::get_mut(&mut spare).expect("retired record is exclusively owned");
             record.len = decoded.len;
+            record.encoded_len = encoded_len;
             record.kind = c.flow.kind;
             record.is_call = c.flow.is_call;
             record.is_terminal = c.flow.is_terminal;
@@ -433,7 +452,7 @@ impl<'a> GapDecoder<'a> {
             Some(spare)
         } else {
             Some(Rc::new(ProbedInsn {
-                len: decoded.len, kind: c.flow.kind, is_call: c.flow.is_call,
+                len: decoded.len, encoded_len, kind: c.flow.kind, is_call: c.flow.is_call,
                 is_terminal: c.flow.is_terminal, fall_through: c.fall_through,
                 flows: c.flows, mnemonic, operands: decoded.operands.clone(), reusable,
             }))
@@ -567,7 +586,7 @@ fn check_valid_subroutine(
     gap_lo: u64,
     gap_hi: u64,
 ) -> Option<BTreeSet<u64>> {
-    check_valid_subroutine_with_policy(decoder, listing, entry, gap_lo, gap_hi, false)
+    check_valid_subroutine_with_policy(decoder, listing, entry, gap_lo, gap_hi, false, None)
         .map(|(body, _adds_info)| body)
 }
 
@@ -578,7 +597,7 @@ fn check_valid_subroutine_strict(
     gap_lo: u64,
     gap_hi: u64,
 ) -> Option<BTreeSet<u64>> {
-    check_valid_subroutine_with_policy(decoder, listing, entry, gap_lo, gap_hi, true)
+    check_valid_subroutine_with_policy(decoder, listing, entry, gap_lo, gap_hi, true, None)
         .map(|(body, _adds_info)| body)
 }
 
@@ -630,6 +649,7 @@ fn check_valid_subroutine_with_policy(
     gap_lo: u64,
     gap_hi: u64,
     strict: bool,
+    required_entry: Option<u64>,
 ) -> Option<(BTreeSet<u64>, bool)> {
     let mut body = std::mem::take(&mut decoder.visited);
     let mut worklist = std::mem::take(&mut decoder.worklist);
@@ -660,6 +680,9 @@ fn check_valid_subroutine_with_policy(
     worklist.push(prefix.end);
     let accepted = follow_subroutine(
         decoder, listing, gap_lo, gap_hi, strict, prefix, flags, &mut body, &mut worklist);
+    // A padding run can terminate before reaching the classified destination.
+    // Check the actual instruction starts before materializing a rejected suffix.
+    let accepted = accepted.filter(|_| required_entry.is_none_or(|at| prefix.contains(at) || body.contains(&at)));
     let result = accepted.map(|corroborated| (
         prefix.addresses().chain(body.iter().copied()).collect(), corroborated));
     decoder.visited = body;
@@ -963,6 +986,27 @@ struct GapWalk<'e> {
     poolslide: Option<(&'e kuna_decomp::architecture::Architecture, Rc<AddrSpace>)>,
 }
 
+/// Disjoint inclusive byte ranges, keyed by their last byte. A candidate slot may
+/// start inside an old instruction or contain the start of one.
+#[derive(Default)]
+struct ClaimedCode(BTreeMap<u64, u64>);
+
+impl ClaimedCode {
+    fn overlaps(&self, first: u64, last: u64) -> bool {
+        self.0.range(first..).next().is_some_and(|(_, &start)| start <= last)
+    }
+
+    fn insert(&mut self, mut first: u64, mut last: u64) {
+        while let Some((&end, &start)) = self.0.range(first.saturating_sub(1)..).next() {
+            if start > last.saturating_add(1) { break; }
+            self.0.remove(&end);
+            first = first.min(start);
+            last = last.max(end);
+        }
+        self.0.insert(last, first);
+    }
+}
+
 /// Frame-prefix probes skip claimed spans and gaps containing no frame roots.
 /// Only `listing` establishes code coverage; `corpus` may include provisional callees.
 fn aif_candidates(
@@ -994,13 +1038,37 @@ fn aif_candidates(
     }
 
     let mut accepted: BTreeSet<u64> = BTreeSet::new();
-    let mut claimed: BTreeSet<u64> = BTreeSet::new();
+    let mut claimed = ClaimedCode::default();
 
     // Walk every undefined gap: `first_undefined_after(start)` returns the next
     // undefined executable VMA. Probe it, then advance past whatever we resolved
     // (the accepted body, or one byte on a reject) and continue.
     let mut frame_spans = frames.iter().peekable();
-    let mut cursor = listing.first_undefined_after(0);
+    let stride = decoder.translate.translate_base().section_instruction_stride
+        .filter(|_| listing.has_section_origins());
+    if stride.is_some() {
+        // Multiple direct targets may decode overlapping instructions. A short
+        // inner instruction cannot release bytes of an enclosing instruction,
+        // even across a section boundary.
+        for (&at, insn) in listing.instructions() {
+            if insn.len > 0 {
+                claimed.insert(at, at.saturating_add(u64::from(insn.len - 1)));
+            }
+        }
+    }
+    let mut cursor = if stride.is_some() {
+        listing.first_undefined_at_or_after(0)
+    } else {
+        listing.first_undefined_after(0)
+    };
+    // Touching or overlapping decoder windows describe one set of available
+    // bytes. Only an actual section boundary restarts the grid.
+    let restricted = (decoder.exec_ranges != listing.exec_ranges()).then(|| {
+        crate::listing::xrefs::range_union(decoder.exec_ranges.iter().copied()
+            .filter(|&(lo, hi)| lo < hi).collect())
+    });
+    let windows = restricted.as_deref();
+    let mut section_start = 0;
     let mut scan_end = 0;
     let mut gap_hi = u64::MAX;
     while let Some(gap_start) = cursor {
@@ -1022,10 +1090,20 @@ fn aif_candidates(
         // are legitimate.
         if gap_start >= scan_end {
             gap_hi = listing.next_instruction_start_after(gap_start).unwrap_or(u64::MAX);
-            let exec_hi = listing.exec_ranges().iter()
-                .find(|&&(lo, hi)| lo <= gap_start && gap_start < hi)
-                .map(|&(_, hi)| hi).expect("undefined address belongs to an executable range");
-            scan_end = gap_hi.min(exec_hi);
+            // The listing owns the section boundaries. A caller may restrict
+            // speculative decoding to disjoint windows within that listing.
+            let Some((base, section_end)) = listing.range_containing_or_after(gap_start) else { break };
+            let mut end = section_end;
+            if let Some(windows) = windows {
+                let Some((lo, hi)) = next_window(windows, gap_start) else { break };
+                if gap_start < lo {
+                    cursor = listing.first_undefined_at_or_after(lo);
+                    continue;
+                }
+                end = end.min(hi);
+            }
+            section_start = base;
+            scan_end = gap_hi.min(end);
         }
         if roots.is_some_and(|roots| roots.range(gap_start..gap_hi).next().is_none()) {
             cursor = if gap_hi == u64::MAX { None } else { listing.first_undefined_after(gap_hi) };
@@ -1035,23 +1113,51 @@ fn aif_candidates(
         // (kuna, `aif strict`) The cursor slides to the next instruction-alignment
         // boundary rather than the next byte, and only an aligned address or a
         // hole's first byte is a candidate at all.
-        let mut advanced = if aifstrict {
-            kuna_aifstrict::next_probe_after(gap_start, gap_hi)
+        let (allowed, mut advanced) = if let Some(width) = stride {
+            section_probe(section_start, gap_start, scan_end, width)
+        } else if aifstrict {
+            (kuna_aifstrict::probe_allowed(listing, gap_start),
+             kuna_aifstrict::next_probe_after(gap_start, gap_hi))
         } else {
-            gap_start.saturating_add(1)
+            (true, gap_start.saturating_add(1))
         };
-        let probe_here = (!aifstrict || kuna_aifstrict::probe_allowed(listing, gap_start))
-            && listing.is_undefined(gap_start) && !claimed.contains(&gap_start);
+        let last = stride.map_or(gap_start, |width| gap_start.saturating_add(u64::from(width.get() - 1)));
+        // A trained fingerprint can have the right total length while its first
+        // instruction exceeds the slot. Check before classifying or walking the body.
+        let probe_here = allowed && listing.is_undefined(gap_start) && !claimed.overlaps(gap_start, last)
+            && stride.is_none_or(|width| decoder.probe(gap_start).is_some_and(|insn| insn.encoded_len <= width.get()));
         // (kuna, `aifnoppad`) No entry starts on filler: filler in front of a known
         // function or zero fill is not probed, and an accept moves past padding.
         let filler = match &mut padding {
-            Some(runs) if probe_here => runs.classify(listing, decoder, gap_start),
+            Some(runs) if probe_here => runs.classify(listing, decoder, gap_start, stride.is_some()),
             _ => kuna_aifnoppad::Filler::No,
         };
         if probe_here && filler != kuna_aifnoppad::Filler::Refuse {
+            let entry_allowed = |decoder: &GapDecoder, at| stride.is_none_or(|width| {
+                let slot_available = if (gap_start..scan_end).contains(&at) {
+                    section_probe(section_start, at, scan_end, width).0
+                } else {
+                    at < gap_hi && entry_fits_slot(listing, at, width, windows)
+                };
+                slot_available && !claimed.overlaps(at, at.saturating_add(u64::from(width.get() - 1)))
+                    && decoder.recorded_instruction(at).is_some_and(|insn| insn.encoded_len <= width.get())
+            });
+            let pool_end = literals.as_ref().and_then(|lits| lits.run_end(gap_start));
+            // A padding suffix has the same destination as the whole run. Check it
+            // before constructing its body, unless a literal pool supplies the entry.
+            let padding_entry = match (pool_end, filler) {
+                (None, kuna_aifnoppad::Filler::Before(at)) => Some(at),
+                _ => None,
+            };
+            let probe = if (pool_end.is_none() && filler == kuna_aifnoppad::Filler::Blocked)
+                || padding_entry.is_some_and(|at| !entry_allowed(decoder, at)) {
+                Probe::Reject
+            } else {
+                probe_gap_start(decoder, listing, &hist, gap_start, gap_hi, aifcorroborate, padding_entry)
+            };
             // (kuna, `aifbracket`) A fragment of the enclosing known function is
             // refused but, like an `aif precise` refusal, consumes its body.
-            let probe = match probe_gap_start(decoder, listing, &hist, gap_start, gap_hi, aifcorroborate) {
+            let probe = match probe {
                 Probe::Accept(body) if bracket.is_some_and(|evidence| {
                     kuna_aifbracket::rejects(listing, decoder, evidence, gap_start, &body)
                 }) => Probe::Uncorroborated(body),
@@ -1060,8 +1166,7 @@ fn aif_candidates(
             // (kuna, `aifpoolslide`) A candidate on a literal-pool word plants its
             // accept on the code after the pool; it is refused, consuming its body,
             // when that is data, and rejected when its body never decoded there.
-            let pool_end = literals.as_ref().and_then(|lits| lits.run_end(gap_start));
-            let probe = match (probe, pool_end) {
+            let mut probe = match (probe, pool_end) {
                 (Probe::Accept(body), Some(end))
                     if !literals.as_ref().is_some_and(|l| l.may_plant(end)) =>
                 {
@@ -1072,23 +1177,34 @@ fn aif_candidates(
                 (_, Some(_)) => Probe::Reject,
                 (probe, None) => probe,
             };
-            if let (Some(lits), Probe::Accept(body) | Probe::Uncorroborated(body)) = (&mut literals, &probe) {
-                lits.add_body(listing, decoder, body);
+            let mut entry = pool_end.or(padding_entry).unwrap_or(gap_start);
+            if let Probe::Accept(body) = &mut probe {
+                if roots.is_none() && entry == gap_start {
+                    if let Some(prefix) = kuna_sparcprologue::prefix(decoder, listing, &claimed, entry) {
+                        body.extend([prefix, prefix + 4]);
+                        entry = prefix;
+                    }
+                }
+            }
+            // A pool, padding run or reconstructed prologue can move the entry.
+            // Check that new slot before either outcome claims the body.
+            if entry != gap_start && !matches!(probe, Probe::Reject) && !entry_allowed(decoder, entry) {
+                probe = Probe::Reject;
+            }
+            if let Probe::Accept(body) | Probe::Uncorroborated(body) = &probe {
+                if let Some(lits) = &mut literals {
+                    lits.add_body(listing, decoder, body);
+                }
+                for &at in body {
+                    // Without a declared slot width retain the ordinary start-only policy.
+                    let last = stride.map_or(at, |_| at.saturating_add(u64::from(decoder.recorded(at).len - 1)));
+                    claimed.insert(at, last);
+                }
+                advanced = body.last().copied().unwrap_or(gap_start).saturating_add(1);
             }
             match probe
             {
-                Probe::Accept(mut body) => {
-                    let mut entry = match (pool_end, filler) {
-                        (Some(end), _) => end,
-                        (None, kuna_aifnoppad::Filler::Before(at)) if body.contains(&at) => at,
-                        _ => gap_start,
-                    };
-                    if roots.is_none() && entry == gap_start {
-                        if let Some(prefix) = kuna_sparcprologue::prefix(decoder, listing, &claimed, entry) {
-                            body.extend([prefix, prefix + 4]);
-                            entry = prefix;
-                        }
-                    }
+                Probe::Accept(body) => {
                     if let Some(bodies) = &mut bodies {
                         bodies.insert(entry, body.iter().copied().filter(|&at| at >= entry)
                             .map(|at| (at, decoder.recorded(at))).collect());
@@ -1103,9 +1219,6 @@ fn aif_candidates(
                         decoder.straight_line.as_mut().unwrap().extend(reached);
                     }
                     accepted.insert(entry);
-                    let body_max = body.iter().copied().max().unwrap_or(gap_start);
-                    advanced = body_max.saturating_add(1);
-                    claimed.extend(body);
                 }
                 // (kuna, `aif precise`) An uncorroborated candidate is refused
                 // as an ENTRY but still consumes its body. Without that, refusing
@@ -1117,9 +1230,6 @@ fn aif_candidates(
                     if let Some(refused) = &mut decoder.straight_line {
                         refused.extend(body.iter().copied());
                     }
-                    let body_max = body.iter().copied().max().unwrap_or(gap_start);
-                    advanced = body_max.saturating_add(1);
-                    claimed.extend(body);
                 }
                 Probe::Reject => {}
             }
@@ -1129,12 +1239,41 @@ fn aif_candidates(
         cursor = if advanced > gap_start && advanced < scan_end {
             Some(advanced)
         } else {
-            listing.first_undefined_after(advanced.saturating_sub(1))
+            listing.first_undefined_at_or_after(advanced)
                 .filter(|&next| next > gap_start)
         };
     }
 
     accepted.into_iter().collect()
+}
+
+/// First sorted, disjoint decoder window containing or following `at`.
+fn next_window(windows: &[(u64, u64)], at: u64) -> Option<(u64, u64)> {
+    windows.get(windows.partition_point(|&(_, hi)| hi <= at)).copied()
+}
+
+fn entry_fits_slot(
+    listing: &Listing,
+    at: u64,
+    width: core::num::NonZeroU32,
+    windows: Option<&[(u64, u64)]>,
+) -> bool {
+    let Some((base, mut end)) = listing.range_containing_or_after(at) else { return false };
+    if let Some(windows) = windows {
+        let Some((lo, hi)) = next_window(windows, at) else { return false };
+        if at < lo { return false; }
+        end = end.min(hi);
+    }
+    // A backward prologue can be in a different undefined gap.
+    let gap_end = listing.next_instruction_start_after(at).unwrap_or(u64::MAX);
+    at >= base && listing.is_undefined(at) && section_probe(base, at, end.min(gap_end), width).0
+}
+
+/// Membership and next probe, bounded so adjacent sections restart at their own origin.
+fn section_probe(base: u64, at: u64, end: u64, stride: core::num::NonZeroU32) -> (bool, u64) {
+    let width = u64::from(stride.get());
+    let offset = (at - base) % width;
+    (offset == 0 && end - at >= width, at.saturating_add(width - offset).min(end))
 }
 
 /// The outcome of one gap-start probe. `Uncorroborated` is `aif precise`'s
@@ -1162,6 +1301,7 @@ fn probe_gap_start(
     gap_start: u64,
     gap_hi: u64,
     aifcorroborate: bool,
+    required_entry: Option<u64>,
 ) -> Probe {
     let Some(fp) = decoder.fingerprint(gap_start) else { return Probe::Reject };
     let count = hist.get(&fp).copied().unwrap_or(0);
@@ -1169,7 +1309,7 @@ fn probe_gap_start(
         return Probe::Reject;
     }
     let Some((body, corroborated)) =
-        check_valid_subroutine_with_policy(decoder, listing, gap_start, gap_start, gap_hi, false)
+        check_valid_subroutine_with_policy(decoder, listing, gap_start, gap_start, gap_hi, false, required_entry)
     else {
         return Probe::Reject;
     };
@@ -1640,6 +1780,20 @@ mod tests {
         assert!(strict_instruction_fits_gap(0x1000, 5, 0x1005));
         assert!(!strict_instruction_fits_gap(0x1000, 6, 0x1005));
         assert!(!strict_instruction_fits_gap(u64::MAX - 1, 4, u64::MAX));
+    }
+
+    #[test]
+    fn section_grid_restarts_at_each_executable_section() {
+        let stride = core::num::NonZeroU32::new(6).unwrap();
+        assert_eq!(section_probe(0x1000, 0x1000, 0x100b, stride), (true, 0x1006));
+        assert_eq!(section_probe(0x1000, 0x1002, 0x100b, stride), (false, 0x1006));
+        assert_eq!(section_probe(0x1000, 0x1006, 0x100b, stride), (false, 0x100b));
+        assert_eq!(section_probe(0x1000, 0x1006, 0x100c, stride), (true, 0x100c));
+        assert_eq!(section_probe(0x100b, 0x100b, 0x1020, stride), (true, 0x1011));
+        assert_eq!(section_probe(0x100b, 0x1011, 0x1020, stride), (true, 0x1017));
+        assert_eq!(section_probe(u64::MAX - 5, u64::MAX - 5, u64::MAX, stride), (false, u64::MAX));
+        assert_eq!(section_probe(u64::MAX - 6, u64::MAX - 6, u64::MAX, stride), (true, u64::MAX));
+        assert_eq!(section_probe(u64::MAX - 2, u64::MAX - 1, u64::MAX, stride), (false, u64::MAX));
     }
 
     #[test]
