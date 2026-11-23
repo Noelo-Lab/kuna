@@ -78,7 +78,9 @@ pub struct RawDiscovery {
 /// synthetic symbols unless ordinary discovery would find them too; they lead
 /// the roots so that the Listing's last-in-first-out walk decodes the ordinary
 /// roots first. An explicit ARM `--isa` keeps its whole-image `TMode` while
-/// the Thumb IT state still propagates within each decode walk.
+/// the Thumb IT state still propagates within each decode walk; under
+/// `--isa arm` a call target off a word boundary (a `blx` to Thumb, decoded in
+/// data) is not an entry, since the whole image decodes as ARM.
 pub fn discover(
     arch: &Architecture,
     translate: &dyn Translate,
@@ -109,6 +111,7 @@ pub fn discover(
         && arch.with_context_db(|db| {
             db.get_variable_value(b"TMode", &Address::new(Rc::clone(code_space), seeds[0])).ok()
         }) == Some(1);
+    let word_aligned = |target: &u64| !explicit_arm_isa || thumb || target % 4 == 0;
     let mut roots: Vec<u64> = seeds.to_vec();
     roots.extend(crate::loader::kuna_realmodecs::without_commits(arch, translate, || {
         let _scope = if real_mode { None } else { translate.decode_context_scope() };
@@ -121,7 +124,7 @@ pub fn discover(
                         || kuna_mzsweep::opens_as_code(translate, code_space, exec_ranges, mz, target)
                 })
                 .collect(),
-            None => swept,
+            None => swept.into_iter().filter(word_aligned).collect::<Vec<u64>>(),
         }
     }));
     roots.sort_unstable();
@@ -145,7 +148,7 @@ pub fn discover(
     );
 
     let mut out: Vec<u64> = seeds.to_vec();
-    out.extend(listing.functions().map(|(&vma, _)| vma));
+    out.extend(listing.functions().map(|(&vma, _)| vma).filter(word_aligned));
     out.sort_unstable();
     out.dedup();
     let dos_exits = kuna_dosexit::analyze(arch, translate, code_space, &listing);

@@ -645,7 +645,8 @@ pub struct ConsoleProgram {
     deferred_raw_noreturn: BTreeSet<u64>,
     /// Proven raw-image flow ends, entry VMA -> exclusive end (`kuna_rawextent`).
     /// They shorten [`crate::funcextent`]'s clip where the CODE range also
-    /// holds data. `None` on images that did not measure flow.
+    /// holds data. `None` on images that did not measure flow (every image but
+    /// an x86 real-mode or 32-bit ARM raw one).
     flow_ends: Option<BTreeMap<u64, u64>>,
     data_name_aliases: HashMap<String, u64>,
     /// (kuna) **Caller-declared function extents**, entry VMA → byte size — what

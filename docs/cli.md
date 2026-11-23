@@ -2142,11 +2142,13 @@ the end of that segment rather than to the end of a `.text` — looser, but stil
 upper bound, where every entry used to report `0` and `--min-size 1` discarded the
 whole binary.
 
-For a headerless image outside x86 real mode, raw discovery
-can shorten the clip to the end of the last instruction reached within it.
-The size still includes gaps between reached instructions. If a reachable
-path cannot be resolved from the decoded instructions or the extent walk runs
-out of visits, the clip is kept. An explicit extent from `--define-function` or
+For a 32-bit ARM headerless image, raw discovery can shorten the clip to the
+end of the last instruction reached within it, extended over the literal pool
+words (and the padding before them) that the function's instructions load or
+address. The size still includes gaps between reached instructions. If a
+reachable path cannot be resolved from the decoded instructions or the extent
+walk runs out of visits, the clip is kept. Other raw languages keep the clip
+outside x86 real mode. An explicit extent from `--define-function` or
 `--assert function` takes precedence.
 
 An MS-DOS executable or a `--raw-image` x86 real-mode program has no

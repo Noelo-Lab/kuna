@@ -1,4 +1,5 @@
-//! Raw inventory counts code reached by flow, not adjacent data.
+//! Raw ARM inventory counts code reached by flow and the literal pools it
+//! loads, not adjacent data; other raw languages keep the clip.
 
 use crate::common;
 use std::path::Path;
@@ -94,8 +95,69 @@ fn raw_thumb_sizes_require_complete_decoded_flow() {
 }
 
 #[test]
-fn raw_x86_inventory_keeps_unmeasured_shared_tail_clips() {
+fn raw_thumb_sizes_keep_the_literal_pools_their_code_loads() {
+    let mut bytes = [0xa5; 0x100];
+    let code: &[(usize, &[u16])] = &[
+        // ldr r0,[pc,#4]; bx lr; two data halfwords; the word it loads.
+        (0x00, &[0x4801, 0x4770]),
+        (0x08, &[0x5678, 0x1234]),
+        // vldr s0,[pc,#8]; bx lr; the single it loads at 0x604c.
+        (0x40, &[0xed9f, 0x0a02, 0x4770]),
+        (0x4c, &[0x0000, 0x3f80]),
+        // adr r3,0x6090; ldrd r2,r3,[r3]; bx lr; the doubleword it addresses.
+        (0x80, &[0xa303, 0xe9d3, 0x2300, 0x4770]),
+        (0x90, &[0x0000, 0x0000, 0x0000, 0x3ff0]),
+        // movs r0,#1; bx lr; then data nothing reads.
+        (0xc0, &[0x2001, 0x4770]),
+    ];
+    for &(start, halfwords) in code {
+        for (i, halfword) in halfwords.iter().enumerate() {
+            let at = start + i * 2;
+            bytes[at..at + 2].copy_from_slice(&halfword.to_le_bytes());
+        }
+    }
+    let image = tempfile::Builder::new().suffix(".bin").tempfile().unwrap();
+    std::fs::write(image.path(), bytes).unwrap();
+    let rows = inventory(
+        image.path(),
+        "ARM:LE:32:Cortex:default",
+        "0x6000",
+        &["--isa", "thumb", "--entry", "0x6001", "--entry", "0x6041", "--entry", "0x6081", "--entry", "0x60c1"],
+    );
+    assert_eq!(rows, [(0x6000, 0xc), (0x6040, 0x10), (0x6080, 0x18), (0x60c0, 4)]);
+}
+
+#[test]
+fn raw_thumb_inventory_keeps_unmeasured_shared_tail_clips() {
     const ENTRIES: usize = 12;
+    const CLIP: usize = 8;
+    const BASE: u64 = 0x7000;
+    let mut bytes = [0xcc; ENTRIES * CLIP];
+    let entries: Vec<_> = (0..ENTRIES)
+        .map(|i| format!("{:#x}", BASE + (i * CLIP) as u64 + 1))
+        .collect();
+    let mut args = vec!["--isa", "thumb"];
+    for (i, entry) in entries.iter().enumerate() {
+        let offset = i * CLIP;
+        let halfword: u16 = if i + 1 == ENTRIES { 0x4770 } else { 0xe002 }; // bx lr; b next entry
+        bytes[offset..offset + 2].copy_from_slice(&halfword.to_le_bytes());
+        args.extend(["--entry", entry.as_str()]);
+    }
+    let image = tempfile::Builder::new().suffix(".bin").tempfile().unwrap();
+    std::fs::write(image.path(), bytes).unwrap();
+    let rows = inventory(image.path(), "ARM:LE:32:Cortex:default", "0x7000", &args);
+    // Each veneer follows the shared suffix; the first four walks consume
+    // 12 + 11 + 10 + 9 visits. The fifth cannot finish in the remaining six
+    // of the 4 * 12 aggregate visits, so it and subsequent entries keep the clip.
+    let expected: Vec<_> = (0..ENTRIES)
+        .map(|i| (BASE + (i * CLIP) as u64, if i < 4 { 2 } else { CLIP as u64 }))
+        .collect();
+    assert_eq!(rows, expected);
+}
+
+#[test]
+fn raw_x86_inventory_keeps_its_clips() {
+    const ENTRIES: usize = 4;
     const CLIP: usize = 8;
     const BASE: u64 = 0x7000;
     let mut bytes = [0xcc; ENTRIES * CLIP];
@@ -115,11 +177,20 @@ fn raw_x86_inventory_keeps_unmeasured_shared_tail_clips() {
     let image = tempfile::Builder::new().suffix(".bin").tempfile().unwrap();
     std::fs::write(image.path(), bytes).unwrap();
     let rows = inventory(image.path(), "x86:LE:32:default", "0x7000", &args);
-    // Each veneer follows the shared suffix; the first four walks consume
-    // 12 + 11 + 10 + 9 visits. The fifth cannot finish in the remaining six
-    // of the 4 * 12 aggregate visits, so it and subsequent entries keep the clip.
-    let expected: Vec<_> = (0..ENTRIES)
-        .map(|i| (BASE + (i * CLIP) as u64, if i < 4 { 2 } else { CLIP as u64 }))
-        .collect();
+    let expected: Vec<_> = (0..ENTRIES).map(|i| (BASE + (i * CLIP) as u64, CLIP as u64)).collect();
     assert_eq!(rows, expected);
+}
+
+#[test]
+fn raw_arm_mode_inventory_skips_off_word_call_targets() {
+    // bx lr; then data whose words spell `blx 0x800e` and `blx 0x803a`.
+    let words: [u32; 16] = [
+        0xe12fff1e, 0xfb000000, 0xe3a00001, 0xe12fff1e, 0xe1a00000, 0xe1a00000, 0xe1a00000, 0xe1a00000,
+        0xfb000004, 0, 0, 0, 0, 0, 0, 0,
+    ];
+    let bytes: Vec<u8> = words.iter().flat_map(|word| word.to_le_bytes()).collect();
+    let image = tempfile::Builder::new().suffix(".bin").tempfile().unwrap();
+    std::fs::write(image.path(), bytes).unwrap();
+    let rows = inventory(image.path(), "ARM:LE:32:v7:default", "0x8000", &["--isa", "arm", "--entry", "0x8000"]);
+    assert_eq!(rows, [(0x8000, 4)]);
 }

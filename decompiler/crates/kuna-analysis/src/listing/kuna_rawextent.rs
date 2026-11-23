@@ -1,14 +1,49 @@
-//! Bound raw-image function extents by their decoded control flow.
+//! (kuna #1288) Where a function of an x86 real-mode or ARM raw image ends.
 //!
-//! A raw loader's CODE range includes data, so clipping at the next entry or
-//! range end can attribute that data to a preceding function. [`measure`]
-//! shortens the clip only when the raw Listing accounts for the function's
-//! flow. The extent remains contiguous and counts any holes before the last
-//! reached instruction. The walk follows branches outside the clip as well:
-//! they can lead back into it.
+//! The inventory measures a function as the clip from its entry to the next
+//! entry or the end of its CODE section (`kuna-console/src/funcextent.rs`).
+//! That is an honest bound where the section table says which bytes are code.
+//! An MS-DOS executable and a `--raw-image` real-mode program have no section
+//! table: the loader publishes the whole load module as one CODE range, its
+//! DGROUP and far data segments included, so a function that data follows ran
+//! on to the next entry. On the unpacked DAZZLE.EXE of issue #1288 a 28-byte
+//! function in front of DGROUP measured 12,174 bytes, and `kuna disassemble`
+//! listed DGROUP as its instructions.
 //!
-//! x86 real mode keeps its DOS-specific rules, including no-return exits and
-//! the recovery of a `cs:` table or fixed-word indirect tail call from p-code.
+//! [`measure`] ends each entry where its flow does, over the descent the raw
+//! discovery already decoded: at the end of the last instruction its flow
+//! reaches between the entry and the next entry, so the span is still
+//! contiguous from the entry and can only be shorter than the clip. The flow
+//! is followed wherever it goes short of another entry, since a path can leave
+//! the span and come back into it, and only what it reaches in the span
+//! counts. A fall-through or jump into another entry ends the path, where the
+//! decompiler bounds the fall-through and prints the jump as a tail call, but
+//! a conditional branch into one is followed on, as the decompiler's flow
+//! follows it. Calls are not entered (the callee is another function) and fall
+//! through unless the callee is no-return; a DOS exit
+//! ([`super::kuna_dosexit`]) has no successor. A branch through a `cs:` table
+//! that lies in the span, which the descent leaves unresolved, reaches the
+//! table's words that name an address in the span, decoded here when the
+//! descent did not decode them; a branch through a fixed word (`jmp
+//! [0x2ef2]`) leaves the function, as the decompiler's tail call does; any
+//! other computed branch has targets nothing names, so its entry is left
+//! unmeasured and keeps the clip. An address a path reaches that does not
+//! decode counts by its first byte. Bytes between reached instructions stay
+//! in the span (a switch table in the body); a table after the last
+//! instruction does not.
+//!
+//! A raw ARM image's one CODE range holds the firmware's data as well, and a
+//! function's literal pool sits after its last instruction. There the walk
+//! reads only the Listing's own records: a branch the descent left unresolved,
+//! a missing or truncated instruction, or a successor outside the mapped bytes
+//! leaves the entry unmeasured, as does running out of visits. A measured end
+//! is then extended over every byte past it, up to the clip, that the
+//! function's reached instructions read or form at a fixed address within
+//! [`POOL_REACH`] of themselves (a `ldr`/`vldr` from the pool, an `adr` ahead
+//! of `ldrd`), so the pool and the alignment padding before it stay in the
+//! function. Code nothing in the flow reaches (an exception landing pad, a
+//! `bx lr` after a tail branch) is past the end. Other raw languages keep the
+//! clip.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -27,7 +62,8 @@ use crate::listing::decode::decode_one;
 use crate::listing::kuna_dosexit::{self, DosExits, Op};
 use crate::listing::{FlowKind, Listing};
 
-/// Exclusive flow ends keyed by entry; an unmeasured entry keeps its clip.
+/// Exclusive flow ends keyed by entry, or `None` when the language is neither
+/// x86 real mode nor 32-bit ARM; an unmeasured entry keeps its clip.
 ///
 /// `entries` is the whole inventory, ascending.
 pub fn measure(
@@ -39,7 +75,10 @@ pub fn measure(
     exits: &DosExits,
 ) -> Option<BTreeMap<u64, u64>> {
     if !kuna_dosexit::is_real_mode(&arch.archid) {
-        let ends = measure_listing(listing, entries);
+        if !crate::loadimage_object::is_arm32_language(&arch.archid) {
+            return None;
+        }
+        let ends = measure_listing(translate, code_space, listing, entries);
         return (!ends.is_empty()).then_some(ends);
     }
     let walk = Walk {
@@ -80,9 +119,18 @@ const MAX_VISITS: usize = 1 << 14;
 /// at most one visit per decoded instruction.
 const LISTING_VISIT_MULTIPLIER: usize = 4;
 
+/// The farthest past the instruction that reads it a fixed-address read can
+/// name a word of its function's literal pool.
+const POOL_REACH: u64 = 1 << 13;
+
 /// Use only the raw Listing's instruction and flow records. In particular, a
 /// missing target is not a reason to try a fresh decode in a different context.
-fn measure_listing(listing: &Listing, entries: &[u64]) -> BTreeMap<u64, u64> {
+fn measure_listing(
+    translate: &dyn Translate,
+    code_space: &Rc<AddrSpace>,
+    listing: &Listing,
+    entries: &[u64],
+) -> BTreeMap<u64, u64> {
     let ranges = listing.exec_ranges();
     let mut ends = BTreeMap::new();
     let mut seen = FxHashSet::default();
@@ -97,7 +145,7 @@ fn measure_listing(listing: &Listing, entries: &[u64]) -> BTreeMap<u64, u64> {
         };
         let bound = entries.get(i + 1).map_or(hi, |&next| hi.min(next));
         if let Some(end) = listing_end(listing, entry, bound, &mut seen, &mut pending, &mut remaining) {
-            ends.insert(entry, end);
+            ends.insert(entry, pool_end(translate, code_space, listing, &seen, entry, end, bound));
         }
     }
     ends
@@ -161,6 +209,96 @@ fn listing_end(
         pending.extend(insn.fall_through);
     }
     Some(end)
+}
+
+/// Extend a measured `end` over the bytes past it, up to `bound`, that the
+/// function's own reached instructions read or form at a fixed address: a
+/// literal pool, and the alignment padding before it, belong to the function
+/// that loads them. An instruction whose fresh decode disagrees with the
+/// Listing's length is not read.
+fn pool_end(
+    translate: &dyn Translate,
+    code_space: &Rc<AddrSpace>,
+    listing: &Listing,
+    reached: &FxHashSet<u64>,
+    entry: u64,
+    end: u64,
+    bound: u64,
+) -> u64 {
+    let mut out = end;
+    for &vma in reached.iter().filter(|&&vma| (entry..end).contains(&vma)) {
+        let Some(insn) = listing.instruction_at(vma) else { continue };
+        let Some((len, ops)) = kuna_dosexit::decode_sized(translate, code_space, vma) else { continue };
+        if len != insn.len {
+            continue;
+        }
+        for (at, width) in fixed_refs(&ops, code_space, insn.flow.is_call) {
+            if (end..bound).contains(&at) && at - vma <= POOL_REACH {
+                out = out.max(at.saturating_add(u64::from(width)).min(bound));
+            }
+        }
+    }
+    out
+}
+
+/// The bytes counted at an address an instruction forms without reading it
+/// (`adr r3,..` ahead of `ldrd r2,r3,[r3]`): the widest literal one load reads.
+const FORMED_WIDTH: u32 = 8;
+
+/// The `(address, width)` of every fixed address one instruction's p-code reads
+/// or forms: a direct memory operand, a `LOAD` through an address computed from
+/// constants alone (`vldr s0,[pc,#8]` aligns `inst_start` in temporaries), or
+/// such a constant written to a register. Branch targets and a call's return
+/// address are not references.
+fn fixed_refs(ops: &[Op], code_space: &Rc<AddrSpace>, is_call: bool) -> Vec<(u64, u32)> {
+    let mut temps: Vec<(&VarnodeData, u64)> = Vec::new();
+    let value = |temps: &[(&VarnodeData, u64)], vn: &VarnodeData| {
+        if kuna_dosexit::is_const(vn) {
+            return Some(vn.offset);
+        }
+        temps.iter().rev().find(|(t, _)| kuna_dosexit::same(t, vn)).map(|&(_, v)| v)
+    };
+    let mut reads = Vec::new();
+    for op in ops {
+        let skip = match op.opcode {
+            OpCode::CPUI_STORE => op.ins.len(),
+            OpCode::CPUI_LOAD | OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH | OpCode::CPUI_CALL => 1,
+            _ => 0,
+        };
+        for (i, vn) in op.ins.iter().enumerate().skip(skip) {
+            if op.opcode == OpCode::CPUI_LOAD && i == 1 {
+                if let (Some(at), Some(out)) = (value(&temps, vn), op.out.as_ref()) {
+                    reads.push((at, out.size));
+                }
+            } else if vn.space.as_ref().is_some_and(|space| Rc::ptr_eq(space, code_space)) {
+                reads.push((vn.offset, vn.size));
+            }
+        }
+        let Some(out) = op.out.as_ref().filter(|out| out.size <= 8) else { continue };
+        let a = op.ins.first().and_then(|vn| value(&temps, vn));
+        let b = op.ins.get(1).and_then(|vn| value(&temps, vn));
+        let folded = match (op.opcode, a, b) {
+            (OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT, Some(a), _) => Some(a),
+            (OpCode::CPUI_INT_ADD, Some(a), Some(b)) => Some(a.wrapping_add(b)),
+            (OpCode::CPUI_INT_SUB, Some(a), Some(b)) => Some(a.wrapping_sub(b)),
+            (OpCode::CPUI_INT_AND, Some(a), Some(b)) => Some(a & b),
+            (OpCode::CPUI_INT_OR, Some(a), Some(b)) => Some(a | b),
+            _ => None,
+        };
+        let mask = if out.size >= 8 { u64::MAX } else { (1u64 << (8 * out.size)) - 1 };
+        let folded = folded.map(|v| v & mask);
+        if !kuna_dosexit::is_unique(out) {
+            if let Some(v) = folded.filter(|_| !is_call) {
+                reads.push((v, FORMED_WIDTH));
+            }
+            continue;
+        }
+        temps.retain(|(t, _)| !kuna_dosexit::same(t, out));
+        if let Some(v) = folded {
+            temps.push((out, v));
+        }
+    }
+    reads
 }
 
 /// The most words read from one table, as [`super::kuna_dosexit`] reads.

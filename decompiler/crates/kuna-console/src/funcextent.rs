@@ -46,10 +46,10 @@
 //! # Where the code range holds data too
 //!
 //! A headerless raw image or an MS-DOS executable has no section table to
-//! separate code and data. Raw discovery measures flow ends where it can
-//! (`kuna_analysis::listing::kuna_rawextent`) and [`bound_by_flow`] shortens
-//! the clip there. An unmeasured entry keeps the clip; an address past a
-//! measured flow end has no extent.
+//! separate code and data. On x86 real mode and 32-bit ARM, raw discovery
+//! measures flow ends where it can (`kuna_analysis::listing::kuna_rawextent`)
+//! and [`bound_by_flow`] shortens the clip there. An unmeasured entry keeps the
+//! clip; an address past a measured flow end has no extent.
 //!
 //! # LOSS
 //!
