@@ -1013,7 +1013,12 @@ analysis left unbounded forces writes only below the lowest slot above its
 base that a stack pointer was spilled to
 (`heritage.rs (Heritage::spill_guard_maximum)`). That slot is another local, and
 forcing it would keep the spilled pointers alive as variables (the
-intermediate pointers of the `dupptr` datatest). Later passes force the guard's
+intermediate pointers of the `dupptr` datatest). In a devirtualized body only a
+slot written by a path that did not itself pass through a spill bounds the
+window (`Heritage::direct_spills`, chapter [02](02-lift-and-flow.md) §2.11): its
+interpreter's operand-stack slots hold pointers and values in turn, the walk
+takes every read of such a slot for the pointer, and so every slot the
+program's values are copied into would count as a spill. Later passes force the guard's
 whole window (`heritage.rs (Heritage::end_spill_guards)`), as for the guard
 upstream's rerun records. A guard
 is born covering the **entire space**

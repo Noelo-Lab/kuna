@@ -5123,6 +5123,21 @@ C reads values the program has overwritten. With the guard, 519 more of the 999
 Tigress samples print C that computes what the source does. `tg_istore` in the
 Tigress-style fixture pins it.
 
+On the stack's first pass a LOAD guard found through a spilled pointer forces
+the writes in its window only below the lowest slot above its base that a stack
+pointer was spilled to (`heritage.rs (Heritage::spill_guard_maximum)`). In a
+devirtualized body only a slot written by a path that did not itself pass
+through a spill counts. The interpreter's operand-stack slots hold the address
+of a variable's slot at one step and a value at the next. The spill walk is not
+flow-sensitive, so it takes every read of such a slot for the pointer, and every
+slot of the program's array that a value is copied into counted as a spill. The
+window then ended at the array's second element, a write read only through an
+indexed LOAD had no reader, and the dead-code pass deleted it, or the part of it
+a later write did not cover (a Tigress loop that swaps bytes of a slot kept its
+low half and zeroed the high half). The operand-stack slots themselves, which
+the interpreter's own pushes write a frame address into, still bound the window,
+so their traffic is not kept. `tg_carried` in the fixture pins it.
+
 **String literals.** A short string the program passes to a call (`"123"` to
 `strcmp`, `"cmd"` to `CreateProcessA`) would print as its address. The
 always-on strings pass plants a typelocked `char[N]` only for runs of five

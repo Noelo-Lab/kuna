@@ -896,6 +896,9 @@ pub struct Heritage {
     /// (kuna) Stack slots `discover_indexed_stack_pointers` saw a stack
     /// pointer spilled to: (offset, size).
     pointer_spills: Vec<(uintb, int4)>,
+    /// (kuna) The offsets of those slots written by a path that did not
+    /// itself pass through a spill.
+    direct_spills: Vec<uintb>,
     /// (kuna) `calleeprotostack` — the local-alias checker this pass answers
     /// "can a pointer reach this stack slot?" with, gathered at most once per
     /// pass.  See [`crate::p4_calls::kuna_calleeprotostack`].
@@ -993,6 +996,7 @@ impl Heritage {
             deadline: None,
             load_copy_ops: Vec::new(),
             pointer_spills: Vec::new(),
+            direct_spills: Vec::new(),
             protostack_alias: None,
             protostack_frame_reload: None,
             global_call_ranges: Default::default(),
@@ -1194,6 +1198,7 @@ impl Heritage {
         self.load_guard.clear();
         self.store_guard.clear();
         self.pointer_spills.clear();
+        self.direct_spills.clear();
         self.store_frame_unresolved = None;
         self.store_frame_guarded = false;
         self.protostack_frame_reload = None;
@@ -5654,6 +5659,9 @@ impl Heritage {
                             unknown_stack_storage = true;
                             if let Some(v) = fd.vbank().get(ov).filter(|v| Rc::ptr_eq(v.get_space(), spc)) {
                                 spills.push((v.get_offset(), v.get_size(), $newoff, $newtrav));
+                                if !cur_spilled {
+                                    self.direct_spills.push(v.get_offset());
+                                }
                             }
                         }
                     }};
@@ -6097,14 +6105,19 @@ impl Heritage {
     /// found through a spilled pointer, in the pass that found it, with no
     /// range from the value-set analysis, stops below the lowest slot above
     /// its base that a stack pointer was spilled to: that slot is another
-    /// local, not the object the pointer addresses.
-    fn spill_guard_maximum(&self, guard: &LoadGuard) -> uintb {
+    /// local, not the object the pointer addresses. In a devirtualized body
+    /// only a slot the walk reached without passing through a spill counts:
+    /// an interpreter's operand-stack slots hold pointers and values in turn,
+    /// so a slot a value is copied into from one is not a pointer.
+    fn spill_guard_maximum(&self, fd: &crate::funcdata::Funcdata, guard: &LoadGuard) -> uintb {
         if !guard.through_spill || guard.is_range_locked() {
             return guard.maximum_offset;
         }
+        let direct = fd.kuna_devirtualized();
         self.pointer_spills
             .iter()
             .map(|&(slot, _)| slot)
+            .filter(|slot| !direct || self.direct_spills.contains(slot))
             .filter(|&slot| slot > guard.minimum_offset)
             .min()
             .map_or(guard.maximum_offset, |slot| guard.maximum_offset.min(slot - 1))
@@ -6145,7 +6158,7 @@ impl Heritage {
                 load_ranges.insert_range(
                     Rc::clone(&guard.spc),
                     guard.minimum_offset,
-                    self.spill_guard_maximum(guard),
+                    self.spill_guard_maximum(fd, guard),
                 );
             }
             for (spc, first, last) in &self.global_load_ranges {

@@ -44,8 +44,21 @@
                     for (i = 0; i < 4; i++) *(long *)((char *)&st[0] + i * 8) += a;
                     return st[1] + st[3];
 
-   `./pushan_interp_x86_64 A...` prints the seven results for a = argc (46
-   for a = 1, tg_indexed 9, tg_istore 8; 66, 144 and 28 for a = 6).
+   tg_carried   the same interpreter over a program whose loop updates st[2]
+                directly and reads the array only through &st[0] plus a
+                computed offset, so st[2]'s loop value reaches nothing else:
+
+                    st[0..3] = a, a + 1, a + 2, a + 3;
+                    s = 0;
+                    for (i = 0; i < 4; i++) {
+                        st[2] = st[2] + a;
+                        s += *(long *)((char *)&st[0] + i * 8);
+                    }
+                    return s;
+
+   `./pushan_interp_x86_64 A...` prints the eight results for a = argc (46
+   for a = 1, tg_indexed 9, tg_istore 8, tg_carried 13; 66, 144, 28 and 48
+   for a = 6).
 
    Build (gcc 11, Ubuntu 22.04 defaults: PIE, stack-clash protection; the
    copy is a memcpy call, as gcc emits for Tigress's 81 KB array, rather than
@@ -107,6 +120,22 @@ unsigned char ts_code[] = {
     T_LOCAL, 8, T_LOAD, T_CONST, 1, 0, 0, 0, T_ADD, T_LOCAL, 8, T_STORE,
     T_GOTO, (unsigned char)-53,
     /* E: */ T_LOCAL, 24, T_LOAD, T_LOCAL, 40, T_LOAD, T_ADD, T_RET,
+};
+/* tg_carried's program, same layout. */
+unsigned char tc_code[] = {
+    T_ARG, T_LOCAL, 16, T_STORE,
+    T_ARG, T_CONST, 1, 0, 0, 0, T_ADD, T_LOCAL, 24, T_STORE,
+    T_ARG, T_CONST, 2, 0, 0, 0, T_ADD, T_LOCAL, 32, T_STORE,
+    T_ARG, T_CONST, 3, 0, 0, 0, T_ADD, T_LOCAL, 40, T_STORE,
+    T_CONST, 0, 0, 0, 0, T_LOCAL, 0, T_STORE,
+    T_CONST, 0, 0, 0, 0, T_LOCAL, 8, T_STORE,
+    /* L: */ T_LOCAL, 8, T_LOAD, T_CONST, 4, 0, 0, 0, T_LT, T_BRF, 42,
+    T_LOCAL, 32, T_LOAD, T_ARG, T_ADD, T_LOCAL, 32, T_STORE,
+    T_LOCAL, 0, T_LOAD, T_LOCAL, 16, T_LOCAL, 8, T_LOAD, T_CONST, 8, 0, 0, 0, T_MUL, T_INDEX, T_LOAD, T_ADD,
+    T_LOCAL, 0, T_STORE,
+    T_LOCAL, 8, T_LOAD, T_CONST, 1, 0, 0, 0, T_ADD, T_LOCAL, 8, T_STORE,
+    T_GOTO, (unsigned char)-53,
+    /* E: */ T_LOCAL, 0, T_LOAD, T_RET,
 };
 unsigned char tg_code[] = {
     T_ARG, T_LOCAL, 16, T_STORE,
@@ -212,6 +241,29 @@ long tg_istore(long a)
         }
 }
 
+long tg_carried(long a)
+{
+    char locals[64];
+    union tg_node stack[16], *sp = stack;
+    unsigned char *pc = tc_code;
+    for (;;)
+        switch (*pc) {
+        case T_ARG: (sp + 1)->l = a; sp++; pc += 1; break;
+        case T_CONST: (sp + 1)->l = *(int *)(pc + 1); sp++; pc += 5; break;
+        case T_LOCAL: (sp + 1)->p = locals + pc[1]; sp++; pc += 2; break;
+        case T_LOAD: sp->l = *(long *)sp->p; pc += 1; break;
+        case T_STORE: *(long *)sp->p = (sp - 1)->l; sp -= 2; pc += 1; break;
+        case T_ADD: (sp - 1)->l = (sp - 1)->l + sp->l; sp--; pc += 1; break;
+        case T_MUL: (sp - 1)->l = (sp - 1)->l * sp->l; sp--; pc += 1; break;
+        case T_OR: (sp - 1)->l = (sp - 1)->l | sp->l; sp--; pc += 1; break;
+        case T_LT: (sp - 1)->l = (sp - 1)->l < sp->l; sp--; pc += 1; break;
+        case T_INDEX: (sp - 1)->p = (char *)(sp - 1)->p + sp->l; sp--; pc += 1; break;
+        case T_BRF: pc += 2; if (!sp->l) pc += (signed char)pc[-1]; sp--; break;
+        case T_GOTO: pc += 2 + (signed char)pc[1]; break;
+        case T_RET: return sp->l;
+        }
+}
+
 long wv_woven(long a)
 {
     unsigned char *pc[2];
@@ -273,6 +325,7 @@ h_RET: return *sp;
 int main(int argc, char **argv)
 {
     long a = argc;
-    printf("%ld %ld %ld %ld %ld %ld %ld\n", sw_writable(a), sw_readonly(a), wv_woven(a), th_copied(a), th_inline(a), tg_indexed(a), tg_istore(a));
+    printf("%ld %ld %ld %ld %ld %ld %ld %ld\n", sw_writable(a), sw_readonly(a), wv_woven(a), th_copied(a), th_inline(a), tg_indexed(a), tg_istore(a),
+           tg_carried(a));
     return 0;
 }
