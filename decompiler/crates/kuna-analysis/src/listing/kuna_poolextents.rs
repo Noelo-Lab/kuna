@@ -90,11 +90,16 @@ fn direct_callee(insn: &Insn) -> Option<u64> {
 }
 
 /// Does flow provably continue from `insn` into its fall-through?
-fn falls_through(insn: &Insn, returns: &BTreeSet<u64>) -> bool {
+pub(crate) fn falls_through(insn: &Insn, returns: &BTreeSet<u64>) -> bool {
+    falls_through_with(insn, returns, false)
+}
+
+/// [`falls_through`]; `lenient` also continues past an indirect call.
+pub(crate) fn falls_through_with(insn: &Insn, returns: &BTreeSet<u64>, lenient: bool) -> bool {
     if insn.fall_through.is_none() {
         return false;
     }
-    if !suspect(insn) {
+    if !suspect(insn) || (lenient && insn.flow.is_call && insn.flow.is_computed) {
         return true;
     }
     if insn.flow.is_conditional && insn.flow.is_call {
@@ -169,6 +174,13 @@ fn returns_through_lr(insn: &Insn) -> Option<bool> {
 /// known no-return list names, or a helper of [`RETURNS_PAST_TABLE`], never
 /// returns.
 pub(crate) fn returning_entries(listing: &Listing) -> BTreeSet<u64> {
+    returning_entries_with(listing, false)
+}
+
+/// [`returning_entries`]; `lenient` also counts a computed jump that is not a
+/// call (`bx r3`, a tail call through a register) as a return through the
+/// stack and continues past an indirect call (`blx r3` through a table).
+pub(crate) fn returning_entries_with(listing: &Listing, lenient: bool) -> BTreeSet<u64> {
     let insns: Vec<&Insn> = listing.instructions().map(|(_, i)| i).collect();
     let mut index: FxHashMap<u64, usize> = FxHashMap::default();
     index.reserve(insns.len());
@@ -223,6 +235,9 @@ pub(crate) fn returning_entries(listing: &Listing) -> BTreeSet<u64> {
                 reaches[i] = if lr { LR } else { STACK };
                 work.push((i, reaches[i]));
             }
+        } else if lenient && insn.flow.kind == FlowKind::ComputedJump && !insn.flow.is_call {
+            reaches[i] = STACK;
+            work.push((i, STACK));
         }
     }
     let past_table = |f: &DiscoveredFunction| {
@@ -243,7 +258,7 @@ pub(crate) fn returning_entries(listing: &Listing) -> BTreeSet<u64> {
             mark(&mut reaches, &mut work, p, flags);
         }
         for &p in fall_preds.of(s) {
-            if falls_through(insns[p], &returns) {
+            if falls_through_with(insns[p], &returns, lenient) {
                 mark(&mut reaches, &mut work, p, flags);
             }
         }
