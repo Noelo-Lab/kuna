@@ -4658,12 +4658,21 @@ its output in every byte of mutable image memory, in every region under a
 symbolic base other than the entry stack pointer (a pointer argument, or one
 reachable from it through memory, may point anywhere into any of them: libpng's
 `png_inflate` writes `*output_size_ptr`, the caller's pointer parameter passed
-in its seventh stack slot), and in the frame from the lowest escaped local up
+in its seventh stack slot), in the frame from the lowest escaped local up
 to the return address, and from the lowest escaped incoming stack argument up
-(the same bytes the emitter keeps alive across a call). Stored bytes there are
-dropped and unwritten ones read as that call's output. Only the return address
-and the frame below every escaped offset keep their values: no address the
-callee received reaches them. Entered past a native prologue, the caller's
+(the same bytes the emitter keeps alive across a call), and in the whole stack
+below the return address, where the callee's own frame lands. Stored bytes
+there are dropped and unwritten ones read as that call's output. Only the
+return address and the frame between it and every escaped offset keep their
+values: no address the callee received reaches them. An interpreter leaves
+copies of its context below the stack pointer when it calls out (VMProtect's
+register context lies below the native stack once the exit has restored it),
+and those copies hold nothing after the call. Before, the emulation kept them:
+in a 32-bit VMProtect build the loop counter of the `connect` loop was still
+at its copy 0xec bytes below the call's stack pointer after the call, the
+rebuilt loop test (below) read the counter from there, and the decompiler,
+which knows that a call overwrites its callee's frame, printed a test of a
+local nothing assigns. Entered past a native prologue, the caller's
 return address sits above the entry stack pointer, inside that range when an
 incoming-area local escaped; a jump through such a slot the function never
 wrote is still the return (`Explorer::is_caller_slot`), whether or not a call

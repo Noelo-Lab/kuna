@@ -5,11 +5,11 @@
     The script loads the synthetic static x86-64 ELF
     decompiler/crates/kuna-analysis/tests/fixtures/pushan_vm2_x86_64
     (generator pushan_vm2_x86_64.py): one stack-machine interpreter in its own
-    64 KiB executable section .vmp0 and twenty-two protected functions, each
+    64 KiB executable section .vmp0 and twenty-three protected functions, each
     an entry stub `push key; jmp vm_entry` whose key selects a hand-written
     bytecode program whose decompilation is known.  Each program targets a
     way the devirtualizer could print something false about the program;
-    twenty-one are decompiled here (f_arr's stack array, read back at a constant
+    twenty-two are decompiled here (f_arr's stack array, read back at a constant
     index after a loop fills it, is lost by the decompiler's own stack alias
     analysis, as it is in native code whose array pointer round-trips through
     the stack).
@@ -76,6 +76,12 @@
     which ext3 sets to 1.  The call prints a0, 1 and &v (and the address the
     interpreter left in RCX); before, `ext3()` with the test on a local no
     call could reach.
+    f_below (#29): a loop whose call handler also copies the counter 0x100
+    bytes below the stack pointer, in the callee's frame, and whose test
+    after the call reads the counter.  The call overwrites that copy, so the
+    rebuilt test reads the counter the loop increments; before, the
+    exploration kept the copy across the call and the test read a frame
+    slot nothing assigns.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -149,6 +155,9 @@ c3
   <com>load function f_arg</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load function f_below</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="PUSHAN-SOUND #1: f_sum, the loop exits on i &lt; 10" min="1" max="1">\(SBORROW8\(v3,10\) &amp;&amp; v1\)\) break;</stringmatch>
@@ -177,7 +186,7 @@ if \(v1\[0\] == 5\)</stringmatch>
 <stringmatch name="PUSHAN-SOUND #17: f_deep, the unmerged join is reported" min="1" max="1">pushan: incomplete: 1 path joined at another stack depth unmerged</stringmatch>
 <stringmatch name="PUSHAN-SOUND #18: f_ijmp, the unresolved jump is reported" min="1" max="1">pushan: incomplete: 1 unresolved computed jump</stringmatch>
 <stringmatch name="PUSHAN-SOUND #19: only those two and f_spbit are incomplete" min="3" max="3">pushan: incomplete</stringmatch>
-<stringmatch name="PUSHAN-SOUND #20: every function is devirtualized" min="21" max="21">pushan: devirtualized VM-protected function</stringmatch>
+<stringmatch name="PUSHAN-SOUND #20: every function is devirtualized" min="22" max="22">pushan: devirtualized VM-protected function</stringmatch>
 <stringmatch name="PUSHAN-SOUND #21: f_epi's shared native epilogue calls fin once, f_spbit's unfollowed arm once, f_mba never" min="2" max="2">fin\(</stringmatch>
 <stringmatch name="PUSHAN-SOUND #22: f_epi, the exit ahead of the epilogue keeps its add" min="1" max="1">a0 = 8;</stringmatch>
 <stringmatch name="PUSHAN-SOUND #23: f_sel, the branch on the merged flag keeps all three returns" min="1" max="1">return 2;
@@ -196,4 +205,6 @@ return 2;</stringmatch>
 if \(v1\[0\] == 5\)
 return 2;
 return 1;</stringmatch>
+<stringmatch name="PUSHAN-SOUND #29: f_below, the test after the call reads the counter the loop increments" min="1" max="1">if \(\(!SBORROW8\(v2,3\) &amp;&amp; !v1\) \|\| \(SBORROW8\(v2,3\) &amp;&amp; v1\)\) break;
+v2 \+= 1;</stringmatch>
 </decompilertest>

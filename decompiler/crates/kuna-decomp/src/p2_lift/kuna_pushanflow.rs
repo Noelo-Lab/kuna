@@ -1075,7 +1075,7 @@ impl<'a> Explorer<'a> {
         }
         if self.fresh_epoch.contains(&key) {
             self.call_epochs += 1;
-            self.clobber_call(&mut state);
+            self.clobber_call(&mut state, None);
         }
         if self.forget_copies.contains(&key) {
             state.copies.clear();
@@ -2459,19 +2459,20 @@ impl<'a> Explorer<'a> {
     }
 
     /// What an external call may have written (`State::clobber_call`): all
-    /// mutable image memory and every symbolic region, and the frame an
-    /// escaped frame address reaches.  An address of a local may reach any
-    /// local at or above it, up to the return address; one of the incoming
-    /// stack arguments reaches every argument at or above it.  The return
-    /// address and the frame below every escaped offset are kept: no address
-    /// the callee received reaches them.
-    fn clobber_call(&mut self, state: &mut State) {
+    /// mutable image memory and every symbolic region, the frame an escaped
+    /// frame address reaches, and the stack below `below`, the slot of the
+    /// call's return address, where the callee's own frame lies.  An address
+    /// of a local may reach any local at or above it, up to the return
+    /// address; one of the incoming stack arguments reaches every argument at
+    /// or above it.  The return address and the frame between it and every
+    /// escaped offset are kept: no address the callee received reaches them.
+    fn clobber_call(&mut self, state: &mut State, below: Option<i128>) {
         let Some(frame) = self.sp0 else {
             state.clobber_mutable(self.target, self.call_epochs);
             return;
         };
         let ps = self.abi.ptr_size as i128;
-        let mut ranges = Vec::new();
+        let mut ranges: Vec<(i128, i128)> = below.into_iter().map(|d| (i128::MIN, d)).collect();
         if let Some(&lo) = self.escapes.iter().find(|o| **o < 0) {
             ranges.push((lo, 0));
         }
@@ -2558,7 +2559,8 @@ impl<'a> Explorer<'a> {
             place_copy(state, c);
         }
         self.call_epochs += 1;
-        self.clobber_call(state);
+        let below = self.sp_depth(state);
+        self.clobber_call(state, below);
         if let Some(c) = copy_dst.filter(|c| c.0.is_some()) {
             place_copy(state, c);
         }

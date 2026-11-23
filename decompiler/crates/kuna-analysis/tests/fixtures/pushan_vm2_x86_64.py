@@ -15,9 +15,10 @@ selects its target arithmetically on a flag a join merged and a comparison,
 arguments read at addresses rebuilt through mixed boolean-arithmetic
 identities with an exit behind an opaque predicate on the stack pointer, and
 a call that writes through a pointer passed on the stack and through a pointer
-argument past its first 16 bytes, and a call whose register arguments are
-the caller's own first argument, a constant and the address of a local the
-callee writes.
+argument past its first 16 bytes, a call whose register arguments are the
+caller's own first argument, a constant and the address of a local the
+callee writes, and a call made while the interpreter keeps a copy of a loop
+counter below the stack pointer, in the callee's frame.
 Every program sits
 in its own 256-byte block of seeded random filler (entropy above 7 bits/byte).
 Regenerate with `python3 pushan_vm2_x86_64.py` (needs GNU as/ld)."""
@@ -32,6 +33,7 @@ OP["SEL"] = min(set(range(1, 256)) - set(codes) - {OP["LEAVE"]})
 OP["LDCTXM"], OP["EXITO"], OP["EXITS"] = sorted(set(range(1, 256)) - set(codes) - {OP["LEAVE"], OP["SEL"]})[:3]
 OP["CALL7"] = min(set(range(1, 256)) - set(OP.values()))
 OP["CALL3"] = min(set(range(1, 256)) - set(OP.values()))
+OP["CALLS"] = min(set(range(1, 256)) - set(OP.values()))
 A0, A1 = 0, 8
 
 
@@ -213,6 +215,15 @@ PROGRAMS = {
               ("LDCTX", V(3)), ("LDIMM", 5), ("EQ",), ("JZ", "T"),
               ("LDIMM", 2), ("EXIT",),
               "T", ("LDIMM", 1), ("EXIT",)],
+    # i = 0; for (;;) { ext(7); if (!(i < 3)) break; i++; } return i;   (the
+    # call handler also copies i 0x100 bytes below the stack pointer, where
+    # the callee's frame lies, as an interpreter leaves copies of its context
+    # behind; the test after the call reads i from the context)
+    "f_below": [("LDIMM", 0), ("STCTX", V(1)),
+                "L", ("LDIMM", 7), ("CALLS",), ("STCTX", V(0)),
+                ("LDCTX", V(1)), ("LDIMM", 3), ("LT",), ("JZ", "E"),
+                ("LDCTX", V(1)), ("LDIMM", 1), ("ADD",), ("STCTX", V(1)), ("JMP", "L"),
+                "E", ("LDCTX", V(1)), ("EXIT",)],
 }
 
 NAMES = list(PROGRAMS)
@@ -317,7 +328,9 @@ def source(blocks):
     # handlers added after the first programs sit past the bytecode, so the
     # handler table and the bytecode keep their addresses
     out += ["h_call3:", "    pop rdx", "    pop rax", "    pop rdi", "    mov rbx, rsi", "    mov rsi, rax",
-            "    call ext3", "    mov rsi, rbx", "    push rax", "    jmp dispatch"]
+            "    call ext3", "    mov rsi, rbx", "    push rax", "    jmp dispatch",
+            "h_calls:", "    pop rdi", f"    mov rax, qword ptr [rbp-{0x100 - V(1):#x}]", "    mov qword ptr [rsp-0x100], rax",
+            "    mov rbx, rsi", "    call ext", "    mov rsi, rbx", "    push rax", "    jmp dispatch"]
     out += [".p2align 4", "    .space 0x10000 - (. - vm_entry)", ""]
     return "\n".join(out)
 
