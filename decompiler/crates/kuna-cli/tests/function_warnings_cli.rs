@@ -142,15 +142,17 @@ fn a_flow_cut_by_the_budget_or_a_declared_extent_is_a_warning() {
 
 /// Each function's body falls through into the next function at its last
 /// instruction, which is where the drained `funcboundflow` warning is recorded.
+/// The `sub esp,4` inside `register_tm_clones` is declared an entry: discovery
+/// no longer plants one there.
 #[test]
 fn an_empty_body_s_drained_warning_is_a_body_warning_in_every_language() {
     let cases = [
-        ("function_boundary_return_x86_64", "ordinary_first", 0x401016, vec![]),
-        ("i386_pie_nl", "register_tm_clones", 0x18f0, vec![("injected", 0x18d0)]),
+        ("function_boundary_return_x86_64", "ordinary_first", 0x401016, vec![], vec![]),
+        ("i386_pie_nl", "register_tm_clones", 0x18f0, vec![("injected", 0x18d0)], vec!["--define-function", "0x18f2"]),
     ];
-    for (fixture, name, last, header) in &cases {
+    for (fixture, name, last, header, declare) in &cases {
         let image = common::fixture(fixture);
-        let listing = document(&["disassemble", &image, name, "--json"]);
+        let listing = document(&[&["disassemble", &image, name, "--json"][..], &declare[..]].concat());
         assert_eq!(listing["instructions"].as_array().unwrap().last().unwrap()["address"], *last, "{listing}");
         let mut expected: Vec<(String, Value)> = vec![("funcboundflow".into(), json!(last))];
         expected.extend(header.iter().map(|(kind, address)| (kind.to_string(), json!(address))));
@@ -158,7 +160,7 @@ fn an_empty_body_s_drained_warning_is_a_body_warning_in_every_language() {
         for language in ["c", "go", "rust"] {
             for style in ["inline", "banner"] {
                 let args = ["decompile", &image, name, "--json", "--language", language];
-                let doc = document(&[&args[..], &["--option", "warnstyle", style]].concat());
+                let doc = document(&[&args[..], &["--option", "warnstyle", style], &declare[..]].concat());
                 let record = &doc["functions"][0];
                 let mut found: Vec<(String, Value)> =
                     records(record).into_iter().map(|(kind, _, address)| (kind, address)).collect();

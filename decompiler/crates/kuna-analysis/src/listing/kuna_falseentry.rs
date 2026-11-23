@@ -39,6 +39,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::rc::Rc;
 
 use kuna_base::space::AddrSpace;
+use kuna_decomp::kuna_fasthash::{FxHashMap, FxHashSet};
 use kuna_sleigh::translate::Translate;
 
 use super::{FlowKind, Listing, RefKind};
@@ -118,11 +119,11 @@ pub fn interior_entries(
     vouched: impl Fn(u64) -> bool,
     mut step: impl FnMut(u64) -> Option<Step>,
 ) -> Verdict {
-    let mut cache: BTreeMap<u64, Option<Step>> = BTreeMap::new();
-    let mut read = |at: u64| -> Option<Step> { cache.entry(at).or_insert_with(|| step(at)).clone() };
+    let mut cache: FxHashMap<u64, Option<Rc<Step>>> = FxHashMap::default();
+    let mut read = |at: u64| -> Option<Rc<Step>> { cache.entry(at).or_insert_with(|| step(at).map(Rc::new)).clone() };
 
     let mut called: BTreeSet<u64> = BTreeSet::new();
-    let mut seen: BTreeSet<u64> = BTreeSet::new();
+    let mut seen: FxHashSet<u64> = FxHashSet::default();
     let mut work: Vec<u64> = candidates.iter().copied().collect();
     while let Some(at) = work.pop() {
         if !seen.insert(at) {
@@ -139,8 +140,8 @@ pub fn interior_entries(
 
     let mut interior: BTreeMap<u64, Reason> = BTreeMap::new();
     let mut via: BTreeMap<u64, u64> = BTreeMap::new();
-    let mut ran_into: BTreeSet<u64> = BTreeSet::new();
-    let mut live: BTreeSet<u64> = BTreeSet::new();
+    let mut ran_into: FxHashSet<u64> = FxHashSet::default();
+    let mut live: FxHashSet<u64> = FxHashSet::default();
     let attested_roots: Vec<u64> = candidates.iter().copied().filter(|&e| vouched(e)).collect();
     for root in attested_roots.into_iter().chain(pointed.iter().copied()) {
         let mut work = vec![root];
@@ -204,7 +205,7 @@ pub fn interior_entries(
 /// its loop branch is reached only through that entry.
 struct Region {
     owner: u64,
-    seen: BTreeSet<u64>,
+    seen: FxHashSet<u64>,
     work: VecDeque<u64>,
     branches_to: BTreeMap<u64, u64>,
     runs_into: BTreeMap<u64, u64>,
@@ -215,7 +216,7 @@ impl Region {
     fn new(owner: u64) -> Region {
         Region {
             owner,
-            seen: BTreeSet::new(),
+            seen: FxHashSet::default(),
             work: VecDeque::from([owner]),
             branches_to: BTreeMap::new(),
             runs_into: BTreeMap::new(),
@@ -223,7 +224,7 @@ impl Region {
         }
     }
 
-    fn grow(&mut self, survivors: &BTreeSet<u64>, read: &mut impl FnMut(u64) -> Option<Step>) {
+    fn grow(&mut self, survivors: &BTreeSet<u64>, read: &mut impl FnMut(u64) -> Option<Rc<Step>>) {
         while let Some(at) = self.work.pop_front() {
             if self.seen.len() >= MAX_REGION_INSNS || !self.seen.insert(at) {
                 continue;
