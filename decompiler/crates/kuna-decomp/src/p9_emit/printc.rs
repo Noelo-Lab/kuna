@@ -4386,11 +4386,14 @@ impl PrintC {
         } else {
             Default::default()
         };
-        self.loop_tests = if matches!(self.lang().forms.do_while, crate::kuna_lang::DoWhileForm::CDoWhile) {
-            crate::p8_structure::kuna_looptest::loop_tests(fd, sroot, arch.loop_test)
+        let loop_tests = if matches!(self.lang().forms.do_while, crate::kuna_lang::DoWhileForm::CDoWhile) {
+            crate::p8_structure::kuna_looptest::loop_tests(fd, sroot, arch.loop_test, &|high| {
+                self.sign_plan.decl_type(high).cloned()
+            })
         } else {
             Default::default()
         };
+        self.loop_tests = loop_tests;
         if let Some(&ret) = self.void_tail_return.and_then(|op| self.loop_tests.tail_returns.get(&op)) {
             self.void_tail_return = Some(ret);
         }
@@ -6757,7 +6760,7 @@ impl PrintC {
                 // Table-driven binary / unary / functional forms.
                 match op_emit_kind(opc) {
                     OpEmitKind::Binary(tok) => {
-                        let tok = self.lang_token(tok);
+                        let tok = self.lang_token(self.loop_tests.token(op).unwrap_or(tok)); // (kuna looptest)
                         self.op_binary_ir(fd, arch, tok, op)
                     }
                     OpEmitKind::Unary(tok) => {

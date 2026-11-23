@@ -1,0 +1,74 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    looptest, ordering tests: a rotated counted loop whose latch tests `!=`
+    behind a guard that tests an ordering.
+
+    Issue: kuna-looptest (decbench O2: gcc tests `i != n` at the bottom of a
+    rotated `for (i = 0; i < n; i++)`, behind `if (n > 0)`).  Stage P8
+    (goto-quality), P0 assertion `option looptest binary|proven|assume`.
+
+    The guard and the latch are not the same test as written: a negative n
+    passes `i != n`.  When the carried value steps by a constant toward an
+    invariant bound, starts strictly on the near side of it (the guard), and
+    the bound is the start plus an exact multiple of the step, the value meets
+    the bound and never passes it, so `i != n` is `i < n` on every iteration
+    and the guard is the first test.
+
+    Authored x86-64 (nasm), laid out as gcc -O2 emits it:
+      down    if (n > 0) do { a[n] = 0; n -= 1; } while (n != 0);
+      bytes   if (n > 0) { end = p + n; do *p++ = 0; while (p != end); }
+              (n is a signed int; &p[n] > p is n > 0)
+      step2   if (n > 0) { i = 0; do { a[i] = 0; i += 2; } while (i != n); }
+              (an odd n never meets i, so the bottom test stays)
+      wrapend if (n != 0) { end = a + (n - 1) + 1 in 32 bits; do ... }
+              (at n == 0 the end is far past a: the guard is not a < end)
+
+    Pass 1 (default `proven`): down prints `while (n > 0)`, bytes prints
+    `while (p < end)`, both without the guard; step2 and wrapend stay guarded
+    do-while loops.  Pass 2 (`option looptest binary`): down and bytes keep
+    their guards and `!=` tests.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4885f67e1031c0488904c74883c0014839f075f3c3c39090909090909090909090909090909090909090909090909090909090909090909090909090909090904885f67e0f48c704f7000000004883ee0175f2c3c39090909090909090909090909090909090909090909090909090909090909090909090909090909090909085f67e134863f64801fec607004883c7014839f775f4c3c3909090909090909090909090909090909090909090909090909090909090909090909090909090904885f67e1431c048c704c7000000004883c0024839f075efc3c3909090909090909090909090909090909090909090909090909090909090909090909090909085f674198d46ff488d44c70848c707000000004883c7084839c775f0c3c3
+</bytechunk>
+<symbol space="ram" offset="0x100040" name="down"/>
+<symbol space="ram" offset="0x100080" name="bytes"/>
+<symbol space="ram" offset="0x1000c0" name="step2"/>
+<symbol space="ram" offset="0x100100" name="wrapend"/>
+</binaryimage>
+<script>
+  <com>parse line extern void down(int8 *a,int8 n);</com>
+  <com>parse line extern void bytes(char *p,int4 n);</com>
+  <com>parse line extern void step2(int8 *a,int8 n);</com>
+  <com>parse line extern void wrapend(int8 *a,uint4 n);</com>
+  <com>lo fu down</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu bytes</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu step2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu wrapend</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option looptest binary</com>
+  <com>lo fu down</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu bytes</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LOOPTEST-ORDER #1: down counts n to zero with the test at the top" min="1" max="1">^  while \(n &gt; 0\) \{$</stringmatch>
+<stringmatch name="LOOPTEST-ORDER #2: bytes walks p up to its end with the test at the top" min="1" max="1">^  while \(p &lt; v1\) \{$</stringmatch>
+<stringmatch name="LOOPTEST-ORDER #3: step2's i can step past n, so it stays a do-while" min="1" max="1">^    \} while \(v1 != n\);$</stringmatch>
+<stringmatch name="LOOPTEST-ORDER #4: wrapend's end is not a &lt; end at n == 0, so it stays a do-while" min="1" max="1">^    \} while \(a != v1\);$</stringmatch>
+<stringmatch name="LOOPTEST-ORDER #5: the n &gt; 0 guard prints for step2, and for down and bytes under binary" min="3" max="3">^  if \(1 &lt;= n\) \{$</stringmatch>
+<stringmatch name="LOOPTEST-ORDER #6: down keeps its != test under binary" min="1" max="1">^    \} while \(n\);$</stringmatch>
+<stringmatch name="LOOPTEST-ORDER #7: bytes keeps its != test under binary" min="1" max="1">^    \} while \(p != v1\);$</stringmatch>
+<stringmatch name="LOOPTEST-ORDER #8: wrapend keeps its n != 0 guard" min="1" max="1">^  if \(n\) \{$</stringmatch>
+</decompilertest>

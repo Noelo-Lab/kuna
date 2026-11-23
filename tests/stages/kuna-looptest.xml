@@ -13,15 +13,15 @@
              (the guard's return and the loop's return are two blocks)
       drain  if (n > 0) { i = 0; do { a[i] = i; i++; } while (i < n); } return n;
       zero16 i = 0; do { a[i] = 0; i++; } while (i != 16);   (no guard)
-      count  if (n > 0) { i = 0; do ...; while (i != n); }   (n < 0 passes the
-             latch test at entry, so the guard is not the entry test)
+      count  if (n > 0) { i = 0; do ...; while (i != n); }   (i steps by 1 from 0
+             to n, so i != n is i < n, the guard's test)
       walk   if (p) do { q = *p; p[1] = 0; p = q; } while (q);
       skip   do c = *s++; while (c != ' ');   (the test reads a body value)
 
     Pass 1 (default `proven`): fill, drain and walk print `while (c)` with
     the guard gone, zero16 prints `while` because its entry test folds to
     true, walk's test reads `p` (the variable `q` is copied into), count
-    and skip stay do-while.  Pass 2 (`option looptest binary`): every loop is
+    prints `while (i < n)` and skip stays do-while.  Pass 2 (`option looptest binary`): every loop is
     a do-while again and fill, drain and walk keep their guards.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
@@ -78,12 +78,12 @@
 </script>
 <stringmatch name="LOOPTEST #1: fill tests its pointer at the top" min="1" max="1">^  while \(a != v1\) \{$</stringmatch>
 <stringmatch name="LOOPTEST #2: fill keeps its n == 0 guard only under binary" min="1" max="1">^  if \(n\) \{$</stringmatch>
-<stringmatch name="LOOPTEST #3: drain tests i &lt; n at the top" min="1" max="1">^  while \(v1 &lt; n\) \{$</stringmatch>
+<stringmatch name="LOOPTEST #3: drain and count test i &lt; n at the top" min="2" max="2">^  while \(v1 &lt; n\) \{$</stringmatch>
 <stringmatch name="LOOPTEST #4: drain is a guarded do-while under binary" min="1" max="1">^    \} while \(v1 &lt; n\);$</stringmatch>
 <stringmatch name="LOOPTEST #5: zero16's entry test folds to true" min="1" max="1">^  while \(v1 != 0x10\) \{$</stringmatch>
 <stringmatch name="LOOPTEST #6: zero16 is a do-while under binary" min="1" max="1">^  \} while \(v1 != 0x10\);$</stringmatch>
-<stringmatch name="LOOPTEST #7: count's guard is not its entry test, so it stays a do-while" min="1" max="1">^    \} while \(v1 != n\);$</stringmatch>
-<stringmatch name="LOOPTEST #8: the n &gt; 0 guard is printed once for count and once for drain under binary" min="2" max="2">^  if \(1 &lt;= n\) \{$</stringmatch>
+<stringmatch name="LOOPTEST #7: count's latch i != n prints as i &lt; n" min="0" max="0">^    \} while \(v1 != n\);$</stringmatch>
+<stringmatch name="LOOPTEST #8: the n &gt; 0 guard is printed only for drain under binary" min="1" max="1">^  if \(1 &lt;= n\) \{$</stringmatch>
 <stringmatch name="LOOPTEST #9: walk tests the variable q is copied into" min="1" max="1">^  while \(p\) \{$</stringmatch>
 <stringmatch name="LOOPTEST #10: walk keeps its guard and do-while under binary" min="1" max="1">^    \} while \(v1\);$</stringmatch>
 <stringmatch name="LOOPTEST #11: skip's test reads a body value, so it stays a do-while" min="1" max="1">^  \} while \(v1 != ' '\);$</stringmatch>
