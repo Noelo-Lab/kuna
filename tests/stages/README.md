@@ -68,6 +68,13 @@ of the `ret 8` function g see both pushed arguments popped, so a later `[esp+4]`
 reads the caller's own argument. A second caller reaches g through a register
 and sees the same pop.
 
+`kuna-varargsave.xml` checks option `varargsave` on gcc -O2 x86-64 variadic
+functions. `report` and `scaled` hand their `va_list` to a callee, so the
+register-save prologue folds: they print `...` after their named parameters
+(`scaled` keeps its named `double`) and no `if (al)` block. `firstd` reads its
+saved `xmm0` slot itself and `dsum` indexes the save area through a register,
+so both keep the stores. The off run prints `report` with fourteen parameters.
+
 `kuna-condexe-heritage.xml` checks that conditional execution removes a re-test
 whose block holds unread flag writes once the register space has had a heritage
 pass (`deadcode delay register 50` keeps those writes alive). Before the fix the

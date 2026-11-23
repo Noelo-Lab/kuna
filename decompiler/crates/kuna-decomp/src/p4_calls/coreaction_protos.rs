@@ -2160,6 +2160,7 @@ impl Action for ActionInputPrototype {
             } else {
                 update_input_no_types(data, &triallist, &mut active);
             }
+            crate::kuna_varargsave::mark_variadic(data);
         }
         let _ = data.clear_dead_varnodes();
         0
