@@ -606,6 +606,12 @@ fn is_register(addr: &Address) -> bool {
         .unwrap_or(false)
 }
 
+/// Is `[addr, addr+size)` a register no Varnode of the function touches, the
+/// only storage [`fed_result`] can hand a later call?
+pub(crate) fn untouched_register(data: &Funcdata, addr: &Address, size: int4) -> bool {
+    is_register(addr) && !touched(data, addr, size)
+}
+
 /// Does any Varnode of the function share a byte with `[addr, addr+size)`?
 pub(crate) fn touched(data: &Funcdata, addr: &Address, size: int4) -> bool {
     touched_by(data, addr, size, false)
@@ -802,9 +808,20 @@ fn claim_untouched_registers_mode(data: &mut Funcdata, pass: ClaimPass) {
         data.kuna_passthrough_claims().to_vec()
     };
     for idx in 0..data.num_calls() {
-        if !data.get_call_specs(idx).is_input_active() || !first.contains(&data.get_call_specs(idx).get_op()) {
+        if !data.get_call_specs(idx).is_input_active() {
             continue;
         }
+        let op = data.get_call_specs(idx).get_op();
+        let fed = if first.contains(&op) {
+            None
+        } else if pass == ClaimPass::Initial {
+            match fed_result(data, op) {
+                Some(result) => Some(result),
+                None => continue,
+            }
+        } else {
+            continue;
+        };
         let entry = data.get_call_specs(idx).get_entry_address().clone();
         let stated: Vec<(Address, int4)> = match data.kuna_protoorder_types(&entry) {
             Some(s) => s.inputs.iter().map(|(a, sz, _)| (a.clone(), *sz)).collect(),
@@ -813,8 +830,12 @@ fn claim_untouched_registers_mode(data: &mut Funcdata, pass: ClaimPass) {
                 None => continue,
             },
         };
-        let op = data.get_call_specs(idx).get_op();
         for (pos, (addr, stated_size)) in stated.iter().cloned().enumerate() {
+            if let Some((raddr, rsize)) = &fed {
+                if !stated[..=pos].iter().all(|(a, s)| within(a, *s, raddr, *rsize)) {
+                    continue;
+                }
+            }
             let Some(size) = stated_width(data, data.get_call_specs(idx), &addr, stated_size) else { continue };
             if !no_hole_before(data, &stated, pos, &claims) {
                 continue;
@@ -961,6 +982,55 @@ fn own_input_varnode(data: &Funcdata, addr: &Address, size: int4) -> Option<Varn
                 .get(v)
                 .is_some_and(|n| n.get_addr() == addr && n.get_size() == size && !n.is_written())
         })
+}
+
+/// The stated return value of the direct call `op` is the next call after, with
+/// no join, indirect call or entry in between ([`producing_call`]): the
+/// storage the earlier callee's own recovery returns in. A register no op of
+/// the function touches reaches `op` holding exactly that value.
+fn fed_result(data: &Funcdata, op: OpId) -> Option<(Address, int4)> {
+    let call = producing_call(data, op)?;
+    let fc = data.get_call_specs(data.get_call_specs_index(call)?);
+    let entry = fc.get_entry_address();
+    if entry.is_invalid() || fc.proto().is_output_locked() || fc.plt_stub().is_some() {
+        return None;
+    }
+    let (addr, size, _) = data.kuna_protoorder_types(entry)?.output.as_ref()?;
+    is_register(addr).then(|| (addr.clone(), *size))
+}
+
+/// Does `[addr, addr+size)` lie inside `[outer, outer+outer_size)`?
+fn within(addr: &Address, size: int4, outer: &Address, outer_size: int4) -> bool {
+    let same_space = match (addr.get_space(), outer.get_space()) {
+        (Some(a), Some(b)) => a.get_index() == b.get_index(),
+        _ => false,
+    };
+    same_space
+        && outer.get_offset() <= addr.get_offset()
+        && addr.get_offset() + size.max(0) as u64 <= outer.get_offset() + outer_size.max(0) as u64
+}
+
+/// Is `vn`, read by the claimed call `op` in `[addr, addr+size)`, the stated
+/// result of the call just before it ([`fed_result`]) -- the INDIRECT creation
+/// that call plants, read whole or as its low piece?
+fn forwarded_call_result(data: &Funcdata, op: OpId, vn: VarnodeId, addr: &Address, size: int4) -> bool {
+    if !data.kuna_passthrough_claims().iter().any(|c| c.addr == *addr && c.size == size && c.arg_owners.contains(&op)) {
+        return false;
+    }
+    let Some((raddr, rsize)) = fed_result(data, op) else { return false };
+    if !within(addr, size, &raddr, rsize) {
+        return false;
+    }
+    let mut def = data.vbank().get(vn).and_then(|v| v.get_def());
+    while let Some(d) = def.filter(|&d| is_low_piece(data, d)) {
+        def = data.obank().get(d).and_then(|o| o.get_in(0)).and_then(|i| data.vbank().get(i)).and_then(|i| i.get_def());
+    }
+    let Some(def) = def.and_then(|d| data.obank().get(d)) else { return false };
+    if def.code() != OpCode::CPUI_INDIRECT || !def.is_indirect_creation() {
+        return false;
+    }
+    let Some(iop) = def.get_in(1).and_then(|i| data.vbank().get(i)) else { return false };
+    Some(OpId::from(slotmap::KeyData::from_ffi(iop.get_offset()))) == producing_call(data, op)
 }
 
 /// Can the claim of the register at `pos` in the callee's stated list be made
@@ -1487,7 +1557,8 @@ pub fn capture(fc: &mut FuncCallSpecs, data: &Funcdata) -> Option<PendingPassThr
             .get(vn)
             .map(|v| v.is_input() && !v.is_written() && *v.get_addr() == addr && v.get_size() == size)
             .unwrap_or(false)
-            || forwarded_own_input(data, vn, &addr, size);
+            || forwarded_own_input(data, vn, &addr, size)
+            || forwarded_call_result(data, op, vn, &addr, size);
         if !own_input && !crate::kuna_armfloatargs::is_forwarded_input(data, vn, &addr, size) && !reassembled(data, vn, &addr, size) {
             continue;
         }
@@ -1560,6 +1631,7 @@ fn extend_one(data: &mut Funcdata, p: &PendingPassThrough) -> bool {
             .filter(|v| {
                 (v.is_input() && *v.get_addr() == addr)
                     || forwarded_own_input(data, vn, &addr, v.get_size())
+                    || forwarded_call_result(data, p.op, vn, &addr, v.get_size())
                     || crate::kuna_armfloatargs::is_forwarded_input(data, vn, &addr, width)
                     || reassembled(data, vn, &addr, v.get_size())
             })
