@@ -77,6 +77,11 @@ pub struct PushanProgram {
     /// Read-only string literals the program refers to by a constant pointer:
     /// (address, bytes including the terminator).
     pub strings: Vec<(u64, u32)>,
+    /// The protector's own sections: the candidate interpreter sections
+    /// ([`Section::vm_candidate`]) the exploration ran VM code in.
+    pub protector: Vec<(u64, u64)>,
+    /// Import slots the exploration resolved a call or a tail call through.
+    pub slots: Vec<u64>,
     pub stats: Stats,
     pub emit_stats: EmitStats,
     pub log: Vec<String>,
@@ -1001,7 +1006,37 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
         .chain(emit_stats.entry_regs.iter().map(|&(o, s)| (o, s as u32)))
         .collect();
     let escapes = cfg.escapes.iter().filter_map(|&o| i64::try_from(o).ok()).collect();
-    Ok(PushanProgram { entry, call_kills, placeholders, call_preserves, escapes, overlay: Rc::new(overlay), strings, stats: explorer.stats.clone(), emit_stats, log })
+    let protector = target
+        .sections
+        .iter()
+        .filter(|s| s.vm_candidate() && Some((s.start, s.end)) != target.entry_section)
+        .filter(|s| cfg.nodes.iter().any(|n| n.entry_ctx.in_vm && s.start <= n.key.addr && n.key.addr < s.end))
+        .map(|s| (s.start, s.end))
+        .collect();
+    let mut slots: Vec<u64> = cfg
+        .nodes
+        .iter()
+        .filter_map(|n| match n.exit {
+            NodeExit::Call { slot: Some(s), .. } | NodeExit::TailCallSlot(s) => Some(s),
+            _ => None,
+        })
+        .collect();
+    slots.sort_unstable();
+    slots.dedup();
+    Ok(PushanProgram {
+        entry,
+        call_kills,
+        placeholders,
+        call_preserves,
+        escapes,
+        overlay: Rc::new(overlay),
+        strings,
+        protector,
+        slots,
+        stats: explorer.stats.clone(),
+        emit_stats,
+        log,
+    })
 }
 
 fn describe_exit(e: &NodeExit) -> String {
@@ -1428,6 +1463,88 @@ pub fn warn_unshown_escapes(arch: &Architecture, fd: &mut Funcdata) {
             "pushan: incomplete: {unshown} local{} whose address a call receives printed as never passed",
             if unshown == 1 { "" } else { "s" }
         ));
+    }
+}
+
+/// Warn when the decompiled body of a devirtualized function still reads or
+/// writes the protector's own memory ([`PushanProgram::protector`]): a cell
+/// of the interpreter's context the emulation did not fold or privatize
+/// survives as a global, so the body computes with VM state the program
+/// never had.  Counted over the final ops (heritage's joins and call guards
+/// excluded): a read or write of a memory location inside the sections, and
+/// a load or store whose address is a constant inside them plus an offset.
+/// Reads of an import slot a call went through are the program's own.
+/// Run once the body is decompiled.
+pub fn warn_protector_state(arch: &Architecture, fd: &mut Funcdata) {
+    if !fd.kuna_devirtualized() {
+        return;
+    }
+    let Some(p) = arch.pushan_cache.get(&fd.get_address().get_offset()) else { return };
+    if p.protector.is_empty() {
+        return;
+    }
+    let Some(ram) = fd.get_arch().manage().get_default_data_space().map(|s| s.get_index()) else { return };
+    let inside = |a: u64, size: u64| p.protector.iter().any(|&(s, e)| a < e && a.saturating_add(size.max(1)) > s);
+    let ptr = arch.manage().get_default_code_space().map_or(8, |s| s.get_addr_size() as u64);
+    let slot = |a: u64| p.slots.iter().any(|&s| a >= s && a < s + ptr);
+    let mem = |v: crate::context::VarnodeId| -> Option<(u64, u64)> {
+        let vn = fd.vbank().get(v)?;
+        (vn.get_space().get_index() == ram).then(|| (vn.get_offset(), vn.get_size().max(0) as u64))
+    };
+    let based = |v: Option<crate::context::VarnodeId>| -> bool {
+        let mut work: Vec<(crate::context::VarnodeId, u32)> = v.into_iter().map(|v| (v, 0)).collect();
+        while let Some((v, depth)) = work.pop() {
+            let Some(vn) = fd.vbank().get(v) else { continue };
+            if vn.is_constant() {
+                if inside(vn.get_offset(), 1) {
+                    return true;
+                }
+                continue;
+            }
+            let Some(def) = vn.get_def().and_then(|d| fd.obank().get(d)) else { continue };
+            if depth < 4 && matches!(def.code(), OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB | OpCode::CPUI_CAST | OpCode::CPUI_COPY) {
+                work.extend((0..def.num_input()).filter_map(|i| def.get_in(i)).map(|x| (x, depth + 1)));
+            }
+        }
+        false
+    };
+    let (mut reads, mut writes) = (0usize, 0usize);
+    for op in fd.obank().iter_alive() {
+        let Some(o) = fd.obank().get(op) else { continue };
+        let code = o.code();
+        let out = o.get_out().and_then(mem);
+        let kept = matches!(code, OpCode::CPUI_INDIRECT | OpCode::CPUI_COPY) && out.is_some() && o.get_in(0).and_then(mem) == out;
+        if code == OpCode::CPUI_MULTIEQUAL || kept {
+            continue;
+        }
+        if out.is_some_and(|(a, sz)| inside(a, sz)) {
+            writes += 1;
+        }
+        if code == OpCode::CPUI_INDIRECT {
+            continue;
+        }
+        let access = matches!(code, OpCode::CPUI_LOAD | OpCode::CPUI_STORE);
+        if access && based(o.get_in(1)) {
+            if code == OpCode::CPUI_LOAD {
+                reads += 1;
+            } else {
+                writes += 1;
+            }
+        }
+        for i in usize::from(access) as int4..o.num_input() {
+            if o.get_in(i).and_then(mem).is_some_and(|(a, sz)| inside(a, sz) && !slot(a)) {
+                reads += 1;
+            }
+        }
+    }
+    if reads + writes > 0 {
+        let part = |n: usize, what: &str| format!("{n} {what}{}", if n == 1 { "" } else { "s" });
+        let what = match (reads, writes) {
+            (r, 0) => part(r, "read"),
+            (0, w) => part(w, "write"),
+            (r, w) => format!("{} and {}", part(r, "read"), part(w, "write")),
+        };
+        fd.warning_header(&format!("pushan: incomplete: {what} of the protector's own memory left in the body"));
     }
 }
 

@@ -4804,7 +4804,12 @@ with these edits:
   locals instead of printing hundreds of global stores. A byte that some
   emitted op still reaches as memory keeps every access overlapping it as
   memory, so the two views never mix: such ops are a forked instruction's raw
-  ops, or an access repeated inside one instruction.
+  ops, an access repeated inside one instruction, or an access the emulation
+  could not place whose address is a constant inside the sections plus terms
+  whose possible bits bound them (`Emitter::access_window`: a cell selected
+  by a value the emulation left open), which keeps every cell of its window
+  memory. An access through a pointer with no such bound is not considered;
+  what it leaves in the body is reported (below).
 - Lock prefixes. LOCK and UNLOCK are effect-free for liveness. They are dropped
   from an instruction whose remaining memory access, if any, is the function's
   own stack, because there is nothing left to guard once the shared access was
@@ -5056,6 +5061,23 @@ body still reads or writes while no op of it computes their address, and the
 header says so ("N locals whose address a call receives printed as never
 passed"): printed that way, a local looks as if no call could change it,
 which is the claim the call model exists to avoid.
+`kuna_pushan.rs (warn_protector_state)` then counts what the decompiled body
+still reads or writes of the protector's own memory: the candidate
+interpreter sections (`Section::vm_candidate`) the exploration ran VM code
+in, recorded as `PushanProgram::protector`. A protected program keeps its
+own data where the compiler put it, so a location there is the
+interpreter's state, unless it is an import slot a call or tail call of the
+exploration went through (`PushanProgram::slots`). The count runs over the
+final ops, so dead code and heritage's own joins (MULTIEQUAL, an INDIRECT or
+a COPY that keeps a location's value in place) count nothing: an op reading
+or writing a memory varnode inside the sections, and a load or store whose
+address is a constant inside them or adds one (through casts and copies).
+A body with any such access carries
+"pushan: incomplete: N reads and M writes of the protector's own memory left
+in the body". Such a body computes with a VM context cell as if it were a
+global of the program, which is what the exploration could not resolve (a
+Themida loop symbolized past its fixpoint), or holds the interpreter state the
+privatization had to leave in memory.
 
 **String literals.** A short string the program passes to a call (`"123"` to
 `strcmp`, `"cmd"` to `CreateProcessA`) would print as its address. The
@@ -5171,7 +5193,9 @@ recorded values, a call to a function of the image that writes a local
 whose address it got in a stack-passed argument and a field 32 bytes past its
 pointer argument (`f_out`), both tested after it, a value kept in a context
 cell of the interpreter's section and read back at an offset decoded through
-a key (`f_ctx`, which returns the value).
+a key (`f_ctx`, which returns the value), and two cells read at an offset the
+argument selects (`f_ctxi`, whose stores stay and whose header reports the
+protector state left).
 `tests/stages/kuna-pushan-interp.xml` runs two passes over the
 `pushan_interp_x86_64` fixture (gcc -O0 from its committed C source), six
 functions that are their own interpreters of one virtual program with a loop

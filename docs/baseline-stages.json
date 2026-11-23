@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5046,
-    5046
+    5047,
+    5047
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2164,7 +2164,7 @@
     "data:PUSHAN-SOUND #16: f_callp, the local is re-read after the call",
     "data:PUSHAN-SOUND #17: f_deep, the unmerged join is reported",
     "data:PUSHAN-SOUND #18: f_ijmp, the unresolved jump is reported",
-    "data:PUSHAN-SOUND #19: only those two and f_spbit are incomplete",
+    "data:PUSHAN-SOUND #19: only those two, f_spbit and f_ctxi are incomplete",
     "data:PUSHAN-SOUND #1: f_sum, the loop exits on i < 10",
     "data:PUSHAN-SOUND #20: every function is devirtualized",
     "data:PUSHAN-SOUND #21: f_epi's shared native epilogue calls fin once, f_spbit's unfollowed arm once, f_mba never",
@@ -2178,6 +2178,7 @@
     "data:PUSHAN-SOUND #29: f_below, the test after the call reads the counter the loop increments",
     "data:PUSHAN-SOUND #2: f_sum, the loop accumulates",
     "data:PUSHAN-SOUND #30: f_ctx, the context cell read through the decoded offset is the sum stored there",
+    "data:PUSHAN-SOUND #31: f_ctxi, the cells an unplaced read may reach stay memory and the header says so",
     "data:PUSHAN-SOUND #3: f_eq, the exit tests the counter",
     "data:PUSHAN-SOUND #4: f_big, the loop exits at 2^40",
     "data:PUSHAN-SOUND #5: f_mem and f_corr, the stored comparison is tested",

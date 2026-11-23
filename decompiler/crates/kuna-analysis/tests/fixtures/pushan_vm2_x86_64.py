@@ -18,9 +18,10 @@ a call that writes through a pointer passed on the stack and through a pointer
 argument past its first 16 bytes, a call whose register arguments are the
 caller's own first argument, a constant and the address of a local the
 callee writes, a call made while the interpreter keeps a copy of a loop
-counter below the stack pointer, in the callee's frame, and a value the
-interpreter keeps in a context cell of its own section, read back at an
-offset decoded through a key register.
+counter below the stack pointer, in the callee's frame, and two values the
+interpreter keeps in context cells of its own section, one read back at an
+offset decoded through a key register and one at an offset the argument
+selects.
 Every program sits
 in its own 256-byte block of seeded random filler (entropy above 7 bits/byte).
 Regenerate with `python3 pushan_vm2_x86_64.py` (needs GNU as/ld)."""
@@ -38,6 +39,7 @@ OP["CALL3"] = min(set(range(1, 256)) - set(OP.values()))
 OP["CALLS"] = min(set(range(1, 256)) - set(OP.values()))
 OP["STG"] = min(set(range(1, 256)) - set(OP.values()))
 OP["LDGM"] = min(set(range(1, 256)) - set(OP.values()))
+OP["LDGI"] = min(set(range(1, 256)) - set(OP.values()))
 A0, A1 = 0, 8
 
 
@@ -233,6 +235,9 @@ PROGRAMS = {
     # decodes as x ^ ((x & ~k) + (~x & k)) with x = rbx + c, which is k
     # whatever rbx holds)
     "f_ctx": [("LDCTX", A0), ("LDIMM", 1), ("ADD",), ("STG", 3), ("LDGM", 3), ("EXIT",)],
+    # cells 1 and 2 = 1, 2; return a0 & 1 ? 2 : 1;   (the cell is read at an
+    # offset the argument selects, which the exploration cannot place)
+    "f_ctxi": [("LDIMM", 1), ("STG", 1), ("LDIMM", 2), ("STG", 2), ("LDCTX", A0), ("LDGI",), ("EXIT",)],
 }
 
 NAMES = list(PROGRAMS)
@@ -347,6 +352,8 @@ def source(blocks):
             "    mov r8, rbx", "    neg r8", "    add r8, -0x3350fa95", "    and r8, rax", "    add rcx, r8",
             "    lea r9, [rbx+0x3350fa94]", "    xor rcx, r9", "    lea rax, [rip+vctx]",
             "    push qword ptr [rax+rcx]", "    jmp dispatch",
+            "h_ldgi:", "    pop rax", "    and eax, 1", "    lea rcx, [rip+vctx]", "    push qword ptr [rcx+rax*8+8]",
+            "    jmp dispatch",
             ".p2align 4", "vctx:", "    .quad 0, 0, 0, 0"]
     out += [".p2align 4", "    .space 0x10000 - (. - vm_entry)", ""]
     return "\n".join(out)

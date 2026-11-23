@@ -5,11 +5,11 @@
     The script loads the synthetic static x86-64 ELF
     decompiler/crates/kuna-analysis/tests/fixtures/pushan_vm2_x86_64
     (generator pushan_vm2_x86_64.py): one stack-machine interpreter in its own
-    64 KiB executable section .vmp0 and twenty-four protected functions, each
+    64 KiB executable section .vmp0 and twenty-five protected functions, each
     an entry stub `push key; jmp vm_entry` whose key selects a hand-written
     bytecode program whose decompilation is known.  Each program targets a
     way the devirtualizer could print something false about the program;
-    twenty-three are decompiled here (f_arr's stack array, read back at a constant
+    twenty-four are decompiled here (f_arr's stack array, read back at a constant
     index after a loop fills it, is lost by the decompiler's own stack alias
     analysis, as it is in native code whose array pointer round-trips through
     the stack).
@@ -35,8 +35,8 @@
     f_callp (#16): a local a call writes through its address is re-read.
     f_deep (#17) and f_ijmp (#18): a loop that grows the stack past the depths
     kept apart, and a virtual jump through an argument: the header says the
-    program is incomplete (#19 counts both, and f_spbit) instead of staying
-    silent.
+    program is incomplete (#19 counts both, f_spbit and f_ctxi) instead of
+    staying silent.
     f_epi (#21, #22): both arms of a virtual branch leave the interpreter for
     the stub's native tail, `add rax, 1; mov rdi, rax; call fin; pop rbx;
     ret`, the else arm at the `add` and the then arm one instruction later.
@@ -91,6 +91,10 @@
     three probe points that never accept it, the read stayed a load of the
     cell's memory, which the privatized store never reaches, and the
     function returned the cell's file contents.
+    f_ctxi (#31): cells 1 and 2 = 1, 2, then the cell a0 & 1 selects is
+    returned.  The exploration cannot place that read, but bounds it to the
+    two cells, so they stay memory (their stores are kept), and the header
+    says the body still reads and writes the protector's own memory.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -170,6 +174,9 @@ c3
   <com>load function f_ctx</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load function f_ctxi</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="PUSHAN-SOUND #1: f_sum, the loop exits on i &lt; 10" min="1" max="1">\(SBORROW8\(v3,10\) &amp;&amp; v1\)\) break;</stringmatch>
@@ -197,8 +204,8 @@ return 4;</stringmatch>
 if \(v1\[0\] == 5\)</stringmatch>
 <stringmatch name="PUSHAN-SOUND #17: f_deep, the unmerged join is reported" min="1" max="1">pushan: incomplete: 1 path joined at another stack depth unmerged</stringmatch>
 <stringmatch name="PUSHAN-SOUND #18: f_ijmp, the unresolved jump is reported" min="1" max="1">pushan: incomplete: 1 unresolved computed jump</stringmatch>
-<stringmatch name="PUSHAN-SOUND #19: only those two and f_spbit are incomplete" min="3" max="3">pushan: incomplete</stringmatch>
-<stringmatch name="PUSHAN-SOUND #20: every function is devirtualized" min="23" max="23">pushan: devirtualized VM-protected function</stringmatch>
+<stringmatch name="PUSHAN-SOUND #19: only those two, f_spbit and f_ctxi are incomplete" min="4" max="4">pushan: incomplete</stringmatch>
+<stringmatch name="PUSHAN-SOUND #20: every function is devirtualized" min="24" max="24">pushan: devirtualized VM-protected function</stringmatch>
 <stringmatch name="PUSHAN-SOUND #21: f_epi's shared native epilogue calls fin once, f_spbit's unfollowed arm once, f_mba never" min="2" max="2">fin\(</stringmatch>
 <stringmatch name="PUSHAN-SOUND #22: f_epi, the exit ahead of the epilogue keeps its add" min="1" max="1">a0 = 8;</stringmatch>
 <stringmatch name="PUSHAN-SOUND #23: f_sel, the branch on the merged flag keeps all three returns" min="1" max="1">return 2;
@@ -222,4 +229,9 @@ v2 \+= 1;</stringmatch>
 <stringmatch name="PUSHAN-SOUND #30: f_ctx, the context cell read through the decoded offset is the sum stored there" min="1" max="1">f_ctx\(int8 a0\) // warn: pushan: devirtualized VM-protected function \([^)]*\)
 \{
 return a0 \+ 1;</stringmatch>
+<stringmatch name="PUSHAN-SOUND #31: f_ctxi, the cells an unplaced read may reach stay memory and the header says so" min="1" max="1">pushan: incomplete: 1 read and 2 writes of the protector's own memory left in the body
+\{
+dat_[0-9a-f]+ = 1;[^\n]*
+dat_[0-9a-f]+ = 2;[^\n]*
+return \*\(unsigned long \*\)\(\(a0 &amp; 1\) \* 8UL \+ 0x[0-9a-f]+\);</stringmatch>
 </decompilertest>

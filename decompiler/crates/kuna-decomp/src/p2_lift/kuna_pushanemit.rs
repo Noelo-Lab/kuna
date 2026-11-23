@@ -928,22 +928,52 @@ impl<'a> Emitter<'a> {
         Some(if bits >= 64 { off as u64 } else { (off as u64) & ((1u64 << bits) - 1) })
     }
 
+    /// The bytes an access the emulation could not place may reach, when its
+    /// address is a constant inside the protector's code sections plus terms
+    /// whose possible bits bound them (a context cell selected by a value the
+    /// emulation left open): `[lo, hi)`.
+    fn access_window(&mut self, a: &super::kuna_pushanemu::AccessRecord) -> Option<(u64, u64)> {
+        let size = self.arena.size(a.addr_expr);
+        let (terms, c) = self.arena.linear_terms(a.addr_expr);
+        if terms.is_empty() || c < 0 || !self.target.is_foreign_code(c as u64) {
+            return None;
+        }
+        let bits = 8 * size as u32;
+        let (mut lo, mut hi) = (c, c);
+        for (t, k) in terms {
+            let k = if super::kuna_pushanexpr::sign(k, size) { k as i128 - (1i128 << bits) } else { k as i128 };
+            let d = k.checked_mul(self.arena.possible_bits(t) as i128)?;
+            if d >= 0 {
+                hi = hi.checked_add(d)?;
+            } else {
+                lo = lo.checked_add(d)?;
+            }
+        }
+        (lo >= 0 && hi - lo < 1i128 << 32).then(|| (lo as u64, (hi + a.size as i128) as u64))
+    }
+
     /// The interpreter's own memory: fixed addresses ([`Self::access_addr`])
     /// inside the protector's code sections (Themida keeps its VM context
     /// there).  Every emitted access to such a byte becomes a copy through a
     /// register past the witness slots, so the decompiler sees the context as
     /// locals it can forward and kill, not as global stores.  A byte some
-    /// emitted op reaches as real memory (a forked or repeated access) stays
-    /// memory, along with every access overlapping it, so the two views never mix.
+    /// emitted op reaches as real memory (a forked or repeated access, or
+    /// one the emulation could not place inside a window of the sections,
+    /// [`Self::access_window`]) stays memory, along with every access
+    /// overlapping it, so the two views never mix.
     fn plan_private(&mut self) {
         let mut ok: BTreeSet<(u64, u32)> = BTreeSet::new();
         let mut blocked: BTreeSet<u64> = BTreeSet::new();
+        let mut windows: Vec<(u64, u64)> = Vec::new();
         let cfg = self.cfg;
         for node in &cfg.nodes {
             for (k, insn) in node.insns.iter().enumerate() {
                 let Some(tr) = node.traces.get(k) else { continue };
                 for a in &tr.accesses {
-                    let Some(addr) = self.access_addr(a) else { continue };
+                    let Some(addr) = self.access_addr(a) else {
+                        windows.extend(self.access_window(a));
+                        continue;
+                    };
                     let n = a.size as u64;
                     let foreign = (0..n).filter(|b| self.target.is_foreign_code(addr.wrapping_add(*b))).count() as u64;
                     if foreign == 0 {
@@ -956,6 +986,11 @@ impl<'a> Emitter<'a> {
                         blocked.extend((0..n).map(|b| addr.wrapping_add(b)));
                     }
                 }
+            }
+        }
+        for &(a, s) in &ok {
+            if windows.iter().any(|&(lo, hi)| a < hi && a.wrapping_add(s as u64) > lo) {
+                blocked.extend((0..s as u64).map(|b| a.wrapping_add(b)));
             }
         }
         loop {
