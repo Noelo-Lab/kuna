@@ -1646,9 +1646,10 @@ const MAX_TAIL_CALLEE_INSTRUCTIONS: u32 = 512;
 
 /// State the recovered prototype of every callee `root` tail-calls (a CALL the
 /// flow followed with its artificial RETURN at the same address), and then of
-/// the direct callee just before each tail call to a callee stated with a
-/// parameter, whose result the tail call may pass on, so the tail call passes through the callee's arguments and result
-/// the way a callee-first `decompile-all` sees them.  At most
+/// the direct callee just before each tail call whose callee states its first
+/// parameter in a register `root` never touches, whose result the tail call
+/// may pass on, so the tail call passes through the callee's arguments and
+/// result the way a callee-first `decompile-all` sees them.  At most
 /// [`MAX_TAIL_CONTRACTS`] callees of at most [`MAX_TAIL_CALLEE_INSTRUCTIONS`]
 /// instructions are tried, tail callees first.  Inert under `protoorder off`.
 fn bootstrap_tail_callees(arch: &mut Architecture, root: &Funcdata) {
@@ -1669,15 +1670,16 @@ fn bootstrap_tail_callees(arch: &mut Architecture, root: &Funcdata) {
     let entry_of = |op: OpId| root.get_call_specs_index(op).map(|i| root.get_call_specs(i).get_entry_address().clone());
     let tails = eligible_callees(arch, tail_calls.iter().filter_map(|&op| entry_of(op)).collect(), root.get_address());
     let used = state_contracts(arch, tails, MAX_TAIL_CONTRACTS);
-    let takes_input = |arch: &Architecture, op: OpId| {
+    let fed = |arch: &Architecture, op: OpId| {
         entry_of(op)
             .and_then(|e| crate::p4_calls::kuna_protoorder::stated_key(&e))
             .and_then(|key| arch.kuna_protoorder_types.get(&key))
-            .is_some_and(|t| !t.inputs.is_empty())
+            .and_then(|t| t.inputs.first().map(|(addr, size, _)| (addr.clone(), *size)))
+            .is_some_and(|(addr, size)| crate::p4_calls::kuna_passthrough::untouched_register(root, &addr, size))
     };
     let feeders: Vec<Address> = tail_calls
         .iter()
-        .filter(|&&op| takes_input(arch, op))
+        .filter(|&&op| fed(arch, op))
         .filter_map(|&op| crate::p4_calls::kuna_passthrough::producing_call(root, op))
         .filter_map(entry_of)
         .collect();

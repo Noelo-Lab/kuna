@@ -6987,9 +6987,14 @@ from its own body alone.
 
 The bootstrap also states, after the tail callees and within the same four, the
 direct callee of the CALL just before each tail call whose callee it stated
-with a parameter (`producing_call`: no join, indirect call or user op in
-between). Its result may be what the tail call passes on; a tail call that
-takes nothing, such as a call to `__stack_chk_fail`, states no such callee.
+with a first parameter in a register no op of the function touches
+(`producing_call`: no join, indirect call or user op in between;
+`untouched_register`). Only then can that callee's result be what the tail
+call passes on. A tail call that takes nothing, such as a call to
+`__stack_chk_fail`, or one whose first argument register the function sets
+itself (x86-64 `call h; mov edi,eax; jmp g`), states no such callee, so a
+statement that could not pass a result on does not retype the rest of the
+function or cost a nested drive.
 arm64e `_tail_auth` is `bl _helper; ...; b _helper2`, which is
 `return _helper2(_helper(a0))`: stating only `_helper2` gave the function
 `_helper2`'s return value, and `_tail_auth` printed `int _tail_auth(unsigned int

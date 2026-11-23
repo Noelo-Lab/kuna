@@ -606,6 +606,12 @@ fn is_register(addr: &Address) -> bool {
         .unwrap_or(false)
 }
 
+/// Is `[addr, addr+size)` a register no Varnode of the function touches, the
+/// only storage [`fed_result`] can hand a later call?
+pub(crate) fn untouched_register(data: &Funcdata, addr: &Address, size: int4) -> bool {
+    is_register(addr) && !touched(data, addr, size)
+}
+
 /// Does any Varnode of the function share a byte with `[addr, addr+size)`?
 pub(crate) fn touched(data: &Funcdata, addr: &Address, size: int4) -> bool {
     touched_by(data, addr, size, false)
