@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5184,
-    5184
+    5192,
+    5192
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1706,13 +1706,21 @@
     "data:LOOPTEST #12: no guarded loop prints a second return",
     "data:LOOPTEST #1: fill tests its pointer at the top",
     "data:LOOPTEST #2: fill keeps its n == 0 guard only under binary",
-    "data:LOOPTEST #3: drain tests i < n at the top",
+    "data:LOOPTEST #3: drain and count test i < n at the top",
     "data:LOOPTEST #4: drain is a guarded do-while under binary",
     "data:LOOPTEST #5: zero16's entry test folds to true",
     "data:LOOPTEST #6: zero16 is a do-while under binary",
-    "data:LOOPTEST #7: count's guard is not its entry test, so it stays a do-while",
-    "data:LOOPTEST #8: the n > 0 guard is printed once for count and once for drain under binary",
+    "data:LOOPTEST #7: count's latch i != n prints as i < n",
+    "data:LOOPTEST #8: the n > 0 guard is printed only for drain under binary",
     "data:LOOPTEST #9: walk tests the variable q is copied into",
+    "data:LOOPTEST-ORDER #1: down counts n to zero with the test at the top",
+    "data:LOOPTEST-ORDER #2: bytes walks p up to its end with the test at the top",
+    "data:LOOPTEST-ORDER #3: step2's i can step past n, so it stays a do-while",
+    "data:LOOPTEST-ORDER #4: wrapend's end is not a < end at n == 0, so it stays a do-while",
+    "data:LOOPTEST-ORDER #5: the n > 0 guard prints for step2, and for down and bytes under binary",
+    "data:LOOPTEST-ORDER #6: down keeps its != test under binary",
+    "data:LOOPTEST-ORDER #7: bytes keeps its != test under binary",
+    "data:LOOPTEST-ORDER #8: wrapend keeps its n != 0 guard",
     "data:LOWEREDSWITCH-SCRUTINEE #1: the re-rolled switch dispatches on the compared parameter",
     "data:LOWEREDSWITCH-SCRUTINEE #2: the scrutinee is never a constant nor empty",
     "data:LOWEREDSWITCH-SCRUTINEE #3: neither pass drops the dispatched-on parameter from the prototype",
