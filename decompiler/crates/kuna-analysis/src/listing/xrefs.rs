@@ -78,7 +78,7 @@ use kuna_sleigh::translate::{AssemblyEmit, PcodeEmit, Translate};
 use object::read::{Object, ObjectSection, ObjectSegment, ObjectSymbol, ObjectSymbolTable};
 use object::SectionKind;
 
-use super::classify::classify;
+use super::classify::{absolute_branch_target, classify};
 use super::context::ContextPainter;
 use super::kuna_pcform::{Formed, PcForm};
 use super::kuna_picbase::{self, Ctx as PicCtx, PicBase};
@@ -188,6 +188,8 @@ pub struct XrefIndex {
     /// The targets of decoded direct calls and branches that lie outside the
     /// sections the walk decodes.
     stopped: BTreeSet<u64>,
+    /// Lowest decoded direct call site for each focused, out-of-section target.
+    stopped_direct_calls: BTreeMap<u64, u64>,
 }
 
 /// Every decoded instruction and its intra-function successors, so each entry's
@@ -546,6 +548,12 @@ impl XrefIndex {
     /// pointed at and stopped short of.
     pub fn undecoded_flow_targets(&self) -> impl Iterator<Item = u64> + '_ {
         self.stopped.iter().copied().filter(|to| !self.decoded.contains(to))
+    }
+
+    /// A direct call site the walk decoded for an out-of-section focus address.
+    /// Call rows through import slots and inferred indirect calls cannot set it.
+    pub fn stopped_direct_call_site(&self, vma: u64) -> Option<u64> {
+        self.stopped_direct_calls.get(&vma).copied()
     }
 
     /// How many distinct instructions the walk decoded.
@@ -998,6 +1006,7 @@ fn descend(
     // as a callee first stops at it, as it always has.
     let mut admitted: HashSet<u64> = HashSet::new();
     let mut stopped: BTreeSet<u64> = BTreeSet::new();
+    let mut stopped_direct_calls = BTreeMap::<u64, u64>::new();
 
     loop {
         // Drain known entries first, then merge recovered roots and focus addresses
@@ -1151,6 +1160,7 @@ fn descend(
                         focused.clear();
                         admitted.clear();
                         stopped.clear();
+                        stopped_direct_calls.clear();
                         walked.clear();
                         if let Some(context) = &mut walk_context { context.reset(); }
                         partition.clear();
@@ -1456,6 +1466,7 @@ fn descend(
 
             for &target in &c.flows {
                 let kind = if c.flow.is_call { XrefKind::Call } else { XrefKind::Jump };
+                let outside_walk = sections_are_runtime && !in_range(&exec_set, target);
                 if condition == Some(target) {
                     condition = None;
                     if c.fall_through.is_none() {
@@ -1463,8 +1474,17 @@ fn descend(
                     }
                 } else if condskip || Some(target) != skip {
                     st.file(vma, target, kind, &text);
+                    if outside_walk && c.flow.is_call && focus.contains(&target)
+                        && raw.iter().any(|op| {
+                            op.opcode == OpCode::CPUI_CALL && absolute_branch_target(op) == Some(target)
+                        })
+                    {
+                        stopped_direct_calls.entry(target)
+                            .and_modify(|site| *site = (*site).min(vma))
+                            .or_insert(vma);
+                    }
                 }
-                if sections_are_runtime && !in_range(&exec_set, target) {
+                if outside_walk {
                     stopped.insert(target);
                 }
                 if c.flow.is_call {
@@ -1739,6 +1759,7 @@ fn descend(
         index.flow = None;
     }
     index.stopped = stopped;
+    index.stopped_direct_calls = stopped_direct_calls;
     index
 }
 
@@ -2108,6 +2129,7 @@ impl State {
             flow: self.flow,
             switches: self.switches,
             stopped: BTreeSet::new(),
+            stopped_direct_calls: BTreeMap::new(),
         }
     }
 }
@@ -2168,6 +2190,7 @@ fn empty() -> XrefIndex {
         flow: None,
         switches: Vec::new(),
         stopped: BTreeSet::new(),
+        stopped_direct_calls: BTreeMap::new(),
     }
 }
 

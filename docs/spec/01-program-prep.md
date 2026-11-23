@@ -10269,6 +10269,15 @@ holds a code address and is not code. A `--from` answer
 about anything other than code decoded in a code section, and a `--to` answer while
 such targets exist, say so in a note.
 
+(kuna, GH #1696) For an incoming JSON query the walk retains the lowest-address
+direct call site it decoded to the selected address outside the walked sections
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (stopped_direct_call_site)`).
+When that exact address belongs to the unwalked executable-section coverage, is
+absent from the canonical function inventory, and has no declared data symbol,
+the CLI reports it as a call destination candidate. A jump, an indirect call, or
+a call to another alias does not provide that evidence. This annotation leaves
+discovery and the default project-export selection unchanged.
+
 (kuna) Both of those rules read a reference out of *one instruction's* p-code,
 which is the whole answer on x86-64 and no answer at all in 32-bit
 position-independent code. There the address of a string, a global or a function
