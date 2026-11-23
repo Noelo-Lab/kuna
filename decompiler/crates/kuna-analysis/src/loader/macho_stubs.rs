@@ -85,10 +85,21 @@ pub(crate) fn resolve_macho_import_slots(
     resolve_macho_indirect_symbols(file, bytes).import_slots
 }
 
+/// Resolve the symbol-pointer slots whose import is a data object (`(slot VA,
+/// raw import name)`), which [`resolve_macho_imports`] leaves out: see
+/// [`super::kuna_machodataslots`].
+pub(crate) fn resolve_macho_data_import_slots(
+    file: &object::File,
+    bytes: &[u8],
+) -> Vec<(u64, Vec<u8>)> {
+    resolve_macho_indirect_symbols(file, bytes).data_slots
+}
+
 #[derive(Default)]
 struct MachOIndirectSymbols {
     imports: Vec<ImportSym>,
     import_slots: Vec<(u64, u64)>,
+    data_slots: Vec<(u64, Vec<u8>)>,
 }
 
 fn resolve_macho_indirect_symbols(
@@ -252,10 +263,11 @@ where
             if nlist.n_strx(endian) == 0 {
                 continue; // no name
             }
-            let name = match nlist.name(endian, strings) {
-                Ok(n) if !n.is_empty() => strip_leading_underscore(n),
+            let raw_name = match nlist.name(endian, strings) {
+                Ok(n) if !n.is_empty() => n,
                 _ => continue,
             };
+            let name = strip_leading_underscore(raw_name);
             if name.is_empty() {
                 continue;
             }
@@ -265,16 +277,20 @@ where
             let Some(addr) = base.checked_add(offset) else {
                 continue;
             };
+            if import_slot {
+                if let Some(last_open) = addr.checked_add(stride) {
+                    out.import_slots.push((addr, last_open));
+                }
+                if super::kuna_machodataslots::is_data_import(raw_name) {
+                    out.data_slots.push((addr, name));
+                    continue;
+                }
+            }
             out.imports.push(ImportSym {
                 addr,
                 name,
                 kind: ImportSymKind::Import,
             });
-            if import_slot {
-                if let Some(last_open) = addr.checked_add(stride) {
-                    out.import_slots.push((addr, last_open));
-                }
-            }
         }
     }
 

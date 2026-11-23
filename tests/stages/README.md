@@ -1,5 +1,42 @@
 # Stage-model issue testcases
 
+`kuna-narrowed-call-input.xml` checks a call through a typed field whose
+argument was narrowed to two bytes before the field's prototype was forced on
+the call: the function decompiles and passes the sum widened to the parameter.
+
+`kuna-calleefilledarg.xml` checks that a call to a stub that loads one of its
+own argument registers (`adrp x1; ldr x1,[x1]; ... br x16`, the Objective-C
+selector-stub shape) keeps the receiver, a stack address, a buffer and a count
+the caller staged after that register, and that the stack object's loads after
+the call are not folded. A stub that does not fill the register keeps the
+one-argument positional rendering, and `option calleefilledarg off` restores it.
+
+`kuna-calleefilledarg-ctramp.xml` checks that a C function that fills `rdi`
+and `rsi` and tail-calls through a function pointer keeps the positional rule:
+the `idiv` remainder a clang -O0 caller leaves in `rdx` is not passed to it.
+Only an `objc_msgSend$<sel>` selector stub steps over the register it fills.
+
+`kuna-pacmodifier-arg-a64e.xml` checks that the blended modifier an arm64e
+caller builds in `x8` for a hidden `pacda` is not the next call's first
+argument, with the modifier computed and folded to a constant. A tagged
+address and a result buffer in `x8` are the controls.
+
+`kuna-aif-slot-edges.xml` compares stock and section-relative AIF inventories
+on stripped x86-64 and MIPS32 ELFs. The six-byte x86 grid covers padded
+entries, section boundaries, overlapping decodes and terminal padding before
+zero fill. The four-byte MIPS grid checks both direct and padding-adjusted
+entry candidates with delay slots. The fixture languages reuse the stock
+decoders and calling conventions through the stage corpus's `specs/` directory.
+
+`ghangr-go-paniccheck-return.xml` checks that a returning Go panic helper
+falls through to the terminal `runtime.gopanic` call. It also checks the
+helper's conditional throw and shows the caller's sentinel with the known
+no-return analysis disabled.
+
+`ghangr-go-mcall-resumption.xml` checks the continuation after a Go scheduler
+switch, independent terminal propagation through a lookalike wrapper, and
+explicit function and call-site overrides.
+
 `kuna-go-atomic-return.xml` checks exact AMD64 Go direct-return atomic additions,
 including old-value, flag, branch, memory-effect and width refusals. The same
 bytes retain C/Rust rendering and the non-Go source control.
@@ -8,6 +45,50 @@ bytes retain C/Rust rendering and the non-Go source control.
 arguments passed by both call orders. It also checks the disabled option,
 an ordinary name lookalike, a wrapper with stack results, the signal
 trampoline and two linked runtime functions with private or foreign exits.
+
+`kuna-extrapop-function.xml` checks that `option extrapop 12 g` makes a caller
+of the `ret 8` function g see both pushed arguments popped, so a later `[esp+4]`
+reads the caller's own argument. A second caller reaches g through a register
+and sees the same pop.
+
+`kuna-condexe-heritage.xml` checks that conditional execution removes a re-test
+whose block holds unread flag writes once the register space has had a heritage
+pass (`deadcode delay register 50` keeps those writes alive). Before the fix the
+second `if (x)` stayed.
+
+`kuna-switchmerge.xml` checks option `switchmerge`: two AArch64 range-checked
+jump tables on one selector, the second reached when the first's range check
+fails, print as one `switch` whose holes take the one `default:` arm. In `f`
+the first table's holes jump to the default code (`case 0x43: case 0x46:` and
+an inner `default: goto` before); in `g` they go to the second table. The off
+run keeps the nested form.
+
+`kuna-switchmerge-values.xml` checks two rules for jump tables. Under option
+`switchmerge`, an AArch64 table whose holes go where its `default:` code sends
+them (through `x == 0x60` and `x == 0x70` tests that fail for the hole values)
+prints no label for the holes: in `f` the holes jumped to a block the default
+code also reaches (`case 0x43: case 0x46: goto`), in `g` they left the switch
+(`break;`). The off run keeps `f`'s labels. `h` checks that `jumptablemax`
+caps a guarded table's distinct arms, not its entries: an 1100-entry
+range-checked table with four arms prints as a switch, not as `jump-as-call`.
+`p` (clang -O2) keeps its hole labels: the arm before them ends in a jump to
+the code after the switch that prints as nothing, so it runs into them.
+
+`kuna-switchmerge-split.xml` checks two more `switchmerge` rules on AArch64
+tables. In `k` a range test splits the selector between two range-checked
+tables whose defaults both jump to the same code; it prints as one switch with
+both tables' labels and one `default:`. In `m` the default arm starts with
+`if (x == 0x60) return ...;`, which prints as `case 0x60:`. The off run keeps
+the `if` forms.
+
+`kuna-jumptableslots.xml` checks the slot bound on a guard-bounded table past
+`jumptablemax`. gcc -O2 guards `x <= 0x28ff` and indexes a 41-entry table with
+`x >> 8`, so the guard admits 0x2900 values over 41 slots. The table stays a
+computed call instead of a switch with a `case` label for each value of `x`.
+
+`kuna-switchsingle.xml` checks that a jump table whose four entries all name one
+block becomes straight-line code with the "all go to same destination" warning
+instead of a `switch` with only a `default` arm.
 
 `ghangr-call-argument-extensions.xml` checks explicit and missing parameter
 contracts. The CLI companion executes complete emitted C, Go and Rust callers
@@ -41,6 +122,10 @@ cover both byte orders and execute the recovered wrappers.
 four-byte OFF result against the proved eight-byte result and high-piece callers.
 Its CLI companion executes the original bytes and untouched emitted C/header
 under MIPS QEMU at O0/O2, including selected exports, workers and streaming.
+
+`kuna-maxlinewidth.xml` checks that `option maxlinewidth 40` breaks a long
+prototype and return statement at 40 columns, while the default prints each on
+one line.
 
 `kuna-stack-byte-copy.xml` checks pushed scratch bytes, partial reads and a
 saved snapshot under the stack store guard. Its CLI companion compiles
@@ -248,6 +333,7 @@ writeup, not here.
 | `kuna-stackstruct.xml` | A local record read through `read(fd,&h,8)` printed its byte and short fields as `v1._4_2_`, which is not C, and no record type was declared (authored C, gcc/clang -O0/-O2) | P6 stack-frame-layout + P9 pointer-notation | `option stackstruct on\|off`, `option partialaccess on\|off` |
 | `kuna-declorder.xml` | A function with ten or more locals declared them in string order, `v1, v10, v11, v2, ...` (authored C, gcc -O0) | P9 naming-policy, local declaration order | `option declorder natural\|name` |
 | `kuna-strlenscan.xml` | gcc 9 expands `strlen` inline as `repnz scasb`, which printed as a do/while over the string and `~count - 1` (authored C, Ubuntu 20.04 gcc 9.4 -O1) | P3 simplification-quiescence, inline string length | `option strlenscan on\|off` |
+| `kuna-opaquepredicate.xml` | a branch on a comparison that is constant for every input (`x * (x + 1) & 1`, `x * x & 3`, `(x \| y) - (x & y) != (x ^ y)`) kept its dead arm (authored C, clang -O0) | P3 simplification-quiescence, constant comparisons | `option opaquepredicate on\|off` |
 | `kuna-rettriangle.xml` | `returndup` split the shared return after a one-block `if`, printing `if (c) f(); return 0;` as `if (!c) return 0; f(); return 0;` (authored C, gcc -O0, stack-protected) | P8 goto-quality, return duplication | `option rettriangle on\|off` |
 
 `kuna-minss-nan.xml` pins an authored scalar MINSS and ratio/clamp probe.
@@ -305,12 +391,17 @@ readability defaults measured on the angr `fmt` corpus binary, DIV-34+ in
 | `kuna-elfgotimports.xml` | an ELF `-fPIC` read of data another object defines (`stdout`, `environ`, a library global) loads a `GLOB_DAT` GOT slot and then loads through it, and printed as `*dat_<slot>`: PE/Mach-O import slots were painted externref but an ELF GOT slot never was | P1 environment-binding (`kuna_elfgotimports`: the undefined-symbol `GLOB_DAT` slots are import slots, named and painted externref) + P9 naming-policy (`importdata`) | `option importdata on\|off` (default on); x86-64 and AArch64 shared objects, with a defined-symbol control |
 | `kuna-objcmeta.xml` | A third-party iOS app (1.9 MB arm64 ObjC): with `objc on` every category method stayed `sub_<addr>` (77: categories extend classes of other images, out of the class walk's reach), every ivar access read `*(long *)((long)self + dat_1001aea74)` (505 sites: the offset variable's 1-byte label never matched the 4-byte load) and a protocol-declared selector typed nothing. P1 external-refinement (`analyzers/objc/kuna_objccats.rs`, `kuna_objcprotos.rs`, `kuna_objcivars.rs`: `-[Class(Category) sel]` renames, `_OBJC_PROTOCOL_$_` names + declared encodings for the stubs, a struct per class from `class_ro_t.ivars` typing `self`) → P3 fold of the offset variables | `option objc on\|off` (names), `option objcivars on\|off` (new kuna settable; struct + typed self + offset fold) |
 | `kuna-dyldcacheobjc.xml` | Foundation out of an iOS 16.4 dyld shared cache (Noelo-Lab/kuna#1623): `objc on` typed no `self` and every `objc_msgSend$<sel>` stub stayed `sub_<addr>`. A cache's small method lists hold selectors and type strings as offsets from the cache's selector base (`0x40000000`/`0x20000000`) and carry two flags in the low bits of the entry size, the strings and selector reference targets live in libobjc's `__OBJC_RO` outside the image, and `baseMethods` with its low bit set is a relative list of lists. P1 external-refinement (`loader/kuna_dyldcache.rs`: the base from the ObjCOptimizationHeader, else libobjc's `objc_opt_t`; `analyzers/objc/kuna_objccache.rs` reads through the cache; `methods.rs`/`classt.rs` decode the flags and the list of lists) on the synthetic caches of `dyld_cache_objc.py` | `option objc on\|off` (no new settable) |
+| `kuna-objcdirect.xml` | UIKitCore out of an iOS 16.4 dyld shared cache: `-[UILabel _setAllowsDefaultTighteningForTruncation:]` printed its receiver as `objc_object *a0` and an ivar as `((objc_object **)a0)[0x56]`, where `objc off` at least showed `_OBJC_IVAR_$_UILabel._configuration`. The method is `objc_direct`: no method list names it, it takes no `_cmd`, and only its symbol says it is a method, so the pass never typed its `self` while still folding the offset variables it loads. P1 external-refinement (`analyzers/objc/kuna_objcdirect.rs` hints the first argument register of every method symbol no method list gave as `self`, typed `<Class> *` for an instance method under `objcivars`; the hint is unlocked, the other parameters are recovered) on `macho_objc_direct.m` | none (a correctness fix, always on under `objc`) |
 | `kuna-objcsdk.xml` | A 1.9 MB third-party iOS app: 2,897 of 25,084 `objc_msgSend$<sel>` calls rendered with no argument (`setHidden:();`), `setAlpha:` showed `0x3ff0000000000000`, `setFrame:` one word for a CGRect — a framework selector is declared nowhere in the image. P1 external-refinement (`analyzers/objc/kuna_objcsdk.rs` reads `@interface`/`@protocol` methods, `@property` getter/setter pairs and `typedef`s from a user-named SDK or header directory into runtime-style encodings; the stub prototype path pins scalars to x/d registers, spreads an HFA `CGRect` over `d0..d3`, returns the flat struct) | `option objcsdk <directory>\|off` (new kuna settable, env-bridged load-time) |
+| `kuna-objcforin.xml` | Perplexity iOS 26.46 (`-[SentryScope setAttributeValue:forKey:]`): every `for (x in c)` loop printed its `NSFastEnumerationState` as eight unrelated locals and read `state.itemsPtr[i]` as `*(objc_object **)(v6 + v5 * 8)`, because the header reader spelled `(NSFastEnumerationState *)` as a class pointer, could not spell the `(id [_Nonnull])` buffer or `NSDictionary`'s generic `(K [])`, and the decoder made any `^{...}` a `void *`, so the selector had no prototype. P1 external-refinement (`analyzers/objc/kuna_objcsdk.rs` lays out a pointer to a `typedef struct` with member names, an array parameter is a pointer, a generic parameter is `id`; `analyzers/objc/encoding.rs` decodes `^{Name=...}` to a pointer to that struct) → P6 `gatherOpen` types the stack object passed to the typelocked pointer | `option objcsdk <directory>\|off` (no new settable) |
 | `kuna-objctypes.xml` | with the `objcivars` structs only `self` was typed: a getter returned `objc_object *`, an ivar of a local class was `objc_object *`, and a field read through either stayed `*(int *)((long)v + 8)` although the property attribute (`T@"Base"`) and ivar encoding (`@"Base"`) name the class. P1 external-refinement (`analyzers/objc/kuna_objcprops.rs` reads every `property_list_t` into class-naming getter/setter encodings; `Selectors::record` keeps the class-naming spelling of agreeing declarations; the decoder resolves `@"Base"` to the layout's struct, declared-record completion included) → P5 field resolution through the typed pointer | `option objc on\|off`, `option objcivars on\|off` (no new settable) |
 | `kuna-opaquepointerretype.xml` | `probe` keeps `&frame[1]` in a saved register (ARM32 r4, PowerPC32 r29); `retype` to a pointer to a bodiless `struct Opaque` added a default one-byte frame range that split the array, the copy holding the address was propagated away, and the retype was refused with `int4 *v3` printed instead. P6 frame layout under the stable-names replay (`p6_variables/funcdata_spacebase.rs` `gather_open`): a value carrying a replayed retype's lock whose pointee has no size lays its range out by the pointee it was printed with (`kuna_stablenames.rs` `printed_pointee`) | always on (`retype` directive) |
 | `kuna-stackpointerretype.xml` | `probe` keeps `&frame[1]` in a saved register (ARM32 r4, PowerPC32 r29); `retype` to a 16-byte `Probe *` re-laid the frame as a `Probe` record, which turned the pointer's definition into a copy that was propagated into its readers: the C printed `consume(&v4)` and the retype was refused. P3 copy propagation (`p3_dataflow/ruleaction_3.rs` `RulePropagateCopy`) keeps a copy that is a definition the replayed retype's lock matched (`p6_variables/kuna_stablenames.rs` `is_retyped_definition`) | always on (`retype` directive) |
 | `kuna-poolfallthru.xml` | ARM32 `probe` (little- and big-endian) ends in a call kuna cannot prove no-return, followed by its PC-relative literal pool; the walk took the call's fall-through, decoded the constants as instructions and printed `halt_baddata(); // warn: Bad instruction` after the call. P2 flow classification (`p2_lift/kuna_funcboundflow.rs` `kuna_should_bound_at_pool`): a call's fall-through onto a literal pool the Listing's trusted loads prove (`kuna-analysis` `listing/kuna_poolextents.rs`) ends the function | `option funcboundflow off\|on` |
 | `kuna-chkstkdarwin.xml` | Apple clang calls `___chkstk_darwin` before a frame larger than a page or a variable-length array, and reads the argument registers after it; the AArch64 model kills x0, x1 and x8-x18 at the call, so `_big_frame`, `_vla_last` and `_probe_stub` printed `(void)` and assigned the probe's result | P2 flow classification (`p2_lift/kuna_chkstkdarwin.rs` removes the probe call from the raw p-code of a Darwin AArch64 image, through the GOT slot, an arm64e `__auth_ptr` slot or the `__stubs` entry; an AArch64 ELF function merely named `___chkstk_darwin` keeps its call) | `option chkstkdarwin on\|off` (destructive, default on) |
+| `kuna-typevote.xml` | `put_u32_be` shifts its `uint4` parameter through merge copies that type inference never saw, so each read printed a cast back to the declared type, `(uint4)a1 >> 0x18` | P5 type propagation (`p5_types/kuna_typevote.rs` types a variable left `undefinedN` by a vote over the ops on its instances) | `option typevote on\|off` (default on) |
+| `kuna-gotonext.xml` | gcc and clang `-O2` switches whose cases fall through printed `goto label_X;` directly above `case 1: label_X:`, clang's chain printed `case 3:` first, and a loop exit printed `goto` where `break;` goes there | P8 goto quality (`p8_structure/kuna_gotonext.rs` censuses the final structured tree at print time; `Funcdata::chain_fallthru_cases` re-derives the fall-thru chains before the case sort) | `option gotonext on\|off` (default on) |
+| `kuna-panicloc.xml` | A Rust panic site passes `&'static core::panic::Location`, which printed as a bare address: `panic_fmt(..,0x2002c0)` | P1 external refinement (`kuna-analysis` `strings/kuna_panicloc.rs` finds the records by shape, types them `core::panic::Location` and names them after file, line and column) | `option panicloc on\|off` (default on, Rust images only) |
 | `kuna-brktrap.xml` | AArch64 SLEIGH lifts `brk #imm` to a jump through `SoftwareBreakpoint`, which flow truncated to a call that returns, so a function whose overflow or bounds check ends in a compiler trap printed as `void` and passed the value it returns to the trap, or returned a value fabricated from a call through it | P2 flow classification (`p2_lift/kuna_brktrap.rs` matches the lowered `brk` with a compiler trap immediate, `#1`, `#1000`, `#0x5500`-`#0x55ff`, `#0xc470`-`#0xc473` or `#0xf003`, and `flow.rs` ends the flow there with a no-return halt; `#0xf003` also reads its `__fastfail` code from `w0`, so the code prints; `brk #0xf000`, `brk #0` and `brk #0x800` are controls) | none (strict fix): one pass at the default |
 | `kuna-ebpf-elf-map-reloc.xml` | kuna [#1652](https://github.com/Noelo-Lab/kuna/issues/1652): a `clang --target=bpf -c` object did not load (EM_BPF 247 had no language), and with `--target` the `R_BPF_64_64` map reference was written as one 64-bit word over the start of the 16-byte `lddw`, so `prog` printed `halt_baddata()` | P1 loader (`kuna-analysis` `loadimage_object.rs` maps EM_BPF to `eBPF:LE\|BE:64:default`; `loader/reloc_apply.rs` patches `R_BPF_64_64` into the two `imm` halves at +4 and +12, `R_BPF_64_32` into the call `imm` as `(S + A - P) / 8 - 1` with the REL addend `(imm + 1) * 8`, so a static callee named by the `.text` section symbol is the one its `imm` selects, in either byte order, and `R_BPF_64_ABS64/ABS32/NODYLD32` as data words; a pspec `<default_symbols>` label outside the default code space at a call target names the callee, so `call 1` prints `bpf_map_lookup_elem`) | none (strict fix): one pass at the default |
 

@@ -15,6 +15,7 @@ mod compiler_probe_tests;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
+use crate::common::process::Capped;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -335,6 +336,69 @@ fn decompile_all_refuses_an_executable_section_iat_slot() {
         stderr,
         "error: selector \"0x401000\" identifies import VirtualAlloc at 0x401000; \
          the IAT slot contains a loader-written pointer, not a function body\n"
+    );
+}
+
+/// Among several selectors an IAT slot is reported and skipped, and the rest
+/// still decompile; when the skips leave nothing to decompile, the run fails.
+#[test]
+fn decompile_all_skips_an_iat_slot_among_other_selectors() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/pe_iatincode_i386.exe")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all",
+        &bin,
+        "--addr",
+        "0x401000",
+        "--addr",
+        "0x401010",
+        "--sleighpath",
+        &specs(),
+    ]);
+    assert!(ok, "the run failed: {stderr}");
+    assert_eq!(
+        stderr,
+        "warning: selector \"0x401000\" identifies import VirtualAlloc at 0x401000; \
+         the IAT slot contains a loader-written pointer, not a function body; skipped\n"
+    );
+    assert!(stdout.contains("// Function: sub_401010 @ 0x401010"), "the body was not decompiled: {stdout}");
+    assert!(!stdout.contains("0x401000 "), "the IAT slot became a result: {stdout}");
+
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all",
+        &bin,
+        "--addr",
+        "0x401000",
+        "--functions",
+        "GetModuleHandleA",
+        "--sleighpath",
+        &specs(),
+    ]);
+    assert!(!ok, "only IAT slots unexpectedly decompiled: {stdout}");
+    assert!(stdout.trim().is_empty(), "an IAT result row escaped: {stdout}");
+    assert!(
+        stderr.ends_with("error: every selector names an import slot; nothing to decompile\n"),
+        "{stderr}"
+    );
+
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all",
+        &bin,
+        "--addr",
+        "0x401000",
+        "--functions",
+        "no_such_function",
+        "--sleighpath",
+        &specs(),
+    ]);
+    assert!(!ok, "a slot and a missing name unexpectedly decompiled: {stdout}");
+    assert!(stdout.trim().is_empty(), "an IAT result row escaped: {stdout}");
+    assert!(
+        stderr.ends_with("error: no selector names a function body; nothing to decompile\n"),
+        "{stderr}"
     );
 }
 
@@ -2646,8 +2710,8 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
         "(unsigned int)(v1 < 0x3fc00000)",
         "if (v1 == 0x3fc00001)",
         "(unsigned int)(0x3fc00000 < v1)",
-        "*a2 = (short)((unsigned int)v1 >> 0x10);",
-        "a2[1] = (unsigned int)v1 >> 0x10;",
+        "*a2 = (short)(v1 >> 0x10);",
+        "a2[1] = v1 >> 0x10;",
     ] {
         assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
     }
@@ -2765,7 +2829,7 @@ fn compile_and_run_each(tag: &str, src: &str) -> Vec<(String, String)> {
             .output()
             .expect("spawn the compiler");
         assert!(built.status.success(), "{cc} rejected the printed C:\n{}\n{src}", String::from_utf8_lossy(&built.stderr));
-        let run = Command::new(&exe).output().expect("run the round trip");
+        let run = Command::new(&exe).capped_output().expect("run the round trip");
         out.push((cc.to_string(), String::from_utf8_lossy(&run.stdout).trim().to_string()));
     }
     let _ = std::fs::remove_dir_all(&dir);
@@ -3116,7 +3180,7 @@ fn compile_pair_and_run_each(tag: &str, lib: &str, main: &str) -> Vec<(String, S
             .output()
             .expect("spawn the compiler");
         assert!(built.status.success(), "{cc} rejected the printed C:\n{}\n{lib}", String::from_utf8_lossy(&built.stderr));
-        let run = Command::new(&exe).output().expect("run the round trip");
+        let run = Command::new(&exe).capped_output().expect("run the round trip");
         out.push((cc.to_string(), String::from_utf8_lossy(&run.stdout).trim().to_string()));
     }
     let _ = std::fs::remove_dir_all(&dir);
@@ -3557,6 +3621,9 @@ fn a_float_handed_on_through_wrappers_to_an_integer_round_trips() {
          printf(\"%x %x %x %x\\n\", dat_4120e0, dat_4120e4, dat_4120e8, dat_4120ec);\n  return 0;\n}}\n",
         arg_of_pointer(&printed, "sub_400b78", 0, "base"),
     );
+    if !cfg!(target_os = "linux") {
+        return;
+    }
     for (cc, got) in compile_and_run_each("floatret-chain-mips", &src) {
         assert_eq!(got, "40100000 0 4010 0", "{cc}: the printed MIPS reader stores something else:\n{printed}");
     }
@@ -8449,7 +8516,7 @@ fn check_narrowload_round_trip(
                     "{build} {elem}/{cc}: the printed functions did not compile:\n{}\n{bodies}",
                     String::from_utf8_lossy(&built.stderr)
                 );
-                let run = Command::new(&exe).output().expect("run the round trip");
+                let run = Command::new(&exe).capped_output().expect("run the round trip");
                 assert_eq!(
                     (String::from_utf8_lossy(&run.stdout), run.status.code()),
                     (String::from_utf8_lossy(&expected.stdout), expected.status.code()),
@@ -8756,13 +8823,8 @@ fn a_value_read_by_a_sign_sensitive_op_is_not_re_read_from_a_global() {
         ("globalstore_clang_O2_x86_64", ",w_rephi,w_oif", &["FIRST", "OHOIST", "OLOOP"][..]),
     ] {
         let bin = fixtures_dir.join(fixture).to_str().unwrap().to_string();
-        let want = match process::optional_output(&mut Command::new(&bin)) {
-            Some(o) => String::from_utf8_lossy(&o.stdout).to_string(),
-            None => {
-                eprintln!("globalstore round trip: the fixture {fixture} does not run here, spelling checked only");
-                continue;
-            }
-        };
+        let want = cfg!(all(target_os = "linux", target_arch = "x86_64"))
+            .then(|| String::from_utf8_lossy(&process::required_output(&mut Command::new(&bin)).stdout).to_string());
         let funcs = format!("{FUNCS}{extra}");
         let (stdout, stderr, ok) =
             run_kuna(&["decompile-all", bin.as_str(), "--functions", funcs.as_str(), "--sleighpath", sp.as_str()]);
@@ -8777,6 +8839,10 @@ fn a_value_read_by_a_sign_sensitive_op_is_not_re_read_from_a_global() {
                 && !stdout.contains("shsink < "),
             "{fixture}: the store's value is still re-read from the global:\n{stdout}"
         );
+        let Some(want) = want else {
+            eprintln!("globalstore round trip: the fixture {fixture} does not run here, spelling checked only");
+            continue;
+        };
         for cc in &compilers {
             let dir = std::env::temp_dir().join(format!("kuna-globalstore-rt-{}-{fixture}-{cc}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);

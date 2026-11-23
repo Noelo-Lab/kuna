@@ -1,0 +1,31 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+  <bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+  <symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-arm64-dwarf-result/arm64-plain.elf</com>
+  <com>option godwarfsig off</com><com>read symbols</com><com>option outlang go</com>
+  <com>load function main.Rise</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-arm64-dwarf-result/arm64-plain.elf</com>
+  <com>read symbols</com><com>option outlang go</com>
+  <com>load function main.Rise</com><com>decompile</com><com>print C</com>
+  <com>load function main.Fall</com><com>decompile</com><com>print C</com>
+  <com>load function main.RiseWide</com><com>decompile</com><com>print C</com>
+  <com>load function main.FallWide</com><com>decompile</com><com>print C</com>
+  <com>map prototype main.Rise int8 Rise(int4 *overrideP);</com>
+  <com>load function main.Rise</com><com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="Go ARM64 plain DWARF off retains inferred result width" min="1" max="2">func Rise\(a0 \*int32\) int64</stringmatch>
+<stringmatch name="Go ARM64 plain narrow rising result retains int32 addition" min="1" max="1">^func Rise\(p \*int32\) int32 \{$
+^  return \*p \+ 1$</stringmatch>
+<stringmatch name="Go ARM64 plain narrow falling result retains int32 subtraction" min="1" max="1">^func Fall\(p \*int32\) int32 \{$
+^  return \*p \+ -1$</stringmatch>
+<stringmatch name="Go ARM64 plain wide rising twin retains int64 extension" min="1" max="1">^func RiseWide\(p \*int32\) int64 \{$
+^  return int64\(\*p\) \+ 1$</stringmatch>
+<stringmatch name="Go ARM64 plain wide falling twin retains int64 extension" min="1" max="1">^func FallWide\(p \*int32\) int64 \{$
+^  return int64\(\*p\) \+ -1$</stringmatch>
+<stringmatch name="Go ARM64 plain DWARF result respects explicit prototype" min="1" max="1">func Rise\(overrideP \*int32\) int64</stringmatch>
+</decompilertest>

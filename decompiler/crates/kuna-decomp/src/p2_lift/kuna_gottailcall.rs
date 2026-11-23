@@ -7,9 +7,8 @@
 //! a table with one entry, `f`. `tailcalljump on` makes that a tail call only
 //! where the callee's prototype is stated or the destination lies outside a
 //! declared extent; otherwise the flow follows the table, and the function
-//! prints `switch(0x...) { case 0x...: <f's body> }`, or, when the slot names
-//! an extern with no bytes, `switch(0x...) { case 0x...: halt_missing(); }`
-//! with the call's arguments gone.
+//! prints `f`'s body in place of the call, or, when the slot names an extern
+//! with no bytes, `halt_missing();` with the call's arguments gone.
 //!
 //! This module adds two cases where the tail call loses nothing:
 //!
@@ -75,6 +74,10 @@ pub struct Ledger {
     /// `(caller, callee)` tail calls [`callable`] allowed in a decompile
     /// [`record`] has not yet checked.
     pub taken: RefCell<BTreeSet<(Key, Key)>>,
+    /// `(caller, destination)` one-destination tables a flow followed in a
+    /// decompile [`record`] has not yet filed. `RuleSwitchSingle` drops such a
+    /// table, so the finished function no longer shows it.
+    pub followed: RefCell<BTreeSet<(Key, Key)>>,
     /// `(caller, callee)` tail calls that lost what the copied-in body shows.
     pub refused: BTreeSet<(Key, Key)>,
     /// The functions the run's plan decompiles.
@@ -105,6 +108,18 @@ pub fn callable(arch: &Architecture, data: &Funcdata, dest: &Address) -> bool {
         ledger.taken.borrow_mut().insert((own, k));
     }
     ok
+}
+
+/// Note that the flow of `data` follows a one-destination table to `dest`
+/// instead of taking a tail call.
+pub fn followed(arch: &Architecture, data: &Funcdata, dest: &Address) {
+    let ledger = &arch.kuna_gottailcall;
+    if !ledger.recording {
+        return;
+    }
+    if let (Some(k), Some(own)) = (key(dest), key(data.get_address())) {
+        ledger.followed.borrow_mut().insert((own, k));
+    }
 }
 
 /// Has the flow so far reached a return that is no tail call: a RETURN with
@@ -147,12 +162,13 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
         Some(stated) => arch.kuna_gottailcall.callable.insert(own, stated),
         None => arch.kuna_gottailcall.callable.remove(&own),
     };
-    for i in 0..data.num_jump_tables() {
-        let Some(dest) = crate::kuna_tailcalljump::kuna_sole_table_destination(data.get_jump_table(i))
-        else {
-            continue;
-        };
-        let Some(k) = key(&dest).filter(|k| *k != own) else { continue };
+    let followed: Vec<Key> = {
+        let mut f = arch.kuna_gottailcall.followed.borrow_mut();
+        let mine: Vec<Key> = f.iter().filter(|(c, k)| *c == own && *k != own).map(|(_, k)| *k).collect();
+        f.retain(|(c, _)| *c != own);
+        mine
+    };
+    for k in followed {
         if !arch.kuna_gottailcall.callable.contains_key(&k) {
             arch.kuna_gottailcall.waiting.entry(k).or_default().insert(own);
         }
@@ -230,7 +246,7 @@ fn takes_every_input(
 /// Drop the function's recovered-tail-call warnings that a new flow of it in
 /// a callee-first run does not raise again (`pending`). A redo can refuse a
 /// tail call the first decompile took, and the stale `// tail-call` would
-/// print on the switch the redo follows.
+/// print on the body the redo copies in.
 pub(crate) fn clear_stale_warnings(arch: &mut Architecture, entry: &Address, pending: &[(uint4, Address, String)]) {
     if !arch.kuna_gottailcall.recording {
         return;

@@ -225,13 +225,13 @@ fn unescape_legacy(name: &str) -> String {
     out
 }
 
-/// Strip the legacy 17-character disambiguator (`::h` + 16 hex digits) some
+/// Strip the legacy 17-character disambiguator (`::h` + 16 lowercase hex digits) some
 /// demanglers leave on the tail.
 fn strip_hash_suffix(name: &str) -> &str {
     match name.rfind("::h") {
         Some(i) => {
             let tail = &name[i + 3..];
-            if tail.len() == 16 && tail.bytes().all(|c| c.is_ascii_hexdigit()) {
+            if tail.len() == 16 && tail.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f')) {
                 &name[..i]
             } else {
                 name

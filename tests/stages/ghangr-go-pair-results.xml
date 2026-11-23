@@ -39,6 +39,19 @@
   <com>load function main.modernForward</com><com>decompile</com><com>print C</com>
   <com>load function main.consume</com><com>decompile</com><com>print C</com>
   <com>echo Go result outputs end</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-pair-signedness/linux-amd64</com>
+  <com>option godwarfsig on</com><com>read symbols</com>
+  <com>option outlang go</com>
+  <com>echo Go signedness pairs begin</com>
+  <com>load function main.Retype</com><com>decompile</com><com>print C</com>
+  <com>load function main.MergeRetype</com><com>decompile</com><com>print C</com>
+  <com>echo Go signedness pairs end</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-pair-signedness/linux-amd64</com>
+  <com>option godwarfsig off</com><com>read symbols</com>
+  <com>option outlang go</com>
+  <com>load function main.Retype</com><com>decompile</com><com>print C</com>
 </script>
 <stringmatch name="Go DWARF signatures off retain the register byte carrier" min="1" max="1">func pair\(a0 int64, a1 int64\) \[16\]byte</stringmatch>
 <stringmatch name="Go paired signatures preserve both source integer results" min="2" max="2">func pair\(a int64, b int64\) \(int64, int64\)</stringmatch>
@@ -110,4 +123,9 @@
 ^  return v1;$
 ^\}$
 ^\s*Go result outputs end$</stringmatch>
+<stringmatch name="Go pair signedness conversion constructs matching field types" min="2" max="2">func\(v struct \{ result0 int64; result1 uint64 \}\) struct \{ result0 uint64; result1 int64 \} \{ return struct \{ result0 uint64; result1 int64 \}\{uint64\(v\.result0\), int64\(v\.result1\)\} \}</stringmatch>
+<stringmatch name="Go pair signedness conversion evaluates each source once" min="2" max="2">Mixed\(a,b,pick\)</stringmatch>
+<stringmatch name="Go pair signedness control keeps the correctly typed alternate results" min="1" max="1">v1\.result0,v1\.result1 = Reorder\(a,b,pick\)</stringmatch>
+<stringmatch name="Go pair signedness off keeps the raw call separate" min="1" max="1">^func Retype\(\) \{$
+^  Mixed\(\)$</stringmatch>
 </decompilertest>

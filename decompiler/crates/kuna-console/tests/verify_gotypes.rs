@@ -310,7 +310,7 @@ fn check_named_struct(arch: &str) {
         let file = object::File::parse(bytes.as_slice()).unwrap();
         let version = kuna_analysis::loader::gobuildinfo::buildinfo_blob(&file)
             .and_then(kuna_analysis::loader::gobuildinfo::version_from_blob);
-        if !matches!(version, Some((1, 18..=25))) {
+        if !matches!(version, Some((1, 18..=27))) {
             assert!(tf.find_by_name("main.Point").unwrap().is_none(), "unsupported 32-bit layout");
             let _ = std::fs::remove_dir_all(&dir);
             return;
@@ -585,8 +585,8 @@ fn build_go_src(dir: &std::path::Path, out_bin: &std::path::Path, arch: &str, sr
 /// The `itab` leg of `gotypeglobals`: on a stripped build, `main.main`'s
 /// interface conversion names its dispatch table `go:itab.main.Dog,main.Speaker`
 /// instead of a bare `&DAT_`; with the option off the record is anonymous
-/// again. Works across the `itablinks`-slice (go≤1.25) and contiguous-region
-/// (go1.26+) layouts the installed toolchain uses.
+/// again. Works across the `itablinks`-slice (go≤1.26) and contiguous-region
+/// (go1.27+) layouts the installed toolchain uses.
 #[test]
 fn stripped_go_itab_renders_named() {
     if !go_available() {

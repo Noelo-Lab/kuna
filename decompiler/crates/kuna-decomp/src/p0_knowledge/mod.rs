@@ -47,6 +47,8 @@ pub mod kuna_goabi;
 // (kuna) Discriminant-value naming for recovered variant parts (load-time,
 // env-bridged; the first VariantLayout consumer).
 pub mod kuna_gotypes;
+pub mod kuna_gopointermethod;
+pub mod kuna_gostringinput;
 // (kuna) Language facets: what a C-shaped type means in the source language
 // (the VariantLayout-style side table on the type factory).
 pub mod kuna_langfacet;

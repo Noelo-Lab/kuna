@@ -123,6 +123,7 @@ impl Action for ActionSiteTypeLock {
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         crate::kuna_gonewtype::contribute(data);
+        crate::kuna_swiftmetaresult::contribute(data);
         if apply_pending(data) {
             self.base.count += 1;
         }

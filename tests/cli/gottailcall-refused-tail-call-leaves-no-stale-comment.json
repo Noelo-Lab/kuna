@@ -27,13 +27,12 @@
       "eq": 0
     },
     "stdout_matches": [
-      "int fwd5\\(int a0,int a1,int a2,int a3,int a4\\)\n\\{\n  switch\\(0x1110\\) \\{\n",
-      "return a1 \\* a2 \\+ a0 \\+ a3 \\* \\(a4 \\+ 1\\);"
+      "int fwd5\\(int a0,int a1,int a2,int a3,int a4\\)\n\\{\n  return a1 \\* a2 \\+ a0 \\+ a3 \\* \\(a4 \\+ 1\\);\n\\}"
     ],
     "stdout_absent": [
-      "switch\\(0x1110\\) \\{ // tail-call"
+      "\\(a4 \\+ 1\\); // tail-call"
     ]
   },
-  "notes": "x86-64 -fno-plt: fwd5 jumps through five's GOT slot and is redone once five is filed, but that tail call passes four of five's five arguments (the caller writes r8 itself), so the check refuses it and the caller is decompiled again with five's body copied in. The refused tail call's warning must not survive the redo as a `// tail-call` on the switch.",
-  "probe_id": "p-d466bdeec4f3"
+  "notes": "x86-64 -fno-plt: fwd5 jumps through five's GOT slot and is redone once five is filed, but that tail call passes four of five's five arguments (the caller writes r8 itself), so the check refuses it and the caller is decompiled again with five's body copied in. The refused tail call's warning must not survive the redo as a `// tail-call` on the copied-in body.",
+  "probe_id": "p-aa58b5a8c34d"
 }

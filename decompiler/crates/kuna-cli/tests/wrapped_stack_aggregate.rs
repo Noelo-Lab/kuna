@@ -3,6 +3,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 const PROTOTYPES: &[(&str, &str)] = &[
     ("readtemp0", "short readtemp0(struct dev d)"),
@@ -123,7 +124,7 @@ __attribute__((force_align_arg_pointer)) void _start(void){{int r=driver();__asm
                         "{fixture} {cc} {host_opt}: {}\n{printed}",
                         String::from_utf8_lossy(&compile.stderr)
                     );
-                    let run = Command::new(&exe).output().expect("run printed C");
+                    let run = Command::new(&exe).capped_output().expect("run printed C");
                     assert!(
                         run.status.success(),
                         "{fixture} {cc} {host_opt}: {:?}\n{printed}",

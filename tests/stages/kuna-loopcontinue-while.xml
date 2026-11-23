@@ -1,0 +1,58 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    `loopcontinue`: a jump to a conditional loop's own test is `continue;`.
+    Continue recovery covered only infinite loops, so in a do-while the jump
+    from a switch arm to the block that holds nothing but the loop test
+    printed `goto label_X;` and an empty `label_X: ;` above `} while (...)`.
+    A while-do (not a for) continues at its condition block and a do-while
+    at a last leaf that prints only the test.
+
+    Stage / sub-stage: P8 "goto-quality", option `loopcontinue on|off`.
+
+    The bytes are little2_attributeValueTok from lib/xmltok.c of expat 2.8.2
+    (MIT, after ./configure), built by gcc 15.3 at -O2 -fno-pie -no-pie
+    -nostartfiles -nostdlib with unresolved symbols ignored, entry
+    XmlInitEncoding; the function sits at 0x407f50 and its jump table at
+    0x40ee40.  Pass 1 is the default, pass 2 `option loopcontinue off`.
+    Pass 3 is the default in Rust, whose do-while is `loop { ..; if !(c)
+    { break; } }`: a `continue;` there would skip the test, so the jump keeps
+    its goto marker.
+-->
+<bytechunk space="ram" offset="0x407f50">
+f30f1efa4989c84839d60f83290100004889d04829f04883f8010f841f0100004889f00fb6480184c975250fb60880bc0f880000001577200fb68c0f88000000
+3eff24cd40ee40000f1f84000000000083c12880f90376304883c0024889d14829c14883f9017fbb498900b806000000c30f1f80000000004839c675eb488d46
+02eb4b0f1f4400004883c0044889d14829c14883f9017f8bebce660f1f4400004839c675c3488d46024829c24883fa010f8e8f000000807e030075120fb65602
+80bc17880000000a7504488d4604498900b807000000c3660f1f84000000000049890031c0c3662e0f1f8400000000004839c60f856fffffff4883c6024c89c1
+e95bfcffff0f1f004839c60f8557ffffff4883c602b827000000498930c366904883c0034889d14829c14883f9010f8feffeffffe92fffffffb8fcffffffc3b8
+ffffffffc3b8fdffffffc30f1f440000
+</bytechunk>
+<bytechunk space="ram" offset="0x40ee40" readonly="true">
+a87f400000000000a87f40000000000030804000000000004080400000000000a87f400000000000a87f4000000000007080400000000000d87f400000000000
+a87f400000000000f07f400000000000c87f400000000000a87f400000000000a87f400000000000a87f400000000000a87f400000000000a87f400000000000
+a87f400000000000a87f400000000000a87f400000000000a87f400000000000a87f4000000000005880400000000000
+</bytechunk>
+<symbol space="ram" offset="0x407f50" name="little2_attributeValueTok"/>
+<symbol space="ram" offset="0x407cb0" name="little2_scanRef"/>
+</binaryimage>
+<script>
+  <com>lo fu little2_attributeValueTok</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option loopcontinue off</com>
+  <com>lo fu little2_attributeValueTok</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option loopcontinue on</com>
+  <com>option setlanguage rust-language</com>
+  <com>lo fu little2_attributeValueTok</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="LOOPCONTINUE-WHILE #1: the case that jumps to the do-while test continues" min="1" max="1">^          v1 = &amp;v1\[4\];$
+^          continue;$</stringmatch>
+<stringmatch name="LOOPCONTINUE-WHILE #2: with the option off it jumps to an empty label above the test" min="1" max="1">^          goto label_407fe6;$</stringmatch>
+<stringmatch name="LOOPCONTINUE-WHILE #3: the empty label prints only with the option off" min="1" max="1">^label_407fe6:$</stringmatch>
+<stringmatch name="LOOPCONTINUE-WHILE #4: 19 gotos over both passes, nine by default and ten with the option off" min="19" max="19">goto label_</stringmatch>
+<stringmatch name="LOOPCONTINUE-WHILE #5: Rust's loop-and-break do-while keeps the jump to its test as a goto marker" min="1" max="1">panic!\("kuna: unstructured goto to label_407fe6"\)</stringmatch>
+</decompilertest>

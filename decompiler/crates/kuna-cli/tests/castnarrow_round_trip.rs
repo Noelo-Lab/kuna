@@ -8,6 +8,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 const SOURCE: &str = include_str!("../../kuna-analysis/tests/fixtures/castnarrow_x86_64.c");
 
@@ -99,7 +100,7 @@ const IMAGES: &[(&str, &[(&str, &str)])] = &[
             ("v2 = (short)a0;", "v2 = a0;"),
             ("v1 = (unsigned char)(a0 >> 3);", "v1 = a0 >> 3;"),
             ("*a1 = (char)a0;", "*a1 = a0;"),
-            ("a1[4] = (char)((unsigned long)a0 >> 0x20);", "a1[4] = (unsigned long)a0 >> 0x20;"),
+            ("a1[4] = (char)(a0 >> 0x20);", "a1[4] = a0 >> 0x20;"),
             ("return (int)x;", "return x;"),
             ("return (short)x;", "return x;"),
         ],
@@ -121,7 +122,7 @@ const IMAGES: &[(&str, &[(&str, &str)])] = &[
             ("v1 = toupper((int)a0);", "v1 = toupper(a0);"),
             ("return v1 + abs((int)a0);", "return v1 + abs(a0);"),
             ("v3 = (short)a0;", "v3 = a0;"),
-            ("a1[2] = (char)((unsigned long)a0 >> 0x10);", "a1[2] = (unsigned long)a0 >> 0x10;"),
+            ("a1[2] = (char)(a0 >> 0x10);", "a1[2] = a0 >> 0x10;"),
             ("return (short)x;", "return x;"),
         ],
     ),
@@ -198,7 +199,7 @@ fn a_narrowing_into_a_destination_of_its_type_round_trips_through_the_printed_c(
                         "{cc} {level} rejected the printed C ({image}, castnarrow {opt}):\n{}\n{text}",
                         String::from_utf8_lossy(&out.stderr)
                     );
-                    let run = Command::new(&exe).output().expect("run the round trip");
+                    let run = Command::new(&exe).capped_output().expect("run the round trip");
                     assert!(
                         run.status.success(),
                         "{image} printed with castnarrow {opt} and built by {cc} {level} computes a different value:\n{}\n{text}",

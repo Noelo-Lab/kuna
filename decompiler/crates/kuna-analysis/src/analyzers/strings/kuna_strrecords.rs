@@ -71,16 +71,16 @@ const DIRECT_MIN_LEN: u64 = 4;
 const MAX_RECORDS: usize = 65536;
 
 /// A read-only data region `[vma, vma+len)` with its raw file bytes.
-struct RoRegion<'a> {
-    vma: u64,
-    data: &'a [u8],
+pub(crate) struct RoRegion<'a> {
+    pub(crate) vma: u64,
+    pub(crate) data: &'a [u8],
 }
 
 impl RoRegion<'_> {
-    fn contains(&self, p: u64) -> bool {
+    pub(crate) fn contains(&self, p: u64) -> bool {
         p >= self.vma && p < self.vma + self.data.len() as u64
     }
-    fn bytes(&self, p: u64, n: u64) -> Option<&[u8]> {
+    pub(crate) fn bytes(&self, p: u64, n: u64) -> Option<&[u8]> {
         if !self.contains(p) || p + n > self.vma + self.data.len() as u64 {
             return None;
         }
@@ -92,7 +92,7 @@ impl RoRegion<'_> {
 /// The sections whose bytes may hold string text or records: genuinely
 /// read-only data, plus `.data.rel.ro` (read-only after relocation, where a
 /// PIE keeps its relocated record slots).
-fn ro_regions<'a>(file: &'a object::File) -> Vec<RoRegion<'a>> {
+pub(crate) fn ro_regions<'a>(file: &'a object::File) -> Vec<RoRegion<'a>> {
     file.sections()
         .filter(|s| {
             matches!(
@@ -115,7 +115,7 @@ fn go_slot_regions<'a>(file: &'a object::File) -> Vec<RoRegion<'a>> {
 
 /// Is this record text? Valid UTF-8 whose chars are >=90% printable or
 /// whitespace — the engine rule's text-evidence test, applied to exact bytes.
-fn is_text(bytes: &[u8]) -> bool {
+pub(crate) fn is_text(bytes: &[u8]) -> bool {
     let Ok(s) = core::str::from_utf8(bytes) else { return false };
     let total = s.chars().count();
     if total == 0 {
@@ -139,7 +139,7 @@ fn record_at(regions: &[RoRegion], ptr: u64, len: u64, min_len: u64) -> Option<S
 }
 
 /// Read a little-endian pointer-width word.
-fn read_word(bytes: &[u8]) -> u64 {
+pub(crate) fn read_word(bytes: &[u8]) -> u64 {
     match bytes.len() {
         8 => u64::from_le_bytes(bytes.try_into().expect("8 bytes")),
         4 => u32::from_le_bytes(bytes.try_into().expect("4 bytes")) as u64,

@@ -142,3 +142,15 @@ fn malformed_names_terminate() {
         assert!(!is_cleanup_call_name(junk), "{junk} must not match");
     }
 }
+
+#[test]
+fn uppercase_hash_shaped_user_calls_are_not_cleanup() {
+    for suffix in ["hABCDEF0123456789", "hAbCdE0123456789f", "h0123456789abcdez", "h12"] {
+        let name = format!("core::ptr::drop_in_place::{suffix}");
+        assert_eq!(normalize_rust_name(&name), name);
+        assert!(!is_cleanup_call_name(&name));
+    }
+    let lower = "core::ptr::drop_in_place::h0123456789abcdef";
+    assert_eq!(normalize_rust_name(lower), "core::ptr::drop_in_place");
+    assert!(is_cleanup_call_name(lower));
+}
