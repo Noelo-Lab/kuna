@@ -234,6 +234,23 @@ encoding decodes and disassembles as before, and `FCVTZS` and `FCVTZU` lift
 to the same p-code. This is a SLEIGH correctness repair, without an inference
 option.
 
+The AArch64 sign-extending byte and halfword loads with a `W` destination
+(`ldrsb`, `ldrsh`, `ldursb`, `ldursh`, `ldtrsb` and `ldtrsh`, in every
+addressing form) sign-extend the loaded value to 32 bits and zero bits 63:32
+of the `X` register, as every write of a `W` register does. Upstream's
+constructors in
+`specs/Ghidra/Processors/AARCH64/data/languages/AARCH64base.sinc` sign-extend
+`ldrsb`, `ldrsh`, `ldursh` and `ldtrsh` into all 64 bits, so `ldrsh w0,[x0]`
+of `0xd564` left `x0 = 0xffffffffffffd564` where the processor leaves
+`0x00000000ffffd564`, and a `W` result later read as 64 bits (an index, an
+address, a returned `unsigned long`) was negative; they zero-extend `ldursb`
+and `ldtrsb` with a `W` destination, losing the sign. Each now lifts as
+`local tmp:4 = sext(*:N addr); Rt_GPR64 = zext(tmp);`. The `X`-destination
+forms, `ldrsw` and the `ldapursb`/`ldapursh` constructors were already right
+and are unchanged. Found by comparing one-instruction lifts against Unicorn
+on AArch64 builds of `ninja`, `libsnappy` and `libdouble-conversion`. This is
+a SLEIGH correctness repair, without an inference option.
+
 The AArch64 pointer-authentication instructions keep their register defined
 while hidden. `AARCH64.pspec` leaves the `ShowPAC` context at 0 for every
 AArch64 language, so `pac*`, `aut*` and `xpac*` lift under the `"hide"`
