@@ -1,0 +1,44 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/cortexm_falseentry_le32",
+    "binary_sha256": "10bf70194e93fd0d27d41c52218b55fdf5f85066d19e5e2cb2aba95b839b288a",
+    "binary_size": 569,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/cortexm_falseentry_le32",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stdout_matches": [
+      "\"address_hex\"\\s*:\\s*\"0x8008020\"",
+      "\"address_hex\"\\s*:\\s*\"0x8008040\"",
+      "\"address_hex\"\\s*:\\s*\"0x8008068\"",
+      "\"address_hex\"\\s*:\\s*\"0x8008080\""
+    ],
+    "stdout_absent": [
+      "\"address_hex\"\\s*:\\s*\"0x8008026\"",
+      "\"address_hex\"\\s*:\\s*\"0x8008046\"",
+      "\"address_hex\"\\s*:\\s*\"0x8008084\""
+    ]
+  },
+  "notes": "Reduced from cleanflight_DALRCF405 0x8010328 (uartTotalRxBytesWaiting), where discovery listed 0x801032c and 0x8010340 inside the function and funcboundflow cut it at the first. The prologue scans plant an entry at a push run into by a predicated return's skip (0x8008026), at a push only the preceding function's cbz reaches (0x8008046), and at the frame push of a pointer-only handler (0x8008084); none is a function, and the handler's real start 0x8008080 is. 0x8008068 follows a call that never returns and a nop, and stays."
+}

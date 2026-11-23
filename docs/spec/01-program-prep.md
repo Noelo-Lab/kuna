@@ -9675,6 +9675,54 @@ output — discovery-only `kuna functions` runs about 6% longer on a Cortex-M im
 because it discovers and reports more functions — and is amortized away end to end,
 where the extra bodies dominate the extra discovery.
 
+**Interior entries** (always on wherever the walk's functions are committed,
+i.e. with `listing` and `funcstart_patterns`; kuna;
+`decompiler/crates/kuna-analysis/src/listing/kuna_falseentry.rs (interior_entries)`)
+remove the entries the speculative oracles above plant inside real functions. The
+prologue-pattern scan, the ARM frame scan and the gap walk judge a candidate by its
+first bytes, and on optimized code those bytes occur mid-function: a shrink-wrapped
+function pushes its frame after an early test (`cmp; bgt out; push {r4,r5,lr}`), a
+variadic one saves its argument registers before the frame push, a switch case or a
+block the compiler moved past the return opens with a push, and when the gap walk
+skips a real entry whose first two mnemonics are rare it accepts the next block that
+looks like a prologue. The decompiler stops the real function's flow at such an
+entry (`funcboundflow`, §2) and decompiles the rest as a function of its own, so the
+real function loses the code past it. The pass reads the finished partition and every
+entry stream of this commit (the load-time entries included) and drops, through
+`AnalysisOutput::interior_entries` at the commit, the candidates that are another
+function's code. Code is **live** when it is reachable from an attested entry over
+static branch, call and switch-case targets and over fall-throughs that provably
+continue — not past a call to a function no path of which returns, an indirect call
+or a user operation, the trust notion of `poolextents` — or, failing that, from a
+Thumb code pointer stored in data, in a literal pool the Listing proves, or naming a
+candidate. An entry is **attested** when a symbol, an entry oracle, a load-time
+oracle other than the pattern scan, a code-pointer scan, a call table or a direct call
+(from any candidate's decoded code) names it, and an attested entry is never dropped:
+a hand-written routine can fall into a second, separately called one. Three facts make
+an unattested candidate interior. (1) A live instruction that is not a call, a user
+operation, padding or zero fill ends exactly at it and continues there, by falling
+through or as the skip of a predicated instruction (`it eq; bxeq lr`); an
+unconditional branch to the next address is a tail call and does not count. (2) The
+flow of the surviving entry before it, entering no callee and stepping onto no other
+surviving entry, reaches a conditional branch or a switch case (the walk's resolved
+tables, or the run of Thumb code pointers stored right after an `ldr.w pc,[rN,rM,lsl
+#2]`) that targets it. (3) That flow runs into it and also branches past it, at or
+before the next surviving entry: a shrink-wrapped function whose real entry only a
+speculative oracle found. Facts 2 and 3 read the preceding entry's own flow, so a
+function whose first instruction heads a loop keeps its entry — its loop branch is
+reached only through it. When the code that runs into an interior entry is reached
+only from a code pointer no oracle accepted (the pointer-entry scan needs an
+undefined gap, and the planted entry splits it), that pointer target is emitted as an
+entry in its place, unless live code runs into it too. Measured on the 63 stripped
+ARM decbench binaries against their unstripped twins (34,019 symbol starts), entries
+at no symbol fall from 1,616 to 743, no symbol start is dropped and the ten entries
+added are symbol starts. On the fixture `cortexm_falseentry_le32` the push after a
+predicated return, the push after a `cbz` past the return and the push inside a
+pointer-only handler stop being functions, the handler's real start becomes one, and
+a pattern-only function after padding and a call that never returns stays one. A
+strict no-op on x86-64, whose drivers leave `funcstart_patterns` off, and on the XML
+datatest path.
+
 Driver defaults (kuna): `kuna decompile-all` and `kuna decompile` inject
 `option listing on` unless the caller names `listing` (DIV-15/DIV-22) — without it
 the default-on no-return propagation is a structural no-op and a stripped binary's

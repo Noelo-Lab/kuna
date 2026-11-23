@@ -46,6 +46,7 @@ pub mod kuna_mzsweep;
 pub mod kuna_rawdiscover;
 pub mod kuna_rawextent;
 pub mod kuna_tailcallentry;
+pub mod kuna_falseentry;
 pub mod kuna_thunkentry;
 mod kuna_walkcontext;
 mod kuna_fingerprintcontext;

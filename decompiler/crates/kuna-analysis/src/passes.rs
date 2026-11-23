@@ -858,6 +858,8 @@ pub fn run_listing_consumers_replaying_observed(
         return Vec::new();
     }
     let mut seeds = listing_seeds_for_language(&file, bytes, Some(arch.get_description()));
+    let mut vouched: std::collections::BTreeSet<u64> = seeds.iter().copied().collect();
+    vouched.extend(cold_entries.iter().copied());
     // (kuna) The fast inventory walk leaves out the functions a Go pclntab
     // names, where the `gopclntab` pass ran and commits them: the pass set
     // follows the load-time verdict, not a later `sourcelang` force.
@@ -884,8 +886,11 @@ pub fn run_listing_consumers_replaying_observed(
     // Gated by the same flag, so x86-64 (funcstart_patterns off) is unchanged.
     if arch.analysis_listing && arch.analysis_funcstart_patterns {
         let execs = crate::entry::executable_sections(&file);
+        let patterns = crate::entry::full_pattern_starts(&file);
+        let pattern_set: std::collections::BTreeSet<u64> = patterns.iter().copied().collect();
+        vouched.extend(committed_entries.iter().copied().filter(|vma| !pattern_set.contains(vma)));
         seeds.extend(
-            crate::entry::full_pattern_starts(&file)
+            patterns
                 .into_iter()
                 .filter(|&vma| crate::entry::in_executable_section(&execs, vma)),
         );
@@ -988,7 +993,9 @@ pub fn run_listing_consumers_replaying_observed(
                 break;
             }
             let before = seeds.len();
-            seeds.extend(accepted.into_iter().take(remaining));
+            let accepted: Vec<u64> = accepted.into_iter().take(remaining).collect();
+            vouched.extend(accepted.iter().copied());
+            seeds.extend(accepted);
             seeds.sort_unstable();
             seeds.dedup();
             let added = seeds.len() - before;
@@ -1020,6 +1027,7 @@ pub fn run_listing_consumers_replaying_observed(
         if let (Some(evidence), Some(code_space)) = (evidence, arch.manage().get_default_code_space()) {
             for _ in 0..crate::aif::kuna_addrtakenentry::MAX_ROUNDS {
                 let accepted = evidence.accept(&listing, translate, std::rc::Rc::clone(code_space));
+                vouched.extend(accepted.iter().copied());
                 let before = seeds.len();
                 seeds.extend(accepted);
                 seeds.sort_unstable();
@@ -1243,6 +1251,7 @@ pub fn run_listing_consumers_replaying_observed(
                 listing.exec_ranges(),
             );
             if !ptr.is_empty() {
+                vouched.extend(ptr.iter().copied());
                 let before = seeds.len();
                 seeds.extend(ptr);
                 seeds.sort_unstable();
@@ -1279,6 +1288,7 @@ pub fn run_listing_consumers_replaying_observed(
     // absorption. Being purely additive is what makes "never removes an entry" a
     // property of the wiring. ARM-only inside `pointer_entry_seeds`, so every
     // non-ARM object is a strict no-op.
+    vouched.extend(frame_pointers.iter().flatten().copied());
     let mut ptrentry_out: Vec<u64> = Vec::new();
     if let Some(checked) = &frame_aif {
         ptrentry_out.clone_from(&checked.pointer_entries);
@@ -1463,6 +1473,35 @@ pub fn run_listing_consumers_replaying_observed(
         modes.entries = retained_entries;
         modes.arm_frames = frame_record;
         out.push(("armframes", modes));
+    }
+    // (kuna `falseentry`) Every entry another function's code runs into, or that
+    // the entry before it branches to locally, is that function's code. Read off
+    // the finished partition and every entry stream above, so the commit drops
+    // it whichever oracle proposed it. See `listing/kuna_falseentry.rs`.
+    if arch.analysis_listing && arch.analysis_funcstart_patterns {
+        if let Some(code_space) = arch.manage().get_default_code_space() {
+            let mut candidates: std::collections::BTreeSet<u64> =
+                committed_entries.iter().copied().chain(listing.functions().map(|(&vma, _)| vma)).collect();
+            let mut no_return = std::collections::BTreeSet::new();
+            let mut pools = Vec::new();
+            for (id, o) in &out {
+                candidates.extend(o.entries.iter().copied());
+                no_return.extend(o.noreturn.iter().map(|f| f.addr));
+                pools.extend(o.arm_pool_extents.iter().copied());
+                if matches!(*id, "ptrentry" | "calltable") {
+                    vouched.extend(o.entries.iter().copied());
+                }
+            }
+            let verdict = crate::listing::kuna_falseentry::scan(
+                &file, &listing, translate, code_space, &candidates, &vouched, &pools, &no_return,
+            );
+            if !verdict.interior.is_empty() {
+                let mut fe_out = AnalysisOutput::default();
+                fe_out.interior_entries = verdict.interior.into_keys().collect();
+                fe_out.entries = verdict.entries.into_iter().collect();
+                out.push(("falseentry", fe_out));
+            }
+        }
     }
     if let Some(observer) = observer {
         observer(&file, &listing);

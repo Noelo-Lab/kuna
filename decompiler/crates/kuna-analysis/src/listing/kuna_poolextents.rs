@@ -90,7 +90,7 @@ fn direct_callee(insn: &Insn) -> Option<u64> {
 }
 
 /// Does flow provably continue from `insn` into its fall-through?
-fn falls_through(insn: &Insn, returns: &BTreeSet<u64>) -> bool {
+pub(crate) fn falls_through(insn: &Insn, returns: &BTreeSet<u64>) -> bool {
     if insn.fall_through.is_none() {
         return false;
     }
