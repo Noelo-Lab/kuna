@@ -1429,8 +1429,11 @@ copied temporary, as ARM's `sub sp,#8` leaves it) to the entry stack pointer.
 An incoming register the prototype model could pass a parameter in is *live*
 when something computes with it, meaning any use but a move, a call argument, a
 merge, the preserved high part of a partial write or a store; it is *spilled*
-when its only uses are stores to frame slots in the entry block and some frame
-load reads such a slot into a different register. A push and pop of the same
+when its only uses are stores to slots of the function's own frame in the
+entry block and some frame load reads such a slot into a different register. A
+store to the caller's side of the entry stack pointer (a register parameter's
+home or save area, as PowerPC64 ELFv1 and Windows x64 provide) is neither:
+optimized code uses those slots too. A push and pop of the same
 register is a save and restore, not a reload, and a load made at a call
 instruction is the callee's stack argument. A callee-saved register is
 *reused* when its incoming value is stored to the frame and the body writes it

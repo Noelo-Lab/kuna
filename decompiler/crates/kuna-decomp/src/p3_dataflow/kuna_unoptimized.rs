@@ -1,15 +1,15 @@
 //! (kuna) Was this function compiled without optimization?
 //!
-//! An unoptimizing compiler gives every parameter a home in the frame: the
-//! prologue stores each incoming argument register to its own stack slot and
-//! the body loads the value back from there whenever it needs it, and no value
-//! is kept in a callee-saved register. An optimizing one computes with the
-//! argument registers directly and keeps values live across calls in
-//! callee-saved registers. [`detect`] decides once per decompile, right after
-//! the first heritage pass, when the registers are in SSA form but the stack is
-//! not yet: a spill is still the raw `STORE` of an incoming register to the
-//! entry stack pointer plus a constant, and a reload the raw `LOAD` from the
-//! same offset.
+//! An unoptimizing compiler gives every parameter a home in its frame: the
+//! prologue stores each incoming argument register to a slot of the function's
+//! own frame and the body loads the value back from there whenever it needs
+//! it, and no value is kept in a callee-saved register. An optimizing one
+//! computes with the argument registers directly and keeps values live across
+//! calls in callee-saved registers. [`detect`] decides once per decompile,
+//! right after the first heritage pass, when the registers are in SSA form but
+//! the stack is not yet: a spill is still the raw `STORE` of an incoming
+//! register to the entry stack pointer plus a constant, and a reload the raw
+//! `LOAD` from the same offset.
 //!
 //! The verdict reads no symbol and no type; a function with no parameter
 //! evidence and no frame pointer is not called unoptimized.
@@ -188,13 +188,14 @@ enum Use {
     /// Computed with: an operand of anything but a move, a call argument, a
     /// merge, a piece of a partial write or a frame store.
     Live,
-    /// Only stored, to these frame offsets in the entry block.
+    /// Only stored, to these slots of the function's own frame in the entry
+    /// block.
     Spilled(Vec<i64>),
     /// Neither.
     Idle,
 }
 
-fn classify(fd: &Funcdata, frame: &mut Frame, vn: VarnodeId, entry: Option<BlockId>) -> Use {
+fn classify(fd: &Funcdata, frame: &mut Frame, vn: VarnodeId, entry: Option<BlockId>, own: &dyn Fn(i64) -> bool) -> Use {
     let mut spills = Vec::new();
     let members = family(fd, vn);
     for &m in &members {
@@ -207,6 +208,7 @@ fn classify(fd: &Funcdata, frame: &mut Frame, vn: VarnodeId, entry: Option<Block
                 OpCode::CPUI_CALL | OpCode::CPUI_CALLIND if o.get_in(0) != Some(m) => {}
                 OpCode::CPUI_STORE if o.get_in(2) == Some(m) && o.get_in(1) != Some(m) => {
                     match o.get_in(1).and_then(|a| frame.offset(a)) {
+                        Some((off, _)) if !own(off) => {}
                         Some((off, _)) if o.get_parent() == entry => spills.push(off),
                         _ => return Use::Live,
                     }
@@ -261,6 +263,10 @@ pub fn evidence(fd: &Funcdata) -> Option<Evidence> {
     let sp_offset = fd.vbank().get(sp)?.get_offset();
     let mut frame = Frame { fd, sp, sp_offset, memo: HashMap::new() };
     let entry = fd.bblocks_ref().get_start_block(fd.bblocks_root_pub()).ok();
+    // A slot in the function's own frame; the caller's side (a register
+    // parameter's home or save area) is used by optimized code too.
+    let grows_down = stack.stack_grows_negative();
+    let own = move |off: i64| if grows_down { off < 0 } else { off > 0 };
     let mut ev = Evidence::default();
     // Frame loads as (instruction, frame offset, register filled).
     let mut loads: Vec<(u64, i64, Option<u64>)> = Vec::new();
@@ -318,7 +324,7 @@ pub fn evidence(fd: &Funcdata) -> Option<Evidence> {
         if !fd.get_func_proto().possible_input_param(&v.get_addr(), v.get_size()) {
             continue;
         }
-        match classify(fd, &mut frame, vn, entry) {
+        match classify(fd, &mut frame, vn, entry, &own) {
             Use::Live => ev.live += 1,
             Use::Idle => {}
             Use::Spilled(offsets) => {
