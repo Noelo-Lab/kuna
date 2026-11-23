@@ -1,5 +1,13 @@
 # Stage-model issue testcases
 
+`kuna-boolbranch.xml` checks option `boolbranch` on gcc -O0 x86-64: a `jle`
+over `mov $1`/`mov $0` returns through a kept `if` (fold: `return 0 < x;`), an
+if/else assignment of 1 and 0 keeps its branch, and a flag whose arm also
+updates memory stays a flag. A `cmovg` and an `__builtin_add_overflow` flag
+that is set by a jump and only tested still fold. `kuna-boolbranch-thumb.xml`
+checks the same on Thumb: an `ite gt` block folds under both values, a `ble`
+over two `movs` keeps its `if` under `keep`.
+
 `kuna-wsignload-a64.xml` checks that an AArch64 sign-extending byte or
 halfword load into a `W` register (`ldrsb`, `ldrsh`, `ldursb`, `ldursh` in
 the unsigned-offset, register, unscaled, pre- and post-index forms)

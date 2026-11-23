@@ -1,0 +1,38 @@
+<decompilertest>
+<!-- P3 conditional execution, option boolbranch (default keep), Thumb.
+     Two hand-assembled forms of int f(int a, int b) { return a > b; }:
+
+       itgreater 0x10000: cmp r0,r1; ite gt; movgt r0,#1; movle r0,#0; bx lr
+       brgreater 0x10010: cmp r0,r1; ble 1f; movs r0,#1; b 2f; 1: movs r0,#0; 2: bx lr
+
+     The IT block lifts each guarded mov to a CBRANCH that skips the rest of
+     its own instruction, so it folds under keep as under fold. brgreater's
+     ble is a branch instruction whose arms are other instructions; fold
+     prints its condition, keep keeps the if. -->
+<binaryimage arch="ARM:LE:32:v8:default">
+<bytechunk space="ram" offset="0x10000" readonly="true">8842ccbf012000207047</bytechunk>
+<bytechunk space="ram" offset="0x10010" readonly="true">884201dd012000e000207047</bytechunk>
+</binaryimage>
+<script>
+<com>set context TMode 1 [ram,0x10000] [ram,0x1001f]</com>
+<com>map function r0x10000 itgreater</com>
+<com>map function r0x10010 brgreater</com>
+<com>parse line extern int itgreater(int a, int b);</com>
+<com>parse line extern int brgreater(int a, int b);</com>
+<com>option boolbranch fold</com>
+<com>lo fu brgreater</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option boolbranch keep</com>
+<com>lo fu itgreater</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu brgreater</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="BOOLBRANCH-THUMB #1: fold folds the branch and keep still folds the IT block" min="2" max="2">^  return \(uint4\)\(b &lt; a\);$</stringmatch>
+<stringmatch name="BOOLBRANCH-THUMB #2: keep keeps the branch instruction's if" min="1" max="1">^  if \(b &lt; a\)$</stringmatch>
+<stringmatch name="BOOLBRANCH-THUMB #3: keep returns the constants from the two arms" min="1" max="1">^    return 1;$</stringmatch>
+</decompilertest>

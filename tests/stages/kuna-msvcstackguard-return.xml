@@ -30,7 +30,9 @@
 
     Two passes flip `msvcstackguard`.  OFF retains exactly the raw checker
     call and cookie algebra.  ON removes the boilerplate and keeps the two
-    machine return values (canonically rendered as `a0 != 0`).  The two
+    machine return values, each on its own path (`return 0;` after the
+    success call, `return 1;` after the failure call; `a0 != 0` under
+    `option boolbranch fold`).  The two
     arm-specific calls keep the control-flow split observable.  This pins the
     option-owned P7-to-P3 restart handoff independently of the generic
     return-preservation heuristic.
@@ -71,6 +73,10 @@ efcdab896745230100000000
 </script>
 <stringmatch name="MSVCSTACKGUARD-RETURN #1: option off retains the raw checker call" min="1" max="1">sub_2100\(</stringmatch>
 <stringmatch name="MSVCSTACKGUARD-RETURN #2: option off retains the cookie read" min="1" max="1">dat_2200 \^</stringmatch>
-<stringmatch name="MSVCSTACKGUARD-RETURN #3: option on keeps failure one and success zero" min="1" max="1">return a0 != 0;</stringmatch>
+<stringmatch name="MSVCSTACKGUARD-RETURN #3: option on keeps failure one and success zero" min="1" max="1">sub_2180\(\);
+return 0;
+\}
+sub_2190\(\);
+return 1;</stringmatch>
 <stringmatch name="MSVCSTACKGUARD-RETURN #4: both passes retain both arm-specific side effects" min="4" max="4">sub_21[89]0\(\);</stringmatch>
 </decompilertest>
