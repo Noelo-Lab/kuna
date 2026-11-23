@@ -187,3 +187,25 @@ fn chunked_workers_give_the_verdicts_of_one_process() {
     assert_eq!(one.len(), 40);
     assert_eq!(rows("3"), one);
 }
+
+/// Tier L's kuna side runs one instruction from the named registers: `sub rsp,
+/// 8` moves the stack pointer down 8, `call rax` pushes the return address
+/// and goes to `rax`, and the same seed gives the same lines.
+#[test]
+fn step_runs_one_instruction_from_the_named_registers() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../kuna-analysis/tests/fixtures/katavm_level1_x86_64");
+    let path = path.to_string_lossy().into_owned();
+    let specs = specs();
+    let args = ["step", &path, "--regs", "RSP,RAX", "--flags", "CF,ZF", "--limit", "8", "--states", "1", "--canonical", "--sleighpath", &specs];
+    let out = verify(&args);
+    assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    let lines: Vec<serde_json::Value> = text.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    let hex = |v: &serde_json::Value| u64::from_str_radix(v.as_str().unwrap().trim_start_matches("0x"), 16).unwrap();
+    let sub = lines.iter().find(|l| l["form"] == "sub RSP,#").expect("a sub rsp");
+    assert_eq!(hex(&sub["out"]["RSP"]), hex(&sub["in"]["RSP"]) - 8);
+    let call = lines.iter().find(|l| l["form"] == "call RAX").expect("a call rax");
+    assert_eq!(hex(&call["next"]), hex(&call["in"]["RAX"]));
+    assert_eq!(call["writes"].as_object().unwrap().len(), 8);
+    assert_eq!(String::from_utf8_lossy(&verify(&args).stdout), text);
+}

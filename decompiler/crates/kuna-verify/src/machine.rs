@@ -42,7 +42,7 @@ impl PcodeEmit for Collect {
     }
 }
 
-fn lift(env: &Env, addr: u64) -> Result<Rc<Insn>, Halt> {
+pub(crate) fn lift(env: &Env, addr: u64) -> Result<Rc<Insn>, Halt> {
     if let Some(i) = env.insns.borrow().get(&addr) {
         return Ok(Rc::clone(i));
     }

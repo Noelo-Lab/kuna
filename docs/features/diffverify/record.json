@@ -176,6 +176,13 @@
     "harness_fixes": ["noreturn-halt", "bool-return", "segment-bases", "thumb-interworking", "barriers", "exclusive-monitor", "x87-extended", "cortex-m-system-registers", "memory-builtins", "readonly-store-trap"],
     "sample_set_after_second_round": {"functions": 250, "agrees": 172, "unknown": 78, "differs": 0}
   },
+  "tier_l": {
+    "results": "docs/features/diffverify/tier-l-results.md",
+    "command": "python3 scripts/diffverify/tier_l.py x86-64|aarch64|thumb BINARY",
+    "forms": {"x86-64": 6686, "thumb": 1330, "aarch64": 789},
+    "differ": {"x86-64": 0, "thumb": 16, "aarch64": 8},
+    "spec_errors": ["aarch64 ldrsh/ldrsb W sign-extends into X", "thumb stmia skips writeback with base in list", "thumb-2 ands/bics/mvns leave C"]
+  },
   "ci": {
     "baseline": "docs/baseline-verify.json",
     "make": "make verify-corpus",

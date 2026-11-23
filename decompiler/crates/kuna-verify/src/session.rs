@@ -179,6 +179,18 @@ pub fn function_entries(path: &str, options: &[(String, String)], spec_roots: &[
         .collect())
 }
 
+/// Load an object file and hand its program to `f`.
+pub fn with_program<R>(
+    path: &str,
+    options: &[(String, String)],
+    spec_roots: &[String],
+    f: impl FnOnce(&ConsoleProgram) -> R,
+) -> Result<R, String> {
+    let (console, _) = run(load_lines(path, options), None, spec_roots, false, None, |_, _| {})?;
+    let prog = dcp(&console).and_then(|d| d.conf.as_ref()).ok_or("no program loaded")?;
+    Ok(f(prog))
+}
+
 /// The console script that decompiles `functions` from an object file. A
 /// function is a name, or an address written `0x...`.
 pub fn binary_script(path: &str, functions: &[String], options: &[(String, String)]) -> Vec<String> {

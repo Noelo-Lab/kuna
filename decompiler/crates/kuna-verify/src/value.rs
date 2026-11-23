@@ -81,15 +81,23 @@ impl FloatFormatProvider for Ieee {
     }
 }
 
-/// The IEEE operations that only move bits: a sign change and a format
-/// conversion of a NaN keep its payload, which a trip through the host's
-/// floats would not.
+/// Results the behavior table does not give as the hardware does: sign
+/// operations on the bits, NaN conversions that keep the payload, and
+/// arithmetic on a NaN, which returns the first NaN operand quieted (x86 SSE,
+/// and ARM with default-NaN mode off).
 fn ieee_bits(opc: OpCode, out: u32, ins: &[(u128, u32)]) -> Option<u128> {
     let &(a, size) = ins.first()?;
     let sign = |n: u32| 1u128 << (n * 8 - 1);
     match (opc, size) {
         (OpCode::CPUI_FLOAT_NEG, 4 | 8) if out == size => Some((a ^ sign(size)) & mask(size)),
         (OpCode::CPUI_FLOAT_ABS, 4 | 8) if out == size => Some(a & !sign(size) & mask(size)),
+        (OpCode::CPUI_FLOAT_ADD | OpCode::CPUI_FLOAT_SUB | OpCode::CPUI_FLOAT_MULT | OpCode::CPUI_FLOAT_DIV, 4 | 8)
+            if out == size && ins.iter().any(|&(v, s)| s == size && is_nan(v, s)) =>
+        {
+            let &(nan, _) = ins.iter().find(|&&(v, s)| s == size && is_nan(v, s))?;
+            let quiet = if size == 4 { 1u128 << 22 } else { 1u128 << 51 };
+            Some(nan | quiet)
+        }
         (OpCode::CPUI_FLOAT_FLOAT2FLOAT, 4) if out == 8 && is_nan(a, 4) => {
             let (s, frac) = ((a >> 31) & 1, a & 0x7f_ffff);
             Some((s << 63) | (0x7ff << 52) | (frac << 29) | (1 << 51))

@@ -24,6 +24,7 @@ pub mod program;
 pub mod report;
 pub mod session;
 pub mod state;
+pub mod step;
 pub mod storage;
 pub mod value;
 pub mod x87;

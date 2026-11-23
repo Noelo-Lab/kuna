@@ -4,6 +4,7 @@
 //! kuna-verify check <binary> <function|0xaddr>... | --all  [--jobs N] [--fn-seconds S] [--contract FILE.c] [--option NAME VALUE]...
 //! kuna-verify corpus <test.xml|dir>...  [--jobs N] [--baseline FILE] [--save-baseline FILE]
 //! kuna-verify localize <test.xml|binary> <function> [--pass N] [--option NAME VALUE]...
+//! kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
 //! common: [--runs N] [--seed S] [--budget OPS] [--json] [--sleighpath DIR]
 //! ```
 //!
@@ -34,6 +35,7 @@ const USAGE: &str = "usage:
   kuna-verify check <binary> <function|0xaddr>... | --all  [--jobs N] [--fn-seconds S] [--contract FILE.c] [--option NAME VALUE]...
   kuna-verify corpus <test.xml|dir>...  [--jobs N] [--baseline FILE] [--save-baseline FILE]
   kuna-verify localize <test.xml|binary> <function> [--pass N] [--option NAME VALUE]...
+  kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
 options: --runs N (256)  --seed S  --budget OPS (200000)  --json  --trace  --sleighpath DIR";
 
 struct Args {
@@ -49,6 +51,12 @@ struct Args {
     baseline: Option<String>,
     save_baseline: Option<String>,
     pass: Option<usize>,
+    regs: Vec<String>,
+    flags: Vec<String>,
+    canonical: bool,
+    states: u32,
+    per_form: usize,
+    limit: usize,
     /// Flags a worker process gets again.
     forward: Vec<String>,
 }
@@ -67,6 +75,12 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         baseline: None,
         save_baseline: None,
         pass: None,
+        regs: Vec::new(),
+        flags: Vec::new(),
+        canonical: false,
+        states: 4,
+        per_form: 2,
+        limit: 2000,
         forward: Vec::new(),
     };
     let mut it = argv.iter();
@@ -105,6 +119,14 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             }
             "--jobs" => a.jobs = Some(num(it.next(), "--jobs")? as usize),
             "--fn-seconds" => a.fn_seconds = num(it.next(), "--fn-seconds")?.max(1),
+            "--regs" | "--flags" => {
+                let v: Vec<String> = it.next().ok_or(format!("{arg} needs names"))?.split(',').filter(|s| !s.is_empty()).map(str::to_string).collect();
+                if arg == "--regs" { a.regs = v } else { a.flags = v }
+            }
+            "--states" => a.states = num(it.next(), "--states")?.max(1) as u32,
+            "--canonical" => a.canonical = true,
+            "--per-form" => a.per_form = num(it.next(), "--per-form")?.max(1) as usize,
+            "--limit" => a.limit = num(it.next(), "--limit")? as usize,
             "--pass" => {
                 let p = num(it.next(), "--pass")?;
                 a.pass = Some(usize::try_from(p).ok().filter(|&p| p > 0).ok_or("--pass counts from 1")?);
@@ -606,6 +628,27 @@ fn run_localize(a: &Args) -> Result<ExitCode, String> {
     })
 }
 
+/// Tier L's kuna side: one JSON line per instruction and state.
+fn run_step(a: &Args) -> Result<ExitCode, String> {
+    let [binary] = a.positional.as_slice() else {
+        return Err(USAGE.to_string());
+    };
+    if a.regs.is_empty() {
+        return Err("step needs --regs".to_string());
+    }
+    let roots = spec_roots(a.sleighpath.as_deref());
+    let opts =
+        kuna_verify::step::Options { seed: a.opts.seed, states: a.states, per_form: a.per_form, limit: a.limit, sweep: 4096, canonical: a.canonical };
+    session::with_program(binary, &a.options, &roots, |prog| {
+        let regs = kuna_verify::step::registers(prog, &a.regs, &a.flags)?;
+        let mut out = std::io::stdout().lock();
+        kuna_verify::step::run(prog, &regs, &opts, |v| {
+            let _ = writeln!(out, "{v}");
+        })
+    })??;
+    Ok(ExitCode::SUCCESS)
+}
+
 /// `corpus`: the file count and the wall time of the whole run; a file count
 /// of 0 is a `check` run over workers, which has a wall time but no files.
 fn print_summary(a: &Args, slowest: &[(f64, String)], rows: &[Row], corpus: Option<(usize, f64)>) {
@@ -658,6 +701,7 @@ fn main() -> ExitCode {
         "corpus" => run_corpus(&a),
         "shard" => run_shard(&a),
         "chunk" => run_chunk_worker(&a),
+        "step" => run_step(&a),
         "localize" => run_localize(&a),
         _ => Err(USAGE.to_string()),
     });
