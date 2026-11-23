@@ -1190,6 +1190,9 @@ pub struct ArchContext {
     /// pre-SSA op graph.  Read by
     /// [`ActionRemoveCleanupCode`](crate::p2_lift::kuna_cleanupcode::ActionRemoveCleanupCode).
     pub remove_cleanup_code: bool,
+    /// (kuna) `option varargsave`: fold the x86-64 System V variadic
+    /// register-save prologue (`p4_calls/kuna_varargsave.rs`).
+    pub vararg_save: bool,
     /// (kuna) `option linuxsyscall`: rewrite a 32-bit Linux `int 0x80` from an
     /// indirect call through the `swi` userop into a named call on the syscall
     /// the number in `EAX` selects.  Read by
@@ -1773,6 +1776,7 @@ impl ArchContext {
             region_edge_order: false,    // regionedgeorder (opt-in default-off)
             outline_spec: String::new(), // outline (opt-in default-off; empty = off)
             remove_cleanup_code: true,   // cleanupcode (DIV-81 default-on; inert on a non-Rust binary)
+            vararg_save: true, // varargsave (default-on; x86-64 System V only)
             linux_syscall: false,        // linuxsyscall (the mode resolves against the Linux-ELF fact in build_arch_handle)
             msvc_str_append: false,      // msvcstrappend (opt-in default-off)
             x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode::Off, // x64syscall (Architecture::reset_defaults sets the shipped default: on)

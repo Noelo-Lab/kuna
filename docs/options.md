@@ -165,6 +165,10 @@ Three tiers:
 | a TOC-relative global after an external PPC64 call prints as an unknown pointer plus an offset | [`callmechanisms`](#callmechanisms----off--auto--on-default-auto) |
 | a 32-bit PowerPC -O0 variadic call drops a trailing double that an earlier argument is computed from | [`varargsharedfloat`](#varargsharedfloat----on--off-default-off) |
 | `sumi(2, x * 2, x)` prints as `sumi(2,x + x)` on PowerPC | [`varargsharedfloat`](#varargsharedfloat----on--off-default-off) |
+| a variadic function opens with if (al) { v = a0; ... } storing xmm registers | [`varargsave`](#varargsave----on--off-default-on-destructive-opt-in) |
+| a printf-style wrapper prints with fourteen parameters including eight unsigned long xmm ones | [`varargsave`](#varargsave----on--off-default-on-destructive-opt-in) |
+| unnamed rsi..r9 parameters stored to stack slots that nothing reads | [`varargsave`](#varargsave----on--off-default-on-destructive-opt-in) |
+| char v1; // al declared at the top of a function | [`varargsave`](#varargsave----on--off-default-on-destructive-opt-in) |
 | a uint8_t parameter prints as unsigned int and is only ever used as a1 & 0xff or (char)a1 | [`narrowargs`](#narrowargs----off--on--callers-default-callers) |
 | an int parameter prints as unsigned long on x86-64 and is used as (unsigned int)a0 | [`narrowargs`](#narrowargs----off--on--callers-default-callers) |
 | a caller passes v + 5 to a callee whose parameter is a byte and another caller passes v - 8 & 0xff | [`narrowargs`](#narrowargs----off--on--callers-default-callers) |
@@ -1270,6 +1274,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Off by default. Turn it on for 32-bit PowerPC code built without optimization (-O0) when a variadic call such as `sumi(2, x * 2, x)` prints `sumi(2,x + x)`; the callee must be declared variadic (DWARF or `--assert prototype`). The register-choice evidence holds only when nothing reorders instructions after register allocation. Measured on 1,200 random clang calls of a non-format variadic double function: at -O0 it restores 91 dropped arguments and adds none; at -O2 and -Os it restores 11 and adds 23 arguments the source never passed, because the post-allocation scheduler moves a scratch value's readers so f0 or f1 looks free. Optimized code rarely needs it: -O2 copies the shared value (`fmr 2,1; fadd 1,1,1`) and prints correctly already.
 - **Where / provenance:** P4/active-input-trial-scoring · kuna · correctness-fix · GH-841
 - **Example:** `option varargsharedfloat on`
+
+### `varargsave` -- on | off, default `on` (destructive opt-in)
+
+- **Symptoms:** a variadic function opens with if (al) { v = a0; ... } storing xmm registers; a printf-style wrapper prints with fourteen parameters including eight unsigned long xmm ones; unnamed rsi..r9 parameters stored to stack slots that nothing reads; char v1; // al declared at the top of a function.
+- **What it does:** x86-64 System V only (inert on every other target): fold the register-save prologue a variadic function opens with into its prototype. A function that calls `va_start` stores the argument registers past its named parameters into a save area in its frame (`mov %rsi,0x28(%rsp)` .. `mov %r9,0x48(%rsp)`, then `test %al,%al; je 1f; movaps %xmm0,0x50(%rsp)` .. `movaps %xmm7,0xc0(%rsp); 1:`), which printed as an `if (al) { v12 = a0; ... }` the source does not have, with every xmm and every general argument register as a parameter (`mprintf(const char *fmt, ...)` printed with fourteen). Right after the first heritage pass, while the stack is not yet in SSA form, the fold matches the prologue exactly: a jump on `(al & al) == 0` of the incoming `al` over a block holding only stores of the incoming xmm registers m..m+c-1 to the slots R+48+16*j of one save area R, rejoining the jump target, and stores of the incoming general registers n..n+g-1 (rdi..r9 = 0..5, a contiguous run) to R+8*k in the block that tests al or the straight line of blocks before it. It then removes the edge into the xmm block and the general-register stores, so al, the saved xmm registers and the unnamed general registers are no longer parameters, and the recovered prototype ends in `...`. It refuses the whole fold when any load reads a saved slot through the stack pointer plus a constant (gcc folds a `va_arg` whose offset it knows into such a load) or through a stack pointer the walk cannot place; loads through the `va_list`'s own pointers are `va_arg` and do not count. The `va_list` field initialisations stay as assignments.
+- **When to flip:** On by default: a variadic function's signature is `f(const char *a0,...)` and its body starts at the first statement of the source. Turn it off to see the save-area stores and the `al` test the machine code performs, for example when auditing a hand-written variadic routine.
+- **Where / provenance:** P4/own-input-prototype-recovery · kuna · structure-recovery · kuna-varargsave
+- **Example:** `option varargsave off`
 
 ### `narrowargs` -- off | on | callers, default `callers`
 

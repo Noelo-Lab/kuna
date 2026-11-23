@@ -184,6 +184,7 @@ kuna_options! { self, p1;
     "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
     "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
     "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
+    "varargsave" => on_off!(vararg_save, "System V variadic register-save prologue folding"),
     "linuxsyscall" => {
         let (mode, msg) = crate::kuna_linuxsyscall::OptionLinuxSyscall.apply(p1)?;
         self.linux_syscall = mode;

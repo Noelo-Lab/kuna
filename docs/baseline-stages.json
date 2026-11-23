@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5167,
-    5167
+    5178,
+    5178
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2860,6 +2860,10 @@
     "data:The ordinary Go function with the same basename stays a free function",
     "data:Third aggregate field is published",
     "data:Third array field is published",
+    "data:Thumb stmia #1: the base in the list still disassembles with writeback",
+    "data:Thumb stmia #2: f returns the written-back base",
+    "data:Thumb stmia #3: f keeps its result",
+    "data:Thumb stmia #4: g, base not in the list, returns the written-back base",
     "data:UCOMISS unordered #10: setnp and setb are the ordered x < y",
     "data:UCOMISS unordered #11: setp beside an exact seta stays",
     "data:UCOMISS unordered #12: setnp beside an exact setb through a pointer stays",
@@ -5061,6 +5065,13 @@
     "data:unwindstarts on: the third unwind-only start joins the inventory (default pass: absent)",
     "data:value-first interning preserves pointer contract",
     "data:value-first interning preserves value contract",
+    "data:varargsave #1: report is variadic after its two named parameters",
+    "data:varargsave #2: scaled keeps its named double, the save starts at xmm1",
+    "data:varargsave #3: both pass their named parameters on",
+    "data:varargsave #4: firstd reads its saved xmm0 slot itself and is not folded",
+    "data:varargsave #5: dsum indexes its save area itself and is not folded",
+    "data:varargsave #6: with the option off report takes fourteen parameters",
+    "data:varargsave #7: the al test prints only in dsum and with the option off",
     "data:varargstackargs #1: the stack-passed variadic argument is never dropped",
     "data:varargstackargs #2: the variadic argument the ABI passes on the stack is recovered",
     "data:varsources #10: the independently computed loop bound does not borrow inputs",

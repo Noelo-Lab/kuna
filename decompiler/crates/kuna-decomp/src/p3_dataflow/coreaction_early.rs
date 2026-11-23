@@ -404,6 +404,9 @@ impl Action for ActionHeritage {
         // (kuna) Expand a frame `rep movs` with a known count before the stack's
         // first heritage (`kuna_repframecopy.rs`).
         crate::p3_dataflow::kuna_repframecopy::expand_all(data);
+        // (kuna) Fold the x86-64 System V variadic register-save prologue
+        // while the stack is not yet heritaged (`kuna_varargsave.rs`).
+        crate::kuna_varargsave::fold(data);
         // (kuna) Repair any synthetic lowered-switch BRANCHIND whose input
         // heritage normalized away (see `kuna_repair_lowered_switch_inputs`).
         // A no-op unless a lowered-switch was installed this function, so it
