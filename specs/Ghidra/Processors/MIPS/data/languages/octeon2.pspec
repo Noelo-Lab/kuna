@@ -15,10 +15,11 @@
       <set name="RELP" val="1" description="1 if mips16e, 0 if micromips"/>
     </context_set>
   </context_data>
-  <!-- KScratch1 and KScratch2 are externally observable across calls. -->
+  <!-- Kernel scratch registers are externally observable across calls. -->
   <volatile inputop="read_volatile" outputop="write_volatile">
     <range space="register" first="0x22f8" last="0x22ff"/>
     <range space="register" first="0x23f8" last="0x23ff"/>
+    <range space="register" first="0x24f8" last="0x24ff"/>
   </volatile>
   <register_data>
     <register name="contextreg" hidden="true"/>

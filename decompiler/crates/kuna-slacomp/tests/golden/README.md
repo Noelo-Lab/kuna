@@ -38,7 +38,7 @@ the four Octeon entries only. The pinned native compiler reproduces their four
 previous digests on the previous sources and matches the Rust compiler on the
 updated ones.
 
-The Octeon II/III kernel scratch transfers update the six MIPS entries. The
+The generation-specific Octeon II/III kernel scratch selectors update the six MIPS entries. The
 pinned C++ compiler reproduces the prior hashes on the base and yields the
 same six updated element streams as the Rust compiler. The generic MIPS32
 and MIPS64 XML outputs differ only in constructor source line numbers.

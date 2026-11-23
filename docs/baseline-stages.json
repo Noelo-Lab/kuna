@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5043,
-    5043
+    5047,
+    5047
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1996,6 +1996,10 @@
     "data:Octeon 64 ABI quad_after returns the source value",
     "data:Octeon 64 ABI quad_identity returns the source value",
     "data:Octeon 64 ABI quad_last_after returns the source value",
+    "data:Octeon II retains ordinary doubleword storage for selector five",
+    "data:Octeon II writes scratch three and keeps selector five generic",
+    "data:Octeon III preserves consecutive doubleword writes to scratch four",
+    "data:Octeon III writes two distinct upper scratch selectors and reads each width",
     "data:Octeon N64 #1 fixed struct field reaches return",
     "data:Octeon N64 #2 first, last and stack float reach return",
     "data:Octeon N64 #3 no uninitialized register-half return",

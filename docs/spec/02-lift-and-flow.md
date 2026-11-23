@@ -3907,11 +3907,12 @@ This normalization removes no computation or memory effect. The existing
 
 Explicit BE Octeon/Plus/II/III language variants share the MIPS core while replacing the four CP2 load/store opcode meanings with bit-test branches. Their conditions are sampled before delay-slot execution. Integer extension arithmetic, comparisons, population counts and bitfield operations use ordinary p-code; II/III additionally expose indexed loads with exact width and signedness. Generic MIPS retains its opcode meanings and SPECIAL2 fallback; Octeon has no wildcard SPECIAL2 success.
 
-On Octeon II and III, CP0 register 31 selectors 2 and 3 name independent
-64-bit kernel scratch registers, `KScratch1` and `KScratch2`. Both `mtc0`
+On Octeon II and III, CP0 register 31 selectors 2 through 4 name independent
+64-bit kernel scratch registers, `KScratch1` through `KScratch3`. Octeon III
+also exposes selector 5 as `KScratch4`. Both `mtc0`
 and `dmtc0` write the full GPR to these registers. A subsequent `mfc0`
 sign-extends the low word, while `dmfc0` reads all 64 bits. The processor
-profile marks both slots volatile so each transfer remains observable across
+profile marks each supported slot volatile so each transfer remains observable across
 calls and repeated writes.
 
 Both 64-bit address and 32-bit address (N32) variants have explicit soft-float compiler specifications; III also offers hard-float models. ELF selection and compiler conventions are described in chapters 01 and 04. System and crypto coverage remain separate from the integer and memory operations described here.
