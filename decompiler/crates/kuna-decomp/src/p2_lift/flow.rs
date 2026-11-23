@@ -171,6 +171,10 @@ pub struct VisitStat {
 /// a longer chain keeps what it has and says so.
 const KUNA_MAX_REENTRY_STAGES: usize = 128;
 
+/// Operations one flow may replay proving that indexed bypasses read the
+/// recovered rows of their tables.
+const KUNA_BYPASS_REPLAY_BUDGET: usize = 1 << 22;
+
 /// The flow's instruction-boundary map (C++ `FlowInfo::visited`).  A type alias
 /// so the jump-table recovery's partial-clone seeding signatures stay readable.
 /// (`Address` is logically immutable as a key — its interior is a memoized space
@@ -2883,6 +2887,7 @@ truncating the fall-through here"
         let mut load_bypasses = BTreeMap::new();
         let mut open_indexed = BTreeSet::new();
         let mut guarded_indexed = BTreeSet::new();
+        let mut bypass_budget = KUNA_BYPASS_REPLAY_BUDGET;
         loop {
             while !self.tablelist.is_empty() {
                 let new_tables = self.recover_jump_tables(run_pipeline, &mut unresolved)?;
@@ -2928,7 +2933,7 @@ truncating the fall-through here"
                         && !table.is_override()
                         && table.address_table().iter().all(|addr| !self.outofbounds.contains(addr))
                     {
-                        if loaded.is_none() || num == 1 {
+                        if num == 1 || (loaded.is_none() && !table.kuna_reads_table_entries()) {
                             provisional.insert(indop);
                         }
                         for (entry, through_load) in loaded.into_iter().flatten() {
@@ -2988,20 +2993,22 @@ truncating the fall-through here"
                             exact = false;
                             continue;
                         }
+                        if indexed && from == op {
+                            continue;
+                        }
                         let value = crate::kuna_returnbranch::target_on_edge(
                             &self.data, from, op, indexed.then_some(to), |index| self.env.is_isa_mode_switch(index));
                         if indexed {
-                            // Even an exact destination says nothing about the value
-                            // of the original index on this incoming edge. An unproved
-                            // one through the load is revalidated by a full recovery.
                             let through = load_bypasses[&to].1;
+                            match self.classify_bypass(from, to, op, idx, &mut bypass_budget) {
+                                crate::kuna_returnbranch::Bypass::Rows => continue,
+                                crate::kuna_returnbranch::Bypass::Unknown if through => continue,
+                                _ => {}
+                            }
                             if through && self.data.obank().get(from)
                                 .is_some_and(|branch| branch.code() == OpCode::CPUI_CBRANCH)
                             {
                                 guarded_indexed.insert(op);
-                            } else if through && value.is_none() {
-                                exact = false;
-                                continue;
                             } else {
                                 open_indexed.insert(op);
                             }

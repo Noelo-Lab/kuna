@@ -183,3 +183,35 @@ fn a_loaded_singleton_reentered_before_its_guard_keeps_an_indirect_exit() {
     assert_eq!(fd.num_jump_tables(), 0);
     assert_eq!(open_cases(&fd), [1]);
 }
+
+#[test]
+fn a_goto_again_dispatch_with_masked_or_constant_indices_keeps_its_table() {
+    // d: jmp *0x2060(,%rdx,8). Two cases fetch the next byte, mask it with & 3
+    // and jump back to d; one sets the index to the constant 3. Every value
+    // reads one of the four recovered rows, so the switch stays closed.
+    let fd = x86_flow(concat!(
+        "31c00fb61783e203ff24d56020000083c0010fb657014883c70183e203ebe983",
+        "c002ba03000000ebdfc301c00fb657014883c70183e203ebcf00000000000000",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "0f200000000000001f2000000000000029200000000000002a20000000000000",
+    ));
+    assert_eq!(fd.num_jump_tables(), 1);
+    assert_eq!(fd.get_jump_table(0).num_entries(), 4);
+    assert!(open_cases(&fd).is_empty());
+}
+
+#[test]
+fn a_case_that_moves_the_table_base_opens_the_dispatch() {
+    // top: movzbl (%rdi),%eax; add $1,%rdi; and $3,%eax; jmp *(%rcx,%rax,8)
+    // with %rcx = 0x2060. Case 0 sets %rcx to a second table at 0x2080 and
+    // jumps back to top, so the next dispatch reads rows outside the first table.
+    let fd = x86_flow(concat!(
+        "b96020000031d20fb6074883c70183e003ff24c1b98020000083c203ebe983c2",
+        "05ebe489d0c36bd207ebdcb864000000c3000000000000000000000000000000",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "14200000000000001e20000000000000232000000000000026200000000000002b",
+        "200000000000002b200000000000002b200000000000002b20000000000000",
+    ));
+    assert_eq!(fd.num_jump_tables(), 0);
+    assert!(!open_cases(&fd).is_empty());
+}

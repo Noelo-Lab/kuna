@@ -5980,6 +5980,20 @@ impl JumpTable {
         false
     }
 
+    /// Whether the table loads of one path read what recovery read: the last a
+    /// recovered row, the earlier ones memory reached on the way to it.
+    pub(crate) fn kuna_reads_recovered_rows(&self, fd: &Funcdata, loads: &[(i32, u64, i32)]) -> bool {
+        let Some(rows) = self.row_loads.as_ref() else { return false };
+        let table = |&(space, at, size): &(i32, u64, i32)| {
+            let space = fd.get_arch().manage().get_space(space)?;
+            Some(LoadTable::single(Address::new(Rc::clone(space), at), size))
+        };
+        loads.split_last().is_some_and(|(last, before)| {
+            table(last).is_some_and(|row| RowLoads::covers(&rows.entries, &row))
+                && before.iter().all(|load| table(load).is_some_and(|l| RowLoads::covers(&rows.reached, &l)))
+        })
+    }
+
     /// Whether the recovered destinations came from entries in memory.
     pub(crate) fn kuna_reads_table_entries(&self) -> bool {
         self.row_loads.as_ref().is_some_and(|rows| rows.depth != 0)

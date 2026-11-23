@@ -2054,12 +2054,30 @@ edge from a sibling switch can share the guarded table without re-entering it.
 If a conditional re-entry repeats the range check, the finished flow graph
 can retain the table. Each incoming selector must have a proved range, and
 every value must read the original rows and reach a known destination.
-An unconditional edge through the load that proves no target, such as a loop
-back to an unguarded byte-indexed or masked dispatch, instead stages the table
-again like a provisional dispatch: a full recovery that still reaches every
-known destination keeps the switch. A single-target table that reads its
-destination from memory is also provisional, so a re-entry before its load,
-such as a jump back to its range check, stages it again.
+Before any of that, `decompiler/crates/kuna-decomp/src/p2_lift/kuna_returnbranch.rs (classify_indexed_edge)`
+replays the edge: the run from its block, after any call on it, then the
+suffix, reading immutable rows from the image.
+- If the replay proves nothing, it enumerates one bounded operation on the
+  index side of the row load: an AND with a mask below 1024, or a one-byte
+  load or zero extension. It enumerates over the whole range, nearest the jump
+  first.
+- A conditional edge keeps only the values that take it.
+- When every value reads a recovered row and reaches a recovered destination,
+  the edge is part of the table, and the switch stays closed. Examples are a
+  bytecode loop that fetches and masks its next opcode, a `goto` back to the
+  dispatch with a re-masked or constant index, and a guard the edge
+  re-evaluates.
+- When a replay reads outside the rows, or proves a target no row supplies, the
+  dispatch is opened. An example is a case that loads a new table base.
+  Enumerated values count here only at zero, because a mask wider than the
+  table may be unreachable.
+- When the replay cannot tell, an edge through the load keeps the recovered
+  table, as upstream does. Examples are a base or index register set outside
+  the run.
+- A row whose target lies inside its own dispatch suffix is the table itself.
+- A table that reads its destinations from memory is provisional only when it
+  has one target. A single-target table re-entered before its load, such as by
+  a jump back to its range check, is staged again.
 After each round of table following,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_indirectreturn.rs (reentry_edges)`
 collects the new direct branches and fallthroughs into previously decoded

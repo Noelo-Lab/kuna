@@ -55,6 +55,8 @@ pub(crate) struct Prefix<'a, F> {
     known: Vec<(Loc, u64)>,
     previous: Option<Address>,
     mode_switch: F,
+    /// Image reads of table loads: space, address, size.
+    loads: Vec<(i32, u64, i32)>,
 }
 
 impl<'a, F: Fn(u64) -> bool> Prefix<'a, F> {
@@ -82,7 +84,7 @@ impl<'a, F: Fn(u64) -> bool> Prefix<'a, F> {
                 (1..=8).contains(&size).then(|| (loc, t.val & calc_mask(size)))
             })
             .collect();
-        Prefix { data, known, previous: None, mode_switch }
+        Prefix { data, known, previous: None, mode_switch, loads: Vec::new() }
     }
 
     /// Temporaries do not survive their instruction.
@@ -152,7 +154,9 @@ impl<'a, F: Fn(u64) -> bool> Prefix<'a, F> {
             if table_loads && op.code() == OpCode::CPUI_LOAD {
                 let index = i32::try_from(self.value(op.get_in(0)?)?).ok()?;
                 let space = self.data.get_arch().manage().get_space(index)?;
-                let ptr = self.value(op.get_in(1)?)?.checked_mul(space.get_word_size() as u64)?;
+                let at = self.value(op.get_in(1)?)?;
+                self.loads.push((index, at, out.2));
+                let ptr = at.checked_mul(space.get_word_size() as u64)?;
                 let mut emulator = crate::kuna_emulatefunction::EmulateFunction::new(self.data);
                 emulator.set_readonly_image_required(true);
                 return emulator.get_load_image_value(space, ptr, out.2).ok();
@@ -276,18 +280,15 @@ pub(crate) fn computed_target(
     false
 }
 
-/// An exact local proof of the target after following `from` back into a
-/// dispatch instruction: the run from `from`'s block start, then the dispatch
-/// instruction's own operations before the jump, through [`Prefix`]. For an
-/// indexed bypass, replay the actual straight-line suffix starting at its
-/// entry, admitting only immutable image reads at known addresses.
-pub(crate) fn target_on_edge(
+/// The operations an edge replays: `from`'s block up to `from`, then the
+/// dispatch instruction's operations before the jump, or for an indexed
+/// bypass the straight-line suffix starting at `table_entry`.
+fn edge_path(
     data: &Funcdata,
     from: OpId,
     dispatch: OpId,
     table_entry: Option<OpId>,
-    mode_switch: impl Fn(u64) -> bool,
-) -> Option<u64> {
+) -> Option<(Vec<OpId>, Vec<OpId>)> {
     let mut run = Vec::new();
     let mut cursor = from;
     loop {
@@ -320,20 +321,198 @@ pub(crate) fn target_on_edge(
         cursor = prev;
     }
     slot.reverse();
-    let mut prefix = Prefix { data, known: Vec::new(), previous: None, mode_switch };
+    let transfer = |id: OpId| data.obank().get(id).map(|op| transfers_control(op.code()));
+    if run.iter().any(|&id| id != from && transfer(id) != Some(false))
+        || slot.iter().any(|&id| transfer(id) != Some(false))
+    {
+        return None;
+    }
+    Some((run, slot))
+}
+
+/// An exact local proof of the target after following `from` back into a
+/// dispatch instruction: the run from `from`'s block start, then the dispatch
+/// instruction's own operations before the jump, through [`Prefix`]. For an
+/// indexed bypass, replay the actual straight-line suffix starting at its
+/// entry, admitting only immutable image reads at known addresses.
+pub(crate) fn target_on_edge(
+    data: &Funcdata,
+    from: OpId,
+    dispatch: OpId,
+    table_entry: Option<OpId>,
+    mode_switch: impl Fn(u64) -> bool,
+) -> Option<u64> {
+    let (run, slot) = edge_path(data, from, dispatch, table_entry)?;
+    let mut prefix = Prefix { data, known: Vec::new(), previous: None, mode_switch, loads: Vec::new() };
     for id in run {
-        let code = data.obank().get(id)?.code();
-        if (id != from && transfers_control(code)) || !prefix.execute(id) {
+        if !prefix.execute(id) {
             return None;
         }
     }
     for id in slot {
-        if transfers_control(data.obank().get(id)?.code())
-            || !prefix.execute_with_table_loads(id, table_entry.is_some()) {
+        if !prefix.execute_with_table_loads(id, table_entry.is_some()) {
             return None;
         }
     }
     prefix.input(dispatch, 0)
+}
+
+/// Index values one bounded operation may take before the proof gives up.
+const MAX_INDEX_VALUES: u64 = 1024;
+
+/// The values an operation can produce whatever its inputs: an AND with a
+/// small constant mask, or a one-byte load or zero extension.
+fn index_bound(data: &Funcdata, id: OpId) -> Option<u64> {
+    let op = data.obank().get(id)?;
+    let out = data.vbank().get(op.get_out()?)?;
+    let input = |slot| data.vbank().get(op.get_in(slot)?);
+    match op.code() {
+        OpCode::CPUI_INT_AND => (0..2)
+            .filter_map(|slot| input(slot).filter(|v| v.is_constant()))
+            .map(|v| v.get_offset() & calc_mask(out.get_size()))
+            .min()
+            .filter(|&mask| mask < MAX_INDEX_VALUES),
+        OpCode::CPUI_LOAD if out.get_size() == 1 => Some(0xff),
+        OpCode::CPUI_INT_ZEXT if input(0)?.get_size() == 1 => Some(0xff),
+        _ => None,
+    }
+}
+
+/// What an indexed bypass can bring to its loaded table.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Bypass {
+    /// Every value it can carry reads a recovered row and reaches a recovered
+    /// destination, so the recovered table already describes the edge.
+    Rows,
+    /// It can read memory outside the recovered rows or arrive with a target
+    /// no row supplies.
+    Escapes,
+    /// The local replay cannot tell.
+    Unknown,
+}
+
+/// One replay of an edge for one value of the enumerated operation.
+enum Replay {
+    Rows,
+    Leaves,
+    Escapes,
+    Unproved,
+}
+
+/// Classifies what an indexed bypass brings to its table.
+/// - `rows` checks one replay's table loads, in order, against the recovered
+///   rows; `known` names the recovered destinations.
+/// - The replay starts after the last call on `from`'s block.
+/// - With nothing proven, the bounded operations on the index side of the row
+///   load are enumerated over their whole range, nearest the jump first. A
+///   bounded operation is an AND with a small constant mask, or a one-byte load
+///   or zero extension.
+/// - When `taken` is set, `from` is a conditional branch. A value whose proven
+///   condition leaves by the other edge does not count; an unproven condition
+///   may take this edge.
+/// - A replay escapes when it reads a table load outside the rows, or when its
+///   proven target comes from no row. An enumerated value counts as an escape
+///   only at zero: a wider bound than the table may still be unreachable.
+/// - `budget` bounds the replayed operations.
+pub(crate) fn classify_indexed_edge(
+    data: &Funcdata,
+    from: OpId,
+    dispatch: OpId,
+    entry: OpId,
+    taken: Option<bool>,
+    mode_switch: impl Fn(u64) -> bool + Copy,
+    rows: impl Fn(&[(i32, u64, i32)]) -> bool,
+    known: impl Fn(u64) -> bool,
+    budget: &mut usize,
+) -> Bypass {
+    let Some((run, slot)) = edge_path(data, from, dispatch, Some(entry)) else { return Bypass::Unknown };
+    let calls = |id: &OpId| data.obank().get(*id).is_some_and(|op| {
+        matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER)
+    });
+    let run = &run[run.iter().rposition(calls).map_or(0, |at| at + 1)..];
+    let path: Vec<(OpId, bool)> = run.iter().map(|&id| (id, false))
+        .chain(slot.iter().map(|&id| (id, true))).collect();
+    let mut replay = |seed: Option<(usize, u64)>| -> Replay {
+        let mut prefix = Prefix { data, known: Vec::new(), previous: None, mode_switch, loads: Vec::new() };
+        for (at, &(id, table)) in path.iter().enumerate() {
+            let Some(left) = budget.checked_sub(1) else { return Replay::Unproved };
+            *budget = left;
+            if !prefix.execute_with_table_loads(id, table) {
+                return Replay::Unproved;
+            }
+            if let Some((_, value)) = seed.filter(|&(seeded, _)| seeded == at) {
+                let Some(out) = data.obank().get(id).and_then(|op| op.get_out()).and_then(|vn| location(data, vn))
+                else { return Replay::Unproved };
+                prefix.known.retain(|(loc, _)| !loc.overlaps(out));
+                prefix.known.push((out, value & calc_mask(out.2)));
+            }
+            if let (Some(taken), false) = (taken, table) {
+                if id == from && prefix.input(from, 1).is_some_and(|cond| (cond != 0) != taken) {
+                    return Replay::Leaves;
+                }
+            }
+        }
+        if !prefix.loads.is_empty() && !rows(&prefix.loads) {
+            return Replay::Escapes;
+        }
+        match prefix.input(dispatch, 0) {
+            Some(target) if !prefix.loads.is_empty() => {
+                if known(target) { Replay::Rows } else { Replay::Escapes }
+            }
+            Some(_) if seed.is_none() => Replay::Escapes,
+            _ => Replay::Unproved,
+        }
+    };
+    match replay(None) {
+        Replay::Rows | Replay::Leaves => return Bypass::Rows,
+        Replay::Escapes => return Bypass::Escapes,
+        Replay::Unproved => {}
+    }
+    // Walk the target's dependencies back from the jump. Only operations behind
+    // the row load are index candidates.
+    let mut needed: Vec<Loc> = data.obank().get(dispatch).and_then(|op| op.get_in(0))
+        .and_then(|vn| location(data, vn)).into_iter().collect();
+    let mut seeds = Vec::new();
+    let mut behind_row = false;
+    for (at, &(id, table)) in path.iter().enumerate().rev() {
+        let Some(op) = data.obank().get(id) else { return Bypass::Unknown };
+        let Some(out) = op.get_out().and_then(|vn| location(data, vn)) else { continue };
+        if !needed.iter().any(|loc| loc.overlaps(out)) {
+            continue;
+        }
+        needed.retain(|loc| !out.overlaps(*loc) || loc.1 < out.1 || loc.1 + loc.2 as u64 > out.1 + out.2 as u64);
+        let row_load = table && op.code() == OpCode::CPUI_LOAD;
+        if behind_row && !row_load {
+            if let Some(bound) = index_bound(data, id) {
+                seeds.push((at, bound));
+            }
+        }
+        behind_row |= row_load;
+        for slot in 0..op.num_input() {
+            if let Some(input) = op.get_in(slot).filter(|&vn| data.vbank().get(vn).is_some_and(|v| !v.is_constant())) {
+                needed.extend(location(data, input));
+            }
+        }
+    }
+    for &(at, bound) in seeds.iter().take(3) {
+        let mut reached = false;
+        let mut complete = true;
+        for value in 0..=bound {
+            match replay(Some((at, value))) {
+                Replay::Rows => reached = true,
+                Replay::Leaves => {}
+                Replay::Escapes if value == 0 => return Bypass::Escapes,
+                Replay::Escapes | Replay::Unproved => {
+                    complete = false;
+                    break;
+                }
+            }
+        }
+        if complete && reached {
+            return Bypass::Rows;
+        }
+    }
+    Bypass::Unknown
 }
 
 #[cfg(test)]

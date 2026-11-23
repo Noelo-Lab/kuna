@@ -2,6 +2,7 @@
 use super::{FlowEnvironment, FlowInfo};
 use crate::context::OpId;
 use crate::jumptable::RecoveryMode;
+use crate::kuna_returnbranch::Bypass;
 use kuna_base::error::KunaResult;
 use kuna_base::space::AddrSpace;
 use kuna_num::opcodes::OpCode;
@@ -14,10 +15,14 @@ impl<E: FlowEnvironment> FlowInfo<'_, E> {
         let bank = self.data.obank();
         let storage = |vn| {
             let value = self.data.vbank().get(vn)?;
-            Some((value.get_addr().clone(), value.get_size()))
+            Some((value.get_space().get_index(), value.get_offset(), value.get_offset() + value.get_size() as u64))
+        };
+        let overlaps = |a: &(i32, u64, u64), b: &(i32, u64, u64)| a.0 == b.0 && a.1 < b.2 && b.1 < a.2;
+        let covers = |outer: &(i32, u64, u64), inner: &(i32, u64, u64)| {
+            outer.0 == inner.0 && outer.1 <= inner.1 && inner.2 <= outer.2
         };
         let branch = bank.get(jump)?;
-        let mut needed = BTreeSet::from([storage(branch.get_in(0)?)?]);
+        let mut needed = vec![storage(branch.get_in(0)?)?];
         let mut entries = Vec::new();
         let mut cursor = jump;
         let mut found_load = false;
@@ -27,7 +32,9 @@ impl<E: FlowEnvironment> FlowInfo<'_, E> {
                 return found_load.then_some(entries);
             }
             if let Some(out) = op.get_out() {
-                if !found_load && needed.remove(&storage(out)?) {
+                let out = storage(out)?;
+                if !found_load && needed.iter().any(|need| overlaps(need, &out)) {
+                    needed.retain(|need| !covers(&out, need));
                     match op.code() {
                         OpCode::CPUI_LOAD => found_load = true,
                         OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INT_SEXT
@@ -36,7 +43,7 @@ impl<E: FlowEnvironment> FlowInfo<'_, E> {
                             for slot in 0..op.num_input() {
                                 let input = op.get_in(slot)?;
                                 if !self.data.vbank().get(input)?.is_constant() {
-                                    needed.insert(storage(input)?);
+                                    needed.push(storage(input)?);
                                 }
                             }
                         }
@@ -53,6 +60,44 @@ impl<E: FlowEnvironment> FlowInfo<'_, E> {
             let Some(prev) = bank.dead_prev(cursor) else { return found_load.then_some(entries) };
             cursor = prev;
         }
+    }
+
+    /// What the edge `from` -> `entry` brings to the loaded table of `jump`:
+    /// see [`crate::kuna_returnbranch::classify_indexed_edge`]. A conditional
+    /// edge counts only the values that take it.
+    pub(super) fn classify_bypass(
+        &self, from: OpId, entry: OpId, jump: OpId, idx: usize, budget: &mut usize,
+    ) -> Bypass {
+        let Some(branch) = self.data.obank().get(from) else { return Bypass::Unknown };
+        let taken = if branch.code() == OpCode::CPUI_CBRANCH {
+            let Some(dest) = branch.get_in(0).and_then(|vn| self.data.vbank().get(vn)) else {
+                return Bypass::Unknown;
+            };
+            if dest.is_constant() {
+                return Bypass::Unknown;
+            }
+            let to_dest = self.target(dest.get_addr()).ok() == Some(entry);
+            let to_fall = self.fallthru_op(from) == Some(entry);
+            match (to_dest, to_fall) {
+                (true, false) => Some(true),
+                (false, true) => Some(false),
+                _ => return Bypass::Unknown,
+            }
+        } else {
+            None
+        };
+        let table = self.data.get_jump_table(idx as i32);
+        let stub = table.kuna_return_default();
+        let known = |target: u64| {
+            table.address_table().iter().any(|dest| {
+                Some(dest) != stub
+                    && AddrSpace::byte_to_address(dest.get_offset(), dest.get_space().unwrap().get_word_size()) == target
+            })
+        };
+        crate::kuna_returnbranch::classify_indexed_edge(
+            &self.data, from, jump, entry, taken, |index| self.env.is_isa_mode_switch(index),
+            |loads| table.kuna_reads_recovered_rows(&self.data, loads), known, budget,
+        )
     }
 
     /// A re-entered selector with unproved values still transfers on those paths.
