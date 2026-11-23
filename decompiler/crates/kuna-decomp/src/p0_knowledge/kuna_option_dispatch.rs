@@ -184,6 +184,7 @@ kuna_options! { self, p1;
     "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
     "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
     "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
+    "varargsave" => on_off!(vararg_save, "System V variadic register-save prologue folding"),
     "linuxsyscall" => {
         let (mode, msg) = crate::kuna_linuxsyscall::OptionLinuxSyscall.apply(p1)?;
         self.linux_syscall = mode;
@@ -570,6 +571,11 @@ kuna_options! { self, p1;
         self.returndup_triangle = val;
         Ok(msg)
     },
+    "tailform" => {
+        let (val, msg) = crate::p8_structure::kuna_tailform::OptionTailForm.apply(p1)?;
+        self.tail_form = val;
+        Ok(msg)
+    },
     "earlyreturn" => {
         let (val, msg) =
             crate::p8_structure::kuna_earlyreturn::OptionEarlyReturn.apply(p1)?;
@@ -721,6 +727,11 @@ kuna_options! { self, p1;
     },
     "cortexmpriv" => on_off!(cortexmpriv, "Cortex-M privileged-mode guard folding"),
     "bytestorewidth" => on_off!(byte_store_width, "Byte-array constant store width"),
+    "boolbranch" => {
+        let (keep, msg) = crate::kuna_boolbranch::parse_bool_branch(p1)?;
+        self.bool_branch_keep = keep;
+        Ok(msg)
+    },
     "acleintrinsics" => on_off!(acle_intrinsics, "AArch64 ACLE intrinsics"),
     "dedupvardecls" => {
         let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;

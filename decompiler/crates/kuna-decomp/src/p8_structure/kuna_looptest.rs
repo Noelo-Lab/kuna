@@ -25,10 +25,12 @@ use kuna_num::opcodes::OpCode;
 
 use crate::architecture::Architecture;
 use crate::block::BlockType;
-use crate::context::{BlockId, OpId, VarnodeId};
+use crate::context::{BlockId, HighVariableId, OpId, VarnodeId};
+use crate::dtype::Datatype;
 use crate::funcdata::Funcdata;
 use crate::prettyprint::{Emit, MarkupRef, SyntaxHighlight};
-use crate::printc::PrintC;
+use crate::printc::{tokens, PrintC};
+use crate::printlanguage::OpToken;
 use crate::printlanguage::modifiers;
 
 /// The `looptest` option value.
@@ -96,17 +98,29 @@ pub struct LoopTests {
     pub hidden: BTreeSet<BlockId>,
     /// A hidden return's RETURN op -> the RETURN that now ends the function.
     pub tail_returns: BTreeMap<OpId, OpId>,
+    /// Per loop, the `==`/`!=` latch comparison that prints as an ordering test.
+    pub respell: BTreeMap<BlockId, (OpId, &'static OpToken)>,
+    /// The re-spelling of the condition being printed.
+    pub active_respell: Option<(OpId, &'static OpToken)>,
 }
 
 impl LoopTests {
+    /// The token a comparison op prints with, when the loop being printed re-spells it.
+    pub fn token(&self, op: OpId) -> Option<&'static OpToken> {
+        self.active_respell.filter(|&(o, _)| o == op).map(|(_, t)| t)
+    }
+
     /// The varnode an explicit leaf prints as.
     pub fn leaf(&self, vn: VarnodeId) -> VarnodeId {
         self.active.iter().find(|(from, _)| *from == vn).map(|&(_, to)| to).unwrap_or(vn)
     }
 }
 
+/// The printer's declared type for a HighVariable, when it overrides the high's own.
+pub type DeclType<'a> = &'a dyn Fn(HighVariableId) -> Option<std::rc::Rc<Datatype>>;
+
 /// Plan every `BlockDoWhile` under `root`.
-pub fn loop_tests(fd: &Funcdata, root: BlockId, mode: LoopTestMode) -> LoopTests {
+pub fn loop_tests(fd: &Funcdata, root: BlockId, mode: LoopTestMode, decl: DeclType) -> LoopTests {
     let mut plan = LoopTests::default();
     if mode == LoopTestMode::Binary {
         return plan;
@@ -129,7 +143,7 @@ pub fn loop_tests(fd: &Funcdata, root: BlockId, mode: LoopTestMode) -> LoopTests
         stack.extend(b.get_list().iter().copied());
     }
     for dw in loops {
-        if let Ok(top) = plan_loop(fd, &leaves, dw, mode) {
+        if let Ok(top) = plan_loop(fd, &leaves, dw, mode, decl) {
             plan.top.insert(dw);
             if !top.subst.is_empty() {
                 plan.subst.insert(dw, top.subst);
@@ -141,6 +155,9 @@ pub fn loop_tests(fd: &Funcdata, root: BlockId, mode: LoopTestMode) -> LoopTests
                 plan.hidden.insert(leaf);
                 plan.tail_returns.insert(from, to);
             }
+            if let Some(r) = top.respell {
+                plan.respell.insert(dw, r);
+            }
         }
     }
     plan
@@ -150,34 +167,59 @@ struct Top {
     guard: Option<(BlockId, Guard)>,
     hidden: Option<(BlockId, OpId, OpId)>,
     subst: Vec<(VarnodeId, VarnodeId)>,
+    respell: Option<(OpId, &'static OpToken)>,
 }
 
 type Verdict = Result<Top, &'static str>;
 
 type Dropped = (BlockId, Guard, Option<(BlockId, OpId, OpId)>);
 
-fn plan_loop(fd: &Funcdata, leaves: &BTreeMap<BlockId, BlockId>, dw: BlockId, mode: LoopTestMode) -> Verdict {
+fn plan_loop(
+    fd: &Funcdata,
+    leaves: &BTreeMap<BlockId, BlockId>,
+    dw: BlockId,
+    mode: LoopTestMode,
+    decl: DeclType,
+) -> Verdict {
     let lp = Loop::find(fd, dw)?;
     let subst = lp.top_ok()?;
     let cont = lp.entry_cond(&BTreeSet::new());
     if cont.as_ref().is_some_and(|c| c.lit == Lit::True && !c.neg) {
-        return Ok(Top { guard: None, hidden: None, subst });
+        return Ok(Top { guard: None, hidden: None, subst, respell: None });
     }
     let guard = lp.guard(fd);
-    let proven = guard.as_ref().is_some_and(|g| g.cond.is_some());
+    let mut proven = guard.as_ref().is_some_and(|g| g.cond.is_some());
+    let mut respell = None;
+    let mut why = "guard differs";
+    if !proven && lp.dominating_fact(cont.as_ref()) {
+        return Ok(Top { guard: None, hidden: None, subst, respell: None });
+    }
     if !proven {
-        if lp.dominating_fact(cont.as_ref()) {
-            return Ok(Top { guard: None, hidden: None, subst });
+        let fresh = guard.as_ref().map(|g| g.fresh.clone()).unwrap_or_default();
+        match lp.respell(&fresh, decl) {
+            Ok(r) => {
+                if guard.as_ref().and_then(|g| g.enter.as_ref()) == Some(&r.entry) {
+                    proven = true;
+                    respell = Some((r.op, r.tok));
+                } else if !r.entry.has_load() && lp.dominating_fact(Some(&r.entry)) {
+                    return Ok(Top { guard: None, hidden: None, subst, respell: Some((r.op, r.tok)) });
+                } else {
+                    why = "respelled guard differs";
+                }
+            }
+            Err(w) => why = w,
         }
+    }
+    if !proven {
         return match mode {
-            LoopTestMode::Assume => Ok(Top { guard: None, hidden: None, subst }),
-            _ => Err(if guard.is_some() { "guard differs" } else { "no guard" }),
+            LoopTestMode::Assume => Ok(Top { guard: None, hidden: None, subst, respell: None }),
+            _ => Err(if guard.is_some() { why } else { "no guard" }),
         };
     }
     let g = guard.expect("proven implies a guard");
     match g.droppable(&lp, leaves) {
-        Ok((node, form, hidden)) => Ok(Top { guard: Some((node, form)), hidden, subst }),
-        Err(_) if mode == LoopTestMode::Assume => Ok(Top { guard: None, hidden: None, subst }),
+        Ok((node, form, hidden)) => Ok(Top { guard: Some((node, form)), hidden, subst, respell }),
+        Err(_) if mode == LoopTestMode::Assume => Ok(Top { guard: None, hidden: None, subst, respell: None }),
         Err(why) => Err(why),
     }
 }
@@ -389,6 +431,131 @@ impl<'a> Loop<'a> {
         Some(cond_of(&e).negate_if(self.cont_neg))
     }
 
+    /// The ordering test that agrees with the latch's `!=` on every iteration a guarded
+    /// counted loop runs.  The latch compares a carried value `x` that steps by a constant
+    /// `s` with a loop-invariant bound `b`; when the entry value starts strictly on the near
+    /// side of `b` and `b - x_entry` is an exact multiple of `s`, `x` meets `b` exactly and
+    /// never passes it, so `x != b` and `x < b` (`x > b` when `s` is negative) agree on
+    /// every value `x` takes, and the arithmetic cannot wrap.  Returns the comparison op,
+    /// the token it prints with, and the entry test `x_entry < b` the guard must equal.
+    fn respell(&self, fresh: &BTreeSet<OpId>, decl: DeclType) -> Result<Respelled, &'static str> {
+        let fd = self.fd;
+        let cvn = self.cond_vn();
+        let cv = fd.vbank().get(cvn).ok_or("stale")?;
+        if !cv.is_implied() {
+            return Err("condition is a variable");
+        }
+        let def = cv.get_def().ok_or("no def")?;
+        let op = fd.obank().get(def).ok_or("stale")?;
+        let ne = match op.code() {
+            OpCode::CPUI_INT_NOTEQUAL if !self.cont_neg => true,
+            OpCode::CPUI_INT_EQUAL if self.cont_neg => false,
+            _ => return Err("not an equality latch"),
+        };
+        let (i0, i1) = (op.get_in(0).ok_or("input")?, op.get_in(1).ok_or("input")?);
+        let (x_first, x, b) = if self.carried.contains_key(&i0) && self.invariant(i1, 0) {
+            (true, i0, i1)
+        } else if self.carried.contains_key(&i1) && self.invariant(i0, 0) {
+            (false, i1, i0)
+        } else {
+            return Err("no carried value against an invariant bound");
+        };
+        let out = *self.carried.get(&x).ok_or("carried")?;
+        let step = self.step(x, out).ok_or("no constant step")?;
+        let bv = fd.vbank().get(b).ok_or("stale")?;
+        let order = order_class(fd, self.alias.get(&x).copied().unwrap_or(x), decl).ok_or("counter type")?;
+        let signed = order == Order::Signed;
+        if bv.is_constant() {
+            let v = bv.get_offset() & calc_mask(bv.get_size());
+            let v = if signed { sext(v, bv.get_size()) } else { v as i64 };
+            if !(0..1 << 31).contains(&v) {
+                return Err("bound constant");
+            }
+        } else if bv.is_implied() {
+            if class_of(bv.get_type()) != Some(order) || bv.get_size() < 4 {
+                return Err("bound type");
+            }
+        } else if order_class(fd, b, decl) != Some(order) {
+            return Err("bound type");
+        }
+        let builder = Builder { fd, subst: None, body: &self.body, fresh };
+        let mut budget = 128;
+        let ex = builder.build(*self.latch_inputs.get(&x).ok_or("entry")?, 0, &mut budget).ok_or("build")?;
+        let eb = builder.build(b, 0, &mut budget).ok_or("build")?;
+        let k = step.unsigned_abs();
+        let exact = if step > 0 { multiple_of(&eb, &ex, k) } else { multiple_of(&ex, &eb, k) };
+        if k != 1 && !exact {
+            return Err("bound not a multiple of the step");
+        }
+        let code = if signed { OpCode::CPUI_INT_SLESS } else { OpCode::CPUI_INT_LESS };
+        let (lo, hi) = if step > 0 { (ex, eb) } else { (eb, ex) };
+        let entry = cond_of(&simplify(Expr::Op { code, size: 1, args: vec![lo, hi] }));
+        let up = step > 0;
+        let tok: &'static OpToken = match (ne, up == x_first) {
+            (true, true) => &tokens::LESS_THAN,
+            (true, false) => &tokens::GREATER_THAN,
+            (false, true) => &tokens::GREATER_EQUAL,
+            (false, false) => &tokens::LESS_EQUAL,
+        };
+        Ok(Respelled { op: def, tok, entry })
+    }
+
+    /// Is `vn` the same value on every iteration: defined before the loop, or an implied
+    /// pure expression of such values?
+    fn invariant(&self, vn: VarnodeId, depth: u32) -> bool {
+        let fd = self.fd;
+        let Some(v) = fd.vbank().get(vn) else { return false };
+        if v.is_constant() || !v.is_written() {
+            return true;
+        }
+        let Some(op) = v.get_def().and_then(|d| fd.obank().get(d)) else { return false };
+        if !op.get_parent().is_some_and(|p| self.body.contains(&p)) {
+            return true;
+        }
+        if !v.is_implied() || depth > 8 || op.code() == OpCode::CPUI_LOAD || !pure_value_op(op.code()) {
+            return false;
+        }
+        (0..op.num_input()).all(|i| op.get_in(i).is_some_and(|x| self.invariant(x, depth + 1)))
+    }
+
+    /// The constant `x` adds to the value `out` carried in from the previous iteration.
+    fn step(&self, x: VarnodeId, out: VarnodeId) -> Option<i64> {
+        let fd = self.fd;
+        let is_out = |v: VarnodeId| {
+            v == out
+                || fd
+                    .vbank()
+                    .get(v)
+                    .and_then(|v| v.get_def())
+                    .and_then(|d| fd.obank().get(d))
+                    .is_some_and(|d| d.code() == OpCode::CPUI_COPY && d.get_in(0) == Some(out))
+        };
+        let konst = |v: VarnodeId| {
+            fd.vbank().get(v).filter(|v| v.is_constant()).map(|v| sext(v.get_offset(), v.get_size()))
+        };
+        let mut v = x;
+        for _ in 0..4 {
+            let op = fd.vbank().get(v)?.get_def().and_then(|d| fd.obank().get(d))?;
+            if !op.get_parent().is_some_and(|p| self.body.contains(&p)) {
+                return None;
+            }
+            let (a, b) = (op.get_in(0), op.get_in(1));
+            let s = match op.code() {
+                OpCode::CPUI_COPY => {
+                    v = a?;
+                    continue;
+                }
+                OpCode::CPUI_INT_ADD if is_out(a?) => konst(b?)?,
+                OpCode::CPUI_INT_ADD if is_out(b?) => konst(a?)?,
+                OpCode::CPUI_INT_SUB if is_out(a?) => konst(b?)?.checked_neg()?,
+                OpCode::CPUI_PTRADD if is_out(a?) => konst(b?)?.checked_mul(konst(op.get_in(2)?)?)?,
+                _ => return None,
+            };
+            return (s != 0).then_some(s);
+        }
+        None
+    }
+
     /// The conditional edge that leads to the loop, walking back over straight-line blocks.
     fn guard(&self, fd: &Funcdata) -> Option<GuardSite> {
         let bb = fd.bblocks_ref();
@@ -415,6 +582,8 @@ impl<'a> Loop<'a> {
                     pre: chain.iter().rev().copied().collect(),
                     skip: other,
                     cond: None,
+                    enter: None,
+                    fresh: BTreeSet::new(),
                 };
                 site.cond = site.compare(self);
                 return Some(site);
@@ -480,6 +649,10 @@ struct GuardSite {
     skip: BlockId,
     /// The guard's enter condition when it equals the loop's entry test.
     cond: Option<Cond>,
+    /// The guard's enter condition.
+    enter: Option<Cond>,
+    /// LOADs that read the memory the loop header sees.
+    fresh: BTreeSet<OpId>,
 }
 
 impl GuardSite {
@@ -517,6 +690,8 @@ impl GuardSite {
         let gb = Builder { fd, subst: None, body: &lp.body, fresh: &fresh };
         let ge = gb.build(gvn, 0, &mut budget)?;
         let gc = cond_of(&ge).negate_if(self.enter_neg);
+        self.enter = Some(gc.clone());
+        self.fresh = fresh.clone();
         let lc = lp.entry_cond(&fresh)?;
         if gc == lc {
             Some(gc)
@@ -643,6 +818,77 @@ impl GuardSite {
             return Ok((ifn, Guard::Tail, Some((skip_leaf, a, b))));
         }
         Err("guard body is not the return")
+    }
+}
+
+/// A comparison the latch can print as an ordering test.
+struct Respelled {
+    op: OpId,
+    tok: &'static OpToken,
+    entry: Cond,
+}
+
+/// How C orders values of a varnode's printed type.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Order {
+    Signed,
+    Unsigned,
+    Pointer,
+}
+
+/// The ordering class of the type `vn` prints with: its high's declaration (the printer's
+/// override first), else the varnode's own type.
+fn order_class(fd: &Funcdata, vn: VarnodeId, decl: DeclType) -> Option<Order> {
+    let v = fd.vbank().get(vn)?;
+    let high = v.get_high()?;
+    let ty = decl(high)
+        .or_else(|| {
+            crate::kuna_declhightype::type_representative(fd, high)
+                .filter(|_| crate::kuna_declhightype::declares_from_high(fd, high))
+                .and_then(|r| fd.vbank().get(r))
+                .map(|r| r.get_type().clone())
+        })
+        .unwrap_or_else(|| v.get_type().clone());
+    class_of(&ty)
+}
+
+fn class_of(ty: &Datatype) -> Option<Order> {
+    use crate::dtype::type_metatype;
+    match ty.get_metatype() {
+        type_metatype::TYPE_INT => Some(Order::Signed),
+        type_metatype::TYPE_UINT => Some(Order::Unsigned),
+        type_metatype::TYPE_PTR | type_metatype::TYPE_PTRREL => Some(Order::Pointer),
+        _ => None,
+    }
+}
+
+/// Is `hi` structurally `lo + n * k`: a pointer `&lo[n]` over `k`-byte elements (C pointer
+/// arithmetic does not wrap), or `lo + n * k` / `lo + (n << j)` with `k` a power of two
+/// (then the difference is a multiple of `k` modulo the word, hence exactly)?
+fn multiple_of(hi: &Expr, lo: &Expr, k: u64) -> bool {
+    if let (Expr::Op { code: OpCode::CPUI_PTRADD, args: h, .. }, Expr::Op { code: OpCode::CPUI_PTRADD, args: l, .. }) =
+        (hi, lo)
+    {
+        if h.len() == 3 && l.len() == 3 && h[0] == l[0] && h[2] == l[2] && h[2].konst() == Some(k) {
+            return true;
+        }
+    }
+    let Expr::Op { code, args, .. } = hi else { return false };
+    match code {
+        OpCode::CPUI_PTRADD if args.len() == 3 => &args[0] == lo && args[2].konst() == Some(k),
+        OpCode::CPUI_INT_ADD if args.len() == 2 && k.is_power_of_two() => {
+            let scaled = if &args[0] == lo { &args[1] } else if &args[1] == lo { &args[0] } else { return false };
+            match scaled {
+                Expr::Op { code: OpCode::CPUI_INT_MULT, args: m, .. } if m.len() == 2 => {
+                    m[0].konst().is_some_and(|c| c % k == 0) || m[1].konst().is_some_and(|c| c % k == 0)
+                }
+                Expr::Op { code: OpCode::CPUI_INT_LEFT, args: m, .. } if m.len() == 2 => {
+                    m[1].konst().is_some_and(|j| j < 64 && (1u64 << j) % k == 0)
+                }
+                _ => false,
+            }
+        }
+        _ => false,
     }
 }
 
@@ -1009,6 +1255,20 @@ fn cond_of(e: &Expr) -> Cond {
     Cond::pos(Lit::Other(e.clone()))
 }
 
+/// `&p[i]` and `&p[j]` over the same element size: two element pointers into one array
+/// compare as their indices (C pointer arithmetic).
+fn same_array(a: &Expr, b: &Expr) -> Option<(Expr, Expr)> {
+    let (Expr::Op { code: OpCode::CPUI_PTRADD, args: x, .. }, Expr::Op { code: OpCode::CPUI_PTRADD, args: y, .. }) =
+        (a, b)
+    else {
+        return None;
+    };
+    if x.len() != 3 || y.len() != 3 || x[0] != y[0] || x[2] != y[2] || x[1].size() != y[1].size() {
+        return None;
+    }
+    Some((x[1].clone(), y[1].clone()))
+}
+
 /// `x == 0` with the conversions and scalings that cannot wrap removed.
 fn zero_test(x: Expr) -> Expr {
     match x {
@@ -1046,6 +1306,9 @@ fn narrow_enough(n: &Expr, size: i32, k: u64) -> bool {
 fn eq(a: Expr, b: Expr) -> Cond {
     if let (Some(x), Some(y)) = (a.konst(), b.konst()) {
         return Cond::of_bool(x == y);
+    }
+    if let Some((i, j)) = same_array(&a, &b) {
+        return eq(i, j);
     }
     for (p, q) in [(&a, &b), (&b, &a)] {
         if let Expr::Op { code, args, .. } = p {
@@ -1095,6 +1358,29 @@ fn eq(a: Expr, b: Expr) -> Cond {
 }
 
 fn ltu(a: Expr, b: Expr) -> Cond {
+    if let Some((i, j)) = same_array(&a, &b) {
+        return lts(i, j);
+    }
+    if let Expr::Op { code: OpCode::CPUI_PTRADD, args, .. } = &b {
+        if args.len() == 3 && args[0] == a {
+            let n = args[1].clone();
+            let sz = n.size();
+            return lts(konst(sz, 0), n);
+        }
+    }
+    if let Expr::Op { code: OpCode::CPUI_PTRADD, args, .. } = &a {
+        if args.len() == 3 && args[0] == b {
+            let n = args[1].clone();
+            let sz = n.size();
+            return lts(n, konst(sz, 0));
+        }
+    }
+    if let Some((x, c)) = narrowed(&a, &b, OpCode::CPUI_INT_ZEXT, false) {
+        return ltu(x, c);
+    }
+    if let Some((c, x)) = narrowed(&b, &a, OpCode::CPUI_INT_ZEXT, false).map(|(x, c)| (c, x)) {
+        return ltu(c, x);
+    }
     let size = a.size().max(b.size());
     match (a.konst(), b.konst()) {
         (Some(x), Some(y)) => Cond::of_bool(x < y),
@@ -1112,7 +1398,40 @@ fn ltu(a: Expr, b: Expr) -> Cond {
     }
 }
 
+/// `ext(x)` compared with a constant that the narrower `x` can hold: the extension keeps
+/// the order (zero extension for unsigned, sign extension for signed comparisons), so the
+/// comparison is the narrow one.
+fn narrowed(ext: &Expr, k: &Expr, code: OpCode, signed: bool) -> Option<(Expr, Expr)> {
+    let Expr::Op { code: c, args, .. } = ext else { return None };
+    if *c != code || args.len() != 1 {
+        return None;
+    }
+    let x = &args[0];
+    let (val, size) = match k {
+        Expr::Const { val, size } => (*val, *size),
+        _ => return None,
+    };
+    let narrow = x.size();
+    if narrow <= 0 || narrow >= size {
+        return None;
+    }
+    let fits = if signed {
+        let v = sext(val, size);
+        let half = 1i64 << (narrow * 8 - 1);
+        (-half..half).contains(&v)
+    } else {
+        val <= calc_mask(narrow)
+    };
+    fits.then(|| (x.clone(), konst(narrow, val)))
+}
+
 fn lts(a: Expr, b: Expr) -> Cond {
+    if let Some((x, c)) = narrowed(&a, &b, OpCode::CPUI_INT_SEXT, true) {
+        return lts(x, c);
+    }
+    if let Some((c, x)) = narrowed(&b, &a, OpCode::CPUI_INT_SEXT, true).map(|(x, c)| (c, x)) {
+        return lts(c, x);
+    }
     let size = a.size().max(b.size());
     match (a.konst(), b.konst()) {
         (Some(x), Some(y)) if size > 0 => Cond::of_bool(sext(x, size) < sext(y, size)),
@@ -1141,8 +1460,10 @@ impl PrintC {
         self.context.push_mod();
         self.context.set_mod(modifiers::ONLY_BRANCH);
         self.loop_tests.active = self.loop_tests.subst.get(&blk).cloned().unwrap_or_default();
+        self.loop_tests.active_respell = self.loop_tests.respell.get(&blk).copied();
         self.emit_block(fd, arch, body);
         self.loop_tests.active.clear();
+        self.loop_tests.active_respell = None;
         self.context.pop_mod();
         let id = self.emit.open_brace_indent(self.lang().kw_open_curly, self.output_brace(self.options.brace_loop));
         self.flush_eol_warnings();

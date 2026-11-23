@@ -473,6 +473,9 @@ mod verify_x86listingswitch;
 #[path = "verify_symbolstream.rs"]
 mod verify_symbolstream;
 
+#[path = "verify_falseentry.rs"]
+mod verify_falseentry;
+
 #[path = "verify_tailcallentry.rs"]
 mod verify_tailcallentry;
 

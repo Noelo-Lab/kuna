@@ -104,3 +104,65 @@ fn parse_values() {
     assert_eq!(parse_loop_test("assume").unwrap().0, LoopTestMode::Assume);
     assert!(parse_loop_test("on").is_err());
 }
+
+#[test]
+fn pointer_order_follows_the_index() {
+    let v = leaves(2);
+    let base = leaf(v[0], 8);
+    let n = leaf(v[1], 4);
+    let end = op(OpCode::CPUI_PTRADD, 8, vec![base.clone(), op(OpCode::CPUI_INT_SEXT, 8, vec![n.clone()]), konst(8, 1)]);
+    let below = cond_of(&op(OpCode::CPUI_INT_LESS, 1, vec![base.clone(), end.clone()]));
+    let positive = cond_of(&op(OpCode::CPUI_INT_SLESS, 1, vec![konst(4, 0), n.clone()]));
+    assert_eq!(below, positive);
+    let above = cond_of(&op(OpCode::CPUI_INT_LESS, 1, vec![end, base]));
+    let negative = cond_of(&op(OpCode::CPUI_INT_SLESS, 1, vec![n, konst(4, 0)]));
+    assert_eq!(above, negative);
+}
+
+#[test]
+fn extensions_keep_the_order_against_a_constant() {
+    let v = leaves(1);
+    let n = leaf(v[0], 4);
+    let wide = op(OpCode::CPUI_INT_SEXT, 8, vec![n.clone()]);
+    assert_eq!(
+        cond_of(&op(OpCode::CPUI_INT_SLESS, 1, vec![konst(8, 0), wide])),
+        cond_of(&op(OpCode::CPUI_INT_SLESS, 1, vec![konst(4, 0), n.clone()]))
+    );
+    let zwide = op(OpCode::CPUI_INT_ZEXT, 8, vec![n.clone()]);
+    assert_eq!(
+        cond_of(&op(OpCode::CPUI_INT_LESS, 1, vec![zwide.clone(), konst(8, 5)])),
+        cond_of(&op(OpCode::CPUI_INT_LESS, 1, vec![n.clone(), konst(4, 5)]))
+    );
+    assert_ne!(
+        cond_of(&op(OpCode::CPUI_INT_LESS, 1, vec![zwide, konst(8, 0x1_0000_0000)])),
+        cond_of(&op(OpCode::CPUI_INT_LESS, 1, vec![n, konst(4, 0)]))
+    );
+}
+
+#[test]
+fn bound_is_a_multiple_of_the_step() {
+    let v = leaves(2);
+    let base = leaf(v[0], 8);
+    let n = leaf(v[1], 8);
+    let ptr = op(OpCode::CPUI_PTRADD, 8, vec![base.clone(), n.clone(), konst(8, 12)]);
+    assert!(multiple_of(&ptr, &base, 12));
+    assert!(!multiple_of(&ptr, &base, 24));
+    let scaled = op(OpCode::CPUI_INT_ADD, 8, vec![base.clone(), op(OpCode::CPUI_INT_MULT, 8, vec![n.clone(), konst(8, 16)])]);
+    assert!(multiple_of(&scaled, &base, 8));
+    let odd = op(OpCode::CPUI_INT_ADD, 8, vec![base.clone(), op(OpCode::CPUI_INT_MULT, 8, vec![n.clone(), konst(8, 12)])]);
+    assert!(!multiple_of(&odd, &base, 12));
+    let wrapped = op(OpCode::CPUI_INT_ADD, 8, vec![base.clone(), op(OpCode::CPUI_INT_ADD, 8, vec![n, konst(8, 1)])]);
+    assert!(!multiple_of(&wrapped, &base, 2));
+}
+
+#[test]
+fn element_pointers_compare_as_indices() {
+    let v = leaves(1);
+    let base = leaf(v[0], 8);
+    let at = |i: u64| op(OpCode::CPUI_PTRADD, 8, vec![base.clone(), konst(8, i), konst(8, 4)]);
+    let entry = cond_of(&op(OpCode::CPUI_INT_NOTEQUAL, 1, vec![at(16), at(32)]));
+    assert_eq!(entry, Cond::of_bool(true));
+    assert_eq!(cond_of(&op(OpCode::CPUI_INT_LESS, 1, vec![at(16), at(32)])), Cond::of_bool(true));
+    assert!(multiple_of(&at(32), &at(16), 4));
+    assert!(!multiple_of(&at(32), &at(16), 8));
+}

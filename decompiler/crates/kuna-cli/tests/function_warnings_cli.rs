@@ -142,15 +142,17 @@ fn a_flow_cut_by_the_budget_or_a_declared_extent_is_a_warning() {
 
 /// Each function's body falls through into the next function at its last
 /// instruction, which is where the drained `funcboundflow` warning is recorded.
+/// The `sub esp,4` inside `register_tm_clones` is declared an entry: discovery
+/// no longer plants one there.
 #[test]
 fn an_empty_body_s_drained_warning_is_a_body_warning_in_every_language() {
     let cases = [
-        ("function_boundary_return_x86_64", "ordinary_first", 0x401016, vec![]),
-        ("i386_pie_nl", "register_tm_clones", 0x18f0, vec![("injected", 0x18d0)]),
+        ("function_boundary_return_x86_64", "ordinary_first", 0x401016, vec![], vec![]),
+        ("i386_pie_nl", "register_tm_clones", 0x18f0, vec![("injected", 0x18d0)], vec!["--define-function", "0x18f2"]),
     ];
-    for (fixture, name, last, header) in &cases {
+    for (fixture, name, last, header, declare) in &cases {
         let image = common::fixture(fixture);
-        let listing = document(&["disassemble", &image, name, "--json"]);
+        let listing = document(&[&["disassemble", &image, name, "--json"][..], &declare[..]].concat());
         assert_eq!(listing["instructions"].as_array().unwrap().last().unwrap()["address"], *last, "{listing}");
         let mut expected: Vec<(String, Value)> = vec![("funcboundflow".into(), json!(last))];
         expected.extend(header.iter().map(|(kind, address)| (kind.to_string(), json!(address))));
@@ -158,7 +160,7 @@ fn an_empty_body_s_drained_warning_is_a_body_warning_in_every_language() {
         for language in ["c", "go", "rust"] {
             for style in ["inline", "banner"] {
                 let args = ["decompile", &image, name, "--json", "--language", language];
-                let doc = document(&[&args[..], &["--option", "warnstyle", style]].concat());
+                let doc = document(&[&args[..], &["--option", "warnstyle", style], &declare[..]].concat());
                 let record = &doc["functions"][0];
                 let mut found: Vec<(String, Value)> =
                     records(record).into_iter().map(|(kind, _, address)| (kind, address)).collect();
@@ -168,12 +170,13 @@ fn an_empty_body_s_drained_warning_is_a_body_warning_in_every_language() {
         }
     }
 
-    let go = |fixture: &str, name: &str| {
-        document(&["decompile", &common::fixture(fixture), name, "--json", "--language", "go"])["functions"][0].clone()
+    let go = |fixture: &str, name: &str, declare: &[&str]| {
+        let image = common::fixture(fixture);
+        document(&[&["decompile", &image, name, "--json", "--language", "go"][..], declare].concat())["functions"][0].clone()
     };
-    let alone = go("function_boundary_return_x86_64", "ordinary_first");
+    let alone = go("function_boundary_return_x86_64", "ordinary_first", &[]);
     assert!(alone["code"].as_str().unwrap().starts_with("func ordinary_first() { // warn: funcboundflow: "), "{alone}");
-    let both = go("i386_pie_nl", "register_tm_clones");
+    let both = go("i386_pie_nl", "register_tm_clones", &["--define-function", "0x18f2"]);
     assert!(
         both["code"].as_str().unwrap().starts_with("func register_tm_clones() { // injected // warn: funcboundflow: "),
         "{both}"
@@ -227,7 +230,7 @@ fn a_function_s_original_name_comment_is_not_a_warning() {
 fn both_warning_styles_report_the_same_warnings() {
     let pe = common::fixture("explicit_branch_assertion_pe_i386.exe");
     let mut args = vec!["decompile-all", &pe, "--json", "--omit", "line_mappings,variables,types"];
-    args.extend(["--addr", "0x418764", "--addr", "0x406de0", "--addr", "0x44a0c6"]);
+    args.extend(["--addr", "0x418764", "--addr", "0x406de0", "--addr", "0x44a0c6", "--option", "tailform", "off"]);
     let inline = document(&args);
     let workers = document(&[&args[..], &["--jobs", "2"]].concat());
     assert_eq!(workers["functions"], inline["functions"], "a --jobs worker's records carry them");
