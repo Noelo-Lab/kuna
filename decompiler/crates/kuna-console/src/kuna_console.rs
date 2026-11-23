@@ -271,6 +271,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "v850indirectbranch" => on_off(conf.v850_indirect_branch),
         "switchmodbound" => on_off(conf.switch_modulo_bound),
         "constselectjump" => conf.const_select_jump.as_str(),
+        "looptest" => conf.loop_test.as_str(),
         "switchsharedcase" => on_off(conf.switch_shared_case),
         "realtypes" => on_off(conf.realtypes),
         // (kuna `calloverlap`) Report the selected overlap policy.

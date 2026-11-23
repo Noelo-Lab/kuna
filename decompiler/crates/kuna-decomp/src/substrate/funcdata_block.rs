@@ -2576,18 +2576,9 @@ impl Funcdata {
         let share = self.get_arch().jumptable_share_partial;
         let mut owned: Option<Funcdata> = None;
         if !share || shared.is_none() {
-            let mut fresh = match self.build_jumptable_partial() {
-                Ok(p) => p,
-                Err(_) => return RecoveryMode::FailNormal,
-            };
-            // Mark the partial as a jump-table-recovery clone, then build its blocks
-            // and run the reduced "jumptable" universalAction over it (C++
-            // partial.truncatedFlow + allacts.setCurrent("jumptable") + perform).
-            fresh.set_flag_raw(crate::funcdata::funcdata_flags::jumptablerecovery_on);
-            if run_pipeline(&mut fresh, visited).is_err() {
-                // C++ catches LowlevelError, warns, and returns fail_normal.
+            let Some(fresh) = self.jumptable_partial(visited, run_pipeline) else {
                 return RecoveryMode::FailNormal;
-            }
+            };
             if share {
                 *shared = Some(fresh);
             } else {
@@ -2658,6 +2649,18 @@ impl Funcdata {
                 }
             }
         }
+    }
+
+    /// Build the SSA view of the flow decoded so far.
+    pub(crate) fn jumptable_partial(
+        &self,
+        visited: &crate::flow::VisitedMap,
+        run_pipeline: &mut crate::flow::JtPipelineFn<'_>,
+    ) -> Option<Funcdata> {
+        let mut partial = self.build_jumptable_partial().ok()?;
+        partial.set_flag_raw(crate::funcdata::funcdata_flags::jumptablerecovery_on);
+        run_pipeline(&mut partial, visited).ok()?;
+        Some(partial)
     }
 
     /// Build the partial Funcdata for jump-table recovery: a fresh function

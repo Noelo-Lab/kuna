@@ -74,6 +74,14 @@ whose block holds unread flag writes once the register space has had a heritage
 pass (`deadcode delay register 50` keeps those writes alive). Before the fix the
 second `if (x)` stayed.
 
+`kuna-looptest.xml` checks option `looptest` on six x86-64 loops laid out as
+gcc -O2 rotates them. A pointer loop whose `n == 0` guard returns separately, a
+counted loop wrapped in `if (n > 0)` and a list walk whose test reads the copy
+of the next pointer print `while (c)` with the guard gone; `i = 0; do ...
+while (i != 16)` prints `while` because its entry test folds to true. A guard
+`n > 0` in front of a `!=` latch and a retry loop whose test reads a body value
+stay do-while. `option looptest binary` restores every do-while and guard.
+
 `kuna-switchmerge.xml` checks option `switchmerge`: two AArch64 range-checked
 jump tables on one selector, the second reached when the first's range check
 fails, print as one `switch` whose holes take the one `default:` arm. In `f`
