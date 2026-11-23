@@ -71,6 +71,7 @@
 <symbol space="ram" offset="0x10000044" name="triple"/>
 </binaryimage>
 <script>
+  <com>option typevote off</com>
   <com>option bejoin off</com>
   <com>lo fu wide_mul</com>
   <com>decompile</com>

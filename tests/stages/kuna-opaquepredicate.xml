@@ -1,0 +1,113 @@
+<decompilertest>
+<!-- P3 simplification quiescence, P0 option opaquepredicate (default off).
+     A comparison that has one result for every input is folded, and the
+     branch it guards loses the arm that never runs. clang -O0, x86-64:
+
+       int check(int x, int y)   { if (((x * (x + 1)) & 1) == 0 || y < 10) return y + 1; return y - 1; }
+       int keep(int x, int y)    { if (((x * (x + 2)) & 1) == 0 || y < 10) return y + 1; return y - 1; }
+       int square(int x, int y)  { if (((x * x) & 3) == 2) return y * 3; return y - 7; }
+       int mixed(unsigned x, unsigned y, int z)
+                                 { if ((x | y) - (x & y) != (x ^ y)) return z * 5; return z + 2; }
+       int mixedkeep(unsigned x, unsigned y, int z)
+                                 { if ((x | y) - (x & y) != (x ^ (y & 4))) return z * 5; return z + 2; }
+       int parity(unsigned x, unsigned y, int z)
+                                 { if (x * (x + 1) == 2 * y + 1) return z * 9; return z + 4; }
+
+     x * (x + 1) is even and x * x is 0 or 1 modulo 4 (decided by the low
+     bits); (x | y) - (x & y) equals x ^ y (decided with each input all zeros
+     or all ones); an even product never equals an odd sum (the low bits of
+     the two sides always differ). keep and mixedkeep depend on their inputs
+     and must stay.
+
+     steps is gcc -O2 -fno-pic -no-pie of
+       void steps(void) { for (int i = 0;; i++) switch (i) { case 0: c0(); break; ... case 9: c9(); break; default: return; } }
+     linked with -Ttext-segment=0x100000 beside ten one-store callees c0..c9.
+     Its index starts as xor ebx,ebx and its guard is cmp ebx,9; ja. Jump-table
+     recovery sees only the path from the xor, so the index reads 0 there; the
+     rule must not fold the guard's ebx == 9 half, or case 9 leaves the table. -->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">f30f1efa554889e5897df88975f48b45f88b4df883c1010fafc183e00183f8007406837df40a7d0b8b45f483c0018945fceb098b45f483e8018945fc8b45fc5dc3</bytechunk>
+<symbol space="ram" offset="0x100000" name="check"/>
+<bytechunk space="ram" offset="0x100050" readonly="true">f30f1efa554889e5897df88975f48b45f88b4df883c1020fafc183e00183f8007406837df40a7d0b8b45f483c0018945fceb098b45f483e8018945fc8b45fc5dc3</bytechunk>
+<symbol space="ram" offset="0x100050" name="keep"/>
+<bytechunk space="ram" offset="0x1000a0" readonly="true">f30f1efa554889e5897df88975f48b45f80faf45f883e00383f80275096b45f4038945fceb098b45f483e8078945fc8b45fc5dc3</bytechunk>
+<symbol space="ram" offset="0x1000a0" name="square"/>
+<bytechunk space="ram" offset="0x1000e0" readonly="true">f30f1efa554889e5897df88975f48955f08b45f80b45f48b4df8234df429c88b4df8334df439c874096b45f0058945fceb098b45f083c0028945fc8b45fc5dc3</bytechunk>
+<symbol space="ram" offset="0x1000e0" name="mixed"/>
+<bytechunk space="ram" offset="0x100120" readonly="true">f30f1efa554889e5897df88975f48955f08b45f80b45f48b4df8234df429c88b4df88b55f483e20431d139c874096b45f0058945fceb098b45f083c0028945fc8b45fc5dc3</bytechunk>
+<symbol space="ram" offset="0x100120" name="mixedkeep"/>
+<bytechunk space="ram" offset="0x100170" readonly="true">f30f1efa554889e5897df88975f48955f08b45f88b4df883c1010fafc18b4df4d1e183c10139c875096b45f0098945fceb098b45f083c0048945fc8b45fc5dc3</bytechunk>
+<symbol space="ram" offset="0x100170" name="parity"/>
+<bytechunk space="ram" offset="0x101000" readonly="true">5331db0f1f44000083fb090f87a900000089d8ff24c500201000660f1f440000e81b0100000f1f0083c301ebdb0f1f00e8fb000000ebf1660f1f840000000000e8db000000ebe1660f1f840000000000e8bb000000ebd1660f1f840000000000e89b000000ebc1660f1f840000000000e87b000000ebb1660f1f840000000000e85b000000eba1660f1f840000000000e83b000000eb91660f1f840000000000e81b000000eb81660f1f840000000000e89b000000e96effffff5bc30f1f4000c705362f000000000000c30f1f440000c705262f000001000000c30f1f440000c705162f000002000000c30f1f440000c705062f000003000000c30f1f440000c705f62e000004000000c30f1f440000c705e62e000005000000c30f1f440000c705d62e000006000000c30f1f440000c705c62e000007000000c30f1f440000c705b62e000008000000c30f1f440000c705a62e000009000000c3</bytechunk>
+<symbol space="ram" offset="0x101000" name="steps"/>
+<symbol space="ram" offset="0x1010c0" name="c0"/>
+<symbol space="ram" offset="0x1010d0" name="c1"/>
+<symbol space="ram" offset="0x1010e0" name="c2"/>
+<symbol space="ram" offset="0x1010f0" name="c3"/>
+<symbol space="ram" offset="0x101100" name="c4"/>
+<symbol space="ram" offset="0x101110" name="c5"/>
+<symbol space="ram" offset="0x101120" name="c6"/>
+<symbol space="ram" offset="0x101130" name="c7"/>
+<symbol space="ram" offset="0x101140" name="c8"/>
+<symbol space="ram" offset="0x101150" name="c9"/>
+<bytechunk space="ram" offset="0x102000" readonly="true">a01010000000000090101000000000008010100000000000701010000000000060101000000000005010100000000000401010000000000030101000000000002010100000000000b010100000000000</bytechunk>
+</binaryimage>
+<script>
+<com>option ctypes on</com>
+<com>parse line extern int check(int x, int y);</com>
+<com>parse line extern int keep(int x, int y);</com>
+<com>parse line extern int square(int x, int y);</com>
+<com>parse line extern int mixed(unsigned int x, unsigned int y, int z);</com>
+<com>parse line extern int mixedkeep(unsigned int x, unsigned int y, int z);</com>
+<com>parse line extern int parity(unsigned int x, unsigned int y, int z);</com>
+<com>option opaquepredicate off</com>
+<com>lo fu check</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu square</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu mixed</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu parity</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option opaquepredicate on</com>
+<com>lo fu check</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu keep</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu square</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu mixed</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu mixedkeep</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu parity</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu steps</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="off keeps the test of a product of consecutive integers" min="1" max="1">x \* \(x \+ 1\) &amp; 1</stringmatch>
+<stringmatch name="on returns the only reachable value" min="1" max="1">^  return y \+ 1;</stringmatch>
+<stringmatch name="a product that is odd for some input stays" min="1" max="1">x \* \(x \+ 2\) &amp; 1</stringmatch>
+<stringmatch name="off keeps the test of a square modulo four" min="1" max="1">x \* x &amp; 3</stringmatch>
+<stringmatch name="on drops the arm behind a square that is 2 modulo four" min="1" max="1">^  return y \+ -7;</stringmatch>
+<stringmatch name="the dead arm of the square test prints only when off" min="1" max="1">y \* 3</stringmatch>
+<stringmatch name="off keeps the bitwise identity" min="1" max="1">\(x \| y\) - \(x &amp; y\) != \(x \^ y\)\)</stringmatch>
+<stringmatch name="on folds the bitwise identity" min="1" max="1">^  return z \+ 2;</stringmatch>
+<stringmatch name="an equality that fails for some input stays" min="1" max="1">\(x \| y\) - \(x &amp; y\) != \(x \^ y &amp; 4\)</stringmatch>
+<stringmatch name="off keeps the comparison of an even product with an odd sum" min="1" max="1">x \* \(x \+ 1\) != y \* 2 \+ 1</stringmatch>
+<stringmatch name="on folds sides whose low bits always differ" min="1" max="1">^  return z \+ 4;</stringmatch>
+<stringmatch name="on keeps the last case of a switch whose index starts at zero" min="1" max="1">case 9:</stringmatch>
+<stringmatch name="on keeps the call in the last case of the switch" min="1" max="1">c9\(\);</stringmatch>
+</decompilertest>

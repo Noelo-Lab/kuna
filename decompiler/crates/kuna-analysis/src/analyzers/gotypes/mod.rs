@@ -24,7 +24,8 @@
 //! recovery. Named non-struct types (a `type MyInt int`) are also skipped —
 //! a bare alias adds no layout knowledge.
 //! Little-endian 32-bit images use typelinks on Go 1.18–1.26 and consecutive
-//! descriptors on Go 1.27. Little-endian 64-bit targets support both layouts.
+//! descriptors on Go 1.27. Little-endian 64-bit targets support both layouts
+//! (typelinks from go1.16 on).
 //!
 //! ## Locating moduledata without symbols
 //!
@@ -53,8 +54,9 @@
 //! 48 bytes on 64-bit: `size @0`, `ptrbytes @8`, `hash @16`, `tflag @20`,
 //! `align @21`, `fieldalign @22`, `kind @23`, `equal @24`, `gcdata @32`,
 //! `nameOff(i32) @40`, `ptrToThis(i32) @44`. Names resolve at
-//! `types + nameOff`: a flags byte, a varint length, then the bytes
-//! (`tflagExtraStar` prefixes a `*` to strip). A struct type continues with
+//! `types + nameOff`: a flags byte, a varint length (a big-endian `u16`
+//! through go1.16), then the bytes (`tflagExtraStar` prefixes a `*` to
+//! strip). A struct type continues with
 //! `pkgPath (ptr) @48`, `fields slice @56`: each field is
 //! `{name (ptr), typ (ptr), offset (uintptr)}`, 24 bytes, since go1.19.
 //! Go1.18 stores `offset << 1 | embedded` in that final word instead.
@@ -81,7 +83,7 @@ use kuna_decomp::kuna_langfacet::LangFacet;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 use crate::pclntab::locate_header;
 use kuna_layout::GoImage;
-use crate::loader::gobuildinfo::{buildinfo_blob, version_from_blob};
+use crate::loader::gobuildinfo::{buildinfo_blob, go_version};
 
 mod kuna_structorder;
 mod kuna_layout;
@@ -119,8 +121,12 @@ const KIND_STRUCT: u8 = 25;
 const KIND_UNSAFEPTR: u8 = 26;
 
 /// `tflag` bits (`internal/abi.TFlag`).
+const TFLAG_UNCOMMON: u8 = 0x1;
 const TFLAG_EXTRA_STAR: u8 = 0x2;
 const TFLAG_NAMED: u8 = 0x4;
+
+/// `internal/abi.UncommonType`: `{PkgPath i32, Mcount u16, Xcount u16, Moff u32, _ u32}`.
+const UNCOMMON_SIZE: u64 = 16;
 
 /// How far past the moduledata anchor the window scan looks, in target words.
 /// The fields phase 1 needs (`types`/`etypes`/`typelinks`) have sat within the
@@ -157,21 +163,28 @@ fn mapped(img: &GoImage, vma: u64) -> bool {
     img.read(vma, 1).is_some()
 }
 
-/// Decode a Go name record at `vma` (go1.17+ encoding): a flags byte, a varint
-/// length, then the UTF-8 bytes. Returns `None` on any malformation.
+/// Decode a Go name record at `vma`: a flags byte, the length (a varint since
+/// go1.17, a big-endian `u16` before — `img.u16_names`), then the UTF-8
+/// bytes. Returns `None` on any malformation.
 fn read_go_name(img: &GoImage, vma: u64) -> Option<String> {
     let _flags = img.read(vma, 1)?[0];
     let mut len: usize = 0;
-    let mut shift = 0u32;
     let mut cur = vma + 1;
-    for _ in 0..4 {
-        let b = img.read(cur, 1)?[0];
-        cur += 1;
-        len |= ((b & 0x7f) as usize) << shift;
-        if b & 0x80 == 0 {
-            break;
+    if img.u16_names {
+        let b = img.read(cur, 2)?;
+        len = usize::from(u16::from_be_bytes([b[0], b[1]]));
+        cur += 2;
+    } else {
+        let mut shift = 0u32;
+        for _ in 0..4 {
+            let b = img.read(cur, 1)?[0];
+            cur += 1;
+            len |= ((b & 0x7f) as usize) << shift;
+            if b & 0x80 == 0 {
+                break;
+            }
+            shift += 7;
         }
-        shift += 7;
     }
     if len == 0 || len > 512 {
         return None;
@@ -288,9 +301,7 @@ fn locate_type_meta(img: &GoImage, anchor: u64) -> Option<TypeMeta> {
 fn descriptor_stride(img: &GoImage, t: &GoType) -> Option<u64> {
     let width = img.word_size;
     let type_base = img.type_base();
-    const UNCOMMON_SIZE: u64 = 16; // {PkgPath i32, Mcount u16, Xcount u16, Moff u32, _ u32}
     const METHOD_SIZE: u64 = 16; // 4 x i32
-    const TFLAG_UNCOMMON: u8 = 0x1;
     let slice_len = |at: u64| -> Option<u64> {
         let len = word(img, at + width)?;
         let cap = word(img, at + 2 * width)?;
@@ -689,12 +700,13 @@ impl AnalysisPass for GoTypesPass {
         if !ctx.file.is_little_endian() {
             return AnalysisOutput::default();
         }
-        let version = buildinfo_blob(ctx.file).and_then(version_from_blob);
+        let mut img = GoImage::new(ctx.file);
+        let version = buildinfo_blob(ctx.file).and_then(|b| go_version(b, |vma, len| img.bytes.read(vma, len)));
         let modern_32_bit = !ctx.file.is_64() && version == Some((1, 27));
         if !ctx.file.is_64() && !modern_32_bit && !matches!(version, Some((1, 18..=26))) {
             return AnalysisOutput::default();
         }
-        let img = GoImage::new(ctx.file);
+        img.u16_names = matches!(version, Some((1, ..=16)));
         let Some(header_vma) = locate_header(ctx.file, &img.bytes) else {
             return AnalysisOutput::default();
         };

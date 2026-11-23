@@ -2106,7 +2106,27 @@ feeding a STORE address prints `*ptr` or hides the dereference
 (`print_load_value`/`print_store_value`), a negated condition flips a
 comparison token to its complement instead of printing `!`.
 
-**The pretty-printer.** All of the above emits *logical* tokens; line breaks
+**The pretty-printer.** All of the above emits *logical* tokens. By default
+kuna prints them straight to the plain emitter, one statement per line,
+where upstream always breaks lines at 100 columns. `option maxlinewidth N`
+(20 to 10000) selects upstream's line breaking for plain text:
+`printc.rs (PrintC::set_max_line_size)` puts `EmitPrettyPrint` in front of the
+plain emitter, and `printc.rs (PrintC::set_markup)` keeps it when it restores
+plain text after a markup render. The markup back-end is never wrapped, and
+only C output is: Go ends a statement at a line break, and Rust and Go print
+unbroken (`printc.rs (PrintC::set_name)` re-selects the emitter when the
+language changes). Only the console's `print C` (and so plain `kuna decompile` text) is
+broken: the batch render behind `--json`, `decompile-all` and the browser front-end
+returns records that address its code line by line (warning lines, line
+mappings, the call-argument positions later casts are written at), so
+`decompiler/crates/kuna-console/src/project.rs (decompile_pulled)` prints each
+of its functions unbroken (`printc.rs (PrintC::suspend_line_size)`). A label
+line fires a pending `else` brace before the label, as it does without the
+pretty-printer (`prettyprint.rs (EmitPrettyPrint::try_tag_line_indent)`). The
+line size also bounds `option commentindent`: an indent of N or more is refused
+(`printc.rs (PrintC::set_line_comment_indent)`), as upstream does
+(`tests/stages/kuna-maxlinewidth.xml`). The datatest corpus passes unchanged
+with `maxlinewidth` set to 100 or 200. When selected, line breaks
 are chosen by `prettyprint.rs (EmitPrettyPrint)`, an Oppen-style streaming
 formatter transcribed verbatim because its breaks are part of the byte-exact
 output: tokens queue in a circular buffer (initial capacity 300, grown by 200
@@ -2118,8 +2138,8 @@ content no longer fits either indents to the group's saved column or, when
 breaking would recover fewer than 10 characters, stays on the line;
 overflow permanently raises inner indents to guarantee at least half a line of
 working space (`prettyprint.rs (EmitPrettyPrint::overflow)`), and inside a
-comment every forced break re-emits the comment fill prefix. Defaults: 100
-columns (`option maxlinewidth`), indent step 2 (`option indentincrement`),
+comment every forced break re-emits the comment fill prefix. Defaults: no
+line limit (`option maxlinewidth`), indent step 2 (`option indentincrement`),
 comment indent 20; brace placement per construct via the four `braceformat`
 fields of `printc.rs (PrintCOptions)`: if/loop/switch braces sit on the same
 line as their construct, and a function's brace sits directly under its
@@ -2367,6 +2387,53 @@ holds in a named local (`v2 = stdout_ptr;`, then several reads through `v2`) nam
 the import only while some other printed statement still reads that local: when
 every read of it is such a load, the loads keep `*v2`, so naming the import never
 leaves the local's assignment dead.
+
+The slot's own value, used without a dereference, is the import's address: Swift
+passes a witness table, type metadata or a conformance descriptor to the runtime
+this way (`swift_getWitnessTable(conformance, type, args)`), and Objective-C a class
+object as a message receiver. With the option on, `PrintC::push_vn_explicit`
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (import_slot_address)`)
+renders a read of a Mach-O import slot whose import is a data object (the slots
+`machodataslots` classifies from the import's mangling, chapter
+[01](01-program-prep.md)) as `&<import>` instead of `dat_<slot>`, named by the same
+`query_function` lookup. A function import's slot keeps its name, so a test of a weak
+function's address still reads the slot. It does so only for the value the loader
+put there: a read whose varnode is a function input, or comes from one through call
+side effects (`INDIRECT`) and joins (`MULTIEQUAL`); a value the function stored into
+the slot keeps the slot name. So do a read narrower than the slot and a read by an
+operator C does not apply to a pointer (a mask, a shift, a multiply or a division:
+`dat_<slot> | 1`, never `&<import> | 1`); an addition stays `&<import> + 8`.
+
+(kuna `cstringconst`, default on) A pointer-wide constant inside a string-literal
+section prints as the literal there, whatever type it reaches the printer with
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_cstringconst.rs`). `pushConstant`
+renders a constant as a quoted string only when its type is a pointer to a
+character type, and `ActionConstantPtr` gives it that type only when a global
+symbol covers the address; the string pass plants `char[N]` at literals of four
+characters or more, so a short literal in the middle of a `__cstring` section
+(`" ("`, `".SH"`, `")"`) has none, and a constant that reaches the printer as an
+argument of a call through an untyped function pointer, or as a `void *` chosen
+between a literal and what an untyped callee returns, printed as the integer
+`0x28abe` or the address `&dat_28a62`. The linker says what those bytes are: a
+Mach-O `__cstring` section (type `S_CSTRING_LITERALS`) holds nothing but
+NUL-terminated string literals, and the bootstrap records its range on the
+`Architecture` (`cstring_ranges`; empty on every other image, so the XML
+datatest corpus never reaches it). An ELF `SHF_STRINGS|SHF_MERGE` section is not
+taken: rustc gives a whole `.rodata` those flags with records inside it (the
+`panicloc` fixture's `core::panic::Location`). `PrintC::push_vn_explicit_ir` consults
+`literal_char` at two points: in the pointer arm, beside the `cfstrings` check,
+for a pointer-typed constant whose pointee is not a character type; and ahead of
+the integer path for a constant that is an argument of a call (`call_literal_char`:
+slot 1 and up, reached directly or through a few copies and phis), since a value
+compared, added or stored may be a plain integer that equals an address. The
+integer arm also needs the constant to land on the first byte of a literal (the
+section's first byte, or the byte after a NUL) and the callee's prototype not to
+lock that argument to a scalar type: in a dylib at base 0 a `size_t` like the
+`0x4000` of `setvbuf(fp, NULL, 0, 0x4000)` can fall inside `__cstring`, and
+would otherwise print as the tail of whatever literal holds that byte. Both
+reach `push_ptr_char_constant_ir`, which reads and escapes the bytes as for a
+`char *` constant and declines when they are not a string. Off keeps the
+integer or address.
 
 (kuna) **The ghidra-mode third style (Phase 3, DIV-77).** The ghidra-mode
 process sets a separate `name_style_ghidra` flag alongside (not instead of)
@@ -5391,3 +5458,18 @@ bundle also checks carry boundaries and exact source/destination aliasing.
 the 5% budget; wall median changed by -0.119%. The C path does not call this Rust
 helper, so this records the measured failure without attributing a cause. The
 original measurement is retained and the correction ships as an explicit opt-in.
+
+**Post-increment** (`postinc`, default on, C output only; kuna;
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_postinc.rs (ActionPostIncrement)`,
+run after the final structure): an in-place pointer step `p = p + c` (an
+`INT_ADD` of a constant `c`, or a `PTRADD` of one element of `c` bytes, whose
+output and first input are the same variable) prints nothing, and the LOAD or
+STORE before it prints its pointer as `p++` (`printc.rs (PrintC::push_post_increment)`,
+token `POST_INCREMENT`, a postfix like the call parentheses), when the stepped
+value is read by exactly that LOAD or STORE besides the step, the access is
+`c` bytes and `p` points to `c`-byte elements (so `p++` steps the same bytes),
+the access is not a stack byte copy, and the statement holding the access is
+the one printed right before the step in the same block. `v = *p; p = &p[1];`
+prints `v = *p++;`, `*d = c; d = &d[1];` prints `*d++ = c;`. A step that goes
+through a copy the loop also compares (`v2 = &a0[1]; v1 += *a0; a0 = v2;`) is
+left as it is (`tests/stages/kuna-postinc.xml`).

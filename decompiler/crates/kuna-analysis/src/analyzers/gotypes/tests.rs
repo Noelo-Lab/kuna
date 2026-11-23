@@ -110,6 +110,13 @@ fn go_name_encoding_decodes_and_refuses() {
     let spans = vec![(0x1000u64, data.to_vec())];
     let img = img_of(&spans);
     assert_eq!(read_go_name(&img, 0x1000).as_deref(), Some("abc"));
+    // go1.16 and earlier: a big-endian u16 length.
+    let old = [0u8, 0, 3, b'a', b'b', b'c', 0];
+    let spans = vec![(0x1000u64, old.to_vec())];
+    let mut img = img_of(&spans);
+    assert_eq!(read_go_name(&img, 0x1000), None, "a u16 length is not a varint");
+    img.u16_names = true;
+    assert_eq!(read_go_name(&img, 0x1000).as_deref(), Some("abc"));
     // zero length refused; unmapped refused.
     let zero = vec![0u8, 0];
     let spans = vec![(0x1000u64, zero)];
@@ -576,6 +583,60 @@ fn descriptor_globals_name_and_type_every_printable_record() {
         let field = desc.get_field(i as i32).unwrap();
         assert_eq!((field.name.as_str(), field.offset), (name, offset));
     }
+}
+
+#[test]
+fn descriptor_globals_follow_type_edges_and_spell_import_paths() {
+    let (mut spans, anchor, types, _) = synth();
+    {
+        let blob = &mut spans[0].1;
+        // `poll.FD` @ +0xc0: a named struct of a sub-package, no fields, with
+        // an uncommon record whose pkgPath names `internal/poll`; its
+        // ptrToThis is the pointer record below.
+        let s = 0xc0;
+        blob[s..s + 8].copy_from_slice(&16u64.to_le_bytes());
+        blob[s + 20] = TFLAG_NAMED | TFLAG_UNCOMMON;
+        blob[s + 23] = KIND_STRUCT;
+        blob[s + 40..s + 44].copy_from_slice(&0x250i32.to_le_bytes());
+        blob[s + 44..s + 48].copy_from_slice(&0x140i32.to_le_bytes());
+        blob[s + 80..s + 84].copy_from_slice(&0x260i32.to_le_bytes());
+        blob[0x250..0x259].copy_from_slice(b"\0\x07poll.FD");
+        blob[0x260..0x26f].copy_from_slice(b"\0\x0dinternal/poll");
+        // `*poll.FD` @ +0x140, reached only through ptrToThis.
+        let p = 0x140;
+        blob[p..p + 8].copy_from_slice(&8u64.to_le_bytes());
+        blob[p + 23] = KIND_POINTER;
+        blob[p + 40..p + 44].copy_from_slice(&0x270i32.to_le_bytes());
+        blob[p + 48..p + 56].copy_from_slice(&(types + 0xc0).to_le_bytes());
+        blob[0x270..0x27a].copy_from_slice(b"\0\x08*poll.FD");
+    }
+    {
+        // Typelinks: main.Point and poll.FD only — `int` is reached through
+        // main.Point's field types, `*poll.FD` through ptrToThis.
+        let links = &mut spans[1].1;
+        links.clear();
+        links.extend_from_slice(&0x60i32.to_le_bytes());
+        links.extend_from_slice(&0xc0i32.to_le_bytes());
+    }
+    let img = img_of(&spans);
+    let meta = locate_type_meta(&img, anchor).expect("triple validates");
+    assert_eq!(meta.offsets, vec![0x60, 0xc0]);
+    let tf = kuna_decomp::dtype::TypeFactoryImpl::new();
+    tf.set_default_alignment_map();
+    tf.set_max_basetype_size(8);
+    tf.setup_sizes(Some(8), 8, 8);
+    tf.cache_core_types().unwrap();
+    let facts = kuna_typeglobals::collect(&tf, &img, &meta);
+    let named: Vec<(u64, &str)> = facts.iter().map(|f| (f.addr, f.name.as_str())).collect();
+    assert_eq!(
+        named,
+        vec![
+            (types, "type:int"),
+            (types + 0x60, "type:main.Point"),
+            (types + 0xc0, "type:internal/poll.FD"),
+            (types + 0x140, "type:*internal/poll.FD"),
+        ]
+    );
 }
 
 // --- itab consumer (kuna_itabs) ---------------------------------------------

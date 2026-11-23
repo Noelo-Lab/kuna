@@ -1,0 +1,40 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    DWARF 5 global locations: DW_OP_addrx.
+
+    A DWARF 4 producer locates a static global with `DW_OP_addr <address>`.
+    DWARF 5 (clang's default) writes `DW_OP_addrx <index>` instead, an index
+    into the unit's .debug_addr table.  The DWARF pass decoded only the first
+    form, so a clang -g binary whose statics have no ELF symbol named none of
+    them: `bump` printed `dat_202250 + dat_202240[k & 3]`.  The index is now
+    resolved through .debug_addr, in the file's byte order.
+
+    The two images are decompiler/crates/kuna-analysis/tests/fixtures/dwarf_addrx.c
+    built for x86-64 and for big-endian AArch64 (the command is in the source).
+    A strict fix with no option: one pass pins the names.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarf_addrx_x86_64</com>
+  <com>read symbols</com>
+  <com>load function bump</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarf_addrx_aarch64_be</com>
+  <com>read symbols</com>
+  <com>load function bump</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="dwarf addrx #1: the scalar global takes its DWARF name on both byte orders" min="2" max="2">^  counter = v1;$</stringmatch>
+<stringmatch name="dwarf addrx #2: the array global takes its DWARF name on both byte orders" min="2" max="2">^  v1 = counter \+ .*table\[</stringmatch>
+<stringmatch name="dwarf addrx #3: no global is left with an address name" min="0" max="0">dat_[0-9a-f]+</stringmatch>
+</decompilertest>

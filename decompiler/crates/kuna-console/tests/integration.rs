@@ -337,19 +337,29 @@ mod verify_noreturn_propagate;
 mod verify_objc;
 #[path = "verify_swiftmetadata.rs"]
 mod verify_swiftmetadata;
+#[path = "verify_swiftobjcthunk.rs"]
+mod verify_swiftobjcthunk;
 #[path = "verify_swifttypes.rs"]
 mod verify_swifttypes;
+#[path = "verify_valuewitness.rs"]
+mod verify_valuewitness;
 #[path = "verify_swiftcall.rs"]
 mod verify_swiftcall;
 
 #[path = "verify_importdata.rs"]
 mod verify_importdata;
 
+#[path = "verify_cstringconst.rs"]
+mod verify_cstringconst;
+
 #[path = "verify_cfstring.rs"]
 mod verify_cfstring;
 
 #[path = "verify_elfgotimports.rs"]
 mod verify_elfgotimports;
+
+#[path = "verify_machodataslots.rs"]
+mod verify_machodataslots;
 
 #[path = "verify_object_formats.rs"]
 mod verify_object_formats;

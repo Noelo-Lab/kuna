@@ -22,6 +22,7 @@ pub mod kuna_calleestackargs; // (kuna `calleeargs`) the stack-argument bytes an
 pub mod kuna_calleepurge; // (kuna) an x86-32 callee's stack purge read off its RET
 pub mod kuna_stackcookie; // (kuna) the frame cookie MSVC stores on the stack is no argument
 pub mod kuna_slotargs; // (kuna) a call through an import slot takes the declared parameters its caller's writes back
+pub mod kuna_declaredpop; // (kuna) a declared pop on a call through a pointer is the solver's equation, not an early INT_ADD
 pub mod kuna_calleeprotostack; // (kuna) a declared callee's prototype states its stack contract
 pub mod kuna_msvcbyval; // (kuna) an MSVC __cdecl import's by-value class argument sized at the call site
 pub(crate) mod kuna_calleenoreturn;
@@ -43,12 +44,14 @@ pub mod kuna_directalias; // (kuna) a direct access at a known stack offset alia
 pub mod kuna_returnuncomputed;
 pub mod kuna_spillargtrial;
 pub mod kuna_stackaddrargtrial;
+pub mod kuna_calleefilledarg; // (kuna) a register the callee loads itself is no slot, and no evidence about the slots after it
 pub mod kuna_zeroidiomuse; // (kuna) a self-cancelling `xor r,r` is not a competing use of the value it eats
 pub mod kuna_varargstackargs; // (kuna) the variadic call's stack tail is its own fillinMap section
 pub mod kuna_argclobber; // (kuna) drop a trailing register argument a previous call's clobber put there
 pub mod kuna_passthrough; // (kuna) a register forwarded untouched to a callee that reads it is a parameter
 pub mod kuna_pltlocal; // (kuna) a call through a PLT stub bound to the image's own definition calls that definition
 pub mod kuna_mixedtailret; // (kuna) a value returned beside a claimed tail-call result is returned too
+pub mod kuna_cachereturn; // (kuna) a return register holding one memory cell's value on every path is the return value
 pub mod kuna_varargtail; // (kuna) a recovered parameter that only feeds a variadic tail is not one a caller may gain
 pub mod kuna_calleearity; // (kuna) one callee, one argument list across its call sites
 pub mod kuna_calleearityfwd; // (kuna) reconcile against a sibling call that finalizes later
@@ -83,6 +86,7 @@ pub mod kuna_entryreads; // (kuna) the incoming registers a function's own body 
 pub mod kuna_callerargs; // (kuna) a 32-bit ARM parameter every caller passes narrow is declared that narrow
 pub mod kuna_typedcallabi; // (kuna) a declared function-pointer prototype only under the image's float convention
 pub mod kuna_varargretreg; // (kuna) a variadic call's argument in the register its value returns in
+pub mod kuna_lockedreturnarg; // (kuna) a stated return register stays an input trial of the call
 pub mod kuna_vfpvariadic; // (kuna) a declared ARM hard-float variadic function returns under the base standard
 pub mod kuna_varargformat;
 pub mod kuna_varargtransfer;

@@ -101,6 +101,7 @@ f30f1efa90c3
 <symbol space="ram" offset="0x401300" name="report"/>
 </binaryimage>
 <script>
+  <com>option protoorder off</com>
   <com>lo fu t2</com>
   <com>decompile</com>
   <com>print C</com>

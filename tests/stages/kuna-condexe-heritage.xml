@@ -1,0 +1,41 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Conditional execution: an op with no readers in a heritaged space.
+
+    ConditionalExecution (condexe.rs, ported from decompiler/cpp/condexe.cc)
+    removes a block that re-tests a condition its dominator already decided.
+    An op in that block whose output has no readers may go only once its
+    space has had a heritage pass (buildHeritageArray). That array was
+    hard-wired to false, so such a block was never removed.
+
+    Authored x86-64 (nasm):
+
+        test edi,edi ; je L1 ; mov dword [rsi],1
+    L1: test edi,edi ; je L2 ; mov dword [rsi+4],2
+    L2: ret
+
+    `deadcode delay register 50` keeps the unread flag writes of the second
+    `test` alive past dead-code removal, so they reach the removability test.
+
+    Fixed: both stores sit under one `if (x)`.
+    Before: `if (x) *p = 1; ... if (x) p[1] = 2;` - two tests.
+
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+85ff7406c70601000000c74424f80500000085ff7407c7460402000000c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="f"/>
+</binaryimage>
+<script>
+  <com>parse line extern void f(int4 x, int4 *p);</com>
+  <com>deadcode delay register 50</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CONDEXE #1: the re-test is removed, one if guards both stores" min="1" max="1">if \(x\) \{</stringmatch>
+<stringmatch name="CONDEXE #2: no second test of x" min="1" max="1">if \(x\)</stringmatch>
+<stringmatch name="CONDEXE #3: no unbraced single-store if remains" min="0" max="0">if \(x\)$</stringmatch>
+</decompilertest>

@@ -432,12 +432,23 @@ fn assertion_outcomes(
     selected: Option<&str>,
 ) -> Vec<kuna_console::assertions::Outcome> {
     use kuna_console::assertions::Outcome;
+    let failures = command_failures(out);
+    let refusals: String = out
+        .lines()
+        .filter(|raw| console_text(raw.trim()).starts_with("Rejected "))
+        .flat_map(|raw| [raw, "\n"])
+        .collect();
+    let out = refusals.as_str();
     let mut outcomes: Vec<Outcome> = directives
         .iter()
         .map(|directive| {
             let (kind, phase, subphase) = directive.body.coords();
             let (detail, fatal) = match crate::assertdecl::console_form(directive, selected) {
-                Ok(form) => match command_failure(out, &form.line) {
+                Ok(form) => match failures
+                    .get(form.line.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| Some(SCRIPT_NOT_REACHED.into()))
+                {
                     Some(reason) => (Some(reason), false),
                     // The console line itself ran clean, which for a DEFERRED
                     // directive says only that it was taken: an `override flow`
@@ -474,36 +485,39 @@ fn assertion_outcomes(
     outcomes
 }
 
-/// The diagnostic the console printed for the command `line`, or `None` when it
-/// ran clean.  `Some` for a command whose echo never appears at all — a script
-/// that stopped early did not apply it.
-fn command_failure(out: &str, line: &str) -> Option<String> {
-    let mut in_command = false;
-    let mut seen = false;
+/// Every command the transcript echoes, with the first diagnostic the console
+/// printed for it (`None` when it ran clean).  One pass, so a run that carries
+/// a header's worth of directives does not rescan the transcript for each.
+fn command_failures(out: &str) -> std::collections::BTreeMap<&str, Option<String>> {
+    let mut failures: std::collections::BTreeMap<&str, Option<String>> = Default::default();
+    let mut current: Option<&str> = None;
     for raw in out.lines() {
         let trimmed = raw.trim();
         let text = console_text(trimmed);
         if trimmed.starts_with(CONSOLE_PROMPT) {
-            in_command = text == line;
-            seen |= in_command;
+            failures.entry(text).or_default();
+            current = Some(text);
             continue;
         }
-        if !in_command || text.is_empty() {
-            continue;
-        }
-        for prefix in CONSOLE_DIAGNOSTICS {
-            if let Some(reason) = text.strip_prefix(prefix) {
-                let reason = reason.trim();
-                if !reason.is_empty() {
-                    return Some(reason.to_string());
-                }
-            }
+        let Some(command) = current.filter(|_| !text.is_empty()) else { continue };
+        let reason = CONSOLE_DIAGNOSTICS
+            .iter()
+            .filter_map(|prefix| text.strip_prefix(prefix).map(str::trim))
+            .find(|reason| !reason.is_empty());
+        if let (Some(reason), Some(slot @ None)) = (reason, failures.get_mut(command)) {
+            *slot = Some(reason.to_string());
         }
     }
-    if seen {
-        None
-    } else {
-        Some(SCRIPT_NOT_REACHED.into())
+    failures
+}
+
+/// The diagnostic the console printed for the command `line`, or `None` when it
+/// ran clean.  `Some` for a command whose echo never appears at all — a script
+/// that stopped early did not apply it.
+fn command_failure(out: &str, line: &str) -> Option<String> {
+    match command_failures(out).remove(line) {
+        Some(reason) => reason,
+        None => Some(SCRIPT_NOT_REACHED.into()),
     }
 }
 
@@ -963,6 +977,8 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
     let mut func_decls: Vec<crate::funcdecl::FuncDecl> = Vec::new();
     let mut assertions: Vec<kuna_console::assertions::Directive> = Vec::new();
     let mut assert_strict = false;
+    let mut types: Vec<String> = Vec::new();
+    let mut types_cpp: Option<String> = None;
     let mut decomp_dbg: Option<String> = None;
     let mut engine: Option<String> = None;
     let mut sleighpath: Option<String> = None;
@@ -1038,6 +1054,14 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
             "--assert-strict" => {
                 assert_strict = true;
                 forwarded.push("--assert-strict".into());
+            }
+            "--types" => {
+                types.push(take_value(argv, &mut i, "--types")?);
+                forwarded.extend(argv[i - 1..=i].iter().cloned());
+            }
+            "--types-cpp" => {
+                types_cpp = Some(take_value(argv, &mut i, "--types-cpp")?);
+                forwarded.extend(argv[i - 1..=i].iter().cloned());
             }
             "--decomp-dbg" => decomp_dbg = Some(take_value(argv, &mut i, "--decomp-dbg")?),
             "--max-fn-memory" => {
@@ -1154,6 +1178,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
     if let Some(flag) = record_flag {
         return Err(format!("{flag} selects --json record keys; add --json"));
     }
+    let assertions = crate::assertdecl::with_types(&types, types_cpp.as_deref(), assertions)?;
 
     // (kuna outlang, DIV-80) The auto policy -- follow the binary when the caller
     // named no language. See `decompile_all::detected_output_language`.
@@ -1205,6 +1230,7 @@ fn usage() {
          \x20                     [--option N V].. [--kassert ARGS].. \\\n\
          \x20                     [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                     [--assert DIRECTIVE|@FILE].. [--assert-strict] \\\n\
+         \x20                     [--types FILE.h|DIR].. [--types-cpp CC] \\\n\
          \x20                     [--isa auto|arm|thumb] [--slice ARCH] [--target T] \\\n\
          \x20                     [--sleighpath D] [--decomp-dbg P] [--max-fn-memory MiB]\n\
          \x20                     [--max-fn-seconds N] [--raw-image --target T --base VMA]\n\
@@ -1257,6 +1283,14 @@ fn usage() {
          @FILE holds one per line with `#` comments, which is what makes an override\n\
          durable across invocations.  A directive the engine declines is reported and\n\
          the run still succeeds; --assert-strict makes it exit 1 instead.\n\
+         \n\
+         --types <file.h | dir> (repeatable) loads C declarations for this run: each\n\
+         function declaration is the prototype of the function or import of that\n\
+         name, and each struct, union, enum and typedef is defined for `type` and\n\
+         `data`.  The text must be preprocessed C; --types-cpp CC runs `CC -E` over\n\
+         each header first (kuna runs no preprocessor otherwise).  A declaration\n\
+         that does not parse is reported with its file and line and the rest still\n\
+         apply; an --assert on the same function wins over the header.\n\
          \n\
          --sleighpath D and --decomp-dbg P override where this run reads the compiled\n\
          SLEIGH tree and which engine binary it drives; without them both are found\n\
@@ -1406,7 +1440,7 @@ fn decompile_one(
         return Err((message, declared));
     }
 
-    let funcs = decompile_all::decompile_entries(&mut prog, args, targets, false);
+    let funcs = decompile_all::decompile_entries(&mut prog, args, targets, false, true);
     let assertions = prog.assertion_outcomes();
     let mut failure = funcs.iter().find_map(|f| {
         f.error.as_ref().map(|reason| {

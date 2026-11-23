@@ -237,6 +237,9 @@ pub mod pcodeop_addlflags {
     /// value from before a call left unguarded. Set by `Heritage::guard_calls`;
     /// a merge copy of its input or its collapse restarts the function.
     pub const kuna_persist_stale: uint4 = 0x4000000;
+    /// (kuna `postinc`) This LOAD or STORE prints its pointer as `p++` and the
+    /// increment after it prints nothing. Set by [`crate::p9_emit::kuna_postinc`].
+    pub const kuna_postinc: uint4 = 0x8000000;
 }
 
 // ---------------------------------------------------------------------------
@@ -1260,15 +1263,16 @@ pub fn get_nz_mask_local(
         OpCode::CPUI_SUBPIECE => {
             let mut resmask = in_nz(0);
             let sz1 = in_offset(1) as int4;
+            let in_word = (sz1 as u32) < usize_uintb as u32;
             if in_size(0) <= usize_uintb {
-                if sz1 < usize_uintb {
+                if in_word {
                     resmask >>= 8 * sz1;
                 } else {
                     resmask = 0;
                 }
             } else {
                 // Extended precision
-                if sz1 < usize_uintb {
+                if in_word {
                     resmask >>= 8 * sz1;
                     if sz1 > 0 {
                         resmask |= fullmask << (8 * (usize_uintb - sz1));
@@ -2156,6 +2160,30 @@ mod tests {
         bank.clear();
         assert!(bank.get(live).is_none());
         assert!(bank.get_mut(live).is_none());
+    }
+
+    /// A SUBPIECE whose byte offset is negative as an `int4` reads past the
+    /// word, as the unsigned `sz1 < sizeof(uintb)` of C++ `getNZMaskLocal` has it.
+    #[test]
+    fn nz_mask_of_a_subpiece_past_the_word() {
+        let m = build_manager();
+        let mut vbank = VarnodeBank::new(&m, 0).unwrap();
+        let mut bank = PcodeOpBank::new();
+        let constant = Rc::clone(m.get_space(0).unwrap());
+        for (insize, expected) in [(4, 0), (16, uintb::MAX)] {
+            let input = vbank.create(insize, ram(&m, 0x1000), dt(insize));
+            vbank.get_mut(input).unwrap().set_nz_mask(0xffff_ffff);
+            let offset = vbank.create(4, Address::new(Rc::clone(&constant), (-4i64) as u64), dt(4));
+            let output = vbank.create(8, ram(&m, 0x2000), dt(8));
+            let op = bank.create_at(2, ram(&m, 0x100));
+            bank.change_opcode(op, typeop(OpCode::CPUI_SUBPIECE));
+            let subpiece = bank.get_mut(op).unwrap();
+            subpiece.set_input(Some(input), 0);
+            subpiece.set_input(Some(offset), 1);
+            subpiece.set_output(Some(output));
+            let mask = get_nz_mask_local(bank.get(op).unwrap(), &vbank, false, &|_| false);
+            assert_eq!(mask, expected, "{insize}-byte input");
+        }
     }
 
     // --- allocation-order monotonicity ------------------------------------

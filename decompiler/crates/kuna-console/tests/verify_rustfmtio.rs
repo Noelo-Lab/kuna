@@ -273,7 +273,7 @@ fn unchanged_expressions_match_native_stdout_and_broken_pipe_results() {
             .next()
             .unwrap()
             .trim_end_matches(';');
-        let mut bindings = String::from("let a0=out as *mut &std::io::Stdout as u64;");
+        let mut bindings = String::from("let a0=out as *mut &std::io::Stdout as *mut u64;");
         for argument in primitive.captures_iter(expression) {
             bindings.push_str(&format!(
                 "let {}=&value as *const {};",

@@ -33,6 +33,12 @@
 //! frame as full input words and the function is an ordinary returning leaf.
 //! Bindings key on the entry address. Other input widths, result storage,
 //! special runtime entries and foreign transfers retain inference.
+//!
+//! ## Images older than the register ABI
+//!
+//! The register ABI reached amd64 in go1.17 and arm64 in go1.18. An image an
+//! older release built passes every argument on the stack, so `abi0` becomes
+//! its default model (`Architecture::kuna_go_stack_default`).
 
 /// Environment variable carrying the `goabi` choice into the load path.
 /// Absent or any value other than the off-tokens means **enabled** (`auto`).

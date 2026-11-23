@@ -57,6 +57,7 @@
 <symbol space="ram" offset="0x10001e" name="mulhi_shift"/>
 </binaryimage>
 <script>
+  <com>option typevote off</com>
   <com>option castnarrow off</com>
   <com>lo fu put_u32_be</com>
   <com>decompile</com>

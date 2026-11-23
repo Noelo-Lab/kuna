@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/voidret_indexed_x86_64",
+    "binary_sha256": "c68fcd1217cbc1c0596fdbd7bc112f7badf9443703b2f23590235cedb3865e17",
+    "binary_size": 15336,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/voidret_indexed_x86_64",
+    "selector": "base_len",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "unsigned int base_len\\(char \\*a0\\)",
+      "return \\(int\\)len;",
+      "return base_len\\(v1\\) \\+ 1;"
+    ],
+    "stdout_absent": [
+      "void base_len\\("
+    ]
+  },
+  "notes": "base_len returns the strlen result it decrements and indexes name with; main reads eax. The index use (name + len - 1) no longer counts as a competing use of the returned value."
+}

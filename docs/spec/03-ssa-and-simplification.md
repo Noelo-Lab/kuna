@@ -602,7 +602,23 @@ on x86-64 (`d0` on AArch64, `f1` on 32-bit PowerPC), and the call printed as
 `vr(k,k + 1)`. kuna still registers the input trial for such a range when the
 call is variadic and its model passes a variadic argument there (chapter 04,
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargretreg.rs
-(argument_in_own_output)`); the range still gets no INDIRECT.
+(argument_in_own_output)`); the range still gets no INDIRECT. It also registers
+the trial for a non-variadic call whose output is locked while its inputs are
+still recovered, as an output-only `return f::<storage>` declaration leaves them
+(chapter 04, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_lockedreturnarg.rs
+(argument_in_locked_output)`). Without the declaration the output is recovered,
+so the range is no exact output when the trial is planted; the declaration made
+upstream's skip drop it. On AArch64, 32-bit ARM and PowerPC the return register
+is also the first argument register, so nothing at the call read the copy into it
+(`mov w0,w20; bl f`). That copy was dead, and the trial added later read the
+register's earlier value: `f(a1,a0)` printed as `f(0,a0)`, where `0` was a
+preceding call's null result, and a real `f(0,a0)` printed as `f(a0,a0)`. The
+trial is registered only where the model takes the range as an input, the same
+range the undeclared call has a trial for, so a register that is no input
+register (x86-64 `RAX`) is unchanged. A variadic call is decided by
+`argument_in_own_output` alone, whose refusals (`al` or CR bit 6 counting no
+floating-point argument, the PowerPC64 shadow register, the model's variadic
+slot) keep applying.
 
 **A counted floating-point register whose range is not the register.** On
 x86-64 SysV a variadic caller puts the number of vector registers it filled in
@@ -1482,10 +1498,11 @@ throwaway per-call `RestartLog`
 (RestartLog)`) that is dropped on return — diagnostic plumbing not yet wired to
 the Architecture-owned log — and neither fires during a jump-table
 sub-decompilation (the `is_jumptable_recovery_on` guards at the call sites —
-the sub-query must not mutate P0, §0.7). The console `deadcode delay` command
-exists but is an unwired stub (`kuna-console/src/ifacedecomp.rs
-(IfcDeadcodedelay)` returns engine-unavailable); the only live writer of the
-Override is `Heritage::bump_deadcode_delay`.
+the sub-query must not mutate P0, §0.7). The console `deadcode delay <space> <n>` command
+(`kuna-console/src/ifacedecomp.rs (IfcDeadcodedelay)`) sets a space's delay for
+all functions when no function is loaded; the per-function form is refused
+because the console rebuilds the Funcdata (and its Override) on `decompile`, so
+the only live writer of the Override is `Heritage::bump_deadcode_delay`.
 
 (kuna early restart) Upstream finishes the pass that asked for
 the restart: every later mainloop iteration, the merges and the structuring of
@@ -1705,6 +1722,19 @@ Different sources, changed low slices, wider floats, incompatible types and
 other unary operations decline. These are strict value-correctness repairs
 with no inference option; they add no floating-status or exception model.
 
+**One-destination switches.** `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_4.rs
+(RuleSwitchSingle)` rewrites a BRANCHIND whose block has one out-edge and
+whose recovered jump table is labelled into a BRANCH to the table's first
+address, then drops the table and the structured-block graph so no `switch`
+is emitted. A header warning (`Switch with 1 destination removed at <addr>`,
+plus `: N cases all go to same destination` when every entry matches) is
+added unless the table has one entry and the switch value is a constant
+(`tests/stages/kuna-switchsingle.xml`). Unlike upstream, a one-entry table
+over a computed value is left alone: kuna's table recovery can keep only the
+entries its guards prove reachable, so a single kept entry is not proof that
+the dispatch has one destination. This is a strict fix with no option: a
+`switch` with one `default:` arm states a selection the code does not make.
+
 **Ordered floating-point condition negation.** The shared
 `decompiler/crates/kuna-num/src/opcodes.rs (get_booleanflip)` table returns no
 single-opcode complement for `FLOAT_LESS` or `FLOAT_LESSEQUAL`: when either
@@ -1783,7 +1813,34 @@ group):
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_5.rs` | comparisons against extremal constants, equation solving, the pointer-recovery trio | `RuleLess2Zero`, `RuleSLess2Zero`, `RuleEqual2Constant`, and oppool2's `RulePtrArith`/`RuleStructOffset0`/`RulePushPtr` (all no-ops until `ActionStartTypes` flips `has_type_recovery_started` — chapter 05 owns what they build) |
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_6.rs` | pointer-op undo, division strength-reduction inversion, cleanup arithmetic | `RulePtraddUndo`/`RulePtrsubUndo`, `RuleDivOpt`/`RuleDivTermAdd`/`RuleSubNormal` (recover `/`, `%` from magic-number multiplies), cleanup-pool `RuleMultNegOne`/`RuleAddUnsigned`/`RuleSubRight`/`RulePieceStructure` |
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_7.rs` | signed div/mod idioms, segments, pointer flow, predication, float compares | `RuleSignDiv2`, `RuleSignMod2nOpt`, `RuleModOpt`, `RuleSegment`, `RulePtrFlow`, `RuleConditionalMove` (group `conditionalexe`), `RuleFloatCast`, `RuleIgnoreNan` |
-| `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_8.rs` | int↔float conversion recovery, bit-counting booleans, float sign ops, compare splitting | `RuleUnsigned2Float`, `RuleThreeWayCompare`, `RulePopcountBoolXor`, `RuleLzcountShiftBool`, `RuleFloatSign`, `RuleOrCompare`, `RuleFuncPtrEncoding`, cleanup-pool `RuleExpandLoad` |
+| `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_8.rs` | int↔float conversion recovery, bit-counting booleans, float sign ops, compare splitting | `RuleUnsigned2Float`, `RuleThreeWayCompare`, `RulePopcountBoolXor`, `RuleLzcountShiftBool`, `RuleFloatSign`, `RuleOrCompare`, `RuleFuncPtrEncoding`, `RulePiecePathology` (group `protorecovery`), cleanup-pool `RuleExpandLoad` |
+
+`RulePiecePathology` keeps a function from returning bits a call left
+undefined. A call whose prototype declares an output narrower than its register
+writes only that output; the convention's `killedbycall` clobber of the rest
+of the register is an INDIRECT creation. A RETURN reading the whole register
+then reads `PIECE(clobber, call output)`, which ancestor realism accepts as a
+solid value, so return recovery took the whole register: `int next_byte(FILE
+*f) { return getc_unlocked(f); }` printed as returning `unsigned long`
+because its refill path returns `int __uflow(FILE *)` in eax. The rule matches
+a PIECE whose high input is an INDIRECT creation and whose low input is the
+output of a CALL with a locked output, contiguous with it in the register. It
+follows the concatenation forward through COPY, INDIRECT and MULTIEQUAL and
+records the low input's size as the bytes consumed of every unlocked RETURN it
+reaches (`FuncProto::set_return_bytes_consumed`), and of each argument slot of
+an unlocked call whose inputs are settled (`set_input_bytes_consumed`). Dead
+code then consumes only those bytes and sub-variable flow trims the RETURN to
+the call's value, so the function returns `int`-width on every path. Where
+another path returns all of the register, which a function returning the
+call's `int` unextended does only when it returns nothing (gnulib's `void
+version_etc_arn` leaves an unrelated 8-byte value in rax on one path), the return
+keeps its width and the call's path prints as the zero-extended `int`. Upstream
+Ghidra also fires on a low input computed by any unary or binary op, and on a
+high input that is a SUBPIECE of the function's own input or of a clobber.
+Those arms are not ported: the upper half of an input register is a value the
+function hands back (`mov eax,edi; rol ax,8; ret` keeps edi's high word), and a
+copied pair, such as a big-endian `r3:r4` a function keeps across another
+call, is concatenated while its output is still being recovered.
 
 `RuleMultiCollapse` keeps its operand traversal, marked-output list and
 temporary rewrite operands in local inline scratch. Wide or deeply nested
@@ -3118,13 +3175,16 @@ and splices the block out of the graph
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
 (Funcdata::remove_from_flow_split)`). The action loops over all blocks until a
 full round makes no change, and refuses to run at all while unreachable blocks
-exist. One kuna conservatism: the per-space "has heritage run yet" array the
-removability test consults is hard-wired to *false*
-(`condexe.rs (ConditionalExecution::build_heritage_array)` — a port seam never
-re-wired to the live `Funcdata::num_heritage_passes`), so an iblock op whose
-output has **no readers** is always refused rather than trusted once its space
-is heritaged; strictly conservative relative to upstream (a collapse is missed,
-never wrongly taken). `condexe.rs (RuleOrPredicate)` (oppool1, group
+exist. An iblock op whose output has **no readers** is removable only once
+its space has had at least one heritage pass: before that, the missing readers
+may simply not be linked yet. `condexe.rs (ConditionalExecution::build_heritage_array)`
+records that per space from `Funcdata::num_heritage_passes`, as upstream. Most
+such ops fall to dead-code removal first. They still reach the test when the
+space's dead-code delay outlasts its heritage delay (the console
+`deadcode delay` command, `tests/stages/kuna-condexe-heritage.xml`), and on
+ARM predicated code: a `moveq`/`movne` pair ahead of the re-tested branch
+(u-boot `env_attr_lookup`) now collapses into the guarded block.
+`condexe.rs (RuleOrPredicate)` (oppool1, group
 `conditionalexe`) handles the value-form of the same redundancy: an INT_OR
 (or INT_XOR) where one operand is provably zero along the path that reaches it (the
 `MultiPredicate` zero-slot analysis) collapses to a COPY of the other operand.
@@ -3590,6 +3650,65 @@ upward rounding keeps the opaque operation; out-of-range and NaN operands, which
 x87 converts to the integer indefinite value when invalid is masked, take
 `FLOAT_TRUNC`'s unspecified result, as for `FISTTP`. Not settable: the rewrite
 is the conversion the instruction performs under that control word.
+
+**opaquepredicate** —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_opaquepredicate.rs
+(RuleOpaquePredicate)`, oppool1, fires on INT_EQUAL, INT_NOTEQUAL, INT_LESS and
+INT_LESSEQUAL. With `option opaquepredicate on` (default off, on in the
+`aggressive` preset, which `auto` selects for inputs under 500 KiB) a comparison that has the same result for every input is
+replaced by a `COPY` of that result, and constant-branch removal then deletes
+the arm that never runs. Control-flow obfuscation plants such comparisons in
+front of real code: `x * (x + 1)` is always even, `x * x` is 0 or 1 modulo 4,
+`(x | y) - (x & y)` always equals `x ^ y`. The rule folds only on an exact
+proof, of which there are three.
+
+*Low bits.* Bit `i` of a sum, difference, product, negation, left shift by a
+constant, or bitwise operation depends only on bits `0..=i` of its operands,
+and `COPY`, `INT_ZEXT`, `INT_SEXT` and a `SUBPIECE` at offset 0 keep the low
+bits of their operand. Each side of the comparison must be a constant or a
+value reduced to at most its low 8 bits — `INT_AND` with a constant mask, or
+`INT_REM` by a constant power of two — possibly under zero extensions. The
+operand of that reduction is read through the operations above; any other
+definition is an *input*, and at most two distinct inputs are allowed. The
+comparison is then a function of the low `k` bits of the inputs, where `k` is
+the width of the widest mask, and it is evaluated for all `2^k` or `4^k`
+assignments, stopping at the first two that disagree. A signed remainder
+(`INT_SREM` by a power of two) takes the sign of its dividend, so only whether
+it is zero follows from the low bits: it is admitted in an `INT_EQUAL` or
+`INT_NOTEQUAL` against zero, and elsewhere only while every assignment makes
+it zero.
+
+*Low bits that always differ.* For `INT_EQUAL` and `INT_NOTEQUAL` whose sides
+are both read through the same operations without a mask, the low four bits of
+the two sides are evaluated for every assignment of the low four bits of the
+inputs. If they differ every time the sides are never equal (`x * (x + 1)` is
+even, `2 * y + 1` is odd). This proof can only show inequality.
+
+*Linear combination of bitwise terms.* For `INT_EQUAL` and `INT_NOTEQUAL` each
+side is read as a sum, difference or negation of terms, each optionally
+multiplied or left-shifted by a constant, where a term is a constant or an
+expression built from `INT_AND`, `INT_OR`, `INT_XOR` and `INT_NEGATE` over the
+inputs with no constant other than zero and all ones. Such a sum takes the
+value its per-bit truth table dictates in every bit position, so the two sides
+differ by one constant for every input exactly when they do with each input set
+to all zeros or all ones. The rule evaluates those assignments (four for two
+inputs); if the difference is the same constant in all of them, the equality
+is always true (difference zero) or always false. An operation that does not
+fit the layer it is met in — a product of two inputs, an `INT_AND` with a mask
+— is itself taken as an input, which only makes the claim proven stronger.
+
+*Bounds.* A free Varnode, a value wider than 8 bytes, a third input, or a
+tree of more than 48 operations proves nothing, and the comparison is left as
+it is. The rule does not fire inside jump-table recovery: the recovery copy of
+the function has no edges back from the table's targets yet, so an index
+initialized by `xor ebx,ebx` and counted up by the cases reads as the constant
+0 there, and folding the `ebx == 9` half of a `cmp ebx,9; ja` guard would cut
+the last entry from the recovered table. A comparison that some assignment
+distinguishes, such as `x * (x + 2) & 1`, is left alone too. Nothing restricts the rule to obfuscated code: `x * 8 == 0x3f`
+folds on the same proof, including when it is one half of a flag-derived
+`<=`. The option is off by default because the predicate is part
+of what the binary does: with it folded, the output no longer shows that the
+function was obfuscated or which blocks the bogus edges reached.
 
 **flagcompare** (GH-1276 / GH-8777) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_flagcompare.rs`, two rules

@@ -1,5 +1,6 @@
 use crate::common;
 use std::{fs, process::Command};
+use crate::common::process::Capped;
 
 fn check(target: &str, windows: bool) {
     if Command::new("clang").arg("--version").output().is_err() {
@@ -138,7 +139,7 @@ int main(void) {
                 String::from_utf8_lossy(&linked.stderr)
             );
             assert!(
-                Command::new(&executable).status().unwrap().success(),
+                Command::new(&executable).capped_status().unwrap().success(),
                 "{opt}: native word-copy mismatch"
             );
         }

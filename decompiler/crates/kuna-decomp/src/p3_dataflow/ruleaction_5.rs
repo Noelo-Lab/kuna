@@ -869,6 +869,9 @@ impl Rule for RulePtrArith {
         if slot == num_input {
             return 0;
         }
+        if crate::kuna_valuewitness::keeps_offset(data, op, slot) {
+            return 0;
+        }
         if evaluate_pointer_expression(data, op, slot) != 2 {
             return 0;
         }

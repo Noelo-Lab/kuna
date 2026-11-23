@@ -55,6 +55,7 @@ pub mod classt;
 pub mod encoding;
 pub mod kuna_objccats;
 mod kuna_objccache;
+pub mod kuna_objcdirect;
 pub mod kuna_objcivars;
 pub mod kuna_objcprops;
 pub mod kuna_objcprotos;
@@ -221,6 +222,7 @@ impl AnalysisPass for ObjcMetadataPass {
                 self.emit_methods(&img, &tctx, architecture, &cat.label, '+', list, None, &mut selectors, &mut out);
             }
         }
+        kuna_objcdirect::emit(&img, architecture, &tctx, objcivars.then_some(&structs), &mut out);
         for proto in &protocols {
             out.symbols.push(SymFact {
                 addr: proto.addr,

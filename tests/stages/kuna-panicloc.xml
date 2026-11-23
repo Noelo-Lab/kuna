@@ -1,0 +1,35 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna-panicloc: P1 external refinement, option panicloc (default on, Rust
+    images only). The script loads the committed panicloc/tiny_x86_64.elf
+    (a no_std rustc build, source and command beside it): pick() panics with a
+    message at tiny.rs:15:9.
+
+    Assert #1 is the off pass: the Location argument is a bare address.
+    Assert #2 is the on pass: the record is a data symbol typed
+    core::panic::Location and named after its position.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/panicloc/tiny_x86_64.elf</com>
+  <com>option panicloc off</com>
+  <com>read symbols</com>
+  <com>load function pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/panicloc/tiny_x86_64.elf</com>
+  <com>option panicloc on</com>
+  <com>read symbols</com>
+  <com>load function pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="panicloc #1: off passes the Location as an address" min="1" max="1">,0x14,0x2002c0\);</stringmatch>
+<stringmatch name="panicloc #2: on names the Location after its position" min="1" max="1">,0x14,&amp;panic_loc_tiny_rs_15_9\);</stringmatch>
+</decompilertest>

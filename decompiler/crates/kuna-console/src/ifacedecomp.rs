@@ -509,7 +509,7 @@ pub(crate) fn parse_machaddr(
     let mut res = Address::new(space, 0);
     let oversize = res
         .read(&token, manage)
-        .map_err(|_| "Bad machine address".to_string())?;
+        .map_err(|e| format!("Bad machine address: {}", e.explain()))?;
     let defaultsize = if size == -1 { oversize } else { size };
     Ok((res, defaultsize))
 }
@@ -3571,11 +3571,24 @@ decomp_command!(
     /// C++ `IfcDeadcodedelay`: `deadcode delay <space> <delay>`.
     IfcDeadcodedelay,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        let _dcp = dcp_mut(status)?;
-        let _name = s.read_token();
-        // C++ resolves the space ("Bad space: <name>") and reads the delay int
-        // ("Need delay integer") before applying it.
-        Err(engine_unavailable("Architecture::getSpaceByName + setDeadcodeDelay"))
+        let dcp = dcp_mut(status)?;
+        let name = s.read_token();
+        let delay: int4 = s.read_token().parse().unwrap_or(-1);
+        let prog = dcp.conf.as_mut().ok_or_else(|| IfaceError::execution("No image loaded"))?;
+        let manage = prog.arch().manage();
+        let spc = manage
+            .get_space_by_name(&name)
+            .cloned()
+            .ok_or_else(|| IfaceError::parse(format!("Bad space: {name}")))?;
+        if delay == -1 {
+            return Err(IfaceError::parse("Need delay integer"));
+        }
+        if dcp.fd.is_some() {
+            return Err(engine_unavailable("per-function deadcode delay across the console IR rebuild"));
+        }
+        manage.set_deadcode_delay(&spc, delay);
+        status.out("Successfully overrided deadcode delay for all functions\n");
+        Ok(())
     }
 );
 
