@@ -150,8 +150,9 @@ Declared prototypes keep their parameter order. For stripped functions whose
 core and VFP banks do not reveal source order, recovery uses the model's VFP
 then core order consistently. Whole-program callers use the established
 `protoorder types` and `passthrough on` contract propagation; a single-function
-run that stated no contract for the callee cannot recover an untouched forwarded
-argument, and the split-trial bootstrap below is what gives it one.
+run that stated no contract for the callee recovers an untouched forwarded
+integer argument from the callee's body (*A callee that stated nothing*, under
+`passthrough`), and the split-trial bootstrap below is what gives it a split one.
 Forwarding and wrapper-return claims are established before synthetic narrowing
 inputs are inserted. If heritage splits a forwarded double around a float result,
 same-width copies and contiguous incoming pieces still establish the original
@@ -688,6 +689,17 @@ consume register storage: an x87 value has ten meaningful bytes even when its
 stack object occupies twelve or sixteen bytes. Stack resources, general
 register resources and aggregate types retain their aligned object size.
 The declared datatype and its alignment remain unchanged.
+
+The explicit `MIPS:BE:64:octeon-32addr:o64` target pairs the original Octeon
+decoder with the soft-float O64 compiler model. Floating-point arguments in
+registers and floating-point results use GPRs. Pointers are four bytes wide.
+The first four argument slots use `a0` through `a3`. The fifth slot starts at
+entry SP + 32. A four-byte scalar occupies SP + 36, while a four-byte struct
+or union occupies SP + 32. Aggregate arguments likewise occupy the leading
+bytes of a register slot. An aggregate result reserves `a0` for the result
+address, moves the first explicit argument to `a1`, and returns the address
+in `v0`.
+The default compiler for this language remains N32.
 
 The Octeon N32 and N64 soft-float models pass small structs and unions in the leading
 bytes of each eight-byte GPR or stack slot, for both fixed and variadic
@@ -1814,6 +1826,50 @@ that machinery.
   `__thiscall` callee, which shifts each later stack offset by the arguments
   the callee popped, so later calls lose stack arguments and locals whose
   address is taken alias outgoing-argument slots.
+
+  (kuna) A pop a call through a pointer takes from its declaration (an import
+  slot's library declaration, §4.1, `kuna_slotargs`), under a model that leaves
+  extrapop unknown, is not written as the `INT_ADD` either when the function
+  has a guessed pop (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_declaredpop.rs
+  (deferred)`). The call takes the INDIRECT the other calls take and keeps the
+  pop on its prototype, so `StackSolver::build` gives it the exact equation
+  (rhs = the pop) and the solve writes it into the IR with every other stack
+  reference. The `INT_ADD` joined the stack pointer after the call to the one
+  before it before anything was solved, and term collection then rewrote a
+  pointer difference after `GetModuleFileNameA` (`end - (path + 1)`) as minus
+  the stack pointer at the import's last push. The local-alias boundary (§4.3,
+  `checkInputTrialUse`) took that slot as an escaped address, and every
+  outgoing argument above it was refused for the rest of the function. Where
+  the solve cannot place the stack pointer, the INDIRECT is written as the
+  `INT_ADD` after the solve (`write_unplaced`): a frame sized at run time, or a
+  stack pointer an exception handler loads from its frame. A direct call's
+  declared pop (a DWARF or demangled declaration of the image's own function)
+  keeps the `INT_ADD`, and so does every pop in a function with nothing to
+  guess.
+
+  The two forms are solved alike only where nothing in the solve reads the
+  form (`kuna_declaredpop.rs (allowed)`), so a function keeps every `INT_ADD`
+  in two more cases. One is a guess that reads the caller's stack: the
+  push-run guess (§6, `kuna_calleepopslot`) of a call into an import or
+  through a pointer counts the slots pushed in front of it. With the `INT_ADD`
+  folded in, every reference after the declared call is an offset from one
+  before it, and the walk reads whichever reference sits at a slot's offset,
+  often one of another call's slots; with the INDIRECT it reads the call's
+  own. GCC's alignment padding (`call [GetLastError]; push ecx; push ecx; push
+  ebx; push eax; call [f]`), a `__cdecl` import's cleanup merged into the next
+  call's reservation, and arguments written with `mov [esp+k]` in the block
+  before the call are where the second reading is wrong and the first right by
+  accident, and the reverse holds for others. So a function defers only when
+  every pop it guesses is a direct call's into the image's own code, guessed
+  to pop the return address or read off a fixed frame, either way the same in
+  both forms; a call through a pointer may still resolve to an import before
+  the solve and counts as one. The other is an exact equation that is false:
+  a direct call's pop stated under that model is computed from its declared
+  parameters as if the callee popped them, which a GCC `__cdecl` or `regparm`
+  callee does not, and its own `RET` says so (`callee_purge`). That leaves the
+  system without a consistent solution, a merge's two paths disagree, and which
+  one the solve takes depends on its order, which the form changes. A function
+  defers only when every such stated pop is the one its callee's returns prove.
 - **`ActionFuncLink`** (`coreaction_protos.rs (ActionFuncLink)`) arms each
   call site. Unlocked or varargs prototype → input recovery on
   (`init_active_input`). Locked prototype → one pre-marked trial per declared
@@ -1888,6 +1944,21 @@ one), the ancestor checks still decide: a discarded call result or a parameter
 the caller reads again after the call stays out, and so does a call result the
 call really takes, which the instructions cannot tell apart. Only a declared
 prototype settles that case: see the forwarded-value rule (`kuna_varargforward.rs`) in §4.4.
+
+(kuna) **A stated return in an argument register.** An output-only declaration
+(`return f::<storage>`) locks the call's output while its inputs stay
+recovered, so the output covers the return register when the guard runs and
+the guard's skip drops that register's input trial. On AArch64, 32-bit ARM and
+PowerPC the return register is also the first argument register, and the
+argument the caller set up there was lost.
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_lockedreturnarg.rs
+(argument_in_locked_output)` keeps the trial for a non-variadic call whose
+output is locked. The guard still plants it only where the model takes the range
+as an input, so it is the trial the undeclared call has, and
+`ActionActiveParam` decides it the same way. A value the caller only passes
+through stays out: `return f() + a;` keeps `f()` when `a` is still in `x0` at
+the call, because `AncestorRealistic` fails a caller input that is not directly
+written, with or without a declared caller prototype. A variadic call is decided by `argument_in_own_output` above alone.
 
 ### `ActionActiveParam` — does this argument exist?
 
@@ -2602,10 +2673,16 @@ classified:
   `open_safer` reads `rdx` alone. The calling function is or may be variadic
   itself, which is a read of `al` before it is written in its entry block other
   than by a store (clang's alignment `push %rax` is a store, `test %al,%al` is
-  not), or its own entry reading its last argument register: an argument
-  supplied there can be the `va_list`, and once the register-save area escapes
-  through it the function's own recovery takes every saved register as a
-  parameter (`cliPrintf(fmt, ...)` handing `cliPrintfva` its saved `r1`-`r3`).
+  not), or its own entry reading its last argument register only to store
+  it: an argument supplied there can be the `va_list`, and once the
+  register-save area escapes through it the function's own recovery takes
+  every saved register as a parameter (`cliPrintf(fmt, ...)` handing
+  `cliPrintfva` its saved `r1`-`r3`). A register-save prologue only stores
+  the registers, so an entry that reads the last one some other way takes it
+  as a named parameter and the function is not variadic on that account:
+  clang keeps a sixth `int` parameter with `mov %r9d,%ebx`, and the function
+  that later tests a byte it loaded into `edi` and calls `ext` with it
+  printed `ext()` while any read of `r9` counted.
   Floating-point registers are left alone, because a callee that only moves
   its `double` (`lua_pushnumber` stores `xmm0`) is recovered with an integer
   parameter, and handing it a `floor()` result made the caller read that result
@@ -6964,8 +7041,9 @@ at a direct, unlocked, non-variadic CALL is an argument when all of these hold:
   openssh `channel_by_id` pushes all of `rsi` for a variadic `%d`, and without
   this `channel_send_open(ssh, int id)` and every other caller of
   `channel_lookup`, which reads `esi` itself, took a 64-bit `id`. A target the
-  walk cannot fully cover, one that stated nothing, or an indirect call adds
-  nothing. Only this check reads the widened set; `calleedeadarg`,
+  walk cannot fully cover, or an indirect call, adds nothing; a target that
+  stated nothing adds the run of argument registers its own body takes (*A
+  callee that stated nothing*, below). Only this check reads the widened set; `calleedeadarg`,
   `calleearitybody` and the arity claim above see the plain walk. The probes are
   cached for the run; the fold reads statements, which accumulate as the run
   goes, so it is memoized for one caller at a time, and a call cycle ends when
@@ -6984,7 +7062,11 @@ at a direct, unlocked, non-variadic CALL is an argument when all of these hold:
 - the calling function is not variadic itself: its entry block does not read that
   return-only register before writing it or calling anything (`test %al,%al`). Its
   own recovery would read every register its prologue saves, and one argument
-  supplied here is enough to tip the saved tail into its list;
+  supplied here is enough to tip the saved tail into its list. A read that only
+  stores the register, directly or through the temporary an instruction copies
+  it to, is no such read: clang's `push %rax` (`tmp = RAX; RSP -= 8; *RSP =
+  tmp`) reserves an aligned stack slot, and counting it left every clang
+  function that opens with one, Rust `cons` among them, without its forwards;
 - the callee's read of `R` is for something other than a **variadic tail**
   (`kuna_varargtail.rs`). A stated parameter whose value, through
   value-preserving operations (copies, phis, width changes, a mask by a
@@ -7123,8 +7205,8 @@ read and the record's.
 
 The record is taken only while `passthrough` is on, so `--option passthrough
 off` leaves every list as before; a single-function `kuna decompile` states no
-callee and sees only the self-call (over grep -O2, two of 449 functions change,
-both recursive). Over fourteen binaries (x86-64 gcc -O2 and -O0, clang,
+callee, and reads the callee's body instead (*A callee that stated nothing*,
+below). Over fourteen binaries (x86-64 gcc -O2 and -O0, clang,
 Cortex-M firmware, an ARM library) this adds 222 call arguments; of the 167
 whose callee has a DWARF prototype, 156 match it in count and the other 11 are
 register-level arguments DWARF does not count (a hidden struct-return pointer,
@@ -7133,6 +7215,46 @@ no DWARF parameters). Call sites passing fewer arguments than the callee's
 DWARF prototype fall from 251 to 130, and no function loses an argument or
 gains an uninitialised local. A hole is still declined (`no_hole_before`), and
 two functions calling each other state nothing for the one decompiled first.
+
+**A callee that stated nothing.** Without a statement -- a single-function
+decompile, a stage test, a callee `protoorder` did not reach -- the callee's
+own body stands in for it, on the evidence `calleearitybody` reads. Its list is
+the leading run of the call model's general-purpose argument registers whose
+low byte the complete entry walk reads for a value that reaches something
+(`reads_low_byte`, a store and an alignment push left out), or, for a register
+the body leaves untouched before a direct call, one that call's target takes:
+`reads_through_calls` is taken for an unstated callee too, and an unstated
+target's take is the same run of the default model's registers read off its
+own body. A register the body only spills with a single ARM or AArch64
+store, or in a multi-register store on ARM, ends the run. A run that reaches
+the model's last general-purpose argument register is no list at all, the
+`RegisterFileFull` decline a stated list gets: gcc's x86-64 variadic
+register-save prologue (`mov %rsi,0x28(%rsp)` .. `mov %r9,0x48(%rsp)`) and
+clang's AArch64 one (`stp x1,x2,[x29,#-120]` .. `stur x7,[x29,#-72]`) read
+every register after the named ones, and so does, through the call, every
+function that reaches such a callee on an error path: without the decline
+gcc -O2's `int g(long x) { return f(x) + 3; }`, whose `f` calls a variadic
+`err` when `x > 5`, printed `f(a0,a1,a2,a3,a4,a5)`, and a single-function
+decompile of x86-64 and AArch64 dash gave `stalloc`, `growstackblock` and
+`setstackmark` six or eight arguments. A body the walk cannot finish -- an import, a thunk, a body past the
+budget -- states nothing, as before. The argument is as wide as the body reads
+it on a little-endian register file; on a big-endian one it is the whole
+register. All of the evidence above applies unchanged, with two additions,
+because the run is bounded only by what the walk saw. The finished list must
+reach the end of the run: a caller that loads one of its registers itself
+(`mov $1,%ecx` between forwarded `rdx` and `r8`) is passing more than it
+forwards, and a list cut in front of it is no better than none. And where the
+walk does not prove the register after the run dead (it was cut at a nested
+call), a caller that loads it with a constant, or with a value used for
+nothing but the call, may be passing a further argument, so the call is left
+as it was -- the terms `calleearitycut` and `calleearityscratch` bound a
+body-read run on. `twice(a, b) { return ins16(a, b) * 2; }` on ARM is `push
+{r11,lr}; bl ins16`, and kuna printed `twice(void) { v1 = sub_400020(); ... }`;
+gcc -O2's x86-64 `returns_word` passes `edi` to `whole` the same way, a PowerPC
+caller forwards `r3`..`r6` to `add64`, and a PowerPC `c_pass` hands them to a
+`pass` that hands them to `add64`. A MIPS caller forwarding `a0`..`a3` fills
+the o32 register file and is left as it was, as are an ARM caller forwarding
+`r0`..`r3` and the `__sread`/`__sseek` newlib wrappers that do.
 
 **The rule only adds.** Every other rule decides a call's argument list first,
 exactly as with the option off, and `passthrough` extends the result. That order
@@ -7391,13 +7513,14 @@ wrong return: 212 of 4,267 gained returns over 444 decbench slices, against 6 of
 budget answers `false` when it runs out, because `true` there states a return on a
 body it never finished reading.
 
-Nothing is added where a callee stated nothing: a single-function `kuna
-decompile`, a narrowed or sharded `decompile-all`, an import, `--option
-protoorder off`, and under `--option protoorder types` a callee in a recursive
-component, leave every call as the option-off run renders it. Under the default
+Where a callee stated nothing -- a single-function `kuna decompile`, a
+narrowed or sharded `decompile-all`, `--option protoorder off`, and under
+`--option protoorder types` a callee in a recursive component -- its body
+speaks for its arguments (*A callee that stated nothing*, above) and nothing
+for its return; an import, whose body the walk cannot read, adds nothing. Under the default
 `cycles` a recursive callee states its list like any other, and this rule reads
-it on the same terms. `tests/stages/kuna-passthrough.xml` is the negative
-control for that clause (the console states no prototype); the positive witness
+it on the same terms. `tests/stages/kuna-passthrough.xml` covers the body
+reading (the console states no prototype); the statement's positive witness
 is `decompiler/crates/kuna-analysis/tests/fixtures/passthrough_x86_64` under
 `tests/cli/passthrough-gives-a-forwarding-function-its-parameter.json`, with a
 clobbered forward and a variadic callee as its controls, and the three shapes
