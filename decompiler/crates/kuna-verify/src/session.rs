@@ -51,8 +51,30 @@ pub fn run(
     conf: Option<ConsoleProgram>,
     spec_roots: &[String],
     keep_going: bool,
-    mut cap: Option<&mut Cap>,
+    cap: Option<&mut Cap>,
     mut on_decompile: impl FnMut(&ConsoleProgram, &Funcdata),
+) -> Result<(IfaceStatus, Vec<Failure>), String> {
+    run_steps(commands, conf, spec_roots, keep_going, cap, |step| {
+        if let Step::Decompiled { prog, fd, .. } = step {
+            on_decompile(prog, fd);
+        }
+    })
+}
+
+/// What [`run_steps`] reports as it goes, with the index of the command.
+pub enum Step<'a> {
+    Decompiled { line: usize, prog: &'a ConsoleProgram, fd: &'a Funcdata },
+    Failed { line: usize, msg: &'a str },
+}
+
+/// [`run`], reporting each failure as it happens too.
+pub fn run_steps(
+    commands: Vec<String>,
+    conf: Option<ConsoleProgram>,
+    spec_roots: &[String],
+    keep_going: bool,
+    mut cap: Option<&mut Cap>,
+    mut on_step: impl FnMut(Step<'_>),
 ) -> Result<(IfaceStatus, Vec<Failure>), String> {
     let mut console = ConsoleCommands::into_status(commands.clone());
     register_decomp_commands(&mut console);
@@ -99,6 +121,7 @@ pub fn run(
             if !keep_going {
                 break Err(msg);
             }
+            on_step(Step::Failed { line: idx - 1, msg: &msg });
             failures.push((idx - 1, msg));
             console.inerror = false;
             console.done = false;
@@ -110,7 +133,7 @@ pub fn run(
                     if let (Some(c), Some(a)) = (cap.as_deref_mut(), applied) {
                         c.result = Some(a);
                     }
-                    on_decompile(prog, fd);
+                    on_step(Step::Decompiled { line: idx - 1, prog, fd });
                     decompiles += 1;
                 }
             }

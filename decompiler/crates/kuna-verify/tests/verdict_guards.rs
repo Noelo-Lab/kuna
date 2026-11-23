@@ -156,3 +156,34 @@ fn a_file_that_cannot_be_checked_fails_the_corpus() {
     let out = verify(&["corpus", &bad.to_string_lossy(), "--sleighpath", &specs(), "--jobs", "1"]);
     assert_eq!(out.status.code(), Some(3), "{}", String::from_utf8_lossy(&out.stdout));
 }
+
+/// `check` over worker processes reports each function once, with the
+/// verdict it gets in one process.
+#[test]
+fn chunked_workers_give_the_verdicts_of_one_process() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../kuna-analysis/tests/fixtures/regglobal_fmt_x86_64");
+    let path = path.to_string_lossy().into_owned();
+    let entries = kuna_verify::session::function_entries(&path, &[], &[specs()]).unwrap();
+    let functions: Vec<String> = entries.iter().take(40).map(|e| format!("{e:#x}")).collect();
+    let rows = |jobs: &str| {
+        let mut args = vec!["check", path.as_str()];
+        args.extend(functions.iter().map(String::as_str));
+        args.extend(["--json", "--runs", "2", "--jobs", jobs, "--sleighpath"]);
+        let specs = specs();
+        args.push(&specs);
+        let out = verify(&args);
+        let mut v: Vec<String> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter(|l| l.starts_with("{\"function"))
+            .map(|l| {
+                let j: serde_json::Value = serde_json::from_str(l).unwrap();
+                format!("{} {}", j["function"], j["label"])
+            })
+            .collect();
+        v.sort();
+        v
+    };
+    let one = rows("1");
+    assert_eq!(one.len(), 40);
+    assert_eq!(rows("3"), one);
+}

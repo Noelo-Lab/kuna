@@ -1,7 +1,7 @@
 //! `kuna-verify`: differential semantic checking (diffverify, Tier C).
 //!
 //! ```text
-//! kuna-verify check <binary> <function|0xaddr>... | --all  [--contract FILE.c] [--option NAME VALUE]...
+//! kuna-verify check <binary> <function|0xaddr>... | --all  [--jobs N] [--fn-seconds S] [--contract FILE.c] [--option NAME VALUE]...
 //! kuna-verify corpus <test.xml|dir>...  [--jobs N] [--baseline FILE] [--save-baseline FILE]
 //! kuna-verify localize <test.xml|binary> <function> [--pass N] [--option NAME VALUE]...
 //! common: [--runs N] [--seed S] [--budget OPS] [--json] [--sleighpath DIR]
@@ -10,6 +10,11 @@
 //! `corpus --jobs N` checks N files at a time, each in a worker process of
 //! this binary (`shard`) that prints one JSON line, so a file's verdicts do
 //! not depend on the files checked before it and a crash costs only its own.
+//! `check --jobs N` splits the functions into fixed chunks and checks N chunks
+//! at a time, each in a worker process (`chunk`) that prints a line as each
+//! function is done; rows print as they arrive. A function with no verdict
+//! after `--fn-seconds` (600) is `UNKNOWN(timeout)`, and the rest of its
+//! chunk goes to a fresh worker.
 //!
 //! Exit status: 1 when a function differs, 3 when a file could not be checked,
 //! 2 for a usage error, else 0. With `--baseline`, 1 only for a regression
@@ -22,11 +27,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 use std::time::Instant;
 
-use kuna_verify::{baseline, check_binary, check_datatest, localize, session, Options, Row};
+use kuna_verify::{baseline, check_binary_each, check_datatest, localize, session, Options, Report, Row, Verdict};
 use serde_json::{json, Value};
 
 const USAGE: &str = "usage:
-  kuna-verify check <binary> <function|0xaddr>... | --all  [--contract FILE.c] [--option NAME VALUE]...
+  kuna-verify check <binary> <function|0xaddr>... | --all  [--jobs N] [--fn-seconds S] [--contract FILE.c] [--option NAME VALUE]...
   kuna-verify corpus <test.xml|dir>...  [--jobs N] [--baseline FILE] [--save-baseline FILE]
   kuna-verify localize <test.xml|binary> <function> [--pass N] [--option NAME VALUE]...
 options: --runs N (256)  --seed S  --budget OPS (200000)  --json  --trace  --sleighpath DIR";
@@ -40,6 +45,7 @@ struct Args {
     json: bool,
     all: bool,
     jobs: Option<usize>,
+    fn_seconds: u64,
     baseline: Option<String>,
     save_baseline: Option<String>,
     pass: Option<usize>,
@@ -57,6 +63,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         json: false,
         all: false,
         jobs: None,
+        fn_seconds: 600,
         baseline: None,
         save_baseline: None,
         pass: None,
@@ -97,6 +104,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
                 a.sleighpath = Some(v);
             }
             "--jobs" => a.jobs = Some(num(it.next(), "--jobs")? as usize),
+            "--fn-seconds" => a.fn_seconds = num(it.next(), "--fn-seconds")?.max(1),
             "--pass" => {
                 let p = num(it.next(), "--pass")?;
                 a.pass = Some(usize::try_from(p).ok().filter(|&p| p > 0).ok_or("--pass counts from 1")?);
@@ -148,30 +156,189 @@ fn run_check(a: &Args) -> Result<ExitCode, String> {
     if functions.is_empty() {
         return Err(USAGE.to_string());
     }
+    let jobs = a.jobs.unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get())).max(1);
+    let started = Instant::now();
+    let rows = if jobs == 1 || functions.len() <= CHUNK {
+        let source = match &a.contract {
+            Some(f) => Some((std::fs::read_to_string(f).map_err(|e| format!("{f}: {e}"))?, f.clone())),
+            None => None,
+        };
+        let mut rows = Vec::new();
+        check_binary_each(
+            binary,
+            &functions,
+            &a.options,
+            &roots,
+            source.as_ref().map(|(s, n)| (s.as_str(), n.as_str())),
+            &a.opts,
+            |_, r| {
+                let row = Row::from(&r);
+                print_row(a, &row);
+                rows.push(row);
+            },
+        )?;
+        rows
+    } else {
+        run_chunks(a, binary, &functions, jobs)?
+    };
+    if a.all {
+        let wall = (functions.len() > CHUNK && jobs > 1).then(|| (0, started.elapsed().as_secs_f64()));
+        print_summary(a, &[], &rows, wall);
+    }
+    Ok(exit_code(&rows, 0))
+}
+
+/// Functions a `check` worker process takes at a time. Fixed, so which
+/// functions share a process does not depend on `--jobs`.
+const CHUNK: usize = 32;
+
+fn print_row(a: &Args, row: &Row) {
+    let mut out = std::io::stdout().lock();
+    let _ = if a.json { writeln!(out, "{}", row.to_json()) } else { write!(out, "{}", row.render()) };
+    let _ = out.flush();
+}
+
+/// The flags a `chunk` worker needs to check as this process would.
+fn chunk_flags(a: &Args) -> Vec<String> {
+    let mut v = a.forward.clone();
+    for (n, val) in &a.options {
+        v.extend(["--option".to_string(), n.clone(), val.clone()]);
+    }
+    if let Some(c) = &a.contract {
+        v.extend(["--contract".to_string(), c.clone()]);
+    }
+    v
+}
+
+/// Check `functions` in chunks across `jobs` worker processes, printing each
+/// row as it arrives.
+fn run_chunks(a: &Args, binary: &str, functions: &[String], jobs: usize) -> Result<Vec<Row>, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let flags = chunk_flags(a);
+    let queue = std::sync::Mutex::new(functions.chunks(CHUNK).map(<[String]>::to_vec).collect::<std::collections::VecDeque<_>>());
+    let rows = std::sync::Mutex::new(Vec::new());
+    let fatal = std::sync::Mutex::new(None);
+    std::thread::scope(|scope| {
+        for _ in 0..jobs.min(functions.len().div_ceil(CHUNK)) {
+            scope.spawn(|| loop {
+                let Some(chunk) = queue.lock().unwrap_or_else(|e| e.into_inner()).pop_front() else { break };
+                let got = run_chunk(&exe, &flags, binary, &chunk, a.fn_seconds, |row| {
+                    print_row(a, &row);
+                    rows.lock().unwrap_or_else(|e| e.into_inner()).push(row);
+                });
+                match got {
+                    Ok(Some(rest)) => queue.lock().unwrap_or_else(|e| e.into_inner()).push_back(rest),
+                    Ok(None) => {}
+                    Err(e) => {
+                        fatal.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert(e);
+                        break;
+                    }
+                }
+            });
+        }
+    });
+    if let Some(e) = fatal.into_inner().unwrap_or_else(|e| e.into_inner()) {
+        return Err(e);
+    }
+    Ok(rows.into_inner().unwrap_or_else(|e| e.into_inner()))
+}
+
+/// One worker over `chunk`. `Ok(Some(rest))` when it stopped early: the first
+/// function without a verdict is reported, and `rest` is still to check.
+fn run_chunk(
+    exe: &Path,
+    flags: &[String],
+    binary: &str,
+    chunk: &[String],
+    fn_seconds: u64,
+    mut on_row: impl FnMut(Row),
+) -> Result<Option<Vec<String>>, String> {
+    let mut child = Command::new(exe)
+        .arg("chunk")
+        .args(flags)
+        .arg(binary)
+        .args(chunk)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    let stdout = child.stdout.take().ok_or("worker without stdout")?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        for line in std::io::BufRead::lines(std::io::BufReader::new(stdout)).map_while(Result::ok) {
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    let mut seen = vec![false; chunk.len()];
+    let stopped = loop {
+        match rx.recv_timeout(std::time::Duration::from_secs(fn_seconds)) {
+            Ok(line) => {
+                let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
+                if let Some(e) = v.get("error").and_then(Value::as_str) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(e.to_string());
+                }
+                let pos = v.get("pos").and_then(Value::as_u64).map(|p| p as usize);
+                if let (Some(pos), Some(row)) = (pos.filter(|&p| p < chunk.len()), v.get("row").and_then(Row::from_json)) {
+                    seen[pos] = true;
+                    on_row(row);
+                }
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                let _ = child.kill();
+                break format!("UNKNOWN(timeout: no verdict in {fn_seconds} s)");
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break String::new(),
+        }
+    };
+    let status = child.wait().map_err(|e| e.to_string())?;
+    let _ = reader.join();
+    let Some(first) = seen.iter().position(|s| !s) else { return Ok(None) };
+    let label = if stopped.is_empty() { format!("UNKNOWN(harness: worker exited ({status}))") } else { stopped };
+    let report = Report {
+        function: chunk[first].clone(),
+        verdict: Verdict::Unknown(label),
+        lines: Vec::new(),
+        suspects: Vec::new(),
+        elapsed: std::time::Duration::ZERO,
+    };
+    on_row(Row::from(&report));
+    let rest: Vec<String> = chunk.iter().zip(&seen).skip(first + 1).filter(|(_, s)| !**s).map(|(f, _)| f.clone()).collect();
+    Ok((!rest.is_empty()).then_some(rest))
+}
+
+/// The `check` worker: print `{"pos", "row"}` as each function is done, or
+/// `{"error"}` when the binary cannot be loaded.
+fn run_chunk_worker(a: &Args) -> Result<ExitCode, String> {
+    let [binary, functions @ ..] = a.positional.as_slice() else {
+        return Err(USAGE.to_string());
+    };
+    let roots = spec_roots(a.sleighpath.as_deref());
     let source = match &a.contract {
         Some(f) => Some((std::fs::read_to_string(f).map_err(|e| format!("{f}: {e}"))?, f.clone())),
         None => None,
     };
-    let reports = check_binary(
+    let line = |v: Value| {
+        let mut out = std::io::stdout().lock();
+        let _ = writeln!(out, "{v}");
+        let _ = out.flush();
+    };
+    let got = check_binary_each(
         binary,
-        &functions,
+        functions,
         &a.options,
         &roots,
         source.as_ref().map(|(s, n)| (s.as_str(), n.as_str())),
         &a.opts,
-    )?;
-    let rows: Vec<Row> = reports.iter().map(Row::from).collect();
-    for r in &rows {
-        if a.json {
-            println!("{}", r.to_json());
-        } else {
-            print!("{}", r.render());
-        }
+        |pos, r| line(json!({"pos": pos, "row": Row::from(&r).to_json()})),
+    );
+    if let Err(e) = got {
+        line(json!({"error": e}));
     }
-    if a.all {
-        print_summary(a, &[], &rows, None);
-    }
-    Ok(exit_code(&rows, 0))
+    Ok(ExitCode::SUCCESS)
 }
 
 /// 1 when a function differs, 3 when a file could not be checked (a worker
@@ -439,7 +606,8 @@ fn run_localize(a: &Args) -> Result<ExitCode, String> {
     })
 }
 
-/// `corpus`: the file count and the wall time of the whole run.
+/// `corpus`: the file count and the wall time of the whole run; a file count
+/// of 0 is a `check` run over workers, which has a wall time but no files.
 fn print_summary(a: &Args, slowest: &[(f64, String)], rows: &[Row], corpus: Option<(usize, f64)>) {
     let mut counts: BTreeMap<&str, u32> = BTreeMap::new();
     let mut reasons: BTreeMap<String, u32> = BTreeMap::new();
@@ -453,7 +621,7 @@ fn print_summary(a: &Args, slowest: &[(f64, String)], rows: &[Row], corpus: Opti
     if a.json {
         println!(
             "{}",
-            json!({"summary": {"files": corpus.map(|c| c.0), "functions": rows.len(), "verdicts": counts,
+            json!({"summary": {"files": corpus.map(|c| c.0).filter(|&f| f > 0), "functions": rows.len(), "verdicts": counts,
                    "reasons": reasons, "check_seconds": check_s, "wall_seconds": corpus.map(|c| c.1),
                    "runs": a.opts.runs}})
         );
@@ -461,8 +629,8 @@ fn print_summary(a: &Args, slowest: &[(f64, String)], rows: &[Row], corpus: Opti
     }
     println!();
     match corpus {
-        Some((files, _)) => println!("files {files}  functions {}", rows.len()),
-        None => println!("functions {}", rows.len()),
+        Some((files, _)) if files > 0 => println!("files {files}  functions {}", rows.len()),
+        _ => println!("functions {}", rows.len()),
     }
     for (k, v) in &counts {
         println!("  {k:<9} {v}");
@@ -489,6 +657,7 @@ fn main() -> ExitCode {
         "check" => run_check(&a),
         "corpus" => run_corpus(&a),
         "shard" => run_shard(&a),
+        "chunk" => run_chunk_worker(&a),
         "localize" => run_localize(&a),
         _ => Err(USAGE.to_string()),
     });

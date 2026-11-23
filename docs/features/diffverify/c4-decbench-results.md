@@ -55,8 +55,19 @@ One binary per project, the one the sample set picks, every function:
 | `O0` | 34 of 37 | 15,592 | 12,742 (82%) | 117 | 2,732 | 1.6 CPU-h |
 
 Not done: `bash`, `cf2.elf`, `betaflight` and `cleanflight` (both levels) ran past a
-40-minute limit, and `--all` prints only at the end, so they left nothing. `u-boot`
-(`O2`) and `tar` (`O0`) ran on past the limit and were stopped by hand.
+40-minute limit, and `--all` printed only at the end, so they left nothing. `u-boot`
+(`O2`) and `tar` (`O0`) were stopped by hand after two and a half hours.
+
+Since then `check` runs its functions over worker processes (`--jobs`, default the
+core count). The functions go in fixed chunks of 32, one process per chunk, so which
+functions share a process does not depend on `--jobs`. Each row prints as its function
+finishes. A function with no verdict after `--fn-seconds` (600) is `UNKNOWN(timeout)`,
+and the rest of its chunk goes to a new worker. `coreutils` `ls` (`O2`, 405 functions)
+takes 31 s instead of 206 s with ten workers, with the same verdict for every function. `bash`
+(`O2`), which left nothing before, finishes its 2,542 functions in 26 minutes on a
+loaded machine, three of them `UNKNOWN(timeout)`. `u-boot` (`O2`) finishes its 2,013
+functions in 14 minutes with no timeout: it never hung, it needs 1.9 CPU-hours of checks,
+which one process could not finish within the limit.
 
 `UNKNOWN` is half budget (2,785), half operations the model cannot run (2,274). Of
 those:
