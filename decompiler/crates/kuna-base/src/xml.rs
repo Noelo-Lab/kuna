@@ -2294,7 +2294,7 @@ mod tests {
         // and kuna-calleepreservesargs / a register a leaf callee leaves alone carries a value to the next call
         // and kuna-framepublish-seh / a published SEH record holds only the frame writes at or above it
         // and kuna-switcharmorder / default and no-return switch arms print last, no default: return; at a void tail
-        assert_eq!(count, 878, "corpus file count drifted");
+        assert_eq!(count, 879, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

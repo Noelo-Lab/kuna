@@ -476,6 +476,10 @@ Three tiers:
 | __chkstk_darwin is called with arguments it does not take | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | a variable declared undefined4/undefined8 although it is shifted, masked or compared | [`typevote`](#typevote----on--off-default-on) |
 | a cast back to a variable's own declared type at each read | [`typevote`](#typevote----on--off-default-on) |
+| for or while loop printed as if (c) { do { ... } while (c); } | [`looptest`](#looptest----binary--proven--assume-default-proven) |
+| if (!n) return; followed by a do-while on the same count | [`looptest`](#looptest----binary--proven--assume-default-proven) |
+| do-while loop whose first test always passes | [`looptest`](#looptest----binary--proven--assume-default-proven) |
+| kuna writes do-while where the source and ida write while or for | [`looptest`](#looptest----binary--proven--assume-default-proven) |
 | a DOS program's globals print as *(short *)0x308e near-pointer dereferences instead of named globals | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | every function of an MS-DOS executable declares an unsigned short local commented // ds | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | the same DOS global gets no shared name across functions | [`mzdgroup`](#mzdgroup----on--off-default-on) |
@@ -1934,6 +1938,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On (default). Flip off to see which values type inference left undefined.
 - **Where / provenance:** P5/type-propagation · kuna · presentation-default · kuna-typevote
 - **Example:** `option typevote off`
+
+### `looptest` -- binary | proven | assume, default `proven`
+
+- **Symptoms:** for or while loop printed as if (c) { do { ... } while (c); }; if (!n) return; followed by a do-while on the same count; do-while loop whose first test always passes; kuna writes do-while where the source and ida write while or for.
+- **What it does:** Print a bottom-tested loop with its test at the top, `while (c) { body }`, when that is provably the same program, and leave out the guard `if` that the compiler's loop rotation put in front of it. gcc's loop header copying turns `while (c) body` into `if (c) do body while (c);` and drops the `if` when it can prove `c` on entry, so kuna prints `do { } while` for loops the source tests at the top. `kuna_looptest` plans each C `BlockDoWhile` on the final structured tree. The test may move to the top only when every loop-variant leaf of the printed condition is the value carried into the next iteration by a header MULTIEQUAL (or a COPY of it, which then prints as that variable) and the condition calls nothing. `proven` then needs the entry test, the condition with each carried value replaced by its entry value, to fold to true, to equal the condition of an edge that dominates the loop, or to equal the condition of a guard right in front of the loop. That guard is left out when the statements between it and the loop are pure and write nothing the skip path reads, and the skip path reaches the loop's own exit or an equal bare return. A guard that has to stay keeps the do-while, and so does a loop whose carried variable lives in the stack frame (unoptimized code, where a bottom test is the source's own). `binary` prints every loop where the binary tests it; `assume` also moves the test of a loop with no entry proof. C output only.
+- **When to flip:** PROVEN by default. Flip to binary to see each loop where the compiler placed its test (and every rotation guard), for example when matching the output against the disassembly. assume is speculative: it also prints `while (c)` for a loop whose first test the binary skips, which is wrong when the source was a do-while whose test can fail on entry.
+- **Where / provenance:** P8/goto-quality · kuna · structure-recovery · kuna-looptest
+- **Example:** `option looptest binary`
 
 ## Analysis & loader passes
 
