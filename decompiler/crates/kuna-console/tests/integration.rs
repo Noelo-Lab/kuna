@@ -7,6 +7,9 @@ mod verify_goextensions;
 #[path = "verify_gobyteextract.rs"]
 mod verify_gobyteextract;
 
+#[path = "verify_op_sizes.rs"]
+mod verify_op_sizes;
+
 #[path = "verify_gobyteview.rs"]
 mod verify_gobyteview;
 
