@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5242,
-    5242
+    5254,
+    5254
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2687,6 +2687,10 @@
     "data:SWITCH ARM ORDER #2: nothing prints after the no-return arm",
     "data:SWITCH ARM ORDER #3: a void function's tail switch prints no default: return;",
     "data:SWITCH ARM ORDER #4: voidtailreturn off keeps default: return;",
+    "data:SWITCHCOND #1: no if or while is left without its condition",
+    "data:SWITCHCOND #2: the switch prints once",
+    "data:SWITCHCOND #3: the inner loop runs inside its case",
+    "data:SWITCHCOND #4: the loop around the switch",
     "data:SWITCHGUARDRELOAD #1: the five legal rows of the reloaded-byte switch are recovered once each",
     "data:SWITCHGUARDRELOAD #2: the switch closes after row 4, the last row the guard allows",
     "data:SWITCHGUARDRELOAD #3: no row past the guard sends flow into an instruction interior",
@@ -3713,6 +3717,14 @@
     "data:exact one signed 64-bit atomic addition",
     "data:exact signed32-to-double intermediate still combines",
     "data:executable literal retains reachable return",
+    "data:expandload opsize #1: t_bit tests the whole declared field",
+    "data:expandload opsize #2: t_bit's widened AND writes 4 bytes",
+    "data:expandload opsize #3: t_bit's compare reads the 4-byte AND",
+    "data:expandload opsize #4: t_test tests the whole declared field",
+    "data:expandload opsize #5: t_test's widened AND writes 4 bytes",
+    "data:expandload opsize #6: t_test's compare reads the 4-byte AND",
+    "data:expandload opsize #7: no AND of 4-byte inputs writes one byte",
+    "data:expandload opsize #8: no compare reads one byte against a 4-byte constant",
     "data:explicit call site keeps its declared arity",
     "data:explicit callsite prototype overrides the recovered input pair",
     "data:explicit function authority replaces the names of both source strings",

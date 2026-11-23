@@ -36,6 +36,10 @@ compiles and executes the emitted C at O0/O2.
 argument was narrowed to two bytes before the field's prototype was forced on
 the call: the function decompiles and passes the sum widened to the parameter.
 
+`kuna-expandload-opsize.xml` checks the final IR of a byte flag test that is
+widened into a test of a declared record's 4-byte field: the AND and the compare
+it feeds are 4 bytes wide, both for `cmp al` after `and eax` and for `testb`.
+
 `kuna-calleefilledarg.xml` checks that a call to a stub that loads one of its
 own argument registers (`adrp x1; ldr x1,[x1]; ... br x16`, the Objective-C
 selector-stub shape) keeps the receiver, a stack address, a buffer and a count
@@ -155,6 +159,13 @@ off` keeps the compiler's chain. `colon` (openssh `misc.c`) keeps its loop: re-r
 its arms continue the loop and the structurer lost the loop to gotos, so the
 switch is withdrawn. The selector stays `int`, and `kind`'s labels over a
 `char` print as character constants.
+
+`kuna-switchcond.xml` checks that a folded switch is never printed where a
+condition belongs. In gcc -O0 x86-64 `scan`, a jump-table switch inside a
+loop, every case continues the loop except one that runs an inner loop first.
+The region structurer folded the switch before that inner loop and printed
+`if` on its own line followed by the whole switch a second time. The inner
+loop now prints inside its case and the switch prints once.
 
 `kuna-jumptableslots.xml` checks the slot bound on a guard-bounded table past
 `jumptablemax`. gcc -O2 guards `x <= 0x28ff` and indexes a 41-entry table with
@@ -364,6 +375,7 @@ writeup, not here.
 | `kuna-swiftstrobj.xml` | kuna (a Swift string literal's object word, the literal's address minus 0x20 tagged in bit 63, printed as the text of the literal stored 32 bytes earlier) | P9 emission, const-pointer typing (`ActionConstantPtr` leaves a constant as a number when every use ORs in bit 63 and the bytes 32 past it open a large literal) | default correctness fix (no option) |
 | `kuna-retcopyclone.xml` | [Kuna #1355](https://github.com/Noelo-Lab/kuna/issues/1355) (a store before a `cmp; cmov; ret`, or before a shared `leave; ret`, printed a second time on one return path) | P8 structure (a return block cloned per predecessor keeps each global's `return_copy` guard flag, and a phi on address-tied storage leaves no `g = g` copy, so neither is rewritten into a second store; the order the split prints stores its phis absorbed) | default correctness fix (no option); the clone's global phis print in address order |
 | `kuna-switchunrolledsense.xml` | [Kuna #1028](https://github.com/Noelo-Lab/kuna/issues/1028) | P2 switch model (copies of the bound check on each predecessor of the dispatch, with opposite branch senses, bound the merged index) | `option switchmultipred on\|off` |
+| `kuna-switchcond.xml` | kuna-owned (bash `man2html` `scan_format`, invalid C) | P8 region structurer (a folded switch keeps one successor; no statement in a condition slot) | default correctness fix (no option) |
 
 | `gh8017-stackprobeloop.xml` | [GH-8017](https://github.com/NationalSecurityAgency/ghidra/issues/8017) | S2 stack-pointer normalization (stack-probe loop) | always on (P2 `stack-pointer-normalization`, `kuna_stackprobeloop.rs`) |
 
