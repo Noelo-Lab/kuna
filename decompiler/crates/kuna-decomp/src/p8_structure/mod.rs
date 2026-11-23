@@ -12,6 +12,7 @@ pub mod kuna_crossjumpreverter;
 pub mod kuna_dedupitetail;
 pub mod kuna_gotolabel;
 pub mod kuna_gotonext;
+pub(crate) mod kuna_switchcaseorder;
 pub(crate) mod kuna_switchmerge;
 pub mod kuna_gotoreduce;
 pub mod kuna_ifelseflatten;
