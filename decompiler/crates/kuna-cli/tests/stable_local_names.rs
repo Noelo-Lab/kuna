@@ -350,7 +350,7 @@ fn a_structure_pointer_retype_keeps_its_name() {
     let fixture = "retypeptr_x86_64";
     let typedef = "typedef struct S { long a; long b; } S;";
     for (function, directive, decl) in
-        [("walk", "type v2 S *v2", "  S *v2;"), ("walk", "type v2 S *", "  S *v2;"), ("squeeze", "type v1 S *v1", "  S *v1;")]
+        [("walk", "type v2 S *v2", "  S *v2;"), ("walk", "type v2 S *", "  S *v2;"), ("squeeze", "type v2 S *v2", "  S *v2;")]
     {
         let code = decompile_in(fixture, function, &[], &[typedef, directive]);
         assert!(code.contains(decl), "{function} {directive}:\n{code}");
