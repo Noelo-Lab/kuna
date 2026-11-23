@@ -2292,7 +2292,8 @@ mod tests {
         // and kuna-bytestorewidth / a constant word store into a byte array keeps its width (bytestorewidth)
         // and kuna-calleefloatreads / a call passes the float register its unstated callee reads
         // and kuna-calleepreservesargs / a register a leaf callee leaves alone carries a value to the next call
-        assert_eq!(count, 875, "corpus file count drifted");
+        // and kuna-framepublish-seh / a published SEH record holds only the frame writes at or above it
+        assert_eq!(count, 876, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

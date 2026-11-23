@@ -3956,8 +3956,8 @@ the Windows loader writes there. The action also folds to zero any varnode whose
 consumed bits and nonzero mask are
 disjoint (skipping constants and COPYs of nonzero constants, which would
 recurse).
-With `stackalias on`, physical frame writes held by the opt-in P6 policy retain
-that hold across this pass (chapter [06](06-variables-and-merge.md)). Clearing a
+With `stackalias on`, or when the function publishes a frame address to memory,
+physical frame writes held by the P6 policy retain that hold across this pass (chapter [06](06-variables-and-merge.md)). Clearing a
 hold that dead-code elimination immediately reinstates would prevent the main
 loop from converging; ordinary temporary holds keep their existing release rule.
 
@@ -4057,8 +4057,11 @@ and disabled local policy retain their existing propagation behavior.
 With `stackviews on`, unresolved STOREs in the containing memory space guard
 escaped frame ranges with an INDIRECT memory version. A reloaded pointer need
 not remain syntactically derived from the stack pointer: it can still designate
-those bytes. The existing deferred alias checker gates these additional guards;
-literal global addresses retain their ordinary disjoint behavior. This prevents
+those bytes. The existing deferred alias checker gates these additional guards.
+A STORE whose destination is a literal global address cannot write frame bytes
+and receives no guard. Storing a frame address into such a global is still an
+escape: the published frame stores stay live through the `stackalias`
+publication hold in every policy (chapter [06](06-variables-and-merge.md)). This prevents
 folding a direct stack read to the old constant after an indirect whole or byte
 write. Unknown call effects retain their existing frame guards.
 

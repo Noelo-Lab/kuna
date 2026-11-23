@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5119,
-    5119
+    5124,
+    5124
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -984,6 +984,9 @@
     "data:FPU TRUNC VIEWS #3: keep genuine floating multiplication",
     "data:FPU TRUNC VIEWS #4: retain the floating storage write",
     "data:FPU TRUNC VIEWS #5: a clobber reads actual floating storage",
+    "data:FRAMEPUBLISH-SEH #1: the push-ecx local below the published record does not make ECX a parameter",
+    "data:FRAMEPUBLISH-SEH #2: the record's handler and state stores print",
+    "data:FRAMEPUBLISH-SEH #3: stores below a published mid-array pointer that it indexes print",
     "data:FUNCBOUNDFLOW #1: default does NOT merge neighbor; only the funcboundflow-off pass shows its body (exactly one occurrence across both passes)",
     "data:FUNCBOUNDFLOW #2: both passes resolve the unnamed no-return call to fatal(), so the sole difference is the boundary truncation",
     "data:FUNCPTRALIGN #1: the SLEIGH ISA-mode bit-clear never reaches the emitted C",
@@ -2132,7 +2135,7 @@
     "data:PEBNAMES-X86 #4: the magic-offset read of BeingDebugged (off pass only)",
     "data:PEBNAMES-X86 #5: the TEB pointer is declared for the reader and every near miss, never for the function that writes the base",
     "data:PEBNAMES-X86 #6: the function that links an SEH record keeps its PEB read untyped under on",
-    "data:PEBNAMES-X86 #7: the SEH registration record stays one 12-byte object under on",
+    "data:PEBNAMES-X86 #7: the SEH registration record keeps its handler and state stores in both passes",
     "data:PEBNAMES-X86 #8: the record is linked and unlinked through the base's first member, not a TEB name, in both passes",
     "data:PEBNAMES-X86 #9: the register storage comment survives in every pass",
     "data:PEIMPORTCALL #1: the IAT-slot call is never left unnamed",
@@ -4928,6 +4931,8 @@
     "data:the call never passes the ABI pointer",
     "data:the converted call uses variable-valued arguments",
     "data:the dead arm of the square test prints only when off",
+    "data:the default policy keeps the Pair and Handle stores published through a volatile global",
+    "data:the default policy keeps the Pair and Handle stores published through an ordinary global",
     "data:the entry partition never loses the input",
     "data:the float rounding is never folded away",
     "data:the function body is kept",

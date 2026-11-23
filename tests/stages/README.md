@@ -372,6 +372,15 @@ are NZCV=0011 for unordered operands, so `gt` prints as `b < a` and `le` as
 `!(b < a)`, never `a != b && !(a < b)`, which a NaN makes true. A strict
 correctness fix with one pass.
 
+`kuna-framepublish-seh.xml` pins an MSVC SEH prologue that links its
+registration record into `fs:[0]` and allocates a local below it with
+`push ecx`. The frame publication holds the record's handler and state
+stores, while the garbage ECX store to the local below the record, which the
+`and` overwrites with only the `fs:[0]` link STORE in between, is still dead
+and does not make ECX a parameter. It also pins a pointer into the middle of
+a local array whose reader indexes below it: all four element stores print. A
+strict fix with one pass.
+
 `kuna-globalorder.xml` pins issue [#871](https://github.com/Noelo-Lab/kuna/issues/871)
 and case-local global stores at the `indexaliasguard global` default: a
 computed global update stays after an aliasing load, and a switch's stores
