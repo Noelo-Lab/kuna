@@ -356,6 +356,12 @@ correctness fix, exercised with defaults and `nanignore none`.
 GCC and Clang and checks NaN, signed zeros, infinities and finite values
 against the original functions.
 
+`kuna-fcmp-unordered.xml` pins every AArch64 condition read after `fcmp`, six
+ARM branches after `vcmp` and `vmrs`, and three compiled functions. The flags
+are NZCV=0011 for unordered operands, so `gt` prints as `b < a` and `le` as
+`!(b < a)`, never `a != b && !(a < b)`, which a NaN makes true. A strict
+correctness fix with one pass.
+
 `kuna-globalorder.xml` pins issue [#871](https://github.com/Noelo-Lab/kuna/issues/871)
 and case-local global stores at the `indexaliasguard global` default: a
 computed global update stays after an aliasing load, and a switch's stores

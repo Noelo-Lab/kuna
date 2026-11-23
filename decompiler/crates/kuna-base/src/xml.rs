@@ -2288,7 +2288,8 @@ mod tests {
         // and kuna-returnhintcaller / a callee return hint keeps the argument passed in the return register
         // and kuna-boundschecked / an Annex K bounds-checked call keeps every declared argument
         // and kuna-declaredpop / a declared import pop is the stack solver's equation
-        assert_eq!(count, 871, "corpus file count drifted");
+        // and kuna-fcmp-unordered / ARM and AArch64 float conditions keep their unordered case
+        assert_eq!(count, 872, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

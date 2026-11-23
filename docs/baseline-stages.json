@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5070,
-    5070
+    5088,
+    5088
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -799,6 +799,24 @@
     "data:FATSTR #2: the raw rodata address renders under off and folds under always",
     "data:FATSTR #3: the call survives both passes",
     "data:FATSTR #4: the length argument is kept in both passes",
+    "data:FCMPUN #10: AArch64 cset gt against a constant is false for a NaN",
+    "data:FCMPUN #11: AArch64 b.le and ARM ble take the unordered arm",
+    "data:FCMPUN #12: ARM bgt is false for a NaN",
+    "data:FCMPUN #13: ARM bge is false for a NaN",
+    "data:FCMPUN #14: ARM blt is true for a NaN",
+    "data:FCMPUN #15: ARM ble after vcmp against 88.0f is false for a NaN",
+    "data:FCMPUN #16: Thumb compare with 0.0f is false for a NaN",
+    "data:FCMPUN #17: AArch64 cset gt on a loaded double is false for a NaN",
+    "data:FCMPUN #18: no ordered-and-unequal spelling true for a NaN",
+    "data:FCMPUN #1: AArch64 cset ge is false for a NaN",
+    "data:FCMPUN #2: AArch64 cset lt is true for a NaN",
+    "data:FCMPUN #3: AArch64 cset gt is false for a NaN",
+    "data:FCMPUN #4: AArch64 cset le is true for a NaN",
+    "data:FCMPUN #5: AArch64 cset hi is true for a NaN",
+    "data:FCMPUN #6: AArch64 cset ls is false for a NaN",
+    "data:FCMPUN #7: AArch64 cset pl and hs are true for a NaN",
+    "data:FCMPUN #8: AArch64 cset mi and lo are false for a NaN",
+    "data:FCMPUN #9: AArch64 cset eq and ne keep their equality",
     "data:FCVTROUND #10: fcvtpu of a double into a 64-bit register",
     "data:FCVTROUND #11: frintm, frintp and frinta stay floats",
     "data:FCVTROUND #12: frintn, frintx and frinti are the typed rounding user ops",
@@ -2817,7 +2835,7 @@
     "data:The ordinary Go function with the same basename stays a free function",
     "data:Third aggregate field is published",
     "data:Third array field is published",
-    "data:UCOMISS unordered #10: setnp beside an exact setb stays",
+    "data:UCOMISS unordered #10: setnp and setb are the ordered x < y",
     "data:UCOMISS unordered #11: setp beside an exact seta stays",
     "data:UCOMISS unordered #12: setnp beside an exact setb through a pointer stays",
     "data:UCOMISS unordered #13: jp then jbe on one memory compare",

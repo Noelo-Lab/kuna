@@ -1786,6 +1786,38 @@ still apply to it once those combinations are normalized. A root packed into a s
 only reassembled into a condition after the guards are gone, so x87
 status-word compares keep the upstream approximation.
 
+ARM `vcmp` with `vmrs` and AArch64 `fcmp` report the unordered case
+differently. N is less-than, Z is equal, C is not-less-than, and V is
+unordered (NZCV=0011). So `gt` (`!Z && N == V`) and `ge` are false for a NaN,
+while `le` (`Z || N != V`), `lt` and `hi` are true for it. A NaN test there
+enters through `==` or `!=` against N, not through an OR, so the guarded root
+above never matches. When none of those folds applies,
+`kuna_floatnegation.rs (fold_exact_conditions)` takes each outermost
+one-byte boolean expression the NaN test feeds. Such an expression is built
+from copies, `!`, `&&`, `||`, `^` and one-byte `&`, `|`, `^`, `==`, `!=`. The
+fold names the two operands of the expression's first float comparison. Every
+other comparison and NaN test in the expression must read those two values,
+matched as above. It evaluates the expression for less, equal and greater,
+and for each unordered case: either operand NaN, or both. An operand proved
+to be a non-NaN constant is never NaN. All the unordered cases must agree. If
+the four-row truth table is one comparison or its negation (`a < b`,
+`a <= b`, `a == b`, `a != b` in either order, or `!` of an ordered one), the
+expression's defining op becomes a copy or a negation of that comparison. The
+comparison is issued after the leaf as above and marked exact. `b.le` then
+prints `!(b < a)`, and `cset gt` prints `b < a`, never
+`a != b && !(a < b)`, which a NaN makes true. The walk also follows the
+flags through a status word: ARM32 packs them into FPSCR
+(`zext(flag) << n`) and reads them back with shifts, masks and `SUBPIECE`,
+and `nanignore` can strip the V test before Z is unpacked. So evaluation runs
+over bit values, and `ZEXT`, `SUBPIECE`, `INT_NEGATE` and constant shifts are
+followed too. The fold declines an expression that reads any other value or
+contains no comparison. It also declines one whose readers pack it into a
+status word, or combine it with other values, such as a flag byte built by
+`|= 2`. A part folded alone there could disagree with a sibling NaN test that
+`nanignore` still approximates. It also declines a table no single comparison
+spells, such as an ordered not-equal or a bare unordered test. `nanignore`
+keeps deciding those as before.
+
 Every comparison these folds issue or rewrite carries the `kuna_exactfloat`
 addlflag (`decompiler/crates/kuna-decomp/src/substrate/op.rs`). It already
 decides the unordered case, so `RuleIgnoreNan`'s
