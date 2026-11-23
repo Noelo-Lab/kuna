@@ -286,6 +286,10 @@ Three tiers:
 | if (!c) return 0; f(); return 0; where the source has if (c) f(); return 0; | [`rettriangle`](#rettriangle----on--off-default-off) |
 | a duplicated constant return right after a one-statement body | [`rettriangle`](#rettriangle----on--off-default-off) |
 | // return-dupe on a function whose only split is a short if before its return | [`rettriangle`](#rettriangle----on--off-default-off) |
+| if (!c) return; f(); where the source has if (c) f(); | [`tailform`](#tailform----off--on-----default-on) |
+| if (!c) return 0; f(); g(); return 0; where the source has if (c) { f(); g(); } return 0; | [`tailform`](#tailform----off--on-----default-on) |
+| a long body nested in if (c) { ... } at the end of a function whose source returns early | [`tailform`](#tailform----off--on-----default-on) |
+| if (c) { f(); return 0; } return 0; with the return written twice | [`tailform`](#tailform----off--on-----default-on) |
 | inverted diamond: if (guard) { entire body } else { v = 0; } return v; | [`earlyreturn`](#earlyreturn----on--off-default-on) |
 | leading argument-validity check wraps the whole body instead of an early return | [`earlyreturn`](#earlyreturn----on--off-default-on) |
 | function opens with if (p != 0) { everything } where source wrote if (!p) return 0; | [`earlyreturn`](#earlyreturn----on--off-default-on) |
@@ -1530,6 +1534,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Turn ON when a short `if` before a constant return comes out as an early return plus a duplicated return, `if (!c) return 0; f(); return 0;`, where IDA prints `if (c) f(); return 0;`. The `aggressive` preset (what `--mode auto` picks under 500 KiB) already turns it on. Leave it off to keep `returndup`'s guard-clause form for every shared constant return.
 - **Where / provenance:** P8/goto-quality · ida · structure-recovery · kuna-rettriangle
 - **Example:** `option rettriangle on`
+
+### `tailform` -- off | on | <n> | <void>,<value>, default `on`
+
+- **Symptoms:** if (!c) return; f(); where the source has if (c) f();; if (!c) return 0; f(); g(); return 0; where the source has if (c) { f(); g(); } return 0;; a long body nested in if (c) { ... } at the end of a function whose source returns early; if (c) { f(); return 0; } return 0; with the return written twice.
+- **What it does:** Re-spell the `if` at the end of a function by the printed size of its conditional part instead of the form the binary's return layout produced. `if (c) { S } return K;` and `if (!c) return K; S; return K;` are the same program; whether the compiler shared the epilogue or gave a path its own `ret` or tail call decides which one structuring recovers, and that layout runs against the author's habit of wrapping a short tail and guarding a long one. After the tree is final, `kuna_tailform` works on the function's top-level statements: a guard `if (c) return K;` whose remaining tail prints at most <n> lines (statements, headers, labels; not lone braces) and returns the same K (void, an equal constant, or one SSA value) becomes `if (!c) { tail } return K;`; a one-arm `if` right before the final bare return whose body prints more than <n> lines becomes a guard clause (void or constant K); and in a valued function an arm of that last `if` that ends in the function's own final `return K;` drops it. Print-tree edits only: the condition is negated in place (FlowBlock::negateCondition), statements move in order, no op is cloned, reordered or removed, and a return that shares a basic block with the last statement prints after the `if` from a return-only copy of the leaf. `on` is 4; `<void>,<value>` sets the two thresholds separately; `kuna_tailform::decide` is the whole policy.
+- **When to flip:** On by default at 4 lines. Leave it on: on the decbench corpus (O2 without inlining, 35,189 functions) it moves TFO2NET more functions to a CFG that matches the source exactly (gained TFO2G, lost TFO2L) and TFO0NET more at O0; the threshold was fitted on half of the projects and checked on the other half. Lower it (`option tailform 2`) when a code base writes early returns even for one-statement tails, raise it when long bodies stay wrapped; `off` prints the binary's own return layout, which is what Ghidra and IDA print.
+- **Where / provenance:** P8/goto-quality · kuna · structure-recovery · kuna-tailform
+- **Example:** `option tailform off`
 
 ### `earlyreturn` -- on | off, default `on`
 
