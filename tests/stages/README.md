@@ -5,6 +5,11 @@ an argument register set once before two calls of a leaf that reads it, and a
 killed-by-call register kept across a leaf that only reads memory. Its control
 leaves a stale register off a callee that never reads it.
 
+`kuna-ppc32-computed-lr.xml` follows a local target stored in LR rather than
+returning the input argument. Its CLI companion covers both byte orders,
+conditional transfers, joins, stack reloads and ordinary ABI returns, and
+compiles and executes the emitted C at O0/O2.
+
 `kuna-narrowed-call-input.xml` checks a call through a typed field whose
 argument was narrowed to two bytes before the field's prototype was forced on
 the call: the function decompiles and passes the sum widened to the parameter.
