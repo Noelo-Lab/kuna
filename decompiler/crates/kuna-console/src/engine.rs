@@ -4374,13 +4374,19 @@ fn object_import_slot_stash(
 }
 
 /// A program with nothing loaded beyond the engine: every stash empty, every
-/// declaration absent. Each bootstrap fills in what its loader supplies.
+/// declaration absent. Each bootstrap fills in what its loader supplies. An XML
+/// or raw image runs at the base its caller states, so its code cannot move.
 fn empty_program(
-    arch: SleighArchitecture,
+    mut arch: SleighArchitecture,
     registry: IdRegistry,
     container: ProgramContainer,
     description: String,
 ) -> ConsoleProgram {
+    if matches!(container, ProgramContainer::Xml | ProgramContainer::Raw) {
+        if let Some(base) = arch.base_mut() {
+            base.runtime_code_relocation = false;
+        }
+    }
     ConsoleProgram {
         callwide: Default::default(),
         arch,
@@ -4680,6 +4686,7 @@ pub fn bootstrap_from_mz_bytes(
     Bootstrap::new(spec_roots).target(target).arm_isa(isa).mz_bytes(path, bytes)
 }
 
+/// DOS picks the segment an `MZ` load module runs at, so its code can move.
 pub(crate) fn bootstrap_mz_bytes(
     path: &str,
     bytes: &[u8],
@@ -4728,6 +4735,7 @@ pub(crate) fn bootstrap_mz_bytes(
         languages,
         Some(image.module.clone()),
     )?;
+    program.arch_mut().runtime_code_relocation = true;
     if let Some(space) = program.analysis_code_space.clone() {
         kuna_analysis::loader::kuna_realmodecs::paint(program.arch(), &space, &image.code_segments);
         if target.starts_with("x86:LE:16:Real Mode") {
@@ -4876,6 +4884,7 @@ pub(crate) fn bootstrap_te_bytes(
     let entry = loader.entry();
     let image_metadata =
         ProgramImageMetadata { entry: Some(entry), sections: loader.section_metadata() };
+    sleigh.base_mut().unwrap().runtime_code_relocation = loader.runtime_code_relocation();
     sleigh.base_mut().unwrap().set_loader(Box::new(loader));
     let input_context_paints = install_input_isa(
         sleigh.base_mut().unwrap(),

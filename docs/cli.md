@@ -1054,11 +1054,17 @@ LR, the directive identifies a computed jump even when the incoming LR value
 is unknown. Sites without a directive use ordinary return and jump recovery.
 AArch64 BR uses the lifted
 register value. A switch on a live pointer needs its runtime value, so the
-directive is rejected for a PIE, a shared object or another image whose code
-relocates at run time, and for a branch whose target encoding Kuna does not
-resolve (ARM32 interworking, AArch64 other than BR, PowerPC other than classic
-CTR/LR). The site then keeps ordinary recovery. Batch summaries report
-rejected image-wide assertions and honor `--assert-strict`.
+directive is rejected for code that may run at another address: a PIE, a
+shared object, a relocatable object, a PE or UEFI TE image with base
+relocations, a Mach-O PIE, and an MZ executable, whose segment DOS chooses. A
+raw image runs at its stated `--base`. It is also rejected for a branch whose
+target Kuna cannot label: a segmented x86 destination, which prints as an
+offset in its code segment, a destination wider than the value the jump
+takes (a 16-bit offset cannot reach 0x10002), ARM32 interworking, AArch64
+other than BR, and PowerPC other than classic CTR/LR. In MIPS16e and microMIPS languages only a
+4-aligned standard-mode destination can be stated. The site then keeps
+ordinary recovery. Batch summaries report rejected image-wide assertions and
+honor `--assert-strict`.
 A conflicting second set is rejected and the first accepted set stays active.
 The JSON status `applied` records installation for this image. Each function
 uses the fact only when its flow reaches the site. As with other program

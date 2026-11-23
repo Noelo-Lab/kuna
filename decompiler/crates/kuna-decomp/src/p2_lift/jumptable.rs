@@ -5785,7 +5785,9 @@ pub struct JumpTable {
     flow_addresses_proven: bool,
 }
 
-/// Known edges are independent of the expression that can discriminate them.
+/// How a stated jump's case labels follow from its branch operand: the operand
+/// is the destination itself, or a classic PowerPC CTR/LR value whose two low
+/// bits the transfer discards.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatedSelector {
     Address,

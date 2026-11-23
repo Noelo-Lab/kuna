@@ -1,0 +1,39 @@
+<decompilertest>
+<binaryimage arch="x86:LE:16:Real Mode:default">
+<bytechunk space="ram" offset="0x100" readonly="true">ff2fb80b00c3b81600c3</bytechunk>
+<bytechunk space="ram" offset="0x10000" readonly="true">ffe0b80b00c3b81600c3</bytechunk>
+<bytechunk space="ram" offset="0x10010" readonly="true">ff2fb80b00c3b81600c3</bytechunk>
+<symbol space="ram" offset="0x100" name="far_low"/>
+<symbol space="ram" offset="0x10000" name="near_jump"/>
+<symbol space="ram" offset="0x10010" name="far_jump"/>
+</binaryimage>
+<script>
+<com expecterror="true">override jumptable 10000 10002 10006</com>
+<com expecterror="true">override jumptable 10010 10012 10016</com>
+<com>override jumptable 100 102 106</com>
+<com>lo fu near_jump</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu far_jump</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu far_low</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/stated-jump/dos.exe</com>
+<com>read symbols</com>
+<com expecterror="true">override jumptable 10000 10002 10006</com>
+<com>load addr 0x10000</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="A near jump in a code segment cannot label linear destinations" min="1" max="1">segmented destination is printed as an offset</stringmatch>
+<stringmatch name="A far jump through a 16-bit offset cannot reach a destination above 0xffff" min="1" max="1">destination 0x10012 does not fit the 2-byte value the jump takes</stringmatch>
+<stringmatch name="DOS chooses the segment an MZ executable runs at" min="1" max="1">runtime load base is unknown for this image</stringmatch>
+<stringmatch name="Rejected destinations print no case" min="0" max="0">case 0x100[01][26]:</stringmatch>
+<stringmatch name="Rejected jumps keep their unresolved flow" min="3" max="3">jump-as-call</stringmatch>
+<stringmatch name="Destinations that fit the offset still label cases" min="1" max="1">case 0x102:</stringmatch>
+<stringmatch name="The second fitting destination is a case too" min="1" max="1">case 0x106:</stringmatch>
+</decompilertest>

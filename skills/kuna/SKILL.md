@@ -104,7 +104,9 @@ Supply known prototypes and types with `--assert` and function entries with
 `--define-function`. If assembly or execution establishes every taken destination
 of a computed jump, pass `--assert 'jumptable SITE TARGET [TARGET ...]'` using
 hexadecimal code addresses. Keep the guard's fall-through out of the list.
-Use `--assert-strict` to catch rejected facts. Save reusable directives one per
+Kuna rejects the set where case labels would be false, such as a PIE, shared
+object or relocatable PE, TE or MZ image, a segmented jump, or a destination
+wider than the jump's value, and the function then decompiles as without it. Use `--assert-strict` to catch rejected facts. Save reusable directives one per
 line and pass `--assert @FILE`. For `decompile-all --jobs N` with multiple
 workers, every directive must be a `jumptable`. Use `--jobs 1` for a mixed
 file. For project exports with assertions, use serial, non-streaming mode.
