@@ -2298,7 +2298,7 @@ mod tests {
         // and kuna-thumb-stmia-writeback / Thumb stmia writes its base back when the base is in the list
         // and kuna-varargsave / the x86-64 System V variadic register-save prologue
         // and kuna-boolbranch, kuna-boolbranch-thumb / a branch instruction selecting 1 or 0 keeps its if
-        assert_eq!(count, 884, "corpus file count drifted");
+        assert_eq!(count, 885, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
