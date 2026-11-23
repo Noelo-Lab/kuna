@@ -2,6 +2,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[test]
 fn integer_carrier_to_record_preserves_both_words() {
@@ -137,7 +138,7 @@ int main(void) {{
                 "{compiler} {level}: {}",
                 String::from_utf8_lossy(&result.stderr)
             );
-            let result = Command::new(&executable).output().unwrap();
+            let result = Command::new(&executable).capped_output().unwrap();
             assert!(result.status.success(), "{compiler} {level}: {result:?}");
         }
     }

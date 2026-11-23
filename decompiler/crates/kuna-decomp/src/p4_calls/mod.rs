@@ -22,6 +22,7 @@ pub mod kuna_calleestackargs; // (kuna `calleeargs`) the stack-argument bytes an
 pub mod kuna_calleepurge; // (kuna) an x86-32 callee's stack purge read off its RET
 pub mod kuna_stackcookie; // (kuna) the frame cookie MSVC stores on the stack is no argument
 pub mod kuna_slotargs; // (kuna) a call through an import slot takes the declared parameters its caller's writes back
+pub mod kuna_declaredpop; // (kuna) a declared pop on a call through a pointer is the solver's equation, not an early INT_ADD
 pub mod kuna_calleeprotostack; // (kuna) a declared callee's prototype states its stack contract
 pub mod kuna_msvcbyval; // (kuna) an MSVC __cdecl import's by-value class argument sized at the call site
 pub(crate) mod kuna_calleenoreturn;
@@ -85,6 +86,7 @@ pub mod kuna_entryreads; // (kuna) the incoming registers a function's own body 
 pub mod kuna_callerargs; // (kuna) a 32-bit ARM parameter every caller passes narrow is declared that narrow
 pub mod kuna_typedcallabi; // (kuna) a declared function-pointer prototype only under the image's float convention
 pub mod kuna_varargretreg; // (kuna) a variadic call's argument in the register its value returns in
+pub mod kuna_lockedreturnarg; // (kuna) a stated return register stays an input trial of the call
 pub mod kuna_vfpvariadic; // (kuna) a declared ARM hard-float variadic function returns under the base standard
 pub mod kuna_varargformat;
 pub mod kuna_varargtransfer;

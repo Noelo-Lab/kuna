@@ -1844,7 +1844,8 @@ impl Heritage {
             if own_output {
                 if fc.is_input_active()
                     && tryregister
-                    && crate::kuna_varargretreg::argument_in_own_output(fd, fc, &trans_addr, size)
+                    && (crate::kuna_lockedreturnarg::argument_in_locked_output(fc)
+                        || crate::kuna_varargretreg::argument_in_own_output(fd, fc, &trans_addr, size))
                 {
                     Self::guard_call_input(fd, fc, addr, &trans_addr, size, overlap_level);
                 }
@@ -2191,7 +2192,9 @@ impl Heritage {
     /// its inputs, and append its argument Varnode to the CALL op
     /// (`heritage.cc:1496-1510`).  (kuna) Also reached for a range the call's own
     /// output covers exactly, which upstream skips whole, when a variadic call
-    /// passes an argument there ([`crate::kuna_varargretreg`]).  A range the call
+    /// passes an argument there ([`crate::kuna_varargretreg`]), or when a
+    /// non-variadic call's output is locked while its inputs are still recovered
+    /// ([`crate::kuna_lockedreturnarg`]).  A range the call
     /// may not take whole still yields the single-precision pieces its stated
     /// prototype names ([`crate::kuna_armfloatargs`]).
     fn guard_call_input(
