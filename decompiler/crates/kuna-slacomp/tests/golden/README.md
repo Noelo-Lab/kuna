@@ -112,6 +112,11 @@ The ARMv8 little-endian entry includes the Thumb `stmia` base writeback that
 applies when the base is in the register list. Its digest was regenerated with
 `slacomp`, which reproduces the previous ARM digest on the previous sources.
 
+The ARMv8 little-endian entry includes the carry-out the Thumb-2 `ands`,
+`bics`, `movs` and `mvns` constructors now set from their shifter operand. Its
+digest was regenerated with `slacomp`, which reproduces the previous ARM
+digest on the previous sources.
+
 `xml_ops.xml` is the same pinned C++ compiler's `-y` output for
 `snips/xml_ops.slaspec`. The CLI test compares XML output byte-for-byte in both
 single-file and recursive modes, including the `BUILD` and `INT_ADD` opcode
