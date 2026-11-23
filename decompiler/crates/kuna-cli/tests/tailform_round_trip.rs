@@ -1,9 +1,10 @@
 //! (kuna `tailform`) Function-tail `if`s re-spelled by the size of their
 //! conditional part.  Each image is printed with the option off and on, the
-//! returns of the functions it re-spells are counted, and the printed C is
-//! compiled beside the fixture source (functions renamed `s_<name>`) under gcc
-//! and clang at -O0 and -O2: every printed function must return what the
-//! source returns and leave `hits`, `ntrail` and `trail` as the source does.
+//! functions it re-spells must print the form each setting gives, and the printed C is
+//! compiled beside the fixture source (functions renamed `s_<name>`, the `note`
+//! and `record` helpers kept) under gcc and clang at -O0 and -O2: every printed
+//! function must return what the source returns and leave `hits`, `ntrail` and
+//! `trail` as the source does.
 use crate::common;
 use common::process;
 use std::process::Command;
@@ -11,8 +12,6 @@ use std::process::Command;
 const SOURCE: &str = include_str!("../../kuna-analysis/tests/fixtures/tailform.c");
 
 const FUNCS: &[&str] = &[
-    "note",
-    "record",
     "note_if_zero",
     "record_pair",
     "record_above",
@@ -58,14 +57,22 @@ int main(void) {
 }
 "#;
 
-/// Each image, and for the functions the option re-spells there the number of
-/// `return`s printed with it off and on.
-const IMAGES: &[(&str, &[(&str, usize, usize)])] = &[
+/// The replay body behind a guard clause, and wrapped.
+const REPLAY: (&str, &str, &str) = ("replay", "  if (a0) {\n    record(*a0);", "  if (!a0)\n    return;\n  record(*a0);");
+
+/// Each image, and for the functions the option re-spells there the text printed
+/// with it off and with it on.
+const IMAGES: &[(&str, &[(&str, &str, &str)])] = &[
     (
         "tailform_gcc_O2_x86_64",
-        &[("note_if_zero", 1, 0), ("record_pair", 2, 1), ("record_above", 2, 1), ("replay", 0, 1)],
+        &[
+            ("note_if_zero", "  if (a0)\n    return;\n  note();", "  if (!a0)\n    note();"),
+            ("record_pair", "    return 0;\n  record(a0);", "  if ((int)a0) {\n    record(a0);\n    record(a1);\n  }\n  return 0;"),
+            ("record_above", "    record(*a0);\n    return 0;\n  }\n  return 0;", "    record(*a0);\n  return 0;"),
+            REPLAY,
+        ],
     ),
-    ("tailform_gcc_O0_x86_64", &[("replay", 0, 1)]),
+    ("tailform_gcc_O0_x86_64", &[REPLAY]),
 ];
 
 /// The printed function `name`, from its header comment to the next.
@@ -101,9 +108,8 @@ fn a_re_spelled_function_tail_round_trips_through_the_printed_c() {
             assert_eq!(rc, 0, "{image} tailform {opt}: {err}");
             for &(name, off, on) in changed {
                 let body = function(&text, name);
-                let want = if opt == "on" { on } else { off };
-                let returns = body.matches("return ").count() + body.matches("return;").count();
-                assert_eq!(returns, want, "{image} {name} tailform {opt}:\n{body}");
+                let (want, not) = if opt == "on" { (on, off) } else { (off, on) };
+                assert!(body.contains(want) && !body.contains(not), "{image} {name} tailform {opt}:\n{body}");
             }
             let program = format!("{PRELUDE}{reference}\n{text}\n{MAIN}");
             for cc in &compilers {
