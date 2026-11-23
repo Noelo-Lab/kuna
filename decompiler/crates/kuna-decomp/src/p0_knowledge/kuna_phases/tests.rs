@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_239() {
-    assert_eq!(kuna_num_settables(), 239);
-    assert_eq!(SETTABLE_TABLE.len(), 239);
+fn settable_count_is_240() {
+    assert_eq!(kuna_num_settables(), 240);
+    assert_eq!(SETTABLE_TABLE.len(), 240);
 }
 
 #[test]
-fn tier_counts_are_50_core_126_transform_63_analysis() {
+fn tier_counts_are_50_core_127_transform_63_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_50_core_126_transform_63_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (50, 126, 63));
+    assert_eq!((core, transform, analysis), (50, 127, 63));
 }
 
 #[test]
@@ -606,6 +606,10 @@ fn option_values_live_value_present_for_76() {
                             // same reason.  Its live value is
                             // `Architecture::const_select_jump`.
                             | "constselectjump"
+                            // (kuna) `looptest` takes a MODE
+                            // (`binary|proven|assume`) over an enum field; its
+                            // live value is `Architecture::loop_test`.
+                            | "looptest"
                             // (kuna) `declorder` takes a MODE (`natural|name`)
                             // over an enum field, for the same reason.  Its live
                             // value is `Architecture::decl_order`.
@@ -1146,7 +1150,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `swiftobjcthunk`; its P1 row sits after `swiftcall`.
     // +1 each for `swifthelpers` and `valuewitness`.
     // +1 for `bytestorewidth`; its P3 row sits after `globalarrayanchor`.
-    assert_eq!(json.matches("},\n").count(), 238);
+    assert_eq!(json.matches("},\n").count(), 239);
     // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 
