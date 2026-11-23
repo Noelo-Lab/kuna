@@ -2924,7 +2924,10 @@ instructions to read: a 16-bit Thumb `ldr rN,[pc,#..]` or `adr` names
 register field is not the PC names nothing, and the rest are decoded once more
 for their p-code, where a direct memory operand or a `LOAD` through an address
 folded from constants (`vldr s0,[pc,#8]` aligns `inst_start` in temporaries)
-names the address. A second decode that disagrees with the Listing's length is
+names the address. ARM's PC-relative `ldrd`, `ldrh`, `ldrsh` and `ldrsb` lift
+their literal's address as a memory operand of the `LOAD` (and of the
+`INT_ADD` that forms `ldrd`'s second word); there that operand stands for its
+own address. A second decode that disagrees with the Listing's length is
 skipped. On the raw `functions` inventory of betaflight (4,177 entries) this
 costs nothing measurable against main. Over 16 Cortex-M and ARM firmware images from the decbench O0/O2
 corpus (19,110 symbolized functions, loaded raw with every `FUNC` symbol as an

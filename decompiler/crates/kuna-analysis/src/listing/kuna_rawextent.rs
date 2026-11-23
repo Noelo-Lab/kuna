@@ -321,8 +321,11 @@ const FORMED_WIDTH: u32 = 8;
 /// The `(address, width)` of every fixed address one instruction's p-code reads
 /// or forms: a direct memory operand, a `LOAD` through an address computed from
 /// constants alone (`vldr s0,[pc,#8]` aligns `inst_start` in temporaries), or
-/// such a constant written to a register. Branch targets and a call's return
-/// address are not references.
+/// such a constant written to a register. ARM's PC-relative `ldrd`, `ldrh`,
+/// `ldrsh` and `ldrsb` lift their literal's address as a memory operand of the
+/// `LOAD` (and of the `INT_ADD` that forms `ldrd`'s second word), so there a
+/// code-space operand stands for its own address. Branch targets and a call's
+/// return address are not references.
 fn fixed_refs(ops: &[Op], code_space: &Rc<AddrSpace>, is_call: bool) -> Vec<(u64, u32)> {
     let mut temps: Vec<(&VarnodeData, u64)> = Vec::new();
     let value = |temps: &[(&VarnodeData, u64)], vn: &VarnodeData| {
@@ -330,6 +333,10 @@ fn fixed_refs(ops: &[Op], code_space: &Rc<AddrSpace>, is_call: bool) -> Vec<(u64
             return Some(vn.offset);
         }
         temps.iter().rev().find(|(t, _)| kuna_dosexit::same(t, vn)).map(|&(_, v)| v)
+    };
+    let in_code = |vn: &VarnodeData| vn.space.as_ref().is_some_and(|space| Rc::ptr_eq(space, code_space));
+    let address = |temps: &[(&VarnodeData, u64)], vn: &VarnodeData| {
+        value(temps, vn).or_else(|| in_code(vn).then_some(vn.offset))
     };
     let mut reads = Vec::new();
     for op in ops {
@@ -340,20 +347,21 @@ fn fixed_refs(ops: &[Op], code_space: &Rc<AddrSpace>, is_call: bool) -> Vec<(u64
         };
         for (i, vn) in op.ins.iter().enumerate().skip(skip) {
             if op.opcode == OpCode::CPUI_LOAD && i == 1 {
-                if let (Some(at), Some(out)) = (value(&temps, vn), op.out.as_ref()) {
+                if let (Some(at), Some(out)) = (address(&temps, vn), op.out.as_ref()) {
                     reads.push((at, out.size));
                 }
-            } else if vn.space.as_ref().is_some_and(|space| Rc::ptr_eq(space, code_space)) {
+            } else if in_code(vn) {
                 reads.push((vn.offset, vn.size));
             }
         }
         let Some(out) = op.out.as_ref().filter(|out| out.size <= 8) else { continue };
         let a = op.ins.first().and_then(|vn| value(&temps, vn));
         let b = op.ins.get(1).and_then(|vn| value(&temps, vn));
+        let sum = op.ins.first().and_then(|vn| address(&temps, vn));
         let folded = match (op.opcode, a, b) {
             (OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT, Some(a), _) => Some(a),
-            (OpCode::CPUI_INT_ADD, Some(a), Some(b)) => Some(a.wrapping_add(b)),
-            (OpCode::CPUI_INT_SUB, Some(a), Some(b)) => Some(a.wrapping_sub(b)),
+            (OpCode::CPUI_INT_ADD, _, Some(b)) => sum.map(|a| a.wrapping_add(b)),
+            (OpCode::CPUI_INT_SUB, _, Some(b)) => sum.map(|a| a.wrapping_sub(b)),
             (OpCode::CPUI_INT_AND, Some(a), Some(b)) => Some(a & b),
             (OpCode::CPUI_INT_OR, Some(a), Some(b)) => Some(a | b),
             _ => None,

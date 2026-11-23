@@ -195,6 +195,34 @@ fn raw_arm_mode_inventory_skips_off_word_call_targets() {
     assert_eq!(rows, [(0x8000, 4)]);
 }
 
+#[test]
+fn raw_arm_sizes_keep_ldrd_ldrh_and_ldrsb_literals() {
+    let mut bytes = [0xa5u8; 0xc0];
+    let code: &[(usize, &[u32])] = &[
+        // ldrd r0,r1,[pc,#8]; bx lr; padding; the doubleword at 0x8010.
+        (0x00, &[0xe1cf00d8, 0xe12fff1e, 0, 0, 0x1111_1111, 0x2222_2222]),
+        // ldrh r0,[pc,#4]; bx lr; padding; the halfword at 0x804c.
+        (0x40, &[0xe1df00b4, 0xe12fff1e, 0, 0x3333]),
+        // ldrsb r0,[pc,#4]; bx lr; padding; the byte at 0x808c.
+        (0x80, &[0xe1df00d4, 0xe12fff1e, 0, 0x44]),
+    ];
+    for &(start, words) in code {
+        for (i, word) in words.iter().enumerate() {
+            let at = start + i * 4;
+            bytes[at..at + 4].copy_from_slice(&word.to_le_bytes());
+        }
+    }
+    let image = tempfile::Builder::new().suffix(".bin").tempfile().unwrap();
+    std::fs::write(image.path(), bytes).unwrap();
+    let rows = inventory(
+        image.path(),
+        "ARM:LE:32:v7:default",
+        "0x8000",
+        &["--isa", "arm", "--entry", "0x8000", "--entry", "0x8040", "--entry", "0x8080"],
+    );
+    assert_eq!(rows, [(0x8000, 0x18), (0x8040, 0xe), (0x8080, 0xd)]);
+}
+
 fn hex_bytes(hex: &str) -> Vec<u8> {
     let digits: Vec<u8> = hex.bytes().filter(u8::is_ascii_hexdigit).collect();
     digits
