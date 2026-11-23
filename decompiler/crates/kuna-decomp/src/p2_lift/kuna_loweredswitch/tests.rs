@@ -847,6 +847,10 @@ fn sample_record(fd: &Funcdata) -> KunaLoweredSwitchRecord {
         default_target: a(0x3000),
         signed_labels: false,
         value: crate::p2_lift::kuna_loweredswitchvalue::ValueCheck::default(),
+        load_at: None,
+        spine: Vec::new(),
+        returns: Vec::new(),
+        linear: false,
     }
 }
 

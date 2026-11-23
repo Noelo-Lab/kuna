@@ -2816,14 +2816,16 @@ strand phi state:
   the cascade head (skipping a leading getopt-style `V == -1` sentinel guard),
   and walks the compare tree carrying angr's binary-search interval
   (`kuna_loweredswitch.rs (recover_cascade)`) to collect case→target pairs and
-  default votes. Acceptance is deliberately narrow: at least 3 cases and 2
-  distinct targets, at most 16 cases, at least one *range* node (a purely
-  linear equality chain is a hand-written if/else-if — without this guard the
-  flip regressed 10 upstream assertions, DIV-4), exactly one independent
+  default votes. Acceptance is narrow: the shape of the cascade must pass
+  `kuna_loweredswitch.rs (cascade_is_switch)` (described below under *Which
+  cascades are switches*: by default three to sixteen cases with two distinct
+  bodies, and a linear chain only when each tested value has a body of its
+  own), there must be exactly one independent
   default *sink* (candidates that flow into another candidate are paths into a
   shared default, counted by a bounded CFG walk — a hand-written cascade whose
   arms land on independent bodies keeps every arm a sink and is declined), and
-  the variable must live in register/stack storage. A hit is recorded in a
+  the variable must live in register/stack storage, or be the output of a load
+  (below). A hit is recorded in a
   **restart-surviving side store** (keyed by function identity, addresses only
   — no IR handles; the store lives on the Action, outliving the `clear()`) and
   a restart is requested.
@@ -3055,34 +3057,114 @@ the first head, as before, but never introduced by a later one. A record's
 dispatch value is then subject to the value check like any other. Measured
 byte-identical on the 675-assertion datatest corpus when the check was introduced.
 
-### Linear chains and wider trees — `loweredswitch linear|tree|all`, opt-in
+### Which cascades are switches — `loweredswitch on|linear|tree|all`
 
-`kuna_loweredswitch.rs (recover_cascade)` records a cascade only after it has
-seen a range node, because a chain of equality tests with no binary-search
-split reads as a hand-written if/else-if, and it takes three to sixteen cases
-(the cap keeps the structurer from being handed a switch so wide that some case
-edges end up as unstructured gotos). Two values of the option widen that.
+gcc lowers every switch below its case-count threshold to compares: a
+binary-search tree with range splits once there are enough cases, and below that
+a chain of equality tests one after another, on x86-64 and ARM alike. An author's
+if/else-if chain on one variable compiles to the same chain, so whether a chain
+re-rolls is a judgement call, and it is made in one place:
+`kuna_loweredswitch.rs (cascade_is_switch)` over a
+`kuna_loweredswitch.rs (CascadeShape)` — the number of distinct case values, the
+number of distinct case bodies (values that share a body count once; copies of
+one block that do the same thing are one body), and whether the cascade has a
+range split. Every value of the option needs two distinct bodies: tests that all
+lead to one body are an `||` condition. Under `on` (the default) a range tree
+takes three to sixteen cases and a linear chain three to sixteen tests that each
+lead to a body of their own. `linear` also takes a linear chain of two tests and
+one whose tests share a body; `tree` takes a range tree of two to sixty-four
+cases (gcc at -O0 lowers a sparse switch to a compare tree whatever its size);
+`all` is both. The sixteen-case cap keeps the structurer from being handed a
+switch so wide that some case edges end up as unstructured gotos.
 
-`linear` also accepts a chain with no range node. clang lowers a switch of
-three or four cases exactly that way, and an if/else-if chain on one variable
-is a switch in all but syntax. The chain still needs three to sixteen cases.
-Each case body must be entered only from the chain and be dominated by the
-chain head: a chain the compiler copied into two paths keeps its ifs, since
-re-rolling one copy would split what the two share. With no range comparison to
-prove the signedness of the labels, an extension on the path to the selector
-decides it; with none, no case value may have the sign bit set, so every label
-prints the same either way. It is not the default because the author's own
-if/else-if chain re-rolls too.
+The default was measured on the decbench corpus against the previous default,
+which took no linear chain at all. Linear chains of three or more tests with a
+body each: +94 functions whose control flow matches the source at O2 and +73 at
+O0, gains in both halves of a project split; letting tests share a body costs 16
+at O0 (`if (c == '\n' || c == '\r') return 0;` is an `||`), and two-test chains,
+although positive (+26 at O2), are the ones the author writes as an `if` about
+as often as a switch, and a two-case switch inside a loop whose arms continue
+the loop can leave the structurer with a switch in a loop condition. A chain
+still needs each case body entered only from the chain, or by a loop back edge
+the body itself heads, and dominated by the chain head: a chain the compiler
+copied into two paths keeps its ifs, since re-rolling one copy would split what
+the two share. A body may not run on into a later test of the chain: a row of
+independent tests (`if (x == 0x11) v = A; if (x == 0x1c) v = A;`) is not a
+switch, and re-rolled it prints as a switch whose arms jump back into tests the
+switch was meant to replace. The install repeats the sharing check on the raw
+p-code it edits (`kuna_loweredswitchexact.rs (raw_cases_private)`), where a case
+body of a linear chain may be entered only from the compare tree and from the
+code the switch's own targets run: a duplicated epilogue can give each case a
+body of its own on the simplified graph while the raw body is shared with a
+second copy of the chain the compiler threaded into another path. With no range
+comparison to prove the signedness of the labels,
+an extension on the path to the selector decides it; with none, no case value
+may have the sign bit set, so every label prints the same either way. The cap,
+the sink, the value check, the exactness check and the every-head rule apply
+under each value, and the re-roll is installed through the same restart, so a
+switch installed for a function stays if the value is narrowed later in the
+session.
 
-`tree` moves the limits of a cascade that does have a range node to two and
-sixty-four cases. gcc at -O0 lowers a sparse switch to a compare tree with no
-jump table whatever its size, so a switch of seventeen or more cases otherwise
-stays a deep if/else tree. A linear chain is not affected.
+### Where a cascade starts and what the install must keep (part of `loweredswitch`)
 
-`all` is both. Every other check of the recovery still applies under each
-value: one shared default sink, the value check, the exactness check and the
-every-head rule. The re-roll is installed through the same restart, so a switch
-installed for a function stays if the value is narrowed later in the session.
+A cascade head may hold code of its own before its compare — the call whose
+result is dispatched on, a load of the selector, stores — because the install
+keeps the head block and only replaces its branch. Only blocks that hold nothing
+but a compare (`kuna_loweredswitch.rs (is_pure_compare_block)`) continue a
+cascade, since the install deletes those. A selector that the simplified graph
+holds in a temporary is the output of a load (an ARM `ldrb r3,[r3]` of
+`dev->bus->busType`); the record keeps the load's address and the install reads
+the head compare's operand only when that is the output of the same load, and
+otherwise declines, because a temporary names no storage the restarted flow could
+read.
+
+The raw-value check of the install
+(`kuna_loweredswitchexact.rs (raw_install_keeps_values)`) follows a raw read to
+what it computes before calling it a use
+(`kuna_loweredswitchexact.rs (read_before_written)`): a value is used when an op
+with an effect reads it, a call or a return may take it, or a location it was
+copied into is used in turn. Raw ARM p-code reads the carry flag into
+`shift_carry` for every data-processing instruction with an immediate and
+overwrites it at the next one, and counting that read as a use declined every
+ARM cascade whose compare blocks set the flags. A case body is also entered
+through the raw block the compare tree reaches it by
+(`kuna_loweredswitchexact.rs (raw_case_entries)`): when the only way from the tree
+into a body is a block that loads a constant (a literal-pool `ldr r2,[pc,#..]` in
+front of a polling loop), the simplified graph has folded that block away and
+names the loop head, and branching straight to the loop head would delete the
+load.
+
+### Installing along the raw paths of the tree (part of `loweredswitch`)
+
+gcc -O2 often loads each case's value before the compare that selects it —
+`mov eax,"p384" ; cmp edi,0x2cb ; je R ; mov eax,"p521" ; cmp edi,0x2cc ; je R ;
+cmp edi,0x19f ; mov eax,"p256" ; mov edx,0 ; cmovne rax,rdx ; R: ret` — so every
+case reaches the one return `R` and only an assignment inside the compare tree
+tells the cases apart. The simplified graph shows one return per case (the
+epilogue duplicated with each constant), but those blocks share a start address,
+which the address-keyed record cannot tell apart, and branching from the head
+straight to `R` would lose the assignments. Detection recognises the shape by
+case targets that are distinct blocks at one address, counts bodies by what the
+blocks do (`kuna_loweredswitchpath.rs (body_signature)`), checks on the
+simplified graph that every value reaches a block that does what its label's or
+the default's does (`kuna_loweredswitchexact.rs (tree_routes)`), and records the
+branch addresses of the tree and the storage the function's returns read.
+
+The install then plans the switch on the raw p-code
+(`kuna_loweredswitchpath.rs (plan)`): it runs the raw tree from the head with the
+switch value known and everything else unknown, for every value that can change
+an outcome (each constant in the tree and its neighbours, and the wrap points of
+the value's width), following the raw branches through the recorded compare
+blocks until the value leaves them. Values that pass the same compare blocks to
+the same block form one arm; every value without a label must take one path, the
+default's; a condition that cannot be decided declines the install. An arm
+repeats the operations of the compare blocks it passed whose results are read
+again, in order, in a block of its own ahead of the block it leaves to
+(`kuna_loweredswitchpath.rs (build_arm_blocks)`); "read" counts a return only
+for the storage the function was seen to return, so the `edx` a `cmov` reads on
+one path is not repeated on the other path, where it would become a phantom
+second return register. Arms that repeat nothing and leave to the same block are
+one arm. Each value therefore runs exactly the operations it ran in the tree.
 
 ### Bound extensions: rescuing an unboundable table
 

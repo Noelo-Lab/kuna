@@ -2288,7 +2288,9 @@ mod tests {
         // and kuna-returnhintcaller / a callee return hint keeps the argument passed in the return register
         // and kuna-boundschecked / an Annex K bounds-checked call keeps every declared argument
         // and kuna-declaredpop / a declared import pop is the stack solver's equation
-        assert_eq!(count, 871, "corpus file count drifted");
+        // and kuna-switcharmorder / default and no-return switch arms print last, no default: return; at a void tail
+        // and kuna-loweredswitch-small / small compare-lowered switches re-roll by default (option loweredswitch)
+        assert_eq!(count, 873, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

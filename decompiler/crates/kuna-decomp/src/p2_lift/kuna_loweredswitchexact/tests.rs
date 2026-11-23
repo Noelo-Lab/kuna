@@ -113,6 +113,10 @@ fn record(fd: &Funcdata, cases: &[(u64, u64)], default: u64, size: int4) -> Kuna
         default_target: ram(fd, default),
         signed_labels: false,
         value: crate::p2_lift::kuna_loweredswitchvalue::ValueCheck::default(),
+        load_at: None,
+        spine: Vec::new(),
+        returns: Vec::new(),
+        linear: false,
     }
 }
 

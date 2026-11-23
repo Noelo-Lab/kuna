@@ -1,0 +1,120 @@
+<decompilertest>
+<!--
+    Small compare-lowered switches re-roll by default.  P2 "switch-model",
+    `option loweredswitch off|on|linear`.
+
+    gcc lowers every switch below its case-count threshold to equality tests.
+    `nid_name` loads each case's string before the compare that selects it
+    (`mov eax,K ; cmp ; je ret`, a `cmovne` for the last case) and every case
+    reaches one shared `ret`; `enable` is a chain of three tests with a body
+    each; `two` is a two-case switch.
+
+    Pass 1 (`option loweredswitch off`) is the compiler's chain: #1 nested
+    tests.  Pass 2 (the default, `on`): `nid_name` re-rolls along the raw paths
+    of its compare tree, each case returning its own string and NULL as the
+    default (#2, #3); `enable` re-rolls (#4); the two-case chain stays an if
+    (#5).  Pass 3 (`option loweredswitch linear`) re-rolls `two` as well (#6).
+
+    gcc 11.4 -O2 -fno-pie -no-pie -fno-jump-tables -fno-tree-switch-conversion
+    -fcf-protection=none -nostdlib -static -Wl,-Ttext=0x401000 (x86-64) of
+
+        __attribute__((noreturn, noinline)) void die(const char *fmt, int v) { for (;;) __asm__ volatile("" ::"r"(fmt), "r"(v)); }
+        const char *nid_name(int nid) {
+          switch (nid) {
+          case 415: return "p256";
+          case 715: return "p384";
+          case 716: return "p521";
+          default: return 0;
+          }
+        }
+        void enable(unsigned *r, int ch) {
+          switch (ch) {
+          case 1: *r |= 1; break;
+          case 2: *r |= 0x10000; break;
+          case 3: *r |= 0x10001; break;
+          }
+        }
+        const char *force_str(int t) {
+          switch (t) {
+          case 0: return "   ";
+          case 1: return "[*]";
+          case 2: return "[!]";
+          default: die("bad %d", t);
+          }
+        }
+        __attribute__((noinline)) int sink(int x) { return x * 7 + 3; }
+        int two(int t, int *p) {
+          switch (t) {
+          case 4: p[0] = sink(1); break;
+          case 9: p[1] = sink(2); break;
+          default: p[2] = 0; break;
+          }
+          return p[3];
+        }
+        void _start(void) {}
+-->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x401000" readonly="true">
+ebfe66662e0f1f8400000000000f1f00b80520400081ffcb0200007421b80a20
+400081ffcc020000741481ff9f010000b800204000ba00000000480f45c2c390
+83fe02741b83fe03740e83fe017401c3830f01c30f1f4000810f01000100c390
+810f00000100c3660f1f84000000000083ff01743b83ff02741685ff742289fe
+bf1b204000e876ffffff660f1f440000b817204000c3662e0f1f840000000000
+b80f204000c3662e0f1f840000000000b813204000c3662e0f1f840000000000
+8d04fd0000000029f883c003c30f1f0083ff04741383ff097426c74608000000
+008b460cc30f1f00bf01000000e8ceffffff89068b460cc30f1f840000000000
+bf02000000e8b6ffffff8946048b460cc366662e0f1f8400000000000f1f4000
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0x402000" readonly="true">
+703235360070333834007035323100202020005b2a5d005b215d006261642025
+6400
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="die"/>
+<symbol space="ram" offset="0x401010" name="nid_name"/>
+<symbol space="ram" offset="0x401040" name="enable"/>
+<symbol space="ram" offset="0x401070" name="force_str"/>
+<symbol space="ram" offset="0x4010c0" name="sink"/>
+<symbol space="ram" offset="0x4010d0" name="two"/>
+</binaryimage>
+<script>
+  <com>option noreturn die</com>
+  <com>option loweredswitch off</com>
+  <com>lo fu nid_name</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu enable</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option loweredswitch on</com>
+  <com>lo fu nid_name</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu enable</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option loweredswitch linear</com>
+  <com>lo fu two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LOWERED SMALL #1: loweredswitch off keeps the compiler's chain" min="1" max="1">^  if \(a0 == 0x2cb\)$</stringmatch>
+<stringmatch name="LOWERED SMALL #2: each case returns the value its compare path loaded" min="1" max="1">^  switch\(a0\) \{$
+^    case 0x19f:$
+^      return 0x402000;$
+^    case 0x2cb:$
+^      return 0x402005;$</stringmatch>
+<stringmatch name="LOWERED SMALL #3: the cmov path is the default" min="1" max="1">^    case 0x2cc:$
+^      return 0x40200a;$
+^    default:$
+^      return 0;$</stringmatch>
+<stringmatch name="LOWERED SMALL #4: a three-test chain with a body each re-rolls by default" min="1" max="1">^  switch\(a1\) \{$</stringmatch>
+<stringmatch name="LOWERED SMALL #5: a two-test chain stays an if by default" min="1" max="1">^  if \(a0 == 4\) \{$</stringmatch>
+<stringmatch name="LOWERED SMALL #6: loweredswitch linear re-rolls the two-test chain" min="1" max="1">^    case 4:$
+^      \*a1 = sink\(1\);$</stringmatch>
+<stringmatch name="LOWERED SMALL #7: three switches in all" min="3" max="3">^  switch\(</stringmatch>
+</decompilertest>

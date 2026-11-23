@@ -105,6 +105,32 @@ pub(crate) fn switch_routes_like_cascade(
         }
     }
 
+    tree_routes(data, head, spine, swvar, |v, reached| {
+        let expected = labels.get(&v).copied().unwrap_or(&rec.default_target);
+        block_get_start(&data.bblocks_ref().arena, reached) == *expected
+    })
+}
+
+/// True when `check(v, reached)` holds for every value `v` of `swvar` that can
+/// change an outcome of the compare tree at `head`, with `reached` the block the
+/// tree sends `v` to: the tree is followed through the blocks of `spine`
+/// reachable from `head` until it leaves them, at each constant and its
+/// neighbours and at the variable's signed and unsigned wrap points.
+pub(crate) fn tree_routes(
+    data: &Funcdata,
+    head: BlockId,
+    spine: &BTreeSet<BlockId>,
+    swvar: VarnodeId,
+    mut check: impl FnMut(uintb, BlockId) -> bool,
+) -> bool {
+    let size = match data.vbank().get(swvar) {
+        Some(v) => v.get_size(),
+        None => return false,
+    };
+    if !(1..=8).contains(&size) {
+        return false;
+    }
+    let mask = calc_mask(size);
     let mut nodes: BTreeMap<BlockId, Node> = BTreeMap::new();
     let mut queue: Vec<BlockId> = vec![head];
     while let Some(bl) = queue.pop() {
@@ -136,8 +162,7 @@ pub(crate) fn switch_routes_like_cascade(
             Some(b) => b,
             None => return false,
         };
-        let expected = labels.get(&v).copied().unwrap_or(&rec.default_target);
-        if block_get_start(&data.bblocks_ref().arena, reached) != *expected {
+        if !check(v, reached) {
             return false;
         }
     }
@@ -276,6 +301,69 @@ pub(crate) fn install_keeps_statements(data: &Funcdata, head: BlockId, targets: 
     true
 }
 
+/// True when every case body in `cases` is entered, on the raw p-code the install
+/// edits, only from the compare tree at `head` or from the code the switch's
+/// targets run (another arm falling into it, the join after the switch, a loop
+/// the body heads).
+///
+/// Detection checks this on the simplified graph, where a duplicated epilogue
+/// gives every case a body of its own; on the raw graph a body can still be shared
+/// with a second copy of the chain the compiler threaded into another path, and
+/// a switch over one copy then prints the other copy's jumps into its arms as
+/// `goto`s.
+pub(crate) fn raw_cases_private(data: &Funcdata, head: BlockId, cases: &[BlockId], targets: &[BlockId]) -> bool {
+    let removed = removed_blocks(data, head, targets);
+    let mut region: BTreeSet<BlockId> = BTreeSet::new();
+    let mut stack: Vec<BlockId> = targets.to_vec();
+    while let Some(x) = stack.pop() {
+        if x == head || !region.insert(x) || region.len() > 4096 {
+            continue;
+        }
+        let b = data.bblocks_ref().block(x);
+        stack.extend((0..b.size_out()).map(|i| b.get_out(i)));
+    }
+    cases.iter().all(|&t| {
+        let blk = data.bblocks_ref().block(t);
+        (0..blk.size_in()).map(|i| blk.get_in(i)).all(|p| p == head || removed.contains(&p) || region.contains(&p))
+    })
+}
+
+/// Move each switch target back to the raw block the compare tree enters it
+/// through.
+///
+/// Detection names a case body by the start of its block on the simplified
+/// graph, where a block that only loaded a constant (a literal-pool `ldr r2`
+/// in front of a loop) has been folded away. On the raw p-code the install edits,
+/// that block is still the only way from the compare tree into the body, and
+/// branching past it would delete the load. A target whose only predecessor in
+/// the compare tree is such a block, with that block's only successor the
+/// target, is entered through it instead, so every value reaching the body still
+/// runs it.
+pub(crate) fn raw_case_entries(data: &Funcdata, head: BlockId, targets: &mut [BlockId]) {
+    for _ in 0..8 {
+        let removed = removed_blocks(data, head, targets);
+        let mut changed = false;
+        for i in 0..targets.len() {
+            let t = targets[i];
+            let blk = data.bblocks_ref().block(t);
+            let preds: BTreeSet<BlockId> =
+                (0..blk.size_in()).map(|k| blk.get_in(k)).filter(|p| *p == head || removed.contains(p)).collect();
+            let p = match preds.iter().next() {
+                Some(&p) if preds.len() == 1 && p != head => p,
+                _ => continue,
+            };
+            if data.bblocks_ref().block(p).size_out() != 1 || targets.contains(&p) {
+                continue;
+            }
+            targets[i] = p;
+            changed = true;
+        }
+        if !changed {
+            break;
+        }
+    }
+}
+
 /// True when, on the raw p-code the install edits, nothing a deleted block
 /// writes can be read again.
 ///
@@ -312,79 +400,150 @@ pub(crate) fn raw_install_keeps_values(data: &Funcdata, head: BlockId, targets: 
             }
         }
     }
-    written.iter().all(|(addr, size)| !read_before_written(data, &removed, targets, addr, *size))
+    written.iter().all(|(addr, size)| {
+        let bad = read_before_written(data, &removed, targets, addr, *size, None);
+        if bad {
+        }
+        !bad
+    })
 }
 
-/// True when some path from `targets` that avoids `removed` reads the `size`
+/// True when some path from `targets` that avoids `removed` uses the `size`
 /// bytes at `addr` before writing all of them.
-fn read_before_written(data: &Funcdata, removed: &BTreeSet<BlockId>, targets: &[BlockId], addr: &Address, size: int4) -> bool {
+///
+/// A raw read is a use only when what it computes is used: the value is followed
+/// through every location an op reading it writes, until an op with an effect
+/// (a branch, store, call, return or other statement) reads it, a call or a
+/// return may take it, or every copy has been overwritten. A raw ARM data op
+/// reads the carry flag into `shift_carry` that the next instruction overwrites,
+/// and that read keeps no value alive. With `returns` a return reads only that
+/// storage, the storage the function was seen to return, rather than every
+/// location the prototype model allows a return value in.
+pub(crate) fn read_before_written(
+    data: &Funcdata,
+    removed: &BTreeSet<BlockId>,
+    targets: &[BlockId],
+    addr: &Address,
+    size: int4,
+    returns: Option<&[(Address, int4)]>,
+) -> bool {
     let space = match addr.get_space() {
         Some(s) => s.get_index(),
         None => return true,
     };
-    let lo = addr.get_offset();
-    let hi = lo.wrapping_add(size as uintb);
     let proto = data.get_func_proto();
     let modelled = proto.has_model();
-    let param = !modelled || proto.possible_input_param(addr, size);
-    let result = !modelled || proto.possible_output_param(addr, size);
-    let killed = modelled && proto.has_effect(addr, size) == crate::fspec::effect_type::KILLEDBYCALL;
-    let mut seen: BTreeSet<BlockId> = BTreeSet::new();
-    let mut stack: Vec<BlockId> = targets.to_vec();
-    while let Some(b) = stack.pop() {
-        if removed.contains(&b) || !seen.insert(b) {
+    let start = Loc { space, lo: addr.get_offset(), size, addr: addr.clone() };
+    let mut seen: BTreeMap<BlockId, Vec<Loc>> = BTreeMap::new();
+    let mut stack: Vec<(BlockId, Vec<Loc>)> = targets.iter().map(|&t| (t, vec![start.clone()])).collect();
+    while let Some((b, mut live)) = stack.pop() {
+        if removed.contains(&b) {
             continue;
         }
-        let mut rewritten = false;
+        let known = seen.entry(b).or_default();
+        if live.iter().all(|l| known.contains(l)) {
+            continue;
+        }
+        for l in known.iter() {
+            if !live.contains(l) {
+                live.push(l.clone());
+            }
+        }
+        *known = live.clone();
         for op in data.bb_ops(b) {
             let o = match data.obank().get(op) {
                 Some(o) => o,
                 None => return true,
             };
-            for i in 0..o.num_input() {
-                let v = match o.get_in(i).and_then(|v| data.vbank().get(v)) {
-                    Some(v) => v,
-                    None => continue,
-                };
-                let vlo = v.get_offset();
-                if !v.is_constant()
-                    && v.get_addr().get_space().map(|s| s.get_index()) == Some(space)
-                    && vlo < hi
-                    && lo < vlo.wrapping_add(v.get_size() as uintb)
-                {
-                    return true;
+            let reads = (0..o.num_input()).filter_map(|i| o.get_in(i).and_then(|v| data.vbank().get(v))).any(|v| {
+                !v.is_constant()
+                    && v.get_addr().get_space().is_some_and(|s| {
+                        let vl = Loc { space: s.get_index(), lo: v.get_offset(), size: v.get_size(), addr: v.get_addr().clone() };
+                        live.iter().any(|l| l.overlaps(&vl))
+                    })
+            });
+            let out = o.get_out().and_then(|v| data.vbank().get(v)).and_then(|v| {
+                v.get_addr().get_space().map(|s| Loc { space: s.get_index(), lo: v.get_offset(), size: v.get_size(), addr: v.get_addr().clone() })
+            });
+            if reads {
+                match out {
+                    Some(out) if !deleted_op_is_statement(o.code()) => {
+                        if !live.contains(&out) {
+                            live.push(out);
+                        }
+                    }
+                    _ => return true,
                 }
+                continue;
             }
             match o.code() {
-                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND if param => return true,
-                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND if killed => {
-                    rewritten = true;
-                    break;
+                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                    if live.iter().any(|l| !modelled || proto.possible_input_param(&l.addr, l.size)) {
+                        return true;
+                    }
+                    live.retain(|l| !(modelled && proto.has_effect(&l.addr, l.size) == crate::fspec::effect_type::KILLEDBYCALL));
                 }
-                OpCode::CPUI_RETURN if result => return true,
+                OpCode::CPUI_RETURN => {
+                    let returned = |l: &Loc| match returns {
+                        Some(rs) => rs.iter().any(|(a, sz)| {
+                            a.get_space().map(|s| s.get_index()) == Some(l.space)
+                                && a.get_offset() < l.hi()
+                                && l.lo < a.get_offset().wrapping_add(*sz as uintb)
+                        }),
+                        None => !modelled || proto.possible_output_param(&l.addr, l.size),
+                    };
+                    if live.iter().any(returned) {
+                        return true;
+                    }
+                }
                 _ => {}
             }
-            if let Some(out) = o.get_out().and_then(|v| data.vbank().get(v)) {
-                let olo = out.get_offset();
-                if out.get_addr().get_space().map(|s| s.get_index()) == Some(space)
-                    && olo <= lo
-                    && hi <= olo.wrapping_add(out.get_size() as uintb)
-                {
-                    rewritten = true;
-                    break;
-                }
+            if let Some(out) = out {
+                live.retain(|l| !out.covers(l));
+            }
+            if live.is_empty() {
+                break;
             }
         }
-        if rewritten {
+        if live.is_empty() {
             continue;
         }
         let blk = data.bblocks_ref().block(b);
-        if blk.size_out() == 0 && param {
+        let returns_here = returns.is_some()
+            && data.bb_op_tail(b).and_then(|op| data.obank().get(op)).is_some_and(|op| op.code() == OpCode::CPUI_RETURN);
+        if blk.size_out() == 0 && !returns_here && live.iter().any(|l| !modelled || proto.possible_input_param(&l.addr, l.size)) {
             return true;
         }
-        stack.extend((0..blk.size_out()).map(|i| blk.get_out(i)));
+        stack.extend((0..blk.size_out()).map(|i| (blk.get_out(i), live.clone())));
     }
     false
+}
+
+/// A storage location: `size` bytes at `lo` in the space with index `space`.
+#[derive(Clone, Debug)]
+struct Loc {
+    space: int4,
+    lo: uintb,
+    size: int4,
+    addr: Address,
+}
+
+impl PartialEq for Loc {
+    fn eq(&self, other: &Loc) -> bool {
+        self.space == other.space && self.lo == other.lo && self.size == other.size
+    }
+}
+
+impl Loc {
+    fn hi(&self) -> uintb {
+        self.lo.wrapping_add(self.size as uintb)
+    }
+    fn overlaps(&self, other: &Loc) -> bool {
+        self.space == other.space && self.lo < other.hi() && other.lo < self.hi()
+    }
+    fn covers(&self, other: &Loc) -> bool {
+        self.space == other.space && self.lo <= other.lo && other.hi() <= self.hi()
+    }
 }
 
 fn deleted_op_is_statement(code: OpCode) -> bool {
