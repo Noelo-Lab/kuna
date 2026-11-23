@@ -16,7 +16,7 @@ kuna-analysis.workspace = true
 kuna-sleigh.workspace = true
 kuna-slacomp.workspace = true
 kuna-num.workspace = true
-# FID construction also reads archive members.
+# FID and FLIRT construction also read archive members.
 object = { workspace = true, features = ["archive"] }
 regex.workspace = true
 serde = { version = "1", features = ["derive"] }
@@ -30,6 +30,7 @@ tempfile = "3.27"
 embed-specs = []
 
 [dev-dependencies]
+flirt-sig.workspace = true
 object = { workspace = true, features = ["write"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 

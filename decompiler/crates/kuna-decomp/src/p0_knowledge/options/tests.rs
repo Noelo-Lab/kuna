@@ -160,14 +160,16 @@ impl ArchOptionContext for RecordingContext {
     fn set_hide_implied_exts(&mut self, val: bool) {
         self.log.push(format!("hide_exts={val}"));
     }
-    fn set_max_line_size(&mut self, val: int4) {
+    fn set_max_line_size(&mut self, val: int4) -> KunaResult<()> {
         self.log.push(format!("max_line={val}"));
+        Ok(())
     }
     fn set_indent_increment(&mut self, val: int4) {
         self.log.push(format!("indent={val}"));
     }
-    fn set_line_comment_indent(&mut self, val: int4) {
+    fn set_line_comment_indent(&mut self, val: int4) -> KunaResult<()> {
         self.log.push(format!("comment_indent={val}"));
+        Ok(())
     }
     fn set_comment_style(&mut self, style: &str) {
         self.log.push(format!("comment_style={style}"));

@@ -339,6 +339,69 @@ fn decompile_all_refuses_an_executable_section_iat_slot() {
     );
 }
 
+/// Among several selectors an IAT slot is reported and skipped, and the rest
+/// still decompile; when the skips leave nothing to decompile, the run fails.
+#[test]
+fn decompile_all_skips_an_iat_slot_among_other_selectors() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/pe_iatincode_i386.exe")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all",
+        &bin,
+        "--addr",
+        "0x401000",
+        "--addr",
+        "0x401010",
+        "--sleighpath",
+        &specs(),
+    ]);
+    assert!(ok, "the run failed: {stderr}");
+    assert_eq!(
+        stderr,
+        "warning: selector \"0x401000\" identifies import VirtualAlloc at 0x401000; \
+         the IAT slot contains a loader-written pointer, not a function body; skipped\n"
+    );
+    assert!(stdout.contains("// Function: sub_401010 @ 0x401010"), "the body was not decompiled: {stdout}");
+    assert!(!stdout.contains("0x401000 "), "the IAT slot became a result: {stdout}");
+
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all",
+        &bin,
+        "--addr",
+        "0x401000",
+        "--functions",
+        "GetModuleHandleA",
+        "--sleighpath",
+        &specs(),
+    ]);
+    assert!(!ok, "only IAT slots unexpectedly decompiled: {stdout}");
+    assert!(stdout.trim().is_empty(), "an IAT result row escaped: {stdout}");
+    assert!(
+        stderr.ends_with("error: every selector names an import slot; nothing to decompile\n"),
+        "{stderr}"
+    );
+
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all",
+        &bin,
+        "--addr",
+        "0x401000",
+        "--functions",
+        "no_such_function",
+        "--sleighpath",
+        &specs(),
+    ]);
+    assert!(!ok, "a slot and a missing name unexpectedly decompiled: {stdout}");
+    assert!(stdout.trim().is_empty(), "an IAT result row escaped: {stdout}");
+    assert!(
+        stderr.ends_with("error: no selector names a function body; nothing to decompile\n"),
+        "{stderr}"
+    );
+}
+
 #[test]
 fn decompile_all_emits_json_for_main() {
     let bin = fauxware();
@@ -2647,8 +2710,8 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
         "(unsigned int)(v1 < 0x3fc00000)",
         "if (v1 == 0x3fc00001)",
         "(unsigned int)(0x3fc00000 < v1)",
-        "*a2 = (short)((unsigned int)v1 >> 0x10);",
-        "a2[1] = (unsigned int)v1 >> 0x10;",
+        "*a2 = (short)(v1 >> 0x10);",
+        "a2[1] = v1 >> 0x10;",
     ] {
         assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
     }

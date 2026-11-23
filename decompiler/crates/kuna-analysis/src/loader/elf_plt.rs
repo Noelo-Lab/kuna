@@ -38,6 +38,8 @@
 //! leaving the pre-existing behavior unchanged.  This module never panics and
 //! never errors — it only ever produces *more* names.
 
+pub(crate) mod defined;
+
 use std::collections::{HashMap, HashSet};
 
 use object::read::{Object, ObjectSection, ObjectSymbol};
@@ -576,42 +578,44 @@ fn decode_aarch64(
     out: &mut Vec<PltSym>,
     named_got: &mut HashSet<u64>,
 ) {
-    let mut off = 0usize;
-    while off + 8 <= data.len() {
-        let adrp = u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]);
-        let ldr =
-            u32::from_le_bytes([data[off + 4], data[off + 5], data[off + 6], data[off + 7]]);
-
-        // adrp Xd, imm: op=1 (bit31), bits[28:24]=10000; immlo=bits[30:29],
-        // immhi=bits[23:5], Rd=bits[4:0].
-        let is_adrp = (adrp >> 31) & 1 == 1 && (adrp >> 24) & 0x1f == 0b1_0000;
-        let adrp_rd = adrp & 0x1f;
-        // ldr Xt,[Xn,#imm] 64-bit unsigned offset: size=11(bits[31:30]),
-        // bits[29:24]=111001, opc=01(bits[23:22]=LDR), imm12=bits[21:10],
-        // Rn=bits[9:5], Rt=bits[4:0].
-        let is_ldr = (ldr >> 30) & 0x3 == 0b11
-            && (ldr >> 24) & 0x3f == 0b11_1001
-            && (ldr >> 22) & 0x3 == 0b01;
-        let ldr_rn = (ldr >> 5) & 0x1f;
-        let ldr_rt = ldr & 0x1f;
-
-        if is_adrp && adrp_rd == 16 && is_ldr && ldr_rn == 16 && ldr_rt == 17 {
-            let immlo = ((adrp >> 29) & 0x3) as i64;
-            let immhi = ((adrp >> 5) & 0x7_ffff) as i64; // 19 bits
-            let mut imm21 = (immhi << 2) | immlo;
-            if imm21 & (1 << 20) != 0 {
-                imm21 -= 1 << 21; // sign-extend the 21-bit page offset
-            }
-            let page_off = imm21 << 12;
-            let ldr_off = (((ldr >> 10) & 0xfff) as u64) * 8; // 64-bit scale
-            let adrp_addr = vma.wrapping_add(off as u64);
-            let got = (adrp_addr & !0xFFF)
-                .wrapping_add(page_off as u64)
-                .wrapping_add(ldr_off);
-            record(adrp_addr, got, map, out, named_got);
+    for (i, pair) in data.windows(8).step_by(4).enumerate() {
+        let entry = vma.wrapping_add(i as u64 * 4);
+        if let Some(slot) = aarch64_slot(entry, pair) {
+            record(entry, slot, map, out, named_got);
         }
-        off += 4;
     }
+}
+
+fn aarch64_slot(adrp_addr: u64, bytes: &[u8]) -> Option<u64> {
+    let adrp = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+    let ldr = u32::from_le_bytes(bytes.get(4..8)?.try_into().ok()?);
+    // adrp Xd, imm: op=1 (bit31), bits[28:24]=10000; immlo=bits[30:29],
+    // immhi=bits[23:5], Rd=bits[4:0].
+    let is_adrp = (adrp >> 31) & 1 == 1 && (adrp >> 24) & 0x1f == 0b1_0000;
+    let adrp_rd = adrp & 0x1f;
+    // ldr Xt,[Xn,#imm] 64-bit unsigned offset: size=11(bits[31:30]),
+    // bits[29:24]=111001, opc=01(bits[23:22]=LDR), imm12=bits[21:10],
+    // Rn=bits[9:5], Rt=bits[4:0].
+    let is_ldr = (ldr >> 30) & 0x3 == 0b11
+        && (ldr >> 24) & 0x3f == 0b11_1001
+        && (ldr >> 22) & 0x3 == 0b01;
+    let ldr_rn = (ldr >> 5) & 0x1f;
+    let ldr_rt = ldr & 0x1f;
+
+    if is_adrp && adrp_rd == 16 && is_ldr && ldr_rn == 16 && ldr_rt == 17 {
+        let immlo = ((adrp >> 29) & 0x3) as i64;
+        let immhi = ((adrp >> 5) & 0x7_ffff) as i64; // 19 bits
+        let mut imm21 = (immhi << 2) | immlo;
+        if imm21 & (1 << 20) != 0 {
+            imm21 -= 1 << 21; // sign-extend the 21-bit page offset
+        }
+        let page_off = imm21 << 12;
+        let ldr_off = (((ldr >> 10) & 0xfff) as u64) * 8; // 64-bit scale
+        return Some((adrp_addr & !0xFFF)
+            .wrapping_add(page_off as u64)
+            .wrapping_add(ldr_off));
+    }
+    None
 }
 
 /// ARM A32 "modified immediate" (data-processing operand2): an 8-bit value
@@ -639,10 +643,20 @@ fn decode_arm(
     out: &mut Vec<PltSym>,
     named_got: &mut HashSet<u64>,
 ) {
-    let read_word = |off: usize| -> Option<u32> {
-        let b = data.get(off..off + 4)?;
-        Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    for (i, code) in data.windows(12).step_by(4).enumerate() {
+        let entry = vma.wrapping_add(i as u64 * 4);
+        if let Some(slot) = arm_slot(entry, code, true) {
+            record(entry, slot, map, out, named_got);
+        }
+    }
+}
+
+fn arm_slot(entry: u64, code: &[u8], little: bool) -> Option<u64> {
+    let read_word = |off: usize| {
+        let bytes = code.get(off..off + 4)?.try_into().ok()?;
+        Some(if little { u32::from_le_bytes(bytes) } else { u32::from_be_bytes(bytes) })
     };
+    let (w0, w1, w2) = (read_word(0)?, read_word(4)?, read_word(8)?);
     // `add ip, <Rn>, #imm`: cond=0xE, I=1,S=0,opcode=ADD → bits[27:20]==0x28,
     // Rd field == 12 (ip).
     let is_add_ip = |w: u32, rn: u32| -> bool {
@@ -652,33 +666,25 @@ fn decode_arm(
             && ((w >> 12) & 0xF) == 12
     };
 
-    let mut off = 0usize;
-    while off + 12 <= data.len() {
-        let (w0, w1, w2) = match (read_word(off), read_word(off + 4), read_word(off + 8)) {
-            (Some(a), Some(b), Some(c)) => (a, b, c),
-            _ => break,
-        };
-        // `ldr pc, [ip, #imm]!`: cond=0xE, bits[27:20]==0x5B (P=1,U=1,W=1,L=1,
-        // immediate), Rn=12(ip), Rt=15(pc).
-        let is_ldr_pc_ip = (w2 >> 28) == 0xE
-            && ((w2 >> 20) & 0xFF) == 0x5B
-            && ((w2 >> 16) & 0xF) == 12
-            && ((w2 >> 12) & 0xF) == 15;
+    // `ldr pc, [ip, #imm]!`: cond=0xE, bits[27:20]==0x5B (P=1,U=1,W=1,L=1,
+    // immediate), Rn=12(ip), Rt=15(pc).
+    let is_ldr_pc_ip = (w2 >> 28) == 0xE
+        && ((w2 >> 20) & 0xFF) == 0x5B
+        && ((w2 >> 16) & 0xF) == 12
+        && ((w2 >> 12) & 0xF) == 15;
 
-        if is_add_ip(w0, 15) && is_add_ip(w1, 12) && is_ldr_pc_ip {
-            let entry = vma.wrapping_add(off as u64);
-            let a = arm_modified_immediate(w0 & 0xFFF) as u64;
-            let b = arm_modified_immediate(w1 & 0xFFF) as u64;
-            let c = (w2 & 0xFFF) as u64; // U=1 → additive offset
-            let got = entry
-                .wrapping_add(8) // ARM pipeline: pc = entry + 8
-                .wrapping_add(a)
-                .wrapping_add(b)
-                .wrapping_add(c);
-            record(entry, got, map, out, named_got);
-        }
-        off += 4;
+    if is_add_ip(w0, 15) && is_add_ip(w1, 12) && is_ldr_pc_ip {
+        let a = arm_modified_immediate(w0 & 0xFFF) as u64;
+        let b = arm_modified_immediate(w1 & 0xFFF) as u64;
+        let c = (w2 & 0xFFF) as u64; // U=1 → additive offset
+        let got = entry
+            .wrapping_add(8) // ARM pipeline: pc = entry + 8
+            .wrapping_add(a)
+            .wrapping_add(b)
+            .wrapping_add(c);
+        return Some(got);
     }
+    None
 }
 
 /// RISC-V (RV32/RV64) standard GNU `ld` import veneer (16-byte entry):

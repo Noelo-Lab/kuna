@@ -2155,10 +2155,13 @@ impl Datatype {
     /// tp->ptrto`, "compare the pointers directly").
     ///
     /// In the C++ TypeFactory every interned data-type is a unique object, so
-    /// this compares already-distinct sub-types by their stored address; the
-    /// resulting tree order is internally consistent within a single factory
-    /// instance (it is rebuilt per run, exactly as in C++).  The Rust analogue
-    /// of the object address is [`Rc::as_ptr`].
+    /// this compares already-distinct sub-types by their stored address.  Heap
+    /// addresses change with the allocator and the run, and the tree order is
+    /// the order a header declares types in, so (kuna) distinct types order by
+    /// id, then (an unnamed type has id 0) by their own dependency order, and
+    /// only then by address ([`Rc::as_ptr`]).  A declared record and its
+    /// completion share one identity but not one shape, so a type carrying a
+    /// completion link orders by id and then that link's address alone.
     fn compare_dependency_ptr(a: &Rc<Datatype>, b: &Rc<Datatype>) -> int4 {
         if Rc::ptr_eq(a, b) {
             return 0;
@@ -2171,12 +2174,36 @@ impl Datatype {
         let pa = identity(a);
         let pb = identity(b);
         if pa == pb {
-            0
-        } else if pa < pb {
-            -1
-        } else {
-            1
+            return 0;
         }
+        let linked = a.record_completion.is_some();
+        let order = a.id.cmp(&b.id)
+            .then(linked.cmp(&b.record_completion.is_some()))
+            .then_with(|| if linked { std::cmp::Ordering::Equal } else { Self::compare_dependency_shape(a, b) })
+            .then(pa.cmp(&pb));
+        match order {
+            std::cmp::Ordering::Less => -1,
+            _ => 1,
+        }
+    }
+
+    /// The dependency order of two distinct types with equal ids, or `Equal`
+    /// when it does not separate them or the walk is [`SHAPE_DEPTH`] deep.
+    fn compare_dependency_shape(a: &Datatype, b: &Datatype) -> std::cmp::Ordering {
+        thread_local!(static DEPTH: std::cell::Cell<u8> = const { std::cell::Cell::new(0) });
+        let depth = DEPTH.get();
+        if depth >= SHAPE_DEPTH {
+            return std::cmp::Ordering::Equal;
+        }
+        struct Restore(u8);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                DEPTH.set(self.0);
+            }
+        }
+        DEPTH.set(depth + 1);
+        let _restore = Restore(depth);
+        a.compare_dependency(b).map_or(std::cmp::Ordering::Equal, |c| c.cmp(&0))
     }
 
     /// Internal-invariant error for a `TypePointer` override reached with a
@@ -4367,6 +4394,11 @@ impl Ord for TreeKey {
         }
     }
 }
+
+/// How many nested unnamed types the dependency order of two distinct types
+/// walks before it falls back to their addresses: a cyclic or shared type
+/// graph cannot make one comparison unbounded.
+const SHAPE_DEPTH: u8 = 8;
 
 /// Mutable interning state of a [`TypeFactoryImpl`] (the C++ `tree`, `nametree`,
 /// `typecache*`, `charcache`).
@@ -9058,6 +9090,68 @@ mod tests {
             assert_eq!(Rc::ptr_eq(&seen, &full), declared, "{name}");
             assert_eq!(seen.is_incomplete(), !declared, "{name}");
         }
+    }
+
+    /// A declared record's stub and completion are one identity, so a third
+    /// type of the same id orders the same way against either of them.
+    #[test]
+    fn a_completion_link_orders_like_its_stub() {
+        let int4 = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+        let with_field = |base: &Datatype, name: &str| {
+            let mut ct = base.clone();
+            ct.kind = DatatypeKind::Struct {
+                field: vec![TypeField::new(0, 0, name, Rc::clone(&int4))],
+                bitfield: vec![],
+            };
+            ct
+        };
+        let mut stub = struct_with_bitfields(vec![], vec![], 0);
+        stub.id = Datatype::hash_name("rec");
+        let other = Rc::new(with_field(&stub, "b"));
+        stub.record_completion = Some(Rc::new(RefCell::new(std::rc::Weak::new())));
+        let full = Rc::new(with_field(&stub, "a"));
+        let stub = Rc::new(stub);
+        assert_eq!(Datatype::compare_dependency_ptr(&stub, &full), 0);
+        assert_eq!(
+            Datatype::compare_dependency_ptr(&stub, &other),
+            Datatype::compare_dependency_ptr(&full, &other),
+        );
+    }
+
+    /// A panic unwinding out of the shape walk leaves the walk depth as it was,
+    /// so a later comparison of the same pair gives the same answer.
+    #[test]
+    fn shape_depth_survives_an_unwind() {
+        let uint4 = || Rc::new(Datatype::new(4, type_metatype::TYPE_UINT));
+        let mut uints: Vec<Rc<Datatype>> = (0..32).map(|_| uint4()).collect();
+        let int = &Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+        uints.extend((0..32).map(|_| uint4()));
+        let shape = int.compare_dependency(&uints[0]).unwrap().signum();
+        let Some(uint) = uints
+            .iter()
+            .find(|u| ((Rc::as_ptr(int) as i128) - (Rc::as_ptr(u) as i128)).signum() as int4 != shape)
+        else {
+            return;
+        };
+        let chain = |leaf: &Rc<Datatype>| {
+            let mut t = Rc::clone(leaf);
+            for _ in 0..8 {
+                t = Rc::new(make_pointer(t, None, 1));
+            }
+            t
+        };
+        let (a, b) = (chain(int), chain(uint));
+        let before = a.compare_dependency(&b).unwrap().signum();
+        let code = || {
+            let mut c = Datatype::new(1, type_metatype::TYPE_CODE);
+            c.kind = DatatypeKind::Code { proto: Some(Rc::new(crate::fspec::FuncProto::new())) };
+            Rc::new(make_pointer(Rc::new(c), None, 1))
+        };
+        let (p1, p2) = (code(), code());
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| p1.compare_dependency(&p2)));
+        assert!(caught.is_err());
+        assert_eq!(before, shape);
+        assert_eq!(a.compare_dependency(&b).unwrap().signum(), before);
     }
 
     #[test]

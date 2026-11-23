@@ -406,11 +406,10 @@ fn decompile_one_prefollowed_once(
             seed.purpose,
         );
     }
-    // (kuna `callerreads`) A `void` function decompiled alone whose callers read
-    // a return register after the call is driven again returning it. A batch
-    // settles the same question from the callers it decompiles (`voidret`).
+    // (kuna `callerreads`) Use raw caller evidence when the driver has no
+    // callee-first return settling pass.
     let read = match &result {
-        Ok(fd) if !arch.kuna_float_scan_batch => kuna_decomp::kuna_callerreads::read(arch, fd),
+        Ok(fd) if !arch.kuna_settle_caller_reads => kuna_decomp::kuna_callerreads::read(arch, fd),
         _ => None,
     };
     if let Some(storage) = read {

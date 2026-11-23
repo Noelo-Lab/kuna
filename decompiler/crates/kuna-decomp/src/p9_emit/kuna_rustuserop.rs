@@ -38,7 +38,7 @@ fn is_ascii_identifier(name: &str) -> bool {
         && chars.all(|c| c == b'_' || c.is_ascii_alphanumeric())
 }
 
-fn raw_keyword(name: &str) -> bool {
+pub(crate) fn raw_keyword(name: &str) -> bool {
     matches!(
         name,
         "as" | "async" | "await" | "break" | "const" | "continue" | "dyn" | "else"

@@ -44,6 +44,15 @@ fn carrier(fd: &Funcdata, mut value: VarnodeId) -> Option<Carrier> {
     None
 }
 
+pub(crate) fn is_zero_word_carrier(fd: &Funcdata, value: VarnodeId) -> bool {
+    let Some(Carrier::ZeroExtend(input, _)) = carrier(fd, value) else {
+        return false;
+    };
+    fd.vbank()
+        .get(input)
+        .is_some_and(|word| word.is_constant() && word.get_offset() == 0)
+}
+
 fn raw_carrier(fd: &Funcdata, mut value: VarnodeId) -> bool {
     for _ in 0..8 {
         let Some(vn) = fd.vbank().get(value) else { return false };

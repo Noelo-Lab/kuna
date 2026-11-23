@@ -104,6 +104,7 @@
 <symbol space="ram" offset="0x140001300" name="c"/>
 </binaryimage>
 <script>
+  <com>option postinc off</com>
   <com>option endptrbound off</com>
   <com>lo fu f</com>
   <com>decompile</com>

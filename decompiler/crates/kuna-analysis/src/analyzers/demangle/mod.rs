@@ -232,11 +232,31 @@ pub fn demangle_raw(raw: &str) -> Option<String> {
     demangle_rust(raw)
 }
 
-/// Rust legacy (`_ZN…`) and v0 (`_R…`); `{:#}` drops the trailing hash.
+/// Rust legacy (`_ZN…`) and v0 (`_R…`), with compiler disambiguators elided.
 fn demangle_rust(raw: &str) -> Option<String> {
     let d = rustc_demangle::try_demangle(raw).ok()?;
-    let s = format!("{:#}", d);
+    let s = rust_spelling(&d);
     (!s.is_empty() && s != raw).then_some(s)
+}
+
+/// The legacy alternate formatter accepts uppercase hex in a hash. A component
+/// with that spelling can be a user name, so keep the ordinary display for it.
+fn rust_spelling(demangled: &rustc_demangle::Demangle<'_>) -> String {
+    let raw = demangled.as_str();
+    let legacy = raw.starts_with("_ZN") || raw.starts_with("__ZN") || raw.starts_with("ZN");
+    let uppercase_tail = legacy
+        && raw.rsplit_once("17h")
+            .and_then(|(_, tail)| tail.get(..16).zip(tail.get(16..)))
+            .is_some_and(|(digits, end)| {
+                (end == "E" || end.starts_with("E."))
+                    && digits.bytes().all(|b| b.is_ascii_hexdigit())
+                    && !crate::sourcelang::is_legacy_rust_hash_digits(digits)
+            });
+    if uppercase_tail {
+        demangled.to_string()
+    } else {
+        format!("{demangled:#}")
+    }
 }
 
 /// Reduce a demangled **Rust** path to a plain `::`-separated one.
@@ -394,7 +414,7 @@ pub fn demangle_name(raw: &str) -> Option<String> {
             // `normalize_rust_name`, not `strip_bracket_groups`: a trait-impl
             // qualifier has to KEEP one of its two paths, and deleting the group
             // would leave a leading `::` the symbol table rejects.
-            let reduced = strip_legacy_rust_hash(&normalize_rust_name(&format!("{:#}", d)));
+            let reduced = strip_legacy_rust_hash(&normalize_rust_name(&rust_spelling(&d)));
             if !reduced.is_empty() && reduced != raw {
                 return Some(reduced);
             }
@@ -414,12 +434,12 @@ pub fn demangle_name(raw: &str) -> Option<String> {
         }
     }
 
-    // Then Rust (`{:#}` already drops the hash; the extra strip is defensive, and
+    // Then Rust (alternate formatting normally drops the hash; the extra strip is defensive, and
     // so is the anonymous-namespace rewrite -- no Rust rendering spells one, but a
     // legacy `_ZN..` symbol reaches the Itanium arm above first either way).
     if let Ok(d) = rustc_demangle::try_demangle(raw) {
         let reduced = strip_legacy_rust_hash(&strip_bracket_groups(&name_anonymous_namespaces(
-            &format!("{:#}", d),
+            &rust_spelling(&d),
         )));
         if !reduced.is_empty() && reduced != raw {
             return Some(reduced);
@@ -657,14 +677,12 @@ fn strip_bracket_groups(s: &str) -> String {
 /// [`cpp_demangle`] demangles it but keeps the disambiguator hash as a final
 /// `::h<hex>` component; this drops it, matching the `{:#}` hash-elision a pure
 /// [`rustc_demangle`] path gives. Conservative: only a final component that is
-/// exactly `h` + 16 hex digits is removed (the rustc legacy hash shape), so a
-/// real C++ name is unaffected.
+/// exactly `h` + 16 lowercase hex digits is removed (the rustc legacy hash shape).
 fn strip_legacy_rust_hash(name: &str) -> String {
     if let Some(last) = name.rfind("::") {
         let tail = &name[last + 2..];
-        let is_legacy_hash = tail.len() == 17
-            && tail.starts_with('h')
-            && tail[1..].bytes().all(|b| b.is_ascii_hexdigit());
+        let is_legacy_hash = tail.strip_prefix('h')
+            .is_some_and(crate::sourcelang::is_legacy_rust_hash_digits);
         if is_legacy_hash {
             return name[..last].to_string();
         }
@@ -1018,6 +1036,47 @@ mod tests {
         // ...but a normal trailing scope is kept (not a 17-char `h<hex>`).
         assert_eq!(strip_legacy_rust_hash("foo::bar"), "foo::bar");
         assert_eq!(strip_legacy_rust_hash("foo::helper"), "foo::helper");
+    }
+
+    #[test]
+    fn legacy_uppercase_hash_shaped_components_survive_demangling() {
+        for (raw, name) in [
+            ("_ZN4demo17hABCDEF0123456789E", "demo::hABCDEF0123456789"),
+            ("_ZN5mixed17hAbCdE0123456789fE", "mixed::hAbCdE0123456789f"),
+            ("_ZN6member17hABCDEF012345678917h0123456789abcdefE", "member::hABCDEF0123456789"),
+            ("_ZN4llvm17hABCDEF0123456789E.llvm.9D1C9369", "llvm::hABCDEF0123456789"),
+            ("_ZN5lower6actual17h0123456789abcdefE", "lower::actual"),
+        ] {
+            assert_eq!(demangle_raw(raw).as_deref(), Some(name), "{raw}");
+            assert_eq!(demangle_name(raw).as_deref(), Some(name), "{raw}");
+        }
+        for raw in [
+            "_ZN4demo17hABCDEF0123456789E",
+            "_ZN5mixed17hAbCdE0123456789fE",
+            "_ZN4llvm17hABCDEF0123456789E.llvm.9D1C9369",
+        ] {
+            assert!(!crate::sourcelang::is_rust_mangled(raw), "{raw}");
+        }
+        assert!(crate::sourcelang::is_rust_mangled(
+            "_ZN6member17hABCDEF012345678917h0123456789abcdefE"
+        ));
+        assert_eq!(
+            demangle_name("_ZN8cpp_demo17hABCDEF0123456789Ev").as_deref(),
+            Some("cpp_demo::hABCDEF0123456789")
+        );
+        for (raw, full) in [
+            (
+                "_ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h517074eb1cb2b995E",
+                "<&T as core::fmt::Debug>::fmt",
+            ),
+            (
+                "_ZN4core3ptr42drop_in_place$LT$alloc..string..String$GT$17h5d180b0b0e91564fE",
+                "core::ptr::drop_in_place<alloc::string::String>",
+            ),
+            ("_RINvNtC3std3mem8align_ofjE", "std::mem::align_of::<usize>"),
+        ] {
+            assert_eq!(demangle_raw(raw).as_deref(), Some(full), "{raw}");
+        }
     }
 
     // ---- MSVC C++ arm (multi-format loader PR-9) ----------------------------

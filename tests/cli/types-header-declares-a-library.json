@@ -1,0 +1,45 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "fetch",
+    "--types",
+    "{{WORK}}/decompiler/crates/kuna-cli/tests/fixtures/types_header/curl.h"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-cli/tests/fixtures/types_header/curlish.so",
+    "binary_sha256": "7478204e368315d7f2ca2f48555d290074c29d168c9b8d1ff28ce19671583730",
+    "binary_size": 3088,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-cli/tests/fixtures/types_header/curlish.so",
+    "selector": "fetch",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "curl_easy_setopt\\(h,CURLOPT_URL,a0\\)",
+      "CURL \\*h;"
+    ],
+    "stdout_absent": [
+      "0x2712"
+    ],
+    "stderr_absent": [
+      "rejected",
+      "unknown option"
+    ]
+  },
+  "notes": "A header loaded with --types gives the calls into its library their prototypes and enum names. Without the flag the same call prints curl_easy_setopt(v1,0x2712,a0); the fixture is curlish.c beside it, built with clang -O2 and ld.lld -shared."
+}

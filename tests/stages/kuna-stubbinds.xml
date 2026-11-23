@@ -1,0 +1,65 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A">
+<!--
+    Stripped Mach-O stubs named from their slot's chained bind
+    (`option stubbinds on|off`, default on).
+
+    A `__stubs` entry is named through the LC_DYSYMTAB indirect-symbol table,
+    which indexes the undefined nlist of the import it jumps to. A chained-
+    fixups link records the import again as the bind on the slot the stub
+    loads, so `strip` may drop the nlist and write INDIRECT_SYMBOL_LOCAL | ABS
+    over the entry; the SwiftPM frameworks of App Store apps ship that way for
+    most of their Swift stdlib and runtime calls. The indirect-symbol walk then
+    leaves the stub `sub_<addr>` and every bl to it is an anonymous call.
+
+    Stage / sub-stage: P1 environment-binding. loader/kuna_stubbinds.rs
+    decodes each unnamed stub (adrp; ldr; br) to its slot, reads the slot's
+    addend-free chained bind and names the stub after the import.
+
+    The XML wrapper only supplies the harness architecture. Both passes clear
+    it and load macho_stubs_stripped_arm64 (chkstkdarwin_macho_arm64 with its
+    indirect-symbol entries overwritten with LOCAL | ABS; generator
+    macho_stubs_stripped_arm64.py) through the object bootstrap. _probe_stub
+    calls the __stubs entry at 0x100000520 with bl; the stub loads the __got
+    slot at 0x100004000, whose chained bind names ___chkstk_darwin.
+
+    Pass 1 (`option stubbinds off`) reproduces the bug: the call renders
+    sub_100000520(...).
+    Pass 2 is the shipped default: the stub is __chkstk_darwin, and
+    chkstkdarwin (which matches the callee by name) removes the probe call
+    from _probe_stub as it does on the unstripped image.
+
+    Assertions span the combined output of both passes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_stubs_stripped_arm64</com>
+  <com>option stubbinds off</com>
+  <com>read symbols</com>
+  <com>load function _probe_stub</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function 0x100000520</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_stubs_stripped_arm64</com>
+  <com>read symbols</com>
+  <com>load function _probe_stub</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function 0x100000520</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="STUBBINDS #1: off, the stripped stub is anonymous and _probe_stub calls it as sub_" min="1" max="1">sub_100000520\(\);</stringmatch>
+<stringmatch name="STUBBINDS #2: on, the stub is named after the bind on its slot" min="1" max="1">void __chkstk_darwin\(void\)</stringmatch>
+<stringmatch name="STUBBINDS #3: on, _probe_stub no longer calls an anonymous stub" min="1" max="1">int8 _probe_stub\(int8 a0,int8 a1\)</stringmatch>
+<stringmatch name="STUBBINDS #4: off, the stub itself is anonymous" min="1" max="1">void sub_100000520\(void\)</stringmatch>
+</decompilertest>

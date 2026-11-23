@@ -39,7 +39,8 @@
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
-use kuna_base::types::int4;
+use kuna_base::space::spacetype;
+use kuna_base::types::{int4, uintb};
 
 use kuna_num::opcodes::OpCode;
 
@@ -194,6 +195,31 @@ impl Funcdata {
         }
     }
 
+    /// (kuna `gotonext`) Re-derive each fall-thru chain from the case blocks: a
+    /// case that is a `BlockGoto` to another case's entry block chains to that
+    /// case.  `grab_case_basic` reads the target's switch out-index from sblocks
+    /// edges, which a target wrapped in its own `BlockGoto` has lost and whose
+    /// remaining indices can be stale, so a chain could be missed or point at the
+    /// case itself, and the sort then put that case first under label 0.
+    fn chain_fallthru_cases(&self, cases: &mut [crate::block::CaseOrder]) {
+        let sb = self.sblocks_ref();
+        for i in 0..cases.len() {
+            let blk = sb.block(cases[i].block);
+            if cases[i].gototype != 0 || blk.get_type() != crate::block::BlockType::Goto {
+                continue;
+            }
+            let target = blk.get_goto_target().and_then(|t| sb.get_front_leaf(t)).and_then(|f| sb.sub_block(f, 0));
+            cases[i].chain = match target {
+                Some(t) => cases
+                    .iter()
+                    .position(|c| c.gototype == 0 && c.basicblock == Some(t))
+                    .filter(|&j| j != i)
+                    .map_or(-1, |j| j as i32),
+                None => -1,
+            };
+        }
+    }
+
     /// `BlockSwitch::finalizePrinting` for a single switch node (block.cc:3607).
     fn finalize_one_switch(&mut self, sw: BlockId) {
         let jt_index = match self.sblocks_ref().block(sw).switch_jt_index() {
@@ -207,6 +233,9 @@ impl Funcdata {
             None => return,
         };
         let ncase = cases.len();
+        if self.get_arch().goto_next {
+            self.chain_fallthru_cases(&mut cases);
+        }
         // Construct the depth parameter, to sort fall-thru cases.
         for i in 0..ncase {
             let mut j = cases[i].chain;
@@ -2603,12 +2632,15 @@ impl Funcdata {
         let addr2 = partial.obank().get(partop).unwrap().get_addr().clone();
         jt.set_indirect_op_addr(partop, addr2);
         let res = if jt.is_partial() {
-            let targets = self.get_override().multistage_targets(&addr).map(<[Address]>::to_vec);
-            jt.recover_multistage(partial).map(|()| {
-                if let Some(targets) = targets {
-                    jt.kuna_adopt_multistage_targets(targets);
-                }
-            })
+            let recovered = jt.recover_multistage(partial);
+            // A failed re-entry must preserve its followed singleton. An ordinary
+            // restart uses the guarded targets established by the late model.
+            if self.get_override().multistage_targets(&addr)
+                .is_some_and(|targets| jt.kuna_adopt_multistage_targets(targets, recovered.is_err())) {
+                Ok(())
+            } else {
+                recovered
+            }
         } else {
             jt.recover_addresses(partial)
         };
@@ -2656,6 +2688,9 @@ impl Funcdata {
             }
         }
         partial.truncated_flow_clone(self)?;
+        partial.kuna_extent_tables = self.kuna_extent_tables.clone();
+        partial.kuna_later_tables = self.kuna_later_tables.clone();
+        partial.kuna_later_wanted = std::rc::Rc::clone(&self.kuna_later_wanted);
         Ok(partial)
     }
 
@@ -2842,6 +2877,16 @@ impl Funcdata {
     /// The original block must have no out edges and more than one (non-redundant)
     /// in edge.
     pub fn node_split(&mut self, b: BlockId, inedge: int4) -> KunaResult<()> {
+        self.node_split_cloning(b, inedge, false).map(|_| ())
+    }
+
+    /// (kuna `returndup calls`) [`Self::node_split`] for a block holding calls:
+    /// each cloned call gets its own call spec.  Returns the new block.
+    pub fn node_split_calls(&mut self, b: BlockId, inedge: int4) -> KunaResult<BlockId> {
+        self.node_split_cloning(b, inedge, true)
+    }
+
+    fn node_split_cloning(&mut self, b: BlockId, inedge: int4, calls: bool) -> KunaResult<BlockId> {
         // Split node b along inedge.
         if self.bblocks_ref().block(b).size_out() != 0 {
             return Err(KunaError::lowlevel(
@@ -2868,13 +2913,14 @@ impl Funcdata {
         let bprime = self.node_split_block_edge(b, inedge);
         // Copy b's ops into bprime (p-code half).
         let mut cloner = CloneBlockOps::new();
+        cloner.calls = calls;
         cloner.clone_block(self, b, bprime, inedge)?;
 
         // We would need to patch outputs here for the more general case when b
         // has out edges (any references not in b to varnodes defined in b need
         // MULTIEQUALs defined in b's out blocks).  b has no out edges here.
         self.structure_reset();
-        Ok(())
+        Ok(bprime)
     }
 
     /// Clone the p-code ops of an expression right before `follow_op`, returning
@@ -4157,11 +4203,15 @@ struct CloneBlockOps {
     clone_list: Vec<(OpId, OpId)>,
     /// Map from original op to its clone (C++ `origToClone`).
     orig_to_clone: std::collections::BTreeMap<OpId, OpId>,
+    /// (kuna `returndup calls`) Clone CALLs and INDIRECTs too: each cloned call
+    /// gets its own copy of the call spec, and a cloned INDIRECT names the
+    /// cloned call.
+    calls: bool,
 }
 
 impl CloneBlockOps {
     fn new() -> Self {
-        CloneBlockOps { clone_list: Vec::new(), orig_to_clone: std::collections::BTreeMap::new() }
+        CloneBlockOps { clone_list: Vec::new(), orig_to_clone: std::collections::BTreeMap::new(), calls: false }
     }
 
     /// Make a basic clone of the p-code op copying its basic control-flow
@@ -4318,6 +4368,18 @@ impl CloneBlockOps {
             .expect("cloneExpression: last clone has output"))
     }
 
+    /// (kuna `returndup calls`) Give the clone of a call op its own copy of the
+    /// original's call spec; returns the new spec's fspec handle.
+    fn clone_call_spec(&self, data: &mut Funcdata, orig_op: OpId, clone_op: OpId) -> Option<uintb> {
+        let idx = data.get_call_specs_index(orig_op)?;
+        let spec = data.get_call_specs(idx).clone_for_op(clone_op);
+        let new_idx = data.push_call_specs(spec);
+        let handle = crate::flow::next_fspec_handle();
+        let style = data.get_arch().kuna_name_style();
+        data.get_call_specs(new_idx).register_in_fspec_space(handle, style);
+        Some(handle)
+    }
+
     /// Map original-op input Varnodes to the input slots of the cloned ops
     /// (C++ `CloneBlockOps::patchInputs`, `funcdata_block.cc:1066`).
     fn patch_inputs(&self, data: &mut Funcdata, inedge: int4) -> KunaResult<()> {
@@ -4339,11 +4401,12 @@ impl CloneBlockOps {
                     data.op_set_opcode_code(orig_op, OpCode::CPUI_COPY);
                     one_input_phis.push(orig_op);
                 }
-            } else if orig_code == OpCode::CPUI_INDIRECT {
+            } else if orig_code == OpCode::CPUI_INDIRECT && !self.calls {
                 return Err(KunaError::lowlevel("Can't clone INDIRECTs"));
-            } else if data.obank().get(orig_op).expect("patchInputs").is_call() {
+            } else if data.obank().get(orig_op).expect("patchInputs").is_call() && !self.calls {
                 return Err(KunaError::lowlevel("Can't clone CALLs"));
             } else {
+                let fspec = if self.calls { self.clone_call_spec(data, orig_op, clone_op) } else { None };
                 let n_in = data.obank().get(clone_op).expect("patchInputs").num_input();
                 for i in 0..n_in {
                     let orig_vn = data
@@ -4363,8 +4426,15 @@ impl CloneBlockOps {
                             v.get_addr().clone(),
                         )
                     };
+                    let space_type = vaddr.get_space().map(|s| s.get_type());
                     let clone_vn = if is_const {
                         orig_vn
+                    } else if is_annot && fspec.is_some() && space_type == Some(spacetype::IPTR_FSPEC) {
+                        data.new_varnode_call_specs(fspec.unwrap())
+                    } else if is_annot && self.calls && space_type == Some(spacetype::IPTR_IOP) {
+                        let target = crate::funcdata_varnode::op_iop_decode(vaddr.get_offset());
+                        let target = self.orig_to_clone.get(&target).copied().unwrap_or(target);
+                        data.new_varnode_iop(target)
                     } else if is_annot {
                         data.new_code_ref(&vaddr)
                     } else if is_free {

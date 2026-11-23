@@ -1383,20 +1383,37 @@ impl Action for ActionDeindirect {
             }
 
             if data.has_type_recovery_started() && !data.get_call_specs(i).is_input_locked() {
-                let proto = data
+                let code = data
                     .obank()
                     .get(op)
                     .and_then(|o| o.get_in(0))
                     .and_then(|target| data.vbank().get(target))
                     .map(|target| target.get_type_read_facing(op))
                     .filter(|ty| ty.get_metatype() == type_metatype::TYPE_PTR)
-                    .and_then(|ty| ty.get_ptr_to())
+                    .and_then(|ty| ty.get_ptr_to());
+                let proto = code
+                    .as_ref()
                     .and_then(|ty| ty.get_code_prototype().cloned())
                     .and_then(|proto| crate::kuna_typedcallabi::admit(data, proto));
                 if let Some(proto) = proto {
+                    let pending = data.has_restart_pending();
                     let mut fc = data.replace_call_specs(i);
+                    let mut recovered = crate::fspec::FuncProto::new();
+                    recovered.copy(fc.proto());
                     let mut restartlog = crate::kuna_restartlog::RestartLog::new();
                     let result = fc.force_set(data, &proto, &mut restartlog);
+                    // (kuna `valuewitness`) A value witness slot learned this
+                    // late, when the call's inputs no longer fit it, keeps the
+                    // inputs already recovered rather than restart the function.
+                    // See `kuna_valuewitness::call_prototype`.
+                    if !pending
+                        && data.has_restart_pending()
+                        && code.is_some_and(|c| crate::kuna_valuewitness::is_slot_code(data.get_arch(), &c))
+                    {
+                        data.set_restart_pending(false);
+                        fc.proto_mut().copy(&recovered);
+                        fc.proto_mut().set_input_lock(true);
+                    }
                     data.restore_call_specs_at(i, fc);
                     result.expect("ActionDeindirect: forceSet failed");
                     self.base.count += 1;

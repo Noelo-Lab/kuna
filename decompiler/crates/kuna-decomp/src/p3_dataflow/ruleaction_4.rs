@@ -1976,12 +1976,10 @@ impl Rule for RuleHumptyOr {
 /// \brief Convert BRANCHIND with only one computed destination to a BRANCH
 /// (C++ `RuleSwitchSingle`).
 ///
-/// STUB(W?-jumptable): the body needs `Funcdata::findJumpTable`,
-/// `removeJumpTable`, `getStructure`, `newCodeRef`, and `warningHeader` plus the
-/// `JumpTable` accessors — none ported to this wave's `Funcdata`.  The guard
-/// `bb->sizeOut() != 1` and the no-jumptable early-out are transcribed; with
-/// `findJumpTable` unported the rule short-circuits to "no jumptable" (the C++
-/// `jt == 0` early-out).  Recorded as a loss.
+/// A labelled table on a single-out-edge BRANCHIND becomes a BRANCH to its
+/// address. (kuna) A one-entry table over a computed value is left alone: table
+/// recovery can keep only the entries its guards prove reachable, so one kept
+/// entry is not proof of one destination.
 pub struct RuleSwitchSingle;
 
 impl RuleSwitchSingle {
@@ -2016,11 +2014,32 @@ impl Rule for RuleSwitchSingle {
         if data.bblocks_ref().block(bb).size_out() != 1 {
             return 0;
         }
-        //   -- STUB(W?-jumptable): findJumpTable + JumpTable accessors + newCodeRef
-        //   + removeJumpTable + getStructure().clear() + warningHeader unported.
-        //   The remaining body (label scan, BRANCHIND->BRANCH conversion) is
-        //   transcribed in the C++ but unreachable until the jumptable surface lands.
-        0
+        let Some(jt_idx) = data.find_jump_table_index(op) else { return 0 };
+        let jt = data.get_jump_table(jt_idx as int4);
+        let num = jt.num_entries();
+        if num == 0 || !jt.is_labelled() {
+            return 0;
+        }
+        let addr = jt.get_address_by_index(0);
+        let constant_input = data.vbank().get(in_vn(data, op, 0)).expect("RuleSwitchSingle: stale input").is_constant();
+        if num == 1 && !constant_input {
+            return 0;
+        }
+        let allcasesmatch = num != 1 && (1..num).all(|i| jt.get_address_by_index(i) == addr);
+        if num != 1 || !constant_input {
+            let mut s = String::from("Switch with 1 destination removed at ");
+            let _ = addr_of(data, op).print_raw(&mut s);
+            if allcasesmatch {
+                s.push_str(&format!(" : {num} cases all go to same destination"));
+            }
+            data.warning_header(&s);
+        }
+        set_opcode(data, op, OpCode::CPUI_BRANCH);
+        let coderef = data.new_code_ref(&addr);
+        data.op_set_input(op, coderef, 0).expect("RuleSwitchSingle: opSetInput");
+        data.remove_jump_table(jt_idx);
+        data.sblocks_clear();
+        1
     }
 }
 

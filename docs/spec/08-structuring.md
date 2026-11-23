@@ -161,10 +161,26 @@ No p-code, statement, or destination changes.
 
 `kuna_loopcontinue.rs (recover_continues)` runs before `mark_unstructured`.
 A goto or if-goto becomes `continue` only when its target's first leaf is the
-first leaf of its innermost `BlockInfLoop`. Entering a nested loop resets that
-scope; conditional loops disable recovery because their continue may evaluate
-a condition or iterator rather than restart the first leaf. Other destinations
-retain gotos. `off` restores the original collapse precedence and rendering.
+first leaf of its innermost `BlockInfLoop`, or the continue point of its
+innermost conditional loop. Entering a nested loop resets that scope. A
+conditional loop's `continue;` evaluates a test or an iterate statement rather
+than restarting the first leaf, so `kuna_loopcontinue.rs (continue_points)`
+gives each one the leaf a `continue;` resumes at, or none. A while-do resumes
+at the front leaf of its condition block, unless it prints as a `for` (an
+iterate op), whose `continue;` would run the iterate statement first; in the
+overflow form the condition block prints first inside `while( true ) { ... }`,
+which is where the jump lands too. A do-while resumes at the last leaf of its
+body only when that leaf prints nothing but the loop test: every op besides
+the branch is not printed, a marker, or has an implied output, and only when
+the output language's do-while runs its test on `continue;`: C's `do..while`
+and Go's `for` post statement do, while Rust prints a do-while as
+`loop { ..; if !(c) { break; } }`, where `continue;` would skip the test, so a
+Rust do-while keeps the goto (the `do_while_continue` flag the architecture
+derives from the output language). A switch
+between the jump and the loop does not matter, since C's `continue` skips
+switches. A jump into any other leaf, including the latch of a `while( true )`
+loop, keeps its goto. `off` restores the original collapse precedence and
+rendering.
 
 **(angr) `condfold` — folding across a *complex* sibling.** `rule_block_or`
 requires the sibling condition block (upstream's `orblock`, the right operand
@@ -1203,6 +1219,141 @@ here — loop construction already tags back-edge gotos). *Failure:* an edge
 whose target is not exactly the innermost loop successor is left a real
 goto. Flipped on by DIV-10.
 
+### gotonext — jumps to where control goes anyway (Ghidra `gotoPrints`)
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_gotonext.rs
+(goto_rewrites)`, read by the C printer
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (PrintC::emit_function_body)`).
+Upstream prints a `BlockGoto`'s jump only when `BlockGoto::gotoPrints`
+holds: the jump's target is not the block that `nextFlowAfter` says runs
+next. kuna's printer printed every such jump, so a switch case falling into
+the next case, and an `if` arm whose last statement jumps to the statement
+after the `if`, printed `goto label_X;` directly above `label_X:`. Passes that
+edit the structured tree after `scopeBreak` also leave jumps to the statement
+after the innermost loop or switch, which is what `break;` does.
+
+*Transform:* the census walks the final structured tree once per function,
+at the top of body emission, so it sees the tree after every pass that edits
+it. It uses `BlockGraph::next_printed_flow_after`, which is `nextFlowAfter`
+with one addition: a switch case whose body prints no `break;` (it is not
+an exit of the switch) falls into the next case even when the body is not a
+`BlockGoto`. Then:
+
+- a `BlockGoto` whose target's front leaf is the next flow prints no jump;
+- a `BlockGoto`, `if (c) goto` or bare-goto switch arm of type
+  `f_goto_goto` whose target's front leaf is the next flow after the
+  innermost loop or switch whose body holds it prints `break;` (only while
+  `loopbreak_recovery` is on, the option that owns `scopeBreak`);
+- a label prints only if a jump that still prints `goto` reaches it. The
+  label carriers are the ones `mark_unstructured` marks, and a
+  `BlockMultiGoto` edge always keeps its label, so a printed `goto` never
+  loses its label.
+
+The census only changes how a jump is spelled, never where control goes:
+each rewrite needs the target to be exactly the block the C text reaches
+next. It applies to the C switch form only, because a Rust `match` arm does
+not fall through and a Rust `break` leaves the loop, not the match.
+
+*Case order:* `BlockSwitch::finalizePrinting` sorts the cases by label and
+places each fall-thru chain (a case that is a `BlockGoto` to another case)
+directly before the case it jumps to. `grab_case_basic` reads the chained
+case's switch out-index from sblocks edges. A case wrapped in its own
+`BlockGoto` has lost that in-edge, and the remaining sblocks indices can be
+stale, so a chain was missed or pointed at the case itself; the sort then
+printed that case first under label 0. With the option on,
+`Funcdata::chain_fallthru_cases` re-derives each chain by matching the jump's
+target leaf against the case blocks before the sort, and the jump between
+the two cases is then a fall-through the census leaves out. Off restores
+both the printing of every jump and the recorded chains.
+
+### switchmerge — one switch for a search tree of jump tables
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_switchmerge.rs
+(switch_plans)`, read by the C printer
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (PrintC::emit_block_switch_c)`)
+and by the goto census. A compiler lowers a sparse source `switch` into a
+search tree of jump tables on one selector: a table's range guard sends the
+values it does not cover to the next table, and the table's holes go to the
+source's `default:` code. The structurer gives each table its own
+`BlockSwitch`, nested in the `default:` arm of the one before it, and prints
+each hole as a `case N:` of an arm that only jumps to the code `default:`
+runs.
+
+*Transform:* at the top of body emission, for each C switch on the final
+structured tree, outer switches first, the plan lists the arms to print:
+
+- When the `default:` arm starts with a `BlockSwitch` on the same selector
+  (the same varnode or the same HighVariable), that switch's arms take the
+  place of the `default:` arm. The inner switch must print nothing before its
+  `switch` (only implied ops in its header block), carry no label, and list no
+  value the merged switch already lists. If the inner switch is the whole arm,
+  its own `default:` becomes the merged one; it
+  must have no jump-table entry that goes to its exit, and the arm must leave
+  the switch or not leave at all, so a `break;` in it still goes to the same
+  place. If the inner switch is the first block of a list (also inside a
+  `BlockGoto`), it must have no `default:` arm, no arm that leaves it and no
+  `break;` that leaves it; its unlisted values reach the rest of the list,
+  which stays the `default:` arm and prints from the next block.
+- A switch that has a jump-table entry going straight to its exit is not
+  merged into: that value prints no label, and in the merged switch it would
+  take the `default:` arm.
+- Then, when `default:` is code, an arm that is only a `goto` to the first
+  block of that code prints no labels. When `default:` is itself such a
+  `goto` and another arm holds the code, the `default:` arm and the jumps are
+  left out and the arm holding the code prints `default:` in place of its
+  labels.
+- An arm that is only a `goto` or a `break;` also prints no labels when every
+  value it lists reaches its target through the `default:` code before that
+  code prints a statement. For each value the walk starts at the basic block
+  the `default:` arm prints first and decides each branch with the value: a
+  `CBRANCH` whose condition the printer inlines from the selector and
+  constants (`==`, `!=`, ranges, masks, casts; evaluated with the ops'
+  `OpBehavior`), or a `BRANCHIND` on the selector, whose out-edge is the
+  entry labelled with the value or else the default edge (none when the
+  table has an unrecovered label or a label on two edges). It stops with no
+  drop at a block that prints a statement other than its branch, a block it
+  has seen, a back edge (which could reach a `switch` whose printed labels
+  no longer match its table), a test of anything else, or after 256 blocks. A varnode is the
+  selector when it is the switch's selector or an explicit varnode of the
+  same HighVariable: the walk passes no printed statement, so no assignment
+  to that variable runs between the `switch` and the test. Holes of a table
+  whose `default:` is an `==` chain or a range test that leads to the next
+  table go away this way.
+- After that, while the `default:` arm (plain code, not a jump) starts with
+  an `if (v == c) S` that has no else, whose condition block prints only its
+  branch and whose test is `INT_EQUAL`/`INT_NOTEQUAL` of the selector and a
+  constant `c` that no arm lists, with the then-branch reached exactly for
+  `c`, the plan prints `case c: S` right before `default:` and `default:`
+  prints the rest of its list. `S` runs for `c` and then falls into the rest,
+  as after the `if`. The arm before `default:` must not fall into it, and a
+  second `case` follows only an `S` whose printed code cannot run past its
+  end (the rule below). When
+  nothing is left of a last `default:` arm, it is not printed.
+- Last, innermost first, an `if` with an else whose two branches each print
+  as a switch on the same selector (a switch not merged elsewhere, or an
+  `if` this rule already prints as one) prints as one switch: the first
+  branch's arms, then the second's. Every label of each branch must route
+  from the condition block to that branch under the value walk above, the
+  label sets must be disjoint with the same size and sign, no owner switch
+  may have a table entry to its exit, every header must print nothing, and
+  the condition block and both branches must carry no label. The defaults
+  must do the same: both absent or `break;`, or the same jump; the second's
+  is left out. The first branch's last arm and the arm before the second
+  branch's default must not fall through. The second switch and the
+  switches merged into it are hosted by the first, so `break;` still leaves
+  to the block after the `if`.
+
+An arm moves or is left out only when the arm printed before it cannot run
+into it. That is read from the printed code, not the case's structured edges:
+the arm before must end in a `break;`, in a jump that prints, or in a leaf
+whose basic block has no successor. A jump to the arm after it in the
+switch's own order prints as nothing, and a tail the cross-jump reverter
+duplicated into the arm carries no edges; both run into the next arm. The
+census reads the plan: a left-out jump keeps no label alive, and
+the target of a `break;` inside a merged switch is the block after the switch
+that is printed. The plan only changes which arm a value is printed under,
+never which code runs for it. It applies to the C switch form only.
+
 ### returndup — the whole-block duplicator (angr `ReturnDuplicatorHigh`)
 
 `decompiler/crates/kuna-decomp/src/p8_structure/kuna_returndup.rs
@@ -1245,6 +1396,32 @@ split forms compile to the *same* object code, so nothing in the binary
 distinguishes them. Its per-edge narrowings — `earlyreturn` (DIV-23) and
 `switchreturn` (DIV-25) — remain separate options: they reach the mixed
 const/variable diamonds this whole-block gate rejects outright.
+
+### returndup calls — one call per path for a cross-jumped call tail
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_returndupcalls.rs
+(ActionReturnDupCalls)` runs in the `returnsplit` group right after
+`returndup`, only at the value `option returndup calls` (not a default). gcc
+`-Os` cross-jumps the tails of paths that end in the same call: each path sets
+the arguments and jumps to one `call f; ...; ret` block, so the call reads
+MULTIEQUALs and prints as `if (c) { a = b; k = 2; } return f(a, k);`. The pass
+splits such a block once per predecessor with
+`decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
+(Funcdata::node_split_calls)`, the `node_split` clone with CALL and INDIRECT
+cloning enabled: each cloned call gets its own copy of the original call spec
+(`FuncCallSpecs::clone_for_op`, a fresh fspec handle), and a cloned INDIRECT's
+iop input names the cloned call. Each path then prints its own call:
+`if (c) return f(b, 2); return f(a, 1);`.
+
+A block qualifies when it has no successors, two to four distinct
+predecessors, at most 16 ops, exactly one direct CALL, an argument of that call
+computed (within the block) from a MULTIEQUAL, and no INDIRECT that still
+creates the call's output (prototype recovery has not settled the output yet;
+a later fullloop pass retries). Each predecessor runs exactly one copy, so the
+split preserves behaviour. It is a value of `returndup` rather than its
+default because the source often wrote the merged form as a ternary argument
+(`lua_pushstring(L, isint ? "integer" : "float")`), and the binary cannot tell
+the two apart.
 
 ### orchain — the split that must not happen (decbench)
 

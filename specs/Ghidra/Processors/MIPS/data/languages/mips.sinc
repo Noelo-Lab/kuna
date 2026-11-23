@@ -287,6 +287,20 @@ define register offset=0x2100 size=$(REGSIZE) [
 ];
 
 # COP-0 control registers, sel=2
+@ifdef OCTEON2
+@define CP0_31_2 "KScratch1"
+@define CP0_31_3 "KScratch2"
+@define CP0_31_4 "KScratch3"
+@else
+@define CP0_31_2 "cop0_reg31.2"
+@define CP0_31_3 "cop0_reg31.3"
+@define CP0_31_4 "cop0_reg31.4"
+@endif
+@ifdef OCTEON3
+@define CP0_31_5 "KScratch4"
+@else
+@define CP0_31_5 "cop0_reg31.5"
+@endif
 define register offset=0x2200 size=$(REGSIZE) [
     MVPConf0        VPEConf0        TCBind          cop0_reg3.2
     cop0_reg4.2     cop0_reg5.2     SRSConf1        cop0_reg7.2
@@ -295,7 +309,7 @@ define register offset=0x2200 size=$(REGSIZE) [
     Config2         cop0_reg17.2    WatchLo.2       WatchHi.2
     cop0_reg20.2    cop0_reg21.2    cop0_reg22.2    TraceControl2
     cop0_reg24.2    PerfCnt.2       cop0_reg26.2    CacheErr.2
-    TagLo.2         TagHi.2         cop0_reg30.2    cop0_reg31.2
+    TagLo.2         TagHi.2         cop0_reg30.2    $(CP0_31_2)
 ];
 
 # COP-0 control registers, sel=3
@@ -307,7 +321,7 @@ define register offset=0x2300 size=$(REGSIZE) [
     Config3         cop0_reg17.3    WatchLo.3       WatchHi.3
     cop0_reg20.3    cop0_reg21.3    cop0_reg22.3    UserTraceData
     cop0_reg24.3    PerfCnt.3       cop0_reg26.3    CacheErr.3
-    DataLo.3        DataHi.3        cop0_reg30.3    cop0_reg31.3
+    DataLo.3        DataHi.3        cop0_reg30.3    $(CP0_31_3)
 ];
 
 # COP-0 control registers, sel=4
@@ -319,7 +333,7 @@ define register offset=0x2400 size=$(REGSIZE) [
     cop0_reg16.4    cop0_reg17.4    WatchLo.4       WatchHi.4
     cop0_reg20.4    cop0_reg21.4    cop0_reg22.4    TraceBPC
     cop0_reg24.4    PerfCnt.4       cop0_reg26.4    CacheErr.4
-    TagLo.4         TagHi.4         cop0_reg30.4    cop0_reg31.4
+    TagLo.4         TagHi.4         cop0_reg30.4    $(CP0_31_4)
 ];
 
 # COP-0 control registers, sel=5
@@ -331,7 +345,7 @@ define register offset=0x2500 size=$(REGSIZE) [
     cop0_reg16.5    cop0_reg17.5    WatchLo.5       WatchHi.5
     cop0_reg20.5    cop0_reg21.5    cop0_reg22.5    cop0_reg23.5
     cop0_reg24.5    PerfCnt.5       cop0_reg26.5    CacheErr.5
-    DataLo.5        DataHi.5        cop0_reg30.5    cop0_reg31.5
+    DataLo.5        DataHi.5        cop0_reg30.5    $(CP0_31_5)
 ];
 
 # COP-0 control registers, sel=6
@@ -753,7 +767,7 @@ attach variables [ rd0_2 ] [
     Config2         cop0_reg17.2    WatchLo.2       WatchHi.2
     cop0_reg20.2    cop0_reg21.2    cop0_reg22.2    TraceControl2
     cop0_reg24.2    PerfCnt.2       cop0_reg26.2    CacheErr.2
-    TagLo.2         TagHi.2         cop0_reg30.2    cop0_reg31.2
+    TagLo.2         TagHi.2         cop0_reg30.2    $(CP0_31_2)
 ];
 
 attach variables [ rd0_3 ] [
@@ -764,7 +778,7 @@ attach variables [ rd0_3 ] [
     Config3         cop0_reg17.3    WatchLo.3       WatchHi.3
     cop0_reg20.3    cop0_reg21.3    cop0_reg22.3    UserTraceData
     cop0_reg24.3    PerfCnt.3       cop0_reg26.3    CacheErr.3
-    DataLo.3        DataHi.3        cop0_reg30.3    cop0_reg31.3
+    DataLo.3        DataHi.3        cop0_reg30.3    $(CP0_31_3)
 ];
 
 attach variables [ rd0_4 ] [
@@ -775,7 +789,7 @@ attach variables [ rd0_4 ] [
     cop0_reg16.4    cop0_reg17.4    WatchLo.4       WatchHi.4
     cop0_reg20.4    cop0_reg21.4    cop0_reg22.4    TraceBPC
     cop0_reg24.4    PerfCnt.4       cop0_reg26.4    CacheErr.4
-    TagLo.4         TagHi.4         cop0_reg30.4    cop0_reg31.4
+    TagLo.4         TagHi.4         cop0_reg30.4    $(CP0_31_4)
 ];
 
 attach variables [ rd0_5 ] [
@@ -786,7 +800,7 @@ attach variables [ rd0_5 ] [
     cop0_reg16.5    cop0_reg17.5    WatchLo.5       WatchHi.5
     cop0_reg20.5    cop0_reg21.5    cop0_reg22.5    cop0_reg23.5
     cop0_reg24.5    PerfCnt.5       cop0_reg26.5    CacheErr.5
-    DataLo.5        DataHi.5        cop0_reg30.5    cop0_reg31.5
+    DataLo.5        DataHi.5        cop0_reg30.5    $(CP0_31_5)
 ];
 
 attach variables [ rd0_6 ] [

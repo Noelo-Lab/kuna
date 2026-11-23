@@ -101,7 +101,7 @@ const RELIABLE_OVERRIDES: &[(&str, &str)] = &[];
 /// (`returndup` since DIV-54, `pdb` since DIV-129, the presentation defaults
 /// `partialaccess`, `voidtailreturn`, `importdata`, `calltargettype` and
 /// `libcnames`, and the target-gated passes -- `rtti`=PE,
-/// `itaniumrtti`=ELF-with-RTTI, `objc`/`macho-arm64e`=Mach-O,
+/// `itaniumrtti`=ELF/Mach-O-with-RTTI, `objc`/`macho-arm64e`=Mach-O,
 /// `sparcstructret`=SPARC, `v850indirectbranch`=V850, the ARM entry and
 /// hard-float passes -- all inert off their target): the preset owns the option
 /// outright, so a user `--option returndup off` earlier on the command line is
@@ -142,6 +142,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("switchguardbound", "on"), // speed-expensive
     ("unrolledguard", "on"),    // speed-expensive
     ("globalarrayanchor", "on"),
+    ("opaquepredicate", "on"),
     ("sparcstructret", "on"), // SPARC-idiom-gated; no-op off-SPARC
     ("v850indirectbranch", "on"), // V850-gated (kuna_v850indbranch::applies); no-op off-V850
     ("regionedgeorder", "on"),
@@ -230,7 +231,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("fid", "on"),
     ("flirt", "on"),         // inert without KUNA_FLIRT_SIGS
     ("rtti", "on"),          // PE-only; no-op off-PE
-    ("itaniumrtti", "on"),   // ELF-only, and inert without __cxxabiv1 typeinfo relocs
+    ("itaniumrtti", "on"),   // ELF and Mach-O, inert without __cxxabiv1 typeinfo anchors
     // The speculative gap-walk ("may create bad code") with the aligned gap cursor
     // (GH-299). Every number in its catalog row was measured under this preset,
     // and the aligned cursor is a net win in BOTH directions there (mid-body
@@ -552,14 +553,12 @@ mod tests {
         /// `rustprobestack` did not clear its default wall-time confidence bounds.
         /// `highsliceguard` added 10.8% CPU time when recovering the upstream table.
         /// `rustarrayzero` missed the initial default-on CPU median budget.
-        /// `ppcapu` selects the e500 model, whose scalar call arguments are not
-        /// yet recovered, so it requires an explicit option.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["dwarf_lines",
               "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
-              "armconstshift", "wrapadd", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "ppcapu", "rustprobestack", "highsliceguard", "rustarrayzero",
+              "armconstshift", "wrapadd", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "rustprobestack", "highsliceguard", "rustarrayzero",
               // `lazyfuncs` changes no output, but its saving is a single-function
               // property: the whole-binary surfaces the presets drive (decompile-all,
               // the web front-end, the benchmark) materialize every target they walk

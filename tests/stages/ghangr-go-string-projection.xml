@@ -1,0 +1,99 @@
+<decompilertest>
+<!-- angr test_go_decompiler.py check_statements_and_runtime_cleanup, reduced
+     to one verified AMD64 string and one guarded byte. P1 godwarfsig owns
+     the input proof and P9 uses it only on the guarded byte load. The
+     definition and all direct calls keep the ABI pointer and length.
+     Off and explicit declarations retain the previous body. -->
+<binaryimage arch="x86:LE:64:default:gcc">
+  <bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+  <symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>option sourcelang auto</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-string-projection/amd64</com>
+  <com>option godwarfsig off</com><com>read symbols</com><com>option outlang go</com>
+  <com>load function main.ByteOr</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-string-projection/amd64</com>
+  <com>option godwarfsig on</com><com>read symbols</com><com>option outlang go</com>
+  <com>load function main.ByteOr</com><com>decompile</com><com>print C</com>
+  <com>load function main.Forward</com><com>decompile</com><com>print C</com>
+  <com>load function main.FromPrefix</com><com>decompile</com><com>print C</com>
+  <com>load function main.FromOther</com><com>decompile</com><com>print C</com>
+  <com>load function main.Length</com><com>decompile</com><com>print C</com>
+  <com>load function main.HeaderData</com><com>decompile</com><com>print C</com>
+  <com>load function main.UnsafeFirst</com><com>decompile</com><com>print C</com>
+  <com>load function main.ExplicitWords</com><com>decompile</com><com>print C</com>
+  <com>option outlang c</com>
+  <com>load function main.ByteOr</com><com>decompile</com><com>print C</com>
+  <com>option outlang rust</com>
+  <com>load function main.ByteOr</com><com>decompile</com><com>print C</com>
+  <com>option outlang go</com>
+  <com>load function main.Forward</com>
+  <com>override prototype 0x45d193 uint1 ByteOr(void)</com>
+  <com>decompile</com><com>print C</com>
+  <com>echo explicit nominal lookalike</com>
+  <com>map prototype main.ByteOr uint1 ByteOr(uint1 *s_data,int8 s_len,int8 i,uint1 fallback);</com>
+  <com>load function main.ByteOr</com><com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="disabled Go DWARF leaves the original inferred inputs" min="1" max="1">func ByteOr\(a0 int64, a1 uint64, a2 uint64, a3 uint32\) uint32</stringmatch>
+<stringmatch name="verified Go byte indexing stays inside the original bounds check" min="1" max="1">
+^func ByteOr\(s_data \*byte, s_len int64, i int64, fallback byte\) byte \{$
+^  if uint64\(s_len\) &lt;= uint64\(i\) \{$
+^    return fallback$
+^  \}$
+^  return unsafe\.String\(s_data,\s*s_len\)\[i\]$
+^\}$
+</stringmatch>
+<stringmatch name="direct forwarding keeps both actual string words" min="1" max="1">
+^func Forward\(s_data \*byte, s_len int64, i int64, fallback byte\) byte \{$
+^  return ByteOr\(s_data,\s*s_len,\s*i,\s*fallback\)$
+</stringmatch>
+<stringmatch name="shortened forwarding uses the live length operand" min="1" max="1">
+^func FromPrefix\(s_data \*byte, s_len int64, prefix int64, i int64, fallback byte\) byte \{$
+^  if uint64\(s_len\) &lt; uint64\(prefix\) \{$
+^    return fallback$
+^  \}$
+^  return ByteOr\(s_data,\s*prefix,\s*i,\s*fallback\)$
+</stringmatch>
+<stringmatch name="forwarding a different backing preserves the actual call string" min="1" max="1">
+^func FromOther\(s_data \*byte, s_len int64, i int64, fallback byte\) byte \{$
+^  if uint64\(s_len\) == 0x0 \{$
+^    return fallback$
+^  \}$
+^  return ByteOr\(.*unsafe\.StringData\("other\\x00"\).*,\s*5,\s*i,\s*fallback\)$
+</stringmatch>
+<stringmatch name="length-only keeps the verified physical length" min="1" max="1">
+^func Length\(s_data \*byte, s_len int64\) int64 \{$
+^  return s_len$
+</stringmatch>
+<stringmatch name="observable pointer bits keep the full physical header" min="1" max="1">
+^func HeaderData\(s_data \*byte, s_len int64\) uint64 \{$
+^  return uint64\(uintptr\(unsafe\.Pointer\(s_data\)\)\) \^ uint64\(s_len\)$
+</stringmatch>
+<stringmatch name="unguarded dereference retains the physical byte load" min="1" max="1">
+^func UnsafeFirst\(s_data \*byte, s_len int64\) byte \{$
+^  return \*s_data$
+</stringmatch>
+<stringmatch name="independent pointer and count are not a nominal string" min="1" max="1">func ExplicitWords\(data \*byte, size int64, i int64, fallback byte\) byte</stringmatch>
+<stringmatch name="C keeps the original physical inputs and read" min="1" max="1">
+^uint1 main\.ByteOr\(uint1 \*s_data,int8 s_len,int8 i,uint1 fallback\)$
+^\{$
+^  if \(\(uint8\)s_len &lt;= \(uint8\)i\)$
+^    return fallback;$
+^  return s_data\[i\];$
+</stringmatch>
+<stringmatch name="Rust keeps the original physical inputs" min="1" max="1">unsafe fn main_ByteOr\(mut s_data: \*mut u8, mut s_len: i64, mut i: i64, mut fallback: u8\) -&gt; u8</stringmatch>
+<stringmatch name="explicit call site keeps its declared arity" min="1" max="1">^  return ByteOr\(\)$</stringmatch>
+<stringmatch name="explicit identical physical names do not inherit nominal authority" min="1" max="1">
+^\s*explicit nominal lookalike$
+(?:^\s*$)?
+^// main\.ByteOr$
+^func ByteOr\(s_data \*byte, s_len int64, i int64, fallback byte\) byte \{$
+^  if uint64\(s_len\) &lt;= uint64\(i\) \{$
+^    return fallback$
+^  \}$
+^  return \*\(\*byte\)\(unsafe\.Add\(unsafe\.Pointer\(s_data\),i \* 1\)\)$
+</stringmatch>
+</decompilertest>

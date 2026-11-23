@@ -1,0 +1,54 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    switchmerge across a range split, and an == test at the head of default.
+
+    Authored AArch64 (clang -c of hand-written assembly).
+    k: `cbz x1` to a block of stores, then `cmp w0,#0x80; b.hi` splits w0
+    between two range-checked eight-entry tables, 0x41..0x48 and 0xa1..0xa8;
+    both tables' range checks and holes go to the block of stores.
+    m: an eight-entry table on 0x41..0x48 whose range check goes to
+    `cmp w0,#0x60; b.ne`, the 0x60 branch returning on its own.
+
+    Fixed: k prints one switch with both tables' labels and one
+    `default: goto`, since every value of each table takes its side of the
+    split and both defaults go to the same code; m prints `case 0x60:` with
+    the return and no `if (x == 0x60)`.
+    Before (and with option switchmerge off): k printed
+    `if (0x81 <= x) { switch ... } else { switch ... }`, and m
+    `default: if (x == 0x60) return ...;`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+210500b41f00027108010054080401511f1d007188040054e90500102a79a8b829010a8b20011fd6088402511f1d0071a8030054090600102a79a8b829010a8b20011fd62000805221000014400080521f000014800080521d000014a00080521b000014e000805219000014000180521700001460018052150000148001805213000014a001805211000014e00180520f000014000280520d000014400280520b0000140004001100001952200000b9027c001b220400b94200000b220800b940041c52200c00b9c0035fd600781f53c0035fd670ffffff78ffffffd0ffffff80ffffff88ffffffd0ffffff90ffffff98ffffff80ffffff88ffffff90ffffffb0ffffff98ffffffa0ffffffb0ffffffa8ffffff
+</bytechunk>
+<bytechunk space="ram" offset="0x101000" readonly="true">
+080401511f1d0071a8000054090300102a79a8b829010a8b20011fd61f800171e1010054200180520f000014200080520b00001440008052090000148000805207000014a000805205000014e000805203000014000180520100001400781f53c0035fd6007c081bc0035fd6c0ffffffc8fffffff0ffffffd0ffffffd8fffffff0ffffffe0ffffffe8ffffff
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="k"/>
+<symbol space="ram" offset="0x101000" name="m"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 k(uint4 x,int4 *p);</com>
+  <com>parse line extern int4 m(int4 x);</com>
+  <com>lo fu k</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option switchmerge off</com>
+  <com>lo fu k</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SWITCHSPLIT #1: k prints one switch, m one, the unmerged k two" min="5" max="5">switch\(x\)</stringmatch>
+<stringmatch name="SWITCHSPLIT #2: only the unmerged k prints the range split" min="1" max="1">0x81 &lt;= x</stringmatch>
+<stringmatch name="SWITCHSPLIT #3: one default jump in k, two in the unmerged k" min="3" max="3">goto label_[0-9a-f]+;</stringmatch>
+<stringmatch name="SWITCHSPLIT #4: m prints the equality test as a case" min="1" max="1">case 0x60:</stringmatch>
+<stringmatch name="SWITCHSPLIT #5: only the unmerged m prints the equality test" min="1" max="1">if \(x == 0x60\)</stringmatch>
+<stringmatch name="SWITCHSPLIT #6: m returns once for 0x60 in each run" min="2" max="2">return 0x117;</stringmatch>
+</decompilertest>

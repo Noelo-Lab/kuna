@@ -50,6 +50,24 @@ use kuna_console::assertions::{Body, Directive};
 pub(crate) use kuna_console::assertsyntax::parse_directive as parse_one;
 pub(crate) use kuna_console::assertsyntax::parse_directive_flag as parse_flag;
 
+/// The run's directives with the `--types` declarations ahead of the caller's
+/// own, so an `--assert` on the same function is applied last and wins.
+pub(crate) fn with_types(
+    types: &[String],
+    cpp: Option<&str>,
+    assertions: Vec<Directive>,
+) -> Result<Vec<Directive>, String> {
+    if types.is_empty() {
+        return match cpp {
+            Some(_) => Err("--types-cpp needs a --types <file.h|dir> to preprocess".into()),
+            None => Ok(assertions),
+        };
+    }
+    let mut all = kuna_console::kuna_cheader::load_types(types, cpp)?;
+    all.extend(assertions);
+    Ok(all)
+}
+
 /// Where a directive's console line goes in the generated script.
 ///
 /// The slots are forced, not stylistic: a `readonly` range must precede `read
