@@ -1,6 +1,7 @@
 //! Typed aggregate field stores remain observable by the next call.
 use crate::common;
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[test]
 fn emitted_partial_global_record_preserves_every_field() {
@@ -116,7 +117,7 @@ int main(void) {{
                 String::from_utf8_lossy(&built.stderr)
             );
             assert!(
-                Command::new(&exe).status().unwrap().success(),
+                Command::new(&exe).capped_status().unwrap().success(),
                 "{compiler} {level}: {body}"
             );
             let _ = std::fs::remove_file(exe);

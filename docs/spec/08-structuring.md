@@ -522,6 +522,23 @@ COPY itself; `decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
 respecting cover, up to the COPY as well. A call, or a statement whose result a
 printed statement between them reads (`n = v & 1;` ahead of a loop over
 `v = strtoul(...)`), keeps its place, and the header goes without it.
+Upstream sorts the arms of a switch by label, and the `default:` arm sorts under
+whatever label its table entry carries, so it prints first or between two cases.
+An arm whose code ends in a call that does not return prints nothing that stops
+it, so the arm printed after it reads as the code it falls into — `default:
+die(...);` followed by `case 1: return "[*]";` shows an edge the program does not
+have, and a reader takes it at its word. After the sort,
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_switchcaseorder.rs
+(order_cases)` keeps the label order and every fall-through chain together and
+moves the arms that would read wrong: the group holding `default:` after the
+other arms (the order authors write), and an arm whose last basic block has no
+successor and ends in a call rather than a return
+(`kuna_switchcaseorder.rs (ends_unstopped)`) after all of those. Only the last of
+several such arms can end the switch, so each of the others is printed with a
+`break;` after its call (as in the `usage(0); break;` of a getopt loop). This is
+a correctness fix with no option: no order it changes printed anything the
+program does.
+
 `blockaction.rs (ActionNormalizeBranches)` runs in the `jumptable` and
 `normalize` action groups, not the C-emitting `decompile` group. When a
 two-successor conditional branch is the only user of a predicate that can be
@@ -1355,6 +1372,81 @@ census reads the plan: a left-out jump keeps no label alive, and
 the target of a `break;` inside a merged switch is the block after the switch
 that is printed. The plan only changes which arm a value is printed under,
 never which code runs for it. It applies to the C switch form only.
+
+### looptest — the test at the top of a rotated loop
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_looptest.rs
+(loop_tests)`, read by the C printer
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (PrintC::emit_block_do_while_c)`,
+`PrintC::emit_block_if`). An optimizing compiler rotates a loop: `while (c) body`
+becomes `if (c) do body while (c);` (gcc's loop header copying), and the `if`
+disappears when the compiler proves `c` on entry. The structurer recovers the
+`BlockDoWhile` that is in the binary, so a loop the source tests at the top
+prints as a guarded do-while. Under `option looptest proven` (the default) the
+plan, made at the top of body emission like `switchmerge`'s, marks the
+do-while loops that print as `while (c) { body }` and the guard `if` nodes that
+print without their test. The p-code is not touched.
+
+*Top test.* The latch is the last leaf of the loop body and ends in the
+`CBRANCH`; the header must have one entry edge and one back edge (from the
+latch), and no goto may target it. Moving the test to the top is the same
+program when the condition reads, at the top of iteration k+1, what it read at
+the bottom of iteration k. So every leaf of the printed condition (following
+implied ops, which must call nothing and store nothing) that is defined inside
+the loop must be the latch input of a header MULTIEQUAL in the MULTIEQUAL's own
+HighVariable, or a varnode that input is a COPY of. A COPY source in another
+HighVariable of the same type prints as the MULTIEQUAL's variable while the
+condition is printed (`do { q = *p; p = q; } while (q)` prints `while (p)`). A
+condition that reads any other body value (`do c = getc(); while (c != '\n')`)
+keeps the bottom test, and so does a loop whose carried variable has an
+instance in the stack frame: an optimizer that rotates loops keeps their
+counters in registers, so such a loop comes from unoptimized code, whose bottom
+test is the source's own.
+
+*Entry test.* The first top test must agree with the binary, which runs the
+body once before testing. The entry test is the condition with each carried
+value replaced by its entry value (the MULTIEQUAL input from the entry edge),
+built as an expression over the varnodes' defining ops and put in a normal
+form: COPY and CAST are transparent, constants fold, commutative operands are
+ordered, comparisons become `==`, unsigned `<` or signed `<` with a constant
+on the right and a negation flag (`0 < n` and `n != 0` meet, unsigned
+`x < 1` is `x == 0`), `x == x + n` is `n == 0`, `p == &p[n]` is `n == 0`
+(C pointer arithmetic), and a zero test sees through a zero or sign extension
+and a multiply or shift by a constant that cannot wrap the extended value. Two
+LOADs are equal when they are the same op, or when their addresses are equal
+and both read the memory the loop header sees: a LOAD the printed condition
+evaluates, one in the guard block after its last call or store, or one in pure
+blocks between the guard and the loop. The loop prints top-tested when the
+entry test folds to true (`i = 0; do … while (i < 16)`), when it equals the
+condition of an edge that dominates the header and whose target has that edge
+as its only way in (no LOADs in this case), or when it equals the condition of
+a guard. Implication is not enough: with a signed count, `n > 0` and
+`p != &a[n]` disagree for negative `n`, so such a loop keeps its do-while.
+
+*The guard.* Walking back from the header's entry edge over straight-line
+blocks reaches the guard, a block ending in a `CBRANCH` with one edge toward
+the loop. When its condition (with the edge's polarity) equals the entry test,
+the guard is left out if dropping it keeps the program: its printed condition
+calls nothing; the blocks between it and the loop hold no call, STORE or LOAD
+(a LOAD the guard protects must not run when the loop is skipped); and the
+skip edge goes either to the loop's own exit block or to a bare return equal to
+the one at the loop's exit (both void, the same varnode, or equal expressions).
+When the skip edge reaches the loop exit, every variable those blocks write
+must have all its instances defined in them or in the loop, so the code after
+the loop cannot read it on the skip path. Three tree shapes qualify, checked on
+the flattened lists around the guard `if`: `if (G) { pre; do … while (f); }`
+and `if (G) { pre; do … while (f); return K; } return K;` print the
+condition's statements and the body (the trailing return is hidden, and a void
+function's elided trailing return moves to the loop's), and `if (!G) return K;
+pre; do … while (f); return K;` prints only the condition's statements. A
+guard that is an `else` arm, or whose shape is anything else, stays, and then
+the loop stays a do-while too: a source author does not write a test twice.
+
+`option looptest binary` prints every loop where the binary tests it.
+`assume` also prints the test at the top for a loop that passes the top-test
+rule but has no entry proof (including one whose guard stays); it is wrong
+when the source was a do-while whose first test can fail. The plan applies to
+the C do-while form only.
 
 ### returndup — the whole-block duplicator (angr `ReturnDuplicatorHigh`)
 

@@ -242,7 +242,7 @@ impl<'a> EmulateFunction<'a> {
 
     /// C++ `EmulatePcodeOp::getLoadImageValue(AddrSpace*,uintb,int4)` — pull a
     /// value out of the program load image (the read-only switch table).
-    fn get_load_image_value(&self, spc: &Rc<AddrSpace>, off: uintb, sz: int4) -> KunaResult<uintb> {
+    pub(crate) fn get_load_image_value(&self, spc: &Rc<AddrSpace>, off: uintb, sz: int4) -> KunaResult<uintb> {
         if self.readonly_image_required {
             if sz <= 0 || off.checked_add(sz as u64 - 1).is_none() {
                 return Err(KunaError::lowlevel(

@@ -1,5 +1,23 @@
 # Stage-model issue testcases
 
+`kuna-boolbranch.xml` checks option `boolbranch` on gcc -O0 x86-64: a `jle`
+over `mov $1`/`mov $0` returns through a kept `if` (fold: `return 0 < x;`), an
+if/else assignment of 1 and 0 keeps its branch, and a flag whose arm also
+updates memory stays a flag. A `cmovg` and an `__builtin_add_overflow` flag
+that is set by a jump and only tested still fold. `kuna-boolbranch-thumb.xml`
+checks the same on Thumb: an `ite gt` block folds under both values, a `ble`
+over two `movs` keeps its `if` under `keep`.
+
+`kuna-calleepreservesargs.xml` checks registers a leaf callee leaves alone:
+an argument register set once before two calls of a leaf that reads it, and a
+killed-by-call register kept across a leaf that only reads memory. Its control
+leaves a stale register off a callee that never reads it.
+
+`kuna-ppc32-computed-lr.xml` follows a local target stored in LR rather than
+returning the input argument. Its CLI companion covers both byte orders,
+conditional transfers, joins, stack reloads and ordinary ABI returns, and
+compiles and executes the emitted C at O0/O2.
+
 `kuna-narrowed-call-input.xml` checks a call through a typed field whose
 argument was narrowed to two bytes before the field's prototype was forced on
 the call: the function decompiles and passes the sum widened to the parameter.
@@ -20,6 +38,13 @@ Only an `objc_msgSend$<sel>` selector stub steps over the register it fills.
 caller builds in `x8` for a hidden `pacda` is not the next call's first
 argument, with the modifier computed and folded to a constant. A tagged
 address and a result buffer in `x8` are the controls.
+
+`kuna-aif-slot-edges.xml` compares stock and section-relative AIF inventories
+on stripped x86-64 and MIPS32 ELFs. The six-byte x86 grid covers padded
+entries, section boundaries, overlapping decodes and terminal padding before
+zero fill. The four-byte MIPS grid checks both direct and padding-adjusted
+entry candidates with delay slots. The fixture languages reuse the stock
+decoders and calling conventions through the stage corpus's `specs/` directory.
 
 `ghangr-go-paniccheck-return.xml` checks that a returning Go panic helper
 falls through to the terminal `runtime.gopanic` call. It also checks the
@@ -44,10 +69,25 @@ of the `ret 8` function g see both pushed arguments popped, so a later `[esp+4]`
 reads the caller's own argument. A second caller reaches g through a register
 and sees the same pop.
 
+`kuna-varargsave.xml` checks option `varargsave` on gcc -O2 x86-64 variadic
+functions. `report` and `scaled` hand their `va_list` to a callee, so the
+register-save prologue folds: they print `...` after their named parameters
+(`scaled` keeps its named `double`) and no `if (al)` block. `firstd` reads its
+saved `xmm0` slot itself and `dsum` indexes the save area through a register,
+so both keep the stores. The off run prints `report` with fourteen parameters.
+
 `kuna-condexe-heritage.xml` checks that conditional execution removes a re-test
 whose block holds unread flag writes once the register space has had a heritage
 pass (`deadcode delay register 50` keeps those writes alive). Before the fix the
 second `if (x)` stayed.
+
+`kuna-looptest.xml` checks option `looptest` on six x86-64 loops laid out as
+gcc -O2 rotates them. A pointer loop whose `n == 0` guard returns separately, a
+counted loop wrapped in `if (n > 0)` and a list walk whose test reads the copy
+of the next pointer print `while (c)` with the guard gone; `i = 0; do ...
+while (i != 16)` prints `while` because its entry test folds to true. A guard
+`n > 0` in front of a `!=` latch and a retry loop whose test reads a body value
+stay do-while. `option looptest binary` restores every do-while and guard.
 
 `kuna-switchmerge.xml` checks option `switchmerge`: two AArch64 range-checked
 jump tables on one selector, the second reached when the first's range check
@@ -73,6 +113,14 @@ tables whose defaults both jump to the same code; it prints as one switch with
 both tables' labels and one `default:`. In `m` the default arm starts with
 `if (x == 0x60) return ...;`, which prints as `case 0x60:`. The off run keeps
 the `if` forms.
+
+`kuna-switcharmorder.xml` checks the order a switch prints its arms in and the
+`default:` arm of a void function's tail switch. `force_str`'s `default:` arm
+ends in a call to the no-return `die` and prints after the cases, with nothing
+after it; it used to print between `case 0:` and `case 1:` and fall into
+`case 1:`. `enable` ends with a switch the source gave no `default:`, so the
+`default: return;` the duplicated epilogue leaves is not printed; `option
+voidtailreturn off` keeps it.
 
 `kuna-jumptableslots.xml` checks the slot bound on a guard-bounded table past
 `jumptablemax`. gcc -O2 guards `x <= 0x28ff` and indexes a 41-entry table with
@@ -100,6 +148,11 @@ and callers across signed, unsigned, Boolean and full-width results.
 and narrowed callback results. Its CLI companion compiles complete C and Rust
 output under the same asserted prototypes and checks every byte value and call
 counts. The original fixture is only decompiled.
+
+`kuna-calleefloatreads.xml` checks calls to callees with no prototype that
+read a float argument register: an x86-64 `xmm0` written after a `pxor`, an
+ARM hard-float double forwarded or computed in `d0`, and a variadic callee
+that must not receive a leftover `xmm0`.
 
 `kuna-callproto.xml` checks a tail jump through a variadic function pointer with
 nothing stated, with a call-site prototype, and with one parameter placed in a
@@ -349,6 +402,21 @@ correctness fix, exercised with defaults and `nanignore none`.
 GCC and Clang and checks NaN, signed zeros, infinities and finite values
 against the original functions.
 
+`kuna-fcmp-unordered.xml` pins every AArch64 condition read after `fcmp`, six
+ARM branches after `vcmp` and `vmrs`, and three compiled functions. The flags
+are NZCV=0011 for unordered operands, so `gt` prints as `b < a` and `le` as
+`!(b < a)`, never `a != b && !(a < b)`, which a NaN makes true. A strict
+correctness fix with one pass.
+
+`kuna-framepublish-seh.xml` pins an MSVC SEH prologue that links its
+registration record into `fs:[0]` and allocates a local below it with
+`push ecx`. The frame publication holds the record's handler and state
+stores, while the garbage ECX store to the local below the record, which the
+`and` overwrites with only the `fs:[0]` link STORE in between, is still dead
+and does not make ECX a parameter. It also pins a pointer into the middle of
+a local array whose reader indexes below it: all four element stores print. A
+strict fix with one pass.
+
 `kuna-globalorder.xml` pins issue [#871](https://github.com/Noelo-Lab/kuna/issues/871)
 and case-local global stores at the `indexaliasguard global` default: a
 computed global update stays after an aliasing load, and a switch's stores
@@ -397,6 +465,7 @@ readability defaults measured on the angr `fmt` corpus binary, DIV-34+ in
 | `kuna-panicloc.xml` | A Rust panic site passes `&'static core::panic::Location`, which printed as a bare address: `panic_fmt(..,0x2002c0)` | P1 external refinement (`kuna-analysis` `strings/kuna_panicloc.rs` finds the records by shape, types them `core::panic::Location` and names them after file, line and column) | `option panicloc on\|off` (default on, Rust images only) |
 | `kuna-brktrap.xml` | AArch64 SLEIGH lifts `brk #imm` to a jump through `SoftwareBreakpoint`, which flow truncated to a call that returns, so a function whose overflow or bounds check ends in a compiler trap printed as `void` and passed the value it returns to the trap, or returned a value fabricated from a call through it | P2 flow classification (`p2_lift/kuna_brktrap.rs` matches the lowered `brk` with a compiler trap immediate, `#1`, `#1000`, `#0x5500`-`#0x55ff`, `#0xc470`-`#0xc473` or `#0xf003`, and `flow.rs` ends the flow there with a no-return halt; `#0xf003` also reads its `__fastfail` code from `w0`, so the code prints; `brk #0xf000`, `brk #0` and `brk #0x800` are controls) | none (strict fix): one pass at the default |
 | `kuna-ebpf-elf-map-reloc.xml` | kuna [#1652](https://github.com/Noelo-Lab/kuna/issues/1652): a `clang --target=bpf -c` object did not load (EM_BPF 247 had no language), and with `--target` the `R_BPF_64_64` map reference was written as one 64-bit word over the start of the 16-byte `lddw`, so `prog` printed `halt_baddata()` | P1 loader (`kuna-analysis` `loadimage_object.rs` maps EM_BPF to `eBPF:LE\|BE:64:default`; `loader/reloc_apply.rs` patches `R_BPF_64_64` into the two `imm` halves at +4 and +12, `R_BPF_64_32` into the call `imm` as `(S + A - P) / 8 - 1` with the REL addend `(imm + 1) * 8`, so a static callee named by the `.text` section symbol is the one its `imm` selects, in either byte order, and `R_BPF_64_ABS64/ABS32/NODYLD32` as data words; a pspec `<default_symbols>` label outside the default code space at a call target names the callee, so `call 1` prints `bpf_map_lookup_elem`) | none (strict fix): one pass at the default |
+| `kuna-boundschecked.xml` | GCC passes a size given as both capacity and count to a C11 Annex K function by copying x3 into x1 (`mov x3,#64; mov w2,#0; mov x1,x3`), and call recovery dropped the later register, so `memset_s(p, 64, 0, 64)` printed `memset_s(v1,0x40,0)`; a Thumb `memcpy_s` also took its caller's pushed `r3` as a fifth argument (GCC 15 -O2 -fPIC shapes, AArch64 both byte orders and Thumb-2) | P1 external refinement (`kuna-analysis` `protos/kuna_libcsigs.rs` seeds the Annex K rows onto the imports) | none (always on) |
 
 `kuna-storecopyeffects.xml` pins the AArch64 address-spill store across calls,
 repeated stores, a load between calls, and a truly dead-store control. The
@@ -572,3 +641,8 @@ fixture source is `decompiler/crates/kuna-cli/tests/fixtures/assert_callee.c`.
 `kuna-rust-process-exit.xml` preserves exit status and preceding stores while
 removing dead trap flow after a known Rust standard-library process exit.
 Different namespaces and a longer similarly named function retain their callers.
+
+`kuna-piecepathology.xml` checks that a function handing back a call declared
+`int` returns 4 bytes on x86-64, not the whole of rax: `next_byte` inlines
+`getc_unlocked` and refills through `int __uflow(FILE *)`, whose upper half of
+rax is undefined. `kuna-regpiece.xml` pins the same fix on `sh_openpipe`.

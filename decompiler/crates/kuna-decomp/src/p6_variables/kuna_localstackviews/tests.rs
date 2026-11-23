@@ -554,6 +554,63 @@ fn unrepresented_frame_publication_refuses_the_whole_candidate() {
     );
 }
 
+/// A frame address stored through a pointer into the heap is published; stored into an
+/// `alloca` area or through a cursor into a local array it only reaches another frame slot.
+#[test]
+fn frame_publication_excludes_stores_into_frame_based_slots() {
+    for destination_kind in ["param", "alloca", "cursor"] {
+        let (mut fd, _) = frame_data();
+        let manage = fd.get_arch().manage();
+        let register = manage.get_space_by_name("register").unwrap().clone();
+        let ram = manage.get_default_data_space().unwrap().clone();
+        let at = |pc| Address::new(ram.clone(), pc);
+        let sp = fd.new_varnode(8, &Address::new(register.clone(), 0), None);
+        let sp = fd.set_input_varnode(sp).unwrap();
+        fd.vbank_mut()
+            .get_mut(sp)
+            .unwrap()
+            .set_flags_pub(crate::varnode::varnode_flags::spacebase);
+        let binary = |fd: &mut Funcdata, pc, code, a, b| {
+            let op = fd.new_op(2, at(pc));
+            fd.op_set_opcode_code(op, code);
+            fd.op_set_input(op, a, 0).unwrap();
+            fd.op_set_input(op, b, 1).unwrap();
+            fd.obank_mut().mark_alive(op);
+            fd.new_unique_out(8, op).unwrap()
+        };
+        let offset = fd.new_constant(8, (-32i64) as u64);
+        let local = binary(&mut fd, 0x1000, OpCode::CPUI_INT_ADD, sp, offset);
+        let destination = match destination_kind {
+            "param" => {
+                let param = fd.new_varnode(8, &Address::new(register.clone(), 8), None);
+                fd.set_input_varnode(param).unwrap()
+            }
+            "alloca" => {
+                let size = fd.new_varnode(8, &Address::new(register.clone(), 16), None);
+                let size = fd.set_input_varnode(size).unwrap();
+                binary(&mut fd, 0x1002, OpCode::CPUI_INT_SUB, sp, size)
+            }
+            _ => {
+                let phi = fd.new_op(2, at(0x1003));
+                fd.op_set_opcode_code(phi, OpCode::CPUI_MULTIEQUAL);
+                fd.obank_mut().mark_alive(phi);
+                let cursor = fd.new_unique_out(8, phi).unwrap();
+                let step = fd.new_constant(8, 8);
+                let next = binary(&mut fd, 0x1004, OpCode::CPUI_INT_ADD, cursor, step);
+                fd.op_set_input(phi, local, 0).unwrap();
+                fd.op_set_input(phi, next, 1).unwrap();
+                cursor
+            }
+        };
+        let op = store(&mut fd, 0x1005);
+        let space = fd.new_constant(8, ram.get_index() as u64);
+        fd.op_set_input(op, space, 0).unwrap();
+        fd.op_set_input(op, destination, 1).unwrap();
+        fd.op_set_input(op, local, 2).unwrap();
+        assert_eq!(frame_published(&fd), (destination_kind == "param").then_some(-32), "{destination_kind}");
+    }
+}
+
 #[test]
 fn native_marker_copy_requires_exact_live_original_write_inside_admitted_storage() {
     for mode in [

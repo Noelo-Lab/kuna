@@ -22,7 +22,12 @@ pub fn pic_slots(file: &object::File<'_>) -> Vec<kuna_decomp::kuna_ppc32piccalls
     }).collect()
 }
 
-fn slots(file: &object::File<'_>) -> (bool, BTreeMap<u64, Vec<u8>>) {
+/// Caller-scoped slots that bind to this defined function.
+pub fn defined_slots(file: &object::File, entry: u64) -> impl Iterator<Item = u64> {
+    super::elf_plt::defined::slots_for(file, entry)
+}
+
+pub(super) fn slots(file: &object::File<'_>) -> (bool, BTreeMap<u64, Vec<u8>>) {
     if file.architecture() != Architecture::PowerPc
         || !matches!(file.kind(), ObjectKind::Executable | ObjectKind::Dynamic)
     {
@@ -141,7 +146,7 @@ pub(super) fn word(file: &object::File<'_>, bytes: &[u8]) -> u32 {
 }
 
 /// Every complete stub in the word-aligned executable sections.
-fn stubs(file: &object::File<'_>) -> Vec<(u64, Stub)> {
+pub(super) fn stubs(file: &object::File<'_>) -> Vec<(u64, Stub)> {
     let mut out = Vec::new();
     if file.architecture() != Architecture::PowerPc {
         return out;

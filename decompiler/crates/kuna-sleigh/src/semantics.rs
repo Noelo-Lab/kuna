@@ -132,6 +132,12 @@ pub struct ConstTpl {
 }
 
 impl ConstTpl {
+    pub(crate) fn remap_spaces(&mut self, remap: &crate::sleighbase::SpaceRemap<'_>) {
+        remap.opt_space(&mut self.value_spaceid);
+    }
+}
+
+impl ConstTpl {
     /// C++ `ConstTpl(void)`: a real constant 0.
     pub fn new() -> ConstTpl {
         ConstTpl::default()
@@ -625,6 +631,15 @@ pub struct VarnodeTpl {
 }
 
 impl VarnodeTpl {
+    pub(crate) fn remap_spaces(&mut self, remap: &crate::sleighbase::SpaceRemap<'_>) {
+        let VarnodeTpl { space, offset, size, unnamed_flag: _ } = self;
+        for c in [space, offset, size] {
+            c.remap_spaces(remap);
+        }
+    }
+}
+
+impl VarnodeTpl {
     /// C++ `VarnodeTpl(int4 hand,bool zerosize)`: varnode built from a
     /// handle; if zerosize is true, set the size constant to zero.
     pub fn new_from_handle(hand: i32, zerosize: bool) -> VarnodeTpl {
@@ -849,6 +864,15 @@ pub struct HandleTpl {
 }
 
 impl HandleTpl {
+    pub(crate) fn remap_spaces(&mut self, remap: &crate::sleighbase::SpaceRemap<'_>) {
+        let HandleTpl { space, size, ptrspace, ptroffset, ptrsize, temp_space, temp_offset } = self;
+        for c in [space, size, ptrspace, ptroffset, ptrsize, temp_space, temp_offset] {
+            c.remap_spaces(remap);
+        }
+    }
+}
+
+impl HandleTpl {
     /// C++ `HandleTpl(void)`.
     pub fn new() -> HandleTpl {
         HandleTpl::default()
@@ -1070,6 +1094,15 @@ pub struct OpTpl {
 }
 
 impl OpTpl {
+    pub(crate) fn remap_spaces(&mut self, remap: &crate::sleighbase::SpaceRemap<'_>) {
+        let OpTpl { output, opc: _, input } = self;
+        for vn in output.iter_mut().chain(input.iter_mut()) {
+            vn.remap_spaces(remap);
+        }
+    }
+}
+
+impl OpTpl {
     /// C++ `OpTpl(OpCode oc)`.
     pub fn new(oc: OpCode) -> OpTpl {
         OpTpl {
@@ -1230,6 +1263,20 @@ pub struct ConstructTpl {
     vec: Vec<OpTpl>,
     /// C++ `result` (nullable owned handle template)
     result: Option<HandleTpl>,
+}
+
+impl ConstructTpl {
+    /// Move every space reference onto the space of the same index in the
+    /// remap's manager.
+    pub(crate) fn remap_spaces(&mut self, remap: &crate::sleighbase::SpaceRemap<'_>) {
+        let ConstructTpl { delayslot: _, numlabels: _, vec, result } = self;
+        for op in vec {
+            op.remap_spaces(remap);
+        }
+        if let Some(result) = result {
+            result.remap_spaces(remap);
+        }
+    }
 }
 
 impl ConstructTpl {

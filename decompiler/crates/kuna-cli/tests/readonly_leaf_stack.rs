@@ -2,6 +2,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 const SOURCE: &str = r#".text
 .globl frame_choice
@@ -99,7 +100,7 @@ fn conditional_store_remains_associated_with_its_return_load() {
                 String::from_utf8_lossy(&output.stderr)
             );
             assert!(
-                Command::new(&executable).status().unwrap().success(),
+                Command::new(&executable).capped_status().unwrap().success(),
                 "{compiler} {level}\n{code}"
             );
         }

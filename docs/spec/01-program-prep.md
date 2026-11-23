@@ -332,14 +332,19 @@ attribute blobs are malformed, truncated or conflicting, and `--target` always
 wins.
 
 (kuna) PowerPC32 ELF APU requirements are read by
-`decompiler/crates/kuna-analysis/src/loader/kuna_ppcaputarget.rs` when the
-default-off `ppcapu` load-time option is on. SPE and embedded floating-point APUs
-then select the e500 decoder. The option stays off until the e500 model recovers
-scalar call arguments held in its 64-bit registers. Shared requirements such as
-ISEL do not identify a processor and retain the generic decoder, including its
-AltiVec support. `EF_PPC_EMB` alone likewise does not select a processor. Unknown
-APU versions and malformed or unsupported requirements keep the generic decoder
-and print a `[kuna target]` note. Explicit `--target` takes precedence. A
+`decompiler/crates/kuna-analysis/src/loader/kuna_ppcaputarget.rs` unless the
+`ppcapu` load-time option is `off`. Under its default `isel`, an ISEL, SPE or
+embedded floating-point requirement, or the embedded ABI flag alone, selects the
+`isel` variant: the generic PowerPC32 registers, AltiVec and calling convention
+plus ISEL, so it decodes everything the generic model does. `ppcapu on` instead
+selects e500 for SPE and embedded floating-point requirements; it stays explicit
+because the e500 model does not yet recover every scalar call argument held in its
+64-bit registers. The e500 `isel` writes the low word and preserves the
+destination’s upper SPE word. PMR, RFMCI and cache locking alone retain the
+generic decoder.
+A nonempty note owner must be NUL-terminated before the loader can skip an
+unrelated note. Unknown APU versions and malformed or unsupported requirements keep the generic
+decoder and print a `[kuna target]` note. Explicit `--target` takes precedence. A
 selected language never falls back to a different ISA if its specification is
 missing. The explicit e500mc target uses the standard PowerPC32 FPR argument and
 return convention, while its 64-bit integer results keep the explicit `r3:r4`
@@ -3635,6 +3640,35 @@ moves.
   no signature gets worse. A function that returns through a `_restgpr_N_x` tail
   branch, which the return recovery reads as an opaque call, stays `void` (89),
   and in 18 the value now shows as that tail call's argument.
+  The C11 Annex K bounds-checked functions whose declarations agree across
+  implementations have rows of their own: `memset_s`, `memcpy_s`, `memmove_s`,
+  `strcpy_s`, `strncpy_s`, `strcat_s`, `strncat_s` and `sprintf_s`. The
+  signatures come from `gcc -aux-info` over mingw-w64's headers, and
+  `memset_s`'s, which mingw-w64 lacks, from FreeBSD's `<string.h>`; both define
+  `errno_t` as `int` and `rsize_t` as `size_t`, as Annex K does. `snprintf_s`,
+  which some libraries give an extra count, and `strtok_s` and `qsort_s`, whose
+  Annex K and Microsoft parameter lists differ, are left out. The rows matter
+  for more than types. GCC loads a size passed both as the capacity and as the
+  count into the later register and copies it into the earlier one
+  (`mov x3,#64; mov w2,#0; mov x1,x3` on AArch64, `movs r3,#64; movs r2,#0;
+  mov r1,r3` in Thumb-2), and call recovery rejects a register trial whose
+  value also reaches an earlier, active argument of the same call
+  (`check_call_double_use`, chapter 04), so without a row `memset_s(p, 64, 0,
+  64)` printed `memset_s(v1,0x40,0)`. With the rows each call takes exactly its
+  declared arguments: a Thumb `memcpy_s` no longer takes the `r3` its caller
+  pushed for alignment as a fifth one, and `sprintf_s` prints its format
+  string. The rows are not seeded at the PLT stub of a name the image itself
+  defines: a library that carries its own `memset_s(void *, int)` or
+  `strcpy_s(char *, const char *)` and calls it through its stub would be
+  handed the declared count (`memset_s(v1,0x40,a2,a3)`), so its calls keep
+  what call recovery finds. On a large AArch64 shared library that imports them, every printed
+  `memset_s`, `memcpy_s` and `strncpy_s` call has four arguments, where 577 of
+  627, 329 of 489 and 6 of 376 had three, six or two. The `int` result has the
+  effect any `int`-returning row already has (`puts`, `fclose`): 28 `void`
+  functions there now return a value, 10 the result of a bounded tail call, 13 a
+  result a bounded call leaves in `w0`, and 5 PLT stubs of other imports by
+  propagation; and three calls to an undeclared import that takes no arguments
+  are passed the preceding call's result.
   Two complex-valued rows, `cexpf` and `cexp`, are
   seeded with the DWARF pass's complex pair types (below), and only where that
   layout applies to the value's width, so a call passes and returns the value
@@ -9255,7 +9289,7 @@ start fingerprint shared by at least 4 already-discovered functions
 (`FINGERPRINT_THRESHOLD`) — the exhaustive gap oracle for functions with no
 static or accepted pointer-table root. The option's four values are cumulative
 settings of one walk (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_aif.rs`):
-`off` runs no walk, `on` runs it with the byte-granular cursor, `strict` with the
+`off` runs no walk. With the ordinary cursor policy, `on` runs the byte-granular walk, `strict` the
 aligned cursor described below, and `precise` adds upstream's second fingerprint
 test to `strict`. The `aggressive` preset sets `strict`; the whole-binary drivers
 inject `on` on a non-x86-64 image when the selected mode names no value.
@@ -9307,13 +9341,30 @@ cursor: it advances to the next 4-byte boundary rather than the next byte, and a
 candidate is probed only when it is 4-byte aligned **or** it is the first byte of its
 hole. The hole-start exemption is the whole distinction the setting draws — a hole
 boundary is evidence, since the recursive-descent walk decoded up to exactly there
-and stopped, while an interior byte the cursor slid onto is a guess. The stride is 4
-on every architecture deliberately: 16-byte alignment kills nine tenths of the bad
+and stopped, while an interior byte the cursor slid onto is a guess. The ordinary strict cursor uses a stride of 4
+deliberately: 16-byte alignment kills nine tenths of the bad
 Cortex-M entries but takes four fifths of the real ones with it. Declining a probe
 also *recovers* entries rather than only removing them, because an accept advances
 the cursor past the accepted body — a phantom accepted one halfword inside a literal
-pool consumes the real function behind it. `aif on` keeps the byte-granular cursor
-exactly.
+pool consumes the real function behind it. `aif on` uses the ordinary byte-granular cursor unless the processor specifies a slot width.
+
+A processor spec can declare a positive byte width with
+`kuna.aif.sectionInstructionStride`. When the object provides section headers,
+the gap walk probes slots counted from each executable section's start, including
+address zero. A restricted decode window clips the walk while retaining the
+original section's slot positions. The entire first slot must be available in
+the section and decoder window. Known instruction extents cover their bytes
+even when another decode starts inside them or they cross a section boundary.
+The entry instruction's own encoding must fit in the slot. On a delay-slot
+processor the body walk still consumes the branch and its delay slot together.
+The same bounds apply when padding, a literal pool or a recovered prologue moves
+the entry. When padding supplies the destination, AIF tests that slot before
+validating the body of the run. The body must reach the destination before AIF
+publishes it. A straight padding path ending at a trap is refused even when
+zero fill follows the trap.
+A replacement processor spec that omits the width restores the ordinary policy.
+Segment-only and raw mappings carry no section
+origin, so the selected AIF mode supplies the ordinary cursor policy there.
 
 (kuna, GH-299) The complementary reject the issue asks for — refuse a candidate
 bracketed by a known function — is the bracket rule of
@@ -9792,6 +9843,56 @@ output — discovery-only `kuna functions` runs about 6% longer on a Cortex-M im
 because it discovers and reports more functions — and is amortized away end to end,
 where the extra bodies dominate the extra discovery.
 
+**Interior entries** (always on wherever the walk's functions are committed,
+i.e. with `listing` and `funcstart_patterns`; kuna;
+`decompiler/crates/kuna-analysis/src/listing/kuna_falseentry.rs (interior_entries)`)
+remove the entries the speculative oracles above plant inside real functions. The
+prologue-pattern scan, the ARM frame scan and the gap walk judge a candidate by its
+first bytes, and on optimized code those bytes occur mid-function: a shrink-wrapped
+function pushes its frame after an early test (`cmp; bgt out; push {r4,r5,lr}`), a
+variadic one saves its argument registers before the frame push, a switch case or a
+block the compiler moved past the return opens with a push, and when the gap walk
+skips a real entry whose first two mnemonics are rare it accepts the next block that
+looks like a prologue. The decompiler stops the real function's flow at such an
+entry (`funcboundflow`, §2) and decompiles the rest as a function of its own, so the
+real function loses the code past it. The pass reads the finished partition and every
+entry stream of this commit (the load-time entries included) and drops, through
+`AnalysisOutput::interior_entries` at the commit, the candidates that are another
+function's code. Code is **live** when it is reachable from an attested entry over
+static branch, call and switch-case targets and over fall-throughs that provably
+continue — the trust notion of `poolextents`, made lenient in two ways: an indirect
+call is taken to return, and a jump through a register counts as a return of the
+function it ends; a direct call to a function no path of which returns and a user
+operation still end the flow — or, failing that, from a
+Thumb code pointer stored in data, in a literal pool the Listing proves, or naming a
+candidate. An entry is **attested** when a symbol, an entry oracle, a load-time
+oracle other than the pattern scan, a code-pointer scan, a call table or a direct call
+(from any candidate's decoded code) names it, and an attested entry is never dropped:
+a hand-written routine can fall into a second, separately called one. Three facts make
+an unattested candidate interior. (1) A live instruction that is not a call, a user
+operation, padding or zero fill ends exactly at it and continues there, by falling
+through or as the skip of a predicated instruction (`it eq; bxeq lr`); an
+unconditional branch to the next address is a tail call and does not count. (2) The
+flow of the surviving entry before it, entering no callee and stepping onto no other
+surviving entry, reaches a conditional branch or a switch case (the walk's resolved
+tables, or the run of Thumb code pointers stored right after an `ldr.w pc,[rN,rM,lsl
+#2]`) that targets it. (3) That flow runs into it and also branches past it, at or
+before the next surviving entry: a shrink-wrapped function whose real entry only a
+speculative oracle found. Facts 2 and 3 read the preceding entry's own flow, so a
+function whose first instruction heads a loop keeps its entry — its loop branch is
+reached only through it. When the code that runs into an interior entry is reached
+only from a code pointer no oracle accepted (the pointer-entry scan needs an
+undefined gap, and the planted entry splits it), that pointer target is emitted as an
+entry in its place, unless live code runs into it too. Measured on the 63 stripped
+ARM decbench binaries against their unstripped twins (34,019 symbol starts), entries
+at no symbol fall from 1,616 to 708, no symbol start is dropped and the ten entries
+added are symbol starts. On the fixture `cortexm_falseentry_le32` the push after a
+predicated return, the push after a `cbz` past the return and the push inside a
+pointer-only handler stop being functions, the handler's real start becomes one, and
+a pattern-only function after padding and a call that never returns stays one. A
+strict no-op on x86-64, whose drivers leave `funcstart_patterns` off, and on the XML
+datatest path.
+
 Driver defaults (kuna): `kuna decompile-all` and `kuna decompile` inject
 `option listing on` unless the caller names `listing` (DIV-15/DIV-22) — without it
 the default-on no-return propagation is a structural no-op and a stripped binary's
@@ -9840,7 +9941,13 @@ widened by every veneer whose slot carries a dynamic relocation against a symbol
 the image defines at that body's address
 (`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (export_alias_class)`). The
 join is again the relocation's binding, not the name, and a query by address keeps
-the plain class.
+the plain class. A named query also checks ARM and AArch64 PLT code, PowerPC32
+absolute and executable BSS PLT entries, and PowerPC64 ELFv1 descriptor stubs.
+The stub must reach the slot relocated against that definition. On ELFv1 the
+symbol names a validated descriptor whose entry is the queried function. The
+stub’s own slot access is excluded from the caller list, and so is a `data`
+row whose value merely equals the stub’s or slot’s address (an immediate or a
+page base in position-independent code), which a query by that address still lists.
 
 An x86-64 ELF memory-indirect call can have a proven local target through an
 immutable GOT slot. `decompiler/crates/kuna-analysis/src/listing/kuna_gotcall.rs`
@@ -10430,6 +10537,15 @@ RAX,[funcval]; CALL RAX` is a `call` row to the funcval word in `__rodata`, whic
 holds a code address and is not code. A `--from` answer
 about anything other than code decoded in a code section, and a `--to` answer while
 such targets exist, say so in a note.
+
+(kuna, GH #1696) For an incoming JSON query the walk retains the lowest-address
+direct call site it decoded to the selected address outside the walked sections
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (stopped_direct_call_site)`).
+When that exact address belongs to the unwalked executable-section coverage, is
+absent from the canonical function inventory, and has no declared data symbol,
+the CLI reports it as a call destination candidate. A jump, an indirect call, or
+a call to another alias does not provide that evidence. This annotation leaves
+discovery and the default project-export selection unchanged.
 
 (kuna) Both of those rules read a reference out of *one instruction's* p-code,
 which is the whole answer on x86-64 and no answer at all in 32-bit
@@ -11750,8 +11866,19 @@ the C++ inheritance chain modeled by composition:
   statics become an explicit `LanguageDatabase` value the bootstrap owns), find the
   `.pspec`/`.cspec`/`.sla` files, build the SLEIGH translator, and run the
   `Architecture::init` tail (type factory, prototype models, print language). The
-  upstream translator-reuse cache is deliberately not ported — it affects build
-  speed only — and is the recorded loss here. (kuna) A spec root is a
+  upstream translator-reuse cache, which hands a later architecture the same
+  `Sleigh` object, is not ported: each architecture owns its translator and its
+  address spaces, which the `.ldefs` truncations and the `.cspec` then modify.
+  (kuna) Instead, in a process that turns reuse on (below), a thread keeps the
+  decoded form of each `.sla` it has decoded twice
+  (`decompiler/crates/kuna-sleigh/src/kuna_slacache.rs`), keyed by the file's
+  full contents. A later translator from the same bytes is a copy of that
+  template (`decompiler/crates/kuna-sleigh/src/sleighbase.rs
+  (SleighBase::clone_decoded)`): a new space set is built from the `.sla`'s space
+  records, every space reference in the symbol table and the constructor
+  templates moves to the space of the same index in it, and the register
+  cross-reference and context variables are rebuilt as a decode builds them. The
+  copy equals a fresh decode and shares no space with the template. A spec root is a
   directory or a tree held in memory
   (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_memoryspecs.rs
   (MemorySpecs)`): a table of `/`-separated relative paths and their contents.
@@ -11762,7 +11889,14 @@ the C++ inheritance chain modeled by composition:
   `decompiler/crates/kuna-console/src/engine.rs (language_database)` scans a
   list of roots once. A bootstrap over the result skips the `.ldefs` scan and
   reads only its own language's `.sla`, `.pspec` and `.cspec`
-  (`LanguageDatabase::read_spec`), so threads may share one database.
+  (`LanguageDatabase::read_spec`), so threads may share one database. A runner
+  whose spec trees cannot change while it runs and that builds many
+  architectures, such as the datatest harness, calls
+  `decompiler/crates/kuna-console/src/engine.rs (reuse_specs)` instead: from
+  then on every bootstrap over the same on-disk roots gets a copy of the first
+  scan of them, and translators are copies of kept `.sla` templates as above.
+  A kept template costs about as much memory as one translator, which is why
+  reuse is the runner's choice and a single-binary run never keeps one.
 - `decompiler/crates/kuna-decomp/src/p1_partition/xml_arch.rs (XmlArchitecture)`
   binds the decompiler's XML `<binaryimage>` container — the datatest corpus's
   entire load path, and the reason the analysis tier can be default-on without

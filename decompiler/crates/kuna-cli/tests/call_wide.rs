@@ -7,6 +7,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[derive(Clone, Copy)]
 struct Case {
@@ -409,7 +410,7 @@ fn replay(case: Case, sources: &[&Path], header: &Path) {
                     .arg(&executable);
                 process::required_output(&mut command);
                 let run = Command::new(&executable)
-                    .output()
+                    .capped_output()
                     .expect("run actual emitted C/header");
                 assert!(run.status.success(),
                     "{} {} {compiler} {level}: actual C/header disagreed with native oracle, exit {:?} \
@@ -683,7 +684,7 @@ fn replay_mips(case: Case, sources: &[&Path], header: &Path, support: &Path) {
             run_arguments(&arguments);
             let run = Command::new(&qemu)
                 .arg(&executable)
-                .output()
+                .capped_output()
                 .expect("run emitted C on MIPS");
             assert!(run.status.success(),
                 "{} {} {level}: cross-MIPS actual C/header disagreed with native oracle, exit {:?} \
@@ -782,7 +783,7 @@ fn replay_selected_mips(case: Case, source: &Path, header: &Path, selected: &str
         .unwrap();
         let run = Command::new(&qemu)
             .arg(&executable)
-            .output()
+            .capped_output()
             .expect("run selected actual C against unchanged native callees");
         assert!(run.status.success(),
             "{} {selected} {level}: selected actual C/header disagreed with native oracle, exit {:?} \

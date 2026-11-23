@@ -224,6 +224,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 | `docs/missing-ghidra-analyses.md` | The `kuna-analysis` tier: the analyzer gap vs Ghidra, pass contract, commit gating. |
 | `docs/ghidra-integration.md` | kuna as Ghidra's decompiler core (architecture + wire protocol). |
 | `docs/web-integration.md` | The WASM/browser front-end and the project site. |
+| `docs/sleigh-specs.md` | Adding a processor module Ghidra lacks, or changing a vendored SLEIGH spec: the files, the compiler oracle, the counts and tests to update. |
 | `docs/devcontainer.md` | The reproducible build container + cross-arch fixture builds. |
 | `docs/nightly.md` | The nightly CI: full gates plus a decbench sample (score and speed changes night to night). |
 | `docs/release.md` | The MAJOR.MINOR version scheme (`VERSION` file + release count, `make version`) and the binary release CI. |

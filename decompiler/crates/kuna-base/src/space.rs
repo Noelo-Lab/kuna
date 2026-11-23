@@ -1628,6 +1628,16 @@ impl AddrSpace {
     /// non-`LowlevelError`: no lookup in the tree returns one, and the only
     /// caller is the console's address parser, where a swallowed one resurfaces
     /// as a hex-parse rejection of the same token.
+    ///
+    /// (kuna) A token that is neither a register name nor starts with a number
+    /// is an error, and so is anything after the name or number other than a
+    /// complete `:size`/`+offset` suffix. The C++ `strtoul` fallback returned
+    /// offset 0 for an unknown name, so `no_such_register` silently became the
+    /// register at offset 0 (`pc` on AArch64), and ignored trailing text
+    /// (`x0:junk` read as `x0` with size 0). A name the speculative probe does
+    /// not resolve is retried with the exact lookup as written, then probed in
+    /// upper and lower case, before it is rejected. A number's suffix is read
+    /// from the end of the number, so a leading sign (`+4:2`) is not read twice.
     pub fn read(&self, s: &str, size: &mut i32, manage: &AddrSpaceManager) -> KunaResult<u64> {
         // JoinSpace::read: parse a comma-separated sequence of register
         // names / shortcut-prefixed offsets into a join record.
@@ -1682,34 +1692,51 @@ impl AddrSpace {
         }
         let bytes = s.as_bytes();
         let append = bytes.iter().position(|&c| c == b':' || c == b'+');
+        let name = match append {
+            None => s,
+            Some(append) => &s[..append],
+        };
         // try { getRegister } catch(LowlevelError) { absolute offset }
-        let point: Option<VarnodeStorage> = manage.register_lookup().and_then(|lookup| {
-            let name = match append {
-                None => s,
-                Some(append) => &s[..append],
-            };
-            lookup.probe_register(name)
-        });
-        let mut offset: u64;
-        match point {
-            Some(point) => {
-                offset = point.offset;
-                *size = point.size as i32; // cast: uint4 -> int4
-            }
-            None => {
-                // catch(LowlevelError): name doesn't exist
-                let (raw, consumed) = cxx_strtoul(bytes);
+        let mut point: Option<VarnodeStorage> =
+            manage.register_lookup().and_then(|lookup| lookup.probe_register(name));
+        let mut offset: u64 = 0;
+        let mut suffix = append;
+        if point.is_none() {
+            let (raw, consumed) = cxx_strtoul(bytes);
+            if consumed == 0 {
+                point = resolve_register_name(manage, name);
+                if point.is_none() {
+                    let space = &self.name;
+                    return Err(KunaError::lowlevel(if manage.register_lookup().is_some() {
+                        format!("{name:?} is not a register of this language or an offset in the {space} space")
+                    } else {
+                        format!("{name:?} is not an offset in the {space} space, and no register names are available")
+                    }));
+                }
+            } else {
+                if !suffix_is_complete(&bytes[consumed..]) {
+                    return Err(malformed_suffix(s));
+                }
                 offset = Self::address_to_byte(raw, self.wordsize);
+                *size = manage.get_default_size();
                 if consumed == bytes.len() {
                     // If no size or offset override: return "natural" size
-                    *size = manage.get_default_size();
                     return Ok(offset);
                 }
-                *size = manage.get_default_size();
+                suffix = Some(consumed);
             }
         }
-        if let Some(append) = append {
-            let expsize = get_offset_size(&bytes[append..], &mut offset);
+        if let Some(point) = point {
+            if let Some(append) = append {
+                if !suffix_is_complete(&bytes[append..]) {
+                    return Err(malformed_suffix(s));
+                }
+            }
+            offset = point.offset;
+            *size = point.size as i32; // cast: uint4 -> int4
+        }
+        if let Some(start) = suffix {
+            let expsize = get_offset_size(&bytes[start..], &mut offset);
             if expsize != -1 {
                 *size = expsize;
                 return Ok(offset);
@@ -1861,6 +1888,42 @@ impl AddrSpace {
     pub fn compare_by_index(a: &AddrSpace, b: &AddrSpace) -> bool {
         a.index < b.index
     }
+}
+
+/// (kuna) The register a non-numeric storage token names, for [`AddrSpace::read`]:
+/// the exact lookup of the token as written, which the speculative probe declined
+/// to make, then probes of its upper- and lower-case spellings (`rax` for x86's
+/// `RAX`). Only the written name reaches the exact lookup, which a host-backed
+/// lookup answers with a query.
+fn resolve_register_name(manage: &AddrSpaceManager, name: &str) -> Option<VarnodeStorage> {
+    let lookup = manage.register_lookup()?;
+    let folded = [name.to_ascii_uppercase(), name.to_ascii_lowercase()];
+    lookup.get_register(name).ok().or_else(|| folded.iter().find_map(|n| lookup.probe_register(n)))
+}
+
+/// (kuna) Is `rest` empty or exactly the `:size`, `:size+offset` or `+offset`
+/// suffix [`get_offset_size`] reads, with nothing left over?
+fn suffix_is_complete(rest: &[u8]) -> bool {
+    let number = |b: &[u8]| -> Option<usize> {
+        let (_, consumed) = cxx_strtoul(b);
+        (consumed > 0).then_some(consumed)
+    };
+    match rest.first() {
+        None => true,
+        Some(b':') => match number(&rest[1..]) {
+            Some(n) => {
+                let tail = &rest[1 + n..];
+                tail.is_empty() || (tail[0] == b'+' && number(&tail[1..]) == Some(tail.len() - 1))
+            }
+            None => false,
+        },
+        Some(b'+') => number(&rest[1..]) == Some(rest.len() - 1),
+        Some(_) => false,
+    }
+}
+
+fn malformed_suffix(s: &str) -> KunaError {
+    KunaError::lowlevel(format!("{s:?} has a malformed size or offset suffix"))
 }
 
 /// Get optional size and offset fields from string (C++ static
@@ -3728,5 +3791,29 @@ mod tests {
         let off = spc.read("0x1000+8", &mut size, &manager).unwrap();
         assert_eq!(off, 0x1008);
         assert_eq!(size, 8);
+    }
+
+    #[test]
+    fn test_space_read_rejects_a_token_that_is_neither_name_nor_offset() {
+        let mut manager = AddrSpaceManager::new();
+        manager.insert_space(Rc::new(ram_space(3))).unwrap();
+        manager.set_default_code_space(3).unwrap();
+        let spc = Rc::clone(manager.get_space(3).unwrap());
+        let mut size: i32 = 0;
+        for (token, named) in [("no_such_register", "no_such_register"), ("rax+2", "rax"), (":4", ""), ("", "")] {
+            let err = spc.read(token, &mut size, &manager).unwrap_err();
+            assert!(err.explain().contains(&format!("{named:?}")), "{token}: {}", err.explain());
+        }
+        for token in ["0x40zz", "8BOGUS", "0x10:", "0x10:2+", "0x10:2+4x", "0x10+"] {
+            let err = spc.read(token, &mut size, &manager).unwrap_err();
+            assert!(err.explain().contains("malformed"), "{token}: {}", err.explain());
+        }
+        let err = spc.read("rax+2", &mut size, &manager).unwrap_err();
+        assert!(err.explain().contains("no register names are available"), "{}", err.explain());
+        assert_eq!(spc.read("0", &mut size, &manager).unwrap(), 0);
+        assert_eq!(spc.read("0x10:2+4", &mut size, &manager).unwrap(), 0x14);
+        assert_eq!((spc.read("+4:2", &mut size, &manager).unwrap(), size), (4, 2));
+        let natural = manager.get_default_size();
+        assert_eq!((spc.read("+0x10", &mut size, &manager).unwrap(), size), (0x10, natural));
     }
 }

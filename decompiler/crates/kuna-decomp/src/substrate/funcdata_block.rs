@@ -284,6 +284,8 @@ impl Funcdata {
         }
         // stable_sort by CaseOrder::compare (label, then depth).
         cases.sort_by(crate::block::CaseOrder::compare);
+        // (kuna `switchcaseorder`) default and unstopped arms last.
+        crate::p8_structure::kuna_switchcaseorder::order_cases(self, &mut cases);
         if let Some(slot) = self.sblocks_mut().block_mut(sw).switch_caseblocks_mut() {
             *slot = cases;
         }
@@ -2576,18 +2578,9 @@ impl Funcdata {
         let share = self.get_arch().jumptable_share_partial;
         let mut owned: Option<Funcdata> = None;
         if !share || shared.is_none() {
-            let mut fresh = match self.build_jumptable_partial() {
-                Ok(p) => p,
-                Err(_) => return RecoveryMode::FailNormal,
-            };
-            // Mark the partial as a jump-table-recovery clone, then build its blocks
-            // and run the reduced "jumptable" universalAction over it (C++
-            // partial.truncatedFlow + allacts.setCurrent("jumptable") + perform).
-            fresh.set_flag_raw(crate::funcdata::funcdata_flags::jumptablerecovery_on);
-            if run_pipeline(&mut fresh, visited).is_err() {
-                // C++ catches LowlevelError, warns, and returns fail_normal.
+            let Some(fresh) = self.jumptable_partial(visited, run_pipeline) else {
                 return RecoveryMode::FailNormal;
-            }
+            };
             if share {
                 *shared = Some(fresh);
             } else {
@@ -2632,12 +2625,15 @@ impl Funcdata {
         let addr2 = partial.obank().get(partop).unwrap().get_addr().clone();
         jt.set_indirect_op_addr(partop, addr2);
         let res = if jt.is_partial() {
-            let targets = self.get_override().multistage_targets(&addr).map(<[Address]>::to_vec);
-            jt.recover_multistage(partial).map(|()| {
-                if let Some(targets) = targets {
-                    jt.kuna_adopt_multistage_targets(targets);
-                }
-            })
+            let recovered = jt.recover_multistage(partial);
+            // A failed re-entry must preserve its followed singleton. An ordinary
+            // restart uses the guarded targets established by the late model.
+            if self.get_override().multistage_targets(&addr)
+                .is_some_and(|targets| jt.kuna_adopt_multistage_targets(targets, recovered.is_err())) {
+                Ok(())
+            } else {
+                recovered
+            }
         } else {
             jt.recover_addresses(partial)
         };
@@ -2655,6 +2651,18 @@ impl Funcdata {
                 }
             }
         }
+    }
+
+    /// Build the SSA view of the flow decoded so far.
+    pub(crate) fn jumptable_partial(
+        &self,
+        visited: &crate::flow::VisitedMap,
+        run_pipeline: &mut crate::flow::JtPipelineFn<'_>,
+    ) -> Option<Funcdata> {
+        let mut partial = self.build_jumptable_partial().ok()?;
+        partial.set_flag_raw(crate::funcdata::funcdata_flags::jumptablerecovery_on);
+        run_pipeline(&mut partial, visited).ok()?;
+        Some(partial)
     }
 
     /// Build the partial Funcdata for jump-table recovery: a fresh function

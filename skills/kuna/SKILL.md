@@ -187,6 +187,11 @@ issues; even a small error matters if it changes the checker's comparison.
 3. Change one relevant option for the affected function, keeping other settings fixed.
    Compare against the original result and evidence; stop once the uncertainty is resolved.
 
+For a custom processor with fixed instruction slots, keep the executable section
+headers when comparing function inventories. AIF counts slots from each section
+start when the processor spec declares `kuna.aif.sectionInstructionStride`.
+A segment-only ELF or raw mapping uses the ordinary cursor for the selected mode.
+
 Supply known prototypes/types with `--assert`, or function entries with
 `--define-function`; consult `kuna docs cli` for syntax. Save reusable assertions in
 an `@file` and check acceptance. `--assert` requires decompilation without `--stream`

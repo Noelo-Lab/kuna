@@ -33,6 +33,85 @@ reaches the architecture only through the
 live implementation is
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (ArchFlowEnv)`.
 
+PPC32 `blr` and its conditional forms are not necessarily ABI returns: LR can
+hold a locally computed code address. Before return processing discards that
+target, `decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppc32lrflow.rs (classify)`
+propagates raw p-code values over the function's blocks to a fixed point.
+Constants, combinations of proven values and loads from immutable image data are
+re-followed as indirect branches;
+ordinary incoming LR values, saved copies and unproved reloads remain returns.
+An image load requires readable bytes in the code address space, read-only and
+nonvolatile properties across its full width, and no preceding untracked store
+or call on any incoming path. A fixed address alone is not proof of a code
+pointer: writable slots can hold a saved incoming LR and remain unproved.
+The proof tracks exact stack stores and reloads, invalidates overlapping writes,
+projects known constants into narrow register views in either byte order,
+forgets memory across calls and respects each callee's preserved registers. It
+makes no claim when the bounded analysis runs out of work or loses provenance.
+Explicit flow assertions win. Newly reached code is checked again before the
+caller-local import proof runs. Reclassified LR targets discard the low two bits
+and use the 32-bit instruction address, including with eight-byte registers;
+QEMU confirms a target with a low bit set reaches the same instruction. This
+classification repair has no option.
+
+Automatic branch overrides are temporary discovery decisions. The proof keeps
+the values from each path together through joins. It evaluates each calculation
+within one path and collects the resulting destinations. A block can retain up
+to eight distinct states. If it exceeds that bound, only facts shared by all
+incoming states survive the join. Each surviving state must prove a destination
+before flow can install the table. A known conditional outcome or dispatch target
+restricts the edges that its state can reach. Masking and logical right shifts
+preserve known comparison bits when a condition register also contains an
+unknown status bit. The proof checks the recovered destination set after each
+expansion. A mismatch triggers another flow pass with the proven
+addresses and address-based case labels. When a newly completed table forms
+a loop back to its own dispatch, the proof must resolve each incoming edge
+to one destination. Flow copies the work before the transfer and uses direct
+edges for those paths, so a switch exit cannot hide a repeated dispatch.
+A converted direct tail call is
+rechecked against LR at the call site. When another computed destination is
+possible, flow follows the instruction again as an indirect branch. If one
+incoming edge proves an LR restore while another proves a computed transfer,
+the returning edge receives a closed copy of the work before the transfer.
+This preserves the call on paths that still prove its destination. A restart
+derives these decisions again without changing explicit caller assertions.
+Calls, further branches and other contexts that cannot be copied safely cause
+a diagnostic instead of publishing an unproved branch. An unknown branch
+decision or a call after the incoming return address is observed may select
+paths based on that address. The proof retains that possibility at joins
+and declines to classify subsequent LR transfers on those paths. An
+unconditional store of the incoming LR followed by an independently proven
+constant transfer can still reach its destination. Computations carry dependence
+on the incoming LR to their results. A branch predicate, indirect target,
+memory address or escaping value can expose that dependence. An unused
+register result leaves the proof intact. The proof also accounts for partial
+stores of the incoming LR, partial overwrites of a saved LR slot and unresolved
+loads that may alias it. A known store that completely overwrites the slot
+discards the old fact. An equality constraint can make an apparent target the
+caller's return address. The proof conservatively retains such returns without
+solving general path constraints. Proof work is bounded across discovery and
+revalidation together; exhaustion cannot validate a temporary decision.
+Entry registers begin unproved: an input register can already contain the
+return address. A move from an input into LR alone is not evidence of a
+computed branch. An explicit flow assertion remains available when the caller
+knows that an otherwise unproved target is a branch.
+Idempotent bitwise copies and the e500 zero extension of a four-byte address
+preserve its stack or incoming-return identity in an eight-byte register.
+
+Ordinary code never proves a constant LR, so the discovery round first runs
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppc32lrflow.rs (may_return_constant_lr)`,
+a single-state pass whose joins take the union of every path and context. It
+records only which bits of a location may be known zero or one, and which
+incoming-stack offset an address may have. Each operation over-approximates
+the proof's own transfer: a constant needs every input possibly constant, the
+partial-bit rules keep the bits they could know, calls and user operations
+forget what the proof forgets, a store to one known stack offset replaces that
+slot, and a store to an unknown offset may reach any slot. Temporaries are
+dropped on edges that leave an instruction; a temporary read after such a drop
+without being written again is unknown. If no LR return can see a fully known
+LR on any path, the round has no site, and the multi-state fixed point does
+not run.
+
 In 64-bit code spaces, SLEIGH display operands marked as code addresses retain
 that interpretation through their nested display subtables. Their evaluated bit patterns
 print as unsigned hexadecimal addresses even when bit 63 is set; ordinary
@@ -92,6 +171,16 @@ including its conditional forms. Its address mode still advances SP by four
 bytes and its PC write preserves interworking. Other PC loads retain their
 existing branch behavior; an explicitly prepared LR retains the indirect-call
 form. This is a SLEIGH correctness repair, without an inference option.
+
+The 16-bit Thumb `stmia Rn!,{list}` always writes the base back, adding four
+bytes per listed register, and disassembles with the `!`. Upstream gave it
+`ldmia`'s rule, which skips the writeback when `Rn` is in the list, so after
+`stmia r0!,{r0,r1}` the base kept its entry value. `ldmia` keeps that rule,
+which is the architecture's for loads. The word `stmia` stores for a listed
+`Rn` is its entry value: the architecture defines that only when `Rn` is the
+lowest listed register and leaves it UNKNOWN otherwise, and the entry value
+is what QEMU stores there. This is a SLEIGH correctness repair, without an
+inference option.
 
 The SPARC floating-to-integer constructors use the integer result width:
 `fdtoi` and `fqtoi` write one 32-bit word through `fsrd`, while `fstox` and
@@ -2032,8 +2121,10 @@ limitation it shares with every architecture's register jump, rather than
 introducing it — a recovered single-entry table whose register is redefined on
 a back edge found after recovery is not staged again, so that later transfer is
 missing from the output, exactly as it is for an x86-64 `jmp *%rax` of the same
-shape. A flow override at the return keeps its classification, and off restores
-the spec's RETURN.
+shape. A flow override at the return keeps its classification, and off keeps
+the instruction's original flow kind in this pass. The decompiler leaves
+PPC32 returns through LR to the PPC32 classifier, which follows additional
+paths to the same transfer and distinguishes local jumps from returns.
 
 **(kuna) Re-entered indirect dispatches — `option constselectjump`, default
 `reentry`, `decompiler/crates/kuna-decomp/src/p2_lift/flow.rs (generate_ops_with_jumptables)`.**
@@ -2041,13 +2132,57 @@ A dispatcher loop jumps through one register, and each step's code loads the
 next step's address and jumps back. Flow recovers the dispatch's first target
 before that code is decoded, so upstream keeps a one-entry table and drops every
 later step. Under `reentry` (and `on`), a recovered in-bounds, non-override
-singleton table is provisional. After each round of table following,
+single-target table is provisional. A multi-target dispatch is also provisional
+when the jump forwards its target operand directly or through the transfer
+instruction's copies and alignment mask. For a table that reads its destinations
+from memory, an edge into the dispatch block can bypass the incoming range
+check, change the table base, or skip the load entirely. Flow compares the
+actual jump operand against its known destinations on these paths. It can
+also follow a local target supplied by the edge, including a target read
+from a proven constant address in immutable memory. For an edge through the
+load, flow checks whether a recovered case can reach its source. An acyclic
+edge from a sibling switch can share the guarded table without re-entering it.
+If a conditional re-entry repeats the range check, the finished flow graph
+can retain the table. Each incoming selector must have a proved range, and
+every value must read the original rows and reach a known destination.
+Before any of that, `decompiler/crates/kuna-decomp/src/p2_lift/kuna_returnbranch.rs (classify_indexed_edge)`
+replays the edge: the run from its block, after any call on it, then the
+suffix, reading immutable rows from the image.
+- If the replay proves nothing, it enumerates a bounded operation on the
+  index side of the row load: an AND with a mask below 1024 (only values
+  inside the mask), or a one-byte load or zero extension. Up to three such
+  operations are tried, nearest the jump first; one whose values disagree
+  passes to the next.
+- A conditional edge keeps only the values that take it.
+- When every value reads a recovered row and reaches a recovered destination,
+  the edge is part of the table, and the switch stays closed. Examples are a
+  bytecode loop that fetches and masks its next opcode, a `goto` back to the
+  dispatch with a re-masked or constant index, and a guard the edge
+  re-evaluates.
+- When a replay's row load, the load nearest the jump on the target's
+  dependencies, reads outside the rows, or the replay proves a target no row
+  supplies, the dispatch is opened. An example is a case that loads a new
+  table base. Other loads on the way are data, such as a bytecode fetch
+  through a pointer a case set to a constant address, or a global state
+  variable. They never open the dispatch; one outside the memory recovery
+  reached leaves the replay unproved. An enumerated operation opens it only
+  when every value it can carry escapes: a mask wider than the table, or a
+  zero the code cannot produce, may be unreachable.
+- When the replay cannot tell, an edge through the load keeps the recovered
+  table, as upstream does. Examples are a base or index register set outside
+  the run.
+- A row whose target lies inside its own dispatch suffix is the table itself.
+- A table that reads its destinations from memory is provisional only when it
+  has one target. A single-target table re-entered before its load, such as by
+  a jump back to its range check, is staged again.
+After each round of table following,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_indirectreturn.rs (reentry_edges)`
 collects the new direct branches and fallthroughs into previously decoded
 instructions, reading only the dead list's tail: flow appends what it
 generates and moves injected or inlined sequences only next to other new
 operations. A recovered table destination that is already decoded is an edge
-as well, since following it creates no operations. A re-entered table is
+as well, since following it creates no operations. Flow records each edge from
+its first discovery, including the original singleton. A re-entered table is
 followed again on every round, so its transfer/destination pairs are followed
 once each; other tables keep upstream's re-following, which on x86-64 gnulib
 `quotearg_buffer_restyled` already shapes the output.
@@ -2063,16 +2198,41 @@ dispatch instruction itself,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_returnbranch.rs (target_on_edge)`
 runs the edge's block and the dispatch instruction's own operations through
 the same `Prefix` evaluator as the entry proof, and a proven local constant
-extends the table without another partial decompile. Any other reaching edge
+extends the table without another partial decompile. Selectors are in addressable
+units. Flow scales them by the code-space word size and applies function-pointer
+alignment before checking locality and mapping. A basic singleton retains the
+emulated branch operand. Local extension keeps that operand and each arriving
+selector for case labels, including distinct values with the same byte address.
+When the original operands are unavailable and conversion can lose bits, flow
+requests SSA recovery. Any other reaching edge
 requests a full recovery once the locally proved frontier drains. At most 128
-such retries run per flow; every dispatch still pending when they run out
-keeps its targets and carries `Re-entered indirect jump may have more targets`,
-once each. A retry admits the constant-select model whatever `constselectjump`
-says except `off`, because the re-entry already shows the targets are one
-function's. A retry's failed second stage keeps the old model and targets and
-reports that warning; outside re-entry a failed second stage restores its model
-silently, as upstream does. `off` records no provisional table and restores
-upstream's flow.
+such retries run per flow. A successful retry must account for the local
+targets already followed. If it omits one, the union of the known targets
+stays reachable. A failed re-entry retry adopts a validated multistage hint
+instead when the hint covers the restored singleton. With `off`, flow skips discovery of additional local
+targets for a register dispatcher. In all three modes, an indexed bypass uses
+the computed address and can reveal a local case outside the original range.
+
+When recovery fails, is disabled, or exhausts its retries, flow keeps the
+unresolved dispatch until table following finishes. At the original jump it
+captures the computed operand once, after the instruction's side effects.
+It branches directly to each distinct known destination on equality and
+uses the ordinary indirect tail call and return for the remaining values.
+These operations share the jump instruction's address and require no unused
+instruction address for the call. An explicit table override retains its
+declared targets.
+
+For a transfer that may also return, the first SSA pass identifies the incoming
+return register or an entry-block load of the return at the initial stack
+pointer before any possible memory overwrite. A store to a proven disjoint
+entry-stack byte range preserves the saved return; an unknown pointer or even
+a partial overlap ends the proof. It follows the selector
+through copies, identity operations, merges and the transfer's own alignment
+mask. An incoming return address takes a separate conditional return. A
+parallel merge carries that decision and a defined selector on each edge,
+so a callback may use any address value and other uses of the original
+selector keep their definitions. Each SSA operand and edge in this walk is
+visited a bounded number of times, including loop-carried merges.
 
 A re-entered dispatch can also receive the caller's return address, and not
 always last: an early exit can reach it before the later steps are decoded.
@@ -2082,8 +2242,7 @@ the table ceiling. The return becomes the table's last, unlabelled address: a
 synthetic RETURN that `FlowInfo::kuna_return_stub` plants one byte past the
 jump, where no instruction is decoded, and that the table marks as its default
 case. If an instruction is already decoded there, the return destination is
-dropped with `Indirect jump caller return overlaps decoded code` rather than
-flowing into that instruction. Whatever the dispatcher block does, including a
+handled by the conditional return of an open dispatch. Whatever the dispatcher block does, including a
 delay-slot update, runs before that return exactly as it does before each case.
 Out-of-bounds or unmapped destinations retain one placeholder and do not make a
 singleton table provisional. The original transfer's mask is recorded from raw
@@ -2585,7 +2744,7 @@ literal address. When the model is admitted and both value-range models have
 declined, `kuna_constselectjump.rs (kuna_collect_const_destinations)` walks the
 MULTIEQUAL/COPY web behind the BRANCHIND input; if every reaching definition is
 a constant, the set becomes a fixed address table whose case labels are the
-target addresses themselves, and recovery proceeds as for any recovered table.
+raw branch inputs. The table holds their aligned byte destinations.
 The walk admits only MULTIEQUAL and COPY and requires at least one MULTIEQUAL
 and two distinct destinations, so it can never claim a shape either basic model
 already handles. Every destination must also sit within `0xffff` of the branch —
@@ -2613,8 +2772,8 @@ more entries records a multistage hint for its jump and restarts the function
 and recovers it through `jumptable.rs (JumpTable::recover_multistage)`. (kuna) The
 second stage runs on the same kind of partial, so it can fold the index again.
 The hint therefore also carries the targets the late model built
-(`overrides.rs (Override::multistage_targets)`). A second stage that again finds
-one address adopts them (`jumptable.rs (JumpTable::kuna_adopt_multistage_targets)`),
+(`overrides.rs (Override::multistage_targets)`). An ordinary second stage with a singleton
+adopts the guarded hint. A failed re-entry retry adopts it only if it covers the restored singleton (`jumptable.rs (JumpTable::kuna_adopt_multistage_targets)`),
 so flow follows every case and the late check below labels them. Each jump is
 restarted at most once. A jump is not restarted unless every value in the
 late model's range passes the guards on its path
@@ -3899,6 +4058,14 @@ This normalization removes no computation or memory effect. The existing
 ## Octeon integer targets
 
 Explicit BE Octeon/Plus/II/III language variants share the MIPS core while replacing the four CP2 load/store opcode meanings with bit-test branches. Their conditions are sampled before delay-slot execution. Integer extension arithmetic, comparisons, population counts and bitfield operations use ordinary p-code; II/III additionally expose indexed loads with exact width and signedness. Generic MIPS retains its opcode meanings and SPECIAL2 fallback; Octeon has no wildcard SPECIAL2 success.
+
+On Octeon II and III, CP0 register 31 selectors 2 through 4 name independent
+64-bit kernel scratch registers, `KScratch1` through `KScratch3`. Octeon III
+also exposes selector 5 as `KScratch4`. Both `mtc0`
+and `dmtc0` write the full GPR to these registers. A subsequent `mfc0`
+sign-extends the low word, while `dmfc0` reads all 64 bits. The processor
+profile marks each supported slot volatile so each transfer remains observable across
+calls and repeated writes.
 
 Both 64-bit address and 32-bit address (N32) variants have explicit soft-float compiler specifications; III also offers hard-float models. ELF selection and compiler conventions are described in chapters 01 and 04. System and crypto coverage remain separate from the integer and memory operations described here.
 

@@ -6,6 +6,7 @@
 pub mod funcdata_resolveflow;
 pub mod flow;
 pub mod kuna_ppc32piccalls;
+pub mod kuna_ppc32lrflow;
 pub mod kuna_armflowcontext;
 pub mod jumptable;
 pub mod kuna_emulatefunction;
@@ -78,3 +79,4 @@ pub mod kuna_indirectreturn;
 pub mod kuna_nullable_reloc;
 
 pub(crate) mod kuna_atomicxadd;
+pub(crate) mod kuna_opendispatch;

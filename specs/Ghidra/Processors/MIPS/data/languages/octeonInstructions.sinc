@@ -2,6 +2,9 @@
 # Fields/availability follow GNU Octeon opcode tables; arithmetic uses ordinary
 # p-code so it can be checked independently of an emulator's helpers.
 
+oct_rt: rt is rt { export rt; }
+oct_rt: rt is rt & rt=0 { local discarded:8 = 0; export discarded; }
+
 :bbit0 RSsrc, oct_bit, Rel16 is $(AMODE) & prime=0x32 & RSsrc & oct_bit & Rel16 {
     local taken:1 = ((RSsrc >> oct_bit) & 1) == 0;
     delayslot(1);
@@ -67,6 +70,28 @@
 }
 
 @ifdef OCTEON2
+# Keep the selector disjunction in one pattern so the enclosing instruction
+# can fall back to generic CP0 transfers for the other selectors.
+@ifdef OCTEON3
+OctKScratch: RD0 is RD0 & rd=31 & (sel=2 | sel=3 | sel=4 | sel=5) { export RD0; }
+@else
+OctKScratch: RD0 is RD0 & rd=31 & (sel=2 | sel=3 | sel=4) { export RD0; }
+@endif
+
+# Read the full register before narrowing so a word read does not create a
+# second, overlapping global in the decompiler.
+:mfc0 oct_rt, OctKScratch is $(AMODE) & prime=16 & copop=0 & oct_rt & OctKScratch & zero6=0 {
+    local value:8 = OctKScratch;
+    oct_rt = sext(value:4);
+}
+:dmfc0 oct_rt, OctKScratch is $(AMODE) & prime=16 & copop=1 & oct_rt & OctKScratch & zero6=0 {
+    oct_rt = OctKScratch;
+}
+# MTC0 writes the destination width. Kernel scratch registers are 64-bit.
+:mtc0 RTsrc, OctKScratch is $(AMODE) & prime=16 & copop=4 & RTsrc & OctKScratch & zero6=0 {
+    OctKScratch = RTsrc;
+}
+
 :lbx RD, RTsrc(RSsrc) is $(AMODE) & prime=0x1f & fct=0xa & sa=0x16 & RD & RTsrc & RSsrc {
     local addr:8 = RSsrc + RTsrc;
     RD = sext(*:1 addr);
