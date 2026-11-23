@@ -1,0 +1,27 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:golang">
+  <bytechunk space="ram" offset="0x100000" readonly="true">4885c97401c331c031dbc3</bytechunk>
+  <bytechunk space="ram" offset="0x100100" readonly="true">31dbc3</bytechunk>
+  <bytechunk space="ram" offset="0x100200" readonly="true">b80100000031dbc3</bytechunk>
+  <symbol space="ram" offset="0x100000" name="select_words"/>
+  <symbol space="ram" offset="0x100100" name="keep_low"/>
+  <symbol space="ram" offset="0x100200" name="one_low"/>
+</binaryimage>
+<script>
+  <com>parse line typedef struct ReaderWords { void *tab; void *data; } ReaderWords;</com>
+  <com>parse line extern ReaderWords select_words(void *tab,void *data,int8 present);</com>
+  <com>parse line extern ReaderWords keep_low(void *tab);</com>
+  <com>parse line extern ReaderWords one_low(void);</com>
+  <com>option outlang go</com>
+  <com>load function select_words</com><com>decompile</com><com>print C</com>
+  <com>load function keep_low</com><com>decompile</com><com>print C</com>
+  <com>load function one_low</com><com>decompile</com><com>print C</com>
+  <com>option outlang c</com>
+  <com>load function select_words</com><com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="A declared Go pointer pair returns the all-zero record" min="1" max="1">return ReaderWords\{\}</stringmatch>
+<stringmatch name="A declared Go pointer pair retains the payload on the live path" min="1" max="1">\.data = data$</stringmatch>
+<stringmatch name="A declared Go pointer pair retains the table from input on both live paths" min="2" max="2">\.tab = tab$</stringmatch>
+<stringmatch name="A declared Go pointer pair keeps the low nonzero constant distinct" min="1" max="1">ZEXT816\(1\)</stringmatch>
+<stringmatch name="The C view keeps its original zero-carrier expression" min="1" max="1">return \(ReaderWords\)ZEXT816\(0\);</stringmatch>
+</decompilertest>

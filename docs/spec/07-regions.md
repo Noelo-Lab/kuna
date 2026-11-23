@@ -689,5 +689,10 @@ unreachable blocks lets the ordinary dead-code pass remove unused comparison
 operands. The success arm and its memory accesses remain; length parameters used
 only by the eliminated comparison can disappear from the inferred signature.
 Straight-line panic stubs and conditionals with two panic successors are retained.
+On AArch64, the pass retains a branch to the exact `runtime.panicdivide`
+helper, including its ABI-suffixed names. AArch64 integer division yields
+zero for a zero divisor, and its lifted result preserves that case. Removing
+the panic edge would turn a Go divide-by-zero into a normal return. The
+helper's no-return fact and the other Go check folds still apply.
 This is a source-oriented destructive transform: `option gobounds off` preserves
 the actual checks for auditing. The Go language gate leaves the C corpus untouched.

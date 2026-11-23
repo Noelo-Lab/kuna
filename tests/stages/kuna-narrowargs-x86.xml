@@ -16,6 +16,7 @@
 </bytechunk>
 </binaryimage>
 <script>
+  <com>option typevote off</com>
   <com>map function r0x401000 store3</com>
   <com>lo fu store3</com>
   <com>decompile</com>

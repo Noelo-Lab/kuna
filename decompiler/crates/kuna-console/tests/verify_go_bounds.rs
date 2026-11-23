@@ -92,7 +92,15 @@ fn go_bounds_and_division_checks_with_explicit_panic_control() {
                 off.contains("runtime.panic"),
                 "{arch} {function} off: {off}"
             );
-            assert!(!on.contains("runtime.panic"), "{arch} {function} on: {on}");
+            // AArch64 SDIV returns zero on a zero divisor, so keep Go's panic edge.
+            if (arch, function) == ("arm64", "divide") {
+                assert!(
+                    on.contains("if (") && on.contains("runtime.panicdivide(); // no-return"),
+                    "{arch} {function} on: {on}"
+                );
+            } else {
+                assert!(!on.contains("runtime.panic"), "{arch} {function} on: {on}");
+            }
             assert!(on.contains("return "), "{arch} {function}: {on}");
             if function == "before" {
                 assert!(

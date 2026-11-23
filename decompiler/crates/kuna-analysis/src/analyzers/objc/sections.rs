@@ -120,6 +120,11 @@ impl<'a> MachoImage<'a> {
         (owner == class).then_some(name)
     }
 
+    /// Every method symbol of the image with its address.
+    pub fn method_symbols(&self) -> impl Iterator<Item = (u64, &'a str)> + '_ {
+        self.method_symbols.iter().map(|(&addr, &name)| (addr, name))
+    }
+
     /// Whether the image was loaded from a dyld shared cache.
     pub fn in_cache(&self) -> bool {
         self.outside.is_some()

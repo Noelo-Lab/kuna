@@ -67,6 +67,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use kuna_base::address::Address;
 use kuna_base::space::{spacetype, AddrSpace};
@@ -77,7 +78,7 @@ use kuna_sleigh::translate::{AssemblyEmit, PcodeEmit, Translate};
 use object::read::{Object, ObjectSection, ObjectSegment, ObjectSymbol, ObjectSymbolTable};
 use object::SectionKind;
 
-use super::classify::classify;
+use super::classify::{absolute_branch_target, classify};
 use super::context::ContextPainter;
 use super::kuna_pcform::{Formed, PcForm};
 use super::kuna_picbase::{self, Ctx as PicCtx, PicBase};
@@ -85,6 +86,7 @@ use super::kuna_picpool::{self, GotImage, Insn, PicPool};
 use super::kuna_pltstub::PltStubs;
 use super::kuna_poolref::PoolImage;
 use super::kuna_regcarry::{self, Machine as CarryMachine};
+use super::kuna_calltable;
 use super::kuna_switchtable;
 use super::model::{FlowKind, FlowType, RawOp};
 #[path = "kuna_prefixreuse.rs"]
@@ -144,19 +146,20 @@ pub struct Xref {
     /// What kind of reference this is.
     pub kind: XrefKind,
     /// The referencing instruction's disassembly (`"CALL 0x00001030"`), empty if
-    /// the assembly emit produced nothing.
-    pub instruction: String,
+    /// the assembly emit produced nothing. Shared by every row with the same text.
+    pub instruction: Arc<str>,
 }
 
 /// Every reference edge the walk found, indexed both ways.
 pub struct XrefIndex {
-    /// Incoming edges, keyed by target VMA; sorted by source then kind.
-    by_target: BTreeMap<u64, Vec<Xref>>,
-    /// Outgoing edges, keyed by the referencing instruction's VMA.
-    by_source: BTreeMap<u64, Vec<Xref>>,
-    /// Outgoing edges, keyed by the entry of the function the source lies in;
-    /// sorted by target then source.
-    by_source_function: BTreeMap<u64, Vec<Xref>>,
+    /// Every edge once, sorted by target, then source, then kind, so a target's
+    /// incoming edges are one slice.
+    refs: Vec<Xref>,
+    /// Indices into `refs`, sorted by source, then target, then kind.
+    by_source: Vec<usize>,
+    /// Indices into `refs` keyed by the entry of the function the source lies
+    /// in; ascending, so sorted by target then source.
+    by_source_function: BTreeMap<u64, Vec<usize>>,
     /// Entry contexts proving each scoped `(instruction, target)` call edge.
     scoped_callers: BTreeMap<(u64, u64), BTreeSet<u64>>,
     /// Every instruction VMA the walk decoded (membership only).
@@ -170,6 +173,8 @@ pub struct XrefIndex {
     indirect_callers: BTreeSet<u64>,
     /// Forwarding veneers, keyed by function entry ([`veneer_at`]).
     veneers: BTreeMap<u64, Veneer>,
+    /// Verified ELF PLT stubs grouped by the function their relocation names.
+    export_plt: BTreeMap<u64, Vec<crate::loader::elf_plt::defined::Stub>>,
     /// The reverse of [`XrefIndex::veneers`]: a slot mapped to every veneer that
     /// forwards through it (normally one, but a program may emit several).
     veneers_of_slot: BTreeMap<u64, Vec<u64>>,
@@ -183,6 +188,8 @@ pub struct XrefIndex {
     /// The targets of decoded direct calls and branches that lie outside the
     /// sections the walk decodes.
     stopped: BTreeSet<u64>,
+    /// Lowest decoded direct call site for each focused, out-of-section target.
+    stopped_direct_calls: BTreeMap<u64, u64>,
 }
 
 /// Every decoded instruction and its intra-function successors, so each entry's
@@ -293,18 +300,37 @@ impl XrefIndex {
     /// veneer alias: another entry may use the same stub with a different base.
     pub fn add_scoped_call(&mut self, arch: &Architecture, function: u64, from: u64, to: u64) {
         self.scoped_callers.entry((from, to)).or_default().insert(function);
-        let instruction = self.by_source.get(&from).and_then(|r| r.first())
-            .map(|r| r.instruction.clone()).filter(|text| !text.is_empty())
+        let instruction = self.refs_from_instruction(from).first()
+            .map(|r| Arc::clone(&r.instruction)).filter(|text| !text.is_empty())
             .unwrap_or_else(|| arch.manage().get_default_code_space()
-                .map(|space| assembly(arch.translate(), from, space)).unwrap_or_default());
-        let edge = Xref { from, to, kind: XrefKind::Call, instruction };
-        for (edges, by_source) in [
-            (self.by_target.entry(to).or_default(), true),
-            (self.by_source.entry(from).or_default(), false),
-            (self.by_source_function.entry(function).or_default(), false),
-        ] {
-            edges.push(edge.clone());
-            sort_dedup(edges, by_source);
+                .map(|space| assembly(arch.translate(), from, space)).unwrap_or_default().into());
+        let at = self.insert(Xref { from, to, kind: XrefKind::Call, instruction });
+        let rows = self.by_source_function.entry(function).or_default();
+        if let Err(i) = rows.binary_search(&at) {
+            rows.insert(i, at);
+        }
+    }
+
+    /// The index of the `(from, to, kind)` row in `refs`, inserting `edge` when
+    /// there is none. Inserting shifts every later index, so this is for the rare
+    /// edge added after the walk.
+    fn insert(&mut self, edge: Xref) -> usize {
+        let key = (edge.to, edge.from, edge.kind);
+        match self.refs.binary_search_by_key(&key, |r| (r.to, r.from, r.kind)) {
+            Ok(at) => at,
+            Err(at) => {
+                for i in self.by_source.iter_mut().chain(self.by_source_function.values_mut().flatten()) {
+                    if *i >= at {
+                        *i += 1;
+                    }
+                }
+                let source_key = (edge.from, edge.to, edge.kind);
+                self.refs.insert(at, edge);
+                let refs = &self.refs;
+                let s = self.by_source.partition_point(|&i| (refs[i].from, refs[i].to, refs[i].kind) < source_key);
+                self.by_source.insert(s, at);
+                at
+            }
         }
     }
 
@@ -316,12 +342,16 @@ impl XrefIndex {
     /// Everything that references `vma` — call sites, branches, and data
     /// references — sorted by source VMA.
     pub fn refs_to(&self, vma: u64) -> &[Xref] {
-        self.by_target.get(&vma).map_or(&[], Vec::as_slice)
+        let lo = self.refs.partition_point(|r| r.to < vma);
+        let len = self.refs[lo..].iter().take_while(|r| r.to == vma).count();
+        &self.refs[lo..lo + len]
     }
 
     /// Every reference to an address in `range`, in target then source order.
     pub fn refs_into(&self, range: std::ops::Range<u64>) -> impl Iterator<Item = &Xref> {
-        self.by_target.range(range).flat_map(|(_, refs)| refs)
+        let lo = self.refs.partition_point(|r| r.to < range.start);
+        let len = self.refs[lo..].partition_point(|r| r.to < range.end);
+        self.refs[lo..lo + len].iter()
     }
 
     /// Everything that references the *callable* `vma` names, rather than the
@@ -337,7 +367,8 @@ impl XrefIndex {
     }
 
     /// [`refs_to`](Self::refs_to) over every member of `class`, minus the
-    /// members' own forwarding jumps; `class` is an [`alias_class`](Self::alias_class)
+    /// members' own forwarding jumps and any value that merely equals an ELF PLT
+    /// stub's or slot's address; `class` is an [`alias_class`](Self::alias_class)
     /// or an [`export_alias_class`](Self::export_alias_class).
     pub fn refs_to_class(&self, class: &BTreeSet<u64>) -> Vec<&Xref> {
         if class.len() == 1 {
@@ -349,14 +380,21 @@ impl XrefIndex {
         // veneer's exact instruction range and nothing wider: ordered containment
         // would swallow whatever code happens to follow the veneer in memory
         // before the next known entry, which is a real caller.
+        let stubs: Vec<_> = class.iter().filter_map(|m| self.export_plt.get(m)).flatten()
+            .filter(|s| class.contains(&s.entry) && class.contains(&s.slot))
+            .collect();
         let bodies: Vec<(u64, u64)> = class
             .iter()
             .filter_map(|m| self.veneers.get(m).map(|v| (*m, v.end)))
+            .chain(stubs.iter().map(|s| (s.entry, s.end)))
             .collect();
         let mut rows: Vec<&Xref> = Vec::new();
         for &member in class {
+            let stub_member = stubs.iter().any(|s| s.entry == member || s.slot == member);
             for r in self.refs_to(member) {
-                if bodies.iter().any(|&(lo, hi)| r.from >= lo && r.from < hi) {
+                if bodies.iter().any(|&(lo, hi)| r.from >= lo && r.from < hi)
+                    || (stub_member && r.kind == XrefKind::Data)
+                {
                     continue;
                 }
                 rows.push(r);
@@ -399,6 +437,10 @@ impl XrefIndex {
     /// value, never a shared name, and an unrelocated or undefined slot adds nothing.
     pub fn export_alias_class(&self, file: &object::File, entry: u64) -> BTreeSet<u64> {
         let mut class = self.alias_class(entry);
+        for stub in self.export_plt.get(&entry).into_iter().flatten() {
+            class.insert(stub.entry);
+            class.extend(self.alias_class(stub.slot));
+        }
         let (Some(relocs), Some(symbols)) = (file.dynamic_relocations(), file.dynamic_symbol_table())
         else {
             return class;
@@ -418,6 +460,11 @@ impl XrefIndex {
         class
     }
 
+    /// Whether a name query for this definition includes this ELF PLT entry.
+    pub fn is_export_stub(&self, definition: u64, address: u64) -> bool {
+        self.export_plt.get(&definition).is_some_and(|stubs| stubs.iter().any(|s| s.entry == address))
+    }
+
     /// The fixed pointer slot the forwarding veneer at `entry` jumps through, or
     /// `None` when `entry` is not a veneer.
     pub fn veneer_slot(&self, entry: u64) -> Option<u64> {
@@ -433,8 +480,9 @@ impl XrefIndex {
     }
 
     /// Everything the single instruction at `vma` references.
-    pub fn refs_from_instruction(&self, vma: u64) -> &[Xref] {
-        self.by_source.get(&vma).map_or(&[], Vec::as_slice)
+    pub fn refs_from_instruction(&self, vma: u64) -> Vec<&Xref> {
+        let lo = self.by_source.partition_point(|&i| self.refs[i].from < vma);
+        self.by_source[lo..].iter().map(|&i| &self.refs[i]).take_while(|r| r.from == vma).collect()
     }
 
     /// Everything the function entered at `entry` references: its callees, the
@@ -447,8 +495,9 @@ impl XrefIndex {
     pub fn refs_from_function(&self, entry: u64) -> Vec<&Xref> {
         self.by_source_function
             .get(&entry)
-            .map_or(Vec::new(), |refs| {
-                refs.iter()
+            .map_or(Vec::new(), |rows| {
+                rows.iter()
+                    .map(|&i| &self.refs[i])
                     .filter(|r| {
                         r.kind != XrefKind::Jump || self.function_containing(r.to) != Some(entry)
                     })
@@ -499,6 +548,12 @@ impl XrefIndex {
     /// pointed at and stopped short of.
     pub fn undecoded_flow_targets(&self) -> impl Iterator<Item = u64> + '_ {
         self.stopped.iter().copied().filter(|to| !self.decoded.contains(to))
+    }
+
+    /// A direct call site the walk decoded for an out-of-section focus address.
+    /// Call rows through import slots and inferred indirect calls cannot set it.
+    pub fn stopped_direct_call_site(&self, vma: u64) -> Option<u64> {
+        self.stopped_direct_calls.get(&vma).copied()
     }
 
     /// How many distinct instructions the walk decoded.
@@ -761,14 +816,8 @@ fn descend(
         return empty();
     };
 
-    let exec: Vec<(u64, u64)> = {
-        let mut r: Vec<(u64, u64)> = crate::entry::executable_sections(file)
-            .into_iter()
-            .map(|(lo, hi, _data)| (lo, hi))
-            .collect();
-        r.sort_unstable();
-        r
-    };
+    let coverage = super::ExecutableCoverage::from_object(file);
+    let exec = &coverage.ranges;
     // A relocatable object is laid out synthetically by the loader, so the raw
     // `object` view's section addresses are pre-link and describe a different
     // address space than the seeds live in (`reloc_object::is_synthetically_laid_out`).
@@ -805,8 +854,10 @@ fn descend(
     // this can prove. Detected before the walk because the base a function
     // *inherits* is established in a different function's prologue -- see
     // `kuna_picbase`. `None` (every non-PIC target, every image with no GOT)
-    // leaves the walk below byte-identical to the pre-feature one.
-    let picbase: Option<(PicCtx, PicBase)> = if !mapped.is_empty() {
+    // leaves the walk below byte-identical to the pre-feature one. A 64-bit
+    // image forms PC-relative addresses directly (RIP-relative, ADRP), so only
+    // a 32-bit one pays for probing every seed's prologue.
+    let picbase: Option<(PicCtx, PicBase)> = if !file.is_64() && !mapped.is_empty() {
         PicCtx::new(arch, data_space.as_ref()).and_then(|ctx| {
             kuna_picbase::detect(file, translate, &code_space, &ctx, &seed_set).map(|b| (ctx, b))
         })
@@ -820,6 +871,9 @@ fn descend(
     // read-only mapped section, and every relocatable object, whose sections are
     // not the runtime ones) leaves every reference below exactly as it was.
     let pool = if mapped.is_empty() { None } else { PoolImage::new(file) };
+    let got_calls = if mapped.is_empty() { None } else {
+        super::kuna_gotcall::GotCalls::new(file, arch, &exec_set)
+    };
     // (kuna) `picpool`: the GOT's file bytes, read through a PC-composed base.
     let got = if mapped.is_empty() { None } else { GotImage::new(file) };
     // (kuna) `pcform`: the addresses an instruction forms from its own address,
@@ -831,9 +885,23 @@ fn descend(
         n => n as usize,
     };
     let preserved = kuna_switchtable::preserved_registers(arch);
+    let named_set = std::cell::OnceCell::new();
+    let named = |at: u64| pool.as_ref().is_some_and(|p| named_set.get_or_init(|| p.code_named(file)).contains(&at));
+    // (kuna `switchextent`) A dispatch's function spans the seeds around it;
+    // its jump tables bound one no range check does (`kuna_switchextent`).
+    let function_tables = pool.as_ref().map(super::kuna_switchextent::FunctionTables::new);
+    let extent_entries = seed_set.clone();
+    let next_table = |from: u64, table: u64| {
+        let lo = extent_entries.range(..=from).next_back().copied()?;
+        let hi = extent_entries.range(from + 1..).next().copied();
+        function_tables.as_ref()?.next_after(translate, &code_space, data_space.as_ref(), &exec, lo, hi, table)
+    };
     let reach = kuna_switchtable::Reach {
         max_entries,
         preserved: &preserved,
+        settled: false,
+        named: Some(&named),
+        next_table: arch.switch_extent.then_some(&next_table),
     };
     let arm = file.architecture() == object::Architecture::Arm;
     let pic_image = pool.as_ref().map(|pool| kuna_picpool::Image {
@@ -859,6 +927,9 @@ fn descend(
     // (kuna) `switchtable`: the dispatches whose read stopped for want of a
     // decoded instruction ending at the key, as `(dispatch, mode, branch)`.
     let mut waiting: HashMap<u64, Vec<(u64, _, VarnodeData)>> = HashMap::new();
+    // (kuna `calltable`) Indexed calls with no range check, read once the walk
+    // has settled so a table that runs into the next one stops at its cases.
+    let mut call_sites: Vec<(u64, VarnodeData)> = Vec::new();
     let thumb_tables = sections_are_runtime
         .then(|| super::kuna_thumbswitch::HalfwordTables::new(file, data_space.clone(), max_entries))
         .flatten();
@@ -891,7 +962,7 @@ fn descend(
     let mut frame_cache = crate::aif::ArmFrames::default();
     let mut frame_partition = None;
     let mut walk_context = super::kuna_walkcontext::WalkContext::new(
-        prologues, translate, arch, &code_space, &exec,
+        prologues, translate, arch, &code_space, exec,
     );
     if arch.analysis_listing && arch.input_arm_isa_override {
         if let Some(context) = &mut walk_context {
@@ -929,6 +1000,7 @@ fn descend(
     // as a callee first stops at it, as it always has.
     let mut admitted: HashSet<u64> = HashSet::new();
     let mut stopped: BTreeSet<u64> = BTreeSet::new();
+    let mut stopped_direct_calls = BTreeMap::<u64, u64>::new();
 
     loop {
         // Drain known entries first, then merge recovered roots and focus addresses
@@ -938,7 +1010,7 @@ fn descend(
             Some(entry) => entry,
             None if prologues && !prologues_done => {
                 prologues_done = true;
-                let mut listing = partition_listing(&partition, &st.funcs, &exec);
+                let mut listing = partition_listing(&partition, &st.funcs, &coverage);
                 if gapwalk {
                     render_fingerprints(
                         &mut listing, &st.funcs, arch, translate, &code_space,
@@ -946,7 +1018,7 @@ fn descend(
                     );
                 }
                 let frames = crate::aif::raw_arm_frames(
-                    file, &listing, arch, translate, Rc::clone(&code_space), &exec, true, None,
+                    file, &listing, arch, translate, Rc::clone(&code_space), exec, true, None,
                 );
                 let found = frames.roots.clone();
                 frame_cache = frames;
@@ -1001,7 +1073,7 @@ fn descend(
                         let original = frame_partition.as_ref().unwrap();
                         let candidates = frame_candidates.iter().copied()
                             .filter(|root| st.funcs.contains(root)).collect();
-                        let mut corpus = partition_listing(&partition, &st.funcs, &exec);
+                        let mut corpus = partition_listing(&partition, &st.funcs, &coverage);
                         render_fingerprints(
                             &mut corpus, &st.funcs, arch, translate, &code_space,
                             &partition, fingerprint_contexts.as_ref(),
@@ -1067,6 +1139,7 @@ fn descend(
                         }).collect();
                         st = State::new(&seed_set, measure || preserve_bodies);
                         waiting.clear();
+                        call_sites.clear();
                         func_queue = seed_set.iter().copied().collect();
                         frame_candidates = reconciled.into_iter().collect();
                         frame_modes = Some(super::kuna_framemode::FrameModes::new(&frame_candidates));
@@ -1081,6 +1154,7 @@ fn descend(
                         focused.clear();
                         admitted.clear();
                         stopped.clear();
+                        stopped_direct_calls.clear();
                         walked.clear();
                         if let Some(context) = &mut walk_context { context.reset(); }
                         partition.clear();
@@ -1100,12 +1174,62 @@ fn descend(
                         &code_space,
                         &partition,
                         &st.funcs,
-                        &exec,
+                        &coverage,
                         fingerprint_contexts.as_ref(),
                         frame_partition.as_ref(),
-                        Some(&crate::aif::kuna_aifbracket::BracketEvidence::from_object(file, &exec)),
+                        Some(&crate::aif::kuna_aifbracket::BracketEvidence::from_object(file, exec)),
                     );
                     pending_focus.extend(found.into_iter().rev());
+                    continue;
+                }
+                // (kuna `calltable`) Nothing fell into these dispatches: a
+                // pointer table with no range check above it is a call table
+                // or nothing.
+                None if arch.analysis_calltable && !waiting.is_empty() && pool.is_some() => {
+                    let settled = kuna_switchtable::Reach { settled: true, ..reach };
+                    let mut left: Vec<_> = waiting.drain().flat_map(|(_, sites)| sites).collect();
+                    left.sort_unstable_by_key(|&(vma, ..)| vma);
+                    for (vma, _, branch) in left {
+                        let read = kuna_switchtable::register_targets(
+                            translate, &code_space, data_space.as_ref(), &|a| st.decoded.contains(&a), vma, &branch,
+                            pool.as_ref().unwrap(), &exec, &settled,
+                        );
+                        if !read.unbounded {
+                            continue;
+                        }
+                        let run = kuna_calltable::call_table_run(read.cases, arm, |t| {
+                            st.decoded.contains(&t) && !st.funcs.contains(&t)
+                        });
+                        if !kuna_calltable::is_call_table(&run, true, |t| st.funcs.contains(&t)) {
+                            continue;
+                        }
+                        let text = assembly(translate, vma, &code_space);
+                        for t in run.into_iter().collect::<BTreeSet<u64>>() {
+                            st.file(vma, t, XrefKind::Call, &text);
+                            if st.funcs.insert(t) {
+                                func_queue.push_back(t);
+                            }
+                        }
+                    }
+                    continue;
+                }
+                None if !call_sites.is_empty() && pool.is_some() => {
+                    for (vma, callind) in std::mem::take(&mut call_sites) {
+                        let read = kuna_switchtable::register_targets(
+                            translate, &code_space, data_space.as_ref(), &|a| st.decoded.contains(&a), vma, &callind,
+                            pool.as_ref().unwrap(), &exec, &reach,
+                        );
+                        let run = kuna_calltable::call_table_run(read.cases, arm, |t| {
+                            st.decoded.contains(&t) && !st.funcs.contains(&t)
+                        });
+                        let text = assembly(translate, vma, &code_space);
+                        for t in run.into_iter().collect::<BTreeSet<u64>>() {
+                            st.file(vma, t, XrefKind::Call, &text);
+                            if st.funcs.insert(t) {
+                                func_queue.push_back(t);
+                            }
+                        }
+                    }
                     continue;
                 }
                 None => {
@@ -1151,7 +1275,7 @@ fn descend(
                 let mut read = kuna_switchtable::TableRead::default();
                 if let Some(tables) = &a32_tables {
                     let decoded = |at: u64| st.decoded.contains(&at);
-                    read = tables.targets(translate, &code_space, &exec, &decoded, vma);
+                    read = tables.targets(translate, &code_space, exec, &decoded, vma);
                 }
                 let predicated = a32_tables.is_some() && is_predicated(translate, &code_space, vma);
                 if read.cases.is_empty() && read.stated.is_none() && read.gap.is_none() && !predicated {
@@ -1163,12 +1287,12 @@ fn descend(
                         vma,
                         Some(&branch),
                         p,
-                        &exec,
+                        exec,
                         &reach,
                         thumb_tables.as_ref(),
                     );
                 }
-                if read.cases.is_empty() && read.stated.is_none() {
+                if read.unbounded || (read.cases.is_empty() && read.stated.is_none()) {
                     if let Some(gap) = read.gap {
                         waiting.entry(gap).or_default().push((vma, mode, branch));
                     }
@@ -1244,6 +1368,18 @@ fn descend(
                 c.fall_through = None;
                 c.flows.clear();
             }
+            let proven_call = if c.flow.is_call && c.flows.is_empty() {
+                got_calls.as_ref().zip(data_space.as_ref())
+                    .and_then(|(calls, data)| calls.target(cap.ops(), data))
+            } else {
+                None
+            };
+            let proven_call = proven_call.filter(|_| {
+                !super::kuna_gotcall::has_stated_callee(arch, &code_space, vma)
+            });
+            if let Some((_, target)) = proven_call {
+                c.flows.push(target);
+            }
             let skip = a32_tables.as_ref().and_then(|_| c.predicated_skip(vma, len));
             let mut condition = condskip.then(|| c.condition_skip(&raw, vma, len)).flatten();
             if let Some(fall) = c.fall_through.filter(|_| !waiting.is_empty()) {
@@ -1263,6 +1399,9 @@ fn descend(
                 let delayed = || has_delay_slot(translate, vma, &code_space, len);
                 data_refs(cap.ops(), data_space.as_ref(), &mapped, fall_through, pool.as_ref(), &formed, &delayed)
             };
+            if let Some((slot, _)) = proven_call {
+                super::kuna_gotcall::resolved_slot_reads(&mut drefs, slot);
+            }
             // (kuna) `regcarry`: the address a register pair forms across
             // instructions. See [`super::kuna_regcarry`].
             if let Some(m) = &carry_machine {
@@ -1321,6 +1460,7 @@ fn descend(
 
             for &target in &c.flows {
                 let kind = if c.flow.is_call { XrefKind::Call } else { XrefKind::Jump };
+                let outside_walk = sections_are_runtime && !in_range(&exec_set, target);
                 if condition == Some(target) {
                     condition = None;
                     if c.fall_through.is_none() {
@@ -1328,8 +1468,17 @@ fn descend(
                     }
                 } else if condskip || Some(target) != skip {
                     st.file(vma, target, kind, &text);
+                    if outside_walk && c.flow.is_call && focus.contains(&target)
+                        && raw.iter().any(|op| {
+                            op.opcode == OpCode::CPUI_CALL && absolute_branch_target(op) == Some(target)
+                        })
+                    {
+                        stopped_direct_calls.entry(target)
+                            .and_modify(|site| *site = (*site).min(vma))
+                            .or_insert(vma);
+                    }
                 }
-                if sections_are_runtime && !in_range(&exec_set, target) {
+                if outside_walk {
                     stopped.insert(target);
                 }
                 if c.flow.is_call {
@@ -1362,7 +1511,7 @@ fn descend(
                 if let Some(p) = pool.as_ref() {
                     let a32 = a32_tables.as_ref().map_or_else(kuna_switchtable::TableRead::default, |tables| {
                         let decoded = |at: u64| st.decoded.contains(&at);
-                        tables.decoded_targets(translate, &code_space, &exec, &decoded, vma, cap.ops(), len)
+                        tables.decoded_targets(translate, &code_space, exec, &decoded, vma, cap.ops(), len)
                     });
                     let branch = cap
                         .ops()
@@ -1374,13 +1523,14 @@ fn descend(
                         waiting.entry(gap).or_default().push((vma, mode, branch.clone()));
                     }
                     let unpredicated = c.flows.is_empty();
+                    let mut unbounded = false;
                     for &(base, kind) in &drefs {
                         if unpredicated && kind == XrefKind::Data && stated.is_none() && a32.gap.is_none() {
                             cases.extend(kuna_switchtable::targets(
                                 base,
                                 vma,
                                 p,
-                                &exec,
+                                exec,
                                 None,
                                 max_entries,
                             ));
@@ -1398,7 +1548,7 @@ fn descend(
                             vma,
                             branch,
                             p,
-                            &exec,
+                            exec,
                             &reach,
                             thumb_tables.as_ref(),
                         );
@@ -1408,6 +1558,7 @@ fn descend(
                             }
                         }
                         (cases, stated) = (read.cases, read.stated);
+                        unbounded = read.unbounded;
                     }
                     // A dispatch that names no address rendered nothing above,
                     // and a row whose instruction column is blank does not say
@@ -1415,9 +1566,53 @@ fn descend(
                     if !cases.is_empty() && text.is_empty() {
                         text = assembly(translate, vma, &code_space);
                     }
-                    st.take_switch(vma, entry, &cases, stated, max_entries, &text);
-                    picpool.cases(vma, &cases);
-                    insn_queue.extend(cases.iter().map(|&target| (target, mode)));
+                    // (kuna `calltable`) A table whose distinct targets are other
+                    // functions' entries (40% of a checked table, all of an
+                    // unchecked one) dispatches tail calls, not cases of this
+                    // function.
+                    if unbounded && arch.analysis_calltable {
+                        cases = kuna_calltable::call_table_run(cases, arm, |t| {
+                            st.decoded.contains(&t) && !st.funcs.contains(&t)
+                        });
+                    }
+                    let call_table = arch.analysis_calltable
+                        && kuna_calltable::is_call_table(&cases, stated.is_none(), |t| st.funcs.contains(&t) && t != entry);
+                    if call_table {
+                        for t in cases.iter().copied().collect::<BTreeSet<u64>>() {
+                            st.file(vma, t, XrefKind::Call, &text);
+                            if st.funcs.insert(t) {
+                                func_queue.push_back(t);
+                            }
+                        }
+                    } else if !unbounded {
+                        st.take_switch(vma, entry, &cases, stated, max_entries, &text);
+                        picpool.cases(vma, &cases);
+                        insn_queue.extend(cases.iter().map(|&target| (target, mode)));
+                    }
+                }
+            }
+            // (kuna `calltable`) An indexed call through a table of function
+            // pointers calls every entry of the table.
+            if arch.analysis_calltable && c.flows.is_empty() && c.flow.is_computed && c.flow.is_call {
+                let callind = cap.ops().iter().find(|o| o.opcode == OpCode::CPUI_CALLIND).and_then(|o| o.ins.first());
+                if let (Some(p), Some(callind)) = (pool.as_ref(), callind) {
+                    let mut read = kuna_switchtable::register_targets(
+                        translate, &code_space, data_space.as_ref(), &|a| st.decoded.contains(&a), vma, callind, p, &exec, &reach,
+                    );
+                    if read.stated.is_none() && !read.cases.is_empty() {
+                        call_sites.push((vma, callind.clone()));
+                        read.cases.clear();
+                    }
+                    read.cases.retain(|&t| !(arm && t & 1 == 1));
+                    if !read.cases.is_empty() && text.is_empty() {
+                        text = assembly(translate, vma, &code_space);
+                    }
+                    for t in read.cases.into_iter().collect::<BTreeSet<u64>>() {
+                        st.file(vma, t, XrefKind::Call, &text);
+                        if st.funcs.insert(t) {
+                            func_queue.push_back(t);
+                        }
+                    }
                 }
             }
 
@@ -1504,9 +1699,8 @@ fn descend(
             st.file(vma, to, kind, &text);
         }
     }
-    for (vma, page) in st.carry.superseded(&st.funcs) {
-        st.unfile(vma, page, XrefKind::Data);
-    }
+    let superseded: HashSet<(u64, u64)> = st.carry.superseded(&st.funcs).into_iter().collect();
+    st.unfile_data(&superseded);
     // A focus address that did not decode is not a function: recording it as one
     // would answer `sub_<addr>` for a byte in the middle of a string.
     for f in focused {
@@ -1552,10 +1746,14 @@ fn descend(
     }
 
     let mut index = st.finish(veneers, preserve_bodies);
+    for stub in crate::loader::elf_plt::defined::stubs(file) {
+        index.export_plt.entry(stub.definition).or_default().push(stub);
+    }
     if !measure {
         index.flow = None;
     }
     index.stopped = stopped;
+    index.stopped_direct_calls = stopped_direct_calls;
     index
 }
 
@@ -1585,7 +1783,7 @@ fn gap_entries(
     code_space: &Rc<AddrSpace>,
     partition: &[(u64, u32)],
     funcs: &BTreeSet<u64>,
-    exec: &[(u64, u64)],
+    coverage: &super::ExecutableCoverage,
     contexts: Option<&super::kuna_fingerprintcontext::FingerprintContexts>,
     frame: Option<&super::Listing>,
     bracket: Option<&crate::aif::kuna_aifbracket::BracketEvidence>,
@@ -1593,7 +1791,7 @@ fn gap_entries(
     if funcs.len() < AIF_MIN_FUNCTIONS || partition.is_empty() {
         return Vec::new();
     }
-    let mut listing = partition_listing(partition, funcs, exec);
+    let mut listing = partition_listing(partition, funcs, coverage);
     let _probe = crate::aif::arm_gap_probe_scope(translate);
     render_fingerprints(&mut listing, funcs, arch, translate, code_space, partition, contexts);
     let poolslide = (arch.analysis_aifpoolslide && crate::loadimage_object::is_arm32_language(&arch.archid))
@@ -1625,12 +1823,10 @@ fn render_frame_flow(listing: &mut super::Listing, state: &State) {
             listing.insns.get_mut(&from).unwrap().flows.push(to);
         }
     }
-    for (&from, refs) in &state.by_source {
-        for call in refs.iter().filter(|r| r.kind == XrefKind::Call) {
-            let insn = listing.insns.get_mut(&from).unwrap();
-            insn.flow.is_call = true;
-            insn.flows.push(call.to);
-        }
+    for call in state.refs.iter().filter(|r| r.kind == XrefKind::Call) {
+        let insn = listing.insns.get_mut(&call.from).unwrap();
+        insn.flow.is_call = true;
+        insn.flows.push(call.to);
     }
 }
 
@@ -1671,7 +1867,7 @@ fn partition_covers(partition: &BTreeMap<u64, u32>, vma: u64) -> bool {
 fn partition_listing(
     partition: &[(u64, u32)],
     funcs: &BTreeSet<u64>,
-    exec: &[(u64, u64)],
+    coverage: &super::ExecutableCoverage,
 ) -> super::Listing {
     let mut insns = super::kuna_insnstore::InstructionStore::default();
     for &(addr, len) in partition {
@@ -1706,7 +1902,7 @@ fn partition_listing(
                 )
             })
             .collect(),
-        exec.to_vec(),
+        coverage.clone(),
     )
 }
 
@@ -1776,8 +1972,11 @@ fn veneer_at(
 
 /// The accumulating state of [`build`].
 struct State {
-    by_target: BTreeMap<u64, Vec<Xref>>,
-    by_source: BTreeMap<u64, Vec<Xref>>,
+    /// Every row filed, in filing order; sorted and deduplicated once, in
+    /// [`State::finish`].
+    refs: Vec<Xref>,
+    /// The instruction texts the rows share.
+    texts: HashSet<Arc<str>>,
     /// Membership only (the `VisitStat` dedup), so it is hashed rather than
     /// ordered: it is probed once per successor edge over the whole program.
     decoded: HashSet<u64>,
@@ -1803,8 +2002,8 @@ struct State {
 impl State {
     fn new(seeds: &BTreeSet<u64>, keep_flow: bool) -> Self {
         Self {
-            by_target: BTreeMap::new(),
-            by_source: BTreeMap::new(),
+            refs: Vec::new(),
+            texts: HashSet::new(),
             decoded: HashSet::new(),
             funcs: seeds.clone(),
             indirect_call_sites: BTreeSet::new(),
@@ -1851,23 +2050,22 @@ impl State {
     }
 
     fn file(&mut self, from: u64, to: u64, kind: XrefKind, instruction: &str) {
-        let r = Xref { from, to, kind, instruction: instruction.to_string() };
-        self.by_target.entry(to).or_default().push(r.clone());
-        self.by_source.entry(from).or_default().push(r);
-    }
-
-    /// Withdraw every `from -> to` row of `kind`.
-    fn unfile(&mut self, from: u64, to: u64, kind: XrefKind) {
-        let withdraw = |map: &mut BTreeMap<u64, Vec<Xref>>, key: u64| {
-            if let Some(refs) = map.get_mut(&key) {
-                refs.retain(|r| (r.from, r.to, r.kind) != (from, to, kind));
-                if refs.is_empty() {
-                    map.remove(&key);
-                }
+        let instruction = match self.texts.get(instruction) {
+            Some(text) => Arc::clone(text),
+            None => {
+                let text: Arc<str> = instruction.into();
+                self.texts.insert(Arc::clone(&text));
+                text
             }
         };
-        withdraw(&mut self.by_source, from);
-        withdraw(&mut self.by_target, to);
+        self.refs.push(Xref { from, to, kind, instruction });
+    }
+
+    /// Withdraw every `Data` row whose `(from, to)` is in `pairs`, in one pass.
+    fn unfile_data(&mut self, pairs: &HashSet<(u64, u64)>) {
+        if !pairs.is_empty() {
+            self.refs.retain(|r| r.kind != XrefKind::Data || !pairs.contains(&(r.from, r.to)));
+        }
     }
 
     /// Use the same owners for incoming rows, outgoing buckets and computed calls.
@@ -1884,35 +2082,34 @@ impl State {
             || self.funcs.range(..=vma).next_back().copied(),
             |owners| owners.get(&vma).copied(),
         );
-        let mut by_source_function: BTreeMap<u64, Vec<Xref>> = BTreeMap::new();
-        for (&from, refs) in &self.by_source {
-            let Some(entry) = owner(from) else {
-                continue;
-            };
-            by_source_function.entry(entry).or_default().extend(refs.iter().cloned());
+        let mut refs = std::mem::take(&mut self.refs);
+        refs.sort_by_key(|r| (r.to, r.from, r.kind));
+        refs.dedup_by_key(|r| (r.to, r.from, r.kind));
+        refs.shrink_to_fit();
+        let mut by_source: Vec<usize> = (0..refs.len()).collect();
+        by_source.sort_unstable_by_key(|&i| (refs[i].from, refs[i].to, refs[i].kind));
+        let mut by_source_function: BTreeMap<u64, Vec<usize>> = BTreeMap::new();
+        for run in by_source.chunk_by(|&a, &b| refs[a].from == refs[b].from) {
+            if let Some(entry) = owner(refs[run[0]].from) {
+                by_source_function.entry(entry).or_default().extend_from_slice(run);
+            }
+        }
+        for rows in by_source_function.values_mut() {
+            rows.sort_unstable();
         }
         let indirect_callers: BTreeSet<u64> = self
             .indirect_call_sites
             .iter()
             .filter_map(|from| owner(*from))
             .collect();
-        for refs in self.by_target.values_mut() {
-            sort_dedup(refs, /* by_source = */ true);
-        }
-        for refs in self.by_source.values_mut() {
-            sort_dedup(refs, /* by_source = */ false);
-        }
-        for refs in by_source_function.values_mut() {
-            sort_dedup(refs, /* by_source = */ false);
-        }
         let insns = self.decoded.len();
         let mut veneers_of_slot: BTreeMap<u64, Vec<u64>> = BTreeMap::new();
         for (&entry, v) in &veneers {
             veneers_of_slot.entry(v.slot).or_default().push(entry);
         }
         XrefIndex {
-            by_target: self.by_target,
-            by_source: self.by_source,
+            refs,
+            by_source,
             by_source_function,
             scoped_callers: BTreeMap::new(),
             decoded: self.decoded,
@@ -1920,11 +2117,13 @@ impl State {
             body_owners,
             indirect_callers,
             veneers,
+            export_plt: BTreeMap::new(),
             veneers_of_slot,
             insns,
             flow: self.flow,
             switches: self.switches,
             stopped: BTreeSet::new(),
+            stopped_direct_calls: BTreeMap::new(),
         }
     }
 }
@@ -1968,22 +2167,10 @@ fn mapping_kind(name: &str) -> Option<u8> {
     }
 }
 
-/// Lock one bucket's read ordering and collapse duplicates on `(from, to, kind)`,
-/// so a target reached twice from one site contributes exactly one row (the same
-/// contract [`super::Listing`]'s reference index holds).
-fn sort_dedup(refs: &mut Vec<Xref>, by_source: bool) {
-    refs.sort_by(|a, b| {
-        let (pa, sa) = if by_source { (a.from, a.to) } else { (a.to, a.from) };
-        let (pb, sb) = if by_source { (b.from, b.to) } else { (b.to, b.from) };
-        pa.cmp(&pb).then_with(|| sa.cmp(&sb)).then_with(|| a.kind.cmp(&b.kind))
-    });
-    refs.dedup_by(|a, b| a.from == b.from && a.to == b.to && a.kind == b.kind);
-}
-
 fn empty() -> XrefIndex {
     XrefIndex {
-        by_target: BTreeMap::new(),
-        by_source: BTreeMap::new(),
+        refs: Vec::new(),
+        by_source: Vec::new(),
         by_source_function: BTreeMap::new(),
         scoped_callers: BTreeMap::new(),
         decoded: HashSet::new(),
@@ -1991,11 +2178,13 @@ fn empty() -> XrefIndex {
         body_owners: None,
         indirect_callers: BTreeSet::new(),
         veneers: BTreeMap::new(),
+        export_plt: BTreeMap::new(),
         veneers_of_slot: BTreeMap::new(),
         insns: 0,
         flow: None,
         switches: Vec::new(),
         stopped: BTreeSet::new(),
+        stopped_direct_calls: BTreeMap::new(),
     }
 }
 
@@ -2015,9 +2204,10 @@ fn branch_cases(
     reach: &kuna_switchtable::Reach,
     thumb_tables: Option<&super::kuna_thumbswitch::HalfwordTables<'_>>,
 ) -> kuna_switchtable::TableRead {
+    let decoded = |at: u64| decoded.contains(&at);
     let mut read = match branch {
         Some(branch) => kuna_switchtable::register_targets(
-            translate, code_space, data_space, decoded, vma, branch, pool, exec, reach,
+            translate, code_space, data_space, &decoded, vma, branch, pool, exec, reach,
         ),
         None => kuna_switchtable::TableRead::default(),
     };
@@ -2025,7 +2215,6 @@ fn branch_cases(
     // See [`super::kuna_thumbswitch`].
     if read.cases.is_empty() && read.stated.is_none() {
         if let Some(tables) = thumb_tables {
-            let decoded = |at: u64| decoded.contains(&at);
             (read.cases, read.stated) = tables.targets(translate, code_space, exec, &decoded, vma);
         }
     }
@@ -2306,7 +2495,7 @@ fn is_return_address_sum(op: &FullOp, fall_through: u64) -> bool {
 /// the slack past it is a scan over one instruction's ops and costs nothing, but
 /// it stays small so a long chain of temporaries inside a multi-operand
 /// instruction cannot be read as the operand fetch.
-const MAX_SLOT_COPIES: usize = 4;
+pub(super) const MAX_SLOT_COPIES: usize = 4;
 
 /// Does the indirect `CALL` in this one instruction read its destination out of
 /// `slot`?
@@ -2422,7 +2611,7 @@ pub(super) fn in_range(ranges: &[(u64, u64)], vma: u64) -> bool {
 
 /// The same address set as `ranges`, as the sorted, disjoint spans [`in_range`]
 /// searches: overlapping and touching ranges are merged.
-pub(super) fn range_union(mut ranges: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
+pub(crate) fn range_union(mut ranges: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
     ranges.sort_unstable();
     let mut out: Vec<(u64, u64)> = Vec::with_capacity(ranges.len());
     for (lo, hi) in ranges {
@@ -2586,6 +2775,34 @@ mod tests {
             refs(&ram, &ops),
             vec![(0x1030, XrefKind::Call), (0x4010, XrefKind::Read)]
         );
+    }
+
+    #[test]
+    fn a_resolved_call_keeps_both_physical_slot_reads_without_a_stale_call_edge() {
+        let (ram, _cst) = spaces();
+        let tmp = Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_INTERNAL));
+        let ops = [
+            op(OpCode::CPUI_COPY, Some(vn(&tmp, 0x100)), vec![vn(&ram, 0x1030)]),
+            op(OpCode::CPUI_COPY, Some(vn(&tmp, 0x100)), vec![vn(&ram, 0x4010)]),
+            op(OpCode::CPUI_COPY, Some(vn(&ram, 0x4020)), vec![vn(&tmp, 0x200)]),
+            op(OpCode::CPUI_CALLIND, None, vec![vn(&tmp, 0x100)]),
+        ];
+        let mut references = refs(&ram, &ops);
+        assert_eq!(references, vec![
+            (0x1030, XrefKind::Call), (0x4010, XrefKind::Read), (0x4020, XrefKind::Write),
+        ]);
+        super::super::kuna_gotcall::resolved_slot_reads(&mut references, 0x4010);
+        assert_eq!(references, vec![
+            (0x1030, XrefKind::Read), (0x4010, XrefKind::Read), (0x4020, XrefKind::Write),
+        ]);
+        let outside_sections = [
+            op(OpCode::CPUI_COPY, Some(vn(&tmp, 0x100)), vec![vn(&ram, 0x3000)]),
+            op(OpCode::CPUI_CALLIND, None, vec![vn(&tmp, 0x100)]),
+        ];
+        let mut references = refs(&ram, &outside_sections);
+        assert!(references.is_empty());
+        super::super::kuna_gotcall::resolved_slot_reads(&mut references, 0x3000);
+        assert_eq!(references, vec![(0x3000, XrefKind::Read)]);
     }
 
     /// The chain is bounded: a temporary the flow op reaches only through more
@@ -2864,15 +3081,15 @@ mod tests {
     /// somewhere else. Both addresses must answer with both references, and
     /// neither may report the veneer's own forwarding jump as a caller.
     fn import_index() -> XrefIndex {
-        let mk = |from, to, kind| Xref { from, to, kind, instruction: String::new() };
+        let mk = |from, to, kind| Xref { from, to, kind, instruction: "".into() };
         let edges = [
             mk(0x1102, 0x1030, XrefKind::Call), // a direct call to the veneer
             mk(0x1030, 0x4008, XrefKind::Jump), // the veneer's own jmp [slot]
             mk(0x1200, 0x4008, XrefKind::Read), // a call straight through the slot
         ];
         let mut st = State {
-            by_target: BTreeMap::new(),
-            by_source: BTreeMap::new(),
+            refs: Vec::new(),
+            texts: HashSet::new(),
             decoded: HashSet::from([0x1030, 0x1102, 0x1200]),
             funcs: BTreeSet::from([0x1000, 0x1030, 0x1180]),
             indirect_call_sites: BTreeSet::new(),
@@ -2931,8 +3148,8 @@ mod tests {
     #[test]
     fn a_computed_call_is_attributed_to_the_function_containing_it() {
         let mut st = State {
-            by_target: BTreeMap::new(),
-            by_source: BTreeMap::new(),
+            refs: Vec::new(),
+            texts: HashSet::new(),
             decoded: HashSet::from([0x1188]),
             funcs: BTreeSet::from([0x1000, 0x1030, 0x1180]),
             indirect_call_sites: BTreeSet::from([0x1188]),
@@ -2965,8 +3182,8 @@ mod tests {
         insns.extend(head);
         insns.push((0x3000, 1, false));
         let st = State {
-            by_target: BTreeMap::new(),
-            by_source: BTreeMap::new(),
+            refs: Vec::new(),
+            texts: HashSet::new(),
             decoded: insns.iter().map(|&(vma, _, _)| vma).collect(),
             funcs: BTreeSet::from([0x1000, 0x2000, 0x3000]),
             indirect_call_sites: BTreeSet::new(),
@@ -3066,18 +3283,19 @@ mod tests {
         assert!(in_range(&range_union(mapped_ranges(&file)), got.address()), "the GOT slot reads as unmapped");
     }
 
-    /// `sort_dedup` collapses the `(from, to, kind)` triple: one row per site.
+    /// `finish` collapses the `(from, to, kind)` triple: one row per site.
     #[test]
     fn duplicate_edges_from_one_site_collapse() {
-        let mk = |from, to, kind| Xref { from, to, kind, instruction: String::new() };
-        let mut rows = vec![
-            mk(0x1102, 0x1030, XrefKind::Call),
-            mk(0x1102, 0x1030, XrefKind::Call),
-            mk(0x1010, 0x1030, XrefKind::Jump),
-        ];
-        sort_dedup(&mut rows, true);
+        let mut st = State::new(&BTreeSet::from([0x1000]), false);
+        st.file(0x1102, 0x1030, XrefKind::Call, "first");
+        st.file(0x1102, 0x1030, XrefKind::Call, "second");
+        st.file(0x1010, 0x1030, XrefKind::Jump, "");
+        let index = st.finish(BTreeMap::new(), false);
+        let rows = index.refs_to(0x1030);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].from, 0x1010);
-        assert_eq!(rows[1].from, 0x1102);
+        assert_eq!((rows[1].from, &*rows[1].instruction), (0x1102, "first"));
+        assert_eq!(index.refs_from_instruction(0x1102).len(), 1);
+        assert_eq!(index.refs_from_function(0x1000).len(), 2);
     }
 }

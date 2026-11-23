@@ -1,11 +1,10 @@
 //! Keep the matched constant prefix of an accepted SPARC32 SAVE candidate.
-use super::{FlowKind, GapDecoder, Listing};
-use std::collections::BTreeSet;
+use super::{ClaimedCode, FlowKind, GapDecoder, Listing};
 
 pub(super) fn prefix(
     decoder: &mut GapDecoder,
     listing: &Listing,
-    claimed: &BTreeSet<u64>,
+    claimed: &ClaimedCode,
     entry: u64,
 ) -> Option<u64> {
     if entry & 3 != 0 || !decoder.translate.is_big_endian() {
@@ -21,7 +20,7 @@ pub(super) fn prefix(
     let end = entry.checked_add(4)?;
     if !decoder.exec_ranges.iter().any(|&(lo, hi)| lo <= start && end <= hi)
         || !listing.is_undefined(start) || !listing.is_undefined(start + 4)
-        || claimed.contains(&start) || claimed.contains(&(start + 4))
+        || claimed.overlaps(start, start) || claimed.overlaps(start + 4, start + 4)
         || listing.function_at(start).is_some() || listing.function_at(start + 4).is_some()
     {
         return None;

@@ -769,14 +769,14 @@ fn canon_switch_var_rejects_conflicting_extension_chain() {
 #[test]
 fn option_apply_on() {
     let (val, msg) = OptionLowerSwitch.apply("on").unwrap();
-    assert!(val);
+    assert_eq!(val, LoweredSwitchMode::On);
     assert_eq!(msg, "Lowered comparison-cascade switch recovery turned on");
 }
 
 #[test]
 fn option_apply_off() {
     let (val, msg) = OptionLowerSwitch.apply("off").unwrap();
-    assert!(!val);
+    assert!(!val.enabled());
     assert_eq!(msg, "Lowered comparison-cascade switch recovery turned off");
 }
 
@@ -784,7 +784,19 @@ fn option_apply_off() {
 fn option_apply_empty_is_on() {
     // C++ onOrOff: empty string => true (on).
     let (val, _msg) = OptionLowerSwitch.apply("").unwrap();
-    assert!(val);
+    assert_eq!(val, LoweredSwitchMode::On);
+}
+
+#[test]
+fn option_apply_widening_values() {
+    let flags = |v: &str| {
+        let (mode, _msg) = OptionLowerSwitch.apply(v).unwrap();
+        (mode.enabled(), mode.linear(), mode.tree())
+    };
+    assert_eq!(flags("on"), (true, false, false));
+    assert_eq!(flags("linear"), (true, true, false));
+    assert_eq!(flags("tree"), (true, false, true));
+    assert_eq!(flags("all"), (true, true, true));
 }
 
 #[test]

@@ -2741,6 +2741,10 @@ impl Translate for Sleigh {
             res.push(String::from_utf8_lossy(nm).into_owned());
         }
     }
+    fn may_have_delay_slots(&self) -> bool {
+        self.base.max_delay_slot_bytes() != 0
+    }
+
     fn instruction_length(&self, baseaddr: &Address) -> KunaResult<i32> {
         Sleigh::instruction_length(self, baseaddr)
     }

@@ -854,7 +854,7 @@
   "fixture": "protoorder_widefill_x86_64 (sha256 ca48818092626783e00d2f69b91c88ed4d6833ddd2ba0398ad9df7faf955ef90): fill_words (word-fill loop) and fill_many (520 stores)",
   "witness_before": "round-12 engine, default and ptrfromuse void: int fill_words(unsigned char *a0,int a1) with v2[0] = 8; ... v2[7] = 1; and int fill_many(unsigned char *a0,int a1) with 4,160 byte stores",
   "witness_after": "identical to main a3bf6a15 in both arms: fill_words(unsigned long *a0,...) with *v2 = 0x102030405060708; fill_many(long a0,...) (void: void *a0) with *(unsigned long *)(a0 + 0x10) = 0x2020726174737575;",
-  "tests": "kuna-cli a_byte_pointee_vote_keeps_word_fills_and_long_callers_whole (both functions, default + ptrfromuse void; fails on the round-12 engine), probe tests/cli/protoorder-types-keeps-a-word-fill-whole.json (a-e475e354c99c; passes main and round 13, fails round 12)",
+  "tests": "kuna-cli a_byte_pointee_vote_keeps_word_fills_and_long_callers_whole (both functions, default + ptrfromuse void; fails on the round-12 engine), probe tests/cli/protoorder-types-keeps-a-word-fill-whole.json (a-e8c923519c05; passes main and round 13, fails round 12)",
   "corpus": "60 binaries: 4 of 32,406 functions change vs the round-12 engine, the same 4 in both arms: crond O0 sub_6b7b (walk limit; two argument casts back to main spelling), betaflight sub_801379c (== main), sub_8013818 (== main), sub_80130a4 (integer votes only)",
   "typesweep": "0 of 10,748 rows move in either arm; firmware 1 of 3,451 (read_data_sector back to main)",
   "not_taken": "narrower-access refusal (+ undefined pointees): measured +3 improved default / +18 ptrfromuse void, 0 worse, fixes stat O2 sub_df20 (char * -> int *, (char)*a0); changes 209 functions on 33 binaries; analysis §10"

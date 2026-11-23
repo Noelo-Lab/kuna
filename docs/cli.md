@@ -387,7 +387,10 @@ When an import has no body-bearing veneer, `decompile` and explicitly filtered
 whole-binary decompilation refuse its IAT slot with exit code 1. The diagnostic
 names the import and slot and explains that the bytes are a loader-written
 pointer, so neither an executable section flag nor direct `--addr` turns
-adjacent IAT words into instructions. Inventory, graph, disassembly/read, and
+adjacent IAT words into instructions. Among several `--addr`/`--functions`
+selectors of one filtered run, a selector naming such a slot is reported as
+`warning: <diagnostic>; skipped` and the others still decompile; the run fails
+only when the skips leave nothing to decompile. Inventory, graph, disassembly/read, and
 xref consumers still resolve the slot because they do not lift a body. An
 explicit `--define-function` or `--assert function` declaration overrides the
 loader classification when the image's import directory is known to be false.
@@ -1160,6 +1163,86 @@ kuna decompile ./a.out sub_401200 --json --assert @overrides.kuna
 Accepted by `decompile`, `decompile-all`, `decompile-project` and `functions`.
 The console spellings, for a hand-driven `decomp_dbg` session, are the commands in
 the table's second column.
+
+**`--types <file.h | dir>`** (repeatable) loads C declarations from a header for
+this run, so a program built against a library kuna has no table for shows that
+library's types instead of bare integers. Each function declaration becomes the
+prototype of the function or import of that name, and each `struct`, `union`,
+`enum` and `typedef` is defined, so `type` and `data` directives can name it. A
+directory contributes its `*.h` files in name order.
+
+```bash
+cat > curl.h <<'EOF'
+typedef void CURL;
+typedef enum { CURLOPT_URL = 10002, CURLOPT_TIMEOUT = 13 } CURLoption;
+CURL *curl_easy_init(void);
+int curl_easy_setopt(CURL *h, CURLoption opt, ...);
+EOF
+kuna decompile ./curlish.so fetch --types curl.h
+```
+
+```text
+-   v1 = curl_easy_init();                  +   h = curl_easy_init();
+-   curl_easy_setopt(v1,0x2712,a0);         +   curl_easy_setopt(h,CURLOPT_URL,a0);
+-   curl_easy_setopt(v1,0xd,0x1e);          +   curl_easy_setopt(h,CURLOPT_TIMEOUT,0x1e);
+```
+
+The header's declarations are applied before the `--assert` directives of the
+same run, wherever the two flags stand on the command line, so an `--assert` on
+the same function wins. A prototype for a function the binary does not have
+does nothing. A function is typed by its own declaration only: declare `fetch`
+in a header too (`int fetch(const char *url);`) to name its parameter and state
+its return type.
+
+A header's prototype has the weight of a `prototype` directive: it replaces the
+signature kuna would otherwise give that function and every call to it, the
+one DWARF or a built-in library table states included, and only an `--assert`
+outranks it. kuna does not check it against the code. A header from another
+version of the library, or one that declares a different function under a name
+the binary also uses, still gives that function the declared signature:
+arguments the code passes but the declaration lacks are dropped from the calls,
+and a `void` return drops the value the callers use. Load the headers the
+binary was built against. A type does not replace one the run already has: a
+`struct`, `union` or `typedef` name that DWARF, a built-in table or an earlier
+header defined keeps that definition, and the header's is reported as rejected.
+
+The text must be preprocessed C. kuna runs no preprocessor on its own: it skips
+`#` lines, so a header that needs its macros or its `#include`s expanded leaves
+declarations that do not parse. **`--types-cpp <cc>`** runs your preprocessor
+over each header first: the value is the command (`cc`, `clang`,
+`'cc -I include -DNDEBUG'`), kuna adds `-E` when the command does not carry it,
+and the header path goes last. A preprocessor that fails is an error. The
+declarations of the headers it includes are loaded as well, and a rejection is
+reported at the file and line the preprocessor's line markers give.
+
+```bash
+kuna decompile ./client fetch --types /usr/include/curl/curl.h --types-cpp cc
+```
+
+A declaration that does not parse is reported on stderr with its file and line,
+and the rest still apply; under `--json` it is a `rejected` row of
+`assertions[]`, whose `directive` starts with `--types <file>:<line>:`. Such a
+rejection never fails the run, under `--assert-strict` too.
+
+```text
+warning: --types bad.h:4: CURL_EXTERN CURL *curl_easy_init(void): rejected: Bad C syntax
+```
+
+What a header may say is what the `typedef` and `prototype` directives accept,
+with a few spellings rewritten first: `__attribute__((..))`, `__asm__(..)`,
+`__extension__`, `__restrict` and `_Noreturn` are dropped; a function body is
+dropped and its declaration kept; an `extern "C" {` wrapper is transparent; an
+enumerator value or an array bound that is an integer constant expression
+(`(1 << 4) | 3`, `10000 + 2`, an earlier enumerator) is replaced by the value C
+gives it (`0xFFFFFFFFu + 1` is 0, `1 << 31` is -2147483648), and one whose
+value depends on the target's `long` (`~0UL`), on a `char` or `short` cast, or
+on what C leaves undefined (`1 << 32`, a signed overflow) is not, so its
+declaration is reported as rejected; an unsized array parameter (`char *argv[]`) is the pointer it is; and
+`__builtin_va_list` is `void *`. Variable declarations are skipped. Not read,
+and reported as rejected: `sizeof` in a constant expression, a flexible array
+member, an anonymous struct or union member, and an empty parameter list
+(`int f()`). Accepted wherever `--assert` is, with its limits: not with
+`--jobs` above 1 on a whole-binary run, and not with `--stream`.
 
 **Paths containing spaces work (DIV-100).** This is the one surface that reaches the engine
 through a console *script* rather than an in-process call, and the console reads a
@@ -2138,7 +2221,12 @@ Behaviors specific to `decompile-all`:
   the loader resolved names at. Callable slots in PE IATs, Mach-O symbol-pointer
   sections, and similar data areas remain in `kuna functions`, remain installed
   for named calls and prototypes, and remain reachable through explicit `--addr`;
-  they are not automatically decoded as function bodies. The slot test is what
+  they are not automatically decoded as function bodies. A Mach-O slot whose
+  import's mangling names a data object (a Swift type's metadata or descriptor, a
+  witness table, an Objective-C class, a C++ vtable or static member) is not in
+  `kuna functions` at all: it is named in the symbol table only, as an ELF GOT
+  data slot is, and that name selects the slot as a data object (`kuna xrefs
+  --to OBJC_CLASS_$_NSObject`, `kuna read`). The slot test is what
   covers a packed PE that keeps its whole import directory inside its one
   `CODE|EXECUTE` section, where the section flags cannot tell the two apart.
   Analysis-discovered entries inside executable sections join
@@ -2225,8 +2313,8 @@ Behaviors specific to `decompile-all`:
   where the wider inventory is the point; a single-function request that already
   named its function gains nothing from it. (The gap was invisible under the
   default `auto` policy below 500 KiB, which resolves to `aggressive` and names
-  all three options itself.) The injected `aif on` is the byte-granular gap
-  cursor; `aggressive` sets `aif strict`, the aligned one, and an explicit
+  all three options itself.) By default the injected `aif on` uses a byte-granular gap
+  cursor. `aggressive` sets `aif strict`, the aligned one, and an explicit
   `--option aif on` after it replaces `strict` by last-write precedence.
   `kuna functions` shares the **discovery** half of that policy (DIV-68): on a
   non-x86-64 binary it injects `funcstart_patterns on`, `aif on`, and the
@@ -2239,6 +2327,18 @@ Behaviors specific to `decompile-all`:
   entry-neutral on that architecture, so it stays the decompiling surfaces'
   default. The interactive console keeps the engine default off; an auto-selected
   `aggressive` preset names all three itself, on either surface.
+
+  A processor that guarantees fixed-width instruction slots from the beginning
+  of every executable section may declare their size in its processor spec,
+  for example `<property key="kuna.aif.sectionInstructionStride" value="6"/>`
+  inside `<properties>`. AIF then probes section-relative slots in the gap
+  walk, including the first slot at address zero. A discovered entry must start
+  a complete slot of undefined bytes in its own section. Its first instruction
+  must fit within that slot. When skipping padding, AIF publishes the
+  destination only if the validated body reaches it.
+  With only executable segment or raw mapping bounds, AIF keeps the cursor
+  policy of the selected mode.
+  Symbol and explicit function entries keep their usual admission rules.
   Omitted `--mode` first resolves the size-based `auto` policy. `--mode fast`
   names and disables the three exhaustive program-wide decode/discovery options
   (`listing`, `funcstart_patterns`, `aif`), suppressing those injections, and
@@ -2722,7 +2822,11 @@ name is on two functions: the export's body and the stub. A name selects the bod
 veneer whose slot the image's own dynamic relocations bind to that body (the
 relocation's symbol is defined in the image at the body's address). The callers
 through the stub are then the export's callers, and `target.aliases` lists the
-stub and its GOT slot. The join is the relocation, never the shared name. An
+stub and its GOT slot. The join is the relocation, never the shared name. On ARM,
+AArch64, PowerPC32 (absolute stubs and the executable BSS PLT) and PowerPC64 ELFv1
+the stub is recognized by its instruction shape and the slot it loads. Thumb
+interworking prefixes, `--long-plt` and PAC (`autia1716`) entries and PowerPC32
+secure-PLT PIC stubs are not joined; query the stub's address for those. An
 **address** still answers for that address alone: `--to <body>` stays at the direct
 references, and `--to <stub>` lists only its slot as an alias.
 
@@ -2793,7 +2897,8 @@ with the reason, so the text answer never reads as complete when it is not:
 ```json
 {"binary": "...", "direction": "to", "count": N,
  "target": {"name","address","address_hex",
-            "aliases": [{"name","address","address_hex"}]},
+            "aliases": [{"name","address","address_hex"}],
+            "call_destination_candidate": {"reason","call_site","call_site_hex"}},
  "coverage": {"decoded": true, "section": "__TEXT,__text",
               "code_section": true, "executable": true,
               "unwalked": [{"name","address","address_hex","section"}],
@@ -2915,6 +3020,15 @@ no such gap.
 | `executable` | The image maps that memory executable. `null` when it is in no section, or for a relocatable object. |
 | `unwalked` | The targets of decoded direct calls and branches that lie in executable memory not marked as code, that a symbol names, and that the walk did not decode. The references they make are in no answer; `--from` one decodes it. |
 | `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section; a `--to` answer gets one while `unwalked` is not empty, and when the image is one entry of a kernel collection and the address is in another entry or in none ([`--option kernelcache`](#--option-kernelcache-id--one-entry-of-an-apple-kernel-collection)). |
+
+An incoming JSON answer may include `target.call_destination_candidate`. It names
+the lowest-address decoded direct call site to the exact selected address. The
+reason `unflagged_executable_section` means the named destination is outside the
+function inventory and the walk stopped at its executable section, which has no
+instruction flags. Kuna omits the field for declared data, alias-only calls,
+indirect calls, and queries that filter out calls. This is evidence for an
+explicit follow-up; it does not establish a function body or add an inventory
+or project-export entry.
 
 ```
 $ kuna xrefs unflagged_macho_arm64 --to _goal
@@ -4972,6 +5086,55 @@ Exit codes: `0` the document was written (whatever each `status`); `1` the binar
 or database could not be read or loaded (a relocatable object included), the
 database language differs, or the single queried address is not a decodable
 entry; `2` a malformed command line, with the usage block.
+
+## `kuna flirt make` — write FLIRT `.pat` and `.sig` files
+
+`kuna flirt make <lib.a|*.o ...> -o <out.pat> [--sig <out.sig>] [--libname NAME]`
+writes FLIRT signatures for the functions of object files or static libraries, so
+a library you have (a vendored `libz.a`, one build of a libc) can name its
+functions in a stripped binary:
+
+```
+$ kuna flirt make libthree.a -o three.pat --sig three.sig
+kuna flirt make: libthree.a: 8 pattern(s)
+kuna flirt make: wrote three.pat (8 pattern(s))
+kuna flirt make: collision: twin_one, twin_two are not told apart; left out of three.sig
+kuna flirt make: wrote three.sig (6 module(s), 1 unresolved collision(s))
+$ KUNA_FLIRT_SIGS=$PWD/three.sig kuna functions prog --option flirt on
+0x401060	sum_bytes	(sub_401060)
+0x4010d0	wrap_mix	(sub_4010d0)
+```
+
+`-o` is the `.pat` text, one line per function that has a global name:
+
+```
+4883EC08BE0B000000E8........4883C40883C001C3.................... 00 0000 0016 :0000 wrap_mix ^000A mix_fold
+```
+
+The fields are the first 32 bytes (`..` is a byte a relocation rewrites, or
+padding past the end of a shorter function), the length and value of the CRC-16
+over the fixed bytes after them, the function length, each public name as
+`:0000 name`, each referenced global name as `^offset name`, and the remaining
+bytes. Functions with only a local symbol, compiler-generated names and functions
+with fewer than four fixed bytes in their first 32 are left out; the last are
+counted on stderr.
+
+`--sig` also writes the binary signature file (format version 10, uncompressed)
+that `--option flirt on` reads through `KUNA_FLIRT_SIGS`. `--libname` sets the
+library name in its header; the default is the first input's file stem. All
+inputs must be objects of one architecture, format and byte order, and the header
+admits the executable format they link into (ELF objects make a signature for ELF
+binaries).
+
+Functions with the same leading 32 bytes and the same CRC collide. `flirt make`
+tells them apart by a tail byte (an offset after the CRC region where they all
+have a fixed byte and differ), then by a referenced name (`wrap_mix` and
+`wrap_sum` above are the same bytes around a call to a different function, and
+the matcher accepts each only where the call goes to that name). Functions that
+nothing tells apart are reported as a `collision:` line and left out of the
+`.sig`; they stay in the `.pat`. Functions with the same bytes and the same name
+are written once. The exit status is 0 when the files were written, 1 when an
+input cannot be read or no function is left to write, and 2 on a usage error.
 
 ## Everything else
 

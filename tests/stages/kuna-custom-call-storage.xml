@@ -6,6 +6,11 @@
     before calling mapper. mapper reads EDX only. The explicit slot-0 storage
     must override MSABI's normal ECX slot without introducing a dummy receiver.
     This is a correctness fix; the ordinary two-slot declaration is a control.
+
+    The additional authored callee returns its EDI argument plus seven. A
+    return-only EAX declaration must retain that inferred argument through
+    rebuilds, and its caller must keep passing eleven. Explicit parameter
+    storage and a fully declared zero-input function calibrate the boundary.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 534883ec204889cbe8f30000004889d989c2e8e90100004883c4205bc3
@@ -16,9 +21,21 @@
 <bytechunk space="ram" offset="0x100200" readonly="true">
 8d4203c3
 </bytechunk>
+<bytechunk space="ram" offset="0x100300" readonly="true">
+8d4707c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100310" readonly="true">
+bf0b000000e8e6ffffffc3
+</bytechunk>
+<bytechunk space="ram" offset="0x100320" readonly="true">
+b805000000c3
+</bytechunk>
 <symbol space="ram" offset="0x100000" name="probe"/>
 <symbol space="ram" offset="0x100100" name="getter"/>
 <symbol space="ram" offset="0x100200" name="mapper"/>
+<symbol space="ram" offset="0x100300" name="return_only"/>
+<symbol space="ram" offset="0x100310" name="return_only_caller"/>
+<symbol space="ram" offset="0x100320" name="no_inputs"/>
 </binaryimage>
 <script>
   <com>parse line extern int4 MSABI probe(void *object);</com>
@@ -37,6 +54,43 @@
   <com>lo fu probe</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>map prototype return_only_caller int4 return_only_caller(void);</com>
+  <com>lo fu return_only</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu return_only_caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>map return 0x100300::%EAX int4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu return_only</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu return_only_caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option outlang go</com>
+  <com>lo fu return_only</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option outlang rust</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option outlang c</com>
+  <com>map param return_only::0 %EDI int4 retained</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu return_only_caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>map prototype no_inputs int4 no_inputs(void);</com>
+  <com>map return no_inputs::%EAX int4</com>
+  <com>lo fu no_inputs</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="CUSTOM-CALL-STORAGE #1: getter supplies the one-formal call across rebuilds" min="2" max="2">return mapper\(raw_type\);</stringmatch>
@@ -45,4 +99,14 @@
 <stringmatch name="CUSTOM-CALL-STORAGE #4: the ordinary two-slot control passes getter as argument two" min="1" max="1">return mapper\(object,raw_type\);</stringmatch>
 <stringmatch name="CUSTOM-CALL-STORAGE #5: the custom call never reads the receiver as an integer" min="0" max="0">mapper\(\(int4\)object\)</stringmatch>
 <stringmatch name="CUSTOM-CALL-STORAGE #6: all three caller runs retain the getter result" min="3" max="3">raw_type = getter\(object\);</stringmatch>
+<stringmatch name="CUSTOM-CALL-STORAGE #7: return-only declaration keeps the inferred input across rebuilds" min="3" max="3">^int4 return_only\(int4 a0\)$</stringmatch>
+<stringmatch name="CUSTOM-CALL-STORAGE #8: return-only body retains its incoming value" min="4" max="4">return (a0 \+ 7|i32::wrapping_add\(a0,7\));</stringmatch>
+<stringmatch name="CUSTOM-CALL-STORAGE #9: return-only declaration never claims no inputs" min="0" max="0">^int4 return_only\(void\)$</stringmatch>
+<stringmatch name="CUSTOM-CALL-STORAGE #10: return-only input never becomes an uninitialized local" min="0" max="0">int4 v[0-9]+; // edi</stringmatch>
+<stringmatch name="CUSTOM-CALL-STORAGE #11: caller retains its argument before and after the edit" min="4" max="4">^  return return_only\(0xb\);$</stringmatch>
+<stringmatch name="CUSTOM-CALL-STORAGE #12: an explicit input still supplies its locked name" min="1" max="1">^int4 return_only\(int4 retained\)$</stringmatch>
+<stringmatch name="CUSTOM-CALL-STORAGE #13: an explicit input still supplies its value" min="1" max="1">return retained \+ 7;</stringmatch>
+<stringmatch name="CUSTOM-CALL-STORAGE #14: a full empty signature remains empty" min="1" max="1">^int4 no_inputs\(void\)$</stringmatch>
+<stringmatch name="CUSTOM-CALL-STORAGE #15: Go output retains the inferred input" min="1" max="1">^func return_only\(a0 int32\) int32</stringmatch>
+<stringmatch name="CUSTOM-CALL-STORAGE #16: Rust output retains the inferred input" min="1" max="1">^unsafe fn return_only\(mut a0: i32\) -&gt; i32</stringmatch>
 </decompilertest>

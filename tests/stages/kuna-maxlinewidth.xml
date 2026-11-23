@@ -1,0 +1,40 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    maxlinewidth and commentindent: the console line-size options.
+
+    Ported from decompiler/cpp/options.cc (OptionMaxLineWidth,
+    OptionCommentIndent), printlanguage.cc (setLineCommentIndent) and
+    prettyprint.cc (EmitPrettyPrint). Upstream prints through EmitPrettyPrint,
+    which breaks lines longer than maxlinewidth. kuna printed through the
+    plain emitter only, so `option maxlinewidth` was accepted and did nothing.
+
+    Stage P9 (emit). The default stays one line per statement; setting
+    maxlinewidth routes the plain text through the pretty printer.
+
+    Authored x86-64 (nasm): f returns the sum of five products of its six
+    arguments.
+
+    Pass 1 (default): the prototype and the return are each one line.
+    Pass 2 (`option maxlinewidth 40`): both break at 40 columns.
+
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+89f80fafc64189d2440fafd14401d04589c2450fafd14401d04189fa440fafd24401d04189f2440fafd14401d0c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="f"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 f(int4 alpha,int4 beta,int4 gamma,int4 delta,int4 epsilon,int4 zeta);</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option maxlinewidth 40</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="MAXLINEWIDTH #1: by default the return is one line" min="1" max="1">^  return alpha \* beta \+ gamma \* delta \+ epsilon \* zeta \+ alpha \* gamma \+ beta \* delta;$</stringmatch>
+<stringmatch name="MAXLINEWIDTH #2: at 40 columns the prototype breaks after its third parameter" min="1" max="1">^int4 f\(int4 alpha,int4 beta,int4 gamma,$</stringmatch>
+<stringmatch name="MAXLINEWIDTH #3: at 40 columns the return breaks into three lines" min="1" max="1">^  return alpha \* beta \+ gamma \* delta \+$</stringmatch>
+<stringmatch name="MAXLINEWIDTH #4: the last term continues under the expression" min="1" max="1">^         \+ beta \* delta;$</stringmatch>
+</decompilertest>

@@ -1,0 +1,14 @@
+{
+  "opportunity": "test_unmapped_register_rendering::test_stack_pointer_in_a_variable_length_frame_is_named",
+  "source_decompiler": "angr",
+  "angr_version": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "base_revision": "ed7a24ed001a915284dd6df3e8fec504c126a0f0",
+  "status": "proposal",
+  "change_kind": "read-only-i386-stack-continuation",
+  "validation": {
+    "authored_stock_lift_observed": true,
+    "symbolic_cases": 5,
+    "native_observer": "authored runnable comparison",
+    "native_observer_executed": false
+  }
+}

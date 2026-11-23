@@ -341,7 +341,16 @@ pub fn check_input_trial_use(
             } else if crate::p4_calls::kuna_varargformat::activate_trial(
                 data, idx, i, &format_arguments,
             ) {
-            } else if vn_is_input {
+            } else if vn_is_input || {
+                // (kuna) `passthrough`: the incoming register carried past calls
+                // that leave it alone, to a callee whose recovered prototype
+                // reads it.
+                let t = data.get_call_specs(idx).active_input().get_trial(i);
+                let (addr, size) = (t.get_address().clone(), t.get_size());
+                data.get_arch().pass_through
+                    && crate::p4_calls::kuna_passthrough::forwarded_own_input(data, vn, &addr, size)
+                    && crate::p4_calls::kuna_passthrough::stated_width(data, data.get_call_specs(idx), &addr, size).is_some()
+            } {
                 // Not likely a parameter but maybe
                 data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_inactive();
             } else {

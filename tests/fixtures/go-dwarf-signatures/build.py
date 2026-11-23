@@ -51,6 +51,27 @@ functions.extend([
     ('stringIndex', 'cmp %rbx,%rcx; jae 1f; movzbl (%rax,%rcx),%eax; ret; 1: call runtime.panicIndex; ud2',
      [('s', 'string', pair), ('index', 'int', 2)], ['u8']),
 ])
+second_pair = (0x52, 0x93, 8, 0x55, 0x93, 8)
+third_pair = (0x54, 0x93, 8, 0x58, 0x93, 8)
+two_bits = 'xor %rbx,%rax; xor %rcx,%rax; xor %rdi,%rax; ret'
+functions.extend([
+    ('twoStringBits', two_bits, [('a', 'string', pair), ('b', 'string', second_pair)], ['u64']),
+    ('twoStringForward', 'call main.twoStringBits; ret',
+     [('a', 'string', pair), ('b', 'string', second_pair)], ['u64']),
+    ('shiftedTwoStrings', 'lea (%rcx,%rsi),%rax; ret',
+     [('bias', 'int', 0), ('a', 'string', (0x53, 0x93, 8, 0x52, 0x93, 8)),
+      ('factor', 'f64', 17), ('b', 'string', (0x55, 0x93, 8, 0x54, 0x93, 8))], ['int']),
+    ('twoStringWrongOrder', two_bits,
+     [('a', 'string', pair), ('b', 'string', (0x55, 0x93, 8, 0x52, 0x93, 8))], ['u64']),
+    ('twoStringShortSecond', two_bits,
+     [('a', 'string', pair), ('b', 'string', (0x52, 0x93, 8, 0x55, 0x93, 4))], ['u64']),
+    ('twoStringWrongKind', two_bits,
+     [('a', 'string', pair), ('b', 'stringlookalike', second_pair)], ['u64']),
+    ('twoStringCollision', 'xor %rbx,%rax; xor %rcx,%rax; xor %rdi,%rax; xor %rsi,%rax; ret',
+     [('a', 'string', pair), ('b', 'string', second_pair), ('b_len', 'int', 4)], ['u64']),
+    ('threeStringPairs', 'xor %rbx,%rax; xor %rcx,%rax; xor %rdi,%rax; xor %rsi,%rax; xor %r8,%rax; ret',
+     [('a', 'string', pair), ('b', 'string', second_pair), ('c', 'string', third_pair)], ['u64']),
+])
 lines = ['.text', '.global _start', '_start: ret']
 def emit(*items): lines.extend(items)
 def string(value): return '.asciz "'+value+'"'

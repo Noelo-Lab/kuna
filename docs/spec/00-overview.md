@@ -1569,12 +1569,14 @@ printf-heavy whole binary (DIV-66). That cost is the reason the typing now
 happens at load instead, and the reason `full` — the loop — remains a per-run
 opt-in rather than the default.
 
-The step's last drive answers for a function decompiled alone (`kuna_callerreads.rs`,
+The step's last drive checks raw caller reads (`kuna_callerreads.rs`,
 chapter [04](04-calls-and-prototypes.md)): when the finished function returns
 `void` and a direct caller reads one of its return registers after the call, the
 step forces that return and drives the function once more, keeping the redo only
-when it returns a value. A batch skips it, since the callers it decompiles settle
-the same question.
+when it returns a value. Only the callee-first driver with a built call graph
+delegates this question to its return settling pass. A batch that visits its
+selection in ordinary order uses the same raw caller evidence as a single
+function, even when the caller is outside the selection.
 
 (kuna) **Surface defaults.** The drivers inject their defaults before the option
 pass, from one shared table
@@ -3006,6 +3008,66 @@ wanted, so silence there is the failure this plane exists to end.
 Durability is caller-carried, as it is for boundaries: `--assert @FILE` is the
 artifact.
 
+(kuna) **Declarations from a header (`--types`).** A program built against a
+library that kuna carries no table for shows that library's handles and option
+codes as bare integers, and stating each prototype and enum as its own
+`--assert` does not scale to a header. `--types <file.h|dir>` reads a header and
+states its declarations on the same plane. `kuna_cheader::load_types` cuts the
+text into top-level declarations: it blanks comments, skips `#` lines (a
+`# <line> "<file>"` marker re-anchors the position it reports), ends a
+declaration at a `;` outside braces and parentheses, drops a function body, and
+looks through an `extern "C" {` wrapper. Each declaration becomes one
+directive. One that starts with `typedef`, or that defines a `struct`, `union`
+or `enum`, is a `typedef` directive. One whose first parenthesis outside braces
+follows an identifier is a `prototype` directive for that identifier, so it
+binds a function or an import of that name and parks for a name the image does
+not have. Anything else (a variable, a forward declaration) states nothing and
+is skipped. Identical declarations are stated once, which is what makes a
+header that several others include harmless.
+
+The C grammar behind `typedef` and `prototype` reads plain declarations only,
+so the front end rewrites the spellings real headers use that it has no
+reading for: compiler decorations are removed, an enumerator value or array
+bound that is an integer constant expression over literals and earlier
+enumerators is replaced by its value, an unsized array parameter is spelled as
+a pointer, and `__builtin_va_list` is spelled `void *`, the storage every
+supported ABI passes it in. The value is the one C gives the expression: each
+literal takes its C type from its digits and suffix, operands meet under the
+usual arithmetic conversions, unsigned arithmetic wraps at its width, and a
+signed `<<` wraps as GCC and Clang define it. The width of `long` differs
+between targets, so a `long` or `unsigned long` result is kept only while it
+means the same at 32 and 64 bits. A hex or octal `LL` literal above the signed
+64-bit range is unsigned under GCC and Clang but signed under MSVC, so it is
+not folded. The loader reads headers before it knows the target, so `int` is
+32 bits wide: on a target whose `int` is 16 bits (AVR, MSP430) a folded value
+that overflows 16 bits is the 32-bit one. An expression C leaves undefined (a
+signed overflow, including `INT_MIN % -1`, a shift by the width or more, a
+division by zero), one that depends
+on the target, one with a `char` or `short` cast, and one whose value the
+grammar cannot read back (above the signed 64-bit range) is left as written,
+and the grammar refuses its declaration: a declaration is stated with C's
+value or not at all, because an enumerator that is off by a wrap can widen its
+enum and shift every field after it in a record. A single literal the grammar
+reads as C does is left as written; a binary literal and an enumerator name are
+replaced, since the grammar has no reading for either. kuna runs no preprocessor unless `--types-cpp <cc>`
+names one; then each header is piped through `<cc> -E` and the output is what
+is cut.
+
+The header's directives are placed ahead of the caller's own, whatever the
+order of the flags, and program-scoped directives are applied in order, so an
+`--assert prototype` for the same function is applied last and wins. A header
+prototype is otherwise a `prototype` directive like any other: it outranks the
+signature DWARF and the built-in library tables give the same name, and it is
+not checked against the code, so a header that does not match the binary is
+believed. Types go the other way: the grammar does not redefine a completed
+record or an existing typedef name, so a type that DWARF, a built-in table or
+an earlier header defined keeps its first definition and the header's is a
+`rejected` row. Each
+directive's report row carries `--types <file>:<line>:` and the declaration; a
+declaration the grammar refuses is a `rejected` row and a warning, the others
+still apply, and such a row never fails the run, under `--assert-strict` too:
+a header is loaded as far as it parses.
+
 A `flow` directive is the sharpest of the function-scoped ones, and the only
 one that changes which bytes are in the function at all. P2 classifies the flow
 out of each instruction — branch, call, call-that-does-not-return, return — and
@@ -3181,7 +3243,7 @@ runtime `on_or_off` parser.
 | env var | option | read at |
 |---|---|---|
 | `KUNA_IFUNCFPRET` | `ifuncfpret` | x86-64 IFUNC (`R_X86_64_IRELATIVE`) stub naming, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_ifuncfpret.rs (IFUNCFPRET_ENV)` |
-| `KUNA_PPCAPU` | `ppcapu` | PowerPC32 e500 selection from an SPE APU note, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_ppcapu.rs (PPCAPU_ENV)` |
+| `KUNA_PPCAPU` | `ppcapu` | PowerPC32 ELF selection from APU requirements and the embedded ABI flag, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_ppcapu.rs (PPCAPU_ENV)` |
 | `KUNA_CALLTARGETTYPE` | `calltargettype` | DWARF `DW_TAG_subroutine_type` import as a function prototype (on unless the option is set off, and never for Rust output), `decompiler/crates/kuna-decomp/src/p5_types/kuna_calltargettype.rs (CALLTARGETTYPE_ENV)` |
 | `KUNA_MACHO_SLICE` | `--slice` | Mach-O fat-binary slice peel, `decompiler/crates/kuna-console/src/engine.rs (select_macho_slice)` |
 | `KUNA_MACHO_ARM64E` | `macho-arm64e` | arm64e spec selection (on by default), `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_macho_arm64e.rs (MACHO_ARM64E_ENV)` |
@@ -3866,9 +3928,15 @@ action loop carries only the IR-boundary handle, not the SLEIGH translator — s
 it hands every restart up (`ActionContext::reflow_requested`) to the outer drive,
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (run_pipeline)`,
 which owns `&mut Architecture`: it clears the function (`Funcdata::clear` — the
-Override store survives), re-follows flow, and re-performs the root, bounded at 8
-cross-flow restarts (`MAX_REFLOW`); past the budget it keeps the last analyzed IR
-rather than failing. Restarts are refused outright during jump-table recovery
+Override store survives) and the analysis warnings the previous pass raised for it
+(`refollow_flow`, upstream `Architecture::clearAnalysis` clearing
+`Comment::warning|Comment::warningheader`, both those already published and those
+still buffered on the `Funcdata`), re-follows flow, and re-performs the root,
+bounded at 8 cross-flow restarts (`MAX_REFLOW`); past the budget it keeps the last
+analyzed IR rather than failing. Clearing the warnings is what keeps a comment from
+describing a pass that was thrown away: a `funcboundflow` truncation at a call the
+restart now knows does not return, or a `branch-flip` on a guard the re-run did not
+flip. Restarts are refused outright during jump-table recovery
 (`is_jumptable_recovery_on`, same `apply`). The relocation is behavioral
 plumbing, not semantics: trigger, clear, re-read-P0, re-run are the upstream
 restart contract.
@@ -4114,7 +4182,10 @@ takes the same windowed load. The straight-line walk never guesses: it stops at
 the first instruction that does not lift or that would cross the window or the
 end of mapped memory, and returns the lifted prefix, its exclusive end, the
 failure and exit status 1. A lift that includes a delay slot reports the
-combined byte span and the slot's operations in the same row.
+combined byte span and the slot's operations in the same row. On generic
+PowerPC64, a failed lift of a complete `isel` word within the window names
+the instruction and suggests the byte-order-matched A2ALT target. The error
+stays attached to the failed address in both straight-line and followed walks.
 
 The `--follow` walk (`raw_pcode/flow.rs`) reads each lift's successors with the
 rule `FlowInfo::xrefControlFlow` applies (`p2_lift/flow.rs`): a branch into the

@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-e475e354c99c",
+  "probe_id": "a-e8c923519c05",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -29,7 +29,7 @@
     },
     "stdout_matches": [
       "int fill_words\\(unsigned long \\*a0,int a1\\)",
-      "\\*v\\d+ = 0x102030405060708;"
+      "\\*v\\d+(?:\\+\\+)? = 0x102030405060708;"
     ],
     "stdout_absent": [
       "int fill_words\\(unsigned char \\*a0",

@@ -201,7 +201,7 @@ fn a_dispatch_skip_into_an_entry_keeps_its_jump() {
 #[test]
 fn a_predicated_branch_to_the_next_instruction_keeps_its_jump() {
     let idx = build("xreffp_strip_arm_le32");
-    let rows: Vec<_> = idx.refs_from_instruction(0x100a8).iter().map(|r| (r.to, r.kind, r.instruction.clone())).collect();
+    let rows: Vec<_> = idx.refs_from_instruction(0x100a8).iter().map(|r| (r.to, r.kind, r.instruction.to_string())).collect();
     assert_eq!(rows, vec![(0x100ac, XrefKind::Jump, "b.eq.w 0x100ac".to_string())]);
 }
 
@@ -214,7 +214,7 @@ fn a_kept_thumb_skip_is_rendered_as_the_walk_decoded_it() {
     let (at, entry) = (0x100be, 0x100c0);
     for idx in [build("xreffp_strip_arm_le32"), build_with("xreffp_strip_arm_le32", armframes_on)] {
         assert!(idx.is_function_entry(entry));
-        let rows: Vec<_> = idx.refs_from_instruction(at).iter().map(|r| (r.to, r.kind, r.instruction.clone())).collect();
+        let rows: Vec<_> = idx.refs_from_instruction(at).iter().map(|r| (r.to, r.kind, r.instruction.to_string())).collect();
         assert_eq!(rows, vec![(entry, XrefKind::Jump, "bx.ne lr".to_string())]);
     }
 }

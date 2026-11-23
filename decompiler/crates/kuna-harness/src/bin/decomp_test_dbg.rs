@@ -116,6 +116,11 @@ fn main() -> ExitCode {
     }
 
     if run_data_tests {
+        // A corpus may supply fixture-only languages alongside its XML cases.
+        let fixture_specs = Path::new(&dirname).join("specs");
+        if fixture_specs.is_dir() {
+            spec_roots.push(fixture_specs.to_string_lossy().into_owned());
+        }
         let test_files = gather_data_tests(&dirname, &data_test_names);
         // C++ `cout << endl << endl;`
         println!();
