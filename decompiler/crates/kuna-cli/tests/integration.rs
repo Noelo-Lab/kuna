@@ -180,6 +180,8 @@ mod coldentry_source_boundary;
 mod compact_switch_cli;
 #[path = "switch_self_loop_cli.rs"]
 mod switch_self_loop_cli;
+#[path = "open_dispatch.rs"]
+mod open_dispatch;
 #[path = "indirect_dispatch.rs"]
 mod indirect_dispatch;
 

@@ -103,7 +103,7 @@ pub(crate) fn reentry_edges(
 
 /// Operations one round's reachability walks may visit before every
 /// provisional dispatch is assumed reachable.
-const REACH_BUDGET: usize = 1 << 20;
+pub(super) const REACH_BUDGET: usize = 1 << 20;
 
 /// For each provisional dispatch, the new edges whose destination reaches it
 /// through decoded code. Only those edges can bring it another value, so only
@@ -131,7 +131,7 @@ pub(crate) fn reaching_edges(
 /// unless the operation always transfers, direct targets, every operation of an
 /// instruction with an internal relative branch, and the recovered targets of
 /// an indirect jump. `None` when the budget runs out.
-fn reached(
+pub(super) fn reached(
     data: &Funcdata,
     start: OpId,
     wanted: &BTreeSet<OpId>,
@@ -249,7 +249,7 @@ pub(crate) fn target_encoding(data: &Funcdata, branch: OpId) -> Option<(i32, u64
     Some((size, result))
 }
 
-fn incoming_return(data: &Funcdata, vn: VarnodeId) -> bool {
+pub(crate) fn incoming_return(data: &Funcdata, vn: VarnodeId) -> bool {
     let Some(value) = data.vbank().get(vn).filter(|v| v.is_input()) else {
         return false;
     };
