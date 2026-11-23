@@ -1765,12 +1765,6 @@ fn vn_addr(data: &Funcdata, vn: VarnodeId) -> Address {
         .get_addr()
         .clone()
 }
-/// True for an address in the temporary (unique) space, which names no storage the
-/// raw p-code of a restarted flow can read.
-pub(crate) fn is_temporary(addr: &Address) -> bool {
-    addr.get_space().is_some_and(|s| s.get_type() == spacetype::IPTR_INTERNAL)
-}
-
 fn vn_space(data: &Funcdata, vn: VarnodeId) -> Option<Rc<AddrSpace>> {
     data.vbank()
         .get(vn)
