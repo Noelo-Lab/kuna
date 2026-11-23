@@ -1,5 +1,13 @@
 # Stage-model issue testcases
 
+`kuna-boolbranch.xml` checks option `boolbranch` on gcc -O0 x86-64: a `jle`
+over `mov $1`/`mov $0` returns through a kept `if` (fold: `return 0 < x;`), an
+if/else assignment of 1 and 0 keeps its branch, and a flag whose arm also
+updates memory stays a flag. A `cmovg` and an `__builtin_add_overflow` flag
+that is set by a jump and only tested still fold. `kuna-boolbranch-thumb.xml`
+checks the same on Thumb: an `ite gt` block folds under both values, a `ble`
+over two `movs` keeps its `if` under `keep`.
+
 `kuna-calleepreservesargs.xml` checks registers a leaf callee leaves alone:
 an argument register set once before two calls of a leaf that reads it, and a
 killed-by-call register kept across a leaf that only reads memory. Its control
@@ -60,6 +68,13 @@ trampoline and two linked runtime functions with private or foreign exits.
 of the `ret 8` function g see both pushed arguments popped, so a later `[esp+4]`
 reads the caller's own argument. A second caller reaches g through a register
 and sees the same pop.
+
+`kuna-varargsave.xml` checks option `varargsave` on gcc -O2 x86-64 variadic
+functions. `report` and `scaled` hand their `va_list` to a callee, so the
+register-save prologue folds: they print `...` after their named parameters
+(`scaled` keeps its named `double`) and no `if (al)` block. `firstd` reads its
+saved `xmm0` slot itself and `dsum` indexes the save area through a register,
+so both keep the stores. The off run prints `report` with fourteen parameters.
 
 `kuna-condexe-heritage.xml` checks that conditional execution removes a re-test
 whose block holds unread flag writes once the register space has had a heritage

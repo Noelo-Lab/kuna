@@ -167,6 +167,10 @@ Three tiers:
 | a TOC-relative global after an external PPC64 call prints as an unknown pointer plus an offset | [`callmechanisms`](#callmechanisms----off--auto--on-default-auto) |
 | a 32-bit PowerPC -O0 variadic call drops a trailing double that an earlier argument is computed from | [`varargsharedfloat`](#varargsharedfloat----on--off-default-off) |
 | `sumi(2, x * 2, x)` prints as `sumi(2,x + x)` on PowerPC | [`varargsharedfloat`](#varargsharedfloat----on--off-default-off) |
+| a variadic function opens with if (al) { v = a0; ... } storing xmm registers | [`varargsave`](#varargsave----on--off-default-on-destructive-opt-in) |
+| a printf-style wrapper prints with fourteen parameters including eight unsigned long xmm ones | [`varargsave`](#varargsave----on--off-default-on-destructive-opt-in) |
+| unnamed rsi..r9 parameters stored to stack slots that nothing reads | [`varargsave`](#varargsave----on--off-default-on-destructive-opt-in) |
+| char v1; // al declared at the top of a function | [`varargsave`](#varargsave----on--off-default-on-destructive-opt-in) |
 | a uint8_t parameter prints as unsigned int and is only ever used as a1 & 0xff or (char)a1 | [`narrowargs`](#narrowargs----off--on--callers-default-callers) |
 | an int parameter prints as unsigned long on x86-64 and is used as (unsigned int)a0 | [`narrowargs`](#narrowargs----off--on--callers-default-callers) |
 | a caller passes v + 5 to a callee whose parameter is a byte and another caller passes v - 8 & 0xff | [`narrowargs`](#narrowargs----off--on--callers-default-callers) |
@@ -451,6 +455,10 @@ Three tiers:
 | one native word store prints as four byte assignments into a char array | [`bytestorewidth`](#bytestorewidth----on--off-default-off) |
 | v1[1].preceding[0] = 3; followed by three = 0 assignments | [`bytestorewidth`](#bytestorewidth----on--off-default-off) |
 | a stack char array receives byte-by-byte copies of an integer constant | [`bytestorewidth`](#bytestorewidth----on--off-default-off) |
+| if (c) return 1; return 0; in the source prints as return c; | [`boolbranch`](#boolbranch----fold--keep-default-keep) |
+| a branch instruction selecting 1 or 0 prints as a boolean expression with no if | [`boolbranch`](#boolbranch----fold--keep-default-keep) |
+| an unoptimized 0/1 jump diamond is folded into v = (a == b) | [`boolbranch`](#boolbranch----fold--keep-default-keep) |
+| need upstream Ghidra's folding of every 0/1 select into its condition | [`boolbranch`](#boolbranch----fold--keep-default-keep) |
 | branch tests x * (x + 1) & 1 or another condition that never changes | [`opaquepredicate`](#opaquepredicate----on--off-default-off) |
 | dead arm guarded by an arithmetic identity is still printed | [`opaquepredicate`](#opaquepredicate----on--off-default-off) |
 | obfuscated function has bogus control flow behind always-true conditions | [`opaquepredicate`](#opaquepredicate----on--off-default-off) |
@@ -1269,6 +1277,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P4/active-input-trial-scoring · kuna · correctness-fix · GH-841
 - **Example:** `option varargsharedfloat on`
 
+### `varargsave` -- on | off, default `on` (destructive opt-in)
+
+- **Symptoms:** a variadic function opens with if (al) { v = a0; ... } storing xmm registers; a printf-style wrapper prints with fourteen parameters including eight unsigned long xmm ones; unnamed rsi..r9 parameters stored to stack slots that nothing reads; char v1; // al declared at the top of a function.
+- **What it does:** x86-64 System V only (inert on every other target): fold the register-save prologue a variadic function opens with into its prototype. A function that calls `va_start` stores the argument registers past its named parameters into a save area in its frame (`mov %rsi,0x28(%rsp)` .. `mov %r9,0x48(%rsp)`, then `test %al,%al; je 1f; movaps %xmm0,0x50(%rsp)` .. `movaps %xmm7,0xc0(%rsp); 1:`), which printed as an `if (al) { v12 = a0; ... }` the source does not have, with every xmm and every general argument register as a parameter (`mprintf(const char *fmt, ...)` printed with fourteen). Right after the first heritage pass, while the stack is not yet in SSA form, the fold matches the prologue exactly: a jump on `(al & al) == 0` of the incoming `al` over a block holding only stores of the incoming xmm registers m..m+c-1 to the slots R+48+16*j of one save area R, rejoining the jump target, and stores of the incoming general registers n..n+g-1 (rdi..r9 = 0..5, a contiguous run) to R+8*k in the block that tests al or the straight line of blocks before it. It then removes the edge into the xmm block and the general-register stores, so al, the saved xmm registers and the unnamed general registers are no longer parameters, and the recovered prototype ends in `...`. It refuses the whole fold when any load reads a saved slot through the stack pointer plus a constant (gcc folds a `va_arg` whose offset it knows into such a load) or through a stack pointer the walk cannot place; loads through the `va_list`'s own pointers are `va_arg` and do not count. The `va_list` field initialisations stay as assignments.
+- **When to flip:** On by default: a variadic function's signature is `f(const char *a0,...)` and its body starts at the first statement of the source. Turn it off to see the save-area stores and the `al` test the machine code performs, for example when auditing a hand-written variadic routine.
+- **Where / provenance:** P4/own-input-prototype-recovery · kuna · structure-recovery · kuna-varargsave
+- **Example:** `option varargsave off`
+
 ### `narrowargs` -- off | on | callers, default `callers`
 
 - **Symptoms:** a uint8_t parameter prints as unsigned int and is only ever used as a1 & 0xff or (char)a1; an int parameter prints as unsigned long on x86-64 and is used as (unsigned int)a0; a caller passes v + 5 to a callee whose parameter is a byte and another caller passes v - 8 & 0xff.
@@ -1876,6 +1892,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Off by default, because byte content cannot tell an integer from a string chunk: `100` and the string tail `"d\0\0\0"` are the same bytes. Turn on when an integer that lands in a byte array (a mistyped or shifted record view, a stack record whose integer fields a `char` array swallowed) prints as one assignment per byte, to see the native store. With it on, an integer whose bytes read as text (`100`, `0x20`) still splits, and a stack string whose chunk holds an escape such as `\x1b` or a Latin-1 byte stays a series of wide stores instead of `builtin_strncpy`.
 - **Where / provenance:** P3/simplification-quiescence · kuna · opt-in-tool · kuna-byte-store-width
 - **Example:** `option bytestorewidth on`
+
+### `boolbranch` -- fold | keep, default `keep`
+
+- **Symptoms:** if (c) return 1; return 0; in the source prints as return c;; a branch instruction selecting 1 or 0 prints as a boolean expression with no if; an unoptimized 0/1 jump diamond is folded into v = (a == b); need upstream Ghidra's folding of every 0/1 select into its condition.
+- **What it does:** Whether a branch instruction whose two arms assign the constants 1 and 0 keeps its `if`. P3 `RuleConditionalMove` (upstream `ruleaction.cc`) folds a `MULTIEQUAL` of `1` and `0` under a `CBRANCH` into the branch's condition, whatever the binary did. That is right for conditional execution: an ARM `ite gt; movgt r0,#1; movle r0,#0`, an x86 `cmovg` or an AArch64 `csel` lifts to a `CBRANCH` that skips the rest of its own instruction, and the source wrote `return a > b;`. It erases an `if` the author wrote when the binary has a branch instruction: unoptimized `if (fnmatch(p, s, FNM_CASEFOLD) == 0) return true; return false;` is a `jne` over two `mov` blocks and printed as `return fnmatch(p,s,0x10) == 0;`. `keep` tells them apart by instruction address: a conditional-execution guard falls through into the rest of its own instruction, so one arm block starts at the guard's address, while a branch instruction's arms start at other instructions. A select under a branch instruction is left alone and the structurer prints the `if` (`if (!fnmatch(p,s,0x10)) return 1; return 0;` with `returndup`, `v = c ? 1 : 0;` for an assignment under `iteregion`). Two compiler-made branches still fold: a jump on the unordered flag of a float comparison (`NAN(x)`, the x86 `jp` GCC uses to materialize a float `!=`), and a flag set by a jump whose arms only assign the constant and whose value is only tested (GCC -O0 `__builtin_add_overflow`: `mov $0,%ecx; jno 1f; mov $1,%ecx; 1: test %cl,%cl`). A flag whose arm does other work, or whose value is returned, stored or computed with, keeps its branch. Selects of a boolean expression (`c && x`, `c || x`) fold as before. `fold` is upstream's rule, folding every such select.
+- **When to flip:** keep (default) prints the branches the binary has: unoptimized code materializes `if (c) return 1; return 0;` and `if (c) v = 1; else v = 0;` with a jump, while a source `return a < b;` compiles to `setcc`, `cmov` or an ARM IT block, which still fold. On the decbench corpus it turns 171 functions at -O0 and 45 at -O2 (ARM firmware built with branches rather than IT blocks) into exact matches of the source's control flow and loses 3. Flip to fold for upstream Ghidra's output, or where a source wrote `return c ? 1 : 0;` and the compiler used a jump for it, which the binary cannot tell apart from the `if`.
+- **Where / provenance:** P3/simplification-quiescence · kuna · structure-recovery · decbench-boolbranch
+- **Example:** `option boolbranch fold`
 
 ### `opaquepredicate` -- on | off, default `off`
 

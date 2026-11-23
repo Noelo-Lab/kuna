@@ -103,6 +103,10 @@ The RISC-V entry includes the Zcmp/Zcmt constructors (`riscv.zc.sinc`), the
 with `slacomp`, which reproduces the previous RISC-V digest on the unmodified
 sources.
 
+The ARMv8 little-endian entry includes the Thumb `stmia` base writeback that
+applies when the base is in the register list. Its digest was regenerated with
+`slacomp`, which reproduces the previous ARM digest on the previous sources.
+
 `xml_ops.xml` is the same pinned C++ compiler's `-y` output for
 `snips/xml_ops.slaspec`. The CLI test compares XML output byte-for-byte in both
 single-file and recursive modes, including the `BUILD` and `INT_ADD` opcode

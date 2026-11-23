@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_240() {
-    assert_eq!(kuna_num_settables(), 240);
-    assert_eq!(SETTABLE_TABLE.len(), 240);
+fn settable_count_is_242() {
+    assert_eq!(kuna_num_settables(), 242);
+    assert_eq!(SETTABLE_TABLE.len(), 242);
 }
 
 #[test]
-fn tier_counts_are_50_core_127_transform_63_analysis() {
+fn tier_counts_are_50_core_129_transform_63_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_50_core_127_transform_63_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (50, 127, 63));
+    assert_eq!((core, transform, analysis), (50, 129, 63));
 }
 
 #[test]
@@ -264,7 +264,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_76() {
+fn option_values_live_value_present_for_78() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -885,7 +885,9 @@ fn option_values_live_value_present_for_76() {
     // +1 for `switchmerge` (live_field = switchmerge).
     // +1 for `cachereturn` (live_field = cache_return).
     // +1 for `bytestorewidth` (live_field = byte_store_width).
-    assert_eq!(with_live, 88);
+    // +1 for `varargsave` (live_field = vararg_save).
+    // +1 for `boolbranch` (live_field = bool_branch_keep).
+    assert_eq!(with_live, 90);
 }
 
 #[test]
@@ -1150,7 +1152,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `swiftobjcthunk`; its P1 row sits after `swiftcall`.
     // +1 each for `swifthelpers` and `valuewitness`.
     // +1 for `bytestorewidth`; its P3 row sits after `globalarrayanchor`.
-    assert_eq!(json.matches("},\n").count(), 239);
+    // +1 for `boolbranch`; its P3 row sits after `bytestorewidth`.
+    assert_eq!(json.matches("},\n").count(), 241);
     // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 
