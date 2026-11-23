@@ -51,6 +51,8 @@ mod archive_members_cli;
 
 #[path = "assert_callee.rs"]
 mod assert_callee;
+#[path = "stated_jump_targets.rs"]
+mod stated_jump_targets;
 
 #[path = "array_member_bits.rs"]
 mod array_member_bits;

@@ -477,6 +477,8 @@ struct DataSym {
 /// exactly as `LoadImageBfd` reads from BFD's section contents.
 #[derive(Debug)]
 pub struct ObjectLoadImage {
+    /// The mapped code addresses may move before execution.
+    pub runtime_code_relocation: bool,
     /// Name of the loadimage (the `LoadImage` base-class `filename` member).
     filename: String,
     /// (kuna) The ARM container states the VFP procedure-call standard
@@ -674,6 +676,20 @@ fn patch_segments(segments: &mut [Segment], vma: u64, value: u64, width: usize, 
         return true;
     }
     false
+}
+
+fn runtime_code_relocation(file: &object::File<'_>) -> bool {
+    let pe_directories = match file {
+        object::File::Pe32(pe) => Some(pe.data_directories()),
+        object::File::Pe64(pe) => Some(pe.data_directories()),
+        _ => None,
+    };
+    if let Some(directories) = pe_directories {
+        return directories.get(object::pe::IMAGE_DIRECTORY_ENTRY_BASERELOC)
+            .is_some_and(|dir| dir.size.get(object::LittleEndian) != 0);
+    }
+    matches!(file.kind(), object::ObjectKind::Dynamic | object::ObjectKind::Relocatable)
+        || matches!(file.flags(), object::FileFlags::MachO { flags } if flags & object::macho::MH_PIE != 0)
 }
 
 impl ObjectLoadImage {
@@ -1158,6 +1174,7 @@ impl ObjectLoadImage {
             dynrelocs.const_ranges.into_iter().filter(|(lo, _)| applied.contains(lo)).collect();
 
         Ok(ObjectLoadImage {
+            runtime_code_relocation: runtime_code_relocation(&file),
             filename: filename.to_string(),
             arm_vfp_args: crate::loader::kuna_armfloatabi::vfp_args(&file),
             float_arg_registers: crate::loader::kuna_floatabi::float_arg_registers(&file),
@@ -1340,6 +1357,7 @@ impl ObjectLoadImage {
         }
 
         Ok(ObjectLoadImage {
+            runtime_code_relocation: true,
             filename: filename.to_string(),
             arm_vfp_args: crate::loader::kuna_armfloatabi::vfp_args(&file),
             float_arg_registers: crate::loader::kuna_floatabi::float_arg_registers(&file),

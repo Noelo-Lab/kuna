@@ -226,6 +226,7 @@ pub struct JumpModelConstSelect {
     /// A re-entered dispatch grows one target per retry, so its walk is
     /// bounded by the table ceiling instead of the select's small one.
     reentered: bool,
+    stated: Option<crate::jumptable::StatedSelector>,
 }
 
 impl JumpModelConstSelect {
@@ -283,7 +284,11 @@ impl JumpModelConstSelect {
     }
 
     pub(crate) fn from_flow_targets(dests: Vec<u64>, stub: Option<u64>) -> Self {
-        Self { dests, return_stub: stub, reentered: true, return_encoding: None }
+        Self { dests, return_stub: stub, reentered: true, ..Self::default() }
+    }
+
+    pub(crate) fn stated(dests: Vec<u64>, selector: crate::jumptable::StatedSelector) -> Self {
+        Self { dests, stated: Some(selector), ..Self::default() }
     }
 
     /// The recovered destination offsets.
@@ -294,7 +299,7 @@ impl JumpModelConstSelect {
 
 impl JumpModel for JumpModelConstSelect {
     fn is_override(&self) -> bool {
-        false
+        self.stated.is_some()
     }
 
     fn get_table_size(&self) -> int4 {
@@ -308,6 +313,9 @@ impl JumpModel for JumpModelConstSelect {
         _matchsize: uint4,
         maxtablesize: uint4,
     ) -> KunaResult<bool> {
+        if self.stated.is_some() {
+            return Ok(true);
+        }
         self.dests.clear();
         self.return_stub = None;
         let (root, address) = match fd.obank().get(indop) {
@@ -343,7 +351,8 @@ impl JumpModel for JumpModelConstSelect {
         addresstable.clear();
         let spc = Rc::clone(fd.obank().get(indop).unwrap().get_addr().get_space().unwrap());
         for &d in &self.dests {
-            let off = target_offset(d, spc.get_word_size(), fd.get_arch().funcptr_align);
+            let align = if self.stated.is_some() { 0 } else { fd.get_arch().funcptr_align };
+            let off = target_offset(d, spc.get_word_size(), align);
             addresstable.push(Address::new(Rc::clone(&spc), off));
         }
         if let Some(stub) = self.return_stub {
@@ -370,6 +379,14 @@ impl JumpModel for JumpModelConstSelect {
         orig: &dyn JumpModel,
     ) -> KunaResult<()> {
         let Some(space) = addresstable.first().and_then(Address::get_space) else { return Ok(()) };
+        if let Some(selector) = self.stated {
+            if let crate::jumptable::StatedSelector::EdgesOnly(reason) = selector {
+                return Err(kuna_base::error::KunaError::lowlevel(reason));
+            }
+            let units = u64::from(space.get_word_size());
+            label.extend(addresstable.iter().map(|a| a.get_offset() / units));
+            return Ok(());
+        }
         if space.get_word_size() == 1 && fd.get_arch().funcptr_align == 0 {
             label.extend(addresstable.iter().map(|a| {
                 if Some(a.get_offset()) == self.return_stub { crate::jumptable::NO_LABEL } else { a.get_offset() }

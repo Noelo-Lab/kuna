@@ -371,6 +371,7 @@ impl Filters {
 
 /// The answer to "where do I start", measured without decompiling anything.
 struct Summary {
+    assertions: Vec<kuna_console::assertions::Outcome>,
     /// Functions discovered, before any triage filter.
     total: usize,
     /// The image entry point as `(address, name)`, `None` when the format
@@ -427,6 +428,7 @@ fn summarize(
     largest.truncate(filters.largest_wanted());
 
     Summary {
+        assertions: prog.assertion_outcomes(),
         total: all.len(),
         entry,
         main: user_main(all),
@@ -526,6 +528,9 @@ fn summary_json(
     ];
     doc.extend(declared.fid_databases_field());
     doc.extend(summary.rust_fields.iter().cloned());
+    if !summary.assertions.is_empty() {
+        doc.push(("assertions".into(), assertions_json(&summary.assertions)));
+    }
     doc.push((
         "summary".into(),
         Json::Object(vec![
@@ -610,7 +615,7 @@ fn summary_text(
 
 /// `kuna decompile-all` entry point.
 pub fn run(argv: &[String]) -> i32 {
-    let (args, filters) = match parse_args_with_filters(argv, "decompile-all") {
+    let (mut args, filters) = match parse_args_with_filters(argv, "decompile-all") {
         Ok(a) => a,
         Err(e) => {
             eprintln!("error: {e}");
@@ -634,7 +639,7 @@ pub fn run(argv: &[String]) -> i32 {
     if filters.summary {
         return run_summary(&args, &filters);
     }
-    match decompile_all(&args, &filters) {
+    match decompile_all(&mut args, &filters) {
         Ok(run) => {
             // An UNFILTERED run that DISCOVERED nothing is a failed run wearing a
             // successful one's clothes. A run narrowed by `--functions`/`--addr`
@@ -702,6 +707,9 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
     let dir = std::path::Path::new(scratch);
     let faults = jobs::Faults::from_env();
     let mut prog = load_program(args, DriverDefaults::Decompile)?;
+    if let Some(rejected) = prog.assertion_outcomes().iter().find(|o| o.status != "applied") {
+        return Err(format!("worker refused {}: {:?}", rejected.directive, rejected.detail));
+    }
     if !args.jobs_objects {
         kuna_decomp::kuna_elemptr::without_objects(prog.arch_mut());
     }
@@ -768,8 +776,8 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
             // One pulled batch for the whole chunk, not one call per function:
             // the callee-hint context is built once per call, and rebuilding the
             // program's entry set per function is unaffordable on a large image.
-            // `single_target` is false because a worker never carries assertions
-            // (`--assert` and `--jobs` are exclusive), so nothing binds to it.
+            // Workers replay only image-scoped jump assertions. No per-function
+            // assertion binds to a single target here.
             let opts = DecompileOptions {
                 no_vars: args.no_vars,
                 want_proto: args.jobs_proto,
@@ -1037,6 +1045,7 @@ pub(crate) fn pool_config<'a>(
         binary: &args.binary,
         mode: args.mode,
         options: &args.options,
+        jump_assertions: &args.assertions,
         func_decls: args.func_decls.iter().map(crate::funcdecl::FuncDecl::flag_value).collect(),
         no_vars: args.no_vars,
         want_proto,
@@ -1325,7 +1334,10 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
             &declared,
         )
     };
-    emit_with_run_error(&text, discovery_error.as_deref())
+    let outcomes = &summary.assertions;
+    let rejected = report_rejected_assertions(outcomes);
+    let status = emit_with_run_error(&text, discovery_error.as_deref());
+    if (args.assert_strict && rejected) || any_refused_assertion(outcomes) { 1 } else { status }
 }
 
 /// One `decompile-all` run: what it decompiled, and how many entries the
@@ -1349,7 +1361,7 @@ struct AllRun {
 ///
 /// The filters run BEFORE the decompile loop on purpose: narrowing the output
 /// would still pay for 1,150 decompiles.
-fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
+fn decompile_all(args: &mut Args, filters: &Filters) -> Result<AllRun, String> {
     let load_started = std::time::Instant::now();
     let mut prog = load_program(args, DriverDefaults::Decompile)?;
     let load_seconds = load_started.elapsed().as_secs_f64();
@@ -1379,6 +1391,8 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
         }
         let inventory = prog.function_entries_canonical();
         let assertions = prog.assertion_outcomes();
+        let mut outcomes = assertions.iter();
+        args.assertions.retain(|_| outcomes.next().is_some_and(|o| o.status == "applied"));
         let synth = synth_base(&prog);
         let arm_frames = worker_arm_frames(&prog);
         drop(prog);
@@ -3252,10 +3266,12 @@ pub(crate) fn parse_args_with_filters(
                     .into(),
             );
         }
-        if !assertions.is_empty() {
+        if !assertions.is_empty() && (cmd != "decompile-all" || assertions.iter().any(|directive|
+            !matches!(directive.body, kuna_console::assertions::Body::JumpTable { .. })))
+        {
             return Err(
-                "--assert and --jobs are exclusive: assertion outcomes are per-load state the \
-                 worker pool cannot merge. Re-run with --jobs 1."
+                "--assert and --jobs > 1 can be combined only on decompile-all with jumptable \
+                 directives alone. Use --jobs 1 for this run."
                     .into(),
             );
         }
@@ -3401,6 +3417,10 @@ fn usage_decompile_all() {
          function that grew by the margin is stopped once the cgroup holds more\n\
          than the cap less it, serial or --jobs alike; outside one there is\n\
          none; 0 disables.\n\
+         --assert DIRECTIVE or --assert @FILE supplies repeatable facts. Use\n\
+         'jumptable SITE TARGET [TARGET ...]' for every taken destination of a\n\
+         computed jump. With --jobs > 1, every directive must be a jumptable.\n\
+         --assert-strict exits nonzero for rejected facts, including in --summary.\n\
          --jobs N spreads the per-function loop over N worker processes (auto =\n\
          this machine's parallelism, capped at 16; 1, the default, is the serial\n\
          in-process path). Output is merged in target order and is identical to\n\

@@ -168,6 +168,14 @@ pub(crate) fn console_form(
             Some(f) => return Err(unbindable(&f)),
             None => (Slot::Function, format!("comment instruction {addr:#x} {text}")),
         },
+        Body::JumpTable { addr, targets } => {
+            use std::fmt::Write;
+            let mut line = format!("override jumptable {addr:#x}");
+            for target in targets {
+                write!(line, " {target:#x}").unwrap();
+            }
+            (Slot::Program, line)
+        }
         Body::Flow { func, addr, kind } => match names_another(func, target) {
             Some(f) => return Err(unbindable(&f)),
             None => (Slot::Function, format!("override flow {addr:#x} {kind}")),

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5258,
-    5258
+    5263,
+    5263
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2115,6 +2115,7 @@
     "data:Octeon scratch word read sign extends the current value",
     "data:Octeon scratch writes survive and word reads preserve both full registers",
     "data:Octeon scratch zero write remains observable at return",
+    "data:Opaque jump is unresolved before its destinations are stated",
     "data:Opaque pointer retype #1",
     "data:Opaque pointer retype #2",
     "data:Opaque pointer retype #3",
@@ -2852,6 +2853,10 @@
     "data:Stack pointer retype #7",
     "data:Stack pointer retype #8",
     "data:Stack pointer retype #9",
+    "data:Stated first destination labels the target operand",
+    "data:Stated second destination labels the target operand",
+    "data:Stated third destination labels the target operand",
+    "data:Stating taken destinations preserves the independent miss",
     "data:String results retain destination writes",
     "data:TAILCALLFRAME #1: default does NOT decode the callee into the caller; only the tailcallframe-off pass shows its store (exactly one occurrence across both passes)",
     "data:TAILCALLFRAME #2: only the default pass recovers the tail jump as a call to the undiscovered callee",

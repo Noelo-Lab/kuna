@@ -264,6 +264,7 @@ pub struct RawPcodeOp {
 }
 
 /// A SLEIGH address-space, offset and byte-size tuple.
+#[derive(PartialEq, Eq)]
 pub struct RawPcodeVarnode {
     pub space: String,
     pub offset: u64,
@@ -700,7 +701,8 @@ pub struct ConsoleProgram {
     /// with, in the order they were given -- the one override plane an agent
     /// states facts through (`crate::assertions`).  Empty for every invocation
     /// that passed none, which is what keeps the plane free.
-    assertions: Vec<crate::assertions::Directive>,
+    assertions: Rc<[crate::assertions::Directive]>,
+    function_assertion_slots: Rc<[usize]>,
     /// One slot per [`Self::assertions`] entry: what became of that directive.
     /// `None` until something claims it, so a directive no surface reached is
     /// still distinguishable from one that was applied.
@@ -2574,6 +2576,7 @@ impl ConsoleProgram {
     /// directive so the report keeps the caller's own order however the
     /// directives are later dispatched.
     pub fn set_assertions(&mut self, directives: Vec<crate::assertions::Directive>) {
+        self.arch_mut().stated_jump_targets.clear();
         if directives.iter().any(|directive| matches!(directive.body,
             crate::assertions::Body::Flow { .. }
             | crate::assertions::Body::Callee { .. }
@@ -2584,12 +2587,23 @@ impl ConsoleProgram {
             self.callwide_unavailable("selected function flow or storage assertions lack a full image proof");
         }
         self.assertion_outcomes = vec![None; directives.len()];
-        self.assertions = directives;
+        self.function_assertion_slots = directives.iter().enumerate()
+            .filter(|(_, d)| d.body.is_function_scoped() && d.body.cross_function_prototype().is_none())
+            .map(|(slot, _)| slot).collect();
+        self.assertions = directives.into();
     }
 
     /// The installed assertions, in the order they were given.
     pub fn assertions(&self) -> &[crate::assertions::Directive] {
         &self.assertions
+    }
+
+    pub(crate) fn local_directives(&self) -> crate::assertions::LocalDirectives {
+        crate::assertions::LocalDirectives { all: self.assertions.clone(), slots: self.function_assertion_slots.clone() }
+    }
+
+    pub(crate) fn assertion_applied(&self, slot: usize) -> bool {
+        self.assertion_outcomes[slot].as_ref().is_some_and(|o| o.status == "applied")
     }
 
     /// Record what became of the `i`-th directive.
@@ -4393,7 +4407,8 @@ fn empty_program(
         anonymous_symbols: std::cell::OnceCell::new(),
         canonical_entries: std::cell::RefCell::new(None),
         entry_names: std::cell::RefCell::new(None),
-        assertions: Vec::new(),
+        assertions: Rc::default(),
+        function_assertion_slots: Rc::default(),
         assertion_outcomes: Vec::new(),
         pending_prototypes: BTreeMap::new(),
         raw_address_units: None,
@@ -5077,6 +5092,7 @@ pub(crate) fn bootstrap_object(
     // section; an entry that only carries the Thumb bit arms the
     // `entrythumbflow` walk, exactly as a TE with that shape does.
     let arch_id = sleigh.arch_id().to_string();
+    sleigh.base_mut().unwrap().runtime_code_relocation = loader.runtime_code_relocation;
     let parsed = is_arm32_language(&arch_id)
         .then(|| kuna_analysis::loadimage_object::parse_object(&*bytes).ok())
         .flatten();
@@ -7082,6 +7098,27 @@ mod te_probe_tests {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn function_assertion_index_shares_only_the_selected_report_slots() {
+        use crate::assertsyntax::parse_directive;
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let mut prog = super::bootstrap_from_object(
+            root.join("tests/fixtures/stated-jump/dispatch.elf").to_str().unwrap(), "",
+            &[root.join("specs").to_string_lossy().into_owned()],
+        ).unwrap();
+        let jump = parse_directive("jumptable 401009 401020 401030 401050").unwrap();
+        let mut directives = vec![jump; 1000];
+        directives.insert(123, parse_directive("flow dispatch::401009 call").unwrap());
+        prog.set_assertions(directives);
+        let first = prog.local_directives();
+        let next = prog.local_directives();
+        assert_eq!(&*first.slots, &[123]);
+        assert!(std::rc::Rc::ptr_eq(&first.slots, &next.slots));
+        assert!(std::rc::Rc::ptr_eq(&first.all, &next.all));
+        prog.set_assertions(Vec::new());
+        assert!(prog.local_directives().slots.is_empty());
+    }
+
     use std::rc::Rc;
 
     use kuna_base::space::{spacetype, AddrSpace};
