@@ -5507,8 +5507,9 @@ fn commit_analysis_output(
     if let Some(entry) = out.go_chanrecv2 {
         prog.arch_mut().go_chanrecv2 = Some(entry);
     }
-    if !out.case_entries.is_empty() {
-        let cases: std::collections::BTreeSet<u64> = out.case_entries.iter().copied().collect();
+    if !out.case_entries.is_empty() || !out.interior_entries.is_empty() {
+        let cases: std::collections::BTreeSet<u64> =
+            out.case_entries.iter().chain(&out.interior_entries).copied().collect();
         out.entries.retain(|e| !cases.contains(e));
     }
     for slot in std::mem::take(&mut out.ppc32_pic_slots) {
