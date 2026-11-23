@@ -1567,6 +1567,16 @@ addl-flag on the condition's `CBRANCH` and emit the condition through the same
 parenthesization, short-circuiting and any comma-expression side effects are
 identical to the `if` form they replace.
 
+An `if` or loop prints its condition block twice: its statements first, then,
+under `ONLY_BRANCH` (or `COMMA_SEPARATE` inside `while (...)` and `for (...)`),
+only the branch that ends it. A switch, an `if`, a loop or a goto has no such
+branch and prints its whole statement again, so `printc.rs (PrintC::emit_block)`
+refuses one in that position (the `renders_branch` test of §8.2): it prints
+`/* WARNING: structuring placed a statement where a condition belongs */` where
+the condition belongs and records the warning, instead of the statement. The
+structurers never hand the printer such a tree (§8.2); this keeps a future
+structuring error from printing the statement a second time without notice.
+
 The `infloopstyle while|do` option controls unconditional C loop spelling.
 By default an infinite-loop node emits `while (true) { ... }`; `do` restores
 `do { ... } while (true);`. A constant true condition has no side effects,

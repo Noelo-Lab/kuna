@@ -4457,6 +4457,12 @@ impl PrintC {
     /// `FlowBlock::emit(PrintLanguage*)` -> `PrintC::emitBlock*`).
     pub(crate) fn emit_block(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         use crate::block::BlockType;
+        if self.context.is_set(modifiers::ONLY_BRANCH | modifiers::COMMA_SEPARATE)
+            && !crate::kuna_switchcond::renders_branch(fd.sblocks_ref(), blk)
+        {
+            self.emit_misplaced_condition();
+            return;
+        }
         match fd.sblocks_ref().block(blk).get_type() {
             BlockType::Copy if self.loop_tests.hidden.contains(&blk) => {} // (kuna looptest)
             BlockType::Copy => self.emit_block_copy(fd, arch, blk),
@@ -4482,6 +4488,16 @@ impl PrintC {
                 }
             }
         }
+    }
+
+    /// A condition slot holding a block with no branch to print (see
+    /// [`crate::kuna_switchcond`]): its statements already printed, so print a
+    /// warning where the condition belongs rather than the statements again.
+    fn emit_misplaced_condition(&mut self) {
+        let warning = crate::kuna_switchcond::MISPLACED_CONDITION_WARNING;
+        let text = format!("/* {warning} */");
+        self.emit.print(&text, SyntaxHighlight::CommentColor);
+        self.record_warning(crate::kuna_functionwarnings::Warning::new(None, warning), &text);
     }
 
     /// C++ `PrintC::emitBlockCondition` (printc.cc:2985): emit a `BlockCondition`
