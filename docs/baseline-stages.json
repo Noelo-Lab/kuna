@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5022,
-    5022
+    5036,
+    5036
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4105,6 +4105,20 @@
     "data:nullable-relocations #7: no COMMON object is read as the slot",
     "data:nullable-relocations #8: a compared weak address reads the slot",
     "data:observable pointer bits keep the full physical header",
+    "data:octeon-o64 advances by one four-byte pointer slot",
+    "data:octeon-o64 branches on the Octeon bit test",
+    "data:octeon-o64 passes the fifth argument on the stack",
+    "data:octeon-o64 reads an aggregate split across register and stack",
+    "data:octeon-o64 reads register and stack aggregates",
+    "data:octeon-o64 reads the fifth scalar float",
+    "data:octeon-o64 reads the fifth stack value",
+    "data:octeon-o64 reads the high half of a single GPR",
+    "data:octeon-o64 returns double bits",
+    "data:octeon-o64 returns float bits",
+    "data:octeon-o64 uses double input bits",
+    "data:octeon-o64 uses float input bits",
+    "data:octeon-o64 writes and returns hidden struct storage",
+    "data:octeon-o64 writes and returns hidden union storage",
     "data:octeoneffects #10: only off forwards a neighboring stack value across zeroing",
     "data:octeoneffects #11: both zero operations retain neighboring stores in both guarded modes",
     "data:octeoneffects #12: zeroing through an incoming pointer keeps a spill in the frame's top cache block",
