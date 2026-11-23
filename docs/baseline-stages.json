@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5175,
-    5175
+    5187,
+    5187
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -200,6 +200,18 @@
     "data:BODYREADS #2: on, the recursive call passes key",
     "data:BODYREADS #3: on, key is the int its read needs",
     "data:BODYREADS #4: off, key is only the byte the store keeps",
+    "data:BOOLBRANCH #1: fold prints the jump selecting 1 or 0 as its condition",
+    "data:BOOLBRANCH #2: keep keeps the if of the returned select",
+    "data:BOOLBRANCH #3: keep returns the constants from the two arms",
+    "data:BOOLBRANCH #4: fold assigns the condition",
+    "data:BOOLBRANCH #5: keep assigns through the kept branch",
+    "data:BOOLBRANCH #6: fold tests the condition again in place of the flag",
+    "data:BOOLBRANCH #7: keep keeps the one flag whose arm does other work, and no other",
+    "data:BOOLBRANCH #8: a materialized overflow flag that is only tested still folds",
+    "data:BOOLBRANCH #9: a cmov still folds under keep",
+    "data:BOOLBRANCH-THUMB #1: fold folds the branch and keep still folds the IT block",
+    "data:BOOLBRANCH-THUMB #2: keep keeps the branch instruction's if",
+    "data:BOOLBRANCH-THUMB #3: keep returns the constants from the two arms",
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
     "data:BRANCHFLIP #2: `option branchflip on` flips to the positive `!= 0` guard (angr-style)",
     "data:BRANCHFLIP #3: the flip is logged so its effect is observable",
@@ -1515,7 +1527,7 @@
     "data:KUNA-CATALOG #4: v850indirectbranch is a V850-gated default ()",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
     "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, switchguardbound, switchsharedcase, switchmultipred, unrolledguard, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, securitycheck, structsynth, protoorder, calleevote, rustprobestack)",
-    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, constselectjump, arraystride, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, guardarm, loopcondhoist, endptrbound, structsynth, structmerge, structheadless, devectorize, gomorestack, gowritebarrier, ptrauthtrap, rustprobestack, chkstkdarwin, opaquepredicate, switchextent)",
+    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, constselectjump, arraystride, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, guardarm, loopcondhoist, endptrbound, structsynth, structmerge, structheadless, devectorize, gomorestack, gowritebarrier, ptrauthtrap, rustprobestack, chkstkdarwin, opaquepredicate, switchextent, boolbranch)",
     "data:KUNA-CATALOG #8: the opt-in-tool change_kind counts explicitly opted transformations ()",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CATALOG FID defaults off",
