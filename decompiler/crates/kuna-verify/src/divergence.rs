@@ -103,6 +103,20 @@ pub const COPY_OVERLAP: Divergence = Divergence {
     matches: |_| false,
 };
 
+/// ARM and AArch64 define a division by zero as 0; C leaves it undefined, so
+/// kuna's `/` for `udiv`/`sdiv` traps where the machine goes on. Always on:
+/// every decompiler prints the instruction as C's division. Matched on a run
+/// where the machine, on those targets, divided by zero and kuna's side traps
+/// dividing by zero.
+pub const DIVIDE_BY_ZERO: Divergence = Divergence {
+    id: "divide-by-zero",
+    option: "(always on)",
+    arch: "ARM",
+    observable: "a division's result",
+    pattern: "the divisor is zero: the machine's result is 0 and kuna's C divides by zero",
+    matches: |_| false,
+};
+
 /// `nanignore compare` (the default) treats a float conversion round trip as
 /// the identity, as upstream does, so a signalling NaN comes back as it went in
 /// where the machine's conversions return it quieted.

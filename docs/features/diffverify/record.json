@@ -176,6 +176,12 @@
     "harness_fixes": ["noreturn-halt", "bool-return", "segment-bases", "thumb-interworking", "barriers", "exclusive-monitor", "x87-extended", "cortex-m-system-registers", "memory-builtins", "readonly-store-trap"],
     "sample_set_after_second_round": {"functions": 250, "agrees": 172, "unknown": 78, "differs": 0}
   },
+  "c5": {
+    "results": "docs/features/diffverify/c5-results.md",
+    "option": "kuna-verify check ... --concolic QUERIES",
+    "sample_set": {"functions_with_concolic_runs": 49, "concolic_runs": 80, "new_differs": 0, "new_divergences": 2},
+    "ls_O2": {"functions_with_concolic_runs": 105, "concolic_runs": 237, "wall_seconds_before": 3.3, "wall_seconds_after": 13.4}
+  },
   "tier_l": {
     "results": "docs/features/diffverify/tier-l-results.md",
     "command": "python3 scripts/diffverify/tier_l.py x86-64|aarch64|thumb BINARY",
@@ -191,6 +197,7 @@
   },
   "declared_divergences": [
     "copy-overlap",
+    "divide-by-zero",
     "returnpair-rdx-zero",
     "switchrunon-cut-row",
     "synthesized-call",

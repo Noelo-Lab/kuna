@@ -15,6 +15,7 @@ pub mod abi;
 pub mod baseline;
 pub mod calls;
 pub mod check;
+pub mod concolic;
 pub mod contract;
 pub mod divergence;
 pub mod graph;

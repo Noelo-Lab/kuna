@@ -210,6 +210,92 @@ fn decodes_in(env: &Env, target: u64, mode: Option<u128>) -> bool {
     })
 }
 
+/// C5's view of one run: what expression of the inputs each written byte
+/// holds, with the byte's concrete value when it was written, so a later
+/// overwrite by code the view does not follow (a callee, a stub) drops it.
+#[derive(Default)]
+struct Shadow {
+    bytes: std::collections::HashMap<(i32, u64), (Rc<crate::concolic::Expr>, u32, u8)>,
+    path: crate::concolic::Path,
+}
+
+/// Branches a recorded path keeps.
+const PATH_BRANCHES: usize = 256;
+
+impl Machine<'_, '_, '_> {
+    /// C5: the expression `vn` holds, given its concrete value; `None` when it
+    /// depends on no input.
+    fn sym_read(&mut self, vn: &VarnodeData, value: u128) -> Option<Rc<crate::concolic::Expr>> {
+        use crate::concolic::Expr;
+        self.shadow.as_ref()?;
+        let spc = Rc::clone(vn.space.as_ref()?);
+        if spc.get_type() == spacetype::IPTR_CONSTANT {
+            return None;
+        }
+        let n = vn.size;
+        let big = spc.is_big_endian();
+        let mut pieces = Vec::with_capacity(n as usize);
+        let mut symbolic = false;
+        for i in 0..u64::from(n) {
+            let at = spc.wrap_offset(vn.offset.wrapping_add(i));
+            let shift = if big { u64::from(n) - 1 - i } else { i };
+            let cb = (value >> (8 * shift)) as u8;
+            let known = self.shadow.as_ref()?.bytes.get(&(spc.get_index(), at)).filter(|(_, _, conc)| *conc == cb).cloned();
+            let piece = match known {
+                Some((e, idx, _)) => Some(crate::concolic::byte(&e, idx)),
+                None if self.state.untouched(&spc, at) => self.env.input_place(&spc, at).map(|place| {
+                    let name: Rc<str> = format!("v{}_{at:x}", place.space).into();
+                    if let Some(s) = self.shadow.as_mut() {
+                        s.path.inputs.insert(Rc::clone(&name), place);
+                    }
+                    Rc::new(Expr::Var(name))
+                }),
+                None => None,
+            };
+            symbolic |= piece.is_some();
+            pieces.push(piece.unwrap_or_else(|| Rc::new(Expr::Const(u128::from(cb), 8))));
+        }
+        if !symbolic {
+            return None;
+        }
+        if !big {
+            pieces.reverse();
+        }
+        Some(if pieces.len() == 1 { pieces.pop()? } else { Rc::new(Expr::Concat(pieces)) })
+    }
+
+    /// C5: `vn` now holds `value`, and the expression `e` when it has one.
+    fn sym_write(&mut self, vn: &VarnodeData, value: u128, e: Option<Rc<crate::concolic::Expr>>) {
+        let Some(shadow) = self.shadow.as_mut() else { return };
+        let Some(spc) = vn.space.as_ref() else { return };
+        let n = u64::from(vn.size);
+        for i in 0..n {
+            let at = spc.wrap_offset(vn.offset.wrapping_add(i));
+            let shift = if spc.is_big_endian() { n - 1 - i } else { i };
+            let key = (spc.get_index(), at);
+            match &e {
+                Some(e) => {
+                    shadow.bytes.insert(key, (Rc::clone(e), shift as u32, (value >> (8 * shift)) as u8));
+                }
+                None => {
+                    shadow.bytes.remove(&key);
+                }
+            }
+        }
+    }
+
+    fn sym_branch(&mut self, at: u64, cond: &VarnodeData, value: u128) {
+        if self.shadow.as_ref().is_none_or(|s| s.path.branches.len() >= PATH_BRANCHES) {
+            return;
+        }
+        if let Some(e) = self.sym_read(cond, value) {
+            if let Some(s) = self.shadow.as_mut() {
+                s.path.branches.push(crate::concolic::Branch { at, cond: e, taken: value != 0 });
+            }
+        }
+    }
+}
+
 /// How the machine run ended.
 pub struct Outcome<'e, 'p> {
     pub state: State<'e, 'p>,
@@ -227,6 +313,8 @@ pub struct Outcome<'e, 'p> {
     pub guessed: bool,
     /// System calls and traps, in order.
     pub events: Vec<crate::calls::UserEvent>,
+    /// C5: the run's path, when `Env::record_path` was on.
+    pub path: Option<crate::concolic::Path>,
 }
 
 struct Machine<'e, 'p, 'c> {
@@ -258,6 +346,8 @@ struct Machine<'e, 'p, 'c> {
     /// Register offsets a callee run for real changed although the calling
     /// convention says the call preserves them, by call address.
     convention: Vec<(u64, u64)>,
+    /// C5: each byte's expression over the inputs, and the path so far.
+    shadow: Option<Shadow>,
 }
 
 impl<'e, 'p> Machine<'e, 'p, '_> {
@@ -498,6 +588,7 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
             guessed: self.guessed,
             events: self.events,
             convention: self.convention,
+            path: self.shadow.map(|s| s.path),
         }
     }
 }
@@ -615,7 +706,11 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit
                 branch(env, &mut m.state, t, &mut i, &mut addr, &mut insn)?;
             }
             OpCode::CPUI_CBRANCH => {
-                if read(&mut m.state, arg(1)?)? != 0 {
+                let c = read(&mut m.state, arg(1)?)?;
+                if top && m.shadow.is_some() {
+                    m.sym_branch(addr, arg(1)?, c);
+                }
+                if c != 0 {
                     let t = arg(0)?;
                     if space(t)?.get_type() != spacetype::IPTR_CONSTANT && tail(addr, t.offset) {
                         return m.tail_call(addr, t.offset, false);
@@ -776,6 +871,10 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit
                     m.state.read(&spc, at, out.size)?
                 };
                 write(&mut m.state, out, v)?;
+                if top && m.shadow.is_some() && spc.get_type() != spacetype::IPTR_CONSTANT {
+                    let e = m.sym_read(&VarnodeData { space: Some(Rc::clone(&spc)), offset: at, size: out.size }, v);
+                    m.sym_write(out, v, e);
+                }
                 i += 1;
             }
             OpCode::CPUI_STORE => {
@@ -794,6 +893,10 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit
                     }
                 }
                 m.state.write(&spc, at, val.size, v)?;
+                if m.shadow.is_some() {
+                    let e = if top { m.sym_read(val, v) } else { None };
+                    m.sym_write(&VarnodeData { space: Some(Rc::clone(&spc)), offset: at, size: val.size }, v, e);
+                }
                 if let Some(reg) = m.spill_of_entry(&spc, at, val) {
                     m.state.mark_saved(at, val.size, reg);
                 }
@@ -802,10 +905,19 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit
             opc => {
                 let out = op.out.as_ref().ok_or_else(|| Halt::Unsupported(get_opname(opc).to_string()))?;
                 let mut ins = crate::value::Inputs::default();
+                let track = top && m.shadow.is_some();
+                let mut syms = Vec::new();
                 for vn in &op.ins {
-                    ins.push((read(&mut m.state, vn)?, vn.size));
+                    let v = read(&mut m.state, vn)?;
+                    if track {
+                        syms.push((m.sym_read(vn, v), v, vn.size));
+                    }
+                    ins.push((v, vn.size));
                 }
-                let v = eval(opc, out.size, ins.as_slice())?;
+                let by_zero = matches!(opc, OpCode::CPUI_INT_DIV | OpCode::CPUI_INT_SDIV)
+                    && env.divide_by_zero_is_zero
+                    && ins.as_slice().get(1).is_some_and(|&(d, _)| d == 0);
+                let v = if by_zero { 0 } else { eval(opc, out.size, ins.as_slice())? };
                 if opc == OpCode::CPUI_COPY {
                     let src = &op.ins[0];
                     if space(out).is_ok_and(|s| s.get_type() == spacetype::IPTR_INTERNAL) {
@@ -820,6 +932,10 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit
                     }
                 }
                 write(&mut m.state, out, v)?;
+                if track {
+                    let e = crate::concolic::op(opc, out.size, &syms);
+                    m.sym_write(out, v, e);
+                }
                 i += 1;
             }
         }
@@ -862,6 +978,7 @@ pub fn run<'e, 'p>(
         copies: Vec::new(),
         restoring: Vec::new(),
         convention: Vec::new(),
+        shadow: env.record_path.get().then(Shadow::default),
     };
     m.state.kill_salt = with_args.map_or(0, |o| o.kill_salt);
     m.state.kill_salt_skip = calls.output_regs.clone();

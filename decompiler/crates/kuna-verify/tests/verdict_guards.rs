@@ -209,3 +209,21 @@ fn step_runs_one_instruction_from_the_named_registers() {
     assert_eq!(call["writes"].as_object().unwrap().len(), 8);
     assert_eq!(String::from_utf8_lossy(&verify(&args).stdout), text);
 }
+
+/// C5: `x == 0x1badb002` is a branch no random run takes; with concolic
+/// queries z3 gives the input that takes it, and one more run agrees. Skipped
+/// where z3 is not installed.
+#[test]
+fn concolic_inputs_reach_a_branch_random_runs_miss() {
+    if Command::new("z3").arg("-version").output().is_err() {
+        return;
+    }
+    let text = [
+        0x55, 0x48, 0x89, 0xe5, 0x89, 0xf9, 0x83, 0xe1, 0x01, 0x81, 0xff, 0x02, 0xb0, 0xad, 0x1b, 0xb8, 0x07, 0x00, 0x00, 0x00,
+        0x0f, 0x45, 0xc1, 0x5d, 0xc3,
+    ];
+    let path = object("magic", &text, &[("magic", 0, text.len() as u64)], &[]);
+    let label = |concolic| check(&path, &["magic"], &Options { runs: 64, concolic, ..Options::default() })[0].verdict.label();
+    assert_eq!(label(0), "AGREES(64)");
+    assert_eq!(label(8), "AGREES(65)");
+}

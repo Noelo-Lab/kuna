@@ -121,6 +121,12 @@ pub struct Env<'p> {
     pub booleans: Vec<(i32, u64, u32)>,
     /// The machine's system calls write the kernel's result registers.
     pub kernel: Cell<bool>,
+    /// C5: input bytes a z3 model sets for this run, over the random state.
+    pub concolic_inputs: RefCell<Option<crate::concolic::Inputs>>,
+    /// C5: the machine records its path on this run.
+    pub record_path: Cell<bool>,
+    /// ARM and AArch64 divide by zero to 0 instead of trapping.
+    pub divide_by_zero_is_zero: bool,
     /// Image pages by base address; `None` for a page not mapped whole.
     image: RefCell<HashMap<u64, Option<Box<[u8]>>, BuildHasherDefault<Fast>>>,
     /// The loader's segments and sections, `[first, last]`: no image byte lies
@@ -250,6 +256,9 @@ impl<'p> Env<'p> {
             ret_slot: 0,
             booleans: Vec::new(),
             kernel: Cell::new(true),
+            concolic_inputs: RefCell::new(None),
+            record_path: Cell::new(false),
+            divide_by_zero_is_zero: ["ARM", "AARCH64"].iter().any(|a| prog.arch().archid.starts_with(a)),
             image: RefCell::new(HashMap::default()),
             mapped,
             image_bytes: RefCell::new(HashMap::default()),
@@ -349,6 +358,9 @@ impl<'p> Env<'p> {
     }
 
     fn random_byte(&self, run: u32, space: &AddrSpace, off: u64) -> u8 {
+        if let Some(b) = self.concolic_inputs.borrow().as_ref().and_then(|m| m.get(&(space.get_index(), off))) {
+            return *b;
+        }
         let g = u64::from(self.granule);
         Self::byte_of(self.word(run, space.get_index(), off / g), off % g, g, space.is_big_endian())
     }
@@ -458,6 +470,46 @@ impl<'p> Env<'p> {
     /// The value a call leaves in a register byte it kills.
     pub fn killed_byte(&self, run: u32, call: u32, off: u64) -> u8 {
         self.clobbered_byte(run, call + 1, &self.register, off)
+    }
+
+    /// C5: where an input byte is, when the run's random state chooses the
+    /// byte at `off`: not a tracked register, the stack pointer, the extended
+    /// part of an argument, the image, the frame below the entry stack
+    /// pointer, or a temporary.
+    pub fn input_place(&self, space: &AddrSpace, off: u64) -> Option<crate::concolic::Place> {
+        let idx = space.get_index();
+        let place = |boolean| Some(crate::concolic::Place { space: idx, off, boolean });
+        if self.tracked.iter().any(|&(sp, t, size, _)| sp == idx && off >= t && off < t + u64::from(size)) {
+            return None;
+        }
+        if let Some(&(_, b, size)) = self.booleans.iter().find(|&&(sp, b, size)| sp == idx && off >= b && off < b + u64::from(size)) {
+            let low = if space.is_big_endian() { b + u64::from(size) - 1 } else { b };
+            return if off == low { place(true) } else { None };
+        }
+        if self.unique.as_ref().is_some_and(|u| u.get_index() == idx) {
+            return None;
+        }
+        if idx == self.register.get_index() {
+            let (sp_off, sp_size) = self.sp;
+            if off >= sp_off && off < sp_off + u64::from(sp_size) {
+                return None;
+            }
+            let extended = self.extensions.iter().any(|x| {
+                let (c, cs) = x.container;
+                let (p, ps) = x.param;
+                x.space == idx && off >= c && off < c + u64::from(cs) && !(off >= p && off < p + u64::from(ps))
+            });
+            return if extended { None } else { place(false) };
+        }
+        if idx == self.ram.get_index() {
+            if self.in_stack(off, 1) {
+                return if off >= self.sp0 { place(false) } else { None };
+            }
+            if self.image_byte(off).is_some() {
+                return None;
+            }
+        }
+        place(false)
     }
 
     pub fn initial_byte(&self, run: u32, space: &AddrSpace, off: u64) -> u8 {
@@ -725,6 +777,18 @@ impl<'e, 'p> State<'e, 'p> {
 
     fn is_register(&self, space: &AddrSpace, off: u64) -> bool {
         space.get_index() == self.env.register.get_index() && off < DENSE_REGISTERS
+    }
+
+    /// C5: whether the byte at `off` still holds the run's initial value: this
+    /// side has not written it, and for memory, no call has run yet.
+    pub fn untouched(&self, space: &AddrSpace, off: u64) -> bool {
+        if self.is_register(space, off) {
+            return self.flags.get(off as usize).is_none_or(|f| f & WRITTEN == 0);
+        }
+        if self.is_unique(space) {
+            return false;
+        }
+        self.epoch == 0 && self.mem.get(&(space.get_index(), off)).is_none()
     }
 
     fn is_unique(&self, space: &AddrSpace) -> bool {

@@ -38,11 +38,14 @@ pub struct Options {
     pub budget_runs: u32,
     /// Add both sides' calls to a `DIFFERS` report.
     pub trace: bool,
+    /// C5: z3 queries per function for concolic inputs after the random
+    /// runs; 0 runs none.
+    pub concolic: u32,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { runs: 256, seed: 0x6b75_6e61, budget: 200_000, budget_runs: 4, trace: false }
+        Options { runs: 256, seed: 0x6b75_6e61, budget: 200_000, budget_runs: 4, trace: false, concolic: 0 }
     }
 }
 
@@ -390,6 +393,12 @@ fn tracked(prog: &ConsoleProgram, fd: &Funcdata, env: &mut Env) -> Vec<(i32, u64
 /// nor the stack, so the stack-protector guard at `fs:0x28` stays put.
 const SEGMENT_BASES: [&str; 2] = ["FS_OFFSET", "GS_OFFSET"];
 
+/// C5: the random runs whose paths are recorded for z3 to branch from.
+const RECORDED_RUNS: u32 = 16;
+
+/// C5: z3's time per query.
+const CONCOLIC_MILLIS: u32 = 300;
+
 /// Runs that may stop on an operation the model cannot run before the
 /// function is given up as `UNKNOWN(unsupported-op)`: such a function is
 /// `UNKNOWN` whatever its other runs show, unless one of them differs, and
@@ -699,14 +708,34 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
     let perturb = unassigned(prog, &env, fd, &claim, &program, &calls);
     let mut perturbed_runs = 0u32;
     let mut kernel_shows = false;
-    for run in 0..opts.runs {
+    let mut work = crate::concolic::Worklist::default();
+    let mut queue: std::collections::VecDeque<(u32, Option<crate::concolic::Inputs>, Option<u64>)> =
+        (0..opts.runs).map(|r| (r, None, None)).collect();
+    loop {
+        let (run, inputs, aim) = match queue.pop_front() {
+            Some(x) => x,
+            None => match (opts.concolic > 0).then(|| work.next(opts.concolic, CONCOLIC_MILLIS)).flatten() {
+                Some((r, inputs, at)) => (r, Some(inputs), Some(at)),
+                None => break,
+            },
+        };
+        *env.concolic_inputs.borrow_mut() = inputs.clone();
+        env.record_path.set(opts.concolic > 0 && (inputs.is_some() || run < RECORDED_RUNS));
         let m = machine::run(&env, run, entry, opts.budget, &calls, None);
+        env.record_path.set(false);
+        if let Some(path) = m.as_ref().ok().and_then(|mo| mo.path.clone()).filter(|p| !p.branches.is_empty()) {
+            work.add(run, inputs.clone(), path);
+        }
         let replay: &[Record] = m.as_ref().map(|mo| mo.calls.as_slice()).unwrap_or(&[]);
         let g = graph::run(&env, &program, run, opts.budget, &calls, replay, None);
         let (mo, go) = match (m, g) {
             (Err(Halt::Trap(t)), Err(Halt::Trap(_))) => {
                 trapped.get_or_insert(t);
                 trapped_runs += 1;
+                continue;
+            }
+            (Ok(_), Err(Halt::Trap(t))) if env.divide_by_zero_is_zero && t.contains("ivide by 0") => {
+                diverged.get_or_insert(divergence::DIVIDE_BY_ZERO.id);
                 continue;
             }
             (Err(Halt::Trap(t)), Ok(_)) if t.starts_with(crate::state::READONLY_STORE) => {
@@ -753,6 +782,9 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
         let differs = |mut lines: Vec<String>| {
             let at = usize::from(lines.first().is_some_and(|l| l.starts_with("contract")));
             lines.insert(at, input_line(prog, &env, run, &claim));
+            if let Some(a) = aim {
+                lines.insert(at + 1, format!("concolic an input z3 gave to take the branch at {a:#x} the other way"));
+            }
             for (site, callee) in &mo.followed {
                 lines.push(format!("note     the machine ran {callee:#x} from {site:#x} itself: kuna has no call there"));
             }
@@ -901,9 +933,10 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
         }
         agreed += 1;
     }
+    *env.concolic_inputs.borrow_mut() = None;
     let mut suspects = abi::unclaimed_inputs(prog, &env, fd, &claim);
     suspects.extend(call_suspects);
-    if agreed == opts.runs {
+    if agreed >= opts.runs {
         if let Some(w) = upper {
             suspects.extend(w.suspects(prog));
         }
