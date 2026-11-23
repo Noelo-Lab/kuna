@@ -142,6 +142,17 @@ after it; it used to print between `case 0:` and `case 1:` and fall into
 `default: return;` the duplicated epilogue leaves is not printed; `option
 voidtailreturn off` keeps it.
 
+`kuna-loweredswitch-small.xml` checks that small compare-lowered switches
+re-roll by default. `nid_name` loads each case's string before the compare that
+selects it and shares one `ret`; the switch is installed along the raw paths of
+the compare tree and every case returns its own string. `enable`'s chain of
+three tests with a body each re-rolls; the two-test chain in `two` stays an
+`if` unless `option loweredswitch linear` is set, and `option loweredswitch
+off` keeps the compiler's chain. `colon` (openssh `misc.c`) keeps its loop: re-rolled,
+its arms continue the loop and the structurer lost the loop to gotos, so the
+switch is withdrawn. The selector stays `int`, and `kind`'s labels over a
+`char` print as character constants.
+
 `kuna-jumptableslots.xml` checks the slot bound on a guard-bounded table past
 `jumptablemax`. gcc -O2 guards `x <= 0x28ff` and indexes a 41-entry table with
 `x >> 8`, so the guard admits 0x2900 values over 41 slots. The table stays a
