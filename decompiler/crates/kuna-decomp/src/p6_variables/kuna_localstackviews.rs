@@ -293,6 +293,38 @@ fn published_input(fd: &Funcdata, id: OpId) -> Option<(i32, VarnodeId)> {
     }
 }
 
+/// The lowest frame offset a live COPY, STORE or volatile write stores outside this frame.
+/// A STORE through a pointer whose every origin is the frame base writes another frame slot.
+pub(crate) fn frame_published(fd: &Funcdata) -> Option<i64> {
+    let frame = |input| crate::kuna_stackranges::frame_address(fd, input).map(|address| address.first);
+    let into_frame = |op: &crate::op::PcodeOp| {
+        op.code() == OpCode::CPUI_STORE
+            && op.get_in(1).is_some_and(|to| crate::kuna_stackranges::frame_based(fd, to))
+    };
+    let volatile_write = |op: &crate::op::PcodeOp| {
+        op.code() == OpCode::CPUI_CALLOTHER
+            && op.get_in(0).and_then(|id| fd.vbank().get(id)).is_some_and(|code| {
+                code.is_constant()
+                    && code.get_offset() == crate::userop::BUILTIN_VOLATILE_WRITE as u64
+            })
+    };
+    fd.obank()
+        .iter_alive()
+        .filter_map(|id| {
+            let op = fd.obank().get(id)?;
+            let value = match op.code() {
+                OpCode::CPUI_COPY => op.get_in(0)?,
+                OpCode::CPUI_STORE => op.get_in(2)?,
+                _ if volatile_write(op) => return frame(op.get_in(2)?),
+                _ => return None,
+            };
+            let low = frame(value)?;
+            published_input(fd, id)?;
+            (!into_frame(op)).then_some(low)
+        })
+        .min()
+}
+
 fn collect(fd: &mut Funcdata) {
     let gathered = (|| {
         let mut groups: BTreeMap<(u64, i32), Vec<Rc<Datatype>>> = BTreeMap::new();

@@ -880,6 +880,7 @@ fn option_values_live_value_present_for_77() {
     // +1 for `switchextent` (live_field = switch_extent).
     // +1 for `switchmerge` (live_field = switchmerge).
     // +1 for `cachereturn` (live_field = cache_return).
+    // +1 for `bytestorewidth` (live_field = byte_store_width).
     // +1 for `varargsave` (live_field = vararg_save).
     assert_eq!(with_live, 88);
 }
@@ -1145,6 +1146,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `cachereturn`; its P4 row sits after `mixedtailret`.
     // +1 for `swiftobjcthunk`; its P1 row sits after `swiftcall`.
     // +1 each for `swifthelpers` and `valuewitness`.
+    // +1 for `bytestorewidth`; its P3 row sits after `globalarrayanchor`.
     assert_eq!(json.matches("},\n").count(), 238);
     // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }

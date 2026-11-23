@@ -716,6 +716,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "cortexmpriv" => on_off!(cortexmpriv, "Cortex-M privileged-mode guard folding"),
+    "bytestorewidth" => on_off!(byte_store_width, "Byte-array constant store width"),
     "acleintrinsics" => on_off!(acle_intrinsics, "AArch64 ACLE intrinsics"),
     "dedupvardecls" => {
         let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;

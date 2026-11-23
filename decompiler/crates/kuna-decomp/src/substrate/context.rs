@@ -834,6 +834,8 @@ pub struct ArchContext {
     pub global_array_anchor: bool,
     /// Fold comparisons proven constant for every input (`opaquepredicate`).
     pub opaque_predicate: bool,
+    /// (kuna `bytestorewidth`) Mirror of `Architecture::byte_store_width`.
+    pub byte_store_width: bool,
     /// (kuna) refuse to split a shared RETURN block that stores to GLOBALS
     /// (`retsplitglobal`).  Read by
     /// [`Funcdata::return_split_is_splittable`](crate::funcdata::Funcdata),
@@ -1673,6 +1675,7 @@ impl ArchContext {
             // unit tests.
             global_array_anchor: false,
             opaque_predicate: false,
+            byte_store_width: false,
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
             ret_split_limit: None,       // retsplitlimit (the ArchSeam carries the real default)
             simd_shuffle_userops: Vec::new(),

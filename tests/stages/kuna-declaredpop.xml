@@ -1,0 +1,44 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    A declared __stdcall import's pop is the stack solver's exact equation,
+    not an INT_ADD written into the IR before the solve.
+
+    Issue: none filed; found on setuptools' cli-32.exe launcher, where every
+    call after GetModuleFileNameA lost its arguments once the import's
+    declaration reached the call (`kuna_slotargs`). The solved pops are the
+    same in both representations; what changed is how the simplifier sees the
+    stack pointer before the solve.
+
+    Stage / sub-stage: P4 `ActionExtraPopSetup`
+    (`p4_calls/kuna_declaredpop.rs`), read by P6 `StackSolver::build`. A
+    strict fix: no option.
+
+    The fixture `declaredpop_pe_i386.exe` is assembled from
+    `declaredpop_pe_i386.asm` (see the fixtures README).
+
+    0x401000 calls GetModuleFileNameA(NULL, path, 0x100), measures `path`
+    with a pointer difference, and passes it to an internal __cdecl helper
+    whose pop the solver can only guess. With the import's pop as an INT_ADD,
+    term collection rewrote the pointer difference in terms of the stack
+    pointer at the import's last push, the local-alias boundary took that slot
+    as an escaped address, and the helper printed `sub_401080()`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/declaredpop_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>load addr 0x401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="DECLAREDPOP #1: the import keeps its declared arguments" min="1" max="1">GetModuleFileNameA\(NULL,Filename,0x100\);</stringmatch>
+<stringmatch name="DECLAREDPOP #2: the helper after it keeps both arguments" min="1" max="1">= sub_401080\(Filename,0\);</stringmatch>
+<stringmatch name="DECLAREDPOP #3: no call after the import loses its arguments" min="0" max="0">sub_401080\(\)</stringmatch>
+</decompilertest>

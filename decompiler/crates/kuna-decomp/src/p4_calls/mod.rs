@@ -12,6 +12,7 @@ pub mod coreaction_protos;
 pub mod kuna_calleedeadarg;
 pub mod kuna_hiddenretarg; // (kuna) a value left in the hidden-return register is no argument a callee cannot take
 pub mod kuna_calleereadarg; // (kuna) keep a refused argument the callee's own body reads
+pub mod kuna_calleefloatreads; // (kuna) pass a float argument register an unstated callee's body reads
 pub mod kuna_zerofillreturn; // (kuna) the zero a narrow write leaves in a returned q register's upper half is no part of the value
 pub mod kuna_zerocallregs; // (kuna) a register a -fzero-call-used-regs epilogue clears is no part of the return value
 pub mod kuna_calleepreserves; // (kuna) the decoded callee's writes narrow the cspec killedbycall set
@@ -22,6 +23,7 @@ pub mod kuna_calleestackargs; // (kuna `calleeargs`) the stack-argument bytes an
 pub mod kuna_calleepurge; // (kuna) an x86-32 callee's stack purge read off its RET
 pub mod kuna_stackcookie; // (kuna) the frame cookie MSVC stores on the stack is no argument
 pub mod kuna_slotargs; // (kuna) a call through an import slot takes the declared parameters its caller's writes back
+pub mod kuna_declaredpop; // (kuna) a declared pop on a call through a pointer is the solver's equation, not an early INT_ADD
 pub mod kuna_calleeprotostack; // (kuna) a declared callee's prototype states its stack contract
 pub mod kuna_msvcbyval; // (kuna) an MSVC __cdecl import's by-value class argument sized at the call site
 pub(crate) mod kuna_calleenoreturn;
@@ -85,6 +87,7 @@ pub mod kuna_entryreads; // (kuna) the incoming registers a function's own body 
 pub mod kuna_callerargs; // (kuna) a 32-bit ARM parameter every caller passes narrow is declared that narrow
 pub mod kuna_typedcallabi; // (kuna) a declared function-pointer prototype only under the image's float convention
 pub mod kuna_varargretreg; // (kuna) a variadic call's argument in the register its value returns in
+pub mod kuna_lockedreturnarg; // (kuna) a stated return register stays an input trial of the call
 pub mod kuna_varargsave; // (kuna) the x86-64 System V register-save prologue is va_start, not code
 pub mod kuna_vfpvariadic; // (kuna) a declared ARM hard-float variadic function returns under the base standard
 pub mod kuna_varargformat;
