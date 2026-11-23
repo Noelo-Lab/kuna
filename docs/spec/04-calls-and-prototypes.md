@@ -6855,12 +6855,12 @@ before reading them, or does some path read them first?
 - A callee that provably **reads** the register its next argument would arrive
   in — the storage the model assigns to one more parameter than were recovered —
   has under-recovered, and is declined outright. This is the rule that catches
-  what the variadic test cannot: `FuncProto::is_dotdotdot` is only ever set from
-  a *declared* signature, and a declared entry never reaches the policy at all
-  (the declared check fires one branch earlier), so on a stripped image it can
-  never fire. A SysV register-save prologue reads every argument register there
-  is, and that read is visible in the body whether or not anything declared the
-  function variadic.
+  what the variadic test cannot: `FuncProto::is_dotdotdot` is set only from a
+  *declared* signature, which never reaches the policy at all (the declared
+  check fires one branch earlier), or from a prologue `varargsave` folded. A
+  SysV register-save prologue that stays in the body (one that reads its own
+  save area) reads every argument register there is, and that read is visible
+  in the body whether or not anything declared the function variadic.
 
 Everything the walk cannot see — an incomplete walk, a register space it cannot
 name, a body that is one endless loop — answers `false` to both, so both rules
