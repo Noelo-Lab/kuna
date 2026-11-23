@@ -2029,7 +2029,11 @@ through pointer arithmetic, copies and casts alone
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_narrowload.rs (widens_into_declared_field)`).
 There the declaration attests the whole field, and the compare can name the
 field's own enum constants, `(p->flagfield & (HIGH_2|HIGH_1)) != 0`, which a
-byte of the field cannot; that is what `enum.xml` #4 pins. A bare pointer's
+byte of the field cannot; that is what `enum.xml` #4 pins. The rewrite widens
+the whole test, not only its constants: each AND gets a fresh output of the
+field's size and the compare reads it, where upstream kept the AND's narrow
+output (`AL:1 = u:4 & #0x3000:4`), an op whose output is narrower than its
+inputs that a reader trusting op sizes cannot evaluate. A bare pointer's
 target is attested only at the bytes the program reads, even when the pointer
 is declared, and a synthesized record attests only the accesses it was built
 from, so both keep the narrow read,
