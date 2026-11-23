@@ -29,6 +29,10 @@ compiles and executes the emitted C at O0/O2.
 argument was narrowed to two bytes before the field's prototype was forced on
 the call: the function decompiles and passes the sum widened to the parameter.
 
+`kuna-expandload-opsize.xml` checks the final IR of a byte flag test that is
+widened into a test of a declared record's 4-byte field: the AND and the compare
+it feeds are 4 bytes wide, both for `cmp al` after `and eax` and for `testb`.
+
 `kuna-calleefilledarg.xml` checks that a call to a stub that loads one of its
 own argument registers (`adrp x1; ldr x1,[x1]; ... br x16`, the Objective-C
 selector-stub shape) keeps the receiver, a stack address, a buffer and a count

@@ -2302,7 +2302,8 @@ mod tests {
         // and kuna-thumb2-logical-carry / Thumb-2 ands/bics/movs/mvns set C from the shifter
         // and kuna-ppc32picimports-abi-isolation / one file's load-time option never reaches the next file's loads
         // and kuna-tailform-noreturn / a call that does not return prints as the if body before the return
-        assert_eq!(count, 890, "corpus file count drifted");
+        // and kuna-expandload-opsize / a widened AND flag test keeps its op sizes
+        assert_eq!(count, 891, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -1,0 +1,56 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna strict fix (P3, cleanup pool, RuleExpandLoad; no option).
+
+    RuleExpandLoad widens a byte flag test of a declared record's field into a
+    test of the whole field: the LOAD, the AND mask and the compare constant
+    grow to the field's size. The AND kept its one-byte output, so the final
+    IR held `AL:1 = u:4 & #0x3000:4` and `ZF = AL:1 != #0x1000:4`, ops whose
+    sizes disagree. The AND now writes a value of the field's size and the
+    compare reads it; the printed C is the same.
+
+    struct rec { char *name; unsigned flags; unsigned short tag;
+    unsigned short pad; long id; }:
+
+      t_bit:  movzx eax,byte [rdi+9] / and eax,0x30 / cmp al,0x10 / je sink(7)
+      t_test: test byte [rdi+9],0x10 / jne sink(7)     (gcc -O2 of
+              `if (r->flags & 0x1000) sink(7);`)
+
+    t_bit's AND writes AL, t_test's a temporary. One pass, defaults only.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+c366662e0f1f8400000000000f1f4000
+0fb6470983e0303c107405c30f1f4000
+bf07000000ebd9660f1f840000000000
+f6470910750ac3660f1f840000000000
+bf07000000e9b6ffffff660f1f440000
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="sink"/>
+<symbol space="ram" offset="0x1010" name="t_bit"/>
+<symbol space="ram" offset="0x1030" name="t_test"/>
+</binaryimage>
+<script>
+  <com>parse line struct rec { char *name; uint4 flags; uint2 tag; uint2 pad; int8 id; };</com>
+  <com>parse line extern void sink(int8 x);</com>
+  <com>parse line extern void t_bit(rec *r);</com>
+  <com>parse line extern void t_test(rec *r);</com>
+  <com>lo fu t_bit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>print raw</com>
+  <com>lo fu t_test</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>print raw</com>
+  <com>quit</com>
+</script>
+<stringmatch name="expandload opsize #1: t_bit tests the whole declared field" min="1" max="1">\(r-&gt;flags &amp; 0x3000\) [!=]= 0x1000</stringmatch>
+<stringmatch name="expandload opsize #2: t_bit's widened AND writes 4 bytes" min="1" max="1">^0x00001014:[[:xdigit:]]+:[[:space:]]+u0x[[:xdigit:]]+:4\(0x00001014:[[:xdigit:]]+\) = u0x[[:xdigit:]]+:4\(0x00001010:[[:xdigit:]]+\) &amp; #0x3000:4$</stringmatch>
+<stringmatch name="expandload opsize #3: t_bit's compare reads the 4-byte AND" min="1" max="1">^0x00001017:[[:xdigit:]]+:[[:space:]]+ZF\([^)]*\) = u0x[[:xdigit:]]+:4\(0x00001014:[[:xdigit:]]+\) != #0x1000:4$</stringmatch>
+<stringmatch name="expandload opsize #4: t_test tests the whole declared field" min="1" max="1">if \(r-&gt;flags &amp; 0x1000\)</stringmatch>
+<stringmatch name="expandload opsize #5: t_test's widened AND writes 4 bytes" min="1" max="1">^0x00001030:[[:xdigit:]]+:[[:space:]]+u0x[[:xdigit:]]+:4\(0x00001030:[[:xdigit:]]+\) = u0x[[:xdigit:]]+:4\(0x00001030:[[:xdigit:]]+\) &amp; #0x1000:4$</stringmatch>
+<stringmatch name="expandload opsize #6: t_test's compare reads the 4-byte AND" min="1" max="1">^0x00001030:[[:xdigit:]]+:[[:space:]]+ZF\([^)]*\) = u0x[[:xdigit:]]+:4\(0x00001030:[[:xdigit:]]+\) == #0x0:4$</stringmatch>
+<stringmatch name="expandload opsize #7: no AND of 4-byte inputs writes one byte" min="0" max="0">^0x[[:xdigit:]]+:[[:xdigit:]]+:[[:space:]]+(AL|u0x[[:xdigit:]]+:1)\([^)]*\) = .* &amp; #0x[[:xdigit:]]+:4$</stringmatch>
+<stringmatch name="expandload opsize #8: no compare reads one byte against a 4-byte constant" min="0" max="0">= (AL|u0x[[:xdigit:]]+:1)\([^)]*\) [!=]= #0x[[:xdigit:]]+:4$</stringmatch>
+</decompilertest>
