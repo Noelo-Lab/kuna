@@ -322,6 +322,9 @@ pub struct FunctionTestCollection {
     /// `build_program` resolves the architecture against these; the binary
     /// supplies them (from `-sleighpath`/`SLEIGHHOME`).
     spec_roots: Vec<String>,
+    /// The load-option environment before the first file, restored before
+    /// each file so one script's `option` choices never reach the next's loads.
+    load_env: kuna_decomp::kuna_loadoptions::EnvSnapshot,
 }
 
 impl FunctionTestCollection {
@@ -347,6 +350,7 @@ impl FunctionTestCollection {
             num_tests_succeeded: 0,
             saw_program: false,
             spec_roots,
+            load_env: kuna_decomp::kuna_loadoptions::EnvSnapshot::capture(),
         }
     }
 
@@ -371,7 +375,7 @@ impl FunctionTestCollection {
     }
 
     /// C++ `clear()`: drop any previous architecture/function and reset the
-    /// console for a new program.
+    /// console and the load-option environment for a new program.
     pub fn clear(&mut self) {
         if let Some(dcp) = self.dcp_mut() {
             dcp.clear_architecture();
@@ -381,6 +385,7 @@ impl FunctionTestCollection {
         self.test_list.clear();
         self.saw_program = false;
         self.console.reset();
+        self.load_env.restore();
     }
 
     /// Reach the console's shared [`IfaceDecompData`] (C++ `dcp`).

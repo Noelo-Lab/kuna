@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5179,
-    5179
+    5184,
+    5184
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3003,6 +3003,7 @@
     "data:ambiguous control flow acquires no terminal contract",
     "data:an earlier scalar advances the string register pair",
     "data:an equality that fails for some input stays",
+    "data:an in-script abi reload names the swapped image's terminal import",
     "data:an integer call beside a q touch is unchanged",
     "data:an overwritten slot grants no terminal import contract",
     "data:angr-LoweredSwitch #1: exactly one switch (none in pass 1 off, one in pass 2 on)",
@@ -3753,6 +3754,8 @@
     "data:frame versions: cached word remains independent",
     "data:frame versions: pointer store stays conditional",
     "data:frame versions: seed writes only four bytes",
+    "data:fresh loads keep the unnamed stub",
+    "data:fresh loads retain the reachable return",
     "data:full-page residuals recovered",
     "data:fully overwritten aggregate parameter objects retain native definitions",
     "data:funcstart-symbolextent #1: both objects list buf_dup_char",
@@ -4203,6 +4206,7 @@
     "data:no call retains the old high return half",
     "data:no call retains the old low return half",
     "data:no fabricated zero multiplication",
+    "data:no fresh load names an earlier file's import",
     "data:no runtime print sink remains",
     "data:no shifted field store",
     "data:no unrecovered transfer",
@@ -4286,6 +4290,7 @@
     "data:on returns the only reachable value",
     "data:one identity for unchanged contents",
     "data:only disabled recovery leaves the indirect call",
+    "data:only the abi reload carries a no-return contract",
     "data:only the default pass merges the tail",
     "data:only the swapped image calls the terminal import",
     "data:only the two real loop exits break",

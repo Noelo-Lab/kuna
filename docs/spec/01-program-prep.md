@@ -174,7 +174,15 @@ bridged across the process by environment variables the CLI exports:
 `KUNA_MACHO_ARM64E` (`macho-arm64e`),
 `KUNA_MACHO_SLICE` (`--slice`), `KUNA_ARM_ISA` (`--isa`),
 `KUNA_DYLD_IMAGE` (`dyldimage`, `--image`), `KUNA_DYLDCROSSREFS` (`dyldcrossrefs`). For those,
-the option rows exist for discoverability while the live gate is the env var. The
+the option rows exist for discoverability while the live gate is the env var. A
+console `option` line writes its load-time value to the same variable, which is
+how `option ... ; clear architecture ; load file` loads with it inside one
+script. The datatest harness therefore restores every variable
+`LoadOptions::from_env` reads to its value at the start of the run before each
+test file (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_loadoptions.rs
+(EnvSnapshot)`, `decompiler/crates/kuna-harness/src/testfunction.rs (clear)`):
+without that, one file's choice (a `ppc32picimports abi` load, say) reached
+every later file's loads in the same process. The
 external-artifact paths `kuna_fid_db` and `kuna_pdb_path` are different: they only
 *locate* the artifact, and only as one tier among others (`pdb` also searches
 beside the image, §1.4) — the `fid`/`pdb` passes stay flag-gated at the deferred
