@@ -2293,7 +2293,9 @@ mod tests {
         // and kuna-calleefloatreads / a call passes the float register its unstated callee reads
         // and kuna-calleepreservesargs / a register a leaf callee leaves alone carries a value to the next call
         // and kuna-framepublish-seh / a published SEH record holds only the frame writes at or above it
-        assert_eq!(count, 879, "corpus file count drifted");
+        // and kuna-switcharmorder / default and no-return switch arms print last, no default: return; at a void tail
+        // and kuna-thumb-stmia-writeback / Thumb stmia writes its base back when the base is in the list
+        assert_eq!(count, 881, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -108,6 +108,14 @@ both tables' labels and one `default:`. In `m` the default arm starts with
 `if (x == 0x60) return ...;`, which prints as `case 0x60:`. The off run keeps
 the `if` forms.
 
+`kuna-switcharmorder.xml` checks the order a switch prints its arms in and the
+`default:` arm of a void function's tail switch. `force_str`'s `default:` arm
+ends in a call to the no-return `die` and prints after the cases, with nothing
+after it; it used to print between `case 0:` and `case 1:` and fall into
+`case 1:`. `enable` ends with a switch the source gave no `default:`, so the
+`default: return;` the duplicated epilogue leaves is not printed; `option
+voidtailreturn off` keeps it.
+
 `kuna-jumptableslots.xml` checks the slot bound on a guard-bounded table past
 `jumptablemax`. gcc -O2 guards `x <= 0x28ff` and indexes a 41-entry table with
 `x >> 8`, so the guard admits 0x2900 values over 41 slots. The table stays a
