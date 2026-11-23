@@ -88,6 +88,7 @@ pub mod kuna_callerargs; // (kuna) a 32-bit ARM parameter every caller passes na
 pub mod kuna_typedcallabi; // (kuna) a declared function-pointer prototype only under the image's float convention
 pub mod kuna_varargretreg; // (kuna) a variadic call's argument in the register its value returns in
 pub mod kuna_lockedreturnarg; // (kuna) a stated return register stays an input trial of the call
+pub mod kuna_varargsave; // (kuna) the x86-64 System V register-save prologue is va_start, not code
 pub mod kuna_vfpvariadic; // (kuna) a declared ARM hard-float variadic function returns under the base standard
 pub mod kuna_varargformat;
 pub mod kuna_varargtransfer;

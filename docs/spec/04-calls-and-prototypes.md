@@ -6855,12 +6855,12 @@ before reading them, or does some path read them first?
 - A callee that provably **reads** the register its next argument would arrive
   in — the storage the model assigns to one more parameter than were recovered —
   has under-recovered, and is declined outright. This is the rule that catches
-  what the variadic test cannot: `FuncProto::is_dotdotdot` is only ever set from
-  a *declared* signature, and a declared entry never reaches the policy at all
-  (the declared check fires one branch earlier), so on a stripped image it can
-  never fire. A SysV register-save prologue reads every argument register there
-  is, and that read is visible in the body whether or not anything declared the
-  function variadic.
+  what the variadic test cannot: `FuncProto::is_dotdotdot` is set only from a
+  *declared* signature, which never reaches the policy at all (the declared
+  check fires one branch earlier), or from a prologue `varargsave` folded. A
+  SysV register-save prologue that stays in the body (one that reads its own
+  save area) reads every argument register there is, and that read is visible
+  in the body whether or not anything declared the function variadic.
 
 Everything the walk cannot see — an incomplete walk, a register space it cannot
 name, a body that is one endless loop — answers `false` to both, so both rules
@@ -8118,6 +8118,63 @@ arguments the source never passed (`sumi(2, x, 2.5 * (y + y + (y - x)))` with
 `fadd 3,2,2` scheduled above `lfs 0` prints a third argument `y + y`). It is
 therefore off by default and in no mode preset, and is meant for code built
 without optimization. With it off, upstream's refusal applies.
+
+### (kuna) `varargsave` — the System V variadic register-save prologue
+
+(kuna) `varargsave` (default on, x86-64 System V only,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargsave.rs (fold)`) folds
+the prologue a variadic function that calls `va_start` opens with. The callee
+stores the argument registers a caller may have filled past the named
+parameters into a register save area `R` in its frame, so `va_arg` can read
+them through the `va_list`: the general registers from the first unnamed one
+(`rdi`..`r9` are 0..5) at `R + 8*k`, then, guarded by `test %al,%al; je`, the
+vector registers from the first unnamed one at `R + 48 + 16*j`. Printed as
+code this was an `if (al) { … }` the source does not have, with every `xmm`
+and every general argument register as a parameter, so `mprintf(const char
+*fmt, ...)` decompiled with fourteen.
+
+The fold runs from `ActionHeritage` right after the first heritage pass, when
+the registers are in SSA form and the stack is not yet: every save is still the
+raw `STORE` of an incoming register to the entry stack pointer plus a
+constant. It matches a `CBRANCH` on `(al & al) == 0` of the incoming `al` (the
+input itself or the low byte of the incoming `rax`, also when a `push %rax;
+pop %rax` in front of the prologue reloads it, as gcc emits for a no-return
+variadic function) whose false successor
+holds nothing but stores of incoming `xmm` registers and rejoins the jump
+target. The stored registers must be a contiguous run `m..m+c-1` at the slots
+`R + 48 + 16*j` of one area `R`, and the general-register saves are the stores
+of incoming `rdi`..`r9` to `R + 8*k` in the guard block or the straight line of
+blocks before it, again a contiguous run. Frame offsets come from one forward
+walk (`frame`) of the entry stack pointer through copies, constant additions
+and subtractions, phis and indirect effects, which also records every other op
+that reads such a value.
+
+The fold is meant for a function whose own body never reads the save area, one
+that hands its `va_list` to a callee (`vfprintf(f, fmt, ap)`), and
+`body_reads_save_area` refuses it otherwise: a load from a saved slot (gcc folds
+a `va_arg` whose offset it knows into `mov 0x28(%rsp),%eax`); a pointer into a
+saved slot, or `R` itself, loaded through, passed to a call or returned, or
+turned into another 64-bit value (`carries_pointer`; a flag, a comparison or
+the `eax` half `xor %eax,%eax` reads is none of these), except `R` stored as a
+value into a frame slot, the `va_list`'s `reg_save_area` field (a `va_arg` loop
+that keeps `R` in a register and adds `gp_offset` to it is refused); a load
+from a `va_list` whose `reg_save_area` field holds `R` (an unoptimized
+`va_arg` reloads `gp_offset` and `reg_save_area`, whose stored constants would
+resolve the read to a saved slot); and a realigned stack pointer.
+
+When it matches, the guard's edge into the `xmm` block is removed (the block is
+unreachable and goes with its stores) and the general-register stores are
+destroyed. The flag computation and the stored registers then have no reader,
+so `al`, the saved `xmm` registers and the unnamed general registers are not
+parameters, and `ActionInputPrototype` gives the recovered prototype its `...`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargsave.rs
+(mark_variadic)`); a prototype with no named parameter prints `(...)`. The
+`va_list` field initialisations stay as assignments (`v1 = 8; v3 = 0x30;
+v4 = __builtin_dwarf_cfa(); v5 = v2;`), and `va_arg` in a function's own body
+is not recognised. `protoorder` still declines a variadic recovered prototype
+(`Decline::Variadic`), so callers recover their own arguments to such a
+function. `tests/stages/kuna-varargsave.xml` checks two folded functions, the two refused
+shapes and the option off. Windows x64 and every other target are untouched.
 
 ### (kuna) `callbacktype` — the prototype of the slot a callback is passed to
 
