@@ -2,6 +2,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[test]
 fn imported_register_storage_reaches_the_executable_thunk() {
@@ -168,7 +169,7 @@ _sample_indirect:
                             "{}",
                             String::from_utf8_lossy(&result.stderr)
                         );
-                        assert!(Command::new(&executable).status().unwrap().success());
+                        assert!(Command::new(&executable).capped_status().unwrap().success());
                     }
                 }
             }

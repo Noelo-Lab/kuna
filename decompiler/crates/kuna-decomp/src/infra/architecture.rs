@@ -1643,10 +1643,10 @@ pub struct Architecture {
     /// (`tailcalljump`). Read through the [`crate::kuna_ifuncfpret`] **env var**
     /// (the PLT map is baked at `load file`); this bool is for catalog visibility.
     pub analysis_ifuncfpret: bool,
-    /// (kuna) Gate e500 selection from a PowerPC ELF APU note (`ppcapu`); default
-    /// off. Read through the [`crate::kuna_ppcapu`] **env var** (the language is
-    /// chosen at `load file`); this bool is for catalog visibility.
-    pub analysis_ppcapu: bool,
+    /// (kuna) Gate embedded PowerPC ELF language selection (`ppcapu`); default
+    /// `isel`. Read through the [`crate::kuna_ppcapu`] **env var** (the language
+    /// is chosen at `load file`); this field is for catalog visibility.
+    pub analysis_ppcapu: crate::kuna_ppcapu::Mode,
     /// (kuna `goabi`) Select the vendored golang compiler spec for a Go image
     /// (the catalog-visible mirror of the `KUNA_GOABI` load-time env gate).
     pub analysis_goabi: bool,
@@ -2679,7 +2679,7 @@ impl Architecture {
             analysis_ppc32picimports: Default::default(),
             ppc32_pic_imports: Default::default(),
             analysis_ifuncfpret: true, // (kuna) option ifuncfpret, default on (x86-64 IRELATIVE slots only)
-            analysis_ppcapu: false, // (kuna) option ppcapu, default off (opt-in)
+            analysis_ppcapu: Default::default(),
             analysis_goabi: false, // (kuna) option goabi; reset_defaults sets the shipped default (auto)
             analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars::Off,
             analysis_dwarf: false,
@@ -5584,6 +5584,23 @@ impl Architecture {
                 None => return Ok(()), // no processor_spec: nothing to apply
             }
         };
+
+        // A replacement pspec describes the entire grid, including an absent property.
+        let mut section_stride = None;
+        if let Some(properties) = find_child(&pspec, "properties") {
+            for property in properties.get_children() {
+                if property.get_name() == "property"
+                    && attr_str(property, "key").as_deref() == Some("kuna.aif.sectionInstructionStride")
+                {
+                    let stride = attr_str(property, "value")
+                        .and_then(|value| value.parse::<core::num::NonZeroU32>().ok())
+                        .ok_or_else(|| KunaError::lowlevel("sectionInstructionStride requires a positive byte count"))?;
+                    section_stride = Some(stride);
+                }
+            }
+        }
+
+        self.translate.translate_base_mut().section_instruction_stride = section_stride;
 
         // C++ parseProcessorConfig dispatch — ELEM_REGISTER_DATA branch
         // (architecture.cc:1202 -> decodeRegisterData).  Seed the lanerecords

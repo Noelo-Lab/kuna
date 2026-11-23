@@ -6,6 +6,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 const FUNCS: &[&str] =
     &["fill32", "zero32", "fill8", "copy32", "copy_end", "isdash", "order", "below", "same_n", "same5", "mismatch"];
@@ -113,7 +114,7 @@ fn repeated_string_instructions_round_trip_through_the_printed_builtins() {
                         "{cc} {level} rejected the printed C ({image}, repstring {opt}):\n{}\n{text}",
                         String::from_utf8_lossy(&out.stderr)
                     );
-                    let run = Command::new(&exe).output().expect("run the round trip");
+                    let run = Command::new(&exe).capped_output().expect("run the round trip");
                     assert!(
                         run.status.success(),
                         "{image} printed with repstring {opt} and built by {cc} {level} computes a different value:\n{}\n{text}",

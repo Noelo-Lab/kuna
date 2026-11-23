@@ -9,6 +9,7 @@ use object::{
 };
 use std::path::PathBuf;
 use std::process::Command;
+use crate::common::process::Capped;
 
 /// One function: its name, its bytes, and the offset of the `call rel32`
 /// opcode it makes to another function, if any.
@@ -95,7 +96,7 @@ fn round_trip(decls: &str, printed: &str, main: &str) {
                 String::from_utf8_lossy(&compile.stderr)
             );
             assert!(
-                Command::new(&exe).status().unwrap().success(),
+                Command::new(&exe).capped_status().unwrap().success(),
                 "{cc} {level}: {printed}"
             );
         }
