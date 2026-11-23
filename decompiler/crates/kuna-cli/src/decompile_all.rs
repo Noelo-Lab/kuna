@@ -1063,6 +1063,8 @@ pub(crate) fn pool_config<'a>(
 /// Emit `text`, then report a discovery failure (stdout before stderr, as
 /// `kuna decompile` orders them) and answer with the run's verdict.
 /// Report every rejected assertion on stderr, and say whether there was one.
+/// A `--types` declaration the C grammar declined is reported too but is not
+/// counted: a header is loaded as far as it parses, under `--assert-strict` too.
 ///
 /// The human surface has no `assertions[]` to read, and a directive that was
 /// silently dropped is the failure mode this plane exists to end -- so a
@@ -1072,6 +1074,12 @@ pub(crate) fn report_rejected_assertions(
 ) -> bool {
     let mut any = false;
     for outcome in outcomes.iter().filter(|o| o.status == "rejected") {
+        let reason = outcome.detail.as_deref().unwrap_or("no reason given");
+        let reason = reason.lines().next().unwrap_or(reason);
+        if let Some(declaration) = kuna_console::kuna_cheader::origin(&outcome.directive) {
+            eprintln!("warning: --types {declaration}: rejected: {reason}");
+            continue;
+        }
         any = true;
         let reason = outcome.detail.as_deref().unwrap_or("no reason given");
         if outcome.fatal {
@@ -2948,6 +2956,8 @@ pub(crate) fn parse_args_with_filters(
     let mut func_decls: Vec<crate::funcdecl::FuncDecl> = Vec::new();
     let mut assertions: Vec<kuna_console::assertions::Directive> = Vec::new();
     let mut assert_strict = false;
+    let mut types: Vec<String> = Vec::new();
+    let mut types_cpp: Option<String> = None;
     let mut mode: Option<String> = None;
     let mut slice: Option<String> = None;
     let mut target: Option<String> = None;
@@ -3015,6 +3025,8 @@ pub(crate) fn parse_args_with_filters(
                 assertions.extend(crate::assertdecl::parse_flag(&v)?);
             }
             "--assert-strict" => assert_strict = true,
+            "--types" => types.push(take(argv, &mut i, "--types")?),
+            "--types-cpp" => types_cpp = Some(take(argv, &mut i, "--types-cpp")?),
             "--jobs" if jobs_flag => {
                 let v = take(argv, &mut i, "--jobs")?;
                 (jobs, jobs_auto) = jobs::parse_jobs(&v)?;
@@ -3130,6 +3142,7 @@ pub(crate) fn parse_args_with_filters(
     }
 
     let binary = binary.ok_or_else(|| format!("{cmd} requires <binary>"))?;
+    let assertions = crate::assertdecl::with_types(&types, types_cpp.as_deref(), assertions)?;
     if filters.rust_signature_manifest.is_some() {
         if apply_rust_signatures.is_some() {
             return Err("--rust-signature-manifest and --apply-rust-signatures are exclusive".into());

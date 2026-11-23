@@ -1,0 +1,52 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    switchmerge: a search tree of jump tables printed as one switch.
+
+    Authored AArch64 (clang -c of hand-written assembly). Both functions
+    range-check w0 against 0x41..0x48 and index an eight-entry table; an
+    out-of-range value goes to a second range check, 0x60..0x67, and a second
+    table. Every case sets the result and jumps to a shared `lsl w0,w0,#1; ret`
+    tail; the holes and the out-of-range values of the second table go to
+    `add w0,w0,#1; eor w0,w0,#0x80; ret`.
+    f: the holes 0x43 and 0x46 of the first table also go to that code.
+    g: the holes of the first table go to the second range check.
+
+    Fixed: each prints one `switch(a0)` with twelve value labels and one
+    `default: return a0 + 1U ^ 0x80;`.
+    Before (option switchmerge off): `default: switch(a0) { ... }` inside
+    the first switch; f also printed `case 0x43: case 0x46:` above the
+    default code and `default: goto label_100098;` in the inner switch.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+080401511f1d0071a8000054090500102a79a8b829010a8b20011fd6088001511f1d0071a8030054290500102a79a8b829010a8b20011fd6200c80521a000014400c805218000014800c805216000014a00c805214000014e00c805212000014000d805210000014000e80520e000014200e80520c000014600e80520a000014800e805208000014c00e805206000014e00e8052040000140004001100001952c0035fd600781f53c0035fd68cffffff94ffffffecffffff9cffffffa4ffffffecffffffacffffffb4ffffff9cffffffa4ffffffccffffffacffffffb4ffffffccffffffbcffffffc4ffffff
+</bytechunk>
+<bytechunk space="ram" offset="0x101000" readonly="true">
+080401511f1d0071a8000054090500102a79a8b829010a8b20011fd6088001511f1d0071a8030054290500102a79a8b829010a8b20011fd6200c80521a000014400c805218000014800c805216000014a00c805214000014e00c805212000014000d805210000014000e80520e000014200e80520c000014600e80520a000014800e805208000014c00e805206000014e00e8052040000140004001100001952c0035fd600781f53c0035fd68cffffff94ffffff70ffffff9cffffffa4ffffff70ffffffacffffffb4ffffff9cffffffa4ffffffccffffffacffffffb4ffffffccffffffbcffffffc4ffffff
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="f"/>
+<symbol space="ram" offset="0x101000" name="g"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 f(int4 x);</com>
+  <com>parse line extern int4 g(int4 x);</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option switchmerge off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SWITCHMERGE #1: f and g print one switch each, the unmerged f two" min="4" max="4">switch\(x\) \{</stringmatch>
+<stringmatch name="SWITCHMERGE #2: no hole of either table prints a label" min="1" max="1">case 0x43:</stringmatch>
+<stringmatch name="SWITCHMERGE #3: one default arm per merged switch, two in the unmerged f" min="4" max="4">default:</stringmatch>
+<stringmatch name="SWITCHMERGE #6: the default code prints once per function" min="3" max="3">return x \+ 1U \^ 0x80;</stringmatch>
+<stringmatch name="SWITCHMERGE #7: the label only the left-out jump reached is gone" min="1" max="1">label_[0-9a-f]+:</stringmatch>
+<stringmatch name="SWITCHMERGE #4: no arm jumps to the default code" min="1" max="1">goto label_</stringmatch>
+<stringmatch name="SWITCHMERGE #5: the second table's labels land in the merged switch" min="3" max="3">case 0x67:</stringmatch>
+</decompilertest>

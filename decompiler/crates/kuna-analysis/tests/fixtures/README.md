@@ -19,6 +19,10 @@ real ELF parser.
 | `ppc32_stack_chk_local_le.o` | built from `ppc32_stack_chk_local_le.s` (`llvm-mc -triple=powerpcle-unknown-linux-gnu -filetype=obj ppc32_stack_chk_local_le.s -o ppc32_stack_chk_local_le.o`, Ubuntu LLVM version 21.1.8), SHA-256 `a944a1c90b2f535ec424c48d3c8a49680c657530e65b521c1309080ad4393cf8` | ELF32 little-endian PowerPC relocatable object; defines global function r6; has an R_PPC_REL24 relocation against undefined symbol __stack_chk_fail_local; r3 is set (mulli 3,3,3) before the branch to the call; read by `kuna-cli/tests/stack_chk_fail_local.rs` and `tests/stages/kuna-stackchklocal.xml` |
 | `ppc32_stack_chk_local_linked_be.so`, `ppc32_stack_chk_local_linked_le.so` | built from `ppc32_stack_chk_local_linked.s` (`llvm-mc -triple=powerpc-unknown-linux-gnu -filetype=obj ppc32_stack_chk_local_linked.s -o p.o`; `ld.lld -shared -z max-page-size=0x1000 p.o -o ppc32_stack_chk_local_linked_be.so`, and the same with `-triple=powerpcle-unknown-linux-gnu` for `_le.so`, Ubuntu LLVM version 21.1.8), SHA-256 `4b6d867f6ecfd2a62083ed9ff0e2ec1688148f99b27c5b6702b1b0b5d1d49533` (BE) and `9e19f6d135cc8aa73e697bb5d557d7cd9bd2c463c151eca45190a2f7c79ae7e3` (LE) | linked ELF32 PowerPC shared objects, 1696 bytes each; readelf -s: r6 at 0x11c4 with size 52 (GLOBAL), the same body as `ppc32_stack_chk_local_*.o`, its `bl` resolved to __stack_chk_fail_local at 0x11f8 with size 16 (LOCAL HIDDEN, in .symtab only), whose body ends in `bl` to the `__stack_chk_fail` PLT call stub at 0x1208; __stack_chk_fail is the only .dynsym import; read by `kuna-cli/tests/stack_chk_fail_local.rs` and `tests/stages/kuna-stackchklocal.xml`; that cargo test also rebuilds both from `ppc32_stack_chk_local_linked.s` when `llvm-mc` and `ld.lld` are installed and checks the rebuilt images the same way |
 | `prefixed_noreturn_aarch64` | built from `prefixed_noreturn_aarch64.s` (`llvm-mc -triple=aarch64 -filetype=obj prefixed_noreturn_aarch64.s -o p.o`; `ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e probe p.o -o prefixed_noreturn_aarch64`, Ubuntu LLVM version 21.1.8), SHA-256 `e9445cf6d2489b9ea65a2de7e8baa44b97e6b85a3bad858adbfa390d1b92b4fb` | linked AArch64 ELF, about 5 KB; readelf -s: probe at 0x10000 with size 28, plain at 0x10020 with size 28; the last instruction of probe is `bl stub___stack_chk_fail` at 0x10018, followed by 4 zero bytes outside the symbol; the last instruction of plain is `bl __stack_chk_fail`; keeps_count and keeps_exit call mystack_chk_fail_count and handle_exit, then return 9; all four callees are defined FUNC symbols whose body is a bare ret; read by `kuna decompile-all` when checking the `<prefix>__` proxy rule in `p2_lift/kuna_noreturn_externmatch.rs`, and by `tests/stages/kuna-prefixed-noreturn.xml` |
+| `switchextent_aarch64` | built from `switchextent_aarch64.s` (`llvm-mc -triple=aarch64 -filetype=obj switchextent_aarch64.s -o s.o`; `ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e guarded s.o -o switchextent_aarch64`, LLVM 22.1.8), SHA-256 `6aaa64b4350413649b2dbc506eb17ecb8f77d87907eaed3104e2ea14325ee3f1` | linked AArch64 ELF, 5.5 KB; readelf -s: guarded at 0x10000, entering at 0x10048, pick at 0x10088, unchecked at 0x10090, last at 0x10118. Compact jump tables (`adr` base, byte or halfword offsets, `lsl #2`) in `.rodata` at 0x11158: `guarded` behind `cmp w0,#3; b.hi`; `entering` whose `cmp w0,#2; b.ls` branches into the dispatch block; `unchecked` dispatching twice on `pick`'s result through `tab_first` (3 halfwords at 0x11160) and `tab_second` (4 at 0x11166), nothing bounding either; `last` through `tab_last` (2 at 0x1116e) followed by a byte array it reads. `switchextent` (`listing/kuna_switchextent.rs`, `p2_lift/kuna_switchextent.rs`): the first unchecked table ends at the function's second; a function's last table, and one followed only by data it reads, stay computed calls. `tests/stages/kuna-switchextent-a64.xml` is the stage test; `kuna-cli/tests/switchextent_cli.rs` decompiles each and reads the walk's jump references |
+| `swiftenumcase_aarch64` | built from `swiftenumcase_aarch64.s` (`llvm-mc -triple=aarch64 -filetype=obj swiftenumcase_aarch64.s -o s.o`; `ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e dispatch s.o -o swiftenumcase_aarch64`, LLVM 22.1.8), SHA-256 `8314072f915b6b377b72c78678e16d2e435e9b8d82f0bdc0c6060889420ae2bd` | linked AArch64 ELF, 5.5 KB; readelf -s: dispatch at 0x10000, consume at 0x1006c, Shape_accessor at 0x10074, swift_getEnumCaseMultiPayload at 0x10080. `dispatch` keeps `Shape_accessor`'s result in x20 across a call, passes it to `swift_getEnumCaseMultiPayload` and indexes `tab_shape` (3 halfwords at 0x11088, `adr` base, `lsl #2`) with the case, no range check and no table after it; four halfwords follow. `swift5_type_metadata` names `shape_descriptor` (0x110a4), an enum descriptor whose accessor is Shape_accessor with 2 payload cases and 1 empty case. `switchextent` (`p2_lift/kuna_switchextent.rs`, `enum_calls`): the table has the enum's three cases; off, or with `swiftmetadata` off, it stays a computed call. `kuna-cli/tests/switchextent_cli.rs` decompiles it |
+| `switchnext_aarch64` | built from `switchnext_aarch64.s` (`llvm-mc -triple=aarch64 -filetype=obj switchnext_aarch64.s -o sn.o`; `ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e name_of sn.o -o switchnext_aarch64`, LLVM 22.1.8), SHA-256 `3e272923fd2d109c54867ffbc3a6aedede106441b66b2839e018fca35b4d6373` | linked AArch64 ELF, 5.5 KB; readelf -s: name_of at 0x10000, next_kind at 0x10034. `name_of` indexes `tab_names` (3 halfwords at 0x110dc) with `x0 & 0xff` and no range check, and its table is its function's last; `next_kind`'s table follows at 0x110e2, then zero bytes. `switchextent` (`p2_lift/kuna_switchextent.rs`, `later_tables`): the byte-masked table ends at the next function's table, three cases instead of phantom cases with next_kind's code. `tests/stages/kuna-switchnext-a64.xml` is the stage test |
+| `switchnextcsel_aarch64` | built from `switchnextcsel_aarch64.s` (`llvm-mc -triple=aarch64 -filetype=obj switchnextcsel_aarch64.s -o snc.o`; `ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e name_of snc.o -o switchnextcsel_aarch64`, Ubuntu LLVM version 21.1.8), SHA-256 `44f8d810fdda21275d7a0e336e798ba9d4b5f829bf5448781d0cad2b4c721ddf` | linked AArch64 ELF, 5.1 KB; readelf -s: name_of at 0x10000, pick at 0x10034. `name_of` indexes `tab_names` (3 bytes at 0x11084) with `x0 & 0xff` and no range check, and its table is its function's last; `pick`'s byte table follows at 0x11087, its index picked by a `csel`/`csinc` chain over constants and added to the table's address before the load. `switchextent` (`p2_lift/kuna_switchextent.rs`, `later_tables`): the extent fold takes a value written after a branch inside one instruction as unknown, so it names pick's table and name_of ends at it, three cases instead of phantom ones. `tests/stages/kuna-switchnextcsel-a64.xml` is the stage test |
 | `prefixed_noreturn_x86_64` | built from `prefixed_noreturn_x86_64.s` (`llvm-mc -triple=x86_64 -filetype=obj prefixed_noreturn_x86_64.s -o p.o`; `ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e probe p.o -o prefixed_noreturn_x86_64`, Ubuntu LLVM version 21.1.8), SHA-256 `d5f4ac84405e3477912a680d046da42c76950c566204cb1895a3f66c6bd0028d` | linked x86_64 ELF, about 5 KB; readelf -s: probe at 0x10000 with size 20, plain at 0x10018 with size 20; the last instruction of probe is `call stub___stack_chk_fail`, followed by 4 zero bytes outside the symbol; the last instruction of plain is `call __stack_chk_fail`; keeps_count and keeps_exit call mystack_chk_fail_count and handle_exit, then return 9; all four callees are defined FUNC symbols whose body is a bare ret; read by `kuna decompile-all` when checking the `<prefix>__` proxy rule in `p2_lift/kuna_noreturn_externmatch.rs`, and by `tests/stages/kuna-prefixed-noreturn.xml` |
 | `rust_minimal_dwarf_names_x86_64` | Rust minimal DWARF plus a genuine imported libc `write`; reproduction in `rust_minimal_dwarf.build.sh` | Rust's namespaced four-argument `write` retains its identity and all four arguments. |
 | `rust_minimal_dwarf_x86_64`, `rust_full_dwarf_x86_64` | Two-function static ELFs built with rustc 1.90.0 minimal/full debug information; source and reproduction script: `rust_minimal_dwarf.rs`, `rust_minimal_dwarf.build.sh` | Minimal DWARF preserves the computed argument to `add_input`; full DWARF retains the named `u64` parameter and return type. |
@@ -1056,6 +1060,36 @@ no_link_references_the_return_address_it_leaves)`.
 `chkstkdarwin_macho_arm64.provenance` (Apple clang, which needs macOS). Pinned
 by `tests/stages/kuna-chkstkdarwin.xml`.
 
+`macho_stubs_stripped_arm64` (arm64, 33 KB; generator
+`macho_stubs_stripped_arm64.py`, regenerate with `python3 macho_stubs_stripped_arm64.py`)
+is `chkstkdarwin_macho_arm64` with every indirect-symbol entry overwritten with
+`INDIRECT_SYMBOL_LOCAL | INDIRECT_SYMBOL_ABS`, the way `strip` leaves a stub whose
+undefined `nlist` it dropped while the chained-fixups bind on the `__got` slot stays.
+Pins `stubbinds` (`loader/kuna_stubbinds.rs`): the `__stubs` entry at `0x100000520`
+is `sub_100000520` from the indirect-symbol walk and `__chkstk_darwin` from the bind
+on `0x100004000`; `tests/stages/kuna-stubbinds.xml` is the two-pass stage test.
+SHA-256 `3431ceec04e811d5c7a04b8b21d9f346077bb5faed9e7191f66610fcc25829f3`.
+
+`thunknames_aarch64` (static AArch64 ELF, 3 KB; source `thunknames_aarch64.c`,
+rebuild with `clang --target=aarch64-linux-gnu -O1 -g -c -o tn.o thunknames_aarch64.c`
+then `clang --target=aarch64-linux-gnu -nostdlib -static -fuse-ld=lld
+-Wl,-e,drop_box -Wl,--build-id=none -o thunknames_aarch64 tn.o`) holds two
+symbol-less `b` thunks: `0x21019c` jumps to `release_box` (DWARF prototype
+`long (long *, long)`), `0x2101a0` jumps to `0x21019c`, and `drop_box` /
+`drop_two` call them. Pins `thunknames` (`kuna-console/src/engine/kuna_thunknames.rs`);
+`tests/stages/kuna-thunknames.xml` is the two-pass stage test.
+SHA-256 `e845b50d98652a01219b518126a06d3c8c9fd2ef42ee3a24b3c3570f1a9f49a5`.
+
+`thunknames_mips` (static MIPS32 little-endian ELF, 1 KB; source
+`thunknames_mips.S`, rebuild with `mipsel-linux-gnu-gcc -mno-abicalls -fno-pic
+-c -o tm.o thunknames_mips.S` then `mipsel-linux-gnu-ld -static -e mips_caller
+--build-id=none -o thunknames_mips tm.o`, GNU binutils 2.38) holds two
+symbol-less `j release_box` entries: `0x4000e0` has a `nop` in its delay slot
+(a thunk, renamed `j_release_box`) and `0x4000e8` has `addiu $a0,$a0,16` there
+(a `this` adjustor, left `sub_4000e8`). `mips_caller` calls both. Pins the
+delay-slot rule of `thunknames`; `tests/stages/kuna-thunknames.xml` passes 3-4.
+SHA-256 `a5ea1f23af005151f08ffc647131b4bfc64ec586c6b94b3248ff1009d2791136`.
+
 `chkstkdarwin_macho_arm64e` (arm64e, 33 KB) reaches the probe through an
 `__auth_ptr` slot, the way an arm64e link calls it: `_big_e` with
 `adrp x16; ldr x16,[x16,#off]; blraaz x16` and `_vla_e` with
@@ -1399,6 +1433,115 @@ LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin
 `$s4main10countWords2ofS2i_tF`. The `_OBJC_CLASS_$__TtC4main7Greeter` data
 symbol keeps the linker's spelling either way.
 
+### `macho_swift_objcthunk_arm64` — Swift vtable slots named from `@objc` thunks (`swiftobjcthunk`)
+
+`macho_swift_objcthunk_arm64` (arm64 iOS dylib, ~66 KB) is the fixture of
+`kuna-console/tests/verify_swiftobjcthunk.rs`. `macho_swift_objcthunk.swift`
+(classes `Replay` and `Sub`, `-Onone`) has `@objc` properties, an `@objc`
+method, an `@objc class func` and an override; `macho_swift_objcthunk_probe.swift`
+(`-O`) has a private class whose `doesNotRecognizeSelector:` thunk inlines the
+override (a `super` send) and calls the non-`@objc` `refresh()` directly.
+Built with swiftc 6.4.2 against the iPhoneOS 16.5 SDK. The SDK's Foundation
+overlay is not needed: a one-line `Foundation` module (`@_exported import
+ObjectiveC`) stands in for it, and `-resource-dir` points at a directory holding
+only the toolchain's `apinotes`, `clang` and `shims`, so the SDK's own Swift
+modules are used. Linked with `-x`, so no Swift function keeps a symbol; the
+pinned VMAs come from the same link without `-x`.
+
+```bash
+echo '@_exported import ObjectiveC' > Foundation.swift
+SW="swiftc -resource-dir $RD -target arm64-apple-ios16.0 -sdk $SDK"
+$SW -parse-as-library -emit-module -module-name Foundation Foundation.swift -emit-module-path mods/Foundation.swiftmodule
+$SW -I mods -Onone -parse-as-library -emit-object -module-name objcfix macho_swift_objcthunk.swift -o t.o
+$SW -I mods -O -parse-as-library -emit-object -module-name objcfix macho_swift_objcthunk_probe.swift -o probe.o
+ld64.lld -arch arm64 -platform_version ios 16.0 16.5 -dylib -o macho_swift_objcthunk_arm64 t.o probe.o \
+         -syslibroot $SDK -L$SDK/usr/lib/swift -L$SDK/usr/lib -lswiftCore -lobjc -lSystem \
+         -install_name @rpath/t.dylib -x
+```
+
+**Pinned VMAs:** `Replay.scrollView` getter/setter `0x4060`/`0x4130`, `Replay.count`
+getter/setter `0x428c`/`0x4340`, `Replay.addFrame(timestamp:label:)` `0x4410`,
+`Replay.make()` `0x4708`, `Sub.addFrame(timestamp:label:)` `0x49bc`,
+`Probe.refresh()` `0x4c10`. With `swiftmetadata` on they are named
+`objcfix.Replay.scrollView.getter`, …, `objcfix.Replay.addFrameWithTimestamp:label:`,
+`objcfix.Replay.make`, `objcfix.Sub.addFrameWithTimestamp:label:`, and
+`Probe.refresh()` stays `objcfix.Probe.vtable#3.method`; `--option swiftobjcthunk
+off` gives every one its positional `vtable#N.kind` name.
+
+### `macho_swift_objcthunk_inlined_arm64` — `@objc` thunks with inlined bodies (`swiftobjcthunk`)
+
+`macho_swift_objcthunk_inlined_arm64` (arm64 iOS dylib, ~66 KB) is the second
+fixture of `kuna-console/tests/verify_swiftobjcthunk.rs`, built from
+`macho_swift_objcthunk_inlined.swift` with `-O -wmo`, the release default. In
+`Gone` and `Kept` the `@objc tap()` thunk holds `tap`'s inlined body, a direct
+call to the non-`@objc` `handle()`; `Gone.tap`'s own slot is left empty, and
+`Kept.tap`'s survives (a subclass overrides it) as a branch to `handle()`.
+`Pure.run()` is not inlined into its thunk, and the public `Sym.act(_:)` keeps
+its exported symbol. No Apple SDK is needed: the source uses `-parse-stdlib`
+and a two-file stand-in for the `ObjectiveC` module, so the swift:6.0 image
+builds it byte-identically.
+
+```bash
+mkdir -p sdk/usr/include/objc
+printf '%s\n' 'typedef struct objc_class *Class;' '__attribute__((objc_root_class))' \
+  '@interface NSObject {' '  Class isa;' '}' '+ (instancetype)alloc;' '- (instancetype)init;' '@end' \
+  > sdk/usr/include/objc/NSObject.h
+printf 'module ObjectiveC [system] {\n  header "objc/NSObject.h"\n  export *\n}\n' > sdk/usr/include/module.modulemap
+D="docker run --rm -u $(id -u):$(id -g) -e HOME=$PWD -v $PWD:$PWD -w $PWD swift:6.0"
+$D swiftc -parse-stdlib -module-cache-path $PWD/mc -module-name objt -target arm64-apple-ios16.0 -sdk $PWD/sdk \
+   -Xfrontend -disable-implicit-concurrency-module-import -Xfrontend -disable-implicit-string-processing-module-import \
+   -O -wmo -parse-as-library -emit-object macho_swift_objcthunk_inlined.swift -o t.o
+$D ld64.lld -arch arm64 -platform_version ios 16.0 16.5 -dylib -undefined dynamic_lookup \
+   -install_name @rpath/objt.dylib -x -o macho_swift_objcthunk_inlined_arm64 t.o
+```
+
+**Pinned VMAs:** `Gone.handle()` `0x4000` and `Kept.handle()` `0x4054` stay
+`objt.Gone.vtable#3.method` / `objt.Kept.vtable#3.method` (not `tap`),
+`Pure.run()` `0x4118` is `objt.Pure.run`, and `Sym.act(_:)` `0x4280` keeps
+`objt.Sym.act(_:)` rather than the selector's `act:`.
+
+### `macho_cstringconst_arm64` — short literals nothing types `char *` (`cstringconst`)
+
+`macho_cstringconst_arm64` (arm64 dylib at base 0, ~50 KB, from
+`macho_cstringconst.c`) passes string literals where nothing gives them a
+character-pointer type: `emit` passes `" ("` to a call through an untyped
+function pointer whose other call site passes an integer in that slot, and
+`choose` picks between `".SH"` and what an untyped callee returns, then passes
+the choice to the same pointer. The literals are shorter than the string pass's
+minimum and, at base 0, below the pointer lower bound, so they print as `0x610`
+and `0x613` unless `cstringconst` reads them from the `__cstring` section
+(`kuna-console/tests/verify_cstringconst.rs`). Built with clang 20 and `ld64.lld`:
+
+```bash
+clang -target arm64-apple-macos11 -O1 -fno-inline -c macho_cstringconst.c -o m.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+         -dylib -install_name @rpath/cs.dylib -o macho_cstringconst_arm64 m.o
+llvm-strip -x macho_cstringconst_arm64
+```
+
+**Pinned VMAs:** `_emit`@`0x508`, `_choose`@`0x55c`, `__cstring`@`0x610` (`" ("`
+at `0x610`, `".SH"` at `0x613`).
+
+`macho_cstringconst_guard_arm64` (arm64 dylib at base 0, ~50 KB, from
+`macho_cstringconst_guard.c`) passes integers that land inside `__cstring`
+without being literals: `sized` hands `setvbuf`, which declares a `size_t`,
+`0x58b` (the first byte of `"hello world"`), and `mid` passes `0x58d` (two
+bytes into it) through the untyped `sink`; `lit` passes the literals `"id"` and
+`"hello world"` to the same pointer. With `cstringconst` on, the two integers
+stay integers and `lit`'s arguments print as literals. Built with clang 21 and
+the rustup `ld64.lld` (LLD 20.1.8), SHA-256
+`26d6d99dcaf49a04d3c42ba8587a1827e7775bc9d53b593d65eeae49b7d7e8cb`:
+
+```bash
+clang -target arm64-apple-macos11 -O1 -fno-inline -c macho_cstringconst_guard.c -o m.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+         -dylib -install_name @rpath/csg.dylib -o macho_cstringconst_guard_arm64 m.o
+llvm-strip -x macho_cstringconst_guard_arm64
+```
+
+**Pinned VMAs:** `_sized`@`0x510`, `_mid`@`0x520`, `_lit`@`0x538`,
+`__cstring`@`0x588` (`"id"` at `0x588`, `"hello world"` at `0x58b`).
+
 ### `macho_gotdata` — data imports read through `__got` (`importdata`)
 
 `macho_gotdata` (arm64, ~50 KB) reads two imported **data** symbols through
@@ -1435,6 +1578,49 @@ clang -target arm64-apple-macos11 -O1 -c macho_gotdata_local.c -o m.o
 "$LLD" -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
        -e _main -o macho_gotdata_local m.o
 ```
+
+### `macho_dataslots_arm64` — data-import slots by their mangling (`machodataslots`)
+
+`macho_dataslots_arm64` (arm64, ~50 KB, from `macho_dataslots.c`) reads, through
+`__got` slots, three imported data objects whose mangling says what they are — an
+Objective-C class object (`_OBJC_CLASS_$_NSObject`), a Swift type's metadata
+(`_$sSSN`), a C++ static data member (`__ZNSt3__15ctypeIcE2idE`) — plus the plain
+C `imported_counter`, and `main` calls `imported_call` through its stub. The
+indirect-symbol walk names every slot; the three marked ones are not function
+inventory entries, and `importdata` renders each read as the import
+(`kuna-console/tests/verify_machodataslots.rs`). Built with clang 20 and `ld64.lld`:
+
+```bash
+clang -target arm64-apple-macos11 -O1 -c macho_dataslots.c -o m.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+         -e _main -o macho_dataslots_arm64 m.o
+llvm-strip -x macho_dataslots_arm64
+```
+
+**Pinned VMAs:** `_read_objc_class`@`0x100000510`, `_read_swift_metadata`@`0x100000520`,
+`_read_cpp_static_member`@`0x100000530`, `_read_counter`@`0x100000540`, the stub
+`imported_call`@`0x100000554`; `__got` slots `OBJC_CLASS_$_NSObject`@`0x100004000`,
+`$sSSN`@`0x100004008`, `std::__1::ctype<char>::id`@`0x100004010`,
+`imported_counter`@`0x100004018`.
+
+### `macho_dataslotaddr_arm64` — data-import addresses passed on (`importdata`)
+
+`macho_dataslotaddr_arm64` (arm64, ~50 KB, from `macho_dataslotaddr.c`) loads two
+`__got` slots, an Objective-C class object (`_OBJC_CLASS_$_NSObject`) and a Swift
+protocol witness table (`_$s7SwiftUI5ColorVAA4ViewAAWP`), and passes the two
+addresses to an imported call without dereferencing them; `importdata` renders each
+as `&<import>` (`kuna-console/tests/verify_machodataslots.rs`). Built with clang 22
+and `ld64.lld`:
+
+```bash
+clang -target arm64-apple-macos11 -O1 -c macho_dataslotaddr.c -o m.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+         -e _main -o macho_dataslotaddr_arm64 m.o
+llvm-strip -x macho_dataslotaddr_arm64
+```
+
+**Pinned VMAs:** `_pass_addresses`@`0x100000510`; `__got` slots
+`$s7SwiftUI5ColorVAA4ViewAAWP`@`0x100004000`, `OBJC_CLASS_$_NSObject`@`0x100004008`.
 
 ### `swift_metadata_elf` — a stripped Swift executable (`swiftmetadata`)
 
@@ -1588,6 +1774,37 @@ alone `style` reads `objc_msgSend$setAlpha:();`; with `option objcsdk
 decompiler/crates/kuna-analysis/tests/fixtures/objc_sdk` it reads
 `objc_msgSend$setAlpha:(a1,a0);`, `v1 = objc_msgSend$frame(a1);` as a `CGRect` and
 `objc_msgSend$setFrame:(a1,v1.x,v1.y,v1.width + 10.0,v1.height);`.
+
+### `macho_objc_forin_arm64` + `objc_sdk/Enumeration.h` — a struct passed by address
+
+`macho_objc_forin_arm64` (arm64, ~50 KB) is the fixture for struct-pointer
+parameters read from headers (`analyzers/objc/kuna_objcsdk.rs`,
+`analyzers/objc/encoding.rs`, stage test `tests/stages/kuna-objcforin.xml`).
+Source `macho_objc_forin.m`: a root class `Bag` **declared and never implemented**
+and one function `visit_all` whose `for (id item in bag)` loop sends
+`countByEnumeratingWithState:objects:count:` with the address of the stack
+enumeration state, every send routed through a linker stub (the `.s` is `clang -S`
+output with each `adrp/ldr x1` selref load dropped and each `bl _objc_msgSend`
+replaced by `bl "_objc_msgSend$<sel>"`). `objc_sdk/Enumeration.h` is a
+**hand-written** stand-in for the SDK's fast-enumeration declarations (no Apple
+text): the state as a `typedef struct { ... } NSFastEnumerationState;` and the
+selector with an array parameter.
+
+```bash
+clang -target arm64-apple-macos11 -fno-objc-arc -O1 -S macho_objc_forin.m -o macho_objc_forin_arm64.s
+# edit: route every send through `_objc_msgSend$<sel>` (drop the selref loads)
+clang -target arm64-apple-macos11 -c macho_objc_forin_arm64.s -o forin.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains -objc_stubs_fast \
+         -undefined dynamic_lookup -x -e _main -o macho_objc_forin_arm64 forin.o
+```
+
+**Pinned VMAs:** `_visit_all`@`0x100000550`, `__objc_stubs`@`0x100000680`
+(`countByEnumeratingWithState:objects:count:` first, then `visit:`). With `objc on`
+alone the state is eight loose words and the element reads
+`*(unsigned long *)(v6 + v5 * 8)`; with `option objcsdk
+decompiler/crates/kuna-analysis/tests/fixtures/objc_sdk` it is one
+`NSFastEnumerationState v1` and the loop reads `v1.itemsPtr[v5]` and
+`*v1.mutationsPtr`.
 
 ### `macho_objc_types_arm64` — declarations typed by class
 
@@ -2471,6 +2688,27 @@ arm64 instruction loads into a temporary before comparing. With `swiftmetadata
 on` both keep their error path: `doCatch` releases the error and calls `altv`,
 and `select_error` returns 7 when x21 is set.
 
+### `swift_helpers_arm64_elf` — swiftc's instantiation helpers and a lazy witness table accessor (`swifthelpers`)
+
+`swift_helpers_arm64_elf` (arm64 ELF shared object, 9.4 KB, SHA-256
+`005e06b621d27ab324be83d286e4267236d8101837544a1bbd9eb92c01f1e1b6`) is built from
+`swift_helpers_arm64_elf.swift` with the x86-64 Linux swiftc 6.4.2 toolchain,
+compiled as its own minimal standard library like `swift_call_arm64_elf`:
+
+```bash
+swiftc -frontend -c -parse-stdlib -module-name hf \
+  -target aarch64-unknown-linux-gnu -O swift_helpers_arm64_elf.swift -o hx.o
+ld.lld -shared -o hx.so hx.o          # LLD 22.1.8
+llvm-objcopy --strip-all hx.so swift_helpers_arm64_elf
+```
+
+`hf.useBox(_:)` (`0x1194c`) calls `__swift_instantiateConcreteTypeFromMangledName`
+(`0x112e4`, the one-argument form) on the cache at `0x31da0` for `hf.Box<hf.Unit>`
+and the lazy witness table accessor of `hf.Box<hf.Unit> : hf.Shape` (`0x11328`,
+cache `0x31e30`), which calls the `Abstract` helper (`0x11388`). Stripping
+removes all of their names. `hf.pair(_:)` (`0x11ab8`) keeps the result of the
+generic `hf.Cell` metadata accessor for two `swift_allocObject` calls.
+
 ### `swift_call_leaf_elf` — a mutating struct call after a Swift leaf call (`swiftcall`)
 
 `swift_call_leaf_elf` (x86-64 ELF, 18 KB, with symbols) is the fixture for the
@@ -2489,6 +2727,52 @@ SHA-256: `1ba763c5d3b5707bba6d8fc58f3125312745f30e8e8d63eb05ea5e6dd39c3e93`.
 **Pinned VMAs:** `$s7leaffix4onceySiAA7CounterVz_SitF`@`0x2630`,
 `$s7leaffix4tickyS2iF`@`0x2800`, `$s7leaffix7CounterV4bumpyyAA4StepOF`@`0x27c0`.
 With `swiftmetadata on` the call decompiles as `leaffix.Counter.bump(_:)(a0,v1,0)`.
+
+### `swift_witness_elf` — value witness tables of a struct, an enum and a generic struct (`valuewitness`)
+
+`swift_witness_elf` (x86-64 ELF PIE, 15 KB, stripped) is the fixture of
+`kuna-console/tests/verify_valuewitness.rs`. Its source `swift_witness_elf.swift`
+holds `Pair` (a struct with a reference), `Shape` (a multi-payload enum, so
+its table has the enum witnesses), the generic `Holder<T>`, whose table is in
+its metadata pattern, and `swapIn<T>`, which moves and copies a `T` through
+its metadata argument's table. Built with swiftc 6.4.2:
+
+```bash
+swiftc -O -module-name witfix swift_witness_elf.swift -o w
+llvm-strip --strip-all w -o swift_witness_elf
+```
+
+SHA-256: `fd04bf395eddf3f020d11d9c07832e41f561fbba30f579e48d430a3cdaecca26`.
+
+**Pinned VMAs** (from the same link before stripping): `$s6witfix4PairVwxx`
+(destroy) `0x2970`, `$s6witfix5ShapeOwug` (getEnumTag) `0x2cc0`,
+`$s6witfix6HolderVwtk` (initializeWithTake) `0x2ec0`, and `witfix.swapIn<A>`
+`0x3580`, which decompiles as `(*v1->initializeWithTake)(v2,a0,a2)` and
+`(*v1->initializeWithCopy)(a0,a1,a2)`.
+
+### `swift_outlined_macho` — outlined value-witness helpers (`valuewitness`)
+
+`swift_outlined_macho` (arm64 iOS Mach-O dylib, 71 KB, local symbols stripped)
+is the second fixture of `kuna-console/tests/verify_valuewitness.rs`. Its source
+`swift_outlined_macho.swift` holds structs and an enum that carry resilient
+Foundation values (`Date`, `URL`, `UUID`), so swiftc copies, moves and destroys
+them through outlined helpers that call one value witness. Built with swiftc
+6.4.2 and the iOS 17 SDK:
+
+```bash
+swiftc -O -module-name witfix -emit-library -target arm64-apple-ios17.0 \
+  swift_outlined_macho.swift -o w.dylib
+llvm-strip -x w.dylib -o swift_outlined_macho
+```
+
+SHA-256: `15bbaa6a68ffb0a4f1d9a8475d3780a10c271a2ac303d5b2fb4e61f6b022aaf2`.
+
+**Pinned VMAs** (from the same link before stripping): `outlined destroy of
+witfix.Slot` `0x53f8`, `merged outlined init with copy of witfix.Stamp`
+`0x4918`, `merged outlined init with take of witfix.Stamp` `0x4970`, and
+`outlined init with copy of Foundation.URL?` `0x4a40`, which fetches its
+metadata through `__swift_instantiateConcreteTypeFromMangledName` and stays
+unnamed.
 
 ### `swift_call_free_elf` — a mutating struct call after a module function (`swiftcall`)
 

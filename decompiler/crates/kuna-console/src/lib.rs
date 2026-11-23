@@ -51,6 +51,7 @@ pub mod assertions;
 mod kuna_qualifiedstorage;
 pub mod assertsyntax;
 mod kuna_callproto;
+pub mod kuna_cheader;
 pub mod grammar;
 pub mod rulecompile;
 pub mod unify;

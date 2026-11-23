@@ -28,7 +28,8 @@
 
     Pass 1 (default) asserts the fix: the switch closes after 'g' (0x67).
     Pass 2 (switchmultipred off) asserts the bug: row 5 (0x68), past the
-    guard, is read.
+    guard, is read. It turns switchextent off too, which otherwise ends the
+    unguarded table at the next jump table the flow decodes above it.
 -->
 <bytechunk space="ram" offset="0x401000">
 803c370477330fb60437488d15e3000000486304824801d03effe0b81101
@@ -87,6 +88,7 @@ ffffabffffffb2ffffffb9ffffffc0ffffffc7ffffffceffffff6d657373
   <com>decompile</com>
   <com>print C</com>
   <com>option switchmultipred off</com>
+  <com>option switchextent off</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
