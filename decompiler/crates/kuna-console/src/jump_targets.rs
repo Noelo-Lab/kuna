@@ -1,6 +1,6 @@
 //! Image-scoped assertions about a single computed branch in the default code space.
 
-use crate::engine::{ConsoleProgram, RawPcodeOp, RawPcodeVarnode};
+use crate::engine::{ConsoleProgram, PendingFunction, RawPcodeOp, RawPcodeVarnode};
 use kuna_base::address::Address;
 use kuna_base::space::AddrSpace;
 use kuna_decomp::jumptable::{StatedJump, StatedSelector};
@@ -40,10 +40,10 @@ pub(crate) fn install(prog: &mut ConsoleProgram, addr: u64, targets: &[u64]) -> 
     let (selector, value_bytes) = branch_selector(prog, &site, addr)?;
     let mut dests = targets
         .iter()
-        .map(|&value| code_address(prog, &space, value))
-        .collect::<Result<Vec<_>, _>>()?;
-    dests.sort_unstable();
-    dests.dedup();
+        .map(|&value| Ok((code_address(prog, &space, value)?, value)))
+        .collect::<Result<Vec<_>, String>>()?;
+    dests.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    dests.dedup_by(|a, b| a.0 == b.0);
     if dests.is_empty() || dests.len() > arch.max_jumptable_size as usize {
         return Err(format!(
             "expected 1 to {} distinct jump destinations",
@@ -51,30 +51,37 @@ pub(crate) fn install(prog: &mut ConsoleProgram, addr: u64, targets: &[u64]) -> 
         ));
     }
     let units = u64::from(space.get_word_size());
-    if let Some(wide) = dests
+    if let Some((_, value)) = dests
         .iter()
-        .find(|at| value_bytes < 8 && (at.get_offset() / units) >> (8 * value_bytes) != 0)
+        .find(|(at, _)| value_bytes < 8 && (at.get_offset() / units) >> (8 * value_bytes) != 0)
     {
         return Err(format!(
-            "cannot label a switch at {addr:#x}: destination {:#x} does not fit the {value_bytes}-byte value the jump takes",
-            prog.output_code_offset(wide.get_offset())
+            "cannot label a switch at {addr:#x}: destination {value:#x} does not fit the {value_bytes}-byte value the jump takes"
         ));
     }
+    let targets: Vec<Address> = dests.iter().map(|(at, _)| at.clone()).collect();
     if let Some(old) = arch.stated_jump_targets.get(&site) {
-        if old.targets == dests && old.selector == selector {
+        if old.targets == targets && old.selector == selector {
             return Ok(());
         }
         return Err(format!(
             "conflicting destination sets for computed branch at {addr:#x}"
         ));
     }
-    prog.arch_mut().stated_jump_targets.insert(
-        site,
-        StatedJump {
-            targets: dests,
-            selector,
-        },
-    );
+    let entries: Vec<(u64, u64)> = dests.iter().map(|(at, value)| (at.get_offset(), *value)).collect();
+    if let Some((entry, value)) = leaving_destination(prog, site.get_offset(), &entries, None) {
+        let at = Address::new(space.clone(), entry);
+        let name = arch
+            .symboltab
+            .function_display_name_across_scopes(&at)
+            .unwrap_or_else(|| format!("{value:#x}"));
+        return Err(format!(
+            "destination {value:#x} is the entry of function {name}, so the jump leaves the function \
+             (state a single tail-call destination with callee, or declare the extent of a function \
+             that holds both)"
+        ));
+    }
+    prog.arch_mut().stated_jump_targets.insert(site, StatedJump { targets, selector });
     prog.callwide_unavailable("computed branch destinations require a new complete image proof");
     Ok(())
 }
@@ -239,4 +246,51 @@ fn is_segment_op(prog: &ConsoleProgram, index: i32) -> bool {
     let arch = prog.arch();
     (0..arch.manage().num_spaces())
         .any(|space| arch.userops.get_segment_op(space).is_some_and(|op| op.get_index() == index))
+}
+
+/// The first `(entry, value)` destination that enters another function the
+/// loader's symbols or the caller declare, counting `pending` as made: that
+/// jump leaves the function, so it is no switch case. A destination inside
+/// the known extent of a declared function that holds the site stays in it,
+/// unless the caller declared the destination's function and only the
+/// symbol table states that extent. The holder's own entry and a part split
+/// off it (`f.cold`) always stay. An entry without a known extent holds no
+/// site, and entries discovery alone found are not evidence, because
+/// discovery also names address-taken case blocks as functions.
+fn leaving_destination(
+    prog: &ConsoleProgram,
+    site: u64,
+    dests: &[(u64, u64)],
+    pending: Option<PendingFunction>,
+) -> Option<(u64, u64)> {
+    let holders = prog.functions_holding(site, pending);
+    dests.iter().copied().find(|&(entry, _)| {
+        let Some(declarer) = prog.function_declarer(entry, pending) else {
+            return false;
+        };
+        !holders.iter().any(|&(start, size, extent)| {
+            prog.same_function(entry, start)
+                || (entry >= start && entry - start < size && extent >= declarer)
+        })
+    })
+}
+
+/// Refuse a function declaration under which a destination of an installed
+/// computed branch would enter another function. The later fact conflicts
+/// with the earlier one, as a second destination set for one site does.
+pub(crate) fn require_declaration_keeps_cases(prog: &ConsoleProgram, pending: PendingFunction) -> Result<(), String> {
+    for (site, jump) in &prog.arch().stated_jump_targets {
+        let entries: Vec<(u64, u64)> = jump
+            .targets
+            .iter()
+            .map(|at| (at.get_offset(), prog.output_code_offset(at.get_offset())))
+            .collect();
+        if let Some((_, value)) = leaving_destination(prog, site.get_offset(), &entries, Some(pending)) {
+            return Err(format!(
+                "destination {value:#x} of the computed branch stated at {:#x} would enter another function",
+                prog.output_code_offset(site.get_offset())
+            ));
+        }
+    }
+    Ok(())
 }

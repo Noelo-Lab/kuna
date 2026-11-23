@@ -516,3 +516,74 @@ fn segmented_and_compressed_destinations_cannot_label_cases() {
         assert!(String::from_utf8_lossy(&out.stderr).contains("4-byte instruction alignment"));
     }
 }
+
+fn fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/stated-jump").join(name)
+}
+
+#[test]
+fn destinations_cannot_enter_another_declared_function() {
+    let dispatch = fixture("dispatch.elf");
+    let declared = [
+        (vec!["--assert", "jumptable 401009 401020 401090"], "ordinary"),
+        (vec!["--define-function", "0x401030=h", "--assert", "jumptable 401009 401020 401030"], "h"),
+        (vec!["--assert", "jumptable 401009 401020 401030", "--assert", "function 401030=h"], "h"),
+        (vec!["--assert", "jumptable 401009 401020 401030", "--assert", "function 401030=h", "--json"], "h"),
+    ];
+    for (args, name) in declared {
+        let mut args = [vec!["dispatch", "--assert-strict"], args].concat();
+        let out = kuna("decompile", &dispatch, &args);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success(), "{args:?}");
+        assert!(stderr.contains(&format!("is the entry of function {name}")), "{stderr}");
+        args.retain(|&arg| arg != "--assert-strict");
+        let out = kuna("decompile", &dispatch, &args);
+        assert!(!String::from_utf8_lossy(&out.stdout).contains("case 0x401020:"), "{args:?}");
+    }
+
+    let own_entry = kuna("decompile", &dispatch, &["dispatch", "--assert", "jumptable 401009 401000 401020", "--assert-strict"]);
+    let body = String::from_utf8_lossy(&own_entry.stdout);
+    assert!(own_entry.status.success(), "{}", String::from_utf8_lossy(&own_entry.stderr));
+    assert!(body.contains("while") && body.contains("case 0x401020:"), "{body}");
+
+    let fixed = fixture("fixed.elf");
+    let inventory = json(kuna("functions", &fixed, &["--json"]));
+    assert!(inventory["functions"].as_array().unwrap().iter().any(|f| f["name"] == "sub_401007"));
+    let out = kuna("decompile", &fixed, &["dispatch", "--assert", "jumptable 401005 401007 40100d", "--assert-strict"]);
+    let body = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(body.contains("case 0x401007:") && body.contains("case 0x40100d:"), "{body}");
+}
+
+#[test]
+fn a_known_extent_or_split_part_keeps_a_destination_in_its_function() {
+    let owners = fixture("owners.elf");
+    let accepted: [(&[&str], &str, &[&str]); 3] = [
+        (&["0x401010"], "jumptable 401015 401000 401017", &["case 0x401000:", "case 0x401017:"]),
+        (&["0x401060", "--define-function", "0x401060-0x401073=declared"], "jumptable 401065 401060 401067", &["while", "case 0x401067:"]),
+        (&["0x401060", "--define-function", "0x401060-0x401073=declared"], "jumptable 401065 401065 401067", &["case 0x401067:"]),
+    ];
+    for (args, directive, cases) in accepted {
+        let args = [args, &["--assert", directive, "--assert-strict"]].concat();
+        let out = kuna("decompile", &owners, &args);
+        let body = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(cases.iter().all(|case| body.contains(case)), "{args:?}: {body}");
+    }
+
+    let micromips = fixture("micromips.elf");
+    let refused: [(&std::path::Path, &[&str], &str, &str); 3] = [
+        (&owners, &["0x401040"], "jumptable 401045 401030 401047", "exported"),
+        (&owners, &["0x401060", "--define-function", "0x401060=declared"], "jumptable 401065 401060 401067", "declared"),
+        (&micromips, &["disp"], "jumptable 400108 400128 400110", "m"),
+    ];
+    for (binary, args, directive, name) in refused {
+        let args = [args, &["--assert", directive]].concat();
+        let out = kuna("decompile", binary, &args);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains(&format!("is the entry of function {name},")), "{args:?}: {stderr}");
+        assert!(!String::from_utf8_lossy(&out.stdout).contains("case 0x"), "{args:?}");
+        let strict = [&args[..], &["--assert-strict"]].concat();
+        assert!(!kuna("decompile", binary, &strict).status.success(), "{args:?}");
+    }
+}

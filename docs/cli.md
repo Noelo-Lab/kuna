@@ -1065,7 +1065,22 @@ other than BR, and PowerPC other than classic CTR/LR. In MIPS16e and microMIPS l
 4-aligned standard-mode destination can be stated. The site then keeps
 ordinary recovery. Batch summaries report rejected image-wide assertions and
 honor `--assert-strict`.
-A conflicting second set is rejected and the first accepted set stays active.
+
+The destinations must belong to the jumping function. One that is the entry
+of another function declared by the symbol table, `--define-function` or a
+`function` directive anywhere in the list rejects the set; state a single
+tail-call destination with `callee` instead. A function holds the site when
+its symbol size or declared extent covers it. A destination stays in that
+function when the extent covers it too, unless only the symbol table gives
+the extent and the caller declared a function at the destination. The
+holder's own entry is a loop, and a part GCC split off it (`f.cold`) is
+part of it. A symbol without a size, as PE exports and Mach-O symbols are,
+holds no site, so a loop to its entry needs a declared extent such as
+`--define-function START-END=NAME`. Entries that only discovery found do not
+count, because discovery also names address-taken case blocks as functions.
+In the console a later `function bounds` that would make an installed
+destination another function's entry is refused, as a conflicting second
+set is. A conflicting second set is rejected and the first accepted set stays active.
 The JSON status `applied` records installation for this image. Each function
 uses the fact only when its flow reaches the site. As with other program
 assertions, `--assert-strict` makes a rejected fact fail the command.
