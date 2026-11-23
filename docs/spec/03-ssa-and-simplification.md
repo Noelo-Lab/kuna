@@ -602,7 +602,23 @@ on x86-64 (`d0` on AArch64, `f1` on 32-bit PowerPC), and the call printed as
 `vr(k,k + 1)`. kuna still registers the input trial for such a range when the
 call is variadic and its model passes a variadic argument there (chapter 04,
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargretreg.rs
-(argument_in_own_output)`); the range still gets no INDIRECT.
+(argument_in_own_output)`); the range still gets no INDIRECT. It also registers
+the trial for a non-variadic call whose output is locked while its inputs are
+still recovered, as an output-only `return f::<storage>` declaration leaves them
+(chapter 04, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_lockedreturnarg.rs
+(argument_in_locked_output)`). Without the declaration the output is recovered,
+so the range is no exact output when the trial is planted; the declaration made
+upstream's skip drop it. On AArch64, 32-bit ARM and PowerPC the return register
+is also the first argument register, so nothing at the call read the copy into it
+(`mov w0,w20; bl f`). That copy was dead, and the trial added later read the
+register's earlier value: `f(a1,a0)` printed as `f(0,a0)`, where `0` was a
+preceding call's null result, and a real `f(0,a0)` printed as `f(a0,a0)`. The
+trial is registered only where the model takes the range as an input, the same
+range the undeclared call has a trial for, so a register that is no input
+register (x86-64 `RAX`) is unchanged. A variadic call is decided by
+`argument_in_own_output` alone, whose refusals (`al` or CR bit 6 counting no
+floating-point argument, the PowerPC64 shadow register, the model's variadic
+slot) keep applying.
 
 **A counted floating-point register whose range is not the register.** On
 x86-64 SysV a variadic caller puts the number of vector registers it filled in

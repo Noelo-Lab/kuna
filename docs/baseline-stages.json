@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5057,
-    5057
+    5063,
+    5063
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3940,6 +3940,12 @@
     "data:kuna-prefixed-noreturn #7: a stub named for a single-word entry returns",
     "data:kuna-prefixed-noreturn #8: a proxy-spelled name with a real body returns",
     "data:kuna-prefixed-noreturn #9: a proxy stub called mid-function returns",
+    "data:kuna-returnhintcaller #1: a real zero stays the first argument",
+    "data:kuna-returnhintcaller #2: the saved index reaches the call",
+    "data:kuna-returnhintcaller #3: the saved pointer reaches the call",
+    "data:kuna-returnhintcaller #4: no call takes the register's earlier value",
+    "data:kuna-returnhintcaller #5: a stated return gives a callee that takes nothing no argument",
+    "data:kuna-returnhintcaller #6: a callee that takes nothing gets no argument from the caller's own input",
     "data:kuna-stackchklocal #1: the linked default pass hands the return value to the helper",
     "data:kuna-stackchklocal #2: noreturn_known off falls through and libgccsigs on drops the argument",
     "data:kuna-stackchklocal #3: the imported helper ends the flow",

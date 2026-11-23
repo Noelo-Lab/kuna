@@ -2285,7 +2285,8 @@ mod tests {
         // and kuna-mips-kscratch / Octeon kernel scratch transfers preserve both selectors across calls
         // and kuna-mips-kscratch3 / Octeon III additional kernel scratch registers
         // and kuna-piecepathology / a call's declared int is the return, not the clobbered rest of its register
-        assert_eq!(count, 868, "corpus file count drifted");
+        // and kuna-returnhintcaller / a callee return hint keeps the argument passed in the return register
+        assert_eq!(count, 869, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

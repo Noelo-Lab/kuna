@@ -1900,6 +1900,21 @@ the caller reads again after the call stays out, and so does a call result the
 call really takes, which the instructions cannot tell apart. Only a declared
 prototype settles that case: see the forwarded-value rule (`kuna_varargforward.rs`) in §4.4.
 
+(kuna) **A stated return in an argument register.** An output-only declaration
+(`return f::<storage>`) locks the call's output while its inputs stay
+recovered, so the output covers the return register when the guard runs and
+the guard's skip drops that register's input trial. On AArch64, 32-bit ARM and
+PowerPC the return register is also the first argument register, and the
+argument the caller set up there was lost.
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_lockedreturnarg.rs
+(argument_in_locked_output)` keeps the trial for a non-variadic call whose
+output is locked. The guard still plants it only where the model takes the range
+as an input, so it is the trial the undeclared call has, and
+`ActionActiveParam` decides it the same way. A value the caller only passes
+through stays out: `return f() + a;` keeps `f()` when `a` is still in `x0` at
+the call, because `AncestorRealistic` fails a caller input that is not directly
+written, with or without a declared caller prototype. A variadic call is decided by `argument_in_own_output` above alone.
+
 ### `ActionActiveParam` — does this argument exist?
 
 Per call with active input recovery
