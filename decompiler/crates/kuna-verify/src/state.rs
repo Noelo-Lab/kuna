@@ -37,6 +37,8 @@ pub struct Extension {
     pub container: (u64, u32),
     pub param: (u64, u32),
     pub signed: bool,
+    /// A `bool` return: the callee leaves 0 or 1 in `param`.
+    pub boolean: bool,
 }
 
 /// What a run needs to know about the program: its spaces, the stack layout,
@@ -827,6 +829,7 @@ impl<'e, 'p> State<'e, 'p> {
         let (p, ps) = x.param;
         let (c, cs) = x.container;
         let Ok(v) = self.read(&space, p, ps) else { return };
+        let v = if x.boolean { v & 1 } else { v };
         let negative = x.signed && ps > 0 && (v >> (ps * 8 - 1)) & 1 == 1;
         let ext = if negative { v | !mask(ps) } else { v & mask(ps) };
         let _ = self.write(&space, c, cs, ext & mask(cs));

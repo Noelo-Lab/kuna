@@ -199,6 +199,14 @@ impl Calls {
     }
 }
 
+/// Whether flow planted a no-return halt after the call at `at`: a callee
+/// kuna knows does not return by name or by its own body, not by prototype.
+fn halts_after(fd: &Funcdata, at: &kuna_base::address::Address) -> bool {
+    fd.obank()
+        .iter_at(at)
+        .any(|(_, o)| fd.obank().get(o).is_some_and(|o| o.get_halt_type() & kuna_decomp::op::pcodeop_flags::noreturn != 0))
+}
+
 /// The registers a stub for `proto` kills: those its effect list says a call
 /// kills, the call's own overrides first (what kuna proved about the callee),
 /// and its output registers, unless the call is known to leave them alone.
@@ -284,7 +292,7 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
             Site {
                 target,
                 extrapop: pop,
-                noreturn: proto.is_no_return(),
+                noreturn: proto.is_no_return() || halts_after(fd, op.get_addr()),
                 killed: killed(env, proto)
                     .into_iter()
                     .filter(|&(off, size)| {

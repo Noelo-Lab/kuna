@@ -168,6 +168,13 @@
     "action_level": 98,
     "wall_seconds_12_jobs": 199
   },
+  "c4_decbench": {
+    "results": "docs/features/diffverify/c4-decbench-results.md",
+    "dataset": "noelo-lab/decbench-dataset",
+    "sample_set": {"functions": 250, "agrees": 157, "unknown": 92, "differs": 1},
+    "all_functions": {"binaries": 66, "functions": 28233, "agrees": 22683, "differs": 243, "unknown": 5306},
+    "harness_fixes": ["noreturn-halt", "bool-return", "segment-bases", "thumb-interworking", "barriers", "exclusive-monitor"]
+  },
   "ci": {
     "baseline": "docs/baseline-verify.json",
     "make": "make verify-corpus",

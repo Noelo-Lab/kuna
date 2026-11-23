@@ -153,8 +153,39 @@ fn mem_space(env: &Env, vn: &VarnodeData) -> Result<Rc<AddrSpace>, Halt> {
 
 /// User ops that only switch the instruction set for the next instruction. Before
 /// the function's exit they change nothing either side can observe; before a
-/// branch inside the function they would change the decode, which is refused.
+/// branch inside the function they would change the decode, which is refused
+/// unless the target already decodes in the mode switched to.
 pub const EXIT_ONLY_USEROPS: &[&str] = &["setISAMode"];
+
+/// User ops with no effect on one thread's values: memory barriers, x86's
+/// `lock` prefix, and ARM's exclusive monitor, which one thread always holds.
+pub const NO_EFFECT_USEROPS: &[&str] = &[
+    "LOCK",
+    "UNLOCK",
+    "DataMemoryBarrier",
+    "DataSynchronizationBarrier",
+    "InstructionSynchronizationBarrier",
+    "ExclusiveAccess",
+    "ClearExclusiveLocal",
+];
+
+/// ARM's `strex` asks whether this thread still holds the monitor: one
+/// thread always does.
+pub const HOLDS_MONITOR: &str = "hasExclusiveAccess";
+
+/// Whether code at `target` decodes in instruction-set mode `mode` (ARM's
+/// `TMode`, 1 for Thumb): a switch to the mode the target is in anyway, as
+/// every `bx` on a Thumb-only core is, changes nothing.
+fn decodes_in(env: &Env, target: u64, mode: Option<u128>) -> bool {
+    let Some(mode) = mode else { return false };
+    let at = Address::new(Rc::clone(&env.code), target & !1);
+    env.prog.arch().with_context_db(|db| {
+        let Ok(var) = db.get_variable(b"TMode") else { return false };
+        let word = var.get_word() as usize;
+        let mask = var.get_mask() << var.get_shift();
+        db.get_context(&at).get(word).is_some_and(|w| u128::from((w & mask) >> var.get_shift()) == mode & 1)
+    })
+}
 
 /// How the machine run ended.
 pub struct Outcome<'e, 'p> {
@@ -514,7 +545,7 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit
     let mut addr = entry;
     let mut insn = lift(env, addr)?;
     let mut i = 0usize;
-    let mut mode_switch: Option<String> = None;
+    let mut mode_switch: Option<(String, Option<u128>)> = None;
     let mut called_here = false;
     loop {
         if i >= insn.ops.len() {
@@ -555,7 +586,7 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit
                 if !relative && tail(addr, t.offset) {
                     return m.tail_call(addr, t.offset, false);
                 }
-                if let Some(name) = mode_switch.take().filter(|_| !relative) {
+                if let Some((name, _)) = mode_switch.take().filter(|(_, v)| !relative && !decodes_in(env, t.offset, *v)) {
                     return Err(Halt::Unsupported(format!("CALLOTHER {name} before a branch at {addr:#x}")));
                 }
                 branch(env, &mut m.state, t, &mut i, &mut addr, &mut insn)?;
@@ -582,7 +613,7 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit
                 if top {
                     m.indirect.push(target);
                 }
-                if let Some(name) = mode_switch.take() {
+                if let Some((name, _)) = mode_switch.take().filter(|(_, v)| !decodes_in(env, target, *v)) {
                     return Err(Halt::Unsupported(format!("CALLOTHER {name} before a branch at {addr:#x}")));
                 }
                 addr = target;
@@ -689,10 +720,23 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit
                     i += 1;
                     continue;
                 }
+                if op.out.is_none() && NO_EFFECT_USEROPS.contains(&name.as_str()) {
+                    i += 1;
+                    continue;
+                }
+                if let Some(out) = op.out.as_ref().filter(|_| name == HOLDS_MONITOR) {
+                    write(&mut m.state, out, 1)?;
+                    i += 1;
+                    continue;
+                }
                 if !(op.out.is_none() && EXIT_ONLY_USEROPS.contains(&name.as_str())) {
                     return Err(Halt::Unsupported(format!("CALLOTHER {name} at {addr:#x}")));
                 }
-                mode_switch = Some(name);
+                let to = match op.ins.get(1) {
+                    Some(vn) => Some(read(&mut m.state, vn)?),
+                    None => None,
+                };
+                mode_switch = Some((name, to));
                 i += 1;
             }
             OpCode::CPUI_LOAD => {

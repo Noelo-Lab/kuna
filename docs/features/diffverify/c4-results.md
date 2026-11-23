@@ -5,7 +5,7 @@ both on the corpus kuna already has. Precision: every `DIFFERS` over `tests/data
 and `tests/stages` is triaged into a kuna bug, a bug its test pins on purpose, a harness
 limit, or a declared divergence, and the harness defects that triage found were fixed on
 the way. Recall: past P3/P4 fixes were put back one at a time in a local build, to see
-which the check catches (§6). The decbench binaries are still open.
+which the check catches (§6). The decbench binaries are in `c4-decbench-results.md`.
 
 ```sh
 decompiler/target/release/kuna-verify corpus tests/datatests tests/stages --trace

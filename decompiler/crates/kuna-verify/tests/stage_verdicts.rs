@@ -148,3 +148,35 @@ fn localize_names_the_store_rule() {
     let latest = culprits.last().unwrap();
     assert_eq!((latest.rule.as_str(), latest.addr), ("storevarnode", Some(0x4011ec)), "{text}");
 }
+
+/// A call kuna knows does not return only by its callee's name (flow plants a
+/// halt after it) ends the run as kuna's does, instead of running on past it.
+#[test]
+fn a_call_flow_halts_after_does_not_return() {
+    let v = verdicts("ghangr-noreturn_extern");
+    let victim = of(&v, &["victim"]);
+    assert!(!victim.is_empty() && victim.iter().all(|l| *l == "AGREES(256)"), "{v:?}");
+}
+
+/// x86's segment bases point at a TLS block, not into the image: the
+/// stack-protector guard at `fs:0x28` reads the same before and after a call.
+#[test]
+fn the_stack_guard_survives_a_call() {
+    let specs = repo().join("specs").to_string_lossy().into_owned();
+    let path = repo().join("decompiler/crates/kuna-analysis/tests/fixtures/katavm_level1_x86_64");
+    let reports =
+        kuna_verify::check_binary(&path.to_string_lossy(), &["sub_12d0".into()], &[], &[specs], None, &Options::default()).unwrap();
+    let labels: Vec<String> = reports.iter().map(|r| r.verdict.label()).collect();
+    assert_eq!(labels, ["AGREES(256)"]);
+}
+
+/// A Thumb `bx` to Thumb code switches to the mode the target decodes in
+/// anyway, and barriers and the exclusive monitor change nothing on one thread.
+#[test]
+fn thumb_interworking_and_barriers_run() {
+    for (test, names) in [("kuna-veneer-tailcall", &["ret_veneer", "plain_veneer"][..]), ("kuna-syscallregs-arm", &["fence"])] {
+        let v = verdicts(test);
+        let got = of(&v, names);
+        assert!(!got.is_empty() && got.iter().all(|l| *l == "AGREES(256)"), "{test}: {v:?}");
+    }
+}

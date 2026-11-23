@@ -160,6 +160,7 @@ pub fn extensions(fd: &Funcdata, env: &Env, prog: &ConsoleProgram) -> Vec<Extens
                 container: (res.offset, res.size),
                 param: (addr.get_offset(), size as u32),
                 signed,
+                boolean: false,
             });
         }
     }
@@ -180,18 +181,22 @@ pub fn return_extension(env: &Env, proto: &kuna_decomp::fspec::FuncProto) -> Opt
     }
     let mut res = kuna_num::pcoderaw::VarnodeData::default();
     let (ext, _) = or_model(rule, proto.model().output(), &addr, size, out.get_type().map(|t| t.as_ref()), &mut res);
+    let boolean = out.get_type().is_some_and(|t| t.get_metatype() == kuna_decomp::dtype::type_metatype::TYPE_BOOL);
     let signed = match ext {
         OpCode::CPUI_INT_SEXT => true,
         OpCode::CPUI_INT_ZEXT => false,
         OpCode::CPUI_PIECE => out.get_type().is_some_and(|t| is_signed(t)),
+        _ if boolean => false,
         _ => return None,
     };
-    let same_space = res.space.as_ref().is_some_and(|s| s.get_index() == space.get_index());
-    (same_space && res.size > size as u32).then(|| Extension {
+    let param = (addr.get_offset(), size as u32);
+    let wider = res.space.as_ref().is_some_and(|s| s.get_index() == space.get_index()) && res.size > size as u32;
+    (wider || boolean).then(|| Extension {
         space: space.get_index(),
-        container: (res.offset, res.size),
-        param: (addr.get_offset(), size as u32),
+        container: if wider { (res.offset, res.size) } else { param },
+        param,
         signed,
+        boolean,
     })
 }
 

@@ -316,7 +316,7 @@ fn booleans(fd: &Funcdata, env: &Env) -> Vec<(i32, u64, u32)> {
 
 /// The storage whose value is known at the function's entry: what the context
 /// tracks, what the loader seeds (a PowerPC TOC from a descriptor, MIPS t9),
-/// and the return address, which gets an address nothing maps so a RETURN to
+/// x86's segment bases, and the return address, which gets an address nothing maps so a RETURN to
 /// it is told apart from a branch.
 fn tracked(prog: &ConsoleProgram, fd: &Funcdata, env: &mut Env) -> Vec<(i32, u64, u32, u64)> {
     let entry = fd.get_address();
@@ -358,8 +358,22 @@ fn tracked(prog: &ConsoleProgram, fd: &Funcdata, env: &mut Env) -> Vec<(i32, u64
             }
         }
     }
+    let tls = env.ram.wrap_offset(env.sp0 / 2) & !0xfff;
+    for name in SEGMENT_BASES {
+        if let Ok(vn) = arch.translate().get_register_data(name) {
+            if let Some(sp) = vn.space.as_ref().filter(|_| vn.size <= 8) {
+                if !out.iter().any(|&(s, o, _, _)| s == sp.get_index() && o == vn.offset) {
+                    out.push((sp.get_index(), vn.offset, vn.size, tls));
+                }
+            }
+        }
+    }
     out
 }
+
+/// x86's segment bases: a thread's TLS or TEB, which is neither the image
+/// nor the stack, so the stack-protector guard at `fs:0x28` stays put.
+const SEGMENT_BASES: [&str; 2] = ["FS_OFFSET", "GS_OFFSET"];
 
 /// Runs that may stop on an operation the model cannot run before the
 /// function is given up as `UNKNOWN(unsupported-op)`: such a function is

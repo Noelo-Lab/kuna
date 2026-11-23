@@ -355,7 +355,12 @@ impl Run<'_, '_, '_> {
                         return Ok(Flow::Next);
                     }
                 }
-                if op.out.is_some() || !crate::machine::EXIT_ONLY_USEROPS.contains(&name.as_str()) {
+                if let Some(out) = op.out.as_ref().filter(|_| name == crate::machine::HOLDS_MONITOR) {
+                    self.set(out, 1)?;
+                    return Ok(Flow::Next);
+                }
+                let quiet = crate::machine::EXIT_ONLY_USEROPS.contains(&name.as_str()) || crate::machine::NO_EFFECT_USEROPS.contains(&name.as_str());
+                if op.out.is_some() || !quiet {
                     return Err(Halt::Unsupported(format!("CALLOTHER {name} at {at:#x}")));
                 }
                 Ok(Flow::Next)
