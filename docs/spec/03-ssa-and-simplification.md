@@ -727,11 +727,35 @@ creation, not one expression.
 The scratch-body clause adds a second, independent way for a summary to count
 as a body, and requires both of its marks
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleescratchbody.rs
-(scratch_body_is_a_body)`). The body must have written **memory**: a
-register-preserving helper's own save slot is why it can use a register at all
-— `__chkstk` spills `R10`/`R11` into its frame before it touches them and
-reloads them before it returns — while `ret`, `endbr64; ret`, a placeholder and
-an entry decoded at the wrong address store nothing at all. And it must have
+(scratch_body_is_a_body)`). The body must have **touched memory**: either
+written it — a register-preserving helper's own save slot is why it can use a
+register at all, and `__chkstk` spills `R10`/`R11` into its frame before it
+touches them and reloads them before it returns — or read it somewhere other
+than its own stack: a `LOAD` whose address is not the stack pointer plus a
+constant, or a direct memory operand (x86's `mov eax,[rip+X]` lifts to a `ram`
+varnode, not a `LOAD`; `CalleeReturnWrites::reads_offstack_memory`). Reading
+its own stack arguments does not count: every i386 leaf does
+(`mov eax,[esp+4]`), and an `EDX` such a leaf leaves alone reaches its
+caller's return, where a byte written to `dl` after the call would make the
+untouched upper bytes look like a returned high word. A leaf that loads
+through its argument or a global and returns the result (`mov rax,rsi; add
+rax,[rdi]; ret`, `mov eax,[rip+X]; add eax,edi; ret`) stores nothing, yet gcc's
+interprocedural register allocation relies on it leaving every other register
+alone: at `-O2` it sets `EDX` once and passes it to two successive calls of
+such a leaf, although `x86-64-gcc.cspec` lists `RDX` as killed. Without the
+read arm the second call read an `EDX` with no definition. `ret`, `endbr64;
+ret`, a placeholder and an entry decoded at the wrong address neither store nor
+read memory. The read arm admits the body only for a register the call's
+convention passes an argument in (`ParamListStandard::possible_param` of the
+call's model): `RAX` and i386 cdecl's `EAX`/`ECX`/`EDX` carry no argument, and a
+value one of them kept across a leaf only reaches the caller's return.
+persistcalls's `void snipsys` ends `syscall; jmp f1`, where `f1` only increments
+globals, and read the syscall's `RAX` as its return value (`unsigned long
+snipsys`); i386 stdcall wrappers that load `EDX` and then call a leaf that
+dereferences its stack argument returned `CONCAT44(edx, eax)` as an
+`unsigned long long`. A leaf that touches no memory at all — `lea eax,[rdi+rsi]; ret` —
+is still refused: its decode is indistinguishable from a constant-returning
+stub. And it must have
 written a register other than the stack pointer, which every `RET` writes, so
 the vacuous summary is still refused. Nothing the paragraphs above establish
 moves: the walk must still be complete, the range must still be a register the

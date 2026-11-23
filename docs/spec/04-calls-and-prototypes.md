@@ -2218,6 +2218,24 @@ classified:
   The cost is a function that really returns, as the high half of a 64-bit
   value, a register it also handed to the kernel: that half is dropped.
 
+  (kuna) Upstream marks every register trial *likely killed by call*, so a
+  register value that reaches the call through an earlier call's INDIRECT fails
+  realism: by the convention, nothing in a register survives a call. gcc's
+  interprocedural register allocation breaks that for a leaf it compiled
+  alongside the caller: it sets `esi` to 0 once and passes it to two calls of
+  `reg`, which reads `rsi` and never writes it. Such a value passes the earlier
+  call when two decoded bodies agree
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleepreserves.rs
+  (preserved_for_reader)`): the earlier callee proves it never writes the
+  register, under the same evidence and gate that narrow a killed-by-call effect
+  in heritage (chapter 03), and the callee of the call being scored reads the
+  register on entry before writing it (`kuna_calleedeadarg.rs
+  (CalleeEntryDead::proves_input)`). The second half keeps a stale register off
+  a call that does not take it: a helper that stores through `rdi` and returns
+  leaves `rsi` alone as well, and the value left there for an earlier call is
+  not an argument of the next one. Only direct calls on both sides qualify, and
+  the RETURN reader of return recovery is unchanged.
+
   (kuna) The MIPS `a3` / PowerPC `cr0` error flag that `syscallregs` defines
   after a system call with `syscall_error()` (chapter 02) is the kernel's write,
   so `AncestorRealistic` treats it like a register value carried through a call:

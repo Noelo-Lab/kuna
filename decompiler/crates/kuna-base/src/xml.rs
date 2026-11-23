@@ -2291,7 +2291,8 @@ mod tests {
         // and kuna-fcmp-unordered / ARM and AArch64 float conditions keep their unordered case
         // and kuna-bytestorewidth / a constant word store into a byte array keeps its width (bytestorewidth)
         // and kuna-calleefloatreads / a call passes the float register its unstated callee reads
-        assert_eq!(count, 874, "corpus file count drifted");
+        // and kuna-calleepreservesargs / a register a leaf callee leaves alone carries a value to the next call
+        assert_eq!(count, 875, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
