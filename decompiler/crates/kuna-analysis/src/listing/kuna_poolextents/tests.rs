@@ -171,6 +171,19 @@ fn a_plt_stub_and_an_indirect_call_never_prove_a_return() {
 }
 
 #[test]
+fn the_lenient_notion_takes_indirect_calls_and_register_tail_jumps_to_return() {
+    let mut img = Image::new();
+    img.func(0x100).put(call(0x100, 0x200)).put(nop(0x104)).put(ret(0x108));
+    img.func(0x200).put(plt(0x200));
+    img.func(0x300).put(call_indirect(0x300)).put(ret(0x304));
+    img.func(0x400).put(svc(0x400)).put(ret(0x404));
+    let returns = returning_entries_with(&img.listing(), true);
+    assert!(returns.contains(&0x200) && returns.contains(&0x100), "a register tail jump ends a returning function");
+    assert!(returns.contains(&0x300), "an indirect call is taken to return");
+    assert!(!returns.contains(&0x400), "a user operation still ends the flow");
+}
+
+#[test]
 fn a_tail_call_returns_through_its_target_and_recursion_alone_does_not() {
     let mut img = Image::new();
     img.func(0x100).put(branch(0x100, 0x200));
