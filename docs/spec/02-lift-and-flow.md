@@ -2138,20 +2138,26 @@ every value must read the original rows and reach a known destination.
 Before any of that, `decompiler/crates/kuna-decomp/src/p2_lift/kuna_returnbranch.rs (classify_indexed_edge)`
 replays the edge: the run from its block, after any call on it, then the
 suffix, reading immutable rows from the image.
-- If the replay proves nothing, it enumerates one bounded operation on the
-  index side of the row load: an AND with a mask below 1024, or a one-byte
-  load or zero extension. It enumerates over the whole range, nearest the jump
-  first.
+- If the replay proves nothing, it enumerates a bounded operation on the
+  index side of the row load: an AND with a mask below 1024 (only values
+  inside the mask), or a one-byte load or zero extension. Up to three such
+  operations are tried, nearest the jump first; one whose values disagree
+  passes to the next.
 - A conditional edge keeps only the values that take it.
 - When every value reads a recovered row and reaches a recovered destination,
   the edge is part of the table, and the switch stays closed. Examples are a
   bytecode loop that fetches and masks its next opcode, a `goto` back to the
   dispatch with a re-masked or constant index, and a guard the edge
   re-evaluates.
-- When a replay reads outside the rows, or proves a target no row supplies, the
-  dispatch is opened. An example is a case that loads a new table base.
-  Enumerated values count here only at zero, because a mask wider than the
-  table may be unreachable.
+- When a replay's row load, the load nearest the jump on the target's
+  dependencies, reads outside the rows, or the replay proves a target no row
+  supplies, the dispatch is opened. An example is a case that loads a new
+  table base. Other loads on the way are data, such as a bytecode fetch
+  through a pointer a case set to a constant address, or a global state
+  variable. They never open the dispatch; one outside the memory recovery
+  reached leaves the replay unproved. An enumerated operation opens it only
+  when every value it can carry escapes: a mask wider than the table, or a
+  zero the code cannot produce, may be unreachable.
 - When the replay cannot tell, an edge through the load keeps the recovered
   table, as upstream does. Examples are a base or index register set outside
   the run.

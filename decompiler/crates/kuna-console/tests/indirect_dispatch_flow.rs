@@ -201,6 +201,35 @@ fn a_goto_again_dispatch_with_masked_or_constant_indices_keeps_its_table() {
 }
 
 #[test]
+fn a_case_that_points_the_fetch_at_a_constant_address_keeps_its_table() {
+    // top: movzbl (%rdi),%eax; add $1,%rdi; and $3,%eax; jmp *0x2040(,%rax,8).
+    // Case 2 sets %rdi to 0x2100 and jumps back to top. That fetch reads data
+    // at a proven address, not a row; the masked index still reads a row.
+    let fd = x86_flow(concat!(
+        "31d20fb6074883c70183e003ff24c54020000089d0c383c203ebe7bf00210000",
+        "ebe06bd207ebdb00000000000000000000000000000000000000000000000000",
+        "132000000000000016200000000000001b200000000000002220000000000000",
+    ));
+    assert_eq!(fd.num_jump_tables(), 1);
+    assert_eq!(fd.get_jump_table(0).num_entries(), 4);
+    assert!(open_cases(&fd).is_empty());
+}
+
+#[test]
+fn an_odd_only_index_keeps_its_table() {
+    // top: movzbl (%rdi),%edx; add $1,%rdi; and $3,%edx; or $1,%edx;
+    // movzbl %dl,%edx; jmp *0x2040(,%rdx,8). Only rows 1 and 3 are reachable.
+    // Enumerating the last zero extension also tries 0, which reads row 0.
+    let fd = x86_flow(concat!(
+        "31f60fb6174883c70183e20383ca010fb6d2ff24d54020000089f0c383c603eb",
+        "e100000000000000000000000000000000000000000000000000000000000000",
+        "02200000000000001c2000000000000002200000000000001920000000000000",
+    ));
+    assert_eq!(fd.num_jump_tables(), 1);
+    assert!(open_cases(&fd).is_empty());
+}
+
+#[test]
 fn a_case_that_moves_the_table_base_opens_the_dispatch() {
     // top: movzbl (%rdi),%eax; add $1,%rdi; and $3,%eax; jmp *(%rcx,%rax,8)
     // with %rcx = 0x2060. Case 0 sets %rcx to a second table at 0x2080 and
