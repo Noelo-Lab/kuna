@@ -89,6 +89,20 @@ pub const PTRAUTH_TRAP: Divergence = Divergence {
     matches: |_| false,
 };
 
+/// `repstring` (the default) prints a `rep movs` as `memcpy`, which the
+/// instruction is not when the destination starts inside the source, ahead of
+/// it: the instruction then repeats the bytes it copied first, as an LZ77
+/// decoder's match copy relies on. Matched on a run whose `memcpy` builtin
+/// meets that overlap.
+pub const COPY_OVERLAP: Divergence = Divergence {
+    id: "copy-overlap",
+    option: "repstring",
+    arch: "x86",
+    observable: "memory a `rep movs` writes",
+    pattern: "a memcpy builtin whose destination lies inside its source, ahead of it",
+    matches: |_| false,
+};
+
 /// `nanignore compare` (the default) treats a float conversion round trip as
 /// the identity, as upstream does, so a signalling NaN comes back as it went in
 /// where the machine's conversions return it quieted.

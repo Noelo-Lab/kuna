@@ -139,6 +139,10 @@ pub fn memory_builtin(index: u64) -> Option<&'static str> {
         (BUILTIN_STRNCPY, "strncpy"),
         (BUILTIN_WCSNCPY, "wcsncpy"),
         (BUILTIN_MEMSET, "memset"),
+        (BUILTIN_MEMSET16, "memset16"),
+        (BUILTIN_MEMSET32, "memset32"),
+        (BUILTIN_MEMSET64, "memset64"),
+        (BUILTIN_MEMCMP, "memcmp"),
         (BUILTIN_STRLEN, "strlen"),
     ]
     .into_iter()

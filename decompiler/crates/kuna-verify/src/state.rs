@@ -71,6 +71,9 @@ impl Escaped {
     }
 }
 
+/// The trap a store into read-only memory or code raises.
+pub const READONLY_STORE: &str = "store to read-only memory";
+
 /// `[first, last]` ranges sorted, with overlapping and adjacent ones joined.
 fn merge_ranges(mut ranges: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
     ranges.sort_unstable();
@@ -100,7 +103,8 @@ pub struct Env<'p> {
     granule: u32,
     edges: Vec<u64>,
     readonly: Vec<(u64, u64)>,
-    /// The image's code sections, `(start, size)`; empty without a section table.
+    /// The image's code sections, `[first, last]`, merged; empty without a
+    /// section table.
     code_sections: Vec<(u64, u64)>,
     pub extensions: Vec<Extension>,
     /// Storage the context or the loader gives a known value at the
@@ -223,9 +227,10 @@ impl<'p> Env<'p> {
         let code_sections = prog
             .sections()
             .into_iter()
-            .filter(|&(_, _, flags)| flags & kuna_sleigh::loadimage::section_flags::CODE != 0)
-            .map(|(start, size, _)| (start, size))
+            .filter(|&(_, size, flags)| size > 0 && flags & kuna_sleigh::loadimage::section_flags::CODE != 0)
+            .map(|(start, size, _)| (start, start.saturating_add(size - 1)))
             .collect();
+        let code_sections = merge_ranges(code_sections);
         Ok(Env {
             prog,
             seed,
@@ -271,11 +276,18 @@ impl<'p> Env<'p> {
         self.prog.entry_bytes_mapped(&Address::new(Rc::clone(&self.code), addr))
     }
 
+    /// Whether `addr` lies in a section the loader marks as code: no callee
+    /// writes there, literal pools included.
+    fn in_code_section(&self, addr: u64) -> bool {
+        let i = self.code_sections.partition_point(|r| r.0 <= addr);
+        i > 0 && self.code_sections[i - 1].1 >= addr
+    }
+
     /// Whether `addr` is mapped code: in a section the loader marks as code,
     /// or anywhere mapped in an image without a section table.
     pub fn is_code(&self, addr: u64) -> bool {
         self.code_mapped(addr)
-            && (self.code_sections.is_empty() || self.code_sections.iter().any(|&(start, size)| addr >= start && addr - start < size))
+            && (self.code_sections.is_empty() || self.in_code_section(addr))
     }
 
     /// A byte of the loaded image, read a page at a time. A page the loader
@@ -386,11 +398,11 @@ impl<'p> Env<'p> {
     }
 
     /// Memory a call can write: the image's writable data, and the bytes near
-    /// a pointer that escaped into an earlier call, never read-only data. This
+    /// a pointer that escaped into an earlier call, never read-only data or code. This
     /// is no more than kuna itself treats as changed by a call, so a value it
     /// keeps across one stays equal unless kuna is wrong to keep it.
     pub fn callee_writable(&self, escaped: &Escaped, space: &AddrSpace, off: u64) -> bool {
-        if !self.is_memory(space) || self.is_readonly(off, 1) {
+        if !self.is_memory(space) || self.is_readonly(off, 1) || self.in_code_section(off) {
             return false;
         }
         escaped.reaches(off) || (space.get_index() == self.ram.get_index() && !self.in_stack(off, 1) && self.image_byte(off).is_some())
@@ -956,6 +968,9 @@ impl<'e, 'p> State<'e, 'p> {
         Ok(v)
     }
 
+    /// Store `size` bytes. A store that changes the image's read-only data or
+    /// code traps, as it does on the target; one that leaves it as it is (the
+    /// decompiler's value of a global, kept across a call) does nothing.
     pub fn write(&mut self, space: &AddrSpace, off: u64, size: u32, val: u128) -> Result<(), Halt> {
         if !self.saved.is_empty() && space.get_index() == self.env.ram.get_index() {
             let dead: Vec<u64> = self.saved.range(off..=off.saturating_add(u64::from(size).max(1) - 1)).map(|(k, _)| *k).collect();
@@ -965,6 +980,14 @@ impl<'e, 'p> State<'e, 'p> {
         }
         if size > MAX_SIZE {
             return Err(Halt::Unsupported(format!("{size}-byte value")));
+        }
+        if space.get_index() == self.env.ram.get_index()
+            && (self.env.is_readonly(off, size.into()) || self.env.in_code_section(off))
+        {
+            if self.read(space, off, size)? == val & crate::value::mask(size) {
+                return Ok(());
+            }
+            return Err(Halt::Trap(format!("{READONLY_STORE} at {off:#x}")));
         }
         for i in 0..u64::from(size) {
             let shift = if space.is_big_endian() { u64::from(size) - 1 - i } else { i };

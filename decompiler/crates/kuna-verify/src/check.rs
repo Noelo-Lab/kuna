@@ -105,6 +105,17 @@ impl UpperWatch {
     }
 }
 
+/// The whole of x87's 80-bit `ST0` when `out` is it, where a `float` or
+/// `double` return lives in the 80-bit format: the machine's value is rounded
+/// to the claimed size before it is compared.
+fn x87_register(prog: &ConsoleProgram, out: &Storage) -> Option<Storage> {
+    if !(out.size == 4 || out.size == 8) || !prog.arch().archid.starts_with("x86") {
+        return None;
+    }
+    let [piece] = out.pieces(prog).try_into().ok()?;
+    (piece.name(prog) == "ST0").then(|| Storage::new(&piece.space, piece.off, 10))
+}
+
 /// One run's comparison: the report lines when the two sides differ.
 struct Compare<'a> {
     prog: &'a ConsoleProgram,
@@ -123,7 +134,11 @@ impl Compare<'_> {
         let mut lines = Vec::new();
         if let Some(out) = &self.claim.storage {
             let k = ret.ok_or_else(|| Halt::Harness("RETURN without the prototype's value".into()))?;
-            let mv = ms.read_storage(&out.space, out.off, out.size)?;
+            let mv = if let Some(st) = x87_register(self.prog, out).filter(|_| self.claim.float) {
+                crate::x87::to_ieee(ms.read_storage(&st.space, st.off, st.size)?, out.size)
+            } else {
+                ms.read_storage(&out.space, out.off, out.size)?
+            };
             if self.claim.float && divergence::nan_quieting(out.size, mv, k & mask(out.size)) {
                 return Ok(Outcome::Declared(divergence::NAN_QUIETING.id));
             }
@@ -694,6 +709,11 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
                 trapped_runs += 1;
                 continue;
             }
+            (Err(Halt::Trap(t)), Ok(_)) if t.starts_with(crate::state::READONLY_STORE) => {
+                trapped.get_or_insert(t);
+                trapped_runs += 1;
+                continue;
+            }
             (Ok(mo), Err(Halt::NoRow(_))) if left_cfg(&mo) => {
                 diverged.get_or_insert(divergence::SWITCH_RUNON.id);
                 continue;
@@ -721,6 +741,10 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
                 }
                 if go.unmatched_switch && left_cfg(&mo) {
                     diverged.get_or_insert(divergence::SWITCH_RUNON.id);
+                    continue;
+                }
+                if go.overlapping_copy {
+                    diverged.get_or_insert(divergence::COPY_OVERLAP.id);
                     continue;
                 }
                 (mo, go)
@@ -895,7 +919,9 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
         _ => Vec::new(),
     };
     if trapped_runs > 0 && matches!(verdict, Verdict::Agrees(_)) {
-        lines.push(format!("note     {trapped_runs} runs trapped on both sides; C leaves them undefined, so they are not compared"));
+        lines.push(format!(
+            "note     {trapped_runs} runs trapped on both sides or stored into read-only memory; C leaves them undefined, so they are not compared"
+        ));
     }
     finish(verdict, lines, suspects)
 }

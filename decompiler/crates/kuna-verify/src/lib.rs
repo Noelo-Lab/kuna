@@ -26,6 +26,7 @@ pub mod session;
 pub mod state;
 pub mod storage;
 pub mod value;
+pub mod x87;
 
 use std::time::{Duration, Instant};
 

@@ -218,6 +218,15 @@ pub fn eval(opc: OpCode, out_size: u32, ins: &[(u128, u32)]) -> Result<u128, Hal
     if out_size > MAX_SIZE || ins.iter().any(|&(_, s)| s > MAX_SIZE) {
         return Err(Halt::Unsupported(format!("{} wider than {MAX_SIZE} bytes", get_opname(opc))));
     }
+    if is_float(opc) && (out_size == 10 || ins.iter().any(|&(_, s)| s == 10)) {
+        return crate::x87::eval(opc, out_size, ins).ok_or_else(|| Halt::Unsupported(format!("{} on x87's 80-bit format", get_opname(opc))));
+    }
+    if let (OpCode::CPUI_FLOAT_INT2FLOAT, 4 | 8, Some(&(v, size))) = (opc, out_size, ins.first()) {
+        if size > 8 && size <= MAX_SIZE {
+            let n = signed(v, size);
+            return Ok(if out_size == 4 { u128::from((n as f32).to_bits()) } else { u128::from((n as f64).to_bits()) });
+        }
+    }
     if is_float(opc) && (out_size > 8 || ins.iter().any(|&(_, s)| s > 8)) {
         return Err(Halt::Unsupported(get_opname(opc).to_string()));
     }
@@ -275,6 +284,13 @@ pub fn eval(opc: OpCode, out_size: u32, ins: &[(u128, u32)]) -> Result<u128, Hal
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unsigned_word_converts_through_a_wider_integer() {
+        let big = u128::from(u64::MAX);
+        assert_eq!(eval(OpCode::CPUI_FLOAT_INT2FLOAT, 4, &[(big, 9)]).unwrap(), u128::from((u64::MAX as f32).to_bits()));
+        assert_eq!(eval(OpCode::CPUI_FLOAT_INT2FLOAT, 8, &[(big, 9)]).unwrap(), u128::from((u64::MAX as f64).to_bits()));
+    }
 
     #[test]
     fn decompiler_only_ops_are_defined_here() {

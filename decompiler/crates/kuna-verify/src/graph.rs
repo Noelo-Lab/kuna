@@ -24,6 +24,9 @@ pub struct Outcome {
     pub ret: Returned,
     /// A switch met a selector no row of its table carries.
     pub unmatched_switch: bool,
+    /// A `memcpy` builtin ran with its destination inside its source, ahead
+    /// of it: the overlap `rep movs` defines and `memcpy` does not.
+    pub overlapping_copy: bool,
     pub calls: Vec<Record>,
     /// The run ended in a call kuna says does not return.
     pub noreturn: bool,
@@ -61,6 +64,10 @@ pub struct Perturb {
     pub killed: Option<bool>,
 }
 
+/// The largest copy, fill or compare a builtin runs; a longer one spends the
+/// budget, as the loop it replaces would.
+const MAX_BUILTIN_BYTES: u64 = 1 << 20;
+
 struct Run<'e, 'p, 'c> {
     calls: &'c Calls,
     perturb: Option<&'c Perturb>,
@@ -73,6 +80,10 @@ struct Run<'e, 'p, 'c> {
     values: Vec<Option<u128>>,
     unmatched_switch: bool,
     records: Vec<Record>,
+    /// Steps a memory builtin took, charged to the budget like the loop it
+    /// replaces.
+    charged: u64,
+    overlapping_copy: bool,
 }
 
 enum Flow {
@@ -236,6 +247,63 @@ impl Run<'_, '_, '_> {
         Ok((spc, addr))
     }
 
+    /// kuna's memory builtins, byte by byte: `memcpy(dst, src, bytes)` (as
+    /// `memmove`, so an overlap kuna's `memcpy` does not allow shows),
+    /// `memset(dst, byte, bytes)`, `memset16`/`32`/`64(dst, value, count)` and
+    /// `r = memcmp(a, b, bytes)`, whose sign says which first differing byte
+    /// is smaller.
+    fn memory_builtin(&mut self, op: &Op, name: &str, at: u64) -> Result<Flow, Halt> {
+        let ram = std::rc::Rc::clone(&self.state.env.ram);
+        let ptr = |v: u128| ram.wrap_offset(v as u64);
+        let width: u64 = match name {
+            "memset16" => 2,
+            "memset32" => 4,
+            "memset64" => 8,
+            "memcpy" | "memset" | "memcmp" => 1,
+            _ => return Err(Halt::Unsupported(format!("{name} at {at:#x}"))),
+        };
+        let (a, b, n) = (self.input(op, 1)?, self.input(op, 2)?, self.input(op, 3)?);
+        let bytes = u64::try_from(n).ok().and_then(|n| n.checked_mul(width)).filter(|&n| n <= MAX_BUILTIN_BYTES).ok_or(Halt::Budget)?;
+        self.charged = bytes;
+        let dst = ptr(a);
+        match name {
+            "memcpy" => {
+                let src = ptr(b);
+                if dst > src && dst - src < bytes {
+                    self.overlapping_copy = true;
+                }
+                let mut data = Vec::with_capacity(bytes as usize);
+                for i in 0..bytes {
+                    data.push(self.state.read(&ram, ram.wrap_offset(src.wrapping_add(i)), 1)?);
+                }
+                for (i, v) in data.into_iter().enumerate() {
+                    self.state.write(&ram, ram.wrap_offset(dst.wrapping_add(i as u64)), 1, v)?;
+                }
+            }
+            "memcmp" => {
+                let other = ptr(b);
+                let mut r = 0i64;
+                for i in 0..bytes {
+                    let x = self.state.read(&ram, ram.wrap_offset(dst.wrapping_add(i)), 1)?;
+                    let y = self.state.read(&ram, ram.wrap_offset(other.wrapping_add(i)), 1)?;
+                    if x != y {
+                        r = if x < y { -1 } else { 1 };
+                        break;
+                    }
+                }
+                let size = op.out.as_ref().map_or(4, |o| o.size);
+                self.set_out(op, (r as i128 as u128) & mask(size))?;
+            }
+            _ => {
+                let value = if name == "memset" { b & 0xff } else { b };
+                for i in 0..bytes / width {
+                    self.state.write(&ram, ram.wrap_offset(dst.wrapping_add(i * width)), width as u32, value & mask(width as u32))?;
+                }
+            }
+        }
+        Ok(Flow::Next)
+    }
+
     fn exec(&mut self, op: &Op) -> Result<Flow, Halt> {
         let at = op.at;
         match &op.kind {
@@ -330,7 +398,7 @@ impl Run<'_, '_, '_> {
             }
             Kind::CallOther { name, builtin } => {
                 if let Some(b) = builtin {
-                    return Err(Halt::Unsupported(format!("{b} at {at:#x}")));
+                    return self.memory_builtin(op, b, at);
                 }
                 let system = crate::calls::SYSTEM_USEROPS.contains(&name.as_str());
                 let trap = crate::calls::TRAP_USEROPS.contains(&name.as_str());
@@ -355,8 +423,8 @@ impl Run<'_, '_, '_> {
                         return Ok(Flow::Next);
                     }
                 }
-                if let Some(out) = op.out.as_ref().filter(|_| name == crate::machine::HOLDS_MONITOR) {
-                    self.set(out, 1)?;
+                if let (Some(out), Some(v)) = (op.out.as_ref(), crate::machine::constant_userop(name)) {
+                    self.set(out, v)?;
                     return Ok(Flow::Next);
                 }
                 let quiet = crate::machine::EXIT_ONLY_USEROPS.contains(&name.as_str()) || crate::machine::NO_EFFECT_USEROPS.contains(&name.as_str());
@@ -424,6 +492,7 @@ impl Run<'_, '_, '_> {
         Outcome {
             ret,
             unmatched_switch: self.unmatched_switch,
+            overlapping_copy: self.overlapping_copy,
             writes: self.state.writes(),
             read_uninitialized: self.state.read_uninitialized,
             call_input: self.call_input,
@@ -467,6 +536,8 @@ pub fn run(
         values: vec![None; program.slots],
         unmatched_switch: false,
         records: Vec::new(),
+        charged: 0,
+        overlapping_copy: false,
     };
     let mut bl = 0usize;
     let mut slot: Option<i32> = None;
@@ -495,7 +566,12 @@ pub fn run(
             if steps > budget {
                 return Err(Halt::Budget);
             }
-            match r.exec(op)? {
+            let flow = r.exec(op)?;
+            steps += std::mem::take(&mut r.charged);
+            if steps > budget {
+                return Err(Halt::Budget);
+            }
+            match flow {
                 Flow::Next => {}
                 Flow::Edge(e) => {
                     edge = e;

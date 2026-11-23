@@ -101,3 +101,44 @@ New kuna bugs that no open PR fixes, each with a repro:
 - i386 stack depth after an in-image cdecl call: `dexter.dll` `_GetOSVersion`;
 - a merged variable that is never assigned: `dexter.dll` `_AddCache`;
 - a PLT stub's forwarded arguments: `libz.so` `crc32_z` at 0x3340.
+
+## 5. Closing the largest `UNKNOWN` causes
+
+The model now runs what made most of §3's `UNKNOWN(unsupported-op)`:
+- **x87's 80-bit format** (`src/x87.rs`): conversions from integers and to and from
+  IEEE single and double (rounding to nearest, ties to even), sign operations,
+  comparisons, the NaN test and truncation are exact. Arithmetic on the format stays
+  unsupported. A `float` or `double` returned in `ST0` is rounded from the 80-bit value
+  before the compare. An integer wider than eight bytes converts to a float exactly
+  (kuna's IR widens an unsigned 64-bit integer to nine bytes first).
+- **Cortex-M system registers**: the code runs privileged, `mrs` of the masks, base
+  priority and exception number reads 0 on both sides, and the writes change nothing
+  either side reads back.
+- **kuna's memory builtins** (`memcpy`, `memset`, `memset16`/`32`/`64`, `memcmp`, which
+  `repstring` prints for x86's `rep` string instructions) run on the decompiled side,
+  spending the budget a byte at a time, as the loop they replace does. A `memcpy`
+  whose destination starts inside its source, ahead of it, is the overlap `rep movs`
+  defines and `memcpy` does not: declared as `DIVERGES(copy-overlap)`.
+
+Running more code showed two more defects in the model, now fixed:
+- A store into read-only data or code (a random pointer into a firmware image at
+  address 0, or into a PIE's text) went through, and a later load of a literal pool
+  read the stored value. A store that changes such memory now traps; a run where it
+  traps is not compared, like a run that traps on both sides.
+- `callee_writable` and the image lookups were linear scans (§3).
+
+| | before | after |
+|---|---:|---:|
+| sample set `AGREES` | 157 | 172 |
+| sample set `DIFFERS` | 1 | 0 |
+| `ssh-add` (`O0`) `AGREES` / `UNKNOWN` | 294 / 697 | 885 / 107 |
+| `RTOSDemo` (`O2`) `AGREES` | 86 | 91 |
+| test corpus `UNKNOWN` turned `AGREES` | | 32 |
+
+The sample set's one `DIFFERS`, `chThdSetPriority`, now agrees: its scheduler callees
+read and write `basepri`, and with the system registers modelled they run. §4 put it
+down to a context switch the model cannot run; that does not hold for this function, and
+the other ChibiOS cases of §4 are not re-triaged yet.
+`CMSIS_DAP.axf`'s CMSIS-RTOS calls now reach their `svc` and are
+`DIVERGES(syscall-result)`. `RTOSDemo`'s new `DIFFERS`, `xQueueReceiveFromISR`, is a call
+argument kuna does not pass, of §4's dropped-argument class.

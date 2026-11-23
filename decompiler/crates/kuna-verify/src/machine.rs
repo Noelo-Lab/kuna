@@ -158,7 +158,8 @@ fn mem_space(env: &Env, vn: &VarnodeData) -> Result<Rc<AddrSpace>, Halt> {
 pub const EXIT_ONLY_USEROPS: &[&str] = &["setISAMode"];
 
 /// User ops with no effect on one thread's values: memory barriers, x86's
-/// `lock` prefix, and ARM's exclusive monitor, which one thread always holds.
+/// `lock` prefix, ARM's exclusive monitor, which one thread always holds, and
+/// Cortex-M's interrupt masks and base priority, which no read sees changed.
 pub const NO_EFFECT_USEROPS: &[&str] = &[
     "LOCK",
     "UNLOCK",
@@ -167,11 +168,33 @@ pub const NO_EFFECT_USEROPS: &[&str] = &[
     "InstructionSynchronizationBarrier",
     "ExclusiveAccess",
     "ClearExclusiveLocal",
+    "setBasePriority",
+    "enableIRQinterrupts",
+    "disableIRQinterrupts",
+    "enableFIQinterrupts",
+    "disableFIQinterrupts",
+    "setThreadModePrivileged",
 ];
 
-/// ARM's `strex` asks whether this thread still holds the monitor: one
-/// thread always does.
-pub const HOLDS_MONITOR: &str = "hasExclusiveAccess";
+/// User ops that answer a question about the processor's state with a value
+/// both sides read alike: ARM's `strex` asks whether this thread still holds
+/// the exclusive monitor (one thread always does), and Cortex-M's `mrs` reads
+/// a system register. The code runs privileged; the masks, base priority and
+/// exception number read 0, and writes to them (`NO_EFFECT_USEROPS`) change
+/// nothing either side reads back.
+pub const CONSTANT_USEROPS: &[(&str, u128)] = &[
+    ("hasExclusiveAccess", 1),
+    ("isCurrentModePrivileged", 1),
+    ("isThreadModePrivileged", 1),
+    ("getBasePriority", 0),
+    ("getCurrentExceptionNumber", 0),
+    ("isIRQinterruptsEnabled", 0),
+    ("isFIQinterruptsEnabled", 0),
+];
+
+pub fn constant_userop(name: &str) -> Option<u128> {
+    CONSTANT_USEROPS.iter().find(|(n, _)| *n == name).map(|&(_, v)| v)
+}
 
 /// Whether code at `target` decodes in instruction-set mode `mode` (ARM's
 /// `TMode`, 1 for Thumb): a switch to the mode the target is in anyway, as
@@ -724,8 +747,8 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32) -> Result<Exit
                     i += 1;
                     continue;
                 }
-                if let Some(out) = op.out.as_ref().filter(|_| name == HOLDS_MONITOR) {
-                    write(&mut m.state, out, 1)?;
+                if let (Some(out), Some(v)) = (op.out.as_ref(), constant_userop(&name)) {
+                    write(&mut m.state, out, v)?;
                     i += 1;
                     continue;
                 }
