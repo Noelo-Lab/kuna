@@ -2290,7 +2290,8 @@ mod tests {
         // and kuna-declaredpop / a declared import pop is the stack solver's equation
         // and kuna-fcmp-unordered / ARM and AArch64 float conditions keep their unordered case
         // and kuna-bytestorewidth / a constant word store into a byte array keeps its width (bytestorewidth)
-        assert_eq!(count, 873, "corpus file count drifted");
+        // and kuna-calleefloatreads / a call passes the float register its unstated callee reads
+        assert_eq!(count, 874, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

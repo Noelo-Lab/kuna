@@ -2762,6 +2762,44 @@ classified:
   leave. Only this rule's question changes; the dead-argument veto and every
   other reader of the walk see every push as a read. `off` counts every push
   again.
+- **Callee-read float argument** (kuna, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleefloatreads.rs (read_width)`, always on):
+  the callee-read argument rule above leaves floating-point registers alone, and
+  this rule takes them on narrower evidence. A trial at the low end of a model
+  float slot (`XMM0_Qa`, ARM `s0` or, under `armfloatreturn`, `d0`) is active
+  when the call's callee stated nothing (no `protoorder` statement, an unlocked
+  and non-variadic prototype) and the same entry walk shows the callee reading
+  the register's low byte before writing it, for a value that reaches something
+  other than a store of the register itself. The trial is then the callee's
+  argument whatever the caller's data flow says, so it skips the realism and
+  only-use scoring: gcc -O2 `main` loads `-7.5f` with `movss` and calls
+  `set_gi_bits`, which stores `xmm0`, and printed `set_gi_bits()`; a caller that
+  forwards its own `d0` (`double a3(double x) { if (x > 1.0) return half(x);
+  ... }`) scored that input as no argument and printed `half()`. Where the model
+  also has a narrower float slot at the same address (ARM `s0` inside `d0`) the
+  callee must read the whole slot, so two floats read as the halves of `d0` stay
+  two words. A callee that only stores the next float slot of the same width
+  is left to the other rules too: newlib's ARM `__ieee754_fmodf` spills `s1` with `vstr` and reloads it
+  as an integer, a read the entry walk does not count, and activating `s0`
+  alone would have turned `fmodf`'s `__ieee754_fmodf(a0,a1)` into
+  `__ieee754_fmodf(a0)`. One shape still loses arguments to the early
+  activation: a call whose every trial the caller's scoring refuses (each the
+  caller's own incoming value) is one `calleearitybody` plans whole off the
+  callee's body, and an activated float makes it a call that recovered
+  something, so crazyflie's `plan_current_goal` passes
+  `piecewise_eval_reversed` only `t` in `s0`, not the struct-return pointer in
+  `r0` or `traj` in `r1`. A variadic callee is left alone: one that reads the model's last
+  float argument register (a register-save prologue saves `xmm0`-`xmm7`) or that
+  reads, on entry, a general register that carries the return value and no
+  argument (SysV `test %al,%al` on the vector-register count). Two other gates
+  take the same evidence. The ARM hard-float model refuses a `d`-register call
+  trial without a callee contract (`kuna_armfloatreturn.rs (call_input_allowed)`),
+  and a body that reads the whole `d` register is one, so `twocalls` passes the
+  computed `d8 * 3.0` to `scale`. Under `calloverlap auto` the call guard
+  registers the trial of the one float slot inside a wider heritaged register
+  (chapter 03), as wide as the callee reads it: `movss %xmm0,g` takes four
+  bytes of an `xmm0` the caller zeroed whole with `pxor`, and the call prints
+  `setf((float4)a0)`. A register the caller never touches gets no trial to
+  score; forwarding one untouched is `passthrough`'s.
 - A definitely-unused trial has its dataflow **freed immediately** — the CALL
   input is replaced with constant 0 so dead-code elimination can reap the
   producer. This is why P4 must iterate with DCE inside mainloop.

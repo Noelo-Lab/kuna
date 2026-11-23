@@ -108,6 +108,11 @@ and narrowed callback results. Its CLI companion compiles complete C and Rust
 output under the same asserted prototypes and checks every byte value and call
 counts. The original fixture is only decompiled.
 
+`kuna-calleefloatreads.xml` checks calls to callees with no prototype that
+read a float argument register: an x86-64 `xmm0` written after a `pxor`, an
+ARM hard-float double forwarded or computed in `d0`, and a variadic callee
+that must not receive a leftover `xmm0`.
+
 `kuna-callproto.xml` checks a tail jump through a variadic function pointer with
 nothing stated, with a call-site prototype, and with one parameter placed in a
 register. Its CLI companion covers both decompile surfaces and the rejection of

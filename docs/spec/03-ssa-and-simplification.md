@@ -877,8 +877,16 @@ result. Argument trials still pass through normal use scoring. The output
 guard kills the surrounding bytes independently; it does not preserve unknown
 upper bits across a call or narrow other uses of the physical register.
 Floating-point slots, ambiguous contained entries, unnamed ranges, other
-address widths and memory ranges are excluded. `off` disables the partial-range
-guards; `in` and `full` retain their broader opt-in behavior.
+address widths and memory ranges are excluded, with one exception: a range
+that holds exactly one model input slot, a float slot at its low end, gets that
+slot's trial where the direct callee stated nothing and its body reads the slot
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs
+(guard_call_read_float_input)`, chapter 04 *Callee-read float argument*). The
+trial is as wide as the callee reads, never less than the slot's minimum: an
+`xmm0` the caller wrote whole with `pxor` and then `cvtsi2ss` passes the four
+bytes a `movss %xmm0,g` callee reads, which simplify to the converted float.
+`off` disables the partial-range guards; `in` and `full` retain their broader
+opt-in behavior.
 
 Trial scoring for this shape has one companion rule, `kuna_exclusivecallret.rs`
 (chapter 04, `ActionActiveParam`), which lets a call and a return on mutually

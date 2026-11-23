@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5099,
-    5099
+    5113,
+    5113
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3235,6 +3235,20 @@
     "data:calleefilledarg-ctramp #1: the trampoline that fills rsi takes only the quotient",
     "data:calleefilledarg-ctramp #2: the trampoline that fills rdi and rsi takes nothing",
     "data:calleefilledarg-ctramp #3: no idiv remainder reaches a call",
+    "data:calleefloatreads #10: twocalls takes the d0 it forwards",
+    "data:calleefloatreads #11: twocalls passes its d0 to the first scale",
+    "data:calleefloatreads #12: twocalls passes the computed double to the second scale",
+    "data:calleefloatreads #13: a3 and a7 forward their d0 to half",
+    "data:calleefloatreads #14: a callee that reads s0 and only spills s1 is passed both",
+    "data:calleefloatreads #1: off, neither setf call takes xmm0",
+    "data:calleefloatreads #2: by default setf takes the loaded constant",
+    "data:calleefloatreads #3: by default setf takes the float converted after the pxor",
+    "data:calleefloatreads #4: by default caller takes the int it converts",
+    "data:calleefloatreads #5: both passes forward pass's own xmm0 to half",
+    "data:calleefloatreads #6: neither pass hands a variadic callee the float getf left in xmm0",
+    "data:calleefloatreads #7: main takes argc alone",
+    "data:calleefloatreads #8: main passes -7.5f to set_gi_bits",
+    "data:calleefloatreads #9: main passes the double it computes to wrapnegd",
     "data:calleenamedlocals #10: m1 and m2 build and pass the local, not the global",
     "data:calleenamedlocals #11: the global is only read, never written or passed",
     "data:calleenamedlocals #12: both renamed slots are declared in every pass",
