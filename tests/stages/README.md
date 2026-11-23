@@ -351,10 +351,10 @@ against the original functions.
 
 `kuna-framepublish-seh.xml` pins an MSVC SEH prologue that links its
 registration record into `fs:[0]` and allocates a local below it with
-`push ecx`. The frame publication holds only the frame writes at or above the
-published record, so the record's handler and state stores print and the
-garbage ECX store to the local does not make ECX a parameter. A strict fix
-with one pass.
+`push ecx`. The frame publication holds the record's handler and state
+stores, while the garbage ECX store to the local below the record, which the
+`and` overwrites with only the `fs:[0]` link STORE in between, is still dead
+and does not make ECX a parameter. A strict fix with one pass.
 
 `kuna-globalorder.xml` pins issue [#871](https://github.com/Noelo-Lab/kuna/issues/871)
 and case-local global stores at the `indexaliasguard global` default: a

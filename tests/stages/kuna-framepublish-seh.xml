@@ -18,13 +18,15 @@
       0x401035  8b e5 / 5d / c3                         mov esp,ebp ; pop ebp ; ret
       0x401040  c2 04 00                                ret 4
 
-    P6 dead-code holds (kuna_stackalias.rs held_by_policy): the publication
-    hold covers frame bytes at or above the lowest published byte (ebp-0xc,
-    the record), so the record's handler and state stores print, while the
-    `push ecx` store to ebp-0x10 keeps the default policy and is dropped.
-    Holding every aliased frame byte instead kept that store live, which made
-    ECX an input: `unsigned int seh_push_ecx(unsigned int a0)` with
-    `v2 = a0;`. Strict fix, one pass.
+    P6 dead-code holds (kuna_stackalias.rs stores_transparent): the
+    publication holds every aliased frame byte, so the record's handler and
+    state stores print. The `push ecx` store to ebp-0x10 lies wholly below the
+    lowest published byte (ebp-0xc, the record), so its dead-store search
+    steps over the fs:[0] link STORE and finds the full overwrite by the
+    `and`: the store is dropped. Treating that STORE as an observer kept the
+    store live, which made ECX an input:
+    `unsigned int seh_push_ecx(unsigned int a0)` with `v2 = a0;`. Strict fix,
+    one pass.
 -->
 <bytechunk space="ram" offset="0x401000" readonly="true">558bec6aff680020400064a10000000050518d45f464a3000000008365f0008d45f050e8180000008b45f08b4df464890d000000008be55dc3ccccccccccccccc20400</bytechunk>
 <symbol space="ram" offset="0x401000" name="seh_push_ecx"/>

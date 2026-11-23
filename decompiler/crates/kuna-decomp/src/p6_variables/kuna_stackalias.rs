@@ -23,7 +23,7 @@ pub fn holds_store(fd: &Funcdata, id: VarnodeId) -> bool {
     };
     fd.vbank().get(id).is_some_and(|v| {
         v.is_stack_store()
-            && (held_by_policy(fd, v)
+            && (held_by_policy(fd)
                 || crate::kuna_stackparamviews::preserves_range(fd, v.get_addr(), v.get_size())
                 || crate::kuna_localstackviews::preserves_range(fd, v.get_addr(), v.get_size()))
             && v.get_space().get_index() == scope.get_space_id().get_index()
@@ -35,24 +35,31 @@ pub fn holds_store(fd: &Funcdata, id: VarnodeId) -> bool {
     })
 }
 
-/// The option policies hold every frame write; a published frame address holds the
-/// writes that reach at or above the lowest published byte, which a reader of the
-/// published pointer can address.
-fn held_by_policy(fd: &Funcdata, v: &crate::varnode::Varnode) -> bool {
-    if fd.get_arch().stack_alias_deadstore || fd.get_arch().stack_views {
-        return true;
+/// The option policies and a published frame address hold every alias-checked frame write.
+fn held_by_policy(fd: &Funcdata) -> bool {
+    fd.get_arch().stack_alias_deadstore || fd.get_arch().stack_views || fd.stack_frame_published.is_some()
+}
+
+/// A write held only by publication and wholly below the lowest published byte is
+/// dead once fully overwritten, even across a STORE that publishes the frame.
+fn stores_transparent(fd: &Funcdata, v: &crate::varnode::Varnode) -> bool {
+    if fd.get_arch().stack_alias_deadstore || fd.get_arch().stack_views
+        || crate::kuna_stackparamviews::preserves_range(fd, v.get_addr(), v.get_size())
+        || crate::kuna_localstackviews::preserves_range(fd, v.get_addr(), v.get_size())
+    {
+        return false;
     }
     fd.stack_frame_published.is_some_and(|low| {
         let bits = 64 - 8 * v.get_space().get_addr_size().clamp(1, 8);
         let start = ((v.get_offset() << bits) as i64) >> bits;
-        start.saturating_add(i64::from(v.get_size())) > low
+        start.saturating_add(i64::from(v.get_size())) <= low
     })
 }
 
 /// Compute once per dead-code pass. A later full overwrite before any memory
 /// observer kills only the earlier store's potentially aliased bytes.
 /// A frame address written to memory outside the frame escapes, so the
-/// alias-checked frame stores at or above it stay live in every policy.
+/// alias-checked frame stores stay live in every policy.
 pub fn prepare(fd: &mut Funcdata) -> i32 {
     if let Some(low) = crate::kuna_localstackviews::frame_published(fd) {
         fd.stack_frame_published = Some(fd.stack_frame_published.map_or(low, |old| old.min(low)));
@@ -74,7 +81,7 @@ pub fn prepare(fd: &mut Funcdata) -> i32 {
             continue;
         };
         if !v.is_stack_store() || v.has_no_local_alias()
-            || (!held_by_policy(fd, v)
+            || (!held_by_policy(fd)
                 && !crate::kuna_stackparamviews::preserves_range(fd, v.get_addr(), v.get_size())
                 && !crate::kuna_localstackviews::preserves_range(fd, v.get_addr(), v.get_size()))
         {
@@ -100,10 +107,11 @@ pub fn prepare(fd: &mut Funcdata) -> i32 {
                 wanted |= 1 << byte;
             }
         }
+        let transparent = stores_transparent(fd, v);
         if wanted != 0
             && !v
                 .get_def()
-                .is_some_and(|op| shadowed(fd, op, v.get_offset(), size, wanted))
+                .is_some_and(|op| shadowed(fd, op, v.get_offset(), size, wanted, transparent))
         {
             holds.insert(id);
         }
@@ -137,7 +145,7 @@ fn byte_mask(start: u64, size: i32, at: u64, width: i32) -> u32 {
 }
 
 /// Search every reachable path with the bytes that still belong to the old write.
-fn shadowed(fd: &Funcdata, def: OpId, start: u64, size: i32, wanted: u32) -> bool {
+fn shadowed(fd: &Funcdata, def: OpId, start: u64, size: i32, wanted: u32, transparent: bool) -> bool {
     let Some(initial) = fd.obank().get(def) else {
         return false;
     };
@@ -171,7 +179,7 @@ fn shadowed(fd: &Funcdata, def: OpId, start: u64, size: i32, wanted: u32) -> boo
             if op.is_marker() {
                 continue;
             }
-            let Some(remaining) = unobserved_bytes(fd, id, start, size, wanted, space) else {
+            let Some(remaining) = unobserved_bytes(fd, id, start, size, wanted, space, transparent) else {
                 return false;
             };
             wanted = remaining;
@@ -201,6 +209,7 @@ fn unobserved_bytes(
     size: i32,
     mut wanted: u32,
     space: i32,
+    transparent: bool,
 ) -> Option<u32> {
     let op = fd.obank().get(id)?;
     if op.code() == OpCode::CPUI_CALL {
@@ -208,12 +217,9 @@ fn unobserved_bytes(
     }
     if matches!(
         op.code(),
-        OpCode::CPUI_CALLIND
-            | OpCode::CPUI_RETURN
-            | OpCode::CPUI_LOAD
-            | OpCode::CPUI_STORE
-            | OpCode::CPUI_CALLOTHER
-    ) {
+        OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN | OpCode::CPUI_LOAD | OpCode::CPUI_CALLOTHER
+    ) || (op.code() == OpCode::CPUI_STORE && !transparent)
+    {
         return None;
     }
     for slot in 0..op.num_input() {
