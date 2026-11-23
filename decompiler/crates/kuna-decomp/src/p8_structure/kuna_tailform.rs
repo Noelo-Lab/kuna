@@ -18,6 +18,10 @@
 //!   than `max` lines becomes `if (!c) return K; S1 .. Sk; return K;`.
 //! * **merge** -- in a valued function, an arm of that last `if` that ends in
 //!   the `return K;` the function ends with drops it and falls through.
+//! * **no-return** -- when the top-level statements end in a call that does
+//!   not return, `if (c) { X } T..; f();` with `X` leaving becomes
+//!   `if (!c) { T..; f(); } X`, for any `X` and any size (`noreturn.rs`);
+//!   it runs first, and the size rule then leaves such an arm wrapped.
 //!
 //! All are print-tree edits on the top-level statement list: the guard's bare
 //! return leaf is dropped (wrap) or a `BlockCopy` of the final return leaf
@@ -27,8 +31,8 @@
 //! `RETURN` (a return that now falls off the function, or one split away from
 //! the statements of its block) and one flagged [`F_RET_ONLY`] prints only it.
 //!
-//! [`decide`] is the whole policy: it maps a [`TailSite`] to wrap / guard /
-//! leave, so a different decision function can replace it.
+//! [`decide`] is the whole size policy: it maps a [`TailSite`] to wrap / guard
+//! / leave, so a different decision function can replace it.
 
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::{int4, uint4, uintb};
@@ -39,6 +43,9 @@ use crate::block::{block_flags, BlockKind, BlockType, FlowBlock};
 use crate::context::{BlockId, OpId, VarnodeId};
 use crate::funcdata::Funcdata;
 use crate::p8_structure::kuna_looptest::{loop_tests, LoopTestMode};
+
+#[path = "kuna_tailform/noreturn.rs"]
+mod noreturn;
 
 /// Leaf flag: print the leaf without its tail `RETURN`.
 pub const F_RET_SKIP: uint4 = 0x4000_0000;
@@ -201,10 +208,18 @@ fn run(data: &mut Funcdata, policy: &TailFormPolicy) -> usize {
         return 0;
     };
     let void = returns_void(data);
-    let mut cx = Ctx { void, elide: void && policy.elide_void, policy: *policy, top, ours: Vec::new(), claimed: Vec::new() };
+    let mut cx = Ctx {
+        void,
+        elide: void && policy.elide_void,
+        policy: *policy,
+        top,
+        ours: Vec::new(),
+        claimed: Vec::new(),
+    };
+    let rewritten = noreturn::run(data, &mut cx);
     let view = build_view(data, top);
     if next_edit(data, &cx, &view.list, &view.conds).is_none() {
-        return 0;
+        return rewritten;
     }
     cx.claimed = claimed_guards(data, policy.loop_test);
     let mut edits = 0;
@@ -233,7 +248,7 @@ fn run(data: &mut Funcdata, policy: &TailFormPolicy) -> usize {
         }
         cx.claimed = claimed_guards(data, policy.loop_test);
     }
-    edits
+    rewritten + edits
 }
 
 /// The guard `if`s the `looptest` plan of the current tree drops; this pass
@@ -436,7 +451,10 @@ fn wrapped_site(data: &Funcdata, cx: &Ctx, ifb: BlockId, r: BlockId, conds: &[(B
     }
     let g = data.sblocks_ref();
     let clause = g.block(ifb).get_block(1);
-    if bare_return(data, clause).is_some() || truncated(data, clause) || (!cx.void && !falls_through(data, clause)) {
+    if bare_return(data, clause).is_some() || truncated(data, clause) || noreturn::noreturn_end(data, clause) {
+        return None;
+    }
+    if !cx.void && !falls_through(data, clause) {
         return None;
     }
     if cx.elide && labelled(data, r) {

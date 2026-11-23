@@ -1667,15 +1667,33 @@ conditional part, `option tailform <n>` lines (default 4):
   same `return K;` the function ends with drops it, so the arm falls through to
   the one return (`if (c) { f(); return 0; } return 0;` prints
   `if (c) f(); return 0;`).
+- **no-return.** When the function's top-level statements end in a call that
+  does not return, the last one-armed `if (c) { X }` before it whose arm
+  leaves — `return E` with any `E`, statements and a return, or a jump —
+  becomes `if (!c) { T..; f(); }` followed by `X`, where `T..; f();` are the
+  statements after the `if`. Neither path reaches the end of the function, so
+  `X` still runs only when `c` holds: `if (0 <= n) return n; xalloc_die();`
+  prints `if (0 > n) xalloc_die(); return n;`, as authors write it. The call
+  is one flow marks as not returning, the artificial `noreturn` halt planted
+  right after it that also gives the printer its `// no-return` note, with
+  nothing printed between the two
+  (`decompiler/crates/kuna-decomp/src/p8_structure/kuna_tailform/noreturn.rs (noreturn_block)`).
+  The search walks back from the call over other statements and over `if`s
+  whose arm falls through (they join the new arm); it stops at an `if` with an
+  `else` or a goto, and at one whose arm already ends in a call that does not
+  return. This runs before the size rule and has no threshold, for void
+  functions too, and the size rule never turns an arm that ends in such a call
+  back into a guard.
 
 A guard `if` that the `looptest` plan (§8.3 looptest) drops in front of a loop
 belongs to that plan: the pass computes the plan on the tree it is editing
 (`kuna_tailform.rs (claimed_guards)`) and does not merge, wrap or guard such an
-`if`, nor wrap a tail or guard a body that holds one, so `while (p) { ... }`
-is not turned back into `if (!p) return; do { ... } while (p);`. With
+`if` or give it the no-return form, nor move a tail or body that holds one, so
+`while (p) { ... }` is not turned back into
+`if (!p) return; do { ... } while (p);`. With
 `option looptest binary` there is no plan and the pass decides those tails too.
 
-Neither direction touches a tail or body that holds a truncated flow
+No edit moves a tail, body or arm that holds a truncated flow
 (`kuna_tailform.rs (truncated)`): a decode-failure or `halt` return, or a
 no-return halt with no call before it, where flow was cut at the next function's
 entry. Such a path does not really end the function.
@@ -1705,15 +1723,34 @@ In a void function with `voidtailreturn` on, the bare `return;` that ends a
 path moved to the end of the function is flagged `F_RET_SKIP` the same way.
 
 Measured with decbench's own CFG extractor over the O2-noinline corpus (35,189
-functions), the default moves TFO2NET functions to an exact match with the
-source (gained TFO2G, lost TFO2L) and TFO0NET at O0 (gained TFO0G, lost TFO0L).
+functions), the default moves 549 functions to an exact match with the
+source (gained 755, lost 206) and 461 at O0 (gained 717, lost 256).
 The threshold was fitted on the even-hash half of the projects and checked on
-the odd half (O2 TFFIT / TFCHECK); one to eight lines all help, the wrap side
+the odd half (O2 +230 / +319); one to eight lines all help, the wrap side
 peaks at four, and one value serves void and constant returns. The lost
 functions are sources that wrote the other form. With the option on, `rettriangle`
 is worth −5 instead of +73 functions at O2 and +75 instead of +378 at O0: the
 pass covers the top-level triangle in both directions, and `rettriangle` keeps
 deciding before structuring, including joins nested inside another construct.
+
+The no-return form, measured the same way against the size rule alone (main
+8d781e789), moves 268 more functions to an exact match at O2 (gained 278, lost
+10; FIT +215, CHECK +53) and 236 more at O0 (gained 261, lost 25; FIT +173,
+CHECK +63), re-spelling 544 and 587 sites. Void tails of any length are part of
+it (+88 and +84 over leaving them to the size rule), and so are arms with
+statements before their return (+141 and +129 over bare returns only). The same
+rewrite in nested lists — `if` arms; loop bodies never end in such a call —
+measured +28 at O2 but +6 at O0 (CHECK +1, thirteen losses), mostly one gnutls
+idiom whose source writes `if (mand) { ...; exit(1); } else return NULL;`, so
+the pass keeps to the function's top level. The lost functions are sources that
+keep the fatal call last after a guard (coreutils `xalloc`:
+`if (p) return p; ...; exit(1);`) and dispatch chains of returns that end in a
+fatal call; refusing the form after such a chain cost more than it saved.
+`tests/stages/kuna-tailform-noreturn.xml` decompiles gcc -O2 functions ending
+in `abort` or `exit` with the option off and on, and
+`kuna-cli/tests/tailform_noreturn_round_trip.rs` compiles their printed C beside
+the source with `abort` and `exit` turned into a `longjmp`, checking that every
+function returns, stores and stops where the source does.
 `tests/stages/kuna-tailform.xml` decompiles gcc -O2 functions with the option
 off and on, and `kuna-cli/tests/tailform_round_trip.rs` compiles the printed C
 of gcc -O2 and -O0 builds beside the source and checks every function returns
