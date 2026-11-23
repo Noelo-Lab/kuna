@@ -1,0 +1,8 @@
+{
+  "opportunity": "test_go_decompiler::check_statements_and_runtime_cleanup",
+  "source_decompiler": "angr",
+  "angr_version": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "option": "godwarfsig",
+  "status": "proposal",
+  "change_kind": "go-string-input-projection"
+}

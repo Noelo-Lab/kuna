@@ -88,10 +88,12 @@ impl<E: FlowEnvironment> FlowInfo<'_, E> {
         };
         let table = self.data.get_jump_table(idx as i32);
         let stub = table.kuna_return_default();
+        let align = self.data.get_arch().funcptr_align;
         let known = |target: u64| {
             table.address_table().iter().any(|dest| {
                 Some(dest) != stub
-                    && AddrSpace::byte_to_address(dest.get_offset(), dest.get_space().unwrap().get_word_size()) == target
+                    && crate::kuna_constselectjump::target_offset(target, dest.get_space().unwrap().get_word_size(), align)
+                        == dest.get_offset()
             })
         };
         crate::kuna_returnbranch::classify_indexed_edge(

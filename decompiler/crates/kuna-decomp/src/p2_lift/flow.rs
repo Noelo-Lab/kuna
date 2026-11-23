@@ -2913,12 +2913,13 @@ truncating the fall-through here"
                         .then(|| self.table_load_suffix(indop)).flatten();
                     for i in 0..num {
                         let addr = self.data.get_jump_table(jt_idx as int4).get_address_by_index(i);
-                        if !self.data.get_jump_table(jt_idx as int4).kuna_is_reentered() || followed.insert((
+                        let first = followed.insert((
                             indop,
                             addr.get_space().map(|s| s.get_index()),
                             addr.get_offset(),
-                        )) {
-                            if self.seen_instruction(&addr)
+                        ));
+                        if first || !self.data.get_jump_table(jt_idx as int4).kuna_is_reentered() {
+                            if first && self.seen_instruction(&addr)
                                 && self.data.get_jump_table(jt_idx as int4).kuna_return_default() != Some(&addr) {
                                 if let Ok(to) = self.target(&addr) { new_edges.push((indop, to)); }
                             }
@@ -3015,22 +3016,25 @@ truncating the fall-through here"
                         }
                         if !reentry && !indexed {
                             let known = self.data.get_jump_table(idx as int4).address_table();
+                            let align = self.data.get_arch().funcptr_align;
                             exact &= value.is_some_and(|v| known.iter().any(|a| {
                                 let size = a.get_space().unwrap().get_word_size();
-                                kuna_base::space::AddrSpace::byte_to_address(a.get_offset(), size) == v
+                                crate::kuna_constselectjump::target_offset(v, size, align) == a.get_offset()
                             }));
                             continue;
                         }
                         let result = value.and_then(|value| {
                             let space = address.get_space()?;
-                            if space.get_word_size() != 1 { return None; }
-                            let target = Address::new(space.clone(), value);
+                            let word_size = space.get_word_size();
+                            let align = self.data.get_arch().funcptr_align;
+                            let byte = crate::kuna_constselectjump::target_offset(value, word_size, align);
+                            let target = Address::new(space.clone(), byte);
                             if self.outofbounds.contains(&target)
                                 || self.data.get_arch().get_load_image_value(&target, 1).is_err()
                             { return None; }
                             let limit = self.data.get_arch().max_jumptable_size as usize;
                             self.data.get_jump_table_mut(idx as int4)
-                                .kuna_extend_flow_target(target, limit)
+                                .kuna_extend_flow_target(value, target, align, limit)
                         });
                         match result { Some(new) => added |= new, None => exact = false }
                     }
