@@ -19,6 +19,7 @@
 <script>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ppc32_stack_chk_local_be.o</com>
+  <com>option tailform off</com>
   <com>option noreturn_known off</com>
   <com>read symbols</com>
   <com>load function r6</com>
@@ -26,12 +27,14 @@
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ppc32_stack_chk_local_be.o</com>
+  <com>option tailform off</com>
   <com>read symbols</com>
   <com>load function r6</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ppc32_stack_chk_local_le.o</com>
+  <com>option tailform off</com>
   <com>option noreturn_known off</com>
   <com>read symbols</com>
   <com>load function r6</com>
@@ -39,18 +42,21 @@
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ppc32_stack_chk_local_le.o</com>
+  <com>option tailform off</com>
   <com>read symbols</com>
   <com>load function r6</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ppc32_stack_chk_local_linked_be.so</com>
+  <com>option tailform off</com>
   <com>read symbols</com>
   <com>load function r6</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ppc32_stack_chk_local_linked_be.so</com>
+  <com>option tailform off</com>
   <com>option libgccsigs on</com>
   <com>read symbols</com>
   <com>load function r6</com>
@@ -58,12 +64,14 @@
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ppc32_stack_chk_local_linked_le.so</com>
+  <com>option tailform off</com>
   <com>read symbols</com>
   <com>load function r6</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/ppc32_stack_chk_local_linked_le.so</com>
+  <com>option tailform off</com>
   <com>option libgccsigs on</com>
   <com>read symbols</com>
   <com>load function r6</com>
