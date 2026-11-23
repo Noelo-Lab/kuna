@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5156,
-    5156
+    5160,
+    5160
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2651,6 +2651,10 @@
     "data:SWIFTSTROBJ #7: every function still ORs in the tag",
     "data:SWIFTSTROBJ #8: a literal biased after the join keeps its text",
     "data:SWIFTSTROBJ #9: so does the other one",
+    "data:SWITCH ARM ORDER #1: default prints after the other arms",
+    "data:SWITCH ARM ORDER #2: nothing prints after the no-return arm",
+    "data:SWITCH ARM ORDER #3: a void function's tail switch prints no default: return;",
+    "data:SWITCH ARM ORDER #4: voidtailreturn off keeps default: return;",
     "data:SWITCHGUARDRELOAD #1: the five legal rows of the reloaded-byte switch are recovered once each",
     "data:SWITCHGUARDRELOAD #2: the switch closes after row 4, the last row the guard allows",
     "data:SWITCHGUARDRELOAD #3: no row past the guard sends flow into an instruction interior",
