@@ -2779,6 +2779,30 @@ impl JumpBasicModel {
         None
     }
 
+    /// Values of this PHI input on its own predecessor. A simplified guard
+    /// can leave a COPY of its only possible constant on the incoming edge.
+    fn guarded_input_range(
+        fd: &Funcdata, block: BlockId, edge: int4, input: VarnodeId,
+    ) -> Option<CircleRange> {
+        let v = fd.vbank().get(input)?;
+        let source = v.get_def().and_then(|id| fd.obank().get(id))
+            .filter(|op| op.code() == OpCode::CPUI_COPY)
+            .and_then(|op| op.get_in(0)).and_then(|vn| fd.vbank().get(vn)).unwrap_or(v);
+        if source.is_constant() {
+            return Some(CircleRange::new_value(source.get_offset(), v.get_size()));
+        }
+        let (branch, slot) = Self::guard_cbranch_for_edge(fd, block, edge)?;
+        let guard = fd.obank().get(branch)?;
+        let mut vn = guard.get_in(1)?;
+        let mut range = CircleRange::new_bool((slot == 1) != guard.is_boolean_flip());
+        for _ in 0..16 {
+            if vn == input { return Some(range); }
+            let def = fd.vbank().get(vn)?.get_def()?;
+            vn = circlerange_pull_back(fd, &mut range, def, false)?;
+        }
+        None
+    }
+
     /// (kuna, angr `test_decompiling_abnormal_switch_case_case3`) Check that all
     /// incoming edges of `bl` reach (through trampolines) a CBRANCH guard that
     /// selects the switch path in the same way (C++
@@ -5947,6 +5971,71 @@ impl JumpTable {
         Some(true)
     }
 
+    /// A conditional re-entry may repeat the bounds check. On the finished
+    /// flow graph, enumerate the merged selector and require each actual
+    /// transfer to read the original table rows and reach a known destination.
+    pub(crate) fn kuna_covers_guarded_dispatch(&self, fd: &Funcdata, jump: OpId) -> bool {
+        let Some(rows) = self.row_loads.as_ref() else { return false };
+        let Some(op) = fd.obank().get(jump) else { return false };
+        if op.is_dead() || op.code() != OpCode::CPUI_BRANCHIND { return false; }
+        let (Some(block), Some(target)) = (op.get_parent(), op.get_in(0)) else { return false };
+        let known: BTreeSet<_> = self.address_table().iter().map(Address::get_offset).collect();
+        let cap = fd.get_arch().max_jumptable_size as u64;
+        let word_size = self.opaddress.get_space().unwrap().get_word_size();
+        for phi in fd.bb_ops(block) {
+            let multi = fd.obank().get(phi).unwrap();
+            if multi.code() != OpCode::CPUI_MULTIEQUAL { continue; }
+            let mut values = BTreeSet::new();
+            let covered = (0..multi.num_input()).all(|edge| {
+                let Some(range) = JumpBasicModel::guarded_input_range(
+                    fd, block, edge, multi.get_in(edge).unwrap(),
+                ) else { return false };
+                if range.is_empty() || range.get_size() > cap { return false; }
+                let mut value = range.get_min();
+                loop {
+                    values.insert(value);
+                    if values.len() as u64 > cap { return false; }
+                    if !range.get_next(&mut value) { return true; }
+                }
+            });
+            if !covered || values.is_empty() { continue; }
+            let selector = multi.get_out().unwrap();
+            if values.into_iter().all(|value| {
+                let mut emu = EmulateFunction::new(fd);
+                emu.set_load_collect(true);
+                emu.seed_varnode_value(selector, value);
+                let Some(raw) = emu.evaluate_held(target, 64) else { return false };
+                let loads = emu.take_loadpoints().unwrap_or_default();
+                loads.split_last().is_some_and(|(last, before)| {
+                    RowLoads::covers(&rows.entries, last)
+                        && before.iter().all(|load| RowLoads::covers(&rows.reached, load))
+                }) && known.contains(&AddrSpace::address_to_byte(raw, word_size))
+            }) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Whether the table loads of one path read what recovery read: the last a
+    /// recovered row, the earlier ones memory reached on the way to it.
+    pub(crate) fn kuna_reads_recovered_rows(&self, fd: &Funcdata, loads: &[(i32, u64, i32)]) -> bool {
+        let Some(rows) = self.row_loads.as_ref() else { return false };
+        let table = |&(space, at, size): &(i32, u64, i32)| {
+            let space = fd.get_arch().manage().get_space(space)?;
+            Some(LoadTable::single(Address::new(Rc::clone(space), at), size))
+        };
+        loads.split_last().is_some_and(|(last, before)| {
+            table(last).is_some_and(|row| RowLoads::covers(&rows.entries, &row))
+                && before.iter().all(|load| table(load).is_some_and(|l| RowLoads::covers(&rows.reached, &l)))
+        })
+    }
+
+    /// Whether the recovered destinations came from entries in memory.
+    pub(crate) fn kuna_reads_table_entries(&self) -> bool {
+        self.row_loads.as_ref().is_some_and(|rows| rows.depth != 0)
+    }
+
     pub(crate) fn kuna_target_encoding(&self) -> Option<(i32, u64)> {
         self.target_encoding
     }
@@ -6718,11 +6807,27 @@ impl JumpTable {
     /// STUB(W4/W5): the save/restore-on-failure control flow is faithful; the
     /// inner `recoverAddresses` needs the absent subsystems.
     pub fn recover_multistage(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
+        let previous_return = self.kuna_return_default().cloned();
         self.save_model();
         let oldaddresstable = std::mem::take(&mut self.addresstable);
         self.loadpoints.clear();
         let mut failure = None;
         match self.recover_addresses(fd) {
+            Ok(()) if self.reentered => {
+                let return_target = self.kuna_return_default();
+                let mut targets: BTreeSet<_> = self.addresstable.iter()
+                    .filter(|addr| Some(*addr) != return_target).cloned().collect();
+                let count = targets.len();
+                let lost_return = previous_return.is_some() && return_target.is_none();
+                targets.extend(oldaddresstable.into_iter().filter(|addr| Some(addr) != previous_return.as_ref()));
+                if targets.len() != count || lost_return {
+                    self.addresstable = targets.into_iter().collect();
+                    let offsets = self.addresstable.iter().map(|a| AddrSpace::byte_to_address(a.get_offset(), a.get_space().map_or(1, |s| s.get_word_size()))).collect();
+                    self.jmodel = Some(Box::new(crate::kuna_constselectjump::JumpModelConstSelect::from_flow_targets(offsets, None)));
+                    self.row_loads = None;
+                    failure = Some(KunaError::lowlevel("Revalidation omitted a previously reached destination"));
+                }
+            }
             Ok(()) => {}
             Err(error) => {
                 // C++ catches JumptableThunkError and LowlevelError identically:
