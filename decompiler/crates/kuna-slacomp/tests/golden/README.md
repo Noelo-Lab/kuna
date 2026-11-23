@@ -97,6 +97,11 @@ tag operation is now a user op producing the tagged pointer (`AddPtrTag`,
 `ExcludePtrTag`, `LoadPtrTag`, `StorePtrTag`), without the alignment-fault
 branch. That digest was regenerated with `slacomp`, which reproduces the
 previous AArch64 digest on the previous sources.
+It also includes the `W`-destination sign-extending loads (`ldrsb`, `ldrsh`,
+`ldursb`, `ldursh`, `ldtrsb`, `ldtrsh`), which now sign-extend to 32 bits and
+zero bits 63:32. The digest was regenerated with `slacomp`, which reproduces
+the previous AArch64 digest on the previous sources and reports the same
+compiler warnings on both.
 
 The RISC-V entry includes the Zcmp/Zcmt constructors (`riscv.zc.sinc`), the
 `Zcmp` context bit and the `c.fsdsp` guard on it. Its digest was regenerated
