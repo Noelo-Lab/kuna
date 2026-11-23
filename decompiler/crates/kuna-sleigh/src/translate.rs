@@ -233,7 +233,7 @@ pub enum UniqueLayout {
 /// (`target_isbigendian`, `unique_base`, `alignment`, `floatformats`) plus
 /// their non-virtual methods.  An engine implementing [`Translate`] embeds
 /// one and exposes it through [`Translate::translate_base`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TranslateBase {
     /// \b true if the general endianness of the process is big endian
     target_isbigendian: bool,

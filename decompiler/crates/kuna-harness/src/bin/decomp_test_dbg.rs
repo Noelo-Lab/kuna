@@ -125,6 +125,7 @@ fn main() -> ExitCode {
         // C++ `cout << endl << endl;`
         println!();
         println!();
+        kuna_console::engine::reuse_specs();
         let mut buf = String::new();
         let errors = run_test_files_with_specs(&test_files, &spec_roots, &mut buf);
         print!("{buf}");

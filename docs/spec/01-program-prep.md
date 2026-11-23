@@ -11619,8 +11619,19 @@ the C++ inheritance chain modeled by composition:
   statics become an explicit `LanguageDatabase` value the bootstrap owns), find the
   `.pspec`/`.cspec`/`.sla` files, build the SLEIGH translator, and run the
   `Architecture::init` tail (type factory, prototype models, print language). The
-  upstream translator-reuse cache is deliberately not ported — it affects build
-  speed only — and is the recorded loss here. (kuna) A spec root is a
+  upstream translator-reuse cache, which hands a later architecture the same
+  `Sleigh` object, is not ported: each architecture owns its translator and its
+  address spaces, which the `.ldefs` truncations and the `.cspec` then modify.
+  (kuna) Instead, in a process that turns reuse on (below), a thread keeps the
+  decoded form of each `.sla` it has decoded twice
+  (`decompiler/crates/kuna-sleigh/src/kuna_slacache.rs`), keyed by the file's
+  full contents. A later translator from the same bytes is a copy of that
+  template (`decompiler/crates/kuna-sleigh/src/sleighbase.rs
+  (SleighBase::clone_decoded)`): a new space set is built from the `.sla`'s space
+  records, every space reference in the symbol table and the constructor
+  templates moves to the space of the same index in it, and the register
+  cross-reference and context variables are rebuilt as a decode builds them. The
+  copy equals a fresh decode and shares no space with the template. A spec root is a
   directory or a tree held in memory
   (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_memoryspecs.rs
   (MemorySpecs)`): a table of `/`-separated relative paths and their contents.
@@ -11631,7 +11642,14 @@ the C++ inheritance chain modeled by composition:
   `decompiler/crates/kuna-console/src/engine.rs (language_database)` scans a
   list of roots once. A bootstrap over the result skips the `.ldefs` scan and
   reads only its own language's `.sla`, `.pspec` and `.cspec`
-  (`LanguageDatabase::read_spec`), so threads may share one database.
+  (`LanguageDatabase::read_spec`), so threads may share one database. A runner
+  whose spec trees cannot change while it runs and that builds many
+  architectures, such as the datatest harness, calls
+  `decompiler/crates/kuna-console/src/engine.rs (reuse_specs)` instead: from
+  then on every bootstrap over the same on-disk roots gets a copy of the first
+  scan of them, and translators are copies of kept `.sla` templates as above.
+  A kept template costs about as much memory as one translator, which is why
+  reuse is the runner's choice and a single-binary run never keeps one.
 - `decompiler/crates/kuna-decomp/src/p1_partition/xml_arch.rs (XmlArchitecture)`
   binds the decompiler's XML `<binaryimage>` container — the datatest corpus's
   entire load path, and the reason the analysis tier can be default-on without
