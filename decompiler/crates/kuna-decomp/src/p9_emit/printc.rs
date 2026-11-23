@@ -1577,6 +1577,11 @@ pub struct PrintC {
     /// only they reached.  Computed per function at the top of
     /// [`emit_function_body`](PrintC::emit_function_body).
     goto_rewrites: crate::p8_structure::kuna_gotonext::GotoRewrites,
+    /// (kuna `switchmerge`) The printed arms of each C `switch` whose arms differ
+    /// from its own cases.  Computed per function with `goto_rewrites`.
+    switch_plans: crate::p8_structure::kuna_switchmerge::SwitchPlans,
+    /// (kuna `looptest`) The loops printed top-tested and the guards dropped.
+    pub(crate) loop_tests: crate::p8_structure::kuna_looptest::LoopTests,
     /// (kuna) Resolved `realtypes` rendering context for the function currently
     /// being printed — the `Architecture::realtypes` gate plus the data-model fact
     /// (`long` is 8 bytes) needed to relabel residual `TYPE_UNKNOWN` (`xunknownN`)
@@ -1673,6 +1678,8 @@ impl PrintC {
             commsorter: crate::comment::CommentSorter::new(),
             void_tail_return: None,
             goto_rewrites: Default::default(),
+            switch_plans: Default::default(),
+            loop_tests: Default::default(),
             rt_ctx: RealTypeCtx::OFF,
             out_lang: crate::kuna_lang::OutLang::C,
             eol_warns: Vec::new(),
@@ -4339,15 +4346,45 @@ impl PrintC {
         } else {
             None
         };
-        self.goto_rewrites = if arch.goto_next && matches!(self.lang().forms.switch, crate::kuna_lang::SwitchForm::CSwitch) {
-            crate::p8_structure::kuna_gotonext::goto_rewrites(fd.sblocks_ref(), sroot, arch.recover_loop_break)
+        let c_switch = matches!(self.lang().forms.switch, crate::kuna_lang::SwitchForm::CSwitch);
+        self.switch_plans = if arch.switchmerge && c_switch {
+            let facts = crate::p8_structure::kuna_switchmerge::PrintFacts {
+                prints_nothing: &|head| self.header_prints_nothing(fd, head),
+                labels: &|sw| self.switch_label_set(fd, arch, sw),
+                arm_labels: &|sw, index| {
+                    let case = &fd.sblocks_ref().block(sw).switch_caseblocks()[index];
+                    self.switch_case_labels(fd, arch, sw, case).into_iter().map(|l| l.0).collect()
+                },
+                block_prints_nothing: &|bb| self.ops_print_nothing(fd, bb),
+            };
+            crate::p8_structure::kuna_switchmerge::switch_plans(fd, sroot, &facts)
         } else {
             Default::default()
         };
+        self.goto_rewrites = if arch.goto_next && c_switch {
+            crate::p8_structure::kuna_gotonext::goto_rewrites(
+                fd.sblocks_ref(),
+                sroot,
+                arch.recover_loop_break,
+                &self.switch_plans,
+            )
+        } else {
+            Default::default()
+        };
+        self.loop_tests = if matches!(self.lang().forms.do_while, crate::kuna_lang::DoWhileForm::CDoWhile) {
+            crate::p8_structure::kuna_looptest::loop_tests(fd, sroot, arch.loop_test)
+        } else {
+            Default::default()
+        };
+        if let Some(&ret) = self.void_tail_return.and_then(|op| self.loop_tests.tail_returns.get(&op)) {
+            self.void_tail_return = Some(ret);
+        }
         self.assign_label_names(fd, sroot);
         self.emit_block_graph(fd, arch, sroot);
+        self.loop_tests = Default::default();
         self.void_tail_return = None;
         self.goto_rewrites = Default::default();
+        self.switch_plans = Default::default();
         self.label_names.clear();
     }
 
@@ -4402,10 +4439,14 @@ impl PrintC {
     pub(crate) fn emit_block(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         use crate::block::BlockType;
         match fd.sblocks_ref().block(blk).get_type() {
+            BlockType::Copy if self.loop_tests.hidden.contains(&blk) => {} // (kuna looptest)
             BlockType::Copy => self.emit_block_copy(fd, arch, blk),
             BlockType::Basic => self.emit_block_basic(fd, arch, blk),
             BlockType::Ls => self.emit_block_ls(fd, arch, blk),
-            BlockType::If => self.emit_block_if(fd, arch, blk),
+            BlockType::If => match self.switch_plans.ifs.get(&blk) {
+                Some(&sw) => self.emit_block_switch(fd, arch, sw),
+                None => self.emit_block_if(fd, arch, blk),
+            },
             BlockType::Graph => self.emit_block_graph(fd, arch, blk),
             BlockType::Goto => self.emit_block_goto(fd, arch, blk),
             BlockType::WhileDo => self.emit_block_while_do(fd, arch, blk),
@@ -4757,6 +4798,10 @@ impl PrintC {
     /// structured list emitted here flows in declaration order.
     fn emit_block_ls(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         let list: Vec<BlockId> = fd.sblocks_ref().block(blk).get_list().to_vec();
+        self.emit_block_list(fd, arch, &list);
+    }
+
+    fn emit_block_list(&mut self, fd: &Funcdata, arch: &Architecture, list: &[BlockId]) {
         if self.context.is_set(modifiers::ONLY_BRANCH) {
             if let Some(&last) = list.last() {
                 self.emit_block(fd, arch, last);
@@ -4816,6 +4861,10 @@ impl PrintC {
         // `dest = ( cond );`.  Checked BEFORE the ternary so the more specific
         // form wins when both match; the mark is set only with
         // `option iteboolean on`.
+        if let Some(&guard) = self.loop_tests.guards.get(&blk) {
+            self.emit_dropped_guard(fd, arch, blk, guard); // (kuna looptest)
+            return;
+        }
         if let Some(m) = self.ite_boolean_match(fd, blk) {
             self.emit_block_if_bool(fd, arch, m);
             return;
@@ -5409,23 +5458,36 @@ impl PrintC {
         // after the `switch (v) {` header brace.
         self.flush_eol_warnings();
 
-        let ncase = fd.sblocks_ref().block(blk).switch_caseblocks().len();
-        for i in 0..ncase {
-            self.emit_switch_case(fd, arch, blk, i);
+        let arms = self.switch_arms(fd, blk);
+        let ncase = arms.len();
+        for (i, arm) in arms.iter().enumerate() {
+            let owner = arm.owner;
+            if owner != blk && arms[..i].iter().all(|a| a.owner != owner) {
+                self.emit_comment_block_tree(fd, fd.sblocks_ref().block(owner).get_block(0));
+            }
+            self.emit_switch_case(fd, arch, *arm);
             let id = self.emit.start_indent();
-            let gototype = fd.sblocks_ref().block(blk).switch_caseblocks()[i].gototype;
-            if gototype != 0 {
-                self.emit.tag_line();
-                let caseblk = fd.sblocks_ref().block(blk).switch_caseblocks()[i].block;
-                let gototype = self.goto_rewrites.case_gototype(blk, caseblk, gototype);
-                self.emit_goto_statement(fd, switch_block, caseblk, gototype);
-            } else {
-                let caseblk = fd.sblocks_ref().block(blk).switch_caseblocks()[i].block;
+            let case = fd.sblocks_ref().block(owner).switch_caseblocks()[arm.index].clone();
+            if let Some((guard, _)) = arm.guard {
                 let id2 = self.emit.begin_block(0);
-                self.emit_block(fd, arch, caseblk);
+                self.emit_block(fd, arch, fd.sblocks_ref().block(guard).get_block(1));
+                self.emit.end_block(id2);
+            } else if case.gototype != 0 {
+                self.emit.tag_line();
+                let gototype = self.goto_rewrites.case_gototype(owner, case.block, case.gototype);
+                let head = fd.sblocks_ref().block(owner).get_block(0);
+                self.emit_goto_statement(fd, head, case.block, gototype);
+            } else {
+                let caseblk = case.block;
+                let id2 = self.emit.begin_block(0);
+                if arm.skip > 0 {
+                    self.emit_arm_rest(fd, arch, caseblk, arm.skip);
+                } else {
+                    self.emit_block(fd, arch, caseblk);
+                }
                 // Blocks that formally exit the switch need an explicit `break;`
                 // (unless it is the last case, whose fall-through is the close).
-                let isexit = fd.sblocks_ref().block(blk).switch_caseblocks()[i].isexit;
+                let isexit = case.isexit;
                 let last = i == ncase - 1;
                 if (isexit && !last) || (last && self.emit.label_dangling()) {
                     self.emit.tag_line();
@@ -5442,12 +5504,21 @@ impl PrintC {
 
     /// C++ `PrintC::emitSwitchCase` (printc.cc:3278): emit the `case N:` /
     /// `default:` label(s) for one case arm.
-    pub(crate) fn emit_switch_case(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId, casenum: usize) {
-        let case = fd.sblocks_ref().block(blk).switch_caseblocks()[casenum].clone();
+    pub(crate) fn emit_switch_case(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        arm: crate::p8_structure::kuna_switchmerge::PlannedCase,
+    ) {
+        let blk = arm.owner;
+        let case = fd.sblocks_ref().block(blk).switch_caseblocks()[arm.index].clone();
         // The case block's first op — used only for markup tagging.
         let firstop = self.case_first_op(fd, case.block);
 
-        if case.isdefault {
+        if let Some((_, value)) = arm.guard {
+            let (_, sz, signed) = self.switch_case_label(fd, arch, blk, &case, 0);
+            self.emit_numeric_case_label(value, sz, signed, None);
+        } else if case.isdefault || arm.as_default {
             // default: (the label value is informational; default emits no value).
             // C++ `emit->tagCaseLabel(..., op, ...)` with op = the case's first op —
             // `opref = firstop->getTime()`, the `<ast>` `<seqnum uniq>`.
@@ -5505,12 +5576,43 @@ impl PrintC {
             }
             _ => case.label,
         };
+        let (sz, mask, signed) = self.switch_label_form(fd, arch, blk);
+        (val & mask, sz, signed)
+    }
+
+    /// (kuna `switchmerge`) Every label of a non-default case arm, as
+    /// [`switch_case_label`](PrintC::switch_case_label) gives them for
+    /// `0..switch_case_label_count`, reading the table once instead of once per
+    /// label.
+    pub(crate) fn switch_case_labels(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        blk: BlockId,
+        case: &crate::block::CaseOrder,
+    ) -> Vec<(uintb, int4, bool)> {
+        let n = self.switch_case_label_count(fd, blk, case) as usize;
+        let raw: Vec<uintb> = match (fd.sblocks_ref().block(blk).switch_jt_index(), case.basicblock) {
+            (Some(j), Some(bb)) => {
+                let jt = fd.get_jump_table(j as int4);
+                let indices = jt.kuna_indices_by_block(fd, bb).unwrap_or_default();
+                (0..n).map(|i| jt.get_label_by_index(indices.get(i).copied().unwrap_or(0))).collect()
+            }
+            _ => vec![case.label; n],
+        };
+        let (sz, mask, signed) = self.switch_label_form(fd, arch, blk);
+        raw.into_iter().map(|val| (val & mask, sz, signed)).collect()
+    }
+
+    /// The byte size, value mask and signedness every label of switch `blk`
+    /// prints with.
+    fn switch_label_form(&self, fd: &Funcdata, arch: &Architecture, blk: BlockId) -> (int4, uintb, bool) {
         let sz = self.switch_var_size(fd, blk);
-        let Some(j) = jt_index else {
-            return (val, sz, false);
+        let Some(j) = fd.sblocks_ref().block(blk).switch_jt_index() else {
+            return (sz, uintb::MAX, false);
         };
         let jt = fd.get_jump_table(j as int4);
-        let val = if jt.kuna_lowered_var().is_none() { val & calc_mask(sz) } else { val };
+        let mask = if jt.kuna_lowered_var().is_none() { calc_mask(sz) } else { uintb::MAX };
         let text_signed = self.lang().caps.signed_text_byte;
         let lowered = jt.get_indirect_op().and_then(|op| lowered_switch_label_form(fd, arch, op, text_signed));
         let signed = match lowered {
@@ -5521,7 +5623,87 @@ impl PrintC {
                 .and_then(|op| native_switch_label_signedness(fd, arch, op, text_signed))
                 .unwrap_or(jt.kuna_has_signed_labels()),
         };
-        (val, sz, signed)
+        (sz, mask, signed)
+    }
+
+    /// (kuna `switchmerge`) The arms `emit_block_switch_c` prints for `blk`.
+    fn switch_arms(&self, fd: &Funcdata, blk: BlockId) -> Vec<crate::p8_structure::kuna_switchmerge::PlannedCase> {
+        if let Some(arms) = self.switch_plans.plans.get(&blk) {
+            return arms.clone();
+        }
+        let n = fd.sblocks_ref().block(blk).switch_caseblocks().len();
+        (0..n)
+            .map(|index| crate::p8_structure::kuna_switchmerge::PlannedCase::new(blk, index))
+            .collect()
+    }
+
+    /// (kuna `switchmerge`) Print a switch arm from the `skip`th block of its
+    /// list, keeping the trailing jump of a `BlockGoto` around the list.
+    fn emit_arm_rest(&mut self, fd: &Funcdata, arch: &Architecture, caseblk: BlockId, skip: usize) {
+        let (list, _) = crate::p8_structure::kuna_switchmerge::arm_list(fd.sblocks_ref(), caseblk);
+        if list.is_empty() {
+            return;
+        }
+        if fd.sblocks_ref().block(caseblk).get_type() == crate::block::BlockType::Goto {
+            self.emit_block_goto_from(fd, arch, caseblk, skip);
+        } else {
+            let list = fd.sblocks_ref().block(caseblk).get_list().to_vec();
+            self.emit_block_list(fd, arch, &list[skip..]);
+        }
+    }
+
+    /// (kuna `switchmerge`) Does the switch header block `head` print no
+    /// statement before its `switch`?  Mirrors the skips of
+    /// [`emit_basic_block_ops`](PrintC::emit_basic_block_ops) in `NO_BRANCH` mode.
+    pub(crate) fn header_prints_nothing(&self, fd: &Funcdata, head: BlockId) -> bool {
+        let graph = fd.sblocks_ref();
+        let mut head = head;
+        while graph.block(head).get_type() == crate::block::BlockType::MultiGoto && graph.block(head).get_size() == 1 {
+            head = graph.block(head).get_block(0);
+        }
+        graph.block(head).get_copy().is_some_and(|bb| self.ops_print_nothing(fd, bb))
+    }
+
+    /// (kuna `switchmerge`) Does the basic block `bb` print no statement
+    /// besides its branch?
+    pub(crate) fn ops_print_nothing(&self, fd: &Funcdata, bb: BlockId) -> bool {
+        let mut cur = fd.bb_op_head(bb);
+        while let Some(inst) = cur {
+            cur = fd.bb_op_next(inst);
+            let Some(o) = fd.obank().get(inst) else {
+                continue;
+            };
+            if self.is_suppressed_statement(fd, inst) || o.is_branch() {
+                continue;
+            }
+            let implied = o.get_out().and_then(|out| fd.vbank().get(out)).is_some_and(|v| v.is_implied());
+            if !implied || crate::kuna_stackbytes::assignment(fd, inst).is_some() {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// (kuna `switchmerge`) The label values the non-default arms of `sw` print,
+    /// with their byte size and signedness.
+    pub(crate) fn switch_label_set(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        sw: BlockId,
+    ) -> Option<crate::p8_structure::kuna_switchmerge::LabelSet> {
+        let mut values = std::collections::BTreeSet::new();
+        let mut form = None;
+        for case in fd.sblocks_ref().block(sw).switch_caseblocks().iter().filter(|c| !c.isdefault) {
+            for (val, sz, signed) in self.switch_case_labels(fd, arch, sw, case) {
+                if form.is_some_and(|f| f != (sz, signed)) || !values.insert(val) {
+                    return None;
+                }
+                form = Some((sz, signed));
+            }
+        }
+        let (sz, signed) = form?;
+        Some((values, sz, signed))
     }
 
     fn emit_default_case_label(&mut self, value: uintb, markup: &MarkupRef) {
@@ -5616,10 +5798,21 @@ impl PrintC {
     /// ([`goto_rewrites`](PrintC::goto_rewrites)); off, the goto is emitted whenever
     /// a target is present.
     fn emit_block_goto(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        self.emit_block_goto_from(fd, arch, blk, 0);
+    }
+
+    /// `emit_block_goto`, printing the body list from its `skip`th block when
+    /// `skip > 0` (the rest of a switch arm whose leading switches merged).
+    fn emit_block_goto_from(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId, skip: usize) {
         self.context.push_mod();
         self.context.set_mod(modifiers::NO_BRANCH);
         let inner = fd.sblocks_ref().block(blk).get_block(0);
-        self.emit_block(fd, arch, inner);
+        if skip > 0 {
+            let list = fd.sblocks_ref().block(inner).get_list().to_vec();
+            self.emit_block_list(fd, arch, &list[skip..]);
+        } else {
+            self.emit_block(fd, arch, inner);
+        }
         self.context.pop_mod();
         if self.goto_rewrites.silent.contains(&blk) {
             self.flush_eol_warnings();
@@ -5775,6 +5968,10 @@ impl PrintC {
     }
 
     fn emit_block_do_while_c(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        if self.loop_tests.top.contains(&blk) {
+            self.emit_block_do_while_top(fd, arch, blk); // (kuna looptest)
+            return;
+        }
         // dowhile block NEVER prints the final branch.
         self.context.push_mod();
         self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
@@ -8998,7 +9195,7 @@ impl PrintC {
                 return;
             }
         }
-        self.push_vn_explicit_ir(fd, arch, vn, op);
+        self.push_vn_explicit_ir(fd, arch, self.loop_tests.leaf(vn), op); // (kuna looptest)
     }
 
     /// C++ `PrintC::pushImpliedField` (printc.cc:2161-2192): an implied Varnode
@@ -10933,8 +11130,14 @@ impl PrintC {
                 // are indexed, never that they end at a zero byte.
                 if !v.is_synthetic_literal() && off != 0 && !crate::kuna_elemptr::reaches_element_pointer(fd, vn) {
                     if let Some(sub) = ct.get_ptr_to() {
-                        // (kuna `cfstrings`) An entry reads as its string whatever its type.
-                        let sub = if sub.is_char_print() { Some(sub) } else { cfstring_char(arch, off) };
+                        // (kuna `cfstrings`) An entry reads as its string whatever its type,
+                        // and so does a literal (kuna `cstringconst`).
+                        let sub = if sub.is_char_print() {
+                            Some(sub)
+                        } else {
+                            cfstring_char(arch, off)
+                                .or_else(|| crate::kuna_cstringconst::literal_char(arch, off, ct.get_size()))
+                        };
                         if let Some(sub) = sub {
                             // point = op->getAddr() (the using op's address; used only
                             // by a segmented resolver — flat spaces ignore it).
@@ -11031,6 +11234,17 @@ impl PrintC {
                 }
                 return;
             }
+            // (kuna `cstringconst`) A constant at the start of a literal that a
+            // call takes as an argument its prototype does not declare a scalar
+            // reads as the literal.
+            if !v.is_synthetic_literal() && self.out_lang == crate::kuna_lang::OutLang::C {
+                if let Some(sub) = crate::kuna_cstringconst::call_literal_char(arch, fd, op, vn, off, sz) {
+                    let point = fd.obank().get(op).map(|o| o.get_addr().clone()).unwrap_or_default();
+                    if self.push_ptr_char_constant_ir(arch, off, sz, &sub, &point, op, vn, None) {
+                        return;
+                    }
+                }
+            }
             // Integer path.  Inside `push_integer` (printc.cc:1376) the varnode
             // high's equate-Symbol format OVERRIDES the read-facing type's format
             // when present.  So: equate-Symbol format wins; otherwise the
@@ -11050,6 +11264,17 @@ impl PrintC {
                 lit.force_sized,
                 lit.size_suffix,
             );
+            return;
+        }
+        if let Some(name) = arch.import_data.then(|| import_slot_address(fd, arch, vn, op)).flatten() {
+            self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+            self.push_atom(&Atom::with_op_vn(
+                name,
+                TagType::VarToken,
+                crate::printlanguage::SyntaxHighlight::global_color,
+                op_key(op),
+                vn_key(vn),
+            ));
             return;
         }
         // HighVariable name resolution (C++ `pushSymbolDetail`: `high->getSymbol()`
@@ -12596,6 +12821,66 @@ fn import_slot_name(fd: &Funcdata, mut vn: VarnodeId) -> Option<String> {
         return None;
     }
     fd.get_arch().query_function(v.get_addr()).map(|(name, _, _)| name)
+}
+
+/// The import whose address `op` reads when `vn` is the slot of a data import
+/// itself, not a pointer through it: the loader fills the slot with the import's
+/// address, so a read of the whole value it was loaded with, before or after a
+/// call, is `&import`. An operator C does not apply to a pointer (a mask, a
+/// shift, a multiply) keeps the slot name.
+fn import_slot_address(fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId) -> Option<String> {
+    if arch.data_import_slots.is_empty() {
+        return None;
+    }
+    let v = fd.vbank().get(vn)?;
+    let slot = v.get_addr();
+    let space = slot.get_space()?;
+    let reader = fd.obank().get(op)?;
+    if !(v.is_persist() && arch.data_import_slots.contains(&(space.get_index(), slot.get_offset())))
+        || v.get_size() as u32 != space.get_addr_size()
+        || reader.get_out() == Some(vn)
+        || integer_only_operator(reader.code())
+        || !holds_loaded_value(fd, vn, 8)
+    {
+        return None;
+    }
+    fd.get_arch().query_function(v.get_addr()).map(|(name, _, _)| name)
+}
+
+/// An operator whose C spelling rejects a pointer operand.
+fn integer_only_operator(code: OpCode) -> bool {
+    matches!(
+        code,
+        OpCode::CPUI_INT_AND
+            | OpCode::CPUI_INT_OR
+            | OpCode::CPUI_INT_XOR
+            | OpCode::CPUI_INT_NEGATE
+            | OpCode::CPUI_INT_2COMP
+            | OpCode::CPUI_INT_LEFT
+            | OpCode::CPUI_INT_RIGHT
+            | OpCode::CPUI_INT_SRIGHT
+            | OpCode::CPUI_INT_MULT
+            | OpCode::CPUI_INT_DIV
+            | OpCode::CPUI_INT_SDIV
+            | OpCode::CPUI_INT_REM
+            | OpCode::CPUI_INT_SREM
+    )
+}
+
+/// Is `vn` the slot's value at entry, carried only across calls (`INDIRECT`)
+/// and joins (`MULTIEQUAL`), never a value the function stored into it?
+fn holds_loaded_value(fd: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    let Some(v) = fd.vbank().get(vn) else { return false };
+    let Some(def) = v.get_def().filter(|_| v.is_written()) else { return true };
+    let Some(o) = fd.obank().get(def) else { return false };
+    depth > 0
+        && match o.code() {
+            OpCode::CPUI_INDIRECT => o.get_in(0).is_some_and(|i| holds_loaded_value(fd, i, depth - 1)),
+            OpCode::CPUI_MULTIEQUAL => {
+                (0..o.num_input()).all(|k| o.get_in(k).is_some_and(|i| i == vn || holds_loaded_value(fd, i, depth - 1)))
+            }
+            _ => false,
+        }
 }
 
 /// Does a printed op other than a `LOAD` through `vn` (directly or through

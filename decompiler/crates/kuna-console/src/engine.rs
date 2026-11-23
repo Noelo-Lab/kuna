@@ -31,6 +31,7 @@
 //! is precisely what `readLoaderSymbols` reads).
 
 mod lazy_inventory;
+mod kuna_thunknames;
 mod kuna_signature_names;
 
 use std::borrow::Cow;
@@ -48,7 +49,7 @@ use kuna_base::xml::{DocumentStorage, Element};
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::options::register_option_elements;
 use kuna_decomp::raw_arch::RawBinaryArchitectureCapability;
-use kuna_decomp::kuna_memoryspecs::IntoSpecRoot;
+use kuna_decomp::kuna_memoryspecs::{IntoSpecRoot, SpecRoot};
 use kuna_decomp::kuna_loadoptions::LoadOptions;
 use kuna_decomp::sleigh_arch::{register_sleigh_arch_ids, LanguageDatabase, SleighArchitecture};
 use kuna_decomp::xml_arch::XmlArchitectureCapability;
@@ -3450,6 +3451,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // (kuna) ELF GOT data imports: the slot names + externref paint exist only
         // to let `importdata` render a read through the slot, so they share its gate.
         "elfgotimports" => arch.import_data,
+        "machodataslots" => arch.import_data,
         // (kuna) The measured libc signature extension — the ~200 prototypes the
         // 27-entry base table does not carry, seeded onto IMPORTED names only. The
         // facts are computed at LOAD and COMMITTED only when this gate is on, so
@@ -3877,12 +3879,52 @@ fn build_registry() -> IdRegistry {
 /// roots).  A root may also be a tree held in memory
 /// ([`kuna_decomp::kuna_memoryspecs::MemorySpecs`]).
 fn scan_language_database(spec_roots: &[impl IntoSpecRoot], registry: &IdRegistry) -> KunaResult<LanguageDatabase> {
+    let roots: Vec<SpecRoot> = spec_roots.iter().map(IntoSpecRoot::to_spec_root).collect();
+    let key: Option<Vec<std::path::PathBuf>> = roots
+        .iter()
+        .map(|root| match root {
+            SpecRoot::Dir(path) => Some(path.clone()),
+            SpecRoot::Memory(_) => None,
+        })
+        .collect();
+    let reused = |key: &[std::path::PathBuf]| {
+        let scans = REUSED_SCANS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        scans.as_ref()?.iter().find(|(k, _)| k == key).map(|(_, db)| db.clone())
+    };
+    if let Some(db) = key.as_deref().and_then(reused) {
+        return Ok(db);
+    }
     let mut db = LanguageDatabase::new();
-    for root in spec_roots {
-        db.add_spec_root(&root.to_spec_root());
+    for root in &roots {
+        db.add_spec_root(root);
     }
     db.get_descriptions(registry)?;
+    if let Some(key) = key {
+        let mut scans = REUSED_SCANS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(scans) = scans.as_mut() {
+            scans.push((key, db.clone()));
+        }
+    }
     Ok(db)
+}
+
+type ReusedScans = Vec<(Vec<std::path::PathBuf>, LanguageDatabase)>;
+
+static REUSED_SCANS: std::sync::Mutex<Option<ReusedScans>> = std::sync::Mutex::new(None);
+
+/// From now on, reuse spec work across the bootstraps of this process: each
+/// set of on-disk spec roots is scanned once, and every later bootstrap over
+/// the same roots gets a copy of that scan; and each `.sla` a thread decodes
+/// twice is kept, so later translators from it are copies of the decoded form
+/// ([`kuna_sleigh::kuna_slacache`]). For runners whose spec trees cannot change
+/// while they run and that build many architectures, such as the datatest
+/// harness. A kept `.sla` costs about as much memory as one translator.
+pub fn reuse_specs() {
+    kuna_sleigh::kuna_slacache::enable();
+    REUSED_SCANS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get_or_insert_with(Vec::new);
 }
 
 /// Scan `spec_roots` into a [`LanguageDatabase`] once, for [`Bootstrap`]s to
@@ -5180,6 +5222,10 @@ pub(crate) fn bootstrap_object(
         &kuna_sleigh::loadimage::LoadImage::get_segments(&loader),
     );
     let globalref_ranges: Vec<(u64, u64)> = loader.data_object_ranges().to_vec();
+    let cstring_ranges: Vec<(u64, u64)> =
+        kuna_decomp::kuna_cstringconst::literal_sections(
+            loader.section_metadata().iter().map(|s| (s.name.as_str(), s.kind.as_str(), s.vma, s.size)),
+        );
 
     // (kuna `bejoin callers`) The exception-table sections, at the addresses
     // the loader maps them to (an object's synthetic layout, relocated), so
@@ -5406,6 +5452,8 @@ pub(crate) fn bootstrap_object(
 
     // (kuna `globalref`) ... and the sections a program's data objects live in.
     prog.arch_mut().globalref_ranges = std::rc::Rc::new(globalref_ranges);
+    // (kuna `cstringconst`) ... and the sections that hold only string literals.
+    prog.arch_mut().cstring_ranges = std::rc::Rc::new(cstring_ranges);
 
     // NB: the analysis-pass facts are committed later, gated, in
     // `commit_analysis_passes` (called from `IfcReadSymbols`), after the per-pass
@@ -5514,10 +5562,35 @@ fn commit_analysis_output(
     out.symbols.extend(go_prototypes.iter().map(|fact| kuna_analysis::pass::SymFact {
         addr: fact.entry, name: fact.pieces.name.clone(), kind: SymKind::Function,
     }));
+    // 0a'. (kuna `swiftobjcthunk`) Off, every function the Swift metadata
+    //      pass named after an `@objc` member takes its positional name back.
+    let positional = std::mem::take(&mut out.swift_positional_names);
+    if !prog.arch().analysis_swiftobjcthunk && !positional.is_empty() {
+        let back: HashMap<u64, (String, String)> =
+            positional.into_iter().map(|(addr, member, slot)| (addr, (member, slot))).collect();
+        let rename = |addr: u64, name: &mut String| {
+            if let Some((_, slot)) = back.get(&addr).filter(|(member, _)| member == name) {
+                *name = slot.clone();
+            }
+        };
+        out.symbols.iter_mut().for_each(|s| rename(s.addr, &mut s.name));
+        out.fid_names.iter_mut().for_each(|f| rename(f.addr, &mut f.name));
+    }
     // 0b. (kuna `swifttypes`) The Swift type-layout arm's facts, the same
     //     deferred shape: on, the typed metadata records and the accessor
     //     prototypes fold into their streams (the register-pinned parameters
     //     are parked at step 7b); off, all three are dropped.
+    // 0a. (kuna `valuewitness`) The value witness functions' names and
+    //     prototypes, and the tables typed beside the static ones: on, they
+    //     fold into their streams; off, they are dropped.
+    let witnesses = std::mem::take(&mut out.swift_witnesses);
+    if prog.arch().analysis_valuewitness {
+        out.symbols.extend(witnesses.names);
+        out.prototypes_at.extend(witnesses.prototypes);
+        if prog.arch().analysis_swifttypes {
+            out.typed_data.extend(witnesses.typed_data);
+        }
+    }
     if prog.arch().analysis_swifttypes {
         let swift = std::mem::take(&mut out.swift_types);
         out.typed_data.extend(swift.typed_data);
@@ -5531,6 +5604,15 @@ fn commit_analysis_output(
         }
     } else {
         out.swift_types = Default::default();
+    }
+    // (kuna `swifthelpers`) The Swift helper arm's facts, the same deferred
+    // shape: on, they fold into their streams; off, they are dropped.
+    let helpers = std::mem::take(&mut out.swift_helpers);
+    if prog.arch().analysis_swifthelpers {
+        out.symbols.extend(helpers.symbols);
+        out.fid_names.extend(helpers.fid_names);
+        out.typed_data.extend(helpers.typed_data);
+        out.prototypes_at.extend(helpers.prototypes_at);
     }
     // 0c. (kuna `gotypeglobals`) A Go image's `_type` descriptors as named,
     //     typed data globals, the same deferred shape: on, they fold into the
@@ -5570,7 +5652,9 @@ fn commit_analysis_output(
         kuna_signature_names::SignatureNames::collect(prog, &out, zero_size_data_names);
 
     // Keep lookup identities even when richer debug information wins the map;
-    // a spelling shared by several objects resolves to its lowest address.
+    // a spelling shared by several objects resolves to its lowest address. A
+    // data import is looked up by the name of the `externref` slot holding it.
+    let externref_slots: std::collections::HashSet<u64> = out.externref.iter().map(|&(first, _)| first).collect();
     let aliases: Vec<(String, u64)> = prog
         .loader_data_objects
         .iter()
@@ -5579,6 +5663,12 @@ fn commit_analysis_output(
         .chain(out.symbols.iter().filter(|s| s.kind == SymKind::Data).map(|s| (s.name.clone(), s.addr)))
         .chain(out.data_objects.iter().map(|d| (d.name.clone(), d.addr)))
         .chain(out.typed_data.iter().map(|d| (d.name.clone(), d.addr)))
+        .chain(
+            out.import_slot_names
+                .iter()
+                .filter(|(slot, _)| externref_slots.contains(slot))
+                .map(|(slot, name)| (name.clone(), *slot)),
+        )
         .collect();
     for (name, address) in aliases {
         let slot = prog.data_name_aliases.entry(name).or_insert(address);
@@ -5693,6 +5783,8 @@ fn commit_analysis_output(
             arch.symboltab.add_function(scope, &addr, &base, min_size, type_code)?;
         }
     }
+    let code_space_index = code_space.get_index();
+    prog.arch_mut().data_import_slots.extend(out.data_import_slots.iter().map(|&slot| (code_space_index, slot)));
 
     // 1a. Named data globals with a known byte size (`out.data_objects`, the DWARF
     //     top-level variables). Mapped into the global scope with an
@@ -5807,8 +5899,16 @@ fn commit_analysis_output(
     //    site and the printer rendered `sub_<addr>` (DIV-59).
     // (kuna `lazyfuncs`) On, an entry keeps its NAME but no `Function` is created here.
     let lazy_funcs = prog.arch().analysis_lazyfuncs;
+    let jump_thunks = if prog.arch().analysis_thunknames {
+        kuna_thunknames::jump_thunks(prog.arch(), code_space, &out.entries)
+    } else {
+        Default::default()
+    };
     let eager = if lazy_funcs {
-        crate::kuna_lazyfuncs::fact_entries(&out)
+        let mut eager = crate::kuna_lazyfuncs::fact_entries(&out);
+        let named_thunks = kuna_thunknames::thunks_to(&jump_thunks, &eager);
+        eager.extend(named_thunks);
+        eager
     } else {
         std::collections::HashSet::new()
     };
@@ -6082,6 +6182,10 @@ fn commit_analysis_output(
         prog.arch_mut().symboltab.rename_symbol(sid, &m.name)?;
         prog.register_symbol(&m.name, addr);
     }
+
+    // 3'''. (kuna `thunknames`) A placeholder jump thunk takes its target's name
+    //       behind `j_`, after every other name source has named the targets.
+    let renamed_thunks = kuna_thunknames::commit(prog, code_space, &jump_thunks)?;
 
     // 4. Detected string literals: place a typelocked `char[len]` data symbol at
     //    each (the kuna analog of `DataUtilities.createData` for an ASCII string),
@@ -6674,6 +6778,12 @@ fn commit_analysis_output(
     //     function Swift already hinted keeps that one.
     commit_input_hints(prog, code_space, &out.objc_self_hints);
 
+    // 7d. (kuna `swiftmetadata`) Each local Swift enum's case count by its
+    //     metadata accessor: the bound of the table its `switch` indexes
+    //     (`p2_lift/kuna_switchextent.rs`).
+    prog.arch_mut().loader_swift_enum_cases =
+        Rc::new(out.swift_enum_cases.iter().copied().collect());
+
     // 8. Call-fixups (the kuna analog of CallFixupAnalyzer's install loop): for
     //    each function the pass matched to a cspec call-fixup `<target>`, tag it
     //    with that fixup's inject id so the engine replaces the CALL with the fixup
@@ -6730,6 +6840,10 @@ fn commit_analysis_output(
             &fact.text,
         );
     }
+
+    // 10. (kuna `thunknames`) A renamed jump thunk takes its target's prototype,
+    //     after every prototype stream above has parked its own.
+    kuna_thunknames::inherit_prototypes(prog, code_space, &jump_thunks, &renamed_thunks);
 
     Ok(())
 }

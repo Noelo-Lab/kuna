@@ -270,6 +270,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "v850indirectbranch" => on_off(conf.v850_indirect_branch),
         "switchmodbound" => on_off(conf.switch_modulo_bound),
         "constselectjump" => conf.const_select_jump.as_str(),
+        "looptest" => conf.loop_test.as_str(),
         "switchsharedcase" => on_off(conf.switch_shared_case),
         "realtypes" => on_off(conf.realtypes),
         // (kuna `calloverlap`) Report the selected overlap policy.
@@ -303,7 +304,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "unwindstarts" => on_off(conf.analysis_unwindstarts),
         "ppc32picimports" => conf.analysis_ppc32picimports.as_str(),
         "ifuncfpret" => on_off(conf.analysis_ifuncfpret),
-        "ppcapu" => on_off(conf.analysis_ppcapu),
+        "ppcapu" => conf.analysis_ppcapu.as_str(),
         // (kuna `goabi`) Two-valued but spelled auto|off, so it reports its token.
         "goabi" => {
             if conf.analysis_goabi {

@@ -1266,6 +1266,169 @@ target leaf against the case blocks before the sort, and the jump between
 the two cases is then a fall-through the census leaves out. Off restores
 both the printing of every jump and the recorded chains.
 
+### switchmerge — one switch for a search tree of jump tables
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_switchmerge.rs
+(switch_plans)`, read by the C printer
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (PrintC::emit_block_switch_c)`)
+and by the goto census. A compiler lowers a sparse source `switch` into a
+search tree of jump tables on one selector: a table's range guard sends the
+values it does not cover to the next table, and the table's holes go to the
+source's `default:` code. The structurer gives each table its own
+`BlockSwitch`, nested in the `default:` arm of the one before it, and prints
+each hole as a `case N:` of an arm that only jumps to the code `default:`
+runs.
+
+*Transform:* at the top of body emission, for each C switch on the final
+structured tree, outer switches first, the plan lists the arms to print:
+
+- When the `default:` arm starts with a `BlockSwitch` on the same selector
+  (the same varnode or the same HighVariable), that switch's arms take the
+  place of the `default:` arm. The inner switch must print nothing before its
+  `switch` (only implied ops in its header block), carry no label, and list no
+  value the merged switch already lists. If the inner switch is the whole arm,
+  its own `default:` becomes the merged one; it
+  must have no jump-table entry that goes to its exit, and the arm must leave
+  the switch or not leave at all, so a `break;` in it still goes to the same
+  place. If the inner switch is the first block of a list (also inside a
+  `BlockGoto`), it must have no `default:` arm, no arm that leaves it and no
+  `break;` that leaves it; its unlisted values reach the rest of the list,
+  which stays the `default:` arm and prints from the next block.
+- A switch that has a jump-table entry going straight to its exit is not
+  merged into: that value prints no label, and in the merged switch it would
+  take the `default:` arm.
+- Then, when `default:` is code, an arm that is only a `goto` to the first
+  block of that code prints no labels. When `default:` is itself such a
+  `goto` and another arm holds the code, the `default:` arm and the jumps are
+  left out and the arm holding the code prints `default:` in place of its
+  labels.
+- An arm that is only a `goto` or a `break;` also prints no labels when every
+  value it lists reaches its target through the `default:` code before that
+  code prints a statement. For each value the walk starts at the basic block
+  the `default:` arm prints first and decides each branch with the value: a
+  `CBRANCH` whose condition the printer inlines from the selector and
+  constants (`==`, `!=`, ranges, masks, casts; evaluated with the ops'
+  `OpBehavior`), or a `BRANCHIND` on the selector, whose out-edge is the
+  entry labelled with the value or else the default edge (none when the
+  table has an unrecovered label or a label on two edges). It stops with no
+  drop at a block that prints a statement other than its branch, a block it
+  has seen, a back edge (which could reach a `switch` whose printed labels
+  no longer match its table), a test of anything else, or after 256 blocks. A varnode is the
+  selector when it is the switch's selector or an explicit varnode of the
+  same HighVariable: the walk passes no printed statement, so no assignment
+  to that variable runs between the `switch` and the test. Holes of a table
+  whose `default:` is an `==` chain or a range test that leads to the next
+  table go away this way.
+- After that, while the `default:` arm (plain code, not a jump) starts with
+  an `if (v == c) S` that has no else, whose condition block prints only its
+  branch and whose test is `INT_EQUAL`/`INT_NOTEQUAL` of the selector and a
+  constant `c` that no arm lists, with the then-branch reached exactly for
+  `c`, the plan prints `case c: S` right before `default:` and `default:`
+  prints the rest of its list. `S` runs for `c` and then falls into the rest,
+  as after the `if`. The arm before `default:` must not fall into it, and a
+  second `case` follows only an `S` whose printed code cannot run past its
+  end (the rule below). When
+  nothing is left of a last `default:` arm, it is not printed.
+- Last, innermost first, an `if` with an else whose two branches each print
+  as a switch on the same selector (a switch not merged elsewhere, or an
+  `if` this rule already prints as one) prints as one switch: the first
+  branch's arms, then the second's. Every label of each branch must route
+  from the condition block to that branch under the value walk above, the
+  label sets must be disjoint with the same size and sign, no owner switch
+  may have a table entry to its exit, every header must print nothing, and
+  the condition block and both branches must carry no label. The defaults
+  must do the same: both absent or `break;`, or the same jump; the second's
+  is left out. The first branch's last arm and the arm before the second
+  branch's default must not fall through. The second switch and the
+  switches merged into it are hosted by the first, so `break;` still leaves
+  to the block after the `if`.
+
+An arm moves or is left out only when the arm printed before it cannot run
+into it. That is read from the printed code, not the case's structured edges:
+the arm before must end in a `break;`, in a jump that prints, or in a leaf
+whose basic block has no successor. A jump to the arm after it in the
+switch's own order prints as nothing, and a tail the cross-jump reverter
+duplicated into the arm carries no edges; both run into the next arm. The
+census reads the plan: a left-out jump keeps no label alive, and
+the target of a `break;` inside a merged switch is the block after the switch
+that is printed. The plan only changes which arm a value is printed under,
+never which code runs for it. It applies to the C switch form only.
+
+### looptest — the test at the top of a rotated loop
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_looptest.rs
+(loop_tests)`, read by the C printer
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (PrintC::emit_block_do_while_c)`,
+`PrintC::emit_block_if`). An optimizing compiler rotates a loop: `while (c) body`
+becomes `if (c) do body while (c);` (gcc's loop header copying), and the `if`
+disappears when the compiler proves `c` on entry. The structurer recovers the
+`BlockDoWhile` that is in the binary, so a loop the source tests at the top
+prints as a guarded do-while. Under `option looptest proven` (the default) the
+plan, made at the top of body emission like `switchmerge`'s, marks the
+do-while loops that print as `while (c) { body }` and the guard `if` nodes that
+print without their test. The p-code is not touched.
+
+*Top test.* The latch is the last leaf of the loop body and ends in the
+`CBRANCH`; the header must have one entry edge and one back edge (from the
+latch), and no goto may target it. Moving the test to the top is the same
+program when the condition reads, at the top of iteration k+1, what it read at
+the bottom of iteration k. So every leaf of the printed condition (following
+implied ops, which must call nothing and store nothing) that is defined inside
+the loop must be the latch input of a header MULTIEQUAL in the MULTIEQUAL's own
+HighVariable, or a varnode that input is a COPY of. A COPY source in another
+HighVariable of the same type prints as the MULTIEQUAL's variable while the
+condition is printed (`do { q = *p; p = q; } while (q)` prints `while (p)`). A
+condition that reads any other body value (`do c = getc(); while (c != '\n')`)
+keeps the bottom test, and so does a loop whose carried variable has an
+instance in the stack frame: an optimizer that rotates loops keeps their
+counters in registers, so such a loop comes from unoptimized code, whose bottom
+test is the source's own.
+
+*Entry test.* The first top test must agree with the binary, which runs the
+body once before testing. The entry test is the condition with each carried
+value replaced by its entry value (the MULTIEQUAL input from the entry edge),
+built as an expression over the varnodes' defining ops and put in a normal
+form: COPY and CAST are transparent, constants fold, commutative operands are
+ordered, comparisons become `==`, unsigned `<` or signed `<` with a constant
+on the right and a negation flag (`0 < n` and `n != 0` meet, unsigned
+`x < 1` is `x == 0`), `x == x + n` is `n == 0`, `p == &p[n]` is `n == 0`
+(C pointer arithmetic), and a zero test sees through a zero or sign extension
+and a multiply or shift by a constant that cannot wrap the extended value. Two
+LOADs are equal when they are the same op, or when their addresses are equal
+and both read the memory the loop header sees: a LOAD the printed condition
+evaluates, one in the guard block after its last call or store, or one in pure
+blocks between the guard and the loop. The loop prints top-tested when the
+entry test folds to true (`i = 0; do … while (i < 16)`), when it equals the
+condition of an edge that dominates the header and whose target has that edge
+as its only way in (no LOADs in this case), or when it equals the condition of
+a guard. Implication is not enough: with a signed count, `n > 0` and
+`p != &a[n]` disagree for negative `n`, so such a loop keeps its do-while.
+
+*The guard.* Walking back from the header's entry edge over straight-line
+blocks reaches the guard, a block ending in a `CBRANCH` with one edge toward
+the loop. When its condition (with the edge's polarity) equals the entry test,
+the guard is left out if dropping it keeps the program: its printed condition
+calls nothing; the blocks between it and the loop hold no call, STORE or LOAD
+(a LOAD the guard protects must not run when the loop is skipped); and the
+skip edge goes either to the loop's own exit block or to a bare return equal to
+the one at the loop's exit (both void, the same varnode, or equal expressions).
+When the skip edge reaches the loop exit, every variable those blocks write
+must have all its instances defined in them or in the loop, so the code after
+the loop cannot read it on the skip path. Three tree shapes qualify, checked on
+the flattened lists around the guard `if`: `if (G) { pre; do … while (f); }`
+and `if (G) { pre; do … while (f); return K; } return K;` print the
+condition's statements and the body (the trailing return is hidden, and a void
+function's elided trailing return moves to the loop's), and `if (!G) return K;
+pre; do … while (f); return K;` prints only the condition's statements. A
+guard that is an `else` arm, or whose shape is anything else, stays, and then
+the loop stays a do-while too: a source author does not write a test twice.
+
+`option looptest binary` prints every loop where the binary tests it.
+`assume` also prints the test at the top for a loop that passes the top-test
+rule but has no entry proof (including one whose guard stays); it is wrong
+when the source was a do-while whose first test can fail. The plan applies to
+the C do-while form only.
+
 ### returndup — the whole-block duplicator (angr `ReturnDuplicatorHigh`)
 
 `decompiler/crates/kuna-decomp/src/p8_structure/kuna_returndup.rs

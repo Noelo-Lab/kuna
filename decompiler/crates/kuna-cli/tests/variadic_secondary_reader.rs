@@ -3,6 +3,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 const NAMES: [&str; 25] = [
     "caller_integer",
@@ -206,7 +207,7 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(Command::new(&binary).status().unwrap().success());
+    assert!(Command::new(&binary).capped_status().unwrap().success());
     let on = decompile(&binary);
     for name in [
         "caller_integer",
@@ -407,7 +408,7 @@ int main(void) {{
                 String::from_utf8_lossy(&compile.stderr)
             );
             assert!(
-                Command::new(&exe).status().unwrap().success(),
+                Command::new(&exe).capped_status().unwrap().success(),
                 "{cc} {level}:\n{printed}"
             );
         }

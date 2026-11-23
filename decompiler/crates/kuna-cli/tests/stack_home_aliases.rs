@@ -4,6 +4,7 @@ use crate::common;
 use serde_json::Value;
 use std::process::Command;
 use std::time::Duration;
+use crate::common::process::Capped;
 
 const FIXTURE: &str = "stackhome_alias_x86_64";
 
@@ -93,7 +94,7 @@ fn reused_home_and_argument_slots_keep_call_keys() {
                     .arg("-o")
                     .arg(&binary),
             );
-            let ran = Command::new(&binary).output().unwrap();
+            let ran = Command::new(&binary).capped_output().unwrap();
             assert!(
                 ran.status.success(),
                 "{compiler} {level} lost a key store:\n{code}"

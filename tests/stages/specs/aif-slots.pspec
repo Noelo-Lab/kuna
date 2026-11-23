@@ -1,0 +1,14 @@
+<processor_spec>
+  <properties>
+    <property key="kuna.aif.sectionInstructionStride" value="6"/>
+  </properties>
+  <programcounter register="RIP"/>
+  <context_data>
+    <context_set space="ram">
+      <set name="addrsize" val="2"/>
+      <set name="opsize" val="1"/>
+      <set name="rexprefix" val="0"/>
+      <set name="longMode" val="1"/>
+    </context_set>
+  </context_data>
+</processor_spec>

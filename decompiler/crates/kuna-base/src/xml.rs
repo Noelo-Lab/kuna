@@ -2266,7 +2266,34 @@ mod tests {
         // and kuna-gotypenames / Go type descriptors and itabs named as the linker spells them, go1.16 on
         // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
         // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
-        assert_eq!(count, 848, "corpus file count drifted");
+        // and kuna-calleefilledarg / an objc_msgSend$ selector stub keeps the arguments staged after x1 (option calleefilledarg)
+        // and kuna-calleefilledarg-ctramp / a C trampoline that fills rsi keeps the positional rule
+        // and kuna-switchextent-a64 / an unchecked AArch64 table ends at the function's next table (option switchextent)
+        // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
+        // and kuna-objcforin / an SDK struct pointer parameter types the stack object passed to it (option objcsdk)
+        // and kuna-switchnextcsel-a64 / a csel-picked next table still ends a byte-masked last table (option switchextent)
+        // and kuna-switchmerge / a search tree of jump tables prints as one switch (option switchmerge)
+        // and kuna-switchmerge-values / a hole the default code sends to the same place prints no label, and a 1100-entry table is a switch
+        // and kuna-switchmerge-split / a range split between two switches, and an == test heading default, print as one switch
+        // and kuna-jumptableslots / a guarded table indexed by x >> 8 past jumptablemax stays a computed call
+        // and kuna-cachereturn / a lazy accessor returns the value of its cache cell (option cachereturn)
+        // and kuna-thunknames / a placeholder jump thunk is named after its target (option thunknames)
+        // and kuna-swifthelpers / Swift instantiation helpers and lazy witness table accessors (option swifthelpers)
+        // and kuna-aif-slot-edges / inferred entries start a complete section-relative slot
+        // and kuna-powerpc-isel / explicit language and call recovery
+        // and kuna-mips-o64-calls / O64 stack arguments and Octeon conditional calls
+        // and kuna-mips-kscratch / Octeon kernel scratch transfers preserve both selectors across calls
+        // and kuna-mips-kscratch3 / Octeon III additional kernel scratch registers
+        // and kuna-piecepathology / a call's declared int is the return, not the clobbered rest of its register
+        // and kuna-returnhintcaller / a callee return hint keeps the argument passed in the return register
+        // and kuna-boundschecked / an Annex K bounds-checked call keeps every declared argument
+        // and kuna-declaredpop / a declared import pop is the stack solver's equation
+        // and kuna-fcmp-unordered / ARM and AArch64 float conditions keep their unordered case
+        // and kuna-bytestorewidth / a constant word store into a byte array keeps its width (bytestorewidth)
+        // and kuna-calleefloatreads / a call passes the float register its unstated callee reads
+        // and kuna-calleepreservesargs / a register a leaf callee leaves alone carries a value to the next call
+        // and kuna-framepublish-seh / a published SEH record holds only the frame writes at or above it
+        assert_eq!(count, 878, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

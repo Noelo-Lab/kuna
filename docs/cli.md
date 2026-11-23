@@ -627,7 +627,12 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `bytes <addr> <hex\|@FILE>` | the bytes mapped here are these, whatever the file holds |
 
 Storage is a register name (`RDI`), the console's `%RDI`, or its address grammar
-(`[stack,-0x18,8]`). Addresses are hexadecimal with or without `0x`. A size is
+(`[stack,-0x18,8]`). A register name is matched as the language spells it, then in upper
+and lower case (`rax` is x86's `RAX`). A name the target's language does not define
+(`no_such_register`, or `RAX` on AArch64), or text after it other than a `:size` or
+`+offset` suffix (`%x0:junk`), is **rejected** with the token, and `--assert-strict` exits
+non-zero. A numeric register offset is read in C notation, so write it with `0x`
+(`%0x4000`, `[register,0x4000,8]`); `%4000` is decimal. Addresses are hexadecimal with or without `0x`. A size is
 decimal unless it carries a `0x`, and `<addr> <size>` is accepted wherever
 `<addr>+<size>` is. A C type may be anything the console's `parse line` accepts,
 including a `typedef` you asserted earlier in the same run.
@@ -2238,7 +2243,12 @@ Behaviors specific to `decompile-all`:
   the loader resolved names at. Callable slots in PE IATs, Mach-O symbol-pointer
   sections, and similar data areas remain in `kuna functions`, remain installed
   for named calls and prototypes, and remain reachable through explicit `--addr`;
-  they are not automatically decoded as function bodies. The slot test is what
+  they are not automatically decoded as function bodies. A Mach-O slot whose
+  import's mangling names a data object (a Swift type's metadata or descriptor, a
+  witness table, an Objective-C class, a C++ vtable or static member) is not in
+  `kuna functions` at all: it is named in the symbol table only, as an ELF GOT
+  data slot is, and that name selects the slot as a data object (`kuna xrefs
+  --to OBJC_CLASS_$_NSObject`, `kuna read`). The slot test is what
   covers a packed PE that keeps its whole import directory inside its one
   `CODE|EXECUTE` section, where the section flags cannot tell the two apart.
   Analysis-discovered entries inside executable sections join
@@ -2325,8 +2335,8 @@ Behaviors specific to `decompile-all`:
   where the wider inventory is the point; a single-function request that already
   named its function gains nothing from it. (The gap was invisible under the
   default `auto` policy below 500 KiB, which resolves to `aggressive` and names
-  all three options itself.) The injected `aif on` is the byte-granular gap
-  cursor; `aggressive` sets `aif strict`, the aligned one, and an explicit
+  all three options itself.) By default the injected `aif on` uses a byte-granular gap
+  cursor. `aggressive` sets `aif strict`, the aligned one, and an explicit
   `--option aif on` after it replaces `strict` by last-write precedence.
   `kuna functions` shares the **discovery** half of that policy (DIV-68): on a
   non-x86-64 binary it injects `funcstart_patterns on`, `aif on`, and the
@@ -2339,6 +2349,18 @@ Behaviors specific to `decompile-all`:
   entry-neutral on that architecture, so it stays the decompiling surfaces'
   default. The interactive console keeps the engine default off; an auto-selected
   `aggressive` preset names all three itself, on either surface.
+
+  A processor that guarantees fixed-width instruction slots from the beginning
+  of every executable section may declare their size in its processor spec,
+  for example `<property key="kuna.aif.sectionInstructionStride" value="6"/>`
+  inside `<properties>`. AIF then probes section-relative slots in the gap
+  walk, including the first slot at address zero. A discovered entry must start
+  a complete slot of undefined bytes in its own section. Its first instruction
+  must fit within that slot. When skipping padding, AIF publishes the
+  destination only if the validated body reaches it.
+  With only executable segment or raw mapping bounds, AIF keeps the cursor
+  policy of the selected mode.
+  Symbol and explicit function entries keep their usual admission rules.
   Omitted `--mode` first resolves the size-based `auto` policy. `--mode fast`
   names and disables the three exhaustive program-wide decode/discovery options
   (`listing`, `funcstart_patterns`, `aif`), suppressing those injections, and
@@ -2440,8 +2462,9 @@ Behaviors specific to `decompile-all`:
   value, `0` included, always wins; outside a capped cgroup there is no
   default, and a function the limit never stops is unchanged. It reads the
   resident set (`VmRSS` on Linux; on Windows the larger of the working set and
-  the private commit), so on a platform without one (macOS) a non-zero value
-  is refused. A function the limit stops usually has an
+  the private commit; on macOS the physical footprint, which drops as the
+  allocator marks freed pages reusable), so on a platform without one a
+  non-zero value is refused. A function the limit stops usually has an
   alternative that keeps some output: `--max-size N` leaves functions over N
   bytes out of the run, and `--option maxinstruction N` truncates their flow
   (see *The instruction budget*).
@@ -2822,7 +2845,11 @@ name is on two functions: the export's body and the stub. A name selects the bod
 veneer whose slot the image's own dynamic relocations bind to that body (the
 relocation's symbol is defined in the image at the body's address). The callers
 through the stub are then the export's callers, and `target.aliases` lists the
-stub and its GOT slot. The join is the relocation, never the shared name. An
+stub and its GOT slot. The join is the relocation, never the shared name. On ARM,
+AArch64, PowerPC32 (absolute stubs and the executable BSS PLT) and PowerPC64 ELFv1
+the stub is recognized by its instruction shape and the slot it loads. Thumb
+interworking prefixes, `--long-plt` and PAC (`autia1716`) entries and PowerPC32
+secure-PLT PIC stubs are not joined; query the stub's address for those. An
 **address** still answers for that address alone: `--to <body>` stays at the direct
 references, and `--to <stub>` lists only its slot as an alias.
 
@@ -2893,7 +2920,8 @@ with the reason, so the text answer never reads as complete when it is not:
 ```json
 {"binary": "...", "direction": "to", "count": N,
  "target": {"name","address","address_hex",
-            "aliases": [{"name","address","address_hex"}]},
+            "aliases": [{"name","address","address_hex"}],
+            "call_destination_candidate": {"reason","call_site","call_site_hex"}},
  "coverage": {"decoded": true, "section": "__TEXT,__text",
               "code_section": true, "executable": true,
               "unwalked": [{"name","address","address_hex","section"}],
@@ -3015,6 +3043,15 @@ no such gap.
 | `executable` | The image maps that memory executable. `null` when it is in no section, or for a relocatable object. |
 | `unwalked` | The targets of decoded direct calls and branches that lie in executable memory not marked as code, that a symbol names, and that the walk did not decode. The references they make are in no answer; `--from` one decodes it. |
 | `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section; a `--to` answer gets one while `unwalked` is not empty, and when the image is one entry of a kernel collection and the address is in another entry or in none ([`--option kernelcache`](#--option-kernelcache-id--one-entry-of-an-apple-kernel-collection)). |
+
+An incoming JSON answer may include `target.call_destination_candidate`. It names
+the lowest-address decoded direct call site to the exact selected address. The
+reason `unflagged_executable_section` means the named destination is outside the
+function inventory and the walk stopped at its executable section, which has no
+instruction flags. Kuna omits the field for declared data, alias-only calls,
+indirect calls, and queries that filter out calls. This is evidence for an
+explicit follow-up; it does not establish a function body or add an inventory
+or project-export entry.
 
 ```
 $ kuna xrefs unflagged_macho_arm64 --to _goal

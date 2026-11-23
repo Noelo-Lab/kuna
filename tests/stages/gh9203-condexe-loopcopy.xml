@@ -39,6 +39,9 @@
   <!-- returndup (DIV-54 default-on) splits this function's shared epilogue, which moves
        the loop-body COPY this test watches; off to isolate the placement guard. -->
   <com>option returndup off</com>
+  <!-- looptest (default proven) prints this loop as `while (v)`: its entry test
+       7 != 0 folds to true.  Kept bottom-tested so assert #2 still sees the loop. -->
+  <com>option looptest binary</com>
   <com>lo fu FUN_0</com>
   <com>decompile</com>
   <com>print C</com>

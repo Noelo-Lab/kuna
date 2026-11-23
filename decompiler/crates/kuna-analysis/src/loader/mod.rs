@@ -90,6 +90,7 @@ pub mod kuna_dataptrs;
 // function it defines.
 pub(crate) mod kuna_pltlocal;
 pub mod kuna_elfgotimports;
+pub mod kuna_machodataslots;
 // (kuna) `msvcfpconst`: recover an MSVC `__real@` floating-point constant COMDAT
 // from its mangled symbol name -- materialise the undefined half's bytes at its
 // synthetic extern slot, and mark both halves foldable.

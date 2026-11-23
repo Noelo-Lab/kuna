@@ -47,6 +47,7 @@ pub enum DrivePurpose {
 /// branch/call/coderef/marker property flags.
 struct ArchFlowEnv {
     mapped_image: Option<Arc<dyn ImageBytes>>,
+    ppc32_lr: Option<crate::kuna_ppc32lrflow::Key>,
     /// (kuna `calltrampoline` / `callpopret`) Memo of both return-address-
     /// discarding probes, keyed by direct-call target.  Both inspect the same
     /// bounded raw decode, so sharing the verdict also keeps the second probe
@@ -73,6 +74,10 @@ impl ArchFlowEnv {
 }
 
 impl FlowEnvironment for ArchFlowEnv {
+    fn defers_return_classification(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
+        self.ppc32_lr.is_some_and(|lr| crate::kuna_ppc32lrflow::is_lr_return(fd, op, lr))
+    }
+
     fn is_isa_mode_switch(&self, index: u64) -> bool {
         self.arch()
             .userops
@@ -451,6 +456,10 @@ impl FlowEnvironment for ArchFlowEnv {
         }
         crate::p2_lift::kuna_ppcpcread::is_pc_capture(fd, op, &arch.kuna_function_bodies,
             |dest| self.query_call(dest).is_some())
+    }
+
+    fn prepare_flow_override(&self, fd: &mut Funcdata, site: &Address, kind: u32) -> KunaResult<()> {
+        crate::p2_lift::kuna_ppc32lrflow::align_target(fd, self.arch(), site, kind)
     }
 
     fn is_v850_indirect_jmp(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
@@ -928,7 +937,7 @@ pub fn ppc32_pic_call_bindings(
     within_flow_budget(arch, |arch| {
         crate::kuna_armfloatreturn::park_float_library_prototypes(arch);
         let fd = arch.new_funcdata(name, entry, size)?;
-        let data = generate_flow(arch, fd)?;
+        let data = generate_flow(arch, fd, None, None)?;
         Ok(crate::kuna_ppc32piccalls::prove(&data, arch).into_values().collect())
     })
 }
@@ -1008,7 +1017,7 @@ pub fn build_and_follow_flow_with_override_and_protos(
 #[allow(clippy::mutable_key_type)]
 fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
     let comments = fd.pending_comment_count();
-    let mut data = generate_flow(arch, fd)?;
+    let mut data = follow_lr_flow(arch, fd)?;
     let bindings = crate::kuna_ppc32piccalls::prove(&data, arch);
     if !bindings.is_empty() {
         // The discarded flow ran past calls the proof ends; nothing it buffered
@@ -1016,9 +1025,55 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
         data.clear();
         data.truncate_pending_comments(comments);
         data.ppc32_pic_calls = bindings;
-        data = generate_flow(arch, data)?;
+        data = follow_lr_flow(arch, data)?;
     }
     publish_flow(arch, data)
+}
+
+#[allow(clippy::mutable_key_type)]
+fn follow_lr_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
+    use crate::p2_lift::kuna_ppc32lrflow::{link_register, BranchPlans, Classification};
+    let comments = fd.pending_comment_count();
+    let lr = link_register(arch);
+    let mut data = generate_flow(arch, fd, lr, None)?;
+    let mut automatic = BranchPlans::new();
+    let mut work = 0usize;
+    let mut rounds = 0usize;
+    loop {
+        rounds += 1;
+        if rounds > 4096 {
+            return Err(KunaError::lowlevel("PPC32 LR flow did not converge"));
+        }
+        match crate::p2_lift::kuna_ppc32lrflow::classify(&mut data, arch, &automatic, &mut work)? {
+            Classification::Changed => continue,
+            Classification::Sites(sites) => {
+                if sites.is_empty() {
+                    break;
+                }
+                for (site, plan) in sites {
+                    if !automatic.contains_key(&site) {
+                        debug_assert_eq!(
+                            data.get_override().get_flow_override(&site),
+                            crate::overrides::flow_type::NONE,
+                        );
+                        data.get_override_mut().insert_flow_override(
+                            site.clone(),
+                            crate::overrides::flow_type::BRANCH,
+                        );
+                    }
+                    automatic.insert(site, plan);
+                }
+                data.clear();
+                data.truncate_pending_comments(comments);
+                data = generate_flow(arch, data, lr, Some(&automatic))?;
+            }
+        }
+    }
+    for site in automatic.into_keys() {
+        debug_assert_eq!(data.get_override().get_flow_override(&site), crate::overrides::flow_type::BRANCH);
+        data.get_override_mut().remove_flow_override(&site);
+    }
+    Ok(data)
 }
 
 /// C++ `Funcdata::followFlow` through `startProcessing`'s sorting, without
@@ -1026,7 +1081,12 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
 /// (`with_caller_return_types`) fails when an instruction crosses its declared
 /// extent, where an ordinary drive still shows the clipped body.
 #[allow(clippy::mutable_key_type)]
-fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
+fn generate_flow(
+    arch: &mut Architecture,
+    fd: Funcdata,
+    ppc32_lr: Option<crate::kuna_ppc32lrflow::Key>,
+    lr_branches: Option<&crate::kuna_ppc32lrflow::BranchPlans>,
+) -> KunaResult<Funcdata> {
     let _load = arch.load_scope();
     crate::kuna_mipsunaligned::paint(arch);
     crate::kuna_memtag::paint(arch, fd.get_address());
@@ -1042,6 +1102,7 @@ fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> 
         Some((start.clone(), Address::new(space, last)))
     });
     let env = ArchFlowEnv {
+        ppc32_lr,
         mapped_image: if arch.mapped_flow_boundary_image {
             arch.translate().loader_rc().borrow().shared_bytes()
         } else {
@@ -1051,6 +1112,7 @@ fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> 
         return_discard_memo: Default::default(),
     };
     let mut flow = FlowInfo::new(fd, &env);
+    flow.set_lr_branches(lr_branches);
     if let Some((baddr, eaddr)) = range {
         flow.set_range(baddr, eaddr);
     }
@@ -1168,6 +1230,7 @@ fn run_jumptable_pipeline(
     // Build the partial's basic blocks (partialflow.generateBlocks).
     let env = ArchFlowEnv {
         mapped_image: None,
+        ppc32_lr: None,
         arch: arch as *const Architecture,
         return_discard_memo: Default::default(),
     };

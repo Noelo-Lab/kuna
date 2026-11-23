@@ -992,6 +992,9 @@ pub mod param_trial_flags {
     pub const STACK_ADDRESS: uint4 = 0x800;
     /// (kuna) Solid only through a reload from the caller's frame.
     pub const FRAME_RELOAD: uint4 = 0x1000;
+    /// (kuna) `calleefilledarg`: the callee loads this register itself, so the
+    /// slot is no parameter and no evidence about the slots after it.
+    pub const CALLEE_FILLED: uint4 = 0x2000;
 }
 
 /// A register or memory location that may be used to pass a parameter or return
@@ -1164,6 +1167,10 @@ impl ParamTrial {
     pub fn has_stack_address(&self) -> bool { self.flags & param_trial_flags::STACK_ADDRESS != 0 }
     pub fn set_frame_reload(&mut self) { self.flags |= param_trial_flags::FRAME_RELOAD; }
     pub fn has_frame_reload(&self) -> bool { self.flags & param_trial_flags::FRAME_RELOAD != 0 }
+    /// (kuna) `calleefilledarg`: the callee writes this register before it
+    /// could read it, and the caller put nothing in it.
+    pub fn set_callee_filled(&mut self) { self.flags |= param_trial_flags::CALLEE_FILLED; }
+    pub fn is_callee_filled(&self) -> bool { self.flags & param_trial_flags::CALLEE_FILLED != 0 }
 
     /// Does this show solid movement into the Varnode (C++ `hasAncestorSolid`)?
     pub fn has_ancestor_solid(&self) -> bool {
@@ -1345,6 +1352,10 @@ pub struct ParamActive {
     /// (kuna) `armfloatargs`: s-registers the function's body reads on entry,
     /// which are parameters even where they would be a back-fill slot.
     read_singles: Vec<Address>,
+    /// (kuna) `calleefilledarg`: the callee's entry-liveness probe, which says
+    /// which argument registers it loads itself; see
+    /// [`crate::p4_calls::kuna_calleefilledarg`].
+    callee_filled: Option<Rc<crate::p4_calls::kuna_calleedeadarg::CalleeEntryDead>>,
 }
 
 impl ParamActive {
@@ -1367,6 +1378,7 @@ impl ParamActive {
             cond_exe_retry: Default::default(), // (kuna) condexeret
             single_floats: Vec::new(), // (kuna) armfloatargs
             read_singles: Vec::new(),  // (kuna) armfloatargs
+            callee_filled: None,       // (kuna) calleefilledarg
         }
     }
 
@@ -1530,6 +1542,25 @@ impl ParamActive {
     /// (kuna) `armfloatargs`: record the s-registers the body reads on entry.
     pub fn set_read_singles(&mut self, addrs: Vec<Address>) {
         self.read_singles = addrs;
+    }
+
+    /// (kuna) `calleefilledarg`: hand over the callee's entry-liveness probe.
+    pub fn set_callee_filled(
+        &mut self,
+        dead: Option<Rc<crate::p4_calls::kuna_calleedeadarg::CalleeEntryDead>>,
+    ) {
+        self.callee_filled = dead;
+    }
+
+    /// (kuna) `calleefilledarg`: is trial `i` a register slot the callee loads
+    /// itself and the caller never filled?  Either the scoring marked it so
+    /// ([`ParamTrial::is_callee_filled`]), or it is a hole `buildTrialMap`
+    /// backfilled on a register the probe proves written before any read.
+    pub fn is_callee_filled(&self, i: int4) -> bool {
+        let t = self.get_trial(i);
+        t.is_callee_filled()
+            || (t.is_unref()
+                && self.callee_filled.as_ref().is_some_and(|d| d.proves_dead(t.get_address(), t.get_size())))
     }
     /// (kuna) `condexeret`: the state of the retry pass.
     pub fn cond_exe_retry(&self) -> &crate::p4_calls::kuna_condexeret::CondExeRetry {
@@ -3252,6 +3283,11 @@ impl ParamListStandard {
         let mut curgroup = -1;
         let mut alldefnouse = false;
         for i in start..stop {
+            if active.is_callee_filled(i) {
+                // (kuna) `calleefilledarg`: not a slot of this callee.
+                // See [`crate::p4_calls::kuna_calleefilledarg`].
+                continue;
+            }
             let (entry, defnouse) = {
                 let curtrial = active.get_trial(i);
                 (curtrial.get_entry(), curtrial.is_definitely_not_used())
@@ -3381,7 +3417,9 @@ impl ParamListStandard {
                 let trial = active.get_trial(i);
                 (trial.is_definitely_not_used(), trial.is_active())
             };
-            if defnouse {
+            // (kuna) `calleefilledarg`: a hole the callee fills itself is
+            // never materialised as an argument.
+            if defnouse || active.is_callee_filled(i) {
                 continue;
             }
             if !is_act {

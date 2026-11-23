@@ -509,7 +509,7 @@ pub(crate) fn parse_machaddr(
     let mut res = Address::new(space, 0);
     let oversize = res
         .read(&token, manage)
-        .map_err(|_| "Bad machine address".to_string())?;
+        .map_err(|e| format!("Bad machine address: {}", e.explain()))?;
     let defaultsize = if size == -1 { oversize } else { size };
     Ok((res, defaultsize))
 }

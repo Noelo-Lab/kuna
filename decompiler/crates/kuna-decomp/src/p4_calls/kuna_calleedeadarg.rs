@@ -207,6 +207,9 @@ pub struct CalleeEntryDead {
     /// in a register survives one of these provably. Read by
     /// [`resolve_forward_transfer`].
     opaque_cuts: Vec<ByteSet>,
+    /// How many of [`Self::opaque_cuts`] are an indirect jump (`BRANCHIND`).
+    /// Read by [`Self::is_trampoline`].
+    jumps: usize,
     /// The subset of [`Self::cuts`] taken at a DIRECT call, with the target's
     /// entry address. Naming the target is not the same as accounting for what
     /// is forwarded to it — the callee's own recovery only accounted for a
@@ -488,6 +491,24 @@ impl CalleeEntryDead {
             && self.takes_none(idx, off, end)
     }
 
+    /// Is this body a trampoline: every path it has leaves through an indirect
+    /// jump (through a GOT slot or a register), none returns, calls or runs a
+    /// user op, and nothing is read before it is written? What such a body
+    /// writes is its own business; every other register goes to the real
+    /// target untouched. Read by [`crate::p4_calls::kuna_calleefilledarg`].
+    pub fn is_trampoline(&self) -> bool {
+        self.complete
+            && !self.lost
+            && self.skipped.is_none()
+            && !self.cuts.is_empty()
+            && self.cuts.len() == self.jumps
+            && self.named_cuts.is_empty()
+            && self.trap_cuts.is_empty()
+            && self.returning_opaque == 0
+            && self.reads.is_empty()
+            && self.return_reads.is_empty()
+    }
+
     /// Does some path reach a system call with a byte of `[addr, addr+size)`
     /// still holding the caller's value, so the kernel may read it?
     pub fn traps_unwritten(&self, addr: &Address, size: int4) -> bool {
@@ -614,6 +635,7 @@ impl CalleeEntryDead {
             reads,
             cuts: cuts.into_iter().map(|c| c.into_iter().collect()).collect(),
             opaque_cuts: Vec::new(),
+            jumps: 0,
             named_cuts: Vec::new(),
             returning_opaque: 0,
             return_reads: Vec::new(),
@@ -860,7 +882,8 @@ type ThroughMemo = HashMap<(int4, u64, u32), Rc<Vec<RegRead>>>;
 /// was handed. A target's read counts for the register bytes nothing on the
 /// forwarder's path wrote before that call ([`add_reads_through`]), and only
 /// where the target's own `protoorder` statement takes that register on the
-/// terms `passthrough` asks of a callee ([`taken_reads`]): a variadic's
+/// terms `passthrough` asks of a callee, or, where it stated nothing, its body
+/// takes it ([`taken_reads`]): a variadic's
 /// register-save prologue reads every argument register, and a forwarder into
 /// one would otherwise be read as taking them all. Calls are followed
 /// [`MAX_THROUGH_DEPTH`] deep, so a cycle of calls ends. Only
@@ -883,8 +906,10 @@ pub fn reads_through_calls(
 
 /// The live reads of the function at `entry`, its own direct calls followed
 /// `depth` more levels, kept where its statement takes a parameter: an
-/// arity-sound list naming the register, not as a variadic tail. Empty for a
-/// function that stated nothing.
+/// arity-sound list naming the register, not as a variadic tail. A function
+/// that stated nothing is read by its body: the leading run of the default
+/// model's argument registers it takes
+/// ([`crate::p4_calls::kuna_passthrough::taken_run`]).
 fn taken_reads(
     arch: &mut crate::architecture::Architecture,
     entry: &Address,
@@ -908,11 +933,35 @@ fn taken_reads(
             let reads = through.unwrap_or_else(|| dead.reads_live.clone());
             reads.into_iter().filter(|r| takes(&stated, r)).collect()
         }
+        None if arch.pass_through => {
+            let dead = probe_cached(arch, entry, reg_idx)?;
+            let through = if depth == 0 {
+                None
+            } else {
+                add_reads_through(&dead, |t| taken_reads(arch, t, reg_idx, depth - 1, memo))
+            }
+            .map(|reads_live| CalleeEntryDead { reads_live, ..(*dead).clone() });
+            match arch.default_fp().cloned() {
+                Some(model) if dead.complete => {
+                    let regs = crate::p4_calls::kuna_passthrough::general_arg_registers(&model);
+                    let run = crate::p4_calls::kuna_passthrough::taken_run(&dead, through.as_ref(), &regs);
+                    let reads = through.as_ref().map_or(&dead.reads_live, |t| &t.reads_live);
+                    reads.iter().filter(|r| run.iter().any(|(a, s)| overlaps_read(a, *s, r))).copied().collect()
+                }
+                _ => Vec::new(),
+            }
+        }
         _ => Vec::new(),
     };
     let out = Rc::new(taken);
     memo.insert((key.0, key.1, depth), Rc::clone(&out));
     Some(out)
+}
+
+/// Does `read` overlap `[a, a+size)`?
+fn overlaps_read(a: &Address, size: int4, &(ridx, off, sz): &RegRead) -> bool {
+    let end = off + sz.max(0) as u64;
+    a.get_space().is_some_and(|s| s.get_index() == ridx) && a.get_offset() < end && off < a.get_offset() + size.max(0) as u64
 }
 
 /// Does `stated` take a parameter that `read` overlaps, other than a variadic tail?
@@ -1276,6 +1325,7 @@ fn probe<T: kuna_sleigh::translate::Translate + ?Sized>(
         res.stored_read_bytes.clear();
         res.cuts.clear();
         res.opaque_cuts.clear();
+        res.jumps = 0;
         res.named_cuts.clear();
         res.returning_opaque = 0;
         res.return_reads.clear();
@@ -1587,6 +1637,7 @@ fn step_instruction(
                 let returns = op.opc == OpCode::CPUI_CALLOTHER
                     && !emit.internal_flow
                     && note_returning_user_op(res, &emit.ops[k + 1..]);
+                res.jumps += usize::from(op.opc == OpCode::CPUI_BRANCHIND);
                 res.opaque_cuts.push(cur.clone());
                 res.cuts.push(cur);
                 if returns {
@@ -1778,7 +1829,8 @@ pub fn seed_callee_entry_dead(
         if let Some(d) = probe_cached(arch, &e, reg_idx) {
             data.kuna_set_callee_entry_dead(&e, d);
         }
-        if pass_through && arch.kuna_protoorder_types.get(&key).is_some_and(|s| !s.inputs.is_empty()) {
+        let stated = arch.kuna_protoorder_types.get(&key);
+        if (pass_through && stated.is_some_and(|s| !s.inputs.is_empty())) || (arch.pass_through && stated.is_none()) {
             if let Some(t) = reads_through_calls(arch, &e, reg_idx, &mut through_memo) {
                 data.kuna_set_callee_entry_through(&e, t);
             }

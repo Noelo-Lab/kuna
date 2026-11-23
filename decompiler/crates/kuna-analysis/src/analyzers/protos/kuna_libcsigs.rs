@@ -25,6 +25,13 @@
 //! * the FORTIFY `*_chk` family from GCC's own builtin types, checked with
 //!   `__builtin_types_compatible_p`;
 //! * `__stack_chk_fail{,_local}` from glibc `debug/stack_chk_fail{,_local}.c` (`void (void)`).
+//! * the C11 Annex K bounds-checked rows from `gcc -aux-info` over mingw-w64's
+//!   `<string.h>`/`<stdio.h>` with `MINGW_HAS_SECURE_API`, and `memset_s`, which
+//!   mingw-w64 lacks, from FreeBSD `include/string.h`. Both headers define
+//!   `errno_t` as `int` and `rsize_t` as `size_t`, as Annex K does (K.3.2, K.3.4).
+//!   Names whose declarations differ between implementations are left out:
+//!   `snprintf_s`, which some libraries give an extra count, and `strtok_s` and
+//!   `qsort_s`, whose Annex K and Microsoft parameter lists differ.
 //!
 //! A declaration whose every slot is not width-stable is **rejected**, not
 //! approximated: `off_t`/`time_t`/`long long`/`char` parameters have no honest
@@ -653,7 +660,26 @@ pub(super) const LIBC_EXT: &[(&str, Sig)] = &[
     // converts `c_strtod`'s result by value.
     ("strtod_l", Sig { ret: Ty::Double, params: &[Ty::CharPtr, Ty::CharPtrPtr, Ty::VoidPtr], vararg: -1 }),
     ("strtof", Sig { ret: Ty::Float, params: &[Ty::CharPtr, Ty::CharPtrPtr], vararg: -1 }),
+    // ---- bounds-checked interfaces (C11 Annex K) ----
+    // The Annex K names whose declarations agree across implementations, so an
+    // import's spelling fixes its signature. GCC loads a size passed twice into
+    // the later register and copies it into the earlier one (`mov x3,#64;
+    // mov x1,x3`), and call recovery drops a trial whose value also reaches an
+    // earlier argument, so without a row the count is lost.
+    ("memcpy_s", Sig { ret: Ty::Int, params: &[Ty::VoidPtr, Ty::Size, Ty::VoidPtr, Ty::Size], vararg: -1 }),
+    ("memmove_s", Sig { ret: Ty::Int, params: &[Ty::VoidPtr, Ty::Size, Ty::VoidPtr, Ty::Size], vararg: -1 }),
+    ("memset_s", Sig { ret: Ty::Int, params: &[Ty::VoidPtr, Ty::Size, Ty::Int, Ty::Size], vararg: -1 }),
+    ("sprintf_s", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::Size, Ty::CharPtr], vararg: 3 }),
+    ("strcat_s", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::Size, Ty::CharPtr], vararg: -1 }),
+    ("strcpy_s", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::Size, Ty::CharPtr], vararg: -1 }),
+    ("strncat_s", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::Size, Ty::CharPtr, Ty::Size], vararg: -1 }),
+    ("strncpy_s", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::Size, Ty::CharPtr, Ty::Size], vararg: -1 }),
 ];
+
+/// The bounds-checked rows of [`LIBC_EXT`], which a program often defines for
+/// itself under the same spelling and a parameter list of its own.
+const BOUNDS_CHECKED: &[&str] =
+    &["memcpy_s", "memmove_s", "memset_s", "sprintf_s", "strcat_s", "strcpy_s", "strncat_s", "strncpy_s"];
 
 /// (kuna `armfloatreturn`) The C99 `<math.h>` functions (and glibc's `sincos`)
 /// a hard-float ARM image imports, laid out by the widened VFP model once the
@@ -776,7 +802,13 @@ impl AnalysisPass for LibcSigsPass {
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
         seed_named_prototypes(&mut out, &imported, LIBC_EXT, types, word_size, super::L);
-        seed_resolved_prototypes(&mut out, &resolved, LIBC_EXT, types, word_size, super::L);
+        let defined = super::defined_function_names(ctx.file, ctx.bytes);
+        let stubs: Vec<_> = resolved
+            .iter()
+            .filter(|(name, _)| !(BOUNDS_CHECKED.contains(&name.as_str()) && defined.contains(name)))
+            .cloned()
+            .collect();
+        seed_resolved_prototypes(&mut out, &stubs, LIBC_EXT, types, word_size, super::L);
         let complex_max = crate::analyzers::dwarf::kuna_dwarfcomplex::max_size(
             ctx.file.format(),
             ctx.file.architecture(),
@@ -931,6 +963,35 @@ mod tests {
                 !LIBC_EXT.iter().any(|(n, _)| *n == name),
                 "{name} is either long double or imported by fewer than three corpus binaries"
             );
+        }
+    }
+
+    /// The bounds-checked rows keep C11 Annex K's order: the destination's
+    /// capacity follows the destination, and the byte or character count comes
+    /// last. Names whose declarations differ between implementations stay out.
+    #[test]
+    fn the_bounds_checked_entries_keep_the_annex_k_slot_order() {
+        let get = |want: &str| &LIBC_EXT.iter().find(|(n, _)| *n == want).expect(want).1;
+        let memset_s = get("memset_s");
+        assert!(matches!(memset_s.ret, Ty::Int), "errno_t memset_s(void *, rsize_t, int, rsize_t)");
+        assert!(matches!(memset_s.params[..], [Ty::VoidPtr, Ty::Size, Ty::Int, Ty::Size]));
+        for name in ["memcpy_s", "memmove_s"] {
+            assert!(matches!(get(name).params[..], [Ty::VoidPtr, Ty::Size, Ty::VoidPtr, Ty::Size]), "{name}");
+        }
+        for name in ["strncpy_s", "strncat_s"] {
+            assert!(matches!(get(name).params[..], [Ty::CharPtr, Ty::Size, Ty::CharPtr, Ty::Size]), "{name}");
+        }
+        for name in ["strcpy_s", "strcat_s"] {
+            assert!(matches!(get(name).params[..], [Ty::CharPtr, Ty::Size, Ty::CharPtr]), "{name}");
+        }
+        for name in BOUNDS_CHECKED {
+            get(name);
+        }
+        let sprintf_s = get("sprintf_s");
+        assert!(matches!(sprintf_s.params[..], [Ty::CharPtr, Ty::Size, Ty::CharPtr]));
+        assert_eq!(sprintf_s.vararg, 3, "char *, rsize_t, const char *fmt, ...");
+        for name in ["snprintf_s", "_snprintf_s", "vsprintf_s", "vsnprintf_s", "sscanf_s", "strtok_s", "qsort_s"] {
+            assert!(!LIBC_EXT.iter().any(|(n, _)| *n == name), "{name} has no declaration every implementation shares");
         }
     }
 

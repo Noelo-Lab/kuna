@@ -1,4 +1,6 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
+#[path = "ppc32_computed_lr.rs"]
+mod ppc32_computed_lr;
 #[path = "mips_elf_selection.rs"]
 mod mips_elf_selection;
 #[path = "return_branch_cli.rs"]
@@ -31,6 +33,9 @@ mod array_record;
 
 #[path = "aif_lea_padding.rs"]
 mod aif_lea_padding;
+
+#[path = "switchextent_cli.rs"]
+mod switchextent_cli;
 
 #[path = "ambiguous_selector_cli.rs"]
 mod ambiguous_selector_cli;
@@ -690,6 +695,8 @@ mod windows_stack_argument_alignment;
 mod imported_data_identifiers;
 #[path = "dwarf_linkage_calls.rs"]
 mod dwarf_linkage_calls;
+#[path = "dwarf_name_chars.rs"]
+mod dwarf_name_chars;
 #[path = "project_named_globals.rs"]
 mod project_named_globals;
 #[path = "x87_register_payload.rs"]
@@ -927,3 +934,8 @@ mod xrefs_immutable_got;
 
 #[path = "types_header.rs"]
 mod types_header;
+
+#[path = "assert_storage_names.rs"]
+mod assert_storage_names;
+#[path = "bounds_checked_prototypes.rs"]
+mod bounds_checked_prototypes;

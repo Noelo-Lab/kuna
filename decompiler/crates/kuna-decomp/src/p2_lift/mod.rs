@@ -6,6 +6,7 @@
 pub mod funcdata_resolveflow;
 pub mod flow;
 pub mod kuna_ppc32piccalls;
+pub mod kuna_ppc32lrflow;
 pub mod kuna_armflowcontext;
 pub mod jumptable;
 pub mod kuna_emulatefunction;
@@ -18,6 +19,7 @@ pub mod kuna_switchguardbound;
 pub mod kuna_switchguardrange;
 pub mod kuna_switchsharedcase;
 pub mod kuna_switchrunon; // (kuna) an unguarded jump table stops where its rows leave the function
+pub mod kuna_switchextent; // (kuna) an unguarded jump table ends at the function's next table
 pub mod kuna_constselectjump; // (kuna) recover a BRANCHIND whose destination is selected between constants
 pub mod kuna_sparcstructret;
 pub mod kuna_stackprobeloop;

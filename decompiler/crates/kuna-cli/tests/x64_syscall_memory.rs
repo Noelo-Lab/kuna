@@ -4,6 +4,7 @@ use crate::common;
 
 use std::path::Path;
 use std::process::Command;
+use crate::common::process::Capped;
 
 const SOURCE: &str = include_str!("fixtures/x64_syscall_memory.c");
 const SCOPE_SOURCE: &str = include_str!("fixtures/x64_syscall_scope.S");
@@ -220,7 +221,7 @@ fn caller_metadata_writes_keep_the_physical_pointer_payload() {
                     String::from_utf8_lossy(&result.stderr)
                 );
                 assert!(
-                    Command::new(&output).status().unwrap().success(),
+                    Command::new(&output).capped_status().unwrap().success(),
                     "{compiler} {optimization}: {}",
                     std::fs::read_to_string(printed).unwrap()
                 );
@@ -341,7 +342,7 @@ int main(void) {{
             std::fs::write(&printed, &program).unwrap();
             compile(&["-O2", native.to_str().unwrap()], &printed, &binary);
             assert!(
-                Command::new(&binary).status().unwrap().success(),
+                Command::new(&binary).capped_status().unwrap().success(),
                 "{optimization} {mode:?}\n{program}"
             );
         }
@@ -501,7 +502,7 @@ int main(void) {{
         std::fs::write(&printed, &program).unwrap();
         compile(&["-O2", native.to_str().unwrap()], &printed, &binary);
         assert!(
-            Command::new(&binary).status().unwrap().success(),
+            Command::new(&binary).capped_status().unwrap().success(),
             "mode {mode:?}\n{program}"
         );
     }
