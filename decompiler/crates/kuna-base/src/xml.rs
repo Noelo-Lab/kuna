@@ -2280,7 +2280,8 @@ mod tests {
         // and kuna-thunknames / a placeholder jump thunk is named after its target (option thunknames)
         // and kuna-swifthelpers / Swift instantiation helpers and lazy witness table accessors (option swifthelpers)
         // and kuna-aif-slot-edges / inferred entries start a complete section-relative slot
-        assert_eq!(count, 862, "corpus file count drifted");
+        // and kuna-powerpc-isel / explicit language and call recovery
+        assert_eq!(count, 863, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

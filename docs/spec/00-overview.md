@@ -3243,7 +3243,7 @@ runtime `on_or_off` parser.
 | env var | option | read at |
 |---|---|---|
 | `KUNA_IFUNCFPRET` | `ifuncfpret` | x86-64 IFUNC (`R_X86_64_IRELATIVE`) stub naming, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_ifuncfpret.rs (IFUNCFPRET_ENV)` |
-| `KUNA_PPCAPU` | `ppcapu` | PowerPC32 e500 selection from an SPE APU note, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_ppcapu.rs (PPCAPU_ENV)` |
+| `KUNA_PPCAPU` | `ppcapu` | PowerPC32 ELF selection from APU requirements and the embedded ABI flag, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_ppcapu.rs (PPCAPU_ENV)` |
 | `KUNA_CALLTARGETTYPE` | `calltargettype` | DWARF `DW_TAG_subroutine_type` import as a function prototype (on unless the option is set off, and never for Rust output), `decompiler/crates/kuna-decomp/src/p5_types/kuna_calltargettype.rs (CALLTARGETTYPE_ENV)` |
 | `KUNA_MACHO_SLICE` | `--slice` | Mach-O fat-binary slice peel, `decompiler/crates/kuna-console/src/engine.rs (select_macho_slice)` |
 | `KUNA_MACHO_ARM64E` | `macho-arm64e` | arm64e spec selection (on by default), `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_macho_arm64e.rs (MACHO_ARM64E_ENV)` |

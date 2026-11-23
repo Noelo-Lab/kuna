@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5019,
-    5019
+    5022,
+    5022
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4267,6 +4267,9 @@
     "data:pointer-arguments #2: no declaration leaks between standalone renders",
     "data:positive displacement stays symbolic",
     "data:post(y) runs once per pass",
+    "data:powerpc-isel passes the selected fifth argument",
+    "data:powerpc-isel reads five scalar arguments",
+    "data:powerpc-isel selects literal zero",
     "data:ppc64be-elfv2-stack-args #1: the callee reads its ninth argument",
     "data:ppc64be-elfv2-stack-args #2: the caller passes n + 9 as the ninth",
     "data:ppc64le-elfv2-stack-args #1: the callee reads its ninth argument",
