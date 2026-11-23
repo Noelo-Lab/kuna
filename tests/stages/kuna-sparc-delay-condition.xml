@@ -38,6 +38,8 @@
 <symbol space="ram" offset="0x1028" name="pick"/>
 </binaryimage>
 <script>
+  <!-- kuna: tailform default-on; this test pins the binary's own function-tail return layout -->
+  <com>option tailform off</com>
   <com>read symbols</com>
   <com>parse line extern void clear_if_both(unsigned int previous, unsigned int current, unsigned int limit, unsigned char *out);</com>
   <com>parse line extern int pick(int value);</com>

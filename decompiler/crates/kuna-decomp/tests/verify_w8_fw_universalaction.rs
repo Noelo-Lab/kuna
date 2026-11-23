@@ -122,7 +122,7 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
     );
     assert_eq!(
-        nonblank, 310,
+        nonblank, 311,
         "full kuna schedule registration count changed"
     );
 
@@ -142,7 +142,7 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
         lines.iter().rev().take(10).map(|l| name_of(l)).collect::<Vec<_>>().into_iter().rev().collect();
     assert_eq!(
         tail,
-        vec!["gotoreduce", "taildup", "ifelseflatten", "crossjumprevert", "dedupitetail", "iteregion", "iteboolean", "paramcopyhoist", "prototypewarnings", "stop"]
+        vec!["taildup", "ifelseflatten", "crossjumprevert", "dedupitetail", "tailform", "iteregion", "iteboolean", "paramcopyhoist", "prototypewarnings", "stop"]
     );
 
     // `directwrite` (protorecovery_b) appears 3x total (protorecovery_a twice +
