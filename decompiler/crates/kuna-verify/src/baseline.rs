@@ -40,6 +40,16 @@ pub fn render(b: &Baseline) -> String {
     s
 }
 
+/// `name class`, where a name may hold spaces (`-[A b:]`) and so may the
+/// reason of an `UNKNOWN`, `SKIPPED` or `DIVERGES` class (`UNKNOWN(no switch row)`).
+fn split_row(r: &str) -> Option<(&str, &str)> {
+    let tagged = r.ends_with(')').then(|| [" UNKNOWN(", " SKIPPED(", " DIVERGES("].iter().filter_map(|t| r.rfind(t)).max()).flatten();
+    match tagged {
+        Some(i) => Some((&r[..i], &r[i + 1..])),
+        None => r.rsplit_once(' '),
+    }
+}
+
 pub fn parse(text: &str) -> Result<Baseline, String> {
     let v: Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
     let obj = v.as_object().ok_or("the baseline is not a JSON object")?;
@@ -49,7 +59,7 @@ pub fn parse(text: &str) -> Result<Baseline, String> {
         let mut out = Vec::with_capacity(rows.len());
         for r in rows {
             let r = r.as_str().ok_or_else(|| format!("{file}: not a string: {r}"))?;
-            let (f, c) = r.rsplit_once(' ').ok_or_else(|| format!("{file}: no class in {r:?}"))?;
+            let (f, c) = split_row(r).ok_or_else(|| format!("{file}: no class in {r:?}"))?;
             out.push((f.to_string(), c.to_string()));
         }
         b.insert(file.clone(), out);
@@ -124,7 +134,10 @@ mod tests {
 
     #[test]
     fn render_round_trips() {
-        let x = b(&[("t/a.xml", &[("f", "AGREES"), ("g g", "UNKNOWN(budget)")]), ("t/b.xml", &[("", ERROR)])]);
+        let x = b(&[
+            ("t/a.xml", &[("f", "AGREES"), ("g g", "UNKNOWN(budget)"), ("h", "UNKNOWN(no switch row)"), ("-[A b:]", "UNKNOWN(no switch row)")]),
+            ("t/b.xml", &[("", ERROR)]),
+        ]);
         assert_eq!(parse(&render(&x)).unwrap(), x);
     }
 
