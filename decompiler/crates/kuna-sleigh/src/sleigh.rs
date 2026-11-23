@@ -1537,6 +1537,33 @@ pub struct Sleigh {
     context_queries: std::cell::Cell<u64>,
 }
 
+/// C++ `Sleigh::initialize`'s decode of the `.sla` bytes into `base`.
+fn decode_sla(
+    base: &mut SleighBase,
+    sla_bytes: &[u8],
+    register_context: impl FnMut(&[u8], i32, i32) -> KunaResult<()>,
+) -> KunaResult<()> {
+    // The C++ `FormatDecode decoder(this)` aliases the
+    // `AddrSpaceManager` that `SleighBase::decode` simultaneously
+    // mutates via `insertSpace` (it IS the manager, by inheritance):
+    // a raw-pointer back-reference (LOSS-020).  The reads
+    // (`read_space`) only ever happen AFTER the relevant inserts, and
+    // never while the decoder holds a borrow across an insert, so the
+    // aliasing is sound; Rust cannot prove the temporal disjointness,
+    // so we mirror the C++ raw pointer with a contained `unsafe`
+    // re-borrow.
+    //
+    // SAFETY: `base.manager` outlives `decoder` (both live for
+    // this call); `SleighBase::decode` mutates the manager only via
+    // `insert_space`/`set_default_code_space` in `decode_sla_spaces`,
+    // strictly before any `read_space` the symbol-table decode issues,
+    // so no manager read and mutation overlap in time.
+    let manager_ptr: *const AddrSpaceManager = &*base.manager;
+    let mut decoder = crate::slaformat::FormatDecode::new(unsafe { &*manager_ptr });
+    decoder.ingest_stream(sla_bytes)?;
+    base.decode(&mut decoder, register_context)
+}
+
 /// A constructor decision reads only instruction bits (relative to the operand
 /// offset) and context words. Keep at most eight matches; operand evaluation and
 /// lifting still run at each address, including all context changes.
@@ -1746,30 +1773,22 @@ impl Sleigh {
         self.constructor_matches.get_mut().clear();
         self.primitive_operands.take();
         if !self.base.is_initialized() {
-            // The C++ `FormatDecode decoder(this)` aliases the
-            // `AddrSpaceManager` that `SleighBase::decode` simultaneously
-            // mutates via `insertSpace` (it IS the manager, by inheritance):
-            // a raw-pointer back-reference (LOSS-020).  The reads
-            // (`read_space`) only ever happen AFTER the relevant inserts, and
-            // never while the decoder holds a borrow across an insert, so the
-            // aliasing is sound; Rust cannot prove the temporal disjointness,
-            // so we mirror the C++ raw pointer with a contained `unsafe`
-            // re-borrow.
-            //
-            // SAFETY: `self.base.manager` outlives `decoder` (both live for
-            // this call); `SleighBase::decode` mutates the manager only via
-            // `insert_space`/`set_default_code_space` in `decode_sla_spaces`,
-            // strictly before any `read_space` the symbol-table decode issues,
-            // so no manager read and mutation overlap in time.
-            let manager_ptr: *const AddrSpaceManager = &*self.base.manager;
-            let mut decoder = crate::slaformat::FormatDecode::new(unsafe { &*manager_ptr });
-            decoder.ingest_stream(sla_bytes)?;
             let db_cell = &self.context_db;
             let register_context = |nm: &[u8], sb: i32, eb: i32| -> KunaResult<()> {
                 db_cell.borrow_mut().register_variable(nm, sb, eb)
             };
-            self.base.decode(&mut decoder, register_context)?;
-            return Ok(());
+            if self.base.manager.num_spaces() == 0 {
+                let template = crate::kuna_slacache::template(sla_bytes, || {
+                    let mut core = SleighBase::new();
+                    decode_sla(&mut core, sla_bytes, |_, _, _| Ok(()))?;
+                    Ok(core)
+                })?;
+                if let Some(core) = template {
+                    self.base = core.clone_decoded(register_context)?;
+                    return Ok(());
+                }
+            }
+            return decode_sla(&mut self.base, sla_bytes, register_context);
         }
         // Re-registration path (engine reused with a new program): re-register
         // the context variables with the (new) database.
@@ -2722,6 +2741,10 @@ impl Translate for Sleigh {
             res.push(String::from_utf8_lossy(nm).into_owned());
         }
     }
+    fn may_have_delay_slots(&self) -> bool {
+        self.base.max_delay_slot_bytes() != 0
+    }
+
     fn instruction_length(&self, baseaddr: &Address) -> KunaResult<i32> {
         Sleigh::instruction_length(self, baseaddr)
     }

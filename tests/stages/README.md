@@ -21,6 +21,13 @@ caller builds in `x8` for a hidden `pacda` is not the next call's first
 argument, with the modifier computed and folded to a constant. A tagged
 address and a result buffer in `x8` are the controls.
 
+`kuna-aif-slot-edges.xml` compares stock and section-relative AIF inventories
+on stripped x86-64 and MIPS32 ELFs. The six-byte x86 grid covers padded
+entries, section boundaries, overlapping decodes and terminal padding before
+zero fill. The four-byte MIPS grid checks both direct and padding-adjusted
+entry candidates with delay slots. The fixture languages reuse the stock
+decoders and calling conventions through the stage corpus's `specs/` directory.
+
 `ghangr-go-paniccheck-return.xml` checks that a returning Go panic helper
 falls through to the terminal `runtime.gopanic` call. It also checks the
 helper's conditional throw and shows the caller's sentinel with the known
@@ -572,3 +579,8 @@ fixture source is `decompiler/crates/kuna-cli/tests/fixtures/assert_callee.c`.
 `kuna-rust-process-exit.xml` preserves exit status and preceding stores while
 removing dead trap flow after a known Rust standard-library process exit.
 Different namespaces and a longer similarly named function retain their callers.
+
+`kuna-piecepathology.xml` checks that a function handing back a call declared
+`int` returns 4 bytes on x86-64, not the whole of rax: `next_byte` inlines
+`getc_unlocked` and refills through `int __uflow(FILE *)`, whose upper half of
+rax is undefined. `kuna-regpiece.xml` pins the same fix on `sh_openpipe`.

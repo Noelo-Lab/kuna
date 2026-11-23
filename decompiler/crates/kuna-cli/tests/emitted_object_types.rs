@@ -5,6 +5,7 @@ use common::process;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope};
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[test]
 fn an_address_only_scalar_has_the_type_of_its_saved_pointer() {
@@ -58,7 +59,7 @@ int main(void) {{
                     .args(["-std=c11", "-Werror=incompatible-pointer-types", level])
                     .arg(&src).arg("-o").arg(&exe).output().unwrap();
                 assert!(compile.status.success(), "{cc} {level}: {}\n{printed}", String::from_utf8_lossy(&compile.stderr));
-                assert!(Command::new(&exe).status().unwrap().success(), "{opt} {cc} {level}: {printed}");
+                assert!(Command::new(&exe).capped_status().unwrap().success(), "{opt} {cc} {level}: {printed}");
             }
         }
         std::fs::remove_file(src).unwrap();

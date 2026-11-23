@@ -926,3 +926,6 @@ mod xrefs_immutable_got;
 
 #[path = "types_header.rs"]
 mod types_header;
+
+#[path = "assert_storage_names.rs"]
+mod assert_storage_names;

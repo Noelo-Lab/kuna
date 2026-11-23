@@ -689,6 +689,17 @@ stack object occupies twelve or sixteen bytes. Stack resources, general
 register resources and aggregate types retain their aligned object size.
 The declared datatype and its alignment remain unchanged.
 
+The explicit `MIPS:BE:64:octeon-32addr:o64` target pairs the original Octeon
+decoder with the soft-float O64 compiler model. Floating-point arguments in
+registers and floating-point results use GPRs. Pointers are four bytes wide.
+The first four argument slots use `a0` through `a3`. The fifth slot starts at
+entry SP + 32. A four-byte scalar occupies SP + 36, while a four-byte struct
+or union occupies SP + 32. Aggregate arguments likewise occupy the leading
+bytes of a register slot. An aggregate result reserves `a0` for the result
+address, moves the first explicit argument to `a1`, and returns the address
+in `v0`.
+The default compiler for this language remains N32.
+
 The Octeon N32 and N64 soft-float models pass small structs and unions in the leading
 bytes of each eight-byte GPR or stack slot, for both fixed and variadic
 arguments. A scalar `float` instead occupies the low four bytes of a GPR, but
@@ -2617,10 +2628,16 @@ classified:
   `open_safer` reads `rdx` alone. The calling function is or may be variadic
   itself, which is a read of `al` before it is written in its entry block other
   than by a store (clang's alignment `push %rax` is a store, `test %al,%al` is
-  not), or its own entry reading its last argument register: an argument
-  supplied there can be the `va_list`, and once the register-save area escapes
-  through it the function's own recovery takes every saved register as a
-  parameter (`cliPrintf(fmt, ...)` handing `cliPrintfva` its saved `r1`-`r3`).
+  not), or its own entry reading its last argument register only to store
+  it: an argument supplied there can be the `va_list`, and once the
+  register-save area escapes through it the function's own recovery takes
+  every saved register as a parameter (`cliPrintf(fmt, ...)` handing
+  `cliPrintfva` its saved `r1`-`r3`). A register-save prologue only stores
+  the registers, so an entry that reads the last one some other way takes it
+  as a named parameter and the function is not variadic on that account:
+  clang keeps a sixth `int` parameter with `mov %r9d,%ebx`, and the function
+  that later tests a byte it loaded into `edi` and calls `ext` with it
+  printed `ext()` while any read of `r9` counted.
   Floating-point registers are left alone, because a callee that only moves
   its `double` (`lua_pushnumber` stores `xmm0`) is recovered with an integer
   parameter, and handing it a `floor()` result made the caller read that result

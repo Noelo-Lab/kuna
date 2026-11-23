@@ -9,6 +9,7 @@ use crate::common;
 use common::process;
 use std::path::Path;
 use std::process::Command;
+use crate::common::process::Capped;
 
 const FUNCTIONS: [&str; 3] = ["audit_select", "audit_select_gcc", "audit_retry"];
 
@@ -133,7 +134,7 @@ fn split_return_writes_each_global_once() {
         std::fs::write(&source, format!("{PRELUDE}\n{printed}\n{DRIVER}")).unwrap();
         let executable = source.with_extension("");
         process::required_output(Command::new(cc).args(["-O0", "-w"]).arg(&source).arg("-o").arg(&executable));
-        let run = Command::new(&executable).output().unwrap();
+        let run = Command::new(&executable).capped_output().unwrap();
         assert!(
             run.status.success(),
             "{label}: printed C writes a global more often than the binary\n{}\n{printed}",

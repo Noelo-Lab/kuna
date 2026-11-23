@@ -93,3 +93,6 @@ mod x86_vmx_status;
 
 #[path = "octeon_core.rs"]
 mod octeon_core;
+
+#[path = "sla_reuse.rs"]
+mod sla_reuse;

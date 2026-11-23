@@ -2279,8 +2279,14 @@ mod tests {
         // and kuna-cachereturn / a lazy accessor returns the value of its cache cell (option cachereturn)
         // and kuna-thunknames / a placeholder jump thunk is named after its target (option thunknames)
         // and kuna-swifthelpers / Swift instantiation helpers and lazy witness table accessors (option swifthelpers)
+        // and kuna-aif-slot-edges / inferred entries start a complete section-relative slot
+        // and kuna-powerpc-isel / explicit language and call recovery
+        // and kuna-mips-o64-calls / O64 stack arguments and Octeon conditional calls
+        // and kuna-mips-kscratch / Octeon kernel scratch transfers preserve both selectors across calls
+        // and kuna-mips-kscratch3 / Octeon III additional kernel scratch registers
+        // and kuna-piecepathology / a call's declared int is the return, not the clobbered rest of its register
         // and kuna-returnhintcaller / a callee return hint keeps the argument passed in the return register
-        assert_eq!(count, 862, "corpus file count drifted");
+        assert_eq!(count, 869, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -1813,7 +1813,34 @@ group):
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_5.rs` | comparisons against extremal constants, equation solving, the pointer-recovery trio | `RuleLess2Zero`, `RuleSLess2Zero`, `RuleEqual2Constant`, and oppool2's `RulePtrArith`/`RuleStructOffset0`/`RulePushPtr` (all no-ops until `ActionStartTypes` flips `has_type_recovery_started` — chapter 05 owns what they build) |
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_6.rs` | pointer-op undo, division strength-reduction inversion, cleanup arithmetic | `RulePtraddUndo`/`RulePtrsubUndo`, `RuleDivOpt`/`RuleDivTermAdd`/`RuleSubNormal` (recover `/`, `%` from magic-number multiplies), cleanup-pool `RuleMultNegOne`/`RuleAddUnsigned`/`RuleSubRight`/`RulePieceStructure` |
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_7.rs` | signed div/mod idioms, segments, pointer flow, predication, float compares | `RuleSignDiv2`, `RuleSignMod2nOpt`, `RuleModOpt`, `RuleSegment`, `RulePtrFlow`, `RuleConditionalMove` (group `conditionalexe`), `RuleFloatCast`, `RuleIgnoreNan` |
-| `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_8.rs` | int↔float conversion recovery, bit-counting booleans, float sign ops, compare splitting | `RuleUnsigned2Float`, `RuleThreeWayCompare`, `RulePopcountBoolXor`, `RuleLzcountShiftBool`, `RuleFloatSign`, `RuleOrCompare`, `RuleFuncPtrEncoding`, cleanup-pool `RuleExpandLoad` |
+| `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_8.rs` | int↔float conversion recovery, bit-counting booleans, float sign ops, compare splitting | `RuleUnsigned2Float`, `RuleThreeWayCompare`, `RulePopcountBoolXor`, `RuleLzcountShiftBool`, `RuleFloatSign`, `RuleOrCompare`, `RuleFuncPtrEncoding`, `RulePiecePathology` (group `protorecovery`), cleanup-pool `RuleExpandLoad` |
+
+`RulePiecePathology` keeps a function from returning bits a call left
+undefined. A call whose prototype declares an output narrower than its register
+writes only that output; the convention's `killedbycall` clobber of the rest
+of the register is an INDIRECT creation. A RETURN reading the whole register
+then reads `PIECE(clobber, call output)`, which ancestor realism accepts as a
+solid value, so return recovery took the whole register: `int next_byte(FILE
+*f) { return getc_unlocked(f); }` printed as returning `unsigned long`
+because its refill path returns `int __uflow(FILE *)` in eax. The rule matches
+a PIECE whose high input is an INDIRECT creation and whose low input is the
+output of a CALL with a locked output, contiguous with it in the register. It
+follows the concatenation forward through COPY, INDIRECT and MULTIEQUAL and
+records the low input's size as the bytes consumed of every unlocked RETURN it
+reaches (`FuncProto::set_return_bytes_consumed`), and of each argument slot of
+an unlocked call whose inputs are settled (`set_input_bytes_consumed`). Dead
+code then consumes only those bytes and sub-variable flow trims the RETURN to
+the call's value, so the function returns `int`-width on every path. Where
+another path returns all of the register, which a function returning the
+call's `int` unextended does only when it returns nothing (gnulib's `void
+version_etc_arn` leaves an unrelated 8-byte value in rax on one path), the return
+keeps its width and the call's path prints as the zero-extended `int`. Upstream
+Ghidra also fires on a low input computed by any unary or binary op, and on a
+high input that is a SUBPIECE of the function's own input or of a clobber.
+Those arms are not ported: the upper half of an input register is a value the
+function hands back (`mov eax,edi; rol ax,8; ret` keeps edi's high word), and a
+copied pair, such as a big-endian `r3:r4` a function keeps across another
+call, is concatenated while its output is still being recovered.
 
 `RuleMultiCollapse` keeps its operand traversal, marked-output list and
 temporary rewrite operands in local inline scratch. Wide or deeply nested
