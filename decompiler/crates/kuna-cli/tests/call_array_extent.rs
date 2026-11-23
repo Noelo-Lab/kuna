@@ -3,6 +3,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 fn decompile(entry: &str, name: &str, option: &str, local_type: Option<&str>) -> String {
     let xml = include_str!(concat!(
@@ -160,7 +161,7 @@ int main(void) {{
                     "{compiler} {optimization}: {}",
                     String::from_utf8_lossy(&compiled.stderr)
                 );
-                let run = Command::new(&executable).output().unwrap();
+                let run = Command::new(&executable).capped_output().unwrap();
                 assert!(
                     run.status.success(),
                     "{name}, {compiler} {optimization}: {}",
@@ -210,7 +211,9 @@ int main(void) {{
         let source = common::scratch_file("overlapping-call-output", "c");
         std::fs::write(&source, program).unwrap();
         for compiler in ["gcc", "clang"] {
-            if process::optional_output(Command::new(compiler).arg("--version")).is_none() {
+            if process::optional_output(Command::new(compiler).arg("--version")).is_none()
+                || !process::sanitizer_runs(compiler, &["-fsanitize=address"])
+            {
                 continue;
             }
             for optimization in ["-O0", "-O2"] {
@@ -232,7 +235,7 @@ int main(void) {{
                 );
                 let run = Command::new(&executable)
                     .env("ASAN_OPTIONS", "detect_leaks=0")
-                    .output()
+                    .capped_output()
                     .unwrap();
                 assert!(
                     run.status.success(),

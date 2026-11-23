@@ -22,8 +22,6 @@ define pcodeop octeon_sync_unknown;
 
 oct_rd: rd is rd { export rd; }
 oct_rd: rd is rd & rd=0 { local discarded:8 = 0; export discarded; }
-oct_rt: rt is rt { export rt; }
-oct_rt: rt is rt & rt=0 { local discarded:8 = 0; export discarded; }
 oct_atomic_addr: simmed(RSsrc) is simmed & RSsrc {
     local addr:8 = RSsrc + simmed;
     export addr;

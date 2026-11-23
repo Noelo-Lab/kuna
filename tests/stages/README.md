@@ -21,6 +21,13 @@ caller builds in `x8` for a hidden `pacda` is not the next call's first
 argument, with the modifier computed and folded to a constant. A tagged
 address and a result buffer in `x8` are the controls.
 
+`kuna-aif-slot-edges.xml` compares stock and section-relative AIF inventories
+on stripped x86-64 and MIPS32 ELFs. The six-byte x86 grid covers padded
+entries, section boundaries, overlapping decodes and terminal padding before
+zero fill. The four-byte MIPS grid checks both direct and padding-adjusted
+entry candidates with delay slots. The fixture languages reuse the stock
+decoders and calling conventions through the stage corpus's `specs/` directory.
+
 `ghangr-go-paniccheck-return.xml` checks that a returning Go panic helper
 falls through to the terminal `runtime.gopanic` call. It also checks the
 helper's conditional throw and shows the caller's sentinel with the known

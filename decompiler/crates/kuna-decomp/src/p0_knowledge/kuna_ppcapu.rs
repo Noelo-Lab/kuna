@@ -1,25 +1,63 @@
-//! (kuna) The `ppcapu` option gate: select the e500 language for a 32-bit
-//! PowerPC ELF image whose `.PPC.EMB.apuinfo` note requires SPE.
+//! (kuna) The `ppcapu` option gate: select a compatible embedded language for a 32-bit
+//! PowerPC ELF image from its APU requirements and embedded ABI flag.
 //!
 //! The language is chosen while the image loads, before any `option` command
 //! runs, so the gate is the process environment variable [`PPCAPU_ENV`], set by
 //! the CLI before loading. `Architecture::analysis_ppcapu` exists only for the
-//! catalog's live `current` field. Default off: the e500 compiler model does
-//! not yet recover scalar call arguments held in its 64-bit registers.
+//! catalog's live `current` field. The default `isel` extends the generic model
+//! with ISEL; `on` also selects e500 for an SPE requirement, whose model does not
+//! yet recover every scalar call argument held in its 64-bit registers.
 
 /// Environment variable read by `kuna-analysis::loader::kuna_ppcaputarget`.
-/// Absent or an off-token ⇒ disabled; any on-token ⇒ enabled.
 pub const PPCAPU_ENV: &str = "KUNA_PPCAPU";
 
-/// Whether APU-based PowerPC language selection is enabled for this process.
-pub fn ppcapu_enabled() -> bool {
-    crate::kuna_loadoptions::scoped(|o| o.ppcapu).unwrap_or_else(crate::kuna_loadoptions::env::ppcapu)
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Mode {
+    Off,
+    #[default]
+    Isel,
+    On,
 }
 
-/// Bridge a `set_kuna_option("ppcapu", val)` toggle to [`PPCAPU_ENV`] so a later
-/// `load file` in the same process sees the choice.
-pub fn set_ppcapu_env(on: bool) {
-    std::env::set_var(PPCAPU_ENV, if on { "on" } else { "off" });
+impl Mode {
+    /// The console vocabulary: `isel`, `on` (or empty) and `off`.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "off" => Some(Self::Off),
+            "isel" => Some(Self::Isel),
+            "on" | "" => Some(Self::On),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Isel => "isel",
+            Self::On => "on",
+        }
+    }
+
+    pub fn set_env(self) {
+        std::env::set_var(PPCAPU_ENV, self.as_str());
+    }
+
+    /// `isel`, the on-tokens of the other load-time gates, and `off` for
+    /// anything else.
+    pub fn from_env_value(value: &str) -> Self {
+        if value.trim().eq_ignore_ascii_case("isel") {
+            Self::Isel
+        } else if crate::options::parse_env_toggle(value, false) {
+            Self::On
+        } else {
+            Self::Off
+        }
+    }
+}
+
+/// The APU-based PowerPC language selection in force for this process.
+pub fn ppcapu_mode() -> Mode {
+    crate::kuna_loadoptions::scoped(|o| o.ppcapu).unwrap_or_else(crate::kuna_loadoptions::env::ppcapu)
 }
 
 #[cfg(test)]
@@ -27,21 +65,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn env_gate_default_off_and_on_tokens() {
+    fn env_gate_default_isel_and_tokens() {
         std::env::remove_var(PPCAPU_ENV);
-        assert!(!ppcapu_enabled(), "unset env ⇒ default off");
-        for on in ["on", "1", "true", "ON", ""] {
-            std::env::set_var(PPCAPU_ENV, on);
-            assert!(ppcapu_enabled(), "`{on}` ⇒ enabled");
+        assert_eq!(ppcapu_mode(), Mode::Isel, "unset env ⇒ default isel");
+        for (token, mode) in [
+            ("isel", Mode::Isel),
+            (" ISEL ", Mode::Isel),
+            ("on", Mode::On),
+            ("1", Mode::On),
+            ("true", Mode::On),
+            ("ON", Mode::On),
+            ("", Mode::On),
+            ("off", Mode::Off),
+            ("0", Mode::Off),
+            ("false", Mode::Off),
+            ("invalid", Mode::Off),
+        ] {
+            std::env::set_var(PPCAPU_ENV, token);
+            assert_eq!(ppcapu_mode(), mode, "`{token}`");
         }
-        for off in ["off", "0", "false"] {
-            std::env::set_var(PPCAPU_ENV, off);
-            assert!(!ppcapu_enabled(), "`{off}` ⇒ disabled");
+        for mode in [Mode::On, Mode::Off, Mode::Isel] {
+            mode.set_env();
+            assert_eq!(ppcapu_mode(), mode);
+            assert_eq!(Mode::parse(mode.as_str()), Some(mode));
         }
-        set_ppcapu_env(true);
-        assert!(ppcapu_enabled());
-        set_ppcapu_env(false);
-        assert!(!ppcapu_enabled());
+        assert_eq!(Mode::parse("yes"), None);
         std::env::remove_var(PPCAPU_ENV);
     }
 }

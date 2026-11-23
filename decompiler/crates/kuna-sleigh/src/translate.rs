@@ -233,7 +233,7 @@ pub enum UniqueLayout {
 /// (`target_isbigendian`, `unique_base`, `alignment`, `floatformats`) plus
 /// their non-virtual methods.  An engine implementing [`Translate`] embeds
 /// one and exposes it through [`Translate::translate_base`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TranslateBase {
     /// \b true if the general endianness of the process is big endian
     target_isbigendian: bool,
@@ -242,6 +242,8 @@ pub struct TranslateBase {
     /// Byte modulo on which instructions are aligned (C++ protected; same
     /// crate access for the engine)
     pub(crate) alignment: i32,
+    /// Optional processor declaration for speculative entries, relative to each executable section.
+    pub section_instruction_stride: Option<core::num::NonZeroU32>,
     /// Floating point formats utilized by the processor (C++ protected)
     pub(crate) floatformats: Vec<FloatFormat>,
 }
@@ -257,6 +259,7 @@ impl TranslateBase {
             target_isbigendian: false,
             unique_base: 0,
             alignment: 1,
+            section_instruction_stride: None,
             floatformats: Vec::new(),
         }
     }
@@ -477,6 +480,9 @@ pub trait Translate: RegisterLookup {
     /// returns a list of these ops in index order.
     /// \param res is the resulting vector of user op names
     fn get_user_op_names(&self, res: &mut Vec<String>);
+
+    /// Whether a lift can consume delay slots beyond the instruction's encoding.
+    fn may_have_delay_slots(&self) -> bool { true }
 
     /// \brief Get the length of a machine instruction
     ///
@@ -987,6 +993,18 @@ mod tests {
         // unknown register falls back to hex parsing (the C++ catch branch)
         let off = register.read("0x10:2", &mut size, &manager).unwrap();
         assert_eq!((off, size), (0x10, 2));
+        for token in ["BOGUS", "BOGUS+2", "x0"] {
+            let err = register.read(token, &mut size, &manager).unwrap_err();
+            assert!(err.explain().contains("is not a register of this language"), "{token}: {}", err.explain());
+        }
+        for token in ["EDX:junk", "EDX+", "EDX:2+"] {
+            let err = register.read(token, &mut size, &manager).unwrap_err();
+            assert!(err.explain().contains("malformed"), "{token}: {}", err.explain());
+        }
+        let off = register.read("edx", &mut size, &manager).unwrap();
+        assert_eq!((off, size), (8, 4));
+        let off = register.read("eax+2", &mut size, &manager).unwrap();
+        assert_eq!((off, size), (2, 4));
 
         // join space console read
         let join = Rc::clone(manager.get_join_space().unwrap());
