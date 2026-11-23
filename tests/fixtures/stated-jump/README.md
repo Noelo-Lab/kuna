@@ -31,11 +31,12 @@ The static PIE in `pie.S` computes its jump destinations at runtime using
 RIP-relative LEA. Its entry checks both taken paths and the guard miss. Under
 an unknown load base its two link-time VMAs establish successors but cannot
 label a switch on the unadjusted pointer. Rebuild using the same assembler
-and linker as above.
+and linker as above. The two explicit flags restate that binutils release's
+defaults, so binutils 2.44 and 2.46 produce the same bytes.
 
 ```sh
-as --64 -o pie.o pie.S
-ld -pie --no-dynamic-linker --build-id=none -Ttext=0x1000 -e _start pie.o -o pie.elf
+as --64 -mx86-used-note=yes -o pie.o pie.S
+ld -pie --no-dynamic-linker --build-id=none --hash-style=both -Ttext=0x1000 -e _start pie.o -o pie.elf
 ./pie.elf
 ```
 
