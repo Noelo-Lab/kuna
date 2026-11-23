@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5050,
-    5050
+    5057,
+    5057
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2131,6 +2131,10 @@
     "data:PIC off keeps the unnamed stub",
     "data:PIC off leaves every driver-linked stub unnamed",
     "data:PIC on names the proved terminal call",
+    "data:PIECEPATHOLOGY #1: in both passes the refill call's int is the 4-byte return",
+    "data:PIECEPATHOLOGY #2: the glibc pass ran, its field reads named",
+    "data:PIECEPATHOLOGY #3: no return claims the undefined upper half of rax",
+    "data:PIECEPATHOLOGY #4: the refill path still returns the call",
     "data:PLTLOCAL #1: the forwarded registers are never lost to the stub",
     "data:PLTLOCAL #2: built at the definition, its declared parameters arrive",
     "data:PLTLOCAL #3: the wrapper gains the parameters it forwards",
@@ -2201,8 +2205,11 @@
     "data:REGNARROW-X86 #1: default counts in 32 bits",
     "data:REGNARROW-X86 #2: default indexes with the 32-bit counter",
     "data:REGNARROW-X86 #3: off keeps the 64-bit register",
-    "data:REGPIECE #1: the upper half of rax is a declared local",
+    "data:REGPIECE #1: the function returns xpipe's int, not all of rax",
     "data:REGPIECE #2: no global-looking register piece",
+    "data:REGPIECE #3: the early return hands back the call's value alone",
+    "data:REGPIECE #4: a declared 8-byte return keeps the whole of rax",
+    "data:REGPIECE #5: there the upper half of rax is a declared local",
     "data:REPFRAMECOPY #10: an overlapping move at the stack pointer shifts the slots down",
     "data:REPFRAMECOPY #11: the virtual calls after a bottom-of-frame local take no stack argument",
     "data:REPFRAMECOPY #12: both virtual calls are kept",

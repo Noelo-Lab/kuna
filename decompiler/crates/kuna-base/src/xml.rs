@@ -2284,7 +2284,8 @@ mod tests {
         // and kuna-mips-o64-calls / O64 stack arguments and Octeon conditional calls
         // and kuna-mips-kscratch / Octeon kernel scratch transfers preserve both selectors across calls
         // and kuna-mips-kscratch3 / Octeon III additional kernel scratch registers
-        assert_eq!(count, 867, "corpus file count drifted");
+        // and kuna-piecepathology / a call's declared int is the return, not the clobbered rest of its register
+        assert_eq!(count, 868, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
