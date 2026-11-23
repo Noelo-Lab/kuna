@@ -162,9 +162,48 @@ pub fn drive(
 
 pub fn load_lines(path: &str, options: &[(String, String)]) -> Vec<String> {
     let mut lines = vec![format!("load file {path}"), "option readonly on".to_string()];
+    let named = |name: &str| options.iter().any(|(n, _)| n == name);
+    lines.extend(
+        driver_defaults(non_x86_64(path))
+            .into_iter()
+            .filter(|(n, _)| !named(n))
+            .map(|(n, v)| format!("option {n} {v}")),
+    );
     lines.extend(options.iter().map(|(n, v)| format!("option {n} {v}")));
     lines.push("read symbols".to_string());
     lines
+}
+
+/// The options `kuna decompile` turns on for an object file unless named, so
+/// the function checked is the one it prints: the Listing that call-graph
+/// no-return propagation reads, and off x86-64 the discovery passes. The
+/// instruction-budget truncation it also turns on is left off: a truncated
+/// body is not the function.
+fn driver_defaults(non_x86_64: bool) -> Vec<(&'static str, &'static str)> {
+    let mut on = vec![("listing", "on")];
+    if non_x86_64 {
+        on.extend([("funcstart_patterns", "on"), ("aif", "on")]);
+    }
+    on
+}
+
+/// Whether an ELF, PE or Mach-O header names a machine other than x86-64.
+/// Anything else is taken as x86-64, as `kuna` takes an image it cannot parse.
+fn non_x86_64(path: &str) -> bool {
+    let Ok(bytes) = std::fs::read(path) else { return false };
+    let u16_at = |o: usize| bytes.get(o..o + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
+    let u32_at = |o: usize| bytes.get(o..o + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+    if bytes.starts_with(b"\x7fELF") {
+        let machine = if bytes.get(5) == Some(&2) { u16_at(18).map(u16::swap_bytes) } else { u16_at(18) };
+        return machine.is_some_and(|m| m != 62);
+    }
+    if bytes.starts_with(b"MZ") {
+        return u32_at(0x3c).and_then(|pe| u16_at(pe as usize + 4)).is_some_and(|m| m != 0x8664);
+    }
+    match u32_at(0) {
+        Some(0xfeed_facf | 0xfeed_face) => u32_at(4).is_some_and(|cpu| cpu != 0x0100_0007),
+        _ => false,
+    }
 }
 
 /// The entry address of every function with code in an object file.
