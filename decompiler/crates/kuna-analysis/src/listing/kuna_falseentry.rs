@@ -28,9 +28,9 @@
 //! Facts 2 and 3 read the preceding entry's own flow, so a function whose first
 //! instruction heads a loop keeps its entry. Code is live when an attested entry
 //! reaches it, or else a code pointer, over static targets and fall-throughs
-//! that provably continue (the [`super::kuna_poolextents`] trust notion), which
-//! keeps a pool after a call to an unproven `panic` from running into the next
-//! function. Attested entries (a symbol, an oracle reading the image, a direct
+//! that provably continue (the [`super::kuna_poolextents`] trust notion, taking
+//! an indirect call and a register tail jump to return), which keeps a pool
+//! after a call to an unproven `panic` from running into the next function. Attested entries (a symbol, an oracle reading the image, a direct
 //! call from any candidate's code) are never dropped. A code pointer no
 //! candidate names whose code runs into an interior entry becomes the entry in
 //! its place.
@@ -290,7 +290,7 @@ pub(crate) fn scan(
         cases
     };
     let dispatch = |is_computed: bool, is_jump: bool, is_call: bool| is_computed && is_jump && !is_call;
-    let mut returns = super::kuna_poolextents::returning_entries(listing);
+    let mut returns = super::kuna_poolextents::returning_entries_with(listing, true);
     returns.retain(|callee| !no_return.contains(callee));
     let attested = |entry: u64| {
         vouched.contains(&entry)
@@ -312,7 +312,7 @@ pub(crate) fn scan(
                 is_call: insn.flow.is_call,
                 fall_through: insn.fall_through,
                 flows: insn.flows.clone(),
-                continues: super::kuna_poolextents::falls_through(insn, &returns),
+                continues: super::kuna_poolextents::falls_through_with(insn, &returns, true),
                 filler: filler(insn.mnemonic.as_str(), &insn.operands, wide),
                 cases,
             });
@@ -327,8 +327,8 @@ pub(crate) fn scan(
         let c = super::classify::classify(&decoded.ops, at, decoded.len);
         let continues = c.fall_through.is_some()
             && (!(c.flow.is_call || c.flow.kind == FlowKind::CallOther)
-                || (c.flow.is_call && c.flow.is_conditional)
-                || (c.flow.is_call && !c.flow.is_computed && c.flows.first().is_some_and(|t| returns.contains(t))));
+                || (c.flow.is_call && (c.flow.is_conditional || c.flow.is_computed))
+                || (c.flow.is_call && c.flows.first().is_some_and(|t| returns.contains(t))));
         let cases = if dispatch(c.flow.is_computed, c.flow.is_jump, c.flow.is_call) {
             inline_table(at, decoded.len)
         } else {

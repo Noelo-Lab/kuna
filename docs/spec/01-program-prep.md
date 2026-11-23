@@ -9692,8 +9692,10 @@ entry stream of this commit (the load-time entries included) and drops, through
 `AnalysisOutput::interior_entries` at the commit, the candidates that are another
 function's code. Code is **live** when it is reachable from an attested entry over
 static branch, call and switch-case targets and over fall-throughs that provably
-continue — not past a call to a function no path of which returns, an indirect call
-or a user operation, the trust notion of `poolextents` — or, failing that, from a
+continue — the trust notion of `poolextents`, made lenient in two ways: an indirect
+call is taken to return, and a jump through a register counts as a return of the
+function it ends; a direct call to a function no path of which returns and a user
+operation still end the flow — or, failing that, from a
 Thumb code pointer stored in data, in a literal pool the Listing proves, or naming a
 candidate. An entry is **attested** when a symbol, an entry oracle, a load-time
 oracle other than the pattern scan, a code-pointer scan, a call table or a direct call
@@ -9715,7 +9717,7 @@ only from a code pointer no oracle accepted (the pointer-entry scan needs an
 undefined gap, and the planted entry splits it), that pointer target is emitted as an
 entry in its place, unless live code runs into it too. Measured on the 63 stripped
 ARM decbench binaries against their unstripped twins (34,019 symbol starts), entries
-at no symbol fall from 1,616 to 743, no symbol start is dropped and the ten entries
+at no symbol fall from 1,616 to 708, no symbol start is dropped and the ten entries
 added are symbol starts. On the fixture `cortexm_falseentry_le32` the push after a
 predicated return, the push after a `cbz` past the return and the push inside a
 pointer-only handler stop being functions, the handler's real start becomes one, and

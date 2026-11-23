@@ -40,5 +40,5 @@
       "\"address_hex\"\\s*:\\s*\"0x8008084\""
     ]
   },
-  "notes": "Reduced from cleanflight_DALRCF405 0x8010328 (uartTotalRxBytesWaiting), where discovery listed 0x801032c and 0x8010340 inside the function and funcboundflow cut it at the first. The prologue scans plant an entry at a push run into by a predicated return's skip (0x8008026), at a push only the preceding function's cbz reaches (0x8008046), and at the frame push of a pointer-only handler (0x8008084); none is a function, and the handler's real start 0x8008080 is. 0x8008068 follows a call that never returns and a nop, and stays."
+  "notes": "Reduced from cleanflight_DALRCF405 uartTotalRxBytesWaiting (0x8010328), cut at a discovered entry inside it. Prologue scans plant entries at a push after a predicated return (0x8008026), a push only the previous function's cbz reaches (0x8008046) and a pointer-only handler's frame push (0x8008084); the handler starts at 0x8008080. 0x8008068 follows a non-returning call and a nop and stays."
 }
