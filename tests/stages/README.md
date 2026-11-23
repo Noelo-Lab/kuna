@@ -66,13 +66,22 @@ whose block holds unread flag writes once the register space has had a heritage
 pass (`deadcode delay register 50` keeps those writes alive). Before the fix the
 second `if (x)` stayed.
 
+`kuna-looptest-order.xml` checks the ordering test of option `looptest` on four
+x86-64 counted loops whose latch tests `!=` behind a guard that tests an order.
+A count down to zero prints `while (n > 0)` and a byte walk to `&p[n]` with a
+signed `n` prints `while (p < end)`, both without the guard. A step of 2 against
+`n` (an odd `n` is never met) and an end pointer computed as `a + (n - 1) + 1` in
+32 bits (far past `a` at `n == 0`) stay guarded do-while loops.
+`option looptest binary` restores the guards and `!=` tests.
+
 `kuna-looptest.xml` checks option `looptest` on six x86-64 loops laid out as
 gcc -O2 rotates them. A pointer loop whose `n == 0` guard returns separately, a
 counted loop wrapped in `if (n > 0)` and a list walk whose test reads the copy
 of the next pointer print `while (c)` with the guard gone; `i = 0; do ...
 while (i != 16)` prints `while` because its entry test folds to true. A guard
-`n > 0` in front of a `!=` latch and a retry loop whose test reads a body value
-stay do-while. `option looptest binary` restores every do-while and guard.
+`n > 0` in front of a `!=` latch prints `while (i < n)` (the ordering test), and
+a retry loop whose test reads a body value stays do-while. `option looptest
+binary` restores every do-while and guard.
 
 `kuna-switchmerge.xml` checks option `switchmerge`: two AArch64 range-checked
 jump tables on one selector, the second reached when the first's range check

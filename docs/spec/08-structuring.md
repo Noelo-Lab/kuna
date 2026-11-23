@@ -1402,7 +1402,39 @@ entry test folds to true (`i = 0; do … while (i < 16)`), when it equals the
 condition of an edge that dominates the header and whose target has that edge
 as its only way in (no LOADs in this case), or when it equals the condition of
 a guard. Implication is not enough: with a signed count, `n > 0` and
-`p != &a[n]` disagree for negative `n`, so such a loop keeps its do-while.
+`i != n` disagree for negative `n`, so the latch is not printed as it stands.
+
+*An ordering test.* A rotated counted loop usually tests `i != n` at the
+bottom behind a guard `n > 0`. When none of the proofs above holds, the plan
+tries the latch's `==`/`!=` comparison as an ordering test. One side must be a
+carried value `x` whose latch value is the MULTIEQUAL output plus a constant
+`s` (`INT_ADD`, `INT_SUB`, or `PTRADD` by constant index and element size,
+through COPYs), the other an invariant bound `b` (defined before the loop, or
+an implied pure expression of such values with no LOAD). If `x` starts strictly
+on the near side of `b` (`x_entry < b` for `s > 0`, `b < x_entry` for
+`s < 0`) and `b - x_entry` is an exact multiple of `s`, then `x` takes the
+values `x_entry, x_entry + s, ..., b` and stops there: `x != b` and `x < b`
+(`x > b`) agree on every value the top test sees, and no step can wrap, since
+each value lies between `x_entry` and `b`. A step of 1 needs no more; otherwise
+the bound must be `&x_entry[n]` with `s` the element size (C pointer
+arithmetic, also when `x_entry` is itself `&p[i]`), or `x_entry + n * c` /
+`x_entry + (n << j)` with `c` or `2^j` a multiple of a power-of-two `s` (the
+difference is then a multiple of `s` modulo the word, hence exactly). The entry test of the ordering test, `x_entry < b`
+compared with the same signedness, must then equal the guard (which is dropped
+under the rules below) or a dominating condition, through the same normal
+form, which also orders pointers by their index (`p < &p[n]` is `0 < n`, and
+`&p[i]` against `&p[j]` over one element size is `i` against `j`, C pointer
+arithmetic; the same rule lets `&p[16] != &p[32]` fold to true as a constant
+entry test) and compares an extended value with a constant at its own width.
+The signedness is the one C will use: both operands must print with types of
+the same class, signed integers, unsigned integers or pointers, read
+from each high's declaration (the `signedness` rounding included) or, for an
+expression, its own type; a constant bound must lie in `[0, 2^31)`. The
+printer then spells that one comparison op with the ordering token (`<`, `>`,
+or `>=`/`<=` for an `==` exit test, which its negation turns into the loop
+test) while it prints the top test. `wrapend`-style bounds such as
+`a + (n - 1) + 1` in 32 bits are far past `a` at `n == 0`, so their entry test
+is not the guard's and the loop stays a do-while.
 
 *The guard.* Walking back from the header's entry edge over straight-line
 blocks reaches the guard, a block ending in a `CBRANCH` with one edge toward
