@@ -124,6 +124,12 @@ The ARMv8 little-endian entry includes the carry-out the Thumb-2 `ands`,
 digest was regenerated with `slacomp`, which reproduces the previous ARM
 digest on the previous sources.
 
+The ARM entry includes the carry of the VFP compares (`FloatVectorCompare` in
+`ARMneon.sinc`), set for unordered operands as `!tNG`, the negation of the
+macro's own `op1 f< op2`. The edit replaces one line and adds no temporary, so
+no source line and no unique offset moves. Its digest was regenerated with
+`slacomp`, which reproduces the previous ARM digest on the unmodified sources.
+
 `xml_ops.xml` is the same pinned C++ compiler's `-y` output for
 `snips/xml_ops.slaspec`. The CLI test compares XML output byte-for-byte in both
 single-file and recursive modes, including the `BUILD` and `INT_ADD` opcode

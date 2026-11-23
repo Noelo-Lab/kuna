@@ -2321,7 +2321,8 @@ mod tests {
         // and kuna-rex-before-prefix / an x86-64 REX prefix that a legacy prefix follows is ignored
         // and kuna-returndup-auto / an unoptimized function keeps the returns its binary records
         // and kuna-iteregion-auto / an unoptimized function keeps the ?: or if/else its binary records
-        assert_eq!(count, 909, "corpus file count drifted");
+        // and kuna-vcmp-carry / ARM vcmp sets the carry for unordered operands
+        assert_eq!(count, 910, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
