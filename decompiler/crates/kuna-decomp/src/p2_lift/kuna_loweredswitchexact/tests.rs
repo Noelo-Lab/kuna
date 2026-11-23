@@ -119,6 +119,7 @@ fn record(fd: &Funcdata, cases: &[(u64, u64)], default: u64, size: int4) -> Kuna
         linear: false,
         shape_without: None,
         base_shape: false,
+        retry: false,
     }
 }
 

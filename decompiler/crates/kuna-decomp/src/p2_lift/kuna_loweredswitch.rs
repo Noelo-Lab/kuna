@@ -102,7 +102,7 @@ use crate::context::{BlockId, OpId, VarnodeId};
 use crate::funcdata::Funcdata;
 use crate::kuna_loweredswitchlabels::{reconcile_range_signedness, LoweredSwitchSignedness};
 use crate::options::on_or_off;
-use crate::p2_lift::kuna_loweredswitchvalue::{verify_installed_switch_values, ValueCheck};
+use crate::p2_lift::kuna_loweredswitchvalue::{verify_installed_switch_values, ValueCheck, ValueState};
 use crate::p2_lift::kuna_loweredswitchexact::{self, record_is_exact};
 use crate::p2_lift::kuna_loweredswitchpath;
 use crate::p2_lift::kuna_loweredswitchheads::{case_body_entered_elsewhere, cascade_heads};
@@ -161,6 +161,9 @@ pub struct KunaLoweredSwitchRecord {
     /// the variable with the most compare-only blocks: the cascade the
     /// recogniser took before it looked at heads holding other code.
     pub base_shape: bool,
+    /// (kuna) Recorded on the retry after a withdrawal: the compare-only
+    /// cascade the previous recogniser chose.
+    pub retry: bool,
 }
 
 /// Side-table key: identifies a function without holding clearable handles
@@ -1156,6 +1159,7 @@ fn recover_cascade(
         linear: !saw_range,
         shape_without: None,
         base_shape,
+        retry: false,
     })
 }
 
@@ -1300,11 +1304,19 @@ impl ActionLowerSwitchDetect {
         if data.is_jumptable_recovery_on() {
             return 0;
         }
-        // already discovered (sticky)
+        // already discovered (sticky); a withdrawn cascade the previous
+        // recogniser would not have chosen is retried as that recogniser would.
+        let mut skip: Vec<Address> = Vec::new();
         if self.store.borrow().has_record(data) {
             verify_installed_switch_values(data, &self.store);
-            return 0;
+            let store = self.store.borrow();
+            let recs = store.records(data);
+            if !recs.iter().all(|r| r.value.state == ValueState::Withdrawn && !r.base_shape && !r.retry) {
+                return 0;
+            }
+            skip = recs.iter().map(|r| r.branch_addr.clone()).collect();
         }
+        let retry = !skip.is_empty();
 
         // Collect comparison-on-constant cascade nodes, grouped by switch variable.
         let mut cmpmap: BTreeMap<BlockId, CmpNode> = BTreeMap::new();
@@ -1340,7 +1352,8 @@ impl ActionLowerSwitchDetect {
             }
         }
         let mut tried: BTreeSet<VarnodeId> = BTreeSet::new();
-        for counts in [&var_count, &pure_count] {
+        let order: &[&BTreeMap<VarnodeId, int4>] = if retry { &[&pure_count] } else { &[&var_count, &pure_count] };
+        for counts in order.iter().copied() {
             let Some(best) = counts.values().copied().max().filter(|c| *c >= 2) else {
                 continue;
             };
@@ -1352,7 +1365,7 @@ impl ActionLowerSwitchDetect {
             tied.sort_unstable();
             for (_, swvar) in tied {
                 tried.insert(swvar);
-                if self.record_cascade(data, &cmpmap, swvar, &pure_count) {
+                if self.record_cascade(data, &cmpmap, swvar, &pure_count, &skip) {
                     return 1; // a record was added (the C++ returns 0 to quiesce; see apply note)
                 }
             }
@@ -1367,7 +1380,9 @@ impl ActionLowerSwitchDetect {
         cmpmap: &BTreeMap<BlockId, CmpNode>,
         swvar: VarnodeId,
         pure_count: &BTreeMap<VarnodeId, int4>,
+        skip: &[Address],
     ) -> bool {
+        let retry = !skip.is_empty();
         // Find the head: a cascade node for swvar that no other cascade node
         // continues into.
         let mut is_child: BTreeSet<BlockId> = BTreeSet::new();
@@ -1399,7 +1414,7 @@ impl ActionLowerSwitchDetect {
         let picked_by_pure = pure_count.get(&swvar).copied().unwrap_or(0) == pure_best && pure_best >= 2;
         // The heads of the whole spine, then the heads of its compare-only part
         // that a head holding other code ran into.
-        let mut heads = cascade_heads(&spine, &is_child);
+        let mut heads = if retry { Vec::new() } else { cascade_heads(&spine, &is_child) };
         let pure_spine: BTreeSet<BlockId> =
             spine.iter().copied().filter(|bl| cmpmap.get(bl).is_some_and(|cn| cn.pure)).collect();
         for h in cascade_heads(&pure_spine, &is_pure_child) {
@@ -1422,6 +1437,10 @@ impl ActionLowerSwitchDetect {
                 None => continue,
             };
             rec.base_shape &= picked_by_pure;
+            rec.retry = retry;
+            if skip.contains(&rec.branch_addr) {
+                continue;
+            }
             if rec.spine.is_empty() && !record_is_exact(data, head, &spine, swvar, &rec) {
                 continue;
             }
@@ -1639,8 +1658,16 @@ impl ActionLowerSwitchInstall {
                     }
                     changed += 1
                 }
-                Ok(None) => {} // CFG no longer matches the record; decline
-                Err(_e) => {}  // surgery error: leave the CFG as-is
+                // The CFG no longer matches the record, or the surgery failed: the
+                // CFG is left as-is, and a cascade the previous recogniser would not
+                // have chosen gives way to the one it would.
+                Ok(None) | Err(_) => {
+                    if let Some(rec) = self.store.borrow_mut().record_mut(data, i) {
+                        if !rec.base_shape && !rec.retry {
+                            rec.value.state = ValueState::Withdrawn;
+                        }
+                    }
+                }
             }
         }
         changed

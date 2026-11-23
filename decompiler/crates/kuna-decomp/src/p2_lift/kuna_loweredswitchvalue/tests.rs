@@ -330,6 +330,7 @@ fn install_fake_switch(fd: &mut Funcdata, input_vn: VarnodeId, read_head_operand
         linear: false,
         shape_without: None,
         base_shape: false,
+        retry: false,
     };
     store.borrow_mut().push(fd, rec);
     store

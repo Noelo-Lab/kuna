@@ -853,6 +853,7 @@ fn sample_record(fd: &Funcdata) -> KunaLoweredSwitchRecord {
         linear: false,
         shape_without: None,
         base_shape: false,
+        retry: false,
     }
 }
 

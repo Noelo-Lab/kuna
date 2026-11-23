@@ -3273,7 +3273,14 @@ tries the compare-only blocks that only a head holding code runs into (tar's
 `read_next_name` dispatches on a call's result with a loop test `v == 3` in the
 call's block ahead of the tree). The every-head rule counts the two kinds of head
 apart, so a failed head holding code never makes the compare-only head behind it
-a later one. A selector that the simplified graph
+a later one. When the cascade chosen this way is withdrawn after the install
+(below) or its install declines, and it is not the one the earlier recogniser
+would have chosen, detection runs once more as that recogniser did: on the
+variables with the most compare-only compares and from compare-only heads only,
+skipping the withdrawn cascade's head. openssh's `uncompress_buffer` heads its
+cascade with the `inflate` call's block, whose loop test `ret == Z_OK` re-rolled
+into a case that continues the loop and printed gotos; the compare-only tree
+behind it is the switch it printed before. A selector that the simplified graph
 holds in a temporary is the output of a load (an ARM `ldrb r3,[r3]` of
 `dev->bus->busType`); the record keeps the load's address and the install reads
 the head compare's operand only when that is the output of the same load, and
