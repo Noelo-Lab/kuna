@@ -2279,8 +2279,10 @@ mod tests {
         // and kuna-cachereturn / a lazy accessor returns the value of its cache cell (option cachereturn)
         // and kuna-thunknames / a placeholder jump thunk is named after its target (option thunknames)
         // and kuna-swifthelpers / Swift instantiation helpers and lazy witness table accessors (option swifthelpers)
+        // and kuna-aif-slot-edges / inferred entries start a complete section-relative slot
+        // and kuna-powerpc-isel / explicit language and call recovery
         // and kuna-mips-o64-calls / O64 stack arguments and Octeon conditional calls
-        assert_eq!(count, 862, "corpus file count drifted");
+        assert_eq!(count, 864, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

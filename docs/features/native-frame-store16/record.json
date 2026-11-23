@@ -1,0 +1,48 @@
+{
+  "feature": "native-frame-store16",
+  "status": "proposal",
+  "production_implementation_started": false,
+  "change_kind": "strict-correctness",
+  "option_proposed": null,
+  "scope": "One original nonvolatile STORE16 at a fixed own-local frame address; preserve complete backing through splitting and allocation.",
+  "base_commit": "24eb881e5a8513da7baf18e2d1860fc9eeb040ff",
+  "base_tree": "dfb2f1de6b2c711907dca7ce270254d25a35a7dc",
+  "stock_evidence": {
+    "cli_sha256": "23d845f0f135a26b4648e1bb8ec37360a803daba56ccb9a4b73a69f2db718fa7",
+    "fixture_sha256": "20e54ba974698ec13155b889172b00fd00153ae6db9886e3dcb6c8c2f8546935",
+    "script_sha256": "065336d6abb09705cc18791de88f0dc0f0320fad2e12d3d059c01e6c7a0d66d4",
+    "raw_load_bytes": 16,
+    "raw_store_bytes": 16,
+    "split_local_objects": true,
+    "compiler": "cc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
+    "compiled_generated_c_objects": true,
+    "fixture_execution": false,
+    "generated_object_execution": false,
+    "native_equivalence_claim": false,
+    "authored_observer_data_load_bytes": [
+      8,
+      8
+    ]
+  },
+  "implementation_acceptance": "One real 16-byte backing passed to a full-width native observer, without a scalar adapter; source and destination evaluated at original points.",
+  "exclusions": [
+    "Loop folding and larger interval unions",
+    "Go ABI zero authority",
+    "Nominal Rust layout or per-output user-type persistence",
+    "Metadata schemas",
+    "Generic unsupported wide-expression emission"
+  ],
+  "timeit": {
+    "status": "pending implementation",
+    "measured": false
+  },
+  "gates": {
+    "implementation_stage": "not added",
+    "full_workspace": "not run; docs-only proposal",
+    "baseline_changes": false
+  },
+  "open_design_gates": [
+    "Complete bounded consumer read/write/escape contract bound to pointer origin; a raw STORE16 or pointer type alone is insufficient.",
+    "Complete post-commit rollback or function reflow clears backing, hints and alias-preservation state together."
+  ]
+}
