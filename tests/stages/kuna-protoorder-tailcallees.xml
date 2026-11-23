@@ -26,8 +26,8 @@
     `_tail_auth` is `bl _helper; ...; b _helper2` with `_helper(int)` and
     `_helper2(int)` each returning in w0: `return _helper2(_helper(a0))`.
     Stating only the tail callee printed
-    `int _tail_auth(void) { _helper(); return _helper2(); }`, a return value
-    computed from no argument.  The drive now also states the callee of the
+    `int _tail_auth(unsigned int a0) { _helper(a0); return _helper2(); }`, a
+    return value computed from no argument.  The drive now also states the callee of the
     call before the tail call, and `passthrough` hands that callee's stated
     result in x0 to the tail callee that reads it.  Pass 3
     (`option passthrough off`) pins the argument-less calls, pass 4 (the

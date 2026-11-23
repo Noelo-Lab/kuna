@@ -6992,10 +6992,11 @@ between). Its result may be what the tail call passes on; a tail call that
 takes nothing, such as a call to `__stack_chk_fail`, states no such callee.
 arm64e `_tail_auth` is `bl _helper; ...; b _helper2`, which is
 `return _helper2(_helper(a0))`: stating only `_helper2` gave the function
-`_helper2`'s return value, and `_tail_auth` printed `int _tail_auth(void) {
-_helper(); return _helper2(); }`, a return value computed from no argument. With
-`_helper` stated as well, `passthrough` passes `a0` to `_helper` and `_helper`'s
-result to `_helper2` (*A result handed to the next call*, below).
+`_helper2`'s return value, and `_tail_auth` printed `int _tail_auth(unsigned int
+a0) { _helper(a0); return _helper2(); }`, a return value computed from no
+argument. With `_helper` stated as well, `passthrough` passes `_helper`'s result
+to `_helper2` (*A result handed to the next call*, below), and `_helper`'s
+stated `int` parameter types `a0`.
 
 A `decompile-all` that selects part of the binary (`--addr`, `--functions`,
 `--limit` and the triage filters) and `kuna decompile --json` have no
