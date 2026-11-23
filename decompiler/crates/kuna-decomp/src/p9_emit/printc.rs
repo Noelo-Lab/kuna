@@ -1576,6 +1576,9 @@ pub struct PrintC {
     /// (kuna `tailform`) The `RETURN` of the leaf being emitted that the leaf
     /// leaves out ([`crate::p8_structure::kuna_tailform::skipped_return`]).
     tailform_skip: Option<OpId>,
+    /// (kuna `voidtailreturn`) The `default:` arm (switch, case index) of the
+    /// switch a void function ends with, when that arm only returns.
+    void_tail_default: Option<(BlockId, usize)>,
     /// (kuna `gotonext`) The gotos left out or printed as `break;`, and the labels
     /// only they reached.  Computed per function at the top of
     /// [`emit_function_body`](PrintC::emit_function_body).
@@ -1681,6 +1684,7 @@ impl PrintC {
             commsorter: crate::comment::CommentSorter::new(),
             void_tail_return: None,
             tailform_skip: None,
+            void_tail_default: None,
             goto_rewrites: Default::default(),
             switch_plans: Default::default(),
             loop_tests: Default::default(),
@@ -2076,6 +2080,7 @@ impl PrintC {
         self.eol_warns.clear();
         self.warnings.clear();
         self.void_tail_return = None;
+        self.void_tail_default = None;
         self.stmt_op = None;
         self.label_names.clear();
         self.local_name_overrides.clear();
@@ -4350,6 +4355,11 @@ impl PrintC {
         } else {
             None
         };
+        self.void_tail_default = if arch.voidtailreturn {
+            crate::p9_emit::kuna_voidtailswitch::elidable_tail_default(fd, self.void_tail_return)
+        } else {
+            None
+        };
         let c_switch = matches!(self.lang().forms.switch, crate::kuna_lang::SwitchForm::CSwitch);
         self.switch_plans = if arch.switchmerge && c_switch {
             let facts = crate::p8_structure::kuna_switchmerge::PrintFacts {
@@ -4387,6 +4397,7 @@ impl PrintC {
         self.emit_block_graph(fd, arch, sroot);
         self.loop_tests = Default::default();
         self.void_tail_return = None;
+        self.void_tail_default = None;
         self.goto_rewrites = Default::default();
         self.switch_plans = Default::default();
         self.label_names.clear();
@@ -5473,7 +5484,10 @@ impl PrintC {
         // after the `switch (v) {` header brace.
         self.flush_eol_warnings();
 
-        let arms = self.switch_arms(fd, blk);
+        let mut arms = self.switch_arms(fd, blk);
+        if let Some((sw, index)) = self.void_tail_default {
+            arms.retain(|a| !(a.owner == sw && a.index == index && a.guard.is_none() && a.skip == 0));
+        }
         let ncase = arms.len();
         for (i, arm) in arms.iter().enumerate() {
             let owner = arm.owner;

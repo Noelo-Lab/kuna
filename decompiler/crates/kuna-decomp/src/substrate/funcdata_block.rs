@@ -284,6 +284,8 @@ impl Funcdata {
         }
         // stable_sort by CaseOrder::compare (label, then depth).
         cases.sort_by(crate::block::CaseOrder::compare);
+        // (kuna `switchcaseorder`) default and unstopped arms last.
+        crate::p8_structure::kuna_switchcaseorder::order_cases(self, &mut cases);
         if let Some(slot) = self.sblocks_mut().block_mut(sw).switch_caseblocks_mut() {
             *slot = cases;
         }
