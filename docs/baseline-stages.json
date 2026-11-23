@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4998,
-    4998
+    4999,
+    4999
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -934,6 +934,7 @@
     "data:FPU TRUNC VIEWS #5: a clobber reads actual floating storage",
     "data:FRAMEPUBLISH-SEH #1: the push-ecx local below the published record does not make ECX a parameter",
     "data:FRAMEPUBLISH-SEH #2: the record's handler and state stores print",
+    "data:FRAMEPUBLISH-SEH #3: stores below a published mid-array pointer that it indexes print",
     "data:FUNCBOUNDFLOW #1: default does NOT merge neighbor; only the funcboundflow-off pass shows its body (exactly one occurrence across both passes)",
     "data:FUNCBOUNDFLOW #2: both passes resolve the unnamed no-return call to fatal(), so the sole difference is the boundary truncation",
     "data:FUNCPTRALIGN #1: the SLEIGH ISA-mode bit-clear never reaches the emitted C",
