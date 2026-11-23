@@ -1711,7 +1711,9 @@ impl ExprArena {
     /// them instead, so a select over it is never read as `var + d`.
     /// Without boolean atoms that answer must also pass
     /// [`identity_probe`](Self::identity_probe), which alone decides an
-    /// expression over several variables; the cached quick points reject
+    /// expression over several variables, and a constant over one variable
+    /// that is no pointer (a context offset decoded through a key,
+    /// `x ^ ((x & !k) + (!x & k))`, is `k`); the cached quick points reject
     /// most expressions before either runs.  This is how angr's concretizing
     /// solver sees through mixed boolean-arithmetic rewrites of the stack
     /// pointer, without fixing the pointer's value.
@@ -1793,6 +1795,7 @@ impl ExprArena {
         // full identity test agrees (where it applies: no boolean atoms).
         let r = match r {
             Some(x) if vars.len() == 1 && self.bool_atoms(e).is_empty() => (self.identity_probe(e) == Some(x)).then_some(x),
+            None if vars.len() == 1 && self.size(e) >= 4 => self.identity_probe(e).filter(|(b, _)| b.is_none()),
             r => r,
         };
         self.probe_memo.insert(e, r);

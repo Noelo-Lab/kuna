@@ -662,3 +662,30 @@ fn identity_probe_cancels_flag_words_over_free_atoms() {
     let addr = a.mk_bin(CPUI_INT_ADD, back, sp, 4);
     assert_eq!(a.affine_probe(addr), Some((a.as_var(sp), 0xef7f_e5beu32 as i32 as i128)), "{}", a.fmt(addr));
 }
+
+/// Themida decodes a context offset `k` through a key, `x ^ ((x & ~k) +
+/// (~x & k))` with `x` the key plus a constant, which is `k` whatever the key
+/// holds.  Over one merge symbol (no pointer) the three probe points never
+/// take a constant, so the identity test decides it; a near miss stays open.
+#[test]
+fn a_key_decoded_offset_over_one_symbol_is_its_constant() {
+    let mut a = ExprArena::new();
+    let s = a.var_of(VarKind::Merged { node: 3, tag: 4 }, 4, false);
+    let c = a.cst(4, 0xccaf_056c);
+    let x = a.mk_bin(CPUI_INT_ADD, s, c, 4);
+    let nk = a.cst(4, 0xffff_ffb3);
+    let lo = a.mk_bin(CPUI_INT_AND, x, nk, 4);
+    let ns = a.mk_un(CPUI_INT_2COMP, s, 4);
+    let k = a.cst(4, 0x4c);
+    let decode = |a: &mut ExprArena, d: u128| {
+        let cd = a.cst(4, d);
+        let nx = a.mk_bin(CPUI_INT_ADD, ns, cd, 4);
+        let hi = a.mk_bin(CPUI_INT_AND, nx, k, 4);
+        let sum = a.mk_bin(CPUI_INT_ADD, lo, hi, 4);
+        a.mk_bin(CPUI_INT_XOR, x, sum, 4)
+    };
+    let off = decode(&mut a, 0x3350_fa93);
+    assert_eq!(a.affine_probe(off), Some((None, 0x4c)), "{}", a.fmt(off));
+    let near = decode(&mut a, 0x3350_fa94);
+    assert_eq!(a.affine_probe(near), None, "{}", a.fmt(near));
+}

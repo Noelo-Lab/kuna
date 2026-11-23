@@ -17,8 +17,10 @@ identities with an exit behind an opaque predicate on the stack pointer, and
 a call that writes through a pointer passed on the stack and through a pointer
 argument past its first 16 bytes, a call whose register arguments are the
 caller's own first argument, a constant and the address of a local the
-callee writes, and a call made while the interpreter keeps a copy of a loop
-counter below the stack pointer, in the callee's frame.
+callee writes, a call made while the interpreter keeps a copy of a loop
+counter below the stack pointer, in the callee's frame, and a value the
+interpreter keeps in a context cell of its own section, read back at an
+offset decoded through a key register.
 Every program sits
 in its own 256-byte block of seeded random filler (entropy above 7 bits/byte).
 Regenerate with `python3 pushan_vm2_x86_64.py` (needs GNU as/ld)."""
@@ -34,6 +36,8 @@ OP["LDCTXM"], OP["EXITO"], OP["EXITS"] = sorted(set(range(1, 256)) - set(codes) 
 OP["CALL7"] = min(set(range(1, 256)) - set(OP.values()))
 OP["CALL3"] = min(set(range(1, 256)) - set(OP.values()))
 OP["CALLS"] = min(set(range(1, 256)) - set(OP.values()))
+OP["STG"] = min(set(range(1, 256)) - set(OP.values()))
+OP["LDGM"] = min(set(range(1, 256)) - set(OP.values()))
 A0, A1 = 0, 8
 
 
@@ -47,7 +51,7 @@ def asm(lines):
         if isinstance(item, str):
             return 0
         op = item[0]
-        return {"LDCTX": 2, "STCTX": 2, "LEAV": 2, "LDCTXM": 2, "LDIMM": 5, "JZ": 2, "JMP": 2, "SEL": 3}.get(op, 1)
+        return {"LDCTX": 2, "STCTX": 2, "LEAV": 2, "LDCTXM": 2, "STG": 2, "LDGM": 2, "LDIMM": 5, "JZ": 2, "JMP": 2, "SEL": 3}.get(op, 1)
     labels, pc = {}, 0
     for it in lines:
         if isinstance(it, str):
@@ -59,7 +63,7 @@ def asm(lines):
             continue
         op, *args = it
         out.append(OP[op])
-        if op in ("LDCTX", "STCTX", "LEAV", "LDCTXM"):
+        if op in ("LDCTX", "STCTX", "LEAV", "LDCTXM", "STG", "LDGM"):
             out.append(args[0] & 0xff)
         elif op == "LDIMM":
             out += list((args[0] & 0xffffffff).to_bytes(4, "little"))
@@ -224,6 +228,11 @@ PROGRAMS = {
                 ("LDCTX", V(1)), ("LDIMM", 3), ("LT",), ("JZ", "E"),
                 ("LDCTX", V(1)), ("LDIMM", 1), ("ADD",), ("STCTX", V(1)), ("JMP", "L"),
                 "E", ("LDCTX", V(1)), ("EXIT",)],
+    # return a0 + 1;   (the sum goes to context cell 3 in the interpreter's
+    # section, Themida-style, and is read back at an offset the handler
+    # decodes as x ^ ((x & ~k) + (~x & k)) with x = rbx + c, which is k
+    # whatever rbx holds)
+    "f_ctx": [("LDCTX", A0), ("LDIMM", 1), ("ADD",), ("STG", 3), ("LDGM", 3), ("EXIT",)],
 }
 
 NAMES = list(PROGRAMS)
@@ -330,7 +339,15 @@ def source(blocks):
     out += ["h_call3:", "    pop rdx", "    pop rax", "    pop rdi", "    mov rbx, rsi", "    mov rsi, rax",
             "    call ext3", "    mov rsi, rbx", "    push rax", "    jmp dispatch",
             "h_calls:", "    pop rdi", f"    mov rax, qword ptr [rbp-{0x100 - V(1):#x}]", "    mov qword ptr [rsp-0x100], rax",
-            "    mov rbx, rsi", "    call ext", "    mov rsi, rbx", "    push rax", "    jmp dispatch"]
+            "    mov rbx, rsi", "    call ext", "    mov rsi, rbx", "    push rax", "    jmp dispatch",
+            "h_stg:", "    movzx eax, byte ptr [rsi]", "    add rsi, 1", "    lea rcx, [rip+vctx]",
+            "    pop qword ptr [rcx+rax*8]", "    jmp dispatch",
+            "h_ldgm:", "    movzx eax, byte ptr [rsi]", "    add rsi, 1", "    shl eax, 3",
+            "    lea rcx, [rbx+0x3350fa94]", "    mov rdx, rax", "    not rdx", "    and rcx, rdx",
+            "    mov r8, rbx", "    neg r8", "    add r8, -0x3350fa95", "    and r8, rax", "    add rcx, r8",
+            "    lea r9, [rbx+0x3350fa94]", "    xor rcx, r9", "    lea rax, [rip+vctx]",
+            "    push qword ptr [rax+rcx]", "    jmp dispatch",
+            ".p2align 4", "vctx:", "    .quad 0, 0, 0, 0"]
     out += [".p2align 4", "    .space 0x10000 - (. - vm_entry)", ""]
     return "\n".join(out)
 

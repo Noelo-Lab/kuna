@@ -973,9 +973,15 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
                         let _ = writeln!(f, "    [{k}] {:#x} {}", insn.addr, insn.asm);
                         if let Some(t) = n.traces.get(k) {
                             for a in &t.accesses {
+                                let sym = if a.addr.is_none() && std::env::var("KUNA_PUSHAN_LOG_SYM").is_ok() {
+                                    let r = explorer.arena.affine_probe(a.addr_expr);
+                                    format!(" probe={r:?} expr={}", explorer.arena.fmt(a.addr_expr).chars().take(400).collect::<String>())
+                                } else {
+                                    String::new()
+                                };
                                 let _ = writeln!(
                                     f,
-                                    "         {} via={:?} addr={}",
+                                    "         {} via={:?} addr={}{sym}",
                                     if a.is_store { "store" } else { "load" },
                                     a.via.map(|(r, d)| format!("reg{r:x}{d:+}")),
                                     a.addr.map(|x| format!("{x:#x}")).unwrap_or_else(|| "sym".into())

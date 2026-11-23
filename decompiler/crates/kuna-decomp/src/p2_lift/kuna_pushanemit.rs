@@ -916,21 +916,34 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    /// The interpreter's own memory: concrete addresses inside the
-    /// protector's code sections (Themida keeps its VM context there).  Every
-    /// emitted access to such a byte becomes a copy through a register past
-    /// the witness slots, so the decompiler sees the context as locals it can
-    /// forward and kill, not as global stores.  A byte some emitted op reaches
-    /// as real memory (a forked or repeated access) stays memory, along with
-    /// every access overlapping it, so the two views never mix.
+    /// The fixed address an access went to: a constant, or an address
+    /// expression the emulation itself placed at one constant
+    /// ([`ExprArena::affine_probe`], as its load and store did).
+    fn access_addr(&mut self, a: &super::kuna_pushanemu::AccessRecord) -> Option<u64> {
+        if a.addr.is_some() {
+            return a.addr;
+        }
+        let (None, off) = self.arena.affine_probe(a.addr_expr)? else { return None };
+        let bits = 8 * self.conf.ptr_size as u32;
+        Some(if bits >= 64 { off as u64 } else { (off as u64) & ((1u64 << bits) - 1) })
+    }
+
+    /// The interpreter's own memory: fixed addresses ([`Self::access_addr`])
+    /// inside the protector's code sections (Themida keeps its VM context
+    /// there).  Every emitted access to such a byte becomes a copy through a
+    /// register past the witness slots, so the decompiler sees the context as
+    /// locals it can forward and kill, not as global stores.  A byte some
+    /// emitted op reaches as real memory (a forked or repeated access) stays
+    /// memory, along with every access overlapping it, so the two views never mix.
     fn plan_private(&mut self) {
         let mut ok: BTreeSet<(u64, u32)> = BTreeSet::new();
         let mut blocked: BTreeSet<u64> = BTreeSet::new();
-        for node in &self.cfg.nodes {
+        let cfg = self.cfg;
+        for node in &cfg.nodes {
             for (k, insn) in node.insns.iter().enumerate() {
                 let Some(tr) = node.traces.get(k) else { continue };
                 for a in &tr.accesses {
-                    let Some(addr) = a.addr else { continue };
+                    let Some(addr) = self.access_addr(a) else { continue };
                     let n = a.size as u64;
                     let foreign = (0..n).filter(|b| self.target.is_foreign_code(addr.wrapping_add(*b))).count() as u64;
                     if foreign == 0 {
@@ -993,12 +1006,12 @@ impl<'a> Emitter<'a> {
     }
 
     /// The register standing for the private access of op `i`, if it is one.
-    fn private_vn(&self, tr: &super::kuna_pushanemu::InsnTrace, insn: &LiftedInsn, i: usize) -> Option<VarnodeData> {
+    fn private_vn(&mut self, tr: &super::kuna_pushanemu::InsnTrace, insn: &LiftedInsn, i: usize) -> Option<VarnodeData> {
         if self.private.is_empty() || tr.forked || tr.path.is_empty() || order_count(Some(tr), insn, i) != 1 {
             return None;
         }
         let acc = tr.accesses.iter().find(|a| a.op_index == i)?;
-        let addr = acc.addr?;
+        let addr = self.access_addr(acc)?;
         if !self.private_accesses.contains(&(addr, acc.size as u32)) {
             return None;
         }

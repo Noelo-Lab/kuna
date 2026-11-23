@@ -4413,14 +4413,29 @@ see are checked by a probe (`ExprArena::affine_probe`). An expression over one
 variable is evaluated with it set to three values that differ in the
 variable's unknown bits. If it moves by the same amount as the variable each
 time, it is `var + d`, and a stack-pointer write is stored in that form. If it
-gives the same value each time, it is that constant. A variable with at most
+gives the same value each time and the variable is a pointer, it is that
+constant. A variable with at most
 two unknown bits (a merged loop counter seen only as 0 and 1 has one) is
 evaluated at each of its possible values instead. Three probe points masked by
 its known bits would coincide, and a select between two bytecode addresses
 over that counter would pass for `counter + 0x47444c`, sending the next
 bytecode fetch into a region that does not exist. Without boolean atoms the
 three-point answer stands only if the identity test below agrees, and an
-expression over several variables goes to the identity test alone.
+expression over several variables goes to the identity test alone. So does
+an expression over one variable that is no pointer when the three points give
+it no answer, and only a constant answer is taken from that test. Themida
+decodes a context offset `k` through a key, `x ^ ((x & ~k) + (~x & k))` with
+`x` the key plus a constant, which is `k` whatever the key holds. In
+newstar_infect_themida the key is a loop's merge symbol, so the offset is a
+one-variable expression the three points always reject (they never accept a
+constant over a non-pointer), and the load of the guest's frame register
+from its context cell went to an unknown address. The emitter then kept it as
+a load of the cell's memory, which the decompiler's own rules placed on the
+cell, while every store to the cell had been privatized into a register: the
+loop read the cell's file contents, and `CopyFileW` got that value minus
+0x32c as its destination instead of the frame buffer. just_if_themida lost
+the store of `&input` into the VM register that becomes RDX the same way, so
+the emulated call passed the caller's RDX to `scanf`.
 
 **Identity by evaluation.** Themida computes every stack and context address
 from the entry stack pointer and other entry registers through identities such
@@ -4776,11 +4791,14 @@ with these edits:
   always knows where the stack pointer is: a merge of two paths, or a callee
   whose stack adjustment the prototype states differently from the emulation,
   cannot leave it unsure.
-- Interpreter memory privatization (`Emitter::plan_private`). A concrete access
-  into the protector's own code sections (Themida keeps its VM context and
-  rebuilt handler tables there) becomes a copy through a register placed past
-  the frame register, one register byte per memory byte the emitted code touches.
-  Those registers are loaded from memory in the entry trampoline, for a path
+- Interpreter memory privatization (`Emitter::plan_private`). An access at a
+  fixed address into the protector's own code sections (Themida keeps its VM
+  context and rebuilt handler tables there) becomes a copy through a register
+  placed past the frame register, one register byte per memory byte the
+  emitted code touches. The address is fixed when it is a constant or when
+  the emulation's own load or store placed it at one through the probe
+  (`Emitter::access_addr`). Those registers are loaded from memory in the
+  entry trampoline, for a path
   that reads a cell before the interpreter writes it. Every external call
   preserves them. The decompiler then forwards and kills the VM context like
   locals instead of printing hundreds of global stores. A byte that some
@@ -5149,9 +5167,11 @@ two virtual exits into one native epilogue, one of them an instruction
 ahead of it, whose call the recovered program makes once, and a virtual branch
 whose handler computes the next VPC from the low bit of a flag a join merged
 and from a comparison (`f_sel`), which splits over the merge symbol's two
-recorded values, and a call to a function of the image that writes a local
+recorded values, a call to a function of the image that writes a local
 whose address it got in a stack-passed argument and a field 32 bytes past its
-pointer argument (`f_out`), both tested after it.
+pointer argument (`f_out`), both tested after it, a value kept in a context
+cell of the interpreter's section and read back at an offset decoded through
+a key (`f_ctx`, which returns the value).
 `tests/stages/kuna-pushan-interp.xml` runs two passes over the
 `pushan_interp_x86_64` fixture (gcc -O0 from its committed C source), six
 functions that are their own interpreters of one virtual program with a loop
