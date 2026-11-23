@@ -3716,10 +3716,13 @@ for architectures that model condition flags as explicit bits.
 `RuleBoolSignLess` (fires on INT_SLESS): a boolean shifted into the sign bit
 and tested with `s< 0` — where the operand's nonzero mask is exactly the bit
 landing in the sign position — becomes `b != 0`. `RuleSborrowGe` (fires on
-BOOL_AND/BOOL_OR): the `N == V` signed-comparison idiom — the
-XNOR of the result sign of `V - K` with `SBORROW(V, K)`, in either its
-AND-of-ORs or OR-of-ANDs lowering — becomes `INT_SLESSEQUAL(K, V)` (`V >= K`
-as the source wrote it). Always on (DIV-3).
+BOOL_AND/BOOL_OR): the XNOR of a sign test of `V - K` with `SBORROW(V, K)`,
+in either its AND-of-ORs or OR-of-ANDs lowering, becomes one signed compare.
+The rule keeps the sign test's polarity. When the test is N (`(V-K) s< 0`), the
+tree is `N == V` and becomes `INT_SLESSEQUAL(K, V)` (`V >= K`). When the test is
+its negation (`0 s<= (V-K)` or `-1 s< (V-K)`, the spellings that simplification
+usually leaves), the tree is `N != V` and becomes `INT_SLESS(V, K)` (`V < K`).
+Always on (DIV-3).
 
 **ovlesssimplify** (GH-7190) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_ovlesssimplify.rs

@@ -5,9 +5,11 @@
 //!
 //!   * [`RuleBoolSignLess`] (GH-1276): `(b << k) s< 0` -> `b != 0`, when the
 //!     boolean's NZMask is exactly the single bit landing in the sign position.
-//!   * [`RuleSborrowGe`] (GH-8777): the `N == V` signed-overflow idiom
-//!     (`XNOR(sign(V-K), SBORROW(V,K))`, in either AND-of-ORs or OR-of-ANDs form)
-//!     -> `INT_SLESSEQUAL(K, V)` (i.e. `V s>= K`).
+//!   * [`RuleSborrowGe`] (GH-8777): the signed-overflow idiom
+//!     `XNOR(F, SBORROW(V,K))` over a sign flag `F` of `V-K`, in either
+//!     AND-of-ORs or OR-of-ANDs form.  With `F = N` (`(V-K) s< 0`) it is
+//!     `N == V` -> `INT_SLESSEQUAL(K, V)`; with `F = !N` (`0 s<= (V-K)` or
+//!     `-1 s< (V-K)`) it is `N != V` -> `INT_SLESS(V, K)`.
 //!
 //! ## STUB(W6) — opcode-flag resolution
 //!
@@ -124,11 +126,11 @@ impl Rule for RuleBoolSignLess {
 }
 
 // ===========================================================================
-// GH-8777: XNOR(N,V)  ->  SLESSEQUAL(K,V)   where  V s>= K
+// GH-8777: XNOR(N,V) -> SLESSEQUAL(K,V);  XNOR(!N,V) -> SLESS(V,K)
 // ===========================================================================
 
-/// (kuna GH-8777) Fold the `N == V` signed-overflow idiom to a clean signed
-/// compare `INT_SLESSEQUAL(K, V)` (C++ `RuleSborrowGe`).
+/// (kuna GH-8777) Fold the `N == V` / `N != V` signed-overflow idioms to a clean
+/// signed compare `INT_SLESSEQUAL(K, V)` / `INT_SLESS(V, K)` (C++ `RuleSborrowGe`).
 pub struct RuleSborrowGe {
     /// Rule group (C++ `Rule::basegroup`).
     group: String,
@@ -173,19 +175,23 @@ impl Rule for RuleSborrowGe {
             }
         };
 
-        let (vbase, kval, sz) = match match_sborrow_ge(data, nflag, vflag) {
+        let (vbase, kval, sz, flag_is_sign) = match match_sborrow_ge(data, nflag, vflag) {
             Some(t) => t,
             None => return 0,
         };
 
-        // Rewrite the whole boolean tree to INT_SLESSEQUAL(K, V)  (K <= V).
-        // STUB(W6): glb->inst[CPUI_INT_SLESSEQUAL] property flags.
-        data.op_set_opcode(op, TypeOp::new(OpCode::CPUI_INT_SLESSEQUAL, 0, "INT_SLESSEQUAL"));
+        // STUB(W6): glb->inst[...] property flags.
         let kvn = data.new_constant(sz, kval);
-        data.op_set_input(op, kvn, 0)
-            .expect("RuleSborrowGe: opSetInput const (internal invariant)");
-        data.op_set_input(op, vbase, 1)
-            .expect("RuleSborrowGe: opSetInput vbase (internal invariant)");
+        let (opc, name, in0, in1) = if flag_is_sign {
+            (OpCode::CPUI_INT_SLESSEQUAL, "INT_SLESSEQUAL", kvn, vbase)
+        } else {
+            (OpCode::CPUI_INT_SLESS, "INT_SLESS", vbase, kvn)
+        };
+        data.op_set_opcode(op, TypeOp::new(opc, 0, name));
+        data.op_set_input(op, in0, 0)
+            .expect("RuleSborrowGe: opSetInput slot 0 (internal invariant)");
+        data.op_set_input(op, in1, 1)
+            .expect("RuleSborrowGe: opSetInput slot 1 (internal invariant)");
         1
     }
 }
@@ -221,10 +227,15 @@ fn strip_bool_neg(data: &Funcdata, vn: VarnodeId) -> Option<VarnodeId> {
     op_in(data, op, 0)
 }
 
-/// Recognize the `V s>= K` flag idiom rooted at `{x, y}` where one is
-/// `INT_SBORROW(V,K)` and the other the sign of `(V-K)` (C++ `matchSborrowGe`).
-/// Returns `(vbase, kval, sz)`.  Order-independent.
-fn match_sborrow_ge(data: &Funcdata, x: VarnodeId, y: VarnodeId) -> Option<(VarnodeId, uintb, int4)> {
+/// Recognize the flag pair `{x, y}` where one is `INT_SBORROW(V,K)` and the other
+/// a sign test of `(V-K)` (C++ `matchSborrowGe`).  Returns `(vbase, kval, sz,
+/// flag_is_sign)`: `flag_is_sign` is true when the test is `N` (`(V-K) s< 0`) and
+/// false when it is `!N` (`0 s<= (V-K)`, `-1 s< (V-K)`).  Order-independent.
+fn match_sborrow_ge(
+    data: &Funcdata,
+    x: VarnodeId,
+    y: VarnodeId,
+) -> Option<(VarnodeId, uintb, int4, bool)> {
     // Identify which is the SBORROW.
     let mut sb: Option<VarnodeId> = None;
     let mut sn: Option<VarnodeId> = None;
@@ -252,27 +263,30 @@ fn match_sborrow_ge(data: &Funcdata, x: VarnodeId, y: VarnodeId) -> Option<(Varn
     let kv: uintb = vn_offset(data, vkonst);
     let width: int4 = vn_size(data, base);
 
-    // sn must be the sign-of-(V-K) flag (N), in one of the equivalent forms.
     if !vn_is_written(data, sn) {
         return None;
     }
     let snop = vn_def(data, sn).expect("sn written");
     let sn_sub: VarnodeId;
+    let flag_is_sign: bool;
     let snc = op_code(data, snop);
     if snc == OpCode::CPUI_INT_SLESSEQUAL {
-        // 0 s<= (V-K)
+        // 0 s<= (V-K)  ==  !N
         let z = op_in(data, snop, 0)?;
         if !vn_is_constant(data, z) || vn_offset(data, z) != 0 {
             return None;
         }
         sn_sub = op_in(data, snop, 1)?;
+        flag_is_sign = false;
     } else if snc == OpCode::CPUI_INT_SLESS {
         let a0 = op_in(data, snop, 0)?;
         let a1 = op_in(data, snop, 1)?;
         if vn_is_constant(data, a0) && vn_offset(data, a0) == calc_mask(vn_size(data, a0)) {
-            sn_sub = a1; // -1 s< (V-K)
+            sn_sub = a1; // -1 s< (V-K)  ==  !N
+            flag_is_sign = false;
         } else if vn_is_constant(data, a1) && vn_offset(data, a1) == 0 {
-            sn_sub = a0; // (V-K) s< 0
+            sn_sub = a0; // (V-K) s< 0  ==  N
+            flag_is_sign = true;
         } else {
             return None;
         }
@@ -306,7 +320,7 @@ fn match_sborrow_ge(data: &Funcdata, x: VarnodeId, y: VarnodeId) -> Option<(Varn
         return None;
     }
 
-    Some((base, kv & calc_mask(width), width))
+    Some((base, kv & calc_mask(width), width, flag_is_sign))
 }
 
 /// Extract the `{N,V}` pair from an AND-of-ORs XNOR tree
