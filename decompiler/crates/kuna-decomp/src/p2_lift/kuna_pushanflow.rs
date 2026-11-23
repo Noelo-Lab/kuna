@@ -27,7 +27,7 @@ use kuna_num::opcodes::OpCode;
 
 use super::kuna_pushanemu::{merge_ite, split_over_symbols, symbol_pin, Emulator, Exit, InsnTrace, LiftedInsn, PushanTarget, SymValues, VpcSource, FETCH_WINDOW};
 use super::kuna_pushanexpr::{ExprArena, ExprId, VarId, VarKind};
-use super::kuna_pushanstate::{Diff, Loc, PushanImage, State, SymLoc};
+use super::kuna_pushanstate::{live_pages, Diff, Loc, PushanImage, State, SymLoc, PAGE_BYTES};
 
 pub type NodeId = u32;
 
@@ -152,8 +152,8 @@ pub struct Stats {
     pub lost_sp: usize,
     /// The last round recorded nothing new (the symbolization fixpoint).
     pub converged: bool,
-    /// The exploration stopped at the node limit or the time budget.
-    pub cut_short: bool,
+    /// The limit the last round stopped at, if any.
+    pub cut_short: Option<Limit>,
     /// An in-function interpreter's fetch read bytecode from writable
     /// memory as the file holds it.
     pub writable_bytecode: bool,
@@ -174,12 +174,42 @@ pub struct Stats {
     pub copy_read_unfolded: bool,
 }
 
+/// What stopped an exploration before its fixpoint.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Limit {
+    /// A round reached [`Config::max_nodes`] nodes.
+    Nodes,
+    /// The work done reached [`Config::max_work`] ([`ExprArena::work`]).
+    Work,
+    /// The memory the exploration holds reached [`Config::max_memory`]
+    /// ([`Explorer::memory_estimate`]).
+    Memory,
+    /// The wall-clock backstop ([`Config::max_seconds`]).
+    Time,
+}
+
+impl Limit {
+    pub fn name(self) -> &'static str {
+        match self {
+            Limit::Nodes => "node limit",
+            Limit::Work => "work budget",
+            Limit::Memory => "memory bound",
+            Limit::Time => "wall-clock limit",
+        }
+    }
+}
+
 pub struct Config {
     pub max_nodes: usize,
     pub max_block_insns: usize,
     pub max_rounds: u32,
     pub max_select_targets: usize,
-    /// Wall-clock budget for the whole exploration (seconds).
+    /// The work budget ([`ExprArena::work`]): what ends an exploration that
+    /// does not reach its fixpoint, at the same point on every machine.
+    pub max_work: u64,
+    /// The memory bound ([`Explorer::memory_estimate`], bytes).
+    pub max_memory: u64,
+    /// Wall-clock backstop for the whole exploration (seconds).
     pub max_seconds: u64,
     /// Streaming diagnostics sink (one line per emulated node).
     pub trace: Option<std::rc::Rc<std::cell::RefCell<std::fs::File>>>,
@@ -191,9 +221,17 @@ impl Default for Config {
             .ok()
             .and_then(|p| std::fs::File::create(p).ok())
             .map(|f| std::rc::Rc::new(std::cell::RefCell::new(f)));
-        let max_seconds = std::env::var("KUNA_PUSHAN_SECONDS").ok().and_then(|v| v.parse().ok()).unwrap_or(120);
-        let max_nodes = std::env::var("KUNA_PUSHAN_MAX_NODES").ok().and_then(|v| v.parse().ok()).unwrap_or(200_000);
-        Config { max_nodes, max_block_insns: 4096, max_rounds: 40, max_select_targets: 16, max_seconds, trace }
+        let knob = |name: &str, default: u64| std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default);
+        Config {
+            max_nodes: knob("KUNA_PUSHAN_MAX_NODES", 200_000) as usize,
+            max_block_insns: 4096,
+            max_rounds: 40,
+            max_select_targets: 16,
+            max_work: knob("KUNA_PUSHAN_MAX_WORK", MAX_WORK),
+            max_memory: knob("KUNA_PUSHAN_MAX_MEMORY", MAX_MEMORY),
+            max_seconds: knob("KUNA_PUSHAN_SECONDS", MAX_SECONDS),
+            trace,
+        }
     }
 }
 
@@ -231,6 +269,7 @@ pub struct Abi {
     pub args: Vec<(u64, u8)>,
 }
 
+#[derive(Default)]
 pub struct FlatCfg {
     pub nodes: Vec<Node>,
     pub index: BTreeMap<NodeKey, NodeId>,
@@ -312,7 +351,16 @@ pub struct Explorer<'a> {
     sp0: Option<u32>,
     new_syms: usize,
     started: std::time::Instant,
-    pub timed_out: bool,
+    /// The limit that stopped the exploration ([`Explorer::exhausted`]).
+    pub stopped: Option<Limit>,
+    /// Store pages alive when the exploration started ([`live_pages`]).
+    pages_base: i64,
+    /// Bytes the round's graph holds: its nodes and their traces.
+    graph_bytes: u64,
+    /// Nodes of the round's graph, and p-code ops of their instructions (what
+    /// the emission rewrites).
+    graph_nodes: u64,
+    graph_ops: u64,
     /// The memory cell an in-function interpreter keeps its virtual PC in
     /// ([`Explorer::probe_interpreter`]).
     pub data_vpc: Option<Cell>,
@@ -335,6 +383,26 @@ pub struct Interpreter {
     /// The selector to pin, when there are several programs.
     pub pin: Option<Pin>,
 }
+
+/// The work budget ([`Config::max_work`]): about 120 s of exploration on a
+/// quiet machine (spec 2.11).
+const MAX_WORK: u64 = 2_300_000_000;
+/// The memory bound ([`Config::max_memory`]), bytes.
+const MAX_MEMORY: u64 = 3328 << 20;
+/// The wall-clock backstop ([`Config::max_seconds`]): five times what the
+/// work budget takes on a quiet machine.
+const MAX_SECONDS: u64 = 600;
+/// Bytes a node of the flat graph holds besides its traces (the node, its
+/// index entry, its instruction list).
+const NODE_BYTES: usize = std::mem::size_of::<Node>() + std::mem::size_of::<(NodeKey, NodeId)>() + super::kuna_pushanexpr::MAP_ENTRY_OVERHEAD;
+/// Bytes a lifted instruction holds in the target's cache.
+const LIFT_BYTES: usize = 640;
+/// Bytes the emission holds per op of the graph's instructions while it
+/// rewrites them (each op's rewrite, its memory reference and liveness), and
+/// per node (its exit, liveness sets and overlay instructions): a
+/// least-squares fit over the 48 test targets (spec 2.11).
+const EMIT_OP_BYTES: u64 = 164;
+const EMIT_NODE_BYTES: u64 = 6600;
 
 const VPC_MAX_DISP: i128 = 16;
 /// Farthest a new VPC register's value may sit from the previous context.
@@ -392,6 +460,24 @@ struct CalleeScan {
     closed: bool,
 }
 
+/// The bytes an instruction's trace holds.
+fn trace_bytes(t: &InsnTrace) -> u64 {
+    use std::mem::size_of;
+    let vecs = [t.op_out.capacity(), t.sp_before.capacity(), t.path.capacity(), t.accesses.capacity(), t.notes.capacity(), t.userops.capacity()];
+    let strings: usize = t.notes.iter().chain(&t.userops).map(|n| n.capacity() + ALLOC_BYTES).sum();
+    (size_of::<InsnTrace>()
+        + t.op_out.capacity() * size_of::<Option<ExprId>>()
+        + t.sp_before.capacity() * size_of::<Option<ExprId>>()
+        + t.path.capacity() * size_of::<usize>()
+        + t.accesses.capacity() * size_of::<super::kuna_pushanemu::AccessRecord>()
+        + (t.notes.capacity() + t.userops.capacity()) * size_of::<String>()
+        + strings
+        + vecs.iter().filter(|c| **c > 0).count() * ALLOC_BYTES) as u64
+}
+
+/// Bytes the allocator spends on each allocation besides its contents.
+const ALLOC_BYTES: usize = 16;
+
 fn classify_space_of(vn: &kuna_num::pcoderaw::VarnodeData) -> Option<super::kuna_pushanemu::Space> {
     vn.space.as_ref().map(super::kuna_pushanemu::classify_space)
 }
@@ -438,7 +524,11 @@ impl<'a> Explorer<'a> {
             sp0: None,
             new_syms: 0,
             started: std::time::Instant::now(),
-            timed_out: false,
+            stopped: None,
+            pages_base: live_pages(),
+            graph_bytes: 0,
+            graph_nodes: 0,
+            graph_ops: 0,
             data_vpc: None,
             probe: true,
             pin: None,
@@ -693,6 +783,7 @@ impl<'a> Explorer<'a> {
 
     /// Run exploration rounds to the symbolization fixpoint.
     pub fn run(&mut self) -> FlatCfg {
+        self.arena.work_limit = Some(self.config.max_work);
         self.arena.deadline = Some(self.started + std::time::Duration::from_secs(self.config.max_seconds));
         if self.probe && self.data_vpc.is_none() {
             let found = self.probe_interpreter();
@@ -704,7 +795,7 @@ impl<'a> Explorer<'a> {
                 self.log.push("interleaved bytecode programs without a selector to pin: other programs' dispatches stay unresolved".into());
             }
         }
-        let mut cfg = FlatCfg { nodes: Vec::new(), index: BTreeMap::new(), entry: 0, escapes: Vec::new(), sym_sources: BTreeMap::new() };
+        let mut cfg = FlatCfg::default();
         let mut prev_nodes = usize::MAX;
         for round in 0..self.config.max_rounds {
             self.stats.rounds = round + 1;
@@ -714,21 +805,32 @@ impl<'a> Explorer<'a> {
             self.new_syms = 0;
             self.new_splits = 0;
             self.new_escapes = 0;
-            if self.timed_out {
+            if self.stopped.is_some() {
                 break;
             }
+            drop(std::mem::take(&mut cfg));
             cfg = self.explore_round();
             cfg.escapes = self.escapes.iter().copied().collect();
             cfg.sym_sources = std::mem::take(&mut self.sym_sources);
             let n = cfg.nodes.len();
+            let mem = self.memory_terms().map(|b| b >> 20);
             self.log.push(format!(
-                "round {}: {} nodes, {} new symbolized locations, {} unresolved, {} halts, {:.1}s",
+                "round {}: {} nodes, {} new symbolized locations, {} unresolved, {} halts, {:.1}s, {} work units {:?}, {} MiB estimated (arena {}, pages {}, graph {}, lifts {}, emission {}; {} ops)",
                 round + 1,
                 n,
                 self.new_syms,
                 self.stats.unresolved,
                 self.stats.halts,
-                self.started.elapsed().as_secs_f64()
+                self.started.elapsed().as_secs_f64(),
+                self.arena.work(),
+                self.arena.steps(),
+                mem.iter().sum::<u64>(),
+                mem[0],
+                mem[1],
+                mem[2],
+                mem[3],
+                mem[4],
+                self.graph_ops
             ));
             if self.new_splits > 0 {
                 self.log.push(format!("round {}: {} native blocks split", round + 1, self.new_splits));
@@ -741,8 +843,9 @@ impl<'a> Explorer<'a> {
             }
             prev_nodes = n;
         }
+        self.arena.work_limit = None;
         self.arena.deadline = None;
-        self.stats.converged = self.new_syms == 0 && self.new_splits == 0 && self.new_escapes == 0 && !self.stats.cut_short;
+        self.stats.converged = self.new_syms == 0 && self.new_splits == 0 && self.new_escapes == 0 && self.stats.cut_short.is_none();
         self.stats.nodes = cfg.nodes.len();
         self.stats.insns = cfg.nodes.iter().map(|n| n.insns.len()).sum();
         self.stats.vm_nodes = cfg.nodes.iter().filter(|n| n.entry_ctx.in_vm).count();
@@ -757,20 +860,58 @@ impl<'a> Explorer<'a> {
         cfg
     }
 
-    /// The exploration's time budget is spent: the round in progress is the
-    /// last, cut short.  Checked between nodes and inside a node's
-    /// instructions and merge, so no single step runs on past the budget (a
-    /// case split stops at the same instant, [`ExprArena::deadline`]).
-    fn out_of_time(&mut self) -> bool {
-        if !self.timed_out && self.started.elapsed().as_secs() < self.config.max_seconds {
-            return false;
+    /// The exploration's work budget, its memory bound or its wall-clock
+    /// backstop is spent: the round in progress is the last, cut short.
+    /// Checked between nodes and inside a node's instructions and merge, so
+    /// no single step runs on past a limit (a case split stops at the same
+    /// point, [`ExprArena::work_limit`]).
+    fn exhausted(&mut self) -> bool {
+        if self.stopped.is_none() {
+            let limit = if self.arena.work() >= self.config.max_work {
+                Limit::Work
+            } else if self.memory_estimate() >= self.config.max_memory {
+                Limit::Memory
+            } else if self.started.elapsed().as_secs() >= self.config.max_seconds {
+                Limit::Time
+            } else {
+                return false;
+            };
+            self.log.push(format!(
+                "{} exhausted: {} work units {:?}, {} MiB estimated {:?}, {:.1}s",
+                limit.name(),
+                self.arena.work(),
+                self.arena.steps(),
+                self.memory_estimate() >> 20,
+                self.memory_terms().map(|b| b >> 20),
+                self.started.elapsed().as_secs_f64()
+            ));
+            self.stopped = Some(limit);
         }
-        if !self.timed_out {
-            self.log.push(format!("time budget of {}s exhausted", self.config.max_seconds));
-        }
-        self.timed_out = true;
-        self.stats.cut_short = true;
+        self.stats.cut_short = self.stopped;
         true
+    }
+
+    /// The bytes the exploration holds, and the emission of the graph it
+    /// has found would add, estimated from what it built: the arena's nodes
+    /// and caches, the store pages alive (a page several states share counted
+    /// once), the round's graph with its traces, the lifted instructions, and
+    /// [`EMIT_OP_BYTES`] per op of the graph's instructions and
+    /// [`EMIT_NODE_BYTES`] per node.  Every term is a count of things built,
+    /// so the bound trips at the same point on every machine.
+    pub fn memory_estimate(&self) -> u64 {
+        self.memory_terms().iter().sum()
+    }
+
+    /// The terms of [`Self::memory_estimate`]: arena, pages, graph, lifts, emission.
+    fn memory_terms(&self) -> [u64; 5] {
+        let pages = (live_pages() - self.pages_base).max(0) as u64;
+        [
+            self.arena.mem_estimate(),
+            pages * PAGE_BYTES as u64,
+            self.graph_bytes,
+            (self.target.lift_count() * LIFT_BYTES) as u64,
+            self.graph_ops * EMIT_OP_BYTES + self.graph_nodes * EMIT_NODE_BYTES,
+        ]
     }
 
     /// The last round runs with every recorded location fully unknown and
@@ -793,12 +934,15 @@ impl<'a> Explorer<'a> {
         self.stats.halts = 0;
         self.stats.misplaced_tail_calls = 0;
         self.stats.unmerged = 0;
-        self.stats.cut_short = false;
+        self.stats.cut_short = None;
+        self.graph_bytes = 0;
+        self.graph_nodes = 0;
+        self.graph_ops = 0;
         self.node_addrs.clear();
         self.stack_depths.clear();
         self.native_covered.clear();
         self.vm_entry_depth = None;
-        let mut cfg = FlatCfg { nodes: Vec::new(), index: BTreeMap::new(), entry: 0, escapes: Vec::new(), sym_sources: BTreeMap::new() };
+        let mut cfg = FlatCfg::default();
         self.sym_sources.clear();
         let mut worklist: VecDeque<NodeId> = VecDeque::new();
         let init = self.initial_state();
@@ -814,10 +958,10 @@ impl<'a> Explorer<'a> {
         while let Some(id) = worklist.pop_front() {
             if cfg.nodes.len() > self.config.max_nodes {
                 self.log.push("node limit reached".into());
-                self.stats.cut_short = true;
+                self.stats.cut_short = Some(Limit::Nodes);
                 break;
             }
-            if self.out_of_time() {
+            if self.exhausted() {
                 break;
             }
             self.emulate_node(&mut cfg, &mut worklist, &mut emu, id);
@@ -936,7 +1080,7 @@ impl<'a> Explorer<'a> {
             }
             let mut kept = Vec::with_capacity(diffs.len());
             for d in diffs {
-                if self.out_of_time() {
+                if self.exhausted() {
                     return id;
                 }
                 let (a, b) = match d.loc.loc {
@@ -983,7 +1127,7 @@ impl<'a> Explorer<'a> {
                 None => diffs,
             };
             for (d, a, b) in diffs {
-                if self.out_of_time() {
+                if self.exhausted() {
                     return id;
                 }
                 let sides = [a, b].map(|v| self.side_values(v, key, &d.loc));
@@ -1106,6 +1250,8 @@ impl<'a> Explorer<'a> {
             }
         }
         let id = cfg.nodes.len() as NodeId;
+        self.graph_bytes += NODE_BYTES as u64;
+        self.graph_nodes += 1;
         cfg.nodes.push(Node {
             call_pop: None,
             call_clobbers: None,
@@ -1216,7 +1362,7 @@ impl<'a> Explorer<'a> {
         let mut exit;
         let native = !ctx.in_vm && !self.target.is_foreign_code(addr);
         loop {
-            if !insns.is_empty() && self.out_of_time() {
+            if !insns.is_empty() && self.exhausted() {
                 exit = Exit::Halt("exploration budget exhausted inside the node".into());
                 break;
             }
@@ -1369,6 +1515,8 @@ impl<'a> Explorer<'a> {
         self.last_pop = None;
         self.last_clobbers = None;
         self.last_escapes = None;
+        self.graph_bytes += (insns.capacity() * std::mem::size_of::<Rc<LiftedInsn>>()) as u64 + traces.iter().map(trace_bytes).sum::<u64>();
+        self.graph_ops += insns.iter().map(|i| i.ops.len() as u64).sum::<u64>();
         let node = &mut cfg.nodes[id as usize];
         node.call_pop = call_pop;
         node.call_clobbers = call_clobbers;
@@ -2431,6 +2579,8 @@ impl<'a> Explorer<'a> {
     fn trampoline(&mut self, cfg: &mut FlatCfg, from: NodeId, addr: u64, exit: NodeExit) -> NodeId {
         let id = cfg.nodes.len() as NodeId;
         let tag = 0x7f00_0000_0000_0000u64 ^ (from as u64).rotate_left(32) ^ addr;
+        self.graph_bytes += NODE_BYTES as u64;
+        self.graph_nodes += 1;
         cfg.nodes.push(Node {
             call_pop: None,
             call_clobbers: None,
@@ -3016,3 +3166,6 @@ pub fn key_tag(key: &NodeKey) -> u64 {
         ^ key.sp.map(|k| (k as u64).wrapping_mul(0xff51afd7ed558ccd)).unwrap_or(0)
         ^ key.holder.map(|r| (r + 1).wrapping_mul(0xc4ceb9fe1a85ec53).rotate_left(13)).unwrap_or(0)
 }
+
+#[cfg(test)]
+mod tests;

@@ -13,6 +13,7 @@
 //! path.
 
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use super::kuna_pushanexpr::{ExprArena, ExprId, VarId, VarKind, MAX_SIZE};
 
@@ -71,10 +72,66 @@ impl CopyRegion {
     }
 }
 
-/// A byte-granular store (one register file, one temporary file, or one memory region).
+/// Bytes per page of a [`ByteStore`].
+const PAGE: usize = 16;
+/// The `idx` of an empty cell of a page.
+const HOLE: u8 = u8::MAX;
+const EMPTY_CELL: ByteVal = ByteVal { expr: 0, idx: HOLE };
+
+/// [`PAGE`] consecutive cells of a store, shared by the states cloned from
+/// one another until one of them writes into it.
+#[derive(Debug)]
+struct Page {
+    cells: [ByteVal; PAGE],
+    n: u8,
+}
+
+thread_local! {
+    /// Pages alive on this thread ([`live_pages`]).
+    static LIVE_PAGES: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
+}
+
+/// The number of store pages alive on this thread: a deterministic measure
+/// of the memory the states of an exploration hold, shared pages counted once.
+pub fn live_pages() -> i64 {
+    LIVE_PAGES.with(|n| n.get())
+}
+
+/// Bytes one page holds, with its reference count and its entry in a store.
+pub const PAGE_BYTES: usize = std::mem::size_of::<Page>() + 2 * std::mem::size_of::<usize>() + 40;
+
+impl Page {
+    fn empty() -> Self {
+        LIVE_PAGES.with(|n| n.set(n.get() + 1));
+        Page { cells: [EMPTY_CELL; PAGE], n: 0 }
+    }
+}
+
+impl Clone for Page {
+    fn clone(&self) -> Self {
+        LIVE_PAGES.with(|n| n.set(n.get() + 1));
+        Page { cells: self.cells, n: self.n }
+    }
+}
+
+impl Drop for Page {
+    fn drop(&mut self) {
+        LIVE_PAGES.with(|n| n.set(n.get() - 1));
+    }
+}
+
+#[inline]
+fn page_of(off: i128) -> (i128, usize) {
+    (off.div_euclid(PAGE as i128) * PAGE as i128, off.rem_euclid(PAGE as i128) as usize)
+}
+
+/// A byte-granular store (one register file, one temporary file, or one
+/// memory region), in pages shared copy-on-write: cloning a state copies one
+/// pointer per page, and a write copies only the page it lands in.
 #[derive(Clone, Default, Debug)]
 pub struct ByteStore {
-    bytes: BTreeMap<i128, ByteVal>,
+    pages: BTreeMap<i128, Rc<Page>>,
+    n: usize,
 }
 
 /// A maximal run of consecutive bytes that slice one value, or a gap.
@@ -86,43 +143,143 @@ struct Run {
 
 impl ByteStore {
     pub fn is_empty(&self) -> bool {
-        self.bytes.is_empty()
+        self.n == 0
     }
     pub fn len(&self) -> usize {
-        self.bytes.len()
+        self.n
+    }
+    pub fn get(&self, off: i128) -> Option<ByteVal> {
+        let (b, i) = page_of(off);
+        let c = self.pages.get(&b)?.cells[i];
+        (c.idx != HOLE).then_some(c)
+    }
+
+    pub fn contains(&self, off: i128) -> bool {
+        self.get(off).is_some()
+    }
+
+    pub fn insert(&mut self, off: i128, v: ByteVal) {
+        let (b, i) = page_of(off);
+        let p = self.pages.entry(b).or_insert_with(|| Rc::new(Page::empty()));
+        if p.cells[i] == v {
+            return;
+        }
+        let page = Rc::make_mut(p);
+        if page.cells[i].idx == HOLE {
+            page.n += 1;
+            self.n += 1;
+        }
+        page.cells[i] = v;
+    }
+
+    fn remove_at(&mut self, off: i128) {
+        let (b, i) = page_of(off);
+        let Some(p) = self.pages.get_mut(&b) else { return };
+        if p.cells[i].idx == HOLE {
+            return;
+        }
+        let page = Rc::make_mut(p);
+        page.cells[i] = EMPTY_CELL;
+        page.n -= 1;
+        self.n -= 1;
+        if page.n == 0 {
+            self.pages.remove(&b);
+        }
+    }
+
+    /// Every stored byte, by ascending offset.
+    pub fn iter(&self) -> impl Iterator<Item = (i128, ByteVal)> + '_ {
+        self.pages.iter().flat_map(|(b, p)| p.cells.iter().enumerate().filter(|(_, c)| c.idx != HOLE).map(move |(i, c)| (b + i as i128, *c)))
+    }
+
+    /// The stored bytes in `[lo, hi)`, by ascending offset.
+    pub fn range(&self, lo: i128, hi: i128) -> impl Iterator<Item = (i128, ByteVal)> + '_ {
+        let first = page_of(lo).0;
+        self.pages
+            .range(first..hi.max(first))
+            .flat_map(|(b, p)| p.cells.iter().enumerate().filter(|(_, c)| c.idx != HOLE).map(move |(i, c)| (b + i as i128, *c)))
+            .filter(move |(o, _)| *o >= lo && *o < hi)
+    }
+
+    /// Keep the stored bytes whose offset satisfies `keep`.
+    pub fn retain(&mut self, keep: impl Fn(i128) -> bool) {
+        let mut n = 0usize;
+        self.pages.retain(|b, p| {
+            let gone: Vec<usize> = (0..PAGE).filter(|&i| p.cells[i].idx != HOLE && !keep(b + i as i128)).collect();
+            if !gone.is_empty() {
+                let page = Rc::make_mut(p);
+                for i in gone {
+                    page.cells[i] = EMPTY_CELL;
+                    page.n -= 1;
+                }
+            }
+            n += p.n as usize;
+            p.n > 0
+        });
+        self.n = n;
     }
 
     pub fn write(&mut self, off: i128, e: ExprId, size: u8, big_endian: bool) {
         for i in 0..size {
             let idx = if big_endian { size - 1 - i } else { i };
-            self.bytes.insert(off + i as i128, ByteVal { expr: e, idx });
+            self.insert(off + i as i128, ByteVal { expr: e, idx });
         }
     }
 
     pub fn clear(&mut self) {
-        self.bytes.clear();
+        self.pages.clear();
+        self.n = 0;
     }
 
     pub fn remove(&mut self, off: i128, size: u8) {
         for i in 0..size {
-            self.bytes.remove(&(off + i as i128));
+            self.remove_at(off + i as i128);
         }
     }
 
     /// Drop every stored byte whose offset satisfies `f`.
     pub fn remove_where(&mut self, f: impl Fn(i128) -> bool) {
-        self.bytes.retain(|o, _| !f(*o));
+        self.retain(|o| !f(o));
     }
 
     pub fn has_any(&self, off: i128, size: u8) -> bool {
-        (0..size).any(|i| self.bytes.contains_key(&(off + i as i128)))
+        (0..size).any(|i| self.contains(off + i as i128))
+    }
+
+    /// Rewrite every stored value through `f`, called once per distinct
+    /// value in ascending offset order; a value that would change size is
+    /// kept (a select that collapsed), so every slice stays valid.
+    pub fn map_exprs(&mut self, arena: &mut ExprArena, f: &mut dyn FnMut(&mut ExprArena, ExprId) -> ExprId) {
+        let mut cache: BTreeMap<ExprId, ExprId> = BTreeMap::new();
+        for p in self.pages.values_mut() {
+            let mut changed: Vec<(usize, ExprId)> = Vec::new();
+            for (i, c) in p.cells.iter().enumerate().filter(|(_, c)| c.idx != HOLE) {
+                let ne = match cache.get(&c.expr) {
+                    Some(n) => *n,
+                    None => {
+                        let n = f(arena, c.expr);
+                        cache.insert(c.expr, n);
+                        n
+                    }
+                };
+                if ne != c.expr && arena.size(ne) == arena.size(c.expr) {
+                    changed.push((i, ne));
+                }
+            }
+            if !changed.is_empty() {
+                let page = Rc::make_mut(p);
+                for (i, ne) in changed {
+                    page.cells[i].expr = ne;
+                }
+            }
+        }
     }
 
     fn runs(&self, off: i128, size: u8, big_endian: bool) -> Vec<Run> {
         let mut runs: Vec<Run> = Vec::new();
         for i in 0..size {
             let o = off + i as i128;
-            let cell = self.bytes.get(&o).copied();
+            let cell = self.get(o);
             if let Some(last) = runs.last_mut() {
                 let extends = match (last.src, cell) {
                     (None, None) => true,
@@ -196,23 +353,50 @@ impl ByteStore {
         acc
     }
 
+    /// Offsets where the two stores disagree (a byte stored in one only,
+    /// or different in both), ascending; a page they share is skipped whole.
+    fn differing(&self, other: &ByteStore) -> Vec<i128> {
+        let mut out = Vec::new();
+        let (mut a, mut b) = (self.pages.iter().peekable(), other.pages.iter().peekable());
+        loop {
+            let (base, pa, pb) = match (a.peek(), b.peek()) {
+                (None, None) => break,
+                (Some((ka, _)), Some((kb, _))) if ka == kb => {
+                    let (k, x) = a.next().unwrap();
+                    let (_, y) = b.next().unwrap();
+                    if Rc::ptr_eq(x, y) {
+                        continue;
+                    }
+                    (*k, Some(x), Some(y))
+                }
+                (Some((ka, _)), Some((kb, _))) if ka > kb => {
+                    let (k, y) = b.next().unwrap();
+                    (*k, None, Some(y))
+                }
+                (Some(_), _) => {
+                    let (k, x) = a.next().unwrap();
+                    (*k, Some(x), None)
+                }
+                (None, Some(_)) => {
+                    let (k, y) = b.next().unwrap();
+                    (*k, None, Some(y))
+                }
+            };
+            for i in 0..PAGE {
+                let ca = pa.map_or(EMPTY_CELL, |p| p.cells[i]);
+                let cb = pb.map_or(EMPTY_CELL, |p| p.cells[i]);
+                if ca != cb {
+                    out.push(base + i as i128);
+                }
+            }
+        }
+        out
+    }
+
     /// Byte offsets where the two stores disagree, as maximal runs.
     pub fn diff_bytes(&self, other: &ByteStore) -> Vec<(i128, u8)> {
-        let mut offs: Vec<i128> = Vec::new();
-        for (o, v) in &self.bytes {
-            if other.bytes.get(o) != Some(v) {
-                offs.push(*o);
-            }
-        }
-        for o in other.bytes.keys() {
-            if !self.bytes.contains_key(o) {
-                offs.push(*o);
-            }
-        }
-        offs.sort_unstable();
-        offs.dedup();
         let mut out: Vec<(i128, u8)> = Vec::new();
-        for o in offs {
+        for o in self.differing(other) {
             if let Some(last) = out.last_mut() {
                 if last.0 + last.1 as i128 == o && last.1 < MAX_SIZE {
                     last.1 += 1;
@@ -226,29 +410,16 @@ impl ByteStore {
 
     /// Byte offsets where the two stores disagree, as ranges.
     pub fn diff_ranges(&self, other: &ByteStore) -> Vec<(i128, u8)> {
-        let mut offs: Vec<i128> = Vec::new();
-        for (o, v) in &self.bytes {
-            if other.bytes.get(o) != Some(v) {
-                offs.push(*o);
-            }
-        }
-        for o in other.bytes.keys() {
-            if !self.bytes.contains_key(o) {
-                offs.push(*o);
-            }
-        }
-        offs.sort_unstable();
-        offs.dedup();
         // A differing byte marks its whole 8-byte-aligned slot (one register,
         // one stack word), so a location is always compared as a whole and a
         // code address in it is seen as such.
-        let mut slots: Vec<i128> = offs.iter().map(|o| o.div_euclid(8) * 8).collect();
+        let mut slots: Vec<i128> = self.differing(other).iter().map(|o| o.div_euclid(8) * 8).collect();
         slots.dedup();
         slots.into_iter().map(|s| (s, 8)).collect()
     }
 
-    pub fn offsets(&self) -> impl Iterator<Item = &i128> {
-        self.bytes.keys()
+    pub fn offsets(&self) -> impl Iterator<Item = i128> + '_ {
+        self.iter().map(|(o, _)| o)
     }
 }
 
@@ -404,7 +575,7 @@ impl State {
     /// numbered `epoch`.
     pub fn clobber_mutable(&mut self, image: &dyn PushanImage, epoch: u64) {
         if let Some(region) = self.mem.get_mut(&None) {
-            region.bytes.retain(|o, _| u64::try_from(*o).is_ok_and(|a| !image.is_mutable(a)));
+            region.retain(|o| u64::try_from(o).is_ok_and(|a| !image.is_mutable(a)));
         }
         self.copies.retain(|c| c.base.is_some() || (0..c.len).step_by(0x1000).chain([c.len - 1]).all(|i| !image.is_mutable((c.off as u64).wrapping_add(i))));
         self.global_epoch = Some(epoch);
@@ -443,11 +614,13 @@ impl State {
         if len == 0 || self.copies.iter().any(|c| c.base.is_none() && c.off < s1 && s0 < c.end()) {
             return false;
         }
-        let written: Vec<(i128, ByteVal)> = self.mem.get(&None).map(|r| r.bytes.range(s0..s1).map(|(o, v)| (*o - s0 + off, *v)).collect()).unwrap_or_default();
+        let written: Vec<(i128, ByteVal)> = self.mem.get(&None).map(|r| r.range(s0, s1).map(|(o, v)| (o - s0 + off, v)).collect()).unwrap_or_default();
         self.forget_copies(base, off, off + len as i128);
         let region = self.mem.entry(base).or_default();
-        region.bytes.retain(|o, _| *o < off || *o >= off + len as i128);
-        region.bytes.extend(written);
+        region.retain(|o| o < off || o >= off + len as i128);
+        for (o, v) in written {
+            region.insert(o, v);
+        }
         self.copies.push(CopyRegion { base, off, len, src, epoch: self.global_epoch });
         true
     }
@@ -482,7 +655,7 @@ impl State {
         let stale: Vec<i128> = (off..off + size as i128).filter(|o| self.cached_fill(arena, base, *o)).collect();
         if let Some(region) = self.mem.get_mut(&base) {
             for o in stale {
-                region.bytes.remove(&o);
+                region.remove(o, 1);
             }
         }
         self.read_mem(arena, &FileImage(image), base, off, size)
@@ -491,7 +664,7 @@ impl State {
     /// The byte at `base + o` holds only the cached symbol of an unwritten
     /// image byte's value (its own address, or its copy's source).
     fn cached_fill(&self, arena: &ExprArena, base: Option<VarId>, o: i128) -> bool {
-        let Some(bv) = self.mem.get(&base).and_then(|r| r.bytes.get(&o)) else { return false };
+        let Some(bv) = self.mem.get(&base).and_then(|r| r.get(o)) else { return false };
         let at = match arena.var_kind(bv.expr) {
             Some(VarKind::InitMem { base: None, offset }) | Some(VarKind::CallOutputAt { base: None, offset, .. }) => offset,
             _ => return false,
@@ -636,40 +809,21 @@ impl State {
 
     /// Rewrite every stored value through `f` (used to pin a boolean atom).
     pub fn map_values(&mut self, arena: &mut ExprArena, f: &mut dyn FnMut(&mut ExprArena, ExprId) -> ExprId) {
-        let mut rewrite = |store: &mut ByteStore, arena: &mut ExprArena| {
-            let mut cache: BTreeMap<ExprId, ExprId> = BTreeMap::new();
-            for v in store.bytes.values_mut() {
-                let ne = match cache.get(&v.expr) {
-                    Some(n) => *n,
-                    None => {
-                        let n = f(arena, v.expr);
-                        cache.insert(v.expr, n);
-                        n
-                    }
-                };
-                if ne != v.expr {
-                    // A value may shrink when a select collapses; keep the slice valid.
-                    if arena.size(ne) == arena.size(v.expr) {
-                        v.expr = ne;
-                    }
-                }
-            }
-        };
-        rewrite(&mut self.regs, arena);
-        rewrite(&mut self.uniq, arena);
+        self.regs.map_exprs(arena, f);
+        self.uniq.map_exprs(arena, f);
         for region in self.mem.values_mut() {
-            rewrite(region, arena);
+            region.map_exprs(arena, f);
         }
     }
 
     /// Whether any of `[off, off + size)` was written in the region of `base`.
     pub fn mem_written(&self, base: Option<VarId>, off: i128, size: u8) -> bool {
-        self.mem.get(&base).is_some_and(|r| (off..off + size as i128).any(|o| r.bytes.contains_key(&o)))
+        self.mem.get(&base).is_some_and(|r| (off..off + size as i128).any(|o| r.contains(o)))
     }
 
     /// The offsets with a stored byte in the region of `base`.
     pub fn mem_offsets(&self, base: Option<VarId>) -> Vec<i128> {
-        self.mem.get(&base).map(|r| r.offsets().copied().collect()).unwrap_or_default()
+        self.mem.get(&base).map(|r| r.offsets().collect()).unwrap_or_default()
     }
 
     pub fn mem_bytes(&self) -> usize {

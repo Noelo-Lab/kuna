@@ -353,6 +353,9 @@ impl PushanImage for ArchTarget<'_> {
 }
 
 impl PushanTarget for ArchTarget<'_> {
+    fn lift_count(&self) -> usize {
+        self.lifts.borrow().len()
+    }
     fn lift(&self, addr: u64) -> Result<Rc<LiftedInsn>, String> {
         if let Some(i) = self.lifts.borrow().get(&addr) {
             return Ok(Rc::clone(i));
@@ -709,38 +712,50 @@ pub fn detect_vm_entry(target: &ArchTarget<'_>, entry: u64) -> Option<u64> {
 
 impl PushanProgram {
     /// What the recovered program may be missing or get wrong, for the
-    /// function's header: computed jumps left unresolved, paths that stopped,
-    /// an exploration that ended before its fixpoint, paths joined without
-    /// merging their values, and stores the emulation could not place.
+    /// function's header ([`caveats_of`]).
     pub fn caveats(&self) -> Option<String> {
-        let s = &self.stats;
-        let mut out = Vec::new();
-        if s.unresolved > 0 {
-            out.push(format!("{} unresolved computed jump{}", s.unresolved, if s.unresolved == 1 { "" } else { "s" }));
-        }
-        if s.halts > 0 {
-            out.push(format!("{} path{} not followed", s.halts, if s.halts == 1 { "" } else { "s" }));
-        }
-        if s.misplaced_tail_calls > 0 {
-            let n = s.misplaced_tail_calls;
-            out.push(format!("{n} jump{} to another function with the stack away from its entry depth", if n == 1 { "" } else { "s" }));
-        }
-        if s.cut_short {
-            out.push("exploration cut short by its budget".into());
-        } else if !s.converged {
-            out.push("no fixpoint within the round limit".into());
-        }
-        if s.unmerged > 0 {
-            out.push(format!("{} path{} joined at another stack depth unmerged", s.unmerged, if s.unmerged == 1 { "" } else { "s" }));
-        }
-        if s.lost_sp > 0 {
-            out.push(format!("{} stack pointer write{} the emulation could not place", s.lost_sp, if s.lost_sp == 1 { "" } else { "s" }));
-        }
-        if s.dropped_stores > 0 {
-            out.push(format!("{} store{} to unresolved addresses not modelled", s.dropped_stores, if s.dropped_stores == 1 { "" } else { "s" }));
-        }
-        (!out.is_empty()).then(|| format!("pushan: incomplete: {}", out.join(", ")))
+        caveats_of(&self.stats)
     }
+}
+
+/// What a program explored with these statistics may be missing or get
+/// wrong: computed jumps left unresolved, paths that stopped, an exploration
+/// that ended before its fixpoint (naming the limit that ended it), paths
+/// joined without merging their values, and stores the emulation could not
+/// place.
+pub fn caveats_of(s: &Stats) -> Option<String> {
+    let mut out = Vec::new();
+    if s.unresolved > 0 {
+        out.push(format!("{} unresolved computed jump{}", s.unresolved, if s.unresolved == 1 { "" } else { "s" }));
+    }
+    if s.halts > 0 {
+        out.push(format!("{} path{} not followed", s.halts, if s.halts == 1 { "" } else { "s" }));
+    }
+    if s.misplaced_tail_calls > 0 {
+        let n = s.misplaced_tail_calls;
+        out.push(format!("{n} jump{} to another function with the stack away from its entry depth", if n == 1 { "" } else { "s" }));
+    }
+    if let Some(limit) = s.cut_short {
+        out.push(format!("exploration cut short by its {}", limit.name()));
+    } else if !s.converged {
+        out.push("no fixpoint within the round limit".into());
+    }
+    if s.unmerged > 0 {
+        out.push(format!("{} path{} joined at another stack depth unmerged", s.unmerged, if s.unmerged == 1 { "" } else { "s" }));
+    }
+    if s.lost_sp > 0 {
+        out.push(format!("{} stack pointer write{} the emulation could not place", s.lost_sp, if s.lost_sp == 1 { "" } else { "s" }));
+    }
+    if s.dropped_stores > 0 {
+        out.push(format!("{} store{} to unresolved addresses not modelled", s.dropped_stores, if s.dropped_stores == 1 { "" } else { "s" }));
+    }
+    (!out.is_empty()).then(|| format!("pushan: incomplete: {}", out.join(", ")))
+}
+
+/// The process's peak resident set (`VmHWM`), for the exploration log.
+fn peak_rss() -> Option<String> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    status.lines().find(|l| l.starts_with("VmHWM:")).map(|l| l.trim_start_matches("VmHWM:").trim().to_string())
 }
 
 /// The code at `addr` is an import thunk: its first instruction, after an
@@ -784,6 +799,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
         // A copied array the program itself reads: run the copies.
         let mut first = std::mem::take(&mut explorer.log);
         first.push("a rep movs copy is read outside folded VPC fetches: explored again with the copies run".into());
+        drop(std::mem::take(&mut cfg));
         explorer = Explorer::new(&target, abi, Config::default(), entry);
         explorer.probe = probe;
         explorer.rep_copies = false;
@@ -852,6 +868,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
         .collect();
     placeholders.push((super::kuna_pushanemit::undef_register(&conf, return_reg), ptr));
     call_kills.extend(placeholders.iter().copied());
+    let explored_hwm = peak_rss();
     let (overlay, emit_stats) = emit(&cfg, &mut explorer.arena, &target, &conf, entry);
     explorer.stats.user_stack_assumed = explorer.arena.sp_bound_used;
     let strings = string_constants(&target, &overlay);
@@ -859,10 +876,8 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
     for n in std::mem::take(&mut explorer.arena.sp_bound_notes) {
         log.push(format!("identity over the user-mode stack range only (emission): {n}"));
     }
-    if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
-        if let Some(l) = status.lines().find(|l| l.starts_with("VmHWM:")) {
-            log.push(format!("peak rss after emission: {}", l.trim_start_matches("VmHWM:").trim()));
-        }
+    if let (Some(a), Some(b)) = (explored_hwm, peak_rss()) {
+        log.push(format!("peak rss after exploration: {a}, after emission: {b}"));
     }
     for s in &target.sections {
         log.push(format!("section {:#x}-{:#x} flags={:#x}{}", s.start, s.end, s.flags, if Some((s.start, s.end)) == target.entry_section { " (entry)" } else { "" }));

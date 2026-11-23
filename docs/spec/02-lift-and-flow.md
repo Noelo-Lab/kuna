@@ -4376,7 +4376,17 @@ image, and all mutable memory is forgotten. A constant fill from the image is no
 because it reads the same on every path, so a node's entry state holds only
 what the program wrote and not every bytecode byte its path fetched. A
 symbolic fill is stored, so reads of the same bytes at different widths
-agree. Values live in a hash-consed DAG
+agree. Each store keeps its cells in 16-byte pages shared copy-on-write
+(`kuna_pushanstate.rs (ByteStore)`). A node's entry state is a copy of the
+state its first path arrived with, so it shares every page that path's
+predecessor did not write, and a write copies only the page it lands in. A
+merge compares two states page by page and skips a page they share. A
+Themida node's entry state holds about 940 cells, most of them the VM context
+and the stack every handler leaves alone. On cairuh_themida (32-bit Themida)
+the process held 2,261 MiB at the end of the first round (22,686 nodes) with
+one map entry per byte, and 1,346 MiB with the pages, of which the 103,578
+distinct pages of all 22,686 entry states are 19 MiB.
+Values live in a hash-consed DAG
 (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanexpr.rs (ExprArena)`)
 that normalizes every node as it is built. Constants fold. Every
 constructor remembers its result by its operands (`ExprArena::memo`; a
@@ -4899,20 +4909,78 @@ translator (`set_pcode_overlay`), which serves an overlay instruction's p-code
 and listing text before decoding any bytes. It also clears the function's
 declared extent, and the flow follower's mapped-byte checks accept overlay
 addresses. The function gets a header warning with the node, instruction and
-round counts, and an instruction budget of at least 4,000,000. The exploration
-itself has a wall-clock budget (120 s, `KUNA_PUSHAN_SECONDS`;
-`Explorer::out_of_time`). It is checked between nodes, before each instruction
-of a node, and at each location a merge compares, and a case split gives up at
-the same instant (`ExprArena::deadline`, cleared when the exploration ends so
-the emitter's splits never depend on the clock). No single step therefore runs
-past the budget by more than one instruction or one substitution. The round
-in progress is then the last: a node stopped inside ends there as a path not
-followed. A second header
-warning (`PushanProgram::caveats`) says what the recovered program may miss or
-get wrong: computed jumps left unresolved, paths not followed, an exploration
-cut short by its budget or ending without its fixpoint, paths joined at another
-stack depth without merging (their values never reached the node), and stores
-the emulation could not place. A function
+round counts, and an instruction budget of at least 4,000,000.
+
+**The exploration's limits.** An exploration that does not reach its fixpoint
+is ended by a work budget, a memory bound or a wall-clock backstop
+(`Explorer::exhausted`), and a round that reaches 200,000 nodes ends at the node
+limit (`KUNA_PUSHAN_MAX_NODES`). The work budget and the memory bound are
+functions of the work done alone, so one input stops at the same step, with the
+same output, on any machine and under any load. A wall-clock budget cut the
+targets near it at a different point on every run, and a loaded machine cut
+targets that reach their fixpoint on a quiet one. The work budget counts the
+steps that take the exploration's CPU time (`ExprArena::charge`,
+`kuna_pushanexpr.rs (Work)`): each p-code op emulated, each constructor call
+the memo does not answer and each one it does, each node a substitution visits,
+and each node the identity test evaluates at each sample point. They are
+weighted 2, 34, 13, 2 and 1 (`WORK_WEIGHTS`, units of about 0.09 microseconds
+of CPU on the loaded test machine), from a least-squares fit of each
+exploration's CPU time on its counts (relative error, 43 explorations of the 48
+test targets), which puts the emulation's cost into the constructor calls each
+op makes; an op keeps a floor of two units. Over those explorations the weighted
+work and the CPU time correlate at r = 0.98 (0.99 between their logarithms);
+emulated ops alone reach 0.60, because the identity test on Themida's mixed
+boolean-arithmetic stack addresses and the substitutions of its case splits
+cost as much as all the emulation and have little to do with the number of
+instructions. The budget is 2.3 billion units (`KUNA_PUSHAN_MAX_WORK`):
+libpng_themida, the slowest target that reaches its fixpoint, needs 1.93
+billion, which take about 105 s on a quiet machine, so the budget is about
+125 s of such work. The memory bound is 3,328 MiB (`KUNA_PUSHAN_MAX_MEMORY`,
+bytes) on an estimate made of counts too (`Explorer::memory_estimate`): the
+capacities of the arena's node tables and caches, the store pages alive
+(`kuna_pushanstate.rs (live_pages)`, counted by the pages themselves as they
+are made, copied and dropped, a page several states share counted once), the
+round's graph with its instruction traces, the lifted instructions, and what
+the emission of the graph will hold on top: 164 bytes per op of the graph's
+instructions (each op's rewrite, its memory reference and its liveness) and
+6,600 per node, a least-squares fit of the emission's peak over the 48 targets.
+Of the targets that reach their fixpoint, libpng_themida has the largest
+estimate, 3,091 MiB (the process peaks at 3,467 MiB). The process holds the
+loaded image and the decompiler besides, which the estimate leaves out; over
+the 48 targets its peak lies between 754 MiB below and 540 MiB above the
+estimate, so an exploration the bound stops peaks below about 3,900 MiB:
+cairuh_themida (32-bit Themida) stops in its second round at 26,936 nodes with
+the process at 3,752 MiB, where the wall-clock budget
+let it run to 61,525 nodes and 12 to 16 GB on a quiet machine. The last
+round's graph is dropped before the next round starts, since nothing of it is
+read again, so two rounds' states and traces never coexist. The wall-clock
+backstop (600 s, `KUNA_PUSHAN_SECONDS`) is five times what the work
+budget takes on a quiet machine and only ends an exploration on a much slower
+or overloaded one. The limits are checked between nodes, before each
+instruction of a node, and at each location a merge compares, and a case split
+gives up at the same point (`ExprArena::work_limit`, `ExprArena::deadline`,
+both cleared when the exploration ends, so the emitter's splits depend on
+neither). No single step therefore runs past a limit by more than one
+instruction or one substitution. The round in progress is then the last: a
+node stopped inside ends there as a path not followed. A second header warning
+(`PushanProgram::caveats`) says what the recovered program may miss or get
+wrong: computed jumps left unresolved, paths not followed, an exploration cut
+short by its work budget, its memory bound, its node limit or its wall-clock
+limit (the warning names which) or ending without its fixpoint, paths joined at
+another stack depth without merging (their values never reached the node), and
+stores the emulation could not place. kuna's per-function watchdog
+(`--max-fn-seconds`, 120 s by default on `kuna decompile`) is not checked
+inside the exploration or the emission: the flow follower's first probe after
+them finds the budget spent, and the function prints no C at all
+(`per-function decompile budget exceeded (120 s) in flow following`). At the
+defaults that is what becomes of an exploration that runs into the work budget
+and of one that reaches its fixpoint late: on the test machine libpng_themida
+(fixpoint after 129 s), zlib_themida (fixpoint after 105 s, then about a
+minute of emission) and smt_no_solve_themida (work budget after 158 s) print
+nothing, as libpng_themida and zlib_themida did under the wall-clock budget. A
+larger `--max-fn-seconds` prints them.
+
+A function
 that is not devirtualized gets the overlay cleared. The program's call-kill
 list (the scratch registers, the return register and the placeholders) is
 stored on the `Funcdata`, and `Heritage::guardCalls`
@@ -5105,7 +5173,11 @@ to `st` and the branch around one of them, which only a loop through `&st[0]`
 plus a computed offset reads (chapter 03's spilled stack pointers).
 The expression arena and the state have unit tests in
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanexpr/tests.rs` and
-`decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanstate/tests.rs`, and
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanstate/tests.rs`;
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanflow/tests.rs` explores a
+counting loop under a tiny work budget, memory bound and wall-clock limit and
+checks that each ends the exploration with the caveat naming it, and that a
+budget cut stops two runs at the same step; and
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_pushanrules/tests.rs`
 checks every rewrite of the four arithmetic rules on random byte-wide trees
 against all 65,536 pairs of inputs.

@@ -88,6 +88,10 @@ pub trait PushanTarget: PushanImage {
     fn user_stack_clear_bits(&self) -> u128 {
         0
     }
+    /// Instructions lifted so far (the entries of the target's lift cache).
+    fn lift_count(&self) -> usize {
+        0
+    }
 }
 
 /// Shannon entropy (bits per byte) of a window.
@@ -749,6 +753,7 @@ impl<'a> Emulator<'a> {
 
     /// Execute one instruction; the state is left as the fall-through side.
     pub fn exec_insn(&mut self, state: &mut State, arena: &mut ExprArena, insn: &LiftedInsn, trace: &mut InsnTrace) -> Exit {
+        arena.charge(super::kuna_pushanexpr::Work::Op, insn.ops.len() as u64);
         state.clear_uniques();
         self.prov.clear();
         trace.op_out = vec![None; insn.ops.len()];

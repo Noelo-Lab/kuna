@@ -170,7 +170,13 @@ pub struct ExprArena {
     probe_memo: BTreeMap<ExprId, Option<(Option<VarId>, i128)>>,
     /// Each constructor's result by its operands ([`ExprArena::memo`]).
     op_memo: crate::kuna_fasthash::FxHashMap<OpKey, ExprId>,
-    /// After this instant a case split gives up (the exploration's budget).
+    /// The steps counted so far, by kind ([`Work`]): what the exploration's
+    /// budget counts.
+    steps: [std::cell::Cell<u64>; 5],
+    /// A case split gives up once [`Self::work`] reaches this (the
+    /// exploration's work budget).
+    pub work_limit: Option<u64>,
+    /// After this instant a case split gives up (the exploration's wall-clock backstop).
     pub deadline: Option<std::time::Instant>,
 }
 
@@ -190,6 +196,26 @@ enum OpKey {
 
 /// Constructor results remembered before the memo starts over.
 const OP_MEMO_LIMIT: usize = 1 << 21;
+/// The steps the exploration's work budget counts ([`ExprArena::charge`]).
+#[derive(Clone, Copy, Debug)]
+pub enum Work {
+    /// A p-code op emulated.
+    Op,
+    /// A constructor call the memo did not answer.
+    Build,
+    /// A constructor call the memo answered.
+    Reuse,
+    /// A node a substitution visited.
+    Subst,
+    /// A node evaluated at one sample point of the identity test.
+    Eval,
+}
+
+/// The cost of one step of each kind of [`Work`], in units of about a tenth
+/// of a microsecond of CPU time (fitted over the 48 test targets, spec 2.11).
+const WORK_WEIGHTS: [u64; 5] = [2, 34, 13, 2, 1];
+/// Bytes a B-tree map spends per entry beyond the entry itself.
+pub const MAP_ENTRY_OVERHEAD: usize = 24;
 
 impl Default for ExprArena {
     fn default() -> Self {
@@ -213,6 +239,8 @@ impl ExprArena {
             unknown_tag: 0,
             probe_memo: BTreeMap::new(),
             op_memo: Default::default(),
+            steps: Default::default(),
+            work_limit: None,
             deadline: None,
         }
     }
@@ -221,13 +249,53 @@ impl ExprArena {
         self.nodes.len()
     }
 
+    /// Count `n` steps of kind `w`.
+    #[inline]
+    pub fn charge(&self, w: Work, n: u64) {
+        let c = &self.steps[w as usize];
+        c.set(c.get() + n);
+    }
+
+    /// The steps counted so far, by kind ([`Work`]).
+    pub fn steps(&self) -> [u64; 5] {
+        self.steps.each_ref().map(|c| c.get())
+    }
+
+    /// The work done so far: the steps counted, each weighted by its cost
+    /// ([`WORK_WEIGHTS`]).
+    pub fn work(&self) -> u64 {
+        self.steps.iter().zip(WORK_WEIGHTS).map(|(c, w)| c.get() * w).sum()
+    }
+
+    /// The bytes the arena holds, estimated from the capacities of its node
+    /// tables and caches (each a function of the work done alone).
+    pub fn mem_estimate(&self) -> u64 {
+        use std::mem::size_of;
+        let intern = MAP_ENTRY_OVERHEAD + size_of::<((ExprKind, u8), ExprId)>();
+        let quick = size_of::<(ExprId, Option<[u128; QUICK_LANES]>)>() + 1;
+        let sig = size_of::<((u8, [u128; QUICK_LANES - 1]), VarId)>() + 1;
+        let memo = size_of::<(OpKey, ExprId)>() + 1;
+        let probe = size_of::<(ExprId, Option<(Option<VarId>, i128)>)>() + MAP_ENTRY_OVERHEAD;
+        let var = size_of::<VarInfo>() + size_of::<((VarKind, u8), ExprId)>() + MAP_ENTRY_OVERHEAD;
+        (self.nodes.capacity() * size_of::<Expr>()
+            + self.known.capacity() * size_of::<(u128, u128)>()
+            + self.intern.len() * intern
+            + self.quick.capacity() * quick
+            + self.quick_sig.capacity() * sig
+            + self.op_memo.capacity() * memo
+            + self.probe_memo.len() * probe
+            + self.vars.len() * var) as u64
+    }
+
     /// `build()`, or its result for the same call before.  A call that made
     /// a fresh unknown (a division by zero) is not remembered: two such
     /// unknowns must stay different values.
     fn memo(&mut self, key: OpKey, build: impl FnOnce(&mut Self) -> ExprId) -> ExprId {
         if let Some(&r) = self.op_memo.get(&key) {
+            self.charge(Work::Reuse, 1);
             return r;
         }
+        self.charge(Work::Build, 1);
         let tag = self.unknown_tag;
         let r = build(self);
         if self.unknown_tag == tag {
@@ -1949,6 +2017,7 @@ impl ExprArena {
             }
         }
         let n = in_vals.first().map(|x| x.len()).unwrap_or(n);
+        self.charge(Work::Eval, (nodes.len() * n) as u64);
         let pos: std::collections::HashMap<ExprId, usize> = nodes.iter().enumerate().map(|(i, x)| (*x, i)).collect();
         let var_pos: std::collections::HashMap<VarId, usize> = vars.iter().enumerate().map(|(i, v)| (*v, i)).collect();
         let atom_pos: std::collections::HashMap<ExprId, usize> = atoms.iter().enumerate().map(|(i, a)| (*a, vars.len() + i)).collect();
@@ -2394,6 +2463,7 @@ impl ExprArena {
         if depth > MAX_DEPTH {
             return e;
         }
+        self.charge(Work::Subst, 1);
         let size = self.size(e);
         let r = match self.kind(e).clone() {
             ExprKind::Const(_) | ExprKind::Var(_) => e,
@@ -2491,7 +2561,7 @@ impl ExprArena {
         *budget -= total;
         let mut results = Vec::with_capacity(total);
         for bitsv in 0..total {
-            if self.deadline.is_some_and(|d| std::time::Instant::now() >= d) {
+            if self.work_limit.is_some_and(|l| self.work() >= l) || self.deadline.is_some_and(|d| std::time::Instant::now() >= d) {
                 return None;
             }
             let mut map = BTreeMap::new();
