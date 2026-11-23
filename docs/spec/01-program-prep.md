@@ -2830,16 +2830,20 @@ bytes) leaves the clip intact, as do 16,384 visits for one entry or the
 exhaustion of the address-ordered walks' shared budget of four times the
 Listing's decoded instructions.
 
-The measured end then extends over the literal pool. Each reached instruction
-is decoded once more for its p-code, and every fixed address it reads (a direct
-memory operand, or a `LOAD` through an address folded from constants, as
-`vldr s0,[pc,#8]` aligns `inst_start` in temporaries) or forms into a register
-(`adr r3,..` ahead of `ldrd r2,r3,[r3]`, counted as a doubleword) that lies at
-or past the end, short of the clip and within 8 KiB of the instruction, moves
-the end to the last byte so named, capped at the clip. The pool and the
-alignment padding in front of it therefore stay with the function that loads
-them. An instruction whose second decode disagrees with the Listing's length
-is skipped. Over 16 Cortex-M and ARM firmware images from the decbench O0/O2
+The measured end then extends over the literal pool. Every fixed address a
+reached instruction reads or forms into a register (`adr r3,..` ahead of
+`ldrd r2,r3,[r3]`, counted as a doubleword) that lies at or past the end, short
+of the clip and within 8 KiB of the instruction, moves the end to the last byte
+so named, capped at the clip. The pool and the alignment padding in front of it
+therefore stay with the function that loads them. The bytes decide which
+instructions to read: a 16-bit Thumb `ldr rN,[pc,#..]` or `adr` names
+`Align(pc,4)` plus its scaled immediate directly, a 32-bit encoding whose base
+register field is not the PC names nothing, and the rest are decoded once more
+for their p-code, where a direct memory operand or a `LOAD` through an address
+folded from constants (`vldr s0,[pc,#8]` aligns `inst_start` in temporaries)
+names the address. A second decode that disagrees with the Listing's length is
+skipped. On the raw `functions` inventory of betaflight (4,177 entries) this
+costs nothing measurable against main. Over 16 Cortex-M and ARM firmware images from the decbench O0/O2
 corpus (19,110 symbolized functions, loaded raw with every `FUNC` symbol as an
 `--entry`), 18,869 extents equal ELF `st_size` where the clip matched 16,829,
 and the clip's 460,312 bytes of overshoot fall to 107,248; 12 functions end

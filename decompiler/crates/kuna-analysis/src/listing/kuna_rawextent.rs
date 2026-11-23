@@ -46,6 +46,7 @@
 //! clip.
 
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
@@ -55,6 +56,7 @@ use kuna_decomp::architecture::Architecture;
 use kuna_decomp::kuna_fasthash::FxHashSet;
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
+use kuna_sleigh::loadimage::LoadImage;
 use kuna_sleigh::translate::Translate;
 
 use crate::listing::classify::classify;
@@ -78,7 +80,7 @@ pub fn measure(
         if !crate::loadimage_object::is_arm32_language(&arch.archid) {
             return None;
         }
-        let ends = measure_listing(translate, code_space, listing, entries);
+        let ends = measure_listing(arch, translate, code_space, listing, entries);
         return (!ends.is_empty()).then_some(ends);
     }
     let walk = Walk {
@@ -126,11 +128,13 @@ const POOL_REACH: u64 = 1 << 13;
 /// Use only the raw Listing's instruction and flow records. In particular, a
 /// missing target is not a reason to try a fresh decode in a different context.
 fn measure_listing(
+    arch: &Architecture,
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
     listing: &Listing,
     entries: &[u64],
 ) -> BTreeMap<u64, u64> {
+    let loader = arch.translate().loader_rc();
     let ranges = listing.exec_ranges();
     let mut ends = BTreeMap::new();
     let mut seen = FxHashSet::default();
@@ -145,7 +149,8 @@ fn measure_listing(
         };
         let bound = entries.get(i + 1).map_or(hi, |&next| hi.min(next));
         if let Some(end) = listing_end(listing, entry, bound, &mut seen, &mut pending, &mut remaining) {
-            ends.insert(entry, pool_end(translate, code_space, listing, &seen, entry, end, bound));
+            let walk = Reached { translate, code_space, listing, loader: &loader, reached: &seen };
+            ends.insert(entry, walk.pool_end(entry, end, bound));
         }
     }
     ends
@@ -211,34 +216,102 @@ fn listing_end(
     Some(end)
 }
 
-/// Extend a measured `end` over the bytes past it, up to `bound`, that the
-/// function's own reached instructions read or form at a fixed address: a
-/// literal pool, and the alignment padding before it, belong to the function
-/// that loads them. An instruction whose fresh decode disagrees with the
-/// Listing's length is not read.
-fn pool_end(
-    translate: &dyn Translate,
-    code_space: &Rc<AddrSpace>,
-    listing: &Listing,
-    reached: &FxHashSet<u64>,
-    entry: u64,
-    end: u64,
-    bound: u64,
-) -> u64 {
-    let mut out = end;
-    for &vma in reached.iter().filter(|&&vma| (entry..end).contains(&vma)) {
-        let Some(insn) = listing.instruction_at(vma) else { continue };
-        let Some((len, ops)) = kuna_dosexit::decode_sized(translate, code_space, vma) else { continue };
-        if len != insn.len {
-            continue;
+/// The instructions one completed walk reached, with what reading them takes.
+struct Reached<'a> {
+    translate: &'a dyn Translate,
+    code_space: &'a Rc<AddrSpace>,
+    listing: &'a Listing,
+    loader: &'a RefCell<Box<dyn LoadImage>>,
+    reached: &'a FxHashSet<u64>,
+}
+
+impl Reached<'_> {
+    /// Extend a measured `end` over the bytes past it, up to `bound`, that the
+    /// function's own reached instructions read or form at a fixed address: a
+    /// literal pool, and the alignment padding before it, belong to the
+    /// function that loads them. The bytes of each instruction decide first
+    /// ([`pc_form`]); only a 32-bit one that can name the PC is decoded again,
+    /// and one whose fresh decode disagrees with the Listing's length is not read.
+    fn pool_end(&self, entry: u64, end: u64, bound: u64) -> u64 {
+        let big_endian = self.code_space.is_big_endian();
+        let mut body = vec![0u8; (end - entry).min(MAX_BODY_BYTES) as usize];
+        let at = Address::new(Rc::clone(self.code_space), entry);
+        if !self.loader.try_borrow_mut().is_ok_and(|mut loader| loader.load_fill(&mut body, &at).is_ok()) {
+            body.clear();
         }
-        for (at, width) in fixed_refs(&ops, code_space, insn.flow.is_call) {
+        let mut out = end;
+        let mut extend = |vma: u64, at: u64, width: u32| {
             if (end..bound).contains(&at) && at - vma <= POOL_REACH {
                 out = out.max(at.saturating_add(u64::from(width)).min(bound));
             }
+        };
+        for &vma in self.reached.iter().filter(|&&vma| (entry..end).contains(&vma)) {
+            let Some(insn) = self.listing.instruction_at(vma) else { continue };
+            let offset = (vma - entry) as usize;
+            let form = body
+                .get(offset..offset + insn.len as usize)
+                .map_or(PcForm::Decode, |bytes| pc_form(bytes, big_endian, vma));
+            match form {
+                PcForm::None => {}
+                PcForm::Ref(at, width) => extend(vma, at, width),
+                PcForm::Decode => {
+                    let Some((len, ops)) = kuna_dosexit::decode_sized(self.translate, self.code_space, vma) else {
+                        continue;
+                    };
+                    if len == insn.len {
+                        for (at, width) in fixed_refs(&ops, self.code_space, insn.flow.is_call) {
+                            extend(vma, at, width);
+                        }
+                    }
+                }
+            }
         }
+        out
     }
-    out
+}
+
+/// The most bytes of one function [`Reached::pool_end`] reads at once; an
+/// instruction past them is decoded again.
+const MAX_BODY_BYTES: u64 = 1 << 20;
+
+/// What an ARM or Thumb instruction's bytes say about a PC-relative reference.
+enum PcForm {
+    /// It cannot address memory relative to the PC.
+    None,
+    /// A 16-bit Thumb `ldr rN,[pc,#..]` reads, or `adr` forms, this address.
+    Ref(u64, u32),
+    /// A 32-bit encoding whose base register field (Thumb's first halfword,
+    /// ARM's bits 16-19) is the PC; [`fixed_refs`] decides on its p-code.
+    Decode,
+}
+
+/// Read one instruction's `bytes` at `vma` for its [`PcForm`].
+fn pc_form(bytes: &[u8], big_endian: bool, vma: u64) -> PcForm {
+    let half = |i: usize| {
+        let pair = [bytes[i], bytes[i + 1]];
+        if big_endian { u16::from_be_bytes(pair) } else { u16::from_le_bytes(pair) }
+    };
+    match bytes.len() {
+        2 => {
+            let insn = half(0);
+            let at = ((vma + 4) & !3) + u64::from(insn & 0xff) * 4;
+            match insn >> 11 {
+                0b01001 => PcForm::Ref(at, 4),
+                0b10100 => PcForm::Ref(at, FORMED_WIDTH),
+                _ => PcForm::None,
+            }
+        }
+        4 => {
+            let word = [bytes[0], bytes[1], bytes[2], bytes[3]];
+            let word = if big_endian { u32::from_be_bytes(word) } else { u32::from_le_bytes(word) };
+            if half(0) & 0xf == 0xf || (word >> 16) & 0xf == 0xf {
+                PcForm::Decode
+            } else {
+                PcForm::None
+            }
+        }
+        _ => PcForm::Decode,
+    }
 }
 
 /// The bytes counted at an address an instruction forms without reading it
