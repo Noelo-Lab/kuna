@@ -181,7 +181,9 @@ fn helper_spill_does_not_truncate_the_callers_reused_page() {
         "#include <stdio.h>\n#include <stdlib.h>\n{helper}\n{body}\nint main(int argc,char **argv) {{ unsigned int x=(unsigned int)strtoul(argv[1],0,10); printf(\"%u\\n\",probe_buffer(x)); }}\n"
     )).unwrap();
     for compiler in ["gcc", "clang"] {
-        if process::optional_output(Command::new(compiler).arg("--version")).is_none() {
+        if process::optional_output(Command::new(compiler).arg("--version")).is_none()
+            || !process::sanitizer_runs(compiler, &["-fsanitize=address"])
+        {
             continue;
         }
         for optimization in ["0", "2"] {

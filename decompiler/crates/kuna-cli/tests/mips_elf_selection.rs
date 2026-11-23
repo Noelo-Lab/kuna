@@ -4,6 +4,7 @@ use object::{
     Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope,
 };
 use std::{path::Path, process::Command};
+use crate::common::process::Capped;
 
 fn elf(little: bool, flags: u32, words: &[u32]) -> Vec<u8> {
     let word = |v: u32| {
@@ -463,7 +464,7 @@ fn check_emitted_c(code: &str, expression: &str) {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        Command::new(&executable).status().unwrap().success(),
+        Command::new(&executable).capped_status().unwrap().success(),
         "{code}"
     );
     std::fs::remove_file(source).unwrap();
@@ -961,7 +962,7 @@ void _start(void) {{
         "{code}\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let output = Command::new(qemu).arg(&executable).output().unwrap();
+    let output = Command::new(qemu).arg(&executable).capped_output().unwrap();
     assert!(output.status.success(), "{little}: {code}\n{output:?}");
     std::fs::remove_file(source).unwrap();
     std::fs::remove_file(executable).unwrap();
