@@ -10,6 +10,7 @@ use crate::common;
 use common::process;
 use std::path::Path;
 use std::process::Command;
+use crate::common::process::Capped;
 
 const SOURCE: &str = r#"
 volatile int sink;
@@ -132,7 +133,7 @@ fn narrow_signed_switch_labels_round_trip_through_c_and_rust() {
             .arg("-o")
             .arg(&c_exe),
     );
-    let status = Command::new(&c_exe).status().unwrap();
+    let status = Command::new(&c_exe).capped_status().unwrap();
     assert!(status.success(), "printed C diverges ({status}):\n{printed}");
 
     let rust = decompile(&binary, "rust");
@@ -153,7 +154,7 @@ fn narrow_signed_switch_labels_round_trip_through_c_and_rust() {
         "rustc: {}\n{rust}",
         String::from_utf8_lossy(&compile.stderr)
     );
-    let out = Command::new(&rust_exe).output().unwrap();
+    let out = Command::new(&rust_exe).capped_output().unwrap();
     assert!(
         out.status.success(),
         "printed Rust diverges: {}\n{rust}",

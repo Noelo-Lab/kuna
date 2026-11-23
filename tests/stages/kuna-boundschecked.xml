@@ -1,0 +1,83 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A">
+<!--
+    Calls to the C11 Annex K bounds-checked functions keep every declared
+    argument. P1 program prep, the built-in libc signatures
+    (kuna-analysis protos/kuna_libcsigs.rs, no option).
+
+    GCC loads a size passed twice into the later argument register and copies
+    it into the earlier one (`mov x3,#64; mov w2,#0; mov x1,x3; bl memset_s`).
+    Without a declaration, call recovery drops the later register because its
+    value also reaches an earlier argument, so the call printed
+    `memset_s(v1,0x40,0)`. The script loads boundschecked_aarch64_{le,be}.so
+    and boundschecked_thumb.so (sources and recipes in the fixtures README),
+    whose callers mirror GCC 15 -O2 -fPIC output.
+
+    Assert #1: memset_s keeps its count (AArch64 both byte orders, Thumb).
+    Assert #2: memcpy_s keeps its count, and on Thumb gains no fifth argument
+    from the pushed r3 slot.
+    Assert #3: memmove_s, strncpy_s and strncat_s keep their counts.
+    Assert #4: sprintf_s prints its format string and the two values.
+-->
+  <bytechunk space="ram" offset="0x1000" readonly="true">c0035fd6</bytechunk>
+  <symbol space="ram" offset="0x1000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/boundschecked_aarch64_le.so</com>
+  <com>read symbols</com>
+  <com>load function clear_obj</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function dup_obj</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function shift_obj</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function dup_name</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function add_name</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function format_pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/boundschecked_aarch64_be.so</com>
+  <com>read symbols</com>
+  <com>load function clear_obj</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function dup_obj</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function shift_obj</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function dup_name</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function add_name</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function format_pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/boundschecked_thumb.so</com>
+  <com>read symbols</com>
+  <com>load function clear_obj</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function dup_obj</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="kuna-boundschecked #1: memset_s keeps its count" min="3" max="3">memset_s\(v1,0x40,0,0x40\);</stringmatch>
+<stringmatch name="kuna-boundschecked #2: memcpy_s keeps exactly its four arguments" min="3" max="3">memcpy_s\(v1,0x20,a0,0x20\);</stringmatch>
+<stringmatch name="kuna-boundschecked #3: memmove_s, strncpy_s and strncat_s keep their counts" min="6" max="6">(memmove_s\(v1,0x20,a0,0x20\)|strncpy_s\(v1,0x10,a0,0x10\)|strncat_s\(a0,0x10,a1,0x10\));</stringmatch>
+<stringmatch name="kuna-boundschecked #4: sprintf_s prints its format string" min="2" max="2">sprintf_s\(a0,0x20,"%d-%d",a1,a2\);</stringmatch>
+</decompilertest>
