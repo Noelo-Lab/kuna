@@ -1,5 +1,15 @@
 # Stage-model issue testcases
 
+`kuna-calleepreservesargs.xml` checks registers a leaf callee leaves alone:
+an argument register set once before two calls of a leaf that reads it, and a
+killed-by-call register kept across a leaf that only reads memory. Its control
+leaves a stale register off a callee that never reads it.
+
+`kuna-ppc32-computed-lr.xml` follows a local target stored in LR rather than
+returning the input argument. Its CLI companion covers both byte orders,
+conditional transfers, joins, stack reloads and ordinary ABI returns, and
+compiles and executes the emitted C at O0/O2.
+
 `kuna-narrowed-call-input.xml` checks a call through a typed field whose
 argument was narrowed to two bytes before the field's prototype was forced on
 the call: the function decompiles and passes the sum widened to the parameter.
@@ -55,6 +65,14 @@ and sees the same pop.
 whose block holds unread flag writes once the register space has had a heritage
 pass (`deadcode delay register 50` keeps those writes alive). Before the fix the
 second `if (x)` stayed.
+
+`kuna-looptest.xml` checks option `looptest` on six x86-64 loops laid out as
+gcc -O2 rotates them. A pointer loop whose `n == 0` guard returns separately, a
+counted loop wrapped in `if (n > 0)` and a list walk whose test reads the copy
+of the next pointer print `while (c)` with the guard gone; `i = 0; do ...
+while (i != 16)` prints `while` because its entry test folds to true. A guard
+`n > 0` in front of a `!=` latch and a retry loop whose test reads a body value
+stay do-while. `option looptest binary` restores every do-while and guard.
 
 `kuna-switchmerge.xml` checks option `switchmerge`: two AArch64 range-checked
 jump tables on one selector, the second reached when the first's range check
@@ -123,6 +141,11 @@ and callers across signed, unsigned, Boolean and full-width results.
 and narrowed callback results. Its CLI companion compiles complete C and Rust
 output under the same asserted prototypes and checks every byte value and call
 counts. The original fixture is only decompiled.
+
+`kuna-calleefloatreads.xml` checks calls to callees with no prototype that
+read a float argument register: an x86-64 `xmm0` written after a `pxor`, an
+ARM hard-float double forwarded or computed in `d0`, and a variadic callee
+that must not receive a leftover `xmm0`.
 
 `kuna-callproto.xml` checks a tail jump through a variadic function pointer with
 nothing stated, with a call-site prototype, and with one parameter placed in a
@@ -371,6 +394,21 @@ correctness fix, exercised with defaults and `nanignore none`.
 `kuna-cli/tests/float_unordered_compare.rs` compiles the emitted bodies with
 GCC and Clang and checks NaN, signed zeros, infinities and finite values
 against the original functions.
+
+`kuna-fcmp-unordered.xml` pins every AArch64 condition read after `fcmp`, six
+ARM branches after `vcmp` and `vmrs`, and three compiled functions. The flags
+are NZCV=0011 for unordered operands, so `gt` prints as `b < a` and `le` as
+`!(b < a)`, never `a != b && !(a < b)`, which a NaN makes true. A strict
+correctness fix with one pass.
+
+`kuna-framepublish-seh.xml` pins an MSVC SEH prologue that links its
+registration record into `fs:[0]` and allocates a local below it with
+`push ecx`. The frame publication holds the record's handler and state
+stores, while the garbage ECX store to the local below the record, which the
+`and` overwrites with only the `fs:[0]` link STORE in between, is still dead
+and does not make ECX a parameter. It also pins a pointer into the middle of
+a local array whose reader indexes below it: all four element stores print. A
+strict fix with one pass.
 
 `kuna-globalorder.xml` pins issue [#871](https://github.com/Noelo-Lab/kuna/issues/871)
 and case-local global stores at the `indexaliasguard global` default: a

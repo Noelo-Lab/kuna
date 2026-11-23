@@ -646,6 +646,11 @@ kuna_options! { self, p1;
     },
     "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
     "switchmerge" => on_off!(switchmerge, "nested-switch merge and default-hole folding"),
+    "looptest" => {
+        let (mode, msg) = crate::p8_structure::kuna_looptest::parse_loop_test(p1)?;
+        self.loop_test = mode;
+        Ok(msg)
+    },
     "gotonext" => on_off!(goto_next, "goto-to-next suppression"),
     "importdata" => on_off!(import_data, "import-slot data-read rendering"),
     "castimplied" => on_off!(cast_implied, "C-implied cast elision"),
@@ -715,6 +720,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "cortexmpriv" => on_off!(cortexmpriv, "Cortex-M privileged-mode guard folding"),
+    "bytestorewidth" => on_off!(byte_store_width, "Byte-array constant store width"),
     "acleintrinsics" => on_off!(acle_intrinsics, "AArch64 ACLE intrinsics"),
     "dedupvardecls" => {
         let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;

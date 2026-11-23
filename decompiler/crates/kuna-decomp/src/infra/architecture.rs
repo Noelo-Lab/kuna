@@ -1238,6 +1238,8 @@ pub struct Architecture {
     /// another switch on the same selector as one `switch`, and leave out the
     /// labels of arms that jump to the code `default:` runs.
     pub switchmerge: bool,
+    /// (kuna `looptest`) Where a bottom-tested loop prints its test.
+    pub loop_test: crate::p8_structure::kuna_looptest::LoopTestMode,
     /// (kuna `importdata`) Render a data read through a loader-marked import slot
     /// (a GOT / `__got` / `__auth_got` / IAT entry holding an import's address) as
     /// the import itself, instead of a dereference of the anonymous slot. Default
@@ -1294,6 +1296,10 @@ pub struct Architecture {
     /// (`decompile_drive::is_injected_userop`), not at registration: the payload
     /// is installed at architecture bootstrap, before any `option` line.
     pub cortexmpriv: bool,
+    /// (kuna `bytestorewidth`) Keep a constant write into a byte array at its
+    /// native width unless its bytes read as text
+    /// ([`crate::p3_dataflow::kuna_bytestorewidth`]).
+    pub byte_store_width: bool,
     /// (kuna `acleintrinsics`) On AArch64, lift the memory-tagging instructions
     /// with their tag effect (`kuna_memtag`) and print the barrier, hint and
     /// memory-tagging user ops as ACLE intrinsics (`kuna_acleintrinsics`).
@@ -2596,6 +2602,7 @@ impl Architecture {
             ctypes: false, // (kuna) option ctypes; reset_defaults sets the shipped default
             voidtailreturn: false, // (kuna) option voidtailreturn; reset_defaults sets the shipped default
             switchmerge: false, // (kuna) option switchmerge; reset_defaults sets the shipped default
+            loop_test: crate::p8_structure::kuna_looptest::LoopTestMode::Binary, // (kuna) option looptest; reset_defaults sets the shipped default
             goto_next: false, // (kuna) option gotonext; reset_defaults sets the shipped default
             import_data: false,
             data_import_slots: std::collections::BTreeSet::new(),
@@ -2607,6 +2614,7 @@ impl Architecture {
             cast_narrow: false, // (kuna) option castnarrow; reset_defaults sets the shipped default
             decl_order: crate::kuna_declorder::DeclOrder::Name, // (kuna) option declorder; reset_defaults sets the shipped default
             cortexmpriv: false, // (kuna) option cortexmpriv; reset_defaults sets the shipped default
+            byte_store_width: false, // (kuna) option bytestorewidth; reset_defaults sets the shipped default
             acle_intrinsics: false, // (kuna) option acleintrinsics; reset_defaults sets the shipped default
             cortexmpriv_inject: None, // (kuna) set by init_userops_and_fixups when the language declares the user-op
             present_lessequal: false,
@@ -2920,6 +2928,7 @@ impl Architecture {
         self.goto_next = true; // (kuna) option gotonext default-on: upstream BlockGoto::gotoPrints; only the spelling of a jump changes; 0/675 datatests
         self.voidtailreturn = true; // (kuna) option voidtailreturn default-on (DIV-98); `option voidtailreturn off` restores the trailing `return;`
         self.switchmerge = true; // (kuna) option switchmerge default-on; `option switchmerge off` prints every jump-table arm of every nested switch
+        self.loop_test = crate::p8_structure::kuna_looptest::LoopTestMode::Proven; // (kuna) option looptest default `proven`; `option looptest binary` prints every loop where the binary tests it
         self.import_data = true; // (kuna) option importdata default-on; `option importdata off` keeps the `*dat_<slot>` dereference
         self.cast_implied = true; // (kuna) option castimplied default-on: leaves out only a value-preserving integer conversion C performs itself (argument to a type-locked parameter, assignment to a local or parameter declared that spelling, return, or under another conversion); 1/675 datatest assertion moved (Union #26, the intended form, pinned to upstream by a per-test opt-out), 10 stage assertions moved to the new form, speed within budget; docs/features/castimplied/default-on-evaluation.md
         self.cast_sign = true; // (kuna) option castsign default-on: a frame local or pointer index only ever compared signed, never an operand of + - * <<, and never met by a top-bit constant in == != & | ^, is declared signed; 0/675 datatest assertions and 0 stage assertions moved, test-cli unchanged, the 444-slice typesweep identical, casts 38,703 -> 38,602 on the census corpus, 41 functions fewer and 0 more; docs/features/castsign/default-on-evaluation.md
@@ -2931,6 +2940,7 @@ impl Architecture {
         self.strlen_scan = true; // (kuna) option strlenscan default-on: an inline repnz scasb length prints as strlen; byte-identical on gcc 11 decbench output, 0/675 datatest assertions
         self.rep_string = true; // (kuna) option repstring default-on: an x86 rep movs/stos/cmpsb loop prints as a copy, fill or compare builtin; inert off x86, 0/675 datatest assertions
         self.cortexmpriv = true; // (kuna) DIV-99: default-ON; the fixup is registered only on a language that declares the user-op (ARM), so inert elsewhere; "the core is privileged" is a modelling judgement, so `off` audits unprivileged Thread-mode code
+        self.byte_store_width = false; // (kuna) option bytestorewidth: opt-in
         self.acle_intrinsics = true; // (kuna) option acleintrinsics default-on; reads the AArch64 `ShowMemTag` context and AArch64 user-op names only, so inert on every other target
         self.float_globals = true; // (kuna) option floatglobals default-on
         self.call_target_type = true; // (kuna) option calltargettype default-on; acts only with `ctypes` on, and `option calltargettype off` keeps the upstream `code *` spellings
@@ -3625,6 +3635,7 @@ impl Architecture {
         // so the live flag drives both the DIV default and the toggle).
         ctx.global_array_anchor = self.global_array_anchor;
         ctx.opaque_predicate = self.opaque_predicate;
+        ctx.byte_store_width = self.byte_store_width;
         ctx.ret_split_global = self.ret_split_global; // retsplitglobal
         ctx.ret_split_limit = self.ret_split_limit; // retsplitlimit
         // (kuna) resolve the byte-shuffle user-op ids ONCE per program, so the
