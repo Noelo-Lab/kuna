@@ -72,10 +72,33 @@ pub fn trace_enabled() -> bool {
 }
 
 //===========================================================================
-// Option parse (`guardarm on|off`, `loopcondhoist on|off`).
+// Option parse (`guardarm off|auto|on`, `loopcondhoist on|off`).
 //===========================================================================
 
-/// The `guardarm on|off` ArchOption — source-layout tie-break for the
+/// The `guardarm` mode: where the layout tie-break applies.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum GuardArmMode {
+    /// Out-index order, as upstream.
+    #[default]
+    Off,
+    /// In functions whose code is unoptimized (`kuna_unoptimized`).
+    Auto,
+    /// In every function.
+    On,
+}
+
+impl GuardArmMode {
+    /// Does the tie-break apply to a function with this verdict?
+    pub fn applies(self, unoptimized: bool) -> bool {
+        match self {
+            GuardArmMode::Off => false,
+            GuardArmMode::Auto => unoptimized,
+            GuardArmMode::On => true,
+        }
+    }
+}
+
+/// The `guardarm off|auto|on` ArchOption — source-layout tie-break for the
 /// `ruleBlockIfNoExit` clause arm.
 pub struct OptionGuardArm;
 
@@ -83,11 +106,24 @@ impl OptionGuardArm {
     /// The option name.
     pub const NAME: &'static str = "guardarm";
 
-    /// Parse `on`/`off`, returning the bool value + a confirmation message.
-    pub fn apply(&self, p1: &str) -> kuna_base::error::KunaResult<(bool, String)> {
-        let val = crate::options::on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("If-no-exit guard-arm layout tie-break turned {prop}")))
+    /// Parse `off`/`auto`/`on`, returning the mode + a confirmation message.
+    pub fn apply(&self, p1: &str) -> kuna_base::error::KunaResult<(GuardArmMode, String)> {
+        let mode = match p1 {
+            "off" => GuardArmMode::Off,
+            "auto" => GuardArmMode::Auto,
+            "on" | "" => GuardArmMode::On,
+            _ => {
+                return Err(kuna_base::error::KunaError::parse(
+                    "guardarm takes off, auto or on",
+                ))
+            }
+        };
+        let prop = match mode {
+            GuardArmMode::Off => "off",
+            GuardArmMode::Auto => "auto (unoptimized functions)",
+            GuardArmMode::On => "on",
+        };
+        Ok((mode, format!("If-no-exit guard-arm layout tie-break turned {prop}")))
     }
 }
 
