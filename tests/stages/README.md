@@ -21,6 +21,13 @@ caller builds in `x8` for a hidden `pacda` is not the next call's first
 argument, with the modifier computed and folded to a constant. A tagged
 address and a result buffer in `x8` are the controls.
 
+`kuna-aif-slot-edges.xml` compares stock and section-relative AIF inventories
+on stripped x86-64 and MIPS32 ELFs. The six-byte x86 grid covers padded
+entries, section boundaries, overlapping decodes and terminal padding before
+zero fill. The four-byte MIPS grid checks both direct and padding-adjusted
+entry candidates with delay slots. The fixture languages reuse the stock
+decoders and calling conventions through the stage corpus's `specs/` directory.
+
 `ghangr-go-paniccheck-return.xml` checks that a returning Go panic helper
 falls through to the terminal `runtime.gopanic` call. It also checks the
 helper's conditional throw and shows the caller's sentinel with the known
@@ -403,6 +410,7 @@ readability defaults measured on the angr `fmt` corpus binary, DIV-34+ in
 | `kuna-panicloc.xml` | A Rust panic site passes `&'static core::panic::Location`, which printed as a bare address: `panic_fmt(..,0x2002c0)` | P1 external refinement (`kuna-analysis` `strings/kuna_panicloc.rs` finds the records by shape, types them `core::panic::Location` and names them after file, line and column) | `option panicloc on\|off` (default on, Rust images only) |
 | `kuna-brktrap.xml` | AArch64 SLEIGH lifts `brk #imm` to a jump through `SoftwareBreakpoint`, which flow truncated to a call that returns, so a function whose overflow or bounds check ends in a compiler trap printed as `void` and passed the value it returns to the trap, or returned a value fabricated from a call through it | P2 flow classification (`p2_lift/kuna_brktrap.rs` matches the lowered `brk` with a compiler trap immediate, `#1`, `#1000`, `#0x5500`-`#0x55ff`, `#0xc470`-`#0xc473` or `#0xf003`, and `flow.rs` ends the flow there with a no-return halt; `#0xf003` also reads its `__fastfail` code from `w0`, so the code prints; `brk #0xf000`, `brk #0` and `brk #0x800` are controls) | none (strict fix): one pass at the default |
 | `kuna-ebpf-elf-map-reloc.xml` | kuna [#1652](https://github.com/Noelo-Lab/kuna/issues/1652): a `clang --target=bpf -c` object did not load (EM_BPF 247 had no language), and with `--target` the `R_BPF_64_64` map reference was written as one 64-bit word over the start of the 16-byte `lddw`, so `prog` printed `halt_baddata()` | P1 loader (`kuna-analysis` `loadimage_object.rs` maps EM_BPF to `eBPF:LE\|BE:64:default`; `loader/reloc_apply.rs` patches `R_BPF_64_64` into the two `imm` halves at +4 and +12, `R_BPF_64_32` into the call `imm` as `(S + A - P) / 8 - 1` with the REL addend `(imm + 1) * 8`, so a static callee named by the `.text` section symbol is the one its `imm` selects, in either byte order, and `R_BPF_64_ABS64/ABS32/NODYLD32` as data words; a pspec `<default_symbols>` label outside the default code space at a call target names the callee, so `call 1` prints `bpf_map_lookup_elem`) | none (strict fix): one pass at the default |
+| `kuna-boundschecked.xml` | GCC passes a size given as both capacity and count to a C11 Annex K function by copying x3 into x1 (`mov x3,#64; mov w2,#0; mov x1,x3`), and call recovery dropped the later register, so `memset_s(p, 64, 0, 64)` printed `memset_s(v1,0x40,0)`; a Thumb `memcpy_s` also took its caller's pushed `r3` as a fifth argument (GCC 15 -O2 -fPIC shapes, AArch64 both byte orders and Thumb-2) | P1 external refinement (`kuna-analysis` `protos/kuna_libcsigs.rs` seeds the Annex K rows onto the imports) | none (always on) |
 
 `kuna-storecopyeffects.xml` pins the AArch64 address-spill store across calls,
 repeated stores, a load between calls, and a truly dead-store control. The
@@ -578,3 +586,8 @@ fixture source is `decompiler/crates/kuna-cli/tests/fixtures/assert_callee.c`.
 `kuna-rust-process-exit.xml` preserves exit status and preceding stores while
 removing dead trap flow after a known Rust standard-library process exit.
 Different namespaces and a longer similarly named function retain their callers.
+
+`kuna-piecepathology.xml` checks that a function handing back a call declared
+`int` returns 4 bytes on x86-64, not the whole of rax: `next_byte` inlines
+`getc_unlocked` and refills through `int __uflow(FILE *)`, whose upper half of
+rax is undefined. `kuna-regpiece.xml` pins the same fix on `sh_openpipe`.

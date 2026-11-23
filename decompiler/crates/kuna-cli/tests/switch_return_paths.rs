@@ -4,6 +4,7 @@ use crate::common;
 
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 const ASSEMBLY: &str = include_str!("fixtures/switch_return_paths.S");
 
@@ -175,7 +176,7 @@ int main(void) {{
                                 .arg("-o")
                                 .arg(&exe),
                         );
-                        let out = Command::new(&exe).output().unwrap();
+                        let out = Command::new(&exe).capped_output().unwrap();
                         assert!(out.status.success(), "{name}, region={region}, returndup={duplicate}, {cc} {level}: {}\n{printed}\n{stderr}", String::from_utf8_lossy(&out.stderr));
                     }
                 }

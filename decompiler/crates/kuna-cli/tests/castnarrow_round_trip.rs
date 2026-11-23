@@ -8,6 +8,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 const SOURCE: &str = include_str!("../../kuna-analysis/tests/fixtures/castnarrow_x86_64.c");
 
@@ -198,7 +199,7 @@ fn a_narrowing_into_a_destination_of_its_type_round_trips_through_the_printed_c(
                         "{cc} {level} rejected the printed C ({image}, castnarrow {opt}):\n{}\n{text}",
                         String::from_utf8_lossy(&out.stderr)
                     );
-                    let run = Command::new(&exe).output().expect("run the round trip");
+                    let run = Command::new(&exe).capped_output().expect("run the round trip");
                     assert!(
                         run.status.success(),
                         "{image} printed with castnarrow {opt} and built by {cc} {level} computes a different value:\n{}\n{text}",

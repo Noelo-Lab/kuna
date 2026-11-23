@@ -283,3 +283,104 @@ fn flags_off_does_not_discover_the_gap_function() {
         "default main must NOT resolve the indirect call to sub_13ae():\n{main_body}"
     );
 }
+
+/// Each synthetic instruction occupies six bytes. The two hidden functions
+/// and two instruction-shaped data objects share a prologue and a PT_LOAD.
+/// Their assembler labels supply the expected entries independently of AIF.
+fn slot_entries(
+    image: &std::path::Path,
+    section_stride: bool,
+    strict: bool,
+    windows: Option<&[(u64, u64)]>,
+) -> Vec<u64> {
+    let mut prog = slot_program(image, section_stride);
+    prog.arch_mut().set_kuna_option("aif", if strict { "strict" } else { "on" }).unwrap();
+    let bytes = std::fs::read(image).unwrap();
+    let file = object::File::parse(&*bytes).unwrap();
+    let seeds = kuna_analysis::entry::collect_entries(&file, &bytes);
+    let arch = prog.arch();
+    let listing = Listing::build_without_image(&file, arch, arch.translate(), &seeds);
+    assert_eq!(listing.function_count(), 65, "direct calls supply the histogram");
+    let entries = kuna_analysis::aif::run_aif(
+        &listing, arch.translate(), arch.manage().get_default_code_space().unwrap().clone(),
+        windows.unwrap_or(listing.exec_ranges()), strict, false, None, None,
+    );
+    if windows.is_none() {
+        // The xref walk constructs a separate listing from its own partition.
+        let xrefs = kuna_analysis::listing::xrefs::build(&file, arch, arch.translate(), &seeds);
+        for addr in [0, 0x40200c, 0x402026, 0x40203e, 0x402052] {
+            assert_eq!(xrefs.is_function_entry(addr), entries.contains(&addr), "xref at {addr:#x}");
+        }
+    }
+    entries
+}
+
+fn slot_program(image: &std::path::Path, section_stride: bool) -> kuna_console::engine::ConsoleProgram {
+    let root = repo_root();
+    let specs = [root.join("specs"), root.join("tests/stages/specs")].map(|p| p.display().to_string());
+    let target = if section_stride { "x86:LE:64:AIFSlots:gcc" } else { "" };
+    bootstrap_from_object(image.to_str().unwrap(), target, &specs).unwrap()
+}
+
+#[test]
+fn replacing_processor_spec_replaces_its_slot_width() {
+    let mut prog = slot_program(&slots_fixture(), true);
+    let arch = prog.arch_mut();
+    let width = |arch: &kuna_decomp::architecture::Architecture| {
+        arch.translate().translate_base().section_instruction_stride.map(|w| w.get())
+    };
+    assert_eq!(width(arch), Some(6));
+    arch.set_pspec_xml(b"<processor_spec/>".to_vec());
+    arch.parse_processor_config().unwrap();
+    assert_eq!(width(arch), None);
+}
+
+fn slots_fixture() -> PathBuf {
+    fixture().with_file_name("aif_slots_x86_64")
+}
+
+#[test]
+fn aif_stride_requires_section_origins() {
+    let image = slots_fixture();
+    assert_eq!(slot_entries(&image, true, true, None), [0, 0x40200c, 0x40203e]);
+    assert_eq!(slot_entries(&image, false, true, None), [0x40200c]);
+
+    // Remove only ELF64 e_shoff, e_shentsize, e_shnum and e_shstrndx.
+    let mut bytes = std::fs::read(image).unwrap();
+    bytes[40..48].fill(0);
+    bytes[58..64].fill(0);
+    let segments = crate::common::scratch_file("aif-segments", "elf");
+    std::fs::write(&segments, bytes).unwrap();
+    for strict in [false, true] {
+        let ordinary = slot_entries(&segments, false, strict, None);
+        if strict {
+            assert_eq!(ordinary, [0x40200c]);
+        } else {
+            assert!(ordinary.contains(&0x402026), "permissive AIF probes the decoy");
+        }
+        assert_eq!(slot_entries(&segments, true, strict, None), ordinary);
+    }
+    std::fs::remove_file(segments).unwrap();
+}
+
+#[test]
+fn aif_decoder_windows_clip_existing_slots() {
+    let image = slots_fixture();
+    // Neither low bound is a slot. Supply the windows in reverse address order.
+    let windows = [(0x40203a, 0x402050), (0x402007, 0x402038)];
+    assert_eq!(slot_entries(&image, true, false, Some(&windows)), [0x40200c, 0x40203e]);
+    assert_eq!(slot_entries(&image, true, false, Some(&windows[..1])), [0x40203e]);
+    assert_eq!(slot_entries(&image, false, false, Some(&windows[..1])), [0x40203e]);
+    assert!(slot_entries(&image, false, false, Some(&[])).is_empty());
+}
+
+#[test]
+fn first_slot_needs_contiguous_decoder_coverage() {
+    let image = slots_fixture();
+    let entry = 0x40200c;
+    let tail = (entry + 6, entry + 18);
+    let missing_byte = [(entry, entry + 5), tail];
+    let touching = [tail, (entry + 5, entry + 6), (entry, entry + 5)];
+    assert!(slot_entries(&image, true, false, Some(&missing_byte)).is_empty());
+    assert_eq!(slot_entries(&image, true, false, Some(&touching)), [entry]);
+}

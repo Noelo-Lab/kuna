@@ -2,6 +2,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 fn roundtrip(compiler: &str, extension: &str, source: &str, functions: &[&str], driver: &str) {
     if process::optional_output(Command::new(compiler).arg("--version")).is_none() {
@@ -67,7 +68,7 @@ fn roundtrip(compiler: &str, extension: &str, source: &str, functions: &[&str], 
                 String::from_utf8_lossy(&output.stderr)
             );
             assert!(
-                Command::new(&executable).status().unwrap().success(),
+                Command::new(&executable).capped_status().unwrap().success(),
                 "{cc} {opt}\n{code}"
             );
         }
