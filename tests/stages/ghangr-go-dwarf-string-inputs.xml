@@ -6,6 +6,7 @@
 <script>
   <com>clear architecture</com>
   <com>load file tests/fixtures/go-dwarf-signatures/compressed</com>
+  <com>option tailform off</com>
   <com>option godwarfsig off</com><com>read symbols</com><com>option outlang go</com>
   <com>option gobounds off</com>
   <com>load function main.stringLen</com><com>decompile</com><com>print C</com>
@@ -13,6 +14,7 @@
   <com>load function main.twoStringBits</com><com>decompile</com><com>print C</com>
   <com>clear architecture</com>
   <com>load file tests/fixtures/go-dwarf-signatures/compressed</com>
+  <com>option tailform off</com>
   <com>option godwarfsig on</com><com>read symbols</com><com>option outlang go</com>
   <com>option gobounds off</com>
   <com>load function main.stringLen</com><com>decompile</com><com>print C</com>

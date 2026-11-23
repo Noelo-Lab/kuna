@@ -13,7 +13,16 @@
     piece is now a local, declared with its storage.
 
     Stage: P6 variable naming (ActionNameVars).  A strict fix with no
-    option: #1 is the declared local, #2 the old global-looking name.
+    option: #2 is the old global-looking name.
+
+    The upper half of rax is not a value at that return at all: xpipe is
+    declared int, so the System V ABI leaves the bits above eax undefined
+    after the call. `RulePiecePathology` now marks such a concatenation as
+    consuming only the call's bytes, so the function returns xpipe's int and
+    the register piece is never named (#1, #3). A second pass declares
+    sh_openpipe to return int8, which the rule leaves alone: the early return
+    then still reads the upper half of rax, and the piece is a declared local
+    (#4, #5), not `dat_4`.
 -->
 <bytechunk space="ram" offset="0x401000" readonly="true">
 8b05fa2f000089078b05f22f00008947048b05e92f0000c30f1f8400000000008b05da2f00
@@ -33,8 +42,15 @@ ffffff8b79048901e8c9ffffff89410431c0c3
   <com>lo fu sh_openpipe</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>parse line extern int8 sh_openpipe(int4 *p);</com>
+  <com>lo fu sh_openpipe</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="REGPIECE #1: the upper half of rax is a declared local" min="1" max="1">^  unsigned int v\d+; // register 0x4$</stringmatch>
+<stringmatch name="REGPIECE #1: the function returns xpipe's int, not all of rax" min="1" max="1">^int4 sh_openpipe\(int4 \*a0\)</stringmatch>
 <stringmatch name="REGPIECE #2: no global-looking register piece" min="0" max="0">dat_4</stringmatch>
+<stringmatch name="REGPIECE #3: the early return hands back the call's value alone" min="1" max="1">^    return v1;$</stringmatch>
+<stringmatch name="REGPIECE #4: a declared 8-byte return keeps the whole of rax" min="1" max="1">^int8 sh_openpipe\(int4 \*p\)</stringmatch>
+<stringmatch name="REGPIECE #5: there the upper half of rax is a declared local" min="1" max="1">^  unsigned int v\d+; // register 0x4$</stringmatch>
 </decompilertest>

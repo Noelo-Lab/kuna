@@ -65,6 +65,8 @@ e9fbfeffff0000000000000000000000
 <symbol space="ram" offset="0x10e0" name="l_bit"/>
 </binaryimage>
 <script>
+  <!-- kuna: tailform default-on; this test pins the binary's own function-tail return layout -->
+  <com>option tailform off</com>
   <com>parse line struct rec { char *name; uint4 flags; uint2 tag; uint2 pad; int8 id; };</com>
   <com>parse line extern void sink(int8 x);</com>
   <com>parse line extern uint8 t_low(rec *r);</com>

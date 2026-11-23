@@ -1,0 +1,108 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A call takes the floating-point argument register its callee reads on
+    entry, when the callee stated no prototype (kuna_calleefloatreads.rs).
+
+    The raw x86-64 image is authored assembly:
+
+      caller:   sub $8,%rsp; movss k,%xmm0; call setf
+                pxor %xmm0,%xmm0; cvtsi2ss %edi,%xmm0; call setf
+                add $8,%rsp; ret
+      pass:     ucomisd one,%xmm0; jbe 1f; jmp half; 1: mulsd one,%xmm0; ret
+      leftover: sub $8,%rsp; call getf; lea k,%rdi; mov $0,%eax; call vf; ...
+      setf:     movss %xmm0,g; ret
+      half:     mulsd one,%xmm0; ret
+      getf:     movss g,%xmm0; ret
+      vf:       a variadic register-save prologue: test %al,%al; je 2f;
+                movaps %xmm0..%xmm7 to the stack; 2: mov (%rdi),%eax; ...
+
+    The pxor heritages all sixteen bytes of xmm0, so with calloverlap off no
+    call registers an xmm0 trial and both setf calls print setf(). By default
+    (calloverlap auto) each takes the four bytes setf reads. pass forwards
+    its own xmm0 to half, which reads it: that trial is the caller's input,
+    and in both passes the call passes it. vf tests al and saves every xmm
+    register, so the float getf leaves in xmm0 is not passed.
+
+    The fixtures: floatret_wrap_gcc_O2's main calls set_gi_bits(-7.5f) after
+    a pxor elsewhere in main. armfloatreturn_armhf.o (hard-float ARM) passes
+    a double in d0 to callees with no prototype: twocalls forwards its own d0
+    to scale and then a computed d8 * 3.0, a3 and a7 forward theirs to half.
+    calleefloatreads_armhf.o (recipe in its .s) is newlib's fmodf shape:
+    outer2 forwards s0 and s1 to inner2, which reads s0 and only spills s1,
+    so both stay arguments rather than s0 alone.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">4883ec08f30f10054c000000e857000000660fefc0f30f2ac7e84a0000004883c408c3660f2e05350000007602eb42f20f590529000000c34883ec08e839000000488d3d10000000b800000000e8310000004883c408c3900000f0c00f1f4000000000000000f03ff30f110564000000c3f20f5905e7ffffffc3f30f100552000000c34881ecd8000000488974242884c074370f294424500f294c24600f295424700f299c24800000000f29a424900000000f29ac24a00000000f29b424b00000000f29bc24c00000008b074881c4d8000000c300000000</bytechunk>
+<symbol space="ram" offset="0x1000" name="caller"/>
+<symbol space="ram" offset="0x10d4" name="g"/>
+<symbol space="ram" offset="0x107a" name="getf"/>
+<symbol space="ram" offset="0x1071" name="half"/>
+<symbol space="ram" offset="0x1058" name="k"/>
+<symbol space="ram" offset="0x1038" name="leftover"/>
+<symbol space="ram" offset="0x1060" name="one"/>
+<symbol space="ram" offset="0x1023" name="pass"/>
+<symbol space="ram" offset="0x1068" name="setf"/>
+<symbol space="ram" offset="0x1083" name="vf"/>
+</binaryimage>
+<script>
+  <com>option calloverlap off</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pass</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu leftover</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calloverlap auto</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pass</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu leftover</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatret_wrap_gcc_O2</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloatreturn_armhf.o</com>
+  <com>read symbols</com>
+  <com>lo fu twocalls</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a7</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleefloatreads_armhf.o</com>
+  <com>read symbols</com>
+  <com>lo fu outer2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="calleefloatreads #1: off, neither setf call takes xmm0" min="2" max="2">^  setf\(\);$</stringmatch>
+<stringmatch name="calleefloatreads #2: by default setf takes the loaded constant" min="1" max="1">^  setf\(dat_1058\);$</stringmatch>
+<stringmatch name="calleefloatreads #3: by default setf takes the float converted after the pxor" min="1" max="1">^  setf\(\(float4\)a0\);$</stringmatch>
+<stringmatch name="calleefloatreads #4: by default caller takes the int it converts" min="1" max="1">^void caller\(int4 a0\)$</stringmatch>
+<stringmatch name="calleefloatreads #5: both passes forward pass's own xmm0 to half" min="2" max="2">v1 = \(float8\)half\(a0\); // tail-call</stringmatch>
+<stringmatch name="calleefloatreads #6: neither pass hands a variadic callee the float getf left in xmm0" min="2" max="2">^  vf\(k\);$</stringmatch>
+<stringmatch name="calleefloatreads #7: main takes argc alone" min="1" max="1">^int4 main\(int4 argc\)$</stringmatch>
+<stringmatch name="calleefloatreads #8: main passes -7.5f to set_gi_bits" min="1" max="1">^  set_gi_bits\(dat_2070\);$</stringmatch>
+<stringmatch name="calleefloatreads #9: main passes the double it computes to wrapnegd" min="1" max="1">^  wrapnegd\(\(float8\)argc \* dat_2080\);$</stringmatch>
+<stringmatch name="calleefloatreads #10: twocalls takes the d0 it forwards" min="1" max="1">^float8 twocalls\(float8 a0\)$</stringmatch>
+<stringmatch name="calleefloatreads #11: twocalls passes its d0 to the first scale" min="1" max="1">^  scale\(a0\);$</stringmatch>
+<stringmatch name="calleefloatreads #12: twocalls passes the computed double to the second scale" min="1" max="1">scale\(a0 \* 3\.0\)</stringmatch>
+<stringmatch name="calleefloatreads #13: a3 and a7 forward their d0 to half" min="2" max="2">return \(float8\)half\(a0\);</stringmatch>
+<stringmatch name="calleefloatreads #14: a callee that reads s0 and only spills s1 is passed both" min="1" max="1">inner2\(a0,a1\)</stringmatch>
+</decompilertest>

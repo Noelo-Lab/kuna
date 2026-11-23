@@ -10,6 +10,7 @@ use object::{
     SymbolScope,
 };
 use std::process::Command;
+use crate::common::process::Capped;
 
 struct Case {
     name: &'static str,
@@ -218,7 +219,7 @@ fn labels_are_followed_by_statements_and_compile_as_c11() {
                     case.name,
                     String::from_utf8_lossy(&compile.stderr)
                 );
-                let status = Command::new(&exe).status().unwrap();
+                let status = Command::new(&exe).capped_status().unwrap();
                 assert!(status.success(), "{} {cc} {level}: {status}\n{printed}", case.name);
             }
         }
@@ -238,7 +239,7 @@ fn labels_are_followed_by_statements_and_compile_as_c11() {
             case.name,
             String::from_utf8_lossy(&compile.stderr)
         );
-        assert!(Command::new(&exe).status().unwrap().success(), "{} rustc: {rust}", case.name);
+        assert!(Command::new(&exe).capped_status().unwrap().success(), "{} rustc: {rust}", case.name);
         for file in [input, src, exe, rust_src] {
             std::fs::remove_file(file).unwrap();
         }

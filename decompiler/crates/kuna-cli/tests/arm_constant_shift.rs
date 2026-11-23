@@ -3,6 +3,7 @@ mod common;
 
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 struct Probe {
     name: String,
@@ -277,7 +278,7 @@ int main(void) {{
                     "{cc} {level}: {}\n{source}",
                     String::from_utf8_lossy(&compiled.stderr)
                 );
-                let run = Command::new(&exe).output().unwrap();
+                let run = Command::new(&exe).capped_output().unwrap();
                 assert!(
                     run.status.success(),
                     "{cc} {level} sanitize={sanitize}: {}\n{}\n{source}",

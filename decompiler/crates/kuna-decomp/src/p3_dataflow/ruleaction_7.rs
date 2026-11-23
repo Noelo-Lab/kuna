@@ -2070,6 +2070,14 @@ impl Rule for RuleConditionalMove {
 
         let bool0_const = vn_is_constant(data, bool0);
         let bool1_const = vn_is_constant(data, bool1);
+        if bool0_const
+            && bool1_const
+            && vn_offset(data, bool0) != vn_offset(data, bool1)
+            && data.get_arch().bool_branch_keep
+            && crate::kuna_boolbranch::keeps_branch(data, op, cbranch, rootblock0, [inblock0, inblock1])
+        {
+            return 0;
+        }
 
         if !bool0_const && !bool1_const {
             if inblock0 == rootblock0 {

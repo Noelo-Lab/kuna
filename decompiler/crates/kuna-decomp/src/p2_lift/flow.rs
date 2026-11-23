@@ -81,7 +81,9 @@ use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::{int4, uint4, uintb, uintm};
 use kuna_num::opcodes::OpCode;
 use kuna_sleigh::translate::{PcodeEmit, Translate};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+
+mod open_dispatch;
 
 use crate::funcdata::Funcdata;
 use crate::jumptable::RecoveryMode;
@@ -169,6 +171,10 @@ pub struct VisitStat {
 /// a longer chain keeps what it has and says so.
 const KUNA_MAX_REENTRY_STAGES: usize = 128;
 
+/// Operations one flow may replay proving that indexed bypasses read the
+/// recovered rows of their tables.
+const KUNA_BYPASS_REPLAY_BUDGET: usize = 1 << 22;
+
 /// The flow's instruction-boundary map (C++ `FlowInfo::visited`).  A type alias
 /// so the jump-table recovery's partial-clone seeding signatures stay readable.
 /// (`Address` is logically immutable as a key — its interior is a memoized space
@@ -190,6 +196,10 @@ pub type JtPipelineFn<'a> = dyn FnMut(&mut Funcdata, &VisitedMap) -> KunaResult<
 /// `Architecture`/`Override`-backed implementor; the algorithm bodies in this
 /// module never change.
 pub trait FlowEnvironment {
+    /// Preserve target-specific address semantics before changing a raw transfer.
+    fn prepare_flow_override(&self, _data: &mut Funcdata, _site: &Address, _kind: uint4) -> KunaResult<()> {
+        Ok(())
+    }
     /// A flow-lifetime snapshot of the live map, available only for eligible images.
     fn mapped_flow_image(&self) -> Option<&dyn kuna_sleigh::loadimage::ImageBytes> {
         None
@@ -259,6 +269,11 @@ pub trait FlowEnvironment {
 
     /// The ISA-mode marker does not change general-register values.
     fn is_isa_mode_switch(&self, _userop_index: uintb) -> bool {
+        false
+    }
+
+    /// A target-specific classifier will handle this return after the graph is built.
+    fn defers_return_classification(&self, _data: &Funcdata, _op: OpId) -> bool {
         false
     }
 
@@ -791,6 +806,7 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     /// Exact instruction addresses where a `BRANCH` override applied during
     /// this flow follow.
     applied_branch_overrides: std::collections::BTreeSet<Address>,
+    lr_branches: Option<&'a crate::kuna_ppc32lrflow::BranchPlans>,
     /// Boolean options for flow following (C++ `flags`).
     flags: uint4,
     /// Number of discovered call sites (C++ `qlst.size()`).
@@ -901,6 +917,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             flowoverride_present,
             loader_transfers_present,
             applied_branch_overrides: std::collections::BTreeSet::new(),
+            lr_branches: None,
             flags: 0,
             qlst_count: 0,
             inline_head: None,
@@ -944,6 +961,10 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     pub fn set_range(&mut self, b: Address, e: Address) {
         self.baddr = b;
         self.eaddr = e;
+    }
+
+    pub(crate) fn set_lr_branches(&mut self, plans: Option<&'a crate::kuna_ppc32lrflow::BranchPlans>) {
+        self.lr_branches = plans;
     }
     /// Set the maximum number of instructions (C++ `setMaximumInstructions`).
     pub fn set_maximum_instructions(&mut self, max: uint4) {
@@ -1516,7 +1537,8 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 curop,
                 &self.visited,
                 |index| self.env.is_isa_mode_switch(index),
-            ) {
+            ) && !self.env.defers_return_classification(&self.data, curop)
+            {
                 let branchind = self.env.resolve_typeop(OpCode::CPUI_BRANCHIND);
                 self.data.op_set_opcode(curop, branchind);
             }
@@ -2096,6 +2118,10 @@ truncating the fall-through here"
             let mut cursor = first;
             while let Some(op) = cursor { ops.push(op); cursor = self.dead_next(op); }
             crate::kuna_nullable_reloc::materialize(&mut self.data, curaddr, step, &ops);
+        }
+
+        if flowoverride != crate::overrides::flow_type::NONE {
+            self.env.prepare_flow_override(&mut self.data, curaddr, flowoverride)?;
         }
 
         // oiter points at first new op: beginDead() if was empty, else ++marker.
@@ -2877,10 +2903,14 @@ truncating the fall-through here"
         let mut followed = std::collections::HashSet::new();
         let mut stages = 0usize;
         let mut pending_retry = std::collections::BTreeSet::new();
-        let mut exhausted = std::collections::BTreeSet::new();
+        let mut unresolved = BTreeSet::new();
+        let mut load_bypasses = BTreeMap::new();
+        let mut open_indexed = BTreeSet::new();
+        let mut guarded_indexed = BTreeSet::new();
+        let mut bypass_budget = KUNA_BYPASS_REPLAY_BUDGET;
         loop {
             while !self.tablelist.is_empty() {
-                let new_tables = self.recover_jump_tables(run_pipeline)?;
+                let new_tables = self.recover_jump_tables(run_pipeline, &mut unresolved)?;
                 self.tablelist.clear();
                 let mark = self.data.obank().get_uniq_id();
                 let mut new_edges = Vec::new();
@@ -2892,19 +2922,24 @@ truncating the fall-through here"
                     if let Some(stub) = self.data.get_jump_table(jt_idx as int4).kuna_return_default().cloned() {
                         if !self.kuna_return_stub(&stub)? {
                             self.data.get_jump_table_mut(jt_idx as int4).kuna_drop_return_default();
+                            unresolved.insert(indop);
                             let address = self.data.obank().get(indop).expect("dispatch op").get_addr().clone();
                             self.data.warning("Indirect jump caller return overlaps decoded code", &address);
                         }
                     }
                     let num = self.data.get_jump_table(jt_idx as int4).num_entries();
+                    let table = self.data.get_jump_table(jt_idx as int4);
+                    let loaded = (num > 0 && table.kuna_reads_table_entries() && !table.is_override())
+                        .then(|| self.table_load_suffix(indop)).flatten();
                     for i in 0..num {
                         let addr = self.data.get_jump_table(jt_idx as int4).get_address_by_index(i);
-                        if !self.data.get_jump_table(jt_idx as int4).kuna_is_reentered() || followed.insert((
+                        let first = followed.insert((
                             indop,
                             addr.get_space().map(|s| s.get_index()),
                             addr.get_offset(),
-                        )) {
-                            if reentry && self.seen_instruction(&addr)
+                        ));
+                        if first || !self.data.get_jump_table(jt_idx as int4).kuna_is_reentered() {
+                            if first && self.seen_instruction(&addr)
                                 && self.data.get_jump_table(jt_idx as int4).kuna_return_default() != Some(&addr) {
                                 if let Ok(to) = self.target(&addr) { new_edges.push((indop, to)); }
                             }
@@ -2914,17 +2949,20 @@ truncating the fall-through here"
                     while !self.addrlist.is_empty() {
                         self.fallthru()?;
                     }
-                    if reentry
-                        && num == 1
-                        && !self.data.get_jump_table(jt_idx as int4).is_override()
-                        && !self.outofbounds.contains(
-                            &self.data.get_jump_table(jt_idx as int4).get_address_by_index(0),
-                        )
+                    let table = self.data.get_jump_table(jt_idx as int4);
+                    if num > 0 && (num == 1 || loaded.is_some() || table.kuna_target_encoding().is_some())
+                        && !table.is_override()
+                        && table.address_table().iter().all(|addr| !self.outofbounds.contains(addr))
                     {
-                        provisional.insert(indop);
+                        if num == 1 || (loaded.is_none() && !table.kuna_reads_table_entries()) {
+                            provisional.insert(indop);
+                        }
+                        for (entry, through_load) in loaded.into_iter().flatten() {
+                            load_bypasses.insert(entry, (indop, through_load));
+                        }
                     }
                 }
-                if reentry {
+                if !provisional.is_empty() || !load_bypasses.is_empty() {
                     new_edges.extend(crate::kuna_indirectreturn::reentry_edges(
                         &self.data, mark, |to| self.target(to).ok(), |op| self.fallthru_op(op)));
                 }
@@ -2932,48 +2970,107 @@ truncating the fall-through here"
                     .filter(|&op| self.data.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_BRANCHIND)
                         && self.data.find_jump_table_index(op).is_some())
                     .collect();
-                let relevant = if new_edges.is_empty() || dispatches.is_empty() {
+                let mut relevant = if new_edges.is_empty() || dispatches.is_empty() {
                     Default::default()
                 } else {
                     crate::kuna_indirectreturn::reaching_edges(&self.data, &dispatches, &new_edges,
                         |to| self.target(to).ok(), |op| self.fallthru_op(op))
                 };
+                for (op, edges) in relevant.iter_mut() {
+                    edges.retain(|edge| load_bypasses.get(&edge.1).is_none_or(|&(owner, _)| owner != *op));
+                }
+                let mut through_load: BTreeMap<OpId, Vec<(OpId, OpId)>> = BTreeMap::new();
+                for &edge in &new_edges {
+                    if let Some(&(op, loads_target)) = load_bypasses.get(&edge.1) {
+                        if loads_target {
+                            through_load.entry(op).or_default().push(edge);
+                        } else {
+                            relevant.entry(op).or_default().push(edge);
+                        }
+                    }
+                }
+                // Following one switch can reveal a guarded predecessor of a
+                // sibling. A path through the load re-enters this table only
+                // when its source is reachable from one of this table's cases.
+                let mut budget = crate::kuna_indirectreturn::REACH_BUDGET;
+                for (op, mut edges) in through_load {
+                    let sources = edges.iter().map(|edge| edge.0).collect();
+                    if let Some(reached) = crate::kuna_indirectreturn::reached(
+                        &self.data, op, &sources, &mut budget, &|to| self.target(to).ok(),
+                        &|id| self.fallthru_op(id))
+                    {
+                        edges.retain(|edge| reached.contains(&edge.0));
+                    }
+                    relevant.entry(op).or_default().extend(edges);
+                }
                 for (op, edges) in relevant {
                     let Some(idx) = self.data.find_jump_table_index(op) else { continue };
                     let address = self.data.obank().get(op).unwrap().get_addr().clone();
                     let mut exact = true;
                     let mut added = false;
                     for (from, to) in edges {
-                        if self.data.obank().get(to).unwrap().get_addr() != &address {
+                        let indexed = load_bypasses.get(&to).is_some_and(|&(owner, _)| owner == op);
+                        if !indexed && self.data.obank().get(to).unwrap().get_addr() != &address {
                             exact = false;
                             continue;
                         }
+                        if indexed && from == op {
+                            continue;
+                        }
                         let value = crate::kuna_returnbranch::target_on_edge(
-                            &self.data, from, op, |index| self.env.is_isa_mode_switch(index));
+                            &self.data, from, op, indexed.then_some(to), |index| self.env.is_isa_mode_switch(index));
+                        if indexed {
+                            let through = load_bypasses[&to].1;
+                            match self.classify_bypass(from, to, op, idx, &mut bypass_budget) {
+                                crate::kuna_returnbranch::Bypass::Rows => continue,
+                                crate::kuna_returnbranch::Bypass::Unknown if through => continue,
+                                _ => {}
+                            }
+                            if through && self.data.obank().get(from)
+                                .is_some_and(|branch| branch.code() == OpCode::CPUI_CBRANCH)
+                            {
+                                guarded_indexed.insert(op);
+                            } else {
+                                open_indexed.insert(op);
+                            }
+                        }
+                        if !reentry && !indexed {
+                            let known = self.data.get_jump_table(idx as int4).address_table();
+                            let align = self.data.get_arch().funcptr_align;
+                            exact &= value.is_some_and(|v| known.iter().any(|a| {
+                                let size = a.get_space().unwrap().get_word_size();
+                                crate::kuna_constselectjump::target_offset(v, size, align) == a.get_offset()
+                            }));
+                            continue;
+                        }
                         let result = value.and_then(|value| {
-                            let target = Address::new(address.get_space()?.clone(), value);
+                            let space = address.get_space()?;
+                            let word_size = space.get_word_size();
+                            let align = self.data.get_arch().funcptr_align;
+                            let byte = crate::kuna_constselectjump::target_offset(value, word_size, align);
+                            let target = Address::new(space.clone(), byte);
                             if self.outofbounds.contains(&target)
                                 || self.data.get_arch().get_load_image_value(&target, 1).is_err()
                             { return None; }
                             let limit = self.data.get_arch().max_jumptable_size as usize;
                             self.data.get_jump_table_mut(idx as int4)
-                                .kuna_extend_flow_target(target, limit)
+                                .kuna_extend_flow_target(value, target, align, limit)
                         });
                         match result { Some(new) => added |= new, None => exact = false }
                     }
-                    if !exact { pending_retry.insert(op); }
+                    if !exact && !open_indexed.contains(&op) && !guarded_indexed.contains(&op) { pending_retry.insert(op); }
                     if added { self.tablelist.push(op); }
                 }
                 if self.tablelist.is_empty() {
                     for op in std::mem::take(&mut pending_retry) {
                         let Some(idx) = self.data.find_jump_table_index(op) else { continue };
-                        if stages < KUNA_MAX_REENTRY_STAGES {
+                        if reentry && stages < KUNA_MAX_REENTRY_STAGES {
                             stages += 1;
                             self.data.get_jump_table_mut(idx as int4).kuna_retry_flow();
                             self.tablelist.push(op);
-                        } else if exhausted.insert(op) {
-                            let address = self.data.obank().get(op).unwrap().get_addr().clone();
-                            self.data.warning("Re-entered indirect jump may have more targets", &address);
+                        } else if unresolved.insert(op) && reentry {
+                            let site = self.data.obank().get(op).unwrap().get_addr().clone();
+                            self.data.warning("Indirect jump recovery limit reached", &site);
                         }
                     }
                 }
@@ -2985,6 +3082,25 @@ truncating the fall-through here"
             }
             if self.tablelist.is_empty() {
                 break;
+            }
+        }
+        guarded_indexed.retain(|op| !open_indexed.contains(op) && !unresolved.contains(op));
+        if !guarded_indexed.is_empty() {
+            let partial = self.data.jumptable_partial(&self.visited, run_pipeline);
+            for op in guarded_indexed {
+                let proved = partial.as_ref().is_some_and(|fd| {
+                    let seq = self.data.obank().get(op).unwrap().get_seq_num();
+                    let Some(jump) = fd.obank().find_op(seq) else { return false };
+                    let Some(idx) = self.data.find_jump_table_index(op) else { return false };
+                    self.data.get_jump_table(idx as int4).kuna_covers_guarded_dispatch(fd, jump)
+                });
+                if !proved { open_indexed.insert(op); }
+            }
+        }
+        unresolved.extend(open_indexed);
+        for op in unresolved {
+            if let Some(idx) = self.data.find_jump_table_index(op) {
+                self.open_dispatch(op, idx)?;
             }
         }
         Ok(())
@@ -4014,6 +4130,7 @@ truncating the fall-through here"
     fn recover_jump_tables(
         &mut self,
         run_pipeline: &mut JtPipelineFn<'_>,
+        unresolved: &mut BTreeSet<OpId>,
     ) -> KunaResult<Vec<usize>> {
         let mut new_tables: Vec<usize> = Vec::new();
         let table_ops: Vec<OpId> = self.tablelist.clone();
@@ -4027,8 +4144,10 @@ truncating the fall-through here"
         // `None` and rebuilt per table when `option jtsharepartial` is off.
         let mut shared_partial: Option<Funcdata> = None;
         for op in table_ops {
-            let at = self.data.obank().get(op).map_or(0, |o| o.get_addr().get_offset());
-            let _scope = crate::decompile_drive::JumpTableScope::enter(at);
+            let Some(site) = self.data.obank().get(op).map(|o| o.get_addr().clone()) else {
+                continue;
+            };
+            let _scope = crate::decompile_drive::JumpTableScope::enter(site.get_offset());
             if !for_inline && self.is_stated_tail_call(op) {
                 self.stated_tail_call(op)?;
                 continue;
@@ -4036,8 +4155,12 @@ truncating the fall-through here"
             let retried = self.data.find_jump_table_index(op).filter(|&idx| {
                 self.data.get_jump_table(idx as int4).kuna_keeps_recovered_targets()
             });
+            let plan = self.lr_branches.and_then(|plans| plans.get(&site))
+                .filter(|_| self.applied_branch_overrides.contains(&site));
             let mut mode = if crate::decompile_drive::deadline_passed_in("jump-table recovery") {
                 Ok(None)
+            } else if let Some(plan) = plan.filter(|plan| plan.use_proven_targets) {
+                Ok(Some(self.install_lr_table(op, site.clone(), &plan.targets)?))
             } else {
                 let mode = self.data.recover_jump_table_flow(
                     op,
@@ -4112,20 +4235,32 @@ truncating the fall-through here"
                 }
                 wanted = self.data.kuna_later_wanted.take();
             }
-            let mode = match (mode, retried) {
-                (Ok(Some(idx)), _) => Ok(Some(idx)),
-                (_, Some(idx)) => {
+            let mode = match (mode, plan, retried) {
+                (Ok(Some(idx)), _, _) => Ok(Some(idx)),
+                (_, Some(plan), _) if !crate::decompile_drive::deadline_passed_in("LR destinations") => {
+                    Ok(Some(self.install_lr_table(op, site.clone(), &plan.targets)?))
+                }
+                (_, _, Some(idx)) => {
                     self.data.get_jump_table_mut(idx as int4).mark_complete();
-                    let addr = self.data.obank().get(op).expect("dispatch op").get_addr().clone();
-                    self.data.warning("Re-entered indirect jump may have more targets", &addr);
+                    unresolved.insert(op);
+                    new_tables.push(idx);
                     continue;
                 }
-                (failed, None) => failed,
+                (mode, _, None) => mode,
             };
+            if retried.is_some() && matches!(mode, Ok(Some(_))) {
+                unresolved.remove(&op);
+            }
             match mode {
                 Ok(Some(jt_idx)) => {
-                    let tail = (!for_inline).then(|| self.tail_call_table_dest(op, jt_idx));
-                    if let Some(dest) = tail.flatten() {
+                    let tail = (!for_inline && plan.is_none_or(|plan| plan.allow_tail_call))
+                        .then(|| self.tail_call_table_dest(op, jt_idx));
+                    // Injection would erase this call before LR revalidation.
+                    let tail = tail.flatten().filter(|dest| {
+                        plan.is_none()
+                            || (!self.env.query_call_inline(dest) && self.env.query_call_inject_id(dest) < 0)
+                    });
+                    if let Some(dest) = tail {
                         self.data.remove_jump_table(jt_idx);
                         for idx in new_tables.iter_mut().filter(|idx| **idx > jt_idx) {
                             *idx -= 1;
@@ -4178,6 +4313,22 @@ truncating the fall-through here"
         let truncop = self.artificial_halt(&addr, 0)?;
         self.data.op_dead_insert_after(truncop, op);
         Ok(())
+    }
+
+    /// Reuse the flow follower's ordinary table edges for exact LR destinations.
+    fn install_lr_table(&mut self, op: OpId, site: Address, targets: &[Address]) -> KunaResult<usize> {
+        let idx = if let Some(idx) = self.data.link_jump_table(op) {
+            if self.data.get_jump_table(idx as int4).is_override() {
+                return Err(KunaError::lowlevel("Cannot replace an explicit jump table"));
+            }
+            idx
+        } else {
+            self.data.install_jump_table(site.clone())?
+        };
+        let table = self.data.get_jump_table_mut(idx as int4);
+        table.set_flow_addresses(targets.to_vec());
+        table.set_indirect_op_addr(op, site);
+        Ok(idx)
     }
 
     /// Convert a BRANCHIND that could not be recovered into a call or return

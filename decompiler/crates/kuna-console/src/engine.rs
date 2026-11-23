@@ -49,7 +49,7 @@ use kuna_base::xml::{DocumentStorage, Element};
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::options::register_option_elements;
 use kuna_decomp::raw_arch::RawBinaryArchitectureCapability;
-use kuna_decomp::kuna_memoryspecs::IntoSpecRoot;
+use kuna_decomp::kuna_memoryspecs::{IntoSpecRoot, SpecRoot};
 use kuna_decomp::kuna_loadoptions::LoadOptions;
 use kuna_decomp::sleigh_arch::{register_sleigh_arch_ids, LanguageDatabase, SleighArchitecture};
 use kuna_decomp::xml_arch::XmlArchitectureCapability;
@@ -3847,12 +3847,52 @@ fn build_registry() -> IdRegistry {
 /// roots).  A root may also be a tree held in memory
 /// ([`kuna_decomp::kuna_memoryspecs::MemorySpecs`]).
 fn scan_language_database(spec_roots: &[impl IntoSpecRoot], registry: &IdRegistry) -> KunaResult<LanguageDatabase> {
+    let roots: Vec<SpecRoot> = spec_roots.iter().map(IntoSpecRoot::to_spec_root).collect();
+    let key: Option<Vec<std::path::PathBuf>> = roots
+        .iter()
+        .map(|root| match root {
+            SpecRoot::Dir(path) => Some(path.clone()),
+            SpecRoot::Memory(_) => None,
+        })
+        .collect();
+    let reused = |key: &[std::path::PathBuf]| {
+        let scans = REUSED_SCANS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        scans.as_ref()?.iter().find(|(k, _)| k == key).map(|(_, db)| db.clone())
+    };
+    if let Some(db) = key.as_deref().and_then(reused) {
+        return Ok(db);
+    }
     let mut db = LanguageDatabase::new();
-    for root in spec_roots {
-        db.add_spec_root(&root.to_spec_root());
+    for root in &roots {
+        db.add_spec_root(root);
     }
     db.get_descriptions(registry)?;
+    if let Some(key) = key {
+        let mut scans = REUSED_SCANS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(scans) = scans.as_mut() {
+            scans.push((key, db.clone()));
+        }
+    }
     Ok(db)
+}
+
+type ReusedScans = Vec<(Vec<std::path::PathBuf>, LanguageDatabase)>;
+
+static REUSED_SCANS: std::sync::Mutex<Option<ReusedScans>> = std::sync::Mutex::new(None);
+
+/// From now on, reuse spec work across the bootstraps of this process: each
+/// set of on-disk spec roots is scanned once, and every later bootstrap over
+/// the same roots gets a copy of that scan; and each `.sla` a thread decodes
+/// twice is kept, so later translators from it are copies of the decoded form
+/// ([`kuna_sleigh::kuna_slacache`]). For runners whose spec trees cannot change
+/// while they run and that build many architectures, such as the datatest
+/// harness. A kept `.sla` costs about as much memory as one translator.
+pub fn reuse_specs() {
+    kuna_sleigh::kuna_slacache::enable();
+    REUSED_SCANS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get_or_insert_with(Vec::new);
 }
 
 /// Scan `spec_roots` into a [`LanguageDatabase`] once, for [`Bootstrap`]s to
@@ -5467,8 +5507,9 @@ fn commit_analysis_output(
     if let Some(entry) = out.go_chanrecv2 {
         prog.arch_mut().go_chanrecv2 = Some(entry);
     }
-    if !out.case_entries.is_empty() {
-        let cases: std::collections::BTreeSet<u64> = out.case_entries.iter().copied().collect();
+    if !out.case_entries.is_empty() || !out.interior_entries.is_empty() {
+        let cases: std::collections::BTreeSet<u64> =
+            out.case_entries.iter().chain(&out.interior_entries).copied().collect();
         out.entries.retain(|e| !cases.contains(e));
     }
     for slot in std::mem::take(&mut out.ppc32_pic_slots) {

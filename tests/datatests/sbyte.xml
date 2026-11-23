@@ -14,6 +14,8 @@ f3c3
 </bytechunk>
 </binaryimage>
 <script>
+  <!-- kuna: tailform default-on; this upstream test pins the binary's own function-tail return layout -->
+  <com>option tailform off</com>
   <com>map fun r0x101008 printf nocode</com>
   <com>map fun r0x100000 printStruct</com>
   <com>parse line struct mystruct { int4 val; int1 thebyte; };</com>

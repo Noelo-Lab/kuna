@@ -509,6 +509,31 @@ is an `if` or a loop has NO node there at all, while kuna's printed `return;`
 re-materialises one — one extra node, one or two extra edges, and an
 `is_exitpoint` role flip that on its own defeats the GED isomorphism test.
 
+The same reasoning covers a switch a void function ends with. Once the shared
+epilogue has been duplicated into the arms, the values the source let fall out of
+the switch (it had no `default:`, or a `default: break;`) print as `default:
+return;`, an arm the source does not have and one more node in its graph.
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_voidtailswitch.rs (elidable_tail_default)`
+finds that arm and `printc.rs (PrintC::emit_block_switch_c)` leaves it out, when
+the function returns void, the switch is the last statement printed (descending
+only `Graph` and `Ls`, and looking past a final leaf that prints only the
+elided trailing `return;`), and the `default:` arm is a leaf that prints nothing
+but a bare `return;`, is not in a fall-through chain and carries no label.
+Leaving such a switch is returning, so the program is unchanged; with
+`option voidtailreturn off` the arm stays.
+
+**Return-split leaves (`option tailform`).** The P8 `tailform` pass (§8.3)
+flags a structured leaf `F_RET_SKIP` or `F_RET_ONLY`.
+`printc.rs (PrintC::emit_block_copy)` prints an `F_RET_ONLY` leaf as the single
+statement of its block's tail `RETURN`, without the block's comments, and
+prints an `F_RET_SKIP` leaf with that `RETURN` left out
+(`kuna_tailform.rs (skipped_return)`, skipped in
+`printc.rs (PrintC::emit_basic_block_ops)` beside the `voidtailreturn` op).
+`printc.rs (PrintC::if_body_elides)` leaves the skipped return out of its
+one-statement count, so `if (c) f();` drops its braces. Both marks are
+positional, on the leaf, so a block that another leaf also prints keeps its
+return there.
+
 **Warning style (P9/`warning-style`, `option warnstyle`).** Analysis warnings
 render as terse `// slug` end-of-line comments on the line they describe
 (kuna default `inline`, DIV-39): `printc.rs (PrintC::emit_comment_group)`
@@ -1541,6 +1566,16 @@ addl-flag on the condition's `CBRANCH` and emit the condition through the same
 `ONLY_BRANCH` renderer the `if (...)` header uses, so the condition's
 parenthesization, short-circuiting and any comma-expression side effects are
 identical to the `if` form they replace.
+
+An `if` or loop prints its condition block twice: its statements first, then,
+under `ONLY_BRANCH` (or `COMMA_SEPARATE` inside `while (...)` and `for (...)`),
+only the branch that ends it. A switch, an `if`, a loop or a goto has no such
+branch and prints its whole statement again, so `printc.rs (PrintC::emit_block)`
+refuses one in that position (the `renders_branch` test of §8.2): it prints
+`/* WARNING: structuring placed a statement where a condition belongs */` where
+the condition belongs and records the warning, instead of the statement. The
+structurers never hand the printer such a tree (§8.2); this keeps a future
+structuring error from printing the statement a second time without notice.
 
 The `infloopstyle while|do` option controls unconditional C loop spelling.
 By default an infinite-loop node emits `while (true) { ... }`; `do` restores

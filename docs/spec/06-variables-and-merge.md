@@ -3130,6 +3130,32 @@ would report a fresh change forever. The option reaches the per-function
 `splitstorekeep`. Ordinary copy propagation is unchanged. Global writes marked
 by store lowering are excluded by the frame-space check.
 
+The same hold is always on, independent of the option, for a function that
+publishes a frame address: a live COPY of a frame address into persistent
+storage, a STORE of one outside the stack space, or a `write_volatile` user op
+whose value is one. Storing the address is the escape, so the frame stores a
+later reader can reach through the reloaded pointer stay live. The hold covers
+every alias-checked frame byte, since a published pointer can point into the
+middle of an object, be indexed below itself, or lead to a lower local through a
+published record. `prepare` records the lowest published offset seen in any pass
+and keeps it for the rest of the function's analysis. A write held only by the
+publication and lying wholly below that offset is still dead once every path
+fully overwrites it before a LOAD, call, user op or return: the bounded search
+(`kuna_stackalias.rs (stores_transparent)`) steps over STOREs for it, since a
+STORE reads no memory. Without that, MSVC's `push ecx`, which allocates a local
+below the SEH record it then links into `fs:[0]` and zeroes with
+`and [ebp-0x10],0` after the link, kept a dead store of ECX live and made ECX a
+parameter. Without it, a frame whose bounded local view admission is refused
+(§6, `kuna_localstackviews.rs`) printed reads through `object_pair` of a local
+that was never written, and an x86 SEH registration record linked into
+`fs:[0]` lost its handler and state fields. Frames whose address only reaches
+calls or other frame slots keep the option's default. A STORE counts as a frame
+slot when every origin of its destination pointer is the frame base, through
+copies, phis and pointer arithmetic with any offset
+(`kuna_stackranges.rs (frame_based)`): an `alloca` area that receives
+outgoing variadic arguments, or a cursor into a local `iovec` array, is not a
+publication.
+
 The policy excludes proved `NoLocalAlias` spills and computes potentially aliased
 bytes before each dead-code pass. A bounded control-flow search follows every
 successor with the bytes that still belong to the old write. A physical write
@@ -3715,7 +3741,9 @@ call, overlapping receiver write or unresolved STORE. A possible receiver use ca
 refuse crossing, but cannot alone prove containment. Crossing, unavailable early
 evidence and overlapping locked layouts refuse the entire footprint, including
 nominal aggregate candidates. Refusal persists for the analysis; later P6 facts
-cannot reopen it. The chosen physical component must contain every overlapping
+cannot reopen it. A refused footprint gets no typed views, but its native writes
+are not dropped: when the frame address was published to memory, the
+`stackalias` publication hold keeps them live. The chosen physical component must contain every overlapping
 validated declared candidate extent, even when that other candidate was itself
 refused; preserving a nested or shifted fragment cannot split the larger
 declared object's storage. Candidate contracts are collected once in that window, so a
@@ -4066,6 +4094,17 @@ from a stack spill, which is still unresolved when the solver runs. A
 push-style frame by a raise, and a push-style caller that defers a cleanup and
 lowers the stack for the next call's alignment fails the store test, since the
 alignment slots are never written.
+
+(kuna) The slots are measured from the stack pointer at the call read back
+through constant adjustments. A call whose pop its declaration states reaches
+the solver as an INDIRECT with an exact equation rather than an `INT_ADD`
+(chapter [04](04-calls-and-prototypes.md), `kuna_declaredpop`), so when the
+stack pointer at the next call is exactly the one that call left, it is no
+offset from anything. It is then measured from itself
+(`kuna_calleepopframe.rs (stated_result)`), as the `INT_ADD` form measured it
+from the stack pointer before the declared call. A function that defers a
+declared pop has no call whose pop the push-run walk above decides: every pop
+it guesses is a direct call's into its own image.
 
 A declared struct parameter split across registers and the entry stack can be
 spilled contiguously beside its incoming stack tail. The spill then crosses

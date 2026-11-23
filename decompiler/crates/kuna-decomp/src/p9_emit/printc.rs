@@ -1573,6 +1573,12 @@ pub struct PrintC {
     /// [`emit_function_body`](PrintC::emit_function_body) and cleared after, so it
     /// is live only for that function's emission.
     void_tail_return: Option<OpId>,
+    /// (kuna `tailform`) The `RETURN` of the leaf being emitted that the leaf
+    /// leaves out ([`crate::p8_structure::kuna_tailform::skipped_return`]).
+    tailform_skip: Option<OpId>,
+    /// (kuna `voidtailreturn`) The `default:` arm (switch, case index) of the
+    /// switch a void function ends with, when that arm only returns.
+    void_tail_default: Option<(BlockId, usize)>,
     /// (kuna `gotonext`) The gotos left out or printed as `break;`, and the labels
     /// only they reached.  Computed per function at the top of
     /// [`emit_function_body`](PrintC::emit_function_body).
@@ -1580,6 +1586,8 @@ pub struct PrintC {
     /// (kuna `switchmerge`) The printed arms of each C `switch` whose arms differ
     /// from its own cases.  Computed per function with `goto_rewrites`.
     switch_plans: crate::p8_structure::kuna_switchmerge::SwitchPlans,
+    /// (kuna `looptest`) The loops printed top-tested and the guards dropped.
+    pub(crate) loop_tests: crate::p8_structure::kuna_looptest::LoopTests,
     /// (kuna) Resolved `realtypes` rendering context for the function currently
     /// being printed — the `Architecture::realtypes` gate plus the data-model fact
     /// (`long` is 8 bytes) needed to relabel residual `TYPE_UNKNOWN` (`xunknownN`)
@@ -1675,8 +1683,11 @@ impl PrintC {
             pending: 0,
             commsorter: crate::comment::CommentSorter::new(),
             void_tail_return: None,
+            tailform_skip: None,
+            void_tail_default: None,
             goto_rewrites: Default::default(),
             switch_plans: Default::default(),
+            loop_tests: Default::default(),
             rt_ctx: RealTypeCtx::OFF,
             out_lang: crate::kuna_lang::OutLang::C,
             eol_warns: Vec::new(),
@@ -2069,6 +2080,7 @@ impl PrintC {
         self.eol_warns.clear();
         self.warnings.clear();
         self.void_tail_return = None;
+        self.void_tail_default = None;
         self.stmt_op = None;
         self.label_names.clear();
         self.local_name_overrides.clear();
@@ -3268,9 +3280,10 @@ impl PrintC {
             return;
         }
         let sz = proto.num_params();
-        if sz == 0 {
+        // (kuna varargsave) a variadic list with no named parameter is `(...)`.
+        if sz == 0 && !proto.is_dotdotdot() {
             self.emit.tag_type("void", SyntaxHighlight::TypeColor, markup);
-        } else {
+        } else if sz != 0 {
             let mut print_comma = false;
             for i in 0..sz {
                 let param = match proto.get_param(i) {
@@ -4343,6 +4356,11 @@ impl PrintC {
         } else {
             None
         };
+        self.void_tail_default = if arch.voidtailreturn {
+            crate::p9_emit::kuna_voidtailswitch::elidable_tail_default(fd, self.void_tail_return)
+        } else {
+            None
+        };
         let c_switch = matches!(self.lang().forms.switch, crate::kuna_lang::SwitchForm::CSwitch);
         self.switch_plans = if arch.switchmerge && c_switch {
             let facts = crate::p8_structure::kuna_switchmerge::PrintFacts {
@@ -4368,9 +4386,22 @@ impl PrintC {
         } else {
             Default::default()
         };
+        let loop_tests = if matches!(self.lang().forms.do_while, crate::kuna_lang::DoWhileForm::CDoWhile) {
+            crate::p8_structure::kuna_looptest::loop_tests(fd, sroot, arch.loop_test, &|high| {
+                self.sign_plan.decl_type(high).cloned()
+            })
+        } else {
+            Default::default()
+        };
+        self.loop_tests = loop_tests;
+        if let Some(&ret) = self.void_tail_return.and_then(|op| self.loop_tests.tail_returns.get(&op)) {
+            self.void_tail_return = Some(ret);
+        }
         self.assign_label_names(fd, sroot);
         self.emit_block_graph(fd, arch, sroot);
+        self.loop_tests = Default::default();
         self.void_tail_return = None;
+        self.void_tail_default = None;
         self.goto_rewrites = Default::default();
         self.switch_plans = Default::default();
         self.label_names.clear();
@@ -4426,7 +4457,14 @@ impl PrintC {
     /// `FlowBlock::emit(PrintLanguage*)` -> `PrintC::emitBlock*`).
     pub(crate) fn emit_block(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         use crate::block::BlockType;
+        if self.context.is_set(modifiers::ONLY_BRANCH | modifiers::COMMA_SEPARATE)
+            && !crate::kuna_switchcond::renders_branch(fd.sblocks_ref(), blk)
+        {
+            self.emit_misplaced_condition();
+            return;
+        }
         match fd.sblocks_ref().block(blk).get_type() {
+            BlockType::Copy if self.loop_tests.hidden.contains(&blk) => {} // (kuna looptest)
             BlockType::Copy => self.emit_block_copy(fd, arch, blk),
             BlockType::Basic => self.emit_block_basic(fd, arch, blk),
             BlockType::Ls => self.emit_block_ls(fd, arch, blk),
@@ -4450,6 +4488,16 @@ impl PrintC {
                 }
             }
         }
+    }
+
+    /// A condition slot holding a block with no branch to print (see
+    /// [`crate::kuna_switchcond`]): its statements already printed, so print a
+    /// warning where the condition belongs rather than the statements again.
+    fn emit_misplaced_condition(&mut self) {
+        let warning = crate::kuna_switchcond::MISPLACED_CONDITION_WARNING;
+        let text = format!("/* {warning} */");
+        self.emit.print(&text, SyntaxHighlight::CommentColor);
+        self.record_warning(crate::kuna_functionwarnings::Warning::new(None, warning), &text);
     }
 
     /// C++ `PrintC::emitBlockCondition` (printc.cc:2985): emit a `BlockCondition`
@@ -4529,8 +4577,18 @@ impl PrintC {
         // to an enclosing loop head (`isLabelBumpUp`).
         self.emit_any_label_statement(fd, blk);
         if let Some(under) = fd.sblocks_ref().block(blk).get_copy() {
+            // (kuna tailform) A leaf that prints only its return.
+            if let Some(ret) = crate::p8_structure::kuna_tailform::only_return(fd, blk) {
+                self.emit.tag_line();
+                self.emit_statement(fd, arch, ret);
+                self.flush_eol_warnings();
+                return;
+            }
+            let skip = crate::p8_structure::kuna_tailform::skipped_return(fd, blk);
+            let saved = std::mem::replace(&mut self.tailform_skip, skip);
             // The copy's `copy` field is a *bblocks* BlockId.
             self.emit_basic_block_ops(fd, arch, under, true);
+            self.tailform_skip = saved;
         }
     }
 
@@ -4848,6 +4906,10 @@ impl PrintC {
         // `dest = ( cond );`.  Checked BEFORE the ternary so the more specific
         // form wins when both match; the mark is set only with
         // `option iteboolean on`.
+        if let Some(&guard) = self.loop_tests.guards.get(&blk) {
+            self.emit_dropped_guard(fd, arch, blk, guard); // (kuna looptest)
+            return;
+        }
         if let Some(m) = self.ite_boolean_match(fd, blk) {
             self.emit_block_if_bool(fd, arch, m);
             return;
@@ -5083,6 +5145,7 @@ impl PrintC {
         let Some(under) = fd.sblocks_ref().block(body).get_copy() else {
             return false;
         };
+        let tailform_skip = crate::p8_structure::kuna_tailform::skipped_return(fd, body);
         let mut printed = 0;
         let mut cur = fd.bb_op_head(under);
         while let Some(inst) = cur {
@@ -5091,7 +5154,7 @@ impl PrintC {
                 Some(o) => o,
                 None => continue,
             };
-            if self.is_suppressed_statement(fd, inst) {
+            if self.is_suppressed_statement(fd, inst) || Some(inst) == tailform_skip {
                 continue;
             }
             // The body always prints under NO_BRANCH: every branch op is skipped.
@@ -5441,7 +5504,10 @@ impl PrintC {
         // after the `switch (v) {` header brace.
         self.flush_eol_warnings();
 
-        let arms = self.switch_arms(fd, blk);
+        let mut arms = self.switch_arms(fd, blk);
+        if let Some((sw, index)) = self.void_tail_default {
+            arms.retain(|a| !(a.owner == sw && a.index == index && a.guard.is_none() && a.skip == 0));
+        }
         let ncase = arms.len();
         for (i, arm) in arms.iter().enumerate() {
             let owner = arm.owner;
@@ -5512,14 +5578,21 @@ impl PrintC {
             self.emit_default_case_label(case.label, &case_markup);
         } else {
             // case <label>: — one line per index targeting this case.
+            let char_selector = lowered_char_selector(fd, blk);
             for i in 0..self.switch_case_label_count(fd, blk, &case) {
                 let (val, sz, signed) = self.switch_case_label(fd, arch, blk, &case, i);
-                self.emit_numeric_case_label(
-                    val,
-                    sz,
-                    signed,
-                    firstop.or_else(|| self.any_op(fd, case.block)),
-                );
+                let op = firstop.or_else(|| self.any_op(fd, case.block));
+                if let (Some((ct, vn)), Some(op)) = (char_selector.as_ref().filter(|_| val < 0x80), op) {
+                    self.emit.tag_line();
+                    self.emit.print(self.lang().kw_case, SyntaxHighlight::KeywordColor);
+                    self.emit.spaces(1, 0);
+                    self.push_char_constant_ir(fd, ct, val, op, *vn);
+                    self.recurse();
+                    self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
+                    self.emit.note_label();
+                    continue;
+                }
+                self.emit_numeric_case_label(val, sz, signed, op);
             }
         }
     }
@@ -5951,6 +6024,10 @@ impl PrintC {
     }
 
     fn emit_block_do_while_c(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        if self.loop_tests.top.contains(&blk) {
+            self.emit_block_do_while_top(fd, arch, blk); // (kuna looptest)
+            return;
+        }
         // dowhile block NEVER prints the final branch.
         self.context.push_mod();
         self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
@@ -6111,7 +6188,7 @@ impl PrintC {
             // and a structural divergence.  Elided only when
             // `elidable_void_tail_return` proved it is the LAST statement of a void
             // function reached on exactly one structured path.
-            if Some(inst) == self.void_tail_return {
+            if Some(inst) == self.void_tail_return || Some(inst) == self.tailform_skip {
                 continue;
             }
             if o.is_branch() {
@@ -6706,7 +6783,7 @@ impl PrintC {
                 // Table-driven binary / unary / functional forms.
                 match op_emit_kind(opc) {
                     OpEmitKind::Binary(tok) => {
-                        let tok = self.lang_token(tok);
+                        let tok = self.lang_token(self.loop_tests.token(op).unwrap_or(tok)); // (kuna looptest)
                         self.op_binary_ir(fd, arch, tok, op)
                     }
                     OpEmitKind::Unary(tok) => {
@@ -9174,7 +9251,7 @@ impl PrintC {
                 return;
             }
         }
-        self.push_vn_explicit_ir(fd, arch, vn, op);
+        self.push_vn_explicit_ir(fd, arch, self.loop_tests.leaf(vn), op); // (kuna looptest)
     }
 
     /// C++ `PrintC::pushImpliedField` (printc.cc:2161-2192): an implied Varnode
@@ -12916,6 +12993,21 @@ fn sblocks_basic_head(fd: &Funcdata, bb: BlockId) -> Option<OpId> {
         BlockKind::Basic(b) => b.op_head,
         _ => None,
     }
+}
+
+/// (kuna `loweredswitch`) The selector of the re-rolled switch `blk` and its
+/// `char` type, when the selector is a one-byte character, or of no known type
+/// and so read as the `char` its equality compares read it as.
+fn lowered_char_selector(fd: &Funcdata, blk: BlockId) -> Option<(std::rc::Rc<crate::dtype::Datatype>, VarnodeId)> {
+    let jt = fd.get_jump_table(fd.sblocks_ref().block(blk).switch_jt_index()? as int4);
+    jt.kuna_lowered_var()?;
+    let op = jt.get_indirect_op()?;
+    let vn = fd.obank().get(op)?.get_in(0)?;
+    let mut ct = fd.vn_type_read_facing(vn, op);
+    if ct.get_metatype() == type_metatype::TYPE_UNKNOWN {
+        ct = crate::p5_types::coreaction_infertypes::input_type_local(fd, op, 0);
+    }
+    (ct.get_size() == 1 && ct.is_char_print()).then_some((ct, vn))
 }
 
 /// Tail op of an sblocks-arena basic block.

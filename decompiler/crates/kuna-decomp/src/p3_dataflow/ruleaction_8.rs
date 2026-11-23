@@ -68,10 +68,10 @@
 //! * **`FlowBlock::findCondition` (formerly STUB(W3-block)).**  Used only by
 //!   `RuleInt2FloatCollapse`; transcribed here as the local [`find_condition`]
 //!   helper (faithful to `block.cc:839`), so that rule now completes.
-//! * **STUB(W4) — `FuncCallSpecs`.**  The W4 `Architecture` skeleton has no
-//!   call-spec table, so `RulePiecePathology` no-ops.  (`funcptr_align` was the
-//!   other half of this note; it is now read live from the architecture, so
-//!   `RuleFuncPtrEncoding` completes on every cspec that declares `<funcptr>`.)
+//! * **`RulePiecePathology`** reads the call-spec table and the function's own
+//!   prototype, so it completes: a concatenation of a call's narrow result with
+//!   the clobber of the rest of its register tells the RETURN and the unlocked
+//!   calls it reaches that only the narrow piece is consumed.
 
 use std::rc::Rc;
 
@@ -1176,6 +1176,10 @@ impl Rule for RulePopcountBoolXor {
 /// \brief Search for concatenations with unlikely things to inform return/
 /// parameter consumption calculation (C++ `RulePiecePathology`, name
 /// `"piecepathology"`).
+///
+/// Only the arm whose high piece is a call's clobber and whose low piece is
+/// that call's locked output is ported; the upper half of an input register or
+/// a copied register pair is a value the function may hand back.
 pub struct RulePiecePathology;
 
 impl Rule for RulePiecePathology {
@@ -1193,34 +1197,106 @@ impl Rule for RulePiecePathology {
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         let vn = data.obank().get(op).expect("pp: stale op").get_in(0).expect("pp: in0");
-        if !data.vbank().get(vn).expect("pp").is_written() {
+        let Some(sub_op) = data.vbank().get(vn).expect("pp").get_def() else {
             return 0;
-        }
-        let sub_op = data.vbank().get(vn).expect("pp").get_def().expect("pp: vn def");
-        let opc = data.obank().get(sub_op).expect("pp").code();
-        // The remaining checks (isPathology / contiguous-register INDIRECT) and
-        // the forward trace all consult FuncCallSpecs / FuncProto consumption
-        // bookkeeping (data.getCallSpecs / fProto->isOutputActive /
-        // setInputBytesConsumed / setReturnBytesConsumed), which is the W4 call-
-        // specification subsystem and is not ported.  Without it the rule cannot
-        // confirm a pathology and so no-ops, exactly as the C++ does when no
-        // pathology is detected.  STUB(W4): FuncCallSpecs / FuncProto.
-        if opc == OpCode::CPUI_SUBPIECE {
-            let sub_in1 = data.obank().get(sub_op).expect("pp").get_in(1).expect("pp: sub in1");
-            if data.vbank().get(sub_in1).expect("pp").get_offset() == 0 {
-                return 0;
+        };
+        match data.obank().get(sub_op).expect("pp").code() {
+            OpCode::CPUI_INDIRECT => {
+                if !data.obank().get(sub_op).expect("pp").is_indirect_creation() {
+                    return 0;
+                }
+                let lsb_vn = data.obank().get(op).expect("pp").get_in(1).expect("pp: in1");
+                let Some(lsb_op) = data.vbank().get(lsb_vn).expect("pp").get_def() else {
+                    return 0;
+                };
+                if !data.obank().get(lsb_op).expect("pp").is_call() {
+                    return 0;
+                }
+                let Some(idx) = data.get_call_specs_index(lsb_op) else {
+                    return 0;
+                };
+                if !data.get_call_specs(idx).proto().is_output_locked() {
+                    return 0;
+                }
+                let (lsb_addr, lsb_size) = {
+                    let v = data.vbank().get(lsb_vn).expect("pp");
+                    (v.get_addr().clone(), v.get_size())
+                };
+                let (msb_addr, msb_size) = {
+                    let v = data.vbank().get(vn).expect("pp");
+                    (v.get_addr().clone(), v.get_size())
+                };
+                let big = lsb_addr.get_space().is_some_and(|s| s.is_big_endian());
+                let addr = if big { &lsb_addr - msb_size as i64 } else { &lsb_addr + lsb_size as i64 };
+                if addr != msb_addr {
+                    return 0;
+                }
             }
-            // STUB(W4): the C++ isPathology(subOp->getIn(0),data) guard is unported; defer.
-            0
-        } else if opc == OpCode::CPUI_INDIRECT {
-            // STUB(W4) for the rest of this arm.
-            if !data.obank().get(sub_op).expect("pp").is_indirect_creation() {
-                return 0;
-            }
-            0
-        } else {
-            0
+            _ => return 0,
         }
+        Self::trace_pathology_forward(op, data)
+    }
+}
+
+impl RulePiecePathology {
+    /// Tell every RETURN and unlocked, finished call the pathological
+    /// concatenation reaches that only its low piece is consumed (C++
+    /// `RulePiecePathology::tracePathologyForward`).
+    fn trace_pathology_forward(op: OpId, data: &mut Funcdata) -> int4 {
+        let mut count = 0;
+        let bytes_consumed = {
+            let in1 = data.obank().get(op).expect("pp").get_in(1).expect("pp: in1");
+            data.vbank().get(in1).expect("pp").get_size()
+        };
+        let mut worklist: Vec<OpId> = vec![op];
+        data.obank_mut().get_mut(op).expect("pp").set_mark();
+        let mut pos = 0usize;
+        while pos < worklist.len() {
+            let cur = worklist[pos];
+            pos += 1;
+            let Some(out_vn) = data.obank().get(cur).expect("pp").get_out() else {
+                continue;
+            };
+            let readers: Vec<OpId> = data.vbank().get(out_vn).expect("pp").descend_iter().collect();
+            for rd in readers {
+                let o = data.obank().get(rd).expect("pp");
+                match o.code() {
+                    OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT | OpCode::CPUI_MULTIEQUAL => {
+                        if !o.is_mark() {
+                            data.obank_mut().get_mut(rd).expect("pp").set_mark();
+                            worklist.push(rd);
+                        }
+                    }
+                    OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                        let slots: Vec<int4> =
+                            (1..o.num_input()).filter(|&i| o.get_in(i) == Some(out_vn)).map(|i| i as int4).collect();
+                        let Some(idx) = data.get_call_specs_index(rd) else {
+                            continue;
+                        };
+                        let fc = data.get_call_specs_mut(idx);
+                        if fc.is_input_active() || fc.is_input_locked() {
+                            continue;
+                        }
+                        for i in slots {
+                            if fc.set_input_bytes_consumed(i, bytes_consumed) {
+                                count += 1;
+                            }
+                        }
+                    }
+                    OpCode::CPUI_RETURN => {
+                        let fp = data.get_func_proto_mut();
+                        if !fp.is_output_locked() && fp.set_return_bytes_consumed(bytes_consumed) {
+                            count += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        for o in worklist {
+            data.obank_mut().get_mut(o).expect("pp").clear_mark();
+        }
+        count
     }
 }
 
@@ -1605,6 +1681,10 @@ impl RuleExpandLoad {
     /// Change the size and data-type of all the AND/EQUAL constants in these
     /// expressions: replace the input `oldVn` with the bigger `newVn` and shift
     /// each constant up by `offset` *bytes*.
+    ///
+    /// (kuna) Each AND also gets a fresh output of the widened size, which the
+    /// compare then reads; upstream keeps the narrow output, leaving an AND
+    /// whose output is narrower than its inputs.
     fn modify_and_comparison(
         data: &mut Funcdata,
         old_vn: VarnodeId,
@@ -1626,6 +1706,10 @@ impl RuleExpandLoad {
             data.vbank_mut().get_mut(new_and_const).expect("mac: stale new and const").update_type(Rc::clone(dt));
             data.op_set_input(and_op, new_vn, 0).expect("mac: opSetInput and 0");
             data.op_set_input(and_op, new_and_const, 1).expect("mac: opSetInput and 1");
+            data.op_unset_output(and_op);
+            let new_and_out = data.new_unique_out_unlaned(dt_size, and_op).expect("mac: and out");
+            data.op_set_input(comp_op, new_and_out, 0).expect("mac: opSetInput comp 0");
+            data.delete_varnode(and_out).expect("mac: delete narrow and out");
             let comp_c = data.obank().get(comp_op).expect("mac: stale comp").get_in(1).expect("mac: comp in1");
             let comp_off = data.vbank().get(comp_c).expect("mac: stale comp const").get_offset();
             let new_comp_off = comp_off << shift;

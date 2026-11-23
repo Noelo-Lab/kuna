@@ -534,6 +534,7 @@ pub fn universal_sched(
     // they reference the same inner table.
     let lowered_store = crate::kuna_loweredswitch::new_shared_store();
     let lowered_store_install = lowered_store.clone();
+    let lowered_store_keep = lowered_store.clone();
     let lowered_store_detect = lowered_store;
 
     // --- stackstall (inside mainloop) -------------------------------------
@@ -869,6 +870,9 @@ pub fn universal_sched(
             // tail (shared prefix/suffix of statement-equivalent leaves across both
             // arms) by hoisting the shared blocks out of the `if`, emitting one copy.
             act!(crate::p8_structure::kuna_dedupitetail::ActionDedupIteTail::boxed("blockrecovery")),
+            // (kuna) tailform: choose the wrapped or guard form of each function-tail
+            // `if` by the size of its conditional tail (print-tree edit only).
+            act!(crate::p8_structure::kuna_tailform::ActionTailForm::boxed("blockrecovery")),
             // (kuna) angr ITERegionConverter (option `iteregion`, default-OFF — a
             // runtime choice).  After the tree is final + goto targets labelled,
             // mark a narrow two-arm assignment diamond (`if (c) v=A; else v=B;`,
@@ -890,6 +894,14 @@ pub fn universal_sched(
             // and no merge or structuring decision can be perturbed by the move --
             // only which basic block's statement list holds the COPY changes.
             act!(crate::p6_variables::kuna_paramcopyhoist::ActionParamCopyHoist::boxed("merge")),
+            // (kuna) loweredswitch: once the structure and prototypes are final,
+            // withdraw a re-rolled switch the function prints worse with.
+            SchedNode::Action(Box::new(move || {
+                Box::new(crate::p2_lift::kuna_loweredswitchkeep::ActionLowerSwitchKeep::with_store(
+                    "blockrecovery",
+                    lowered_store_keep.clone(),
+                ))
+            })),
             act!(ActionPrototypeWarnings::boxed("protorecovery")),
             act!(ActionStop::boxed("base")),
         ],

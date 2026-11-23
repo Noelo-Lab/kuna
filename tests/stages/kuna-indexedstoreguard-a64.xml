@@ -110,7 +110,7 @@ f30b40f9fd7bc2a8c0035fd6c0035fd6
 <stringmatch name="INDEXEDSTOREGUARD-A64 #1: b[6] and b[1] are elements of one array read after the store" min="2" max="2">return (\(int4\))?v1\[1\] \+ (\(int4\))?v1\[6\];</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD-A64 #2: the store writes through an array, not a scalar" min="2" max="2">^\s*v1\[a1 &amp; 7\] = 3;$</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD-A64 #3: the stale values never appear" min="0" max="0">return a1 \+ a0;</stringmatch>
-<stringmatch name="INDEXEDSTOREGUARD-A64 #4: u2 and u5 (index with no bound) read b[1] and b[2] back from the array" min="2" max="2">return (\(int4\)v1\[2\] \+ \(int4\)v1\[1\]|\(int8\)\(int2\)v1\[1\]);</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD-A64 #4: u2 and u5 (index with no bound) read b[1] and b[2] back from the array" min="2" max="2">return (\(int4\)v1\[2\] \+ \(int4\)v1\[1\]|\(int4\)\(int2\)v1\[1\]);</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD-A64 #5: no store is printed through the address of a scalar" min="0" max="0">\(&amp;v\d+\)\[</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD-A64 #6: the stale u2 and u5 never appear" min="0" max="0">return (a0 \* 2 \+ 1|a0);</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD-A64 #7: the array w5's stride-2 walk goes through keeps its eight elements" min="1" max="1">^\s*int8 v3 \[8\]; // ([^\n]+ \| )?stack - 0x40( \| [^\n]+)?$</stringmatch>
