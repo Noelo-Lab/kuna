@@ -2938,7 +2938,8 @@ the data after it) and the pools an assembler or armcc leaves out of a
 symbol's size.
 An exception landing pad, reached only through unwind tables a raw image does
 not carry, is past the end the same way unless a pool the body loads follows
-it. A function decoded in the wrong instruction set (ARM-mode assembly in an
+it. With few seeds, a pool several functions share can pull the undiscovered
+ones between them into the first function's extent, still inside the clip. A function decoded in the wrong instruction set (ARM-mode assembly in an
 image given `--isa thumb`) ends where that decode's flow does.
 
 Other raw languages keep the clip. Over static glibc on x86-64, MIPS and
@@ -2957,13 +2958,32 @@ its context writes are rolled back before the descent, and an explicit ARM
 `--isa` mode is protected inside it: a `bx`, `blx` or `it` spelled by data no
 longer switches the decode mode for the bytes after it or leaves IT state on
 the code (crazyflie's `vec_cross_product`, decoded under a stale IT block,
-went from 16 parameters to its 3). The descent's own commits, such as the mode
-switch of a real `blx` into ARM-mode library code, persist as before: rolling
-those back as well left a static glibc Thumb image with bad-instruction output
-in 453 of its 891 functions, against 193 on main and 70 with the descent's
-commits kept. Under `--isa arm` a swept or discovered call target off a word
-boundary (a `blx` to Thumb, decoded from data) is not an entry, since the
-whole image decodes as ARM.
+went from 16 parameters to its 3). The cost is that the sweep no longer finds
+code of the other mode by accident: main's sweep, flipping modes as it went,
+found 387 of a static armhf glibc image's functions from its Thumb entry under
+a wrong `--isa arm` and 1,166 of u-boot's from a Thumb entry under a wrong
+`--isa thumb`; now an image decodes as its `--isa` says, and those runs find 6
+and none. Under the right `--isa` the armhf run finds 552 against main's 405.
+
+The descent's own commits, such as the mode switch of a real `blx` into
+ARM-mode library code, persist, and three rules keep them right. Under an
+explicit ARM `--isa` the seeds are walked before the swept roots, so a seed's
+closure, with each real `blx` in it, decodes before a swept root does; a swept
+root the sweep found through a `blx` would otherwise decode in the wrong mode
+whenever it lies above its caller, since the walk takes the highest root
+first. Before the descent each seed's `TMode` is painted over `[seed, next
+seed)` with its own value, so a `blx` switches its target's mode up to the
+next seed and no further: without that fence the switch into one ARM function
+flowed over every Thumb function after it until the next change point, and the
+static armhf image kept its better decompilation but had 706 exact extents
+instead of 837 (`__setstate_r` measured 12 of its 164 bytes). With both, that image has
+837 exact extents against 593 on main and bad-instruction output in 66 of its
+891 functions against 193. Under `--isa arm` a swept call target off a word
+boundary (a `blx` to Thumb, spelled by data) is not a root, which removes
+u-boot's two such entries inside real functions; a Thumb function the descent
+reaches through a real `blx` stays an entry. Swept-only code (reached by no
+seed's closure) can still call a cross-mode function above it, which then
+decodes in the image's mode.
 
 (kuna #1288) **On an x86 real-mode raw image the extent ends where the function's
 flow does** (always on;

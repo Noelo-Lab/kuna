@@ -194,3 +194,52 @@ fn raw_arm_mode_inventory_skips_off_word_call_targets() {
     let rows = inventory(image.path(), "ARM:LE:32:v7:default", "0x8000", &["--isa", "arm", "--entry", "0x8000"]);
     assert_eq!(rows, [(0x8000, 4)]);
 }
+
+fn hex_bytes(hex: &str) -> Vec<u8> {
+    let digits: Vec<u8> = hex.bytes().filter(u8::is_ascii_hexdigit).collect();
+    digits
+        .chunks(2)
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+        .collect()
+}
+
+#[test]
+fn raw_mixed_images_keep_the_functions_a_real_blx_reaches() {
+    // --isa arm. ARM _start: push {r4,lr}; mov r4,r0; blx t1 (0x8022); add r0,r0,r4;
+    // bl a2; pop {r4,pc}. a2: add r0,r0,#7; bx lr. Thumb t1 at 2 mod 4: push; adds;
+    // bl t2 (0x802e); adds; pop. t2: lsls; adds; bx lr. Then an unreached ARM bx lr.
+    let arm_first = hex_bytes(
+        "10402de9 0040a0e1 040000fb 040080e0 000000eb 1080bde8 070080e2 1eff2fe1
+         00bf10b5 441c00f0 02f80019 10bd4000 03307047 1eff2fe1",
+    );
+    // --isa thumb. Thumb _start: push; adds; blx armf1 (0x800c, above it); adds; pop.
+    // ARM armf1: push; add r0,r0,r0,lsl #2; bl armf2; pop. armf2: cmp; movgt; bx lr.
+    let thumb_first = hex_bytes(
+        "10b5441c 00f002e8 001910bd 10402de9 000180e0 000000eb 1080bde8 640050e3
+         6400a0c3 1eff2fe1",
+    );
+    let cases: [(&[u8], &str, &str, &[(u64, u64)]); 2] = [
+        (&arm_first, "arm", "0x8000", &[(0x8000, 24), (0x8018, 8), (0x8022, 12), (0x802e, 6)]),
+        (&thumb_first, "thumb", "0x8001", &[(0x8000, 12), (0x800c, 16), (0x801c, 12)]),
+    ];
+    let specs = common::repo_root().join("specs");
+    for (bytes, isa, entry, expected) in cases {
+        let image = tempfile::Builder::new().suffix(".bin").tempfile().unwrap();
+        std::fs::write(image.path(), bytes).unwrap();
+        let args = ["--isa", isa, "--entry", entry];
+        assert_eq!(inventory(image.path(), "ARM:LE:32:v7:default", "0x8000", &args), expected, "--isa {isa}");
+        let (stdout, stderr, status) = common::run_kuna(&[
+            "decompile-all", image.path().to_str().unwrap(), "--json", "--no-vars", "--raw-image",
+            "--target", "ARM:LE:32:v7:default", "--base", "0x8000", "--sleighpath", specs.to_str().unwrap(),
+            "--isa", isa, "--entry", entry,
+        ]);
+        assert_eq!(status, 0, "{stderr}");
+        let doc: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        let functions = doc["functions"].as_array().unwrap();
+        assert_eq!(functions.len(), expected.len(), "{stdout}");
+        for function in functions {
+            let code = function["code"].as_str().unwrap_or_default();
+            assert!(function["error"].is_null() && !code.contains("baddata"), "--isa {isa}: {function}");
+        }
+    }
+}

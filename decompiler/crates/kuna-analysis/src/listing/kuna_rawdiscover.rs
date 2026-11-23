@@ -80,8 +80,12 @@ pub struct RawDiscovery {
 /// roots first. The sweep decodes data as well as code, so its context writes
 /// are rolled back before the descent and an explicit ARM `--isa` mode is
 /// protected inside it; the descent's own writes (a real `blx`) persist. Under
-/// `--isa arm` a call target off a word boundary (a `blx` to Thumb, decoded in
-/// data) is not an entry, since the whole image decodes as ARM.
+/// an explicit ARM `--isa` the seeds follow the swept roots, so that their
+/// closure, with the mode switch of each real `blx` in it, decodes before a
+/// swept root does, and each seed's mode is fenced ([`fence_seed_modes`]).
+/// Under `--isa arm` a swept call target off a word boundary (a `blx` decoded
+/// in data) is not a root; a Thumb entry the descent reaches through a real
+/// `blx` stays an entry.
 pub fn discover(
     arch: &Architecture,
     translate: &dyn Translate,
@@ -106,8 +110,7 @@ pub fn discover(
             db.get_variable_value(b"TMode", &Address::new(Rc::clone(code_space), seeds[0])).ok()
         }) == Some(1);
     let word_aligned = |target: &u64| !explicit_arm_isa || thumb || target % 4 == 0;
-    let mut roots: Vec<u64> = seeds.to_vec();
-    roots.extend(crate::loader::kuna_realmodecs::without_commits(arch, translate, || {
+    let mut swept: Vec<u64> = crate::loader::kuna_realmodecs::without_commits(arch, translate, || {
         let _scope = if real_mode {
             None
         } else {
@@ -128,14 +131,23 @@ pub fn discover(
                 .collect(),
             None => swept.into_iter().filter(word_aligned).collect::<Vec<u64>>(),
         }
-    }));
-    roots.sort_unstable();
-    roots.dedup();
+    });
+    let mut seed_roots = seeds.to_vec();
+    seed_roots.sort_unstable();
+    seed_roots.dedup();
+    swept.sort_unstable();
+    swept.dedup();
+    swept.retain(|target| seed_roots.binary_search(target).is_err());
     let mut deferred = assertion_roots;
-    deferred.retain(|entry| roots.binary_search(entry).is_err());
+    deferred.retain(|entry| seed_roots.binary_search(entry).is_err() && swept.binary_search(entry).is_err());
     let ordinary_start = deferred.len();
-    if ordinary_start != 0 {
-        drop(roots.splice(..0, deferred.iter().copied()));
+    if !explicit_arm_isa {
+        seed_roots.extend(swept.drain(..));
+        seed_roots.sort_unstable();
+    }
+    let roots: Vec<u64> = deferred.iter().copied().chain(swept).chain(seed_roots).collect();
+    if explicit_arm_isa {
+        fence_seed_modes(arch, code_space, exec_ranges, seeds);
     }
 
     // One descent over all roots. PARTITION_ONLY retains instruction lengths
@@ -150,7 +162,7 @@ pub fn discover(
     );
 
     let mut out: Vec<u64> = seeds.to_vec();
-    out.extend(listing.functions().map(|(&vma, _)| vma).filter(word_aligned));
+    out.extend(listing.functions().map(|(&vma, _)| vma));
     out.sort_unstable();
     out.dedup();
     let dos_exits = kuna_dosexit::analyze(arch, translate, code_space, &listing);
@@ -165,6 +177,30 @@ pub fn discover(
         Vec::new()
     };
     RawDiscovery { entries: out, dos_exits, flow_ends, call_returns }
+}
+
+/// Paint each seed's `TMode` over `[seed, next seed)`, its own value, so that
+/// a real `blx` the descent follows switches the mode of its target up to the
+/// next seed and no further: a Thumb function after an ARM one keeps its mode.
+fn fence_seed_modes(
+    arch: &Architecture,
+    code_space: &Rc<AddrSpace>,
+    exec_ranges: &[(u64, u64)],
+    seeds: &[u64],
+) {
+    let mut seeds = seeds.to_vec();
+    seeds.sort_unstable();
+    seeds.dedup();
+    for (i, &seed) in seeds.iter().enumerate() {
+        let Some(&(_, hi)) = exec_ranges.iter().find(|&&(lo, hi)| (lo..hi).contains(&seed)) else { continue };
+        let end = seeds.get(i + 1).map_or(hi, |&next| next.min(hi));
+        let at = Address::new(Rc::clone(code_space), seed);
+        arch.with_context_db_mut(|db| {
+            if let Ok(mode) = db.get_variable_value(b"TMode", &at) {
+                let _ = db.set_variable_region(b"TMode", &at, &Address::new(Rc::clone(code_space), end), mode);
+            }
+        });
+    }
 }
 
 /// Drop from `deferred` every assertion root an ordinary root's flow calls, so
