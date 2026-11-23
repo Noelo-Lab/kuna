@@ -54,6 +54,9 @@ b91000000031c0bf00302000f348abc605ef1b000078c3
 <symbol space="ram" offset="0x201400" name="zero_g"/>
 </binaryimage>
 <script>
+  <!-- looptest (default proven) prints the loops this test pins as do-while with the
+       test at the top (their entry tests fold to true); kept bottom-tested here. -->
+  <com>option looptest binary</com>
   <com>map address r0x203000 char gfill[128]</com>
   <com>lo fu fill32</com>
   <com>decompile</com>
