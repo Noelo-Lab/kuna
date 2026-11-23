@@ -182,6 +182,14 @@ lowest listed register and leaves it UNKNOWN otherwise, and the entry value
 is what QEMU stores there. This is a SLEIGH correctness repair, without an
 inference option.
 
+The Thumb-2 flag-setting `ands`, `bics`, `movs` and `mvns` with a modified
+immediate or a shifted register set C to the shifter's carry-out, as `orrs`,
+`eors` and `tst` already did: bit 31 of a rotated constant, the last bit
+shifted out of the register, or C itself when nothing is rotated or shifted.
+Upstream set only N and Z, so a `bcs` after `ands.w r0,r1,r2,lsr #1` read the
+carry from before it. `movs.w` of an unshifted register still leaves C alone.
+This is a SLEIGH correctness repair, without an inference option.
+
 The SPARC floating-to-integer constructors use the integer result width:
 `fdtoi` and `fqtoi` write one 32-bit word through `fsrd`, while `fstox` and
 `fqtox` write 64 bits through `fdrd`. Scalar destinations preserve odd register numbers;
@@ -225,6 +233,23 @@ decode the mode (`fcvt_srnd`, `fcvt_vrnd`, `fcvt_vlanes`, `frint_s` and
 encoding decodes and disassembles as before, and `FCVTZS` and `FCVTZU` lift
 to the same p-code. This is a SLEIGH correctness repair, without an inference
 option.
+
+The AArch64 sign-extending byte and halfword loads with a `W` destination
+(`ldrsb`, `ldrsh`, `ldursb`, `ldursh`, `ldtrsb` and `ldtrsh`, in every
+addressing form) sign-extend the loaded value to 32 bits and zero bits 63:32
+of the `X` register, as every write of a `W` register does. Upstream's
+constructors in
+`specs/Ghidra/Processors/AARCH64/data/languages/AARCH64base.sinc` sign-extend
+`ldrsb`, `ldrsh`, `ldursh` and `ldtrsh` into all 64 bits, so `ldrsh w0,[x0]`
+of `0xd564` left `x0 = 0xffffffffffffd564` where the processor leaves
+`0x00000000ffffd564`, and a `W` result later read as 64 bits (an index, an
+address, a returned `unsigned long`) was negative; they zero-extend `ldursb`
+and `ldtrsb` with a `W` destination, losing the sign. Each now lifts as
+`local tmp:4 = sext(*:N addr); Rt_GPR64 = zext(tmp);`. The `X`-destination
+forms, `ldrsw` and the `ldapursb`/`ldapursh` constructors were already right
+and are unchanged. Found by comparing one-instruction lifts against Unicorn
+on AArch64 builds of `ninja`, `libsnappy` and `libdouble-conversion`. This is
+a SLEIGH correctness repair, without an inference option.
 
 The AArch64 pointer-authentication instructions keep their register defined
 while hidden. `AARCH64.pspec` leaves the `ShowPAC` context at 0 for every
