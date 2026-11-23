@@ -470,6 +470,9 @@ impl MergeContext for Funcdata {
     fn sync_cover_dirty(&mut self) {
         self.sync_cover_dirty_highs();
     }
+    fn vn_refresh_cover(&mut self, vn: VarnodeId) {
+        self.update_varnode_cover(vn);
+    }
 
     // --- Bank-mediated piece introspection --------------------------------
     //     The `VariableGroup`/`VariablePiece` overlap model lives in the

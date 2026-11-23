@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5052,
-    5052
+    5055,
+    5055
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1370,6 +1370,9 @@
     "data:INDEXEDSTOREGUARD-A64 #7: the array w5's stride-2 walk goes through keeps its eight elements",
     "data:INDEXEDSTOREGUARD-A64 #8: gap2's walk goes through one array of the whole struct array",
     "data:INDEXEDSTOREGUARD-A64 #9: m8 stores through the frame array buf, not a scalar",
+    "data:INFLATECOVER #1: halfwords 3 and 1 are saved before the write of the low half",
+    "data:INFLATECOVER #2: the high half takes the saved halfwords",
+    "data:INFLATECOVER #3: halfword 1 is not read back after the write that replaced it",
     "data:INFLOOPSTYLE #1: legacy bottom-tested infinite spelling",
     "data:INFLOOPSTYLE #2: default top-tested infinite spelling",
     "data:INFLOOPSTYLE #3: body call preserved in both forms",

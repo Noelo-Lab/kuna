@@ -65,6 +65,12 @@ were never rebuilt after the pieces were created, so the copy was merged back
 into the slot and the printed C read byte 5 after the write. It is now saved
 before the write and byte 7 takes the saved value.
 
+`kuna-inflatecover.xml` checks a gcc -O0 halfword swap inside a stack `long`:
+an expression over halfwords 3 and 1 is used after a write of the low half that
+replaces halfword 1. `ActionMarkImplied` tested the expression against the
+slot's pieces with Covers it did not rebuild, so the expression was printed at
+its use and read halfword 1 after the write. It is now saved before the write.
+
 `kuna-switchmerge.xml` checks option `switchmerge`: two AArch64 range-checked
 jump tables on one selector, the second reached when the first's range check
 fails, print as one `switch` whose holes take the one `default:` arm. In `f`
@@ -294,6 +300,7 @@ writeup, not here.
 | `kuna-retcopyclone.xml` | [Kuna #1355](https://github.com/Noelo-Lab/kuna/issues/1355) (a store before a `cmp; cmov; ret`, or before a shared `leave; ret`, printed a second time on one return path) | P8 structure (a return block cloned per predecessor keeps each global's `return_copy` guard flag, and a phi on address-tied storage leaves no `g = g` copy, so neither is rewritten into a second store; the order the split prints stores its phis absorbed) | default correctness fix (no option); the clone's global phis print in address order |
 | `kuna-spillptr-loadguard.xml` | kuna (Tigress `Virtualize` sample `script_0_57` lost a live `if`: a store read only through a pointer spilled to a stack slot) | P3 heritage, LOAD guards (discovery follows a stack pointer through the slot it is spilled to) | default correctness fix (no option) |
 | `kuna-piececover.xml` | kuna (Tigress `Virtualize` samples, and the same functions unprotected at gcc -O0, printed a half or byte swap of a `state[]` element reading bytes a wider write had already replaced) | P6 merge, Cover intersection of overlapping pieces (member Covers of every overlapping piece are rebuilt before the test; a data-flow edit dirties the member's variable) | default correctness fix (no option) |
+| `kuna-inflatecover.xml` | kuna (unprotected Tigress samples at gcc -O0 printed a halfword swap of a `state[]` element reading a halfword a wider write had already replaced) | P6 `ActionMarkImplied`, `Merge::inflateTest` (stale member Covers of the operand's variable and its overlapping pieces are rebuilt before the test) | default correctness fix (no option) |
 | `kuna-switchunrolledsense.xml` | [Kuna #1028](https://github.com/Noelo-Lab/kuna/issues/1028) | P2 switch model (copies of the bound check on each predecessor of the dispatch, with opposite branch senses, bound the merged index) | `option switchmultipred on\|off` |
 
 | `gh8017-stackprobeloop.xml` | [GH-8017](https://github.com/NationalSecurityAgency/ghidra/issues/8017) | S2 stack-pointer normalization (stack-probe loop) | always on (P2 `stack-pointer-normalization`, `kuna_stackprobeloop.rs`) |

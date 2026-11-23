@@ -223,6 +223,16 @@ came from Covers left over from an edited function: a loop pointer kept a stale
 range across its own increment and printed through a temporary
 (`v1 = &p[1]; … p = v1;`).
 
+`merge.rs (Merge::inflate_test)`, the arm of `ActionMarkImplied` that asks
+whether an operand is overwritten while an expression waits to be printed at its
+use, reads the Cover of every instance of the operand's variable and of every
+piece overlapping it. It rebuilds each stale one first
+(`MergeContext::vn_refresh_cover`), as `Varnode::getCover` does upstream. A piece written after
+the merge settled still held its old range, so a wider write of a slot between
+an expression over two halfwords of that slot and the expression's use went
+unseen: the C printed `CONCAT22` of halfwords 3 and 1 after the write that
+replaced halfword 1.
+
 Overlapping pieces that hold the same bytes do not collide.
 `funcdata.rs (Funcdata::varnode_partial_copy_shadow)` recognizes a piece copied out
 of a whole and a whole assembled from its pieces. Its COPY-chain walk treats a

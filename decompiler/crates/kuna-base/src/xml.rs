@@ -2284,7 +2284,7 @@ mod tests {
         // and kuna-pushan-interp / an in-function bytecode interpreter devirtualized (option pushan)
         // and kuna-spillptr-loadguard / a LOAD through a spilled stack pointer is guarded
         // and kuna-piececover / a byte saved across a wider write of its slot keeps its old value
-        assert_eq!(count, 866, "corpus file count drifted");
+        assert_eq!(count, 867, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

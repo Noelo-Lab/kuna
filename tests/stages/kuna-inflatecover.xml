@@ -1,0 +1,58 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    An expression over two halfwords of a stack local, read after a wider
+    write that replaces one of them: P6 ActionMarkImplied, the
+    Merge::inflateTest Cover check.  Source (gcc 11 -O0
+    -fno-stack-protector -fcf-protection=none):
+        void swaphalves(unsigned long *input, unsigned long *output) {
+          unsigned long state[4]; unsigned short t;
+          state[0] = input[0] >> 7;
+          state[1] = input[0] | (state[0] >> ((input[0] & 7) | 1));
+          if (state[0] + state[1] == input[0]) {
+            *((unsigned short *)&state[0] + 0) = (unsigned short)input[0];
+          } else {
+            t = *((unsigned short *)&state[0] + 2);
+            *((unsigned short *)&state[0] + 2) = *((unsigned short *)&state[0] + 1);
+            *((unsigned short *)&state[0] + 1) = t;
+            t = *((unsigned short *)&state[0] + 3);
+            *((unsigned short *)&state[0] + 3) = *((unsigned short *)&state[0] + 0);
+            *((unsigned short *)&state[0] + 0) = t;
+          }
+          output[0] = (state[0] | state[1]) + state[1];
+        }
+    The high half of state[0] is rebuilt as CONCAT22 of halfwords 3 and 1
+    after the write of the low half (halfwords 0 and 1) that replaces
+    halfword 1.  ActionMarkImplied asks whether the CONCAT22 may be printed
+    at its use, testing the pieces of state[0] that overlap halfword 1
+    against the CONCAT22's live range, and read those pieces' Covers
+    without rebuilding the stale ones, so the write between was missed:
+    the printed C read ((unsigned short *)&v)[1] after the write that
+    replaced it (wrong for every input taking the else branch whose
+    halfwords 1 and 2 differ).  The Covers are now rebuilt before the
+    test, so the CONCAT22 is saved before the write (#1) and the high half
+    takes the saved value (#2, #3).
+-->
+<bytechunk space="ram" offset="0x101000" readonly="true">
+554889e548897dc8488975c0488b45c8488b0048c1e807488945d0488b45c848
+8b30488b55d0488b45c8488b0083e00683c80189c148d3ea4889d04809f04889
+45d8488b55d0488b45d84801c2488b45c8488b004839c27510488b45c8488b10
+488d45d0668910eb60488d45d04883c0040fb700668945fe488d55d04883c202
+488d45d04883c0040fb712668910488d45d04883c0020fb755fe668910488d45
+d04883c0060fb700668945fe488d55d0488d45d04883c0060fb712668910488d
+45d00fb755fe668910488b55d0488b45d84809c2488b45d84801c2488b45c048
+8910905dc3
+</bytechunk>
+<symbol space="ram" offset="0x101000" name="swaphalves"/>
+</binaryimage>
+<script>
+  <com>lo fu swaphalves</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="INFLATECOVER #1: halfwords 3 and 1 are saved before the write of the low half" min="1" max="1">^    v\d+ = CONCAT22\(\(\([a-z0-9 ]+ \*\)&amp;v\d+\)\[3\],\(\([a-z0-9 ]+ \*\)&amp;v\d+\)\[1\]\);$
+^    \*\([a-z0-9 ]+ \*\)&amp;v\d+ = </stringmatch>
+<stringmatch name="INFLATECOVER #2: the high half takes the saved halfwords" min="1" max="1">^    v\d+ = CONCAT44\(v\d+,\([a-z0-9 ]+\)v\d+\);$</stringmatch>
+<stringmatch name="INFLATECOVER #3: halfword 1 is not read back after the write that replaced it" min="0" max="0">CONCAT44\(CONCAT22\(</stringmatch>
+</decompilertest>
