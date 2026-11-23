@@ -58,6 +58,6 @@ d05bc348c7c0ffffffff5bc3488d35750f000031ffe88effffff4889c7e8c6ffffffb83c0000000f
 <stringmatch name="CALLRETPAIR #2: the call gains the 16-byte join output the cspec output rule asked for" min="1" max="1">v1 = read_value\(a0,a1,0x10,1\);</stringmatch>
 <stringmatch name="CALLRETPAIR #3: both halves are SUBPIECEs of the call output instead of locals with no definition" min="1" max="1">return \*SUB168\(v1,0\) \+ SUB168\(v1,8\);</stringmatch>
 <stringmatch name="CALLRETPAIR #4: no unassigned rdx local survives, neither where the pair formed nor in the control" min="0" max="0">int8 v2; // rdx</stringmatch>
-<stringmatch name="CALLRETPAIR #5: the control adds the 7 it left in rdx to the payload, because the bounded callee decode proves no_payload never writes rdx" min="1" max="1">^  return \*\(int8 \*\)no_payload\(\) \+ 7;$</stringmatch>
+<stringmatch name="CALLRETPAIR #5: the control adds the 7 it left in rdx to the payload, because the bounded callee decode proves no_payload never writes rdx" min="1" max="1">^  return \*\(int8 \*\)no_payload\(a0\) \+ 7;$</stringmatch>
 <stringmatch name="CALLRETPAIR #6: the integer return stays separate from the pointer payload" min="1" max="1">int8 read_tag\(unsigned long a0,unsigned long a1\)</stringmatch>
 </decompilertest>
