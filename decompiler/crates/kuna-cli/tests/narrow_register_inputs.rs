@@ -1,6 +1,7 @@
 //! Mixed-width reads preserve distinct ABI arguments and destination fields.
 use crate::common;
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[test]
 fn narrow_sparc_argument_reads_preserve_all_stored_values() {
@@ -99,7 +100,7 @@ int main(void) {{
                 "{compiler} {optimization}: {}",
                 String::from_utf8_lossy(&build.stderr)
             );
-            let run = Command::new(&executable).output().unwrap();
+            let run = Command::new(&executable).capped_output().unwrap();
             assert!(run.status.success(), "{compiler} {optimization}: {run:?}");
             std::fs::remove_file(executable).unwrap();
         }

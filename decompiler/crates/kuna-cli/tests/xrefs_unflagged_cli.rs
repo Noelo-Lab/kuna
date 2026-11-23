@@ -139,6 +139,35 @@ fn to_lists_the_called_code_it_did_not_walk() {
     assert!(text.contains("0x1000003fc\tcall\t_middle\t@0x1000003d8"), "the symbol names the callee: {text}");
 }
 
+#[test]
+fn exact_direct_call_to_omitted_code_has_a_candidate() {
+    let (doc, _) = xrefs(MACHO, "--to", "0x1000003fc");
+    assert_eq!(rows(&doc), [call(0x1000003d8, 0x1000003fc, "-")]);
+    assert_eq!(doc["target"]["call_destination_candidate"], serde_json::json!({
+        "reason": "unflagged_executable_section",
+        "call_site": 0x1000003d8u64,
+        "call_site_hex": "0x1000003d8",
+    }));
+
+    let path = common::fixture(MACHO);
+    let (stdout, stderr, rc) = common::run_kuna(&["xrefs", &path, "--to", "0x1000003fc", "--kind", "jump", "--json"]);
+    assert_eq!(rc, 0, "{stderr}");
+    let filtered: Value = serde_json::from_str(&stdout).unwrap();
+    assert!(filtered["target"].get("call_destination_candidate").is_none());
+
+    for (fixture, direction, address) in [
+        (MACHO, "--to", "_orphan"),
+        (MACHO, "--to", "_greeting"),
+        (MACHO, "--to", "_goal"),
+        (MACHO, "--from", "_middle"),
+        (ELF, "--to", "table"),
+        (ELF, "--to", "middle"),
+    ] {
+        let (control, _) = xrefs(fixture, direction, address);
+        assert!(control["target"].get("call_destination_candidate").is_none(), "{address}: {control}");
+    }
+}
+
 /// The inventory is GH #1339's: no function in `__TEXT,__const` is listed.
 #[test]
 fn the_inventory_still_leaves_unflagged_code_out() {
