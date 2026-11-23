@@ -5106,6 +5106,23 @@ emulation could not place on a path of the body". An unplaced load needs no
 count: it reads an unknown, which the emitter never folds, so the overlay
 keeps the program's own load.
 
+`Heritage::guard` gives every stack range of a devirtualized body
+upstream's store guard, an `indirect_store` INDIRECT at every STORE that may
+reach it, whatever `option indexaliasguard` says
+(`kuna_pushan.rs (guards_every_store)`). An in-function interpreter such as
+Tigress's keeps its operands on a stack of unions in the frame. It pushes the
+address of a variable's slot there, adds a scaled index to the address it pops,
+and stores through the result, so in the emitted body a store into the
+program's array goes through a frame address reloaded from a slot. On the
+stack's first heritage pass the indexed-pointer discovery follows such reloads
+only for LOADs, the frame's addresses do not resolve to the stack base plus
+constants and indices, and the windowed policy guards an unbounded index for
+only four elements. Without the guard, the SSA ties a later read of a slot to
+the value from before the store, the earlier store loses its reader, and the
+C reads values the program has overwritten. With the guard, 519 more of the 999
+Tigress samples print C that computes what the source does. `tg_istore` in the
+Tigress-style fixture pins it.
+
 **String literals.** A short string the program passes to a call (`"123"` to
 `strcmp`, `"cmd"` to `CreateProcessA`) would print as its address. The
 always-on strings pass plants a typelocked `char[N]` only for runs of five
@@ -5230,9 +5247,8 @@ whose header reports the lost store).
 `tests/stages/kuna-pushan-interp.xml` runs two passes over the
 `pushan_interp_x86_64` fixture (gcc -O0 from its committed C source), six
 functions that are their own interpreters of one virtual program with a loop
-and a branch, and a seventh that interprets a second program in Tigress's
-style, every variable reached through its slot's address pushed on the
-virtual stack. With `off`, the switch-dispatched one decompiles to its
+and a branch, and two that interpret other programs in Tigress's style, every
+variable reached through its slot's address pushed on the virtual stack. With `off`, the switch-dispatched one decompiles to its
 interpreter. With the default, switch dispatch over writable and read-only
 bytecode, threaded code copied by `memcpy` into a stack-probed local or by an
 inline `rep movsq` that leaves no copy loop behind, and two
@@ -5241,7 +5257,10 @@ the writable ones carry the bytecode clause, the interleaved one says it
 follows its first program, and bytecode the function patches with its
 argument is reported incomplete. The Tigress-style program keeps its stores
 to `st` and the branch around one of them, which only a loop through `&st[0]`
-plus a computed offset reads (chapter 03's spilled stack pointers).
+plus a computed offset reads (chapter 03's spilled stack pointers). The
+second Tigress-style program writes its array through `&st[0]` plus a computed
+offset and returns two slots it reads directly, and the C returns the slots,
+not the values stored before the loop.
 The expression arena and the state have unit tests in
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanexpr/tests.rs` and
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanstate/tests.rs`;

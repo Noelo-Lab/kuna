@@ -1345,6 +1345,17 @@ pub fn call_kills(fd: &Funcdata, addr: &Address, size: int4) -> bool {
     kills.iter().any(|&(o, s)| o <= lo && hi <= o.saturating_add(s.max(0) as u64))
 }
 
+/// Does every STORE that may reach the stack range `addr:size` of a
+/// devirtualized body guard it, as upstream `Heritage::guardStores` does?  The
+/// body's frame is rebuilt from the emulated interpreter, whose stores into it
+/// go through stack addresses it reloads from its own operand stack, so the
+/// windowed stack-store policy leaves most of them unguarded. Consulted by
+/// `Heritage::guard`.
+pub fn guards_every_store(fd: &Funcdata, addr: &Address) -> bool {
+    fd.kuna_devirtualized()
+        && addr.get_space().is_some_and(|spc| spc.get_type() == kuna_base::space::spacetype::IPTR_SPACEBASE)
+}
+
 /// Does every call inside a devirtualized body overwrite the stack range
 /// `addr:size`?  True when the range lies below the lowest stack pointer any
 /// call is made with, where only the interpreter's scratch and the callees'

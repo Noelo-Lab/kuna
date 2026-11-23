@@ -1701,7 +1701,9 @@ impl Heritage {
                     .map(|s| s.get_type() != spacetype::IPTR_INTERNAL)
                     .unwrap_or(false);
             let stack_effects = crate::kuna_stackeffects::enabled_for(fd, addr, size);
-            let mut guarded_stores = if (high_ptr_possible && level >= LEVEL_FULL) || stack_effects {
+            let every_store = (high_ptr_possible && level >= LEVEL_FULL)
+                || crate::p2_lift::kuna_pushan::guards_every_store(fd, addr);
+            let mut guarded_stores = if every_store || stack_effects {
                 self.guard_stores(fd, addr, size, write, false)
             } else if high_ptr_possible && guard_stack_bytes {
                 self.guard_stores(fd, addr, size, write, true)
@@ -1711,11 +1713,11 @@ impl Heritage {
                 }
                 Vec::new()
             };
-            if high_ptr_possible && level < LEVEL_FULL && guard_stack_indexed && !stack_effects {
+            if high_ptr_possible && !every_store && guard_stack_indexed && !stack_effects {
                 self.guard_indexed_stores(fd, addr, size, write, &mut guarded_stores);
             }
             if high_ptr_possible {
-                if level < LEVEL_FULL && self.spill_store_budget_ok {
+                if !every_store && self.spill_store_budget_ok {
                     super::kuna_spillstoreguard::build(
                         fd, addr, size, &self.spill_stores, &guarded_stores, &self.spill_store_bounds,
                         &mut self.spill_store_guards, write,

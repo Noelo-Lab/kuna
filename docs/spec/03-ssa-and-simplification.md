@@ -1238,6 +1238,13 @@ what upstream always does; it is not kuna's default because on a frame slot the
 INDIRECT chain survives into the emitted C as write-backs of values a slot
 already holds. The global LOAD guard runs at `full` too.
 
+A devirtualized body's stack ranges get this guard at every level, in place of
+the indexed and spilled-pointer store windows below
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushan.rs (guards_every_store)`,
+chapter [02](02-lift-and-flow.md) §2.11): its frame is rebuilt from the
+emulated interpreter, which stores into it through stack addresses it reloads
+from its own operand stack.
+
 At `off` none of them runs, which is what kuna shipped before the option.
 
 The stack store guard (always on) also enables STORE guards at
