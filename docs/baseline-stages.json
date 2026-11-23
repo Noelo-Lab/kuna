@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5217,
-    5217
+    5220,
+    5220
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2884,6 +2884,9 @@
     "data:Thumb stmia #2: f returns the written-back base",
     "data:Thumb stmia #3: f keeps its result",
     "data:Thumb stmia #4: g, base not in the list, returns the written-back base",
+    "data:Thumb-2 logical carry #1: f branches on the bit the shift moved into C",
+    "data:Thumb-2 logical carry #2: no branch reads an undefined carry",
+    "data:Thumb-2 logical carry #3: g's cleared carry folds its branch away",
     "data:UCOMISS unordered #10: setnp and setb are the ordered x < y",
     "data:UCOMISS unordered #11: setp beside an exact seta stays",
     "data:UCOMISS unordered #12: setnp beside an exact setb through a pointer stays",
