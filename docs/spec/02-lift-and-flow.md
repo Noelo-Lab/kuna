@@ -182,6 +182,14 @@ lowest listed register and leaves it UNKNOWN otherwise, and the entry value
 is what QEMU stores there. This is a SLEIGH correctness repair, without an
 inference option.
 
+The Thumb-2 flag-setting `ands`, `bics`, `movs` and `mvns` with a modified
+immediate or a shifted register set C to the shifter's carry-out, as `orrs`,
+`eors` and `tst` already did: bit 31 of a rotated constant, the last bit
+shifted out of the register, or C itself when nothing is rotated or shifted.
+Upstream set only N and Z, so a `bcs` after `ands.w r0,r1,r2,lsr #1` read the
+carry from before it. `movs.w` of an unshifted register still leaves C alone.
+This is a SLEIGH correctness repair, without an inference option.
+
 The SPARC floating-to-integer constructors use the integer result width:
 `fdtoi` and `fqtoi` write one 32-bit word through `fsrd`, while `fstox` and
 `fqtox` write 64 bits through `fdrd`. Scalar destinations preserve odd register numbers;
