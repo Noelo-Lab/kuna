@@ -9087,7 +9087,7 @@ start fingerprint shared by at least 4 already-discovered functions
 (`FINGERPRINT_THRESHOLD`) — the exhaustive gap oracle for functions with no
 static or accepted pointer-table root. The option's four values are cumulative
 settings of one walk (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_aif.rs`):
-`off` runs no walk, `on` runs it with the byte-granular cursor, `strict` with the
+`off` runs no walk. With the ordinary cursor policy, `on` runs the byte-granular walk, `strict` the
 aligned cursor described below, and `precise` adds upstream's second fingerprint
 test to `strict`. The `aggressive` preset sets `strict`; the whole-binary drivers
 inject `on` on a non-x86-64 image when the selected mode names no value.
@@ -9139,13 +9139,30 @@ cursor: it advances to the next 4-byte boundary rather than the next byte, and a
 candidate is probed only when it is 4-byte aligned **or** it is the first byte of its
 hole. The hole-start exemption is the whole distinction the setting draws — a hole
 boundary is evidence, since the recursive-descent walk decoded up to exactly there
-and stopped, while an interior byte the cursor slid onto is a guess. The stride is 4
-on every architecture deliberately: 16-byte alignment kills nine tenths of the bad
+and stopped, while an interior byte the cursor slid onto is a guess. The ordinary strict cursor uses a stride of 4
+deliberately: 16-byte alignment kills nine tenths of the bad
 Cortex-M entries but takes four fifths of the real ones with it. Declining a probe
 also *recovers* entries rather than only removing them, because an accept advances
 the cursor past the accepted body — a phantom accepted one halfword inside a literal
-pool consumes the real function behind it. `aif on` keeps the byte-granular cursor
-exactly.
+pool consumes the real function behind it. `aif on` uses the ordinary byte-granular cursor unless the processor specifies a slot width.
+
+A processor spec can declare a positive byte width with
+`kuna.aif.sectionInstructionStride`. When the object provides section headers,
+the gap walk probes slots counted from each executable section's start, including
+address zero. A restricted decode window clips the walk while retaining the
+original section's slot positions. The entire first slot must be available in
+the section and decoder window. Known instruction extents cover their bytes
+even when another decode starts inside them or they cross a section boundary.
+The entry instruction's own encoding must fit in the slot. On a delay-slot
+processor the body walk still consumes the branch and its delay slot together.
+The same bounds apply when padding, a literal pool or a recovered prologue moves
+the entry. When padding supplies the destination, AIF tests that slot before
+validating the body of the run. The body must reach the destination before AIF
+publishes it. A straight padding path ending at a trap is refused even when
+zero fill follows the trap.
+A replacement processor spec that omits the width restores the ordinary policy.
+Segment-only and raw mappings carry no section
+origin, so the selected AIF mode supplies the ordinary cursor policy there.
 
 (kuna, GH-299) The complementary reject the issue asks for — refuse a candidate
 bracketed by a known function — is the bracket rule of
