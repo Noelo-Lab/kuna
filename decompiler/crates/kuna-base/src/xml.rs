@@ -2300,7 +2300,8 @@ mod tests {
         // and kuna-boolbranch, kuna-boolbranch-thumb / a branch instruction selecting 1 or 0 keeps its if
         // and kuna-wsignload-a64 / AArch64 W-register sign-extending loads zero bits 63:32
         // and kuna-thumb2-logical-carry / Thumb-2 ands/bics/movs/mvns set C from the shifter
-        assert_eq!(count, 888, "corpus file count drifted");
+        // and kuna-ppc32picimports-abi-isolation / one file's load-time option never reaches the next file's loads
+        assert_eq!(count, 889, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
