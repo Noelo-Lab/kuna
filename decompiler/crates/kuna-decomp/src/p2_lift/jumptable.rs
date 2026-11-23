@@ -5790,7 +5790,6 @@ pub struct JumpTable {
 pub enum StatedSelector {
     Address,
     PowerPcAligned,
-    EdgesOnly(&'static str),
 }
 
 #[derive(Debug)]

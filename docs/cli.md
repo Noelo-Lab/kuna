@@ -1053,11 +1053,12 @@ branches discard the low two selector bits. For a classic PPC32 branch through
 LR, the directive identifies a computed jump even when the incoming LR value
 is unknown. Sites without a directive use ordinary return and jump recovery.
 AArch64 BR uses the lifted
-register value. For a PIE or another relocatable image, the addresses recover
-successors, but a runtime load base is needed to label a switch on a live
-pointer. Decompiling a function that reaches such a site reports that limit.
-The same diagnostic identifies unresolved branch encodings. Batch summaries
-report rejected assertions and honor `--assert-strict`.
+register value. A switch on a live pointer needs its runtime value, so the
+directive is rejected for a PIE, a shared object or another image whose code
+relocates at run time, and for a branch whose target encoding Kuna does not
+resolve (ARM32 interworking, AArch64 other than BR, PowerPC other than classic
+CTR/LR). The site then keeps ordinary recovery. Batch summaries report
+rejected image-wide assertions and honor `--assert-strict`.
 A conflicting second set is rejected and the first accepted set stays active.
 The JSON status `applied` records installation for this image. Each function
 uses the fact only when its flow reaches the site. As with other program

@@ -122,8 +122,9 @@ pub(crate) fn install(prog: &mut ConsoleProgram, addr: u64, targets: &[u64]) -> 
         }
         break;
     }
+    let unlabelable = |reason: &str| Err(format!("cannot label a switch at {addr:#x}: {reason}"));
     let selector = if arch.runtime_code_relocation {
-        StatedSelector::EdgesOnly("runtime load base is unknown for this image")
+        return unlabelable("runtime load base is unknown for this image");
     } else if powerpc {
         let ctr_or_lr = [b"CTR".as_slice(), b"LR"].iter().any(|name| {
             arch.get_register_varnode(name)
@@ -132,16 +133,16 @@ pub(crate) fn install(prog: &mut ConsoleProgram, addr: u64, targets: &[u64]) -> 
         if ctr_or_lr && classic_ppc {
             StatedSelector::PowerPcAligned
         } else {
-            StatedSelector::EdgesOnly("PowerPC branch target encoding is unresolved")
+            return unlabelable("PowerPC branch target encoding is unresolved");
         }
     } else if arch.archid.starts_with("ARM:") {
-        StatedSelector::EdgesOnly("ARM interworking requires the branch target's ISA state")
+        return unlabelable("ARM interworking requires the branch target's ISA state");
     } else if arch.archid.starts_with("AARCH64:")
         && !prog
             .disassemble_at(site.get_offset())
             .is_ok_and(|(_, mnemonic, _)| mnemonic.eq_ignore_ascii_case("br"))
     {
-        StatedSelector::EdgesOnly("AArch64 branch target encoding is unresolved")
+        return unlabelable("AArch64 branch target encoding is unresolved");
     } else {
         StatedSelector::Address
     };

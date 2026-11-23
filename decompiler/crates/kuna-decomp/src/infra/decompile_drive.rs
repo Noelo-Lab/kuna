@@ -1350,19 +1350,6 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
     let mut contract_root: Option<Box<dyn Action>> = None;
     let mut contract_budget = MAX_CONTRACT_CALLEES;
     loop {
-        if !resume && !arch.stated_jump_targets.is_empty() {
-            for index in 0..fd.num_jump_tables() {
-                let site = fd.get_jump_table(index).get_op_address();
-                if let Some(crate::jumptable::StatedSelector::EdgesOnly(reason)) =
-                    arch.stated_jump_targets.get(site).map(|fact| fact.selector)
-                {
-                    return Err(KunaError::lowlevel(format!(
-                        "recovered computed jump edges at {:#x}; cannot label switch: {reason}",
-                        site.get_offset()
-                    )));
-                }
-            }
-        }
         let res = {
             let deadline = arch.kuna_fn_deadline;
             let root = arch

@@ -384,3 +384,28 @@ fn a_runtime_pointer_cannot_be_compared_to_a_pie_vma() {
         assert!(!all.contains("case 0x1007:"), "{all}");
     }
 }
+
+#[test]
+fn unlabelable_branches_reject_the_directive_and_keep_the_function() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let file = tempfile::NamedTempFile::new().unwrap();
+    // bx r0; mov r0,#11; bx lr; mov r0,#22; bx lr
+    let arm: Vec<_> = [0xe12fff10u32, 0xe3a0000b, 0xe12fff1e, 0xe3a00016, 0xe12fff1e]
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect();
+    std::fs::write(file.path(), arm).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .arg("decompile")
+        .arg(file.path())
+        .args(["0x100", "--addr", "--raw-image", "--target", "ARM:LE:32:v8", "--isa", "arm"])
+        .args(["--base", "0x100", "--assert", "jumptable 100 104 10c", "--sleighpath"])
+        .arg(root.join("specs"))
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let body = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{stderr}");
+    assert!(stderr.contains("rejected") && stderr.contains("interworking"), "{stderr}");
+    assert!(body.contains("jump-as-call") && !body.contains("case "), "{body}");
+}

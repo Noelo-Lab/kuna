@@ -490,12 +490,16 @@ fn stated_destinations_are_the_outgoing_edges_and_leave_the_guard_intact() {
 }
 
 #[test]
-fn position_independent_jumps_keep_both_taken_edges_and_the_guard_miss() {
-    verify_stated_edges("pie.elf", "jumptable 1005 1007 100d",
-                        0x1005, &[0x1007, 0x100d], [0x1005, 0x1013]);
+fn position_independent_jumps_reject_the_directive_and_keep_their_flow() {
+    let (mut prog, entry) = load_with_hint("pie.elf", "jumptable 1005 1007 100d");
+    let outcome = &prog.assertion_outcomes()[0];
+    assert_eq!(outcome.status, "rejected");
+    assert!(outcome.detail.as_deref().unwrap().contains("runtime load base"), "{outcome:?}");
+    let fd = build_and_follow_flow(prog.arch_mut(), "dispatch", entry.addr.clone(), 0).unwrap();
+    assert_eq!(fd.num_jump_tables(), 0);
 }
 
-fn verify_stated_edges(image: &str, hint: &str, site: u64, taken: &[u64], guard_edges: [u64; 2]) {
+fn load_with_hint(image: &str, hint: &str) -> (kuna_console::engine::ConsoleProgram, kuna_console::engine::FunctionEntry) {
     use kuna_console::{assertions, assertsyntax, engine};
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let mut prog = engine::bootstrap_from_object(
@@ -503,12 +507,15 @@ fn verify_stated_edges(image: &str, hint: &str, site: u64, taken: &[u64], guard_
         &[root.join("specs").to_string_lossy().into_owned()],
     ).unwrap();
     prog.commit_pending_analysis().unwrap();
-    prog.set_assertions(vec![assertsyntax::parse_directive(
-        hint
-    ).unwrap()]);
+    prog.set_assertions(vec![assertsyntax::parse_directive(hint).unwrap()]);
     assertions::apply_program_scoped(&mut prog);
-    assert_eq!(prog.assertion_outcomes()[0].status, "applied");
     let entry = prog.resolve_entry(&engine::EntrySelector::parse("dispatch")).unwrap();
+    (prog, entry)
+}
+
+fn verify_stated_edges(image: &str, hint: &str, site: u64, taken: &[u64], guard_edges: [u64; 2]) {
+    let (mut prog, entry) = load_with_hint(image, hint);
+    assert_eq!(prog.assertion_outcomes()[0].status, "applied");
     for _ in 0..2 {
         let fd = build_and_follow_flow(prog.arch_mut(), "dispatch", entry.addr.clone(), 0).unwrap();
         let successors = |id| {

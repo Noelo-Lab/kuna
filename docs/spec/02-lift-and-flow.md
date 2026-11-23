@@ -2307,8 +2307,10 @@ jump-table recovery. It follows each distinct destination and preserves the
 guard and any miss edge already present in the instruction or its predecessor.
 The fixed model uses the branch's effective destination as the selector.
 For a classic PowerPC branch through CTR or LR, flow explicitly clears the
-two architecturally discarded bits before SSA. An unresolved runtime load
-base or target encoding allows CFG recovery and blocks unsound case emission.
+two architecturally discarded bits before SSA. An image whose code relocates
+at run time, or a branch whose target encoding is unresolved, cannot label a
+switch on the live pointer, so the assertion is rejected when it is installed
+and the site keeps ordinary recovery.
 Its case values are the destination addresses in code-space addressable units.
 The model has no table-index ordering, inferred default or guard to fold.
 A fresh follow of the same image consults the same site map.

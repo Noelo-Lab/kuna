@@ -379,10 +379,7 @@ impl JumpModel for JumpModelConstSelect {
         orig: &dyn JumpModel,
     ) -> KunaResult<()> {
         let Some(space) = addresstable.first().and_then(Address::get_space) else { return Ok(()) };
-        if let Some(selector) = self.stated {
-            if let crate::jumptable::StatedSelector::EdgesOnly(reason) = selector {
-                return Err(kuna_base::error::KunaError::lowlevel(reason));
-            }
+        if self.stated.is_some() {
             let units = u64::from(space.get_word_size());
             label.extend(addresstable.iter().map(|a| a.get_offset() / units));
             return Ok(());
