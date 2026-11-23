@@ -509,6 +509,19 @@ is an `if` or a loop has NO node there at all, while kuna's printed `return;`
 re-materialises one — one extra node, one or two extra edges, and an
 `is_exitpoint` role flip that on its own defeats the GED isomorphism test.
 
+The same reasoning covers a switch a void function ends with. Once the shared
+epilogue has been duplicated into the arms, the values the source let fall out of
+the switch (it had no `default:`, or a `default: break;`) print as `default:
+return;`, an arm the source does not have and one more node in its graph.
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_voidtailswitch.rs (elidable_tail_default)`
+finds that arm and `printc.rs (PrintC::emit_block_switch_c)` leaves it out, when
+the function returns void, the switch is the last statement printed (descending
+only `Graph` and `Ls`, and looking past a final leaf that prints only the
+elided trailing `return;`), and the `default:` arm is a leaf that prints nothing
+but a bare `return;`, is not in a fall-through chain and carries no label.
+Leaving such a switch is returning, so the program is unchanged; with
+`option voidtailreturn off` the arm stays.
+
 **Warning style (P9/`warning-style`, `option warnstyle`).** Analysis warnings
 render as terse `// slug` end-of-line comments on the line they describe
 (kuna default `inline`, DIV-39): `printc.rs (PrintC::emit_comment_group)`
