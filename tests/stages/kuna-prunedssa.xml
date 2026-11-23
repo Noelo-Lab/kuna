@@ -54,11 +54,11 @@
 <stringmatch name="prunedssa #3: both passes keep churn's 64 struct copies" min="128" max="128">take\(</stringmatch>
 <stringmatch name="prunedssa #4: both passes keep escaped's 64 calls" min="128" max="128">reg\(0x[0-9a-f]+,</stringmatch>
 <stringmatch name="prunedssa #5: both passes keep the 64 struct writes each callee may read" min="128" max="128">^  v[0-9]+\[0\] = (0x)?[0-9a-f]+;$</stringmatch>
-<stringmatch name="prunedssa #6: readonlycalls off keeps the read-only guards in churn's live IR" min="2" max="2">Count - pcode = 90311</stringmatch>
+<stringmatch name="prunedssa #6: readonlycalls off keeps the read-only guards in churn's live IR" min="2" max="2">Count - pcode = 90320</stringmatch>
 <stringmatch name="prunedssa #7: upstream's dead joins are never built for churn" min="0" max="0">Count - created = 118816</stringmatch>
-<stringmatch name="prunedssa #8: prunedssa builds no dead joins for churn" min="2" max="2">Count - created = 118112</stringmatch>
-<stringmatch name="prunedssa #9: readonlycalls drops the read-only guards from churn's live IR" min="2" max="2">Count - pcode = 8135</stringmatch>
-<stringmatch name="prunedssa #10: the default builds the fewest ops for churn" min="2" max="2">Count - created = 35936</stringmatch>
+<stringmatch name="prunedssa #8: prunedssa builds no dead joins for churn" min="2" max="2">Count - created = 118065</stringmatch>
+<stringmatch name="prunedssa #9: readonlycalls drops the read-only guards from churn's live IR" min="2" max="2">Count - pcode = 8144</stringmatch>
+<stringmatch name="prunedssa #10: the default builds the fewest ops for churn" min="2" max="2">Count - created = 35889</stringmatch>
 <stringmatch name="prunedssa #11: escaped's address-tied slots keep every guard in every pass" min="2" max="2">Count - created = 12578</stringmatch>
 <stringmatch name="prunedssa #12: escaped's live IR is the same in both passes" min="2" max="2">Count - pcode = 4812</stringmatch>
 </decompilertest>

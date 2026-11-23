@@ -51,7 +51,7 @@ c8c30f1f0066662e0f1f840000000000f30f1efabf01000000ba03000000e87dffffffbe02000000
 </script>
 <stringmatch name="tail callees #1: with nothing stated the thunk drops the tail call's result" min="1" max="1">^  target\(a0,0\); // tail-call$</stringmatch>
 <stringmatch name="tail callees #2: the thunk returns the tail call's result" min="1" max="1">^  return target\(a0,NULL\); // tail-call$</stringmatch>
-<stringmatch name="tail callees #3: with nothing stated the forwarder drops the argument it passes through" min="1" max="1">^  (return )?helper\(a0,a1 \+ 1\); // tail-call$</stringmatch>
+<stringmatch name="tail callees #3: with nothing stated the forwarder passes the argument helper's body reads, but not its result" min="1" max="1">^  helper\(a0,a1 \+ 1,a2\); // tail-call$</stringmatch>
 <stringmatch name="tail callees #4: the forwarder passes its third argument through" min="1" max="1">^  return helper\(a0,a1 \+ 1,a2\); // tail-call$</stringmatch>
 <stringmatch name="tail callees #5: the forwarder takes the three parameters its callee reads" min="1" max="1">^int4 pass\(int4 a0,int4 a1,int4 a2\)$</stringmatch>
 </decompilertest>
