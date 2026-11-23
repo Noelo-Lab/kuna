@@ -170,12 +170,13 @@ fn an_empty_body_s_drained_warning_is_a_body_warning_in_every_language() {
         }
     }
 
-    let go = |fixture: &str, name: &str| {
-        document(&["decompile", &common::fixture(fixture), name, "--json", "--language", "go"])["functions"][0].clone()
+    let go = |fixture: &str, name: &str, declare: &[&str]| {
+        let image = common::fixture(fixture);
+        document(&[&["decompile", &image, name, "--json", "--language", "go"][..], declare].concat())["functions"][0].clone()
     };
-    let alone = go("function_boundary_return_x86_64", "ordinary_first");
+    let alone = go("function_boundary_return_x86_64", "ordinary_first", &[]);
     assert!(alone["code"].as_str().unwrap().starts_with("func ordinary_first() { // warn: funcboundflow: "), "{alone}");
-    let both = go("i386_pie_nl", "register_tm_clones");
+    let both = go("i386_pie_nl", "register_tm_clones", &["--define-function", "0x18f2"]);
     assert!(
         both["code"].as_str().unwrap().starts_with("func register_tm_clones() { // injected // warn: funcboundflow: "),
         "{both}"
