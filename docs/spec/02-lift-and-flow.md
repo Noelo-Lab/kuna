@@ -3159,13 +3159,15 @@ cases (gcc at -O0 lowers a sparse switch to a compare tree whatever its size);
 switch so wide that some case edges end up as unstructured gotos.
 
 The default was measured on the decbench corpus against the previous default,
-which took no linear chain at all. Linear chains of three or more tests with a
-body each: +94 functions whose control flow matches the source at O2 and +73 at
-O0, gains in both halves of a project split; letting tests share a body costs 16
-at O0 (`if (c == '\n' || c == '\r') return 0;` is an `||`), and two-test chains,
-although positive (+26 at O2), are the ones the author writes as an `if` about
-as often as a switch, and a two-case switch inside a loop whose arms continue
-the loop can leave the structurer with a switch in a loop condition. A chain
+which took no linear chain at all: with this recogniser, 45 more functions match
+the source's control flow at O2 and 22 more at O0, with gains in both halves of
+a project split (the losses are if/else-if chains the author wrote over one
+variable, such as `TIM_ICInit` and `mode_to_security_class`). Letting tests share
+a body costs 16 at O0 (`if (c == '\n' || c == '\r') return 0;` is an `||`).
+Two-test chains would add 26 at O2 and 23 at O0, but they are the ones the author
+writes as an `if` about as often as a switch, and a two-case switch inside a loop
+whose arms continue the loop can leave the structurer with a switch in a loop
+condition. A chain
 still needs each case body entered only from the chain, or by a loop back edge
 the body itself heads, and dominated by the chain head: a chain the compiler
 copied into two paths keeps its ifs, since re-rolling one copy would split what
