@@ -8,6 +8,7 @@ use object::write::{Object, Symbol, SymbolSection};
 use object::{Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope};
 use std::path::PathBuf;
 use std::process::Command;
+use crate::common::process::Capped;
 
 /// `enum Mode { FIRST = 1, SECOND = 2 }; struct Packet { enum Mode mode; float
 /// gain; int value; };` read back by clang -O2: `value` at +8, `gain` at +4.
@@ -228,7 +229,7 @@ int main(void) {{
     for cc in &compilers {
         let compile = Command::new(cc).args(["-std=c11", "-O1"]).arg(&src).arg("-o").arg(&exe).output().unwrap();
         assert!(compile.status.success(), "{cc}: {}\n{printed}", String::from_utf8_lossy(&compile.stderr));
-        assert!(Command::new(&exe).status().unwrap().success(), "{cc}: {printed}");
+        assert!(Command::new(&exe).capped_status().unwrap().success(), "{cc}: {printed}");
     }
     std::fs::remove_file(src).unwrap();
     std::fs::remove_file(exe).unwrap();

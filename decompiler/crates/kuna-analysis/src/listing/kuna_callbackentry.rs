@@ -128,7 +128,7 @@ mod tests {
         let insns = model.instructions().filter(|(&at, _)| at != 0x2005)
             .map(|(_, insn)| insn.clone()).collect();
         let model = Listing::from_model_for_test(insns, model.funcs.into_values().collect(),
-            model.stack_callback_refs, model.exec_ranges);
+            model.stack_callback_refs, model.coverage.ranges);
         assert!(stack_callback_candidates(&model).is_empty());
     }
 }

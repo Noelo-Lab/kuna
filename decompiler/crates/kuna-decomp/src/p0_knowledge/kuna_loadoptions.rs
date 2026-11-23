@@ -23,6 +23,7 @@ use crate::kuna_kernelcache::KernelcacheChoice;
 use crate::kuna_kernelcacheboot::KernelcacheBoot;
 use crate::kuna_libctypes::LibcTypesLayout;
 use crate::kuna_ppc32picimports::Mode as Ppc32PicMode;
+use crate::kuna_ppcapu::Mode as PpcApuMode;
 use crate::kuna_sourcelang::SourceLang;
 use crate::kuna_symbolnamechars::NameChars;
 use crate::options::env_toggle;
@@ -51,7 +52,7 @@ pub struct LoadOptions {
     /// `ifuncfpret`: name x86-64 IFUNC PLT stubs.
     pub ifuncfpret: bool,
     /// `ppcapu`: select the PowerPC APU language for an image that needs it.
-    pub ppcapu: bool,
+    pub ppcapu: PpcApuMode,
     /// `kernelcache`: unwrap Apple firmware containers and pick a fileset entry.
     pub kernelcache: KernelcacheChoice,
     /// `kernelcache-boot`: where the collections a kernel collection links are found.
@@ -100,7 +101,7 @@ impl Default for LoadOptions {
         LoadOptions {
             ppc32picimports: Ppc32PicMode::Off,
             ifuncfpret: true,
-            ppcapu: false,
+            ppcapu: PpcApuMode::Isel,
             kernelcache: KernelcacheChoice::default(),
             kernelcache_boot: KernelcacheBoot::default(),
             goabi: true,
@@ -183,7 +184,7 @@ impl LoadOptions {
         match option {
             "ppc32picimports" => self.ppc32picimports.set_env(),
             "ifuncfpret" => kuna_ifuncfpret::set_ifuncfpret_env(self.ifuncfpret),
-            "ppcapu" => kuna_ppcapu::set_ppcapu_env(self.ppcapu),
+            "ppcapu" => self.ppcapu.set_env(),
             "kernelcache" => kuna_kernelcache::set_kernelcache_env(&self.kernelcache),
             "kernelcache-boot" => {
                 kuna_kernelcacheboot::set_kernelcache_boot_env(&self.kernelcache_boot)
@@ -310,8 +311,9 @@ pub mod env {
         env_toggle(crate::kuna_ifuncfpret::IFUNCFPRET_ENV, true)
     }
 
-    pub fn ppcapu() -> bool {
-        env_toggle(crate::kuna_ppcapu::PPCAPU_ENV, false)
+    pub fn ppcapu() -> PpcApuMode {
+        std::env::var(crate::kuna_ppcapu::PPCAPU_ENV)
+            .map_or(PpcApuMode::Isel, |value| PpcApuMode::from_env_value(&value))
     }
 
     pub fn kernelcache() -> KernelcacheChoice {
@@ -468,15 +470,15 @@ mod tests {
     #[test]
     fn a_scope_dropped_out_of_order_leaves_the_live_ones_in_force() {
         let first = LoadOptions { goabi: false, ..LoadOptions::default() }.enter();
-        let second = LoadOptions { ppcapu: true, ..LoadOptions::default() }.enter();
+        let second = LoadOptions { ppcapu: PpcApuMode::On, ..LoadOptions::default() }.enter();
         let environment = enter_environment();
         drop(second);
         assert_eq!(scoped(|o| o.goabi), None, "the environment scope is still innermost");
         drop(first);
         assert_eq!(scoped(|o| o.goabi), None);
-        let third = LoadOptions { ppcapu: true, ..LoadOptions::default() }.enter();
+        let third = LoadOptions { ppcapu: PpcApuMode::On, ..LoadOptions::default() }.enter();
         drop(environment);
-        assert_eq!(scoped(|o| o.ppcapu), Some(true));
+        assert_eq!(scoped(|o| o.ppcapu), Some(PpcApuMode::On));
         drop(third);
         assert_eq!(scoped(|o| o.goabi), None, "no scope outlives its guard");
         assert!(!options_in_force());
@@ -486,7 +488,7 @@ mod tests {
     fn gates_read_the_scope_not_the_environment() {
         let options = LoadOptions {
             ifuncfpret: false,
-            ppcapu: true,
+            ppcapu: PpcApuMode::On,
             kernelcache: KernelcacheChoice::Off,
             kernelcache_boot: KernelcacheBoot::Off,
             symbolnamechars: NameChars::Ident,
@@ -503,7 +505,7 @@ mod tests {
         };
         let _scope = options.enter();
         assert!(!crate::kuna_ifuncfpret::ifuncfpret_enabled());
-        assert!(crate::kuna_ppcapu::ppcapu_enabled());
+        assert_eq!(crate::kuna_ppcapu::ppcapu_mode(), PpcApuMode::On);
         assert_eq!(KernelcacheChoice::in_force(), KernelcacheChoice::Off);
         assert_eq!(KernelcacheBoot::in_force(), KernelcacheBoot::Off);
         assert_eq!(

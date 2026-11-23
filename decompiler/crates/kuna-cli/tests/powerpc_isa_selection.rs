@@ -9,6 +9,7 @@ use object::{
 };
 use std::path::Path;
 use std::process::Command;
+use crate::common::process::Capped;
 
 fn image(endian: Endianness, abi: u32, vector_abi: bool) -> Vec<u8> {
     let mut object = Object::new(BinaryFormat::Elf, Architecture::PowerPc64, endian);
@@ -110,7 +111,7 @@ fn check_selection_semantics(code: &str) {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        Command::new(&executable).status().unwrap().success(),
+        Command::new(&executable).capped_status().unwrap().success(),
         "{code}"
     );
     std::fs::remove_file(source).unwrap();
@@ -173,6 +174,45 @@ fn generic_powerpc_failure_explains_the_explicit_isa_override() {
                     assert!(output.contains("return a1;"), "{output}");
                 }
             }
+        }
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn raw_pcode_reports_the_isa_at_the_failed_instruction() {
+    let path = common::scratch_file("raw-powerpc-isa", "o");
+    for (endian, order) in [(Endianness::Big, "BE"), (Endianness::Little, "LE")] {
+        std::fs::write(&path, image(endian, 0, false)).unwrap();
+        let alternate = format!("PowerPC:{order}:64:A2ALT");
+        let walk = |symbol: &str, options: &[&str], status| {
+            let mut args = vec!["raw-pcode", path.to_str().unwrap(), symbol, "--follow", "--json"];
+            args.extend_from_slice(options);
+            let (out, err, code) = common::run_kuna(&args);
+            assert_eq!(code, status, "{err}");
+            serde_json::from_str::<serde_json::Value>(&out).unwrap()
+        };
+        let doc = walk("select_value", &[], 1);
+        let issue = &doc["issues"][0];
+        assert_eq!(doc["complete"], false);
+        assert_eq!(doc["instruction_count"], 1);
+        assert_eq!(issue["reason"], "decode_error");
+        assert_eq!(issue["address"], doc["start"].as_u64().unwrap() + 4);
+        let message = issue["message"].as_str().unwrap();
+        for fragment in ["isel", &format!("PowerPC:{order}:64:default"), &format!("--target {alternate}")] {
+            assert!(message.contains(fragment), "{message}");
+        }
+        let (out, _, code) = common::run_kuna(&["raw-pcode", path.to_str().unwrap(), "select_value", "--json"]);
+        assert_eq!(code, 1);
+        let linear: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(linear["error"]["message"], issue["message"]);
+        assert_eq!(linear["error"]["address"], issue["address"]);
+        let doc = walk("select_value", &["--target", &alternate], 0);
+        assert_eq!(doc["complete"], true);
+        assert_eq!(doc["instruction_count"], 3);
+        assert!(doc["issues"].as_array().unwrap().is_empty());
+        for doc in [walk("invalid", &[], 1), walk("select_value", &["--bytes", "6"], 1)] {
+            assert!(!doc["issues"][0]["message"].as_str().unwrap().contains("isel"));
         }
     }
     std::fs::remove_file(path).unwrap();

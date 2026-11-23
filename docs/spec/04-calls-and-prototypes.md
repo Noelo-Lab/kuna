@@ -689,6 +689,17 @@ stack object occupies twelve or sixteen bytes. Stack resources, general
 register resources and aggregate types retain their aligned object size.
 The declared datatype and its alignment remain unchanged.
 
+The explicit `MIPS:BE:64:octeon-32addr:o64` target pairs the original Octeon
+decoder with the soft-float O64 compiler model. Floating-point arguments in
+registers and floating-point results use GPRs. Pointers are four bytes wide.
+The first four argument slots use `a0` through `a3`. The fifth slot starts at
+entry SP + 32. A four-byte scalar occupies SP + 36, while a four-byte struct
+or union occupies SP + 32. Aggregate arguments likewise occupy the leading
+bytes of a register slot. An aggregate result reserves `a0` for the result
+address, moves the first explicit argument to `a1`, and returns the address
+in `v0`.
+The default compiler for this language remains N32.
+
 The Octeon N32 and N64 soft-float models pass small structs and unions in the leading
 bytes of each eight-byte GPR or stack slot, for both fixed and variadic
 arguments. A scalar `float` instead occupies the low four bytes of a GPR, but

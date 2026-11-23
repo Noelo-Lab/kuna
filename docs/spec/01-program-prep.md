@@ -332,14 +332,19 @@ attribute blobs are malformed, truncated or conflicting, and `--target` always
 wins.
 
 (kuna) PowerPC32 ELF APU requirements are read by
-`decompiler/crates/kuna-analysis/src/loader/kuna_ppcaputarget.rs` when the
-default-off `ppcapu` load-time option is on. SPE and embedded floating-point APUs
-then select the e500 decoder. The option stays off until the e500 model recovers
-scalar call arguments held in its 64-bit registers. Shared requirements such as
-ISEL do not identify a processor and retain the generic decoder, including its
-AltiVec support. `EF_PPC_EMB` alone likewise does not select a processor. Unknown
-APU versions and malformed or unsupported requirements keep the generic decoder
-and print a `[kuna target]` note. Explicit `--target` takes precedence. A
+`decompiler/crates/kuna-analysis/src/loader/kuna_ppcaputarget.rs` unless the
+`ppcapu` load-time option is `off`. Under its default `isel`, an ISEL, SPE or
+embedded floating-point requirement, or the embedded ABI flag alone, selects the
+`isel` variant: the generic PowerPC32 registers, AltiVec and calling convention
+plus ISEL, so it decodes everything the generic model does. `ppcapu on` instead
+selects e500 for SPE and embedded floating-point requirements; it stays explicit
+because the e500 model does not yet recover every scalar call argument held in its
+64-bit registers. The e500 `isel` writes the low word and preserves the
+destination’s upper SPE word. PMR, RFMCI and cache locking alone retain the
+generic decoder.
+A nonempty note owner must be NUL-terminated before the loader can skip an
+unrelated note. Unknown APU versions and malformed or unsupported requirements keep the generic
+decoder and print a `[kuna target]` note. Explicit `--target` takes precedence. A
 selected language never falls back to a different ISA if its specification is
 missing. The explicit e500mc target uses the standard PowerPC32 FPR argument and
 return convention, while its 64-bit integer results keep the explicit `r3:r4`
@@ -9087,7 +9092,7 @@ start fingerprint shared by at least 4 already-discovered functions
 (`FINGERPRINT_THRESHOLD`) — the exhaustive gap oracle for functions with no
 static or accepted pointer-table root. The option's four values are cumulative
 settings of one walk (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_aif.rs`):
-`off` runs no walk, `on` runs it with the byte-granular cursor, `strict` with the
+`off` runs no walk. With the ordinary cursor policy, `on` runs the byte-granular walk, `strict` the
 aligned cursor described below, and `precise` adds upstream's second fingerprint
 test to `strict`. The `aggressive` preset sets `strict`; the whole-binary drivers
 inject `on` on a non-x86-64 image when the selected mode names no value.
@@ -9139,13 +9144,30 @@ cursor: it advances to the next 4-byte boundary rather than the next byte, and a
 candidate is probed only when it is 4-byte aligned **or** it is the first byte of its
 hole. The hole-start exemption is the whole distinction the setting draws — a hole
 boundary is evidence, since the recursive-descent walk decoded up to exactly there
-and stopped, while an interior byte the cursor slid onto is a guess. The stride is 4
-on every architecture deliberately: 16-byte alignment kills nine tenths of the bad
+and stopped, while an interior byte the cursor slid onto is a guess. The ordinary strict cursor uses a stride of 4
+deliberately: 16-byte alignment kills nine tenths of the bad
 Cortex-M entries but takes four fifths of the real ones with it. Declining a probe
 also *recovers* entries rather than only removing them, because an accept advances
 the cursor past the accepted body — a phantom accepted one halfword inside a literal
-pool consumes the real function behind it. `aif on` keeps the byte-granular cursor
-exactly.
+pool consumes the real function behind it. `aif on` uses the ordinary byte-granular cursor unless the processor specifies a slot width.
+
+A processor spec can declare a positive byte width with
+`kuna.aif.sectionInstructionStride`. When the object provides section headers,
+the gap walk probes slots counted from each executable section's start, including
+address zero. A restricted decode window clips the walk while retaining the
+original section's slot positions. The entire first slot must be available in
+the section and decoder window. Known instruction extents cover their bytes
+even when another decode starts inside them or they cross a section boundary.
+The entry instruction's own encoding must fit in the slot. On a delay-slot
+processor the body walk still consumes the branch and its delay slot together.
+The same bounds apply when padding, a literal pool or a recovered prologue moves
+the entry. When padding supplies the destination, AIF tests that slot before
+validating the body of the run. The body must reach the destination before AIF
+publishes it. A straight padding path ending at a trap is refused even when
+zero fill follows the trap.
+A replacement processor spec that omits the width restores the ordinary policy.
+Segment-only and raw mappings carry no section
+origin, so the selected AIF mode supplies the ordinary cursor policy there.
 
 (kuna, GH-299) The complementary reject the issue asks for — refuse a candidate
 bracketed by a known function — is the bracket rule of
@@ -9672,7 +9694,13 @@ widened by every veneer whose slot carries a dynamic relocation against a symbol
 the image defines at that body's address
 (`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (export_alias_class)`). The
 join is again the relocation's binding, not the name, and a query by address keeps
-the plain class.
+the plain class. A named query also checks ARM and AArch64 PLT code, PowerPC32
+absolute and executable BSS PLT entries, and PowerPC64 ELFv1 descriptor stubs.
+The stub must reach the slot relocated against that definition. On ELFv1 the
+symbol names a validated descriptor whose entry is the queried function. The
+stub’s own slot access is excluded from the caller list, and so is a `data`
+row whose value merely equals the stub’s or slot’s address (an immediate or a
+page base in position-independent code), which a query by that address still lists.
 
 An x86-64 ELF memory-indirect call can have a proven local target through an
 immutable GOT slot. `decompiler/crates/kuna-analysis/src/listing/kuna_gotcall.rs`
@@ -10262,6 +10290,15 @@ RAX,[funcval]; CALL RAX` is a `call` row to the funcval word in `__rodata`, whic
 holds a code address and is not code. A `--from` answer
 about anything other than code decoded in a code section, and a `--to` answer while
 such targets exist, say so in a note.
+
+(kuna, GH #1696) For an incoming JSON query the walk retains the lowest-address
+direct call site it decoded to the selected address outside the walked sections
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (stopped_direct_call_site)`).
+When that exact address belongs to the unwalked executable-section coverage, is
+absent from the canonical function inventory, and has no declared data symbol,
+the CLI reports it as a call destination candidate. A jump, an indirect call, or
+a call to another alias does not provide that evidence. This annotation leaves
+discovery and the default project-export selection unchanged.
 
 (kuna) Both of those rules read a reference out of *one instruction's* p-code,
 which is the whole answer on x86-64 and no answer at all in 32-bit
@@ -11582,8 +11619,19 @@ the C++ inheritance chain modeled by composition:
   statics become an explicit `LanguageDatabase` value the bootstrap owns), find the
   `.pspec`/`.cspec`/`.sla` files, build the SLEIGH translator, and run the
   `Architecture::init` tail (type factory, prototype models, print language). The
-  upstream translator-reuse cache is deliberately not ported — it affects build
-  speed only — and is the recorded loss here. (kuna) A spec root is a
+  upstream translator-reuse cache, which hands a later architecture the same
+  `Sleigh` object, is not ported: each architecture owns its translator and its
+  address spaces, which the `.ldefs` truncations and the `.cspec` then modify.
+  (kuna) Instead, in a process that turns reuse on (below), a thread keeps the
+  decoded form of each `.sla` it has decoded twice
+  (`decompiler/crates/kuna-sleigh/src/kuna_slacache.rs`), keyed by the file's
+  full contents. A later translator from the same bytes is a copy of that
+  template (`decompiler/crates/kuna-sleigh/src/sleighbase.rs
+  (SleighBase::clone_decoded)`): a new space set is built from the `.sla`'s space
+  records, every space reference in the symbol table and the constructor
+  templates moves to the space of the same index in it, and the register
+  cross-reference and context variables are rebuilt as a decode builds them. The
+  copy equals a fresh decode and shares no space with the template. A spec root is a
   directory or a tree held in memory
   (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_memoryspecs.rs
   (MemorySpecs)`): a table of `/`-separated relative paths and their contents.
@@ -11594,7 +11642,14 @@ the C++ inheritance chain modeled by composition:
   `decompiler/crates/kuna-console/src/engine.rs (language_database)` scans a
   list of roots once. A bootstrap over the result skips the `.ldefs` scan and
   reads only its own language's `.sla`, `.pspec` and `.cspec`
-  (`LanguageDatabase::read_spec`), so threads may share one database.
+  (`LanguageDatabase::read_spec`), so threads may share one database. A runner
+  whose spec trees cannot change while it runs and that builds many
+  architectures, such as the datatest harness, calls
+  `decompiler/crates/kuna-console/src/engine.rs (reuse_specs)` instead: from
+  then on every bootstrap over the same on-disk roots gets a copy of the first
+  scan of them, and translators are copies of kept `.sla` templates as above.
+  A kept template costs about as much memory as one translator, which is why
+  reuse is the runner's choice and a single-binary run never keeps one.
 - `decompiler/crates/kuna-decomp/src/p1_partition/xml_arch.rs (XmlArchitecture)`
   binds the decompiler's XML `<binaryimage>` container — the datatest corpus's
   entire load path, and the reason the analysis tier can be default-on without
