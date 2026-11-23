@@ -993,6 +993,18 @@ mod tests {
         // unknown register falls back to hex parsing (the C++ catch branch)
         let off = register.read("0x10:2", &mut size, &manager).unwrap();
         assert_eq!((off, size), (0x10, 2));
+        for token in ["BOGUS", "BOGUS+2", "x0"] {
+            let err = register.read(token, &mut size, &manager).unwrap_err();
+            assert!(err.explain().contains("is not a register of this language"), "{token}: {}", err.explain());
+        }
+        for token in ["EDX:junk", "EDX+", "EDX:2+"] {
+            let err = register.read(token, &mut size, &manager).unwrap_err();
+            assert!(err.explain().contains("malformed"), "{token}: {}", err.explain());
+        }
+        let off = register.read("edx", &mut size, &manager).unwrap();
+        assert_eq!((off, size), (8, 4));
+        let off = register.read("eax+2", &mut size, &manager).unwrap();
+        assert_eq!((off, size), (2, 4));
 
         // join space console read
         let join = Rc::clone(manager.get_join_space().unwrap());

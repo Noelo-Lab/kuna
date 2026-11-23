@@ -627,7 +627,12 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `bytes <addr> <hex\|@FILE>` | the bytes mapped here are these, whatever the file holds |
 
 Storage is a register name (`RDI`), the console's `%RDI`, or its address grammar
-(`[stack,-0x18,8]`). Addresses are hexadecimal with or without `0x`. A size is
+(`[stack,-0x18,8]`). A register name is matched as the language spells it, then in upper
+and lower case (`rax` is x86's `RAX`). A name the target's language does not define
+(`no_such_register`, or `RAX` on AArch64), or text after it other than a `:size` or
+`+offset` suffix (`%x0:junk`), is **rejected** with the token, and `--assert-strict` exits
+non-zero. A numeric register offset is read in C notation, so write it with `0x`
+(`%0x4000`, `[register,0x4000,8]`); `%4000` is decimal. Addresses are hexadecimal with or without `0x`. A size is
 decimal unless it carries a `0x`, and `<addr> <size>` is accepted wherever
 `<addr>+<size>` is. A C type may be anything the console's `parse line` accepts,
 including a `typedef` you asserted earlier in the same run.
