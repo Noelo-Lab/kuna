@@ -696,10 +696,12 @@ impl State {
     /// reports it.  A location is an aligned slot of `word` bytes (the
     /// target's register and stack-word size); a slot symbolic on both sides
     /// whose difference sits in one half only is narrowed to that half (down
-    /// to a byte), so a narrow variable sharing a slot with an unchanged
-    /// neighbour does not take the neighbour with it.  A slot whose two
-    /// values are the same by [`same_value`] (each path rebuilt it through a
-    /// different identity) is no difference.
+    /// to a byte), and then to the run from the first to the last byte the
+    /// two sides hold differently, so a narrow variable sharing a slot with
+    /// an unchanged neighbour (an aligned one, or a byte of an interpreter
+    /// context's packed, unaligned cell) does not take the neighbour with it.
+    /// A slot whose two values are the same by [`same_value`] (each path
+    /// rebuilt it through a different identity) is no difference.
     pub fn diff_constants(&mut self, other: &mut State, arena: &mut ExprArena, image: &dyn PushanImage, word: u8) -> Vec<Diff> {
         let mut out = Vec::new();
         let w = word.max(1) as i128;
@@ -746,7 +748,18 @@ impl State {
                     todo.push((off + h as i128, h));
                     todo.push((off, h));
                 } else {
-                    out.push(record(arena, SymLoc { loc: Loc::Reg { off: off as u64 }, size }, a, b));
+                    let (lo, n) = if size > 1 && arena.is_const(a).is_none() && arena.is_const(b).is_none() {
+                        differing_run(size, &mut |i| self.read_reg(arena, off as u64 + i as u64, 1) != other.read_reg(arena, off as u64 + i as u64, 1))
+                    } else {
+                        (0, size)
+                    };
+                    let (off, a, b) = if n == size {
+                        (off, a, b)
+                    } else {
+                        let o = (off + lo as i128) as u64;
+                        (o as i128, self.read_reg(arena, o, n), other.read_reg(arena, o, n))
+                    };
+                    out.push(record(arena, SymLoc { loc: Loc::Reg { off: off as u64 }, size: n }, a, b));
                 }
             }
         }
@@ -773,7 +786,18 @@ impl State {
                         todo.push((off + h as i128, h));
                         todo.push((off, h));
                     } else {
-                        out.push(record(arena, SymLoc { loc: Loc::Mem { base, off }, size }, a, b));
+                        let (lo, n) = if size > 1 && arena.is_const(a).is_none() && arena.is_const(b).is_none() {
+                            differing_run(size, &mut |i| self.read_mem(arena, image, base, off + i as i128, 1) != other.read_mem(arena, image, base, off + i as i128, 1))
+                        } else {
+                            (0, size)
+                        };
+                        let (off, a, b) = if n == size {
+                            (off, a, b)
+                        } else {
+                            let o = off + lo as i128;
+                            (o, self.read_mem(arena, image, base, o, n), other.read_mem(arena, image, base, o, n))
+                        };
+                        out.push(record(arena, SymLoc { loc: Loc::Mem { base, off }, size: n }, a, b));
                     }
                 }
             }
@@ -899,6 +923,14 @@ fn fill_mem(
         }
     }
     a.var_of(VarKind::InitMem { base, offset: o }, len, false)
+}
+
+/// The bytes `[lo, lo + n)` of a `size`-byte location from its first to its
+/// last byte for which `differs` holds; the whole location when none does.
+fn differing_run(size: u8, differs: &mut dyn FnMut(u8) -> bool) -> (u8, u8) {
+    let Some(lo) = (0..size).find(|&i| differs(i)) else { return (0, size) };
+    let hi = (lo..size).rev().find(|&i| differs(i)).unwrap_or(lo);
+    (lo, hi - lo + 1)
 }
 
 fn loc_tag(l: &Loc) -> u64 {

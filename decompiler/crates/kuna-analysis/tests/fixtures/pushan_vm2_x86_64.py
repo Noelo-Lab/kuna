@@ -21,7 +21,9 @@ callee writes, a call made while the interpreter keeps a copy of a loop
 counter below the stack pointer, in the callee's frame, and two values the
 interpreter keeps in context cells of its own section, one read back at an
 offset decoded through a key register and one at an offset the argument
-selects.
+selects, and a local written through a copy of the frame pointer the
+interpreter keeps in an unaligned context cell beside one that two joining
+paths set differently.
 Every program sits
 in its own 256-byte block of seeded random filler (entropy above 7 bits/byte).
 Regenerate with `python3 pushan_vm2_x86_64.py` (needs GNU as/ld)."""
@@ -40,6 +42,9 @@ OP["CALLS"] = min(set(range(1, 256)) - set(OP.values()))
 OP["STG"] = min(set(range(1, 256)) - set(OP.values()))
 OP["LDGM"] = min(set(range(1, 256)) - set(OP.values()))
 OP["LDGI"] = min(set(range(1, 256)) - set(OP.values()))
+OP["SETFP"] = min(set(range(1, 256)) - set(OP.values()))
+OP["STC9"] = min(set(range(1, 256)) - set(OP.values()))
+OP["STFP"] = min(set(range(1, 256)) - set(OP.values()))
 A0, A1 = 0, 8
 
 
@@ -53,7 +58,8 @@ def asm(lines):
         if isinstance(item, str):
             return 0
         op = item[0]
-        return {"LDCTX": 2, "STCTX": 2, "LEAV": 2, "LDCTXM": 2, "STG": 2, "LDGM": 2, "LDIMM": 5, "JZ": 2, "JMP": 2, "SEL": 3}.get(op, 1)
+        return {"LDCTX": 2, "STCTX": 2, "LEAV": 2, "LDCTXM": 2, "STG": 2, "LDGM": 2, "STFP": 2, "LDIMM": 5, "JZ": 2, "JMP": 2,
+                "SEL": 3}.get(op, 1)
     labels, pc = {}, 0
     for it in lines:
         if isinstance(it, str):
@@ -65,7 +71,7 @@ def asm(lines):
             continue
         op, *args = it
         out.append(OP[op])
-        if op in ("LDCTX", "STCTX", "LEAV", "LDCTXM", "STG", "LDGM"):
+        if op in ("LDCTX", "STCTX", "LEAV", "LDCTXM", "STG", "LDGM", "STFP"):
             out.append(args[0] & 0xff)
         elif op == "LDIMM":
             out += list((args[0] & 0xffffffff).to_bytes(4, "little"))
@@ -238,6 +244,16 @@ PROGRAMS = {
     # cells 1 and 2 = 1, 2; return a0 & 1 ? 2 : 1;   (the cell is read at an
     # offset the argument selects, which the exploration cannot place)
     "f_ctxi": [("LDIMM", 1), ("STG", 1), ("LDIMM", 2), ("STG", 2), ("LDCTX", A0), ("LDGI",), ("EXIT",)],
+    # v = 1; cell9 = a0 < 5 ? a0 : a1; *(fp + &v - rbp) = 2; return v;   (2:
+    # the interpreter copies its frame pointer to the unaligned context cell
+    # at vcell + 1, whose top byte shares an aligned word with the cell at
+    # vcell + 9 that the two arms set to different values before they join,
+    # and writes v through that copy)
+    "f_cell": [("SETFP",), ("LDIMM", 1), ("STCTX", V(3)),
+               ("LDCTX", A0), ("LDIMM", 5), ("LT",), ("JZ", "E"),
+               ("LDCTX", A0), ("STC9",), ("JMP", "J"),
+               "E", ("LDCTX", A1), ("STC9",),
+               "J", ("LDIMM", 2), ("STFP", V(3)), ("LDCTX", V(3)), ("EXIT",)],
 }
 
 NAMES = list(PROGRAMS)
@@ -354,7 +370,12 @@ def source(blocks):
             "    push qword ptr [rax+rcx]", "    jmp dispatch",
             "h_ldgi:", "    pop rax", "    and eax, 1", "    lea rcx, [rip+vctx]", "    push qword ptr [rcx+rax*8+8]",
             "    jmp dispatch",
-            ".p2align 4", "vctx:", "    .quad 0, 0, 0, 0"]
+            "h_setfp:", "    lea rcx, [rip+vcell]", "    mov qword ptr [rcx+1], rbp", "    jmp dispatch",
+            "h_stc9:", "    lea rcx, [rip+vcell]", "    pop qword ptr [rcx+9]", "    jmp dispatch",
+            "h_stfp:", "    movsx rax, byte ptr [rsi]", "    add rsi, 1", "    lea rcx, [rip+vcell]", "    mov rcx, qword ptr [rcx+1]",
+            "    pop qword ptr [rcx+rax]", "    jmp dispatch",
+            ".p2align 4", "vctx:", "    .quad 0, 0, 0, 0",
+            ".p2align 4", "vcell:", "    .quad 0, 0, 0"]
     out += [".p2align 4", "    .space 0x10000 - (. - vm_entry)", ""]
     return "\n".join(out)
 

@@ -280,6 +280,29 @@ fn a_value_rebuilt_through_an_identity_is_no_difference() {
 }
 
 #[test]
+fn a_merge_leaves_the_byte_an_unaligned_neighbour_shares_with_the_slot() {
+    use kuna_num::opcodes::OpCode::*;
+    let mut a = ExprArena::new();
+    let img = NoImage;
+    let sp = a.var_of(VarKind::InitReg { offset: 0x20 }, 8, false);
+    let k = a.cst(8, (-0x58i64) as u64 as u128);
+    let fp = a.mk_bin(CPUI_INT_ADD, sp, k, 8);
+    let x = a.var_of(VarKind::InitReg { offset: 0x8 }, 8, false);
+    let y = a.var_of(VarKind::InitReg { offset: 0x10 }, 8, false);
+    let mut s1 = State::new(false, (0x200, 0x216));
+    s1.write_mem(None, 0x1001, fp, 8);
+    let mut s2 = s1.clone();
+    s1.write_mem(None, 0x1009, x, 8);
+    s2.write_mem(None, 0x1009, y, 8);
+    let d = s1.diff_constants(&mut s2, &mut a, &img, 8);
+    assert!(d.iter().all(|d| !matches!(d.loc.loc, Loc::Mem { off, .. } if off <= 0x1008 && 0x1008 < off + d.loc.size as i128)), "{d:?}");
+    assert!(d.iter().any(|d| d.loc == SymLoc { loc: Loc::Mem { base: None, off: 0x1009 }, size: 7 }), "{d:?}");
+    let locs: Vec<SymLoc> = d.iter().map(|d| d.loc).collect();
+    s1.symbolize(&mut a, 9, &locs);
+    assert_eq!(s1.read_mem(&mut a, &img, None, 0x1001, 8), fp);
+}
+
+#[test]
 fn a_call_overwrites_symbolic_regions_and_the_escaped_frame() {
     let mut a = ExprArena::new();
     let mut s = State::new(false, (0x200, 0x216));

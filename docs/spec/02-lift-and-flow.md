@@ -4550,9 +4550,17 @@ value differs is recorded against the node's key. A location is an aligned
 8-byte slot. Two values are the same when they are one node or when the
 identity test finds their difference to be the constant 0
 (`kuna_pushanstate.rs (same_value)`). A slot that is symbolic on both sides
-and differs in only one half is narrowed to that half, down to one byte, so a
-narrow variable sharing a slot with an unchanged neighbour does not take the
-neighbour with it. The halves are compared as nodes: splitting a slot around
+and differs in only one half is narrowed to that half, down to one byte, and
+what is left is narrowed to the run from the first to the last byte the two
+sides hold as different nodes, so a narrow variable sharing a slot with an
+unchanged neighbour does not take the neighbour with it. Themida packs its
+context cells at unaligned addresses, so one aligned slot can hold the top
+byte of the interpreter's copy of the frame pointer, the same on both sides,
+beside a cell the joining paths set differently. Symbolized whole, the slot
+turned that byte into a merge symbol: no access through the copy could be
+placed any more, and the stores among them were lost (zlib_themida's
+`gz_read`, whose loop advances `buf` in its home slot through the copy, kept
+the entry `buf` for `strm.next_out`). The halves are compared as nodes: splitting a slot around
 a byte that is the same value through two different identities would keep the
 top byte of Themida's frame pointer (saved in a context slot whose low bytes
 hold junk that differs every loop iteration) through a loop merge, but costs
@@ -5193,9 +5201,12 @@ recorded values, a call to a function of the image that writes a local
 whose address it got in a stack-passed argument and a field 32 bytes past its
 pointer argument (`f_out`), both tested after it, a value kept in a context
 cell of the interpreter's section and read back at an offset decoded through
-a key (`f_ctx`, which returns the value), and two cells read at an offset the
+a key (`f_ctx`, which returns the value), two cells read at an offset the
 argument selects (`f_ctxi`, whose stores stay and whose header reports the
-protector state left).
+protector state left), and a local written through the interpreter's copy
+of its frame pointer, kept in an unaligned context cell beside one that the
+two arms of a branch set differently (`f_cell`, which returns the value
+written).
 `tests/stages/kuna-pushan-interp.xml` runs two passes over the
 `pushan_interp_x86_64` fixture (gcc -O0 from its committed C source), six
 functions that are their own interpreters of one virtual program with a loop
