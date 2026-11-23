@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5146,
-    5146
+    5158,
+    5158
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1689,6 +1689,18 @@
     "data:LOOPCONTINUE-WHILE #3: the empty label prints only with the option off",
     "data:LOOPCONTINUE-WHILE #4: 19 gotos over both passes, nine by default and ten with the option off",
     "data:LOOPCONTINUE-WHILE #5: Rust's loop-and-break do-while keeps the jump to its test as a goto marker",
+    "data:LOOPTEST #10: walk keeps its guard and do-while under binary",
+    "data:LOOPTEST #11: skip's test reads a body value, so it stays a do-while",
+    "data:LOOPTEST #12: no guarded loop prints a second return",
+    "data:LOOPTEST #1: fill tests its pointer at the top",
+    "data:LOOPTEST #2: fill keeps its n == 0 guard only under binary",
+    "data:LOOPTEST #3: drain tests i < n at the top",
+    "data:LOOPTEST #4: drain is a guarded do-while under binary",
+    "data:LOOPTEST #5: zero16's entry test folds to true",
+    "data:LOOPTEST #6: zero16 is a do-while under binary",
+    "data:LOOPTEST #7: count's guard is not its entry test, so it stays a do-while",
+    "data:LOOPTEST #8: the n > 0 guard is printed once for count and once for drain under binary",
+    "data:LOOPTEST #9: walk tests the variable q is copied into",
     "data:LOWEREDSWITCH-SCRUTINEE #1: the re-rolled switch dispatches on the compared parameter",
     "data:LOWEREDSWITCH-SCRUTINEE #2: the scrutinee is never a constant nor empty",
     "data:LOWEREDSWITCH-SCRUTINEE #3: neither pass drops the dispatched-on parameter from the prototype",

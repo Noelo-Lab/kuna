@@ -647,6 +647,11 @@ kuna_options! { self, p1;
     },
     "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
     "switchmerge" => on_off!(switchmerge, "nested-switch merge and default-hole folding"),
+    "looptest" => {
+        let (mode, msg) = crate::p8_structure::kuna_looptest::parse_loop_test(p1)?;
+        self.loop_test = mode;
+        Ok(msg)
+    },
     "gotonext" => on_off!(goto_next, "goto-to-next suppression"),
     "importdata" => on_off!(import_data, "import-slot data-read rendering"),
     "castimplied" => on_off!(cast_implied, "C-implied cast elision"),

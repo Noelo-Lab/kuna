@@ -6125,6 +6125,25 @@ live_field = "switchmerge"
 live_true = "on"
 live_false = "off"
 
+[[settable]]
+option = "looptest"
+values = "binary|proven|assume"
+default = "proven"
+destructive = false
+phase = "P8"
+subphase = "goto-quality"
+strength = "HARD"
+rewind = "P9"
+issue = "kuna-looptest"
+summary = "Print a bottom-tested loop with its test at the top, `while (c) { body }`, when that is provably the same program, and leave out the guard `if` that the compiler's loop rotation put in front of it. gcc's loop header copying turns `while (c) body` into `if (c) do body while (c);` and drops the `if` when it can prove `c` on entry, so kuna prints `do { } while` for loops the source tests at the top. `kuna_looptest` plans each C `BlockDoWhile` on the final structured tree. The test may move to the top only when every loop-variant leaf of the printed condition is the value carried into the next iteration by a header MULTIEQUAL (or a COPY of it, which then prints as that variable) and the condition calls nothing. `proven` then needs the entry test, the condition with each carried value replaced by its entry value, to fold to true, to equal the condition of an edge that dominates the loop, or to equal the condition of a guard right in front of the loop. That guard is left out when the statements between it and the loop are pure and write nothing the skip path reads, and the skip path reaches the loop's own exit or an equal bare return. A guard that has to stay keeps the do-while, and so does a loop whose carried variable lives in the stack frame (unoptimized code, where a bottom test is the source's own). `binary` prints every loop where the binary tests it; `assume` also moves the test of a loop with no entry proof. C output only."
+use_when = "PROVEN by default. Flip to binary to see each loop where the compiler placed its test (and every rotation guard), for example when matching the output against the disassembly. assume is speculative: it also prints `while (c)` for a loop whose first test the binary skips, which is wrong when the source was a do-while whose test can fail on entry."
+example = "option looptest binary"
+source_decompiler = "kuna"
+inspiration = "decbench O2 corpus: kuna printed 4,015 `do ... while` loops where the source-equivalent output has 306; coreutils ls initialize_ordering_vector, crazyflie uart2GetData, e2fsck jbd2_journal_clear_revoke"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "for or while loop printed as if (c) { do { ... } while (c); }|if (!n) return; followed by a do-while on the same count|do-while loop whose first test always passes|kuna writes do-while where the source and ida write while or for"
+
 
 [[settable]]
 option = "panicloc"

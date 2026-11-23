@@ -1580,6 +1580,8 @@ pub struct PrintC {
     /// (kuna `switchmerge`) The printed arms of each C `switch` whose arms differ
     /// from its own cases.  Computed per function with `goto_rewrites`.
     switch_plans: crate::p8_structure::kuna_switchmerge::SwitchPlans,
+    /// (kuna `looptest`) The loops printed top-tested and the guards dropped.
+    pub(crate) loop_tests: crate::p8_structure::kuna_looptest::LoopTests,
     /// (kuna) Resolved `realtypes` rendering context for the function currently
     /// being printed — the `Architecture::realtypes` gate plus the data-model fact
     /// (`long` is 8 bytes) needed to relabel residual `TYPE_UNKNOWN` (`xunknownN`)
@@ -1677,6 +1679,7 @@ impl PrintC {
             void_tail_return: None,
             goto_rewrites: Default::default(),
             switch_plans: Default::default(),
+            loop_tests: Default::default(),
             rt_ctx: RealTypeCtx::OFF,
             out_lang: crate::kuna_lang::OutLang::C,
             eol_warns: Vec::new(),
@@ -4369,8 +4372,17 @@ impl PrintC {
         } else {
             Default::default()
         };
+        self.loop_tests = if matches!(self.lang().forms.do_while, crate::kuna_lang::DoWhileForm::CDoWhile) {
+            crate::p8_structure::kuna_looptest::loop_tests(fd, sroot, arch.loop_test)
+        } else {
+            Default::default()
+        };
+        if let Some(&ret) = self.void_tail_return.and_then(|op| self.loop_tests.tail_returns.get(&op)) {
+            self.void_tail_return = Some(ret);
+        }
         self.assign_label_names(fd, sroot);
         self.emit_block_graph(fd, arch, sroot);
+        self.loop_tests = Default::default();
         self.void_tail_return = None;
         self.goto_rewrites = Default::default();
         self.switch_plans = Default::default();
@@ -4428,6 +4440,7 @@ impl PrintC {
     pub(crate) fn emit_block(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         use crate::block::BlockType;
         match fd.sblocks_ref().block(blk).get_type() {
+            BlockType::Copy if self.loop_tests.hidden.contains(&blk) => {} // (kuna looptest)
             BlockType::Copy => self.emit_block_copy(fd, arch, blk),
             BlockType::Basic => self.emit_block_basic(fd, arch, blk),
             BlockType::Ls => self.emit_block_ls(fd, arch, blk),
@@ -4849,6 +4862,10 @@ impl PrintC {
         // `dest = ( cond );`.  Checked BEFORE the ternary so the more specific
         // form wins when both match; the mark is set only with
         // `option iteboolean on`.
+        if let Some(&guard) = self.loop_tests.guards.get(&blk) {
+            self.emit_dropped_guard(fd, arch, blk, guard); // (kuna looptest)
+            return;
+        }
         if let Some(m) = self.ite_boolean_match(fd, blk) {
             self.emit_block_if_bool(fd, arch, m);
             return;
@@ -5952,6 +5969,10 @@ impl PrintC {
     }
 
     fn emit_block_do_while_c(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        if self.loop_tests.top.contains(&blk) {
+            self.emit_block_do_while_top(fd, arch, blk); // (kuna looptest)
+            return;
+        }
         // dowhile block NEVER prints the final branch.
         self.context.push_mod();
         self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
@@ -9175,7 +9196,7 @@ impl PrintC {
                 return;
             }
         }
-        self.push_vn_explicit_ir(fd, arch, vn, op);
+        self.push_vn_explicit_ir(fd, arch, self.loop_tests.leaf(vn), op); // (kuna looptest)
     }
 
     /// C++ `PrintC::pushImpliedField` (printc.cc:2161-2192): an implied Varnode

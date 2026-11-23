@@ -1241,6 +1241,8 @@ pub struct Architecture {
     /// another switch on the same selector as one `switch`, and leave out the
     /// labels of arms that jump to the code `default:` runs.
     pub switchmerge: bool,
+    /// (kuna `looptest`) Where a bottom-tested loop prints its test.
+    pub loop_test: crate::p8_structure::kuna_looptest::LoopTestMode,
     /// (kuna `importdata`) Render a data read through a loader-marked import slot
     /// (a GOT / `__got` / `__auth_got` / IAT entry holding an import's address) as
     /// the import itself, instead of a dereference of the anonymous slot. Default
@@ -2604,6 +2606,7 @@ impl Architecture {
             ctypes: false, // (kuna) option ctypes; reset_defaults sets the shipped default
             voidtailreturn: false, // (kuna) option voidtailreturn; reset_defaults sets the shipped default
             switchmerge: false, // (kuna) option switchmerge; reset_defaults sets the shipped default
+            loop_test: crate::p8_structure::kuna_looptest::LoopTestMode::Binary, // (kuna) option looptest; reset_defaults sets the shipped default
             goto_next: false, // (kuna) option gotonext; reset_defaults sets the shipped default
             import_data: false,
             data_import_slots: std::collections::BTreeSet::new(),
@@ -2930,6 +2933,7 @@ impl Architecture {
         self.goto_next = true; // (kuna) option gotonext default-on: upstream BlockGoto::gotoPrints; only the spelling of a jump changes; 0/675 datatests
         self.voidtailreturn = true; // (kuna) option voidtailreturn default-on (DIV-98); `option voidtailreturn off` restores the trailing `return;`
         self.switchmerge = true; // (kuna) option switchmerge default-on; `option switchmerge off` prints every jump-table arm of every nested switch
+        self.loop_test = crate::p8_structure::kuna_looptest::LoopTestMode::Proven; // (kuna) option looptest default `proven`; `option looptest binary` prints every loop where the binary tests it
         self.import_data = true; // (kuna) option importdata default-on; `option importdata off` keeps the `*dat_<slot>` dereference
         self.cast_implied = true; // (kuna) option castimplied default-on: leaves out only a value-preserving integer conversion C performs itself (argument to a type-locked parameter, assignment to a local or parameter declared that spelling, return, or under another conversion); 1/675 datatest assertion moved (Union #26, the intended form, pinned to upstream by a per-test opt-out), 10 stage assertions moved to the new form, speed within budget; docs/features/castimplied/default-on-evaluation.md
         self.cast_sign = true; // (kuna) option castsign default-on: a frame local or pointer index only ever compared signed, never an operand of + - * <<, and never met by a top-bit constant in == != & | ^, is declared signed; 0/675 datatest assertions and 0 stage assertions moved, test-cli unchanged, the 444-slice typesweep identical, casts 38,703 -> 38,602 on the census corpus, 41 functions fewer and 0 more; docs/features/castsign/default-on-evaluation.md
