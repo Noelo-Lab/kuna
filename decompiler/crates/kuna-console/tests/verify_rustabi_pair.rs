@@ -111,7 +111,7 @@ fn the_producer_keeps_the_whole_pair() {
 fn the_consumer_reads_the_payload_out_of_the_call() {
     let code = decompile("rust_scalarpair_x86_64", "cons", &["option rustabi auto"]);
     assert!(
-        code.contains("= prod()"),
+        code.contains("= prod(a0)"),
         "the call must have an output the payload comes out of; got:\n{code}",
     );
     let declared = declared_locals(&code);
@@ -143,7 +143,7 @@ fn a_callee_proven_not_to_write_the_payload_is_not_paired() {
         "a callee the probe proves never writes the payload register must not be paired",
     );
     assert!(
-        on.contains("scalar_callee();"),
+        on.contains("  scalar_callee(a0);"),
         "the call must keep no output; got:\n{on}",
     );
 }
@@ -156,7 +156,7 @@ fn a_callee_proven_not_to_write_the_payload_is_not_paired() {
 fn the_veto_is_the_callee_body_and_nothing_else() {
     let paired = decompile("rust_scalarpair_x86_64", "cons", &["option rustabi auto"]);
     assert!(
-        paired.contains("= prod()"),
+        paired.contains("= prod(a0)"),
         "the positive control must still pair; got:\n{paired}",
     );
 }

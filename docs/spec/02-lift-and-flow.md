@@ -2128,7 +2128,8 @@ collects the new direct branches and fallthroughs into previously decoded
 instructions, reading only the dead list's tail: flow appends what it
 generates and moves injected or inlined sequences only next to other new
 operations. A recovered table destination that is already decoded is an edge
-as well, since following it creates no operations. A re-entered table is
+as well, since following it creates no operations. Flow records each edge from
+its first discovery, including the original singleton. A re-entered table is
 followed again on every round, so its transfer/destination pairs are followed
 once each; other tables keep upstream's re-following, which on x86-64 gnulib
 `quotearg_buffer_restyled` already shapes the output.
@@ -2144,15 +2145,21 @@ dispatch instruction itself,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_returnbranch.rs (target_on_edge)`
 runs the edge's block and the dispatch instruction's own operations through
 the same `Prefix` evaluator as the entry proof, and a proven local constant
-extends the table without another partial decompile. Any other reaching edge
+extends the table without another partial decompile. Selectors are in addressable
+units. Flow scales them by the code-space word size and applies function-pointer
+alignment before checking locality and mapping. A basic singleton retains the
+emulated branch operand. Local extension keeps that operand and each arriving
+selector for case labels, including distinct values with the same byte address.
+When the original operands are unavailable and conversion can lose bits, flow
+requests SSA recovery. Any other reaching edge
 requests a full recovery once the locally proved frontier drains. At most 128
 such retries run per flow; every dispatch still pending when they run out
 keeps its targets and carries `Re-entered indirect jump may have more targets`,
 once each. A retry admits the constant-select model whatever `constselectjump`
 says except `off`, because the re-entry already shows the targets are one
 function's. A retry's failed second stage keeps the old model and targets and
-reports that warning; outside re-entry a failed second stage restores its model
-silently, as upstream does. `off` records no provisional table and restores
+reports that warning unless a validated multistage hint covers the restored
+singleton. Outside re-entry a failed second stage restores its model silently. `off` records no provisional table and restores
 upstream's flow.
 
 A re-entered dispatch can also receive the caller's return address, and not
@@ -2666,7 +2673,7 @@ literal address. When the model is admitted and both value-range models have
 declined, `kuna_constselectjump.rs (kuna_collect_const_destinations)` walks the
 MULTIEQUAL/COPY web behind the BRANCHIND input; if every reaching definition is
 a constant, the set becomes a fixed address table whose case labels are the
-target addresses themselves, and recovery proceeds as for any recovered table.
+raw branch inputs. The table holds their aligned byte destinations.
 The walk admits only MULTIEQUAL and COPY and requires at least one MULTIEQUAL
 and two distinct destinations, so it can never claim a shape either basic model
 already handles. Every destination must also sit within `0xffff` of the branch —
@@ -2694,8 +2701,8 @@ more entries records a multistage hint for its jump and restarts the function
 and recovers it through `jumptable.rs (JumpTable::recover_multistage)`. (kuna) The
 second stage runs on the same kind of partial, so it can fold the index again.
 The hint therefore also carries the targets the late model built
-(`overrides.rs (Override::multistage_targets)`). A second stage that again finds
-one address adopts them (`jumptable.rs (JumpTable::kuna_adopt_multistage_targets)`),
+(`overrides.rs (Override::multistage_targets)`). An ordinary second stage with a singleton
+adopts the guarded hint. A failed re-entry retry adopts it only if it covers the restored singleton (`jumptable.rs (JumpTable::kuna_adopt_multistage_targets)`),
 so flow follows every case and the late check below labels them. Each jump is
 restarted at most once. A jump is not restarted unless every value in the
 late model's range passes the guards on its path
@@ -3980,6 +3987,14 @@ This normalization removes no computation or memory effect. The existing
 ## Octeon integer targets
 
 Explicit BE Octeon/Plus/II/III language variants share the MIPS core while replacing the four CP2 load/store opcode meanings with bit-test branches. Their conditions are sampled before delay-slot execution. Integer extension arithmetic, comparisons, population counts and bitfield operations use ordinary p-code; II/III additionally expose indexed loads with exact width and signedness. Generic MIPS retains its opcode meanings and SPECIAL2 fallback; Octeon has no wildcard SPECIAL2 success.
+
+On Octeon II and III, CP0 register 31 selectors 2 through 4 name independent
+64-bit kernel scratch registers, `KScratch1` through `KScratch3`. Octeon III
+also exposes selector 5 as `KScratch4`. Both `mtc0`
+and `dmtc0` write the full GPR to these registers. A subsequent `mfc0`
+sign-extends the low word, while `dmfc0` reads all 64 bits. The processor
+profile marks each supported slot volatile so each transfer remains observable across
+calls and repeated writes.
 
 Both 64-bit address and 32-bit address (N32) variants have explicit soft-float compiler specifications; III also offers hard-float models. ELF selection and compiler conventions are described in chapters 01 and 04. System and crypto coverage remain separate from the integer and memory operations described here.
 

@@ -1,0 +1,131 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    ARM vcmp/vmrs and AArch64 fcmp set NZCV=0011 for unordered operands, so
+    each condition code decides a NaN its own way: gt and ge are false for
+    it, le, lt and hi are true. P3 nanignore folding
+    (kuna_floatnegation.rs fold_exact_conditions) evaluates the flag
+    expression for every ordering of the two operands, NaNs included, and
+    keeps the one comparison it equals before the NaN test is dropped.
+    Strict correctness fix, no option: the one pass is the fix.
+
+    The XML wrapper only provides the harness architecture. The script loads
+    four in-tree fixtures (sources beside them). fcmp_unordered_a64.o reads
+    every AArch64 condition by cset after fcmp d0,d1, one after fcmp s0,#0.0,
+    and branches with b.le. fcmp_unordered_a32.o branches on six ARM
+    conditions after vcmp.f64 d0,d1 and vmrs. scale_err (clang -O2) branches
+    with ble against 88.0f, logish (clang, Thumb) on a compare with 0.0f, and
+    ccw_mixed reads cset gt after fcmp d0,#0.0.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fcmp_unordered_a64.o</com>
+  <com>read symbols</com>
+  <com>lo fu a64_eq</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a64_ne</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a64_mi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a64_pl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a64_ge</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a64_lt</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a64_gt</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a64_le</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a64_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a64_ls</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a64_hs</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a64_lo</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a64_gt_zero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a64_le_branch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fcmp_unordered_a32.o</com>
+  <com>read symbols</com>
+  <com>lo fu a32_gt</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a32_le</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a32_ge</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a32_lt</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a32_pl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a32_mi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloat_preset_hard.o</com>
+  <com>read symbols</com>
+  <com>mode aggressive</com>
+  <com>lo fu scale_err</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatret_cm4.o</com>
+  <com>read symbols</com>
+  <com>lo fu logish</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/prefersplit_a64.o</com>
+  <com>read symbols</com>
+  <com>lo fu ccw_mixed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="FCMPUN #1: AArch64 cset ge is false for a NaN" min="1" max="1">return a1 &lt;= a0;</stringmatch>
+<stringmatch name="FCMPUN #2: AArch64 cset lt is true for a NaN" min="1" max="1">return !\(a1 &lt;= a0\);</stringmatch>
+<stringmatch name="FCMPUN #3: AArch64 cset gt is false for a NaN" min="1" max="1">return a1 &lt; a0;</stringmatch>
+<stringmatch name="FCMPUN #4: AArch64 cset le is true for a NaN" min="1" max="1">return !\(a1 &lt; a0\);</stringmatch>
+<stringmatch name="FCMPUN #5: AArch64 cset hi is true for a NaN" min="1" max="1">return !\(a0 &lt;= a1\);</stringmatch>
+<stringmatch name="FCMPUN #6: AArch64 cset ls is false for a NaN" min="1" max="1">return a0 &lt;= a1;</stringmatch>
+<stringmatch name="FCMPUN #7: AArch64 cset pl and hs are true for a NaN" min="2" max="2">return !\(a0 &lt; a1\);</stringmatch>
+<stringmatch name="FCMPUN #8: AArch64 cset mi and lo are false for a NaN" min="2" max="2">return a0 &lt; a1;</stringmatch>
+<stringmatch name="FCMPUN #9: AArch64 cset eq and ne keep their equality" min="2" max="2">return a0 [!=]= a1;</stringmatch>
+<stringmatch name="FCMPUN #10: AArch64 cset gt against a constant is false for a NaN" min="1" max="1">return 0\.0f &lt; a0;</stringmatch>
+<stringmatch name="FCMPUN #11: AArch64 b.le and ARM ble take the unordered arm" min="2" max="2">if \(a1 &lt; a0\)</stringmatch>
+<stringmatch name="FCMPUN #12: ARM bgt is false for a NaN" min="1" max="1">if \(!\(a1 &lt; a0\)\)</stringmatch>
+<stringmatch name="FCMPUN #13: ARM bge is false for a NaN" min="1" max="1">if \(!\(a1 &lt;= a0\)\)</stringmatch>
+<stringmatch name="FCMPUN #14: ARM blt is true for a NaN" min="1" max="1">if \(a1 &lt;= a0\)</stringmatch>
+<stringmatch name="FCMPUN #15: ARM ble after vcmp against 88.0f is false for a NaN" min="1" max="1">if \(88\.0f &lt; a0\)</stringmatch>
+<stringmatch name="FCMPUN #16: Thumb compare with 0.0f is false for a NaN" min="1" max="1">if \(0\.0f &lt; a0\) \{</stringmatch>
+<stringmatch name="FCMPUN #17: AArch64 cset gt on a loaded double is false for a NaN" min="1" max="1">\(uint2\)\(0\.0 &lt; a0-&gt;field_0x0\)</stringmatch>
+<stringmatch name="FCMPUN #18: no ordered-and-unequal spelling true for a NaN" min="0" max="0">!= [a-z0-9.f]+ &amp;&amp; !\(</stringmatch>
+</decompilertest>

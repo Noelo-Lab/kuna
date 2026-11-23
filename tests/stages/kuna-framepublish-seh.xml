@@ -1,0 +1,60 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    A published frame address holds only the frame writes a reader of the
+    published pointer can reach. MSVC's SEH prologue links a registration
+    record into fs:[0] (a frame publication) and allocates a local below it
+    with `push ecx`, whose garbage ECX is overwritten by `and [ebp-0x10],0`
+    before the local's address goes to a call:
+
+      0x401000  55 / 8b ec / 6a ff / 68 00 20 40 00     push ebp ; mov ebp,esp ; push -1 ; push handler
+      0x40100a  64 a1 00 00 00 00 / 50                  mov eax,fs:[0] ; push eax
+      0x401011  51                                      push ecx            ; the local at ebp-0x10
+      0x401012  8d 45 f4 / 64 a3 00 00 00 00            lea eax,[ebp-0xc] ; mov fs:[0],eax
+      0x40101b  83 65 f0 00                             and dword [ebp-0x10],0
+      0x40101f  8d 45 f0 / 50 / e8 18 00 00 00          push &local ; call 0x401040
+      0x401028  8b 45 f0 / 8b 4d f4                     mov eax,[ebp-0x10] ; mov ecx,[ebp-0xc]
+      0x40102e  64 89 0d 00 00 00 00                    mov fs:[0],ecx
+      0x401035  8b e5 / 5d / c3                         mov esp,ebp ; pop ebp ; ret
+      0x401040  c2 04 00                                ret 4
+
+    P6 dead-code holds (kuna_stackalias.rs stores_transparent): the
+    publication holds every aliased frame byte, so the record's handler and
+    state stores print. The `push ecx` store to ebp-0x10 lies wholly below the
+    lowest published byte (ebp-0xc, the record), so its dead-store search
+    steps over the fs:[0] link STORE and finds the full overwrite by the
+    `and`: the store is dropped. Treating that STORE as an observer kept the
+    store live, which made ECX an input:
+    `unsigned int seh_push_ecx(unsigned int a0)` with `v2 = a0;`. Strict fix,
+    one pass.
+
+    mid_published publishes a pointer into the middle of a local array and
+    reads below it through the reloaded global:
+
+      0x401060  83 ec 10 / c7 04 24 01.. / .. 02 / .. 03 / .. 04   arr[0..3] = 1..4
+      0x401084  8d 44 24 08 / a3 00 21 40 00                      g = &arr[2]
+      0x40108d  8b 0d 00 21 40 00 / 8b 41 f8 / 03 41 fc / 03 01 / 03 41 04
+                                                                  return g[-2]+g[-1]+g[0]+g[1]
+
+    arr[0] and arr[1] lie below the published byte but a reader of g reaches
+    them, so all four stores print (main printed none).
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">558bec6aff680020400064a10000000050518d45f464a3000000008365f0008d45f050e8180000008b45f08b4df464890d000000008be55dc3ccccccccccccccc20400</bytechunk>
+<symbol space="ram" offset="0x401000" name="seh_push_ecx"/>
+<symbol space="ram" offset="0x401040" name="use_local"/>
+<bytechunk space="ram" offset="0x401060" readonly="true">83ec10c7042401000000c744240402000000c744240803000000c744240c040000008d442408a3002140008b0d002140008b41f80341fc030103410483c410c3</bytechunk>
+<symbol space="ram" offset="0x401060" name="mid_published"/>
+</binaryimage>
+<script>
+  <com>lo fu seh_push_ecx</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mid_published</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="FRAMEPUBLISH-SEH #1: the push-ecx local below the published record does not make ECX a parameter" min="1" max="1">^unsigned int seh_push_ecx\(void\)</stringmatch>
+<stringmatch name="FRAMEPUBLISH-SEH #2: the record's handler and state stores print" min="2" max="2"> = 0x402000;$| = 0xffffffff;$</stringmatch>
+<stringmatch name="FRAMEPUBLISH-SEH #3: stores below a published mid-array pointer that it indexes print" min="4" max="4">^  v[0-9]+\[[0-3]\] = [1-4];$</stringmatch>
+</decompilertest>
