@@ -1019,8 +1019,9 @@ pub fn unused_vfp_type(
     data.get_arch().types()?.get_base(size, type_metatype::TYPE_FLOAT).ok()
 }
 
-/// A widened call-argument trial needs a callee contract; a live d-register
-/// alone does not establish that an unknown call consumes a double.
+/// A widened call-argument trial needs a callee contract, a stated one or a
+/// body that reads the whole d-register ([`crate::p4_calls::kuna_calleefloatreads`]);
+/// a live d-register alone does not establish that an unknown call consumes a double.
 pub fn call_input_allowed(
     data: &Funcdata,
     call: &crate::fspec::FuncCallSpecs,
@@ -1047,6 +1048,7 @@ pub fn call_input_allowed(
                     *a == *addr && *s == size && ty.get_metatype() == type_metatype::TYPE_FLOAT
                 })
         })
+        || crate::p4_calls::kuna_calleefloatreads::reads(data, call, addr, size)
 }
 
 #[cfg(test)]

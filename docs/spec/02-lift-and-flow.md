@@ -33,6 +33,85 @@ reaches the architecture only through the
 live implementation is
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (ArchFlowEnv)`.
 
+PPC32 `blr` and its conditional forms are not necessarily ABI returns: LR can
+hold a locally computed code address. Before return processing discards that
+target, `decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppc32lrflow.rs (classify)`
+propagates raw p-code values over the function's blocks to a fixed point.
+Constants, combinations of proven values and loads from immutable image data are
+re-followed as indirect branches;
+ordinary incoming LR values, saved copies and unproved reloads remain returns.
+An image load requires readable bytes in the code address space, read-only and
+nonvolatile properties across its full width, and no preceding untracked store
+or call on any incoming path. A fixed address alone is not proof of a code
+pointer: writable slots can hold a saved incoming LR and remain unproved.
+The proof tracks exact stack stores and reloads, invalidates overlapping writes,
+projects known constants into narrow register views in either byte order,
+forgets memory across calls and respects each callee's preserved registers. It
+makes no claim when the bounded analysis runs out of work or loses provenance.
+Explicit flow assertions win. Newly reached code is checked again before the
+caller-local import proof runs. Reclassified LR targets discard the low two bits
+and use the 32-bit instruction address, including with eight-byte registers;
+QEMU confirms a target with a low bit set reaches the same instruction. This
+classification repair has no option.
+
+Automatic branch overrides are temporary discovery decisions. The proof keeps
+the values from each path together through joins. It evaluates each calculation
+within one path and collects the resulting destinations. A block can retain up
+to eight distinct states. If it exceeds that bound, only facts shared by all
+incoming states survive the join. Each surviving state must prove a destination
+before flow can install the table. A known conditional outcome or dispatch target
+restricts the edges that its state can reach. Masking and logical right shifts
+preserve known comparison bits when a condition register also contains an
+unknown status bit. The proof checks the recovered destination set after each
+expansion. A mismatch triggers another flow pass with the proven
+addresses and address-based case labels. When a newly completed table forms
+a loop back to its own dispatch, the proof must resolve each incoming edge
+to one destination. Flow copies the work before the transfer and uses direct
+edges for those paths, so a switch exit cannot hide a repeated dispatch.
+A converted direct tail call is
+rechecked against LR at the call site. When another computed destination is
+possible, flow follows the instruction again as an indirect branch. If one
+incoming edge proves an LR restore while another proves a computed transfer,
+the returning edge receives a closed copy of the work before the transfer.
+This preserves the call on paths that still prove its destination. A restart
+derives these decisions again without changing explicit caller assertions.
+Calls, further branches and other contexts that cannot be copied safely cause
+a diagnostic instead of publishing an unproved branch. An unknown branch
+decision or a call after the incoming return address is observed may select
+paths based on that address. The proof retains that possibility at joins
+and declines to classify subsequent LR transfers on those paths. An
+unconditional store of the incoming LR followed by an independently proven
+constant transfer can still reach its destination. Computations carry dependence
+on the incoming LR to their results. A branch predicate, indirect target,
+memory address or escaping value can expose that dependence. An unused
+register result leaves the proof intact. The proof also accounts for partial
+stores of the incoming LR, partial overwrites of a saved LR slot and unresolved
+loads that may alias it. A known store that completely overwrites the slot
+discards the old fact. An equality constraint can make an apparent target the
+caller's return address. The proof conservatively retains such returns without
+solving general path constraints. Proof work is bounded across discovery and
+revalidation together; exhaustion cannot validate a temporary decision.
+Entry registers begin unproved: an input register can already contain the
+return address. A move from an input into LR alone is not evidence of a
+computed branch. An explicit flow assertion remains available when the caller
+knows that an otherwise unproved target is a branch.
+Idempotent bitwise copies and the e500 zero extension of a four-byte address
+preserve its stack or incoming-return identity in an eight-byte register.
+
+Ordinary code never proves a constant LR, so the discovery round first runs
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppc32lrflow.rs (may_return_constant_lr)`,
+a single-state pass whose joins take the union of every path and context. It
+records only which bits of a location may be known zero or one, and which
+incoming-stack offset an address may have. Each operation over-approximates
+the proof's own transfer: a constant needs every input possibly constant, the
+partial-bit rules keep the bits they could know, calls and user operations
+forget what the proof forgets, a store to one known stack offset replaces that
+slot, and a store to an unknown offset may reach any slot. Temporaries are
+dropped on edges that leave an instruction; a temporary read after such a drop
+without being written again is unknown. If no LR return can see a fully known
+LR on any path, the round has no site, and the multi-state fixed point does
+not run.
+
 In 64-bit code spaces, SLEIGH display operands marked as code addresses retain
 that interpretation through their nested display subtables. Their evaluated bit patterns
 print as unsigned hexadecimal addresses even when bit 63 is set; ordinary
@@ -2032,8 +2111,10 @@ limitation it shares with every architecture's register jump, rather than
 introducing it — a recovered single-entry table whose register is redefined on
 a back edge found after recovery is not staged again, so that later transfer is
 missing from the output, exactly as it is for an x86-64 `jmp *%rax` of the same
-shape. A flow override at the return keeps its classification, and off restores
-the spec's RETURN.
+shape. A flow override at the return keeps its classification, and off keeps
+the instruction's original flow kind in this pass. The decompiler leaves
+PPC32 returns through LR to the PPC32 classifier, which follows additional
+paths to the same transfer and distinguishes local jumps from returns.
 
 **(kuna) Re-entered indirect dispatches — `option constselectjump`, default
 `reentry`, `decompiler/crates/kuna-decomp/src/p2_lift/flow.rs (generate_ops_with_jumptables)`.**

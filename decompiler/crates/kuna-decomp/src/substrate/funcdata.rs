@@ -390,6 +390,7 @@ pub struct Funcdata {
     pub(crate) stack_object_assertions: Vec<crate::kuna_stackobjectasserts::ObjectAssertion>,
     pub(crate) stack_object_bound_uses: std::collections::BTreeSet<(crate::kuna_stackobjects::SourcePoint, i32)>,
     pub(crate) stack_alias_holds: Option<std::collections::BTreeSet<VarnodeId>>,
+    pub(crate) stack_frame_published: Option<i64>,
     pub(crate) callee_memory: std::collections::HashMap<
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_calleememory::CalleeMemory>,
@@ -530,8 +531,8 @@ pub struct Funcdata {
     kuna_own_entry_dead: Option<std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>>,
     /// (kuna `passthrough`) The same probes with what each direct call's target
     /// takes added ([`crate::kuna_calleedeadarg::reads_through_calls`]), for the
-    /// callees `protoorder` stated a prototype for.  Read only by
-    /// [`crate::p4_calls::kuna_passthrough::stated_width`].
+    /// callees `protoorder` stated a prototype for and the ones it stated
+    /// nothing for.  Read only by `passthrough`.
     kuna_callee_entry_through: std::collections::HashMap<
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
@@ -853,6 +854,7 @@ impl Funcdata {
             stack_object_assertions: Vec::new(),
             stack_object_bound_uses: std::collections::BTreeSet::new(),
             stack_alias_holds: None,
+            stack_frame_published: None,
             callee_memory: std::collections::HashMap::new(),
             pending_comments: Vec::new(),
             kuna_infertypes_settled: false,
@@ -4480,6 +4482,7 @@ impl Funcdata {
         self.stack_objects.clear();
         self.stack_object_bound_uses.clear();
         self.stack_alias_holds = None;
+        self.stack_frame_published = None;
         self.callee_memory.clear();
         self.clear_blocks();
         self.obank.clear();
