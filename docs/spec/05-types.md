@@ -178,6 +178,24 @@ back — and the two inline unit tests (`dependent_order_nested_struct`,
 `dependent_order_pointer_cycle`) pin both facts: the raw tree order really is
 container-first, and the DFS reorders it.
 
+(kuna) Where upstream compares two sub-types "by absolute pointer" (what a
+pointer points at, an array's element, a union field's type, a prototype's
+parameters), `dtype.rs (Datatype::compare_dependency_ptr)` orders two distinct
+types by id first, then by their own `compare_dependency` (an unnamed type
+has id 0, so a pointer to a pointer is told apart by what it finally points
+at), and by `Rc` address only when both agree. Heap addresses change with the
+allocator and with what was allocated earlier, and the tree order is the order
+`dependent_order` hands to emission, so an address-only comparison let the same
+input declare its types in different orders. The nested comparison stops
+`SHAPE_DEPTH` (8) levels down and falls back to the address there, which bounds
+one comparison on a cyclic or heavily shared type graph. A record the C grammar
+declared and its completion (and an alias made of it while incomplete) share one
+completion link and so one identity, but not one shape, so a type carrying such
+a link orders by id, then after every unlinked type of that id, then by the
+link's address, never by shape: the order of two identity classes cannot depend
+on which member of a class is compared.
+`tests/stages/kuna-typeorder.xml` pins the order on a DWARF fixture.
+
 (kuna) **A record the C grammar declared completes the pointers built to it.**
 Upstream completes a struct or union in place (`TypeFactory::setFields`), so a
 pointer built to the incomplete stub sees the members as soon as they arrive. An
@@ -1482,14 +1500,21 @@ states the signature its target must have, and when `calltargettype` is on,
 final one: it runs once, in the one-shot tail, after `ActionNameVars` and
 directly before `ActionSetCasts`, and never feeds the inference lattice or
 `ActionDeindirect`'s forced prototypes. For each indirect call whose prototype
-is neither locked nor variadic it builds `R (*)(A1,..,An)` with
+is neither variadic nor locked, or was stated at the call itself (`override
+prototype`, the `callproto` assertion, which types the call but not the value
+it goes through), it builds `R (*)(A1,..,An)` with
 `TypeFactory::getTypeCode(PrototypePieces)`: `R` is the high type of the call's
 output, or `void` when it has none, and each `Ai` the high type of the argument
 in that slot as it is read there -- except an argument printed inline as an
 address computed from a base (`&v4`, `&a1[2]`, a `PTRSUB` or `PTRADD`), whose C
 type is the base's rather than its own, which takes `void *`. A call any of
 whose types has no C spelling (a partial or union-resolving type, an array, a
-`TYPE_SPACEBASE`, a scalar of a width C has no type for) is skipped.
+`TYPE_SPACEBASE`, a scalar of a width C has no type for) is skipped. A call
+whose prototype was stated at the call takes `R` and the `Ai` from that
+declaration instead (a variadic one its fixed parameters and `...`, the
+arguments past them passed as printed), and the storage its declared
+parameters were given stands in for the argument storage such a call never
+recovers.
 
 The type must also be one a C compiler would pass the same way. Laid out under
 the default model, each parameter of the built prototype has to fall inside the
@@ -1716,7 +1741,7 @@ recovered as a pointer into the declaration when its sink is typed as a
 pointer, and otherwise prints as the bare address, the same as for an
 aggregate the DWARF tier declared.
 
-Two (kuna) escapes hook exactly here, both always on:
+Three (kuna) escapes hook exactly here; the first two are always on:
 
 - **(kuna GH-6930)** The function-entry escape: the
   bit-transitions rejection is skipped when the constant resolves *exactly* to
@@ -1756,6 +1781,25 @@ Two (kuna) escapes hook exactly here, both always on:
   number *anywhere*, which `ActionConstantPtr::apply` collects once per pass from
   the constant snapshot it already takes
   (`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs`).
+- **(kuna `blobs`)** The embedded-file escape: a constant equal to the first
+  address of an embedded image or archive (chapter 01, `blobs`) skips both the
+  pointer-lower-bound rejection and the bit-transitions rejection
+  (`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
+  (is_pointer)`). A shared object linked at base zero keeps its read-only data
+  in the first page, below the bound every x86 processor spec sets, so the
+  function returning a PNG at `0x2d0` printed `return 0x2d0;` whether or not a
+  symbol named the array; and `0x3c0` is a single run of set bits. The address
+  set is exact starts only, shared from `Architecture::blob_entries`, and the
+  skip is declined on the same two readings as the function-entry escape
+  (`kuna_inferfuncentry.rs (entry_escape_applies)`): the reader is not
+  arithmetic, and the function reads that value as a number nowhere else.
+  The escape cannot tell the address from an equal number: a function that
+  never touches the file but returns, stores, passes or compares that value
+  (`return 0x370;` beside a PNG at `0x370`) prints the file's name too, and
+  the return or parameter type becomes `unsigned char *`. Only a file starting
+  in the first page or at a mask-like address is exposed, which in practice
+  means the small shared objects whose read-only data `ld.lld` places first.
+  Empty, so inert, under `blobs off`.
 - **(kuna GH-8471)** Thumb function-pointer preservation: a Thumb function pointer
   is `fn|1`; constant-pointer recovery produces `PTRSUB(fn) + 1`, and the
   simplification rule that normally deletes out-of-bounds PTRSUBs would
@@ -2057,7 +2101,12 @@ inline `newobject` into, such as `mallocgcSmallScanNoHeaderSC4`; the suffix is
 held to plain alphanumerics) — the descriptor argument must be a constant
 address (or one `COPY` away — the lifted `lea`), must point at the START of a
 `type:<name>` data symbol, and `<name>` must be held by the type factory as a
-complete named record (`TYPE_STRUCT`, non-zero size); a mallocgc-family site
+complete named record (`TYPE_STRUCT`, non-zero size). The symbol spells a
+named type with its full import path (`type:internal/poll.FD`) and the
+harvest interns the reflection spelling (`poll.FD`), so the directory part of
+the named type's own qualifier, before any type arguments, is dropped first
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_gonewtype.rs (harvest_spelling)`); a composite spelling keeps its path
+and refuses below. A mallocgc-family site
 must additionally state a constant size equal to the record's. The site is
 then locked to `<name> *` at the output's width. Pointer, array and primitive
 descriptor spellings
@@ -2071,6 +2120,22 @@ rendering that follows from them (field reads become `->field`); it moves or
 deletes no statement. Off Go images it is structurally inert: the callee name,
 the `type:` symbol and the interned record only exist where the Go harvest
 ran.
+
+The second client, the call-site arm of [`swifttypes`](../options.md)
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_swiftmetaresult.rs
+(contribute)`), locks the result of every call to a Swift type metadata
+accessor (a callee named `….type_metadata_accessor`) or to an instantiation
+helper (`__swift_instantiateConcreteTypeFromMangledName…`) to
+`swift.type_metadata *`, the record the metadata pass interned (chapter 01).
+Such a callee returns the metadata first whatever arguments it takes, so the
+result is a stated fact while the arguments stay recovered. It refuses a
+result wider or narrower than a pointer, one joined through a phi with a
+value of other provenance. A read outside the 16-byte record (the value
+witness table word below it, a field offset vector or generic argument past
+it) would print as an element of an array of records, so the client runs
+only while `valuewitness` is on, which keeps every such offset off a
+`swift.type_metadata *` a byte offset (`kuna_valuewitness::keeps_offset`). Off Swift images it is inert: no callee
+carries those names and the record is not interned.
 
 **(kuna) The interface type-word guard.** A Go interface value is a two-word
 `(type, data)` pair, and a `&type:T` descriptor global — the type word — is
@@ -3462,6 +3527,15 @@ rule `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_1.rs
 (RuleRangeMeld)`, which pulls two comparison ranges back to a common Varnode
 and intersects/unions them into one comparison.
 
+A Varnode's non-zero mask is itself a range: `set_nz_mask` turns a mask with
+one run of set bits into `[0, mask + stride)` with the stride `2^k`, `k` being
+the mask's lowest set bit. The step is a 32-bit signed integer, so the largest
+stride it holds is `2^30`. A mask whose lowest set bit is higher (the value of
+`x << 35` in a 64-bit register, the form a RISC-V bit test takes) forms no
+range: `set_nz_mask` reports failure and the guard analysis keeps the range it
+pulled back, without the mask's refinement. Upstream shifts the 32-bit step by
+`k` unchecked, which is undefined for `k >= 32`.
+
 **The value-set solver.** On top of `CircleRange` sits an abstract
 interpretation layer (`ValueSet`, `ValueSetSolver`, same file): a
 Bourdoncle-style weak topological ordering over the SSA constraint graph, with
@@ -3912,3 +3986,24 @@ drives them (`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs
 (Heritage::heritage)`) is a documented stub — inert for every architecture
 without split records, which is the entire current test surface, so no live
 output depends on it yet.
+
+**Type vote** (`typevote`, default on; kuna;
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_typevote.rs (ActionTypeVote)`,
+run after the merge passes, before names and casts): a variable whose type is
+still `undefinedN` (1, 2, 4 or 8 bytes, no instance type-locked or constant)
+takes the type the ops on its instances vote for. Logical shifts and zero
+extension vote unsigned; arithmetic shifts, sign extension, signed compares,
+divides and overflow tests vote signed; a COPY from or to an `int`/`uint`
+value votes its signedness with weight 3; other integer arithmetic, bitwise
+ops and equality tests vote numeric; float ops vote float. Integer votes give
+`int`/`uint` of the size (signed unless unsigned outvotes it), float votes at
+4 or 8 bytes give `float`/`double`, and no vote leaves the variable undefined.
+The prototype stays the prototype's: a value that reaches a RETURN (through
+copies, register pair joins, extensions and truncations) is not voted, and a
+parameter takes only an unsigned vote, since an undefined parameter already
+prints as unsigned in the signature. A piece of a union (`TYPE_PARTIALUNION`,
+which also prints as `undefinedN`) keeps its type, because its union field
+reads hang on it. Merge copies added after type inference start untyped, so a
+parameter printed `unsigned int a1` read as `(unsigned int)a1 >> 0x18`; voted,
+it reads `a1 >> 0x18`. The variables left undefined are union pieces,
+odd-sized (3, 5, 6, 7 byte) values and returned values.

@@ -133,11 +133,40 @@ pub fn class_name(img: &MachoImage, ro: u64) -> Option<String> {
 /// `Some(0)` when the class defines no methods.
 pub fn base_methods(img: &MachoImage, ro: u64) -> Option<u64> {
     let p = img.read_ptr(ro.wrapping_add(class_ro_t::BASE_METHODS))?;
-    if p == 0 {
+    if p == 0 || p & 1 != 0 {
         None
     } else {
         Some(p)
     }
+}
+
+/// Every `method_list_t` of `class_ro_t.baseMethods`: the one list it points
+/// at, or — with its low bit set, a dyld shared cache's preattached categories
+/// — the lists a `relative_list_list_t` names: `u32 entsizeAndFlags, u32 count`
+/// then `count` eight-byte entries whose `>> 16` is the list's offset from
+/// the entry itself (the low 16 bits are the image index).
+pub fn method_lists(img: &MachoImage, ro: u64) -> Vec<u64> {
+    let Some(p) = img.read_ptr(ro.wrapping_add(class_ro_t::BASE_METHODS)) else { return Vec::new() };
+    if p == 0 {
+        return Vec::new();
+    }
+    if p & 1 == 0 {
+        return vec![p];
+    }
+    let header = p & !1;
+    let (Some(ent), Some(count)) = (img.read_u32(header), img.read_u32(header.wrapping_add(4))) else {
+        return Vec::new();
+    };
+    if ent & 0xffff != 8 {
+        return Vec::new();
+    }
+    (0..count.min(1024) as u64)
+        .filter_map(|i| {
+            let at = header.wrapping_add(8).wrapping_add(i * 8);
+            let entry = img.read_ptr(at)? as i64;
+            Some(at.wrapping_add((entry >> 16) as u64))
+        })
+        .collect()
 }
 
 /// The `baseProperties` (`property_list_t*`) at `class_ro_t.baseProperties`.

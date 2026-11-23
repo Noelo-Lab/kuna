@@ -74,3 +74,28 @@ fn other_subcommands_note_the_hint_on_stderr_only() {
     assert!(err.contains(PYI_HINT), "{err}");
     assert!(!out.contains("pyinstxtractor"), "{out}");
 }
+
+#[test]
+fn a_rust_image_without_comment_reports_its_release_and_crates() {
+    let bin = fixture("rust_crate_paths_x86_64");
+    let (out, err, code) = run_kuna(&["functions", &bin, "--summary", "--json"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("\"id\": \"rust\""), "{out}");
+    assert!(out.contains("\"version\": \"1.95.0\""), "{out}");
+    assert!(out.contains("Rust binary (rustc 1.95.0): output defaults to --language rust"), "{out}");
+    assert!(out.contains("\"name\": \"arrayvec\""), "{out}");
+    assert!(out.contains("\"version\": \"0.7.6\""), "{out}");
+
+    let (text, _, _) = run_kuna(&["functions", &bin, "--summary"]);
+    assert!(text.contains("runtime\trust\tRust binary (rustc 1.95.0)"), "{text}");
+    assert!(text.contains("crate\tarrayvec\t0.7.6"), "{text}");
+}
+
+#[test]
+fn a_rust_image_with_comment_reports_the_recorded_version() {
+    let bin = fixture("rust_fmt_args_real_x86_64");
+    let (out, err, code) = run_kuna(&["functions", &bin, "--summary", "--json"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("\"version\": \"1.93.1\""), "{out}");
+    assert!(out.contains("\"crates\": []"), "{out}");
+}

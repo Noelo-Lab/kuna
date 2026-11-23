@@ -1,0 +1,206 @@
+{
+  "tools": {
+    "assembler": {
+      "name": "mips64-octeon-linux-gnu-as",
+      "sha256": "96b3d7b45a26a3b53aba77e56a372d30c8fa92f06092a2ca78a39d1e97ad465a",
+      "version": "GNU assembler (GNU Binutils) 2.30"
+    },
+    "linker": {
+      "name": "ld",
+      "sha256": "2865846ece2642439cfae404ef930bfc5494c4babd2347757878b8f0f8f761cf",
+      "version": "GNU ld (GNU Binutils) 2.47.20260726"
+    },
+    "objcopy": {
+      "name": "objcopy",
+      "sha256": "f4cee3fbde6906b10a4dba6c3543281fb5ccdbab4d8ba1c6acc560b4131f2ba2",
+      "version": "GNU objcopy (GNU Binutils) 2.47.20260726"
+    },
+    "nm": {
+      "name": "nm",
+      "sha256": "1fd313eeb35b9fbda41a3f9a51af9c8b1c1d471927b7f3046580d15937155f0a",
+      "version": "GNU nm (GNU Binutils) 2.47.20260726"
+    }
+  },
+  "fixtures": [
+    {
+      "source": "foreign-copy-64.S",
+      "source_sha256": "b940e0b030ea47d04568fc5da838d28b100cde07df9fb3cb93f0690d0dbb49ef",
+      "binary": "foreign-copy-64.bin",
+      "binary_sha256": "c6bbac3a70805c891f11ef3f20f6a5c90edfb033c1aef04aa96505aa305aa15c",
+      "elf_sha256": "cd96a4e5539310d931c9b2e718979db619026584413bc51e61eb6f0ecfd909de",
+      "base": 4194304,
+      "size": 40,
+      "abi": "64",
+      "kind": "foreign-copy",
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "foreign-copy-64.o",
+          "foreign-copy-64.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "foreign-copy-64.elf",
+          "foreign-copy-64.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "foreign-copy-64.elf",
+          "foreign-copy-64.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "foreign-copy-n32.S",
+      "source_sha256": "591497ec41af9738175799de2e26c91882f9c7f890d9207cfb3a0b55c5ca4ac7",
+      "binary": "foreign-copy-n32.bin",
+      "binary_sha256": "c6bbac3a70805c891f11ef3f20f6a5c90edfb033c1aef04aa96505aa305aa15c",
+      "elf_sha256": "2226cdb8ee1e760bd4e3dff1faab8d937f66cdd9704dc743bc8e6c53e9b66328",
+      "base": 4194304,
+      "size": 40,
+      "abi": "n32",
+      "kind": "foreign-copy",
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=n32",
+          "-o",
+          "foreign-copy-n32.o",
+          "foreign-copy-n32.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf32btsmipn32",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "foreign-copy-n32.elf",
+          "foreign-copy-n32.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "foreign-copy-n32.elf",
+          "foreign-copy-n32.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "narrow-64.S",
+      "source_sha256": "615da087f0f70e38acae50d73b2915ac340b04980045e0f5f4f2e182cc039b6d",
+      "binary": "narrow-64.bin",
+      "binary_sha256": "b811d66e024750dc91c631442e41cfb9115930a3281092ba788638c73303dac4",
+      "elf_sha256": "703350ba09bb489e2093cd849e8f51ae539159a4992d96e2bd7f4b17b0b2c405",
+      "base": 4194304,
+      "size": 52,
+      "abi": "64",
+      "kind": "narrow",
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "narrow-64.o",
+          "narrow-64.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "narrow-64.elf",
+          "narrow-64.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "narrow-64.elf",
+          "narrow-64.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "narrow-n32.S",
+      "source_sha256": "6acc72740bed56ea569cbc1f50be15b9236cfef93c3e08c0bb5aafaa6d11d7ed",
+      "binary": "narrow-n32.bin",
+      "binary_sha256": "b811d66e024750dc91c631442e41cfb9115930a3281092ba788638c73303dac4",
+      "elf_sha256": "3763e84b07b7902a0a1de6ed9f7a49ae2c248576cd4f29deb051043f6844d869",
+      "base": 4194304,
+      "size": 52,
+      "abi": "n32",
+      "kind": "narrow",
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=n32",
+          "-o",
+          "narrow-n32.o",
+          "narrow-n32.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf32btsmipn32",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "narrow-n32.elf",
+          "narrow-n32.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "narrow-n32.elf",
+          "narrow-n32.text.bin"
+        ]
+      ]
+    }
+  ]
+}

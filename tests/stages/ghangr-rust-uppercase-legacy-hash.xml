@@ -1,0 +1,40 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+    <bytechunk space="ram" offset="0x100040" readonly="true">5389fbe82800000001c3bf44332211e82c000000bf88776655e83200000089d85bc366662e0f1f8400000000000f1f00b842000000c3662e0f1f840000000000c366662e0f1f8400000000000f1f4000c3</bytechunk>
+    <symbol space="ram" offset="0x100040" name="caller" />
+    <symbol space="ram" offset="0x100070" name="real_work" />
+    <symbol space="ram" offset="0x100080" name="core::ptr::drop_in_place::hABCDEF0123456789" />
+    <symbol space="ram" offset="0x100090" name="core::ptr::drop_in_place::h0123456789abcdef" />
+  </binaryimage>
+<script>
+<com>load function caller</com><com>decompile</com><com>print C</com>
+<com>option cleanupcode off</com><com>decompile</com><com>print C</com>
+
+<com>clear architecture</com>
+<com>load file tests/fixtures/rust-uppercase-legacy/names.elf</com>
+<com>read symbols</com>
+<com>load function 0x401000</com><com>decompile</com><com>print C</com>
+<com>load function 0x401010</com><com>decompile</com><com>print C</com>
+<com>load function 0x401020</com><com>decompile</com><com>print C</com>
+<com>load function 0x401030</com><com>decompile</com><com>print C</com>
+<com>load function 0x401040</com><com>decompile</com><com>print C</com>
+<com>load function 0x401050</com><com>decompile</com><com>print C</com>
+<com>load function 0x401060</com><com>decompile</com><com>print C</com>
+<com>load function 0x401070</com><com>decompile</com><com>print C</com>
+<com>load function 0x401080</com><com>decompile</com><com>print C</com>
+<com>load function 0x401090</com><com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="A final uppercase component remains a function name" min="1" max="1">\bdemo::hABCDEF0123456789\(void\)</stringmatch>
+<stringmatch name="A final component with mixed-case digits remains a function name" min="1" max="1">\bmixed::hAbCdE0123456789f\(void\)</stringmatch>
+<stringmatch name="A true Rust hash elides only the compiler suffix after an uppercase member" min="1" max="1">\bmember::hABCDEF0123456789\(void\)</stringmatch>
+<stringmatch name="A lowercase legacy compiler hash remains elided" min="1" max="1">\blower::actual\(void\)</stringmatch>
+<stringmatch name="An Itanium function can itself have an uppercase hash-shaped identifier" min="1" max="1">\bcpp_demo::hABCDEF0123456789\(void\)</stringmatch>
+<stringmatch name="An ordinary Itanium name is unchanged by Rust hash matching" min="1" max="1">\bcpp_ok::go\(void\)</stringmatch>
+<stringmatch name="An uppercase name also survives an accepted LLVM suffix" min="1" max="1">\bllvm::hABCDEF0123456789\(void\)</stringmatch>
+<stringmatch name="A v0 name is unchanged by legacy hash matching" min="1" max="1">\bsimple::main\(void\)</stringmatch>
+<stringmatch name="An MSVC name is unchanged by legacy hash matching" min="1" max="1">\bBar::foo\(Bar \*this\)</stringmatch>
+<stringmatch name="A true lowercase LLVM hash stays elided" min="1" max="1">\blowerllvm::actual\(void\)</stringmatch>
+<stringmatch name="Uppercase hash user call survives default and off" min="2" max="2">  core::ptr::drop_in_place::hABCDEF0123456789\(0x11223344\);</stringmatch>
+  <stringmatch name="Lowercase hash cleanup call stays optional" min="1" max="1">  core::ptr::drop_in_place::h0123456789abcdef\(0x55667788\);</stringmatch>
+  <stringmatch name="Hash guards retain the ordinary work call" min="2" max="2">real_work</stringmatch>
+</decompilertest>

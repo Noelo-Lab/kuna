@@ -1,0 +1,114 @@
+<decompilertest>
+<!--
+    Kuna #1626: on AArch64 the memory-tagging instructions lost their tag
+    effect, and barriers and hints printed under their SLEIGH instruction
+    names.  AARCH64.pspec leaves the ShowMemTag context at 0, under which
+    irg/addg/subg/gmi/ldg lift as a pointer copy or add and stg/st2g as
+    nothing, so `return __arm_mte_create_random_tag(p, 0);` decompiled to
+    `return a0;` and `__arm_mte_set_tag(p)` to an empty `void f(void)`.
+
+    Stage / sub-stage: P9 naming-policy (`option acleintrinsics`, AArch64
+    only, default on), with a P2 context paint (`kuna_memtag`).  On sets
+    ShowMemTag to 1 before a function is lifted, so each tag instruction is
+    one user op whose result is the tagged pointer, and
+    `kuna_acleintrinsics` prints the barrier, hint and tag user ops as the
+    ACLE intrinsics of <arm_acle.h>, recombining a barrier's domain and
+    type operands into the 4-bit CRm.
+
+    First chunk: clang 22 -O2 for aarch64-linux-gnu with
+    -march=armv8.5-a+memtag over
+      void barrier(volatile int *p) { *p = 1; __dmb(11); __dsb(15); __isb(15); }
+      void idle(void) { __wfi(); __yield(); __wfe(); __sev(); __sevl(); }
+      void *tag(void *p) { return __arm_mte_create_random_tag(p, 0); }
+      void *inc(void *p) { return __arm_mte_increment_tag(p, 3); }
+      unsigned long excl(void *p, unsigned long m) { return __arm_mte_exclude_tag(p, m); }
+      void settag(void *p) { __arm_mte_set_tag(p); }
+      void *gettag(void *p) { return __arm_mte_get_tag(p); }
+      void *alloc16(void *p) { void *q = __arm_mte_create_random_tag(p,
+          __arm_mte_exclude_tag(p, 0)); __arm_mte_set_tag(q); return q; }
+    Second chunk, hand-assembled shapes no intrinsic produces:
+      store_other  stg x1,[x0]; ret        store_pair  st2g x0,[x0],#32; ret
+      load_other   ldg x1,[x0]; mov x0,x1; ret
+      add_off      addg x0,x0,#32,#1; ret  sub_off     subg x0,x1,#16,#2; ret
+      isb_one      isb #1; ret             clear2      stzg x0,[x0]; ret
+
+    Pass 1 (option acleintrinsics off): the output before this option.
+    Pass 2 (default): the intrinsics; a tag load or store whose pointer is
+    not its own granule address keeps its user-op name.
+-->
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<bytechunk space="ram" offset="0x100000" readonly="true">
+28008052080000b9bf3b03d59f3f03d5df3f03d5c0035fd67f2003d53f2003d5
+5f2003d59f2003d5bf2003d5c0035fd60010df9ac0035fd6000c8091c0035fd6
+0014c19ac0035fd6000820d9c0035fd6000060d9c0035fd60814df9a0010c89a
+000820d9c0035fd6
+</bytechunk>
+<bytechunk space="ram" offset="0x100100" readonly="true">
+010820d9c0035fd60024a0d9c0035fd6010060d9e00301aac0035fd600048291
+c0035fd6200881d1c0035fd6df3103d5c0035fd6000860d9c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="barrier"/>
+<symbol space="ram" offset="0x100018" name="idle"/>
+<symbol space="ram" offset="0x100030" name="tag"/>
+<symbol space="ram" offset="0x100038" name="inc"/>
+<symbol space="ram" offset="0x100040" name="excl"/>
+<symbol space="ram" offset="0x100048" name="settag"/>
+<symbol space="ram" offset="0x100050" name="gettag"/>
+<symbol space="ram" offset="0x100058" name="alloc16"/>
+<symbol space="ram" offset="0x100100" name="store_other"/>
+<symbol space="ram" offset="0x100108" name="store_pair"/>
+<symbol space="ram" offset="0x100110" name="load_other"/>
+<symbol space="ram" offset="0x10011c" name="add_off"/>
+<symbol space="ram" offset="0x100124" name="sub_off"/>
+<symbol space="ram" offset="0x10012c" name="isb_one"/>
+<symbol space="ram" offset="0x100134" name="clear2"/>
+</binaryimage>
+<script>
+  <com>option acleintrinsics off</com>
+  <com>lo fu barrier</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu idle</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu tag</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu inc</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu excl</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu settag</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu gettag</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu alloc16</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu store_other</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu store_pair</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu load_other</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu add_off</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu sub_off</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu isb_one</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu clear2</com>  <com>decompile</com>  <com>print C</com>
+  <com>option acleintrinsics on</com>
+  <com>lo fu barrier</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu idle</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu tag</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu inc</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu excl</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu settag</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu gettag</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu alloc16</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu store_other</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu store_pair</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu load_other</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu add_off</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu sub_off</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu isb_one</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu clear2</com>  <com>decompile</com>  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ACLE #1: off, a tagging function returns its argument unchanged" min="3" max="3">^\s*return a0;$</stringmatch>
+<stringmatch name="ACLE #2: off, barriers print under their SLEIGH names" min="4" max="4">DataMemoryBarrier\(2,3\);|DataSynchronizationBarrier\(3,3,0\);|InstructionSynchronizationBarrier\(\);</stringmatch>
+<stringmatch name="ACLE #3: off, hints print under their SLEIGH names" min="5" max="5">WaitForInterrupt\(\);|Yield\(\);|WaitForEvent\(\);|SendEvent\(\);|SendEventLocally\(\);</stringmatch>
+<stringmatch name="ACLE #4: irg is a call that produces the returned pointer" min="1" max="1">^\s*return __arm_mte_create_random_tag\(a0,0\);$</stringmatch>
+<stringmatch name="ACLE #5: barriers print with their CRm recombined" min="3" max="3">^\s*__dmb\(11\);$|^\s*__dsb\(15\);$|^\s*__isb\(15\);$</stringmatch>
+<stringmatch name="ACLE #6: the isb option comes from the instruction" min="1" max="1">^\s*__isb\(1\);$</stringmatch>
+<stringmatch name="ACLE #7: hints print as intrinsics" min="5" max="5">^\s*__wfi\(\);$|^\s*__yield\(\);$|^\s*__wfe\(\);$|^\s*__sev\(\);$|^\s*__sevl\(\);$</stringmatch>
+<stringmatch name="ACLE #8: addg and subg increment the tag of the moved pointer" min="3" max="3">return __arm_mte_increment_tag\(a0,3\);|return __arm_mte_increment_tag\(a0 \+ 0x20,1\);|return __arm_mte_increment_tag\(a1 \+ -0x10,2\);</stringmatch>
+<stringmatch name="ACLE #9: gmi and ldg produce their results" min="2" max="2">return __arm_mte_exclude_tag\(a0,a1\);|return __arm_mte_get_tag\(a0\);</stringmatch>
+<stringmatch name="ACLE #10: a pointer tagging its own granule is __arm_mte_set_tag" min="4" max="4">^\s*__arm_mte_set_tag\((a0|v1)\);$</stringmatch>
+<stringmatch name="ACLE #11: the tagged pointer flows from irg through stg to the return" min="1" max="1">v1 = __arm_mte_create_random_tag\(a0,__arm_mte_exclude_tag\(a0,0\)\);</stringmatch>
+<stringmatch name="ACLE #12: a tag store or load of another granule keeps its user-op name" min="3" max="3">^\s*StorePtrTag\(a0,a1\);$|^\s*StorePtrTag\(a0 \+ 0x10,a0\);$|return LoadPtrTag\(a1,a0\);</stringmatch>
+<stringmatch name="ACLE #13: no alignment-fault branch" min="0" max="0">AlignmentFault|if \(</stringmatch>
+</decompilertest>

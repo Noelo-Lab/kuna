@@ -7381,14 +7381,10 @@ is sf=1 & op=0 & S=0 & b_2328=0b100011 & b_22=0 & b_1621 & b_1013 & Rd_GPR64xsp 
 # " & b_1415=0" is not required by the spec (op3 doesn't have any requirements and is not used)
 [ shifted_imm = b_1621 << $(LOG2_TAG_GRANULE); ]
 {
-	# we don't actually modify the target register, so Ghidra understands the pointer target is still the same.
-	# pseudo-ops let us do that, but it means that the decompiler can put an unintuitive value in the
-	# "CopyPtrTag_AddToPtrTag_Exclude" argument, e.g. "param_2 + 0x20".
-	uimm4:1 = b_1013;
-	exclude:2 = 0;
-	Or2BytesWithExcludedTags(exclude);
-	Rd_GPR64xsp = Rn_GPR64xsp + shifted_imm;
-	CopyPtrTag_AddToPtrTag_Exclude(Rd_GPR64xsp, Rn_GPR64xsp, uimm4, exclude);
+	# (kuna) the tagged pointer is the op's result, so it reaches every later use
+	uimm4:8 = b_1013;
+	tmp:8 = Rn_GPR64xsp + shifted_imm;
+	Rd_GPR64xsp = AddPtrTag(tmp, uimm4);
 }
 
 }
@@ -7671,11 +7667,7 @@ with : ShowMemTag=1 {
 :gmi Rd_GPR64, Rn_GPR64xsp, Rm_GPR64
 is sf=1 & b_30=0 & S=0 & b_2128=0b11010110 & Rm_GPR64 & b_1015=0b000101 & Rn_GPR64xsp & Rd_GPR64
 {
-	# get tag from address
-	#tag:8 = (Rn_GPR64xsp >> 56) & 0xf;
-	tag:8 = 0;
-	AllocationTagFromAddress(tag, Rn_GPR64xsp);
-	Rd_GPR64 = Rm_GPR64 | (1 << tag);
+	Rd_GPR64 = ExcludePtrTag(Rn_GPR64xsp, Rm_GPR64);
 }
 
 }
@@ -7706,11 +7698,9 @@ with : ShowMemTag=1 {
 :irg Rd_GPR64xsp, Rn_GPR64xsp^OPTIONAL_XM
 is sf=1 & b_30=0 & S=0 & b_2128=0b11010110 & OPTIONAL_XM & b_1015=0b000100 & Rn_GPR64xsp & Rd_GPR64xsp
 {
+	# (kuna) the tagged pointer is the op's result, so it reaches every later use
 	tmp:8 = OPTIONAL_XM;
-	exclude:2 = tmp:2;
-	Or2BytesWithExcludedTags(exclude);
-	Rd_GPR64xsp = Rn_GPR64xsp;
-	RandomizePtrTag_Exclude(Rd_GPR64xsp, exclude);
+	Rd_GPR64xsp = RandomizePtrTag_Exclude(Rn_GPR64xsp, tmp);
 }
 
 }
@@ -7737,9 +7727,7 @@ with : ShowMemTag=1 {
 is b_2131=0b11011001011 & addr_granuleSIMM & b_1011=0b00 & Rt_GPR64
 {
 	tmp:8 = addr_granuleSIMM;
-	Align(tmp, $(TAG_GRANULE));
-	tag:8 = LoadMemTag(tmp);
-	SetPtrTag(Rt_GPR64, tag);
+	Rt_GPR64 = LoadPtrTag(Rt_GPR64, tmp);
 }
 
 }
@@ -7842,11 +7830,7 @@ is b_2131=0b11111000001 & Rs_GPR64 & b_1015=0x28 & Rn_GPR64 & Rt_GPR64xsp {
 }
 
 
-addrGranuleIndexed_checkAlignment: addrGranuleIndexed is Rn=0b11111 & addrGranuleIndexed { export addrGranuleIndexed; }  # don't check alignment if we're working with the stack, it's assumed to be 16-byte-aligned, though that is technically optional
-addrGranuleIndexed_checkAlignment: addrGranuleIndexed is Rn & addrGranuleIndexed { tmp:8 = addrGranuleIndexed; RequireGranuleAlignment(tmp); export tmp; }  # if the address in tmp is derived from sp, the error condition in RequireGranuleAlignment can still be an unreachable block; it doesn't seem possible to avoid the decompiler message in that case
 
-addrPairGranuleIndexed_checkAlignment: addrPairGranuleIndexed is Rn=0b11111 & addrPairGranuleIndexed { export addrPairGranuleIndexed; }  # don't check alignment if we're working with the stack, it's assumed to be 16-byte-aligned, though that is technically optional
-addrPairGranuleIndexed_checkAlignment: addrPairGranuleIndexed is Rn & addrPairGranuleIndexed { tmp:8 = addrPairGranuleIndexed; RequireGranuleAlignment(tmp); export tmp; }  # if the address in tmp is derived from sp, the error condition in RequireGranuleAlignment can still be an unreachable block; it doesn't seem possible to avoid the decompiler message in that case
 
 
 with : ShowMemTag=1 {
@@ -7856,20 +7840,19 @@ with : ShowMemTag=1 {
 # C6.2.291 ST2G page C6-1811 line 106987 MATCH xd9a00800/mask=xffe00c00
 # CONSTRUCT xd9a00000/mask=xffe00000 MATCHED 3 DOCUMENTED OPCODES
 
-:st2g Rt_GPR64xsp, addrGranuleIndexed_checkAlignment
-is b_2131=0b11011001101 & (b_10=1 | b_11=1) & Rt_GPR64xsp & addrGranuleIndexed_checkAlignment
+:st2g Rt_GPR64xsp, addrGranuleIndexed
+is b_2131=0b11011001101 & (b_10=1 | b_11=1) & Rt_GPR64xsp & addrGranuleIndexed
 {
-	# in case Rt == Rn, get the tag first so any updates in addrGranuleIndexed_checkAlignment don't affect it
-	tag:8 = 0;
-	AllocationTagFromAddress(tag, Rt_GPR64xsp);
+	# in case Rt == Rn, get the tag first so any updates in addrGranuleIndexed don't affect it
+	data:8 = Rt_GPR64xsp;
 
-	build addrGranuleIndexed_checkAlignment;
+	build addrGranuleIndexed;
 
-	# this instruction throws an alignment fault if address is not granule-aligned
-	address:8 = addrGranuleIndexed_checkAlignment;
+	# (kuna) the alignment fault a misaligned address raises is not modelled: its branch is in no source
+	address:8 = addrGranuleIndexed;
 
-	StoreMemTag(address, tag );
-	StoreMemTag(address + $(TAG_GRANULE), tag );
+	StorePtrTag(address, data);
+	StorePtrTag(address + $(TAG_GRANULE), data);
 }
 
 }
@@ -7896,19 +7879,18 @@ with : ShowMemTag=1 {
 # C6.2.304 STG page C6-1836 line 108242 MATCH xd9200800/mask=xffe00c00
 # CONSTRUCT xd9200000/mask=xffe00000 MATCHED 3 DOCUMENTED OPCODES
 
-:stg Rt_GPR64xsp, addrGranuleIndexed_checkAlignment
-is b_2131=0b11011001001 & (b_10=1 | b_11=1) & Rt_GPR64xsp & addrGranuleIndexed_checkAlignment
+:stg Rt_GPR64xsp, addrGranuleIndexed
+is b_2131=0b11011001001 & (b_10=1 | b_11=1) & Rt_GPR64xsp & addrGranuleIndexed
 {
-	# in case Rt == Rn, get the tag first so any updates in addrGranuleIndexed_checkAlignment don't affect it
-	tag:8 = 0;
-	AllocationTagFromAddress(tag, Rt_GPR64xsp);
+	# in case Rt == Rn, get the tag first so any updates in addrGranuleIndexed don't affect it
+	data:8 = Rt_GPR64xsp;
 
-	build addrGranuleIndexed_checkAlignment;
+	build addrGranuleIndexed;
 
-	# this instruction throws an alignment fault if address is not granule-aligned
-	address:8 = addrGranuleIndexed_checkAlignment;
+	# (kuna) the alignment fault a misaligned address raises is not modelled: its branch is in no source
+	address:8 = addrGranuleIndexed;
 
-	StoreMemTag(address, tag );
+	StorePtrTag(address, data);
 }
 
 }
@@ -7981,25 +7963,22 @@ with : ShowMemTag=1 {
 # C6.2.306 STGP page C6-1839 line 108445 MATCH x69000000/mask=xffc00000
 # CONSTRUCT x68000000/mask=xfe400000 MATCHED 3 DOCUMENTED OPCODES
 
-:stgp Rt_GPR64, Rt2_GPR64, addrPairGranuleIndexed_checkAlignment
-is b_3031=0b01 & b_2529=0b10100 & (b_23=1 | b_24=1) & b_22=0 & Rt2_GPR64 & addrPairGranuleIndexed_checkAlignment & Rt_GPR64
+:stgp Rt_GPR64, Rt2_GPR64, addrPairGranuleIndexed
+is b_3031=0b01 & b_2529=0b10100 & (b_23=1 | b_24=1) & b_22=0 & Rt2_GPR64 & addrPairGranuleIndexed & Rt_GPR64
 {
-	# Read all registers before addrPairGranuleIndexed_checkAlignment takes effect, or pre-index writeback could modify their values
+	# Read all registers before addrPairGranuleIndexed takes effect, or pre-index writeback could modify their values
 	# (unusually, this instruction does not have unpredictable behavior in that case).
 	data1:8 = Rt_GPR64;
 	data2:8 = Rt2_GPR64;
 
-	build addrPairGranuleIndexed_checkAlignment;
-	address:8 = addrPairGranuleIndexed_checkAlignment;  # StoreMemTag requires granule alignment
-
-	tag:8 = 0;
-	AllocationTagFromAddress(tag, address);
+	build addrPairGranuleIndexed;
+	address:8 = addrPairGranuleIndexed;  # StoreMemTag requires granule alignment
 
 	# The decompiler apparently doesn't show changes to [sp+X] unless the new values
 	# are used in the function.  However, the changes really are happening.
 	*address = data1;
 	*(address + 8) = data2;
-	StoreMemTag(address, tag);
+	StorePtrTag(address, address);
 }
 
 }
@@ -8038,16 +8017,15 @@ with : ShowMemTag=1 {
 # C6.2.353 STZ2G page C6-1935 line 113626 MATCH xd9e00800/mask=xffe00c00
 # CONSTRUCT xd9e00000/mask=xffe00000 MATCHED 3 DOCUMENTED OPCODES
 
-:stz2g Rt_GPR64xsp, addrGranuleIndexed_checkAlignment
-is b_2131=0b11011001111 & (b_10=1 | b_11=1) & addrGranuleIndexed_checkAlignment & Rt_GPR64xsp
+:stz2g Rt_GPR64xsp, addrGranuleIndexed
+is b_2131=0b11011001111 & (b_10=1 | b_11=1) & addrGranuleIndexed & Rt_GPR64xsp
 {
-	tag:8 = 0;
-	AllocationTagFromAddress(tag, Rt_GPR64xsp);
+	data:8 = Rt_GPR64xsp;
 
 	# Although the zero-storage is not required to be granule-aligned, the tag-updating is,
 	# so effectively the entire operation must be at a granule-aligned address.
-	build addrGranuleIndexed_checkAlignment;
-	address:8 = addrGranuleIndexed_checkAlignment;
+	build addrGranuleIndexed;
+	address:8 = addrGranuleIndexed;
 
 	# store two granules worth of zeros and tag it from Rt
 	tmp:8 = 0;
@@ -8059,8 +8037,8 @@ is b_2131=0b11011001111 & (b_10=1 | b_11=1) & addrGranuleIndexed_checkAlignment 
 	tmp = tmp + 8;
 	if (tmp < count) goto <loopstart>;
 
-	StoreMemTag(address, tag);
-	StoreMemTag(address + $(TAG_GRANULE), tag);
+	StorePtrTag(address, data);
+	StorePtrTag(address + $(TAG_GRANULE), data);
 }
 
 }
@@ -8099,16 +8077,15 @@ with : ShowMemTag=1 {
 # C6.2.354 STZG page C6-1937 line 113766 MATCH xd9600800/mask=xffe00c00
 # CONSTRUCT xd9600000/mask=xffe00000 MATCHED 3 DOCUMENTED OPCODES
 
-:stzg Rt_GPR64xsp, addrGranuleIndexed_checkAlignment
-is b_2131=0b11011001011 & (b_10=1 | b_11=1) & addrGranuleIndexed_checkAlignment & Rt_GPR64xsp
+:stzg Rt_GPR64xsp, addrGranuleIndexed
+is b_2131=0b11011001011 & (b_10=1 | b_11=1) & addrGranuleIndexed & Rt_GPR64xsp
 {
-	tag:8 = 0;
-	AllocationTagFromAddress(tag, Rt_GPR64xsp);
+	data:8 = Rt_GPR64xsp;
 
 	# Although the zero-storage is not required to be granule-aligned, the tag-updating is,
 	# so effectively the entire operation must be at a granule-aligned address.
-	build addrGranuleIndexed_checkAlignment;
-	address:8 = addrGranuleIndexed_checkAlignment;
+	build addrGranuleIndexed;
+	address:8 = addrGranuleIndexed;
 
 	# store one granule worth of zeros and tag it from Rt
 	tmp:8 = 0;
@@ -8120,7 +8097,7 @@ is b_2131=0b11011001011 & (b_10=1 | b_11=1) & addrGranuleIndexed_checkAlignment 
 	tmp = tmp + 8;
 	if (tmp < count) goto <loopstart>;
 
-	StoreMemTag(address, tag);
+	StorePtrTag(address, data);
 }
 
 }
@@ -8240,14 +8217,10 @@ is sf=1 & op=1 & S=0 & b_2328=0b100011 & b_22=0 & b_1621 & b_1013 & Rd_GPR64xsp 
 # " & b_1415=0" is not required by the spec (op3 doesn't have any requirements and is not used)
 [ shifted_imm = b_1621 << $(LOG2_TAG_GRANULE); ]
 {
-	# we don't actually modify the target register, so Ghidra understands the pointer target is still the same.
-	# pseudo-ops let us do that, but it means that the decompiler can put an unintuitive value in the
-	# "CopyPtrTag_AddToPtrTag_Exclude" argument, e.g. "param_2 - 0x20".
-	uimm4:1 = b_1013;
-	exclude:2 = 0;
-	Or2BytesWithExcludedTags(exclude);
-	Rd_GPR64xsp = Rn_GPR64xsp - shifted_imm;
-	CopyPtrTag_AddToPtrTag_Exclude(Rd_GPR64xsp, Rn_GPR64xsp, uimm4, exclude);
+	# (kuna) the tagged pointer is the op's result, so it reaches every later use
+	uimm4:8 = b_1013;
+	tmp:8 = Rn_GPR64xsp - shifted_imm;
+	Rd_GPR64xsp = AddPtrTag(tmp, uimm4);
 }
 
 }

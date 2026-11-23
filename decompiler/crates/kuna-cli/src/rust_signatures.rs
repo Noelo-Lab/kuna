@@ -12,6 +12,11 @@ use sha2::{Digest, Sha256};
 
 use crate::jsonfmt::Json;
 
+mod kuna_comment_profile;
+mod kuna_installed_manifest;
+
+pub(crate) use kuna_installed_manifest::run;
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Corpus {
@@ -250,6 +255,7 @@ pub(crate) fn fields(manifest: &ManifestInfo, image: Option<&ImageReport>) -> Ve
     let mut candidates = Vec::new();
     let mut selected = Value::Null;
     let mut tied = Vec::new();
+    let mut comment_hint = None;
     let status = if let Some(image) = image {
         if let Some(error) = &image.error {
             if error == "unsupported_image" {
@@ -258,6 +264,7 @@ pub(crate) fn fields(manifest: &ManifestInfo, image: Option<&ImageReport>) -> Ve
                 "unavailable"
             }
         } else if let Some(report) = &image.report {
+            comment_hint = kuna_comment_profile::hint(&image.compiler, report);
             for candidate in &report.candidates {
                 candidates.push(json!({
                     "profile": profile_json(candidate.profile),
@@ -293,13 +300,16 @@ pub(crate) fn fields(manifest: &ManifestInfo, image: Option<&ImageReport>) -> Ve
     } else {
         "unavailable"
     };
-    let report = json!({
+    let mut report = json!({
         "status": status, "selected_profile": selected, "tied_profiles": tied,
         "scope": {"listing": "final_accepted", "entries": "text_section_tails", "tail_bytes": 131072, "summary_filters_applied": false},
         "entry_count": image.map(|image| image.entry_count),
         "reason": image.and_then(|image| image.error.as_deref()),
         "provenance": manifest, "candidates": candidates,
     });
+    if let Some(hint) = comment_hint {
+        report["comment_profile_hint"] = hint;
+    }
     vec![
         ("compiler_provenance".into(), ordered(compiler)),
         ("rust_signature_profile".into(), ordered(report)),
@@ -324,3 +334,18 @@ fn ordered(value: Value) -> Json {
 
 #[cfg(test)]
 mod tests;
+
+/// The application and its scoring must observe the same unmodified linked image.
+pub(crate) fn validate_application(args: &crate::decompile_all::Args) -> Result<(), String> {
+    use kuna_console::assertions::Body;
+    if args.raw_image || args.slice.is_some() || args.target.is_some() || args.isa.is_some()
+        || args.assertions.iter().any(|directive| matches!(directive.body, Body::Bytes { .. }))
+        || args.options.iter().any(|(name, _)| matches!(name.as_str(), "dyldimage" | "kernelcache"))
+    {
+        return Err("--apply-rust-signatures requires an unmodified object image without raw, slice, target, ISA, image-selection or bytes overrides".into());
+    }
+    if args.jobs != 1 || args.jobs_auto || args.jobs_worker.is_some() {
+        return Err("--apply-rust-signatures requires a single-process functions or decompile run".into());
+    }
+    Ok(())
+}

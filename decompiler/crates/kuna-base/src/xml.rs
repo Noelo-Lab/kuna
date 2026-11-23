@@ -2224,8 +2224,62 @@ mod tests {
         // and gh1627-x86-senduipi-gatherpf / SENDUIPI is not RDRAND and VGATHERPF indexes with a ZMM register
         // and gh1628-x86-vmx-decode-flags / VMREAD/VMWRITE decode without REX.W and VMX instructions set CF/ZF
         // and kuna-kernelbug / a Linux kernel __bug_table trap prints as __WARN(file,line) or BUG()
+        // and kuna-kernelcacheboot / an Auxiliary kernel collection resolved against its boot collection (option kernelcache-boot)
         // and gh1674-subpiece-shadow-wide-const / a subpiece shadow 8 bytes into a 16-byte constant reads 0
-        assert_eq!(count, 782, "corpus file count drifted");
+        // and kuna-wrapadd / wrapadd wraps a widened four-byte sum before its extension
+        // and kuna-rustversion-commit / a Rust image without .comment gets its release from /rustc/<commit>/ paths
+        // and kuna-sharedpush-regparm / a declared list its callee's register reads contradict shares no push
+        // and kuna-acleintrinsics / AArch64 MTE tag instructions and barriers print as ACLE intrinsics
+        // and kuna-assert-callee / a stated destination makes an indirect call direct
+        // and kuna-assert-format-isolate / a constant's format set by its instruction, and an isolated local
+        // and kuna-callproto / one call through a pointer is given its own prototype
+        // and kuna-dyldcacheobjc / a dyld shared cache image's ObjC metadata is read through the cache
+        // and kuna-dyldimage-merge / dyldimage A+B loads two dyld shared cache images as one program
+        // and kuna-blobs / an embedded PNG, GIF, JPEG, zip or gzip is returned by name
+        // and kuna-repstring, kuna-repstring-i386 / x86 rep movs/stos/cmpsb print as copy, fill and compare builtins
+        // and kuna-reentereddispatch / a re-entered dispatch keeps every step's store
+        // and kuna-dispatch-values / dispatcher return values survive narrowing and copies
+        // and ghangr-go-paniccheck-return / a returning Go panic check keeps its continuation
+        // and ghangr-go-aarch64-stack-stride / adjacent eight-byte spills keep their declared inputs
+        // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
+        // and kuna-restart-warnings / a restart drops the warnings of the pass it discards
+        // and kuna-narrowed-call-input / a call argument narrowed before its prototype is forced stays valid
+        // and kuna-extrapop-function / option extrapop <n> <name> sets a named function's extrapop
+        // and kuna-condexe-heritage / condexe removes a re-test whose block holds unread ops
+        // and kuna-dwarf-addrx / a DWARF 5 DW_OP_addrx global takes its name on both byte orders
+        // and kuna-pacmodifier-arg-a64e / a hidden signing's modifier is not a call argument
+        // and kuna-objcdirect / an Objective-C direct method's receiver is its class
+        // and kuna-itaniumrtti-macho / Itanium RTTI on a Mach-O through chained-fixup binds
+        // and kuna-itaniumrtti-macho-classic / and through classic LC_DYLD_INFO binds
+        // and kuna-typeorder / distinct types order by id and shape before heap address
+        // and kuna-loopcontinue-while / a jump to a do-while's own test prints as continue
+        // and kuna-switchsingle / a jump table whose entries all name one block is a direct branch
+        // and kuna-protoorder-tailcallees / a single decompile states its tail callees' prototypes first
+        // and kuna-typevote / a variable left undefinedN takes the type its ops vote for (option typevote)
+        // and kuna-gotonext / a goto to the statement that runs next is left out, a loop or switch exit prints break (option gotonext)
+        // and kuna-loweredswitch-linear / loweredswitch linear re-rolls a linear equality chain
+        // and kuna-loweredswitch-tree / loweredswitch tree re-rolls a twenty-case compare tree
+        // and kuna-maxlinewidth / option maxlinewidth breaks plain-text lines
+        // and kuna-postinc / a pointer step after its dereference prints *p++
+        // and kuna-returndupcalls / gcc -Os cross-jumped call tails split per path
+        // and kuna-panicloc / a Rust panic Location record is typed and named after its position (option panicloc)
+        // and kuna-gotypenames / Go type descriptors and itabs named as the linker spells them, go1.16 on
+        // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
+        // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
+        // and kuna-calleefilledarg / an objc_msgSend$ selector stub keeps the arguments staged after x1 (option calleefilledarg)
+        // and kuna-calleefilledarg-ctramp / a C trampoline that fills rsi keeps the positional rule
+        // and kuna-switchextent-a64 / an unchecked AArch64 table ends at the function's next table (option switchextent)
+        // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
+        // and kuna-objcforin / an SDK struct pointer parameter types the stack object passed to it (option objcsdk)
+        // and kuna-switchnextcsel-a64 / a csel-picked next table still ends a byte-masked last table (option switchextent)
+        // and kuna-switchmerge / a search tree of jump tables prints as one switch (option switchmerge)
+        // and kuna-switchmerge-values / a hole the default code sends to the same place prints no label, and a 1100-entry table is a switch
+        // and kuna-switchmerge-split / a range split between two switches, and an == test heading default, print as one switch
+        // and kuna-jumptableslots / a guarded table indexed by x >> 8 past jumptablemax stays a computed call
+        // and kuna-cachereturn / a lazy accessor returns the value of its cache cell (option cachereturn)
+        // and kuna-thunknames / a placeholder jump thunk is named after its target (option thunknames)
+        // and kuna-swifthelpers / Swift instantiation helpers and lazy witness table accessors (option swifthelpers)
+        assert_eq!(count, 861, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -330,6 +330,40 @@ fn all_applies_report_no_change_on_empty_fd() {
 }
 
 // -----------------------------------------------------------------------------
+// 4b. ActionDeadCode — the sweep holds the per-function budget
+// -----------------------------------------------------------------------------
+
+/// A function of one block whose only operation is a `COPY` nothing reads.
+fn fd_with_a_dead_copy() -> Funcdata {
+    let mut fd = build_fd();
+    let ram = ram_space(&fd);
+    let root = fd.bblocks_ref().root.expect("bblocks root");
+    let bl = fd.bblocks_mut().new_block_basic(root);
+    let src = fd.new_constant(4, 7);
+    let copy = fd.new_op(1, Address::new(ram, 0x1000));
+    fd.op_set_opcode_code(copy, OpCode::CPUI_COPY);
+    fd.op_set_input(copy, src, 0).unwrap();
+    fd.op_insert(copy, bl, None);
+    fd.new_unique_out(4, copy).unwrap();
+    fd.op_heritage().unwrap();
+    fd
+}
+
+/// The sweep that destroys dead operations reads the per-function deadline:
+/// with the budget spent it leaves the operation it would otherwise destroy.
+#[test]
+fn deadcode_sweep_stops_once_the_budget_is_spent() {
+    let mut swept = fd_with_a_dead_copy();
+    deadcode_apply(&mut swept);
+    assert_eq!(swept.obank().iter_alive().count(), 0);
+
+    let mut cut_off = fd_with_a_dead_copy();
+    let _drive = crate::decompile_drive::DeadlineScope::enter(Some(std::time::Instant::now()));
+    deadcode_apply(&mut cut_off);
+    assert_eq!(cut_off.obank().iter_alive().count(), 1);
+}
+
+// -----------------------------------------------------------------------------
 // 5. ActionLaneDivide — a split that fails part way
 // -----------------------------------------------------------------------------
 

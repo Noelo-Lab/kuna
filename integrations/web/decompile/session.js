@@ -82,7 +82,7 @@ function varDirective(rec, qualifier) {
   return `name ${sym} ${rec.name}`;
 }
 
-const SCOPED = new Set(['name', 'type', 'comment', 'flow']);
+const SCOPED = new Set(['name', 'type', 'comment', 'flow', 'callproto']);
 
 /** `flow 0x10 return` qualified with `f` → `flow f::0x10 return`. */
 function qualifyRaw(text, qualifier) {
@@ -597,7 +597,7 @@ export class Session {
 /** Does a raw directive hold for the whole program (safe to send with any request)? */
 export function isGlobalRaw(text) {
   const [keyword, first = ''] = text.trim().split(/\s+/, 2);
-  if (['name', 'type', 'comment', 'flow'].includes(keyword)) return false;
+  if (['name', 'type', 'comment', 'flow', 'callproto'].includes(keyword)) return false;
   if (['param', 'return'].includes(keyword)) return first.includes('::');
   return true;
 }

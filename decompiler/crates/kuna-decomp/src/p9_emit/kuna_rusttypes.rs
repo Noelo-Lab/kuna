@@ -45,7 +45,7 @@ pub static RUST_SPELLER: RustSpeller = RustSpeller;
 
 /// The Rust integer name for a `size`-byte value of the given signedness, or
 /// `None` when Rust has no integer of that width.
-fn int_name(size: int4, signed: bool) -> Option<&'static str> {
+pub(crate) fn int_name(size: int4, signed: bool) -> Option<&'static str> {
     Some(match (size, signed) {
         (1, true) => "i8",
         (2, true) => "i16",

@@ -1,0 +1,35 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:golang">
+<!--
+  Go parity G02/G07, P1 calling-convention storage: an AArch64 BL/RET does
+  not pop eight bytes from the caller's stack. The abi-internal model must
+  use extrapop=0 while retaining the existing stackshift and argument offsets.
+  This is an unconditional model correction; no option is added.
+
+  Authored source: tests/fixtures/go-aarch64-stackpop/recursive.S. Its scalar
+  recursive function spills n and the first recursive result into distinct
+  stack slots before the next call, implementing fib(n-1) + fib(n-2).
+  The prototype fixes only the scalar input/result contract. With extrapop=8
+  the first call loses its assignment and the second uses an uninitialized
+  stack value instead of n. These assertions pin the complete fixed dataflow.
+  The 60 bytes below are assembled with clang targeting aarch64-linux-gnu;
+  they are inspected as data and never executed.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+1f0400f1ad010054fd7bbea9fd030091e00b00f9000400d1faffff97e00f00f9
+e00b40f9000800d1f6ffff97e10f40f90000018bfd7bc2a8c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="recursive"/>
+</binaryimage>
+<script>
+  <com>map prototype recursive int8 recursive(int8 n);</com>
+  <com>load function recursive</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Go AArch64 scalar recursion retains its input" min="1" max="1">recursive\([[:alnum:]_ ]+ n\)</stringmatch>
+<stringmatch name="Go AArch64 scalar recursion retains its base case" min="1" max="1">if \(2 &lt;= n\)</stringmatch>
+<stringmatch name="Go AArch64 first recursive result survives the spill" min="1" max="1">v1 = recursive\(n \+ -1\);</stringmatch>
+<stringmatch name="Go AArch64 second call reuses n and the first result" min="1" max="1">n = recursive\(n \+ -2\) \+ v1;</stringmatch>
+<stringmatch name="Go AArch64 recursion returns the combined scalar" min="1" max="1">return n;</stringmatch>
+</decompilertest>

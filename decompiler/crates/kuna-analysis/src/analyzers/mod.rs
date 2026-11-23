@@ -6,6 +6,7 @@
 
 pub mod addrtable;
 pub mod aif;
+pub mod blobs;
 pub mod callfixup;
 pub mod demangle;
 pub mod dwarf;

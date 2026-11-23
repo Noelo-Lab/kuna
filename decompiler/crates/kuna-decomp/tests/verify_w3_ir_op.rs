@@ -398,21 +398,14 @@ fn nzmask_subpiece_offset_at_sizeof_boundary() {
     );
 }
 
-/// NEW FINDING (round 2): SUBPIECE with a constant truncation offset whose
-/// `(int4)offset` is NEGATIVE (offset >= 2^31). C++ op.cc:701 `sz1 < sizeof
-/// (uintb)` promotes the negative sz1 to a huge size_t -> the comparison is
-/// FALSE -> `resmask = 0` (op.cc:704). The Rust port line 1212 compares two
-/// i32s (`sz1 < usize_uintb`), so a negative sz1 is `< 8` -> it ENTERS
-/// `resmask >>= 8*sz1` with a negative count -> DEBUG PANIC (and a wrong value
-/// in release). This test asserts the C++-faithful result (0); the Rust panics,
-/// so it FAILS, evidencing the divergence.
-///
-/// Reachability note: a SUBPIECE truncation offset cannot legitimately reach
-/// 2^31 bytes, so this is a fidelity/robustness divergence at near-nil
-/// reachability, NOT a blocker — see the verdict (severity: minor).
+/// SUBPIECE with a constant truncation offset whose `(int4)offset` is negative
+/// (offset >= 2^31). C++ op.cc:701 `sz1 < sizeof(uintb)` promotes the negative
+/// sz1 to a huge size_t, so the comparison is false and `resmask = 0`
+/// (op.cc:704). The port compares the offset with the word size as unsigned
+/// the same way, so a negative offset reads past the word and yields 0 instead
+/// of shifting by a negative count.
 #[test]
-#[should_panic] // documents the divergence: C++ returns 0, Rust panics in debug
-fn nzmask_subpiece_negative_offset_diverges() {
+fn nzmask_subpiece_negative_offset_matches_cpp() {
     let m = build_manager();
     let mut vbank = VarnodeBank::new(&m, 0).unwrap();
     let mut bank = PcodeOpBank::new();
@@ -422,10 +415,16 @@ fn nzmask_subpiece_negative_offset_diverges() {
     let outp = freevn(&mut vbank, &m, 1, 0x2000);
     let id = build_op(&mut bank, OpCode::CPUI_SUBPIECE, 0, Some(outp), &[inp, off], &m);
     let op = bank.get(id).unwrap();
-    // C++-faithful expectation would be 0. The Rust panics first (this is why the
-    // test is #[should_panic]); if the port is ever fixed to match C++, replace
-    // with assert_eq!(.., 0) and drop should_panic.
-    let _ = get_nz_mask_local(op, &vbank, false, &no_loop);
+    assert_eq!(get_nz_mask_local(op, &vbank, false, &no_loop), 0u64);
+
+    // Extended precision (16-byte input): the same offset reads past the word
+    // and the mask is left untouched: full width of the 1-byte output.
+    let wide = freevn(&mut vbank, &m, 16, 0x3000);
+    let idw = build_op(&mut bank, OpCode::CPUI_SUBPIECE, 0, Some(outp), &[wide, off], &m);
+    assert_eq!(
+        get_nz_mask_local(bank.get(idw).unwrap(), &vbank, false, &no_loop),
+        0xffu64
+    );
 }
 
 /// INT_MULT total-shift boundary: round-1 said op.rs:1263 `resmask >>= 8*size

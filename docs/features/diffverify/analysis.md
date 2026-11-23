@@ -6,8 +6,9 @@ can be built from.
 ## 1. Wrong-value bugs are fixed one at a time, and each fix builds its own oracle
 
 Fix commits since 2026-06-01 that carry a phase tag (`fix(pN)` in the subject; newer
-commits often omit the tag, so these are lower bounds): P2 32, P3 31, P4 25, P9 24,
-P6 12, others 14.
+commits often omit the tag, so these are lower bounds): P2 32, P3 31, P4 25, P9 27,
+P6 13, others 17 (P1 8, P5 4, P8 3, P0 1, P7 1), plus 9 commits tagged with two or three
+phases (`git log --since=2026-06-01 --format=%s | grep -oE 'fix\(p[0-9][^)]*\)'`).
 
 Each fix proved itself with an oracle written for that PR:
 
@@ -101,9 +102,9 @@ concrete execution before symbolic proof, and a declared-divergence list from da
 - **Rule control.** Rules are named, keep `count_apply` statistics, and can be switched
   off with `disable_rule(specify)` (`infra/action.rs`). A failing function can be bisected
   down to the rules that fired.
-- **Phase hooks.** Draft #1699 (`HookRegistry::on_phase`) would add P2, Band B and P6
-  snapshot points. It is useful for localizing a difference, but the first slice does not
-  need it (proposal, Tier C).
+- **Phase hooks.** Draft #1699 (`HookRegistry::on_phase`, closed unmerged; issue #1641
+  stays open) proposed P2, Band B and P6 snapshot points. Hooks are useful for localizing
+  a difference, but the first slice does not need them (proposal, Tier C).
 
 ## 6. Why not build the solver and emulator
 

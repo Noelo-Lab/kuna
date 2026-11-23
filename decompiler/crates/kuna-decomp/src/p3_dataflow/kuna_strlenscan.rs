@@ -57,7 +57,7 @@ use crate::op::PcodeOp;
 use crate::userop::BUILTIN_STRLEN;
 
 /// The ops the body may compute besides the LOAD and its branch.
-const PURE: &[OpCode] = &[
+pub(crate) const PURE: &[OpCode] = &[
     CPUI_COPY,
     CPUI_INT_ADD,
     CPUI_INT_SUB,
@@ -208,7 +208,7 @@ fn taken(data: &Funcdata, b: BlockId) -> Option<(BlockId, BlockId)> {
 
 /// The value of `v` with each `(leaf, value)` of `env` substituted, following
 /// only ops defined in `region`; `None` when `v` reads anything else.
-fn eval(data: &Funcdata, v: VarnodeId, env: &[(VarnodeId, u64)], region: &[BlockId], depth: u32) -> Option<u64> {
+pub(crate) fn eval(data: &Funcdata, v: VarnodeId, env: &[(VarnodeId, u64)], region: &[BlockId], depth: u32) -> Option<u64> {
     if let Some(&(_, x)) = env.iter().find(|(leaf, _)| *leaf == v) {
         return Some(x);
     }

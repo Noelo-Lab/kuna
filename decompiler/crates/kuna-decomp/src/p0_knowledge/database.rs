@@ -545,6 +545,13 @@ pub mod symbol_category {
 /// Base of internal symbol ID's (C++ `Symbol::ID_BASE`, `database.cc:46`).
 pub const SYMBOL_ID_BASE: uint8 = 0x4000_0000_0000_0000;
 
+/// A declared prototype and any Go DWARF input authority committed with it.
+#[derive(Debug, Clone)]
+pub struct FunctionPrototype {
+    pieces: crate::fspec::PrototypePieces,
+    go_string_input: Option<crate::kuna_gostringinput::GoStringInput>,
+}
+
 /// The subclass discriminant for a [`Symbol`] (C++ uses virtual dispatch /
 /// `dynamic_cast`; the arena model uses an explicit tag in the same object).
 #[derive(Debug, Clone)]
@@ -575,6 +582,10 @@ pub enum SymbolKind {
         /// (`IfcFixupApply`).  `-1` = no fixup.  Parked here for the same reason as
         /// `inline_func` (the lazily-built `Funcdata`/`FuncProto` is W5).
         inject_id: int4,
+        /// `FuncProto::extrapop` for this function (C++
+        /// `getFuncProto().setExtraPop(expop)`), set by `option extrapop <n>
+        /// <name>` (`OptionExtraPop`).  `None` = the prototype model's value.
+        extra_pop: Option<int4>,
         /// The parsed, source-declared prototype pieces for this function (C++
         /// `parse line extern <decl>` → `Architecture::setPrototype` →
         /// `queryFunction(name)->getFuncProto()`), parked on the FunctionSymbol so a
@@ -584,7 +595,9 @@ pub enum SymbolKind {
         /// queried `Funcdata` fresh, so the declared prototype is stashed here (by
         /// name+address) and re-seeded into a `FuncProto` on demand.  `None` = no
         /// source-declared prototype (the default-model recovery applies).
-        proto_pieces: Option<Box<crate::fspec::PrototypePieces>>,
+        proto_pieces: Option<Box<FunctionPrototype>>,
+        /// Receiver evidence belongs to this exact parked prototype.
+        pointer_receiver: Option<Box<crate::kuna_gopointermethod::Receiver>>,
     },
     /// `EquateSymbol` — labels a constant (C++ `EquateSymbol`).
     Equate {
@@ -2244,7 +2257,9 @@ impl Database {
             inline_func: false,
             no_return: false,
             inject_id: -1,
+            extra_pop: None,
             proto_pieces: None,
+            pointer_receiver: None,
         };
         let sid = self.symbols.insert(sym);
         self.add_symbol_internal(scope, sid)?;
@@ -2869,6 +2884,27 @@ impl Database {
         }
     }
 
+    /// Set the `FuncProto::extrapop` for a FunctionSymbol (C++
+    /// `fd->getFuncProto().setExtraPop(expop)` reached via `OptionExtraPop::apply`).
+    /// No-op on a non-Function symbol.
+    pub fn set_function_extra_pop(&mut self, sid: SymbolId, expop: int4) {
+        self.kuna_gen += 1;
+        if let SymbolKind::Function { extra_pop, .. } = &mut self.symbols[sid].kind {
+            *extra_pop = Some(expop);
+        }
+    }
+
+    /// The extrapop parked on the FunctionSymbol at `addr` (any scope), if set.
+    pub fn function_extra_pop_across_scopes(&self, addr: &Address) -> Option<int4> {
+        match self.find_function_across_scopes(addr) {
+            Some((sid, _)) => match self.symbols[sid].kind {
+                SymbolKind::Function { extra_pop, .. } => extra_pop,
+                _ => None,
+            },
+            None => None,
+        }
+    }
+
     /// Set the `FuncProto::injectid` for a FunctionSymbol (C++
     /// `fd->getFuncProto().setInjectId(injectid)` reached via `IfcFixupApply`).
     /// No-op on a non-Function symbol.
@@ -2902,16 +2938,77 @@ impl Database {
         pieces: crate::fspec::PrototypePieces,
     ) {
         self.kuna_gen += 1;
-        if let SymbolKind::Function { proto_pieces, .. } = &mut self.symbols[sid].kind {
-            *proto_pieces = Some(Box::new(pieces));
+        Self::write_function_prototype(
+            &mut self.symbols[sid].kind,
+            FunctionPrototype { pieces, go_string_input: None },
+        );
+    }
+
+    pub(crate) fn set_function_proto_with_go_string(
+        &mut self,
+        sid: SymbolId,
+        pieces: crate::fspec::PrototypePieces,
+        go_string_input: Option<crate::kuna_gostringinput::GoStringInput>,
+    ) {
+        self.kuna_gen += 1;
+        Self::write_function_prototype(
+            &mut self.symbols[sid].kind,
+            FunctionPrototype { pieces, go_string_input },
+        );
+    }
+
+    fn write_function_prototype(kind: &mut SymbolKind, prototype: FunctionPrototype) {
+        if let SymbolKind::Function { proto_pieces, pointer_receiver, .. } = kind {
+            *proto_pieces = Some(Box::new(prototype));
+            *pointer_receiver = None;
         }
+    }
+
+    /// The single Go string formal attached to the exact declared function entry.
+    pub fn function_go_string_input(
+        &self,
+        addr: &Address,
+    ) -> Option<&crate::kuna_gostringinput::GoStringInput> {
+        let (sid, _) = self.find_function_across_scopes(addr)?;
+        let SymbolKind::Function { proto_pieces: Some(decl), .. } = &self.symbols[sid].kind else {
+            return None;
+        };
+        decl.go_string_input.as_ref().filter(|formal| &formal.entry == addr)
+    }
+
+    pub fn attach_go_pointer_receiver(
+        &mut self, addr: &Address, receiver: crate::kuna_gopointermethod::Receiver,
+    ) {
+        self.kuna_gen += 1;
+        let Some((id, _)) = self.find_function_across_scopes(addr) else { return };
+        let symbol = &mut self.symbols[id];
+        if symbol.name != receiver.symbol || symbol.display_name != receiver.symbol {
+            return;
+        }
+        if let SymbolKind::Function { proto_pieces: Some(pieces), pointer_receiver, .. } = &mut symbol.kind {
+            if pieces.pieces.name == receiver.symbol {
+                *pointer_receiver = Some(Box::new(receiver));
+            }
+        }
+    }
+
+    pub(crate) fn go_pointer_receiver(
+        &self, addr: &Address,
+    ) -> Option<&crate::kuna_gopointermethod::Receiver> {
+        let (id, _) = self.find_function_across_scopes(addr)?;
+        let symbol = &self.symbols[id];
+        let SymbolKind::Function { pointer_receiver: Some(receiver), .. } = &symbol.kind else {
+            return None;
+        };
+        (symbol.name == receiver.symbol && symbol.display_name == receiver.symbol)
+            .then_some(receiver.as_ref())
     }
 
     /// The prototype pieces parked on FunctionSymbol `sid`, or `None` when it
     /// carries none or is not a function.
     pub fn function_proto_pieces_of(&self, sid: SymbolId) -> Option<&crate::fspec::PrototypePieces> {
         match &self.symbols[sid].kind {
-            SymbolKind::Function { proto_pieces, .. } => proto_pieces.as_deref(),
+            SymbolKind::Function { proto_pieces, .. } => proto_pieces.as_deref().map(|decl| &decl.pieces),
             _ => None,
         }
     }
@@ -2927,7 +3024,7 @@ impl Database {
     ) -> Option<&crate::fspec::PrototypePieces> {
         let sid = self.find_function(scope, addr)?;
         match &self.symbols[sid].kind {
-            SymbolKind::Function { proto_pieces, .. } => proto_pieces.as_deref(),
+            SymbolKind::Function { proto_pieces, .. } => proto_pieces.as_deref().map(|decl| &decl.pieces),
             _ => None,
         }
     }
@@ -2947,7 +3044,7 @@ impl Database {
     ) -> Option<&crate::fspec::PrototypePieces> {
         let (sid, _) = self.find_function_across_scopes(addr)?;
         match &self.symbols[sid].kind {
-            SymbolKind::Function { proto_pieces, .. } => proto_pieces.as_deref(),
+            SymbolKind::Function { proto_pieces, .. } => proto_pieces.as_deref().map(|decl| &decl.pieces),
             _ => None,
         }
     }
@@ -3392,6 +3489,10 @@ impl Database {
                             sym.kind,
                             SymbolKind::Function { no_return: true, .. }
                         ),
+                        func_extra_pop: match sym.kind {
+                            SymbolKind::Function { extra_pop, .. } => extra_pop,
+                            _ => None,
+                        },
                     });
                 }
             }
@@ -3436,7 +3537,7 @@ impl Database {
                     if let SymbolKind::Function { proto_pieces: Some(pieces), .. } =
                         &self.symbols[entry.symbol].kind
                     {
-                        out.push((space_index as int4, entry.get_first(), (**pieces).clone()));
+                        out.push((space_index as int4, entry.get_first(), pieces.pieces.clone()));
                     }
                 }
             }

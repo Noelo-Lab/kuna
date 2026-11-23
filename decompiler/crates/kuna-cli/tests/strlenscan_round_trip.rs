@@ -33,7 +33,7 @@ const SCANS: &[&str] = &["scan_slash", "raw_count"];
 const AFTER: &[&str] = &["len_then_clear", "len_then_wipe", "len_then_free"];
 
 const PRELUDE: &str = "#include <stdbool.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n\
-                       #define STRLENSCAN_NO_MAIN\n";
+                       #define STRLENSCAN_NO_MAIN\n#define builtin_memcpy memcpy\n";
 
 /// Calls the printed functions through prototype-less pointers and compares
 /// each result, and each buffer they write, with the source function's.  A

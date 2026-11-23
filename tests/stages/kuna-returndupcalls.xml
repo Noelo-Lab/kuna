@@ -1,0 +1,52 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `returndup calls`.  gcc -Os cross-jumps the tails of
+    paths that end in the same call: each path sets the arguments and jumps
+    to one shared `call f` block, so the decompiler sees merged arguments
+    and prints `if (c <= 5) { b2 = 2; a = b; } return f(a, b2) + 3;`.  With
+    `option returndup calls`, the shared block is split per predecessor and each path
+    gets its own call: `if (6 <= c) return f(a,1) + 3; return f(b,2) + 3;`.
+
+    Stage / sub-stage: P8 "goto-quality" (ActionReturnDupCalls, group
+    returnsplit).
+
+    Source (gcc -Os -fno-pie -no-pie -nostartfiles):
+      __attribute__((noinline)) int f(int x, int y) { return x * 31 + y; }
+      int pick(int c, int a, int b) { int r; if (c > 5) r = f(a, 1); else r = f(b, 2); return r + 3; }
+      int pick3(int c, int a, int b) { if (c == 1) return f(a, 7) * 2; if (c == 2) return f(b, 7) * 2; return f(a + b, 9) * 2; }
+
+    Pass 1 is the default (merged arguments); pass 2 sets `returndup calls`.
+-->
+<bytechunk space="ram" offset="0x401000">
+f30f1efa6bff1f8d0437c3f30f1efa83ff0589f7be010000007f07be0200000089d7e8d9ffffff83c003c3f30f1efa89f889f7be0700000083f801741583f802
+7509be0700000089d7eb0701d7be09000000e8a9ffffff01c0c3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="f"/>
+<symbol space="ram" offset="0x40100b" name="pick"/>
+<symbol space="ram" offset="0x40102b" name="pick3"/>
+</binaryimage>
+<script>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option returndup calls</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick3</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="returndup calls #1: the default keeps pick's single call with merged arguments (bug reproduced)" min="1" max="1">^  return f\(a1,v1\) \+ 3;$</stringmatch>
+<stringmatch name="returndup calls #2: the default keeps pick3's single call with merged arguments (bug reproduced)" min="1" max="1">^  return f\(a1,v1\) \* 2;$</stringmatch>
+<stringmatch name="returndup calls #3: the value gives pick one call per path" min="1" max="1">^    return f\(a1,1\) \+ 3;$
+^  return f\(a2,2\) \+ 3;$</stringmatch>
+<stringmatch name="returndup calls #4: the value gives pick3 one call per path" min="1" max="1">^    return f\(a1,7\) \* 2;$
+^  if \(a0 == 2\)( // branch-flip)?$
+^    return f\(a2,7\) \* 2;$
+^  return f\(a1 \+ a2,9\) \* 2;$</stringmatch>
+</decompilertest>

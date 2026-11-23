@@ -1,0 +1,148 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna GH-1650 `repstring`: SLEIGH lifts an x86 repeat prefix as a loop
+    inside the one instruction, so an inlined copy, fill or compare printed as
+    `while (n) { *p = *q; n -= 1; ... }` or
+    `do { if (!n) return 1; ... } while (x == y);`.
+
+    Stage / sub-stage: P3 "simplification-quiescence".  The P0 assertion
+    `option repstring on|off` decides whether the proved loop becomes
+    `builtin_memcpy`, `builtin_memset`, `builtin_memset32` or `builtin_memcmp`.
+
+    The bytes are .rodata and .text of decompiler/crates/kuna-analysis/tests/
+    fixtures/repstring_x86_64, built from repstring.c by gcc 15.3
+    (-Os -minline-all-stringops -fno-pic): fill32 (`rep stosd` of a word
+    whose bytes differ), zero32 (of zero), fill8 (`rep stosb`), copy32 and
+    copy_end (`rep movsd`, the second returning the final destination), isdash
+    (`strcmp(s, "-") == 0` inlined as `repz cmpsb`), order and below (a
+    `memcmp` result built from the carry and zero flags), same_n (a run-time
+    length), same5 (no flags set up before the instruction) and mismatch (the
+    final pointer is returned, so it is no memcmp).
+
+    zero_g (0x201400) is not from the fixture: it is gcc 15.3's
+    `-O2 -mstringop-strategy=rep_8byte` code for
+    `char gfill[128]; void zero_g(void) { memset(gfill, 0, 128); gfill[5] = 'x'; }`
+    linked at 0x201400 with gfill at 0x203000, which `map address` names; the
+    fill's destination is the global, so it prints as `gfill`.
+
+    Pass 1 runs with no option line, so it pins the shipped default.  Pass 2
+    (`option repstring off`) reproduces the bug: every instruction is a loop.
+-->
+<bytechunk space="ram" offset="0x200158" readonly="true">
+2d00
+</bytechunk>
+<bytechunk space="ram" offset="0x20125c">
+89f1b804030201f3abc389f131c0f3abc389d189f0f3aac389d1f3a5c389d1f3a54889f8c3b8020000004889feb902000000bf580120004839c0f3a60f94c00f
+b6c0c34889f8ba050000004889f7b9050000004889c64839d2f3a60f97c01c000fbec0c34889f8ba070000004889f7b9070000004889c64839d2f3a60f97c01c
+000fbec0c1e81fc34889f84889d14889f74839d24889c6f3a60f94c00fb6c0c34887feb905000000f3a60f94c00fb6c0c34887feb908000000f3a64889f0c3
+</bytechunk>
+<symbol space="ram" offset="0x20125c" name="fill32"/>
+<symbol space="ram" offset="0x201266" name="zero32"/>
+<symbol space="ram" offset="0x20126d" name="fill8"/>
+<symbol space="ram" offset="0x201274" name="copy32"/>
+<symbol space="ram" offset="0x201279" name="copy_end"/>
+<symbol space="ram" offset="0x201281" name="isdash"/>
+<symbol space="ram" offset="0x20129f" name="order"/>
+<symbol space="ram" offset="0x2012c0" name="below"/>
+<symbol space="ram" offset="0x2012e4" name="same_n"/>
+<symbol space="ram" offset="0x2012fc" name="same5"/>
+<symbol space="ram" offset="0x20130d" name="mismatch"/>
+<bytechunk space="ram" offset="0x201400">
+b91000000031c0bf00302000f348abc605ef1b000078c3
+</bytechunk>
+<symbol space="ram" offset="0x201400" name="zero_g"/>
+</binaryimage>
+<script>
+  <com>map address r0x203000 char gfill[128]</com>
+  <com>lo fu fill32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zero32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fill8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu copy32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu copy_end</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu isdash</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu order</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu below</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu same_n</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu same5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mismatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zero_g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option repstring off</com>
+  <com>lo fu fill32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zero32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fill8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu copy32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu copy_end</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu isdash</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu order</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu below</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu same_n</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu same5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mismatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zero_g</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="repstring #1: with no option line (the shipped default) a fill of a mixed word is a 4-byte fill" min="1" max="1">^  builtin_memset32\(a0,0x1020304,</stringmatch>
+<stringmatch name="repstring #2: a fill of zero words is a memset of n * 4 bytes" min="1" max="1">^  builtin_memset\(a0,0,a1 \* 4UL\);</stringmatch>
+<stringmatch name="repstring #3: a byte fill is a memset of its run-time byte" min="1" max="1">^  builtin_memset\(a0,a1,</stringmatch>
+<stringmatch name="repstring #4: a copy is a memcpy of n * 4 bytes, in both copies" min="2" max="2">^  builtin_memcpy\(a0,a1,a2 \* 4UL\);</stringmatch>
+<stringmatch name="repstring #5: the destination read after a copy is its end" min="1" max="1">^  return &amp;\(\(char \*\)a0\)\[a2 \* 4UL\];</stringmatch>
+<stringmatch name="repstring #6: an inlined strcmp with a short constant is a memcmp of the string" min="1" max="1">^  return builtin_memcmp\(a0,"-",2\) == 0;</stringmatch>
+<stringmatch name="repstring #7: the carry and zero flags after a compare are the sign of its result" min="1" max="1">^  v1 = builtin_memcmp\(a0,a1,5\);
+^  return \(char\)\(\(0 &lt; v1\) - \(v1 &lt; 0\)\);</stringmatch>
+<stringmatch name="repstring #8: a compare of a run-time length" min="1" max="1">^  return builtin_memcmp\(a0,a1,a2\) == 0;</stringmatch>
+<stringmatch name="repstring #9: a compare with no flags set before it, of a constant length" min="1" max="1">^  return builtin_memcmp\(a0,a1,5\) == 0;</stringmatch>
+<stringmatch name="repstring #10: eleven builtins in the default pass, none with the option off" min="11" max="11">builtin_mem</stringmatch>
+<stringmatch name="repstring #11: a compare whose final pointer is returned keeps its loop by default, as do four compares with the option off" min="5" max="5">^  \} while \(v2 == v4\);</stringmatch>
+<stringmatch name="repstring #12: with the option off every copy and fill is an element loop -- the bug" min="6" max="6">^  while \(</stringmatch>
+<stringmatch name="repstring #13: and an ordered compare is a loop over two flags -- the bug" min="2" max="2">^  \} while \(v5\);</stringmatch>
+<stringmatch name="repstring #14: a fill of a named global names the global, not its address" min="1" max="1">^  builtin_memset\(gfill,0,0x80\);</stringmatch>
+<stringmatch name="repstring #15: with the option off the fill loop starts at the same global" min="1" max="1">^  v[0-9]+ = gfill;$</stringmatch>
+</decompilertest>

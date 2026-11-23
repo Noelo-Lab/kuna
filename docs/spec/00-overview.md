@@ -218,6 +218,23 @@ simultaneous ingests have independent member files. Non-object members are
 still skipped, bootstrap failures retain the archive/member warning, and
 record order and cross-input deduplication remain unchanged.
 
+Archive inputs to the image commands are settled before dispatch by
+`decompiler/crates/kuna-cli/src/armember.rs (resolve)`. An argument that names
+an `ar` archive, alone or as `lib.a:NAME`, is replaced by the path of one
+member: the one `--member NAME` or the `:NAME` suffix names, else the only
+object member, else the only object member defining a symbol that another
+argument spells (a Mach-O name also matches without its leading underscore).
+Any other case is a usage error listing the object members. A name stored
+more than once is selected as `NAME#K`, its K-th occurrence, and an argument
+that is an existing file is never split at a `:`. The member is written under
+an owned temporary directory that is removed when the command returns; a thin
+archive's member is named in place, resolved against the archive's directory,
+and must be a regular file (read on demand, one at a time), with a `note:`
+when its path leaves that directory. `--member` with no name prints the member
+list, and `functions` with no member re-runs itself once per object member
+(`--member=NAME`) and joins the listings with a `member:` prefix on each name.
+Commands never see the archive, so a member loads exactly as its `.o` does.
+
 Text decompilation owns its C and optional region-output files for the entire
 console run, including a discovery retry. Each file is privately created and
 its initial writing handle is closed before launching the console. Scope exit
@@ -1552,12 +1569,14 @@ printf-heavy whole binary (DIV-66). That cost is the reason the typing now
 happens at load instead, and the reason `full` — the loop — remains a per-run
 opt-in rather than the default.
 
-The step's last drive answers for a function decompiled alone (`kuna_callerreads.rs`,
+The step's last drive checks raw caller reads (`kuna_callerreads.rs`,
 chapter [04](04-calls-and-prototypes.md)): when the finished function returns
 `void` and a direct caller reads one of its return registers after the call, the
 step forces that return and drives the function once more, keeping the redo only
-when it returns a value. A batch skips it, since the callers it decompiles settle
-the same question.
+when it returns a value. Only the callee-first driver with a built call graph
+delegates this question to its return settling pass. A batch that visits its
+selection in ordinary order uses the same raw caller evidence as a single
+function, even when the caller is outside the selection.
 
 (kuna) **Surface defaults.** The drivers inject their defaults before the option
 pass, from one shared table
@@ -1638,7 +1657,13 @@ address the written-slot guard guards, every 256 new values a pointer walk of
 (`decompiler/crates/kuna-decomp/src/p6_variables/merge.rs (Merge::budget)`,
 chapter 06), every 1024 seeds the implied-variable walk visits
 (`decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs
-(MARK_IMPLIED_PROBE_STRIDE)`), before each region attempt of region identification (chapter
+(MARK_IMPLIED_PROBE_STRIDE)`), every 256 Varnodes the dead-code sweep visits
+(`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
+(SWEEP_DEADLINE_STRIDE)`: destroying a dead operation unlinks it from each
+input's reader list, which is linear in that list, so a function whose dead
+operations all read one Varnode sweeps in quadratic time and the sweep stops
+where the budget ends, leaving the rest of the dead operations in place),
+before each region attempt of region identification (chapter
 07), before each call-argument trial `ActionActiveParam` scores and every 256
 steps of the trial's use walks (chapter 04), and again after the final layout checks: the drive
 publishes its deadline to
@@ -1648,7 +1673,13 @@ jump-table recovery probes it too, before and after each table's attempt and
 after its basic and default-path models (`decompiler/crates/kuna-decomp/src/p2_lift/flow.rs
 (FlowInfo::recover_jump_tables)`, `decompiler/crates/kuna-decomp/src/p2_lift/jumptable.rs
 (JumpTable::recover_model)`); a table reached past the deadline is not attempted
-and its indirect jump is truncated as an unrecovered one. On expiry the
+and its indirect jump is truncated as an unrecovered one. Inside a model, every
+loop over the values of the switch variable (building the address table,
+checking its rows against the guards, labelling them) advances through
+`decompiler/crates/kuna-decomp/src/p2_lift/jumptable.rs (walk_within_budget)`,
+which fails the walk once a probe sees the budget spent, so a table of any
+length the `jumptablemax` ceiling admits ends with its drive instead of after
+its last row. On expiry the
 containers stop scheduling work and unwind; the driver converts that into the
 function's `error` record (a pass panic after the deadline passed reports the
 same budget error) and the batch continues. The record names where the budget
@@ -1659,7 +1690,8 @@ running when the deadline passed — an action (a rule pool adds the rule that
 applied most since the function's reset, `decompiler/crates/kuna-decomp/src/infra/action.rs
 (ActionPool::budget_site)`), heritage, variable merging, region identification,
 region structuring, `action activeparam`'s trial scoring, a
-store-reachability walk or a jump-table step. A walk that recurses too often
+store-reachability walk or a jump-table step (`jump-table value walk` for
+the loop over a table's values). A walk that recurses too often
 to read the clock at each step probes through
 `decompile_drive.rs (budget_probe)`, which reads it every 256th call and,
 once it has seen the budget spent, answers at once for the rest of the drive;
@@ -2411,8 +2443,12 @@ lowering) and applied by
 | `return [<func>::]<storage> <C typedeclaration>` | `map return` | P4 prototype-source |
 | `comment [<func>::]<addr> <text>` | `comment instruction` | P9 external-refinement |
 | `flow [<func>::]<addr> branch\|call\|callreturn\|return` | `override flow` | P2 flow-classification |
+| `callee [<func>::]<callsite> <name\|address>` | `override indirect` | P2 flow-classification |
+| `callproto [<func>::]<callsite> <C declaration>` | `override prototype` | P4 prototype-source |
 | `name [<func>::]<symbol> <newname>` | `rename` | P9 naming-policy |
 | `type [<func>::]<symbol> <C type>` | `retype` | P5 type-propagation |
+| `format [<func>::]<addr> hex\|dec\|oct\|bin\|char [<value>]` | `force constant` | P9 literal-format |
+| `isolate [<func>::]<symbol>` | `isolate` | P6 merge-aggressiveness |
 | `readonly <addr>+<size>` | `readonly` | P1 code-data-partition |
 | `volatile <addr>+<size>` | `volatile` | P1 code-data-partition |
 | `bytes <addr> <hex\|@FILE>` | `override bytes` | P1 code-data-partition |
@@ -2463,7 +2499,8 @@ file. **Program-scoped** directives (`function`, `typedef`, `prototype`,
 (`ConsoleProgram::set_assertions` + `assertions::apply_program_scoped`, called
 from `decompiler/crates/kuna-cli/src/decompile_all.rs (load_program)`), for the
 same reason a declared boundary is: an assertion outranks discovery.
-**Function-scoped** directives (`param`, `return`, `comment`, `flow`) become
+**Function-scoped** directives (`param`, `return`, `comment`, `flow`,
+`callproto`) become
 decompile SEEDS (`assertions::function_seed`), because a prototype fact is
 consumed at flow time and cannot be applied afterwards. **Symbol-scoped** directives (`name`,
 `type`) can only be applied to an already-decompiled function — the local they
@@ -2476,6 +2513,40 @@ the function, so every run without one costs exactly what it did before. The
 script surface (`decompiler/crates/kuna-cli/src/decompile/script.rs (build_script_for_input)`)
 emits the same facts at the same three slots, with the same conditional second
 `decompile`.
+
+(kuna) **`callproto` states the prototype of one call instruction.** A
+`prototype` describes a function and reaches a call through the callee's symbol;
+a call through a pointer or a register has no such symbol, and a variadic
+callback takes different arguments at each call, so the only place the fact can
+be stated is the call itself. The engine has carried that store since the port
+(`Override::insert_proto_override`, consumed by `FlowInfo::build_call_specs`
+when the call spec is created), reachable only from the console's `override
+prototype`. `decompiler/crates/kuna-console/src/kuna_callproto.rs` is the one
+parser both surfaces use: the declaration is the grammar `prototype` takes, the
+trailing `;` is optional, and a parameter may be followed by `@<storage>` in
+the spelling `param` takes, which rides in the pieces' `input_storage` so the
+model places the remaining parameters around it; a `@<storage>` after the
+parameter list is the return's `output_storage`. The override is built under
+the default model (`build_override_proto`; the pieces carry no model), so a
+declaration naming any other calling convention (`__thiscall`) is rejected
+rather than laid out under the wrong one, while an alias of the default model
+with the same `this` handling (`<modelalias>`: `__cdecl` on x86-64 Windows) is
+the default under another name and is accepted; `@<storage>` states a
+non-default placement.
+Two directives for the same call site keep the later one, and the earlier
+reports `rejected` (`assertions::restated_call_prototypes`, used by both
+surfaces). The in-process surface seeds
+the pieces as the drive's per-call-site overrides (`FunctionSeed::proto_overrides`),
+where a stated one outranks a format-string one discovered at the same address,
+and the script surface lowers to `override prototype` in the function slot. A
+call site is an address at which the followed function has a call spec, which
+includes a tail jump treated as a call; any other address is rejected with `No
+call is made at this address` — by the console command on the script surface,
+and by `assertions::record_unbound_call_prototypes` against the decompiled
+function on the in-process one. Like `flow`, the directive withdraws the
+`callwide` whole-image proof, which did not see it. A stated prototype locks
+the call's inputs, and `calltargettype` (chapter 05) still gives the target of
+such an indirect call the stated type, so the call stays one C can make.
 
 (kuna) **A symbol-scoped directive reaches the register locals too, by mapping a
 Symbol over their storage.** `name`/`type` resolve their target through
@@ -2493,6 +2564,38 @@ printer chose instead of by a hand-written varnode specifier. `linkSymbol`'s
 `query_container_for_link(addr, usepoint)` then binds it on the second pass, and
 `assertions::carried_usepoint_symbols` carries it across the in-process surface's
 IR rebuild.
+
+`format` and `isolate` are symbol-scoped in the same way: each names
+something only a finished decompile has, and takes effect in the second pass.
+`format` names a constant by the address of the instruction that reads it
+(`decompiler/crates/kuna-console/src/kuna_constformat.rs`). The candidates are
+the integer constants the live operations at that address read, leaving out the
+inputs that are not printed as numbers (a LOAD or STORE space id, a user-op
+index, a branch, call or return target, a SUBPIECE truncation, a PTRSUB offset,
+a PTRADD element size) and a constant whose read-facing type is an enum, which
+prints as the enum's names whatever its format; when only such a constant is
+read the rejection says so. One candidate value needs no more; several need the
+directive's `<value>`, and the rejection lists the values so the caller can
+pick. A `char` request is refused for a constant wider than 32 bits whose
+value is not the sign extension of its low 32 bits, since the character
+literal keeps only those bits. Each chosen constant gets
+the EquateSymbol `force varnode` builds (`Funcdata::build_dynamic_symbol`,
+anchored by the constant's dataflow hash) with the display format set and the
+type locked, and `assertions::carried_dynamic_symbols` carries it to the
+second pass, where the dynamic mapping finds the constant by its hash and the
+printer reads the format. After the second pass `assertions::verify_formats`
+looks for a constant at the address that holds a Symbol of that format; when
+there is none the directive is refused, since the C then prints the constant
+as before. The console spelling is `force constant <addr> <format> [<value>]`,
+and its `decompile` prints `Rejected force constant ...` for the same check.
+
+`isolate` resolves its name as `name` does and sets the Symbol's isolated flag
+(`kuna_hightarget.rs (isolate_local)`); the console's `isolate` command is the
+same function. A printed register local gets the isolated, type-locked Symbol
+over its definition that a `type` stating its present type would map, and the
+use-point carry brings it to the second pass. A stack local and a parameter
+are isolated without a type lock, and reach the second pass by their storage
+(chapter 06, `decompiler/crates/kuna-decomp/src/p6_variables/kuna_isolated.rs`).
 
 When a Varnode is created at an isolated local's mapped definition,
 `Funcdata::set_varnode_properties` applies its exact, locked type before
@@ -2905,7 +3008,67 @@ wanted, so silence there is the failure this plane exists to end.
 Durability is caller-carried, as it is for boundaries: `--assert @FILE` is the
 artifact.
 
-A `flow` directive is the sharpest of the four function-scoped ones, and the only
+(kuna) **Declarations from a header (`--types`).** A program built against a
+library that kuna carries no table for shows that library's handles and option
+codes as bare integers, and stating each prototype and enum as its own
+`--assert` does not scale to a header. `--types <file.h|dir>` reads a header and
+states its declarations on the same plane. `kuna_cheader::load_types` cuts the
+text into top-level declarations: it blanks comments, skips `#` lines (a
+`# <line> "<file>"` marker re-anchors the position it reports), ends a
+declaration at a `;` outside braces and parentheses, drops a function body, and
+looks through an `extern "C" {` wrapper. Each declaration becomes one
+directive. One that starts with `typedef`, or that defines a `struct`, `union`
+or `enum`, is a `typedef` directive. One whose first parenthesis outside braces
+follows an identifier is a `prototype` directive for that identifier, so it
+binds a function or an import of that name and parks for a name the image does
+not have. Anything else (a variable, a forward declaration) states nothing and
+is skipped. Identical declarations are stated once, which is what makes a
+header that several others include harmless.
+
+The C grammar behind `typedef` and `prototype` reads plain declarations only,
+so the front end rewrites the spellings real headers use that it has no
+reading for: compiler decorations are removed, an enumerator value or array
+bound that is an integer constant expression over literals and earlier
+enumerators is replaced by its value, an unsized array parameter is spelled as
+a pointer, and `__builtin_va_list` is spelled `void *`, the storage every
+supported ABI passes it in. The value is the one C gives the expression: each
+literal takes its C type from its digits and suffix, operands meet under the
+usual arithmetic conversions, unsigned arithmetic wraps at its width, and a
+signed `<<` wraps as GCC and Clang define it. The width of `long` differs
+between targets, so a `long` or `unsigned long` result is kept only while it
+means the same at 32 and 64 bits. A hex or octal `LL` literal above the signed
+64-bit range is unsigned under GCC and Clang but signed under MSVC, so it is
+not folded. The loader reads headers before it knows the target, so `int` is
+32 bits wide: on a target whose `int` is 16 bits (AVR, MSP430) a folded value
+that overflows 16 bits is the 32-bit one. An expression C leaves undefined (a
+signed overflow, including `INT_MIN % -1`, a shift by the width or more, a
+division by zero), one that depends
+on the target, one with a `char` or `short` cast, and one whose value the
+grammar cannot read back (above the signed 64-bit range) is left as written,
+and the grammar refuses its declaration: a declaration is stated with C's
+value or not at all, because an enumerator that is off by a wrap can widen its
+enum and shift every field after it in a record. A single literal the grammar
+reads as C does is left as written; a binary literal and an enumerator name are
+replaced, since the grammar has no reading for either. kuna runs no preprocessor unless `--types-cpp <cc>`
+names one; then each header is piped through `<cc> -E` and the output is what
+is cut.
+
+The header's directives are placed ahead of the caller's own, whatever the
+order of the flags, and program-scoped directives are applied in order, so an
+`--assert prototype` for the same function is applied last and wins. A header
+prototype is otherwise a `prototype` directive like any other: it outranks the
+signature DWARF and the built-in library tables give the same name, and it is
+not checked against the code, so a header that does not match the binary is
+believed. Types go the other way: the grammar does not redefine a completed
+record or an existing typedef name, so a type that DWARF, a built-in table or
+an earlier header defined keeps its first definition and the header's is a
+`rejected` row. Each
+directive's report row carries `--types <file>:<line>:` and the declaration; a
+declaration the grammar refuses is a `rejected` row and a warning, the others
+still apply, and such a row never fails the run, under `--assert-strict` too:
+a header is loaded as far as it parses.
+
+A `flow` directive is the sharpest of the function-scoped ones, and the only
 one that changes which bytes are in the function at all. P2 classifies the flow
 out of each instruction — branch, call, call-that-does-not-return, return — and
 `FlowInfo::process` consults the per-function `Override` store
@@ -2941,6 +3104,30 @@ the same engine in process, exited 1 on the same command. Every per-function abo
 is now stamped onto the retained `Funcdata` (`set_kuna_pipeline_failure`) so that
 shell names its reason, and the script surface reports the raised abort the way it
 already reported the swallowed one.
+
+A `callee` directive states where one indirect call goes. The engine cannot
+derive the destination of `call *(%rax)`, and it already has the store for it:
+the per-function `Override` keeps an indirect-call redirect, which kuna plants
+itself when it resolves a call and restarts. The directive plants the same
+redirect before flow (`decompiler/crates/kuna-console/src/kuna_calleeoverride.rs
+(plant)`). It first decodes the instruction at the call site and accepts an
+indirect call or an indirect jump; a direct call, any other instruction and a
+destination that is not a function entry are rejected with the reason, and
+nothing is planted. A destination is a function name or a `0x` entry address.
+The fact is parked on the architecture under the entry of the function that
+holds the call, and P2 turns the call into a direct call to the callee, or the
+jump into a tail call (02, *Call sites*). The script surface lowers the
+directive to the console command `override indirect <callsite> <name|address>`
+(`kuna-console/src/ifacedecomp.rs (IfcOverrideIndirect)`), which calls the same
+`plant`. A call site the function's flow does not reach cannot be seen before
+flow, so the engine records it on the `Funcdata` after the follow and both
+surfaces turn that record into a `fatal` rejection, as they do for a refused
+`flow` (`assertions::record_rejected_callee_overrides`, and the console's
+`Rejected override indirect ...` line). The planted redirect is consulted before
+any resolution of kuna's own, so the statement outranks a destination kuna
+would have recovered (the import a GOT-slot call loads). Two `callee`
+directives for one call site leave the later one planted; the same function
+reports the earlier one rejected.
 
 A `call` (or `callreturn`) override carries one more fact with it: the RET-call
 chain it starts. `push <continuation>; push <target>; ret` is a call spelled
@@ -3211,7 +3398,14 @@ the top of the space by halving the remaining gap, so a block renumbered to end
 near the maximum would run out of room again within a few dozen appends, and
 building a block of tens of thousands of operations would renumber it thousands
 of times. With the upper half free, a renumber is followed by roughly 280
-appends before the next one.
+appends before the next one. That alone still renumbers a growing block once
+per 280 operations, which is quadratic work in a long straight-line block: a
+30,000-instruction block took minutes to build. So an append steps by the
+smaller of the fixed gap (`0x1000000`) and the order space divided by the
+block's operation count. Blocks of up to 255 operations step exactly as
+before; a longer block's gap shrinks as it grows, a renumber then leaves room
+for about as many appends as the block already holds, and the renumbers of a
+block grow with the logarithm of its length.
 
 Deleting a varnode through `Funcdata::delete_varnode` first checks the bank's
 deletion precondition: the node must have neither a defining operation nor any
@@ -3734,9 +3928,15 @@ action loop carries only the IR-boundary handle, not the SLEIGH translator — s
 it hands every restart up (`ActionContext::reflow_requested`) to the outer drive,
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (run_pipeline)`,
 which owns `&mut Architecture`: it clears the function (`Funcdata::clear` — the
-Override store survives), re-follows flow, and re-performs the root, bounded at 8
-cross-flow restarts (`MAX_REFLOW`); past the budget it keeps the last analyzed IR
-rather than failing. Restarts are refused outright during jump-table recovery
+Override store survives) and the analysis warnings the previous pass raised for it
+(`refollow_flow`, upstream `Architecture::clearAnalysis` clearing
+`Comment::warning|Comment::warningheader`, both those already published and those
+still buffered on the `Funcdata`), re-follows flow, and re-performs the root,
+bounded at 8 cross-flow restarts (`MAX_REFLOW`); past the budget it keeps the last
+analyzed IR rather than failing. Clearing the warnings is what keeps a comment from
+describing a pass that was thrown away: a `funcboundflow` truncation at a call the
+restart now knows does not return, or a `branch-flip` on a guard the re-run did not
+flip. Restarts are refused outright during jump-table recovery
 (`is_jumptable_recovery_on`, same `apply`). The relocation is behavioral
 plumbing, not semantics: trigger, clear, re-read-P0, re-run are the upstream
 restart contract.

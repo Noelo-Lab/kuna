@@ -9,6 +9,8 @@ use crate::common;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use kuna_base::address::Address;
+use kuna_decomp::varnode::varnode_flags;
 use kuna_console::engine::{bootstrap_from_object_with_isa, ConsoleProgram};
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
@@ -42,7 +44,29 @@ fn double_dispatch_elf() -> Vec<u8> {
         body.extend(target.to_le_bytes());
     }
     body.extend((1..=128).map(|tag| case(tag).map_or(4u8, |k| (k % 4) as u8)));
+    elf_image(body)
+}
 
+/// One bounds check guarding one two-stage table of `rows` byte-map entries,
+/// its byte map at 0x40104c behind three 4-byte offsets.
+fn long_dispatch_elf(rows: u32) -> Vec<u8> {
+    let mut body = vec![0x8d, 0x51, 0xff, 0x81, 0xfa];
+    body.extend((rows - 1).to_le_bytes());
+    body.extend([
+        0x77, 0x2c, 0x4c, 0x8d, 0x05, 0xee, 0xef, 0xff, 0xff, 0x48, 0x63, 0xc2, 0x41, 0x0f, 0xb6,
+        0x84, 0x00, 0x4c, 0x10, 0x00, 0x00, 0x41, 0x8b, 0x8c, 0x80, 0x40, 0x10, 0x00, 0x00, 0x4c,
+        0x01, 0xc1, 0xff, 0xe1, 0xb8, 0x0a, 0x00, 0x00, 0x00, 0xc3, 0xb8, 0x0b, 0x00, 0x00, 0x00,
+        0xc3, 0xb8, 0xff, 0xff, 0xff, 0xff, 0xc3, 0xcc, 0xcc, 0xcc,
+    ]);
+    for target in [0x102bu32, 0x1031, 0x1037] {
+        body.extend(target.to_le_bytes());
+    }
+    body.extend((0..rows).map(|row| [0u8, 1, 2, 2, 1, 2, 0, 2].get(row as usize).copied().unwrap_or(2)));
+    elf_image(body)
+}
+
+/// `body` as the code of an x86-64 executable entered at 0x401000.
+fn elf_image(body: Vec<u8>) -> Vec<u8> {
     let mut image = vec![0; 0x1000];
     image[..7].copy_from_slice(b"\x7fELF\x02\x01\x01");
     for (at, value) in [(16, 2u16), (18, 62), (52, 64), (54, 56), (56, 1)] {
@@ -62,8 +86,12 @@ fn double_dispatch_elf() -> Vec<u8> {
 }
 
 fn program(budget: Option<Duration>) -> (ConsoleProgram, PathBuf) {
+    program_of(double_dispatch_elf(), budget)
+}
+
+fn program_of(image: Vec<u8>, budget: Option<Duration>) -> (ConsoleProgram, PathBuf) {
     let path = common::scratch_file("jumptable-budget", "elf");
-    std::fs::write(&path, double_dispatch_elf()).unwrap();
+    std::fs::write(&path, image).unwrap();
     let mut program = bootstrap_from_object_with_isa(path.to_str().unwrap(), "", &specs(), None)
         .expect("bootstrap fixture with built processor specs");
     program.commit_pending_analysis().unwrap();
@@ -98,6 +126,29 @@ fn expired_budget_names_the_jump_table_being_recovered() {
     assert_eq!(
         error.as_deref(),
         Some("per-function decompile budget exceeded (0 s) in jump-table recovery at 0x401026"),
+    );
+}
+
+/// A table too long to walk within the budget fails inside the walk over its
+/// values, not after it: the recovery loops themselves read the deadline. The
+/// byte map is read-only, so the model emulates every row to prove which
+/// offsets the map selects.
+#[test]
+fn a_long_table_walk_stops_at_the_budget() {
+    const ROWS: u32 = 1 << 22;
+    let (mut program, path) = program_of(long_dispatch_elf(ROWS), Some(Duration::from_millis(500)));
+    program.arch_mut().max_jumptable_size = ROWS;
+    let entry = program.find_entry_at(0x401000).expect("entry point");
+    let at = |offset: u64| Address::new(entry.addr.get_space().unwrap().clone(), offset);
+    let (first, last_open) = (at(0x401040), at(0x40104c + u64::from(ROWS)));
+    program.arch_mut().symboltab.set_property_range(varnode_flags::readonly, &first, &last_open);
+    let mut result = decompile_targets(&mut program, vec![entry], true, false, false);
+    std::fs::remove_file(path).unwrap();
+    let r = result.remove(0);
+    assert!(r.code.is_none(), "{:?}", r.code);
+    assert_eq!(
+        r.error.as_deref(),
+        Some("per-function decompile budget exceeded (0 s) in jump-table value walk at 0x401029"),
     );
 }
 

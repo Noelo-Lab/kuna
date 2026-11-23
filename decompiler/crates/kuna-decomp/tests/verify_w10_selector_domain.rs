@@ -194,15 +194,57 @@ fn byte_map_longer_than_the_table_limit_recovers_only_its_selector_values() {
     }
 }
 
-#[test]
-fn writable_byte_map_keeps_the_conservative_selector_domain() {
-    let code = decompile_dispatch(include_bytes!("fixtures/selector_domain_text.bin"), false);
-
-    assert_ne!(
+/// Three cases and none of the targets a map byte read as a table row names.
+fn assert_three_rows(code: &str) {
+    assert_eq!(
         code.matches("case ").count(),
         3,
-        "writable map was narrowed from its image snapshot:\n{code}"
+        "unexpected switch labels:\n{code}"
     );
+    assert!(!code.contains("flows to"), "invented target:\n{code}");
+}
+
+/// A writable map's values are not taken from the image, but the table still
+/// ends where the map begins.
+#[test]
+fn writable_byte_map_ends_the_table_where_the_map_begins() {
+    assert_three_rows(&decompile_dispatch(
+        include_bytes!("fixtures/selector_domain_text.bin"),
+        false,
+    ));
+}
+
+/// The map's last selector byte changed from 2 to 1, so its image selects only
+/// rows 0 and 1. A read-only map narrows to those two; a writable one is not
+/// narrowed from its image and keeps row 2, ending only where the map begins.
+#[test]
+fn writable_byte_map_keeps_a_row_its_image_does_not_select() {
+    let mut text = include_bytes!("fixtures/selector_domain_text.bin").to_vec();
+    let map = text
+        .windows(9)
+        .position(|w| w == [0, 0, 0, 0, 1, 0, 0, 0, 2])
+        .expect("map head");
+    text[map + 8] = 1;
+    assert_eq!(
+        decompile_dispatch(&text, true).matches("case ").count(),
+        2,
+        "read-only map was not narrowed"
+    );
+    assert_three_rows(&decompile_dispatch(&text, false));
+}
+
+/// `selector_domain.S` as with `-DINPUT_COUNT=70000`: more index values than
+/// are emulated, so the map's values stay unproven.
+#[test]
+fn byte_map_longer_than_the_emulation_budget_ends_the_table_at_the_map() {
+    let mut text = include_bytes!("fixtures/selector_domain_wide_text.bin").to_vec();
+    let bound = text
+        .windows(5)
+        .position(|w| w == [0x3d, 0xdb, 0x05, 0x00, 0x00])
+        .expect("cmp $1499,%eax");
+    text[bound + 1..bound + 5].copy_from_slice(&69_999u32.to_le_bytes());
+    text.resize(text.len() + 70_000 - 1_500, 0);
+    assert_three_rows(&decompile_dispatch(&text, true));
 }
 
 #[test]

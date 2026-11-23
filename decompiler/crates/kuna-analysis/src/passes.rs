@@ -44,7 +44,7 @@ fn load_pass_enabled(id: &str) -> bool {
 pub fn default_passes() -> Vec<Box<dyn AnalysisPass>> {
     // A non-PE/non-Mach-O format (`Elf`): the back-compat entry never carries the
     // PE-only `rtti` pass nor the Mach-O-only `objc` pass. It DOES carry the
-    // ELF-only `itaniumrtti` pass, which is default-off at the commit boundary, so
+    // ELF and Mach-O `itaniumrtti` pass, which is default-off at the commit boundary, so
     // the committed facts are still byte-identical to before that pass.
     passes_for(Compiler::Unknown, object::BinaryFormat::Elf)
 }
@@ -64,9 +64,9 @@ pub fn default_passes() -> Vec<Box<dyn AnalysisPass>> {
 ///   (the Objective-C runtime metadata is a Mach-O concern — `BinaryFormat::MachO`),
 ///   so a non-Mach-O binary's pass set is byte-identical to before this pass existed,
 ///   and
-/// - the Itanium RTTI / vtable pass (`itaniumrtti`), registered ONLY on an ELF image
-///   (the GCC/Clang C++ ABI is an ELF concern — `BinaryFormat::Elf`), so a non-ELF
-///   binary's pass set is byte-identical to before this pass existed.
+/// - the Itanium RTTI / vtable pass (`itaniumrtti`), registered ONLY on an ELF or
+///   Mach-O image (the GCC/Clang C++ ABI), so a PE binary's pass set is
+///   byte-identical to before this pass existed.
 pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<dyn AnalysisPass>> {
     let mut passes: Vec<Box<dyn AnalysisPass>> = vec![
         // S1 loader: known no-return functions (exit/abort/…). Mirrors Ghidra's
@@ -338,6 +338,8 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         Box::new(crate::callfixup::CallFixupPass),
         // (kuna `kernelbug`) A Linux kernel image's `__bug_table`; inert elsewhere.
         Box::new(crate::kernelbug::KernelBugPass),
+        // (kuna `blobs`) Embedded images and archives, committed unless `blobs off`.
+        Box::new(crate::blobs::BlobPass),
         // (kuna `thunkentry`) An MSVC incremental-link table's stubs and targets.
         Box::new(crate::listing::kuna_thunkentry::IncrementalLinkPass),
         // (kuna) The MSVC x87 one-operand intrinsics take ST0 and return in ST0.
@@ -396,13 +398,13 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // `<C>::typeinfo_name` / `<C>::vtable` / `<C>::vtable_for_<Base>` labels and one
     // `<C>::vfunc_<i>` function symbol per virtual slot. Ghidra has NO Itanium RTTI
     // analyzer (its `RttiAnalyzer` is MSVC-only and its GCC class recovery is
-    // script-tier), so this is a kuna capability rather than a port. ELF-only:
-    // registered ONLY for `BinaryFormat::Elf`, so every other target's pass set is
-    // byte-identical (the pass ALSO self-gates on ELF in `run`). DEFAULT-OFF: its
+    // script-tier), so this is a kuna capability rather than a port. ELF and
+    // Mach-O (fixup slots resolved first); every other target's pass set is
+    // byte-identical (the pass ALSO self-gates in `run`). DEFAULT-OFF: its
     // facts are computed at load but committed only when `--option itaniumrtti on`
     // (`engine.rs::analysis_pass_enabled` reads `arch.analysis_itaniumrtti`, default
     // false), so a default run is byte-identical.
-    if format == object::BinaryFormat::Elf {
+    if matches!(format, object::BinaryFormat::Elf | object::BinaryFormat::MachO) {
         passes.push(Box::new(crate::rtti::kuna_itaniumrtti::ItaniumRttiPass));
     }
 
@@ -412,6 +414,14 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // Committed only when `importdata` is on.
     if format == object::BinaryFormat::Elf {
         passes.push(Box::new(crate::loader::kuna_elfgotimports::ElfGotImportPass));
+    }
+
+    // S1 Mach-O data-import slots (MachODataImportPass): name each symbol-pointer
+    // slot holding a data import (type metadata, a witness table, a class object)
+    // for its import and paint it `externref`, so `importdata` renders a read
+    // through it as the import. Committed only when `importdata` is on.
+    if format == object::BinaryFormat::MachO {
+        passes.push(Box::new(crate::loader::kuna_machodataslots::MachODataImportPass));
     }
 
     // S1 Go pclntab function-name recovery (GoPclntabPass): when the binary is Go
@@ -450,6 +460,8 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // off` drops the facts at the read-symbols boundary.
     if compiler.is_rust() {
         passes.push(Box::new(crate::strings::kuna_strrecords::StrRecordPass::rust()));
+        // (kuna `panicloc`) The panic `Location` records, typed and named.
+        passes.push(Box::new(crate::strings::kuna_panicloc::PanicLocationPass));
     }
 
     // S1 PE/Mach-O import-slot call binding (PeImportCallPass): paint
@@ -470,6 +482,13 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // walk does not cover.
     if format == object::BinaryFormat::MachO {
         passes.push(Box::new(crate::loader::kuna_authptrcall::AuthPtrCallPass));
+    }
+
+    // S1 stripped-stub naming (StubBindsPass): a `__stubs` entry whose
+    // indirect-symbol entry is `LOCAL|ABS` is named after the chained bind on
+    // the slot it jumps through. Committed only when `stubbinds` is on.
+    if format == object::BinaryFormat::MachO {
+        passes.push(Box::new(crate::loader::kuna_stubbinds::StubBindsPass));
     }
 
     // S1 MSVC RTTI / vftable recovery (RttiPass): on a Windows PE, parse the
@@ -1353,6 +1372,16 @@ pub fn run_listing_consumers_replaying_observed(
         out.push(("tailcallentry", tce_out));
     }
 
+    // (kuna `calltable`) Call tables add their targets as entries; a discovered
+    // entry on a switch case that nothing calls is not a function.
+    if arch.analysis_listing && arch.analysis_calltable && listing.has_refs() {
+        let tables = crate::listing::kuna_calltable::scan(&file, &listing, arch, translate);
+        let mut ct_out = AnalysisOutput::default();
+        ct_out.entries = tables.entries;
+        ct_out.case_entries = tables.case_entries;
+        out.push(("calltable", ct_out));
+    }
+
     // (kuna `callerreads`) Where each direct call returns to, for the decompile
     // step to read a `void` function's callers from.
     if arch.analysis_listing && listing.has_refs() {
@@ -1811,8 +1840,9 @@ mod tests {
 
     /// Compilers with no language pack select the same pass set. Go carries its
     /// two Go-only passes (the next test), and Rust appends `fatstrrecords`
-    /// (the `&str`-record string pass) — exactly one pass, at the end, so the
-    /// base set is byte-identical underneath.
+    /// (the `&str`-record string pass) then `panicloc` (the panic `Location`
+    /// records) — exactly two passes, at the end, so the base set is
+    /// byte-identical underneath.
     #[test]
     fn non_go_compilers_have_same_pass_ids() {
         let base = ids(&passes_for(Compiler::Gcc, NON_PE));
@@ -1824,12 +1854,13 @@ mod tests {
         assert_eq!(&swift[..base.len()], &base[..], "Swift set is the base set + extras");
         let rust = ids(&passes_for(Compiler::Rustc, NON_PE));
         assert_eq!(&rust[..base.len()], &base[..], "Rust set is the base set + extras");
-        assert_eq!(rust.last(), Some(&"fatstrrecords"), "Rust appends the record pass");
-        assert_eq!(rust.len(), base.len() + 1, "Rust adds exactly one pass");
+        assert_eq!(&rust[base.len()..], &["fatstrrecords", "panicloc"], "Rust appends the record and Location passes");
         // No compiler without a string-record arm carries the record pass
-        // (Go carries it too — the next test).
-        for c in [Compiler::Gcc, Compiler::Clang, Compiler::Swift, Compiler::Unknown] {
-            assert!(!ids(&passes_for(c, NON_PE)).contains(&"fatstrrecords"), "{c:?} must not carry fatstrrecords");
+        // (Go carries it too — the next test), and only Rust the Location pass.
+        for c in [Compiler::Gcc, Compiler::Clang, Compiler::Swift, Compiler::Unknown, Compiler::Go] {
+            let set = ids(&passes_for(c, NON_PE));
+            assert!(c == Compiler::Go || !set.contains(&"fatstrrecords"), "{c:?} must not carry fatstrrecords");
+            assert!(!set.contains(&"panicloc"), "{c:?} must not carry panicloc");
         }
     }
 
@@ -1892,21 +1923,21 @@ mod tests {
         assert_eq!(image_on_disk_path(&synthetic), None);
     }
 
-    /// The Itanium RTTI pass (`itaniumrtti`) is registered ONLY on an ELF image —
-    /// the GCC/Clang C++ ABI is an ELF concern, exactly as the Microsoft ABI is a
-    /// PE one — so every non-ELF pass set is byte-identical to before it existed.
+    /// The Itanium RTTI pass (`itaniumrtti`) is registered ONLY on an ELF or
+    /// Mach-O image, the two formats of the GCC/Clang C++ ABI, as the Microsoft
+    /// ABI is a PE one, so a PE or COFF pass set is byte-identical to before it existed.
     /// It precedes the Go `gopclntab` pass so that pass keeps its "appended last"
     /// contract on a Go ELF.
     #[test]
-    fn itaniumrtti_pass_is_elf_gated() {
+    fn itaniumrtti_pass_is_elf_and_macho_gated() {
         for c in [Compiler::Gcc, Compiler::Clang, Compiler::Go, Compiler::Unknown] {
-            let elf = ids(&passes_for(c, object::BinaryFormat::Elf));
-            assert!(elf.contains(&"itaniumrtti"), "{c:?}/Elf must carry itaniumrtti");
-            for fmt in [
-                object::BinaryFormat::Pe,
-                object::BinaryFormat::MachO,
-                object::BinaryFormat::Coff,
-            ] {
+            for fmt in [object::BinaryFormat::Elf, object::BinaryFormat::MachO] {
+                assert!(
+                    ids(&passes_for(c, fmt)).contains(&"itaniumrtti"),
+                    "{c:?}/{fmt:?} must carry itaniumrtti"
+                );
+            }
+            for fmt in [object::BinaryFormat::Pe, object::BinaryFormat::Coff] {
                 assert!(
                     !ids(&passes_for(c, fmt)).contains(&"itaniumrtti"),
                     "{c:?}/{fmt:?} must not carry itaniumrtti"
@@ -1978,19 +2009,18 @@ mod tests {
         assert!(!elf.contains(&"objc"), "ELF must not carry the objc pass");
         assert!(macho.contains(&"objc"), "Mach-O must carry the objc pass");
         // Compare the format-neutral base after dropping each format's gated
-        // additions: `itaniumrtti` and `elfgotimports` for ELF and `peimportcall`,
-        // `authptrcall`, `cfstrings` and `objc` for Mach-O.
+        // additions: `elfgotimports` for ELF and `peimportcall`, `authptrcall`,
+        // `stubbinds`, `cfstrings`, `objc` and `machodataslots` for Mach-O. Both carry `itaniumrtti`.
         let elf_neutral: Vec<&str> = elf
             .iter()
             .copied()
-            .filter(|&p| !matches!(p, "itaniumrtti" | "elfgotimports"))
+            .filter(|&p| p != "elfgotimports")
             .collect();
         let macho_neutral: Vec<&str> = macho
             .iter()
             .copied()
-            .filter(|&p| !matches!(p, "peimportcall" | "authptrcall" | "cfstrings" | "objc"))
+            .filter(|&p| !matches!(p, "peimportcall" | "authptrcall" | "stubbinds" | "cfstrings" | "objc" | "machodataslots"))
             .collect();
-        assert!(!elf_neutral.contains(&"itaniumrtti"));
         assert_eq!(
             macho_neutral, elf_neutral,
             "Mach-O and ELF must share the same format-neutral pass base"

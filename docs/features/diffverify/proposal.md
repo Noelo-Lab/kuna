@@ -153,8 +153,8 @@ that exceeds it is `UNKNOWN`.
 subset it ends on as **candidate culprits**. That subset is 1-minimal (re-enabling any
 one of its rules brings the difference back), not the smallest possible. Disabling a
 rule changes which other rules fire and in what order, so the search is not monotone, and
-the report says it is a candidate set. Once #1699 lands, per-phase snapshots further
-narrow the difference to P2, Band B or P6.
+the report says it is a candidate set. Once phase hooks land (#1641), per-phase snapshots
+further narrow the difference to P2, Band B or P6.
 - **Only fired rules are candidates.** The search space is the k rules that applied to
   this function, not the whole rule table. When one rule alone is the cause and disabling
   others does not mask it, that takes about log2 k re-decompiles of one function. Other
@@ -407,8 +407,8 @@ No earlier issue or PR proposes a standing semantic check. These overlap in part
   atoms and has no SMT solver, so it cannot prove two functions equivalent, and Tier S
   still needs z3. If #1534 lands, its expression arena is a candidate for Tier S's
   encoding side, before the SMT-LIB printer.
-- **#1641 / #1699 (open).** Phase hooks. Tier C does not need them; they would localize
-  a `DIFFERS` to P2, Band B or P6 (open question 1).
+- **#1641 (open issue) / #1699 (draft, closed unmerged).** Phase hooks. Tier C does not
+  need them; they would localize a `DIFFERS` to P2, Band B or P6 (open question 1).
 - **#317 (merged).** The ghidra-sim harness diffs kuna's **text** against the Ghidra GUI
   path. It checks fidelity to Ghidra, not what the code computes.
 - **Per-PR compile-and-compare oracles** (#677, #773, #942, #974, #1009, #1154 and others).
@@ -427,7 +427,8 @@ No earlier issue or PR proposes a standing semantic check. These overlap in part
 ## Open questions
 
 1. Is the final `Funcdata` the right decompiled side, or should C1 already require
-   #1699's Band B snapshot, which is closer to where most bugs are made?
+   a Band B snapshot from phase hooks (#1641), which is closer to where most bugs are
+   made?
 2. How should the machine side's initial stack be modeled? One option is a fixed
    return-address sentinel, with the caller's frame as scratch memory that is identical on
    both sides.

@@ -15,7 +15,7 @@
   "first_slice": "C1",
   "motivating_fix": "https://github.com/Noelo-Lab/kuna/pull/794",
   "optional_dependency": [
-    "https://github.com/Noelo-Lab/kuna/pull/1699"
+    "https://github.com/Noelo-Lab/kuna/issues/1641"
   ],
   "tiers": {
     "C": "concrete: SLEIGH emulation of the binary vs a new interpreter over the final Funcdata, from the same raw state; prototype claims checked against a typed contract (source, DWARF) when one exists, else PROTOTYPE_SUSPECT",
@@ -53,7 +53,7 @@
     "L1",
     "P"
   ],
-  "status": "C1 and C2 implemented; C4 precision and recall on tests/datatests + tests/stages",
+  "status": "C1, C2 and C3 implemented; C4 precision and recall on tests/datatests + tests/stages and on decbench",
   "measurements": {
     "C1": {
       "corpus": "tests/datatests + tests/stages, 256 runs per function",

@@ -12,7 +12,8 @@
 
 use kuna_base::error::KunaResult;
 
-/// The install name, basename or stem of the cache image to load.
+/// The install name, basename or stem of the cache image to load; several
+/// joined by `+` load as one program.
 pub const DYLDIMAGE_ENV: &str = "KUNA_DYLD_IMAGE";
 
 /// Gates naming calls and GOT slots that reach into other cache images.

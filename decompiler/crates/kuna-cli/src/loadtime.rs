@@ -31,6 +31,7 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
         "ifuncfpret" => (kuna_ifuncfpret::IFUNCFPRET_ENV, DefaultOn),
         "ppcapu" => (kuna_ppcapu::PPCAPU_ENV, DefaultOff),
         "kernelcache" => (kuna_kernelcache::KERNELCACHE_ENV, Kernelcache),
+        "kernelcache-boot" => (kuna_decomp::kuna_kernelcacheboot::KERNELCACHE_BOOT_ENV, Trimmed),
         "goabi" => (kuna_goabi::GOABI_ENV, DefaultOn),
         "symbolnamechars" => (kuna_symbolnamechars::SYMBOLNAMECHARS_ENV, SymbolNameChars),
         "libctypes" => (kuna_libctypes::LIBCTYPES_ENV, LibcTypes),
@@ -91,8 +92,9 @@ pub(crate) fn is_loadtime_gate(name: &str) -> bool {
 }
 
 /// The load-time gates that choose which image of a file is read: the
-/// `MH_FILESET` entry and the dyld shared cache image.
-const IMAGE_SELECTION: [&str; 2] = ["kernelcache", "dyldimage"];
+/// `MH_FILESET` entry, the collections its pointers are resolved against, and
+/// the dyld shared cache image.
+const IMAGE_SELECTION: [&str; 3] = ["kernelcache", "kernelcache-boot", "dyldimage"];
 
 /// Export the image-selection gates `argv` sets with `--option NAME VALUE` for
 /// the whole invocation, as the global `--image` is: every surface that reads

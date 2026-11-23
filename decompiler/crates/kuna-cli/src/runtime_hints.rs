@@ -24,6 +24,9 @@ pub struct RuntimeHint {
     /// `true` when native decompilation is not the whole answer and the hint says
     /// what to run instead; only these are echoed to stderr.
     pub actionable: bool,
+    /// The registry crates a Rust image names, as `(name, version)`; `None` for
+    /// every other row.
+    pub crates: Option<Vec<(String, String)>>,
 }
 
 const PYI_MAGIC: &[u8] = b"MEI\x0c\x0b\x0a\x0b\x0e";
@@ -196,7 +199,7 @@ fn nativeaot_version(b: &[u8], pe: Option<&PeView>) -> Option<Option<String>> {
 }
 
 fn hint(id: &'static str, version: Option<String>, text: String, actionable: bool) -> RuntimeHint {
-    RuntimeHint { id, version, hint: text, actionable }
+    RuntimeHint { id, version, hint: text, actionable, crates: None }
 }
 
 /// Recognize the runtimes and packers `bytes` carries. `toolchain` adds the Go
@@ -305,12 +308,17 @@ pub fn detect(bytes: &[u8], toolchain: bool) -> Vec<RuntimeHint> {
                 "Go binary: function names come from pclntab; start at main.main".into(),
                 false,
             )),
-            Compiler::Rustc => out.push(hint(
-                "rust",
-                None,
-                "Rust binary: output defaults to --language rust".into(),
-                false,
-            )),
+            Compiler::Rustc => {
+                let version = kuna_analysis::sourcelang::rustc_version_label(bytes);
+                let label = version
+                    .as_deref()
+                    .map(|v| format!("Rust binary (rustc {v})"))
+                    .unwrap_or_else(|| "Rust binary".into());
+                let mut row =
+                    hint("rust", version, format!("{label}: output defaults to --language rust"), false);
+                row.crates = Some(kuna_analysis::sourcelang::registry_crates(bytes));
+                out.push(row);
+            }
             _ => {}
         }
     }
@@ -323,12 +331,22 @@ pub fn to_json(hints: &[RuntimeHint]) -> Json {
         hints
             .iter()
             .map(|h| {
-                Json::Object(vec![
+                let mut row = vec![
                     ("id".into(), Json::Str(h.id.into())),
                     ("version".into(), h.version.clone().map(Json::Str).unwrap_or(Json::Null)),
                     ("hint".into(), Json::Str(h.hint.clone())),
                     ("actionable".into(), Json::Bool(h.actionable)),
-                ])
+                ];
+                if let Some(crates) = &h.crates {
+                    let crates = crates.iter().map(|(name, version)| {
+                        Json::Object(vec![
+                            ("name".into(), Json::Str(name.clone())),
+                            ("version".into(), Json::Str(version.clone())),
+                        ])
+                    });
+                    row.push(("crates".into(), Json::Array(crates.collect())));
+                }
+                Json::Object(row)
             })
             .collect(),
     )

@@ -101,7 +101,7 @@ const RELIABLE_OVERRIDES: &[(&str, &str)] = &[];
 /// (`returndup` since DIV-54, `pdb` since DIV-129, the presentation defaults
 /// `partialaccess`, `voidtailreturn`, `importdata`, `calltargettype` and
 /// `libcnames`, and the target-gated passes -- `rtti`=PE,
-/// `itaniumrtti`=ELF-with-RTTI, `objc`/`macho-arm64e`=Mach-O,
+/// `itaniumrtti`=ELF/Mach-O-with-RTTI, `objc`/`macho-arm64e`=Mach-O,
 /// `sparcstructret`=SPARC, `v850indirectbranch`=V850, the ARM entry and
 /// hard-float passes -- all inert off their target): the preset owns the option
 /// outright, so a user `--option returndup off` earlier on the command line is
@@ -132,15 +132,17 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // transform-tier default-off recovery/structuring passes.
     ("switchmodbound", "on"),
     // (kuna) Recover a CMOV/predicated indirect dispatch over constant code
-    // addresses. Default OFF because a conditional tail call between two nearby
-    // function entries has the same shape and recovering it splices both callee
-    // bodies into the caller; preset membership is the delivery route, since the
-    // only alternative on a real dispatch is losing the whole body behind the
-    // branch to a `(*v)()` call.
+    // addresses. The default `reentry` recovers only re-entered dispatcher loops,
+    // because a conditional tail call between two nearby function entries has the
+    // same shape and recovering it splices both callee bodies into the caller;
+    // preset membership is the delivery route for `on`, since the only
+    // alternative on a real dispatch is losing the whole body behind the branch
+    // to a `(*v)()` call.
     ("constselectjump", "on"),
     ("switchguardbound", "on"), // speed-expensive
     ("unrolledguard", "on"),    // speed-expensive
     ("globalarrayanchor", "on"),
+    ("opaquepredicate", "on"),
     ("sparcstructret", "on"), // SPARC-idiom-gated; no-op off-SPARC
     ("v850indirectbranch", "on"), // V850-gated (kuna_v850indbranch::applies); no-op off-V850
     ("regionedgeorder", "on"),
@@ -229,7 +231,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("fid", "on"),
     ("flirt", "on"),         // inert without KUNA_FLIRT_SIGS
     ("rtti", "on"),          // PE-only; no-op off-PE
-    ("itaniumrtti", "on"),   // ELF-only, and inert without __cxxabiv1 typeinfo relocs
+    ("itaniumrtti", "on"),   // ELF and Mach-O, inert without __cxxabiv1 typeinfo anchors
     // The speculative gap-walk ("may create bad code") with the aligned gap cursor
     // (GH-299). Every number in its catalog row was measured under this preset,
     // and the aligned cursor is a net win in BOTH directions there (mid-body
@@ -528,7 +530,9 @@ mod tests {
         ///
         /// `armconstshift` makes signed ARM constant shifts defined C at the
         /// cost of a cast pair on every sign-bit test (`x << 0x18 < 0`), which
-        /// firmware uses for nearly every register flag check.
+        /// firmware uses for nearly every register flag check. `wrapadd` makes a
+        /// widened four-byte sum wrap the same way, at the cost of a cast pair on
+        /// every such sum (`return a0 + 3;`).
         ///
         /// `x86listingswitch` reaches valid cases but ordinary tail jumps from
         /// them can hide independent function entries from the AIF gap walk;
@@ -556,7 +560,7 @@ mod tests {
               "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
-              "armconstshift", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "ppcapu", "rustprobestack", "highsliceguard", "rustarrayzero",
+              "armconstshift", "wrapadd", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "ppcapu", "rustprobestack", "highsliceguard", "rustarrayzero",
               // `lazyfuncs` changes no output, but its saving is a single-function
               // property: the whole-binary surfaces the presets drive (decompile-all,
               // the web front-end, the benchmark) materialize every target they walk

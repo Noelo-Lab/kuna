@@ -68,6 +68,8 @@ const REGISTERS: [&str; 6] = ["EAX", "ECX", "EDX", "EBX", "ESI", "EDI"];
 
 const ECX: u8 = 1 << 1;
 const EDX: u8 = 1 << 2;
+/// EAX, ECX and EDX: the registers an x86-32 convention passes arguments in.
+const ARGUMENTS: u8 = 1 | ECX | EDX;
 /// EAX and the callee-saved registers.
 const FOREIGN: u8 = 1 | (1 << 3) | (1 << 4) | (1 << 5);
 
@@ -463,6 +465,12 @@ fn is_import(arch: &Architecture, entry: &Address) -> bool {
     let size = entry.get_space().map_or(1, |s| s.get_addr_size() as i32);
     let (_, flags) = arch.symboltab.query_properties(scope, entry, size, entry);
     flags & crate::varnode::varnode_flags::externref != 0
+}
+
+/// How many of EAX, ECX and EDX the callee at `entry` reads before writing
+/// them: the arguments it takes in registers.
+pub fn argument_registers(arch: &Architecture, entry: &Address) -> u8 {
+    callee_register_inputs(arch, entry).map_or(0, |inputs| (inputs & ARGUMENTS).count_ones() as u8)
 }
 
 /// The tracked registers the callee at `entry` reads before writing, as bits

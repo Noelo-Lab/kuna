@@ -58,6 +58,7 @@ fn with_edited_types<R>(edit: impl FnOnce(&mut Metadata), f: impl FnOnce(&Types)
     let namer = Namer {
         md: &md,
         imports: &imports,
+        objc_members: Default::default(),
         memo: Default::default(),
         code: file
             .sections()

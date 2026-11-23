@@ -52,6 +52,6 @@
 <stringmatch name="Rust raw array address keeps callback order" min="1" max="1">\(\&amp;raw\ mut\ \(\*counted_base\(p\)\)\.i32\)</stringmatch>
 <stringmatch name="Rust raw array address preserves result pointer casts" min="1" max="1">as\ \*mut\ i32\)\ as\ \*mut\ u32;</stringmatch>
 <stringmatch name="Rust raw array address preserves literal width" min="1" max="1">::core::convert::identity::&lt;i64&gt;\(\-0x8000000000000000\ &gt;&gt;\ \(n\ as\ u8\ \&amp;\ 0x3f\)\)</stringmatch>
-<stringmatch name="Rust array integer decay uses a raw address" min="1" max="1">\&amp;raw\ mut\ \(\*p\)\.i32\ as\ i64\ \+</stringmatch>
+<stringmatch name="Rust array integer decay uses a raw address" min="1" max="1">i64::wrapping_add\(\&amp;raw mut \(\*p\)\.i32 as i64,4 &lt;&lt; \(n as u8 &amp; 0x3f\)\) as \*mut i32;</stringmatch>
 <stringmatch name="Rust array address cast suppression stays diagnostic" min="1" max="1">return\ \&amp;mut\ \(\*p\)\.i64\[i\];</stringmatch>
 </decompilertest>

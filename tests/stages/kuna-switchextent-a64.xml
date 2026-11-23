@@ -1,0 +1,54 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    AArch64 compact jump tables with no range check, assembled from
+    decompiler/crates/kuna-analysis/tests/fixtures/switchextent_aarch64.s
+    (the .text and .rodata of switchextent_aarch64).
+
+    `unchecked` dispatches twice on a call's result (`bl pick`), through
+    halfword offset tables laid out back to back in .rodata: tab_first
+    (3 entries at 0x11160) is followed by tab_second (4 entries at 0x11166).
+    Nothing bounds either index, so the basic model finds the whole 32-bit
+    range and both dispatches print as computed calls. With switchextent
+    (default on) the first table ends where the function's second begins
+    and recovers as a three-case switch; the second is the function's last
+    and stays a computed call. `last` dispatches once through tab_last
+    (0x1116e), followed by a byte array the function reads (bytes_last,
+    0x11172): an object that is not a jump table bounds nothing, so it
+    stays a computed call too. `entering` is bounded by the `cmp w0,#2;
+    b.ls` that branches into its dispatch block.
+-->
+<bytechunk space="ram" offset="0x10000">
+1f0c0071e80100541f2003d5688a00108a000010094960384a09098b40011fd640018052c0035fd660018052c0035fd680018052c0035fd6a0018052c0035fd600008012c0035fd61f0800716900005400008012c0035fd6080000b0087105918a000010094960384a09098b40011fd680028052c0035fd6a0028052c0035fd6c0028052c0035fd600080012c0035fd6fd7bbea9f35301a9fd030091f303012afaffff97080000b0088105918a000010095960784a09098b40011fd6d403805204000014f40380520200001414048052e003132aedffff97080000b0089905918a000010095960784a09098b40011fd68006001106000014800a001104000014800e00110200001480120011f35341a9fd7bc2a8c0035fd6fd7bbfa9fd030091daffff97080000b008b905918a000010095960784a09098b40011fd60005805204000014080000b008c9059100094039fd7bc1a8c0035fd6
+</bytechunk>
+<bytechunk space="ram" offset="0x11158">
+00020406000204000000020004000000020004000600000002000102030405060708
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="guarded"/>
+<symbol space="ram" offset="0x10048" name="entering"/>
+<symbol space="ram" offset="0x10088" name="pick"/>
+<symbol space="ram" offset="0x10090" name="unchecked"/>
+<symbol space="ram" offset="0x10118" name="last"/>
+</binaryimage>
+<script>
+  <com>load function unchecked</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function last</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function entering</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option switchextent off</com>
+  <com>load function unchecked</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="switchextent #1: the first unchecked table ends at the function's second and is a switch" min="1" max="1">switch\(pick\(a0\) &amp; 0xffffffff\) \{</stringmatch>
+<stringmatch name="switchextent #2: the switch has the three cases the second table's start admits, and entering its three" min="6" max="6">case [0-2]:</stringmatch>
+<stringmatch name="switchextent #3: a function's last table stays a computed call: unchecked's second, last's only, and unchecked's first with the option off (the second is then unreached)" min="3" max="3">// jump-as-call</stringmatch>
+<stringmatch name="switchextent #4: a byte array the function reads bounds nothing: last's table is still read by the computed call" min="1" max="1">\* 2UL \+ 0x1116e\) \* 4UL</stringmatch>
+<stringmatch name="switchextent #5: a range check that branches into the dispatch block bounds the table" min="1" max="1">switch\(a0\) \{</stringmatch>
+</decompilertest>

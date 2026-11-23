@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/passthrough_loopfwd_x86_64",
+    "binary_sha256": "61e173ccc51e4aa5f0b9af4754f1eed6dca1b34b0d398b943a1d97c6a3fb4f47",
+    "binary_size": 15296,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/passthrough_loopfwd_x86_64",
+    "selector": "walk",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "long walk\\([a-z *]+a0\\)",
+      "^        add_pair\\(a0\\);$",
+      "^  add_pair\\(a0\\);$"
+    ],
+    "stdout_absent": [
+      "add_pair\\(\\)"
+    ]
+  },
+  "notes": "walk keeps rdi across its call to add_pair inside a loop (gcc knows add_pair does not write it), so the call's rdi is the incoming rdi joined with the rdi carried back past the call: the call takes a0. once makes the same call outside a loop."
+}

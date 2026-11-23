@@ -7,20 +7,20 @@
 use super::*;
 
 #[test]
-fn option_default_is_off() {
-    let opt = ConstSelectJumpOption::default();
-    assert!(!opt.is_enabled());
+fn option_default_is_reentry() {
+    assert_eq!(ConstSelectMode::default(), ConstSelectMode::Reentry);
+    assert!(ConstSelectMode::Reentry.admits_reentry() && ConstSelectMode::On.admits_reentry());
+    assert!(!ConstSelectMode::Off.admits_reentry());
 }
 
 #[test]
-fn apply_on_then_off() {
-    let mut opt = ConstSelectJumpOption::default();
-    let msg = opt.apply(true);
-    assert!(opt.is_enabled());
-    assert!(msg.contains("on"));
-    let msg = opt.apply(false);
-    assert!(!opt.is_enabled());
-    assert!(msg.contains("off"));
+fn every_value_parses_and_others_are_refused() {
+    for mode in [ConstSelectMode::Off, ConstSelectMode::Reentry, ConstSelectMode::On] {
+        let (parsed, msg) = OptionConstSelectJump.apply(mode.as_str()).unwrap();
+        assert_eq!(parsed, mode);
+        assert!(msg.ends_with(mode.as_str()));
+    }
+    assert!(OptionConstSelectJump.apply("true").is_err());
 }
 
 #[test]

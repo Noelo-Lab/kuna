@@ -1,0 +1,1626 @@
+{
+  "tools": {
+    "assembler": {
+      "name": "mips64-octeon-linux-gnu-as",
+      "sha256": "96b3d7b45a26a3b53aba77e56a372d30c8fa92f06092a2ca78a39d1e97ad465a",
+      "version": "GNU assembler (GNU Binutils) 2.30"
+    },
+    "linker": {
+      "name": "ld",
+      "sha256": "2865846ece2642439cfae404ef930bfc5494c4babd2347757878b8f0f8f761cf",
+      "version": "GNU ld (GNU Binutils) 2.47.20260726"
+    },
+    "objcopy": {
+      "name": "objcopy",
+      "sha256": "f4cee3fbde6906b10a4dba6c3543281fb5ccdbab4d8ba1c6acc560b4131f2ba2",
+      "version": "GNU objcopy (GNU Binutils) 2.47.20260726"
+    },
+    "nm": {
+      "name": "nm",
+      "sha256": "1fd313eeb35b9fbda41a3f9a51af9c8b1c1d471927b7f3046580d15937155f0a",
+      "version": "GNU nm (GNU Binutils) 2.47.20260726"
+    }
+  },
+  "fixtures": [
+    {
+      "source": "reentry-64-r31-1.S",
+      "source_sha256": "9ff60fb6e687ccde9a4659dba1a8c8e164e992a55376a32f90a0c0a13006b13b",
+      "binary": "reentry-64-r31-1.bin",
+      "binary_sha256": "d5d00305b6cc7a65ec622c71880e9b3eb2e7a2e3f15b8303fbbc6cb8c8e56454",
+      "elf_sha256": "dbe6c838a3b2421435ea9e88657231eddbe1509aa314fe918acb3fd810a72c92",
+      "base": 4194304,
+      "size": 36,
+      "abi": "64",
+      "register": 31,
+      "steps": 1,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "reentry-64-r31-1.o",
+          "reentry-64-r31-1.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-64-r31-1.elf",
+          "reentry-64-r31-1.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-64-r31-1.elf",
+          "reentry-64-r31-1.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-64-r31-2-addiu.S",
+      "source_sha256": "6bc8ab90524aa3303f7ea6166b3412a63016c5e90a52c1b1d90b17c4648247d9",
+      "binary": "reentry-64-r31-2-addiu.bin",
+      "binary_sha256": "76c0e4051e90c438bc266e41423a0f74f406a5fe523c82e97fc03b0932f2cca4",
+      "elf_sha256": "96d2438817ba2630a74ad9dcfe9d290f2349c555cffd8e567128154fd879f579",
+      "base": 4227056,
+      "size": 60,
+      "abi": "64",
+      "register": 31,
+      "steps": 2,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "reentry-64-r31-2-addiu.o",
+          "reentry-64-r31-2-addiu.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x407ff0",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-64-r31-2-addiu.elf",
+          "reentry-64-r31-2-addiu.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-64-r31-2-addiu.elf",
+          "reentry-64-r31-2-addiu.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-64-r31-2-condreturn.S",
+      "source_sha256": "3ea21606f44302c6b43db7b8eb9fc4e7a274e617cab4eb1269831315db9caf34",
+      "binary": "reentry-64-r31-2-condreturn.bin",
+      "binary_sha256": "7cad4030f0eaf46a4647e70426976c9d3df04e44ab8c58097087768f691085f6",
+      "elf_sha256": "d28d75b20008d8f36069a4b45c9f93aed0230af1941e64f0ae7cf3bd8110bed4",
+      "base": 4194304,
+      "size": 72,
+      "abi": "64",
+      "register": 31,
+      "steps": 2,
+      "wide_return": false,
+      "join": false,
+      "default_return": true,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "reentry-64-r31-2-condreturn.o",
+          "reentry-64-r31-2-condreturn.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-64-r31-2-condreturn.elf",
+          "reentry-64-r31-2-condreturn.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-64-r31-2-condreturn.elf",
+          "reentry-64-r31-2-condreturn.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-64-r31-2-delay.S",
+      "source_sha256": "cb733c48f208b1407643eba14b485a2eaba2dee916747e4cc1587984dd8112af",
+      "binary": "reentry-64-r31-2-delay.bin",
+      "binary_sha256": "ed0a3fa0b2c93ba15af61167fdf54de4e1eeadcf74336d49f18f68b8c6399a7c",
+      "elf_sha256": "3b42c09ee12dd891ccc1754c38a2d0bccce462b477c35e15a90b0790eada45d2",
+      "base": 4194304,
+      "size": 60,
+      "abi": "64",
+      "register": 31,
+      "steps": 2,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "reentry-64-r31-2-delay.o",
+          "reentry-64-r31-2-delay.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-64-r31-2-delay.elf",
+          "reentry-64-r31-2-delay.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-64-r31-2-delay.elf",
+          "reentry-64-r31-2-delay.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-64-r31-2-early.S",
+      "source_sha256": "d2fc19c1530bb600b45ed7cc60934b2731dcfd7909acaf2ad8842c756316758e",
+      "binary": "reentry-64-r31-2-early.bin",
+      "binary_sha256": "eb9f9d5bd3e39dfff5b417c347daac629249347668d07b20ca1ce89109e5b5ec",
+      "elf_sha256": "65f346496f308750084311a795e90d836a1731f4432fb470458c710f173ae743",
+      "base": 4194304,
+      "size": 84,
+      "abi": "64",
+      "register": 31,
+      "steps": 2,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "reentry-64-r31-2-early.o",
+          "reentry-64-r31-2-early.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-64-r31-2-early.elf",
+          "reentry-64-r31-2-early.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-64-r31-2-early.elf",
+          "reentry-64-r31-2-early.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-64-r31-2-indirect-reentry.S",
+      "source_sha256": "df006fee1c1b3e38f112c8b21b32007677a2f9f7a16bf6f19abe3e059eb010e9",
+      "binary": "reentry-64-r31-2-indirect-reentry.bin",
+      "binary_sha256": "eb3c8701193bed65b64c005382a18cfcb204bf4a16d1c978adf4e42290b1c943",
+      "elf_sha256": "656325b3f669de1671b1c01beeb4977f8d81b5b857091e08a58c68106c928cac",
+      "base": 4194304,
+      "size": 68,
+      "abi": "64",
+      "register": 31,
+      "steps": 2,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "reentry-64-r31-2-indirect-reentry.o",
+          "reentry-64-r31-2-indirect-reentry.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-64-r31-2-indirect-reentry.elf",
+          "reentry-64-r31-2-indirect-reentry.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-64-r31-2-indirect-reentry.elf",
+          "reentry-64-r31-2-indirect-reentry.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-64-r31-2-join.S",
+      "source_sha256": "a8b1c3518bf8cf7db8ffce72000c3389d60a78d9412df18d9b09ccc5f9df8253",
+      "binary": "reentry-64-r31-2-join.bin",
+      "binary_sha256": "e8ec7af66d3ca16deb6a4741b956787cb92f6ac3901e07396e26451d8c78b03b",
+      "elf_sha256": "a2a4ea12be014db87fcd8bb17ba417258d8ceecb38a546d00b9d2e246f255d04",
+      "base": 4194304,
+      "size": 84,
+      "abi": "64",
+      "register": 31,
+      "steps": 2,
+      "wide_return": false,
+      "join": true,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "reentry-64-r31-2-join.o",
+          "reentry-64-r31-2-join.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-64-r31-2-join.elf",
+          "reentry-64-r31-2-join.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-64-r31-2-join.elf",
+          "reentry-64-r31-2-join.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-64-r31-2-separate-return.S",
+      "source_sha256": "30999584ab2848fc7ceca5d319c635ddcf54437a68763453250d73c50332b49f",
+      "binary": "reentry-64-r31-2-separate-return.bin",
+      "binary_sha256": "457efdcf224898a8a75f734d3b39016b20df3d4fb43a269e10591fb652263d3a",
+      "elf_sha256": "dce1411cebdf615022a3edd38f86f14a8d10881ed30fbec601c4a4c2d3e2a5e4",
+      "base": 4194304,
+      "size": 60,
+      "abi": "64",
+      "register": 31,
+      "steps": 2,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "reentry-64-r31-2-separate-return.o",
+          "reentry-64-r31-2-separate-return.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-64-r31-2-separate-return.elf",
+          "reentry-64-r31-2-separate-return.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-64-r31-2-separate-return.elf",
+          "reentry-64-r31-2-separate-return.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-64-r31-2-wide-return.S",
+      "source_sha256": "acebe94a8094794201fee8dce24a2f62ef2591454d451839cfd33ab48fb349d1",
+      "binary": "reentry-64-r31-2-wide-return.bin",
+      "binary_sha256": "591172c81c306c4a7a0051020790a5ff14d5be2b6cd75077ba7ce28c88a10d66",
+      "elf_sha256": "e1449e7c7a2e1cda394fe5ab2da3f6dc82f3d9ae819e984bd798134752f48556",
+      "base": 4194304,
+      "size": 88,
+      "abi": "64",
+      "register": 31,
+      "steps": 2,
+      "wide_return": true,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "reentry-64-r31-2-wide-return.o",
+          "reentry-64-r31-2-wide-return.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-64-r31-2-wide-return.elf",
+          "reentry-64-r31-2-wide-return.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-64-r31-2-wide-return.elf",
+          "reentry-64-r31-2-wide-return.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-64-r31-2-wide-shift31.S",
+      "source_sha256": "49b5fd0218425274a189458850dbb87b57924c24d82040c24cb7bae15ec41a1e",
+      "binary": "reentry-64-r31-2-wide-shift31.bin",
+      "binary_sha256": "9ff10ee99a0ef70e653beb3c6823368621ced502ee08bd290b6c2caac6708534",
+      "elf_sha256": "088b415b287c62a4ef09ba8bc174ed39927a24df64da5a82a383b01ff31fe143",
+      "base": 4194304,
+      "size": 88,
+      "abi": "64",
+      "register": 31,
+      "steps": 2,
+      "wide_return": true,
+      "join": false,
+      "default_return": false,
+      "return_shift": 31,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "reentry-64-r31-2-wide-shift31.o",
+          "reentry-64-r31-2-wide-shift31.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-64-r31-2-wide-shift31.elf",
+          "reentry-64-r31-2-wide-shift31.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-64-r31-2-wide-shift31.elf",
+          "reentry-64-r31-2-wide-shift31.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-64-r31-2-wide-shift63.S",
+      "source_sha256": "fb98e105b8ac96a91d17b5913ab9bd26e93c356eefa50e1feaeb9563a970f1e5",
+      "binary": "reentry-64-r31-2-wide-shift63.bin",
+      "binary_sha256": "59d6e76c43a03fd56dcaaa521381ed43941984f909ff5cfe4758270f50a82c22",
+      "elf_sha256": "7ec4ebc3eef763887b844880a8e6f5cab92564c34590b52c8ecdec397518c1c9",
+      "base": 4194304,
+      "size": 88,
+      "abi": "64",
+      "register": 31,
+      "steps": 2,
+      "wide_return": true,
+      "join": false,
+      "default_return": false,
+      "return_shift": 63,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "reentry-64-r31-2-wide-shift63.o",
+          "reentry-64-r31-2-wide-shift63.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-64-r31-2-wide-shift63.elf",
+          "reentry-64-r31-2-wide-shift63.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-64-r31-2-wide-shift63.elf",
+          "reentry-64-r31-2-wide-shift63.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-64-r31-2.S",
+      "source_sha256": "fa3887568ee3d0cc74470f6b589558647bbd3b4fb79f694c920669f8d02eb760",
+      "binary": "reentry-64-r31-2.bin",
+      "binary_sha256": "773180d51b7482f2befc74c6b32a67d5cd9d4d866852e18493dfd3828fd24e72",
+      "elf_sha256": "b9994057b9462b56ac8c89699adc9a600c6c049045a420111700e93905937adb",
+      "base": 4194304,
+      "size": 60,
+      "abi": "64",
+      "register": 31,
+      "steps": 2,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "reentry-64-r31-2.o",
+          "reentry-64-r31-2.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-64-r31-2.elf",
+          "reentry-64-r31-2.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-64-r31-2.elf",
+          "reentry-64-r31-2.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-64-r31-4.S",
+      "source_sha256": "f62415b177cbf1e2f66cbe447544c20e5ace47b13d174fb58bb4962221e70a65",
+      "binary": "reentry-64-r31-4.bin",
+      "binary_sha256": "ca742b06c347e19c88b50ad37c6008d2e3464b504fab6085f967a564750eb5e0",
+      "elf_sha256": "2e49aa50a737f9c7cec809ee250014cae362aaea40fca2a61a9c13a253be69ae",
+      "base": 4194304,
+      "size": 108,
+      "abi": "64",
+      "register": 31,
+      "steps": 4,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "reentry-64-r31-4.o",
+          "reentry-64-r31-4.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-64-r31-4.elf",
+          "reentry-64-r31-4.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-64-r31-4.elf",
+          "reentry-64-r31-4.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-64-r9-1.S",
+      "source_sha256": "a33f5c87c44e34004135128569e9134d09ea70a86a15ab8d20fe4684bc4ded18",
+      "binary": "reentry-64-r9-1.bin",
+      "binary_sha256": "fa589426bdc0db6c35c6edabe3b6a6d2c107d14090a96f9902576a2609deac24",
+      "elf_sha256": "df7ea62ff7133e2298627d3b1033d1e89a9a98835f033baaba1b8b365668c4ce",
+      "base": 4194304,
+      "size": 36,
+      "abi": "64",
+      "register": 9,
+      "steps": 1,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "reentry-64-r9-1.o",
+          "reentry-64-r9-1.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-64-r9-1.elf",
+          "reentry-64-r9-1.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-64-r9-1.elf",
+          "reentry-64-r9-1.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-64-r9-2.S",
+      "source_sha256": "8091c1519c36f6bfc9fcfc66f37a6ac6b5382e24d6ad0a4df577f62254f37248",
+      "binary": "reentry-64-r9-2.bin",
+      "binary_sha256": "4acba5327d2b911b54a3935e9ecbee9148d7252a6657b13e709383ac80d0d0ba",
+      "elf_sha256": "c0dd1441bc2c2a0ae371f67d1f3d7f216fefd6e896863832e242cbeae7492d51",
+      "base": 4194304,
+      "size": 60,
+      "abi": "64",
+      "register": 9,
+      "steps": 2,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "reentry-64-r9-2.o",
+          "reentry-64-r9-2.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-64-r9-2.elf",
+          "reentry-64-r9-2.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-64-r9-2.elf",
+          "reentry-64-r9-2.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-64-r9-4.S",
+      "source_sha256": "5afcae136c4c715fd156bf7bdb1e94a10841fd6ea1e930f0d91f2f2eead958ea",
+      "binary": "reentry-64-r9-4.bin",
+      "binary_sha256": "63e22e40a03e6d4eae6390f1e144241722337f58268d15441f03e2fc26a7ded4",
+      "elf_sha256": "3a9909383b4eae913aab6116991d5473cc9cbb41a046ec74c191c0c99929f344",
+      "base": 4194304,
+      "size": 108,
+      "abi": "64",
+      "register": 9,
+      "steps": 4,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=64",
+          "-o",
+          "reentry-64-r9-4.o",
+          "reentry-64-r9-4.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf64btsmip",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-64-r9-4.elf",
+          "reentry-64-r9-4.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-64-r9-4.elf",
+          "reentry-64-r9-4.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-n32-r31-1.S",
+      "source_sha256": "7e8d5d88be62d6027e9ce63211e3ccab52b71be026d8dfff117694d3210a5ea8",
+      "binary": "reentry-n32-r31-1.bin",
+      "binary_sha256": "d5d00305b6cc7a65ec622c71880e9b3eb2e7a2e3f15b8303fbbc6cb8c8e56454",
+      "elf_sha256": "8fc5168a91752e2ad1720d1cb23c261972a2361e682f1940e6cddddce26e12cc",
+      "base": 4194304,
+      "size": 36,
+      "abi": "n32",
+      "register": 31,
+      "steps": 1,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=n32",
+          "-o",
+          "reentry-n32-r31-1.o",
+          "reentry-n32-r31-1.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf32btsmipn32",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-n32-r31-1.elf",
+          "reentry-n32-r31-1.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-n32-r31-1.elf",
+          "reentry-n32-r31-1.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-n32-r31-2-addiu.S",
+      "source_sha256": "1304da919585ed36e56b2be3972254113d9675f0ac49e0ac44eb4d095dfb6183",
+      "binary": "reentry-n32-r31-2-addiu.bin",
+      "binary_sha256": "76c0e4051e90c438bc266e41423a0f74f406a5fe523c82e97fc03b0932f2cca4",
+      "elf_sha256": "05aaa9e0696cb7c78ba0990e39c8feb02c3262108d4b348d4a48975249c6751f",
+      "base": 4227056,
+      "size": 60,
+      "abi": "n32",
+      "register": 31,
+      "steps": 2,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=n32",
+          "-o",
+          "reentry-n32-r31-2-addiu.o",
+          "reentry-n32-r31-2-addiu.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf32btsmipn32",
+          "-Ttext",
+          "0x407ff0",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-n32-r31-2-addiu.elf",
+          "reentry-n32-r31-2-addiu.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-n32-r31-2-addiu.elf",
+          "reentry-n32-r31-2-addiu.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-n32-r31-2-condreturn.S",
+      "source_sha256": "7a57ef0ecb0b48bf98a256f643f69637b2bb03b66218e2558a758b5b7eb3bdbb",
+      "binary": "reentry-n32-r31-2-condreturn.bin",
+      "binary_sha256": "7cad4030f0eaf46a4647e70426976c9d3df04e44ab8c58097087768f691085f6",
+      "elf_sha256": "aef3dc69b87639ea13a48c9bba8d7d28b23f781275c2760bce91ec5f64d485bd",
+      "base": 4194304,
+      "size": 72,
+      "abi": "n32",
+      "register": 31,
+      "steps": 2,
+      "wide_return": false,
+      "join": false,
+      "default_return": true,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=n32",
+          "-o",
+          "reentry-n32-r31-2-condreturn.o",
+          "reentry-n32-r31-2-condreturn.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf32btsmipn32",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-n32-r31-2-condreturn.elf",
+          "reentry-n32-r31-2-condreturn.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-n32-r31-2-condreturn.elf",
+          "reentry-n32-r31-2-condreturn.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-n32-r31-2-delay.S",
+      "source_sha256": "b0f760c57723481be38e5f45ae19a76b312c7c67cf234f37b689cfeb88c766b4",
+      "binary": "reentry-n32-r31-2-delay.bin",
+      "binary_sha256": "ed0a3fa0b2c93ba15af61167fdf54de4e1eeadcf74336d49f18f68b8c6399a7c",
+      "elf_sha256": "0669136d5832b4f9d391dd6961f3e84a70690b4117569e51590473e90783a8b6",
+      "base": 4194304,
+      "size": 60,
+      "abi": "n32",
+      "register": 31,
+      "steps": 2,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=n32",
+          "-o",
+          "reentry-n32-r31-2-delay.o",
+          "reentry-n32-r31-2-delay.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf32btsmipn32",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-n32-r31-2-delay.elf",
+          "reentry-n32-r31-2-delay.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-n32-r31-2-delay.elf",
+          "reentry-n32-r31-2-delay.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-n32-r31-2-early.S",
+      "source_sha256": "315374570575304682f32ad000dff5d0d6efb872b0b99549f50b20514544ee9f",
+      "binary": "reentry-n32-r31-2-early.bin",
+      "binary_sha256": "eb9f9d5bd3e39dfff5b417c347daac629249347668d07b20ca1ce89109e5b5ec",
+      "elf_sha256": "b666bb5305e1db87fc4a46200f5f21b74bbfd253dbb269515a2b4883de051ad6",
+      "base": 4194304,
+      "size": 84,
+      "abi": "n32",
+      "register": 31,
+      "steps": 2,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=n32",
+          "-o",
+          "reentry-n32-r31-2-early.o",
+          "reentry-n32-r31-2-early.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf32btsmipn32",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-n32-r31-2-early.elf",
+          "reentry-n32-r31-2-early.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-n32-r31-2-early.elf",
+          "reentry-n32-r31-2-early.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-n32-r31-2-indirect-reentry.S",
+      "source_sha256": "f06ab45fee8160196327c60a036a60295e22f4af8da3b0b278ffddaeb0b3e5da",
+      "binary": "reentry-n32-r31-2-indirect-reentry.bin",
+      "binary_sha256": "eb3c8701193bed65b64c005382a18cfcb204bf4a16d1c978adf4e42290b1c943",
+      "elf_sha256": "ec98e840195a91aef17b4acd2c12c19e9a20796abb8a95a2cf0e9761b1777037",
+      "base": 4194304,
+      "size": 68,
+      "abi": "n32",
+      "register": 31,
+      "steps": 2,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=n32",
+          "-o",
+          "reentry-n32-r31-2-indirect-reentry.o",
+          "reentry-n32-r31-2-indirect-reentry.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf32btsmipn32",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-n32-r31-2-indirect-reentry.elf",
+          "reentry-n32-r31-2-indirect-reentry.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-n32-r31-2-indirect-reentry.elf",
+          "reentry-n32-r31-2-indirect-reentry.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-n32-r31-2-join.S",
+      "source_sha256": "849ea7a539e860e8ffa6145fd44f00d7e8c235856950ce012edcf6aed0248ed2",
+      "binary": "reentry-n32-r31-2-join.bin",
+      "binary_sha256": "e8ec7af66d3ca16deb6a4741b956787cb92f6ac3901e07396e26451d8c78b03b",
+      "elf_sha256": "a9e7711538017f2f12403f16a0994f9c4fefe821e9745a049e41f1a7fc3ca5fa",
+      "base": 4194304,
+      "size": 84,
+      "abi": "n32",
+      "register": 31,
+      "steps": 2,
+      "wide_return": false,
+      "join": true,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=n32",
+          "-o",
+          "reentry-n32-r31-2-join.o",
+          "reentry-n32-r31-2-join.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf32btsmipn32",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-n32-r31-2-join.elf",
+          "reentry-n32-r31-2-join.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-n32-r31-2-join.elf",
+          "reentry-n32-r31-2-join.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-n32-r31-2-separate-return.S",
+      "source_sha256": "78e3e28a35650e6d1f3f610f4d2078af43fbd60b5b8b00c7d9c3d4629ef16307",
+      "binary": "reentry-n32-r31-2-separate-return.bin",
+      "binary_sha256": "457efdcf224898a8a75f734d3b39016b20df3d4fb43a269e10591fb652263d3a",
+      "elf_sha256": "f0e1a240b24abb09cd3ed0ecb0a49ce3d2dfed0183a4d9f2e594b2c8a01c9335",
+      "base": 4194304,
+      "size": 60,
+      "abi": "n32",
+      "register": 31,
+      "steps": 2,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=n32",
+          "-o",
+          "reentry-n32-r31-2-separate-return.o",
+          "reentry-n32-r31-2-separate-return.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf32btsmipn32",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-n32-r31-2-separate-return.elf",
+          "reentry-n32-r31-2-separate-return.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-n32-r31-2-separate-return.elf",
+          "reentry-n32-r31-2-separate-return.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-n32-r31-2-wide-return.S",
+      "source_sha256": "df75c69ee665026ee05ee8d451adad342a2faefc551b7dd8b02bb6bcc971a0ff",
+      "binary": "reentry-n32-r31-2-wide-return.bin",
+      "binary_sha256": "591172c81c306c4a7a0051020790a5ff14d5be2b6cd75077ba7ce28c88a10d66",
+      "elf_sha256": "901aadc396fc9e59f410e0717e1b7e4d043a861a9696ac99f1fac7875d1de26a",
+      "base": 4194304,
+      "size": 88,
+      "abi": "n32",
+      "register": 31,
+      "steps": 2,
+      "wide_return": true,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=n32",
+          "-o",
+          "reentry-n32-r31-2-wide-return.o",
+          "reentry-n32-r31-2-wide-return.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf32btsmipn32",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-n32-r31-2-wide-return.elf",
+          "reentry-n32-r31-2-wide-return.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-n32-r31-2-wide-return.elf",
+          "reentry-n32-r31-2-wide-return.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-n32-r31-2-wide-shift31.S",
+      "source_sha256": "6b0f8bf9840cb254caccf911830f2a007c2b9d5fd4849e341c89ec9a0789cb6d",
+      "binary": "reentry-n32-r31-2-wide-shift31.bin",
+      "binary_sha256": "9ff10ee99a0ef70e653beb3c6823368621ced502ee08bd290b6c2caac6708534",
+      "elf_sha256": "addcff93db0665e5613091aa6de401d644f80c4a98114bfe07aa18c5584ea94e",
+      "base": 4194304,
+      "size": 88,
+      "abi": "n32",
+      "register": 31,
+      "steps": 2,
+      "wide_return": true,
+      "join": false,
+      "default_return": false,
+      "return_shift": 31,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=n32",
+          "-o",
+          "reentry-n32-r31-2-wide-shift31.o",
+          "reentry-n32-r31-2-wide-shift31.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf32btsmipn32",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-n32-r31-2-wide-shift31.elf",
+          "reentry-n32-r31-2-wide-shift31.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-n32-r31-2-wide-shift31.elf",
+          "reentry-n32-r31-2-wide-shift31.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-n32-r31-2-wide-shift63.S",
+      "source_sha256": "1e35216db6782b3f14c33f177064dbcc4b83e62fcb5fc5ef778f242d9d05f2e5",
+      "binary": "reentry-n32-r31-2-wide-shift63.bin",
+      "binary_sha256": "59d6e76c43a03fd56dcaaa521381ed43941984f909ff5cfe4758270f50a82c22",
+      "elf_sha256": "3ee28071e70585bc1599283b604c4cd70387a29075a3a8a49c533228fc6b4e7a",
+      "base": 4194304,
+      "size": 88,
+      "abi": "n32",
+      "register": 31,
+      "steps": 2,
+      "wide_return": true,
+      "join": false,
+      "default_return": false,
+      "return_shift": 63,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=n32",
+          "-o",
+          "reentry-n32-r31-2-wide-shift63.o",
+          "reentry-n32-r31-2-wide-shift63.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf32btsmipn32",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-n32-r31-2-wide-shift63.elf",
+          "reentry-n32-r31-2-wide-shift63.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-n32-r31-2-wide-shift63.elf",
+          "reentry-n32-r31-2-wide-shift63.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-n32-r31-2.S",
+      "source_sha256": "43342a6a203a4cb5bc8247488c13fac63e1b9b006e18c3c931a0ce8314f30b29",
+      "binary": "reentry-n32-r31-2.bin",
+      "binary_sha256": "773180d51b7482f2befc74c6b32a67d5cd9d4d866852e18493dfd3828fd24e72",
+      "elf_sha256": "02447b87a2031b08849e5bae6f5ff33babe55246a51979800b693effad6b28db",
+      "base": 4194304,
+      "size": 60,
+      "abi": "n32",
+      "register": 31,
+      "steps": 2,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=n32",
+          "-o",
+          "reentry-n32-r31-2.o",
+          "reentry-n32-r31-2.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf32btsmipn32",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-n32-r31-2.elf",
+          "reentry-n32-r31-2.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-n32-r31-2.elf",
+          "reentry-n32-r31-2.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-n32-r31-4.S",
+      "source_sha256": "54bcf806dc24a282470181f73d60eac6b3f3ad60bf9e4bbda1e9b92f5b516d43",
+      "binary": "reentry-n32-r31-4.bin",
+      "binary_sha256": "ca742b06c347e19c88b50ad37c6008d2e3464b504fab6085f967a564750eb5e0",
+      "elf_sha256": "1781ade80f96b50f54c621ec8d0689f6c3bdcb87d8085431778e75de1a2dc635",
+      "base": 4194304,
+      "size": 108,
+      "abi": "n32",
+      "register": 31,
+      "steps": 4,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=n32",
+          "-o",
+          "reentry-n32-r31-4.o",
+          "reentry-n32-r31-4.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf32btsmipn32",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-n32-r31-4.elf",
+          "reentry-n32-r31-4.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-n32-r31-4.elf",
+          "reentry-n32-r31-4.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-n32-r9-1.S",
+      "source_sha256": "20d1e79af43d2a82d374812dded867ea57af854f2c71472f532bf111795b4c87",
+      "binary": "reentry-n32-r9-1.bin",
+      "binary_sha256": "fa589426bdc0db6c35c6edabe3b6a6d2c107d14090a96f9902576a2609deac24",
+      "elf_sha256": "907a306048a3208bdd2553e055bbb7a677488f589773ab4c515f152d4995c339",
+      "base": 4194304,
+      "size": 36,
+      "abi": "n32",
+      "register": 9,
+      "steps": 1,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=n32",
+          "-o",
+          "reentry-n32-r9-1.o",
+          "reentry-n32-r9-1.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf32btsmipn32",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-n32-r9-1.elf",
+          "reentry-n32-r9-1.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-n32-r9-1.elf",
+          "reentry-n32-r9-1.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-n32-r9-2.S",
+      "source_sha256": "079bd4fc561b4edc97cf0b541b04bcc1dc36b74012120543113ff016ae001a36",
+      "binary": "reentry-n32-r9-2.bin",
+      "binary_sha256": "4acba5327d2b911b54a3935e9ecbee9148d7252a6657b13e709383ac80d0d0ba",
+      "elf_sha256": "2ff0f3610c544e55eccec9f93cc6f09082802c4be2b468285d49f5ba3258b60a",
+      "base": 4194304,
+      "size": 60,
+      "abi": "n32",
+      "register": 9,
+      "steps": 2,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=n32",
+          "-o",
+          "reentry-n32-r9-2.o",
+          "reentry-n32-r9-2.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf32btsmipn32",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-n32-r9-2.elf",
+          "reentry-n32-r9-2.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-n32-r9-2.elf",
+          "reentry-n32-r9-2.text.bin"
+        ]
+      ]
+    },
+    {
+      "source": "reentry-n32-r9-4.S",
+      "source_sha256": "86e25f82fbe525c985ade883d230ef7130bd96759c2e6ebf090441d8816bbf92",
+      "binary": "reentry-n32-r9-4.bin",
+      "binary_sha256": "63e22e40a03e6d4eae6390f1e144241722337f58268d15441f03e2fc26a7ded4",
+      "elf_sha256": "20fb4206117e92f7f98b90766f9a05393faf13f5554ee22eb5295cf3978ca7fd",
+      "base": 4194304,
+      "size": 108,
+      "abi": "n32",
+      "register": 9,
+      "steps": 4,
+      "wide_return": false,
+      "join": false,
+      "default_return": false,
+      "return_shift": 32,
+      "commands": [
+        [
+          "mips64-octeon-linux-gnu-as",
+          "-EB",
+          "-march=octeon",
+          "-mabi=n32",
+          "-o",
+          "reentry-n32-r9-4.o",
+          "reentry-n32-r9-4.S"
+        ],
+        [
+          "ld",
+          "-m",
+          "elf32btsmipn32",
+          "-Ttext",
+          "0x400000",
+          "-Tdata",
+          "0x500000",
+          "-e",
+          "_start",
+          "--build-id=none",
+          "-o",
+          "reentry-n32-r9-4.elf",
+          "reentry-n32-r9-4.o"
+        ],
+        [
+          "objcopy",
+          "--only-section=.text",
+          "-O",
+          "binary",
+          "reentry-n32-r9-4.elf",
+          "reentry-n32-r9-4.text.bin"
+        ]
+      ]
+    }
+  ]
+}

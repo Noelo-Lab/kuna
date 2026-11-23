@@ -51,10 +51,66 @@
 <com>load function integer_address</com>
 <com>decompile</com>
 <com>print C</com>
+
+  <!-- An offset in a DWARF record prefix is a byte address. -->
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-record-prefix/loads</com>
+  <com>read symbols</com>
+  <com>map prototype before_a0 uint8 before_a0(struct Padded *p);</com>
+  <com>map prototype before_a4 uint8 before_a4(struct Padded *p);</com>
+  <com>map prototype at_a8 uint8 at_a8(struct Padded *p);</com>
+  <com>map prototype at_b16 uint8 at_b16(struct Padded *p);</com>
+  <com>option outlang go</com>
+  <com>load function before_a0</com><com>decompile</com><com>print C</com>
+  <com>load function before_a4</com><com>decompile</com><com>print C</com>
+  <com>load function at_a8</com><com>decompile</com><com>print C</com>
+  <com>load function at_b16</com><com>decompile</com><com>print C</com>
+  <com>option nocastprinting on</com>
+  <com>load function before_a4</com><com>decompile</com><com>print C</com>
+  <com>option nocastprinting off</com>
+  <com>option outlang c</com>
+  <com>load function before_a4</com><com>decompile</com><com>print C</com>
+  <com>option outlang rust</com>
+  <com>load function before_a4</com><com>decompile</com><com>print C</com>
 </script>
 <stringmatch name="Go64 pointer: live pointer bases survive all seven additions" min="7" max="7">unsafe\.Add\(unsafe\.Pointer\(base\),</stringmatch>
 <stringmatch name="Go64 pointer: dynamic offsets preserve their signed variable" min="3" max="3">unsafe\.Add\(unsafe\.Pointer\(base\),offset\)</stringmatch>
 <stringmatch name="Go64 pointer: negative offset is a signed byte displacement" min="1" max="1">unsafe\.Add\(unsafe\.Pointer\(base\),-0x8\)</stringmatch>
-<stringmatch name="Go64 pointer: integer addresses keep their explicit reconstruction" min="1" max="1">unsafe\.Pointer\(uintptr\(base \+ 0x</stringmatch>
+<!-- The integer base and each record view are separate consecutive function prints. -->
+<stringmatch name="Go64 pointer: integer addresses keep their explicit reconstruction" min="1" max="1">^func integer_address\(base uint64\) \*uint64 \{$
+^  return \(\*uint64\)\(unsafe\.Pointer\(uintptr\(base \+ 0x8\)\)\)$
+^\}$
+^$
+^func before_a0\(p \*Padded\) uint64 \{$
+^  return \*\(\*uint64\)\(unsafe\.Pointer\(p\)\)$
+^\}$
+^$
+^func before_a4\(p \*Padded\) uint64 \{$
+^  return \*\(\*uint64\)\(unsafe\.Pointer\((?:\(\*(?:byte|uint8)\)\()?unsafe\.Add\(unsafe\.Pointer\(p\),(?:0x)?4\)\)?\)\)$
+^\}$
+^$
+^func at_a8\(p \*Padded\) uint64 \{$
+^  return \(\*p\)\.a$
+^\}$
+^$
+^func at_b16\(p \*Padded\) uint64 \{$
+^  return \(\*p\)\.b$
+^\}$
+^$
+^func before_a4\(p \*Padded\) uint64 \{$
+^  return \*\(\*uint64\)\(unsafe\.Pointer\(&amp;\(\*p\)\.field_0x4\)\)$
+^\}$
+^$
+^uint8 before_a4\(Padded \*p\)$
+^\{$
+^  return \*\([^)]+\)&amp;p-&gt;field_0x4;$
+^\}$
+^$
+^$
+^#\[allow\(
+^unsafe fn before_a4\(mut p: \*mut Padded\) -&gt; u64$
+^\{$
+^  return \*\(&amp;mut \(\*p\)\.field_0x4 as \*mut u64\);$
+^\}$</stringmatch>
 <stringmatch name="Go64 pointer: pointer arithmetic has no signed integer roundtrip" min="0" max="0">int[36][24]\(uintptr\(unsafe\.Pointer\(base\)\)\)</stringmatch>
 </decompilertest>

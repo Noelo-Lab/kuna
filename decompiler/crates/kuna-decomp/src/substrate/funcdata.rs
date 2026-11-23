@@ -157,6 +157,16 @@ pub struct DirectiveSymbol {
 }
 
 pub struct Funcdata {
+    /// (kuna `switchextent`) The jump tables the function's extent dispatches
+    /// through, and those a Swift enum's case indexes, once a flow with a
+    /// computed jump decoded it (`p2_lift/kuna_switchextent.rs`).
+    pub(crate) kuna_extent_tables: Option<std::rc::Rc<crate::kuna_switchextent::ExtentTables>>,
+    /// (kuna `switchextent`) The tables of the functions after this one, once
+    /// a table that is the function's last asked for them.
+    pub(crate) kuna_later_tables: Option<std::rc::Rc<Vec<u64>>>,
+    /// (kuna `switchextent`) The table whose sanity check asked the flow for
+    /// [`Self::kuna_later_tables`], shared with the jump-table partial.
+    pub(crate) kuna_later_wanted: std::rc::Rc<std::cell::Cell<Option<u64>>>,
     pub(crate) kuna_x87_empty_returns: Vec<Address>,
     pub(crate) kuna_fpu_trunc_views: Vec<OpId>,
     /// Boolean properties associated with \b this function (C++ `flags`)
@@ -441,6 +451,9 @@ pub struct Funcdata {
     /// is what lets the front-ends report the rejection (`--assert` ledger, exit
     /// code) while still emitting the C.
     kuna_rejected_flow: Vec<(Address, kuna_base::types::uint4, String)>,
+    /// (kuna `--assert callee`) The caller-stated indirect-call destinations
+    /// the followed flow did not apply, as `(call site, callee, reason)`.
+    kuna_rejected_callee: Vec<(Address, Address, String)>,
     /// (kuna `--assert`) The local-scope Symbols the `name`/`type` directives
     /// applied to THIS pass renamed, retyped or created, each keyed back to the
     /// identifier the pass printed for its variable.  A rebuilt `Funcdata` starts
@@ -642,6 +655,8 @@ pub struct Funcdata {
     /// (kuna `elfmain`) The C runtime's `main` declaration this function's inputs
     /// take, when it is an executable's own `main`. See [`crate::kuna_elfmaindecl`].
     kuna_elfmain: Option<std::rc::Rc<crate::kuna_elfmaindecl::Runtime>>,
+    pub(crate) kuna_go_receiver: Option<crate::kuna_gopointermethod::Receiver>,
+    go_string_input: Option<Box<crate::kuna_gostringinput::GoStringInput>>,
     /// (kuna `swiftcall`) Names and types for the inputs this function's
     /// analysis recovers. See [`crate::kuna_inputhints`].
     kuna_input_hints: Option<std::rc::Rc<Vec<crate::kuna_inputhints::InputHint>>>,
@@ -684,6 +699,7 @@ pub struct Funcdata {
     /// the return-half placement test
     /// ([`crate::kuna_retpushedhalf::PushedRegisters`]).
     kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters,
+    pub(crate) kuna_atomic_xadds: Vec<crate::p2_lift::kuna_atomicxadd::Instruction>,
 }
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
@@ -766,6 +782,9 @@ impl Funcdata {
 
         Ok(Funcdata {
             kuna_fpu_trunc_views: Vec::new(),
+            kuna_extent_tables: None,
+            kuna_later_tables: None,
+            kuna_later_wanted: std::rc::Rc::default(),
             kuna_x87_empty_returns: Vec::new(),
             flags: 0,
             clean_up_index: 0,
@@ -841,6 +860,7 @@ impl Funcdata {
             kuna_call_mechanisms: Default::default(),
             kuna_fspec_handles: Vec::new(),
             kuna_rejected_flow: Vec::new(),
+            kuna_rejected_callee: Vec::new(),
             kuna_directive_symbols: Vec::new(),
             kuna_prior_names: Default::default(),
             kuna_default_name_end: 1,
@@ -894,6 +914,8 @@ impl Funcdata {
             kuna_calleevote_inputs: None,
             kuna_callerargs: None,
             kuna_elfmain: None,
+            kuna_go_receiver: None,
+            go_string_input: None,
             kuna_input_hints: None,
             kuna_calleevote_closed: false,
             kuna_elemptr_blocked: None,
@@ -907,6 +929,7 @@ impl Funcdata {
             kuna_elemptr_no_objects: false,
             kuna_elemptr_stated: std::collections::HashMap::new(),
             kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters::default(),
+            kuna_atomic_xadds: Vec::new(),
         })
     }
 
@@ -994,6 +1017,11 @@ impl Funcdata {
         std::mem::take(&mut self.pending_comments)
     }
 
+    /// Discard the buffered comments of any type in `types`.
+    pub fn drop_pending_comments(&mut self, types: kuna_base::types::uint4) {
+        self.pending_comments.retain(|(tp, _, _)| tp & types == 0);
+    }
+
     /// How many analysis comments are buffered (a mark for
     /// [`Self::truncate_pending_comments`]).
     pub fn pending_comment_count(&self) -> usize {
@@ -1070,6 +1098,21 @@ impl Funcdata {
     /// (kuna) The flow overrides this function's flow follow refused.
     pub fn kuna_rejected_flow_overrides(&self) -> &[(Address, kuna_base::types::uint4, String)] {
         &self.kuna_rejected_flow
+    }
+
+    /// (kuna) Record a stated indirect-call destination the flow did not apply.
+    /// Idempotent per call site.
+    pub fn note_rejected_callee_override(&mut self, site: Address, callee: Address, reason: &str) {
+        if self.kuna_rejected_callee.iter().any(|(s, _, _)| s == &site) {
+            return;
+        }
+        self.kuna_rejected_callee.push((site, callee, reason.to_string()));
+    }
+
+    /// (kuna) The stated indirect-call destinations this function's flow did
+    /// not apply.
+    pub fn kuna_rejected_callee_overrides(&self) -> &[(Address, Address, String)] {
+        &self.kuna_rejected_callee
     }
 
     /// (kuna `--assert`) The Symbols a `name`/`type` directive touched on this pass.
@@ -1231,6 +1274,16 @@ impl Funcdata {
     ) -> Option<&crate::kuna_calleedeadarg::CalleeEntryDead> {
         let sp = entry.get_space()?;
         self.kuna_callee_entry_dead.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
+    }
+
+    /// (kuna `calleefilledarg`) The same probe, shared, for a `ParamActive` to
+    /// hold through `fillinMap`.
+    pub fn kuna_callee_entry_dead_shared(
+        &self,
+        entry: &Address,
+    ) -> Option<std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>> {
+        let sp = entry.get_space()?;
+        self.kuna_callee_entry_dead.get(&(sp.get_index(), entry.get_offset())).cloned()
     }
 
     /// (kuna `hiddenretarg`) Remember the leaves of a value vetoed from a call.
@@ -1632,6 +1685,14 @@ impl Funcdata {
     /// (kuna `elfmain`) The C runtime's `main` declaration for this function.
     pub fn kuna_elfmain(&self) -> Option<&crate::kuna_elfmaindecl::Runtime> {
         self.kuna_elfmain.as_deref()
+    }
+
+    pub(crate) fn set_go_string_input(&mut self, formal: Option<crate::kuna_gostringinput::GoStringInput>) {
+        self.go_string_input = formal.map(Box::new);
+    }
+
+    pub(crate) fn go_string_input(&self) -> Option<&crate::kuna_gostringinput::GoStringInput> {
+        self.go_string_input.as_deref()
     }
 
     /// (kuna `swiftcall`) Seed the input hints. See [`crate::kuna_inputhints`].
@@ -4134,9 +4195,11 @@ impl Funcdata {
     /// op's parent, splice it onto the per-op intrusive basic-block list before
     /// `before`, then compute `ordbefore`/`ordafter` from neighbours and either
     /// set an overflow-safe midpoint or recompute the whole order. An append that
-    /// finds no room renumbers into the lower half of the order space, so later
-    /// appends do not renumber the block again every few ops. The BRANCHIND
-    /// `f_switch_out` mark is applied via the block flags.
+    /// finds no room renumbers into the lower half of the order space, and an
+    /// append that makes a block 256 ops or longer takes a gap that shrinks with
+    /// the block's length, so each renumbering leaves room for as many appends as
+    /// the block already holds and building a block stays linear in its ops.
+    /// The BRANCHIND `f_switch_out` mark is applied via the block flags.
     pub fn bb_insert_op(&mut self, op: OpId, bl: BlockId, before: Option<OpId>) {
         if self.op_is_call_or_store(op) {
             self.affecting_ops_changed();
@@ -4174,7 +4237,8 @@ impl Funcdata {
         // on overflow) else the order of the op we inserted before.
         let ordafter: uintm = match before {
             None => {
-                let oa = ordbefore.wadd(0x1000000);
+                let gap = (uintm::MAX / self.bb_op_len(bl) as uintm).min(0x1000000);
+                let oa = ordbefore.wadd(gap);
                 if oa <= ordbefore {
                     uintm::MAX
                 } else {
@@ -4356,9 +4420,10 @@ impl Funcdata {
     /// given (type-locked, equates, asserted identities) and the prototype only
     /// its locked parts, so a restarted analysis starts where a fresh decompile
     /// does. The W3 IR clears (`clearBlocks`, `obank.clear`, `vbank.clear`) and
-    /// the flag/index reset are faithful. Buffered comments survive, as C++
-    /// comments already in the database survive a restart.
+    /// the flag/index reset are faithful. Buffered comments survive; the
+    /// restart drive drops the warnings (`refollow_flow`).
     pub fn clear(&mut self) {
+        self.kuna_atomic_xadds.clear();
         self.ppc32_pic_calls.clear();
         self.kuna_regnarrow_runs = 0;
         self.kuna_regnarrow_values.clear();
@@ -5676,10 +5741,7 @@ impl<'a> FuncdataCoverCtx<'a> {
             table
         });
         if let Some(&Some(bid)) = usize::try_from(index).ok().and_then(|at| table.get(at)) {
-            debug_assert!((0..n)
-                .map(|i| self.fd.bblocks_get_block(i))
-                .find(|&b| self.fd.bblocks.block(b).get_index() == index)
-                .is_some_and(|b| b == bid));
+            debug_assert_eq!(self.fd.bblocks.block(bid).get_index(), index);
             return bid;
         }
         for i in 0..n {
@@ -6612,14 +6674,14 @@ mod tests {
         let mut fd = build_fd();
         let (block, _) = make_block_with_ops(&mut fd, 1);
         let start = fd.affecting_ops_revision();
-        for i in 0..20_000u64 {
+        for i in 0..200_000u64 {
             let op = fd.obank.create_at(1, Address::new(ram_space(&fd), 0x2000 + i));
             fd.obank.change_opcode(op, TypeOp::new(OpCode::CPUI_COPY, 0, "COPY"));
             fd.bb_insert_op(op, block, None);
         }
         assert_strict_block_order(&fd, block);
         let renumbers = fd.affecting_ops_revision() - start;
-        assert!(renumbers <= 100, "{renumbers} renumbers");
+        assert!(renumbers <= 16, "{renumbers} renumbers");
     }
 
     #[test]

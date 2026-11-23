@@ -243,7 +243,7 @@ fn layout_metadata_rejects_other_images_and_bounds_relro_to_full_pages() {
             .join(NATIVE[1]),
     )
     .unwrap();
-    let layout = kuna_analysis::sourcelang::fmt_pieces_layout(&bytes).unwrap();
+    let layout = kuna_analysis::sourcelang::fmt_pieces_layout(&bytes, true).unwrap();
     let (lo, hi) = layout.relro.unwrap();
     assert!(lo < hi && hi % 4096 == 0);
     let phoff = u64::from_le_bytes(bytes[32..40].try_into().unwrap()) as usize;
@@ -256,14 +256,14 @@ fn layout_metadata_rejects_other_images_and_bounds_relro_to_full_pages() {
     let mut partial = bytes.clone();
     partial[relro + 40..relro + 48].copy_from_slice(&(hi - lo - 1).to_le_bytes());
     assert_eq!(
-        kuna_analysis::sourcelang::fmt_pieces_layout(&partial)
+        kuna_analysis::sourcelang::fmt_pieces_layout(&partial, true)
             .unwrap()
             .relro,
         Some((lo, hi - 4096))
     );
     let mut no_relro = bytes.clone();
     no_relro[relro..relro + 4].copy_from_slice(&0u32.to_le_bytes());
-    assert!(kuna_analysis::sourcelang::fmt_pieces_layout(&no_relro)
+    assert!(kuna_analysis::sourcelang::fmt_pieces_layout(&no_relro, true)
         .unwrap()
         .relro
         .is_none());
@@ -281,11 +281,31 @@ fn layout_metadata_rejects_other_images_and_bounds_relro_to_full_pages() {
             }
         }
         assert!(
-            kuna_analysis::sourcelang::fmt_pieces_layout(&other).is_none(),
+            kuna_analysis::sourcelang::fmt_pieces_layout(&other, true).is_none(),
             "{mutation}"
         );
     }
-    assert!(kuna_analysis::sourcelang::fmt_pieces_layout(b"not ELF").is_none());
+    let mut uncommented = bytes.clone();
+    let record = uncommented
+        .windows(20)
+        .position(|w| w == b"rustc version 1.90.0")
+        .unwrap();
+    uncommented[record..record + 5].copy_from_slice(b"RUSTC");
+    assert!(kuna_analysis::sourcelang::fmt_pieces_layout(&uncommented, true).is_some());
+    assert!(kuna_analysis::sourcelang::fmt_pieces_layout(&uncommented, false).is_none());
+    assert_eq!(
+        kuna_analysis::sourcelang::stable_rustc_version(&uncommented, true),
+        Some((1, 90, 0))
+    );
+    assert_eq!(kuna_analysis::sourcelang::stable_rustc_version(&uncommented, false), None);
+    let path = uncommented
+        .windows(7)
+        .position(|w| w == b"/rustc/")
+        .unwrap();
+    uncommented[path + 7] = if uncommented[path + 7] == b'0' { b'1' } else { b'0' };
+    assert!(kuna_analysis::sourcelang::fmt_pieces_layout(&uncommented, true).is_none());
+    assert_eq!(kuna_analysis::sourcelang::stable_rustc_version(&uncommented, true), None);
+    assert!(kuna_analysis::sourcelang::fmt_pieces_layout(b"not ELF", true).is_none());
 }
 
 #[test]

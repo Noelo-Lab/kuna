@@ -2794,7 +2794,18 @@ pub fn parse_protopieces(
     factory: &dyn TypeFactory,
     org: DataOrg,
 ) -> KunaResult<PrototypePieces> {
-    let mut parser = CParse::new(factory, org, LINE_BUFFER);
+    parse_protopieces_with_model(input, factory, org, &[]).map(|(pieces, _)| pieces)
+}
+
+/// [`parse_protopieces`] that also recognizes the calling-convention names in
+/// `models` and returns the one the declaration names (empty when none).
+pub fn parse_protopieces_with_model(
+    input: &str,
+    factory: &dyn TypeFactory,
+    org: DataOrg,
+    models: &[String],
+) -> KunaResult<(PrototypePieces, String)> {
+    let mut parser = CParse::with_models(factory, org, LINE_BUFFER, models);
     if !parser.parse_stream(input.as_bytes().to_vec(), DocType::Declaration)? {
         return Err(KunaError::parse(parser.get_error().to_string()));
     }
@@ -2813,7 +2824,7 @@ pub fn parse_protopieces(
     if !decl.get_prototype(&mut pieces, factory, &org)? {
         return Err(KunaError::parse("Did not parse a prototype"));
     }
-    Ok(pieces)
+    Ok((pieces, decl.get_model().to_string()))
 }
 
 /// C++ `parse_C(Architecture *glb,istream &s)` (`grammar.cc:2993-3037`): load type

@@ -25,6 +25,7 @@
 </bytechunk>
 </binaryimage>
 <script>
+  <com>option typevote off</com>
   <com>set context TMode 1 [ram,0x10000] [ram,0x1002f]</com>
   <com>map function r0x10000 put16</com>
   <com>map function r0x10010 put_hi</com>

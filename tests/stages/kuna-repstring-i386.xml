@@ -1,0 +1,131 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+<!--
+    kuna GH-1650 `repstring`: SLEIGH lifts an x86 repeat prefix as a loop
+    inside the one instruction, so an inlined copy, fill or compare printed as
+    `while (n) { *p = *q; n -= 1; ... }` or
+    `do { if (!n) return 1; ... } while (x == y);`.
+
+    Stage / sub-stage: P3 "simplification-quiescence".  The P0 assertion
+    `option repstring on|off` decides whether the proved loop becomes
+    `builtin_memcpy`, `builtin_memset`, `builtin_memset32` or `builtin_memcmp`.
+
+    The bytes are .rodata and .text of decompiler/crates/kuna-analysis/tests/
+    fixtures/repstring_i386, built from repstring.c by gcc 15.3
+    (-m32 -Os -minline-all-stringops -fno-pic): fill32 (`rep stosd` of a word
+    whose bytes differ), zero32 (of zero), fill8 (`rep stosb`), copy32 and
+    copy_end (`rep movsd`, the second returning the final destination), isdash
+    (`strcmp(s, "-") == 0` inlined as `repz cmpsb`), order and below (a
+    `memcmp` result built from the carry and zero flags), same_n (a run-time
+    length), same5 (no flags set up before the instruction) and mismatch (the
+    final pointer is returned, so it is no memcmp).
+
+    Pass 1 runs with no option line, so it pins the shipped default.  Pass 2
+    (`option repstring off`) reproduces the bug: every instruction is a loop.
+-->
+<bytechunk space="ram" offset="0x4000d4" readonly="true">
+2d00
+</bytechunk>
+<bytechunk space="ram" offset="0x4012a0">
+55b80403020189e5578b4d0c8b7d08f3ab5f5dc35531c089e5578b4d0c8b7d08f3ab5f5dc35589e5578b4d108b7d088b450cf3aa5f5dc35589e5578b4d108b7d
+08568b750cf3a55e5f5dc35589e5578b4d108b7d08568b750cf3a589f85e5f5dc355b802000000b90200000039c089e557bfd4004000568b7508f3a65e5f5d0f
+94c00fb6c0c355b805000000b90500000039c089e557568b7d0c8b7508f3a65e5f5d0f97c01c000fbec0c355b807000000b90700000039c089e557568b7d0c8b
+7508f3a65e5f5d0f97c01c000fbec0c1e81fc35589e5578b4d108b7d0c568b750839c9f3a65e5f5d0f94c00fb6c0c355b90500000089e5578b7d0c568b7508f3
+a60f94c05e0fb6c05f5dc355b90800000089e5578b7d0c568b7508f3a689f05e5f5dc3
+</bytechunk>
+<symbol space="ram" offset="0x4012a0" name="fill32"/>
+<symbol space="ram" offset="0x4012b4" name="zero32"/>
+<symbol space="ram" offset="0x4012c5" name="fill8"/>
+<symbol space="ram" offset="0x4012d7" name="copy32"/>
+<symbol space="ram" offset="0x4012eb" name="copy_end"/>
+<symbol space="ram" offset="0x401301" name="isdash"/>
+<symbol space="ram" offset="0x401326" name="order"/>
+<symbol space="ram" offset="0x40134b" name="below"/>
+<symbol space="ram" offset="0x401373" name="same_n"/>
+<symbol space="ram" offset="0x40138f" name="same5"/>
+<symbol space="ram" offset="0x4013ab" name="mismatch"/>
+</binaryimage>
+<script>
+  <com>lo fu fill32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zero32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fill8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu copy32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu copy_end</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu isdash</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu order</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu below</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu same_n</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu same5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mismatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option repstring off</com>
+  <com>lo fu fill32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zero32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fill8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu copy32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu copy_end</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu isdash</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu order</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu below</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu same_n</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu same5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mismatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="repstring #1: with no option line (the shipped default) a fill of a mixed word is a 4-byte fill" min="1" max="1">^  builtin_memset32\(a0,0x1020304,</stringmatch>
+<stringmatch name="repstring #2: a fill of zero words is a memset of n * 4 bytes" min="1" max="1">^  builtin_memset\(a0,0,a1 \* 4\);</stringmatch>
+<stringmatch name="repstring #3: a byte fill is a memset of its run-time byte" min="1" max="1">^  builtin_memset\(a0,a1,</stringmatch>
+<stringmatch name="repstring #4: a copy is a memcpy of n * 4 bytes, in both copies" min="2" max="2">^  builtin_memcpy\(a0,a1,a2 \* 4\);</stringmatch>
+<stringmatch name="repstring #5: the destination read after a copy is its end" min="1" max="1">^  return &amp;\(\(char \*\)a0\)\[a2 \* 4\];</stringmatch>
+<stringmatch name="repstring #6: an inlined strcmp with a short constant is a memcmp of the string" min="1" max="1">^  return builtin_memcmp\(a0,"-",2\) == 0;</stringmatch>
+<stringmatch name="repstring #7: the carry and zero flags after a compare are the sign of its result" min="1" max="1">^  v1 = builtin_memcmp\(a0,a1,5\);
+^  return \(char\)\(\(0 &lt; v1\) - \(v1 &lt; 0\)\);</stringmatch>
+<stringmatch name="repstring #8: a compare of a run-time length" min="1" max="1">^  return builtin_memcmp\(a0,a1,a2\) == 0;</stringmatch>
+<stringmatch name="repstring #9: a compare with no flags set before it, of a constant length" min="1" max="1">^  return builtin_memcmp\(a0,a1,5\) == 0;</stringmatch>
+<stringmatch name="repstring #10: ten builtins in the default pass, none with the option off" min="10" max="10">builtin_mem</stringmatch>
+<stringmatch name="repstring #11: a compare whose final pointer is returned keeps its loop by default, as do four compares with the option off" min="5" max="5">^  \} while \(v2 == v4\);</stringmatch>
+<stringmatch name="repstring #12: with the option off every copy and fill is an element loop -- the bug" min="5" max="5">^  while \(</stringmatch>
+<stringmatch name="repstring #13: and an ordered compare is a loop over two flags -- the bug" min="2" max="2">^  \} while \(v5\);</stringmatch>
+</decompilertest>

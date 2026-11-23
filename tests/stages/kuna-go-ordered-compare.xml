@@ -1,0 +1,62 @@
+<decompilertest>
+<!-- P9 Go condition rendering over authored UCOMISD/Jcc byte sequences.
+     A positive float equality proves both of its operands are ordered.
+     Ordered inequality, a third operand, a load and a conditional store
+     keep their existing guards. The final C run pins the machine guard. -->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">660f2ec175087a06b807000000c3b809000000c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="ordered_eq_args"/>
+<bytechunk space="ram" offset="0x100040" readonly="true">660f2e053801000075087a06b811000000c3b813000000c3</bytechunk>
+<symbol space="ram" offset="0x100040" name="ordered_eq_constant"/>
+<bytechunk space="ram" offset="0x100080" readonly="true">660f2ec174087a06b81b000000c3b81d000000c3</bytechunk>
+<symbol space="ram" offset="0x100080" name="ordered_ne_args"/>
+<bytechunk space="ram" offset="0x1000c0" readonly="true">660f2ec1750c660f2ed27a06b825000000c3b827000000c3</bytechunk>
+<symbol space="ram" offset="0x1000c0" name="unordered_other"/>
+<bytechunk space="ram" offset="0x100100" readonly="true">660f2e0775087a06b82f000000c3b831000000c3</bytechunk>
+<symbol space="ram" offset="0x100100" name="ordered_eq_load"/>
+<bytechunk space="ram" offset="0x100140" readonly="true">660f2ec1750ec7073d0000007a06b839000000c3b83b000000c3</bytechunk>
+<symbol space="ram" offset="0x100140" name="ordered_eq_with_store"/>
+<bytechunk space="ram" offset="0x100180" readonly="true">000000000000f83f</bytechunk>
+</binaryimage>
+<script>
+<com>map prototype ordered_eq_args int ordered_eq_args(double a, double b);</com>
+<com>map prototype ordered_eq_constant int ordered_eq_constant(double a);</com>
+<com>map prototype ordered_ne_args int ordered_ne_args(double a, double b);</com>
+<com>map prototype unordered_other int unordered_other(double a, double b, double c);</com>
+<com>map prototype ordered_eq_load int ordered_eq_load(double a, double *p);</com>
+<com>map prototype ordered_eq_with_store int ordered_eq_with_store(double a, double b, int *p);</com>
+<com>option outlang go</com>
+<com>load function ordered_eq_args</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option readonly off</com>
+<com>load function ordered_eq_constant</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option readonly on</com>
+<com>load function ordered_ne_args</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function unordered_other</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function ordered_eq_load</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function ordered_eq_with_store</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option outlang c</com>
+<com>load function ordered_eq_args</com>
+<com>decompile</com>
+<com>print C</com>
+</script>
+<stringmatch name="Go equality makes its argument NaN checks redundant" min="1" max="1">^  if a == b \{$</stringmatch>
+<stringmatch name="Go equality makes its constant comparison NaN check redundant" min="1" max="1">^  if a == dat_100180 \{$</stringmatch>
+<stringmatch name="Go ordered inequality still excludes NaN" min="1" max="1">^  if \(a != b &amp;&amp; \(!(?:NAN|math\.IsNaN)\(a\) &amp;&amp; !(?:NAN|math\.IsNaN)\(b\)\)\) \{$</stringmatch>
+<stringmatch name="Go equality cannot prove an unrelated operand ordered" min="1" max="1">^  if \(a == b &amp;&amp; \(!(?:NAN|math\.IsNaN)\(c\)\)\) \{$</stringmatch>
+<stringmatch name="Go equality preserves a separate implied load in its NaN guard" min="1" max="1">^  if \(a == \*p &amp;&amp; \(!(?:NAN|math\.IsNaN)\(a\) &amp;&amp; !(?:NAN|math\.IsNaN)\(\*p\)\)\) \{$</stringmatch>
+<stringmatch name="Go condition keeps the clause that performs a store" min="1" max="1">^  if \(a == b &amp;&amp; \(func\(\) bool \{$</stringmatch>
+<stringmatch name="Go condition retains its conditional store value" min="1" max="1">^    \*p = (?:0x3d|61)$</stringmatch>
+<stringmatch name="C equality still shows both machine NaN checks" min="1" max="1">^  if \(\(a == b\) &amp;&amp; \(!NAN\(a\) &amp;&amp; !NAN\(b\)\)\)$</stringmatch>
+</decompilertest>
