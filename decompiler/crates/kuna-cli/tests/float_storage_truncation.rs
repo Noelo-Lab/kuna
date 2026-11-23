@@ -1,6 +1,7 @@
 //! A floating argument's integer storage bits survive a low-word extraction.
 use crate::common;
 use std::process::Command;
+use crate::common::process::Capped;
 
 fn decoded(hex: &str) -> Vec<u8> {
     (0..hex.len())
@@ -104,7 +105,7 @@ int main(void) {
                 optimization,
                 String::from_utf8_lossy(&build.stderr)
             );
-            let run = Command::new(&executable).output().unwrap();
+            let run = Command::new(&executable).capped_output().unwrap();
             assert!(run.status.success(), "{compiler} {optimization}: {run:?}");
             std::fs::remove_file(executable).unwrap();
         }
@@ -252,7 +253,7 @@ int main(void) {
                 "{compiler} {optimization}: {}",
                 String::from_utf8_lossy(&build.stderr)
             );
-            let run = Command::new(&executable).output().unwrap();
+            let run = Command::new(&executable).capped_output().unwrap();
             assert!(run.status.success(), "{compiler} {optimization}: {run:?}");
             std::fs::remove_file(executable).unwrap();
         }
@@ -371,7 +372,7 @@ int main(void) {
                 "{compiler} {optimization}: {}",
                 String::from_utf8_lossy(&build.stderr)
             );
-            let run = Command::new(&executable).output().unwrap();
+            let run = Command::new(&executable).capped_output().unwrap();
             assert!(run.status.success(), "{compiler} {optimization}: {run:?}");
             std::fs::remove_file(executable).unwrap();
         }
@@ -457,7 +458,7 @@ int main(void) { return check(scale); }
                 "{compiler} {optimization}: {}",
                 String::from_utf8_lossy(&build.stderr)
             );
-            let run = Command::new(&executable).output().unwrap();
+            let run = Command::new(&executable).capped_output().unwrap();
             assert!(run.status.success(), "{compiler} {optimization}: {run:?}");
             std::fs::remove_file(executable).unwrap();
         }

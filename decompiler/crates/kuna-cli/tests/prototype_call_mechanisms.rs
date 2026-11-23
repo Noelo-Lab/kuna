@@ -2,6 +2,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 #[test]
@@ -145,7 +146,7 @@ pair:
                 let run = Command::new(&client)
                     .arg(&original)
                     .arg(&binary)
-                    .output()
+                    .capped_output()
                     .unwrap();
                 assert_eq!(
                     run.status.code(),
@@ -321,7 +322,7 @@ int main(int argc, char **argv) {
                 let run = Command::new(&client)
                     .arg(&original)
                     .arg(&binary)
-                    .output()
+                    .capped_output()
                     .unwrap();
                 assert_eq!(
                     run.status.code(),

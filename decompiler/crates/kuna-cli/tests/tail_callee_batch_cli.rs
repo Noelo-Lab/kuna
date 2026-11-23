@@ -2,6 +2,8 @@
 //! of the callees their functions tail-call, as `kuna decompile` does (option
 //! `protoorder`). Neither has a callee-first order behind it, so the AArch64
 //! forwarder `ldr x8,[x3]; cbz x8,L; b target` printed `target(); // tail-call`.
+//! With `protoorder off` nothing is stated and `passthrough` reads `target`'s
+//! own body instead; only with that off as well does the call pass nothing.
 //!
 //! Fixture: `tailcallee_fwd_aarch64` (`forward`@`0x21015c`, `target`@`0x21012c`).
 //! Integration tests require the built processor specs under `specs/`.
@@ -23,7 +25,11 @@ fn run(args: &[&str]) -> String {
 fn narrowed_decompile_all_forwards_the_tail_callees_arguments() {
     let out = run(&["decompile-all", "--addr", FORWARD]);
     assert!(out.contains("target(a0,a1,a2,a3,a4); // tail-call"), "{out}");
-    let off = run(&["decompile-all", "--addr", FORWARD, "--option", "protoorder", "off"]);
+    let unstated = run(&["decompile-all", "--addr", FORWARD, "--option", "protoorder", "off"]);
+    assert!(unstated.contains("target(a0,a1,a2,a3,a4); // tail-call"), "{unstated}");
+    let off = run(&[
+        "decompile-all", "--addr", FORWARD, "--option", "protoorder", "off", "--option", "passthrough", "off",
+    ]);
     assert!(off.contains("target(); // tail-call"), "{off}");
 }
 

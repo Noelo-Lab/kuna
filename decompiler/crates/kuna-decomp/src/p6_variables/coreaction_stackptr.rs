@@ -831,11 +831,8 @@ pub(crate) fn analyze_extra_pop(
     // stack frame; an Err here mirrors that LowlevelError -> early return.  The
     // cosmetic warning text is routed through the action context elsewhere and is
     // not load-bearing for the analysis result, so it is omitted here.
-    if solver.build(data, stackspace, spcbase).is_err() {
-        return 0;
-    }
-    if solver.vnlist.is_empty() {
-        return 0;
+    if solver.build(data, stackspace, spcbase).is_err() || solver.vnlist.is_empty() {
+        return write_unplaced(data, stackspace, spcbase);
     }
     solver.solve();
 
@@ -899,5 +896,13 @@ pub(crate) fn analyze_extra_pop(
             changed += 1;
         }
     }
-    changed
+    changed + write_unplaced(data, stackspace, spcbase)
+}
+
+/// (kuna) A stated pop the solve could not place; see
+/// [`crate::p4_calls::kuna_declaredpop::write_unplaced`].
+fn write_unplaced(data: &mut Funcdata, stackspace: &Rc<AddrSpace>, spcbase: int4) -> int4 {
+    let Ok(point) = stackspace.get_spacebase(spcbase) else { return 0 };
+    let Some(space) = point.space.clone() else { return 0 };
+    crate::p4_calls::kuna_declaredpop::write_unplaced(data, &Address::new(space, point.offset))
 }

@@ -1807,9 +1807,13 @@ that grew by the floor while other workers filled the container can be
 stopped although it would have fit, and which one it is varies from run to
 run, but each such stop usually replaces a worker the kernel would have
 killed outright. A run outside a capped cgroup has no default. The resident set
-is `kuna_hostmem.rs (resident_bytes)`: `VmRSS` on Linux, and on Windows the
-larger of the working set and the private commit; a platform that reports no
-resident set (macOS) refuses a non-zero limit. Printing the function counts
+is `kuna_hostmem.rs (resident_bytes)`: `VmRSS` on Linux, on Windows the
+larger of the working set and the private commit, and on macOS the physical
+footprint (`proc_pid_rusage`'s `ri_phys_footprint`), which, unlike the resident
+size, drops when the allocator marks freed pages reusable, so a function is not
+charged for the freed transients of the one before it although macOS has no
+`malloc_trim`; a platform that reports no resident set refuses a non-zero
+limit. Printing the function counts
 against the same budget: the drive hands back what is left of its deadline
 with the function (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
 (Funcdata::render_budget)`), and whoever renders it publishes that, counted
@@ -2452,6 +2456,20 @@ lowering) and applied by
 | `readonly <addr>+<size>` | `readonly` | P1 code-data-partition |
 | `volatile <addr>+<size>` | `volatile` | P1 code-data-partition |
 | `bytes <addr> <hex\|@FILE>` | `override bytes` | P1 code-data-partition |
+
+(kuna) **A storage token names storage the target has, or the directive is
+rejected.** The console's address parser,
+`decompiler/crates/kuna-base/src/space.rs (AddrSpace::read)`, reads the storage of
+`param` and `return`, as it reads every address in a console command. Upstream's
+`strtoul` fallback read a token that is neither a register name nor a number as
+offset 0 and ignored any text after a name or number, so `no_such_register`, `RAX`
+on AArch64 (both the register at offset 0, `pc`) and `%x0:junk` applied silently and
+`--assert-strict` exited 0. Here such a token is an error that names it, as is
+anything after a name or number other than a complete `:size`, `:size+offset` or
+`+offset` suffix. A name the speculative register probe misses is tried with the
+exact lookup as written, then in upper and lower case, so `rax` is x86's `RAX`. A
+number is still read in C notation (`%4000` is decimal), and its suffix is read
+from where the number ends.
 
 `map address` retains an object's outer `volatile` qualifier and marks a
 global object's entire byte range volatile, so `--assert 'data 0x20000 volatile int cursor'`

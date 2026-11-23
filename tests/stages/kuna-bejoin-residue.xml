@@ -146,8 +146,10 @@
 <stringmatch name="bejoin residue #7: off prints the reloads with their halves swapped, as the default prints keep and drop" min="6" max="6">return (CONCAT44\(a0,a0 &gt;&gt; 0x1f\)|\(uint8\)a0 &lt;&lt; 0x20);</stringmatch>
 <stringmatch name="bejoin residue #8: a pair passed to __floatundidf proves add64" min="1" max="1">return CONCAT44\(a2 \+ a0 \+ \(uint4\)CARRY4\(a3,a1\),a3 \+ a1\);</stringmatch>
 <stringmatch name="bejoin residue #9: evidence alone prints add64 swapped" min="1" max="1">return CONCAT44\(a3 \+ a1,a2 \+ a0 \+ \(uint4\)CARRY4\(a3,a1\)\);</stringmatch>
-<stringmatch name="bejoin residue #10: a sign test of a whole wrapper reads its high word" min="2" max="2">\(int8\)wrap\(\)</stringmatch>
-<stringmatch name="bejoin residue #11: bejoinpass off reads the first register as the low word" min="2" max="2">\(int4\)wrap\(\)</stringmatch>
+<stringmatch name="bejoin residue #10: a sign test of a whole wrapper reads its high word" min="1" max="1">\(int8\)wrap\(a0,a1,a2,a3\)</stringmatch>
+<stringmatch name="bejoin residue #10b: on MIPS wrap forwards all four argument registers, which states no arity" min="1" max="1">\(int8\)wrap\(\)</stringmatch>
+<stringmatch name="bejoin residue #11: bejoinpass off reads the first register as the low word" min="1" max="1">\(int4\)wrap\(a0,a1,a2,a3\)</stringmatch>
+<stringmatch name="bejoin residue #11b: bejoinpass off on MIPS, the same low-word read" min="1" max="1">\(int4\)wrap\(\)</stringmatch>
 <stringmatch name="bejoin residue #12: a pair stored with std is read, so keep is not proven" min="0" max="0">^int8 keep\(</stringmatch>
 <stringmatch name="bejoin residue #13: a discarded volatile reload beside the int is not proven" min="0" max="0">^uint8 drop\(</stringmatch>
 </decompilertest>

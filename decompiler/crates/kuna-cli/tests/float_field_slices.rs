@@ -1,5 +1,6 @@
 use crate::common;
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[test]
 fn wide_call_store_preserves_float_field_bits() {
@@ -90,7 +91,7 @@ int main(void) {{
                 String::from_utf8_lossy(&built.stderr)
             );
             assert!(
-                Command::new(&executable).status().unwrap().success(),
+                Command::new(&executable).capped_status().unwrap().success(),
                 "{compiler} {level}: {body}"
             );
             std::fs::remove_file(executable).unwrap();

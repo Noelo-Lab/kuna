@@ -2,6 +2,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 const FUNCTIONS: &[&str] = &[
     "array_write",
@@ -103,7 +104,7 @@ fn spilled_stack_pointer_writes_round_trip_with_alias_and_escape_controls() {
                         "{fixture} {cc} {level}:\n{}\n{printed}",
                         String::from_utf8_lossy(&compile.stderr)
                     );
-                    let run = Command::new(&exe).output().expect("run the printed C");
+                    let run = Command::new(&exe).capped_output().expect("run the printed C");
                     assert!(
                         run.status.success(),
                         "{fixture} {cc} {level}:\n{}\n{printed}",
