@@ -59,7 +59,7 @@ fn object(name: &str, text: &[u8], functions: &[(&str, u64, u64)], calls: &[(u64
     let dir = std::env::temp_dir().join(format!("kuna-verify-guards-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(format!("{name}.o"));
-    std::fs::write(&path, obj.write().unwrap()).unwrap();
+    crate::zext_pair::write_whole(&path, &obj.write().unwrap());
     path
 }
 

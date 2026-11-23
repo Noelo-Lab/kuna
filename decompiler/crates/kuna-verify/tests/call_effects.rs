@@ -51,7 +51,7 @@ fn object() -> PathBuf {
     let dir = std::env::temp_dir().join(format!("kuna-verify-calls-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("callmem.o");
-    std::fs::write(&path, obj.write().unwrap()).unwrap();
+    crate::zext_pair::write_whole(&path, &obj.write().unwrap());
     path
 }
 

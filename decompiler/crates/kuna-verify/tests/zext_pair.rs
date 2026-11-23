@@ -51,8 +51,18 @@ fn arm_object() -> PathBuf {
     let dir = std::env::temp_dir().join(format!("kuna-verify-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("zext_pair.o");
-    std::fs::write(&path, obj.write().unwrap()).unwrap();
+    write_whole(&path, &obj.write().unwrap());
     path
+}
+
+/// Write `bytes` to `path` through a rename, so a test reading the fixture
+/// never sees another test thread's half-written copy of it.
+pub fn write_whole(path: &std::path::Path, bytes: &[u8]) {
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = path.with_extension(format!("{n}.tmp"));
+    std::fs::write(&tmp, bytes).unwrap();
+    std::fs::rename(&tmp, path).unwrap();
 }
 
 fn specs() -> Vec<String> {
