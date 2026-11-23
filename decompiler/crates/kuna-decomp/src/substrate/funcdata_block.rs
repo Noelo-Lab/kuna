@@ -1993,11 +1993,13 @@ impl Funcdata {
     ///      to the new BRANCHIND so the existing structurer + printer emit a
     ///      `switch`.
     ///
-    /// Returns `Ok(Some((jt_index, read_head_operand)))` on success, `Ok(None)` if
-    /// the CFG no longer matches the record (e.g. the head/targets were merged
-    /// away — install declines gracefully rather than corrupting the CFG).
-    /// `read_head_operand` reports that `prefer_head_operand` found an operand of
-    /// the head compare other than `var_addr` and the switch reads it.
+    /// Returns `Ok(Some((jt_index, read_head_operand, strict)))` on success,
+    /// `Ok(None)` if the CFG no longer matches the record (e.g. the head/targets
+    /// were merged away — install declines gracefully rather than corrupting the
+    /// CFG). `read_head_operand` reports that `prefer_head_operand` found an
+    /// operand of the head compare other than `var_addr` and the switch reads it;
+    /// `strict` that the install enters every body directly and passes the value
+    /// check with every raw read counted as a use.
     #[allow(clippy::too_many_arguments)]
     pub fn kuna_install_lowered_switch(
         &mut self,
@@ -2013,7 +2015,7 @@ impl Funcdata {
         path_spine: &[Address],
         path_returns: &[(Address, int4)],
         linear: bool,
-    ) -> KunaResult<Option<(usize, bool)>> {
+    ) -> KunaResult<Option<(usize, bool, bool)>> {
         use kuna_base::types::uintb;
 
         // Don't re-install if a table already exists for this branch address.
@@ -2035,7 +2037,7 @@ impl Funcdata {
         // (kuna `loweredswitchexact`) every label of a shared body is kept instead.
         // (kuna `loweredswitchpath`) A tree that loads each case's value inside it
         // installs along its raw paths.
-        let (out_blocks, out_labels, out_is_default) = if !path_spine.is_empty() {
+        let (out_blocks, out_labels, out_is_default, strict) = if !path_spine.is_empty() {
             use crate::p2_lift::kuna_loweredswitchpath as lsp;
             let arms = match lsp::plan_install(self, head, var_addr, var_size, case_vals, prefer_head_operand, load_at, path_spine, path_returns) {
                 Some(arms) if arms.len() >= 3 => arms,
@@ -2051,7 +2053,7 @@ impl Funcdata {
             let blocks = lsp::build_arm_blocks(self, &arms)?;
             let n = arms.len();
             let labels: Vec<Vec<uintb>> = arms.into_iter().map(|a| if a.labels.is_empty() { vec![0] } else { a.labels }).collect();
-            (blocks, labels, (0..n).map(|i| i + 1 == n).collect::<Vec<bool>>())
+            (blocks, labels, (0..n).map(|i| i + 1 == n).collect::<Vec<bool>>(), false)
         } else {
             let mut out_targets: Vec<Address> = Vec::new();
             let mut out_labels: Vec<Vec<uintb>> = Vec::new();
@@ -2085,6 +2087,7 @@ impl Funcdata {
             }
             // (kuna `loweredswitchexact`) Enter each body through the raw block the tree
             // reaches it by.
+            let entered = out_blocks.clone();
             crate::p2_lift::kuna_loweredswitchexact::raw_case_entries(self, head, &mut out_blocks);
             // Need at least 2 case edges + a default for a switch.
             if out_blocks.len() < 3 {
@@ -2103,10 +2106,12 @@ impl Funcdata {
             if !crate::p2_lift::kuna_loweredswitchexact::raw_install_keeps_values(self, head, &out_blocks) {
                 return Ok(None);
             }
+            let strict = out_blocks == entered
+                && crate::p2_lift::kuna_loweredswitchexact::raw_install_keeps_values_strictly(self, head, &out_blocks);
             if linear && !crate::p2_lift::kuna_loweredswitchexact::raw_cases_private(self, head, &out_blocks[..out_blocks.len() - 1], &out_blocks) {
                 return Ok(None);
             }
-            (out_blocks, out_labels, out_is_default)
+            (out_blocks, out_labels, out_is_default, strict)
         };
 
         // The head's trailing op must be the recorded CBRANCH.
@@ -2282,7 +2287,7 @@ impl Funcdata {
 
         self.jumpvec_mut().push(jt);
         let idx = self.num_jump_tables() as usize - 1;
-        Ok(Some((idx, read_head_operand)))
+        Ok(Some((idx, read_head_operand, strict)))
     }
 
     /// (kuna) Would installing the lowered switch at `head` strand a genuine jump

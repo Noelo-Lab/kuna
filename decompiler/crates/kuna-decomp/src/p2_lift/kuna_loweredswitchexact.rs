@@ -376,6 +376,16 @@ pub(crate) fn raw_case_entries(data: &Funcdata, head: BlockId, targets: &mut [Bl
 /// before an op reads it, before a call or tail call that may take it as a
 /// parameter, and before a return that may return it.
 pub(crate) fn raw_install_keeps_values(data: &Funcdata, head: BlockId, targets: &[BlockId]) -> bool {
+    keeps_values(data, head, targets, false)
+}
+
+/// [`raw_install_keeps_values`] with every raw read of a deleted value counted as
+/// a use, as the recogniser had it before reads were followed to their uses.
+pub(crate) fn raw_install_keeps_values_strictly(data: &Funcdata, head: BlockId, targets: &[BlockId]) -> bool {
+    keeps_values(data, head, targets, true)
+}
+
+fn keeps_values(data: &Funcdata, head: BlockId, targets: &[BlockId], strict: bool) -> bool {
     let removed = removed_blocks(data, head, targets);
     let mut written: Vec<(Address, int4)> = Vec::new();
     for &b in &removed {
@@ -400,12 +410,7 @@ pub(crate) fn raw_install_keeps_values(data: &Funcdata, head: BlockId, targets: 
             }
         }
     }
-    written.iter().all(|(addr, size)| {
-        let bad = read_before_written(data, &removed, targets, addr, *size, None);
-        if bad {
-        }
-        !bad
-    })
+    written.iter().all(|(addr, size)| !uses_before_written(data, &removed, targets, addr, *size, None, strict))
 }
 
 /// True when some path from `targets` that avoids `removed` uses the `size`
@@ -426,6 +431,18 @@ pub(crate) fn read_before_written(
     addr: &Address,
     size: int4,
     returns: Option<&[(Address, int4)]>,
+) -> bool {
+    uses_before_written(data, removed, targets, addr, size, returns, false)
+}
+
+fn uses_before_written(
+    data: &Funcdata,
+    removed: &BTreeSet<BlockId>,
+    targets: &[BlockId],
+    addr: &Address,
+    size: int4,
+    returns: Option<&[(Address, int4)]>,
+    strict: bool,
 ) -> bool {
     let space = match addr.get_space() {
         Some(s) => s.get_index(),
@@ -466,6 +483,9 @@ pub(crate) fn read_before_written(
                 v.get_addr().get_space().map(|s| Loc { space: s.get_index(), lo: v.get_offset(), size: v.get_size(), addr: v.get_addr().clone() })
             });
             if reads {
+                if strict {
+                    return true;
+                }
                 match out {
                     Some(out) if !deleted_op_is_statement(o.code()) => {
                         if !live.contains(&out) {

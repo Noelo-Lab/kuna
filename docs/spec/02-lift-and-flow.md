@@ -3363,9 +3363,10 @@ function prints more `goto`s. A loop the structurer loses prints its back edge
 as a `goto`, so the count catches `colon`; a loop that only the compare tree
 needed (a `do { ... } while (4 <= v)` around the dispatch) may go. The `goto`
 count does not apply to the binary-search tree with a compare-only head over a
-register selector, on the variable with the most compare-only compares: the
-cascade the recogniser always took, which reads better than its compare tree
-even with a goto or two.
+register selector, on the variable with the most compare-only compares, whose
+install enters every case body directly and keeps every value with each raw read
+of it counted as a use: the cascade the recogniser always took and installed,
+which reads better than its compare tree even with a goto or two.
 
 The switch also reads its selector the way the compares it replaced did. An
 equality compare reads its operands as `int`, and a chain of equality tests with

@@ -158,8 +158,9 @@ pub struct KunaLoweredSwitchRecord {
     pub shape_without: Option<crate::p2_lift::kuna_loweredswitchkeep::Shape>,
     /// (kuna) The cascade is a binary-search tree with a compare-only head over
     /// a register or stack selector, installed straight to its case bodies, on
-    /// the variable with the most compare-only blocks: the cascade the
-    /// recogniser took before it looked at heads holding other code.
+    /// the variable with the most compare-only blocks, and its install passes
+    /// the stricter checks: the cascade the recogniser took and installed
+    /// before it looked at heads holding other code or followed raw reads.
     pub base_shape: bool,
     /// (kuna) Recorded on the retry after a withdrawal: the compare-only
     /// cascade the previous recogniser chose.
@@ -1647,9 +1648,10 @@ impl ActionLowerSwitchInstall {
                 &r.returns,
                 r.linear,
             ) {
-                Ok(Some((_idx, read_head_operand))) => {
+                Ok(Some((_idx, read_head_operand, strict))) => {
                     if let Some(rec) = self.store.borrow_mut().record_mut(data, i) {
                         rec.value.read_head_operand = read_head_operand;
+                        rec.base_shape &= strict;
                         if rec.value.state == crate::p2_lift::kuna_loweredswitchvalue::ValueState::Verified
                             && rec.value.verified_read != Some(read_head_operand)
                         {
