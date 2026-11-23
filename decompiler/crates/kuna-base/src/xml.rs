@@ -2287,7 +2287,8 @@ mod tests {
         // and kuna-piecepathology / a call's declared int is the return, not the clobbered rest of its register
         // and kuna-returnhintcaller / a callee return hint keeps the argument passed in the return register
         // and kuna-boundschecked / an Annex K bounds-checked call keeps every declared argument
-        assert_eq!(count, 870, "corpus file count drifted");
+        // and kuna-declaredpop / a declared import pop is the stack solver's equation
+        assert_eq!(count, 871, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

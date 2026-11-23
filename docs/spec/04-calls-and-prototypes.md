@@ -1825,6 +1825,50 @@ that machinery.
   `__thiscall` callee, which shifts each later stack offset by the arguments
   the callee popped, so later calls lose stack arguments and locals whose
   address is taken alias outgoing-argument slots.
+
+  (kuna) A pop a call through a pointer takes from its declaration (an import
+  slot's library declaration, §4.1, `kuna_slotargs`), under a model that leaves
+  extrapop unknown, is not written as the `INT_ADD` either when the function
+  has a guessed pop (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_declaredpop.rs
+  (deferred)`). The call takes the INDIRECT the other calls take and keeps the
+  pop on its prototype, so `StackSolver::build` gives it the exact equation
+  (rhs = the pop) and the solve writes it into the IR with every other stack
+  reference. The `INT_ADD` joined the stack pointer after the call to the one
+  before it before anything was solved, and term collection then rewrote a
+  pointer difference after `GetModuleFileNameA` (`end - (path + 1)`) as minus
+  the stack pointer at the import's last push. The local-alias boundary (§4.3,
+  `checkInputTrialUse`) took that slot as an escaped address, and every
+  outgoing argument above it was refused for the rest of the function. Where
+  the solve cannot place the stack pointer, the INDIRECT is written as the
+  `INT_ADD` after the solve (`write_unplaced`): a frame sized at run time, or a
+  stack pointer an exception handler loads from its frame. A direct call's
+  declared pop (a DWARF or demangled declaration of the image's own function)
+  keeps the `INT_ADD`, and so does every pop in a function with nothing to
+  guess.
+
+  The two forms are solved alike only where nothing in the solve reads the
+  form (`kuna_declaredpop.rs (allowed)`), so a function keeps every `INT_ADD`
+  in two more cases. One is a guess that reads the caller's stack: the
+  push-run guess (§6, `kuna_calleepopslot`) of a call into an import or
+  through a pointer counts the slots pushed in front of it. With the `INT_ADD`
+  folded in, every reference after the declared call is an offset from one
+  before it, and the walk reads whichever reference sits at a slot's offset,
+  often one of another call's slots; with the INDIRECT it reads the call's
+  own. GCC's alignment padding (`call [GetLastError]; push ecx; push ecx; push
+  ebx; push eax; call [f]`), a `__cdecl` import's cleanup merged into the next
+  call's reservation, and arguments written with `mov [esp+k]` in the block
+  before the call are where the second reading is wrong and the first right by
+  accident, and the reverse holds for others. So a function defers only when
+  every pop it guesses is a direct call's into the image's own code, guessed
+  to pop the return address or read off a fixed frame, either way the same in
+  both forms; a call through a pointer may still resolve to an import before
+  the solve and counts as one. The other is an exact equation that is false:
+  a direct call's pop stated under that model is computed from its declared
+  parameters as if the callee popped them, which a GCC `__cdecl` or `regparm`
+  callee does not, and its own `RET` says so (`callee_purge`). That leaves the
+  system without a consistent solution, a merge's two paths disagree, and which
+  one the solve takes depends on its order, which the form changes. A function
+  defers only when every such stated pop is the one its callee's returns prove.
 - **`ActionFuncLink`** (`coreaction_protos.rs (ActionFuncLink)`) arms each
   call site. Unlocked or varargs prototype → input recovery on
   (`init_active_input`). Locked prototype → one pre-marked trial per declared
