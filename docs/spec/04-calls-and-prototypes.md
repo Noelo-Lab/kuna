@@ -9648,7 +9648,11 @@ the flow builder renders as a call and synthetic return. A genuine indirect
 call or an explicitly resolved tail transfer is not such a jump. A killed or
 unassigned register and a locked `void` return supply no value either. Any write
 after the call supplies its own value rather than forwarding the call result.
-Other headerless targets do not file this caller evidence.
+Other headerless targets do not file this caller evidence. Over 15 Cortex-M
+firmware images of the decbench O0/O2 corpus loaded raw with `--isa thumb` and
+every `FUNC` symbol as an `--entry` (17,165 functions), 154 functions change
+from `void` to a value, DWARF declares a return value for every one of them,
+and none changes the other way.
 
 An explicitly freed x87 ST0 is not an inferred return value. Before SSA, a
 must-empty analysis records ordinary returns reached with ST0 empty on every
