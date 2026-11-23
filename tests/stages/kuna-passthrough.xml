@@ -20,19 +20,15 @@
     forwards.  Where rdi is heritaged, `AncestorRealistic::execute`
     (funcdata_varnode.cc:2159) refuses an input Varnode at the call slot anyway.
 
-    THIS FIXTURE IS THE NEGATIVE CONTROL for the clause that decides the
-    argument.  `option passthrough on` adds a forwarded register only when the
-    CALLEE's own recovered prototype reads it, and that prototype reaches a
-    call site only through `protoorder`, which parks it when a whole-binary
-    `decompile-all` decompiles the callee first.  This harness decompiles ONE
-    function from a byte image: no callee was decompiled first, `target` has
-    stated nothing about itself, and a rule that adds an argument may not read
-    silence as evidence.  `park_recovered_proto` is written true only in
-    decompiler/crates/kuna-cli/src/decompile_all.rs; the console paths this
-    harness runs through (kuna-console/src/project.rs, project_stream.rs) pass
-    false, so no stage test can put a parked prototype in front of the rule.
-    Both passes therefore render the forwarding functions without the
-    parameter.
+    This harness decompiles ONE function from a byte image: no callee was
+    decompiled first, so `target` has stated nothing about itself and the
+    `protoorder` statement the rule reads in a whole-binary `decompile-all`
+    is absent.  The callee's own body still speaks: its bounded entry decode
+    (the `calleedeadarg` probe) reads rdi before writing it, for a value that
+    reaches something, and nothing in rsi.  With nothing stated, `option
+    passthrough on` takes that leading run of argument registers as the
+    callee's list, so pass 2 gives both forwarding functions the parameter
+    and both calls the argument.  Pass 1 (`off`) is the bug.
 
     The POSITIVE witness is the same code as a real program,
     decompiler/crates/kuna-analysis/tests/fixtures/passthrough_x86_64 (source
@@ -46,14 +42,22 @@
     Stage / sub-stage: P4 "active-input-trial-scoring".  The P0 assertion
     `option passthrough on|off` decides whether a register the function
     forwards untouched to a callee whose recovered prototype reads it is an
-    argument (and the function's parameter).  Pass 1 pins the shipped `off`;
-    pass 2 pins that `on` alone, with nothing stated, adds nothing.
+    argument (and the function's parameter).  Pass 1 is `off`, pass 2 the
+    default `on`.
 
-    The Go-marked ELF below covers the same refusal after gomorestack folds
-    a cold AX/BX spill arm. Each wrapper is also decompiled with an explicit
-    callee declaration. Both declared calls retain all their operands, and
-    all four selected bodies omit the growth call. The Go callee-first
-    positives are the two cold-spill probes in tests/cli/.
+    The Go-marked ELF below covers the same claim after gomorestack folds a
+    cold AX/BX spill arm: with nothing declared, `read_word` and `read_text`
+    read AX and AX/BX on entry, so the wrappers forward them.  Each wrapper is
+    also decompiled with an explicit callee declaration.  Both declared calls
+    retain all their operands, and all four selected bodies omit the growth
+    call.  The Go callee-first positives are the two cold-spill probes in
+    tests/cli/.
+
+    passthrough_varerr_x86_64.o (gcc -O2, recipe in its .c) is the variadic
+    control: check reads rdi and, past `x > 5`, calls the variadic err with
+    rsi..r9 untouched, which err's register-save prologue stores.  check's
+    run through that call reaches r9, the last argument register, which is
+    no arity claim, so wrap forwards rdi alone and not six registers.
 -->
 <bytechunk space="ram" offset="0x401000">
 4889f80fb61784d2740e4883c70180fa2f75f04889f8ebebc3ebe54883ec08e8
@@ -106,14 +110,24 @@ b83c000000bf010000000f05f4
   <com>decompile</com>
   <com>print C</com>
   <com>echo passthrough output ends</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/passthrough_varerr_x86_64.o</com>
+  <com>read symbols</com>
+  <com>option protoorder off</com>
+  <com>lo fu wrap</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="passthrough #1: the tail-call thunk never names rdi, so it has no parameter in either pass" min="2" max="2">void fwd\(void\)</stringmatch>
-<stringmatch name="passthrough #2: the function that tests the result never names rdi either, and has no parameter in either pass" min="2" max="2">void fwdtest\(void\)</stringmatch>
-<!-- Match all printed bodies between the markers. The four original C
-     target calls still take no operands. Whole Go bodies prohibit a growth
-     call in every pass, including after explicit call declarations. -->
-<stringmatch name="passthrough #3: the calls pass nothing in both passes, because no callee stated a prototype for the rule to read" min="1" max="1">^\s*passthrough output begins$
+<stringmatch name="passthrough #1: off, the tail-call thunk never names rdi, so it has no parameter" min="1" max="1">void fwd\(void\)</stringmatch>
+<stringmatch name="passthrough #1b: on, the callee's body reads rdi, so the thunk forwards it as its parameter" min="1" max="1">void fwd\(unsigned long a0\)</stringmatch>
+<stringmatch name="passthrough #2: off, the function that tests the result never names rdi either, and has no parameter" min="1" max="1">void fwdtest\(void\)</stringmatch>
+<stringmatch name="passthrough #2b: on, it forwards rdi too" min="1" max="1">void fwdtest\(unsigned long a0\)</stringmatch>
+<!-- Match all printed bodies between the markers. The off pass passes
+     nothing; the on pass passes what each callee's body reads. Whole Go
+     bodies prohibit a growth call in every pass, including after explicit
+     call declarations. -->
+<stringmatch name="passthrough #3: off passes nothing; on passes the registers each unstated callee's body reads" min="1" max="1">^\s*passthrough output begins$
 ^\s*$
 ^void fwd\(void\)$
 ^\{$
@@ -127,29 +141,29 @@ b83c000000bf010000000f05f4
 ^  halt\(\);(?: // [^()]*)?$
 ^\}$
 ^\s*$
-^void fwd\(void\)$
+^void fwd\(unsigned long a0\)$
 ^\{$
-^  target\(\);(?: // tail-call)?$
+^  target\(a0\);(?: // tail-call)?$
 ^\}$
 ^\s*$
-^void fwdtest\(void\)$
+^void fwdtest\(unsigned long a0\)$
 ^\{$
-^  if \(target\(\)\)$
+^  if \(target\(a0\)\)$
 ^    return;$
 ^  halt\(\);(?: // [^()]*)?$
 ^\}$
 ^\s*$
-^void forward_word\(void\)$
+^void forward_word\(unsigned long a0\)$
 ^\{$
-^  read_word\(\);$
+^  read_word\(a0\);$
 ^\}$
 ^\s*$
-^void forward_text\([^()]*\)$
+^void forward_text\(unsigned long a0,unsigned long a1\)$
 ^\{$
 ^  unsigned long v[0-9]+;(?: // [^()]*)?$
 ^\s*$
 ^  v[0-9]+ = a0;$
-^  read_text\(\);$
+^  read_text\(a0,a1\);$
 ^\}$
 ^\s*$
 ^void forward_word\([^()]*\)$
@@ -162,4 +176,6 @@ b83c000000bf010000000f05f4
 ^  read_text\(a0,a1\);$
 ^\}$
 ^\s*passthrough output ends$</stringmatch>
+<stringmatch name="passthrough #4: a callee whose error path calls a variadic takes only the register its body reads" min="1" max="1">^  return check\(a0\) \+ 3;$</stringmatch>
+<stringmatch name="passthrough #4b: and not the five the variadic's register-save prologue stores" min="0" max="0">check\(a0,a1</stringmatch>
 </decompilertest>

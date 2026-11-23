@@ -4,6 +4,7 @@ use object::{
     Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope,
 };
 use std::process::Command;
+use crate::common::process::Capped;
 
 fn powerpc_hard_float_image(little: bool, apu: bool, embedded: bool) -> Vec<u8> {
     let endian = if little {
@@ -83,7 +84,7 @@ fn check_emitted_c(code: &str, expression: &str) {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        Command::new(&executable).status().unwrap().success(),
+        Command::new(&executable).capped_status().unwrap().success(),
         "{code}"
     );
     std::fs::remove_file(source).unwrap();

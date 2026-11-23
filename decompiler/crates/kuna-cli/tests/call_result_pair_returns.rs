@@ -9,6 +9,7 @@ use common::process;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{Architecture, BinaryFormat, Endianness, FileFlags, SectionKind, SymbolFlags, SymbolKind, SymbolScope};
 use std::process::Command;
+use crate::common::process::Capped;
 
 /// The source of every image, built with `clang --target=<triple> -O2
 /// -fno-pic` and checked against the printed C under the `s_` names.
@@ -216,7 +217,7 @@ fn a_callee_result_with_a_changed_high_word_round_trips_through_the_printed_c() 
                     "{cc} {level} rejected the printed C ({arch}):\n{}\n{text}",
                     String::from_utf8_lossy(&out.stderr)
                 );
-                let run = Command::new(&exe).output().expect("run the round trip");
+                let run = Command::new(&exe).capped_output().expect("run the round trip");
                 assert!(
                     run.status.success(),
                     "{arch} printed and built by {cc} {level} computes a different value:\n{}\n{text}",
@@ -371,7 +372,7 @@ fn a_pushed_argument_caller_returns_the_whole_pair_in_both_modes() {
                 "{cc} {level} rejected the printed C:\n{}\n{text}",
                 String::from_utf8_lossy(&out.stderr)
             );
-            let run = Command::new(&exe).output().expect("run the round trip");
+            let run = Command::new(&exe).capped_output().expect("run the round trip");
             assert!(
                 run.status.success(),
                 "printed and built by {cc} {level} computes a different value:\n{}\n{text}",

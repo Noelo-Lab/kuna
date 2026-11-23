@@ -3634,6 +3634,35 @@ moves.
   no signature gets worse. A function that returns through a `_restgpr_N_x` tail
   branch, which the return recovery reads as an opaque call, stays `void` (89),
   and in 18 the value now shows as that tail call's argument.
+  The C11 Annex K bounds-checked functions whose declarations agree across
+  implementations have rows of their own: `memset_s`, `memcpy_s`, `memmove_s`,
+  `strcpy_s`, `strncpy_s`, `strcat_s`, `strncat_s` and `sprintf_s`. The
+  signatures come from `gcc -aux-info` over mingw-w64's headers, and
+  `memset_s`'s, which mingw-w64 lacks, from FreeBSD's `<string.h>`; both define
+  `errno_t` as `int` and `rsize_t` as `size_t`, as Annex K does. `snprintf_s`,
+  which some libraries give an extra count, and `strtok_s` and `qsort_s`, whose
+  Annex K and Microsoft parameter lists differ, are left out. The rows matter
+  for more than types. GCC loads a size passed both as the capacity and as the
+  count into the later register and copies it into the earlier one
+  (`mov x3,#64; mov w2,#0; mov x1,x3` on AArch64, `movs r3,#64; movs r2,#0;
+  mov r1,r3` in Thumb-2), and call recovery rejects a register trial whose
+  value also reaches an earlier, active argument of the same call
+  (`check_call_double_use`, chapter 04), so without a row `memset_s(p, 64, 0,
+  64)` printed `memset_s(v1,0x40,0)`. With the rows each call takes exactly its
+  declared arguments: a Thumb `memcpy_s` no longer takes the `r3` its caller
+  pushed for alignment as a fifth one, and `sprintf_s` prints its format
+  string. The rows are not seeded at the PLT stub of a name the image itself
+  defines: a library that carries its own `memset_s(void *, int)` or
+  `strcpy_s(char *, const char *)` and calls it through its stub would be
+  handed the declared count (`memset_s(v1,0x40,a2,a3)`), so its calls keep
+  what call recovery finds. On a large AArch64 shared library that imports them, every printed
+  `memset_s`, `memcpy_s` and `strncpy_s` call has four arguments, where 577 of
+  627, 329 of 489 and 6 of 376 had three, six or two. The `int` result has the
+  effect any `int`-returning row already has (`puts`, `fclose`): 28 `void`
+  functions there now return a value, 10 the result of a bounded tail call, 13 a
+  result a bounded call leaves in `w0`, and 5 PLT stubs of other imports by
+  propagation; and three calls to an undeclared import that takes no arguments
+  are passed the preceding call's result.
   Two complex-valued rows, `cexpf` and `cexp`, are
   seeded with the DWARF pass's complex pair types (below), and only where that
   layout applies to the value's width, so a call passes and returns the value
@@ -11619,8 +11648,19 @@ the C++ inheritance chain modeled by composition:
   statics become an explicit `LanguageDatabase` value the bootstrap owns), find the
   `.pspec`/`.cspec`/`.sla` files, build the SLEIGH translator, and run the
   `Architecture::init` tail (type factory, prototype models, print language). The
-  upstream translator-reuse cache is deliberately not ported — it affects build
-  speed only — and is the recorded loss here. (kuna) A spec root is a
+  upstream translator-reuse cache, which hands a later architecture the same
+  `Sleigh` object, is not ported: each architecture owns its translator and its
+  address spaces, which the `.ldefs` truncations and the `.cspec` then modify.
+  (kuna) Instead, in a process that turns reuse on (below), a thread keeps the
+  decoded form of each `.sla` it has decoded twice
+  (`decompiler/crates/kuna-sleigh/src/kuna_slacache.rs`), keyed by the file's
+  full contents. A later translator from the same bytes is a copy of that
+  template (`decompiler/crates/kuna-sleigh/src/sleighbase.rs
+  (SleighBase::clone_decoded)`): a new space set is built from the `.sla`'s space
+  records, every space reference in the symbol table and the constructor
+  templates moves to the space of the same index in it, and the register
+  cross-reference and context variables are rebuilt as a decode builds them. The
+  copy equals a fresh decode and shares no space with the template. A spec root is a
   directory or a tree held in memory
   (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_memoryspecs.rs
   (MemorySpecs)`): a table of `/`-separated relative paths and their contents.
@@ -11631,7 +11671,14 @@ the C++ inheritance chain modeled by composition:
   `decompiler/crates/kuna-console/src/engine.rs (language_database)` scans a
   list of roots once. A bootstrap over the result skips the `.ldefs` scan and
   reads only its own language's `.sla`, `.pspec` and `.cspec`
-  (`LanguageDatabase::read_spec`), so threads may share one database.
+  (`LanguageDatabase::read_spec`), so threads may share one database. A runner
+  whose spec trees cannot change while it runs and that builds many
+  architectures, such as the datatest harness, calls
+  `decompiler/crates/kuna-console/src/engine.rs (reuse_specs)` instead: from
+  then on every bootstrap over the same on-disk roots gets a copy of the first
+  scan of them, and translators are copies of kept `.sla` templates as above.
+  A kept template costs about as much memory as one translator, which is why
+  reuse is the runner's choice and a single-binary run never keeps one.
 - `decompiler/crates/kuna-decomp/src/p1_partition/xml_arch.rs (XmlArchitecture)`
   binds the decompiler's XML `<binaryimage>` container — the datatest corpus's
   entire load path, and the reason the analysis tier can be default-on without

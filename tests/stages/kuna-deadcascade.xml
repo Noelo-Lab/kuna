@@ -32,6 +32,6 @@
 </script>
 <stringmatch name="deadcascade #1: every pass prints churn" min="3" max="3">^uint8 churn\(int8 a0,char \*a1\)$</stringmatch>
 <stringmatch name="deadcascade #2: every pass keeps churn's 256 calls" min="768" max="768">sink\(</stringmatch>
-<stringmatch name="deadcascade #3: every pass leaves the same live IR" min="3" max="3">Count - pcode = 8135</stringmatch>
-<stringmatch name="deadcascade #4: every pass creates the same ops" min="3" max="3">Count - created = 35936</stringmatch>
+<stringmatch name="deadcascade #3: every pass leaves the same live IR" min="3" max="3">Count - pcode = 8144</stringmatch>
+<stringmatch name="deadcascade #4: every pass creates the same ops" min="3" max="3">Count - created = 35889</stringmatch>
 </decompilertest>

@@ -4,6 +4,7 @@ use object::{
     Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope,
 };
 use std::process::Command;
+use crate::common::process::Capped;
 
 // Authored ARM instructions implement narrow(x), use_narrow(x), cast_only(x),
 // mixed_input(x,y), multiple(n,x,y), and its forwarding caller. No toolchain is needed.
@@ -178,7 +179,7 @@ fn single_arguments_written_over_a_double_result_are_read_as_written() {
         String::from_utf8_lossy(&compile.stderr)
     );
     assert!(
-        Command::new(executable).status().unwrap().success(),
+        Command::new(executable).capped_status().unwrap().success(),
         "{code}"
     );
 }
@@ -314,7 +315,7 @@ fn a_backfill_slot_below_a_double_is_neither_a_parameter_nor_an_argument() {
             String::from_utf8_lossy(&compile.stderr)
         );
         assert!(
-            Command::new(executable).status().unwrap().success(),
+            Command::new(executable).capped_status().unwrap().success(),
             "{code}"
         );
     }
@@ -645,7 +646,7 @@ fn compile_and_run(sources: &[std::path::PathBuf], executable: &std::path::Path)
         "{}",
         String::from_utf8_lossy(&compile.stderr)
     );
-    let run = Command::new(executable).output().unwrap();
+    let run = Command::new(executable).capped_output().unwrap();
     assert!(run.status.success());
     String::from_utf8(run.stdout).unwrap()
 }
@@ -729,7 +730,7 @@ fn narrowing_forwarded_contracts_compile_and_preserve_values() {
         String::from_utf8_lossy(&compile.stderr)
     );
     assert!(
-        Command::new(executable).status().unwrap().success(),
+        Command::new(executable).capped_status().unwrap().success(),
         "{code}"
     );
 }
@@ -841,7 +842,7 @@ fn recovered_scalar_contracts_compile_and_compute_the_expected_values() {
         String::from_utf8_lossy(&compile.stderr)
     );
     assert!(
-        Command::new(executable).status().unwrap().success(),
+        Command::new(executable).capped_status().unwrap().success(),
         "{code}"
     );
 }
@@ -1014,7 +1015,7 @@ fn compiled_arm_and_thumb_sources_preserve_mixed_values_and_declared_order_contr
                     "{}\n{functions}",
                     String::from_utf8_lossy(&compile.stderr)
                 );
-                let result = Command::new(&executable).output().unwrap();
+                let result = Command::new(&executable).capped_output().unwrap();
                 assert!(result.status.success());
                 assert_eq!(
                     String::from_utf8(result.stdout).unwrap(),
