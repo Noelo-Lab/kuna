@@ -3268,9 +3268,10 @@ impl PrintC {
             return;
         }
         let sz = proto.num_params();
-        if sz == 0 {
+        // (kuna varargsave) a variadic list with no named parameter is `(...)`.
+        if sz == 0 && !proto.is_dotdotdot() {
             self.emit.tag_type("void", SyntaxHighlight::TypeColor, markup);
-        } else {
+        } else if sz != 0 {
             let mut print_comma = false;
             for i in 0..sz {
                 let param = match proto.get_param(i) {

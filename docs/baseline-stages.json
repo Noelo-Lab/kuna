@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5047,
-    5047
+    5054,
+    5054
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4941,6 +4941,13 @@
     "data:unwindstarts on: the third unwind-only start joins the inventory (default pass: absent)",
     "data:value-first interning preserves pointer contract",
     "data:value-first interning preserves value contract",
+    "data:varargsave #1: report is variadic after its two named parameters",
+    "data:varargsave #2: scaled keeps its named double, the save starts at xmm1",
+    "data:varargsave #3: both pass their named parameters on",
+    "data:varargsave #4: firstd reads its saved xmm0 slot itself and is not folded",
+    "data:varargsave #5: dsum indexes its save area itself and is not folded",
+    "data:varargsave #6: with the option off report takes fourteen parameters",
+    "data:varargsave #7: the al test prints only in dsum and with the option off",
     "data:varargstackargs #1: the stack-passed variadic argument is never dropped",
     "data:varargstackargs #2: the variadic argument the ABI passes on the stack is recovered",
     "data:varsources #10: the independently computed loop bound does not borrow inputs",

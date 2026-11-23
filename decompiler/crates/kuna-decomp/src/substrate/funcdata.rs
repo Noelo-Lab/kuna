@@ -168,6 +168,9 @@ pub struct Funcdata {
     /// [`Self::kuna_later_tables`], shared with the jump-table partial.
     pub(crate) kuna_later_wanted: std::rc::Rc<std::cell::Cell<Option<u64>>>,
     pub(crate) kuna_x87_empty_returns: Vec<Address>,
+    /// (kuna `varargsave`) Set when the first heritage pass folded this
+    /// function's variadic register-save prologue (`p4_calls/kuna_varargsave.rs`).
+    pub(crate) kuna_vararg_save: bool,
     pub(crate) kuna_fpu_trunc_views: Vec<OpId>,
     /// Boolean properties associated with \b this function (C++ `flags`)
     flags: uint4,
@@ -786,6 +789,7 @@ impl Funcdata {
             kuna_later_tables: None,
             kuna_later_wanted: std::rc::Rc::default(),
             kuna_x87_empty_returns: Vec::new(),
+            kuna_vararg_save: false,
             flags: 0,
             clean_up_index: 0,
             high_level_index: 0,
@@ -4433,6 +4437,7 @@ impl Funcdata {
         self.kuna_call_mechanisms = Default::default();
         self.kuna_fpu_trunc_views.clear();
         self.kuna_x87_empty_returns.clear();
+        self.kuna_vararg_save = false;
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).
         self.flags &= !(funcdata_flags::highlevel_on
             | funcdata_flags::blocks_generated
