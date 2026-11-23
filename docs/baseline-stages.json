@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5230,
-    5230
+    5242,
+    5242
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1721,6 +1721,18 @@
     "data:LOOPTEST-ORDER #6: down keeps its != test under binary",
     "data:LOOPTEST-ORDER #7: bytes keeps its != test under binary",
     "data:LOOPTEST-ORDER #8: wrapend keeps its n != 0 guard",
+    "data:LOWERED SMALL #10: the re-rolled switch still reads its selector as the compares did",
+    "data:LOWERED SMALL #11: labels of a switch over a char print as characters",
+    "data:LOWERED SMALL #12: compares against functions stay compares",
+    "data:LOWERED SMALL #1: loweredswitch off keeps the compiler's chain",
+    "data:LOWERED SMALL #2: each case returns the value its compare path loaded",
+    "data:LOWERED SMALL #3: the cmov path is the default",
+    "data:LOWERED SMALL #4: a three-test chain with a body each re-rolls by default",
+    "data:LOWERED SMALL #5: a two-test chain stays an if by default",
+    "data:LOWERED SMALL #6: loweredswitch linear re-rolls the two-test chain",
+    "data:LOWERED SMALL #7: four switches in all",
+    "data:LOWERED SMALL #8: a switch that would cost colon its loop is withdrawn",
+    "data:LOWERED SMALL #9: colon keeps its character compares",
     "data:LOWEREDSWITCH-SCRUTINEE #1: the re-rolled switch dispatches on the compared parameter",
     "data:LOWEREDSWITCH-SCRUTINEE #2: the scrutinee is never a constant nor empty",
     "data:LOWEREDSWITCH-SCRUTINEE #3: neither pass drops the dispatched-on parameter from the prototype",
@@ -4146,8 +4158,8 @@
     "data:logical shift retains unsigned destination",
     "data:loop initial and backedge definitions share a family",
     "data:low address outside pointer inference range still folds",
-    "data:loweredswitch linear #1: by default the linear chain stays nested ifs",
-    "data:loweredswitch linear #2: with linear both chains re-roll into a switch",
+    "data:loweredswitch linear #1: with loweredswitch off the linear chain stays nested ifs",
+    "data:loweredswitch linear #2: by default both chains re-roll into a switch",
     "data:loweredswitch linear #3: the if/else-if chain's three values become cases",
     "data:loweredswitch linear #4: the chain's fall-out is the switch default",
     "data:loweredswitch tree #1: by default the twenty-case tree stays nested ifs",

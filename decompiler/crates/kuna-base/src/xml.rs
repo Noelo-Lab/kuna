@@ -2294,6 +2294,7 @@ mod tests {
         // and kuna-calleepreservesargs / a register a leaf callee leaves alone carries a value to the next call
         // and kuna-framepublish-seh / a published SEH record holds only the frame writes at or above it
         // and kuna-switcharmorder / default and no-return switch arms print last, no default: return; at a void tail
+        // and kuna-loweredswitch-small / small compare-lowered switches re-roll by default (option loweredswitch)
         // and kuna-thumb-stmia-writeback / Thumb stmia writes its base back when the base is in the list
         // and kuna-varargsave / the x86-64 System V variadic register-save prologue
         // and kuna-boolbranch, kuna-boolbranch-thumb / a branch instruction selecting 1 or 0 keeps its if
@@ -2301,7 +2302,7 @@ mod tests {
         // and kuna-thumb2-logical-carry / Thumb-2 ands/bics/movs/mvns set C from the shifter
         // and kuna-ppc32picimports-abi-isolation / one file's load-time option never reaches the next file's loads
         // and kuna-tailform-noreturn / a call that does not return prints as the if body before the return
-        assert_eq!(count, 889, "corpus file count drifted");
+        assert_eq!(count, 890, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

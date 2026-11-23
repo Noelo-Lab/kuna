@@ -102,11 +102,13 @@ use crate::context::{BlockId, OpId, VarnodeId};
 use crate::funcdata::Funcdata;
 use crate::kuna_loweredswitchlabels::{reconcile_range_signedness, LoweredSwitchSignedness};
 use crate::options::on_or_off;
-use crate::p2_lift::kuna_loweredswitchvalue::{verify_installed_switch_values, ValueCheck};
-use crate::p2_lift::kuna_loweredswitchexact::record_is_exact;
+use crate::p2_lift::kuna_loweredswitchvalue::{verify_installed_switch_values, ValueCheck, ValueState};
+use crate::p2_lift::kuna_loweredswitchexact::{self, record_is_exact};
+use crate::p2_lift::kuna_loweredswitchpath;
 use crate::p2_lift::kuna_loweredswitchheads::{case_body_entered_elsewhere, cascade_heads};
 
 use kuna_base::marshal::ElementId;
+
 
 /// Marshaling element `<loweredswitch>` (kuna).  ElementIds live in the 4000+
 /// range (C++ `ELEM_LOWEREDSWITCH = ElementId("loweredswitch",4019)`).
@@ -136,6 +138,33 @@ pub struct KunaLoweredSwitchRecord {
     /// (kuna `loweredswitchvalue`) The compared value and whether the installed
     /// switch has been shown to read it.
     pub value: ValueCheck,
+    /// The address of the load that produced a selector the detection graph held
+    /// in a temporary: the install reads that load's output or nothing.
+    pub load_at: Option<Address>,
+    /// (kuna) The branch addresses of the compare tree, when the switch is
+    /// installed along the tree's raw paths
+    /// ([`kuna_loweredswitchpath`](crate::p2_lift::kuna_loweredswitchpath)); empty
+    /// for a switch that branches straight to its case bodies.
+    pub spine: Vec<Address>,
+    /// (kuna) The storage the function's returns read on the detection graph,
+    /// for a switch installed along the raw paths: an assignment the install
+    /// repeats on a path is needed only when something reads it.
+    pub returns: Vec<(Address, int4)>,
+    /// (kuna) The cascade is a linear chain of equality tests, whose case bodies
+    /// must not be shared with anything outside it on the raw p-code either.
+    pub linear: bool,
+    /// (kuna) What the function printed before the switch was installed
+    /// ([`kuna_loweredswitchkeep`](crate::p2_lift::kuna_loweredswitchkeep)).
+    pub shape_without: Option<crate::p2_lift::kuna_loweredswitchkeep::Shape>,
+    /// (kuna) The cascade is a binary-search tree with a compare-only head over
+    /// a register or stack selector, installed straight to its case bodies, on
+    /// the variable with the most compare-only blocks, and its install passes
+    /// the stricter checks: the cascade the recogniser took and installed
+    /// before it looked at heads holding other code or followed raw reads.
+    pub base_shape: bool,
+    /// (kuna) Recorded on the retry after a withdrawal: the compare-only
+    /// cascade the previous recogniser chose.
+    pub retry: bool,
 }
 
 /// Side-table key: identifies a function without holding clearable handles
@@ -461,6 +490,9 @@ fn normalize_selector_constant(
 struct CmpNode {
     /// True if this block is a clean comparison-on-constant.
     valid: bool,
+    /// True when the block holds nothing but the comparison: only such a block
+    /// may continue a cascade, any compare block may head one.
+    pure: bool,
     /// True for `INT_EQUAL`/`INT_NOTEQUAL` (emits a case).
     is_equality: bool,
     /// The canonicalized variable operand (the identity key).
@@ -496,6 +528,7 @@ impl CmpNode {
     fn new() -> CmpNode {
         CmpNode {
             valid: false,
+            pure: false,
             is_equality: false,
             var: None,
             effective_size: 0,
@@ -788,6 +821,8 @@ fn recover_cascade(
     stack.push((startbb, 0, 0xFFFF_FFFF_FFFF_FFFF));
     let mut saw_range = false; // true once a range (binary-search) node is seen
     let mut case_blocks: Vec<BlockId> = Vec::new();
+    let mut case_block_of: BTreeMap<uintb, BlockId> = BTreeMap::new();
+    let mut default_blocks: Vec<BlockId> = Vec::new();
     let mut range_signedness: Option<LoweredSwitchSignedness> = None;
     let mut path_signedness: Option<LoweredSwitchSignedness> = None;
     let mut effective_size: Option<int4> = None;
@@ -799,7 +834,7 @@ fn recover_cascade(
             return None;
         }
         match cmpmap.get(&b) {
-            Some(cn) if cn.var == Some(swvar) => Some(b),
+            Some(cn) if cn.var == Some(swvar) && cn.pure => Some(b),
             _ => None,
         }
     };
@@ -809,10 +844,11 @@ fn recover_cascade(
     // place (angr's `default_case_candidates[addr] = ...` dedup by address) and
     // remembers a representative block per candidate for the convergence check.
     let vote_default =
-        |dv: &mut BTreeMap<Address, int4>, cb: &mut BTreeMap<Address, BlockId>, bl: BlockId| {
+        |dv: &mut BTreeMap<Address, int4>, cb: &mut BTreeMap<Address, BlockId>, db: &mut Vec<BlockId>, bl: BlockId| {
             let a = target_start(data, bl);
             *dv.entry(a.clone()).or_insert(0) += 1;
             cb.entry(a).or_insert(bl);
+            db.push(bl);
         };
 
     while let Some((bb, min_, max_)) = stack.pop() {
@@ -853,13 +889,14 @@ fn recover_cascade(
                     }
                     cases.insert(cn.cval, tgt);
                     case_blocks.push(cn.match_out.expect("equality node has matchOut"));
+                    case_block_of.insert(cn.cval, cn.match_out.expect("equality node has matchOut"));
                 }
             }
             match is_cascade(cn.cont_a) {
                 Some(contb) => stack.push((contb, min_, max_)),
                 None => {
                     let a = cn.cont_a.expect("equality node has contA");
-                    vote_default(&mut default_votes, &mut default_cand_block, a);
+                    vote_default(&mut default_votes, &mut default_cand_block, &mut default_blocks, a);
                 }
             }
         } else {
@@ -905,24 +942,17 @@ fn recover_cascade(
             // exactly as before.  So a single-value edge is simply dropped here.
             if le_cascade.is_none() && min_.wrapping_add(1) != value {
                 // le edge terminal, not a single value ⇒ default candidate (`:579-582`).
-                vote_default(&mut default_votes, &mut default_cand_block, le);
+                vote_default(&mut default_votes, &mut default_cand_block, &mut default_blocks, le);
             }
             if gt_cascade.is_none() && value != max_ {
                 // gt edge terminal, not a single value ⇒ default candidate (`:590-593`).
-                vote_default(&mut default_votes, &mut default_cand_block, gt);
+                vote_default(&mut default_votes, &mut default_cand_block, &mut default_blocks, gt);
             }
         }
     }
 
-    // RULE3: need >= 3 cases.  `loweredswitch tree` moves the floor to 2 and the
-    // cap to 64 for a binary-search cascade; a linear chain keeps 3 to 16.
-    let (floor, cap) = if saw_range && data.get_arch().lowered_switch_tree { (2, 64) } else { (3, 16) };
-    if cases.len() < floor {
-        return None;
-    }
-    // Fail-safe cap: a very large synthesized switch can make the structurer
-    // mark some case edges as unstructured gotos and abort.  Cap at 16 by default.
-    if cases.len() > cap {
+    let mode = LoweredSwitchMode::from_flags(data.get_arch().lowered_switch_linear, data.get_arch().lowered_switch_tree);
+    if cases.len() < 2 || cases.len() > mode.max_cases(saw_range) {
         return None;
     }
     if default_votes.is_empty() {
@@ -974,11 +1004,29 @@ fn recover_cascade(
         }
         Some(proven)
     } else {
-        if !data.get_arch().lowered_switch_linear {
-            return None;
-        }
         let blocks = data.bblocks_ref();
-        if case_blocks.iter().any(|&b| blocks.block(b).size_in() != 1 || !blocks.dominates(startbb, Some(b))) {
+        let entered_elsewhere = |b: BlockId| {
+            let blk = blocks.block(b);
+            (0..blk.size_in()).map(|i| blk.get_in(i)).any(|p| !visited.contains(&p) && !blocks.dominates(b, Some(p)))
+        };
+        // A body that runs on into a later test of the chain is one of a row of
+        // independent `if`s, not an arm.
+        let runs_into_chain = |b: BlockId| {
+            let mut seen: BTreeSet<BlockId> = BTreeSet::new();
+            let mut stack = vec![b];
+            while let Some(x) = stack.pop() {
+                if x == startbb || !seen.insert(x) || seen.len() > 256 {
+                    continue;
+                }
+                if x != b && visited.contains(&x) {
+                    return true;
+                }
+                let blk = blocks.block(x);
+                stack.extend((0..blk.size_out()).map(|i| blk.get_out(i)));
+            }
+            false
+        };
+        if case_blocks.iter().any(|&b| entered_elsewhere(b) || !blocks.dominates(startbb, Some(b)) || runs_into_chain(b)) {
             return None;
         }
         path_signedness
@@ -994,24 +1042,76 @@ fn recover_cascade(
         }
     }
 
-    // Distinct targets, and no case target collides with the default.
+    // Distinct targets, and no case target collides with the default. Blocks
+    // that start at one address are copies of one block (a duplicated epilogue
+    // the compare tree loads a different value for on each path): they are told
+    // apart by what they do, and the switch is installed along the raw paths.
+    let def_blocks: Vec<BlockId> = default_blocks.iter().copied().filter(|&b| target_start(data, b) == def_addr).collect();
+    let mut paths = false;
     let mut tgtset: BTreeSet<Address> = BTreeSet::new();
-    for tgt in cases.values() {
-        // a case can't be the default block
+    for (val, tgt) in cases.iter() {
         if *tgt == def_addr {
-            return None;
+            if case_block_of.get(val).is_none_or(|b| def_blocks.contains(b)) {
+                return None;
+            }
+            paths = true;
         }
         tgtset.insert(tgt.clone());
     }
-    // RULE3: >= 2 distinct targets
     if tgtset.len() < 2 {
+        if case_block_of.values().collect::<BTreeSet<_>>().len() < 2 {
+            return None;
+        }
+        paths = true;
+    }
+    let mut spine_addrs: Vec<Address> = Vec::new();
+    let mut bodies = tgtset.len();
+    if paths {
+        let sig = |b: BlockId| kuna_loweredswitchpath::body_signature(data, b);
+        let default_sig: BTreeSet<_> = default_blocks.iter().map(|&b| sig(b)).collect();
+        let case_sig: BTreeMap<uintb, _> = case_block_of.iter().map(|(v, &b)| (*v, sig(b))).collect();
+        let distinct: BTreeSet<_> = case_sig.values().filter(|s| !default_sig.contains(*s)).collect();
+        if default_sig.len() != 1 {
+            return None;
+        }
+        bodies = distinct.len();
+        let tree: BTreeSet<BlockId> = cmpmap
+            .iter()
+            .filter(|(b, cn)| cn.var == Some(swvar) && (cn.pure || **b == startbb))
+            .map(|(b, _)| *b)
+            .collect();
+        let dsig = default_sig.into_iter().next();
+        let routed = kuna_loweredswitchexact::tree_routes(data, startbb, &tree, swvar, |v, reached| {
+            let want = case_sig.get(&v).cloned().or_else(|| dsig.clone());
+            Some(sig(reached)) == want
+        });
+        if !routed {
+            return None;
+        }
+        for &b in &visited {
+            spine_addrs.push(op_addr(data, data.bb_op_tail(b)?));
+        }
+    }
+    let shape = CascadeShape { values: cases.len(), bodies, range: saw_range };
+    if !cascade_is_switch(shape, mode) {
+        return None;
+    }
+
+    // A compare against the address of a symbol prints the symbol's name, which
+    // no case label can spell.
+    if case_vals_name_symbols(data, swvar, cases.keys()) {
         return None;
     }
 
     // The switch variable must live in stable storage (register/stack).
     let vspc = vn_space(data, swvar)?;
     let st = vspc.get_type();
-    if st != spacetype::IPTR_PROCESSOR && st != spacetype::IPTR_SPACEBASE {
+    let load_at = if st == spacetype::IPTR_INTERNAL {
+        vn_def(data, swvar).filter(|&d| op_code(data, d) == OpCode::CPUI_LOAD).map(|d| op_addr(data, d))
+    } else {
+        None
+    };
+    if st != spacetype::IPTR_PROCESSOR && st != spacetype::IPTR_SPACEBASE && load_at.is_none() {
         return None;
     }
     if data.get_arch().switch_selector_guard && !selector_defined_in_function(data, swvar) {
@@ -1031,7 +1131,8 @@ fn recover_cascade(
         case_targets.push(tgt.clone());
     }
     // Equalities never decide signedness: without a range node or an extension
-    // on the path, every label must print the same signed or unsigned.
+    // on the path, every label must print the same signed or unsigned, and the
+    // labels are signed, as the `int` the compares read the selector as.
     let signed_labels = match proven_signedness {
         Some(signedness) => signedness.signed_labels(),
         None => {
@@ -1039,10 +1140,11 @@ fn recover_cascade(
             if case_vals.iter().any(|&v| v & sign_bit != 0) {
                 return None;
             }
-            false
+            true
         }
     };
 
+    let base_shape = saw_range && cmpmap.get(&startbb).is_some_and(|c| c.pure) && load_at.is_none() && !paths;
     Some(KunaLoweredSwitchRecord {
         branch_addr,
         var_addr,
@@ -1052,6 +1154,13 @@ fn recover_cascade(
         default_target: def_addr,
         signed_labels,
         value: ValueCheck::for_value(data, swvar),
+        load_at,
+        returns: if spine_addrs.is_empty() { Vec::new() } else { kuna_loweredswitchpath::returned_storage(data) },
+        spine: spine_addrs,
+        linear: !saw_range,
+        shape_without: None,
+        base_shape,
+        retry: false,
     })
 }
 
@@ -1081,6 +1190,18 @@ fn selector_defined_in_function(data: &Funcdata, swvar: VarnodeId) -> bool {
 /// A getopt-style loop tests the EOF sentinel (-1) before the real dispatch;
 /// that equality must stay an ordinary branch, so we advance past any leading
 /// `V == all-ones` guard.
+/// True when `swvar` is as wide as a code address and a case value is the
+/// address of a symbol or a known function.
+fn case_vals_name_symbols<'a>(data: &Funcdata, swvar: VarnodeId, vals: impl Iterator<Item = &'a uintb>) -> bool {
+    let glb = data.get_arch();
+    let Some(space) = data.get_address().get_space().cloned() else { return false };
+    if vn_size(data, swvar) != space.get_addr_size() as int4 {
+        return false;
+    }
+    let mut vals = vals;
+    vals.any(|&v| v >= 0x1000 && glb.symbol_starts_at(&Address::new(Rc::clone(&space), v)))
+}
+
 fn advance_past_guards(
     data: &Funcdata,
     mut head: BlockId,
@@ -1109,7 +1230,7 @@ fn advance_past_guards(
             _ => break,
         };
         match cmpmap.get(&cont) {
-            Some(c) if c.var == Some(swvar) => {}
+            Some(c) if c.var == Some(swvar) && c.pure => {}
             _ => break,
         }
         // the -1 guard is not part of the switch
@@ -1184,11 +1305,19 @@ impl ActionLowerSwitchDetect {
         if data.is_jumptable_recovery_on() {
             return 0;
         }
-        // already discovered (sticky)
+        // already discovered (sticky); a withdrawn cascade the previous
+        // recogniser would not have chosen is retried as that recogniser would.
+        let mut skip: Vec<Address> = Vec::new();
         if self.store.borrow().has_record(data) {
             verify_installed_switch_values(data, &self.store);
-            return 0;
+            let store = self.store.borrow();
+            let recs = store.records(data);
+            if !recs.iter().all(|r| r.value.state == ValueState::Withdrawn && !r.base_shape && !r.retry) {
+                return 0;
+            }
+            skip = recs.iter().map(|r| r.branch_addr.clone()).collect();
         }
+        let retry = !skip.is_empty();
 
         // Collect comparison-on-constant cascade nodes, grouped by switch variable.
         let mut cmpmap: BTreeMap<BlockId, CmpNode> = BTreeMap::new();
@@ -1203,43 +1332,62 @@ impl ActionLowerSwitchDetect {
             if block_is_switch_out(data, b) {
                 continue;
             }
-            if !is_pure_compare_block(data, b) {
-                continue;
-            }
-            let cn = analyze_cmp(data, b);
+            let mut cn = analyze_cmp(data, b);
             if !cn.valid || cn.var.is_none() {
                 continue;
             }
+            cn.pure = is_pure_compare_block(data, b);
             let var = cn.var.expect("valid CmpNode has var");
             cmpmap.insert(b, cn);
             *var_count.entry(var).or_insert(0) += 1;
         }
 
-        // Pick the switch variable: the Varnode with the most cascade nodes. Tied
-        // variables are tried in the order they were created, and the first whose
-        // cascade records wins; a Varnode's id is only the arena slot it reused.
-        let Some(best) = var_count.values().copied().max().filter(|c| *c >= 2) else {
-            return 0;
-        };
-        let mut tied: Vec<(uint4, VarnodeId)> = var_count
-            .iter()
-            .filter(|(_, count)| **count == best)
-            .map(|(var, _)| (data.vbank().get(*var).map_or(u32::MAX, |v| v.get_create_index()), *var))
-            .collect();
-        tied.sort_unstable();
-        for (_, swvar) in tied {
-            if self.record_cascade(data, &cmpmap, swvar) {
-                return 1; // a record was added (the C++ returns 0 to quiesce; see apply note)
+        // Pick the switch variable: the Varnode with the most cascade nodes, then
+        // the one with the most compare-only cascade nodes. Tied variables are
+        // tried in the order they were created, and the first whose cascade
+        // records wins; a Varnode's id is only the arena slot it reused.
+        let mut pure_count: BTreeMap<VarnodeId, int4> = BTreeMap::new();
+        for cn in cmpmap.values().filter(|cn| cn.pure) {
+            if let Some(v) = cn.var {
+                *pure_count.entry(v).or_insert(0) += 1;
+            }
+        }
+        let mut tried: BTreeSet<VarnodeId> = BTreeSet::new();
+        let order: &[&BTreeMap<VarnodeId, int4>] = if retry { &[&pure_count] } else { &[&var_count, &pure_count] };
+        for counts in order.iter().copied() {
+            let Some(best) = counts.values().copied().max().filter(|c| *c >= 2) else {
+                continue;
+            };
+            let mut tied: Vec<(uint4, VarnodeId)> = counts
+                .iter()
+                .filter(|(var, count)| **count == best && !tried.contains(var))
+                .map(|(var, _)| (data.vbank().get(*var).map_or(u32::MAX, |v| v.get_create_index()), *var))
+                .collect();
+            tied.sort_unstable();
+            for (_, swvar) in tied {
+                tried.insert(swvar);
+                if self.record_cascade(data, &cmpmap, swvar, &pure_count, &skip) {
+                    return 1; // a record was added (the C++ returns 0 to quiesce; see apply note)
+                }
             }
         }
         0
     }
 
     /// Record the first cascade on `swvar` that recovers, and request a restart.
-    fn record_cascade(&mut self, data: &mut Funcdata, cmpmap: &BTreeMap<BlockId, CmpNode>, swvar: VarnodeId) -> bool {
+    fn record_cascade(
+        &mut self,
+        data: &mut Funcdata,
+        cmpmap: &BTreeMap<BlockId, CmpNode>,
+        swvar: VarnodeId,
+        pure_count: &BTreeMap<VarnodeId, int4>,
+        skip: &[Address],
+    ) -> bool {
+        let retry = !skip.is_empty();
         // Find the head: a cascade node for swvar that no other cascade node
         // continues into.
         let mut is_child: BTreeSet<BlockId> = BTreeSet::new();
+        let mut is_pure_child: BTreeSet<BlockId> = BTreeSet::new();
         for (_, cn) in cmpmap.iter() {
             if cn.var != Some(swvar) {
                 continue;
@@ -1251,22 +1399,50 @@ impl ActionLowerSwitchDetect {
                     _ => continue,
                 };
                 if let Some(sc) = cmpmap.get(&s) {
-                    if sc.var == Some(swvar) {
+                    if sc.var == Some(swvar) && sc.pure {
                         is_child.insert(s);
+                        if cn.pure {
+                            is_pure_child.insert(s);
+                        }
                     }
                 }
             }
         }
         let spine: BTreeSet<BlockId> =
             cmpmap.iter().filter(|(_, cn)| cn.var == Some(swvar)).map(|(bl, _)| *bl).collect();
-        let heads = cascade_heads(&spine, &is_child);
-        for (i, root) in heads.into_iter().enumerate() {
+        // The variable a recogniser counting only compare-only blocks would pick.
+        let pure_best = pure_count.values().copied().max().unwrap_or(0);
+        let picked_by_pure = pure_count.get(&swvar).copied().unwrap_or(0) == pure_best && pure_best >= 2;
+        // The heads of the whole spine, then the heads of its compare-only part
+        // that a head holding other code ran into.
+        let mut heads = if retry { Vec::new() } else { cascade_heads(&spine, &is_child) };
+        let pure_spine: BTreeSet<BlockId> =
+            spine.iter().copied().filter(|bl| cmpmap.get(bl).is_some_and(|cn| cn.pure)).collect();
+        for h in cascade_heads(&pure_spine, &is_pure_child) {
+            if !heads.contains(&h) {
+                heads.push(h);
+            }
+        }
+        // A later head must not be entered from elsewhere; heads holding other
+        // code are ranked apart, so they never demote a compare-only head.
+        let mut earlier = [0usize; 2];
+        for root in heads {
+            let pure = cmpmap.get(&root).is_some_and(|cn| cn.pure);
+            let i = earlier[pure as usize];
+            earlier[pure as usize] += 1;
             let head = advance_past_guards(data, root, cmpmap, swvar);
-            let rec = match recover_cascade(data, head, cmpmap, swvar) {
+            let spine: BTreeSet<BlockId> =
+                spine.iter().copied().filter(|bl| *bl == head || cmpmap.get(bl).is_some_and(|cn| cn.pure)).collect();
+            let mut rec = match recover_cascade(data, head, cmpmap, swvar) {
                 Some(r) => r,
                 None => continue,
             };
-            if !record_is_exact(data, head, &spine, swvar, &rec) {
+            rec.base_shape &= picked_by_pure;
+            rec.retry = retry;
+            if skip.contains(&rec.branch_addr) {
+                continue;
+            }
+            if rec.spine.is_empty() && !record_is_exact(data, head, &spine, swvar, &rec) {
                 continue;
             }
             if i > 0 && (data.bblocks_ref().block(head).size_in() > 1 || case_body_entered_elsewhere(data, head, &rec)) {
@@ -1316,6 +1492,14 @@ impl Action for ActionLowerSwitchDetect {
         let _ = self.detect(data);
         0 // no op change; let the fullloop quiesce and the restart fire
     }
+}
+
+/// True when `op` is the `BRANCHIND` of a re-rolled switch whose labels are
+/// signed: its compares read the selector as a signed integer.
+pub(crate) fn reads_signed_selector(data: &Funcdata, op: OpId) -> bool {
+    (0..data.num_jump_tables()).map(|i| data.get_jump_table(i)).any(|jt| {
+        jt.kuna_lowered_var().is_some() && jt.get_indirect_op() == Some(op) && jt.kuna_has_signed_labels()
+    })
 }
 
 //===========================================================================
@@ -1448,7 +1632,7 @@ impl ActionLowerSwitchInstall {
                 }
                 // Without a restart-stable name nothing can verify a head-operand
                 // read, so an unnamed switch reads the home storage.
-                rec.value.reads_home()
+                rec.value.reads_home() && rec.load_at.is_none()
             };
             match data.kuna_install_lowered_switch(
                 &r.branch_addr,
@@ -1459,10 +1643,15 @@ impl ActionLowerSwitchInstall {
                 &r.default_target,
                 r.signed_labels,
                 !read_home,
+                r.load_at.as_ref(),
+                &r.spine,
+                &r.returns,
+                r.linear,
             ) {
-                Ok(Some((_idx, read_head_operand))) => {
+                Ok(Some((_idx, read_head_operand, strict))) => {
                     if let Some(rec) = self.store.borrow_mut().record_mut(data, i) {
                         rec.value.read_head_operand = read_head_operand;
+                        rec.base_shape &= strict;
                         if rec.value.state == crate::p2_lift::kuna_loweredswitchvalue::ValueState::Verified
                             && rec.value.verified_read != Some(read_head_operand)
                         {
@@ -1471,8 +1660,16 @@ impl ActionLowerSwitchInstall {
                     }
                     changed += 1
                 }
-                Ok(None) => {} // CFG no longer matches the record; decline
-                Err(_e) => {}  // surgery error: leave the CFG as-is
+                // The CFG no longer matches the record, or the surgery failed: the
+                // CFG is left as-is, and a cascade the previous recogniser would not
+                // have chosen gives way to the one it would.
+                Ok(None) | Err(_) => {
+                    if let Some(rec) = self.store.borrow_mut().record_mut(data, i) {
+                        if !rec.base_shape && !rec.retry {
+                            rec.value.state = ValueState::Withdrawn;
+                        }
+                    }
+                }
             }
         }
         changed
@@ -1527,6 +1724,24 @@ pub enum LoweredSwitchMode {
 }
 
 impl LoweredSwitchMode {
+    /// The recovery mode the `linear` and `tree` widenings of an enabled
+    /// recovery select.
+    pub fn from_flags(linear: bool, tree: bool) -> LoweredSwitchMode {
+        match (linear, tree) {
+            (false, false) => LoweredSwitchMode::On,
+            (true, false) => LoweredSwitchMode::Linear,
+            (false, true) => LoweredSwitchMode::Tree,
+            (true, true) => LoweredSwitchMode::All,
+        }
+    }
+    /// The most cases a cascade of the given form may re-roll into.
+    pub fn max_cases(self, range: bool) -> usize {
+        if range && self.tree() {
+            64
+        } else {
+            16
+        }
+    }
     pub fn enabled(self) -> bool {
         self != LoweredSwitchMode::Off
     }
@@ -1536,6 +1751,40 @@ impl LoweredSwitchMode {
     pub fn tree(self) -> bool {
         matches!(self, LoweredSwitchMode::Tree | LoweredSwitchMode::All)
     }
+}
+
+/// What the recogniser knows about a compare cascade when it decides whether
+/// the cascade is a switch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CascadeShape {
+    /// Distinct case values.
+    pub values: usize,
+    /// Distinct case bodies: values that share a body count once, and copies of
+    /// one block that do the same thing are one body.
+    pub bodies: usize,
+    /// The cascade splits on a range (a binary-search tree) rather than testing
+    /// one value after another.
+    pub range: bool,
+}
+
+/// Whether a cascade of `shape` re-rolls into a switch under `mode`. A cascade
+/// needs two distinct bodies: tests that all lead to one body are an `||`
+/// condition. A binary-search tree is the compiler's own switch lowering and
+/// takes three values (two under `tree`). A linear chain takes three values
+/// with a body of its own each (an `if`/`else if` chain whose tests share a
+/// body is an `||` more often than a switch), and under `linear` also two
+/// values and shared bodies.
+pub fn cascade_is_switch(shape: CascadeShape, mode: LoweredSwitchMode) -> bool {
+    if !mode.enabled() || shape.bodies < 2 || shape.values > mode.max_cases(shape.range) {
+        return false;
+    }
+    if shape.range {
+        return shape.values >= if mode.tree() { 2 } else { 3 };
+    }
+    if mode.linear() {
+        return shape.values >= 2;
+    }
+    shape.values >= 3 && shape.bodies == shape.values
 }
 
 /// `loweredswitch on|off|linear|tree|all` (C++ `OptionLowerSwitch`).

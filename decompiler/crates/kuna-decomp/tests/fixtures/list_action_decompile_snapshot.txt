@@ -308,5 +308,6 @@
 0301                  iteregion
 0302                  iteboolean
 0303                  paramcopyhoist
-0304        !         prototypewarnings
-0305                  stop
+0304                  lowerswitchkeep
+0305        !         prototypewarnings
+0306                  stop
