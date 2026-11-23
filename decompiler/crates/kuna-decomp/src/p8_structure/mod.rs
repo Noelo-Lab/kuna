@@ -21,6 +21,7 @@ pub mod kuna_itecondlist;
 pub mod kuna_iteregion;
 pub mod kuna_loopbreak_recovery;
 pub mod kuna_loopcontinue;
+pub mod kuna_looptest;
 pub mod kuna_orchain;
 pub mod kuna_rettriangle;
 pub mod kuna_outline;
