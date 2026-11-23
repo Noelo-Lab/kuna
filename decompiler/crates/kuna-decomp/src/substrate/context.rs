@@ -2397,6 +2397,16 @@ impl ArchContext {
         })
     }
 
+    /// (kuna `loweredswitch`) True when a global symbol or a known function
+    /// starts at `addr`: a constant equal to it prints as the symbol's name.
+    pub fn symbol_starts_at(&self, addr: &Address) -> bool {
+        let Some(space) = addr.get_space() else { return false };
+        let offset = addr.get_offset();
+        self.effective_global_query(addr)
+            .is_some_and(|q| q.entries_starting_at(space.get_index(), offset).next().is_some())
+            || self.lazy_entry_starts.binary_search(&offset).is_ok()
+    }
+
     /// (kuna `switchextent`) The first known function entry above `addr`'s
     /// offset in its space, over the same functions [`Self::function_owner`]
     /// sees.
