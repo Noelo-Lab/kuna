@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5047,
-    5047
+    5050,
+    5050
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2095,6 +2095,9 @@
     "data:PIC off keeps the unnamed stub",
     "data:PIC off leaves every driver-linked stub unnamed",
     "data:PIC on names the proved terminal call",
+    "data:PIECECOVER #1: byte 5 is saved right after it is stored, before the wider write",
+    "data:PIECECOVER #2: byte 7 takes the saved byte",
+    "data:PIECECOVER #3: byte 5 is not read back after the write that replaced it",
     "data:PLTLOCAL #1: the forwarded registers are never lost to the stub",
     "data:PLTLOCAL #2: built at the definition, its declared parameters arrive",
     "data:PLTLOCAL #3: the wrapper gains the parameters it forwards",

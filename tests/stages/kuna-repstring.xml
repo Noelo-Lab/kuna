@@ -140,9 +140,9 @@ b91000000031c0bf00302000f348abc605ef1b000078c3
 <stringmatch name="repstring #8: a compare of a run-time length" min="1" max="1">^  return builtin_memcmp\(a0,a1,a2\) == 0;</stringmatch>
 <stringmatch name="repstring #9: a compare with no flags set before it, of a constant length" min="1" max="1">^  return builtin_memcmp\(a0,a1,5\) == 0;</stringmatch>
 <stringmatch name="repstring #10: eleven builtins in the default pass, none with the option off" min="11" max="11">builtin_mem</stringmatch>
-<stringmatch name="repstring #11: a compare whose final pointer is returned keeps its loop by default, as do four compares with the option off" min="5" max="5">^  \} while \(v2 == v4\);</stringmatch>
+<stringmatch name="repstring #11: a compare whose final pointer is returned keeps its loop by default, as do four compares with the option off" min="5" max="5">^  \} while \(v\d+ == v\d+\);</stringmatch>
 <stringmatch name="repstring #12: with the option off every copy and fill is an element loop -- the bug" min="6" max="6">^  while \(</stringmatch>
-<stringmatch name="repstring #13: and an ordered compare is a loop over two flags -- the bug" min="2" max="2">^  \} while \(v5\);</stringmatch>
+<stringmatch name="repstring #13: and an ordered compare is a loop over two flags -- the bug" min="2" max="2">^  \} while \(v\d+\);</stringmatch>
 <stringmatch name="repstring #14: a fill of a named global names the global, not its address" min="1" max="1">^  builtin_memset\(gfill,0,0x80\);</stringmatch>
 <stringmatch name="repstring #15: with the option off the fill loop starts at the same global" min="1" max="1">^  v[0-9]+ = gfill;$</stringmatch>
 </decompilertest>

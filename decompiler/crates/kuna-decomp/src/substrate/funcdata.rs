@@ -5000,18 +5000,24 @@ impl Funcdata {
     }
 
     /// One step up `vn`'s COPY chain (`vn->getDef()->getIn(0)` when `vn` is a
-    /// written COPY), or `None` at the chain source.  Shared by the shadow
-    /// helpers below (C++ inlines the same `while(isWritten && COPY)` walk).
+    /// written COPY, or a SUBPIECE keeping every byte of its input), or `None`
+    /// at the chain source.  Shared by the shadow helpers below (C++ inlines the
+    /// same `while(isWritten && COPY)` walk).
     fn copy_chain_pred(&self, vn: VarnodeId) -> Option<VarnodeId> {
         let v = self.vbank.get(vn)?;
         if !v.is_written() {
             return None;
         }
-        let def = v.get_def()?;
-        if self.obank.get(def).map(|o| o.code())? != OpCode::CPUI_COPY {
-            return None;
+        let def = self.obank.get(v.get_def()?)?;
+        match def.code() {
+            OpCode::CPUI_COPY => def.get_in(0),
+            OpCode::CPUI_SUBPIECE => {
+                let whole = def.get_in(0)?;
+                let off = self.vbank.get(def.get_in(1)?)?.get_offset();
+                (off == 0 && self.vbank.get(whole)?.get_size() == v.get_size()).then_some(whole)
+            }
+            _ => None,
         }
-        self.obank.get(def).and_then(|o| o.get_in(0))
     }
 
     /// Walk `vn` to the end of its COPY chain (`while(isWritten && COPY) vn = in0`).
@@ -5073,13 +5079,7 @@ impl Funcdata {
             if tmpvn == whole {
                 return true;
             }
-            let mut tmpvn = tmpvn;
-            while let Some(pred) = self.copy_chain_pred(tmpvn) {
-                tmpvn = pred;
-                if tmpvn == whole {
-                    return true;
-                }
-            }
+            return self.skip_copy_chain(tmpvn) == self.skip_copy_chain(whole);
         } else if opc == OpCode::CPUI_MULTIEQUAL {
             let recurse = recurse + 1;
             if recurse > 1 {
@@ -5165,14 +5165,7 @@ impl Funcdata {
             if tmpvn == piece {
                 return true;
             }
-            let mut tmpvn = tmpvn;
-            while let Some(pred) = self.copy_chain_pred(tmpvn) {
-                tmpvn = pred;
-                if tmpvn == piece {
-                    return true;
-                }
-            }
-            return false;
+            return self.skip_copy_chain(tmpvn) == self.skip_copy_chain(piece);
         }
         // CPUI_PIECE input is too big, recursively search for another CPUI_PIECE
         self.find_piece_shadow(tmpvn, least_byte, piece)
@@ -5956,6 +5949,14 @@ impl Funcdata {
     /// `with_high_split` for the bank's `update_cover`.
     pub fn high_update_cover(&mut self, id: crate::context::HighVariableId) {
         self.with_high_split(|hb, ctx| hb.update_cover(id, ctx));
+    }
+
+    /// Mark dirty the HighVariables whose member Covers went stale since the
+    /// last call (the C++ `Varnode::setFlags` -> `high->coverDirty()` forward).
+    pub fn sync_cover_dirty_highs(&mut self) {
+        for h in self.vbank_mut().take_cover_dirty_highs() {
+            self.high_bank_mut().cover_dirty(h);
+        }
     }
 
     /// The HighVariable's name representative Varnode (C++

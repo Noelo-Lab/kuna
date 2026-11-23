@@ -190,6 +190,8 @@ pub trait MergeContext: HighContext {
     /// Drive `bank.update_cover(high)` across the bank-split (the `updateHigh`
     /// rebuild step; the cache purge stays in [`MergeIntersect`]).
     fn bank_update_cover_for(&mut self, high: HighVariableId);
+    /// Forward stale member Covers to their HighVariables' dirty flags.
+    fn sync_cover_dirty(&mut self) {}
 
     // --- Bank-mediated HighVariable / piece introspection (boundary: variable.rs
     //     does not expose `high->piece`/group offsets/size publicly) ----------
@@ -1067,6 +1069,7 @@ impl MergeIntersect {
         cache: &mut HighIntersectTest,
         a: HighVariableId,
     ) -> bool {
+        ctx.sync_cover_dirty();
         if !ctx.high_is_cover_dirty(a) {
             return true;
         }

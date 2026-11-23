@@ -204,6 +204,33 @@ as live nowhere and an overlapping merge is accepted. This bites the trim COPYs
 joined a high — the merged variable then holds two values that are live at the
 same instant.
 
+The forward also covers the ordinary data-flow edits. Setting or clearing a
+Varnode's definition and adding or removing one of its reads go through the
+`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (VarnodeBank)`, which
+records the member's HighVariable; `funcdata.rs
+(Funcdata::sync_cover_dirty_highs)` marks those variables dirty before every
+intersection test (`merge.rs (MergeIntersect::update_high)`), the effect C++ gets
+from `Varnode::setFlags` notifying the high directly. A piece of a VariableGroup
+is tested with its *extended* Cover, the union of its own members and the members
+of every piece it overlaps, so rebuilding a piece first rebuilds the stale member
+Covers of those overlapping pieces too (`funcdata_merge.rs
+(Funcdata::refresh_high_cover)`), as reading `Varnode::getCover` would upstream.
+Without it a piece created late (a split byte copy, a field store) still held the
+empty Cover it was allocated with. A copy of a 4-byte slot made to keep its old
+value across byte writes into that slot was then merged back into the slot, and
+the printed C read the slot after the bytes had replaced it. The opposite error
+came from Covers left over from an edited function: a loop pointer kept a stale
+range across its own increment and printed through a temporary
+(`v1 = &p[1]; … p = v1;`).
+
+Overlapping pieces that hold the same bytes do not collide.
+`funcdata.rs (Funcdata::varnode_partial_copy_shadow)` recognizes a piece copied out
+of a whole and a whole assembled from its pieces. Its COPY-chain walk treats a
+SUBPIECE that keeps every byte of its input as a COPY, and a piece and a whole
+whose COPY chains start at the same Varnode are shadows of each other, so a call
+result stored to a stack struct and also split into its fields, or a revisited
+range rebuilt by `SUB88(CONCAT53(…),0)`, keeps one variable per slot.
+
 The call/store crossing test snapshots operation identities, block indices and
 order positions in `PcodeOpSet`. Those positions are valid only for the IR
 revision at which they were collected. `MergeIntersect::intersection` checks
