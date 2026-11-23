@@ -44,6 +44,10 @@ use crate::context::{BlockId, OpId, VarnodeId};
 use crate::funcdata::Funcdata;
 use crate::p8_structure::kuna_looptest::{loop_tests, LoopTestMode};
 
+pub use features::TailFeatures;
+
+#[path = "kuna_tailform/features.rs"]
+mod features;
 #[path = "kuna_tailform/noreturn.rs"]
 mod noreturn;
 
@@ -59,9 +63,24 @@ pub const DEFAULT_MAX_LINES: u32 = 4;
 /// Bound on the edits made in one function (each edit moves one `if`).
 const MAX_EDITS: usize = 64;
 
-/// The `tailform` option value: the wrap threshold for void and for valued tails.
+/// How [`decide`] chooses between the two forms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TailRule {
+    /// Wrap a tail of at most the threshold's lines.
+    Threshold,
+    /// Wrap every tail.
+    Wrap,
+    /// Guard every tail.
+    Guard,
+    /// The saved logistic weights of [`crate::p8_structure::kuna_tailform_weights`].
+    Model,
+}
+
+/// The `tailform` option value: the rule, and the wrap threshold for void and
+/// for valued tails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TailFormPolicy {
+    pub rule: TailRule,
     pub void_max: u32,
     pub value_max: u32,
     /// `voidtailreturn` is on: a void path's final bare `return;` is elided.
@@ -73,6 +92,7 @@ pub struct TailFormPolicy {
 impl Default for TailFormPolicy {
     fn default() -> Self {
         TailFormPolicy {
+            rule: TailRule::Threshold,
             void_max: DEFAULT_MAX_LINES,
             value_max: DEFAULT_MAX_LINES,
             elide_void: true,
@@ -91,13 +111,15 @@ pub enum TailShape {
 }
 
 /// One function-tail site, as [`decide`] sees it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TailSite {
     pub shape: TailShape,
     /// The function returns void.
     pub void: bool,
     /// Printed lines of the conditional part `S`.
     pub lines: usize,
+    /// The site's features, computed only when the rule or the dump reads them.
+    pub feats: Option<TailFeatures>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,10 +129,18 @@ pub enum TailDecision {
     Leave,
 }
 
-/// Wrap a tail of at most the threshold's lines, guard a longer one.
+/// Choose the form of `site`: under [`TailRule::Threshold`] wrap a tail of at
+/// most the threshold's lines and guard a longer one; under [`TailRule::Model`]
+/// wrap when the saved weights score the site's features above zero.
 pub fn decide(site: &TailSite, policy: &TailFormPolicy) -> TailDecision {
     let max = if site.void { policy.void_max } else { policy.value_max } as usize;
-    match (site.shape, site.lines <= max) {
+    let wrap = match policy.rule {
+        TailRule::Threshold => site.lines <= max,
+        TailRule::Wrap => true,
+        TailRule::Guard => false,
+        TailRule::Model => site.feats.as_ref().map_or(site.lines <= max, |f| features::model_score(f) > 0.0),
+    };
+    match (site.shape, wrap) {
         (TailShape::Guard, true) => TailDecision::Wrap,
         (TailShape::Wrapped, false) => TailDecision::Guard,
         _ => TailDecision::Leave,
