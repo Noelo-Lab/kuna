@@ -155,13 +155,13 @@
 //! `Decline::UnderRecovered` and `Decline::RegisterFileFull` — live in the
 //! branch that parks a prototype in the symbol table (`lock`), and its default
 //! `types` mode, the one this rule reads, returns before them;
-//! `Decline::Variadic` itself is only ever set from a DECLARED `...`, so on a
-//! stripped image it cannot fire at all. A stripped SysV variadic is STATED:
-//! `long vlog(int,long,...)` built with `gcc -O2` and stripped states three
-//! parameters, and `KUNA_PROTOORDER_TRACE=1` prints `state sub_11d0 params=3`.
-//! What declines the drop there is the list itself — a register-save prologue
-//! reads every argument register there is, so the recovered list CARRIES the
-//! register the drop would take, and the first half of the clause refuses it.
+//! `Decline::Variadic` itself fires only for a DECLARED `...` and for a
+//! register-save prologue `varargsave` folded (whose callers then state
+//! nothing). A stripped SysV variadic whose prologue stays in its body, one
+//! that reads its own save area, is STATED, and what declines the drop there
+//! is the list itself — the register-save prologue reads every argument
+//! register there is, so the recovered list CARRIES the register the drop
+//! would take, and the first half of the clause refuses it.
 //! Where a variadic recovers short instead, the callee-body veto below and the
 //! surviving-argument accounting above are what answer for it.
 //!

@@ -264,7 +264,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_76() {
+fn option_values_live_value_present_for_78() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -885,6 +885,7 @@ fn option_values_live_value_present_for_76() {
     // +1 for `switchmerge` (live_field = switchmerge).
     // +1 for `cachereturn` (live_field = cache_return).
     // +1 for `bytestorewidth` (live_field = byte_store_width).
+    // +1 for `varargsave` (live_field = vararg_save).
     // +1 for `boolbranch` (live_field = bool_branch_keep).
     assert_eq!(with_live, 89);
 }
