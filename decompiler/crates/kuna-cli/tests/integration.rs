@@ -929,3 +929,5 @@ mod types_header;
 
 #[path = "assert_storage_names.rs"]
 mod assert_storage_names;
+#[path = "bounds_checked_prototypes.rs"]
+mod bounds_checked_prototypes;

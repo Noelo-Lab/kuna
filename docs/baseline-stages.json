@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5063,
-    5063
+    5067,
+    5067
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3928,6 +3928,10 @@
     "data:kernelbug #5: the undefined __fentry__ hook dissolves",
     "data:kernelbug #6: the undefined return thunk is a return",
     "data:known read-only calls do not add uncertain effects",
+    "data:kuna-boundschecked #1: memset_s keeps its count",
+    "data:kuna-boundschecked #2: memcpy_s keeps exactly its four arguments",
+    "data:kuna-boundschecked #3: memmove_s, strncpy_s and strncat_s keep their counts",
+    "data:kuna-boundschecked #4: sprintf_s prints its format string",
     "data:kuna-msvcstackguard #1: the entry-side cookie scramble is emitted only with the option off",
     "data:kuna-msvcstackguard #2: the checker call is emitted only with the option off",
     "data:kuna-msvcstackguard #3: the computation the function actually performs survives both passes",
