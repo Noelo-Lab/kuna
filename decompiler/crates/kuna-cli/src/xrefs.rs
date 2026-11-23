@@ -430,6 +430,7 @@ struct Coverage {
     placement: Placement,
     /// [`unwalked_code`].
     unwalked: Vec<(u64, String)>,
+    call_destination_site: Option<u64>,
     notes: Vec<String>,
 }
 
@@ -488,7 +489,13 @@ fn coverage_of(
             notes.extend(unwalked_note(prog, index, names, &unwalked));
         }
     }
-    Coverage { decoded, placement, unwalked, notes }
+    let call_destination_site = index.stopped_direct_call_site(addr).filter(|_| {
+        direction == Direction::To
+            && names.at(addr).is_none()
+            && unwalked.iter().any(|(address, _)| *address == addr)
+            && declared_data(file, addr).is_none()
+    });
+    Coverage { decoded, placement, unwalked, call_destination_site, notes }
 }
 
 /// The note for an address of a kernel collection the loaded entry does not
@@ -874,8 +881,13 @@ fn resolve_target(
         if by_name { index.export_alias_class(file, addr) } else { index.alias_class(addr) };
     let name = name.or_else(|| name_at(prog, index, names, addr)).or(fallback);
     if by_name && prog.arch().analysis_ppc32picimports.scoped() {
-        class.extend(prog.arch().ppc32_pic_imports.values()
-            .filter(|s| Some(&s.name) == name.as_ref()).map(|s| s.address));
+        let slots = &prog.arch().ppc32_pic_imports;
+        if !slots.is_empty() && declared_function(file, addr).is_some() {
+            class.extend(kuna_analysis::loader::kuna_ppc32_imports::defined_slots(file, addr)
+                .filter(|slot| slots.contains_key(slot)));
+        } else {
+            class.extend(slots.values().filter(|s| Some(&s.name) == name.as_ref()).map(|s| s.address));
+        }
     }
     Target { addr, name, class, by_name }
 }
@@ -1014,33 +1026,42 @@ fn result_json(
             })
             .collect(),
     );
+    let mut target_fields = vec![
+        (
+            "name".into(),
+            target.name.clone().map(Json::Str).unwrap_or(Json::Null),
+        ),
+        ("address".into(), Json::Number(target.addr.to_string())),
+        ("address_hex".into(), Json::Str(format!("0x{:x}", target.addr))),
+        (
+            "aliases".into(),
+            Json::Array(
+                aliases(target)
+                    .into_iter()
+                    .map(|a| {
+                        function_json(
+                            &name_at(prog, index, names, a).unwrap_or_else(|| format!("0x{a:x}")),
+                            a,
+                        )
+                    })
+                    .collect(),
+            ),
+        ),
+    ];
+    let calls_selected = args.instructions && (args.kinds.is_empty() || args.kinds.contains(&XrefKind::Call));
+    if let Some(site) = coverage.call_destination_site.filter(|_| calls_selected) {
+        target_fields.push((
+            "call_destination_candidate".into(),
+            Json::Object(vec![
+                ("reason".into(), Json::Str("unflagged_executable_section".into())),
+                ("call_site".into(), Json::Number(site.to_string())),
+                ("call_site_hex".into(), Json::Str(format!("0x{site:x}"))),
+            ]),
+        ));
+    }
     Json::Object(vec![
         ("binary".into(), Json::Str(args.binary.clone())),
-        (
-            "target".into(),
-            Json::Object(vec![
-                (
-                    "name".into(),
-                    target.name.clone().map(Json::Str).unwrap_or(Json::Null),
-                ),
-                ("address".into(), Json::Number(target.addr.to_string())),
-                ("address_hex".into(), Json::Str(format!("0x{:x}", target.addr))),
-                (
-                    "aliases".into(),
-                    Json::Array(
-                        aliases(target)
-                            .into_iter()
-                            .map(|a| {
-                                function_json(
-                                    &name_at(prog, index, names, a).unwrap_or_else(|| format!("0x{a:x}")),
-                                    a,
-                                )
-                            })
-                            .collect(),
-                    ),
-                ),
-            ]),
-        ),
+        ("target".into(), Json::Object(target_fields)),
         ("direction".into(), Json::Str(args.direction.as_str().to_string())),
         ("count".into(), Json::Number(rows.len().to_string())),
         ("coverage".into(), coverage_json(prog, index, names, coverage)),
@@ -1109,7 +1130,7 @@ fn render_text(
     for a in aliases(target) {
         let (what, how) = if import.contains(&a) {
             ("import", "a forwarding veneer and the pointer slot it jumps through")
-        } else if index.veneer_slot(a).is_some() {
+        } else if index.veneer_slot(a).is_some() || index.is_export_stub(target.addr, a) {
             ("export", "its own PLT stub")
         } else {
             ("export", "the GOT slot its PLT stub jumps through")
@@ -1343,7 +1364,7 @@ fn usage() {
          says whether the target was decoded, its section, and the called code the\n\
          walk did not decode (unwalked), with notes also printed on stderr.\n\
          \n\
-         --json emits {{binary,target:{{name,address,address_hex,aliases}},direction,count,\n\
+         --json emits {{binary,target:{{name,address,address_hex,aliases,call_destination_candidate?}},direction,count,\n\
          coverage:{{decoded,section,code_section,executable,unwalked,notes}},\n\
          xrefs:[{{address,address_hex,kind,from_function,to_function,instruction,..}}],\n\
          data_refs_coverage,data_refs_reason,data_refs_count,data_refs:[{{kind,from_address,from_name,\n\
