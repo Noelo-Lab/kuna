@@ -185,6 +185,9 @@ b801000000c3
 <symbol space="ram" offset="0x315f0" name="use9"/>
 </binaryimage>
 <script>
+  <!-- looptest (default proven) prints the loops this test pins as do-while with the
+       test at the top (their entry tests fold to true); kept bottom-tested here. -->
+  <com>option looptest binary</com>
   <com>lo fu sum_msvc</com>
   <com>decompile</com>
   <com>print C</com>
