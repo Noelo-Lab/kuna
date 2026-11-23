@@ -19,7 +19,7 @@ use crate::action::{Action, ActionContext};
 use crate::architecture::Architecture;
 use crate::flow::{FlowEnvironment, FlowInfo};
 use crate::funcdata::{funcdata_flags, Funcdata};
-use crate::context::{HighVariableId, TypeOp};
+use crate::context::{HighVariableId, OpId, TypeOp};
 
 use kuna_sleigh::translate::Translate;
 use kuna_sleigh::loadimage::ImageBytes;
@@ -1645,11 +1645,12 @@ const MAX_TAIL_CONTRACTS: usize = 4;
 const MAX_TAIL_CALLEE_INSTRUCTIONS: u32 = 512;
 
 /// State the recovered prototype of every callee `root` tail-calls (a CALL the
-/// flow followed with its artificial RETURN at the same address), so the tail
-/// call passes through the callee's arguments and result the way a
-/// callee-first `decompile-all` sees them.  At most [`MAX_TAIL_CONTRACTS`]
-/// callees of at most [`MAX_TAIL_CALLEE_INSTRUCTIONS`] instructions are tried.
-/// Inert under `protoorder off`.
+/// flow followed with its artificial RETURN at the same address), and then of
+/// the direct callee just before each tail call to a callee stated with a
+/// parameter, whose result the tail call may pass on, so the tail call passes through the callee's arguments and result
+/// the way a callee-first `decompile-all` sees them.  At most
+/// [`MAX_TAIL_CONTRACTS`] callees of at most [`MAX_TAIL_CALLEE_INSTRUCTIONS`]
+/// instructions are tried, tail callees first.  Inert under `protoorder off`.
 fn bootstrap_tail_callees(arch: &mut Architecture, root: &Funcdata) {
     if !arch.protoorder.is_on() || root.num_calls() == 0 {
         return;
@@ -1661,23 +1662,43 @@ fn bootstrap_tail_callees(arch: &mut Architecture, root: &Funcdata) {
             root.obank().get(op).filter(|o| o.code() == OpCode::CPUI_RETURN).map(|o| o.get_addr().clone())
         })
         .collect();
-    let tails: Vec<Address> = (0..root.num_calls())
-        .filter_map(|i| {
-            let fc = root.get_call_specs(i);
-            let at = root.obank().get(fc.get_op())?.get_addr().clone();
-            returns.contains(&at).then(|| fc.get_entry_address().clone())
-        })
+    let tail_calls: Vec<OpId> = (0..root.num_calls())
+        .map(|i| root.get_call_specs(i).get_op())
+        .filter(|&op| root.obank().get(op).is_some_and(|o| returns.contains(o.get_addr())))
         .collect();
-    let entries = eligible_callees(arch, tails, root.get_address());
-    if entries.is_empty() {
-        return;
+    let entry_of = |op: OpId| root.get_call_specs_index(op).map(|i| root.get_call_specs(i).get_entry_address().clone());
+    let tails = eligible_callees(arch, tail_calls.iter().filter_map(|&op| entry_of(op)).collect(), root.get_address());
+    let used = state_contracts(arch, tails, MAX_TAIL_CONTRACTS);
+    let takes_input = |arch: &Architecture, op: OpId| {
+        entry_of(op)
+            .and_then(|e| crate::p4_calls::kuna_protoorder::stated_key(&e))
+            .and_then(|key| arch.kuna_protoorder_types.get(&key))
+            .is_some_and(|t| !t.inputs.is_empty())
+    };
+    let feeders: Vec<Address> = tail_calls
+        .iter()
+        .filter(|&&op| takes_input(arch, op))
+        .filter_map(|&op| crate::p4_calls::kuna_passthrough::producing_call(root, op))
+        .filter_map(entry_of)
+        .collect();
+    let feeders = eligible_callees(arch, feeders, root.get_address());
+    state_contracts(arch, feeders, MAX_TAIL_CONTRACTS.saturating_sub(used));
+}
+
+/// State the recovered prototypes of at most `budget` of `entries`, each
+/// against the statements made before this call; returns how many were tried.
+fn state_contracts(arch: &mut Architecture, entries: Vec<Address>, budget: usize) -> usize {
+    if entries.is_empty() || budget == 0 {
+        return 0;
     }
     let prior = std::mem::take(&mut arch.kuna_protoorder_types);
     let mut stated = Vec::new();
-    for entry in entries.into_iter().take(MAX_TAIL_CONTRACTS) {
+    let mut tried = 0;
+    for entry in entries.into_iter().take(budget) {
         if deadline_passed() {
             break;
         }
+        tried += 1;
         if let Some((Some(types), _)) = recover_one_contract(arch, &prior, &entry, Some(MAX_TAIL_CALLEE_INSTRUCTIONS)) {
             if let Some(key) = crate::p4_calls::kuna_protoorder::stated_key(&entry) {
                 stated.push((key, types));
@@ -1686,6 +1707,7 @@ fn bootstrap_tail_callees(arch: &mut Architecture, root: &Funcdata) {
     }
     arch.kuna_protoorder_types = prior;
     arch.kuna_protoorder_types.extend(stated);
+    tried
 }
 
 /// Decompile one callee far enough to state its recovered parameter types, then

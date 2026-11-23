@@ -6985,6 +6985,18 @@ bound costs 11.0%. The nested drives do not recurse, and declared or
 already-stated callees are skipped. `protoorder off` decompiles the function
 from its own body alone.
 
+The bootstrap also states, after the tail callees and within the same four, the
+direct callee of the CALL just before each tail call whose callee it stated
+with a parameter (`producing_call`: no join, indirect call or user op in
+between). Its result may be what the tail call passes on; a tail call that
+takes nothing, such as a call to `__stack_chk_fail`, states no such callee.
+arm64e `_tail_auth` is `bl _helper; ...; b _helper2`, which is
+`return _helper2(_helper(a0))`: stating only `_helper2` gave the function
+`_helper2`'s return value, and `_tail_auth` printed `int _tail_auth(void) {
+_helper(); return _helper2(); }`, a return value computed from no argument. With
+`_helper` stated as well, `passthrough` passes `a0` to `_helper` and `_helper`'s
+result to `_helper2` (*A result handed to the next call*, below).
+
 A `decompile-all` that selects part of the binary (`--addr`, `--functions`,
 `--limit` and the triage filters) and `kuna decompile --json` have no
 callee-first order behind them either: `callee_first_decision` takes that order
@@ -7316,6 +7328,26 @@ asks for: suppressing it cut a Cortex-M `double` returned in r0:r1 to r0.
 And a later hole fill finds the trial already there instead of adding a read to
 a range dead-code removal has visited, which forces a restart with a longer
 dead-code delay and a different result.
+
+**A result handed to the next call.** One later call is claimed as well: a call
+whose previous direct CALL (`producing_call`: the last CALL before it in its
+block or its chain of single predecessors, with no join, indirect call or user
+op in between) has a callee that states a return value in a register
+(`RecoveredTypes::output`), when the later callee's stated parameters up to and
+including the claimed one all lie inside that register. On a convention that
+returns in its first argument register (AArch64 `x0`, AAPCS `r0`, RISC-V `a0`),
+a register no op touches reaches that call holding the earlier callee's result:
+`bl h; b g` is `return g(h(a0))`. The claim gives the later CALL a read of the
+register before the first heritage, as above; heritage links it to the INDIRECT
+creation the earlier call plants for the register, so the earlier call's output
+trial is found and becomes its output. `capture` and the extension at the end of
+`ActionActiveParam` accept that creation (read whole or as its low piece) as
+they accept the function's own input, but only at a call this pass claimed and
+only when the creation belongs to that previous call (`forwarded_call_result`).
+Only the pre-link claim makes this one; the mid-pipeline re-run, which can only
+reuse the function's input Varnode, does not. Without it the arm64e
+`_tail_auth` above printed `_helper(a0); return _helper2();`, also in
+`decompile-all`, where both callees are stated.
 
 A trial on a claimed range, at any call, is never scored: `check_input_trial_use`
 marks it inactive, which is where the option-off run's trial for that slot
