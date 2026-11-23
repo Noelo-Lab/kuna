@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5036,
-    5036
+    5043,
+    5043
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2026,6 +2026,13 @@
     "data:Octeon n64 atomics: no save or restore collision",
     "data:Octeon n64 atomics: repeated write barriers retained",
     "data:Octeon n64 atomics: stack and pointer input stores retained",
+    "data:Octeon scratch callee observes and replaces its caller's write",
+    "data:Octeon scratch consecutive writes remain observable",
+    "data:Octeon scratch read before overwrite retains the previous value",
+    "data:Octeon scratch state is visible on both sides of a call",
+    "data:Octeon scratch word read sign extends the current value",
+    "data:Octeon scratch writes survive and word reads preserve both full registers",
+    "data:Octeon scratch zero write remains observable at return",
     "data:Opaque pointer retype #1",
     "data:Opaque pointer retype #2",
     "data:Opaque pointer retype #3",

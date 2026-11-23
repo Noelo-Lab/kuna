@@ -38,6 +38,11 @@ the four Octeon entries only. The pinned native compiler reproduces their four
 previous digests on the previous sources and matches the Rust compiler on the
 updated ones.
 
+The Octeon II/III kernel scratch transfers update the six MIPS entries. The
+pinned C++ compiler reproduces the prior hashes on the base and yields the
+same six updated element streams as the Rust compiler. The generic MIPS32
+and MIPS64 XML outputs differ only in constructor source line numbers.
+
 The SPARC entries include kuna's destination corrections for `fdtoi`, `fqtoi`,
 `fstox` and `fqtox`. The first three were regenerated with Ghidra's C++
 compiler on the corrected sources, which reproduces the previous hashes on the

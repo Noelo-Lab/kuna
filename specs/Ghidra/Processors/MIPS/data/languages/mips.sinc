@@ -287,6 +287,13 @@ define register offset=0x2100 size=$(REGSIZE) [
 ];
 
 # COP-0 control registers, sel=2
+@ifdef OCTEON2
+@define CP0_31_2 "KScratch1"
+@define CP0_31_3 "KScratch2"
+@else
+@define CP0_31_2 "cop0_reg31.2"
+@define CP0_31_3 "cop0_reg31.3"
+@endif
 define register offset=0x2200 size=$(REGSIZE) [
     MVPConf0        VPEConf0        TCBind          cop0_reg3.2
     cop0_reg4.2     cop0_reg5.2     SRSConf1        cop0_reg7.2
@@ -295,7 +302,7 @@ define register offset=0x2200 size=$(REGSIZE) [
     Config2         cop0_reg17.2    WatchLo.2       WatchHi.2
     cop0_reg20.2    cop0_reg21.2    cop0_reg22.2    TraceControl2
     cop0_reg24.2    PerfCnt.2       cop0_reg26.2    CacheErr.2
-    TagLo.2         TagHi.2         cop0_reg30.2    cop0_reg31.2
+    TagLo.2         TagHi.2         cop0_reg30.2    $(CP0_31_2)
 ];
 
 # COP-0 control registers, sel=3
@@ -307,7 +314,7 @@ define register offset=0x2300 size=$(REGSIZE) [
     Config3         cop0_reg17.3    WatchLo.3       WatchHi.3
     cop0_reg20.3    cop0_reg21.3    cop0_reg22.3    UserTraceData
     cop0_reg24.3    PerfCnt.3       cop0_reg26.3    CacheErr.3
-    DataLo.3        DataHi.3        cop0_reg30.3    cop0_reg31.3
+    DataLo.3        DataHi.3        cop0_reg30.3    $(CP0_31_3)
 ];
 
 # COP-0 control registers, sel=4
@@ -753,7 +760,7 @@ attach variables [ rd0_2 ] [
     Config2         cop0_reg17.2    WatchLo.2       WatchHi.2
     cop0_reg20.2    cop0_reg21.2    cop0_reg22.2    TraceControl2
     cop0_reg24.2    PerfCnt.2       cop0_reg26.2    CacheErr.2
-    TagLo.2         TagHi.2         cop0_reg30.2    cop0_reg31.2
+    TagLo.2         TagHi.2         cop0_reg30.2    $(CP0_31_2)
 ];
 
 attach variables [ rd0_3 ] [
@@ -764,7 +771,7 @@ attach variables [ rd0_3 ] [
     Config3         cop0_reg17.3    WatchLo.3       WatchHi.3
     cop0_reg20.3    cop0_reg21.3    cop0_reg22.3    UserTraceData
     cop0_reg24.3    PerfCnt.3       cop0_reg26.3    CacheErr.3
-    DataLo.3        DataHi.3        cop0_reg30.3    cop0_reg31.3
+    DataLo.3        DataHi.3        cop0_reg30.3    $(CP0_31_3)
 ];
 
 attach variables [ rd0_4 ] [

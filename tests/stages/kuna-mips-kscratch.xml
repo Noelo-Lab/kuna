@@ -1,0 +1,56 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:64:octeon2:default">
+<!-- GNU-assembled tests/fixtures/mips-cp0/scratch.S -->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+4084f802 4085f803 000000c0 4028f802 fcc80000 4008f803 fcc80008 4022f803 03e00008 00000000
+4022f802 4084f802 000000c0 03e00008 00000000
+4002f803 03e00008 00000000
+4080f802 000000c0 03e00008 00000000
+67bdffe0 ffbf0018 4084f802 000000c0 0c000421 00000000 000000c0 4022f802 dfbf0018 03e00008 67bd0020
+4022f802 fcc20000 4085f802 000000c0 03e00008 00000000
+4084f803 000000c0 4085f803 000000c0 03e00008 00000000
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="scratch"/>
+<symbol space="ram" offset="0x1028" name="previous"/>
+<symbol space="ram" offset="0x103c" name="read_word"/>
+<symbol space="ram" offset="0x1048" name="clear_first"/>
+<symbol space="ram" offset="0x1058" name="around"/>
+<symbol space="ram" offset="0x1084" name="observe"/>
+<symbol space="ram" offset="0x109c" name="write_twice"/>
+</binaryimage>
+<script>
+<com>option ctypes on</com>
+<com>parse line extern long scratch(long x,long y,long *out);</com>
+<com>parse line extern long previous(long x);</com>
+<com>parse line extern long read_word(void);</com>
+<com>parse line extern void clear_first(void);</com>
+<com>parse line extern long around(long x,long y,long *out);</com>
+<com>parse line extern void observe(long x,long y,long *out);</com>
+<com>parse line extern void write_twice(long x,long y);</com>
+<com>lo fu scratch</com><com>decompile</com><com>print C</com>
+<com>lo fu previous</com><com>decompile</com><com>print C</com>
+<com>lo fu read_word</com><com>decompile</com><com>print C</com>
+<com>lo fu clear_first</com><com>decompile</com><com>print C</com>
+<com>lo fu around</com><com>decompile</com><com>print C</com>
+<com>lo fu observe</com><com>decompile</com><com>print C</com>
+<com>lo fu write_twice</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="Octeon scratch writes survive and word reads preserve both full registers" min="1" max="1">KScratch1 = x;
+KScratch2 = y;
+\*out = KScratch1;
+out\[1\] = \(int\)KScratch2;
+return KScratch2;</stringmatch>
+<stringmatch name="Octeon scratch read before overwrite retains the previous value" min="1" max="1">v1 = KScratch1;
+KScratch1 = x;
+return v1;</stringmatch>
+<stringmatch name="Octeon scratch word read sign extends the current value" min="1" max="1">return \(int\)KScratch2;</stringmatch>
+<stringmatch name="Octeon scratch zero write remains observable at return" min="1" max="1">KScratch1 = 0;</stringmatch>
+<stringmatch name="Octeon scratch state is visible on both sides of a call" min="1" max="1">KScratch1 = x;
+observe\(x,y,out\);
+return KScratch1;</stringmatch>
+<stringmatch name="Octeon scratch callee observes and replaces its caller's write" min="1" max="1">\*out = KScratch1;
+KScratch1 = y;</stringmatch>
+<stringmatch name="Octeon scratch consecutive writes remain observable" min="1" max="1">KScratch2 = x;
+KScratch2 = y;</stringmatch>
+</decompilertest>
