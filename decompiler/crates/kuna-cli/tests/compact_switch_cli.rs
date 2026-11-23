@@ -188,6 +188,8 @@ fn decompile(image: &[u8], asserts: &[&str], options: &[&str]) -> String {
     for option in options {
         command.args(["--option", option, "off"]);
     }
+    // The assertions pin the switch's nesting under the binary's own return layout.
+    command.args(["--option", "tailform", "off"]);
     command
         .args(["--addr", "0x401000", "--mode", "reliable", "--assert-strict", "--sleighpath"])
         .arg(specs());

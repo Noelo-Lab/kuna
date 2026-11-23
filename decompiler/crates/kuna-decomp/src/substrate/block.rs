@@ -2743,6 +2743,16 @@ impl BlockGraph {
         }
     }
 
+    /// (kuna `tailform`) Replace the components of the print-tree node `id` with
+    /// `list`, re-parenting each to `id`.  A print-tree edit only: edges and
+    /// p-code are untouched.
+    pub fn kuna_set_components(&mut self, id: BlockId, list: Vec<BlockId>) {
+        for &c in &list {
+            self.arena[c].parent = Some(id);
+        }
+        self.arena[id].list = list;
+    }
+
     /// Build a new BlockList collapsing the given components
     /// (C++ `BlockGraph::newBlockList`, `block.cc:1761`).
     pub fn new_block_list(&mut self, graph_id: BlockId, nodes: &[BlockId]) -> KunaResult<BlockId> {

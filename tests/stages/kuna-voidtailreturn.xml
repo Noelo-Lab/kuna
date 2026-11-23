@@ -38,6 +38,8 @@
 <symbol space="ram" offset="0x100000" name="vt_fn"/>
 </binaryimage>
 <script>
+  <!-- kuna: tailform default-on; this test pins the binary's own function-tail return layout -->
+  <com>option tailform off</com>
   <com>parse line extern void vt_fn(int4 x);</com>
   <com>lo fu vt_fn</com>
   <com>decompile</com>
