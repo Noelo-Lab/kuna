@@ -1298,6 +1298,9 @@ pub struct ArchContext {
     /// one-block `if` -- see `Architecture::returndup_triangle`.  Read by
     /// `Funcdata::returndup_apply`.
     pub returndup_triangle: bool,
+    /// (kuna) `tailform`: the function-tail form policy, `None` when off -- see
+    /// `Architecture::tail_form`.
+    pub tail_form: Option<crate::p8_structure::kuna_tailform::TailFormPolicy>,
     /// (kuna) `paramcopyhoist`: anchor an unmodified incoming parameter's trim COPY
     /// in the entry block rather than at the MULTIEQUAL slot's predecessor tail —
     /// see `Architecture::param_copy_hoist`.  Read by
@@ -1793,6 +1796,7 @@ impl ArchContext {
             iteboolean: false,            // iteboolean (0/1 select -> boolean assignment)
             param_copy_hoist: false,      // paramcopyhoist (parameter copy-shadow -> entry block)
             returndup_triangle: false,    // rettriangle (one-block-if join, copied from the Architecture)
+            tail_form: None,              // tailform (copied from the Architecture)
             duplicate_shared_returns: false, // returndup (opt-in default-off)
             duplicate_call_returns: false, // returndup calls
             early_return: false, // earlyreturn (opt-in default-off)

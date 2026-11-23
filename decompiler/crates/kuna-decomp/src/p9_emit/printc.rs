@@ -1573,6 +1573,9 @@ pub struct PrintC {
     /// [`emit_function_body`](PrintC::emit_function_body) and cleared after, so it
     /// is live only for that function's emission.
     void_tail_return: Option<OpId>,
+    /// (kuna `tailform`) The `RETURN` of the leaf being emitted that the leaf
+    /// leaves out ([`crate::p8_structure::kuna_tailform::skipped_return`]).
+    tailform_skip: Option<OpId>,
     /// (kuna `gotonext`) The gotos left out or printed as `break;`, and the labels
     /// only they reached.  Computed per function at the top of
     /// [`emit_function_body`](PrintC::emit_function_body).
@@ -1675,6 +1678,7 @@ impl PrintC {
             pending: 0,
             commsorter: crate::comment::CommentSorter::new(),
             void_tail_return: None,
+            tailform_skip: None,
             goto_rewrites: Default::default(),
             switch_plans: Default::default(),
             rt_ctx: RealTypeCtx::OFF,
@@ -4529,8 +4533,18 @@ impl PrintC {
         // to an enclosing loop head (`isLabelBumpUp`).
         self.emit_any_label_statement(fd, blk);
         if let Some(under) = fd.sblocks_ref().block(blk).get_copy() {
+            // (kuna tailform) A leaf that prints only its return.
+            if let Some(ret) = crate::p8_structure::kuna_tailform::only_return(fd, blk) {
+                self.emit.tag_line();
+                self.emit_statement(fd, arch, ret);
+                self.flush_eol_warnings();
+                return;
+            }
+            let skip = crate::p8_structure::kuna_tailform::skipped_return(fd, blk);
+            let saved = std::mem::replace(&mut self.tailform_skip, skip);
             // The copy's `copy` field is a *bblocks* BlockId.
             self.emit_basic_block_ops(fd, arch, under, true);
+            self.tailform_skip = saved;
         }
     }
 
@@ -5083,6 +5097,7 @@ impl PrintC {
         let Some(under) = fd.sblocks_ref().block(body).get_copy() else {
             return false;
         };
+        let tailform_skip = crate::p8_structure::kuna_tailform::skipped_return(fd, body);
         let mut printed = 0;
         let mut cur = fd.bb_op_head(under);
         while let Some(inst) = cur {
@@ -5091,7 +5106,7 @@ impl PrintC {
                 Some(o) => o,
                 None => continue,
             };
-            if self.is_suppressed_statement(fd, inst) {
+            if self.is_suppressed_statement(fd, inst) || Some(inst) == tailform_skip {
                 continue;
             }
             // The body always prints under NO_BRANCH: every branch op is skipped.
@@ -6111,7 +6126,7 @@ impl PrintC {
             // and a structural divergence.  Elided only when
             // `elidable_void_tail_return` proved it is the LAST statement of a void
             // function reached on exactly one structured path.
-            if Some(inst) == self.void_tail_return {
+            if Some(inst) == self.void_tail_return || Some(inst) == self.tailform_skip {
                 continue;
             }
             if o.is_branch() {

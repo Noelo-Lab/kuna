@@ -509,6 +509,18 @@ is an `if` or a loop has NO node there at all, while kuna's printed `return;`
 re-materialises one — one extra node, one or two extra edges, and an
 `is_exitpoint` role flip that on its own defeats the GED isomorphism test.
 
+**Return-split leaves (`option tailform`).** The P8 `tailform` pass (§8.3)
+flags a structured leaf `F_RET_SKIP` or `F_RET_ONLY`.
+`printc.rs (PrintC::emit_block_copy)` prints an `F_RET_ONLY` leaf as the single
+statement of its block's tail `RETURN`, without the block's comments, and
+prints an `F_RET_SKIP` leaf with that `RETURN` left out
+(`kuna_tailform.rs (skipped_return)`, skipped in
+`printc.rs (PrintC::emit_basic_block_ops)` beside the `voidtailreturn` op).
+`printc.rs (PrintC::if_body_elides)` leaves the skipped return out of its
+one-statement count, so `if (c) f();` drops its braces. Both marks are
+positional, on the leaf, so a block that another leaf also prints keeps its
+return there.
+
 **Warning style (P9/`warning-style`, `option warnstyle`).** Analysis warnings
 render as terse `// slug` end-of-line comments on the line they describe
 (kuna default `inline`, DIV-39): `printc.rs (PrintC::emit_comment_group)`

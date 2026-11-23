@@ -1,0 +1,110 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `tailform`: at the end of a function `if (c) { S } return K;` and
+    `if (!c) return K; S; return K;` are the same program, and the binary's
+    return layout, not the source, decides which one structuring recovers.
+    The option re-spells each function-tail `if` by the printed size of its
+    conditional part: wrapped up to 4 lines, a guard clause above.
+
+    Stage / sub-stage: P8 "goto-quality", a print-tree edit after final
+    structuring.  The P0 assertion `option tailform off|on|<n>|<void>,<value>`
+    sets the size threshold.
+
+    The bytes are .text of decompiler/crates/kuna-analysis/tests/fixtures/
+    tailform.c built by gcc 11.4 at -O2 (tailform_gcc_O2_x86_64):
+    note_if_zero (`if (a == 0) note();`, a tail call with its own exit),
+    record_pair (`if (a) { record(a); record(b); } return 0;`, whose last
+    block holds the calls and the return), record_above (a compound condition
+    whose arm repeats the final `return 0;`), replay (a long void body that
+    shares the epilogue) and first_value (`return -1` and `return 0`, the
+    control).
+
+    Pass 1 runs with `option tailform off` and prints the binary's form.
+    Pass 2 (`option tailform on`, the default) wraps the short tails, drops
+    the repeated return and guards the long body; first_value is the same.
+-->
+<bytechunk space="ram" offset="0x1250">
+f30f1efa8305052f000001c30f1f4000f30f1efa8b05d62d00008d500183e03f8915ca2d0000488d15e32d0000893c82c366662e0f1f8400000000000f1f4000
+f30f1efa85ff7408c30f1f8000000000ebae66662e0f1f8400000000000f1f00f30f1efa85ff750831c0c30f1f4400005589f5e898ffffff89efe891ffffff31
+c05dc366662e0f1f8400000000006690f30f1efa4885ff74068b3f39f77f0931c0c3660f1f4400004883ec08e85fffffff31c04883c408c30f1f840000000000
+f30f1efa4885ff74068b3f85ff7f01c3e93bffffff66662e0f1f840000000000f30f1efa41544189fc85f6780789f7e81cffffff4489e0415cc3660f1f440000
+f30f1efa41544189fc83fe017e0789f7e8fbfeffff4489e0415cc30f1f440000f30f1efa4885ff7447534889fb8b3fe8dcfeffff8b038d7801e8d2feffff8b03
+8d7802e8c8feffff8b038d7803e8befeffff8b038d7804e8b4feffff8b035b8905ab2d0000c3662e0f1f840000000000c366662e0f1f8400000000000f1f4000
+f30f1efa4885ff74124883ec088b3fe87cfeffff31c04883c408c3b8ffffffffc3
+</bytechunk>
+<symbol space="ram" offset="0x1250" name="note"/>
+<symbol space="ram" offset="0x1260" name="record"/>
+<symbol space="ram" offset="0x1290" name="note_if_zero"/>
+<symbol space="ram" offset="0x12b0" name="record_pair"/>
+<symbol space="ram" offset="0x12e0" name="record_above"/>
+<symbol space="ram" offset="0x1310" name="record_positive"/>
+<symbol space="ram" offset="0x1330" name="keep_first"/>
+<symbol space="ram" offset="0x1350" name="pass_through"/>
+<symbol space="ram" offset="0x1370" name="replay"/>
+<symbol space="ram" offset="0x13d0" name="first_value"/>
+</binaryimage>
+<script>
+  <com>option tailform off</com>
+  <com>lo fu note_if_zero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu record_pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu record_above</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu replay</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu first_value</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option tailform on</com>
+  <com>lo fu note_if_zero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu record_pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu record_above</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu replay</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu first_value</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="tailform #1: off, a short void tail behind its own exit prints as a guard clause" min="1" max="1">^  if \(a0\)$
+^    return;$
+^  note\(\);</stringmatch>
+<stringmatch name="tailform #2: on, the same tail is wrapped" min="1" max="1">^  if \(!a0\)$
+^    note\(\);</stringmatch>
+<stringmatch name="tailform #3: off, a short tail before a constant return prints as a guard and a second return" min="1" max="1">^    return 0;$
+^  record\(a0\);$
+^  record\(a1\);$
+^  return 0;$</stringmatch>
+<stringmatch name="tailform #4: on, the tail is wrapped and the return its block ends with printed once after the if" min="1" max="1">^  if \(.*\) \{$
+^    record\(a0\);$
+^    record\(a1\);$
+^  \}$
+^  return 0;$</stringmatch>
+<stringmatch name="tailform #5: off, the arm repeats the final return" min="1" max="1">^  if \(\(a0\) &amp;&amp; \(a1 &lt; \*a0\)\) \{$
+^    record\(\*a0\);$
+^    return 0;$
+^  \}$</stringmatch>
+<stringmatch name="tailform #6: on, the arm falls through to the one return" min="1" max="1">^  if \(\(a0\) &amp;&amp; \(a1 &lt; \*a0\)\)$
+^    record\(\*a0\);$
+^  return 0;$</stringmatch>
+<stringmatch name="tailform #7: off, a long void body is wrapped" min="1" max="1">^  if \(a0\) \{$
+^    record\(\*a0\);$
+^    record\(\*a0 \+ 1\);$</stringmatch>
+<stringmatch name="tailform #8: on, the long body follows a guard clause" min="1" max="1">^  if \(!a0\)$
+^    return;$
+^  record\(\*a0\);$
+^  record\(\*a0 \+ 1\);$</stringmatch>
+<stringmatch name="tailform #9: two different return values are left alone in both passes" min="2" max="2">^  return 0xffffffff;$</stringmatch>
+</decompilertest>

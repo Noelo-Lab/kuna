@@ -7,13 +7,16 @@
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
 </binaryimage>
 <script>
+  <!-- kuna: tailform default-on; this test pins the binary's own function-tail return layout -->
   <com>clear architecture</com>
   <com>load file tests/fixtures/go-paniccheck-return/paniccheck-elf</com>
+  <com>option tailform off</com>
   <com>read symbols</com>
   <com>load function runtime.panicshift</com><com>decompile</com><com>print C</com>
   <com>load function runtime.panicCheck1</com><com>decompile</com><com>print C</com>
   <com>clear architecture</com>
   <com>load file tests/fixtures/go-paniccheck-return/paniccheck-elf</com>
+  <com>option tailform off</com>
   <com>option noreturn_known off</com>
   <com>read symbols</com>
   <com>load function runtime.panicshift</com><com>decompile</com><com>print C</com>

@@ -72,6 +72,8 @@ b83c000000bf010000000f05f4
 <symbol space="ram" offset="0x4010c0" name="halt"/>
 </binaryimage>
 <script>
+  <!-- kuna: tailform default-on; this test pins the binary's own function-tail return layout -->
+  <com>option tailform off</com>
   <com>echo passthrough output begins</com>
   <com>option protoorder off</com>
   <com>option passthrough off</com>
@@ -90,6 +92,7 @@ b83c000000bf010000000f05f4
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/go_live_forward_amd64</com>
+  <com>option tailform off</com>
   <com>read symbols</com>
   <com>lo fu forward_word</com>
   <com>decompile</com>

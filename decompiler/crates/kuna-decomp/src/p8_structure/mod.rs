@@ -30,5 +30,6 @@ pub mod kuna_returndupcalls;
 pub mod kuna_retsplitglobal;
 pub mod kuna_retsplitlimit;
 pub mod kuna_switchreturn;
+pub mod kuna_tailform;
 pub mod kuna_taildup;
 pub mod region_structurer;
