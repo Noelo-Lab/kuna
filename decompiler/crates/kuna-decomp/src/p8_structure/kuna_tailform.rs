@@ -237,13 +237,14 @@ fn run(data: &mut Funcdata, policy: &TailFormPolicy) -> usize {
 }
 
 /// The guard `if`s the `looptest` plan of the current tree drops; this pass
-/// leaves them, and everything around them, to that plan.
+/// leaves them, and everything around them, to that plan.  The printer's sign
+/// plan does not exist yet, so counters keep their high's own declared type.
 fn claimed_guards(data: &Funcdata, mode: LoopTestMode) -> Vec<BlockId> {
     let Some(root) = data.sblocks_ref().root else { return Vec::new() };
     if mode == LoopTestMode::Binary {
         return Vec::new();
     }
-    loop_tests(data, root, mode).guards.keys().copied().collect()
+    loop_tests(data, root, mode, &|_| None).guards.keys().copied().collect()
 }
 
 /// Whether `b` is, or holds, a guard the `looptest` plan claims.
