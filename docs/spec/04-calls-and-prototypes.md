@@ -9812,9 +9812,13 @@ not realistic, which is also what keeps a register gcc's `-fipa-ra` lets a
 caller keep across the call from being taken for a result. The value printed is
 the one the register holds at each RETURN, so a path the binary never takes
 (the fall-through of an `error(nonzero, ...)` that flow keeps) returns whatever
-is left there. Over the decbench O2 and O0 corpus (257 binaries each, 35,197 and
-34,473 functions) a function whose source is `void` never gained a return this
-way; 124 functions whose source returns a value did at O2.
+is left there. Over the decbench corpus (257 binaries at O2 without inlining
+and at O0, 35,197 and 34,473 functions), these rules with the agreement on a low
+register and the tail callee's read above turn 218 and 17 functions from `void`
+to a value. Every one whose source signature could be read returns a value
+there (152 and 15), but one at O0: coreutils `factor_insert_multiplicity`, whose
+only reader returns its result and is itself a `void` function recovered
+returning a value. No function lost its return.
 
 The trial is returned no wider than the callers read and than every path sets
 (`kuna_voidret.rs (defined_width)`). Heritage sizes the trial by the range the
