@@ -144,7 +144,7 @@ fn epilogue_run(data: &Funcdata, ret: OpId, outputs: &[ParamEntry]) -> Option<Ru
             ops.push(id);
             walk = o.basic_neighbours().0;
         }
-        let Some(clears) = clearing_instruction(data, &ops) else { break };
+        let Some(clears) = clearing_instruction(data, &ops, outputs) else { break };
         foreign |= clears.iter().all(|&(vn, ref addr, size)| {
             !outputs.iter().any(|e| e.intersects(addr, size)) && unread_after(data, vn, &at)
         });
@@ -160,7 +160,9 @@ fn epilogue_run(data: &Funcdata, ret: OpId, outputs: &[ParamEntry]) -> Option<Ru
 /// zero, or a one-byte flag computed by a comparison, and it clears at least
 /// one register wider than a flag. A write a later write of the same
 /// instruction covers is heritage's slicing of the old value, not a result.
-fn clearing_instruction(data: &Funcdata, ops: &[OpId]) -> Option<Vec<(VarnodeId, Address, i32)>> {
+/// A register is storage in the space the model's `outputs` live in: `movl
+/// $0,g(%rip)` writes a zero into a global, which is memory, and ends the run.
+fn clearing_instruction(data: &Funcdata, ops: &[OpId], outputs: &[ParamEntry]) -> Option<Vec<(VarnodeId, Address, i32)>> {
     let mut writes: Vec<(OpId, VarnodeId)> = Vec::new();
     for &id in ops.iter().rev() {
         let o = data.obank().get(id)?;
@@ -170,9 +172,12 @@ fn clearing_instruction(data: &Funcdata, ops: &[OpId]) -> Option<Vec<(VarnodeId,
             _ => {}
         }
         let vn = o.get_out()?;
-        match data.vbank().get(vn)?.get_space().get_type() {
+        let space = data.vbank().get(vn)?.get_space();
+        match space.get_type() {
             spacetype::IPTR_INTERNAL => {}
-            spacetype::IPTR_PROCESSOR => writes.push((id, vn)),
+            spacetype::IPTR_PROCESSOR if outputs.iter().any(|e| e.get_space().get_index() == space.get_index()) => {
+                writes.push((id, vn))
+            }
             _ => return None,
         }
     }

@@ -995,6 +995,8 @@ pub(crate) fn read_storage(out: &crate::varnode::Varnode) -> Option<(Address, in
 /// returning a zero-extended word a caller reads wider, kept whole at the
 /// widest such read ([`crate::kuna_zextreturn::zero_extended_word`]).
 pub fn due(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
+    let lows: BTreeMap<(int4, uintb), Option<(Address, int4)>> =
+        arch.kuna_voidret.read.iter().map(|(callee, claims)| (*callee, common_low_register(arch, claims))).collect();
     let ledger = &mut arch.kuna_voidret;
     let mut force: Vec<((int4, uintb), (Address, int4))> = Vec::new();
     let mut withdraw: Vec<(int4, uintb)> = Vec::new();
@@ -1002,8 +1004,13 @@ pub fn due(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
     for (callee, claims) in &ledger.read {
         let Some(first) = claims.first() else { continue };
         let space = |a: &Address| a.get_space().map(|s| s.get_index());
-        let agree = claims.iter().all(|(a, _)| space(a) == space(&first.0) && a.get_offset() == first.0.get_offset());
-        let widest = claims.iter().max_by_key(|(_, s)| *s).cloned().unwrap_or_else(|| first.clone());
+        let same = claims.iter().all(|(a, _)| space(a) == space(&first.0) && a.get_offset() == first.0.get_offset());
+        let low = lows.get(callee).cloned().flatten().filter(|_| !same);
+        let agree = same || low.is_some();
+        let widest = match &low {
+            Some(low) => low.clone(),
+            None => claims.iter().max_by_key(|(_, s)| *s).cloned().unwrap_or_else(|| first.clone()),
+        };
         match ledger.forced.get(callee) {
             None if agree && ledger.returns.get(callee) == Some(&Returns::Void) => force.push((*callee, widest)),
             None if agree && displaced(ledger, callee, &widest) => {
@@ -1012,6 +1019,11 @@ pub fn due(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
             }
             Some(_) if ledger.withdrawn.contains(callee) => {}
             Some(_) if !agree => withdraw.push(*callee),
+            Some((addr, _))
+                if low.is_some() && ledger.returns.get(callee) == Some(&Returns::Void) && *addr != widest.0 =>
+            {
+                force.push((*callee, widest))
+            }
             Some((_, size)) if widest.1 > *size => force.push((*callee, widest)),
             _ => {}
         }
@@ -1037,6 +1049,33 @@ pub fn due(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
         out.insert(callee);
     }
     out
+}
+
+/// The register every claim of `claims` reads at its least significant end,
+/// at the widest of those reads, when the claims differ only in what they read
+/// above it: a caller that passes a leftover `rdx` on (`v3 = f(); ..
+/// fatal(.., SUB168(v3,8))`) reads `rdx:rax` where every other caller reads
+/// `rax`, and an ARM caller reads `r1:r0` where the others read `r0`. The
+/// callers agree on the register the value comes back in; the one above it is
+/// what one of them found there. `None` when a claim's low register differs.
+fn common_low_register(arch: &Architecture, claims: &[(Address, int4)]) -> Option<(Address, int4)> {
+    let low = |(addr, size): &(Address, int4)| -> Option<(Address, int4)> {
+        let space = addr.get_space()?;
+        if space.get_type() != spacetype::IPTR_JOIN {
+            return (space.get_type() == spacetype::IPTR_PROCESSOR).then(|| (addr.clone(), *size));
+        }
+        let join = arch.manage().find_join(addr.get_offset()).ok()?;
+        let piece = join.get_piece(join.num_pieces().checked_sub(1)?);
+        Some((Address::new(std::rc::Rc::clone(piece.space.as_ref()?), piece.offset), piece.size as int4))
+    };
+    let lows: Vec<(Address, int4)> = claims.iter().map(low).collect::<Option<_>>()?;
+    let first = lows.first()?;
+    let same = |a: &Address| a.get_space().map(|s| s.get_index()) == first.0.get_space().map(|s| s.get_index())
+        && a.get_offset() == first.0.get_offset();
+    if !lows.iter().all(|(a, _)| same(a)) {
+        return None;
+    }
+    lows.iter().max_by_key(|(_, s)| *s).cloned()
 }
 
 /// Does `callee` return a value in storage that shares no byte with `read`,
@@ -1952,27 +1991,32 @@ pub fn forced(data: &Funcdata, addr: &Address, size: int4) -> bool {
 /// Is `opmatch` a RETURN whose forced return trial [`score_forced`] is scoring?
 /// A caller reads the register after the call, so the value there is the
 /// function's result whatever else the function does with it, and
-/// `only_op_use` lets it be stored and branched on as well ([`returned_use`]).
+/// `only_op_use` lets it be stored, loaded through, passed on and branched on
+/// as well ([`returned_use`]).
 pub fn scoring_return(data: &Funcdata, opmatch: crate::context::OpId) -> bool {
     data.kuna_forced_scoring()
         && data.obank().get(opmatch).is_some_and(|o| o.code() == kuna_num::opcodes::OpCode::CPUI_RETURN)
 }
 
 /// Is `op`'s use of `vn` one a returned value may also have: a branch on it
-/// (`if (r > 7) gj++; return r;`), a store of it as the stored value (`*p = r;
-/// return r;`; a copy into a global, `gi = r`, is the same store), a RETURN
-/// handing it back in another register (`lea 1(%rax),%edx` leaves `x + 1` in
-/// `edx`, which the callers do not read), or an index added to another
-/// variable (`p[len - 1]`: what the sum reaches is not the value's own use)?
-/// Upstream's `onlyOpUse` refuses all four, to tell a value passed in a
-/// register from a variable that happens to sit there. A load or store through
-/// the value or the value plus a constant, and a call reading it (the stream
-/// pointer of a `getc` loop, the message of an `error` call), still refuse it.
+/// (`if (r > 7) gj++; return r;`), a store of it or through it (`*p = r;`,
+/// `gi = r`, `p->next = 0; return p;`), a load through it (`while (*p == ' ')
+/// p++; return p;`), an argument of a call (`memset(p, 0, n); return p;`), a
+/// RETURN handing it back in another register (`lea 1(%rax),%edx` leaves
+/// `x + 1` in `edx`, which the callers do not read), or an index added to
+/// another variable (`p[len - 1]`: what the sum reaches is not the value's own
+/// use)? Upstream's `onlyOpUse` refuses all of them, to tell a value passed in
+/// a register from a variable that happens to sit there; a caller that reads
+/// the register after the call has settled that question.
 pub fn returned_use(data: &Funcdata, op: crate::context::OpId, vn: crate::context::VarnodeId) -> bool {
     use kuna_num::opcodes::OpCode;
     data.obank().get(op).is_some_and(|o| match o.code() {
-        OpCode::CPUI_CBRANCH | OpCode::CPUI_RETURN => true,
-        OpCode::CPUI_STORE => o.get_in(2) == Some(vn) && o.get_in(1) != Some(vn),
+        OpCode::CPUI_CBRANCH
+        | OpCode::CPUI_RETURN
+        | OpCode::CPUI_STORE
+        | OpCode::CPUI_LOAD
+        | OpCode::CPUI_CALL
+        | OpCode::CPUI_CALLIND => true,
         OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB => (0..2)
             .filter_map(|k| o.get_in(k))
             .filter(|&k| k != vn)
