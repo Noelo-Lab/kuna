@@ -1942,6 +1942,31 @@ function hands back (`mov eax,edi; rol ax,8; ret` keeps edi's high word), and a
 copied pair, such as a big-endian `r3:r4` a function keeps across another
 call, is concatenated while its output is still being recovered.
 
+`RuleAndMask` and `RuleHighOrderAnd` drop an `INT_AND` whose mask clears
+only bits its input already has clear, and fold `(V + c) & mask` into
+`V + (c & mask)` when `V` is aligned; the OR rules fold `(V + c) | k` into an
+add the same way. Upstream gave the stack pointer at entry a non-zero mask
+with its low byte clear, so any stack address rounded to 256 bytes or less
+folded into a frame offset. The stack pointer at entry is instead aligned to
+what the call guarantees
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_framealign.rs
+(entry_alignment)`): to the return-address push where the default model pops
+one (8 on x86-64, 4 on i386), to 8 where the call pushes nothing (SPARC,
+MIPS, ARM, AArch64, PPC, RISC-V, whose ABIs keep at least 8), and never more
+than twice the pointer width. That is what a compiler relies on when it
+addresses the second word of an 8-byte frame slot as `(fp - 0x20) | 4`. The
+256-byte reading is kept only for a realigned frame, where the AND writes the
+stack pointer itself, directly or through a `COPY` (`and rsp,-0x40` in a
+prologue, `and esp,-0x10` in an i386 `main`): everything after it is
+addressed from the realigned pointer, so the frame's offsets still name the
+same objects (`kuna_framealign.rs (and_operand_nz_mask)`). Any other rounding
+past the entry alignment keeps its mask. A buffer rounded up inside the frame
+while the stack pointer stays unaligned, as U-Boot's `ALLOC_CACHE_ALIGN_BUFFER`
+does with `(sp + 0x3f) & ~0x3f`, used to print as `&Stack0 - n`, which is the
+machine's address only when the entry stack pointer is a multiple of 64. It
+now prints the rounding:
+`(uint8)&((char *)__builtin_dwarf_cfa() + 0x1f)[-n] & 0xffffffffffffffc0`.
+
 `RuleMultiCollapse` keeps its operand traversal, marked-output list and
 temporary rewrite operands in local inline scratch. Wide or deeply nested
 phis can spill to owned buffers without changing visit order. Both success and

@@ -53,6 +53,7 @@ use kuna_num::opcodes::OpCode;
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::expression::TermOrder;
 use crate::funcdata::Funcdata;
+use crate::p3_dataflow::kuna_framealign;
 use crate::p3_dataflow::kuna_volatileload;
 use crate::context::{OpId, VarnodeId};
 
@@ -709,7 +710,7 @@ impl Rule for RuleAndMask {
         let in0 = data.obank().get(op).expect("RuleAndMask: stale op").get_in(0).expect(
             "RuleAndMask: INT_AND has no in0",
         );
-        let mask1 = data.vbank().get(in0).expect("RuleAndMask: stale in0").get_nz_mask();
+        let mask1 = kuna_framealign::and_operand_nz_mask(data, in0, op);
         let andmask: uintb = if mask1 == 0 {
             0
         } else {
@@ -2376,7 +2377,7 @@ impl Rule for RuleHighOrderAnd {
             if data.vbank().get(xalign).expect("RuleHighOrderAnd: stale xalign").is_free() {
                 return 0;
             }
-            let mask1 = data.vbank().get(xalign).expect("RuleHighOrderAnd: stale xalign").get_nz_mask();
+            let mask1 = kuna_framealign::and_operand_nz_mask(data, xalign, op);
             // addop->Input(0) must be unaffected by the AND
             if (mask1 & val) != mask1 {
                 return 0;
@@ -2400,7 +2401,7 @@ impl Rule for RuleHighOrderAnd {
                 let zerovn = data.obank().get(addop).expect("RuleHighOrderAnd: stale addop").get_in(i).expect(
                     "RuleHighOrderAnd: INT_ADD input null",
                 );
-                let mask2_z = data.vbank().get(zerovn).expect("RuleHighOrderAnd: stale zerovn").get_nz_mask();
+                let mask2_z = kuna_framealign::and_operand_nz_mask(data, zerovn, op);
                 // zerovn must be unaffected by the AND operation
                 if (mask2_z & val) != mask2_z {
                     continue;
@@ -2430,7 +2431,7 @@ impl Rule for RuleHighOrderAnd {
                 let xalign = data.obank().get(addop2).expect("RuleHighOrderAnd: stale addop2").get_in(0).expect(
                     "RuleHighOrderAnd: addop2 has no in0",
                 );
-                let mask2_x = data.vbank().get(xalign).expect("RuleHighOrderAnd: stale xalign").get_nz_mask();
+                let mask2_x = kuna_framealign::and_operand_nz_mask(data, xalign, op);
                 if (mask2_x & val) != mask2_x {
                     continue;
                 }

@@ -7,6 +7,12 @@ default prints the source's flat guard `if (c == -1 || ...) return -1;`, and
 -O2 `backup` is not called unoptimized, so the default keeps its out-index arm
 order, and only `option guardarm on` lets its layout put the else arm first.
 
+`kuna-stackalignbuf.xml` checks a buffer rounded up to 64 bytes inside the
+frame (`(sp + 63) & ~63`, U-Boot's `ALLOC_CACHE_ALIGN_BUFFER`): the call
+argument and the load keep the `& 0xffffffffffffffc0`, and no address is
+printed as if the entry stack pointer were 64-aligned. Its control realigns
+`rsp` itself in the prologue and keeps its 64-byte local a frame variable.
+
 `kuna-boolbranch.xml` checks option `boolbranch` on gcc -O0 x86-64: a `jle`
 over `mov $1`/`mov $0` returns through a kept `if` (fold: `return 0 < x;`), an
 if/else assignment of 1 and 0 keeps its branch, and a flag whose arm also
