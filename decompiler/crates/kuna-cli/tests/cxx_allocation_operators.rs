@@ -9,5 +9,6 @@ fn an_imported_delete_keeps_its_pointer() {
     let (body, err, code) =
         common::run_kuna(&["decompile", &common::fixture("cxx_alloc_x86_64"), "drop_array"]);
     assert_eq!(code, 0, "{err}");
+    assert!(body.contains("void drop_array(long *a0)"), "{body}");
     assert!(body.contains("operator delete[](a0)"), "{body}");
 }

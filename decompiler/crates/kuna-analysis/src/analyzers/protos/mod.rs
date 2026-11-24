@@ -161,13 +161,14 @@ const LIBC: &[(&str, Sig)] = &[
     ("realloc", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::Size], vararg: -1 }),
     ("free", Sig { ret: Ty::Void, params: &[Ty::VoidPtr], vararg: -1 }),
     // (kuna) The C++ allocation operators, by their Itanium
-    // names: `operator new` and `new[]` take a size (`m` where `size_t` is
-    // `unsigned long`, `j` where it is `unsigned int`) and return the storage,
-    // and `delete` and `delete[]` take the pointer, perhaps with the size. Each
-    // may also take a `std::nothrow_t const &` and a `std::align_val_t`, an
-    // enum of `size_t`. Mangling encodes no return type, and cppsig refuses
-    // operator names, so without these an imported one lost its arguments
-    // and `new`'s result.
+    // names: `operator new` and `new[]` take a size and return the storage,
+    // and `delete` and `delete[]` take the pointer, perhaps with the size. The
+    // size is spelled `m` where `size_t` is `unsigned long` (LP64), `j` where it
+    // is `unsigned int` (ILP32) and `y` where it is `unsigned long long`
+    // (MinGW-w64's LLP64). Each may also take a `std::nothrow_t const &` and a
+    // `std::align_val_t`, an enum of `size_t`. Mangling encodes no return
+    // type, and cppsig refuses operator names, so without these an imported
+    // one lost its arguments.
     ("_Znwm", Sig { ret: Ty::VoidPtr, params: &[Ty::Size], vararg: -1 }),
     ("_ZnwmRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::VoidPtr], vararg: -1 }),
     ("_ZnwmSt11align_val_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size], vararg: -1 }),
@@ -184,6 +185,14 @@ const LIBC: &[(&str, Sig)] = &[
     ("_ZnajRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::VoidPtr], vararg: -1 }),
     ("_ZnajSt11align_val_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size], vararg: -1 }),
     ("_ZnajSt11align_val_tRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("_Znwy", Sig { ret: Ty::VoidPtr, params: &[Ty::Size], vararg: -1 }),
+    ("_ZnwyRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("_ZnwySt11align_val_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size], vararg: -1 }),
+    ("_ZnwySt11align_val_tRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("_Znay", Sig { ret: Ty::VoidPtr, params: &[Ty::Size], vararg: -1 }),
+    ("_ZnayRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("_ZnaySt11align_val_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size], vararg: -1 }),
+    ("_ZnaySt11align_val_tRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size, Ty::VoidPtr], vararg: -1 }),
     ("_ZdlPv", Sig { ret: Ty::Void, params: &[Ty::VoidPtr], vararg: -1 }),
     ("_ZdlPvRKSt9nothrow_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
     ("_ZdlPvSt11align_val_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size], vararg: -1 }),
@@ -192,6 +201,8 @@ const LIBC: &[(&str, Sig)] = &[
     ("_ZdlPvmSt11align_val_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size, Ty::Size], vararg: -1 }),
     ("_ZdlPvj", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size], vararg: -1 }),
     ("_ZdlPvjSt11align_val_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size, Ty::Size], vararg: -1 }),
+    ("_ZdlPvy", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size], vararg: -1 }),
+    ("_ZdlPvySt11align_val_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size, Ty::Size], vararg: -1 }),
     ("_ZdaPv", Sig { ret: Ty::Void, params: &[Ty::VoidPtr], vararg: -1 }),
     ("_ZdaPvRKSt9nothrow_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
     ("_ZdaPvSt11align_val_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size], vararg: -1 }),
@@ -200,12 +211,8 @@ const LIBC: &[(&str, Sig)] = &[
     ("_ZdaPvmSt11align_val_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size, Ty::Size], vararg: -1 }),
     ("_ZdaPvj", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size], vararg: -1 }),
     ("_ZdaPvjSt11align_val_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size, Ty::Size], vararg: -1 }),
-    ("memcpy", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::VoidPtr, Ty::Size], vararg: -1 }),
-    ("memmove", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::VoidPtr, Ty::Size], vararg: -1 }),
-    ("memset", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::Int, Ty::Size], vararg: -1 }),
-    ("memcpy", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::VoidPtr, Ty::Size], vararg: -1 }),
-    ("memmove", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::VoidPtr, Ty::Size], vararg: -1 }),
-    ("memset", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::Int, Ty::Size], vararg: -1 }),
+    ("_ZdaPvy", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size], vararg: -1 }),
+    ("_ZdaPvySt11align_val_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size, Ty::Size], vararg: -1 }),
     // sys/ptrace.h — `long ptrace(int request, pid_t pid, void *addr, void *data)`.
     // glibc DECLARES it variadic (`long ptrace(enum __ptrace_request, ...)`), so no
     // body analysis can derive the arity; the four fixed slots are glibc's own
@@ -1037,28 +1044,48 @@ mod tests {
                 _ => "other",
             }
         }
-        let want: &[(&str, &str, &[&str])] = &[
-            ("_Znwm", "void *", &["size_t"]),
-            ("_Znaj", "void *", &["size_t"]),
-            ("_ZnamRKSt9nothrow_t", "void *", &["size_t", "void *"]),
-            ("_ZnwmSt11align_val_t", "void *", &["size_t", "size_t"]),
-            ("_ZnwjSt11align_val_tRKSt9nothrow_t", "void *", &["size_t", "size_t", "void *"]),
-            ("_ZdlPv", "void", &["void *"]),
-            ("_ZdaPv", "void", &["void *"]),
-            ("_ZdlPvm", "void", &["void *", "size_t"]),
-            ("_ZdaPvj", "void", &["void *", "size_t"]),
-            ("_ZdlPvRKSt9nothrow_t", "void", &["void *", "void *"]),
-            ("_ZdaPvSt11align_val_t", "void", &["void *", "size_t"]),
-            ("_ZdlPvmSt11align_val_t", "void", &["void *", "size_t", "size_t"]),
-            ("_ZdaPvSt11align_val_tRKSt9nothrow_t", "void", &["void *", "size_t", "void *"]),
-        ];
-        for (name, ret, params) in want {
-            let (_, sig) = LIBC.iter().find(|(n, _)| n == name).unwrap_or_else(|| panic!("{name}"));
-            let got: Vec<&str> = sig.params.iter().map(|t| spelled(*t)).collect();
-            assert_eq!((spelled(sig.ret), got.as_slice(), sig.vararg), (*ret, *params, -1), "{name}");
+        // What the Itanium name says: `_Znw`/`_Zna` then the size, or
+        // `_Zdl`/`_Zda`, `Pv` and perhaps the size; then perhaps
+        // `St11align_val_t` (a `size_t`) and `RKSt9nothrow_t` (a reference).
+        fn from_mangling(name: &str) -> (&'static str, Vec<&'static str>) {
+            let (ret, mut params, rest) = if let Some(rest) = name.strip_prefix("_Znw").or_else(|| name.strip_prefix("_Zna")) {
+                let rest = rest.strip_prefix(['m', 'j', 'y']).expect("a size_t spelling");
+                ("void *", vec!["size_t"], rest)
+            } else {
+                let rest = name.strip_prefix("_ZdlPv").or_else(|| name.strip_prefix("_ZdaPv")).expect("a delete");
+                match rest.strip_prefix(['m', 'j', 'y']) {
+                    Some(rest) => ("void", vec!["void *", "size_t"], rest),
+                    None => ("void", vec!["void *"], rest),
+                }
+            };
+            let rest = match rest.strip_prefix("St11align_val_t") {
+                Some(rest) => {
+                    params.push("size_t");
+                    rest
+                }
+                None => rest,
+            };
+            match rest {
+                "" => {}
+                "RKSt9nothrow_t" => params.push("void *"),
+                other => panic!("{name}: unexpected {other}"),
+            }
+            (ret, params)
         }
-        let operators = LIBC.iter().filter(|(n, _)| n.starts_with("_Zn") || n.starts_with("_Zd")).count();
-        assert_eq!(operators, 32, "16 forms of new and new[], and 16 of delete and delete[]");
+        let operators: Vec<_> = LIBC.iter().filter(|(n, _)| n.starts_with("_Zn") || n.starts_with("_Zd")).collect();
+        for (name, sig) in &operators {
+            let got: Vec<&str> = sig.params.iter().map(|t| spelled(*t)).collect();
+            assert_eq!((spelled(sig.ret), got, sig.vararg), {
+                let (ret, params) = from_mangling(name);
+                (ret, params, -1)
+            }, "{name}");
+        }
+        let names: HashSet<&str> = operators.iter().map(|(n, _)| *n).collect();
+        assert_eq!(names.len(), operators.len(), "a name is listed twice");
+        assert_eq!(operators.len(), 44, "24 forms of new and new[], and 20 of delete and delete[]");
+        for name in ["_Znwm", "_Znaj", "_Znwy", "_ZdlPv", "_ZdaPvm", "_ZdlPvySt11align_val_t", "_ZnwjSt11align_val_tRKSt9nothrow_t"] {
+            assert!(names.contains(name), "{name}");
+        }
     }
 
     #[test]
