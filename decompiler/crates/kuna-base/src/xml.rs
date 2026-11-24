@@ -2315,8 +2315,10 @@ mod tests {
         // and gh1922-declared-caller-readarg-thumb / a declared fixed caller's pushed r3 is no va-save
         // and kuna-stated-jump-placement / stated destinations a segment, a narrow offset or a DOS load cannot label
         // and kuna-stated-jump-owners / stated destinations stay in the declared function that holds the jump
+        // and kuna-armshiftguard / an ARM register LSL whose count cannot reach 32 prints no range guard
+        // and gh1922-pushpad-caller-readarg-thumb / r3 pushed beneath lr is no va-save
         // and kuna-rex-before-prefix / an x86-64 REX prefix that a legacy prefix follows is ignored
-        assert_eq!(count, 904, "corpus file count drifted");
+        assert_eq!(count, 906, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

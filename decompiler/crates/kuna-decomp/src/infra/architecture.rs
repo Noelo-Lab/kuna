@@ -428,6 +428,9 @@ pub struct Architecture {
     /// fixed ARM LSL (`on`), or also every architecture's fixed 64-bit left
     /// shift (`all`), so the emitted C shift is defined.
     pub arm_constant_shift: crate::p9_emit::kuna_armconstantshift::ConstShiftMode,
+    /// (kuna `armshiftguard`) Which register-controlled ARM LSLs print the
+    /// `n < 32u ? x << n : 0` range guard.
+    pub arm_shift_guard: crate::p9_emit::kuna_armshiftguard::ShiftGuardMode,
     /// (kuna `wrapadd`) Print a four-byte addition that a wider sign extension
     /// observes through unsigned C, so it wraps as the machine word does.
     pub wrap_add: bool,
@@ -2447,6 +2450,7 @@ impl Architecture {
             kuna_call_returns: Vec::new(),
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             arm_constant_shift: crate::p9_emit::kuna_armconstantshift::ConstShiftMode::Off,
+            arm_shift_guard: crate::p9_emit::kuna_armshiftguard::ShiftGuardMode::Always, // (kuna) option armshiftguard; reset_defaults sets the shipped default
             wrap_add: false,
             rust_array_zero: false,
             char_byte: true, // (kuna) option charbyte; reset_defaults sets the shipped default
@@ -2971,6 +2975,7 @@ impl Architecture {
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
         self.arm_constant_shift = crate::p9_emit::kuna_armconstantshift::ConstShiftMode::Off;
+        self.arm_shift_guard = crate::p9_emit::kuna_armshiftguard::ShiftGuardMode::Needed; // (kuna) option armshiftguard default `needed`: a count whose non-zero mask is below 32 cannot reach the guard; `option armshiftguard always` restores every guard
         self.wrap_add = false; // (kuna) option wrapadd: default off, the casts cost readability on every widened int sum
         self.rust_array_zero = false;
         self.arm_float_args = true; // (kuna) option armfloatargs: default-ON with armfloatreturn; inert unless the ELF states the VFP procedure-call standard
