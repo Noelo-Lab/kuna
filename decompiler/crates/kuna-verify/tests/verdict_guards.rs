@@ -264,3 +264,20 @@ fn a_call_with_only_padding_after_it_does_not_return() {
     let reports = check(&path, &["f"], &Options { runs: 16, ..Options::default() });
     assert_eq!(reports[0].verdict, Verdict::Agrees(16), "{}", reports[0].render());
 }
+
+/// A corpus worker still running after `--file-seconds` is killed and its
+/// file reported as an error, so one stuck file cannot hold a run up.
+#[test]
+fn a_corpus_worker_past_its_time_is_killed() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/datatests");
+    let files = [dir.join("pointersub.xml"), dir.join("ccmp.xml")].map(|p| p.to_string_lossy().into_owned());
+    let specs = specs();
+    let started = std::time::Instant::now();
+    let out = verify(&[
+        "corpus", &files[0], &files[1], "--jobs", "2", "--runs", "2000000", "--file-seconds", "1", "--sleighpath", &specs,
+    ]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(3), "{text}");
+    assert!(text.contains("timeout: no verdicts in 1 s"), "{text}");
+    assert!(started.elapsed() < std::time::Duration::from_secs(60));
+}

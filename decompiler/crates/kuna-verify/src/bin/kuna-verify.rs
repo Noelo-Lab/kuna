@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! kuna-verify check <binary> <function|0xaddr>... | --all  [--jobs N] [--fn-seconds S] [--contract FILE.c] [--option NAME VALUE]...
-//! kuna-verify corpus <test.xml|dir>...  [--jobs N] [--baseline FILE] [--save-baseline FILE]
+//! kuna-verify corpus <test.xml|dir>...  [--jobs N] [--file-seconds S] [--baseline FILE] [--save-baseline FILE]
 //! kuna-verify localize <test.xml|binary> <function> [--pass N] [--option NAME VALUE]...
 //! kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
 //! common: [--runs N] [--seed S] [--budget OPS] [--concolic QUERIES] [--json] [--sleighpath DIR]
@@ -11,6 +11,8 @@
 //! `corpus --jobs N` checks N files at a time, each in a worker process of
 //! this binary (`shard`) that prints one JSON line, so a file's verdicts do
 //! not depend on the files checked before it and a crash costs only its own.
+//! A worker still running after `--file-seconds` (1200) is killed and its file
+//! is an error, as a crash is.
 //! `check --jobs N` splits the functions into fixed chunks and checks N chunks
 //! at a time, each in a worker process (`chunk`) that prints a line as each
 //! function is done; rows print as they arrive. A function with no verdict
@@ -33,7 +35,7 @@ use serde_json::{json, Value};
 
 const USAGE: &str = "usage:
   kuna-verify check <binary> <function|0xaddr>... | --all  [--jobs N] [--fn-seconds S] [--contract FILE.c] [--option NAME VALUE]...
-  kuna-verify corpus <test.xml|dir>...  [--jobs N] [--baseline FILE] [--save-baseline FILE]
+  kuna-verify corpus <test.xml|dir>...  [--jobs N] [--file-seconds S] [--baseline FILE] [--save-baseline FILE]
   kuna-verify localize <test.xml|binary> <function> [--pass N] [--option NAME VALUE]...
   kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
 options: --runs N (256)  --seed S  --budget OPS (200000)  --concolic QUERIES (0)  --json  --trace  --sleighpath DIR";
@@ -48,6 +50,7 @@ struct Args {
     all: bool,
     jobs: Option<usize>,
     fn_seconds: u64,
+    file_seconds: u64,
     baseline: Option<String>,
     save_baseline: Option<String>,
     pass: Option<usize>,
@@ -72,6 +75,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         all: false,
         jobs: None,
         fn_seconds: 600,
+        file_seconds: 1200,
         baseline: None,
         save_baseline: None,
         pass: None,
@@ -124,6 +128,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             }
             "--jobs" => a.jobs = Some(num(it.next(), "--jobs")? as usize),
             "--fn-seconds" => a.fn_seconds = num(it.next(), "--fn-seconds")?.max(1),
+            "--file-seconds" => a.file_seconds = num(it.next(), "--file-seconds")?.max(1),
             "--regs" | "--flags" => {
                 let v: Vec<String> = it.next().ok_or(format!("{arg} needs names"))?.split(',').filter(|s| !s.is_empty()).map(str::to_string).collect();
                 if arg == "--regs" { a.regs = v } else { a.flags = v }
@@ -449,7 +454,7 @@ fn run_workers(a: &Args, files: &[PathBuf], jobs: usize) -> Result<Vec<FileRows>
             scope.spawn(|| loop {
                 let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let Some(file) = files.get(i) else { break };
-                let got = check_in_worker(&exe, &a.forward, i, file);
+                let got = check_in_worker(&exe, &a.forward, i, file, a.file_seconds);
                 *results[i].lock().unwrap_or_else(|e| e.into_inner()) = Some(got);
             });
         }
@@ -460,21 +465,42 @@ fn run_workers(a: &Args, files: &[PathBuf], jobs: usize) -> Result<Vec<FileRows>
         .collect())
 }
 
-fn check_in_worker(exe: &Path, forward: &[String], index: usize, file: &Path) -> FileRows {
-    let output = Command::new(exe)
+/// Check one datatest file in a worker process; a worker that has not
+/// finished after `seconds` is killed and its file reported as an error.
+fn check_in_worker(exe: &Path, forward: &[String], index: usize, file: &Path, seconds: u64) -> FileRows {
+    let child = Command::new(exe)
         .arg("shard")
         .args(forward)
         .arg(format!("{index}={}", file.to_string_lossy()))
+        .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .output();
-    let output = match output {
-        Ok(o) => o,
+        .spawn();
+    let mut child = match child {
+        Ok(c) => c,
         Err(e) => return FileRows { rows: Vec::new(), error: Some(e.to_string()) },
     };
-    let parsed = String::from_utf8_lossy(&output.stdout).lines().find_map(parse_file_line);
-    parsed
+    let Some(mut stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        return FileRows { rows: Vec::new(), error: Some("worker has no output".to_string()) };
+    };
+    let (tx, rx) = std::sync::mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        let mut text = String::new();
+        let _ = std::io::Read::read_to_string(&mut stdout, &mut text);
+        let _ = tx.send(text);
+    });
+    let Ok(text) = rx.recv_timeout(std::time::Duration::from_secs(seconds)) else {
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = reader.join();
+        return FileRows { rows: Vec::new(), error: Some(format!("timeout: no verdicts in {seconds} s")) };
+    };
+    let status = child.wait().map(|s| s.to_string()).unwrap_or_else(|e| e.to_string());
+    let _ = reader.join();
+    text.lines()
+        .find_map(parse_file_line)
         .map(|(_, rows)| rows)
-        .unwrap_or_else(|| FileRows { rows: Vec::new(), error: Some(format!("worker exited ({})", output.status)) })
+        .unwrap_or_else(|| FileRows { rows: Vec::new(), error: Some(format!("worker exited ({status})")) })
 }
 
 fn run_corpus(a: &Args) -> Result<ExitCode, String> {
