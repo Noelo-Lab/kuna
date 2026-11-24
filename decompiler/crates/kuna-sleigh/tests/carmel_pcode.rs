@@ -671,3 +671,59 @@ fn tasking_wide_relative_call_reaches_the_linked_callee_and_restores_sp() {
         assert_eq!(m.reg("A0L"), u64::from(expected as u16));
     }
 }
+
+#[test]
+fn backtrace_clear_keeps_the_other_port_and_obeys_the_predicate() {
+    const LEFT: u32 = 0x2da022;
+    const RIGHT: u32 = 0x2dbffe;
+    for (fetch, issues, expected) in [
+        ((LEFT, NOP), &[(0, 1, 6), (2, 1, 0)][..], (0, 0xbf32)),
+        ((NOP, RIGHT), &[(0, 1, 6), (2, 1, 0)][..], (0xacdb, 0)),
+        ((SEQUENTIAL | NOP, LEFT), &[(0, 2, 3), (1, 3, 6), (2, 1, 0)][..], (0, 0xbf32)),
+        ((0x2da003, NOP), &[(0, 1, 6), (2, 1, 0)][..], (0xacdb, 0xbf32)),
+    ] {
+        let mut m = Machine::new(0, &[fetch, (NOP, NOP)], issues, None);
+        m.seed(&[("BTR1", 0xacdb), ("BTR2", 0xbf32), ("CETBL", 0)]);
+        m.start(0).unwrap();
+        if issues[0].1 == 2 {
+            assert_eq!(m.step(), 3);
+            assert_eq!((m.reg("BTR1"), m.reg("BTR2")), (0xacdb, 0xbf32));
+        }
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("BTR1"), m.reg("BTR2")), expected);
+    }
+}
+
+#[test]
+fn wide_load_initializes_the_pointer_without_overwriting_its_lower_bound() {
+    let mut m = Machine::new(0, &[(0x8f0a01, 0xc276c2), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+    m.seed(&[("R0", 0x40), ("RL0", 0x106), ("PACFG", 0), ("CETBL", 0xffff)]);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("R0"), m.reg("RL0"), m.reg("PACFG")), (0x0a01, 0x106, 1));
+    assert_eq!(m.reg("EST") & 0x3f, 0);
+}
+
+#[test]
+fn cliw_half_move_sign_extends_into_a_full_result_and_clears_carry() {
+    let template = [0x7fffff22, 0x7f003fff, 0xff7ffff8];
+    let mut m = Machine::new(0, &[CLIW, (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], Some(template));
+    m.seed(&[("A0", 0x7612342744), ("A1", 0xff90001000), ("EST", 1)]);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!(m.reg("A0"), 0xffffff9000);
+    assert_eq!(m.reg("EST") & 0x3f, 0x10);
+}
+
+#[test]
+fn compact_long_store_wraps_its_second_data_word_and_records_loss() {
+    let mut m = Machine::new(0, &[(0x133321, NOP), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+    m.seed(&[("A2", 0x40000000), ("A0", 0x40000003), ("R6", 0xffff), ("CETBL", 0xffff)]);
+    for word in [0xfffe, 0xffff, 0, 1] {
+        m.seed_data(word, 0xa55a);
+    }
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.data(0xffff), m.data(0)), (3, 0x8000));
+    assert_eq!((m.data(0xfffe), m.data(1), m.reg("EST") & 0x3f), (0xa55a, 0xa55a, 0x24));
+}

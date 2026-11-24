@@ -3870,6 +3870,15 @@ context field; every other language keeps the unchanged delay-slot path. The
 p-code emulator likewise converts an indirect transfer's CODE-word operand to
 a byte offset only in such a `code` space.
 
+For covered compact long arithmetic with an inactive peer, the widened
+result determines status before limiting. A long DATA write publishes two
+16-bit words and wraps its second address in the DATA bank. A qualified
+`CLRBTR` clears only its physical backtrace port; a veto preserves it.
+
+Covered wide `LOAD` forms distinguish accumulator writeback from pointer
+and `PACFG` setup. An operand that initializes a pointer does not also
+overwrite the encoded bound register.
+
 Lifted compact delayed `EQ` reads the incoming `EST` condition before any
 delay issue executes. The delay runs on both paths, including when the
 transfer itself is the right slot of a sequential fetch.

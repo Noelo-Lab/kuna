@@ -47,6 +47,9 @@ zero and register-half MOVE; half-register CMP/CMPU and signed full-accumulator
 CMP with an inactive peer; signed register-only MUL, MAC, MSU, and DIV;
 logical and arithmetic low-half shifts with an inactive peer; assigned
 ADDRUPDATE pointer pairs; and ordinary signed conditional GOTO with no delay.
+Selected compact long ADD, SUB, and multiply forms preserve status and
+two-word DATA results with an inactive peer. Qualified CLRBTR clears the
+selected backtrace port only when its predicate allows it.
 Compact unconditional and wide relative GOTO execute up to three following
 issues, counting sequential slots individually. For the qualified wide form,
 the address-enable bit can admit a transfer even when the predicate is false.
@@ -59,8 +62,10 @@ Unconditional wide relative CALL without delay uses the same two-word DATA
 stack link. Marked wide MOVE covers signed literals to accumulator halves,
 whole accumulators, and address registers; it also supports short DATA
 through `R0` indirect/postincrement and absolute DATA loads into address
-registers. Other wide effects include selected EXTRACTS, EXTRACTZ, INSERT,
-DIVIDE, divide-with-trace, logic and unary arithmetic routes. Unqualified
+registers. Wide LOAD covers selected accumulator, pointer and configuration
+destinations, including immediate pointer setup that leaves a bound intact.
+Other wide effects include selected EXTRACTS, EXTRACTZ, INSERT, DIVIDE,
+divide-with-trace, logic and unary arithmetic routes. Unqualified
 BANKXCHG exchanges selected pointer or accumulator banks. Predicated logic
 uses incoming CE feedback; the language does not model its general publication.
 Marked MOVU supports some register and literal sources to whole accumulators
@@ -69,11 +74,11 @@ lane order; competing accumulator writes and two transfers stop lift.
 Unrecognized sequential right families and reserved compact operands and
 wide EXTRACT descriptors reject lift without changing canonical listing boundaries.
 
-CLIW specialization admits the all-NOP template and a signed MAC1 register
-product with the remaining lanes inactive. The multiply uses standard-width
-C intermediates while preserving the physical accumulator's guard. Other
-forms can be listed but do not lift. In particular the subset has no
-general hardware loops, indirect calls, PowerPlug, or a general cross-issue
+CLIW specialization admits the all-NOP template, a signed MAC1 register
+product, and covered register ALU operations with all other lanes inactive.
+The arithmetic uses standard-width C intermediates while preserving the
+physical accumulator's guard. Other forms can be listed but do not lift.
+The subset has no general hardware loops, indirect calls, PowerPlug, or a general cross-issue
 port model. A directly adjacent wide immediate store and absolute load
 are lifted as a pair so the load reads before the store writes, while the
 load remains an independently enterable issue. A delayed transfer still
