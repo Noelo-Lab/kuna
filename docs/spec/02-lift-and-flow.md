@@ -3919,6 +3919,12 @@ indirect operand is a CODE word address; an out-of-range payload does not
 wrap into mapped CODE. Stated jump-table destinations can resolve the
 computed edge without replacing the operand with a constant.
 
+Unconditional wide `CALLABS (R0)` takes the low target word from DATA
+at `R0` and the high word from DATA at `R0+1`, without changing `R0`.
+It pushes a two-word stack link for `inst_start + 2 + 2 * encoded_delay`.
+At most five following issues retire before the call; the explicit
+continuation follows the pushed link rather than the extent of those issues.
+
 Lifted absolute peripheral moves address `io` and `ext` as separate 16-bit
 word spaces. A peripheral word and a `data` word at the same numeric
 address do not alias.

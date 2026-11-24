@@ -844,3 +844,27 @@ fn wide_goabs_does_not_wrap_an_out_of_range_payload_into_code() {
     assert!(m.emulator.execute_instruction().is_err(), "the wrapped address would execute a mapped NOP");
     assert_eq!(m.emulator.get_execute_address().get_offset(), 3 * target);
 }
+
+#[test]
+fn wide_callabs_reads_both_data_words_and_returns_to_the_encoded_link() {
+    let mut fetches = [(INC_A0, NOP); 16];
+    fetches[0] = (0x800000, 0xcf7c01);
+    fetches[12] = (RETURN, NOP);
+    fetches[15] = (RETURN, NOP);
+    let issues = [(0, 5, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 6), (10, 1, 6),
+                  (12, 1, 6), (14, 1, 6), (16, 1, 6), (24, 1, 6), (30, 1, 0)];
+    for (base, offset) in [(0x11000, 24), (0x21000, 30)] {
+        let mut m = Machine::new(base, &fetches, &issues, None);
+        let target = base + offset;
+        let link = base + 16;
+        m.seed(&[("R0", 0x4200), ("SP", 0x4100), ("A0L", 0x1234)]);
+        m.seed_data(0x4200, target & 0xffff);
+        m.seed_data(0x4201, target >> 16);
+        m.start(base).unwrap();
+        assert_eq!(m.step(), 3 * target);
+        assert_eq!((m.reg("R0"), m.reg("SP"), m.reg("A0L")), (0x4200, 0x40fe, 0x1239));
+        assert_eq!((m.data(0x40ff), m.data(0x4100)), (link & 0xffff, link >> 16));
+        assert_eq!(m.step(), 3 * link);
+        assert_eq!(m.reg("SP"), 0x4100);
+    }
+}

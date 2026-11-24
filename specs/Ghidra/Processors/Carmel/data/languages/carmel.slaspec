@@ -2210,9 +2210,21 @@ link_1_0: word_address is epsilon [ word_address = (inst_start + 1) & 0xffffff; 
 link_1_1: word_address is epsilon [ word_address = (inst_start + 3) & 0xffffff; ] { export *[const]:3 word_address; }
 link_2_0: word_address is epsilon [ word_address = (inst_start + 2) & 0xffffff; ] { export *[const]:3 word_address; }
 link_2_1: word_address is epsilon [ word_address = (inst_start + 4) & 0xffffff; ] { export *[const]:3 word_address; }
+link_2_2: word_address is epsilon [ word_address = (inst_start + 6) & 0xffffff; ] { export *[const]:3 word_address; }
+link_2_3: word_address is epsilon [ word_address = (inst_start + 8) & 0xffffff; ] { export *[const]:3 word_address; }
+link_2_4: word_address is epsilon [ word_address = (inst_start + 10) & 0xffffff; ] { export *[const]:3 word_address; }
+link_2_5: word_address is epsilon [ word_address = (inst_start + 12) & 0xffffff; ] { export *[const]:3 word_address; }
+link_2_6: word_address is epsilon [ word_address = (inst_start + 14) & 0xffffff; ] { export *[const]:3 word_address; }
+link_2_7: word_address is epsilon [ word_address = (inst_start + 16) & 0xffffff; ] { export *[const]:3 word_address; }
 # A CALL delayed by one compact slot resumes at its pushed word, past that slot's sequential partner.
 resume_1_1: word_address is epsilon [ word_address = (inst_start + 3) & 0xffffff; ] { export *[code]:3 word_address; }
 resume_2_1: word_address is epsilon [ word_address = (inst_start + 4) & 0xffffff; ] { export *[code]:3 word_address; }
+resume_2_2: word_address is epsilon [ word_address = (inst_start + 6) & 0xffffff; ] { export *[code]:3 word_address; }
+resume_2_3: word_address is epsilon [ word_address = (inst_start + 8) & 0xffffff; ] { export *[code]:3 word_address; }
+resume_2_4: word_address is epsilon [ word_address = (inst_start + 10) & 0xffffff; ] { export *[code]:3 word_address; }
+resume_2_5: word_address is epsilon [ word_address = (inst_start + 12) & 0xffffff; ] { export *[code]:3 word_address; }
+resume_2_6: word_address is epsilon [ word_address = (inst_start + 14) & 0xffffff; ] { export *[code]:3 word_address; }
+resume_2_7: word_address is epsilon [ word_address = (inst_start + 16) & 0xffffff; ] { export *[code]:3 word_address; }
 
 :"GOTO" direct_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x0 & slot_13_22=0x158 & direct_target { goto direct_target; }
 :"GOTO" direct_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & direct_target); (slot_mode=0 & nop_right) { goto direct_target; }
@@ -2305,6 +2317,14 @@ wide_goto_target: wide_word_address is wide_goto_offset_0 & wide_goto_offset_22 
 :"GOABS A0" "delay 5" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x2 & wide_10_22=0x13da & wide_24_45=0x80000 [ carmel_counted_delay=1; ] { local target:4 = A0:4; delayslot(5); goto [target]; }
 :"GOABS A0" "delay 6" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x2 & wide_10_22=0x13dc & wide_24_45=0x80000 [ carmel_counted_delay=1; ] { local target:4 = A0:4; delayslot(5); goto [target]; }
 :"GOABS A0" "delay 7" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x2 & wide_10_22=0x13de & wide_24_45=0x80000 [ carmel_counted_delay=1; ] { local target:4 = A0:4; delayslot(5); goto [target]; }
+:"CALLABS (R0)" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x1 & wide_10_22=0x13d1 & wide_24_45=0x0 & link_2_0 { local low:2 = *[data]:2 R0; local high_addr:2 = R0 + 1; local high:2 = *[data]:2 high_addr; local target:4 = zext(low) | (zext(high) << 16); push_link(link_2_0); call [target]; }
+:"CALLABS (R0)" "delay 1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x1 & wide_10_22=0x13d3 & wide_24_45=0x0 & link_2_1 & resume_2_1 [ carmel_counted_delay=1; ] { local low:2 = *[data]:2 R0; local high_addr:2 = R0 + 1; local high:2 = *[data]:2 high_addr; local target:4 = zext(low) | (zext(high) << 16); push_link(link_2_1); delayslot(1); call [target]; goto resume_2_1; }
+:"CALLABS (R0)" "delay 2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x1 & wide_10_22=0x13d5 & wide_24_45=0x0 & link_2_2 & resume_2_2 [ carmel_counted_delay=1; ] { local low:2 = *[data]:2 R0; local high_addr:2 = R0 + 1; local high:2 = *[data]:2 high_addr; local target:4 = zext(low) | (zext(high) << 16); push_link(link_2_2); delayslot(2); call [target]; goto resume_2_2; }
+:"CALLABS (R0)" "delay 3" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x1 & wide_10_22=0x13d7 & wide_24_45=0x0 & link_2_3 & resume_2_3 [ carmel_counted_delay=1; ] { local low:2 = *[data]:2 R0; local high_addr:2 = R0 + 1; local high:2 = *[data]:2 high_addr; local target:4 = zext(low) | (zext(high) << 16); push_link(link_2_3); delayslot(3); call [target]; goto resume_2_3; }
+:"CALLABS (R0)" "delay 4" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x1 & wide_10_22=0x13d9 & wide_24_45=0x0 & link_2_4 & resume_2_4 [ carmel_counted_delay=1; ] { local low:2 = *[data]:2 R0; local high_addr:2 = R0 + 1; local high:2 = *[data]:2 high_addr; local target:4 = zext(low) | (zext(high) << 16); push_link(link_2_4); delayslot(4); call [target]; goto resume_2_4; }
+:"CALLABS (R0)" "delay 5" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x1 & wide_10_22=0x13db & wide_24_45=0x0 & link_2_5 & resume_2_5 [ carmel_counted_delay=1; ] { local low:2 = *[data]:2 R0; local high_addr:2 = R0 + 1; local high:2 = *[data]:2 high_addr; local target:4 = zext(low) | (zext(high) << 16); push_link(link_2_5); delayslot(5); call [target]; goto resume_2_5; }
+:"CALLABS (R0)" "delay 6" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x1 & wide_10_22=0x13dd & wide_24_45=0x0 & link_2_6 & resume_2_6 [ carmel_counted_delay=1; ] { local low:2 = *[data]:2 R0; local high_addr:2 = R0 + 1; local high:2 = *[data]:2 high_addr; local target:4 = zext(low) | (zext(high) << 16); push_link(link_2_6); delayslot(5); call [target]; goto resume_2_6; }
+:"CALLABS (R0)" "delay 7" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x1 & wide_10_22=0x13df & wide_24_45=0x0 & link_2_7 & resume_2_7 [ carmel_counted_delay=1; ] { local low:2 = *[data]:2 R0; local high_addr:2 = R0 + 1; local high:2 = *[data]:2 high_addr; local target:4 = zext(low) | (zext(high) << 16); push_link(link_2_7); delayslot(5); call [target]; goto resume_2_7; }
 
 conditional_target: word_address is conditional_words [ word_address = (inst_start + conditional_words) & 0xffffff; ] { export *[code]:3 word_address; }
 :"GOTO GE1" conditional_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_1=0x0 & slot_9_22=0x140a & conditional_target { if (!(((EST ^ (EST << 3)) & 0x10) != 0)) goto conditional_target; }
