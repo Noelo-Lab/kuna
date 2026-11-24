@@ -406,6 +406,7 @@ impl Action for ActionHeritage {
         crate::p3_dataflow::kuna_repframecopy::expand_all(data);
         crate::kuna_unoptimized::detect(data);
         crate::p8_structure::kuna_o0returns::record(data);
+        crate::p2_lift::kuna_o0switch::record(data);
         // (kuna) Fold the x86-64 System V variadic register-save prologue
         // while the stack is not yet heritaged (`kuna_varargsave.rs`).
         crate::kuna_varargsave::fold(data);
