@@ -3883,9 +3883,10 @@ selected frame register even when the result predicate suppresses the
 DATA store. Static CE-table loads that configure both banks sample the
 same incoming `EST`; one new latch cannot feed the other within that issue.
 
-Only a covered immutable CLIW record in an explicitly normalized XML bank
-can specialize a reference. Raw CODE and writable or incomplete template
-banks retain the encoded index in disassembly and produce `unimpl`.
+Only a covered immutable CLIW record in a normalized bank can specialize a
+reference. Located TASKING images and XML can supply such a bank. Raw CODE
+and writable, partial, or ambiguous banks retain the encoded index in
+disassembly and produce `unimpl`.
 
 **(kuna) SPARC struct return — `option sparcstructret`, default on, SPARC-gated,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_sparcstructret.rs
