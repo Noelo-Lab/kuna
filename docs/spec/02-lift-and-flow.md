@@ -3924,6 +3924,9 @@ at `R0` and the high word from DATA at `R0+1`, without changing `R0`.
 It pushes a two-word stack link for `inst_start + 2 + 2 * encoded_delay`.
 At most five following issues retire before the call; the explicit
 continuation follows the pushed link rather than the extent of those issues.
+Compact unconditional `CALLABS` with an inactive right lane uses the same
+link rule. It admits zero through three delay issues and samples either the
+two DATA words at `R0` or the low 32 bits of `A0` before executing them.
 
 Lifted absolute peripheral moves address `io` and `ext` as separate 16-bit
 word spaces. A peripheral word and a `data` word at the same numeric

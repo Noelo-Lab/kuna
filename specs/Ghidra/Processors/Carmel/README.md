@@ -58,6 +58,8 @@ retiring up to five delay issues. The guard byte does not enter the target.
 The unconditional wide `CALLABS (R0)` reads its target from two DATA words.
 It retires at most five delay issues but saves the link from the encoded
 delay, including when the encoding requests six or seven.
+Compact unconditional `CALLABS` with an inactive right lane takes its target
+from `(R0)` or the low 32 bits of `A0`, with up to three delay issues.
 Compact CALL admits zero or one delay issue. Compact RETURN also admits
 two or three delay issues with an inactive right lane, and an undelayed
 CE1 form whose address enable can override a veto. Immediate REPEAT handles

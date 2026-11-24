@@ -868,3 +868,25 @@ fn wide_callabs_reads_both_data_words_and_returns_to_the_encoded_link() {
         assert_eq!(m.reg("SP"), 0x4100);
     }
 }
+
+#[test]
+fn compact_callabs_selects_its_encoded_source_before_delay_updates_a0() {
+    let base = 0x11000;
+    let issues = [(0, 1, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6),
+                  (8, 1, 6), (24, 1, 6), (30, 1, 0)];
+    for (op, target) in [(0x2bca06, base + 24), (0x2bcb06, base + 30)] {
+        let mut fetches = [(INC_A0, NOP); 16];
+        fetches[0] = (op, NOP);
+        fetches[12] = (RETURN, NOP);
+        fetches[15] = (RETURN, NOP);
+        let mut m = Machine::new(base, &fetches, &issues, None);
+        m.seed(&[("R0", 0x4200), ("SP", 0x4100), ("A0", (0x81 << 32) | (base + 30))]);
+        m.seed_data(0x4200, 0x1018);
+        m.seed_data(0x4201, 1);
+        m.start(base).unwrap();
+        assert_eq!(m.step(), 3 * target);
+        assert_eq!((m.reg("A0L"), m.reg("SP")), (0x1021, 0x40fe));
+        assert_eq!(m.step(), 3 * (base + 8));
+        assert_eq!(m.reg("SP"), 0x4100);
+    }
+}
