@@ -81,6 +81,7 @@ pub fn check_binary_each(
                     lines: Vec::new(),
                     suspects: Vec::new(),
                     elapsed: Duration::ZERO,
+                    concolic: None,
                 };
                 emit(pos, report);
             }

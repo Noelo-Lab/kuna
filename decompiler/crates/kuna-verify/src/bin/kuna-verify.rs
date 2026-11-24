@@ -331,6 +331,7 @@ fn run_chunk(
         lines: Vec::new(),
         suspects: Vec::new(),
         elapsed: std::time::Duration::ZERO,
+        concolic: None,
     };
     on_row(Row::from(&report));
     let rest: Vec<String> = chunk.iter().zip(&seen).skip(first + 1).filter(|(_, s)| !**s).map(|(f, _)| f.clone()).collect();
@@ -588,7 +589,7 @@ fn report_baseline(c: &baseline::Changes, file: &str) -> ExitCode {
     let actions = std::env::var_os("GITHUB_ACTIONS").is_some();
     let groups = [
         ("new DIFFERS or file errors", "error", &c.regressions),
-        ("no longer agree", "warning", &c.lost),
+        ("no longer agree or no longer checked", "warning", &c.lost),
         ("other changes", "notice", &c.other),
     ];
     eprintln!();
@@ -604,6 +605,10 @@ fn report_baseline(c: &baseline::Changes, file: &str) -> ExitCode {
             }
         }
     }
+    eprintln!(
+        "AGREES {} -> {} of {} -> {} functions",
+        c.agreed.0, c.agreed.1, c.functions.0, c.functions.1
+    );
     if c.regressions.is_empty() {
         let note = if c.is_empty() { "" } else { "; re-record it if the changes are intended" };
         eprintln!("BASELINE OK against {file}{note}");

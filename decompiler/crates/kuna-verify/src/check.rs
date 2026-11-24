@@ -658,6 +658,28 @@ fn input_line(prog: &ConsoleProgram, env: &Env, run: u32, claim: &Claim) -> Stri
 /// Check one decompiled function. `contract`, when given, is the function's
 /// real type.
 pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Contract>, opts: &Options) -> Report {
+    let mut work = crate::concolic::Worklist::default();
+    let mut report = check_runs(prog, fd, contract, opts, &mut work);
+    if opts.concolic > 0 {
+        let s = work.summary();
+        let why = match s.solver {
+            crate::concolic::SolverState::Unavailable => "; z3 could not be started, so no concolic run was made",
+            crate::concolic::SolverState::Broken => "; z3 stopped answering as expected and was not asked again",
+            _ => "",
+        };
+        report.lines.push(format!("concolic {} z3 queries, {} inputs found{why}", s.queries, s.models));
+        report.concolic = Some(s);
+    }
+    report
+}
+
+fn check_runs(
+    prog: &ConsoleProgram,
+    fd: &Funcdata,
+    contract: Option<&Contract>,
+    opts: &Options,
+    work: &mut crate::concolic::Worklist,
+) -> Report {
     let started = Instant::now();
     let finish = |verdict: Verdict, lines: Vec<String>, suspects: Vec<String>| Report {
         function: fd.get_name().to_string(),
@@ -665,6 +687,7 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
         lines,
         suspects,
         elapsed: started.elapsed(),
+        concolic: None,
     };
     let mut env = match Env::new(prog, opts.seed) {
         Ok(e) => e,
@@ -708,7 +731,6 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
     let perturb = unassigned(prog, &env, fd, &claim, &program, &calls);
     let mut perturbed_runs = 0u32;
     let mut kernel_shows = false;
-    let mut work = crate::concolic::Worklist::default();
     let mut queue: std::collections::VecDeque<(u32, Option<crate::concolic::Inputs>, Option<u64>)> =
         (0..opts.runs).map(|r| (r, None, None)).collect();
     loop {

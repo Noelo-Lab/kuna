@@ -2,10 +2,11 @@
 //! verdict classes in script order, and how a run compares with it.
 //!
 //! A class leaves out what varies without the verdict changing: an `AGREES`
-//! run count, a `DIFFERS` run, an `UNKNOWN` address. Only a function that now
-//! differs where it did not, or a file that can no longer be checked, is a
-//! regression; every other change is reported so the baseline can be
-//! re-recorded.
+//! run count, a `DIFFERS` run, an `UNKNOWN` address. Rows pair by function and
+//! occurrence, so a file whose function list changed is still compared. A
+//! function that now differs where it did not, a new function that differs,
+//! or a file that can no longer be checked is a regression; lost coverage is a
+//! warning; every other change is reported so the baseline can be re-recorded.
 
 use std::collections::BTreeMap;
 
@@ -69,12 +70,17 @@ pub fn parse(text: &str) -> Result<Baseline, String> {
 
 #[derive(Default, Debug)]
 pub struct Changes {
-    /// A function that now differs, or a file that can no longer be checked.
+    /// A function that now differs, a new function that differs, or a file
+    /// that can no longer be checked.
     pub regressions: Vec<String>,
-    /// A function that agreed and no longer does, without differing.
+    /// Coverage lost without a new difference: a function that agreed and no
+    /// longer does, a function or file the baseline has that was not checked.
     pub lost: Vec<String>,
     /// Every other change, a function that no longer differs among them.
     pub other: Vec<String>,
+    /// Functions that agree, and functions in all, in the baseline and now.
+    pub agreed: (usize, usize),
+    pub functions: (usize, usize),
 }
 
 impl Changes {
@@ -83,32 +89,72 @@ impl Changes {
     }
 }
 
+/// Each row keyed by its function and how many times the file decompiled that
+/// function before it, so a function decompiled again under other options
+/// pairs with its own earlier verdict.
+fn keyed(rows: &[(String, String)]) -> Vec<((String, usize), String)> {
+    let mut seen: BTreeMap<&str, usize> = BTreeMap::new();
+    rows.iter()
+        .map(|(f, c)| {
+            let n = seen.entry(f.as_str()).or_default();
+            *n += 1;
+            ((f.clone(), *n), c.clone())
+        })
+        .collect()
+}
+
+fn name((f, n): &(String, usize)) -> String {
+    if *n == 1 { f.clone() } else { format!("{f} (decompile {n})") }
+}
+
 pub fn compare(base: &Baseline, now: &Baseline) -> Changes {
     let mut c = Changes::default();
+    let count = |b: &Baseline| {
+        let rows = b.values().flatten();
+        (rows.clone().filter(|(_, k)| k == "AGREES").count(), rows.count())
+    };
+    let (was_agreed, was_all) = count(base);
+    let (now_agreed, now_all) = count(now);
+    c.agreed = (was_agreed, now_agreed);
+    c.functions = (was_all, now_all);
     for (file, rows) in now {
         let Some(was) = base.get(file) else {
+            for (f, k) in rows.iter().filter(|(_, k)| k == "DIFFERS" || k == ERROR) {
+                c.regressions.push(format!("{file} {f}: not in the baseline, {k}"));
+            }
             c.other.push(format!("{file}: not in the baseline"));
             continue;
         };
-        let names = |r: &[(String, String)]| r.iter().map(|(f, _)| f.clone()).collect::<Vec<_>>();
-        if names(was) != names(rows) {
-            let differs = rows.iter().any(|(_, k)| k == "DIFFERS" || k == ERROR);
-            let line = format!("{file}: decompiles other functions than the baseline lists");
-            if differs && was.iter().all(|(_, k)| k != "DIFFERS" && k != ERROR) {
+        let was = keyed(was);
+        let rows = keyed(rows);
+        let old: BTreeMap<_, _> = was.iter().cloned().collect();
+        let new: BTreeMap<_, _> = rows.iter().cloned().collect();
+        for (key, k) in &rows {
+            let f = name(key);
+            let Some(o) = old.get(key) else {
+                let line = format!("{file} {f}: not in the baseline, {k}");
+                if k == "DIFFERS" || k == ERROR {
+                    c.regressions.push(line);
+                } else {
+                    c.other.push(line);
+                }
+                continue;
+            };
+            if o == k {
+                continue;
+            }
+            let line = format!("{file} {f}: {o} -> {k}");
+            if k == "DIFFERS" || k == ERROR {
                 c.regressions.push(line);
+            } else if o == "AGREES" {
+                c.lost.push(line);
             } else {
                 c.other.push(line);
             }
-            continue;
         }
-        for ((f, old), (_, new)) in was.iter().zip(rows) {
-            if old == new {
-                continue;
-            }
-            let line = format!("{file} {f}: {old} -> {new}");
-            if new == "DIFFERS" || new == ERROR {
-                c.regressions.push(line);
-            } else if old == "AGREES" {
+        for (key, k) in was.iter().filter(|(key, _)| !new.contains_key(key)) {
+            let line = format!("{file} {}: {k}, no longer decompiled", name(key));
+            if k == "AGREES" {
                 c.lost.push(line);
             } else {
                 c.other.push(line);
@@ -116,7 +162,7 @@ pub fn compare(base: &Baseline, now: &Baseline) -> Changes {
         }
     }
     for file in base.keys().filter(|f| !now.contains_key(*f)) {
-        c.other.push(format!("{file}: in the baseline, not checked"));
+        c.lost.push(format!("{file}: in the baseline, not checked"));
     }
     c
 }
@@ -157,7 +203,31 @@ mod tests {
         let base = b(&[("a", &[("f", "AGREES")]), ("b", &[("f", "AGREES")])]);
         let now = b(&[("a", &[("", ERROR)]), ("c", &[("f", "AGREES")])]);
         let c = compare(&base, &now);
-        assert_eq!(c.regressions, ["a: decompiles other functions than the baseline lists"]);
-        assert_eq!(c.other, ["c: not in the baseline", "b: in the baseline, not checked"]);
+        assert_eq!(c.regressions, ["a : not in the baseline, ERROR"]);
+        assert_eq!(c.lost, ["a f: AGREES, no longer decompiled", "b: in the baseline, not checked"]);
+        assert_eq!(c.other, ["c: not in the baseline"]);
+    }
+
+    /// A changed function list still compares the functions both have, and a
+    /// new function that differs is a regression even where an old one already
+    /// differed.
+    #[test]
+    fn a_changed_function_list_is_compared_by_name() {
+        let base = b(&[("a", &[("f", "DIFFERS"), ("g", "AGREES")])]);
+        let now = b(&[("a", &[("f", "DIFFERS"), ("h", "DIFFERS")])]);
+        let c = compare(&base, &now);
+        assert_eq!(c.regressions, ["a h: not in the baseline, DIFFERS"]);
+        assert_eq!(c.lost, ["a g: AGREES, no longer decompiled"]);
+        assert_eq!((c.agreed, c.functions), ((1, 0), (2, 2)));
+    }
+
+    /// A function decompiled twice pairs each decompile with its own.
+    #[test]
+    fn a_function_decompiled_twice_pairs_by_occurrence() {
+        let base = b(&[("a", &[("f", "DIFFERS"), ("f", "AGREES")])]);
+        let now = b(&[("a", &[("g", "AGREES"), ("f", "DIFFERS"), ("f", "DIFFERS")])]);
+        let c = compare(&base, &now);
+        assert_eq!(c.regressions, ["a f (decompile 2): AGREES -> DIFFERS"]);
+        assert_eq!(c.other, ["a g: not in the baseline, AGREES"]);
     }
 }

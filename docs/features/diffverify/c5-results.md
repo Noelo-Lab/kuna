@@ -32,12 +32,26 @@ the default, nothing changes: the corpus baseline is the same.
   included (an x86 `cmov` is one). Up to 256 branches per path are kept, from the first 16
   random runs and from every concolic run.
 - **Choosing a query:** the worklist takes, over every recorded path, the first branch
-  whose other direction no run has taken. Each direction is tried once.
+  whose other direction no run has taken. A branch is its instruction's address and
+  the index of its p-code op there, so the branches inside one instruction (a `rep`
+  prefix's count test and the loop's) are told apart. A direction is asked about once
+  per path prefix, the branches before it and how they went: unsatisfiable after one
+  prefix, it can be satisfiable after another.
 - **z3:** one process per function, each query pushed and popped, with 300 ms per
-  query. A model's bytes are merged with the base run's, so the rest of the state stays
-  the base run's.
+  query. The scope is popped whatever the answer; an answer that is not `sat`,
+  `unsat` or `unknown`, or a model that does not parse, ends the use of that process.
+  A model's bytes are merged with the base run's, so the rest of the state stays the
+  base run's.
+- **Booleans:** p-code's `BOOL_AND`, `BOOL_OR`, `BOOL_XOR` and `BOOL_NEGATE` read any
+  nonzero byte as true, as the concrete evaluation does; the encoding tests each input
+  against zero before combining them, so a byte other than 0 or 1 is not read
+  bitwise.
 - **Reports:** a `DIFFERS` on a concolic run says so:
-  `concolic an input z3 gave to take the branch at 0x… the other way`.
+  `concolic an input z3 gave to take the branch at 0x… the other way`. Every function
+  checked with `--concolic` gets a line `concolic N z3 queries, M inputs found`, and
+  in `--json` a `z3` object (`queries`, `models`, `solver`: `ran`, `unused`,
+  `unavailable` or `broken`). Without z3 the line says that no concolic run was made,
+  so an `AGREES` from the random runs alone is not read as a concolic one.
 - **Determinism:** results are the same from run to run and for any `--jobs`, because
   the queries are made in a fixed order.
 
@@ -60,11 +74,15 @@ fault, never committed, made kuna compare against `0x1badb003`:
 - One function becomes `UNKNOWN(budget)`: the concolic input sent `parseRFCStructuredData`
   around a long loop.
 
-**`coreutils` `ls`** (`O2`, 405 functions, ten workers):
+**`coreutils` `ls`** (`O2`, 405 functions, ten workers), as first measured:
 - 105 functions get 237 concolic runs.
 - Wall time goes from 3.3 s to 13.4 s.
   - With a z3 process per query it was 41 s.
   - With 2 s per query it was 58 s.
+
+With the path-aware worklist, z3 runs for 140 functions: 697 queries, 454 inputs found,
+33.6 s against 13.2 s without `--concolic` on a machine busy with other builds. The
+verdicts are the same.
 
 One run with a z3 process per query reported `transfer_entries` `DIFFERS`: kuna's loop
 calls the hash function once more before `abort()` than the machine does. The

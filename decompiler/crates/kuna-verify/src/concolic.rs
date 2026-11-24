@@ -90,6 +90,11 @@ pub fn op(opc: OpCode, out: u32, ins: &[(Option<Rc<Expr>>, u128, u32)]) -> Optio
         }
         Some(Rc::new(if swap { Expr::Test(name, b, a) } else { Expr::Test(name, a, b) }))
     };
+    let truth = |a: Rc<Expr>| Rc::new(Expr::Test("distinct", a.clone(), konst(0, a.width())));
+    let logic = |name: &'static str| -> Option<Rc<Expr>> {
+        let (a, b) = (arg(0)?, arg(1)?);
+        (ow == 8).then(|| Rc::new(Expr::Op(name, vec![truth(a), truth(b)], 8)))
+    };
     let shift = |name: &'static str, signed: bool| -> Option<Rc<Expr>> {
         let (a, b) = (arg(0)?, arg(1)?);
         if a.width() != ow {
@@ -109,12 +114,15 @@ pub fn op(opc: OpCode, out: u32, ins: &[(Option<Rc<Expr>>, u128, u32)]) -> Optio
         CPUI_INT_SDIV => bin("bvsdiv"),
         CPUI_INT_REM => bin("bvurem"),
         CPUI_INT_SREM => bin("bvsrem"),
-        CPUI_INT_AND | CPUI_BOOL_AND => bin("bvand"),
-        CPUI_INT_OR | CPUI_BOOL_OR => bin("bvor"),
-        CPUI_INT_XOR | CPUI_BOOL_XOR => bin("bvxor"),
+        CPUI_INT_AND => bin("bvand"),
+        CPUI_INT_OR => bin("bvor"),
+        CPUI_INT_XOR => bin("bvxor"),
+        CPUI_BOOL_AND => logic("bvand"),
+        CPUI_BOOL_OR => logic("bvor"),
+        CPUI_BOOL_XOR => logic("bvxor"),
         CPUI_INT_NEGATE => arg(0).filter(|a| a.width() == ow).map(|a| Rc::new(Expr::Op("bvnot", vec![a], ow))),
         CPUI_INT_2COMP => arg(0).filter(|a| a.width() == ow).map(|a| Rc::new(Expr::Op("bvneg", vec![a], ow))),
-        CPUI_BOOL_NEGATE => arg(0).filter(|a| a.width() == 8 && ow == 8).map(|a| Rc::new(Expr::Op("bvxor", vec![a, konst(1, 8)], 8))),
+        CPUI_BOOL_NEGATE => arg(0).filter(|_| ow == 8).map(|a| Rc::new(Expr::Test("=", a.clone(), konst(0, a.width())))),
         CPUI_INT_LEFT => shift("bvshl", false),
         CPUI_INT_RIGHT => shift("bvlshr", false),
         CPUI_INT_SRIGHT => shift("bvashr", true),
@@ -164,11 +172,13 @@ pub fn byte(e: &Rc<Expr>, i: u32) -> Rc<Expr> {
     Rc::new(Expr::Extract(Rc::clone(e), 8 * i + 7, 8 * i))
 }
 
-/// One recorded branch of the function's own code: its address, its
-/// condition, and whether it was taken.
+/// One recorded branch of the function's own code: its instruction's address,
+/// the index of its p-code op in that instruction, its condition, and whether
+/// it was taken.
 #[derive(Clone)]
 pub struct Branch {
     pub at: u64,
+    pub op: u32,
     pub cond: Rc<Expr>,
     pub taken: bool,
 }
@@ -296,10 +306,18 @@ impl Drop for Solver {
     }
 }
 
+/// What one query gave.
+enum Answer {
+    Model(HashMap<(i32, u64), u8>),
+    /// Unsatisfiable, unknown in the time given, or nothing to ask.
+    None,
+    /// z3 did not answer as expected: the process is not used again.
+    Broken,
+}
+
 /// Ask z3 for inputs that hold `path.branches[..k]` and take `branches[k]`
-/// the other way. `None` when unsatisfiable, unknown in the time given, or z3
-/// cannot be run.
-fn solve(solver: &mut Solver, path: &Path, k: usize) -> Option<HashMap<(i32, u64), u8>> {
+/// the other way. The query's scope is popped whatever the answer.
+fn solve(solver: &mut Solver, path: &Path, k: usize) -> Answer {
     let mut em = Emitter { ids: HashMap::new(), defs: String::new() };
     let mut asserts = String::new();
     for (i, b) in path.branches[..=k].iter().enumerate() {
@@ -319,35 +337,46 @@ fn solve(solver: &mut Solver, path: &Path, k: usize) -> Option<HashMap<(i32, u64
         }
     }
     if used.is_empty() {
-        return None;
+        return Answer::None;
     }
     script.push_str(&em.defs);
     script.push_str(&asserts);
     script.push_str("(check-sat)\n");
-    solver.send(&script)?;
-    let verdict = solver.line()?;
+    if solver.send(&script).is_none() {
+        return Answer::Broken;
+    }
     let names: Vec<&str> = used.iter().map(|n| &**n).collect();
-    let model = if verdict.trim() == "sat" {
-        solver.send(&format!("(get-value ({}))\n", names.join(" ")))?;
-        let text = solver.sexpr()?;
-        let mut model = HashMap::new();
-        for name in &names {
-            let at = text.find(&format!("({name} "))? + name.len() + 2;
-            let v = text[at..].split(|c: char| c == ')' || c.is_whitespace()).next()?;
-            let byte = if let Some(h) = v.strip_prefix("#x") {
-                u8::from_str_radix(h, 16).ok()?
-            } else {
-                u8::from_str_radix(v.strip_prefix("#b")?, 2).ok()?
-            };
-            let place = path.inputs.get(*name)?;
-            model.insert((place.space, place.off), byte);
-        }
-        Some(model)
-    } else {
-        None
+    let answer = match solver.line().as_deref().map(str::trim) {
+        Some("sat") => match model(solver, path, &names) {
+            Some(m) => Answer::Model(m),
+            None => Answer::Broken,
+        },
+        Some("unsat" | "unknown") => Answer::None,
+        _ => Answer::Broken,
     };
-    solver.send("(pop 1)\n")?;
-    model
+    if solver.send("(pop 1)\n").is_none() {
+        return Answer::Broken;
+    }
+    answer
+}
+
+/// The input bytes of a satisfiable query.
+fn model(solver: &mut Solver, path: &Path, names: &[&str]) -> Option<HashMap<(i32, u64), u8>> {
+    solver.send(&format!("(get-value ({}))\n", names.join(" ")))?;
+    let text = solver.sexpr()?;
+    let mut model = HashMap::new();
+    for name in names {
+        let at = text.find(&format!("({name} "))? + name.len() + 2;
+        let v = text[at..].split(|c: char| c == ')' || c.is_whitespace()).next()?;
+        let byte = if let Some(h) = v.strip_prefix("#x") {
+            u8::from_str_radix(h, 16).ok()?
+        } else {
+            u8::from_str_radix(v.strip_prefix("#b")?, 2).ok()?
+        };
+        let place = path.inputs.get(*name)?;
+        model.insert((place.space, place.off), byte);
+    }
+    Some(model)
 }
 
 fn em_mentions(em: &Emitter, asserts: &str, name: &str) -> bool {
@@ -356,25 +385,79 @@ fn em_mentions(em: &Emitter, asserts: &str, name: &str) -> bool {
 }
 
 /// Which branch to flip next: across every recorded path, the first branch
-/// whose other direction no run has taken, each tried once.
+/// whose other direction no run has taken. A direction is asked about once per
+/// path prefix (the branches before it and how they went): unsatisfiable after
+/// one prefix, it may not be after another.
 #[derive(Default)]
 pub struct Worklist {
     solver: Option<Solver>,
     /// z3 could not be started.
-    unavailable: bool,
+    pub unavailable: bool,
+    /// z3 stopped answering as expected and was not used again.
+    pub broken: bool,
     paths: Vec<(u32, Option<Inputs>, Path)>,
-    covered: HashSet<(u64, bool)>,
-    tried: HashSet<(u64, bool)>,
+    covered: HashSet<(u64, u32, bool)>,
+    tried: HashSet<(u64, u32, bool, u64)>,
     pub queries: u32,
     pub found: u32,
+}
+
+/// What concolic exploration did for one function.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Summary {
+    pub queries: u32,
+    pub models: u32,
+    pub solver: SolverState,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SolverState {
+    /// No branch needed a query.
+    Unused,
+    Ran,
+    Unavailable,
+    Broken,
+}
+
+impl SolverState {
+    pub fn name(self) -> &'static str {
+        match self {
+            SolverState::Unused => "unused",
+            SolverState::Ran => "ran",
+            SolverState::Unavailable => "unavailable",
+            SolverState::Broken => "broken",
+        }
+    }
+}
+
+fn prefix(branches: &[Branch]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for b in branches {
+        (b.at, b.op, b.taken).hash(&mut h);
+    }
+    h.finish()
 }
 
 impl Worklist {
     pub fn add(&mut self, run: u32, inputs: Option<Inputs>, path: Path) {
         for b in &path.branches {
-            self.covered.insert((b.at, b.taken));
+            self.covered.insert((b.at, b.op, b.taken));
         }
         self.paths.push((run, inputs, path));
+    }
+
+    pub fn summary(&self) -> Summary {
+        let solver = if self.unavailable {
+            SolverState::Unavailable
+        } else if self.broken {
+            SolverState::Broken
+        } else if self.queries > 0 {
+            SolverState::Ran
+        } else {
+            SolverState::Unused
+        };
+        Summary { queries: self.queries, models: self.found, solver }
     }
 
     /// The next run to make: its base run, the input bytes to set (the base
@@ -384,34 +467,86 @@ impl Worklist {
         while p < self.paths.len() {
             let n = self.paths[p].2.branches.len();
             for k in 0..n {
-                if self.queries >= max_queries {
+                if self.queries >= max_queries || self.unavailable || self.broken {
                     return None;
                 }
-                let b = &self.paths[p].2.branches[k];
-                let want = (b.at, !b.taken);
-                if self.covered.contains(&want) || !self.tried.insert(want) {
+                let branches = &self.paths[p].2.branches;
+                let b = &branches[k];
+                let want = (b.at, b.op, !b.taken);
+                if self.covered.contains(&want) || !self.tried.insert((want.0, want.1, want.2, prefix(&branches[..k]))) {
                     continue;
                 }
-                self.queries += 1;
-                if self.solver.is_none() && !self.unavailable {
+                if self.solver.is_none() {
                     self.solver = Solver::start(millis);
-                    self.unavailable = self.solver.is_none();
+                    if self.solver.is_none() {
+                        self.unavailable = true;
+                        return None;
+                    }
                 }
-                let Some(solver) = self.solver.as_mut() else { return None };
-                let solved = solve(solver, &self.paths[p].2, k);
-                if solved.is_none() && solver.child.try_wait().ok().flatten().is_some() {
-                    self.solver = None;
-                }
-                if let Some(model) = solved {
-                    self.found += 1;
-                    let (run, base, _) = &self.paths[p];
-                    let mut inputs: HashMap<(i32, u64), u8> = base.as_deref().cloned().unwrap_or_default();
-                    inputs.extend(model);
-                    return Some((*run, Rc::new(inputs), want.0));
+                self.queries += 1;
+                let solver = self.solver.as_mut()?;
+                match solve(solver, &self.paths[p].2, k) {
+                    Answer::Model(model) => {
+                        self.found += 1;
+                        let (run, base, _) = &self.paths[p];
+                        let mut inputs: HashMap<(i32, u64), u8> = base.as_deref().cloned().unwrap_or_default();
+                        inputs.extend(model);
+                        return Some((*run, Rc::new(inputs), want.0));
+                    }
+                    Answer::None => {}
+                    Answer::Broken => {
+                        self.solver = None;
+                        self.broken = true;
+                        return None;
+                    }
                 }
             }
             p += 1;
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn eval(e: &Expr) -> u128 {
+        match e {
+            Expr::Const(v, _) => *v,
+            Expr::Op(name, a, w) => {
+                let (x, y) = (eval(&a[0]), a.get(1).map_or(0, |b| eval(b)));
+                let v = match *name {
+                    "bvand" => x & y,
+                    "bvor" => x | y,
+                    "bvxor" => x ^ y,
+                    other => panic!("{other}"),
+                };
+                v & ((1u128 << w) - 1)
+            }
+            Expr::Test(name, a, b) => {
+                let (x, y) = (eval(a), eval(b));
+                u128::from(match *name {
+                    "=" => x == y,
+                    "distinct" => x != y,
+                    other => panic!("{other}"),
+                })
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    /// p-code's boolean ops read any nonzero byte as true, as the concrete
+    /// evaluator does, and give 0 or 1.
+    #[test]
+    fn boolean_ops_normalize_their_inputs() {
+        let two = Rc::new(Expr::Const(2, 8));
+        let ins = |a: &Rc<Expr>, b: u128| vec![(Some(Rc::clone(a)), 0, 1), (None, b, 1)];
+        let at = |opc, ins: &[(Option<Rc<Expr>>, u128, u32)]| eval(&op(opc, 1, ins).unwrap());
+        assert_eq!(at(OpCode::CPUI_BOOL_AND, &ins(&two, 1)), 1);
+        assert_eq!(at(OpCode::CPUI_BOOL_OR, &ins(&two, 1)), 1);
+        assert_eq!(at(OpCode::CPUI_BOOL_XOR, &ins(&two, 1)), 0);
+        assert_eq!(at(OpCode::CPUI_BOOL_NEGATE, &[(Some(two), 0, 1)]), 0);
+        assert_eq!(at(OpCode::CPUI_INT_AND, &ins(&Rc::new(Expr::Const(2, 8)), 1)), 0);
     }
 }

@@ -284,13 +284,13 @@ impl Machine<'_, '_, '_> {
         }
     }
 
-    fn sym_branch(&mut self, at: u64, cond: &VarnodeData, value: u128) {
+    fn sym_branch(&mut self, at: u64, op: usize, cond: &VarnodeData, value: u128) {
         if self.shadow.as_ref().is_none_or(|s| s.path.branches.len() >= PATH_BRANCHES) {
             return;
         }
         if let Some(e) = self.sym_read(cond, value) {
             if let Some(s) = self.shadow.as_mut() {
-                s.path.branches.push(crate::concolic::Branch { at, cond: e, taken: value != 0 });
+                s.path.branches.push(crate::concolic::Branch { at, op: op as u32, cond: e, taken: value != 0 });
             }
         }
     }
@@ -749,7 +749,7 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(
             OpCode::CPUI_CBRANCH => {
                 let c = read(&mut m.state, arg(1)?)?;
                 if top && m.shadow.is_some() {
-                    m.sym_branch(addr, arg(1)?, c);
+                    m.sym_branch(addr, i, arg(1)?, c);
                 }
                 if c != 0 {
                     let t = arg(0)?;

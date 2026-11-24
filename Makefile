@@ -55,8 +55,10 @@ test-stages: $(BINDIR)/kuna
 	  --datatests-dir tests/stages --baseline docs/baseline-stages.json
 
 # diffverify (docs/features/diffverify/): kuna-verify over both corpora, every
-# verdict compared with docs/baseline-verify.json. Fails only on a function that
-# now differs or a file that can no longer be checked; other changes are listed.
+# verdict compared with docs/baseline-verify.json, function by function even
+# where a file's function list changed. Fails only on a function that now
+# differs (a new one included) or a file that can no longer be checked; lost
+# coverage and other changes are listed, with the count of AGREES before/after.
 # Re-record: make verify-corpus VERIFY_ARGS='--save-baseline docs/baseline-verify.json'
 verify-corpus:
 	cd $(ENGINE) && cargo build --$(PROFILE) -p kuna-verify

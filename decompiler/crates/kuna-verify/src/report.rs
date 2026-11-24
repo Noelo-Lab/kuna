@@ -48,6 +48,8 @@ pub struct Report {
     pub lines: Vec<String>,
     pub suspects: Vec<String>,
     pub elapsed: Duration,
+    /// With `--concolic`: what the exploration did, z3 failing included.
+    pub concolic: Option<crate::concolic::Summary>,
 }
 
 impl Report {
@@ -68,6 +70,8 @@ pub struct Row {
     pub lines: Vec<String>,
     pub suspects: Vec<String>,
     pub ms: f64,
+    /// `(queries, inputs found, solver state)` with `--concolic`.
+    pub concolic: Option<(u32, u32, String)>,
 }
 
 impl From<&Report> for Row {
@@ -83,6 +87,7 @@ impl From<&Report> for Row {
             lines: r.lines.clone(),
             suspects: r.suspects.clone(),
             ms: r.elapsed.as_secs_f64() * 1e3,
+            concolic: r.concolic.map(|s| (s.queries, s.models, s.solver.name().to_string())),
         }
     }
 }
@@ -113,7 +118,7 @@ impl Row {
     }
 
     pub fn to_json(&self) -> Value {
-        json!({
+        let mut v = json!({
             "function": self.function,
             "verdict": self.class,
             "label": self.label,
@@ -121,7 +126,11 @@ impl Row {
             "lines": self.lines,
             "suspects": self.suspects,
             "ms": self.ms,
-        })
+        });
+        if let Some((q, m, s)) = &self.concolic {
+            v["z3"] = json!({"queries": q, "models": m, "solver": s});
+        }
+        v
     }
 
     pub fn from_json(v: &Value) -> Option<Row> {
@@ -140,6 +149,9 @@ impl Row {
             lines: strings("lines")?,
             suspects: strings("suspects")?,
             ms: v.get("ms")?.as_f64()?,
+            concolic: v.get("z3").and_then(|c| {
+                Some((c.get("queries")?.as_u64()? as u32, c.get("models")?.as_u64()? as u32, c.get("solver")?.as_str()?.to_string()))
+            }),
         })
     }
 }
@@ -156,6 +168,7 @@ mod tests {
             lines: vec!["machine  r1:r0 = 0x1".into()],
             suspects: vec!["reads r2".into()],
             elapsed: Duration::from_micros(1500),
+            concolic: Some(crate::concolic::Summary { queries: 3, models: 1, solver: crate::concolic::SolverState::Ran }),
         };
         let row = Row::from(&r);
         assert_eq!(Row::from_json(&row.to_json()), Some(row.clone()));

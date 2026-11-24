@@ -223,9 +223,33 @@ fn concolic_inputs_reach_a_branch_random_runs_miss() {
         0x0f, 0x45, 0xc1, 0x5d, 0xc3,
     ];
     let path = object("magic", &text, &[("magic", 0, text.len() as u64)], &[]);
-    let label = |concolic| check(&path, &["magic"], &Options { runs: 64, concolic, ..Options::default() })[0].verdict.label();
-    assert_eq!(label(0), "AGREES(64)");
-    assert_eq!(label(8), "AGREES(65)");
+    let report = |concolic| check(&path, &["magic"], &Options { runs: 64, concolic, ..Options::default() }).remove(0);
+    assert_eq!(report(0).verdict.label(), "AGREES(64)");
+    let r = report(8);
+    assert_eq!(r.verdict.label(), "AGREES(65)");
+    let s = r.concolic.unwrap();
+    assert_eq!((s.models, s.solver), (1, kuna_verify::concolic::SolverState::Ran), "{}", r.render());
+}
+
+/// `--concolic` with no z3 to run says so, in the lines and the JSON, instead
+/// of an `AGREES` that looks like the random runs and the concolic ones both
+/// passed.
+#[test]
+fn concolic_without_z3_says_so() {
+    let text = [
+        0x55, 0x48, 0x89, 0xe5, 0x89, 0xf9, 0x83, 0xe1, 0x01, 0x81, 0xff, 0x02, 0xb0, 0xad, 0x1b, 0xb8, 0x07, 0x00, 0x00, 0x00,
+        0x0f, 0x45, 0xc1, 0x5d, 0xc3,
+    ];
+    let path = object("magic_noz3", &text, &[("magic", 0, text.len() as u64)], &[]);
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna-verify"))
+        .args(["check", &path.to_string_lossy(), "magic", "--runs", "16", "--concolic", "4", "--json", "--sleighpath", &specs()])
+        .env("PATH", "")
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    let row: serde_json::Value = text.lines().find(|l| l.starts_with('{')).map(|l| serde_json::from_str(l).unwrap()).unwrap();
+    assert_eq!(row["z3"]["solver"], "unavailable", "{text}");
+    assert!(row["lines"].as_array().unwrap().iter().any(|l| l.as_str().unwrap().contains("z3 could not be started")), "{text}");
 }
 
 /// A call followed only by padding and then another function does not
