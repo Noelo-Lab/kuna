@@ -86,12 +86,16 @@ define register offset=0x130 size=2 [ RN6 ];
 define register offset=0x134 size=2 [ RN7 ];
 define register offset=0x138 size=2 [ SP ];
 define register offset=0x13c size=2 [ MINMAX ];
+define register offset=0x140 size=2 [ LC1 ];
+define register offset=0x144 size=4 [ LSA1W ];
+define register offset=0x145 size=3 [ LSA1 ];
 
 define register offset=0x160 size=16 [ contextreg ];
 define context contextreg
     carmel_issue = (0,2) noflow
     carmel_next_issue_size = (3,5) noflow
     carmel_cliw_known = (6,6) noflow
+    carmel_bad_fetch = (7,7) noflow
     carmel_cliw_95_64 = (32,63) noflow
     carmel_cliw_63_32 = (64,95) noflow
     carmel_cliw_31_0 = (96,127) noflow
@@ -109,8 +113,10 @@ define context contextreg
     tpl_87_90 = (37,40) noflow
     mac_right = (41,44) noflow
     tpl_83_86 = (41,44) noflow
-    mac_destination = (50,54) noflow
+    mac_lo = (50,54) noflow
     tpl_73_77 = (50,54) noflow
+    mac_hi = (50,54) noflow
+    mac_guard = (50,54) noflow
 ;
 
 define token slot (24)
@@ -126,9 +132,32 @@ define token slot (24)
     slot_2_4 = (2,4)
     slot_5_22 = (5,22)
     slot_0_22 = (0,22)
+    slot_10_22 = (10,22)
+    cmp_lhs = (5,9)
+    slot_7_9 = (7,9)
+    slot_6_9 = (6,9)
+    cmp_rhs = (1,4)
+    cmpu_lhs = (5,9)
+    cmpu_rhs = (1,4)
+    slot_7_22 = (7,22)
+    slot_6_6 = (6,6)
+    slot_5_6 = (5,6)
+    cmp_full_lhs_full = (4,6)
+    cmp_full_lhs_lo = (4,6)
+    cmp_full_lhs_hi = (4,6)
+    cmp_full_lhs_guard = (4,6)
+    slot_3_3 = (3,3)
+    slot_2_3 = (2,3)
+    cmp_full_rhs_full = (1,3)
+    cmp_full_rhs_lo = (1,3)
+    cmp_full_rhs_hi = (1,3)
+    cmp_full_rhs_guard = (1,3)
     rel_words = (3,12) signed
     slot_0_2 = (0,2)
     slot_13_22 = (13,22)
+    conditional_words = (2,8) signed
+    slot_0_1 = (0,1)
+    slot_9_22 = (9,22)
 ;
 
 define token wide (48)
@@ -143,6 +172,11 @@ define token wide (48)
     wide_immediate_22 = (0,1) hex
     wide_2_11 = (2,11)
     wide_14_22 = (14,22)
+    wide_2_9 = (2,9)
+    wide_0_9 = (0,9)
+    wide_13_22 = (13,22)
+    wide_40_45 = (40,45)
+    absolute_data_addr = (24,39) hex
     index_low_0 = (24,33) hex
     index_high_0 = (15,15) hex
     wide_20_22 = (20,22)
@@ -156,9 +190,23 @@ define token wide (48)
 
 attach variables [inc_source] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _];
 attach variables [move_source] [A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
+attach variables [cmp_lhs] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
+attach variables [cmp_rhs] [A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
+attach variables [cmpu_lhs] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
+attach variables [cmpu_rhs] [A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
+attach variables [cmp_full_lhs_full] [A0 A1 A2 A3 A4 A5 _ _];
+attach variables [cmp_full_lhs_lo] [A0L A1L A2L A3L A4L A5L _ _];
+attach variables [cmp_full_lhs_hi] [A0H A1H A2H A3H A4H A5H _ _];
+attach variables [cmp_full_lhs_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
+attach variables [cmp_full_rhs_full] [A0 A1 A2 A3 A4 A5 _ _];
+attach variables [cmp_full_rhs_lo] [A0L A1L A2L A3L A4L A5L _ _];
+attach variables [cmp_full_rhs_hi] [A0H A1H A2H A3H A4H A5H _ _];
+attach variables [cmp_full_rhs_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
 attach variables [mac_left] [A0L A1L A2L A3L A0H A1H A2H A3H _ _ _ _ _ _ _ _];
 attach variables [mac_right] [A0L A1L A2L A3L A0H A1H A2H A3H _ _ _ _ _ _ _ _];
-attach variables [mac_destination] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0 A1 A2 A3 A4 A5 _ _ _ _ _ _ _ _ _ _];
+attach variables [mac_lo] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _];
+attach variables [mac_hi] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0H A1H A2H A3H A4H A5H _ _ _ _ _ _ _ _ _ _];
+attach variables [mac_guard] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ GB0 GB1 GB2 GB3 GB4 GB5 _ _ _ _ _ _ _ _ _ _];
 
 # Stage arithmetic without publishing either packet lane's WB effects.
 # The result is low 16, with the EST set bits in the next 16. L is sticky.
@@ -417,6 +465,28 @@ complete_right: right_a5h is $(COMPACT_A5H) & right_a5h { build right_a5h; commi
 :^left_a5h "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a5h; build right_a4h; commit_half(A5H, left_a5h, 0); commit_half(A4H, right_a4h, 6); }
 :^left_a5h "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) unimpl
 
+:"CMP" cmp_lhs,cmp_rhs is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_0=0x0 & slot_10_22=0x826 & (slot_7_9=4 | slot_6_9=10 | slot_7_9=6 | slot_6_9=14) & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & cmp_lhs & cmp_rhs { local lhs:2 = cmp_lhs; local rhs:2 = cmp_rhs; local flags:2 = (zext(lhs == rhs) << 3) | (zext(lhs s< rhs) << 4); EST = (EST & 0xffc7) | (flags << 0); }
+:"CMP" cmp_lhs,cmp_rhs "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_10_22=0x826 & (slot_7_9=4 | slot_6_9=10 | slot_7_9=6 | slot_6_9=14) & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & cmp_lhs & cmp_rhs); (slot_mode=0 & nop_right) { local lhs:2 = cmp_lhs; local rhs:2 = cmp_rhs; local flags:2 = (zext(lhs == rhs) << 3) | (zext(lhs s< rhs) << 4); EST = (EST & 0xffc7) | (flags << 0); }
+:^nop_left "||" "CMP" cmp_lhs,cmp_rhs is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_0=0x0 & slot_10_22=0x826 & (slot_7_9=4 | slot_6_9=10 | slot_7_9=6 | slot_6_9=14) & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & cmp_lhs & cmp_rhs) { local lhs:2 = cmp_lhs; local rhs:2 = cmp_rhs; local flags:2 = (zext(lhs == rhs) << 3) | (zext(lhs s< rhs) << 4); EST = (EST & 0xf1ff) | (flags << 6); }
+:"CMPU" cmpu_lhs,cmpu_rhs is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_0=0x0 & slot_10_22=0x82e & (slot_7_9=4 | slot_6_9=10 | slot_7_9=6 | slot_6_9=14) & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & cmpu_lhs & cmpu_rhs { local lhs:2 = cmpu_lhs; local rhs:2 = cmpu_rhs; local flags:2 = (zext(lhs == rhs) << 3) | zext(lhs >= rhs); EST = (EST & 0xfff6) | (flags << 0); }
+:"CMPU" cmpu_lhs,cmpu_rhs "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_10_22=0x82e & (slot_7_9=4 | slot_6_9=10 | slot_7_9=6 | slot_6_9=14) & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & cmpu_lhs & cmpu_rhs); (slot_mode=0 & nop_right) { local lhs:2 = cmpu_lhs; local rhs:2 = cmpu_rhs; local flags:2 = (zext(lhs == rhs) << 3) | zext(lhs >= rhs); EST = (EST & 0xfff6) | (flags << 0); }
+:^nop_left "||" "CMPU" cmpu_lhs,cmpu_rhs is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_0=0x0 & slot_10_22=0x82e & (slot_7_9=4 | slot_6_9=10 | slot_7_9=6 | slot_6_9=14) & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & cmpu_lhs & cmpu_rhs) { local lhs:2 = cmpu_lhs; local rhs:2 = cmpu_rhs; local flags:2 = (zext(lhs == rhs) << 3) | zext(lhs >= rhs); EST = (EST & 0xfdbf) | (flags << 6); }
+
+# Do not materialize a 40-bit C temporary to compare two accumulators.
+macro compare_full(lhs_lo, lhs_hi, lhs_guard, rhs_lo, rhs_hi, rhs_guard, shift) {
+    local a:8 = sext(lhs_guard) * 0x100000000 + zext(lhs_hi) * 0x10000 + zext(lhs_lo);
+    local b:8 = sext(rhs_guard) * 0x100000000 + zext(rhs_hi) * 0x10000 + zext(rhs_lo);
+    local delta:8 = a - b;
+    local overflow:1 = delta s> 0x7fffffffff || delta s< -0x8000000000;
+    local sticky:1 = overflow && ((ECFG & 0x24) == 0);
+    local flags:2 = (zext(overflow) << 1) | (zext(sticky) << 2) | (zext(delta == 0) << 3) |
+                    (zext((delta & 0x8000000000) != 0) << 4);
+    EST = (EST & ~(0x1a << shift)) | (flags << shift);
+}
+:"CMP" cmp_full_lhs_full,cmp_full_rhs_full is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_0=0x0 & slot_7_22=0x413a & (slot_6_6=0 | slot_5_6=2) & cmp_full_lhs_full & cmp_full_lhs_lo & cmp_full_lhs_hi & cmp_full_lhs_guard & (slot_3_3=0 | slot_2_3=2) & cmp_full_rhs_full & cmp_full_rhs_lo & cmp_full_rhs_hi & cmp_full_rhs_guard { compare_full(cmp_full_lhs_lo, cmp_full_lhs_hi, cmp_full_lhs_guard, cmp_full_rhs_lo, cmp_full_rhs_hi, cmp_full_rhs_guard, 0); }
+:"CMP" cmp_full_lhs_full,cmp_full_rhs_full "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_7_22=0x413a & (slot_6_6=0 | slot_5_6=2) & cmp_full_lhs_full & cmp_full_lhs_lo & cmp_full_lhs_hi & cmp_full_lhs_guard & (slot_3_3=0 | slot_2_3=2) & cmp_full_rhs_full & cmp_full_rhs_lo & cmp_full_rhs_hi & cmp_full_rhs_guard); (slot_mode=0 & nop_right) { compare_full(cmp_full_lhs_lo, cmp_full_lhs_hi, cmp_full_lhs_guard, cmp_full_rhs_lo, cmp_full_rhs_hi, cmp_full_rhs_guard, 0); }
+:^nop_left "||" "CMP" cmp_full_lhs_full,cmp_full_rhs_full is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_0=0x0 & slot_7_22=0x413a & (slot_6_6=0 | slot_5_6=2) & cmp_full_lhs_full & cmp_full_lhs_lo & cmp_full_lhs_hi & cmp_full_lhs_guard & (slot_3_3=0 | slot_2_3=2) & cmp_full_rhs_full & cmp_full_rhs_lo & cmp_full_rhs_hi & cmp_full_rhs_guard) { compare_full(cmp_full_lhs_lo, cmp_full_lhs_hi, cmp_full_lhs_guard, cmp_full_rhs_lo, cmp_full_rhs_hi, cmp_full_rhs_guard, 6); }
+
 # CALL uses the ordinary issue size, not inst_next after delay expansion.
 macro push_link(saved_pc) {
     local old_sp:2 = SP;
@@ -494,6 +564,44 @@ resume_2_1: word_address is epsilon [ word_address = (inst_start + 4) & 0xffffff
 wide_call_target: word_address is wide_call_offset_0 & wide_call_offset_22 [ word_address = (inst_start + (wide_call_offset_0 | (wide_call_offset_22 << 22))) & 0xffffff; ] { export *[code]:3 word_address; }
 :CALL wide_call_target is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27c1 & wide_call_target & link_2_0 { push_link(link_2_0); call wide_call_target; }
 
+conditional_target: word_address is conditional_words [ word_address = (inst_start + conditional_words) & 0xffffff; ] { export *[code]:3 word_address; }
+:"GOTO GE1" conditional_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_1=0x0 & slot_9_22=0x140a & conditional_target { if (!(((EST ^ (EST << 3)) & 0x10) != 0)) goto conditional_target; }
+:"GOTO GE1" conditional_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x140a & conditional_target); (slot_mode=0 & nop_right) { if (!(((EST ^ (EST << 3)) & 0x10) != 0)) goto conditional_target; }
+:^nop_left "||" "GOTO GE1" conditional_target is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x140a & conditional_target) { if (!(((EST ^ (EST << 3)) & 0x10) != 0)) goto conditional_target; }
+:"GOTO GT1" conditional_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_1=0x0 & slot_9_22=0x140c & conditional_target { if (!(((EST ^ (EST << 3)) & 0x10) != 0) && !((EST & 0x8) != 0)) goto conditional_target; }
+:"GOTO GT1" conditional_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x140c & conditional_target); (slot_mode=0 & nop_right) { if (!(((EST ^ (EST << 3)) & 0x10) != 0) && !((EST & 0x8) != 0)) goto conditional_target; }
+:^nop_left "||" "GOTO GT1" conditional_target is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x140c & conditional_target) { if (!(((EST ^ (EST << 3)) & 0x10) != 0) && !((EST & 0x8) != 0)) goto conditional_target; }
+:"GOTO EQ1" conditional_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_1=0x0 & slot_9_22=0x140e & conditional_target { if (((EST & 0x8) != 0)) goto conditional_target; }
+:"GOTO EQ1" conditional_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x140e & conditional_target); (slot_mode=0 & nop_right) { if (((EST & 0x8) != 0)) goto conditional_target; }
+:^nop_left "||" "GOTO EQ1" conditional_target is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x140e & conditional_target) { if (((EST & 0x8) != 0)) goto conditional_target; }
+:"GOTO NEQ1" conditional_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_1=0x0 & slot_9_22=0x140f & conditional_target { if (!((EST & 0x8) != 0)) goto conditional_target; }
+:"GOTO NEQ1" conditional_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x140f & conditional_target); (slot_mode=0 & nop_right) { if (!((EST & 0x8) != 0)) goto conditional_target; }
+:^nop_left "||" "GOTO NEQ1" conditional_target is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x140f & conditional_target) { if (!((EST & 0x8) != 0)) goto conditional_target; }
+:"GOTO LE1" conditional_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_1=0x0 & slot_9_22=0x1410 & conditional_target { if ((((EST ^ (EST << 3)) & 0x10) != 0) || ((EST & 0x8) != 0)) goto conditional_target; }
+:"GOTO LE1" conditional_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x1410 & conditional_target); (slot_mode=0 & nop_right) { if ((((EST ^ (EST << 3)) & 0x10) != 0) || ((EST & 0x8) != 0)) goto conditional_target; }
+:^nop_left "||" "GOTO LE1" conditional_target is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x1410 & conditional_target) { if ((((EST ^ (EST << 3)) & 0x10) != 0) || ((EST & 0x8) != 0)) goto conditional_target; }
+:"GOTO LT1" conditional_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_1=0x0 & slot_9_22=0x1412 & conditional_target { if ((((EST ^ (EST << 3)) & 0x10) != 0)) goto conditional_target; }
+:"GOTO LT1" conditional_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x1412 & conditional_target); (slot_mode=0 & nop_right) { if ((((EST ^ (EST << 3)) & 0x10) != 0)) goto conditional_target; }
+:^nop_left "||" "GOTO LT1" conditional_target is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x1412 & conditional_target) { if ((((EST ^ (EST << 3)) & 0x10) != 0)) goto conditional_target; }
+:"GOTO GE2" conditional_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_1=0x0 & slot_9_22=0x142a & conditional_target { if (!(((EST ^ (EST << 3)) & 0x400) != 0)) goto conditional_target; }
+:"GOTO GE2" conditional_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x142a & conditional_target); (slot_mode=0 & nop_right) { if (!(((EST ^ (EST << 3)) & 0x400) != 0)) goto conditional_target; }
+:^nop_left "||" "GOTO GE2" conditional_target is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x142a & conditional_target) { if (!(((EST ^ (EST << 3)) & 0x400) != 0)) goto conditional_target; }
+:"GOTO GT2" conditional_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_1=0x0 & slot_9_22=0x142c & conditional_target { if (!(((EST ^ (EST << 3)) & 0x400) != 0) && !((EST & 0x200) != 0)) goto conditional_target; }
+:"GOTO GT2" conditional_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x142c & conditional_target); (slot_mode=0 & nop_right) { if (!(((EST ^ (EST << 3)) & 0x400) != 0) && !((EST & 0x200) != 0)) goto conditional_target; }
+:^nop_left "||" "GOTO GT2" conditional_target is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x142c & conditional_target) { if (!(((EST ^ (EST << 3)) & 0x400) != 0) && !((EST & 0x200) != 0)) goto conditional_target; }
+:"GOTO EQ2" conditional_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_1=0x0 & slot_9_22=0x142e & conditional_target { if (((EST & 0x200) != 0)) goto conditional_target; }
+:"GOTO EQ2" conditional_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x142e & conditional_target); (slot_mode=0 & nop_right) { if (((EST & 0x200) != 0)) goto conditional_target; }
+:^nop_left "||" "GOTO EQ2" conditional_target is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x142e & conditional_target) { if (((EST & 0x200) != 0)) goto conditional_target; }
+:"GOTO NEQ2" conditional_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_1=0x0 & slot_9_22=0x142f & conditional_target { if (!((EST & 0x200) != 0)) goto conditional_target; }
+:"GOTO NEQ2" conditional_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x142f & conditional_target); (slot_mode=0 & nop_right) { if (!((EST & 0x200) != 0)) goto conditional_target; }
+:^nop_left "||" "GOTO NEQ2" conditional_target is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x142f & conditional_target) { if (!((EST & 0x200) != 0)) goto conditional_target; }
+:"GOTO LE2" conditional_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_1=0x0 & slot_9_22=0x1430 & conditional_target { if ((((EST ^ (EST << 3)) & 0x400) != 0) || ((EST & 0x200) != 0)) goto conditional_target; }
+:"GOTO LE2" conditional_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x1430 & conditional_target); (slot_mode=0 & nop_right) { if ((((EST ^ (EST << 3)) & 0x400) != 0) || ((EST & 0x200) != 0)) goto conditional_target; }
+:^nop_left "||" "GOTO LE2" conditional_target is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x1430 & conditional_target) { if ((((EST ^ (EST << 3)) & 0x400) != 0) || ((EST & 0x200) != 0)) goto conditional_target; }
+:"GOTO LT2" conditional_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_1=0x0 & slot_9_22=0x1432 & conditional_target { if ((((EST ^ (EST << 3)) & 0x400) != 0)) goto conditional_target; }
+:"GOTO LT2" conditional_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x1432 & conditional_target); (slot_mode=0 & nop_right) { if ((((EST ^ (EST << 3)) & 0x400) != 0)) goto conditional_target; }
+:^nop_left "||" "GOTO LT2" conditional_target is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x1432 & conditional_target) { if ((((EST ^ (EST << 3)) & 0x400) != 0)) goto conditional_target; }
+
 # R0's AGU reserves the incoming address; the store uses it after update.
 macro advance_r0(address) {
     local mode:2 = PACFG & 3;
@@ -531,26 +639,172 @@ literal_word: literal is wide_immediate_0 & wide_immediate_22 [ literal = wide_i
 :MOVE "A3H",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x9b & wide_14_22=0x119 & literal_word { local staged:4; stage_move(literal_word, staged); commit_half(A3H, staged, 0); }
 :MOVE "A4H",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x9c & wide_14_22=0x119 & literal_word { local staged:4; stage_move(literal_word, staged); commit_half(A4H, staged, 0); }
 :MOVE "A5H",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x9d & wide_14_22=0x119 & literal_word { local staged:4; stage_move(literal_word, staged); commit_half(A5H, staged, 0); }
+:MOVE "A0",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x88 & wide_14_22=0x119 & literal_word { local staged:4; stage_move(literal_word, staged); A0 = sext(literal_word); EST = (EST & 0xffc4) | staged(2); }
+:MOVE "A1",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x89 & wide_14_22=0x119 & literal_word { local staged:4; stage_move(literal_word, staged); A1 = sext(literal_word); EST = (EST & 0xffc4) | staged(2); }
+:MOVE "A2",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x8a & wide_14_22=0x119 & literal_word { local staged:4; stage_move(literal_word, staged); A2 = sext(literal_word); EST = (EST & 0xffc4) | staged(2); }
+:MOVE "A3",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x8b & wide_14_22=0x119 & literal_word { local staged:4; stage_move(literal_word, staged); A3 = sext(literal_word); EST = (EST & 0xffc4) | staged(2); }
+:MOVE "A4",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x8c & wide_14_22=0x119 & literal_word { local staged:4; stage_move(literal_word, staged); A4 = sext(literal_word); EST = (EST & 0xffc4) | staged(2); }
+:MOVE "A5",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x8d & wide_14_22=0x119 & literal_word { local staged:4; stage_move(literal_word, staged); A5 = sext(literal_word); EST = (EST & 0xffc4) | staged(2); }
+:MOVE "R0",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa0 & wide_14_22=0x119 & literal_word { R0 = literal_word; }
+:MOVE "R1",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa1 & wide_14_22=0x119 & literal_word { R1 = literal_word; }
+:MOVE "R2",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa2 & wide_14_22=0x119 & literal_word { R2 = literal_word; }
+:MOVE "R3",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa3 & wide_14_22=0x119 & literal_word { R3 = literal_word; }
+:MOVE "R4",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa4 & wide_14_22=0x119 & literal_word { R4 = literal_word; }
+:MOVE "R5",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa5 & wide_14_22=0x119 & literal_word { R5 = literal_word; }
+:MOVE "R6",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa6 & wide_14_22=0x119 & literal_word { R6 = literal_word; }
+:MOVE "R7",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa7 & wide_14_22=0x119 & literal_word { R7 = literal_word; }
 :MOVE "*R0",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x0 & wide_14_22=0x119 & literal_word { local address:2 = R0; local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; }
 :MOVE "*R0++",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x10 & wide_14_22=0x119 & literal_word { local address:2 = R0; advance_r0(address); local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; }
 
+# Unsigned MOVE consumes a word or a 24-bit saved loop address.
+macro moveu_flags(value) { EST = (EST & 0xffc4) | (zext(value == 0) << 3); }
+:MOVU "A0",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0x88 & wide_14_22=0x11b & literal_word { A0 = zext(literal_word); moveu_flags(literal_word); }
+:MOVU "A0","A0L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x222 & wide_13_22=0x21c & wide_40_45=0x10 { local source:4 = zext(A0L); A0 = zext(source); moveu_flags(source); }
+:MOVU "A0","A1L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x222 & wide_13_22=0x21c & wide_40_45=0x11 { local source:4 = zext(A1L); A0 = zext(source); moveu_flags(source); }
+:MOVU "A0","A2L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x222 & wide_13_22=0x21c & wide_40_45=0x12 { local source:4 = zext(A2L); A0 = zext(source); moveu_flags(source); }
+:MOVU "A0","A3L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x222 & wide_13_22=0x21c & wide_40_45=0x13 { local source:4 = zext(A3L); A0 = zext(source); moveu_flags(source); }
+:MOVU "A0","A4L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x222 & wide_13_22=0x21c & wide_40_45=0x14 { local source:4 = zext(A4L); A0 = zext(source); moveu_flags(source); }
+:MOVU "A0","A5L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x222 & wide_13_22=0x21c & wide_40_45=0x15 { local source:4 = zext(A5L); A0 = zext(source); moveu_flags(source); }
+:MOVU "A0","A0H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x222 & wide_13_22=0x21c & wide_40_45=0x18 { local source:4 = zext(A0H); A0 = zext(source); moveu_flags(source); }
+:MOVU "A0","A1H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x222 & wide_13_22=0x21c & wide_40_45=0x19 { local source:4 = zext(A1H); A0 = zext(source); moveu_flags(source); }
+:MOVU "A0","A2H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x222 & wide_13_22=0x21c & wide_40_45=0x1a { local source:4 = zext(A2H); A0 = zext(source); moveu_flags(source); }
+:MOVU "A0","A3H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x222 & wide_13_22=0x21c & wide_40_45=0x1b { local source:4 = zext(A3H); A0 = zext(source); moveu_flags(source); }
+:MOVU "A0","A4H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x222 & wide_13_22=0x21c & wide_40_45=0x1c { local source:4 = zext(A4H); A0 = zext(source); moveu_flags(source); }
+:MOVU "A0","A5H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x222 & wide_13_22=0x21c & wide_40_45=0x1d { local source:4 = zext(A5H); A0 = zext(source); moveu_flags(source); }
+:MOVU "A0","A0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x222 & wide_13_22=0x21c & wide_40_45=0x8 { local source:4 = 0; A0 = zext(source); moveu_flags(source); }
+:MOVU "A0","LSA1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x223 & wide_13_22=0x21c & wide_40_45=0x12 { local source:4 = LSA1W & 0xffffff; A0 = zext(source); moveu_flags(source); }
+:MOVU "A0","LC1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x223 & wide_13_22=0x21c & wide_40_45=0x14 { local source:4 = zext(LC1); A0 = zext(source); moveu_flags(source); }
+:MOVU "A1",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0x89 & wide_14_22=0x11b & literal_word { A1 = zext(literal_word); moveu_flags(literal_word); }
+:MOVU "A1","A0L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x226 & wide_13_22=0x21c & wide_40_45=0x10 { local source:4 = zext(A0L); A1 = zext(source); moveu_flags(source); }
+:MOVU "A1","A1L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x226 & wide_13_22=0x21c & wide_40_45=0x11 { local source:4 = zext(A1L); A1 = zext(source); moveu_flags(source); }
+:MOVU "A1","A2L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x226 & wide_13_22=0x21c & wide_40_45=0x12 { local source:4 = zext(A2L); A1 = zext(source); moveu_flags(source); }
+:MOVU "A1","A3L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x226 & wide_13_22=0x21c & wide_40_45=0x13 { local source:4 = zext(A3L); A1 = zext(source); moveu_flags(source); }
+:MOVU "A1","A4L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x226 & wide_13_22=0x21c & wide_40_45=0x14 { local source:4 = zext(A4L); A1 = zext(source); moveu_flags(source); }
+:MOVU "A1","A5L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x226 & wide_13_22=0x21c & wide_40_45=0x15 { local source:4 = zext(A5L); A1 = zext(source); moveu_flags(source); }
+:MOVU "A1","A0H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x226 & wide_13_22=0x21c & wide_40_45=0x18 { local source:4 = zext(A0H); A1 = zext(source); moveu_flags(source); }
+:MOVU "A1","A1H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x226 & wide_13_22=0x21c & wide_40_45=0x19 { local source:4 = zext(A1H); A1 = zext(source); moveu_flags(source); }
+:MOVU "A1","A2H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x226 & wide_13_22=0x21c & wide_40_45=0x1a { local source:4 = zext(A2H); A1 = zext(source); moveu_flags(source); }
+:MOVU "A1","A3H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x226 & wide_13_22=0x21c & wide_40_45=0x1b { local source:4 = zext(A3H); A1 = zext(source); moveu_flags(source); }
+:MOVU "A1","A4H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x226 & wide_13_22=0x21c & wide_40_45=0x1c { local source:4 = zext(A4H); A1 = zext(source); moveu_flags(source); }
+:MOVU "A1","A5H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x226 & wide_13_22=0x21c & wide_40_45=0x1d { local source:4 = zext(A5H); A1 = zext(source); moveu_flags(source); }
+:MOVU "A1","A0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x226 & wide_13_22=0x21c & wide_40_45=0x8 { local source:4 = 0; A1 = zext(source); moveu_flags(source); }
+:MOVU "A1","LSA1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x227 & wide_13_22=0x21c & wide_40_45=0x12 { local source:4 = LSA1W & 0xffffff; A1 = zext(source); moveu_flags(source); }
+:MOVU "A1","LC1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x227 & wide_13_22=0x21c & wide_40_45=0x14 { local source:4 = zext(LC1); A1 = zext(source); moveu_flags(source); }
+:MOVU "A2",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0x8a & wide_14_22=0x11b & literal_word { A2 = zext(literal_word); moveu_flags(literal_word); }
+:MOVU "A2","A0L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22a & wide_13_22=0x21c & wide_40_45=0x10 { local source:4 = zext(A0L); A2 = zext(source); moveu_flags(source); }
+:MOVU "A2","A1L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22a & wide_13_22=0x21c & wide_40_45=0x11 { local source:4 = zext(A1L); A2 = zext(source); moveu_flags(source); }
+:MOVU "A2","A2L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22a & wide_13_22=0x21c & wide_40_45=0x12 { local source:4 = zext(A2L); A2 = zext(source); moveu_flags(source); }
+:MOVU "A2","A3L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22a & wide_13_22=0x21c & wide_40_45=0x13 { local source:4 = zext(A3L); A2 = zext(source); moveu_flags(source); }
+:MOVU "A2","A4L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22a & wide_13_22=0x21c & wide_40_45=0x14 { local source:4 = zext(A4L); A2 = zext(source); moveu_flags(source); }
+:MOVU "A2","A5L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22a & wide_13_22=0x21c & wide_40_45=0x15 { local source:4 = zext(A5L); A2 = zext(source); moveu_flags(source); }
+:MOVU "A2","A0H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22a & wide_13_22=0x21c & wide_40_45=0x18 { local source:4 = zext(A0H); A2 = zext(source); moveu_flags(source); }
+:MOVU "A2","A1H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22a & wide_13_22=0x21c & wide_40_45=0x19 { local source:4 = zext(A1H); A2 = zext(source); moveu_flags(source); }
+:MOVU "A2","A2H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22a & wide_13_22=0x21c & wide_40_45=0x1a { local source:4 = zext(A2H); A2 = zext(source); moveu_flags(source); }
+:MOVU "A2","A3H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22a & wide_13_22=0x21c & wide_40_45=0x1b { local source:4 = zext(A3H); A2 = zext(source); moveu_flags(source); }
+:MOVU "A2","A4H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22a & wide_13_22=0x21c & wide_40_45=0x1c { local source:4 = zext(A4H); A2 = zext(source); moveu_flags(source); }
+:MOVU "A2","A5H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22a & wide_13_22=0x21c & wide_40_45=0x1d { local source:4 = zext(A5H); A2 = zext(source); moveu_flags(source); }
+:MOVU "A2","A0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22a & wide_13_22=0x21c & wide_40_45=0x8 { local source:4 = 0; A2 = zext(source); moveu_flags(source); }
+:MOVU "A2","LSA1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22b & wide_13_22=0x21c & wide_40_45=0x12 { local source:4 = LSA1W & 0xffffff; A2 = zext(source); moveu_flags(source); }
+:MOVU "A2","LC1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22b & wide_13_22=0x21c & wide_40_45=0x14 { local source:4 = zext(LC1); A2 = zext(source); moveu_flags(source); }
+:MOVU "A3",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0x8b & wide_14_22=0x11b & literal_word { A3 = zext(literal_word); moveu_flags(literal_word); }
+:MOVU "A3","A0L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22e & wide_13_22=0x21c & wide_40_45=0x10 { local source:4 = zext(A0L); A3 = zext(source); moveu_flags(source); }
+:MOVU "A3","A1L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22e & wide_13_22=0x21c & wide_40_45=0x11 { local source:4 = zext(A1L); A3 = zext(source); moveu_flags(source); }
+:MOVU "A3","A2L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22e & wide_13_22=0x21c & wide_40_45=0x12 { local source:4 = zext(A2L); A3 = zext(source); moveu_flags(source); }
+:MOVU "A3","A3L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22e & wide_13_22=0x21c & wide_40_45=0x13 { local source:4 = zext(A3L); A3 = zext(source); moveu_flags(source); }
+:MOVU "A3","A4L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22e & wide_13_22=0x21c & wide_40_45=0x14 { local source:4 = zext(A4L); A3 = zext(source); moveu_flags(source); }
+:MOVU "A3","A5L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22e & wide_13_22=0x21c & wide_40_45=0x15 { local source:4 = zext(A5L); A3 = zext(source); moveu_flags(source); }
+:MOVU "A3","A0H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22e & wide_13_22=0x21c & wide_40_45=0x18 { local source:4 = zext(A0H); A3 = zext(source); moveu_flags(source); }
+:MOVU "A3","A1H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22e & wide_13_22=0x21c & wide_40_45=0x19 { local source:4 = zext(A1H); A3 = zext(source); moveu_flags(source); }
+:MOVU "A3","A2H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22e & wide_13_22=0x21c & wide_40_45=0x1a { local source:4 = zext(A2H); A3 = zext(source); moveu_flags(source); }
+:MOVU "A3","A3H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22e & wide_13_22=0x21c & wide_40_45=0x1b { local source:4 = zext(A3H); A3 = zext(source); moveu_flags(source); }
+:MOVU "A3","A4H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22e & wide_13_22=0x21c & wide_40_45=0x1c { local source:4 = zext(A4H); A3 = zext(source); moveu_flags(source); }
+:MOVU "A3","A5H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22e & wide_13_22=0x21c & wide_40_45=0x1d { local source:4 = zext(A5H); A3 = zext(source); moveu_flags(source); }
+:MOVU "A3","A0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22e & wide_13_22=0x21c & wide_40_45=0x8 { local source:4 = 0; A3 = zext(source); moveu_flags(source); }
+:MOVU "A3","LSA1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22f & wide_13_22=0x21c & wide_40_45=0x12 { local source:4 = LSA1W & 0xffffff; A3 = zext(source); moveu_flags(source); }
+:MOVU "A3","LC1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x22f & wide_13_22=0x21c & wide_40_45=0x14 { local source:4 = zext(LC1); A3 = zext(source); moveu_flags(source); }
+:MOVU "A4",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0x8c & wide_14_22=0x11b & literal_word { A4 = zext(literal_word); moveu_flags(literal_word); }
+:MOVU "A4","A0L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x232 & wide_13_22=0x21c & wide_40_45=0x10 { local source:4 = zext(A0L); A4 = zext(source); moveu_flags(source); }
+:MOVU "A4","A1L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x232 & wide_13_22=0x21c & wide_40_45=0x11 { local source:4 = zext(A1L); A4 = zext(source); moveu_flags(source); }
+:MOVU "A4","A2L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x232 & wide_13_22=0x21c & wide_40_45=0x12 { local source:4 = zext(A2L); A4 = zext(source); moveu_flags(source); }
+:MOVU "A4","A3L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x232 & wide_13_22=0x21c & wide_40_45=0x13 { local source:4 = zext(A3L); A4 = zext(source); moveu_flags(source); }
+:MOVU "A4","A4L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x232 & wide_13_22=0x21c & wide_40_45=0x14 { local source:4 = zext(A4L); A4 = zext(source); moveu_flags(source); }
+:MOVU "A4","A5L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x232 & wide_13_22=0x21c & wide_40_45=0x15 { local source:4 = zext(A5L); A4 = zext(source); moveu_flags(source); }
+:MOVU "A4","A0H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x232 & wide_13_22=0x21c & wide_40_45=0x18 { local source:4 = zext(A0H); A4 = zext(source); moveu_flags(source); }
+:MOVU "A4","A1H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x232 & wide_13_22=0x21c & wide_40_45=0x19 { local source:4 = zext(A1H); A4 = zext(source); moveu_flags(source); }
+:MOVU "A4","A2H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x232 & wide_13_22=0x21c & wide_40_45=0x1a { local source:4 = zext(A2H); A4 = zext(source); moveu_flags(source); }
+:MOVU "A4","A3H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x232 & wide_13_22=0x21c & wide_40_45=0x1b { local source:4 = zext(A3H); A4 = zext(source); moveu_flags(source); }
+:MOVU "A4","A4H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x232 & wide_13_22=0x21c & wide_40_45=0x1c { local source:4 = zext(A4H); A4 = zext(source); moveu_flags(source); }
+:MOVU "A4","A5H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x232 & wide_13_22=0x21c & wide_40_45=0x1d { local source:4 = zext(A5H); A4 = zext(source); moveu_flags(source); }
+:MOVU "A4","A0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x232 & wide_13_22=0x21c & wide_40_45=0x8 { local source:4 = 0; A4 = zext(source); moveu_flags(source); }
+:MOVU "A4","LSA1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x233 & wide_13_22=0x21c & wide_40_45=0x12 { local source:4 = LSA1W & 0xffffff; A4 = zext(source); moveu_flags(source); }
+:MOVU "A4","LC1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x233 & wide_13_22=0x21c & wide_40_45=0x14 { local source:4 = zext(LC1); A4 = zext(source); moveu_flags(source); }
+:MOVU "A5",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0x8d & wide_14_22=0x11b & literal_word { A5 = zext(literal_word); moveu_flags(literal_word); }
+:MOVU "A5","A0L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x236 & wide_13_22=0x21c & wide_40_45=0x10 { local source:4 = zext(A0L); A5 = zext(source); moveu_flags(source); }
+:MOVU "A5","A1L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x236 & wide_13_22=0x21c & wide_40_45=0x11 { local source:4 = zext(A1L); A5 = zext(source); moveu_flags(source); }
+:MOVU "A5","A2L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x236 & wide_13_22=0x21c & wide_40_45=0x12 { local source:4 = zext(A2L); A5 = zext(source); moveu_flags(source); }
+:MOVU "A5","A3L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x236 & wide_13_22=0x21c & wide_40_45=0x13 { local source:4 = zext(A3L); A5 = zext(source); moveu_flags(source); }
+:MOVU "A5","A4L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x236 & wide_13_22=0x21c & wide_40_45=0x14 { local source:4 = zext(A4L); A5 = zext(source); moveu_flags(source); }
+:MOVU "A5","A5L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x236 & wide_13_22=0x21c & wide_40_45=0x15 { local source:4 = zext(A5L); A5 = zext(source); moveu_flags(source); }
+:MOVU "A5","A0H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x236 & wide_13_22=0x21c & wide_40_45=0x18 { local source:4 = zext(A0H); A5 = zext(source); moveu_flags(source); }
+:MOVU "A5","A1H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x236 & wide_13_22=0x21c & wide_40_45=0x19 { local source:4 = zext(A1H); A5 = zext(source); moveu_flags(source); }
+:MOVU "A5","A2H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x236 & wide_13_22=0x21c & wide_40_45=0x1a { local source:4 = zext(A2H); A5 = zext(source); moveu_flags(source); }
+:MOVU "A5","A3H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x236 & wide_13_22=0x21c & wide_40_45=0x1b { local source:4 = zext(A3H); A5 = zext(source); moveu_flags(source); }
+:MOVU "A5","A4H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x236 & wide_13_22=0x21c & wide_40_45=0x1c { local source:4 = zext(A4H); A5 = zext(source); moveu_flags(source); }
+:MOVU "A5","A5H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x236 & wide_13_22=0x21c & wide_40_45=0x1d { local source:4 = zext(A5H); A5 = zext(source); moveu_flags(source); }
+:MOVU "A5","A0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x236 & wide_13_22=0x21c & wide_40_45=0x8 { local source:4 = 0; A5 = zext(source); moveu_flags(source); }
+:MOVU "A5","LSA1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x237 & wide_13_22=0x21c & wide_40_45=0x12 { local source:4 = LSA1W & 0xffffff; A5 = zext(source); moveu_flags(source); }
+:MOVU "A5","LC1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x237 & wide_13_22=0x21c & wide_40_45=0x14 { local source:4 = zext(LC1); A5 = zext(source); moveu_flags(source); }
+:MOVU "discard",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0x8e & wide_14_22=0x11b & literal_word { moveu_flags(literal_word); }
+:MOVU "discard","A0L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23a & wide_13_22=0x21c & wide_40_45=0x10 { local source:4 = zext(A0L); moveu_flags(source); }
+:MOVU "discard","A1L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23a & wide_13_22=0x21c & wide_40_45=0x11 { local source:4 = zext(A1L); moveu_flags(source); }
+:MOVU "discard","A2L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23a & wide_13_22=0x21c & wide_40_45=0x12 { local source:4 = zext(A2L); moveu_flags(source); }
+:MOVU "discard","A3L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23a & wide_13_22=0x21c & wide_40_45=0x13 { local source:4 = zext(A3L); moveu_flags(source); }
+:MOVU "discard","A4L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23a & wide_13_22=0x21c & wide_40_45=0x14 { local source:4 = zext(A4L); moveu_flags(source); }
+:MOVU "discard","A5L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23a & wide_13_22=0x21c & wide_40_45=0x15 { local source:4 = zext(A5L); moveu_flags(source); }
+:MOVU "discard","A0H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23a & wide_13_22=0x21c & wide_40_45=0x18 { local source:4 = zext(A0H); moveu_flags(source); }
+:MOVU "discard","A1H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23a & wide_13_22=0x21c & wide_40_45=0x19 { local source:4 = zext(A1H); moveu_flags(source); }
+:MOVU "discard","A2H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23a & wide_13_22=0x21c & wide_40_45=0x1a { local source:4 = zext(A2H); moveu_flags(source); }
+:MOVU "discard","A3H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23a & wide_13_22=0x21c & wide_40_45=0x1b { local source:4 = zext(A3H); moveu_flags(source); }
+:MOVU "discard","A4H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23a & wide_13_22=0x21c & wide_40_45=0x1c { local source:4 = zext(A4H); moveu_flags(source); }
+:MOVU "discard","A5H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23a & wide_13_22=0x21c & wide_40_45=0x1d { local source:4 = zext(A5H); moveu_flags(source); }
+:MOVU "discard","A0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23a & wide_13_22=0x21c & wide_40_45=0x8 { local source:4 = 0; moveu_flags(source); }
+:MOVU "discard","LSA1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23b & wide_13_22=0x21c & wide_40_45=0x12 { local source:4 = LSA1W & 0xffffff; moveu_flags(source); }
+:MOVU "discard","LC1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23b & wide_13_22=0x21c & wide_40_45=0x14 { local source:4 = zext(LC1); moveu_flags(source); }
+
+:MOVE "R0","*"^absolute_data_addr is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x280 & wide_13_22=0x21b & wide_40_45=0x38 & absolute_data_addr { local address:2 = absolute_data_addr; R0 = *[data]:2 address; }
+:MOVE "R1","*"^absolute_data_addr is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x284 & wide_13_22=0x21b & wide_40_45=0x38 & absolute_data_addr { local address:2 = absolute_data_addr; R1 = *[data]:2 address; }
+:MOVE "R2","*"^absolute_data_addr is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x288 & wide_13_22=0x21b & wide_40_45=0x38 & absolute_data_addr { local address:2 = absolute_data_addr; R2 = *[data]:2 address; }
+:MOVE "R3","*"^absolute_data_addr is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x28c & wide_13_22=0x21b & wide_40_45=0x38 & absolute_data_addr { local address:2 = absolute_data_addr; R3 = *[data]:2 address; }
+:MOVE "R4","*"^absolute_data_addr is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x290 & wide_13_22=0x21b & wide_40_45=0x38 & absolute_data_addr { local address:2 = absolute_data_addr; R4 = *[data]:2 address; }
+:MOVE "R5","*"^absolute_data_addr is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x294 & wide_13_22=0x21b & wide_40_45=0x38 & absolute_data_addr { local address:2 = absolute_data_addr; R5 = *[data]:2 address; }
+:MOVE "R6","*"^absolute_data_addr is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x298 & wide_13_22=0x21b & wide_40_45=0x38 & absolute_data_addr { local address:2 = absolute_data_addr; R6 = *[data]:2 address; }
+:MOVE "R7","*"^absolute_data_addr is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x29c & wide_13_22=0x21b & wide_40_45=0x38 & absolute_data_addr { local address:2 = absolute_data_addr; R7 = *[data]:2 address; }
+
 # MAC1 signed-register product. Inactive ALUs do not own EST.
-macro signed_product(destination, left, right) {
-    local a:5 = sext(left);
-    local b:5 = sext(right);
-    local product:5 = (a * b) << (ECFG & 1);
+macro signed_product(lo, hi, guard, left, right) {
+    # Sign-extend into a native C integer width before multiplication.
+    # Doubling by multiplication avoids C's undefined left shift of a negative result.
+    local a:8 = sext(left);
+    local b:8 = sext(right);
+    local scale:8 = 1 + sext(ECFG & 1);
+    local product:8 = a * b * scale;
     local extend:1 = (product s> 0x7fffffff);
     local limit:1 = extend && ((ECFG & 4) != 0);
     local flags:2 = (zext(limit) << 2) | (zext(product == 0) << 3) |
                     (zext(product s< 0) << 4) | (zext(extend) << 5);
-    destination = product - zext(limit);
+    # A signed 16x16 result has no magnitude beyond the low 32 bits.
+    # Keep the native guard without requiring a nonstandard C integer width.
+    local result:4 = product:4 - zext(limit);
+    lo = result:2;
+    hi = result(2);
+    guard = -zext(product s< 0);
     EST = (EST & 0xffc4) | flags;
 }
 
 template_index: encoded is index_low_0 & index_high_0 [ encoded = index_low_0 | (index_high_0 << 10); ] { }
 :CLIW template_index is (((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1) & wide_20_22=0x5 & template_index unimpl
 :CLIW template_index is (((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1) & template_index & carmel_cliw_known=1 & wide_0_0=0x0 & wide_3_7=0x18 & wide_10_14=0x18 & wide_20_22=0x5 & wide_34_46=0x318 & wide_8_9<2 & wide_1_2<2 & tpl_52_63=0xfff & tpl_64_72=0xff & tpl_49_51=0x0 & tpl_24_31=0xff & tpl_32_46=0x3fff & tpl_3_23=0xfffff & tpl_0_2=0x0 & tpl_73_95=0x3fffff { }
-:CLIW template_index is (((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1) & template_index & carmel_cliw_known=1 & wide_0_0=0x0 & wide_3_7=0x18 & wide_10_14=0x18 & wide_20_22=0x5 & wide_34_46=0x318 & wide_8_9<2 & wide_1_2<2 & tpl_52_63=0xfff & tpl_64_72=0xff & tpl_49_51=0x0 & tpl_24_31=0xff & tpl_32_46=0x3fff & tpl_3_23=0xfffff & tpl_0_2=0x0 & tpl_91_95=0x10 & tpl_78_82=0x1f & (tpl_87_90=0 | tpl_87_90=1 | tpl_87_90=2 | tpl_87_90=3 | tpl_87_90=4 | tpl_87_90=5 | tpl_87_90=6 | tpl_87_90=7) & mac_left & (tpl_83_86=0 | tpl_83_86=1 | tpl_83_86=2 | tpl_83_86=3 | tpl_83_86=4 | tpl_83_86=5 | tpl_83_86=6 | tpl_83_86=7) & mac_right & (tpl_73_77=16 | tpl_73_77=17 | tpl_73_77=18 | tpl_73_77=19 | tpl_73_77=20 | tpl_73_77=21) & mac_destination { signed_product(mac_destination, mac_left, mac_right); }
+:CLIW template_index is (((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1) & template_index & carmel_cliw_known=1 & wide_0_0=0x0 & wide_3_7=0x18 & wide_10_14=0x18 & wide_20_22=0x5 & wide_34_46=0x318 & wide_8_9<2 & wide_1_2<2 & tpl_52_63=0xfff & tpl_64_72=0xff & tpl_49_51=0x0 & tpl_24_31=0xff & tpl_32_46=0x3fff & tpl_3_23=0xfffff & tpl_0_2=0x0 & tpl_91_95=0x10 & tpl_78_82=0x1f & (tpl_87_90=0 | tpl_87_90=1 | tpl_87_90=2 | tpl_87_90=3 | tpl_87_90=4 | tpl_87_90=5 | tpl_87_90=6 | tpl_87_90=7) & mac_left & (tpl_83_86=0 | tpl_83_86=1 | tpl_83_86=2 | tpl_83_86=3 | tpl_83_86=4 | tpl_83_86=5 | tpl_83_86=6 | tpl_83_86=7) & mac_right & (tpl_73_77=16 | tpl_73_77=17 | tpl_73_77=18 | tpl_73_77=19 | tpl_73_77=20 | tpl_73_77=21) & mac_lo & mac_hi & mac_guard { signed_product(mac_lo, mac_hi, mac_guard, mac_left, mac_right); }
 
 raw_left: slot_raw is slot_raw & slot_mode=0 { }
 raw_right: slot_raw is slot_raw & slot_mode=0 { }

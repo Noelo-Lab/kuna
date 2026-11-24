@@ -127,12 +127,20 @@ struct Family48 {
     operands: &'static [OperandField],
 }
 
-pub(super) fn compact(word: u32) -> Option<Operation> {
-    let payload = u64::from(word);
-    let family = tables::COMPACT_INDEX[((word >> 15) & 0xff) as usize]
+fn compact_family(word: u32) -> Option<&'static Family24> {
+    tables::COMPACT_INDEX[((word >> 15) & 0xff) as usize]
         .iter()
         .map(|&index| &tables::COMPACT[usize::from(index)])
-        .find(|f| f.gate.matches(payload))?;
+        .find(|f| f.gate.matches(u64::from(word)))
+}
+
+pub(super) fn has_compact_family(word: u32) -> bool {
+    compact_family(word).is_some()
+}
+
+pub(super) fn compact(word: u32) -> Option<Operation> {
+    let payload = u64::from(word);
+    let family = compact_family(word)?;
     let key = family.variant.read(payload);
     let variant = family.variants.iter().find(|v| v.key == key)?;
     let rule = variant.rules.iter().find(|r| r.gate.matches(payload))?;

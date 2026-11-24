@@ -137,6 +137,22 @@ fn a_call_delayed_by_one_compact_slot_resumes_at_its_pushed_word() {
     assert!(reached.contains(&12) && !reached.contains(&9), "{reached:?}");
 }
 
+#[test]
+fn an_unknown_sequential_family_stops_both_inc_and_goto_before_issue() {
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    for left in [[0xa1, 0xac, 0x20], [0xab, 0x00, 0x30]] {
+        let fetch = [left, [0x7f, 0xff, 0xff]].concat();
+        let program = raw(&[fetch.as_slice(), &nop].concat(), 0, &[0]).unwrap();
+        assert_eq!(program.disassemble_at(0).unwrap().0, 3);
+        assert!(matches!(program.raw_pcode_at(0), Err(KunaError::BadData { .. })));
+        assert!(program.insn_flow(0).is_none());
+    }
+    let missing_opcode = [0xa1, 0xac, 0x20, 0x64, 0x91, 0x0d];
+    let program = raw(&[missing_opcode, nop].concat(), 0, &[0]).unwrap();
+    assert!(program.raw_pcode_at(0).unwrap().1.iter().any(|op| op.opcode == "INT_ADD"));
+    assert!(matches!(program.raw_pcode_at(3), Err(KunaError::Unimpl { .. })));
+}
+
 fn xml(chunks: &str) -> KunaResult<ConsoleProgram> {
     let source = format!("<binaryimage arch=\"{TARGET}\">{chunks}</binaryimage>");
     let mut docs = DocumentStorage::new();

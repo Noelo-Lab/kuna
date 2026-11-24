@@ -197,6 +197,65 @@ fn inc_wrap_and_status_use_the_widened_alu_and_physical_lane() {
 }
 
 #[test]
+fn compact_half_compare_uses_signed_order_and_the_physical_lane() {
+    for (word, lhs, rhs, flags) in [
+        (0x209a02, 0x8000, 1, 0x10),
+        (0x209a02, 0x8000, 0x8000, 8),
+        (0x209a02, 1, 0x8000, 0),
+        (0x20ba02, 0x8000, 1, 1),
+        (0x20ba02, 0x8000, 0x8000, 9),
+        (0x20ba02, 1, 0x8000, 0),
+    ] {
+        for (fetch, metadata, ticks, shift) in [
+            ((word, NOP), &[(0, 1, 6), (2, 1, 0)][..], 1, 0),
+            ((NOP, word), &[(0, 1, 6), (2, 1, 0)][..], 1, 6),
+            ((SEQUENTIAL | NOP, word), &[(0, 2, 3), (1, 3, 3), (2, 1, 0)][..], 2, 0),
+        ] {
+            let mut m = Machine::new(0, &[fetch, (NOP, NOP)], metadata, None);
+            let a0 = 0x8765430000 | lhs;
+            let a1 = 0x1234560000 | rhs;
+            m.seed(&[("A0", a0), ("A1", a1)]);
+            m.start(0).unwrap();
+            for _ in 0..ticks {
+                m.step();
+            }
+            assert_eq!((m.reg("A0"), m.reg("A1"), m.reg("EST")), (a0, a1, flags << shift));
+        }
+    }
+}
+
+#[test]
+fn wide_signed_literal_to_whole_accumulator_replaces_the_guard() {
+    for (literal, expected, est) in [
+        (0, 0, 8),
+        (0x7fff, 0x7fff, 0),
+        (0x8000, 0xffffff8000, 0x10),
+        (0xffff, 0xffffffffff, 0x10),
+    ] {
+        let mut m = Machine::new(
+            0, &[(0x800000 | literal, 0xc64220), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None,
+        );
+        m.seed(&[("A0", 0x8765432100), ("R0", 0xbeef)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A0"), m.reg("EST"), m.reg("R0")), (expected, est, 0xbeef));
+    }
+}
+
+#[test]
+fn wide_literal_to_address_register_does_not_shift_or_set_alu_status() {
+    for (right, register) in [(0xc64280, "R0"), (0xc64290, "R4"), (0xc6429c, "R7")] {
+        let mut m = Machine::new(
+            0, &[(0x808001, right), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None,
+        );
+        m.seed(&[(register, 0xbeef), ("A0", 0x8765432100), ("ECFG", 0x20)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg(register), m.reg("A0"), m.reg("EST")), (0x8001, 0x8765432100, 0));
+    }
+}
+
+#[test]
 fn wide_data_store_uses_the_old_word_address_and_postincrements_r0() {
     for (low, expected_r0) in [(0xc64000, 0x4100), (0xc64040, 0x4101)] {
         let mut m = Machine::new(0, &[(0x808e4c, low), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);

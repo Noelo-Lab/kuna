@@ -68,6 +68,12 @@ fn fetch_word(bytes: &[u8]) -> u32 {
     u32::from_be_bytes([0, bytes[0], bytes[1], bytes[2]])
 }
 
+/// Native preflight rejects the whole sequential fetch when the right word
+/// has no family, but still issues the left word for an unknown right opcode.
+pub(super) fn unknown_compact_right_family(fetch: &[u8; 6]) -> bool {
+    !decode::has_compact_family(fetch_word(&fetch[3..]))
+}
+
 pub(super) fn print(fetch: &[u8; 6], pc: u32, size: i32, mnemonic: &mut String, body: &mut String) {
     let left = fetch_word(fetch);
     let right = fetch_word(&fetch[3..]);

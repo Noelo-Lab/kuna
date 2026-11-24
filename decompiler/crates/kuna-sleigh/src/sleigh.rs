@@ -2573,6 +2573,15 @@ impl Sleigh {
             && self.context_db.borrow().get_variable(b"carmel_issue").is_ok()
     }
 
+    fn check_carmel_fetch(&self, addr: &Address) -> KunaResult<()> {
+        if self.base.base.get_alignment() == 3
+            && matches!(self.context_db.borrow().get_variable_value(b"carmel_bad_fetch", addr), Ok(1))
+        {
+            return Err(KunaError::bad_data("Unknown compact family in Carmel sequential fetch"));
+        }
+        Ok(())
+    }
+
     fn one_instruction_with_map(
         &self,
         emit: &mut dyn PcodeEmit,
@@ -2603,6 +2612,7 @@ impl Sleigh {
         if let Some(image) = image {
             Self::check_mapped_instruction(image, baseaddr, 1)?;
         }
+        self.check_carmel_fetch(baseaddr)?;
         self.last_commits.borrow_mut().clear();
         let mut pos = self.obtain_context_with_match_cache(baseaddr, ParseState::Pcode, assembly.is_some())?;
         let carmel_delay = pos.get_delay_slot() > 0 && self.uses_carmel_issues();
@@ -2627,6 +2637,9 @@ impl Sleigh {
                 let delayaddr = &pos.addr + i64::from(fall_offset);
                 if let Some(image) = image {
                     Self::check_mapped_instruction(image, &delayaddr, 1)?;
+                }
+                if carmel_delay {
+                    self.check_carmel_fetch(&delayaddr)?;
                 }
                 let mut delaypos = self.obtain_context(&delayaddr, ParseState::Pcode)?;
                 let len = delaypos.get_length();

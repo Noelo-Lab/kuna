@@ -659,6 +659,9 @@ including a `typedef` you asserted earlier in the same run.
 A `data` declaration replaces inferred strings that overlap its byte range,
 including one that runs past either end. Interior named data and previous
 explicit declarations retain their mappings.
+For a named processor space, the address uses that space's units. For example,
+`data [data,0x4100] volatile unsigned short sample` binds Carmel DATA word
+`0x4100`, not CODE word `0x4100`.
 
 The bare address retains the default mapping. To select another processor space,
 use `[space,addr]` as one token with the exact, case-sensitive space name. The

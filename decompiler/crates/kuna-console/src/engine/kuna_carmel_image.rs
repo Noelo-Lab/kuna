@@ -15,6 +15,7 @@ const CLIW_BANK_END: u64 = (1 << 10) * TEMPLATE;
 
 const ISSUE: &str = "carmel_issue";
 const NEXT: &str = "carmel_next_issue_size";
+const BAD_FETCH: &str = "carmel_bad_fetch";
 
 const CLIW_FIELDS: [&str; 4] = [
     "carmel_cliw_known", "carmel_cliw_95_64", "carmel_cliw_63_32", "carmel_cliw_31_0",
@@ -53,6 +54,7 @@ impl Issue {
 pub(super) struct Framing {
     issues: Vec<ContextPaint>,
     next_sizes: Vec<ContextPaint>,
+    bad_fetches: Vec<ContextPaint>,
 }
 
 fn paint(paints: &mut Vec<ContextPaint>, var: &'static str, addr: u64, value: u32) {
@@ -79,6 +81,7 @@ impl Framing {
 
     pub(super) fn into_paints(mut self) -> Vec<ContextPaint> {
         self.issues.append(&mut self.next_sizes);
+        self.issues.append(&mut self.bad_fetches);
         self.issues
     }
 }
@@ -221,6 +224,10 @@ pub(super) fn frame(
             let left = Issue::left(&fetch);
             paint(&mut result.issues, ISSUE, addr, left as u32);
             if left == Issue::SeqLeft {
+                if super::kuna_carmel_listing::unknown_compact_right_family(&fetch) {
+                    paint(&mut result.bad_fetches, BAD_FETCH, addr, 1);
+                    paint(&mut result.bad_fetches, BAD_FETCH, addr + SLOT, 1);
+                }
                 paint(&mut result.issues, ISSUE, addr + SLOT, Issue::SeqRight as u32);
                 paint(&mut result.next_sizes, NEXT, addr, SLOT as u32);
                 if following_size != 0 {

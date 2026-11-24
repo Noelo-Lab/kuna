@@ -150,6 +150,41 @@ fn raw_arm_data_addresses_preserve_their_low_bit() {
 }
 
 #[test]
+fn raw_carmel_store_uses_the_declared_data_word_not_the_code_word() {
+    let fixture = RawFixture::new("raw-carmel-data", &[
+        0x80, 0x41, 0x00, 0xc6, 0x42, 0x80, // MOVE R0,0x4100
+        0x80, 0x56, 0x78, 0xc6, 0x40, 0x00, // MOVE *R0,0x5678
+        0x2b, 0xd8, 0x00, 0x2b, 0xec, 0x00, // RETURN || NOP
+    ]);
+    let path = fixture.0.to_string_lossy();
+    let mut program = bootstrap_from_raw(
+        &path, "Carmel:BE:24:default:default", 0, &[0], None, &specs(),
+    ).expect("bootstrap word-addressed Carmel fixture");
+    program.commit_pending_analysis().unwrap();
+    program.set_assertions(vec![
+        Directive {
+            raw: "data [data,0x4100] volatile unsigned short sample".into(),
+            body: Body::Data { addr: 0x4100, space: Some("data".into()),
+                decl: "volatile unsigned short sample".into() },
+        },
+        Directive {
+            raw: "data 0x4100 unsigned short code_word".into(),
+            body: Body::Data { addr: 0x4100, space: None, decl: "unsigned short code_word".into() },
+        },
+    ]);
+    assertions::apply_program_scoped(&mut program);
+    assert_eq!(program.assertion_outcomes().len(), 2);
+    assert!(program.assertion_outcomes().iter().all(|outcome| outcome.status == "applied"));
+    let space = program.arch().manage().get_space_by_name("data").unwrap();
+    let address = Address::new(std::rc::Rc::clone(space), 0x8200);
+    assert_ne!(program.arch().symboltab.get_property(&address) & varnode_flags::volatil, 0);
+    let entry = program.find_entry_at(0).unwrap();
+    let results = decompile_targets(&mut program, vec![entry], true, false, false);
+    let code = results[0].code.as_deref().expect("decompiled Carmel store");
+    assert!(code.contains("sample =") && !code.contains("code_word"), "{code}");
+}
+
+#[test]
 fn word_addressed_targets_scale_base_and_entries_to_byte_offsets() {
     let fixture = RawFixture::new("raw-avr-nops", &[0, 0, 0, 0]);
     let path = fixture.0.to_string_lossy();
