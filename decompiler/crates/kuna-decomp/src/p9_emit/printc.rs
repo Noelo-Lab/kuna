@@ -6685,6 +6685,7 @@ impl PrintC {
                 // decode is a pseudo-call naming the failure, not a return.
                 let halt = fd.obank().get(op).map(|o| o.get_halt_type()).unwrap_or(0);
                 if let Some(nm) = crate::kuna_decodehalt::halt_call_name(halt) {
+                    crate::kuna_unitcalls::record(fd, op, nm);
                     self.emit.tag_func_name(nm, SyntaxHighlight::FuncnameColor, &kw_markup);
                     self.emit.print(crate::printlanguage::OPEN_PAREN, SyntaxHighlight::NoColor);
                     self.emit.print(crate::printlanguage::CLOSE_PAREN, SyntaxHighlight::NoColor);

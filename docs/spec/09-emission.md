@@ -3951,11 +3951,12 @@ the header sheds.
 **(kuna `unitcalls`) The header declares the helpers and user-defined
 operations the code calls.** The printer spells an op C has no operator for as a
 call to a helper named after the op and its operand sizes (`SCARRY4(a,b)`,
-`SUB168(x,8)`, `CONCAT44(hi,lo)`), and a SLEIGH user-defined operation as a call
-to its name (`invalidInstructionException()`). Nothing declared either, so an
-export that printed one did not compile. While a function prints,
-`printc.rs (PrintC::op_func_ir)` and `printc.rs (PrintC::op_callother_ir)`
-record each such name with the op's output
+`SUB168(x,8)`, `CONCAT44(hi,lo)`), a SLEIGH user-defined operation as a call to
+its name (`invalidInstructionException()`), and a RETURN planted where the bytes
+would not decode as a call naming the failure (`halt_baddata()`). Nothing
+declared them, so an export that printed one did not compile. While a function
+prints, `printc.rs (PrintC::op_func_ir)`, `printc.rs (PrintC::op_callother_ir)`
+and the halt arm of the RETURN printer record each such name with the op's output
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_unitcalls.rs`), and the
 function's call declarations
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_callprototypes.rs`) take one
@@ -3965,7 +3966,8 @@ binary passed and a prototype would reject a faithful call. The prelude defines
 `KUNA_ANY_ARGS` as `...` where `()` means no parameters (C23, and the c2x modes
 of gcc 13 and clang 16 on) and as nothing before. `T` is `bool` for the carry and borrow tests, and otherwise the
 widest output any call of the name has, or `void` when none has one. An output
-with no `undefinedN` or float spelling gets no declaration. The prelude's
+with no `undefinedN` or float spelling gets no declaration, and neither do the
+float constants the printer spells `NAN`, `INFINITY` and `FLOAT_UNKNOWN`. The prelude's
 `undefined16` is an `unsigned __int128` aligned to one byte where the compiler
 has the type, so arithmetic on a 16-byte value (a rax:rdx pair) compiles and a
 record holding one keeps its layout. The byte struct remains the fallback.

@@ -1,31 +1,36 @@
 //! (kuna `unitcalls`) The p-code helpers and user-defined operations a
 //! function's C calls by name, so a project header can declare each one.
 //!
-//! The printer spells an op C has no operator for as a call to a helper named
+//! The printer spells three things as calls nothing declared, so a unit that
+//! named one did not compile: an op C has no operator for, as a helper named
 //! after it and its operand sizes (`SCARRY4(a,b)`, `SUB168(x,8)`,
-//! `CONCAT44(hi,lo)`), and a SLEIGH user-defined operation as a call to its
-//! name (`invalidInstructionException()`). Nothing declared them, so a unit
-//! that named one did not compile. Each is declared with no fixed parameters,
-//! `extern T name(KUNA_ANY_ARGS);`, because the printed arguments are whatever
-//! the binary passed and a prototype would reject a faithful call. The
-//! recompile prelude defines `KUNA_ANY_ARGS` as `...` where `()` means no
-//! parameters (C23, and the c2x modes of gcc 13 and clang 16 on) and as nothing
-//! before. `T` is the op's output, or `void` without one; a name a function
-//! calls both with and without an output, or at two output sizes, takes the
-//! widest.
+//! `CONCAT44(hi,lo)`); a SLEIGH user-defined operation, by its name
+//! (`invalidInstructionException()`); and a RETURN the engine planted where the
+//! bytes would not decode, by the failure (`halt_baddata()`). Each is declared
+//! with no fixed parameters, `extern T name(KUNA_ANY_ARGS);`, because the
+//! printed arguments are whatever the binary passed and a prototype would
+//! reject a faithful call. The recompile prelude defines `KUNA_ANY_ARGS` as
+//! `...` where `()` means no parameters (C23, and the c2x modes of gcc 13 and
+//! clang 16 on) and as nothing before. `T` is the op's output, or `void`
+//! without one; a name a function calls both with and without an output, or at
+//! two output sizes, takes the widest.
 //!
 //! The printer records each call on its thread while it prints a function and
 //! forgets them when it starts the next one, so [`take`] answers for the
 //! function this thread printed last; [`crate::kuna_callprototypes::declarations`]
 //! calls it right after the print.
 //!
-//! Limits: an output with no `undefinedN` or float spelling (9 or 12 bytes) is
-//! not declared, and the unit still does not compile; a user-defined operation
-//! named like a C library function (`syscall`) clashes with that library's
-//! header if the unit includes it; and the widest output is chosen per
-//! function, so two functions that call one user-defined operation at two
-//! output sizes, or one with its output and one without, get two declarations,
-//! which the header reports as disagreeing and leaves undeclared.
+//! Limits:
+//! - An output with no `undefinedN` or float spelling (9 or 12 bytes) is not
+//!   declared, and neither are the float constants the printer spells `NAN`,
+//!   `INFINITY` and `FLOAT_UNKNOWN`, so a unit that holds one still does not
+//!   compile.
+//! - A user-defined operation named like a C library function (`syscall`)
+//!   clashes with that library's header if the unit includes it.
+//! - The widest output is chosen per function, so two functions that call one
+//!   user-defined operation at two output sizes, or one with its output and
+//!   one without, get two declarations, which the header reports as
+//!   disagreeing and leaves undeclared.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -52,10 +57,7 @@ pub fn forget() {
 /// such as the `CALLOTHER[0x5]` fallback, or an output C has no type for, is
 /// left out.
 pub fn record(fd: &Funcdata, op: OpId, name: &str) {
-    let mut bytes = name.bytes();
-    let identifier = bytes.next().is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
-        && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_');
-    if !identifier {
+    if !is_identifier(name) {
         return;
     }
     if let Some(returns) = fd.obank().get(op).and_then(|o| returns(fd, o.code(), o.get_out())) {
@@ -71,6 +73,12 @@ pub fn take() -> Vec<String> {
         .into_iter()
         .map(|(name, (_, ty))| format!("{ty} {name}(KUNA_ANY_ARGS);"))
         .collect()
+}
+
+fn is_identifier(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    bytes.next().is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+        && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
 fn note(name: &str, returns: Returns) {
@@ -141,6 +149,16 @@ mod tests {
             take(),
             ["void LOCK(KUNA_ANY_ARGS);", "undefined8 rdtsc(KUNA_ANY_ARGS);"]
         );
+    }
+
+    #[test]
+    fn only_a_c_identifier_is_declared() {
+        for name in ["SCARRY4", "halt_baddata", "_x", "a1"] {
+            assert!(is_identifier(name), "{name}");
+        }
+        for name in ["CALLOTHER[0x5]", "r#match", "1a", "", "a-b"] {
+            assert!(!is_identifier(name), "{name}");
+        }
     }
 
     #[test]
