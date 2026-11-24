@@ -1,0 +1,79 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v7:default">
+<!--
+    GH-1922 (kuna): "Calls to an in-image memcpy keep only their first
+    arguments (Betaflight, DWARF)"
+    https://github.com/Noelo-Lab/kuna/issues/1922
+
+    Reduced from Betaflight (Cortex-M4, gcc -O2, DWARF), where calls to the
+    firmware's own newlib memcpy printed one or two of their three arguments
+    whenever the caller's DWARF prototype was applied.  Hand-written Thumb-2,
+    assembled with clang for thumbv7em and linked at 0x10000:
+
+      mcpy          newlib-shaped copy: reads r0, r1 and r2, writes r3 first.
+      cp4           reads r0 and r1 only.
+      sink          reads r0.
+      copy_profile  void copy_profile(unsigned char dst, unsigned char src):
+                    push {r3, lr}; movs r2,#0xa4; ldr r3,=tbl;
+                    mla r1,r2,r1,r3; mla r0,r2,r0,r3; bl mcpy
+                    (pidCopyProfile: the size also feeds both multiplies).
+      burst         void burst(unsigned char a, unsigned char *data,
+                    unsigned char len): push {r3, r4, r7, lr}; uses len for
+                    a later call and passes data and len on untouched
+                    (sx1280WriteCommandBurst).
+      one           void one(int *d, int *s): push {r3, lr}; movs r2,#4;
+                    add r1,r2; bl cp4.  Control: cp4 does not read r2.
+
+    Stage model: P4 active-input-trial scoring.  The size register is
+    refused by onlyOpUse (it has another use), and the callee-read rule
+    (kuna_calleereadarg.rs) declined to add it back because each caller's
+    entry stores r3, its last argument register, only to save it (gcc's
+    `push {r3, lr}` alignment pad), which the rule reads as a possible
+    variadic register-save area.  The calls printed mcpy(a,b) and mcpy(a).
+    A caller whose locked prototype states a fixed parameter list has no
+    such area, so the rule now applies to it; the parse lines stand in for
+    the DWARF prototypes.
+-->
+<bytechunk space="ram" offset="0x10000">
+844641ea000313f0030307d1042a05d351f8043b40f8043b043af7e72ab111f8
+013b00f8013b013af8e76046704700bf0b680360704700bf00bf00bf00bf00bf
+0130704700bf00bf00bf00bf00bf00bf08b5a422034b02fb013102fb0030fff7
+cfff08bd0001010000bf00bf00bf00bf98b5541c044b03f8010b1846fff7c0ff
+e0b2fff7ddff98bd0002010000bf00bf08b504221144fff7cbff08bd
+</bytechunk>
+<bytechunk space="ram" offset="0x10100">
+00000000000000000000000000000000
+</bytechunk>
+<bytechunk space="ram" offset="0x10200">
+00000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="mcpy"/>
+<symbol space="ram" offset="0x10030" name="cp4"/>
+<symbol space="ram" offset="0x10040" name="sink"/>
+<symbol space="ram" offset="0x10050" name="copy_profile"/>
+<symbol space="ram" offset="0x10070" name="burst"/>
+<symbol space="ram" offset="0x10090" name="one"/>
+<symbol space="ram" offset="0x10100" name="tbl"/>
+<symbol space="ram" offset="0x10200" name="buf"/>
+</binaryimage>
+<script>
+  <com>set context TMode 1 [ram,0x10000] [ram,0x1009f]</com>
+  <com>parse line extern void copy_profile(unsigned char dst, unsigned char src);</com>
+  <com>parse line extern void burst(unsigned char a, unsigned char *data, unsigned char len);</com>
+  <com>parse line extern void one(int *d, int *s);</com>
+  <com>lo fu copy_profile</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu burst</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu one</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH1922 declared caller #1: the size a declared caller also multiplies with is passed" min="1" max="1">mcpy\([^;]*,[^;]*,0xa4\);</stringmatch>
+<stringmatch name="GH1922 declared caller #2: a declared caller passes on its own data and len after the buffer" min="1" max="1">mcpy\([^;]*,data,[^;]*len\);</stringmatch>
+<stringmatch name="GH1922 declared caller #3: no copy call keeps only its first arguments" min="0" max="0">mcpy\([^,;]*(,[^,;]*)?\);</stringmatch>
+<stringmatch name="GH1922 declared caller #4: a callee that does not read r2 gets two arguments" min="1" max="1">cp4\(d,&amp;s\[1\]\);</stringmatch>
+</decompilertest>
