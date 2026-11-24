@@ -87,6 +87,14 @@ pub fn through_thunks(env: &Env, target: u64) -> u64 {
     t
 }
 
+/// Whether `target` is a thunk that leads out of the image's code: a PLT
+/// stub whose GOT slot the file leaves zero or points outside. Running it
+/// would jump to no code, so its call is a call out of the image.
+pub fn leads_out(env: &Env, target: u64) -> bool {
+    let t = through_thunks(env, target);
+    t != target && !env.is_code(t)
+}
+
 fn follow_thunks(env: &Env, target: u64) -> u64 {
     let mut t = target;
     for _ in 0..4 {
@@ -101,7 +109,8 @@ fn follow_thunks(env: &Env, target: u64) -> u64 {
 }
 
 /// Where the thunk at `at` jumps, run from state `run`; `None` when the code
-/// there stores, calls, tests or does not jump within a few instructions.
+/// there stores anywhere but the stack (a lazy PLT entry pushes its index),
+/// calls, tests or does not jump within a few instructions.
 fn thunk_hop(env: &Env, at: u64, run: u32) -> Option<u64> {
     let mut state = State::new(env, 0x7fff_0000 + run);
     let mut addr = at;
@@ -124,8 +133,17 @@ fn thunk_hop(env: &Env, at: u64, run: u32) -> Option<u64> {
                     let v = state.read(&spc, spc.wrap_offset(ptr), out.size).ok()?;
                     write(&mut state, out, v).ok()?;
                 }
-                OpCode::CPUI_STORE
-                | OpCode::CPUI_CALL
+                OpCode::CPUI_STORE => {
+                    let spc = mem_space(env, op.ins.first()?).ok()?;
+                    let ptr = read(&mut state, op.ins.get(1)?).ok()? as u64;
+                    let val = op.ins.get(2)?;
+                    if spc.get_index() != env.ram.get_index() || !env.in_stack(ptr, u64::from(val.size)) {
+                        return None;
+                    }
+                    let v = read(&mut state, val).ok()?;
+                    state.write(&spc, spc.wrap_offset(ptr), val.size, v).ok()?;
+                }
+                OpCode::CPUI_CALL
                 | OpCode::CPUI_CALLIND
                 | OpCode::CPUI_CBRANCH
                 | OpCode::CPUI_CALLOTHER
@@ -312,6 +330,9 @@ pub struct Outcome<'e, 'p> {
     pub calls: Vec<Record>,
     /// The run ended in a call kuna says does not return.
     pub noreturn: bool,
+    /// It ended in one only kuna says does not return: no known name, no
+    /// layout evidence, and no in-image callee that ran to its return.
+    pub unverified_noreturn: bool,
     /// Calls kuna does not make that the machine ran for real: call address
     /// and callee.
     pub followed: Vec<(u64, u64)>,
@@ -328,6 +349,16 @@ pub struct Outcome<'e, 'p> {
 struct Machine<'e, 'p, 'c> {
     env: &'e Env<'p>,
     calls: &'c Calls,
+    /// Stubs given so far: a callee that ran to its return through one may
+    /// only have returned because the stub did.
+    stubs: u32,
+    unverified_noreturn: bool,
+    /// A callee run for real reached a call that does not return by its
+    /// definition.
+    proved_noreturn: bool,
+    /// A callee runs to test kuna's no-return claim: a call it makes through
+    /// a PLT stub that leads out of the code is a call out of the image.
+    checking_noreturn: bool,
     state: State<'e, 'p>,
     records: Vec<Record>,
     indirect: Vec<u64>,
@@ -412,10 +443,76 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
 
     /// One of the function's tail calls: record it, then run an in-image
     /// callee for real or give it the stub. The function then returns.
+    /// Whether `target` does not return by its definition (`known_noreturn`),
+    /// reading `error`'s `status` from the convention's first argument register.
+    fn known_noreturn(&mut self, target: u64) -> Result<bool, Halt> {
+        let prog = self.env.prog;
+        let Some(name) = prog.function_named_at(target).or_else(|| prog.function_named_at(through_thunks(self.env, target))) else {
+            return Ok(false);
+        };
+        let plain = name.split('@').next().unwrap_or(&name).trim_start_matches('_');
+        let first = match self.calls.int_regs.first().filter(|_| matches!(plain, "error" | "error_at_line")) {
+            Some(r) => {
+                let live = self.state.live.take();
+                let v = self.state.read_storage(&r.space, r.off, r.size);
+                self.state.live = live;
+                Some(v?)
+            }
+            None => None,
+        };
+        Ok(crate::calls::known_noreturn(&name, first))
+    }
+
+    /// For a call kuna says does not return: `None` when the machine stops
+    /// there too, or the callee's exit when it ran for real and returned
+    /// without a stub on the way, so kuna's claim is false. The machine stops
+    /// on evidence of its own (a known name, the layout) or, with none, on
+    /// kuna's word, which the run records.
+    fn stops_at(&mut self, at: u64, target: u64, args: &[u128]) -> Result<Option<Exit>, Halt> {
+        let site = self.calls.site(at);
+        if site.laid_out_noreturn {
+            return Ok(None);
+        }
+        let name = self
+            .env
+            .prog
+            .function_named_at(target)
+            .or_else(|| self.env.prog.function_named_at(through_thunks(self.env, target)))
+            .unwrap_or_default();
+        if crate::calls::known_noreturn(&name, args.first().copied()) {
+            return Ok(None);
+        }
+        if self.env.code_mapped(target & !1) && !leads_out(self.env, target) && !self.in_callee {
+            let saved = self.state.clone();
+            let (records, stubs) = (self.records.len(), self.stubs);
+            self.proved_noreturn = false;
+            self.checking_noreturn = true;
+            let ran = self.real(at, target);
+            self.checking_noreturn = false;
+            let ran = ran?;
+            if let Some(e @ Exit::Return) = ran.filter(|_| self.stubs == stubs) {
+                return Ok(Some(e));
+            }
+            self.state = saved;
+            self.records.truncate(records);
+            if let Some(r) = self.records.last_mut() {
+                r.effect = None;
+            }
+            if std::mem::take(&mut self.proved_noreturn) {
+                return Ok(None);
+            }
+        }
+        self.unverified_noreturn = true;
+        Ok(None)
+    }
+
     fn tail_call(&mut self, at: u64, target: u64, indirect: bool) -> Result<Exit, Halt> {
         let args = self.record(at, Some(target), indirect)?;
         if self.calls.site(at).noreturn {
-            return Ok(Exit::NoReturn);
+            return Ok(match self.stops_at(at, target, &args)? {
+                Some(_) => Exit::Return,
+                None => Exit::NoReturn,
+            });
         }
         let in_image = self.env.code_mapped(target);
         if in_image {
@@ -452,6 +549,7 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
 
     /// The stub's effect: kill, let the arguments escape, pop the stack.
     fn stub(&mut self, at: u64, args: &[u128]) -> Result<(), Halt> {
+        self.stubs += 1;
         let site = self.calls.site(at).clone();
         let pop = site.extrapop.ok_or_else(|| Halt::Unsupported(format!("call at {at:#x} with unknown stack cleanup")))?;
         self.state.call(&site.killed, args, site.ret_ext.as_ref());
@@ -599,6 +697,7 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
             indirect: self.indirect,
             calls: self.records,
             noreturn,
+            unverified_noreturn: self.unverified_noreturn,
             followed: self.followed,
             guessed: self.guessed,
             events: self.events,
@@ -825,13 +924,19 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(
                     m.state.end_instruction();
                     continue;
                 }
-                let in_image = env.code_mapped(target);
+                let in_image = env.code_mapped(target) && !(m.checking_noreturn && leads_out(env, target));
                 if own {
-                    if calls.site(addr).noreturn {
-                        m.record(addr, Some(target), indirect)?;
-                        return Ok(Exit::NoReturn);
-                    }
                     let args = m.record(addr, Some(target), indirect)?;
+                    if calls.site(addr).noreturn {
+                        match m.stops_at(addr, target, &args)? {
+                            None => return Ok(Exit::NoReturn),
+                            Some(_) => {
+                                called_here = true;
+                                i += 1;
+                                continue;
+                            }
+                        }
+                    }
                     match if in_image { m.real(addr, target)? } else { None } {
                         Some(e @ (Exit::Leave | Exit::Unwind(_))) => return Ok(e),
                         Some(_) => {}
@@ -840,6 +945,9 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(
                             m.stub(addr, &args)?
                         }
                     }
+                } else if mode == Mode::Opaque && m.known_noreturn(target)? {
+                    m.proved_noreturn = true;
+                    return Ok(Exit::NoReturn);
                 } else if in_image {
                     if top && !m.followed.contains(&(addr, target)) {
                         m.followed.push((addr, target));
@@ -1029,6 +1137,10 @@ pub fn run<'e, 'p>(
         returns: Vec::new(),
         events: Vec::new(),
         guessed: false,
+        stubs: 0,
+        unverified_noreturn: false,
+        proved_noreturn: false,
+        checking_noreturn: false,
         copies: Vec::new(),
         restoring: Vec::new(),
         convention: Vec::new(),

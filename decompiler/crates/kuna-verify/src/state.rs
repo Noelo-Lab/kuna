@@ -319,7 +319,7 @@ impl<'p> Env<'p> {
     /// A byte of the loaded image, read a page at a time. A page the loader
     /// does not map whole is read a byte at a time, as each byte is asked for:
     /// a random pointer lands in one far more often than in the image.
-    fn image_byte(&self, addr: u64) -> Option<u8> {
+    pub(crate) fn image_byte(&self, addr: u64) -> Option<u8> {
         if let Some(m) = &self.mapped {
             let i = m.partition_point(|r| r.0 <= addr);
             if i == 0 || m[i - 1].1 < addr {
@@ -573,7 +573,9 @@ pub type FrameReads = HashSet<u64, BuildHasherDefault<Fast>>;
 /// need none.
 #[derive(Clone, Default)]
 struct Mem {
-    pages: HashMap<(i32, u64), Page, BuildHasherDefault<Fast>>,
+    /// Shared until written: cloning a state to run a callee for real copies
+    /// the page pointers, not the pages.
+    pages: HashMap<(i32, u64), Rc<Page>, BuildHasherDefault<Fast>>,
 }
 
 #[derive(Clone)]
@@ -594,7 +596,7 @@ impl Mem {
     }
 
     fn insert(&mut self, sp: i32, off: u64, b: u8) {
-        let p = self.pages.entry((sp, off >> 6)).or_insert(Page { bytes: [0; 64], set: 0 });
+        let p = Rc::make_mut(self.pages.entry((sp, off >> 6)).or_insert_with(|| Rc::new(Page { bytes: [0; 64], set: 0 })));
         let i = off & 63;
         p.bytes[i as usize] = b;
         p.set |= 1 << i;
@@ -607,17 +609,30 @@ impl Mem {
         })
     }
 
-    /// The bytes of `sp` in `[start, end)`, in no order.
+    /// The bytes of `sp` in `[start, end)`, in no order: the range's pages
+    /// looked up, or every page scanned when there are fewer of those.
     fn range(&self, sp: i32, start: u64, end: u64) -> Vec<(u64, u8)> {
-        self.iter().filter(|&((s, off), _)| s == sp && off >= start && off < end).map(|((_, off), b)| (off, b)).collect()
+        if end <= start {
+            return Vec::new();
+        }
+        let (first, last) = (start >> 6, (end - 1) >> 6);
+        let inside = |off: u64| off >= start && off < end;
+        if last - first < self.pages.len() as u64 {
+            (first..=last)
+                .filter_map(|page| self.pages.get(&(sp, page)).map(|p| (page, p)))
+                .flat_map(|(page, p)| (0..64u64).filter(move |i| p.set >> i & 1 == 1).map(move |i| (page << 6 | i, p.bytes[i as usize])))
+                .filter(|&(off, _)| inside(off))
+                .collect()
+        } else {
+            self.iter().filter(|&((s, off), _)| s == sp && inside(off)).map(|((_, off), b)| (off, b)).collect()
+        }
     }
 
     fn retain(&mut self, mut keep: impl FnMut(i32, u64) -> bool) {
         self.pages.retain(|&(sp, page), p| {
-            for i in 0..64u64 {
-                if p.set >> i & 1 == 1 && !keep(sp, page << 6 | i) {
-                    p.set &= !(1 << i);
-                }
+            let gone = (0..64u64).filter(|&i| p.set >> i & 1 == 1 && !keep(sp, page << 6 | i)).fold(0u64, |m, i| m | 1 << i);
+            if gone != 0 {
+                Rc::make_mut(p).set &= !gone;
             }
             p.set != 0
         });
@@ -1060,17 +1075,30 @@ impl<'e, 'p> State<'e, 'p> {
         Writes { bytes, epoch: self.epoch, escaped: self.escaped.clone(), skip: BTreeSet::new(), objects: Vec::new() }
     }
 
-    /// [`Self::writes`] at a call passing `args`, plus the frame objects this
-    /// call or an earlier one received a pointer to: a callee can read them,
-    /// directly or through a pointer an earlier callee kept.
+    /// [`Self::writes`] at a call passing `args`, plus the frame objects a
+    /// callee can reach: one an argument points to, one whose address this side
+    /// stored outside the frame (`global = &x`) or in an object already
+    /// reachable (`h.p = &x; f(&h)`), and one an earlier call could reach.
     pub fn writes_at_call(&mut self, args: &[u128]) -> Writes {
         let mut w = self.writes();
         let ram = self.env.ram.get_index();
-        for &a in args {
-            let Some(o) = self.env.stack_object(a as u64).filter(|_| self.env.in_stack(a as u64, 1)) else { continue };
-            if !self.passed_objects.contains(&o) {
-                self.passed_objects.push(o);
+        let mut found: Vec<u64> = args.iter().map(|&a| a as u64).collect();
+        let env = self.env;
+        found.extend(self.stored_pointers(|off| !env.in_stack(off, 1)));
+        let mut scanned = 0;
+        loop {
+            for &a in &found {
+                let Some(o) = self.env.stack_object(a).filter(|_| self.env.in_stack(a, 1)) else { continue };
+                if !self.passed_objects.contains(&o) {
+                    self.passed_objects.push(o);
+                }
             }
+            if scanned == self.passed_objects.len() {
+                break;
+            }
+            let objects = self.passed_objects[scanned..].to_vec();
+            scanned = self.passed_objects.len();
+            found = self.stored_pointers(|off| objects.iter().any(|&(s, e)| off >= s && off < e));
         }
         for &(start, end) in &self.passed_objects {
             if w.objects.contains(&(start, end)) {
@@ -1086,6 +1114,34 @@ impl<'e, 'p> State<'e, 'p> {
             }
         }
         w
+    }
+
+    /// The pointer-sized, aligned words this side wrote in RAM at offsets
+    /// `keep` accepts.
+    fn stored_pointers(&self, keep: impl Fn(u64) -> bool) -> Vec<u64> {
+        let ram = self.env.ram.get_index();
+        let size = u64::from(self.env.ram.get_addr_size()).clamp(1, 8);
+        let big = self.env.ram.is_big_endian();
+        let mut words = Vec::new();
+        for ((sp, off), _) in self.mem.iter() {
+            if sp != ram || off % size != 0 || !keep(off) {
+                continue;
+            }
+            let mut v = 0u64;
+            let mut whole = true;
+            for i in 0..size {
+                let Some(b) = self.mem.get(ram, off + i) else {
+                    whole = false;
+                    break;
+                };
+                let shift = if big { size - 1 - i } else { i };
+                v |= u64::from(b) << (shift * 8);
+            }
+            if whole {
+                words.push(v);
+            }
+        }
+        words
     }
 
     /// Extend the value in `x.param` across `x.container`, as the ABI says a

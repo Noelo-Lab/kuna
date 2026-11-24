@@ -53,6 +53,9 @@ pub struct Site {
     /// when kuna does not know.
     pub extrapop: Option<i32>,
     pub noreturn: bool,
+    /// The compiler left none of the function after the call: evidence the
+    /// call does not return that does not come from kuna.
+    pub laid_out_noreturn: bool,
     /// Register ranges the call kills.
     pub killed: Vec<(u64, u32)>,
     /// Where each of kuna's arguments is passed, by input slot; `None` where
@@ -76,6 +79,7 @@ pub struct Site {
     pub ret_ext: Option<crate::state::Extension>,
 }
 
+#[derive(Clone)]
 pub struct Calls {
     /// By the address of the call instruction.
     pub by_addr: BTreeMap<u64, Site>,
@@ -202,19 +206,64 @@ impl Calls {
 }
 
 /// Whether flow planted a no-return halt after the call at `at`, or a
-/// `CALL_RETURN` override ends the flow there (`error (1, ...)`): a callee kuna
-/// knows does not return by name, by its own body or by the call's arguments,
-/// not by prototype.
-fn halts_after(fd: &Funcdata, at: &kuna_base::address::Address) -> bool {
-    fd.get_override().get_flow_override(at) == kuna_decomp::overrides::flow_type::CALL_RETURN
-        || fd
+/// `CALL_RETURN` override cuts the flow after a call instruction (`error (1,
+/// ...)`): a callee kuna knows does not return by name, by its own body or by
+/// the call's arguments, not by prototype. The same override on a branch only
+/// makes it a tail call.
+fn halts_after(fd: &Funcdata, env: &Env, at: &kuna_base::address::Address) -> bool {
+    let cut = fd.get_override().get_flow_override(at) == kuna_decomp::overrides::flow_type::CALL_RETURN
+        && crate::machine::lift(env, at.get_offset())
+            .is_ok_and(|i| i.ops.iter().any(|o| matches!(o.opc, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)));
+    cut || fd
             .obank()
             .iter_at(at)
             .any(|(_, o)| fd.obank().get(o).is_some_and(|o| o.get_halt_type() & kuna_decomp::op::pcodeop_flags::noreturn != 0))
 }
 
-/// Whether only padding lies between the call at `at` and the start of another
-/// function: the compiler left none of this function's code after the call, so
+/// Callees that do not return by their definition, whatever kuna inferred.
+pub const KNOWN_NORETURN: &[&str] = &[
+    "exit", "_exit", "_Exit", "quick_exit", "abort", "__assert_fail", "__assert_rtn", "__assert", "__stack_chk_fail",
+    "__fortify_fail", "__chk_fail", "__libc_fatal", "longjmp", "_longjmp", "siglongjmp", "__longjmp_chk", "err", "errx",
+    "verr", "verrx", "pthread_exit", "thrd_exit", "__cxa_throw", "__cxa_rethrow", "__cxa_bad_cast", "__cxa_bad_typeid",
+    "_Unwind_Resume", "ExitProcess", "ExitThread", "TerminateProcess", "RaiseException", "_CxxThrowException",
+];
+
+/// Ghidra's curated lists of functions that do not return, by platform and
+/// language: data about names, not anything kuna inferred about this binary.
+const NORETURN_LISTS: [&str; 5] = [
+    include_str!("../../kuna-analysis/data/ElfFunctionsThatDoNotReturn"),
+    include_str!("../../kuna-analysis/data/PEFunctionsThatDoNotReturn"),
+    include_str!("../../kuna-analysis/data/PeMacFunctionsThatDoNotReturn"),
+    include_str!("../../kuna-analysis/data/RustFunctionsThatDoNotReturn"),
+    include_str!("../../kuna-analysis/data/GolangFunctionsThatDoNotReturn"),
+];
+
+fn listed(plain: &str) -> bool {
+    NORETURN_LISTS.iter().flat_map(|l| l.lines()).map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).any(|l| {
+        let entry = l.trim_start_matches('_');
+        match entry.strip_suffix('*') {
+            Some(prefix) => plain.starts_with(prefix),
+            None => plain == entry,
+        }
+    })
+}
+
+/// Whether `name` does not return by definition: a name on Ghidra's lists or
+/// this one, or `error` and `error_at_line` with a nonzero `status`.
+pub fn known_noreturn(name: &str, first_arg: Option<u128>) -> bool {
+    let bare = name.split('@').next().unwrap_or(name);
+    let plain = bare.trim_start_matches('_');
+    if KNOWN_NORETURN.iter().any(|&k| k == bare || k.trim_start_matches('_') == plain)
+        || listed(plain)
+        || kuna_decomp::kuna_noreturn_externmatch::is_known_noreturn_name(bare)
+    {
+        return true;
+    }
+    matches!(plain, "error" | "error_at_line") && first_arg.is_some_and(|s| s as u32 != 0)
+}
+
+/// Whether only padding (instructions with no effect, or zero bytes) lies
+/// between the call at `at` and the start of another function: the compiler left none of this function's code after the call, so
 /// it does not return (`error (1, ...)`, a fatal wrapper no name marks).
 fn falls_into_another(fd: &Funcdata, env: &Env, at: u64) -> bool {
     let own = fd.get_address().get_offset();
@@ -225,7 +274,9 @@ fn falls_into_another(fd: &Funcdata, env: &Env, at: u64) -> bool {
             return true;
         }
         match crate::machine::lift(env, next) {
-            Ok(i) if no_effect(env, &i) => next = next.wrapping_add(i.len),
+            Ok(i) if no_effect(env, &i) || (0..i.len).all(|k| env.image_byte(next.wrapping_add(k)) == Some(0)) => {
+                next = next.wrapping_add(i.len)
+            }
             _ => return false,
         }
     }
@@ -328,7 +379,8 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
             Site {
                 target,
                 extrapop: pop,
-                noreturn: proto.is_no_return() || halts_after(fd, op.get_addr()) || falls_into_another(fd, env, op.get_addr().get_offset()),
+                noreturn: proto.is_no_return() || halts_after(fd, env, op.get_addr()) || falls_into_another(fd, env, op.get_addr().get_offset()),
+                laid_out_noreturn: falls_into_another(fd, env, op.get_addr().get_offset()),
                 killed: killed(env, proto)
                     .into_iter()
                     .filter(|&(off, size)| {
@@ -354,6 +406,7 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
         target: None,
         extrapop: extrapop(own.model().get_extra_pop()),
         noreturn: false,
+        laid_out_noreturn: false,
         killed: killed(env, own),
         args: Vec::new(),
         locked: false,

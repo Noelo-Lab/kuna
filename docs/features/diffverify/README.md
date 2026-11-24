@@ -47,8 +47,18 @@ ins16  DIFFERS  (run 1 of 256)
   op semantic, or a wrong SLEIGH spec, is the same on both sides and invisible here. Tier
   L checks the spec and the op semantics against Unicorn, one instruction at a time
   (`tier-l-results.md`).
-- **How much it catches** is measured by planting faults in the IR (`mutation.md`): 77%
-  of reached mutants on the test corpus, 79% on `ls` and `find`.
+- **What the machine side takes from kuna.** It runs the machine code, but it still has to
+  know where each call's arguments live and whether a call returns. It does not take
+  kuna's word that a call does not return. It stops there only on evidence of its own:
+  - the callee's name is on Ghidra's no-return lists or on the checker's own list (for
+    `error` and `error_at_line`, only with a nonzero status);
+  - the compiler left only padding after the call;
+  - an in-image callee, run for real, reaches such a call.
+
+  An in-image callee that, run for real, returns without going through a stub proves
+  kuna wrong. A run that ends on kuna's word alone is not counted (`noreturn-unverified`).
+- **How much it catches** is measured by planting faults in the IR (`mutation.md`): 76%
+  of reached mutants on the test corpus, 74–75% on `ls` and `find`.
 
 ## 3. Verdicts
 
@@ -56,8 +66,8 @@ ins16  DIFFERS  (run 1 of 256)
 |---|---|
 | `AGREES(n)` | `n` runs agreed. Runs that trapped on both sides are not counted. |
 | `DIFFERS` | one run gave a difference. The report says which run and what differed. |
-| `DIVERGES(id)` | the difference is one kuna makes on purpose, a declared divergence (`src/divergence.rs`): `switchrunon-cut-row`, `synthesized-call`, `gowritebarrier`, `panic-check`, `ptrauth-trap`, `copy-overlap`, `divide-by-zero`, `nan-quieting`, `syscall-result`. Each one names the option that makes the trade, and the pattern the difference has to match. Any other difference under the same option is still `DIFFERS`. |
-| `UNKNOWN(reason)` | the check could not decide. `budget`: a side ran past `--budget` ops. `unsupported-op`: an op or user op the model does not run. `trap`: only one side trapped, or both trapped in every run. `harness`: the model failed. `no switch row`: a switch value no row of kuna's table takes. `prototype-suspect`: the difference rests on a callee prototype kuna recovered and may have wrong. `uninitialized-local`: kuna's result depends on a local nothing assigned. `guessed-callee`: a callee whose effect the model had to guess. `timeout`: no verdict within `--fn-seconds`. |
+| `DIVERGES(id)` | the difference is one kuna makes on purpose, a declared divergence (`src/divergence.rs`): `switchrunon-cut-row`, `synthesized-call`, `gowritebarrier`, `panic-check`, `ptrauth-trap`, `copy-overlap`, `divide-by-zero`, `nan-quieting`, `syscall-result`. Each one names the option that makes the trade, and the pattern the difference has to match. Any other difference under the same option is still `DIFFERS`. A declared call leaves out only itself and what follows it in that run: the calls and memory before it are still compared. |
+| `UNKNOWN(reason)` | the check could not decide. `budget`: a side ran past `--budget` ops. `unsupported-op`: an op or user op the model does not run. `trap`: only one side trapped, or both trapped in every run. `harness`: the model failed. `no switch row`: a switch value no row of kuna's table takes. `prototype-suspect`: the difference rests on a callee prototype kuna recovered and may have wrong. `uninitialized-local`: kuna's result depends on a local nothing assigned. `guessed-callee`: a callee whose effect the model had to guess. `noreturn-unverified`: every run ended at a call only kuna says does not return (§2). `timeout`: no verdict within `--fn-seconds`. |
 | `SKIPPED(reason)` | reserved for Tier S. |
 
 Exit status: 1 when a function differs, 3 when a file could not be checked, 2 for a usage
@@ -76,7 +86,7 @@ error, and 0 otherwise. With `--baseline`, it is 1 only for a regression (§6).
 | `kuna passes N arguments, and the prototype it gives the callee takes M` | a call short of its callee's declared prototype |
 | `memory before call N` / `memory at exit` | the first byte that differs, and how many do |
 | `kuna's result depends on ... which its C never assigns` | rerunning kuna's side with another value there changes its result: the C reads something it never set |
-| `note` | not a difference: trapped runs left out, a call the machine ran itself |
+| `note` | not a difference: runs left out (trapped on both sides, or ended at a call only kuna says does not return), a call the machine ran itself |
 | `concolic` | with `--concolic`: z3 queries, the inputs found, and whether z3 ran |
 | `trace` | with `--trace`: every call of the failing run on each side |
 | `PROTOTYPE_SUSPECT(...)` | kuna's prototype for this function or a callee disagrees with what the run showed. This is not a verdict. |
@@ -133,7 +143,10 @@ common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES 
 5. **Run kuna's side.** `graph.rs` interprets the compiled program from the same state,
    with the same stubs and replays.
 6. **Compare.** `check.rs` compares the calls in order, the memory before each call, the
-   memory at exit and the return value. It declares divergences (`divergence.rs`), and
+   memory at exit and the return value. At a call, the frame objects compared are the
+   ones a callee can reach: an argument points to one, its address was stored outside
+   the frame (`global = &x`), or it was stored in an object already reachable
+   (`h.p = &x; f(&h)`). It declares divergences (`divergence.rs`), and
    returns `UNKNOWN` where a difference rests on a guess. It also reruns kuna's side with
    other values in anything kuna's C reads but never assigns.
 7. **Report.** `report.rs` prints the verdict as text or JSON.

@@ -327,7 +327,7 @@ library rather than stubbed.
 | S1 | Tier S for loop-free `AGREES` functions that pass the static entry condition, under the budget | `EQUIVALENT` and `UNKNOWN(budget)` counts on the same corpus; every `sat` replays or is classified |
 | S2 | bounded loops; budget baseline and budget-regression flag | `EQUIVALENT(≤k)` counts; a deliberately bloating rule change is flagged by budget alone |
 | L1 | Tier L for x86-64, AArch64, ARM | per-arch mismatch report with skip list. **Done** (`tier-l-results.md`: 8,805 instruction forms against Unicorn; x86-64 differs only in the `AF` the spec does not compute; three SLEIGH spec errors on AArch64 and Thumb) |
-| M | mutation testing of the check: one semantic fault planted at a time in kuna's side of a function that agrees | recall per fault kind, the faults reached counted apart. **Done** (`mutation.md`: 77% of reached mutants caught on the corpus, 79% on `ls` and `find`; three gaps it showed in the check are fixed) |
+| M | mutation testing of the check: one semantic fault planted at a time in kuna's side of a function that agrees | recall per fault kind, the faults reached counted apart. **Done** (`mutation.md`: 76% of reached mutants caught on the corpus, 74–75% on `ls` and `find`; the gaps it showed in the check are fixed, and claims the check cannot verify are reported as such) |
 | P | separate proposal | — |
 
 C5 comes after C2 and before S1: most of what C1 skips needs C2's memory and call model

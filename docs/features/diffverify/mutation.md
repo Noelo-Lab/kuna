@@ -13,8 +13,10 @@ kuna-verify mutate <binary> <function>... --per-function 6 --json    # some func
 
 ## 1. What a mutant is
 
-A mutant changes one op of the compiled decompiled side (`src/program.rs`) or one call
-site, never the machine side. Up to `--per-function` mutants (6) are taken per function,
+A mutant changes one op of the compiled decompiled side (`src/program.rs`) or the facts
+kuna's side reads about one call. The machine side keeps its own copy of the call facts,
+so a mutant never changes how the reference run is made. The one exception is `noreturn`,
+below. Up to `--per-function` mutants (6) are taken per function,
 one operator after another, so each kind is tried where the function has one.
 
 | operator | the fault |
@@ -26,6 +28,7 @@ one operator after another, so each kind is tried where the function has one.
 | `drop-store` | a store does nothing |
 | `call-target` | a direct call goes to another function: the call site's target, which is what the printed C names a direct callee by |
 | `drop-arg` | a call loses its last argument. A recovered prototype loses the parameter too, as when kuna recovers one too few; a declared one (DWARF, libc types, a datatest's `parse line`) keeps it, as in #1922 |
+| `noreturn` | a call that returns is said not to. This is kuna's claim about the call, which both sides read, so it is the one mutant the machine side sees too: it has to find the claim false itself (README §2) |
 
 A mutant whose op no run reaches cannot be seen by any check, so recall counts only the
 mutants a run reached. A mutant that ends `UNKNOWN` (a budget overrun, a trap) is counted
@@ -55,19 +58,28 @@ or the decbench sample set.
 
 ## 3. Recall
 
-| | corpus | `ls` (`O2`) | `ls`, `--concolic 16` | `find` (`O2`) |
-|---|---:|---:|---:|---:|
-| mutants reached | 15,211 | 1,142 | 1,152 | 1,905 |
-| caught | 11,726 (77.1%) | 902 (79.0%) | 913 (79.3%) | 1,510 (79.3%) |
-| `branch` | 86.9% | 86.7% | 89.2% | 81.6% |
-| `call-target` | 84.7% | 85.0% | 67.0%* | 84.4% |
-| `constant` | 77.9% | 57.8% | 70.4% | 72.7% |
-| `drop-arg` | 47.5% | 91.1% | 91.2% | 86.2% |
-| `drop-store` | 89.5% | 66.2% | 70.3% | 82.2% |
-| `opcode` | 78.5% | 79.8% | 82.2% | 75.0% |
-| `swap` | 78.2% | 89.3% | 89.3% | 78.9% |
+With the machine side's call facts kept apart from kuna's:
 
-\* measured before the PLT fix of §2.
+| | corpus | `ls` (`O2`) | `find` (`O2`) |
+|---|---:|---:|---:|
+| mutants reached | 15,822 | 1,155 | 1,914 |
+| caught | 12,040 (76.1%) | 858 (74.3%) | 1,429 (74.7%) |
+| `branch` | 87.2% | 86.7% | 82.0% |
+| `call-target` | 83.7% | 84.2% | 84.5% |
+| `constant` | 79.3% | 59.8% | 73.9% |
+| `drop-arg` | 47.0% | 82.7% | 81.7% |
+| `drop-store` | 89.4% | 66.2% | 80.6% |
+| `noreturn` | 61.4% | 5.0% | 4.4% |
+| `opcode` | 79.0% | 79.4% | 75.6% |
+| `swap` | 78.2% | 89.3% | 79.6% |
+
+`--concolic 16` raises `constant` on `ls` (measured before `noreturn` was added) from 57.8%
+to 70.4%.
+
+`noreturn` on `ls` and `find` is mostly a claim about an imported function. It has no
+name the lists know and no body in the image to run, so the run ends on kuna's word and
+is not counted. That is 36 of 60 mutants on `ls` and 63 of 114 on `find`, reported as
+`UNKNOWN(noreturn-unverified)` rather than passing as agreement.
 
 What is left, by kind:
 

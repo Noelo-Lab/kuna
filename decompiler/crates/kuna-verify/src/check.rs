@@ -234,35 +234,53 @@ fn target(t: Option<u64>) -> String {
 /// the canary.
 const STACK_PROTECTOR: &[&str] = &["stack_chk_fail", "security_check_cookie", "report_gsfailure"];
 
-/// How the two sides' calls compare: the first difference, and the arguments a
-/// recovered callee prototype may have wrong.
+/// How the two sides' calls compare: the first difference, a declared
+/// divergence among them, whether it ends what the run can compare, and the
+/// arguments a recovered callee prototype may have wrong.
 struct CallCompare {
     differs: Option<Vec<String>>,
     declared: Option<&'static str>,
+    /// The declared divergence changes what follows it (a check the machine
+    /// fails and panics in), so the rest of the run is not compared.
+    stop: bool,
     suspects: Vec<String>,
 }
 
+/// Compare the calls in order. A call kuna synthesized, and a Go write
+/// barrier the machine calls where kuna stores directly, are declared: what
+/// either side does after one is not comparable (a stub stands where the
+/// other side ran code), so the calls before the first are compared and the
+/// rest of the run is not.
 fn compare_calls(prog: &ConsoleProgram, env: &Env, run: u32, calls: &Calls, m: &[Record], g: &[Record]) -> CallCompare {
     let mut suspects = Vec::new();
-    if g.iter().any(|c| c.at == 0 || (!c.indirect && c.target.is_none())) {
-        return CallCompare { differs: None, declared: Some(divergence::SYNTHESIZED_CALL.id), suspects };
-    }
-    let differs = |lines: Vec<String>, suspects: Vec<String>| CallCompare { differs: Some(lines), declared: None, suspects };
+    let synthesized = g.iter().position(|c| c.at == 0 || (!c.indirect && c.target.is_none()));
+    let barrier = m.iter().position(|c| {
+        c.target.and_then(|t| prog.function_named_at(t)).is_some_and(|n| n.starts_with("runtime.gcWriteBarrier"))
+            && !g.iter().any(|k| k.at == c.at)
+    });
+    let declared = match (synthesized, barrier) {
+        (Some(s), Some(b)) if b < s => Some((b, divergence::GO_WRITE_BARRIER.id)),
+        (Some(s), _) => Some((s, divergence::SYNTHESIZED_CALL.id)),
+        (None, Some(b)) => Some((b, divergence::GO_WRITE_BARRIER.id)),
+        (None, None) => None,
+    };
+    let cut = declared.map_or(usize::MAX, |(k, _)| k);
+    let (m, g) = (&m[..cut.min(m.len())], &g[..cut.min(g.len())]);
+    let declared = declared.map(|(_, id)| id);
+    let stop = declared.is_some();
+    let differs = |lines: Vec<String>, suspects: Vec<String>| CallCompare { differs: Some(lines), declared: None, stop: false, suspects };
     for k in 0..m.len().max(g.len()) {
         let n = k + 1;
         let (mc, gc) = match (m.get(k), g.get(k)) {
             (Some(mc), Some(gc)) => (mc, gc),
             (Some(mc), None) => {
                 let name = mc.target.and_then(|t| prog.function_named_at(t)).unwrap_or_default();
-                if name.starts_with("runtime.gcWriteBarrier") {
-                    return CallCompare { differs: None, declared: Some(divergence::GO_WRITE_BARRIER.id), suspects };
-                }
                 if kuna_decomp::kuna_gobounds::is_go_check_name(&name) || kuna_decomp::kuna_securitycheck::is_security_check_name(&name) {
-                    return CallCompare { differs: None, declared: Some(divergence::PANIC_CHECK.id), suspects };
+                    return CallCompare { differs: None, declared: Some(divergence::PANIC_CHECK.id), stop: true, suspects };
                 }
                 let l = format!("call {n} at {:#x} to {}: the machine makes it, kuna does not", mc.at, target(mc.target));
                 if STACK_PROTECTOR.contains(&name.trim_start_matches('_')) {
-                    return CallCompare { differs: None, declared: None, suspects: vec![format!("canary: {l}")] };
+                    return CallCompare { differs: None, declared, stop, suspects: vec![format!("canary: {l}")] };
                 }
                 return differs(vec![l], suspects);
             }
@@ -322,7 +340,7 @@ fn compare_calls(prog: &ConsoleProgram, env: &Env, run: u32, calls: &Calls, m: &
             return differs(vec![format!("memory before call {n} to {}: {d}", target(gc.target))], suspects);
         }
     }
-    CallCompare { differs: None, declared: None, suspects }
+    CallCompare { differs: None, declared, stop, suspects }
 }
 
 /// The parameters kuna's prototype types `bool`, in a register or in the
@@ -741,20 +759,31 @@ fn check_runs(
     };
     let compare = Compare { prog, claim: &claim, contract: contract.zip(contract_storage.as_ref()) };
     let mut upper = UpperWatch::new(prog, fd, &claim);
-    let mut calls = calls::sites(fd, &env);
+    let mut machine_calls = calls::sites(fd, &env);
+    let mut calls = machine_calls.clone();
     let mut program: Program = program::compile(prog, fd, &calls);
     if let Some((m, reached)) = mutation {
         program.reached = reached;
         match crate::mutate::apply(&mut program, &mut calls, &env, m) {
-            Some(what) => *mutated = Some(what),
+            Some(what) => {
+                if m.operator == crate::mutate::Operator::NoReturn {
+                    let at = program.blocks[m.block].ops[m.op].at;
+                    if let Some(s) = machine_calls.by_addr.get_mut(&at) {
+                        s.noreturn = true;
+                    }
+                }
+                *mutated = Some(what)
+            }
             None => return finish(Verdict::Unknown("UNKNOWN(mutant does not apply)".into()), Vec::new(), Vec::new()),
         }
     }
     let calls = calls;
+    let machine_calls = machine_calls;
     let program = program;
     let entry = fd.get_address().get_offset();
     let left_cfg = |mo: &machine::Outcome| mo.indirect.iter().any(|t| !program.starts.contains(t));
     let mut agreed = 0u32;
+    let mut unverified_runs = 0u32;
     let mut trapped_runs = 0u32;
     let mut trapped: Option<String> = None;
     let mut budget_runs = 0u32;
@@ -777,7 +806,7 @@ fn check_runs(
         };
         *env.concolic_inputs.borrow_mut() = inputs.clone();
         env.record_path.set(opts.concolic > 0 && (inputs.is_some() || run < RECORDED_RUNS));
-        let m = machine::run(&env, run, entry, opts.budget, &calls, None);
+        let m = machine::run(&env, run, entry, opts.budget, &machine_calls, None);
         env.record_path.set(false);
         if let Some(path) = m.as_ref().ok().and_then(|mo| mo.path.clone()).filter(|p| !p.branches.is_empty()) {
             work.add(run, inputs.clone(), path);
@@ -818,9 +847,9 @@ fn check_runs(
             (Ok(mo), Ok(go)) => {
                 if diverged.is_none() && !env.kernel.get() && mo.events.iter().any(|e| calls::SYSTEM_USEROPS.contains(&e.name.as_str())) {
                     env.kernel.set(true);
-                    let alt = machine::run(&env, run, entry, opts.budget, &calls, None);
+                    let alt = machine::run(&env, run, entry, opts.budget, &machine_calls, None);
                     env.kernel.set(false);
-                    if alt.is_ok_and(|alt| machine_differs(prog, &env, run, &calls, &claim, &mo, &alt).is_some()) {
+                    if alt.is_ok_and(|alt| machine_differs(prog, &env, run, &machine_calls, &claim, &mo, &alt).is_some()) {
                         kernel_shows = true;
                     }
                 }
@@ -875,10 +904,10 @@ fn check_runs(
             continue;
         }
         let mut cc = compare_calls(prog, &env, run, &calls, &mo.calls, &go.calls);
-        if let Some(ci) = go.call_input.as_ref().filter(|_| cc.differs.is_none() && cc.declared.is_none()) {
-            if let Ok(alt) = machine::run(&env, run, entry, opts.budget, &calls, Some(&ci.with)) {
-                let callee = ci.with.call.and_then(|k| callee_differs(prog, &calls, mo.calls.get(k), alt.calls.get(k)));
-                if let Some(d) = machine_differs(prog, &env, run, &calls, &claim, &mo, &alt).or(callee) {
+        if let Some(ci) = go.call_input.as_ref().filter(|_| cc.differs.is_none() && !cc.stop) {
+            if let Ok(alt) = machine::run(&env, run, entry, opts.budget, &machine_calls, Some(&ci.with)) {
+                let callee = ci.with.call.and_then(|k| callee_differs(prog, &machine_calls, mo.calls.get(k), alt.calls.get(k)));
+                if let Some(d) = machine_differs(prog, &env, run, &machine_calls, &claim, &mo, &alt).or(callee) {
                     let l = format!("{}; given kuna's arguments, the machine's {d}", ci.msg);
                     if ci.locked {
                         cc.suspects.push(format!("{l}; the callee's declared prototype does not take it"));
@@ -888,7 +917,7 @@ fn check_runs(
                 }
             }
         }
-        if cc.differs.is_none() && cc.declared.is_none() {
+        if cc.differs.is_none() && !cc.stop {
             cc.differs = compare_events(prog, &mo.events, &go.events);
         }
         let canary = cc.suspects.iter().any(|s| s.starts_with("canary: "));
@@ -907,7 +936,9 @@ fn check_runs(
         }
         if let Some(id) = cc.declared {
             diverged.get_or_insert(id);
-            continue;
+            if cc.stop {
+                continue;
+            }
         }
         if let Some(lines) = cc.differs {
             if undefined {
@@ -927,6 +958,10 @@ fn check_runs(
         if mo.noreturn != go.noreturn {
             let which = if mo.noreturn { "the machine stops in a no-return call, kuna returns" } else { "kuna stops in a no-return call, the machine returns" };
             return finish(Verdict::Differs { run, of: opts.runs }, differs(vec![which.to_string()]), Vec::new());
+        }
+        if mo.noreturn && mo.unverified_noreturn {
+            unverified_runs += 1;
+            continue;
         }
         let mut ms = mo.state;
         let outcome = if mo.noreturn { Ok(Outcome::Same) } else { compare.run(&mut ms, go.ret) };
@@ -976,10 +1011,10 @@ fn check_runs(
                     } else {
                         machine::WithArgs { call: None, bytes: entry_bytes(&env, u, run), kill_salt: 0 }
                     };
-                    let base = machine::run(&env, run, entry, opts.budget, &calls, None);
-                    let alt = machine::run(&env, run, entry, opts.budget, &calls, Some(&with));
+                    let base = machine::run(&env, run, entry, opts.budget, &machine_calls, None);
+                    let alt = machine::run(&env, run, entry, opts.budget, &machine_calls, Some(&with));
                     match (base, alt) {
-                        (Ok(b), Ok(a)) if machine_differs(prog, &env, run, &calls, &claim, &b, &a).is_none() => {}
+                        (Ok(b), Ok(a)) if machine_differs(prog, &env, run, &machine_calls, &claim, &b, &a).is_none() => {}
                         _ => continue,
                     }
                 }
@@ -999,6 +1034,9 @@ fn check_runs(
     }
     let verdict = match (unknown, diverged, trapped) {
         (Some(h), _, _) => Verdict::from_halt(&h),
+        (None, None, None) if agreed == 0 && unverified_runs > 0 => Verdict::Unknown(
+            "UNKNOWN(noreturn-unverified: every run ended at a call only kuna says does not return)".to_string(),
+        ),
         (None, Some(d), _) => Verdict::Diverges(d),
         (None, None, Some(t)) if agreed == 0 => Verdict::from_halt(&Halt::Trap(t)),
         (None, None, _) => Verdict::Agrees(agreed),
@@ -1007,6 +1045,11 @@ fn check_runs(
         Some(c) if matches!(verdict, Verdict::Agrees(_)) => vec![format!("contract {}  ({})", c.declaration, c.source)],
         _ => Vec::new(),
     };
+    if unverified_runs > 0 && matches!(verdict, Verdict::Agrees(_)) {
+        lines.push(format!(
+            "note     {unverified_runs} runs ended at a call only kuna says does not return, with no name, layout or run to show it; they are not counted"
+        ));
+    }
     if trapped_runs > 0 && matches!(verdict, Verdict::Agrees(_)) {
         lines.push(format!(
             "note     {trapped_runs} runs trapped on both sides or stored into read-only memory; C leaves them undefined, so they are not compared"

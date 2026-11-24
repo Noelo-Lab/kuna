@@ -35,9 +35,12 @@ pub enum Operator {
     /// A call loses its last argument: a recovered prototype loses it too, as
     /// when kuna recovers one parameter too few; a declared one keeps it.
     DropArg,
+    /// A call that returns is said not to. This is kuna's claim about the call,
+    /// which both sides read; the machine side has to find it false itself.
+    NoReturn,
 }
 
-pub const OPERATORS: [Operator; 7] = [
+pub const OPERATORS: [Operator; 8] = [
     Operator::Opcode,
     Operator::Constant,
     Operator::Swap,
@@ -45,6 +48,7 @@ pub const OPERATORS: [Operator; 7] = [
     Operator::DropStore,
     Operator::CallTarget,
     Operator::DropArg,
+    Operator::NoReturn,
 ];
 
 impl Operator {
@@ -57,6 +61,7 @@ impl Operator {
             Operator::DropStore => "drop-store",
             Operator::CallTarget => "call-target",
             Operator::DropArg => "drop-arg",
+            Operator::NoReturn => "noreturn",
         }
     }
 }
@@ -137,6 +142,9 @@ pub fn mutants(p: &Program, calls: &Calls) -> Vec<Mutation> {
                     if calls.site(op.at).target.is_some() {
                         add(Operator::CallTarget);
                     }
+                    if !calls.site(op.at).noreturn {
+                        add(Operator::NoReturn);
+                    }
                     if op.ins.len() > 1 {
                         add(Operator::DropArg);
                     }
@@ -208,6 +216,12 @@ pub fn apply(p: &mut Program, calls: &mut Calls, env: &Env, m: Mutation) -> Opti
                 "recovered prototype shrunk"
             };
             format!("last call argument dropped [{class}, {proto}]")
+        }
+        (Operator::NoReturn, Kind::Call { .. }) => {
+            let site = calls.by_addr.get_mut(&at)?;
+            site.noreturn = true;
+            let place = site.target.map_or("indirect", |t| if env.code_mapped(t) { "callee in the image" } else { "callee outside the image" });
+            format!("call said not to return [{place}]")
         }
         _ => return None,
     };
