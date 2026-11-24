@@ -78,8 +78,6 @@ pub struct TailFeatures {
     pub last: LastKind,
     /// `S` ends in a call whose block returns (a tail call).
     pub tail_call: bool,
-    /// `S` ends in a call that does not return.
-    pub noreturn: bool,
     /// `S` holds every call of the function, and at least one.
     pub only_calls: bool,
     pub cond: CondKind,
@@ -97,6 +95,8 @@ pub struct TailFeatures {
     pub p_loops: u32,
     /// Guard clauses (`if (c) return K;`) before the site.
     pub p_guards: u32,
+    /// The function looks unoptimized (`kuna_unoptimized`).
+    pub unopt: bool,
 }
 
 impl LastKind {
@@ -164,8 +164,8 @@ impl KKind {
 /// The numeric features by name, in dump order.
 pub const NUMERIC: &[&str] = &[
     "void", "wrapped", "lines", "top", "stmts", "calls", "assigns", "rets", "ifs", "loops", "switches", "gotos",
-    "tail_call", "noreturn", "only_calls", "cond_ops", "cond_call", "null_param", "p_top", "p_stmts", "p_rets",
-    "p_loops", "p_guards",
+    "tail_call", "only_calls", "cond_ops", "cond_call", "null_param", "p_top", "p_stmts", "p_rets", "p_loops",
+    "p_guards", "unopt", "unopt_wrapped",
 ];
 
 impl TailFeatures {
@@ -185,7 +185,6 @@ impl TailFeatures {
             "switches" => self.switches.into(),
             "gotos" => self.gotos.into(),
             "tail_call" => b(self.tail_call),
-            "noreturn" => b(self.noreturn),
             "only_calls" => b(self.only_calls),
             "cond_ops" => self.cond_ops.into(),
             "cond_call" => b(self.cond_call),
@@ -195,6 +194,8 @@ impl TailFeatures {
             "p_rets" => self.p_rets.into(),
             "p_loops" => self.p_loops.into(),
             "p_guards" => self.p_guards.into(),
+            "unopt" => b(self.unopt),
+            "unopt_wrapped" => b(self.unopt && self.wrapped),
             _ => return None,
         })
     }
@@ -322,13 +323,14 @@ fn top_of(data: &Funcdata, b: BlockId, conds: &[(BlockId, BlockId)]) -> u32 {
     }
 }
 
-/// The last statement of `b`, through lists.
-fn last_kind(data: &Funcdata, b: BlockId) -> (LastKind, Option<BlockId>) {
+/// The last statement of `b`, through lists, not counting a final return the
+/// rewrite hides (`skip_ret`).
+fn last_kind(data: &Funcdata, b: BlockId, skip_ret: bool) -> (LastKind, Option<BlockId>) {
     let g = data.sblocks_ref();
     let blk = g.block(b);
     match blk.get_type() {
         BlockType::Ls | BlockType::Graph => {
-            blk.get_list().last().map_or((LastKind::Other, None), |&l| last_kind(data, l))
+            blk.get_list().last().map_or((LastKind::Other, None), |&l| last_kind(data, l, skip_ret))
         }
         BlockType::If => (LastKind::If, None),
         BlockType::WhileDo | BlockType::DoWhile | BlockType::InfLoop => (LastKind::Loop, None),
@@ -341,7 +343,7 @@ fn last_kind(data: &Funcdata, b: BlockId) -> (LastKind, Option<BlockId>) {
             while let Some(o) = cur {
                 cur = data.bb_op_next(o);
                 let Some(op) = data.obank().get(o) else { continue };
-                if Some(o) == skip || !super::op_prints(data, o) {
+                if Some(o) == skip || !super::op_prints(data, o) || (skip_ret && op.code() == OpCode::CPUI_RETURN) {
                     continue;
                 }
                 kind = match op.code() {
@@ -484,6 +486,7 @@ pub(super) struct SiteParts<'a> {
     /// Returns in the part that do not print after the rewrite.
     pub hidden_rets: u32,
     pub conds: &'a [(BlockId, BlockId)],
+    pub unopt: bool,
 }
 
 pub(super) fn compute(data: &Funcdata, s: &SiteParts) -> TailFeatures {
@@ -495,15 +498,9 @@ pub(super) fn compute(data: &Funcdata, s: &SiteParts) -> TailFeatures {
     t.rets = t.rets.saturating_sub(s.hidden_rets);
     t.ops = t.ops.saturating_sub(s.hidden_rets);
     let top: u32 = s.part.iter().map(|&p| top_of(data, p, s.conds)).sum::<u32>().saturating_sub(s.hidden_rets);
-    let (last, last_bb) = s.part.last().map_or((LastKind::Other, None), |&l| last_kind(data, l));
+    let (last, last_bb) = s.part.last().map_or((LastKind::Other, None), |&l| last_kind(data, l, s.hidden_rets > 0));
     let last_tail = last_bb.and_then(|bb| data.bb_op_tail(bb)).and_then(|o| data.obank().get(o));
     let tail_call = last == LastKind::Call && last_tail.is_some_and(|o| o.code() == OpCode::CPUI_RETURN);
-    let noreturn = last == LastKind::Call
-        && last_bb.is_some_and(|bb| {
-            let tail = data.bb_op_tail(bb).and_then(|o| data.obank().get(o));
-            data.bblocks_ref().block(bb).size_out() == 0
-                && tail.is_some_and(|o| o.code() != OpCode::CPUI_RETURN || o.get_halt_type() != 0)
-        });
     let only_calls = t.calls > 0 && function_calls(data) == t.calls;
     let enter_neg = s.shape == TailShape::Guard;
     let (cond, cond_ops, cond_call, null_param) = cond_facts(data, cond_of(data, ifb, s.conds), enter_neg);
@@ -537,7 +534,6 @@ pub(super) fn compute(data: &Funcdata, s: &SiteParts) -> TailFeatures {
         gotos: t.gotos,
         last,
         tail_call,
-        noreturn,
         only_calls,
         cond,
         cond_ops,
@@ -549,6 +545,7 @@ pub(super) fn compute(data: &Funcdata, s: &SiteParts) -> TailFeatures {
         p_rets: pre.rets,
         p_loops: pre.loops,
         p_guards,
+        unopt: s.unopt,
     }
 }
 
@@ -559,7 +556,15 @@ pub(super) fn dump_dir() -> Option<&'static std::path::Path> {
 }
 
 /// Append one site to `<dir>/<pid>.jsonl`.
-pub(super) fn dump(data: &Funcdata, dir: &std::path::Path, idx: u32, site_addr: u64, f: &TailFeatures) {
+pub(super) fn dump(
+    data: &Funcdata,
+    dir: &std::path::Path,
+    idx: u32,
+    site_addr: u64,
+    policy: &super::TailFormPolicy,
+    decision: super::TailDecision,
+    f: &TailFeatures,
+) {
     let file = data
         .get_arch()
         .loader
@@ -568,10 +573,12 @@ pub(super) fn dump(data: &Funcdata, dir: &std::path::Path, idx: u32, site_addr: 
         .unwrap_or_default();
     let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
     let line = format!(
-        "{{\"file\": \"{}\", \"addr\": {}, \"fn\": \"{}\", \"idx\": {idx}, \"site\": {site_addr}, \"feat\": {}}}\n",
+        "{{\"file\": \"{}\", \"addr\": {}, \"fn\": \"{}\", \"idx\": {idx}, \"site\": {site_addr}, \"rule\": \"{:?}\", \"decision\": \"{:?}\", \"feat\": {}}}\n",
         esc(&file),
         data.get_address().get_offset(),
         esc(data.get_name()),
+        policy.rule,
+        decision,
         f.json()
     );
     let path = dir.join(format!("{}.jsonl", std::process::id()));

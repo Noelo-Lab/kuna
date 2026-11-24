@@ -131,14 +131,18 @@ pub enum TailDecision {
 
 /// Choose the form of `site`: under [`TailRule::Threshold`] wrap a tail of at
 /// most the threshold's lines and guard a longer one; under [`TailRule::Model`]
-/// wrap when the saved weights score the site's features above zero.
+/// wrap when the saved weights score the site's features above zero (and an
+/// empty tail always, so every choice is one some threshold makes), falling
+/// back to the threshold for a site without features.
 pub fn decide(site: &TailSite, policy: &TailFormPolicy) -> TailDecision {
     let max = if site.void { policy.void_max } else { policy.value_max } as usize;
     let wrap = match policy.rule {
         TailRule::Threshold => site.lines <= max,
         TailRule::Wrap => true,
         TailRule::Guard => false,
-        TailRule::Model => site.feats.as_ref().map_or(site.lines <= max, |f| features::model_score(f) > 0.0),
+        TailRule::Model => {
+            site.feats.as_ref().map_or(site.lines <= max, |f| site.lines == 0 || features::model_score(f) > 0.0)
+        }
     };
     match (site.shape, wrap) {
         (TailShape::Guard, true) => TailDecision::Wrap,
@@ -231,6 +235,11 @@ struct Ctx {
     ours: Vec<BlockId>,
     /// Guard `if`s the `looptest` plan drops in front of a loop.
     claimed: Vec<BlockId>,
+    /// The model or the training dump reads site features.
+    feats: bool,
+    /// `claimed` is computed, so a decision is final enough to dump.
+    checked: bool,
+    dumped: std::cell::RefCell<Vec<(u64, TailShape)>>,
 }
 
 fn run(data: &mut Funcdata, policy: &TailFormPolicy) -> usize {
@@ -245,13 +254,21 @@ fn run(data: &mut Funcdata, policy: &TailFormPolicy) -> usize {
         top,
         ours: Vec::new(),
         claimed: Vec::new(),
+        feats: policy.rule == TailRule::Model || features::dump_dir().is_some(),
+        checked: false,
+        dumped: std::cell::RefCell::new(Vec::new()),
     };
     let rewritten = noreturn::run(data, &mut cx);
     let view = build_view(data, top);
+    if features::dump_dir().is_some() {
+        cx.claimed = claimed_guards(data, policy.loop_test);
+        cx.checked = true;
+    }
     if next_edit(data, &cx, &view.list, &view.conds).is_none() {
         return rewritten;
     }
     cx.claimed = claimed_guards(data, policy.loop_test);
+    cx.checked = true;
     let mut edits = 0;
     let start = next_edit(data, &cx, &view.list, &view.conds).is_some() && materialize(data, top, view);
     while start && edits < MAX_EDITS {
@@ -424,8 +441,11 @@ fn next_edit(data: &Funcdata, cx: &Ctx, list: &[BlockId], conds: &[(BlockId, Blo
         }
         if cx.void || matches!(key, RetKey::Const(..)) {
             if let Some(lines) = wrapped_site(data, cx, list[i], r, conds) {
-                let site = TailSite { shape: TailShape::Wrapped, void: cx.void, lines };
-                if decide(&site, &cx.policy) == TailDecision::Guard {
+                let clause = data.sblocks_ref().block(list[i]).get_block(1);
+                let hidden = if cx.elide { terminal_returns(data, clause, RetKey::Void, true) } else { 0 };
+                let part = [clause];
+                let at = SiteAt { list, at: i, part: &part, key, hidden, conds };
+                if site_decision(data, cx, TailShape::Wrapped, lines, &at) == TailDecision::Guard {
                     return Some(Edit::Guard(i));
                 }
             }
@@ -456,21 +476,68 @@ fn next_edit(data: &Funcdata, cx: &Ctx, list: &[BlockId], conds: &[(BlockId, Blo
             return None;
         }
         let mut lines: usize = tail.iter().map(|&t| count_lines(data, t, conds)).sum();
-        if let Final::Embedded(..) = fin {
-            lines = lines.saturating_sub(1);
+        let hidden = if let Final::Embedded(..) = fin {
+            1
         } else if cx.elide {
-            lines = lines.saturating_sub(terminal_returns(data, list[body_end - 1], RetKey::Void, false));
-        }
+            terminal_returns(data, list[body_end - 1], RetKey::Void, false)
+        } else {
+            0
+        };
+        lines = lines.saturating_sub(hidden);
         if !negatable(data, cond_of(data, list[i], conds)) {
             return None;
         }
-        let site = TailSite { shape: TailShape::Guard, void: cx.void, lines };
-        return match decide(&site, &cx.policy) {
+        let at = SiteAt { list, at: i, part: tail, key, hidden, conds };
+        return match site_decision(data, cx, TailShape::Guard, lines, &at) {
             TailDecision::Wrap => Some(Edit::Wrap(i)),
             _ => None,
         };
     }
     None
+}
+
+/// Where a site sits: its `if` in the statement list, its conditional part,
+/// the returned value, and the returns in the part that the rewrite hides.
+struct SiteAt<'a> {
+    list: &'a [BlockId],
+    at: usize,
+    part: &'a [BlockId],
+    key: RetKey,
+    hidden: usize,
+    conds: &'a [(BlockId, BlockId)],
+}
+
+/// [`decide`] for one site, with its features when the model or the training
+/// dump reads them.  A part that ends in a call that does not return is the
+/// no-return form's, not a decision site: it gets no features.
+fn site_decision(data: &Funcdata, cx: &Ctx, shape: TailShape, lines: usize, at: &SiteAt) -> TailDecision {
+    let mut site = TailSite { shape, void: cx.void, lines, feats: None };
+    let decision_site = at.part.last().is_some_and(|&l| !noreturn::noreturn_end(data, l));
+    if cx.feats && decision_site {
+        let parts = features::SiteParts {
+            list: at.list,
+            at: at.at,
+            part: at.part,
+            shape,
+            void: cx.void,
+            key: Some(at.key),
+            lines,
+            hidden_rets: at.hidden as u32,
+            conds: at.conds,
+            unopt: data.kuna_unoptimized(),
+        };
+        site.feats = Some(features::compute(data, &parts));
+    }
+    let decision = decide(&site, &cx.policy);
+    if let (Some(dir), Some(f), true) = (features::dump_dir(), site.feats.as_ref(), cx.checked) {
+        let addr = features::site_addr(data, at.list[at.at], at.conds);
+        let mut dumped = cx.dumped.borrow_mut();
+        if !dumped.contains(&(addr, shape)) {
+            features::dump(data, dir, dumped.len() as u32, addr, &cx.policy, decision, f);
+            dumped.push((addr, shape));
+        }
+    }
+    decision
 }
 
 /// For a wrapped `if (c) { S }` right before the final bare return `r`, the
@@ -964,10 +1031,16 @@ impl OptionTailForm {
     pub const NAME: &'static str = "tailform";
 
     pub fn apply(&self, p1: &str) -> KunaResult<(Option<TailFormPolicy>, String)> {
-        let bad = || KunaError::parse("Must specify tailform as 'off', 'on', <n> or <void>,<value>");
+        let bad = || KunaError::parse("Must specify tailform as 'off', 'on', 'wrap', 'guard', 'model', <n> or <void>,<value>");
+        let rule = |rule| TailFormPolicy { rule, ..Default::default() };
         let policy = match p1 {
             "off" => return Ok((None, "Function-tail form policy turned off".to_string())),
             "on" => TailFormPolicy::default(),
+            "wrap" => return Ok((Some(rule(TailRule::Wrap)), "Function-tail form policy: wrap every tail".to_string())),
+            "guard" => return Ok((Some(rule(TailRule::Guard)), "Function-tail form policy: guard every tail".to_string())),
+            "model" => {
+                return Ok((Some(rule(TailRule::Model)), "Function-tail form policy: the saved logistic model".to_string()))
+            }
             _ => match p1.split_once(',') {
                 Some((v, k)) => TailFormPolicy {
                     void_max: v.trim().parse().map_err(|_| bad())?,

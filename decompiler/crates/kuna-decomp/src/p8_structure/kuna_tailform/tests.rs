@@ -3,7 +3,7 @@
 use super::*;
 
 fn site(shape: TailShape, void: bool, lines: usize) -> TailSite {
-    TailSite { shape, void, lines }
+    TailSite { shape, void, lines, feats: None }
 }
 
 #[test]
@@ -45,4 +45,15 @@ fn the_option_takes_off_on_one_or_two_thresholds() {
     assert_eq!((two.void_max, two.value_max), (2, 5));
     assert!(o.apply("wide").is_err());
     assert!(o.apply("2,").is_err());
+    assert_eq!(o.apply("wrap").unwrap().0.unwrap().rule, TailRule::Wrap);
+    assert_eq!(o.apply("guard").unwrap().0.unwrap().rule, TailRule::Guard);
+    assert_eq!(o.apply("model").unwrap().0.unwrap().rule, TailRule::Model);
+}
+
+#[test]
+fn forced_rules_wrap_or_guard_every_tail() {
+    let wrap = TailFormPolicy { rule: TailRule::Wrap, ..Default::default() };
+    let guard = TailFormPolicy { rule: TailRule::Guard, ..Default::default() };
+    assert_eq!(decide(&site(TailShape::Guard, true, 40), &wrap), TailDecision::Wrap);
+    assert_eq!(decide(&site(TailShape::Wrapped, false, 1), &guard), TailDecision::Guard);
 }
