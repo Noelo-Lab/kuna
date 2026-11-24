@@ -1933,9 +1933,13 @@ code then consumes only those bytes and sub-variable flow trims the RETURN to
 the call's value, so the function returns `int`-width on every path. A path
 that returns another call's result is narrowed with it: the RETURN pull traces
 back into that call and narrows its output (`try_call_return_push`, below), so
-two functions that tail-call each other and a declared `int` (readline's
-`rl_forward_char` and `rl_backward_char` beside `int rl_forward_byte`) return
-`int`, not `unsigned long` with `return (unsigned int)rl_forward_byte(..)`. Where
+a function that tail-calls a declared `int` on one path and an unlocked call on
+another (readline's `rl_forward_char`, beside `int rl_forward_byte` and its
+partner `rl_backward_char`) returns `int`, not `unsigned long` with
+`return (unsigned int)rl_forward_byte(..)`. The partner narrows only if one of
+its own paths returns a declared `int`: `rl_backward_char` tail-calls
+`rl_backward_byte`, whose prototype nothing declares, so it keeps `unsigned
+long`. Where
 another path returns all of the register, which a function returning the
 call's `int` unextended does only when it returns nothing (gnulib's `void
 version_etc_arn` leaves an unrelated 8-byte value in rax on one path), the return
@@ -2849,12 +2853,14 @@ CALL is a push (`try_call_return_push`, upstream `tryCallReturnPush`): when the
 logical value is the low part, at least a byte, and nothing outside it is
 consumed, the call's output becomes the narrow value and a ZEXT of it stands in
 for the old output until dead code removes it. A call whose prototype locks its
-output, or whose output trials are still being scored, refuses. The port had
-left this arm a stub that failed the whole trace, so a RETURN pull failed at
-the first returned call result: a function returning a declared `int` on one
-path and an unlocked call's result on another kept the whole register and
-printed the declared call zero-extended, and a `uint32_t` caller of an
-unstated callee read the call as `uint8` and masked it (`v1 & 0xffffffff`).
+output, or whose output trials are still being scored, refuses. Any trace may
+end at a call this way, not only a RETURN pull: a caller that keeps only the
+low bytes of a call's result reads the call at that width, so `u_int len =
+sshbuf_len(b)` declares an `unsigned int`, a `uint32_t` caller of an unstated
+callee does not mask it (`v1 & 0xffffffff`), an ARM caller tests a `bool`
+callee's result as a byte, and a function returning a declared `int` on one
+path and an unlocked call's result on another returns `int` instead of
+printing the declared call zero-extended.
 (kuna) A call pull whose dropped bits
 are known zero, because the wide input's non-zero mask lies inside the logical
 mask, is recorded on the call's spec when the rewrite commits

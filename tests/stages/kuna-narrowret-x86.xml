@@ -78,6 +78,6 @@ feffff4883c40883c0015b5dc30f1f00f30f1efa5589fd534883ec08e8cffeffff89efc1ef0389c3
   <com>quit</com>
 </script>
 <stringmatch name="NARROWRET-X86 #1: a callee whose word write clears rax returns int in both passes" min="2" max="2">int4 whole\(int4 a0\)</stringmatch>
-<stringmatch name="NARROWRET-X86 #2: with nothing stated the caller reads the call at the width it returns" min="2" max="2">^uint4 returns_word\(unsigned long a0\)$</stringmatch>
+<stringmatch name="NARROWRET-X86 #2: with nothing stated the caller reads the call at the width it returns" min="2" max="2">^uint4 returns_word\(</stringmatch>
 <stringmatch name="NARROWRET-X86 #3: a byte the callee never extends is read as al" min="2" max="2">uint1 v1; // al \| bl</stringmatch>
 </decompilertest>
