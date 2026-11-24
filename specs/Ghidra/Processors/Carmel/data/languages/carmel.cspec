@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<compiler_spec>
+  <data_organization>
+    <pointer_size value="2"/>
+    <integer_size value="2"/>
+    <long_size value="4"/>
+  </data_organization>
+  <global>
+    <range space="data"/>
+  </global>
+  <stackpointer register="SP" space="data" growth="negative"/>
+  <!-- TASKING addone and its separate caller pass and return int in A0L.
+       The return PC occupies two DATA words. Other prototype classes are unverified. -->
+  <default_proto>
+    <prototype name="default" extrapop="4" stackshift="4">
+      <input>
+        <pentry minsize="1" maxsize="2"><register name="A0L"/></pentry>
+      </input>
+      <output>
+        <pentry minsize="1" maxsize="2"><register name="A0L"/></pentry>
+      </output>
+    </prototype>
+  </default_proto>
+</compiler_spec>

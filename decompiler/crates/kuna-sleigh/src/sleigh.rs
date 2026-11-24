@@ -1385,6 +1385,7 @@ impl PcodeBuilder for SleighBuilder<'_> {
         let delay_byte_cnt = self.contexts[self.cur_ctx].ctx.get_delay_slot();
         let mut fall_offset = fall_base;
         let mut bytecount = 0i32;
+        let carmel_start = self.engine.uses_carmel_issues().then_some(self.cache.issued.len());
         loop {
             let newaddr = &baseaddr + i64::from(fall_offset);
             self.set_unique_offset(&newaddr);
@@ -1411,6 +1412,22 @@ impl PcodeBuilder for SleighBuilder<'_> {
             bytecount += len;
             if bytecount >= delay_byte_cnt {
                 break;
+            }
+        }
+        if let Some(start) = carmel_start {
+            let (before, slot) = self.cache.issued.split_at(start);
+            let memory = |op: &PcodeData| matches!(op.opc, OpCode::CPUI_LOAD | OpCode::CPUI_STORE);
+            let unsafe_flow = |op: &PcodeData| match op.opc {
+                OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH => op
+                    .invar
+                    .and_then(|i| self.cache.pool[i].space.as_ref())
+                    .is_none_or(|space| space.get_type() != spacetype::IPTR_CONSTANT),
+                OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND
+                | OpCode::CPUI_RETURN | OpCode::CPUI_CALLOTHER => true,
+                _ => false,
+            };
+            if slot.iter().any(unsafe_flow) || before.iter().any(memory) && slot.iter().any(memory) {
+                return Err(KunaError::unimpl("Unsupported Carmel delay issue effects", fall_base));
             }
         }
         self.cur = saved_cur;
@@ -2548,6 +2565,14 @@ impl Sleigh {
         }
     }
 
+    fn uses_carmel_issues(&self) -> bool {
+        self.base.base.get_alignment() == 3
+            && self.base.manager.get_default_code_space().is_some_and(|space| {
+                space.get_word_size() == 3 && space.get_name() == "code"
+            })
+            && self.context_db.borrow().get_variable(b"carmel_issue").is_ok()
+    }
+
     fn one_instruction_with_map(
         &self,
         emit: &mut dyn PcodeEmit,
@@ -2580,9 +2605,10 @@ impl Sleigh {
         }
         self.last_commits.borrow_mut().clear();
         let mut pos = self.obtain_context_with_match_cache(baseaddr, ParseState::Pcode, assembly.is_some())?;
+        let carmel_delay = pos.get_delay_slot() > 0 && self.uses_carmel_issues();
         if let Some(image) = image {
             Self::check_mapped_instruction(image, baseaddr, pos.get_length())?;
-            if pos.get_delay_slot() > 0 {
+            if pos.get_delay_slot() > 0 && !carmel_delay {
                 return Err(KunaError::lowlevel("Checked instruction translation does not support delay slots"));
             }
         }
@@ -2599,9 +2625,18 @@ impl Sleigh {
             let mut bytecount = 0i32;
             loop {
                 let delayaddr = &pos.addr + i64::from(fall_offset);
+                if let Some(image) = image {
+                    Self::check_mapped_instruction(image, &delayaddr, 1)?;
+                }
                 let mut delaypos = self.obtain_context(&delayaddr, ParseState::Pcode)?;
-                self.apply_commits(&delaypos)?;
                 let len = delaypos.get_length();
+                if carmel_delay && (len != pos.get_delay_slot() || delaypos.get_delay_slot() > 0) {
+                    return Err(KunaError::unimpl("Invalid Carmel delay issue", pos.get_length()));
+                }
+                if let Some(image) = image {
+                    Self::check_mapped_instruction(image, &delayaddr, len)?;
+                }
+                self.apply_commits(&delaypos)?;
                 delaypos.parsestate = ParseState::Pcode;
                 contexts.push(ResolvedCtx { addr: delayaddr, ctx: delaypos });
                 fall_offset += len;

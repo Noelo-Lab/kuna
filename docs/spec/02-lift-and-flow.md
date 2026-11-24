@@ -3843,6 +3843,24 @@ budget is reported as a coverage note, since its import calls are then missing.
 
 ## 2.5 Arch quirks
 
+**Carmel CODE issues.** Raw CODE and read-only XML CODE are framed in complete
+six-byte fetches. A sequential fetch exposes two independent three-byte
+instructions; a parallel or wide fetch exposes only its even start. The
+console stores byte offsets internally and preserves odd CODE word addresses
+at its raw boundary. It does not compact omitted slots or decode missing ROM
+as padding.
+
+Parallel roots sample both compact lanes before committing their register
+effects. A compact delay counts one following issue, not one fetch: the
+loader paints the following issue's length, and the translator checks the
+whole mapped delay before splicing its p-code. Unimplemented or nested
+transfers stop the lift rather than making an edge. A delay with memory
+effects cannot be combined with an unverified stack transfer.
+
+Only a covered immutable CLIW record in an explicitly normalized XML bank
+can specialize a reference. Raw CODE and writable or incomplete template
+banks retain the encoded index in disassembly and produce `unimpl`.
+
 **(kuna) SPARC struct return — `option sparcstructret`, default on, SPARC-gated,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_sparcstructret.rs
 (kuna_sparc_struct_ret_trap_producer)` (from Ghidra issue GH-6882).** The SPARC ABI

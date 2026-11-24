@@ -503,15 +503,7 @@ pub mod emulate_memory {
 
     /// C++ `EmulateMemory::executeBranchind`
     pub fn execute_branchind<T: EmulateMemory + ?Sized>(emu: &mut T) -> KunaResult<()> {
-        let op = current_op(emu);
-        let memstate = Rc::clone(emu.get_memory_state());
-        let off = memstate.borrow().get_value_data(op.get_input(0))?;
-        let spc = Rc::clone(
-            op.get_addr()
-                .get_space()
-                .expect("executeBranchind: instruction address with null space (C++ UB)"),
-        );
-        emu.set_execute_address(&Address::new(spc, off))
+        execute_indirect_transfer(emu)
     }
 
     /// C++ `EmulateMemory::executeCall`
@@ -522,15 +514,21 @@ pub mod emulate_memory {
 
     /// C++ `EmulateMemory::executeCallind`
     pub fn execute_callind<T: EmulateMemory + ?Sized>(emu: &mut T) -> KunaResult<()> {
+        execute_indirect_transfer(emu)
+    }
+
+    fn execute_indirect_transfer<T: EmulateMemory + ?Sized>(emu: &mut T) -> KunaResult<()> {
         let op = current_op(emu);
         let memstate = Rc::clone(emu.get_memory_state());
         let off = memstate.borrow().get_value_data(op.get_input(0))?;
-        let spc = Rc::clone(
-            op.get_addr()
-                .get_space()
-                .expect("executeCallind: instruction address with null space (C++ UB)"),
-        );
-        emu.set_execute_address(&Address::new(spc, off))
+        let spc = op.get_addr().get_space().expect("indirect transfer without a code space");
+        // Carmel's operand is the architectural CODE word; the cursor addresses bytes.
+        let off = if spc.get_name() == "code" && spc.get_word_size() == 3 {
+            AddrSpace::address_to_byte(off, spc.get_word_size())
+        } else {
+            off
+        };
+        emu.set_execute_address(&Address::new(Rc::clone(spc), off))
     }
 
     /// C++ `EmulateMemory::executeCallother`

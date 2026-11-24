@@ -30,6 +30,7 @@
 //! function entry the faithful way (the binaryimage's own symbol records, which
 //! is precisely what `readLoaderSymbols` reads).
 
+mod kuna_carmel_image;
 mod lazy_inventory;
 mod kuna_thunknames;
 mod kuna_signature_names;
@@ -4321,6 +4322,9 @@ pub(crate) fn bootstrap_xml_image(
             "No sleigh specification for architecture {arch_id}"
         )));
     }
+    let carmel_bank = (arch.sleigh().arch_id() == kuna_carmel_image::TARGET)
+        .then(|| kuna_carmel_image::check_xml_chunks(&binaryimage))
+        .transpose()?;
 
     // buildSpecFile -> buildTranslator -> the Architecture::init tail (shared
     // by both the XML and ELF frontends).
@@ -4352,9 +4356,26 @@ pub(crate) fn bootstrap_xml_image(
 
     // Hand the opened loader to the engine (the C++ `loader` back-pointer the
     // decode reads on load_fill).
-    let img = arch
+    let mut img = arch
         .take_loader()
         .ok_or_else(|| KunaError::lowlevel("loader vanished after open"))?;
+    let input_context = if let Some(normalized_bank) = carmel_bank {
+        let base = arch.sleigh().base().unwrap();
+        let code = default_code_space(arch.sleigh())?;
+        let cliw = base.manage().get_space_by_name("cliw")
+            .ok_or_else(|| KunaError::lowlevel("Carmel target has no CLIW space"))?;
+        let entries = symbols.iter().filter_map(|symbol| {
+            symbol.addr.get_space().filter(|space| Rc::ptr_eq(space, &code))?;
+            Some(symbol.addr.get_offset())
+        });
+        let paints = kuna_carmel_image::frame_xml(
+            &mut img, &code, cliw, &readonly_ranges, normalized_bank, entries,
+        )?;
+        install_input_context(base, &code, &paints)?;
+        Some((code, paints))
+    } else {
+        None
+    };
     arch.sleigh_mut().base_mut().unwrap().set_loader(Box::new(img));
 
     // Apply the collected read-only ranges to the symbol table's property map
@@ -4370,12 +4391,15 @@ pub(crate) fn bootstrap_xml_image(
 
     // Slice the XML leaf back to its `SleighArchitecture` (the XML-specific
     // loader/adjustvma machinery is spent; the engine owns the opened image).
-    // The XML path runs no analysis tier, so no facts are stashed and the gated
-    // commit at `read symbols` is a no-op (parity is structurally untouched).
+    // Only the target-specific immutable Carmel image context needs replay.
     let mut prog = empty_program(arch.into_sleigh(), registry, ProgramContainer::Xml, description);
     let split_parts = xml_split_parts(&symbols);
     prog.record_loader_functions(&symbols, &split_parts);
     prog.symbols = SymbolStream::from_loader(symbols);
+    if let Some((code, paints)) = input_context {
+        prog.pending_analysis = input_isa_stash(paints);
+        prog.analysis_code_space = Some(code);
+    }
     // C++ `conf->readLoaderSymbols("::")` (testfunction.cc:160 / consolemain.cc:104):
     // install the binaryimage symbols as FunctionSymbols so a CALL to one resolves
     // to its callee name at flow-analysis time.
@@ -4532,15 +4556,27 @@ fn install_input_isa(
 ) -> KunaResult<Vec<kuna_analysis::pass::ContextPaint>> {
     let paints = input_isa_paints_for_ranges(ranges, arch, arch_id, isa)?;
     arch.input_arm_isa_override = explicit;
-    for paint in &paints {
-        let begin = Address::new(Rc::clone(code_space), paint.addr);
-        let end = paint.end.map(|end| Address::new(Rc::clone(code_space), end));
-        arch.with_context_db_mut(|db| match end {
-            Some(end) => db.set_variable_region(paint.var.as_bytes(), &begin, &end, paint.value),
-            None => db.set_variable(paint.var.as_bytes(), &begin, paint.value),
-        })?;
-    }
+    install_input_context(arch, code_space, &paints)?;
     Ok(paints)
+}
+
+fn install_input_context(
+    arch: &Architecture,
+    code_space: &Rc<AddrSpace>,
+    paints: &[kuna_analysis::pass::ContextPaint],
+) -> KunaResult<()> {
+    arch.with_context_db_mut(|db| {
+        for paint in paints {
+            let begin = Address::new(Rc::clone(code_space), paint.addr);
+            if let Some(end) = paint.end {
+                let end = Address::new(Rc::clone(code_space), end);
+                db.set_variable_region(paint.var.as_bytes(), &begin, &end, paint.value)?;
+            } else {
+                db.set_variable(paint.var.as_bytes(), &begin, paint.value)?;
+            }
+        }
+        Ok(())
+    })
 }
 
 fn input_isa_stash(
@@ -4737,6 +4773,10 @@ pub(crate) fn bootstrap_raw_image(
     }
 
     let arch_id = raw.sleigh().arch_id().to_string();
+    let carmel = arch_id == kuna_carmel_image::TARGET;
+    if carmel {
+        kuna_carmel_image::validate_raw(image_base, image_size, image_end)?;
+    }
     let arm32 = is_arm32_language(&arch_id);
     if arm32 && isa.is_none() {
         return Err(KunaError::lowlevel(
@@ -4758,7 +4798,7 @@ pub(crate) fn bootstrap_raw_image(
     }
 
     let ranges = [(image_base, image_size)];
-    let input_context_paints = install_input_isa(
+    let mut input_context_paints = install_input_isa(
         raw.sleigh_mut().base_mut().unwrap(),
         &arch_id,
         &code_space,
@@ -4777,16 +4817,26 @@ pub(crate) fn bootstrap_raw_image(
     let pending_synthetic_entries = normalized_entries
         .into_iter()
         .map(|entry| Address::new(Rc::clone(&code_space), entry))
-        .collect();
+        .collect::<Vec<_>>();
+
     let description = raw
         .sleigh()
         .base()
         .unwrap()
         .get_description()
         .to_string();
-    let image = raw
+    let mut image = raw
         .take_loader()
         .ok_or_else(|| KunaError::lowlevel("raw loader vanished after validation"))?;
+    if carmel {
+        let framing = kuna_carmel_image::frame(
+            &mut image, &code_space, [(image_base, image_end)], |_, _, _| Ok(()),
+        )?;
+        framing.require_entries(pending_synthetic_entries.iter().map(Address::get_offset))?;
+        let paints = framing.into_paints();
+        install_input_context(raw.sleigh().base().unwrap(), &code_space, &paints)?;
+        input_context_paints.extend(paints);
+    }
     raw.sleigh_mut()
         .base_mut()
         .unwrap()
