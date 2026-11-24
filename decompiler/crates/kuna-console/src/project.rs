@@ -1375,7 +1375,8 @@ pub fn deferred_callwide_header<'a>(
             } else {
                 required.insert(contract.name.as_str());
                 if !result.call_declarations.iter().any(|decl| {
-                    declarator_name(decl.trim().trim_end_matches(';')) == contract.name
+                    !kuna_decomp::kuna_unitcalls::is_helper(decl)
+                        && declarator_name(decl.trim().trim_end_matches(';')) == contract.name
                 }) {
                     return Err(format!("callwide export: missing call declaration for {}", contract.name));
                 }
@@ -1405,6 +1406,7 @@ pub fn deferred_callwide_header<'a>(
             continue;
         }
         let declarations: BTreeSet<_> = results.iter().flat_map(|r| &r.call_declarations)
+            .filter(|decl| !kuna_decomp::kuna_unitcalls::is_helper(decl))
             .filter(|decl| declarator_name(decl.trim().trim_end_matches(';')) == name)
             .map(|decl| decl.trim()).collect();
         if declarations.len() != 1 {
@@ -2244,6 +2246,17 @@ mod tests {
             inputs: vec![true; 4], definition: false,
         }];
         result
+    }
+
+    #[test]
+    fn a_helper_named_like_a_wide_call_target_neither_declares_nor_contradicts_it() {
+        let mut result = wide_call();
+        result.call_declarations.push("void producer(KUNA_ANY_ARGS);".into());
+        let header = super::build_header("fresh", "", "", std::slice::from_ref(&result)).unwrap();
+        assert!(header.contains("extern unsigned long long producer(int,int,int,int);"), "{header}");
+        assert!(!header.contains("producer(KUNA_ANY_ARGS)"), "{header}");
+        result.call_declarations.retain(|declaration| declaration.contains("KUNA_ANY_ARGS"));
+        assert!(super::build_header("fresh", "", "", &[result]).is_err());
     }
 
     #[test]

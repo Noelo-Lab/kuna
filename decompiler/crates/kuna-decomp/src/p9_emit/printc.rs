@@ -1655,6 +1655,9 @@ pub struct PrintC {
     /// [`crate::kuna_globalref`].
     globalref: crate::kuna_globalref::Plan,
     named_globals: crate::kuna_namedglobals::References,
+    /// The helpers and user-defined operations this function's C calls. See
+    /// [`crate::kuna_unitcalls`].
+    unit_calls: crate::kuna_unitcalls::Calls,
     /// Per-body spelling of a goto-target leaf whose address label another
     /// printed label already uses (see [`assign_label_names`](PrintC::assign_label_names)).
     label_names: std::collections::BTreeMap<BlockId, String>,
@@ -1710,6 +1713,7 @@ impl PrintC {
             stmt_op: None,
             globalref: crate::kuna_globalref::Plan::default(),
             named_globals: crate::kuna_namedglobals::References::default(),
+            unit_calls: crate::kuna_unitcalls::Calls::default(),
             label_names: std::collections::BTreeMap::new(),
         }
     }
@@ -2788,7 +2792,7 @@ impl PrintC {
         // type-name chokepoint below reads `self.rt_ctx`.
         self.rt_ctx = RealTypeCtx::for_function(fd, arch, self.out_lang);
         self.named_globals = crate::kuna_namedglobals::References::default();
-        crate::kuna_unitcalls::forget();
+        self.unit_calls = crate::kuna_unitcalls::Calls::default();
         self.globalref = crate::kuna_globalref::plan(
             fd,
             arch,
@@ -6685,7 +6689,7 @@ impl PrintC {
                 // decode is a pseudo-call naming the failure, not a return.
                 let halt = fd.obank().get(op).map(|o| o.get_halt_type()).unwrap_or(0);
                 if let Some(nm) = crate::kuna_decodehalt::halt_call_name(halt) {
-                    crate::kuna_unitcalls::record(fd, op, nm);
+                    self.unit_calls.record(fd, op, nm);
                     self.emit.tag_func_name(nm, SyntaxHighlight::FuncnameColor, &kw_markup);
                     self.emit.print(crate::printlanguage::OPEN_PAREN, SyntaxHighlight::NoColor);
                     self.emit.print(crate::printlanguage::CLOSE_PAREN, SyntaxHighlight::NoColor);
@@ -7234,7 +7238,7 @@ impl PrintC {
             return;
         }
         let name = func_operator_name(fd, op, opc);
-        crate::kuna_unitcalls::record(fd, op, &name);
+        self.unit_calls.record(fd, op, &name);
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
         // The name is pushed as an *operator* token (C++ `optoken`, no_color).
         self.push_atom(&Atom::with_op(
@@ -7340,7 +7344,7 @@ impl PrintC {
                 (false, Some(op)) => String::from_utf8_lossy(op.get_name()).into_owned(),
                 (false, None) => format!("CALLOTHER[{:#x}]", in0_off),
             };
-            crate::kuna_unitcalls::record(fd, op, &nm);
+            self.unit_calls.record(fd, op, &nm);
             self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
             self.push_atom(&Atom::with_op(
                 nm,
@@ -11779,6 +11783,11 @@ impl PrintC {
 
     pub fn globalref_plan(&self) -> &crate::kuna_globalref::Plan {
         &self.globalref
+    }
+
+    /// The helpers and user-defined operations the last function printed calls.
+    pub fn unit_calls(&self) -> &crate::kuna_unitcalls::Calls {
+        &self.unit_calls
     }
 
     fn push_member_base_ir(

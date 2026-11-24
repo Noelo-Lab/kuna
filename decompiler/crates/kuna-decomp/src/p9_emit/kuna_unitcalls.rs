@@ -1,5 +1,5 @@
-//! (kuna `unitcalls`) The p-code helpers and user-defined operations a
-//! function's C calls by name, so a project header can declare each one.
+//! (kuna) The p-code helpers and user-defined operations a function's C calls
+//! by name, so a project header can declare each one.
 //!
 //! The printer spells three things as calls nothing declared, so a unit that
 //! named one did not compile: an op C has no operator for, as a helper named
@@ -11,15 +11,15 @@
 //! printed arguments are whatever the binary passed and a prototype would
 //! reject a faithful call. The recompile prelude defines `KUNA_ANY_ARGS` as
 //! `...` where `()` means no parameters (C23, and the c2x modes of gcc 13 and
-//! clang 16 on) and as nothing before. `T` is the op's output, or `void`
-//! without one; a name a function calls both with and without an output, or at
-//! two output sizes, takes the widest.
+//! clang 16 on) and as nothing before. `T` is the op's output, spelled as the
+//! float of its width where the output is a float, or `void` without one; a
+//! name a function calls both with and without an output, or at two output
+//! sizes, takes the widest.
 //!
-//! The printer records each call on its thread while it prints a function and
-//! forgets them when it starts the next one, so [`take`] answers for the
-//! function this thread printed last; [`crate::kuna_callprototypes::declarations`]
-//! calls it right after the print, which puts the declarations with the
-//! function's other call declarations.
+//! The printer keeps one [`Calls`] for the function it is printing, starts it
+//! empty with each function and answers it from `PrintC::unit_calls`, which
+//! [`crate::kuna_callprototypes::declarations`] reads to put the declarations
+//! with the function's other call declarations.
 //!
 //! The header writes them in a block of their own ([`header_block`]), one per
 //! name across every function at the widest type a call has, and only when the
@@ -34,55 +34,72 @@
 //!   declared, and neither are the float constants the printer spells `NAN`,
 //!   `INFINITY` and `FLOAT_UNKNOWN`, so a unit that holds one still does not
 //!   compile.
+//! - A name that is a C keyword (MIPS's `break`) is not declared; the call the
+//!   body prints still does not compile.
 //! - Code that defines `KUNA_DECLARE_HELPERS` and also includes a C library
-//!   header that declares an operation's name (`syscall`) gets two declarations
-//!   that disagree.
+//!   header that declares an operation's name (`syscall`, `sin`, `sleep`,
+//!   `wait`) gets two declarations that disagree.
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use kuna_num::opcodes::OpCode;
 
 use crate::context::{OpId, VarnodeId};
+use crate::dtype::type_metatype;
 use crate::funcdata::Funcdata;
 
 /// A declared return type and the output size it stands for (`-1` for
 /// `void`), by which the widest of two calls is kept.
 type Returns = (i32, &'static str);
 
-thread_local! {
-    static CALLED: RefCell<BTreeMap<String, Returns>> = const { RefCell::new(BTreeMap::new()) };
-}
+/// The words C reserves, which no declaration can use as a name.
+const C_KEYWORDS: &[&str] = &[
+    "alignas", "alignof", "asm", "auto", "bool", "break", "case", "char", "const", "constexpr",
+    "continue", "default", "do", "double", "else", "enum", "extern", "false", "float", "for",
+    "goto", "if", "inline", "int", "long", "nullptr", "register", "restrict", "return", "short",
+    "signed", "sizeof", "static", "static_assert", "struct", "switch", "thread_local", "true",
+    "typedef", "typeof", "typeof_unqual", "union", "unsigned", "void", "volatile", "while",
+    "_Alignas", "_Alignof", "_Atomic", "_BitInt", "_Bool", "_Complex", "_Decimal128",
+    "_Decimal32", "_Decimal64", "_Generic", "_Imaginary", "_Noreturn", "_Static_assert",
+    "_Thread_local",
+];
 
-/// Forget what was recorded: the printer starts a new function.
-pub fn forget() {
-    CALLED.with(|called| called.borrow_mut().clear());
-}
+/// The helpers and operations one function's C calls, by name, each at the
+/// widest declared type a call has.
+#[derive(Default)]
+pub struct Calls(BTreeMap<String, Returns>);
 
-/// Record that the C calls `name` for `op`. A name that is not a C identifier,
-/// such as the `CALLOTHER[0x5]` fallback, or an output C has no type for, is
-/// left out.
-pub fn record(fd: &Funcdata, op: OpId, name: &str) {
-    if !is_identifier(name) {
-        return;
+impl Calls {
+    /// Record that the C calls `name` for `op`. A name that is not a C
+    /// identifier, such as the `CALLOTHER[0x5]` fallback, a C keyword, or an
+    /// output C has no type for, is left out.
+    pub fn record(&mut self, fd: &Funcdata, op: OpId, name: &str) {
+        if !declarable(name) {
+            return;
+        }
+        if let Some(returns) = fd.obank().get(op).and_then(|o| returns(fd, o.code(), o.get_out())) {
+            self.note(name, returns);
+        }
     }
-    if let Some(returns) = fd.obank().get(op).and_then(|o| returns(fd, o.code(), o.get_out())) {
-        note(name, returns);
+
+    /// One `T name(KUNA_ANY_ARGS);` per name recorded.
+    pub fn declarations(&self) -> Vec<String> {
+        self.0.iter().map(|(name, (_, ty))| format!("{ty} {name}(KUNA_ANY_ARGS);")).collect()
+    }
+
+    fn note(&mut self, name: &str, returns: Returns) {
+        match self.0.get_mut(name) {
+            Some(kept) if returns.0 > kept.0 => *kept = returns,
+            Some(_) => {}
+            None => {
+                self.0.insert(name.to_owned(), returns);
+            }
+        }
     }
 }
 
-/// The declarations recorded since the printer started the function, each
-/// `T name(KUNA_ANY_ARGS);`, which are then forgotten.
-pub fn take() -> Vec<String> {
-    CALLED
-        .with(|called| std::mem::take(&mut *called.borrow_mut()))
-        .into_iter()
-        .map(|(name, (_, ty))| format!("{ty} {name}(KUNA_ANY_ARGS);"))
-        .collect()
-}
-
-/// Whether `declaration` is one [`take`] made.
+/// Whether `declaration` is one [`Calls::declarations`] made.
 pub fn is_helper(declaration: &str) -> bool {
     declaration.trim_end().ends_with("(KUNA_ANY_ARGS);")
 }
@@ -134,29 +151,26 @@ fn rank_of(ty: &str) -> i32 {
     }
 }
 
+fn declarable(name: &str) -> bool {
+    is_identifier(name) && !C_KEYWORDS.contains(&name)
+}
+
 fn is_identifier(name: &str) -> bool {
     let mut bytes = name.bytes();
     bytes.next().is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
         && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
-fn note(name: &str, returns: Returns) {
-    CALLED.with(|called| {
-        let mut called = called.borrow_mut();
-        let kept = called.entry(name.to_owned()).or_insert(returns);
-        if returns.0 > kept.0 {
-            *kept = returns;
-        }
-    });
-}
-
 fn returns(fd: &Funcdata, code: OpCode, out: Option<VarnodeId>) -> Option<Returns> {
-    returns_of(code, out.and_then(|out| fd.vbank().get(out)).map(|vn| vn.get_size()))
+    let out = out.and_then(|out| fd.vbank().get(out));
+    let float = out.is_some_and(|vn| vn.get_type().get_metatype() == type_metatype::TYPE_FLOAT);
+    returns_of(code, out.map(|vn| vn.get_size()), float)
 }
 
 /// The declared type of a call to `code`'s helper or operation with an output
-/// of `size` bytes, or with none.
-fn returns_of(code: OpCode, size: Option<i32>) -> Option<Returns> {
+/// of `size` bytes, or with none; `float` says the output is typed a float
+/// (`FLOAT_RINT`).
+fn returns_of(code: OpCode, size: Option<i32>, float: bool) -> Option<Returns> {
     use OpCode::*;
     let Some(size) = size else {
         return Some((-1, "void"));
@@ -164,7 +178,7 @@ fn returns_of(code: OpCode, size: Option<i32>) -> Option<Returns> {
     if matches!(code, CPUI_INT_CARRY | CPUI_INT_SCARRY | CPUI_INT_SBORROW | CPUI_FLOAT_NAN) {
         return Some((size, "bool"));
     }
-    let ty = if matches!(
+    let ty = if float || matches!(
         code,
         CPUI_FLOAT_ABS | CPUI_FLOAT_SQRT | CPUI_FLOAT_CEIL | CPUI_FLOAT_FLOOR | CPUI_FLOAT_ROUND
     ) {
@@ -198,16 +212,18 @@ mod tests {
 
     #[test]
     fn a_name_called_with_and_without_an_output_is_declared_with_the_widest() {
-        forget();
-        note("rdtsc", (-1, "void"));
-        note("rdtsc", (8, "undefined8"));
-        note("rdtsc", (4, "undefined4"));
-        note("LOCK", (-1, "void"));
+        let mut calls = Calls::default();
+        calls.note("rdtsc", (-1, "void"));
+        calls.note("rdtsc", (8, "undefined8"));
+        calls.note("rdtsc", (4, "undefined4"));
+        calls.note("LOCK", (-1, "void"));
 
         assert_eq!(
-            take(),
+            calls.declarations(),
             ["void LOCK(KUNA_ANY_ARGS);", "undefined8 rdtsc(KUNA_ANY_ARGS);"]
         );
+        assert_eq!(calls.declarations().len(), 2, "reading the set leaves it in place");
+        assert!(Calls::default().declarations().is_empty());
     }
 
     #[test]
@@ -239,12 +255,12 @@ mod tests {
     }
 
     #[test]
-    fn only_a_c_identifier_is_declared() {
-        for name in ["SCARRY4", "halt_baddata", "_x", "a1"] {
-            assert!(is_identifier(name), "{name}");
+    fn only_a_c_identifier_that_is_not_a_keyword_is_declared() {
+        for name in ["SCARRY4", "halt_baddata", "_x", "a1", "breakpoint", "syscall"] {
+            assert!(declarable(name), "{name}");
         }
-        for name in ["CALLOTHER[0x5]", "r#match", "1a", "", "a-b"] {
-            assert!(!is_identifier(name), "{name}");
+        for name in ["CALLOTHER[0x5]", "r#match", "1a", "", "a-b", "break", "asm", "_Bool", "typeof"] {
+            assert!(!declarable(name), "{name}");
         }
     }
 
@@ -252,42 +268,34 @@ mod tests {
     fn a_call_is_declared_with_the_type_of_its_output() {
         use OpCode::*;
         let cases = [
-            (CPUI_INT_CARRY, Some(1), Some((1, "bool"))),
-            (CPUI_INT_SCARRY, Some(1), Some((1, "bool"))),
-            (CPUI_INT_SBORROW, Some(1), Some((1, "bool"))),
-            (CPUI_FLOAT_NAN, Some(1), Some((1, "bool"))),
-            (CPUI_INT_ZEXT, Some(1), Some((1, "undefined1"))),
-            (CPUI_INT_SEXT, Some(2), Some((2, "undefined2"))),
-            (CPUI_CALLOTHER, Some(3), Some((3, "undefined3"))),
-            (CPUI_POPCOUNT, Some(4), Some((4, "undefined4"))),
-            (CPUI_CALLOTHER, Some(5), Some((5, "undefined5"))),
-            (CPUI_CALLOTHER, Some(6), Some((6, "undefined6"))),
-            (CPUI_CALLOTHER, Some(7), Some((7, "undefined7"))),
-            (CPUI_SUBPIECE, Some(8), Some((8, "undefined8"))),
-            (CPUI_PIECE, Some(16), Some((16, "undefined16"))),
-            (CPUI_CALLOTHER, Some(32), Some((32, "undefined32"))),
-            (CPUI_CALLOTHER, None, Some((-1, "void"))),
-            (CPUI_FLOAT_ABS, Some(4), Some((4, "float"))),
-            (CPUI_FLOAT_SQRT, Some(8), Some((8, "double"))),
-            (CPUI_FLOAT_ROUND, Some(10), Some((10, "long double"))),
-            (CPUI_FLOAT_CEIL, Some(16), Some((16, "long double"))),
-            (CPUI_FLOAT_FLOOR, Some(8), Some((8, "double"))),
-            (CPUI_CALLOTHER, Some(12), None),
-            (CPUI_FLOAT_ABS, Some(2), None),
+            (CPUI_INT_CARRY, Some(1), false, Some((1, "bool"))),
+            (CPUI_INT_SCARRY, Some(1), false, Some((1, "bool"))),
+            (CPUI_INT_SBORROW, Some(1), false, Some((1, "bool"))),
+            (CPUI_FLOAT_NAN, Some(1), false, Some((1, "bool"))),
+            (CPUI_INT_ZEXT, Some(1), false, Some((1, "undefined1"))),
+            (CPUI_INT_SEXT, Some(2), false, Some((2, "undefined2"))),
+            (CPUI_CALLOTHER, Some(3), false, Some((3, "undefined3"))),
+            (CPUI_POPCOUNT, Some(4), false, Some((4, "undefined4"))),
+            (CPUI_CALLOTHER, Some(5), false, Some((5, "undefined5"))),
+            (CPUI_CALLOTHER, Some(6), false, Some((6, "undefined6"))),
+            (CPUI_CALLOTHER, Some(7), false, Some((7, "undefined7"))),
+            (CPUI_SUBPIECE, Some(8), false, Some((8, "undefined8"))),
+            (CPUI_PIECE, Some(16), false, Some((16, "undefined16"))),
+            (CPUI_CALLOTHER, Some(32), false, Some((32, "undefined32"))),
+            (CPUI_CALLOTHER, None, false, Some((-1, "void"))),
+            (CPUI_FLOAT_ABS, Some(4), false, Some((4, "float"))),
+            (CPUI_FLOAT_SQRT, Some(8), false, Some((8, "double"))),
+            (CPUI_FLOAT_ROUND, Some(10), false, Some((10, "long double"))),
+            (CPUI_FLOAT_CEIL, Some(16), false, Some((16, "long double"))),
+            (CPUI_FLOAT_FLOOR, Some(8), false, Some((8, "double"))),
+            (CPUI_CALLOTHER, Some(12), false, None),
+            (CPUI_FLOAT_ABS, Some(2), false, None),
+            (CPUI_CALLOTHER, Some(8), true, Some((8, "double"))),
+            (CPUI_CALLOTHER, Some(4), true, Some((4, "float"))),
+            (CPUI_CALLOTHER, None, true, Some((-1, "void"))),
         ];
-        for (code, size, returns) in cases {
-            assert_eq!(returns_of(code, size), returns, "{code:?} {size:?}");
+        for (code, size, float, returns) in cases {
+            assert_eq!(returns_of(code, size, float), returns, "{code:?} {size:?} {float}");
         }
-    }
-
-    #[test]
-    fn a_function_takes_only_what_was_recorded_since_its_print_started() {
-        forget();
-        note("SCARRY4", (1, "bool"));
-        forget();
-        note("SUB168", (8, "undefined8"));
-
-        assert_eq!(take(), ["undefined8 SUB168(KUNA_ANY_ARGS);"]);
-        assert_eq!(take(), Vec::<String>::new(), "take forgets what it answered");
     }
 }
