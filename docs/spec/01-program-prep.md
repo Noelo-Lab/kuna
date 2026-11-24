@@ -247,6 +247,14 @@ about the read changes — the same segment walk, the same zero-fill past the la
 segment it crosses, the same unmapped-start `DataUnavailError` — and a request
 of 512 bytes or fewer still follows exactly the path it always did.
 
+The binary IEEE-695/TIOF reader
+(`decompiler/crates/kuna-analysis/src/loader/ieee695.rs (module)`) opens an
+indexed module without selecting a target. It bounds each nonzero W-part
+offset by the next part and verifies the module-end record. Record cursors
+decode compact numeric fields and tokenize relocation expressions inside those
+bounds. Section placement, symbol binding, and relocation field encoding
+remain the responsibility of the input profile.
+
 The mapping unit is the ELF **`PT_LOAD` segment** (what the OS actually maps), not the BFD
 section list. Where upstream returns a BFD target string for the Java side to
 re-map, kuna resolves the SLEIGH language id directly off the object header
