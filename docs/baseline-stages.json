@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5276,
-    5276
+    5281,
+    5281
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1053,6 +1053,11 @@
     "data:GH180 #6: exactly one standalone CARRY8 in the transcript (the jb guard)",
     "data:GH180 #7: the unsigned collapse does not appear (compound form)",
     "data:GH180 #8: the unsigned collapse does not appear (plain form)",
+    "data:GH1916 stackpad x86 #1: no pad register half is printed",
+    "data:GH1916 stackpad x86 #2: the seventh int is the stored constant",
+    "data:GH1916 stackpad x86 #3: the declared char is passed as itself",
+    "data:GH1916 stackpad x86 #4: the variadic stack int is the stored constant",
+    "data:GH1916 stackpad x86 #5: a stored long keeps its full width",
     "data:GH1951 #1: rcall disassembles to the in-range 4KiW-wrapped target 0x100e",
     "data:GH1951 #2: lifted call targets the masked in-range word 0x0807",
     "data:GH1951 #3: the unmasked out-of-range word 0xf807 must NOT appear",
