@@ -104,7 +104,7 @@ fn classify(fd: &Funcdata, c: BlockId) -> Option<(u64, Form)> {
     let (st, se) = (slot(fd, j, t)?, slot(fd, j, e)?);
     let joined = fd.bb_ops(j).into_iter().any(|o| {
         let Some(op) = fd.obank().get(o) else { return false };
-        if op.code() != OpCode::CPUI_MULTIEQUAL || !op.get_out().is_some_and(|v| scratch(fd, v)) {
+        if op.code() != OpCode::CPUI_MULTIEQUAL || !op.get_out().is_some_and(|v| temporary(fd, v)) {
             return false;
         }
         let def = |s: usize, x: BlockId| {
@@ -121,13 +121,23 @@ fn classify(fd: &Funcdata, c: BlockId) -> Option<(u64, Form)> {
     joined.then_some((at, Form::Value))
 }
 
-/// Whether `vn` is a register a call does not preserve: where an unoptimizing
-/// compiler evaluates an expression, not where it keeps a `register` variable.
-fn scratch(fd: &Funcdata, vn: VarnodeId) -> bool {
-    fd.vbank().get(vn).is_some_and(|v| {
-        !memory(fd, vn)
-            && fd.get_func_proto().has_effect(&v.get_addr(), v.get_size()) != crate::fspec::effect_type::UNAFFECTED
-    })
+/// Whether register `vn` holds an expression's value rather than a variable.
+/// An unoptimizing compiler evaluates in registers a call does not preserve,
+/// and keeps a value in a preserved one only to carry it across a call to
+/// its one use, a copy into an argument register; a `register` variable lives
+/// in a preserved register and is read wherever the source names it.
+fn temporary(fd: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(v) = fd.vbank().get(vn) else { return false };
+    if memory(fd, vn) {
+        return false;
+    }
+    if fd.get_func_proto().has_effect(&v.get_addr(), v.get_size()) != crate::fspec::effect_type::UNAFFECTED {
+        return true;
+    }
+    let mut reads = v.descend_iter().filter_map(|d| fd.obank().get(d)).filter(|d| {
+        !matches!(d.code(), OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT | OpCode::CPUI_RETURN)
+    });
+    matches!((reads.next(), reads.next()), (Some(r), None) if r.code() == OpCode::CPUI_COPY)
 }
 
 /// The in-edge index of `j` that comes from `x`.
@@ -210,7 +220,14 @@ pub(crate) fn form(fd: &Funcdata, addr: u64) -> Option<Form> {
         return None;
     }
     let rec = fd.kuna_o0select.as_deref()?;
-    rec.sites.binary_search_by_key(&addr, |s| s.0).ok().map(|i| rec.sites[i].1)
+    let f = rec.sites.binary_search_by_key(&addr, |s| s.0).ok().map(|i| rec.sites[i].1)?;
+    static FORCE: std::sync::OnceLock<Option<Form>> = std::sync::OnceLock::new();
+    let force = FORCE.get_or_init(|| match std::env::var("KUNA_O0SEL_FORCE").as_deref() {
+        Ok("value") => Some(Form::Value),
+        Ok("stmt") => Some(Form::Statement),
+        _ => None,
+    });
+    Some(force.unwrap_or(f))
 }
 
 /// How the source wrote the branch of `CBRANCH` op `op`, if recorded.
