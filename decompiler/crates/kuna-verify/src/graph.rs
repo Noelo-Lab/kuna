@@ -560,6 +560,7 @@ pub fn run(
     let mut bl = 0usize;
     let mut slot: Option<i32> = None;
     let mut steps = 0u64;
+    let mut forced = 0usize;
     loop {
         let block = &program.blocks[bl];
         steps += 1;
@@ -588,6 +589,17 @@ pub fn run(
                 return Err(Halt::Budget);
             }
             let flow = r.exec(op)?;
+            if let Some((_, _, values)) = program.force.as_ref().filter(|f| f.0 == bl && f.1 == k) {
+                let nth = forced;
+                forced += 1;
+                if let (Some(Some(v)), Some(out)) = (values.get(nth), op.out.as_ref()) {
+                    r.set(out, *v & mask(out.size))?;
+                }
+            }
+            if let Some(rec) = &program.record {
+                let value = op.out.as_ref().and_then(|o| r.values[o.slot]);
+                rec.borrow_mut().push(crate::program::Exec { block: bl, op: k, value });
+            }
             steps += std::mem::take(&mut r.charged);
             if steps > budget {
                 return Err(Halt::Budget);

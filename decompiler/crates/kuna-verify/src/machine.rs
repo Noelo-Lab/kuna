@@ -825,6 +825,11 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(
             if let Some(l) = m.state.live.as_mut() {
                 l.instruction();
             }
+            if mode != Mode::Opaque {
+                if let Some(p) = env.probe.borrow_mut().as_mut() {
+                    p.start(&mut m.state, depth as usize, addr);
+                }
+            }
         }
         if let Some(l) = m.state.live.as_mut() {
             l.op();

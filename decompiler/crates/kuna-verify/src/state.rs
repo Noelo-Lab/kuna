@@ -125,6 +125,8 @@ pub struct Env<'p> {
     pub concolic_inputs: RefCell<Option<crate::concolic::Inputs>>,
     /// C5: the machine records its path on this run.
     pub record_path: Cell<bool>,
+    /// CSIC: the machine side's values at kuna's outputs, when observed.
+    pub probe: RefCell<Option<crate::intervene::Probe>>,
     /// ARM and AArch64 divide by zero to 0 instead of trapping.
     pub divide_by_zero_is_zero: bool,
     /// Image pages by base address; `None` for a page not mapped whole.
@@ -259,6 +261,7 @@ impl<'p> Env<'p> {
             kernel: Cell::new(true),
             concolic_inputs: RefCell::new(None),
             record_path: Cell::new(false),
+            probe: RefCell::new(None),
             divide_by_zero_is_zero: ["ARM", "AARCH64"].iter().any(|a| prog.arch().archid.starts_with(a)),
             image: RefCell::new(HashMap::default()),
             mapped,

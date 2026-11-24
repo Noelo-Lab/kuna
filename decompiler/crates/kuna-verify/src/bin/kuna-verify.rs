@@ -4,6 +4,7 @@
 //! kuna-verify check <binary> <function|0xaddr>... | --all  [--jobs N] [--fn-seconds S] [--contract FILE.c] [--option NAME VALUE]...
 //! kuna-verify corpus <test.xml|dir>...  [--jobs N] [--file-seconds S] [--baseline FILE] [--save-baseline FILE]
 //! kuna-verify localize <test.xml|binary> <function> [--pass N] [--option NAME VALUE]...
+//! kuna-verify intervene <test.xml|binary> <function> [--pass N] [--localize] [--option NAME VALUE]...
 //! kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
 //! common: [--runs N] [--seed S] [--budget OPS] [--concolic QUERIES] [--json] [--sleighpath DIR]
 //! ```
@@ -37,8 +38,9 @@ const USAGE: &str = "usage:
   kuna-verify check <binary> <function|0xaddr>... | --all  [--jobs N] [--fn-seconds S] [--contract FILE.c] [--option NAME VALUE]...
   kuna-verify corpus <test.xml|dir>...  [--jobs N] [--file-seconds S] [--baseline FILE] [--save-baseline FILE]
   kuna-verify localize <test.xml|binary> <function> [--pass N] [--option NAME VALUE]...
+  kuna-verify intervene <test.xml|binary> <function> [--pass N] [--localize] [--option NAME VALUE]...
   kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
-  kuna-verify mutate <test.xml|dir>... | <binary> <function|0xaddr>... | --all  [--per-function N (6)] [--jobs N] [--file-seconds S]
+  kuna-verify mutate <test.xml|dir>... | <binary> <function|0xaddr>... | --all  [--per-function N (6)] [--jobs N] [--file-seconds S] [--intervene]
 options: --runs N (256)  --seed S  --budget OPS (200000)  --concolic QUERIES (0)  --json  --trace  --sleighpath DIR";
 
 struct Args {
@@ -59,6 +61,7 @@ struct Args {
     regs: Vec<String>,
     flags: Vec<String>,
     canonical: bool,
+    localize: bool,
     states: u32,
     per_form: usize,
     limit: usize,
@@ -85,6 +88,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         regs: Vec::new(),
         flags: Vec::new(),
         canonical: false,
+        localize: false,
         states: 4,
         per_form: 2,
         limit: 2000,
@@ -139,6 +143,11 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             }
             "--states" => a.states = num(it.next(), "--states")?.max(1) as u32,
             "--canonical" => a.canonical = true,
+            "--localize" => a.localize = true,
+            "--intervene" => {
+                a.opts.intervene = true;
+                a.forward.push("--intervene".to_string());
+            }
             "--per-form" => a.per_form = num(it.next(), "--per-form")?.max(1) as usize,
             "--limit" => a.limit = num(it.next(), "--limit")? as usize,
             "--pass" => {
@@ -696,6 +705,33 @@ fn run_localize(a: &Args) -> Result<ExitCode, String> {
     })
 }
 
+/// CSIC: replay a differing run with one change to kuna's side at a time, and
+/// name the changes after which it agrees.
+fn run_intervene(a: &Args) -> Result<ExitCode, String> {
+    let [target, function] = a.positional.as_slice() else {
+        return Err(USAGE.to_string());
+    };
+    let roots = spec_roots(a.sleighpath.as_deref());
+    let src = if target.ends_with(".xml") {
+        localize::Source::Datatest(target)
+    } else {
+        localize::Source::Binary { path: target, functions: vec![function.clone()], options: &a.options }
+    };
+    let (decompile, mut found) = kuna_verify::intervene::search_source(&src, &roots, function, a.pass, &a.opts)?;
+    if a.localize && found.run.is_some() {
+        let l = localize::localize(&src, &roots, function, Some(decompile + 1), &a.opts)?;
+        kuna_verify::intervene::attribute(&mut found, &l);
+    }
+    if a.json {
+        let mut v = found.json();
+        v["decompile"] = json!(decompile + 1);
+        println!("{v}");
+    } else {
+        print!("{}", found.render(&format!("{function} (decompile {})", decompile + 1)));
+    }
+    Ok(if found.run.is_some() { ExitCode::from(1) } else { ExitCode::SUCCESS })
+}
+
 /// Tier L's kuna side: one JSON line per instruction and state.
 fn run_step(a: &Args) -> Result<ExitCode, String> {
     let [binary] = a.positional.as_slice() else {
@@ -771,6 +807,7 @@ fn main() -> ExitCode {
         "chunk" => run_chunk_worker(&a),
         "step" => run_step(&a),
         "localize" => run_localize(&a),
+        "intervene" => run_intervene(&a),
         "mutate" => run_mutate(&a),
         _ => Err(USAGE.to_string()),
     });
@@ -792,6 +829,10 @@ fn mutant_json(o: &kuna_verify::mutate::Outcome) -> Value {
         "killed": o.killed(),
         "reached": o.reached,
         "ms": o.ms,
+        "csic": o.csic.as_ref().map(|h| json!({
+            "witnesses": h.witnesses, "first": h.first, "any": h.any, "address": h.address,
+            "value": h.value, "structural": h.structural, "replays": h.replays, "ms": h.ms,
+        })),
     })
 }
 
@@ -884,6 +925,9 @@ fn print_mutation_summary(rows: &[Value], json: bool) {
     let total = by.values().fold([0usize; 4], |acc, e| [acc[0] + e[0], acc[1] + e[1], acc[2] + e[2], acc[3] + e[3]]);
     let recall = |e: &[usize; 4]| if e[1] == 0 { 0.0 } else { 100.0 * e[2] as f64 / e[1] as f64 };
     if json {
+        if let Some(c) = csic_counts(rows) {
+            println!("{}", json!({"csic_summary": c}));
+        }
         let ops: serde_json::Map<String, Value> = by
             .iter()
             .map(|(k, e)| (k.clone(), json!({"mutants": e[0], "reached": e[1], "killed": e[2], "unknown": e[3], "recall": recall(e)})))
@@ -895,11 +939,59 @@ fn print_mutation_summary(rows: &[Value], json: bool) {
     for (k, e) in by.iter().chain(std::iter::once((&"all".to_string(), &total))) {
         println!("{:<12} {:>8} {:>8} {:>8} {:>8} {:>6.1}%", k, e[0], e[1], e[2], e[3], recall(e));
     }
+    print_csic_summary(rows);
     let survived: Vec<&Value> = rows
         .iter()
         .filter(|r| r["reached"].as_bool() == Some(true) && r["killed"].as_bool() != Some(true) && !r["verdict"].as_str().is_some_and(|v| v.starts_with("UNKNOWN")))
         .collect();
     for r in survived.iter().take(20) {
         println!("survived  {}  {}  {}", r["function"].as_str().unwrap_or(""), r["what"].as_str().unwrap_or(""), r["verdict"].as_str().unwrap_or(""));
+    }
+}
+
+/// `mutate --intervene`, per operator over caught mutants: how many got a
+/// witness, and how often one is on the mutated op.
+fn csic_counts(rows: &[Value]) -> Option<Value> {
+    let mut by: BTreeMap<String, [usize; 7]> = BTreeMap::new();
+    for r in rows {
+        let c = &r["csic"];
+        if c.is_null() {
+            continue;
+        }
+        let flag = |k: &str| usize::from(c[k].as_bool() == Some(true));
+        let row = [1, usize::from(c["witnesses"].as_u64().unwrap_or(0) > 0), flag("first"), flag("any"), flag("address"), flag("value"), flag("structural")];
+        for key in [r["operator"].as_str().unwrap_or("?"), "all"] {
+            let e = by.entry(key.to_string()).or_default();
+            for (x, y) in e.iter_mut().zip(row) {
+                *x += y;
+            }
+        }
+    }
+    if by.is_empty() {
+        return None;
+    }
+    let names = ["searched", "witness", "first", "any", "address", "value", "structural"];
+    Some(Value::Object(by.into_iter().map(|(k, e)| (k, json!(names.iter().zip(e).map(|(n, v)| (n.to_string(), json!(v))).collect::<serde_json::Map<_, _>>()))).collect()))
+}
+
+fn print_csic_summary(rows: &[Value]) {
+    let Some(Value::Object(by)) = csic_counts(rows) else { return };
+    let pct = |a: u64, b: u64| if b == 0 { 0.0 } else { 100.0 * a as f64 / b as f64 };
+    println!();
+    println!("{:<12} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>10}", "csic", "searched", "witness", "first", "any", "address", "value", "structural");
+    for (k, e) in &by {
+        let g = |n: &str| e[n].as_u64().unwrap_or(0);
+        let n = g("searched");
+        println!(
+            "{:<12} {:>8} {:>7.1}% {:>7.1}% {:>7.1}% {:>7.1}% {:>7.1}% {:>9.1}%",
+            k,
+            n,
+            pct(g("witness"), n),
+            pct(g("first"), n),
+            pct(g("any"), n),
+            pct(g("address"), n),
+            pct(g("value"), n),
+            pct(g("structural"), n)
+        );
     }
 }

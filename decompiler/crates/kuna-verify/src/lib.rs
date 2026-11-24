@@ -19,6 +19,7 @@ pub mod concolic;
 pub mod contract;
 pub mod divergence;
 pub mod graph;
+pub mod intervene;
 pub mod localize;
 pub mod machine;
 pub mod mutate;

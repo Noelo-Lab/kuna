@@ -100,8 +100,9 @@ error, and 0 otherwise. With `--baseline`, it is 1 only for a regression (§6).
 kuna-verify check <binary> <function|0xaddr>... | --all  [--jobs N] [--fn-seconds S] [--contract FILE.c] [--option NAME VALUE]...
 kuna-verify corpus <test.xml|dir>...  [--jobs N] [--file-seconds S] [--baseline FILE] [--save-baseline FILE]
 kuna-verify localize <test.xml|binary> <function> [--pass N] [--option NAME VALUE]...
+kuna-verify intervene <test.xml|binary> <function> [--pass N] [--localize] [--option NAME VALUE]...
 kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
-kuna-verify mutate <test.xml|dir>... | <binary> <function|0xaddr>... | --all  [--per-function N] [--jobs N]
+kuna-verify mutate <test.xml|dir>... | <binary> <function|0xaddr>... | --all  [--per-function N] [--jobs N] [--intervene]
 common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES (0)] [--json] [--trace] [--sleighpath DIR]
 ```
 
@@ -115,10 +116,16 @@ common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES 
   is killed and its file reported as an error.
 - **`localize`** names the rule application after which a function starts to differ, by
   holding rules back one at a time (`c3-results.md`).
+- **`intervene`** replays the differing run with one change to kuna's side at a time:
+  an op's output set to the machine's value, or one op's opcode, operand order, branch
+  or constant changed. It names each change after which the run agrees, as a
+  counterfactual witness, never as the cause (`csic-results.md`). `--localize` adds the
+  rule application `localize` names at a witness's address.
 - **`step`** is Tier L's kuna side: one instruction's p-code from random register values,
   as JSON. `scripts/diffverify/tier_l.py` runs it against Unicorn.
 - **`mutate`** plants faults in kuna's side and reports how many the check catches
-  (`mutation.md`).
+  (`mutation.md`). With `--intervene`, it also runs `intervene` on each caught mutant and
+  reports how often a witness lands on the mutated op.
 - **`--concolic N`** adds up to `N` z3 queries per function, for inputs that take a branch
   the random runs did not. z3 only picks inputs; the verdict still comes from running both
   sides (`c5-results.md`).
@@ -171,6 +178,7 @@ common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES 
 | `divergence.rs` | declared divergences |
 | `concolic.rs` | expressions, branch recording, z3 |
 | `localize.rs` | rule localization |
+| `intervene.rs` | counterfactual interventions on a differing run (CSIC) |
 | `mutate.rs` | mutation testing |
 | `step.rs` | Tier L's kuna side |
 | `baseline.rs`, `report.rs` | corpus baseline, output |
@@ -220,7 +228,8 @@ It is not a replacement for review. What it does not cover:
 
 **Feedback an agent can act on.** A `DIFFERS` names an input, the call or byte that
 differs and what each side did; `localize` then names the rule application after which
-the function first differs (`c3-results.md`). That is a place to start debugging, not
+the function first differs (`c3-results.md`), and `intervene` names the ops whose change
+makes the run agree (`csic-results.md`). That is a place to start debugging, not
 only a verdict, which is what an agent fixing its own change needs.
 
 **What is not claimed.** `AGREES` means the runs made agreed, not that the two are
@@ -248,8 +257,12 @@ run yet.
 2. **Rule out the harness** before naming a kuna bug (`triage.md`). The model has been
    wrong before, about RTOS context switches, libgcc's multi-level returns, no-return
    calls and joined return registers. `triage.md` lists them.
-3. **Name the rule** with `localize` when a rule rather than an action is responsible.
-4. **Reduce it** to a few lines of C where you can (`clang --target=...`). Check that
+3. **Find the op** with `intervene`. A witness is an op whose change makes the run agree.
+   The earliest one is the place to look first. Add `--localize` to name the rule.
+   A witness shows that the run depends on that op. It does not show that the op is the
+   only cause, or the smallest one.
+4. **Name the rule** with `localize` when a rule rather than an action is responsible.
+5. **Reduce it** to a few lines of C where you can (`clang --target=...`). Check that
    `kuna decompile` prints the same wrong C, then file it or fix it.
 
 ## 9. The other documents
@@ -267,4 +280,6 @@ run yet.
 | `tier-l-results.md` | Tier L: SLEIGH p-code against Unicorn, the spec errors found |
 | `triage.md` | how to decide whether a difference is the spec's, the emulator's, the checker's or the harness's |
 | `mutation.md` | mutation testing: what share of planted faults the check catches |
+| `csic-results.md` | `intervene`: counterfactual witnesses for a `DIFFERS`, and how often they land on a planted fault |
+| `aeq-design.md` | design only: checking algebraic laws across functions (FIFO, LIFO, inverses) |
 | `record.json` | the slices' measured numbers, for scripts |

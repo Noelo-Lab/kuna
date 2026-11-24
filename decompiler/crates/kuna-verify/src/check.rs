@@ -41,11 +41,14 @@ pub struct Options {
     /// C5: z3 queries per function for concolic inputs after the random
     /// runs; 0 runs none.
     pub concolic: u32,
+    /// `mutate`: search each caught mutant's run for interventions
+    /// (`intervene`) and say whether one lands on the mutated op.
+    pub intervene: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { runs: 256, seed: 0x6b75_6e61, budget: 200_000, budget_runs: 4, trace: false, concolic: 0 }
+        Options { runs: 256, seed: 0x6b75_6e61, budget: 200_000, budget_runs: 4, trace: false, concolic: 0, intervene: false }
     }
 }
 
@@ -690,7 +693,7 @@ fn input_line(prog: &ConsoleProgram, env: &Env, run: u32, claim: &Claim) -> Stri
 /// real type.
 pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Contract>, opts: &Options) -> Report {
     let mut work = crate::concolic::Worklist::default();
-    let mut report = check_runs(prog, fd, contract, opts, &mut work, None, &mut None);
+    let mut report = check_runs(prog, fd, contract, opts, &mut work, None, &mut None, None);
     if opts.concolic > 0 {
         let s = work.summary();
         let why = match s.solver {
@@ -710,10 +713,25 @@ pub fn check_mutant(prog: &ConsoleProgram, fd: &Funcdata, opts: &Options, m: cra
     let mut work = crate::concolic::Worklist::default();
     let mut got = None;
     let reached = std::rc::Rc::new(std::cell::Cell::new(false));
-    let report = check_runs(prog, fd, None, opts, &mut work, Some((m, std::rc::Rc::clone(&reached))), &mut got);
+    let report = check_runs(prog, fd, None, opts, &mut work, Some((m, std::rc::Rc::clone(&reached))), &mut got, None);
     got.map(|what| (report, what, reached.get()))
 }
 
+/// CSIC: check `fd`, with mutant `m` planted when given, under an
+/// intervention search's hook (`intervene`).
+pub(crate) fn check_hooked(
+    prog: &ConsoleProgram,
+    fd: &Funcdata,
+    opts: &Options,
+    m: Option<crate::mutate::Mutation>,
+    hook: Option<&mut crate::intervene::Hook>,
+) -> Report {
+    let mut work = crate::concolic::Worklist::default();
+    let mutation = m.map(|m| (m, std::rc::Rc::new(std::cell::Cell::new(false))));
+    check_runs(prog, fd, None, opts, &mut work, mutation, &mut None, hook)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn check_runs(
     prog: &ConsoleProgram,
     fd: &Funcdata,
@@ -722,6 +740,7 @@ fn check_runs(
     work: &mut crate::concolic::Worklist,
     mutation: Option<(crate::mutate::Mutation, std::rc::Rc<std::cell::Cell<bool>>)>,
     mutated: &mut Option<String>,
+    mut hook: Option<&mut crate::intervene::Hook>,
 ) -> Report {
     let started = Instant::now();
     let finish = |verdict: Verdict, lines: Vec<String>, suspects: Vec<String>| Report {
@@ -777,6 +796,12 @@ fn check_runs(
             None => return finish(Verdict::Unknown("UNKNOWN(mutant does not apply)".into()), Vec::new(), Vec::new()),
         }
     }
+    if let Some(d) = hook.as_ref().and_then(|h| h.apply.as_ref()) {
+        if !crate::intervene::apply(&mut program, d) {
+            return finish(Verdict::Unknown("UNKNOWN(intervention does not apply)".into()), Vec::new(), Vec::new());
+        }
+    }
+    let record = hook.as_ref().and_then(|h| h.prepare(&mut program));
     let calls = calls;
     let machine_calls = machine_calls;
     let program = program;
@@ -795,7 +820,10 @@ fn check_runs(
     let mut perturbed_runs = 0u32;
     let mut kernel_shows = false;
     let mut queue: std::collections::VecDeque<(u32, Option<crate::concolic::Inputs>, Option<u64>)> =
-        (0..opts.runs).map(|r| (r, None, None)).collect();
+        match hook.as_ref().and_then(|h| h.run) {
+            Some(r) => std::iter::once((r, None, None)).collect(),
+            None => (0..opts.runs).map(|r| (r, None, None)).collect(),
+        };
     loop {
         let (run, inputs, aim) = match queue.pop_front() {
             Some(x) => x,
@@ -806,13 +834,18 @@ fn check_runs(
         };
         *env.concolic_inputs.borrow_mut() = inputs.clone();
         env.record_path.set(opts.concolic > 0 && (inputs.is_some() || run < RECORDED_RUNS));
+        *env.probe.borrow_mut() = hook.as_ref().and_then(|h| h.probe(&program));
         let m = machine::run(&env, run, entry, opts.budget, &machine_calls, None);
+        let probe = env.probe.borrow_mut().take();
         env.record_path.set(false);
         if let Some(path) = m.as_ref().ok().and_then(|mo| mo.path.clone()).filter(|p| !p.branches.is_empty()) {
             work.add(run, inputs.clone(), path);
         }
         let replay: &[Record] = m.as_ref().map(|mo| mo.calls.as_slice()).unwrap_or(&[]);
         let g = graph::run(&env, &program, run, opts.budget, &calls, replay, None);
+        if let Some(h) = hook.as_mut() {
+            h.keep(&program, probe, record.as_ref());
+        }
         let (mo, go) = match (m, g) {
             (Err(Halt::Trap(t)), Err(Halt::Trap(_))) => {
                 trapped.get_or_insert(t);

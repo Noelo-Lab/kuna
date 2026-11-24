@@ -123,6 +123,7 @@ pub struct Block {
     pub outs: Vec<(usize, i32)>,
 }
 
+#[derive(Clone)]
 pub struct Program {
     pub blocks: Vec<Block>,
     pub slots: usize,
@@ -133,6 +134,19 @@ pub struct Program {
     /// The register-save stores kuna's `varargsave` folded away: what the
     /// printed `va_list` setup means by `va_start`, run at entry.
     pub vararg: Option<kuna_decomp::kuna_varargsave::Folded>,
+    /// CSIC: the op whose output an intervention sets, `(block, op)`, and the
+    /// value for each of its executions, in order (`None` leaves one alone).
+    pub force: Option<(usize, usize, Vec<Option<u128>>)>,
+    /// CSIC: each executed op and its output value, in order.
+    pub record: Option<std::rc::Rc<std::cell::RefCell<Vec<Exec>>>>,
+}
+
+/// One op of kuna's side as a run executed it.
+#[derive(Clone, Copy, Debug)]
+pub struct Exec {
+    pub block: usize,
+    pub op: usize,
+    pub value: Option<u128>,
 }
 
 /// The decompiler's built-in user ops that read or write memory.
@@ -421,5 +435,5 @@ pub fn compile(prog: &ConsoleProgram, fd: &Funcdata, calls: &Calls) -> Program {
         blocks.push(Block { index: block.get_index(), start: start_of(bl), phis, ops, outs });
     }
     let starts = blocks.iter().map(|b| b.start).collect();
-    Program { blocks, slots: c.slots.len(), starts, watch: None, reached: Default::default(), vararg: fd.vararg_folded().cloned() }
+    Program { blocks, slots: c.slots.len(), starts, watch: None, reached: Default::default(), vararg: fd.vararg_folded().cloned(), force: None, record: None }
 }

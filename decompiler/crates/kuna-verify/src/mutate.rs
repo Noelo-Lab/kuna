@@ -102,7 +102,7 @@ fn near(opc: OpCode) -> Option<OpCode> {
     })
 }
 
-fn ordered(opc: OpCode) -> bool {
+pub(crate) fn ordered(opc: OpCode) -> bool {
     use OpCode::*;
     matches!(
         opc,
@@ -239,6 +239,40 @@ pub struct Outcome {
     /// A run reached the mutated op.
     pub reached: bool,
     pub ms: f64,
+    /// With `Options::intervene`, for a caught mutant: what the search found.
+    pub csic: Option<Hit>,
+}
+
+/// Whether an intervention search on a caught mutant points at the op the
+/// mutant changed.
+#[derive(Clone, Debug)]
+pub struct Hit {
+    pub witnesses: usize,
+    /// The earliest witness, by where its op first ran, is on the mutated op.
+    pub first: bool,
+    /// Some witness is on the mutated op.
+    pub any: bool,
+    /// Some witness is on an op from the mutated op's instruction.
+    pub address: bool,
+    /// A value witness, or a structural one, is on the mutated op.
+    pub value: bool,
+    pub structural: bool,
+    pub replays: usize,
+    pub ms: f64,
+}
+
+fn hit(c: &crate::intervene::Csic, m: Mutation, at: u64) -> Hit {
+    let on = |w: &&crate::intervene::Witness| w.change.place() == (m.block, m.op);
+    Hit {
+        witnesses: c.witnesses.len(),
+        first: c.witnesses.first().is_some_and(|w| on(&w)),
+        any: c.witnesses.iter().any(|w| on(&w)),
+        address: c.witnesses.iter().any(|w| w.at == at),
+        value: c.witnesses.iter().filter(on).any(|w| w.change.family() == "value"),
+        structural: c.witnesses.iter().filter(on).any(|w| w.change.family() == "structural"),
+        replays: c.replays,
+        ms: c.ms,
+    }
 }
 
 impl Outcome {
@@ -283,13 +317,19 @@ pub fn mutate_function(prog: &ConsoleProgram, fd: &Funcdata, opts: &Options, per
         .filter_map(|m| {
             let started = Instant::now();
             let (report, what, reached) = crate::check::check_mutant(prog, fd, opts, m)?;
+            let ms = started.elapsed().as_secs_f64() * 1e3;
+            let csic = (opts.intervene && matches!(report.verdict, Verdict::Differs { .. })).then(|| {
+                let at = program.blocks[m.block].ops[m.op].at;
+                hit(&crate::intervene::search(prog, fd, opts, Some(m)), m, at)
+            });
             Some(Outcome {
                 function: fd.get_name().to_string(),
                 operator: m.operator,
                 what,
                 verdict: report.verdict,
                 reached,
-                ms: started.elapsed().as_secs_f64() * 1e3,
+                ms,
+                csic,
             })
         })
         .collect()
