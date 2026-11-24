@@ -65,6 +65,7 @@ pub mod kuna_arraycoverwidth;
 pub mod kuna_bytearrayc;
 pub(crate) mod kuna_bytearrayslice;
 pub mod kuna_armregistershift; // (kuna) defined C for ARM register-controlled LSL
+pub mod kuna_armshiftguard; // (kuna) when a register-controlled ARM LSL prints its range guard
 pub mod kuna_armconstantshift;
 pub(crate) mod kuna_acleintrinsics; // (kuna) AArch64 barrier, hint and memory-tagging user ops as ACLE intrinsics
 pub mod kuna_emptystrconst;
