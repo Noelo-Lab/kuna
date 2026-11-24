@@ -1680,11 +1680,14 @@ call). Each in-edge of the join belongs to a statement:
   of its own, unless the join computes the returned register itself (the
   `mov eax, K` or frame load in front of `leave`), in which case all its
   in-edges share that one statement;
-- in a void function `return;` is a jump or a `nop`, and kuna's flow gives a
-  `nop` no p-code, so paths are told apart by the instruction they land on: the
-  target of a branch, or for a fall-through the first branch target between
-  its last instruction and the join. Paths that land on the same address share
-  a statement.
+- in a void function `return;` is a `nop` (and a jump when it is not last),
+  and kuna's flow gives a `nop` no p-code. A jump-only predecessor is a
+  `return;` only when a branch into it lands on the `nop` in front of it; a
+  bare jump is a `break` or `goto`. Every other path is told apart by the
+  instruction it lands on: the target of a branch, or for a fall-through the
+  first branch target between its last instruction and the join, and a run of
+  landings with no p-code between them counts as the last one. Paths that land
+  on the same address share a statement.
 
 The record is carried by the edges themselves: bits 16–30 of each edge label
 hold a tag naming the statement (separately for the valued and the void
@@ -1700,7 +1703,12 @@ At `returndup` time `kuna_o0returns.rs (split)` groups the RETURN block's
 in-edges by tag and gives each group its own copy of the epilogue with
 `node_split` (a group of several edges is moved onto its copy only when the
 block has no phi), the largest group keeping the original; a group's value may
-be a constant or a variable. When every RETURN block of the function is one
+be a constant or a variable. A RETURN block still behind the stack-protector
+join, reached by one untagged edge from it, is spliced into the join first
+(`kuna_o0returns.rs (joined)`), and an epilogue may be split when it holds
+arithmetic the simplifier hoisted out of the returns (`p + MULTIEQUAL(i, i +
+2)`), as long as it reads no memory and makes no call (`kuna_o0returns.rs
+(pure_epilogue)`). When every RETURN block of the function is one
 recorded statement the function is *decided*, and the rule-based passes stand
 down: `returndup`'s const gate, short-circuit gate and `rettriangle`, and the
 `earlyreturn`/`switchreturn` peels, skip recorded blocks (`recorded`), and
