@@ -1124,15 +1124,16 @@ impl<'e, 'p> State<'e, 'p> {
         w
     }
 
-    /// The pointer-sized, aligned words this side wrote in RAM at offsets
-    /// `keep` accepts.
+    /// The stack addresses held by pointer-sized words this side wrote in RAM
+    /// at offsets `keep` accepts, aligned or not: a packed structure can hold
+    /// a pointer at any offset.
     fn stored_pointers(&self, keep: impl Fn(u64) -> bool) -> Vec<u64> {
         let ram = self.env.ram.get_index();
         let size = u64::from(self.env.ram.get_addr_size()).clamp(1, 8);
         let big = self.env.ram.is_big_endian();
         let mut words = Vec::new();
         for ((sp, off), _) in self.mem.iter() {
-            if sp != ram || off % size != 0 || !keep(off) {
+            if sp != ram || !keep(off) {
                 continue;
             }
             let mut v = 0u64;
@@ -1145,7 +1146,7 @@ impl<'e, 'p> State<'e, 'p> {
                 let shift = if big { size - 1 - i } else { i };
                 v |= u64::from(b) << (shift * 8);
             }
-            if whole {
+            if whole && self.env.in_stack(v, 1) {
                 words.push(v);
             }
         }

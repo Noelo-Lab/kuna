@@ -219,7 +219,7 @@ fn compare_writes(env: &Env, run: u32, machine: &Writes, kuna: &Writes, read: Op
 
 /// A computed call target as an address in the code space: wrapped to its
 /// size, and without the ARM or MIPS instruction-set bit.
-fn code_target(env: &Env, t: Option<u64>) -> Option<u64> {
+pub(crate) fn code_target(env: &Env, t: Option<u64>) -> Option<u64> {
     let id = &env.prog.arch().archid;
     let isa_bit = id.starts_with("ARM") || id.starts_with("MIPS");
     t.map(|t| env.code.wrap_offset(t) & if isa_bit { !1 } else { !0 })
@@ -299,7 +299,10 @@ fn compare_calls(prog: &ConsoleProgram, env: &Env, run: u32, calls: &Calls, m: &
         let code_or_outside = |t: u64| env.is_code(t) || !env.code_mapped(t);
         let both = |a: Option<u64>, b: Option<u64>| a.zip(b).is_some_and(|(m, k)| code_or_outside(m) && code_or_outside(k));
         let comparable = both(mr, kr) || both(mt, kt);
-        let compared = (mc.indirect && gc.indirect) || (direct && comparable);
+        let resolved = calls.site(gc.at).resolved;
+        let both_code = mt.zip(kt).is_some_and(|(m, k)| env.is_code(m) && env.is_code(k));
+        let mixed = mc.indirect != gc.indirect && !resolved && both_code;
+        let compared = (mc.indirect && gc.indirect) || (direct && comparable) || mixed;
         let same = mr == kr || (mt == kt && mt.is_some_and(|t| env.is_code(t)));
         if compared && !same {
             let l = format!("call {n} at {:#x}: the machine calls {}, kuna calls {}", gc.at, target(mc.target), target(gc.target));
@@ -688,9 +691,29 @@ fn input_line(prog: &ConsoleProgram, env: &Env, run: u32, claim: &Claim) -> Stri
 
 /// Check one decompiled function. `contract`, when given, is the function's
 /// real type.
+/// Runs of the pass that gives a parameter kuna's recovered prototype types
+/// `bool` any value: the 0-or-1 domain is kuna's claim, not the program's.
+const DOMAIN_RUNS: u32 = 64;
+
 pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Contract>, opts: &Options) -> Report {
     let mut work = crate::concolic::Worklist::default();
-    let mut report = check_runs(prog, fd, contract, opts, &mut work, None, &mut None);
+    let (mut report, assumed) = check_runs(prog, fd, contract, opts, &mut work, None, &mut None, false);
+    if assumed && matches!(report.verdict, Verdict::Agrees(_)) {
+        let free = Options { runs: opts.runs.min(DOMAIN_RUNS), concolic: 0, ..*opts };
+        let (wide, _) = check_runs(prog, fd, contract, &free, &mut crate::concolic::Worklist::default(), None, &mut None, true);
+        if matches!(wide.verdict, Verdict::Differs { .. }) {
+            report.verdict = Verdict::Unknown(
+                "UNKNOWN(assumed-domain: agrees only while a parameter kuna's recovered prototype types bool holds 0 or 1)".into(),
+            );
+            report.lines = wide.lines;
+            report.suspects = wide.suspects;
+        } else if matches!(wide.verdict, Verdict::Agrees(_)) {
+            report.lines.push(format!(
+                "note     a parameter kuna's recovered prototype types bool also took any byte, in {} runs that agree",
+                free.runs
+            ));
+        }
+    }
     if opts.concolic > 0 {
         let s = work.summary();
         let why = match s.solver {
@@ -710,7 +733,7 @@ pub fn check_mutant(prog: &ConsoleProgram, fd: &Funcdata, opts: &Options, m: cra
     let mut work = crate::concolic::Worklist::default();
     let mut got = None;
     let reached = std::rc::Rc::new(std::cell::Cell::new(false));
-    let report = check_runs(prog, fd, None, opts, &mut work, Some((m, std::rc::Rc::clone(&reached))), &mut got);
+    let (report, _) = check_runs(prog, fd, None, opts, &mut work, Some((m, std::rc::Rc::clone(&reached))), &mut got, false);
     got.map(|what| (report, what, reached.get()))
 }
 
@@ -722,15 +745,13 @@ fn check_runs(
     work: &mut crate::concolic::Worklist,
     mutation: Option<(crate::mutate::Mutation, std::rc::Rc<std::cell::Cell<bool>>)>,
     mutated: &mut Option<String>,
-) -> Report {
+    free_domain: bool,
+) -> (Report, bool) {
     let started = Instant::now();
-    let finish = |verdict: Verdict, lines: Vec<String>, suspects: Vec<String>| Report {
-        function: fd.get_name().to_string(),
-        verdict,
-        lines,
-        suspects,
-        elapsed: started.elapsed(),
-        concolic: None,
+    let assumed = std::cell::Cell::new(false);
+    let finish = |verdict: Verdict, lines: Vec<String>, suspects: Vec<String>| {
+        let r = Report { function: fd.get_name().to_string(), verdict, lines, suspects, elapsed: started.elapsed(), concolic: None };
+        (r, assumed.get())
     };
     let mut env = match Env::new(prog, opts.seed) {
         Ok(e) => e,
@@ -749,6 +770,10 @@ fn check_runs(
     env.extensions = abi::extensions(fd, &env, prog);
     env.tracked = tracked(prog, fd, &mut env);
     env.booleans = booleans(fd, &env);
+    assumed.set(!fd.get_func_proto().is_input_locked() && !env.booleans.is_empty());
+    if free_domain {
+        env.booleans.clear();
+    }
     env.kernel.set(kernel_returns(prog));
     let contract_storage = match contract.filter(|c| !c.ret.is_void()) {
         Some(c) => match abi::return_storage(prog, fd, &c.ret) {

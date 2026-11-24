@@ -188,3 +188,17 @@ fn x87_extended_values_run_and_return() {
     let v = verdicts("kuna-integer-float-rounding-x87");
     assert_eq!(of(&v, &["cmpf", "lt1", "l2d2f"]), ["AGREES(256)", "AGREES(256)", "AGREES(256)"]);
 }
+
+/// A parameter kuna's recovered prototype types `bool` keeps both sides to 0
+/// and 1, which is kuna's claim, not the program's; a second pass gives it any
+/// byte, and `flagparam` agrees there too.
+#[test]
+fn an_inferred_bool_parameter_is_also_checked_with_any_byte() {
+    let specs = repo().join("specs").to_string_lossy().into_owned();
+    let path = repo().join("tests/stages/kuna-boolbyte.xml");
+    let res = check_datatest(&path.to_string_lossy(), &[specs], &Options::default());
+    let rows: Vec<_> = res.reports.iter().filter(|r| r.function == "flagparam").collect();
+    let all: String = rows.iter().map(|r| r.render()).collect();
+    assert!(rows.iter().all(|r| r.verdict.label() == "AGREES(256)"), "{all}");
+    assert!(rows.iter().any(|r| r.lines.iter().any(|l| l.contains("types bool also took any byte"))), "{all}");
+}
