@@ -2757,8 +2757,9 @@ pub fn print_c_recompile_prelude(arch: &Architecture) -> String {
     out.push_str("/* kuna recompile prelude (generated): core scalar typedefs */\n");
     out.push_str("#include <stdbool.h>\n");
     // (kuna `unitcalls`) The parameter list of a declared p-code helper or
-    // user-defined operation: `()` means no parameters from C23 on.
-    out.push_str("#if defined(__STDC_VERSION__) && __STDC_VERSION__ > 201710L\n#define KUNA_ANY_ARGS ...\n#else\n#define KUNA_ANY_ARGS\n#endif\n");
+    // user-defined operation: `...` where `()` means no parameters, which is
+    // C23 and the c2x modes of gcc 13 and clang 16 on; `()` before.
+    out.push_str("#if defined(__STDC_VERSION__) && __STDC_VERSION__ > 201710L && (__STDC_VERSION__ >= 202311L || __clang_major__ >= 16 || (!defined(__clang__) && __GNUC__ >= 13))\n#define KUNA_ANY_ARGS ...\n#else\n#define KUNA_ANY_ARGS\n#endif\n");
     // A recovered aggregate can hold target pointers, and a host that compiles
     // this header for a different data model sizes them differently and moves
     // every field after such a member -- which also moves what `p[1]` means in

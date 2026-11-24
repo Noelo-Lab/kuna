@@ -8,10 +8,11 @@
 //! that named one did not compile. Each is declared with no fixed parameters,
 //! `extern T name(KUNA_ANY_ARGS);`, because the printed arguments are whatever
 //! the binary passed and a prototype would reject a faithful call. The
-//! recompile prelude defines `KUNA_ANY_ARGS` as `...` from C23 on, where `()`
-//! means no parameters, and as nothing before. `T` is the op's output, or
-//! `void` without one; a name called both with and without an output, or at
-//! two output sizes, takes the widest.
+//! recompile prelude defines `KUNA_ANY_ARGS` as `...` where `()` means no
+//! parameters (C23, and the c2x modes of gcc 13 and clang 16 on) and as nothing
+//! before. `T` is the op's output, or `void` without one; a name a function
+//! calls both with and without an output, or at two output sizes, takes the
+//! widest.
 //!
 //! The printer records each call on its thread while it prints a function and
 //! forgets them when it starts the next one, so [`take`] answers for the
@@ -21,9 +22,10 @@
 //! Limits: an output with no `undefinedN` or float spelling (9 or 12 bytes) is
 //! not declared, and the unit still does not compile; a user-defined operation
 //! named like a C library function (`syscall`) clashes with that library's
-//! header if the unit includes it; two functions that call one user-defined
-//! operation at two output sizes get two declarations, which the header
-//! reports as disagreeing.
+//! header if the unit includes it; and the widest output is chosen per
+//! function, so two functions that call one user-defined operation at two
+//! output sizes, or one with its output and one without, get two declarations,
+//! which the header reports as disagreeing and leaves undeclared.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -82,8 +84,14 @@ fn note(name: &str, returns: Returns) {
 }
 
 fn returns(fd: &Funcdata, code: OpCode, out: Option<VarnodeId>) -> Option<Returns> {
+    returns_of(code, out.map(|out| fd.vbank().get(out).map_or(0, |vn| vn.get_size())))
+}
+
+/// The declared type of a call to `code`'s helper or operation with an output
+/// of `size` bytes, or with none.
+fn returns_of(code: OpCode, size: Option<i32>) -> Option<Returns> {
     use OpCode::*;
-    let Some(size) = out.and_then(|out| fd.vbank().get(out)).map(|vn| vn.get_size()) else {
+    let Some(size) = size else {
         return Some((-1, "void"));
     };
     if matches!(code, CPUI_INT_CARRY | CPUI_INT_SCARRY | CPUI_INT_SBORROW | CPUI_FLOAT_NAN) {
@@ -133,6 +141,26 @@ mod tests {
             take(),
             ["void LOCK(KUNA_ANY_ARGS);", "undefined8 rdtsc(KUNA_ANY_ARGS);"]
         );
+    }
+
+    #[test]
+    fn a_call_is_declared_with_the_type_of_its_output() {
+        use OpCode::*;
+        let cases = [
+            (CPUI_INT_SCARRY, Some(1), Some("bool")),
+            (CPUI_FLOAT_NAN, Some(1), Some("bool")),
+            (CPUI_SUBPIECE, Some(8), Some("undefined8")),
+            (CPUI_PIECE, Some(16), Some("undefined16")),
+            (CPUI_CALLOTHER, Some(3), Some("undefined3")),
+            (CPUI_CALLOTHER, None, Some("void")),
+            (CPUI_FLOAT_SQRT, Some(8), Some("double")),
+            (CPUI_FLOAT_ROUND, Some(10), Some("long double")),
+            (CPUI_CALLOTHER, Some(12), None),
+            (CPUI_FLOAT_ABS, Some(2), None),
+        ];
+        for (code, size, ty) in cases {
+            assert_eq!(returns_of(code, size).map(|(_, ty)| ty), ty, "{code:?} {size:?}");
+        }
     }
 
     #[test]

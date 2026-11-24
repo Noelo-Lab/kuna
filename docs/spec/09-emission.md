@@ -3962,8 +3962,8 @@ function's call declarations
 `T name(KUNA_ANY_ARGS);` per name, which the header writes as `extern` lines.
 There is no fixed parameter list, because the printed arguments are whatever the
 binary passed and a prototype would reject a faithful call. The prelude defines
-`KUNA_ANY_ARGS` as `...` from C23 on, where `()` means no parameters, and as
-nothing before. `T` is `bool` for the carry and borrow tests, and otherwise the
+`KUNA_ANY_ARGS` as `...` where `()` means no parameters (C23, and the c2x modes
+of gcc 13 and clang 16 on) and as nothing before. `T` is `bool` for the carry and borrow tests, and otherwise the
 widest output any call of the name has, or `void` when none has one. An output
 with no `undefinedN` or float spelling gets no declaration. The prelude's
 `undefined16` is an `unsigned __int128` aligned to one byte where the compiler
@@ -3993,8 +3993,10 @@ uint4;`, …; 8-byte integers always spell `long long` so the text is
 data-model independent; `bool` is covered by `#include <stdbool.h>`;
 `char`/`void` are real C and emit nothing), then the fixed Ghidra/kuna
 `undefined` family — `undefined`, `undefined1..8` (3/5/6/7 mapped to the next
-larger unsigned integer, each carrying a sizeof-divergence note) and
-`undefined16`/`undefined32` as byte-array structs. The non-printer half of
+larger unsigned integer, each carrying a sizeof-divergence note),
+`undefined16` as a one-byte-aligned `unsigned __int128` where the compiler has
+the type and a byte-array struct where it does not, and `undefined32` as a
+byte-array struct. The non-printer half of
 the export (section enumeration, one-instruction disassembly, raw image
 bytes, named data symbols for the `.asm`/`README.md` artifacts) lives on the
 console engine, `decompiler/crates/kuna-console/src/engine.rs
