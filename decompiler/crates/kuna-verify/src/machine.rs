@@ -338,6 +338,8 @@ struct Machine<'e, 'p, 'c> {
     /// function's budget, which the decompiled side never spends on them.
     callee_pool: u64,
     in_callee: bool,
+    /// Where each enclosing call returns, innermost last.
+    returns: Vec<u64>,
     /// System calls and traps, in order.
     events: Vec<crate::calls::UserEvent>,
     /// Argument-register bytes to give one call's callee instead of the
@@ -416,8 +418,12 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
             return Ok(Exit::NoReturn);
         }
         let in_image = self.env.code_mapped(target);
-        if in_image && self.real(at, target)?.is_some() {
-            return Ok(Exit::Return);
+        if in_image {
+            match self.real(at, target)? {
+                Some(e @ Exit::Unwind(_)) => return Ok(e),
+                Some(_) => return Ok(Exit::Return),
+                None => {}
+            }
         }
         self.guess_if_frame(in_image, &args);
         self.stub(at, &args)?;
@@ -561,7 +567,7 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         }
         match ran {
             Err(Halt::Budget) if !outer && self.steps > budget => Err(Halt::Budget),
-            Ok(exit @ (Exit::Return | Exit::Leave)) => {
+            Ok(exit @ (Exit::Return | Exit::Leave | Exit::Unwind(_))) => {
                 let site = self.calls.site(at);
                 let mut keep = site.killed.clone();
                 keep.push(self.env.sp);
@@ -631,9 +637,14 @@ const CALLEE_STEPS: u64 = 50_000;
 const MAX_DEPTH: u32 = 32;
 
 /// How an execution ended.
+#[derive(Clone, Copy)]
 enum Exit {
     Return,
     NoReturn,
+    /// A callee returned to where an enclosing call returns (libgcc's float
+    /// routines reach a shared tail with `bl` and pop their caller's frame):
+    /// every frame up to that call's ends.
+    Unwind(u64),
     /// A callee returned straight to the function's caller (a trampoline).
     Leave,
 }
@@ -660,9 +671,23 @@ enum Mode {
 fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(u64, u64)>) -> Result<Exit, Halt> {
     let outer = m.state.in_callee_code;
     m.state.in_callee_code = mode != Mode::Top;
+    if let Some((b, _)) = back {
+        m.returns.push(b & !1);
+    }
     let exit = exec_body(m, entry, mode, depth, back);
+    if back.is_some() {
+        m.returns.pop();
+    }
     m.state.in_callee_code = outer;
-    exit
+    exit.map(|e| match (e, back) {
+        (Exit::Unwind(t), Some((b, _))) if returns_to(t, b) => Exit::Return,
+        (e, _) => e,
+    })
+}
+
+/// Whether a return to `target` is a return to `back`, a call's fallthrough.
+fn returns_to(target: u64, back: u64) -> bool {
+    (target & !1).wrapping_sub(back & !1) <= RETURN_SLACK
 }
 
 fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(u64, u64)>) -> Result<Exit, Halt> {
@@ -762,9 +787,12 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(
                 }
                 if !top {
                     if let Some((b, call_sp)) = back {
-                        let elsewhere = (target & !1).wrapping_sub(b & !1) > RETURN_SLACK;
+                        let elsewhere = !returns_to(target, b);
                         let sp = m.sp_value()?;
                         let switched = sp.wrapping_sub(call_sp).wrapping_add(STACK_SWITCH) > 2 * STACK_SWITCH;
+                        if elsewhere && !switched && m.returns.iter().rev().skip(1).any(|&r| returns_to(target, r)) {
+                            return Ok(Exit::Unwind(target));
+                        }
                         if elsewhere && (switched || env.code_mapped(target & !1)) {
                             return Err(Halt::Unsupported(format!("a callee returned to {target:#x}, not to {b:#x} after its call")));
                         }
@@ -805,7 +833,7 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(
                     }
                     let args = m.record(addr, Some(target), indirect)?;
                     match if in_image { m.real(addr, target)? } else { None } {
-                        Some(Exit::Leave) => return Ok(Exit::Leave),
+                        Some(e @ (Exit::Leave | Exit::Unwind(_))) => return Ok(e),
                         Some(_) => {}
                         None => {
                             m.guess_if_frame(in_image, &args);
@@ -820,7 +848,7 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(
                     let back = Some((addr.wrapping_add(insn.len), m.sp_value()?));
                     match exec(m, target, inner, depth + 1, back)? {
                         Exit::NoReturn => return Ok(Exit::NoReturn),
-                        Exit::Leave => return Ok(Exit::Leave),
+                        e @ (Exit::Leave | Exit::Unwind(_)) => return Ok(e),
                         Exit::Return => {}
                     }
                 } else if mode != Mode::Opaque {
@@ -998,6 +1026,7 @@ pub fn run<'e, 'p>(
         budget,
         callee_pool: budget,
         in_callee: false,
+        returns: Vec::new(),
         events: Vec::new(),
         guessed: false,
         copies: Vec::new(),

@@ -199,12 +199,46 @@ impl Calls {
     }
 }
 
-/// Whether flow planted a no-return halt after the call at `at`: a callee
-/// kuna knows does not return by name or by its own body, not by prototype.
+/// Whether flow planted a no-return halt after the call at `at`, or a
+/// `CALL_RETURN` override ends the flow there (`error (1, ...)`): a callee kuna
+/// knows does not return by name, by its own body or by the call's arguments,
+/// not by prototype.
 fn halts_after(fd: &Funcdata, at: &kuna_base::address::Address) -> bool {
-    fd.obank()
-        .iter_at(at)
-        .any(|(_, o)| fd.obank().get(o).is_some_and(|o| o.get_halt_type() & kuna_decomp::op::pcodeop_flags::noreturn != 0))
+    fd.get_override().get_flow_override(at) == kuna_decomp::overrides::flow_type::CALL_RETURN
+        || fd
+            .obank()
+            .iter_at(at)
+            .any(|(_, o)| fd.obank().get(o).is_some_and(|o| o.get_halt_type() & kuna_decomp::op::pcodeop_flags::noreturn != 0))
+}
+
+/// Whether only padding lies between the call at `at` and the start of another
+/// function: the compiler left none of this function's code after the call, so
+/// it does not return (`error (1, ...)`, a fatal wrapper no name marks).
+fn falls_into_another(fd: &Funcdata, env: &Env, at: u64) -> bool {
+    let own = fd.get_address().get_offset();
+    let Ok(call) = crate::machine::lift(env, at) else { return false };
+    let mut next = at.wrapping_add(call.len);
+    for _ in 0..16 {
+        if next != own && env.function_starts_at(next) {
+            return true;
+        }
+        match crate::machine::lift(env, next) {
+            Ok(i) if no_effect(env, &i) => next = next.wrapping_add(i.len),
+            _ => return false,
+        }
+    }
+    false
+}
+
+/// Padding: an instruction that writes only temporaries and does not branch.
+fn no_effect(env: &Env, insn: &crate::machine::Insn) -> bool {
+    insn.ops.iter().all(|o| {
+        !matches!(
+            o.opc,
+            OpCode::CPUI_STORE | OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALL
+                | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER | OpCode::CPUI_RETURN
+        ) && o.out.as_ref().is_none_or(|v| env.unique.as_ref().zip(v.space.as_ref()).is_some_and(|(u, s)| u.get_index() == s.get_index()))
+    })
 }
 
 /// The registers a stub for `proto` kills: those its effect list says a call
@@ -239,8 +273,8 @@ fn killed(env: &Env, proto: &FuncProto) -> Vec<(u64, u32)> {
     out
 }
 
-/// The register a call's value is copied or cast into, for a call whose
-/// prototype has no output yet keeps its value in a temporary.
+/// The register, or registers joined, a call's value is copied or cast into,
+/// for a call whose prototype has no output yet keeps its value in a temporary.
 fn copied_to_register(fd: &Funcdata, env: &Env, out: Option<VarnodeId>) -> Option<Storage> {
     let v = fd.vbank().get(out?)?;
     v.descend_iter().filter_map(|d| fd.obank().get(d)).find_map(|d| {
@@ -249,7 +283,7 @@ fn copied_to_register(fd: &Funcdata, env: &Env, out: Option<VarnodeId>) -> Optio
         }
         let w = fd.vbank().get(d.get_out()?)?;
         let st = Storage::at(w.get_addr(), w.get_size() as u32)?;
-        (st.space.get_index() == env.register.get_index()).then_some(st)
+        st.pieces(env.prog).iter().all(|p| p.space.get_index() == env.register.get_index()).then_some(st)
     })
 }
 
@@ -292,7 +326,7 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
             Site {
                 target,
                 extrapop: pop,
-                noreturn: proto.is_no_return() || halts_after(fd, op.get_addr()),
+                noreturn: proto.is_no_return() || halts_after(fd, op.get_addr()) || falls_into_another(fd, env, op.get_addr().get_offset()),
                 killed: killed(env, proto)
                     .into_iter()
                     .filter(|&(off, size)| {

@@ -137,6 +137,7 @@ pub struct Env<'p> {
     /// Where a call to each target goes once thunks are followed.
     pub(crate) thunks: RefCell<HashMap<u64, u64>>,
     pub(crate) insns: RefCell<BTreeMap<u64, Rc<crate::machine::Insn>>>,
+    entries: std::cell::OnceCell<BTreeSet<u64>>,
     stack: Rc<AddrSpace>,
     /// The decompiled function, whose local symbols give the extent of a
     /// stack object whose address escapes.
@@ -264,6 +265,7 @@ impl<'p> Env<'p> {
             image_bytes: RefCell::new(HashMap::default()),
             thunks: RefCell::new(HashMap::new()),
             insns: RefCell::new(BTreeMap::new()),
+            entries: std::cell::OnceCell::new(),
             stack: Rc::clone(stack),
             fd: None,
             locals: RefCell::new(BTreeMap::new()),
@@ -279,6 +281,13 @@ impl<'p> Env<'p> {
         let last = addr.wrapping_add(size.saturating_sub(1));
         let i = self.readonly.partition_point(|r| r.0 <= addr);
         last >= addr && i > 0 && self.readonly[i - 1].1 >= last
+    }
+
+    /// Whether a function the program knows starts at `addr`.
+    pub fn function_starts_at(&self, addr: u64) -> bool {
+        self.entries
+            .get_or_init(|| self.prog.function_entries_canonical().iter().map(|e| e.addr.get_offset()).collect())
+            .contains(&addr)
     }
 
     pub fn code_mapped(&self, addr: u64) -> bool {

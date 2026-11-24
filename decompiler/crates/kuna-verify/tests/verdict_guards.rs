@@ -227,3 +227,16 @@ fn concolic_inputs_reach_a_branch_random_runs_miss() {
     assert_eq!(label(0), "AGREES(64)");
     assert_eq!(label(8), "AGREES(65)");
 }
+
+/// A call followed only by padding and then another function does not
+/// return, whatever its callee: `die(1);` then `g`. The machine stops at it as
+/// kuna's flow does, instead of running on into `g`.
+#[test]
+fn a_call_with_only_padding_after_it_does_not_return() {
+    let text = [
+        0xbf, 0x01, 0, 0, 0, 0xe8, 0, 0, 0, 0, 0x0f, 0x1f, 0x00, 0x66, 0x90, 0x90, 0xb8, 0x05, 0, 0, 0, 0xc3,
+    ];
+    let path = object("padded", &text, &[("f", 0, 16), ("g", 16, 6)], &[(6, "die")]);
+    let reports = check(&path, &["f"], &Options { runs: 16, ..Options::default() });
+    assert_eq!(reports[0].verdict, Verdict::Agrees(16), "{}", reports[0].render());
+}
