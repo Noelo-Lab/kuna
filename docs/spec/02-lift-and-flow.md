@@ -405,6 +405,19 @@ is selector*0x10000 + offset, so a near branch keeps the selector and wraps the
 offset, as upstream computes it. This is a SLEIGH correctness repair, without
 an inference option.
 
+An x86-64 REX prefix applies only as the last prefix before the opcode. The CPU
+ignores one that a legacy prefix follows (`0x66`, `0x67`, `F2`, `F3`, `F0`, or a
+segment override): `f3 48 67 ab` is `rep stos` of dwords with a 32-bit address,
+and the REX.W does not apply. Upstream's REX constructors move the decode into its
+primary phase, so the legacy prefix after the REX byte was read as the opcode, and
+the function stopped at a bad-instruction halt. A constructor in `ia.sinc`, under
+`@ifdef IA64`, now matches a legacy prefix in the primary phase right after a REX.
+It undoes the REX (the prefix bits, and the operand size, which a REX.W had set
+to 64 bits and which goes back to 16 bits after a `0x66`, else 32), returns to
+the prefix phase, and decodes on from the legacy prefix. The constructor replaces
+two blank lines, so `x86.sla` and `x86-16.sla` are byte-identical. This is a SLEIGH
+correctness repair, without an option.
+
 A DOS program built by Microsoft's or Borland's compilers for the 8087
 emulator carries no x87 opcodes: the linker's emulator fixups turn each `WAIT`
 and ESC opcode pair into a software interrupt that the emulator services or,

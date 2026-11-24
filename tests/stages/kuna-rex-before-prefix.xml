@@ -1,0 +1,42 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A REX prefix before a legacy prefix is not the last prefix before the opcode,
+    so an x86-64 CPU ignores it. P2 lift: the x86-64 SLEIGH spec read the legacy
+    prefix after a REX byte as the opcode and planted a bad-instruction halt.
+
+    rex_stos is f3 48 67 ab (rep stos with a 32-bit address, the REX.W ignored),
+    rex_stos16 is f3 48 66 ab (rep stos of words), rex_movs is 48 67 f3 48 a5 (rep
+    movs of quadwords with 32-bit addresses: the second REX.W is the last prefix),
+    and rex_load is 48 67 8b 07 (mov eax,[edi]). Each matches objdump's decoding.
+    Strict correctness fix, so one pass pins the output.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">f34867abc3</bytechunk>
+<bytechunk space="ram" offset="0x1010" readonly="true">f34866abc3</bytechunk>
+<bytechunk space="ram" offset="0x1020" readonly="true">4867f348a5c3</bytechunk>
+<bytechunk space="ram" offset="0x1030" readonly="true">48678b07c3</bytechunk>
+<symbol space="ram" offset="0x1000" name="rex_stos"/>
+<symbol space="ram" offset="0x1010" name="rex_stos16"/>
+<symbol space="ram" offset="0x1020" name="rex_movs"/>
+<symbol space="ram" offset="0x1030" name="rex_load"/>
+</binaryimage>
+<script>
+  <com>lo fu rex_stos</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rex_stos16</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rex_movs</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rex_load</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="REXPREFIX #1: rep stos after an ignored REX.W stores dwords" min="1" max="1">builtin_memset32\(v2,v1,a0\);</stringmatch>
+<stringmatch name="REXPREFIX #2: a 66 after an ignored REX.W stores words" min="1" max="1">builtin_memset16\(v2,v1,a0\);</stringmatch>
+<stringmatch name="REXPREFIX #3: the last REX.W before the opcode still moves quadwords" min="1" max="1">builtin_memcpy\(v2,v1,a0 \* 8\);</stringmatch>
+<stringmatch name="REXPREFIX #4: a load through edi after an ignored REX.W" min="1" max="1">return \*\(unsigned int \*\)\(long long\)v1;</stringmatch>
+<stringmatch name="REXPREFIX #5: no bad-instruction halt" min="0" max="0">halt_baddata</stringmatch>
+</decompilertest>

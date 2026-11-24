@@ -80,6 +80,11 @@ constructors moved into an `x87` table there. Their `ia.sinc` lines changed
 in place (each quoted mnemonic and `X87_Dn` macro expands back to the old
 text outside 16-bit x86, and the table's `with` block is under `@ifdef IA16`),
 so the `x86.slaspec` and `x86-64.slaspec` digests are again unchanged.
+The `x86-64.slaspec` digest was regenerated with `slacomp` when the decode began to
+ignore a REX prefix that comes before a legacy prefix, as the CPU does. `slacomp`
+reproduces all three previous x86 digests on the previous sources. The constructor
+replaces two blank lines under `@ifdef IA64`, so the `x86.slaspec` and
+`x86-16.slaspec` digests are unchanged, source lines included.
 
 The AArch64 entry includes kuna's rounding-mode corrections for the
 `FCVT{A,M,N,P}{S,U}`, `FRINT*` and `FRINT32/64*` constructors, their four
