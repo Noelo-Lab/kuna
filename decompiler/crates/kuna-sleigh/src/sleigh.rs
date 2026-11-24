@@ -1426,7 +1426,12 @@ impl PcodeBuilder for SleighBuilder<'_> {
                 | OpCode::CPUI_RETURN | OpCode::CPUI_CALLOTHER => true,
                 _ => false,
             };
-            if slot.iter().any(unsafe_flow) || before.iter().any(memory) && slot.iter().any(memory) {
+            let source: &ParserContext = &self.contexts[saved_ctx].ctx;
+            let repeating = self.engine.context_db.borrow().get_variable(b"carmel_repeating")
+                .is_ok_and(|field| field.get_value(&source.context) != 0);
+            if slot.iter().any(unsafe_flow)
+                || (repeating || before.iter().any(memory)) && slot.iter().any(memory)
+            {
                 return Err(KunaError::unimpl("Unsupported Carmel delay issue effects", fall_base));
             }
         }

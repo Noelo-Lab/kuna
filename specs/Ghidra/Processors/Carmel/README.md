@@ -28,8 +28,11 @@ p-code. Missing memory is not initialized by this language.
 
 Implemented compact effects: exact NOP; INC with low-half accumulator operands;
 zero and register-half MOVE; half-register CMP/CMPU and signed full-accumulator
-CMP with an inactive peer; ordinary signed conditional GOTO with no delay;
-and unconditional relative GOTO/CALL and RETURN with zero or one delay issue.
+CMP with an inactive peer; signed register-only MUL, MAC and MSU; logical
+and arithmetic low-half shifts with an inactive peer; ordinary signed conditional
+GOTO with no delay; and unconditional relative GOTO/CALL and RETURN with zero
+or one delay issue. Immediate REPEAT handles one register-only following issue,
+including zero repeats. It does not lift a transfer or DATA access in that issue.
 The explicit post-CALL branch past an unexecuted sequential slot is part of
 the caller's control flow, even if analysis found a function entry there.
 Unconditional wide relative CALL without delay uses the same two-word DATA
@@ -47,8 +50,8 @@ CLIW specialization admits the all-NOP template and a signed MAC1 register
 product with the remaining lanes inactive. The multiply uses standard-width
 C intermediates while preserving the physical accumulator's guard. Other
 forms can be listed but do not lift. In particular the subset has no
-hardware loops, indirect calls, PowerPlug, or general cross-issue port
-hazard model. In particular, an adjacent same-address store/load can read
+general hardware loops, indirect calls, PowerPlug, or cross-issue port
+hazard model. An adjacent same-address store/load can read
 the old word in the native pipeline but the new word in emitted C.
 
 `carmel.slaspec` is generated from the recovered decoder field descriptions
@@ -81,7 +84,7 @@ The reference checkout's `carmel_kuna_sim_inventory.py` and
 `carmel_kuna_sim_merge.py` index the native simulator observations by pytest
 item, oracle call, and case occurrence. The emitted-C runners verify a native
 return boundary and compare the compiled C with the DLL at `-O0` and `-O2`.
-The current run matched 147 of 3,585 observed case occurrences. Two additional
+The current run matched 195 of 3,585 observed case occurrences. Two additional
 cases match the original static decode rejection. Nineteen more truncate at
 the same address but are only unimplemented lifts. The full simulator suite
 does not pass; neither a matching listing nor a truncated lift is a C pass.

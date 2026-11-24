@@ -256,6 +256,39 @@ fn wide_literal_to_address_register_does_not_shift_or_set_alu_status() {
 }
 
 #[test]
+fn signed_mac_and_msu_preserve_native_wrap_limit_and_no_borrow() {
+    for (word, lhs, rhs, accumulator, ecfg, result, est) in [
+        (0x58d114, 2, 3, 0x7fffffffff, 0, 0x8000000005, 0x36),
+        (0x58d114, 2, 3, 0x7fffffff, 4, 0x7fffffff, 0x24),
+        (0x58d114, 0xfffe, 3, 0xff80000000, 4, 0xff80000000, 0x35),
+        (0x5cd114, 2, 3, 6, 0, 0, 9),
+        (0x5cd114, 0x8000, 0x8000, 0, 5, 0xff80000000, 0x10),
+    ] {
+        let mut m = Machine::new(0, &[(word, NOP), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("A0", accumulator), ("A1L", lhs), ("A2L", rhs), ("ECFG", ecfg), ("X1", 0x1234)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A0"), m.reg("EST"), m.reg("X1")), (result, est, 0x1234));
+    }
+}
+
+#[test]
+fn immediate_repeat_skips_or_replays_only_its_next_issue() {
+    for count in [0, 1, 5] {
+        let mut m = Machine::new(
+            0, &[(0x2bc000 | count, NOP), (INC_A0, NOP), (INC_A1, NOP), (NOP, NOP)],
+            &[(0, 1, 6), (2, 1, 6), (4, 1, 6), (6, 1, 0)], None,
+        );
+        m.seed(&[("A0L", 7), ("A1L", 12)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 12, "the repeated issue is not followed twice");
+        assert_eq!((m.reg("A0L"), m.reg("A1L")), (7 + u64::from(count), 12));
+        assert_eq!(m.step(), 18);
+        assert_eq!(m.reg("A1L"), 13);
+    }
+}
+
+#[test]
 fn wide_data_store_uses_the_old_word_address_and_postincrements_r0() {
     for (low, expected_r0) in [(0xc64000, 0x4100), (0xc64040, 0x4101)] {
         let mut m = Machine::new(0, &[(0x808e4c, low), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
