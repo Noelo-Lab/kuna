@@ -3857,11 +3857,13 @@ unknown text does not invent execution, and recognizing the syntax of an
 unimplemented form does not let flow follow past that form.
 
 Parallel roots sample both compact lanes before committing their register
-effects. A compact delay counts one following issue, not one fetch: the
-loader paints the following issue's length, and the translator checks the
-whole mapped delay before splicing its p-code. Unimplemented or nested
-transfers stop the lift rather than making an edge. A delay with memory
-effects cannot be combined with an unverified stack transfer. The translator
+effects. A Carmel delay is measured in issues, not fetches. For a one-issue
+delay the loader paints the following issue's byte length. For longer delays
+the translator counts independently decoded issues. It checks that each issue
+is mapped before adding its p-code. Nested transfers and unimplemented delay
+effects stop lift instead of introducing a control-flow edge. Memory effects
+that require unmodeled ordering with a transfer or another delayed issue are
+also rejected. The translator
 applies these delay rules only to a language with alignment 3 whose default
 `code` space has three-byte words and which defines the `carmel_issue`
 context field; every other language keeps the unchanged delay-slot path. The

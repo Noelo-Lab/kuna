@@ -7,6 +7,9 @@ sequential instructions, or one wide issue.
 Only a sequential right slot is an instruction start. DATA, IO and EXT are
 separate 16-bit-word spaces; a CLIW template occupies four 24-bit slots.
 
+Build Kuna and compile the specification as shown below before running this
+example from the repository root:
+
 ```sh
 decoder=decompiler/target/release/kuna
 export KUNA_SPECS="$PWD/specs"
@@ -21,8 +24,8 @@ The raw image must use canonical CODE byte order, an even CODE word base and
 complete fetches. XML `<binaryimage>` chunks and symbols instead carry byte
 offsets: `3 * code_slot`, `2 * data_word`, `12 * template_index`. XML CODE must
 be read-only. Set CLIW `readonly="true"` only for an independently established
-immutable bank, normalized to template index 0–1023. This explicit mapping uses
-the simulator's one-bank index alias; the encoded high index bit remains in
+immutable bank, normalized to template index 0–1023. In this mapping the
+encoded high index bit does not affect the template lookup; it remains in
 disassembly. A writable, absent, partial or non-normalized bank cannot provide
 p-code. Missing memory is not initialized by this language.
 
@@ -61,43 +64,20 @@ load remains an independently enterable issue. A delayed transfer still
 executes only its prescribed issues. A separated same-port collision is not
 lifted faithfully by this model.
 
-`carmel.slaspec` is generated from the recovered decoder field descriptions
-and independently assembled/native-tested semantic fixtures in the Carmel
-reference repository. No vendor tool or reference simulator is used at Kuna
-build or runtime. From that checkout, regenerate the source with:
-
-```sh
-python tools/carmel_ghidra.py --target kuna isa/carmel-v3.1r2.json \
-  ../kuna/specs/Ghidra/Processors/Carmel/data/languages/carmel.slaspec
-```
-
 `kuna disassemble` prints CrossView-style expressions, including parallel
 lane separators, conditional qualifiers and reserved issues (`???;`).
 The listing uses decoded operand fields, not p-code, so an instruction
 can have a complete listing while the lifter conservatively returns `unimpl`.
-Regenerate the checked-in display projections separately:
+
+Run the checked-in p-code and raw CODE fixtures from the repository root:
 
 ```sh
-python tools/carmel_kuna_listing.py \
-  ../kuna/decompiler/crates/kuna-console/src/engine/kuna_carmel_listing/decode/tables.rs
+cargo build --manifest-path decompiler/Cargo.toml --release -p kuna-slacomp -p kuna-cli
+decompiler/target/release/slacomp specs/Ghidra/Processors/Carmel/data/languages/carmel.slaspec
+cargo test --manifest-path decompiler/Cargo.toml --release -p kuna-sleigh --test integration carmel_pcode
+cargo test --manifest-path decompiler/Cargo.toml --release -p kuna-console --test integration verify_carmel_raw
 ```
 
-The ignored Rust `verify_carmel_disasm_parity::sweep` test consumes private
-JSONL produced by `tests/carmel_kuna_disasm_corpus.py` in the reference
-checkout. It compares exact text, original CODE addresses and consumed
-words against the original CrossView and the Python formatter.
-
-The reference checkout's `carmel_kuna_sim_inventory.py` and
-`carmel_kuna_sim_merge.py` index the native simulator observations by pytest
-item, oracle call, and case occurrence. The emitted-C runners verify a native
-return boundary and compare the compiled C with the DLL at `-O0` and `-O2`.
-The current run matched 314 of 3,585 observed case occurrences. Another 28
-match an original static decode rejection. Forty-eight more truncate at the
-same address but are unimplemented lifts. The full simulator suite
-does not pass; neither a matching listing nor a truncated lift is a C pass.
-
-The [fixture corpus](../../../../tests/fixtures/carmel/README.md) records the
-compiler and locator identities, fixed entry addresses, ABI evidence and
-bounded inputs. Compiler support is limited to the observed simple scalar
-argument and result convention; the compiler vectors exercise deliberately
-unimplemented instruction families as well.
+The [compiler and assembler fixtures](../../../../tests/fixtures/carmel/README.md)
+include their source, linked CODE, entry points, and bounded inputs.
+These tests cover the implemented subset, not the full instruction set.

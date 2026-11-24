@@ -2,20 +2,13 @@
 
 ## Compiler suite
 
-The [original C and assembler fixtures](../tests/fixtures/carmel/README.md)
-are independent of the generated SLEIGH. Both TASKING C89 levels linked with
-no run-time library. The native simulator matched 18 bounded cases at each
-level, including six `addone`/`call_addone` calls, multiple control paths,
-DATA aliasing and volatile stores, stack-spilled arguments, pointer calls,
-and fixed-point dot/FIR output. FIR used independent DATA buses (`0x4110` and
-`0xc120`); both streams in single-port memory produced native stop `0x501`.
-The `-O0` nested loop and FIR needed 397 and 478 cycles respectively to reach
-the return sentinel. These are native state witnesses, not Kuna lift coverage.
+The [checked-in C and assembler fixtures](../tests/fixtures/carmel/README.md)
+include source, linked CODE images, entry addresses, and defined inputs.
 
 | Source fixture | `-O0` Kuna | `-O2` Kuna | First-slice boundary |
 |---|---|---|---|
 | `addone` | truncated | complete | Unoptimized `LINK` frame unlifted |
-| `call_addone` | truncated | truncated | `LINK` / wide relative CALL |
+| `call_addone` | truncated | complete p-code | Unoptimized `LINK` frame unlifted; C inference still incomplete |
 | `call_stack` | truncated | truncated | Stack argument PUSH / wide CALL |
 | `call_indirect` | truncated | truncated | Saved-register stack and conditional/indirect flow |
 | `call_pointer` | truncated | truncated | Saved-register stack and indirect call |
@@ -27,13 +20,12 @@ the return sentinel. These are native state witnesses, not Kuna lift coverage.
 | `dot_q7` | truncated | truncated | Wider MAC, DATA loads and repeat |
 | `fir_q7` | truncated | truncated | Wider MAC, DATA loads and repeated/conditional flow |
 
-The score is 1 complete of 24 fixed source/optimization pairs, 23 truncated,
-0 failed. Compiler-discovered internal `_from_q7` is not part of this count.
-There is no complete pointer, call or DSP C result to showcase. The completed
-scalar has one recovered 16-bit argument, a return, and no gotos. Its expression
-retains the machine's optional saturation at `0x7fff`; `ECFG` currently appears
-as a register-derived local instead of a typed input. All bounded defined inputs
-agree with the original C; signed overflow at `0x7fff` is not a C witness.
+Only `addone` at `-O2` has both a complete default C result and a recovered
+scalar argument. No complete default pointer, nested-loop, or DSP C result
+is claimed. For the stated defined inputs the returned value is `x + 1`.
+The emitted expression retains the machine's optional saturation at
+`0x7fff`; `ECFG` appears as a register-derived local instead of an ABI input.
+Signed overflow at `0x7fff` is not a C witness.
 
 ```c
 short sub_2e(short a0)
@@ -43,116 +35,24 @@ short sub_2e(short a0)
 }
 ```
 
-The raw odd-slot CLI case in the plan reaches `INC A1L` and then `RETURN`.
+The raw odd-slot CLI fixture reaches `INC A1L` and then `RETURN`.
 The 16-bit TASKING scalar result is in `A0L`, so SSA removes the `A1L` write
 from C as dead. The raw p-code test pins the actual `A1L` write and absence of
 an `A0L` write; the stage test separately puts a live-return increment in the
 odd slot so the emitted C exercises that path.
 
-## Independent native reference
+## Checked-in regression tests
 
-The p-code fixtures verify old-state reads (`21ac2031aa20`), widened INC
-status and wrap, signed DATA stores, CODE-word returns, delayed branches,
-call return-PC placement, and the signed CLIW MAC at both ECFG scales.
-Unlifted effects are not no-ops. A single-issue state match does not make
-adjacent DATA reads/writes cycle-faithful. The lift publishes lane flags, not
-the pipeline's standing condition-execution feedback in `EST[13:12]`; no
-predicated flow or PowerPlug execution is claimed. The Python reference
-remains unfinished: sealed
-`54c095800007c6a96829691a45b425f51a25da97` matched 4,017/4,096 draws;
-the 27 targeted repairs on `eb76f5f20c` were not a fresh holdout. No new
-raw-encoding confidence or original PE32 instruction-coverage claim follows.
+- [Execution fixtures](../decompiler/crates/kuna-sleigh/tests/carmel_pcode.rs)
+  exercise parallel old-state reads, INC flags, CODE-word return addresses,
+  stack restoration, and the signed CLIW product. The adjacent DATA test
+  checks that the load sees the old word, that the store publishes the new
+  word, and that a direct entry at the load also works.
+- [Raw CODE fixtures](../decompiler/crates/kuna-console/tests/verify_carmel_raw.rs)
+  exercise odd-slot targets, issue-counted delays, reserved encodings, and
+  read-only CLIW specialization. A readable listing does not imply that an
+  instruction has executable p-code.
 
-The focused native differential, clock, control, CLIW and PowerPlug witnesses
-passed (eight tests across the two targeted runs). The broader five-module
-native run reached 102 completed tests before its deadline; it has no final
-result and is not a confidence or cycle gate.
-
-## Wild corpus
-
-The image and entry manifest was frozen before the constructors. The field
-images are Linksys WRTU54G-TM 4.16.363, VINETIC 2CPE 0.17.64 and Sigrand/HT503,
-VINETIC 4VIP 16.15.56, and sealed 2CPE 0.17.200. The SDK images are the
-TASKING linked examples `demo`, `filter`, `graphs`, `spectra`, and sealed
-`queens`. The recovered 3.0r6 archive added no unique linked example: its
-three members exactly matched 3.1r2. No verified M-GOLD, SignalMaster/CAREB,
-or MoNET binary was found. Original binaries and XML are private.
-
-| Split | Images | Fixed anchors | Supported / unsupported at reached issues | Complete / truncated C |
-|---|---:|---:|---:|---:|
-| Field development | 4 | 18 | 0 / 18 | 0 / 18 |
-| Field holdout | 1 | 6 | 0 / 6 | 0 / 6 |
-| SDK development | 4 | 4 | 0 / 4 | 0 / 4 |
-| SDK holdout | 1 | 1 | 0 / 1 | 0 / 1 |
-
-All 29 fixed starts agreed with the independent framing cross-check, not a
-native disassembly oracle. Every walk hit an unsupported issue at its start;
-there were no failed or timed-out images, no comparable wild direct edges,
-and no complete wild C or structural-quality score. In particular, zero
-recorded unresolved ROM/CLIW edges does not mean every target is resolved.
-The two holdout images ran once, without tuning against them.
-
-Run the same private sweep with an XML image produced by the reference
-repository's `tools/carmel_wild_export.py`:
-
-```sh
-KUNA_CARMEL_WILD_IMAGE=/absolute/private/image.xml \
-  cargo test --manifest-path decompiler/Cargo.toml --release -p kuna-console \
-  --test integration verify_carmel_wild::sweep -- --ignored --exact --nocapture
-```
-
-The release sweep binary SHA-256 was
-`a6b40068a7ad74df646b87827d3149b4b8426a509a340c0ae26943c5caada83d`;
-the compiled spec hash was
-`28f1b7194c3e80e1d960613f18ffb41bdd5a8a1904a7a4c62003210645715b57`.
-Development image runs took 1.58–1.88 s including process startup; the two
-holdouts took 2.76 s and 3.57 s. The compiled `addone` CLI cold-process
-median was 1.76 s (seven runs). The x86-64 `/usr/bin/true` entry report was
-byte-identical to the installed baseline, and the vendored datatest corpus
-kept all 675 passing assertions.
-
-A separately bounded wild witness used VINETIC 2CPE 0.17.64 `pcm_ch`
-at CODE word `0x89a`: TASKING and Kuna p-code agreed on `A2L=0x8000`,
-the preserved accumulator high halves and guards, `EST=0x10`, and the next
-issue at word `0x89c`. It is inside a vector-backed function but is not
-an additional function anchor. The three byte-identical 2CPE V2.2 copies
-do not count as independent state witnesses.
-
-## Native listing parity and wider CALL
-
-On mcurie, Kuna, the Python formatter and original CrossView agreed
-exactly on all 68,243 fixed fetches: text, CODE start address and consumed
-words. The corpus includes 14,032 fetches with an unknown issue, 27,472
-compact family/variant cases, 25,014 wide cases, 11,528 curated cases,
-133 fixed boundary cases, and 4,096 deterministic raw draws.
-The full input SHA-256 was
-`90b57d3c022ab741bccf6e6d5980ffe6f45b6aaa23d02f05fac07e3d78ff81da`.
-This is not an exhaustive test over all 48-bit patterns. Native CrossView
-exposed six Python differences, corrected before the three-way run.
-
-The wider lift accepts the no-delay unconditional relative CALL in the
-linked `-O2` `call_addone` fixture. Twelve p-code tests passed, including the
-call's CODE target, saved DATA link, SP restoration and returned value.
-Default C still misses the caller's inferred argument and return. With
-explicit register-located prototypes it prints `return callee(x,cfg);`;
-that observation does not upgrade the default compiler-quality score.
-
-## Simulator fixture replay
-
-The reference inventory covers 421 Python pytest items, including 111 with
-no native call. It records 3,585 observed simulator case occurrences and
-16 interrupted or unobserved occurrences. The inventory SHA-256 is
-`37d6dac55c4f2557b7718c448c04bb2e8e65fcdecc24898cce8e96875adc52c6`.
-
-For the supported instructions, the reference runners repeat the original
-case in the TASKING DLL, prove that adding a return observer preserves its
-watched state and retirement path, and compile and run the emitted C at
-`-O0` and `-O2`. The aggregate matches 314 case occurrences in C and 28
-additional static decode rejects at the native stop address. A further 48
-reach a matching address with only an unimplemented lift. None of those
-48 is counted as parity. Full simulator fixture equivalence remains open.
-
-The adjacent wide-store/absolute-load witness now observes the old DATA
-word in the load and the new word in memory, as the DLL does. The load is
-still a valid independent entry. This scheduling rule does not implement
-the more general arbitration and partial effects of a native DATA-port stop.
+Run the commands in the [processor README](../specs/Ghidra/Processors/Carmel/README.md).
+The tests cover an executable subset; they do not establish complete
+instruction or pipeline semantics.

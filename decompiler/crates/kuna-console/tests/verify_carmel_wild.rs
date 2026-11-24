@@ -1,4 +1,4 @@
-//! Private fixed-entry Carmel sweep. The report records Kuna observations, not native verdicts.
+//! Report Kuna disassembly, lift and C output at fixed entries of a Carmel XML image.
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write,
@@ -377,15 +377,15 @@ impl CMetrics {
 }
 
 #[test]
-#[ignore = "requires a private Carmel XML image in KUNA_CARMEL_WILD_IMAGE"]
+#[ignore = "requires a Carmel XML image in KUNA_CARMEL_WILD_IMAGE"]
 fn sweep() {
-    let file = std::env::var_os("KUNA_CARMEL_WILD_IMAGE").expect("set KUNA_CARMEL_WILD_IMAGE to a private XML image");
+    let file = std::env::var_os("KUNA_CARMEL_WILD_IMAGE").expect("set KUNA_CARMEL_WILD_IMAGE to a Carmel XML image");
     let xml = std::fs::read(file).expect("read KUNA_CARMEL_WILD_IMAGE");
     let mut digest = String::with_capacity(64);
     for byte in Sha256::digest(&xml) {
         write!(&mut digest, "{byte:02x}").expect("format SHA-256 into String");
     }
-    let document = xml_tree(&xml).expect("parse private Carmel XML");
+    let document = xml_tree(&xml).expect("parse Carmel XML");
     let root = document.get_root();
     assert_eq!(root.get_name(), "binaryimage");
     assert_eq!(root.get_attribute_value("arch").unwrap(), ARCH.as_bytes());
@@ -399,7 +399,7 @@ fn sweep() {
         assert_eq!(symbol.get_attribute_value("name").unwrap(), name.as_bytes());
         assert!(anchors.insert(at, name).is_none(), "duplicate fixed entry at {at:#x}");
     }
-    assert!(!anchors.is_empty(), "private Carmel XML image has no fixed entries");
+    assert!(!anchors.is_empty(), "Carmel XML image has no fixed entries");
     let specs = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../specs");
     let mut prog = bootstrap_program(Rc::clone(root), ARCH, &[specs.to_str().unwrap().into()])
         .expect("bootstrap Carmel XML against compiled Carmel specification");

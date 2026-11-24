@@ -1,5 +1,4 @@
-//! Private JSONL parity sweep for canonical Carmel fetches. CrossView is the authority;
-//! equality with Python alone never establishes correctness.
+//! Compare canonical Carmel fetches against expected text and issue boundaries.
 
 use std::{
     collections::BTreeMap,
@@ -112,10 +111,10 @@ impl Drop for Scratch {
 }
 
 #[test]
-#[ignore = "requires private CrossView/Python JSONL in KUNA_CARMEL_DISASM_CORPUS"]
+#[ignore = "requires an input JSONL file in KUNA_CARMEL_DISASM_CORPUS"]
 fn sweep() {
     let input = PathBuf::from(std::env::var_os("KUNA_CARMEL_DISASM_CORPUS")
-        .expect("set KUNA_CARMEL_DISASM_CORPUS to a private Carmel JSONL corpus"));
+        .expect("set KUNA_CARMEL_DISASM_CORPUS to a Carmel JSONL input file"));
     let mut reader = BufReader::new(File::open(&input)
         .unwrap_or_else(|err| panic!("Carmel corpus {}: {err}", input.display())));
 
