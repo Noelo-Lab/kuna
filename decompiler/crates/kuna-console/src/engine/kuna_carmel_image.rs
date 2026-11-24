@@ -6,6 +6,7 @@ use kuna_analysis::pass::ContextPaint;
 use kuna_base::{address::Address, error::{KunaError, KunaResult}, space::AddrSpace, xml::Element};
 use kuna_sleigh::loadimage::LoadImage;
 
+mod conditional_return;
 mod peer_redirect;
 
 pub(super) const TARGET: &str = "Carmel:BE:24:default:default";
@@ -18,6 +19,11 @@ const CLIW_BANK_END: u64 = (1 << 10) * TEMPLATE;
 const ISSUE: &str = "carmel_issue";
 const NEXT: &str = "carmel_next_issue_size";
 const BAD_FETCH: &str = "carmel_bad_fetch";
+
+enum Specialization {
+    PeerRedirect(peer_redirect::Redirect),
+    ConditionalReturn(conditional_return::ReturnDelay),
+}
 
 const CLIW_FIELDS: [&str; 4] = [
     "carmel_cliw_known", "carmel_cliw_95_64", "carmel_cliw_63_32", "carmel_cliw_31_0",
@@ -229,7 +235,7 @@ pub(super) fn frame(
     mut on_fetch: impl FnMut(&mut dyn LoadImage, u64, &Fetch) -> KunaResult<()>,
 ) -> KunaResult<Framing> {
     let mut result = Framing::default();
-    let mut redirects = Vec::new();
+    let mut candidates = Vec::new();
     for (start, end) in ranges {
         let mut addr = start.div_ceil(FETCH) * FETCH;
         let end = end.min(CODE_END) / FETCH * FETCH;
@@ -268,15 +274,17 @@ pub(super) fn frame(
                 paint(&mut result.next_sizes, NEXT, addr, following_size);
             }
             if let Some(redirect) = peer_redirect::Redirect::parse(&fetch) {
-                redirects.push((addr, redirect));
+                candidates.push((addr, Specialization::PeerRedirect(redirect)));
+            } else if let Some(delay) = conditional_return::ReturnDelay::parse(&fetch) {
+                candidates.push((addr, Specialization::ConditionalReturn(delay)));
             }
             on_fetch(loader, addr, &fetch)?;
             std::mem::swap(&mut fetch, &mut next);
             addr += FETCH;
         }
     }
-    for (start, redirect) in redirects {
-        if redirect.admissible(start, |at| {
+    for (start, candidate) in candidates {
+        let fetch_at = |at| {
             if !result.is_issue_start(at) || covered(&result.bad_fetches, at)
                 || covered(&result.bad_fetches, at + SLOT)
             {
@@ -285,8 +293,13 @@ pub(super) fn frame(
             let mut fetch = [0; FETCH as usize];
             loader.load_fill(&mut fetch, &Address::new(Rc::clone(code), at))?;
             Ok(Some(fetch))
-        })? {
-            paint(&mut result.specializations, peer_redirect::CONTEXT, start, 1);
+        };
+        let (context, safe) = match candidate {
+            Specialization::PeerRedirect(redirect) => (peer_redirect::CONTEXT, redirect.admissible(start, fetch_at)?),
+            Specialization::ConditionalReturn(delay) => (conditional_return::CONTEXT, delay.admissible(start, fetch_at)?),
+        };
+        if safe {
+            paint(&mut result.specializations, context, start, 1);
         }
     }
     Ok(result)

@@ -107,6 +107,36 @@ fn carmel_backtrace_projections_preserve_the_other_lane_and_the_vetoed_write() {
     }
 }
 
+#[test]
+fn carmel_scalar_stack_pointer_returns_the_popped_word_address() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-scalar-sp", "bin");
+    fs::write(&binary, [0x2b, 0xd8, 0, 0x2b, 0xec, 0]).unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+    command.arg("decompile").arg(&binary).args([
+        "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+        "--base", "0", "--json", "--assert-strict",
+        "--assert", "param 0 %SP unsigned short input_sp",
+        "--assert", "return %SP unsigned short",
+    ]);
+    let output = common::process::required_output(&mut command);
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let function = &report["functions"][0];
+    assert!(function["error"].is_null(), "{function}");
+    let emitted = function["code"].as_str().unwrap();
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    fs::write(&source, format!("{emitted}\nint main(void) {{\n\
+        return sub_0(0x4020) != 0x4022 || sub_0(0x4070) != 0x4072;\n\
+    }}\n")).unwrap();
+    run_emitted_c(&source, &executable, emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")

@@ -3904,6 +3904,11 @@ Lifted compact delayed `EQ` reads the incoming `EST` condition before any
 delay issue executes. The delay runs on both paths, including when the
 transfer itself is the right slot of a sequential fetch.
 
+The guarded compact `RETURN EQ1` counts at most six complete parallel
+increment issues, including when the encoded delay is seven. It samples
+incoming `EST` before the delay and reads the two DATA link words only
+on the taken path. The mapped CODE guard does not validate a runtime link.
+
 Lifted absolute peripheral moves address `io` and `ext` as separate 16-bit
 word spaces. A peripheral word and a `data` word at the same numeric
 address do not alias.

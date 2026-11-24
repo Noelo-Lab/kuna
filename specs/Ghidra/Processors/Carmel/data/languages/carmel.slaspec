@@ -143,6 +143,7 @@ define context contextreg
     carmel_repeating = (8,8) noflow
     carmel_single_issue = (9,9) noflow
     carmel_counted_delay = (10,10) noflow
+    carmel_conditional_return_safe = (12,12) noflow
     carmel_cliw_95_64 = (32,63) noflow
     carmel_cliw_63_32 = (64,95) noflow
     carmel_cliw_31_0 = (96,127) noflow
@@ -2367,7 +2368,15 @@ data_load_dst: "R6" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x298 & w
 data_load_dst: "R7" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x29c & wide_13_22=0x21b & wide_40_45=0x38 { export R7; }
 :MOVE data_load_dst,"*"^absolute_data_addr is carmel_issue=5 & data_load_dst & absolute_data_addr { local address:2 = absolute_data_addr; data_load_dst = *[data]:2 address; }
 
-
+# RETURN EQ1: the guarded parallel delay admits no SP or DATA dependency.
+:"RETURN EQ1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be070); (slot_mode=0 & nop_right) { local taken:1 = (EST & 8) != 0; if (!taken) goto <return_veto>; local target:3; pop_link(target); return [target]; <return_veto> goto inst_next; }
+:"RETURN EQ1" "delay 1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be071); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(1); if (!taken) goto <return_veto>; local target:3; pop_link(target); return [target]; <return_veto> goto inst_next; }
+:"RETURN EQ1" "delay 2" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be072); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(2); if (!taken) goto <return_veto>; local target:3; pop_link(target); return [target]; <return_veto> goto inst_next; }
+:"RETURN EQ1" "delay 3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be073); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(3); if (!taken) goto <return_veto>; local target:3; pop_link(target); return [target]; <return_veto> goto inst_next; }
+:"RETURN EQ1" "delay 4" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be074); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(4); if (!taken) goto <return_veto>; local target:3; pop_link(target); return [target]; <return_veto> goto inst_next; }
+:"RETURN EQ1" "delay 5" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be075); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(5); if (!taken) goto <return_veto>; local target:3; pop_link(target); return [target]; <return_veto> goto inst_next; }
+:"RETURN EQ1" "delay 6" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be076); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(6); if (!taken) goto <return_veto>; local target:3; pop_link(target); return [target]; <return_veto> goto inst_next; }
+:"RETURN EQ1" "delay 7" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be077); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(6); if (!taken) goto <return_veto>; local target:3; pop_link(target); return [target]; <return_veto> goto inst_next; }
 
 :CLRBTR clrbtr_mask is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_0=0x0 & slot_13_22=0x16d & clrbtr_mask { BTR1 = 0; }
 :CLRBTR clrbtr_mask "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_13_22=0x16d & clrbtr_mask); (slot_mode=0 & nop_right) { BTR1 = 0; }

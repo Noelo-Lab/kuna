@@ -1426,6 +1426,9 @@ rewrite `LOAD/STORE` through a spacebase-relative pointer into direct
 `(stack, offset)` Varnodes. Third, the stack-pointer *flow* itself is kept
 affine by `ActionStackPtrFlow` (§6.5). Everything below consumes the
 `(stack, offset)` Varnodes those links produce.
+An explicitly typed integer parameter at the exact stack-pointer storage
+keeps its scalar address arithmetic instead of acquiring an implicit
+C stack-frame base.
 
 A type-locked signed or unsigned integer parameter in the exact stack-pointer
 register storage (same address and width) represents the incoming SP value.

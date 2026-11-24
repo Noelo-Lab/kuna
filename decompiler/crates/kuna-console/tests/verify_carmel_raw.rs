@@ -149,6 +149,32 @@ fn compact_dual_redirect_counts_only_retired_peers() {
 }
 
 #[test]
+fn conditional_return_veto_skips_stack_reads_after_six_retired_increments() {
+    let base = 0x1000;
+    let entry = base + 2;
+    let compare = [0x20, 0x9a, 2, 0x2b, 0xec, 0];
+    let returning = [0x2b, 0xe0, 0x77, 0x2b, 0xec, 0];
+    let inc = [0x21, 0xac, 0x20, 0x2b, 0xec, 0];
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let bytes = [compare, returning, inc, inc, inc, inc, inc, inc, nop].concat();
+    let program = raw(&bytes, base, &[entry]).unwrap();
+    let (len, ops) = program.raw_pcode_at(3 * entry).unwrap();
+    assert_eq!(len, 42);
+    let guard = ops.iter().position(|op| op.opcode == "CBRANCH").unwrap();
+    let mut loads = ops.iter().enumerate().filter(|(_, op)| op.opcode == "LOAD");
+    let first = loads.next().unwrap().0;
+    let second = loads.next().unwrap().0;
+    assert!(loads.next().is_none());
+    let veto = guard + ops[guard].inputs[0].offset as usize;
+    assert!(guard < first && second < veto);
+    assert_eq!(ops[veto].opcode, "BRANCH");
+    assert_eq!(ops[veto].inputs[0].offset, 3 * (entry + 14));
+
+    let program = raw(&bytes[..48], base, &[entry]).unwrap();
+    assert!(matches!(program.raw_pcode_at(3 * entry), Err(KunaError::Unimpl { .. })));
+}
+
+#[test]
 fn a_call_delayed_by_one_compact_slot_resumes_at_its_pushed_word() {
     let bytes = [
         0x2b, 0x20, 0x42, 0x2b, 0xec, 0, // CALL +8 delay 1 || NOP pushes word 4
