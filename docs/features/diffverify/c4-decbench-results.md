@@ -142,3 +142,50 @@ the other ChibiOS cases of §4 are not re-triaged yet.
 `CMSIS_DAP.axf`'s CMSIS-RTOS calls now reach their `svc` and are
 `DIVERGES(syscall-result)`. `RTOSDemo`'s new `DIFFERS`, `xQueueReceiveFromISR`, is a call
 argument kuna does not pass, of §4's dropped-argument class.
+
+## 6. The rerun with the current harness
+
+Every function of the same 74 binaries again, after §5, with main merged up to #1914 (so
+with the fixes of #1889–#1911), then the `DIFFERS` rechecked after the fixes below.
+
+| | functions | `AGREES` | `DIFFERS` | `DIVERGES` | `UNKNOWN` |
+|---|---:|---:|---:|---:|---:|
+| first full run (§3–§4, partial) | 28,233 | 22,683 | 243 | — | 5,306 |
+| before this section | 47,384 | 41,164 | 481 | 206 | 5,533 |
+| now | 47,756 | 41,964 (88%) | 249 | 206 | 5,337 |
+
+`O2` has 159 `DIFFERS` and `O0` 90. Only the `DIFFERS` were rechecked after the last
+fixes; a function that agreed before them was not run again.
+
+**Harness defects this rerun showed, all fixed** (`triage.md` §2 lists them with the
+rest):
+- kuna-verify loaded a binary without the options `kuna decompile` turns on: the
+  Listing, which no-return propagation reads, and off x86-64 the discovery passes. So it
+  checked a different decompilation from the one the CLI prints, in which calls to
+  internal fatal wrappers (`ohshite`, `die`, `app_exit`) returned.
+- A call followed only by padding and then another function, and a call kuna ends with a
+  `CALL_RETURN` override (`error (1, ...)`), ran on into the next function.
+- An RTOS context switch returns into another thread on another stack; the callee is
+  now given the stub. A return to an enclosing call's return address on the same stack
+  (libgcc's soft-float routines) unwinds to that call instead.
+- A call result kuna keeps in a joined register pair (`r1:r0`) was not read back.
+
+**What the 249 are:**
+
+| cause | functions | where |
+|---|---:|---|
+| kuna's C reads a variable nothing assigns (a call output or a register a call kills) | 54 | across projects; one mechanism each, not triaged one by one |
+| a call drops arguments | 42 | #1916 (a stack argument), #1918 (an import without a prototype, and the PLT entries themselves); the rest not matched to an issue yet |
+| the set or order of calls differs | 31 | not triaged |
+| memory differs | 31 | includes 10 ChibiOS `rt_test_*` around scheduler calls, most likely the context-switch limit, not kuna |
+| functions discovery found in data | 23 | Cortex-M firmware `sub_*` whose bytes are strings: `funcstart_patterns`/`aif` take them for code, and `decompile-all` prints them too |
+| u-boot's aligned stack buffers | 16 | #1919, directly (`part_test_dos`, `fs_devread`, `print_partition_extended`) or through callees run for real; not each checked |
+| a return value or an argument value | 23 | not triaged |
+| `memcpy`'s size dropped | 10 | Betaflight: `memcpy(dst, src)` for a three-argument call; `--option dwarf off` restores the size, so the DWARF import loses it; not filed yet |
+| `fdt_getprop()` with no arguments | 7 | #1917 |
+| a call through a function pointer drops arguments | 6 | `tar` `tar_sparse_*` |
+| i386 stack offsets after `memset`/`memcpy` | 4 | #1920 |
+| a return widened in a tail-call cycle | 2 | #1921 |
+
+`transfer_entries` (`c5-results.md` §2) does not differ again: `--concolic 64` over
+eight seeds gives `AGREES` or `UNKNOWN(budget)`.
