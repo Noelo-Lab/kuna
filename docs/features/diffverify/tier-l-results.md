@@ -1,5 +1,9 @@
 # diffverify — Tier L results (the lift against Unicorn)
 
+Before naming a cause for any difference here, follow `triage.md`: a difference against
+Unicorn can be the spec's, Unicorn's, kuna-verify's evaluator's, the driver's or the
+architecture's own.
+
 Tier L checks the machine side of Tier C: one instruction's SLEIGH p-code, run with the
 op semantics the check uses (`machine::lift`, `value::eval`), against Unicorn (QEMU's
 TCG as a library) from the same state (proposal, Tier L).
