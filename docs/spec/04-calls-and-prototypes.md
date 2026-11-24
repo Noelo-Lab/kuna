@@ -2700,7 +2700,17 @@ classified:
   as a named parameter and the function is not variadic on that account:
   clang keeps a sixth `int` parameter with `mov %r9d,%ebx`, and the function
   that later tests a byte it loaded into `edi` and calls `ext` with it
-  printed `ext()` while any read of `r9` counted.
+  printed `ext()` while any read of `r9` counted. A function whose own
+  prototype is locked with a fixed parameter list (DWARF, a header,
+  `--assert prototype`) is not variadic on that account either: it has no
+  register-save area, so a store of its last argument register is a spill or a
+  pad. gcc keeps a Cortex-M stack 8-byte aligned with `push {r3, lr}` and
+  `push {r3, r4, r7, lr}`, and in Betaflight every such caller of newlib's
+  `memcpy` lost the size it computes into `r2` and also multiplies with
+  (`pidCopyProfile` printed `memcpy(dst,src)`), and with it the `data` and
+  `length` a caller hands on untouched (`sx1280WriteCommandBurst` printed
+  `memcpy(&v2[v1 + 1])`), while its DWARF prototype was applied. Without a
+  declaration the store still declines the rule.
   Floating-point registers are left alone, because a callee that only moves
   its `double` (`lua_pushnumber` stores `xmm0`) is recovered with an integer
   parameter, and handing it a `floor()` result made the caller read that result
