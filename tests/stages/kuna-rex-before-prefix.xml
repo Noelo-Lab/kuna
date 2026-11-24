@@ -34,9 +34,9 @@
   <com>decompile</com>
   <com>print C</com>
 </script>
-<stringmatch name="REXPREFIX #1: rep stos after an ignored REX.W stores dwords" min="1" max="1">builtin_memset32\(v2,v1,a0\);</stringmatch>
-<stringmatch name="REXPREFIX #2: a 66 after an ignored REX.W stores words" min="1" max="1">builtin_memset16\(v2,v1,a0\);</stringmatch>
-<stringmatch name="REXPREFIX #3: the last REX.W before the opcode still moves quadwords" min="1" max="1">builtin_memcpy\(v2,v1,a0 \* 8\);</stringmatch>
-<stringmatch name="REXPREFIX #4: a load through edi after an ignored REX.W" min="1" max="1">return \*\(unsigned int \*\)\(long long\)v1;</stringmatch>
+<stringmatch name="REXPREFIX #1: rep stos after an ignored REX.W stores dwords" min="1" max="1">builtin_memset32\(a0,v1,a3\);</stringmatch>
+<stringmatch name="REXPREFIX #2: a 66 after an ignored REX.W stores words" min="1" max="1">builtin_memset16\(a0,v1,a3\);</stringmatch>
+<stringmatch name="REXPREFIX #3: the last REX.W before the opcode still moves quadwords" min="1" max="1">builtin_memcpy\(a0,a1,a3 \* 8\);</stringmatch>
+<stringmatch name="REXPREFIX #4: a load through edi after an ignored REX.W" min="1" max="1">return \*\(unsigned int \*\)\(int8\)a0;</stringmatch>
 <stringmatch name="REXPREFIX #5: no bad-instruction halt" min="0" max="0">halt_baddata</stringmatch>
 </decompilertest>
