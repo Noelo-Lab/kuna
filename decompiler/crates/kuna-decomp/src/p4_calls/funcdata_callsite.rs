@@ -209,6 +209,7 @@ pub fn check_input_trial_use(
                             .get_trial_mut(i)
                             .mark_inactive();
                     }
+                    crate::p4_calls::kuna_stackpadarg::narrow_pad_upper(data, idx, i);
                 } else {
                     // Stackvar for unrealistic ancestor is definitely not a parameter
                     data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();

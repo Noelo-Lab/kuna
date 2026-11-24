@@ -8042,8 +8042,10 @@ size. It shrinks a processor-register trial wider than an int to the int width,
 keeping the register's low-order end on a big-endian image, when two bounded
 walks agree. The low int bytes must pass the defined-bytes walk above. Every
 byte above them must come, through copies, concatenations, subpieces and phi
-nodes whose inputs all qualify, from an incoming processor register that no
-parameter of the caller's locked prototype overlaps. Under the caller's own
+nodes whose inputs all qualify, from incoming processor register bytes the
+caller cannot take as a parameter: bytes no input entry of its prototype model
+reaches (RAX under System V), or bytes no parameter of its locked prototype
+overlaps. Under the caller's own
 prototype those bytes hold no value the source could have passed, so the
 argument is the int and the calls print `pr(f,a)` and `pr(f,a,a)`. The rule
 declines floating-point registers, callers with a parameter in join storage, and
@@ -8057,6 +8059,41 @@ variadic register, with no constant format to bound the call: `int d6(const
 char *f, int a) { return pr(f); }` prints `pr(f,a)`, and an unused `double` in
 `d0` joins an AArch64 variadic call. The register holds that value when the
 callee starts, so the printed call compiles back to the same instructions.
+
+### (kuna) The pad above an argument in its stack slot (`kuna_stackpadarg.rs`)
+
+clang -O2 aligns the stack for a call with `push %rax` and then stores an `int`
+argument that goes on the stack over the low four bytes of the pushed slot:
+`int k7(void) { return in7(1,0,0,0,0,6,7); }` is `push %rax; movl $7,(%rsp);
+...; call in7`. Under System V every stack argument fills an 8-byte slot, so
+the stack trial is 8 bytes and heritage pieces it from the stored `7` and the
+upper half of the caller's incoming RAX. `AncestorRealistic` accepts the stored
+piece, and the call printed `in7(1,0,0,0,0,6,(unsigned long)v1 &
+0xffffffff00000000 | 7)`, or `CONCAT44(v1,7)` with debug information, with `v1`
+never set. A wrapper that declares `int ns` in `r8d` and passes it on the stack
+with `push %r8` pads the slot with the upper half of its own `r8` the same way
+(tar's `fprintftime` printed `CONCAT44(v1,ns)` once its forwarded registers fill
+their slots). gcc's `push $7` stores the whole slot and is unaffected.
+
+`narrow_pad_upper`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_stackpadarg.rs`, always on)
+runs right after the ancestor-use path marks a stack trial active or inactive.
+It applies only to a trial that fills exactly one slot of a stack input entry of
+the callee's model (its size is the entry's alignment) and is wider than an
+int. Every byte from the int width up must pass the undeclared-bytes walk of the
+forwarded-value rule: through copies, concatenations, subpieces and phi nodes,
+from incoming processor register bytes the caller cannot take as a parameter.
+The rule then keeps the low bytes up to the first undeclared one, when that is
+1, 2 or the int width, and shrinks the trial to them (at the slot's high end on
+a big-endian image). Those bytes hold no value the source could have passed, so
+the calls print `in7(1,0,0,0,0,6,7)` and `pr("...",1,2,3,4,5,6)`. A declared
+`char c` that clang stores with `movl %edi,(%rsp)` has undeclared bytes 1-3 too
+(the rest of `rdi` above `dil`), so its trial keeps one byte and the call prints
+`ic7(1,0,0,0,0,6,c)`. A slot whose upper bytes are computed, constant (gcc's
+`push $0`, a zero-extending `movl %edi,%eax; push %rax`) or a register the
+caller may take as a parameter keeps its full width, as does a stored `long`.
+On a 32-bit target a 4-byte slot is never wider than an int, and an 8-byte trial
+spans two slots, so the rule does not apply.
 
 ### (kuna) `varargsharedfloat` — a variadic double that also feeds an earlier argument
 

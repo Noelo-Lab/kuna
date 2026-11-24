@@ -1,0 +1,82 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-1916 (kuna): "x86-64: a seventh int argument clang stores over a pushed
+    pad prints the pad register's upper half"
+    https://github.com/Noelo-Lab/kuna/issues/1916
+
+    Source:
+      int in7(int,char**,const char*,void*,int*,int,int);
+      long il7(int,char**,const char*,void*,int*,int,long);
+      int ic7(int,char**,const char*,void*,int*,int,char);
+      int pr(const char *, ...);
+      int k7(void){return in7(1,0,0,0,0,6,7);}
+      int kc(char c){return ic7(1,0,0,0,0,6,c);}
+      int kp(void){return pr("%d %d %d %d %d %d\n",1,2,3,4,5,6);}
+      long kl(long x){return il7(1,0,0,0,0,6,x*3);}
+
+    clang -O2 for x86_64-linux-gnu, linked at 0x100000 with the format string
+    at 0x100400 and the callees left as bare addresses (in7 0x100800, ic7
+    0x100810, pr 0x100820, il7 0x100830).  clang aligns the stack for each
+    call with `push %rax` and stores the seventh argument over the low four
+    bytes of that slot (`movl $7,(%rsp)`; `movl %edi,(%rsp)` in kc).
+
+    Stage model: P4 call recovery, active-input-trial scoring.  The 8-byte
+    stack trial pieces the stored value with the upper half of the caller's
+    incoming RAX, which the System V model never takes as a parameter, and in
+    kc also with bytes 1-3 of rdi above the declared char.  The calls printed
+    `CONCAT44(v1,7)`, `CONCAT44(v1,(int)CONCAT71(v2,c))` and
+    `(unsigned long)v1 & 0xffffffff00000000 | ...6...` with v1 never set.
+    kuna_stackpadarg.rs (always on) narrows the trial to its low bytes below
+    that padding.  kl stores a whole computed long, which stays 8 bytes.
+-->
+<bytechunk space="ram" offset="0x100000">
+50c7042407000000bf0100000031f631
+d231c94531c041b906000000e8df0700
+0059c3666666662e0f1f840000000000
+50893c24bf0100000031f631d231c945
+31c041b906000000e8c307000059c390
+50c7042406000000488d3da1030000be
+01000000ba02000000b90300000041b8
+0400000041b90500000031c0e89f0700
+0059c3666666662e0f1f840000000000
+50488d047f48890424bf0100000031f6
+31d231c94531c041b906000000e87e07
+000059c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100400" readonly="true">
+25642025642025642025642025642025
+640a00
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="k7"/>
+<symbol space="ram" offset="0x100030" name="kc"/>
+<symbol space="ram" offset="0x100050" name="kp"/>
+<symbol space="ram" offset="0x100090" name="kl"/>
+<symbol space="ram" offset="0x100800" name="in7"/>
+<symbol space="ram" offset="0x100810" name="ic7"/>
+<symbol space="ram" offset="0x100820" name="pr"/>
+<symbol space="ram" offset="0x100830" name="il7"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 pr(char *f, ...);</com>
+  <com>parse line extern int4 kc(char c);</com>
+  <com>lo fu k7</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu kc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu kp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu kl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH1916 stackpad x86 #1: no pad register half is printed" min="0" max="0">CONCAT|0xffffffff00000000</stringmatch>
+<stringmatch name="GH1916 stackpad x86 #2: the seventh int is the stored constant" min="1" max="1">in7\(1,0,0,0,0,6,7\);</stringmatch>
+<stringmatch name="GH1916 stackpad x86 #3: the declared char is passed as itself" min="1" max="1">ic7\(1,0,0,0,0,6,c\);</stringmatch>
+<stringmatch name="GH1916 stackpad x86 #4: the variadic stack int is the stored constant" min="1" max="1">,1,2,3,4,5,6\);</stringmatch>
+<stringmatch name="GH1916 stackpad x86 #5: a stored long keeps its full width" min="1" max="1">il7\(1,0,0,0,0,6,\w+ \* 3\);</stringmatch>
+</decompilertest>
