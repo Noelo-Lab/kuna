@@ -3948,6 +3948,48 @@ header's alone: the body still spells a call to such a function and a cast to
 such a type with the one name they share, so the exported `.c` keeps the clash
 the header sheds.
 
+**(kuna) The header declares, on request, the helpers and user-defined
+operations the code calls.** The printer spells an op C has no
+operator for as a call to a helper named after the op and its operand sizes
+(`SCARRY4(a,b)`, `SUB168(x,8)`, `CONCAT44(hi,lo)`), a SLEIGH user-defined
+operation as a call to its name (`invalidInstructionException()`), and a RETURN
+planted where the bytes would not decode as a call naming the failure
+(`halt_baddata()`). Nothing declared them, so an export that printed one did
+not compile on its own. While a function prints, `printc.rs
+(PrintC::op_func_ir)`, `printc.rs (PrintC::op_callother_ir)` and the halt arm
+of the RETURN printer record each such name with the op's output in the
+printer's per-function set
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_unitcalls.rs`), which starts
+empty with each function, and the function's call declarations
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_callprototypes.rs`) take one
+`T name(KUNA_ANY_ARGS);` per name. `T` is `bool` for the carry and borrow
+tests, and otherwise the op's output, spelled as the float of its width where
+a user-defined operation's output is a float (`FLOAT_RINT`), or `void` when it
+has none. The header
+writes them in a block of their own, one `extern` per name at the widest type
+any function's calls have (at one width the `undefinedN` spelling, which takes
+the integer operators a float does not, so the choice does not depend on the
+order the functions land in), and only for code that defines
+`KUNA_DECLARE_HELPERS`. Each line is also under `#ifndef name`, and a name the
+header already declares, or a C keyword (MIPS's `break` user-defined
+operation), is left out. A wide call's declaration check (`callwide`) does not
+count these lines. The opt-in is there because code that
+compiles an export usually brings its own definitions (a `CONCAT44` macro,
+`static inline` x87 conversions, `<unistd.h>`'s `syscall`), which a declaration
+would contradict. Code that does define it and also includes a C library
+header declaring an operation's name (`syscall`, `sin`, `sleep`, `wait`) gets
+two declarations that disagree. There is no fixed parameter list, because the printed
+arguments are whatever the binary passed and a prototype would reject a
+faithful call. The prelude defines `KUNA_ANY_ARGS` as `...` where `()` means no
+parameters (C23, and the c2x modes of gcc 13 and clang 16 on) and as nothing
+before. An output with no `undefinedN` or float spelling gets no declaration,
+and neither do the float constants the printer spells `NAN`, `INFINITY` and
+`FLOAT_UNKNOWN`. The prelude's `undefined16` is an `unsigned __int128` aligned
+to one byte where the compiler has the type, so arithmetic on a 16-byte value
+(a rax:rdx pair) compiles and a record holding one keeps its layout. The byte
+struct remains the fallback, and clang on Windows takes it too: it lays a record
+out the Microsoft way, which ignores the one-byte alignment.
+
 **The prototype — one token stream, two documents.** The prototype segment of
 §9.2's document walk was extracted verbatim into `printc.rs
 (PrintC::emit_prototype_declaration)` — pure code motion, byte-identical
@@ -3971,8 +4013,10 @@ uint4;`, …; 8-byte integers always spell `long long` so the text is
 data-model independent; `bool` is covered by `#include <stdbool.h>`;
 `char`/`void` are real C and emit nothing), then the fixed Ghidra/kuna
 `undefined` family — `undefined`, `undefined1..8` (3/5/6/7 mapped to the next
-larger unsigned integer, each carrying a sizeof-divergence note) and
-`undefined16`/`undefined32` as byte-array structs. The non-printer half of
+larger unsigned integer, each carrying a sizeof-divergence note),
+`undefined16` as a one-byte-aligned `unsigned __int128` where the compiler has
+the type (and is not clang on Windows) and a byte-array struct where it does
+not, and `undefined32` as a byte-array struct. The non-printer half of
 the export (section enumeration, one-instruction disassembly, raw image
 bytes, named data symbols for the `.asm`/`README.md` artifacts) lives on the
 console engine, `decompiler/crates/kuna-console/src/engine.rs
