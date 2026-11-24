@@ -3908,6 +3908,9 @@ The guarded compact `RETURN EQ1` counts at most six complete parallel
 increment issues, including when the encoded delay is seven. It samples
 incoming `EST` before the delay and reads the two DATA link words only
 on the taken path. The mapped CODE guard does not validate a runtime link.
+An ordinary compact `RETURN` with an inactive right lane can retire two
+or three following issues. In the undelayed CE1 form, either execution or
+address enable allows the stack pop and transfer.
 
 Lifted absolute peripheral moves address `io` and `ext` as separate 16-bit
 word spaces. A peripheral word and a `data` word at the same numeric

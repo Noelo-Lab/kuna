@@ -785,3 +785,34 @@ fn wide_mac_reads_all_24_saved_code_address_bits_as_unsigned() {
     assert_eq!(m.step(), 6);
     assert_eq!((m.reg("LC1"), m.reg("LSA1"), m.reg("X1"), m.reg("EST") & 0x3f), (0xfe, 0xfef876, 3, 1));
 }
+
+#[test]
+fn compact_return_retires_only_its_counted_issues_and_pops_the_link() {
+    let issues = [(0, 1, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 6), (10, 1, 0)];
+    for delay in [2, 3] {
+        let mut m = Machine::new(0, &[
+            (RETURN | (delay << 1), NOP), (INC_A0, NOP), (INC_A0, NOP),
+            (INC_A0, NOP), (INC_A1, NOP), (NOP, NOP),
+        ], &issues, None);
+        m.seed(&[("A0L", 0x1234), ("A1L", 0x5678), ("SP", 0x4100)]);
+        m.seed_data(0x4101, 10);
+        m.seed_data(0x4102, 0);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 30);
+        assert_eq!((m.reg("SP"), m.reg("A0L"), m.reg("A1L")),
+                   (0x4102, 0x1234 + u64::from(delay), 0x5678));
+    }
+}
+
+#[test]
+fn compact_ce1_return_pops_for_address_enable_even_with_execution_vetoed() {
+    let issues = [(0, 1, 6), (2, 1, 6), (4, 1, 0)];
+    for (table, ce_cfg, target, sp) in [(0, 0, 6, 0x4100), (0, 0x1000, 12, 0x4102), (0xff, 0, 12, 0x4102)] {
+        let mut m = Machine::new(0, &[(RETURN | 1, NOP), (NOP, NOP), (NOP, NOP)], &issues, None);
+        m.seed(&[("CECFG1", ce_cfg), ("CETBL", table), ("EST", 0), ("SP", 0x4100)]);
+        m.seed_data(0x4101, 4);
+        m.seed_data(0x4102, 0);
+        m.start(0).unwrap();
+        assert_eq!((m.step(), m.reg("SP")), (target, sp));
+    }
+}

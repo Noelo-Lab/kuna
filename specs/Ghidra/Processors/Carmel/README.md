@@ -53,7 +53,9 @@ selected backtrace port only when its predicate allows it.
 Compact unconditional and wide relative GOTO execute up to three following
 issues, counting sequential slots individually. For the qualified wide form,
 the address-enable bit can admit a transfer even when the predicate is false.
-Compact CALL and RETURN admit zero or one delay issue. Immediate REPEAT handles
+Compact CALL admits zero or one delay issue. Compact RETURN also admits
+two or three delay issues with an inactive right lane, and an undelayed
+CE1 form whose address enable can override a veto. Immediate REPEAT handles
 one register-only following issue, including zero repeats. REPEAT does not lift a
 transfer or DATA access in that issue.
 The explicit post-CALL branch past an unexecuted sequential slot is part of
