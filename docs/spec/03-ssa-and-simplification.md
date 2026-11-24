@@ -928,8 +928,14 @@ chapter 04 `voidret`): a caller that keeps such a callee's float as integer
 bits (`movq %xmm0,%rbx`) has the output trial dropped there, and the guard
 having marked the range unaffected, the pre-call `xmm0` would then pass
 through the call. A callee recovered `void` still takes the guard; the read it
-files is the evidence `voidret` redoes the callee with, after which its callers
-are decompiled against the recovered return.
+files is the evidence `voidret` redoes the callee with. Its callers are then
+decompiled again against the recovered return, which they state, so the guard
+does not run there a second time: in the default callee-first `decompile-all`
+an ELF import's PLT entry gains the `double` return (`double difftime(void)`)
+and its callers keep the read unassigned. A single-function decompile, a
+`decompile-all` with `protoorder off`, and a call through a PE import's IAT
+slot or a function pointer have no ledger entry for the callee, and connect
+the result.
 `off` disables the partial-range guards; `in` and `full` retain their broader
 opt-in behavior.
 
