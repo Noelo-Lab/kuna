@@ -94,6 +94,20 @@ enum Flow {
 }
 
 impl Run<'_, '_, '_> {
+    /// Fill the register save area as `va_start` does: the stores kuna's
+    /// `varargsave` folded, the vector ones only when the incoming `al` is set.
+    fn va_start(&mut self, env: &Env, f: &kuna_decomp::kuna_varargsave::Folded) -> Result<(), Halt> {
+        let al = self.initial.read_storage(&env.register, f.al.0, f.al.1)?;
+        for &(reg, size, frame, vector) in &f.stores {
+            if vector && al == 0 {
+                continue;
+            }
+            let v = self.initial.read_storage(&env.register, reg, size)?;
+            self.state.write_storage(&env.ram, env.sp0.wrapping_add(frame as u64), size, v)?;
+        }
+        Ok(())
+    }
+
     fn value(&mut self, a: &Arg) -> Result<u128, Halt> {
         match &a.op {
             Operand::Const(v) => Ok(*v),
@@ -540,6 +554,9 @@ pub fn run(
         charged: 0,
         overlapping_copy: false,
     };
+    if let Some(f) = &program.vararg {
+        r.va_start(env, f)?;
+    }
     let mut bl = 0usize;
     let mut slot: Option<i32> = None;
     let mut steps = 0u64;

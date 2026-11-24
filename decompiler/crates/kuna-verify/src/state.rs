@@ -456,12 +456,20 @@ impl<'p> Env<'p> {
     }
 
     /// The `[start, end)` of the local symbol of kuna's that holds frame
-    /// address `p`.
+    /// address `p`, or of the register save area when `varargsave` folded it:
+    /// the bytes `va_start` defines, not the padding kuna's symbol may take in.
     pub fn stack_object(&self, p: u64) -> Option<(u64, u64)> {
         if let Some(hit) = self.locals.borrow().get(&p) {
             return *hit;
         }
         let found = self.fd.and_then(|fd| {
+            if let Some(f) = fd.vararg_folded() {
+                let start = self.ram.wrap_offset(self.sp0.wrapping_add(f.area as u64));
+                let end = start.wrapping_add(kuna_decomp::kuna_varargsave::SAVE_AREA as u64);
+                if p >= start && p < end {
+                    return Some((start, end));
+                }
+            }
             let local = fd.get_scope_local()?;
             let db = local.database();
             let at = Address::new(Rc::clone(&self.stack), self.stack.wrap_offset(p.wrapping_sub(self.sp0)));

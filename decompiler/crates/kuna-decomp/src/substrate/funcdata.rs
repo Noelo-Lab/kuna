@@ -172,6 +172,7 @@ pub struct Funcdata {
     /// (kuna `varargsave`) Set when the first heritage pass folded this
     /// function's variadic register-save prologue (`p4_calls/kuna_varargsave.rs`).
     pub(crate) kuna_vararg_save: bool,
+    pub(crate) kuna_vararg_folded: Option<crate::kuna_varargsave::Folded>,
     /// (kuna) Whether the function's code is unoptimized, decided once after
     /// the first heritage pass (`p3_dataflow/kuna_unoptimized.rs`).
     pub(crate) kuna_unoptimized: Option<bool>,
@@ -801,6 +802,7 @@ impl Funcdata {
             kuna_later_wanted: std::rc::Rc::default(),
             kuna_x87_empty_returns: Vec::new(),
             kuna_vararg_save: false,
+            kuna_vararg_folded: None,
             kuna_unoptimized: None,
             flags: 0,
             clean_up_index: 0,
@@ -2435,6 +2437,11 @@ impl Funcdata {
 
     /// Overall count of heritage passes (C++ `Funcdata::getHeritagePass`,
     /// `funcdata.hh:239` — `heritage.getPass()`).
+    /// (kuna `varargsave`) The register-save stores the fold removed.
+    pub fn vararg_folded(&self) -> Option<&crate::kuna_varargsave::Folded> {
+        self.kuna_vararg_folded.as_ref()
+    }
+
     pub fn get_heritage_pass(&self) -> int4 {
         self.heritage.get_pass()
     }
@@ -4479,6 +4486,7 @@ impl Funcdata {
         self.kuna_fpu_trunc_views.clear();
         self.kuna_x87_empty_returns.clear();
         self.kuna_vararg_save = false;
+        self.kuna_vararg_folded = None;
         self.kuna_unoptimized = None;
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).
         self.flags &= !(funcdata_flags::highlevel_on

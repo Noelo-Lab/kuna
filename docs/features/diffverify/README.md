@@ -141,7 +141,12 @@ common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES 
    gets a deterministic stub: it kills the registers the convention says it kills, with
    values derived from the run, and may change the memory it can reach.
 5. **Run kuna's side.** `graph.rs` interprets the compiled program from the same state,
-   with the same stubs and replays.
+   with the same stubs and replays. Where kuna's `varargsave` folded a variadic
+   function's register-save prologue, the printed `va_list` setup stands for
+   `va_start`, so kuna's side starts by filling the save area as `va_start` does (the
+   vector registers only when `al` is nonzero). At a call that receives the `va_list`,
+   the save area compared is the 176 bytes `va_start` defines, not the padding kuna's
+   local may take in.
 6. **Compare.** `check.rs` compares the calls in order, the memory before each call, the
    memory at exit and the return value. At a call, the frame objects compared are the
    ones a callee can reach: an argument points to one, its address was stored outside
@@ -185,7 +190,59 @@ Rows are paired by function and occurrence, so a file whose function list change
 still compared. Re-record the baseline with
 `make verify-corpus VERIFY_ARGS='--save-baseline docs/baseline-verify.json'`.
 
-## 7. When a function differs
+## 7. As a check on pull requests
+
+The check is deterministic: its verdict comes from running the machine code, not from a
+model's judgement, so it holds every pull request to the same bar whichever agent wrote
+it. It has done three things review did not:
+
+- **Found bugs in merged code.** The decbench run found seven kuna bugs (#1916–#1922)
+  and three errors in the vendored SLEIGH specs (`tier-l-results.md`), all in code that
+  had passed its tests and review.
+- **Confirmed fixes on its own.** The stage tests #1924 and #1927 added give `DIFFERS`
+  in their pass with the fix turned off and `AGREES` in the default pass, without anyone
+  reading the printed C.
+- **Gates regressions.** `make verify-corpus` (§6) names every function a change makes
+  differ.
+
+It is not a replacement for review. What it does not cover:
+
+- **Recall on real bugs is lower than on planted ones.** Of 22 past P3/P4 fixes put back
+  one at a time, it catches 7, and 11 with a C contract (`c4-results.md` §6). Planted
+  faults are caught at 74–76% (`mutation.md`).
+- **The printed C.** Casts, precedence and readability are Tier P's (§2).
+- **About 11% of functions get no verdict** (`UNKNOWN`): mostly the run budget,
+  unsupported ops (SIMD, user ops) and traps.
+- **A `DIFFERS` still needs triage.** Most false ones so far were the harness's
+  (`triage.md` §2), so someone has to rule it out before blaming kuna.
+- **What a reviewer looks at.** Option rules, the design of an edge case and code
+  quality are outside what running the IR can see.
+
+**Feedback an agent can act on.** A `DIFFERS` names an input, the call or byte that
+differs and what each side did; `localize` then names the rule application after which
+the function first differs (`c3-results.md`). That is a place to start debugging, not
+only a verdict, which is what an agent fixing its own change needs.
+
+**What is not claimed.** `AGREES` means the runs made agreed, not that the two are
+equivalent on every input. The check covers semantic correctness of the decompile only:
+not speed, memory safety or maintainability of the change.
+
+**The experiment that would settle it.** The hypothesis is that the check lowers the
+semantic regressions decompiler pull requests bring in, without a stronger model. With
+the same model and the same reasoning budget in every arm:
+
+| arm | how a change is written and checked |
+|---|---|
+| A | an agent writes the change and an agent reviews it |
+| B | A, plus the existing tests (`make test`, `make test-stages`, `make rust-test`) |
+| C | B, plus `kuna-verify`: the corpus baseline, the changed functions, `localize` on each `DIFFERS` |
+
+Measured per arm: regressions that reach main, defects found before merge, fixes that
+succeed, tokens spent, and fixes a maintainer has to add after merge. The tasks can be
+replayed from merged pull requests that later needed a follow-up fix. It has not been
+run yet.
+
+## 8. When a function differs
 
 1. **Read the report** (§3), and rerun with `--trace` to see every call.
 2. **Rule out the harness** before naming a kuna bug (`triage.md`). The model has been
@@ -195,7 +252,7 @@ still compared. Re-record the baseline with
 4. **Reduce it** to a few lines of C where you can (`clang --target=...`). Check that
    `kuna decompile` prints the same wrong C, then file it or fix it.
 
-## 8. The other documents
+## 9. The other documents
 
 | file | what it holds |
 |---|---|

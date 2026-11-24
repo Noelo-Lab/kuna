@@ -311,3 +311,34 @@ fn a_call_short_of_its_declared_prototype_is_caught() {
     assert!(!dropped.is_empty());
     assert!(dropped.iter().all(|r| r["killed"] == true), "{dropped:?}");
 }
+
+/// `report(int tag, const char *fmt, ...)` from `kuna-varargsave` (gcc -O2)
+/// hands its `va_list` to `vsink`, declared and outside the image, so the save
+/// area is compared at the call. kuna's `varargsave` folds the stores that fill
+/// it; the decompiled side fills it as `va_start` does, so both passes agree.
+#[test]
+fn a_folded_register_save_area_is_filled_as_va_start_does() {
+    let text = "4881ecd8000000488954243048894c24384c894424404c894c244884c074370f\
+294424500f294c24600f295424700f299c24800000000f29a424900000000f29\
+ac24a00000000f29b424b00000000f29bc24c0000000488d8424e0000000488d\
+542408c7442408100000004889442410488d442420c744240c30000000488944\
+2418e869ffffff4881c4d8000000c390";
+    let pass = "<com>lo fu report</com><com>decompile</com>";
+    let xml = format!(
+        "<decompilertest><binaryimage arch=\"x86:LE:64:default:gcc\">\
+<bytechunk space=\"ram\" offset=\"0x100010\">{text}</bytechunk>\
+<symbol space=\"ram\" offset=\"0x100000\" name=\"vsink\"/>\
+<symbol space=\"ram\" offset=\"0x100010\" name=\"report\"/></binaryimage><script>\
+<com>parse line struct va_tag {{ uint4 gp_offset; uint4 fp_offset; void *overflow_arg_area; void *reg_save_area; }};</com>\
+<com>parse line extern int4 vsink(int4 tag, char *fmt, va_tag *ap);</com>\
+{pass}<com>option varargsave off</com>{pass}</script></decompilertest>"
+    );
+    let dir = std::env::temp_dir().join(format!("kuna-verify-guards-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("vararg-report.xml");
+    std::fs::write(&path, xml).unwrap();
+    let res = kuna_verify::check_datatest(&path.to_string_lossy(), &[specs()], &Options { runs: 32, ..Options::default() });
+    assert_eq!(res.error, None);
+    let labels: Vec<String> = res.reports.iter().map(|r| r.verdict.label()).collect();
+    assert_eq!(labels, ["AGREES(32)", "AGREES(32)"], "{}", res.reports.iter().map(|r| r.render()).collect::<String>());
+}

@@ -145,17 +145,21 @@ argument kuna does not pass, of §4's dropped-argument class.
 
 ## 6. The rerun with the current harness
 
-Every function of the same 74 binaries again, after §5, with main merged up to #1914 (so
-with the fixes of #1889–#1911), then the `DIFFERS` rechecked after the fixes below.
+Every function of the same 74 binaries again, after §5, with main merged up to #1932 (so
+with the fixes of #1889–#1927), then every function that did not agree rechecked after the
+last harness fix below.
 
 | | functions | `AGREES` | `DIFFERS` | `DIVERGES` | `UNKNOWN` |
 |---|---:|---:|---:|---:|---:|
 | first full run (§3–§4, partial) | 28,233 | 22,683 | 243 | — | 5,306 |
 | before this section | 47,384 | 41,164 | 481 | 206 | 5,533 |
-| now | 47,756 | 41,964 (88%) | 249 | 206 | 5,337 |
+| after the first fixes below | 47,756 | 41,964 (88%) | 249 | 206 | 5,337 |
+| now | 49,184 | 43,321 (88%) | 252 | 206 | 5,405 |
 
-`O2` has 159 `DIFFERS` and `O0` 90. Only the `DIFFERS` were rechecked after the last
-fixes; a function that agreed before them was not run again.
+`O2` has 160 `DIFFERS` and `O0` 92. The last line counts each function a binary defines;
+the earlier lines counted a name that two functions of one binary share once (1,428
+functions). The recheck goes by name, so the 36 such functions in it keep the verdict of
+the full run.
 
 **Harness defects this rerun showed, all fixed** (`triage.md` §2 lists them with the
 rest):
@@ -169,18 +173,28 @@ rest):
   now given the stub. A return to an enclosing call's return address on the same stack
   (libgcc's soft-float routines) unwinds to that call instead.
 - A call result kuna keeps in a joined register pair (`r1:r0`) was not read back.
+- kuna's `varargsave` folds the stores of a variadic function's register-save prologue,
+  and the printed `va_list` setup stands for `va_start`. Once a `va_list` passed to a
+  callee was followed into the save area it points to, about 160 variadic functions
+  (`errc`, `ohshite`, `rl_message`, `parser_errmsg`) stopped agreeing: kuna's save area
+  was never filled. kuna's side now fills it as `va_start` does, from the stores the fold
+  records, and compares only the 176 bytes `va_start` defines.
 
-**What the 249 are:**
+**What the 252 are:** the 249 of the line before, unchanged, and three new: `printServo`
+(Cleanflight, both builds), whose `r1` differs at its 46th call in one run of 256, and
+`USBD_Initialize` (Crazyflie `O0`), whose result depends on a call output kuna never
+connects. None
+of the 249 agrees after #1924 or #1927.
 
 | cause | functions | where |
 |---|---:|---|
-| kuna's C reads a variable nothing assigns (a call output or a register a call kills) | 54 | across projects; one mechanism each, not triaged one by one |
+| kuna's C reads a variable nothing assigns (a call output or a register a call kills) | 55 | across projects; one mechanism each, not triaged one by one |
 | a call drops arguments | 42 | #1916 (a stack argument), #1918 (an import without a prototype, and the PLT entries themselves); the rest not matched to an issue yet |
 | the set or order of calls differs | 31 | not triaged |
 | memory differs | 31 | includes 10 ChibiOS `rt_test_*` around scheduler calls, most likely the context-switch limit, not kuna |
 | functions discovery found in data | 23 | Cortex-M firmware `sub_*` whose bytes are strings: `funcstart_patterns`/`aif` take them for code, and `decompile-all` prints them too |
 | u-boot's aligned stack buffers | 16 | #1919, directly (`part_test_dos`, `fs_devread`, `print_partition_extended`) or through callees run for real; not each checked |
-| a return value or an argument value | 23 | not triaged |
+| a return value or an argument value | 25 | not triaged |
 | `memcpy`'s arguments dropped | 10 | #1922: Betaflight's calls to its own `memcpy` keep one or two of three; `--option dwarf off` restores them in three of the five functions |
 | `fdt_getprop()` with no arguments | 7 | #1917 |
 | a call through a function pointer drops arguments | 6 | `tar` `tar_sparse_*` |

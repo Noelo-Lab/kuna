@@ -8277,7 +8277,11 @@ parameters, and `ActionInputPrototype` gives the recovered prototype its `...`
 (mark_variadic)`); a prototype with no named parameter prints `(...)`. The
 `va_list` field initialisations stay as assignments (`v1 = 8; v3 = 0x30;
 v4 = __builtin_dwarf_cfa(); v5 = v2;`), and `va_arg` in a function's own body
-is not recognised. `protoorder` still declines a variadic recovered prototype
+is not recognised. The fold keeps a record of the stores it removed, the save
+area's offset from the entry stack pointer and each register with its slot
+(`Funcdata::vararg_folded`), so a reader of the IR can put back what `va_start`
+means; `kuna-verify` fills the save area from it before running the function.
+`protoorder` still declines a variadic recovered prototype
 (`Decline::Variadic`), so callers recover their own arguments to such a
 function. `tests/stages/kuna-varargsave.xml` checks two folded functions, the two refused
 shapes and the option off. Windows x64 and every other target are untouched.

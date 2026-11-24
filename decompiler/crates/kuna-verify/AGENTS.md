@@ -1,0 +1,52 @@
+# kuna-verify — agent notes
+
+`kuna-verify` is a dev-only tool: it runs kuna's final IR and the machine code from one
+state and compares them. Read `docs/features/diffverify/README.md` before changing it, and
+`docs/features/diffverify/triage.md` before naming the cause of a `DIFFERS`. The root
+`AGENTS.md` still applies.
+
+## Rules
+
+- **A `DIFFERS` is not a kuna bug until the harness is ruled out.** Most false ones so
+  far were the checker's, not the decompiler's. Follow `triage.md`: the cause can be
+  kuna, the SLEIGH spec, the reference emulator, the checker's evaluator or the harness.
+- **A harness change must not move verdicts it did not mean to move.** Before committing,
+  compare every verdict on the corpus, `ls` (`O2`, `O0`) and `find` against the previous
+  build, and explain each one that moved.
+- **`docs/baseline-verify.json` is re-recorded only for a reason the commit names** (new
+  stage tests from main, a deliberate harness change), never to absorb a regression.
+- **Fault injections into the engine stay local.** Plant them to test the check, then
+  revert; mutants (`kuna-verify mutate`) change only kuna's side, never the machine side.
+- **Recheck decbench functions by address, or leave out names a binary defines twice.**
+  Two functions of one binary can share a name, and `load function NAME` picks one.
+
+## Regressions
+
+One entry per trap an agent fell into here. Date, model and PR say when it was true; an
+entry that no longer applies can be removed.
+
+- 2026-11-24 · Claude Opus 5.5 · PR #1830
+  Treated a `CALL_RETURN` flow override as "does not return". It also turns a branch
+  into a tail call, so gh8471's test became a false `DIFFERS`. Only a `CALL_RETURN` on a
+  call instruction is a no-return cut.
+- 2026-11-24 · Claude Opus 5.5 · PR #1830
+  Read `RDI` at every nested call to decide whether `error(status, ...)` returns. LiveIn
+  tracking counted that read as the callee reading `RDI`, a false `DIFFERS` in
+  `calleefloatreads`. Read the status only for the `error` names, with tracking off.
+- 2026-11-24 · Claude Opus 5.5 · PR #1830
+  Took every PLT thunk as an external call. That exposed an out-of-bounds frame pointer
+  (`ls` `O0` `group_number`) the check cannot yet judge. Keep it to the no-return check
+  until that has a design.
+- 2026-11-24 · Claude Opus 5.5 · PR #1830
+  Followed pointers stored in a passed frame object (transitive escape), which reached a
+  `va_list`'s register save area. kuna's `varargsave` folds the stores that fill it, so
+  about 160 variadic functions stopped agreeing. kuna's side now fills the area as
+  `va_start` does, from `Funcdata::vararg_folded`.
+- 2026-11-24 · Claude Opus 5.5 · PR #1830
+  Merged a by-name decbench recheck into an `--all` run keyed by name. Functions sharing
+  a name were mixed up, and four `libedit` functions looked fixed by a main merge when
+  they were not.
+- 2026-11-24 · Claude Opus 5.5 · PR #1830
+  The first `drop-arg` mutant shortened the call and left the prototype, so the check
+  caught it by construction and recall read too high. A mutant must leave kuna's facts
+  as a real fault would.

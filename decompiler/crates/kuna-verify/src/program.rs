@@ -130,6 +130,9 @@ pub struct Program {
     /// A mutant's op, `(block, op)`, and whether a run reached it.
     pub watch: Option<(usize, usize)>,
     pub reached: std::rc::Rc<std::cell::Cell<bool>>,
+    /// The register-save stores kuna's `varargsave` folded away: what the
+    /// printed `va_list` setup means by `va_start`, run at entry.
+    pub vararg: Option<kuna_decomp::kuna_varargsave::Folded>,
 }
 
 /// The decompiler's built-in user ops that read or write memory.
@@ -418,5 +421,5 @@ pub fn compile(prog: &ConsoleProgram, fd: &Funcdata, calls: &Calls) -> Program {
         blocks.push(Block { index: block.get_index(), start: start_of(bl), phis, ops, outs });
     }
     let starts = blocks.iter().map(|b| b.start).collect();
-    Program { blocks, slots: c.slots.len(), starts, watch: None, reached: Default::default() }
+    Program { blocks, slots: c.slots.len(), starts, watch: None, reached: Default::default(), vararg: fd.vararg_folded().cloned() }
 }
