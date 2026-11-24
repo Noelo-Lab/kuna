@@ -156,6 +156,9 @@ pub(super) fn build_script_for_input(
     for form in forms(crate::assertdecl::Slot::Program) {
         lines.push(form.line);
     }
+    for form in forms(crate::assertdecl::Slot::Jump) {
+        lines.push(form.line);
+    }
     if options.iter().any(|(name, value)| name == "callwide" && value == "on") {
         lines.push("callwide prepare".into());
     }

@@ -2702,9 +2702,10 @@ classified:
   that later tests a byte it loaded into `edi` and calls `ext` with it
   printed `ext()` while any read of `r9` counted. A function whose own
   prototype is locked with a fixed parameter list (DWARF, a header,
-  `--assert prototype`) is not variadic on that account either: it has no
-  register-save area, so a store of its last argument register is a spill or a
-  pad. gcc keeps a Cortex-M stack 8-byte aligned with `push {r3, lr}` and
+  `--assert prototype`, the library-prototype table or a demangled name, each
+  of which states a `...` where there is one) is not variadic on that account
+  either: it has no register-save area, so a store of its last argument
+  register is a spill or a pad. gcc keeps a Cortex-M stack 8-byte aligned with `push {r3, lr}` and
   `push {r3, r4, r7, lr}`, and in Betaflight every such caller of newlib's
   `memcpy` lost the size it computes into `r2` and also multiplies with
   (`pidCopyProfile` printed `memcpy(dst,src)`), and with it the `data` and
