@@ -199,6 +199,10 @@ pub struct CalleeEntryDead {
     /// r2, r3}; push {lr}`), so such a store is no save. Read by
     /// [`Self::stores_below_another`].
     stored_below_bytes: ByteSet,
+    /// The register bytes an instruction that stores several registers stores
+    /// as the highest of them, the shape of a register save (`stm r0!, {r1, r2,
+    /// r3}`). Read by [`Self::stores_below_another`].
+    stored_top_bytes: ByteSet,
     /// Did some path reach an instruction the walk could not decode? A body
     /// decoded in the wrong instruction set reads registers at random before it
     /// breaks. Read by [`Self::reads_low_byte`].
@@ -371,7 +375,9 @@ impl CalleeEntryDead {
 
     /// Does some path store the LOW byte of `[addr, addr+size)`, unwritten,
     /// with an instruction that also stores a register above it
-    /// ([`Self::stored_below_bytes`])? Read by
+    /// ([`Self::stored_below_bytes`]), and no path store it alone or as the
+    /// highest register of a store (clang -Oz's `push {r3, r4, lr}` pad beside
+    /// its `stm r0!, {r1, r2, r3}` save)? Read by
     /// [`crate::p4_calls::kuna_calleereadarg`].
     pub fn stores_below_another(&self, addr: &Address, size: int4) -> bool {
         if !self.complete || size <= 0 {
@@ -386,7 +392,10 @@ impl CalleeEntryDead {
         } else {
             addr.get_offset()
         };
-        self.stored_below_bytes.contains(&(self.reg_idx, low))
+        let key = (self.reg_idx, low);
+        self.stored_below_bytes.contains(&key)
+            && !self.stored_read_bytes.contains(&key)
+            && !self.stored_top_bytes.contains(&key)
     }
 
     /// How many bytes of `[addr, addr+size)`, counted from its least
@@ -593,6 +602,7 @@ impl CalleeEntryDead {
             &mut self.unpadded_read_bytes,
             &mut self.stored_read_bytes,
             &mut self.stored_below_bytes,
+            &mut self.stored_top_bytes,
             &mut self.cond_written,
         ];
         for set in sets {
@@ -674,6 +684,7 @@ impl CalleeEntryDead {
             trap_cuts: Vec::new(),
             stored_read_bytes: ByteSet::new(),
             stored_below_bytes: ByteSet::new(),
+            stored_top_bytes: ByteSet::new(),
             undecodable: false,
             complete,
         }
@@ -693,10 +704,19 @@ impl CalleeEntryDead {
     /// register above it (`push {r3, lr}`).
     #[cfg(test)]
     pub(crate) fn with_stored_below_byte(mut self, b: u64) -> Self {
-        if self.live_read_bytes.remove(&(self.reg_idx, b)) {
-            self.unpadded_read_bytes.remove(&(self.reg_idx, b));
-            self.stored_below_bytes.insert((self.reg_idx, b));
-        }
+        self.live_read_bytes.remove(&(self.reg_idx, b));
+        self.unpadded_read_bytes.remove(&(self.reg_idx, b));
+        self.stored_below_bytes.insert((self.reg_idx, b));
+        self
+    }
+
+    /// Record that a multi-register store stores byte `b` as its highest
+    /// register (`stm r0!, {r1, r2, r3}`).
+    #[cfg(test)]
+    pub(crate) fn with_stored_top_byte(mut self, b: u64) -> Self {
+        self.live_read_bytes.remove(&(self.reg_idx, b));
+        self.unpadded_read_bytes.remove(&(self.reg_idx, b));
+        self.stored_top_bytes.insert((self.reg_idx, b));
         self
     }
 
@@ -1343,6 +1363,7 @@ pub fn probe_entry_with<T: kuna_sleigh::translate::Translate + ?Sized>(
         res.unpadded_read_bytes.clear();
         res.stored_read_bytes.clear();
         res.stored_below_bytes.clear();
+        res.stored_top_bytes.clear();
         res.cuts.clear();
         res.opaque_cuts.clear();
         res.jumps = 0;
@@ -1609,9 +1630,10 @@ fn step_instruction(
                     res.reads_live.push((idx, off, sz));
                 }
                 let stored = op.opc == OpCode::CPUI_STORE && i == 2;
-                if stored && multi_store && stored_top.is_some_and(|top| off + v.size as u64 <= top) {
-                    res.stored_below_bytes
-                        .extend((off..off + v.size as u64).filter(|b| !base.contains(&(idx, *b))).map(|b| (idx, b)));
+                if stored && multi_store {
+                    let below = stored_top.is_some_and(|top| off + v.size as u64 <= top);
+                    let into = if below { &mut res.stored_below_bytes } else { &mut res.stored_top_bytes };
+                    into.extend((off..off + v.size as u64).filter(|b| !base.contains(&(idx, *b))).map(|b| (idx, b)));
                 }
                 if !formal && !(stored && multi_store) {
                     let into = if stored { &mut res.stored_read_bytes } else { &mut res.live_read_bytes };

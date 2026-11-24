@@ -724,4 +724,6 @@ and `r1` still gets two arguments.
 no declaration: a Thumb caller whose `push {r3, r4, r5, r6, r7, lr}` stores
 `r3` beneath `lr` keeps the length it also stores, a callee that reads only
 `r0` and `r1` still gets two arguments, and a caller that saves `r0`-`r3` in
-a push of their own (a variadic register save) still loses it.
+a push of their own (a variadic register save) still loses it, as does one
+that pads with `push {r3, ..., lr}` and saves `r1`-`r3` with `stm` (clang
+-Oz).

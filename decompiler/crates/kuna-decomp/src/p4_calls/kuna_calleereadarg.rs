@@ -68,7 +68,8 @@
 //!   store of it together with a register above it, which is that pad again:
 //!   a save stores the argument registers on their own, the last one highest,
 //!   beneath the incoming stack arguments (`push {r0, r1, r2, r3}; push
-//!   {lr}`).
+//!   {lr}`), unless the entry also stores it that way: clang -Oz pads with
+//!   `push {r3, r4, lr}` and saves with `stm r0!, {r1, r2, r3}`.
 //!
 //! Where the walk cannot finish, the callee's `protoorder` statement answers
 //! instead with what its first heritage saw it read, for the registers it
@@ -187,7 +188,7 @@ fn declared_fixed(data: &Funcdata) -> bool {
 
 /// May the calling function's own entry `own` be a variadic register save:
 /// does it read `last`, its final argument register, only to store it, other
-/// than together with a register above it (gcc's `push {r3, lr}` pad)?
+/// than only together with a register above it (gcc's `push {r3, lr}` pad)?
 pub(crate) fn may_save_varargs(own: &CalleeEntryDead, (a, s): &(Address, int4)) -> bool {
     own.proves_read(a, *s) && !own.reads_low_byte(a, *s, false, false) && !own.stores_below_another(a, *s)
 }
