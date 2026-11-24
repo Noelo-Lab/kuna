@@ -2308,7 +2308,9 @@ mod tests {
         // and kuna-stated-jump / caller-stated computed branch destinations
         // and kuna-passthroughslot / forwarded registers fill their slots ahead of a loaded argument
         // and kuna-passthroughslot-arm / an ARM pad or a register the callee does not take is no filled slot
-        assert_eq!(count, 897, "corpus file count drifted");
+        // and gh1916-stackpadarg-x86 / a stack slot's pushed pad is not part of its int argument
+        // and kuna-dwarfpop / a MinGW DWARF-declared callee pops what its returns prove
+        assert_eq!(count, 898, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
