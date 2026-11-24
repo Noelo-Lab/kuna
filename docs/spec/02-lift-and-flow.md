@@ -3855,7 +3855,12 @@ effects. A compact delay counts one following issue, not one fetch: the
 loader paints the following issue's length, and the translator checks the
 whole mapped delay before splicing its p-code. Unimplemented or nested
 transfers stop the lift rather than making an edge. A delay with memory
-effects cannot be combined with an unverified stack transfer.
+effects cannot be combined with an unverified stack transfer. The translator
+applies these delay rules only to a language with alignment 3 whose default
+`code` space has three-byte words and which defines the `carmel_issue`
+context field; every other language keeps the unchanged delay-slot path. The
+p-code emulator likewise converts an indirect transfer's CODE-word operand to
+a byte offset only in such a `code` space.
 
 Only a covered immutable CLIW record in an explicitly normalized XML bank
 can specialize a reference. Raw CODE and writable or incomplete template
