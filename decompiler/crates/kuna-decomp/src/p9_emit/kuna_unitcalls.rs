@@ -84,7 +84,7 @@ pub fn take() -> Vec<String> {
 
 /// Whether `declaration` is one [`take`] made.
 pub fn is_helper(declaration: &str) -> bool {
-    declaration.trim().ends_with("(KUNA_ANY_ARGS);")
+    declaration.trim_end().ends_with("(KUNA_ANY_ARGS);")
 }
 
 /// The header's block of the helpers the `declarations` of every function

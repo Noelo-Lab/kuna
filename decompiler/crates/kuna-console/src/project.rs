@@ -2216,6 +2216,26 @@ mod tests {
         assert!(!header.contains("extern int split") && !header.contains("extern long split"), "{header}");
     }
 
+    #[test]
+    fn helper_declarations_stay_out_of_the_call_targets_until_asked_for() {
+        let mut result = streamed("int local(int a0);", "int");
+        result.call_declarations = vec![
+            "int puts(char *a0);".into(),
+            "bool SCARRY4(KUNA_ANY_ARGS);".into(),
+            "undefined8 puts(KUNA_ANY_ARGS);".into(),
+            "void local(KUNA_ANY_ARGS);".into(),
+        ];
+        let header = super::build_header("fresh", "", "", &[result]).unwrap();
+        let at = |text: &str| header.find(text).unwrap_or_else(|| panic!("no {text}: {header}"));
+        let (targets, block, prototypes) =
+            (at("/* declared call targets */"), at("#ifdef KUNA_DECLARE_HELPERS"), at("/* function prototypes */"));
+        assert!(targets < block && block < prototypes, "{header}");
+        assert!(header[targets..block].contains("extern int puts(char *a0);"), "{header}");
+        assert!(!header[targets..block].contains("SCARRY4"), "{header}");
+        assert!(header[block..prototypes].contains("#ifndef SCARRY4\nextern bool SCARRY4(KUNA_ANY_ARGS);\n#endif\n"), "{header}");
+        assert!(!header.contains("puts(KUNA_ANY_ARGS)") && !header.contains("local(KUNA_ANY_ARGS)"), "{header}");
+    }
+
     fn wide_call() -> FuncResult {
         let mut result = streamed("unsigned long long caller(void);", "unsigned long long");
         result.call_declarations = vec!["unsigned long long producer(int,int,int,int);".into()];
