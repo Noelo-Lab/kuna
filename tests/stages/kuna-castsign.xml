@@ -62,6 +62,7 @@ c7e8bafeffff488945f8488b45f84883f8ff7d07b802000000eb22488b45f848
 <symbol space="ram" offset="0x1111" name="sign_of"/>
 </binaryimage>
 <script>
+  <com>option returndup on</com>
   <com>parse line extern uint8 ulen(char *s);</com>
   <com>parse line extern void fill(uint8 *p);</com>
   <com>option castsign off</com>

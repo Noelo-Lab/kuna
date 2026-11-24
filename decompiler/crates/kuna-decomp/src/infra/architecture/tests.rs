@@ -173,6 +173,7 @@ fn apply_mode_aggressive_flips_offdefault_flags_but_not_dwarf_lines() {
     // Listed by the preset even though DIV-54 makes it a shipped default, so the
     // preset re-enables it after an earlier `--option returndup off`.
     assert!(arch.duplicate_shared_returns);
+    assert!(arch.returndup_record); // at its shipped value `auto`
     assert!(arch.sparc_struct_return); // SPARC-idiom-gated, safe to enable
     assert!(arch.v850_indirect_branch); // V850-gated, listed so the preset owns it
     // The exclusion: annotates every statement of a `-g` binary with a
@@ -189,6 +190,7 @@ fn apply_mode_reliable_is_a_no_op() {
     assert!(!arch.analysis_listing);
     assert_eq!(arch.analysis_aif, crate::kuna_aif::AifMode::Off);
     assert!(arch.duplicate_shared_returns); // DIV-54 shipped default survives
+    assert!(arch.returndup_record); // `returndup auto`
 }
 
 #[test]

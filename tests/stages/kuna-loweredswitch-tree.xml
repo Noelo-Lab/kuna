@@ -44,6 +44,7 @@ e87bfdffffeb29bf12000000e86ffdffffeb1dbf13000000e863fdffffeb11bf14000000e857fdff
 <symbol space="ram" offset="0x401016" name="wide"/>
 </binaryimage>
 <script>
+  <com>option returndup on</com>
   <com>lo fu wide</com>
   <com>decompile</com>
   <com>print C</com>

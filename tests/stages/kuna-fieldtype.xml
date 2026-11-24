@@ -58,6 +58,7 @@ c3
 <script>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fieldtype_gcc_O0_x86_64</com>
+  <com>option returndup on</com>
   <com>option libcnames off</com>
   <com>option fieldtype off</com>
   <com>read symbols</com>
@@ -81,6 +82,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fieldtype_gcc_O0_x86_64</com>
+  <com>option returndup on</com>
   <com>option libcnames off</com>
   <com>option fieldtype on</com>
   <com>read symbols</com>
@@ -104,6 +106,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fieldtype_clang_O2_x86_64</com>
+  <com>option returndup on</com>
   <com>option operand_refs on</com>
   <com>option fieldtype off</com>
   <com>read symbols</com>
@@ -112,6 +115,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fieldtype_clang_O2_x86_64</com>
+  <com>option returndup on</com>
   <com>option operand_refs on</com>
   <com>option fieldtype on</com>
   <com>read symbols</com>

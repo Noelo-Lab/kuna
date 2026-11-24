@@ -6763,7 +6763,7 @@ int main(void) {
         for opt in ["off", "on"] {
             let args = [
                 "decompile-all", bin.as_str(), "--functions", funcs, "--sleighpath", sp.as_str(),
-                "--option", "castobject", opt,
+                "--option", "castobject", opt, "--option", "returndup", "on",
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
             assert!(ok, "kuna decompile-all failed: {stderr}");
@@ -8059,7 +8059,10 @@ int main(void) {
             .to_string();
         let mut listings: Vec<String> = Vec::new();
         for opt in ["off", "on"] {
-            let args = ["decompile-all", bin.as_str(), "--sleighpath", sp.as_str(), "--option", "callrettype", opt];
+            let args = [
+                "decompile-all", bin.as_str(), "--sleighpath", sp.as_str(), "--option", "callrettype", opt,
+                "--option", "returndup", "on",
+            ];
             let (stdout, stderr, ok) = run_kuna(&args);
             assert!(ok, "kuna decompile-all failed: {stderr}");
             for (off, on) in lines {
@@ -9475,7 +9478,12 @@ fn a_branch_chosen_flag_or_an_int_truncation_keeps_its_int_in_the_first_register
         let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "bejoin", "on"]);
         assert!(ok, "kuna decompile-all {fixture} failed: {stderr}");
         let printed = callrettype_functions(&stdout, funcs);
-        let sigs: Vec<&str> = printed.split("// Function: ").skip(1).filter_map(|part| part.lines().nth(1)).collect();
+        let sigs: Vec<&str> = printed
+            .split("// Function: ")
+            .skip(1)
+            .filter_map(|part| part.lines().nth(1))
+            .map(|sig| sig.split(" //").next().unwrap_or(sig))
+            .collect();
         assert_eq!(sigs.len(), funcs.len(), "{fixture}: every function prints:\n{stdout}");
         for sig in &sigs {
             let want = if sig.contains("pick") { 5 } else { 2 };
