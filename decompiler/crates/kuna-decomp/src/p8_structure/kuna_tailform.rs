@@ -439,6 +439,13 @@ fn next_edit(data: &Funcdata, cx: &Ctx, list: &[BlockId], conds: &[(BlockId, Blo
     if let Final::Bare(r, key) = fin {
         let i = n - 2;
         if (!cx.void || cx.elide) && merges(data, cx, list[i], key) {
+            // (kuna `returndup auto`) a recorded `return;` of its own is a guard.
+            if key == RetKey::Void
+                && crate::p8_structure::kuna_o0returns::decided(data)
+                && negatable(data, cond_of(data, list[i], conds))
+            {
+                return Some(Edit::Guard(i));
+            }
             return Some(Edit::Merge(i, key));
         }
         if cx.void || matches!(key, RetKey::Const(..)) {
@@ -513,6 +520,10 @@ struct SiteAt<'a> {
 /// dump reads them.  A part that ends in a call that does not return is the
 /// no-return form's, not a decision site: it gets no features.
 fn site_decision(data: &Funcdata, cx: &Ctx, shape: TailShape, lines: usize, at: &SiteAt) -> TailDecision {
+    // (kuna `returndup auto`) the recorded return statements placed this tail.
+    if crate::p8_structure::kuna_o0returns::decided(data) {
+        return TailDecision::Leave;
+    }
     let mut site = TailSite { shape, void: cx.void, lines, feats: None };
     let decision_site = at.part.last().is_some_and(|&l| !noreturn::noreturn_end(data, l));
     if cx.feats && decision_site {
@@ -546,6 +557,10 @@ fn site_decision(data: &Funcdata, cx: &Ctx, shape: TailShape, lines: usize, at: 
 /// function ends with anyway (and is more than that return).
 fn merges(data: &Funcdata, cx: &Ctx, b: BlockId, key: RetKey) -> bool {
     if !plain_if(data, b) || holds_claimed(data, cx, b) {
+        return false;
+    }
+    // (kuna `returndup auto`) a recorded valued return is not merged away.
+    if key != RetKey::Void && crate::p8_structure::kuna_o0returns::decided(data) {
         return false;
     }
     let clause = data.sblocks_ref().block(b).get_block(1);
