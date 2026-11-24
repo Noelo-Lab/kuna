@@ -1331,10 +1331,13 @@ pub fn plant(data: &mut Funcdata) {
 }
 
 pub(crate) fn plant_piece(data: &mut Funcdata, addr: Address, size: int4) {
-    if (crate::p4_calls::kuna_passthrough::suppresses_return_trial(data, &addr, size)
-        && !crate::kuna_armfloatreturn::forwarded_vfp_return(data, &addr, size))
-        || touched_beyond(data, &addr, size)
+    if crate::p4_calls::kuna_passthrough::suppresses_return_trial(data, &addr, size)
+        && !crate::kuna_armfloatreturn::forwarded_vfp_return(data, &addr, size)
     {
+        claim_tail_callees(data, &addr, size);
+        return;
+    }
+    if touched_beyond(data, &addr, size) {
         return;
     }
     let rets: Vec<crate::context::OpId> = data
@@ -1359,6 +1362,33 @@ pub(crate) fn plant_piece(data: &mut Funcdata, addr: Address, size: int4) {
         active.get_trial_mut(t).set_slot(slot);
     }
     data.kuna_note_forced_return_planted(addr, size);
+}
+
+/// File a read of `[addr, addr+size)` from each tail callee still recovered
+/// `void` whose call a live RETURN hands back, when `passthrough` claimed that
+/// register for the function's own arguments and no return trial is planted:
+/// ARM u-boot's `bootm_run` is `ldr r1,=..; movw r2,#0x80f; b boot_run`, which
+/// forwards `r0`, so its callers' read of `r0` reaches the RETURN only through
+/// `boot_run`'s result. Forced in turn, the callee returns what it computes,
+/// and `passthrough` hands that result on once the callee states it.
+fn claim_tail_callees(data: &mut Funcdata, addr: &Address, size: int4) {
+    let rets: Vec<crate::context::OpId> = data
+        .obank()
+        .iter_code(kuna_num::opcodes::OpCode::CPUI_RETURN)
+        .filter(|&r| data.obank().get(r).is_some_and(|o| !o.is_dead() && o.get_halt_type() == 0))
+        .collect();
+    for r in rets {
+        let Some(fc) = crate::p4_calls::kuna_passthrough::producing_call(data, r)
+            .and_then(|c| data.get_call_specs_index(c))
+            .map(|i| data.get_call_specs(i))
+        else {
+            continue;
+        };
+        let Some(k) = key(fc.get_entry_address()) else { continue };
+        if !fc.proto().is_output_locked() && data.kuna_callee_returns(k) == Some(Returns::Void) {
+            data.kuna_note_forced_claim((k, (addr.clone(), size)));
+        }
+    }
 }
 
 /// Does a Varnode of the function share a byte with `[addr, addr+size)` and
@@ -1536,7 +1566,8 @@ fn score_trial(
         }
         return false;
     }
-    if hands_on_unstated(data, &addr, size, width, live, slot) || merges_in_pieces(data, live, slot) {
+    if hands_on_unstated(data, &addr, size, width, live, slot) || (width >= size && merges_in_pieces(data, live, slot))
+    {
         return false;
     }
     let every = live.iter().all(|&r| {
@@ -1566,7 +1597,11 @@ fn score_trial(
 /// pick; test %eax,%eax` and then one of two `getname` calls before a shared
 /// `ret`, returned `CONCAT44(dat_4,v2)` and stored the upper half of
 /// `getname`'s pointer into `dat_4`, a register piece printed as a global, on
-/// each path.  The function stays as it was.
+/// each path.  The function stays as it was.  Asked only of a value returned
+/// whole: one that every path sets no wider than its low piece is narrowed to
+/// it ([`narrow`]), which leaves the pieces above out of the return (openssh's
+/// `int sshbuf_reserve`, whose `eax` and the rest of `rax` merge apart, beside
+/// a caller that hands the result on and reads all of `rax`).
 fn merges_in_pieces(data: &Funcdata, live: &[crate::context::OpId], slot: int4) -> bool {
     use kuna_num::opcodes::OpCode;
     let def = |vn: crate::context::VarnodeId| data.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d));
