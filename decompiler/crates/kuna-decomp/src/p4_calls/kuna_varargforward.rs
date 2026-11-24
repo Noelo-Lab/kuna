@@ -74,9 +74,10 @@ pub fn forwards_declared_value(
 }
 
 /// Narrow register trial `i` of variadic call spec `idx` to the int width when
-/// only its low int bytes are defined and every byte above them is a part of
-/// the caller's own incoming register that its locked prototype declares no
-/// parameter in. The trial may be active, or inactive and later gap-filled.
+/// only its low int bytes are defined and every byte above them comes from the
+/// caller's own incoming register bytes that it cannot take as a parameter (see
+/// `undeclared_bytes`). The trial may be active, or inactive and later
+/// gap-filled.
 /// `int d4(const char *f, int a) { pr(f, a); return pr(f, a); }` hands `a` on
 /// in `esi`; the 8-byte `rsi` trial would otherwise print `CONCAT44(v1,a)` with
 /// `v1` never set.

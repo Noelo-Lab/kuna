@@ -8114,11 +8114,11 @@ byte above them must come, through copies, concatenations, subpieces and phi
 nodes whose inputs all qualify, from incoming processor register bytes the
 caller cannot take as a parameter: bytes no input entry of its prototype model
 reaches (RAX under System V), or bytes no parameter of its locked prototype
-overlaps. Under the caller's own
-prototype those bytes hold no value the source could have passed, so the
-argument is the int and the calls print `pr(f,a)` and `pr(f,a,a)`. The rule
-declines floating-point registers, callers with a parameter in join storage, and
-callees without `...`. A declared `long` or pointer, or any value whose upper
+overlaps. Under the caller's own prototype those bytes hold no value the source
+could have passed, so the argument is the int and the calls print `pr(f,a)` and
+`pr(f,a,a)`. The rule declines floating-point registers and callees without
+`...`; the locked-prototype reading also declines callers with a parameter in
+join storage. A declared `long` or pointer, or any value whose upper
 bytes are computed, keeps its full width. A `char` or `short` that clang
 forwards without extending it is not narrowed either, because bytes inside the
 int are undeclared too.
