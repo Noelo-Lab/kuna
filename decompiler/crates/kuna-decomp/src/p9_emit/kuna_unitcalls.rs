@@ -162,6 +162,45 @@ fn declarable(name: &str) -> bool {
     is_identifier(name) && !C_KEYWORDS.contains(&name)
 }
 
+/// Give a jump stub's `proto` and its definition in `code` an
+/// unknown parameter list, `(KUNA_ANY_ARGS)`, where kuna recovered `(void)`. A
+/// stub's body only jumps through the import's slot, so kuna sees no parameter,
+/// while its callers pass the import's arguments, which `(void)` would refuse.
+/// Both change, or neither: the definition is the line that starts with the
+/// prototype's declarator. A stub kuna recovered parameters for is left as it
+/// is, and so is a declarator whose last `(void)` is not the function's own, as
+/// in a function returning a function pointer. Before C23, clang warns at a
+/// call that passes arguments to `()` (`-Wdeprecated-non-prototype`); it
+/// compiles.
+pub fn unknown_stub_params(proto: &mut Option<String>, code: &mut Option<String>) {
+    let (Some(proto), Some(code)) = (proto.as_mut(), code.as_mut()) else {
+        return;
+    };
+    let declarator = proto.trim().trim_end_matches(';').to_owned();
+    let Some(head) = declarator
+        .strip_suffix("(void)")
+        .filter(|head| head.ends_with(|c: char| c.is_ascii_alphanumeric() || c == '_'))
+    else {
+        return;
+    };
+    let Some(at) = definition_line(code, &declarator) else {
+        return;
+    };
+    let open = format!("{head}(KUNA_ANY_ARGS)");
+    code.replace_range(at..at + declarator.len(), &open);
+    *proto = proto.replacen(&declarator, &open, 1);
+}
+
+/// Where `code`'s definition line starts with `declarator`: at the start of a
+/// line, followed by the end of the line or a trailing comment.
+fn definition_line(code: &str, declarator: &str) -> Option<usize> {
+    let bytes = code.as_bytes();
+    code.match_indices(declarator).map(|(at, _)| at).find(|&at| {
+        (at == 0 || bytes[at - 1] == b'\n')
+            && matches!(bytes.get(at + declarator.len()), None | Some(b'\n' | b' '))
+    })
+}
+
 fn is_identifier(name: &str) -> bool {
     let mut bytes = name.bytes();
     bytes.next().is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
@@ -264,6 +303,45 @@ mod tests {
         assert!(is_helper(" bool SCARRY4(KUNA_ANY_ARGS); ") && !is_helper("int puts(char *a0);"));
         assert_eq!(header_block(["int puts(char *a0);"], |_| false), "");
     }
+
+    #[test]
+    fn a_stub_recovered_with_no_parameters_takes_any() {
+        let rewrite = |proto: &str, code: &str| {
+            let (mut proto, mut code) = (Some(proto.to_owned()), Some(code.to_owned()));
+            unknown_stub_params(&mut proto, &mut code);
+            (proto.unwrap(), code.unwrap())
+        };
+        assert_eq!(
+            rewrite("unsigned long strfry(void);", "unsigned long strfry(void)\n{\n  return (*dat_1002730)();\n}"),
+            (
+                "unsigned long strfry(KUNA_ANY_ARGS);".to_owned(),
+                "unsigned long strfry(KUNA_ANY_ARGS)\n{\n  return (*dat_1002730)();\n}".to_owned()
+            )
+        );
+        // The definition line may carry a warning; a mention in a comment above
+        // it is not the definition.
+        assert_eq!(
+            rewrite("void f(void);", "// was void f(void) once\nvoid f(void) // warn: bad data\n{\n}").1,
+            "// was void f(void) once\nvoid f(KUNA_ANY_ARGS) // warn: bad data\n{\n}"
+        );
+        // A recovered parameter, or no definition line, changes neither.
+        assert_eq!(
+            rewrite("char *strdup(char *a0);", "char *strdup(char *a0)\n{\n}"),
+            ("char *strdup(char *a0);".to_owned(), "char *strdup(char *a0)\n{\n}".to_owned())
+        );
+        assert_eq!(
+            rewrite("void f(void);", "// void f(void)\nint g(void)\n{\n}"),
+            ("void f(void);".to_owned(), "// void f(void)\nint g(void)\n{\n}".to_owned())
+        );
+        assert_eq!(
+            rewrite("int (*f(void))(void);", "int (*f(void))(void)\n{\n}"),
+            ("int (*f(void))(void);".to_owned(), "int (*f(void))(void)\n{\n}".to_owned())
+        );
+        let (mut none, mut code) = (None, Some("x".to_owned()));
+        unknown_stub_params(&mut none, &mut code);
+        assert_eq!(code.as_deref(), Some("x"));
+    }
+
 
     #[test]
     fn a_same_width_tie_keeps_the_undefined_spelling_in_either_order() {

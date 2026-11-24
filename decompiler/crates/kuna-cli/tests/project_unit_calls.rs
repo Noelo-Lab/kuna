@@ -69,3 +69,58 @@ fn an_export_that_calls_helpers_and_operations_compiles() {
         }
     }
 }
+
+/// A jump stub forwards whatever its caller passes, so an export gives one kuna
+/// recovered `(void)` for the parameter list `(KUNA_ANY_ARGS)`, in its prototype
+/// and its definition, and declares the GOT slot a PLT stub jumps through.
+/// `plt_import_x86_64`'s `main` calls `strfry` through its PLT stub, which jumps
+/// through the GOT slot 0x10024f8; `jump_stubs_x86_64`'s `main` passes two
+/// arguments to each of `endbr64; jmp *slot`, `endbr64; bnd jmp *slot` and
+/// `jmp *slot`.
+#[test]
+fn an_export_that_calls_through_jump_stubs_compiles() {
+    if process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        eprintln!("an_export_that_calls_through_jump_stubs_compiles: skipping (no `cc`)");
+        return;
+    }
+    for (fixture, stubs, slots) in [
+        ("plt_import_x86_64", &["strfry"][..], &["dat_10024f8"][..]),
+        ("jump_stubs_x86_64", &["ibt_stub", "bnd_stub", "plain_stub"][..], &[][..]),
+    ] {
+        let dir = export(fixture);
+        let c = dir.join(format!("{fixture}.c"));
+        let header = std::fs::read_to_string(dir.join(format!("{fixture}.h"))).unwrap();
+        let body = std::fs::read_to_string(&c).unwrap();
+        for stub in stubs {
+            let open = format!("{stub}(KUNA_ANY_ARGS)");
+            assert!(
+                header.lines().any(|line| line.ends_with(&format!(" {open};")) || line.ends_with(&format!("*{open};"))),
+                "{fixture}'s header does not declare {open}:\n{header}"
+            );
+            let lines: Vec<&str> = body.lines().collect();
+            assert!(
+                lines.windows(2).any(|pair| pair[0].contains(&open) && !pair[0].ends_with(';') && pair[1] == "{"),
+                "{fixture} does not define {open}:\n{body}"
+            );
+            let void = format!("{stub}(void)");
+            assert!(!header.contains(&void) && !body.contains(&void), "{fixture} keeps {void}");
+        }
+        for slot in slots {
+            assert!(declares(&header, slot), "{fixture}'s header does not declare {slot}:\n{header}");
+        }
+        for standard in ["-std=c11", "-std=c2x"] {
+            let out = Command::new("cc")
+                .args([standard, "-fsyntax-only"])
+                .args(common::CC_GCC15_DEMOTE)
+                .args(["-Werror=implicit-function-declaration", "-Werror=undef", "-DKUNA_DECLARE_HELPERS"])
+                .arg(&c)
+                .capped_output()
+                .expect("spawn cc");
+            assert!(
+                out.status.success(),
+                "{fixture}'s export failed cc {standard}:\n{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+    }
+}

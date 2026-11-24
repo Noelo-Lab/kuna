@@ -987,12 +987,19 @@ pub fn decompile_pulled(
                     if replay {
                         crate::assertions::verify_formats(prog, &fd, &name, single_target);
                     }
+                    let (mut code, mut proto) = (Some(code), proto);
+                    if header_carries_types
+                        && prog.arch().print().out_lang() == kuna_decomp::kuna_lang::OutLang::C
+                        && is_jump_stub(prog, byte_address)
+                    {
+                        kuna_decomp::kuna_unitcalls::unknown_stub_params(&mut proto, &mut code);
+                    }
                     sink(FuncResult {
                         name,
                         address,
                         byte_address,
                         size: size as i64,
-                        code: Some(code),
+                        code,
                         error: None,
                         proto,
                         emitted_c_name: (header_carries_types && prog.arch().print().out_lang() == kuna_decomp::kuna_lang::OutLang::C).then_some(emitted_name),
@@ -1218,6 +1225,21 @@ pub fn sanitize_guard(file_name: &str) -> String {
     }
     s.push_str("_H");
     s
+}
+
+/// Is the function at `vma` a jump stub: one indirect jump, such as an x86 PLT
+/// stub's `jmp [GOT]` or a PE or Mach-O import thunk, perhaps after `endbr64` or
+/// `endbr32` (a CET `.plt.sec` stub; GNU ld's `bnd jmp` decodes as one jump)? A
+/// stub forwards whatever its caller passes, so in an export one kuna recovered
+/// no parameters for takes any. An ARM or AArch64 PLT stub (`adrp; ldr; br`) is
+/// several instructions, and a direct `jmp` to a decompiled function keeps the
+/// parameters recovered for it.
+fn is_jump_stub(prog: &ConsoleProgram, vma: u64) -> bool {
+    prog.lone_jump_target(vma) == Some(None)
+        || (prog
+            .read_bytes(vma, 4)
+            .is_some_and(|b| matches!(b.as_slice(), [0xf3, 0x0f, 0x1e, 0xfa | 0xfb]))
+            && prog.lone_jump_target(vma + 4) == Some(None))
 }
 
 /// (kuna) Every name the type block introduces as a TYPEDEF name.
