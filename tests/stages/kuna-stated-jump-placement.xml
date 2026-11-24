@@ -1,0 +1,36 @@
+<decompilertest>
+<binaryimage arch="x86:LE:16:Real Mode:default">
+<bytechunk space="ram" offset="0x100" readonly="true">ff2fb80b00c3b81600c3</bytechunk>
+<bytechunk space="ram" offset="0x10000" readonly="true">ffe0b80b00c3b81600c3</bytechunk>
+<bytechunk space="ram" offset="0x10010" readonly="true">ff2fb80b00c3b81600c3</bytechunk>
+<symbol space="ram" offset="0x100" name="far_low"/>
+<symbol space="ram" offset="0x10000" name="near_jump"/>
+<symbol space="ram" offset="0x10010" name="far_jump"/>
+</binaryimage>
+<script>
+<com expecterror="true">override jumptable 10000 10002 10006</com>
+<com expecterror="true">override jumptable 10010 10012 10016</com>
+<com expecterror="true">override jumptable 100 102 106</com>
+<com>lo fu near_jump</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu far_jump</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu far_low</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/stated-jump/dos.exe</com>
+<com>read symbols</com>
+<com expecterror="true">override jumptable 10000 10002 10006</com>
+<com>load addr 0x10000</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="A real-mode jump, near or far, cannot label linear destinations" min="3" max="3">segmented destination is printed as an offset</stringmatch>
+<stringmatch name="DOS chooses the segment an MZ executable runs at" min="1" max="1">runtime load base is unknown for this image</stringmatch>
+<stringmatch name="Rejected destinations print no case" min="0" max="0">case 0x</stringmatch>
+<stringmatch name="Rejected jumps keep their unresolved flow" min="4" max="4">jump-as-call</stringmatch>
+</decompilertest>

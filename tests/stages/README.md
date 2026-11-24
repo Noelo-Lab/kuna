@@ -32,6 +32,13 @@ returning the input argument. Its CLI companion covers both byte orders,
 conditional transfers, joins, stack reloads and ordinary ABI returns, and
 compiles and executes the emitted C at O0/O2.
 
+`kuna-stated-jump-placement.xml` checks stated computed-jump destinations
+whose case labels the jump's value could never equal. A real-mode `jmp ax`
+takes an offset in its code segment, a `jmp far [bx]` takes an offset in the
+segment it loads, whether or not the destinations fit 16 bits, and DOS picks
+the segment an MZ executable runs at. Each rejects its `override jumptable`
+and keeps the unresolved jump.
+
 `kuna-narrowed-call-input.xml` checks a call through a typed field whose
 argument was narrowed to two bytes before the field's prototype was forced on
 the call: the function decompiles and passes the sum widened to the parameter.

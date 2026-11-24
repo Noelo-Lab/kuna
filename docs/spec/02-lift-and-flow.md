@@ -2310,7 +2310,19 @@ For a classic PowerPC branch through CTR or LR, flow explicitly clears the
 two architecturally discarded bits before SSA. An image whose code relocates
 at run time, or a branch whose target encoding is unresolved, cannot label a
 switch on the live pointer, so the assertion is rejected when it is installed
-and the site keeps ordinary recovery.
+and the site keeps ordinary recovery. Every bootstrap records whether code can
+move; the architecture assumes it can until the loader proves a fixed
+placement or the caller states the base of a raw or XML image. A branch input
+computed by the address space's segment operation is rejected too: the C
+prints it as the offset within its code segment, which a linear label cannot
+match. Every computed branch of a 16-bit x86 language is rejected the same
+way, because SLEIGH lifts some without the segment operation: a prefixed near
+jump still adds CS, and a far jump drops the segment it loads. The walk back
+from the branch input to the segment operation passes through copies,
+extensions and truncations in the same instruction. A zero extension on that
+walk, or a branch input narrower than the address, bounds every value the
+jump can take, so a destination above that bound is rejected: a 32-bit
+`jmp ax` never reaches 0x401003.
 Its case values are the destination addresses in code-space addressable units.
 The model has no table-index ordering, inferred default or guard to fold.
 A fresh follow of the same image consults the same site map.

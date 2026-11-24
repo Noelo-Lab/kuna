@@ -1769,6 +1769,8 @@ pub struct Architecture {
     pub kuna_callee_overrides: std::collections::BTreeMap<Address, std::collections::BTreeMap<Address, Address>>,
     /// Complete sets of taken destinations stated for individual computed jumps.
     pub stated_jump_targets: std::collections::BTreeMap<Address, crate::jumptable::StatedJump>,
+    /// Whether the mapped code can run at another address. A load fact; true
+    /// until the loader proves a fixed placement or the caller states the base.
     pub runtime_code_relocation: bool,
     /// (kuna `formatstring`) Which variadic arguments the target passes exactly
     /// as named ones, which bounds what a closed printf/scanf override may
@@ -2717,7 +2719,7 @@ impl Architecture {
             format_override_callpoints: std::collections::BTreeSet::new(),
             kuna_callee_overrides: std::collections::BTreeMap::new(),
             stated_jump_targets: Default::default(),
-            runtime_code_relocation: false,
+            runtime_code_relocation: true,
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
             analysis_listing: false,
             analysis_fast_funcdisc: false,
