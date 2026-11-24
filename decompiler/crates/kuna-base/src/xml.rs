@@ -2306,7 +2306,8 @@ mod tests {
         // and kuna-switchcond / a folded switch is never printed where a condition belongs
         // and kuna-guardauto / the guardarm layout tie-break applies by default only to unoptimized code
         // and kuna-stated-jump / caller-stated computed branch destinations
-        assert_eq!(count, 894, "corpus file count drifted");
+        // and kuna-comparedarg / arguments compared with each other before the call stay its arguments
+        assert_eq!(count, 895, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5263,
-    5263
+    5266,
+    5266
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3528,6 +3528,9 @@
     "data:codescalar #6: the data control is untouched -- its pointer was never a code pointer",
     "data:commit-identified release recovers repeated indices",
     "data:commit-identified release recovers the decimal print",
+    "data:comparedarg #1: no call loses the arguments it was compared on",
+    "data:comparedarg #2: newer passes both seconds fields to elapsed",
+    "data:comparedarg #3: differ passes both seconds fields to other",
     "data:computed LR does not return the input",
     "data:computed LR reaches the common epilogue",
     "data:computed and stored interior entries retain returning calls",

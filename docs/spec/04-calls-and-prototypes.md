@@ -2364,6 +2364,39 @@ classified:
   co-executes with the call, so relaxing that shape is the fabrication the
   family's own design notes warn against.
 
+  (kuna) The compared-argument test
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_comparedarg.rs (compares_other_argument)`,
+  always on) takes one dominating-compare shape out of that rejection: the
+  value is compared with **another argument of the same call**. A caller that
+  skips the call when two values are equal loads them into the argument
+  registers and compares them there: clang -O2's
+  `if (s->sec == ref->sec) return 0; return elapsed(s->sec, ref->sec) ...` is
+  `mov (%rdi),%rdi; mov (%rsi),%rsi; cmp %rsi,%rdi; jne; call elapsed@plt`, and
+  find's `pred_newer` calls `difftime` the same way. Both trials reached the
+  `CBRANCH` and the call printed `elapsed()`; with an import kuna has no
+  prototype for, no body and no sibling could restore the list. The walk skips
+  an equality or ordering test, a borrow test, or a `cmp`'s subtraction into a
+  temporary whose other operand is a Varnode the call reads at another input
+  slot (directly, or through the copy the compare instruction makes of it),
+  and does not follow its result. The comparison reads nothing the call does
+  not read. The call must be direct and non-variadic, to a callee with no body
+  the entry walk can read: an import, a PLT entry that only jumps through its
+  GOT slot, an address with no code (`bodiless_callee`). A callee with a body
+  is `calleearitybody`'s and `passthrough`'s to speak for; a table-driven
+  indirect call right after a search loop (`while (*p != type) p++; p->fn()`)
+  would otherwise take the loop's last compared pair, as U-Boot's `fs_*`
+  dispatchers did; and a format, not the registers, says what `printf` takes.
+  Three more conditions keep leftovers out. Both values must be computed
+  by the function on the way to the call, not its inputs and not joins of
+  several paths (`computed_here`). Every general-purpose argument register
+  before the pair must hold such a value as well (`filled_before`), so the pair
+  continues a list the caller filled from the first register. A Thumb `-O0`
+  loop `for (i = 0; i < n; i++) acc += f(i);` reloads `i` and `n` into `r2` and
+  `r3` for its test and calls `f` with them still there. `r1` holds nothing the
+  loop wrote, so those two are not taken (fixture `kuna-armwalkmode.xml` #5).
+  A comparison with a constant (`test %rcx,%rcx; jz; call`) keeps the upstream
+  rejection.
+
   (kuna) The mutually-exclusive call/return test
   (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_exclusivecallret.rs (applies, skips_use)`,
   always on) applies the same mutual-exclusion argument to a call and a return. GCC
