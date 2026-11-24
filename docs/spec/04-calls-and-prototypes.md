@@ -7272,7 +7272,18 @@ function that reaches such a callee on an error path: without the decline
 gcc -O2's `int g(long x) { return f(x) + 3; }`, whose `f` calls a variadic
 `err` when `x > 5`, printed `f(a0,a1,a2,a3,a4,a5)`, and a single-function
 decompile of x86-64 and AArch64 dash gave `stalloc`, `growstackblock` and
-`setstackmark` six or eight arguments. A body the walk cannot finish -- an import, a thunk, a body past the
+`setstackmark` six or eight arguments. The decline is lifted at one call: where
+the caller stores a value into the callee's first stack-argument slot between
+the call and the call or block start before it (`stores_first_stack_arg`, asked
+of the raw p-code before heritage: `push $0`, or clang's `mov $0,(%rsp)` after
+an aligning `push %rax`, with the stack pointer's constant moves followed back
+and the call instruction's own return-address push skipped). The convention
+passes an argument on the stack only past a full register file, so there the
+whole run is the list. A store of a register as it stands is no such argument:
+a prologue's `push %rbx` lands on the same slot. clang -O2's
+`getopt_long(argc,argv,opts,longopts,index)`, which forwards five registers to
+a seven-parameter `internal` and passes `0, 0` in `r9d` and `[rsp]`, printed
+`internal();`. A body the walk cannot finish -- an import, a thunk, a body past the
 budget -- states nothing, as before. The argument is as wide as the body reads
 it on a little-endian register file; on a big-endian one it is the whole
 register. All of the evidence above applies unchanged, with two additions,
@@ -7314,6 +7325,27 @@ argument, never an argument on its own), and the pass acts twice outside it:
   stopping at the first one the function does not forward. The final list must
   be a leading run of the stated one, and a list holding a stack argument is
   left alone.
+
+**A forwarded register fills its slot.** A register trial the scoring leaves
+inactive because it stands on the function's own value -- its input Varnode, or
+that value carried past calls, reassembled or handed on from an earlier call's
+result, the same tests `build_input_from_trials` applies -- and that the
+callee takes by the evidence above is marked *forwarded* at the end of
+`check_input_trial_use` (`kuna_passthrough.rs (mark_forwarded)`).
+`forceInactiveChain` counts such a trial as a filled slot, not a link of an
+inactive chain: past two inactive slots in a row the upstream rule marks every
+later trial inactive, active or not, so a caller that forwards three or more
+registers and loads the next one itself lost that one too, and with the
+loaded register gone the forwarded ones had no list to extend. clang -O2's
+`w5(a,b,c,d) { return in5(a,b,c,d,0) + 1; }` printed `in5() + 1`, and
+`get_int`'s `getprop(blob,node,prop,&len)` printed `getprop()` (U-Boot's six
+`fdtdec_*` callers of `fdt_getprop` were that shape) where `stackaddrargtrial`,
+off by default, was the only thing that kept `&len`. A forwarded trial with no
+active trial after it stays inactive and is left to the extension above; one
+with an active trial after it is made active by the rule's own hole filling, as
+upstream already does for a run of up to two. The mark needs the callee's
+evidence, so with nothing stated and no body run, or with the option off, the
+chain is counted as before.
 
 **Making the register visible.** At the end of `ActionFuncLink`, before the
 first heritage, a register no Varnode of the function touches gets a trial and a

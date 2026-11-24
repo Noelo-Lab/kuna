@@ -995,6 +995,9 @@ pub mod param_trial_flags {
     /// (kuna) `calleefilledarg`: the callee loads this register itself, so the
     /// slot is no parameter and no evidence about the slots after it.
     pub const CALLEE_FILLED: uint4 = 0x2000;
+    /// (kuna) `passthrough`: the caller forwards its own incoming register
+    /// here untouched and the callee takes it, so the slot is filled.
+    pub const FORWARDED: uint4 = 0x4000;
 }
 
 /// A register or memory location that may be used to pass a parameter or return
@@ -1171,6 +1174,9 @@ impl ParamTrial {
     /// could read it, and the caller put nothing in it.
     pub fn set_callee_filled(&mut self) { self.flags |= param_trial_flags::CALLEE_FILLED; }
     pub fn is_callee_filled(&self) -> bool { self.flags & param_trial_flags::CALLEE_FILLED != 0 }
+    /// (kuna) `passthrough`: the caller forwards the callee's parameter here.
+    pub fn set_forwarded(&mut self) { self.flags |= param_trial_flags::FORWARDED; }
+    pub fn is_forwarded(&self) -> bool { self.flags & param_trial_flags::FORWARDED != 0 }
 
     /// Does this show solid movement into the Varnode (C++ `hasAncestorSolid`)?
     pub fn has_ancestor_solid(&self) -> bool {
@@ -3329,7 +3335,7 @@ impl ParamListStandard {
         let mut chainlength = 0;
         let mut max = -1;
         for i in start..stop {
-            let (defnouse, is_act, is_unref, addr_is_spacebase, slotgrp, protected) = {
+            let (defnouse, is_act, is_unref, addr_is_spacebase, slotgrp, protected, forwarded) = {
                 let trial = active.get_trial(i);
                 let addr_sb = trial
                     .get_address()
@@ -3355,12 +3361,17 @@ impl ParamListStandard {
                         trial,
                         &self.entry,
                     ) || crate::p4_calls::kuna_stackaddrargtrial::trial_is_protected(active, trial, &self.entry),
+                    trial.is_forwarded(),
                 )
             };
             if defnouse {
                 continue;
             }
-            if !is_act {
+            if !is_act && forwarded {
+                // (kuna) `passthrough`: a register the caller forwards to a
+                // callee that takes it is a filled slot, not a link of the chain.
+                chainlength = 0;
+            } else if !is_act {
                 if is_unref && active.is_recover_subcall() && addr_is_spacebase {
                     seenchain = true;
                 }

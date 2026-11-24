@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5263,
-    5263
+    5267,
+    5267
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3298,10 +3298,10 @@
     "data:callee signature uses source aggregate",
     "data:calleearity #1: the call site whose guard branches on its argument never renders with an empty list",
     "data:calleearity #2: both call sites of one callee get the same arity",
-    "data:calleearitycut #1: only the two discriminators render an empty argument list",
+    "data:calleearitycut #1: only the whole-file discriminator renders an empty argument list",
     "data:calleearitycut #2: the four arguments the callee's body reads are recovered, bounded by the register the run stops at",
     "data:calleearitycut #3: a callee that reads every argument register leaves the run no boundary, so its site is untouched",
-    "data:calleearitycut #4: `caller3` writes the register the run stops at, so it is carrying a further argument and that site is untouched",
+    "data:calleearitycut #4: `caller3` writes the register the run stops at, so it is carrying a further argument and the list is not truncated before it",
     "data:calleearityfwd #1: the call site that finalizes BEFORE its witness never renders with an empty list",
     "data:calleearityfwd #2: the size the small arm leaves in the argument register is recovered",
     "data:calleearityfwd #3: the site that was already right keeps exactly one argument",
@@ -4436,6 +4436,10 @@
     "data:passthrough #3: off passes nothing; on passes the registers each unstated callee's body reads",
     "data:passthrough #4: a callee whose error path calls a variadic takes only the register its body reads",
     "data:passthrough #4b: and not the five the variadic's register-save prologue stores",
+    "data:passthroughslot #1: no call loses every argument",
+    "data:passthroughslot #2: getopt_long forwards its five parameters and loads r9d and the stack argument",
+    "data:passthroughslot #3: w5 forwards four parameters and loads the fifth",
+    "data:passthroughslot #4: get_int forwards three parameters and passes the address of len",
     "data:persistcalls #10: persistcalls on drops the guard of small's that only passes a value on",
     "data:persistcalls #11: revisit reads u0 again after the call with the option off and on",
     "data:persistcalls #12: revisit compares the two reads with the option off and on",

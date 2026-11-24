@@ -115,6 +115,12 @@
 //! `ActionInputPrototype` then makes the function's input a parameter because
 //! the call now reads it.
 //!
+//! A trial left inactive on the function's own value that the callee takes is
+//! marked forwarded ([`mark_forwarded`]), and `forceInactiveChain` counts it as
+//! a filled slot: three forwarded registers in a row would otherwise cut off the
+//! register the caller loads after them (`getprop(fdt,node,name,&len)` printed
+//! `getprop()`), leaving no list to extend.
+//!
 //! # The tail call's result
 //!
 //! When every live RETURN is reached from a direct call with nothing in between,
@@ -307,8 +313,8 @@ fn self_takes(data: &Funcdata, addr: &Address, size: int4) -> bool {
 /// `None` for the function itself, a callee `protoorder` stated, a body the
 /// decode could not finish (an import, a thunk, a body past the budget), and
 /// an empty run.
-fn body_registers(data: &Funcdata, proto: &crate::fspec::FuncProto, entry: &Address) -> Option<Vec<(Address, int4)>> {
-    body_run(data, proto, entry).map(|(run, _)| run)
+fn body_registers(data: &Funcdata, proto: &crate::fspec::FuncProto, entry: &Address, call: OpId) -> Option<Vec<(Address, int4)>> {
+    body_run(data, proto, entry, call).map(|(run, _)| run)
 }
 
 /// The general-purpose register entries of `model`'s input list, in order.
@@ -333,10 +339,14 @@ pub(crate) fn general_arg_registers(model: &crate::fspec::ProtoModel) -> Vec<(Ad
 /// list: gcc's x86-64 variadic prologue saves `rsi`..`r9` one store each, and
 /// clang's AArch64 one saves `x1`..`x7`, so the run of a variadic callee, and
 /// of every function that reaches one on an error path, is the whole file.
+/// With `full` the whole file is kept: the call it is asked for hands the
+/// callee a stack argument ([`stack_arg_calls`]), which the convention passes
+/// only past a full register file.
 pub(crate) fn taken_run(
     dead: &crate::kuna_calleedeadarg::CalleeEntryDead,
     through: Option<&crate::kuna_calleedeadarg::CalleeEntryDead>,
     regs: &[(Address, int4)],
+    full: bool,
 ) -> Vec<(Address, int4)> {
     let run: Vec<(Address, int4)> = regs
         .iter()
@@ -346,7 +356,7 @@ pub(crate) fn taken_run(
         })
         .cloned()
         .collect();
-    if run.len() == regs.len() {
+    if run.len() == regs.len() && !full {
         return Vec::new();
     }
     run
@@ -357,13 +367,15 @@ fn body_run(
     data: &Funcdata,
     proto: &crate::fspec::FuncProto,
     entry: &Address,
+    call: OpId,
 ) -> Option<(Vec<(Address, int4)>, Option<(Address, int4)>)> {
     if entry == data.get_address() || data.kuna_protoorder_types(entry).is_some() || !proto.has_model() {
         return None;
     }
     let dead = data.kuna_callee_entry_dead(entry).filter(|f| f.is_complete())?;
     let regs = general_arg_registers(proto.model());
-    let run = taken_run(dead, data.kuna_callee_entry_through(entry), &regs);
+    let full = data.kuna_passthrough_stack_arg_calls().contains(&call);
+    let run = taken_run(dead, data.kuna_callee_entry_through(entry), &regs, full);
     let stop = regs.get(run.len()).cloned();
     (!run.is_empty()).then_some((run, stop))
 }
@@ -380,7 +392,7 @@ fn body_run(
 /// argument, and a list cut in front of it would hide it.
 fn body_boundary_loaded(fc: &FuncCallSpecs, data: &Funcdata) -> bool {
     let entry = fc.get_entry_address();
-    let Some((_, Some((baddr, bsize)))) = body_run(data, fc.proto(), entry) else { return false };
+    let Some((_, Some((baddr, bsize)))) = body_run(data, fc.proto(), entry, fc.get_op()) else { return false };
     if data.kuna_callee_entry_dead(entry).is_some_and(|f| f.proves_dead(&baddr, bsize)) {
         return false;
     }
@@ -407,7 +419,7 @@ fn body_boundary_loaded(fc: &FuncCallSpecs, data: &Funcdata) -> bool {
 /// [`body_registers`] run, and the argument is as wide as the body reads it.
 fn body_width(data: &Funcdata, fc: &FuncCallSpecs, addr: &Address, size: int4) -> Option<int4> {
     let entry = fc.get_entry_address();
-    let (_, whole) = body_registers(data, fc.proto(), entry)?.into_iter().find(|(a, _)| a == addr)?;
+    let (_, whole) = body_registers(data, fc.proto(), entry, fc.get_op())?.into_iter().find(|(a, _)| a == addr)?;
     let size = size.min(whole);
     let facts = data.kuna_callee_entry_through(entry).or_else(|| data.kuna_callee_entry_dead(entry))?;
     let width = facts.live_input_width(addr, size).unwrap_or(size);
@@ -418,8 +430,8 @@ fn body_width(data: &Funcdata, fc: &FuncCallSpecs, addr: &Address, size: int4) -
 /// statement, or, for a call of the function to itself, the argument registers
 /// of its model up to the first its own body does not read; for a callee that
 /// stated nothing, its [`body_registers`] under `proto`.
-fn stated_registers(data: &Funcdata, proto: &crate::fspec::FuncProto, entry: &Address) -> Option<Vec<Address>> {
-    if let Some(run) = body_registers(data, proto, entry) {
+fn stated_registers(data: &Funcdata, proto: &crate::fspec::FuncProto, entry: &Address, call: OpId) -> Option<Vec<Address>> {
+    if let Some(run) = body_registers(data, proto, entry, call) {
         return Some(run.into_iter().map(|(a, _)| a).collect());
     }
     if entry == data.get_address() {
@@ -506,6 +518,112 @@ pub(crate) fn set_up_as_variadic(data: &Funcdata, idx: int4) -> bool {
         cur = data.op_previous_op(op);
     }
     false
+}
+
+/// Does the caller store into the first stack-argument slot of the direct
+/// call `op`, between the call and the last call or block start before it?
+///
+/// Asked before heritage, of the raw p-code: the stack pointer's changes are
+/// followed back from the call, and a `STORE` through the stack pointer, or a
+/// temporary computed from it by a constant, that lands where the callee's
+/// convention puts its first stack parameter (`push $0`, clang's `mov
+/// $0,(%rsp)` after an aligning `push %rax`) is the caller passing an argument
+/// past the argument registers. A store of a register as it stands
+/// ([`holds_register`]) is not: `push %rbx` in the prologue lands on that slot
+/// too.
+fn stores_first_stack_arg(data: &Funcdata, op: OpId) -> bool {
+    let Some(idx) = data.get_call_specs_index(op) else { return false };
+    let proto = data.get_call_specs(idx).proto();
+    if !proto.has_model() || proto.is_dotdotdot() || data.obank().get(op).is_none_or(|o| o.code() != OpCode::CPUI_CALL) {
+        return false;
+    }
+    let extrapop = proto.get_extra_pop();
+    if extrapop == crate::fspec::EXTRAPOP_UNKNOWN {
+        return false;
+    }
+    let Some(base) = proto.model().input().get_entry().iter().find_map(|e| {
+        (e.get_space().get_type() == spacetype::IPTR_SPACEBASE).then(|| e.get_base() as i64)
+    }) else {
+        return false;
+    };
+    let Some(sp) = crate::p4_calls::kuna_spillargtrial::stack_pointer_storage(data) else { return false };
+    let is_sp = |v: &Varnode| {
+        sp.space.as_ref().is_some_and(|s| v.get_space().get_index() == s.get_index())
+            && v.get_offset() == sp.offset
+            && v.get_size() as u32 == sp.size
+    };
+    let slot = base - extrapop as i64;
+    let mut delta: i64 = 0;
+    let call_at = data.obank().get(op).map(|o| o.get_addr().clone());
+    let mut cur = data.op_previous_op(op);
+    let mut budget = 64;
+    while let Some(prev) = cur {
+        budget -= 1;
+        let Some(o) = data.obank().get(prev) else { return false };
+        if call_at.as_ref() == Some(o.get_addr()) {
+            cur = data.op_previous_op(prev);
+            continue;
+        }
+        if budget == 0
+            || matches!(
+                o.code(),
+                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER | OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH | OpCode::CPUI_BRANCHIND
+            )
+        {
+            return false;
+        }
+        if o.code() == OpCode::CPUI_STORE {
+            let at = o.get_in(1).and_then(|v| data.vbank().get(v)).and_then(|a| {
+                if is_sp(a) {
+                    return Some(0);
+                }
+                let d = data.obank().get(a.get_def()?)?;
+                d.get_in(0).and_then(|v| data.vbank().get(v)).filter(|v| is_sp(v))?;
+                match d.code() {
+                    OpCode::CPUI_COPY => Some(0),
+                    OpCode::CPUI_INT_ADD => {
+                        let c = d.get_in(1).and_then(|v| data.vbank().get(v)).filter(|v| v.is_constant())?;
+                        Some(kuna_base::address::sign_extend_sized(c.get_offset(), c.get_size(), 8) as i64)
+                    }
+                    _ => None,
+                }
+            });
+            if at.is_some_and(|off| off + delta == slot) {
+                return !holds_register(data, o.get_in(2));
+            }
+        }
+        if o.get_out().and_then(|v| data.vbank().get(v)).is_some_and(is_sp) {
+            let step = (o.code() == OpCode::CPUI_INT_ADD || o.code() == OpCode::CPUI_INT_SUB)
+                .then(|| {
+                    o.get_in(0).and_then(|v| data.vbank().get(v)).filter(|v| is_sp(v))?;
+                    o.get_in(1).and_then(|v| data.vbank().get(v)).filter(|v| v.is_constant()).map(|c| kuna_base::address::sign_extend_sized(c.get_offset(), c.get_size(), 8) as i64)
+                })
+                .flatten();
+            match step {
+                Some(c) if o.code() == OpCode::CPUI_INT_ADD => delta -= c,
+                Some(c) => delta += c,
+                None => return false,
+            }
+        }
+        cur = data.op_previous_op(prev);
+    }
+    false
+}
+
+/// Is `vn` a register's value as it stands, directly or through the COPY
+/// into a temporary that `push %rbx` stores? A pushed register is a save of a
+/// callee-saved register or an alignment pad, no argument the store proves.
+fn holds_register(data: &Funcdata, vn: Option<VarnodeId>) -> bool {
+    let Some(v) = vn.and_then(|v| data.vbank().get(v)) else { return true };
+    if is_register(v.get_addr()) {
+        return true;
+    }
+    v.get_def()
+        .and_then(|d| data.obank().get(d))
+        .filter(|d| d.code() == OpCode::CPUI_COPY)
+        .and_then(|d| d.get_in(0))
+        .and_then(|i| data.vbank().get(i))
+        .is_some_and(|i| is_register(i.get_addr()))
 }
 
 /// Is the function itself variadic -- does its entry block read a register
@@ -800,6 +918,11 @@ fn claim_untouched_registers_mode(data: &mut Funcdata, pass: ClaimPass) {
             .map(|i| data.get_call_specs(i).get_op())
             .collect();
         data.kuna_set_passthrough_vararg_calls(vararg);
+        let stack: Vec<OpId> = (0..data.num_calls())
+            .map(|i| data.get_call_specs(i).get_op())
+            .filter(|&op| stores_first_stack_arg(data, op))
+            .collect();
+        data.kuna_set_passthrough_stack_arg_calls(stack);
     }
     let first = first_calls(data);
     let mut claims = if pass == ClaimPass::Initial {
@@ -825,7 +948,7 @@ fn claim_untouched_registers_mode(data: &mut Funcdata, pass: ClaimPass) {
         let entry = data.get_call_specs(idx).get_entry_address().clone();
         let stated: Vec<(Address, int4)> = match data.kuna_protoorder_types(&entry) {
             Some(s) => s.inputs.iter().map(|(a, sz, _)| (a.clone(), *sz)).collect(),
-            None => match body_registers(data, data.get_call_specs(idx).proto(), &entry) {
+            None => match body_registers(data, data.get_call_specs(idx).proto(), &entry, op) {
                 Some(run) => run,
                 None => continue,
             },
@@ -1552,14 +1675,7 @@ pub fn capture(fc: &mut FuncCallSpecs, data: &Funcdata) -> Option<PendingPassThr
             retire.push(i);
         }
         let Some(vn) = data.obank().get(op).and_then(|o| o.get_in(t.get_slot())) else { continue };
-        let own_input = data
-            .vbank()
-            .get(vn)
-            .map(|v| v.is_input() && !v.is_written() && *v.get_addr() == addr && v.get_size() == size)
-            .unwrap_or(false)
-            || forwarded_own_input(data, vn, &addr, size)
-            || forwarded_call_result(data, op, vn, &addr, size);
-        if !own_input && !crate::kuna_armfloatargs::is_forwarded_input(data, vn, &addr, size) && !reassembled(data, vn, &addr, size) {
+        if !carries_own_value(data, op, vn, &addr, size) {
             continue;
         }
         if let Some(width) = stated_width(data, fc, &addr, size) {
@@ -1571,6 +1687,44 @@ pub fn capture(fc: &mut FuncCallSpecs, data: &Funcdata) -> Option<PendingPassThr
     }
     let body_blocked = !candidates.is_empty() && body_boundary_loaded(fc, data);
     (!candidates.is_empty()).then_some(PendingPassThrough { op, candidates, body_blocked })
+}
+
+/// Is `vn`, read by the call `op` at `[addr, addr+size)`, the function's own
+/// incoming value there: its input Varnode, carried past calls that leave it
+/// alone, an earlier call's result it hands on, or a float or integer register
+/// reassembled from its pieces?
+fn carries_own_value(data: &Funcdata, op: OpId, vn: VarnodeId, addr: &Address, size: int4) -> bool {
+    data.vbank()
+        .get(vn)
+        .is_some_and(|v| v.is_input() && !v.is_written() && *v.get_addr() == *addr && v.get_size() == size)
+        || forwarded_own_input(data, vn, addr, size)
+        || forwarded_call_result(data, op, vn, addr, size)
+        || crate::kuna_armfloatargs::is_forwarded_input(data, vn, addr, size)
+        || reassembled(data, vn, addr, size)
+}
+
+/// Mark trial `i` of call spec `idx`, scored inactive, as forwarded when the
+/// call reads the function's own value there as `vn` and the callee takes it
+/// ([`stated_width`]).
+///
+/// Such a trial stays inactive, but it fills its slot:
+/// `forceInactiveChain` does not count it as a link of an inactive chain, so a
+/// register or stack argument the caller loads after three or more forwarded
+/// ones (`internal(argc,argv,opts,longopts,index,0,0)`,
+/// `getprop(fdt,node,name,&len)`) is not cut off, and the hole-filling that
+/// follows makes the forwarded registers arguments in front of it.
+pub fn mark_forwarded(data: &mut Funcdata, idx: int4, i: int4, vn: VarnodeId) {
+    let forwarded = {
+        let fc = data.get_call_specs(idx);
+        let t = fc.active_input().get_trial(i);
+        !t.is_active()
+            && !t.is_definitely_not_used()
+            && carries_own_value(data, fc.get_op(), vn, t.get_address(), t.get_size())
+            && stated_width(data, fc, t.get_address(), t.get_size()).is_some()
+    };
+    if forwarded {
+        data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).set_forwarded();
+    }
 }
 
 /// Is `vn` the function's own incoming integer register `[addr, addr+size)`
@@ -1610,8 +1764,8 @@ fn extend_one(data: &mut Funcdata, p: &PendingPassThrough) -> bool {
         return false;
     }
     let proto = data.get_call_specs(idx).proto();
-    let from_body = body_registers(data, proto, &entry).is_some();
-    let Some(stated) = stated_registers(data, proto, &entry) else { return false };
+    let from_body = body_registers(data, proto, &entry, p.op).is_some();
+    let Some(stated) = stated_registers(data, proto, &entry, p.op) else { return false };
     let have: Vec<Address> = current.iter().map(|(a, _)| a.clone()).collect();
     let offered: Vec<Address> = p.candidates.iter().map(|(a, _, _)| a.clone()).collect();
     let added: Vec<(Address, int4, VarnodeId)> =
