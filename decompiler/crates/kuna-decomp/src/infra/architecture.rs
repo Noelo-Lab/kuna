@@ -1146,6 +1146,10 @@ pub struct Architecture {
     /// (kuna) `returndup calls`: also split a block that ends in one call and a
     /// return once per predecessor when the call's arguments are merged values.
     pub duplicate_call_returns: bool,
+    /// (kuna) `returndup auto`: in a function `kuna_unoptimized` flags,
+    /// duplicate exactly the return statements the raw block graph records
+    /// ([`crate::p8_structure::kuna_o0returns`]).
+    pub returndup_record: bool,
     /// (kuna) `rettriangle`: decline a `duplicate_shared_returns` split whose
     /// shared RETURN block is the join of a one-block `if`.  Read by
     /// [`crate::p8_structure::kuna_rettriangle::is_triangle_join`].
@@ -2613,6 +2617,7 @@ impl Architecture {
             param_copy_hoist: false,
             duplicate_shared_returns: false,
             duplicate_call_returns: false,
+            returndup_record: false, // (kuna) option returndup auto; reset_defaults sets the shipped default
             returndup_triangle: false, // (kuna) option rettriangle; reset_defaults sets the shipped default
             tail_form: None, // (kuna) option tailform; reset_defaults sets the shipped default
             early_return: false,
@@ -2950,6 +2955,7 @@ impl Architecture {
         self.returndup_triangle = false; // (kuna) option rettriangle default-off: decbench sample O0 -163 GED / +56 perfect, O2 +60 GED / +1 perfect; on in the aggressive preset
         self.duplicate_shared_returns = true; // (kuna) DIV-54 default-on, superseding the DIV-18 revert (angr SAILR gotoless ReturnDuplicatorHigh). The -976 GED-perfect regression that reverted it was measured before #137 added the const-return gate (`returndup_is_const_ret`); re-ablated on 52,862 decbench functions the selective pass is +417 GED-perfect / -7,756 aggregate GED, net-positive in every one of nine tested partitions. Per-test opt-out (`option returndup off`) on the datatests it changes keeps the corpus byte-identical.
         self.duplicate_call_returns = false; // (kuna) `returndup calls` is opt-in: the merged call is often the source's own ternary argument
+        self.returndup_record = true; // (kuna) `returndup auto` default: in unoptimized functions the recorded return statements decide the splits
         self.early_return = true; // (kuna) DIV-23 default-on (angr SAILR ReturnDuplicatorHigh PER-EDGE const-guard early-return hoisting: peel only the CONSTANT arm of a mixed return phi). The const-only narrowing of returndup that returndup's whole-block gate cannot reach; unlike broad returndup (DIV-18, -976 regression), the decbench ablation measured this NET-POSITIVE (+47 perfect matches, -576 summed GED, 158:54 improved:regressed across 508 sailr binaries) because it only recovers genuine source early-return guards. Per-test opt-out (`option earlyreturn off`) on the datatests it changes keeps the corpus byte-identical.
         self.switch_return = true; // (kuna) DIV-25 default-on. The continuation of earlyreturn (DIV-23) to WIDE multi-way switch-phi returns (`switch { case: v=K; break; } return v` above earlyreturn's 16-in-edge cap -> per-case `return K`); same per-edge const-peel machinery so it inherits earlyreturn's safety (peels only CONSTANT arms, so it cannot cause returndup's variable-return regression). The decbench ablation of the wide-switch delta on top of default earlyreturn-on measured NET-POSITIVE (+2 perfect matches, -107 summed GED, 3:0 improved:regressed across 17 sailr binaries, zero regressions). Per-test opt-out (`option switchreturn off`) on the datatests it changes keeps the corpus byte-identical.
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
@@ -3823,6 +3829,7 @@ impl Architecture {
         ctx.param_copy_hoist = self.param_copy_hoist; // paramcopyhoist (parameter copy-shadow -> entry block)
         ctx.duplicate_shared_returns = self.duplicate_shared_returns; // returndup
         ctx.duplicate_call_returns = self.duplicate_call_returns; // returndup calls
+        ctx.returndup_record = self.returndup_record; // returndup auto
         ctx.returndup_triangle = self.returndup_triangle; // rettriangle (one-block-if join)
         ctx.tail_form = self.tail_form.map(|p| crate::p8_structure::kuna_tailform::TailFormPolicy { elide_void: self.voidtailreturn, loop_test: self.loop_test, ..p }); // tailform
         ctx.early_return = self.early_return; // earlyreturn

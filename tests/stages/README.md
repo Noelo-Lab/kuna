@@ -7,6 +7,13 @@ reach 32; an unbounded count keeps the `n < 32u ? x << n : 0` guard. `never`
 drops that guard too, `always` restores all three, and with `armconstshift on`
 a guard-free shift of a signed literal keeps its unsigned conversion.
 
+`kuna-returndup-auto.xml` checks option `returndup` (default `auto`) on gcc -O0
+x86-64: a guard clause `if (!c) return 0;` keeps its own return, a body that
+shares the epilogue's `return 3` prints one return, a void `if (c) return;`
+keeps its bare return and `if (c) return a; return b;` returns each
+parameter. Under `option returndup on` both guard clauses print wrapped by the
+size rule and the two parameter returns merge into one variable.
+
 `kuna-guardauto.xml` checks option `guardarm` (default `auto`) on two x86-64
 functions. In a gcc -O0 `unget`, whose parameters live in frame slots, the
 default prints the source's flat guard `if (c == -1 || ...) return -1;`, and
@@ -350,6 +357,8 @@ writeup, not here.
 | `gh1627-x86-senduipi-gatherpf.xml` | [Kuna #1627](https://github.com/Noelo-Lab/kuna/issues/1627) | S1 decode-table / S2 p-code lift (x86 spec-fix, no option) | `F3 0F C7 /6` reg-form is `SENDUIPI r64` (was RDRAND), with `UIRET`/`TESTUI`/`CLUI`/`STUI` in `uintr.sinc`; RIP-relative `0F 18 /7`,`/6` are `PREFETCHIT0/1`; `VGATHERPF*` use the VSIB operand tables so the index is a ZMM/YMM register and the user-op takes an address |
 
 | `gh1628-x86-vmx-decode-flags.xml` | [Kuna #1628](https://github.com/Noelo-Lab/kuna/issues/1628) | S1 decode-table / S2 p-code lift (x86 spec-fix, no option) | `VMREAD`/`VMWRITE` decode without REX.W in 64-bit mode; every VMX user-op returns its status (0/1/2) and `vmxflags` sets ZF/CF from it, so `setna` after `vmlaunch` reads the VMX outcome; `VMPTRST` stores the VMCS pointer |
+
+| `kuna-rex-before-prefix.xml` | Authored x86-64 prefix order | S1 decode-table (x86 spec-fix, no option) | a REX prefix that a legacy prefix follows is ignored, as the CPU ignores it (`f3 48 67 ab` is `rep stos` of dwords with a 32-bit address; `48 67 f3 48 a5` keeps the last REX.W), instead of the legacy prefix decoding as a bad opcode |
 
 | `gh1674-subpiece-shadow-wide-const.xml` | [Kuna #1674](https://github.com/Noelo-Lab/kuna/issues/1674) | P6 merge (cover intersection, partial copy shadow; no option) | a constant truncated by 8 or more bytes reads 0 instead of shifting a 64-bit offset by 64 or more bits, so the function decompiles in a build with overflow checks |
 
@@ -754,3 +763,21 @@ fixed parameter lists that save `r3` as gcc's alignment pad (`push {r3, lr}`):
 a newlib-shaped copy keeps the size the caller also multiplies with, and the
 `data` and `len` a caller passes on untouched. A callee that reads only `r0`
 and `r1` still gets two arguments.
+
+`gh1922-pushpad-caller-readarg-thumb.xml` checks the same alignment pad with
+no declaration: a Thumb caller whose `push {r3, r4, r5, r6, r7, lr}` stores
+`r3` beneath `lr` keeps the length it also stores, a callee that reads only
+`r0` and `r1` still gets two arguments, and a caller that saves `r0`-`r3` in
+a push of their own (a variadic register save) still loses it, as does one
+that pads with `push {r3, ..., lr}` and saves `r1`-`r3` with `stm` (clang
+-Oz).
+
+`kuna-retvalue.xml` checks that a function its callers read a result from
+returns it though it also stores or loads through it, and that zero stores into
+globals do not make a returned zero look like a `-fzero-call-used-regs`
+epilogue. gcc -O2's `make_cell` stores through what `malloc` returned,
+`skip_blanks` loads through the pointer it advances, and `lookup` walks a list
+through its cursor, each read by `main`: they print their return, where they
+printed `void`. `reset` (`movl $0,gi; xor %eax,%eax; movl $0,gj; ret`) returns
+its zero. `push_cell`, whose result `main` ignores, stays `void`. A strict fix
+with one pass.

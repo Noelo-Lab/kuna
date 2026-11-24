@@ -1655,6 +1655,80 @@ default and with the option on, and
 -O0/-O2 and clang -O0 builds beside the source and checks each function
 returns and calls what the source does.
 
+### returndup auto — the returns an unoptimized function was written with
+
+`returndup`, `earlyreturn`, `rettriangle` and `tailform` choose where returns go
+by rules, because in optimized code the binary does not record the source's
+return statements. Unoptimized code does. An unoptimizing compiler gives a
+function one epilogue and compiles every `return` into code of its own: the
+value is put in the return register and control jumps to the epilogue or falls
+into it. `if (c) { S; } return K;` therefore has one block that sets `K`, the
+epilogue itself, reached from the condition and from `S`; `if (!c) return K;
+S; return K;` has two, each ending its own path; and `v = K; if (c) { S;
+v = K2; } return v;` loads the frame slot once in the epilogue. Simplification
+erases the difference: the value-setting blocks become empty and are removed,
+and every form ends as one RETURN block with a phi over its predecessors.
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_o0returns.rs (record)`
+reads the raw graph at the first heritage pass, in a function the detector of
+chapter 03 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_unoptimized.rs
+(is_unoptimized)`) calls unoptimized and whose only RETURN is reached from two
+to 64 edges. The join is the RETURN's block, or the stack-protector check in
+front of it (a two-way block whose other successor is a dead end that makes a
+call). Each in-edge of the join belongs to a statement:
+
+- a predecessor that only computes a value on its way to the join (no store,
+  call or decision) is one statement for every edge that enters it, so
+  `if (a || b) return 1;` is one return reached twice;
+- in a function that returns a value, every other predecessor ends in a return
+  of its own, unless the join computes the returned register itself (the
+  `mov eax, K` or frame load in front of `leave`), in which case all its
+  in-edges share that one statement;
+- in a void function `return;` is a `nop` (and a jump when it is not last),
+  and kuna's flow gives a `nop` no p-code. A jump-only predecessor is a
+  `return;` only when a branch into it lands on the `nop` in front of it; a
+  bare jump is a `break` or `goto`. Every other path is told apart by the
+  instruction it lands on: the target of a branch, or for a fall-through the
+  first branch target between its last instruction and the join, and a run of
+  landings with no p-code between them counts as the last one. Paths that land
+  on the same address share a statement.
+
+The record is carried by the edges themselves: bits 16–30 of each edge label
+hold a tag naming the statement (separately for the valued and the void
+reading, since the return type is not known yet), set on the join's in-edges
+and on the in-edges of value-only predecessors. When a block is removed its
+in-edges are re-pointed at its successor with their labels
+(`BlockGraph::remove_from_flow`), so the tags reach the RETURN block's in-edges
+after simplification; edge flags are only ever cleared by mask. Which reading
+applies, and whether the join computed the returned register, is decided when
+`returndup` runs, against the recovered output storage.
+
+At `returndup` time `kuna_o0returns.rs (split)` groups the RETURN block's
+in-edges by tag and gives each group its own copy of the epilogue with
+`node_split` (a group of several edges is moved onto its copy only when the
+block has no phi), the largest group keeping the original; a group's value may
+be a constant or a variable. A RETURN block still behind the stack-protector
+join, reached by one untagged edge from it, is spliced into the join first
+(`kuna_o0returns.rs (joined)`), and an epilogue may be split when it holds
+arithmetic the simplifier hoisted out of the returns (`p + MULTIEQUAL(i, i +
+2)`), as long as it reads no memory and makes no call (`kuna_o0returns.rs
+(pure_epilogue)`). When every RETURN block of the function is one
+recorded statement the function is *decided*, and the rule-based passes stand
+down: `returndup`'s const gate, short-circuit gate and `rettriangle`, and the
+`earlyreturn`/`switchreturn` peels, skip recorded blocks (`recorded`), and
+`tailform` leaves the function's tails as the record placed them, except that
+`if (c) { S; return; } return;` is re-spelled as the guard `if (!c) return; S;`
+— void returns are elided, and without the re-spelling the recorded explicit
+`return;` would vanish. A block whose in-edges lost their tags (a later pass
+made a new edge) is not recorded and the rules apply to it as before.
+
+Two source forms are the same code at `-O0` and the record picks one:
+`return c ? a : b;` compiles exactly like `if (c) return a; return b;` and is
+printed as the second (merging non-constant returns instead was measured worse,
+195 functions lost against 9 gained), and a `switch` whose `default: break;`
+is the last statement emits the same `nop` as a `return;`. Optimized functions
+are untouched; `option returndup on` restores the rules everywhere.
+
 ### tailform — the form of a function-tail `if`
 
 `if (c) { S } return K;` and `if (!c) return K; S; return K;` are the same
@@ -1727,7 +1801,11 @@ and gotos, never a lone brace. The decision is one function,
 `kuna_tailform.rs (decide)`, over a `TailSite` (current form, void or valued,
 lines), so a different policy plugs in there; `<void>,<value>` sets separate
 thresholds for the two kinds, and `wrap` and `guard` force one form at every
-site.
+site. In a function whose returns `returndup auto` placed from the binary
+(`kuna_o0returns.rs (decided)`, see the previous section) no size or model
+decision is made: wrap, guard and the valued merge leave the tree alone, and a
+last `if` whose arm ends in its own return before the final bare return is
+printed as a guard.
 
 `option tailform model` decides each site with saved weights instead of the
 size test. The site's features

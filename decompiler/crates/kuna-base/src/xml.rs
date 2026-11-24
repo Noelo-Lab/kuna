@@ -2316,12 +2316,16 @@ mod tests {
         // and kuna-stated-jump-placement / stated destinations a segment, a narrow offset or a DOS load cannot label
         // and kuna-stated-jump-owners / stated destinations stay in the declared function that holds the jump
         // and kuna-armshiftguard / an ARM register LSL whose count cannot reach 32 prints no range guard
+        // and gh1922-pushpad-caller-readarg-thumb / r3 pushed beneath lr is no va-save
+        // and kuna-retvalue / a result its callers read is returned though stored or loaded through
+        // and kuna-rex-before-prefix / an x86-64 REX prefix that a legacy prefix follows is ignored
+        // and kuna-returndup-auto / an unoptimized function keeps the returns its binary records
         // and kuna-pushan / a VM-protected entry stub devirtualized (option pushan)
         // and kuna-pushan-sound / a devirtualized body says nothing false about its program
         // and kuna-pushan-interp / an in-function bytecode interpreter devirtualized (option pushan)
         // and kuna-spillptr-loadguard / a LOAD through a spilled stack pointer is guarded
         // and kuna-piececover / a byte saved across a wider write of its slot keeps its old value
-        assert_eq!(count, 910, "corpus file count drifted");
+        assert_eq!(count, 914, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

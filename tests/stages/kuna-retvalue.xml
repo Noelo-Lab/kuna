@@ -1,0 +1,57 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A function whose callers read its return register returns the value there
+    even when it also loads or stores through it, and a function that zeroes
+    eax after zeroing globals returns that zero (kuna_voidret.rs returned_use,
+    kuna_zerocallregs.rs clearing_instruction). Strict fix, one pass.
+
+    The script loads retvalue_x86_64_gcc_O2 (gcc -O2, source retvalue.c beside
+    it). make_cell stores through the pointer malloc returned and returns it,
+    skip_blanks loads through the pointer it advances and returns it, lookup
+    walks a list through the pointer it returns, and main reads rax after each
+    call. Upstream's onlyOpUse refused each value for the load or store, and
+    the forced scoring kept that refusal, so all three printed void beside
+    callers that use the result. reset is `movl $0,gi; xor %eax,%eax; movl
+    $0,gj; ret`: the zero stores into globals were taken for registers a
+    -fzero-call-used-regs epilogue clears, so the returned zero was dropped.
+    push_cell is make_cell's shape, but main ignores its result, so it stays
+    void.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/retvalue_x86_64_gcc_O2</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load function make_cell</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function skip_blanks</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function lookup</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function reset</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function push_cell</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="RETVALUE #1: a pointer stored through and read by its caller never prints void" min="0" max="0">void make_cell\(</stringmatch>
+<stringmatch name="RETVALUE #2: the stored-through pointer is returned" min="1" max="1">return p;</stringmatch>
+<stringmatch name="RETVALUE #3: a pointer loaded through and read by its caller never prints void" min="0" max="0">void skip_blanks\(</stringmatch>
+<stringmatch name="RETVALUE #4: the advanced pointer is returned" min="1" max="1">return a0;</stringmatch>
+<stringmatch name="RETVALUE #5: a list walk's cursor read by its caller never prints void" min="0" max="0">void lookup\(</stringmatch>
+<stringmatch name="RETVALUE #6: the cursor is returned where the key matches" min="1" max="1">return v1;</stringmatch>
+<stringmatch name="RETVALUE #7: and the null that ends the list is returned" min="1" max="1">return NULL;</stringmatch>
+<stringmatch name="RETVALUE #8: a zero in eax after zero stores into globals is not an epilogue clear" min="0" max="0">void reset\(</stringmatch>
+<stringmatch name="RETVALUE #9: the zero is returned" min="1" max="1">return 0;</stringmatch>
+<stringmatch name="RETVALUE #10: the same shape whose caller ignores the register stays void" min="1" max="1">void push_cell\(</stringmatch>
+</decompilertest>

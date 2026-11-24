@@ -114,7 +114,7 @@ fn run(args: &[&str], extra: &[&str]) -> String {
 fn kuna(args: &[&str]) -> String {
     let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
         .args(args)
-        .args(["--sleighpath"])
+        .args(["--option", "returndup", "on", "--sleighpath"])
         .arg(common::repo_root().join("specs"))
         .output()
         .expect("run kuna");
