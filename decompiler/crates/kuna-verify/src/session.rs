@@ -208,13 +208,18 @@ fn non_x86_64(path: &str) -> bool {
 
 /// The entry address of every function with code in an object file.
 pub fn function_entries(path: &str, options: &[(String, String)], spec_roots: &[String]) -> Result<Vec<u64>, String> {
+    Ok(function_extents(path, options, spec_roots)?.into_iter().map(|(at, _)| at).collect())
+}
+
+/// [`function_entries`] with each function's byte extent, 0 where unknown.
+pub fn function_extents(path: &str, options: &[(String, String)], spec_roots: &[String]) -> Result<Vec<(u64, u64)>, String> {
     let (console, _) = run(load_lines(path, options), None, spec_roots, false, None, |_, _| {})?;
     let prog = dcp(&console).and_then(|d| d.conf.as_ref()).ok_or("no program loaded")?;
     Ok(prog
         .function_entries_executable()
         .into_iter()
         .filter(|e| prog.entry_bytes_mapped(&e.addr))
-        .map(|e| e.addr.get_offset())
+        .map(|e| (e.addr.get_offset(), e.size))
         .collect())
 }
 

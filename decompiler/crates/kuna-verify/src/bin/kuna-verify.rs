@@ -184,10 +184,12 @@ fn run_check(a: &Args) -> Result<ExitCode, String> {
         return Err(USAGE.to_string());
     };
     let roots = spec_roots(a.sleighpath.as_deref());
-    let functions: Vec<String> = if a.all {
-        session::function_entries(binary, &a.options, &roots)?.into_iter().map(|e| format!("{e:#x}")).collect()
+    let (functions, chunks) = if a.all {
+        let sized: Vec<(String, u64)> =
+            session::function_extents(binary, &a.options, &roots)?.into_iter().map(|(at, n)| (format!("{at:#x}"), n)).collect();
+        (sized.iter().map(|(f, _)| f.clone()).collect::<Vec<_>>(), chunks_by_size(&sized))
     } else {
-        named.to_vec()
+        (named.to_vec(), named.chunks(CHUNK).map(<[String]>::to_vec).collect())
     };
     if functions.is_empty() {
         return Err(USAGE.to_string());
@@ -215,7 +217,7 @@ fn run_check(a: &Args) -> Result<ExitCode, String> {
         )?;
         rows
     } else {
-        run_chunks(a, binary, &functions, jobs)?
+        run_chunks(a, binary, chunks, jobs)?
     };
     if a.all {
         let wall = (functions.len() > CHUNK && jobs > 1).then(|| (0, started.elapsed().as_secs_f64()));
@@ -248,14 +250,40 @@ fn chunk_flags(a: &Args) -> Vec<String> {
 
 /// Check `functions` in chunks across `jobs` worker processes, printing each
 /// row as it arrives.
-fn run_chunks(a: &Args, binary: &str, functions: &[String], jobs: usize) -> Result<Vec<Row>, String> {
+/// Chunks whose functions' total size is about the same, largest first: a
+/// big function gets a worker of its own early instead of holding up the end
+/// of the run. A chunk still holds at most [`CHUNK`] functions, and the
+/// chunks depend only on the functions, never on `--jobs`.
+fn chunks_by_size(functions: &[(String, u64)]) -> Vec<Vec<String>> {
+    let mut sorted: Vec<&(String, u64)> = functions.iter().collect();
+    sorted.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let total: u64 = sorted.iter().map(|f| f.1.max(1)).sum();
+    let target = total.div_ceil(functions.len().div_ceil(CHUNK).max(1) as u64);
+    let mut out = Vec::new();
+    let (mut cur, mut acc) = (Vec::new(), 0u64);
+    for (f, n) in sorted {
+        cur.push(f.clone());
+        acc += (*n).max(1);
+        if acc >= target || cur.len() == CHUNK {
+            out.push(std::mem::take(&mut cur));
+            acc = 0;
+        }
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
+fn run_chunks(a: &Args, binary: &str, chunks: Vec<Vec<String>>, jobs: usize) -> Result<Vec<Row>, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let flags = chunk_flags(a);
-    let queue = std::sync::Mutex::new(functions.chunks(CHUNK).map(<[String]>::to_vec).collect::<std::collections::VecDeque<_>>());
+    let workers = jobs.min(chunks.len());
+    let queue = std::sync::Mutex::new(chunks.into_iter().collect::<std::collections::VecDeque<_>>());
     let rows = std::sync::Mutex::new(Vec::new());
     let fatal = std::sync::Mutex::new(None);
     std::thread::scope(|scope| {
-        for _ in 0..jobs.min(functions.len().div_ceil(CHUNK)) {
+        for _ in 0..workers {
             scope.spawn(|| loop {
                 let Some(chunk) = queue.lock().unwrap_or_else(|e| e.into_inner()).pop_front() else { break };
                 let got = run_chunk(&exe, &flags, binary, &chunk, a.fn_seconds, |row| {
@@ -783,12 +811,14 @@ fn run_mutate(a: &Args) -> Result<ExitCode, String> {
         }
         tasks.extend(files.iter().map(|f| vec![f.to_string_lossy().into_owned()]));
     } else {
-        let functions: Vec<String> = if a.all {
-            session::function_entries(first, &a.options, &roots)?.iter().map(|e| format!("{e:#x}")).collect()
+        let chunks: Vec<Vec<String>> = if a.all {
+            let sized: Vec<(String, u64)> =
+                session::function_extents(first, &a.options, &roots)?.into_iter().map(|(at, n)| (format!("{at:#x}"), n)).collect();
+            chunks_by_size(&sized)
         } else {
-            a.positional[1..].to_vec()
+            a.positional[1..].chunks(CHUNK).map(<[String]>::to_vec).collect()
         };
-        tasks.extend(functions.chunks(CHUNK).map(|c| std::iter::once(first.clone()).chain(c.iter().cloned()).collect()));
+        tasks.extend(chunks.into_iter().map(|c| std::iter::once(first.clone()).chain(c).collect()));
     }
     let rows: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
     let print = |v: Value| {
