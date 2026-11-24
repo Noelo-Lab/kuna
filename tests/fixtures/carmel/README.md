@@ -39,3 +39,19 @@ DATA pointers. These observations are not a full TASKING compiler model.
 The [conditional-delay emission test](../../../decompiler/crates/kuna-cli/tests/carmel_emission.rs)
 embeds its CODE bytes and expected returns. On 64-bit Linux with `cc`, it
 compiles and executes Kuna’s generated C at `-O0` and `-O2`.
+
+## TASKING file formats
+
+`containers/caller-object.ieee695` is the `-O2` output for
+[`containers/caller.c`](containers/caller.c); `_addone` is unresolved.
+`containers/caller-linked.ieee695` links it with
+[`containers/addone.c`](containers/addone.c) without locating the result.
+`containers/issues-absolute.{ieee695,tiof}` locate [`issues.asm`](issues.asm)
+with a separate CLIW template.
+
+`containers/sparse.{ieee695,srec,ihex}` locate the `-O2` output for
+[`caller.c`](caller.c), [`scalar.c`](scalar.c), and [`dsp.c`](dsp.c).
+Their CODE sections begin at words `0x20`, `0xfffc`, and `0x10100`;
+the entry is `0x10100`. `containers/ram-copy.{ieee695,tiof}` also link
+[`containers/ram.c`](containers/ram.c); the six initializer bytes start
+at CODE word `0x10162` and are not executable.

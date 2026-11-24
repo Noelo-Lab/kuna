@@ -271,6 +271,20 @@ object takes `eBPF:LE:64:default` or `eBPF:BE:64:default` by its byte order, the
 same two ids the vendored `eBPF.opinion` declares, so a `clang --target=bpf -c`
 program loads without `--target`.
 
+**TASKING Carmel containers.** The Carmel profile
+(`decompiler/crates/kuna-console/src/engine/kuna_carmel_object/ieee.rs (parse)`)
+maps indexed IEEE-695/TIOF modules by memory bank. Relocatable modules get a
+checked layout in each bank before applying supported W5 relocation records.
+An unresolved CODE reference can name an unmapped function; unresolved DATA
+references are not assigned fabricated storage. Absolute modules keep their
+located addresses. Physical CODE ROM copies of initializers are read-only
+data, not instruction extents.
+
+Motorola S-record and Intel HEX locator exports carry addresses but omit the
+Carmel bank and execution map. An explicit instruction-only CODE assertion
+allows their addresses to be converted from three-byte words without filling
+gaps. This profile does not infer CLIW, DATA or ROM copies from text records.
+
 (kuna) ELF target selection also reads declared instruction and ABI requirements
 (`decompiler/crates/kuna-analysis/src/loader/kuna_mipstarget.rs`). MIPS ELF32 can
 carry 64-bit instructions with 32-bit pointers: the ISA flags select the register

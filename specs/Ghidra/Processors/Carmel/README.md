@@ -29,6 +29,19 @@ encoded high index bit does not affect the template lookup; it remains in
 disassembly. A writable, absent, partial or non-normalized bank cannot provide
 p-code. Missing memory is not initialized by this language.
 
+TASKING's IEEE-695 `.obj` and unlocated `.out`, and its IEEE-695 and
+TIOF absolute outputs, load without `--raw-image`. For example:
+
+```sh
+"$decoder" decompile tests/fixtures/carmel/containers/caller-linked.ieee695 _call_addone
+```
+
+Absolute modules retain locator addresses. Relocatable modules use a synthetic
+layout and report unsupported relocations rather than guessing. Motorola
+S-record and Intel HEX exports can be loaded with `KUNA_TASKING_CARMEL_CODE=on`
+only when they contain instruction words in CODE, with no auxiliary banks or
+ROM initialization data. See the [CLI reference](../../../../docs/cli.md#tasking-carmel-images).
+
 Implemented compact effects: exact NOP; INC with low-half accumulator operands;
 zero and register-half MOVE; half-register CMP/CMPU and signed full-accumulator
 CMP with an inactive peer; signed register-only MUL, MAC, MSU, and DIV;

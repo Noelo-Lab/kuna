@@ -582,6 +582,8 @@ mod verify_bootstrap;
 mod verify_carmel_disasm_parity;
 #[path = "verify_carmel_raw.rs"]
 mod verify_carmel_raw;
+#[path = "verify_carmel_formats.rs"]
+mod verify_carmel_formats;
 #[path = "verify_carmel_wild.rs"]
 mod verify_carmel_wild;
 

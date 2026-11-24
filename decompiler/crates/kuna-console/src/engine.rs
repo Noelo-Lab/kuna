@@ -32,6 +32,7 @@
 
 mod kuna_carmel_image;
 mod kuna_carmel_listing;
+mod kuna_carmel_object;
 mod lazy_inventory;
 mod kuna_thunknames;
 mod kuna_signature_names;
@@ -256,6 +257,8 @@ enum ProgramContainer {
     Raw,
     /// A UEFI TE image through its own bounded parser.
     Te,
+    /// A native TASKING container or locator record stream.
+    CarmelObject,
 }
 
 /// A mixed-ARM container entry with the Thumb bit set, awaiting the
@@ -1934,9 +1937,9 @@ impl ConsoleProgram {
         }
     }
 
-    /// (kuna) Every section of bytes the load image maps, as `(vma, size, flags)`
-    /// triples — `flags` bits per [`kuna_sleigh::loadimage::section_flags`]
-    /// (CODE/DATA/READONLY/UNALLOC/NOLOAD).
+    /// (kuna) Sections as `(vma, size, flags)` triples, with flags from
+    /// [`kuna_sleigh::loadimage::section_flags`]. On native Carmel images these
+    /// flat VMAs describe the CODE bank only.
     ///
     /// Consumes the LoadImage section-iteration API
     /// (`openSectionInfo`/`getNextSection`/`closeSectionInfo`) in one shot, the
@@ -1947,6 +1950,11 @@ impl ConsoleProgram {
     /// loader publishes no section info (e.g. the XML `<binaryimage>` corpus
     /// loader, which keeps the trait's default no-op iteration).
     pub fn sections(&self) -> Vec<(u64, u64, u32)> {
+        let code = if self.container == ProgramContainer::CarmelObject {
+            self.arch().manage().get_default_code_space()
+        } else {
+            None
+        };
         let loader_rc = self.arch().translate().loader_rc();
         // The iteration methods are `&self` (C++ `const` with a `mutable`
         // cursor; interior mutability here), so a shared borrow suffices.
@@ -1960,7 +1968,9 @@ impl ConsoleProgram {
             // (the runModel shape). An empty section list leaves the default
             // record (size 0), which the skip below drops.
             let moresections = loader.get_next_section(&mut secinfo);
-            if secinfo.size != 0 {
+            if secinfo.size != 0 && code.is_none_or(|code| {
+                secinfo.address.get_space().is_some_and(|space| Rc::ptr_eq(space, code))
+            }) {
                 out.push((secinfo.address.get_offset(), secinfo.size, secinfo.flags));
             }
             if !moresections {
@@ -4624,7 +4634,7 @@ fn empty_program(
     container: ProgramContainer,
     description: String,
 ) -> ConsoleProgram {
-    if matches!(container, ProgramContainer::Xml | ProgramContainer::Raw) {
+    if matches!(container, ProgramContainer::Xml | ProgramContainer::Raw | ProgramContainer::CarmelObject) {
         if let Some(base) = arch.base_mut() {
             base.runtime_code_relocation = false;
         }
@@ -4857,6 +4867,85 @@ pub(crate) fn bootstrap_raw_image(
     prog.analysis_code_space = Some(code_space);
     prog.raw_address_units = Some((word_size, arm32));
     Ok(prog)
+}
+
+/// Hand the TASKING profile's normalized CODE and auxiliary banks to SLEIGH.
+pub(crate) fn bootstrap_carmel_bytes(
+    path: &str,
+    bytes: &[u8],
+    target: &str,
+    languages: &(impl Languages + ?Sized),
+    isa: Option<ArmIsa>,
+) -> KunaResult<ConsoleProgram> {
+    use kuna_carmel_image::{frame_banked, space_extents, TARGET};
+    use kuna_carmel_object::{Image, NativeImage, Space};
+
+    if isa.is_some() {
+        return Err(KunaError::lowlevel("an ARM ISA override cannot be used with a TASKING Carmel image"));
+    }
+    let Image { regions, symbols, imports, entry, normalized_cliw, relocatable } =
+        kuna_carmel_object::parse(bytes)?;
+    let registry = build_registry();
+    let mut sleigh = build_sleigh_for_loader(path, target, languages, &registry, TARGET, None)?;
+    if sleigh.arch_id() != TARGET {
+        return Err(KunaError::lowlevel("a TASKING Carmel image requires the Carmel target"));
+    }
+    let code = default_code_space(&sleigh)?;
+    let arch = sleigh.base().unwrap();
+    let mut loader = NativeImage::new(path, regions, arch.manage())?;
+    let cliw = Rc::clone(arch.manage().get_space_by_name(Space::Cliw.name())
+        .ok_or_else(|| KunaError::lowlevel("missing Carmel CLIW space"))?);
+    let readonly = loader_readonly_ranges(&loader, arch.manage());
+    let templates: Vec<_> = if normalized_cliw { space_extents(&readonly, &cliw).collect() } else { Vec::new() };
+    let executable = loader.executable_ranges();
+    let framing = frame_banked(&mut loader, &code, &cliw, executable.iter().copied(), &templates)?;
+    framing.require_entries(entry)?;
+    let mut functions = Vec::new();
+    let mut data = Vec::new();
+    let defined = if relocatable { EntryProvenance::DefinedObject } else { EntryProvenance::Mapped };
+    for (symbol, provenance) in symbols.into_iter().map(|s| (s, defined))
+        .chain(imports.into_iter().map(|s| (s, EntryProvenance::UndefinedExternal)))
+    {
+        let addr = loader.address(symbol.space, symbol.offset)?;
+        let name = String::from_utf8_lossy(&symbol.name);
+        let name = kuna_decomp::kuna_symbolnamebound::bound_scope_path(&name, "::").into_owned();
+        if provenance == EntryProvenance::UndefinedExternal
+            || symbol.space == Space::Code && framing.is_issue_start(symbol.offset)
+        {
+            functions.push(ProgramSymbol { ordinal: 0, name, addr, object_location: None, binding: None, provenance });
+        } else if symbol.space != Space::Code && loader.contains(symbol.space, symbol.offset) {
+            data.push((name, addr));
+        }
+    }
+    let fallback_entry = entry.filter(|&at| !functions.iter().any(|s| s.addr.get_offset() == at));
+    let sections = executable.into_iter().map(|(start, end)| {
+        ProgramSectionMetadata::new("code", start, end - start, object::SectionKind::Text, None,
+            section_flags::CODE | section_flags::READONLY)
+    }).collect();
+    let paints = framing.into_paints();
+    install_input_context(arch, &code, &paints)?;
+    let description = arch.get_description().to_string();
+    sleigh.base_mut().unwrap().set_loader(Box::new(loader));
+    let mut program = empty_program(sleigh, registry, ProgramContainer::CarmelObject, description);
+    program.image_metadata = Some(ProgramImageMetadata { entry, sections });
+    program.raw_address_units = Some((u64::from(code.get_word_size()), false));
+    program.pending_synthetic_entries = fallback_entry.into_iter().map(|at| Address::new(Rc::clone(&code), at)).collect();
+    program.pending_analysis = input_isa_stash(paints);
+    program.analysis_code_space = Some(code);
+    apply_readonly_ranges(&mut program, &readonly);
+    program.record_loader_functions(&functions, &[]);
+    program.symbols = SymbolStream::from_loader(functions);
+    program.read_loader_symbols()?;
+    let arch = program.arch_mut();
+    let spaces = arch.manage().num_spaces();
+    for (name, addr) in data {
+        let size = addr.get_space().unwrap().get_word_size() as int4;
+        let ty = arch.types().get_base(size, kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN)?;
+        let (scope, basename) = arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, spaces)?;
+        let (id, _) = arch.symboltab.add_symbol_mapped(scope, &basename, ty, &addr, &Address::new_invalid())?;
+        arch.symboltab.set_attribute(id, kuna_decomp::varnode::varnode_flags::namelock);
+    }
+    Ok(program)
 }
 
 /// Bootstrap a real image on disk — a UEFI TE or an object-format binary —
@@ -5259,6 +5348,9 @@ pub(crate) fn bootstrap_object(
                 None => std::fs::read(path)
                     .map_err(|e| KunaError::lowlevel(format!("Unable to open image file: {path}: {e}")))?,
             };
+            if kuna_carmel_object::recognizes(&bytes, target) {
+                return bootstrap_carmel_bytes(path, &bytes, target, languages, isa);
+            }
             // (kuna `kernelcache`) IMG4 / IM4P / LZFSE / complzss unwrapping and MH_FILESET
             // entry selection, ahead of every other normalization.
             let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::in_force();
@@ -7244,12 +7336,13 @@ pub fn bootstrap_from_file(
 pub(crate) enum FileInput {
     Mz(Vec<u8>),
     Te(Vec<u8>),
+    Carmel(Vec<u8>),
     Object,
     Xml(Rc<Element>),
 }
 
 /// Read and classify the file [`bootstrap_from_file`] loads.
-pub(crate) fn classify_file(path: &str) -> KunaResult<FileInput> {
+pub(crate) fn classify_file(path: &str, target: &str) -> KunaResult<FileInput> {
     if kuna_analysis::loader::kuna_dyldcache::is_dyld_cache_file(Path::new(path))
         || kuna_analysis::image_bytes::ImageBytes::map_thin_macho(path).ok().flatten().is_some()
     {
@@ -7265,6 +7358,9 @@ pub(crate) fn classify_file(path: &str) -> KunaResult<FileInput> {
     }
     if is_object_binary(&bytes) || is_apple_container(&bytes) {
         return Ok(FileInput::Object);
+    }
+    if kuna_carmel_object::recognizes(&bytes, target) {
+        return Ok(FileInput::Carmel(bytes));
     }
     if !bytes
         .iter()

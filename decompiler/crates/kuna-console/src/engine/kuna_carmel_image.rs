@@ -55,6 +55,7 @@ pub(super) struct Framing {
     issues: Vec<ContextPaint>,
     next_sizes: Vec<ContextPaint>,
     bad_fetches: Vec<ContextPaint>,
+    cliw: Vec<ContextPaint>,
 }
 
 fn paint(paints: &mut Vec<ContextPaint>, var: &'static str, addr: u64, value: u32) {
@@ -67,10 +68,14 @@ fn paint(paints: &mut Vec<ContextPaint>, var: &'static str, addr: u64, value: u3
 }
 
 impl Framing {
+    pub(super) fn is_issue_start(&self, addr: u64) -> bool {
+        let next = self.issues.partition_point(|paint| paint.addr <= addr);
+        addr.is_multiple_of(SLOT) && next != 0 && addr < self.issues[next - 1].end.unwrap()
+    }
+
     pub(super) fn require_entries(&self, entries: impl IntoIterator<Item = u64>) -> KunaResult<()> {
         for addr in entries {
-            let next = self.issues.partition_point(|paint| paint.addr <= addr);
-            if addr % SLOT != 0 || next == 0 || addr >= self.issues[next - 1].end.unwrap() {
+            if !self.is_issue_start(addr) {
                 return Err(KunaError::lowlevel(format!(
                     "Carmel entry 0x{:x} is not a mapped issue start", addr / SLOT,
                 )));
@@ -82,6 +87,7 @@ impl Framing {
     pub(super) fn into_paints(mut self) -> Vec<ContextPaint> {
         self.issues.append(&mut self.next_sizes);
         self.issues.append(&mut self.bad_fetches);
+        self.issues.append(&mut self.cliw);
         self.issues
     }
 }
@@ -143,7 +149,7 @@ pub(super) fn check_xml_chunks(root: &Element) -> KunaResult<bool> {
     }))
 }
 
-fn space_extents<'a>(
+pub(super) fn space_extents<'a>(
     ranges: &'a [(Address, Address)], space: &'a Rc<AddrSpace>,
 ) -> impl Iterator<Item = (u64, u64)> + 'a {
     ranges.iter().filter_map(move |(start, end)| {
@@ -170,8 +176,21 @@ pub(super) fn frame_xml(
     } else {
         Vec::new()
     };
+    let framing = frame_banked(loader, code, cliw, space_extents(readonly, code), &templates)?;
+    framing.require_entries(entries)?;
+    Ok(framing.into_paints())
+}
+
+/// Frame executable byte extents separately from read-only data in CODE ROM.
+pub(super) fn frame_banked(
+    loader: &mut dyn LoadImage,
+    code: &Rc<AddrSpace>,
+    cliw: &Rc<AddrSpace>,
+    code_ranges: impl IntoIterator<Item = (u64, u64)>,
+    templates: &[(u64, u64)],
+) -> KunaResult<Framing> {
     let mut paints = Vec::new();
-    let framing = frame(loader, code, space_extents(readonly, code), |loader, at, fetch| {
+    let mut framing = frame(loader, code, code_ranges, |loader, at, fetch| {
         // The standard wide prefilter uses three bits below the right marker.
         // Family key 5 moves the payload seam to 23 and uses left bits 0..9.
         if fetch[3] >> 4 != 0xd || templates.is_empty() {
@@ -192,9 +211,8 @@ pub(super) fn frame_xml(
         }
         Ok(())
     })?;
-    framing.require_entries(entries)?;
-    paints.extend(framing.into_paints());
-    Ok(paints)
+    framing.cliw = paints;
+    Ok(framing)
 }
 
 /// Each range is an actual mapped byte extent (start, exclusive end).

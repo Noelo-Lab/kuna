@@ -1576,6 +1576,23 @@ with other segments in DS.
 `decompile-graph` and the graph-backed `--summary`/`--reachable-from` need an
 object-file view and refuse it with a capability error, as for a TE.
 
+### TASKING Carmel images
+
+Kuna recognizes TASKING Carmel relocatable `.obj` and `.out` files and
+absolute IEEE-695 and binary TIOF images. Numeric CODE addresses use
+24-bit words, just as for a Carmel raw image, but do not need `--raw-image`
+or `--base`. Relocatable symbols are placed at synthetic addresses, not
+at their eventual linker-script locations.
+
+Intel HEX and Motorola S-record files omit the Carmel bank map. Set
+`KUNA_TASKING_CARMEL_CODE=on` only for exports containing instructions in CODE
+without CLIW words or ROM initialization data. For example:
+
+```sh
+KUNA_TASKING_CARMEL_CODE=on kuna disassemble \
+  tests/fixtures/carmel/containers/sparse.srec 0xfffc --addr --count 2
+```
+
 ### Headerless raw images
 
 `--raw-image` loads a file that has no object header. It is separate from

@@ -3843,12 +3843,12 @@ budget is reported as a coverage note, since its import calls are then missing.
 
 ## 2.5 Arch quirks
 
-**Carmel CODE issues.** Raw CODE and read-only XML CODE are framed in complete
-six-byte fetches. A sequential fetch exposes two independent three-byte
-instructions; a parallel or wide fetch exposes only its even start. The
-console stores byte offsets internally and preserves odd CODE word addresses
-at its raw boundary. It does not compact omitted slots or decode missing ROM
-as padding.
+**Carmel CODE issues.** Raw CODE, read-only XML CODE, and executable regions
+of TASKING images are framed in complete six-byte fetches. A sequential
+fetch exposes two independent three-byte instructions; a parallel or wide
+fetch exposes only its even start. The console stores byte offsets internally
+and preserves odd CODE word addresses at the command boundary. It does not
+compact omitted slots or decode missing ROM as padding.
 
 The Carmel console listing applies CrossView-style syntax to the framed
 issue. It uses the complete fetch even at an odd entry because some compact

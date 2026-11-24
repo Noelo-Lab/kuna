@@ -42,6 +42,8 @@ pub const LOAD_OBJC_ENV: &str = "KUNA_LOAD_OBJC";
 pub const LOAD_STRINGS_ENV: &str = "KUNA_LOAD_STRINGS";
 /// `off` copies a thin Mach-O into memory instead of mapping it.
 pub const LOAD_MMAP_ENV: &str = "KUNA_LOAD_MMAP";
+/// Treat locator text records as an instruction-only TASKING Carmel export.
+pub const TASKING_CARMEL_CODE_ENV: &str = "KUNA_TASKING_CARMEL_CODE";
 
 /// Every load-time setting, one field per option. [`Default`] is the shipped
 /// default of each option, the value an unset environment variable means.
@@ -94,6 +96,8 @@ pub struct LoadOptions {
     pub load_strings: bool,
     /// Map a thin Mach-O read-only rather than copy it into memory.
     pub load_mmap: bool,
+    /// Assert that a TASKING text image contains only Carmel CODE.
+    pub tasking_carmel_code: bool,
 }
 
 impl Default for LoadOptions {
@@ -122,6 +126,7 @@ impl Default for LoadOptions {
             load_objc: true,
             load_strings: true,
             load_mmap: true,
+            tasking_carmel_code: false,
         }
     }
 }
@@ -154,6 +159,7 @@ impl LoadOptions {
             load_objc: env::load_objc(),
             load_strings: env::load_strings(),
             load_mmap: env::load_mmap(),
+            tasking_carmel_code: env::tasking_carmel_code(),
         }
     }
 
@@ -315,6 +321,7 @@ pub const ENV_VARS: &[&str] = &[
     LOAD_OBJC_ENV,
     LOAD_STRINGS_ENV,
     LOAD_MMAP_ENV,
+    TASKING_CARMEL_CODE_ENV,
 ];
 
 /// The load-option environment as it stood when captured. An `option` command
@@ -469,6 +476,10 @@ pub mod env {
 
     pub fn load_mmap() -> bool {
         !std::env::var(LOAD_MMAP_ENV).is_ok_and(|value| matches!(value.as_str(), "off" | "0" | "false"))
+    }
+
+    pub fn tasking_carmel_code() -> bool {
+        env_toggle(TASKING_CARMEL_CODE_ENV, false)
     }
 
     /// The `"<maj>.<min>"` release in `KUNA_GOVERSION`; `None` when it is
