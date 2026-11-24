@@ -250,9 +250,11 @@ of 512 bytes or fewer still follows exactly the path it always did.
 The binary IEEE-695/TIOF reader
 (`decompiler/crates/kuna-analysis/src/loader/ieee695.rs (module)`) opens an
 indexed module without selecting a target. It bounds each nonzero W-part
-offset by the next part and verifies the module-end record. Record cursors
-decode compact numeric fields and tokenize relocation expressions inside those
-bounds. Section placement, symbol binding, and relocation field encoding
+offset by the next part (an empty part may share the next part's offset, as
+binutils writes an empty trailer) and verifies the module-end record. Record
+cursors decode compact numeric fields and names (including the 0xDE/0xDF
+lengths of names of 128 bytes or more) and tokenize relocation expressions
+inside those bounds. Section placement, symbol binding, and relocation field encoding
 remain the responsibility of the input profile.
 
 The mapping unit is the ELF **`PT_LOAD` segment** (what the OS actually maps), not the BFD

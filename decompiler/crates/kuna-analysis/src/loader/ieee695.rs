@@ -69,8 +69,21 @@ impl<'a> Cursor<'a> {
         self.num()?.try_into().map_err(|_| err(at, "record length overflow"))
     }
 
+    /// Read a string whose length is a number, or one or two bytes after
+    /// 0xDE or 0xDF (IEEE-695's form for names of 128 bytes or more).
     pub fn name(&mut self) -> KunaResult<&'a [u8]> {
-        let n = self.read_length()?;
+        let n = match self.peek() {
+            Some(0xde) => {
+                self.byte()?;
+                usize::from(self.byte()?)
+            }
+            Some(0xdf) => {
+                self.byte()?;
+                let len = self.take(2)?;
+                usize::from(u16::from_be_bytes([len[0], len[1]]))
+            }
+            _ => self.read_length()?,
+        };
         self.take(n)
     }
 
@@ -122,7 +135,7 @@ pub fn module(bytes: &[u8]) -> KunaResult<Module<'_>> {
     let mut parts = [Cursor { rem: &[], offset: 0 }; 8];
     for (i, &start) in starts.iter().enumerate().rev() {
         if start == 0 { continue; }
-        if start >= end || start < header.offset {
+        if start > end || (i == 7 && start == end) || start < header.offset {
             return Err(err(header.offset, format_args!("invalid W{i} part offset {start:#x}")));
         }
         parts[i] = Cursor { rem: &bytes[start..end], offset: start };
@@ -187,10 +200,28 @@ mod tests {
     fn rejects_overlapping_parts_and_missing_module_end() {
         let mut bytes = image();
         let part_offset = |part: usize| 18 + 4 * part + 3;
-        bytes[part_offset(2)] = bytes[part_offset(5)];
+        bytes[part_offset(2)] = bytes[part_offset(5)] + 1;
         assert!(module(&bytes).unwrap_err().explain().contains("invalid W2 part offset"));
         let mut bytes = image();
         bytes.pop();
         assert!(module(&bytes).unwrap_err().explain().contains("invalid W7 part offset"));
+    }
+
+    #[test]
+    fn accepts_an_empty_part_at_the_next_offset_and_long_names() {
+        let mut bytes = image();
+        let part_offset = |part: usize| 18 + 4 * part + 3;
+        bytes[part_offset(6)] = bytes[part_offset(7)];
+        let module = module(&bytes).unwrap();
+        assert!(module.parts[6].rem.is_empty());
+        assert_eq!(module.parts[7].rem, [0xe1]);
+        let mut names = vec![0xde, 200];
+        names.extend([b'x'; 200]);
+        names.extend([0xdf, 0x01, 0x00]);
+        names.extend([b'y'; 256]);
+        let mut cursor = Cursor { rem: &names, offset: 0 };
+        assert_eq!(cursor.name().unwrap(), [b'x'; 200]);
+        assert_eq!(cursor.name().unwrap(), [b'y'; 256]);
+        cursor.end().unwrap();
     }
 }
