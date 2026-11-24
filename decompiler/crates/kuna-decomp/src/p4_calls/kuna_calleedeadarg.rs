@@ -191,6 +191,14 @@ pub struct CalleeEntryDead {
     /// (SysV's `xor %eax,%eax`) is a store alone evidence. Read by
     /// [`Self::reads_low_byte`].
     stored_read_bytes: ByteSet,
+    /// The register bytes an instruction that stores several registers stores
+    /// together with a register above them in the register file: gcc's
+    /// Cortex-M `push {r3, lr}` keeping the stack 8-byte aligned. A variadic
+    /// register save stores the argument registers in a store of their own, the
+    /// last one highest, beneath the incoming stack arguments (`push {r0, r1,
+    /// r2, r3}; push {lr}`), so such a store is no save. Read by
+    /// [`Self::stores_below_another`].
+    stored_below_bytes: ByteSet,
     /// Did some path reach an instruction the walk could not decode? A body
     /// decoded in the wrong instruction set reads registers at random before it
     /// breaks. Read by [`Self::reads_low_byte`].
@@ -359,6 +367,26 @@ impl CalleeEntryDead {
         let live = if pads { &self.unpadded_read_bytes } else { &self.live_read_bytes };
         live.contains(&(self.reg_idx, low))
             || (stores && self.stored_read_bytes.contains(&(self.reg_idx, low)))
+    }
+
+    /// Does some path store the LOW byte of `[addr, addr+size)`, unwritten,
+    /// with an instruction that also stores a register above it
+    /// ([`Self::stored_below_bytes`])? Read by
+    /// [`crate::p4_calls::kuna_calleereadarg`].
+    pub fn stores_below_another(&self, addr: &Address, size: int4) -> bool {
+        if !self.complete || size <= 0 {
+            return false;
+        }
+        let Some(sp) = addr.get_space() else { return false };
+        if self.reg_idx < 0 || sp.get_index() != self.reg_idx {
+            return false;
+        }
+        let low = if addr.is_big_endian() {
+            addr.get_offset().wrapping_add(size as u64 - 1)
+        } else {
+            addr.get_offset()
+        };
+        self.stored_below_bytes.contains(&(self.reg_idx, low))
     }
 
     /// How many bytes of `[addr, addr+size)`, counted from its least
@@ -564,6 +592,7 @@ impl CalleeEntryDead {
             &mut self.live_read_bytes,
             &mut self.unpadded_read_bytes,
             &mut self.stored_read_bytes,
+            &mut self.stored_below_bytes,
             &mut self.cond_written,
         ];
         for set in sets {
@@ -644,6 +673,7 @@ impl CalleeEntryDead {
             skipped: None,
             trap_cuts: Vec::new(),
             stored_read_bytes: ByteSet::new(),
+            stored_below_bytes: ByteSet::new(),
             undecodable: false,
             complete,
         }
@@ -655,6 +685,17 @@ impl CalleeEntryDead {
         if self.live_read_bytes.remove(&(self.reg_idx, b)) {
             self.unpadded_read_bytes.remove(&(self.reg_idx, b));
             self.stored_read_bytes.insert((self.reg_idx, b));
+        }
+        self
+    }
+
+    /// Turn the read of byte `b` into one a multi-register store made with a
+    /// register above it (`push {r3, lr}`).
+    #[cfg(test)]
+    pub(crate) fn with_stored_below_byte(mut self, b: u64) -> Self {
+        if self.live_read_bytes.remove(&(self.reg_idx, b)) {
+            self.unpadded_read_bytes.remove(&(self.reg_idx, b));
+            self.stored_below_bytes.insert((self.reg_idx, b));
         }
         self
     }
@@ -1301,6 +1342,7 @@ pub fn probe_entry_with<T: kuna_sleigh::translate::Translate + ?Sized>(
         res.live_read_bytes.clear();
         res.unpadded_read_bytes.clear();
         res.stored_read_bytes.clear();
+        res.stored_below_bytes.clear();
         res.cuts.clear();
         res.opaque_cuts.clear();
         res.jumps = 0;
@@ -1523,6 +1565,17 @@ fn step_instruction(
         })
         .count()
         >= 2;
+    let stored_top = if multi_store {
+        emit.ops
+            .iter()
+            .filter(|o| o.opc == OpCode::CPUI_STORE)
+            .filter_map(|o| o.ins.get(2))
+            .filter(|v| v.space.as_ref().is_some_and(|s| s.get_index() == res.reg_idx))
+            .map(|v| v.offset)
+            .max()
+    } else {
+        None
+    };
     let push = push_copies(emit, res.reg_idx);
     if let Some((sp, _)) = &push {
         if pushed.sp.is_some_and(|s| s != *sp) {
@@ -1556,6 +1609,10 @@ fn step_instruction(
                     res.reads_live.push((idx, off, sz));
                 }
                 let stored = op.opc == OpCode::CPUI_STORE && i == 2;
+                if stored && multi_store && stored_top.is_some_and(|top| off + v.size as u64 <= top) {
+                    res.stored_below_bytes
+                        .extend((off..off + v.size as u64).filter(|b| !base.contains(&(idx, *b))).map(|b| (idx, b)));
+                }
                 if !formal && !(stored && multi_store) {
                     let into = if stored { &mut res.stored_read_bytes } else { &mut res.live_read_bytes };
                     for b in off..off + v.size as u64 {
