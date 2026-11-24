@@ -632,6 +632,9 @@ pub struct Architecture {
     /// (kuna) `loweredswitch tree|all`: a binary-search compare tree re-rolls
     /// from 2 to 64 cases instead of 3 to 16.
     pub lowered_switch_tree: bool,
+    /// (kuna) `loweredswitch auto`: in an unoptimized function the way the
+    /// compare tests were compiled decides whether a cascade re-rolls.
+    pub lowered_switch_compiled: bool,
     /// (kuna `funcboundflow`) Bound fall-through at a known function entry: when a
     /// fall-through reaches the entry of another known function (the callee just
     /// executed being an unnamed static no-return the analysis could not prove
@@ -2504,6 +2507,7 @@ impl Architecture {
             switch_selector_guard: false, // (kuna) option switchselector; reset_defaults sets the shipped default
             lowered_switch_linear: false, // (kuna) option loweredswitch linear|all
             lowered_switch_tree: false, // (kuna) option loweredswitch tree|all
+            lowered_switch_compiled: false, // (kuna) option loweredswitch auto; reset_defaults sets the shipped default
             sparc_struct_return: false,
             global_array_anchor: false,
             opaque_predicate: false,
@@ -2905,6 +2909,7 @@ impl Architecture {
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.lowered_switch_linear = false; // (kuna) `loweredswitch linear` is opt-in: a linear chain also reads as a hand-written if/else-if
         self.lowered_switch_tree = false; // (kuna) `loweredswitch tree` is opt-in: the 16-case cap is the structurer's fail-safe
+        self.lowered_switch_compiled = true; // (kuna) `loweredswitch auto` default: in unoptimized functions the compiled test layout decides switch vs if-chain
         self.cast_object = true; // (kuna) option castobject default-on: a stack local whose address only fills declared int * parameters, whose readers agree, is declared int; evidence in docs/features/castobject/default-on-evaluation.md
         self.end_ptr_bound = true; // (kuna) DIV-177 default-on: a pointer walk's end bound renders on its own buffer (0/675 ablation)
         self.call_mechanism_mode = crate::kuna_callmechanisms::CallMechanismMode::Auto; // (kuna) option callmechanisms default `auto`: the PPC64 cspecs' uponreturn stores r2Save at 0x28(r1), the TOC save slot only under ELFv1, so on an image whose ELFv1 function descriptors the loader validated (a linked image's or an object's .opd) a return payload is installed only at a call whose next instruction reloads the slot it stores. Gated on that loader fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `on` installs them on any image, `off` on none
@@ -3805,6 +3810,7 @@ impl Architecture {
         ctx.switch_selector_guard = self.switch_selector_guard; // switchselector
         ctx.lowered_switch_linear = self.lowered_switch_linear; // loweredswitch linear|all
         ctx.lowered_switch_tree = self.lowered_switch_tree; // loweredswitch tree|all
+        ctx.lowered_switch_compiled = self.lowered_switch_compiled; // loweredswitch auto
         ctx.cond_fold = self.cond_fold; // condfold
         ctx.cond_stmts = self.cond_stmts; // condstmts
         ctx.goto_reduce = self.goto_reduce; // gotoreduce

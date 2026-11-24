@@ -108,25 +108,17 @@ fn callee_saved(fd: &Funcdata, v: &Varnode) -> bool {
 }
 
 /// Frame offsets of values, followed back to the entry stack pointer.
-pub(crate) struct Frame<'a> {
+struct Frame<'a> {
     fd: &'a Funcdata,
     sp: VarnodeId,
     sp_offset: u64,
     memo: HashMap<VarnodeId, Option<(i64, bool)>>,
 }
 
-impl<'a> Frame<'a> {
-    /// A walker over `fd`'s frame; `None` without a stack pointer input.
-    pub(crate) fn for_function(fd: &'a Funcdata) -> Option<Frame<'a>> {
-        let stack = fd.get_arch().manage().get_stack_space()?.clone();
-        let sp = fd.find_spacebase_input(&stack)?;
-        let sp_offset = fd.vbank().get(sp)?.get_offset();
-        Some(Frame { fd, sp, sp_offset, memo: HashMap::new() })
-    }
-
+impl Frame<'_> {
     /// The entry-stack-pointer offset `vn` holds, and whether the chain passes
     /// through a callee-saved register other than the stack pointer.
-    pub(crate) fn offset(&mut self, vn: VarnodeId) -> Option<(i64, bool)> {
+    fn offset(&mut self, vn: VarnodeId) -> Option<(i64, bool)> {
         self.walk(vn, WALK_DEPTH)
     }
 

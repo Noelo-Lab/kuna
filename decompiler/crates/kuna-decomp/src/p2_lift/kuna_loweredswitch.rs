@@ -105,6 +105,7 @@ use crate::options::on_or_off;
 use crate::p2_lift::kuna_loweredswitchvalue::{verify_installed_switch_values, ValueCheck, ValueState};
 use crate::p2_lift::kuna_loweredswitchexact::{self, record_is_exact};
 use crate::p2_lift::kuna_loweredswitchpath;
+use crate::p2_lift::kuna_o0switch::{self, Form};
 use crate::p2_lift::kuna_loweredswitchheads::{case_body_entered_elsewhere, cascade_heads};
 
 use kuna_base::marshal::ElementId;
@@ -1093,7 +1094,11 @@ fn recover_cascade(
         }
     }
     let shape = CascadeShape { values: cases.len(), bodies, range: saw_range };
-    if !cascade_is_switch(shape, mode) {
+    let form = kuna_o0switch::verdict(
+        data,
+        visited.iter().filter_map(|&b| data.bb_op_tail(b)).map(|o| op_addr(data, o).get_offset()),
+    );
+    if !cascade_is_switch(shape, mode, form) {
         return None;
     }
 
@@ -1713,11 +1718,13 @@ impl Action for ActionLowerSwitchInstall {
 
 /// (kuna) Toggle lowered comparison-cascade -> switch recovery:
 /// What `loweredswitch` re-rolls: nothing, the binary-search cascades of 3 to
-/// 16 cases, and optionally linear equality chains and wider compare trees.
+/// 16 cases, and optionally linear equality chains and wider compare trees;
+/// `Auto` is `On` with an unoptimized function's compiled tests deciding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LoweredSwitchMode {
     Off,
     On,
+    Auto,
     Linear,
     Tree,
     All,
@@ -1769,14 +1776,21 @@ pub struct CascadeShape {
 
 /// Whether a cascade of `shape` re-rolls into a switch under `mode`. A cascade
 /// needs two distinct bodies: tests that all lead to one body are an `||`
-/// condition. A binary-search tree is the compiler's own switch lowering and
-/// takes three values (two under `tree`). A linear chain takes three values
-/// with a body of its own each (an `if`/`else if` chain whose tests share a
-/// body is an `||` more often than a switch), and under `linear` also two
-/// values and shared bodies.
-pub fn cascade_is_switch(shape: CascadeShape, mode: LoweredSwitchMode) -> bool {
+/// condition. In an unoptimized function `form`, read from how the tests were
+/// compiled ([`kuna_o0switch`]), decides: a switch of two or more values, or
+/// no switch. Otherwise a binary-search tree is the compiler's own switch
+/// lowering and takes three values (two under `tree`). A linear chain takes
+/// three values with a body of its own each (an `if`/`else if` chain whose
+/// tests share a body is an `||` more often than a switch), and under
+/// `linear` also two values and shared bodies.
+pub fn cascade_is_switch(shape: CascadeShape, mode: LoweredSwitchMode, form: Option<Form>) -> bool {
     if !mode.enabled() || shape.bodies < 2 || shape.values > mode.max_cases(shape.range) {
         return false;
+    }
+    match form {
+        Some(Form::Switch) => return shape.values >= 2,
+        Some(Form::IfChain) => return false,
+        None => {}
     }
     if shape.range {
         return shape.values >= if mode.tree() { 2 } else { 3 };
@@ -1787,7 +1801,7 @@ pub fn cascade_is_switch(shape: CascadeShape, mode: LoweredSwitchMode) -> bool {
     shape.values >= 3 && shape.bodies == shape.values
 }
 
-/// `loweredswitch on|off|linear|tree|all` (C++ `OptionLowerSwitch`).
+/// `loweredswitch on|off|auto|linear|tree|all` (C++ `OptionLowerSwitch`).
 ///
 /// The kuna Rust port ships default-on (the angr-port DIV;
 /// `architecture.rs:418`).  "off" makes the Detect/Install Actions inert.
@@ -1797,12 +1811,16 @@ impl OptionLowerSwitch {
     /// The option name (C++ `name = "loweredswitch"`).
     pub const NAME: &'static str = "loweredswitch";
 
-    /// C++ `OptionLowerSwitch::apply`, extended with the `linear`, `tree` and
-    /// `all` values.  Returns the resolved mode plus the confirmation message;
+    /// C++ `OptionLowerSwitch::apply`, extended with the `auto`, `linear`,
+    /// `tree` and `all` values.  Returns the resolved mode plus the confirmation message;
     /// the caller writes the mode into the `Architecture`.
     pub fn apply(&self, p1: &str) -> KunaResult<(LoweredSwitchMode, String)> {
         let widened = |what: &str| format!("Lowered comparison-cascade switch recovery turned on, {what}");
         Ok(match p1.trim() {
+            "auto" => (
+                LoweredSwitchMode::Auto,
+                "Lowered comparison-cascade switch recovery turned on, decided by the compiled tests in unoptimized functions".to_string(),
+            ),
             "linear" => (LoweredSwitchMode::Linear, widened("linear equality chains included")),
             "tree" => (LoweredSwitchMode::Tree, widened("compare trees of 2 to 64 cases included")),
             "all" => (

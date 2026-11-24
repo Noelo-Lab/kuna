@@ -797,6 +797,8 @@ fn option_apply_widening_values() {
     assert_eq!(flags("linear"), (true, true, false));
     assert_eq!(flags("tree"), (true, false, true));
     assert_eq!(flags("all"), (true, true, true));
+    assert_eq!(flags("auto"), (true, false, false));
+    assert_eq!(OptionLowerSwitch.apply("auto").unwrap().0, LoweredSwitchMode::Auto);
 }
 
 #[test]
