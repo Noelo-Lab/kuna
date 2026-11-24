@@ -533,6 +533,9 @@ pub struct ObjectLoadImage {
     /// (kuna) The container's floating-point argument convention
     /// ([`crate::loader::kuna_floatabi::float_arg_registers`]).
     float_arg_registers: Option<bool>,
+    /// (kuna) clang built the image
+    /// ([`crate::loader::kuna_spillselects::built_by_clang`]).
+    built_by_clang: bool,
     /// (kuna) Whether the container states floating-point register hardware
     /// ([`crate::loader::kuna_armfloatabi::fp_hardware`]).
     float_hardware: Option<bool>,
@@ -1232,6 +1235,7 @@ impl ObjectLoadImage {
             filename: filename.to_string(),
             arm_vfp_args: crate::loader::kuna_armfloatabi::vfp_args(&file),
             float_arg_registers: crate::loader::kuna_floatabi::float_arg_registers(&file),
+            built_by_clang: crate::loader::kuna_spillselects::built_by_clang(&file),
             float_hardware: crate::loader::kuna_armfloatabi::fp_hardware(&file),
             callee_extends_returns: crate::loader::kuna_returnext::callee_extends_returns(&file),
             archtype,
@@ -1416,6 +1420,7 @@ impl ObjectLoadImage {
             filename: filename.to_string(),
             arm_vfp_args: crate::loader::kuna_armfloatabi::vfp_args(&file),
             float_arg_registers: crate::loader::kuna_floatabi::float_arg_registers(&file),
+            built_by_clang: crate::loader::kuna_spillselects::built_by_clang(&file),
             float_hardware: crate::loader::kuna_armfloatabi::fp_hardware(&file),
             callee_extends_returns: crate::loader::kuna_returnext::callee_extends_returns(&file),
             archtype,
@@ -1726,6 +1731,8 @@ impl LoadImage for ObjectLoadImage {
     fn arm_vfp_args(&self) -> bool { self.arm_vfp_args }
 
     fn float_arg_registers(&self) -> Option<bool> { self.float_arg_registers }
+
+    fn built_by_clang(&self) -> bool { self.built_by_clang }
 
     fn float_hardware(&self) -> Option<bool> { self.float_hardware }
 

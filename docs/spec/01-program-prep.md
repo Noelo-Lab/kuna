@@ -212,6 +212,12 @@ overlay requested after publication fails closed.
 
 ## 1.2 Load image
 
+The Intel HEX reader (`decompiler/crates/kuna-analysis/src/loader/ihex.rs (read)`)
+validates record lengths, checksums, and EOF. A segment or linear extension
+replaces the base for later data addresses. Start records carry either CS:IP
+or a linear address. Data payload lengths do not set the address unit: an
+input profile decides where to map the unscaled addresses and what gaps mean.
+
 `decompiler/crates/kuna-analysis/src/loadimage_object.rs (ObjectLoadImage)` is the
 real-binary `LoadImage` backend — the substitution for upstream's GPL-licensed
 BFD loader (`LoadImageBfd`), rebuilt on the permissive `object` crate with the C++
@@ -246,6 +252,16 @@ neighbouring short read is being answered from is left as it was. Nothing else
 about the read changes — the same segment walk, the same zero-fill past the last
 segment it crosses, the same unmapped-start `DataUnavailError` — and a request
 of 512 bytes or fewer still follows exactly the path it always did.
+
+The binary IEEE-695/TIOF reader
+(`decompiler/crates/kuna-analysis/src/loader/ieee695.rs (module)`) opens an
+indexed module without selecting a target. It bounds each nonzero W-part
+offset by the next part (an empty part may share the next part's offset, as
+binutils writes an empty trailer) and verifies the module-end record. Record
+cursors decode compact numeric fields and names (including the 0xDE/0xDF
+lengths of names of 128 bytes or more) and tokenize relocation expressions
+inside those bounds. Section placement, symbol binding, and relocation field encoding
+remain the responsibility of the input profile.
 
 The mapping unit is the ELF **`PT_LOAD` segment** (what the OS actually maps), not the BFD
 section list. Where upstream returns a BFD target string for the Java side to
@@ -2115,6 +2131,13 @@ it. On DAZZLE four of 295 functions change: the tick poll and `delay()` keep
 their reads, a video-mode probe keeps its read of the EGA switches at 0x487,
 and the hard-disk parameter vectors at 0x104 and 0x118 are read where the code
 reads them.
+
+The Motorola S-record reader
+(`decompiler/crates/kuna-analysis/src/loader/srecord.rs (read)`) validates
+lengths, checksums, the optional data-record count, and the terminator. It
+returns the original address and encoded width for each data or start record.
+S-records have assigned addresses but no relocation entries. The reader does
+not assume a memory bank, a byte-addressed target, or a rule for filling gaps.
 
 ## 1.3 Loader markup
 

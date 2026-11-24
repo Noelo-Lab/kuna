@@ -14,6 +14,13 @@ keeps its bare return and `if (c) return a; return b;` returns each
 parameter. Under `option returndup on` both guard clauses print wrapped by the
 size rule and the two parameter returns merge into one variable.
 
+`kuna-iteregion-auto.xml` checks option `iteregion` (default `auto`) on gcc
+-O0 x86-64: a conditional value that each arm loads into a register before one
+store after the join prints as `?:`, also when one arm is computed, and an
+if/else whose arms each store 1 or 0 keeps its `if`. Under `option iteregion on`
+the first prints as an `if` without an `else`, the stores fold into a
+conditional and the computed arm keeps its `if`.
+
 `kuna-guardauto.xml` checks option `guardarm` (default `auto`) on two x86-64
 functions. In a gcc -O0 `unget`, whose parameters live in frame slots, the
 default prints the source's flat guard `if (c == -1 || ...) return -1;`, and
