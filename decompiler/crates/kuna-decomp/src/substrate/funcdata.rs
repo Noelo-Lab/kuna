@@ -178,6 +178,9 @@ pub struct Funcdata {
     /// (kuna `returndup auto`) The return statements read at the first
     /// heritage pass (`p8_structure/kuna_o0returns.rs`).
     pub(crate) kuna_o0returns: Option<Box<crate::p8_structure::kuna_o0returns::Record>>,
+    /// (kuna `iteregion auto`) The conditional values read at the first
+    /// heritage pass (`p8_structure/kuna_o0select.rs`).
+    pub(crate) kuna_o0select: Option<Box<crate::p8_structure::kuna_o0select::Record>>,
     pub(crate) kuna_fpu_trunc_views: Vec<OpId>,
     /// Boolean properties associated with \b this function (C++ `flags`)
     flags: uint4,
@@ -806,6 +809,7 @@ impl Funcdata {
             kuna_vararg_save: false,
             kuna_unoptimized: None,
             kuna_o0returns: None,
+            kuna_o0select: None,
             flags: 0,
             clean_up_index: 0,
             high_level_index: 0,
@@ -4485,6 +4489,7 @@ impl Funcdata {
         self.kuna_vararg_save = false;
         self.kuna_unoptimized = None;
         self.kuna_o0returns = None;
+        self.kuna_o0select = None;
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).
         self.flags &= !(funcdata_flags::highlevel_on
             | funcdata_flags::blocks_generated
