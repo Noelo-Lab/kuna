@@ -121,6 +121,22 @@ fn a_delay_needs_one_mapped_issue_with_supported_effects() {
     }
 }
 
+#[test]
+fn a_call_delayed_by_one_compact_slot_resumes_at_its_pushed_word() {
+    let bytes = [
+        0x2b, 0x20, 0x42, 0x2b, 0xec, 0, // CALL +8 delay 1 || NOP pushes word 4
+        0xa1, 0xac, 0x20, 0x21, 0xac, 0x20, // the delay issue, then a slot the return skips
+        0x2b, 0xd8, 0, 0x2b, 0xec, 0,
+        0x2b, 0xec, 0, 0x2b, 0xec, 0,
+        0x2b, 0xd8, 0, 0x2b, 0xec, 0,
+    ];
+    let mut program = raw(&bytes, 0, &[0]).unwrap();
+    let space = Rc::clone(program.arch().manage().get_default_code_space().unwrap());
+    let fd = build_and_follow_flow(program.arch_mut(), "delayed_call", Address::new(space, 0), 0).unwrap();
+    let reached: Vec<_> = fd.obank().iter_all().map(|(seq, _)| seq.get_addr().get_offset()).collect();
+    assert!(reached.contains(&12) && !reached.contains(&9), "{reached:?}");
+}
+
 fn xml(chunks: &str) -> KunaResult<ConsoleProgram> {
     let source = format!("<binaryimage arch=\"{TARGET}\">{chunks}</binaryimage>");
     let mut docs = DocumentStorage::new();
