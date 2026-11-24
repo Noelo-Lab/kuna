@@ -89,6 +89,9 @@ fn a_one_block_if_before_a_constant_return_round_trips_through_the_printed_c() {
                 "--option",
                 "tailform",
                 "off",
+                "--option",
+                "returndup",
+                "on",
             ];
             let (text, err, rc) = common::run_kuna(&args);
             assert_eq!(rc, 0, "{image} rettriangle {opt}: {err}");
