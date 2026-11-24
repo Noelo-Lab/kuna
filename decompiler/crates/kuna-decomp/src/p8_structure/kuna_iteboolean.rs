@@ -240,7 +240,7 @@ pub fn match_ite_boolean(data: &Funcdata, n: BlockId) -> Option<IteBoolMatch> {
         return None;
     }
     let cbranch = cond_terminal_cbranch(data, cond_tail, 0)?;
-    if crate::p8_structure::kuna_o0select::form_of(data, cbranch) == Some(crate::p8_structure::kuna_o0select::Form::Statement) {
+    if crate::p8_structure::kuna_o0select::statement(data, cbranch) {
         return None;
     }
 

@@ -99,12 +99,11 @@ fn classify(fd: &Funcdata, c: BlockId) -> Option<(u64, Form)> {
     if eb.get_out(0) != j || j == c || j == t || j == e {
         return None;
     }
-    let (at_t, at_e) = (arm(fd, t)?, arm(fd, e)?);
-    let quiet = !at_t.stores && !at_e.stores;
-    if tb.size_in() == 1 && eb.size_in() == 1 && joined(fd, t, e, j, quiet) {
+    let (st, se) = (stores(fd, t)?, stores(fd, e)?);
+    if tb.size_in() == 1 && eb.size_in() == 1 && joined(fd, t, e, j, !st && !se) {
         return Some((at, Form::Value));
     }
-    (at_t.stores && at_e.stores).then_some((at, Form::Statement))
+    (st && se).then_some((at, Form::Statement))
 }
 
 /// Whether `j` merges a temporary that arms `t` and `e` each define and that
@@ -157,13 +156,9 @@ fn slot(fd: &Funcdata, j: BlockId, x: BlockId) -> Option<usize> {
     (0..jb.size_in()).find(|&k| jb.get_in(k) == x).map(|k| k as usize)
 }
 
-struct Arm {
-    stores: bool,
-}
-
-/// What arm `x` does.  The return address a call instruction pushes is not a
-/// store of the arm's.
-fn arm(fd: &Funcdata, x: BlockId) -> Option<Arm> {
+/// Whether arm `x` writes memory; `None` for a block that is no arm.  The
+/// return address a call instruction pushes is not a store of the arm's.
+fn stores(fd: &Funcdata, x: BlockId) -> Option<bool> {
     let ops = fd.bb_ops(x);
     if ops.len() > MAX_ARM_OPS {
         return None;
@@ -174,18 +169,21 @@ fn arm(fd: &Funcdata, x: BlockId) -> Option<Arm> {
         .filter(|op| op.is_call())
         .map(|op| op.get_addr().get_offset())
         .collect();
-    let mut a = Arm { stores: false };
+    let mut writes = false;
     for o in ops {
         let op = fd.obank().get(o)?;
-        match op.code() {
-            OpCode::CPUI_STORE => a.stores |= !calls.contains(&op.get_addr().get_offset()),
-            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER => {}
+        writes |= match op.code() {
+            OpCode::CPUI_STORE => !calls.contains(&op.get_addr().get_offset()),
             OpCode::CPUI_RETURN | OpCode::CPUI_BRANCHIND | OpCode::CPUI_CBRANCH => return None,
-            OpCode::CPUI_INDIRECT | OpCode::CPUI_MULTIEQUAL => {}
-            _ => a.stores |= op.get_out().is_some_and(|v| memory(fd, v)),
-        }
+            OpCode::CPUI_CALL
+            | OpCode::CPUI_CALLIND
+            | OpCode::CPUI_CALLOTHER
+            | OpCode::CPUI_INDIRECT
+            | OpCode::CPUI_MULTIEQUAL => false,
+            _ => op.get_out().is_some_and(|v| memory(fd, v)),
+        };
     }
-    Some(a)
+    Some(writes)
 }
 
 /// Whether `vn` is read by something other than a merge or a return, looking
@@ -237,6 +235,11 @@ pub(crate) fn form(fd: &Funcdata, addr: u64) -> Option<Form> {
 /// How the source wrote the branch of `CBRANCH` op `op`, if recorded.
 pub(crate) fn form_of(fd: &Funcdata, op: crate::context::OpId) -> Option<Form> {
     form(fd, fd.obank().get(op)?.get_addr().get_offset())
+}
+
+/// Whether the branch of `CBRANCH` op `op` is a recorded statement.
+pub(crate) fn statement(fd: &Funcdata, op: crate::context::OpId) -> bool {
+    form_of(fd, op) == Some(Form::Statement)
 }
 
 #[cfg(test)]

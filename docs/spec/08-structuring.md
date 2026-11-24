@@ -1210,9 +1210,10 @@ have one successor, the same join:
   one it belongs to, while a `register` variable in a preserved register is
   read wherever the source names it. A read is a store, a computation or a
   test of the value; a copy into another register that is then read; and a
-  call, when the arms set the register themselves or a copy moved the value
-  into the argument register, because an unprototyped call also reads
-  whatever an earlier call left in a scratch register. Only the low part of a
+  call, when the arms do nothing but set that register (an argument evaluated
+  in place) or a copy moved the value into the argument register, because an
+  unprototyped call also reads whatever a statement or an earlier call left in
+  a scratch register. Only the low part of a
   partial-register piece carries the value, since the pieces heritage builds
   around a narrow write would otherwise make every overwritten register look
   read. A phi read only by the RETURN is a returned value and is left to

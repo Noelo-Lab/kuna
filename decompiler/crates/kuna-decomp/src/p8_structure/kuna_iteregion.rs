@@ -217,12 +217,10 @@ pub fn match_ite_assignment(data: &Funcdata, n: BlockId) -> Option<IteAssignMatc
     // precedes each `_PF` diamond) — the printer emits them normally *before* the
     // ternary, so nothing is lost.
     let cbranch = cond_cbranch(data, cond_block)?;
-    let form = crate::p8_structure::kuna_o0select::form_of(data, cbranch);
-    if form == Some(crate::p8_structure::kuna_o0select::Form::Statement) {
-        return None;
-    }
-    let value = form == Some(crate::p8_structure::kuna_o0select::Form::Value);
-    if blk.get_size() == 2 && !value {
+    use crate::p8_structure::kuna_o0select::{form_of, Form};
+    let form = form_of(data, cbranch);
+    let value = form == Some(Form::Value);
+    if form == Some(Form::Statement) || blk.get_size() == 2 && !value {
         return None;
     }
 
@@ -308,7 +306,8 @@ fn cond_cbranch(data: &Funcdata, id: BlockId) -> Option<OpId> {
 /// `printed_ops` already inlines, so the arm remains one statement.  Only ops that
 /// carry a **side effect** or **control flow** (a `STORE`, a call, a branch, an
 /// `INDIRECT`/`MULTIEQUAL` bookkeeping op) are rejected — those cannot be a ternary
-/// branch expression.
+/// branch expression.  In a recorded conditional value (`value`) any pure op is
+/// an arm, and so is a call whose result the arm assigns.
 fn single_assign_arm(data: &Funcdata, id: BlockId, value: bool) -> Option<(OpId, VarnodeId)> {
     let bb = leaf_bblock(data, id)?;
     let ops = printed_ops(data, bb);
@@ -329,8 +328,7 @@ fn single_assign_arm(data: &Funcdata, id: BlockId, value: bool) -> Option<(OpId,
             return None;
         }
         let call = matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND);
-        if call && !value
-            || matches!(
+        if call && !value || matches!(
             o.code(),
             OpCode::CPUI_STORE
                 | OpCode::CPUI_CALLOTHER
