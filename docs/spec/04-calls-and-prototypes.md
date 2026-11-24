@@ -7286,7 +7286,9 @@ into one (`mov $0,0x8(%rsp)`, ARM's `str r3,[sp,#0]`) is not seen. A `push`
 counts unless it is a prologue's push of a register that is no argument
 register of the callee's model (`prologue_push`: the instruction COPYs the
 register into the temporary it stores, and nothing back to the function's
-entry writes it or calls): gcc's `push %rbx` and clang's aligning `push %rax`
+entry writes it or calls; the start of an entry block nothing jumps back into
+counts as the entry, since an `endbr64` lifts to no p-code): gcc's `push %rbx`
+and clang's aligning `push %rax`
 just before a call save or pad. Counted, they gave a glibc-`syscall()`-style
 body that reads every argument register `sys1(0x27,a1,a2,a3,a4,a5)` from
 `long pid_plus(long x) { return sys1(39) + x; }` and six parameters to the

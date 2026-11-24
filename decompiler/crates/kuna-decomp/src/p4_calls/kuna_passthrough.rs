@@ -635,8 +635,10 @@ fn holds_register(data: &Funcdata, vn: Option<VarnodeId>) -> bool {
 
 /// Is the raw `store` a prologue's push of a register that is no argument
 /// register of the callee's model: the instruction COPYs the register into the
-/// temporary it stores, and nothing back to the function's entry writes it or
-/// calls? gcc's `push %rbx` and clang's aligning `push %rax` just before a call
+/// temporary it stores, and nothing back to the function's entry, or to the
+/// start of an entry block nothing jumps back into (past an `endbr64`, which
+/// lifts to no p-code), writes it or calls? gcc's `push %rbx` and clang's
+/// aligning `push %rax` just before a call
 /// save or pad, and pass nothing; `push %r9` (a forwarded parameter) and a
 /// push of a register the function computed are arguments.
 fn prologue_push(data: &Funcdata, store: OpId, proto: &crate::fspec::FuncProto) -> bool {
@@ -691,6 +693,10 @@ fn prologue_push(data: &Funcdata, store: OpId, proto: &crate::fspec::FuncProto) 
         cur = data.op_previous_op(prev);
     }
     at_entry
+        || data.obank().get(store).and_then(|o| o.get_parent()).is_some_and(|b| {
+            let bl = data.bblocks_ref().block(b);
+            bl.is_entry_point() && bl.size_in() == 0
+        })
 }
 
 /// Is the function itself variadic -- does its entry block read a register

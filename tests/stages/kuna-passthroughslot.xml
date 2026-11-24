@@ -43,6 +43,9 @@
     call k7` at the function's entry, forwarding rdi..r9 to k7, which reads
     all six and 8(%rsp): rbx is written before it is pushed, so the push is
     the seventh argument, k7(a0,a1,a2,a3,a4,a5,7), not a register save.
+    pid_minus is pid_plus built with -fcf-protection: its entry instruction
+    is `endbr64`, which lifts to no p-code, so the push is a prologue save
+    because nothing before it in the entry block writes rbx.
 -->
 <bytechunk space="ram" offset="0x401000" readonly="true">
 4101f944034c240844890d1d1100004d85c07403418938488b060fbe000fbe12
@@ -61,7 +64,8 @@ cb89d84883c4105bc3
 4889f84889f74889d64889ca4d89c24d89c84c8b4c24080f05c3660f1f440000
 534889fbbf27000000e8d2ffffff4801d85bc366662e0f1f8400000000006690
 488b4424084801f84801f04801d04801c84c01c04c01c8c30f1f840000000000
-bb0700000053e8d5ffffff5bc3
+bb0700000053e8d5ffffff5bc30f1f00f30f1efa534889fbbf27000000e87eff
+ffff4829d85bc3
 </bytechunk>
 <symbol space="ram" offset="0x401000" name="internal"/>
 <symbol space="ram" offset="0x401030" name="getopt_long"/>
@@ -77,6 +81,7 @@ bb0700000053e8d5ffffff5bc3
 <symbol space="ram" offset="0x402040" name="pid_plus"/>
 <symbol space="ram" offset="0x402060" name="k7"/>
 <symbol space="ram" offset="0x402080" name="p_rbx_first"/>
+<symbol space="ram" offset="0x402090" name="pid_minus"/>
 </binaryimage>
 <script>
   <com>lo fu getopt_long</com>
@@ -95,6 +100,9 @@ bb0700000053e8d5ffffff5bc3
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu p_rbx_first</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pid_minus</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option passthrough off</com>
@@ -116,4 +124,5 @@ bb0700000053e8d5ffffff5bc3
 <stringmatch name="passthroughslot #5: g3 passes h3 the three registers it forwards, not the ecx it keeps for itself" min="1" max="1">h3\(a0,a1,a2\);</stringmatch>
 <stringmatch name="passthroughslot #6: pid_plus's prologue push %rbx is no stack argument, so sys1 takes only the number" min="1" max="1">sys1\(0x27\) \+ a0;</stringmatch>
 <stringmatch name="passthroughslot #7: p_rbx_first pushes the rbx its entry instruction loads, a seventh argument" min="1" max="1">k7\(a0,a1,a2,a3,a4,a5,7\)</stringmatch>
+<stringmatch name="passthroughslot #8: pid_minus's push %rbx after endbr64 is a prologue save, so sys1 takes only the number" min="1" max="1">sys1\(0x27\) - a0;</stringmatch>
 </decompilertest>

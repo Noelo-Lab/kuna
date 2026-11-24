@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5275,
-    5275
+    5276,
+    5276
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4443,6 +4443,7 @@
     "data:passthroughslot #5: g3 passes h3 the three registers it forwards, not the ecx it keeps for itself",
     "data:passthroughslot #6: pid_plus's prologue push %rbx is no stack argument, so sys1 takes only the number",
     "data:passthroughslot #7: p_rbx_first pushes the rbx its entry instruction loads, a seventh argument",
+    "data:passthroughslot #8: pid_minus's push %rbx after endbr64 is a prologue save, so sys1 takes only the number",
     "data:passthroughslot-arm #1: sbuffill forwards c and n and nothing its push pad left behind",
     "data:passthroughslot-arm #2: lock forwards mp alone, not the BASEPRI value or the untouched registers",
     "data:passthroughslot-arm #3: neither caller's own prototype is widened",
