@@ -4038,11 +4038,12 @@ neither (`kuna_unitcalls.rs (unknown_stub_params)`). A jump stub
 one jump), or a PE or Mach-O import thunk. A stub kuna recovered parameters for
 keeps them, and so does one whose input list is locked, as a library
 declaration's `void abort(void)` is: its callers pass what it says. A direct
-`jmp` to a decompiled function is not a stub, and an ARM or AArch64 PLT stub
-(`adrp; ldr; br`) is several instructions. gcc before 13 at `-std=c2x` has no
-spelling for such a definition: it rejects `f(...)` and reads the definition
-`f()` as taking nothing, so there a call with arguments that follows the stub's
-definition still fails. Function bodies, every other prototype and the output
+`jmp` to a decompiled function is not a stub, and an AArch64 PLT or Mach-O stub
+(`adrp; ldr; br`) or an ARM PLT stub (`add; add; ldr pc`) is several
+instructions. gcc before 13 at `-std=c2x` has no spelling for such a
+definition: it rejects `f(...)` and reads the definition `f()` as taking
+nothing, so there a call with arguments that follows the stub's definition
+still fails. Function bodies, every other prototype and the output
 of `kuna decompile` and `decompile-all` are unchanged.
 
 **The prototype — one token stream, two documents.** The prototype segment of

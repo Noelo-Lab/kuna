@@ -1232,9 +1232,9 @@ pub fn sanitize_guard(file_name: &str) -> String {
 /// stub's `jmp [GOT]` or a PE or Mach-O import thunk, perhaps after `endbr64` or
 /// `endbr32` (a CET `.plt.sec` stub; GNU ld's `bnd jmp` decodes as one jump)? A
 /// stub forwards whatever its caller passes, so in an export one kuna recovered
-/// no parameters for takes any. An ARM or AArch64 PLT stub (`adrp; ldr; br`) is
-/// several instructions, and a direct `jmp` to a decompiled function keeps the
-/// parameters recovered for it.
+/// no parameters for takes any. An AArch64 PLT or Mach-O stub (`adrp; ldr; br`)
+/// or an ARM PLT stub (`add; add; ldr pc`) is several instructions, and a direct
+/// `jmp` to a decompiled function keeps the parameters recovered for it.
 fn is_jump_stub(prog: &ConsoleProgram, vma: u64) -> bool {
     prog.lone_jump_target(vma) == Some(None)
         || (prog
