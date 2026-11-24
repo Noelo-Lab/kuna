@@ -3964,9 +3964,12 @@ empty with each function, and the function's call declarations
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_callprototypes.rs`) take one
 `T name(KUNA_ANY_ARGS);` per name. `T` is `bool` for the carry and borrow
 tests, and otherwise the op's output, spelled as the float of its width where
-the output is a float (`FLOAT_RINT`), or `void` when it has none. The header
+a user-defined operation's output is a float (`FLOAT_RINT`), or `void` when it
+has none. The header
 writes them in a block of their own, one `extern` per name at the widest type
-any function's calls have, and only for code that defines
+any function's calls have (at one width the `undefinedN` spelling, which takes
+the integer operators a float does not, so the choice does not depend on the
+order the functions land in), and only for code that defines
 `KUNA_DECLARE_HELPERS`. Each line is also under `#ifndef name`, and a name the
 header already declares, or a C keyword (MIPS's `break` user-defined
 operation), is left out. A wide call's declaration check (`callwide`) does not

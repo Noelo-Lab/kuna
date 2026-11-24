@@ -12,9 +12,9 @@
 //! reject a faithful call. The recompile prelude defines `KUNA_ANY_ARGS` as
 //! `...` where `()` means no parameters (C23, and the c2x modes of gcc 13 and
 //! clang 16 on) and as nothing before. `T` is the op's output, spelled as the
-//! float of its width where the output is a float, or `void` without one; a
-//! name a function calls both with and without an output, or at two output
-//! sizes, takes the widest.
+//! float of its width where a user-defined operation's output is a float, or
+//! `void` without one; a name called both with and without an output, or at two
+//! output sizes, takes the widest, and at one width the `undefinedN` spelling.
 //!
 //! The printer keeps one [`Calls`] for the function it is printing, starts it
 //! empty with each function and answers it from `PrintC::unit_calls`, which
@@ -49,8 +49,8 @@ use crate::context::{OpId, VarnodeId};
 use crate::dtype::type_metatype;
 use crate::funcdata::Funcdata;
 
-/// A declared return type and the output size it stands for (`-1` for
-/// `void`), by which the widest of two calls is kept.
+/// A declared return type and its [`rank_of`], by which the widest of two
+/// calls is kept.
 type Returns = (i32, &'static str);
 
 /// The words C reserves, which no declaration can use as a name.
@@ -90,7 +90,7 @@ impl Calls {
 
     fn note(&mut self, name: &str, returns: Returns) {
         match self.0.get_mut(name) {
-            Some(kept) if returns.0 > kept.0 => *kept = returns,
+            Some(kept) if replaces(returns, *kept) => *kept = returns,
             Some(_) => {}
             None => {
                 self.0.insert(name.to_owned(), returns);
@@ -119,7 +119,7 @@ pub fn header_block<'d>(declarations: impl IntoIterator<Item = &'d str>, declare
         }
         let rank = rank_of(ty);
         let kept = widest.entry(name).or_insert((rank, ty));
-        if rank > kept.0 {
+        if replaces((rank, ty), *kept) {
             *kept = (rank, ty);
         }
     }
@@ -151,6 +151,13 @@ fn rank_of(ty: &str) -> i32 {
     }
 }
 
+/// Whether `new` replaces `kept` as a name's declared type: a wider output, or
+/// at the same width the `undefinedN` spelling, which takes the integer
+/// operators a float spelling does not, so the choice is the same in any order.
+fn replaces(new: (i32, &str), kept: (i32, &str)) -> bool {
+    new.0 > kept.0 || (new.0 == kept.0 && new.1.starts_with("undefined") && !kept.1.starts_with("undefined"))
+}
+
 fn declarable(name: &str) -> bool {
     is_identifier(name) && !C_KEYWORDS.contains(&name)
 }
@@ -168,26 +175,30 @@ fn returns(fd: &Funcdata, code: OpCode, out: Option<VarnodeId>) -> Option<Return
 }
 
 /// The declared type of a call to `code`'s helper or operation with an output
-/// of `size` bytes, or with none; `float` says the output is typed a float
-/// (`FLOAT_RINT`).
+/// of `size` bytes, or with none; `float` says the output is typed a float,
+/// which spells a user-defined operation's output (`FLOAT_RINT`) as the float
+/// of its width, but not a p-code helper's (`SUB168`).
 fn returns_of(code: OpCode, size: Option<i32>, float: bool) -> Option<Returns> {
     use OpCode::*;
     let Some(size) = size else {
         return Some((-1, "void"));
     };
     if matches!(code, CPUI_INT_CARRY | CPUI_INT_SCARRY | CPUI_INT_SBORROW | CPUI_FLOAT_NAN) {
-        return Some((size, "bool"));
+        return Some((rank_of("bool"), "bool"));
     }
-    let ty = if float || matches!(
+    let float_name = match size {
+        4 => Some("float"),
+        8 => Some("double"),
+        10 | 16 => Some("long double"),
+        _ => None,
+    };
+    let ty = if matches!(
         code,
         CPUI_FLOAT_ABS | CPUI_FLOAT_SQRT | CPUI_FLOAT_CEIL | CPUI_FLOAT_FLOOR | CPUI_FLOAT_ROUND
     ) {
-        match size {
-            4 => "float",
-            8 => "double",
-            10 | 16 => "long double",
-            _ => return None,
-        }
+        float_name?
+    } else if let Some(ty) = float_name.filter(|_| float && code == CPUI_CALLOTHER) {
+        ty
     } else {
         match size {
             1 => "undefined1",
@@ -203,7 +214,7 @@ fn returns_of(code: OpCode, size: Option<i32>, float: bool) -> Option<Returns> {
             _ => return None,
         }
     };
-    Some((size, ty))
+    Some((rank_of(ty), ty))
 }
 
 #[cfg(test)]
@@ -255,6 +266,25 @@ mod tests {
     }
 
     #[test]
+    fn a_same_width_tie_keeps_the_undefined_spelling_in_either_order() {
+        for (first, second) in [((8, "double"), (8, "undefined8")), ((8, "undefined8"), (8, "double"))] {
+            let mut calls = Calls::default();
+            calls.note("SUB168", first);
+            calls.note("SUB168", second);
+            assert_eq!(calls.declarations(), ["undefined8 SUB168(KUNA_ANY_ARGS);"]);
+        }
+        let caller = ["double SUB168(KUNA_ANY_ARGS);", "long double FLOAT_RINT(KUNA_ANY_ARGS);"];
+        let other = ["undefined8 SUB168(KUNA_ANY_ARGS);", "undefined16 FLOAT_RINT(KUNA_ANY_ARGS);"];
+        let forward = header_block(caller.into_iter().chain(other), |_| false);
+        let backward = header_block(other.into_iter().chain(caller), |_| false);
+        assert_eq!(forward, backward);
+        assert!(forward.contains("extern undefined8 SUB168(KUNA_ANY_ARGS);"), "{forward}");
+        assert!(forward.contains("extern undefined16 FLOAT_RINT(KUNA_ANY_ARGS);"), "{forward}");
+        let wider = header_block(["undefined8 FLOAT_RINT(KUNA_ANY_ARGS);", "long double FLOAT_RINT(KUNA_ANY_ARGS);"], |_| false);
+        assert!(wider.contains("extern long double FLOAT_RINT(KUNA_ANY_ARGS);"), "{wider}");
+    }
+
+    #[test]
     fn only_a_c_identifier_that_is_not_a_keyword_is_declared() {
         for name in ["SCARRY4", "halt_baddata", "_x", "a1", "breakpoint", "syscall"] {
             assert!(declarable(name), "{name}");
@@ -285,14 +315,19 @@ mod tests {
             (CPUI_CALLOTHER, None, false, Some((-1, "void"))),
             (CPUI_FLOAT_ABS, Some(4), false, Some((4, "float"))),
             (CPUI_FLOAT_SQRT, Some(8), false, Some((8, "double"))),
-            (CPUI_FLOAT_ROUND, Some(10), false, Some((10, "long double"))),
+            (CPUI_FLOAT_ROUND, Some(10), false, Some((16, "long double"))),
             (CPUI_FLOAT_CEIL, Some(16), false, Some((16, "long double"))),
             (CPUI_FLOAT_FLOOR, Some(8), false, Some((8, "double"))),
             (CPUI_CALLOTHER, Some(12), false, None),
             (CPUI_FLOAT_ABS, Some(2), false, None),
             (CPUI_CALLOTHER, Some(8), true, Some((8, "double"))),
             (CPUI_CALLOTHER, Some(4), true, Some((4, "float"))),
+            (CPUI_CALLOTHER, Some(10), true, Some((16, "long double"))),
+            (CPUI_CALLOTHER, Some(2), true, Some((2, "undefined2"))),
             (CPUI_CALLOTHER, None, true, Some((-1, "void"))),
+            (CPUI_SUBPIECE, Some(8), true, Some((8, "undefined8"))),
+            (CPUI_PIECE, Some(16), true, Some((16, "undefined16"))),
+            (CPUI_INT_ZEXT, Some(4), true, Some((4, "undefined4"))),
         ];
         for (code, size, float, returns) in cases {
             assert_eq!(returns_of(code, size, float), returns, "{code:?} {size:?} {float}");
