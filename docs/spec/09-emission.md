@@ -1606,10 +1606,10 @@ selector emits `-0xd =>` where it once printed `0xfff3 =>`, a pattern rustc
 rejects as out of range for `i16`, and a sign-extended `i16` selector no
 longer carries the widened `0xfffffff3`.
 
-**(kuna) Dynamic ARM LSL in C.** ARM register-controlled `LSL` uses the low
-eight bits of its count, so counts 32 through 255 must produce zero for a
-32-bit value. C makes a shift by 32 or more undefined. The selector and
-repeatability proof live in
+**(kuna) Dynamic ARM LSL in C — `option armshiftguard`.** ARM register-controlled
+`LSL` uses the low eight bits of its count, so counts 32 through 255 must
+produce zero for a 32-bit value. C makes a shift by 32 or more undefined. The
+selector and repeatability proof live in
 `p9_emit/kuna_armregistershift.rs (plan_arm_register_lsl)`; the C printer emits
 the plan as a guarded conditional. It preserves the lifted count expression,
 compares its unsigned same-width cast with the shifted value's bit width, and
@@ -1632,10 +1632,40 @@ non-repeatable ARM inputs keep their existing output. Under `regnarrow` (chapter
 an unsigned narrow value prints as that value, since the guard already casts it
 and the shift reads it the same (`(unsigned int)v4 < 32u ? (unsigned int)1 << v4 :
 0u` where a narrowed counter printed `(unsigned int)(unsigned int)v4`;
-`unsigned_extension_source`). The 12-byte reproduction
-and emitted-form checks are in `tests/stages/kuna-arm-register-shift.xml`; signed
-comparison and ASR consumers are in
-`tests/stages/kuna-arm-register-shift-signed.xml`.
+`unsigned_extension_source`).
+
+Which shifts carry the guard is option `armshiftguard`
+(`p9_emit/kuna_armshiftguard.rs (guard_needed)`). The guard is a `?:` that no
+source writes, so it costs a branch in the printed control flow of every
+firmware bit operation such as `1 << (pin & 0x1f)`. Under the default `needed`
+the planner first asks whether the count can reach 32 at all: its non-zero
+mask, the set of bits it may hold, is the engine's stored mask (chapter
+[03](03-ssa-and-simplification.md), `ActionNonzeroMask`) intersected with the
+mask re-derived over its definition at print time
+(`kuna_boolbyte::value_mask`), so a Varnode created after the last mask pass is
+still bounded by its definition. A mask below 32 (`count_below_width`) proves
+every value of the count lies in 0..31, and the shift then takes the ordinary
+binary-operator path, printing `x << n` like any other shift. This covers a
+count masked with `& 0x1f` or narrower, a field extracted by shift and mask
+(`(c & 0xfff) >> 8`), a remainder by 32 or less, a narrow zero-extended
+value, a left-shifted small field (`(c & 7) << 2`), a sum of disjoint or small
+masks, and a variable whose every reaching definition is one of these. A count
+the mask cannot bound keeps its guard, including a loop counter whose bound is
+only a branch and the double-word shift complement `(n - 0x20 & 0xff)` that a
+compiler's inline 64-bit shift relies on. `always` restores the guard on every
+qualifying shift; `never` drops it everywhere, printing the plain C shift
+`x << (n & 0xff)`. Under `never` a count that reaches 32 prints as undefined C
+instead of the machine's zero: for a source shift by a variable that is the
+same undefined behavior the source had, but for the low word of a compiler's
+inline 64-bit shift, whose complement count is out of range on every call, the
+printed C no longer computes the binary's value. The register-count right
+shifts (`LSR`/`ASR` by register, `INT_RIGHT`/`INT_SRIGHT` of the same
+`n & 0xff`) are not guarded under any value. The 12-byte reproduction and
+emitted-form checks are in `tests/stages/kuna-arm-register-shift.xml` (unbounded
+counts, so the default keeps them guarded); signed comparison and ASR consumers
+are in `tests/stages/kuna-arm-register-shift-signed.xml`; the three values on
+clang Thumb code (a masked count, a four-bit field, an unbounded count) are in
+`tests/stages/kuna-armshiftguard.xml`.
 
 **(kuna) Fixed ARM LSL with a signed operand in C.** A constant-count 32-bit
 `INT_LEFT` still computes the low 32 bits when its declared operand is signed.
@@ -1643,7 +1673,11 @@ C11 instead makes a negative signed shiftee or signed overflow undefined,
 including when the function converts the result to unsigned on return.
 `p9_emit/kuna_armconstantshift.rs (plan_arm_constant_lsl)` selects ARM shifts
 with a constant count below 32, equal four-byte input/output widths, and a
-signed integer or signed enum shiftee. The C printer casts that operand to
+signed integer or signed enum shiftee. A register count whose non-zero mask
+proves it below 32 (`kuna_armshiftguard::count_below_width`, the proof
+`armshiftguard needed` uses to drop the range guard) counts as an in-range
+fixed count, so a shift that loses its guard keeps the unsigned conversion when
+this option is on. The C printer casts that operand to
 `uint4` before the shift, preserving locked declarations. If the output type
 is signed, it casts the whole unsigned shift back to `int4` to preserve signed
 comparisons and arithmetic right shifts. That signed conversion and negative
