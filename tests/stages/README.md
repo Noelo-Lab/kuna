@@ -39,6 +39,16 @@ segment it loads, whether or not the destinations fit 16 bits, and DOS picks
 the segment an MZ executable runs at. Each rejects its `override jumptable`
 and keeps the unresolved jump.
 
+`kuna-stated-jump-owners.xml` checks which stated destinations stay in the
+function that holds the jump. A GCC-style `.cold` part of the jumping
+function is a case, in a loaded ELF and in an XML image whose symbols are
+named as written, and so is the entry of a caller-declared extent that
+holds the site, beside a size-less inner symbol. A size-less exported symbol
+holds no site, so a jump to its entry from an unsymbolized function is
+refused, as is the entry of `ordinary` from `dispatch`. A later `function
+bounds` that would make an installed destination another function's entry is
+refused, and the installed set and its identical restatement stay in use.
+
 `kuna-narrowed-call-input.xml` checks a call through a typed field whose
 argument was narrowed to two bytes before the field's prototype was forced on
 the call: the function decompiles and passes the sum widened to the parameter.

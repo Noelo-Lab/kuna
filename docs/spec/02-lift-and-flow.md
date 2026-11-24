@@ -2323,6 +2323,21 @@ extensions and truncations in the same instruction. A zero extension on that
 walk, or a branch input narrower than the address, bounds every value the
 jump can take, so a destination above that bound is rejected: a 32-bit
 `jmp ax` never reaches 0x401003.
+A destination that enters another function declared by the loader's
+symbols or by the caller is a tail call, not a case, and is rejected as well.
+A declared function holds the site when its known extent, the caller's or
+else the symbol table's size, covers it; a size-less entry holds nothing. A
+destination inside a holder's extent stays in it unless the caller declared
+a function there and only the symbol table states the extent, because a
+caller's declaration outranks the image's. The holder's own entry is a loop,
+and a part split off it stays as well: the loader pairs `f.cold` and
+`f.cold.N` with `f` by raw symbol name, since demangling gives a C++ part
+its parent's name. Entries and extents are compared with any ARM or MIPS
+ISA bit cleared. Discovery's own entries are not evidence, since it names
+address-taken case blocks as functions. Directives that declare functions
+apply before every `jumptable` in the same list, and a later console
+declaration under which an installed destination would enter another
+function is refused before it changes anything.
 Its case values are the destination addresses in code-space addressable units.
 The model has no table-index ordering, inferred default or guard to fold.
 A fresh follow of the same image consults the same site map.
