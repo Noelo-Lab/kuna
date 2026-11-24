@@ -85,6 +85,10 @@ pub fn declarations(arch: &Architecture, fd: &Funcdata) -> Result<Declarations, 
             crate::printc::declaration_text(&Rc::new(code), &name, rt.clone())
         ));
     }
+    // (kuna `unitcalls`) The helpers and user-defined operations the C calls,
+    // which the printer recorded on this thread: call this right after
+    // printing `fd`, once.
+    declarations.extend(crate::kuna_unitcalls::take());
     Ok(Declarations {
         declarations: declarations.into_iter().collect(),
         callwide_prototypes,

@@ -2756,6 +2756,9 @@ pub fn print_c_recompile_prelude(arch: &Architecture) -> String {
     let mut out = String::new();
     out.push_str("/* kuna recompile prelude (generated): core scalar typedefs */\n");
     out.push_str("#include <stdbool.h>\n");
+    // (kuna `unitcalls`) The parameter list of a declared p-code helper or
+    // user-defined operation: `()` means no parameters from C23 on.
+    out.push_str("#if defined(__STDC_VERSION__) && __STDC_VERSION__ > 201710L\n#define KUNA_ANY_ARGS ...\n#else\n#define KUNA_ANY_ARGS\n#endif\n");
     // A recovered aggregate can hold target pointers, and a host that compiles
     // this header for a different data model sizes them differently and moves
     // every field after such a member -- which also moves what `p[1]` means in
@@ -2829,7 +2832,12 @@ pub fn print_c_recompile_prelude(arch: &Architecture) -> String {
     out.push_str("typedef unsigned long long undefined6; /* 6 bytes in the decompiler; sizeof differs */\n");
     out.push_str("typedef unsigned long long undefined7; /* 7 bytes in the decompiler; sizeof differs */\n");
     out.push_str("typedef unsigned long long undefined8;\n");
+    // A 16-byte integer where the compiler has one, since the C does
+    // arithmetic on 16-byte values (a rax:rdx pair, `SUB168(x,8)`), aligned
+    // like the byte struct so no record's layout moves.
+    out.push_str("#ifdef __SIZEOF_INT128__\n__extension__ typedef unsigned __int128 undefined16 __attribute__((aligned(1)));\n#else\n");
     out.push_str("typedef struct { unsigned char b[16]; } undefined16;\n");
+    out.push_str("#endif\n");
     out.push_str("typedef struct { unsigned char b[32]; } undefined32;\n");
     out
 }

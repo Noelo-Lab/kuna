@@ -2788,6 +2788,7 @@ impl PrintC {
         // type-name chokepoint below reads `self.rt_ctx`.
         self.rt_ctx = RealTypeCtx::for_function(fd, arch, self.out_lang);
         self.named_globals = crate::kuna_namedglobals::References::default();
+        crate::kuna_unitcalls::forget();
         self.globalref = crate::kuna_globalref::plan(
             fd,
             arch,
@@ -7232,6 +7233,7 @@ impl PrintC {
             return;
         }
         let name = func_operator_name(fd, op, opc);
+        crate::kuna_unitcalls::record(fd, op, &name);
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
         // The name is pushed as an *operator* token (C++ `optoken`, no_color).
         self.push_atom(&Atom::with_op(
@@ -7337,6 +7339,7 @@ impl PrintC {
                 (false, Some(op)) => String::from_utf8_lossy(op.get_name()).into_owned(),
                 (false, None) => format!("CALLOTHER[{:#x}]", in0_off),
             };
+            crate::kuna_unitcalls::record(fd, op, &nm);
             self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
             self.push_atom(&Atom::with_op(
                 nm,

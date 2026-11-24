@@ -3948,6 +3948,28 @@ header's alone: the body still spells a call to such a function and a cast to
 such a type with the one name they share, so the exported `.c` keeps the clash
 the header sheds.
 
+**(kuna `unitcalls`) The header declares the helpers and user-defined
+operations the code calls.** The printer spells an op C has no operator for as a
+call to a helper named after the op and its operand sizes (`SCARRY4(a,b)`,
+`SUB168(x,8)`, `CONCAT44(hi,lo)`), and a SLEIGH user-defined operation as a call
+to its name (`invalidInstructionException()`). Nothing declared either, so an
+export that printed one did not compile. While a function prints,
+`printc.rs (PrintC::op_func_ir)` and `printc.rs (PrintC::op_callother_ir)`
+record each such name with the op's output
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_unitcalls.rs`), and the
+function's call declarations
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_callprototypes.rs`) take one
+`T name(KUNA_ANY_ARGS);` per name, which the header writes as `extern` lines.
+There is no fixed parameter list, because the printed arguments are whatever the
+binary passed and a prototype would reject a faithful call. The prelude defines
+`KUNA_ANY_ARGS` as `...` from C23 on, where `()` means no parameters, and as
+nothing before. `T` is `bool` for the carry and borrow tests, and otherwise the
+widest output any call of the name has, or `void` when none has one. An output
+with no `undefinedN` or float spelling gets no declaration. The prelude's
+`undefined16` is an `unsigned __int128` aligned to one byte where the compiler
+has the type, so arithmetic on a 16-byte value (a rax:rdx pair) compiles and a
+record holding one keeps its layout. The byte struct remains the fallback.
+
 **The prototype — one token stream, two documents.** The prototype segment of
 §9.2's document walk was extracted verbatim into `printc.rs
 (PrintC::emit_prototype_declaration)` — pure code motion, byte-identical
