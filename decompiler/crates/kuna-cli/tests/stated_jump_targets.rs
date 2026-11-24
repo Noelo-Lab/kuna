@@ -476,9 +476,13 @@ fn segmented_and_compressed_destinations_cannot_label_cases() {
     let near = [0xff, 0xe0, 0xb8, 0x0b, 0x00, 0xc3, 0xb8, 0x16, 0x00, 0xc3];
     let far = [0xff, 0x2f, 0xb8, 0x0b, 0x00, 0xc3, 0xb8, 0x16, 0x00, 0xc3];
     let ax32 = [0x66, 0xff, 0xe0, 0xb8, 0x0b, 0, 0, 0, 0xc3, 0xb8, 0x16, 0, 0, 0, 0xc3];
-    let rejected: [(&[u8], &str, &str, &str, &str); 3] = [
+    // jmp eax with operand- and address-size prefixes: SLEIGH omits the segment operation.
+    let eax16 = [0x66, 0x67, 0xff, 0xe0, 0x66, 0xb8, 0x0b, 0, 0, 0, 0xc3, 0x66, 0xb8, 0x16, 0, 0, 0, 0xc3];
+    let rejected: [(&[u8], &str, &str, &str, &str); 5] = [
         (&near, real, "0x10000", "jumptable 10000 10002 10006", "segmented destination"),
-        (&far, real, "0x10000", "jumptable 10000 10002 10006", "destination 0x10002 does not fit the 2-byte value"),
+        (&far, real, "0x10000", "jumptable 10000 10002 10006", "segmented destination"),
+        (&far, real, "0x100", "jumptable 100 102 106", "segmented destination"),
+        (&eax16, real, "0x10000", "jumptable 10000 10004 1000b", "segmented destination"),
         (&ax32, "x86:LE:32:default", "0x401000", "jumptable 401000 401003 401009", "destination 0x401003 does not fit the 2-byte value"),
     ];
     for (bytes, target, base, directive, reason) in rejected {
@@ -494,14 +498,9 @@ fn segmented_and_compressed_destinations_cannot_label_cases() {
         args.push("--assert-strict");
         assert!(!kuna("decompile", file.path(), &args).status.success());
     }
-    for (bytes, target, directive, cases) in [
-        (&far[..], real, "jumptable 100 102 106", ["case 0x102:", "case 0x106:"]),
-        (&ax32[..], "x86:LE:32:default", "jumptable 100 103 109", ["case 0x103:", "case 0x109:"]),
-    ] {
-        let out = raw_jump(target, bytes, directive);
-        let body = String::from_utf8_lossy(&out.stdout);
-        assert!(out.status.success() && cases.iter().all(|case| body.contains(case)), "{body}");
-    }
+    let fits = raw_jump("x86:LE:32:default", &ax32, "jumptable 100 103 109");
+    let body = String::from_utf8_lossy(&fits.stdout);
+    assert!(fits.status.success() && body.contains("case 0x103:") && body.contains("case 0x109:"), "{body}");
 
     // jr t9; nop; li v0,11; jr ra; nop; li v0,22; jr ra; nop
     let mips: Vec<_> = [0x03200008u32, 0, 0x2402000b, 0x03e00008, 0, 0x24020016, 0x03e00008, 0]

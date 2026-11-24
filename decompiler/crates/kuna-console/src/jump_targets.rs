@@ -135,8 +135,11 @@ fn compressed_mode_variable(prog: &ConsoleProgram) -> Option<&'static [u8]> {
 /// SLEIGH lifts a classic PPC32 branch through LR as RETURN, so a stated set
 /// identifies that jump even when LR's provenance is unknown. A site whose
 /// operand cannot label a case is rejected with the missing fact: an image
-/// that may run elsewhere, a segmented near offset, ARM interworking, or an
-/// unresolved PowerPC or AArch64 target encoding.
+/// that may run elsewhere, a segmented destination, ARM interworking, or an
+/// unresolved PowerPC or AArch64 target encoding. Every computed branch of a
+/// 16-bit x86 language is segmented: a near target is an offset in CS and a
+/// far target's segment is loaded with it, even where SLEIGH lifts the branch
+/// without the segment operation.
 fn branch_selector(prog: &ConsoleProgram, site: &Address, addr: u64) -> Result<(StatedSelector, u32), String> {
     let arch = prog.arch();
     let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -181,7 +184,9 @@ fn branch_selector(prog: &ConsoleProgram, site: &Address, addr: u64) -> Result<(
     if arch.runtime_code_relocation {
         return unlabelable("runtime load base is unknown for this image");
     }
-    if producer.is_some_and(|userop| is_segment_op(prog, userop.get_index())) {
+    if arch.archid.starts_with("x86:LE:16:")
+        || producer.is_some_and(|userop| is_segment_op(prog, userop.get_index()))
+    {
         return unlabelable("a segmented destination is printed as an offset in its code segment");
     }
     if powerpc {
