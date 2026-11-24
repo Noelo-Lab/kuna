@@ -31,9 +31,9 @@
 //! * in a function that returns a value, the epilogue itself when it computes
 //!   the returned register (`mov eax, K` before `leave`); otherwise each
 //!   predecessor ends in a `return` of its own;
-//! * in a void function, where `return;` is only a jump or a `nop`, the
-//!   instruction a path lands on: paths that land on the same address share
-//!   it, and a block that jumps to the epilogue is a `return;` of its own.
+//! * in a void function, where `return;` is a `nop` and a jump, a block that
+//!   only jumps and is entered on its `nop`; otherwise the instruction a path
+//!   lands on, paths that land on the same address sharing it.
 //!
 //! The compiler emits `return c ? a : b;` exactly like `if (c) return a;
 //! return b;`, and this prints the second.
@@ -89,7 +89,8 @@ pub(crate) fn record(fd: &mut Funcdata) {
     let preds: Vec<BlockId> = (0..n).map(|i| fd.bblocks_ref().block(j).get_in(i)).collect();
     let j_start = fd.bb_op_head(j).and_then(|o| fd.obank().get(o)).map_or(0, |o| o.get_addr().get_offset());
     let entries: Vec<Option<Entry>> = preds.iter().map(|&x| entry(fd, x, j)).collect();
-    let lands = landings(&entries, j_start);
+    let mut lands = landings(&entries, j_start);
+    chain_nops(fd, &mut lands, j_start);
     let mut valued: Vec<Key> = Vec::new();
     let mut void: Vec<Key> = Vec::new();
     let mut pure: Vec<bool> = Vec::new();
@@ -97,7 +98,11 @@ pub(crate) fn record(fd: &mut Funcdata) {
         let i = i as int4;
         let stmt = statement_only(fd, x);
         valued.push(if stmt { Key::Block(x) } else { Key::Edge(i) });
-        void.push(if stmt { Key::Block(x) } else { lands[i as usize].map_or(Key::Edge(i), Key::Landing) });
+        void.push(if stmt && behind_nop(fd, x) {
+            Key::Block(x)
+        } else {
+            lands[i as usize].map_or(Key::Edge(i), Key::Landing)
+        });
         pure.push(stmt);
     }
     let (gv, gd) = (numbered(&valued), numbered(&void));
@@ -116,7 +121,6 @@ pub(crate) fn record(fd: &mut Funcdata) {
             }
         }
     }
-    dump_raw(fd, j, &valued, &void, &rec);
     fd.kuna_o0returns = Some(Box::new(rec));
 }
 
@@ -148,7 +152,10 @@ fn epilogue(fd: &Funcdata) -> Option<BlockId> {
         return None;
     }
     let mut j = fd.obank().get(r)?.get_parent()?;
-    while fd.bblocks_ref().block(j).size_in() == 1 {
+    for _ in 0..4 {
+        if fd.bblocks_ref().block(j).size_in() != 1 {
+            break;
+        }
         let p = fd.bblocks_ref().block(j).get_in(0);
         if !guard_check(fd, p, j) {
             break;
@@ -202,6 +209,17 @@ fn statement_only(fd: &Funcdata, x: BlockId) -> bool {
         })
 }
 
+/// Whether a jump into `x` lands on an instruction without p-code in front
+/// of it: the `nop` a `return;` compiles to, where a `break` or `goto` is a
+/// bare jump.
+fn behind_nop(fd: &Funcdata, x: BlockId) -> bool {
+    let Some(start) = fd.bb_op_head(x).and_then(|o| fd.obank().get(o)).map(|o| o.get_addr().get_offset()) else {
+        return false;
+    };
+    let b = fd.bblocks_ref().block(x);
+    (0..b.size_in()).any(|k| matches!(entry(fd, b.get_in(k), x), Some(Entry::Jump(d)) if d < start))
+}
+
 /// How `x` passes to `j`: by a jump to an address, or by falling into the
 /// instructions after its last one.
 #[derive(Debug, Clone, Copy)]
@@ -236,10 +254,13 @@ fn entry(fd: &Funcdata, x: BlockId, j: BlockId) -> Option<Entry> {
 /// between its block and `j` that has no p-code (a `nop`), so it lands on
 /// the first jump target in that gap, or on `j` itself.
 fn landings(entries: &[Option<Entry>], j_start: u64) -> Vec<Option<u64>> {
-    let jumps: Vec<u64> = entries.iter().filter_map(|e| match e {
-        Some(Entry::Jump(d)) => Some(*d),
-        _ => None,
-    }).collect();
+    let jumps: Vec<u64> = entries
+        .iter()
+        .filter_map(|e| match e {
+            Some(Entry::Jump(d)) => Some(*d),
+            _ => None,
+        })
+        .collect();
     entries
         .iter()
         .map(|e| match *e {
@@ -250,6 +271,32 @@ fn landings(entries: &[Option<Entry>], j_start: u64) -> Vec<Option<u64>> {
             None => None,
         })
         .collect()
+}
+
+/// A landing on a `nop` that only runs into a later landing's `nop` (no
+/// p-code between them) lands there too.
+fn chain_nops(fd: &Funcdata, lands: &mut [Option<u64>], j_start: u64) {
+    let mut nops: Vec<u64> = lands.iter().flatten().copied().filter(|&l| l < j_start).collect();
+    nops.sort_unstable();
+    nops.dedup();
+    if nops.len() < 2 {
+        return;
+    }
+    let addrs: Vec<u64> =
+        fd.obank().iter_alive().filter_map(|o| fd.obank().get(o)).map(|o| o.get_addr().get_offset()).collect();
+    let mut to = HashMap::new();
+    for w in nops.windows(2).rev() {
+        let (a, b) = (w[0], w[1]);
+        if !addrs.iter().any(|&x| x >= a && x < b) {
+            let end = *to.get(&b).unwrap_or(&b);
+            to.insert(a, end);
+        }
+    }
+    for l in lands.iter_mut().flatten() {
+        if let Some(&e) = to.get(l) {
+            *l = e;
+        }
+    }
 }
 
 /// The registers block `j` computes itself: values it derives rather than
@@ -308,39 +355,17 @@ pub(crate) fn groups(fd: &Funcdata, b: BlockId) -> Option<Vec<Vec<int4>>> {
         rec.held.iter().any(|&(hs, ho, hz)| hs == s && ho < off + sz && off < ho + hz as u64)
     };
     let blk = fd.bblocks_ref().block(b);
-    let phi = if valued && std::env::var_os("KUNA_O0RET_VALCONST").is_some() {
-        op.get_in(1).and_then(|v| fd.vbank().get(v)).and_then(|v| v.get_def()).and_then(|d| fd.obank().get(d)).filter(|d| d.code() == OpCode::CPUI_MULTIEQUAL && d.get_parent() == Some(b))
-    } else {
-        None
-    };
     let mut parts: Vec<(u16, Vec<int4>)> = Vec::new();
     for i in 0..blk.size_in() {
         let tag = ((blk.get_in_label(i) & TAG_MASK) >> TAG_SHIFT) as usize;
         let &(gv, gd) = rec.tags.get(tag.checked_sub(1)?)?;
-        let mut gid = if held { 0 } else if valued { gv } else { gd };
-        if let Some(m) = phi {
-            let pure = statement_only(fd, blk.get_in(i));
-            let konst = m.get_in(i).is_some_and(|v| const_value(fd, v));
-            if !pure && !konst {
-                gid = u16::MAX;
-            }
-        }
+        let gid = if held { 0 } else if valued { gv } else { gd };
         match parts.iter_mut().find(|(g, _)| *g == gid) {
             Some((_, p)) => p.push(i),
             None => parts.push((gid, vec![i])),
         }
     }
     Some(parts.into_iter().map(|(_, p)| p).collect())
-}
-
-fn const_value(fd: &Funcdata, vn: VarnodeId) -> bool {
-    let Some(v) = fd.vbank().get(vn) else { return false };
-    if v.is_constant() {
-        return true;
-    }
-    v.get_def().and_then(|d| fd.obank().get(d)).is_some_and(|d| {
-        d.code() == OpCode::CPUI_COPY && d.get_in(0).and_then(|i| fd.vbank().get(i)).is_some_and(|i| i.is_constant())
-    })
 }
 
 /// Whether the record decides RETURN block `b`: the function's returns are
@@ -379,12 +404,13 @@ pub(crate) fn split(fd: &mut Funcdata, max_splits: int4, max_inedges: int4) -> i
     }
     let mut count = 0;
     for b in returns(fd) {
+        let b = joined(fd, b);
         loop {
             let Some(parts) = groups(fd, b) else { break };
             if parts.len() < 2
                 || count >= max_splits
                 || fd.bblocks_ref().block(b).size_in() > max_inedges
-                || !fd.return_split_is_splittable(b)
+                || !(fd.return_split_is_splittable(b) || pure_epilogue(fd, b))
             {
                 break;
             }
@@ -407,91 +433,61 @@ pub(crate) fn split(fd: &mut Funcdata, max_splits: int4, max_inedges: int4) -> i
                 fd.switch_edge(q, b, nb);
             }
         }
-        dump_late(fd, b);
     }
     let all = returns(fd).into_iter().all(|b| groups(fd, b).is_some_and(|g| g.len() <= 1));
     if let Some(rec) = fd.kuna_o0returns.as_deref_mut() {
         rec.decided = all;
     }
-    if dump_dir().is_some() {
-        dump_line(format!(
-            "{{\"kind\":\"split\",\"file\":\"{}\",\"fn\":{},\"decided\":{all},\"count\":{count}}}",
-            dump_file(fd),
-            fd.get_address().get_offset()
-        ));
-    }
     count
+}
+
+/// RETURN block `b`, or, when its one untagged in-edge comes from a block that
+/// only runs into it (the join left by a stripped stack-protector check), the
+/// two spliced into that block.
+fn joined(fd: &mut Funcdata, b: BlockId) -> BlockId {
+    let g = fd.bblocks_ref();
+    if g.block(b).size_in() != 1 || g.block(b).get_in_label(0) & TAG_MASK != 0 {
+        return b;
+    }
+    let p = g.block(b).get_in(0);
+    let pb = g.block(p);
+    let tagged = pb.size_in() > 0 && (0..pb.size_in()).all(|i| pb.get_in_label(i) & TAG_MASK != 0);
+    if pb.size_out() != 1 || !tagged || fd.splice_block_basic(p).is_err() {
+        return b;
+    }
+    p
+}
+
+/// An epilogue that only computes the returned value: arithmetic over
+/// settled values, no memory access, call or branch.
+fn pure_epilogue(fd: &Funcdata, b: BlockId) -> bool {
+    let ops = fd.bb_ops(b);
+    ops.len() <= MAX_STATEMENT_OPS
+        && ops.iter().all(|&o| {
+            let Some(op) = fd.obank().get(o) else { return false };
+            let quiet = !matches!(
+                op.code(),
+                OpCode::CPUI_STORE
+                    | OpCode::CPUI_LOAD
+                    | OpCode::CPUI_CALL
+                    | OpCode::CPUI_CALLIND
+                    | OpCode::CPUI_CALLOTHER
+                    | OpCode::CPUI_BRANCH
+                    | OpCode::CPUI_CBRANCH
+                    | OpCode::CPUI_BRANCHIND
+                    | OpCode::CPUI_INDIRECT
+                    | OpCode::CPUI_NEW
+            );
+            let settled = (0..op.num_input())
+                .filter_map(|i| op.get_in(i))
+                .all(|v| fd.vbank().get(v).is_some_and(|v| v.is_constant() || v.is_annotation() || !v.is_free()));
+            let local = op.get_out().and_then(|v| fd.vbank().get(v)).is_none_or(|v| !v.is_persist());
+            quiet && settled && local
+        })
 }
 
 fn has_multiequal(fd: &Funcdata, b: BlockId) -> bool {
     fd.bb_ops(b).iter().any(|&o| fd.obank().get(o).is_some_and(|op| op.code() == OpCode::CPUI_MULTIEQUAL))
-}
-
-fn dump_dir() -> Option<std::path::PathBuf> {
-    std::env::var_os("KUNA_O0RET_DUMP").map(std::path::PathBuf::from)
-}
-
-fn dump_file(fd: &Funcdata) -> String {
-    fd.get_arch().loader.as_ref().map(|l| l.borrow().get_file_name().to_string()).unwrap_or_default()
-}
-
-fn dump_line(line: String) {
-    use std::io::Write;
-    let Some(dir) = dump_dir() else { return };
-    let path = dir.join(format!("{}.jsonl", std::process::id()));
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(f, "{line}");
-    }
-}
-
-fn dump_raw(fd: &Funcdata, j: BlockId, valued: &[Key], void: &[Key], rec: &Record) {
-    if dump_dir().is_none() {
-        return;
-    }
-    let edges: Vec<String> = (0..valued.len())
-        .map(|i| {
-            let x = fd.bblocks_ref().block(j).get_in(i as int4);
-            let start = fd.bb_op_head(x).and_then(|o| fd.obank().get(o)).map_or(0, |o| o.get_addr().get_offset());
-            format!(
-                "{{\"pred\":{start},\"valued\":\"{:?}\",\"void\":\"{:?}\",\"gv\":{},\"gd\":{}}}",
-                valued[i], void[i], rec.tags[i].0, rec.tags[i].1
-            )
-        })
-        .collect();
-    let jstart = fd.bb_op_head(j).and_then(|o| fd.obank().get(o)).map_or(0, |o| o.get_addr().get_offset());
-    dump_line(format!(
-        "{{\"kind\":\"raw\",\"file\":\"{}\",\"fn\":{},\"name\":\"{}\",\"j\":{jstart},\"held\":{},\"edges\":[{}]}}",
-        dump_file(fd),
-        fd.get_address().get_offset(),
-        fd.get_name(),
-        rec.held.len(),
-        edges.join(",")
-    ));
-}
-
-fn dump_late(fd: &Funcdata, b: BlockId) {
-    if dump_dir().is_none() {
-        return;
-    }
-    let op = fd.bb_op_tail(b).and_then(|t| fd.obank().get(t));
-    let valued = op.is_some_and(|o| o.num_input() >= 2);
-    let parts = groups(fd, b).map(|g| g.iter().map(|p| p.len().to_string()).collect::<Vec<_>>().join(","));
-    let blk = fd.bblocks_ref().block(b);
-    let labs: Vec<String> = (0..blk.size_in())
-        .map(|i| {
-            let x = blk.get_in(i);
-            let a = fd.bb_op_head(x).and_then(|o| fd.obank().get(o)).map_or(0, |o| o.get_addr().get_offset());
-            format!("{a:x}:{:x}", blk.get_in_label(i))
-        })
-        .collect();
-    dump_line(format!(
-        "{{\"kind\":\"late\",\"file\":\"{}\",\"fn\":{},\"valued\":{valued},\"size_in\":{},\"parts\":\"{}\",\"labs\":\"{}\"}}",
-        dump_file(fd),
-        fd.get_address().get_offset(),
-        blk.size_in(),
-        parts.unwrap_or_else(|| "none".to_string()),
-        labs.join(" ")
-    ));
 }
 
 #[cfg(test)]
@@ -504,6 +500,16 @@ mod tests {
         assert_eq!(landings(&e, 0xc9), vec![Some(0xc8), Some(0xc8)]);
         let e = [Some(Entry::Jump(0xa6)), Some(Entry::Fall(0xa7))];
         assert_eq!(landings(&e, 0xa8), vec![Some(0xa6), Some(0xa8)]);
+    }
+
+    #[test]
+    fn returndup_auto_keeps_duplication_on_and_adds_the_record() {
+        let opt = crate::p8_structure::kuna_returndup::OptionReturnDup;
+        assert!(matches!(opt.apply("auto"), Ok((true, false, true, _))));
+        assert!(matches!(opt.apply("on"), Ok((true, false, false, _))));
+        assert!(matches!(opt.apply("off"), Ok((false, false, false, _))));
+        assert!(matches!(opt.apply("calls"), Ok((true, true, true, _))));
+        assert!(opt.apply("sometimes").is_err());
     }
 
     #[test]

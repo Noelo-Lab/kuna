@@ -2312,7 +2312,7 @@ mod tests {
         // and kuna-tailform-model / saved weights choose the function-tail form
         // and kuna-tailform-voidreturn / a void tail if drops the return the function end repeats
         // and kuna-calloverlap-floatret / a call's float result inside a wider XMM range
-        assert_eq!(count, 900, "corpus file count drifted");
+        assert_eq!(count, 901, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

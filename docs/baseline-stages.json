@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5290,
-    5290
+    5298,
+    5298
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2368,6 +2368,14 @@
     "data:RETSYSREG MIPS #1: a Status write through v1 beside a computed v0 is not returned",
     "data:RETSYSREG MIPS #2: a prefetch, cache op or mtc2 on the high word keeps the pair",
     "data:RETSYSREG MIPS #3: st never returns the pair",
+    "data:RETURNDUP AUTO #1: guard's first return stays its own statement (pass 1)",
+    "data:RETURNDUP AUTO #2: guard's call is not nested under the condition (pass 1)",
+    "data:RETURNDUP AUTO #3: wrapped's shared return is printed once (pass 1)",
+    "data:RETURNDUP AUTO #4: vguard keeps its bare return (pass 1)",
+    "data:RETURNDUP AUTO #5: pick returns each parameter from its own return (pass 1)",
+    "data:RETURNDUP AUTO #6: with returndup on guard is wrapped (pass 2)",
+    "data:RETURNDUP AUTO #7: with returndup on vguard is wrapped (pass 2)",
+    "data:RETURNDUP AUTO #8: with returndup on pick merges its returns (pass 2)",
     "data:RETURNPIECE #10: the high half is never returned by itself",
     "data:RETURNPIECE #1: both arguments of join_lo_hi stay and the return is eight bytes",
     "data:RETURNPIECE #2: the high half from the third argument keeps it",
