@@ -11,8 +11,12 @@ What they are
                          jr $t9, and h's slot names the undefined ext.
   gottailcall_refused_x86_64.so  the same x86-64 build of
                          gottailcall_refused.c: fwd5's tail call through
-                         five's slot is refused (it would pass four of five's
-                         five arguments), so fwd5 keeps the copied-in body.
+                         five's slot was refused while it passed four of
+                         five's five arguments (fwd5 writes r8 after
+                         forwarding rdi..rcx). Forwarded registers now fill
+                         their slots, so the call passes all five and the
+                         tail call is kept; the fixture no longer reaches the
+                         refusal path.
   Source: gottailcall.c, gottailcall_refused.c.
 
 Why they are vendored
