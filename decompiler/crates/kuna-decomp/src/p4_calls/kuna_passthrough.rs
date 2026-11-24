@@ -528,13 +528,15 @@ pub(crate) fn set_up_as_variadic(data: &Funcdata, idx: int4) -> bool {
 /// call `op`, between the call and the last call or block start before it?
 ///
 /// Asked before heritage, of the raw p-code: the stack pointer's changes are
-/// followed back from the call, and a `STORE` through the stack pointer, or a
-/// temporary computed from it by a constant, that lands where the callee's
-/// convention puts its first stack parameter (`push $0`, clang's `mov
-/// $0,(%rsp)` after an aligning `push %rax`) is the caller passing an argument
-/// past the argument registers. A store of a register as it stands
-/// ([`holds_register`]) is not: `push %rbx` in the prologue lands on that slot
-/// too.
+/// followed back from the call, and a `STORE` through the stack pointer that
+/// lands where the callee's convention puts its first stack parameter (`push
+/// $0`, clang's `mov $0,(%rsp)` after an aligning `push %rax`) is the caller
+/// passing an argument past the argument registers. A store of a register
+/// (`mov %rbx,(%rsp)`) is not ([`holds_register`]). Before heritage a
+/// temporary is not yet linked to the op that wrote it, so a store through an
+/// address computed into one (`mov $0,0x8(%rsp)`, ARM's `str r3,[sp,#0]`) is
+/// not seen, and a `push`, whose value goes through one, counts whatever it
+/// pushes.
 fn stores_first_stack_arg(data: &Funcdata, op: OpId) -> bool {
     let Some(idx) = data.get_call_specs_index(op) else { return false };
     let proto = data.get_call_specs(idx).proto();
@@ -614,9 +616,9 @@ fn stores_first_stack_arg(data: &Funcdata, op: OpId) -> bool {
     false
 }
 
-/// Is `vn` a register's value as it stands, directly or through the COPY
-/// into a temporary that `push %rbx` stores? A pushed register is a save of a
-/// callee-saved register or an alignment pad, no argument the store proves.
+/// Is `vn` a register's value as it stands, directly or through a linked COPY
+/// into a temporary? Of the raw p-code only the first holds: a `push`'s
+/// temporary is not yet linked to the COPY that filled it.
 fn holds_register(data: &Funcdata, vn: Option<VarnodeId>) -> bool {
     let Some(v) = vn.and_then(|v| data.vbank().get(v)) else { return true };
     if is_register(v.get_addr()) {
@@ -922,11 +924,13 @@ fn claim_untouched_registers_mode(data: &mut Funcdata, pass: ClaimPass) {
             .map(|i| data.get_call_specs(i).get_op())
             .collect();
         data.kuna_set_passthrough_vararg_calls(vararg);
-        let stack: Vec<OpId> = (0..data.num_calls())
-            .map(|i| data.get_call_specs(i).get_op())
-            .filter(|&op| stores_first_stack_arg(data, op))
-            .collect();
-        data.kuna_set_passthrough_stack_arg_calls(stack);
+        if pass == ClaimPass::Initial {
+            let stack: Vec<OpId> = (0..data.num_calls())
+                .map(|i| data.get_call_specs(i).get_op())
+                .filter(|&op| stores_first_stack_arg(data, op))
+                .collect();
+            data.kuna_set_passthrough_stack_arg_calls(stack);
+        }
     }
     let first = first_calls(data);
     let mut claims = if pass == ClaimPass::Initial {

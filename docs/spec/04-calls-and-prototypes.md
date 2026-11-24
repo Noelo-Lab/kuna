@@ -7275,12 +7275,17 @@ decompile of x86-64 and AArch64 dash gave `stalloc`, `growstackblock` and
 `setstackmark` six or eight arguments. The decline is lifted at one call: where
 the caller stores a value into the callee's first stack-argument slot between
 the call and the call or block start before it (`stores_first_stack_arg`, asked
-of the raw p-code before heritage: `push $0`, or clang's `mov $0,(%rsp)` after
-an aligning `push %rax`, with the stack pointer's constant moves followed back
-and the call instruction's own return-address push skipped). The convention
-passes an argument on the stack only past a full register file, so there the
-whole run is the list. A store of a register as it stands is no such argument:
-a prologue's `push %rbx` lands on the same slot. clang -O2's
+once, of the raw p-code before the first heritage: `push $0`, or clang's `mov
+$0,(%rsp)` after an aligning `push %rax`, with the stack pointer's constant
+moves followed back and the call instruction's own return-address push
+skipped). The convention passes an argument on the stack only past a full
+register file, so there the whole run is the list. A store of a register
+(`mov %rbx,(%rsp)`) is no such argument. Before heritage a temporary is not
+yet linked to the op that wrote it, so a store through an address computed
+into one (`mov $0,0x8(%rsp)`, ARM's `str r3,[sp,#0]`) is not seen, and a
+`push`, whose value goes through one, counts whatever it pushes: gcc passes a
+forwarded register parameter as a stack argument that way (tar's
+`_getopt_long_r` is `push $0; push %r9; xor %r9d,%r9d; call`). clang -O2's
 `getopt_long(argc,argv,opts,longopts,index)`, which forwards five registers to
 a seven-parameter `internal` and passes `0, 0` in `r9d` and `[rsp]`, printed
 `internal();`. A body the walk cannot finish -- an import, a thunk, a body past the
