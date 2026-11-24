@@ -9434,7 +9434,13 @@ how heritage reads `edx` back out of the `rdx` a 32-bit `xor` rebuilt around
 it. A register write a later write of the same instruction covers is heritage
 slicing the old value and does not count. The x87 instructions write the stack
 registers with copies of each other and are no clearing instruction, so `=all`'s
-x87 block stops the walk.
+x87 block stops the walk. A register is storage in the space of the model's
+output entries: a zero stored into a global (`movl $0,gj(%rip)`, which heritage
+reads as a copy into that global's own storage) writes memory and stops the
+walk too. Counted as a cleared register, it made bash's `rl_on_new_line`,
+`movl $0,gi(%rip); xor %eax,%eax; movl $0,gj(%rip); ret`, an epilogue of three
+clears with one in storage no output entry names, and its returned zero was
+dropped: it printed `void`, where the binary is `return 0;`.
 
 The run is taken for the epilogue only when one of its instructions clears
 nothing but registers that no output entry of the prototype model names
@@ -9702,6 +9708,22 @@ the first time it is decompiled. A reader decompiled later that reads the
 wrapper wider forces it again at that width, and one that reads another
 register withdraws it: it returns nothing again, as before.
 
+Callers that read a register pair and callers that read only its least
+significant register agree on that register (`kuna_voidret.rs
+(common_low_register)`): the function is forced to it, at the widest of those
+reads. The reader of the pair found a value in the register above and used it,
+which says nothing about what the function returns there. openssh's
+`auth_restrict_session` hands the result of `sshauthopt_new` and the `rdx` it
+finds beside it to the no-return `fatal`, so it reads `rdx:rax` where every other
+caller reads `rax`, and `sshauthopt_new` (`ret = calloc(1, sizeof(*ret)); if (ret
+== NULL) return NULL; ret->force_tun_device = -1; return ret;`) was withdrawn and
+printed `void`; an ARM caller that reads `r1:r0` beside callers of `r0` did the
+same to u-boot's `find_ino` and betaflight's `nextArg`. A function already forced
+to the pair that still returns nothing is forced again to the low register. The
+pieces are the join's own, least significant last, so where a big-endian pair
+puts the high word in the first register the low registers differ and the
+callers still disagree.
+
 A function recovered returning a value in storage that shares no byte with the
 register its callers read is forced the same way (`kuna_voidret.rs (displaced)`).
 gcc's `-fzero-call-used-regs` ends a function by zeroing every call-clobbered
@@ -9730,41 +9752,69 @@ it: heritage sizes its own trial by the range the function names, and gcc -O1's
 `type_name`'s pointer while its caller read all of `rax`. Only the pieces planted are left out: in
 i386 `call zsum; or $0xff,%edx; ret`, whose callers read `edx:eax`, `eax` is
 planted and the `edx` the function writes keeps the trial heritage gives it.
+Where `passthrough` claimed the storage as an argument the function forwards to
+a tail call, nothing is planted, and the callers' read reaches the RETURN only
+through the tail callee's result: ARM u-boot's `bootm_run` is `ldr r1,=..; movw
+r2,#0x80f; b boot_run`, which leaves `r0` as it found it. Each tail callee still
+recovered `void` that a live RETURN is reached from (`passthrough`'s
+`producing_call`) then gets a read of the storage filed for it
+(`kuna_voidret.rs (claim_tail_callees)`), as a path returning a `void` callee's
+result does below. Forced in turn, `boot_run` (`str r1,[r0,#0x14]; ..; b
+bootm_run_states`) returns its own tail callee's result, and `bootm_run` is
+decompiled again as a function waiting on it, where `passthrough` hands that
+result on.
 Where paths meet before the RETURN, heritage refines a planted range wider
 than every write at the narrower name the function uses and merges each piece
-on its own, which no rule joins again; such a trial is refused
+on its own, which no rule joins again; a trial returned whole is then refused
 (`kuna_voidret.rs (merges_in_pieces)`). gcc -O1's `wrap`, `call pick; test
 %eax,%eax` and then one of two `getname` calls before a shared `ret`, returned
 `CONCAT44(dat_4,v2)` and stored the upper half of `getname`'s pointer into
 `dat_4`, a register piece printed as a global, on each path; it stays `void`.
+A trial that every path sets no wider than its low piece is narrowed to that
+piece (below), which leaves the merged pieces above it out of the return:
+openssh's `int sshbuf_reserve`, whose `eax` and the rest of `rax` merge apart,
+is read in all of `rax` by `sshbuf_put_u64`, which returns the result as it
+finds it, and now returns its `int`.
 `ActionReturnRecovery` then marks a
 trial on that storage active (`kuna_voidret.rs (score_forced)`) only when the
 value is the return value at EVERY live RETURN: `AncestorRealistic` accepts it,
 and `ancestor_op_use` finds it used only on its way to the RETURN, with two
 changes. A call's result (or its INDIRECT creation) that nothing else uses
 counts, where upstream refuses it outright
-(`Funcdata::kuna_forced_scoring`). And the value may also be stored, branched
-on, or handed back in another register (`kuna_voidret.rs (returned_use)`,
-`kuna_voidret.rs (scoring_return)`): `gi = a * 3; return gi;` stores the `eax`
-it returns, `if (r > 7) gj++; return r;` tests it, and `x = *p; gi = x + 1; gj
-= x; return x;` leaves `x + 1` in `edx`, a register the callers do not read.
-It may also be added to another variable, which makes it an index:
-gnulib's `base_len` (`for (len = strlen (name); 1 < len && name[len - 1] ==
-'/'; len--) continue; return len;`) loads through `name + len - 1`, and what
-that sum reaches is not a use of `len` itself. An addition of a constant
-still carries the value on, so a load or store through the value plus a
-constant refuses it as before.
-Upstream's `onlyOpUse` refuses all four, to tell a value passed in a register
-from a variable that happens to sit there; with a caller reading the register
-that question is settled, and the refusal printed `void f(int a0) { gi = a0 *
-3; }` beside `printf("%d\n", f(2))`, and gnulib's `xmalloc` (`p = malloc(n);
-if (!p) xalloc_die(); return p;`) as `void` beside every caller using its
-pointer. A single-function decompile asks its callers' machine code instead
-(`callerreads`, below). A load or store through the value and a call reading it
-still refuse it. So a function that leaves its caller's register in place stays
-`void`, and so does one that uses the register as scratch: a stream pointer in
-a `getc` loop, or a message handed to an `error(nonzero, ...)` whose
-fall-through is pruned into a RETURN.
+(`Funcdata::kuna_forced_scoring`). And the value may have any of the uses a
+returned value has besides being returned (`kuna_voidret.rs (returned_use)`,
+`kuna_voidret.rs (scoring_return)`): it may be stored, or be the address a
+store or a load goes through, be branched on, be passed to a call, or be handed
+back in another register. `gi = a * 3; return gi;` stores the `eax` it returns,
+`if (r > 7) gj++; return r;` tests it, and `x = *p; gi = x + 1; gj = x; return
+x;` leaves `x + 1` in `edx`, a register the callers do not read. A constructor
+stores through the pointer it returns (bash's `rl_make_bare_keymap`, `keymap =
+xmalloc(..); for (..) keymap[i].type = ISFUNC; return keymap;`), a scanner loads
+through the pointer it advances (`while (*p == ' ') p++; return p;`, gnulib's
+`component_start`), a list walk loads through its cursor, and a checksum loop
+passes its running value to the call that updates it (betaflight's
+`crc16_ccitt_update`). It may also be added to another variable, which makes it
+an index: gnulib's `base_len` (`for (len = strlen (name); 1 < len && name[len
+- 1] == '/'; len--) continue; return len;`) loads through `name + len - 1`, and
+what that sum reaches is not a use of `len` itself.
+Upstream's `onlyOpUse` refuses all of these, to tell a value passed in a
+register from a variable that happens to sit there; with a caller reading the
+register after the call that question is settled, since the convention leaves
+the register clobbered there and a caller reads it only for the result. The
+refusal printed `void f(int a0) { gi = a0 * 3; }` beside `printf("%d\n",
+f(2))`, gnulib's `xmalloc` (`p = malloc(n); if (!p) xalloc_die(); return p;`)
+as `void` beside every caller using its pointer, and `rl_make_bare_keymap` as
+`void` beside `v1 = rl_make_bare_keymap();` in each of its callers. A
+single-function decompile asks its callers' machine code instead
+(`callerreads`, below). A function that leaves its caller's register in place
+still stays `void`: its entry value of a register no parameter arrives in is
+not realistic, which is also what keeps a register gcc's `-fipa-ra` lets a
+caller keep across the call from being taken for a result. The value printed is
+the one the register holds at each RETURN, so a path the binary never takes
+(the fall-through of an `error(nonzero, ...)` that flow keeps) returns whatever
+is left there. Over the decbench O2 and O0 corpus (257 binaries each, 35,197 and
+34,473 functions) a function whose source is `void` never gained a return this
+way; 124 functions whose source returns a value did at O2.
 
 The trial is returned no wider than the callers read and than every path sets
 (`kuna_voidret.rs (defined_width)`). Heritage sizes the trial by the range the
@@ -10098,9 +10148,14 @@ power of two (`mov %eax,%esi` reads four bytes, `test %al,%al` one, `mov
 The step then forces that storage the way `decompile-all` does
 (`kuna_callerreads.rs (force)` files it in `Ledger::forced`, which
 `kuna_voidret.rs (seed)` reads) and drives the function once more, so the forced
-scoring above decides: a value also stored to a global, branched on, or left in
-another register is returned, and so is a call's result, while a load or store
-through the value or a call reading it still refuses it. The forcing is undone
+scoring above decides: a value also stored to a global, stored or loaded
+through, branched on, passed to a call, or left in another register is returned,
+and so is a call's result, while the function's entry value of a register no
+parameter arrives in still refuses it. The stage test
+`tests/stages/kuna-retvalue.xml` decompiles gcc -O2's `make_cell` (stores
+through what `malloc` returned), `skip_blanks` (loads through the pointer it
+advances) and `lookup` (walks a list through its cursor) alone, each read by
+`main`, and a `push_cell` whose result `main` ignores stays `void`. The forcing is undone
 after the drive, and the redo is kept only when the function then returns a
 value; otherwise the first decompile stands. When the callee-first driver has a
 call graph, it settles returns from its decompiled callers and skips this raw

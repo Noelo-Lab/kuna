@@ -696,3 +696,13 @@ Different namespaces and a longer similarly named function retain their callers.
 `int` returns 4 bytes on x86-64, not the whole of rax: `next_byte` inlines
 `getc_unlocked` and refills through `int __uflow(FILE *)`, whose upper half of
 rax is undefined. `kuna-regpiece.xml` pins the same fix on `sh_openpipe`.
+
+`kuna-retvalue.xml` checks that a function its callers read a result from
+returns it though it also stores or loads through it, and that zero stores into
+globals do not make a returned zero look like a `-fzero-call-used-regs`
+epilogue. gcc -O2's `make_cell` stores through what `malloc` returned,
+`skip_blanks` loads through the pointer it advances, and `lookup` walks a list
+through its cursor, each read by `main`: they print their return, where they
+printed `void`. `reset` (`movl $0,gi; xor %eax,%eax; movl $0,gj; ret`) returns
+its zero. `push_cell`, whose result `main` ignores, stays `void`. A strict fix
+with one pass.

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5290,
-    5290
+    5300,
+    5300
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2378,6 +2378,16 @@
     "data:RETURNPIECE #7: an argument in the high half beside a computed low half",
     "data:RETURNPIECE #8: the control whose high half is the first argument is unchanged",
     "data:RETURNPIECE #9: no function returns only four of the eight bytes it computes",
+    "data:RETVALUE #10: the same shape whose caller ignores the register stays void",
+    "data:RETVALUE #1: a pointer stored through and read by its caller never prints void",
+    "data:RETVALUE #2: the stored-through pointer is returned",
+    "data:RETVALUE #3: a pointer loaded through and read by its caller never prints void",
+    "data:RETVALUE #4: the advanced pointer is returned",
+    "data:RETVALUE #5: a list walk's cursor read by its caller never prints void",
+    "data:RETVALUE #6: the cursor is returned where the key matches",
+    "data:RETVALUE #7: and the null that ends the list is returned",
+    "data:RETVALUE #8: a zero in eax after zero stores into globals is not an epilogue clear",
+    "data:RETVALUE #9: the zero is returned",
     "data:REVISITREFINE #1: the unaligned read pieces 3 + 5 bytes, never an 8-byte phi as its high piece",
     "data:REVISITREFINE #2: each slot is one 8-byte variable",
     "data:REVISITREFINE #3: no 13-byte concatenation",

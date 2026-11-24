@@ -518,6 +518,8 @@ mod repeated_global_pointer_stores;
 
 #[path = "stored_return_values.rs"]
 mod stored_return_values;
+#[path = "forced_return_callers.rs"]
+mod forced_return_callers;
 
 #[path = "strings_cli.rs"]
 mod strings_cli;

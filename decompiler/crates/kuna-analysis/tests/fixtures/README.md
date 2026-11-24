@@ -2431,6 +2431,15 @@ three calls and ignores it after `scale`. With `callerreads` off a single-functi
 decompile prints all four `void`; on, `triple`, `keep` and `same` return `int` and `scale`
 stays `void`. Used by `tests/stages/kuna-callerreads.xml`.
 
+`retvalue_x86_64_gcc_O2` (16,296 bytes, PIE x86-64, not stripped) is built from
+`retvalue.c` with gcc 11.4: `gcc -O2 -o retvalue_x86_64_gcc_O2 retvalue.c`.
+`make_cell` stores through the pointer `malloc` returned and returns it, `skip_blanks`
+loads through the pointer it advances and returns it, `lookup` walks a list through the
+cursor it returns, and `main` reads `rax` after each call. `reset` is `movl $0,gi;
+xor %eax,%eax; movl $0,gj; ret` and `main` ignores its result; `push_cell` is
+`make_cell` with a store to a global, and `main` ignores its result too. Used by
+`tests/stages/kuna-retvalue.xml`.
+
 ### Functions reached only through a pointer the program takes
 
 `pe_addrtaken_x86_64.exe` (4,096 bytes, PE32+/x86-64, SHA-256
