@@ -703,3 +703,9 @@ Different namespaces and a longer similarly named function retain their callers.
 `int` returns 4 bytes on x86-64, not the whole of rax: `next_byte` inlines
 `getc_unlocked` and refills through `int __uflow(FILE *)`, whose upper half of
 rax is undefined. `kuna-regpiece.xml` pins the same fix on `sh_openpipe`.
+
+`gh1922-declared-caller-readarg-thumb.xml` checks Thumb callers with declared
+fixed parameter lists that save `r3` as gcc's alignment pad (`push {r3, lr}`):
+a newlib-shaped copy keeps the size the caller also multiplies with, and the
+`data` and `len` a caller passes on untouched. A callee that reads only `r0`
+and `r1` still gets two arguments.
