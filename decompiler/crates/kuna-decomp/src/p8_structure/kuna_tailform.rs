@@ -440,7 +440,10 @@ fn next_edit(data: &Funcdata, cx: &Ctx, list: &[BlockId], conds: &[(BlockId, Blo
         let i = n - 2;
         // (kuna `returndup auto`) the recorded returns of `if (c) { S; return; }
         // return;` are two statements: print the bare one as the guard.
-        if crate::p8_structure::kuna_o0returns::decided(data) && returning_if(data, cx, list[i], conds) {
+        if crate::p8_structure::kuna_o0returns::decided(data)
+            && !labelled(data, r)
+            && returning_if(data, cx, list[i], conds)
+        {
             return Some(Edit::Guard(i));
         }
         if (!cx.void || cx.elide) && merges(data, cx, list[i], key) {
@@ -994,7 +997,7 @@ fn guard(data: &mut Funcdata, cx: &mut Ctx, list: &[BlockId], i: usize) -> bool 
     if cx.elide {
         data.sblocks_mut().block_mut(r).set_flag(F_RET_SKIP);
         mark_terminal_returns(data, clause, RetKey::Void, false);
-    } else if !falls_through(data, clause) {
+    } else if crate::p8_structure::kuna_o0returns::decided(data) && !falls_through(data, clause) {
         data.sblocks_mut().block_mut(r).set_flag(F_RET_SKIP);
     }
     let mut top = list[..=i].to_vec();
