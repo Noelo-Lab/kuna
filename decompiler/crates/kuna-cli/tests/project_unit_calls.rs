@@ -2,7 +2,8 @@
 //! user-defined operations (`invalidInstructionException`) and decode-failure
 //! halts (`halt_baddata`) its C calls, and its
 //! `undefined16` takes arithmetic, so the export compiles as C11 and as C2x,
-//! where `T f();` stops meaning "any arguments".
+//! where `T f();` stops meaning "any arguments", for code that defines
+//! `KUNA_DECLARE_HELPERS`; code that does not brings its own definitions.
 use crate::common;
 use common::process;
 use std::path::PathBuf;
@@ -55,7 +56,7 @@ fn an_export_that_calls_helpers_and_operations_compiles() {
         }
         for standard in ["-std=c11", "-std=c2x"] {
             let out = Command::new("cc")
-                .args([standard, "-fsyntax-only", "-Werror=implicit-function-declaration", "-Werror=undef"])
+                .args([standard, "-fsyntax-only", "-Werror=implicit-function-declaration", "-Werror=undef", "-DKUNA_DECLARE_HELPERS"])
                 .arg(&c)
                 .output()
                 .expect("spawn cc");

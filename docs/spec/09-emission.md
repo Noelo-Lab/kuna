@@ -3948,29 +3948,37 @@ header's alone: the body still spells a call to such a function and a cast to
 such a type with the one name they share, so the exported `.c` keeps the clash
 the header sheds.
 
-**(kuna `unitcalls`) The header declares the helpers and user-defined
-operations the code calls.** The printer spells an op C has no operator for as a
-call to a helper named after the op and its operand sizes (`SCARRY4(a,b)`,
-`SUB168(x,8)`, `CONCAT44(hi,lo)`), a SLEIGH user-defined operation as a call to
-its name (`invalidInstructionException()`), and a RETURN planted where the bytes
-would not decode as a call naming the failure (`halt_baddata()`). Nothing
-declared them, so an export that printed one did not compile. While a function
-prints, `printc.rs (PrintC::op_func_ir)`, `printc.rs (PrintC::op_callother_ir)`
-and the halt arm of the RETURN printer record each such name with the op's output
+**(kuna `unitcalls`) The header declares, on request, the helpers and
+user-defined operations the code calls.** The printer spells an op C has no
+operator for as a call to a helper named after the op and its operand sizes
+(`SCARRY4(a,b)`, `SUB168(x,8)`, `CONCAT44(hi,lo)`), a SLEIGH user-defined
+operation as a call to its name (`invalidInstructionException()`), and a RETURN
+planted where the bytes would not decode as a call naming the failure
+(`halt_baddata()`). Nothing declared them, so an export that printed one did
+not compile on its own. While a function prints, `printc.rs
+(PrintC::op_func_ir)`, `printc.rs (PrintC::op_callother_ir)` and the halt arm
+of the RETURN printer record each such name with the op's output
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_unitcalls.rs`), and the
 function's call declarations
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_callprototypes.rs`) take one
-`T name(KUNA_ANY_ARGS);` per name, which the header writes as `extern` lines.
-There is no fixed parameter list, because the printed arguments are whatever the
-binary passed and a prototype would reject a faithful call. The prelude defines
-`KUNA_ANY_ARGS` as `...` where `()` means no parameters (C23, and the c2x modes
-of gcc 13 and clang 16 on) and as nothing before. `T` is `bool` for the carry and borrow tests, and otherwise the
-widest output any call of the name has, or `void` when none has one. An output
-with no `undefinedN` or float spelling gets no declaration, and neither do the
-float constants the printer spells `NAN`, `INFINITY` and `FLOAT_UNKNOWN`. The prelude's
-`undefined16` is an `unsigned __int128` aligned to one byte where the compiler
-has the type, so arithmetic on a 16-byte value (a rax:rdx pair) compiles and a
-record holding one keeps its layout. The byte struct remains the fallback.
+`T name(KUNA_ANY_ARGS);` per name. `T` is `bool` for the carry and borrow
+tests, and otherwise the op's output, or `void` when it has none. The header
+writes them in a block of their own, one `extern` per name at the widest type
+any function's calls have, and only for code that defines
+`KUNA_DECLARE_HELPERS`. Each line is also under `#ifndef name`, and a name the
+header already declares is left out. The opt-in is there because code that
+compiles an export usually brings its own definitions (a `CONCAT44` macro,
+`static inline` x87 conversions, `<unistd.h>`'s `syscall`), which a declaration
+would contradict. There is no fixed parameter list, because the printed
+arguments are whatever the binary passed and a prototype would reject a
+faithful call. The prelude defines `KUNA_ANY_ARGS` as `...` where `()` means no
+parameters (C23, and the c2x modes of gcc 13 and clang 16 on) and as nothing
+before. An output with no `undefinedN` or float spelling gets no declaration,
+and neither do the float constants the printer spells `NAN`, `INFINITY` and
+`FLOAT_UNKNOWN`. The prelude's `undefined16` is an `unsigned __int128` aligned
+to one byte where the compiler has the type, so arithmetic on a 16-byte value
+(a rax:rdx pair) compiles and a record holding one keeps its layout. The byte
+struct remains the fallback.
 
 **The prototype — one token stream, two documents.** The prototype segment of
 §9.2's document walk was extracted verbatim into `printc.rs

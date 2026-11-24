@@ -1476,11 +1476,16 @@ pub fn build_header_with_names(
         .collect();
     let mut calls: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
     for declaration in results.iter().flat_map(|r| &r.call_declarations) {
+        if kuna_decomp::kuna_unitcalls::is_helper(declaration) { continue; }
         let name = declarator_name(declaration.trim().trim_end_matches(';'));
         if !own.contains(&name) {
             calls.entry(name).or_default().insert(declaration.trim());
         }
     }
+    let helpers = kuna_decomp::kuna_unitcalls::header_block(
+        results.iter().flat_map(|r| &r.call_declarations).map(String::as_str),
+        |name| own.contains(name) || shadowed.contains(name) || calls.contains_key(name),
+    );
     if !calls.is_empty() { out.push_str("\n/* declared call targets */\n"); }
     for (name, declarations) in calls {
         let text = declarations.iter().copied().collect::<Vec<_>>().join(" ");
@@ -1493,6 +1498,7 @@ pub fn build_header_with_names(
             let _ = writeln!(out, "extern {text}");
         }
     }
+    out.push_str(&helpers);
     out.push_str("\n/* function prototypes */\n");
     for r in results {
         match (&r.proto, &r.error) {
