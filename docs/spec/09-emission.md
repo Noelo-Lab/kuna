@@ -1606,10 +1606,10 @@ selector emits `-0xd =>` where it once printed `0xfff3 =>`, a pattern rustc
 rejects as out of range for `i16`, and a sign-extended `i16` selector no
 longer carries the widened `0xfffffff3`.
 
-**(kuna) Dynamic ARM LSL in C.** ARM register-controlled `LSL` uses the low
-eight bits of its count, so counts 32 through 255 must produce zero for a
-32-bit value. C makes a shift by 32 or more undefined. The selector and
-repeatability proof live in
+**(kuna) Dynamic ARM LSL in C — `option armshiftguard`.** ARM register-controlled
+`LSL` uses the low eight bits of its count, so counts 32 through 255 must
+produce zero for a 32-bit value. C makes a shift by 32 or more undefined. The
+selector and repeatability proof live in
 `p9_emit/kuna_armregistershift.rs (plan_arm_register_lsl)`; the C printer emits
 the plan as a guarded conditional. It preserves the lifted count expression,
 compares its unsigned same-width cast with the shifted value's bit width, and
@@ -1632,10 +1632,40 @@ non-repeatable ARM inputs keep their existing output. Under `regnarrow` (chapter
 an unsigned narrow value prints as that value, since the guard already casts it
 and the shift reads it the same (`(unsigned int)v4 < 32u ? (unsigned int)1 << v4 :
 0u` where a narrowed counter printed `(unsigned int)(unsigned int)v4`;
-`unsigned_extension_source`). The 12-byte reproduction
-and emitted-form checks are in `tests/stages/kuna-arm-register-shift.xml`; signed
-comparison and ASR consumers are in
-`tests/stages/kuna-arm-register-shift-signed.xml`.
+`unsigned_extension_source`).
+
+Which shifts carry the guard is option `armshiftguard`
+(`p9_emit/kuna_armshiftguard.rs (guard_needed)`). The guard is a `?:` that no
+source writes, so it costs a branch in the printed control flow of every
+firmware bit operation such as `1 << (pin & 0x1f)`. Under the default `needed`
+the planner first asks whether the count can reach 32 at all: its non-zero
+mask, the set of bits it may hold, is the engine's stored mask (chapter
+[03](03-ssa-and-simplification.md), `ActionNonzeroMask`) intersected with the
+mask re-derived over its definition at print time
+(`kuna_boolbyte::value_mask`), so a Varnode created after the last mask pass is
+still bounded by its definition. A mask below 32 (`count_below_width`) proves
+every value of the count lies in 0..31, and the shift then takes the ordinary
+binary-operator path, printing `x << n` like any other shift. This covers a
+count masked with `& 0x1f` or narrower, a field extracted by shift and mask
+(`(c & 0xfff) >> 8`), a remainder by 32 or less, a narrow zero-extended
+value, a left-shifted small field (`(c & 7) << 2`), a sum of disjoint or small
+masks, and a variable whose every reaching definition is one of these. A count
+the mask cannot bound keeps its guard, including a loop counter whose bound is
+only a branch and the double-word shift complement `(n - 0x20 & 0xff)` that a
+compiler's inline 64-bit shift relies on. `always` restores the guard on every
+qualifying shift; `never` drops it everywhere, printing the plain C shift
+`x << (n & 0xff)`. Under `never` a count that reaches 32 prints as undefined C
+instead of the machine's zero: for a source shift by a variable that is the
+same undefined behavior the source had, but for the low word of a compiler's
+inline 64-bit shift, whose complement count is out of range on every call, the
+printed C no longer computes the binary's value. The register-count right
+shifts (`LSR`/`ASR` by register, `INT_RIGHT`/`INT_SRIGHT` of the same
+`n & 0xff`) are not guarded under any value. The 12-byte reproduction and
+emitted-form checks are in `tests/stages/kuna-arm-register-shift.xml` (unbounded
+counts, so the default keeps them guarded); signed comparison and ASR consumers
+are in `tests/stages/kuna-arm-register-shift-signed.xml`; the three values on
+clang Thumb code (a masked count, a four-bit field, an unbounded count) are in
+`tests/stages/kuna-armshiftguard.xml`.
 
 **(kuna) Fixed ARM LSL with a signed operand in C.** A constant-count 32-bit
 `INT_LEFT` still computes the low 32 bits when its declared operand is signed.
@@ -1643,7 +1673,11 @@ C11 instead makes a negative signed shiftee or signed overflow undefined,
 including when the function converts the result to unsigned on return.
 `p9_emit/kuna_armconstantshift.rs (plan_arm_constant_lsl)` selects ARM shifts
 with a constant count below 32, equal four-byte input/output widths, and a
-signed integer or signed enum shiftee. The C printer casts that operand to
+signed integer or signed enum shiftee. A register count whose non-zero mask
+proves it below 32 (`kuna_armshiftguard::count_below_width`, the proof
+`armshiftguard needed` uses to drop the range guard) counts as an in-range
+fixed count, so a shift that loses its guard keeps the unsigned conversion when
+this option is on. The C printer casts that operand to
 `uint4` before the shift, preserving locked declarations. If the output type
 is signed, it casts the whole unsigned shift back to `int4` to preserve signed
 comparisons and arithmetic right shifts. That signed conversion and negative
@@ -3948,6 +3982,48 @@ header's alone: the body still spells a call to such a function and a cast to
 such a type with the one name they share, so the exported `.c` keeps the clash
 the header sheds.
 
+**(kuna) The header declares, on request, the helpers and user-defined
+operations the code calls.** The printer spells an op C has no
+operator for as a call to a helper named after the op and its operand sizes
+(`SCARRY4(a,b)`, `SUB168(x,8)`, `CONCAT44(hi,lo)`), a SLEIGH user-defined
+operation as a call to its name (`invalidInstructionException()`), and a RETURN
+planted where the bytes would not decode as a call naming the failure
+(`halt_baddata()`). Nothing declared them, so an export that printed one did
+not compile on its own. While a function prints, `printc.rs
+(PrintC::op_func_ir)`, `printc.rs (PrintC::op_callother_ir)` and the halt arm
+of the RETURN printer record each such name with the op's output in the
+printer's per-function set
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_unitcalls.rs`), which starts
+empty with each function, and the function's call declarations
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_callprototypes.rs`) take one
+`T name(KUNA_ANY_ARGS);` per name. `T` is `bool` for the carry and borrow
+tests, and otherwise the op's output, spelled as the float of its width where
+a user-defined operation's output is a float (`FLOAT_RINT`), or `void` when it
+has none. The header
+writes them in a block of their own, one `extern` per name at the widest type
+any function's calls have (at one width the `undefinedN` spelling, which takes
+the integer operators a float does not, so the choice does not depend on the
+order the functions land in), and only for code that defines
+`KUNA_DECLARE_HELPERS`. Each line is also under `#ifndef name`, and a name the
+header already declares, or a C keyword (MIPS's `break` user-defined
+operation), is left out. A wide call's declaration check (`callwide`) does not
+count these lines. The opt-in is there because code that
+compiles an export usually brings its own definitions (a `CONCAT44` macro,
+`static inline` x87 conversions, `<unistd.h>`'s `syscall`), which a declaration
+would contradict. Code that does define it and also includes a C library
+header declaring an operation's name (`syscall`, `sin`, `sleep`, `wait`) gets
+two declarations that disagree. There is no fixed parameter list, because the printed
+arguments are whatever the binary passed and a prototype would reject a
+faithful call. The prelude defines `KUNA_ANY_ARGS` as `...` where `()` means no
+parameters (C23, and the c2x modes of gcc 13 and clang 16 on) and as nothing
+before. An output with no `undefinedN` or float spelling gets no declaration,
+and neither do the float constants the printer spells `NAN`, `INFINITY` and
+`FLOAT_UNKNOWN`. The prelude's `undefined16` is an `unsigned __int128` aligned
+to one byte where the compiler has the type, so arithmetic on a 16-byte value
+(a rax:rdx pair) compiles and a record holding one keeps its layout. The byte
+struct remains the fallback, and clang on Windows takes it too: it lays a record
+out the Microsoft way, which ignores the one-byte alignment.
+
 **The prototype — one token stream, two documents.** The prototype segment of
 §9.2's document walk was extracted verbatim into `printc.rs
 (PrintC::emit_prototype_declaration)` — pure code motion, byte-identical
@@ -3971,8 +4047,10 @@ uint4;`, …; 8-byte integers always spell `long long` so the text is
 data-model independent; `bool` is covered by `#include <stdbool.h>`;
 `char`/`void` are real C and emit nothing), then the fixed Ghidra/kuna
 `undefined` family — `undefined`, `undefined1..8` (3/5/6/7 mapped to the next
-larger unsigned integer, each carrying a sizeof-divergence note) and
-`undefined16`/`undefined32` as byte-array structs. The non-printer half of
+larger unsigned integer, each carrying a sizeof-divergence note),
+`undefined16` as a one-byte-aligned `unsigned __int128` where the compiler has
+the type (and is not clang on Windows) and a byte-array struct where it does
+not, and `undefined32` as a byte-array struct. The non-printer half of
 the export (section enumeration, one-instruction disassembly, raw image
 bytes, named data symbols for the `.asm`/`README.md` artifacts) lives on the
 console engine, `decompiler/crates/kuna-console/src/engine.rs

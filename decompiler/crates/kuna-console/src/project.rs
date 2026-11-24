@@ -1375,7 +1375,8 @@ pub fn deferred_callwide_header<'a>(
             } else {
                 required.insert(contract.name.as_str());
                 if !result.call_declarations.iter().any(|decl| {
-                    declarator_name(decl.trim().trim_end_matches(';')) == contract.name
+                    !kuna_decomp::kuna_unitcalls::is_helper(decl)
+                        && declarator_name(decl.trim().trim_end_matches(';')) == contract.name
                 }) {
                     return Err(format!("callwide export: missing call declaration for {}", contract.name));
                 }
@@ -1405,6 +1406,7 @@ pub fn deferred_callwide_header<'a>(
             continue;
         }
         let declarations: BTreeSet<_> = results.iter().flat_map(|r| &r.call_declarations)
+            .filter(|decl| !kuna_decomp::kuna_unitcalls::is_helper(decl))
             .filter(|decl| declarator_name(decl.trim().trim_end_matches(';')) == name)
             .map(|decl| decl.trim()).collect();
         if declarations.len() != 1 {
@@ -1476,11 +1478,16 @@ pub fn build_header_with_names(
         .collect();
     let mut calls: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
     for declaration in results.iter().flat_map(|r| &r.call_declarations) {
+        if kuna_decomp::kuna_unitcalls::is_helper(declaration) { continue; }
         let name = declarator_name(declaration.trim().trim_end_matches(';'));
         if !own.contains(&name) {
             calls.entry(name).or_default().insert(declaration.trim());
         }
     }
+    let helpers = kuna_decomp::kuna_unitcalls::header_block(
+        results.iter().flat_map(|r| &r.call_declarations).map(String::as_str),
+        |name| own.contains(name) || shadowed.contains(name) || calls.contains_key(name),
+    );
     if !calls.is_empty() { out.push_str("\n/* declared call targets */\n"); }
     for (name, declarations) in calls {
         let text = declarations.iter().copied().collect::<Vec<_>>().join(" ");
@@ -1493,6 +1500,7 @@ pub fn build_header_with_names(
             let _ = writeln!(out, "extern {text}");
         }
     }
+    out.push_str(&helpers);
     out.push_str("\n/* function prototypes */\n");
     for r in results {
         match (&r.proto, &r.error) {
@@ -2210,6 +2218,26 @@ mod tests {
         assert!(!header.contains("extern int split") && !header.contains("extern long split"), "{header}");
     }
 
+    #[test]
+    fn helper_declarations_stay_out_of_the_call_targets_until_asked_for() {
+        let mut result = streamed("int local(int a0);", "int");
+        result.call_declarations = vec![
+            "int puts(char *a0);".into(),
+            "bool SCARRY4(KUNA_ANY_ARGS);".into(),
+            "undefined8 puts(KUNA_ANY_ARGS);".into(),
+            "void local(KUNA_ANY_ARGS);".into(),
+        ];
+        let header = super::build_header("fresh", "", "", &[result]).unwrap();
+        let at = |text: &str| header.find(text).unwrap_or_else(|| panic!("no {text}: {header}"));
+        let (targets, block, prototypes) =
+            (at("/* declared call targets */"), at("#ifdef KUNA_DECLARE_HELPERS"), at("/* function prototypes */"));
+        assert!(targets < block && block < prototypes, "{header}");
+        assert!(header[targets..block].contains("extern int puts(char *a0);"), "{header}");
+        assert!(!header[targets..block].contains("SCARRY4"), "{header}");
+        assert!(header[block..prototypes].contains("#ifndef SCARRY4\nextern bool SCARRY4(KUNA_ANY_ARGS);\n#endif\n"), "{header}");
+        assert!(!header.contains("puts(KUNA_ANY_ARGS)") && !header.contains("local(KUNA_ANY_ARGS)"), "{header}");
+    }
+
     fn wide_call() -> FuncResult {
         let mut result = streamed("unsigned long long caller(void);", "unsigned long long");
         result.call_declarations = vec!["unsigned long long producer(int,int,int,int);".into()];
@@ -2218,6 +2246,17 @@ mod tests {
             inputs: vec![true; 4], definition: false,
         }];
         result
+    }
+
+    #[test]
+    fn a_helper_named_like_a_wide_call_target_neither_declares_nor_contradicts_it() {
+        let mut result = wide_call();
+        result.call_declarations.push("void producer(KUNA_ANY_ARGS);".into());
+        let header = super::build_header("fresh", "", "", std::slice::from_ref(&result)).unwrap();
+        assert!(header.contains("extern unsigned long long producer(int,int,int,int);"), "{header}");
+        assert!(!header.contains("producer(KUNA_ANY_ARGS)"), "{header}");
+        result.call_declarations.retain(|declaration| declaration.contains("KUNA_ANY_ARGS"));
+        assert!(super::build_header("fresh", "", "", &[result]).is_err());
     }
 
     #[test]
