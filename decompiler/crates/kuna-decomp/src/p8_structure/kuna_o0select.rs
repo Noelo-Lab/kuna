@@ -100,15 +100,19 @@ fn classify(fd: &Funcdata, c: BlockId) -> Option<(u64, Form)> {
         return None;
     }
     let (at_t, at_e) = (arm(fd, t)?, arm(fd, e)?);
-    if tb.size_in() == 1 && eb.size_in() == 1 && joined(fd, t, e, j) {
+    let quiet = !at_t.stores && !at_e.stores;
+    if tb.size_in() == 1 && eb.size_in() == 1 && joined(fd, t, e, j, quiet) {
         return Some((at, Form::Value));
     }
     (at_t.stores && at_e.stores).then_some((at, Form::Statement))
 }
 
 /// Whether `j` merges a temporary that arms `t` and `e` each define and that
-/// is read after the join.
-fn joined(fd: &Funcdata, t: BlockId, e: BlockId, j: BlockId) -> bool {
+/// is read after the join.  A call reads it directly only when the arms set
+/// it and do nothing else (`quiet`): an argument evaluated in place; after a
+/// statement in each arm the register holds a leftover that an unprototyped
+/// call reads as well.
+fn joined(fd: &Funcdata, t: BlockId, e: BlockId, j: BlockId, quiet: bool) -> bool {
     let (Some(st), Some(se)) = (slot(fd, j, t), slot(fd, j, e)) else { return false };
     fd.bb_ops(j).into_iter().any(|o| {
         let Some(op) = fd.obank().get(o) else { return false };
@@ -124,7 +128,7 @@ fn joined(fd: &Funcdata, t: BlockId, e: BlockId, j: BlockId) -> bool {
                 .map(|d| d.code() != OpCode::CPUI_INDIRECT)
         };
         let (Some(dt), Some(de)) = (def(st, t), def(se, e)) else { return false };
-        op.get_out().is_some_and(|v| used(fd, v, USE_DEPTH, dt && de))
+        op.get_out().is_some_and(|v| used(fd, v, USE_DEPTH, quiet && dt && de))
     })
 }
 
