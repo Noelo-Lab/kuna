@@ -9886,7 +9886,8 @@ unlocked output (chapter 03), a MinGW `-O0` function whose `mov eax,[iat];
 call eax` resolves to `ExitProcess` restarted, the pass before the restart
 returned `eax` joined with what the unresolved call left, the pass after it
 refused the bare handle where the returning path also loads through it, and the
-function printed `int f(..)` around a bare `return;`.
+function printed `int f(..)` around a bare `return;`. The pass after the restart
+now returns the handle alone, which its caller reads (`returned_use` above).
 
 A redone wrapper reads its own callee's result in turn, so each settling
 repeats, up to ten rounds, reaching one function further down a chain of
