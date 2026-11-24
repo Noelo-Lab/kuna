@@ -84,7 +84,7 @@ fn note(name: &str, returns: Returns) {
 }
 
 fn returns(fd: &Funcdata, code: OpCode, out: Option<VarnodeId>) -> Option<Returns> {
-    returns_of(code, out.map(|out| fd.vbank().get(out).map_or(0, |vn| vn.get_size())))
+    returns_of(code, out.and_then(|out| fd.vbank().get(out)).map(|vn| vn.get_size()))
 }
 
 /// The declared type of a call to `code`'s helper or operation with an output
@@ -147,19 +147,31 @@ mod tests {
     fn a_call_is_declared_with_the_type_of_its_output() {
         use OpCode::*;
         let cases = [
-            (CPUI_INT_SCARRY, Some(1), Some("bool")),
-            (CPUI_FLOAT_NAN, Some(1), Some("bool")),
-            (CPUI_SUBPIECE, Some(8), Some("undefined8")),
-            (CPUI_PIECE, Some(16), Some("undefined16")),
-            (CPUI_CALLOTHER, Some(3), Some("undefined3")),
-            (CPUI_CALLOTHER, None, Some("void")),
-            (CPUI_FLOAT_SQRT, Some(8), Some("double")),
-            (CPUI_FLOAT_ROUND, Some(10), Some("long double")),
+            (CPUI_INT_CARRY, Some(1), Some((1, "bool"))),
+            (CPUI_INT_SCARRY, Some(1), Some((1, "bool"))),
+            (CPUI_INT_SBORROW, Some(1), Some((1, "bool"))),
+            (CPUI_FLOAT_NAN, Some(1), Some((1, "bool"))),
+            (CPUI_INT_ZEXT, Some(1), Some((1, "undefined1"))),
+            (CPUI_INT_SEXT, Some(2), Some((2, "undefined2"))),
+            (CPUI_CALLOTHER, Some(3), Some((3, "undefined3"))),
+            (CPUI_POPCOUNT, Some(4), Some((4, "undefined4"))),
+            (CPUI_CALLOTHER, Some(5), Some((5, "undefined5"))),
+            (CPUI_CALLOTHER, Some(6), Some((6, "undefined6"))),
+            (CPUI_CALLOTHER, Some(7), Some((7, "undefined7"))),
+            (CPUI_SUBPIECE, Some(8), Some((8, "undefined8"))),
+            (CPUI_PIECE, Some(16), Some((16, "undefined16"))),
+            (CPUI_CALLOTHER, Some(32), Some((32, "undefined32"))),
+            (CPUI_CALLOTHER, None, Some((-1, "void"))),
+            (CPUI_FLOAT_ABS, Some(4), Some((4, "float"))),
+            (CPUI_FLOAT_SQRT, Some(8), Some((8, "double"))),
+            (CPUI_FLOAT_ROUND, Some(10), Some((10, "long double"))),
+            (CPUI_FLOAT_CEIL, Some(16), Some((16, "long double"))),
+            (CPUI_FLOAT_FLOOR, Some(8), Some((8, "double"))),
             (CPUI_CALLOTHER, Some(12), None),
             (CPUI_FLOAT_ABS, Some(2), None),
         ];
-        for (code, size, ty) in cases {
-            assert_eq!(returns_of(code, size).map(|(_, ty)| ty), ty, "{code:?} {size:?}");
+        for (code, size, returns) in cases {
+            assert_eq!(returns_of(code, size), returns, "{code:?} {size:?}");
         }
     }
 

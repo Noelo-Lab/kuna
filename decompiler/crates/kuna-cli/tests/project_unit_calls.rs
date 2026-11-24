@@ -52,7 +52,7 @@ fn an_export_that_calls_helpers_and_operations_compiles() {
         }
         for standard in ["-std=c11", "-std=c2x"] {
             let out = Command::new("cc")
-                .args([standard, "-fsyntax-only", "-Werror=implicit-function-declaration"])
+                .args([standard, "-fsyntax-only", "-Werror=implicit-function-declaration", "-Werror=undef"])
                 .arg(&c)
                 .output()
                 .expect("spawn cc");

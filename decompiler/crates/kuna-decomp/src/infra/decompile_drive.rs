@@ -2748,8 +2748,9 @@ pub fn print_c_prototype(arch: &mut Architecture, fd: &Funcdata) -> String {
 /// `int8`, `float8`, …, spelled per standard C — 8-byte integers always use
 /// `long long` so the text is data-model independent) plus the fixed Ghidra
 /// `undefined` family block (`undefined`, `undefined1..8` — 3/5/6/7 mapped to
-/// the next larger unsigned integer with a sizeof note — and `undefined16/32`
-/// as byte-array structs).  `bool` is covered by `#include <stdbool.h>`;
+/// the next larger unsigned integer with a sizeof note — `undefined16` as a
+/// one-byte-aligned `unsigned __int128` where the compiler has one, and
+/// otherwise, like `undefined32`, as a byte-array struct).  `bool` is covered by `#include <stdbool.h>`;
 /// `char`/`void` are real C and emit nothing.
 pub fn print_c_recompile_prelude(arch: &Architecture) -> String {
     use crate::dtype::type_metatype::*;
@@ -2759,7 +2760,7 @@ pub fn print_c_recompile_prelude(arch: &Architecture) -> String {
     // (kuna `unitcalls`) The parameter list of a declared p-code helper or
     // user-defined operation: `...` where `()` means no parameters, which is
     // C23 and the c2x modes of gcc 13 and clang 16 on; `()` before.
-    out.push_str("#if defined(__STDC_VERSION__) && __STDC_VERSION__ > 201710L && (__STDC_VERSION__ >= 202311L || __clang_major__ >= 16 || (!defined(__clang__) && __GNUC__ >= 13))\n#define KUNA_ANY_ARGS ...\n#else\n#define KUNA_ANY_ARGS\n#endif\n");
+    out.push_str("#if defined(__STDC_VERSION__) && __STDC_VERSION__ > 201710L && (__STDC_VERSION__ >= 202311L || (defined(__clang__) && __clang_major__ >= 16) || (defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 13))\n#define KUNA_ANY_ARGS ...\n#else\n#define KUNA_ANY_ARGS\n#endif\n");
     // A recovered aggregate can hold target pointers, and a host that compiles
     // this header for a different data model sizes them differently and moves
     // every field after such a member -- which also moves what `p[1]` means in
