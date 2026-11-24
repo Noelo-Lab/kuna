@@ -671,10 +671,11 @@ fn prologue_push(data: &Funcdata, store: OpId, proto: &crate::fspec::FuncProto) 
     let entry = data.get_address().clone();
     let mut cur = Some(store);
     let mut budget = 64;
+    let mut at_entry = false;
     while let Some(prev) = cur {
         budget -= 1;
         let Some(o) = data.obank().get(prev) else { return false };
-        if *o.get_addr() == entry {
+        if at_entry && *o.get_addr() != entry {
             return true;
         }
         if budget == 0
@@ -686,9 +687,10 @@ fn prologue_push(data: &Funcdata, store: OpId, proto: &crate::fspec::FuncProto) 
         {
             return false;
         }
+        at_entry |= *o.get_addr() == entry;
         cur = data.op_previous_op(prev);
     }
-    false
+    at_entry
 }
 
 /// Is the function itself variadic -- does its entry block read a register

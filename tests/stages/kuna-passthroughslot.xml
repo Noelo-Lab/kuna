@@ -39,7 +39,10 @@
     `sys1(39) + x` after a prologue `push %rbx`; sys1 is a syscall() body that
     reads every argument register, and a pushed callee-saved register is no
     stack argument, so its run stays no arity claim, not
-    sys1(0x27,a1,a2,a3,a4,a5).
+    sys1(0x27,a1,a2,a3,a4,a5).  p_rbx_first is `mov $7,%ebx; push %rbx;
+    call k7` at the function's entry, forwarding rdi..r9 to k7, which reads
+    all six and 8(%rsp): rbx is written before it is pushed, so the push is
+    the seventh argument, k7(a0,a1,a2,a3,a4,a5,7), not a register save.
 -->
 <bytechunk space="ram" offset="0x401000" readonly="true">
 4101f944034c240844890d1d1100004d85c07403418938488b060fbe000fbe12
@@ -56,7 +59,9 @@ cb89d84883c4105bc3
 <bytechunk space="ram" offset="0x402000" readonly="true">
 0faffe8d0417c3660f1f84000000000089f9e8e9ffffff01c8c3660f1f440000
 4889f84889f74889d64889ca4d89c24d89c84c8b4c24080f05c3660f1f440000
-534889fbbf27000000e8d2ffffff4801d85bc3
+534889fbbf27000000e8d2ffffff4801d85bc366662e0f1f8400000000006690
+488b4424084801f84801f04801d04801c84c01c04c01c8c30f1f840000000000
+bb0700000053e8d5ffffff5bc3
 </bytechunk>
 <symbol space="ram" offset="0x401000" name="internal"/>
 <symbol space="ram" offset="0x401030" name="getopt_long"/>
@@ -70,6 +75,8 @@ cb89d84883c4105bc3
 <symbol space="ram" offset="0x402010" name="g3"/>
 <symbol space="ram" offset="0x402020" name="sys1"/>
 <symbol space="ram" offset="0x402040" name="pid_plus"/>
+<symbol space="ram" offset="0x402060" name="k7"/>
+<symbol space="ram" offset="0x402080" name="p_rbx_first"/>
 </binaryimage>
 <script>
   <com>lo fu getopt_long</com>
@@ -85,6 +92,9 @@ cb89d84883c4105bc3
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu pid_plus</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu p_rbx_first</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option passthrough off</com>
@@ -105,4 +115,5 @@ cb89d84883c4105bc3
 <stringmatch name="passthroughslot #4: get_int forwards three parameters and passes the address of len" min="1" max="1">getprop\(a0,a1,a2,&amp;v[0-9]+\)</stringmatch>
 <stringmatch name="passthroughslot #5: g3 passes h3 the three registers it forwards, not the ecx it keeps for itself" min="1" max="1">h3\(a0,a1,a2\);</stringmatch>
 <stringmatch name="passthroughslot #6: pid_plus's prologue push %rbx is no stack argument, so sys1 takes only the number" min="1" max="1">sys1\(0x27\) \+ a0;</stringmatch>
+<stringmatch name="passthroughslot #7: p_rbx_first pushes the rbx its entry instruction loads, a seventh argument" min="1" max="1">k7\(a0,a1,a2,a3,a4,a5,7\)</stringmatch>
 </decompilertest>
