@@ -3912,6 +3912,13 @@ An ordinary compact `RETURN` with an inactive right lane can retire two
 or three following issues. In the undelayed CE1 form, either execution or
 address enable allows the stack pop and transfer.
 
+Unconditional wide `GOABS A0` samples the 32-bit accumulator payload
+before any delay issue can change it. The accumulator guard byte does not
+contribute. Encoded delays six and seven both retire five issues. The
+indirect operand is a CODE word address; an out-of-range payload does not
+wrap into mapped CODE. Stated jump-table destinations can resolve the
+computed edge without replacing the operand with a constant.
+
 Lifted absolute peripheral moves address `io` and `ext` as separate 16-bit
 word spaces. A peripheral word and a `data` word at the same numeric
 address do not alias.

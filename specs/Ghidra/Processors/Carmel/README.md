@@ -53,6 +53,8 @@ selected backtrace port only when its predicate allows it.
 Compact unconditional and wide relative GOTO execute up to three following
 issues, counting sequential slots individually. For the qualified wide form,
 the address-enable bit can admit a transfer even when the predicate is false.
+Unconditional wide `GOABS A0` samples the accumulator's low 32 bits before
+retiring up to five delay issues. The guard byte does not enter the target.
 Compact CALL admits zero or one delay issue. Compact RETURN also admits
 two or three delay issues with an inactive right lane, and an undelayed
 CE1 form whose address enable can override a veto. Immediate REPEAT handles

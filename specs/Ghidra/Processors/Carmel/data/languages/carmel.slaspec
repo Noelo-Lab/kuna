@@ -392,6 +392,7 @@ define token wide (48)
     wide_goto_offset_0 = (24,45) hex
     wide_goto_offset_22 = (0,1) hex
     wide_goto_ce_bank = (46,46)
+    wide_10_22 = (10,22)
     config_shift_ce_bank = (46,46)
     wide_repeat_count = (24,39)
     wide_immediate_0 = (24,45) hex
@@ -2296,6 +2297,14 @@ wide_goto_target: wide_word_address is wide_goto_offset_0 & wide_goto_offset_22 
 :"GOTO" wide_goto_target "delay 7" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27dc & wide_goto_target [ carmel_counted_delay=1; ] { delayslot(3); goto wide_goto_target; }
 :"GOTO" wide_goto_target "delay 7" "CE1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=0 & wide_9_22=0x27dc & wide_goto_target [ carmel_counted_delay=1; ] { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); local taken:1 = (enabled != 0) || ((CECFG1 & 0x1000) != 0); delayslot(3); if (taken) goto wide_goto_target; }
 :"GOTO" wide_goto_target "delay 7" "CE2" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=1 & wide_9_22=0x27dc & wide_goto_target [ carmel_counted_delay=1; ] { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); local taken:1 = (enabled != 0) || ((CECFG2 & 0x1000) != 0); delayslot(3); if (taken) goto wide_goto_target; }
+:"GOABS A0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x2 & wide_10_22=0x13d0 & wide_24_45=0x80000 { local target:4 = A0:4; goto [target]; }
+:"GOABS A0" "delay 1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x2 & wide_10_22=0x13d2 & wide_24_45=0x80000 [ carmel_counted_delay=1; ] { local target:4 = A0:4; delayslot(1); goto [target]; }
+:"GOABS A0" "delay 2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x2 & wide_10_22=0x13d4 & wide_24_45=0x80000 [ carmel_counted_delay=1; ] { local target:4 = A0:4; delayslot(2); goto [target]; }
+:"GOABS A0" "delay 3" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x2 & wide_10_22=0x13d6 & wide_24_45=0x80000 [ carmel_counted_delay=1; ] { local target:4 = A0:4; delayslot(3); goto [target]; }
+:"GOABS A0" "delay 4" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x2 & wide_10_22=0x13d8 & wide_24_45=0x80000 [ carmel_counted_delay=1; ] { local target:4 = A0:4; delayslot(4); goto [target]; }
+:"GOABS A0" "delay 5" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x2 & wide_10_22=0x13da & wide_24_45=0x80000 [ carmel_counted_delay=1; ] { local target:4 = A0:4; delayslot(5); goto [target]; }
+:"GOABS A0" "delay 6" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x2 & wide_10_22=0x13dc & wide_24_45=0x80000 [ carmel_counted_delay=1; ] { local target:4 = A0:4; delayslot(5); goto [target]; }
+:"GOABS A0" "delay 7" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x2 & wide_10_22=0x13de & wide_24_45=0x80000 [ carmel_counted_delay=1; ] { local target:4 = A0:4; delayslot(5); goto [target]; }
 
 conditional_target: word_address is conditional_words [ word_address = (inst_start + conditional_words) & 0xffffff; ] { export *[code]:3 word_address; }
 :"GOTO GE1" conditional_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_1=0x0 & slot_9_22=0x140a & conditional_target { if (!(((EST ^ (EST << 3)) & 0x10) != 0)) goto conditional_target; }

@@ -816,3 +816,31 @@ fn compact_ce1_return_pops_for_address_enable_even_with_execution_vetoed() {
         assert_eq!((m.step(), m.reg("SP")), (target, sp));
     }
 }
+
+#[test]
+fn wide_goabs_samples_the_payload_before_its_five_delay_issues() {
+    let base = 0x11000;
+    let mut fetches = [(INC_A1, NOP); 14];
+    fetches[0] = (0x880000, 0xcf7802);
+    fetches[1] = (INC_A0, NOP);
+    let issues = [(0, 5, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 6),
+                  (10, 1, 6), (12, 1, 6), (14, 1, 6), (24, 1, 6), (26, 1, 0)];
+    for target in [base + 24, base + 26] {
+        let mut m = Machine::new(base, &fetches, &issues, None);
+        m.seed(&[("A0", (0x81 << 32) | target), ("A1L", 0x1234)]);
+        m.start(base).unwrap();
+        assert_eq!(m.step(), 3 * target);
+        assert_eq!((m.reg("A0L"), m.reg("A1L")), ((target + 1) & 0xffff, 0x1238));
+    }
+}
+
+#[test]
+fn wide_goabs_does_not_wrap_an_out_of_range_payload_into_code() {
+    let base = 0x11000;
+    let mut m = Machine::new(base, &[(0x880000, 0xcf4002), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+    let target = 0x1000000 | (base + 2);
+    m.seed(&[("A0", target)]);
+    m.start(base).unwrap();
+    assert!(m.emulator.execute_instruction().is_err(), "the wrapped address would execute a mapped NOP");
+    assert_eq!(m.emulator.get_execute_address().get_offset(), 3 * target);
+}
