@@ -2320,8 +2320,9 @@ mod tests {
         // and kuna-retvalue / a result its callers read is returned though stored or loaded through
         // and kuna-rex-before-prefix / an x86-64 REX prefix that a legacy prefix follows is ignored
         // and kuna-returndup-auto / an unoptimized function keeps the returns its binary records
+        // and kuna-iteregion-auto / an unoptimized function keeps the ?: or if/else its binary records
         // and kuna-cxxalloc / the C++ allocation operators keep their arguments and are __cdecl on i386
-        assert_eq!(count, 909, "corpus file count drifted");
+        assert_eq!(count, 910, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

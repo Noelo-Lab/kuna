@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5349,
-    5349
+    5356,
+    5356
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -217,7 +217,7 @@
     "data:BOOLBRANCH #2: keep keeps the if of the returned select",
     "data:BOOLBRANCH #3: keep returns the constants from the two arms",
     "data:BOOLBRANCH #4: fold assigns the condition",
-    "data:BOOLBRANCH #5: keep assigns through the kept branch",
+    "data:BOOLBRANCH #5: keep assigns in the arms of the kept branch",
     "data:BOOLBRANCH #6: fold tests the condition again in place of the flag",
     "data:BOOLBRANCH #7: keep keeps the one flag whose arm does other work, and no other",
     "data:BOOLBRANCH #8: a materialized overflow flag that is only tested still folds",
@@ -1498,6 +1498,13 @@
     "data:ITANIUMRTTI-MACHO-CLASSIC #1: off leaves the vptr stores as addresses",
     "data:ITANIUMRTTI-MACHO-CLASSIC #2: on names Square's vptr",
     "data:ITANIUMRTTI-MACHO-CLASSIC #3: on names Circle's vptr",
+    "data:ITEREGION AUTO #1: pick prints its conditional value (pass 1)",
+    "data:ITEREGION AUTO #2: flag keeps the store of its then arm (pass 1)",
+    "data:ITEREGION AUTO #3: flag keeps the store of its else arm (pass 1)",
+    "data:ITEREGION AUTO #4: arg's computed arm folds into the conditional (pass 1)",
+    "data:ITEREGION AUTO #5: with iteregion on pick prints an if without an else (pass 2)",
+    "data:ITEREGION AUTO #6: with iteregion on flag folds into a conditional (pass 2)",
+    "data:ITEREGION AUTO #7: with iteregion on arg keeps its if/else (pass 2)",
     "data:Immutable GOT graph resolution keeps the existing named C call",
     "data:Immutable GOT graph resolution keeps writable C calls indirect",
     "data:JUMPTABLEMAX #1: at the default cap the four-case switch is recovered",

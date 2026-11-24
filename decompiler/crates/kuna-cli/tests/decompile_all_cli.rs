@@ -7983,7 +7983,7 @@ int main(void) {
                 ("stream = (FILE *)pick_stream(a0);", "stream = pick_stream(a0);"),
                 (
                     "s = (a0) ? (char *)after_colon(a0) : (char *)fallback_name();",
-                    "    s = after_colon(a0);\n  else {\n    s = fallback_name();",
+                    "s = (a0) ? after_colon(a0) : fallback_name();",
                 ),
                 ("return (int)neg32(a0);", "return neg32(a0);"),
             ],

@@ -65,6 +65,7 @@ pub mod pe_dosmagic;
 pub mod pe_headers;
 // (kuna) ET_REL relocatable-object (`.o`) load-layout + relocation engine.
 pub mod reloc_object;
+pub mod srecord;
 // Architecture-aware ELF instruction/data relocation encoders used by the
 // relocatable-object layout. Kept separate so bitfield rules are unit-testable.
 mod reloc_apply;
@@ -135,6 +136,7 @@ pub mod kuna_armfuncmode;
 pub mod kuna_floatabi;
 // (kuna) does an arm64 image's platform have the callee extend a narrow return?
 pub mod kuna_returnext;
+pub mod kuna_spillselects;
 // (kuna #1288) the x86 real-mode code segment a loader paints into the decode context.
 pub mod kuna_realmodecs;
 // (kuna `mzdgroup`) the data segment an MS-DOS program's startup code loads into DS.

@@ -1294,6 +1294,9 @@ pub struct ArchContext {
     /// when the source used a ternary).  Read by
     /// [`crate::p8_structure::kuna_iteregion`]'s `ActionIteRegion`.
     pub iteregion: bool,
+    /// (kuna) `iteregion auto` -- the recorded conditional values decide an
+    /// unoptimized function ([`crate::p8_structure::kuna_o0select`]).
+    pub iteregion_record: bool,
     /// (kuna) `iteexpr`: extend iteregion to computed-expression diamond arms (see
     /// `Architecture::iteexpr`).  Per-function snapshot copy.
     pub iteexpr: bool,
@@ -1805,6 +1808,7 @@ impl ArchContext {
             revert_cross_jumps: false,   // crossjumprevert (opt-in default-off)
             dedup_ite_tail: false,        // dedupitetail (opt-in default-off)
             iteregion: false,             // iteregion (opt-in default-off, runtime-choice)
+            iteregion_record: false,      // iteregion auto
             iteexpr: false,               // iteexpr (computed-arm ?: extension, default-off)
             iteboolean: false,            // iteboolean (0/1 select -> boolean assignment)
             param_copy_hoist: false,      // paramcopyhoist (parameter copy-shadow -> entry block)
