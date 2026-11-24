@@ -516,6 +516,10 @@ impl FlowEnvironment for ArchFlowEnv {
         )
     }
 
+    fn stated_jump_targets(&self, site: &Address) -> Option<&crate::jumptable::StatedJump> {
+        self.arch().stated_jump_targets.get(site)
+    }
+
     fn stated_callee_site(&self, fd: &Funcdata, site: &Address) -> bool {
         crate::kuna_calleeoverride::is_stated(self.arch(), fd, site)
     }
@@ -1179,6 +1183,33 @@ fn publish_flow(arch: &mut Architecture, mut data: Funcdata) -> KunaResult<Funcd
     // is true; the rest of startProcessing — sortCallSpecs / buildInfoList /
     // applyDeadCodeDelay — is a W4 stub or handled lazily in op_heritage).
     data.set_flag_raw(funcdata_flags::processing_started);
+    // The PPC count/link register transfer discards two bits even when SLEIGH
+    // names the register itself as the destination. Install that operation in
+    // the completed CFG before heritage reads it, including on a fresh follow.
+    if !arch.stated_jump_targets.is_empty() {
+        for index in 0..data.num_jump_tables() {
+            let table = data.get_jump_table(index);
+            let site = table.get_op_address();
+            if !arch.stated_jump_targets.get(site).is_some_and(|f|
+                f.selector == crate::jumptable::StatedSelector::PowerPcAligned)
+            {
+                continue;
+            }
+            let branch = table.get_indirect_op().unwrap();
+            let raw = data.obank().get(branch).unwrap().get_in(0).unwrap();
+            let size = data.vbank().get(raw).unwrap().get_size();
+            let address_bits = kuna_base::address::calc_mask(size.min(site.get_addr_size()));
+            let align = data.new_op(2, site.clone());
+            data.op_set_opcode(align, crate::typeop::type_op_for(OpCode::CPUI_INT_AND));
+            data.op_unset_input(branch, 0);
+            data.op_set_input(align, raw, 0)?;
+            let mask = data.new_constant(size, address_bits & !3);
+            data.op_set_input(align, mask, 1)?;
+            let aligned = data.new_unique_out(size, align)?;
+            data.op_insert_before(align, branch);
+            data.op_set_input(branch, aligned, 0)?;
+        }
+    }
     // Publish buffered flow comments only after replacement construction succeeds,
     // and only from the drive that owns the Architecture.  A nested recovery drive
     // (the P4 callee-contract bootstrap) exists to state types: its statements are
@@ -1191,6 +1222,15 @@ fn publish_flow(arch: &mut Architecture, mut data: Funcdata) -> KunaResult<Funcd
         }
         if arch.mapped_flow_boundary_image {
             crate::kuna_mappedflowboundary::clear_stale_warnings(&mut arch.commentdb, &func_addr);
+        }
+        if !arch.stated_jump_targets.is_empty()
+            && (0..data.num_jump_tables()).any(|i| data.get_jump_table(i).is_override())
+        {
+            arch.commentdb.retain_comments(|c|
+                c.func_addr != func_addr || c.tp != crate::architecture::comment_type::warning
+                    || c.text != "WARNING: Treating indirect jump as call"
+                    || !arch.stated_jump_targets.contains_key(&c.addr)
+            );
         }
         let pending = data.drain_pending_comments();
         crate::kuna_gottailcall::clear_stale_warnings(arch, &func_addr, &pending);

@@ -134,6 +134,10 @@ fn every_dispatch_left_at_the_retry_cap_is_warned() {
 
 /// Follow flow over a raw x86-64 image loaded and entered at 0x2000.
 fn x86_flow(hex: &str) -> kuna_decomp::funcdata::Funcdata {
+    x86_flow_with_hint(hex, None)
+}
+
+fn x86_flow_with_hint(hex: &str, hint: Option<&str>) -> kuna_decomp::funcdata::Funcdata {
     let bytes: Vec<u8> = (0..hex.len()).step_by(2)
         .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
         .collect();
@@ -150,6 +154,11 @@ fn x86_flow(hex: &str) -> kuna_decomp::funcdata::Funcdata {
     )
     .unwrap();
     program.commit_pending_analysis().unwrap();
+    if let Some(hint) = hint {
+        program.set_assertions(vec![kuna_console::assertsyntax::parse_directive(hint).unwrap()]);
+        kuna_console::assertions::apply_program_scoped(&mut program);
+        assert_eq!(program.assertion_outcomes()[0].status, "applied");
+    }
     let space = program.arch().manage().get_default_code_space().unwrap().clone();
     let fd = build_and_follow_flow(program.arch_mut(), "loop", Address::new(space, 0x2000), 0).unwrap();
     std::fs::remove_file(path).unwrap();
@@ -175,13 +184,26 @@ fn a_loaded_singleton_reentered_before_its_guard_keeps_an_indirect_exit() {
     // mov $0x2040,%ecx; guard: cmp $1,%edi; ja done; load (%rcx,%rax,8); jmp *%rax.
     // The first case moves the base to the third row and jumps back to the
     // guard. The zero second row ends the first recovery after one target.
-    let fd = x86_flow(concat!(
+    let image = concat!(
         "b94020000083ff01771b89f8488b04c1ffe0c70607000000b950200000ebe6c7",
         "0617000000c30000000000000000000000000000000000000000000000000000",
         "122000000000000000000000000000001f20000000000000",
-    ));
+    );
+    let fd = x86_flow(image);
     assert_eq!(fd.num_jump_tables(), 0);
     assert_eq!(open_cases(&fd), [1]);
+
+    // The caller can supply the complete pair of local targets across both visits.
+    let stated = x86_flow_with_hint(image, Some("jumptable 2010 201f 2012"));
+    assert!(open_cases(&stated).is_empty());
+    assert_eq!(stated.num_jump_tables(), 1);
+    let table = stated.get_jump_table(0);
+    let op = stated.obank().get(table.get_indirect_op().unwrap()).unwrap();
+    let block = stated.bblocks_ref().block(op.get_parent().unwrap());
+    let mut targets: Vec<_> = (0..block.size_out())
+        .map(|i| stated.bblocks_block_start(block.get_out(i)).get_offset()).collect();
+    targets.sort_unstable();
+    assert_eq!(targets, [0x2012, 0x201f]);
 }
 
 #[test]
@@ -458,5 +480,58 @@ fn aligned_register_dispatch_chains_keep_the_local_fast_path() {
         );
         assert!(stages <= 2, "{language}: {stages} full recoveries");
         assert_eq!(warnings, 0, "{language}");
+    }
+}
+
+#[test]
+fn stated_destinations_are_the_outgoing_edges_and_leave_the_guard_intact() {
+    verify_stated_edges("dispatch.elf", "jumptable 401009 401050 401020 401030 401050",
+                        0x401009, &[0x401020, 0x401030, 0x401050], [0x401005, 0x40100b]);
+}
+
+#[test]
+fn position_independent_jumps_reject_the_directive_and_keep_their_flow() {
+    let (mut prog, entry) = load_with_hint("pie.elf", "jumptable 1005 1007 100d");
+    let outcome = &prog.assertion_outcomes()[0];
+    assert_eq!(outcome.status, "rejected");
+    assert!(outcome.detail.as_deref().unwrap().contains("runtime load base"), "{outcome:?}");
+    let fd = build_and_follow_flow(prog.arch_mut(), "dispatch", entry.addr.clone(), 0).unwrap();
+    assert_eq!(fd.num_jump_tables(), 0);
+}
+
+fn load_with_hint(image: &str, hint: &str) -> (kuna_console::engine::ConsoleProgram, kuna_console::engine::FunctionEntry) {
+    use kuna_console::{assertions, assertsyntax, engine};
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let mut prog = engine::bootstrap_from_object(
+        root.join("tests/fixtures/stated-jump").join(image).to_str().unwrap(), "",
+        &[root.join("specs").to_string_lossy().into_owned()],
+    ).unwrap();
+    prog.commit_pending_analysis().unwrap();
+    prog.set_assertions(vec![assertsyntax::parse_directive(hint).unwrap()]);
+    assertions::apply_program_scoped(&mut prog);
+    let entry = prog.resolve_entry(&engine::EntrySelector::parse("dispatch")).unwrap();
+    (prog, entry)
+}
+
+fn verify_stated_edges(image: &str, hint: &str, site: u64, taken: &[u64], guard_edges: [u64; 2]) {
+    let (mut prog, entry) = load_with_hint(image, hint);
+    assert_eq!(prog.assertion_outcomes()[0].status, "applied");
+    for _ in 0..2 {
+        let fd = build_and_follow_flow(prog.arch_mut(), "dispatch", entry.addr.clone(), 0).unwrap();
+        let successors = |id| {
+            let block = fd.bblocks_ref().block(id);
+            let mut targets: Vec<_> = (0..block.size_out())
+                .map(|i| fd.bblocks_block_start(block.get_out(i)).get_offset()).collect();
+            targets.sort_unstable();
+            targets
+        };
+        assert_eq!(fd.num_jump_tables(), 1);
+        let table = fd.get_jump_table(0);
+        assert_eq!(table.get_op_address().get_offset(), site);
+        let branch = fd.obank().get(table.get_indirect_op().unwrap()).unwrap();
+        assert_eq!(successors(branch.get_parent().unwrap()), taken);
+        let guard = (0..fd.bblocks_get_size()).map(|i| fd.bblocks_get_block(i))
+            .find(|&b| fd.bblocks_block_start(b) == entry.addr).unwrap();
+        assert_eq!(successors(guard), guard_edges);
     }
 }

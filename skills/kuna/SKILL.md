@@ -100,10 +100,15 @@ headers when comparing function inventories. AIF counts slots from each section
 start when the processor spec declares `kuna.aif.sectionInstructionStride`.
 A segment-only ELF or raw mapping uses the ordinary cursor for the selected mode.
 
-Supply known prototypes/types with `--assert`, or function entries with
-`--define-function`; consult `kuna docs cli` for syntax. Save reusable assertions in
-an `@file` and check acceptance. `--assert` requires decompilation without `--stream`
-and without a worker pool (`--jobs 1`).
+Supply known prototypes and types with `--assert` and function entries with
+`--define-function`. If assembly or execution establishes every taken destination
+of a computed jump, pass `--assert 'jumptable SITE TARGET [TARGET ...]'` using
+hexadecimal code addresses. Keep the guard's fall-through out of the list.
+Use `--assert-strict` to catch rejected facts. Save reusable directives one per
+line and pass `--assert @FILE`. For `decompile-all --jobs N` with multiple
+workers, every directive must be a `jumptable`. Use `--jobs 1` for a mixed
+file. For project exports with assertions, use serial, non-streaming mode.
+See `kuna docs cli` for a runnable example and address conventions.
 
 ## Follow challenge clues and verify critical operations
 
