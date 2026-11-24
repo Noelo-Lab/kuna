@@ -669,8 +669,21 @@ impl AnalysisPass for LibProtoPass {
         seed_named_prototypes(&mut out, &present, LIBC, types, word_size, L);
         seed_resolved_prototypes(&mut out, &imports, LIBC, types, word_size, L);
         out.c_runtime_imports = crate::loader::pe_iat::c_runtime_import_names(ctx.bytes);
+        out.c_runtime_imports.extend(
+            LIBC.iter()
+                .map(|(name, _)| *name)
+                .filter(|name| is_cxx_allocation_operator(name))
+                .filter(|name| present.contains(*name) || imports.iter().any(|(n, _)| n == name))
+                .map(String::from),
+        );
         out
     }
+}
+
+/// Whether a table name is an Itanium `operator new`/`new[]`/`delete`/`delete[]`.
+/// They are free functions, so `__cdecl` on 32-bit x86 whichever DLL exports them.
+fn is_cxx_allocation_operator(name: &str) -> bool {
+    ["_Znw", "_Zna", "_Zdl", "_Zda"].iter().any(|prefix| name.starts_with(prefix))
 }
 
 #[cfg(test)]

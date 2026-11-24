@@ -4147,8 +4147,15 @@ moves.
   model, whose stated `extrapop` of 4 leaves nothing for the declared-callee
   stack contract (chapter 04) to resolve. The DLL is the evidence, not the name: the BSD socket
   spellings the libc tables carry are `__stdcall` WinSock exports and keep the
-  default. Only where the default model's `extrapop` is unknown and the spec
-  registers a `__cdecl` model of its own, so x86-64 and every ELF are untouched.
+  default. The one exception is the C++ allocation operators: their Itanium name
+  is itself the evidence, since GCC and Clang compile a free function
+  `__cdecl` by default on 32-bit x86, so the pass reports each operator name the image
+  imports or defines whichever DLL exports it (MinGW's `libstdc++-6.dll`, or the
+  image itself when it links libstdc++ statically). Read as `__stdcall`, a locked
+  `operator new[](size_t)` popped its own argument and moved every later
+  `[esp+k]` in a GCC fixed frame by 4. Only where the default model's `extrapop`
+  is unknown and the spec registers a `__cdecl` model of its own, so x86-64 and
+  every ELF are untouched.
 - **(kuna) Declared names** (`declaredlibcproto`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/mod.rs (declared_libc_prototype)`,
   consulted from `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declare_function)`):
