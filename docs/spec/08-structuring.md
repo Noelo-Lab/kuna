@@ -1678,7 +1678,11 @@ conditional part, `option tailform <n>` lines (default 4):
 - **merge.** In a valued function, an arm of that last `if` that ends in the
   same `return K;` the function ends with drops it, so the arm falls through to
   the one return (`if (c) { f(); return 0; } return 0;` prints
-  `if (c) f(); return 0;`).
+  `if (c) f(); return 0;`). In a void function with `voidtailreturn` on, the
+  same holds for the `return;` ending an arm of the `if` before the final
+  `return;` or of an `if` that is the function's last statement:
+  `if (p) { ...; return; }` prints `if (p) { ... }` (O0 +17, 17 gained and none
+  lost; O2 unchanged). An arm that is nothing but the return keeps it.
 - **no-return.** When the function's top-level statements end in a call that
   does not return, the last one-armed `if (c) { X }` before it whose arm
   leaves — `return E` with any `E`, statements and a return, or a jump —

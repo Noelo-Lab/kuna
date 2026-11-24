@@ -2310,7 +2310,8 @@ mod tests {
         // and kuna-passthroughslot-arm / an ARM pad or a register the callee does not take is no filled slot
         // and gh1916-stackpadarg-x86 / a stack slot's pushed pad is not part of its int argument
         // and kuna-tailform-model / saved weights choose the function-tail form
-        assert_eq!(count, 898, "corpus file count drifted");
+        // and kuna-tailform-voidreturn / a void tail if drops the return the function end repeats
+        assert_eq!(count, 899, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -422,6 +422,9 @@ fn goto_refs(data: &Funcdata) -> Vec<BlockId> {
 
 fn next_edit(data: &Funcdata, cx: &Ctx, list: &[BlockId], conds: &[(BlockId, BlockId)]) -> Option<Edit> {
     let n = list.len();
+    if cx.elide && n > 0 && merges(data, cx, list[n - 1], RetKey::Void) {
+        return Some(Edit::Merge(n - 1, RetKey::Void));
+    }
     if n < 2 {
         return None;
     }
@@ -435,7 +438,7 @@ fn next_edit(data: &Funcdata, cx: &Ctx, list: &[BlockId], conds: &[(BlockId, Blo
     }
     if let Final::Bare(r, key) = fin {
         let i = n - 2;
-        if !cx.void && merges(data, cx, list[i], key) {
+        if (!cx.void || cx.elide) && merges(data, cx, list[i], key) {
             return Some(Edit::Merge(i, key));
         }
         if cx.void || matches!(key, RetKey::Const(..)) {

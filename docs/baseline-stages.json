@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5285,
-    5285
+    5287,
+    5287
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -5073,6 +5073,8 @@
     "data:tailform no-return #7: every call to abort and exit is printed in both passes",
     "data:tailform no-return #8: off, pick returns inside the if and abort ends it",
     "data:tailform no-return #9: off, lookup returns inside the if after its loop and abort ends it",
+    "data:tailform void return #1: off, the arm ends in a return",
+    "data:tailform void return #2: on, the arm ends in its store",
     "data:tee-O2 tail-jumps #1: indirect-jump-as-call marker (pass 1 off only)",
     "data:tee-O2 tail-jumps #2: unresolved GOT-pointer indirect call (pass 1 off only)",
     "data:tee-O2 tail-jumps #3: tail call resolves to named setlocale (pass 2 on only)",
