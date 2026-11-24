@@ -56,10 +56,15 @@
 //! * the calling function is or may be variadic itself (it reads `al` in its
 //!   entry block other than to store it, as `test %al,%al` does and clang's
 //!   alignment `push %rax` does not, or its own entry reads its last argument
-//!   register): an argument supplied there can be the `va_list` (`cliPrintf`
-//!   handing `cliPrintfva` its saved `r1`-`r3`), and once the save area escapes
-//!   through it the function's own recovery takes every saved register as a
-//!   parameter.
+//!   register only to store it): an argument supplied there can be the
+//!   `va_list` (`cliPrintf` handing `cliPrintfva` its saved `r1`-`r3`), and
+//!   once the save area escapes through it the function's own recovery takes
+//!   every saved register as a parameter. A register-save prologue only stores
+//!   the registers, so an entry that reads the last one some other way (clang's
+//!   `mov %r9d,%r14d` keeping a sixth parameter) takes it as a named parameter.
+//!   A function whose locked prototype states a fixed list (DWARF, a header)
+//!   has no save area, so its store of that register is a spill or gcc's
+//!   `push {r3, lr}` alignment pad, and does not decline the rule.
 //!
 //! Where the walk cannot finish, the callee's `protoorder` statement answers
 //! instead with what its first heritage saw it read, for the registers it
@@ -167,6 +172,15 @@ pub(crate) fn reads_as_argument(
     live.reads_low_byte(addr, size, stores, true) && !live.proves_read(last_addr, *last_size)
 }
 
+/// Is the calling function declared with a fixed parameter list: a locked
+/// prototype (DWARF, a header, `--assert prototype`) that is not variadic? Its
+/// entry then saves no register-argument area, so a store of its last
+/// argument register is a spill or a pad (gcc's `push {r3, lr}`).
+fn declared_fixed(data: &Funcdata) -> bool {
+    let proto = data.get_func_proto();
+    proto.is_input_locked() && !proto.is_dotdotdot()
+}
+
 /// Record the calls this rule must leave alone, before heritage folds the
 /// writes that identify them away: each call the function sets up as variadic
 /// (SysV's `xor %eax,%eax` vector-register count), and every call of a function
@@ -230,9 +244,9 @@ pub fn capture(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingReadArg> {
     let last = regs
         .last()
         .map(|e| (Address::new(std::rc::Rc::clone(e.get_space()), e.get_base()), e.get_size()));
-    let own = data.kuna_callee_entry_dead(data.get_address());
+    let own = data.kuna_callee_entry_dead(data.get_address()).filter(|_| !declared_fixed(data));
     if let (Some(own), Some((a, s))) = (own, last.as_ref()) {
-        if own.proves_read(a, *s) {
+        if own.proves_read(a, *s) && !own.reads_low_byte(a, *s, false, false) {
             return None;
         }
     }

@@ -3830,7 +3830,7 @@ impl Action for ActionBlockStructure {
         // block start address (trace only).
         let mut exitleaf_facts = crate::p8_structure::kuna_ifnoexit::ExitLeafFacts::default();
         let dbg_ifne = crate::p8_structure::kuna_ifnoexit::trace_enabled();
-        let guard_arm = data.get_arch().guard_arm;
+        let guard_arm = data.get_arch().guard_arm.applies(crate::kuna_unoptimized::is_unoptimized(data));
         let loop_cond_hoist = data.get_arch().loop_cond_hoist;
         let want_addr = dbg_ifne || guard_arm;
         let nbb = data.bblocks_get_size();

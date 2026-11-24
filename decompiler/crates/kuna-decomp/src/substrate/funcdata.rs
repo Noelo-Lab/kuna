@@ -167,7 +167,14 @@ pub struct Funcdata {
     /// (kuna `switchextent`) The table whose sanity check asked the flow for
     /// [`Self::kuna_later_tables`], shared with the jump-table partial.
     pub(crate) kuna_later_wanted: std::rc::Rc<std::cell::Cell<Option<u64>>>,
+    pub(crate) open_dispatch_returns: Vec<crate::p2_lift::kuna_opendispatch::ReturnGuard>,
     pub(crate) kuna_x87_empty_returns: Vec<Address>,
+    /// (kuna `varargsave`) Set when the first heritage pass folded this
+    /// function's variadic register-save prologue (`p4_calls/kuna_varargsave.rs`).
+    pub(crate) kuna_vararg_save: bool,
+    /// (kuna) Whether the function's code is unoptimized, decided once after
+    /// the first heritage pass (`p3_dataflow/kuna_unoptimized.rs`).
+    pub(crate) kuna_unoptimized: Option<bool>,
     pub(crate) kuna_fpu_trunc_views: Vec<OpId>,
     /// Boolean properties associated with \b this function (C++ `flags`)
     flags: uint4,
@@ -344,6 +351,8 @@ pub struct Funcdata {
     qlst: Vec<FuncCallSpecs>,
     /// Proofs belong to this entry's flow only, and are rebuilt after clear/restart.
     pub(crate) ppc32_pic_calls: std::collections::BTreeMap<u64, crate::kuna_ppc32piccalls::CallBinding>,
+    /// (kuna tailform) Where flow warned that a call does not return.
+    kuna_noreturn_notes: Vec<Address>,
     /// HighVariable merging engine (C++ `Merge covermerge`, `funcdata.hh:91`).
     ///
     /// The C++ `Funcdata` owns a single `Merge` whose `copyTrims` accumulator
@@ -389,6 +398,7 @@ pub struct Funcdata {
     pub(crate) stack_object_assertions: Vec<crate::kuna_stackobjectasserts::ObjectAssertion>,
     pub(crate) stack_object_bound_uses: std::collections::BTreeSet<(crate::kuna_stackobjects::SourcePoint, i32)>,
     pub(crate) stack_alias_holds: Option<std::collections::BTreeSet<VarnodeId>>,
+    pub(crate) stack_frame_published: Option<i64>,
     pub(crate) callee_memory: std::collections::HashMap<
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_calleememory::CalleeMemory>,
@@ -535,8 +545,8 @@ pub struct Funcdata {
     kuna_own_entry_dead: Option<std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>>,
     /// (kuna `passthrough`) The same probes with what each direct call's target
     /// takes added ([`crate::kuna_calleedeadarg::reads_through_calls`]), for the
-    /// callees `protoorder` stated a prototype for.  Read only by
-    /// [`crate::p4_calls::kuna_passthrough::stated_width`].
+    /// callees `protoorder` stated a prototype for and the ones it stated
+    /// nothing for.  Read only by `passthrough`.
     kuna_callee_entry_through: std::collections::HashMap<
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
@@ -631,6 +641,9 @@ pub struct Funcdata {
     /// writes the return register, which carries no argument, just before them
     /// (`xor %eax,%eax` is SysV's vector-register count).
     kuna_passthrough_vararg_calls: Vec<crate::context::OpId>,
+    /// (kuna `passthrough`) The CALL ops the caller hands a stack argument,
+    /// past a full argument-register file.
+    kuna_passthrough_stack_arg_calls: Vec<crate::context::OpId>,
     /// (kuna `msvcbyval`) The calls whose by-value slot `ActionDefaultParams`
     /// sized, with the constructor call that builds each.
     kuna_msvc_byval_sites: Vec<crate::p4_calls::kuna_msvcbyval::ByvalSite>,
@@ -787,11 +800,14 @@ impl Funcdata {
         };
 
         Ok(Funcdata {
+            open_dispatch_returns: Vec::new(),
             kuna_fpu_trunc_views: Vec::new(),
             kuna_extent_tables: None,
             kuna_later_tables: None,
             kuna_later_wanted: std::rc::Rc::default(),
             kuna_x87_empty_returns: Vec::new(),
+            kuna_vararg_save: false,
+            kuna_unoptimized: None,
             flags: 0,
             clean_up_index: 0,
             high_level_index: 0,
@@ -845,6 +861,7 @@ impl Funcdata {
             heritage: crate::heritage::Heritage::new(),
             qlst: Vec::new(),
             ppc32_pic_calls: Default::default(),
+            kuna_noreturn_notes: Vec::new(),
             covermerge: None,
             cover_blocks: None,
             affecting_ops_revision: 0,
@@ -857,6 +874,7 @@ impl Funcdata {
             stack_object_assertions: Vec::new(),
             stack_object_bound_uses: std::collections::BTreeSet::new(),
             stack_alias_holds: None,
+            stack_frame_published: None,
             callee_memory: std::collections::HashMap::new(),
             pending_comments: Vec::new(),
             kuna_infertypes_settled: false,
@@ -913,6 +931,7 @@ impl Funcdata {
             kuna_callret_returned: Vec::new(),
             kuna_passthrough_claims: Vec::new(),
             kuna_passthrough_vararg_calls: Vec::new(),
+            kuna_passthrough_stack_arg_calls: Vec::new(),
             kuna_msvc_byval_sites: Vec::new(),
             kuna_readarg_vararg_calls: Vec::new(),
             kuna_passthrough_variadic: false,
@@ -984,6 +1003,7 @@ impl Funcdata {
     /// ([`Self::drain_pending_comments`]) and flushed by the decompile drive.
     pub fn warning(&mut self, txt: &str, ad: &Address) {
         let msg = self.warning_prefix() + txt;
+        self.kuna_note_noreturn(crate::architecture::comment_type::warning, ad, &msg);
         self.pending_comments.push((
             crate::architecture::comment_type::warning,
             ad.clone(),
@@ -1066,7 +1086,20 @@ impl Funcdata {
         ad: Address,
         txt: String,
     ) {
+        self.kuna_note_noreturn(tp, &ad, &txt);
         self.pending_comments.push((tp, ad, txt));
+    }
+
+    /// (kuna tailform) Remember a warning the printer shows as `// no-return`.
+    fn kuna_note_noreturn(&mut self, tp: kuna_base::types::uint4, ad: &Address, txt: &str) {
+        if tp == crate::architecture::comment_type::warning && crate::printc::warning_slug(txt) == "no-return" {
+            self.kuna_noreturn_notes.push(ad.clone());
+        }
+    }
+
+    /// (kuna tailform) Whether flow warned that the call at `ad` does not return.
+    pub fn kuna_noreturn_note(&self, ad: &Address) -> bool {
+        self.kuna_noreturn_notes.contains(ad)
     }
 
     /// (kuna) Record why the decompile pipeline aborted for this function.
@@ -1907,6 +1940,16 @@ impl Funcdata {
     /// (kuna `passthrough`) The CALL ops set up as variadic calls.
     pub fn kuna_passthrough_vararg_calls(&self) -> &[crate::context::OpId] {
         &self.kuna_passthrough_vararg_calls
+    }
+
+    /// (kuna `passthrough`) Record the CALL ops handed a stack argument.
+    pub fn kuna_set_passthrough_stack_arg_calls(&mut self, ops: Vec<crate::context::OpId>) {
+        self.kuna_passthrough_stack_arg_calls = ops;
+    }
+
+    /// (kuna `passthrough`) The CALL ops handed a stack argument.
+    pub fn kuna_passthrough_stack_arg_calls(&self) -> &[crate::context::OpId] {
+        &self.kuna_passthrough_stack_arg_calls
     }
 
     /// (kuna `msvcbyval`) Record the calls whose by-value slot was sized.
@@ -4466,14 +4509,18 @@ impl Funcdata {
     pub fn clear(&mut self) {
         self.kuna_atomic_xadds.clear();
         self.ppc32_pic_calls.clear();
+        self.kuna_noreturn_notes.clear();
         self.kuna_regnarrow_runs = 0;
         self.kuna_regnarrow_values.clear();
         self.kuna_regnarrow_failed.clear();
         self.kuna_regsigned_values.clear();
 
         self.kuna_call_mechanisms = Default::default();
+        self.open_dispatch_returns.clear();
         self.kuna_fpu_trunc_views.clear();
         self.kuna_x87_empty_returns.clear();
+        self.kuna_vararg_save = false;
+        self.kuna_unoptimized = None;
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).
         self.flags &= !(funcdata_flags::highlevel_on
             | funcdata_flags::blocks_generated
@@ -4518,6 +4565,7 @@ impl Funcdata {
         self.stack_objects.clear();
         self.stack_object_bound_uses.clear();
         self.stack_alias_holds = None;
+        self.stack_frame_published = None;
         self.callee_memory.clear();
         self.clear_blocks();
         self.obank.clear();
@@ -4556,6 +4604,7 @@ impl Funcdata {
         self.kuna_callee_split_calls.clear();
         self.kuna_passthrough_claims.clear();
         self.kuna_passthrough_vararg_calls.clear();
+        self.kuna_passthrough_stack_arg_calls.clear();
         self.kuna_msvc_byval_sites.clear();
         self.kuna_readarg_vararg_calls.clear();
         self.kuna_passthrough_variadic = false;

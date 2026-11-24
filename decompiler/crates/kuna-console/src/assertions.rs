@@ -132,6 +132,8 @@ pub enum Body {
     /// `flow [<func>::]<addr> branch|call|callreturn|return` — the flow out of
     /// this instruction is not what kuna decided it was.
     Flow { func: Option<String>, addr: u64, kind: String },
+    /// All taken destinations of the computed branch at a code address.
+    JumpTable { addr: u64, targets: Vec<u64> },
     /// `callee [<func>::]<callsite> <name|address>` — the indirect call at this
     /// instruction goes to this function.
     Callee { func: Option<String>, addr: u64, callee: String },
@@ -193,6 +195,7 @@ impl Body {
             Body::Param { .. } => ("param", "P4", "prototype-source"),
             Body::Return { .. } => ("return", "P4", "prototype-source"),
             Body::Comment { .. } => ("comment", "P9", "external-refinement"),
+            Body::JumpTable { .. } => ("jumptable", "P2", "switch-model"),
             Body::Flow { .. } => ("flow", "P2", "flow-classification"),
             Body::Callee { .. } => ("callee", "P2", "flow-classification"),
             Body::CallProto { .. } => ("callproto", "P4", "prototype-source"),
@@ -225,7 +228,7 @@ impl Body {
     }
 
     /// Is this directive applied per-function (rather than once per program)?
-    fn is_function_scoped(&self) -> bool {
+    pub(crate) fn is_function_scoped(&self) -> bool {
         matches!(
             self,
             Body::Param { .. }
@@ -327,7 +330,7 @@ fn code_addr(prog: &ConsoleProgram, vma: u64) -> Result<Address, String> {
 }
 
 /// Scale a user address without treating its low bit as a function state bit.
-fn data_addr(prog: &ConsoleProgram, vma: u64) -> Result<Address, String> {
+pub(crate) fn data_addr(prog: &ConsoleProgram, vma: u64) -> Result<Address, String> {
     let vma = prog.input_address_offset(vma).map_err(|e| e.explain().to_string())?;
     let space = prog
         .arch()
@@ -411,7 +414,8 @@ fn overlay_bytes(prog: &mut ConsoleProgram, vma: u64, data: &[u8]) -> Result<(),
 }
 
 /// Apply the program-scoped directives (`function`, `typedef`, `prototype`,
-/// `data`) and record an [`Outcome`] for each.
+/// `data`, `jumptable`) and record an [`Outcome`] for each. Jump destinations
+/// are checked against declared functions, so `jumptable` directives go last.
 ///
 /// Called right after the analysis commit — a caller-declared fact outranks
 /// discovery — and before any function is selected.  The function- and
@@ -422,7 +426,9 @@ fn overlay_bytes(prog: &mut ConsoleProgram, vma: u64, data: &[u8]) -> Result<(),
 pub fn apply_program_scoped(prog: &mut ConsoleProgram) {
     let _load = prog.arch().load_scope();
     let directives = prog.assertions().to_vec();
-    for (i, directive) in directives.iter().enumerate() {
+    let jump = |d: &&Directive| matches!(d.body, Body::JumpTable { .. });
+    let others = directives.iter().enumerate().filter(|(_, d)| !jump(d));
+    for (i, directive) in others.chain(directives.iter().enumerate().filter(|(_, d)| jump(d))) {
         // A QUALIFIED `param`/`return` is a statement about the named function's
         // prototype and holds whether or not this run decompiles it, so it is
         // applied here rather than waiting for a selection that may never name
@@ -489,6 +495,7 @@ fn apply_one_program_scoped(prog: &mut ConsoleProgram, body: &Body) -> Result<()
                 .map_err(|e| e.explain().to_string())
         }
         Body::Prototype { func, decl } => apply_prototype(prog, func, decl),
+        Body::JumpTable { addr, targets } => crate::jump_targets::install(prog, *addr, targets),
         Body::Data { addr, decl } => apply_data(prog, *addr, decl),
         Body::Import { addr, name } => {
             let slot = data_addr(prog, *addr)?;
@@ -976,6 +983,19 @@ pub struct FunctionSeed {
     pub proto_overrides: Vec<(Address, PrototypePieces)>,
 }
 
+/// Per-function traversal references the original report slots. Image facts,
+/// including large target lists, never enter this index.
+pub(crate) struct LocalDirectives {
+    pub all: Rc<[Directive]>,
+    pub slots: Rc<[usize]>,
+}
+
+impl LocalDirectives {
+    fn iter(&self) -> impl Iterator<Item = (usize, &Directive)> {
+        self.slots.iter().map(|&i| (i, &self.all[i]))
+    }
+}
+
 /// Build the [`FunctionSeed`] for the function `name` entered at `entry`, and
 /// record an outcome for every directive that bound to it.
 ///
@@ -987,22 +1007,13 @@ pub fn function_seed(
     entry: &Address,
     single: bool,
 ) -> FunctionSeed {
-    let directives = prog.assertions().to_vec();
+    let directives = prog.local_directives();
     let mut seed = FunctionSeed {
         pending_proto: prog.pending_prototype(name).cloned(),
         ..Default::default()
     };
-    for (i, directive) in directives.iter().enumerate() {
-        if directive.body.is_symbol_scoped() || !directive.body.is_function_scoped() {
-            continue;
-        }
-        // Already applied program-scoped, onto the prototype of the function it
-        // names; `pending_proto` above picks it back up when that function is the
-        // one being decompiled.
-        if directive.body.cross_function_prototype().is_some() {
-            continue;
-        }
-        if !binds_to(&directive.body, name, single) {
+    for (i, directive) in directives.iter() {
+        if directive.body.is_symbol_scoped() || !binds_to(&directive.body, name, single) {
             continue;
         }
         let outcome = match seed_one(prog, &directive.body, name, entry, &mut seed) {
@@ -1011,11 +1022,10 @@ pub fn function_seed(
         };
         prog.set_assertion_outcome(i, outcome);
     }
-    if directives.iter().any(|d| matches!(d.body, Body::CallProto { .. })) {
-        let outcomes = prog.assertion_outcomes();
-        let applied = |i: usize| outcomes.get(i).is_some_and(|o| o.status == "applied");
-        for i in restated_call_prototypes(&directives, applied, |d| binds_to(&d.body, name, single)) {
-            prog.set_assertion_outcome(i, restated(&directives[i]));
+    if directives.iter().any(|(_, d)| matches!(d.body, Body::CallProto { .. })) {
+        let applied = |i| prog.assertion_applied(i);
+        for i in restated_sites(directives.iter(), call_proto_site, applied, |d| binds_to(&d.body, name, single)) {
+            prog.set_assertion_outcome(i, restated(&directives.all[i]));
         }
     }
     seed
@@ -1030,15 +1040,28 @@ pub fn restated_call_prototypes(
     applied: impl Fn(usize) -> bool,
     binds: impl Fn(&Directive) -> bool,
 ) -> Vec<usize> {
-    let sites: Vec<Option<u64>> = directives
-        .iter()
-        .enumerate()
-        .map(|(i, d)| match d.body {
-            Body::CallProto { addr, .. } if applied(i) && binds(d) => Some(addr),
-            _ => None,
-        })
-        .collect();
-    (0..sites.len()).filter(|&i| sites[i].is_some() && sites[i + 1..].contains(&sites[i])).collect()
+    restated_sites(directives.iter().enumerate(), call_proto_site, applied, binds)
+}
+
+fn call_proto_site(body: &Body) -> Option<u64> {
+    match body { Body::CallProto { addr, .. } => Some(*addr), _ => None }
+}
+
+fn restated_sites<'a>(
+    directives: impl Iterator<Item = (usize, &'a Directive)>,
+    site: fn(&Body) -> Option<u64>,
+    applied: impl Fn(usize) -> bool,
+    binds: impl Fn(&Directive) -> bool,
+) -> Vec<usize> {
+    let mut latest = std::collections::HashMap::new();
+    let mut replaced = Vec::new();
+    for (slot, d) in directives {
+        if let Some(addr) = site(&d.body).filter(|_| applied(slot) && binds(d)) {
+            replaced.extend(latest.insert(addr, slot));
+        }
+    }
+    replaced.sort_unstable();
+    replaced
 }
 
 /// The outcome of a `callproto` a later one for the same call replaced.
@@ -1065,8 +1088,8 @@ pub fn record_rejected_flow_overrides(
     if refused.is_empty() {
         return;
     }
-    let directives = prog.assertions().to_vec();
-    for (i, directive) in directives.iter().enumerate() {
+    let directives = prog.local_directives();
+    for (i, directive) in directives.iter() {
         let Body::Flow { addr, kind, .. } = &directive.body else { continue };
         if !binds_to(&directive.body, name, single) {
             continue;
@@ -1091,18 +1114,16 @@ pub fn record_rejected_callee_overrides(
     single: bool,
     fd: &Funcdata,
 ) {
-    if !prog.assertions().iter().any(|d| matches!(d.body, Body::Callee { .. })) {
+    if !prog.local_directives().iter().any(|(_, d)| matches!(d.body, Body::Callee { .. })) {
         return;
     }
-    let directives = prog.assertions().to_vec();
-    let outcomes = prog.assertion_outcomes();
-    let applied = |i: usize| outcomes.get(i).is_some_and(|o| o.status == "applied");
+    let directives = prog.local_directives();
     let binds = |d: &Directive| binds_to(&d.body, name, single);
-    let restated = restated_callees(&directives, applied, binds);
+    let restated = restated_sites(directives.iter(), callee_site, |i| prog.assertion_applied(i), binds);
     let refused = fd.kuna_rejected_callee_overrides();
-    for (i, directive) in directives.iter().enumerate() {
+    for (i, directive) in directives.iter() {
         let Body::Callee { addr, .. } = &directive.body else { continue };
-        if !applied(i) || !binds(directive) {
+        if !prog.assertion_applied(i) || !binds(directive) {
             continue;
         }
         let outcome = if restated.contains(&i) {
@@ -1126,15 +1147,11 @@ pub fn restated_callees(
     applied: impl Fn(usize) -> bool,
     binds: impl Fn(&Directive) -> bool,
 ) -> Vec<usize> {
-    let sites: Vec<Option<u64>> = directives
-        .iter()
-        .enumerate()
-        .map(|(i, d)| match d.body {
-            Body::Callee { addr, .. } if applied(i) && binds(d) => Some(addr),
-            _ => None,
-        })
-        .collect();
-    (0..sites.len()).filter(|&i| sites[i].is_some() && sites[i + 1..].contains(&sites[i])).collect()
+    restated_sites(directives.iter().enumerate(), callee_site, applied, binds)
+}
+
+fn callee_site(body: &Body) -> Option<u64> {
+    match body { Body::Callee { addr, .. } => Some(*addr), _ => None }
 }
 
 /// The outcome of a `callee` a later one for the same call site replaced.
@@ -1151,14 +1168,14 @@ pub fn record_unbound_call_prototypes(
     single: bool,
     fd: &Funcdata,
 ) {
-    if !prog.assertions().iter().any(|d| matches!(d.body, Body::CallProto { .. })) {
+    if !prog.local_directives().iter().any(|(_, d)| matches!(d.body, Body::CallProto { .. })) {
         return;
     }
-    let directives = prog.assertions().to_vec();
-    for (i, directive) in directives.iter().enumerate() {
+    let directives = prog.local_directives();
+    for (i, directive) in directives.iter() {
         let Body::CallProto { addr, .. } = &directive.body else { continue };
         if !binds_to(&directive.body, name, single)
-            || prog.assertion_outcomes().get(i).is_none_or(|o| o.status != "applied")
+            || !prog.assertion_applied(i)
         {
             continue;
         }
@@ -1229,6 +1246,7 @@ fn seed_one(
                 ));
             }
             let at = code_addr(prog, *addr)?;
+            crate::jump_targets::require_unstated(prog, &at)?;
             seed.flow_overrides.push((at.clone(), type_));
             // (kuna) The same chain extension the `override flow` console
             // command performs, for the in-process drive (`decompile-all`,
@@ -1266,9 +1284,9 @@ fn seed_one(
 /// Are there symbol-scoped directives bound to `name`?  The second decompile
 /// pass exists only for these, so every run without one keeps its current cost.
 pub fn has_symbol_scoped(prog: &ConsoleProgram, name: &str, single: bool) -> bool {
-    prog.assertions()
+    prog.local_directives()
         .iter()
-        .any(|d| d.body.is_symbol_scoped() && binds_to(&d.body, name, single))
+        .any(|(_, d)| d.body.is_symbol_scoped() && binds_to(&d.body, name, single))
 }
 
 /// Apply the symbol-scoped directives (`name`, `type`) to the first pass's
@@ -1291,10 +1309,10 @@ pub fn apply_symbol_scoped(
     single: bool,
 ) -> Option<Vec<Expected>> {
     let _load = prog.arch().load_scope();
-    let directives = prog.assertions().to_vec();
+    let directives = prog.local_directives();
     let mut applied_any = false;
     let mut touched: Vec<(usize, kuna_decomp::database::SymbolId, Option<Rc<Datatype>>)> = Vec::new();
-    for (i, directive) in directives.iter().enumerate() {
+    for (i, directive) in directives.iter() {
         if !directive.body.is_symbol_scoped() || !binds_to(&directive.body, name, single) {
             continue;
         }
@@ -1404,9 +1422,9 @@ pub enum Shown {
 /// type, did not reach the output and is reported refused rather than
 /// applied; one declared under a suffixed name is applied, and says so.
 pub fn verify_printed(prog: &mut ConsoleProgram, fd: &Funcdata, code: &str, expected: &[Expected]) {
-    let directives = prog.assertions().to_vec();
+    let directives = prog.local_directives();
     for (i, shown) in check_printed(prog.arch(), fd, code, expected) {
-        let Some(directive) = directives.get(i) else { continue };
+        let Some(directive) = directives.all.get(i) else { continue };
         let outcome = match shown {
             Shown::Refused(reason) => directive.refused(reason),
             Shown::AppliedAs(note) => Outcome { detail: Some(note), ..directive.applied() },
@@ -1420,10 +1438,10 @@ pub fn verify_printed(prog: &mut ConsoleProgram, fd: &Funcdata, code: &str, expe
 /// replay finds the constant again by its dataflow hash, and one it cannot
 /// find prints as before.
 pub fn verify_formats(prog: &mut ConsoleProgram, fd: &Funcdata, name: &str, single: bool) {
-    let directives = prog.assertions().to_vec();
-    for (i, directive) in directives.iter().enumerate() {
+    let directives = prog.local_directives();
+    for (i, directive) in directives.iter() {
         let Body::Format { addr, format, value, .. } = &directive.body else { continue };
-        if !binds_to(&directive.body, name, single) || prog.assertion_outcomes().get(i).is_none_or(|o| o.status != "applied") {
+        if !binds_to(&directive.body, name, single) || !prog.assertion_applied(i) {
             continue;
         }
         let Ok(at) = code_addr(prog, *addr) else { continue };

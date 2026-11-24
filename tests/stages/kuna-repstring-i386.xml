@@ -46,6 +46,9 @@ a60f94c05e0fb6c05f5dc355b90800000089e5578b7d0c568b7508f3a689f05e5f5dc3
 <symbol space="ram" offset="0x4013ab" name="mismatch"/>
 </binaryimage>
 <script>
+  <!-- looptest (default proven) prints the loops this test pins as do-while with the
+       test at the top (their entry tests fold to true); kept bottom-tested here. -->
+  <com>option looptest binary</com>
   <com>lo fu fill32</com>
   <com>decompile</com>
   <com>print C</com>

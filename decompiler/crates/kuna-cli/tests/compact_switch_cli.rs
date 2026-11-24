@@ -4,6 +4,7 @@ use common::process;
 
 use std::path::PathBuf;
 use std::process::Command;
+use crate::common::process::Capped;
 
 /// An x86-64 executable whose single segment maps `body` at 0x401000.
 fn elf(body: &[u8]) -> Vec<u8> {
@@ -187,6 +188,8 @@ fn decompile(image: &[u8], asserts: &[&str], options: &[&str]) -> String {
     for option in options {
         command.args(["--option", option, "off"]);
     }
+    // The assertions pin the switch's nesting under the binary's own return layout.
+    command.args(["--option", "tailform", "off"]);
     command
         .args(["--addr", "0x401000", "--mode", "reliable", "--assert-strict", "--sleighpath"])
         .arg(specs());
@@ -297,7 +300,7 @@ int main(int argc, char **argv) {{
                 "{cc} {level}: {}\n{printed}",
                 String::from_utf8_lossy(&compile.stderr)
             );
-            let run = Command::new(&exe).arg(&binary).output().unwrap();
+            let run = Command::new(&exe).arg(&binary).capped_output().unwrap();
             assert!(
                 run.status.success(),
                 "{cc} {level}: {} {}\n{printed}",
@@ -873,7 +876,7 @@ int main(int argc, char **argv) {{
                 "{cc} {level}: {}\n{printed}",
                 String::from_utf8_lossy(&compile.stderr)
             );
-            let run = Command::new(&exe).arg(&binary).output().unwrap();
+            let run = Command::new(&exe).arg(&binary).capped_output().unwrap();
             assert!(
                 run.status.success(),
                 "{cc} {level}: {} {}\n{printed}",

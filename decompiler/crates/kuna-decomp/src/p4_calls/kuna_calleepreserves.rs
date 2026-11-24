@@ -99,6 +99,9 @@ use kuna_base::marshal::ElementId;
 use kuna_base::space::spacetype;
 use kuna_base::types::int4;
 
+use kuna_num::opcodes::OpCode;
+
+use crate::context::OpId;
 use crate::funcdata::Funcdata;
 use crate::fspec::FuncCallSpecs;
 
@@ -154,7 +157,41 @@ pub fn callee_preserves_range(
         return false;
     }
     body_departs_from_convention(data, fc, w)
-        || crate::p4_calls::kuna_calleescratchbody::scratch_body_is_a_body(data, w)
+        || crate::p4_calls::kuna_calleescratchbody::scratch_body_is_a_body(
+            data,
+            w,
+            crate::kuna_rustabi::call_model(fc.proto())
+                .and_then(|m| m.input_opt())
+                .is_some_and(|i| i.possible_param(addr, size)),
+        )
+}
+
+/// Does the register value `indop` carries across an earlier direct call reach
+/// `reader` unchanged, as an argument `reader`'s callee takes?
+///
+/// The argument-recovery side of the same evidence. `AncestorRealistic` treats a
+/// register value that reaches a call through an earlier call as clobbered;
+/// gcc's interprocedural register allocation sets an argument register once and
+/// leaves it across calls of a leaf it knows does not write it. Both bodies must
+/// speak: the earlier callee proves it never writes the register (as
+/// [`callee_preserves_range`] decides), and `reader`'s callee reads it on entry
+/// before writing it. A stale register the next callee never reads stays out.
+pub fn preserved_for_reader(data: &Funcdata, indop: OpId, reader: OpId) -> bool {
+    let Some(o) = data.obank().get(indop) else { return false };
+    let (Some(out), Some(iop)) = (o.get_out(), o.get_in(1)) else { return false };
+    let Some(iop) = data.vbank().get(iop).filter(|v| v.get_space().get_type() == spacetype::IPTR_IOP) else {
+        return false;
+    };
+    let Some(out) = data.vbank().get(out) else { return false };
+    let (addr, size) = (out.get_addr(), out.get_size());
+    let callop = OpId::from(slotmap::KeyData::from_ffi(iop.get_offset()));
+    let direct_call = |op: OpId| {
+        data.obank().get(op).filter(|c| c.code() == OpCode::CPUI_CALL)?;
+        data.get_call_specs_index(op).map(|i| data.get_call_specs(i))
+    };
+    let (Some(earlier), Some(later)) = (direct_call(callop), direct_call(reader)) else { return false };
+    data.kuna_callee_entry_dead(later.get_entry_address()).is_some_and(|d| d.proves_input(addr, size))
+        && callee_preserves_range(data, earlier, addr, size)
 }
 
 /// Does the decoded body demonstrably depart from the convention the effect list

@@ -1271,8 +1271,8 @@ fn usage() {
          \n\
          --assert <directive | @file> (repeatable) states a fact the engine could not\n\
          derive.  The vocabulary is function, typedef, prototype, data, import, param,\n\
-         return, name, type, format, isolate, comment, flow, callee, callproto, readonly,\n\
-         volatile, bytes -- for instance `prototype login int login(char *user,char *pw)`,\n\
+         return, name, type, format, isolate, comment, flow, jumptable, callee, callproto,\n\
+         readonly, volatile, bytes -- for instance `prototype login int login(char *user,char *pw)`,\n\
          `type v2 char[16]`,\n\
          `name v2 credbuf`, `readonly 0x404028+8`, `flow 0x1405 return`.\n\
          `format <addr> hex|dec|oct|bin|char [<value>]` sets the form the constant\n\

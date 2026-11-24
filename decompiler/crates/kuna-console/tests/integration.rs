@@ -7,6 +7,9 @@ mod verify_goextensions;
 #[path = "verify_gobyteextract.rs"]
 mod verify_gobyteextract;
 
+#[path = "verify_op_sizes.rs"]
+mod verify_op_sizes;
+
 #[path = "verify_gobyteview.rs"]
 mod verify_gobyteview;
 
@@ -469,6 +472,9 @@ mod verify_x86listingswitch;
 
 #[path = "verify_symbolstream.rs"]
 mod verify_symbolstream;
+
+#[path = "verify_falseentry.rs"]
+mod verify_falseentry;
 
 #[path = "verify_tailcallentry.rs"]
 mod verify_tailcallentry;

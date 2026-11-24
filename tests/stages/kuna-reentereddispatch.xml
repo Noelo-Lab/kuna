@@ -1,7 +1,8 @@
 <decompilertest>
-<binaryimage arch="MIPS:BE:64:default">
-<bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
-<symbol space="ram" offset="0x100000" name="harness_stub"/>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- mov $step,%eax; dispatch: jmp *%rax; step: mov %edi,(%rsi); mov %rdx,%rax; jmp dispatch -->
+<bytechunk space="ram" offset="0x1000" readonly="true">b807100000ffe0893e4889d0ebf7</bytechunk>
+<symbol space="ram" offset="0x1000" name="callback_dispatch"/>
 </binaryimage>
 <!--
   kuna constselectjump reentry: a dispatcher loop jumps through one register,
@@ -19,6 +20,8 @@
   indirect_dispatch.rs executes the emitted C against the stores at O0/O2.
 -->
 <script>
+<com>parse line extern void callback_dispatch(int value,int *slot,void *next);</com>
+<com>lo fu callback_dispatch</com><com>decompile</com><com>print C</com>
 <com>clear architecture</com>
 <com>load raw MIPS:BE:64:octeon-32addr:default 0x400000 0x400000 tests/fixtures/indirect-dispatch/reentry-n32-r31-2.bin</com>
 <com>function bounds 0x400000 0x40003c as reentry_n32_r31_2</com>
@@ -146,4 +149,7 @@
 <stringmatch name="reentereddispatch #3: reentry reaches the third and fourth stores" min="4" max="4">output\[[23]\] = seed;</stringmatch>
 <stringmatch name="reentereddispatch #4: the caller return is a defined default case" min="7" max="7">default:</stringmatch>
 <stringmatch name="reentereddispatch #5: no dispatch is left incomplete or undefined" min="0" max="0">more targets|uninitialized|could not be normalized|overlaps decoded</stringmatch>
+<stringmatch name="reentereddispatch #6: the callback transfers after the store" min="1" max="1">v[0-9]+ = next;
+\}
+\(\*v[0-9]+\)\(\);</stringmatch>
 </decompilertest>

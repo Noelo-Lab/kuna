@@ -21,6 +21,7 @@
 <symbol space="ram" offset="0x10018c" name="runtime.panicdivide.abi0"/>
 </binaryimage>
 <script>
+  <com>option tailform off</com>
   <com>option sourcelang go</com><com>option outlang go</com>
   <com>option noreturn runtime.panicdivide</com>
   <com>option noreturn application.panicdivide</com>

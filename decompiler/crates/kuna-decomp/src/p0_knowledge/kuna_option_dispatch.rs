@@ -184,6 +184,7 @@ kuna_options! { self, p1;
     "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
     "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
     "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
+    "varargsave" => on_off!(vararg_save, "System V variadic register-save prologue folding"),
     "linuxsyscall" => {
         let (mode, msg) = crate::kuna_linuxsyscall::OptionLinuxSyscall.apply(p1)?;
         self.linux_syscall = mode;
@@ -576,6 +577,11 @@ kuna_options! { self, p1;
         self.returndup_triangle = val;
         Ok(msg)
     },
+    "tailform" => {
+        let (val, msg) = crate::p8_structure::kuna_tailform::OptionTailForm.apply(p1)?;
+        self.tail_form = val;
+        Ok(msg)
+    },
     "earlyreturn" => {
         let (val, msg) =
             crate::p8_structure::kuna_earlyreturn::OptionEarlyReturn.apply(p1)?;
@@ -652,6 +658,11 @@ kuna_options! { self, p1;
     },
     "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
     "switchmerge" => on_off!(switchmerge, "nested-switch merge and default-hole folding"),
+    "looptest" => {
+        let (mode, msg) = crate::p8_structure::kuna_looptest::parse_loop_test(p1)?;
+        self.loop_test = mode;
+        Ok(msg)
+    },
     "gotonext" => on_off!(goto_next, "goto-to-next suppression"),
     "importdata" => on_off!(import_data, "import-slot data-read rendering"),
     "castimplied" => on_off!(cast_implied, "C-implied cast elision"),
@@ -721,6 +732,12 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "cortexmpriv" => on_off!(cortexmpriv, "Cortex-M privileged-mode guard folding"),
+    "bytestorewidth" => on_off!(byte_store_width, "Byte-array constant store width"),
+    "boolbranch" => {
+        let (keep, msg) = crate::kuna_boolbranch::parse_bool_branch(p1)?;
+        self.bool_branch_keep = keep;
+        Ok(msg)
+    },
     "acleintrinsics" => on_off!(acle_intrinsics, "AArch64 ACLE intrinsics"),
     "dedupvardecls" => {
         let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;
@@ -836,14 +853,12 @@ kuna_options! { self, p1;
         Ok(format!("PPC32 PIC import recovery {}", mode.as_str()))
     },
     "ppcapu" => {
-        let val = on_or_off(p1)?;
-        self.analysis_ppcapu = val;
-        self.load_options_mut().ppcapu = val;
-        crate::kuna_ppcapu::set_ppcapu_env(val);
-        Ok(format!(
-            "PowerPC APU-note language selection turned {}",
-            if val { "on" } else { "off" }
-        ))
+        let mode = crate::kuna_ppcapu::Mode::parse(p1)
+            .ok_or_else(|| KunaError::parse("Expected ppcapu isel|on|off"))?;
+        self.analysis_ppcapu = mode;
+        self.load_options_mut().ppcapu = mode;
+        mode.set_env();
+        Ok(format!("PowerPC APU-note language selection {}", mode.as_str()))
     },
     "ifuncfpret" => {
         let val = on_or_off(p1)?;

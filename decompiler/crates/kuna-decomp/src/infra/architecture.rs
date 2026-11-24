@@ -599,6 +599,9 @@ pub struct Architecture {
     /// resolves a call to one of those names.  See
     /// [`crate::p2_lift::kuna_cleanupcode`].
     pub remove_cleanup_code: bool,
+    /// (kuna `varargsave`) Fold the x86-64 System V variadic register-save
+    /// prologue (`option varargsave`). See [`crate::kuna_varargsave`].
+    pub vararg_save: bool,
     /// (kuna `linuxsyscall`) Rewrite a 32-bit Linux `int 0x80` from the indirect
     /// call through the `swi` userop that x86 SLEIGH lowers it to into a named
     /// call on the syscall the constant in `EAX` selects, with the ABI argument
@@ -969,10 +972,10 @@ pub struct Architecture {
     /// the primary structuring path; falls back to `CollapseStructure` on irreducible code).
     pub region_structure: bool,
     /// (kuna) Source-layout tie-break for `CollapseStructure::ruleBlockIfNoExit`'s
-    /// clause arm (option `guardarm`, default-off opt-in).  Only fires when BOTH
-    /// arms are eligible clauses; the earlier-addressed arm becomes the `if`
-    /// clause instead of out-index 0.
-    pub guard_arm: bool,
+    /// clause arm (option `guardarm`).  Only fires when BOTH arms are eligible
+    /// clauses; the earlier-addressed arm becomes the `if` clause instead of
+    /// out-index 0.
+    pub guard_arm: crate::p8_structure::kuna_ifnoexit::GuardArmMode,
     /// (kuna) Defer a live loop head in `CollapseStructure`'s deferred
     /// `ruleBlockIfNoExit` scan while a non-head candidate remains (option
     /// `loopcondhoist`, default-off opt-in), so `ruleBlockWhileDo` keeps the
@@ -1144,6 +1147,10 @@ pub struct Architecture {
     /// shared RETURN block is the join of a one-block `if`.  Read by
     /// [`crate::p8_structure::kuna_rettriangle::is_triangle_join`].
     pub returndup_triangle: bool,
+    /// (kuna) `tailform`: wrap or guard each function-tail `if` by the printed
+    /// size of its conditional tail; `None` when off.  Read by
+    /// [`crate::p8_structure::kuna_tailform`].
+    pub tail_form: Option<crate::p8_structure::kuna_tailform::TailFormPolicy>,
     /// (kuna) Hoist a leading const-guard into an early return (`if (c) return K;`) by
     /// peeling only the CONSTANT arm of a mixed return phi — the per-edge narrowing of
     /// angr SAILR `ReturnDuplicatorHigh` that `duplicate_shared_returns`' whole-block
@@ -1246,6 +1253,8 @@ pub struct Architecture {
     /// another switch on the same selector as one `switch`, and leave out the
     /// labels of arms that jump to the code `default:` runs.
     pub switchmerge: bool,
+    /// (kuna `looptest`) Where a bottom-tested loop prints its test.
+    pub loop_test: crate::p8_structure::kuna_looptest::LoopTestMode,
     /// (kuna `importdata`) Render a data read through a loader-marked import slot
     /// (a GOT / `__got` / `__auth_got` / IAT entry holding an import's address) as
     /// the import itself, instead of a dereference of the anonymous slot. Default
@@ -1302,6 +1311,13 @@ pub struct Architecture {
     /// (`decompile_drive::is_injected_userop`), not at registration: the payload
     /// is installed at architecture bootstrap, before any `option` line.
     pub cortexmpriv: bool,
+    /// (kuna `bytestorewidth`) Keep a constant write into a byte array at its
+    /// native width unless its bytes read as text
+    /// ([`crate::p3_dataflow::kuna_bytestorewidth`]).
+    pub byte_store_width: bool,
+    /// (kuna `boolbranch`) Keep a 0/1 select under a branch instruction instead of
+    /// folding it into the condition ([`crate::p3_dataflow::kuna_boolbranch`]).
+    pub bool_branch_keep: bool,
     /// (kuna `acleintrinsics`) On AArch64, lift the memory-tagging instructions
     /// with their tag effect (`kuna_memtag`) and print the barrier, hint and
     /// memory-tagging user ops as ACLE intrinsics (`kuna_acleintrinsics`).
@@ -1647,10 +1663,10 @@ pub struct Architecture {
     /// (`tailcalljump`). Read through the [`crate::kuna_ifuncfpret`] **env var**
     /// (the PLT map is baked at `load file`); this bool is for catalog visibility.
     pub analysis_ifuncfpret: bool,
-    /// (kuna) Gate e500 selection from a PowerPC ELF APU note (`ppcapu`); default
-    /// off. Read through the [`crate::kuna_ppcapu`] **env var** (the language is
-    /// chosen at `load file`); this bool is for catalog visibility.
-    pub analysis_ppcapu: bool,
+    /// (kuna) Gate embedded PowerPC ELF language selection (`ppcapu`); default
+    /// `isel`. Read through the [`crate::kuna_ppcapu`] **env var** (the language
+    /// is chosen at `load file`); this field is for catalog visibility.
+    pub analysis_ppcapu: crate::kuna_ppcapu::Mode,
     /// (kuna `goabi`) Select the vendored golang compiler spec for a Go image
     /// (the catalog-visible mirror of the `KUNA_GOABI` load-time env gate).
     pub analysis_goabi: bool,
@@ -1759,6 +1775,11 @@ pub struct Architecture {
     /// function entry -> call site -> callee entry
     /// ([`crate::p2_lift::kuna_calleeoverride`]).
     pub kuna_callee_overrides: std::collections::BTreeMap<Address, std::collections::BTreeMap<Address, Address>>,
+    /// Complete sets of taken destinations stated for individual computed jumps.
+    pub stated_jump_targets: std::collections::BTreeMap<Address, crate::jumptable::StatedJump>,
+    /// Whether the mapped code can run at another address. A load fact; true
+    /// until the loader proves a fixed placement or the caller states the base.
+    pub runtime_code_relocation: bool,
     /// (kuna `formatstring`) Which variadic arguments the target passes exactly
     /// as named ones, which bounds what a closed printf/scanf override may
     /// declare. A FACT, written once at `load file` from the image's container;
@@ -2477,6 +2498,7 @@ impl Architecture {
             mapped_flow_boundary_image: false,
             overlap_branch: false, // (kuna) option overlapbranch; reset_defaults sets the shipped default
             remove_cleanup_code: false, // (kuna) option cleanupcode; reset_defaults sets the shipped default
+            vararg_save: false, // (kuna) option varargsave; reset_defaults sets the shipped default
             linux_syscall: crate::kuna_linuxsyscall::LinuxSyscallMode::Off, // (kuna) option linuxsyscall; reset_defaults sets the shipped default
             msvc_str_append: false, // (kuna) option msvcstrappend; reset_defaults sets the shipped default
             switch_selector_guard: false, // (kuna) option switchselector; reset_defaults sets the shipped default
@@ -2568,7 +2590,7 @@ impl Architecture {
             strlen_scan: false, // (kuna) option strlenscan; reset_defaults sets the shipped default
             rep_string: false, // (kuna) option repstring; reset_defaults sets the shipped default
             region_structure: true,
-            guard_arm: false,
+            guard_arm: crate::p8_structure::kuna_ifnoexit::GuardArmMode::Off, // (kuna) option guardarm; reset_defaults sets the shipped default
             loop_continue: true,
             post_increment: true,
             loop_cond_hoist: false,
@@ -2588,6 +2610,7 @@ impl Architecture {
             duplicate_shared_returns: false,
             duplicate_call_returns: false,
             returndup_triangle: false, // (kuna) option rettriangle; reset_defaults sets the shipped default
+            tail_form: None, // (kuna) option tailform; reset_defaults sets the shipped default
             early_return: false,
             switch_return: false,
             recover_loop_break: false,
@@ -2607,6 +2630,7 @@ impl Architecture {
             ctypes: false, // (kuna) option ctypes; reset_defaults sets the shipped default
             voidtailreturn: false, // (kuna) option voidtailreturn; reset_defaults sets the shipped default
             switchmerge: false, // (kuna) option switchmerge; reset_defaults sets the shipped default
+            loop_test: crate::p8_structure::kuna_looptest::LoopTestMode::Binary, // (kuna) option looptest; reset_defaults sets the shipped default
             goto_next: false, // (kuna) option gotonext; reset_defaults sets the shipped default
             import_data: false,
             data_import_slots: std::collections::BTreeSet::new(),
@@ -2618,6 +2642,8 @@ impl Architecture {
             cast_narrow: false, // (kuna) option castnarrow; reset_defaults sets the shipped default
             decl_order: crate::kuna_declorder::DeclOrder::Name, // (kuna) option declorder; reset_defaults sets the shipped default
             cortexmpriv: false, // (kuna) option cortexmpriv; reset_defaults sets the shipped default
+            byte_store_width: false, // (kuna) option bytestorewidth; reset_defaults sets the shipped default
+            bool_branch_keep: false, // (kuna) option boolbranch; reset_defaults sets the shipped default
             acle_intrinsics: false, // (kuna) option acleintrinsics; reset_defaults sets the shipped default
             cortexmpriv_inject: None, // (kuna) set by init_userops_and_fixups when the language declares the user-op
             present_lessequal: false,
@@ -2685,7 +2711,7 @@ impl Architecture {
             analysis_ppc32picimports: Default::default(),
             ppc32_pic_imports: Default::default(),
             analysis_ifuncfpret: true, // (kuna) option ifuncfpret, default on (x86-64 IRELATIVE slots only)
-            analysis_ppcapu: false, // (kuna) option ppcapu, default off (opt-in)
+            analysis_ppcapu: Default::default(),
             analysis_goabi: false, // (kuna) option goabi; reset_defaults sets the shipped default (auto)
             analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars::Off,
             analysis_dwarf: false,
@@ -2703,6 +2729,8 @@ impl Architecture {
             elfmain_main_decl: None,
             format_override_callpoints: std::collections::BTreeSet::new(),
             kuna_callee_overrides: std::collections::BTreeMap::new(),
+            stated_jump_targets: Default::default(),
+            runtime_code_relocation: true,
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
             analysis_listing: false,
             analysis_fast_funcdisc: false,
@@ -2838,6 +2866,7 @@ impl Architecture {
         self.tail_call_frame = true; // (kuna) DIV-109 default-on: REMOVES CODE. A direct jmp preceded by a teardown of exactly the entry block's frame is a tail call even when the callee was never discovered. Byte-identical (0/675) on the datatest corpus; restore the flow-into-the-callee decode with `option tailcallframe off`
         self.funcbound_flow = true; // (kuna) DIV-67 default-on: REMOVES CODE. Truncates a fall-through that reaches another known function's entry (a function ending in an unnamed static no-return `exit`/`abort`/`die()` wrapper) instead of decoding the next function's body into it. Byte-identical (0/675) on the datatest corpus; restore upstream flow-into-callee with `option funcboundflow off`
         self.overlap_branch = true; // (kuna) DIV-106 default-on: REMOVES CODE. Ends a conditional branch's fall-through in a halt when the branch's own target lies strictly inside that fall-through instruction's encoding (the anti-disassembly junk-lead-byte overlap), instead of letting the bogus decode swallow the target and desynchronise the stream. Two real instruction starts cannot sit at `next` and strictly inside `next`, so the trigger never matches well-formed code and is byte-identical (0/675) on the datatest corpus; restore the fall-through-wins decode with `option overlapbranch off`
+        self.vararg_save = true; // (kuna) option varargsave default-on: fold the x86-64 System V variadic register-save prologue; inert on every other target
         self.remove_cleanup_code = true; // (kuna) DIV-81 default-on: REMOVES CODE. Deletes the Rust drop/deallocate call sites (`core::ptr::drop_in_place`, `Drop::drop`, `alloc::raw_vec::RawVecInner::deallocate`, `__rust_dealloc`) and the argument setup that only feeds them. Structurally inert outside a Rust binary (no C ELF resolves a call to one of those names), so byte-identical (0/675) on the datatest corpus; keep the drop glue with `option cleanupcode off`
         self.switch_selector_guard = false; // (kuna) option switchselector, default-off: re-rolling a parameter-dispatch cascade into a switch is the better default; ON narrows `loweredswitch` to cascades whose selector the function itself computes
         self.msvc_str_append = false; // (kuna) option msvcstrappend, default-off: it deletes the inlined fast path's stores and renames the grow call, and no MSVC C++ corpus in the tree can measure it
@@ -2912,6 +2941,8 @@ impl Architecture {
         self.iteregion = true; // (kuna) DIV-17 default-on (angr ITERegionConverter: assignment-diamond -> `?:` ternary, decbench F5). Per-test opt-out (`option iteregion off`) on the datatests it changes keeps the corpus byte-identical.
         self.iteexpr = false; // (kuna) computed-arm ?: extension: runtime choice, default-off (corpus byte-identical).
         self.iteboolean = true; // (kuna) DIV-51 default-on (short-circuit 0/1 select -> boolean assignment; 0/675 ablation). Per-test opt-out (`option iteboolean off`) on the one stage test it changes keeps the corpus byte-identical.
+        self.tail_form = Some(Default::default()); // (kuna) option tailform default-on
+        self.guard_arm = crate::p8_structure::kuna_ifnoexit::GuardArmMode::Auto; // (kuna) option guardarm default `auto`: the layout tie-break only in functions `kuna_unoptimized` calls unoptimized; `option guardarm off` restores out-index order everywhere
         self.returndup_triangle = false; // (kuna) option rettriangle default-off: decbench sample O0 -163 GED / +56 perfect, O2 +60 GED / +1 perfect; on in the aggressive preset
         self.duplicate_shared_returns = true; // (kuna) DIV-54 default-on, superseding the DIV-18 revert (angr SAILR gotoless ReturnDuplicatorHigh). The -976 GED-perfect regression that reverted it was measured before #137 added the const-return gate (`returndup_is_const_ret`); re-ablated on 52,862 decbench functions the selective pass is +417 GED-perfect / -7,756 aggregate GED, net-positive in every one of nine tested partitions. Per-test opt-out (`option returndup off`) on the datatests it changes keeps the corpus byte-identical.
         self.duplicate_call_returns = false; // (kuna) `returndup calls` is opt-in: the merged call is often the source's own ternary argument
@@ -2932,6 +2963,7 @@ impl Architecture {
         self.goto_next = true; // (kuna) option gotonext default-on: upstream BlockGoto::gotoPrints; only the spelling of a jump changes; 0/675 datatests
         self.voidtailreturn = true; // (kuna) option voidtailreturn default-on (DIV-98); `option voidtailreturn off` restores the trailing `return;`
         self.switchmerge = true; // (kuna) option switchmerge default-on; `option switchmerge off` prints every jump-table arm of every nested switch
+        self.loop_test = crate::p8_structure::kuna_looptest::LoopTestMode::Proven; // (kuna) option looptest default `proven`; `option looptest binary` prints every loop where the binary tests it
         self.import_data = true; // (kuna) option importdata default-on; `option importdata off` keeps the `*dat_<slot>` dereference
         self.cast_implied = true; // (kuna) option castimplied default-on: leaves out only a value-preserving integer conversion C performs itself (argument to a type-locked parameter, assignment to a local or parameter declared that spelling, return, or under another conversion); 1/675 datatest assertion moved (Union #26, the intended form, pinned to upstream by a per-test opt-out), 10 stage assertions moved to the new form, speed within budget; docs/features/castimplied/default-on-evaluation.md
         self.cast_sign = true; // (kuna) option castsign default-on: a frame local or pointer index only ever compared signed, never an operand of + - * <<, and never met by a top-bit constant in == != & | ^, is declared signed; 0/675 datatest assertions and 0 stage assertions moved, test-cli unchanged, the 444-slice typesweep identical, casts 38,703 -> 38,602 on the census corpus, 41 functions fewer and 0 more; docs/features/castsign/default-on-evaluation.md
@@ -2943,6 +2975,8 @@ impl Architecture {
         self.strlen_scan = true; // (kuna) option strlenscan default-on: an inline repnz scasb length prints as strlen; byte-identical on gcc 11 decbench output, 0/675 datatest assertions
         self.rep_string = true; // (kuna) option repstring default-on: an x86 rep movs/stos/cmpsb loop prints as a copy, fill or compare builtin; inert off x86, 0/675 datatest assertions
         self.cortexmpriv = true; // (kuna) DIV-99: default-ON; the fixup is registered only on a language that declares the user-op (ARM), so inert elsewhere; "the core is privileged" is a modelling judgement, so `off` audits unprivileged Thread-mode code
+        self.byte_store_width = false; // (kuna) option bytestorewidth: opt-in
+        self.bool_branch_keep = true; // (kuna) option boolbranch default keep: a 0/1 select under a branch instruction keeps its if; conditional execution still folds
         self.acle_intrinsics = true; // (kuna) option acleintrinsics default-on; reads the AArch64 `ShowMemTag` context and AArch64 user-op names only, so inert on every other target
         self.float_globals = true; // (kuna) option floatglobals default-on
         self.call_target_type = true; // (kuna) option calltargettype default-on; acts only with `ctypes` on, and `option calltargettype off` keeps the upstream `code *` spellings
@@ -3637,6 +3671,8 @@ impl Architecture {
         // so the live flag drives both the DIV default and the toggle).
         ctx.global_array_anchor = self.global_array_anchor;
         ctx.opaque_predicate = self.opaque_predicate;
+        ctx.byte_store_width = self.byte_store_width;
+        ctx.bool_branch_keep = self.bool_branch_keep;
         ctx.ret_split_global = self.ret_split_global; // retsplitglobal
         ctx.ret_split_limit = self.ret_split_limit; // retsplitlimit
         // (kuna) resolve the byte-shuffle user-op ids ONCE per program, so the
@@ -3735,6 +3771,7 @@ impl Architecture {
         ctx.region_edge_order = self.region_edge_order; // regionedgeorder
         ctx.outline_spec = self.outline_spec.clone(); // outline
         ctx.remove_cleanup_code = self.remove_cleanup_code; // cleanupcode
+        ctx.vararg_save = self.vararg_save; // varargsave
         ctx.linux_syscall = self.linux_syscall.fires(self.image_linux_elf); // (kuna) linuxsyscall
         ctx.msvc_str_append = self.msvc_str_append; // msvcstrappend
         ctx.octeon_effects = self.octeon_effects; // octeoneffects
@@ -3782,6 +3819,7 @@ impl Architecture {
         ctx.duplicate_shared_returns = self.duplicate_shared_returns; // returndup
         ctx.duplicate_call_returns = self.duplicate_call_returns; // returndup calls
         ctx.returndup_triangle = self.returndup_triangle; // rettriangle (one-block-if join)
+        ctx.tail_form = self.tail_form.map(|p| crate::p8_structure::kuna_tailform::TailFormPolicy { elide_void: self.voidtailreturn, loop_test: self.loop_test, ..p }); // tailform
         ctx.early_return = self.early_return; // earlyreturn
         ctx.switch_return = self.switch_return; // switchreturn
         ctx.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
@@ -5589,6 +5627,23 @@ impl Architecture {
                 None => return Ok(()), // no processor_spec: nothing to apply
             }
         };
+
+        // A replacement pspec describes the entire grid, including an absent property.
+        let mut section_stride = None;
+        if let Some(properties) = find_child(&pspec, "properties") {
+            for property in properties.get_children() {
+                if property.get_name() == "property"
+                    && attr_str(property, "key").as_deref() == Some("kuna.aif.sectionInstructionStride")
+                {
+                    let stride = attr_str(property, "value")
+                        .and_then(|value| value.parse::<core::num::NonZeroU32>().ok())
+                        .ok_or_else(|| KunaError::lowlevel("sectionInstructionStride requires a positive byte count"))?;
+                    section_stride = Some(stride);
+                }
+            }
+        }
+
+        self.translate.translate_base_mut().section_instruction_stride = section_stride;
 
         // C++ parseProcessorConfig dispatch — ELEM_REGISTER_DATA branch
         // (architecture.cc:1202 -> decodeRegisterData).  Seed the lanerecords

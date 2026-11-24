@@ -2279,12 +2279,48 @@ mod tests {
         // and kuna-cachereturn / a lazy accessor returns the value of its cache cell (option cachereturn)
         // and kuna-thunknames / a placeholder jump thunk is named after its target (option thunknames)
         // and kuna-swifthelpers / Swift instantiation helpers and lazy witness table accessors (option swifthelpers)
+        // and kuna-aif-slot-edges / inferred entries start a complete section-relative slot
+        // and kuna-powerpc-isel / explicit language and call recovery
+        // and kuna-mips-o64-calls / O64 stack arguments and Octeon conditional calls
+        // and kuna-mips-kscratch / Octeon kernel scratch transfers preserve both selectors across calls
+        // and kuna-mips-kscratch3 / Octeon III additional kernel scratch registers
+        // and kuna-piecepathology / a call's declared int is the return, not the clobbered rest of its register
+        // and kuna-returnhintcaller / a callee return hint keeps the argument passed in the return register
+        // and kuna-boundschecked / an Annex K bounds-checked call keeps every declared argument
+        // and kuna-declaredpop / a declared import pop is the stack solver's equation
+        // and kuna-fcmp-unordered / ARM and AArch64 float conditions keep their unordered case
+        // and kuna-bytestorewidth / a constant word store into a byte array keeps its width (bytestorewidth)
+        // and kuna-calleefloatreads / a call passes the float register its unstated callee reads
+        // and kuna-calleepreservesargs / a register a leaf callee leaves alone carries a value to the next call
+        // and kuna-framepublish-seh / a published SEH record holds only the frame writes at or above it
+        // and kuna-switcharmorder / default and no-return switch arms print last, no default: return; at a void tail
+        // and kuna-loweredswitch-small / small compare-lowered switches re-roll by default (option loweredswitch)
+        // and kuna-thumb-stmia-writeback / Thumb stmia writes its base back when the base is in the list
+        // and kuna-varargsave / the x86-64 System V variadic register-save prologue
+        // and kuna-boolbranch, kuna-boolbranch-thumb / a branch instruction selecting 1 or 0 keeps its if
+        // and kuna-wsignload-a64 / AArch64 W-register sign-extending loads zero bits 63:32
+        // and kuna-thumb2-logical-carry / Thumb-2 ands/bics/movs/mvns set C from the shifter
+        // and kuna-ppc32picimports-abi-isolation / one file's load-time option never reaches the next file's loads
+        // and kuna-tailform-noreturn / a call that does not return prints as the if body before the return
+        // and kuna-expandload-opsize / a widened AND flag test keeps its op sizes
+        // and kuna-switchcond / a folded switch is never printed where a condition belongs
+        // and kuna-guardauto / the guardarm layout tie-break applies by default only to unoptimized code
+        // and kuna-stated-jump / caller-stated computed branch destinations
+        // and kuna-passthroughslot / forwarded registers fill their slots ahead of a loaded argument
+        // and kuna-passthroughslot-arm / an ARM pad or a register the callee does not take is no filled slot
+        // and gh1916-stackpadarg-x86 / a stack slot's pushed pad is not part of its int argument
+        // and kuna-tailform-model / saved weights choose the function-tail form
+        // and kuna-tailform-voidreturn / a void tail if drops the return the function end repeats
+        // and kuna-calloverlap-floatret / a call's float result inside a wider XMM range
+        // and gh1922-declared-caller-readarg-thumb / a declared fixed caller's pushed r3 is no va-save
+        // and kuna-stated-jump-placement / stated destinations a segment, a narrow offset or a DOS load cannot label
+        // and kuna-stated-jump-owners / stated destinations stay in the declared function that holds the jump
         // and kuna-pushan / a VM-protected entry stub devirtualized (option pushan)
         // and kuna-pushan-sound / a devirtualized body says nothing false about its program
         // and kuna-pushan-interp / an in-function bytecode interpreter devirtualized (option pushan)
         // and kuna-spillptr-loadguard / a LOAD through a spilled stack pointer is guarded
         // and kuna-piececover / a byte saved across a wider write of its slot keeps its old value
-        assert_eq!(count, 867, "corpus file count drifted");
+        assert_eq!(count, 909, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

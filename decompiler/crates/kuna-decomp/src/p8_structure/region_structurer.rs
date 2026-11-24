@@ -758,7 +758,7 @@ impl<'a> RegionStructurer<'a> {
             //      a `BlockSwitch` carrying the `CaseOrder` descriptors
             //      `ActionFinalStructure::finalize_switch_printing` expects, so the
             //      switch-finalization/rendering path is unchanged.
-            if self.match_acyclic_switch_cases()? {
+            if self.match_acyclic_switch_cases(false)? {
                 continue;
             }
             // (a) acyclic sequence schema (phoenix._match_acyclic_sequence).
@@ -799,6 +799,11 @@ impl<'a> RegionStructurer<'a> {
             if self.rule_block_goto()? {
                 continue;
             }
+            // (b2) a switch held back because its continue cases and its exit
+            //      lead to different blocks: turn those continues into gotos.
+            if self.match_acyclic_switch_cases(true)? {
+                continue;
+            }
             // (c) last-resort edge virtualization (phoenix._last_resort_refinement
             //     + sailr._order_virtualizable_edges).  Always removes one edge.
             if self.virtualize_one_edge()? {
@@ -824,7 +829,8 @@ impl<'a> RegionStructurer<'a> {
             }
             return Ok(false);
         }
-        Ok(self.size() == 1)
+        Ok(self.size() == 1
+            && crate::kuna_switchcond::misplaced_condition(self.graph, self.graph_id).is_none())
     }
 
     // -----------------------------------------------------------------------
@@ -942,7 +948,7 @@ impl<'a> RegionStructurer<'a> {
     /// edge-true/edge-false order, exactly as Ghidra passes them.
     fn try_if_else(&mut self, bl: BlockId) -> KunaResult<bool> {
         let b = self.graph.block(bl);
-        if b.size_out() != 2 || b.is_switch_out() {
+        if b.size_out() != 2 || b.is_switch_out() || !self.renders_branch(bl) {
             return Ok(false);
         }
         if !b.is_decision_out(0) || !b.is_decision_out(1) {
@@ -984,7 +990,7 @@ impl<'a> RegionStructurer<'a> {
     /// needing the data-flow condition flip) is deferred to a later increment.
     fn try_if_then_true_clause(&mut self, bl: BlockId) -> KunaResult<bool> {
         let b = self.graph.block(bl);
-        if b.size_out() != 2 || b.is_switch_out() {
+        if b.size_out() != 2 || b.is_switch_out() || !self.renders_branch(bl) {
             return Ok(false);
         }
         if b.get_out(0) == bl || b.get_out(1) == bl {
@@ -1010,6 +1016,11 @@ impl<'a> RegionStructurer<'a> {
         let graph_id = self.graph_id;
         self.graph.new_block_if(graph_id, bl, clause);
         Ok(true)
+    }
+
+    /// Can `bl` sit in a condition slot: does it end in a two-way branch?
+    fn renders_branch(&self, bl: BlockId) -> bool {
+        crate::kuna_switchcond::renders_branch(self.graph, bl)
     }
 
     // -----------------------------------------------------------------------
@@ -1111,7 +1122,7 @@ impl<'a> RegionStructurer<'a> {
         if self.graph.block(bl).is_goto_out(1) {
             return Ok(false);
         }
-        if self.graph.block(bl).is_switch_out() {
+        if self.graph.block(bl).is_switch_out() || !self.renders_branch(bl) {
             return Ok(false);
         }
         for i in 0..2 {
@@ -1128,7 +1139,7 @@ impl<'a> RegionStructurer<'a> {
             if self.graph.block(orblock).is_interior_goto_target() {
                 continue; // No unstructured jumps into or
             }
-            if self.graph.block(orblock).is_switch_out() {
+            if self.graph.block(orblock).is_switch_out() || !self.renders_branch(orblock) {
                 continue;
             }
             if self.graph.block(bl).is_back_edge_out(i) {
@@ -1212,14 +1223,16 @@ impl<'a> RegionStructurer<'a> {
     /// switch is folded (or a skip-edge is virtualized to a goto, which makes
     /// progress); honest-partial: a switch we cannot match falls through to the
     /// virtualize fallback (never a panic, never a whole-function abort).
-    fn match_acyclic_switch_cases(&mut self) -> KunaResult<bool> {
+    /// With `split`, a switch held back only because its continue cases and its
+    /// exit lead to different blocks has those continues made gotos instead.
+    fn match_acyclic_switch_cases(&mut self, split: bool) -> KunaResult<bool> {
         if self.switch_blocks.is_empty() {
             return Ok(false); // no recovered jump table ⇒ no switch schema
         }
         let n = self.size();
         for i in 0..n {
             let bl = self.component(i);
-            if self.try_switch_cases(bl)? {
+            if self.try_switch_cases(bl, split)? {
                 return Ok(true);
             }
         }
@@ -1230,7 +1243,7 @@ impl<'a> RegionStructurer<'a> {
     /// `CollapseStructure::ruleBlockSwitch`, `blockaction.cc:1649`, realized in the
     /// region structurer).  Mirrors the exact case/exit/skip topology checks; on a
     /// clean match emits `BlockSwitch` via [`BlockGraph::new_block_switch`].
-    fn try_switch_cases(&mut self, bl: BlockId) -> KunaResult<bool> {
+    fn try_switch_cases(&mut self, bl: BlockId, split: bool) -> KunaResult<bool> {
         if !self.graph.block(bl).is_switch_out() {
             return Ok(false);
         }
@@ -1361,6 +1374,47 @@ impl<'a> RegionStructurer<'a> {
             && (0..sizeout).any(|i| is_continue_case(self, self.graph.block(bl).get_out(i)))
         {
             return Ok(false);
+        }
+        // The folded switch keeps one successor.  A continue case whose loop
+        // head is not the exit would leave it a second one, and a block with two
+        // successors ending in a switch is taken as a condition by the if and
+        // loop folds (`if switch (...)`).  Such a case waits for the exit path
+        // to fold into a case of its own; under `split` it becomes a goto.
+        let mut kept = exitblock;
+        let mut strays: Vec<BlockId> = Vec::new();
+        for i in 0..sizeout {
+            let c = self.graph.block(bl).get_out(i);
+            if Some(c) == exitblock || !is_continue_case(self, c) || strays.contains(&c) {
+                continue;
+            }
+            let target = self.graph.block(c).get_out(0);
+            match kept {
+                None => kept = Some(target),
+                Some(k) if k != target => strays.push(c),
+                Some(_) => {}
+            }
+        }
+        if !strays.is_empty() {
+            if std::env::var_os("KUNA_RS_DEBUG").is_some() {
+                eprintln!(
+                    "[rs]   switch #{} {} {} continue case(s) beside exit #{:?}",
+                    self.graph.block(bl).get_index(),
+                    if split { "splits" } else { "waits on" },
+                    strays.len(),
+                    kept.map(|k| self.graph.block(k).get_index()),
+                );
+            }
+            if !split {
+                return Ok(false);
+            }
+            let graph_id = self.graph_id;
+            for c in strays {
+                if !self.graph.block(c).is_goto_out(0) {
+                    self.graph.set_goto_branch(c, 0)?;
+                }
+                self.graph.new_block_goto(graph_id, c);
+            }
+            return Ok(true);
         }
 
         // --- Skip-to-exit handling (checkSwitchSkips) ---------------------------
@@ -1755,7 +1809,7 @@ impl<'a> RegionStructurer<'a> {
             self.graph.new_block_inf_loop(graph_id, head);
             return Ok(true);
         }
-        if sizeout != 2 || b.is_switch_out() {
+        if sizeout != 2 || b.is_switch_out() || !self.renders_branch(head) {
             return Ok(false);
         }
         if b.is_goto_out(0) || b.is_goto_out(1) {
@@ -2734,7 +2788,7 @@ impl<'a> RegionStructurer<'a> {
                         self.graph.new_block_multi_goto(graph_id, bl, e);
                         return Ok(true);
                     }
-                    if sizeout == 2 {
+                    if sizeout == 2 && self.renders_branch(bl) {
                         // The TRUE (out-edge 1) branch must be the goto for
                         // new_block_if_goto; if the goto is the false branch,
                         // virtualize as a single goto would have flipped it.  For
@@ -3334,6 +3388,11 @@ mod tests {
     }
 
     fn fold_switch(g: &mut BlockGraph, root: BlockId, b: &[BlockId]) -> Option<BlockId> {
+        assert!(g.block(b[3]).is_back_edge_out(0));
+        fold_switch_split(g, root, b, false)
+    }
+
+    fn fold_switch_split(g: &mut BlockGraph, root: BlockId, b: &[BlockId], split: bool) -> Option<BlockId> {
         let copy = |g: &BlockGraph, id: BlockId| match g.block(id).kind() {
             BlockKind::Copy { copy } => copy.unwrap(),
             _ => unreachable!(),
@@ -3341,8 +3400,7 @@ mod tests {
         let head = copy(g, b[2]);
         let maps = (3..b.len()).map(|i| ((head, copy(g, b[i])), (i as int4 - 3, false))).collect();
         let mut st = RegionStructurer::new(g, root).with_switch_maps([(head, 0)].into_iter().collect(), maps);
-        assert!(st.graph.block(b[3]).is_back_edge_out(0));
-        if !st.try_switch_cases(b[2]).unwrap() {
+        if !st.try_switch_cases(b[2], split).unwrap() {
             return None;
         }
         (0..g.block(root).get_size())
@@ -3369,9 +3427,32 @@ mod tests {
         assert_eq!(g.block(b[3]).get_out(0), b[2]);
         let enclosing = [(0, 1), (1, 2), (1, 5), (2, 3), (2, 4), (2, 5), (3, 1)];
         let (mut g, root, b) = switch_graph(6, &enclosing, &[3]);
-        let sw = fold_switch(&mut g, root, &b).unwrap();
-        let outs: Vec<_> = (0..g.block(sw).size_out()).map(|i| g.block(sw).get_out(i)).collect();
-        assert!(outs.contains(&b[1]) && outs.contains(&b[5]), "{outs:?}");
+        assert!(fold_switch(&mut g, root, &b).is_none());
+        assert_eq!(g.block(b[3]).get_out(0), b[1]);
+        assert!(fold_switch_split(&mut g, root, &b, true).is_none());
+        let goto = g.block(b[2]).get_out(0);
+        assert_eq!(g.block(goto).get_type(), crate::block::BlockType::Goto);
+        assert_eq!(g.block(goto).get_goto_target(), Some(b[1]));
+        let sw = fold_switch_split(&mut g, root, &b, false).unwrap();
+        assert_eq!((g.block(sw).size_out(), g.block(sw).get_out(0)), (1, b[5]));
+    }
+
+    #[test]
+    fn an_exit_that_continues_is_the_one_successor() {
+        let edges = [(0, 1), (1, 2), (1, 6), (2, 3), (2, 4), (2, 5), (3, 5), (4, 5), (5, 1)];
+        let (mut g, root, b) = switch_graph(7, &edges, &[5]);
+        let sw = fold_switch_split(&mut g, root, &b, false).unwrap();
+        assert_eq!((g.block(sw).size_out(), g.block(sw).get_out(0)), (1, b[5]));
+    }
+
+    #[test]
+    fn continues_to_two_loop_heads_keep_one() {
+        let edges = [(0, 1), (1, 2), (2, 3), (2, 4), (3, 0), (4, 1)];
+        let (mut g, root, b) = switch_graph(5, &edges, &[3, 4]);
+        assert!(fold_switch(&mut g, root, &b).is_none());
+        assert!(fold_switch_split(&mut g, root, &b, true).is_none());
+        let sw = fold_switch_split(&mut g, root, &b, false).unwrap();
+        assert_eq!((g.block(sw).size_out(), g.block(sw).get_out(0)), (1, b[0]));
     }
 
     #[test]

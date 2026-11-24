@@ -1,4 +1,6 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
+#[path = "ppc32_computed_lr.rs"]
+mod ppc32_computed_lr;
 #[path = "mips_elf_selection.rs"]
 mod mips_elf_selection;
 #[path = "return_branch_cli.rs"]
@@ -49,6 +51,8 @@ mod archive_members_cli;
 
 #[path = "assert_callee.rs"]
 mod assert_callee;
+#[path = "stated_jump_targets.rs"]
+mod stated_jump_targets;
 
 #[path = "assert_import.rs"]
 mod assert_import;
@@ -181,6 +185,8 @@ mod coldentry_source_boundary;
 mod compact_switch_cli;
 #[path = "switch_self_loop_cli.rs"]
 mod switch_self_loop_cli;
+#[path = "open_dispatch.rs"]
+mod open_dispatch;
 #[path = "indirect_dispatch.rs"]
 mod indirect_dispatch;
 
@@ -330,6 +336,12 @@ mod libgcc_divdi3;
 
 #[path = "rettriangle_round_trip.rs"]
 mod rettriangle_round_trip;
+
+#[path = "tailform_round_trip.rs"]
+mod tailform_round_trip;
+
+#[path = "tailform_noreturn_round_trip.rs"]
+mod tailform_noreturn_round_trip;
 
 #[path = "return_copy_clone.rs"]
 mod return_copy_clone;
@@ -929,3 +941,8 @@ mod xrefs_immutable_got;
 
 #[path = "types_header.rs"]
 mod types_header;
+
+#[path = "assert_storage_names.rs"]
+mod assert_storage_names;
+#[path = "bounds_checked_prototypes.rs"]
+mod bounds_checked_prototypes;

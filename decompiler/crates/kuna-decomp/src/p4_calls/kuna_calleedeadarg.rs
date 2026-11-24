@@ -882,7 +882,8 @@ type ThroughMemo = HashMap<(int4, u64, u32), Rc<Vec<RegRead>>>;
 /// was handed. A target's read counts for the register bytes nothing on the
 /// forwarder's path wrote before that call ([`add_reads_through`]), and only
 /// where the target's own `protoorder` statement takes that register on the
-/// terms `passthrough` asks of a callee ([`taken_reads`]): a variadic's
+/// terms `passthrough` asks of a callee, or, where it stated nothing, its body
+/// takes it ([`taken_reads`]): a variadic's
 /// register-save prologue reads every argument register, and a forwarder into
 /// one would otherwise be read as taking them all. Calls are followed
 /// [`MAX_THROUGH_DEPTH`] deep, so a cycle of calls ends. Only
@@ -905,8 +906,10 @@ pub fn reads_through_calls(
 
 /// The live reads of the function at `entry`, its own direct calls followed
 /// `depth` more levels, kept where its statement takes a parameter: an
-/// arity-sound list naming the register, not as a variadic tail. Empty for a
-/// function that stated nothing.
+/// arity-sound list naming the register, not as a variadic tail. A function
+/// that stated nothing is read by its body: the leading run of the default
+/// model's argument registers it takes
+/// ([`crate::p4_calls::kuna_passthrough::taken_run`]).
 fn taken_reads(
     arch: &mut crate::architecture::Architecture,
     entry: &Address,
@@ -930,11 +933,35 @@ fn taken_reads(
             let reads = through.unwrap_or_else(|| dead.reads_live.clone());
             reads.into_iter().filter(|r| takes(&stated, r)).collect()
         }
+        None if arch.pass_through => {
+            let dead = probe_cached(arch, entry, reg_idx)?;
+            let through = if depth == 0 {
+                None
+            } else {
+                add_reads_through(&dead, |t| taken_reads(arch, t, reg_idx, depth - 1, memo))
+            }
+            .map(|reads_live| CalleeEntryDead { reads_live, ..(*dead).clone() });
+            match arch.default_fp().cloned() {
+                Some(model) if dead.complete => {
+                    let regs = crate::p4_calls::kuna_passthrough::general_arg_registers(&model);
+                    let run = crate::p4_calls::kuna_passthrough::taken_run(&dead, through.as_ref(), &regs, false);
+                    let reads = through.as_ref().map_or(&dead.reads_live, |t| &t.reads_live);
+                    reads.iter().filter(|r| run.iter().any(|(a, s)| overlaps_read(a, *s, r))).copied().collect()
+                }
+                _ => Vec::new(),
+            }
+        }
         _ => Vec::new(),
     };
     let out = Rc::new(taken);
     memo.insert((key.0, key.1, depth), Rc::clone(&out));
     Some(out)
+}
+
+/// Does `read` overlap `[a, a+size)`?
+fn overlaps_read(a: &Address, size: int4, &(ridx, off, sz): &RegRead) -> bool {
+    let end = off + sz.max(0) as u64;
+    a.get_space().is_some_and(|s| s.get_index() == ridx) && a.get_offset() < end && off < a.get_offset() + size.max(0) as u64
 }
 
 /// Does `stated` take a parameter that `read` overlaps, other than a variadic tail?
@@ -1772,7 +1799,8 @@ pub fn seed_callee_entry_dead(
         if let Some(d) = probe_cached(arch, &e, reg_idx) {
             data.kuna_set_callee_entry_dead(&e, d);
         }
-        if pass_through && arch.kuna_protoorder_types.get(&key).is_some_and(|s| !s.inputs.is_empty()) {
+        let stated = arch.kuna_protoorder_types.get(&key);
+        if (pass_through && stated.is_some_and(|s| !s.inputs.is_empty())) || (arch.pass_through && stated.is_none()) {
             if let Some(t) = reads_through_calls(arch, &e, reg_idx, &mut through_memo) {
                 data.kuna_set_callee_entry_through(&e, t);
             }
