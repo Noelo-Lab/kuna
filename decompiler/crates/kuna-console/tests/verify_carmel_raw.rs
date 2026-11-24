@@ -153,6 +153,22 @@ fn an_unknown_sequential_family_stops_both_inc_and_goto_before_issue() {
     assert!(matches!(program.raw_pcode_at(3), Err(KunaError::Unimpl { .. })));
 }
 
+#[test]
+fn a_reserved_compact_operand_stops_its_issue_before_any_peer_executes() {
+    let reserved = [0x2b, 0xf2, 0x01];
+    let inc = [0x21, 0xac, 0x20];
+    let parallel = raw(&[inc, reserved].concat(), 0, &[0]).unwrap();
+    assert_eq!(parallel.disassemble_at(0).unwrap().0, 6);
+    assert!(matches!(parallel.raw_pcode_at(0), Err(KunaError::BadData { .. })));
+
+    let sequential = raw(&[[0xa1, inc[1], inc[2]], reserved].concat(), 0, &[0, 1]).unwrap();
+    assert!(sequential.raw_pcode_at(0).unwrap().1.iter().any(|op| op.opcode == "INT_ADD"));
+    assert!(matches!(sequential.raw_pcode_at(3), Err(KunaError::BadData { .. })));
+
+    let assigned = raw(&[[0x2b, 0xf2, 0x81], [0x2b, 0xec, 0]].concat(), 0, &[0]).unwrap();
+    assert!(matches!(assigned.raw_pcode_at(0), Err(KunaError::Unimpl { .. })));
+}
+
 fn xml(chunks: &str) -> KunaResult<ConsoleProgram> {
     let source = format!("<binaryimage arch=\"{TARGET}\">{chunks}</binaryimage>");
     let mut docs = DocumentStorage::new();

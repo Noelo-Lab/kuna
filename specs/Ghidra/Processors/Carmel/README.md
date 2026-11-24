@@ -28,31 +28,38 @@ p-code. Missing memory is not initialized by this language.
 
 Implemented compact effects: exact NOP; INC with low-half accumulator operands;
 zero and register-half MOVE; half-register CMP/CMPU and signed full-accumulator
-CMP with an inactive peer; signed register-only MUL, MAC and MSU; logical
-and arithmetic low-half shifts with an inactive peer; ordinary signed conditional
-GOTO with no delay; and unconditional relative GOTO/CALL and RETURN with zero
-or one delay issue. Immediate REPEAT handles one register-only following issue,
-including zero repeats. It does not lift a transfer or DATA access in that issue.
+CMP with an inactive peer; signed register-only MUL, MAC, MSU, and DIV;
+logical and arithmetic low-half shifts with an inactive peer; assigned
+ADDRUPDATE pointer pairs; and ordinary signed conditional GOTO with no delay.
+Unconditional compact and marked wide relative GOTO execute up to three
+following issues, counting sequential slots individually. Compact CALL and
+RETURN admit zero or one delay issue. Immediate REPEAT handles one
+register-only following issue, including zero repeats. REPEAT does not lift a
+transfer or DATA access in that issue.
 The explicit post-CALL branch past an unexecuted sequential slot is part of
 the caller's control flow, even if analysis found a function entry there.
 Unconditional wide relative CALL without delay uses the same two-word DATA
 stack link. Marked wide MOVE covers signed literals to accumulator halves,
 whole accumulators, and address registers; it also supports short DATA
 through `R0` indirect/postincrement and absolute DATA loads into address
-registers. Marked MOVU supports a subset of
-register and literal sources to whole accumulators or the arithmetic result
-sink. Parallel lanes sample old registers and publish in lane order;
-competing accumulator writes and two transfers stop lift. An unrecognized
-right opcode family stops lift at the start of a sequential fetch without
-changing its canonical listing boundaries.
+registers. Register-only routes of EXTRACTS, EXTRACTZ, INSERT, and the
+divide-with-trace operations are also supported. Marked MOVU supports a
+subset of register and literal sources to whole accumulators or the
+arithmetic result sink. Parallel lanes sample old registers and publish in
+lane order; competing accumulator writes and two transfers stop lift.
+Unrecognized sequential right families and verified reserved compact
+operand ports reject lift without changing canonical listing boundaries.
 
 CLIW specialization admits the all-NOP template and a signed MAC1 register
 product with the remaining lanes inactive. The multiply uses standard-width
 C intermediates while preserving the physical accumulator's guard. Other
 forms can be listed but do not lift. In particular the subset has no
-general hardware loops, indirect calls, PowerPlug, or cross-issue port
-hazard model. An adjacent same-address store/load can read
-the old word in the native pipeline but the new word in emitted C.
+general hardware loops, indirect calls, PowerPlug, or a general cross-issue
+port model. A directly adjacent wide immediate store and absolute load
+are lifted as a pair so the load reads before the store writes, while the
+load remains an independently enterable issue. A delayed transfer still
+executes only its prescribed issues. A separated same-port collision is not
+lifted faithfully by this model.
 
 `carmel.slaspec` is generated from the recovered decoder field descriptions
 and independently assembled/native-tested semantic fixtures in the Carmel
@@ -84,9 +91,9 @@ The reference checkout's `carmel_kuna_sim_inventory.py` and
 `carmel_kuna_sim_merge.py` index the native simulator observations by pytest
 item, oracle call, and case occurrence. The emitted-C runners verify a native
 return boundary and compare the compiled C with the DLL at `-O0` and `-O2`.
-The current run matched 195 of 3,585 observed case occurrences. Two additional
-cases match the original static decode rejection. Nineteen more truncate at
-the same address but are only unimplemented lifts. The full simulator suite
+The current run matched 314 of 3,585 observed case occurrences. Another 28
+match an original static decode rejection. Forty-eight more truncate at the
+same address but are unimplemented lifts. The full simulator suite
 does not pass; neither a matching listing nor a truncated lift is a C pass.
 
 The [fixture corpus](../../../../tests/fixtures/carmel/README.md) records the

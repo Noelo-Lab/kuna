@@ -223,11 +223,15 @@ pub(super) fn frame(
             };
             let left = Issue::left(&fetch);
             paint(&mut result.issues, ISSUE, addr, left as u32);
-            if left == Issue::SeqLeft {
-                if super::kuna_carmel_listing::unknown_compact_right_family(&fetch) {
-                    paint(&mut result.bad_fetches, BAD_FETCH, addr, 1);
-                    paint(&mut result.bad_fetches, BAD_FETCH, addr + SLOT, 1);
+            if matches!(left, Issue::SeqLeft | Issue::Parallel) {
+                let faults = super::kuna_carmel_listing::compact_fetch_faults(&fetch, left == Issue::SeqLeft);
+                for (slot, rejected) in faults.into_iter().enumerate() {
+                    if rejected {
+                        paint(&mut result.bad_fetches, BAD_FETCH, addr + (slot as u64) * SLOT, 1);
+                    }
                 }
+            }
+            if left == Issue::SeqLeft {
                 paint(&mut result.issues, ISSUE, addr + SLOT, Issue::SeqRight as u32);
                 paint(&mut result.next_sizes, NEXT, addr, SLOT as u32);
                 if following_size != 0 {

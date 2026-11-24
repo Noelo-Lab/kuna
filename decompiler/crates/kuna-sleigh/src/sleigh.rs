@@ -1382,10 +1382,11 @@ impl PcodeBuilder for SleighBuilder<'_> {
 
         let baseaddr = self.contexts[self.cur_ctx].addr.clone();
         let fall_base = self.contexts[self.cur_ctx].ctx.get_length();
-        let delay_byte_cnt = self.contexts[self.cur_ctx].ctx.get_delay_slot();
+        let delay_budget = self.contexts[self.cur_ctx].ctx.get_delay_slot();
         let mut fall_offset = fall_base;
-        let mut bytecount = 0i32;
+        let mut consumed = 0i32;
         let carmel_start = self.engine.uses_carmel_issues().then_some(self.cache.issued.len());
+        let counted = carmel_start.is_some() && self.engine.carmel_counted_delay(&self.contexts[saved_ctx].ctx);
         loop {
             let newaddr = &baseaddr + i64::from(fall_offset);
             self.set_unique_offset(&newaddr);
@@ -1409,8 +1410,8 @@ impl PcodeBuilder for SleighBuilder<'_> {
             let tpl = handle.map(|h| self.templ(h));
             self.build(tpl, -1)?;
             fall_offset += len;
-            bytecount += len;
-            if bytecount >= delay_byte_cnt {
+            consumed += if counted { 1 } else { len };
+            if consumed >= delay_budget {
                 break;
             }
         }
@@ -1430,7 +1431,8 @@ impl PcodeBuilder for SleighBuilder<'_> {
             let repeating = self.engine.context_db.borrow().get_variable(b"carmel_repeating")
                 .is_ok_and(|field| field.get_value(&source.context) != 0);
             if slot.iter().any(unsafe_flow)
-                || (repeating || before.iter().any(memory)) && slot.iter().any(memory)
+                || (repeating || counted && delay_budget > 1 || before.iter().any(memory))
+                    && slot.iter().any(memory)
             {
                 return Err(KunaError::unimpl("Unsupported Carmel delay issue effects", fall_base));
             }
@@ -1890,7 +1892,7 @@ impl Sleigh {
     }
 
     /// C++ `Sleigh::resolve`: build the constructor tree (disassembly state).
-    fn resolve(&self, pos: &mut ParserContext, reuse_matches: bool) -> KunaResult<()> {
+    fn resolve(&self, pos: &mut ParserContext, reuse_matches: bool, inside_carmel_delay: bool) -> KunaResult<()> {
         self.load_fill_context(pos)?;
         // loadContext: pull context words for the current address.
         {
@@ -1898,6 +1900,12 @@ impl Sleigh {
             let mut cache = self.cache.borrow_mut();
             let addr = pos.addr.clone();
             cache.get_context(&**db, &addr, &mut pos.context);
+            if inside_carmel_delay {
+                if let Ok(field) = db.get_variable(b"carmel_single_issue") {
+                    // A delay executes only the next issue, not a DATA scheduling pair.
+                    field.set_value(&mut pos.context, 1);
+                }
+            }
         }
         pos.set_delay_slot(0);
         pos.clear_commits();
@@ -2085,7 +2093,7 @@ impl Sleigh {
         addr: &Address,
         state: ParseState,
     ) -> KunaResult<ParserContextGuard> {
-        self.obtain_context_with_match_cache(addr, state, false)
+        self.obtain_context_with_match_cache(addr, state, false, false)
     }
 
     fn obtain_context_with_match_cache(
@@ -2093,10 +2101,11 @@ impl Sleigh {
         addr: &Address,
         state: ParseState,
         reuse_matches: bool,
+        inside_carmel_delay: bool,
     ) -> KunaResult<ParserContextGuard> {
         self.context_queries.set(self.context_queries.get().wrapping_add(1));
         let mut pos = self.checkout_context(addr);
-        self.resolve(&mut pos, reuse_matches)?;
+        self.resolve(&mut pos, reuse_matches, inside_carmel_delay)?;
         if state == ParseState::Disassembly {
             return Ok(pos);
         }
@@ -2578,11 +2587,16 @@ impl Sleigh {
             && self.context_db.borrow().get_variable(b"carmel_issue").is_ok()
     }
 
+    fn carmel_counted_delay(&self, pos: &ParserContext) -> bool {
+        self.context_db.borrow().get_variable(b"carmel_counted_delay")
+            .is_ok_and(|field| field.get_value(&pos.context) != 0)
+    }
+
     fn check_carmel_fetch(&self, addr: &Address) -> KunaResult<()> {
         if self.base.base.get_alignment() == 3
             && matches!(self.context_db.borrow().get_variable_value(b"carmel_bad_fetch", addr), Ok(1))
         {
-            return Err(KunaError::bad_data("Unknown compact family in Carmel sequential fetch"));
+            return Err(KunaError::bad_data("Carmel fetch rejected before issue"));
         }
         Ok(())
     }
@@ -2619,8 +2633,9 @@ impl Sleigh {
         }
         self.check_carmel_fetch(baseaddr)?;
         self.last_commits.borrow_mut().clear();
-        let mut pos = self.obtain_context_with_match_cache(baseaddr, ParseState::Pcode, assembly.is_some())?;
+        let mut pos = self.obtain_context_with_match_cache(baseaddr, ParseState::Pcode, assembly.is_some(), false)?;
         let carmel_delay = pos.get_delay_slot() > 0 && self.uses_carmel_issues();
+        let counted = carmel_delay && self.carmel_counted_delay(&pos);
         if let Some(image) = image {
             Self::check_mapped_instruction(image, baseaddr, pos.get_length())?;
             if pos.get_delay_slot() > 0 && !carmel_delay {
@@ -2637,7 +2652,7 @@ impl Sleigh {
         let mut contexts: Vec<ResolvedCtx> = std::mem::take(&mut *self.ctx_vec.borrow_mut());
         contexts.clear();
         if pos.get_delay_slot() > 0 {
-            let mut bytecount = 0i32;
+            let mut consumed = 0i32;
             loop {
                 let delayaddr = &pos.addr + i64::from(fall_offset);
                 if let Some(image) = image {
@@ -2646,9 +2661,10 @@ impl Sleigh {
                 if carmel_delay {
                     self.check_carmel_fetch(&delayaddr)?;
                 }
-                let mut delaypos = self.obtain_context(&delayaddr, ParseState::Pcode)?;
+                let mut delaypos =
+                    self.obtain_context_with_match_cache(&delayaddr, ParseState::Pcode, false, carmel_delay)?;
                 let len = delaypos.get_length();
-                if carmel_delay && (len != pos.get_delay_slot() || delaypos.get_delay_slot() > 0) {
+                if carmel_delay && (!counted && len != pos.get_delay_slot() || delaypos.get_delay_slot() > 0) {
                     return Err(KunaError::unimpl("Invalid Carmel delay issue", pos.get_length()));
                 }
                 if let Some(image) = image {
@@ -2658,8 +2674,8 @@ impl Sleigh {
                 delaypos.parsestate = ParseState::Pcode;
                 contexts.push(ResolvedCtx { addr: delayaddr, ctx: delaypos });
                 fall_offset += len;
-                bytecount += len;
-                if bytecount >= pos.get_delay_slot() {
+                consumed += if counted { 1 } else { len };
+                if consumed >= pos.get_delay_slot() {
                     break;
                 }
             }

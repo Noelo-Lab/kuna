@@ -136,3 +136,23 @@ call's CODE target, saved DATA link, SP restoration and returned value.
 Default C still misses the caller's inferred argument and return. With
 explicit register-located prototypes it prints `return callee(x,cfg);`;
 that observation does not upgrade the default compiler-quality score.
+
+## Simulator fixture replay
+
+The reference inventory covers 421 Python pytest items, including 111 with
+no native call. It records 3,585 observed simulator case occurrences and
+16 interrupted or unobserved occurrences. The inventory SHA-256 is
+`37d6dac55c4f2557b7718c448c04bb2e8e65fcdecc24898cce8e96875adc52c6`.
+
+For the supported instructions, the reference runners repeat the original
+case in the TASKING DLL, prove that adding a return observer preserves its
+watched state and retirement path, and compile and run the emitted C at
+`-O0` and `-O2`. The aggregate matches 314 case occurrences in C and 28
+additional static decode rejects at the native stop address. A further 48
+reach a matching address with only an unimplemented lift. None of those
+48 is counted as parity. Full simulator fixture equivalence remains open.
+
+The adjacent wide-store/absolute-load witness now observes the old DATA
+word in the load and the new word in memory, as the DLL does. The load is
+still a valid independent entry. This scheduling rule does not implement
+the more general arbitration and partial effects of a native DATA-port stop.

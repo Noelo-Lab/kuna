@@ -306,6 +306,74 @@ fn wide_data_store_uses_the_old_word_address_and_postincrements_r0() {
 }
 
 #[test]
+fn adjacent_data_load_reads_before_store_but_remains_an_independent_target() {
+    let mut m = Machine::new(
+        0,
+        &[(0x805678, 0xc64040), (0xb84000, 0xc36280), (NOP, NOP)],
+        &[(0, 5, 6), (2, 5, 6), (4, 1, 0)],
+        None,
+    );
+    m.seed(&[("R0", 0x4000)]);
+    m.seed_data(0x4000, 0xabcd);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 12);
+    assert_eq!((m.reg("R0"), m.data(0x4000)), (0xabcd, 0x5678));
+
+    m.start(2).unwrap();
+    assert_eq!(m.step(), 12);
+    assert_eq!(m.reg("R0"), 0x5678);
+}
+
+#[test]
+fn delayed_transfer_does_not_execute_the_following_data_load() {
+    let mut m = Machine::new(
+        0,
+        &[(goto(6, 1, false), NOP), (0x805678, 0xc64040), (0xb84000, 0xc36280), (NOP, NOP)],
+        &[(0, 1, 6), (2, 5, 6), (4, 5, 6), (6, 1, 0)],
+        None,
+    );
+    m.seed(&[("R0", 0x4000)]);
+    m.seed_data(0x4000, 0xabcd);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 18);
+    assert_eq!((m.reg("R0"), m.data(0x4000)), (0x4001, 0x5678));
+}
+
+#[test]
+fn wide_goto_saturates_delay_and_counts_sequential_slots_separately() {
+    let mut m = Machine::new(
+        0,
+        &[(0x800008, 0xcfb800), (SEQUENTIAL | INC_A0, INC_A1), (0x801234, 0xc64280),
+          (INC_A2, NOP), (NOP, NOP)],
+        &[(0, 5, 3), (2, 2, 3), (3, 3, 6), (4, 5, 6), (6, 1, 6), (8, 1, 0)],
+        None,
+    );
+    m.seed(&[("A0L", 7), ("A1L", 9), ("A2L", 13), ("R0", 0)]);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 24);
+    assert_eq!((m.reg("A0L"), m.reg("A1L"), m.reg("A2L"), m.reg("R0")), (8, 10, 13, 0x1234));
+}
+
+#[test]
+fn compact_address_update_uses_implicit_and_explicit_modulo_windows() {
+    for (mode, incoming, increment, expected) in [
+        (2, 0x0003, 1, 0x0004),
+        (2, 0x4003, 1, 0x3ffc),
+        (2, 0xffff, 1, 0),
+        (3, 0x4003, 1, 0x4004),
+        (3, 0x4007, 1, 0x4000),
+        (3, 0x4000, 0xffff, 0x4007),
+    ] {
+        let mut m = Machine::new(0, &[(0x2c8080, NOP), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("R0", incoming), ("RN0", increment), ("PACFG", mode), ("RM0", 7), ("RL0", 0x4000)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!(m.reg("R0"), expected, "mode {mode}, R0 {incoming:#x}, RN0 {increment:#x}");
+        assert_eq!(m.reg("PACFG"), mode);
+    }
+}
+
+#[test]
 fn goto_targets_an_odd_code_word_without_running_its_left_slot() {
     let mut m = Machine::new(
         0,

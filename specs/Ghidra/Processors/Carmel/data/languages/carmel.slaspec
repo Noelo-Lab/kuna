@@ -89,6 +89,8 @@ define register offset=0x13c size=2 [ MINMAX ];
 define register offset=0x140 size=2 [ LC1 ];
 define register offset=0x144 size=4 [ LSA1W ];
 define register offset=0x145 size=3 [ LSA1 ];
+define register offset=0x148 size=4 [ LEA1W ];
+define register offset=0x149 size=3 [ LEA1 ];
 
 define register offset=0x160 size=16 [ contextreg ];
 define context contextreg
@@ -97,6 +99,8 @@ define context contextreg
     carmel_cliw_known = (6,6) noflow
     carmel_bad_fetch = (7,7) noflow
     carmel_repeating = (8,8) noflow
+    carmel_single_issue = (9,9) noflow
+    carmel_counted_delay = (10,10) noflow
     carmel_cliw_95_64 = (32,63) noflow
     carmel_cliw_63_32 = (64,95) noflow
     carmel_cliw_31_0 = (96,127) noflow
@@ -153,6 +157,51 @@ define token slot (24)
     cmp_full_rhs_lo = (1,3)
     cmp_full_rhs_hi = (1,3)
     cmp_full_rhs_guard = (1,3)
+    agu_modifier_0 = (7,8)
+    agu_modifier_1 = (5,6)
+    agu_modifier_2 = (3,4)
+    agu_modifier_3 = (1,2)
+    slot_15_22 = (15,22)
+    slot_13_14 = (13,14)
+    slot_12_14 = (12,14)
+    agu_0_r = (12,14)
+    agu_0_rn = (12,14)
+    agu_0_rm = (12,14)
+    agu_0_rl = (12,14)
+    agu_0_shift = (12,14)
+    agu_1_r = (12,14)
+    agu_1_rn = (12,14)
+    agu_1_rm = (12,14)
+    agu_1_rl = (12,14)
+    agu_1_shift = (12,14)
+    slot_10_11 = (10,11)
+    slot_9_11 = (9,11)
+    agu_2_r = (9,11)
+    agu_2_rn = (9,11)
+    agu_2_rm = (9,11)
+    agu_2_rl = (9,11)
+    agu_2_shift = (9,11)
+    agu_3_r = (9,11)
+    agu_3_rn = (9,11)
+    agu_3_rm = (9,11)
+    agu_3_rl = (9,11)
+    agu_3_shift = (9,11)
+    div_step_dst = (5,7)
+    div_step_dst_lo = (5,7)
+    div_step_dst_hi = (5,7)
+    div_step_dst_guard = (5,7)
+    slot_7_7 = (7,7)
+    slot_6_7 = (6,7)
+    div_step_src = (1,4)
+    slot_8_22 = (8,22)
+    div_btr1_dst = (4,6)
+    div_btr1_dst_lo = (4,6)
+    div_btr1_dst_hi = (4,6)
+    div_btr1_dst_guard = (4,6)
+    div_btr1_src = (1,3)
+    div_btr1_src_lo = (1,3)
+    div_btr1_src_hi = (1,3)
+    div_btr1_src_guard = (1,3)
     compact_mul_left = (4,8)
     slot_6_8 = (6,8)
     compact_mul_right = (1,3)
@@ -169,7 +218,6 @@ define token slot (24)
     slot_3_7 = (3,7)
     slot_4_7 = (4,7)
     slot_5_7 = (5,7)
-    slot_6_7 = (6,7)
     shift_8_dst = (11,13)
     shift_8_dst_lo = (11,13)
     shift_8_dst_hi = (11,13)
@@ -206,9 +254,16 @@ define token wide (48)
     wide_right = (0,23) hex
     wide_left_mode = (47,47)
     wide_right_mode = (23,23)
+    bitfield_descriptor = (24,39) hex
+    wide_0_22 = (0,22)
+    wide_40_45 = (40,45)
+    wide_0_10 = (0,10)
+    wide_13_22 = (13,22)
     wide_call_offset_0 = (24,45) hex
     wide_call_offset_22 = (0,1) hex
     wide_9_22 = (9,22)
+    wide_goto_offset_0 = (24,45) hex
+    wide_goto_offset_22 = (0,1) hex
     wide_repeat_count = (24,39)
     wide_14_22 = (14,22)
     wide_immediate_0 = (24,45) hex
@@ -216,8 +271,6 @@ define token wide (48)
     wide_2_11 = (2,11)
     wide_2_9 = (2,9)
     wide_0_9 = (0,9)
-    wide_13_22 = (13,22)
-    wide_40_45 = (40,45)
     absolute_data_addr = (24,39) hex
     index_low_0 = (24,33) hex
     index_high_0 = (15,15) hex
@@ -244,6 +297,39 @@ attach variables [cmp_full_rhs_full] [A0 A1 A2 A3 A4 A5 _ _];
 attach variables [cmp_full_rhs_lo] [A0L A1L A2L A3L A4L A5L _ _];
 attach variables [cmp_full_rhs_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [cmp_full_rhs_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
+attach variables [agu_0_r] [R0 R0 R0 _ R1 R1 R2 _];
+attach variables [agu_0_rn] [RN0 RN0 RN0 _ RN1 RN1 RN2 _];
+attach variables [agu_0_rm] [RM0 RM0 RM0 _ RM0 RM0 RM2 _];
+attach variables [agu_0_rl] [RL0 RL0 RL0 _ RL0 RL0 RL2 _];
+attach values [agu_0_shift] [0 0 0 _ 2 2 4 _];
+attach variables [agu_1_r] [R1 R2 R3 _ R2 R3 R3 _];
+attach variables [agu_1_rn] [RN1 RN2 RN3 _ RN2 RN3 RN3 _];
+attach variables [agu_1_rm] [RM0 RM2 RM2 _ RM2 RM2 RM2 _];
+attach variables [agu_1_rl] [RL0 RL2 RL2 _ RL2 RL2 RL2 _];
+attach values [agu_1_shift] [2 4 6 _ 4 6 6 _];
+attach variables [agu_2_r] [R4 R4 R4 _ R5 R5 R6 _];
+attach variables [agu_2_rn] [RN4 RN4 RN4 _ RN5 RN5 RN6 _];
+attach variables [agu_2_rm] [RM4 RM4 RM4 _ RM4 RM4 RM6 _];
+attach variables [agu_2_rl] [RL4 RL4 RL4 _ RL4 RL4 RL6 _];
+attach values [agu_2_shift] [8 8 8 _ 10 10 12 _];
+attach variables [agu_3_r] [R5 R6 R7 _ R6 R7 R7 _];
+attach variables [agu_3_rn] [RN5 RN6 RN7 _ RN6 RN7 RN7 _];
+attach variables [agu_3_rm] [RM4 RM6 RM6 _ RM6 RM6 RM6 _];
+attach variables [agu_3_rl] [RL4 RL6 RL6 _ RL6 RL6 RL6 _];
+attach values [agu_3_shift] [10 12 14 _ 12 14 14 _];
+attach variables [div_step_dst] [A0 A1 A2 A3 A4 A5 _ _];
+attach variables [div_step_dst_lo] [A0L A1L A2L A3L A4L A5L _ _];
+attach variables [div_step_dst_hi] [A0H A1H A2H A3H A4H A5H _ _];
+attach variables [div_step_dst_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
+attach variables [div_step_src] [A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
+attach variables [div_btr1_dst] [A0 A1 A2 A3 A4 A5 _ _];
+attach variables [div_btr1_dst_lo] [A0L A1L A2L A3L A4L A5L _ _];
+attach variables [div_btr1_dst_hi] [A0H A1H A2H A3H A4H A5H _ _];
+attach variables [div_btr1_dst_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
+attach variables [div_btr1_src] [A0 A1 A2 A3 A4 A5 _ _];
+attach variables [div_btr1_src_lo] [A0L A1L A2L A3L A4L A5L _ _];
+attach variables [div_btr1_src_hi] [A0H A1H A2H A3H A4H A5H _ _];
+attach variables [div_btr1_src_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
 attach variables [compact_mul_left] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L _ _ _ _ A0H A1H A2H A3H _ _ _ _];
 attach variables [compact_mul_right] [A0L A1L A2L A3L A0H A1H A2H A3H];
 attach variables [compact_square_right] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L _ _ _ _ A0H A1H A2H A3H _ _ _ _];
@@ -549,6 +635,180 @@ macro compare_full(lhs_lo, lhs_hi, lhs_guard, rhs_lo, rhs_hi, rhs_guard, shift) 
 :"CMP" cmp_full_lhs_full,cmp_full_rhs_full "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_7_22=0x413a & (slot_6_6=0 | slot_5_6=2) & cmp_full_lhs_full & cmp_full_lhs_lo & cmp_full_lhs_hi & cmp_full_lhs_guard & (slot_3_3=0 | slot_2_3=2) & cmp_full_rhs_full & cmp_full_rhs_lo & cmp_full_rhs_hi & cmp_full_rhs_guard); (slot_mode=0 & nop_right) { compare_full(cmp_full_lhs_lo, cmp_full_lhs_hi, cmp_full_lhs_guard, cmp_full_rhs_lo, cmp_full_rhs_hi, cmp_full_rhs_guard, 0); }
 :^nop_left "||" "CMP" cmp_full_lhs_full,cmp_full_rhs_full is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_0=0x0 & slot_7_22=0x413a & (slot_6_6=0 | slot_5_6=2) & cmp_full_lhs_full & cmp_full_lhs_lo & cmp_full_lhs_hi & cmp_full_lhs_guard & (slot_3_3=0 | slot_2_3=2) & cmp_full_rhs_full & cmp_full_rhs_lo & cmp_full_rhs_hi & cmp_full_rhs_guard) { compare_full(cmp_full_lhs_lo, cmp_full_lhs_hi, cmp_full_lhs_guard, cmp_full_rhs_lo, cmp_full_rhs_hi, cmp_full_rhs_guard, 6); }
 
+# Assigned ADDRUPDATE ports are disjoint; no DATA access takes place.
+macro reverse_word(value, reversed) {
+    local x:2 = ((value & 0x5555) << 1) | ((value >> 1) & 0x5555);
+    x = ((x & 0x3333) << 2) | ((x >> 2) & 0x3333);
+    x = ((x & 0x0f0f) << 4) | ((x >> 4) & 0x0f0f);
+    reversed = (x << 8) | (x >> 8);
+}
+
+macro modify_ptr(reg, increment, rm, rl, shift, modifier) {
+    local action:2 = modifier;
+    if (action == 0) goto <done>;
+    local incoming:2 = reg;
+    local mode_shift:4 = shift;
+    local mode:2 = (PACFG >> mode_shift) & 3;
+    local delta:2 = increment;
+    if (action == 1) goto <with_delta>;
+    delta = 5 - action * 2;
+  <with_delta>
+    local result:2 = incoming + delta;
+    if (mode == 2) goto <pair>;
+    if (mode == 3) goto <explicit>;
+    if (mode != 1 || action != 1) goto <publish>;
+    local rev_in:2;
+    local rev_step:2;
+    reverse_word(incoming, rev_in);
+    reverse_word(delta, rev_step);
+    local rev_sum:2 = rev_in + rev_step;
+    reverse_word(rev_sum, result);
+    goto <publish>;
+  <pair>
+    # The implicit window starts at zero. Compare the wrapped 16-bit
+    # candidate, not the incoming pointer's aligned block.
+    local size:4 = zext(rm & 0xfff) + 1;
+    if (zext(result) < size) goto <publish>;
+    goto <wrap>;
+  <explicit>
+    size = zext(rm & 0xfff) + 1;
+    local limit:4 = zext(rl) + size;
+    if (limit <= 0x10000 && rl <= result && zext(result) < limit) goto <publish>;
+  <wrap>
+    if (delta s< 0) goto <wrapped_neg>;
+    result = result - size:2;
+    goto <publish>;
+  <wrapped_neg>
+    result = result + size:2;
+  <publish>
+    reg = result;
+  <done>
+}
+agu_group_0: agu_0_r,agu_1_r is (slot_13_14=0 | slot_12_14=2 | slot_13_14=2 | slot_12_14=6) & agu_0_r & agu_0_rn & agu_0_rm & agu_0_rl & agu_0_shift & agu_modifier_0 & agu_1_r & agu_1_rn & agu_1_rm & agu_1_rl & agu_1_shift & agu_modifier_1 { modify_ptr(agu_0_r, agu_0_rn, agu_0_rm, agu_0_rl, agu_0_shift, agu_modifier_0); modify_ptr(agu_1_r, agu_1_rn, agu_1_rm, agu_1_rl, agu_1_shift, agu_modifier_1); }
+agu_group_1: agu_2_r,agu_3_r is (slot_10_11=0 | slot_9_11=2 | slot_10_11=2 | slot_9_11=6) & agu_2_r & agu_2_rn & agu_2_rm & agu_2_rl & agu_2_shift & agu_modifier_2 & agu_3_r & agu_3_rn & agu_3_rm & agu_3_rl & agu_3_shift & agu_modifier_3 { modify_ptr(agu_2_r, agu_2_rn, agu_2_rm, agu_2_rl, agu_2_shift, agu_modifier_2); modify_ptr(agu_3_r, agu_3_rn, agu_3_rm, agu_3_rl, agu_3_shift, agu_modifier_3); }
+:"ADDRUPDATE" agu_group_0,agu_group_1 is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_0=0x0 & slot_15_22=0x59 & agu_group_0 & agu_group_1 { build agu_group_0; build agu_group_1; }
+:"ADDRUPDATE" agu_group_0,agu_group_1 "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_15_22=0x59 & agu_group_0 & agu_group_1); (slot_mode=0 & nop_right) { build agu_group_0; build agu_group_1; }
+:^nop_left "||" "ADDRUPDATE" agu_group_0,agu_group_1 is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_0=0x0 & slot_15_22=0x59 & agu_group_0 & agu_group_1) { build agu_group_0; build agu_group_1; }
+
+:EXTRACTS "A0","A1",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x751113 & wide_40_45=0xf & bitfield_descriptor { local source:8 = sext(GB1) * 0x100000000 + zext(A1H) * 0x10000 + zext(A1L); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local negative:1 = (result & ((mask >> 1) + 1)) != 0; result = result - (mask + 1) * zext(negative); local flags:2 = (zext(result == 0) << 3) | (zext(negative) << 4); A0L = result:2; A0H = result(2); GB0 = 0 - negative; EST = (EST & 0xffe7) | flags; }
+:EXTRACTS "A0","A2",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x751115 & wide_40_45=0xf & bitfield_descriptor { local source:8 = sext(GB2) * 0x100000000 + zext(A2H) * 0x10000 + zext(A2L); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local negative:1 = (result & ((mask >> 1) + 1)) != 0; result = result - (mask + 1) * zext(negative); local flags:2 = (zext(result == 0) << 3) | (zext(negative) << 4); A0L = result:2; A0H = result(2); GB0 = 0 - negative; EST = (EST & 0xffe7) | flags; }
+:EXTRACTS "discard","A2",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x751d15 & wide_40_45=0xf & bitfield_descriptor { local source:8 = sext(GB2) * 0x100000000 + zext(A2H) * 0x10000 + zext(A2L); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local negative:1 = (result & ((mask >> 1) + 1)) != 0; result = result - (mask + 1) * zext(negative); local flags:2 = (zext(result == 0) << 3) | (zext(negative) << 4); EST = (EST & 0xffe7) | flags; }
+:EXTRACTS "discard","A2",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x758315 & wide_40_45=0xf & bitfield_descriptor { local source:8 = sext(GB2) * 0x100000000 + zext(A2H) * 0x10000 + zext(A2L); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local negative:1 = (result & ((mask >> 1) + 1)) != 0; result = result - (mask + 1) * zext(negative); local flags:2 = (zext(result == 0) << 3) | (zext(negative) << 4); EST = (EST & 0xffe7) | flags; }
+:EXTRACTS "discard","A2",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x75b115 & wide_40_45=0xf & bitfield_descriptor { local source:8 = sext(GB2) * 0x100000000 + zext(A2H) * 0x10000 + zext(A2L); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local negative:1 = (result & ((mask >> 1) + 1)) != 0; result = result - (mask + 1) * zext(negative); local flags:2 = (zext(result == 0) << 3) | (zext(negative) << 4); EST = (EST & 0xffe7) | flags; }
+:EXTRACTS "LC1","LSA1",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x75a9c5 & wide_40_45=0xf & bitfield_descriptor { local source:8 = zext(LSA1W & 0xffffff); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local negative:1 = (result & ((mask >> 1) + 1)) != 0; result = result - (mask + 1) * zext(negative); local flags:2 = (zext(result == 0) << 3) | (zext(negative) << 4); LC1 = result:2; EST = (EST & 0xffe7) | flags; }
+:EXTRACTS "LC1","LEA1",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x75a9c7 & wide_40_45=0xf & bitfield_descriptor { local source:8 = zext(LEA1W & 0xffffff); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local negative:1 = (result & ((mask >> 1) + 1)) != 0; result = result - (mask + 1) * zext(negative); local flags:2 = (zext(result == 0) << 3) | (zext(negative) << 4); LC1 = result:2; EST = (EST & 0xffe7) | flags; }
+:EXTRACTS "LC1","LC1",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x75a9c9 & wide_40_45=0xf & bitfield_descriptor { local source:8 = sext(LC1); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local negative:1 = (result & ((mask >> 1) + 1)) != 0; result = result - (mask + 1) * zext(negative); local flags:2 = (zext(result == 0) << 3) | (zext(negative) << 4); LC1 = result:2; EST = (EST & 0xffe7) | flags; }
+:EXTRACTS "LC1","PSTATUS",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x75a9cb & wide_40_45=0xf & bitfield_descriptor { local source:8 = sext(PSTATUS); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local negative:1 = (result & ((mask >> 1) + 1)) != 0; result = result - (mask + 1) * zext(negative); local flags:2 = (zext(result == 0) << 3) | (zext(negative) << 4); LC1 = result:2; EST = (EST & 0xffe7) | flags; }
+:EXTRACTS "LC1","INTBASE",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x75a9cd & wide_40_45=0xf & bitfield_descriptor { local source:8 = sext(INTBASE); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local negative:1 = (result & ((mask >> 1) + 1)) != 0; result = result - (mask + 1) * zext(negative); local flags:2 = (zext(result == 0) << 3) | (zext(negative) << 4); LC1 = result:2; EST = (EST & 0xffe7) | flags; }
+:EXTRACTS "LC1","USER_IO",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x75a9cf & wide_40_45=0xf & bitfield_descriptor { local source:8 = sext(USER_IO); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local negative:1 = (result & ((mask >> 1) + 1)) != 0; result = result - (mask + 1) * zext(negative); local flags:2 = (zext(result == 0) << 3) | (zext(negative) << 4); LC1 = result:2; EST = (EST & 0xffe7) | flags; }
+:EXTRACTS "LC1","0",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x75a9d1 & wide_40_45=0xf & bitfield_descriptor { local source:8 = 0; local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local negative:1 = (result & ((mask >> 1) + 1)) != 0; result = result - (mask + 1) * zext(negative); local flags:2 = (zext(result == 0) << 3) | (zext(negative) << 4); LC1 = result:2; EST = (EST & 0xffe7) | flags; }
+:EXTRACTS "LC1","PACFG",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x75a9d5 & wide_40_45=0xf & bitfield_descriptor { local source:8 = sext(PACFG); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local negative:1 = (result & ((mask >> 1) + 1)) != 0; result = result - (mask + 1) * zext(negative); local flags:2 = (zext(result == 0) << 3) | (zext(negative) << 4); LC1 = result:2; EST = (EST & 0xffe7) | flags; }
+:EXTRACTS "RL4","RM2",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x7569c7 & wide_40_45=0xf & bitfield_descriptor { local source:8 = sext(RM2); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local negative:1 = (result & ((mask >> 1) + 1)) != 0; result = result - (mask + 1) * zext(negative); local flags:2 = (zext(result == 0) << 3) | (zext(negative) << 4); RL4 = result:2; EST = (EST & 0xffe7) | flags; }
+:EXTRACTZ "A0","GB2",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x771105 & wide_40_45=0xf & bitfield_descriptor { local source:8 = zext(GB2); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local flags:2 = zext(result == 0) << 3; A0L = result:2; A0H = result(2); GB0 = 0; EST = (EST & 0xffe7) | flags; }
+:EXTRACTZ "A0","GB3",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x771107 & wide_40_45=0xf & bitfield_descriptor { local source:8 = zext(GB3); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local flags:2 = zext(result == 0) << 3; A0L = result:2; A0H = result(2); GB0 = 0; EST = (EST & 0xffe7) | flags; }
+:EXTRACTZ "A0","GB4",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x771109 & wide_40_45=0xf & bitfield_descriptor { local source:8 = zext(GB4); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local flags:2 = zext(result == 0) << 3; A0L = result:2; A0H = result(2); GB0 = 0; EST = (EST & 0xffe7) | flags; }
+:EXTRACTZ "A0","FF1",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x77112d & wide_40_45=0xf & bitfield_descriptor { local source:8 = sext(FF1); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local flags:2 = zext(result == 0) << 3; A0L = result:2; A0H = result(2); GB0 = 0; EST = (EST & 0xffe7) | flags; }
+:EXTRACTZ "A0","FF1",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x77117d & wide_40_45=0xf & bitfield_descriptor { local source:8 = sext(FF1); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local flags:2 = zext(result == 0) << 3; A0L = result:2; A0H = result(2); GB0 = 0; EST = (EST & 0xffe7) | flags; }
+:EXTRACTZ "A0","LSA1",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x7711a5 & wide_40_45=0xf & bitfield_descriptor { local source:8 = zext(LSA1W & 0xffffff); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local flags:2 = zext(result == 0) << 3; A0L = result:2; A0H = result(2); GB0 = 0; EST = (EST & 0xffe7) | flags; }
+:EXTRACTZ "A0","LEA1",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x7711a7 & wide_40_45=0xf & bitfield_descriptor { local source:8 = zext(LEA1W & 0xffffff); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local flags:2 = zext(result == 0) << 3; A0L = result:2; A0H = result(2); GB0 = 0; EST = (EST & 0xffe7) | flags; }
+:EXTRACTZ "A0","LC1",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x7711a9 & wide_40_45=0xf & bitfield_descriptor { local source:8 = sext(LC1); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local flags:2 = zext(result == 0) << 3; A0L = result:2; A0H = result(2); GB0 = 0; EST = (EST & 0xffe7) | flags; }
+:EXTRACTZ "A0","A1","FF1:FF2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x771113 & wide_40_45=0x29 { local source:8 = sext(GB1) * 0x100000000 + zext(A1H) * 0x10000 + zext(A1L); local count:4 = zext(FF2 & 31); local offset:4 = zext(FF1 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local flags:2 = zext(result == 0) << 3; A0L = result:2; A0H = result(2); GB0 = 0; EST = (EST & 0xffe7) | flags; }
+:EXTRACTZ "FF1","RM0",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x777dc5 & wide_40_45=0xf & bitfield_descriptor { local source:8 = sext(RM0); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local flags:2 = zext(result == 0) << 3; FF1 = result:2; EST = (EST & 0xffe7) | flags; }
+:EXTRACTZ "LC1","A1",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x77a913 & wide_40_45=0xf & bitfield_descriptor { local source:8 = sext(GB1) * 0x100000000 + zext(A1H) * 0x10000 + zext(A1L); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local result:8 = (source s>> offset) & mask; local flags:2 = zext(result == 0) << 3; LC1 = result:2; EST = (EST & 0xffe7) | flags; }
+:INSERT "A0","A1","31:31" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x791113 & wide_40_45=0xe { local source:8 = zext(GB1) * 0x100000000 + zext(A1H) * 0x10000 + zext(A1L); local count:4 = 31; local offset:4 = 31; local mask:8 = 0x7fffffff >> (31 - count); local original:8 = zext(GB0) * 0x100000000 + zext(A0H) * 0x10000 + zext(A0L); local result:8 = (original & ~(mask << offset)) | ((source & mask) << offset); local flags:2 = zext((result & 0xffffffffff) == 0) << 3; A0L = result:2; A0H = result(2); GB0 = result(4); EST = (EST & 0x3000) | flags; }
+:INSERT "A0","A1",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x791113 & wide_40_45=0xf & bitfield_descriptor { local source:8 = zext(GB1) * 0x100000000 + zext(A1H) * 0x10000 + zext(A1L); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local original:8 = zext(GB0) * 0x100000000 + zext(A0H) * 0x10000 + zext(A0L); local result:8 = (original & ~(mask << offset)) | ((source & mask) << offset); local flags:2 = zext((result & 0xffffffffff) == 0) << 3; A0L = result:2; A0H = result(2); GB0 = result(4); EST = (EST & 0x3000) | flags; }
+:INSERT "A0","A1","A1L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x791113 & wide_40_45=0x11 { local source:8 = zext(GB1) * 0x100000000 + zext(A1H) * 0x10000 + zext(A1L); local count:4 = zext(A1L & 31); local offset:4 = zext((A1L >> 15) * 31); local mask:8 = 0x7fffffff >> (31 - count); local original:8 = zext(GB0) * 0x100000000 + zext(A0H) * 0x10000 + zext(A0L); local result:8 = (original & ~(mask << offset)) | ((source & mask) << offset); local flags:2 = zext((result & 0xffffffffff) == 0) << 3; A0L = result:2; A0H = result(2); GB0 = result(4); EST = (EST & 0x3000) | flags; }
+:INSERT "A0","A1","FF1:FF2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x791113 & wide_40_45=0x16 { local source:8 = zext(GB1) * 0x100000000 + zext(A1H) * 0x10000 + zext(A1L); local count:4 = zext(FF2 & 31); local offset:4 = zext(FF1 & 31); local mask:8 = 0x7fffffff >> (31 - count); local original:8 = zext(GB0) * 0x100000000 + zext(A0H) * 0x10000 + zext(A0L); local result:8 = (original & ~(mask << offset)) | ((source & mask) << offset); local flags:2 = zext((result & 0xffffffffff) == 0) << 3; A0L = result:2; A0H = result(2); GB0 = result(4); EST = (EST & 0x3000) | flags; }
+:INSERT "A0","A1","A5H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x791113 & wide_40_45=0x1d { local source:8 = zext(GB1) * 0x100000000 + zext(A1H) * 0x10000 + zext(A1L); local count:4 = zext(A5H & 31); local offset:4 = zext((A5H >> 15) * 31); local mask:8 = 0x7fffffff >> (31 - count); local original:8 = zext(GB0) * 0x100000000 + zext(A0H) * 0x10000 + zext(A0L); local result:8 = (original & ~(mask << offset)) | ((source & mask) << offset); local flags:2 = zext((result & 0xffffffffff) == 0) << 3; A0L = result:2; A0H = result(2); GB0 = result(4); EST = (EST & 0x3000) | flags; }
+:INSERT "A0","A1","FF1:FF2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x791113 & wide_40_45=0x1e { local source:8 = zext(GB1) * 0x100000000 + zext(A1H) * 0x10000 + zext(A1L); local count:4 = zext(FF2 & 31); local offset:4 = zext(FF1 & 31); local mask:8 = 0x7fffffff >> (31 - count); local original:8 = zext(GB0) * 0x100000000 + zext(A0H) * 0x10000 + zext(A0L); local result:8 = (original & ~(mask << offset)) | ((source & mask) << offset); local flags:2 = zext((result & 0xffffffffff) == 0) << 3; A0L = result:2; A0H = result(2); GB0 = result(4); EST = (EST & 0x3000) | flags; }
+:INSERT "A0","A1","FF1:FF2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x791113 & wide_40_45=0x23 { local source:8 = zext(GB1) * 0x100000000 + zext(A1H) * 0x10000 + zext(A1L); local count:4 = zext(FF2 & 31); local offset:4 = zext(FF1 & 31); local mask:8 = 0x7fffffff >> (31 - count); local original:8 = zext(GB0) * 0x100000000 + zext(A0H) * 0x10000 + zext(A0L); local result:8 = (original & ~(mask << offset)) | ((source & mask) << offset); local flags:2 = zext((result & 0xffffffffff) == 0) << 3; A0L = result:2; A0H = result(2); GB0 = result(4); EST = (EST & 0x3000) | flags; }
+:INSERT "A0","0",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x7911b1 & wide_40_45=0xf & bitfield_descriptor { local source:8 = 0; local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local original:8 = zext(GB0) * 0x100000000 + zext(A0H) * 0x10000 + zext(A0L); local result:8 = (original & ~(mask << offset)) | ((source & mask) << offset); local flags:2 = zext((result & 0xffffffffff) == 0) << 3; A0L = result:2; A0H = result(2); GB0 = result(4); EST = (EST & 0x3000) | flags; }
+:INSERT "discard","A1",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x79b113 & wide_40_45=0xf & bitfield_descriptor { local source:8 = zext(GB1) * 0x100000000 + zext(A1H) * 0x10000 + zext(A1L); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local original:8 = 0; local result:8 = (original & ~(mask << offset)) | ((source & mask) << offset); local flags:2 = zext((result & 0xffff) == 0) << 3; EST = (EST & 0x3000) | flags; }
+:INSERT "FF2","A1",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x792f13 & wide_40_45=0xf & bitfield_descriptor { local source:8 = zext(GB1) * 0x100000000 + zext(A1H) * 0x10000 + zext(A1L); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local original:8 = sext(FF2); local result:8 = (original & ~(mask << offset)) | ((source & mask) << offset); local flags:2 = zext((result & 0xffff) == 0) << 3; FF2 = result(2); EST = (EST & 0x3000) | flags; }
+:INSERT "LSA1","A1",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x79a513 & wide_40_45=0xf & bitfield_descriptor { local source:8 = zext(GB1) * 0x100000000 + zext(A1H) * 0x10000 + zext(A1L); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local original:8 = zext(LSA1W & 0xffffff); local result:8 = (original & ~(mask << offset)) | ((source & mask) << offset); local flags:2 = zext((result & 0xffff) == 0) << 3; local upper:2 = result(2); LSA1W = (LSA1W & 0xffff0000) | zext(upper); EST = (EST & 0x3000) | flags; }
+:INSERT "GB0","GB0",bitfield_descriptor is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x7901c1 & wide_40_45=0xf & bitfield_descriptor { local source:8 = zext(GB0); local count:4 = zext((bitfield_descriptor:2 >> 8) & 31); local offset:4 = zext(bitfield_descriptor:2 & 31); local mask:8 = 0x7fffffff >> (31 - count); local original:8 = zext(GB0); local result:8 = (original & ~(mask << offset)) | ((source & mask) << offset); local flags:2 = zext((result & 0xffff) == 0) << 3; GB0 = result(2); EST = (EST & 0x3000) | flags; }
+
+# Bias signed operands before comparing them so the math stays nonnegative
+# even in emitted C. All remainder calculations fit ordinary 64-bit integers.
+macro divide_accumulator(lo, hi, guard, value) {
+    value = (zext(guard ^ 0x80) << 32) | (zext(hi) << 16) | zext(lo);
+}
+
+macro divide_write(lo, hi, guard, result) {
+    lo = result:2;
+    hi = result(2);
+    guard = result(4);
+}
+
+macro divide_step(lo, hi, guard, divisor) {
+    local dividend:8;
+    divide_accumulator(lo, hi, guard, dividend);
+    # dividend = A + 2^39. Double it, then give both comparison sides
+    # the common bias 2^40 + 2^31. The output discards that bias modulo 2^40.
+    local doubled:8 = dividend * 2;
+    local lhs:8 = doubled + 0x80000000;
+    local rhs:8 = (zext(divisor ^ 0x8000) << 16) + 0x10000000000;
+    local result:8 = doubled;
+    if (lhs < rhs) goto <publish>;
+    result = (lhs - rhs) | 1;
+    <publish>
+    divide_write(lo, hi, guard, result);
+}
+
+macro divide_trace(lo, hi, guard, div_lo, div_hi, div_guard, btr) {
+    local dividend:8;
+    local divisor:8;
+    divide_accumulator(lo, hi, guard, dividend);
+    divide_accumulator(div_lo, div_hi, div_guard, divisor);
+    local take:1 = dividend >= divisor;
+    local trace:2 = (btr << 1) | zext(take);
+    # Subtract BEFORE shifting; the trial bit belongs to BTR, not the remainder.
+    if (!take) goto <publish>;
+    dividend = dividend - divisor;
+    <publish>
+    local result:8 = dividend * 2;
+    divide_write(lo, hi, guard, result);
+    btr = trace;
+}
+:DIVIDE div_step_dst,div_step_src "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_8_22=0x3023 & (slot_7_7=0 | slot_6_7=2) & div_step_dst & div_step_dst_lo & div_step_dst_hi & div_step_dst_guard & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & div_step_src); (slot_mode=0 & nop_right) { divide_step(div_step_dst_lo, div_step_dst_hi, div_step_dst_guard, div_step_src); }
+:DIVTRACE div_btr1_dst,div_btr1_src,"BTR1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_7_22=0x6048 & (slot_6_6=0 | slot_5_6=2) & div_btr1_dst & div_btr1_dst_lo & div_btr1_dst_hi & div_btr1_dst_guard & (slot_3_3=0 | slot_2_3=2) & div_btr1_src & div_btr1_src_lo & div_btr1_src_hi & div_btr1_src_guard); (slot_mode=0 & nop_right) { divide_trace(div_btr1_dst_lo, div_btr1_dst_hi, div_btr1_dst_guard, div_btr1_src_lo, div_btr1_src_hi, div_btr1_src_guard, BTR1); }
+:DIVTRACE "A0","A0","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x622 & wide_13_22=0x219 & wide_40_45=0x8 { divide_trace(A0L, A0H, GB0, A0L, A0H, GB0, BTR2); }
+:DIVTRACE "A0","A1","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x622 & wide_13_22=0x219 & wide_40_45=0x9 { divide_trace(A0L, A0H, GB0, A1L, A1H, GB1, BTR2); }
+:DIVTRACE "A0","A2","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x622 & wide_13_22=0x219 & wide_40_45=0xa { divide_trace(A0L, A0H, GB0, A2L, A2H, GB2, BTR2); }
+:DIVTRACE "A0","A3","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x622 & wide_13_22=0x219 & wide_40_45=0xb { divide_trace(A0L, A0H, GB0, A3L, A3H, GB3, BTR2); }
+:DIVTRACE "A0","A4","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x622 & wide_13_22=0x219 & wide_40_45=0xc { divide_trace(A0L, A0H, GB0, A4L, A4H, GB4, BTR2); }
+:DIVTRACE "A0","A5","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x622 & wide_13_22=0x219 & wide_40_45=0xd { divide_trace(A0L, A0H, GB0, A5L, A5H, GB5, BTR2); }
+:DIVTRACE "A1","A0","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x626 & wide_13_22=0x219 & wide_40_45=0x8 { divide_trace(A1L, A1H, GB1, A0L, A0H, GB0, BTR2); }
+:DIVTRACE "A1","A1","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x626 & wide_13_22=0x219 & wide_40_45=0x9 { divide_trace(A1L, A1H, GB1, A1L, A1H, GB1, BTR2); }
+:DIVTRACE "A1","A2","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x626 & wide_13_22=0x219 & wide_40_45=0xa { divide_trace(A1L, A1H, GB1, A2L, A2H, GB2, BTR2); }
+:DIVTRACE "A1","A3","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x626 & wide_13_22=0x219 & wide_40_45=0xb { divide_trace(A1L, A1H, GB1, A3L, A3H, GB3, BTR2); }
+:DIVTRACE "A1","A4","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x626 & wide_13_22=0x219 & wide_40_45=0xc { divide_trace(A1L, A1H, GB1, A4L, A4H, GB4, BTR2); }
+:DIVTRACE "A1","A5","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x626 & wide_13_22=0x219 & wide_40_45=0xd { divide_trace(A1L, A1H, GB1, A5L, A5H, GB5, BTR2); }
+:DIVTRACE "A2","A0","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x62a & wide_13_22=0x219 & wide_40_45=0x8 { divide_trace(A2L, A2H, GB2, A0L, A0H, GB0, BTR2); }
+:DIVTRACE "A2","A1","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x62a & wide_13_22=0x219 & wide_40_45=0x9 { divide_trace(A2L, A2H, GB2, A1L, A1H, GB1, BTR2); }
+:DIVTRACE "A2","A2","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x62a & wide_13_22=0x219 & wide_40_45=0xa { divide_trace(A2L, A2H, GB2, A2L, A2H, GB2, BTR2); }
+:DIVTRACE "A2","A3","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x62a & wide_13_22=0x219 & wide_40_45=0xb { divide_trace(A2L, A2H, GB2, A3L, A3H, GB3, BTR2); }
+:DIVTRACE "A2","A4","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x62a & wide_13_22=0x219 & wide_40_45=0xc { divide_trace(A2L, A2H, GB2, A4L, A4H, GB4, BTR2); }
+:DIVTRACE "A2","A5","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x62a & wide_13_22=0x219 & wide_40_45=0xd { divide_trace(A2L, A2H, GB2, A5L, A5H, GB5, BTR2); }
+:DIVTRACE "A3","A0","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x62e & wide_13_22=0x219 & wide_40_45=0x8 { divide_trace(A3L, A3H, GB3, A0L, A0H, GB0, BTR2); }
+:DIVTRACE "A3","A1","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x62e & wide_13_22=0x219 & wide_40_45=0x9 { divide_trace(A3L, A3H, GB3, A1L, A1H, GB1, BTR2); }
+:DIVTRACE "A3","A2","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x62e & wide_13_22=0x219 & wide_40_45=0xa { divide_trace(A3L, A3H, GB3, A2L, A2H, GB2, BTR2); }
+:DIVTRACE "A3","A3","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x62e & wide_13_22=0x219 & wide_40_45=0xb { divide_trace(A3L, A3H, GB3, A3L, A3H, GB3, BTR2); }
+:DIVTRACE "A3","A4","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x62e & wide_13_22=0x219 & wide_40_45=0xc { divide_trace(A3L, A3H, GB3, A4L, A4H, GB4, BTR2); }
+:DIVTRACE "A3","A5","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x62e & wide_13_22=0x219 & wide_40_45=0xd { divide_trace(A3L, A3H, GB3, A5L, A5H, GB5, BTR2); }
+:DIVTRACE "A4","A0","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x632 & wide_13_22=0x219 & wide_40_45=0x8 { divide_trace(A4L, A4H, GB4, A0L, A0H, GB0, BTR2); }
+:DIVTRACE "A4","A1","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x632 & wide_13_22=0x219 & wide_40_45=0x9 { divide_trace(A4L, A4H, GB4, A1L, A1H, GB1, BTR2); }
+:DIVTRACE "A4","A2","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x632 & wide_13_22=0x219 & wide_40_45=0xa { divide_trace(A4L, A4H, GB4, A2L, A2H, GB2, BTR2); }
+:DIVTRACE "A4","A3","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x632 & wide_13_22=0x219 & wide_40_45=0xb { divide_trace(A4L, A4H, GB4, A3L, A3H, GB3, BTR2); }
+:DIVTRACE "A4","A4","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x632 & wide_13_22=0x219 & wide_40_45=0xc { divide_trace(A4L, A4H, GB4, A4L, A4H, GB4, BTR2); }
+:DIVTRACE "A4","A5","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x632 & wide_13_22=0x219 & wide_40_45=0xd { divide_trace(A4L, A4H, GB4, A5L, A5H, GB5, BTR2); }
+:DIVTRACE "A5","A0","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x636 & wide_13_22=0x219 & wide_40_45=0x8 { divide_trace(A5L, A5H, GB5, A0L, A0H, GB0, BTR2); }
+:DIVTRACE "A5","A1","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x636 & wide_13_22=0x219 & wide_40_45=0x9 { divide_trace(A5L, A5H, GB5, A1L, A1H, GB1, BTR2); }
+:DIVTRACE "A5","A2","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x636 & wide_13_22=0x219 & wide_40_45=0xa { divide_trace(A5L, A5H, GB5, A2L, A2H, GB2, BTR2); }
+:DIVTRACE "A5","A3","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x636 & wide_13_22=0x219 & wide_40_45=0xb { divide_trace(A5L, A5H, GB5, A3L, A3H, GB3, BTR2); }
+:DIVTRACE "A5","A4","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x636 & wide_13_22=0x219 & wide_40_45=0xc { divide_trace(A5L, A5H, GB5, A4L, A4H, GB4, BTR2); }
+:DIVTRACE "A5","A5","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x636 & wide_13_22=0x219 & wide_40_45=0xd { divide_trace(A5L, A5H, GB5, A5L, A5H, GB5, BTR2); }
+
 # Standalone signed multiplier in the primary lane. Accumulator halves bypass X.
 macro compact_signed_multiply(lo, hi, guard, left, right) {
     local a:8 = sext(left);
@@ -725,6 +985,16 @@ resume_2_1: word_address is epsilon [ word_address = (inst_start + 4) & 0xffffff
 :"GOTO" direct_target "delay 1" "||" complete_right is carmel_next_issue_size=6 & (carmel_issue=1 & slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & direct_target); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) { build complete_right; delayslot(6); goto direct_target; }
 :^nop_left "||" "GOTO" direct_target "delay 1" is carmel_next_issue_size=6 & (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & direct_target) { delayslot(6); goto direct_target; }
 :^complete_left "||" "GOTO" direct_target "delay 1" is carmel_next_issue_size=6 & (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left); (slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & direct_target) { build complete_left; delayslot(6); goto direct_target; }
+:"GOTO" direct_target "delay 2" is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x4 & slot_13_22=0x158 & direct_target [ carmel_counted_delay=1; ] { delayslot(2); goto direct_target; }
+:"GOTO" direct_target "delay 2" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_2=0x4 & slot_13_22=0x158 & direct_target); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { delayslot(2); goto direct_target; }
+:"GOTO" direct_target "delay 2" "||" complete_right is (carmel_issue=1 & slot_mode=0 & slot_0_2=0x4 & slot_13_22=0x158 & direct_target); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) [ carmel_counted_delay=1; ] { build complete_right; delayslot(2); goto direct_target; }
+:^nop_left "||" "GOTO" direct_target "delay 2" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_2=0x4 & slot_13_22=0x158 & direct_target) [ carmel_counted_delay=1; ] { delayslot(2); goto direct_target; }
+:^complete_left "||" "GOTO" direct_target "delay 2" is (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left); (slot_mode=0 & slot_0_2=0x4 & slot_13_22=0x158 & direct_target) [ carmel_counted_delay=1; ] { build complete_left; delayslot(2); goto direct_target; }
+:"GOTO" direct_target "delay 3" is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x6 & slot_13_22=0x158 & direct_target [ carmel_counted_delay=1; ] { delayslot(3); goto direct_target; }
+:"GOTO" direct_target "delay 3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_2=0x6 & slot_13_22=0x158 & direct_target); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { delayslot(3); goto direct_target; }
+:"GOTO" direct_target "delay 3" "||" complete_right is (carmel_issue=1 & slot_mode=0 & slot_0_2=0x6 & slot_13_22=0x158 & direct_target); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) [ carmel_counted_delay=1; ] { build complete_right; delayslot(3); goto direct_target; }
+:^nop_left "||" "GOTO" direct_target "delay 3" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_2=0x6 & slot_13_22=0x158 & direct_target) [ carmel_counted_delay=1; ] { delayslot(3); goto direct_target; }
+:^complete_left "||" "GOTO" direct_target "delay 3" is (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left); (slot_mode=0 & slot_0_2=0x6 & slot_13_22=0x158 & direct_target) [ carmel_counted_delay=1; ] { build complete_left; delayslot(3); goto direct_target; }
 :"CALL" direct_target is (((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x0 & slot_13_22=0x159 & direct_target) & link_1_0 { push_link(link_1_0); call direct_target; }
 :"CALL" direct_target "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x159 & direct_target); (slot_mode=0 & nop_right)) & link_2_0 { push_link(link_2_0); call direct_target; }
 :"CALL" direct_target "||" complete_right is ((carmel_issue=1 & slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x159 & direct_target); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right)) & link_2_0 { push_link(link_2_0); build complete_right; call direct_target; }
@@ -758,6 +1028,15 @@ resume_2_1: word_address is epsilon [ word_address = (inst_start + 4) & 0xffffff
 
 wide_call_target: word_address is wide_call_offset_0 & wide_call_offset_22 [ word_address = (inst_start + (wide_call_offset_0 | (wide_call_offset_22 << 22))) & 0xffffff; ] { export *[code]:3 word_address; }
 :CALL wide_call_target is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27c1 & wide_call_target & link_2_0 { push_link(link_2_0); call wide_call_target; }
+wide_goto_target: wide_word_address is wide_goto_offset_0 & wide_goto_offset_22 [ wide_word_address = (inst_start + (wide_goto_offset_0 | (wide_goto_offset_22 << 22))) & 0xffffff; ] { export *[code]:3 wide_word_address; }
+:"GOTO" wide_goto_target is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27c0 & wide_goto_target { goto wide_goto_target; }
+:"GOTO" wide_goto_target "delay 1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27c4 & wide_goto_target [ carmel_counted_delay=1; ] { delayslot(1); goto wide_goto_target; }
+:"GOTO" wide_goto_target "delay 2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27c8 & wide_goto_target [ carmel_counted_delay=1; ] { delayslot(2); goto wide_goto_target; }
+:"GOTO" wide_goto_target "delay 3" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27cc & wide_goto_target [ carmel_counted_delay=1; ] { delayslot(3); goto wide_goto_target; }
+:"GOTO" wide_goto_target "delay 4" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27d0 & wide_goto_target [ carmel_counted_delay=1; ] { delayslot(3); goto wide_goto_target; }
+:"GOTO" wide_goto_target "delay 5" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27d4 & wide_goto_target [ carmel_counted_delay=1; ] { delayslot(3); goto wide_goto_target; }
+:"GOTO" wide_goto_target "delay 6" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27d8 & wide_goto_target [ carmel_counted_delay=1; ] { delayslot(3); goto wide_goto_target; }
+:"GOTO" wide_goto_target "delay 7" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27dc & wide_goto_target [ carmel_counted_delay=1; ] { delayslot(3); goto wide_goto_target; }
 
 conditional_target: word_address is conditional_words [ word_address = (inst_start + conditional_words) & 0xffffff; ] { export *[code]:3 word_address; }
 :"GOTO GE1" conditional_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_1=0x0 & slot_9_22=0x140a & conditional_target { if (!(((EST ^ (EST << 3)) & 0x10) != 0)) goto conditional_target; }
@@ -808,29 +1087,15 @@ conditional_target: word_address is conditional_words [ word_address = (inst_sta
 :^complete_left "||" "REP" repeat_count is carmel_next_issue_size=6 & (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left); (slot_mode=0 & slot_10_22=0xaf0 & repeat_count) [ carmel_repeating=1; ] { build complete_left; local count:2 = repeat_count; if (count == 0) goto <exit>; <again> delayslot(6); count = count - 1; if (count != 0) goto <again>; <exit> }
 :"REP" wide_repeat_count is carmel_next_issue_size=6 & carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x13b & wide_repeat_count [ carmel_repeating=1; ] { local count:2 = wide_repeat_count; if (count == 0) goto <exit>; <again> delayslot(6); count = count - 1; if (count != 0) goto <again>; <exit> }
 
-# R0's AGU reserves the incoming address; the store uses it after update.
-macro advance_r0(address) {
-    local mode:2 = PACFG & 3;
-    local next_address:2 = address + 1;
-    if (mode < 2) goto <publish>;
-    local modulo:2 = RM0 & 0xfff;
-    local count:2 = modulo + 1;
-    if (mode == 3) goto <bounded>;
-    # Expand the low modulo bits to the power-of-two aligned window mask.
-    local span:2 = modulo | (modulo >> 1);
-    span = span | (span >> 2);
-    span = span | (span >> 4);
-    span = span | (span >> 8);
-    if ((address & span) < modulo) goto <publish>;
-    goto <wrap>;
-  <bounded>
-    local end:4 = zext(RL0) + zext(count);
-    if ((end <= 0x10000) && (RL0 <= next_address) && (zext(next_address) < end)) goto <publish>;
-  <wrap>
-    next_address = next_address - count;
-  <publish>
-    R0 = next_address;
-}
+data_load_dst: "R0" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x280 & wide_13_22=0x21b & wide_40_45=0x38 { export R0; }
+data_load_dst: "R1" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x284 & wide_13_22=0x21b & wide_40_45=0x38 { export R1; }
+data_load_dst: "R2" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x288 & wide_13_22=0x21b & wide_40_45=0x38 { export R2; }
+data_load_dst: "R3" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x28c & wide_13_22=0x21b & wide_40_45=0x38 { export R3; }
+data_load_dst: "R4" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x290 & wide_13_22=0x21b & wide_40_45=0x38 { export R4; }
+data_load_dst: "R5" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x294 & wide_13_22=0x21b & wide_40_45=0x38 { export R5; }
+data_load_dst: "R6" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x298 & wide_13_22=0x21b & wide_40_45=0x38 { export R6; }
+data_load_dst: "R7" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x29c & wide_13_22=0x21b & wide_40_45=0x38 { export R7; }
+:MOVE data_load_dst,"*"^absolute_data_addr is carmel_issue=5 & data_load_dst & absolute_data_addr { local address:2 = absolute_data_addr; data_load_dst = *[data]:2 address; }
 
 literal_word: literal is wide_immediate_0 & wide_immediate_22 [ literal = wide_immediate_0 | (wide_immediate_22 << 22); ] { export *[const]:2 literal; }
 :MOVE "A0L",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x90 & wide_14_22=0x119 & literal_word { local staged:4; stage_move(literal_word, staged); commit_half(A0L, staged, 0); }
@@ -860,7 +1125,9 @@ literal_word: literal is wide_immediate_0 & wide_immediate_22 [ literal = wide_i
 :MOVE "R6",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa6 & wide_14_22=0x119 & literal_word { R6 = literal_word; }
 :MOVE "R7",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa7 & wide_14_22=0x119 & literal_word { R7 = literal_word; }
 :MOVE "*R0",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x0 & wide_14_22=0x119 & literal_word { local address:2 = R0; local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; }
-:MOVE "*R0++",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x10 & wide_14_22=0x119 & literal_word { local address:2 = R0; advance_r0(address); local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; }
+:MOVE "*R0",literal_word ";" "MOVE" data_load_dst,"*"^absolute_data_addr is carmel_single_issue=0 & carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x0 & wide_14_22=0x119 & literal_word ; (data_load_dst & absolute_data_addr) { local read_addr:2 = absolute_data_addr; local read_value:2 = *[data]:2 read_addr; local address:2 = R0; local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; data_load_dst = read_value; }
+:MOVE "*R0++",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x10 & wide_14_22=0x119 & literal_word { local address:2 = R0; modify_ptr(R0, RN0, RM0, RL0, 0, 2); local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; }
+:MOVE "*R0++",literal_word ";" "MOVE" data_load_dst,"*"^absolute_data_addr is carmel_single_issue=0 & carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x10 & wide_14_22=0x119 & literal_word ; (data_load_dst & absolute_data_addr) { local read_addr:2 = absolute_data_addr; local read_value:2 = *[data]:2 read_addr; local address:2 = R0; modify_ptr(R0, RN0, RM0, RL0, 0, 2); local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; data_load_dst = read_value; }
 
 # Unsigned MOVE consumes a word or a 24-bit saved loop address.
 macro moveu_flags(value) { EST = (EST & 0xffc4) | (zext(value == 0) << 3); }
@@ -976,15 +1243,6 @@ macro moveu_flags(value) { EST = (EST & 0xffc4) | (zext(value == 0) << 3); }
 :MOVU "discard","A0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23a & wide_13_22=0x21c & wide_40_45=0x8 { local source:4 = 0; moveu_flags(source); }
 :MOVU "discard","LSA1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23b & wide_13_22=0x21c & wide_40_45=0x12 { local source:4 = LSA1W & 0xffffff; moveu_flags(source); }
 :MOVU "discard","LC1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23b & wide_13_22=0x21c & wide_40_45=0x14 { local source:4 = zext(LC1); moveu_flags(source); }
-
-:MOVE "R0","*"^absolute_data_addr is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x280 & wide_13_22=0x21b & wide_40_45=0x38 & absolute_data_addr { local address:2 = absolute_data_addr; R0 = *[data]:2 address; }
-:MOVE "R1","*"^absolute_data_addr is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x284 & wide_13_22=0x21b & wide_40_45=0x38 & absolute_data_addr { local address:2 = absolute_data_addr; R1 = *[data]:2 address; }
-:MOVE "R2","*"^absolute_data_addr is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x288 & wide_13_22=0x21b & wide_40_45=0x38 & absolute_data_addr { local address:2 = absolute_data_addr; R2 = *[data]:2 address; }
-:MOVE "R3","*"^absolute_data_addr is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x28c & wide_13_22=0x21b & wide_40_45=0x38 & absolute_data_addr { local address:2 = absolute_data_addr; R3 = *[data]:2 address; }
-:MOVE "R4","*"^absolute_data_addr is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x290 & wide_13_22=0x21b & wide_40_45=0x38 & absolute_data_addr { local address:2 = absolute_data_addr; R4 = *[data]:2 address; }
-:MOVE "R5","*"^absolute_data_addr is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x294 & wide_13_22=0x21b & wide_40_45=0x38 & absolute_data_addr { local address:2 = absolute_data_addr; R5 = *[data]:2 address; }
-:MOVE "R6","*"^absolute_data_addr is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x298 & wide_13_22=0x21b & wide_40_45=0x38 & absolute_data_addr { local address:2 = absolute_data_addr; R6 = *[data]:2 address; }
-:MOVE "R7","*"^absolute_data_addr is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x29c & wide_13_22=0x21b & wide_40_45=0x38 & absolute_data_addr { local address:2 = absolute_data_addr; R7 = *[data]:2 address; }
 
 # MAC1 signed-register product. Inactive ALUs do not own EST.
 macro signed_product(lo, hi, guard, left, right) {

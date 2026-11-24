@@ -68,10 +68,16 @@ fn fetch_word(bytes: &[u8]) -> u32 {
     u32::from_be_bytes([0, bytes[0], bytes[1], bytes[2]])
 }
 
-/// Native preflight rejects the whole sequential fetch when the right word
-/// has no family, but still issues the left word for an unknown right opcode.
-pub(super) fn unknown_compact_right_family(fetch: &[u8; 6]) -> bool {
-    !decode::has_compact_family(fetch_word(&fetch[3..]))
+/// A missing right family poisons a sequential fetch before either slot issues.
+/// A resolved reserved operand poisons its own slot, or the entire parallel issue.
+pub(super) fn compact_fetch_faults(fetch: &[u8; 6], sequential: bool) -> [bool; 2] {
+    let right = decode::compact_rejection(fetch_word(&fetch[3..]));
+    if sequential && right.is_none() {
+        return [true, true];
+    }
+    let left = decode::compact_rejection(fetch_word(fetch)) == Some(true);
+    let right = right == Some(true);
+    if sequential { [left, right] } else { [left || right, false] }
 }
 
 pub(super) fn print(fetch: &[u8; 6], pc: u32, size: i32, mnemonic: &mut String, body: &mut String) {

@@ -134,17 +134,35 @@ fn compact_family(word: u32) -> Option<&'static Family24> {
         .find(|f| f.gate.matches(u64::from(word)))
 }
 
-pub(super) fn has_compact_family(word: u32) -> bool {
-    compact_family(word).is_some()
+/// Native operand admission, distinct from the CrossView rendering.
+/// `None` means that no compact family matches the word.
+pub(super) fn compact_rejection(word: u32) -> Option<bool> {
+    let family = compact_family(word)?;
+    if !matches!(family.id, 16 | 35 | 40 | 41 | 45 | 49) {
+        return Some(false);
+    }
+    let payload = u64::from(word);
+    Some(compact_rule(family, payload).is_some_and(|(_, rule)| {
+        rule.operands.iter().any(|op| match op.kind {
+            107 => matches!(op.field.read(payload), 21 | 28 | 29),
+            141 => matches!(op.field.read(payload), 0 | 1 | 3 | 6),
+            _ => false,
+        })
+    }))
+}
+
+fn compact_rule(family: &Family24, payload: u64) -> Option<(u16, &Rule)> {
+    let key = family.variant.read(payload);
+    let variant = family.variants.iter().find(|v| v.key == key)?;
+    let rule = variant.rules.iter().find(|r| r.gate.matches(payload))?;
+    Some((variant.semantic, rule))
 }
 
 pub(super) fn compact(word: u32) -> Option<Operation> {
     let payload = u64::from(word);
     let family = compact_family(word)?;
-    let key = family.variant.read(payload);
-    let variant = family.variants.iter().find(|v| v.key == key)?;
-    let rule = variant.rules.iter().find(|r| r.gate.matches(payload))?;
-    Some(Operation::new(family.id, variant.semantic, word, None, payload, 0, rule.operands))
+    let (semantic, rule) = compact_rule(family, payload)?;
+    Some(Operation::new(family.id, semantic, word, None, payload, 0, rule.operands))
 }
 
 pub(super) fn wide(left: u32, right: u32) -> Option<Operation> {
