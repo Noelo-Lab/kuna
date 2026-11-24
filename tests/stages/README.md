@@ -734,3 +734,13 @@ no declaration: a Thumb caller whose `push {r3, r4, r5, r6, r7, lr}` stores
 a push of their own (a variadic register save) still loses it, as does one
 that pads with `push {r3, ..., lr}` and saves `r1`-`r3` with `stm` (clang
 -Oz).
+
+`kuna-retvalue.xml` checks that a function its callers read a result from
+returns it though it also stores or loads through it, and that zero stores into
+globals do not make a returned zero look like a `-fzero-call-used-regs`
+epilogue. gcc -O2's `make_cell` stores through what `malloc` returned,
+`skip_blanks` loads through the pointer it advances, and `lookup` walks a list
+through its cursor, each read by `main`: they print their return, where they
+printed `void`. `reset` (`movl $0,gi; xor %eax,%eax; movl $0,gj; ret`) returns
+its zero. `push_cell`, whose result `main` ignores, stays `void`. A strict fix
+with one pass.

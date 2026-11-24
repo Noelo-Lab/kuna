@@ -2317,7 +2317,8 @@ mod tests {
         // and kuna-stated-jump-owners / stated destinations stay in the declared function that holds the jump
         // and kuna-armshiftguard / an ARM register LSL whose count cannot reach 32 prints no range guard
         // and gh1922-pushpad-caller-readarg-thumb / r3 pushed beneath lr is no va-save
-        assert_eq!(count, 905, "corpus file count drifted");
+        // and kuna-retvalue / a result its callers read is returned though stored or loaded through
+        assert_eq!(count, 906, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
