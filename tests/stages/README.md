@@ -87,6 +87,13 @@ of the `ret 8` function g see both pushed arguments popped, so a later `[esp+4]`
 reads the caller's own argument. A second caller reaches g through a register
 and sees the same pop.
 
+`kuna-dwarfpop.xml` checks a MinGW GCC i386 PE whose DWARF declares
+`__cdecl` callees without naming a convention. A call to `fill` (`ret`) on one
+of two paths that merge before a call to `copy` leaves `copy` its caller's own
+`ptr`, and a local struct cleared by `fill` and handed to `query` is read back
+as the fields `query` wrote, with no outgoing argument stored into it. Before
+the fix the declaration's arity was taken as bytes `fill` pops.
+
 `kuna-varargsave.xml` checks option `varargsave` on gcc -O2 x86-64 variadic
 functions. `report` and `scaled` hand their `va_list` to a callee, so the
 register-save prologue folds: they print `...` after their named parameters

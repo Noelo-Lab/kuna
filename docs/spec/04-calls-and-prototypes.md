@@ -4838,6 +4838,23 @@ reference in the caller, so the solver keeps such a call. A call to
 a call to `void observe(float,float)` keeps the cleanup the solver reads off the
 caller.
 
+A declaration states a parameter list, not what the callee's code does with the
+stack, so at a direct call whose callee's own returns prove its pop (the walk of
+`kuna_calleepurge.rs`, recorded on the call spec at flow) the proven pop is taken
+instead of the one the parameter list implies
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleeprotostack.rs
+(resolve_declared_extra_pop)`). This matters for the parked pieces the DWARF pass
+gives a MinGW i386 PE's own functions: GCC's DWARF names no calling convention,
+so a `__cdecl` function is laid out under the default `__stdcall` model, and
+reading its three parameters as twelve popped bytes moves every later stack
+reference in the caller by twelve. A `memset` called on one of two paths that
+merge then leaves the merged block reading a `memcpy` source from a slot nothing
+wrote, and the outgoing arguments and return addresses of later calls print as
+stores into a local struct. The `ret` of such a callee proves a pop of 4, and the
+call takes it. A callee the walk cannot read (an indirect jump, a return reached
+with the stack pointer unknown) still takes the declaration's pop, and a model
+that states its own extrapop is left alone as before.
+
 The same park is read a second time, at de-indirection. `ActionDefaultParams`
 runs once at the head of the function, when a `call dword ptr [IAT slot]` is
 still a CALLIND with no callee to ask about, so a parked signature reached such a

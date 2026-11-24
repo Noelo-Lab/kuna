@@ -47,7 +47,11 @@
 //!   resolved too, but only when its declaration NAMED the convention: one
 //!   that names none is laid out under the default model, which on x86 Windows
 //!   is `__stdcall`, and an MSVC `__cdecl` helper declared that way would
-//!   otherwise be credited with popping its own arguments.
+//!   otherwise be credited with popping its own arguments. Where the callee's
+//!   own returns prove its pop ([`crate::p4_calls::kuna_calleepurge`]), that
+//!   pop is taken instead of the parameter list's: GCC's DWARF names no
+//!   convention, so a MinGW image's `__cdecl` function is declared under the
+//!   default `__stdcall` model, and its `ret` is what says it pops nothing.
 //! * **The reach.** Only for an input-locked, non-variadic prototype whose
 //!   extrapop is known by the rule above; only for a stack range wholly at or
 //!   above that extrapop in the CALLEE's frame (the return-address slot and the
@@ -65,19 +69,23 @@ use kuna_base::types::{int4, uintb};
 
 use crate::fspec::{FuncProto, EXTRAPOP_UNKNOWN};
 
-/// Give a freshly seeded, locked callee prototype the extrapop its parameter
-/// list implies (`ActionDefaultParams`).
+/// Give a freshly seeded, locked callee prototype the extrapop its callee's
+/// own returns prove (`proven`, see [`crate::p4_calls::kuna_calleepurge`]), or
+/// else the one its parameter list implies (`ActionDefaultParams`).
 ///
 /// A no-op unless the prototype is input-locked and its MODEL declines to state
 /// an extrapop; a model that states one already has the exact answer.
-pub fn resolve_declared_extra_pop(fp: &mut FuncProto) {
+pub fn resolve_declared_extra_pop(fp: &mut FuncProto, proven: Option<int4>) {
     if !fp.is_input_locked() {
         return;
     }
     if fp.get_extra_pop() != EXTRAPOP_UNKNOWN {
         return;
     }
-    fp.resolve_extra_pop();
+    match proven {
+        Some(ep) => fp.set_extra_pop(ep),
+        None => fp.resolve_extra_pop(),
+    }
 }
 
 /// The callee-frame offset at and above which a declared callee's stack contract

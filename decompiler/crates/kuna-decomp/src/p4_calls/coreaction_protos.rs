@@ -609,6 +609,7 @@ impl Action for ActionDefaultParams {
                                 Ok(()) => {
                                     crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
                                         &mut fp,
+                                        data.get_call_specs(i).callee_purge(),
                                     );
                                     let op = data.get_call_specs(i).get_op();
                                     (!own_slot || crate::p4_calls::kuna_slotargs::backed(data, op, &fp))
@@ -677,8 +678,10 @@ impl Action for ActionDefaultParams {
                     }
                 }
             } else if arch.callee_proto_model(data.get_call_specs(i).get_entry_address()).is_some() {
+                let proven = data.get_call_specs(i).callee_purge();
                 crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
                     data.get_call_specs_mut(i).proto_mut(),
+                    proven,
                 );
             }
             if let Err(error) = crate::kuna_callmechanisms::apply_return(data, i) {

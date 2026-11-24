@@ -2308,7 +2308,7 @@ mod tests {
         // and kuna-stated-jump / caller-stated computed branch destinations
         // and kuna-passthroughslot / forwarded registers fill their slots ahead of a loaded argument
         // and kuna-passthroughslot-arm / an ARM pad or a register the callee does not take is no filled slot
-        assert_eq!(count, 896, "corpus file count drifted");
+        assert_eq!(count, 897, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

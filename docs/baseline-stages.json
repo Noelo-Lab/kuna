@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5276,
-    5276
+    5280,
+    5280
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -709,6 +709,10 @@
     "data:DUPLABELS #5: the default path jumps to the copy that stores v3",
     "data:DUPLABELS #6: the second copy stores the tag the path chose",
     "data:DWARF function value agrees with its qualified definition",
+    "data:DWARFPOP #1: copy takes the caller's own ptr after the merge",
+    "data:DWARFPOP #2: fill keeps its three arguments",
+    "data:DWARFPOP #3: version reads the fields query wrote",
+    "data:DWARFPOP #4: no outgoing argument is stored into the local",
     "data:DWARFVARIANTS #10: the overlaying Result keeps its recovered tag field",
     "data:DWARFVARIANTS #11: and its payload is spelled by OFFSET because Ok and Err both claim it",
     "data:DWARFVARIANTS #12: neither variant of the overlaying Result is ever named as a field",

@@ -57,7 +57,25 @@ fn resolve_declared_extra_pop_leaves_a_model_that_states_its_own() {
     let mut fp = void_store_proto();
     fp.set_input_lock(true);
     fp.set_extra_pop(4); // as a __cdecl model would
-    resolve_declared_extra_pop(&mut fp);
+    resolve_declared_extra_pop(&mut fp, None);
+    assert_eq!(fp.get_extra_pop(), 4);
+}
+
+#[test]
+fn resolve_declared_extra_pop_takes_the_pop_the_callee_proves() {
+    let mut fp = void_store_proto();
+    fp.set_input_lock(true);
+    fp.set_extra_pop(EXTRAPOP_UNKNOWN);
+    resolve_declared_extra_pop(&mut fp, Some(4));
+    assert_eq!(fp.get_extra_pop(), 4);
+}
+
+#[test]
+fn resolve_declared_extra_pop_keeps_a_stated_pop_over_a_proven_one() {
+    let mut fp = void_store_proto();
+    fp.set_input_lock(true);
+    fp.set_extra_pop(4);
+    resolve_declared_extra_pop(&mut fp, Some(12));
     assert_eq!(fp.get_extra_pop(), 4);
 }
 
@@ -65,7 +83,7 @@ fn resolve_declared_extra_pop_leaves_a_model_that_states_its_own() {
 fn resolve_declared_extra_pop_needs_the_lock() {
     let mut fp = FuncProto::new();
     fp.set_extra_pop(EXTRAPOP_UNKNOWN);
-    resolve_declared_extra_pop(&mut fp);
+    resolve_declared_extra_pop(&mut fp, None);
     assert_eq!(fp.get_extra_pop(), EXTRAPOP_UNKNOWN);
 }
 
@@ -79,6 +97,6 @@ fn store_less_prototype_declines() {
     assert!(!fp.has_store());
     fp.set_extra_pop(20);
     assert_eq!(declared_caller_frame_floor(&fp), None);
-    resolve_declared_extra_pop(&mut fp);
+    resolve_declared_extra_pop(&mut fp, None);
     assert_eq!(fp.get_extra_pop(), 20);
 }
