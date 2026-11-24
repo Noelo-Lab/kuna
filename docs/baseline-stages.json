@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5287,
-    5287
+    5290,
+    5290
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -461,6 +461,9 @@
     "data:CALLOVERLAP #4: full, guardCallOverlappingInput recovers the truncated XMM0 argument and tryOutputOverlapGuard the return value",
     "data:CALLOVERLAP #5: full, f regains its own parameter",
     "data:CALLOVERLAP #6: full, the epilogue adds 1.0 to the recovered call result, not to a stale pre-call read",
+    "data:CALLOVERLAP FLOATRET #1: off, the call defines no result",
+    "data:CALLOVERLAP FLOATRET #2: off, the sum reads a variable nothing assigns",
+    "data:CALLOVERLAP FLOATRET #3: auto, the sum reads the call's result",
     "data:CALLPOPRET #1: the call is followed as a branch and recovers the pointer to the inline data",
     "data:CALLPOPRET #2: no port reads are decoded at the unreachable return address",
     "data:CALLRETPAIR #1: the call is never a bare statement with its JSValue discarded",
