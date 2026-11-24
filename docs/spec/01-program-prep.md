@@ -3489,9 +3489,10 @@ moves.
   argument an inferred integer. The table also lists the C++ allocation
   operators by their Itanium names (`_Znwm`, `_Znam`, `_ZdlPv`, `_ZdlPvm`,
   `_ZdaPv`, their `nothrow_t` and `align_val_t` forms, and the `j` and `y`
-  spellings where `size_t` is `unsigned int` or MinGW-w64's `unsigned long long`): mangling encodes no return type and
-  `cppsig` refuses operator names, so without the entries an imported
-  `operator delete[]` lost its pointer. The compatible name-keyed prototype stream is
+  spellings where `size_t` is `unsigned int` or MinGW-w64's `unsigned long
+  long`): mangling encodes no return type and `cppsig` refuses operator names,
+  so without the entries an imported `operator delete[]` lost its pointer. On an
+  i386 PE they are also declared `__cdecl` (below). The compatible name-keyed prototype stream is
   retained for ordinary symbols. For an imported table name the pass additionally
   emits the same signature at every concrete address the format resolver reports.
   This is required on PE, where the IAT slot and its `FF 25` veneer are separate

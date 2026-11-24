@@ -163,15 +163,7 @@ const LIBC: &[(&str, Sig)] = &[
     ("memcpy", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::VoidPtr, Ty::Size], vararg: -1 }),
     ("memmove", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::VoidPtr, Ty::Size], vararg: -1 }),
     ("memset", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::Int, Ty::Size], vararg: -1 }),
-    // (kuna) The C++ allocation operators, by their Itanium
-    // names: `operator new` and `new[]` take a size and return the storage,
-    // and `delete` and `delete[]` take the pointer, perhaps with the size. The
-    // size is spelled `m` where `size_t` is `unsigned long` (LP64), `j` where it
-    // is `unsigned int` (ILP32) and `y` where it is `unsigned long long`
-    // (MinGW-w64's LLP64). Each may also take a `std::nothrow_t const &` and a
-    // `std::align_val_t`, an enum of `size_t`. Mangling encodes no return
-    // type, and cppsig refuses operator names, so without these an imported
-    // one lost its arguments.
+    // C++ allocation operators (Itanium; `size_t` is `m`, `j` or `y`)
     ("_Znwm", Sig { ret: Ty::VoidPtr, params: &[Ty::Size], vararg: -1 }),
     ("_ZnwmRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::VoidPtr], vararg: -1 }),
     ("_ZnwmSt11align_val_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size], vararg: -1 }),
