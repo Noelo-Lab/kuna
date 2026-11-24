@@ -25,6 +25,7 @@ pub mod kuna_loopbreak_recovery;
 pub mod kuna_loopcontinue;
 pub mod kuna_looptest;
 pub mod kuna_o0returns;
+pub mod kuna_o0select;
 pub mod kuna_orchain;
 pub mod kuna_rettriangle;
 pub mod kuna_outline;

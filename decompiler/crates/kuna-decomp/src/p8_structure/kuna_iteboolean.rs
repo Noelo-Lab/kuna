@@ -240,6 +240,9 @@ pub fn match_ite_boolean(data: &Funcdata, n: BlockId) -> Option<IteBoolMatch> {
         return None;
     }
     let cbranch = cond_terminal_cbranch(data, cond_tail, 0)?;
+    if crate::p8_structure::kuna_o0select::form_of(data, cbranch) == Some(crate::p8_structure::kuna_o0select::Form::Statement) {
+        return None;
+    }
 
     let (true_op, dest_true, val_true) = const_bool_arm(data, true_clause)?;
     let (_else_op, dest_else, val_else) = const_bool_arm(data, else_clause)?;
