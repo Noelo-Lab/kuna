@@ -114,7 +114,33 @@ fn classify(fd: &Funcdata, c: BlockId) -> Option<(u64, Form)> {
                 .and_then(|d| fd.obank().get(d))
                 .is_some_and(|d| d.get_parent() == Some(x))
         };
-        defined_in(st, t) && defined_in(se, e) && op.get_out().is_some_and(|v| used(fd, v, USE_DEPTH))
+        let scratch = op.get_out().and_then(|v| fd.vbank().get(v)).is_some_and(|v| {
+            fd.get_func_proto().has_effect(&v.get_addr(), v.get_size()) != crate::fspec::effect_type::UNAFFECTED
+        });
+        let ok = scratch && defined_in(st, t) && defined_in(se, e) && op.get_out().is_some_and(|v| used(fd, v, USE_DEPTH, false));
+        if ok {
+            if let Ok(dir) = std::env::var("KUNA_O0SEL_DUMP") {
+                let v = fd.vbank().get(op.get_out().unwrap()).unwrap();
+                let defs: Vec<String> = (0..op.num_input()).filter_map(|i| op.get_in(i)).filter_map(|x| fd.vbank().get(x)).map(|x| x.get_def().and_then(|d| fd.obank().get(d)).map_or("in".to_string(), |d| format!("{:?}", d.code()))).collect();
+                let path = std::path::Path::new(&dir).join("debug.txt");
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+                    use std::io::Write;
+                    let _ = writeln!(f, "{} {:#x} reg {:#x}:{} defs {:?}", fd.get_name(), at, v.get_offset(), v.get_size(), defs);
+                    let mut st = vec![(op.get_out().unwrap(), 0u32)];
+                    while let Some((x, dep)) = st.pop() {
+                        if dep > 8 { continue; }
+                        for d in fd.vbank().get(x).unwrap().descend_iter() {
+                            if let Some(dop) = fd.obank().get(d) {
+                                let o = dop.get_out().and_then(|o| fd.vbank().get(o)).map(|o| format!("{:#x}:{}:{}", o.get_offset(), o.get_size(), o.get_space().get_name()));
+                                let _ = writeln!(f, "   {} {:?}@{:#x} -> {:?}", dep, dop.code(), dop.get_addr().get_offset(), o);
+                                if let Some(o) = dop.get_out() { if !matches!(dop.code(), OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT) { st.push((o, dep + 1)); } }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        ok
     });
     joined.then_some((at, Form::Value))
 }
@@ -157,17 +183,24 @@ fn arm(fd: &Funcdata, x: BlockId) -> Option<Arm> {
 }
 
 /// Whether `vn` is read by something other than a merge or a return, looking
-/// through copies into another register.
-fn used(fd: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+/// through copies into another register.  A call reads it only once a copy
+/// moved it into an argument register: an unprototyped call also reads
+/// whatever a scratch register happens to hold.
+fn used(fd: &Funcdata, vn: VarnodeId, depth: u32, copied: bool) -> bool {
     let Some(v) = fd.vbank().get(vn) else { return false };
     v.descend_iter().any(|d| {
         let Some(op) = fd.obank().get(d) else { return false };
+        let next = |copied: bool| {
+            op.get_out().is_some_and(|o| memory(fd, o) || (depth > 0 && used(fd, o, depth - 1, copied)))
+        };
+        let low = |slot: i32| op.get_in(slot).and_then(|c| fd.vbank().get(c)).is_some_and(|c| c.is_constant() && c.get_offset() == 0);
         match op.code() {
             OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT | OpCode::CPUI_RETURN => false,
-            OpCode::CPUI_COPY | OpCode::CPUI_SUBPIECE | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT
-            | OpCode::CPUI_PIECE => op.get_out().is_some_and(|o| {
-                memory(fd, o) || (depth > 0 && used(fd, o, depth - 1))
-            }),
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => copied,
+            OpCode::CPUI_COPY => next(true),
+            OpCode::CPUI_SUBPIECE => low(1) && next(copied),
+            OpCode::CPUI_PIECE => op.get_in(1) == Some(vn) && next(copied),
+            OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => next(copied),
             _ => true,
         }
     })
@@ -187,6 +220,9 @@ fn memory(fd: &Funcdata, vn: VarnodeId) -> bool {
 
 /// How the source wrote the branch whose `CBRANCH` sits at `addr`, if recorded.
 pub(crate) fn form(fd: &Funcdata, addr: u64) -> Option<Form> {
+    if !fd.get_arch().iteregion_record {
+        return None;
+    }
     let rec = fd.kuna_o0select.as_deref()?;
     rec.sites.binary_search_by_key(&addr, |s| s.0).ok().map(|i| rec.sites[i].1)
 }
