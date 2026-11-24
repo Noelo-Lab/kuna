@@ -181,7 +181,7 @@ rest):
 | functions discovery found in data | 23 | Cortex-M firmware `sub_*` whose bytes are strings: `funcstart_patterns`/`aif` take them for code, and `decompile-all` prints them too |
 | u-boot's aligned stack buffers | 16 | #1919, directly (`part_test_dos`, `fs_devread`, `print_partition_extended`) or through callees run for real; not each checked |
 | a return value or an argument value | 23 | not triaged |
-| `memcpy`'s size dropped | 10 | Betaflight: `memcpy(dst, src)` for a three-argument call; `--option dwarf off` restores the size, so the DWARF import loses it; not filed yet |
+| `memcpy`'s arguments dropped | 10 | #1922: Betaflight's calls to its own `memcpy` keep one or two of three; `--option dwarf off` restores them in three of the five functions |
 | `fdt_getprop()` with no arguments | 7 | #1917 |
 | a call through a function pointer drops arguments | 6 | `tar` `tar_sparse_*` |
 | i386 stack offsets after `memset`/`memcpy` | 4 | #1920 |
