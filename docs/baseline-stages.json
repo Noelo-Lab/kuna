@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5290,
-    5290
+    5296,
+    5296
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -119,6 +119,12 @@
     "data:ARMFUNCMODE #6: an unsymbolized A32 helper an A32 export calls stays A32",
     "data:ARMFUNCMODE #7: a Thumb static behind an A32 helper that calls a noreturn function keeps Thumb",
     "data:ARMFUNCMODE #8: a Thumb static behind an A32 literal pool keeps Thumb",
+    "data:ARMSHIFTGUARD #1: by default a count masked below 32 prints the plain shift",
+    "data:ARMSHIFTGUARD #2: by default a four-bit field count prints the plain shift",
+    "data:ARMSHIFTGUARD #3: the unbounded count keeps its guard by default, and always guards all three",
+    "data:ARMSHIFTGUARD #4: never prints the unbounded count's plain shift",
+    "data:ARMSHIFTGUARD #5: always restores the guard on the masked count",
+    "data:ARMSHIFTGUARD #6: with armconstshift on, a dropped guard keeps the unsigned shift of the signed literal",
     "data:ARMWALKMODE #1: off, the A32 helper after the blx target decodes as Thumb",
     "data:ARMWALKMODE #2: default, the bl target keeps A32 in both call orders",
     "data:ARMWALKMODE #3: default, the blx target decodes as Thumb and returns 7",
