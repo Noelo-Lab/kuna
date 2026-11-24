@@ -98,7 +98,7 @@ fn classify(fd: &Funcdata, c: BlockId) -> Option<(u64, Form)> {
     if at_t.stores && at_e.stores {
         return Some((at, Form::Statement));
     }
-    if at_t.stores || at_e.stores || at_t.calls || at_e.calls || tb.size_in() != 1 || eb.size_in() != 1 {
+    if at_t.stores || at_e.stores || tb.size_in() != 1 || eb.size_in() != 1 {
         return None;
     }
     let (st, se) = (slot(fd, j, t)?, slot(fd, j, e)?);
@@ -127,20 +127,27 @@ fn slot(fd: &Funcdata, j: BlockId, x: BlockId) -> Option<usize> {
 
 struct Arm {
     stores: bool,
-    calls: bool,
 }
 
+/// What arm `x` does.  The return address a call instruction pushes is not a
+/// store of the arm's.
 fn arm(fd: &Funcdata, x: BlockId) -> Option<Arm> {
     let ops = fd.bb_ops(x);
     if ops.len() > MAX_ARM_OPS {
         return None;
     }
-    let mut a = Arm { stores: false, calls: false };
+    let calls: Vec<u64> = ops
+        .iter()
+        .filter_map(|&o| fd.obank().get(o))
+        .filter(|op| op.is_call())
+        .map(|op| op.get_addr().get_offset())
+        .collect();
+    let mut a = Arm { stores: false };
     for o in ops {
         let op = fd.obank().get(o)?;
         match op.code() {
-            OpCode::CPUI_STORE => a.stores = true,
-            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER => a.calls = true,
+            OpCode::CPUI_STORE => a.stores |= !calls.contains(&op.get_addr().get_offset()),
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER => {}
             OpCode::CPUI_RETURN | OpCode::CPUI_BRANCHIND | OpCode::CPUI_CBRANCH => return None,
             OpCode::CPUI_INDIRECT | OpCode::CPUI_MULTIEQUAL => {}
             _ => a.stores |= op.get_out().is_some_and(|v| memory(fd, v)),

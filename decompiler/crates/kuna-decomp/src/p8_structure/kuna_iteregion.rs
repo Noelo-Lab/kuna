@@ -329,11 +329,11 @@ fn single_assign_arm(data: &Funcdata, id: BlockId, value: bool) -> Option<(OpId,
         if !data.get_arch().iteexpr && !value {
             return None;
         }
-        if matches!(
+        let call = matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND);
+        if call && !value
+            || matches!(
             o.code(),
             OpCode::CPUI_STORE
-                | OpCode::CPUI_CALL
-                | OpCode::CPUI_CALLIND
                 | OpCode::CPUI_CALLOTHER
                 | OpCode::CPUI_RETURN
                 | OpCode::CPUI_BRANCH
