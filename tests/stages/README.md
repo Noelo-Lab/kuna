@@ -305,6 +305,8 @@ writeup, not here.
 
 | `gh1628-x86-vmx-decode-flags.xml` | [Kuna #1628](https://github.com/Noelo-Lab/kuna/issues/1628) | S1 decode-table / S2 p-code lift (x86 spec-fix, no option) | `VMREAD`/`VMWRITE` decode without REX.W in 64-bit mode; every VMX user-op returns its status (0/1/2) and `vmxflags` sets ZF/CF from it, so `setna` after `vmlaunch` reads the VMX outcome; `VMPTRST` stores the VMCS pointer |
 
+| `kuna-rex-before-prefix.xml` | Authored x86-64 prefix order | S1 decode-table (x86 spec-fix, no option) | a REX prefix that a legacy prefix follows is ignored, as the CPU ignores it (`f3 48 67 ab` is `rep stos` of dwords with a 32-bit address; `48 67 f3 48 a5` keeps the last REX.W), instead of the legacy prefix decoding as a bad opcode |
+
 | `gh1674-subpiece-shadow-wide-const.xml` | [Kuna #1674](https://github.com/Noelo-Lab/kuna/issues/1674) | P6 merge (cover intersection, partial copy shadow; no option) | a constant truncated by 8 or more bytes reads 0 instead of shifting a 64-bit offset by 64 or more bits, so the function decompiles in a build with overflow checks |
 
 | `gh9184-x86-fma-ymm256.xml` | [GH-9184](https://github.com/NationalSecurityAgency/ghidra/issues/9184) | S1/S2 decode + pcode-semantics (x86 spec-fix, no option) | SLEIGH YMM FMA uses 256-bit `local tmp:32` (was `tmp:16`) |
