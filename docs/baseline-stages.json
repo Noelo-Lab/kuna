@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5309,
-    5309
+    5313,
+    5313
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1075,6 +1075,10 @@
     "data:GH1916 stackpad x86 #3: the declared char is passed as itself",
     "data:GH1916 stackpad x86 #4: the variadic stack int is the stored constant",
     "data:GH1916 stackpad x86 #5: a stored long keeps its full width",
+    "data:GH1922 declared caller #1: the size a declared caller also multiplies with is passed",
+    "data:GH1922 declared caller #2: a declared caller passes on its own data and len after the buffer",
+    "data:GH1922 declared caller #3: no copy call keeps only its first arguments",
+    "data:GH1922 declared caller #4: a callee that does not read r2 gets two arguments",
     "data:GH1951 #1: rcall disassembles to the in-range 4KiW-wrapped target 0x100e",
     "data:GH1951 #2: lifted call targets the masked in-range word 0x0807",
     "data:GH1951 #3: the unmasked out-of-range word 0xf807 must NOT appear",
