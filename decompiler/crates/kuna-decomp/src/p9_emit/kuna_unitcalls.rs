@@ -162,10 +162,10 @@ fn declarable(name: &str) -> bool {
     is_identifier(name) && !C_KEYWORDS.contains(&name)
 }
 
-/// Give a jump stub's `proto` and its definition in `code` an
-/// unknown parameter list, `(KUNA_ANY_ARGS)`, where kuna recovered `(void)`. A
-/// stub's body only jumps through the import's slot, so kuna sees no parameter,
-/// while its callers pass the import's arguments, which `(void)` would refuse.
+/// Give a jump stub's `proto` and its definition in `code` an unknown parameter
+/// list, `(KUNA_ANY_ARGS)`, where kuna recovered `(void)`. A stub's body only
+/// jumps through the import's slot, so kuna sees no parameter, while its
+/// callers pass the import's arguments, which `(void)` would refuse.
 /// Both change, or neither: the definition is the line that starts with the
 /// prototype's declarator. A stub kuna recovered parameters for is left as it
 /// is, and so is a declarator whose last `(void)` is not the function's own, as
@@ -304,6 +304,10 @@ mod tests {
         assert_eq!(header_block(["int puts(char *a0);"], |_| false), "");
     }
 
+    /// The definition line may carry a trailing comment, and a mention in a
+    /// comment above it is not the definition. A recovered parameter, no
+    /// definition line, or a `(void)` that is not the function's own changes
+    /// neither the prototype nor the code.
     #[test]
     fn a_stub_recovered_with_no_parameters_takes_any() {
         let rewrite = |proto: &str, code: &str| {
@@ -318,13 +322,10 @@ mod tests {
                 "unsigned long strfry(KUNA_ANY_ARGS)\n{\n  return (*dat_1002730)();\n}".to_owned()
             )
         );
-        // The definition line may carry a warning; a mention in a comment above
-        // it is not the definition.
         assert_eq!(
             rewrite("void f(void);", "// was void f(void) once\nvoid f(void) // warn: bad data\n{\n}").1,
             "// was void f(void) once\nvoid f(KUNA_ANY_ARGS) // warn: bad data\n{\n}"
         );
-        // A recovered parameter, or no definition line, changes neither.
         assert_eq!(
             rewrite("char *strdup(char *a0);", "char *strdup(char *a0)\n{\n}"),
             ("char *strdup(char *a0);".to_owned(), "char *strdup(char *a0)\n{\n}".to_owned())
@@ -341,7 +342,6 @@ mod tests {
         unknown_stub_params(&mut none, &mut code);
         assert_eq!(code.as_deref(), Some("x"));
     }
-
 
     #[test]
     fn a_same_width_tie_keeps_the_undefined_spelling_in_either_order() {

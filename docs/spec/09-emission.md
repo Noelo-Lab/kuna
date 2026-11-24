@@ -4336,7 +4336,10 @@ the Mach-O symbol-pointer and unwind sections. The merged ranges reach the
 engine as `infra/architecture.rs (Architecture::globalref_ranges)`, installed by
 the object bootstrap beside the `litpoolconst` ranges; every path without a
 section table leaves them empty, so the rule is inert for the XML datatest
-corpus.
+corpus. The ranges bound which constant addresses become `&dat_<addr>`; a
+`dat_<addr>` the body already reads or writes directly is declared wherever it
+lies, a GOT slot or an import address table entry included (*The declaration*
+below).
 
 **What one function knows.** `kuna_globalref.rs (plan)` walks the function
 once when its document starts, and records three facts:
@@ -4381,7 +4384,8 @@ declaration the structure-member declarator builds for it (`printc.rs
 access, or is a record or union. Unnamed means that no global Symbol covers it,
 wherever it lies: an import's GOT slot, which a PLT stub jumps through, counts
 too, though it lies outside the sections the loader classifies as program data,
-so the stub's `(*dat_<slot>)()` names a declared object. They travel as `FuncResult::globals`, which
+so the stub's `(*dat_<slot>)()` names a declared object. They travel as
+`FuncResult::globals`, which
 the `--jobs` wire carries like the type records, and
 `decompiler/crates/kuna-console/src/project.rs (global_declarations)` turns
 them into one `extern` line per named address in the `decompile-project`
