@@ -122,8 +122,9 @@
 //! cut off the register the caller loads after them
 //! (`getprop(fdt,node,name,&len)` printed `getprop()`), leaving no list to
 //! extend. A run that holds any other inactive slot is a chain as upstream
-//! counts it, and a stack slot past a filled run needs the caller's own store
-//! into the first one ([`stores_first_stack_arg`]).
+//! counts it; past a filled run a stack slot needs the caller's own store into
+//! the first one ([`stores_first_stack_arg`]), and a register the callee's
+//! decode shows it never takes ends the list.
 //!
 //! # The tail call's result
 //!
@@ -535,8 +536,8 @@ pub(crate) fn set_up_as_variadic(data: &Funcdata, idx: int4) -> bool {
 /// (`mov %rbx,(%rsp)`) is not ([`holds_register`]). Before heritage a
 /// temporary is not yet linked to the op that wrote it, so a store through an
 /// address computed into one (`mov $0,0x8(%rsp)`, ARM's `str r3,[sp,#0]`) is
-/// not seen, and a `push`, whose value goes through one, counts whatever it
-/// pushes.
+/// not seen, and a `push`, whose value goes through one, counts unless it is
+/// a [`prologue_push`].
 fn stores_first_stack_arg(data: &Funcdata, op: OpId) -> bool {
     let Some(idx) = data.get_call_specs_index(op) else { return false };
     let proto = data.get_call_specs(idx).proto();
@@ -595,7 +596,7 @@ fn stores_first_stack_arg(data: &Funcdata, op: OpId) -> bool {
                 }
             });
             if at.is_some_and(|off| off + delta == slot) {
-                return !holds_register(data, o.get_in(2));
+                return !holds_register(data, o.get_in(2)) && !prologue_push(data, prev, proto);
             }
         }
         if o.get_out().and_then(|v| data.vbank().get(v)).is_some_and(is_sp) {
@@ -618,7 +619,7 @@ fn stores_first_stack_arg(data: &Funcdata, op: OpId) -> bool {
 
 /// Is `vn` a register's value as it stands, directly or through a linked COPY
 /// into a temporary? Of the raw p-code only the first holds: a `push`'s
-/// temporary is not yet linked to the COPY that filled it.
+/// temporary is not yet linked to the COPY that filled it ([`prologue_push`]).
 fn holds_register(data: &Funcdata, vn: Option<VarnodeId>) -> bool {
     let Some(v) = vn.and_then(|v| data.vbank().get(v)) else { return true };
     if is_register(v.get_addr()) {
@@ -630,6 +631,64 @@ fn holds_register(data: &Funcdata, vn: Option<VarnodeId>) -> bool {
         .and_then(|d| d.get_in(0))
         .and_then(|i| data.vbank().get(i))
         .is_some_and(|i| is_register(i.get_addr()))
+}
+
+/// Is the raw `store` a prologue's push of a register that is no argument
+/// register of the callee's model: the instruction COPYs the register into the
+/// temporary it stores, and nothing back to the function's entry writes it or
+/// calls? gcc's `push %rbx` and clang's aligning `push %rax` just before a call
+/// save or pad, and pass nothing; `push %r9` (a forwarded parameter) and a
+/// push of a register the function computed are arguments.
+fn prologue_push(data: &Funcdata, store: OpId, proto: &crate::fspec::FuncProto) -> bool {
+    let Some(v) = data.obank().get(store).and_then(|o| o.get_in(2)).and_then(|v| data.vbank().get(v)) else { return false };
+    let Some(at) = data.obank().get(store).map(|o| o.get_addr().clone()) else { return false };
+    let mut reg = None;
+    let mut cur = data.op_previous_op(store);
+    while let Some(prev) = cur {
+        let Some(o) = data.obank().get(prev) else { return false };
+        if *o.get_addr() != at {
+            break;
+        }
+        if o.get_out().and_then(|w| data.vbank().get(w)).is_some_and(|w| w.get_addr() == v.get_addr() && w.get_size() == v.get_size()) {
+            reg = (o.code() == OpCode::CPUI_COPY)
+                .then(|| o.get_in(0).and_then(|i| data.vbank().get(i)))
+                .flatten()
+                .filter(|i| is_register(i.get_addr()))
+                .map(|i| (i.get_addr().clone(), i.get_size()));
+            break;
+        }
+        cur = data.op_previous_op(prev);
+    }
+    let Some((raddr, rsize)) = reg else { return false };
+    let overlaps = |a: &Address, s: int4| {
+        a.get_space().map(|x| x.get_index()) == raddr.get_space().map(|x| x.get_index())
+            && a.get_offset() < raddr.get_offset() + rsize as u64
+            && raddr.get_offset() < a.get_offset() + s.max(0) as u64
+    };
+    if general_arg_registers(proto.model()).iter().any(|(a, s)| overlaps(a, *s)) {
+        return false;
+    }
+    let entry = data.get_address().clone();
+    let mut cur = Some(store);
+    let mut budget = 64;
+    while let Some(prev) = cur {
+        budget -= 1;
+        let Some(o) = data.obank().get(prev) else { return false };
+        if *o.get_addr() == entry {
+            return true;
+        }
+        if budget == 0
+            || matches!(
+                o.code(),
+                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER | OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH | OpCode::CPUI_BRANCHIND
+            )
+            || (*o.get_addr() != at && o.get_out().and_then(|w| data.vbank().get(w)).is_some_and(|w| overlaps(w.get_addr(), w.get_size())))
+        {
+            return false;
+        }
+        cur = data.op_previous_op(prev);
+    }
+    false
 }
 
 /// Is the function itself variadic -- does its entry block read a register
@@ -1737,16 +1796,26 @@ pub fn mark_forwarded(data: &mut Funcdata, idx: int4, i: int4, vn: VarnodeId) {
 
 /// What `forceInactiveChain` reads where a trial of call spec `fc` is
 /// [`mark_forwarded`]: does the caller store into the first stack-argument slot
-/// ([`stores_first_stack_arg`]), and which registers does the callee take
-/// ([`stated_registers`])?
-pub(crate) fn forwarded_evidence(data: &Funcdata, fc: &FuncCallSpecs) -> (bool, Vec<Address>) {
+/// ([`stores_first_stack_arg`]), which registers does the callee take
+/// ([`stated_registers`]), and which argument registers does its complete
+/// decode show it never takes?
+pub(crate) fn forwarded_evidence(data: &Funcdata, fc: &FuncCallSpecs) -> (bool, Vec<Address>, Vec<Address>) {
     let active = fc.active_input();
     if !(0..active.get_num_trials()).any(|i| active.get_trial(i).is_forwarded()) {
-        return (false, Vec::new());
+        return (false, Vec::new(), Vec::new());
     }
     let stored = data.kuna_passthrough_stack_arg_calls().contains(&fc.get_op());
-    let takes = stated_registers(data, fc.proto(), fc.get_entry_address(), fc.get_op()).unwrap_or_default();
-    (stored, takes)
+    let entry = fc.get_entry_address();
+    let takes = stated_registers(data, fc.proto(), entry, fc.get_op()).unwrap_or_default();
+    let untaken = match data.kuna_callee_entry_dead(entry) {
+        Some(dead) if fc.proto().has_model() => general_arg_registers(fc.proto().model())
+            .into_iter()
+            .filter(|(a, s)| dead.never_takes(a, *s) || dead.returns_untouched(a, *s))
+            .map(|(a, _)| a)
+            .collect(),
+        _ => Vec::new(),
+    };
+    (stored, takes, untaken)
 }
 
 /// Is `vn` the function's own incoming integer register `[addr, addr+size)`

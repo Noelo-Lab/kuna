@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5271,
-    5271
+    5274,
+    5274
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4440,10 +4440,13 @@
     "data:passthroughslot #2: getopt_long forwards its five parameters and loads r9d and the stack argument",
     "data:passthroughslot #3: w5 forwards four parameters and loads the fifth",
     "data:passthroughslot #4: get_int forwards three parameters and passes the address of len",
+    "data:passthroughslot #5: g3 passes h3 the three registers it forwards, not the ecx it keeps for itself",
+    "data:passthroughslot #6: pid_plus's prologue push %rbx is no stack argument, so sys1 takes only the number",
     "data:passthroughslot-arm #1: sbuffill forwards c and n and nothing its push pad left behind",
     "data:passthroughslot-arm #2: lock forwards mp alone, not the BASEPRI value or the untouched registers",
     "data:passthroughslot-arm #3: neither caller's own prototype is widened",
     "data:passthroughslot-arm #4: with passthrough off the forwarded registers are not arguments",
+    "data:passthroughslot-arm #5: lock3 passes inner3 no BASEPRI value from r3",
     "data:persistcalls #10: persistcalls on drops the guard of small's that only passes a value on",
     "data:persistcalls #11: revisit reads u0 again after the call with the option off and on",
     "data:persistcalls #12: revisit compares the two reads with the option off and on",

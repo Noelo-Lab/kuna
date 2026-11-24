@@ -1504,8 +1504,8 @@ impl Action for ActionActiveParam {
                 // the next slot is on the stack -- the ABI reaches the stack
                 // only past a full register file.
                 fc.get_active_input().set_stack_arg_gap(true);
-                let (stored, takes) = crate::p4_calls::kuna_passthrough::forwarded_evidence(data, &fc);
-                fc.get_active_input().set_forwarded_evidence(stored, takes);
+                let (stored, takes, untaken) = crate::p4_calls::kuna_passthrough::forwarded_evidence(data, &fc);
+                fc.get_active_input().set_forwarded_evidence(stored, takes, untaken);
                 let reads = fc.callee_reg_model().is_some_and(|m| fc.proto().has_matching_model(m));
                 fc.get_active_input().set_callee_reads_registers(reads);
                 crate::kuna_armfloatargs::mark_single_floats(&mut fc, data);

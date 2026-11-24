@@ -12,6 +12,9 @@
         lockS:    ldr r0,[r0]; bx lr                                  (mp)
         lock:     push {r3,lr}; movs r3,#48; msr BASEPRI,r3; bl lockS;
                   movs r3,#0; msr BASEPRI,r3; pop {r3,pc}
+        inner3:   ldr r0,[r0]; mla r0,r2,r1,r0; bx lr                (p, b, c)
+        lock3:    push {r7,lr}; mov r7,sp; movs r3,#48; msr BASEPRI,r3;
+                  bl inner3; movs r1,#0; msr BASEPRI,r1; pop {r7,pc}
 
     sbuffill (betaflight's sbufFill over memset) forwards r1 and r2 to fill3;
     its `push {r3,...}` alignment pad reads r3 and leaves it in the first
@@ -21,7 +24,11 @@
     forwarded register as a filled slot whatever else its run held let both
     runs past the two-slot chain limit, giving fill3(*a0,a1,a2,a3,a3) and
     lockS(a0,a1,a2,0x30,a3), with each caller's own prototype widened to
-    four parameters to match.
+    four parameters to match.  lock3 (clang's shape of the same lock)
+    forwards r0-r2, which inner3 takes, and then loads r3 for the msr:
+    inner3's own decode shows it never reads r3, so a register after a
+    filled run that the callee never takes ends the list there, not
+    inner3(a0,a1,a2,0x30).
 
     Stage: P4 active input-trial scoring (forceInactiveChain, option
     passthrough, on by default).  Pass 1 is the default; pass 2 sets
@@ -29,19 +36,25 @@
 -->
 <bytechunk space="ram" offset="0x10000" readonly="true">
 01708018704700bf38b5044615460068fff7f6ff23682b44236038bd00687047
-08b5302383f31188fff7f8ff002383f3118808bd
+08b5302383f31188fff7f8ff002383f3118808bd006802fb0100704780b56f46
+302383f31188fff7f5ff002181f3118880bd00bf
 </bytechunk>
 <symbol space="ram" offset="0x10000" name="fill3"/>
 <symbol space="ram" offset="0x10008" name="sbuffill"/>
 <symbol space="ram" offset="0x1001c" name="lockS"/>
 <symbol space="ram" offset="0x10020" name="lock"/>
+<symbol space="ram" offset="0x10034" name="inner3"/>
+<symbol space="ram" offset="0x1003c" name="lock3"/>
 </binaryimage>
 <script>
-  <com>set context TMode 1 [ram,0x10000] [ram,0x10034]</com>
+  <com>set context TMode 1 [ram,0x10000] [ram,0x10054]</com>
   <com>lo fu sbuffill</com>
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu lock</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lock3</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option passthrough off</com>
@@ -57,4 +70,5 @@
 <stringmatch name="passthroughslot-arm #2: lock forwards mp alone, not the BASEPRI value or the untouched registers" min="2" max="2">lockS\(a0\);</stringmatch>
 <stringmatch name="passthroughslot-arm #3: neither caller's own prototype is widened" min="4" max="4">void (sbuffill\([^,)]*,[^,)]*,[^,)]*\)|lock\([^,)]*\))</stringmatch>
 <stringmatch name="passthroughslot-arm #4: with passthrough off the forwarded registers are not arguments" min="1" max="1">fill3\(\*a0\);</stringmatch>
+<stringmatch name="passthroughslot-arm #5: lock3 passes inner3 no BASEPRI value from r3" min="0" max="0">inner3\([^)]*0x30</stringmatch>
 </decompilertest>

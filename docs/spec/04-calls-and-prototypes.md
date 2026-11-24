@@ -7282,10 +7282,17 @@ skipped). The convention passes an argument on the stack only past a full
 register file, so there the whole run is the list. A store of a register
 (`mov %rbx,(%rsp)`) is no such argument. Before heritage a temporary is not
 yet linked to the op that wrote it, so a store through an address computed
-into one (`mov $0,0x8(%rsp)`, ARM's `str r3,[sp,#0]`) is not seen, and a
-`push`, whose value goes through one, counts whatever it pushes: gcc passes a
-forwarded register parameter as a stack argument that way (tar's
-`_getopt_long_r` is `push $0; push %r9; xor %r9d,%r9d; call`). clang -O2's
+into one (`mov $0,0x8(%rsp)`, ARM's `str r3,[sp,#0]`) is not seen. A `push`
+counts unless it is a prologue's push of a register that is no argument
+register of the callee's model (`prologue_push`: the instruction COPYs the
+register into the temporary it stores, and nothing back to the function's
+entry writes it or calls): gcc's `push %rbx` and clang's aligning `push %rax`
+just before a call save or pad. Counted, they gave a glibc-`syscall()`-style
+body that reads every argument register `sys1(0x27,a1,a2,a3,a4,a5)` from
+`long pid_plus(long x) { return sys1(39) + x; }` and six parameters to the
+caller. A pushed argument register is an argument: gcc passes a forwarded
+parameter on the stack that way (tar's `_getopt_long_r` is `push $0; push
+%r9; xor %r9d,%r9d; call`), as is a register the function computed. clang -O2's
 `getopt_long(argc,argv,opts,longopts,index)`, which forwards five registers to
 a seven-parameter `internal` and passes `0, 0` in `r9d` and `[rsp]`, printed
 `internal();`. A body the walk cannot finish -- an import, a thunk, a body past the
@@ -7353,8 +7360,7 @@ after it keeps its place, and the rule's own hole filling makes the run's
 registers arguments in front of it, as upstream already does for a run of up
 to two. Any other run longer than two is a chain exactly as upstream counts
 it, because a register past the callee's run, or a stack slot, is nothing the
-callee was seen to take. ARM
-Thumb code shows both: gcc's `push {r3, lr}` alignment pad reads r3, and
+callee was seen to take. ARM Thumb code shows both: gcc's `push {r3, lr}` alignment pad reads r3, and
 ChibiOS's `chMtxLock(mp)` loads `r3 = 0x30` for `msr BASEPRI` around a call
 of `chMtxLockS(mp)` whose body reads only r0; read as filled whatever else
 the run held, betaflight's `sbufFill` printed `memset(*buf,c,n,a3,a3)` and
@@ -7364,8 +7370,15 @@ the caller stores into the first stack-argument slot something other than a
 register as it stands (`stores_first_stack_arg`, above), since the pad register
 a prologue pushes lies in that slot at the call: betaflight's
 `strtol(s,end,base)` is `push {r3,lr}; movs r3,#1; bl _strto_l`, and its r3
-read as a fifth argument. A filled run with no active trial after it stays
-inactive and is left to the extension above. The mark needs the callee's
+read as a fifth argument. Past a filled run, a register the callee's complete
+decode shows it never takes (`never_takes`, or `returns_untouched` for a leaf,
+which reads a Thumb `bx lr`'s mode switch as the return it is) also ends the
+list: gcc -O2's IPA-RA keeps `a` in ecx across `h3(a,b,c)`, and clang's
+`lock3` loads r3 for `msr BASEPRI` before `inner3(p,b,c)`, which printed
+`h3(a0,a1,a2,a0)` and `inner3(a0,a1,a2,0x30)`. A register the callee may still
+read past a call it makes is kept, as `kuna-calleearitycut`'s caller3 r8d is.
+A filled run with no active trial after it stays inactive and is left to the
+extension above. The mark needs the callee's
 evidence, so with nothing stated and no body run, or with the option off, the
 chain is counted as before.
 

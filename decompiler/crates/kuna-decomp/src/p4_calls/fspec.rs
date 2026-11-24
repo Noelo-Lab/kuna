@@ -1355,6 +1355,9 @@ pub struct ParamActive {
     /// (kuna `passthrough`) The registers the callee takes by passthrough's
     /// evidence, where a trial is forwarded.  Set by `ActionActiveParam`.
     forwarded_takes: Vec<Address>,
+    /// (kuna `passthrough`) The argument registers the callee's decode shows it
+    /// never takes, where a trial is forwarded.  Set by `ActionActiveParam`.
+    forwarded_untaken: Vec<Address>,
     /// (kuna) `condexeret`: where the output trials stand with respect to the one
     /// retry pass; see [`crate::p4_calls::kuna_condexeret`].
     cond_exe_retry: crate::p4_calls::kuna_condexeret::CondExeRetry,
@@ -1390,6 +1393,7 @@ impl ParamActive {
             callee_reads_registers: false, // (kuna) calleereginputs
             forwarded_stack: false,    // (kuna) passthrough
             forwarded_takes: Vec::new(), // (kuna) passthrough
+            forwarded_untaken: Vec::new(), // (kuna) passthrough
             cond_exe_retry: Default::default(), // (kuna) condexeret
             single_floats: Vec::new(), // (kuna) armfloatargs
             read_singles: Vec::new(),  // (kuna) armfloatargs
@@ -1544,10 +1548,17 @@ impl ParamActive {
     }
 
     /// (kuna `passthrough`) Record whether the caller stores into the first
-    /// stack-argument slot, and the registers the callee takes.
-    pub fn set_forwarded_evidence(&mut self, stored: bool, takes: Vec<Address>) {
+    /// stack-argument slot, the registers the callee takes and those it never
+    /// takes.
+    pub fn set_forwarded_evidence(&mut self, stored: bool, takes: Vec<Address>, untaken: Vec<Address>) {
         self.forwarded_stack = stored;
         self.forwarded_takes = takes;
+        self.forwarded_untaken = untaken;
+    }
+
+    /// (kuna `passthrough`) Does the callee never take the register at `addr`?
+    pub fn is_forwarded_untaken(&self, addr: &Address) -> bool {
+        self.forwarded_untaken.iter().any(|a| a == addr)
     }
 
     /// (kuna `passthrough`) Does the callee take the register at `addr`?
@@ -3366,7 +3377,7 @@ impl ParamListStandard {
         let mut spared = false;
         let mut max = -1;
         for i in start..stop {
-            let (defnouse, is_act, is_unref, addr_is_spacebase, slotgrp, protected, forwarded, taken) = {
+            let (defnouse, is_act, is_unref, addr_is_spacebase, slotgrp, protected, forwarded, taken, untaken) = {
                 let trial = active.get_trial(i);
                 let addr_sb = trial
                     .get_address()
@@ -3394,6 +3405,7 @@ impl ParamListStandard {
                     ) || crate::p4_calls::kuna_stackaddrargtrial::trial_is_protected(active, trial, &self.entry),
                     trial.is_forwarded(),
                     active.is_forwarded_take(trial.get_address()),
+                    active.is_forwarded_untaken(trial.get_address()),
                 )
             };
             if defnouse {
@@ -3402,8 +3414,9 @@ impl ParamListStandard {
             // (kuna) `passthrough`: a run of inactive slots that holds a
             // register the caller forwards to a callee that takes it, and
             // otherwise only registers the callee takes, is filled; any other
-            // run is a chain as upstream counts it. A stack slot past a filled
-            // run needs the caller's own store into the first one.
+            // run is a chain as upstream counts it. Past a filled run, a stack
+            // slot needs the caller's own store into the first one, and a
+            // register the callee never takes ends the list.
             let stored = addr_is_spacebase && active.is_forwarded_stack();
             if !is_act {
                 filled |= forwarded;
@@ -3456,7 +3469,7 @@ impl ParamListStandard {
                         spared = true;
                     }
                 }
-                if spared && addr_is_spacebase && !stored {
+                if spared && if addr_is_spacebase { !stored } else { untaken } {
                     seenchain = true;
                 }
                 chainlength = 0;
