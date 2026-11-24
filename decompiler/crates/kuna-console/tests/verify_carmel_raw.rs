@@ -122,6 +122,33 @@ fn a_delay_needs_one_mapped_issue_with_supported_effects() {
 }
 
 #[test]
+fn compact_dual_redirect_counts_only_retired_peers() {
+    let base = 0x1000;
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let mut bytes = [nop; 7].concat();
+    bytes[..6].copy_from_slice(&[0x28, 0, 0x22, 0x2b, 0, 0x66]);
+    bytes[18..21].copy_from_slice(&[0x21, 0xac, 0xa4]); // +6: INC A2L
+    for (selector, delay_bytes, target, executes_increment) in [(0, 24, 12, true), (2, 18, 8, false)] {
+        bytes[1] = selector;
+        let program = raw(&bytes, base, &[base]).unwrap();
+        let (length, ops) = program.raw_pcode_at(3 * base).unwrap();
+        let a2l = program.arch().translate().get_register_varnode(b"A2L").unwrap();
+        let writes_a2l = ops.iter().any(|op| op.output.as_ref().is_some_and(|vn|
+            vn.space == "register" && vn.offset == a2l.offset && vn.size == a2l.size));
+        let branch = ops.iter().find(|op| op.opcode == "BRANCH").unwrap();
+        assert_eq!((length, writes_a2l), (delay_bytes, executes_increment));
+        assert_eq!(branch.inputs[0].offset, 3 * (base + target));
+        assert_eq!(program.insn_flow(3 * base).unwrap().targets, [3 * (base + target)]);
+    }
+
+    // Selector 1 chooses the backed left target, but the right lane's
+    // speculative target still must be backed. Padding is not a CODE fetch.
+    let program = raw(&bytes[..36], base, &[base]).unwrap();
+    assert!(matches!(program.raw_pcode_at(3 * base), Err(KunaError::Unimpl { .. })));
+    assert!(program.insn_flow(3 * base).is_none());
+}
+
+#[test]
 fn a_call_delayed_by_one_compact_slot_resumes_at_its_pushed_word() {
     let bytes = [
         0x2b, 0x20, 0x42, 0x2b, 0xec, 0, // CALL +8 delay 1 || NOP pushes word 4
@@ -181,6 +208,16 @@ fn an_unbound_wide_extract_descriptor_cannot_issue() {
             assert!(matches!(result, Err(KunaError::Unimpl { .. })));
         }
     }
+}
+
+#[test]
+fn an_unconnected_configuration_shifter_input_stops_before_execution() {
+    let base = 0x1000;
+    let blocked = raw(&[0x4e, 0xad, 0x81, 0xf1, 0x81, 0xf1], base, &[base]).unwrap();
+    assert_eq!(blocked.disassemble_at(3 * base).unwrap().0, 6);
+    assert!(matches!(blocked.raw_pcode_at(3 * base), Err(KunaError::BadData { .. })));
+    let connected = raw(&[0x4e, 0xad, 0x81, 0xf1, 0x81, 0xe1], base, &[base]).unwrap();
+    assert!(connected.raw_pcode_at(3 * base).unwrap().1.iter().any(|op| op.opcode == "INT_RIGHT"));
 }
 
 fn xml(chunks: &str) -> KunaResult<ConsoleProgram> {

@@ -144,6 +144,7 @@ define context contextreg
     carmel_cliw_95_64 = (32,63) noflow
     carmel_cliw_63_32 = (64,95) noflow
     carmel_cliw_31_0 = (96,127) noflow
+    carmel_peer_redirect_safe = (11,11) noflow
     tpl_52_63 = (64,75) noflow
     tpl_64_72 = (55,63) noflow
     tpl_49_51 = (76,78) noflow
@@ -331,6 +332,8 @@ define token slot (24)
     slot_0_2 = (0,2)
     conditional_words = (2,8) signed
     slot_0_1 = (0,1)
+    peer_left_target_words = (2,8) signed
+    peer_right_target_words = (3,12) signed
     repeat_count = (0,9)
 ;
 
@@ -375,6 +378,8 @@ define token wide (48)
     wide_2_9 = (2,9)
     wide_0_2 = (0,2)
     wide_24_45 = (24,45)
+    transfer_roles_imm = (24,39) hex
+    wide_2_22 = (2,22)
     wide_div_literal = (24,39) hex
     wide_div_ce_bank = (46,46)
     wide_call_offset_0 = (24,45) hex
@@ -383,6 +388,7 @@ define token wide (48)
     wide_goto_offset_0 = (24,45) hex
     wide_goto_offset_22 = (0,1) hex
     wide_goto_ce_bank = (46,46)
+    config_shift_ce_bank = (46,46)
     wide_repeat_count = (24,39)
     wide_immediate_0 = (24,45) hex
     wide_immediate_22 = (0,1) hex
@@ -1667,6 +1673,20 @@ unary_right: "ABS" "A5H","FF12" is slot_0_22=0x20e6de { local result:8; local fl
 :^unary_left "||" nop_right is (carmel_issue=1 & slot_mode=0 & ((slot_0_22=0x20c20c) | (slot_0_22=0x20c20d) | (slot_0_22=0x20c20e) | (slot_0_22=0x20c20f) | (slot_0_22=0x20c21c) | (slot_0_22=0x20c21d) | (slot_0_22=0x20c21e) | (slot_0_22=0x20c21f) | (slot_0_22=0x20c22c) | (slot_0_22=0x20c22d) | (slot_0_22=0x20c22e) | (slot_0_22=0x20c22f) | (slot_0_22=0x20c23c) | (slot_0_22=0x20c23d) | (slot_0_22=0x20c23e) | (slot_0_22=0x20c23f) | (slot_0_22=0x20c24c) | (slot_0_22=0x20c24d) | (slot_0_22=0x20c24e) | (slot_0_22=0x20c24f) | (slot_0_22=0x20c25c) | (slot_0_22=0x20c25d) | (slot_0_22=0x20c25e) | (slot_0_22=0x20c25f) | (slot_0_22=0x20c68c) | (slot_0_22=0x20c68d) | (slot_0_22=0x20c68e) | (slot_0_22=0x20c68f) | (slot_0_22=0x20c69c) | (slot_0_22=0x20c69d) | (slot_0_22=0x20c69e) | (slot_0_22=0x20c69f) | (slot_0_22=0x20c6ac) | (slot_0_22=0x20c6ad) | (slot_0_22=0x20c6ae) | (slot_0_22=0x20c6af) | (slot_0_22=0x20c6bc) | (slot_0_22=0x20c6bd) | (slot_0_22=0x20c6be) | (slot_0_22=0x20c6bf) | (slot_0_22=0x20c6cc) | (slot_0_22=0x20c6cd) | (slot_0_22=0x20c6ce) | (slot_0_22=0x20c6cf) | (slot_0_22=0x20c6dc) | (slot_0_22=0x20c6dd) | (slot_0_22=0x20c6de) | (slot_0_22=0x20c6df) | (slot_0_22=0x20e20c) | (slot_0_22=0x20e20e) | (slot_0_22=0x20e21c) | (slot_0_22=0x20e21e) | (slot_0_22=0x20e22c) | (slot_0_22=0x20e22e) | (slot_0_22=0x20e23c) | (slot_0_22=0x20e23e) | (slot_0_22=0x20e24c) | (slot_0_22=0x20e24e) | (slot_0_22=0x20e25c) | (slot_0_22=0x20e25e) | (slot_0_22=0x20e68c) | (slot_0_22=0x20e68e) | (slot_0_22=0x20e69c) | (slot_0_22=0x20e69e) | (slot_0_22=0x20e6ac) | (slot_0_22=0x20e6ae) | (slot_0_22=0x20e6bc) | (slot_0_22=0x20e6be) | (slot_0_22=0x20e6cc) | (slot_0_22=0x20e6ce) | (slot_0_22=0x20e6dc) | (slot_0_22=0x20e6de)) & unary_left); (slot_mode=0 & nop_right) { build unary_left; }
 :^nop_left "||" unary_right is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & ((slot_0_22=0x20c20c) | (slot_0_22=0x20c20d) | (slot_0_22=0x20c20e) | (slot_0_22=0x20c20f) | (slot_0_22=0x20c21c) | (slot_0_22=0x20c21d) | (slot_0_22=0x20c21e) | (slot_0_22=0x20c21f) | (slot_0_22=0x20c22c) | (slot_0_22=0x20c22d) | (slot_0_22=0x20c22e) | (slot_0_22=0x20c22f) | (slot_0_22=0x20c23c) | (slot_0_22=0x20c23d) | (slot_0_22=0x20c23e) | (slot_0_22=0x20c23f) | (slot_0_22=0x20c24c) | (slot_0_22=0x20c24d) | (slot_0_22=0x20c24e) | (slot_0_22=0x20c24f) | (slot_0_22=0x20c25c) | (slot_0_22=0x20c25d) | (slot_0_22=0x20c25e) | (slot_0_22=0x20c25f) | (slot_0_22=0x20c68c) | (slot_0_22=0x20c68d) | (slot_0_22=0x20c68e) | (slot_0_22=0x20c68f) | (slot_0_22=0x20c69c) | (slot_0_22=0x20c69d) | (slot_0_22=0x20c69e) | (slot_0_22=0x20c69f) | (slot_0_22=0x20c6ac) | (slot_0_22=0x20c6ad) | (slot_0_22=0x20c6ae) | (slot_0_22=0x20c6af) | (slot_0_22=0x20c6bc) | (slot_0_22=0x20c6bd) | (slot_0_22=0x20c6be) | (slot_0_22=0x20c6bf) | (slot_0_22=0x20c6cc) | (slot_0_22=0x20c6cd) | (slot_0_22=0x20c6ce) | (slot_0_22=0x20c6cf) | (slot_0_22=0x20c6dc) | (slot_0_22=0x20c6dd) | (slot_0_22=0x20c6de) | (slot_0_22=0x20c6df) | (slot_0_22=0x20e20c) | (slot_0_22=0x20e20e) | (slot_0_22=0x20e21c) | (slot_0_22=0x20e21e) | (slot_0_22=0x20e22c) | (slot_0_22=0x20e22e) | (slot_0_22=0x20e23c) | (slot_0_22=0x20e23e) | (slot_0_22=0x20e24c) | (slot_0_22=0x20e24e) | (slot_0_22=0x20e25c) | (slot_0_22=0x20e25e) | (slot_0_22=0x20e68c) | (slot_0_22=0x20e68e) | (slot_0_22=0x20e69c) | (slot_0_22=0x20e69e) | (slot_0_22=0x20e6ac) | (slot_0_22=0x20e6ae) | (slot_0_22=0x20e6bc) | (slot_0_22=0x20e6be) | (slot_0_22=0x20e6cc) | (slot_0_22=0x20e6ce) | (slot_0_22=0x20e6dc) | (slot_0_22=0x20e6de)) & unary_right) { build unary_right; }
 
+# Word configuration result: zero-fill shift, original bit zero drives C.
+:LSHIFT "CE2" "ECFG","ECFG","-1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & config_shift_ce_bank=1 & wide_0_22=0x7181e1 & wide_40_45=0xe { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <config_shift_veto>; local input:2 = ECFG; local carry_bit:2 = input & 1; local word:2 = input >> 1; ECFG = word; EST = (EST & 0xffc6) | carry_bit | (zext(word == 0) << 3); <config_shift_veto> }
+:LSHIFT "CE2" "ECFG","EST","-1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & config_shift_ce_bank=1 & wide_0_22=0x7181e3 & wide_40_45=0xe { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <config_shift_veto>; local input:2 = EST; local carry_bit:2 = input & 1; local word:2 = input >> 1; ECFG = word; EST = (EST & 0xffc6) | carry_bit | (zext(word == 0) << 3); <config_shift_veto> }
+:LSHIFT "CE2" "ECFG","CECFG1","-1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & config_shift_ce_bank=1 & wide_0_22=0x7181e5 & wide_40_45=0xe { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <config_shift_veto>; local input:2 = CECFG1; local carry_bit:2 = input & 1; local word:2 = input >> 1; ECFG = word; EST = (EST & 0xffc6) | carry_bit | (zext(word == 0) << 3); <config_shift_veto> }
+:LSHIFT "CE2" "ECFG","CECFG2","-1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & config_shift_ce_bank=1 & wide_0_22=0x7181e7 & wide_40_45=0xe { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <config_shift_veto>; local input:2 = CECFG2; local carry_bit:2 = input & 1; local word:2 = input >> 1; ECFG = word; EST = (EST & 0xffc6) | carry_bit | (zext(word == 0) << 3); <config_shift_veto> }
+:LSHIFT "CE2" "ECFG","CETBL","-1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & config_shift_ce_bank=1 & wide_0_22=0x7181e9 & wide_40_45=0xe { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <config_shift_veto>; local input:2 = CETBL; local carry_bit:2 = input & 1; local word:2 = input >> 1; ECFG = word; EST = (EST & 0xffc6) | carry_bit | (zext(word == 0) << 3); <config_shift_veto> }
+:LSHIFT "CE2" "ECFG","FFTV","-1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & config_shift_ce_bank=1 & wide_0_22=0x7181eb & wide_40_45=0xe { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <config_shift_veto>; local input:2 = FFTV; local carry_bit:2 = input & 1; local word:2 = input >> 1; ECFG = word; EST = (EST & 0xffc6) | carry_bit | (zext(word == 0) << 3); <config_shift_veto> }
+:LSHIFT "CE2" "ECFG","BTR1","-1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & config_shift_ce_bank=1 & wide_0_22=0x7181ed & wide_40_45=0xe { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <config_shift_veto>; local input:2 = BTR1; local carry_bit:2 = input & 1; local word:2 = input >> 1; ECFG = word; EST = (EST & 0xffc6) | carry_bit | (zext(word == 0) << 3); <config_shift_veto> }
+:LSHIFT "CE2" "ECFG","BTR2","-1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & config_shift_ce_bank=1 & wide_0_22=0x7181ef & wide_40_45=0xe { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <config_shift_veto>; local input:2 = BTR2; local carry_bit:2 = input & 1; local word:2 = input >> 1; ECFG = word; EST = (EST & 0xffc6) | carry_bit | (zext(word == 0) << 3); <config_shift_veto> }
+:LSHIFT "CE2" "ECFG","CETBL","-1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & config_shift_ce_bank=1 & wide_0_22=0x7181c9 & wide_40_45=0xe { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <config_shift_veto>; local input:2 = CETBL; local carry_bit:2 = input & 1; local word:2 = input >> 1; ECFG = word; EST = (EST & 0xffc6) | carry_bit | (zext(word == 0) << 3); <config_shift_veto> }
+:LSHIFT "CE2" "ECFG","CETBL","-1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & config_shift_ce_bank=1 & wide_0_22=0x718189 & wide_40_45=0xe { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <config_shift_veto>; local input:2 = CETBL; local carry_bit:2 = input & 1; local word:2 = input >> 1; ECFG = word; EST = (EST & 0xffc6) | carry_bit | (zext(word == 0) << 3); <config_shift_veto> }
+:LSHIFT "CE2" "discard","CETBL","-1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & config_shift_ce_bank=1 & wide_0_22=0x7183e9 & wide_40_45=0xe { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <config_shift_veto>; local input:2 = CETBL; local carry_bit:2 = input & 1; EST = (EST & 0xfffe) | carry_bit; <config_shift_veto> }
+:LSHIFT "CE2" "CETBL","CETBL","-1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & config_shift_ce_bank=1 & wide_0_22=0x7189e9 & wide_40_45=0xe { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <config_shift_veto>; local input:2 = CETBL; local carry_bit:2 = input & 1; local word:2 = input >> 1; CETBL = word; EST = (EST & 0xffc6) | carry_bit | (zext(word == 0) << 3); <config_shift_veto> }
+
 # Load configuration regardless of the wide prefix. A static load samples the incoming EST for both CE banks before publishing either.
 ce_config_value: config is ce_config_bits_0 & ce_config_bits_6 [ config = ce_config_bits_0 | (ce_config_bits_6 << 6); ] { export *[const]:2 config; }
 ce_truth_value: ce_truth_bits is ce_truth_bits { export *[const]:2 ce_truth_bits; }
@@ -2032,6 +2052,97 @@ macro wide_div_trace_sink(lo, hi, guard) {
 :DIVIDE "CE1" "A5H","A0L" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_div_ce_bank=0 & wide_0_9=0x276 & wide_13_22=0x218 & wide_40_45=0x10 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <wide_div_disabled>; local dividend:8; dividend = 0x8000000000 + zext(GB5) * 0x10000 + zext(A5H); local result:8; wide_div_trial(dividend, A0L, 32, 0x800000000000, result); A5H = result:2; GB5 = result(2); <wide_div_disabled> }
 :DIVIDE "CE1" "A5L",wide_div_literal is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_div_ce_bank=0 & wide_0_9=0x256 & wide_13_22=0x218 & wide_40_45=0xf & wide_div_literal { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <wide_div_disabled>; local dividend:8; wide_div_biased(A5L, A5H, GB5, dividend); local result:8; wide_div_trial(dividend, wide_div_literal:2, 32, 0x800000000000, result); A5L = result:2; A5H = result(2); GB5 = result(4); <wide_div_disabled> }
 :DIVTRACE "discard","A1","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x762 & wide_13_22=0x219 & wide_40_45=0x9 { wide_div_trace_sink(A1L, A1H, GB1); }
+
+# Family 39: R3 is an AGU source, not a plain ALU register operand.
+macro transfer_roles_r3(delta, result) {
+    local base:2 = R3;
+    local mode:2 = (PACFG >> 6) & 3;
+    local candidate:4 = sext(base) + sext(delta);
+    if (mode < 2) goto <transfer_done>;
+
+    local size:4;
+    local lower:4;
+    if (mode == 3) goto <transfer_explicit>;
+    local mask:2 = RM2;
+    mask = mask | (mask >> 1);
+    mask = mask | (mask >> 2);
+    mask = mask | (mask >> 4);
+    mask = mask | (mask >> 8);
+    lower = sext(base & ~mask);
+    size = zext(RM2 & 0xfff) + 1;
+    if (candidate s>= lower && candidate s< lower + size) goto <transfer_done>;
+    goto <transfer_wrap>;
+
+  <transfer_explicit>
+    candidate = zext(candidate:2);
+    lower = zext(RL2);
+    size = zext(RM2) + 1;
+    local limit:4 = lower + size;
+    if (limit <= 0x10000 && lower <= candidate && candidate < limit) goto <transfer_done>;
+  <transfer_wrap>
+    if (delta s< 0) goto <transfer_reverse>;
+    candidate = candidate - size;
+    goto <transfer_done>;
+  <transfer_reverse>
+    candidate = candidate + size;
+  <transfer_done>
+    result = candidate:2;
+}
+:TRANSFER "R2","A0L",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x100422 & transfer_roles_imm { R2 = A0L + transfer_roles_imm; }
+:TRANSFER "R2","A1L",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1004a2 & transfer_roles_imm { R2 = A1L + transfer_roles_imm; }
+:TRANSFER "R2","FF1",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x101f22 & transfer_roles_imm { R2 = FF1 + transfer_roles_imm; }
+:TRANSFER "R2","LSA1L",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x102922 & transfer_roles_imm { R2 = LSA1L + transfer_roles_imm; }
+:TRANSFER "R2","LEA1L",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1029a2 & transfer_roles_imm { R2 = LEA1L + transfer_roles_imm; }
+:TRANSFER "R2","LC1",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x102a22 & transfer_roles_imm { R2 = LC1 + transfer_roles_imm; }
+:TRANSFER "R2","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x100322 & transfer_roles_imm { R2 = 0xffff + transfer_roles_imm; }
+:TRANSFER "R2","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1003a2 & transfer_roles_imm { R2 = 0xffff + transfer_roles_imm; }
+:TRANSFER "R2","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x100722 & transfer_roles_imm { R2 = 0xffff + transfer_roles_imm; }
+:TRANSFER "R2","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1007a2 & transfer_roles_imm { R2 = 0xffff + transfer_roles_imm; }
+:TRANSFER "R2","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x103022 & transfer_roles_imm { R2 = 0xffff + transfer_roles_imm; }
+:TRANSFER "R2","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x103fa2 & transfer_roles_imm { R2 = 0xffff + transfer_roles_imm; }
+:TRANSFER "A0L","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x101188 & transfer_roles_imm { local delta:2 = transfer_roles_imm; transfer_roles_r3(delta, A0L); }
+:TRANSFER "A1L","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x101189 & transfer_roles_imm { local delta:2 = transfer_roles_imm; transfer_roles_r3(delta, A1L); }
+:TRANSFER "FF1","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1011be & transfer_roles_imm { local delta:2 = transfer_roles_imm; transfer_roles_r3(delta, FF1); }
+:TRANSFER "LSA1L","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1011d2 & transfer_roles_imm { local delta:2 = transfer_roles_imm; transfer_roles_r3(delta, LSA1L); }
+:TRANSFER "LEA1L","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1011d3 & transfer_roles_imm { local delta:2 = transfer_roles_imm; transfer_roles_r3(delta, LEA1L); }
+:TRANSFER "LC1","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1011d4 & transfer_roles_imm { local delta:2 = transfer_roles_imm; transfer_roles_r3(delta, LC1); }
+:TRANSFER "discard","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x101186 & transfer_roles_imm {  }
+:TRANSFER "discard","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x101187 & transfer_roles_imm {  }
+:TRANSFER "discard","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x10118e & transfer_roles_imm {  }
+:TRANSFER "discard","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x10118f & transfer_roles_imm {  }
+:TRANSFER "discard","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1011e0 & transfer_roles_imm {  }
+:TRANSFER "discard","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1011ff & transfer_roles_imm {  }
+:TRANSFER "discard","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x103de5 & transfer_roles_imm {  }
+:TRANSFER "discard","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x103e86 & transfer_roles_imm {  }
+
+# One architectural redirect, after the native-proven peers retire.
+# Do not emit speculative debugger PC updates or suppress an unmapped-target stop.
+peer_left_target: word_address is peer_left_target_words [ word_address = (inst_start + peer_left_target_words) & 0xffffff; ] { export *[code]:3 word_address; }
+peer_right_target: word_address is peer_right_target_words [ word_address = (inst_start + peer_right_target_words) & 0xffffff; ] { export *[code]:3 word_address; }
+:"GOTO cond=0" peer_left_target "delay 0" "||" "GOTO" peer_right_target "delay 0" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x0 & slot_9_22=0x1400 & peer_left_target); (slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & peer_right_target) { goto peer_right_target; }
+:"GOTO cond=0" peer_left_target "delay 0" "||" "GOTO" peer_right_target "delay 1" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x0 & slot_9_22=0x1400 & peer_left_target); (slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & peer_right_target) { goto peer_right_target; }
+:"GOTO cond=0" peer_left_target "delay 0" "||" "GOTO" peer_right_target "delay 2" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x0 & slot_9_22=0x1400 & peer_left_target); (slot_mode=0 & slot_0_2=0x4 & slot_13_22=0x158 & peer_right_target) { goto peer_right_target; }
+:"GOTO cond=0" peer_left_target "delay 0" "||" "GOTO" peer_right_target "delay 3" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x0 & slot_9_22=0x1400 & peer_left_target); (slot_mode=0 & slot_0_2=0x6 & slot_13_22=0x158 & peer_right_target) [ carmel_counted_delay=1; ] { delayslot(1); goto peer_right_target; }
+:"GOTO cond=0" peer_left_target "delay 1" "||" "GOTO" peer_right_target "delay 0" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x1 & slot_9_22=0x1400 & peer_left_target); (slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & peer_right_target) { goto peer_right_target; }
+:"GOTO cond=0" peer_left_target "delay 1" "||" "GOTO" peer_right_target "delay 1" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x1 & slot_9_22=0x1400 & peer_left_target); (slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & peer_right_target) [ carmel_counted_delay=1; ] { delayslot(1); goto peer_right_target; }
+:"GOTO cond=0" peer_left_target "delay 1" "||" "GOTO" peer_right_target "delay 2" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x1 & slot_9_22=0x1400 & peer_left_target); (slot_mode=0 & slot_0_2=0x4 & slot_13_22=0x158 & peer_right_target) [ carmel_counted_delay=1; ] { delayslot(1); goto peer_right_target; }
+:"GOTO cond=0" peer_left_target "delay 1" "||" "GOTO" peer_right_target "delay 3" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x1 & slot_9_22=0x1400 & peer_left_target); (slot_mode=0 & slot_0_2=0x6 & slot_13_22=0x158 & peer_right_target) [ carmel_counted_delay=1; ] { delayslot(2); goto peer_right_target; }
+:"GOTO cond=0" peer_left_target "delay 2" "||" "GOTO" peer_right_target "delay 0" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x2 & slot_9_22=0x1400 & peer_left_target); (slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & peer_right_target) { goto peer_right_target; }
+:"GOTO cond=0" peer_left_target "delay 2" "||" "GOTO" peer_right_target "delay 1" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x2 & slot_9_22=0x1400 & peer_left_target); (slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & peer_right_target) [ carmel_counted_delay=1; ] { delayslot(1); goto peer_right_target; }
+:"GOTO cond=0" peer_left_target "delay 2" "||" "GOTO" peer_right_target "delay 2" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x2 & slot_9_22=0x1400 & peer_left_target); (slot_mode=0 & slot_0_2=0x4 & slot_13_22=0x158 & peer_right_target) [ carmel_counted_delay=1; ] { delayslot(2); goto peer_right_target; }
+:"GOTO cond=0" peer_left_target "delay 2" "||" "GOTO" peer_right_target "delay 3" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x2 & slot_9_22=0x1400 & peer_left_target); (slot_mode=0 & slot_0_2=0x6 & slot_13_22=0x158 & peer_right_target) [ carmel_counted_delay=1; ] { delayslot(3); goto peer_right_target; }
+:"GOTO cond=1" peer_left_target "delay 0" "||" "GOTO" peer_right_target "delay 0" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x0 & slot_9_22=0x1401 & peer_left_target); (slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & peer_right_target) { goto peer_left_target; }
+:"GOTO cond=1" peer_left_target "delay 0" "||" "GOTO" peer_right_target "delay 1" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x0 & slot_9_22=0x1401 & peer_left_target); (slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & peer_right_target) { goto peer_left_target; }
+:"GOTO cond=1" peer_left_target "delay 0" "||" "GOTO" peer_right_target "delay 2" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x0 & slot_9_22=0x1401 & peer_left_target); (slot_mode=0 & slot_0_2=0x4 & slot_13_22=0x158 & peer_right_target) { goto peer_left_target; }
+:"GOTO cond=1" peer_left_target "delay 0" "||" "GOTO" peer_right_target "delay 3" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x0 & slot_9_22=0x1401 & peer_left_target); (slot_mode=0 & slot_0_2=0x6 & slot_13_22=0x158 & peer_right_target) { goto peer_left_target; }
+:"GOTO cond=1" peer_left_target "delay 1" "||" "GOTO" peer_right_target "delay 0" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x1 & slot_9_22=0x1401 & peer_left_target); (slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & peer_right_target) { goto peer_left_target; }
+:"GOTO cond=1" peer_left_target "delay 1" "||" "GOTO" peer_right_target "delay 1" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x1 & slot_9_22=0x1401 & peer_left_target); (slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & peer_right_target) [ carmel_counted_delay=1; ] { delayslot(1); goto peer_left_target; }
+:"GOTO cond=1" peer_left_target "delay 1" "||" "GOTO" peer_right_target "delay 2" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x1 & slot_9_22=0x1401 & peer_left_target); (slot_mode=0 & slot_0_2=0x4 & slot_13_22=0x158 & peer_right_target) [ carmel_counted_delay=1; ] { delayslot(1); goto peer_left_target; }
+:"GOTO cond=1" peer_left_target "delay 1" "||" "GOTO" peer_right_target "delay 3" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x1 & slot_9_22=0x1401 & peer_left_target); (slot_mode=0 & slot_0_2=0x6 & slot_13_22=0x158 & peer_right_target) [ carmel_counted_delay=1; ] { delayslot(1); goto peer_left_target; }
+:"GOTO cond=1" peer_left_target "delay 2" "||" "GOTO" peer_right_target "delay 0" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x2 & slot_9_22=0x1401 & peer_left_target); (slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & peer_right_target) { goto peer_left_target; }
+:"GOTO cond=1" peer_left_target "delay 2" "||" "GOTO" peer_right_target "delay 1" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x2 & slot_9_22=0x1401 & peer_left_target); (slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & peer_right_target) [ carmel_counted_delay=1; ] { delayslot(1); goto peer_left_target; }
+:"GOTO cond=1" peer_left_target "delay 2" "||" "GOTO" peer_right_target "delay 2" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x2 & slot_9_22=0x1401 & peer_left_target); (slot_mode=0 & slot_0_2=0x4 & slot_13_22=0x158 & peer_right_target) [ carmel_counted_delay=1; ] { delayslot(2); goto peer_left_target; }
+:"GOTO cond=1" peer_left_target "delay 2" "||" "GOTO" peer_right_target "delay 3" is (carmel_issue=1 & slot_mode=0 & carmel_peer_redirect_safe=1 & slot_0_1=0x2 & slot_9_22=0x1401 & peer_left_target); (slot_mode=0 & slot_0_2=0x6 & slot_13_22=0x158 & peer_right_target) [ carmel_counted_delay=1; ] { delayslot(2); goto peer_left_target; }
 
 # CALL uses the ordinary issue size, not inst_next after delay expansion.
 macro push_link(saved_pc) {

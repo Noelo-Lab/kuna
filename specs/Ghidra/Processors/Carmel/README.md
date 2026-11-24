@@ -64,13 +64,20 @@ whole accumulators, and address registers; it also supports short DATA
 through `R0` indirect/postincrement and absolute DATA loads into address
 registers. Wide LOAD covers selected accumulator, pointer and configuration
 destinations, including immediate pointer setup that leaves a bound intact.
+Selected wide address transfers add the immediate displacement to a word
+source, including saved CODE addresses and the `R3` address unit.
+Selected CE2 logical shifts use configuration-word sources and preserve
+the destination on a veto. An unconnected configuration input stops before issue.
 Other wide effects include selected EXTRACTS, EXTRACTZ, INSERT, DIVIDE,
 divide-with-trace, logic and unary arithmetic routes. Unqualified
 BANKXCHG exchanges selected pointer or accumulator banks. Predicated logic
 uses incoming CE feedback; the language does not model its general publication.
 Marked MOVU supports some register and literal sources to whole accumulators
 or the arithmetic result sink. Parallel lanes sample old registers and publish in
-lane order; competing accumulator writes and two transfers stop lift.
+lane order. Competing accumulator writes and unproved dual transfers stop
+lift. Compact dual direct transfers with fixed-result selectors can lift when
+both destinations are backed and their potential delay peers have bounded
+register effects.
 Unrecognized sequential right families and reserved compact operands and
 wide EXTRACT descriptors reject lift without changing canonical listing boundaries.
 

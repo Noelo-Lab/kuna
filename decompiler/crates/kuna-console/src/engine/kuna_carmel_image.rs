@@ -6,6 +6,8 @@ use kuna_analysis::pass::ContextPaint;
 use kuna_base::{address::Address, error::{KunaError, KunaResult}, space::AddrSpace, xml::Element};
 use kuna_sleigh::loadimage::LoadImage;
 
+mod peer_redirect;
+
 pub(super) const TARGET: &str = "Carmel:BE:24:default:default";
 const SLOT: u64 = 3;
 const FETCH: u64 = 2 * SLOT;
@@ -55,7 +57,7 @@ pub(super) struct Framing {
     issues: Vec<ContextPaint>,
     next_sizes: Vec<ContextPaint>,
     bad_fetches: Vec<ContextPaint>,
-    cliw: Vec<ContextPaint>,
+    specializations: Vec<ContextPaint>,
 }
 
 fn paint(paints: &mut Vec<ContextPaint>, var: &'static str, addr: u64, value: u32) {
@@ -67,10 +69,14 @@ fn paint(paints: &mut Vec<ContextPaint>, var: &'static str, addr: u64, value: u3
     }
 }
 
+fn covered(paints: &[ContextPaint], addr: u64) -> bool {
+    let next = paints.partition_point(|paint| paint.addr <= addr);
+    next != 0 && addr < paints[next - 1].end.unwrap()
+}
+
 impl Framing {
     pub(super) fn is_issue_start(&self, addr: u64) -> bool {
-        let next = self.issues.partition_point(|paint| paint.addr <= addr);
-        addr.is_multiple_of(SLOT) && next != 0 && addr < self.issues[next - 1].end.unwrap()
+        addr.is_multiple_of(SLOT) && covered(&self.issues, addr)
     }
 
     pub(super) fn require_entries(&self, entries: impl IntoIterator<Item = u64>) -> KunaResult<()> {
@@ -87,7 +93,7 @@ impl Framing {
     pub(super) fn into_paints(mut self) -> Vec<ContextPaint> {
         self.issues.append(&mut self.next_sizes);
         self.issues.append(&mut self.bad_fetches);
-        self.issues.append(&mut self.cliw);
+        self.issues.append(&mut self.specializations);
         self.issues
     }
 }
@@ -211,7 +217,7 @@ pub(super) fn frame_banked(
         }
         Ok(())
     })?;
-    framing.cliw = paints;
+    framing.specializations.append(&mut paints);
     Ok(framing)
 }
 
@@ -223,6 +229,7 @@ pub(super) fn frame(
     mut on_fetch: impl FnMut(&mut dyn LoadImage, u64, &Fetch) -> KunaResult<()>,
 ) -> KunaResult<Framing> {
     let mut result = Framing::default();
+    let mut redirects = Vec::new();
     for (start, end) in ranges {
         let mut addr = start.div_ceil(FETCH) * FETCH;
         let end = end.min(CODE_END) / FETCH * FETCH;
@@ -260,9 +267,26 @@ pub(super) fn frame(
             } else if following_size != 0 {
                 paint(&mut result.next_sizes, NEXT, addr, following_size);
             }
+            if let Some(redirect) = peer_redirect::Redirect::parse(&fetch) {
+                redirects.push((addr, redirect));
+            }
             on_fetch(loader, addr, &fetch)?;
             std::mem::swap(&mut fetch, &mut next);
             addr += FETCH;
+        }
+    }
+    for (start, redirect) in redirects {
+        if redirect.admissible(start, |at| {
+            if !result.is_issue_start(at) || covered(&result.bad_fetches, at)
+                || covered(&result.bad_fetches, at + SLOT)
+            {
+                return Ok(None);
+            }
+            let mut fetch = [0; FETCH as usize];
+            loader.load_fill(&mut fetch, &Address::new(Rc::clone(code), at))?;
+            Ok(Some(fetch))
+        })? {
+            paint(&mut result.specializations, peer_redirect::CONTEXT, start, 1);
         }
     }
     Ok(result)

@@ -3870,6 +3870,14 @@ context field; every other language keeps the unchanged delay-slot path. The
 p-code emulator likewise converts an indirect transfer's CODE-word operand to
 a byte offset only in such a `code` space.
 
+For a compact conditional/unconditional direct transfer pair with selector
+zero or one, the fixed result picks one branch. It retires the lesser
+encoded delay, plus one issue for selector zero with right delay three.
+Both encoded targets must be distinct, forward, aligned, backed CODE
+fetches past the maximum delay window. The loader admits only NOP and
+independent low-accumulator increments in the bounded peer window, and
+requires bounded speculative target fetches even on the unselected path.
+
 For covered compact long arithmetic with an inactive peer, the widened
 result determines status before limiting. A long DATA write publishes two
 16-bit words and wraps its second address in the DATA bank. A qualified
@@ -3878,6 +3886,15 @@ result determines status before limiting. A long DATA write publishes two
 Covered wide `LOAD` forms distinguish accumulator writeback from pointer
 and `PACFG` setup. An operand that initializes a pointer does not also
 overwrite the encoded bound register.
+
+Covered wide address transfers add the low 16-bit displacement to a word
+source or the `R3` address unit. Saving a CODE address preserves its upper
+byte. The open input supplies all ones; the open result discards the sum.
+
+Selected CE2 logical shifts read configuration words, shift right by one,
+and take carry from the input's low bit. The status destination discards
+the word but still drives carry. The unconnected configuration input
+rejects at decode, even when CE2 would veto execution.
 
 Lifted compact delayed `EQ` reads the incoming `EST` condition before any
 delay issue executes. The delay runs on both paths, including when the

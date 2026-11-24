@@ -174,11 +174,21 @@ fn wide_family(left: u32, right: u32) -> Option<(&'static Family48, u64)> {
 }
 
 pub(super) fn wide_rejected(left: u32, right: u32) -> bool {
-    wide_family(left, right).is_some_and(|(family, payload)| {
-        family.id == 43
-            && family.variants.iter().any(|v| matches!(v.semantic, 94 | 95) && v.key == family.variant.read(payload))
-            && family.operands.iter().any(|op| op.kind == 125 && matches!(op.field.read(payload), 0x45..=0x47 | 0x7d | 0x7f))
-    })
+    let Some((family, payload)) = wide_family(left, right) else { return false; };
+    let variant = family.variant.read(payload);
+    match family.id {
+        43 => family.variants.iter().any(|v| matches!(v.semantic, 94 | 95) && v.key == variant)
+            && family.operands.iter().any(|op| op.kind == 125 && matches!(op.field.read(payload), 0x45..=0x47 | 0x7d | 0x7f)),
+        44 if left >> 22 == 1 => {
+            let [destination, source, count] = family.operands else { return false; };
+            // This CE2 word shifter route rejects its unconnected
+            // configuration input before either operand can issue.
+            destination.field.read(payload) == 0xc0 && source.field.read(payload) == 0xf8
+                && count.field.read(payload) == 0x4e
+                && family.variants.iter().any(|v| v.semantic == 41 && v.key == variant)
+        }
+        _ => false,
+    }
 }
 
 pub(super) fn wide(left: u32, right: u32) -> Option<Operation> {

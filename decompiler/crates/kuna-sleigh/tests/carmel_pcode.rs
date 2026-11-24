@@ -727,3 +727,28 @@ fn compact_long_store_wraps_its_second_data_word_and_records_loss() {
     assert_eq!((m.data(0xffff), m.data(0)), (3, 0x8000));
     assert_eq!((m.data(0xfffe), m.data(1), m.reg("EST") & 0x3f), (0xa55a, 0xa55a, 0x24));
 }
+
+#[test]
+fn wide_transfer_adds_to_the_saved_code_low_word_without_rewriting_the_high_byte() {
+    for (fetch, expected) in [
+        ((0x80002b, 0xc04748), 0x10806b), // Saved LSA1 low word from R3 + 43.
+        ((0xf46726, 0xc0f797), 0x103412), // Both transfer ports are disconnected.
+    ] {
+        let mut m = Machine::new(0, &[fetch, (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        m.seed(&[("LSA1", 0x103412), ("LEA1", 0x20c452), ("R3", 0x8040), ("PACFG", 0)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("LSA1"), m.reg("LEA1"), m.reg("R3")), (expected, 0x20c452, 0x8040));
+    }
+}
+
+#[test]
+fn ce2_word_shift_publishes_carry_even_when_the_result_word_is_zero() {
+    for (table, expected) in [(0, (0x8035, 0)), (0xffff, (0, 9))] {
+        let mut m = Machine::new(0, &[(0x4ead81, 0xf181ed), (NOP, NOP)], &[(0, 4, 6), (2, 1, 0)], None);
+        m.seed(&[("BTR1", 1), ("ECFG", 0x8035), ("CECFG2", 0x5605), ("EST", 0), ("CETBL", table)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("ECFG"), m.reg("EST") & 0x39), expected);
+    }
+}
