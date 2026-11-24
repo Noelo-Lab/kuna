@@ -4036,10 +4036,14 @@ neither (`kuna_unitcalls.rs (unknown_stub_params)`). A jump stub
 (`project.rs (is_jump_stub)`) is one indirect jump, perhaps after `endbr64` or
 `endbr32`: an x86 PLT stub, a CET `.plt.sec` stub (GNU ld's `bnd jmp` decodes as
 one jump), or a PE or Mach-O import thunk. A stub kuna recovered parameters for
-keeps them, a direct `jmp` to a decompiled function is not a stub, and an ARM or
-AArch64 PLT stub (`adrp; ldr; br`) is several instructions. Function bodies,
-every other prototype and the output of `kuna decompile` and `decompile-all` are
-unchanged.
+keeps them, and so does one whose input list is locked, as a library
+declaration's `void abort(void)` is: its callers pass what it says. A direct
+`jmp` to a decompiled function is not a stub, and an ARM or AArch64 PLT stub
+(`adrp; ldr; br`) is several instructions. gcc before 13 at `-std=c2x` has no
+spelling for such a definition: it rejects `f(...)` and reads the definition
+`f()` as taking nothing, so there a call with arguments that follows the stub's
+definition still fails. Function bodies, every other prototype and the output
+of `kuna decompile` and `decompile-all` are unchanged.
 
 **The prototype — one token stream, two documents.** The prototype segment of
 §9.2's document walk was extracted verbatim into `printc.rs
@@ -4384,8 +4388,9 @@ declaration the structure-member declarator builds for it (`printc.rs
 access, or is a record or union. Unnamed means that no global Symbol covers it,
 wherever it lies: an import's GOT slot, which a PLT stub jumps through, counts
 too, though it lies outside the sections the loader classifies as program data,
-so the stub's `(*dat_<slot>)()` names a declared object. They travel as
-`FuncResult::globals`, which
+so the stub's `(*dat_<slot>)()` names a declared object. The code address a
+branch or call names is a reference, not storage the body reads, and is never
+declared. They travel as `FuncResult::globals`, which
 the `--jobs` wire carries like the type records, and
 `decompiler/crates/kuna-console/src/project.rs (global_declarations)` turns
 them into one `extern` line per named address in the `decompile-project`

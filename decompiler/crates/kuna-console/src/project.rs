@@ -990,6 +990,7 @@ pub fn decompile_pulled(
                     let (mut code, mut proto) = (Some(code), proto);
                     if header_carries_types
                         && prog.arch().print().out_lang() == kuna_decomp::kuna_lang::OutLang::C
+                        && !fd.get_func_proto().is_input_locked()
                         && is_jump_stub(prog, byte_address)
                     {
                         kuna_decomp::kuna_unitcalls::unknown_stub_params(&mut proto, &mut code);

@@ -72,20 +72,21 @@ fn an_export_that_calls_helpers_and_operations_compiles() {
 
 /// A jump stub forwards whatever its caller passes, so an export gives one kuna
 /// recovered `(void)` for the parameter list `(KUNA_ANY_ARGS)`, in its prototype
-/// and its definition, and declares the GOT slot a PLT stub jumps through.
-/// `plt_import_x86_64`'s `main` calls `strfry` through its PLT stub, which jumps
-/// through the GOT slot 0x10024f8; `jump_stubs_x86_64`'s `main` passes two
-/// arguments to each of `endbr64; jmp *slot`, `endbr64; bnd jmp *slot` and
-/// `jmp *slot`.
+/// and its definition, and declares the GOT slot a PLT stub jumps through, but
+/// not the code address a jump names. `plt_import_x86_64`'s `main` calls
+/// `strfry` through its PLT stub, which jumps through the GOT slot 0x10024f8;
+/// `jump_stubs_x86_64`'s `main` passes two arguments to each of
+/// `endbr64; jmp *slot`, `endbr64; bnd jmp *slot` and `jmp *slot`. Each `_start`
+/// ends in `jmp .`, at 0x10013ce and 0x10012fe.
 #[test]
 fn an_export_that_calls_through_jump_stubs_compiles() {
     if process::optional_output(Command::new("cc").arg("--version")).is_none() {
         eprintln!("an_export_that_calls_through_jump_stubs_compiles: skipping (no `cc`)");
         return;
     }
-    for (fixture, stubs, slots) in [
-        ("plt_import_x86_64", &["strfry"][..], &["dat_10024f8"][..]),
-        ("jump_stubs_x86_64", &["ibt_stub", "bnd_stub", "plain_stub"][..], &[][..]),
+    for (fixture, stubs, slots, branch_target) in [
+        ("plt_import_x86_64", &["strfry"][..], &["dat_10024f8"][..], "dat_10013ce"),
+        ("jump_stubs_x86_64", &["ibt_stub", "bnd_stub", "plain_stub"][..], &[][..], "dat_10012fe"),
     ] {
         let dir = export(fixture);
         let c = dir.join(format!("{fixture}.c"));
@@ -108,7 +109,12 @@ fn an_export_that_calls_through_jump_stubs_compiles() {
         for slot in slots {
             assert!(declares(&header, slot), "{fixture}'s header does not declare {slot}:\n{header}");
         }
+        assert!(!declares(&header, branch_target), "{fixture}'s header declares {branch_target}:\n{header}");
         for standard in ["-std=c11", "-std=c2x"] {
+            if !defines_any_args(&dir, fixture, standard) {
+                eprintln!("{fixture}: skipping cc {standard}, which cannot define a function taking any arguments");
+                continue;
+            }
             let out = Command::new("cc")
                 .args([standard, "-fsyntax-only"])
                 .args(common::CC_GCC15_DEMOTE)
@@ -123,4 +129,32 @@ fn an_export_that_calls_through_jump_stubs_compiles() {
             );
         }
     }
+}
+
+/// Can `cc` at `standard` define a function as taking `(KUNA_ANY_ARGS)` and
+/// then call it with arguments? gcc before 13 cannot at `-std=c2x`: it rejects
+/// `f(...)` and reads the definition `f()` as taking nothing.
+fn defines_any_args(dir: &std::path::Path, fixture: &str, standard: &str) -> bool {
+    let probe = dir.join("defines_any_args.c");
+    let text = format!(
+        "#include \"{fixture}.h\"\nint kuna_probe(KUNA_ANY_ARGS) {{ return 0; }}\n\
+         int kuna_probe_call(void) {{ return kuna_probe(1); }}\n"
+    );
+    std::fs::write(&probe, text).unwrap();
+    let out = Command::new("cc").args([standard, "-fsyntax-only"]).arg(&probe).capped_output().expect("spawn cc");
+    out.status.success()
+}
+
+/// A jump stub whose prototype a library declaration gave keeps it: its callers
+/// pass what that prototype says. `noreturn_propagate_x86_64`'s `abort` is GNU
+/// ld's `endbr64; bnd jmp *slot` `.plt.sec` stub, and `abort` takes nothing.
+#[test]
+fn a_jump_stub_with_a_declared_prototype_keeps_it() {
+    let fixture = "noreturn_propagate_x86_64";
+    let dir = export(fixture);
+    let header = std::fs::read_to_string(dir.join(format!("{fixture}.h"))).unwrap();
+    let body = std::fs::read_to_string(dir.join(format!("{fixture}.c"))).unwrap();
+    assert!(header.lines().any(|line| line == "void abort(void);"), "{fixture}'s header:\n{header}");
+    assert!(body.lines().any(|line| line == "void abort(void)"), "{fixture}:\n{body}");
+    assert!(!header.contains("abort(KUNA_ANY_ARGS)") && !body.contains("abort(KUNA_ANY_ARGS)"));
 }
