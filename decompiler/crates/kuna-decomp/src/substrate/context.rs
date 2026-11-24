@@ -1322,6 +1322,9 @@ pub struct ArchContext {
     /// (kuna) `returndup calls` — also split a cross-jumped call tail per
     /// predecessor ([`crate::p8_structure::kuna_returndupcalls`]).
     pub duplicate_call_returns: bool,
+    /// (kuna) `returndup auto` — the recorded return statements decide the
+    /// splits in an unoptimized function ([`crate::p8_structure::kuna_o0returns`]).
+    pub returndup_record: bool,
     /// (kuna) hoist a leading const-guard into an early return by peeling only the
     /// CONSTANT arm of a mixed return phi (`early_return`, opt-in default-off).  Read by
     /// [`crate::p8_structure::kuna_earlyreturn`]'s `ActionEarlyReturn`.
@@ -1809,6 +1812,7 @@ impl ArchContext {
             tail_form: None,              // tailform (copied from the Architecture)
             duplicate_shared_returns: false, // returndup (opt-in default-off)
             duplicate_call_returns: false, // returndup calls
+            returndup_record: false, // returndup auto
             early_return: false, // earlyreturn (opt-in default-off)
             switch_return: false, // switchreturn (opt-in default-off)
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)

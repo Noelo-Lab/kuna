@@ -206,3 +206,36 @@ fn a_register_only_pushed_for_the_next_call_does_not_count() {
     let read = body(&[0x10], true);
     assert!(reads_as_argument(&read, &a, s, Some(&loc(&reg, 0x88)), true));
 }
+
+/// `cliPrintf(const char *, ...)` saves its argument registers in a push of
+/// their own (`push {r0, r1, r2, r3}`), the last one highest: its entry may be
+/// a variadic save. gcc's `push {r3, lr}` stores the last argument register
+/// beneath `lr` to keep the stack 8-byte aligned, which no save does, and a
+/// body that reads the register some other way takes it as a parameter.
+#[test]
+fn a_last_register_pushed_beneath_another_is_no_variadic_save() {
+    let reg = reg_space();
+    let last = loc(&reg, 0x88);
+    let save = body(&[0x80, 0x88], true).with_stored_byte(0x88);
+    assert!(may_save_varargs(&save, &last));
+    let multi = body(&[0x80, 0x88], true).with_written_byte(0x88);
+    assert!(may_save_varargs(&multi, &last));
+    let pad = body(&[0x88], true).with_stored_below_byte(0x88);
+    assert!(!may_save_varargs(&pad, &last));
+    let named = body(&[0x88], true);
+    assert!(!may_save_varargs(&named, &last));
+}
+
+/// clang -Oz reserves stack by pushing dead registers (`sub sp, #12; push {r3,
+/// r4, lr}`) and then saves `r1`-`r3` with `stm r0!, {r1, r2, r3}`, or the
+/// last one alone with `str r3, [sp, #20]`: the pad beside a save is still a
+/// possible variadic save.
+#[test]
+fn a_pad_beside_a_save_of_the_last_register_may_still_be_a_variadic_save() {
+    let reg = reg_space();
+    let last = loc(&reg, 0x88);
+    let stm = body(&[0x80, 0x88], true).with_stored_below_byte(0x88).with_stored_top_byte(0x88);
+    assert!(may_save_varargs(&stm, &last));
+    let str_ = body(&[0x88], true).with_stored_byte(0x88).with_stored_below_byte(0x88);
+    assert!(may_save_varargs(&str_, &last));
+}

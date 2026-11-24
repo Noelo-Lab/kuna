@@ -48,6 +48,11 @@ kuna_options! { self, p1;
         self.arm_constant_shift = mode;
         Ok(msg)
     },
+    "armshiftguard" => {
+        let (mode, msg) = crate::p9_emit::kuna_armshiftguard::OptionArmShiftGuard.apply(p1)?;
+        self.arm_shift_guard = mode;
+        Ok(msg)
+    },
     "rustarrayzero" => on_off!(rust_array_zero, "Rust byte-array zero values"),
     "arraynotation" => {
         let (val, msg) = crate::kuna_arraynotation::OptionArrayNotation.apply(p1)?;
@@ -560,10 +565,11 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "returndup" => {
-        let (val, calls, msg) =
+        let (val, calls, record, msg) =
             crate::p8_structure::kuna_returndup::OptionReturnDup.apply(p1)?;
         self.duplicate_shared_returns = val;
         self.duplicate_call_returns = calls;
+        self.returndup_record = record;
         Ok(msg)
     },
     "rettriangle" => {

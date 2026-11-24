@@ -2312,8 +2312,16 @@ mod tests {
         // and kuna-tailform-model / saved weights choose the function-tail form
         // and kuna-tailform-voidreturn / a void tail if drops the return the function end repeats
         // and kuna-calloverlap-floatret / a call's float result inside a wider XMM range
+        // and gh1922-declared-caller-readarg-thumb / a declared fixed caller's pushed r3 is no va-save
+        // and kuna-stated-jump-placement / stated destinations a segment, a narrow offset or a DOS load cannot label
+        // and kuna-stated-jump-owners / stated destinations stay in the declared function that holds the jump
+        // and kuna-armshiftguard / an ARM register LSL whose count cannot reach 32 prints no range guard
+        // and gh1922-pushpad-caller-readarg-thumb / r3 pushed beneath lr is no va-save
+        // and kuna-retvalue / a result its callers read is returned though stored or loaded through
+        // and kuna-rex-before-prefix / an x86-64 REX prefix that a legacy prefix follows is ignored
+        // and kuna-returndup-auto / an unoptimized function keeps the returns its binary records
         // and kuna-cxxalloc / the C++ allocation operators keep their arguments and are __cdecl on i386
-        assert_eq!(count, 901, "corpus file count drifted");
+        assert_eq!(count, 909, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
