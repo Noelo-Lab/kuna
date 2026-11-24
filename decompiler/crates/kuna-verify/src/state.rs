@@ -8,7 +8,7 @@
 //! keeps its own writes on top.
 
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::BuildHasherDefault;
 use std::rc::Rc;
 
@@ -136,7 +136,7 @@ pub struct Env<'p> {
     image_bytes: RefCell<HashMap<u64, Option<u8>, BuildHasherDefault<Fast>>>,
     /// Where a call to each target goes once thunks are followed.
     pub(crate) thunks: RefCell<HashMap<u64, u64>>,
-    pub(crate) insns: RefCell<BTreeMap<u64, Rc<crate::machine::Insn>>>,
+    pub(crate) insns: RefCell<HashMap<u64, Rc<crate::machine::Insn>, BuildHasherDefault<Fast>>>,
     entries: std::cell::OnceCell<BTreeSet<u64>>,
     stack: Rc<AddrSpace>,
     /// The decompiled function, whose local symbols give the extent of a
@@ -264,7 +264,7 @@ impl<'p> Env<'p> {
             mapped,
             image_bytes: RefCell::new(HashMap::default()),
             thunks: RefCell::new(HashMap::new()),
-            insns: RefCell::new(BTreeMap::new()),
+            insns: RefCell::new(HashMap::default()),
             entries: std::cell::OnceCell::new(),
             stack: Rc::clone(stack),
             fd: None,
@@ -557,6 +557,107 @@ impl<'p> Env<'p> {
 /// Register offsets past this go through the sparse map.
 const DENSE_REGISTERS: u64 = 1 << 20;
 
+/// The frame bytes a callee run for real reads.
+pub type FrameReads = HashSet<u64, BuildHasherDefault<Fast>>;
+
+/// Memory this side wrote, in 64-byte pages each with a mask of the bytes set.
+/// Every reader that needs an order collects into a sorted map, so the pages
+/// need none.
+#[derive(Clone, Default)]
+struct Mem {
+    pages: HashMap<(i32, u64), Page, BuildHasherDefault<Fast>>,
+}
+
+#[derive(Clone)]
+struct Page {
+    bytes: [u8; 64],
+    set: u64,
+}
+
+impl Mem {
+    fn get(&self, sp: i32, off: u64) -> Option<u8> {
+        let p = self.pages.get(&(sp, off >> 6))?;
+        let i = off & 63;
+        (p.set >> i & 1 == 1).then(|| p.bytes[i as usize])
+    }
+
+    fn contains(&self, sp: i32, off: u64) -> bool {
+        self.get(sp, off).is_some()
+    }
+
+    fn insert(&mut self, sp: i32, off: u64, b: u8) {
+        let p = self.pages.entry((sp, off >> 6)).or_insert(Page { bytes: [0; 64], set: 0 });
+        let i = off & 63;
+        p.bytes[i as usize] = b;
+        p.set |= 1 << i;
+    }
+
+    /// Every byte, in no order.
+    fn iter(&self) -> impl Iterator<Item = ((i32, u64), u8)> + '_ {
+        self.pages.iter().flat_map(|(&(sp, page), p)| {
+            (0..64u64).filter(move |i| p.set >> i & 1 == 1).map(move |i| ((sp, page << 6 | i), p.bytes[i as usize]))
+        })
+    }
+
+    /// The bytes of `sp` in `[start, end)`, in no order.
+    fn range(&self, sp: i32, start: u64, end: u64) -> Vec<(u64, u8)> {
+        self.iter().filter(|&((s, off), _)| s == sp && off >= start && off < end).map(|((_, off), b)| (off, b)).collect()
+    }
+
+    fn retain(&mut self, mut keep: impl FnMut(i32, u64) -> bool) {
+        self.pages.retain(|&(sp, page), p| {
+            for i in 0..64u64 {
+                if p.set >> i & 1 == 1 && !keep(sp, page << 6 | i) {
+                    p.set &= !(1 << i);
+                }
+            }
+            p.set != 0
+        });
+    }
+}
+
+/// The temporaries of the current instruction, one entry per value written:
+/// p-code reads a temporary as it wrote it, so a read is usually one lookup.
+#[derive(Clone, Default)]
+struct Temps {
+    entries: Vec<(u64, u32, u128, bool)>,
+}
+
+impl Temps {
+    fn exact(&self, off: u64, size: u32) -> Option<u128> {
+        self.entries.iter().rev().find(|e| e.0 == off && e.1 == size).map(|e| e.2)
+    }
+
+    fn byte(&self, off: u64) -> Option<u8> {
+        self.entries.iter().rev().find(|e| off >= e.0 && off - e.0 < u64::from(e.1)).map(|&(at, size, v, big)| {
+            let i = off - at;
+            let shift = if big { u64::from(size) - 1 - i } else { i };
+            (v >> (shift * 8)) as u8
+        })
+    }
+
+    fn set(&mut self, off: u64, size: u32, v: u128, big: bool) {
+        let end = off + u64::from(size);
+        if self.entries.iter().any(|e| e.0 < end && off < e.0 + u64::from(e.1)) {
+            let old = std::mem::take(&mut self.entries);
+            for (at, n, val, b) in old {
+                if at < end && off < at + u64::from(n) {
+                    for i in 0..u64::from(n) {
+                        let o = at + i;
+                        if o < off || o >= end {
+                            let shift = if b { u64::from(n) - 1 - i } else { i };
+                            self.entries.push((o, 1, (val >> (shift * 8)) & 0xff, b));
+                        }
+                    }
+                } else {
+                    self.entries.push((at, n, val, b));
+                }
+            }
+        }
+        self.entries.push((off, size, v & crate::value::mask(size), big));
+    }
+}
+
 /// A multiplicative hasher for the temporaries' byte offsets: they are
 /// cleared every instruction, so the map keeps its capacity and its hashing
 /// costs one multiply.
@@ -593,8 +694,8 @@ pub struct State<'e, 'p> {
     pub run: u32,
     regs: Vec<u8>,
     flags: Vec<u8>,
-    unique: HashMap<u64, u8, BuildHasherDefault<Fast>>,
-    mem: BTreeMap<(i32, u64), u8>,
+    unique: Temps,
+    mem: Mem,
     /// Calls made so far.
     pub epoch: u32,
     /// Pointer-sized values passed to calls so far.
@@ -611,7 +712,7 @@ pub struct State<'e, 'p> {
     /// register it came from: what C sees there is uninitialized too.
     pub read_saved: bool,
     /// While a callee runs for real: the frame bytes it reads.
-    pub frame_reads: Option<BTreeSet<u64>>,
+    pub frame_reads: Option<FrameReads>,
     /// Code other than the function's own is running (a callee run for real
     /// or followed); what it writes in the frame is not the function's.
     pub in_callee_code: bool,
@@ -627,7 +728,7 @@ pub struct State<'e, 'p> {
     /// Frame bytes last written by such code: a frame object's comparison at
     /// a call leaves them out, as a helper's leftovers in a buffer C never
     /// initialized.
-    callee_written: BTreeSet<u64>,
+    callee_written: HashSet<u64, BuildHasherDefault<Fast>>,
 }
 
 /// The argument-register bytes a callee run for real reads before writing
@@ -635,9 +736,11 @@ pub struct State<'e, 'p> {
 /// stack store (a spill, a `push`, a varargs prologue) is not one.
 #[derive(Clone, Debug)]
 pub struct LiveIn {
-    regs: Vec<(u64, u32)>,
+    /// Per register byte up to the last argument register's end: an
+    /// argument register's byte, and whether the callee wrote it.
+    tracked: Vec<bool>,
+    written: Vec<bool>,
     pub read: BTreeMap<u64, u8>,
-    written: BTreeSet<u64>,
     /// Reads by the current op, committed when the next op starts.
     last: Vec<(u64, u8)>,
     /// Reads a COPY moved into a temporary this instruction, by its offset.
@@ -646,15 +749,28 @@ pub struct LiveIn {
 
 impl LiveIn {
     pub fn new(regs: Vec<(u64, u32)>) -> Self {
-        LiveIn { regs, read: BTreeMap::new(), written: BTreeSet::new(), last: Vec::new(), pending: Vec::new() }
+        let end = regs.iter().map(|&(o, n)| (o + u64::from(n)) as usize).max().unwrap_or(0).min(DENSE_REGISTERS as usize);
+        let mut tracked = vec![false; end];
+        for &(o, n) in &regs {
+            for at in o..o + u64::from(n) {
+                if let Some(t) = tracked.get_mut(at as usize) {
+                    *t = true;
+                }
+            }
+        }
+        LiveIn { written: vec![false; end], tracked, read: BTreeMap::new(), last: Vec::new(), pending: Vec::new() }
     }
 
     fn saw(&mut self, off: u64, b: u8) {
-        if !self.written.contains(&off)
-            && !self.read.contains_key(&off)
-            && self.regs.iter().any(|&(o, n)| off >= o && off < o + u64::from(n))
-        {
+        let i = off as usize;
+        if self.tracked.get(i) == Some(&true) && !self.written[i] && !self.read.contains_key(&off) {
             self.last.push((off, b));
+        }
+    }
+
+    fn wrote(&mut self, off: u64) {
+        if let Some(w) = self.written.get_mut(off as usize) {
+            *w = true;
         }
     }
 
@@ -730,8 +846,8 @@ impl<'e, 'p> State<'e, 'p> {
             run,
             regs: Vec::new(),
             flags: Vec::new(),
-            unique: HashMap::default(),
-            mem: BTreeMap::new(),
+            unique: Temps::default(),
+            mem: Mem::default(),
             epoch: 0,
             escaped: Escaped::default(),
             log: None,
@@ -740,7 +856,7 @@ impl<'e, 'p> State<'e, 'p> {
             read_saved: false,
             frame_reads: None,
             in_callee_code: false,
-            callee_written: BTreeSet::new(),
+            callee_written: HashSet::default(),
             live: None,
             passed_objects: Vec::new(),
             kill_salt: 0,
@@ -774,10 +890,7 @@ impl<'e, 'p> State<'e, 'p> {
         if sp <= lo {
             return;
         }
-        let dead: Vec<(i32, u64)> = self.mem.range((ram, lo)..(ram, sp)).map(|(k, _)| *k).collect();
-        for k in dead {
-            self.mem.remove(&k);
-        }
+        self.mem.retain(|s, off| s != ram || off < lo || off >= sp);
         let dead: Vec<u64> = self.saved.range(lo..sp).map(|(k, _)| *k).collect();
         for k in dead {
             self.saved.remove(&k);
@@ -797,7 +910,7 @@ impl<'e, 'p> State<'e, 'p> {
         if self.is_unique(space) {
             return false;
         }
-        self.epoch == 0 && self.mem.get(&(space.get_index(), off)).is_none()
+        self.epoch == 0 && !self.mem.contains(space.get_index(), off)
     }
 
     fn is_unique(&self, space: &AddrSpace) -> bool {
@@ -825,11 +938,7 @@ impl<'e, 'p> State<'e, 'p> {
             }
             return b;
         }
-        let found = if self.is_unique(space) {
-            self.unique.get(&off).copied()
-        } else {
-            self.mem.get(&(space.get_index(), off)).copied()
-        };
+        let found = if self.is_unique(space) { self.unique.byte(off) } else { self.mem.get(space.get_index(), off) };
         if let Some(reads) = self.frame_reads.as_mut() {
             if space.get_index() == self.env.ram.get_index() && self.env.in_stack(off, 1) {
                 reads.insert(off);
@@ -852,15 +961,15 @@ impl<'e, 'p> State<'e, 'p> {
             self.regs[i] = b;
             self.flags[i] |= PRESENT | WRITTEN;
             if let Some(l) = self.live.as_mut() {
-                l.written.insert(off);
+                l.wrote(off);
             }
         } else if self.is_unique(space) {
-            self.unique.insert(off, b);
+            self.unique.set(off, 1, u128::from(b), false);
         } else {
             if let Some(log) = self.log.as_mut() {
                 log.push(Event::Write(space.get_index(), off, b));
             }
-            self.mem.insert((space.get_index(), off), b);
+            self.mem.insert(space.get_index(), off, b);
             if space.get_index() == self.env.ram.get_index() && self.env.in_stack(off, 1) {
                 if self.in_callee_code {
                     self.callee_written.insert(off);
@@ -938,12 +1047,8 @@ impl<'e, 'p> State<'e, 'p> {
 
     /// What this side wrote outside the stack since its last call.
     pub fn writes(&self) -> Writes {
-        let bytes = self
-            .mem
-            .iter()
-            .filter(|((sp, off), _)| self.env.prog.arch().manage().get_space(*sp).is_some_and(|s| self.env.observable(s, *off)))
-            .map(|(k, v)| (*k, *v))
-            .collect();
+        let manage = self.env.prog.arch().manage();
+        let bytes = self.mem.iter().filter(|((sp, off), _)| manage.get_space(*sp).is_some_and(|s| self.env.observable(s, *off))).collect();
         Writes { bytes, epoch: self.epoch, escaped: self.escaped.clone(), skip: BTreeSet::new(), objects: Vec::new() }
     }
 
@@ -964,11 +1069,11 @@ impl<'e, 'p> State<'e, 'p> {
                 continue;
             }
             w.objects.push((start, end));
-            for (k, v) in self.mem.range((ram, start)..(ram, end)) {
-                if self.callee_written.contains(&k.1) {
-                    w.skip.insert(k.1);
+            for (off, v) in self.mem.range(ram, start, end) {
+                if self.callee_written.contains(&off) {
+                    w.skip.insert(off);
                 } else {
-                    w.bytes.insert(*k, *v);
+                    w.bytes.insert((ram, off), v);
                 }
             }
         }
@@ -1014,20 +1119,41 @@ impl<'e, 'p> State<'e, 'p> {
         let env = self.env;
         let escaped = std::mem::take(&mut self.escaped);
         let manage = env.prog.arch().manage();
-        self.mem.retain(|(sp, off), _| manage.get_space(*sp).is_some_and(|s| !env.callee_writable(&escaped, s, *off)));
+        self.mem.retain(|sp, off| manage.get_space(sp).is_some_and(|s| !env.callee_writable(&escaped, s, off)));
         self.escaped = escaped;
         self.epoch += 1;
     }
 
     /// Forget the temporaries: they live for one instruction.
     pub fn end_instruction(&mut self) {
-        self.unique.clear();
+        self.unique.entries.clear();
     }
 
     /// Read a processor or temporary space value of up to sixteen bytes.
     pub fn read(&mut self, space: &AddrSpace, off: u64, size: u32) -> Result<u128, Halt> {
         if size > MAX_SIZE {
             return Err(Halt::Unsupported(format!("{size}-byte value")));
+        }
+        if self.is_unique(space) {
+            if let Some(v) = self.unique.exact(off, size) {
+                return Ok(v);
+            }
+        }
+        let end = off.wrapping_add(u64::from(size));
+        if self.is_register(space, off) && end <= DENSE_REGISTERS && end > off {
+            self.grow(end as usize);
+            for i in off as usize..end as usize {
+                if self.flags[i] & PRESENT == 0 {
+                    self.regs[i] = self.env.initial_byte(self.run, space, i as u64);
+                    self.flags[i] |= PRESENT;
+                }
+                if let Some(l) = self.live.as_mut() {
+                    l.saw(i as u64, self.regs[i]);
+                }
+            }
+            let bytes = &self.regs[off as usize..end as usize];
+            let fold = |v: u128, &b: &u8| (v << 8) | u128::from(b);
+            return Ok(if space.is_big_endian() { bytes.iter().fold(0, fold) } else { bytes.iter().rev().fold(0, fold) });
         }
         let mut v = 0u128;
         for i in 0..u64::from(size) {
@@ -1054,6 +1180,24 @@ impl<'e, 'p> State<'e, 'p> {
         if size > MAX_SIZE {
             return Err(Halt::Unsupported(format!("{size}-byte value")));
         }
+        if self.is_unique(space) {
+            self.unique.set(off, size, val, space.is_big_endian());
+            return Ok(());
+        }
+        let end = off.wrapping_add(u64::from(size));
+        if self.is_register(space, off) && end <= DENSE_REGISTERS && end > off {
+            self.grow(end as usize);
+            for i in 0..u64::from(size) {
+                let shift = if space.is_big_endian() { u64::from(size) - 1 - i } else { i };
+                let at = (off + i) as usize;
+                self.regs[at] = (val >> (shift * 8)) as u8;
+                self.flags[at] |= PRESENT | WRITTEN;
+                if let Some(l) = self.live.as_mut() {
+                    l.wrote(at as u64);
+                }
+            }
+            return Ok(());
+        }
         if space.get_index() == self.env.ram.get_index()
             && (self.env.is_readonly(off, size.into()) || self.env.in_code_section(off))
         {
@@ -1076,9 +1220,9 @@ impl<'e, 'p> State<'e, 'p> {
             if self.is_register(space, at) {
                 self.flags.get(at as usize).is_some_and(|f| f & WRITTEN != 0)
             } else if self.is_unique(space) {
-                self.unique.contains_key(&at)
+                self.unique.byte(at).is_some()
             } else {
-                self.mem.contains_key(&(space.get_index(), at))
+                self.mem.contains(space.get_index(), at)
             }
         })
     }

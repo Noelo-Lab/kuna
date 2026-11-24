@@ -178,7 +178,7 @@ pub struct Record {
     pub effect: Option<Effect>,
     /// The frame bytes that callee read, when the machine ran it for real:
     /// only those of the frame objects it was given are compared.
-    pub frame_reads: Option<std::collections::BTreeSet<u64>>,
+    pub frame_reads: Option<crate::state::FrameReads>,
     /// The argument-register bytes that callee read before writing, with
     /// the machine's values: what kuna's call must pass there.
     pub live_in: Option<Vec<(u64, u8)>>,

@@ -184,7 +184,7 @@ impl Compare<'_> {
 
 /// The first byte the two sides left different, of the memory either wrote.
 /// `read`: the frame bytes a callee run for real read, when only those count.
-fn compare_writes(env: &Env, run: u32, machine: &Writes, kuna: &Writes, read: Option<&BTreeSet<u64>>) -> Option<String> {
+fn compare_writes(env: &Env, run: u32, machine: &Writes, kuna: &Writes, read: Option<&crate::state::FrameReads>) -> Option<String> {
     let manage = env.prog.arch().manage();
     let ram = env.ram.get_index();
     let keys: BTreeSet<(i32, u64)> = machine

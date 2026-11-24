@@ -543,7 +543,7 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         let call_sp = self.sp_value()?;
         self.state.log = Some(Vec::new());
         if outer {
-            self.state.frame_reads = Some(std::collections::BTreeSet::new());
+            self.state.frame_reads = Some(crate::state::FrameReads::default());
             self.state.live = Some(crate::state::LiveIn::new(self.calls.input_regs.clone()));
         }
         self.budget = if outer { steps + limit } else { budget.min(steps + limit) };
