@@ -59,7 +59,8 @@ const MAX_STATEMENT_OPS: usize = 32;
 /// The return statements of one function, read before simplification.
 #[derive(Debug, Clone, Default)]
 pub struct Record {
-    /// Registers the epilogue block computes itself: (space index, offset, size).
+    /// Registers the epilogue block computes itself and passes on, as (space
+    /// index, offset, size).
     held: Vec<(i32, u64, int4)>,
     /// Per tag: the statement it belongs to if the function returns a value,
     /// and if it returns void.
@@ -95,15 +96,8 @@ pub(crate) fn record(fd: &mut Funcdata) {
     for (i, &x) in preds.iter().enumerate() {
         let i = i as int4;
         let stmt = statement_only(fd, x);
-        let ends_jump = tail_code(fd, x) == Some(OpCode::CPUI_BRANCH);
         valued.push(if stmt { Key::Block(x) } else { Key::Edge(i) });
-        void.push(if stmt {
-            Key::Block(x)
-        } else if ends_jump {
-            Key::Edge(i)
-        } else {
-            lands[i as usize].map_or(Key::Edge(i), Key::Landing)
-        });
+        void.push(if stmt { Key::Block(x) } else { lands[i as usize].map_or(Key::Edge(i), Key::Landing) });
         pure.push(stmt);
     }
     let (gv, gd) = (numbered(&valued), numbered(&void));
@@ -258,7 +252,8 @@ fn landings(entries: &[Option<Entry>], j_start: u64) -> Vec<Option<u64>> {
         .collect()
 }
 
-/// The registers block `j` writes with a value it computes itself.
+/// The registers block `j` computes itself: values it derives rather than
+/// copies in from a predecessor.
 fn held(fd: &Funcdata, j: BlockId) -> Vec<(i32, u64, int4)> {
     let mut out = Vec::new();
     for o in fd.bb_ops(j) {
@@ -276,7 +271,7 @@ fn local(fd: &Funcdata, vn: VarnodeId, j: BlockId, depth: u32) -> bool {
     if v.is_constant() {
         return true;
     }
-    let Some(op) = v.get_def().and_then(|d| fd.obank().get(d)) else { return false };
+    let Some(op) = v.get_def().and_then(|d| fd.obank().get(d)) else { return !v.is_input() };
     if op.get_parent() != Some(j) {
         return false;
     }
@@ -300,22 +295,52 @@ pub(crate) fn groups(fd: &Funcdata, b: BlockId) -> Option<Vec<Vec<int4>>> {
     }
     let valued = op.num_input() >= 2;
     let held = valued && {
-        let v = fd.vbank().get(op.get_in(1)?)?;
-        let (s, off, sz) = (v.get_space().get_index(), v.get_offset(), v.get_size() as u64);
+        let proto = fd.get_func_proto();
+        let (a, sz) = if proto.has_store() {
+            let out = proto.get_output();
+            (out.get_address(), out.get_size())
+        } else {
+            let v = fd.vbank().get(op.get_in(1)?)?;
+            (v.get_addr().clone(), v.get_size())
+        };
+        let s = a.get_space().map_or(-1, |s| s.get_index());
+        let (off, sz) = (a.get_offset(), sz as u64);
         rec.held.iter().any(|&(hs, ho, hz)| hs == s && ho < off + sz && off < ho + hz as u64)
     };
     let blk = fd.bblocks_ref().block(b);
+    let phi = if valued && std::env::var_os("KUNA_O0RET_VALCONST").is_some() {
+        op.get_in(1).and_then(|v| fd.vbank().get(v)).and_then(|v| v.get_def()).and_then(|d| fd.obank().get(d)).filter(|d| d.code() == OpCode::CPUI_MULTIEQUAL && d.get_parent() == Some(b))
+    } else {
+        None
+    };
     let mut parts: Vec<(u16, Vec<int4>)> = Vec::new();
     for i in 0..blk.size_in() {
         let tag = ((blk.get_in_label(i) & TAG_MASK) >> TAG_SHIFT) as usize;
         let &(gv, gd) = rec.tags.get(tag.checked_sub(1)?)?;
-        let gid = if held { 0 } else if valued { gv } else { gd };
+        let mut gid = if held { 0 } else if valued { gv } else { gd };
+        if let Some(m) = phi {
+            let pure = statement_only(fd, blk.get_in(i));
+            let konst = m.get_in(i).is_some_and(|v| const_value(fd, v));
+            if !pure && !konst {
+                gid = u16::MAX;
+            }
+        }
         match parts.iter_mut().find(|(g, _)| *g == gid) {
             Some((_, p)) => p.push(i),
             None => parts.push((gid, vec![i])),
         }
     }
     Some(parts.into_iter().map(|(_, p)| p).collect())
+}
+
+fn const_value(fd: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(v) = fd.vbank().get(vn) else { return false };
+    if v.is_constant() {
+        return true;
+    }
+    v.get_def().and_then(|d| fd.obank().get(d)).is_some_and(|d| {
+        d.code() == OpCode::CPUI_COPY && d.get_in(0).and_then(|i| fd.vbank().get(i)).is_some_and(|i| i.is_constant())
+    })
 }
 
 /// Whether the record decides RETURN block `b`: the function's returns are

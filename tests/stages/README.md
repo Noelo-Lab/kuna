@@ -1,5 +1,12 @@
 # Stage-model issue testcases
 
+`kuna-returndup-auto.xml` checks option `returndup` (default `auto`) on gcc -O0
+x86-64: a guard clause `if (!c) return 0;` keeps its own return, a body that
+shares the epilogue's `return 3` prints one return, a void `if (c) return;`
+keeps its bare return and `if (c) return a; return b;` returns each
+parameter. Under `option returndup on` both guard clauses print wrapped by the
+size rule and the two parameter returns merge into one variable.
+
 `kuna-guardauto.xml` checks option `guardarm` (default `auto`) on two x86-64
 functions. In a gcc -O0 `unget`, whose parameters live in frame slots, the
 default prints the source's flat guard `if (c == -1 || ...) return -1;`, and

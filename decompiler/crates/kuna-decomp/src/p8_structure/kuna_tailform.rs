@@ -438,14 +438,12 @@ fn next_edit(data: &Funcdata, cx: &Ctx, list: &[BlockId], conds: &[(BlockId, Blo
     }
     if let Final::Bare(r, key) = fin {
         let i = n - 2;
+        // (kuna `returndup auto`) the recorded returns of `if (c) { S; return; }
+        // return;` are two statements: print the bare one as the guard.
+        if crate::p8_structure::kuna_o0returns::decided(data) && returning_if(data, cx, list[i], conds) {
+            return Some(Edit::Guard(i));
+        }
         if (!cx.void || cx.elide) && merges(data, cx, list[i], key) {
-            // (kuna `returndup auto`) a recorded `return;` of its own is a guard.
-            if key == RetKey::Void
-                && crate::p8_structure::kuna_o0returns::decided(data)
-                && negatable(data, cond_of(data, list[i], conds))
-            {
-                return Some(Edit::Guard(i));
-            }
             return Some(Edit::Merge(i, key));
         }
         if cx.void || matches!(key, RetKey::Const(..)) {
@@ -565,6 +563,20 @@ fn merges(data: &Funcdata, cx: &Ctx, b: BlockId, key: RetKey) -> bool {
     }
     let clause = data.sblocks_ref().block(b).get_block(1);
     bare_return(data, clause).is_none() && terminal_returns(data, clause, key, true) > 0
+}
+
+/// A one-arm `if` whose arm is more than a bare return and ends in one.
+fn returning_if(data: &Funcdata, cx: &Ctx, ifb: BlockId, conds: &[(BlockId, BlockId)]) -> bool {
+    if !plain_if(data, ifb) || cx.ours.contains(&ifb) || holds_claimed(data, cx, ifb) {
+        return false;
+    }
+    let clause = data.sblocks_ref().block(ifb).get_block(1);
+    bare_return(data, clause).is_none()
+        && !falls_through(data, clause)
+        && has_return(data, clause, false)
+        && !truncated(data, clause)
+        && !noreturn::noreturn_end(data, clause)
+        && negatable(data, cond_of(data, ifb, conds))
 }
 
 /// For a wrapped `if (c) { S }` right before the final bare return `r`, the
@@ -982,6 +994,8 @@ fn guard(data: &mut Funcdata, cx: &mut Ctx, list: &[BlockId], i: usize) -> bool 
     if cx.elide {
         data.sblocks_mut().block_mut(r).set_flag(F_RET_SKIP);
         mark_terminal_returns(data, clause, RetKey::Void, false);
+    } else if !falls_through(data, clause) {
+        data.sblocks_mut().block_mut(r).set_flag(F_RET_SKIP);
     }
     let mut top = list[..=i].to_vec();
     top.push(clause);
