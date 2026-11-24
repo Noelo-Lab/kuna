@@ -160,6 +160,9 @@ const LIBC: &[(&str, Sig)] = &[
     ("calloc", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size], vararg: -1 }),
     ("realloc", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::Size], vararg: -1 }),
     ("free", Sig { ret: Ty::Void, params: &[Ty::VoidPtr], vararg: -1 }),
+    ("memcpy", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::VoidPtr, Ty::Size], vararg: -1 }),
+    ("memmove", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::VoidPtr, Ty::Size], vararg: -1 }),
+    ("memset", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::Int, Ty::Size], vararg: -1 }),
     // (kuna) The C++ allocation operators, by their Itanium
     // names: `operator new` and `new[]` take a size and return the storage,
     // and `delete` and `delete[]` take the pointer, perhaps with the size. The
