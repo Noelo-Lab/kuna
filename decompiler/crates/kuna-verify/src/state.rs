@@ -283,11 +283,19 @@ impl<'p> Env<'p> {
         last >= addr && i > 0 && self.readonly[i - 1].1 >= last
     }
 
+    fn entries(&self) -> &BTreeSet<u64> {
+        self.entries.get_or_init(|| self.prog.function_entries_canonical().iter().map(|e| e.addr.get_offset()).collect())
+    }
+
     /// Whether a function the program knows starts at `addr`.
     pub fn function_starts_at(&self, addr: u64) -> bool {
-        self.entries
-            .get_or_init(|| self.prog.function_entries_canonical().iter().map(|e| e.addr.get_offset()).collect())
-            .contains(&addr)
+        self.entries().contains(&addr)
+    }
+
+    /// A function other than the one at `addr`: the next one, or the first.
+    pub fn another_function(&self, addr: u64) -> Option<u64> {
+        let e = self.entries();
+        e.range(addr.wrapping_add(1)..).next().or_else(|| e.iter().next()).copied().filter(|&f| f != addr)
     }
 
     pub fn code_mapped(&self, addr: u64) -> bool {
@@ -662,7 +670,7 @@ impl Temps {
 /// cleared every instruction, so the map keeps its capacity and its hashing
 /// costs one multiply.
 #[derive(Default, Clone, Copy)]
-pub(crate) struct Fast(u64);
+pub struct Fast(u64);
 
 impl std::hash::Hasher for Fast {
     fn finish(&self) -> u64 {

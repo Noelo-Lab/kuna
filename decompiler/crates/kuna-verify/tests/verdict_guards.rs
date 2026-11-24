@@ -281,3 +281,33 @@ fn a_corpus_worker_past_its_time_is_killed() {
     assert!(text.contains("timeout: no verdicts in 1 s"), "{text}");
     assert!(started.elapsed() < std::time::Duration::from_secs(60));
 }
+
+fn mutants(test: &str) -> Vec<serde_json::Value> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests").join(test).to_string_lossy().into_owned();
+    let specs = specs();
+    let out = verify(&["mutate", &path, "--jobs", "1", "--json", "--sleighpath", &specs]);
+    String::from_utf8_lossy(&out.stdout).lines().filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok()).filter(|v| v.get("operator").is_some()).collect()
+}
+
+/// A direct call kuna names another function for is a difference, also where
+/// the callee is outside the image (the datatest's bytes end before it).
+#[test]
+fn a_mutant_call_target_is_caught() {
+    let rows = mutants("datatests/concat.xml");
+    let targets: Vec<_> = rows.iter().filter(|r| r["operator"] == "call-target" && r["reached"] == true).collect();
+    assert!(!targets.is_empty());
+    assert!(targets.iter().all(|r| r["killed"] == true), "{targets:?}");
+}
+
+/// A call that passes fewer arguments than the declared prototype kuna gives
+/// its callee is a difference (Noelo-Lab/kuna#1922's shape).
+#[test]
+fn a_call_short_of_its_declared_prototype_is_caught() {
+    let rows = mutants("stages/kuna-narrowext.xml");
+    let dropped: Vec<_> = rows
+        .iter()
+        .filter(|r| r["operator"] == "drop-arg" && r["reached"] == true && r["what"].as_str().unwrap_or("").contains("declared prototype kept"))
+        .collect();
+    assert!(!dropped.is_empty());
+    assert!(dropped.iter().all(|r| r["killed"] == true), "{dropped:?}");
+}

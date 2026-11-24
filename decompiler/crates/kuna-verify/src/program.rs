@@ -95,6 +95,8 @@ pub enum Kind {
     /// is what the storage holds when that op runs.
     IndirectBefore,
     StrayPhi,
+    /// Does nothing: what a mutant leaves of a dropped store.
+    Nop,
 }
 
 #[derive(Clone, Debug)]
@@ -125,6 +127,9 @@ pub struct Program {
     pub blocks: Vec<Block>,
     pub slots: usize,
     pub starts: BTreeSet<u64>,
+    /// A mutant's op, `(block, op)`, and whether a run reached it.
+    pub watch: Option<(usize, usize)>,
+    pub reached: std::rc::Rc<std::cell::Cell<bool>>,
 }
 
 /// The decompiler's built-in user ops that read or write memory.
@@ -413,5 +418,5 @@ pub fn compile(prog: &ConsoleProgram, fd: &Funcdata, calls: &Calls) -> Program {
         blocks.push(Block { index: block.get_index(), start: start_of(bl), phis, ops, outs });
     }
     let starts = blocks.iter().map(|b| b.start).collect();
-    Program { blocks, slots: c.slots.len(), starts }
+    Program { blocks, slots: c.slots.len(), starts, watch: None, reached: Default::default() }
 }

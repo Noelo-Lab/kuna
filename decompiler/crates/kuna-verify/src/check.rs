@@ -275,15 +275,28 @@ fn compare_calls(prog: &ConsoleProgram, env: &Env, run: u32, calls: &Calls, m: &
         if mc.at != gc.at {
             return differs(vec![format!("call {n}: the machine calls from {:#x}, kuna from {:#x}", mc.at, gc.at)], suspects);
         }
-        let (mt, kt) = (code_target(env, mc.target), code_target(env, gc.target));
-        let (mt, kt) = (mt.map(|t| machine::through_thunks(env, t)), kt.map(|t| machine::through_thunks(env, t)));
-        let both_code = mt.zip(kt).is_some_and(|(m, k)| env.is_code(m) && env.is_code(k));
-        let compared = (mc.indirect && gc.indirect) || (both_code && !calls.site(gc.at).resolved);
-        if compared && mt != kt {
+        let (mr, kr) = (code_target(env, mc.target), code_target(env, gc.target));
+        let (mt, kt) = (mr.map(|t| machine::through_thunks(env, t)), kr.map(|t| machine::through_thunks(env, t)));
+        let direct = !mc.indirect && !gc.indirect && !calls.site(gc.at).resolved;
+        let code_or_outside = |t: u64| env.is_code(t) || !env.code_mapped(t);
+        let both = |a: Option<u64>, b: Option<u64>| a.zip(b).is_some_and(|(m, k)| code_or_outside(m) && code_or_outside(k));
+        let comparable = both(mr, kr) || both(mt, kt);
+        let compared = (mc.indirect && gc.indirect) || (direct && comparable);
+        let same = mr == kr || (mt == kt && mt.is_some_and(|t| env.is_code(t)));
+        if compared && !same {
             let l = format!("call {n} at {:#x}: the machine calls {}, kuna calls {}", gc.at, target(mc.target), target(gc.target));
             return differs(vec![l], suspects);
         }
         let site = calls.site(gc.at);
+        if gc.args.len() < site.params {
+            let l = format!(
+                "call {n} to {}: kuna passes {} arguments, and the prototype it gives the callee takes {}",
+                target(gc.target),
+                gc.args.len(),
+                site.params
+            );
+            return differs(vec![l], suspects);
+        }
         for (i, ((ma, ka), arg)) in mc.args.iter().zip(&gc.args).zip(&site.args).enumerate() {
             let Some(st) = arg.as_ref().map(|a| &a.storage) else { continue };
             if ma & mask(st.size) == ka & mask(st.size) {
@@ -659,7 +672,7 @@ fn input_line(prog: &ConsoleProgram, env: &Env, run: u32, claim: &Claim) -> Stri
 /// real type.
 pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Contract>, opts: &Options) -> Report {
     let mut work = crate::concolic::Worklist::default();
-    let mut report = check_runs(prog, fd, contract, opts, &mut work);
+    let mut report = check_runs(prog, fd, contract, opts, &mut work, None, &mut None);
     if opts.concolic > 0 {
         let s = work.summary();
         let why = match s.solver {
@@ -673,12 +686,24 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
     report
 }
 
+/// Check `fd` with mutant `m` planted on kuna's side: the report, what the
+/// mutant changed, and whether a run reached it. `None` when it does not apply.
+pub fn check_mutant(prog: &ConsoleProgram, fd: &Funcdata, opts: &Options, m: crate::mutate::Mutation) -> Option<(Report, String, bool)> {
+    let mut work = crate::concolic::Worklist::default();
+    let mut got = None;
+    let reached = std::rc::Rc::new(std::cell::Cell::new(false));
+    let report = check_runs(prog, fd, None, opts, &mut work, Some((m, std::rc::Rc::clone(&reached))), &mut got);
+    got.map(|what| (report, what, reached.get()))
+}
+
 fn check_runs(
     prog: &ConsoleProgram,
     fd: &Funcdata,
     contract: Option<&Contract>,
     opts: &Options,
     work: &mut crate::concolic::Worklist,
+    mutation: Option<(crate::mutate::Mutation, std::rc::Rc<std::cell::Cell<bool>>)>,
+    mutated: &mut Option<String>,
 ) -> Report {
     let started = Instant::now();
     let finish = |verdict: Verdict, lines: Vec<String>, suspects: Vec<String>| Report {
@@ -716,8 +741,17 @@ fn check_runs(
     };
     let compare = Compare { prog, claim: &claim, contract: contract.zip(contract_storage.as_ref()) };
     let mut upper = UpperWatch::new(prog, fd, &claim);
-    let calls = calls::sites(fd, &env);
-    let program: Program = program::compile(prog, fd, &calls);
+    let mut calls = calls::sites(fd, &env);
+    let mut program: Program = program::compile(prog, fd, &calls);
+    if let Some((m, reached)) = mutation {
+        program.reached = reached;
+        match crate::mutate::apply(&mut program, &mut calls, &env, m) {
+            Some(what) => *mutated = Some(what),
+            None => return finish(Verdict::Unknown("UNKNOWN(mutant does not apply)".into()), Vec::new(), Vec::new()),
+        }
+    }
+    let calls = calls;
+    let program = program;
     let entry = fd.get_address().get_offset();
     let left_cfg = |mo: &machine::Outcome| mo.indirect.iter().any(|t| !program.starts.contains(t));
     let mut agreed = 0u32;

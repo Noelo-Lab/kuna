@@ -472,6 +472,7 @@ impl Run<'_, '_, '_> {
                 Ok(Flow::Next)
             }
             Kind::StrayPhi => Err(Halt::Harness("MULTIEQUAL after a block's head".into())),
+            Kind::Nop => Ok(Flow::Next),
             Kind::Eval(opc) => {
                 let size = op.out.as_ref().map(|o| o.size).ok_or_else(|| Halt::Unsupported("op without output".into()))?;
                 let mut ins = crate::value::Inputs::default();
@@ -561,7 +562,10 @@ pub fn run(
             }
         }
         let mut edge = 0;
-        for op in &block.ops {
+        for (k, op) in block.ops.iter().enumerate() {
+            if program.watch == Some((bl, k)) {
+                program.reached.set(true);
+            }
             steps += 1;
             if steps > budget {
                 return Err(Halt::Budget);

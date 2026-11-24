@@ -61,6 +61,8 @@ pub struct Site {
     /// The callee's parameters are declared, not recovered: an argument that
     /// differs is a difference, not a doubtful prototype.
     pub locked: bool,
+    /// How many parameters the prototype kuna gives the callee has.
+    pub params: usize,
     /// Where the callee's prototype returns its value.
     pub output: Option<Storage>,
     /// kuna bound the call past a PLT stub or replaced it with an injection:
@@ -336,6 +338,7 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
                     .collect(),
                 args,
                 locked: proto.is_input_locked(),
+                params: proto.num_params().max(0) as usize,
                 output: (proto.get_output().get_size() > 0)
                     .then(|| Storage::at(&proto.get_output().get_address(), proto.get_output().get_size() as u32))
                     .flatten()
@@ -354,6 +357,7 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
         killed: killed(env, own),
         args: Vec::new(),
         locked: false,
+        params: 0,
         output: None,
         ret_ext: None,
         input_storage: Vec::new(),

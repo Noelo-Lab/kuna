@@ -21,6 +21,7 @@ pub mod divergence;
 pub mod graph;
 pub mod localize;
 pub mod machine;
+pub mod mutate;
 pub mod program;
 pub mod report;
 pub mod session;
@@ -139,4 +140,46 @@ pub fn check_datatest(path: &str, spec_roots: &[String], opts: &Options) -> File
         Err(e) => Some(e),
     };
     FileResult { reports, error, wall: start.elapsed() }
+}
+
+/// Plant mutants in each function a datatest decompiles (`mutate`), up to
+/// `per_function` each, and hand each outcome to `emit`.
+pub fn mutate_datatest(
+    path: &str,
+    spec_roots: &[String],
+    opts: &Options,
+    per_function: usize,
+    mut emit: impl FnMut(mutate::Outcome),
+) -> Result<(), String> {
+    let (prog, commands) = session::load_datatest(path, spec_roots)?;
+    let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        session::drive(commands, Some(prog), spec_roots, |prog, fd| {
+            for o in mutate::mutate_function(prog, fd, opts, per_function) {
+                emit(o);
+            }
+        })
+    }));
+    match run {
+        Ok(r) => r,
+        Err(_) => Err("panicked".to_string()),
+    }
+}
+
+/// [`mutate_datatest`] for functions of an object file.
+pub fn mutate_binary(
+    path: &str,
+    functions: &[String],
+    options: &[(String, String)],
+    spec_roots: &[String],
+    opts: &Options,
+    per_function: usize,
+    mut emit: impl FnMut(mutate::Outcome),
+) -> Result<(), String> {
+    let script = session::binary_script(path, functions, options);
+    session::run(script, None, spec_roots, true, None, |prog, fd| {
+        for o in mutate::mutate_function(prog, fd, opts, per_function) {
+            emit(o);
+        }
+    })
+    .map(|_| ())
 }

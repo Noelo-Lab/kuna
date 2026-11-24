@@ -38,6 +38,7 @@ const USAGE: &str = "usage:
   kuna-verify corpus <test.xml|dir>...  [--jobs N] [--file-seconds S] [--baseline FILE] [--save-baseline FILE]
   kuna-verify localize <test.xml|binary> <function> [--pass N] [--option NAME VALUE]...
   kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
+  kuna-verify mutate <test.xml|dir>... | <binary> <function|0xaddr>... | --all  [--per-function N (6)] [--jobs N] [--file-seconds S]
 options: --runs N (256)  --seed S  --budget OPS (200000)  --concolic QUERIES (0)  --json  --trace  --sleighpath DIR";
 
 struct Args {
@@ -51,6 +52,7 @@ struct Args {
     jobs: Option<usize>,
     fn_seconds: u64,
     file_seconds: u64,
+    per_function: usize,
     baseline: Option<String>,
     save_baseline: Option<String>,
     pass: Option<usize>,
@@ -76,6 +78,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         jobs: None,
         fn_seconds: 600,
         file_seconds: 1200,
+        per_function: 6,
         baseline: None,
         save_baseline: None,
         pass: None,
@@ -129,6 +132,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--jobs" => a.jobs = Some(num(it.next(), "--jobs")? as usize),
             "--fn-seconds" => a.fn_seconds = num(it.next(), "--fn-seconds")?.max(1),
             "--file-seconds" => a.file_seconds = num(it.next(), "--file-seconds")?.max(1),
+            "--per-function" => a.per_function = num(it.next(), "--per-function")?.max(1) as usize,
             "--regs" | "--flags" => {
                 let v: Vec<String> = it.next().ok_or(format!("{arg} needs names"))?.split(',').filter(|s| !s.is_empty()).map(str::to_string).collect();
                 if arg == "--regs" { a.regs = v } else { a.flags = v }
@@ -739,6 +743,7 @@ fn main() -> ExitCode {
         "chunk" => run_chunk_worker(&a),
         "step" => run_step(&a),
         "localize" => run_localize(&a),
+        "mutate" => run_mutate(&a),
         _ => Err(USAGE.to_string()),
     });
     match result {
@@ -747,5 +752,124 @@ fn main() -> ExitCode {
             eprintln!("kuna-verify: {e}");
             ExitCode::from(2)
         }
+    }
+}
+
+fn mutant_json(o: &kuna_verify::mutate::Outcome) -> Value {
+    json!({
+        "function": o.function,
+        "operator": o.operator.name(),
+        "what": o.what,
+        "verdict": o.verdict.label(),
+        "killed": o.killed(),
+        "reached": o.reached,
+        "ms": o.ms,
+    })
+}
+
+/// `mutate`: plant mutants in kuna's side of functions that agree and report
+/// which the check catches. With `--jobs` above 1, each datatest file or each
+/// chunk of a binary's functions runs in a worker process of its own.
+fn run_mutate(a: &Args) -> Result<ExitCode, String> {
+    let roots = spec_roots(a.sleighpath.as_deref());
+    let Some(first) = a.positional.first() else { return Err(USAGE.to_string()) };
+    let datatests = first.ends_with(".xml") || Path::new(first).is_dir();
+    let jobs = a.jobs.unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get())).max(1);
+    let mut tasks: Vec<Vec<String>> = Vec::new();
+    if datatests {
+        let mut files = Vec::new();
+        for p in &a.positional {
+            collect(Path::new(p), &mut files)?;
+        }
+        tasks.extend(files.iter().map(|f| vec![f.to_string_lossy().into_owned()]));
+    } else {
+        let functions: Vec<String> = if a.all {
+            session::function_entries(first, &a.options, &roots)?.iter().map(|e| format!("{e:#x}")).collect()
+        } else {
+            a.positional[1..].to_vec()
+        };
+        tasks.extend(functions.chunks(CHUNK).map(|c| std::iter::once(first.clone()).chain(c.iter().cloned()).collect()));
+    }
+    let rows: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
+    let print = |v: Value| {
+        if a.json {
+            println!("{v}");
+        }
+        rows.lock().unwrap_or_else(|e| e.into_inner()).push(v);
+    };
+    if jobs == 1 {
+        for t in &tasks {
+            let emit = |o: kuna_verify::mutate::Outcome| print(mutant_json(&o));
+            if datatests {
+                if let Err(e) = kuna_verify::mutate_datatest(&t[0], &roots, &a.opts, a.per_function, emit) {
+                    eprintln!("kuna-verify: {}: {e}", t[0]);
+                }
+            } else {
+                kuna_verify::mutate_binary(&t[0], &t[1..], &a.options, &roots, &a.opts, a.per_function, emit)?;
+            }
+        }
+    } else {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let mut flags = chunk_flags(a);
+        flags.extend(["--per-function".to_string(), a.per_function.to_string(), "--jobs".to_string(), "1".to_string(), "--json".to_string()]);
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        std::thread::scope(|scope| {
+            for _ in 0..jobs.min(tasks.len().max(1)) {
+                scope.spawn(|| loop {
+                    let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(t) = tasks.get(i) else { break };
+                    let out = Command::new(&exe).arg("mutate").args(t).args(&flags).stderr(Stdio::null()).output();
+                    let Ok(out) = out else { continue };
+                    for l in String::from_utf8_lossy(&out.stdout).lines() {
+                        if let Ok(mut v) = serde_json::from_str::<Value>(l) {
+                            if v.get("operator").is_some() {
+                                v["file"] = Value::from(t[0].as_str());
+                                print(v);
+                            }
+                        }
+                    }
+                });
+            }
+        });
+    }
+    let rows = rows.into_inner().unwrap_or_else(|e| e.into_inner());
+    print_mutation_summary(&rows, a.json);
+    Ok(ExitCode::SUCCESS)
+}
+
+fn print_mutation_summary(rows: &[Value], json: bool) {
+    let mut by: std::collections::BTreeMap<String, [usize; 4]> = std::collections::BTreeMap::new();
+    for r in rows {
+        let e = by.entry(r["operator"].as_str().unwrap_or("?").to_string()).or_default();
+        e[0] += 1;
+        if r["reached"].as_bool() == Some(true) {
+            e[1] += 1;
+            if r["killed"].as_bool() == Some(true) {
+                e[2] += 1;
+            } else if r["verdict"].as_str().is_some_and(|v| v.starts_with("UNKNOWN")) {
+                e[3] += 1;
+            }
+        }
+    }
+    let total = by.values().fold([0usize; 4], |acc, e| [acc[0] + e[0], acc[1] + e[1], acc[2] + e[2], acc[3] + e[3]]);
+    let recall = |e: &[usize; 4]| if e[1] == 0 { 0.0 } else { 100.0 * e[2] as f64 / e[1] as f64 };
+    if json {
+        let ops: serde_json::Map<String, Value> = by
+            .iter()
+            .map(|(k, e)| (k.clone(), json!({"mutants": e[0], "reached": e[1], "killed": e[2], "unknown": e[3], "recall": recall(e)})))
+            .collect();
+        println!("{}", json!({"mutation_summary": {"operators": ops, "mutants": total[0], "reached": total[1], "killed": total[2], "unknown": total[3], "recall": recall(&total)}}));
+        return;
+    }
+    println!("{:<12} {:>8} {:>8} {:>8} {:>8} {:>7}", "operator", "mutants", "reached", "killed", "unknown", "recall");
+    for (k, e) in by.iter().chain(std::iter::once((&"all".to_string(), &total))) {
+        println!("{:<12} {:>8} {:>8} {:>8} {:>8} {:>6.1}%", k, e[0], e[1], e[2], e[3], recall(e));
+    }
+    let survived: Vec<&Value> = rows
+        .iter()
+        .filter(|r| r["reached"].as_bool() == Some(true) && r["killed"].as_bool() != Some(true) && !r["verdict"].as_str().is_some_and(|v| v.starts_with("UNKNOWN")))
+        .collect();
+    for r in survived.iter().take(20) {
+        println!("survived  {}  {}  {}", r["function"].as_str().unwrap_or(""), r["what"].as_str().unwrap_or(""), r["verdict"].as_str().unwrap_or(""));
     }
 }
