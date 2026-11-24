@@ -1088,7 +1088,8 @@ DIV flip. This one is an explicit **runtime
 choice**: an explicit source `if/else` compiles to the same bytes, so the
 rewrite matches the source only when the source used a ternary; DIV-17
 flipped it on (ablation net-positive) and documents flipping it off per
-function.
+function. In an unoptimized function the default `auto` value replaces the
+guess with what the binary records (see *iteregion auto* below).
 
 ### iteboolean — short-circuit `0`/`1` re-rolling (decbench)
 
@@ -1178,6 +1179,60 @@ whole graph twice.
 *Failure:* everything the two matchers already decline, unchanged. It is a
 strictly narrower match than `iteregion`/`iteboolean` themselves and runs
 whenever they do (DIV-56), so their options are the only ones that reach it.
+
+### iteregion auto — the conditional values an unoptimized function was written with
+
+`iteregion` folds a diamond by its shape, and in optimized code the shape is
+all there is: `x = c ? a : b;` and `if (c) x = a; else x = b;` compile to the
+same branch and the same merge. Unoptimized code keeps them apart. An
+unoptimizing compiler finishes every statement with a store to the variable it
+assigns and evaluates an expression in scratch registers, so a conditional
+value loads a register in each arm and is stored (or passed, or tested) once
+after the join, while the `if`/`else` statement stores in each arm. After the
+stack is heritaged both are one phi over the arms, and the merge decides the
+printed shape: two inputs that interfere get a copy in each arm and print as
+the diamond, an input that shares storage with the result leaves an `if`
+without an `else` (`if (c) b = a;` for `x = c ? a : b;`).
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_o0select.rs (record)`
+reads the raw graph at the first heritage pass of a function the detector of
+chapter 03 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_unoptimized.rs
+(is_unoptimized)`) calls unoptimized, when registers are in SSA form and the
+stack is not. For every block that ends in a CBRANCH whose two successors each
+have one successor, the same join:
+
+- if each arm is entered only from the branch and the join holds a phi of a
+  temporary register whose inputs are defined in the two arms and whose value
+  is read, the branch is a *conditional value*, whatever else the arms do
+  (`c ? i++ : j` also stores). A temporary is a register the calling
+  convention does not preserve, or a preserved one whose only read is a copy:
+  the compiler parks an argument there to carry it across a call before the
+  one it belongs to, while a `register` variable in a preserved register is
+  read wherever the source names it. A read is a store, a computation or a
+  test of the value; a copy into another register that is then read; and a
+  call, when the arms set the register themselves or a copy moved the value
+  into the argument register, because an unprototyped call also reads
+  whatever an earlier call left in a scratch register. Only the low part of a
+  partial-register piece carries the value, since the pieces heritage builds
+  around a narrow write would otherwise make every overwritten register look
+  read. A phi read only by the RETURN is a returned value and is left to
+  `returndup auto` (`return c ? a : b;` compiles like two returns);
+- otherwise, if both arms write memory (a STORE, or a direct write to a frame
+  or global address; the return address a call instruction pushes does not
+  count), the branch is a *statement*.
+
+Each decided branch is recorded by the address of its CBRANCH, which every
+later copy of the branch keeps. `kuna_iteregion.rs (match_ite_assignment)`
+asks the record for the CBRANCH of the `if` it matches: a recorded statement
+never folds, and `kuna_iteboolean.rs (match_ite_boolean)` declines it too; a
+recorded conditional value folds with computed arms (what `iteexpr` does on
+request), with an arm that is a call whose result is the value, with arms that
+write the same high variable through different storage, and as an `if`
+without an `else`, which prints `v = c ? A : v;`. A conditional evaluates only
+the arm it selects, as the branch did, so the fold moves each arm's
+computation into the expression unchanged. Unrecorded branches, and every
+branch of an optimized function, keep the shape rule; `option iteregion on`
+restores it everywhere.
 
 ### earlyreturn — per-edge const-guard peeling (angr `ReturnDuplicatorHigh`, narrowed)
 

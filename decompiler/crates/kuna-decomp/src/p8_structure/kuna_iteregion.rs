@@ -139,7 +139,6 @@ impl Action for ActionIteRegion {
         if data.sblocks_get_size() == 0 {
             return 0; // not structured
         }
-        crate::p8_structure::kuna_o0select::dump(data);
         let root = data.sblocks_root();
 
         // Snapshot the matched CBRANCH of every eligible diamond, then mark them

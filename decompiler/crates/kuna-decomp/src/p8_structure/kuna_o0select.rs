@@ -2,11 +2,11 @@
 //! function wrote it.
 //!
 //! An unoptimizing compiler finishes every statement with a store to the
-//! variable it assigns, and computes an expression in registers.  The two
+//! variable it assigns, and evaluates an expression in registers.  The two
 //! spellings of a conditional value therefore compile apart:
 //!
 //! ```c
-//! x = c ? a : b;              // each arm loads into a register; one store after the join
+//! x = c ? a : b;              // each arm loads a register; one store after the join
 //! if (c) x = a; else x = b;   // each arm stores to x
 //! ```
 //!
@@ -14,11 +14,12 @@
 //! `iteregion` prints as `?:` or not by the shape of the arms.  [`record`]
 //! reads the raw block graph at the first heritage pass of a function that
 //! [`crate::p3_dataflow::kuna_unoptimized`] calls unoptimized: a branch whose
-//! two arms only compute a register that the join reads is a conditional
-//! value, and a branch whose two arms each store is a statement.  The record
-//! keys each decided branch by the address of its `CBRANCH`, which every later
-//! copy of that branch keeps.  A branch whose value is only returned is left
-//! to [`crate::p8_structure::kuna_o0returns`].
+//! arms each define a temporary register that the join merges and reads is a
+//! conditional value (whatever else the arms do, as in `c ? i++ : j`), and a
+//! branch whose arms each write memory and join nothing is a statement.  The
+//! record keys each decided branch by the address of its `CBRANCH`, which
+//! every later copy of that branch keeps.  A value that is only returned is
+//! left to [`crate::p8_structure::kuna_o0returns`].
 
 use kuna_base::space::spacetype;
 use kuna_num::opcodes::OpCode;
@@ -47,6 +48,18 @@ pub struct Record {
     sites: Vec<(u64, Form)>,
 }
 
+impl Record {
+    fn new(mut sites: Vec<(u64, Form)>) -> Self {
+        sites.sort_unstable_by_key(|s| s.0);
+        sites.dedup_by_key(|s| s.0);
+        Record { sites }
+    }
+
+    fn form(&self, addr: u64) -> Option<Form> {
+        self.sites.binary_search_by_key(&addr, |s| s.0).ok().map(|i| self.sites[i].1)
+    }
+}
+
 /// Read and record the conditional values; once, at the first heritage pass.
 pub(crate) fn record(fd: &mut Funcdata) {
     if fd.get_heritage_pass() != 1 || fd.kuna_o0select.is_some() {
@@ -59,16 +72,8 @@ pub(crate) fn record(fd: &mut Funcdata) {
     if !crate::p3_dataflow::kuna_unoptimized::is_unoptimized(fd) {
         return;
     }
-    let mut sites = Vec::new();
-    for i in 0..fd.bblocks_get_size() {
-        let c = fd.bblocks_get_block(i);
-        if let Some(site) = classify(fd, c) {
-            sites.push(site);
-        }
-    }
-    sites.sort_unstable_by_key(|s| s.0);
-    sites.dedup_by_key(|s| s.0);
-    fd.kuna_o0select = Some(Box::new(Record { sites }));
+    let sites = (0..fd.bblocks_get_size()).filter_map(|i| classify(fd, fd.bblocks_get_block(i))).collect();
+    fd.kuna_o0select = Some(Box::new(Record::new(sites)));
 }
 
 fn classify(fd: &Funcdata, c: BlockId) -> Option<(u64, Form)> {
@@ -95,14 +100,17 @@ fn classify(fd: &Funcdata, c: BlockId) -> Option<(u64, Form)> {
         return None;
     }
     let (at_t, at_e) = (arm(fd, t)?, arm(fd, e)?);
-    if at_t.stores && at_e.stores {
-        return Some((at, Form::Statement));
+    if tb.size_in() == 1 && eb.size_in() == 1 && joined(fd, t, e, j) {
+        return Some((at, Form::Value));
     }
-    if at_t.stores || at_e.stores || tb.size_in() != 1 || eb.size_in() != 1 {
-        return None;
-    }
-    let (st, se) = (slot(fd, j, t)?, slot(fd, j, e)?);
-    let joined = fd.bb_ops(j).into_iter().any(|o| {
+    (at_t.stores && at_e.stores).then_some((at, Form::Statement))
+}
+
+/// Whether `j` merges a temporary that arms `t` and `e` each define and that
+/// is read after the join.
+fn joined(fd: &Funcdata, t: BlockId, e: BlockId, j: BlockId) -> bool {
+    let (Some(st), Some(se)) = (slot(fd, j, t), slot(fd, j, e)) else { return false };
+    fd.bb_ops(j).into_iter().any(|o| {
         let Some(op) = fd.obank().get(o) else { return false };
         if op.code() != OpCode::CPUI_MULTIEQUAL || !op.get_out().is_some_and(|v| temporary(fd, v)) {
             return false;
@@ -117,8 +125,7 @@ fn classify(fd: &Funcdata, c: BlockId) -> Option<(u64, Form)> {
         };
         let (Some(dt), Some(de)) = (def(st, t), def(se, e)) else { return false };
         op.get_out().is_some_and(|v| used(fd, v, USE_DEPTH, dt && de))
-    });
-    joined.then_some((at, Form::Value))
+    })
 }
 
 /// Whether register `vn` holds an expression's value rather than a variable.
@@ -220,14 +227,7 @@ pub(crate) fn form(fd: &Funcdata, addr: u64) -> Option<Form> {
         return None;
     }
     let rec = fd.kuna_o0select.as_deref()?;
-    let f = rec.sites.binary_search_by_key(&addr, |s| s.0).ok().map(|i| rec.sites[i].1)?;
-    static FORCE: std::sync::OnceLock<Option<Form>> = std::sync::OnceLock::new();
-    let force = FORCE.get_or_init(|| match std::env::var("KUNA_O0SEL_FORCE").as_deref() {
-        Ok("value") => Some(Form::Value),
-        Ok("stmt") => Some(Form::Statement),
-        _ => None,
-    });
-    Some(force.unwrap_or(f))
+    rec.form(addr)
 }
 
 /// How the source wrote the branch of `CBRANCH` op `op`, if recorded.
@@ -235,87 +235,25 @@ pub(crate) fn form_of(fd: &Funcdata, op: crate::context::OpId) -> Option<Form> {
     form(fd, fd.obank().get(op)?.get_addr().get_offset())
 }
 
-/// TEMP debug: the recorded sites and the structured shape each ended in.
-pub(crate) fn dump(fd: &Funcdata) {
-    let Ok(dir) = std::env::var("KUNA_O0SEL_DUMP") else { return };
-    let Some(rec) = fd.kuna_o0select.as_deref() else { return };
-    if rec.sites.is_empty() {
-        return;
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_record_answers_by_branch_address() {
+        let rec = Record::new(vec![(0x40, Form::Statement), (0x10, Form::Value), (0x40, Form::Statement)]);
+        assert_eq!(rec.form(0x10), Some(Form::Value));
+        assert_eq!(rec.form(0x40), Some(Form::Statement));
+        assert_eq!(rec.form(0x20), None);
+        assert_eq!(rec.sites.len(), 2);
     }
-    let mut shapes: Vec<(u64, String)> = Vec::new();
-    if fd.sblocks_get_size() > 0 {
-        let mut stack = vec![fd.sblocks_root()];
-        while let Some(id) = stack.pop() {
-            let g = fd.sblocks_ref();
-            let blk = g.block(id);
-            for i in 0..blk.get_size() {
-                stack.push(blk.get_block(i));
-            }
-            if blk.get_type() != crate::block::BlockType::If {
-                continue;
-            }
-            let cond = blk.get_block(0);
-            let tail = crate::p8_structure::kuna_itecondlist::cond_list_tail(fd, cond);
-            let Some(bb) = last_leaf(fd, tail) else { continue };
-            let Some(&cb) = crate::p8_structure::kuna_iteregion::printed_ops(fd, bb).last() else { continue };
-            let Some(cbo) = fd.obank().get(cb) else { continue };
-            if cbo.code() != OpCode::CPUI_CBRANCH {
-                continue;
-            }
-            let at = cbo.get_addr().get_offset();
-            let arm = |k: i32| -> String {
-                if k >= blk.get_size() {
-                    return "-".into();
-                }
-                let Some(bb) = crate::p8_structure::kuna_iteregion::leaf_bblock(fd, blk.get_block(k)) else {
-                    return "X".into();
-                };
-                let ops = crate::p8_structure::kuna_iteregion::printed_ops(fd, bb);
-                let names: Vec<String> = ops
-                    .iter()
-                    .filter_map(|&o| fd.obank().get(o))
-                    .map(|o| format!("{:?}", o.code()).trim_start_matches("CPUI_").to_lowercase())
-                    .collect();
-                names.join("+")
-            };
-            let marked = crate::p8_structure::kuna_iteregion::match_ite_assignment(fd, id).is_some()
-                || crate::p8_structure::kuna_iteboolean::match_ite_boolean(fd, id).is_some();
-            let cond_kind = if tail != cond || g.block(tail).get_type() == crate::block::BlockType::Condition {
-                "cc"
-            } else {
-                "c"
-            };
-            shapes.push((
-                at,
-                format!("{}:{}:{}|{}{}", blk.get_size(), cond_kind, arm(1), arm(2), if marked { ":M" } else { "" }),
-            ));
-        }
-    }
-    let mut out = String::new();
-    for &(a, f) in &rec.sites {
-        let s: Vec<&str> = shapes.iter().filter(|x| x.0 == a).map(|x| x.1.as_str()).collect();
-        out.push_str(&format!(
-            "{{\"fn\":\"{}\",\"entry\":{},\"at\":\"{:#x}\",\"form\":\"{:?}\",\"shape\":\"{}\"}}\n",
-            fd.get_name(),
-            fd.get_address().get_offset(),
-            a,
-            f,
-            if s.is_empty() { "none".to_string() } else { s.join(";") }
-        ));
-    }
-    let path = std::path::Path::new(&dir).join(format!("{}.jsonl", std::process::id()));
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-        use std::io::Write;
-        let _ = f.write_all(out.as_bytes());
+
+    #[test]
+    fn iteregion_auto_keeps_folding_on_and_adds_the_record() {
+        let opt = crate::p8_structure::kuna_iteregion::OptionIteRegion;
+        assert!(matches!(opt.apply("auto"), Ok((true, true, _))));
+        assert!(matches!(opt.apply("on"), Ok((true, false, _))));
+        assert!(matches!(opt.apply("off"), Ok((false, false, _))));
+        assert!(opt.apply("sometimes").is_err());
     }
 }
-
-fn last_leaf(fd: &Funcdata, id: BlockId) -> Option<BlockId> {
-    let g = fd.sblocks_ref();
-    let blk = g.block(id);
-    match blk.get_type() {
-        crate::block::BlockType::Condition => last_leaf(fd, blk.get_block(blk.get_size() - 1)),
-        _ => crate::p8_structure::kuna_iteregion::leaf_bblock(fd, id),
-    }
-}
-
