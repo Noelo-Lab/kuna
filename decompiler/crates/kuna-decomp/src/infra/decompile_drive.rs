@@ -2798,14 +2798,22 @@ pub fn print_c_prototype(arch: &mut Architecture, fd: &Funcdata) -> String {
 /// `int8`, `float8`, …, spelled per standard C — 8-byte integers always use
 /// `long long` so the text is data-model independent) plus the fixed Ghidra
 /// `undefined` family block (`undefined`, `undefined1..8` — 3/5/6/7 mapped to
-/// the next larger unsigned integer with a sizeof note — and `undefined16/32`
-/// as byte-array structs).  `bool` is covered by `#include <stdbool.h>`;
-/// `char`/`void` are real C and emit nothing.
+/// the next larger unsigned integer with a sizeof note — `undefined16` as a
+/// one-byte-aligned `unsigned __int128` where the compiler has one, so the
+/// body's 16-byte arithmetic compiles and no record's layout moves, and
+/// otherwise, like `undefined32`, as a byte-array struct; clang on Windows lays
+/// a record out the Microsoft way, which keeps the 16-byte alignment, so it
+/// takes the struct).  `bool` is covered
+/// by `#include <stdbool.h>`; `char`/`void` are real C and emit nothing.
+/// `KUNA_ANY_ARGS` is the parameter list of a helper the header declares
+/// ([`crate::kuna_unitcalls`]): `...` where `()` means no parameters (C23,
+/// and the c2x modes of gcc 13 and clang 16 on), and empty before.
 pub fn print_c_recompile_prelude(arch: &Architecture) -> String {
     use crate::dtype::type_metatype::*;
     let mut out = String::new();
     out.push_str("/* kuna recompile prelude (generated): core scalar typedefs */\n");
     out.push_str("#include <stdbool.h>\n");
+    out.push_str("#if defined(__STDC_VERSION__) && __STDC_VERSION__ > 201710L && (__STDC_VERSION__ >= 202311L || (defined(__clang__) && __clang_major__ >= 16) || (defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 13))\n#define KUNA_ANY_ARGS ...\n#else\n#define KUNA_ANY_ARGS\n#endif\n");
     // A recovered aggregate can hold target pointers, and a host that compiles
     // this header for a different data model sizes them differently and moves
     // every field after such a member -- which also moves what `p[1]` means in
@@ -2879,7 +2887,9 @@ pub fn print_c_recompile_prelude(arch: &Architecture) -> String {
     out.push_str("typedef unsigned long long undefined6; /* 6 bytes in the decompiler; sizeof differs */\n");
     out.push_str("typedef unsigned long long undefined7; /* 7 bytes in the decompiler; sizeof differs */\n");
     out.push_str("typedef unsigned long long undefined8;\n");
+    out.push_str("#if defined(__SIZEOF_INT128__) && !(defined(__clang__) && defined(_WIN32))\n__extension__ typedef unsigned __int128 undefined16 __attribute__((aligned(1)));\n#else\n");
     out.push_str("typedef struct { unsigned char b[16]; } undefined16;\n");
+    out.push_str("#endif\n");
     out.push_str("typedef struct { unsigned char b[32]; } undefined32;\n");
     out
 }

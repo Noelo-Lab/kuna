@@ -65,6 +65,7 @@ pub mod kuna_arraycoverwidth;
 pub mod kuna_bytearrayc;
 pub(crate) mod kuna_bytearrayslice;
 pub mod kuna_armregistershift; // (kuna) defined C for ARM register-controlled LSL
+pub mod kuna_armshiftguard; // (kuna) when a register-controlled ARM LSL prints its range guard
 pub mod kuna_armconstantshift;
 pub(crate) mod kuna_acleintrinsics; // (kuna) AArch64 barrier, hint and memory-tagging user ops as ACLE intrinsics
 pub mod kuna_emptystrconst;
@@ -84,6 +85,7 @@ pub mod kuna_castarith; // (kuna) pointer arithmetic stays in pointer terms
 pub mod kuna_structdefs;
 pub mod kuna_namedglobals;
 pub mod kuna_globalref; // (kuna) a constant address used as a pointer prints as its global
+pub mod kuna_unitcalls; // (kuna) the helpers and user-defined operations a function's C calls
 pub mod kuna_namespaces; // (kuna) which namespaces print in front of a name
 pub mod kuna_funcptrnames;
 pub(crate) mod kuna_rustfuncptr;

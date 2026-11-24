@@ -473,6 +473,10 @@ Three tiers:
 | dead arm guarded by an arithmetic identity is still printed | [`opaquepredicate`](#opaquepredicate----on--off-default-off) |
 | obfuscated function has bogus control flow behind always-true conditions | [`opaquepredicate`](#opaquepredicate----on--off-default-off) |
 | condition compares an OR minus an AND of two values with their XOR | [`opaquepredicate`](#opaquepredicate----on--off-default-off) |
+| (unsigned int)n < 32u ? ... << n : 0 around an ARM shift | [`armshiftguard`](#armshiftguard----always--needed--never-default-needed) |
+| ternary around a shift whose count is already masked with & 0x1f | [`armshiftguard`](#armshiftguard----always--needed--never-default-needed) |
+| firmware 1 << pin prints as a conditional expression | [`armshiftguard`](#armshiftguard----always--needed--never-default-needed) |
+| ARM shift by a register prints a range check the source does not have | [`armshiftguard`](#armshiftguard----always--needed--never-default-needed) |
 | Go array accesses surrounded by runtime.panicIndex or runtime.panicBounds calls | [`gobounds`](#gobounds----on--off-default-on-destructive-opt-in) |
 | Go division retains compiler-generated runtime.panicdivide branches | [`gobounds`](#gobounds----on--off-default-on-destructive-opt-in) |
 | PPC32 PIC calls retain local linker stub names | [`ppc32picimports`](#ppc32picimports----off--on--abi-default-off) |
@@ -1935,6 +1939,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P3/simplification-quiescence · kuna · structure-recovery · kuna-opaque-predicate
 - **Example:** `option opaquepredicate on`
 
+### `armshiftguard` -- always | needed | never, default `needed`
+
+- **Symptoms:** (unsigned int)n < 32u ? ... << n : 0 around an ARM shift; ternary around a shift whose count is already masked with & 0x1f; firmware 1 << pin prints as a conditional expression; ARM shift by a register prints a range check the source does not have.
+- **What it does:** ARM only (inert on every other target): which register-controlled 32-bit LSLs print the range guard `(unsigned int)n < 32u ? (unsigned int)x << n : 0`. ARM shifts by the low byte of the count register and yields 0 for 32 through 255, where a C shift is undefined, so the guard is what makes the printed C compute the machine's value; it is also a `?:` the source never wrote. `needed` leaves it out when the count's non-zero mask (the bits it can set, from the engine's mask analysis re-derived over its definition at print time) lies below 32: a count masked with `& 0x1f` or narrower, a remainder, a narrow field, or a sum of such. That count cannot reach the guard, and the shift prints as any other C shift. `always` guards every register LSL whose operands can print twice; `never` prints the plain shift `x << (n & 0xff)`, whose C is undefined exactly where the count reaches 32.
+- **When to flip:** NEEDED by default: it only drops guards that cannot fire. Flip to never to read firmware bit-manipulation (`1 << pin`, `mask << (idx * 2)`) as the source wrote it, accepting that a count of 32 or more prints as the undefined C shift instead of the machine's 0; to always to see every guard, for example before recompiling the output to compare it with the binary.
+- **Where / provenance:** P9/cast-policy · kuna · presentation-default · arm-register-lsl-guard
+- **Example:** `option armshiftguard never`
+
 ### `gobounds` -- on | off, default `on` (destructive opt-in)
 
 - **Symptoms:** Go array accesses surrounded by runtime.panicIndex or runtime.panicBounds calls; Go division retains compiler-generated runtime.panicdivide branches.
@@ -2866,7 +2878,7 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 ### `armconstshift` -- off | on | all, default `off`
 
 - **Symptoms:** a signed ARM value is shifted left by a constant in the emitted C; UBSan reports a left shift of a negative value in recompiled ARM output; a signed ARM shift overflows into the sign bit in recompiled output; UBSan reports a left shift of a negative 64-bit value in recompiled output; a sign-extended 32-bit value shifted left into the sign bit of a 64-bit result.
-- **What it does:** Print a fixed left shift of a signed operand as a shift of its unsigned conversion, so the emitted C is defined for negative values and for bits shifted into or past the sign. `on` covers ARM's fixed 32-bit LSL, `(int)((unsigned int)x << n)`; `all` adds every architecture's fixed 64-bit left shift with a count below 64, `(long)((unsigned long)x << n)`, keeping an operand's sign extension inside the conversion. The shiftee is converted once, the signed result type is restored only when the p-code output is signed, unsigned and register-count shifts are unchanged, a 64-bit operand whose known bits prove the result nonnegative keeps the compact form, and a signed variable is never shifted in place.
+- **What it does:** Print a fixed left shift of a signed operand as a shift of its unsigned conversion, so the emitted C is defined for negative values and for bits shifted into or past the sign. `on` covers ARM's fixed 32-bit LSL, `(int)((unsigned int)x << n)`; `all` adds every architecture's fixed 64-bit left shift with a count below 64, `(long)((unsigned long)x << n)`, keeping an operand's sign extension inside the conversion. The shiftee is converted once, the signed result type is restored only when the p-code output is signed, unsigned shiftees are unchanged, a register count qualifies only when its non-zero mask proves it below 32 (the shifts `armshiftguard needed` prints without a range guard), a 64-bit operand whose known bits prove the result nonnegative keeps the compact form, and a signed variable is never shifted in place.
 - **When to flip:** Turn on when the emitted C must be free of signed-shift undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary; use `all` for 64-bit code on any architecture. Off by default because the conversion adds a cast pair to every ARM sign-bit test such as `x << 0x18 < 0`, which firmware uses for nearly every register flag check, and to every scaled 64-bit index.
 - **Where / provenance:** P9/cast-policy · kuna · correctness-fix · arm-fixed-signed-lsl
 - **Example:** `option armconstshift on`

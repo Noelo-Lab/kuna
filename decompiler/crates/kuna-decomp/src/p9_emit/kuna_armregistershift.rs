@@ -28,7 +28,7 @@ pub(crate) struct ArmRegisterLslPlan {
 }
 
 /// Select a variable ARM `CPUI_INT_LEFT` whose inputs can safely appear twice
-/// in its C conditional expression.
+/// in its C conditional expression and whose count `armshiftguard` guards.
 pub(crate) fn plan_arm_register_lsl(
     fd: &Funcdata,
     arch: &Architecture,
@@ -50,6 +50,7 @@ pub(crate) fn plan_arm_register_lsl(
     if count_v.is_constant()
         || lhs_v.get_size() != 4
         || out_v.get_size() != 4
+        || !crate::p9_emit::kuna_armshiftguard::guard_needed(fd, arch, o.get_in(1)?)
         || !operand_is_repeatable(fd, lhs, 16)
         || !operand_is_repeatable(fd, count, 16)
     {
