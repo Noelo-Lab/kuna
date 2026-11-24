@@ -54,6 +54,8 @@ struct Machine {
     state: Rc<RefCell<MemoryState>>,
     code: Rc<AddrSpace>,
     data: Rc<AddrSpace>,
+    io: Rc<AddrSpace>,
+    ext: Rc<AddrSpace>,
 }
 
 impl Machine {
@@ -74,6 +76,9 @@ impl Machine {
         let manager = sleigh.manager_rc();
         let code = Rc::clone(manager.get_space_by_name("code").unwrap());
         let data = Rc::clone(manager.get_space_by_name("data").unwrap());
+        let io = Rc::clone(manager.get_space_by_name("io").unwrap());
+        let ext = Rc::clone(manager.get_space_by_name("ext").unwrap());
+        assert_eq!((io.get_word_size(), ext.get_word_size()), (2, 2));
         assert_eq!((code.get_word_size(), data.get_word_size()), (3, 2));
         let address = |word| Address::new(Rc::clone(&code), 3 * (base + word));
         sleigh.with_context_db_mut(|db| {
@@ -100,7 +105,7 @@ impl Machine {
         let trans: Rc<dyn Translate> = Rc::new(sleigh);
         let mut state = MemoryState::new(Rc::clone(&trans));
         // Bank alignment is independent of the target's address scaling (in particular CODE's 3).
-        for (name, alignment) in [("code", 8), ("data", 2), ("register", 8), ("unique", 8)] {
+        for (name, alignment) in [("code", 8), ("data", 2), ("io", 2), ("ext", 2), ("register", 8), ("unique", 8)] {
             let space = Rc::clone(manager.get_space_by_name(name).unwrap());
             state.set_memory_bank(Rc::new(RefCell::new(MemoryHashOverlay::new(
                 space, alignment, 64, 128, None,
@@ -109,7 +114,7 @@ impl Machine {
         let state = Rc::new(RefCell::new(state));
         let breaks = Rc::new(RefCell::new(BreakTableCallBack::new(Rc::clone(&trans))));
         let emulator = EmulatePcodeCache::new(trans, manager, Rc::clone(&state), breaks);
-        Self { emulator, state, code, data }
+        Self { emulator, state, code, data, io, ext }
     }
 
     fn seed(&self, registers: &[(&str, u64)]) {
@@ -367,6 +372,73 @@ fn qualified_wide_goto_samples_address_enable_before_the_delay() {
         m.start(0).unwrap();
         assert_eq!(m.step(), next);
         assert_eq!((m.reg("A0L"), m.reg("A1L"), m.reg("A2L")), (1, 1, 0));
+    }
+}
+
+#[test]
+fn delayed_compact_eq_samples_est_before_its_two_counted_issues() {
+    for (est, a0, a1, next) in [(8, 7, 9, 36), (0, 0xffff, 0xffff, 18)] {
+        let mut m = Machine::new(
+            0,
+            &[(0x281c32, NOP), (INC_A0, NOP), (INC_A1, NOP), (NOP, NOP), (NOP, NOP), (NOP, NOP), (NOP, NOP)],
+            &[(0, 1, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 6), (10, 1, 6), (12, 1, 0)],
+            None,
+        );
+        m.seed(&[("A0L", a0), ("A1L", a1), ("EST", est)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), next);
+        assert_eq!(m.reg("A0L"), (a0 + 1) & 0xffff);
+        assert_eq!(m.reg("A1L"), (a1 + 1) & 0xffff);
+        assert_ne!(m.reg("EST") & 8, est);
+    }
+}
+
+#[test]
+fn absolute_peripheral_moves_keep_equal_data_io_and_ext_word_addresses_distinct() {
+    let mut m = Machine::new(
+        0,
+        &[(0x800102, 0xc64640), (0xb83456, 0xcc0409), (NOP, NOP)],
+        &[(0, 5, 6), (2, 5, 6), (4, 1, 0)],
+        None,
+    );
+    m.seed(&[("A0", 0xab87650000), ("EST", 0x1222)]);
+    m.seed_data(0x102, 0x1afe);
+    m.state.borrow_mut().set_value(&m.io, 0x204, 2, 0xb5d9).unwrap();
+    m.state.borrow_mut().set_value(&m.ext, 0x204, 2, 0xa61d).unwrap();
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!(m.step(), 12);
+    assert_eq!((m.reg("A0"), m.reg("EST"), m.data(0x102)), (0xab8765b5d9, 0x1222, 0x1afe));
+    let state = m.state.borrow();
+    assert_eq!(state.get_value(&m.io, 0x204, 2).unwrap(), 0xb5d9);
+    assert_eq!(state.get_value(&m.ext, 0x204, 2).unwrap(), 0x3456);
+}
+
+#[test]
+fn link_uses_address_enable_before_its_independently_predicated_store() {
+    for (config, table, sp, frame, saved) in [
+        (0, 0, 0x4040, 0xc048, 0x2299),
+        (0x1000, 0, 0x5aa5, 0x403f, 0x2299),
+        (0x1000, 0xffff, 0x5aa5, 0x403f, 0xc048),
+    ] {
+        let mut m = Machine::new(0, &[(0x741a65, 0xc60a9e), (NOP, NOP)], &[(0, 4, 6), (2, 1, 0)], None);
+        m.seed(&[("SP", 0x4040), ("R7", 0xc048), ("CECFG2", config), ("CETBL", table)]);
+        m.seed_data(0x4040, 0x2299);
+        m.seed_data(0x4041, 0x67ea);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("SP"), m.reg("R7"), m.data(0x4040), m.data(0x4041)), (sp, frame, saved, 0x67ea));
+    }
+}
+
+#[test]
+fn static_ce_banks_both_sample_the_incoming_feedback_bit() {
+    for (incoming, after) in [(4, 0x3004), (0x1004, 4)] {
+        let mut m = Machine::new(0, &[(0x8c0001, 0xcde4b3), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        m.seed(&[("CECFG1", 0x1000), ("CECFG2", 0x1000), ("CETBL", 0xaabb), ("EST", incoming)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("CECFG1"), m.reg("CECFG2"), m.reg("CETBL"), m.reg("EST")), (0x2ccc, 0x2ccc, 0x0101, after));
     }
 }
 

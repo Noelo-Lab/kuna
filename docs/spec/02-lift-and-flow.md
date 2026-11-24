@@ -3870,6 +3870,19 @@ context field; every other language keeps the unchanged delay-slot path. The
 p-code emulator likewise converts an indirect transfer's CODE-word operand to
 a byte offset only in such a `code` space.
 
+Lifted compact delayed `EQ` reads the incoming `EST` condition before any
+delay issue executes. The delay runs on both paths, including when the
+transfer itself is the right slot of a sequential fetch.
+
+Lifted absolute peripheral moves address `io` and `ext` as separate 16-bit
+word spaces. A peripheral word and a `data` word at the same numeric
+address do not alias.
+
+For the lifted `LINK` forms, address enable can update `SP` and the
+selected frame register even when the result predicate suppresses the
+DATA store. Static CE-table loads that configure both banks sample the
+same incoming `EST`; one new latch cannot feed the other within that issue.
+
 Only a covered immutable CLIW record in an explicitly normalized XML bank
 can specialize a reference. Raw CODE and writable or incomplete template
 banks retain the encoded index in disassembly and produce `unimpl`.

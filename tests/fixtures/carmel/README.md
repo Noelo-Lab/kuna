@@ -35,3 +35,7 @@ argument and result and the caller's two-DATA-word return link.
 The listings separately show the six half-register integer arguments before
 stack spill, two-word function pointers, and independently allocated 16-bit
 DATA pointers. These observations are not a full TASKING compiler model.
+
+The [conditional-delay emission test](../../../decompiler/crates/kuna-cli/tests/carmel_emission.rs)
+embeds its CODE bytes and expected returns. On 64-bit Linux with `cc`, it
+compiles and executes Kuna’s generated C at `-O0` and `-O2`.
