@@ -86,9 +86,11 @@ define register offset=0x13c size=2 [ MINMAX ];
 define register offset=0x140 size=2 [ LC1 ];
 define register offset=0x144 size=4 [ LSA1W ];
 define register offset=0x145 size=3 [ LSA1 ];
+define register offset=0x145 size=1 [ LSA1H ];
 define register offset=0x146 size=2 [ LSA1L ];
 define register offset=0x148 size=4 [ LEA1W ];
 define register offset=0x149 size=3 [ LEA1 ];
+define register offset=0x149 size=1 [ LEA1H ];
 define register offset=0x14a size=2 [ LEA1L ];
 define register offset=0x200 size=5 [ A0S ];
 define register offset=0x200 size=1 [ GB0S ];
@@ -382,6 +384,7 @@ define token wide (48)
     wide_2_22 = (2,22)
     wide_div_literal = (24,39) hex
     wide_div_ce_bank = (46,46)
+    wide_mac_prefix = (46,46)
     wide_call_offset_0 = (24,45) hex
     wide_call_offset_22 = (0,1) hex
     wide_9_22 = (9,22)
@@ -1800,6 +1803,68 @@ compact_long_left: "MPY" "CE1" "*R3","A2L","A1L" is slot_0_22=0x400723 { local p
 compact_long_left: "MPYUS" "CE1" "*R3","A2L","A1L" is slot_0_22=0x480723 { local previous:2 = EST; local enabled:2; unary_ce(CECFG1, previous, CETBL, 0, enabled); if (enabled == 0) goto <long_done>; local old_address:2 = R3; local a:8 = zext(A2L); local b:8 = (zext(A1L) ^ 0x8000) - 0x8000; local bits:8 = (a * b * (1 + zext(ECFG & 1))) & 0xffffffffff; local carry_out:1 = 0; local overflow:1 = 0; local result:8; local flags:2; compact_long_finish(bits, carry_out, overflow, 1:1, 1:1, result, flags); local next_address:2 = old_address + 1; *[data]:2 old_address = result:2; *[data]:2 next_address = result(2); EST = (previous & 0xffc4) | (flags << 0); <long_done> }
 :^compact_long_left "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x480723 & compact_long_left); (slot_mode=0 & nop_right) { build compact_long_left; }
 
+# Immediate address-unit transfers and fixed long strides.
+macro transfer_address_word(pointer, modulo, bound, shift, delta, result) {
+    local base:2 = pointer;
+    local mode:2 = (PACFG >> shift) & 3;
+    local candidate:4 = sext(base) + sext(delta);
+    if (mode < 2) goto <transfer_done>;
+
+    local size:4;
+    local lower:4;
+    if (mode == 3) goto <transfer_explicit>;
+    local mask:2 = modulo;
+    mask = mask | (mask >> 1);
+    mask = mask | (mask >> 2);
+    mask = mask | (mask >> 4);
+    mask = mask | (mask >> 8);
+    lower = sext(base & ~mask);
+    size = zext(modulo & 0xfff) + 1;
+    if (candidate s>= lower && candidate s< lower + size) goto <transfer_done>;
+    goto <transfer_wrap>;
+
+  <transfer_explicit>
+    candidate = zext(candidate:2);
+    lower = zext(bound);
+    size = zext(modulo) + 1;
+    local limit:4 = lower + size;
+    if (limit <= 0x10000 && lower <= candidate && candidate < limit) goto <transfer_done>;
+  <transfer_wrap>
+    if (delta s< 0) goto <transfer_reverse>;
+    candidate = candidate - size;
+    goto <transfer_done>;
+  <transfer_reverse>
+    candidate = candidate + size;
+  <transfer_done>
+    result = candidate:2;
+}
+:TRANSFER "R2","A0L",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x100422 & transfer_roles_imm { R2 = A0L + transfer_roles_imm; }
+:TRANSFER "R2","A1L",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1004a2 & transfer_roles_imm { R2 = A1L + transfer_roles_imm; }
+:TRANSFER "R2","FF1",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x101f22 & transfer_roles_imm { R2 = FF1 + transfer_roles_imm; }
+:TRANSFER "R2","LSA1L",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x102922 & transfer_roles_imm { R2 = LSA1L + transfer_roles_imm; }
+:TRANSFER "R2","LEA1L",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1029a2 & transfer_roles_imm { R2 = LEA1L + transfer_roles_imm; }
+:TRANSFER "R2","LC1",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x102a22 & transfer_roles_imm { R2 = LC1 + transfer_roles_imm; }
+:TRANSFER "R2","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x100322 & transfer_roles_imm { R2 = 0xffff + transfer_roles_imm; }
+:TRANSFER "R2","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1003a2 & transfer_roles_imm { R2 = 0xffff + transfer_roles_imm; }
+:TRANSFER "R2","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x100722 & transfer_roles_imm { R2 = 0xffff + transfer_roles_imm; }
+:TRANSFER "R2","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1007a2 & transfer_roles_imm { R2 = 0xffff + transfer_roles_imm; }
+:TRANSFER "R2","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x103022 & transfer_roles_imm { R2 = 0xffff + transfer_roles_imm; }
+:TRANSFER "R2","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x103fa2 & transfer_roles_imm { R2 = 0xffff + transfer_roles_imm; }
+:TRANSFER "A0L","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x101188 & transfer_roles_imm { local delta:2 = transfer_roles_imm; transfer_address_word(R3, RM2, RL2, 6, delta, A0L); }
+:TRANSFER "A1L","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x101189 & transfer_roles_imm { local delta:2 = transfer_roles_imm; transfer_address_word(R3, RM2, RL2, 6, delta, A1L); }
+:TRANSFER "FF1","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1011be & transfer_roles_imm { local delta:2 = transfer_roles_imm; transfer_address_word(R3, RM2, RL2, 6, delta, FF1); }
+:TRANSFER "LSA1L","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1011d2 & transfer_roles_imm { local delta:2 = transfer_roles_imm; transfer_address_word(R3, RM2, RL2, 6, delta, LSA1L); }
+:TRANSFER "LEA1L","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1011d3 & transfer_roles_imm { local delta:2 = transfer_roles_imm; transfer_address_word(R3, RM2, RL2, 6, delta, LEA1L); }
+:TRANSFER "LC1","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1011d4 & transfer_roles_imm { local delta:2 = transfer_roles_imm; transfer_address_word(R3, RM2, RL2, 6, delta, LC1); }
+:TRANSFER "discard","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x101186 & transfer_roles_imm {  }
+:TRANSFER "discard","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x101187 & transfer_roles_imm {  }
+:TRANSFER "discard","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x10118e & transfer_roles_imm {  }
+:TRANSFER "discard","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x10118f & transfer_roles_imm {  }
+:TRANSFER "discard","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1011e0 & transfer_roles_imm {  }
+:TRANSFER "discard","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1011ff & transfer_roles_imm {  }
+:TRANSFER "discard","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x103de5 & transfer_roles_imm {  }
+:TRANSFER "discard","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x103e86 & transfer_roles_imm {  }
+
 # Absolute peripheral words, distinct from ordinary DATA.
 io_word: "IO["^io_word_address^"]" is io_word_address { export *[io]:2 io_word_address; }
 ext_read_word: "EXT["^peripheral_address^"]" is ext_read_word_0 & ext_read_word_6 [ peripheral_address = ext_read_word_0 | (ext_read_word_6 << 6); ] { export *[ext]:2 peripheral_address; }
@@ -1814,6 +1879,9 @@ peripheral_literal: peripheral_literal_bits is peripheral_literal_bits { export 
 :MOVE "RN7",io_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_11=0x6bc & wide_14_22=0x119 & wide_40_45=0x0 & io_word { RN7 = io_word; }
 :MOVE "CE1" "RN7",io_word is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=0 & wide_0_11=0x6bc & wide_14_22=0x119 & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && ((CECFG1 & 0x1000) == 0)) goto <peripheral_done>; RN7 = io_word; <peripheral_done> }
 :MOVE "CE2" "RN7",io_word is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=1 & wide_0_11=0x6bc & wide_14_22=0x119 & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && ((CECFG2 & 0x1000) == 0)) goto <peripheral_done>; RN7 = io_word; <peripheral_done> }
+:MOVE io_word,"selector_50" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x140 & wide_14_22=0x11a & wide_40_45=0x0 & io_word { local stride:2 = 2; transfer_address_word(R0, RM0, RL0, 0, stride, R0); io_word = 0; }
+:MOVE "CE1" io_word,"selector_50" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=0 & wide_0_9=0x140 & wide_14_22=0x11a & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && ((CECFG1 & 0x1000) == 0)) goto <peripheral_done>; local stride:2 = 2; transfer_address_word(R0, RM0, RL0, 0, stride, R0); if (enabled == 0) goto <peripheral_done>; io_word = 0; <peripheral_done> }
+:MOVE "CE2" io_word,"selector_50" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=1 & wide_0_9=0x140 & wide_14_22=0x11a & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && ((CECFG2 & 0x1000) == 0)) goto <peripheral_done>; local stride:2 = 2; transfer_address_word(R0, RM0, RL0, 0, stride, R0); if (enabled == 0) goto <peripheral_done>; io_word = 0; <peripheral_done> }
 :MOVE io_word,"A0L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x240 & wide_14_22=0x11a & wide_40_45=0x0 & io_word { io_word = A0L; }
 :MOVE "CE1" io_word,"A0L" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=0 & wide_0_9=0x240 & wide_14_22=0x11a & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <peripheral_done>; io_word = A0L; <peripheral_done> }
 :MOVE "CE2" io_word,"A0L" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=1 & wide_0_9=0x240 & wide_14_22=0x11a & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <peripheral_done>; io_word = A0L; <peripheral_done> }
@@ -2053,67 +2121,39 @@ macro wide_div_trace_sink(lo, hi, guard) {
 :DIVIDE "CE1" "A5L",wide_div_literal is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_div_ce_bank=0 & wide_0_9=0x256 & wide_13_22=0x218 & wide_40_45=0xf & wide_div_literal { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <wide_div_disabled>; local dividend:8; wide_div_biased(A5L, A5H, GB5, dividend); local result:8; wide_div_trial(dividend, wide_div_literal:2, 32, 0x800000000000, result); A5L = result:2; A5H = result(2); GB5 = result(4); <wide_div_disabled> }
 :DIVTRACE "discard","A1","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x762 & wide_13_22=0x219 & wide_40_45=0x9 { wide_div_trace_sink(A1L, A1H, GB1); }
 
-# Family 39: R3 is an AGU source, not a plain ALU register operand.
-macro transfer_roles_r3(delta, result) {
-    local base:2 = R3;
-    local mode:2 = (PACFG >> 6) & 3;
-    local candidate:4 = sext(base) + sext(delta);
-    if (mode < 2) goto <transfer_done>;
-
-    local size:4;
-    local lower:4;
-    if (mode == 3) goto <transfer_explicit>;
-    local mask:2 = RM2;
-    mask = mask | (mask >> 1);
-    mask = mask | (mask >> 2);
-    mask = mask | (mask >> 4);
-    mask = mask | (mask >> 8);
-    lower = sext(base & ~mask);
-    size = zext(RM2 & 0xfff) + 1;
-    if (candidate s>= lower && candidate s< lower + size) goto <transfer_done>;
-    goto <transfer_wrap>;
-
-  <transfer_explicit>
-    candidate = zext(candidate:2);
-    lower = zext(RL2);
-    size = zext(RM2) + 1;
-    local limit:4 = lower + size;
-    if (limit <= 0x10000 && lower <= candidate && candidate < limit) goto <transfer_done>;
-  <transfer_wrap>
-    if (delta s< 0) goto <transfer_reverse>;
-    candidate = candidate - size;
-    goto <transfer_done>;
-  <transfer_reverse>
-    candidate = candidate + size;
-  <transfer_done>
-    result = candidate:2;
+# Use unsigned 64-bit carriers for signed-40 arithmetic, never a size-5 value.
+macro wide_mac_su_subtract(addend, left, right, word_result, result, flags) {
+    local signed_left:8 = (zext(left) ^ 0x8000) - 0x8000;
+    local product:8 = (signed_left * zext(right) * (1 + zext(ECFG & 1))) & 0xffffffffff;
+    result = (addend - product) & 0xffffffffff;
+    local carry_out:1 = addend >= product;
+    local negative:1 = result >= 0x8000000000;
+    local extended:1 = result > 0x7fffffff && result < 0xff80000000;
+    local overflow:1 = ((addend ^ product) & (addend ^ result) & 0x8000000000) != 0;
+    local zero:1 = result == 0 || (word_result != 0 && (result >> 16) == 0);
+    # This mixed-sign route does not clamp at ALIM. ALIM and S (unless SR1
+    # is also set) inhibit new L; neither configuration clears sticky L.
+    local loss:1 = (ECFG & 4) == 0 && (ECFG & 0x28) != 8 &&
+                   (overflow || (word_result != 0 && extended));
+    flags = zext(carry_out) | (zext(overflow) << 1) | (zext(loss) << 2) |
+            (zext(zero) << 3) | (zext(negative) << 4) | (zext(extended) << 5);
 }
-:TRANSFER "R2","A0L",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x100422 & transfer_roles_imm { R2 = A0L + transfer_roles_imm; }
-:TRANSFER "R2","A1L",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1004a2 & transfer_roles_imm { R2 = A1L + transfer_roles_imm; }
-:TRANSFER "R2","FF1",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x101f22 & transfer_roles_imm { R2 = FF1 + transfer_roles_imm; }
-:TRANSFER "R2","LSA1L",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x102922 & transfer_roles_imm { R2 = LSA1L + transfer_roles_imm; }
-:TRANSFER "R2","LEA1L",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1029a2 & transfer_roles_imm { R2 = LEA1L + transfer_roles_imm; }
-:TRANSFER "R2","LC1",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x102a22 & transfer_roles_imm { R2 = LC1 + transfer_roles_imm; }
-:TRANSFER "R2","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x100322 & transfer_roles_imm { R2 = 0xffff + transfer_roles_imm; }
-:TRANSFER "R2","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1003a2 & transfer_roles_imm { R2 = 0xffff + transfer_roles_imm; }
-:TRANSFER "R2","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x100722 & transfer_roles_imm { R2 = 0xffff + transfer_roles_imm; }
-:TRANSFER "R2","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1007a2 & transfer_roles_imm { R2 = 0xffff + transfer_roles_imm; }
-:TRANSFER "R2","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x103022 & transfer_roles_imm { R2 = 0xffff + transfer_roles_imm; }
-:TRANSFER "R2","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x103fa2 & transfer_roles_imm { R2 = 0xffff + transfer_roles_imm; }
-:TRANSFER "A0L","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x101188 & transfer_roles_imm { local delta:2 = transfer_roles_imm; transfer_roles_r3(delta, A0L); }
-:TRANSFER "A1L","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x101189 & transfer_roles_imm { local delta:2 = transfer_roles_imm; transfer_roles_r3(delta, A1L); }
-:TRANSFER "FF1","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1011be & transfer_roles_imm { local delta:2 = transfer_roles_imm; transfer_roles_r3(delta, FF1); }
-:TRANSFER "LSA1L","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1011d2 & transfer_roles_imm { local delta:2 = transfer_roles_imm; transfer_roles_r3(delta, LSA1L); }
-:TRANSFER "LEA1L","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1011d3 & transfer_roles_imm { local delta:2 = transfer_roles_imm; transfer_roles_r3(delta, LEA1L); }
-:TRANSFER "LC1","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1011d4 & transfer_roles_imm { local delta:2 = transfer_roles_imm; transfer_roles_r3(delta, LC1); }
-:TRANSFER "discard","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x101186 & transfer_roles_imm {  }
-:TRANSFER "discard","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x101187 & transfer_roles_imm {  }
-:TRANSFER "discard","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x10118e & transfer_roles_imm {  }
-:TRANSFER "discard","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x10118f & transfer_roles_imm {  }
-:TRANSFER "discard","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1011e0 & transfer_roles_imm {  }
-:TRANSFER "discard","R3",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1011ff & transfer_roles_imm {  }
-:TRANSFER "discard","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x103de5 & transfer_roles_imm {  }
-:TRANSFER "discard","open",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x103e86 & transfer_roles_imm {  }
+
+:MSUSU "discard","RL0","RN5","ECFG" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_mac_prefix=1 & wide_0_11=0xdc1 & wide_14_22=0x12e & wide_24_45=0x386df0 { local left:2 = RL0; local right:2 = RN5; local addend:8 = sext(ECFG) & 0xffffffffff; local result:8; local flags:2; wide_mac_su_subtract(addend, left, right, 1:1, result, flags); X1 = left; EST = (EST & 0xffc4) | flags; }
+:MSUSU "discard","RL0","RN5","FFTV" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_mac_prefix=1 & wide_0_11=0xdc1 & wide_14_22=0x12e & wide_24_45=0x386df5 { local left:2 = RL0; local right:2 = RN5; local addend:8 = sext(FFTV) & 0xffffffffff; local result:8; local flags:2; wide_mac_su_subtract(addend, left, right, 1:1, result, flags); X1 = left; EST = (EST & 0xffc4) | flags; }
+:MSUSU "CETBL","RL0","RN5","FFTV" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_mac_prefix=1 & wide_0_11=0xdc4 & wide_14_22=0x12e & wide_24_45=0x386df5 { local left:2 = RL0; local right:2 = RN5; local addend:8 = sext(FFTV) & 0xffffffffff; local result:8; local flags:2; wide_mac_su_subtract(addend, left, right, 1:1, result, flags); X1 = left; CETBL = result(2); EST = (EST & 0xffc4) | flags; }
+:MSUSU "BTR1","RL0","RN5","FFTV" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_mac_prefix=1 & wide_0_11=0xdc6 & wide_14_22=0x12e & wide_24_45=0x386df5 { local left:2 = RL0; local right:2 = RN5; local addend:8 = sext(FFTV) & 0xffffffffff; local result:8; local flags:2; wide_mac_su_subtract(addend, left, right, 1:1, result, flags); X1 = left; BTR1 = result(2); EST = (EST & 0xffc4) | flags; }
+:MSUSU "A0","RL0","RN5","A3" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_mac_prefix=1 & wide_0_11=0xd88 & wide_14_22=0x12e & wide_24_45=0x386df3 { local left:2 = RL0; local right:2 = RN5; local addend:8 = (zext(GB3) << 32) | (zext(A3H) << 16) | zext(A3L); local result:8; local flags:2; wide_mac_su_subtract(addend, left, right, 0:1, result, flags); X1 = left; A0L = result:2; A0H = result(2); GB0 = result(4); EST = (EST & 0xffc4) | flags; }
+:MSUSU "A0","RL0","RN5","-1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_mac_prefix=1 & wide_0_11=0xd88 & wide_14_22=0x12e & wide_24_45=0x386df6 { local left:2 = RL0; local right:2 = RN5; local addend:8 = 0xffffffffff:8; local result:8; local flags:2; wide_mac_su_subtract(addend, left, right, 0:1, result, flags); X1 = left; A0L = result:2; A0H = result(2); GB0 = result(4); EST = (EST & 0xffc4) | flags; }
+:MSUSU "discard","RL0","RN5","A3" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_mac_prefix=1 & wide_0_11=0xd8e & wide_14_22=0x12e & wide_24_45=0x386df3 { local left:2 = RL0; local right:2 = RN5; local addend:8 = (zext(GB3) << 32) | (zext(A3H) << 16) | zext(A3L); local result:8; local flags:2; wide_mac_su_subtract(addend, left, right, 0:1, result, flags); X1 = left; EST = (EST & 0xffc4) | flags; }
+:MSUSU "A0H","RL0","RN5","A1H" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_mac_prefix=1 & wide_0_11=0xd98 & wide_14_22=0x12e & wide_24_45=0x386df9 { local left:2 = RL0; local right:2 = RN5; local addend:8 = sext(A1H) & 0xffffffffff; local result:8; local flags:2; wide_mac_su_subtract(addend, left, right, 1:1, result, flags); X1 = left; A0H = result(2); EST = (EST & 0xffc4) | flags; }
+:MSUSU "A0H","RL0","RN5","A0L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_mac_prefix=1 & wide_0_11=0xd98 & wide_14_22=0x12e & wide_24_45=0x386df0 { local left:2 = RL0; local right:2 = RN5; local addend:8 = sext(A0L) & 0xffffffffff; local result:8; local flags:2; wide_mac_su_subtract(addend, left, right, 1:1, result, flags); X1 = left; A0H = result(2); EST = (EST & 0xffc4) | flags; }
+:MSUSU "RL4","RL0","RN5","RM2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_mac_prefix=1 & wide_0_11=0xdb4 & wide_14_22=0x12e & wide_24_45=0x386df3 { local left:2 = RL0; local right:2 = RN5; local addend:8 = sext(RM2) & 0xffffffffff; local result:8; local flags:2; wide_mac_su_subtract(addend, left, right, 1:1, result, flags); X1 = left; RL4 = result(2); EST = (EST & 0xffc4) | flags; }
+:MSUSU "RL4","RL0","RN5","FF1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_mac_prefix=1 & wide_0_11=0xdb4 & wide_14_22=0x12e & wide_24_45=0x386dfe { local left:2 = RL0; local right:2 = RN5; local addend:8 = sext(FF1) & 0xffffffffff; local result:8; local flags:2; wide_mac_su_subtract(addend, left, right, 1:1, result, flags); X1 = left; RL4 = result(2); EST = (EST & 0xffc4) | flags; }
+:MSUSU "LC1","RL0","RN5","LSA1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_mac_prefix=1 & wide_0_11=0xdd4 & wide_14_22=0x12e & wide_24_45=0x386df2 { local left:2 = RL0; local right:2 = RN5; local addend:8 = (zext(LSA1H) << 16) | zext(LSA1L); local result:8; local flags:2; wide_mac_su_subtract(addend, left, right, 1:1, result, flags); X1 = left; LC1 = result(2); EST = (EST & 0xffc4) | flags; }
+:MSUSU "LC1","RL0","RN5","0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_mac_prefix=1 & wide_0_11=0xdd4 & wide_14_22=0x12e & wide_24_45=0x386df8 { local left:2 = RL0; local right:2 = RN5; local addend:8 = 0:8; local result:8; local flags:2; wide_mac_su_subtract(addend, left, right, 1:1, result, flags); X1 = left; LC1 = result(2); EST = (EST & 0xffc4) | flags; }
+:MSUSU "LC1","RL0","RN5","PSTATUS" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_mac_prefix=1 & wide_0_11=0xdd4 & wide_14_22=0x12e & wide_24_45=0x386df5 { local left:2 = RL0; local right:2 = RN5; local addend:8 = (zext(PSTATUS) << 16) | ((0 - zext(PSTATUS s< 0)) & 0xff00000000); local result:8; local flags:2; wide_mac_su_subtract(addend, left, right, 1:1, result, flags); X1 = left; LC1 = result(2); EST = (EST & 0xffc4) | flags; }
+:MSUSU "LC1","RL0","RN5","USER_IO" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_mac_prefix=1 & wide_0_11=0xdd4 & wide_14_22=0x12e & wide_24_45=0x386df7 { local left:2 = RL0; local right:2 = RN5; local addend:8 = (zext(USER_IO) << 16) | ((0 - zext(USER_IO s< 0)) & 0xff00000000); local result:8; local flags:2; wide_mac_su_subtract(addend, left, right, 1:1, result, flags); X1 = left; LC1 = result(2); EST = (EST & 0xffc4) | flags; }
 
 # One architectural redirect, after the native-proven peers retire.
 # Do not emit speculative debugger PC updates or suppress an unmapped-target stop.
@@ -2326,6 +2366,8 @@ data_load_dst: "R5" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x294 & w
 data_load_dst: "R6" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x298 & wide_13_22=0x21b & wide_40_45=0x38 { export R6; }
 data_load_dst: "R7" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x29c & wide_13_22=0x21b & wide_40_45=0x38 { export R7; }
 :MOVE data_load_dst,"*"^absolute_data_addr is carmel_issue=5 & data_load_dst & absolute_data_addr { local address:2 = absolute_data_addr; data_load_dst = *[data]:2 address; }
+
+
 
 :CLRBTR clrbtr_mask is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_0=0x0 & slot_13_22=0x16d & clrbtr_mask { BTR1 = 0; }
 :CLRBTR clrbtr_mask "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_13_22=0x16d & clrbtr_mask); (slot_mode=0 & nop_right) { BTR1 = 0; }

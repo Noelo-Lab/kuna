@@ -68,6 +68,8 @@ Selected wide address transfers add the immediate displacement to a word
 source, including saved CODE addresses and the `R3` address unit.
 Selected CE2 logical shifts use configuration-word sources and preserve
 the destination on a veto. An unconnected configuration input stops before issue.
+Covered wide signed/unsigned multiply-subtract forms select the addend
+from the result bank and keep the first multiplier's `X1` latch.
 Other wide effects include selected EXTRACTS, EXTRACTZ, INSERT, DIVIDE,
 divide-with-trace, logic and unary arithmetic routes. Unqualified
 BANKXCHG exchanges selected pointer or accumulator banks. Predicated logic

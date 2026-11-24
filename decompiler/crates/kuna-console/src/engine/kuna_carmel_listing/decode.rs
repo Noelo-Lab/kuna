@@ -177,6 +177,15 @@ pub(super) fn wide_rejected(left: u32, right: u32) -> bool {
     let Some((family, payload)) = wide_family(left, right) else { return false; };
     let variant = family.variant.read(payload);
     match family.id {
+        26 if left >> 22 == 3 => {
+            let [destination, lhs, rhs, addend] = family.operands else { return false; };
+            // Only the unconnected addend ports for this signed/unsigned
+            // multiplier pair are known to fail before either input issues.
+            lhs.field.read(payload) == 0x70 && rhs.field.read(payload) == 0x6d
+                && matches!((destination.field.read(payload), addend.field.read(payload)),
+                    (0xc4, 0xf8) | (0xb4, 0xfd) | (0x88, 0xfa))
+                && family.variants.iter().any(|v| v.semantic == 158 && v.key == variant)
+        }
         43 => family.variants.iter().any(|v| matches!(v.semantic, 94 | 95) && v.key == variant)
             && family.operands.iter().any(|op| op.kind == 125 && matches!(op.field.read(payload), 0x45..=0x47 | 0x7d | 0x7f)),
         44 if left >> 22 == 1 => {

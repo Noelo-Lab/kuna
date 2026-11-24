@@ -752,3 +752,36 @@ fn ce2_word_shift_publishes_carry_even_when_the_result_word_is_zero() {
         assert_eq!((m.reg("ECFG"), m.reg("EST") & 0x39), expected);
     }
 }
+
+#[test]
+fn wide_long_io_separates_address_enable_from_bus_publication() {
+    for (ce, config, expected) in [(0, 0, (0x4047, 0x96b5)), (0, 0x1000, (0x4041, 0x96b5)), (0xff00, 0, (0x4041, 0))] {
+        let mut m = Machine::new(0, &[(0x400102, 0xc68140), (NOP, NOP)], &[(0, 4, 6), (2, 1, 0)], None);
+        m.seed(&[("R0", 0x4047), ("RM0", 7), ("PACFG", 2), ("CETBL", ce), ("CECFG2", config)]);
+        m.state.borrow_mut().set_value(&m.io, 0x204, 2, 0x96b5).unwrap();
+        m.state.borrow_mut().set_value(&m.ext, 0x204, 2, 0x43a6).unwrap();
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        let state = m.state.borrow();
+        assert_eq!((state.get_value_by_name("R0").unwrap(), state.get_value(&m.io, 0x204, 2).unwrap()), expected);
+        assert_eq!(state.get_value(&m.ext, 0x204, 2).unwrap(), 0x43a6);
+    }
+}
+
+#[test]
+fn wide_signed_unsigned_mac_publishes_the_latch_without_clamping_the_result() {
+    let mut m = Machine::new(0, &[(0xf86df3, 0xcb8d88), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+    m.seed(&[("A3", 0x007fffffff), ("RL0", 0xffff), ("RN5", 1), ("ECFG", 0x44), ("EST", 0)]);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("A0"), m.reg("X1"), m.reg("EST") & 0x3f), (0x0080000000, 0xffff, 0x20));
+}
+
+#[test]
+fn wide_mac_reads_all_24_saved_code_address_bits_as_unsigned() {
+    let mut m = Machine::new(0, &[(0xf86df2, 0xcb8dd4), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+    m.seed(&[("LSA1", 0xfef876), ("RL0", 3), ("RN5", 7), ("ECFG", 0x40), ("EST", 0)]);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("LC1"), m.reg("LSA1"), m.reg("X1"), m.reg("EST") & 0x3f), (0xfe, 0xfef876, 3, 1));
+}

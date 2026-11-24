@@ -220,6 +220,20 @@ fn an_unconnected_configuration_shifter_input_stops_before_execution() {
     assert!(connected.raw_pcode_at(3 * base).unwrap().1.iter().any(|op| op.opcode == "INT_RIGHT"));
 }
 
+#[test]
+fn unconnected_wide_mac_addends_reject_before_the_multiplier_latch() {
+    let base = 0x1000;
+    for packet in [
+        [0xf8, 0x6d, 0xf8, 0xcb, 0x8d, 0xc4],
+        [0xf8, 0x6d, 0xfd, 0xcb, 0x8d, 0xb4],
+        [0xf8, 0x6d, 0xfa, 0xcb, 0x8d, 0x88],
+    ] {
+        let program = raw(&packet, base, &[base]).unwrap();
+        assert_eq!(program.disassemble_at(base * 3).unwrap().0, 6);
+        assert!(matches!(program.raw_pcode_at(base * 3), Err(KunaError::BadData { .. })));
+    }
+}
+
 fn xml(chunks: &str) -> KunaResult<ConsoleProgram> {
     let source = format!("<binaryimage arch=\"{TARGET}\">{chunks}</binaryimage>");
     let mut docs = DocumentStorage::new();

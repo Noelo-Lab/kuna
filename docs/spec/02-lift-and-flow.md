@@ -3896,6 +3896,10 @@ and take carry from the input's low bit. The status destination discards
 the word but still drives carry. The unconnected configuration input
 rejects at decode, even when CE2 would veto execution.
 
+For covered wide signed/unsigned multiply-subtract forms, the result bank
+selects the extended addend and result width. The first multiplier source
+publishes to `X1`. `ALIM` inhibits new loss status without clamping the result.
+
 Lifted compact delayed `EQ` reads the incoming `EST` condition before any
 delay issue executes. The delay runs on both paths, including when the
 transfer itself is the right slot of a sequential fetch.
@@ -3903,6 +3907,9 @@ transfer itself is the right slot of a sequential fetch.
 Lifted absolute peripheral moves address `io` and `ext` as separate 16-bit
 word spaces. A peripheral word and a `data` word at the same numeric
 address do not alias.
+The covered long-DATA I/O source does not drive a DATA value onto the bus.
+It advances `R0` by two, including when only address enable is set. Zero
+is written to the I/O word only when execution is enabled.
 
 For the lifted `LINK` forms, address enable can update `SP` and the
 selected frame register even when the result predicate suppresses the
