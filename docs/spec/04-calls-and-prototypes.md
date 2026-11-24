@@ -2710,8 +2710,31 @@ classified:
   `memcpy` lost the size it computes into `r2` and also multiplies with
   (`pidCopyProfile` printed `memcpy(dst,src)`), and with it the `data` and
   `length` a caller hands on untouched (`sx1280WriteCommandBurst` printed
-  `memcpy(&v2[v1 + 1])`), while its DWARF prototype was applied. Without a
-  declaration the store still declines the rule.
+  `memcpy(&v2[v1 + 1])`), while its DWARF prototype was applied. Nor is a
+  function variadic on that account, declared or not, when the instruction
+  that stores its last argument register also stores a register above it in
+  the register file: that is the same pad. A variadic register save stores
+  the argument registers in a store of their own, the last one highest,
+  directly beneath the incoming stack arguments `va_arg` walks on into
+  (`cliPrintf`: `push {r0, r1, r2, r3}; push {lr}`; `tfp_sprintf`: `push {r1,
+  r2, r3}; push {r4, lr}`), so `push {r3, r4, r5, lr}` is never one. The entry
+  walk (`CalleeEntryDead`) records the register bytes such a store writes
+  beneath a higher register, and apart from them the bytes a multi-register
+  store writes as its highest register. The pad counts only where the entry
+  stores the register no other way: clang -Oz reserves stack by pushing dead
+  registers (`sub sp, #12; push {r3, r4, lr}`) and then saves `r1`-`r3` with
+  `stm r0!, {r1, r2, r3}`, or `r3` alone with `str r3, [sp, #20]`, so a store
+  of the register alone or as the highest register of a store still makes the
+  function a possible variadic save (clang -Oz's `sqlite3_mprintf` otherwise
+  hands `sqlite3_vmprintf` its save area and takes `r1`-`r3` as three more
+  parameters). Read with the DWARF ignored, Crazyflie's
+  `syslinkSendPacket` printed `memcpy(&sendBuffer[4],&a0[2])` without the
+  length it also stores into the packet header, and Betaflight printed
+  `strlen()` for a pointer it also keeps and `ledSet(0)` for `ledSet(0,
+  false)`; every such call across Betaflight, cleanflight and Crazyflie now
+  passes only arguments its DWARF prototype states. A single store of the
+  register (mavlink's `str r3, [sp, #0xc]` spill of a real fourth parameter)
+  still declines the rule without a declaration.
   Floating-point registers are left alone, because a callee that only moves
   its `double` (`lua_pushnumber` stores `xmm0`) is recovered with an integer
   parameter, and handing it a `floor()` result made the caller read that result
