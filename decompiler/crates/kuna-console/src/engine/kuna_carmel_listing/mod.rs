@@ -80,6 +80,10 @@ pub(super) fn compact_fetch_faults(fetch: &[u8; 6], sequential: bool) -> [bool; 
     if sequential { [left, right] } else { [left || right, false] }
 }
 
+pub(super) fn wide_fetch_fault(fetch: &[u8; 6]) -> bool {
+    decode::wide_rejected(fetch_word(fetch), fetch_word(&fetch[3..]))
+}
+
 pub(super) fn print(fetch: &[u8; 6], pc: u32, size: i32, mnemonic: &mut String, body: &mut String) {
     let left = fetch_word(fetch);
     let right = fetch_word(&fetch[3..]);

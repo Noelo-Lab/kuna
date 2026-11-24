@@ -230,6 +230,8 @@ pub(super) fn frame(
                         paint(&mut result.bad_fetches, BAD_FETCH, addr + (slot as u64) * SLOT, 1);
                     }
                 }
+            } else if super::kuna_carmel_listing::wide_fetch_fault(&fetch) {
+                paint(&mut result.bad_fetches, BAD_FETCH, addr, 1);
             }
             if left == Issue::SeqLeft {
                 paint(&mut result.issues, ISSUE, addr + SLOT, Issue::SeqRight as u32);

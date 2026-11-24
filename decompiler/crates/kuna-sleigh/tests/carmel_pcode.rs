@@ -355,6 +355,53 @@ fn wide_goto_saturates_delay_and_counts_sequential_slots_separately() {
 }
 
 #[test]
+fn qualified_wide_goto_samples_address_enable_before_the_delay() {
+    for (config, next) in [(0, 18), (0x1000, 24)] {
+        let mut m = Machine::new(
+            0,
+            &[(0x000008, 0xcf9000), (INC_A0, NOP), (INC_A1, NOP), (INC_A2, NOP), (NOP, NOP)],
+            &[(0, 4, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 0)],
+            None,
+        );
+        m.seed(&[("CECFG1", config), ("CETBL", 0), ("EST", 0)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), next);
+        assert_eq!((m.reg("A0L"), m.reg("A1L"), m.reg("A2L")), (1, 1, 0));
+    }
+}
+
+#[test]
+fn bank_exchange_swaps_only_selected_pointer_configuration_bits() {
+    let mut m = Machine::new(0, &[(0x800001, 0xcb4000), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+    m.seed(&[
+        ("R0", 0x1234), ("R0S", 0xabcd), ("RN0", 3), ("RN0S", 5),
+        ("PACFG", 0x5156), ("PACFGS", 0xfff9), ("R1", 0x1111), ("R1S", 0x2222),
+    ]);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("R0"), m.reg("R0S"), m.reg("RN0"), m.reg("RN0S")), (0xabcd, 0x1234, 5, 3));
+    assert_eq!((m.reg("PACFG"), m.reg("PACFGS"), m.reg("R1"), m.reg("R1S")), (0x5155, 0xfffa, 0x1111, 0x2222));
+}
+
+#[test]
+fn wide_logic_flags_include_the_guard_even_when_the_word_result_is_zero() {
+    let mut m = Machine::new(0, &[(0xc9c1a7, 0xea8222), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+    m.seed(&[("A0", 0xcc00000000), ("A1", 0), ("R0", 64), ("EST", 0x3000)]);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("R0"), m.reg("EST")), (0, 0x3030));
+}
+
+#[test]
+fn compact_neg_of_ff12_uses_the_unsigned_double_word_input() {
+    let mut m = Machine::new(0, &[(0x20c20c, NOP), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+    m.seed(&[("FF1", 0x8001), ("FF2", 0xffff), ("EST", 0), ("ECFG", 0)]);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("A0"), m.reg("EST")), (0xff00007fff, 0x30));
+}
+
+#[test]
 fn compact_address_update_uses_implicit_and_explicit_modulo_windows() {
     for (mode, incoming, increment, expected) in [
         (2, 0x0003, 1, 0x0004),

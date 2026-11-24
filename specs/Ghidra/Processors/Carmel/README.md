@@ -34,10 +34,11 @@ zero and register-half MOVE; half-register CMP/CMPU and signed full-accumulator
 CMP with an inactive peer; signed register-only MUL, MAC, MSU, and DIV;
 logical and arithmetic low-half shifts with an inactive peer; assigned
 ADDRUPDATE pointer pairs; and ordinary signed conditional GOTO with no delay.
-Unconditional compact and marked wide relative GOTO execute up to three
-following issues, counting sequential slots individually. Compact CALL and
-RETURN admit zero or one delay issue. Immediate REPEAT handles one
-register-only following issue, including zero repeats. REPEAT does not lift a
+Compact unconditional and wide relative GOTO execute up to three following
+issues, counting sequential slots individually. For the qualified wide form,
+the address-enable bit can admit a transfer even when the predicate is false.
+Compact CALL and RETURN admit zero or one delay issue. Immediate REPEAT handles
+one register-only following issue, including zero repeats. REPEAT does not lift a
 transfer or DATA access in that issue.
 The explicit post-CALL branch past an unexecuted sequential slot is part of
 the caller's control flow, even if analysis found a function entry there.
@@ -45,13 +46,15 @@ Unconditional wide relative CALL without delay uses the same two-word DATA
 stack link. Marked wide MOVE covers signed literals to accumulator halves,
 whole accumulators, and address registers; it also supports short DATA
 through `R0` indirect/postincrement and absolute DATA loads into address
-registers. Register-only routes of EXTRACTS, EXTRACTZ, INSERT, and the
-divide-with-trace operations are also supported. Marked MOVU supports a
-subset of register and literal sources to whole accumulators or the
-arithmetic result sink. Parallel lanes sample old registers and publish in
+registers. Other wide effects include selected EXTRACTS, EXTRACTZ, INSERT,
+DIVIDE, divide-with-trace, logic and unary arithmetic routes. Unqualified
+BANKXCHG exchanges selected pointer or accumulator banks. Predicated logic
+uses incoming CE feedback; the language does not model its general publication.
+Marked MOVU supports some register and literal sources to whole accumulators
+or the arithmetic result sink. Parallel lanes sample old registers and publish in
 lane order; competing accumulator writes and two transfers stop lift.
-Unrecognized sequential right families and verified reserved compact
-operand ports reject lift without changing canonical listing boundaries.
+Unrecognized sequential right families and reserved compact operands and
+wide EXTRACT descriptors reject lift without changing canonical listing boundaries.
 
 CLIW specialization admits the all-NOP template and a signed MAC1 register
 product with the remaining lanes inactive. The multiply uses standard-width

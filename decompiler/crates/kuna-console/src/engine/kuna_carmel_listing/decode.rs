@@ -165,13 +165,24 @@ pub(super) fn compact(word: u32) -> Option<Operation> {
     Some(Operation::new(family.id, semantic, word, None, payload, 0, rule.operands))
 }
 
-pub(super) fn wide(left: u32, right: u32) -> Option<Operation> {
+fn wide_family(left: u32, right: u32) -> Option<(&'static Family48, u64)> {
     let right_payload = u64::from(right & 0x7fffff);
-    let mut payload = right_payload << 22 | u64::from(left & 0x3fffff);
+    let payload = right_payload << 22 | u64::from(left & 0x3fffff);
     let family = tables::WIDE.get(usize::from(tables::WIDE_INDEX[(payload >> 35) as usize]))?;
-    if family.cliw {
-        payload = right_payload << 23 | u64::from(left & 0x7fffff);
-    }
+    let payload = if family.cliw { right_payload << 23 | u64::from(left & 0x7fffff) } else { payload };
+    Some((family, payload))
+}
+
+pub(super) fn wide_rejected(left: u32, right: u32) -> bool {
+    wide_family(left, right).is_some_and(|(family, payload)| {
+        family.id == 43
+            && family.variants.iter().any(|v| matches!(v.semantic, 94 | 95) && v.key == family.variant.read(payload))
+            && family.operands.iter().any(|op| op.kind == 125 && matches!(op.field.read(payload), 0x45..=0x47 | 0x7d | 0x7f))
+    })
+}
+
+pub(super) fn wide(left: u32, right: u32) -> Option<Operation> {
+    let (family, payload) = wide_family(left, right)?;
     let key = family.variant.read(payload);
     let variant = family.variants.iter().find(|v| v.key == key)?;
     Some(Operation::new(

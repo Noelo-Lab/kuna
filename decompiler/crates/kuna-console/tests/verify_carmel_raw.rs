@@ -169,6 +169,20 @@ fn a_reserved_compact_operand_stops_its_issue_before_any_peer_executes() {
     assert!(matches!(assigned.raw_pcode_at(0), Err(KunaError::Unimpl { .. })));
 }
 
+#[test]
+fn an_unbound_wide_extract_descriptor_cannot_issue() {
+    for (selector, rejected) in [(0xfc, false), (0xfd, true), (0xfe, false), (0xff, true)] {
+        let program = raw(&[selector, 0x89, 0x61, 0xf7, 0x8e, 0x8b], 0, &[0]).unwrap();
+        assert_eq!(program.disassemble_at(0).unwrap().0, 6);
+        let result = program.raw_pcode_at(0);
+        if rejected {
+            assert!(matches!(result, Err(KunaError::BadData { .. })));
+        } else {
+            assert!(matches!(result, Err(KunaError::Unimpl { .. })));
+        }
+    }
+}
+
 fn xml(chunks: &str) -> KunaResult<ConsoleProgram> {
     let source = format!("<binaryimage arch=\"{TARGET}\">{chunks}</binaryimage>");
     let mut docs = DocumentStorage::new();
