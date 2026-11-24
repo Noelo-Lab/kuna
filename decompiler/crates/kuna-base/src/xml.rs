@@ -2306,8 +2306,11 @@ mod tests {
         // and kuna-switchcond / a folded switch is never printed where a condition belongs
         // and kuna-guardauto / the guardarm layout tie-break applies by default only to unoptimized code
         // and kuna-stated-jump / caller-stated computed branch destinations
+        // and kuna-passthroughslot / forwarded registers fill their slots ahead of a loaded argument
+        // and kuna-passthroughslot-arm / an ARM pad or a register the callee does not take is no filled slot
+        // and gh1916-stackpadarg-x86 / a stack slot's pushed pad is not part of its int argument
         // and kuna-calloverlap-floatret / a call's float result inside a wider XMM range
-        assert_eq!(count, 895, "corpus file count drifted");
+        assert_eq!(count, 898, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
