@@ -2313,7 +2313,9 @@ mod tests {
         // and kuna-tailform-voidreturn / a void tail if drops the return the function end repeats
         // and kuna-calloverlap-floatret / a call's float result inside a wider XMM range
         // and gh1922-declared-caller-readarg-thumb / a declared fixed caller's pushed r3 is no va-save
-        assert_eq!(count, 901, "corpus file count drifted");
+        // and kuna-stated-jump-placement / stated destinations a segment, a narrow offset or a DOS load cannot label
+        // and kuna-stated-jump-owners / stated destinations stay in the declared function that holds the jump
+        assert_eq!(count, 903, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
