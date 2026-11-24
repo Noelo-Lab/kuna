@@ -499,6 +499,12 @@ fn position_independent_jumps_reject_the_directive_and_keep_their_flow() {
     assert_eq!(fd.num_jump_tables(), 0);
 }
 
+#[test]
+fn discovered_case_blocks_keep_both_taken_edges_and_the_guard_miss() {
+    verify_stated_edges("fixed.elf", "jumptable 401005 401007 40100d",
+                        0x401005, &[0x401007, 0x40100d], [0x401005, 0x401013]);
+}
+
 fn load_with_hint(image: &str, hint: &str) -> (kuna_console::engine::ConsoleProgram, kuna_console::engine::FunctionEntry) {
     use kuna_console::{assertions, assertsyntax, engine};
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");

@@ -1177,39 +1177,46 @@ fn generate_flow(
     Ok(data)
 }
 
+/// The PPC count/link register transfer discards two bits even when SLEIGH
+/// names the register itself as the destination. Each stated classic CTR/LR
+/// branch reads its operand through that mask, installed in the completed CFG
+/// before heritage reads it, including on a fresh follow.
+fn align_stated_powerpc_branches(arch: &Architecture, data: &mut Funcdata) -> KunaResult<()> {
+    if arch.stated_jump_targets.is_empty() {
+        return Ok(());
+    }
+    for index in 0..data.num_jump_tables() {
+        let table = data.get_jump_table(index);
+        let site = table.get_op_address().clone();
+        if !arch.stated_jump_targets.get(&site).is_some_and(|f|
+            f.selector == crate::jumptable::StatedSelector::PowerPcAligned)
+        {
+            continue;
+        }
+        let branch = table.get_indirect_op().unwrap();
+        let raw = data.obank().get(branch).unwrap().get_in(0).unwrap();
+        let size = data.vbank().get(raw).unwrap().get_size();
+        let address_bits = kuna_base::address::calc_mask(size.min(site.get_addr_size()));
+        let align = data.new_op(2, site);
+        data.op_set_opcode(align, crate::typeop::type_op_for(OpCode::CPUI_INT_AND));
+        data.op_unset_input(branch, 0);
+        data.op_set_input(align, raw, 0)?;
+        let mask = data.new_constant(size, address_bits & !3);
+        data.op_set_input(align, mask, 1)?;
+        let aligned = data.new_unique_out(size, align)?;
+        data.op_insert_before(align, branch);
+        data.op_set_input(branch, aligned, 0)?;
+    }
+    Ok(())
+}
+
 /// Mark processing started and publish the flow's buffered comments.
 fn publish_flow(arch: &mut Architecture, mut data: Funcdata) -> KunaResult<Funcdata> {
     // startProcessing then sets the processing_started flag (so isProcStarted()
     // is true; the rest of startProcessing — sortCallSpecs / buildInfoList /
     // applyDeadCodeDelay — is a W4 stub or handled lazily in op_heritage).
     data.set_flag_raw(funcdata_flags::processing_started);
-    // The PPC count/link register transfer discards two bits even when SLEIGH
-    // names the register itself as the destination. Install that operation in
-    // the completed CFG before heritage reads it, including on a fresh follow.
-    if !arch.stated_jump_targets.is_empty() {
-        for index in 0..data.num_jump_tables() {
-            let table = data.get_jump_table(index);
-            let site = table.get_op_address();
-            if !arch.stated_jump_targets.get(site).is_some_and(|f|
-                f.selector == crate::jumptable::StatedSelector::PowerPcAligned)
-            {
-                continue;
-            }
-            let branch = table.get_indirect_op().unwrap();
-            let raw = data.obank().get(branch).unwrap().get_in(0).unwrap();
-            let size = data.vbank().get(raw).unwrap().get_size();
-            let address_bits = kuna_base::address::calc_mask(size.min(site.get_addr_size()));
-            let align = data.new_op(2, site.clone());
-            data.op_set_opcode(align, crate::typeop::type_op_for(OpCode::CPUI_INT_AND));
-            data.op_unset_input(branch, 0);
-            data.op_set_input(align, raw, 0)?;
-            let mask = data.new_constant(size, address_bits & !3);
-            data.op_set_input(align, mask, 1)?;
-            let aligned = data.new_unique_out(size, align)?;
-            data.op_insert_before(align, branch);
-            data.op_set_input(branch, aligned, 0)?;
-        }
-    }
+    align_stated_powerpc_branches(arch, &mut data)?;
     // Publish buffered flow comments only after replacement construction succeeds,
     // and only from the drive that owns the Architecture.  A nested recovery drive
     // (the P4 callee-contract bootstrap) exists to state types: its statements are
