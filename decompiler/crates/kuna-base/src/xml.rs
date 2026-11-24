@@ -2311,8 +2311,9 @@ mod tests {
         // and gh1916-stackpadarg-x86 / a stack slot's pushed pad is not part of its int argument
         // and kuna-tailform-model / saved weights choose the function-tail form
         // and kuna-tailform-voidreturn / a void tail if drops the return the function end repeats
+        // and kuna-calloverlap-floatret / a call's float result inside a wider XMM range
         // and gh1922-declared-caller-readarg-thumb / a declared fixed caller's pushed r3 is no va-save
-        assert_eq!(count, 900, "corpus file count drifted");
+        assert_eq!(count, 901, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

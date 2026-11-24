@@ -29,7 +29,9 @@
 //!   multi-slot register ranges are partitioned by `kuna_multiregargs`.
 //! * [`LEVEL_AUTO`] (the default) — both guards, but only for a named
 //!   eight-byte register's low four-byte general ABI slot on a truncated 32-bit
-//!   address target, including e500 GPRs.
+//!   address target, including e500 GPRs. The output guard also takes the
+//!   model's first float return slot at the low end of a wider register
+//!   ([`auto_float_output`]).
 //! * [`LEVEL_IN`] — the input guard only.  Recovers the dropped argument but
 //!   leaves the call's return value unrecovered.
 //! * [`LEVEL_FULL`] — both upstream partial-range guards. Complete register partitions
@@ -169,6 +171,58 @@ pub(crate) fn auto_register(
         })
 }
 
+/// Whether the output guard may give the call `fc`, whose output is not
+/// locked, the model's first float return slot as the only output slot inside
+/// this wider register range, at its low end: x86-64 `XMM0_Qa` inside an `xmm0`
+/// the caller moves whole with `movapd` after the call. Only a callee the run
+/// has stated or recovered no returned value for takes it: an import, any
+/// callee of a single-function decompile, or one `decompile-all` recovered
+/// `void`, which the read then hands to `voidret`.
+pub(crate) fn auto_float_output(
+    fd: &crate::funcdata::Funcdata,
+    fc: &crate::fspec::FuncCallSpecs,
+    addr: &kuna_base::address::Address,
+    size: int4,
+) -> bool {
+    if float_output_slot(fc.proto(), addr, size).is_none() {
+        return false;
+    }
+    let entry = fc.get_entry_address();
+    let Some(space) = entry.get_space() else {
+        return true;
+    };
+    let key = (space.get_index(), entry.get_offset());
+    fd.kuna_callret_stated(key).is_none()
+        && matches!(fd.kuna_callee_returns(key), None | Some(crate::kuna_voidret::Returns::Void))
+}
+
+/// The model's first float return slot of `proto`, when the output is not
+/// locked and that slot is the only output slot inside `[addr, addr+size)`, at
+/// its low end, narrower than the range.
+fn float_output_slot(
+    proto: &crate::fspec::FuncProto,
+    addr: &kuna_base::address::Address,
+    size: int4,
+) -> Option<(kuna_base::address::Address, int4)> {
+    use crate::dtype::type_class;
+
+    if proto.is_output_locked() || !proto.has_model() {
+        return None;
+    }
+    let entries = proto.model().output_list()?.get_entry();
+    let mut contained = entries.iter().filter(|e| e.contained_by(addr, size));
+    let (Some(slot), None) = (contained.next(), contained.next()) else {
+        return None;
+    };
+    let first_float = entries.iter().find(|e| e.get_type() == type_class::TYPECLASS_FLOAT)?;
+    let at = kuna_base::address::Address::new(std::rc::Rc::clone(slot.get_space()), slot.get_base());
+    (std::ptr::eq(first_float, slot)
+        && slot.get_size() < size
+        && slot.get_join_record().is_none()
+        && addr.justified_contain(size, &at, slot.get_size(), false) == 0)
+        .then_some((at, slot.get_size()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -284,6 +338,44 @@ mod tests {
                 let (manager, proto, addr) = sample(big, false, &slots);
                 assert!(!auto_register(&manager, &proto, &addr, 8, false));
             }
+        }
+    }
+
+    #[test]
+    fn float_output_slot_is_only_the_first_float_return_slot_at_the_low_end() {
+        use type_class::{TYPECLASS_FLOAT as FLOAT, TYPECLASS_GENERAL as GENERAL};
+        let (manager, _, _) = sample(false, false, &[]);
+        let register = manager.get_space_by_name("register").unwrap().clone();
+        let mut model = ProtoModel::new(&manager);
+        model.build_param_list("standard").unwrap();
+        for (group, &(offset, class)) in [(0x1200u64, FLOAT), (0x1220, FLOAT), (0x0, GENERAL)].iter().enumerate() {
+            let entry = ParamEntry::seed(
+                group as int4,
+                class,
+                register.clone(),
+                offset,
+                8,
+                1,
+                0,
+                0,
+                true,
+                false,
+                model.output().get_entry(),
+                &manager,
+            )
+            .unwrap();
+            model.output_mut().push_entry(entry);
+        }
+        model.output_mut().finish_decode();
+        let mut proto = FuncProto::new();
+        proto.set_internal(
+            Rc::new(model),
+            Rc::new(Datatype::new(0, type_metatype::TYPE_VOID)),
+        );
+        let at = |off: u64| Address::new(register.clone(), off);
+        assert_eq!(float_output_slot(&proto, &at(0x1200), 16), Some((at(0x1200), 8)));
+        for (off, size) in [(0x1200, 8), (0x1220, 16), (0x11f8, 16), (0x1200, 64), (0x0, 16)] {
+            assert_eq!(float_output_slot(&proto, &at(off), size), None);
         }
     }
 
