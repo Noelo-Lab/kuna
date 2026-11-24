@@ -405,6 +405,19 @@ is selector*0x10000 + offset, so a near branch keeps the selector and wraps the
 offset, as upstream computes it. This is a SLEIGH correctness repair, without
 an inference option.
 
+An x86-64 REX prefix applies only as the last prefix before the opcode. The CPU
+ignores one that a legacy prefix follows (`0x66`, `0x67`, `F2`, `F3`, `F0`, or a
+segment override): `f3 48 67 ab` is `rep stos` of dwords with a 32-bit address,
+and the REX.W does not apply. Upstream's REX constructors move the decode into its
+primary phase, so the legacy prefix after the REX byte was read as the opcode, and
+the function stopped at a bad-instruction halt. A constructor in `ia.sinc`, under
+`@ifdef IA64`, now matches a legacy prefix in the primary phase right after a REX.
+It undoes the REX (the prefix bits, and the operand size, which a REX.W had set
+to 64 bits and which goes back to 16 bits after a `0x66`, else 32), returns to
+the prefix phase, and decodes on from the legacy prefix. The constructor replaces
+two blank lines, so `x86.sla` and `x86-16.sla` are byte-identical. This is a SLEIGH
+correctness repair, without an option.
+
 A DOS program built by Microsoft's or Borland's compilers for the 8087
 emulator carries no x87 opcodes: the linker's emulator fixups turn each `WAIT`
 and ESC opcode pair into a software interrupt that the emulator services or,
@@ -2310,7 +2323,34 @@ For a classic PowerPC branch through CTR or LR, flow explicitly clears the
 two architecturally discarded bits before SSA. An image whose code relocates
 at run time, or a branch whose target encoding is unresolved, cannot label a
 switch on the live pointer, so the assertion is rejected when it is installed
-and the site keeps ordinary recovery.
+and the site keeps ordinary recovery. Every bootstrap records whether code can
+move; the architecture assumes it can until the loader proves a fixed
+placement or the caller states the base of a raw or XML image. A branch input
+computed by the address space's segment operation is rejected too: the C
+prints it as the offset within its code segment, which a linear label cannot
+match. Every computed branch of a 16-bit x86 language is rejected the same
+way, because SLEIGH lifts some without the segment operation: a prefixed near
+jump still adds CS, and a far jump drops the segment it loads. The walk back
+from the branch input to the segment operation passes through copies,
+extensions and truncations in the same instruction. A zero extension on that
+walk, or a branch input narrower than the address, bounds every value the
+jump can take, so a destination above that bound is rejected: a 32-bit
+`jmp ax` never reaches 0x401003.
+A destination that enters another function declared by the loader's
+symbols or by the caller is a tail call, not a case, and is rejected as well.
+A declared function holds the site when its known extent, the caller's or
+else the symbol table's size, covers it; a size-less entry holds nothing. A
+destination inside a holder's extent stays in it unless the caller declared
+a function there and only the symbol table states the extent, because a
+caller's declaration outranks the image's. The holder's own entry is a loop,
+and a part split off it stays as well: the loader pairs `f.cold` and
+`f.cold.N` with `f` by raw symbol name, since demangling gives a C++ part
+its parent's name. Entries and extents are compared with any ARM or MIPS
+ISA bit cleared. Discovery's own entries are not evidence, since it names
+address-taken case blocks as functions. Directives that declare functions
+apply before every `jumptable` in the same list, and a later console
+declaration under which an installed destination would enter another
+function is refused before it changes anything.
 Its case values are the destination addresses in code-space addressable units.
 The model has no table-index ordering, inferred default or guard to fold.
 A fresh follow of the same image consults the same site map.

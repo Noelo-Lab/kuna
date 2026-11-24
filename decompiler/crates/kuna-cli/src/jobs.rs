@@ -487,10 +487,11 @@ struct RetiredBlocks {
 }
 
 impl Session {
+    /// Open the pool's scratch directory. The parent's accepted jump facts are
+    /// snapshotted there, so workers and retries never reopen the user's file.
     fn open(cfg: &PoolConfig, inventory: &[TargetSpec]) -> Result<Session, String> {
         let scratch = ScratchDir::create()?;
         if !cfg.jump_assertions.is_empty() {
-            // Snapshot the parent's accepted facts. Workers and retries never reopen the user's file.
             let lines: Vec<_> = cfg.jump_assertions.iter().map(|d|
                 d.raw.split_whitespace().collect::<Vec<_>>().join(" ")
             ).collect();

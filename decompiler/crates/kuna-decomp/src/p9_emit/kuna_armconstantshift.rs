@@ -1,4 +1,5 @@
-//! Defined C for a signed operand of a fixed, in-range 32-bit ARM LSL.
+//! Defined C for a signed operand of an in-range 32-bit ARM LSL: a constant
+//! count below 32, or a register count whose non-zero mask keeps it there.
 
 use crate::architecture::Architecture;
 use crate::context::{OpId, VarnodeId};
@@ -65,13 +66,8 @@ pub(crate) fn plan_arm_constant_lsl(
         return None;
     }
     let (lhs, count) = (o.get_in(0)?, o.get_in(1)?);
-    let (lhs_v, count_v, out_v) = (
-        fd.vbank().get(lhs)?,
-        fd.vbank().get(count)?,
-        fd.vbank().get(o.get_out()?)?,
-    );
-    if !count_v.is_constant()
-        || count_v.get_offset() >= 32
+    let (lhs_v, out_v) = (fd.vbank().get(lhs)?, fd.vbank().get(o.get_out()?)?);
+    if !crate::p9_emit::kuna_armshiftguard::count_below_width(fd, count, 32)
         || lhs_v.get_size() != 4
         || out_v.get_size() != 4
         || !signed_shiftee(fd, arch, lhs, op)

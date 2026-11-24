@@ -1177,39 +1177,46 @@ fn generate_flow(
     Ok(data)
 }
 
+/// The PPC count/link register transfer discards two bits even when SLEIGH
+/// names the register itself as the destination. Each stated classic CTR/LR
+/// branch reads its operand through that mask, installed in the completed CFG
+/// before heritage reads it, including on a fresh follow.
+fn align_stated_powerpc_branches(arch: &Architecture, data: &mut Funcdata) -> KunaResult<()> {
+    if arch.stated_jump_targets.is_empty() {
+        return Ok(());
+    }
+    for index in 0..data.num_jump_tables() {
+        let table = data.get_jump_table(index);
+        let site = table.get_op_address().clone();
+        if !arch.stated_jump_targets.get(&site).is_some_and(|f|
+            f.selector == crate::jumptable::StatedSelector::PowerPcAligned)
+        {
+            continue;
+        }
+        let branch = table.get_indirect_op().unwrap();
+        let raw = data.obank().get(branch).unwrap().get_in(0).unwrap();
+        let size = data.vbank().get(raw).unwrap().get_size();
+        let address_bits = kuna_base::address::calc_mask(size.min(site.get_addr_size()));
+        let align = data.new_op(2, site);
+        data.op_set_opcode(align, crate::typeop::type_op_for(OpCode::CPUI_INT_AND));
+        data.op_unset_input(branch, 0);
+        data.op_set_input(align, raw, 0)?;
+        let mask = data.new_constant(size, address_bits & !3);
+        data.op_set_input(align, mask, 1)?;
+        let aligned = data.new_unique_out(size, align)?;
+        data.op_insert_before(align, branch);
+        data.op_set_input(branch, aligned, 0)?;
+    }
+    Ok(())
+}
+
 /// Mark processing started and publish the flow's buffered comments.
 fn publish_flow(arch: &mut Architecture, mut data: Funcdata) -> KunaResult<Funcdata> {
     // startProcessing then sets the processing_started flag (so isProcStarted()
     // is true; the rest of startProcessing — sortCallSpecs / buildInfoList /
     // applyDeadCodeDelay — is a W4 stub or handled lazily in op_heritage).
     data.set_flag_raw(funcdata_flags::processing_started);
-    // The PPC count/link register transfer discards two bits even when SLEIGH
-    // names the register itself as the destination. Install that operation in
-    // the completed CFG before heritage reads it, including on a fresh follow.
-    if !arch.stated_jump_targets.is_empty() {
-        for index in 0..data.num_jump_tables() {
-            let table = data.get_jump_table(index);
-            let site = table.get_op_address();
-            if !arch.stated_jump_targets.get(site).is_some_and(|f|
-                f.selector == crate::jumptable::StatedSelector::PowerPcAligned)
-            {
-                continue;
-            }
-            let branch = table.get_indirect_op().unwrap();
-            let raw = data.obank().get(branch).unwrap().get_in(0).unwrap();
-            let size = data.vbank().get(raw).unwrap().get_size();
-            let address_bits = kuna_base::address::calc_mask(size.min(site.get_addr_size()));
-            let align = data.new_op(2, site.clone());
-            data.op_set_opcode(align, crate::typeop::type_op_for(OpCode::CPUI_INT_AND));
-            data.op_unset_input(branch, 0);
-            data.op_set_input(align, raw, 0)?;
-            let mask = data.new_constant(size, address_bits & !3);
-            data.op_set_input(align, mask, 1)?;
-            let aligned = data.new_unique_out(size, align)?;
-            data.op_insert_before(align, branch);
-            data.op_set_input(branch, aligned, 0)?;
-        }
-    }
+    align_stated_powerpc_branches(arch, &mut data)?;
     // Publish buffered flow comments only after replacement construction succeeds,
     // and only from the drive that owns the Architecture.  A nested recovery drive
     // (the P4 callee-contract bootstrap) exists to state types: its statements are
@@ -2748,14 +2755,22 @@ pub fn print_c_prototype(arch: &mut Architecture, fd: &Funcdata) -> String {
 /// `int8`, `float8`, …, spelled per standard C — 8-byte integers always use
 /// `long long` so the text is data-model independent) plus the fixed Ghidra
 /// `undefined` family block (`undefined`, `undefined1..8` — 3/5/6/7 mapped to
-/// the next larger unsigned integer with a sizeof note — and `undefined16/32`
-/// as byte-array structs).  `bool` is covered by `#include <stdbool.h>`;
-/// `char`/`void` are real C and emit nothing.
+/// the next larger unsigned integer with a sizeof note — `undefined16` as a
+/// one-byte-aligned `unsigned __int128` where the compiler has one, so the
+/// body's 16-byte arithmetic compiles and no record's layout moves, and
+/// otherwise, like `undefined32`, as a byte-array struct; clang on Windows lays
+/// a record out the Microsoft way, which keeps the 16-byte alignment, so it
+/// takes the struct).  `bool` is covered
+/// by `#include <stdbool.h>`; `char`/`void` are real C and emit nothing.
+/// `KUNA_ANY_ARGS` is the parameter list of a helper the header declares
+/// ([`crate::kuna_unitcalls`]): `...` where `()` means no parameters (C23,
+/// and the c2x modes of gcc 13 and clang 16 on), and empty before.
 pub fn print_c_recompile_prelude(arch: &Architecture) -> String {
     use crate::dtype::type_metatype::*;
     let mut out = String::new();
     out.push_str("/* kuna recompile prelude (generated): core scalar typedefs */\n");
     out.push_str("#include <stdbool.h>\n");
+    out.push_str("#if defined(__STDC_VERSION__) && __STDC_VERSION__ > 201710L && (__STDC_VERSION__ >= 202311L || (defined(__clang__) && __clang_major__ >= 16) || (defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 13))\n#define KUNA_ANY_ARGS ...\n#else\n#define KUNA_ANY_ARGS\n#endif\n");
     // A recovered aggregate can hold target pointers, and a host that compiles
     // this header for a different data model sizes them differently and moves
     // every field after such a member -- which also moves what `p[1]` means in
@@ -2829,7 +2844,9 @@ pub fn print_c_recompile_prelude(arch: &Architecture) -> String {
     out.push_str("typedef unsigned long long undefined6; /* 6 bytes in the decompiler; sizeof differs */\n");
     out.push_str("typedef unsigned long long undefined7; /* 7 bytes in the decompiler; sizeof differs */\n");
     out.push_str("typedef unsigned long long undefined8;\n");
+    out.push_str("#if defined(__SIZEOF_INT128__) && !(defined(__clang__) && defined(_WIN32))\n__extension__ typedef unsigned __int128 undefined16 __attribute__((aligned(1)));\n#else\n");
     out.push_str("typedef struct { unsigned char b[16]; } undefined16;\n");
+    out.push_str("#endif\n");
     out.push_str("typedef struct { unsigned char b[32]; } undefined32;\n");
     out
 }
