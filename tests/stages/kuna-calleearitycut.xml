@@ -59,7 +59,9 @@
     has no boundary at all - the AArch64 variadic register-save shape - and
     `caller3` writes `mov $2,%r8d` before the CALL, so the register the run stops
     at is carrying a fifth argument and truncating there would hide it.  Both are
-    declined.
+    declined by this rule.  `caller3` keeps its fifth argument instead through
+    passthrough: the three registers it forwards fill their slots, so the r8d it
+    writes is not cut off behind them (kuna-passthroughslot.xml).
 -->
 <bytechunk space="ram" offset="0x100000">
 c30000000000000000000000000000004889f801f001d001c8e8e2ffffffc300
@@ -89,8 +91,8 @@ ffffff01d85bc331c05bc3000000000000000000000000000000000000000000
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="calleearitycut #1: only the two discriminators render an empty argument list" min="2" max="2">callee2?\(\)</stringmatch>
+<stringmatch name="calleearitycut #1: only the whole-file discriminator renders an empty argument list" min="1" max="1">callee2?\(\)</stringmatch>
 <stringmatch name="calleearitycut #2: the four arguments the callee's body reads are recovered, bounded by the register the run stops at" min="1" max="1">callee\(a[0-9]+,a[0-9]+,a[0-9]+,1\)</stringmatch>
 <stringmatch name="calleearitycut #3: a callee that reads every argument register leaves the run no boundary, so its site is untouched" min="1" max="1">callee2\(\)</stringmatch>
-<stringmatch name="calleearitycut #4: `caller3` writes the register the run stops at, so it is carrying a further argument and that site is untouched" min="1" max="1">callee\(\)</stringmatch>
+<stringmatch name="calleearitycut #4: `caller3` writes the register the run stops at, so it is carrying a further argument and the list is not truncated before it" min="1" max="1">callee\(a[0-9]+,a[0-9]+,a[0-9]+,1,2\)</stringmatch>
 </decompilertest>

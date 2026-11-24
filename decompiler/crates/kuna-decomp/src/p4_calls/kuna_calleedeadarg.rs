@@ -944,7 +944,7 @@ fn taken_reads(
             match arch.default_fp().cloned() {
                 Some(model) if dead.complete => {
                     let regs = crate::p4_calls::kuna_passthrough::general_arg_registers(&model);
-                    let run = crate::p4_calls::kuna_passthrough::taken_run(&dead, through.as_ref(), &regs);
+                    let run = crate::p4_calls::kuna_passthrough::taken_run(&dead, through.as_ref(), &regs, false);
                     let reads = through.as_ref().map_or(&dead.reads_live, |t| &t.reads_live);
                     reads.iter().filter(|r| run.iter().any(|(a, s)| overlaps_read(a, *s, r))).copied().collect()
                 }
