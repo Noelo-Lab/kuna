@@ -2318,7 +2318,8 @@ mod tests {
         // and kuna-armshiftguard / an ARM register LSL whose count cannot reach 32 prints no range guard
         // and gh1922-pushpad-caller-readarg-thumb / r3 pushed beneath lr is no va-save
         // and kuna-retvalue / a result its callers read is returned though stored or loaded through
-        assert_eq!(count, 906, "corpus file count drifted");
+        // and kuna-rex-before-prefix / an x86-64 REX prefix that a legacy prefix follows is ignored
+        assert_eq!(count, 907, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
