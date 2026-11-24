@@ -19,7 +19,9 @@
 //! branch whose arms each write memory and join nothing is a statement.  The
 //! record keys each decided branch by the address of its `CBRANCH`, which
 //! every later copy of that branch keeps.  A value that is only returned is
-//! left to [`crate::p8_structure::kuna_o0returns`].
+//! left to [`crate::p8_structure::kuna_o0returns`].  clang does not separate
+//! the forms (at `-O0` it stores a value that crosses a branch to a stack
+//! slot in each arm), so an image the container says clang built is not read.
 
 use kuna_base::space::spacetype;
 use kuna_num::opcodes::OpCode;
@@ -66,7 +68,7 @@ pub(crate) fn record(fd: &mut Funcdata) {
         return;
     }
     let arch = fd.get_arch();
-    if !arch.iteregion || !arch.iteregion_record {
+    if !arch.iteregion || !arch.iteregion_record || arch.loader.as_ref().is_some_and(|l| l.borrow().built_by_clang()) {
         return;
     }
     if !crate::p3_dataflow::kuna_unoptimized::is_unoptimized(fd) {

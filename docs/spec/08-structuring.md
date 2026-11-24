@@ -1235,6 +1235,13 @@ computation into the expression unchanged. Unrecorded branches, and every
 branch of an optimized function, keep the shape rule; `option iteregion on`
 restores it everywhere.
 
+clang does not separate the two forms: at `-O0` it keeps any value that
+crosses a branch in a stack slot, so a conditional value is stored in each arm
+like the statement. The record is not read in an image the container says
+clang built (`decompiler/crates/kuna-analysis/src/loader/kuna_spillselects.rs
+(built_by_clang)`: a `clang version` line in an ELF `.comment`, which the C
+runtime's objects fill with a GCC line in every image, or any Mach-O image).
+
 ### earlyreturn — per-edge const-guard peeling (angr `ReturnDuplicatorHigh`, narrowed)
 
 `decompiler/crates/kuna-decomp/src/p8_structure/kuna_earlyreturn.rs
