@@ -132,17 +132,19 @@ pub enum TailDecision {
 /// Choose the form of `site`: under [`TailRule::Threshold`] wrap a tail of at
 /// most the threshold's lines and guard a longer one; under [`TailRule::Model`]
 /// wrap when the saved weights score the site's features above zero (and an
-/// empty tail always, so every choice is one some threshold makes), falling
-/// back to the threshold for a site without features.
+/// empty tail always, so every choice is one some threshold makes).  The model
+/// was fitted on optimized code: in a function `kuna_unoptimized` flags, and at
+/// a site without features, the threshold decides.
 pub fn decide(site: &TailSite, policy: &TailFormPolicy) -> TailDecision {
     let max = if site.void { policy.void_max } else { policy.value_max } as usize;
     let wrap = match policy.rule {
         TailRule::Threshold => site.lines <= max,
         TailRule::Wrap => true,
         TailRule::Guard => false,
-        TailRule::Model => {
-            site.feats.as_ref().map_or(site.lines <= max, |f| site.lines == 0 || features::model_score(f) > 0.0)
-        }
+        TailRule::Model => match site.feats.as_ref() {
+            Some(f) if !f.unopt => site.lines == 0 || features::model_score(f) > 0.0,
+            _ => site.lines <= max,
+        },
     };
     match (site.shape, wrap) {
         (TailShape::Guard, true) => TailDecision::Wrap,
@@ -433,11 +435,8 @@ fn next_edit(data: &Funcdata, cx: &Ctx, list: &[BlockId], conds: &[(BlockId, Blo
     }
     if let Final::Bare(r, key) = fin {
         let i = n - 2;
-        if !cx.void && plain_if(data, list[i]) && !holds_claimed(data, cx, list[i]) {
-            let clause = data.sblocks_ref().block(list[i]).get_block(1);
-            if bare_return(data, clause).is_none() && terminal_returns(data, clause, key, true) > 0 {
-                return Some(Edit::Merge(i, key));
-            }
+        if !cx.void && merges(data, cx, list[i], key) {
+            return Some(Edit::Merge(i, key));
         }
         if cx.void || matches!(key, RetKey::Const(..)) {
             if let Some(lines) = wrapped_site(data, cx, list[i], r, conds) {
@@ -524,7 +523,7 @@ fn site_decision(data: &Funcdata, cx: &Ctx, shape: TailShape, lines: usize, at: 
             lines,
             hidden_rets: at.hidden as u32,
             conds: at.conds,
-            unopt: data.kuna_unoptimized(),
+            unopt: crate::p3_dataflow::kuna_unoptimized::is_unoptimized(data),
         };
         site.feats = Some(features::compute(data, &parts));
     }
@@ -538,6 +537,16 @@ fn site_decision(data: &Funcdata, cx: &Ctx, shape: TailShape, lines: usize, at: 
         }
     }
     decision
+}
+
+/// Whether `b` is a one-arm `if` whose arm ends in the `return key` the
+/// function ends with anyway (and is more than that return).
+fn merges(data: &Funcdata, cx: &Ctx, b: BlockId, key: RetKey) -> bool {
+    if !plain_if(data, b) || holds_claimed(data, cx, b) {
+        return false;
+    }
+    let clause = data.sblocks_ref().block(b).get_block(1);
+    bare_return(data, clause).is_none() && terminal_returns(data, clause, key, true) > 0
 }
 
 /// For a wrapped `if (c) { S }` right before the final bare return `r`, the

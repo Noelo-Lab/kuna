@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5281,
-    5281
+    5285,
+    5285
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -5060,6 +5060,10 @@
     "data:tailform #7: off, a long void body is wrapped",
     "data:tailform #8: on, the long body follows a guard clause",
     "data:tailform #9: two different return values are left alone in both passes",
+    "data:tailform model #1: on, the four-line tail stays wrapped",
+    "data:tailform model #2: model, the tail follows a guard clause",
+    "data:tailform model #3: model, the one-call tail is wrapped",
+    "data:tailform model #4: the runtime's store is printed in both passes",
     "data:tailform no-return #1: off, scaled returns inside the if and ends in exit",
     "data:tailform no-return #2: on, scaled's two-statement fatal arm is the if body",
     "data:tailform no-return #3: on, pick tests the merged fatal condition and returns after it",
