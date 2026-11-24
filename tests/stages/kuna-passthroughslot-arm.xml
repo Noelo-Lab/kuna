@@ -1,0 +1,60 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:Cortex">
+<!--
+    The ARM side of kuna-passthroughslot.xml: a register the caller forwards
+    fills its slot only in a run that holds nothing else the caller touched,
+    and a stack slot past such a run needs the caller's own store into it.
+
+        fill3:    strb r1,[r0]; adds r0,r0,r2; bx lr                 (dst, c, n)
+        sbuffill: push {r3,r4,r5,lr}; mov r4,r0; mov r5,r2; ldr r0,[r0];
+                  bl fill3; ldr r3,[r4]; add r3,r5; str r3,[r4];
+                  pop {r3,r4,r5,pc}
+        lockS:    ldr r0,[r0]; bx lr                                  (mp)
+        lock:     push {r3,lr}; movs r3,#48; msr BASEPRI,r3; bl lockS;
+                  movs r3,#0; msr BASEPRI,r3; pop {r3,pc}
+
+    sbuffill (betaflight's sbufFill over memset) forwards r1 and r2 to fill3;
+    its `push {r3,...}` alignment pad reads r3 and leaves it in the first
+    stack-argument slot at the call, which the scoring takes as a realistic
+    stack argument.  lock (ChibiOS chMtxLock over chMtxLockS) forwards r0,
+    leaves r1 and r2 untouched and loads r3 for `msr BASEPRI`.  Counting a
+    forwarded register as a filled slot whatever else its run held let both
+    runs past the two-slot chain limit, giving fill3(*a0,a1,a2,a3,a3) and
+    lockS(a0,a1,a2,0x30,a3), with each caller's own prototype widened to
+    four parameters to match.
+
+    Stage: P4 active input-trial scoring (forceInactiveChain, option
+    passthrough, on by default).  Pass 1 is the default; pass 2 sets
+    passthrough off, where no forwarded register is kept.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+01708018704700bf38b5044615460068fff7f6ff23682b44236038bd00687047
+08b5302383f31188fff7f8ff002383f3118808bd
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="fill3"/>
+<symbol space="ram" offset="0x10008" name="sbuffill"/>
+<symbol space="ram" offset="0x1001c" name="lockS"/>
+<symbol space="ram" offset="0x10020" name="lock"/>
+</binaryimage>
+<script>
+  <com>set context TMode 1 [ram,0x10000] [ram,0x10034]</com>
+  <com>lo fu sbuffill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lock</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option passthrough off</com>
+  <com>lo fu sbuffill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lock</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="passthroughslot-arm #1: sbuffill forwards c and n and nothing its push pad left behind" min="1" max="1">fill3\(\*a0,a1,a2\);</stringmatch>
+<stringmatch name="passthroughslot-arm #2: lock forwards mp alone, not the BASEPRI value or the untouched registers" min="2" max="2">lockS\(a0\);</stringmatch>
+<stringmatch name="passthroughslot-arm #3: neither caller's own prototype is widened" min="4" max="4">void (sbuffill\([^,)]*,[^,)]*,[^,)]*\)|lock\([^,)]*\))</stringmatch>
+<stringmatch name="passthroughslot-arm #4: with passthrough off the forwarded registers are not arguments" min="1" max="1">fill3\(\*a0\);</stringmatch>
+</decompilertest>

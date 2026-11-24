@@ -7331,19 +7331,36 @@ inactive because it stands on the function's own value -- its input Varnode, or
 that value carried past calls, reassembled or handed on from an earlier call's
 result, the same tests `build_input_from_trials` applies -- and that the
 callee takes by the evidence above is marked *forwarded* at the end of
-`check_input_trial_use` (`kuna_passthrough.rs (mark_forwarded)`).
-`forceInactiveChain` counts such a trial as a filled slot, not a link of an
-inactive chain: past two inactive slots in a row the upstream rule marks every
+`check_input_trial_use` (`kuna_passthrough.rs (mark_forwarded)`). Past two
+inactive slots in a row the upstream `forceInactiveChain` rule marks every
 later trial inactive, active or not, so a caller that forwards three or more
 registers and loads the next one itself lost that one too, and with the
 loaded register gone the forwarded ones had no list to extend. clang -O2's
 `w5(a,b,c,d) { return in5(a,b,c,d,0) + 1; }` printed `in5() + 1`, and
 `get_int`'s `getprop(blob,node,prop,&len)` printed `getprop()` (U-Boot's six
 `fdtdec_*` callers of `fdt_getprop` were that shape) where `stackaddrargtrial`,
-off by default, was the only thing that kept `&len`. A forwarded trial with no
-active trial after it stays inactive and is left to the extension above; one
-with an active trial after it is made active by the rule's own hole filling, as
-upstream already does for a run of up to two. The mark needs the callee's
+off by default, was the only thing that kept `&len`.
+
+So a run of inactive slots that holds a forwarded register, and otherwise only
+registers the callee takes (`kuna_passthrough.rs (forwarded_evidence)`, the
+same statement or body run), is a filled run, not a chain: the active trial
+after it keeps its place, and the rule's own hole filling makes the run's
+registers arguments in front of it, as upstream already does for a run of up
+to two. Any other run longer than two is a chain exactly as upstream counts
+it, because a register past the callee's run, or a stack slot, is nothing the
+callee was seen to take. ARM
+Thumb code shows both: gcc's `push {r3, lr}` alignment pad reads r3, and
+ChibiOS's `chMtxLock(mp)` loads `r3 = 0x30` for `msr BASEPRI` around a call
+of `chMtxLockS(mp)` whose body reads only r0; read as filled whatever else
+the run held, betaflight's `sbufFill` printed `memset(*buf,c,n,a3,a3)` and
+`chMtxLock` printed `chMtxLockS(a0,a1,a2,0x30,a3)`, each caller gaining
+parameters to match. A stack slot past a filled run is an argument only where
+the caller stores into the first stack-argument slot something other than a
+register as it stands (`stores_first_stack_arg`, above), since the pad register
+a prologue pushes lies in that slot at the call: betaflight's
+`strtol(s,end,base)` is `push {r3,lr}; movs r3,#1; bl _strto_l`, and its r3
+read as a fifth argument. A filled run with no active trial after it stays
+inactive and is left to the extension above. The mark needs the callee's
 evidence, so with nothing stated and no body run, or with the option off, the
 chain is counted as before.
 

@@ -23,10 +23,13 @@
     and left the list with nothing to extend.  getopt_long's callee reads all
     six argument registers, a run passthrough did not take as an arity claim.
 
-    Stage: P4 active input-trial scoring (kuna_passthrough.rs, always on).
-    A forwarded register the callee takes fills its slot in the chain rule;
-    a callee body that reads the whole register file is taken at a call
-    whose caller also stores the first stack argument.
+    Stage: P4 active input-trial scoring (kuna_passthrough.rs, option
+    passthrough, on by default).  A forwarded register the callee takes fills
+    its slot in the chain rule; a callee body that reads the whole register
+    file is taken at a call whose caller also stores the first stack
+    argument.  Pass 1 is the default; pass 2 sets passthrough off, where all
+    three calls print with no arguments.  The ARM shapes the fill must not
+    reach are in kuna-passthroughslot-arm.xml.
 -->
 <bytechunk space="ram" offset="0x401000" readonly="true">
 4101f944034c240844890d1d1100004d85c07403418938488b060fbe000fbe12
@@ -59,9 +62,19 @@ cb89d84883c4105bc3
   <com>lo fu get_int</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option passthrough off</com>
+  <com>lo fu getopt_long</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu get_int</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="passthroughslot #1: no call loses every argument" min="0" max="0">(internal|in5|getprop)\(\)</stringmatch>
+<stringmatch name="passthroughslot #1: only with passthrough off does a call lose every argument" min="3" max="3">(internal|in5|getprop)\(\)</stringmatch>
 <stringmatch name="passthroughslot #2: getopt_long forwards its five parameters and loads r9d and the stack argument" min="1" max="1">internal\(a0,a1,a2,a3,a4,0,</stringmatch>
 <stringmatch name="passthroughslot #3: w5 forwards four parameters and loads the fifth" min="1" max="1">return in5\(a0,a1,a2,a3,0\) \+ 1;</stringmatch>
 <stringmatch name="passthroughslot #4: get_int forwards three parameters and passes the address of len" min="1" max="1">getprop\(a0,a1,a2,&amp;v[0-9]+\)</stringmatch>

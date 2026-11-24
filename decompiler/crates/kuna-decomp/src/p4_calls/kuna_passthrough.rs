@@ -116,10 +116,14 @@
 //! the call now reads it.
 //!
 //! A trial left inactive on the function's own value that the callee takes is
-//! marked forwarded ([`mark_forwarded`]), and `forceInactiveChain` counts it as
-//! a filled slot: three forwarded registers in a row would otherwise cut off the
-//! register the caller loads after them (`getprop(fdt,node,name,&len)` printed
-//! `getprop()`), leaving no list to extend.
+//! marked forwarded ([`mark_forwarded`]), and `forceInactiveChain` reads a run
+//! of such trials, and of other registers the callee takes, as filled
+//! ([`forwarded_evidence`]): three forwarded registers in a row would otherwise
+//! cut off the register the caller loads after them
+//! (`getprop(fdt,node,name,&len)` printed `getprop()`), leaving no list to
+//! extend. A run that holds any other inactive slot is a chain as upstream
+//! counts it, and a stack slot past a filled run needs the caller's own store
+//! into the first one ([`stores_first_stack_arg`]).
 //!
 //! # The tail call's result
 //!
@@ -340,7 +344,7 @@ pub(crate) fn general_arg_registers(model: &crate::fspec::ProtoModel) -> Vec<(Ad
 /// clang's AArch64 one saves `x1`..`x7`, so the run of a variadic callee, and
 /// of every function that reaches one on an error path, is the whole file.
 /// With `full` the whole file is kept: the call it is asked for hands the
-/// callee a stack argument ([`stack_arg_calls`]), which the convention passes
+/// callee a stack argument ([`stores_first_stack_arg`]), which the convention passes
 /// only past a full register file.
 pub(crate) fn taken_run(
     dead: &crate::kuna_calleedeadarg::CalleeEntryDead,
@@ -1725,6 +1729,20 @@ pub fn mark_forwarded(data: &mut Funcdata, idx: int4, i: int4, vn: VarnodeId) {
     if forwarded {
         data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).set_forwarded();
     }
+}
+
+/// What `forceInactiveChain` reads where a trial of call spec `fc` is
+/// [`mark_forwarded`]: does the caller store into the first stack-argument slot
+/// ([`stores_first_stack_arg`]), and which registers does the callee take
+/// ([`stated_registers`])?
+pub(crate) fn forwarded_evidence(data: &Funcdata, fc: &FuncCallSpecs) -> (bool, Vec<Address>) {
+    let active = fc.active_input();
+    if !(0..active.get_num_trials()).any(|i| active.get_trial(i).is_forwarded()) {
+        return (false, Vec::new());
+    }
+    let stored = data.kuna_passthrough_stack_arg_calls().contains(&fc.get_op());
+    let takes = stated_registers(data, fc.proto(), fc.get_entry_address(), fc.get_op()).unwrap_or_default();
+    (stored, takes)
 }
 
 /// Is `vn` the function's own incoming integer register `[addr, addr+size)`
