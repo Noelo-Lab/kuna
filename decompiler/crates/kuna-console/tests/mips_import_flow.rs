@@ -20,6 +20,8 @@ fn only_concrete_got_import_declarations_supply_type_only_prototypes() {
         ).unwrap();
         prog.commit_pending_analysis().unwrap();
         let ctx = prog.arch().build_arch_handle();
+        assert!(ctx.loader_glibc_imports.is_empty(),
+            "these imports are unversioned, so no void declaration binds below: {image}");
         let entry = ctx.loader_mips_imports.iter().find(|entry|
             ctx.callee_proto_pieces(entry).is_some_and(|p| p.name == "strlen")
         ).expect("loader-proven strlen import").clone();
@@ -50,6 +52,57 @@ fn only_concrete_got_import_declarations_supply_type_only_prototypes() {
         prog.arch_mut().loader_mips_imports = Rc::default();
         assert!(kuna_qualifiedcall::prototype(&prog.arch().build_arch_handle(), &entry).is_none(),
             "an entry without GOT import provenance must keep the code-type lookup");
+    }
+}
+
+#[test]
+fn a_void_glibc_declaration_binds_only_under_its_own_name_in_argument_registers() {
+    use kuna_decomp::{dtype::type_metatype, fspec::PrototypePieces, kuna_qualifiedcall};
+    use std::rc::Rc;
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    for image in ["n32-glibc.elf", "o32-glibc.elf"] {
+        let mut prog = bootstrap_from_object(
+            root.join("tests/fixtures/mips-glibc-imports").join(image).to_str().unwrap(),
+            "", &[root.join("specs").to_string_lossy().into_owned()],
+        ).unwrap();
+        prog.commit_pending_analysis().unwrap();
+        let ctx = prog.arch().build_arch_handle();
+        let entry = ctx.loader_mips_imports.iter().find(|entry|
+            ctx.callee_proto_pieces(entry).is_some_and(|p| p.name == "free")
+        ).expect("loader-proven free import").clone();
+        assert_eq!(ctx.loader_glibc_imports.get(&entry).map(String::as_str), Some("free"), "{image}");
+        let pieces = ctx.callee_proto_pieces(&entry).unwrap();
+        assert!(pieces.kuna_library_table, "{image}");
+        assert_eq!(kuna_qualifiedcall::prototype(&ctx, &entry).expect(image).num_params(), 1);
+        let pointer = pieces.intypes[0].clone();
+        let (int4, int8, float) = {
+            let types = prog.arch().types();
+            (types.get_base(4, type_metatype::TYPE_INT).unwrap(),
+                types.get_base(8, type_metatype::TYPE_INT).unwrap(),
+                types.get_base(4, type_metatype::TYPE_FLOAT).unwrap())
+        };
+        let with = |change: &dyn Fn(&mut PrototypePieces)| {
+            let mut changed = pieces.clone();
+            change(&mut changed);
+            changed
+        };
+        for (label, changed, params) in [
+            ("four pointers", with(&|p| p.intypes = vec![pointer.clone(); 4]), Some(4)),
+            ("five pointers", with(&|p| p.intypes = vec![pointer.clone(); 5]), None),
+            ("a 4-byte integer", with(&|p| p.intypes = vec![int4.clone()]), Some(1)),
+            ("an integer wider than a pointer", with(&|p| p.intypes = vec![int8.clone()]), None),
+            ("a float", with(&|p| p.intypes = vec![float.clone()]), None),
+            ("another name", with(&|p| p.name = "exit".into()), None),
+            ("a declaration from outside the table", with(&|p| p.kuna_library_table = false), None),
+        ] {
+            prog.arch_mut().set_function_prototype_pieces_at(&entry, changed);
+            let proto = kuna_qualifiedcall::prototype(&prog.arch().build_arch_handle(), &entry);
+            assert_eq!(proto.map(|proto| proto.num_params()), params, "{label}: {image}");
+        }
+        prog.arch_mut().set_function_prototype_pieces_at(&entry, pieces);
+        prog.arch_mut().loader_glibc_imports = Rc::default();
+        assert!(kuna_qualifiedcall::prototype(&prog.arch().build_arch_handle(), &entry).is_none(),
+            "an import without a glibc version keeps the void exclusion: {image}");
     }
 }
 

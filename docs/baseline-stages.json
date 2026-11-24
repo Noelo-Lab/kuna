@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5347,
-    5347
+    5353,
+    5353
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -13,6 +13,8 @@
     "data:A declared extent keeps the loop back to its entry",
     "data:A final component with mixed-case digits remains a function name",
     "data:A final uppercase component remains a function name",
+    "data:A glibc import that returns a value keeps its argument",
+    "data:A glibc-versioned void import receives the pointer it is passed in N32, O32, N64, from libpthread and under its own declared name",
     "data:A later declaration cannot strand an installed destination set",
     "data:A lowercase legacy compiler hash remains elided",
     "data:A part split off the jumping function is one of its cases",
@@ -23,6 +25,7 @@
     "data:A true Rust hash elides only the compiler suffix after an uppercase member",
     "data:A true lowercase LLVM hash stays elided",
     "data:A v0 name is unchanged by legacy hash matching",
+    "data:A void glibc import with a double parameter keeps today's recovery",
     "data:ABI reloads preserve the returning import identity",
     "data:ACLE #10: a pointer tagging its own granule is __arm_mte_set_tag",
     "data:ACLE #11: the tagged pointer flows from irg through stg to the return",
@@ -208,6 +211,7 @@
     "data:An ordinary Itanium name is unchanged by Rust hash matching",
     "data:An uppercase name also survives an accepted LLVM suffix",
     "data:Another function's entry is no case",
+    "data:Another name's declaration at a glibc-versioned free keeps today's recovery",
     "data:Array fields never become locals",
     "data:BODYREADS #1: off, the recursive call drops key",
     "data:BODYREADS #2: on, the recursive call passes key",
@@ -819,6 +823,7 @@
     "data:EXTRAPOP #2: extrapop 12 pops both arguments, so [esp+4] is the caller's argument",
     "data:EXTRAPOP #3: the call sees both pushed arguments",
     "data:EXTRAPOP #4: a call through a register to g pops its arguments too",
+    "data:Each forwarding wrapper takes the pointer as its parameter",
     "data:Explicit Go consumer preserves sign extension",
     "data:Explicit Go consumer preserves zero extension",
     "data:Explicit Go prototype retains the narrowing conversion",
@@ -3004,6 +3009,7 @@
     "data:UNSIGNEDREAD #4: no arithmetic shift of the int",
     "data:UNSIGNEDREAD #5: the byte-sum selector is cast to its byte type",
     "data:UNSIGNEDREAD #6: no int-wide selector",
+    "data:Unversioned, other-library, GLIBC_PRIVATE and caller-declared zero-argument imports pass nothing",
     "data:Uppercase hash user call survives default and off",
     "data:VARIANTNAMES #1: no bare discriminant is stored",
     "data:VARIANTNAMES #2: the store names the variant",
