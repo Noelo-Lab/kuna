@@ -1,11 +1,14 @@
 //! A project export declares the p-code helpers (`SCARRY4`, `SUB168`),
 //! user-defined operations (`invalidInstructionException`) and decode-failure
-//! halts (`halt_baddata`) its C calls, and its
-//! `undefined16` takes arithmetic, so the export compiles as C11 and as C2x,
-//! where `T f();` stops meaning "any arguments", for code that defines
-//! `KUNA_DECLARE_HELPERS`; code that does not brings its own definitions.
+//! halts (`halt_baddata`) its C calls for code that defines
+//! `KUNA_DECLARE_HELPERS`, and its `undefined16` takes arithmetic, so the
+//! export compiles as C11 and as C2x, where `T f();` stops meaning "any
+//! arguments". `checked_arith_x86_64`'s `scale` checks its add with SCARRY4 and
+//! traps with `ud1`; `argclobber_pair_x86_64`'s `mk` returns a 16-byte rax:rdx
+//! pair, which its caller splits with SUB168; `pseudo_names_x86_64`'s
+//! `undecodable` holds a byte x86-64 does not decode.
 use crate::common;
-use common::process;
+use common::process::{self, Capped};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -37,10 +40,6 @@ fn an_export_that_calls_helpers_and_operations_compiles() {
         eprintln!("an_export_that_calls_helpers_and_operations_compiles: skipping (no `cc`)");
         return;
     }
-    // `checked_arith_x86_64`'s `scale` checks its add with SCARRY4 and traps
-    // with `ud1`; `argclobber_pair_x86_64`'s `mk` returns a 16-byte rax:rdx
-    // pair, which its caller splits with SUB168; `pseudo_names_x86_64`'s
-    // `undecodable` holds a byte x86-64 does not decode.
     for (fixture, names) in [
         ("checked_arith_x86_64", &["SCARRY4", "invalidInstructionException"][..]),
         ("argclobber_pair_x86_64", &["SUB168"][..]),
@@ -56,9 +55,11 @@ fn an_export_that_calls_helpers_and_operations_compiles() {
         }
         for standard in ["-std=c11", "-std=c2x"] {
             let out = Command::new("cc")
-                .args([standard, "-fsyntax-only", "-Werror=implicit-function-declaration", "-Werror=undef", "-DKUNA_DECLARE_HELPERS"])
+                .args([standard, "-fsyntax-only"])
+                .args(common::CC_GCC15_DEMOTE)
+                .args(["-Werror=implicit-function-declaration", "-Werror=undef", "-DKUNA_DECLARE_HELPERS"])
                 .arg(&c)
-                .output()
+                .capped_output()
                 .expect("spawn cc");
             assert!(
                 out.status.success(),
