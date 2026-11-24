@@ -20,6 +20,7 @@ chapter is anchored to the code that implements it.
 | [07 — Region identification](07-regions.md) | (angr) the region graph & identifier |
 | [08 — Structuring](08-structuring.md) | collapse structuring, (angr) region structurer, goto quality |
 | [09 — Emission](09-emission.md) | casts, PrintC, naming, strings |
+| [10 — Deobfuscation](10-deobfuscation.md) | the deobfuscation plane: stage hooks, recovered bodies, VM devirtualization |
 
 ## Rules (read before editing)
 

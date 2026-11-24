@@ -1,7 +1,7 @@
 use super::*;
 
 struct NoImage;
-impl PushanImage for NoImage {
+impl SymImage for NoImage {
     fn read_bytes(&self, _addr: u64, _buf: &mut [u8]) -> bool {
         false
     }
@@ -11,7 +11,7 @@ impl PushanImage for NoImage {
 }
 
 struct ConstImage;
-impl PushanImage for ConstImage {
+impl SymImage for ConstImage {
     fn read_bytes(&self, addr: u64, buf: &mut [u8]) -> bool {
         if !(0x1000..0x2000).contains(&addr) {
             return false;
@@ -115,7 +115,7 @@ fn diff_and_symbolize() {
 
 /// Image bytes at 0x1000..0x2000, of which 0x1800.. is a writable data section.
 struct DataImage;
-impl PushanImage for DataImage {
+impl SymImage for DataImage {
     fn read_bytes(&self, addr: u64, buf: &mut [u8]) -> bool {
         ConstImage.read_bytes(addr, buf)
     }
@@ -205,7 +205,7 @@ fn a_copy_reads_its_source_lazily_until_overwritten_or_forgotten() {
 
 #[test]
 fn a_merged_decision_splits_over_its_recorded_constants() {
-    use super::super::kuna_pushanemu::{split_over_symbols, symbol_pin, SymValues};
+    use super::super::kuna_symemu::{split_over_symbols, symbol_pin, SymValues};
     use kuna_num::opcodes::OpCode::*;
     let mut a = ExprArena::new();
     let mut s = State::new(false, (0x200, 0x216));

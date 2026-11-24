@@ -1015,7 +1015,7 @@ base that a stack pointer was spilled to
 forcing it would keep the spilled pointers alive as variables (the
 intermediate pointers of the `dupptr` datatest). In a devirtualized body only a
 slot written by a path that did not itself pass through a spill bounds the
-window (`Heritage::direct_spills`, chapter [02](02-lift-and-flow.md) §2.11): its
+window (`Heritage::direct_spills`, `BodyPolicy::direct_spills`, chapter [10](10-deobfuscation.md)): its
 interpreter's operand-stack slots hold pointers and values in turn, the walk
 takes every read of such a slot for the pointer, and so every slot the
 program's values are copied into would count as a spill. Later passes force the guard's
@@ -1245,8 +1245,8 @@ already holds. The global LOAD guard runs at `full` too.
 
 A devirtualized body's stack ranges get this guard at every level, in place of
 the indexed and spilled-pointer store windows below
-(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushan.rs (guards_every_store)`,
-chapter [02](02-lift-and-flow.md) §2.11): its frame is rebuilt from the
+(`decompiler/crates/kuna-decomp/src/deobf/kuna_body.rs (guards_every_store)`,
+`BodyPolicy::guard_stack_stores`, chapter [10](10-deobfuscation.md)): its frame is rebuilt from the
 emulated interpreter, which stores into it through stack addresses it reloads
 from its own operand stack.
 
@@ -3807,11 +3807,11 @@ blobs — this is a deliberate readability divergence, not a fidelity fix, and i
 is inert on every function with no wide multiply.
 
 **Devirtualized residue** (rides on option `pushan`, no option of its own) —
-`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_pushanrules.rs
+`decompiler/crates/kuna-decomp/src/deobf/kuna_pushanrules.rs
 (RulePushanLogic)`, `(RulePushanArith)`, `(RulePushanPiece)` and
 `(RulePushanCarry)`, four oppool1 rules whose first test is
-`Funcdata::kuna_devirtualized` — set by `kuna_pushan.rs (adopt)` only for a
-body pushan replaced with its synthetic program (§2.11). Every other function, and so the whole datatest corpus, keeps
+the body's policy (`BodyPolicy::residue_rules`), set only for a
+body pushan replaced with its synthetic program (chapter [10](10-deobfuscation.md), §10.2). Every other function, and so the whole datatest corpus, keeps
 its output byte for byte, and the gate costs one emptiness check per visited
 op. The rules clean up what a VMProtect interpreter leaves after
 devirtualization: its handlers build every logic operation from NOR gates

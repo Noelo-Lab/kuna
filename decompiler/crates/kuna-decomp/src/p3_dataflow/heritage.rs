@@ -1707,7 +1707,7 @@ impl Heritage {
                     .unwrap_or(false);
             let stack_effects = crate::kuna_stackeffects::enabled_for(fd, addr, size);
             let every_store = (high_ptr_possible && level >= LEVEL_FULL)
-                || crate::p2_lift::kuna_pushan::guards_every_store(fd, addr);
+                || crate::kuna_body::guards_every_store(fd, addr);
             let mut guarded_stores = if every_store || stack_effects {
                 self.guard_stores(fd, addr, size, write, false)
             } else if high_ptr_possible && guard_stack_bytes {
@@ -1888,20 +1888,10 @@ impl Heritage {
             // heritage.cc:1468) because the output-active branch can promote it to
             // `killedbycall`.
             let mut effecttype = fc.proto().has_effect(&trans_addr, size);
-            if effecttype == effect_type::UNKNOWN_EFFECT
-                && crate::p2_lift::kuna_pushan::call_kills(fd, addr, size)
-            {
-                effecttype = effect_type::KILLEDBYCALL;
-            }
-            if effecttype == effect_type::UNKNOWN_EFFECT
-                && crate::p2_lift::kuna_pushan::call_preserves(fd, addr, size)
-            {
-                effecttype = effect_type::UNAFFECTED;
-            }
-            if effecttype == effect_type::UNKNOWN_EFFECT
-                && crate::p2_lift::kuna_pushan::call_frame_kills(fd, addr, size)
-            {
-                effecttype = effect_type::KILLEDBYCALL;
+            if effecttype == effect_type::UNKNOWN_EFFECT {
+                if let Some(stated) = crate::kuna_body::call_effect(fd, addr, size) {
+                    effecttype = stated;
+                }
             }
             if effecttype == effect_type::UNKNOWN_EFFECT
                 && ((super::kuna_leafmemory::preserves(fd, fc, addr, size)
@@ -2343,7 +2333,7 @@ impl Heritage {
         self.tiled_input_trial(fd, fc, addr, size, &entry, 8)
     }
 
-    /// (kuna pushan) In a devirtualized body, a stack range that is only the
+    /// (kuna deobf) In a body recovered from an interpreter, a stack range that is only the
     /// low piece of an argument slot passes the PIECE of the ranges of this
     /// pass that tile the whole slot.  The interpreter reads and writes its
     /// stack in halves, so heritage refines the slots the program's arguments
@@ -2359,7 +2349,7 @@ impl Heritage {
     ) -> bool {
         use crate::fspec::Containment;
         use kuna_base::space::spacetype;
-        if !fd.kuna_devirtualized() {
+        if !fd.kuna_body().policy.join_stack_inputs {
             return false;
         }
         let Some(spc) = addr.get_space() else { return false };
@@ -6113,7 +6103,7 @@ impl Heritage {
         if !guard.through_spill || guard.is_range_locked() {
             return guard.maximum_offset;
         }
-        let direct = fd.kuna_devirtualized();
+        let direct = fd.kuna_body().policy.direct_spills;
         self.pointer_spills
             .iter()
             .map(|&(slot, _)| slot)

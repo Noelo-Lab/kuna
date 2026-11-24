@@ -14,7 +14,7 @@ fn fixture(devirtualized: bool) -> (Funcdata, OpId) {
     manager.insert_space(ram.clone()).unwrap();
     let mut fd = Funcdata::new("vm", "vm", Rc::new(ArchContext::new(manager)), Address::new(ram.clone(), 0x1000), 0x10000000, 0x40).unwrap();
     if devirtualized {
-        fd.kuna_set_devirtualized(true);
+        fd.kuna_set_body(Some(std::rc::Rc::new(crate::kuna_body::RecoveredBody::with_policy(crate::kuna_body::BodyPolicy { residue_rules: true, ..Default::default() }))));
     }
     let root = fd.bblocks_ref().root.unwrap();
     let block = fd.bblocks_mut().new_block_basic(root);

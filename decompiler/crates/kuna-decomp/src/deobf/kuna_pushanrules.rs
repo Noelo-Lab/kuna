@@ -8,7 +8,7 @@
 //! `XorSimplifications`, `RemoveRedundantNegations`, `VMPSubAsNot`,
 //! `NegPlusConstToSub`, `VMInsertSimplifier`, `AndMaskPruning`,
 //! `DisjointAddToOr`). They act only inside a devirtualized
-//! function ([`Funcdata::kuna_devirtualized`]) and every rewrite is an exact
+//! function (a body whose policy sets `residue_rules`) and every rewrite is an exact
 //! bitvector identity that makes the expression strictly smaller.
 //!
 //! * [`RulePushanLogic`] evaluates a tree of AND/OR/XOR/NOT (and additions of
@@ -162,7 +162,7 @@ fn same_value(data: &Funcdata, a: VarnodeId, b: VarnodeId, depth: u32) -> bool {
 }
 
 fn devirtualized_only(data: &Funcdata) -> bool {
-    data.kuna_devirtualized()
+    data.kuna_body().policy.residue_rules
 }
 
 macro_rules! pushan_rule {

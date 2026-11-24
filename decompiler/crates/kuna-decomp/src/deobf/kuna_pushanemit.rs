@@ -24,9 +24,9 @@ use kuna_num::pcoderaw::VarnodeData;
 use kuna_sleigh::kuna_pcodeoverlay::{OverlayInsn, OverlayOp, PcodeOverlay};
 use OpCode::*;
 
-use super::kuna_pushanemu::{classify_space, LiftedInsn, PushanTarget, RawOp, Space};
-use super::kuna_pushanexpr::{ExprArena, ExprId, ExprKind, VarId};
-use super::kuna_pushanstate::Loc;
+use super::kuna_symemu::{classify_space, LiftedInsn, SymTarget, RawOp, Space};
+use super::kuna_symexpr::{ExprArena, ExprId, ExprKind, VarId};
+use super::kuna_symstate::Loc;
 use super::kuna_pushanflow::{FlatCfg, NodeExit, NodeId};
 
 pub struct EmitConfig {
@@ -93,7 +93,7 @@ pub struct EmitStats {
     /// the locals its arguments point at.
     pub call_escapes: BTreeMap<u64, Vec<i64>>,
     /// The overlay addresses of the live instructions whose store the
-    /// emulation lost ([`AccessRecord::lost`](super::kuna_pushanemu::AccessRecord)).
+    /// emulation lost ([`AccessRecord::lost`](super::kuna_symemu::AccessRecord)).
     pub lost_stores: BTreeSet<u64>,
     /// The lowest stack pointer, relative to the entry one, any external call
     /// is made with: below it lie only the interpreter's scratch and the
@@ -592,7 +592,7 @@ fn call_floor(cfg: &FlatCfg, exits: &[ExitInfo]) -> Option<i128> {
 struct Emitter<'a> {
     cfg: &'a FlatCfg,
     arena: &'a mut ExprArena,
-    target: &'a dyn PushanTarget,
+    target: &'a dyn SymTarget,
     conf: &'a EmitConfig,
     stats: EmitStats,
     /// Deciding booleans of multi-way selects, each with its witness slot.
@@ -623,7 +623,7 @@ struct Emitter<'a> {
 }
 
 /// How many times the emitted path executes op `i` of `insn`.
-fn order_count(trace: Option<&super::kuna_pushanemu::InsnTrace>, insn: &LiftedInsn, i: usize) -> usize {
+fn order_count(trace: Option<&super::kuna_symemu::InsnTrace>, insn: &LiftedInsn, i: usize) -> usize {
     match trace {
         Some(t) if !t.forked && !t.path.is_empty() => t.path.iter().filter(|&&x| x == i).count(),
         _ => usize::from(i < insn.ops.len()),
@@ -638,7 +638,7 @@ pub fn syn_addr(conf: &EmitConfig, node: NodeId) -> u64 {
 }
 
 /// Build the overlay for a recovered graph; `entry_addr` maps to the entry node.
-pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, conf: &EmitConfig, entry_addr: u64) -> (PcodeOverlay, EmitStats) {
+pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn SymTarget, conf: &EmitConfig, entry_addr: u64) -> (PcodeOverlay, EmitStats) {
     let mut em = Emitter {
         cfg,
         arena,
@@ -935,7 +935,7 @@ impl<'a> Emitter<'a> {
     /// The fixed address an access went to: a constant, or an address
     /// expression the emulation itself placed at one constant
     /// ([`ExprArena::affine_probe`], as its load and store did).
-    fn access_addr(&mut self, a: &super::kuna_pushanemu::AccessRecord) -> Option<u64> {
+    fn access_addr(&mut self, a: &super::kuna_symemu::AccessRecord) -> Option<u64> {
         if a.addr.is_some() {
             return a.addr;
         }
@@ -948,7 +948,7 @@ impl<'a> Emitter<'a> {
     /// address is a constant inside the protector's code sections plus terms
     /// whose possible bits bound them (a context cell selected by a value the
     /// emulation left open): `[lo, hi)`.
-    fn access_window(&mut self, a: &super::kuna_pushanemu::AccessRecord) -> Option<(u64, u64)> {
+    fn access_window(&mut self, a: &super::kuna_symemu::AccessRecord) -> Option<(u64, u64)> {
         let size = self.arena.size(a.addr_expr);
         let (terms, c) = self.arena.linear_terms(a.addr_expr);
         if terms.is_empty() || c < 0 || !self.target.is_foreign_code(c as u64) {
@@ -957,7 +957,7 @@ impl<'a> Emitter<'a> {
         let bits = 8 * size as u32;
         let (mut lo, mut hi) = (c, c);
         for (t, k) in terms {
-            let k = if super::kuna_pushanexpr::sign(k, size) { k as i128 - (1i128 << bits) } else { k as i128 };
+            let k = if super::kuna_symexpr::sign(k, size) { k as i128 - (1i128 << bits) } else { k as i128 };
             let d = k.checked_mul(self.arena.possible_bits(t) as i128)?;
             if d >= 0 {
                 hi = hi.checked_add(d)?;
@@ -1057,7 +1057,7 @@ impl<'a> Emitter<'a> {
     }
 
     /// The register standing for the private access of op `i`, if it is one.
-    fn private_vn(&mut self, tr: &super::kuna_pushanemu::InsnTrace, insn: &LiftedInsn, i: usize) -> Option<VarnodeData> {
+    fn private_vn(&mut self, tr: &super::kuna_symemu::InsnTrace, insn: &LiftedInsn, i: usize) -> Option<VarnodeData> {
         if self.private.is_empty() || tr.forked || tr.path.is_empty() || order_count(Some(tr), insn, i) != 1 {
             return None;
         }
@@ -1338,7 +1338,7 @@ impl<'a> Emitter<'a> {
     }
 
     /// Where the LOAD/STORE at op index `i` went, from the emulated address.
-    fn mem_ref(&mut self, trace: Option<&super::kuna_pushanemu::InsnTrace>, i: usize) -> MemRef {
+    fn mem_ref(&mut self, trace: Option<&super::kuna_symemu::InsnTrace>, i: usize) -> MemRef {
         let Some(tr) = trace else { return MemRef::Unknown };
         if tr.forked {
             return MemRef::Unknown;
@@ -1379,7 +1379,7 @@ impl<'a> Emitter<'a> {
 
     /// Is `e` the value register `off` held at entry?
     fn is_entry_value(&self, e: ExprId, off: u64) -> bool {
-        matches!(self.arena.var_kind(e), Some(super::kuna_pushanexpr::VarKind::InitReg { offset }) if offset == off)
+        matches!(self.arena.var_kind(e), Some(super::kuna_symexpr::VarKind::InitReg { offset }) if offset == off)
     }
 
     /// Does `e` hold nothing the program put in register `reg`: its entry
@@ -1388,7 +1388,7 @@ impl<'a> Emitter<'a> {
     /// interpreter's context slot carried a different call's leftovers each
     /// time around)?  `o` records which of those it met.
     fn never_defined(&self, e: ExprId, reg: u64, seen: &mut BTreeSet<VarId>, depth: u32, o: &mut Origins) -> bool {
-        use super::kuna_pushanexpr::VarKind;
+        use super::kuna_symexpr::VarKind;
         if depth > 64 {
             return false;
         }
@@ -1860,7 +1860,7 @@ impl<'a> Emitter<'a> {
     }
 
     /// `scratch = frame + k` for a memory access whose address is stack-relative.
-    fn stack_address(&mut self, op: &RawOp, i: usize, trace: Option<&super::kuna_pushanemu::InsnTrace>) -> Option<OverlayOp> {
+    fn stack_address(&mut self, op: &RawOp, i: usize, trace: Option<&super::kuna_symemu::InsnTrace>) -> Option<OverlayOp> {
         if !self.conf.remat_sp {
             return None;
         }
@@ -1881,7 +1881,7 @@ impl<'a> Emitter<'a> {
     }
 
     /// Fold a data op to its emulated constant or stack-relative form.
-    fn rewrite_data(&mut self, op: &RawOp, i: usize, trace: Option<&super::kuna_pushanemu::InsnTrace>) -> OverlayOp {
+    fn rewrite_data(&mut self, op: &RawOp, i: usize, trace: Option<&super::kuna_symemu::InsnTrace>) -> OverlayOp {
         let Some(trace) = trace else { return Self::raw(op) };
         if trace.forked {
             return Self::raw(op);

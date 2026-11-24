@@ -30,7 +30,7 @@ the real basic blocks seeded by
 kept until the control-flow graph changes. A devirtualized body is the one
 exception: it is built again once dead code may be removed in every space, and
 each of its structurings first undoes the branch negations of the previous one
-(§2.11). Both engines collapse that mirror; neither mutates
+(chapter [10](10-deobfuscation.md), §10.2). Both engines collapse that mirror; neither mutates
 p-code, with one deliberate exception — a branch-condition orientation flip
 (`negateCondition`, needed whenever a schema requires the true edge on the
 other side) is recorded during collapse and its data-flow half (the CBRANCH

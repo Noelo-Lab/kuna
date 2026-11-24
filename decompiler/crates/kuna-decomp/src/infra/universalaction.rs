@@ -484,7 +484,7 @@ pub fn universal_sched(
         rrow!("doublein", "doubleprecis", crate::double::RuleDoubleIn::new("doubleprecis")),
         rrow!("doubleout", "doubleprecis", crate::double::RuleDoubleOut::new("doubleprecis")),
         rrow!("stackprobeloop", "analysis", crate::kuna_stackprobeloop::RuleStackProbeLoop::new("analysis")),
-        // (kuna pushan) inert outside a devirtualized body.
+        // (kuna deobf) residue rules, inert unless the body's policy asks for them.
         rrow!("pushanlogic", "analysis", crate::kuna_pushanrules::RulePushanLogic::new("analysis")),
         rrow!("pushanarith", "analysis", crate::kuna_pushanrules::RulePushanArith::new("analysis")),
         rrow!("pushanpiece", "analysis", crate::kuna_pushanrules::RulePushanPiece::new("analysis")),

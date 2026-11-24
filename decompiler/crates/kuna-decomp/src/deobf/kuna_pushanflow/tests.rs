@@ -9,7 +9,7 @@ use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 
 use super::super::kuna_pushan::caveats_of;
-use super::super::kuna_pushanemu::RawOp;
+use super::super::kuna_symemu::RawOp;
 use super::*;
 
 const LOOP: u64 = 0x1000;
@@ -32,7 +32,7 @@ impl Counter {
     }
 }
 
-impl PushanImage for Counter {
+impl SymImage for Counter {
     fn read_bytes(&self, _addr: u64, _buf: &mut [u8]) -> bool {
         false
     }
@@ -41,7 +41,7 @@ impl PushanImage for Counter {
     }
 }
 
-impl PushanTarget for Counter {
+impl SymTarget for Counter {
     fn lift(&self, addr: u64) -> Result<Rc<LiftedInsn>, String> {
         if addr != LOOP {
             return Err(format!("nothing at {addr:#x}"));

@@ -3146,7 +3146,7 @@ and the name's built-in libc signature is parked on the symbol as a declared
 function's is. `ActionDeindirect` then resolves any `CALLIND` whose target is
 the slot's contents through its `isPersist() && isExternalRef()` arm, exactly
 as it does for a slot the PE or Mach-O tables named, so native calls through the
-slot and the calls a devirtualized function makes through it (02, section 2.11)
+slot and the calls a devirtualized function makes through it (10, section 10.2)
 both print as calls to `<name>`. A data symbol already covering the slot keeps
 its name for the slot's own reads and writes; the property is ORed into it by
 `Database::kuna_add_range_property`, because upstream's `setAttribute` masks
@@ -4131,7 +4131,9 @@ under `decompiler/crates/kuna-decomp/src` is arranged as `substrate` (the IR
 containers, §0.3), `infra` (scheduler, god object, drive — this chapter),
 `p0_knowledge` (§0.4), and `p1_partition` … `p9_emit`, which map 1:1 onto
 chapters 01–09 of this spec; the program-preparation tier is
-`decompiler/crates/kuna-analysis/src` (chapter 01). Execution order is §0.6's
+`decompiler/crates/kuna-analysis/src` (chapter 01). `deobf` is the
+deobfuscation plane (chapter [10](10-deobfuscation.md)): it is no phase, and
+holds the deobfuscators together with the hooks the phases call them at. Execution order is §0.6's
 tree — when you need to know *when* a pass runs, read
 `decompiler/crates/kuna-decomp/src/infra/universalaction.rs (universal_sched)`
 and search for the pass's constructor, never the folder.

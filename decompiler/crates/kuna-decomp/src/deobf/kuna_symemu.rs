@@ -18,8 +18,8 @@ use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 use OpCode::*;
 
-use super::kuna_pushanexpr::{VarId, ExprArena, ExprId, ExprKind, MAX_SIZE};
-use super::kuna_pushanstate::{PushanImage, State};
+use super::kuna_symexpr::{VarId, ExprArena, ExprId, ExprKind, MAX_SIZE};
+use super::kuna_symstate::{SymImage, State};
 
 /// A lifted p-code operation (the SLEIGH template instantiated at an address).
 #[derive(Clone, Debug)]
@@ -39,7 +39,7 @@ pub struct LiftedInsn {
 }
 
 /// What the emulator needs from the binary and the translator.
-pub trait PushanTarget: PushanImage {
+pub trait SymTarget: SymImage {
     fn lift(&self, addr: u64) -> Result<Rc<LiftedInsn>, String>;
     fn ptr_size(&self) -> u8;
     fn space_by_index(&self, index: i32) -> Option<Rc<AddrSpace>>;
@@ -212,7 +212,7 @@ const MAX_SPLIT_ASSIGNMENTS: usize = 64;
 const MAX_FORK_DEPTH: u32 = 4;
 
 pub struct Emulator<'a> {
-    pub target: &'a dyn PushanTarget,
+    pub target: &'a dyn SymTarget,
     /// Per-instruction provenance: unique offset -> (register offset, displacement).
     prov: BTreeMap<u64, (u64, i128)>,
     /// Stack pointer register (offset, size) to snapshot before every op.
@@ -262,7 +262,7 @@ pub type SymValues = Rc<std::cell::RefCell<BTreeMap<VarId, std::collections::BTr
 const MAX_INDEXED_VALUES: usize = 16;
 
 impl<'a> Emulator<'a> {
-    pub fn new(target: &'a dyn PushanTarget) -> Self {
+    pub fn new(target: &'a dyn SymTarget) -> Self {
         Emulator {
             target,
             prov: BTreeMap::new(),
@@ -761,7 +761,7 @@ impl<'a> Emulator<'a> {
             state.clobber_mutable(self.target, epoch);
             return true;
         }
-        let upward = terms.iter().all(|(_, c)| !super::kuna_pushanexpr::sign(*c, size));
+        let upward = terms.iter().all(|(_, c)| !super::kuna_symexpr::sign(*c, size));
         for b in bases {
             let (lo, hi) = if arena.var_info(b).pointer { (if upward { k } else { i128::MIN }, 0) } else { (i128::MIN, i128::MAX) };
             state.forget_copies(Some(b), lo, hi);
@@ -773,7 +773,7 @@ impl<'a> Emulator<'a> {
 
     /// Execute one instruction; the state is left as the fall-through side.
     pub fn exec_insn(&mut self, state: &mut State, arena: &mut ExprArena, insn: &LiftedInsn, trace: &mut InsnTrace) -> Exit {
-        arena.charge(super::kuna_pushanexpr::Work::Op, insn.ops.len() as u64);
+        arena.charge(super::kuna_symexpr::Work::Op, insn.ops.len() as u64);
         state.clear_uniques();
         self.prov.clear();
         trace.op_out = vec![None; insn.ops.len()];
@@ -1132,7 +1132,7 @@ pub fn symbol_pin(arena: &mut ExprArena, sym_values: &SymValues, atom: ExprId) -
 }
 
 /// `state := c ? taken : state`, location by location.
-pub fn merge_ite(state: &mut State, taken: &mut State, arena: &mut ExprArena, image: &dyn PushanImage, c: ExprId) {
+pub fn merge_ite(state: &mut State, taken: &mut State, arena: &mut ExprArena, image: &dyn SymImage, c: ExprId) {
     for (o, len) in state.regs.diff_ranges(&taken.regs) {
         let a = taken.read_reg(arena, o as u64, len);
         let b = state.read_reg(arena, o as u64, len);
@@ -1153,7 +1153,7 @@ pub fn merge_ite(state: &mut State, taken: &mut State, arena: &mut ExprArena, im
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect();
-    let empty = super::kuna_pushanstate::ByteStore::default();
+    let empty = super::kuna_symstate::ByteStore::default();
     for base in bases {
         let ranges = state.mem.get(&base).unwrap_or(&empty).diff_ranges(taken.mem.get(&base).unwrap_or(&empty));
         for (o, len) in ranges {

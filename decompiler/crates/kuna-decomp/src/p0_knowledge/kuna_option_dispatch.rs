@@ -351,7 +351,7 @@ kuna_options! { self, p1;
     "pushan" => {
         let (mode, msg) = crate::kuna_pushan::OptionPushan.apply(p1)?;
         self.pushan_mode = mode;
-        self.pushan_cache.clear();
+        self.deobf_bodies.clear();
         Ok(msg)
     },
     "loweredswitch" => {

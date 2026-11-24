@@ -1398,9 +1398,9 @@ impl Action for ActionActiveParam {
         // aliascheck.gather(&data, getStackSpace(), true): deferred local-alias
         // checker for the spacebase-parameter branch.
         let mut aliascheck = data.build_alias_checker_deferred();
-        // (kuna pushan) A devirtualized function's input trials are judged by
-        // their data flow alone; see [`crate::kuna_pushan::adopt`].
-        if data.kuna_devirtualized() {
+        // (kuna deobf) A recovered body may ask for its input trials to be
+        // judged by their data flow alone.
+        if data.kuna_body().policy.inputs_by_dataflow {
             if let Some(c) = aliascheck.as_mut() {
                 c.assume_no_pointers();
             }

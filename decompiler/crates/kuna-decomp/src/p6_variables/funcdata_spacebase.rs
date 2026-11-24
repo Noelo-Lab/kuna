@@ -670,8 +670,8 @@ impl Funcdata {
         // `&mut ScopeLocal` borrow does not alias the `&self` arch read.
         if aliasyes {
             let mut alias: Vec<uintb> = state.get_alias().to_vec();
-            if self.kuna_devirtualized() && !self.kuna_call_escapes().is_empty() {
-                alias.extend(self.kuna_call_escapes().iter().map(|&o| space.wrap_offset(o as uintb)));
+            if !self.kuna_body().escapes.is_empty() {
+                alias.extend(self.kuna_body().escapes.iter().map(|&o| space.wrap_offset(o as uintb)));
                 alias.sort_unstable();
                 alias.dedup();
             }
@@ -1381,14 +1381,14 @@ impl Funcdata {
                         ex_addr.get_space().map(|spc|
                             lm.is_unmapped_unaliased(spc, ex_addr.get_offset())))
                         .unwrap_or(false);
-                    let escaped = crate::p2_lift::kuna_pushan::frame_escaped(self, &ex_addr, ex_size);
+                    let escaped = crate::kuna_body::frame_escaped(self, &ex_addr, ex_size);
                     fl = if unaliased && !escaped { varnode_flags::nolocalalias } else { 0 };
                 } else {
                     fl = 0;
                 }
             }
 
-            if crate::p2_lift::kuna_pushan::holds_escape(self, &ex_addr, ex_size) {
+            if crate::kuna_body::holds_escape(self, &ex_addr, ex_size) {
                 fl &= !varnode_flags::nolocalalias;
             }
             if self.sync_varnodes_with_symbol(&group, fl, ct.as_ref(), entry_is_join_piece) {

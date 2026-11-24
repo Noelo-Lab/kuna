@@ -13,6 +13,12 @@
 //! (SSA, dead code, stack variables, types, structuring) does the paper's
 //! stage 2 and 3 on that program unchanged.
 //!
+//! It is a member of the deobfuscation plane
+//! ([`kuna_deobf`](super::kuna_deobf)): [`Pushan`] recovers the body at the
+//! front, or after the plain flow for an interpreter that is the function's
+//! own body, states the body's facts and analysis policy, and audits the
+//! decompiled result.
+//!
 //! `auto` (the default) devirtualizes a function whose direct native flow
 //! reaches a branch or call into a separate executable section of at least
 //! 64 KiB — the stub a protector leaves at the original entry; `on` treats the requested function
@@ -34,9 +40,11 @@ use kuna_sleigh::loadimage::{section_flags, LoadImageSection};
 use kuna_sleigh::translate::{PcodeEmit, UniqueLayout};
 
 use super::kuna_pushanemit::{emit, EmitConfig, EmitStats};
-use super::kuna_pushanemu::{classify_space, LiftedInsn, PushanTarget, RawOp, Space};
+use super::kuna_symemu::{classify_space, LiftedInsn, SymTarget, RawOp, Space};
 use super::kuna_pushanflow::{Abi, Config, Explorer, NodeExit, Stats};
-use super::kuna_pushanstate::PushanImage;
+use super::kuna_symstate::SymImage;
+use super::kuna_body::{BodyFacts, BodyPolicy, RecoveredBody};
+use super::kuna_deobf::Deobfuscator;
 use crate::architecture::Architecture;
 use crate::fspec::EXTRAPOP_UNKNOWN;
 use crate::funcdata::Funcdata;
@@ -192,7 +200,7 @@ fn thread_block_register(arch: &Architecture, ptr: u8) -> Option<u64> {
     arch.translate().probe_register_varnode(name.as_bytes()).map(|v| v.offset)
 }
 
-/// [`PushanTarget`] over the live [`Architecture`].
+/// [`SymTarget`] over the live [`Architecture`].
 pub struct ArchTarget<'a> {
     arch: &'a Architecture,
     ram: Rc<AddrSpace>,
@@ -204,7 +212,7 @@ pub struct ArchTarget<'a> {
     userops: Vec<String>,
     /// Entropy of each 256-byte block, computed on demand.
     entropy: RefCell<BTreeMap<u64, f64>>,
-    /// Entropy of the window around each address [`PushanTarget::bytecode_near`] tested.
+    /// Entropy of the window around each address [`SymTarget::bytecode_near`] tested.
     near_entropy: RefCell<BTreeMap<u64, f64>>,
     /// A Windows image (`int 0x29` is `__fastfail`).
     windows: bool,
@@ -255,7 +263,7 @@ impl<'a> ArchTarget<'a> {
         arch.translate().get_user_op_names(&mut userops);
         let ptr = ram.get_addr_size() as u8;
         let image_base = sections.iter().map(|s| s.start).min().unwrap_or(0) & !0xffff;
-        let windows = super::kuna_fastfailnoreturn::archid_is_windows(&arch.archid);
+        let windows = crate::kuna_fastfailnoreturn::archid_is_windows(&arch.archid);
         let teb = windows.then(|| ThreadBlock::new(ptr, image_base));
         Some(ArchTarget {
             arch,
@@ -323,7 +331,7 @@ impl<'a> ArchTarget<'a> {
     }
 }
 
-impl PushanImage for ArchTarget<'_> {
+impl SymImage for ArchTarget<'_> {
     fn read_bytes(&self, addr: u64, buf: &mut [u8]) -> bool {
         if let Some(teb) = self.teb.as_ref().filter(|t| t.contains(addr)) {
             for (i, b) in buf.iter_mut().enumerate() {
@@ -357,7 +365,7 @@ impl PushanImage for ArchTarget<'_> {
     }
 }
 
-impl PushanTarget for ArchTarget<'_> {
+impl SymTarget for ArchTarget<'_> {
     fn lift_count(&self) -> usize {
         self.lifts.borrow().len()
     }
@@ -444,7 +452,7 @@ impl PushanTarget for ArchTarget<'_> {
         }
     }
     fn noreturn_interrupt(&self, vector: u64) -> bool {
-        self.windows && vector == super::kuna_fastfailnoreturn::FASTFAIL_VECTOR as u64
+        self.windows && vector == crate::kuna_fastfailnoreturn::FASTFAIL_VECTOR as u64
     }
     fn file_data(&self, addr: u64) -> bool {
         self.section_of(addr).is_some_and(|s| s.flags & (section_flags::CODE | section_flags::NOLOAD | section_flags::UNALLOC) == 0)
@@ -466,7 +474,7 @@ impl PushanTarget for ArchTarget<'_> {
             return *h >= BYTECODE_ENTROPY;
         }
         let mut buf = [0u8; 256];
-        let h = if self.read_bytes(block, &mut buf) { super::kuna_pushanemu::entropy(&buf) } else { 0.0 };
+        let h = if self.read_bytes(block, &mut buf) { super::kuna_symemu::entropy(&buf) } else { 0.0 };
         self.entropy.borrow_mut().insert(block, h);
         h >= BYTECODE_ENTROPY
     }
@@ -483,7 +491,7 @@ impl PushanTarget for ArchTarget<'_> {
             addr - 128
         };
         let mut buf = [0u8; 256];
-        let h = if self.read_bytes(start, &mut buf) { super::kuna_pushanemu::entropy(&buf) } else { return self.bytecode_like(addr) };
+        let h = if self.read_bytes(start, &mut buf) { super::kuna_symemu::entropy(&buf) } else { return self.bytecode_like(addr) };
         self.near_entropy.borrow_mut().insert(addr, h);
         h >= BYTECODE_ENTROPY
     }
@@ -543,37 +551,6 @@ fn string_constants(target: &ArchTarget<'_>, overlay: &PcodeOverlay) -> Vec<(u64
         }
     }
     refs.iter().filter_map(|&a| target.string_at(a, &refs).map(|len| (a, len))).collect()
-}
-
-/// Plant a typelocked `char[N]` symbol at each of the program's string
-/// literals that no symbol covers yet, as `operand_refs` does for a native
-/// operand, so the printer renders the constant as the literal. The strings
-/// pass plants only runs of five characters or more, and a shorter literal
-/// is otherwise found only through an instruction operand, which in a
-/// protected image exists only inside the bytecode. True when one was planted.
-fn plant_strings(arch: &mut Architecture, strings: &[(u64, u32)]) -> bool {
-    let (Some(global), Some(space)) = (arch.symboltab.get_global_scope(), arch.manage().get_default_data_space().cloned()) else {
-        return false;
-    };
-    let mut planted = false;
-    for &(off, len) in strings {
-        let addr = Address::new(Rc::clone(&space), off);
-        let occupied = arch.symboltab.find_function(global, &addr).is_some()
-            || arch.is_lazy_entry(off)
-            || arch.symboltab.find_container(global, &addr, 1, &Address::new_invalid()).is_some();
-        if occupied || !arch.is_global_read_only(&addr, len as int4) {
-            continue;
-        }
-        let types = arch.types();
-        let Ok(arr) = types.get_type_char(types.get_size_of_char()).and_then(|ch| types.get_type_array(len as i32, ch)) else {
-            continue;
-        };
-        if let Ok((sid, _)) = arch.symboltab.add_symbol_mapped(global, &format!("s_{off:x}"), arr, &addr, &Address::new_invalid()) {
-            arch.symboltab.set_attribute(sid, crate::varnode::varnode_flags::typelock);
-            planted = true;
-        }
-    }
-    planted
 }
 
 /// Minimum entropy (bits/byte) of a 256-byte window for a VPC fetch (the paper's 5.0).
@@ -1068,53 +1045,118 @@ fn devirtualize_unclocked(arch: &mut Architecture, entry: u64) -> Result<PushanP
     program
 }
 
-/// Decide whether `fd` is devirtualized, install the overlay the flow follower
-/// will lift, and return the program.  Clears a stale overlay otherwise.
-pub fn prepare_flow(arch: &mut Architecture, fd: &mut Funcdata) -> Option<Rc<PushanProgram>> {
-    let mode = arch.pushan_mode;
-    let entry = fd.get_address().get_offset();
-    if mode == MODE_OFF {
-        install(arch, None);
-        return None;
-    }
-    if let Some(p) = arch.pushan_cache.get(&entry).cloned() {
-        install(arch, Some(Rc::clone(&p.overlay)));
-        adopt(arch, &p, fd);
-        return Some(p);
-    }
-    if mode == MODE_AUTO {
-        if arch.pushan_vm_sections.is_none() {
-            arch.pushan_vm_sections = Some(large_code_sections(arch));
+/// How a devirtualized body is analysed.  Its frame is rebuilt from the
+/// emulated interpreter, which reaches it through stack addresses it reloads
+/// from its own operand stack and reads and writes it in halves, so every
+/// STORE guards the stack ranges, a split argument slot is passed whole and
+/// only a directly spilled slot bounds a LOAD guard.  The local-alias test is
+/// off for the call argument trials: it takes every non-additive use of a
+/// stack address as a pointer escaping to the locals above it, and the
+/// interpreter makes such uses of addresses deep in the frame throughout (its
+/// virtual stack pointer compared against the native one, its context copied
+/// down the frame, the flags of that arithmetic pushed), so the boundary falls
+/// below every call's outgoing arguments and each stack argument is rejected
+/// as aliased.  The trials are judged by their data flow alone, as angr's
+/// call-site maker reads the slots above the return address.  The structure
+/// is rebuilt once the interpreter's dead stores are gone, and the residue
+/// rules ([`kuna_pushanrules`](super::kuna_pushanrules)) apply.
+const POLICY: BodyPolicy = BodyPolicy {
+    guard_stack_stores: true,
+    join_stack_inputs: true,
+    direct_spills: true,
+    inputs_by_dataflow: true,
+    restructure_after_deadcode: true,
+    residue_rules: true,
+};
+
+impl PushanProgram {
+    /// The program as the plane's recovered body.  Every external call kills
+    /// the ABI's scratch registers outright: the interpreter re-saves its
+    /// whole context right after each call, reading registers the callee just
+    /// clobbered, and the prototype model's "unknown effect" on those would
+    /// make that garbage read look like a live use of the argument the caller
+    /// had placed there.  A COPY out of a placeholder register (an input
+    /// nothing wrote, or a call's indirect creation), or into or out of a
+    /// register holding an argument register's entry value (the function's
+    /// own input, which counts as an argument only where a later one does),
+    /// is incidental.
+    fn into_body(self) -> RecoveredBody {
+        let mut header = vec![format!(
+            "pushan: devirtualized VM-protected function ({} nodes, {} instructions, {} rounds{}{})",
+            self.stats.nodes,
+            self.stats.insns,
+            self.stats.rounds,
+            if self.stats.writable_bytecode { "; assumes its bytecode in writable memory is what the file holds" } else { "" },
+            if self.stats.woven > 1 { format!("; follows the first of {} interleaved bytecode programs", self.stats.woven) } else { String::new() }
+        )];
+        header.extend(self.caveats());
+        let entries = &self.emit_stats.entry_regs;
+        RecoveredBody {
+            by: OptionPushan::NAME,
+            overlay: Rc::clone(&self.overlay),
+            facts: BodyFacts {
+                call_kills: self.call_kills.iter().map(|&(o, s)| (o, s as int4)).collect(),
+                call_preserves: self.call_preserves.iter().map(|&(o, s)| (o, s as int4)).collect(),
+                call_floor: self.emit_stats.call_floor.map(|k| k as i64),
+                escapes: self.escapes.clone(),
+                incidental_from: self.placeholders.iter().chain(entries).copied().collect(),
+                incidental_to: entries.clone(),
+                policy: POLICY,
+            },
+            strings: self.strings.clone(),
+            header,
+            detail: Box::new(self),
         }
-        let candidates = arch.pushan_vm_sections.as_deref().unwrap_or(&[]);
-        if !candidates.iter().any(|&(s, e)| !(s <= entry && entry < e)) {
-            install(arch, None);
+    }
+}
+
+/// The VM devirtualizer as a member of the deobfuscation plane.
+pub struct Pushan;
+
+impl Deobfuscator for Pushan {
+    fn name(&self) -> &'static str {
+        OptionPushan::NAME
+    }
+
+    /// `on` devirtualizes the function; `auto` only one whose direct native
+    /// flow enters an interpreter section ([`detect_vm_entry`]).  A program
+    /// that never entered an interpreter is dropped: the plain flow is the
+    /// right answer.
+    fn front(&self, arch: &mut Architecture, fd: &mut Funcdata) -> Option<RecoveredBody> {
+        let mode = arch.pushan_mode;
+        let entry = fd.get_address().get_offset();
+        if mode == MODE_OFF {
             return None;
         }
-        let detected = ArchTarget::new(arch, entry).and_then(|t| detect_vm_entry(&t, entry));
-        if detected.is_none() {
-            install(arch, None);
-            return None;
+        if mode == MODE_AUTO {
+            if arch.pushan_vm_sections.is_none() {
+                arch.pushan_vm_sections = Some(large_code_sections(arch));
+            }
+            let candidates = arch.pushan_vm_sections.as_deref().unwrap_or(&[]);
+            if !candidates.iter().any(|&(s, e)| !(s <= entry && entry < e)) {
+                return None;
+            }
+            ArchTarget::new(arch, entry).and_then(|t| detect_vm_entry(&t, entry))?;
+        }
+        match devirtualize_unclocked(arch, entry) {
+            Ok(p) if p.stats.vm_nodes == 0 => None,
+            Ok(p) => Some(p.into_body()),
+            Err(e) => {
+                fd.warning_header(&format!("pushan: devirtualization failed: {e}"));
+                None
+            }
         }
     }
-    match devirtualize_unclocked(arch, entry) {
-        Ok(p) if p.stats.vm_nodes == 0 => {
-            // Never entered an interpreter: the plain flow is the right answer.
-            install(arch, None);
-            None
-        }
-        Ok(p) => {
-            let p = Rc::new(p);
-            arch.pushan_cache.insert(entry, Rc::clone(&p));
-            install(arch, Some(Rc::clone(&p.overlay)));
-            adopt(arch, &p, fd);
-            Some(p)
-        }
-        Err(e) => {
-            fd.warning_header(&format!("pushan: devirtualization failed: {e}"));
-            install(arch, None);
-            None
-        }
+
+    fn after_flow(&self, arch: &mut Architecture, fd: &Funcdata) -> Option<RecoveredBody> {
+        interpreter_after_flow(arch, fd)
+    }
+
+    fn audit(&self, arch: &Architecture, fd: &mut Funcdata, body: &RecoveredBody) {
+        let Some(p) = body.detail.downcast_ref::<PushanProgram>() else { return };
+        warn_unshown_escapes(p, fd);
+        warn_protector_state(arch, p, fd);
+        warn_lost_stores(p, fd);
     }
 }
 
@@ -1125,14 +1167,11 @@ pub fn prepare_flow(arch: &mut Architecture, fd: &mut Funcdata) -> Option<Rc<Pus
 /// caller follows the flow again from it. Every other function pays one scan
 /// of its ops; a front-end whose translator is not SLEIGH (Ghidra's), which
 /// cannot serve the overlay, pays nothing.
-pub fn interpreter_after_flow(arch: &mut Architecture, fd: &Funcdata) -> bool {
-    if arch.pushan_mode != MODE_AUTO || fd.kuna_devirtualized() || arch.translate().as_sleigh().is_none() {
-        return false;
+fn interpreter_after_flow(arch: &mut Architecture, fd: &Funcdata) -> Option<RecoveredBody> {
+    if arch.pushan_mode != MODE_AUTO {
+        return None;
     }
     let entry = fd.get_address().get_offset();
-    if arch.pushan_cache.contains_key(&entry) {
-        return false;
-    }
     let started = std::time::Instant::now();
     if !interpreter_shape(arch, fd) {
         if let Ok(path) = std::env::var("KUNA_PUSHAN_PROBE_LOG") {
@@ -1140,13 +1179,13 @@ pub fn interpreter_after_flow(arch: &mut Architecture, fd: &Funcdata) -> bool {
                 let _ = writeln!(f, "{entry:#x} scan {:.3}ms", started.elapsed().as_secs_f64() * 1000.0);
             }
         }
-        return false;
+        return None;
     }
     let mut lap = [0f64; 3];
     let found = {
-        let Some(target) = ArchTarget::new(arch, entry) else { return false };
+        let target = ArchTarget::new(arch, entry)?;
         lap[0] = started.elapsed().as_secs_f64() * 1000.0;
-        let Some(abi) = abi_for(arch, &target) else { return false };
+        let abi = abi_for(arch, &target)?;
         let mut probe = Explorer::new(&target, abi, Config::default(), entry);
         lap[1] = started.elapsed().as_secs_f64() * 1000.0;
         let r = !probe.probe_interpreter().cells.is_empty();
@@ -1159,14 +1198,11 @@ pub fn interpreter_after_flow(arch: &mut Architecture, fd: &Funcdata) -> bool {
         }
     }
     if !found {
-        return false;
+        return None;
     }
     match devirtualize_unclocked(arch, entry) {
-        Ok(p) if p.stats.vm_nodes > 0 && p.stats.data_dispatches > 0 => {
-            arch.pushan_cache.insert(entry, Rc::new(p));
-            true
-        }
-        _ => false,
+        Ok(p) if p.stats.vm_nodes > 0 && p.stats.data_dispatches > 0 => Some(p.into_body()),
+        _ => None,
     }
 }
 
@@ -1229,207 +1265,12 @@ fn copy_routine_name(name: &str) -> bool {
     matches!(name.split('@').next().unwrap_or(""), "memcpy" | "memmove" | "__memcpy_chk" | "__memmove_chk")
 }
 
-/// Point the function at its synthetic program: the flow follower lifts the
-/// overlay instead of a byte range, and every external call kills the ABI's
-/// scratch registers outright. The interpreter re-saves its whole context
-/// right after each call, reading registers the callee just clobbered, and
-/// the prototype model's "unknown effect" on those would make that garbage
-/// read look like a live use of the argument the caller had placed there.
-///
-/// The local-alias test is turned off for the call argument trials. It takes
-/// every non-additive use of a stack address as a pointer escaping to the
-/// locals above it, and the interpreter makes such uses of addresses deep in
-/// the frame throughout (its virtual stack pointer compared against the native
-/// one, its context copied down the frame, the flags of that arithmetic pushed),
-/// so the boundary falls below every call's outgoing arguments and each stack
-/// argument is rejected as aliased. The trials are judged by their data flow
-/// alone, as angr's call-site maker reads the slots above the return address,
-/// and a slot heritage split into halves is passed whole
-/// (`Heritage::guard_joined_stack_input`).
-///
-/// The program's string literals are planted ([`plant_strings`]) and, when
-/// that moved the symbol table, the function takes a fresh view of it: the
-/// one it was built with predates them.
-fn adopt(arch: &mut Architecture, p: &PushanProgram, fd: &mut Funcdata) {
-    if plant_strings(arch, &p.strings) {
-        fd.kuna_set_arch(arch.build_arch_handle_for_entry(Some(fd.get_address())));
-    }
-    fd.kuna_set_size(0);
-    fd.kuna_set_call_kills(p.call_kills.iter().map(|&(o, s)| (o, s as int4)).collect());
-    fd.kuna_set_call_preserves(p.call_preserves.iter().map(|&(o, s)| (o, s as int4)).collect());
-    fd.kuna_set_call_floor(p.emit_stats.call_floor.map(|k| k as i64));
-    fd.kuna_set_call_escapes(p.escapes.clone());
-    fd.kuna_set_devirtualized(true);
-}
-
-/// Mark every COPY out of a placeholder register, and every COPY into or out
-/// of a register holding an argument register's entry value, as incidental,
-/// once the flow follower has built the ops. The parameter analysis then
-/// walks through the copy into its source instead of taking it as a solid
-/// movement of a value into the argument register: to the placeholder (an
-/// input nothing wrote, or a call's indirect creation), or to the function's
-/// own input, which counts as an argument only where a later one does.
-pub fn mark_undefined_copies(p: &PushanProgram, fd: &mut Funcdata) {
-    let within = |set: &[(u64, u8)], off: u64, size: i32| set.iter().any(|&(o, s)| off >= o && off + size as u64 <= o + s as u64);
-    let entries = &p.emit_stats.entry_regs;
-    let copies: Vec<crate::context::OpId> = fd.obank().iter_alive().filter(|&o| fd.obank().get(o).is_some_and(|op| op.code() == OpCode::CPUI_COPY)).collect();
-    for op in copies {
-        let reg = |v: Option<crate::context::VarnodeId>| {
-            v.and_then(|v| fd.vbank().get(v)).filter(|v| v.get_space().get_name() == "register").map(|v| (v.get_offset(), v.get_size()))
-        };
-        let from = reg(fd.obank().get(op).and_then(|o| o.get_in(0)));
-        let to = reg(fd.obank().get(op).and_then(|o| o.get_out()));
-        let incidental = from.is_some_and(|(off, size)| within(&p.placeholders, off, size) || within(entries, off, size))
-            || to.is_some_and(|(off, size)| within(entries, off, size));
-        if incidental {
-            if let Some(o) = fd.obank_mut().get_mut(op) {
-                o.set_additional_flag(crate::op::pcodeop_addlflags::incidental_copy);
-            }
-        }
-    }
-}
-
-/// Must the main loop's structuring of a devirtualized body be built again?
-/// The first structuring runs before memory is heritaged, while every block
-/// still holds the interpreter's dead stores, so a loop head that tests one
-/// comparison counts as complex and takes the `while (true)` overflow form.
-/// The structure is rebuilt once, on the first pass at which dead code may be
-/// removed in every space. Consulted by `ActionBlockStructure`.
-pub fn restructure_settled(fd: &Funcdata) -> bool {
-    fd.kuna_devirtualized() && !fd.is_high_on() && fd.get_heritage_pass() == fd.deadcode_settled_pass()
-}
-
-/// Record the blocks whose branch a structuring of a devirtualized body
-/// negated, so the next structuring can start from the emitted orientation.
-pub fn record_structure_flips(fd: &mut Funcdata, flips: &[crate::context::BlockId]) {
-    if fd.kuna_devirtualized() {
-        fd.kuna_structure_flips_mut().extend_from_slice(flips);
-    }
-}
-
-/// Negate again every branch the discarded structure of a devirtualized body
-/// negated, before the body is structured anew. Each structuring then starts
-/// from the emitted orientation, as a native function's only one does, rather
-/// than from its predecessor's choices: a rule that takes the false edge first
-/// would otherwise pick the other arm of a two-exit split on every rebuild.
-pub fn unflip_structure(fd: &mut Funcdata) {
-    let flips = std::mem::take(fd.kuna_structure_flips_mut());
-    if flips.is_empty() {
-        return;
-    }
-    let live: std::collections::BTreeSet<crate::context::BlockId> = (0..fd.bblocks_get_size()).map(|i| fd.bblocks_get_block(i)).collect();
-    for bb in flips {
-        if !live.contains(&bb) || fd.bblocks_ref().block(bb).size_out() != 2 {
-            continue;
-        }
-        let cbranch = fd.bb_op_tail(bb).and_then(|op| fd.obank().get(op)).is_some_and(|op| op.code() == OpCode::CPUI_CBRANCH);
-        if cbranch {
-            fd.block_basic_negate_lastop(bb);
-        }
-    }
-}
-
-/// Does a call inside a devirtualized body kill the register range `addr:size`
-/// beyond what its prototype model says? Consulted by `Heritage::guardCalls`.
-pub fn call_kills(fd: &Funcdata, addr: &Address, size: int4) -> bool {
-    let kills = fd.kuna_call_kills();
-    if kills.is_empty() {
-        return false;
-    }
-    let Some(spc) = addr.get_space() else { return false };
-    if spc.get_name() != "register" {
-        return false;
-    }
-    let lo = addr.get_offset();
-    let hi = lo.saturating_add(size.max(0) as u64);
-    kills.iter().any(|&(o, s)| o <= lo && hi <= o.saturating_add(s.max(0) as u64))
-}
-
-/// Does every STORE that may reach the stack range `addr:size` of a
-/// devirtualized body guard it, as upstream `Heritage::guardStores` does?  The
-/// body's frame is rebuilt from the emulated interpreter, whose stores into it
-/// go through stack addresses it reloads from its own operand stack, so the
-/// windowed stack-store policy leaves most of them unguarded. Consulted by
-/// `Heritage::guard`.
-pub fn guards_every_store(fd: &Funcdata, addr: &Address) -> bool {
-    fd.kuna_devirtualized()
-        && addr.get_space().is_some_and(|spc| spc.get_type() == kuna_base::space::spacetype::IPTR_SPACEBASE)
-}
-
-/// Does every call inside a devirtualized body overwrite the stack range
-/// `addr:size`?  True when the range lies below the lowest stack pointer any
-/// call is made with, where only the interpreter's scratch and the callees'
-/// frames live.  Consulted by `Heritage::guardCalls`.
-pub fn call_frame_kills(fd: &Funcdata, addr: &Address, size: int4) -> bool {
-    let (Some(floor), Some(spc)) = (fd.kuna_call_floor(), addr.get_space()) else { return false };
-    if size <= 0 || spc.get_type() != kuna_base::space::spacetype::IPTR_SPACEBASE {
-        return false;
-    }
-    let bits = 8 * spc.get_addr_size() as u32;
-    let off = addr.get_offset();
-    let signed = if bits >= 64 { off as i64 as i128 } else { ((off << (64 - bits)) as i64 >> (64 - bits)) as i128 };
-    signed + size as i128 <= floor as i128
-}
-
-/// The signed entry-stack offset of `addr`, when it is a stack address of a
-/// devirtualized body with escaped frame offsets.
-fn escape_offset(fd: &Funcdata, addr: &Address) -> Option<i128> {
-    let spc = addr.get_space()?;
-    if !fd.kuna_devirtualized() || fd.kuna_call_escapes().is_empty() || spc.get_type() != kuna_base::space::spacetype::IPTR_SPACEBASE {
-        return None;
-    }
-    let bits = 8 * spc.get_addr_size() as u32;
-    let off = addr.get_offset();
-    Some(if bits >= 64 { off as i64 as i128 } else { ((off << (64 - bits)) as i64 >> (64 - bits)) as i128 })
-}
-
-/// Is the stack range `addr:size` of a devirtualized body at or above the
-/// lowest local whose address the exploration saw handed to an external call
-/// (below the return address)?  An unmapped slot there never gets
-/// `nolocalalias`.  Consulted by `syncVarnodesWithSymbols`.
-pub fn frame_escaped(fd: &Funcdata, addr: &Address, size: int4) -> bool {
-    let Some(&lo) = fd.kuna_call_escapes().iter().filter(|o| **o < 0).min() else { return false };
-    let Some(off) = escape_offset(fd, addr) else { return false };
-    off + size.max(1) as i128 > lo as i128 && off < 0
-}
-
-/// Does the stack range `addr:size` of a devirtualized body hold an address
-/// the exploration saw handed to an external call?  The local-alias mapping
-/// counts each such address as a pointer into the frame (the store that
-/// passed it is often gone from the body), but marks a symbol that starts
-/// below the address unaliased; that slot never gets `nolocalalias` either.
-/// Consulted by `syncVarnodesWithSymbols`.
-pub fn holds_escape(fd: &Funcdata, addr: &Address, size: int4) -> bool {
-    let Some(off) = escape_offset(fd, addr) else { return false };
-    fd.kuna_call_escapes().iter().any(|&o| off <= o as i128 && (o as i128) < off + size.max(1) as i128)
-}
-
-/// Does every call inside a devirtualized body leave `addr:size` untouched?
-/// True for the registers standing for the interpreter's own memory.
-pub fn call_preserves(fd: &Funcdata, addr: &Address, size: int4) -> bool {
-    let keep = fd.kuna_call_preserves();
-    if keep.is_empty() {
-        return false;
-    }
-    let Some(spc) = addr.get_space() else { return false };
-    if spc.get_name() != "register" {
-        return false;
-    }
-    let lo = addr.get_offset();
-    let hi = lo.saturating_add(size.max(0) as u64);
-    keep.iter().any(|&(o, s)| o <= lo && hi <= o.saturating_add(s.max(0) as u64))
-}
-
 /// Warn when the decompiled body of a devirtualized function still reads or
 /// writes a local whose address an external call of the body receives (as
 /// the exploration saw it), while no op of the body computes that address:
 /// printed so, the local looks as if no call could change it.  Run once the
 /// body is decompiled.
-pub fn warn_unshown_escapes(arch: &Architecture, fd: &mut Funcdata) {
-    if !fd.kuna_devirtualized() {
-        return;
-    }
-    let Some(p) = arch.pushan_cache.get(&fd.get_address().get_offset()) else { return };
+fn warn_unshown_escapes(p: &PushanProgram, fd: &mut Funcdata) {
     let mut escapes: BTreeSet<i64> = BTreeSet::new();
     let mut taken: BTreeSet<i64> = BTreeSet::new();
     for op in fd.obank().iter_alive() {
@@ -1487,11 +1328,7 @@ pub fn warn_unshown_escapes(arch: &Architecture, fd: &mut Funcdata) {
 /// a load or store whose address is a constant inside them plus an offset.
 /// Reads of an import slot a call went through are the program's own.
 /// Run once the body is decompiled.
-pub fn warn_protector_state(arch: &Architecture, fd: &mut Funcdata) {
-    if !fd.kuna_devirtualized() {
-        return;
-    }
-    let Some(p) = arch.pushan_cache.get(&fd.get_address().get_offset()) else { return };
+fn warn_protector_state(arch: &Architecture, p: &PushanProgram, fd: &mut Funcdata) {
     if p.protector.is_empty() {
         return;
     }
@@ -1568,11 +1405,7 @@ pub fn warn_protector_state(arch: &Architecture, fd: &mut Funcdata) {
 /// are folded.  A store counts when a basic block the final function keeps
 /// covers its instruction, so a store in removed code counts nothing.  Run
 /// once the body is decompiled.
-pub fn warn_lost_stores(arch: &Architecture, fd: &mut Funcdata) {
-    if !fd.kuna_devirtualized() {
-        return;
-    }
-    let Some(p) = arch.pushan_cache.get(&fd.get_address().get_offset()) else { return };
+fn warn_lost_stores(p: &PushanProgram, fd: &mut Funcdata) {
     let Some(space) = fd.get_address().get_space().cloned() else { return };
     if p.emit_stats.lost_stores.is_empty() {
         return;
@@ -1587,16 +1420,6 @@ pub fn warn_lost_stores(arch: &Architecture, fd: &mut Funcdata) {
     let n = p.emit_stats.lost_stores.iter().filter(|&&a| covers.iter().any(|c| c.in_range(&Address::new(space.clone(), a), 1))).count();
     if n > 0 {
         fd.warning_header(&format!("pushan: incomplete: {n} store{} through an address the emulation could not place on a path of the body", if n == 1 { "" } else { "s" }));
-    }
-}
-
-/// Point the translator at `overlay`. Through the shared handle: taking the
-/// translator mutably resets per-image state other passes keep.
-fn install(arch: &mut Architecture, overlay: Option<Rc<PcodeOverlay>>) {
-    if let Some(s) = arch.translate().as_sleigh() {
-        if overlay.is_some() || s.pcode_overlay().is_some() {
-            s.set_pcode_overlay(overlay);
-        }
     }
 }
 

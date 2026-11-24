@@ -70,7 +70,7 @@ pub enum VarKind {
     /// Memory an external call may have written, read after the call that
     /// opened `epoch` (one per emulated call): mutable image memory at a
     /// concrete address (`base` None), or `base + offset` behind a symbolic
-    /// base ([`State::clobber_call`](super::kuna_pushanstate::State::clobber_call)).
+    /// base ([`State::clobber_call`](super::kuna_symstate::State::clobber_call)).
     CallOutputAt { epoch: u64, base: Option<VarId>, offset: i128 },
     /// A location that held different constants on two paths into a node.
     Merged { node: u32, tag: u64 },
@@ -212,7 +212,7 @@ pub enum Work {
 }
 
 /// The cost of one step of each kind of [`Work`], in units of about a tenth
-/// of a microsecond of CPU time (fitted over the 48 test targets, spec 2.11).
+/// of a microsecond of CPU time (fitted over the 48 test targets, spec 10.2).
 const WORK_WEIGHTS: [u64; 5] = [2, 34, 13, 2, 1];
 /// Bytes a B-tree map spends per entry beyond the entry itself.
 pub const MAP_ENTRY_OVERHEAD: usize = 24;
@@ -2089,7 +2089,7 @@ impl ExprArena {
     /// (the identity must hold whatever the comparison says), and spares the
     /// test a guard on program data that holds at one value only, which no
     /// sample of its operands would hit.
-    /// The spec (02-lift-and-flow 2.11) argues the error probability.
+    /// The spec (10-deobfuscation 10.2) argues the error probability.
     pub fn identity_probe(&mut self, e: ExprId) -> Option<(Option<VarId>, i128)> {
         let size = self.size(e);
         if let Some(c) = self.is_const(e) {

@@ -28,7 +28,7 @@
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
-use kuna_base::types::{int2, int4, uint4, uint8, uintb, uintm, Wrap};
+use kuna_base::types::{int2, int4, uint4, uint8, uintm, Wrap};
 
 use crate::block::{block_flags, BasicData, BlockGraph, BlockKind, FlowBlock};
 use crate::fspec::{FuncCallSpecs, FuncProto, ParamActive};
@@ -468,20 +468,11 @@ pub struct Funcdata {
     kuna_default_name_end: int4,
     /// Whether the naming pass records [`Self::kuna_name_snapshot`].
     kuna_record_names: bool,
-    /// (kuna pushan) Register ranges every external call of this devirtualized
-    /// function kills, over and above the prototype model's own effect list.
-    kuna_call_kills: Vec<(uintb, int4)>,
-    /// (kuna pushan) Register ranges every external call preserves.
-    kuna_call_preserves: Vec<(uintb, int4)>,
-    /// (kuna pushan) The lowest stack offset any external call is made at.
-    kuna_call_floor: Option<i64>,
-    /// (kuna pushan) Entry-stack offsets whose address a call received.
-    kuna_call_escapes: Vec<i64>,
-    /// (kuna pushan) The body is a devirtualized program, whose stack argument
-    /// trials are judged without the local-alias test and join half slots.
-    kuna_devirtualized: bool,
-    /// (kuna pushan) The blocks whose branch the last structuring of a
-    /// devirtualized body negated.
+    /// (kuna deobf) The recovered body the function is lifted from, when a
+    /// deobfuscator recovered one; see [`Self::kuna_body`].
+    kuna_body: Option<std::rc::Rc<crate::kuna_body::RecoveredBody>>,
+    /// (kuna deobf) The blocks whose branch the last structuring of a
+    /// recovered body negated.
     kuna_structure_flips: Vec<BlockId>,
     /// The numbering the naming pass handed out, by instance identity; see
     /// `kuna_stablenames::snapshot`.
@@ -880,11 +871,7 @@ impl Funcdata {
             kuna_prior_names: Default::default(),
             kuna_default_name_end: 1,
             kuna_record_names: false,
-            kuna_call_kills: Vec::new(),
-            kuna_call_preserves: Vec::new(),
-            kuna_call_floor: None,
-            kuna_call_escapes: Vec::new(),
-            kuna_devirtualized: false,
+            kuna_body: None,
             kuna_structure_flips: Vec::new(),
             kuna_name_snapshot: Vec::new(),
             kuna_directive_targets: std::collections::BTreeMap::new(),
@@ -1189,44 +1176,20 @@ impl Funcdata {
     pub fn set_kuna_record_names(&mut self, on: bool) {
         self.kuna_record_names = on;
     }
-    /// (kuna pushan) The register ranges every external call kills in this
-    /// function; empty outside a devirtualized body.
-    pub fn kuna_call_kills(&self) -> &[(uintb, int4)] {
-        &self.kuna_call_kills
+    /// (kuna deobf) What the stages after the flow may assume of the body
+    /// and how they analyse it: a recovered body's, or [`NATIVE`]'s for a
+    /// function lifted from its own bytes.
+    ///
+    /// [`NATIVE`]: crate::kuna_body::NATIVE
+    pub fn kuna_body(&self) -> &crate::kuna_body::BodyFacts {
+        self.kuna_body.as_ref().map_or(&crate::kuna_body::NATIVE, |b| &b.facts)
     }
-    pub fn kuna_set_call_kills(&mut self, kills: Vec<(uintb, int4)>) {
-        self.kuna_call_kills = kills;
+    /// (kuna deobf) The recovered body the function is lifted from.
+    pub fn kuna_recovered(&self) -> Option<&std::rc::Rc<crate::kuna_body::RecoveredBody>> {
+        self.kuna_body.as_ref()
     }
-    pub fn kuna_call_preserves(&self) -> &[(uintb, int4)] {
-        &self.kuna_call_preserves
-    }
-    pub fn kuna_set_call_preserves(&mut self, keep: Vec<(uintb, int4)>) {
-        self.kuna_call_preserves = keep;
-    }
-    /// (kuna pushan) The lowest stack offset, from the entry stack pointer,
-    /// any external call of this devirtualized function is made at.
-    pub fn kuna_call_floor(&self) -> Option<i64> {
-        self.kuna_call_floor
-    }
-    pub fn kuna_set_call_floor(&mut self, floor: Option<i64>) {
-        self.kuna_call_floor = floor;
-    }
-    /// (kuna pushan) The entry-stack offsets whose address the exploration
-    /// saw handed to an external call: the local-alias mapping counts each as
-    /// a pointer into the frame, whether or not the store that passed it
-    /// survives in the body.
-    pub fn kuna_call_escapes(&self) -> &[i64] {
-        &self.kuna_call_escapes
-    }
-    pub fn kuna_set_call_escapes(&mut self, escapes: Vec<i64>) {
-        self.kuna_call_escapes = escapes;
-    }
-    /// (kuna pushan) Whether the body is a devirtualized program.
-    pub fn kuna_devirtualized(&self) -> bool {
-        self.kuna_devirtualized
-    }
-    pub fn kuna_set_devirtualized(&mut self, on: bool) {
-        self.kuna_devirtualized = on;
+    pub fn kuna_set_body(&mut self, body: Option<std::rc::Rc<crate::kuna_body::RecoveredBody>>) {
+        self.kuna_body = body;
     }
     pub fn kuna_structure_flips_mut(&mut self) -> &mut Vec<BlockId> {
         &mut self.kuna_structure_flips
@@ -2029,11 +1992,11 @@ impl Funcdata {
     pub fn get_size(&self) -> int4 {
         self.size
     }
-    /// (kuna pushan) Override the declared body size; 0 lifts the flow range.
+    /// (kuna deobf) Override the declared body size; 0 lifts the flow range.
     pub fn kuna_set_size(&mut self, size: int4) {
         self.size = size;
     }
-    /// (kuna pushan) Replace the architecture view of a function whose flow
+    /// (kuna deobf) Replace the architecture view of a function whose flow
     /// has not been generated, after the symbol table it snapshots moved.
     pub fn kuna_set_arch(&mut self, glb: ArchHandle) {
         self.glb = glb;

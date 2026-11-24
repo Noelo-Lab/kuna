@@ -15,7 +15,7 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use super::kuna_pushanexpr::{ExprArena, ExprId, VarId, VarKind, MAX_SIZE};
+use super::kuna_symexpr::{ExprArena, ExprId, VarId, VarKind, MAX_SIZE};
 
 /// Byte `idx` of value `expr`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -25,7 +25,7 @@ pub struct ByteVal {
 }
 
 /// Where the emulator reads the bytes of the binary.
-pub trait PushanImage {
+pub trait SymImage {
     /// Fill `buf` from `addr`; false when the first byte is unmapped.
     fn read_bytes(&self, addr: u64, buf: &mut [u8]) -> bool;
     /// Whether `addr` lies in a section the program may write at run time.
@@ -39,9 +39,9 @@ pub trait PushanImage {
 
 /// The image as the file holds it, writable memory included: what a fetch
 /// through an in-function interpreter's virtual PC reads.
-pub struct FileImage<'a>(pub &'a dyn PushanImage);
+pub struct FileImage<'a>(pub &'a dyn SymImage);
 
-impl PushanImage for FileImage<'_> {
+impl SymImage for FileImage<'_> {
     fn read_bytes(&self, addr: u64, buf: &mut [u8]) -> bool {
         self.0.read_bytes(addr, buf)
     }
@@ -556,7 +556,7 @@ impl State {
     pub fn read_mem(
         &mut self,
         arena: &mut ExprArena,
-        image: &dyn PushanImage,
+        image: &dyn SymImage,
         base: Option<VarId>,
         off: i128,
         size: u8,
@@ -573,7 +573,7 @@ impl State {
     /// An external call may have written any mutable memory: the stored
     /// bytes there are dropped and later reads see the output of the call
     /// numbered `epoch`.
-    pub fn clobber_mutable(&mut self, image: &dyn PushanImage, epoch: u64) {
+    pub fn clobber_mutable(&mut self, image: &dyn SymImage, epoch: u64) {
         if let Some(region) = self.mem.get_mut(&None) {
             region.retain(|o| u64::try_from(o).is_ok_and(|a| !image.is_mutable(a)));
         }
@@ -588,7 +588,7 @@ impl State {
     /// any of them), and the frame bytes in `ranges` (those an escaped frame
     /// address reaches).  Their stored bytes are dropped and their unwritten
     /// bytes read as that call's output.
-    pub fn clobber_call(&mut self, image: &dyn PushanImage, epoch: u64, frame: VarId, ranges: Vec<(i128, i128)>) {
+    pub fn clobber_call(&mut self, image: &dyn SymImage, epoch: u64, frame: VarId, ranges: Vec<(i128, i128)>) {
         self.clobber_mutable(image, epoch);
         let symbolic: Vec<VarId> = self.mem.keys().filter_map(|b| b.filter(|v| *v != frame)).collect();
         for b in symbolic {
@@ -651,7 +651,7 @@ impl State {
     /// path wrote reads what it wrote, and an unwritten byte reads the file
     /// (directly or through a copy), even where an earlier read cached the
     /// symbol of its value at entry.
-    pub fn read_mem_file(&mut self, arena: &mut ExprArena, image: &dyn PushanImage, base: Option<VarId>, off: i128, size: u8) -> ExprId {
+    pub fn read_mem_file(&mut self, arena: &mut ExprArena, image: &dyn SymImage, base: Option<VarId>, off: i128, size: u8) -> ExprId {
         let stale: Vec<i128> = (off..off + size as i128).filter(|o| self.cached_fill(arena, base, *o)).collect();
         if let Some(region) = self.mem.get_mut(&base) {
             for o in stale {
@@ -702,7 +702,7 @@ impl State {
     /// context's packed, unaligned cell) does not take the neighbour with it.
     /// A slot whose two values are the same by [`same_value`] (each path
     /// rebuilt it through a different identity) is no difference.
-    pub fn diff_constants(&mut self, other: &mut State, arena: &mut ExprArena, image: &dyn PushanImage, word: u8) -> Vec<Diff> {
+    pub fn diff_constants(&mut self, other: &mut State, arena: &mut ExprArena, image: &dyn SymImage, word: u8) -> Vec<Diff> {
         let mut out = Vec::new();
         let w = word.max(1) as i128;
         let slots_of = |runs: Vec<(i128, u8)>| {
@@ -863,7 +863,7 @@ impl State {
 #[allow(clippy::too_many_arguments)]
 fn fill_mem(
     a: &mut ExprArena,
-    image: &dyn PushanImage,
+    image: &dyn SymImage,
     be: bool,
     base: Option<VarId>,
     o: i128,

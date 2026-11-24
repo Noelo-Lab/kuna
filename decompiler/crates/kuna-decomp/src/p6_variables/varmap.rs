@@ -791,7 +791,7 @@ impl AliasChecker {
         }
     }
 
-    /// (kuna pushan) Answer as if no pointer into the space had been gathered.
+    /// (kuna deobf) Answer as if no pointer into the space had been gathered.
     pub fn assume_no_pointers(&mut self) {
         self.calculated = true;
         self.add_base.clear();

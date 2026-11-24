@@ -820,8 +820,9 @@ pub struct Architecture {
     pub recover_lowered_switch: bool,
     /// (kuna `pushan`) Devirtualize VM-protected functions: 0 off, 1 auto, 2 on.
     pub pushan_mode: u8,
-    /// (kuna `pushan`) Devirtualized programs by entry offset (restarts re-flow).
-    pub pushan_cache: std::collections::BTreeMap<u64, Rc<crate::kuna_pushan::PushanProgram>>,
+    /// (kuna deobf) Recovered bodies by entry offset (restarts re-flow); an
+    /// option that changes what a deobfuscator recovers clears it.
+    pub deobf_bodies: std::collections::BTreeMap<u64, Rc<crate::kuna_body::RecoveredBody>>,
     /// (kuna `pushan`) The image's executable sections large enough to hold an
     /// interpreter, computed once; `auto` never looks further without two.
     pub pushan_vm_sections: Option<Vec<(u64, u64)>>,
@@ -2532,7 +2533,7 @@ impl Architecture {
             recover_array_stride: false,
             recover_lowered_switch: false,
             pushan_mode: 0, // (kuna) option pushan; reset_defaults sets the shipped default
-            pushan_cache: std::collections::BTreeMap::new(),
+            deobf_bodies: std::collections::BTreeMap::new(),
             pushan_vm_sections: None,
             nul_terminator: false,
             end_ptr_bound: true,

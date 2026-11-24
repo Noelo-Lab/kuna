@@ -25,9 +25,9 @@ use std::rc::Rc;
 
 use kuna_num::opcodes::OpCode;
 
-use super::kuna_pushanemu::{merge_ite, split_over_symbols, symbol_pin, Emulator, Exit, InsnTrace, LiftedInsn, PushanTarget, SymValues, VpcSource, FETCH_WINDOW};
-use super::kuna_pushanexpr::{ExprArena, ExprId, VarId, VarKind};
-use super::kuna_pushanstate::{live_pages, Diff, Loc, PushanImage, State, SymLoc, PAGE_BYTES};
+use super::kuna_symemu::{merge_ite, split_over_symbols, symbol_pin, Emulator, Exit, InsnTrace, LiftedInsn, SymTarget, SymValues, VpcSource, FETCH_WINDOW};
+use super::kuna_symexpr::{ExprArena, ExprId, VarId, VarKind};
+use super::kuna_symstate::{live_pages, Diff, Loc, SymImage, State, SymLoc, PAGE_BYTES};
 
 pub type NodeId = u32;
 
@@ -282,7 +282,7 @@ pub struct FlatCfg {
 }
 
 pub struct Explorer<'a> {
-    pub target: &'a dyn PushanTarget,
+    pub target: &'a dyn SymTarget,
     pub abi: Abi,
     pub config: Config,
     pub arena: ExprArena,
@@ -385,7 +385,7 @@ pub struct Interpreter {
 }
 
 /// The work budget ([`Config::max_work`]): about 120 s of exploration on a
-/// quiet machine (spec 2.11).
+/// quiet machine (spec 10.2).
 const MAX_WORK: u64 = 2_300_000_000;
 /// The memory bound ([`Config::max_memory`]), bytes.
 const MAX_MEMORY: u64 = 3328 << 20;
@@ -394,13 +394,13 @@ const MAX_MEMORY: u64 = 3328 << 20;
 const MAX_SECONDS: u64 = 600;
 /// Bytes a node of the flat graph holds besides its traces (the node, its
 /// index entry, its instruction list).
-const NODE_BYTES: usize = std::mem::size_of::<Node>() + std::mem::size_of::<(NodeKey, NodeId)>() + super::kuna_pushanexpr::MAP_ENTRY_OVERHEAD;
+const NODE_BYTES: usize = std::mem::size_of::<Node>() + std::mem::size_of::<(NodeKey, NodeId)>() + super::kuna_symexpr::MAP_ENTRY_OVERHEAD;
 /// Bytes a lifted instruction holds in the target's cache.
 const LIFT_BYTES: usize = 640;
 /// Bytes the emission holds per op of the graph's instructions while it
 /// rewrites them (each op's rewrite, its memory reference and liveness), and
 /// per node (its exit, liveness sets and overlay instructions): a
-/// least-squares fit over the 48 test targets (spec 2.11).
+/// least-squares fit over the 48 test targets (spec 10.2).
 const EMIT_OP_BYTES: u64 = 164;
 const EMIT_NODE_BYTES: u64 = 6600;
 
@@ -469,7 +469,7 @@ fn trace_bytes(t: &InsnTrace) -> u64 {
         + t.op_out.capacity() * size_of::<Option<ExprId>>()
         + t.sp_before.capacity() * size_of::<Option<ExprId>>()
         + t.path.capacity() * size_of::<usize>()
-        + t.accesses.capacity() * size_of::<super::kuna_pushanemu::AccessRecord>()
+        + t.accesses.capacity() * size_of::<super::kuna_symemu::AccessRecord>()
         + (t.notes.capacity() + t.userops.capacity()) * size_of::<String>()
         + strings
         + vecs.iter().filter(|c| **c > 0).count() * ALLOC_BYTES) as u64
@@ -478,12 +478,12 @@ fn trace_bytes(t: &InsnTrace) -> u64 {
 /// Bytes the allocator spends on each allocation besides its contents.
 const ALLOC_BYTES: usize = 16;
 
-fn classify_space_of(vn: &kuna_num::pcoderaw::VarnodeData) -> Option<super::kuna_pushanemu::Space> {
-    vn.space.as_ref().map(super::kuna_pushanemu::classify_space)
+fn classify_space_of(vn: &kuna_num::pcoderaw::VarnodeData) -> Option<super::kuna_symemu::Space> {
+    vn.space.as_ref().map(super::kuna_symemu::classify_space)
 }
 
 impl<'a> Explorer<'a> {
-    pub fn new(target: &'a dyn PushanTarget, abi: Abi, config: Config, entry_addr: u64) -> Self {
+    pub fn new(target: &'a dyn SymTarget, abi: Abi, config: Config, entry_addr: u64) -> Self {
         Explorer {
             target,
             abi,
@@ -552,7 +552,7 @@ impl<'a> Explorer<'a> {
         self.arena.mark_pointer(sp);
         let sp_var = self.arena.as_var(sp).expect("sp is a variable");
         self.sp0 = Some(sp_var);
-        let clear = self.target.user_stack_clear_bits() & super::kuna_pushanexpr::mask(ps);
+        let clear = self.target.user_stack_clear_bits() & super::kuna_symexpr::mask(ps);
         self.arena.sp_bound = (clear != 0).then_some((sp_var, clear));
         let ret = st.read_mem(&mut self.arena, self.target, Some(sp_var), 0, ps);
         self.retaddr = Some(ret);
@@ -1300,7 +1300,7 @@ impl<'a> Explorer<'a> {
                 let len = (hi - lo) as u8;
                 let x = entry.read_mem(&mut self.arena, self.target, base, lo, len);
                 let y = state.read_mem(&mut self.arena, self.target, base, lo, len);
-                if super::kuna_pushanstate::same_value(&mut self.arena, x, y) {
+                if super::kuna_symstate::same_value(&mut self.arena, x, y) {
                     continue;
                 }
                 let ((zx, ox), (zy, oy)) = (self.arena.known_bits(x), self.arena.known_bits(y));
@@ -1499,7 +1499,7 @@ impl<'a> Explorer<'a> {
                 None => next_ctx,
             })
             .collect();
-        self.direct_exit = insns.last().and_then(|i| i.ops.iter().rev().find(|op| matches!(op.opc, OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_RETURN | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND))).is_some_and(|op| op.opc == OpCode::CPUI_BRANCH && classify_space_of(&op.ins[0]) == Some(super::kuna_pushanemu::Space::Ram));
+        self.direct_exit = insns.last().and_then(|i| i.ops.iter().rev().find(|op| matches!(op.opc, OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_RETURN | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND))).is_some_and(|op| op.opc == OpCode::CPUI_BRANCH && classify_space_of(&op.ins[0]) == Some(super::kuna_symemu::Space::Ram));
         let node_exit = match self.fork_on_vpc(cfg, worklist, id, &exit, &mut state, next_ctx) {
             Some(e) => e,
             None => self.resolve_exit(cfg, worklist, id, exit, state, next_ctx, &insns),
@@ -2370,7 +2370,7 @@ impl<'a> Explorer<'a> {
         // (a loop's exit test) can take values the recorded constants never
         // showed: that target is split on its atoms instead.
         for a in self.arena.bool_atoms(t) {
-            let super::kuna_pushanexpr::ExprKind::Bin(OpCode::CPUI_INT_EQUAL, x, k) = self.arena.kind(a).clone() else { return None };
+            let super::kuna_symexpr::ExprKind::Bin(OpCode::CPUI_INT_EQUAL, x, k) = self.arena.kind(a).clone() else { return None };
             let (x, k) = if self.arena.is_const(x).is_some() { (k, x) } else { (x, k) };
             if x != var_expr || !self.arena.is_const(k).is_some_and(|c| values.contains(&c)) {
                 return None;
@@ -2555,14 +2555,14 @@ impl<'a> Explorer<'a> {
             let mut next = a + insn.len as u64;
             for op in &insn.ops {
                 match op.opc {
-                    OpCode::CPUI_BRANCH if classify_space_of(&op.ins[0]) == Some(super::kuna_pushanemu::Space::Ram) => {
+                    OpCode::CPUI_BRANCH if classify_space_of(&op.ins[0]) == Some(super::kuna_symemu::Space::Ram) => {
                         if self.target.is_foreign_code(op.ins[0].offset) {
                             return true;
                         }
                         next = op.ins[0].offset;
                     }
                     OpCode::CPUI_CBRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN => {
-                        if op.opc != OpCode::CPUI_CBRANCH || classify_space_of(&op.ins[0]) != Some(super::kuna_pushanemu::Space::Const) {
+                        if op.opc != OpCode::CPUI_CBRANCH || classify_space_of(&op.ins[0]) != Some(super::kuna_symemu::Space::Const) {
                             return false;
                         }
                     }
@@ -2700,7 +2700,7 @@ impl<'a> Explorer<'a> {
         for &(b, o) in &pointers {
             if b.is_none() && self.target.is_mapped(o as u64) && self.target.is_writable(o as u64) {
                 for k in 0..(CALL_POINTEE_BYTES / ps as i128) {
-                    let u = self.arena.var(super::kuna_pushanexpr::VarInfo::new(VarKind::CallOutput { site }, ps, false));
+                    let u = self.arena.var(super::kuna_symexpr::VarInfo::new(VarKind::CallOutput { site }, ps, false));
                     state.write_mem(None, o + k * ps as i128, u, ps);
                 }
             }
@@ -2717,7 +2717,7 @@ impl<'a> Explorer<'a> {
         let kept = |off: u64, size: u8| scan.as_ref().is_some_and(|s| s.closed && !s.writes.iter().any(|&(o, n)| o < off + size as u64 && off < o + n as u64));
         let mut clobbered: Vec<(u64, u8)> = Vec::new();
         if !kept(self.abi.return_reg, ps) {
-            let ret = self.arena.var(super::kuna_pushanexpr::VarInfo::new(VarKind::CallResult { site }, ps, false));
+            let ret = self.arena.var(super::kuna_symexpr::VarInfo::new(VarKind::CallResult { site }, ps, false));
             state.write_reg(self.abi.return_reg, ret, ps);
         }
         let flags = self.abi.flag_regs;
@@ -2727,7 +2727,7 @@ impl<'a> Explorer<'a> {
             }
             clobbered.push((off, size));
             let boolean = size == 1 && off >= flags.0 && off < flags.1;
-            let u = self.arena.var(super::kuna_pushanexpr::VarInfo::new(VarKind::CallClobber { site, offset: off }, size, boolean));
+            let u = self.arena.var(super::kuna_symexpr::VarInfo::new(VarKind::CallClobber { site, offset: off }, size, boolean));
             state.write_reg(off, u, size);
         }
         self.last_clobbers = Some(clobbered);
@@ -2832,11 +2832,11 @@ impl<'a> Explorer<'a> {
         let mut raises = false;
         for op in &insn.ops {
             let Some(out) = &op.out else { continue };
-            if classify_space_of(out) != Some(super::kuna_pushanemu::Space::Register) {
+            if classify_space_of(out) != Some(super::kuna_symemu::Space::Register) {
                 continue;
             }
             if out.offset == sp {
-                let k = op.ins.get(1).filter(|v| classify_space_of(v) == Some(super::kuna_pushanemu::Space::Const)).map(|v| v.offset as i64);
+                let k = op.ins.get(1).filter(|v| classify_space_of(v) == Some(super::kuna_symemu::Space::Const)).map(|v| v.offset as i64);
                 if op.opc == OpCode::CPUI_INT_ADD && op.ins.first().is_some_and(|v| v.offset == sp) && k.is_some_and(|k| k > 0) {
                     raises = true;
                 }
@@ -2908,14 +2908,14 @@ impl<'a> Explorer<'a> {
             let mut falls = true;
             for op in &insn.ops {
                 if let Some(out) = &op.out {
-                    if classify_space_of(out) == Some(super::kuna_pushanemu::Space::Register) {
+                    if classify_space_of(out) == Some(super::kuna_symemu::Space::Register) {
                         let w = (out.offset, out.size.min(255) as u8);
                         if !scan.writes.contains(&w) {
                             scan.writes.push(w);
                         }
                     }
                 }
-                let ram_target = op.ins.first().filter(|v| classify_space_of(v) == Some(super::kuna_pushanemu::Space::Ram)).map(|v| v.offset);
+                let ram_target = op.ins.first().filter(|v| classify_space_of(v) == Some(super::kuna_symemu::Space::Ram)).map(|v| v.offset);
                 match op.opc {
                     OpCode::CPUI_BRANCH => {
                         if let Some(t) = ram_target {
@@ -3000,7 +3000,7 @@ pub fn pin(arena: &mut ExprArena, state: &mut State, atom: ExprId, value: ExprId
 /// exclusive or states when `b` is a constant other than the minimum.  This is
 /// the signed comparison a `jl`/`jge`/`jg`/`jle` pair of flags encodes.
 pub fn fuse_signed_compares(arena: &mut ExprArena, atoms: &mut Vec<ExprId>, targets: &mut [(Vec<Vec<(ExprId, bool)>>, NodeId)]) {
-    use super::kuna_pushanexpr::ExprKind;
+    use super::kuna_symexpr::ExprKind;
     use OpCode::*;
     let mut pairs = Vec::new();
     for &o in atoms.iter() {
@@ -3126,7 +3126,7 @@ fn vpc_key(vals: &[u64]) -> u64 {
 }
 
 /// The last control-flow op of `insn`.
-fn flow_op(insn: &LiftedInsn) -> Option<&super::kuna_pushanemu::RawOp> {
+fn flow_op(insn: &LiftedInsn) -> Option<&super::kuna_symemu::RawOp> {
     insn.ops.iter().rev().find(|op| {
         matches!(op.opc, OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN)
     })
@@ -3136,13 +3136,13 @@ fn flow_op(insn: &LiftedInsn) -> Option<&super::kuna_pushanemu::RawOp> {
 fn branches_to_itself(insn: &LiftedInsn) -> bool {
     insn.ops.iter().any(|op| {
         matches!(op.opc, OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH)
-            && classify_space_of(&op.ins[0]) == Some(super::kuna_pushanemu::Space::Ram)
+            && classify_space_of(&op.ins[0]) == Some(super::kuna_symemu::Space::Ram)
             && op.ins[0].offset == insn.addr
     })
 }
 
 /// The value of symbolized location `l` in `state`.
-fn read_loc(state: &mut State, arena: &mut ExprArena, image: &dyn PushanImage, l: &SymLoc) -> ExprId {
+fn read_loc(state: &mut State, arena: &mut ExprArena, image: &dyn SymImage, l: &SymLoc) -> ExprId {
     match l.loc {
         Loc::Reg { off } => state.read_reg(arena, off, l.size),
         Loc::Mem { base, off } => state.read_mem(arena, image, base, off, l.size),

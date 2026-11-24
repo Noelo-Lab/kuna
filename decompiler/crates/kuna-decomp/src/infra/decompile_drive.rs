@@ -117,7 +117,7 @@ impl FlowEnvironment for ArchFlowEnv {
     /// target the walk is about to queue.  A loader already borrowed elsewhere
     /// reports `true` (queue it), which is the behaviour that predates the probe.
     fn code_bytes_mapped(&self, addr: &Address) -> bool {
-        // (kuna pushan) A synthetic instruction has no bytes but is lifted.
+        // (kuna deobf) A recovered body's instruction has no bytes but is lifted.
         if let Some(ov) = self.arch().translate().as_sleigh().and_then(|s| s.pcode_overlay()) {
             if ov.contains(addr) {
                 return true;
@@ -1035,10 +1035,9 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
 fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
     let comments = fd.pending_comment_count();
     let mut data = generate_flow_once(arch, fd)?;
-    // (kuna pushan) An interpreter that is the function's own body is only
-    // seen once its plain flow shows a computed jump; the flow is then
-    // followed again from the devirtualized program.
-    if crate::kuna_pushan::interpreter_after_flow(arch, &data) {
+    // (kuna deobf) Obfuscation only the plain flow shows: the flow is
+    // followed again from the body a deobfuscator recovered.
+    if crate::kuna_deobf::after_flow(arch, &data) {
         data.clear();
         data.truncate_pending_comments(comments);
         data = generate_flow_once(arch, data)?;
@@ -1052,9 +1051,9 @@ fn generate_flow_once(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcd
     crate::kuna_mipsunaligned::paint(arch);
     crate::kuna_memtag::paint(arch, fd.get_address());
     let mut fd = fd;
-    // (kuna pushan) A VM-protected function is lifted from its devirtualized
-    // synthetic program instead of its bytes.
-    let pushan = crate::kuna_pushan::prepare_flow(arch, &mut fd);
+    // (kuna deobf) The front of the deobfuscation plane: a function a
+    // deobfuscator recovers a body for is lifted from it instead of its bytes.
+    let recovered = crate::kuna_deobf::front(arch, &mut fd);
     // C++ Funcdata::followFlow(baddr, eaddr): a function carrying a declared byte
     // extent restricts flow to it; size 0 keeps the unbounded default the whole
     // engine has used until now (`kuna_console::engine::UNBOUNDED_SIZE`), so this
@@ -1067,7 +1066,7 @@ fn generate_flow_once(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcd
         Some((start.clone(), Address::new(space, last)))
     });
     let env = ArchFlowEnv {
-        mapped_image: if pushan.is_none() && arch.mapped_flow_boundary_image {
+        mapped_image: if recovered.is_none() && arch.mapped_flow_boundary_image {
             arch.translate().loader_rc().borrow().shared_bytes()
         } else {
             None
@@ -1075,18 +1074,8 @@ fn generate_flow_once(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcd
         arch: arch as *const Architecture,
         return_discard_memo: Default::default(),
     };
-    if let Some(p) = &pushan {
-        fd.warning_header(&format!(
-            "pushan: devirtualized VM-protected function ({} nodes, {} instructions, {} rounds{}{})",
-            p.stats.nodes,
-            p.stats.insns,
-            p.stats.rounds,
-            if p.stats.writable_bytecode { "; assumes its bytecode in writable memory is what the file holds" } else { "" },
-            if p.stats.woven > 1 { format!("; follows the first of {} interleaved bytecode programs", p.stats.woven) } else { String::new() }
-        ));
-        if let Some(c) = p.caveats() {
-            fd.warning_header(&c);
-        }
+    for line in recovered.iter().flat_map(|body| &body.header) {
+        fd.warning_header(line);
     }
     let mut flow = FlowInfo::new(fd, &env);
     if let Some((baddr, eaddr)) = range {
@@ -1100,8 +1089,8 @@ fn generate_flow_once(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcd
     // options `maxinstruction` / `errortoomanyinstructions` / `unimplemented` /
     // `jumpload` mutate them (options.cc ports in `p0_knowledge/options.rs`).
     flow.set_flags(arch.flowoptions);
-    flow.set_maximum_instructions(if pushan.is_some() {
-        arch.max_instructions.max(4_000_000)
+    flow.set_maximum_instructions(if recovered.is_some() {
+        arch.max_instructions.max(crate::kuna_deobf::RECOVERED_MAX_INSTRUCTIONS)
     } else {
         arch.max_instructions
     });
@@ -1133,8 +1122,8 @@ fn generate_flow_once(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcd
         generated?;
     }
     flow.generate_blocks()?;
-    if let Some(p) = &pushan {
-        crate::kuna_pushan::mark_undefined_copies(p, &mut flow.data);
+    if recovered.is_some() {
+        crate::kuna_body::mark_incidental_copies(&mut flow.data);
     }
     // C++ followFlow: switchOverJumpTables(flow) — map each recovered table's
     // addresses to the basic-block out-edges (the `target` surface is
@@ -1370,9 +1359,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // (kuna `bejoin evidence`) A call resolved mid-pass to a proven
         // callee read it unproven: run the pass again with its verdict.
         if !(reflow_requested && fd.has_restart_pending()) && !crate::kuna_bejoin::wide_callee_missed(arch, fd) {
-            crate::kuna_pushan::warn_unshown_escapes(arch, fd);
-            crate::kuna_pushan::warn_protector_state(arch, fd);
-            crate::kuna_pushan::warn_lost_stores(arch, fd);
+            crate::kuna_deobf::audit(arch, fd);
             drain_pipeline_comments(arch, fd);
             return Ok(total);
         }
@@ -1382,9 +1369,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
             // analyzed to print, so keep it and say more restarts were pending.
             fd.warning_header("Exceeded maximum restarts with more pending");
             fd.set_restart_pending(false);
-            crate::kuna_pushan::warn_unshown_escapes(arch, fd);
-            crate::kuna_pushan::warn_protector_state(arch, fd);
-            crate::kuna_pushan::warn_lost_stores(arch, fd);
+            crate::kuna_deobf::audit(arch, fd);
             drain_pipeline_comments(arch, fd);
             return Ok(total);
         }
@@ -3607,9 +3592,9 @@ pub(crate) fn deadline_passed() -> bool {
     FN_DEADLINE.with(|d| d.get().is_some_and(budget_spent))
 }
 
-/// (kuna pushan) Take `spent` off the running drive's clock. The exploration
-/// of a VM-protected function runs under its own work budget, so the
-/// per-function budget covers only the decompilation that follows it.
+/// (kuna deobf) Take `spent` off the running drive's clock. A deobfuscator
+/// that recovers a body runs under its own work budget, so the per-function
+/// budget covers only the decompilation that follows it.
 pub(crate) fn uncharge(arch: &mut Architecture, spent: std::time::Duration) {
     if let Some(deadline) = arch.kuna_fn_deadline.as_mut() {
         *deadline += spent;
