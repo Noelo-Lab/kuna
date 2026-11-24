@@ -104,45 +104,30 @@ fn classify(fd: &Funcdata, c: BlockId) -> Option<(u64, Form)> {
     let (st, se) = (slot(fd, j, t)?, slot(fd, j, e)?);
     let joined = fd.bb_ops(j).into_iter().any(|o| {
         let Some(op) = fd.obank().get(o) else { return false };
-        if op.code() != OpCode::CPUI_MULTIEQUAL {
+        if op.code() != OpCode::CPUI_MULTIEQUAL || !op.get_out().is_some_and(|v| scratch(fd, v)) {
             return false;
         }
-        let defined_in = |s: usize, x: BlockId| {
+        let def = |s: usize, x: BlockId| {
             op.get_in(s as i32)
                 .and_then(|v| fd.vbank().get(v))
                 .and_then(|v| v.get_def())
                 .and_then(|d| fd.obank().get(d))
-                .is_some_and(|d| d.get_parent() == Some(x))
+                .filter(|d| d.get_parent() == Some(x))
+                .map(|d| d.code() != OpCode::CPUI_INDIRECT)
         };
-        let scratch = op.get_out().and_then(|v| fd.vbank().get(v)).is_some_and(|v| {
-            fd.get_func_proto().has_effect(&v.get_addr(), v.get_size()) != crate::fspec::effect_type::UNAFFECTED
-        });
-        let ok = scratch && defined_in(st, t) && defined_in(se, e) && op.get_out().is_some_and(|v| used(fd, v, USE_DEPTH, false));
-        if ok {
-            if let Ok(dir) = std::env::var("KUNA_O0SEL_DUMP") {
-                let v = fd.vbank().get(op.get_out().unwrap()).unwrap();
-                let defs: Vec<String> = (0..op.num_input()).filter_map(|i| op.get_in(i)).filter_map(|x| fd.vbank().get(x)).map(|x| x.get_def().and_then(|d| fd.obank().get(d)).map_or("in".to_string(), |d| format!("{:?}", d.code()))).collect();
-                let path = std::path::Path::new(&dir).join("debug.txt");
-                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-                    use std::io::Write;
-                    let _ = writeln!(f, "{} {:#x} reg {:#x}:{} defs {:?}", fd.get_name(), at, v.get_offset(), v.get_size(), defs);
-                    let mut st = vec![(op.get_out().unwrap(), 0u32)];
-                    while let Some((x, dep)) = st.pop() {
-                        if dep > 8 { continue; }
-                        for d in fd.vbank().get(x).unwrap().descend_iter() {
-                            if let Some(dop) = fd.obank().get(d) {
-                                let o = dop.get_out().and_then(|o| fd.vbank().get(o)).map(|o| format!("{:#x}:{}:{}", o.get_offset(), o.get_size(), o.get_space().get_name()));
-                                let _ = writeln!(f, "   {} {:?}@{:#x} -> {:?}", dep, dop.code(), dop.get_addr().get_offset(), o);
-                                if let Some(o) = dop.get_out() { if !matches!(dop.code(), OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT) { st.push((o, dep + 1)); } }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        ok
+        let (Some(dt), Some(de)) = (def(st, t), def(se, e)) else { return false };
+        op.get_out().is_some_and(|v| used(fd, v, USE_DEPTH, dt && de))
     });
     joined.then_some((at, Form::Value))
+}
+
+/// Whether `vn` is a register a call does not preserve: where an unoptimizing
+/// compiler evaluates an expression, not where it keeps a `register` variable.
+fn scratch(fd: &Funcdata, vn: VarnodeId) -> bool {
+    fd.vbank().get(vn).is_some_and(|v| {
+        !memory(fd, vn)
+            && fd.get_func_proto().has_effect(&v.get_addr(), v.get_size()) != crate::fspec::effect_type::UNAFFECTED
+    })
 }
 
 /// The in-edge index of `j` that comes from `x`.
@@ -183,9 +168,10 @@ fn arm(fd: &Funcdata, x: BlockId) -> Option<Arm> {
 }
 
 /// Whether `vn` is read by something other than a merge or a return, looking
-/// through copies into another register.  A call reads it only once a copy
-/// moved it into an argument register: an unprototyped call also reads
-/// whatever a scratch register happens to hold.
+/// through copies into another register.  A call reads it only when the arms
+/// set it or a copy moved it into an argument register (`copied`): an
+/// unprototyped call also reads whatever an earlier call left in a scratch
+/// register.
 fn used(fd: &Funcdata, vn: VarnodeId, depth: u32, copied: bool) -> bool {
     let Some(v) = fd.vbank().get(vn) else { return false };
     v.descend_iter().any(|d| {
