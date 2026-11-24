@@ -32,6 +32,23 @@ returning the input argument. Its CLI companion covers both byte orders,
 conditional transfers, joins, stack reloads and ordinary ABI returns, and
 compiles and executes the emitted C at O0/O2.
 
+`kuna-stated-jump-placement.xml` checks stated computed-jump destinations
+whose case labels the jump's value could never equal. A real-mode `jmp ax`
+takes an offset in its code segment, a `jmp far [bx]` takes an offset in the
+segment it loads, whether or not the destinations fit 16 bits, and DOS picks
+the segment an MZ executable runs at. Each rejects its `override jumptable`
+and keeps the unresolved jump.
+
+`kuna-stated-jump-owners.xml` checks which stated destinations stay in the
+function that holds the jump. A GCC-style `.cold` part of the jumping
+function is a case, in a loaded ELF and in an XML image whose symbols are
+named as written, and so is the entry of a caller-declared extent that
+holds the site, beside a size-less inner symbol. A size-less exported symbol
+holds no site, so a jump to its entry from an unsymbolized function is
+refused, as is the entry of `ordinary` from `dispatch`. A later `function
+bounds` that would make an installed destination another function's entry is
+refused, and the installed set and its identical restatement stay in use.
+
 `kuna-narrowed-call-input.xml` checks a call through a typed field whose
 argument was narrowed to two bytes before the field's prototype was forced on
 the call: the function decompiles and passes the sum widened to the parameter.
@@ -431,6 +448,8 @@ writeup, not here.
 | `kuna-rettriangle.xml` | `returndup` split the shared return after a one-block `if`, printing `if (c) f(); return 0;` as `if (!c) return 0; f(); return 0;` (authored C, gcc -O0, stack-protected) | P8 goto-quality, return duplication | `option rettriangle on\|off` |
 | `kuna-tailform.xml` | the function-tail `if` printed in the form the return layout picked: `if (a0) return; note();` for `if (a == 0) note();`, a guard and a second `return 0` for a wrapped two-call body, the arm repeating the final `return 0`, a six-statement void body wrapped, and a list walk whose guard `looptest` owns (authored C, gcc -O2) | P8 goto-quality, print-tree edit after final structuring | `option tailform off\|on\|<n>\|<void>,<value>` |
 | `kuna-tailform-noreturn.xml` | a function ending in a call that does not return printed with that call last and the other side's return inside the `if`: `if (v2) return v2 + 7; __fprintf_chk(..); exit(2);`, a merged two-test `abort` and the test after a loop the same way, and a void store-and-return arm before `abort();` (authored C, gcc -O2, the fixture loaded whole) | P8 goto-quality, print-tree edit after final structuring | `option tailform off\|on` |
+| `kuna-tailform-model.xml` | the C runtime's `__do_global_dtors_aux` (`if (completed) return; ...`) printed wrapped by the 4-line threshold; `option tailform model` prints the guard clause, and still wraps a one-call tail (authored C, gcc -O2, the fixture loaded whole) | P8 goto-quality, print-tree edit after final structuring | `option tailform on\|model` |
+| `kuna-tailform-voidreturn.xml` | a void function's last statement `if (!completed) { ...; completed = 1; return; }` printed with the arm's redundant `return;` (the C runtime's `__do_global_dtors_aux`, gcc -O0 fixture loaded whole) | P8 goto-quality, print-tree edit after final structuring | `option tailform off\|on` |
 
 `kuna-minss-nan.xml` pins an authored scalar MINSS and ratio/clamp probe.
 P3 and P9 preserve the negation of an ordered float comparison as `!(a < b)`

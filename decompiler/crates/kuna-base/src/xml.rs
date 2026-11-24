@@ -2309,7 +2309,13 @@ mod tests {
         // and kuna-passthroughslot / forwarded registers fill their slots ahead of a loaded argument
         // and kuna-passthroughslot-arm / an ARM pad or a register the callee does not take is no filled slot
         // and gh1916-stackpadarg-x86 / a stack slot's pushed pad is not part of its int argument
-        assert_eq!(count, 898, "corpus file count drifted");
+        // and kuna-tailform-model / saved weights choose the function-tail form
+        // and kuna-tailform-voidreturn / a void tail if drops the return the function end repeats
+        // and kuna-calloverlap-floatret / a call's float result inside a wider XMM range
+        // and kuna-stated-jump-placement / stated destinations a segment, a narrow offset or a DOS load cannot label
+        // and kuna-stated-jump-owners / stated destinations stay in the declared function that holds the jump
+        // and kuna-rex-before-prefix / an x86-64 REX prefix that a legacy prefix follows is ignored
+        assert_eq!(count, 903, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
