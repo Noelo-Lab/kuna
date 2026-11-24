@@ -34,10 +34,10 @@ compiles and executes the emitted C at O0/O2.
 
 `kuna-stated-jump-placement.xml` checks stated computed-jump destinations
 whose case labels the jump's value could never equal. A real-mode `jmp ax`
-takes an offset in its code segment, a `jmp far [bx]` takes a 16-bit offset
-that cannot reach 0x10012, and DOS picks the segment an MZ executable runs at.
-Each rejects its `override jumptable` and keeps the unresolved jump. A far
-jump whose destinations fit the offset still labels both cases.
+takes an offset in its code segment, a `jmp far [bx]` takes an offset in the
+segment it loads, whether or not the destinations fit 16 bits, and DOS picks
+the segment an MZ executable runs at. Each rejects its `override jumptable`
+and keeps the unresolved jump.
 
 `kuna-narrowed-call-input.xml` checks a call through a typed field whose
 argument was narrowed to two bytes before the field's prototype was forced on

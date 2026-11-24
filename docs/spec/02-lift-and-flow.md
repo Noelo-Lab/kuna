@@ -2315,11 +2315,14 @@ move; the architecture assumes it can until the loader proves a fixed
 placement or the caller states the base of a raw or XML image. A branch input
 computed by the address space's segment operation is rejected too: the C
 prints it as the offset within its code segment, which a linear label cannot
-match. The walk back from the branch input to that operation passes through
-copies, extensions and truncations in the same instruction. A zero extension
-on that walk, or a branch input narrower than the address, bounds every
-value the jump can take, so a destination above that bound is rejected: a
-16-bit `jmp far [bx]` offset never equals 0x10002.
+match. Every computed branch of a 16-bit x86 language is rejected the same
+way, because SLEIGH lifts some without the segment operation: a prefixed near
+jump still adds CS, and a far jump drops the segment it loads. The walk back
+from the branch input to the segment operation passes through copies,
+extensions and truncations in the same instruction. A zero extension on that
+walk, or a branch input narrower than the address, bounds every value the
+jump can take, so a destination above that bound is rejected: a 32-bit
+`jmp ax` never reaches 0x401003.
 Its case values are the destination addresses in code-space addressable units.
 The model has no table-index ordering, inferred default or guard to fold.
 A fresh follow of the same image consults the same site map.
