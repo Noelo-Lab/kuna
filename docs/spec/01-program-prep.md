@@ -212,6 +212,12 @@ overlay requested after publication fails closed.
 
 ## 1.2 Load image
 
+The Intel HEX reader (`decompiler/crates/kuna-analysis/src/loader/ihex.rs (read)`)
+validates record lengths, checksums, and EOF. A segment or linear extension
+replaces the base for later data addresses. Start records carry either CS:IP
+or a linear address. Data payload lengths do not set the address unit: an
+input profile decides where to map the unscaled addresses and what gaps mean.
+
 `decompiler/crates/kuna-analysis/src/loadimage_object.rs (ObjectLoadImage)` is the
 real-binary `LoadImage` backend — the substitution for upstream's GPL-licensed
 BFD loader (`LoadImageBfd`), rebuilt on the permissive `object` crate with the C++
