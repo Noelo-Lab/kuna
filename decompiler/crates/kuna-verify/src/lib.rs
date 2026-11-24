@@ -1,5 +1,5 @@
-//! diffverify, Tier C (slices C1 and C2): does kuna's decompiled function compute what
-//! the machine code computes?
+//! diffverify: does kuna's decompiled function compute what the machine code
+//! computes? `docs/features/diffverify/README.md` is the guide.
 //!
 //! Both sides start from the same raw machine state. The machine side runs the
 //! function's SLEIGH p-code (`machine`); the decompiled side runs the final
