@@ -8,8 +8,9 @@
     [rdi+rdi*4]`: a 32-bit write, which clears the upper half of rax, and the
     caller `returns_word` reads rax whole after the call.  The listing
     declares `whole` an `int`, and the write proves a zero extension but no
-    sign, so even under `decompile-all` it states nothing and `returns_word`
-    keeps rax whole (#1, #2).  gcc's `next_byte` returns `lea eax, [rdi+1]`
+    sign, so even under `decompile-all` it states nothing (#1).
+    `returns_word` uses only eax of the call, so the RETURN pull narrows the
+    call's output with its own return and it returns `uint4` (#2).  gcc's `next_byte` returns `lea eax, [rdi+1]`
     without extending the byte: nothing proves its upper bits zero, so it
     states nothing either and `larger_byte` reads `al` (#3).
 
@@ -77,6 +78,6 @@ feffff4883c40883c0015b5dc30f1f00f30f1efa5589fd534883ec08e8cffeffff89efc1ef0389c3
   <com>quit</com>
 </script>
 <stringmatch name="NARROWRET-X86 #1: a callee whose word write clears rax returns int in both passes" min="2" max="2">int4 whole\(int4 a0\)</stringmatch>
-<stringmatch name="NARROWRET-X86 #2: with nothing stated the caller keeps rax whole" min="2" max="2">uint8 v1; // rax</stringmatch>
+<stringmatch name="NARROWRET-X86 #2: with nothing stated the caller reads the call at the width it returns" min="2" max="2">^uint4 returns_word\(unsigned long a0\)$</stringmatch>
 <stringmatch name="NARROWRET-X86 #3: a byte the callee never extends is read as al" min="2" max="2">uint1 v1; // al \| bl</stringmatch>
 </decompilertest>

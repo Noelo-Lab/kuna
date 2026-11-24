@@ -694,3 +694,9 @@ Different namespaces and a longer similarly named function retain their callers.
 `int` returns 4 bytes on x86-64, not the whole of rax: `next_byte` inlines
 `getc_unlocked` and refills through `int __uflow(FILE *)`, whose upper half of
 rax is undefined. `kuna-regpiece.xml` pins the same fix on `sh_openpipe`.
+
+`kuna-tailcycle-intreturn.xml` checks the same width when the declared `int`
+is returned beside another call's result: two functions that tail-call each
+other and a declared `int forward_byte`, the shape of readline's
+`rl_forward_char`. The partner's call output narrows with the RETURN, so both
+return `int4` and the declared call is not zero-extended.

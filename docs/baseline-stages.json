@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5263,
-    5263
+    5267,
+    5267
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1939,7 +1939,7 @@
     "data:NARROWRET #5: and are combined bitwise",
     "data:NARROWRET #6: a sign-extended result stays signed",
     "data:NARROWRET-X86 #1: a callee whose word write clears rax returns int in both passes",
-    "data:NARROWRET-X86 #2: with nothing stated the caller keeps rax whole",
+    "data:NARROWRET-X86 #2: with nothing stated the caller reads the call at the width it returns",
     "data:NARROWRET-X86 #3: a byte the callee never extends is read as al",
     "data:NATIVE SWITCH LABELS #1: all scalar native tables use the selector",
     "data:NATIVE SWITCH LABELS #2: every signed first arm is negative",
@@ -5031,6 +5031,10 @@
     "data:tail callees #7: the call before the tail call passes the incoming x0",
     "data:tail callees #8: the tail call passes on _helper's result in x0",
     "data:tail callees #9: no tail call returns a value computed from no argument",
+    "data:tailcycle #1: both partners return the declared callee's 4 bytes",
+    "data:tailcycle #2: the declared int is returned as it is, not zero-extended",
+    "data:tailcycle #3: no return claims the upper half of rax",
+    "data:tailcycle #4: the partner's result is read at the same width",
     "data:tailform #10: a guard looptest drops stays looptest's, so the loop prints top-tested in both passes",
     "data:tailform #11: with looptest binary the long loop body moves behind a guard clause",
     "data:tailform #1: off, a short void tail behind its own exit prints as a guard clause",

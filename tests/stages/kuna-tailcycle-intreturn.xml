@@ -1,0 +1,67 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A function returns a declared `int` callee's result beside another call's
+    (#1921).  clang 20 -O2 (x86-64), three translation units, of
+
+        int forward_byte(int count, int key);          declared below
+        int forward_char(int count, int key) {
+            if (mb_cur_max() == 1 || byte_mode) return forward_byte(count, key);
+            if (count < 0) return backward_char(-count, key);
+            point += count; return 0;
+        }
+        int backward_char(int count, int key) {
+            if (mb_cur_max() == 1 || byte_mode) return forward_byte(-count, key);
+            if (count < 0) return forward_char(-count, key);
+            point -= count; return 0;
+        }
+
+    the shape of readline's rl_forward_char / rl_backward_char.  Every
+    return is a `jmp` tail call or `xor eax,eax; ret`.  `forward_byte`
+    writes only eax, so RulePiecePathology tells the RETURN that 4 bytes are
+    consumed, and the RETURN pull of SubvariableFlow narrows every returned
+    value to eax.  The partner's result is the output of a call whose
+    prototype is not locked, and `tryCallReturnPush` was a stub that failed
+    the whole pull there.  The return stayed 8 bytes, and the declared call
+    printed as `return (uint4)forward_byte(a0,a1);`, a claim that the upper
+    half of rax is zero which nothing in the code makes true.
+
+    Stage / sub-stage: P3 "subvariable flow" (RETURN pull through a call
+    output).  No option: the 8-byte return is false about the program.
+    Pass 1 (`protoorder off`) keeps the partner unstated, as the first member
+    of a call cycle sees it; pass 2 (the default) states it first.
+-->
+<bytechunk space="ram" offset="0x4012b0">
+55535089f389fde8940000004883f801741c833dab10000000751385ed781e012da310000031c04883c4085b5dc389ef89de4883c4085b5de973000000f7dd89
+ef89de4883c4085b5de902000000cccc55535089f389fde8440000004883f801741c833d5b10000000751385ed7820292d5310000031c04883c4085b5dc3f7dd
+89ef89de4883c4085b5de921000000f7dd89ef89de4883c4085b5de960ffffff4863051d10000048ffc0c30f1f4400008d043703050f100000890509100000c3
+c3
+</bytechunk>
+<symbol space="ram" offset="0x4012b0" name="forward_char"/>
+<symbol space="ram" offset="0x401300" name="backward_char"/>
+<symbol space="ram" offset="0x401350" name="mb_cur_max"/>
+<symbol space="ram" offset="0x401360" name="forward_byte"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 forward_byte(int4 count,int4 key);</com>
+  <com>option protoorder off</com>
+  <com>lo fu forward_char</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu backward_char</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option protoorder cycles</com>
+  <com>lo fu forward_char</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu backward_char</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="tailcycle #1: both partners return the declared callee's 4 bytes" min="4" max="4">^int4 (forward|backward)_char\(int4 a0,int4 a1\)$</stringmatch>
+<stringmatch name="tailcycle #2: the declared int is returned as it is, not zero-extended" min="4" max="4">^  return forward_byte\(-?a0,a1\); // tail-call$</stringmatch>
+<stringmatch name="tailcycle #3: no return claims the upper half of rax" min="0" max="0">uint8|\(uint4\)forward_byte</stringmatch>
+<stringmatch name="tailcycle #4: the partner's result is read at the same width" min="4" max="4">^  int4 v1; // eax$</stringmatch>
+</decompilertest>

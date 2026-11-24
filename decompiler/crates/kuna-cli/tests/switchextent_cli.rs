@@ -14,7 +14,7 @@ fn an_unchecked_table_ends_at_the_functions_next_table() {
         out
     };
     let unchecked = decompile("unchecked", &[]);
-    assert!(unchecked.contains("switch(pick(a0) & 0xffffffff) {"), "{unchecked}");
+    assert!(unchecked.contains("switch(pick(a0)) {"), "{unchecked}");
     assert_eq!(unchecked.matches("case ").count(), 3, "{unchecked}");
     assert_eq!(unchecked.matches("// jump-as-call").count(), 1, "the last table has no bound: {unchecked}");
     let off = decompile("unchecked", &["--option", "switchextent", "off"]);
@@ -66,7 +66,7 @@ fn a_swift_enum_table_has_its_enums_case_count() {
         out
     };
     let on = decompile(&[]);
-    assert!(on.contains("switch(swift_getEnumCaseMultiPayload(a0,v1) & 0xffffffff) {"), "{on}");
+    assert!(on.contains("switch(swift_getEnumCaseMultiPayload(a0,v1)) {"), "{on}");
     assert_eq!(on.matches("case ").count(), 3, "{on}");
     assert!(!on.contains("// jump-as-call"), "{on}");
     let off = decompile(&["--option", "switchextent", "off"]);
