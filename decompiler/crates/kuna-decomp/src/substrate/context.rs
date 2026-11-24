@@ -1134,11 +1134,11 @@ pub struct ArchContext {
     /// Read by [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure).
     pub region_structure: bool,
     /// (kuna) source-layout tie-break for `ruleBlockIfNoExit`'s clause arm
-    /// (`guard_arm`, option `guardarm`, opt-in default-off).  When set and BOTH
-    /// out-arms are eligible clauses, the earlier-addressed arm becomes the `if`
-    /// clause instead of out-index 0.  Read by
+    /// (`guard_arm`, option `guardarm`).  Where it applies and BOTH out-arms
+    /// are eligible clauses, the earlier-addressed arm becomes the `if` clause
+    /// instead of out-index 0.  Read by
     /// [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure).
-    pub guard_arm: bool,
+    pub guard_arm: crate::p8_structure::kuna_ifnoexit::GuardArmMode,
     /// (kuna) defer a live loop head in the deferred `ruleBlockIfNoExit` scan
     /// (`loop_cond_hoist`, option `loopcondhoist`, opt-in default-off) so
     /// `ruleBlockWhileDo` keeps the loop's head test.  Read by
@@ -1769,7 +1769,7 @@ impl ArchContext {
             strlen_scan: false, // strlenscan (live value copied from the Architecture)
             rep_string: false, // repstring (live value copied from the Architecture)
             region_structure: false,     // regionstructure (opt-in default-off)
-            guard_arm: false,            // guardarm (opt-in default-off)
+            guard_arm: crate::p8_structure::kuna_ifnoexit::GuardArmMode::Off, // guardarm
             loop_continue: true,
             do_while_continue: true,
             goto_next: false,

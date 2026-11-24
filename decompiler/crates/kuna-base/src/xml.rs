@@ -2302,7 +2302,14 @@ mod tests {
         // and kuna-thumb2-logical-carry / Thumb-2 ands/bics/movs/mvns set C from the shifter
         // and kuna-ppc32picimports-abi-isolation / one file's load-time option never reaches the next file's loads
         // and kuna-tailform-noreturn / a call that does not return prints as the if body before the return
-        assert_eq!(count, 890, "corpus file count drifted");
+        // and kuna-expandload-opsize / a widened AND flag test keeps its op sizes
+        // and kuna-switchcond / a folded switch is never printed where a condition belongs
+        // and kuna-guardauto / the guardarm layout tie-break applies by default only to unoptimized code
+        // and kuna-stated-jump / caller-stated computed branch destinations
+        // and kuna-passthroughslot / forwarded registers fill their slots ahead of a loaded argument
+        // and kuna-passthroughslot-arm / an ARM pad or a register the callee does not take is no filled slot
+        // and gh1916-stackpadarg-x86 / a stack slot's pushed pad is not part of its int argument
+        assert_eq!(count, 897, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

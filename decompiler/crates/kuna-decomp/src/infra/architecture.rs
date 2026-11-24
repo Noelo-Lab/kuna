@@ -964,10 +964,10 @@ pub struct Architecture {
     /// the primary structuring path; falls back to `CollapseStructure` on irreducible code).
     pub region_structure: bool,
     /// (kuna) Source-layout tie-break for `CollapseStructure::ruleBlockIfNoExit`'s
-    /// clause arm (option `guardarm`, default-off opt-in).  Only fires when BOTH
-    /// arms are eligible clauses; the earlier-addressed arm becomes the `if`
-    /// clause instead of out-index 0.
-    pub guard_arm: bool,
+    /// clause arm (option `guardarm`).  Only fires when BOTH arms are eligible
+    /// clauses; the earlier-addressed arm becomes the `if` clause instead of
+    /// out-index 0.
+    pub guard_arm: crate::p8_structure::kuna_ifnoexit::GuardArmMode,
     /// (kuna) Defer a live loop head in `CollapseStructure`'s deferred
     /// `ruleBlockIfNoExit` scan while a non-head candidate remains (option
     /// `loopcondhoist`, default-off opt-in), so `ruleBlockWhileDo` keeps the
@@ -1767,6 +1767,9 @@ pub struct Architecture {
     /// function entry -> call site -> callee entry
     /// ([`crate::p2_lift::kuna_calleeoverride`]).
     pub kuna_callee_overrides: std::collections::BTreeMap<Address, std::collections::BTreeMap<Address, Address>>,
+    /// Complete sets of taken destinations stated for individual computed jumps.
+    pub stated_jump_targets: std::collections::BTreeMap<Address, crate::jumptable::StatedJump>,
+    pub runtime_code_relocation: bool,
     /// (kuna `formatstring`) Which variadic arguments the target passes exactly
     /// as named ones, which bounds what a closed printf/scanf override may
     /// declare. A FACT, written once at `load file` from the image's container;
@@ -2574,7 +2577,7 @@ impl Architecture {
             strlen_scan: false, // (kuna) option strlenscan; reset_defaults sets the shipped default
             rep_string: false, // (kuna) option repstring; reset_defaults sets the shipped default
             region_structure: true,
-            guard_arm: false,
+            guard_arm: crate::p8_structure::kuna_ifnoexit::GuardArmMode::Off, // (kuna) option guardarm; reset_defaults sets the shipped default
             loop_continue: true,
             post_increment: true,
             loop_cond_hoist: false,
@@ -2713,6 +2716,8 @@ impl Architecture {
             elfmain_main_decl: None,
             format_override_callpoints: std::collections::BTreeSet::new(),
             kuna_callee_overrides: std::collections::BTreeMap::new(),
+            stated_jump_targets: Default::default(),
+            runtime_code_relocation: false,
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
             analysis_listing: false,
             analysis_fast_funcdisc: false,
@@ -2923,6 +2928,7 @@ impl Architecture {
         self.iteexpr = false; // (kuna) computed-arm ?: extension: runtime choice, default-off (corpus byte-identical).
         self.iteboolean = true; // (kuna) DIV-51 default-on (short-circuit 0/1 select -> boolean assignment; 0/675 ablation). Per-test opt-out (`option iteboolean off`) on the one stage test it changes keeps the corpus byte-identical.
         self.tail_form = Some(Default::default()); // (kuna) option tailform default-on
+        self.guard_arm = crate::p8_structure::kuna_ifnoexit::GuardArmMode::Auto; // (kuna) option guardarm default `auto`: the layout tie-break only in functions `kuna_unoptimized` calls unoptimized; `option guardarm off` restores out-index order everywhere
         self.returndup_triangle = false; // (kuna) option rettriangle default-off: decbench sample O0 -163 GED / +56 perfect, O2 +60 GED / +1 perfect; on in the aggressive preset
         self.duplicate_shared_returns = true; // (kuna) DIV-54 default-on, superseding the DIV-18 revert (angr SAILR gotoless ReturnDuplicatorHigh). The -976 GED-perfect regression that reverted it was measured before #137 added the const-return gate (`returndup_is_const_ret`); re-ablated on 52,862 decbench functions the selective pass is +417 GED-perfect / -7,756 aggregate GED, net-positive in every one of nine tested partitions. Per-test opt-out (`option returndup off`) on the datatests it changes keeps the corpus byte-identical.
         self.duplicate_call_returns = false; // (kuna) `returndup calls` is opt-in: the merged call is often the source's own ternary argument

@@ -5,7 +5,8 @@
 //! fixture source (functions renamed `s_<name>`, `probe` kept) under gcc and
 //! clang at -O0 and -O2, with `abort` and `exit` turned into a `longjmp` that
 //! records which one ran: every printed function must return, store and stop
-//! where the source does.
+//! where the source does. `guardarm` is off: its `auto` default already prints
+//! the -O0 `lookup` guard flat with `tailform` off.
 use crate::common;
 use common::process;
 use std::process::Command;
@@ -107,7 +108,7 @@ fn a_no_return_tail_round_trips_through_the_printed_c() {
     for &(image, changed) in IMAGES {
         let path = common::fixture(image);
         for opt in ["off", "on"] {
-            let args = ["decompile-all", path.as_str(), "--functions", funcs.as_str(), "--option", "tailform", opt];
+            let args = ["decompile-all", path.as_str(), "--functions", funcs.as_str(), "--option", "tailform", opt, "--option", "guardarm", "off"];
             let (text, err, rc) = common::run_kuna(&args);
             assert_eq!(rc, 0, "{image} tailform {opt}: {err}");
             for &(name, off, on) in changed {

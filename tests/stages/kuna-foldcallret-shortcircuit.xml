@@ -31,10 +31,11 @@
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
 </binaryimage>
 <script>
-  <!-- kuna: tailform default-on; this test pins the binary's own function-tail return layout -->
+  <!-- kuna: tailform default-on and guardarm default auto; this test pins the binary's own function-tail return layout and the out-index arm order -->
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/foldcallret_sc_gcc_O0_x86_64</com>
   <com>option tailform off</com>
+  <com>option guardarm off</com>
   <com>read symbols</com>
   <com>load function w1f</com>
   <com>decompile</com>
@@ -45,6 +46,7 @@
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/foldcallret_sc_clang_O0_x86_64</com>
   <com>option tailform off</com>
+  <com>option guardarm off</com>
   <com>read symbols</com>
   <com>load function w1f</com>
   <com>decompile</com>
@@ -55,6 +57,7 @@
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/foldcallret_sc_clang_O2_x86_64</com>
   <com>option tailform off</com>
+  <com>option guardarm off</com>
   <com>read symbols</com>
   <com>load function w4f</com>
   <com>decompile</com>

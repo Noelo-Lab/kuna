@@ -7272,7 +7272,32 @@ function that reaches such a callee on an error path: without the decline
 gcc -O2's `int g(long x) { return f(x) + 3; }`, whose `f` calls a variadic
 `err` when `x > 5`, printed `f(a0,a1,a2,a3,a4,a5)`, and a single-function
 decompile of x86-64 and AArch64 dash gave `stalloc`, `growstackblock` and
-`setstackmark` six or eight arguments. A body the walk cannot finish -- an import, a thunk, a body past the
+`setstackmark` six or eight arguments. The decline is lifted at one call: where
+the caller stores a value into the callee's first stack-argument slot between
+the call and the call or block start before it (`stores_first_stack_arg`, asked
+once, of the raw p-code before the first heritage: `push $0`, or clang's `mov
+$0,(%rsp)` after an aligning `push %rax`, with the stack pointer's constant
+moves followed back and the call instruction's own return-address push
+skipped). The convention passes an argument on the stack only past a full
+register file, so there the whole run is the list. A store of a register
+(`mov %rbx,(%rsp)`) is no such argument. Before heritage a temporary is not
+yet linked to the op that wrote it, so a store through an address computed
+into one (`mov $0,0x8(%rsp)`, ARM's `str r3,[sp,#0]`) is not seen. A `push`
+counts unless it is a prologue's push of a register that is no argument
+register of the callee's model (`prologue_push`: the instruction COPYs the
+register into the temporary it stores, and nothing back to the function's
+entry writes it or calls; the start of an entry block nothing jumps back into
+counts as the entry, since an `endbr64` lifts to no p-code): gcc's `push %rbx`
+and clang's aligning `push %rax`
+just before a call save or pad. Counted, they gave a glibc-`syscall()`-style
+body that reads every argument register `sys1(0x27,a1,a2,a3,a4,a5)` from
+`long pid_plus(long x) { return sys1(39) + x; }` and six parameters to the
+caller. A pushed argument register is an argument: gcc passes a forwarded
+parameter on the stack that way (tar's `_getopt_long_r` is `push $0; push
+%r9; xor %r9d,%r9d; call`), as is a register the function computed. clang -O2's
+`getopt_long(argc,argv,opts,longopts,index)`, which forwards five registers to
+a seven-parameter `internal` and passes `0, 0` in `r9d` and `[rsp]`, printed
+`internal();`. A body the walk cannot finish -- an import, a thunk, a body past the
 budget -- states nothing, as before. The argument is as wide as the body reads
 it on a little-endian register file; on a big-endian one it is the whole
 register. All of the evidence above applies unchanged, with two additions,
@@ -7314,6 +7339,50 @@ argument, never an argument on its own), and the pass acts twice outside it:
   stopping at the first one the function does not forward. The final list must
   be a leading run of the stated one, and a list holding a stack argument is
   left alone.
+
+**A forwarded register fills its slot.** A register trial the scoring leaves
+inactive because it stands on the function's own value -- its input Varnode, or
+that value carried past calls, reassembled or handed on from an earlier call's
+result, the same tests `build_input_from_trials` applies -- and that the
+callee takes by the evidence above is marked *forwarded* at the end of
+`check_input_trial_use` (`kuna_passthrough.rs (mark_forwarded)`). Past two
+inactive slots in a row the upstream `forceInactiveChain` rule marks every
+later trial inactive, active or not, so a caller that forwards three or more
+registers and loads the next one itself lost that one too, and with the
+loaded register gone the forwarded ones had no list to extend. clang -O2's
+`w5(a,b,c,d) { return in5(a,b,c,d,0) + 1; }` printed `in5() + 1`, and
+`get_int`'s `getprop(blob,node,prop,&len)` printed `getprop()` (U-Boot's six
+`fdtdec_*` callers of `fdt_getprop` were that shape) where `stackaddrargtrial`,
+off by default, was the only thing that kept `&len`.
+
+So a run of inactive slots that holds a forwarded register, and otherwise only
+registers the callee takes (`kuna_passthrough.rs (forwarded_evidence)`, the
+same statement or body run), is a filled run, not a chain: the active trial
+after it keeps its place, and the rule's own hole filling makes the run's
+registers arguments in front of it, as upstream already does for a run of up
+to two. Any other run longer than two is a chain exactly as upstream counts
+it, because a register past the callee's run, or a stack slot, is nothing the
+callee was seen to take. ARM Thumb code shows both: gcc's `push {r3, lr}` alignment pad reads r3, and
+ChibiOS's `chMtxLock(mp)` loads `r3 = 0x30` for `msr BASEPRI` around a call
+of `chMtxLockS(mp)` whose body reads only r0; read as filled whatever else
+the run held, betaflight's `sbufFill` printed `memset(*buf,c,n,a3,a3)` and
+`chMtxLock` printed `chMtxLockS(a0,a1,a2,0x30,a3)`, each caller gaining
+parameters to match. A stack slot past a filled run is an argument only where
+the caller stores into the first stack-argument slot something other than a
+register as it stands (`stores_first_stack_arg`, above), since the pad register
+a prologue pushes lies in that slot at the call: betaflight's
+`strtol(s,end,base)` is `push {r3,lr}; movs r3,#1; bl _strto_l`, and its r3
+read as a fifth argument. Past a filled run, a register the callee's complete
+decode shows it never takes (`never_takes`, or `returns_untouched` for a leaf,
+which reads a Thumb `bx lr`'s mode switch as the return it is) also ends the
+list: gcc -O2's IPA-RA keeps `a` in ecx across `h3(a,b,c)`, and clang's
+`lock3` loads r3 for `msr BASEPRI` before `inner3(p,b,c)`, which printed
+`h3(a0,a1,a2,a0)` and `inner3(a0,a1,a2,0x30)`. A register the callee may still
+read past a call it makes is kept, as `kuna-calleearitycut`'s caller3 r8d is.
+A filled run with no active trial after it stays inactive and is left to the
+extension above. The mark needs the callee's
+evidence, so with nothing stated and no body run, or with the option off, the
+chain is counted as before.
 
 **Making the register visible.** At the end of `ActionFuncLink`, before the
 first heritage, a register no Varnode of the function touches gets a trial and a
@@ -8042,12 +8111,14 @@ size. It shrinks a processor-register trial wider than an int to the int width,
 keeping the register's low-order end on a big-endian image, when two bounded
 walks agree. The low int bytes must pass the defined-bytes walk above. Every
 byte above them must come, through copies, concatenations, subpieces and phi
-nodes whose inputs all qualify, from an incoming processor register that no
-parameter of the caller's locked prototype overlaps. Under the caller's own
-prototype those bytes hold no value the source could have passed, so the
-argument is the int and the calls print `pr(f,a)` and `pr(f,a,a)`. The rule
-declines floating-point registers, callers with a parameter in join storage, and
-callees without `...`. A declared `long` or pointer, or any value whose upper
+nodes whose inputs all qualify, from incoming processor register bytes the
+caller cannot take as a parameter: bytes no input entry of its prototype model
+reaches (RAX under System V), or bytes no parameter of its locked prototype
+overlaps. Under the caller's own prototype those bytes hold no value the source
+could have passed, so the argument is the int and the calls print `pr(f,a)` and
+`pr(f,a,a)`. The rule declines floating-point registers and callees without
+`...`; the locked-prototype reading also declines callers with a parameter in
+join storage. A declared `long` or pointer, or any value whose upper
 bytes are computed, keeps its full width. A `char` or `short` that clang
 forwards without extending it is not narrowed either, because bytes inside the
 int are undeclared too.
@@ -8057,6 +8128,41 @@ variadic register, with no constant format to bound the call: `int d6(const
 char *f, int a) { return pr(f); }` prints `pr(f,a)`, and an unused `double` in
 `d0` joins an AArch64 variadic call. The register holds that value when the
 callee starts, so the printed call compiles back to the same instructions.
+
+### (kuna) The pad above an argument in its stack slot (`kuna_stackpadarg.rs`)
+
+clang -O2 aligns the stack for a call with `push %rax` and then stores an `int`
+argument that goes on the stack over the low four bytes of the pushed slot:
+`int k7(void) { return in7(1,0,0,0,0,6,7); }` is `push %rax; movl $7,(%rsp);
+...; call in7`. Under System V every stack argument fills an 8-byte slot, so
+the stack trial is 8 bytes and heritage pieces it from the stored `7` and the
+upper half of the caller's incoming RAX. `AncestorRealistic` accepts the stored
+piece, and the call printed `in7(1,0,0,0,0,6,(unsigned long)v1 &
+0xffffffff00000000 | 7)`, or `CONCAT44(v1,7)` with debug information, with `v1`
+never set. A wrapper that declares `int ns` in `r8d` and passes it on the stack
+with `push %r8` pads the slot with the upper half of its own `r8` the same way
+(tar's `fprintftime` printed `CONCAT44(v1,ns)` once its forwarded registers fill
+their slots). gcc's `push $7` stores the whole slot and is unaffected.
+
+`narrow_pad_upper`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_stackpadarg.rs`, always on)
+runs right after the ancestor-use path marks a stack trial active or inactive.
+It applies only to a trial that fills exactly one slot of a stack input entry of
+the callee's model (its size is the entry's alignment) and is wider than an
+int. Every byte from the int width up must pass the undeclared-bytes walk of the
+forwarded-value rule: through copies, concatenations, subpieces and phi nodes,
+from incoming processor register bytes the caller cannot take as a parameter.
+The rule then keeps the low bytes up to the first undeclared one, when that is
+1, 2 or the int width, and shrinks the trial to them (at the slot's high end on
+a big-endian image). Those bytes hold no value the source could have passed, so
+the calls print `in7(1,0,0,0,0,6,7)` and `pr("...",1,2,3,4,5,6)`. A declared
+`char c` that clang stores with `movl %edi,(%rsp)` has undeclared bytes 1-3 too
+(the rest of `rdi` above `dil`), so its trial keeps one byte and the call prints
+`ic7(1,0,0,0,0,6,c)`. A slot whose upper bytes are computed, constant (gcc's
+`push $0`, a zero-extending `movl %edi,%eax; push %rax`) or a register the
+caller may take as a parameter keeps its full width, as does a stored `long`.
+On a 32-bit target a 4-byte slot is never wider than an int, and an 8-byte trial
+spans two slots, so the rule does not apply.
 
 ### (kuna) `varargsharedfloat` — a variadic double that also feeds an earlier argument
 

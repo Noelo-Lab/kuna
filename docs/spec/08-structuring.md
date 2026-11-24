@@ -100,9 +100,17 @@ Ghidra all write `if (!ok) fatal(); return v;` — the condition negated, the
 body re-parented one level deeper, and the fatal call demoted to the
 function's trailing fall-through.
 
-`guardarm on` (default-off opt-in) breaks **only that tie**, and by code
-layout: of the two eligible arms, the one whose first leaf lies earlier in the
-address space becomes the clause. An unoptimized compiler emits the taken
+`guardarm` breaks **only that tie**, and by code layout: of the two eligible
+arms, the one whose first leaf lies earlier in the address space becomes the
+clause. It takes `off`, `auto` and `on`; `auto`, the default, applies the
+layout only in a function chapter 03's detector calls unoptimized
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_unoptimized.rs (detect)`,
+read here through `is_unoptimized`), `on` in every function and `off` in
+none. An unoptimizing compiler emits blocks in source order, so its layout is
+the author's choice; an optimizing one moves cold paths and shares tails, so
+elsewhere the earlier arm says nothing about the source. On the decbench
+corpus the layout applied everywhere wins 279 and loses 58 exact matches at O0
+but loses 67 against 24 at O2; under `auto` the O2 output is unchanged. An unoptimized compiler emits the taken
 clause of `if (c) A; B;` in front of `B`, and emits the `then` side of an
 `if/else` in front of the `else` side, so the earlier arm is the source's
 `if` body in both shapes. A block with a single eligible arm is untouched, so
@@ -674,16 +682,20 @@ then iterates until one component remains, each round trying in order:
    below).
 6. `rule_block_goto` — wrap edges already marked unstructured, exactly as
    §8.1's rule 1.
-7. `region_structurer.rs (RegionStructurer::virtualize_one_edge)` — the last
+7. The switch schema once more, splitting: a switch held back only because a
+   continue case and its exit lead to different blocks has those continue
+   cases made gotos (the one-successor rule at the end of this section).
+8. `region_structurer.rs (RegionStructurer::virtualize_one_edge)` — the last
    resort: mark one structured edge as a goto (below). Because this always
    removes an edge, the loop converges; the only "stuck" exit is a component
    set with no virtualizable edge at all.
 
 A hang-guard caps the rounds at `2*n^2 + 64` (`region_structurer.rs
 (round_cap)`) so a mis-port fails cleanly instead of spinning; the cap, a
-stuck knot, or a schema error all make `structure()` report non-convergence,
-upon which `ActionBlockStructure` re-seeds and falls back to
-`CollapseStructure` (§8.1).
+stuck knot, a schema error, or a finished tree that holds a statement where a
+condition belongs (`kuna_switchcond.rs (misplaced_condition)`, below) all make
+`structure()` report non-convergence, upon which `ActionBlockStructure`
+re-seeds and falls back to `CollapseStructure` (§8.1).
 
 The condition-folding and schema loops also check the current function's time
 and memory budget before each round. Exhaustion stops the attempt, and
@@ -1972,3 +1984,31 @@ block whose only edge loops back to itself. When the dispatch loop is a case
 of an outer switch, such a case is not a continue either: folding it as a
 terminal case would make its self-edge internal and drop the inner loop, so
 the outer switch declines until the loop schema has wrapped it.
+
+A folded switch keeps at most one successor, as it does in `CollapseStructure`,
+where every case reaches the one exit. A continue case adds a second kind of
+exit: its backedge survives the fold as an out-edge of the `BlockSwitch`. When
+that edge's loop head is not the switch's exit, the folded switch would be a
+block with two successors whose last statement is a switch, and the if and loop
+schemas, which read any two-successor block as a condition, printed it as one:
+`if` followed by the whole switch statement a second time, which is not C.
+`RegionStructurer::try_switch_cases` declines such a fold. Usually the exit is
+only the unfolded rest of one case, a case that runs an inner loop before it
+continues (bash `man2html`'s `scan_format` at `-O0`); once the loop and
+sequence schemas have folded that rest into the case, every case continues and
+the switch folds as the source wrote it, the inner loop inside its case. When
+nothing else can move, because cases that `break` rejoin after the switch, the
+schema runs once more with `split` before any edge is virtualized: each
+continue case whose loop head is not the kept successor becomes a `BlockGoto`
+to that head, which `loopcontinue` prints as `continue;`, and the switch then
+folds with the one exit. Continue cases to two different loop heads keep the
+first case's head and split the rest.
+
+Whatever produced it, no schema puts a block that prints a statement into a
+condition slot. `kuna_switchcond.rs (renders_branch)` is false for a switch, an
+`if`, a loop or a goto at the end of any nesting of lists, and the if/else,
+if-then, short-circuit, while-do, do-while and if-goto folds all require it.
+`structure()` checks the finished tree with `kuna_switchcond.rs
+(misplaced_condition)` and reports non-convergence on a hit, so
+`ActionBlockStructure` falls back to `CollapseStructure`, which cannot build
+such a tree. The printer holds the last line (§9).

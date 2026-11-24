@@ -172,6 +172,9 @@ pub struct Funcdata {
     /// (kuna `varargsave`) Set when the first heritage pass folded this
     /// function's variadic register-save prologue (`p4_calls/kuna_varargsave.rs`).
     pub(crate) kuna_vararg_save: bool,
+    /// (kuna) Whether the function's code is unoptimized, decided once after
+    /// the first heritage pass (`p3_dataflow/kuna_unoptimized.rs`).
+    pub(crate) kuna_unoptimized: Option<bool>,
     pub(crate) kuna_fpu_trunc_views: Vec<OpId>,
     /// Boolean properties associated with \b this function (C++ `flags`)
     flags: uint4,
@@ -632,6 +635,9 @@ pub struct Funcdata {
     /// writes the return register, which carries no argument, just before them
     /// (`xor %eax,%eax` is SysV's vector-register count).
     kuna_passthrough_vararg_calls: Vec<crate::context::OpId>,
+    /// (kuna `passthrough`) The CALL ops the caller hands a stack argument,
+    /// past a full argument-register file.
+    kuna_passthrough_stack_arg_calls: Vec<crate::context::OpId>,
     /// (kuna `msvcbyval`) The calls whose by-value slot `ActionDefaultParams`
     /// sized, with the constructor call that builds each.
     kuna_msvc_byval_sites: Vec<crate::p4_calls::kuna_msvcbyval::ByvalSite>,
@@ -795,6 +801,7 @@ impl Funcdata {
             kuna_later_wanted: std::rc::Rc::default(),
             kuna_x87_empty_returns: Vec::new(),
             kuna_vararg_save: false,
+            kuna_unoptimized: None,
             flags: 0,
             clean_up_index: 0,
             high_level_index: 0,
@@ -916,6 +923,7 @@ impl Funcdata {
             kuna_callret_returned: Vec::new(),
             kuna_passthrough_claims: Vec::new(),
             kuna_passthrough_vararg_calls: Vec::new(),
+            kuna_passthrough_stack_arg_calls: Vec::new(),
             kuna_msvc_byval_sites: Vec::new(),
             kuna_readarg_vararg_calls: Vec::new(),
             kuna_passthrough_variadic: false,
@@ -1906,6 +1914,16 @@ impl Funcdata {
     /// (kuna `passthrough`) The CALL ops set up as variadic calls.
     pub fn kuna_passthrough_vararg_calls(&self) -> &[crate::context::OpId] {
         &self.kuna_passthrough_vararg_calls
+    }
+
+    /// (kuna `passthrough`) Record the CALL ops handed a stack argument.
+    pub fn kuna_set_passthrough_stack_arg_calls(&mut self, ops: Vec<crate::context::OpId>) {
+        self.kuna_passthrough_stack_arg_calls = ops;
+    }
+
+    /// (kuna `passthrough`) The CALL ops handed a stack argument.
+    pub fn kuna_passthrough_stack_arg_calls(&self) -> &[crate::context::OpId] {
+        &self.kuna_passthrough_stack_arg_calls
     }
 
     /// (kuna `msvcbyval`) Record the calls whose by-value slot was sized.
@@ -4461,6 +4479,7 @@ impl Funcdata {
         self.kuna_fpu_trunc_views.clear();
         self.kuna_x87_empty_returns.clear();
         self.kuna_vararg_save = false;
+        self.kuna_unoptimized = None;
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).
         self.flags &= !(funcdata_flags::highlevel_on
             | funcdata_flags::blocks_generated
@@ -4544,6 +4563,7 @@ impl Funcdata {
         self.kuna_callee_split_calls.clear();
         self.kuna_passthrough_claims.clear();
         self.kuna_passthrough_vararg_calls.clear();
+        self.kuna_passthrough_stack_arg_calls.clear();
         self.kuna_msvc_byval_sites.clear();
         self.kuna_readarg_vararg_calls.clear();
         self.kuna_passthrough_variadic = false;
