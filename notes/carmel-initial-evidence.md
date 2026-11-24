@@ -117,3 +117,22 @@ the preserved accumulator high halves and guards, `EST=0x10`, and the next
 issue at word `0x89c`. It is inside a vector-backed function but is not
 an additional function anchor. The three byte-identical 2CPE V2.2 copies
 do not count as independent state witnesses.
+
+## Native listing parity and wider CALL
+
+On mcurie, Kuna, the Python formatter and original CrossView agreed
+exactly on all 68,243 fixed fetches: text, CODE start address and consumed
+words. The corpus includes 14,032 fetches with an unknown issue, 27,472
+compact family/variant cases, 25,014 wide cases, 11,528 curated cases,
+133 fixed boundary cases, and 4,096 deterministic raw draws.
+The full input SHA-256 was
+`90b57d3c022ab741bccf6e6d5980ffe6f45b6aaa23d02f05fac07e3d78ff81da`.
+This is not an exhaustive test over all 48-bit patterns. Native CrossView
+exposed six Python differences, corrected before the three-way run.
+
+The wider lift accepts the no-delay unconditional relative CALL in the
+linked `-O2` `call_addone` fixture. Twelve p-code tests passed, including the
+call's CODE target, saved DATA link, SP restoration and returned value.
+Default C still misses the caller's inferred argument and return. With
+explicit register-located prototypes it prints `return callee(x,cfg);`;
+that observation does not upgrade the default compiler-quality score.

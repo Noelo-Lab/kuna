@@ -160,8 +160,7 @@ fn only_complete_readonly_cliw_records_specialize_the_reference() {
     for source in [code.to_owned(), bank(product, false), bank(&product[..22], true)] {
         let program = xml(&source).unwrap();
         let (len, mnemonic, index) = program.disassemble_at(0x18).unwrap();
-        assert_eq!((len, mnemonic.as_str()), (6, "CLIW"));
-        assert!(index.trim().ends_with('0'), "{index}");
+        assert_eq!((len, mnemonic.as_str(), index.as_str()), (6, "cliwexe", "0x0()"));
         assert!(matches!(program.raw_pcode_at(0x18), Err(KunaError::Unimpl { .. })));
     }
 }
@@ -171,8 +170,8 @@ fn normalized_cliw_alias_retains_the_high_index_in_assembly() {
     let source = r#"<bytechunk space="code" offset="0" readonly="true">8c6001dce1c2</bytechunk>
                     <bytechunk space="cliw" offset="0xc" readonly="true">8097e0fffff03fffff7ffff8</bytechunk>"#;
     let program = xml(source).unwrap();
-    let (_, _, index) = program.disassemble_at(0).unwrap();
-    assert!(matches!(index.trim(), "0x401" | "1025"), "{index}");
+    let (_, mnemonic, index) = program.disassemble_at(0).unwrap();
+    assert_eq!((mnemonic.as_str(), index.as_str()), ("cliwexe", "0x401()"));
     assert!(program.raw_pcode_at(0).unwrap().1.iter().any(|op| op.opcode == "INT_MULT"));
     let another_bank = r#"<bytechunk space="cliw" offset="0x3000">7ffffefffff03fffff7ffff8</bytechunk>"#;
     assert!(matches!(

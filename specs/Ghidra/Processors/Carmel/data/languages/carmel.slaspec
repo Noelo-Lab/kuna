@@ -136,6 +136,9 @@ define token wide (48)
     wide_right = (0,23) hex
     wide_left_mode = (47,47)
     wide_right_mode = (23,23)
+    wide_call_offset_0 = (24,45) hex
+    wide_call_offset_22 = (0,1) hex
+    wide_9_22 = (9,22)
     wide_immediate_0 = (24,45) hex
     wide_immediate_22 = (0,1) hex
     wide_2_11 = (2,11)
@@ -487,6 +490,9 @@ resume_2_1: word_address is epsilon [ word_address = (inst_start + 4) & 0xffffff
 :"RETURN" "delay 1" "||" complete_right is carmel_next_issue_size=6 & (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd802); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) { local target:3; pop_link(target); build complete_right; delayslot(6); return [target]; }
 :^nop_left "||" "RETURN" "delay 1" is carmel_next_issue_size=6 & (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_22=0x2bd802) { local target:3; pop_link(target); delayslot(6); return [target]; }
 :^complete_left "||" "RETURN" "delay 1" is carmel_next_issue_size=6 & (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left); (slot_mode=0 & slot_0_22=0x2bd802) { local target:3; pop_link(target); build complete_left; delayslot(6); return [target]; }
+
+wide_call_target: word_address is wide_call_offset_0 & wide_call_offset_22 [ word_address = (inst_start + (wide_call_offset_0 | (wide_call_offset_22 << 22))) & 0xffffff; ] { export *[code]:3 word_address; }
+:CALL wide_call_target is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27c1 & wide_call_target & link_2_0 { push_link(link_2_0); call wide_call_target; }
 
 # R0's AGU reserves the incoming address; the store uses it after update.
 macro advance_r0(address) {

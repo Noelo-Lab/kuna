@@ -359,3 +359,36 @@ fn tasking_compiled_addone_returns_the_c_result() {
         assert_eq!(m.reg("SP"), 0x4402);
     }
 }
+
+#[test]
+fn tasking_wide_relative_call_reaches_the_linked_callee_and_restores_sp() {
+    let code: String = include_str!("../../../../tests/fixtures/carmel/compiler-o2.hex")
+        .split_whitespace()
+        .collect();
+    let callee = 0x2e;
+    let mut fetches = vec![(NOP, NOP); (callee / 2 + 2) as usize];
+    for pc in [0, 2, callee] {
+        let at = (6 * pc) as usize;
+        fetches[(pc / 2) as usize] = (
+            u32::from_str_radix(&code[at..at + 6], 16).unwrap(),
+            u32::from_str_radix(&code[at + 6..at + 12], 16).unwrap(),
+        );
+    }
+    let caller_return = callee + 2;
+    let issues = [(0, 5, 6), (2, 1, 6), (callee, 2, 3), (callee + 1, 3, 6), (caller_return, 1, 0)];
+    let mut m = Machine::new(0, &fetches, &issues, None);
+    for (x, expected) in [(-2i16, -1i16), (0, 1), (42, 43)] {
+        m.seed(&[("A0L", u64::from(x as u16)), ("SP", 0x4400), ("ECFG", 0)]);
+        m.seed_data(0x4401, caller_return);
+        m.seed_data(0x4402, 0);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 3 * callee);
+        assert_eq!((m.reg("SP"), m.data(0x43ff), m.data(0x4400)), (0x43fe, 2, 0));
+        assert_eq!(m.step(), 3 * (callee + 1));
+        assert_eq!(m.step(), 6);
+        assert_eq!(m.reg("SP"), 0x4400);
+        assert_eq!(m.step(), 3 * caller_return);
+        assert_eq!(m.reg("SP"), 0x4402);
+        assert_eq!(m.reg("A0L"), u64::from(expected as u16));
+    }
+}

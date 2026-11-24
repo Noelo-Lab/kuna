@@ -578,6 +578,8 @@ mod verify_rustprobestack;
 #[path = "verify_bootstrap.rs"]
 mod verify_bootstrap;
 
+#[path = "verify_carmel_disasm_parity.rs"]
+mod verify_carmel_disasm_parity;
 #[path = "verify_carmel_raw.rs"]
 mod verify_carmel_raw;
 #[path = "verify_carmel_wild.rs"]

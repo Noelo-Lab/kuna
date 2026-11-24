@@ -101,7 +101,7 @@ fn thumb_pointer(prog: &ConsoleProgram, args: &DisArgs) -> Result<Option<u64>, S
     let spec = args.spec.trim();
     if !prog.is_arm32()
         || split_range(spec).is_some()
-        || !(args.by_address || looks_like_addr(spec))
+        || !(args.raw_base.is_some() || args.by_address || looks_like_addr(spec))
     {
         return Ok(None);
     }

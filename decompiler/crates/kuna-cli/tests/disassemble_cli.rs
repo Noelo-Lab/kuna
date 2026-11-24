@@ -229,6 +229,84 @@ fn raw_view_validates_the_mapping_flags_at_the_cli() {
 
 // --- the acceptance probes ---------------------------------------------------
 
+#[test]
+fn raw_carmel_listing_uses_code_words_and_keeps_byte_sizes() {
+    let path = common::scratch_file("raw-carmel", "bin");
+    std::fs::write(
+        &path,
+        [
+            0xa1, 0xac, 0x20, 0x21, 0xac, 0x62, // Sequential increments.
+            0x2b, 0xec, 0x00, 0x2b, 0xec, 0x00, // Parallel NOPs.
+            0x80, 0x12, 0x34, 0xc6, 0x42, 0x40, // Wide immediate move.
+        ],
+    )
+    .unwrap();
+    let input = path.to_str().unwrap();
+    let raw = ["--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0x1000", "--json"];
+    let run = |command: &str, address: &str, flags: &[&str]| {
+        run_kuna(&[&[command, input, address][..], &raw, flags].concat())
+    };
+    let query = |command, address, flags: &[&str]| {
+        let (stdout, stderr, status) = run(command, address, flags);
+        assert_eq!(status, 0, "{command} {address}: {stderr}");
+        stdout
+    };
+
+    for command in ["disassemble", "raw-pcode"] {
+        let text = query(command, "0x1000", &["--addr", "--count", "2"]);
+        let doc = parse_doc(&text);
+        assert_eq!(doc["start"], 0x1000);
+        assert_eq!(doc["end"], 0x1002);
+        assert_eq!(doc["bytes"], 6);
+        let rows = instructions(&text);
+        assert_eq!(rows.len(), 2);
+        for (row, (address, bytes)) in rows.iter().zip([("0x1000", "a1ac20"), ("0x1001", "21ac62")]) {
+            assert_eq!(row["address_hex"], address);
+            assert_eq!(row["size"], 3);
+            assert_eq!(row["bytes"], bytes);
+            assert_ne!(row["mnemonic"], ".byte");
+        }
+    }
+
+    let text = query("disassemble", "0x1001", &["--count", "3"]);
+    let rows = instructions(&text);
+    assert_eq!(
+        rows.iter().map(|row| as_str(&row["text"])).collect::<Vec<_>>(),
+        ["inc(a1l);", "nop || nop;", "a0l = 0x1234;"],
+    );
+    assert_eq!(rows.iter().map(|row| as_u64(&row["size"])).collect::<Vec<_>>(), [3, 6, 6]);
+    assert_eq!(rows[2]["address_hex"], "0x1004");
+    assert_eq!(parse_doc(&text)["end_hex"], "0x1006");
+
+    let text = query("disassemble", "0x1005", &["--count", "1"]);
+    let rows = instructions(&text);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["address_hex"], "0x1005");
+    assert_eq!(rows[0]["mnemonic"], ".byte");
+    assert_eq!(rows[0]["bytes"], "c64240");
+
+    let text = query("read", "0x1005", &["--bytes", "2"]);
+    let doc = parse_doc(&text);
+    assert_eq!(doc["bytes"], 2);
+    assert_eq!(doc["hex"], "c642");
+    assert_eq!(doc["end_hex"], "0x1006");
+    assert_eq!(doc["provenance"][0]["file_offset"], 15);
+    let text = query("read", "0x1005", &["--bytes", "12"]);
+    assert_eq!(parse_doc(&text)["hex"], "c64240", "do not pad at EOF");
+
+    let text = query("raw-pcode", "0x1000-0x1002", &["--follow"]);
+    let doc = parse_doc(&text);
+    assert_eq!(doc["range_end_hex"], "0x1002");
+    assert_eq!(doc["blocks"][0]["successors"][0]["target_hex"], "0x1002");
+
+    let (_, stderr, status) = run("disassemble", "0x1000", &["--slice", "arm"]);
+    assert_eq!(status, 2, "{stderr}");
+    assert!(stderr.contains("--slice does not apply to --raw-image"), "{stderr}");
+    let (_, stderr, status) = run("disassemble", "0x1001", &["--base", "0x1001"]);
+    assert_eq!(status, 1, "{stderr}");
+    assert!(stderr.contains("even word base"), "{stderr}");
+}
+
 /// **The acceptance probe**: `kuna disassemble <bin> main` lists real
 /// instructions. Before this command there was no way to see one at all — three
 /// testers hit `unknown subcommand "disassemble"` after decompilation had

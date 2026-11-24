@@ -3512,6 +3512,10 @@ In raw word-addressed images an undecoded row runs to the next CODE word.
 Staying on the grid is also what lets the literal pool below be recognized at
 all: a pool word is only folded when it starts a decoded row.
 
+In raw word-addressed images, undecoded bytes instead run to the next CODE
+word. For example, a Carmel address that names the second word of a wide
+issue is not an instruction start and is listed as `.byte`.
+
 ### Literal pools are listed as data
 
 A constant that will not fit an ARM/MIPS/PowerPC immediate is parked in `.text`

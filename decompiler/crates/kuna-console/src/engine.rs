@@ -31,6 +31,7 @@
 //! is precisely what `readLoaderSymbols` reads).
 
 mod kuna_carmel_image;
+mod kuna_carmel_listing;
 mod lazy_inventory;
 mod kuna_thunknames;
 mod kuna_signature_names;
@@ -2072,6 +2073,16 @@ impl ConsoleProgram {
                 .ok_or_else(|| KunaError::lowlevel("no default code space"))?,
         );
         let addr = Address::new(code_space, vma);
+        if self.arch.arch_id() == kuna_carmel_image::TARGET {
+            let translate = self.arch().translate();
+            let size = translate.instruction_length(&addr)?;
+            let word = vma / 3;
+            let start = Address::new(Rc::clone(addr.get_space().unwrap()), 3 * (word & !1));
+            let mut fetch = [0; 6];
+            translate.loader_rc().borrow_mut().load_fill(&mut fetch, &start)?;
+            kuna_carmel_listing::print(&fetch, word as u32, size, mnem, body);
+            return Ok(size);
+        }
         self.arch().translate().print_assembly_into(&addr, mnem, body)
     }
 

@@ -3850,6 +3850,12 @@ console stores byte offsets internally and preserves odd CODE word addresses
 at its raw boundary. It does not compact omitted slots or decode missing ROM
 as padding.
 
+The Carmel console listing applies CrossView-style syntax to the framed
+issue. It uses the complete fetch even at an odd entry because some compact
+right-slot operands depend on the preceding slot's display fields. Listing
+unknown text does not invent execution, and recognizing the syntax of an
+unimplemented form does not let flow follow past that form.
+
 Parallel roots sample both compact lanes before committing their register
 effects. A compact delay counts one following issue, not one fetch: the
 loader paints the following issue's length, and the translator checks the
