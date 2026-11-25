@@ -3888,6 +3888,11 @@ Covered wide `LOAD` forms distinguish accumulator writeback from pointer
 and `PACFG` setup. An operand that initializes a pointer does not also
 overwrite the encoded bound register.
 
+Wide logical operations on address-register words write the saved counter
+`LC1`, not the active counter `LC`. The flag-only long DATA form still
+postincrements its address register by two words and computes status from
+the complete 40-bit result without writing an operand.
+
 Covered wide address transfers add the low 16-bit displacement to a word
 source or the `R3` address unit. Saving a CODE address preserves its upper
 byte. The open input supplies all ones; the open result discards the sum.

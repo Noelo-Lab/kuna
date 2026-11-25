@@ -108,6 +108,48 @@ fn carmel_backtrace_projections_preserve_the_other_lane_and_the_vetoed_write() {
 }
 
 #[test]
+fn carmel_wide_logic_writes_saved_loop_count_without_replacing_active_count() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-wide-logic-loop-count", "bin");
+    fs::write(&binary, [
+        0xe0, 0x72, 0x25, 0xeb, 0x52, 0xae, // XOR LC1,RN3,R0
+        0x2b, 0xd8, 0x00, 0x2b, 0xec, 0x00,
+    ]).unwrap();
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let mut emitted = String::new();
+    for (register, name) in [("LC1", "saved_count"), ("LC", "active_count")] {
+        let output = common::process::required_output(Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0", "--json", "--assert-strict",
+                "--assert", "param 0 %LC unsigned short active",
+                "--assert", "param 1 %RN3 unsigned short step",
+                "--assert", "param 2 %R0 unsigned short index",
+                "--assert", &format!("return %{register} unsigned short"),
+            ]));
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        emitted.push_str(&function["code"].as_str().unwrap().replace("sub_0", name));
+        emitted.push('\n');
+    }
+    fs::write(&source, format!(
+        "{emitted}\nint main(void) {{\n\
+         return saved_count(0x1234, 0xe28, 0x8c44) != 0x826c ||\n\
+                saved_count(0x1234, 0x8c44, 0x8c44) != 0 ||\n\
+                active_count(0x1234, 0xe28, 0x8c44) != 0x1234;\n\
+         }}\n",
+    )).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_scalar_stack_pointer_returns_the_popped_word_address() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
