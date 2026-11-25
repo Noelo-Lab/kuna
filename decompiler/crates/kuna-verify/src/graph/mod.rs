@@ -7,6 +7,8 @@
 //! run's initial state, any other from the current one. LOAD and STORE use the
 //! same memory model as the machine side, and a call has the same stub.
 
+pub mod program;
+
 use kuna_base::space::AddrSpace;
 use kuna_num::opcodes::get_opname;
 
@@ -34,12 +36,19 @@ pub struct Outcome {
     pub writes: Writes,
     /// It read a byte of its own frame that nothing wrote.
     pub read_uninitialized: bool,
-    /// The first call where a callee the machine ran for real read an
-    /// argument register kuna's call does not pass the same value in.
-    pub call_input: Option<CallInput>,
+    /// The calls, up to [`CALL_INPUTS`] of them, where a callee the machine
+    /// ran for real read an argument register kuna's call does not pass the
+    /// same value in.
+    pub call_inputs: Vec<CallInput>,
+    /// Calls past [`CALL_INPUTS`] whose argument reads differ.
+    pub unkept_inputs: usize,
     /// System calls and traps, in order.
     pub events: Vec<crate::calls::UserEvent>,
 }
+
+/// Calls per run whose differing argument reads are kept for a rerun; more
+/// are only counted ([`Outcome::unkept_inputs`]).
+pub const CALL_INPUTS: usize = 64;
 
 /// A call whose callee reads argument-register bytes kuna passes otherwise:
 /// the report, and kuna's bytes (a stand-in where it passes none) for a
@@ -71,7 +80,8 @@ const MAX_BUILTIN_BYTES: u64 = 1 << 20;
 struct Run<'e, 'p, 'c> {
     calls: &'c Calls,
     perturb: Option<&'c Perturb>,
-    call_input: Option<CallInput>,
+    call_inputs: Vec<CallInput>,
+    unkept_inputs: usize,
     events: Vec<crate::calls::UserEvent>,
     /// The machine's calls, whose recorded effects this side replays.
     replay: &'c [Record],
@@ -100,11 +110,11 @@ impl Run<'_, '_, '_> {
     /// (an import, a PIC GOT slot), which the call check leaves alone.
     fn same_callee(&self, machine: Option<u64>, kuna: Option<u64>, resolved: bool) -> bool {
         let env = self.state.env;
-        let (m, k) = (crate::check::code_target(env, machine), crate::check::code_target(env, kuna));
+        let (m, k) = (crate::compare::observe::code_target(env, machine), crate::compare::observe::code_target(env, kuna));
         resolved
             || m == k
             || k.is_none_or(|k| !env.is_code(k))
-            || m.zip(k).is_some_and(|(m, k)| crate::machine::through_thunks(env, m) == crate::machine::through_thunks(env, k))
+            || m.zip(k).is_some_and(|(m, k)| crate::machine::transparent_target(env, m) == crate::machine::transparent_target(env, k))
     }
 
     /// Fill the register save area as `va_start` does: the stores kuna's
@@ -233,9 +243,13 @@ impl Run<'_, '_, '_> {
                 ));
             }
         }
-        if let (Some(msg), None) = (first, self.call_input.as_ref()) {
-            let locked = self.calls.site(op.at).locked;
-            self.call_input = Some(CallInput { msg, with: crate::machine::WithArgs { call: Some(k), bytes, kill_salt: 0 }, locked });
+        if let Some(msg) = first {
+            if self.call_inputs.len() < CALL_INPUTS {
+                let locked = self.calls.site(op.at).locked;
+                self.call_inputs.push(CallInput { msg, with: crate::machine::WithArgs { call: Some(k), bytes, kill_salt: 0 }, locked });
+            } else {
+                self.unkept_inputs += 1;
+            }
         }
         Ok(())
     }
@@ -383,7 +397,8 @@ impl Run<'_, '_, '_> {
                     args.push(self.input(op, k)?);
                 }
                 let indirect = direct.is_none();
-                let writes = self.state.writes_at_call(&args);
+                let wide = target.is_some_and(|t| self.state.env.code_mapped(t));
+                let writes = self.state.writes_at_call(&args, wide);
                 crate::calls::record(&mut self.records, Record { at, target, indirect, args, writes, effect: None, frame_reads: None, live_in: None })?;
                 let site = self.calls.site(at);
                 if site.noreturn {
@@ -523,7 +538,8 @@ impl Run<'_, '_, '_> {
             overlapping_copy: self.overlapping_copy,
             writes: self.state.writes(),
             read_uninitialized: self.state.read_uninitialized,
-            call_input: self.call_input,
+            call_inputs: self.call_inputs,
+            unkept_inputs: self.unkept_inputs,
             events: self.events,
             calls: self.records,
             noreturn,
@@ -556,7 +572,8 @@ pub fn run(
     let mut r = Run {
         calls,
         perturb,
-        call_input: None,
+        call_inputs: Vec::new(),
+        unkept_inputs: 0,
         events: Vec::new(),
         replay,
         state: State::new(env, run),

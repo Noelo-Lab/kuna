@@ -39,7 +39,7 @@ const USAGE: &str = "usage:
   kuna-verify localize <test.xml|binary> <function> [--pass N] [--contract FILE.c] [--option NAME VALUE]...
   kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
   kuna-verify mutate <test.xml|dir>... | <binary> <function|0xaddr>... | --all  [--per-function N (6)] [--jobs N] [--file-seconds S]
-options: --runs N (256)  --seed S  --budget OPS (200000)  --concolic QUERIES (0)  --json  --trace  --sleighpath DIR";
+options: --runs N (256)  --seed S  --budget OPS (200000)  --concolic QUERIES (0)  --call-reruns N (4)  --json  --trace  --sleighpath DIR";
 
 struct Args {
     positional: Vec<String>,
@@ -115,6 +115,11 @@ fn parse(argv: &[String]) -> Result<Args, String> {
                 let v = it.next();
                 a.opts.concolic = u32::try_from(num(v, "--concolic")?).map_err(|_| "--concolic: too large")?;
                 a.forward.extend(["--concolic".to_string(), v.cloned().unwrap_or_default()]);
+            }
+            "--call-reruns" => {
+                let v = it.next();
+                a.opts.call_reruns = u32::try_from(num(v, "--call-reruns")?).map_err(|_| "--call-reruns: too large")?;
+                a.forward.extend(["--call-reruns".to_string(), v.cloned().unwrap_or_default()]);
             }
             "--runs" | "--seed" | "--budget" => {
                 let v = it.next();
@@ -194,9 +199,16 @@ fn run_check(a: &Args) -> Result<ExitCode, String> {
         return Err(USAGE.to_string());
     };
     let roots = spec_roots(a.sleighpath.as_deref());
+    let cannot = |e: String| {
+        eprintln!("kuna-verify: {binary}: {e}");
+        Ok(ExitCode::from(3))
+    };
     let (functions, chunks) = if a.all {
-        let sized: Vec<(String, u64)> =
-            session::function_extents(binary, &a.options, &roots)?.into_iter().map(|(at, n)| (format!("{at:#x}"), n)).collect();
+        let extents = match session::function_extents(binary, &a.options, &roots) {
+            Ok(x) => x,
+            Err(e) => return cannot(e),
+        };
+        let sized: Vec<(String, u64)> = extents.into_iter().map(|(at, n)| (format!("{at:#x}"), n)).collect();
         (sized.iter().map(|(f, _)| f.clone()).collect::<Vec<_>>(), chunks_by_size(&sized))
     } else {
         (named.to_vec(), named.chunks(CHUNK).map(<[String]>::to_vec).collect())
@@ -212,7 +224,7 @@ fn run_check(a: &Args) -> Result<ExitCode, String> {
     };
     let rows = if !a.timed && (jobs == 1 || functions.len() <= CHUNK) {
         let mut rows = Vec::new();
-        check_binary_each(
+        let got = check_binary_each(
             binary,
             &functions,
             &a.options,
@@ -224,16 +236,23 @@ fn run_check(a: &Args) -> Result<ExitCode, String> {
                 print_row(a, &row);
                 rows.push(row);
             },
-        )?;
-        rows
+        );
+        match got {
+            Ok(()) => rows,
+            Err(e) => return cannot(e),
+        }
     } else {
-        run_chunks(a, binary, chunks, jobs)?
+        match run_chunks(a, binary, chunks, jobs) {
+            Ok(rows) => rows,
+            Err(e) => return cannot(e),
+        }
     };
     if a.all {
         let wall = (functions.len() > CHUNK && jobs > 1).then(|| (0, started.elapsed().as_secs_f64()));
         print_summary(a, &[], &rows, wall);
     }
-    Ok(exit_code(&rows, 0))
+    let crashed = rows.iter().filter(|r| r.label.starts_with("UNKNOWN(harness: worker exited")).count();
+    Ok(exit_code(&rows, crashed))
 }
 
 /// Functions a `check` worker process takes at a time. Fixed, so which

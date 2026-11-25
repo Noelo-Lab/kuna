@@ -39,7 +39,10 @@ ins16  DIFFERS  (run 1 of 256)
   target, their arguments, and the memory a callee could read at that moment. At the end,
   the memory written outside the frame and the return value are compared. The return
   value is compared under the calling convention, and under the real return type when a
-  C prototype is given (`--contract FILE.c`).
+  C prototype is given (`--contract FILE.c`). Plain `char` there is unsigned on the
+  System V ABIs of ARM, AArch64, PowerPC, RISC-V and s390, and signed on x86, Apple
+  Silicon and Windows ARM; a source that mentions `-fsigned-char` or
+  `-funsigned-char` (in a comment) overrides it.
 - **Not checked: the printed C.** A fault in the C printer (a cast, an operator's
   precedence, a type's spelling) is not in the IR, so `AGREES` cannot rule it out. That
   is Tier P, a separate axis (`proposal.md`).
@@ -64,10 +67,10 @@ ins16  DIFFERS  (run 1 of 256)
 
 | verdict | meaning |
 |---|---|
-| `AGREES(n)` | `n` runs agreed. Runs that trapped on both sides are not counted. |
+| `AGREES(n)` | `n` runs agreed. Runs that trapped on both sides, or ran past `--budget` ops on both sides, are not counted, and the report says how many. A run past the budget on one side only makes the function `UNKNOWN(budget)`: one side may loop where the other does not. |
 | `DIFFERS` | one run gave a difference. The report says which run and what differed. |
-| `DIVERGES(id)` | the difference is one kuna makes on purpose, a declared divergence (`src/divergence.rs`): `switchrunon-cut-row`, `synthesized-call`, `gowritebarrier`, `panic-check`, `ptrauth-trap`, `copy-overlap`, `divide-by-zero`, `nan-quieting`, `syscall-result`. Each one names the option that makes the trade, and the pattern the difference has to match. Any other difference under the same option is still `DIFFERS`. A declared call leaves out only itself and what follows it in that run: the calls and memory before it are still compared. |
-| `UNKNOWN(reason)` | the check could not decide. `budget`: a side ran past `--budget` ops. `unsupported-op`: an op or user op the model does not run. `trap`: only one side trapped, or both trapped in every run. `harness`: the model failed. `no switch row`: a switch value no row of kuna's table takes. `prototype-suspect`: the difference rests on a callee prototype kuna recovered and may have wrong. `uninitialized-local`: kuna's result depends on a local nothing assigned. `guessed-callee`: a callee whose effect the model had to guess. `noreturn-unverified`: every run ended at a call only kuna says does not return (§2). `timeout`: no verdict within `--fn-seconds`. |
+| `DIVERGES(id)` | the difference is one kuna makes on purpose, a declared divergence (`src/abi/divergence.rs`): `switchrunon-cut-row`, `synthesized-call`, `gowritebarrier`, `panic-check`, `ptrauth-trap`, `copy-overlap`, `divide-by-zero`, `nan-quieting`, `syscall-result`. Each one names the option that makes the trade, and the pattern the difference has to match. Any other difference under the same option is still `DIFFERS`. A declared call leaves out only itself and what follows it in that run: the calls and memory before it are still compared. |
+| `UNKNOWN(reason)` | the check could not decide. `budget`: a side ran past `--budget` ops. `unsupported-op`: an op or user op the model does not run. `trap`: only one side trapped, or both trapped in every run. `harness`: the model failed. `no switch row`: a switch value no row of kuna's table takes. `prototype-suspect`: the difference rests on a callee prototype kuna recovered and may have wrong. `uninitialized-local`: kuna's result depends on a local nothing assigned. `guessed-callee`: a callee whose effect the model had to guess. `noreturn-unverified`: every run ended at a call only kuna says does not return (§2). `call-reruns`: every run had more calls whose callee reads an argument kuna passes otherwise than `--call-reruns` lets the machine rerun with kuna's value. `assumed-domain`: it agrees only while a parameter kuna's recovered prototype types `bool` holds 0 or 1 (§5). `timeout`: no verdict within `--fn-seconds`. |
 | `SKIPPED(reason)` | reserved for Tier S. |
 
 Exit status: 1 when a function differs, 3 when a file could not be checked, 2 for a usage
@@ -102,7 +105,7 @@ kuna-verify corpus <test.xml|dir>...  [--jobs N] [--file-seconds S] [--baseline 
 kuna-verify localize <test.xml|binary> <function> [--pass N] [--contract FILE.c] [--option NAME VALUE]...
 kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
 kuna-verify mutate <test.xml|dir>... | <binary> <function|0xaddr>... | --all  [--per-function N] [--jobs N] [--file-seconds S]
-common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES (0)] [--json] [--trace] [--sleighpath DIR]
+common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES (0)] [--call-reruns N (4)] [--json] [--trace] [--sleighpath DIR]
 ```
 
 - **`check`** loads a binary with the options `kuna decompile` turns on (the Listing, and
@@ -122,7 +125,9 @@ common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES 
   with `k - 1` the function agrees over every run, with `k` it differs. Bisection assumes
   that once an application makes the function differ, later ones do not undo it; a rewrite
   that a later one cancels can hide an earlier application, so `k` is a candidate to look
-  at, not a proof that it is the first or the only cause.
+  at, not a proof that it is the first or the only cause. Holding a rule back also
+  changes which rules apply after it, so a culprit may be one side of an interaction
+  rather than the direct cause.
 - **`step`** is Tier L's kuna side: one instruction's p-code from random register values,
   as JSON. `scripts/diffverify/tier_l.py` runs it against Unicorn.
 - **`mutate`** plants faults in kuna's side and reports how many the check catches
@@ -161,27 +166,29 @@ common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES 
    the frame (`global = &x`), or it was stored in an object already reachable
    (`h.p = &x; f(&h)`). It declares divergences (`divergence.rs`), and
    returns `UNKNOWN` where a difference rests on a guess. It also reruns kuna's side with
-   other values in anything kuna's C reads but never assigns.
+   other values in anything kuna's C reads but never assigns. Both sides start a
+   parameter kuna's recovered prototype types `bool` at 0 or 1; a function that agrees is
+   then run again with any byte there, and agreeing only on 0 and 1 is
+   `UNKNOWN(assumed-domain)`, since the domain is kuna's claim, not the program's.
+   Declared prototypes and the extensions the ABI documents keep their domain.
 7. **Report.** `report.rs` prints the verdict as text or JSON.
 
-| module | role |
-|---|---|
-| `lib.rs`, `bin/kuna-verify.rs` | entry points, worker processes, the CLI |
-| `session.rs` | drive the console; the load options `kuna decompile` uses |
-| `program.rs` | compile a `Funcdata` for repeated runs |
-| `calls.rs` | per-call facts shared by both sides; no-return sites |
-| `state.rs` | the machine state, memory model, image and stack layout |
-| `machine.rs` | the machine side: lift, run, callees run for real, stubs |
-| `graph.rs` | kuna's side |
-| `value.rs`, `x87.rs` | p-code op semantics, x87's 80-bit format |
-| `check.rs` | runs, comparisons, verdicts |
-| `abi.rs`, `contract.rs`, `storage.rs` | calling conventions, C contracts, storage names |
-| `divergence.rs` | declared divergences |
-| `concolic.rs` | expressions, branch recording, z3 |
-| `localize.rs` | rule localization |
-| `mutate.rs` | mutation testing |
-| `step.rs` | Tier L's kuna side |
-| `baseline.rs`, `report.rs` | corpus baseline, output |
+The crate is grouped by folder; the old module paths (`crate::check`, `crate::calls`,
+...) are re-exported from `lib.rs`, so they still resolve.
+
+| folder | modules | role |
+|---|---|---|
+| `src/` | `lib.rs`, `bin/kuna-verify.rs`, `session.rs` | entry points, worker processes, the CLI; driving the console with the load options `kuna decompile` uses |
+| `semantics/` | `value.rs`, `x87.rs`, `storage.rs` | p-code op semantics both sides share, x87's 80-bit format, storage names |
+| `state/` | `mod.rs`, `mem.rs` | the machine state, image and stack layout; memory by copy-on-write pages, temporaries |
+| `machine/` | `mod.rs`, `thunk.rs` | the machine side: lift, run, callees run for real, stubs; following thunks |
+| `graph/` | `mod.rs`, `program.rs` | kuna's side: compiling a `Funcdata` for repeated runs, and running it |
+| `abi/` | `mod.rs`, `calls.rs`, `contract.rs`, `divergence.rs` | calling conventions, per-call facts both sides share, C contracts, declared divergences |
+| `compare/` | `check.rs`, `observe.rs`, `setup.rs` | the runs and the verdict; comparing calls, memory and system calls; each run's starting state |
+| `tools/` | `localize.rs`, `mutate.rs`, `concolic.rs`, `step.rs` | rule localization, mutation testing, z3 inputs, Tier L's kuna side |
+| `report/` | `mod.rs`, `baseline.rs` | output; the corpus baseline |
+
+A later tier gets a folder of its own (`symbolic/` for Tier S, `printer/` for Tier P).
 
 ## 6. In CI
 
@@ -261,7 +268,48 @@ run yet.
 4. **Reduce it** to a few lines of C where you can (`clang --target=...`). Check that
    `kuna decompile` prints the same wrong C, then file it or fix it.
 
-## 9. The other documents
+## 9. Not done yet
+
+- **Tier S and Tier P.** Proving agreement symbolically, and checking the printed C, are
+  designed (`proposal.md`) but not built.
+- **PLT thunks as external calls everywhere.** Only the no-return check treats a thunk
+  that leads out of the image as an external call. Doing it everywhere exposes frame
+  pointers a function forms out of bounds (`ls` `O0` `group_number`, `&buf[-8]` aliasing
+  another slot), and how to judge those needs a design first.
+- **The domain of an inferred narrow parameter.** An inferred `bool` is also checked with
+  any byte (§5); an `int` kuna infers in a register the ABI extends is still checked only
+  with extended values, which is right only when the inferred width is.
+- **Stack arguments to a callee run for real.** The machine's callee runs on the
+  machine's arguments and kuna's side replays its effect. A register argument kuna gets
+  wrong is caught by rerunning the machine with kuna's value (the callee reads it); a
+  stack argument is not, so a stack argument kuna's recovered prototype misses or gets
+  wrong (x86-32 `cdecl`) can agree. Extending that rerun to the outgoing argument area
+  needs kuna's stack inputs mapped to the callee's reads first.
+- **Object sizes for a callee outside the image.** What a callee can reach through a
+  frame pointer is kuna's local that holds it. A callee run for real is also compared on
+  the bytes it reads past that local, when they are another of kuna's locals; a stubbed
+  callee reads nothing the model sees, so there kuna's sizing still bounds the compare.
+- **Code after a call kuna thinks returns.** If kuna misses that a call does not return,
+  it prints the bytes after it as code. No run reaches them on either side, so this is
+  invisible here; it is a readability fault for Tier P. A run in which a callee aborts
+  on its input stops on both sides, which is right.
+- **Frame bytes kuna has no local for.** A callee run for real is compared on what it
+  reads inside and past the object it was given, but only where kuna has a local. A
+  byte kuna lost entirely (a store to a slot it never recovered) is not compared yet:
+  telling it from the outgoing argument area and saved registers, which kuna does not
+  keep in memory either, needs those found from the machine side first.
+- **Symbolic proof (Tier S).** Not started: a relational symbolic engine over both
+  sides' p-code belongs in its own pull request.
+- **System-call arguments.** kuna passes a system call the registers its block sets
+  up, in order, and may leave some out; each one it passes is compared with the
+  machine's register, but which ones a given call needs is not modelled, so one it
+  leaves out is not a difference here.
+- **Speed.** Comparing memory by page rather than by byte, a lifting cache shared by a
+  worker's functions, and overlapping z3 queries with runs. None is at the top of the
+  current profile.
+- **The pull-request experiment** of §7 has not been run.
+
+## 10. The other documents
 
 | file | what it holds |
 |---|---|

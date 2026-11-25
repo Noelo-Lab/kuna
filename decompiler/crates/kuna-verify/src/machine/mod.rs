@@ -10,6 +10,9 @@
 //! function returns. Where kuna has no call, a callee in the image is run for
 //! real, and its RETURN comes back to the caller.
 
+mod thunk;
+pub use thunk::*;
+
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -72,96 +75,6 @@ fn read(state: &mut State, vn: &VarnodeData) -> Result<u128, Halt> {
 
 fn write(state: &mut State, vn: &VarnodeData, val: u128) -> Result<(), Halt> {
     state.write(space(vn)?, vn.offset, vn.size, val)
-}
-
-/// Where a call to `target` really goes: through a thunk (a jump, a PLT
-/// slot's `jmp [got]`, an `endbr64` before it) to what it jumps to, when two
-/// runs from different states reach the same place without storing or
-/// calling. A target that is no thunk is its own answer.
-pub fn through_thunks(env: &Env, target: u64) -> u64 {
-    if let Some(&t) = env.thunks.borrow().get(&target) {
-        return t;
-    }
-    let t = follow_thunks(env, target);
-    env.thunks.borrow_mut().insert(target, t);
-    t
-}
-
-/// Whether `target` is a thunk that leads out of the image's code: a PLT
-/// stub whose GOT slot the file leaves zero or points outside. Running it
-/// would jump to no code, so its call is a call out of the image.
-pub fn leads_out(env: &Env, target: u64) -> bool {
-    let t = through_thunks(env, target);
-    t != target && !env.is_code(t)
-}
-
-fn follow_thunks(env: &Env, target: u64) -> u64 {
-    let mut t = target;
-    for _ in 0..4 {
-        let a = thunk_hop(env, t, 0);
-        let b = thunk_hop(env, t, 1);
-        match (a, b) {
-            (Some(x), Some(y)) if x == y && x != t => t = x,
-            _ => break,
-        }
-    }
-    t
-}
-
-/// Where the thunk at `at` jumps, run from state `run`; `None` when the code
-/// there stores anywhere but the stack (a lazy PLT entry pushes its index),
-/// calls, tests or does not jump within a few instructions.
-fn thunk_hop(env: &Env, at: u64, run: u32) -> Option<u64> {
-    let mut state = State::new(env, 0x7fff_0000 + run);
-    let mut addr = at;
-    for _ in 0..3 {
-        let insn = lift(env, addr).ok()?;
-        for op in &insn.ops {
-            match op.opc {
-                OpCode::CPUI_BRANCH => {
-                    let t = op.ins.first()?;
-                    if space(t).ok()?.get_type() == spacetype::IPTR_CONSTANT {
-                        return None;
-                    }
-                    return Some(t.offset);
-                }
-                OpCode::CPUI_BRANCHIND => return Some(read(&mut state, op.ins.first()?).ok()? as u64),
-                OpCode::CPUI_LOAD => {
-                    let spc = mem_space(env, op.ins.first()?).ok()?;
-                    let ptr = read(&mut state, op.ins.get(1)?).ok()? as u64;
-                    let out = op.out.as_ref()?;
-                    let v = state.read(&spc, spc.wrap_offset(ptr), out.size).ok()?;
-                    write(&mut state, out, v).ok()?;
-                }
-                OpCode::CPUI_STORE => {
-                    let spc = mem_space(env, op.ins.first()?).ok()?;
-                    let ptr = read(&mut state, op.ins.get(1)?).ok()? as u64;
-                    let val = op.ins.get(2)?;
-                    if spc.get_index() != env.ram.get_index() || !env.in_stack(ptr, u64::from(val.size)) {
-                        return None;
-                    }
-                    let v = read(&mut state, val).ok()?;
-                    state.write(&spc, spc.wrap_offset(ptr), val.size, v).ok()?;
-                }
-                OpCode::CPUI_CALL
-                | OpCode::CPUI_CALLIND
-                | OpCode::CPUI_CBRANCH
-                | OpCode::CPUI_CALLOTHER
-                | OpCode::CPUI_RETURN => return None,
-                opc => {
-                    let out = op.out.as_ref()?;
-                    let mut ins = Vec::with_capacity(op.ins.len());
-                    for vn in &op.ins {
-                        ins.push((read(&mut state, vn).ok()?, vn.size));
-                    }
-                    let v = eval(opc, out.size, &ins).ok()?;
-                    write(&mut state, out, v).ok()?;
-                }
-            }
-        }
-        addr = env.code.wrap_offset(addr.wrapping_add(insn.len));
-    }
-    None
 }
 
 fn mem_space(env: &Env, vn: &VarnodeData) -> Result<Rc<AddrSpace>, Halt> {
@@ -430,7 +343,7 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         for st in &self.calls.pointer_regs {
             given.push(self.state.read_storage(&st.space, st.off, st.size)?);
         }
-        let r = Record { at, target, indirect, args: args.clone(), writes: self.state.writes_at_call(&given), effect: None, frame_reads: None, live_in: None };
+        let r = Record { at, target, indirect, args: args.clone(), writes: self.state.writes_at_call(&given, target.is_some_and(|t| self.env.code_mapped(t))), effect: None, frame_reads: None, live_in: None };
         crate::calls::record(&mut self.records, r)?;
         if let Some(o) = self.with_args.filter(|o| o.call == Some(self.records.len() - 1)) {
             let register = std::rc::Rc::clone(&self.env.register);
@@ -667,7 +580,7 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
             Err(Halt::Budget) if !outer && self.steps > budget => Err(Halt::Budget),
             Ok(exit @ (Exit::Return | Exit::Leave | Exit::Unwind(_))) => {
                 let site = self.calls.site(at);
-                let mut keep = site.killed.clone();
+                let mut keep = site.abi_killed.clone();
                 keep.push(self.env.sp);
                 for o in self.state.preserve_registers(&saved, &keep) {
                     if !self.convention.contains(&(at, o)) {

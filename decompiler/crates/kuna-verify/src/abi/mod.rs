@@ -1,6 +1,10 @@
 //! What kuna claims about a function's interface, and what the calling
 //! convention promises regardless of the claim.
 
+pub mod calls;
+pub mod contract;
+pub mod divergence;
+
 use std::rc::Rc;
 
 use kuna_console::engine::ConsoleProgram;
@@ -73,6 +77,19 @@ pub fn claim(prog: &ConsoleProgram, fd: &Funcdata) -> Claim {
 }
 
 /// The C integer sizes the contract reader needs, from the program's types.
+/// Whether plain `char` is signed on the target `archid` names
+/// (`AARCH64:LE:64:AppleSilicon:default`): the System V ABIs of ARM, AArch64,
+/// PowerPC, RISC-V and s390 make it unsigned; Apple's and Windows' ARM ABIs
+/// and x86 make it signed. A contract can override it (`-funsigned-char`).
+pub fn char_signed(archid: &str) -> bool {
+    let mut parts = archid.split(':');
+    let processor = parts.next().unwrap_or("");
+    let rest: Vec<&str> = parts.collect();
+    let signs_on_arm = rest.iter().any(|p| *p == "AppleSilicon" || *p == "windows");
+    let unsigned_family = ["ARM", "AARCH64", "PowerPC", "RISCV", "s390"].iter().any(|p| processor.starts_with(p));
+    !unsigned_family || signs_on_arm
+}
+
 pub fn c_sizes(prog: &ConsoleProgram) -> CSizes {
     let t = prog.arch().types();
     CSizes {
@@ -80,6 +97,7 @@ pub fn c_sizes(prog: &ConsoleProgram) -> CSizes {
         long: t.get_size_of_long() as u32,
         long_long: t.get_size_of_long_long() as u32,
         pointer: t.get_size_of_pointer() as u32,
+        char_signed: char_signed(&prog.arch().archid),
     }
 }
 
@@ -235,6 +253,22 @@ pub fn unclaimed_input_storage(prog: &ConsoleProgram, env: &Env, fd: &Funcdata, 
         }
     }
     found
+}
+
+#[cfg(test)]
+mod char_tests {
+    use super::char_signed;
+
+    #[test]
+    fn plain_char_by_target() {
+        assert!(char_signed("x86:LE:64:default:gcc"));
+        assert!(!char_signed("AARCH64:LE:64:v8A:default"));
+        assert!(!char_signed("ARM:LE:32:v8:default"));
+        assert!(char_signed("AARCH64:LE:64:AppleSilicon:default"));
+        assert!(char_signed("AARCH64:LE:64:v8A:windows"));
+        assert!(!char_signed("PowerPC:BE:64:default:default"));
+        assert!(!char_signed("RISCV:LE:64:RV64GC:gcc"));
+    }
 }
 
 #[cfg(test)]

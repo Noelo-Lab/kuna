@@ -203,3 +203,33 @@ of the 249 agrees after #1924 or #1927.
 
 `transfer_entries` (`c5-results.md` §2) does not differ again: `--concolic 64` over
 eight seeds gives `AGREES` or `UNKNOWN(budget)`.
+
+### The budget rule
+
+The numbers above were measured when one run past `--budget` made a function
+`UNKNOWN(budget)`, which was 4,283 of the 5,405 `UNKNOWN`. Runs past the budget on both
+sides are now counted apart, as trapped runs are; one past it on one side only still
+makes the function `UNKNOWN(budget)`, since one side may loop where the other does not.
+Measured on 286 of those functions (up to four per binary, names a binary defines once):
+
+| counting both-sided budget runs apart | functions |
+|---|---:|
+| `AGREES` | 135 (47%) |
+| still `UNKNOWN(budget)` | 122 |
+| another `UNKNOWN` it had hidden (trap, unsupported op, uninitialized local) | 24 |
+| `DIVERGES` | 3 |
+| `DIFFERS` | 2, not yet triaged (`dpkg-query` `pkg_array_init_from_names`, ChibiOS `rt_test_012_006_execute`) |
+
+On the test corpus 123 functions moved from `UNKNOWN(budget)` to `AGREES`, and three
+to `DIFFERS`: `kuna-arrayextent`'s `ff_gcc` in its three passes, for an `n` past the
+array, where the source writes out of bounds and the machine's frame layout and kuna's
+differ. On `ls` (`O2`, `O0`) and `find`, 77 moved to `AGREES` and one to `DIFFERS` (`ls`
+`O0` `mpsort_into_tmp`, not yet triaged). The full decbench run has not been repeated
+under the new rule.
+
+Each such run costs two full budgets, so after four of them a function's later runs get
+an eighth of the budget, and one that then runs past it on one side only is run again
+with the whole budget before it counts as looping. On the test corpus that puts the
+check at 194 CPU-seconds against 156 before the rule (`--jobs 4`, a loaded machine) and
+4,102 functions agreeing against 3,931; without the shorter budget it took 323.
+

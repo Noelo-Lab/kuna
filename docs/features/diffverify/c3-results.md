@@ -39,6 +39,9 @@ later ones do not undo it. A rewrite that a later application cancels breaks tha
 can hide an earlier application that already differed. So `k` is a candidate: the
 agreeing end with `k - 1` is checked over every run and the differing end with `k` is a
 concrete counterexample, but neither shows that `k` is the first or the only cause.
+Holding a rule back also changes the IR every later rule sees and the order they apply
+in, so a culprit can be one side of an interaction between rules rather than the
+direct cause.
 
 Holding back every rule at once does not work as a baseline. Without the folding
 rules, stack addresses are never resolved and actions see a different program. So
