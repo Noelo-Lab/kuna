@@ -3026,7 +3026,7 @@ segments. The spans are snapshotted, a bit per byte for whether it is NUL, befor
 The NUL bytes are alignment fill or a zero-filled tail far more often than code, so
 they are left out of the total a share is taken of. Only bytes inside the spans
 count, so a block lifted outside them, such as an `--addr` into data, adds nothing.
-A whole-binary `decompile-all --json` reports the measure as `coverage`, and a
+`decompile-all --json --coverage` reports the measure as `coverage`, and a
 whole-binary project export's completion line reports its two shares. Nothing here
 changes what is decompiled or printed.
 

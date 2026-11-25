@@ -2228,11 +2228,11 @@ into the other. A function whose C failed to render was decoded all the same and
 keeps its ranges; one whose decompile failed has none. `--omit ranges` leaves the
 key out.
 
-A whole-binary `decompile-all --json` run also carries a top-level `coverage`
-object after `count`: how much of the image's executable code the run lifted and
-decompiled. A whole-binary run keeps every discovered function: it has no
-`--functions` or `--addr`, and no triage filter that drops a function. A byte that
-several records cover counts once.
+`decompile-all --json --coverage` also carries a top-level `coverage` object after
+`count`: how much of the image's executable code the run lifted and decompiled. It
+measures the whole binary, so the run must keep every discovered function:
+`--coverage` is refused with `--functions` or `--addr`, and with a triage filter that
+drops a function. A byte that several records cover counts once.
 
 - `executable_bytes` is what the image holds of its CODE sections. Where it has no
   section table, it counts the executable load segments, the same spans the `size`
@@ -2250,13 +2250,12 @@ several records cover counts once.
 - `functions`, `decompiled_functions` and `unlifted_functions` count the records,
   the records with a `null` `error`, and the records with no `ranges`.
 
-A narrowed run carries no `coverage`, so its document is still the one
-`kuna decompile --json` gives for the same selection, and a share is never low
-only because the selection is small. `--jobs` reports the same figures as a serial
-run.
+Without `--coverage` the document carries no `coverage`, so it stays the one
+`kuna decompile --json` gives for the same selection. `--jobs` reports the same
+figures as a serial run.
 
 ```bash
-kuna decompile-all ./fauxware --json
+kuna decompile-all ./fauxware --json --coverage
 #   {"binary": "./fauxware", "language": "c-language", "count": 21,
 #    "coverage": {"executable_bytes": 990, "unlifted_nul_bytes": 32, "lifted_bytes": 853,
 #                 "decompiled_bytes": 853, "lifted_share": 0.8904, "decompiled_share": 0.8904,
@@ -4284,8 +4283,8 @@ verdict is taken only after the `.c`, `.h`, `.asm`, README and, under `--stream`
 artifacts are written.
 
 The completion line of a whole-binary export ends with how much of the image's
-executable code the export covers. It is measured as `decompile-all --json`'s
-`coverage` is, with the NUL bytes no function lifted left out of the total:
+executable code the export covers. It is measured as `decompile-all --coverage`
+measures it, with the NUL bytes no function lifted left out of the total:
 `functions: 21 ok, 0 failed; code: 89.0% lifted, 89.0% decompiled of 958 bytes`
 (fauxware above).
 A share short of 100% never rounds up to it. The clause is left out when the

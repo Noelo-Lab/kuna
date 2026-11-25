@@ -76,6 +76,9 @@ pub(crate) struct Args {
     /// record collections left out of the document. Omitting `variables` also
     /// sets `no_vars`, so the extraction is skipped too.
     pub(crate) omit: Omit,
+    /// (kuna `coverage`) `--coverage` (`decompile-all --json`, whole binary
+    /// only): add the run-level `coverage` object.
+    pub(crate) coverage: bool,
     /// `--max-fn-seconds N` (decompile-all / decompile-project): per-function
     /// decompile watchdog budget in seconds; `0` disables.  A function that
     /// exceeds it is recorded as that function's `error` (the batch continues)
@@ -169,6 +172,7 @@ impl Args {
             entry_seeds: Vec::new(),
             no_vars: false,
             omit: Omit::default(),
+            coverage: false,
             max_fn_seconds: 0,
             max_fn_memory: Some(0),
             options: Vec::new(),
@@ -1355,8 +1359,8 @@ struct AllRun {
     interior: crate::interior::Interiors,
     /// The caller's declarations, as the document reports them.
     declared: crate::funcdecl::Declared,
-    /// (kuna `coverage`) The executable bytes for a whole-binary `--json` run's
-    /// `coverage`, kept before a `--jobs` parent drops the program.
+    /// (kuna `coverage`) The executable bytes for `--coverage`, kept before a
+    /// `--jobs` parent drops the program.
     code: Option<kuna_console::kuna_coverage::Code>,
 }
 
@@ -1379,7 +1383,13 @@ fn decompile_all(args: &mut Args, filters: &Filters) -> Result<AllRun, String> {
     let interior = crate::interior::selections(&prog, args, &targets);
     let declared = crate::funcdecl::Declared::of(&prog);
     let whole = targets.len() == discovered && args.addrs.is_empty() && args.names.is_none();
-    let code = (args.json && whole).then(|| kuna_console::kuna_coverage::Code::of(&prog));
+    if args.coverage && !whole {
+        return Err(format!(
+            "--coverage measures the whole binary; the triage filters kept {} of {discovered} functions",
+            targets.len()
+        ));
+    }
+    let code = args.coverage.then(|| kuna_console::kuna_coverage::Code::of(&prog));
     let (callee_first, explicit) = callee_first_decision(&prog, args, targets.len(), whole);
     // `--jobs N`: hand the targets to the worker pool and release the parent's
     // program (2.0 GB on an 18 MB PE) before the workers start — nothing below
@@ -3005,6 +3015,7 @@ pub(crate) fn parse_args_with_filters(
     let mut entry_seeds: Vec<EntrySelector> = Vec::new();
     let mut no_vars = false;
     let mut omit = Omit::default();
+    let mut coverage = false;
     let mut max_fn_seconds: Option<u64> = None;
     let mut max_fn_memory: Option<u64> = None;
     let mut options: Vec<(String, String)> = Vec::new();
@@ -3056,6 +3067,7 @@ pub(crate) fn parse_args_with_filters(
             }
             "--no-vars" => no_vars = true,
             "--omit" if matches!(cmd, "decompile-all" | "decompile") => omit.add(&take(argv, &mut i, "--omit")?)?,
+            "--coverage" if cmd == "decompile-all" => coverage = true,
             "--functions" => {
                 let v = take(argv, &mut i, "--functions")?;
                 names = Some(v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect());
@@ -3218,6 +3230,14 @@ pub(crate) fn parse_args_with_filters(
         }
         no_vars |= omit.variables;
     }
+    if coverage {
+        if !json {
+            return Err("--coverage adds a key to the --json document; add --json".into());
+        }
+        if names.is_some() || !addrs.is_empty() {
+            return Err("--coverage measures the whole binary; drop --functions and --addr".into());
+        }
+    }
 
     if raw_image {
         if cmd == "decompile-graph" {
@@ -3369,6 +3389,7 @@ pub(crate) fn parse_args_with_filters(
             entry_seeds,
             no_vars,
             omit,
+            coverage,
             max_fn_seconds,
             max_fn_memory,
             options,
@@ -3426,7 +3447,7 @@ fn parse_entry_selector(s: &str) -> Result<EntrySelector, String> {
 fn usage_decompile_all() {
     eprintln!(
         "usage: kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \\\n\
-         \x20                   [--no-vars] [--omit aliases,ranges,line_mappings,variables,types] \\\n\
+         \x20                   [--no-vars] [--omit aliases,ranges,line_mappings,variables,types] [--coverage] \\\n\
          \x20                   [--max-fn-seconds N] [--max-fn-memory MiB] \\\n\
          \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
@@ -3447,6 +3468,8 @@ fn usage_decompile_all() {
          every record -- aliases, ranges, line_mappings, variables (with stack_objects),\n\
          types -- and lists them in a top-level `omitted` array, so an omitted\n\
          collection is never mistaken for an empty one.\n\
+         --coverage (with --json, whole binary only) adds a top-level `coverage`:\n\
+         the executable bytes, the parts decoded and decompiled, and their shares.\n\
          --no-vars skips the variable extraction and leaves `variables` empty.\n\
          --max-fn-seconds N caps ONE function's decompile at N seconds (default 10\n\
          for unfiltered fast runs, 120 otherwise; 0 disables); a function over\n\

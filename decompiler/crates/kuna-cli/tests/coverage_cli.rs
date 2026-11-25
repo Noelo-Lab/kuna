@@ -63,7 +63,7 @@ fn count(doc: &serde_json::Value, key: &str) -> u64 {
 #[test]
 fn a_whole_binary_run_measures_the_executable_bytes_its_functions_cover() {
     let bin = common::fixture("fauxware");
-    let doc = json(&["decompile-all", &bin, "--json"]);
+    let doc = json(&["decompile-all", &bin, "--json", "--coverage"]);
     let functions = doc["functions"].as_array().unwrap();
     let code = executable_sections(&bin);
     let executable: u64 = code.iter().map(|(_, bytes)| bytes.len() as u64).sum();
@@ -95,8 +95,26 @@ fn a_whole_binary_run_measures_the_executable_bytes_its_functions_cover() {
     let share = in_code(&lifted) as f64 / (executable - unlifted_nul) as f64;
     assert_eq!(doc["coverage"]["lifted_share"].to_string(), format!("{share:.4}"));
 
-    let narrowed = json(&["decompile-all", &bin, "--functions", "main", "--json"]);
-    assert!(narrowed.get("coverage").is_none(), "a selection is not a measure of the binary: {narrowed}");
+    let plain = json(&["decompile-all", &bin, "--json"]);
+    assert!(plain.get("coverage").is_none(), "only --coverage asks for it: {plain}");
+}
+
+#[test]
+fn coverage_is_refused_on_a_narrowed_run() {
+    let bin = common::fixture("fauxware");
+    let (_, stderr, code) = common::run_kuna(&["decompile-all", &bin, "--json", "--coverage", "--functions", "main"]);
+    assert_eq!(code, 2, "{stderr}");
+    assert!(stderr.contains("--coverage measures the whole binary"), "{stderr}");
+
+    let specs = common::repo_root().join("specs");
+    let specs = specs.to_str().unwrap();
+    let narrowed = ["decompile-all", &bin, "--json", "--coverage", "--min-size", "100", "--sleighpath", specs];
+    let (_, stderr, code) = common::run_kuna(&narrowed);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(stderr.contains("the triage filters kept"), "{stderr}");
+
+    let kept_all = json(&["decompile-all", &bin, "--json", "--coverage", "--min-size", "0"]);
+    assert!(kept_all.get("coverage").is_some(), "a filter that drops nothing still measures: {kept_all}");
 }
 
 #[test]
@@ -120,8 +138,8 @@ fn ranges_can_be_omitted() {
 #[test]
 fn a_jobs_run_reports_what_a_serial_run_does() {
     let bin = common::fixture("fauxware");
-    let serial = json(&["decompile-all", &bin, "--json", "--option", "protoorder", "off"]);
-    let pooled = json(&["decompile-all", &bin, "--json", "--option", "protoorder", "off", "--jobs", "2"]);
+    let serial = json(&["decompile-all", &bin, "--json", "--coverage", "--option", "protoorder", "off"]);
+    let pooled = json(&["decompile-all", &bin, "--json", "--coverage", "--option", "protoorder", "off", "--jobs", "2"]);
     assert_eq!(pooled["coverage"], serial["coverage"]);
     let by_name = |doc: &serde_json::Value| -> Vec<(String, Vec<(u64, u64)>)> {
         doc["functions"].as_array().unwrap().iter().map(|f| (f["name"].as_str().unwrap().to_owned(), ranges(f))).collect()
@@ -132,7 +150,7 @@ fn a_jobs_run_reports_what_a_serial_run_does() {
 #[test]
 fn a_project_export_says_how_much_code_it_covers() {
     let bin = common::fixture("fauxware");
-    let doc = json(&["decompile-all", &bin, "--json"]);
+    let doc = json(&["decompile-all", &bin, "--json", "--coverage"]);
     let out = common::scratch_file("coverage-project", "kuna");
     let (stdout, _) = run(&["decompile-project", &bin, "-o", out.to_str().unwrap()]);
     let total = count(&doc, "executable_bytes") - count(&doc, "unlifted_nul_bytes");
