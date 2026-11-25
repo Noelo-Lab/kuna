@@ -13,18 +13,16 @@
 //! whose leaves print nothing but their tests, and the two returns the
 //! constants 1 and 0 of an integral return type.  The guard's `if` is flagged
 //! [`F_BOOL_RET`] and the final return leaves the tree; the printer emits the
-//! condition through the same renderer as the `if` header, as the returned
-//! value.  When the guard returns 0 the condition is negated in place first
-//! (De Morgan through the chain), so the printed value is 1 exactly when the
-//! guard's return 1 ran.  C's `&&` and `||` yield exactly 0 or 1, so the value
-//! is the one the constants gave, with the same operands evaluated in the same
-//! order and the same short-circuit.
+//! condition through the same renderer as the `if` header as the returned
+//! value, behind a `!` when the guard returns 0 ([`F_BOOL_RET_NOT`]).  C's
+//! `&&`, `||` and `!` yield exactly 0 or 1, so the value is the one the
+//! constants gave, with the same operands evaluated in the same order and the
+//! same short-circuit.  No p-code changes.
 //!
-//! A simple condition is left alone (an unoptimizing compiler would have used
-//! a flag-setting instruction for `return a == b;`, so the branch is the
-//! author's `if`), and so is a guard after other statements, a chain of
-//! guards, and a condition that prints a statement inside it (a comma
-//! expression).
+//! A simple condition keeps its `if` (an unoptimizing compiler would have used
+//! a flag-setting instruction for `return a == b;`), and so do a guard after
+//! other statements, a chain of guards, and a condition that prints a
+//! statement inside it (a comma expression).
 
 use kuna_base::types::uint4;
 use kuna_num::opcodes::OpCode;
@@ -84,7 +82,6 @@ impl Action for ActionBoolRet {
 struct Site {
     ifb: BlockId,
     ret: BlockId,
-    cond: BlockId,
     /// The guard returns 0.
     negate: bool,
 }
@@ -96,12 +93,7 @@ fn rewrite(data: &mut Funcdata) -> bool {
     if !tf::materialize(data, top, view) {
         return false;
     }
-    let mut flags = F_BOOL_RET;
-    if site.negate && dev("demorgan") {
-        tf::negate(data, site.cond, true);
-    } else if site.negate {
-        flags |= F_BOOL_RET_NOT;
-    }
+    let flags = if site.negate { F_BOOL_RET | F_BOOL_RET_NOT } else { F_BOOL_RET };
     data.sblocks_mut().block_mut(site.ifb).set_flag(flags);
     let rest: Vec<BlockId> = data.sblocks_ref().block(top).get_list().iter().copied().filter(|&b| b != site.ret).collect();
     data.sblocks_mut().kuna_set_components(top, rest);
@@ -109,18 +101,11 @@ fn rewrite(data: &mut Funcdata) -> bool {
     true
 }
 
-fn dev(flag: &str) -> bool {
-    std::env::var("KUNA_BOOLRET_X").is_ok_and(|v| v.split(',').any(|f| f == flag))
-}
-
 fn find(data: &Funcdata, list: &[BlockId], conds: &[(BlockId, BlockId)]) -> Option<Site> {
-    let tail = dev("tail")
-        && !crate::p3_dataflow::kuna_unoptimized::is_unoptimized(data)
-        && !crate::p3_dataflow::kuna_unoptimized::frame_pointer(data);
-    if list.len() < 2 || (list.len() != 2 && !tail) || !integral_return(data) {
+    if list.len() != 2 || !integral_return(data) {
         return None;
     }
-    let (ifb, ret) = (list[list.len() - 2], list[list.len() - 1]);
+    let (ifb, ret) = (list[0], list[1]);
     let RetKey::Const(_, k) = tf::guard_key(data, ifb)? else { return None };
     let RetKey::Const(_, last) = tf::bare_return(data, ret)? else { return None };
     if k > 1 || last != 1 - k {
@@ -131,19 +116,21 @@ fn find(data: &Funcdata, list: &[BlockId], conds: &[(BlockId, BlockId)]) -> Opti
     if [ifb, clause, ret].iter().any(|b| refs.contains(b)) {
         return None;
     }
+    let skipped = |b| data.sblocks_ref().block(leaf(data, b)).get_flags() & tf::F_RET_SKIP != 0;
+    if skipped(clause) || skipped(ret) {
+        return None;
+    }
     let cond = tf::cond_of(data, ifb, conds);
-    if data.sblocks_ref().block(cond).get_type() != BlockType::Condition || !tf::negatable(data, cond) {
+    let chain = data.sblocks_ref().block(cond).get_type() == BlockType::Condition;
+    if !chain || !quiet_chain(data, cond, &refs, 0) || !tf::negatable(data, cond) {
         return None;
     }
-    if !quiet_chain(data, cond, &refs, 0, true, tail, dev("comma")) {
-        return None;
-    }
-    Some(Site { ifb, ret, cond, negate: k == 0 })
+    Some(Site { ifb, ret, negate: k == 0 })
 }
 
 /// Whether every leaf of the condition chain `c` prints nothing but its test
 /// and carries no label.
-fn quiet_chain(data: &Funcdata, c: BlockId, refs: &[BlockId], depth: u32, front: bool, lead: bool, comma: bool) -> bool {
+fn quiet_chain(data: &Funcdata, c: BlockId, refs: &[BlockId], depth: u32) -> bool {
     if depth > MAX_DEPTH {
         return false;
     }
@@ -151,12 +138,10 @@ fn quiet_chain(data: &Funcdata, c: BlockId, refs: &[BlockId], depth: u32, front:
     match g.block(c).get_type() {
         BlockType::Condition => {
             g.block(c).get_size() == 2
-                && quiet_chain(data, g.block(c).get_block(0), refs, depth + 1, front, lead, comma)
-                && quiet_chain(data, g.block(c).get_block(1), refs, depth + 1, false, lead, comma)
+                && quiet_chain(data, g.block(c).get_block(0), refs, depth + 1)
+                && quiet_chain(data, g.block(c).get_block(1), refs, depth + 1)
         }
-        BlockType::Copy => {
-            !refs.contains(&c) && !tf::labelled(data, c) && (if front { lead } else { comma } || quiet_leaf(data, c))
-        }
+        BlockType::Copy => !refs.contains(&c) && !tf::labelled(data, c) && quiet_leaf(data, c),
         _ => false,
     }
 }
@@ -197,10 +182,16 @@ pub fn returned(data: &Funcdata, ifb: BlockId) -> Option<(OpId, bool)> {
     if blk.get_flags() & F_BOOL_RET == 0 || blk.get_type() != BlockType::If || blk.get_size() != 2 {
         return None;
     }
-    let mut leaf = blk.get_block(1);
-    while matches!(g.block(leaf).get_type(), BlockType::Ls | BlockType::Graph) && g.block(leaf).get_size() == 1 {
-        leaf = g.block(leaf).get_block(0);
-    }
-    let tail = data.bb_op_tail(g.block(leaf).get_copy()?)?;
+    let tail = data.bb_op_tail(g.block(leaf(data, blk.get_block(1))).get_copy()?)?;
     (data.obank().get(tail)?.code() == OpCode::CPUI_RETURN).then_some((tail, blk.get_flags() & F_BOOL_RET_NOT != 0))
+}
+
+/// `b`, or the leaf a chain of one-element lists holds.
+fn leaf(data: &Funcdata, b: BlockId) -> BlockId {
+    let g = data.sblocks_ref();
+    let mut b = b;
+    while matches!(g.block(b).get_type(), BlockType::Ls | BlockType::Graph) && g.block(b).get_size() == 1 {
+        b = g.block(b).get_block(0);
+    }
+    b
 }

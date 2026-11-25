@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5441,
-    5441
+    5454,
+    5454
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -237,6 +237,19 @@
     "data:BOOLBRANCH-THUMB #1: fold folds the branch and keep still folds the IT block",
     "data:BOOLBRANCH-THUMB #2: keep keeps the branch instruction's if",
     "data:BOOLBRANCH-THUMB #3: keep returns the constants from the two arms",
+    "data:BOOLRET #1: keep tests the short-circuit condition in a guard",
+    "data:BOOLRET #2: return returns the short-circuit condition",
+    "data:BOOLRET #3: keep returns 0 from the guard of the other polarity",
+    "data:BOOLRET #4: return returns the negation of that condition",
+    "data:BOOLRET #5: a simple condition keeps its if",
+    "data:BOOLRET #6: two guards stay two guards",
+    "data:BOOLRET #7: a guard after a statement keeps its if",
+    "data:BOOLRET #8: the final return is gone only where the condition is returned",
+    "data:BOOLRET-THUMB #1: keep prints each folded guard",
+    "data:BOOLRET-THUMB #2: keep prints the guard of the other constant",
+    "data:BOOLRET-THUMB #3: keep returns both constants",
+    "data:BOOLRET-THUMB #4: return returns the condition",
+    "data:BOOLRET-THUMB #5: return returns the negation of a guard that returns 0",
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
     "data:BRANCHFLIP #2: `option branchflip on` flips to the positive `!= 0` guard (angr-style)",
     "data:BRANCHFLIP #3: the flip is logged so its effect is observable",

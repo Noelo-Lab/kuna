@@ -712,6 +712,10 @@ fn option_values_live_value_present_for_78() {
                             // `warnstyle` and `int3pad` are here.  Its live
                             // value is `Architecture::signedness`.
                             | "signedness"
+                            // (kuna) `boolbranch` takes `fold|keep|return`
+                            // over two fields; its live value is read from
+                            // `Architecture::bool_ret` and `bool_branch_keep`.
+                            | "boolbranch"
                     ) || PASS_GATES.contains(&st.option),
                     "unexpected option with no live reader: {}",
                     st.option
@@ -894,7 +898,8 @@ fn option_values_live_value_present_for_78() {
     // +1 for `bytestorewidth` (live_field = byte_store_width).
     // +1 for `varargsave` (live_field = vararg_save).
     // +1 for `boolbranch` (live_field = bool_branch_keep).
-    assert_eq!(with_live, 90);
+    // -1: `boolbranch` became three-valued (fold|keep|return) with no `live_field`.
+    assert_eq!(with_live, 89);
 }
 
 #[test]

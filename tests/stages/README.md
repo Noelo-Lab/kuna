@@ -79,6 +79,14 @@ that is set by a jump and only tested still fold. `kuna-boolbranch-thumb.xml`
 checks the same on Thumb: an `ite gt` block folds under both values, a `ble`
 over two `movs` keeps its `if` under `keep`.
 
+`kuna-boolret.xml` checks option `boolbranch` (default `return`) on gcc -O0
+x86-64: a function that only returns `p != 0 && p[0] == '/'` prints one return
+of the condition, and one whose guard returns 0 returns the condition's
+negation, where `keep` prints a guard and two returns; a simple condition, two
+guards and a guard after a store keep their `if`s. `kuna-boolret-thumb.xml`
+checks the same on two hand-assembled Thumb functions in gcc -O2's layout, one
+return per path.
+
 `kuna-wsignload-a64.xml` checks that an AArch64 sign-extending byte or
 halfword load into a `W` register (`ldrsb`, `ldrsh`, `ldursb`, `ldursh` in
 the unsigned-offset, register, unscaled, pre- and post-index forms)
