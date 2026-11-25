@@ -2329,7 +2329,7 @@ mod tests {
         // and kuna-looptest-zerotrip / a guard drops when its skip path is the loop's exit path run zero times
         // and kuna-looptest-entry / an empty body, a frame counter, a reused or recomputed value test at the top
         // and kuna-loopcondhoist / the test that is a loop's condition is the loop's exit
-        assert_eq!(count, 918, "corpus file count drifted");
+        assert_eq!(count, 920, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
