@@ -725,22 +725,6 @@ impl ClassWriter {
 
             DecompilerContext::get_logger().start_write_class(&cl.qualified_name());
 
-            if DecompilerContext::get_option(IFernflowerPreferences::SOURCE_FILE_COMMENTS) {
-                let class_struct = node.with(|d| d.class_struct);
-                let source_file_attr =
-                    class_struct.get_attribute(StructGeneralAttribute::ATTRIBUTE_SOURCE_FILE);
-
-                if let Some(source_file_attr) = source_file_attr {
-                    let pool = class_struct.get_pool();
-                    let source_file = source_file_attr.get_source_file(pool);
-
-                    buffer
-                        .append_indent(indent)
-                        .append(&format!("// $VF: Compiled from {source_file}"))
-                        .append_line_separator();
-                }
-            }
-
             self.write_class_definition(node, buffer, indent);
 
             let mut has_content = false;

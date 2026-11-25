@@ -505,7 +505,6 @@ impl KotlinWriter {
 
         let wrapper = node.get_wrapper().expect("NullPointerException: wrapper");
         let cl = wrapper.get_class_struct();
-        let pool = cl.get_pool();
 
         KotlinChooser::parse_metadata_for(cl);
         let kt_data = KtAttrs::get(cl, &KElement::KEY());
@@ -545,21 +544,6 @@ impl KotlinWriter {
             Some(KElement::Class(cls)) => cls.flags(),
             Some(_) => 0,
         };
-
-        if DecompilerContext::get_option(IFernflowerPreferences::SOURCE_FILE_COMMENTS) {
-            let source_file_attr = node
-                .with(|d| d.class_struct)
-                .get_attribute(StructGeneralAttribute::ATTRIBUTE_SOURCE_FILE);
-
-            if let Some(source_file_attr) = source_file_attr {
-                let source_file = source_file_attr.get_source_file(pool);
-
-                buffer
-                    .append_indent(indent)
-                    .append(&format!("// $VF: Compiled from {source_file}"))
-                    .append_line_separator();
-            }
-        }
 
         if Flags::CLASS_KIND.get(kotlin_flags) == Some(ClassKind::AnnotationClass)
             || cl.has_modifier(ACC_ANNOTATION)

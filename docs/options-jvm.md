@@ -195,8 +195,6 @@ Three tiers:
 | need to know why a method failed (option is off) | [`jvm_dump_exception_on_error`](#jvm_dump_exception_on_error----on--off-default-on) |
 | /* $VF: ... */ and // $VF: comments clutter the output | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
 | need to know where the decompiler approximated (option is off) | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
-| need the original .java file name of a class | [`jvm_sourcefile_comments`](#jvm_sourcefile_comments----on--off-default-off) |
-| repackaged or shaded classes of unknown origin | [`jvm_sourcefile_comments`](#jvm_sourcefile_comments----on--off-default-off) |
 | need the source positions of identifiers for navigation | [`jvm_dump_text_tokens`](#jvm_dump_text_tokens----on--off-default-off-destructive-opt-in) |
 | debugging which identifier a name in the output refers to | [`jvm_dump_text_tokens`](#jvm_dump_text_tokens----on--off-default-off-destructive-opt-in) |
 | stack trace names lambda$main$0 or Main$1 and the matching code is hard to find | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics----on--off-default-off) |
@@ -805,15 +803,6 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 - **Where / provenance:** p9_emit/class_writer, finally_processor, assignment_exprent, const_exprent, invocation_exprent · vineflower · vineflower-option
 - **Also spelled:** `decompiler-comments`, `dec`
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_decompiler_comments off`
-
-### `jvm_sourcefile_comments` -- on | off, default `off`
-
-- **Symptoms:** need the original .java file name of a class; repackaged or shaded classes of unknown origin.
-- **What it does:** Write // $VF: Compiled from <name> above each class whose SourceFile attribute names its source file.
-- **When to flip:** Turn on to see the original file names, which reveal class origins in shaded or repackaged jars.
-- **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
-- **Also spelled:** `sourcefile-comments`, `sfc`
-- **Example:** `kuna decompile app.jar com.ex.Main --option jvm_sourcefile_comments on`
 
 ### `jvm_dump_text_tokens` -- on | off, default `off` (destructive opt-in)
 

@@ -938,8 +938,7 @@ whatever the class-level rewrites hid. `jvm_override_annotation` adds `@Override
 instance method of a Java 5+ class file overrides or implements a method of a supertype
 the engine can see;
 `jvm_mark_corresponding_synthetics` names the synthetic method behind each lambda and the
-class behind each anonymous class in a comment; `jvm_sourcefile_comments` writes the
-`SourceFile` name above each class; `jvm_decompiler_comments` controls every `$VF:` note
+class behind each anonymous class in a comment; `jvm_decompiler_comments` controls every `$VF:` note
 the passes above attached to a method. Lambdas are written inline at their use, without
 braces when the body is one expression (`jvm_inline_simple_lambdas`). Generic method calls
 carry explicit type arguments under `jvm_explicit_generics`. Constants print as source
