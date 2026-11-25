@@ -6,8 +6,7 @@
 use std::path::Path;
 
 use kuna_managed::{
-    Catalog, Engine, Inventory, Kind, MemberInfo, MemberSpan, OptionRow, Program, RunSettings, Runtime, Target,
-    TypeInfo, Unit,
+    Catalog, Engine, Inventory, Kind, MemberInfo, MemberSpan, Program, RunSettings, Runtime, Target, TypeInfo, Unit,
 };
 
 pub(crate) struct Toy;
@@ -24,27 +23,6 @@ const BAG: &str = "type Bag {\n  fn size() {\n    return 0\n  }\n}\n";
 /// `(type, member, signature, error)`.
 const MEMBERS: [(&str, &str, &str, Option<&str>); 3] =
     [("toy/Box", "get", "()I", None), ("toy/Box", "put", "(I)V", Some("bad stack")), ("toy/Bag", "size", "()I", None)];
-
-const ROW: OptionRow = OptionRow {
-    option: "toy_fast",
-    aliases: &[],
-    values: "on|off",
-    default: "off",
-    destructive: false,
-    phase: "p9",
-    subphase: "emit",
-    strength: "",
-    rewind: "",
-    issue: "",
-    summary: "Writes faster.",
-    use_when: "Never.",
-    example: "--option toy_fast on",
-    source_decompiler: "",
-    inspiration: "",
-    change_kind: "",
-    tier: "core",
-    symptoms: "slow",
-};
 
 impl Engine for Toy {
     fn name(&self) -> &'static str {
@@ -79,11 +57,8 @@ impl Engine for Toy {
         let types = vec![ty("toy/Box"), ty("toy/Bag")];
         Ok(Box::new(ToyProgram(Inventory::new(types, None, |n| n.replace('/', ".")))))
     }
-    fn resolve(&self, name: &str, value: &str) -> Result<(String, String), String> {
-        match (name, value) {
-            ("toy_fast", "on" | "off") => Ok((name.into(), value.into())),
-            _ => Err(format!("unknown toy option {name}")),
-        }
+    fn resolve(&self, name: &str, _value: &str) -> Result<(String, String), String> {
+        Err(format!("unknown toy option {name}"))
     }
     fn language(&self, value: &str, input: &str, _options: &mut Vec<(String, String)>) -> Result<(), String> {
         match value {
@@ -92,8 +67,7 @@ impl Engine for Toy {
         }
     }
     fn options(&self) -> Catalog {
-        let section = ("core", "## Core", "All of them.");
-        Catalog { rows: vec![ROW], preamble: "# toy\n".into(), sections: [section; 3], tail: "" }
+        Catalog { rows: Vec::new(), preamble: String::new(), sections: [("core", "", ""); 3], tail: "" }
     }
     fn check(&self) -> Vec<String> {
         Vec::new()
