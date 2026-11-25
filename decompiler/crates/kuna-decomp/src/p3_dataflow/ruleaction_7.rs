@@ -202,6 +202,9 @@ impl Rule for RuleSignDiv2 {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        if super::kuna_sdivpow2::recover(op, data) {
+            return 1;
+        }
         let in1 = op_in(data, op, 1).expect("signdiv2: missing in1");
         if !vn_is_constant(data, in1) {
             return 0;
