@@ -184,6 +184,9 @@ pub struct Funcdata {
     pub(crate) kuna_latch_join_withdrawn: bool,
     /// The blocks the joined latches were placed in.
     pub(crate) kuna_latch_blocks: Vec<crate::context::BlockId>,
+    /// (kuna) Whether that first heritage pass saw the function address its
+    /// frame through a frame pointer.
+    pub(crate) kuna_frame_pointer: bool,
     /// (kuna `returndup auto`) The return statements read at the first
     /// heritage pass (`p8_structure/kuna_o0returns.rs`).
     pub(crate) kuna_o0returns: Option<Box<crate::p8_structure::kuna_o0returns::Record>>,
@@ -828,6 +831,7 @@ impl Funcdata {
             kuna_latch_joins: 0,
             kuna_latch_join_withdrawn: false,
             kuna_latch_blocks: Vec::new(),
+            kuna_frame_pointer: false,
             kuna_o0returns: None,
             kuna_o0select: None,
             kuna_o0switch: None,
@@ -4518,6 +4522,7 @@ impl Funcdata {
         self.kuna_vararg_save = false;
         self.kuna_flow_ranges.clear();
         self.kuna_unoptimized = None;
+        self.kuna_frame_pointer = false;
         self.kuna_o0returns = None;
         self.kuna_o0select = None;
         self.kuna_o0switch = None;

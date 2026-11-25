@@ -2325,12 +2325,13 @@ mod tests {
         // and kuna-vcmp-carry / ARM vcmp sets the carry for unordered operands
         // and kuna-loweredswitch-auto / an unoptimized function keeps the switch or if-chain its tests record
         // and kuna-ppc64-plt-stubs / every PPC64 ELFv2 linker stub form names its import
+        // and kuna-ppc32picimports-aggressive / the aggressive preset names PPC32 PIC imports
         // and kuna-loopcontinue-auto(-thumb) / an unoptimized function keeps the continue/break tests its binary records
         // and kuna-looptest-zerotrip / a guard drops when its skip path is the loop's exit path run zero times
         // and kuna-looptest-entry / an empty body, a frame counter, a reused or recomputed value test at the top
         // and kuna-loopcondhoist / the test that is a loop's condition is the loop's exit
         // and kuna-latchjoin / a loop latch the compiler copied into each path is joined into one
-        assert_eq!(count, 919, "corpus file count drifted");
+        assert_eq!(count, 922, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

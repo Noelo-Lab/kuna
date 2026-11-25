@@ -1166,6 +1166,10 @@ pub struct Architecture {
     /// size of its conditional tail; `None` when off.  Read by
     /// [`crate::p8_structure::kuna_tailform`].
     pub tail_form: Option<crate::p8_structure::kuna_tailform::TailFormPolicy>,
+    /// (kuna) `returndup auto`: in optimized functions, fold adjacent guards
+    /// and give the arms of a merged return their own.  Read by
+    /// [`crate::p8_structure::kuna_retshape`].
+    pub ret_shape: crate::p8_structure::kuna_retshape::RetShapePolicy,
     /// (kuna) Hoist a leading const-guard into an early return (`if (c) return K;`) by
     /// peeling only the CONSTANT arm of a mixed return phi — the per-edge narrowing of
     /// angr SAILR `ReturnDuplicatorHigh` that `duplicate_shared_returns`' whole-block
@@ -2630,6 +2634,7 @@ impl Architecture {
             returndup_record: false, // (kuna) option returndup auto; reset_defaults sets the shipped default
             returndup_triangle: false, // (kuna) option rettriangle; reset_defaults sets the shipped default
             tail_form: None, // (kuna) option tailform; reset_defaults sets the shipped default
+            ret_shape: crate::p8_structure::kuna_retshape::RetShapePolicy::off(), // (kuna) option returndup auto; reset_defaults sets the shipped default
             early_return: false,
             switch_return: false,
             recover_loop_break: false,
@@ -2970,6 +2975,7 @@ impl Architecture {
         self.duplicate_shared_returns = true; // (kuna) DIV-54 default-on, superseding the DIV-18 revert (angr SAILR gotoless ReturnDuplicatorHigh). The -976 GED-perfect regression that reverted it was measured before #137 added the const-return gate (`returndup_is_const_ret`); re-ablated on 52,862 decbench functions the selective pass is +417 GED-perfect / -7,756 aggregate GED, net-positive in every one of nine tested partitions. Per-test opt-out (`option returndup off`) on the datatests it changes keeps the corpus byte-identical.
         self.duplicate_call_returns = false; // (kuna) `returndup calls` is opt-in: the merged call is often the source's own ternary argument
         self.returndup_record = true; // (kuna) `returndup auto` default: in unoptimized functions the recorded return statements decide the splits
+        self.ret_shape.on = true; // (kuna) `returndup auto` default: in optimized functions adjacent guards fold and merged returns split per arm
         self.early_return = true; // (kuna) DIV-23 default-on (angr SAILR ReturnDuplicatorHigh PER-EDGE const-guard early-return hoisting: peel only the CONSTANT arm of a mixed return phi). The const-only narrowing of returndup that returndup's whole-block gate cannot reach; unlike broad returndup (DIV-18, -976 regression), the decbench ablation measured this NET-POSITIVE (+47 perfect matches, -576 summed GED, 158:54 improved:regressed across 508 sailr binaries) because it only recovers genuine source early-return guards. Per-test opt-out (`option earlyreturn off`) on the datatests it changes keeps the corpus byte-identical.
         self.switch_return = true; // (kuna) DIV-25 default-on. The continuation of earlyreturn (DIV-23) to WIDE multi-way switch-phi returns (`switch { case: v=K; break; } return v` above earlyreturn's 16-in-edge cap -> per-case `return K`); same per-edge const-peel machinery so it inherits earlyreturn's safety (peels only CONSTANT arms, so it cannot cause returndup's variable-return regression). The decbench ablation of the wide-switch delta on top of default earlyreturn-on measured NET-POSITIVE (+2 perfect matches, -107 summed GED, 3:0 improved:regressed across 17 sailr binaries, zero regressions). Per-test opt-out (`option switchreturn off`) on the datatests it changes keeps the corpus byte-identical.
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
@@ -3179,6 +3185,9 @@ impl Architecture {
     /// See [`crate::modes`]. The frontend-only `auto` policy errors here because
     /// an Architecture has no input-file size; file frontends resolve it to a
     /// concrete preset before this method. Errors on an unknown mode name.
+    /// `ppc32picimports abi` acts only while an image loads, so the preset
+    /// sets it for the next load and leaves the open image's live mode, a
+    /// caller-local `on` included, as it was.
     pub fn apply_mode(&mut self, name: &str) -> KunaResult<String> {
         if crate::modes::mode_is_automatic(name) {
             return Err(KunaError::parse(
@@ -3192,9 +3201,11 @@ impl Architecture {
                 known.join(", ")
             ))
         })?;
+        let ppc32picimports = self.analysis_ppc32picimports;
         for (opt, val) in overrides {
             self.set_kuna_option(opt, val)?;
         }
+        self.analysis_ppc32picimports = ppc32picimports;
         Ok(format!(
             "mode {name} applied ({} option override{})",
             overrides.len(),
@@ -3850,6 +3861,7 @@ impl Architecture {
         ctx.returndup_record = self.returndup_record; // returndup auto
         ctx.returndup_triangle = self.returndup_triangle; // rettriangle (one-block-if join)
         ctx.tail_form = self.tail_form.map(|p| crate::p8_structure::kuna_tailform::TailFormPolicy { elide_void: self.voidtailreturn, loop_test: self.loop_test, ..p }); // tailform
+        ctx.ret_shape = crate::p8_structure::kuna_retshape::RetShapePolicy { loop_test: self.loop_test, ..self.ret_shape }; // returndup auto
         ctx.early_return = self.early_return; // earlyreturn
         ctx.switch_return = self.switch_return; // switchreturn
         ctx.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
