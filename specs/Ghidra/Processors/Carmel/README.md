@@ -76,6 +76,10 @@ one register-only following issue, including zero repeats. For wide CE1
 REPEAT, a veto with address enable clear executes that issue once; otherwise
 the immediate count applies. REPEAT does not lift a transfer or DATA access
 in the repeated issue.
+Selected dynamic REPEAT forms sample `A0L`, a postmodified `R1`, or an
+absolute DATA word before three setup issues. A zero count skips only the
+first body issue. The wide DATA encoding can replay a range of up to five
+issues. Setup and body must be register-only and contain no transfers.
 The explicit post-CALL branch past an unexecuted sequential slot is part of
 the caller's control flow, even if analysis found a function entry there.
 Unconditional wide relative CALL without delay uses the same two-word DATA

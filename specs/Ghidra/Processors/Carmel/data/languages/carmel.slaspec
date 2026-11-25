@@ -145,6 +145,7 @@ define context contextreg
     carmel_single_issue = (9,9) noflow
     carmel_counted_delay = (10,10) noflow
     carmel_conditional_return_safe = (12,12) noflow
+    carmel_split_delay = (13,13) noflow
     carmel_cliw_95_64 = (32,63) noflow
     carmel_cliw_63_32 = (64,95) noflow
     carmel_cliw_31_0 = (96,127) noflow
@@ -396,6 +397,8 @@ define token wide (48)
     wide_10_22 = (10,22)
     config_shift_ce_bank = (46,46)
     wide_repeat_count = (24,39)
+    wide_repeat_delay = (11,13)
+    wide_repeat_long = (13,13)
     wide_immediate_0 = (24,45) hex
     wide_immediate_22 = (0,1) hex
     wide_2_11 = (2,11)
@@ -2409,6 +2412,21 @@ conditional_target: word_address is conditional_words [ word_address = (inst_sta
 :^complete_left "||" "REP" repeat_count is carmel_next_issue_size=6 & (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left); (slot_mode=0 & slot_10_22=0xaf0 & repeat_count) [ carmel_repeating=1; ] { build complete_left; local count:2 = repeat_count; if (count == 0) goto <exit>; <again> delayslot(6); count = count - 1; if (count != 0) goto <again>; <exit> }
 :"REP" wide_repeat_count is carmel_next_issue_size=6 & carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x13b & wide_repeat_count [ carmel_repeating=1; ] { local count:2 = wide_repeat_count; if (count == 0) goto <exit>; <again> delayslot(6); count = count - 1; if (count != 0) goto <again>; <exit> }
 :"REP" wide_repeat_count "CE1" is carmel_next_issue_size=6 & carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=0 & wide_14_22=0x13b & wide_repeat_count [ carmel_repeating=1; ] { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); local count:2 = 1; if ((enabled == 0) && ((CECFG1 & 0x1000) == 0)) goto <count_ready>; count = wide_repeat_count; <count_ready> if (count == 0) goto <exit>; <again> delayslot(6); count = count - 1; if (count != 0) goto <again>; <exit> }
+
+# Dynamic count is sampled before three setup issues. A zero count skips
+# the first body issue only, even when a nonzero count would replay a range.
+repeat_setup: is epsilon { delayslot(3); }
+repeat_first: is epsilon { delayslot(1); }
+
+:"REP A0L" "||" nop_right^repeat_setup is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bc400 & repeat_setup); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; carmel_split_delay=1; carmel_repeating=1; ] { local count:2 = A0L; build repeat_setup; if (count == 0) goto <exit>; <again> delayslot(1); count = count - 1; if (count != 0) goto <again>; <exit> }
+:"REP (R1)+RN1" "delay 3"^repeat_setup is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x4f1c00 & wide_24_45=0x90000 & repeat_setup [ carmel_counted_delay=1; carmel_split_delay=1; carmel_repeating=1; ] { local count:2 = R1; modify_ptr(R1, RN1, RM0, RL0, 2, 1); build repeat_setup; if (count == 0) goto <exit>; <again> delayslot(1); count = count - 1; if (count != 0) goto <again>; <exit> }
+
+@define REPEAT_DATA "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x13c & wide_0_10=0 & wide_40_45=0x38 & absolute_data_addr & repeat_setup"
+:"REP" "*"^absolute_data_addr "delay" wide_repeat_delay^repeat_setup is $(REPEAT_DATA) & wide_repeat_long=0 & wide_repeat_delay [ carmel_counted_delay=1; carmel_split_delay=1; carmel_repeating=1; ] { local address:2 = absolute_data_addr; local count:2 = *[data]:2 address; local delay:1 = wide_repeat_delay; build repeat_setup; if (count == 0) goto <exit>; if (delay == 3) goto <again>; count = 1; <again> delayslot(1); count = count - 1; if (count != 0) goto <again>; <exit> }
+:"REP" "*"^absolute_data_addr "delay 4"^repeat_setup^repeat_first is $(REPEAT_DATA) & wide_repeat_delay=4 & repeat_first [ carmel_counted_delay=1; carmel_split_delay=1; carmel_repeating=1; ] { local address:2 = absolute_data_addr; local count:2 = *[data]:2 address; build repeat_setup; if (count == 0) goto <tail>; <again> build repeat_first; <tail> delayslot(1); if (count <= 1) goto <exit>; count = count - 1; goto <again>; <exit> }
+:"REP" "*"^absolute_data_addr "delay 5"^repeat_setup^repeat_first is $(REPEAT_DATA) & wide_repeat_delay=5 & repeat_first [ carmel_counted_delay=1; carmel_split_delay=1; carmel_repeating=1; ] { local address:2 = absolute_data_addr; local count:2 = *[data]:2 address; build repeat_setup; if (count == 0) goto <tail>; <again> build repeat_first; <tail> delayslot(2); if (count <= 1) goto <exit>; count = count - 1; goto <again>; <exit> }
+:"REP" "*"^absolute_data_addr "delay 6"^repeat_setup^repeat_first is $(REPEAT_DATA) & wide_repeat_delay=6 & repeat_first [ carmel_counted_delay=1; carmel_split_delay=1; carmel_repeating=1; ] { local address:2 = absolute_data_addr; local count:2 = *[data]:2 address; build repeat_setup; if (count == 0) goto <tail>; <again> build repeat_first; <tail> delayslot(3); if (count <= 1) goto <exit>; count = count - 1; goto <again>; <exit> }
+:"REP" "*"^absolute_data_addr "delay 7"^repeat_setup^repeat_first is $(REPEAT_DATA) & wide_repeat_delay=7 & repeat_first [ carmel_counted_delay=1; carmel_split_delay=1; carmel_repeating=1; ] { local address:2 = absolute_data_addr; local count:2 = *[data]:2 address; build repeat_setup; if (count == 0) goto <tail>; <again> build repeat_first; <tail> delayslot(4); if (count <= 1) goto <exit>; count = count - 1; goto <again>; <exit> }
 
 data_load_dst: "R0" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x280 & wide_13_22=0x21b & wide_40_45=0x38 { export R0; }
 data_load_dst: "R1" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x284 & wide_13_22=0x21b & wide_40_45=0x38 { export R1; }

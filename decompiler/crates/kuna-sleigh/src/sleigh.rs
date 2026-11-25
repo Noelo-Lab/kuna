@@ -1090,6 +1090,8 @@ struct SleighBuilder<'a> {
     uniq_space: Rc<AddrSpace>,
     uniquemask: u32,
     uniqueoffset: u64,
+    /// Displacement within the pre-resolved delay range of a split Carmel schedule.
+    split_delay_offset: Option<i32>,
     cache: &'a mut PcodeCacher,
 }
 
@@ -1374,7 +1376,7 @@ impl PcodeBuilder for SleighBuilder<'_> {
     }
 
     /// C++ `SleighBuilder::delaySlot`.
-    fn delay_slot(&mut self, _op: &OpTpl) -> KunaResult<()> {
+    fn delay_slot(&mut self, op: &OpTpl) -> KunaResult<()> {
         let saved_cur = self.cur.clone();
         let saved_ctx = self.cur_ctx;
         let saved_cross = self.cross_ctx;
@@ -1382,8 +1384,10 @@ impl PcodeBuilder for SleighBuilder<'_> {
 
         let baseaddr = self.contexts[self.cur_ctx].addr.clone();
         let fall_base = self.contexts[self.cur_ctx].ctx.get_length();
-        let delay_budget = self.contexts[self.cur_ctx].ctx.get_delay_slot();
-        let mut fall_offset = fall_base;
+        let (mut fall_offset, delay_budget) = match self.split_delay_offset {
+            Some(offset) => (fall_base + offset, op.get_in(0).get_offset().get_real() as i32),
+            None => (fall_base, self.contexts[saved_ctx].ctx.get_delay_slot()),
+        };
         let mut consumed = 0i32;
         let carmel_start = self.engine.uses_carmel_issues().then_some(self.cache.issued.len());
         let counted = carmel_start.is_some() && self.engine.carmel_counted_delay(&self.contexts[saved_ctx].ctx);
@@ -1414,6 +1418,9 @@ impl PcodeBuilder for SleighBuilder<'_> {
             if consumed >= delay_budget {
                 break;
             }
+        }
+        if let Some(offset) = &mut self.split_delay_offset {
+            *offset = fall_offset - fall_base;
         }
         if let Some(start) = carmel_start {
             let (before, slot) = self.cache.issued.split_at(start);
@@ -2000,7 +2007,15 @@ impl Sleigh {
                 if let Some(h) = handle {
                     let ds = self.base.templates[h].delay_slot();
                     if ds > 0 {
-                        walker.ctx.set_delay_slot(ds as i32); // C++ uint4 -> int4
+                        let ds = ds as i32; // C++ uint4 -> int4
+                        // A split Carmel schedule has one successive slice per
+                        // delay directive. All slices are decoded before any build.
+                        let previous = if self.carmel_split_delay(walker.ctx) {
+                            walker.ctx.get_delay_slot()
+                        } else {
+                            0
+                        };
+                        walker.ctx.set_delay_slot(previous + ds);
                     }
                 }
             }
@@ -2592,6 +2607,12 @@ impl Sleigh {
             .is_ok_and(|field| field.get_value(&pos.context) != 0)
     }
 
+    fn carmel_split_delay(&self, pos: &ParserContext) -> bool {
+        let db = self.context_db.borrow();
+        db.get_variable(b"carmel_split_delay")
+            .is_ok_and(|field| field.get_value(&pos.context) != 0)
+    }
+
     fn check_carmel_fetch(&self, addr: &Address) -> KunaResult<()> {
         if self.base.base.get_alignment() == 3
             && matches!(self.context_db.borrow().get_variable_value(b"carmel_bad_fetch", addr), Ok(1))
@@ -2707,6 +2728,7 @@ impl Sleigh {
             uniq_space,
             uniquemask: umask,
             uniqueoffset: (contexts[0].addr.get_offset() & u64::from(umask)) << 8,
+            split_delay_offset: (counted && self.carmel_split_delay(&contexts[0].ctx)).then_some(0),
             cache: &mut cache,
         };
         builder.cur.point = Some(contexts[0].ctx.base_state);
@@ -2735,6 +2757,9 @@ impl Sleigh {
                 return Err(KunaError::unimpl(s, fall_offset));
             }
             Err(e) => return Err(e),
+        }
+        if builder.split_delay_offset.is_some_and(|offset| offset + contexts[0].ctx.get_length() != fall_offset) {
+            return Err(KunaError::unimpl("Invalid split Carmel delay schedule", fall_offset));
         }
         cache.resolve_relatives()?;
         cache.emit(baseaddr, emit);

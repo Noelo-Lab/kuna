@@ -312,6 +312,54 @@ fn ce1_repeat_executes_once_on_veto_or_uses_the_literal_count() {
 }
 
 #[test]
+fn dynamic_register_repeat_samples_before_the_setup_and_modifies_r1_once() {
+    for (root, mode) in [((0x2bc400, NOP), 1), ((0x890000, 0xcf1c00), 5)] {
+        for count in [0, 3] {
+            let mut m = Machine::new(
+                0,
+                &[root, (SEQUENTIAL | INC_A0, INC_A1), (INC_A2, NOP), (0x21ace6, NOP), (NOP, NOP)],
+                &[(0, mode, 3), (2, 2, 3), (3, 3, 6), (4, 1, 6), (6, 1, 6), (8, 1, 0)],
+                None,
+            );
+            m.seed(&[("A0L", count), ("R1", count), ("RN1", 2), ("PSTATUS", 0x10)]);
+            m.start(0).unwrap();
+            assert_eq!(m.step(), 24);
+            assert_eq!((m.reg("A0L"), m.reg("A1L"), m.reg("A2L")), (count + 1, 1, 1));
+            assert_eq!(m.reg("A3L"), count);
+            assert_eq!(m.reg("R1"), count + if mode == 5 { 2 } else { 0 });
+            assert_eq!(m.reg("PSTATUS"), 0x10);
+        }
+    }
+}
+
+#[test]
+fn dynamic_data_repeat_zero_skips_only_the_first_of_the_selected_issues() {
+    for (delay, count, expected) in [
+        (2, 3, [1, 1, 1]), (3, 3, [3, 1, 1]), (4, 3, [3, 3, 1]),
+        (5, 0, [0, 1, 1]), (5, 3, [3, 3, 3]), (7, 3, [3, 3, 3]),
+    ] {
+        let mut m = Machine::new(
+            0,
+            &[(0xb84100, 0xcf0000 | delay << 11), (INC_A0, NOP), (INC_A1, NOP), (INC_A2, NOP),
+              (0x21ace6, NOP), (0x21ad28, NOP), (0x21ad6a, NOP), (NOP, NOP), (NOP, NOP), (NOP, NOP)],
+            &[(0, 5, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 6),
+              (10, 1, 6), (12, 1, 6), (14, 1, 6), (16, 1, 6), (18, 1, 0)],
+            None,
+        );
+        m.seed_data(0x4100, count);
+        m.start(0).unwrap();
+        let end = 2 + 2 * (3 + delay.saturating_sub(2).max(1));
+        assert_eq!(m.step(), u64::from(end) * 3);
+        for _ in (end..14).step_by(2) {
+            m.step();
+        }
+        assert_eq!([m.reg("A0L"), m.reg("A1L"), m.reg("A2L")], [1, 1, 1]);
+        assert_eq!([m.reg("A3L"), m.reg("A4L"), m.reg("A5L")], expected);
+        assert_eq!(m.data(0x4100), count);
+    }
+}
+
+#[test]
 fn wide_data_store_uses_the_old_word_address_and_postincrements_r0() {
     for (low, expected_r0) in [(0xc64000, 0x4100), (0xc64040, 0x4101)] {
         let mut m = Machine::new(0, &[(0x808e4c, low), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);

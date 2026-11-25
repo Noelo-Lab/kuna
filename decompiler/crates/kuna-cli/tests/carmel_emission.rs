@@ -137,6 +137,57 @@ fn carmel_scalar_stack_pointer_returns_the_popped_word_address() {
     }
 }
 
+#[test]
+fn carmel_data_repeat_replays_the_range_and_skips_only_its_first_issue_at_zero() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let code = [
+        0xb8, 0x41, 0x00, 0xcf, 0x20, 0x00, // REP *0x4100 delay 4
+        0x21, 0xac, 0x20, 0x2b, 0xec, 0x00, // setup: INC A0L
+        0x21, 0xac, 0x62, 0x2b, 0xec, 0x00, //        INC A1L
+        0x21, 0xac, 0xa4, 0x2b, 0xec, 0x00, //        INC A2L
+        0x21, 0xac, 0xe6, 0x2b, 0xec, 0x00, // body:  INC A3L
+        0x21, 0xad, 0x28, 0x2b, 0xec, 0x00, //        INC A4L
+        0x2b, 0xd8, 0x00, 0x2b, 0xec, 0x00,
+    ];
+    let binary = common::scratch_file("carmel-data-repeat", "bin");
+    fs::write(&binary, code).unwrap();
+    for (output, zero, three) in [("A3L", 7, 10), ("A4L", 8, 10)] {
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.arg("decompile").arg(&binary).args([
+            "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+            "--json", "--assert-strict",
+            "--assert", "data [data,0x4100] volatile unsigned short repeat_count",
+            "--assert", "param 0 %A3L unsigned short in_a3l",
+            "--assert", "param 1 %A4L unsigned short in_a4l",
+            "--assert", "param 2 %ECFG unsigned short in_ecfg",
+            "--assert", &format!("return %{output} unsigned short"),
+        ]);
+        let result = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&result.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        let emitted = function["code"].as_str().unwrap();
+        let source = binary.with_extension("c");
+        let executable = binary.with_extension("exe");
+        fs::write(&source, format!(
+            "#include <stdbool.h>\nvolatile unsigned short repeat_count;\n{emitted}\n\
+             int main(void) {{\n\
+               repeat_count = 0;\n\
+               if (sub_0(7, 7, 0) != {zero} || repeat_count != 0) return 1;\n\
+               repeat_count = 3;\n\
+               return sub_0(7, 7, 0) != {three} || repeat_count != 3;\n\
+             }}\n"
+        )).unwrap();
+        run_emitted_c(&source, &executable, emitted);
+        for file in [source, executable] {
+            fs::remove_file(file).unwrap();
+        }
+    }
+    fs::remove_file(binary).unwrap();
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")

@@ -306,6 +306,7 @@ fn borrowed_builder_cursor_uses_target_tree_and_cross_addresses() {
         uniq_space: space,
         uniquemask: 0,
         uniqueoffset: 0,
+        split_delay_offset: None,
         cache: &mut cache,
     };
     builder.cur.point = Some(0);
