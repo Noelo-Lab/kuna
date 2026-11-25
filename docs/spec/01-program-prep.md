@@ -338,9 +338,30 @@ and treats FP ANY as unspecified. Call recovery uses the same evidence, includin
 in images without section headers. Non-Octeon target selection is unchanged.
 Octeon III accepts the VZ capability declaration emitted by its compiler;
 this does not assert that every privileged VZ instruction is modeled.
-Octeon N32/N64 selection does not intercept ELF32 O32 images, including
+Octeon selection does not intercept ELF32 O32 or EABI images, including
 little-endian images carrying Octeon machine flags: they retain generic MIPS
-selection, and an explicit target still takes precedence.
+selection, and an explicit target still takes precedence. A big-endian ELF32
+image that is not N32 and declares O64, or no ABI at all, with the original
+Octeon machine tag and the MIPS64r2 ISA selects `MIPS:BE:64:octeon-32addr:o64`,
+the only Octeon O64 model, so `bbit`, `seq`, `cins`, `exts` and the 64-bit
+loads and stores decode and the fifth integer argument comes from the stack
+slot at SP + 32. Without an ABI declaration the evidence for O32 is
+`EF_MIPS_32BITMODE`, which GCC writes for O32 code on a 64-bit ISA, or a GCC
+`.mdebug.abi*` marker section naming another ABI; an image with neither,
+including one without section headers, has 64-bit registers, which O32 never
+declares, and is taken as O64. That is the assumption the generic selector
+already makes for a no-ABI ELF32 image with a 64-bit ISA, with the same note,
+and `--target` overrides it. The original Octeon has no FPU, so an image
+without a float declaration is taken as soft-float; with no GNU attribute or
+ABI-flags record, the header's FP64, NaN2008 or legacy hard-float bit is that
+declaration. An ABI-flags record must declare what the N32/N64 path requires
+of a soft-float profile, with the Octeon ISA extension or none. Such an image
+that instead declares hard float, 32-bit registers, another ISA or ISA
+extension, another ABI in its `.mdebug.abi*` marker (`.mdebug.abiO64`
+agrees), Octeon Plus or a later Octeon generation (none has an O64 model), or
+is little-endian keeps the generic selection it had before, and a note gives
+the reason and, for a big-endian image, the explicit Octeon O64 target. Only
+the machine tag identifies these images: an ISA extension alone does not.
 
 (kuna) A RISC-V ELF whose `Tag_RISCV_arch` attribute lists `zcmp` or `zcmt`
 selects the `RISCV:LE:32:Zcmp` or `RISCV:LE:64:Zcmp` language

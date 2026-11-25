@@ -20,6 +20,12 @@ pub fn language_id(variant: &str, n32: bool, hard: bool) -> String {
     )
 }
 
+/// The language ID of the original Octeon with 32-bit addresses and the
+/// soft-float O64 compiler model, the only Octeon O64 language.
+pub fn o64_language_id() -> String {
+    "MIPS:BE:64:octeon-32addr:o64".to_string()
+}
+
 /// The floating-point convention an Octeon language ID's compiler model
 /// selects: `Some(true)` for `hard`; `Some(false)` for the soft-float `default`
 /// and its ABI alias; `None` for any other language or compiler ID.
