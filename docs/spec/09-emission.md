@@ -4986,8 +4986,12 @@ comparison uses C's `!=` token, which keeps the parentheses around a bitwise
 operand (`(value as u8 & 0x55) != 0`), except directly under another
 comparison, where it takes Rust's own token: Rust comparisons do not chain, so
 `(f() != 0) != g` is parenthesised rather than printed as `f() != 0 != g`. A
-constant of Boolean type prints as `false` or `true`, as in Go, so a Boolean
-return or assignment never receives an integer literal.
+constant of Boolean type prints as `false` or `true` where what consumes it is
+Boolean too (`kuna_rustboolcast.rs (rust_boolean_constant)`): the return value
+of a function that returns `bool`, a declared `bool` variable a copy assigns
+(followed through implied copies), or the other side of `==` or `!=`. Elsewhere
+it keeps its integer spelling, because a merged variable can be declared at an
+integer type while one of its pieces is typed Boolean.
 Cosmetic cast suppression disables the conversion.
 C and Go emission are unchanged.
 
