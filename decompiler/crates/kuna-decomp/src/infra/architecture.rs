@@ -1103,6 +1103,9 @@ pub struct Architecture {
     /// (`gotoreduce`/`crossjumprevert`) (`dedup_ite_tail`, opt-in
     /// default-off).
     pub dedup_ite_tail: bool,
+    /// (kuna) join duplicated loop latches (`dedupitetail latch`); see
+    /// [`crate::p8_structure::kuna_latchjoin`].
+    pub latch_join: bool,
     /// (kuna) angr `ITERegionConverter`: rewrite a two-arm assignment *diamond*
     /// (`if (c) v = A; else v = B;`, both arms a single COPY to the same
     /// variable, converging on one tail) to a `?:` ternary (`v = c ? A : B;`).
@@ -2616,6 +2619,7 @@ impl Architecture {
             flatten_ifelse: false,
             revert_cross_jumps: false,
             dedup_ite_tail: false,
+            latch_join: false, // (kuna) option dedupitetail latch; reset_defaults sets the shipped default
             iteregion: false,
             iteregion_record: false,
             iteexpr: false,
@@ -2954,6 +2958,7 @@ impl Architecture {
         self.flatten_ifelse = true; // (kuna) DIV-13 default-on (angr IfElseFlattener; 0/675 ablation)
         self.revert_cross_jumps = true; // (kuna) DIV-13 default-on (angr SAILR CrossJumpReverter; 0/675 ablation)
         self.dedup_ite_tail = true; // (kuna) DIV-13 default-on (angr structurer ITE region-dedup — merge duplicated if/else tails; 0/675 ablation)
+        self.latch_join = true; // (kuna) option dedupitetail default `latch`: join loop latches the compiler copied into each path (kuna_latchjoin)
         self.iteregion_record = true; // (kuna) `iteregion auto` default: the recorded conditional values decide unoptimized functions
         self.iteregion = true; // (kuna) DIV-17 default-on (angr ITERegionConverter: assignment-diamond -> `?:` ternary, decbench F5). Per-test opt-out (`option iteregion off`) on the datatests it changes keeps the corpus byte-identical.
         self.iteexpr = false; // (kuna) computed-arm ?: extension: runtime choice, default-off (corpus byte-identical).
@@ -3834,6 +3839,7 @@ impl Architecture {
         ctx.flatten_ifelse = self.flatten_ifelse; // ifelseflatten
         ctx.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert
         ctx.dedup_ite_tail = self.dedup_ite_tail; // dedupitetail
+        ctx.latch_join = self.latch_join; // dedupitetail latch
         ctx.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
         ctx.iteregion_record = self.iteregion_record; // iteregion auto
         ctx.iteexpr = self.iteexpr; // iteexpr (computed-arm ?: extension, runtime-choice)

@@ -2127,7 +2127,8 @@ fn decompile_func_full_with_objects_inner(
     let mut attempt = |prefollowed: Option<Funcdata>,
                        unguarded: bool,
                        condstmts_seed: &std::collections::BTreeSet<Address>,
-                       elfmain: Option<&crate::kuna_elfmaindecl::Runtime>|
+                       elfmain: Option<&crate::kuna_elfmaindecl::Runtime>,
+                       latch_join: bool|
      -> KunaResult<Funcdata> {
         // Kept for the parked-prototype lookup below (the flow build consumes the
         // address).
@@ -2150,6 +2151,7 @@ fn decompile_func_full_with_objects_inner(
             fd.withdraw_stack_store_guard();
         }
         fd.set_condstmts_seed(condstmts_seed.clone());
+        fd.kuna_latch_join_withdrawn = !latch_join;
         // The prototype the function is decompiled *against*. Two sources, in
         // precedence order:
         //
@@ -2369,10 +2371,10 @@ fn decompile_func_full_with_objects_inner(
         // guard needs is analyzed again from scratch without it.
         let mut seed = std::collections::BTreeSet::new();
         let mut unguarded = false;
-        let mut result = match attempt(prefollowed.take(), false, &seed, elfmain) {
+        let mut result = match attempt(prefollowed.take(), false, &seed, elfmain, true) {
             Ok(fd) if fd.stack_store_guard_spoiled() => {
                 unguarded = true;
-                attempt(None, true, &seed, elfmain)
+                attempt(None, true, &seed, elfmain, true)
             }
             other => other,
         };
@@ -2382,9 +2384,20 @@ fn decompile_func_full_with_objects_inner(
             let Ok(fd) = &result else { break };
             let Some(next) = crate::p8_structure::kuna_condstmts::next_seed(fd) else { break };
             seed = next;
-            match attempt(None, unguarded, &seed, elfmain) {
+            match attempt(None, unguarded, &seed, elfmain, true) {
                 Ok(fd) => result = Ok(fd),
                 Err(_) => break,
+            }
+        }
+        // (kuna `dedupitetail latch`) A function whose joined loop latch prints
+        // gotos is decompiled again without the join; the copy with fewer gotos wins.
+        if let Some(with) = result.as_ref().ok().and_then(crate::p8_structure::kuna_latchjoin::joined_gotos) {
+            if with > 0 {
+                if let Ok(plain) = attempt(None, unguarded, &seed, elfmain, false) {
+                    if crate::p8_structure::kuna_latchjoin::plain_gotos(&plain) < with {
+                        result = Ok(plain);
+                    }
+                }
             }
         }
         if elfmain.is_some() && !result.as_ref().is_ok_and(crate::kuna_elfmaindecl::settled) {

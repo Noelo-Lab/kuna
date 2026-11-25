@@ -1293,6 +1293,8 @@ pub struct ArchContext {
     /// opt-in default-off).  Read by
     /// [`crate::p8_structure::kuna_dedupitetail`]'s `ActionDedupIteTail`.
     pub dedup_ite_tail: bool,
+    /// (kuna) join duplicated loop latches (`dedupitetail latch`).
+    pub latch_join: bool,
     /// (kuna) angr `ITERegionConverter`: rewrite a two-arm assignment *diamond*
     /// (`if (c) v = A; else v = B;`) to a `?:` ternary (`v = c ? A : B;`)
     /// (`iteregion`, opt-in default-off — a **runtime choice**: matches source only
@@ -1817,6 +1819,7 @@ impl ArchContext {
             flatten_ifelse: false,  // ifelseflatten (opt-in default-off)
             revert_cross_jumps: false,   // crossjumprevert (opt-in default-off)
             dedup_ite_tail: false,        // dedupitetail (opt-in default-off)
+            latch_join: false,            // dedupitetail latch
             iteregion: false,             // iteregion (opt-in default-off, runtime-choice)
             iteregion_record: false,      // iteregion auto
             iteexpr: false,               // iteexpr (computed-arm ?: extension, default-off)

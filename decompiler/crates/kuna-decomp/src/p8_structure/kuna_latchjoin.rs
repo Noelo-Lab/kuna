@@ -66,7 +66,10 @@ impl Action for ActionLatchJoin {
         Some(Box::new(ActionLatchJoin { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        if crate::p3_dataflow::kuna_unoptimized::is_unoptimized(data) {
+        if !data.get_arch().latch_join
+            || data.kuna_latch_join_withdrawn
+            || crate::p3_dataflow::kuna_unoptimized::is_unoptimized(data)
+        {
             return 0;
         }
         let dry = std::env::var_os("KUNA_LJ_DRY").is_some();
@@ -82,9 +85,25 @@ impl Action for ActionLatchJoin {
             execute(data, &plan);
             joins += 1;
         }
+        data.kuna_latch_joins += joins as u32;
         self.base_mut().count += joins as i32;
         0
     }
+}
+
+/// Gotos the finished function prints when a latch was joined, else `None`: the
+/// drive decompiles such a function again without the join and keeps the result
+/// with fewer gotos.
+pub fn joined_gotos(fd: &Funcdata) -> Option<i32> {
+    if fd.kuna_latch_joins == 0 {
+        return None;
+    }
+    Some(crate::p2_lift::kuna_loweredswitchkeep::printed_gotos(fd))
+}
+
+/// The goto count of a decompile without the join.
+pub fn plain_gotos(fd: &Funcdata) -> i32 {
+    crate::p2_lift::kuna_loweredswitchkeep::printed_gotos(fd)
 }
 
 /// One accepted join: `ops_a[i]` and `ops_b[i]` are the corresponding ops of the
