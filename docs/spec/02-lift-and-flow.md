@@ -3925,6 +3925,13 @@ parallel multiply uses `X2` and the second flag lane. The wide form uses
 `X1` and the first flag lane under either qualifier, and its unsigned
 first operand bypasses product limiting.
 
+The qualified wide DATA unary forms with a disconnected result still fetch
+their operand. The address override can run postincrement without publishing
+new arithmetic flags. `ROL` puts the fetched operand's top bit in carry;
+`ROR` uses its low bit. `INC` and `NOT` do not replace arithmetic status when
+the result is disconnected. The fractional `ADDL`, `SUBH` and `SUBL` forms
+instead publish the status of adjusting the implicit all-ones accumulator.
+
 For covered qualified compact `ADD` and `SUB` word read-modify-write forms,
 the left parallel lane computes flags but cannot write back to the first
 accumulator half; the right lane and sequential issues can. Address and

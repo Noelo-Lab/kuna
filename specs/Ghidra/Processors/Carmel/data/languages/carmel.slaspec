@@ -1465,6 +1465,117 @@ macro unary_max_flags(word) {
     EST = (EST & 0xffe5) | flags;
 }
 
+macro wide_unary_data_read(address, width, low, high) {
+    low = *[data]:2 address;
+    high = 0;
+    if (width == 1) goto <done>;
+    local upper:2 = address + 1;
+    high = *[data]:2 upper;
+  <done>
+}
+
+macro wide_unary_r4(width, low, high, enabled) {
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <done>;
+    local address:2 = R4;
+    wide_unary_data_read(address, width, low, high);
+    modify_ptr_scaled(R4, RN4, RM4, RL4, 8, 2, width);
+  <done>
+}
+
+macro wide_unary_r4_discard(width) {
+    local low:2;
+    local high:2;
+    local enabled:2;
+    wide_unary_r4(width, low, high, enabled);
+    publish_alu_ce(EST & 0xcfff);
+}
+
+macro wide_unary_r4_rotate(width, right) {
+    local low:2;
+    local high:2;
+    local enabled:2;
+    wide_unary_r4(width, low, high, enabled);
+    if (enabled == 0) goto <done>;
+    local carry_bit:2 = low & 1;
+    if (right != 0) goto <commit>;
+    carry_bit = low >> 15;
+    if (width == 1) goto <commit>;
+    carry_bit = high >> 15;
+  <commit>
+    EST = (EST & 0xfffe) | carry_bit;
+  <done>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+macro wide_unary_subh_status(value) {
+    local result:4 = ~value;
+    local flags:2 = 1 | (zext(result == 0) << 3) | (zext((result & 0x80000000) != 0) << 4);
+    publish_alu_ce((EST & 0xcfc4) | flags);
+}
+
+@define WIDE_UNARY_DATA "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & unary_wide_ce_bank=0"
+:INC "CE1" "discard","*R4++" is $(WIDE_UNARY_DATA) & wide_0_22=0x4237cc & wide_40_45=0x14 { wide_unary_r4_discard(1:2); }
+:NOT "CE1" "discard","*R4++:long" is $(WIDE_UNARY_DATA) & wide_0_22=0x422fcd & wide_40_45=0x14 { wide_unary_r4_discard(2:2); }
+:ROL "CE1" "discard","*R4++" is $(WIDE_UNARY_DATA) & wide_0_22=0x423bcc & wide_40_45=0x14 { wide_unary_r4_rotate(1:2, 0:1); }
+:ROL "CE1" "discard","*R4++:long" is $(WIDE_UNARY_DATA) & wide_0_22=0x423bcd & wide_40_45=0x14 { wide_unary_r4_rotate(2:2, 0:1); }
+:ROR "CE1" "discard","*R4++:long" is $(WIDE_UNARY_DATA) & wide_0_22=0x423fcd & wide_40_45=0x14 { wide_unary_r4_rotate(2:2, 1:1); }
+:INC "CE1" "discard","*R2+RN2" is $(WIDE_UNARY_DATA) & wide_0_22=0x4237cc & wide_40_45=0x2a {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <done>;
+    local address:2 = R2 + RN2;
+    local word:2 = *[data]:2 address;
+  <done>
+    publish_alu_ce(EST & 0xcfff);
+}
+:SUBL "CE1" "discard","*R4++:long" is $(WIDE_UNARY_DATA) & wide_0_22=0x4203cd & wide_40_45=0x14 {
+    local low:2;
+    local high:2;
+    local enabled:2;
+    wide_unary_r4(2:2, low, high, enabled);
+    if (enabled == 0) goto <done>;
+    EST = (EST & 0xffc4) | 0x11 | ((high >> 15) << 5);
+  <done>
+    publish_alu_ce(EST & 0xcfff);
+}
+:SUBH "CE1" "discard","*R4++" is $(WIDE_UNARY_DATA) & wide_0_22=0x4207cc & wide_40_45=0x14 {
+    local low:2;
+    local high:2;
+    local enabled:2;
+    wide_unary_r4(1:2, low, high, enabled);
+    if (enabled == 0) goto <done>;
+    EST = (EST & 0xffc4) | 1 | (zext((low >> 15) == 0) << 4);
+  <done>
+    publish_alu_ce(EST & 0xcfff);
+}
+:ADDL "CE1" "discard","*R4++" is $(WIDE_UNARY_DATA) & wide_0_22=0x4213cc & wide_40_45=0x14 {
+    local low:2;
+    local high:2;
+    local enabled:2;
+    wide_unary_r4(1:2, low, high, enabled);
+    if (enabled == 0) goto <done>;
+    EST = (EST & 0xffc4) | zext(low != 0) | (zext(low == 1) << 3) | (zext(low == 0) << 4);
+  <done>
+    publish_alu_ce(EST & 0xcfff);
+}
+:SUBH "CE1" "discard","*R6+RN6:long" is $(WIDE_UNARY_DATA) & wide_0_22=0x4207f5 & wide_40_45=0x2e {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <finish>;
+    local address:2 = R6 + RN6;
+    local low:2;
+    local high:2;
+    wide_unary_data_read(address, 2:2, low, high);
+    if (enabled == 0) goto <finish>;
+    local result:4 = zext(low) | (zext(high) << 16);
+    wide_unary_subh_status(result);
+    goto <done>;
+  <finish>
+    publish_alu_ce(EST & 0xcfff);
+  <done>
+}
+
 :^wide_logic_rmw_operator "LC1",wide_lc_rn,wide_lc_r is $(WIDE_LOGIC_RMW) & wide_lc_r_bank=4 & wide_lc_logic_form=0x1a95 & wide_0_1=2 & wide_lc_r & wide_lc_rn {
     local result:2;
     wide_logic_bitop(wide_logic_rmw_operator, wide_lc_rn, wide_lc_r, result);
@@ -2916,6 +3027,7 @@ literal_word: literal is wide_immediate_0 & wide_immediate_22 [ literal = wide_i
 :MOVE "R5",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa5 & wide_14_22=0x119 & literal_word { R5 = literal_word; }
 :MOVE "R6",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa6 & wide_14_22=0x119 & literal_word { R6 = literal_word; }
 :MOVE "R7",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa7 & wide_14_22=0x119 & literal_word { R7 = literal_word; }
+:MOVE "RN6",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xae & wide_14_22=0x119 & literal_word { RN6 = literal_word; }
 :MOVE "*R0",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x0 & wide_14_22=0x119 & literal_word { local address:2 = R0; local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; }
 :MOVE "*R0",literal_word ";" "MOVE" data_load_dst,"*"^absolute_data_addr is carmel_single_issue=0 & carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x0 & wide_14_22=0x119 & literal_word ; (data_load_dst & absolute_data_addr) { local read_addr:2 = absolute_data_addr; local read_value:2 = *[data]:2 read_addr; local address:2 = R0; local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; data_load_dst = read_value; }
 :MOVE "*R0++",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x10 & wide_14_22=0x119 & literal_word { local address:2 = R0; modify_ptr(R0, RN0, RM0, RL0, 0, 2); local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; }
