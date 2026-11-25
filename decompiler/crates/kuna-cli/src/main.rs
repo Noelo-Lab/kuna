@@ -31,6 +31,7 @@ mod optname;
 mod output;
 mod paths;
 mod project_stream;
+mod ppc32_pic_note;
 mod runtime_hints;
 mod rust_signatures;
 mod skill;
