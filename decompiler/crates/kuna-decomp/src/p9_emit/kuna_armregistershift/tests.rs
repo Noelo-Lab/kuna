@@ -44,6 +44,7 @@ fn arm_arch() -> Architecture {
     arch.types_impl().setup_sizes(Some(4), 4, 4);
     arch.types_impl().set_default_alignment_map();
     arch.build_core_types().unwrap();
+    arch.arm_shift_guard = crate::p9_emit::kuna_armshiftguard::ShiftGuardMode::Always;
     arch
 }
 
@@ -260,7 +261,7 @@ fn masked_count(fd: &mut Funcdata, register: &Rc<AddrSpace>, mask: u64, offset: 
 
 #[test]
 fn armshiftguard_guards_only_a_count_that_can_reach_32() {
-    use crate::p9_emit::kuna_armshiftguard::ShiftGuardMode::{Always, Needed, Never};
+    use crate::p9_emit::kuna_armshiftguard::ShiftGuardMode::{Always, Needed, Never, Wide};
     for (mode, mask, guarded) in [
         (Always, 0x1f, true),
         (Needed, 0x1f, false),
@@ -268,6 +269,8 @@ fn armshiftguard_guards_only_a_count_that_can_reach_32() {
         (Needed, 0x20, true),
         (Needed, 0x3f, true),
         (Needed, 0xff, true),
+        (Wide, 0x1f, false),
+        (Wide, 0xff, false),
         (Never, 0xff, false),
     ] {
         let (mut fd, register) = build_fd();
@@ -288,6 +291,7 @@ fn armshiftguard_values_parse() {
     for (text, mode) in [
         ("always", ShiftGuardMode::Always),
         ("needed", ShiftGuardMode::Needed),
+        ("wide", ShiftGuardMode::Wide),
         ("never", ShiftGuardMode::Never),
     ] {
         assert_eq!(OptionArmShiftGuard.apply(text).unwrap().0, mode);

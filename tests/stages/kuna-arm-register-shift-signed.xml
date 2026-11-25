@@ -8,6 +8,8 @@
     ShiftNegative tests the ARM N/V signed comparison after a register LSL.
     ShiftArithmetic consumes the same result with ASR #31, which distinguishes
     a signed result (-1 for a set sign bit) from an unsigned 0/1 result.
+    The default `armshiftguard wide` prints these counts unguarded and keeps
+    both consumers; the second pass pins `needed` for the guarded form.
 -->
 <bytechunk space="ram" offset="0x10000">0110a0e31120a0e1000052e30100a0b30000a0a31eff2fe1</bytechunk>
 <bytechunk space="ram" offset="0x10100">0110a0e31120a0e1c20fa0e11eff2fe1</bytechunk>
@@ -23,9 +25,17 @@
   <com>load function ShiftArithmetic</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option armshiftguard needed</com>
+  <com>load function ShiftNegative</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ShiftArithmetic</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="ARM LSL signed consumers #1: cast the defined unsigned shift back to its signed p-code result type" min="2" max="2">\(int4\)\s*\(\s*\(uint4\)</stringmatch>
-<stringmatch name="ARM LSL signed consumers #2: preserve the signed comparison with zero" min="1" max="1">(&lt;\s*0|&lt;=\s*-1)</stringmatch>
-<stringmatch name="ARM LSL signed consumers #3: preserve arithmetic right shift of the sign bit" min="1" max="1">&gt;&gt;\s*(31|0x1f)</stringmatch>
+<stringmatch name="ARM LSL signed consumers #2: preserve the signed comparison with zero, unguarded by default and guarded under needed" min="2" max="2">(&lt;\s*0|&lt;=\s*-1)</stringmatch>
+<stringmatch name="ARM LSL signed consumers #3: preserve arithmetic right shift of the sign bit in both passes" min="2" max="2">&gt;&gt;\s*(31|0x1f)</stringmatch>
+<stringmatch name="ARM LSL signed consumers #4: by default the shift prints unguarded" min="1" max="1">return \(1 &lt;&lt; \(count &amp; 0xff\)\) &gt;&gt; 0x1f;</stringmatch>
 </decompilertest>

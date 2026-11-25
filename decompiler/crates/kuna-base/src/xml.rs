@@ -2315,7 +2315,7 @@ mod tests {
         // and gh1922-declared-caller-readarg-thumb / a declared fixed caller's pushed r3 is no va-save
         // and kuna-stated-jump-placement / stated destinations a segment, a narrow offset or a DOS load cannot label
         // and kuna-stated-jump-owners / stated destinations stay in the declared function that holds the jump
-        // and kuna-armshiftguard / an ARM register LSL whose count cannot reach 32 prints no range guard
+        // and kuna-armshiftguard / an ARM register LSL prints no range guard unless a lowered 64-bit shift relies on it
         // and gh1922-pushpad-caller-readarg-thumb / r3 pushed beneath lr is no va-save
         // and kuna-retvalue / a result its callers read is returned though stored or loaded through
         // and kuna-rex-before-prefix / an x86-64 REX prefix that a legacy prefix follows is ignored
