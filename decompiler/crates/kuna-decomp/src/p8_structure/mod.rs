@@ -23,7 +23,7 @@ pub mod kuna_itecondlist;
 pub mod kuna_iteregion;
 pub mod kuna_loopbreak_recovery;
 pub mod kuna_loopcontinue;
-pub mod kuna_loopexit;
+pub mod kuna_loopcond;
 pub mod kuna_looptest;
 pub mod kuna_o0returns;
 pub mod kuna_o0select;

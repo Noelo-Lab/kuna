@@ -123,31 +123,55 @@ fprintf(...); exit(1);` — layout order gets all three right, because it is
 reading what the compiler recorded about the source rather than guessing from
 the callee.
 
-**`loopcondhoist` — which *block* the deferred scan folds first.** The deferred
-scan walks the live components in order and folds the first one whose terminal
-arm qualifies, then restarts the whole cascade from the top. A head-tested loop
-whose exit arm is a `return` is such a component — once `ActionReturnSplit` (or
-`returndup`) has given that return in-degree 1, `rule_block_if_no_exit` matches
-the loop head — and the head sits ahead of its own body in component order. So
-the head folds to `if (!C) return X;` and drops to one out-edge, at which point
-`rule_block_while_do` can never match it again: the loop is emitted as
-`while( true ) { if (!C) return X; BODY; }` where the source and IDA write
-`while (C) { BODY }`. Nothing later recovers it; the head test is now a
-statement, not a condition.
+**`loopcondhoist` — the loop's condition is its exit.** A loop written
+`while (C) { … if (X) break; … }` has one natural exit, `C` failing; every
+other way out is a `break`, a `return` or a `goto`. Three places decide which
+exit a structured loop keeps, and each can lose the condition's. `LoopBody::findExit`
+takes the first exit it meets, tails first; the deferred scan above folds the
+first block whose terminal arm qualifies, and a loop's head sits ahead of its
+own body in component order, so a head whose exit arm is a `return` folds to
+`if (!C) return X;` and drops to one out-edge, after which
+`rule_block_while_do` can never match it; and `ActionReturnSplit` copies a
+return block for every goto into it, so a `break` to the return statement
+after the loop becomes a second return that the head's exit no longer
+shares. The loop is then emitted as `while( true ) { if (!C) return X; … }`
+with the code written before a `break` printed after the loop.
 
-The block carrying the loop's `break` is a candidate in the *same* scan, and
-folding it first is strictly better. Its clause is the loop's follower, which
-the rule already requires be reached from nowhere else (`size_in() == 1`), so
-absorbing it into the break arm is semantics-preserving by the rule's own
-precondition; the body then collapses to a single back-edge clause and the head
-test hoists into the `while`/`for` header on the next cascade pass with no new
-machinery and no relocated statement. `loopcondhoist on` (default-off opt-in)
-therefore gives the non-heads one pass of the scan to themselves — skipping
-components that are live loop heads, resolved through the collapsed graph the
-same way `LoopBody::update` resolves a recorded head — and falls back to the
-unrestricted upstream pass only when that finds nothing. A function with no
-loop-head candidate is byte-identical, and the scan still terminates on the same
-fixpoint because each fold strictly reduces the component count.
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_loopcond.rs (condition)`
+names the block whose test is the condition. In a function chapter 03's
+detector calls unoptimized it reads the layout: a compiler that does not
+optimize enters a `while` or `for` loop by jumping to its condition, which it
+places after the body, so a head laid out after every latch is the condition;
+a head laid out first with one conditional latch is a `do … while`, whose latch
+is the condition; and a head laid out first with no conditional latch is a
+`for (;;)`, which keeps the structurer's choice. In an optimized function a
+single conditional latch is the condition (`gcc` rotates a `while` loop into a
+guard and a bottom test, which `looptest` later moves back to the top), else a
+test at the head. An arm into a block that ends in a call that does not
+return is not an exit for this purpose, so `for (;;) { …; if (n != len)
+error(); }` stays an infinite loop. With a condition block known,
+`CollapseStructure` hands it to `findExit` first, and the deferred
+`ruleBlockIfNoExit` scan skips it in a first pass over the other blocks; while
+its loop still holds an unstructured inner loop it skips it in the second pass
+too, so `select_goto` resolves the inner loop before the outer condition can be
+folded away. The region structurer's refinement keeps the condition's exit
+edge structural (`region_structurer.rs (condition_exit)`). In an unoptimized
+function `ActionReturnSplit` leaves an in-edge of a return block alone when
+the goto it comes from is a `break` of its innermost loop
+(`kuna_loopcond.rs (is_loop_break)`: the goto's target starts the code after
+that loop) and chapter 08's `returndup auto` record says that edge enters the
+same return statement as another (`kuna_loopcond.rs (shared_return)`), so the
+break prints as `break;` to the one `return`. In optimized code a shared return
+block is as often the compiler merging two `return`s as a source `break`, and
+the split stays. Every change is a different nesting of the same blocks; no
+statement is copied or moved along any path.
+
+The option takes `off` (the structurers' own choices, as upstream), `auto` (the
+condition in unoptimized functions only) and `on`, the default (unoptimized
+functions as under `auto`, optimized ones by the latch-then-head rule). On the
+decbench corpus against main `on` gains 143 and loses 9 exact matches at O0
+and gains 60 and loses 8 at O2-noinline, positive on both project halves at
+both levels; `auto` alone is O0 +126 with O2 unchanged.
 
 **`loopcontinue` — preserve secondary latches before greedy loop folding.**
 A single-entry natural loop can have several back-edges to the same head:

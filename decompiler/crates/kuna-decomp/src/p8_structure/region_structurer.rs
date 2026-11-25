@@ -80,23 +80,6 @@ use crate::context::BlockId;
 
 use kuna_base::marshal::ElementId;
 
-// TEMP loopexit dump (remove before commit)
-thread_local! { pub static LEX_FN: std::cell::Cell<u64> = const { std::cell::Cell::new(0) }; }
-pub fn lex_dump(line: &str) {
-    if let Some(d) = std::env::var_os("KUNA_LOOPEXIT_DUMP") {
-        use std::io::Write;
-        let p = std::path::Path::new(&d).join(format!("{}.jsonl", std::process::id()));
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(p) {
-            static HDR: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-            if !HDR.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                let a: Vec<String> = std::env::args().map(|x| format!("{x:?}")).collect();
-                let _ = writeln!(f, "{{\"args\":[{}]}}", a.join(","));
-            }
-            let _ = writeln!(f, "{{\"f\":\"0x{:x}\",{}}}", LEX_FN.with(|c| c.get()), line);
-        }
-    }
-}
-
 /// Marshaling element `<regionstructure>` (kuna).  ElementIds live in the 4000+
 /// range (the next free id after `tailcalljump` = 4101).
 pub const ELEM_REGIONSTRUCTURE: ElementId = ElementId::new("regionstructure", 4102);
@@ -218,7 +201,7 @@ pub fn run_region_structurer(
     // region structurer (the refinement is dead).  Read before the `sblocks_mut`
     // borrow so we still hold `&Funcdata`.
     let loop_refine = data.get_arch().region_loop_refine;
-    let loop_exit = data.get_arch().loop_exit.rule(crate::kuna_unoptimized::is_unoptimized(data));
+    let loop_cond = data.get_arch().loop_cond_hoist.rule(crate::kuna_unoptimized::is_unoptimized(data));
     // SAILR P2 last-resort edge-virtualization ordering gate (`regionedgeorder`,
     // default-OFF opt-in).  Read while we still hold `&Funcdata`.
     let edge_order = data.get_arch().region_edge_order;
@@ -260,8 +243,8 @@ pub fn run_region_structurer(
         .with_complex_blocks(complex_blocks)
         .with_condfold_sets(condfold_sets)
         .with_loop_refine(loop_refine, cyclic_loops, bb_addr)
-        .with_edge_order(edge_order);
-    st.loop_exit = loop_exit;
+        .with_edge_order(edge_order)
+        .with_loop_cond(loop_cond);
     let ok = st.structure(deadline)?;
     let flips = if ok { st.take_pending_flips() } else { Vec::new() };
     if std::env::var_os("KUNA_RS_DEBUG").is_some() {
@@ -419,8 +402,8 @@ struct RegionStructurer<'a> {
     /// body components through this set and absorbs them into a `BlockInfLoop` once
     /// the switch + conditionals have folded.
     pending_body_addrs: std::collections::BTreeMap<uintb, std::collections::BTreeSet<uintb>>,
-    /// (kuna, `option loopexit`) how this function's loop conditions are found.
-    loop_exit: Option<crate::p8_structure::kuna_loopexit::Rule>,
+    /// (kuna, `option loopcondhoist`) how this function's loop conditions are found.
+    loop_cond: Option<crate::p8_structure::kuna_loopcond::Rule>,
 }
 
 impl<'a> RegionStructurer<'a> {
@@ -440,8 +423,14 @@ impl<'a> RegionStructurer<'a> {
             edge_order: false,
             pending_inf_loops: std::collections::BTreeSet::new(),
             pending_body_addrs: std::collections::BTreeMap::new(),
-            loop_exit: None,
+            loop_cond: None,
         }
+    }
+
+    /// Attach the loop-condition rule (`loopcondhoist`).
+    fn with_loop_cond(mut self, rule: Option<crate::p8_structure::kuna_loopcond::Rule>) -> Self {
+        self.loop_cond = rule;
+        self
     }
 
     /// Attach the last-resort edge-virtualization ordering gate (`regionedgeorder`).
@@ -763,12 +752,10 @@ impl<'a> RegionStructurer<'a> {
             }
             rounds += 1;
             if rounds > cap {
-                lex_dump("\"k\":\"why\",\"r\":\"cap\"");
                 // Hang-guard: report non-convergence so the caller falls back.
                 return Ok(false);
             }
             if self.has_stranded_component() {
-                lex_dump("\"k\":\"why\",\"r\":\"stranded\"");
                 if std::env::var_os("KUNA_RS_DEBUG").is_some() {
                     eprintln!("[rs] STRANDED: {} components remain (round {rounds})", self.size());
                 }
@@ -833,7 +820,6 @@ impl<'a> RegionStructurer<'a> {
             if self.virtualize_one_edge()? {
                 continue;
             }
-            lex_dump("\"k\":\"why\",\"r\":\"stuck\"");
             // Nothing matched and >1 node remains and no edge to virtualize:
             // an un-virtualizable knot.  Report failure (caller falls back).
             if std::env::var_os("KUNA_RS_DEBUG").is_some() {
@@ -854,9 +840,8 @@ impl<'a> RegionStructurer<'a> {
             }
             return Ok(false);
         }
-        let mis = crate::kuna_switchcond::misplaced_condition(self.graph, self.graph_id).is_some();
-        if mis { lex_dump("\"k\":\"why\",\"r\":\"misplaced\""); }
-        Ok(self.size() == 1 && !mis)
+        Ok(self.size() == 1
+            && crate::kuna_switchcond::misplaced_condition(self.graph, self.graph_id).is_none())
     }
 
     // -----------------------------------------------------------------------
@@ -2583,14 +2568,6 @@ impl<'a> RegionStructurer<'a> {
             let keep = self
                 .condition_exit(head, &exit_edges)
                 .or_else(|| self.choose_structural_exit(head, &exit_edges, normal_exit));
-            if std::env::var_os("KUNA_LOOPEXIT_DUMP").is_some() {
-                let ex: Vec<String> = exit_edges.iter().map(|&(s, e, d)| format!("[\"0x{:x}\",\"0x{:x}\",{},{},{},{},{}]",
-                    self.component_addr(s).unwrap_or(0), self.component_addr(d).unwrap_or(0), (s == head) as u8,
-                    Some((s, e)) == keep, self.graph.block(d).size_in(), self.graph.block(d).size_out(),
-                    (0..self.graph.block(s).size_out()).any(|k| self.graph.block(s).get_out(k) == head && self.graph.block(s).is_back_edge_out(k)) as u8)).collect();
-                lex_dump(&format!("\"k\":\"refine\",\"head\":\"0x{:x}\",\"normal\":\"0x{:x}\",\"ri\":{},\"exits\":[{}]",
-                    head_addr.unwrap_or(0), normal_exit.and_then(|n| self.component_addr(n)).unwrap_or(0), ri_loop.is_some() as u8, ex.join(",")));
-            }
             for &(src, e, _dst) in exit_edges.iter() {
                 if Some((src, e)) == keep {
                     continue;
@@ -2607,11 +2584,11 @@ impl<'a> RegionStructurer<'a> {
         })
     }
 
-    /// (kuna, `option loopexit`) The exit edge of the block whose test is the
-    /// loop's condition, see [`crate::p8_structure::kuna_loopexit`].
+    /// (kuna, `option loopcondhoist`) The exit edge of the block whose test is the
+    /// loop's condition, see [`crate::p8_structure::kuna_loopcond`].
     fn condition_exit(&self, head: BlockId, exit_edges: &[(BlockId, int4, BlockId)]) -> Option<(BlockId, int4)> {
-        use crate::p8_structure::kuna_loopexit::{condition, Cond};
-        let rule = self.loop_exit?;
+        use crate::p8_structure::kuna_loopcond::{condition, Cond};
+        let rule = self.loop_cond?;
         let exit_of = |bl: BlockId| exit_edges.iter().find(|&&(s, _, _)| s == bl).map(|&(s, e, _)| (s, e));
         let hb = self.graph.block(head);
         let mut latches: Vec<BlockId> = Vec::new();

@@ -2,11 +2,11 @@ use super::*;
 
 #[test]
 fn the_mode_picks_the_rule() {
-    assert_eq!(LoopExitMode::Structure.rule(true), None);
-    assert_eq!(LoopExitMode::Auto.rule(false), None);
-    assert_eq!(LoopExitMode::Auto.rule(true), Some(Rule::Layout));
-    assert_eq!(LoopExitMode::Head.rule(true), Some(Rule::Layout));
-    assert_eq!(LoopExitMode::Head.rule(false), Some(Rule::Prefer));
+    assert_eq!(LoopCondHoist::Off.rule(true), None);
+    assert_eq!(LoopCondHoist::Auto.rule(false), None);
+    assert_eq!(LoopCondHoist::Auto.rule(true), Some(Rule::Layout));
+    assert_eq!(LoopCondHoist::On.rule(true), Some(Rule::Layout));
+    assert_eq!(LoopCondHoist::On.rule(false), Some(Rule::Prefer));
 }
 
 #[test]
@@ -34,8 +34,8 @@ fn optimized_code_prefers_a_conditional_latch() {
 
 #[test]
 fn the_option_parses_its_values() {
-    assert_eq!(OptionLoopExit.apply("structure").unwrap().0, LoopExitMode::Structure);
-    assert_eq!(OptionLoopExit.apply("head").unwrap().0, LoopExitMode::Head);
-    assert_eq!(OptionLoopExit.apply("auto").unwrap().0, LoopExitMode::Auto);
-    assert!(OptionLoopExit.apply("sideways").is_err());
+    assert_eq!(OptionLoopCondHoist.apply("off").unwrap().0, LoopCondHoist::Off);
+    assert_eq!(OptionLoopCondHoist.apply("on").unwrap().0, LoopCondHoist::On);
+    assert_eq!(OptionLoopCondHoist.apply("auto").unwrap().0, LoopCondHoist::Auto);
+    assert!(OptionLoopCondHoist.apply("sideways").is_err());
 }

@@ -978,13 +978,8 @@ pub struct Architecture {
     /// out-index 0.
     pub guard_arm: crate::p8_structure::kuna_ifnoexit::GuardArmMode,
     /// (kuna) Which exit of a loop the structurers keep as the loop's own
-    /// (option `loopexit`); see [`crate::p8_structure::kuna_loopexit`].
-    pub loop_exit: crate::p8_structure::kuna_loopexit::LoopExitMode,
-    /// (kuna) Defer a live loop head in `CollapseStructure`'s deferred
-    /// `ruleBlockIfNoExit` scan while a non-head candidate remains (option
-    /// `loopcondhoist`, default-off opt-in), so `ruleBlockWhileDo` keeps the
-    /// loop's head test instead of emitting `while(true) { if (!C) ...; }`.
-    pub loop_cond_hoist: bool,
+    /// (option `loopcondhoist`); see [`crate::p8_structure::kuna_loopcond`].
+    pub loop_cond_hoist: crate::p8_structure::kuna_loopcond::LoopCondHoist,
     /// Preserve secondary natural-loop latches as continues (`loopcontinue`).
     pub loop_continue: bool,
     /// (kuna `postinc`) A pointer step after its dereference prints as `*p++`.
@@ -2604,10 +2599,9 @@ impl Architecture {
             rep_string: false, // (kuna) option repstring; reset_defaults sets the shipped default
             region_structure: true,
             guard_arm: crate::p8_structure::kuna_ifnoexit::GuardArmMode::Off, // (kuna) option guardarm; reset_defaults sets the shipped default
-            loop_exit: crate::p8_structure::kuna_loopexit::LoopExitMode::Structure, // (kuna) option loopexit; reset_defaults sets the shipped default
             loop_continue: true,
             post_increment: true,
-            loop_cond_hoist: false,
+            loop_cond_hoist: crate::p8_structure::kuna_loopcond::LoopCondHoist::Off, // (kuna) option loopcondhoist; reset_defaults sets the shipped default
             region_loop_refine: false,
             region_edge_order: false,
             outline_spec: String::new(),
@@ -2959,7 +2953,7 @@ impl Architecture {
         self.iteexpr = false; // (kuna) computed-arm ?: extension: runtime choice, default-off (corpus byte-identical).
         self.iteboolean = true; // (kuna) DIV-51 default-on (short-circuit 0/1 select -> boolean assignment; 0/675 ablation). Per-test opt-out (`option iteboolean off`) on the one stage test it changes keeps the corpus byte-identical.
         self.tail_form = Some(Default::default()); // (kuna) option tailform default-on
-        self.loop_exit = crate::p8_structure::kuna_loopexit::LoopExitMode::Auto; // (kuna) option loopexit default `auto`: the loop's condition is its exit in functions `kuna_unoptimized` calls unoptimized
+        self.loop_cond_hoist = crate::p8_structure::kuna_loopcond::LoopCondHoist::On; // (kuna) option loopcondhoist default `on`: the loop's condition is its exit, read from the layout in functions `kuna_unoptimized` calls unoptimized; `auto` keeps the structurer's choice in optimized ones
         self.guard_arm = crate::p8_structure::kuna_ifnoexit::GuardArmMode::Auto; // (kuna) option guardarm default `auto`: the layout tie-break only in functions `kuna_unoptimized` calls unoptimized; `option guardarm off` restores out-index order everywhere
         self.returndup_triangle = false; // (kuna) option rettriangle default-off: decbench sample O0 -163 GED / +56 perfect, O2 +60 GED / +1 perfect; on in the aggressive preset
         self.duplicate_shared_returns = true; // (kuna) DIV-54 default-on, superseding the DIV-18 revert (angr SAILR gotoless ReturnDuplicatorHigh). The -976 GED-perfect regression that reverted it was measured before #137 added the const-return gate (`returndup_is_const_ret`); re-ablated on 52,862 decbench functions the selective pass is +417 GED-perfect / -7,756 aggregate GED, net-positive in every one of nine tested partitions. Per-test opt-out (`option returndup off`) on the datatests it changes keeps the corpus byte-identical.
@@ -3781,7 +3775,6 @@ impl Architecture {
         ctx.rep_string = self.rep_string; // repstring
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
-        ctx.loop_exit = self.loop_exit; // loopexit
         ctx.loop_continue = self.loop_continue;
         ctx.do_while_continue =
             self.print.out_lang().profile().forms.do_while != crate::kuna_lang::DoWhileForm::RustLoopBreakIf;

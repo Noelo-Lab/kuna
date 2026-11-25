@@ -1139,16 +1139,11 @@ pub struct ArchContext {
     /// instead of out-index 0.  Read by
     /// [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure).
     pub guard_arm: crate::p8_structure::kuna_ifnoexit::GuardArmMode,
-    /// (kuna) which exit of a loop the structurers keep (`loop_exit`, option
-    /// `loopexit`).  Read by
+    /// (kuna) which exit of a loop the structurers keep (`loop_cond_hoist`,
+    /// option `loopcondhoist`).  Read by
     /// [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure) and
     /// [`ActionReturnSplit`](crate::blockaction::ActionReturnSplit).
-    pub loop_exit: crate::p8_structure::kuna_loopexit::LoopExitMode,
-    /// (kuna) defer a live loop head in the deferred `ruleBlockIfNoExit` scan
-    /// (`loop_cond_hoist`, option `loopcondhoist`, opt-in default-off) so
-    /// `ruleBlockWhileDo` keeps the loop's head test.  Read by
-    /// [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure).
-    pub loop_cond_hoist: bool,
+    pub loop_cond_hoist: crate::p8_structure::kuna_loopcond::LoopCondHoist,
     /// Preserve secondary natural-loop latches as continues (`loopcontinue`).
     pub loop_continue: bool,
     /// (kuna `loopcontinue`) The output language's do-while runs its test on
@@ -1786,12 +1781,11 @@ impl ArchContext {
             rep_string: false, // repstring (live value copied from the Architecture)
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: crate::p8_structure::kuna_ifnoexit::GuardArmMode::Off, // guardarm
-            loop_exit: crate::p8_structure::kuna_loopexit::LoopExitMode::Structure, // loopexit
             loop_continue: true,
             do_while_continue: true,
             goto_next: false,
             post_increment: false,
-            loop_cond_hoist: false,      // loopcondhoist (opt-in default-off)
+            loop_cond_hoist: crate::p8_structure::kuna_loopcond::LoopCondHoist::Off, // loopcondhoist
             region_loop_refine: false,   // regionlooprefine (opt-in default-off)
             region_edge_order: false,    // regionedgeorder (opt-in default-off)
             outline_spec: String::new(), // outline (opt-in default-off; empty = off)

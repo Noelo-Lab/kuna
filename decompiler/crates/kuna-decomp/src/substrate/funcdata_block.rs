@@ -3135,8 +3135,8 @@ impl Funcdata {
         }
         let mut splitedge: Vec<int4> = Vec::new();
         let mut retnode: Vec<BlockId> = Vec::new();
-        let keep_breaks = self.get_arch().loop_exit.rule(crate::p3_dataflow::kuna_unoptimized::is_unoptimized(self))
-            == Some(crate::p8_structure::kuna_loopexit::Rule::Layout);
+        let keep_breaks = self.get_arch().loop_cond_hoist.rule(crate::p3_dataflow::kuna_unoptimized::is_unoptimized(self))
+            == Some(crate::p8_structure::kuna_loopcond::Rule::Layout);
 
         let return_ops: Vec<OpId> = self.obank().iter_code(OpCode::CPUI_RETURN).collect();
         for op in return_ops {
@@ -3164,14 +3164,14 @@ impl Funcdata {
             // splitedge holds edges to split, biggest index first, so edge removal
             // does not shift the index of remaining edges.
             let size_in = self.bblocks_ref().block(parent).size_in();
-            let shared = if keep_breaks { crate::p8_structure::kuna_loopexit::shared_return(self, parent) } else { Vec::new() };
+            let shared = if keep_breaks { crate::p8_structure::kuna_loopcond::shared_return(self, parent) } else { Vec::new() };
             for i in (0..size_in).rev() {
                 let inbl = self.bblocks_ref().block(parent).get_in(i);
                 let mut bl = self.bblocks_ref().block(inbl).get_copy_map();
                 while let Some(cur) = bl {
                     if self.sblocks_ref().block(cur).is_mark() {
                         // (kuna `loopexit`) a `break` to its own return statement is not copied.
-                        if shared.contains(&i) && crate::p8_structure::kuna_loopexit::is_loop_break(self.sblocks_ref(), cur) {
+                        if shared.contains(&i) && crate::p8_structure::kuna_loopcond::is_loop_break(self.sblocks_ref(), cur) {
                             break;
                         }
                         splitedge.push(i);

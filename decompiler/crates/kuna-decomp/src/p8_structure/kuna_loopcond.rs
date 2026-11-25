@@ -1,4 +1,4 @@
-//! (kuna `loopexit`) Which exit of a loop is its condition.
+//! (kuna `loopcondhoist`) Which exit of a loop is its condition.
 //!
 //! A loop written `while (c) { … if (x) break; … }` has one natural exit, the
 //! condition failing; every other way out is a `break`, a `return` or a `goto`.
@@ -42,16 +42,16 @@ use kuna_base::error::{KunaError, KunaResult};
 use crate::block::{BlockGraph, BlockType};
 use crate::context::BlockId;
 
-/// The `loopexit` mode.
+/// The `loopcondhoist` mode.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum LoopExitMode {
-    /// The structurers' own choice, as before this option.
+pub enum LoopCondHoist {
+    /// The structurers' own choice, as upstream.
     #[default]
-    Structure,
-    /// The condition, in every function.
-    Head,
+    Off,
     /// The condition, in functions `kuna_unoptimized` calls unoptimized.
     Auto,
+    /// The condition, in every function.
+    On,
 }
 
 /// How a function's loop conditions are found.
@@ -72,38 +72,38 @@ pub enum Cond {
     Latch(usize),
 }
 
-impl LoopExitMode {
+impl LoopCondHoist {
     /// The rule for a function with this verdict, if any.
     pub fn rule(self, unoptimized: bool) -> Option<Rule> {
         match (self, unoptimized) {
-            (LoopExitMode::Structure, _) | (LoopExitMode::Auto, false) => None,
+            (LoopCondHoist::Off, _) | (LoopCondHoist::Auto, false) => None,
             (_, true) => Some(Rule::Layout),
-            (LoopExitMode::Head, false) => Some(Rule::Prefer),
+            (LoopCondHoist::On, false) => Some(Rule::Prefer),
         }
     }
 }
 
-/// The `loopexit structure|head|auto` ArchOption.
-pub struct OptionLoopExit;
+/// The `loopcondhoist off|auto|on` ArchOption.
+pub struct OptionLoopCondHoist;
 
-impl OptionLoopExit {
+impl OptionLoopCondHoist {
     /// The option name.
-    pub const NAME: &'static str = "loopexit";
+    pub const NAME: &'static str = "loopcondhoist";
 
-    /// Parse `structure`/`head`/`auto`, returning the mode + a confirmation message.
-    pub fn apply(&self, p1: &str) -> KunaResult<(LoopExitMode, String)> {
+    /// Parse `off`/`auto`/`on`, returning the mode + a confirmation message.
+    pub fn apply(&self, p1: &str) -> KunaResult<(LoopCondHoist, String)> {
         let mode = match p1 {
-            "structure" | "off" => LoopExitMode::Structure,
-            "head" | "on" => LoopExitMode::Head,
-            "auto" | "" => LoopExitMode::Auto,
-            _ => return Err(KunaError::parse("loopexit takes structure, head or auto")),
+            "off" => LoopCondHoist::Off,
+            "auto" => LoopCondHoist::Auto,
+            "on" | "" => LoopCondHoist::On,
+            _ => return Err(KunaError::parse("loopcondhoist takes off, auto or on")),
         };
         let prop = match mode {
-            LoopExitMode::Structure => "structure (the structurer's choice)",
-            LoopExitMode::Head => "head (every function)",
-            LoopExitMode::Auto => "auto (unoptimized functions)",
+            LoopCondHoist::Off => "off",
+            LoopCondHoist::Auto => "auto (unoptimized functions)",
+            LoopCondHoist::On => "on",
         };
-        Ok((mode, format!("Loop exit set to {prop}")))
+        Ok((mode, format!("Loop condition hoist turned {prop}")))
     }
 }
 
@@ -175,5 +175,5 @@ pub(crate) fn shared_return(fd: &crate::funcdata::Funcdata, b: BlockId) -> Vec<k
 }
 
 #[cfg(test)]
-#[path = "kuna_loopexit/tests.rs"]
+#[path = "kuna_loopcond/tests.rs"]
 mod tests;
