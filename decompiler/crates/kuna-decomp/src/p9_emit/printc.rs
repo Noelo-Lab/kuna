@@ -9248,6 +9248,10 @@ impl PrintC {
             (v.is_implied(), v.has_implied_field(), v.get_def())
         };
         if implied {
+            if let Some(to) = self.loop_tests.printed_as(vn) {
+                self.push_vn_explicit_ir(fd, arch, to, op); // (kuna looptest)
+                return;
+            }
             // C++ `PrintLanguage::recurse` (printlanguage.cc:533): an implied
             // Varnode carrying a resolved union/struct field renders as
             // `<def-expr>.field` via `pushImpliedField`; otherwise just expand the

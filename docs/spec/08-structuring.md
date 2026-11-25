@@ -1507,12 +1507,25 @@ implied ops, which must call nothing and store nothing) that is defined inside
 the loop must be the latch input of a header MULTIEQUAL in the MULTIEQUAL's own
 HighVariable, or a varnode that input is a COPY of. A COPY source in another
 HighVariable of the same type prints as the MULTIEQUAL's variable while the
-condition is printed (`do { q = *p; p = q; } while (q)` prints `while (p)`). A
-condition that reads any other body value (`do c = getc(); while (c != '\n')`)
-keeps the bottom test, and so does a loop whose carried variable has an
-instance in the stack frame: an optimizer that rotates loops keeps their
-counters in registers, so such a loop comes from unoptimized code, whose bottom
-test is the source's own.
+condition is printed (`do { q = *p; p = q; } while (q)` prints `while (p)`).
+An implied expression of the condition that computes a latch input again --
+the same pure ops over the same varnodes, reading no memory, such as `&v2[1]`
+beside `v1 = &v2[1]` -- has that input's value, so it prints as the carried
+variable while the condition is printed, and the entry test reads that
+variable's entry value in its place. A condition that reads any other body
+value (`do c = getc(); while (c != '\n')`) keeps the bottom test, and so does a
+loop whose carried variable has an instance in the stack frame in a function
+the unoptimized-code detector
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_unoptimized.rs`) flags: there
+every counter lives in the frame and a bottom test is the source's own. In an
+optimized function a counter in the frame is one whose address is taken, and
+its loop is tested like any other.
+
+A loop whose body prints nothing -- one block whose only printed op is its
+`CBRANCH` -- is the condition's own loop: `do {} while (c);` and
+`while (c) {}` evaluate `c` the same number of times for every input, calls in
+`c` included, so it prints top-tested whatever `c` reads and without an entry
+proof (`while (poll_busy()) {}`).
 
 *Entry test.* The first top test must agree with the binary, which runs the
 body once before testing. The entry test is the condition with each carried
@@ -1523,11 +1536,18 @@ ordered, comparisons become `==`, unsigned `<` or signed `<` with a constant
 on the right and a negation flag (`0 < n` and `n != 0` meet, unsigned
 `x < 1` is `x == 0`), `x == x + n` is `n == 0`, `p == &p[n]` is `n == 0`
 (C pointer arithmetic), and a zero test sees through a zero or sign extension
-and a multiply or shift by a constant that cannot wrap the extended value. Two
-LOADs are equal when they are the same op, or when their addresses are equal
-and both read the memory the loop header sees: a LOAD the printed condition
-evaluates, one in the guard block after its last call or store, or one in pure
-blocks between the guard and the loop. The loop prints top-tested when the
+and a multiply or shift by a constant that cannot wrap the extended value.
+Comparisons and boolean ops of constants fold, and two sums of the same
+non-constant terms (through `+`, `-` and `PTRADD`) are equal exactly when their
+constants are, modulo the word: `p != &p->v[0x1d]` and `sp - 0x168 !=
+sp - 0x108` fold to true. Two LOADs are equal when they are the same op, or
+when their addresses are equal and both read the memory the loop header sees:
+a LOAD the printed condition evaluates, one in pure blocks between the guard
+and the loop, or one met walking back from the guard's branch -- through the
+guard block and on into each block that is the only way into the one after
+it -- before any call or side effect, where a STORE in between is passed when
+its bytes and the LOAD's are disjoint offsets of the same base value (`p->nalloc
+= 0` between a load of `p->num` and the loop). The loop prints top-tested when the
 entry test folds to true (`i = 0; do … while (i < 16)`), when it equals the
 condition of an edge that dominates the header and whose target has that edge
 as its only way in (no LOADs in this case), or when it equals the condition of
@@ -1570,17 +1590,40 @@ is not the guard's and the loop stays a do-while.
 blocks reaches the guard, a block ending in a `CBRANCH` with one edge toward
 the loop. When its condition (with the edge's polarity) equals the entry test,
 the guard is left out if dropping it keeps the program: its printed condition
-calls nothing; the blocks between it and the loop hold no call, STORE or LOAD
-(a LOAD the guard protects must not run when the loop is skipped); and the
-skip edge goes either to the loop's own exit block or to a bare return equal to
-the one at the loop's exit (both void, the same varnode, or equal expressions).
-When the skip edge reaches the loop exit, every variable those blocks write
-must have all its instances defined in them or in the loop, so the code after
-the loop cannot read it on the skip path. Three tree shapes qualify, checked on
-the flattened lists around the guard `if`: `if (G) { pre; do … while (f); }`
-and `if (G) { pre; do … while (f); return K; } return K;` print the
+calls nothing, and the blocks between it and the loop (`pre`) hold no call,
+STORE or LOAD (a LOAD the guard protects must not run when the loop is
+skipped). Without the guard, the skip path runs `pre`, the top test (false,
+since it is the guard's), and the loop's exit path, instead of what it ran
+before; that is the same program when both reach the same place with the same
+effects and the same values, and the loop then ran zero times, so every carried
+variable still holds its entry value. The check evaluates the exit side that
+way: each value it reads from the loop must be a carried variable in its own
+HighVariable (a varnode the body computes and nothing carries has no value
+after zero iterations), read as its entry value, and on the skip side a
+failed `a != k` guard lets `a` read as `k`. The skip and exit paths qualify in
+these shapes. They are the same block (the skip edge reaches the loop's exit).
+Both end in a return: two bare returns with equal values, the exit's read at
+zero trips (`if (b > 1) { x = a; ... return x; } return a;`), or two blocks
+whose calls, stores and printed statements pair up in order with the same
+callee, the same storage for any write to memory and equal operands, and equal
+return values (`return report(head, n)` against `return report(NULL, 0)`; a
+constant compares equal to one of another width when both extensions agree).
+Or they meet at a join `J`: the skip block `S` (if any) flows into `J`, entered
+only from the guard, and has no call, store or write to memory, so dropping it
+loses nothing; the exit block `E` (if any) flows into `J`, entered only from
+the latch, and has no call, store, LOAD or read of memory, so running it on the
+skip path adds nothing; and every MULTIEQUAL in `J` receives equal values over
+the skip edge and over the exit edge at zero trips (`if (b < end) { n = 0; do
+… } else n = 0;`). A join is also how a write in `pre` to a variable that lives
+on is checked when the skip edge reaches the exit block itself: a value the
+code after the loop reads on the skip path reaches it through a MULTIEQUAL
+there, since variable merging never lets `pre` overwrite a value that is live
+across it. The tree shapes, checked on the flattened lists around the guard
+`if`: `if (G) { pre; do … while (f); E }` and `if (G) { pre; do … while (f);
+E } else { S }` (either arm) print the condition's statements and the loop's
+arm; `if (G) { pre; do … while (f); return K; } return K';` prints the
 condition's statements and the body (the trailing return is hidden, and a void
-function's elided trailing return moves to the loop's), and `if (!G) return K;
+function's elided trailing return moves to the loop's); and `if (!G) return K';
 pre; do … while (f); return K;` prints only the condition's statements. A
 guard that is an `else` arm, or whose shape is anything else, stays, and then
 the loop stays a do-while too: a source author does not write a test twice.
