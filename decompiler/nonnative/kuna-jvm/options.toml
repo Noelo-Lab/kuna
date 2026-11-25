@@ -1111,28 +1111,6 @@ tier = "core"
 symptoms = "need the source positions of identifiers for navigation|debugging which identifier a name in the output refers to"
 
 [[option]]
-option = "jvm_remove_imports"
-vineflower = "remove-imports"
-short = "rim"
-aliases = ["remove-imports", "rim"]
-values = "on|off"
-default = "off"
-destructive = false
-phase = "p9_emit"
-subphase = "import_collector"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Write no import statements; names keep the short form an import would allow, so the file reads like the class body alone and no longer compiles."
-use_when = "Turn on to save space when only method bodies are read, e.g. when feeding classes to a model."
-example = "kuna decompile app.jar com.ex.Main --option jvm_remove_imports on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.REMOVE_IMPORTS (remove-imports, -rim)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "long import blocks at the top of every file|imports are noise for the task at hand"
-
-[[option]]
 option = "jvm_mark_corresponding_synthetics"
 vineflower = "mark-corresponding-synthetics"
 short = "mcs"

@@ -926,7 +926,7 @@ writes a root class and everything nested in it into a text buffer, and
 the imports `decompiler/nonnative/kuna-jvm/src/p9_emit/import_collector.rs (ImportCollector)`
 collected while the body was written. The collector decides, per class name, whether
 the short name can be used in this file without ambiguity, and lists the imports that
-requires; `jvm_remove_imports` writes no import statements. A `package-info` class and a
+requires. A `package-info` class and a
 `module-info` class have writers of their own.
 
 **What is written.** For each class: annotations, modifiers, type parameters, `extends`,

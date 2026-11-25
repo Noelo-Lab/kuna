@@ -201,8 +201,6 @@ Three tiers:
 | repackaged or shaded classes of unknown origin | [`jvm_sourcefile_comments`](#jvm_sourcefile_comments----on--off-default-off) |
 | need the source positions of identifiers for navigation | [`jvm_dump_text_tokens`](#jvm_dump_text_tokens----on--off-default-off-destructive-opt-in) |
 | debugging which identifier a name in the output refers to | [`jvm_dump_text_tokens`](#jvm_dump_text_tokens----on--off-default-off-destructive-opt-in) |
-| long import blocks at the top of every file | [`jvm_remove_imports`](#jvm_remove_imports----on--off-default-off) |
-| imports are noise for the task at hand | [`jvm_remove_imports`](#jvm_remove_imports----on--off-default-off) |
 | stack trace names lambda$main$0 or Main$1 and the matching code is hard to find | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics----on--off-default-off) |
 | need the class file of an anonymous class | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics----on--off-default-off) |
 | output differs from Vineflower's test fixture but matches java -jar | [`jvm_plugins`](#jvm_plugins----on--off-default-on) |
@@ -836,15 +834,6 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 - **Where / provenance:** p0_knowledge/fernflower, text_token_dump_visitor · vineflower · vineflower-option
 - **Also spelled:** `dump-text-tokens`, `dtt`
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_dump_text_tokens on`
-
-### `jvm_remove_imports` -- on | off, default `off`
-
-- **Symptoms:** long import blocks at the top of every file; imports are noise for the task at hand.
-- **What it does:** Write no import statements; names keep the short form an import would allow, so the file reads like the class body alone and no longer compiles.
-- **When to flip:** Turn on to save space when only method bodies are read, e.g. when feeding classes to a model.
-- **Where / provenance:** p9_emit/import_collector · vineflower · vineflower-option
-- **Also spelled:** `remove-imports`, `rim`
-- **Example:** `kuna decompile app.jar com.ex.Main --option jvm_remove_imports on`
 
 ### `jvm_mark_corresponding_synthetics` -- on | off, default `off`
 
