@@ -5,11 +5,22 @@ use crate::context::{OpId, VarnodeId};
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
 use crate::printc::{op_key, tokens, PrintC};
-use crate::printlanguage::{Atom, SyntaxHighlight, TagType};
+use crate::printlanguage::{Atom, OpToken, SyntaxHighlight, TagType};
 use kuna_num::opcodes::OpCode;
 use std::rc::Rc;
 
 impl PrintC {
+    /// The `!=` of a byte test `x != 0`: C's token, which keeps the parentheses
+    /// around a bitwise operand, except under another comparison, where Rust's
+    /// own token parenthesises it (Rust comparisons do not chain).
+    pub(crate) fn byte_test_token(&self) -> &'static OpToken {
+        if self.top_is_comparison() {
+            self.lang_token(&tokens::NOT_EQUAL)
+        } else {
+            &tokens::NOT_EQUAL
+        }
+    }
+
     fn rust_boolean_expression(
         &self,
         fd: &Funcdata,
@@ -69,7 +80,7 @@ impl PrintC {
         }
         let Some(value) = fd.obank().get(op).and_then(|operation| operation.get_in(0))
             else { return false; };
-        self.push_op(self.lang_token(&tokens::NOT_EQUAL), Some(op_key(op)));
+        self.push_op(self.byte_test_token(), Some(op_key(op)));
         self.push_cast_open(byte, op);
         self.push_vn_ir(fd, arch, value, op);
         self.push_cast_close(byte);
@@ -130,7 +141,7 @@ impl PrintC {
                     }
                     if result.is_none_or(|result| result.get_size() != 1) {
                         let Ok(byte) = arch.types().get_base(1, type_metatype::TYPE_UINT) else { return false; };
-                        self.push_op(self.lang_token(&tokens::NOT_EQUAL), Some(op_key(op)));
+                        self.push_op(self.byte_test_token(), Some(op_key(op)));
                         self.push_cast_open(&byte, op);
                         self.push_vn_ir(fd, arch, value, op);
                         self.push_cast_close(&byte);
@@ -144,7 +155,7 @@ impl PrintC {
         }
         let context = node.is_implied()
             && crate::kuna_rustintegers::needs_integer_context(fd, value, op, 8).unwrap_or(true);
-        self.push_op(self.lang_token(&tokens::NOT_EQUAL), Some(op_key(op)));
+        self.push_op(self.byte_test_token(), Some(op_key(op)));
         if context {
             let signed = source.get_metatype() == type_metatype::TYPE_INT
                 && !(source.is_char_print() && source.is_core_type());

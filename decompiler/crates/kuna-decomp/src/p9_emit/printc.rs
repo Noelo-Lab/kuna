@@ -8643,6 +8643,14 @@ impl PrintC {
         (self.lang().map_token)(tok)
     }
 
+    /// (kuna outlang) Whether the operator on top of the stack is a comparison.
+    pub(crate) fn top_is_comparison(&self) -> bool {
+        self.revpol.last().is_some_and(|top| {
+            top.tok.token_type == crate::printlanguage::TokenType::Binary
+                && matches!(top.tok.print1, "==" | "!=" | "<" | "<=" | ">" | ">=")
+        })
+    }
+
     /// Push the operator for a field reached THROUGH a pointer.
     ///
     /// (kuna outlang) C has a dedicated token for it (`p->f`). Rust raw pointers
@@ -11152,7 +11160,9 @@ impl PrintC {
             // by `push_float` (the decimal literal), every other metatype reaches
             // `push_integer` with `ct->getDisplayFormat()` as its `displayFormat`.
             let ct = fd.vn_type_read_facing(vn, op);
-            if self.out_lang == crate::kuna_lang::OutLang::Go && ct.get_metatype() == type_metatype::TYPE_BOOL {
+            if matches!(self.out_lang, crate::kuna_lang::OutLang::Go | crate::kuna_lang::OutLang::Rust)
+                && ct.get_metatype() == type_metatype::TYPE_BOOL
+            {
                 self.push_atom(&Atom::with_op_vn(if off == 0 { "false" } else { "true" },
                     TagType::VarToken, crate::printlanguage::SyntaxHighlight::const_color,
                     op_key(op), vn_key(vn)));
