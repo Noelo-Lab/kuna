@@ -3003,7 +3003,7 @@ impl Architecture {
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
         self.arm_constant_shift = crate::p9_emit::kuna_armconstantshift::ConstShiftMode::Off;
-        self.arm_shift_guard = crate::p9_emit::kuna_armshiftguard::ShiftGuardMode::Needed; // (kuna) option armshiftguard default `needed`: a count whose non-zero mask is below 32 cannot reach the guard; `option armshiftguard always` restores every guard
+        self.arm_shift_guard = crate::p9_emit::kuna_armshiftguard::ShiftGuardMode::Wide; // (kuna) option armshiftguard default `wide`: only the counts of a lowered double-word shift keep the guard; `needed` adds every count not proven below 32, `always` every guard
         self.wrap_add = false; // (kuna) option wrapadd: default off, the casts cost readability on every widened int sum
         self.rust_array_zero = false;
         self.arm_float_args = true; // (kuna) option armfloatargs: default-ON with armfloatreturn; inert unless the ELF states the VFP procedure-call standard

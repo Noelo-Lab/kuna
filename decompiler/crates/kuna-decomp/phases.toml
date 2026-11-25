@@ -5884,22 +5884,22 @@ symptoms = "a signed ARM value is shifted left by a constant in the emitted C|UB
 
 [[settable]]
 option = "armshiftguard"
-values = "always|needed|never"
-default = "needed"
+values = "always|needed|wide|never"
+default = "wide"
 destructive = false
 phase = "P9"
 subphase = "cast-policy"
 strength = "HARD"
 rewind = "P9"
 issue = "arm-register-lsl-guard"
-summary = "ARM only (inert on every other target): which register-controlled 32-bit LSLs print the range guard `(unsigned int)n < 32u ? (unsigned int)x << n : 0`. ARM shifts by the low byte of the count register and yields 0 for 32 through 255, where a C shift is undefined, so the guard is what makes the printed C compute the machine's value; it is also a `?:` the source never wrote. `needed` leaves it out when the count's non-zero mask (the bits it can set, from the engine's mask analysis re-derived over its definition at print time) lies below 32: a count masked with `& 0x1f` or narrower, a remainder, a narrow field, or a sum of such. That count cannot reach the guard, and the shift prints as any other C shift. `always` guards every register LSL whose operands can print twice; `never` prints the plain shift `x << (n & 0xff)`, whose C is undefined exactly where the count reaches 32."
-use_when = "NEEDED by default: it only drops guards that cannot fire. Flip to never to read firmware bit-manipulation (`1 << pin`, `mask << (idx * 2)`) as the source wrote it, accepting that a count of 32 or more prints as the undefined C shift instead of the machine's 0; to always to see every guard, for example before recompiling the output to compare it with the binary."
-example = "option armshiftguard never"
+summary = "ARM only (inert on every other target): which register-controlled 32-bit LSLs print the range guard `(unsigned int)n < 32u ? (unsigned int)x << n : 0`. ARM shifts by the low byte of the count register and yields 0 for 32 through 255, where a C shift is undefined, so the guard is what makes the printed C compute the machine's value; it is also a `?:` the source never wrote. `needed` leaves it out when the count's non-zero mask (the bits it can set, from the engine's mask analysis re-derived over its definition at print time) lies below 32: a count masked with `& 0x1f` or narrower, a remainder, a narrow field, or a sum of such. That count cannot reach the guard, and the shift prints as any other C shift. `wide` (the default) also leaves it out on every other count except those of a lowered 64-bit shift: gcc's and clang's inline double-word shift and libgcc's `__aeabi_llsl`/`__aeabi_llsr`/`__aeabi_lasr` shift each word by the program's count `n` and by `n - 32` and `32 - n` and rely on the machine's 0, as does a register ROR. A count keeps its guard when it is connected, through copies, the `& 0xff` mask, constant sums, negation, scaling and joins, to a value that two register shift counts use with opposite signs and constants summing to a multiple of 32 (`n` and `32 - n`, `n - 32` and `32 - n`); a source shift by `n - 32` beside one by `n` does not qualify. Everywhere else the plain `x << (n & 0xff)` is undefined exactly where the source's own shift by a variable was. `always` guards every register LSL whose operands can print twice; `never` prints the plain shift everywhere, including in a lowered 64-bit shift, whose printed C then no longer computes the binary's value."
+use_when = "WIDE by default: the plain C shift wherever the program wrote a shift by a variable, the guard where the compiler's own 64-bit shift relies on the machine. Flip to needed to keep every guard that can fire, for example before recompiling the output to compare it with the binary, or for hand-written assembly or a 64-bit left shift whose high word is unused, which shift one word by 32 or more and look like a 32-bit shift by a variable; to always to see every guard; to never to drop the guards of lowered 64-bit shifts too."
+example = "option armshiftguard needed"
 source_decompiler = "kuna"
 inspiration = "decbench O2 ARM firmware: 331 functions printed `(unsigned int)(a0 & 0x1f) < 32u ? (int)((unsigned int)1 << (a0 & 0x1f)) : 0` for the source's `1 << (clken & 0x1f)` (libopencm3 rcc_periph_clock_enable), a branch no author wrote"
 change_kind = "presentation-default"
 tier = "transform"
-symptoms = "(unsigned int)n < 32u ? ... << n : 0 around an ARM shift|ternary around a shift whose count is already masked with & 0x1f|firmware 1 << pin prints as a conditional expression|ARM shift by a register prints a range check the source does not have"
+symptoms = "(unsigned int)n < 32u ? ... << n : 0 around an ARM shift|ternary around a shift whose count is already masked with & 0x1f|firmware 1 << pin prints as a conditional expression|ARM shift by a register prints a range check the source does not have|recompiled ARM output computes a different value from the binary for a shift count of 32 or more|a lowered 64-bit shift prints its word shifts by n - 32 and 32 - n with range checks"
 
 [[settable]]
 option = "wrapadd"
