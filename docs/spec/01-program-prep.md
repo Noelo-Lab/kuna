@@ -2364,8 +2364,9 @@ funcsym stream:
   imported identity, including when a terminal call has no mapped fall-through
   bytes. This does not add a sectionless PPC32 resolver.
   A CLI run that leaves the option short of `abi` (by `--option`, its mode
-  preset or `KUNA_PPC32PICIMPORTS`) on an image whose validated `.plt` has
-  r30-relative stubs says so in a `ppc32-pic-imports` note, counted by
+  preset or `KUNA_PPC32PICIMPORTS`) on an image whose `.plt` holds validated
+  slots and whose code has r30-relative stubs says so in a `ppc32-pic-imports`
+  note, counted by
   `decompiler/crates/kuna-analysis/src/loader/kuna_ppc32_imports.rs (pic_stub_count)`.
   The count is of complete stub shapes, so `abi` may name fewer. The note
   reads the 20-byte ELF header first and goes no further unless it is ELF32
