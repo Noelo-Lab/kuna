@@ -2123,6 +2123,7 @@ fn decompile_func_full_with_objects_inner(
         };
     let mapped_params = mapped_params.as_slice();
     let input_hints = arch.loader_input_hints.get(&funcaddr).cloned();
+    let loop_cond_off = std::cell::Cell::new(false);
     let mut attempt = |prefollowed: Option<Funcdata>,
                        unguarded: bool,
                        condstmts_seed: &std::collections::BTreeSet<Address>,
@@ -2147,6 +2148,9 @@ fn decompile_func_full_with_objects_inner(
         fd.set_kuna_record_names(record_names);
         if unguarded {
             fd.withdraw_stack_store_guard();
+        }
+        if loop_cond_off.get() {
+            fd.withdraw_loop_cond();
         }
         fd.set_condstmts_seed(condstmts_seed.clone());
         // The prototype the function is decompiled *against*. Two sources, in
@@ -2385,6 +2389,19 @@ fn decompile_func_full_with_objects_inner(
                 Ok(fd) => result = Ok(fd),
                 Err(_) => break,
             }
+        }
+        // (kuna `loopcondhoist`) A function that printed more gotos with its
+        // loops' conditions than the structurers' own choice prints is kept
+        // with the structurers' choice.
+        let printed = |fd: &Funcdata| crate::p8_structure::kuna_loopcond::printed_gotos(fd.sblocks_ref(), fd.sblocks_root());
+        if let Some(with) = result.as_ref().ok().filter(|fd| fd.loop_cond_used()).map(printed).filter(|&n| n > 0) {
+            loop_cond_off.set(true);
+            if let Ok(plain) = attempt(None, unguarded, &seed, elfmain) {
+                if printed(&plain) < with {
+                    result = Ok(plain);
+                }
+            }
+            loop_cond_off.set(false);
         }
         if elfmain.is_some() && !result.as_ref().is_ok_and(crate::kuna_elfmaindecl::settled) {
             elfmain = None;

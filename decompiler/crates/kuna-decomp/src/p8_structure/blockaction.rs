@@ -3867,6 +3867,11 @@ fn collapse_once(
     let res = collapse.collapse_all();
     let cc = collapse.get_change_count();
     let flips = collapse.take_pending_flips();
+    let used = !collapse.loop_conds.is_empty();
+    drop(collapse);
+    if used {
+        data.note_loop_cond_used();
+    }
     (res, cc, flips)
 }
 
@@ -3904,7 +3909,7 @@ impl Action for ActionBlockStructure {
         // knot or the hang-guard), re-seed `sblocks` and fall through to the
         // unchanged `CollapseStructure` path.  OFF (default) skips this entirely and
         // output is byte-identical.
-        let loop_cond = data.get_arch().loop_cond_hoist.rule(crate::kuna_unoptimized::is_unoptimized(data));
+        let loop_cond = crate::p8_structure::kuna_loopcond::rule_for(data);
         if data.get_arch().region_structure {
             let mut rs = crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline, loop_cond);
             if loop_cond.is_some() && matches!(rs, Ok((true, _))) {

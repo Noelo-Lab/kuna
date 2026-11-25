@@ -3135,8 +3135,8 @@ impl Funcdata {
         }
         let mut splitedge: Vec<int4> = Vec::new();
         let mut retnode: Vec<BlockId> = Vec::new();
-        let keep_breaks = self.get_arch().loop_cond_hoist.rule(crate::p3_dataflow::kuna_unoptimized::is_unoptimized(self))
-            == Some(crate::p8_structure::kuna_loopcond::Rule::Layout);
+        let keep_breaks =
+            crate::p8_structure::kuna_loopcond::rule_for(self) == Some(crate::p8_structure::kuna_loopcond::Rule::Layout);
 
         let return_ops: Vec<OpId> = self.obank().iter_code(OpCode::CPUI_RETURN).collect();
         for op in return_ops {
@@ -3172,6 +3172,7 @@ impl Funcdata {
                     if self.sblocks_ref().block(cur).is_mark() {
                         // (kuna `loopexit`) a `break` to its own return statement is not copied.
                         if shared.contains(&i) && crate::p8_structure::kuna_loopcond::is_loop_break(self.sblocks_ref(), cur) {
+                            self.note_loop_cond_used();
                             break;
                         }
                         splitedge.push(i);

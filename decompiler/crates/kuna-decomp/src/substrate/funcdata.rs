@@ -288,6 +288,11 @@ pub struct Funcdata {
     /// (kuna `stackstoreguard`) Set when the final layout spoiled what the
     /// guard needs; the drive then analyzes the function again without it.
     stack_store_guard_spoiled: std::cell::Cell<bool>,
+    /// (kuna `loopcondhoist`) Set when the drive analyzes the function again
+    /// without the loop-condition rule.  Survives `clear()`.
+    loop_cond_withdrawn: std::cell::Cell<bool>,
+    /// (kuna `loopcondhoist`) Set when the rule named a loop's condition.
+    loop_cond_used: std::cell::Cell<bool>,
     stack_byte_copy_ops: std::collections::BTreeSet<OpId>,
     /// (kuna `condstmts`) Block start addresses structured as complex from the
     /// first structuring on; set by the drive and kept across `clear()`.
@@ -845,6 +850,8 @@ impl Funcdata {
             guard_only_seen: std::cell::RefCell::new(Vec::new()),
             stack_store_guard_withdrawn: std::cell::Cell::new(false),
             stack_store_guard_spoiled: std::cell::Cell::new(false),
+            loop_cond_withdrawn: std::cell::Cell::new(false),
+            loop_cond_used: std::cell::Cell::new(false),
             stack_byte_copy_ops: Default::default(),
             kuna_condstmts_seed: std::collections::BTreeSet::new(),
             kuna_condstmts_hits: std::collections::BTreeSet::new(),
@@ -2778,6 +2785,26 @@ impl Funcdata {
     /// (kuna `stackstoreguard`) Did the final layout spoil what the guard needs?
     pub fn stack_store_guard_spoiled(&self) -> bool {
         self.stack_store_guard_spoiled.get()
+    }
+
+    /// (kuna `loopcondhoist`) Analyze this function without the loop-condition rule.
+    pub fn withdraw_loop_cond(&self) {
+        self.loop_cond_withdrawn.set(true);
+    }
+
+    /// (kuna `loopcondhoist`) Is the loop-condition rule off for this function?
+    pub fn loop_cond_withdrawn(&self) -> bool {
+        self.loop_cond_withdrawn.get()
+    }
+
+    /// (kuna `loopcondhoist`) Record that the rule named a loop's condition.
+    pub fn note_loop_cond_used(&self) {
+        self.loop_cond_used.set(true);
+    }
+
+    /// (kuna `loopcondhoist`) Did the rule name a loop's condition?
+    pub fn loop_cond_used(&self) -> bool {
+        self.loop_cond_used.get()
     }
 
     /// (kuna `castobject`) Every stack object any pass re-declared.

@@ -109,6 +109,14 @@ impl OptionLoopCondHoist {
     }
 }
 
+/// The rule for `fd`, if its loops' conditions are followed.
+pub fn rule_for(fd: &crate::funcdata::Funcdata) -> Option<Rule> {
+    if fd.loop_cond_withdrawn() {
+        return None;
+    }
+    fd.get_arch().loop_cond_hoist.rule(crate::p3_dataflow::kuna_unoptimized::is_unoptimized(fd))
+}
+
 /// The condition block of a loop.  `head` is the head's start address and
 /// whether it tests (one of its arms leaves the loop); `latches` the same for
 /// each block with a back edge to the head.

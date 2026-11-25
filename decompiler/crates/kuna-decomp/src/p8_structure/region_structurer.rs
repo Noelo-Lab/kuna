@@ -247,6 +247,9 @@ pub fn run_region_structurer(
         .with_loop_cond(loop_cond);
     let ok = st.structure(deadline)?;
     let flips = if ok { st.take_pending_flips() } else { Vec::new() };
+    if st.cond_used.get() {
+        data.note_loop_cond_used();
+    }
     if std::env::var_os("KUNA_RS_DEBUG").is_some() {
         eprintln!("[rs] structure -> ok={ok} flips={}", flips.len());
     }
@@ -404,6 +407,8 @@ struct RegionStructurer<'a> {
     pending_body_addrs: std::collections::BTreeMap<uintb, std::collections::BTreeSet<uintb>>,
     /// (kuna, `option loopcondhoist`) how this function's loop conditions are found.
     loop_cond: Option<crate::p8_structure::kuna_loopcond::Rule>,
+    /// (kuna, `option loopcondhoist`) set when a loop's condition exit was kept.
+    cond_used: std::cell::Cell<bool>,
 }
 
 impl<'a> RegionStructurer<'a> {
@@ -424,6 +429,7 @@ impl<'a> RegionStructurer<'a> {
             pending_inf_loops: std::collections::BTreeSet::new(),
             pending_body_addrs: std::collections::BTreeMap::new(),
             loop_cond: None,
+            cond_used: std::cell::Cell::new(false),
         }
     }
 
@@ -2600,10 +2606,14 @@ impl<'a> RegionStructurer<'a> {
         }
         let info = |bl: BlockId| (self.component_addr(bl), self.graph.block(bl).size_out() == 2 && exit_of(bl).is_some());
         let latch_info: Vec<(Option<u64>, bool)> = latches.iter().map(|&l| info(l)).collect();
-        match condition(rule, info(head), &latch_info)? {
+        let keep = match condition(rule, info(head), &latch_info)? {
             Cond::Head => exit_of(head),
             Cond::Latch(i) => exit_of(latches[i]),
+        };
+        if keep.is_some() {
+            self.cond_used.set(true);
         }
+        keep
     }
 
     /// Choose the loop's normal exit target.  With the region identifier's exit
