@@ -320,6 +320,7 @@ fn update_all_types_genuine_param_unassigned_sets_flag_w6s4f1_r2() {
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
+        kuna_library_table: false,
     };
     let r = fp.update_all_types(&proto, &tf, &mgr);
     assert!(
@@ -358,6 +359,7 @@ fn assign_parameter_storage_ignore_output_only_catches_param_unassigned_w6s4f1_r
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
+        kuna_library_table: false,
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     let r = model.assign_parameter_storage(&proto, &mut res, true, &tf, &mgr);

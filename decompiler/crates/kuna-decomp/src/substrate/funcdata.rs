@@ -175,6 +175,16 @@ pub struct Funcdata {
     /// (kuna) Whether the function's code is unoptimized, decided once after
     /// the first heritage pass (`p3_dataflow/kuna_unoptimized.rs`).
     pub(crate) kuna_unoptimized: Option<bool>,
+    /// (kuna `returndup auto`) The return statements read at the first
+    /// heritage pass (`p8_structure/kuna_o0returns.rs`).
+    pub(crate) kuna_o0returns: Option<Box<crate::p8_structure::kuna_o0returns::Record>>,
+    /// (kuna `iteregion auto`) The conditional values read at the first
+    /// heritage pass (`p8_structure/kuna_o0select.rs`).
+    pub(crate) kuna_o0select: Option<Box<crate::p8_structure::kuna_o0select::Record>>,
+    /// (kuna `loweredswitch auto`) How the conditional branches of an
+    /// unoptimized function were compiled, read at the first heritage pass
+    /// (`p2_lift/kuna_o0switch.rs`).
+    pub(crate) kuna_o0switch: Option<Box<crate::p2_lift::kuna_o0switch::Record>>,
     pub(crate) kuna_fpu_trunc_views: Vec<OpId>,
     /// Boolean properties associated with \b this function (C++ `flags`)
     flags: uint4,
@@ -802,6 +812,9 @@ impl Funcdata {
             kuna_x87_empty_returns: Vec::new(),
             kuna_vararg_save: false,
             kuna_unoptimized: None,
+            kuna_o0returns: None,
+            kuna_o0select: None,
+            kuna_o0switch: None,
             flags: 0,
             clean_up_index: 0,
             high_level_index: 0,
@@ -4480,6 +4493,9 @@ impl Funcdata {
         self.kuna_x87_empty_returns.clear();
         self.kuna_vararg_save = false;
         self.kuna_unoptimized = None;
+        self.kuna_o0returns = None;
+        self.kuna_o0select = None;
+        self.kuna_o0switch = None;
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).
         self.flags &= !(funcdata_flags::highlevel_on
             | funcdata_flags::blocks_generated

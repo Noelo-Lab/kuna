@@ -583,3 +583,6 @@ mod indirect_dispatch_flow;
 
 #[path = "verify_immutable_got.rs"]
 mod verify_immutable_got;
+
+#[path = "export_unit_calls.rs"]
+mod export_unit_calls;

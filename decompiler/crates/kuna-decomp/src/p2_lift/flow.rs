@@ -1537,17 +1537,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 let branchind = self.env.resolve_typeop(OpCode::CPUI_BRANCHIND);
                 self.data.op_set_opcode(curop, branchind);
             }
-            let computed_return = if self.env.defers_return_classification(&self.data, curop) {
-                // A stated PPC32 link-register jump already has its complete
-                // target set. Other LR returns still need the path-sensitive proof.
-                let ret = self.data.obank().get(curop).expect("deferred return");
-                self.env.stated_jump_targets(ret.get_addr()).is_some()
-            } else {
-                crate::kuna_returnbranch::computed_target(
-                    &self.data, curop, &self.visited, |index| self.env.is_isa_mode_switch(index),
-                )
-            };
-            if computed_return {
+            if self.is_computed_return(curop) {
                 let branchind = self.env.resolve_typeop(OpCode::CPUI_BRANCHIND);
                 self.data.op_set_opcode(curop, branchind);
             }
@@ -1919,6 +1909,19 @@ following this call as a branch"
             self.is_inside_declared_extent(dest),
             || self.env.is_tail_call_branch(&self.data, op, dest),
             || self.env.is_frame_teardown_tail_call(&self.data, op, dest),
+        )
+    }
+
+    /// Is the RETURN `op` a computed jump? A stated PPC32 link-register jump
+    /// already has its complete target set; other deferred LR returns keep the
+    /// path-sensitive proof for later.
+    fn is_computed_return(&self, op: OpId) -> bool {
+        if self.env.defers_return_classification(&self.data, op) {
+            let ret = self.data.obank().get(op).expect("deferred return");
+            return self.env.stated_jump_targets(ret.get_addr()).is_some();
+        }
+        crate::kuna_returnbranch::computed_target(
+            &self.data, op, &self.visited, |index| self.env.is_isa_mode_switch(index),
         )
     }
 

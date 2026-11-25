@@ -131,7 +131,7 @@ build failure. The options it enables:
   also need `listing`, which this preset supplies; off ARM they are measured
   no-ops (identical entry sets on 90 x86-64 twins and 12 i386 PE images).
 
-`returndup` (DIV-54), `pdb` (DIV-129), `cfstrings`, the presentation defaults
+`returndup` (DIV-54, at its shipped value `auto`), `pdb` (DIV-129), `cfstrings`, the presentation defaults
 (`partialaccess`, `voidtailreturn`, `importdata`, `calltargettype`, `libcnames`)
 and the target-gated passes (`sparcstructret`, `v850indirectbranch`,
 `cortexmpriv`, `x64syscall`, `armfloatreturn`/`armfloatargs`, `rtti`,

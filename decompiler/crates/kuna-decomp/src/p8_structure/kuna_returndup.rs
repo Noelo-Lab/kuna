@@ -142,26 +142,39 @@ impl Action for ActionReturnDup {
 }
 
 //===========================================================================
-// Option parse (`returndup on|off|calls`).
+// Option parse (`returndup on|off|auto|calls`).
 //===========================================================================
 
-/// The `returndup on|off|calls` ArchOption (angr SAILR gotoless
-/// `ReturnDuplicatorHigh` shared-bare-epilogue return duplication; `calls` adds
-/// [`crate::p8_structure::kuna_returndupcalls`]).
+/// The `returndup on|off|auto|calls` ArchOption (angr SAILR gotoless
+/// `ReturnDuplicatorHigh` shared-bare-epilogue return duplication; `auto`
+/// follows [`crate::p8_structure::kuna_o0returns`] in unoptimized functions;
+/// `calls` is `auto` plus [`crate::p8_structure::kuna_returndupcalls`]).
 pub struct OptionReturnDup;
 
 impl OptionReturnDup {
     /// The option name.
     pub const NAME: &'static str = "returndup";
 
-    /// Parse `on`/`off`/`calls`, returning whether bare epilogues are
-    /// duplicated, whether call tails are too, and a confirmation message.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, bool, String)> {
-        if p1 == "calls" {
-            return Ok((true, true, "Shared return duplication turned on, call tails included".to_string()));
+    /// Parse `on`/`off`/`auto`/`calls`, returning whether bare epilogues are
+    /// duplicated, whether call tails are too, whether the recorded return
+    /// statements decide unoptimized functions, and a confirmation message.
+    pub fn apply(&self, p1: &str) -> KunaResult<(bool, bool, bool, String)> {
+        match p1 {
+            "calls" => {
+                return Ok((true, true, true, "Shared return duplication turned on, call tails included".to_string()))
+            }
+            "auto" => {
+                return Ok((
+                    true,
+                    false,
+                    true,
+                    "Shared return duplication turned on, recorded returns in unoptimized functions".to_string(),
+                ))
+            }
+            _ => {}
         }
         let val = on_or_off(p1)?;
         let prop = if val { "on" } else { "off" };
-        Ok((val, false, format!("Shared bare-epilogue return duplication turned {prop}")))
+        Ok((val, false, false, format!("Shared bare-epilogue return duplication turned {prop}")))
     }
 }

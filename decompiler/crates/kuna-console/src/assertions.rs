@@ -409,7 +409,8 @@ fn overlay_bytes(prog: &mut ConsoleProgram, vma: u64, data: &[u8]) -> Result<(),
 }
 
 /// Apply the program-scoped directives (`function`, `typedef`, `prototype`,
-/// `data`) and record an [`Outcome`] for each.
+/// `data`, `jumptable`) and record an [`Outcome`] for each. Jump destinations
+/// are checked against declared functions, so `jumptable` directives go last.
 ///
 /// Called right after the analysis commit — a caller-declared fact outranks
 /// discovery — and before any function is selected.  The function- and
@@ -420,7 +421,9 @@ fn overlay_bytes(prog: &mut ConsoleProgram, vma: u64, data: &[u8]) -> Result<(),
 pub fn apply_program_scoped(prog: &mut ConsoleProgram) {
     let _load = prog.arch().load_scope();
     let directives = prog.assertions().to_vec();
-    for (i, directive) in directives.iter().enumerate() {
+    let jump = |d: &&Directive| matches!(d.body, Body::JumpTable { .. });
+    let others = directives.iter().enumerate().filter(|(_, d)| !jump(d));
+    for (i, directive) in others.chain(directives.iter().enumerate().filter(|(_, d)| jump(d))) {
         // A QUALIFIED `param`/`return` is a statement about the named function's
         // prototype and holds whether or not this run decompiles it, so it is
         // applied here rather than waiting for a selection that may never name

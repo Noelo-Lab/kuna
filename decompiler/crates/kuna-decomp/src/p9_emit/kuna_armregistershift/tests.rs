@@ -244,3 +244,54 @@ fn explicit_materialized_call_and_pure_arithmetic_counts_are_accepted() {
         0x60,
     ));
 }
+
+fn masked_count(fd: &mut Funcdata, register: &Rc<AddrSpace>, mask: u64, offset: u64) -> VarnodeId {
+    let op = new_op(fd, 2, offset, OpCode::CPUI_INT_AND);
+    let value = new_value(fd, register, 0x100 + offset);
+    fd.op_set_input(op, value, 0).unwrap();
+    let constant = fd.new_constant(4, mask);
+    fd.op_set_input(op, constant, 1).unwrap();
+    let output = new_value(fd, register, offset);
+    fd.op_set_output(op, output).unwrap();
+    let output = fd.obank().get(op).unwrap().get_out().unwrap();
+    fd.vbank_mut().get_mut(output).unwrap().set_implied();
+    output
+}
+
+#[test]
+fn armshiftguard_guards_only_a_count_that_can_reach_32() {
+    use crate::p9_emit::kuna_armshiftguard::ShiftGuardMode::{Always, Needed, Never};
+    for (mode, mask, guarded) in [
+        (Always, 0x1f, true),
+        (Needed, 0x1f, false),
+        (Needed, 0x7, false),
+        (Needed, 0x20, true),
+        (Needed, 0x3f, true),
+        (Needed, 0xff, true),
+        (Never, 0xff, false),
+    ] {
+        let (mut fd, register) = build_fd();
+        let mut arch = arm_arch();
+        arch.arm_shift_guard = mode;
+        let count = masked_count(&mut fd, &register, mask, 0x40);
+        assert_eq!(
+            plan_for_count(&mut fd, &arch, &register, count, 0x60),
+            guarded,
+            "{mode:?} & {mask:#x}"
+        );
+    }
+}
+
+#[test]
+fn armshiftguard_values_parse() {
+    use crate::p9_emit::kuna_armshiftguard::{OptionArmShiftGuard, ShiftGuardMode};
+    for (text, mode) in [
+        ("always", ShiftGuardMode::Always),
+        ("needed", ShiftGuardMode::Needed),
+        ("never", ShiftGuardMode::Never),
+    ] {
+        assert_eq!(OptionArmShiftGuard.apply(text).unwrap().0, mode);
+        assert_eq!(mode.as_str(), text);
+    }
+    assert!(OptionArmShiftGuard.apply("on").is_err());
+}

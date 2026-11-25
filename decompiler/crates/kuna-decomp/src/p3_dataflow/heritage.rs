@@ -2028,7 +2028,8 @@ impl Heritage {
                             fd, fc, addr, &trans_addr, size, write,
                         ) || ((overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_FULL
                             || (overlap_level == super::kuna_calloverlap::LEVEL_AUTO
-                                && super::kuna_calloverlap::auto_register(fd.get_arch().manage(), fc.proto(), &trans_addr, size, true)))
+                                && (super::kuna_calloverlap::auto_register(fd.get_arch().manage(), fc.proto(), &trans_addr, size, true)
+                                    || super::kuna_calloverlap::auto_float_output(fd, fc, &trans_addr, size))))
                             && self
                                 .try_output_overlap_guard(fd, fc, addr, &trans_addr, size, write))
                         {
