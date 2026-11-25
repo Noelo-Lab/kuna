@@ -249,6 +249,7 @@ fn true_target(data: &Funcdata, bl: BlockId, cbr: OpId) -> BlockId {
     }
 }
 
+/// The first header whose two back edges come from latch copies that join.
 fn find_plan(data: &Funcdata) -> Option<Plan> {
     let graph = data.bblocks_ref();
     let root = graph.root?;
@@ -374,6 +375,10 @@ fn shape(data: &Funcdata, oa: OpId, ob: OpId, negated: bool) -> Result<Vec<i32>,
     Ok(slots)
 }
 
+/// The identical run of the latch copies `a` and `b` of header `h`: ops paired by
+/// shape from the branch backwards, then cut to start after any op one copy
+/// computes from the run differently from the other; outputs may be read only by
+/// the run and by the targets' MULTIEQUALs on the copy's own edge.
 fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict {
     let g = data.bblocks_ref();
     let (ba, bb) = (g.block(a), g.block(b));
@@ -397,15 +402,12 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
         (Some(&x), Some(&y)) => (x, y),
         _ => return Err("empty".into()),
     };
-    // The condition pair and its sense.
     let (pa, pb) = (data.obank().get(ta).unwrap(), data.obank().get(tb).unwrap());
     if pa.code() != OpCode::CPUI_CBRANCH || pb.code() != OpCode::CPUI_CBRANCH {
         return Err("no cbranch".into());
     }
     let negated = true_target(data, a, ta) != true_target(data, b, tb);
     let cond = (pa.get_in(1).unwrap(), pb.get_in(1).unwrap(), negated);
-    // Walk back pairing ops by shape.  An operation without memory effects that
-    // only one copy has is stepped over (it stays in its copy, ahead of the run).
     let try_shape = |oa: OpId, ob: OpId| -> Result<Vec<i32>, String> {
         let negated = cond.2
             && data.obank().get(oa).unwrap().get_out() == Some(cond.0)
@@ -453,8 +455,6 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
     if pairs.is_empty() {
         return Err(format!("no common tail: {stop}"));
     }
-    // Validate dataflow, cutting the run where one copy reads a value of the run the
-    // other copy does not.
     let mut start = 0usize;
     'outer: loop {
         if start >= pairs.len() {
@@ -466,7 +466,6 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
         let def_pos = |v: VarnodeId, pos: &HashMap<OpId, usize>| -> Option<usize> {
             data.vbank().get(v).unwrap().get_def().and_then(|d| pos.get(&d).copied())
         };
-        // Returns Err(cut) when the run must start after index `cut`.
         let check_pair = |va: VarnodeId, vb: VarnodeId, negated_ok: bool| -> Result<(), Result<usize, String>> {
             if va == vb {
                 return Ok(());
@@ -555,8 +554,6 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
                 }
             }
         }
-        // Outputs: used only inside the run or by the target MULTIEQUALs on the
-        // copy's own edge; a test of the opposite sense only by the run.
         for (oa, ob, _) in run.iter() {
             let complemented = data.obank().get(*oa).unwrap().code() != data.obank().get(*ob).unwrap().code();
             for (o, blk, pos) in [(*oa, a, &pos_a), (*ob, b, &pos_b)] {
@@ -583,7 +580,6 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
                 }
             }
         }
-        // Target MULTIEQUALs.
         for &t in &targets {
             let tb = data.bblocks_ref().block(t);
             let (sa, sb) = (tb.get_in_index(a), tb.get_in_index(b));
@@ -603,7 +599,6 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
                 }
             }
         }
-        // The run must hold the branch and the op computing its condition.
         if def_pos(cond.0, &pos_a).is_none() {
             return Err(format!("condition not in run (run {}, {stop})", run.len()));
         }
@@ -616,6 +611,9 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
     }
 }
 
+/// Route `A` and `B` into a new block `J` holding `A`'s run behind a MULTIEQUAL
+/// for each value the copies differ in, delete `B`'s run, and give the targets'
+/// MULTIEQUALs one input from `J` in place of the two.
 fn execute(data: &mut Funcdata, plan: &Plan) {
     let (a, b) = (plan.a, plan.b);
     let targets = [data.bblocks_ref().block(a).get_out(0), data.bblocks_ref().block(a).get_out(1)];
@@ -623,7 +621,6 @@ fn execute(data: &mut Funcdata, plan: &Plan) {
     let in_run = |data: &Funcdata, v: VarnodeId, pos: &HashMap<OpId, usize>| -> bool {
         data.vbank().get(v).unwrap().get_def().is_some_and(|d| pos.contains_key(&d))
     };
-    // External input pairs that need a MULTIEQUAL, in first-use order.
     let mut merges: Vec<(VarnodeId, VarnodeId)> = Vec::new();
     let need = |data: &Funcdata, va: VarnodeId, vb: VarnodeId, merges: &mut Vec<(VarnodeId, VarnodeId)>| {
         if va == vb || in_run(data, va, &pos_a) {
@@ -676,14 +673,12 @@ fn execute(data: &mut Funcdata, plan: &Plan) {
         target_pairs.push((t, sa, sb, phis));
     }
 
-    // Control flow: A and B fall into a new block J that takes their out edges.
     let addr = data.obank().get(plan.ops_a[0]).unwrap().get_addr().clone();
     let (a0, b0) = (target_pairs[0].1, target_pairs[0].2);
     let (a1, b1) = (target_pairs[1].1, target_pairs[1].2);
     let j = data.node_join_create_block(a, b, targets[0], targets[1], a0 > b0, a1 > b1, &addr);
     data.kuna_latch_blocks.push(j);
 
-    // MULTIEQUALs for the values that differ between the copies.
     let mut merged: HashMap<(VarnodeId, VarnodeId), VarnodeId> = HashMap::new();
     for &(va, vb) in &merges {
         let multi = data.new_op(2, addr.clone());
@@ -707,7 +702,6 @@ fn execute(data: &mut Funcdata, plan: &Plan) {
     }
     let value = |va: VarnodeId, vb: VarnodeId| merged.get(&(va, vb)).copied().unwrap_or(va);
 
-    // Move A's run into J, reading merged values where the copies differ.
     for (i, (&oa, &ob)) in plan.ops_a.iter().zip(plan.ops_b.iter()).enumerate() {
         let slots = &slot_maps[i];
         let skip0 = matches!(data.obank().get(oa).unwrap().code(), OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH);
@@ -727,7 +721,6 @@ fn execute(data: &mut Funcdata, plan: &Plan) {
         data.op_insert_end(oa, j);
     }
 
-    // Target MULTIEQUALs: the inputs from A and B become the one from J.
     for (t, sa, sb, phis) in &target_pairs {
         let (lo, hi) = if sa > sb { (*sb, *sa) } else { (*sa, *sb) };
         for &(op, va, vb) in phis {
@@ -742,7 +735,6 @@ fn execute(data: &mut Funcdata, plan: &Plan) {
         }
     }
 
-    // B's copy is now dead.
     for &ob in plan.ops_b.iter().rev() {
         data.op_destroy(ob);
     }
