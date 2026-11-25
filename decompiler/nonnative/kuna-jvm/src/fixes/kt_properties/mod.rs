@@ -20,7 +20,6 @@ use crate::expr_processor::ExprProcessor;
 use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::{InvocationExprent, InvocationType};
 use crate::k_types::KTypes;
-use crate::kotlin_options::KotlinOptions;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_flags::Flags;
 use crate::method_wrapper::MethodWrapper;
@@ -230,11 +229,7 @@ pub fn write_field_as_property(
 
 pub fn visibility(access_flags: i32) -> &'static str {
     if access_flags & ACC_PUBLIC != 0 {
-        if DecompilerContext::get_option(KotlinOptions::SHOW_PUBLIC_VISIBILITY) {
-            "public "
-        } else {
-            ""
-        }
+        "public "
     } else if access_flags & ACC_PROTECTED != 0 {
         "protected "
     } else if access_flags & ACC_PRIVATE != 0 {

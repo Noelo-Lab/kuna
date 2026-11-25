@@ -1329,8 +1329,9 @@ or, for the primary one, the `init` block of its body. Hidden members and the bo
 lambdas compiled to methods (`name$lambda$N`, written inline where they are used) are
 skipped, as are synthetic and bridge members under `jvm_remove_synthetic` and
 `jvm_remove_bridge`. A member the metadata does not describe is written from its JVM
-signature as a plain `fun`, and a warning is logged. `jvm_kt_show_public` writes the `public` that Kotlin source
-leaves implicit (on by default, as in Vineflower). A parameter default is recovered from
+signature as a plain `fun`, and a warning is logged. Every declaration carries its
+visibility, `public` included, which Kotlin source leaves implicit (Vineflower's
+`kt-show-public` default, fixed). A parameter default is recovered from
 the `$default` stub's body (`decompiler/nonnative/kuna-jvm/src/kotlin/default_args_map.rs`):
 the value it assigns when the parameter's mask bit is set; when no value can be read, the
 parameter is written with `= ...` (the plugin's `kt-unknown-defaults`, fixed).

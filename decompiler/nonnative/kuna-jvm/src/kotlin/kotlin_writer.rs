@@ -60,7 +60,7 @@ use crate::kotlin_object_processors::KotlinObjectProcessors;
 use crate::kotlin_options::KotlinOptions;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
-use crate::kt_proto::{ClassKind, Modality, Visibility};
+use crate::kt_proto::{ClassKind, Modality};
 use crate::fixes::kt_initializers::kt_file_static_initializer;
 use crate::fixes::kt_anonymous_objects::kt_object_super_call;
 use crate::fixes::kt_jumps;
@@ -1484,11 +1484,7 @@ impl KotlinWriter {
 
         buffer.append_indent(indent);
 
-        if Flags::VISIBILITY.get(kotlin_flags) != Some(Visibility::Public)
-            || DecompilerContext::get_option(KotlinOptions::SHOW_PUBLIC_VISIBILITY)
-        {
-            KUtils::append_visibility(buffer, Flags::VISIBILITY.get(kotlin_flags));
-        }
+        KUtils::append_visibility(buffer, Flags::VISIBILITY.get(kotlin_flags));
 
         if Flags::IS_EXPECT_CLASS.get(kotlin_flags) {
             buffer.append("expect ");

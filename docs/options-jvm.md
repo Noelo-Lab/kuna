@@ -128,8 +128,6 @@ Three tiers:
 | parameter names do not follow the renamer's scheme | [`jvm_rename_parameters`](#jvm_rename_parameters----on--off-default-off) |
 | if (x == null) { $$$reportNull$$$0(0); } at the top of methods | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull----on--off-default-on) |
 | explicit null checks on @NotNull parameters or before returns (option is off) | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull----on--off-default-on) |
-| every Kotlin declaration starts with public | [`jvm_kt_show_public`](#jvm_kt_show_public----on--off-default-on) |
-| public modifiers that Kotlin source would omit | [`jvm_kt_show_public`](#jvm_kt_show_public----on--off-default-on) |
 | "a" + b + "c" in Kotlin output where a template was written | [`jvm_kt_collapse_string_concat`](#jvm_kt_collapse_string_concat----on--off-default-on) |
 | string templates hide the concatenation order | [`jvm_kt_collapse_string_concat`](#jvm_kt_collapse_string_concat----on--off-default-on) |
 | a facade class prints only This is a multifile facade and a list of files | [`jvm_kt_decompile_facades`](#jvm_kt_decompile_facades----on--off-default-off) |
@@ -484,15 +482,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** plugins/idea_not_null_pass, idea_not_null_plugin · vineflower · vineflower-option
 - **Also spelled:** `resugar-idea-notnull`, `inn`
 - **Example:** `kuna decompile app.jar com.ex.Service --option jvm_resugar_idea_notnull off`
-
-### `jvm_kt_show_public` -- on | off, default `on`
-
-- **Symptoms:** every Kotlin declaration starts with public; public modifiers that Kotlin source would omit.
-- **What it does:** Kotlin plugin: write the public modifier on public classes, functions, constructors and properties of Kotlin classes, which Kotlin source normally leaves implicit (needs jvm_kt_enable on, the default).
-- **When to flip:** Turn off for idiomatic Kotlin with public implied, so that only internal, protected and private members carry a visibility keyword.
-- **Where / provenance:** kotlin/kotlin_writer, k_function, k_constructor, k_utils · vineflower · vineflower-option
-- **Also spelled:** `kt-show-public`
-- **Example:** `kuna decompile app.jar com.ex.Service --option jvm_kt_show_public off`
 
 ### `jvm_kt_collapse_string_concat` -- on | off, default `on`
 

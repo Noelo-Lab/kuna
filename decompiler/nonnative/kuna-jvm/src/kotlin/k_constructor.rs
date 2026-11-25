@@ -23,7 +23,6 @@ use crate::fixes::kt_names::kt_function_parameter_name;
 use crate::fixes::kt_delegation_calls::kt_default_args_super_call;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::kotlin_options::KotlinOptions;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
@@ -408,11 +407,7 @@ impl KConstructor {
 
             buf.append_indent(indent);
 
-            if Flags::VISIBILITY.get(self.flags) != Some(Visibility::Public)
-                || DecompilerContext::get_option(KotlinOptions::SHOW_PUBLIC_VISIBILITY)
-            {
-                KUtils::append_visibility(&mut buf, Flags::VISIBILITY.get(self.flags));
-            }
+            KUtils::append_visibility(&mut buf, Flags::VISIBILITY.get(self.flags));
 
             buf.append("constructor");
 
@@ -600,9 +595,7 @@ impl KConstructor {
                 appended = true;
             }
 
-            if (Flags::VISIBILITY.get(self.flags) != Some(Visibility::Public)
-                || (appended
-                    && DecompilerContext::get_option(KotlinOptions::SHOW_PUBLIC_VISIBILITY)))
+            if (Flags::VISIBILITY.get(self.flags) != Some(Visibility::Public) || appended)
                 && class_kind != Some(ClassKind::EnumClass)
             {
                 buf.append(" ");

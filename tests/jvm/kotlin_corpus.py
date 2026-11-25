@@ -44,7 +44,6 @@ SOURCE = {
 }
 PLUGINS = {'kotlin-only': '1', 'none': '0'}
 OVERLAYS = {
-    'kt-show-public-off': [('kt-show-public', '0')],
     'kt-collapse-string-concat-off': [('kt-collapse-string-concat', '0')],
     'kt-unknown-defaults-empty': [('kt-unknown-defaults', '')],
     'kt-decompile-facades-on': [('kt-decompile-facades', '1')],

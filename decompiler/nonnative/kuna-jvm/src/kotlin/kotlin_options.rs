@@ -7,7 +7,6 @@ use crate::plugin_options::AddDefaults;
 pub struct KotlinOptions;
 
 impl KotlinOptions {
-    pub const SHOW_PUBLIC_VISIBILITY: &'static str = "kt-show-public";
     pub const DECOMPILE_KOTLIN: &'static str = "kt-enable";
     pub const UNKNOWN_DEFAULT_ARG_STRING: &'static str = "kt-unknown-defaults";
     pub const COLLAPSE_STRING_CONCATENATION: &'static str = "kt-collapse-string-concat";
@@ -15,15 +14,6 @@ impl KotlinOptions {
 
     /// The option fields, in declaration order.
     pub const OPTIONS: &'static [PreferenceOption] = &[
-        PreferenceOption {
-            field: "SHOW_PUBLIC_VISIBILITY",
-            key: KotlinOptions::SHOW_PUBLIC_VISIBILITY,
-            short_name: None,
-            name: Some("Show public visibility"),
-            description: Some("If a construct is public, show the public keyword"),
-            type_: Some(OptionType::Boolean),
-            dynamic_default_value: None,
-        },
         PreferenceOption {
             field: "DECOMPILE_KOTLIN",
             key: KotlinOptions::DECOMPILE_KOTLIN,
@@ -67,7 +57,6 @@ impl KotlinOptions {
     ];
 
     pub fn add_defaults(cons: &mut dyn AddDefaults) {
-        cons.add_default(KotlinOptions::SHOW_PUBLIC_VISIBILITY, "1");
         cons.add_default(KotlinOptions::DECOMPILE_KOTLIN, "1");
         cons.add_default(KotlinOptions::UNKNOWN_DEFAULT_ARG_STRING, "...");
         cons.add_default(KotlinOptions::COLLAPSE_STRING_CONCATENATION, "1");

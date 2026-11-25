@@ -113,11 +113,6 @@ fn bundled_plugins_register_in_oracle_order_with_their_options() {
                 "rename-parameters",
                 Some("0".to_string())
             ),
-            (
-                "Kotlin".to_string(),
-                "kt-show-public",
-                Some("1".to_string())
-            ),
             ("Kotlin".to_string(), "kt-enable", Some("1".to_string())),
             (
                 "Kotlin".to_string(),
