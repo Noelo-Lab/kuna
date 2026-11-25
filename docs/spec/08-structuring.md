@@ -1152,15 +1152,19 @@ p->next; }` instead of a `while` loop inside a `do` loop.
 
 *Goto guard:* joining can move where the structurer needs a goto, typically a
 goto between two places in the joined loop where the nested loops used a `break`.
-A function whose finished structure prints a goto from one place to another
-inside a loop that holds a joined latch (`kuna_latchjoin.rs (gotos_near_joins)`;
-any goto at all when that loop is not found) is decompiled again from the start
-with the join withdrawn
+A function of at most `kuna_latchjoin.rs (MAX_RECHECK_OPS)` = 1000 ops whose
+finished structure prints a goto from one place to another inside a loop that
+holds a joined latch (`kuna_latchjoin.rs (gotos_near_joins)`; any goto at all
+when that loop is not found) is decompiled again from the start with the join
+withdrawn
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs`, after the
 `stackstoreguard` and `condstmts` re-attempts, which the second decompile runs
 again on its own); the joined result is kept unless the other is structured and
 prints strictly fewer gotos (`kuna_latchjoin.rs (fewer_gotos)`, counted by the
-print-time census in `p2_lift/kuna_loweredswitchkeep.rs (printed_gotos)`).
+print-time census in `p2_lift/kuna_loweredswitchkeep.rs (printed_gotos)`). The
+second decompile costs as much as the first; on the decbench O2 corpus the
+unjoined result printed fewer gotos in 32 of 479 such functions, all under 500
+ops, so larger functions keep the joined result unchecked.
 
 `option dedupitetail on` keeps only the if/else hoisting above and prints the
 copies as before; `off` turns both off.
