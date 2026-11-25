@@ -1632,7 +1632,9 @@ segment of its target.
 
 Raw images carry no symbols, so there is no object-backed discovery tier to
 run; `rawdiscover` sweeps the executable bytes for direct call
-targets and hands them, with the seeds, to the ordinary recursive descent, so
+targets and hands them, with the seeds, to the ordinary recursive descent.
+Branches in the same instruction, including an explicit post-call
+continuation, are not callees. Thus
 `functions` reports what the image calls rather than only what you typed:
 
 ```bash
