@@ -237,6 +237,9 @@ fn ltrace(fd: &Funcdata, dw: BlockId, verdict: &Verdict) {
             g.as_ref().map(|g| bdesc(g.skip)).unwrap_or_default(),
             bdesc(lp.exit),
         );
+        if matches!(verdict, Err("condition reads a body value")) {
+            detail.push_str(&format!(" leaf={}", lp.body_leaf_kind(lp.cond_vn(), 0)));
+        }
         detail.truncate(1200);
     }
     use std::io::Write;
@@ -526,7 +529,9 @@ impl<'a> Loop<'a> {
             return Ok(());
         }
         if self.latch_inputs.contains_key(&vn) {
-            if self.carried.get(&vn).is_some_and(|&out| self.on_stack(out)) {
+            if crate::p3_dataflow::kuna_unoptimized::is_unoptimized(self.fd)
+                && self.carried.get(&vn).is_some_and(|&out| self.on_stack(out))
+            {
                 return Err("loop variable on the stack");
             }
             if let Some(&to) = self.alias.get(&vn) {
@@ -670,6 +675,11 @@ impl<'a> Loop<'a> {
             }
             match (a.get_out(), b.get_out()) {
                 (Some(x), Some(y)) => {
+                    let (Some(vx), Some(vy)) = (fd.vbank().get(x), fd.vbank().get(y)) else { return false };
+                    let visible = |v: &crate::varnode::Varnode| v.is_addr_tied() || v.is_persist();
+                    if (visible(vx) || visible(vy)) && (vx.get_addr() != vy.get_addr() || vx.get_size() != vy.get_size()) {
+                        return false;
+                    }
                     rename.insert(y, x);
                 }
                 (None, None) => {}
@@ -708,6 +718,57 @@ impl<'a> Loop<'a> {
             let z = self.zero_trip(u, after, &BTreeMap::new(), fact);
             z.is_some() && self.skip_value(w, fact) == z
         })
+    }
+
+    fn body_leaf_kind(&self, vn: VarnodeId, depth: u32) -> String {
+        let fd = self.fd;
+        let Some(v) = fd.vbank().get(vn) else { return String::new() };
+        if depth > 20 || v.is_constant() || !v.is_written() {
+            return String::new();
+        }
+        let Some(op) = v.get_def().and_then(|d| fd.obank().get(d)) else { return String::new() };
+        if !op.get_parent().is_some_and(|p| self.body.contains(&p)) {
+            return String::new();
+        }
+        if v.is_implied() {
+            let first = usize::from(op.code() == OpCode::CPUI_LOAD) as i32;
+            for i in first..op.num_input() {
+                if let Some(x) = op.get_in(i) {
+                    let k = self.body_leaf_kind(x, depth + 1);
+                    if !k.is_empty() {
+                        return k;
+                    }
+                }
+            }
+            return String::new();
+        }
+        if self.latch_inputs.contains_key(&vn) {
+            return String::new();
+        }
+        let code = format!("{:?}", op.code()).trim_start_matches("CPUI_").to_string();
+        if op.code() == OpCode::CPUI_MULTIEQUAL {
+            return if op.get_parent() == Some(self.header) { "header-mq".into() } else { "inner-mq".into() };
+        }
+        let mut c = vn;
+        let mut feeds = false;
+        for _ in 0..4 {
+            let uses: Vec<OpId> = fd.vbank().get(c).map(|v| v.descend_iter().collect()).unwrap_or_default();
+            let mut next = None;
+            for u in uses {
+                let Some(uo) = fd.obank().get(u) else { continue };
+                if uo.code() == OpCode::CPUI_MULTIEQUAL && uo.get_parent() == Some(self.header) {
+                    feeds = true;
+                }
+                if matches!(uo.code(), OpCode::CPUI_COPY | OpCode::CPUI_CAST) {
+                    next = uo.get_out();
+                }
+            }
+            match next {
+                Some(n) if !feeds => c = n,
+                _ => break,
+            }
+        }
+        format!("{code}{}", if feeds { "-feeds-header" } else { "" })
     }
 
     /// Does the variable `out` belongs to live in the stack frame?  An optimizer that
@@ -1339,7 +1400,11 @@ fn without_effect(fd: &Funcdata, o: OpId, may_load: bool) -> bool {
     if p.is_call() || has_side_effect(p.code()) || (p.code() == OpCode::CPUI_LOAD && !may_load) {
         return false;
     }
-    p.get_out().and_then(|v| fd.vbank().get(v)).is_none_or(|v| !v.is_addr_tied() && !v.is_persist())
+    let memory = |v: VarnodeId| fd.vbank().get(v).is_some_and(|v| v.is_addr_tied() || v.is_persist());
+    if !may_load && (0..p.num_input()).any(|i| p.get_in(i).is_some_and(memory)) {
+        return false;
+    }
+    p.get_out().is_none_or(|v| !memory(v))
 }
 
 fn none_ops() -> BTreeSet<OpId> {
