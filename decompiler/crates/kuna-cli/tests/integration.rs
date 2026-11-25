@@ -838,6 +838,8 @@ mod ppc32_pic_abi;
 
 #[path = "compact_json.rs"]
 mod compact_json;
+#[path = "coverage_cli.rs"]
+mod coverage_cli;
 
 #[path = "rust_probestack.rs"]
 mod rust_probestack;
