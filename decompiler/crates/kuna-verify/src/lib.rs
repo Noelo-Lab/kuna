@@ -118,18 +118,22 @@ pub struct FileResult {
 
 /// Check every function a datatest's script decompiles, under the options its
 /// script sets.
+/// A command the script expects to fail (a datatest that checks an error
+/// message) is passed over, as `kuna test` does; a file none of whose
+/// decompiles could be checked is an error.
 pub fn check_datatest(path: &str, spec_roots: &[String], opts: &Options) -> FileResult {
     let start = Instant::now();
     let mut reports = Vec::new();
     let error = match session::load_datatest(path, spec_roots) {
         Ok((prog, commands)) => {
             let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                session::drive(commands, Some(prog), spec_roots, |prog, fd| {
+                session::run(commands, Some(prog), spec_roots, true, None, |prog, fd| {
                     reports.push(check_function(prog, fd, None, opts));
                 })
             }));
             match run {
-                Ok(Ok(())) => None,
+                Ok(Ok((_, failures))) if reports.is_empty() && !failures.is_empty() => Some(failures[0].1.clone()),
+                Ok(Ok(_)) => None,
                 Ok(Err(e)) => Some(e),
                 Err(_) => Some("panicked".to_string()),
             }

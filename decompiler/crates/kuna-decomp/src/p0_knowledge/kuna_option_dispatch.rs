@@ -48,6 +48,11 @@ kuna_options! { self, p1;
         self.arm_constant_shift = mode;
         Ok(msg)
     },
+    "armshiftguard" => {
+        let (mode, msg) = crate::p9_emit::kuna_armshiftguard::OptionArmShiftGuard.apply(p1)?;
+        self.arm_shift_guard = mode;
+        Ok(msg)
+    },
     "rustarrayzero" => on_off!(rust_array_zero, "Rust byte-array zero values"),
     "arraynotation" => {
         let (val, msg) = crate::kuna_arraynotation::OptionArrayNotation.apply(p1)?;
@@ -354,6 +359,7 @@ kuna_options! { self, p1;
         self.recover_lowered_switch = mode.enabled();
         self.lowered_switch_linear = mode.linear();
         self.lowered_switch_tree = mode.tree();
+        self.lowered_switch_compiled = mode == crate::kuna_loweredswitch::LoweredSwitchMode::Auto;
         Ok(msg)
     },
     "nulterminator" => {
@@ -489,7 +495,12 @@ kuna_options! { self, p1;
         self.loop_cond_hoist = val;
         Ok(msg)
     },
-    "loopcontinue" => on_off!(loop_continue, "Secondary loop-latch continue recovery"),
+    "loopcontinue" => {
+        let (val, record, msg) = crate::p8_structure::kuna_loopcontinue::OptionLoopContinue.apply(p1)?;
+        self.loop_continue = val;
+        self.loop_continue_record = record;
+        Ok(msg)
+    },
     "postinc" => on_off!(post_increment, "Pointer steps folded into *p++"),
     "regionlooprefine" => on_off!(
         region_loop_refine,
@@ -542,8 +553,9 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "iteregion" => {
-        let (val, msg) = crate::p8_structure::kuna_iteregion::OptionIteRegion.apply(p1)?;
+        let (val, record, msg) = crate::p8_structure::kuna_iteregion::OptionIteRegion.apply(p1)?;
         self.iteregion = val;
+        self.iteregion_record = record;
         Ok(msg)
     },
     "iteexpr" => on_off!(iteexpr, "Computed-expression arm ?: recovery (iteregion extension)"),
@@ -560,10 +572,11 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "returndup" => {
-        let (val, calls, msg) =
+        let (val, calls, record, msg) =
             crate::p8_structure::kuna_returndup::OptionReturnDup.apply(p1)?;
         self.duplicate_shared_returns = val;
         self.duplicate_call_returns = calls;
+        self.returndup_record = record;
         Ok(msg)
     },
     "rettriangle" => {

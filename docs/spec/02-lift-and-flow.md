@@ -190,6 +190,19 @@ Upstream set only N and Z, so a `bcs` after `ands.w r0,r1,r2,lsr #1` read the
 carry from before it. `movs.w` of an unshifted register still leaves C alone.
 This is a SLEIGH correctness repair, without an inference option.
 
+The ARM VFP compares (`vcmp` and `vcmpe`, f16, f32 and f64, against a
+register or zero, in A32 and Thumb) set the carry for unordered operands.
+The architecture writes NZCV as 0110 for equal, 1000 for less, 0010 for
+greater and 0011 for unordered, so C is "not less than". Upstream's
+`FloatVectorCompare` macro in
+`specs/Ghidra/Processors/ARM/data/languages/ARMneon.sinc` computed C as
+`op2 f<= op1`, which is false for a NaN. After `vmrs APSR_nzcv, fpscr`,
+`bhi` and `bcs` then decided a NaN as not taken and `bls` and `bcc` as
+taken, the opposite of the hardware, whatever the NaN folding does later.
+C is now the negation of N, `!(op1 f< op2)`, the value AArch64 `fcmp`
+already gives it (0011 for unordered, `op1 f>= op2` otherwise). This is a
+SLEIGH correctness repair, without an inference option.
+
 The SPARC floating-to-integer constructors use the integer result width:
 `fdtoi` and `fqtoi` write one 32-bit word through `fsrd`, while `fstox` and
 `fqtox` write 64 bits through `fdrd`. Scalar destinations preserve odd register numbers;
@@ -405,6 +418,19 @@ is selector*0x10000 + offset, so a near branch keeps the selector and wraps the
 offset, as upstream computes it. This is a SLEIGH correctness repair, without
 an inference option.
 
+An x86-64 REX prefix applies only as the last prefix before the opcode. The CPU
+ignores one that a legacy prefix follows (`0x66`, `0x67`, `F2`, `F3`, `F0`, or a
+segment override): `f3 48 67 ab` is `rep stos` of dwords with a 32-bit address,
+and the REX.W does not apply. Upstream's REX constructors move the decode into its
+primary phase, so the legacy prefix after the REX byte was read as the opcode, and
+the function stopped at a bad-instruction halt. A constructor in `ia.sinc`, under
+`@ifdef IA64`, now matches a legacy prefix in the primary phase right after a REX.
+It undoes the REX (the prefix bits, and the operand size, which a REX.W had set
+to 64 bits and which goes back to 16 bits after a `0x66`, else 32), returns to
+the prefix phase, and decodes on from the legacy prefix. The constructor replaces
+two blank lines, so `x86.sla` and `x86-16.sla` are byte-identical. This is a SLEIGH
+correctness repair, without an option.
+
 A DOS program built by Microsoft's or Borland's compilers for the 8087
 emulator carries no x87 opcodes: the linker's emulator fixups turn each `WAIT`
 and ESC opcode pair into a software interrupt that the emulator services or,
@@ -542,6 +568,19 @@ internal to the instruction's own p-code (`flow.rs (FlowInfo::find_rel_target)`)
 ops beyond the deepest internal branch time are dead and deleted
 (`delete_remaining_ops`). The op-creation and classification order here is
 observable — it fixes the SeqNum allocation every later phase keys on.
+
+(kuna `coverage`) When the main flow is done, the decompile drive keeps the
+`visited` map's byte extents on the function as its decoded ranges
+(`flow.rs (decoded_ranges)`, `Funcdata::flow_ranges`): every instruction the flow
+decoded in the entry's space, joined where they touch. Each entry's length is the
+step the flow took, so a branch's delay slot is inside it. An entry whose first op
+is an artificial halt (a decode failure, a cut flow, a filled-in stub) was never
+decoded and is left out. A callee inlined whole (`inline_clone`) merges its flow's
+map into the function's, so its instructions count as the function's own; a
+callee with no branch or call, folded onto the call address (`inline_ez_clone`),
+leaves the map alone and adds none. The ranges outlive the simplifications that
+later drop a dead block, and are what a decompile reports as its function's body
+(§1, *coverage*).
 
 **The dead list is a list, and the walk must treat it as one.** The C++ holds
 `std::list<PcodeOp *>::iterator`s directly (`insertiter` on each op), so
@@ -2310,7 +2349,34 @@ For a classic PowerPC branch through CTR or LR, flow explicitly clears the
 two architecturally discarded bits before SSA. An image whose code relocates
 at run time, or a branch whose target encoding is unresolved, cannot label a
 switch on the live pointer, so the assertion is rejected when it is installed
-and the site keeps ordinary recovery.
+and the site keeps ordinary recovery. Every bootstrap records whether code can
+move; the architecture assumes it can until the loader proves a fixed
+placement or the caller states the base of a raw or XML image. A branch input
+computed by the address space's segment operation is rejected too: the C
+prints it as the offset within its code segment, which a linear label cannot
+match. Every computed branch of a 16-bit x86 language is rejected the same
+way, because SLEIGH lifts some without the segment operation: a prefixed near
+jump still adds CS, and a far jump drops the segment it loads. The walk back
+from the branch input to the segment operation passes through copies,
+extensions and truncations in the same instruction. A zero extension on that
+walk, or a branch input narrower than the address, bounds every value the
+jump can take, so a destination above that bound is rejected: a 32-bit
+`jmp ax` never reaches 0x401003.
+A destination that enters another function declared by the loader's
+symbols or by the caller is a tail call, not a case, and is rejected as well.
+A declared function holds the site when its known extent, the caller's or
+else the symbol table's size, covers it; a size-less entry holds nothing. A
+destination inside a holder's extent stays in it unless the caller declared
+a function there and only the symbol table states the extent, because a
+caller's declaration outranks the image's. The holder's own entry is a loop,
+and a part split off it stays as well: the loader pairs `f.cold` and
+`f.cold.N` with `f` by raw symbol name, since demangling gives a C++ part
+its parent's name. Entries and extents are compared with any ARM or MIPS
+ISA bit cleared. Discovery's own entries are not evidence, since it names
+address-taken case blocks as functions. Directives that declare functions
+apply before every `jumptable` in the same list, and a later console
+declaration under which an installed destination would enter another
+function is refused before it changes anything.
 Its case values are the destination addresses in code-space addressable units.
 The model has no table-index ordering, inferred default or guard to fold.
 A fresh follow of the same image consults the same site map.
@@ -3136,7 +3202,15 @@ load of that size. A wider location whose low bytes were last written by a zero 
 sign extension is followed into what was extended, so gcc -O0's
 `movzwl -4(%rbp),%eax ; cmp $0xea60,%eax` over an `unsigned short` reads the
 two-byte load. Every path must reach the same operand, or the install reads the
-home storage.
+home storage. When detection held the value in a temporary that a load wrote (a
+field, a global or a pointed-to byte the compiler loaded once into a register),
+there is no home storage to fall back to, and the operand must be that load. No
+other temporary then counts as the home, and the walk also follows a register
+copy of the value and an extension whose low bytes it is, past a write that
+extends a location into itself: x86-64 zero-extends every 32-bit register write
+into the whole register, so gcc -O0's `mov eax,[rax+0x48] ; cmp eax,2` lifts to
+a load, a copy into `EAX`, `RAX = zext(EAX)` and a compare of a copy of `EAX`,
+and reads the load.
 
 Whichever storage it reads, a named switch is then checked. Detection records a
 restart-stable *name* for the compared value
@@ -3254,7 +3328,7 @@ the first head, as before, but never introduced by a later one. A record's
 dispatch value is then subject to the value check like any other. Measured
 byte-identical on the 675-assertion datatest corpus when the check was introduced.
 
-### Which cascades are switches — `loweredswitch on|linear|tree|all`
+### Which cascades are switches — `loweredswitch on|auto|linear|tree|all`
 
 gcc lowers every switch below its case-count threshold to compares: a
 binary-search tree with range splits once there are enough cases, and below that
@@ -3303,6 +3377,68 @@ the sink, the value check, the exactness check and the every-head rule apply
 under each value, and the re-roll is installed through the same restart, so a
 switch installed for a function stays if the value is narrowed later in the
 session.
+In an unoptimized function the default `auto` replaces the shape guess with
+what the binary records (next section).
+
+### loweredswitch auto — the switch or if-chain an unoptimized function was written with
+
+In optimized code a small `switch` and an if/else-if chain over one variable
+compile to the same compares, so the shape rule above guesses. Unoptimized code
+keeps them apart by layout. An unoptimizing compiler emits a `switch` as a run
+of tests laid out one after another, each jumping to its case on a match and
+falling through to the next test, with the case bodies after the run; an
+`if (x == K)` falls through into its own body on a match and jumps to the next
+`else if` on a mismatch:
+
+```text
+switch (x)          cmp x,1 ; je case1 ; cmp x,2 ; je case2 ; jmp default
+if (x == 1) ...     cmp x,1 ; jne next ; <body> ; next: cmp x,2 ; jne ...
+```
+
+gcc ends the run with a jump to the default, or reverses its last test so
+that it falls into a case body laid out right after it (`cmp x,'N' ; je N ;
+cmp x,'n' ; jne end ; <n body>`); clang tests every value as
+`sub ; je case ; jmp next`. A switch of three or more values
+that gcc lowers to a binary-search tree keeps the polarity on its equality
+tests. What the compared value is does not separate the two forms: a switch
+over a plain `int` local compares its frame slot in every test as the
+if-chain does, and only a selector that needs a temporary (a promoted `char`, a
+field, a global, a computed value) is loaded once for the whole run.
+
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_o0switch.rs (record)` reads
+every conditional branch at the first heritage pass of a function the detector
+of chapter 03 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_unoptimized.rs
+(is_unoptimized)`) calls unoptimized, before simplification normalizes branch
+senses and propagates loads away. For each CBRANCH it records, by the address
+of the branch: whether the condition is an equality against a constant
+(`x == K`, or the flag form `x - K == 0`, possibly negated or read back through
+a copied flag) and, if so, whether the branch is taken when the values are
+equal; and the instruction that produced the compared value, followed back
+through register moves to the load or computation. The record is kept on the
+`Funcdata` for the rest of the decompile.
+
+`kuna_o0switch.rs (verdict)` reads the record for the tests of a cascade
+`kuna_loweredswitch.rs (recover_cascade)` found, in address order. A test
+without a record, or fewer than two equality tests, decides nothing. An
+equality test before the last that falls into its body on a match makes the
+cascade an if-chain. Otherwise every equality test but the last jumps on its
+match, and the cascade is a switch when the last jumps too, when there are
+three or more equality tests, or when one load feeds every test; a two-test
+chain whose last test falls into its body is also how an `if (x != K)`
+followed by another test, and a two-value `||`, compile, so it is left
+undecided. `cascade_is_switch` takes the
+verdict before the shape: a switch re-rolls with two to sixteen values and any
+two distinct bodies (shared bodies are `case` labels of one arm), an if-chain
+never re-rolls, whatever its size or number of bodies, and an undecided cascade
+keeps the shape rule. Every other guard of the recogniser and the keep pass
+still applies, and neither the retry after a withdrawal nor the keep pass's
+exemption from its goto test reads the record: the retry decides by the shape
+rule, as the recogniser it retries did, and only a tree the shape rule takes is
+exempt. Otherwise a three-case tree the keep pass withdraws would come back as
+a two-case switch behind its first test, reached through a goto. On the
+decbench corpus's unoptimized functions the polarity separates 841 of 842
+x86-64 switch cascades and every Thumb one from the if-chains. `option loweredswitch on` restores the shape rule everywhere, and
+`linear`, `tree` and `all` widen the shape rule without reading the record.
 
 ### Where a cascade starts and what the install must keep (part of `loweredswitch`)
 

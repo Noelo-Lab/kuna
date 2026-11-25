@@ -1,0 +1,152 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    looptest, top tests without a guard to drop: more loops whose first top
+    test is proven, and loops whose test at the top is the same program
+    whatever their first test is.
+
+    Issue: kuna-looptest3 (decbench O2: rotated loops printed do-while because
+    their entry test was not recognised, or their test at the bottom recomputes
+    the value a carried variable already holds).  Stage P8 (goto-quality), P0
+    assertion `option looptest binary|proven|assume` (default `proven`).
+
+    The bytes are .text of authored C built by gcc 11.4 -O2 -fno-inline
+    -fcf-protection=none -fno-tree-vectorize (ten_o0 at -O0), linked at
+    0x100000 with the helpers poll_busy, touch and release:
+      spin        while (poll_busy()) ;   (an empty body)
+      skip_spaces do c = *s++; while (c == ' '); return c;
+                  (control: the test reads a body value)
+      each_index  for (i = 0; i < n; i++) touch(&i);   (i lives in the frame
+                  because its address is taken; the function is optimized)
+      ten_o0      i = 0; do { touch(&i); i++; } while (i < 10);   at -O0
+                  (control: an unoptimized function's frame counter)
+      free_args   if (a->list && a->num < a->nalloc) for (i = 0; i < a->num;
+                  i++) ...   (the guard reuses the load of a->num in the
+                  `&&` block before it)
+      reset_free  a->nalloc = 0; for (i = 0; i < a->num; i++) ...   (gcc loads
+                  a->num before the store to the field next to it)
+      flip_body   for (q = s->body; q != &s->tail; q++) *q ^= 0x5a;   declared
+                  with an integer parameter, so both ends are sums s + 8 and
+                  s + 0x48
+      bump_range  do { *p += 1; p++; } while (p != q);   (control: no proof)
+      clear_grid  g->head = 1; then a nested zeroing loop gcc unrolls inside,
+                  whose test recomputes the next row pointer
+
+    Pass 1 (default `proven`): spin prints `while (poll_busy()) {}`, which runs
+    the same calls as the do-while; each_index, free_args and reset_free drop
+    their guards (the guard's load of a->num reads the memory the loop sees);
+    flip_body's entry test s + 0x48 != s + 8 folds to true; clear_grid's test
+    prints the carried v2 for `&(*v1)[8]`.  skip_spaces, ten_o0 and bump_range
+    stay do-whiles.  Pass 2 (`option looptest binary`): every loop is a
+    do-while again.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4883ec080f1f4000e8c301000085c075f74883c408c3662e0f1f8400000000000fbe074883c7013c2074f5c30f1f4000534883ec10c744240c0000000085ff7e
+2089fb0f1f440000488d7c240ce88e0100008b44240c83c0018944240c39d87ce74883c4105bc3660f1f8400000000004885ff745b55534889fb4883ec08488b
+3f4885ff742d8b43083b430c732585c0741c31ed0f1f400089e883c501488b3cc7e84a010000396b08488b3b77eae83d01000048c70300000000c74308000000
+004883c4085b5dc30f1f840000000000c366662e0f1f8400000000000f1f40008b4708c7470c0000000085c07432554889fd5331db4883ec080f1f8000000000
+488b450089da83c301488b3cd0e8de000000395d0877e94883c4085b5dc36690c366662e0f1f8400000000000f1f4000488d4708488d57480f1f840000000000
+83305a4883c0044839c275f4c30f1f008307014883c7044839f775f4c30f1f00c70701000000488d4704488d97440100000f1f8000000000660fefc0c7402000
+0000004883c0280f1140d80f1140e84839c275e4c3554889e54883ec10c745fc00000000488d45fc4889c7e8300000008b45fc83c0018945fc8b45fc83f8097e
+e39090c9c3662e0f1f8400000000009031c0c366662e0f1f8400000000006690c366662e0f1f8400000000000f1f4000c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="spin"/>
+<symbol space="ram" offset="0x100020" name="skip_spaces"/>
+<symbol space="ram" offset="0x100030" name="each_index"/>
+<symbol space="ram" offset="0x100070" name="free_args"/>
+<symbol space="ram" offset="0x1000e0" name="reset_free"/>
+<symbol space="ram" offset="0x100130" name="flip_body"/>
+<symbol space="ram" offset="0x100150" name="bump_range"/>
+<symbol space="ram" offset="0x100160" name="clear_grid"/>
+<symbol space="ram" offset="0x100195" name="ten_o0"/>
+<symbol space="ram" offset="0x1001d0" name="poll_busy"/>
+<symbol space="ram" offset="0x1001e0" name="touch"/>
+<symbol space="ram" offset="0x1001f0" name="release"/>
+</binaryimage>
+<script>
+  <!-- kuna: tailform default-on; this test pins the binary's own function-tail return layout -->
+  <com>option tailform off</com>
+  <com>parse line struct Args { int8 *list; uint4 num; uint4 nalloc; };</com>
+  <com>parse line extern int4 poll_busy(void);</com>
+  <com>parse line extern void spin(void);</com>
+  <com>parse line extern int4 skip_spaces(char *s);</com>
+  <com>parse line extern void touch(int4 *p);</com>
+  <com>parse line extern void each_index(int4 n);</com>
+  <com>parse line extern void ten_o0(void);</com>
+  <com>parse line extern void release(int8 *p);</com>
+  <com>parse line extern void free_args(Args *a);</com>
+  <com>parse line extern void reset_free(Args *a);</com>
+  <com>parse line extern void flip_body(int8 s);</com>
+  <com>parse line extern void bump_range(int4 *p,int4 *q);</com>
+  <com>parse line extern void clear_grid(int4 *g);</com>
+  <com>lo fu spin</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu skip_spaces</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu each_index</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ten_o0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu free_args</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu reset_free</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu flip_body</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu bump_range</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu clear_grid</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option looptest binary</com>
+  <com>lo fu spin</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu skip_spaces</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu each_index</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ten_o0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu free_args</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu reset_free</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu flip_body</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu bump_range</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu clear_grid</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LOOPTEST-ENTRY #1: spin's empty body tests at the top" min="1" max="1">^  while \(poll_busy\(\)\) \{$</stringmatch>
+<stringmatch name="LOOPTEST-ENTRY #2: spin is a do-while under binary" min="1" max="1">^  \} while \(poll_busy\(\)\);$</stringmatch>
+<stringmatch name="LOOPTEST-ENTRY #3: skip_spaces reads a body value and stays a do-while" min="2" max="2">^  \} while \(v1 == ' '\);$</stringmatch>
+<stringmatch name="LOOPTEST-ENTRY #4: each_index tests its frame counter at the top" min="1" max="1">^  while \(v1 &lt; n\) \{$</stringmatch>
+<stringmatch name="LOOPTEST-ENTRY #5: each_index keeps its n &lt;= 0 guard only under binary" min="1" max="1">^  if \(n &lt;= 0\)$</stringmatch>
+<stringmatch name="LOOPTEST-ENTRY #6: ten_o0's unoptimized frame counter stays at the bottom" min="2" max="2">^  \} while \(v1 &lt;= 9\);$</stringmatch>
+<stringmatch name="LOOPTEST-ENTRY #7: free_args tests a-&gt;num at the top" min="1" max="1">^      while \(v1 &lt; a-&gt;num\) \{$</stringmatch>
+<stringmatch name="LOOPTEST-ENTRY #8: reset_free tests a-&gt;num at the top" min="1" max="1">^  while \(v1 &lt; a-&gt;num\) \{$</stringmatch>
+<stringmatch name="LOOPTEST-ENTRY #9: the two a-&gt;num guards are printed only under binary" min="2" max="2">^ *if \(a-&gt;num\) \{$</stringmatch>
+<stringmatch name="LOOPTEST-ENTRY #10: flip_body's entry test s + 0x48 != s + 8 holds" min="1" max="1">^  while \(\(uint4 \*\)\(s \+ 0x48\) != v1\) \{$</stringmatch>
+<stringmatch name="LOOPTEST-ENTRY #11: bump_range stays a do-while" min="2" max="2">^  \} while \(p != q\);$</stringmatch>
+<stringmatch name="LOOPTEST-ENTRY #12: clear_grid tests the carried row pointer at the top" min="1" max="1">^  while \(\(char \(\*\)\[16\]\)&amp;g\[0x51\] != \(char \(\*\)\[16\]\)v2\) \{$</stringmatch>
+<stringmatch name="LOOPTEST-ENTRY #13: clear_grid recomputes the row pointer only under binary" min="1" max="1">^  \} while \(\(char \(\*\)\[16\]\)&amp;g\[0x51\] != \(char \(\*\)\[16\]\)&amp;\(\*v1\)\[8\]\);$</stringmatch>
+</decompilertest>

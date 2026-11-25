@@ -518,6 +518,8 @@ mod repeated_global_pointer_stores;
 
 #[path = "stored_return_values.rs"]
 mod stored_return_values;
+#[path = "forced_return_callers.rs"]
+mod forced_return_callers;
 
 #[path = "strings_cli.rs"]
 mod strings_cli;
@@ -745,6 +747,9 @@ mod float_literal_width;
 #[path = "project_call_declarations.rs"]
 mod project_call_declarations;
 
+#[path = "project_unit_calls.rs"]
+mod project_unit_calls;
+
 #[path = "parameter_spill_reuse.rs"]
 mod parameter_spill_reuse;
 
@@ -833,6 +838,8 @@ mod ppc32_pic_abi;
 
 #[path = "compact_json.rs"]
 mod compact_json;
+#[path = "coverage_cli.rs"]
+mod coverage_cli;
 
 #[path = "rust_probestack.rs"]
 mod rust_probestack;

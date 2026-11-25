@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_243() {
-    assert_eq!(kuna_num_settables(), 243);
-    assert_eq!(SETTABLE_TABLE.len(), 243);
+fn settable_count_is_244() {
+    assert_eq!(kuna_num_settables(), 244);
+    assert_eq!(SETTABLE_TABLE.len(), 244);
 }
 
 #[test]
-fn tier_counts_are_50_core_130_transform_63_analysis() {
+fn tier_counts_are_50_core_131_transform_63_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_50_core_130_transform_63_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (50, 130, 63));
+    assert_eq!((core, transform, analysis), (50, 131, 63));
 }
 
 #[test]
@@ -604,6 +604,10 @@ fn option_values_live_value_present_for_78() {
                             // reason.  Its live value is
                             // `Architecture::arm_constant_shift`.
                             | "armconstshift"
+                            // (kuna) `armshiftguard` takes a MODE
+                            // (`always|needed|wide|never`) over an enum field; its
+                            // live value is `Architecture::arm_shift_guard`.
+                            | "armshiftguard"
                             // (kuna) `constselectjump` takes a MODE
                             // (`off|reentry|on`) over an enum field, for the
                             // same reason.  Its live value is
@@ -1156,7 +1160,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 each for `swifthelpers` and `valuewitness`.
     // +1 for `bytestorewidth`; its P3 row sits after `globalarrayanchor`.
     // +1 for `boolbranch`; its P3 row sits after `bytestorewidth`.
-    assert_eq!(json.matches("},\n").count(), 242);
+    assert_eq!(json.matches("},\n").count(), 243);
     // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 

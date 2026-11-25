@@ -1537,17 +1537,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 let branchind = self.env.resolve_typeop(OpCode::CPUI_BRANCHIND);
                 self.data.op_set_opcode(curop, branchind);
             }
-            let computed_return = if self.env.defers_return_classification(&self.data, curop) {
-                // A stated PPC32 link-register jump already has its complete
-                // target set. Other LR returns still need the path-sensitive proof.
-                let ret = self.data.obank().get(curop).expect("deferred return");
-                self.env.stated_jump_targets(ret.get_addr()).is_some()
-            } else {
-                crate::kuna_returnbranch::computed_target(
-                    &self.data, curop, &self.visited, |index| self.env.is_isa_mode_switch(index),
-                )
-            };
-            if computed_return {
+            if self.is_computed_return(curop) {
                 let branchind = self.env.resolve_typeop(OpCode::CPUI_BRANCHIND);
                 self.data.op_set_opcode(curop, branchind);
             }
@@ -1919,6 +1909,19 @@ following this call as a branch"
             self.is_inside_declared_extent(dest),
             || self.env.is_tail_call_branch(&self.data, op, dest),
             || self.env.is_frame_teardown_tail_call(&self.data, op, dest),
+        )
+    }
+
+    /// Is the RETURN `op` a computed jump? A stated PPC32 link-register jump
+    /// already has its complete target set; other deferred LR returns keep the
+    /// path-sensitive proof for later.
+    fn is_computed_return(&self, op: OpId) -> bool {
+        if self.env.defers_return_classification(&self.data, op) {
+            let ret = self.data.obank().get(op).expect("deferred return");
+            return self.env.stated_jump_targets(ret.get_addr()).is_some();
+        }
+        crate::kuna_returnbranch::computed_target(
+            &self.data, op, &self.visited, |index| self.env.is_isa_mode_switch(index),
         )
     }
 
@@ -4609,6 +4612,41 @@ impl<E: FlowEnvironment> PcodeEmit for FlowEmit<'_, '_, E> {
         crate::kuna_localstackviews::record_native(self.fd, op);
         self.emitted.push(op);
     }
+}
+
+/// (kuna `coverage`) The bytes of every instruction in `fd`'s `visited` map,
+/// delay slots included (each entry's size is the step the flow took over it):
+/// engine byte offsets in the entry's space, half-open, ascending and joined
+/// where they touch. An entry whose first op is an artificial halt (a decode
+/// failure, a flow cut, a stub the flow filled in) was never decoded and is left
+/// out.
+#[allow(clippy::mutable_key_type)]
+pub fn decoded_ranges(fd: &Funcdata, visited: &VisitedMap) -> Vec<(u64, u64)> {
+    let space = fd.get_address().get_space();
+    let mut out: Vec<(u64, u64)> = Vec::new();
+    for (addr, stat) in visited {
+        let Some(size) = u64::try_from(stat.size).ok().filter(|&size| size > 0) else {
+            continue;
+        };
+        let halt = fd
+            .obank()
+            .find_op(&stat.seqnum)
+            .and_then(|op| fd.obank().get(op))
+            .is_some_and(|op| op.get_halt_type() != 0);
+        let elsewhere = match (addr.get_space(), space) {
+            (Some(at), Some(entry)) => !std::rc::Rc::ptr_eq(at, entry),
+            (at, entry) => at.is_some() != entry.is_some(),
+        };
+        if halt || elsewhere {
+            continue;
+        }
+        let (start, end) = (addr.get_offset(), addr.get_offset().saturating_add(size));
+        match out.last_mut() {
+            Some(last) if start <= last.1 => last.1 = last.1.max(end),
+            _ => out.push((start, end)),
+        }
+    }
+    out
 }
 
 /// Free-function `FlowInfo::target` over an explicit `(Funcdata, visited)` pair

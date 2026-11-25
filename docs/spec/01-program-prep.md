@@ -212,6 +212,12 @@ overlay requested after publication fails closed.
 
 ## 1.2 Load image
 
+The Intel HEX reader (`decompiler/crates/kuna-analysis/src/loader/ihex.rs (read)`)
+validates record lengths, checksums, and EOF. A segment or linear extension
+replaces the base for later data addresses. Start records carry either CS:IP
+or a linear address. Data payload lengths do not set the address unit: an
+input profile decides where to map the unscaled addresses and what gaps mean.
+
 `decompiler/crates/kuna-analysis/src/loadimage_object.rs (ObjectLoadImage)` is the
 real-binary `LoadImage` backend — the substitution for upstream's GPL-licensed
 BFD loader (`LoadImageBfd`), rebuilt on the permissive `object` crate with the C++
@@ -246,6 +252,16 @@ neighbouring short read is being answered from is left as it was. Nothing else
 about the read changes — the same segment walk, the same zero-fill past the last
 segment it crosses, the same unmapped-start `DataUnavailError` — and a request
 of 512 bytes or fewer still follows exactly the path it always did.
+
+The binary IEEE-695/TIOF reader
+(`decompiler/crates/kuna-analysis/src/loader/ieee695.rs (module)`) opens an
+indexed module without selecting a target. It bounds each nonzero W-part
+offset by the next part (an empty part may share the next part's offset, as
+binutils writes an empty trailer) and verifies the module-end record. Record
+cursors decode compact numeric fields and names (including the 0xDE/0xDF
+lengths of names of 128 bytes or more) and tokenize relocation expressions
+inside those bounds. Section placement, symbol binding, and relocation field encoding
+remain the responsibility of the input profile.
 
 The mapping unit is the ELF **`PT_LOAD` segment** (what the OS actually maps), not the BFD
 section list. Where upstream returns a BFD target string for the Java side to
@@ -2116,6 +2132,13 @@ their reads, a video-mode probe keeps its read of the EGA switches at 0x487,
 and the hard-disk parameter vectors at 0x104 and 0x118 are read where the code
 reads them.
 
+The Motorola S-record reader
+(`decompiler/crates/kuna-analysis/src/loader/srecord.rs (read)`) validates
+lengths, checksums, the optional data-record count, and the terminator. It
+returns the original address and encoded width for each data or start record.
+S-records have assigned addresses but no relocation entries. The reader does
+not assume a memory bank, a byte-addressed target, or a rule for filling gaps.
+
 ## 1.3 Loader markup
 
 Import naming exists because a CALL into a linkage stub carries no symbol: without
@@ -2141,6 +2164,32 @@ funcsym stream:
   is recovered as a `tailcalljump` to a discovered function instead of flowing into
   the stub and rendering `(*dat_...)(...)`; the FP-return-type recovery it unblocks
   is a Ghidra-divergent follow-up (`docs/features/ifuncfpret/proposal.md`).
+  PowerPC64 ELFv2 has no `.plt` code: `.plt` is a NOBITS table of slots and the
+  linker writes each call stub into `.text`, where
+  `decompiler/crates/kuna-analysis/src/loader/elf_plt.rs (decode_ppc_text)` finds
+  them with `decompiler/crates/kuna-analysis/src/loader/kuna_ppc64_stubs.rs (stub_at)`.
+  A stub loads its import's slot into r12 and ends `mtctr r12; bctr`, after an
+  optional `std r2,24(r1)` TOC save (`--plt-localentry` omits it). The slot is
+  TOC-relative, `[addis r12,r2,ha;] ld r12,lo(r2|r12)` with the TOC at
+  `.got + 0x8000`; pc-relative for Power10 callers, `mflr r12; bcl 20,31,.+4;
+  mflr r11; mtlr r12; [addis r12,r11,ha;] ld r12,lo(r11|r12)` from the address
+  after the `bcl`; or a Power10 `pld r12,off` (GNU ld `--power10-stubs`, lld).
+  When both TOC and pc-relative code call an import, GNU ld writes the TOC
+  save followed by a pc-relative stub, a `pld` one after a `nop` that keeps the
+  `pld` 8-byte aligned, and pc-relative callers enter it one word in; the stub
+  is named at both entries.
+  GNU ld writes the TOC form without `addis` whenever the slot is within 32 KiB
+  of the TOC, which is every stub of most libraries; lld writes the `addis` form.
+  An image without a `.got` has only pc-relative stubs. A stub is named only
+  when its slot carries an `R_PPC64_JMP_SLOT` relocation, since a GOT entry
+  holding a function's address loads with the same instructions, and never at
+  or inside a defined function of either symbol table (lld's local `__plt_*`
+  stub symbols aside): GCC writes the `pld` sequence itself for a Power10
+  `-fno-plt` sibling call, and naming that function after its callee would
+  replace its own name. Every stub is named, so an import that several stub
+  groups call carries its name at each. The TOC forms assume one TOC; a later
+  TOC group of a multi-TOC image computes its slots from the first and
+  normally names nothing. ELFv1 function descriptors resolve separately.
   Two ABIs need special handling: PowerPC (ELFv2 `.plt` is a NOBITS data table, not
   decodable code; PPC32 uses its own secure-PLT stub shape), and **MIPS**, which
   has no PLT and no jump-slot relocations at all — its resolver walks the
@@ -2303,8 +2352,11 @@ funcsym stream:
   are unaffected. In the console, set the option before `load file`; CLI
   options are bridged before either loader runs. The `abi` mode is opt-in because
   the proof walks every function:
-  about 0.3-0.4 s for libstdc++ or libc, which makes listing a PPC32 PIC
-  image's functions 1.1-1.8x slower and a single-function decompile up to 3x.
+  about 0.15-0.3 s for libstdc++ or libc, which makes listing a PPC32 PIC
+  image's functions about 1.05-1.35x slower and a single-function decompile
+  of a large library up to 2.9x. A meet updates the stored state in place and
+  reports whether it changed, and a stub is found from any byte it covers by
+  one hash lookup.
   The default path and other formats pay nothing, and the proof runs once per
   image content. Resolved PPC32 import names take
   precedence over local stub labels, which remain aliases. Existing library
@@ -2953,6 +3005,30 @@ already says which bytes are code (over stripped x86-64 ELF the clip's overshoot
 is alignment padding, 694 of 1,093 functions; MSVC lays a switch table out after
 its function in `.text`, and ARM a literal pool, both bytes of the function), and
 another raw language would need its own table and literal-pool readers.
+
+(kuna `coverage`) **A decompile reports the exact body beside the bound**
+(always on; `decompiler/crates/kuna-console/src/kuna_coverage.rs (output_ranges)`).
+The flow records the bytes of every instruction it decodes for a function, delay
+slots included (§2, `decoded_ranges`), so a decompile knows its function's body,
+code it goes on to prove dead included. Mapped to the target's address units as
+`line_mappings` is, the ranges ride `FuncResult::ranges` across the `--jobs` wire
+and the result store. A function whose C failed to render keeps its ranges, since
+it was decoded; a function whose decompile failed has none. Over a batch,
+`Code::measure_results` sets those ranges against the bytes the image holds for the
+CODE spans the extent clip uses: the section table, or else the executable load
+segments. The spans are snapshotted, a bit per byte for whether it is NUL, before a
+`--jobs` parent drops its program. The measure gives three counts:
+
+- the bytes some function lifted;
+- the bytes covered by a function that decompiled without an error;
+- the NUL bytes no function lifted.
+
+The NUL bytes are alignment fill or a zero-filled tail far more often than code, so
+they are left out of the total a share is taken of. Only bytes inside the spans
+count, so a block lifted outside them, such as an `--addr` into data, adds nothing.
+`decompile-all --json --coverage` reports the measure as `coverage`, and a
+whole-binary project export's completion line reports its two shares. Nothing here
+changes what is decompiled or printed.
 
 Naming a pointer slot is not by itself enough to bind a call *through* it. An ELF
 PLT stub and a Mach-O `__stubs` entry are code, so the call is direct and the name
@@ -11865,7 +11941,16 @@ call through the first stub names its import.
 Without a callee prototype, a preserved incoming argument register cannot
 establish import arity: calls with and without that argument can have identical
 instructions. A declared prototype supplies that missing contract
-(`kuna_gotimportproto.rs`, §4).
+(`kuna_gotimportproto.rs`, §4). The loader also records, by name, which
+imports' dynamic symbols require a public `GLIBC_*` version of one of glibc's
+own libraries (`libc.so.6`, `libm.so.6`, `libpthread.so.0`, `libdl.so.2`,
+`librt.so.1`, `libutil.so.1`, `libresolv.so.2`, `libanl.so.1`)
+(`decompiler/crates/kuna-analysis/src/loader/elf_plt.rs (mips_glibc_import_names)`),
+reading `.gnu.version` once for each undefined dynamic function and marking
+the imports of those names, so the built-in glibc declaration of such an
+import may also state a void result. `GLIBC_PRIVATE` is glibc's internal
+interface, which its headers do not declare, so it does not count, and a name
+also imported under another version is not marked.
 
 
 ### Weak import identity and slot membership

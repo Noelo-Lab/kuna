@@ -1,0 +1,149 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    looptest, the zero-trip guard drop: a guard in front of a rotated loop is
+    dropped when the program without it is the same on the skip path.
+
+    Issue: kuna-looptest3 (decbench O2: gcc copies the loop test into a guard
+    and gives the skip path its own copy of the code after the loop, so kuna
+    printed `if (c) { do ... while (c); return x; } return 0;` where the source
+    has one top-tested loop).  Stage P8 (goto-quality), P0 assertion
+    `option looptest binary|proven|assume` (default `proven`).
+
+    The bytes are .text of authored C built by gcc 11.4 -O2 -fno-inline
+    -fcf-protection=none, linked at 0x100000 with the helpers report, keep and
+    release:
+      dsum          s = 0; for (i = 0; i < n; i++) s += a[i]; return s;
+                    (skip path `return 0.0`, the exit `return s`)
+      lsum_or_minus if (p) { s = 0; for (; p; p = p->next) s += p->val; }
+                    else s = -1; return s;   (control: -1 is not s's start)
+      bytes_differ  ret = 0; for (; n > 0; n -= 1) ret |= *p1++ ^ *p2++;
+                    return ret != 0;   (skip path `return 0`)
+      count_report  n = 0; for (p = head; p; p = p->next) n++;
+                    return report(head, n);   (skip path report(NULL, 0))
+      count_or_one  if (!head) return report(head, 1); ... the same loop
+                    (control: 1 is not n's start)
+      visit         a bucket walk whose skip path assigns n = 0 in an else arm
+      popcount_or   if (!x) return -1; c = 0; while (x) { x &= x - 1; c++; }
+                    (control: the else arm assigns -1)
+      free_opts     two counted loops sharing one counter register
+      walk_keep     i = k; if (p) for (i = 0; p; p = p->next) i++; return i;
+                    (control: the skip path returns k, not i's start)
+
+    Pass 1 (default `proven`): dsum, bytes_differ, count_report, visit and
+    free_opts print `while (c)` without their guards: the skip path's return,
+    call or merged value is what the exit path gives when each carried
+    variable keeps its entry value.  The four controls keep their guards and
+    do-whiles.  Pass 2 (`option looptest binary`): every loop is a do-while
+    behind its guard.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4885f67e1b488d04f7660fefc00f1f00f20f58074883c7084839c775f3c36690660fefc0c366662e0f1f8400000000004885ff741731c0660f1f840000000000
+034708488b3f4885ff75f5c3b8ffffffffc366662e0f1f8400000000000f1f004885d2742b31c94531c0660f1f4400000fb6040f32040e4883c1010fb6c04109
+c04839ca75ea31c04585c00f95c0c39031c0c366662e0f1f84000000000066904885ff741b4889f831f6660f1f440000488b0083c6014885c075f5e980010000
+31f6e979010000660f1f8400000000004889f831f64885ff7416660f1f440000488b0083c6014885c075f5e950010000be01000000e946010000660f1f440000
+4155415455534883ec084839f773604889fd4989f54531e4488b7d004885ff751f4883c5104939ed77ee4883c4084c89e05b5d415c415dc30f1f840000000000
+4889ebeb130f1f00488b5b084983c4014885db74cc488b3be8f300000085c075e74883c4084c89e05b5d415c415dc34531e4ebb666662e0f1f84000000000090
+85ff741b4531c0660f1f8400000000008d47ff4183c00121c775f54489c0c341b8ffffffffebf4660f1f84000000000055534889fb4883ec0848837f0800741e
+31ed660f1f440000488b03488b3ce84883c501e88800000048396b0877ea488b3be87a00000048837b1800741a31ed90488b4310488b3ce84883c501e85f0000
+0048396b1877e9488b7b104883c4085b5de94a000000662e0f1f8400000000004889f04885ff741431c0660f1f440000488b3f4883c0014885ff75f4c30f1f00
+89f0c366662e0f1f840000000000669031c04885ff0f95c0c30f1f8000000000c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="dsum"/>
+<symbol space="ram" offset="0x100030" name="lsum_or_minus"/>
+<symbol space="ram" offset="0x100060" name="bytes_differ"/>
+<symbol space="ram" offset="0x1000a0" name="count_report"/>
+<symbol space="ram" offset="0x1000d0" name="count_or_one"/>
+<symbol space="ram" offset="0x100100" name="visit"/>
+<symbol space="ram" offset="0x100180" name="popcount_or"/>
+<symbol space="ram" offset="0x1001b0" name="free_opts"/>
+<symbol space="ram" offset="0x100220" name="walk_keep"/>
+<symbol space="ram" offset="0x100240" name="report"/>
+<symbol space="ram" offset="0x100250" name="keep"/>
+<symbol space="ram" offset="0x100260" name="release"/>
+</binaryimage>
+<script>
+  <!-- kuna: tailform default-on; this test pins the binary's own function-tail return layout -->
+  <com>option tailform off</com>
+  <com>parse line extern float8 dsum(float8 *a,int8 n);</com>
+  <com>parse line extern int4 lsum_or_minus(int8 *p);</com>
+  <com>parse line extern int4 bytes_differ(uint1 *p1,uint1 *p2,uint8 n);</com>
+  <com>parse line extern int4 report(int8 *head,int4 count);</com>
+  <com>parse line extern int4 count_report(int8 *head);</com>
+  <com>parse line extern int4 count_or_one(int8 *head);</com>
+  <com>parse line extern int4 keep(int8 *p);</com>
+  <com>parse line extern uint8 visit(int8 *b,int8 *end);</com>
+  <com>parse line extern int4 popcount_or(uint4 x);</com>
+  <com>parse line extern void release(int8 *p);</com>
+  <com>parse line extern void free_opts(int8 *o);</com>
+  <com>parse line extern uint8 walk_keep(int8 *p,uint8 k);</com>
+  <com>lo fu dsum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lsum_or_minus</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu bytes_differ</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu count_report</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu count_or_one</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu visit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu popcount_or</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu free_opts</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu walk_keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option looptest binary</com>
+  <com>lo fu dsum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lsum_or_minus</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu bytes_differ</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu count_report</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu count_or_one</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu visit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu popcount_or</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu free_opts</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu walk_keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LOOPTEST-ZEROTRIP #1: dsum tests a &lt; v1 at the top" min="1" max="1">^  while \(a &lt; v1\) \{$</stringmatch>
+<stringmatch name="LOOPTEST-ZEROTRIP #2: dsum's skip return 0.0 is printed only under binary" min="1" max="1">^  return 0\.0;$</stringmatch>
+<stringmatch name="LOOPTEST-ZEROTRIP #3: bytes_differ tests at the top and returns ret != 0 once" min="1" max="1">^  while \(n != v3\) \{$</stringmatch>
+<stringmatch name="LOOPTEST-ZEROTRIP #4: bytes_differ keeps the guarded do-while under binary" min="1" max="1">^    \} while \(n != v3\);$</stringmatch>
+<stringmatch name="LOOPTEST-ZEROTRIP #5: count_report tests v1 at the top" min="1" max="1">^  while \(v1\) \{$</stringmatch>
+<stringmatch name="LOOPTEST-ZEROTRIP #6: count_report's report(NULL,0) is printed only under binary" min="1" max="1">^  return report\(NULL,0\); // tail-call$</stringmatch>
+<stringmatch name="LOOPTEST-ZEROTRIP #7: count_or_one keeps its report(NULL,1) guard" min="2" max="2">^    return report\(NULL,1\); // tail-call$</stringmatch>
+<stringmatch name="LOOPTEST-ZEROTRIP #8: visit tests b &lt; end at the top" min="1" max="1">^  while \(b &lt; end\) \{$</stringmatch>
+<stringmatch name="LOOPTEST-ZEROTRIP #9: visit's else arm is printed only under binary" min="1" max="1">^  if \(end &lt;= b\) // branch-flip$</stringmatch>
+<stringmatch name="LOOPTEST-ZEROTRIP #10: popcount_or and lsum_or_minus keep their -1" min="4" max="4">^ *(v1 = -1|return -1);$</stringmatch>
+<stringmatch name="LOOPTEST-ZEROTRIP #11: free_opts tests both counters at the top" min="2" max="2">^  while \(v2 &lt; \(uint8\)o\[[13]\]\) \{$</stringmatch>
+<stringmatch name="LOOPTEST-ZEROTRIP #12: walk_keep keeps its guard and do-while" min="2" max="2">^    k = 0;$</stringmatch>
+</decompilertest>

@@ -3058,7 +3058,7 @@ impl Funcdata {
     /// substantive operation in the block (C++ `ActionReturnSplit::isSplittable`,
     /// `blockaction.cc:2242`).  Only MULTIEQUAL / COPY / RETURN ops with
     /// constant/annotation/non-free inputs are allowed.
-    fn return_split_is_splittable(&self, b: BlockId) -> bool {
+    pub(crate) fn return_split_is_splittable(&self, b: BlockId) -> bool {
         let mut global_stores: usize = 0;
         let mut cur = self.bb_op_head(b);
         while let Some(op) = cur {
@@ -3167,6 +3167,10 @@ impl Funcdata {
                 let mut bl = self.bblocks_ref().block(inbl).get_copy_map();
                 while let Some(cur) = bl {
                     if self.sblocks_ref().block(cur).is_mark() {
+                        // (kuna `loopcontinue auto`) a recorded `break` keeps its one return.
+                        if crate::p8_structure::kuna_o0jumps::keeps_return(self, parent, i, cur) {
+                            break;
+                        }
                         splitedge.push(i);
                         retnode.push(parent);
                         bl = None;
@@ -3306,7 +3310,8 @@ impl Funcdata {
     }
 
     pub(crate) fn returndup_apply(&mut self, max_splits: int4, max_inedges: int4) -> int4 {
-        let mut count = 0;
+        // (kuna `returndup auto`) the recorded return statements first.
+        let mut count = crate::p8_structure::kuna_o0returns::split(self, max_splits, max_inedges);
 
         // Collect the candidate RETURN blocks up front — `node_split` mutates the CFG
         // (adds duplicate blocks, calls `structure_reset`), so we must not iterate the
@@ -3330,6 +3335,9 @@ impl Funcdata {
                 continue;
             }
             if !self.return_split_is_splittable(parent) {
+                continue;
+            }
+            if crate::p8_structure::kuna_o0returns::recorded(self, parent) {
                 continue;
             }
             // (kuna, angr-selective) Only duplicate a SIMPLE CONST-RETURN region — angr
@@ -3476,6 +3484,9 @@ impl Funcdata {
                 continue;
             }
             if !self.return_split_is_splittable(parent) {
+                continue;
+            }
+            if crate::p8_structure::kuna_o0returns::recorded(self, parent) {
                 continue;
             }
             let mut edges = self.earlyreturn_const_edges(parent);
