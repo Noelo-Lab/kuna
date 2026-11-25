@@ -151,6 +151,7 @@ mod tests {
             aliases: vec!["alias".into()],
             object_location: None,
             callee_hints: Vec::new(),
+            ranges: Vec::new(),
             synth: None,
             pointerargs: None,
             warnings: Vec::new(),

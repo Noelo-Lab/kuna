@@ -174,5 +174,5 @@ fn omitted_aliases_leave_the_name_address_and_code() {
 
     let (_, stderr, code) = common::run_kuna(&["decompile", &bin, &alias, "--json", "--omit", "alias"]);
     assert_eq!(code, 2);
-    assert!(stderr.contains("aliases, line_mappings, variables, types"), "{stderr}");
+    assert!(stderr.contains("aliases, ranges, line_mappings, variables, types"), "{stderr}");
 }

@@ -41,6 +41,7 @@ pub mod kuna_hightarget;
 pub mod kuna_constformat;
 pub mod kuna_callwide;
 pub mod kuna_declaredbytes;
+pub mod kuna_coverage;
 pub mod kuna_lazyfuncs;
 mod kuna_paramasserts;
 mod kuna_dwarfstack;

@@ -674,6 +674,7 @@ pub fn run(argv: &[String]) -> i32 {
                         &run.interior,
                         &run.declared,
                         args.omit,
+                        run.code.as_ref().map(|code| code.measure_results(&run.funcs)).as_ref(),
                     )
                 }),
             };
@@ -1354,6 +1355,9 @@ struct AllRun {
     interior: crate::interior::Interiors,
     /// The caller's declarations, as the document reports them.
     declared: crate::funcdecl::Declared,
+    /// (kuna `coverage`) The executable bytes for a whole-binary `--json` run's
+    /// `coverage`, kept before a `--jobs` parent drops the program.
+    code: Option<kuna_console::kuna_coverage::Code>,
 }
 
 /// Load + analyze the binary once, narrow the target list, then decompile what
@@ -1375,6 +1379,7 @@ fn decompile_all(args: &mut Args, filters: &Filters) -> Result<AllRun, String> {
     let interior = crate::interior::selections(&prog, args, &targets);
     let declared = crate::funcdecl::Declared::of(&prog);
     let whole = targets.len() == discovered && args.addrs.is_empty() && args.names.is_none();
+    let code = (args.json && whole).then(|| kuna_console::kuna_coverage::Code::of(&prog));
     let (callee_first, explicit) = callee_first_decision(&prog, args, targets.len(), whole);
     // `--jobs N`: hand the targets to the worker pool and release the parent's
     // program (2.0 GB on an 18 MB PE) before the workers start — nothing below
@@ -1409,7 +1414,7 @@ fn decompile_all(args: &mut Args, filters: &Filters) -> Result<AllRun, String> {
             arm_frames,
             None,
         )?;
-        return Ok(AllRun { funcs: pooled.results, discovered, assertions, interior, declared });
+        return Ok(AllRun { funcs: pooled.results, discovered, assertions, interior, declared, code });
     }
     if explicit && prog.arch().protoorder.is_on() && !whole {
         eprintln!(
@@ -1424,7 +1429,7 @@ fn decompile_all(args: &mut Args, filters: &Filters) -> Result<AllRun, String> {
         note_custom_inert(&prog, targets.len());
         decompile_entries(&mut prog, args, targets, /* pointer_arguments= */ true, !whole)
     };
-    Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes(), interior, declared })
+    Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes(), interior, declared, code })
 }
 
 /// Arm the per-function budgets `args` asks for: the wall-clock watchdog on the
@@ -2325,7 +2330,7 @@ pub(crate) fn render_selected_json(
 ) -> String {
     let mut out = Vec::new();
     write_selected_json(
-        &mut out, binary, funcs, options, error, total, assertions, interior, declared, omit,
+        &mut out, binary, funcs, options, error, total, assertions, interior, declared, omit, None,
     )
     .expect("rendering the document into memory");
     String::from_utf8(out).expect("the document is ASCII")
@@ -2345,12 +2350,17 @@ pub(crate) fn write_selected_json(
     interior: &crate::interior::Interiors,
     declared: &crate::funcdecl::Declared,
     omit: Omit,
+    coverage: Option<&kuna_console::kuna_coverage::Coverage>,
 ) -> std::io::Result<()> {
     let language = crate::loadtime::explicit_output_language(options)
         .and_then(kuna_decomp::kuna_lang::OutLang::from_print_name)
         .map(|lang| lang.print_name()).unwrap_or("c-language");
-    let (head, tail) =
+    let (mut head, tail) =
         document_fields(binary, funcs.len(), language, error, total, assertions, declared, omit);
+    if let Some(coverage) = coverage {
+        let after = head.iter().position(|(key, _)| key == "count").map_or(head.len(), |at| at + 1);
+        head.insert(after, ("coverage".to_string(), coverage_json(coverage)));
+    }
     let records = funcs.iter().map(|f| function_json(f, interior, declared, omit));
     crate::jsonfmt::write_indent2_streamed(out, &head, "functions", records, &tail)?;
     out.write_all(b"\n")
@@ -2555,6 +2565,9 @@ fn function_json(
         ),
         ("warnings".into(), Json::Array(f.warnings.iter().map(warning_json).collect())),
     ]);
+    if !omit.ranges {
+        record.push(("ranges".into(), Json::Array(f.ranges.iter().map(|&range| range_json(range)).collect())));
+    }
     if !omit.line_mappings {
         record.push((
             "line_mappings".into(),
@@ -2611,6 +2624,33 @@ fn warning_json(warning: &kuna_decomp::kuna_functionwarnings::Warning) -> Json {
         ("message".into(), Json::Str(warning.message())),
         ("line".into(), Json::Number(warning.line.to_string())),
         ("address".into(), warning.address.map_or(Json::Null, |a| Json::Number(a.to_string()))),
+    ])
+}
+
+/// One of a record's `ranges`, half-open as `[start, end)`.
+fn range_json((start, end): (u64, u64)) -> Json {
+    Json::Object(vec![
+        ("start".into(), Json::Number(start.to_string())),
+        ("start_hex".into(), Json::Str(format!("0x{start:x}"))),
+        ("end".into(), Json::Number(end.to_string())),
+        ("end_hex".into(), Json::Str(format!("0x{end:x}"))),
+    ])
+}
+
+/// The run-level `coverage` object.
+fn coverage_json(coverage: &kuna_console::kuna_coverage::Coverage) -> Json {
+    let count = |n: u64| Json::Number(n.to_string());
+    let share = |share: Option<f64>| share.map_or(Json::Null, |share| Json::Number(format!("{share:.4}")));
+    Json::Object(vec![
+        ("executable_bytes".into(), count(coverage.executable_bytes)),
+        ("unlifted_nul_bytes".into(), count(coverage.unlifted_nul_bytes)),
+        ("lifted_bytes".into(), count(coverage.lifted_bytes)),
+        ("decompiled_bytes".into(), count(coverage.decompiled_bytes)),
+        ("lifted_share".into(), share(coverage.lifted_share())),
+        ("decompiled_share".into(), share(coverage.decompiled_share())),
+        ("functions".into(), count(coverage.functions as u64)),
+        ("decompiled_functions".into(), count(coverage.decompiled_functions as u64)),
+        ("unlifted_functions".into(), count(coverage.unlifted_functions as u64)),
     ])
 }
 
@@ -2751,6 +2791,7 @@ mod provenance_json_tests {
             aliases: Vec::new(),
             object_location: None,
             callee_hints: Vec::new(),
+            ranges: Vec::new(),
             synth: None,
             pointerargs: None,
             warnings: Vec::new(),
@@ -3385,7 +3426,7 @@ fn parse_entry_selector(s: &str) -> Result<EntrySelector, String> {
 fn usage_decompile_all() {
     eprintln!(
         "usage: kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \\\n\
-         \x20                   [--no-vars] [--omit aliases,line_mappings,variables,types] \\\n\
+         \x20                   [--no-vars] [--omit aliases,ranges,line_mappings,variables,types] \\\n\
          \x20                   [--max-fn-seconds N] [--max-fn-memory MiB] \\\n\
          \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
@@ -3403,7 +3444,7 @@ fn usage_decompile_all() {
          at (a header warning at the entry); `error` is set only for a failed\n\
          function.\n\
          --omit KEY[,KEY].. (with --json) leaves those record collections out of\n\
-         every record -- aliases, line_mappings, variables (with stack_objects),\n\
+         every record -- aliases, ranges, line_mappings, variables (with stack_objects),\n\
          types -- and lists them in a top-level `omitted` array, so an omitted\n\
          collection is never mistaken for an empty one.\n\
          --no-vars skips the variable extraction and leaves `variables` empty.\n\

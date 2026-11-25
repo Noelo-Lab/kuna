@@ -1657,6 +1657,7 @@ fn lost_result(t: &TargetSpec, reason: &str) -> FuncResult {
         aliases: t.aliases.clone(),
         object_location: t.object_location.clone(),
         callee_hints: Vec::new(),
+        ranges: Vec::new(),
         synth: None,
         pointerargs: None,
         warnings: Vec::new(),
@@ -2174,6 +2175,7 @@ mod tests {
                 offset: 0x40,
             }),
             callee_hints: vec![0x401200, 0x401340, 0xffff_ffff_ffff_fff0],
+            ranges: vec![(0x401200, 0x401210), (0x401220, 0x401233)],
             synth: None,
             pointerargs: None,
             warnings: Vec::new(),
@@ -2195,6 +2197,7 @@ mod tests {
             && a.aliases == b.aliases
             && a.object_location == b.object_location
             && a.callee_hints == b.callee_hints
+            && a.ranges == b.ranges
             && a.field_calls == b.field_calls
             && a.pointerargs == b.pointerargs
             && a.warnings == b.warnings
@@ -2284,6 +2287,7 @@ mod tests {
             aliases: Vec::new(),
             object_location: None,
             callee_hints: Vec::new(),
+            ranges: Vec::new(),
             synth: None,
             pointerargs: None,
             warnings: Vec::new(),
@@ -2340,13 +2344,14 @@ mod tests {
             aliases: Vec::new(),
             object_location: None,
             callee_hints: Vec::new(),
+            ranges: Vec::new(),
             synth: None,
             pointerargs: None,
             warnings: Vec::new(),
             detail: None,
         };
         let expected = [
-            b"KUNAJOBRES12\x01\x55\0\0\0".as_slice(),
+            b"KUNAJOBRES13\x01\x59\0\0\0".as_slice(),
             b"\x10\0\0\0\0\0\0\0\x20\0\0\0\0\0\0\0",
             b"\xff\xff\xff\xff\xff\xff\xff\xff",
             b"\x01\0\0\0f\0\x01\x01\0\0\0e\0\0",
@@ -2359,6 +2364,7 @@ mod tests {
             b"\0\0\0\0", // globals
             b"\0\0\0\0", // field calls
             b"\0\0\0\0", // callee hints
+            b"\0\0\0\0", // ranges
             b"\0\0", // synth and pointer arguments
             b"\0\0\0\0", // warnings
             b"\0\0\0\0", // call declarations
@@ -2892,6 +2898,7 @@ mod tests {
             aliases: Vec::new(),
             object_location: None,
             callee_hints: Vec::new(),
+            ranges: Vec::new(),
             synth: None,
             pointerargs: None,
             warnings: Vec::new(),
