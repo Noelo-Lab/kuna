@@ -86,7 +86,10 @@ fn suspect(insn: &Insn) -> bool {
 
 /// The direct callee of a call instruction.
 fn direct_callee(insn: &Insn) -> Option<u64> {
-    (insn.flow.is_call && !insn.flow.is_computed).then(|| insn.flows.first().copied()).flatten()
+    match insn.calls() {
+        [callee] if !insn.flow.is_computed => Some(*callee),
+        _ => None,
+    }
 }
 
 /// Does flow provably continue from `insn` into its fall-through?
@@ -191,8 +194,8 @@ pub(crate) fn returning_entries_with(listing: &Listing, lenient: bool) -> BTreeS
     for (p, insn) in insns.iter().enumerate() {
         if let Some(callee) = direct_callee(insn) {
             call_sites.entry(callee).or_default().push(p);
-        } else {
-            branch_edges.extend(insn.flows.iter().filter_map(|t| index.get(t)).map(|&s| (s, p)));
+        } else if !suspect(insn) {
+            branch_edges.extend(insn.branches().iter().filter_map(|t| index.get(t)).map(|&s| (s, p)));
         }
         if let Some(&s) = insn.fall_through.as_ref().and_then(|f| index.get(f)) {
             fall_edges.push((s, p));

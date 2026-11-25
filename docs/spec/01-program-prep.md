@@ -8334,6 +8334,15 @@ than pushing them onto a worklist itself, so a driver that routes successors
 somewhere else still runs the identical decode-and-claim policy. Indirect targets are recorded
 with their computed/indirect predicates but contribute no static successor.
 
+Call and branch targets retain their own roles from p-code classification
+through the cached and stored Listing records. An instruction can call a
+callee and then branch to a local continuation, as SPARC calls with a delay
+slot do. The walk and raw function scan offer only the direct call target as
+a function entry; the continuation stays in the caller's instruction walk.
+A branch target cannot corroborate a callee or its no-return metadata.
+Gap validation follows that explicit continuation even when another path in
+the same call bundle returns.
+
 (kuna) Assembly capture retains operand bodies as per-instruction `String`s,
 but mnemonic spellings repeat heavily across a Listing. The walker interns each
 captured mnemonic into an immutable `Mnemonic` handle backed by shared text,
@@ -9424,9 +9433,16 @@ acceptance and fingerprint stay the `save` candidate's, and only the plain gap w
 applies it. Over 117 Debian SPARC32 images it moves 12 entries in 11 images back
 eight bytes, each onto a true start, and changes no count; GCC 14 stripped
 `-m32` images scored against their unstripped twins move 29 entries, all onto the
-symbol address. Two prefixes are not recognised: a frame size whose low ten bits
-are zero, which GCC builds with a lone `sethi`, and SPARC64's `sethi; xor`, since
-the pass runs only where `%g1` is four bytes.
+symbol address. A frame size whose low ten bits are zero, which GCC
+builds with a lone `sethi`, is not recognised by this SPARC32 rule.
+
+On SPARC64, the plain gap walk can instead accept an untrained
+`sethi; xor; save` entry. The first two instructions must build a
+16-byte-aligned negative frame size outside the immediate range in one
+temporary; `save` must add it to `sp` and write `sp`. The three words must
+be unclaimed in the same executable gap, and the body must pass the usual
+subroutine walk with call or branch corroboration. The ordinary fingerprint
+and bracket rules still apply to other candidates.
 
 (kuna, GH-299) No gap entry starts on a literal-pool word: `aifpoolslide`
 (default-on; `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifpoolslide.rs`).

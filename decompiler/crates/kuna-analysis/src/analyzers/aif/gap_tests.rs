@@ -67,6 +67,7 @@ fn padding_fixture(size: usize, count: usize) -> (Sleigh, Rc<AddrSpace>, Listing
                 len: decoded.len,
                 fall_through: c.fall_through,
                 flow: c.flow,
+                call_count: c.calls().len() as u32,
                 flows: c.flows,
                 mnemonic: decoded.mnemonic.into(),
                 operands: decoded.operands,
@@ -201,6 +202,7 @@ fn hidden_fixture(kind: &str) -> (Sleigh, Rc<AddrSpace>, Listing) {
                 len: d.len,
                 fall_through: c.fall_through,
                 flow: c.flow,
+                call_count: c.calls().len() as u32,
                 flows: c.flows,
                 mnemonic: d.mnemonic.into(),
                 operands: d.operands,
@@ -218,6 +220,63 @@ fn hidden_fixture(kind: &str) -> (Sleigh, Rc<AddrSpace>, Listing) {
         space,
         Listing::from_model_for_test(insns, funcs, Vec::new(), ranges),
     )
+}
+
+#[test]
+fn mixed_call_and_branch_preserve_local_paths_without_promoting_callees() {
+    use crate::listing::model::RawOp;
+    use kuna_num::{opcodes::OpCode, pcoderaw::VarnodeData};
+
+    let (engine, space) = arm(vec![
+        0x00, 0xf0, 0x20, 0xe3, // replaced by mixed p-code below
+        0x1e, 0xff, 0x2f, 0xe1, // fall-through return
+        0x00, 0xf0, 0x20, 0xe3, // branch target: nop
+        0x1e, 0xff, 0x2f, 0xe1, // branch path return
+    ]);
+    let callee = BASE + 0x20;
+    let gap_end = BASE + 0x10;
+    let listing = Listing::from_model_for_test(
+        Vec::new(), Vec::new(), Vec::new(), vec![(BASE, callee + 4)],
+    );
+    let target = |offset| Some(VarnodeData { space: Some(Rc::clone(&space)), offset, size: 4 });
+    for (call, jump, direct_callee, has_fall, terminal) in [
+        (OpCode::CPUI_CALL, OpCode::CPUI_BRANCH, Some(callee), false, false),
+        (OpCode::CPUI_CALLIND, OpCode::CPUI_CBRANCH, None, true, false),
+        (OpCode::CPUI_CALL, OpCode::CPUI_CBRANCH, Some(callee), false, true),
+    ] {
+        let mut ops = vec![
+            RawOp { opcode: call, in0: direct_callee.and_then(target) },
+            RawOp { opcode: jump, in0: target(BASE + 8) },
+        ];
+        if terminal {
+            ops.push(RawOp { opcode: OpCode::CPUI_RETURN, in0: None });
+        }
+        let c = crate::listing::classify::classify(&ops, BASE, 4);
+        let probe = Rc::new(ProbedInsn {
+            len: 4, encoded_len: 4, kind: c.flow.kind, is_call: c.flow.is_call,
+            is_terminal: c.flow.is_terminal, fall_through: c.fall_through,
+            call_count: c.calls().len(), flows: c.flows.clone(), mnemonic: Rc::from("CALL"),
+            operands: String::new(), reusable: None,
+        });
+        let call_listing = Listing::from_insns_for_test(vec![Insn {
+            addr: BASE, len: 4, flow: c.flow, fall_through: c.fall_through,
+            call_count: c.calls().len() as u32, flows: c.flows,
+            mnemonic: Default::default(), operands: String::new(), pcode: None,
+        }], false);
+        let called: BTreeSet<_> = direct_callee.into_iter().collect();
+        assert_eq!(kuna_framecalls::independently_called(&call_listing, [BASE], &BTreeMap::new()), called);
+        let prefixes = BTreeMap::from([(BASE, Rc::clone(&probe))]);
+        assert_eq!(kuna_framecalls::independently_called(&listing, [BASE], &prefixes), called);
+
+        let mut decoder = GapDecoder::new(&engine, Rc::clone(&space), listing.exec_ranges());
+        decoder.cache.insert(BASE, Some(probe));
+        let expected = BTreeSet::from([BASE, BASE + 8, BASE + 12])
+            .into_iter().chain(has_fall.then_some(BASE + 4)).collect();
+        assert_eq!(
+            check_valid_subroutine_strict(&mut decoder, &listing, BASE, BASE, gap_end),
+            Some(expected),
+        );
+    }
 }
 
 #[test]

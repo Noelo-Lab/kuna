@@ -68,6 +68,7 @@ mod tests {
         Insn {
             addr,
             len,
+            call_count: 0,
             fall_through: Some(addr + u64::from(len)),
             flow: FlowType {
                 kind: if call {

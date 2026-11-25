@@ -212,6 +212,7 @@ mod tests {
         ProbedInsn {
             len: 1, encoded_len: 1, kind: FlowKind::Fallthrough, is_call: false, is_terminal: false, fall_through: None,
             flows: Vec::new(), mnemonic: Rc::from(mnemonic), operands: operands.to_string(), reusable: None,
+            call_count: 0,
         }
     }
 

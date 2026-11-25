@@ -130,6 +130,11 @@ fn call_site_has_no_fallthrough(listing: &Listing, call_vma: u64, callee: u64) -
         // The call site is not a decoded instruction; no evidence we can read.
         return false;
     };
+    // For a mixed transfer the instruction's successor may describe a branch,
+    // not a return from this callee.
+    if insn.flow.is_jump || insn.flow.is_conditional || !insn.calls().contains(&callee) {
+        return false;
+    }
     let Some(fall) = insn.fall_through else {
         // A call with no fall-through at all (a lowered tail jump) is evidence.
         return true;
@@ -191,7 +196,7 @@ fn last_act_is_terminal_call(listing: &Listing, entry: u64, terminal: &BTreeSet<
         }
         // (a) A call whose static callee is already terminal AND which itself has
         // no valid fall-through (the call is a terminal flow of this function).
-        for &callee in &insn.flows {
+        for &callee in insn.calls() {
             if terminal.contains(&callee)
                 && call_site_has_no_fallthrough(listing, vma, callee)
             {

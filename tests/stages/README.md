@@ -242,6 +242,14 @@ zero fill. The four-byte MIPS grid checks both direct and padding-adjusted
 entry candidates with delay slots. The fixture languages reuse the stock
 decoders and calling conventions through the stage corpus's `specs/` directory.
 
+`kuna-sparc-call-continuation.xml` checks that raw-image discovery follows
+the continuation of a SPARC delayed call inside its caller, without adding
+it as a third function beside the caller and callee.
+
+`kuna-sparc64-large-frame.xml` checks that AIF can find a large frame
+without a matching trained fingerprint. Mismatched temporaries and an
+uncorroborated frame-shaped byte sequence are not entries.
+
 `ghangr-go-paniccheck-return.xml` checks that a returning Go panic helper
 falls through to the terminal `runtime.gopanic` call. It also checks the
 helper's conditional throw and shows the caller's sentinel with the known

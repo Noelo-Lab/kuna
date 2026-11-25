@@ -236,9 +236,7 @@ impl WalkModes<'_> {
                 returns = true;
                 break;
             }
-            if !insn.flow.is_call {
-                stack.extend(insn.flows.iter().copied());
-            }
+            stack.extend(insn.branches().iter().copied());
             stack.extend(insn.fall_through);
         }
         if returns {

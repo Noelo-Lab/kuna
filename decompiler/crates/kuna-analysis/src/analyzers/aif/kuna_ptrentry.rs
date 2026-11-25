@@ -235,17 +235,19 @@ pub(super) fn check_terminating_routine(
             did_terminate = true;
             continue;
         }
-        for &target in &insn.flows {
+        for &target in insn.calls() {
             if !decoder.in_exec(target) {
                 return None;
             }
-            if insn.is_call {
-                if listing.is_instruction_start(target) {
-                    adds_info = true;
-                }
-            } else {
-                worklist.push(target);
+            if listing.is_instruction_start(target) {
+                adds_info = true;
             }
+        }
+        for &target in insn.branches() {
+            if !decoder.in_exec(target) {
+                return None;
+            }
+            worklist.push(target);
         }
         if let Some(fall) = insn.fall_through {
             worklist.push(fall);

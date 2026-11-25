@@ -20,18 +20,16 @@ pub(super) fn independently_called(
         if !seen.insert(at) {
             continue;
         }
-        let (fall, flows, is_call) = if let Some(insn) = prefixes.get(&at) {
-            (insn.fall_through, &insn.flows, insn.is_call)
+        let (fall, flows, calls) = if let Some(insn) = prefixes.get(&at) {
+            (insn.fall_through, &insn.flows, insn.calls())
         } else if let Some(insn) = corpus.instruction_at(at) {
-            (insn.fall_through, &insn.flows, insn.flow.is_call)
+            (insn.fall_through, &insn.flows, insn.calls())
         } else {
             continue;
         };
         pending.extend(fall);
         pending.extend(flows.iter().copied());
-        if is_call {
-            called.extend(flows.iter().copied());
-        }
+        called.extend(calls.iter().copied());
     }
     called
 }

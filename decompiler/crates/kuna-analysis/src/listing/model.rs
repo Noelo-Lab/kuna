@@ -132,11 +132,12 @@ pub struct Insn {
     pub addr: u64,
     /// Bytes consumed incl. delay slots (the `one_instruction` return value).
     pub len: u32,
+    pub(crate) call_count: u32,
     /// `None` iff `!flow.has_fallthrough` (a terminal instruction).
     pub fall_through: Option<u64>,
     /// Flow class projected from the emitted p-code (NOT a separate API result).
     pub flow: FlowType,
-    /// Static control targets (`getFlows`): branch/call destination VMAs.
+    /// Static targets (`getFlows`), with direct calls before same-function branches.
     pub flows: Vec<u64>,
     /// The decoded mnemonic (from a capturing `AssemblyEmit`).
     pub mnemonic: Mnemonic,
@@ -159,6 +160,16 @@ pub struct Insn {
     pub pcode: Option<Box<Vec<RawOp>>>,
 }
 
+impl Insn {
+    pub(crate) fn calls(&self) -> &[u64] {
+        &self.flows[..self.call_count as usize]
+    }
+
+    pub(crate) fn branches(&self) -> &[u64] {
+        &self.flows[self.call_count as usize..]
+    }
+}
+
 /// The walk's actual per-instruction product: every [`Insn`] field except the
 /// lazily-populated raw ops, which the walk never fills.
 ///
@@ -171,11 +182,12 @@ pub struct InsnLite {
     pub addr: u64,
     /// Bytes consumed incl. delay slots (the `one_instruction` return value).
     pub len: u32,
+    pub(crate) call_count: u32,
     /// `None` iff `!flow.has_fallthrough` (a terminal instruction).
     pub fall_through: Option<u64>,
     /// Flow class projected from the emitted p-code.
     pub flow: FlowType,
-    /// Static control targets (`getFlows`): branch/call destination VMAs.
+    /// Static targets (`getFlows`), with direct calls before same-function branches.
     pub flows: Vec<u64>,
     /// The decoded mnemonic (empty when the walk captured no assembly).
     pub mnemonic: Mnemonic,
@@ -188,6 +200,7 @@ impl From<InsnLite> for Insn {
         Insn {
             addr: lite.addr,
             len: lite.len,
+            call_count: lite.call_count,
             fall_through: lite.fall_through,
             flow: lite.flow,
             flows: lite.flows,
