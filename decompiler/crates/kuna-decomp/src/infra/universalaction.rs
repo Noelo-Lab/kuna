@@ -872,6 +872,7 @@ pub fn universal_sched(
             act!(crate::p8_structure::kuna_dedupitetail::ActionDedupIteTail::boxed("blockrecovery")),
             // (kuna) tailform: choose the wrapped or guard form of each function-tail
             // `if` by the size of its conditional tail (print-tree edit only).
+            act!(crate::p8_structure::kuna_retshape::ActionRetShape::boxed("blockrecovery")),
             act!(crate::p8_structure::kuna_tailform::ActionTailForm::boxed("blockrecovery")),
             // (kuna) angr ITERegionConverter (option `iteregion`, default-OFF — a
             // runtime choice).  After the tree is final + goto targets labelled,

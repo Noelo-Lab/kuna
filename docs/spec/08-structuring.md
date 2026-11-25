@@ -1868,7 +1868,97 @@ Two source forms are the same code at `-O0` and the record picks one:
 printed as the second (merging non-constant returns instead was measured worse,
 195 functions lost against 9 gained), and a `switch` whose `default: break;`
 is the last statement emits the same `nop` as a `return;`. Optimized functions
-are untouched; `option returndup on` restores the rules everywhere.
+are not recorded (the next section covers what `auto` does there); `option
+returndup on` restores the rules everywhere, and `option returndup record` keeps
+the record but not the optimized-function shapes.
+
+### returndup auto in optimized functions — one guard per `||`, one return per arm
+
+An optimizing compiler emits the same code for `if (a) return K; if (b) return
+K;` and `if (a || b) return K;`, and for `if (c) v = f(); else v = g(); return
+v;` and `if (c) return f(); return g();`. Which one structuring recovers is
+decided by the return layout — whether the paths share a return block, and
+whether the splitters above give each path its own — not by the author, and
+measured against the sources it is the wrong one far more often than not: where
+kuna printed one return fed by assignments in both arms of the last `if`, the
+source wrote that form for 5 of 204 functions; where it printed adjacent guards
+with the same return, the source had a `||` guard in 241 of 626 and separate
+guards in 160. In functions the detector of chapter 03 does not call
+unoptimized and that do not address their frame through a frame pointer (the
+detector's own evidence, cached at the first heritage pass: small `-O0`
+functions it misses keep one, optimizing compilers rarely do), `auto` re-spells
+both
+(`decompiler/crates/kuna-decomp/src/p8_structure/kuna_retshape.rs`).
+
+**Guards.** `kuna_retshape.rs (ActionRetShape)` runs on the final tree right
+before `tailform`. In every statement list (each `Ls`/`Graph` no enclosing list
+flattens, with the condition prefixes of its `if`s hoisted the way `tailform`
+hoists them, print-neutrally and only when a fold is decided) it folds a run of
+adjacent guards `if (a) return K; if (b) return K;` into one `if (a || b)
+return K;`: both arms must print only a bare return of the same value (void,
+equal constants, one named variable, or the same expression varnode), the
+second guard must print nothing in front of its test and carry no label, and
+neither may be a guard the `looptest` plan drops. The folded condition is a new
+`BlockCondition` over the two existing conditions, left-nested as
+`rule_block_or` builds a chain, and the second return leaf leaves the tree. Each
+leaf keeps its own `CBRANCH` polarity — it already printed the test that enters
+its clause — so the `||` evaluates the same tests in the same order and runs the
+same `return` on the same paths. Two adjacent tests that both call something
+stay two guards when the return is void or a constant (authors check one call's
+result per guard: across the corpus sources such joins were written as `||` 30%
+of the time for void and 41% for constants, against 49-78% when at most one
+test calls).
+
+**Merged returns.** `kuna_retshape.rs (arm_returns)` adds candidates to
+`returndup` (`Funcdata::returndup_apply`, before the short-circuit gate): a
+RETURN block whose returned value is a phi of its in-edges, perhaps through
+casts, extensions or a `SUBPIECE`, and which holds nothing else but the
+return's own `glob = glob` guard copies (`value_tail`: no load, store, call,
+branch or `INDIRECT`; at most 16 ops). The split is the same `node_split` the
+constant duplication uses, so each arm runs its own copy of a value-only block
+and returns the value it computed. On ARM the phi is often extended in the
+return block (`sxth r0, r0` before `pop {pc}`), which the bare-epilogue filter
+rejects; on x86 a stack-protector check joins the paths, and once
+`kuna_stackguard` has stripped it the phi sits in a block that only runs into a
+one-predecessor RETURN, which is spliced into it first (the same move as
+`kuna_o0returns.rs (joined)`), after every other check has passed.
+
+Which merges split is the judgement. Every in-edge must end an arm (one
+out-edge), so a one-armed update `if (c) v += k; return v;` keeps its merge. An
+arm entered from several places qualifies only when its entries join one `if`
+(`if_join`: a two-way block and the one block it branches to, or two blocks
+entered only from the same two-way block) or fold into one short-circuit chain
+(`kuna_orchain.rs (folded_in_degree)`, the fold replay above, leaves it one
+in-edge): any other arm, such as a cleanup block several failure paths and a
+`switch` reach, becomes a terminal block with several entries once it returns
+on its own, and the structurer needs a `goto` for it. The one exception to the
+arm rule is a one-block `if` (`fresh_triangle`): `v = a; if (c) v = b; return
+v;` splits when `b` does not read `a` (through copies), which is the source's
+`if (!c) return a; return b;`, while the update keeps its merge.
+
+Measured on the decbench corpus against `record` in the same build (main
+fb88f5865, where `record` prints every function byte for byte as before),
+`auto` makes 305 more O2-noinline functions structurally exact and 23 fewer
+(+204 on one half of the projects, +78 on the other); measured one at a time
+on the previous main (068372109), the guard fold was +60 (63 / 3) and the merged-return split
++222 (242 / 20). The losses are sources that wrote the other form: a ternary, a
+result variable assigned in each arm and returned once, separate guards each
+checking a call's result. The two shapes never touch a function the detector
+calls unoptimized or one with a frame pointer; at -O0 the functions both tests
+let through (mostly firmware built with optimization) move 61 functions to an
+exact match and 8 off (+5 and +48 on the two halves); without the frame-pointer
+test two small openssh functions in nine binaries were lost. Each is a
+print-tree edit or a split of a value-only block, so both print the same
+program. One function of the 35,197 gains a `goto`, through `loopcondhoist`:
+with the arms split, the loop-condition structuring of its last pass prints a
+`goto`, the retry without the rule does no better, and the function falls back
+to `CollapseStructure` (with `loopcondhoist off`, or with `record`, it has
+none). The extra work is one pass over the final tree, a check of each valued
+return block, and one more round of the main loop in a function whose arms
+split (0.5% more heritage passes over sshd, 0.3% over bash). Measured with
+`KUNA_ACTION_PROF` and one job, `record` and `auto` side by side, whole-binary
+time on those two binaries moves by +0.3% and -1.5%, inside the run-to-run
+noise; `ActionRetShape` itself takes 5-10 ms per binary.
 
 ### loopcontinue auto — the jump statements an unoptimized function was written with
 

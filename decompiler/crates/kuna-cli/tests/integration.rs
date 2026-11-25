@@ -334,6 +334,9 @@ mod libgcc_divdi3;
 #[path = "rettriangle_round_trip.rs"]
 mod rettriangle_round_trip;
 
+#[path = "retshape_round_trip.rs"]
+mod retshape_round_trip;
+
 #[path = "tailform_round_trip.rs"]
 mod tailform_round_trip;
 
