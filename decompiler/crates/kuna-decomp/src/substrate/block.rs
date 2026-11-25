@@ -651,6 +651,10 @@ impl FlowBlock {
     pub fn get_in_rev_index(&self, i: int4) -> int4 {
         self.intothis[i as usize].reverse_index
     }
+    /// (kuna) The label of the i-th \e in edge.
+    pub fn get_in_label(&self, i: int4) -> uint4 {
+        self.intothis[i as usize].label
+    }
     /// Get the \b false output FlowBlock (C++ `getFalseOut`).
     pub fn get_false_out(&self) -> BlockId {
         self.get_out(0)
@@ -2741,6 +2745,16 @@ impl BlockGraph {
             }
             ret
         }
+    }
+
+    /// (kuna `tailform`) Replace the components of the print-tree node `id` with
+    /// `list`, re-parenting each to `id`.  A print-tree edit only: edges and
+    /// p-code are untouched.
+    pub fn kuna_set_components(&mut self, id: BlockId, list: Vec<BlockId>) {
+        for &c in &list {
+            self.arena[c].parent = Some(id);
+        }
+        self.arena[id].list = list;
     }
 
     /// Build a new BlockList collapsing the given components

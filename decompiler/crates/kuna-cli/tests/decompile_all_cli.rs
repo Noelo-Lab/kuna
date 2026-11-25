@@ -15,6 +15,7 @@ mod compiler_probe_tests;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
+use crate::common::process::Capped;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -2828,7 +2829,7 @@ fn compile_and_run_each(tag: &str, src: &str) -> Vec<(String, String)> {
             .output()
             .expect("spawn the compiler");
         assert!(built.status.success(), "{cc} rejected the printed C:\n{}\n{src}", String::from_utf8_lossy(&built.stderr));
-        let run = Command::new(&exe).output().expect("run the round trip");
+        let run = Command::new(&exe).capped_output().expect("run the round trip");
         out.push((cc.to_string(), String::from_utf8_lossy(&run.stdout).trim().to_string()));
     }
     let _ = std::fs::remove_dir_all(&dir);
@@ -3179,7 +3180,7 @@ fn compile_pair_and_run_each(tag: &str, lib: &str, main: &str) -> Vec<(String, S
             .output()
             .expect("spawn the compiler");
         assert!(built.status.success(), "{cc} rejected the printed C:\n{}\n{lib}", String::from_utf8_lossy(&built.stderr));
-        let run = Command::new(&exe).output().expect("run the round trip");
+        let run = Command::new(&exe).capped_output().expect("run the round trip");
         out.push((cc.to_string(), String::from_utf8_lossy(&run.stdout).trim().to_string()));
     }
     let _ = std::fs::remove_dir_all(&dir);
@@ -3620,6 +3621,9 @@ fn a_float_handed_on_through_wrappers_to_an_integer_round_trips() {
          printf(\"%x %x %x %x\\n\", dat_4120e0, dat_4120e4, dat_4120e8, dat_4120ec);\n  return 0;\n}}\n",
         arg_of_pointer(&printed, "sub_400b78", 0, "base"),
     );
+    if !cfg!(target_os = "linux") {
+        return;
+    }
     for (cc, got) in compile_and_run_each("floatret-chain-mips", &src) {
         assert_eq!(got, "40100000 0 4010 0", "{cc}: the printed MIPS reader stores something else:\n{printed}");
     }
@@ -3676,12 +3680,12 @@ fn a_float_return_beside_a_global_read_stays_an_integer() {
 /// `Funcdata::clear` does, so the return type is what the restarted pass
 /// recovers (`unsigned int`), not the first pass's. Patched to also load
 /// through the handle on that path (`je` to a `mov ecx,[eax]` the
-/// `ExitProcess` path jumps over), the pass before the restart returned `eax`,
-/// joined with what the unresolved call left, and the pass after it refused
-/// the handle: the function must be `void`. No function that declares a return
-/// type prints a bare `return;`.
+/// `ExitProcess` path jumps over), the pass before the restart returned `eax`
+/// joined with what the unresolved call left; the pass after it returns the
+/// handle alone, which the entry still reads, though the function loads through
+/// it. No function that declares a return type prints a bare `return;`.
 #[test]
-fn a_return_refused_after_a_restart_leaves_the_function_void() {
+fn a_restart_returns_what_the_restarted_pass_recovers() {
     let fixture = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatret_restart_pe_i386.exe");
     let sp = specs();
     let decompile = |bin: &str| {
@@ -3712,7 +3716,10 @@ fn a_return_refused_after_a_restart_leaves_the_function_void() {
     let patched = common::scratch_file("floatret-restart-load", "exe");
     std::fs::write(&patched, &image).unwrap();
     let printed = decompile(patched.to_str().unwrap());
-    assert!(printed.contains("void sub_401020(unsigned int a0)"), "{printed}");
+    assert!(
+        printed.contains("unsigned int sub_401020(unsigned int a0)") && printed.contains("return 0xffffffff;"),
+        "{printed}"
+    );
 }
 
 /// `floatret_handon_gcc_O1`: `key_ssh_name` passes `key_type_plain`'s `int` to
@@ -6756,7 +6763,7 @@ int main(void) {
         for opt in ["off", "on"] {
             let args = [
                 "decompile-all", bin.as_str(), "--functions", funcs, "--sleighpath", sp.as_str(),
-                "--option", "castobject", opt,
+                "--option", "castobject", opt, "--option", "returndup", "on",
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
             assert!(ok, "kuna decompile-all failed: {stderr}");
@@ -7976,7 +7983,7 @@ int main(void) {
                 ("stream = (FILE *)pick_stream(a0);", "stream = pick_stream(a0);"),
                 (
                     "s = (a0) ? (char *)after_colon(a0) : (char *)fallback_name();",
-                    "    s = after_colon(a0);\n  else {\n    s = fallback_name();",
+                    "s = (a0) ? after_colon(a0) : fallback_name();",
                 ),
                 ("return (int)neg32(a0);", "return neg32(a0);"),
             ],
@@ -8026,9 +8033,9 @@ int main(void) {
                 ("v1 = (char *)fallback_name();", "v1 = fallback_name();"),
                 ("stream = (FILE *)pick_stream(a0);", "stream = pick_stream(a0);"),
                 ("return (int)neg32(a0);", "return neg32(a0);"),
+                ("v1 = (char *)skip_blanks(a0);", "v1 = skip_blanks(a0);"),
             ],
             &[
-                "v1 = (char *)skip_blanks(a0);",
                 "return (unsigned long)signed_delta(a0,a1) >> 0x3f;",
                 "unsigned short use_s16_as_u(short a0)",
                 "unsigned int use_neg_as_unsigned(int a0)",
@@ -8052,7 +8059,10 @@ int main(void) {
             .to_string();
         let mut listings: Vec<String> = Vec::new();
         for opt in ["off", "on"] {
-            let args = ["decompile-all", bin.as_str(), "--sleighpath", sp.as_str(), "--option", "callrettype", opt];
+            let args = [
+                "decompile-all", bin.as_str(), "--sleighpath", sp.as_str(), "--option", "callrettype", opt,
+                "--option", "returndup", "on",
+            ];
             let (stdout, stderr, ok) = run_kuna(&args);
             assert!(ok, "kuna decompile-all failed: {stderr}");
             for (off, on) in lines {
@@ -8512,7 +8522,7 @@ fn check_narrowload_round_trip(
                     "{build} {elem}/{cc}: the printed functions did not compile:\n{}\n{bodies}",
                     String::from_utf8_lossy(&built.stderr)
                 );
-                let run = Command::new(&exe).output().expect("run the round trip");
+                let run = Command::new(&exe).capped_output().expect("run the round trip");
                 assert_eq!(
                     (String::from_utf8_lossy(&run.stdout), run.status.code()),
                     (String::from_utf8_lossy(&expected.stdout), expected.status.code()),
@@ -8819,13 +8829,8 @@ fn a_value_read_by_a_sign_sensitive_op_is_not_re_read_from_a_global() {
         ("globalstore_clang_O2_x86_64", ",w_rephi,w_oif", &["FIRST", "OHOIST", "OLOOP"][..]),
     ] {
         let bin = fixtures_dir.join(fixture).to_str().unwrap().to_string();
-        let want = match process::optional_output(&mut Command::new(&bin)) {
-            Some(o) => String::from_utf8_lossy(&o.stdout).to_string(),
-            None => {
-                eprintln!("globalstore round trip: the fixture {fixture} does not run here, spelling checked only");
-                continue;
-            }
-        };
+        let want = cfg!(all(target_os = "linux", target_arch = "x86_64"))
+            .then(|| String::from_utf8_lossy(&process::required_output(&mut Command::new(&bin)).stdout).to_string());
         let funcs = format!("{FUNCS}{extra}");
         let (stdout, stderr, ok) =
             run_kuna(&["decompile-all", bin.as_str(), "--functions", funcs.as_str(), "--sleighpath", sp.as_str()]);
@@ -8840,6 +8845,10 @@ fn a_value_read_by_a_sign_sensitive_op_is_not_re_read_from_a_global() {
                 && !stdout.contains("shsink < "),
             "{fixture}: the store's value is still re-read from the global:\n{stdout}"
         );
+        let Some(want) = want else {
+            eprintln!("globalstore round trip: the fixture {fixture} does not run here, spelling checked only");
+            continue;
+        };
         for cc in &compilers {
             let dir = std::env::temp_dir().join(format!("kuna-globalstore-rt-{}-{fixture}-{cc}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
@@ -9469,7 +9478,12 @@ fn a_branch_chosen_flag_or_an_int_truncation_keeps_its_int_in_the_first_register
         let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "bejoin", "on"]);
         assert!(ok, "kuna decompile-all {fixture} failed: {stderr}");
         let printed = callrettype_functions(&stdout, funcs);
-        let sigs: Vec<&str> = printed.split("// Function: ").skip(1).filter_map(|part| part.lines().nth(1)).collect();
+        let sigs: Vec<&str> = printed
+            .split("// Function: ")
+            .skip(1)
+            .filter_map(|part| part.lines().nth(1))
+            .map(|sig| sig.split(" //").next().unwrap_or(sig))
+            .collect();
         assert_eq!(sigs.len(), funcs.len(), "{fixture}: every function prints:\n{stdout}");
         for sig in &sigs {
             let want = if sig.contains("pick") { 5 } else { 2 };

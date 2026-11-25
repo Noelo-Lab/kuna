@@ -192,10 +192,40 @@ fn build_and_of_ors(fd: &mut Funcdata, n: VarnodeId, v: VarnodeId) -> OpId {
     andop
 }
 
-/// Build the {N (sign of V-K), V (SBORROW(V,K))} flag pair, sharing `vbase`.
-/// Returns (n, v).
-fn build_flag_pair(fd: &mut Funcdata, vbase: VarnodeId, kval: u64, sz: int4) -> (VarnodeId, VarnodeId) {
-    // sub = V + (-K)   (INT_ADD with the two's-complement of K)
+/// Build `BOOL_OR(BOOL_AND(N,V), BOOL_AND(!N,!V))` over the flag pair (n, v),
+/// returning the OR op.
+fn build_or_of_ands(fd: &mut Funcdata, n: VarnodeId, v: VarnodeId) -> OpId {
+    let not_v = bool_neg(fd, 0x200, v);
+    let not_n = bool_neg(fd, 0x204, n);
+    let aa = build_bool(fd, 0x208, OpCode::CPUI_BOOL_AND, n, v);
+    let ab = build_bool(fd, 0x20c, OpCode::CPUI_BOOL_AND, not_n, not_v);
+    let orop = mk_op(fd, 0x210, 2, OpCode::CPUI_BOOL_OR);
+    wire(fd, aa, orop, 0);
+    wire(fd, ab, orop, 1);
+    let out = fd.new_unique(1, Some(unk(1)));
+    let _ = set_def(fd, out, orop);
+    orop
+}
+
+/// Which spelling of the sign flag of `V-K` the tree is built over.
+#[derive(Clone, Copy)]
+enum SignForm {
+    /// `(V-K) s< 0` == N.
+    LessZero,
+    /// `0 s<= (V-K)` == !N.
+    ZeroLessEq,
+    /// `-1 s< (V-K)` == !N.
+    MinusOneLess,
+}
+
+/// Build the {sign flag of V-K, V (SBORROW(V,K))} pair, sharing `vbase`.
+fn build_flag_pair(
+    fd: &mut Funcdata,
+    vbase: VarnodeId,
+    kval: u64,
+    sz: int4,
+    form: SignForm,
+) -> (VarnodeId, VarnodeId) {
     let subop = mk_op(fd, 0x180, 2, OpCode::CPUI_INT_ADD);
     let negk = (kval.wrapping_neg()) & calc_mask(sz);
     let negk_c = fd.new_constant(sz, negk);
@@ -204,11 +234,21 @@ fn build_flag_pair(fd: &mut Funcdata, vbase: VarnodeId, kval: u64, sz: int4) -> 
     let sub = fd.new_unique(sz, Some(unk(sz)));
     let sub = set_def(fd, sub, subop);
 
-    // N = INT_SLESSEQUAL(0, V-K)
-    let zero = fd.new_constant(sz, 0);
-    let n = build_bool(fd, 0x188, OpCode::CPUI_INT_SLESSEQUAL, zero, sub);
+    let n = match form {
+        SignForm::LessZero => {
+            let zero = fd.new_constant(sz, 0);
+            build_bool(fd, 0x188, OpCode::CPUI_INT_SLESS, sub, zero)
+        }
+        SignForm::ZeroLessEq => {
+            let zero = fd.new_constant(sz, 0);
+            build_bool(fd, 0x188, OpCode::CPUI_INT_SLESSEQUAL, zero, sub)
+        }
+        SignForm::MinusOneLess => {
+            let m1 = fd.new_constant(sz, calc_mask(sz));
+            build_bool(fd, 0x188, OpCode::CPUI_INT_SLESS, m1, sub)
+        }
+    };
 
-    // V = INT_SBORROW(V, K)
     let sbop = mk_op(fd, 0x190, 2, OpCode::CPUI_INT_SBORROW);
     let kc = fd.new_constant(sz, kval);
     wire(fd, vbase, sbop, 0);
@@ -218,23 +258,48 @@ fn build_flag_pair(fd: &mut Funcdata, vbase: VarnodeId, kval: u64, sz: int4) -> 
     (n, v)
 }
 
-#[test]
-fn sborrowge_and_of_ors_folds_to_slessequal() {
+/// Apply the rule to the tree built in `form`/`and_of_ors` and return the
+/// rewritten op's opcode plus whether input 0 is the constant 7 (else `vbase`).
+fn fold_sborrow(form: SignForm, and_of_ors: bool) -> (OpCode, bool) {
     let mut fd = build_fd();
     let vbase = mk_written(&mut fd, 0x40, 4);
-    let (n, v) = build_flag_pair(&mut fd, vbase, 7, 4);
-    let andop = build_and_of_ors(&mut fd, n, v);
+    let (n, v) = build_flag_pair(&mut fd, vbase, 7, 4, form);
+    let root = if and_of_ors {
+        build_and_of_ors(&mut fd, n, v)
+    } else {
+        build_or_of_ands(&mut fd, n, v)
+    };
 
     let mut rule = RuleSborrowGe::new();
-    assert_eq!(rule.apply_op(andop, &mut fd), 1);
+    assert_eq!(rule.apply_op(root, &mut fd), 1);
 
-    let o = fd.obank().get(andop).unwrap();
-    assert_eq!(o.code(), OpCode::CPUI_INT_SLESSEQUAL);
-    // in0 = const K (= 7), in1 = V
-    let k = o.get_in(0).unwrap();
-    assert!(fd.vbank().get(k).unwrap().is_constant());
+    let o = fd.obank().get(root).unwrap();
+    let in0 = o.get_in(0).unwrap();
+    let in1 = o.get_in(1).unwrap();
+    let k_first = fd.vbank().get(in0).unwrap().is_constant();
+    let (k, b) = if k_first { (in0, in1) } else { (in1, in0) };
     assert_eq!(fd.vbank().get(k).unwrap().get_offset(), 7);
-    assert_eq!(o.get_in(1), Some(vbase));
+    assert_eq!(b, vbase);
+    (o.code(), k_first)
+}
+
+#[test]
+fn sborrowge_sign_flag_folds_to_slessequal() {
+    for and_of_ors in [true, false] {
+        assert_eq!(
+            fold_sborrow(SignForm::LessZero, and_of_ors),
+            (OpCode::CPUI_INT_SLESSEQUAL, true)
+        );
+    }
+}
+
+#[test]
+fn sborrowge_nonneg_flag_folds_to_sless() {
+    for form in [SignForm::ZeroLessEq, SignForm::MinusOneLess] {
+        for and_of_ors in [true, false] {
+            assert_eq!(fold_sborrow(form, and_of_ors), (OpCode::CPUI_INT_SLESS, false));
+        }
+    }
 }
 
 #[test]

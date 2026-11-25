@@ -176,6 +176,7 @@ pub(crate) struct PoolConfig<'a> {
     pub(crate) mode: &'static str,
     pub(crate) options: &'a [(String, String)],
     pub(crate) func_decls: Vec<String>,
+    pub(crate) jump_assertions: &'a [kuna_console::assertions::Directive],
     pub(crate) no_vars: bool,
     pub(crate) want_proto: bool,
     pub(crate) want_provenance: bool,
@@ -486,8 +487,17 @@ struct RetiredBlocks {
 }
 
 impl Session {
+    /// Open the pool's scratch directory. The parent's accepted jump facts are
+    /// snapshotted there, so workers and retries never reopen the user's file.
     fn open(cfg: &PoolConfig, inventory: &[TargetSpec]) -> Result<Session, String> {
         let scratch = ScratchDir::create()?;
+        if !cfg.jump_assertions.is_empty() {
+            let lines: Vec<_> = cfg.jump_assertions.iter().map(|d|
+                d.raw.split_whitespace().collect::<Vec<_>>().join(" ")
+            ).collect();
+            std::fs::write(scratch.path().join("jumps.assert"), lines.join("\n"))
+                .map_err(|e| format!("cannot write worker jump assertions: {e}"))?;
+        }
         if !cfg.full_load {
             let path = scratch.path().join(INVENTORY_FILE);
             std::fs::write(&path, encode_spec(inventory))
@@ -1106,6 +1116,9 @@ impl Worker {
             if let Some(v) = value {
                 cmd.arg(flag).arg(v);
             }
+        }
+        if !cfg.jump_assertions.is_empty() {
+            cmd.arg("--assert").arg(format!("@{}", scratch.join("jumps.assert").display()));
         }
         for decl in &cfg.func_decls {
             cmd.arg("--define-function").arg(decl);
@@ -2907,6 +2920,7 @@ mod tests {
             mode: "fast",
             options: &[],
             func_decls: Vec::new(),
+            jump_assertions: &[],
             no_vars: false,
             want_proto: false,
             want_provenance: false,

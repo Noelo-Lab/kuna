@@ -2,6 +2,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[test]
 fn extracted_float_words_round_trip_as_bits() {
@@ -60,7 +61,7 @@ int main(void) {
             let output = Command::new(compiler).args(["-std=c11", level]).arg(&regenerated)
                 .arg(&binary).arg("-o").arg(&executable).output().unwrap();
             assert!(output.status.success(), "{}\n{code}", String::from_utf8_lossy(&output.stderr));
-            assert!(Command::new(&executable).status().unwrap().success(), "{compiler} {level}\n{code}");
+            assert!(Command::new(&executable).capped_status().unwrap().success(), "{compiler} {level}\n{code}");
         }
     }
     if process::optional_output(Command::new("rustc").arg("--version")).is_some() {
@@ -85,7 +86,7 @@ fn main() { unsafe {
             let output = Command::new("rustc").args(["--crate-name", "float_subwords", "-C"])
                 .arg(format!("opt-level={level}")).arg(&rust).arg("-o").arg(&executable).output().unwrap();
             assert!(output.status.success(), "{}\n{rust_code}", String::from_utf8_lossy(&output.stderr));
-            assert!(Command::new(&executable).status().unwrap().success(), "{rust_code}");
+            assert!(Command::new(&executable).capped_status().unwrap().success(), "{rust_code}");
         }
         std::fs::remove_file(rust).unwrap();
     }

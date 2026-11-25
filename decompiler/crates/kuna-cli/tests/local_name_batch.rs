@@ -24,7 +24,7 @@ fn decompile_fixture(
     directives: &[&str],
 ) -> (String, Vec<String>) {
     let binary = common::fixture(fixture);
-    let mut args = vec!["decompile", &binary, function, "--mode", "reliable"];
+    let mut args = vec!["decompile", &binary, function, "--mode", "reliable", "--option", "returndup", "on"];
     for directive in directives {
         args.extend(["--assert", directive]);
     }

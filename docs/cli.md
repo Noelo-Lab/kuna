@@ -619,6 +619,7 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `data <addr> <C typedeclaration>` | a named, typed global at an address |
 | `comment [<func>::]<addr> <text>` | a comment rendered into the C at that instruction |
 | `flow [<func>::]<addr> branch\|call\|callreturn\|return` | the flow out of this instruction is not what kuna decided |
+| `jumptable <site> <target> [<target> ...]` | every taken destination of a computed branch, in hexadecimal code addresses |
 | `callee [<func>::]<callsite> <name\|address>` | the indirect call at this instruction goes to this function |
 | `callproto [<func>::]<callsite> <C declaration>` | the arguments and return of the one call made by the instruction at `<callsite>` |
 | `function <start>[-<end>][=<name>]` | the `--define-function` spelling, on this plane |
@@ -627,7 +628,12 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `bytes <addr> <hex\|@FILE>` | the bytes mapped here are these, whatever the file holds |
 
 Storage is a register name (`RDI`), the console's `%RDI`, or its address grammar
-(`[stack,-0x18,8]`). Addresses are hexadecimal with or without `0x`. A size is
+(`[stack,-0x18,8]`). A register name is matched as the language spells it, then in upper
+and lower case (`rax` is x86's `RAX`). A name the target's language does not define
+(`no_such_register`, or `RAX` on AArch64), or text after it other than a `:size` or
+`+offset` suffix (`%x0:junk`), is **rejected** with the token, and `--assert-strict` exits
+non-zero. A numeric register offset is read in C notation, so write it with `0x`
+(`%0x4000`, `[register,0x4000,8]`); `%4000` is decimal. Addresses are hexadecimal with or without `0x`. A size is
 decimal unless it carries a `0x`, and `<addr> <size>` is accepted wherever
 `<addr>+<size>` is. A C type may be anything the console's `parse line` accepts,
 including a `typedef` you asserted earlier in the same run.
@@ -1018,6 +1024,67 @@ second `callee` for the same call site replaces the first, which is reported
 rejected. A call site the function's flow never reaches is refused after the
 decompile, and the run exits non-zero. In the console the same fact is
 `override indirect <callsite> <name|address>`, given after `load function`.
+
+**Known computed-branch destinations.** Use `jumptable SITE TARGET [TARGET ...]`
+when you know every taken destination of one computed jump. Supply hexadecimal
+code addresses in the default code space, using ELF/object byte VMAs or the
+selected raw target's address units. List only the taken destinations. The
+instruction's guard still determines whether its fall-through executes.
+The case values are the computed destination operand in addressable units.
+The list can be unordered and can repeat a destination.
+
+From a Kuna checkout, this example uses the linked fixture included with the tests.
+
+```sh
+image=tests/fixtures/stated-jump/dispatch.elf
+kuna decompile "$image" dispatch --assert 'jumptable 401009 401050 401020 401030'
+```
+
+The switch selects addresses `0x401020`, `0x401030` and `0x401050`. A guard
+miss returns 77. Repeat `--assert` to name additional sites, or put one
+directive per line in a file and pass `--assert @FILE` to either command.
+`decompile-all --jobs N` accepts a file containing only these directives.
+The console spelling is `override jumptable SITE TARGET [TARGET ...]`.
+
+Kuna checks that the site decodes to one indirect branch, every destination
+is mapped and instruction-aligned in code-space units, and the distinct count fits
+`jumptablemax`. Trap or exception-handler transfers are rejected. PowerPC classic CTR/LR
+branches discard the low two selector bits. For a classic PPC32 branch through
+LR, the directive identifies a computed jump even when the incoming LR value
+is unknown. Sites without a directive use ordinary return and jump recovery.
+AArch64 BR uses the lifted
+register value. A switch on a live pointer needs its runtime value, so the
+directive is rejected for code that may run at another address: a PIE, a
+shared object, a relocatable object, a PE or UEFI TE image with base
+relocations, a Mach-O PIE, and an MZ executable, whose segment DOS chooses. A
+raw image runs at its stated `--base`. It is also rejected for a branch whose
+target Kuna cannot label: any computed branch of a 16-bit x86 language,
+near or far, whose destination prints as an offset in its code segment, a
+destination wider than the value the jump takes (a 32-bit `jmp ax` cannot
+reach 0x401003), ARM32 interworking, AArch64
+other than BR, and PowerPC other than classic CTR/LR. In MIPS16e and microMIPS languages only a
+4-aligned standard-mode destination can be stated. The site then keeps
+ordinary recovery. Batch summaries report rejected image-wide assertions and
+honor `--assert-strict`.
+
+The destinations must belong to the jumping function. One that is the entry
+of another function declared by the symbol table, `--define-function` or a
+`function` directive anywhere in the list rejects the set; state a single
+tail-call destination with `callee` instead. A function holds the site when
+its symbol size or declared extent covers it. A destination stays in that
+function when the extent covers it too, unless only the symbol table gives
+the extent and the caller declared a function at the destination. The
+holder's own entry is a loop, and a part GCC split off it (`f.cold`) is
+part of it. A symbol without a size, as PE exports and Mach-O symbols are,
+holds no site, so a loop to its entry needs a declared extent such as
+`--define-function START-END=NAME`. Entries that only discovery found do not
+count, because discovery also names address-taken case blocks as functions.
+In the console a later `function bounds` that would make an installed
+destination another function's entry is refused, as a conflicting second
+set is. A conflicting second set is rejected and the first accepted set stays active.
+The JSON status `applied` records installation for this image. Each function
+uses the fact only when its flow reaches the site. As with other program
+assertions, `--assert-strict` makes a rejected fact fail the command.
 
 **A `call` override follows the RET-call chain it starts.** `push
 <continuation>; push <target>; ret` is a call written without a `call`
@@ -2313,8 +2380,8 @@ Behaviors specific to `decompile-all`:
   where the wider inventory is the point; a single-function request that already
   named its function gains nothing from it. (The gap was invisible under the
   default `auto` policy below 500 KiB, which resolves to `aggressive` and names
-  all three options itself.) The injected `aif on` is the byte-granular gap
-  cursor; `aggressive` sets `aif strict`, the aligned one, and an explicit
+  all three options itself.) By default the injected `aif on` uses a byte-granular gap
+  cursor. `aggressive` sets `aif strict`, the aligned one, and an explicit
   `--option aif on` after it replaces `strict` by last-write precedence.
   `kuna functions` shares the **discovery** half of that policy (DIV-68): on a
   non-x86-64 binary it injects `funcstart_patterns on`, `aif on`, and the
@@ -2327,6 +2394,18 @@ Behaviors specific to `decompile-all`:
   entry-neutral on that architecture, so it stays the decompiling surfaces'
   default. The interactive console keeps the engine default off; an auto-selected
   `aggressive` preset names all three itself, on either surface.
+
+  A processor that guarantees fixed-width instruction slots from the beginning
+  of every executable section may declare their size in its processor spec,
+  for example `<property key="kuna.aif.sectionInstructionStride" value="6"/>`
+  inside `<properties>`. AIF then probes section-relative slots in the gap
+  walk, including the first slot at address zero. A discovered entry must start
+  a complete slot of undefined bytes in its own section. Its first instruction
+  must fit within that slot. When skipping padding, AIF publishes the
+  destination only if the validated body reaches it.
+  With only executable segment or raw mapping bounds, AIF keeps the cursor
+  policy of the selected mode.
+  Symbol and explicit function entries keep their usual admission rules.
   Omitted `--mode` first resolves the size-based `auto` policy. `--mode fast`
   names and disables the three exhaustive program-wide decode/discovery options
   (`listing`, `funcstart_patterns`, `aif`), suppressing those injections, and
@@ -2428,8 +2507,9 @@ Behaviors specific to `decompile-all`:
   value, `0` included, always wins; outside a capped cgroup there is no
   default, and a function the limit never stops is unchanged. It reads the
   resident set (`VmRSS` on Linux; on Windows the larger of the working set and
-  the private commit), so on a platform without one (macOS) a non-zero value
-  is refused. A function the limit stops usually has an
+  the private commit; on macOS the physical footprint, which drops as the
+  allocator marks freed pages reusable), so on a platform without one a
+  non-zero value is refused. A function the limit stops usually has an
   alternative that keeps some output: `--max-size N` leaves functions over N
   bytes out of the run, and `--option maxinstruction N` truncates their flow
   (see *The instruction budget*).
@@ -2610,9 +2690,10 @@ Behaviors specific to `decompile-all`:
     only write end its parent holds; end-of-pipe means the parent is gone by any
     route including SIGKILL, and the worker deletes the shared scratch directory
     (0700, holding the symbol inventory and every function's C) and exits.
-  - `--assert` and `--raw-image` are refused with `--jobs > 1` **on the pool
-    surfaces**: assertion outcomes are per-load state a pool cannot merge, and a
-    raw image's entry seeds are its load. `kuna functions --jobs N` spawns no
+  - With `--jobs > 1`, `decompile-all` can replay image-wide `jumptable`
+    assertions in every worker. Other assertions require one worker because
+    their outcomes depend on per-load state. The pool also requires an object
+    image because a raw image's entry seeds are its load. `kuna functions --jobs N` spawns no
     pool, so both combinations work there — the lanes read the parent's own
     overlaid bytes, and a raw image simply runs no discovery walk.
 
@@ -2810,7 +2891,11 @@ name is on two functions: the export's body and the stub. A name selects the bod
 veneer whose slot the image's own dynamic relocations bind to that body (the
 relocation's symbol is defined in the image at the body's address). The callers
 through the stub are then the export's callers, and `target.aliases` lists the
-stub and its GOT slot. The join is the relocation, never the shared name. An
+stub and its GOT slot. The join is the relocation, never the shared name. On ARM,
+AArch64, PowerPC32 (absolute stubs and the executable BSS PLT) and PowerPC64 ELFv1
+the stub is recognized by its instruction shape and the slot it loads. Thumb
+interworking prefixes, `--long-plt` and PAC (`autia1716`) entries and PowerPC32
+secure-PLT PIC stubs are not joined; query the stub's address for those. An
 **address** still answers for that address alone: `--to <body>` stays at the direct
 references, and `--to <stub>` lists only its slot as an alias.
 
@@ -2881,7 +2966,8 @@ with the reason, so the text answer never reads as complete when it is not:
 ```json
 {"binary": "...", "direction": "to", "count": N,
  "target": {"name","address","address_hex",
-            "aliases": [{"name","address","address_hex"}]},
+            "aliases": [{"name","address","address_hex"}],
+            "call_destination_candidate": {"reason","call_site","call_site_hex"}},
  "coverage": {"decoded": true, "section": "__TEXT,__text",
               "code_section": true, "executable": true,
               "unwalked": [{"name","address","address_hex","section"}],
@@ -3003,6 +3089,15 @@ no such gap.
 | `executable` | The image maps that memory executable. `null` when it is in no section, or for a relocatable object. |
 | `unwalked` | The targets of decoded direct calls and branches that lie in executable memory not marked as code, that a symbol names, and that the walk did not decode. The references they make are in no answer; `--from` one decodes it. |
 | `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section; a `--to` answer gets one while `unwalked` is not empty, and when the image is one entry of a kernel collection and the address is in another entry or in none ([`--option kernelcache`](#--option-kernelcache-id--one-entry-of-an-apple-kernel-collection)). |
+
+An incoming JSON answer may include `target.call_destination_candidate`. It names
+the lowest-address decoded direct call site to the exact selected address. The
+reason `unflagged_executable_section` means the named destination is outside the
+function inventory and the walk stopped at its executable section, which has no
+instruction flags. Kuna omits the field for declared data, alias-only calls,
+indirect calls, and queries that filter out calls. This is evidence for an
+explicit follow-up; it does not establish a function body or add an inventory
+or project-export entry.
 
 ```
 $ kuna xrefs unflagged_macho_arm64 --to _goal

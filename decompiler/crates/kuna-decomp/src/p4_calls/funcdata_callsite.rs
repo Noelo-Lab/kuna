@@ -209,6 +209,7 @@ pub fn check_input_trial_use(
                             .get_trial_mut(i)
                             .mark_inactive();
                     }
+                    crate::p4_calls::kuna_stackpadarg::narrow_pad_upper(data, idx, i);
                 } else {
                     // Stackvar for unrealistic ancestor is definitely not a parameter
                     data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
@@ -255,6 +256,14 @@ pub fn check_input_trial_use(
         } else if {
             let t = data.get_call_specs(idx).active_input().get_trial(i);
             crate::p4_calls::kuna_swiftcall::passes_own_self(data, idx, slot, t.get_address(), t.get_size())
+        } {
+            let trial = data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i);
+            trial.set_ancestor_realistic();
+            trial.set_ancestor_solid();
+            trial.mark_active();
+        } else if {
+            let t = data.get_call_specs(idx).active_input().get_trial(i);
+            crate::p4_calls::kuna_calleefloatreads::reads(data, data.get_call_specs(idx), t.get_address(), t.get_size())
         } {
             let trial = data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i);
             trial.set_ancestor_realistic();
@@ -362,6 +371,7 @@ pub fn check_input_trial_use(
         // (kuna) `hiddenretarg`: an active hidden-return register is no argument
         // when no callee could be returning through it.
         crate::p4_calls::kuna_hiddenretarg::rescore_active_trial(data, idx, i);
+        crate::p4_calls::kuna_passthrough::mark_forwarded(data, idx, i, vn);
 
         // If definitely not used, free up the dataflow.
         if data.get_call_specs_mut(idx).get_active_input().get_trial(i).is_definitely_not_used() {

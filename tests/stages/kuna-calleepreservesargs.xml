@@ -1,0 +1,91 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A register the callee leaves alone carries a value across the call.
+
+    gcc -O2 allocates registers across a call to a leaf it compiled in the same
+    unit (-fipa-ra): it sets an argument register once and hands it to two
+    calls of a leaf it knows does not write it, and it keeps a value in a
+    killed-by-call register across such a leaf. The convention says nothing
+    survives; the leaf's own decoded body says it does.
+
+        reg:   mov rax,rsi ; add rax,[rdi] ; ret
+        fill:  mov byte [rdi],0x41 ; ret
+        mtf:   mov eax,[rip+0x2fda] ; add eax,edi ; ret
+
+        twice: push rbx ; mov rbx,rdi ; xor esi,esi ; call reg
+               lea rdi,[rbx+8] ; mov rbx,rax ; call reg
+               add rax,rbx ; pop rbx ; ret
+
+    The second reg call reads the ESI zeroed before the first. Upstream's
+    AncestorRealistic takes any register value that crosses a call as
+    clobbered, so the second call lost its argument.
+
+        pipe:  push rbx ; mov rbx,rdi ; mov edi,[rdi] ; mov edx,0x40
+               mov esi,1 ; call mtf ; mov edi,[rbx+4] ; mov [rbx],eax
+               call mtf ; mov [rbx+4],eax ; pop rbx ; ret
+
+    The second mtf call reads the EDX set before the first. x86-64-gcc.cspec
+    lists RDX in <killedbycall>, and calleepreserves declined to narrow it:
+    mtf stores nothing and writes no preserved register, and its one memory
+    read is a direct ram operand, not a LOAD. The second call read an EDX with
+    no definition.
+
+    stale is the control: fill also leaves RSI alone but never reads it, so
+    the 7 left in ESI is not an argument of the second fill call.
+
+        stale: push rbx ; mov rbx,rdi ; mov esi,7 ; call fill
+               lea rdi,[rbx+1] ; call fill ; pop rbx ; ret
+
+    persistcalls_sem_x86_64's snipsys is the return-register control: a
+    void function that ends `syscall; jmp f1`, where f1 only increments
+    globals. A body that only reads memory keeps argument registers alive,
+    not RAX, so the syscall's RAX is not snipsys's return value.
+
+    Stage: P3 heritage call guards and P4 argument recovery
+    (kuna_calleepreserves.rs, kuna_calleescratchbody.rs). A strict fix with
+    no option.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+4889f0480307c3ccccccccccccccccccc60741c3cccccccccccccccccccccccc
+8b05da2f000001f8c3cccccccccccccc534889fb31f6e8c5ffffff488d7b0848
+89c3e8b9ffffff4801d85bc3cccccccc534889fbbe07000000e8b2ffffff488d
+7b01e8a9ffffff5bc3cccccccccccccc534889fb8b3fba40000000be01000000
+e89bffffff8b7b048903e891ffffff8943045bc3
+</bytechunk>
+<bytechunk space="ram" offset="0x404000">
+0000000000000000
+</bytechunk>
+</binaryimage>
+<script>
+  <com>map function r0x401000 reg</com>
+  <com>map function r0x401010 fill</com>
+  <com>map function r0x401020 mtf</com>
+  <com>parse line extern int4 mtf(int4 fd,int4 a,int4 b);</com>
+  <com>map function r0x401030 twice</com>
+  <com>map function r0x401050 stale</com>
+  <com>map function r0x401070 pipe</com>
+  <com>lo fu twice</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pipe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/persistcalls_sem_x86_64</com>
+  <com>read symbols</com>
+  <com>lo fu snipsys</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLEEPRESERVESARGS #1: the zero set before the first reg call is set once" min="1" max="1">^  v2 = 0;$</stringmatch>
+<stringmatch name="CALLEEPRESERVESARGS #2: the second reg call is passed that zero" min="1" max="1">^  return reg\(a0 \+ 8,v2\) \+ v1;$</stringmatch>
+<stringmatch name="CALLEEPRESERVESARGS #3: the second mtf call is passed the 0x40 set before the first" min="1" max="1">^  a0\[1\] = mtf\(fd,a,0x40\);$</stringmatch>
+<stringmatch name="CALLEEPRESERVESARGS #4: no edx local is read without being assigned" min="0" max="0">// edx</stringmatch>
+<stringmatch name="CALLEEPRESERVESARGS #5: control, a register the next callee never reads is not its argument" min="1" max="1">^  fill\(a0 \+ 1\);$</stringmatch>
+<stringmatch name="CALLEEPRESERVESARGS #6: control, a load-only leaf keeps no RAX for a void caller to return" min="1" max="1">^void snipsys\(</stringmatch>
+</decompilertest>

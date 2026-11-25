@@ -172,6 +172,19 @@ fn take_token(s: &str) -> (&str, &str) {
     }
 }
 
+pub(crate) fn jump_targets(text: &str) -> Result<(u64, Vec<u64>), String> {
+    let mut tokens = text.split_whitespace();
+    let site = tokens.next().and_then(parse_vma).ok_or("jumptable needs a hex branch address")?;
+    let mut targets = tokens.map(|s| parse_vma(s).ok_or_else(|| format!("invalid jump destination {s:?}")))
+        .collect::<Result<Vec<_>, _>>()?;
+    if targets.is_empty() {
+        return Err("jumptable needs at least one taken destination".into());
+    }
+    targets.sort_unstable();
+    targets.dedup();
+    Ok((site, targets))
+}
+
 /// Parse one directive line.
 pub fn parse_directive(spec: &str) -> Result<Directive, String> {
     let raw = spec.trim().to_string();
@@ -344,6 +357,10 @@ pub fn parse_directive(spec: &str) -> Result<Directive, String> {
             }
             Body::Bytes { addr, data }
         }
+        "jumptable" => {
+            let (addr, targets) = jump_targets(rest).map_err(|e| bad(&e))?;
+            Body::JumpTable { addr, targets }
+        }
         "flow" => {
             let (addr, kind) = take_token(rest);
             let (func, addr) = split_qualifier(addr);
@@ -384,7 +401,7 @@ pub fn parse_directive(spec: &str) -> Result<Directive, String> {
         other => {
             return Err(format!(
                 "--assert {raw:?}: unknown directive {other:?} (want one of \
-                 function, typedef, prototype, callproto, data, param, return, comment, flow, callee, \
+                 function, typedef, prototype, callproto, data, param, return, comment, flow, jumptable, callee, \
                  name, type, format, isolate, readonly, volatile, bytes)"
             ))
         }

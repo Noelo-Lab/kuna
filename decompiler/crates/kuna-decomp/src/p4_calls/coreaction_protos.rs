@@ -770,6 +770,7 @@ impl Action for ActionExtraPopSetup {
         let sb_size = point.size as int4;
 
         let exact = crate::p4_calls::kuna_calleepurge::every_pop_settled(data);
+        let defer = crate::p4_calls::kuna_declaredpop::allowed(data, exact);
         for i in 0..data.num_calls() {
             let mut extrapop = data.get_call_specs(i).get_extra_pop();
             if extrapop == EXTRAPOP_UNKNOWN && exact {
@@ -782,6 +783,10 @@ impl Action for ActionExtraPopSetup {
             }
             if extrapop == 0 {
                 continue;
+            }
+            // (kuna) See [`crate::p4_calls::kuna_declaredpop`].
+            if crate::p4_calls::kuna_declaredpop::deferred(data, i, defer) {
+                extrapop = EXTRAPOP_UNKNOWN;
             }
             let fc_op = data.get_call_specs(i).get_op();
             let fc_op_addr = match data.obank().get(fc_op) {
@@ -1499,6 +1504,8 @@ impl Action for ActionActiveParam {
                 // the next slot is on the stack -- the ABI reaches the stack
                 // only past a full register file.
                 fc.get_active_input().set_stack_arg_gap(true);
+                let (stored, takes, untaken) = crate::p4_calls::kuna_passthrough::forwarded_evidence(data, &fc);
+                fc.get_active_input().set_forwarded_evidence(stored, takes, untaken);
                 let reads = fc.callee_reg_model().is_some_and(|m| fc.proto().has_matching_model(m));
                 fc.get_active_input().set_callee_reads_registers(reads);
                 crate::kuna_armfloatargs::mark_single_floats(&mut fc, data);
@@ -2155,6 +2162,7 @@ impl Action for ActionInputPrototype {
             } else {
                 update_input_no_types(data, &triallist, &mut active);
             }
+            crate::kuna_varargsave::mark_variadic(data);
         }
         let _ = data.clear_dead_varnodes();
         0

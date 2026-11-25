@@ -1,0 +1,91 @@
+<decompilertest>
+<!--
+    A folded switch is never printed where a condition belongs.  P8
+    "region structurer" (switch-case schema, `try_switch_cases`); a strict
+    correctness fix with no option.
+
+    `scan` loops over a string with a jump-table switch.  Every case but
+    `'w'..'z'` advances and continues the loop; `'w'..'z'` runs an inner loop
+    over the run of such characters before it continues.  The region
+    structurer folded the switch while that inner loop was still unfolded,
+    taking the inner loop's head as the switch's exit and keeping the other
+    cases' backedges as a second successor of the folded switch.  The `if`
+    schema then took the folded switch for a condition: kuna printed the
+    switch, then `if` on a line of its own, then the whole switch again as the
+    condition, then the inner loop as the `if` body.  The structurer now waits
+    for the inner loop to fold into its case, and the function prints as the
+    source wrote it.
+
+    #1 no `if` or `while` without its condition; #2 one switch; #3 the inner
+    loop inside its case; #4 the outer loop around the switch.
+
+    gcc 11.4 -O0 -fno-pie -no-pie -fcf-protection=none
+    -fno-asynchronous-unwind-tables -nostdlib -static -Wl,-Ttext=0x401000
+    (x86-64) of
+
+        __attribute__((noinline)) void sink(int v) { __asm__ volatile("" :: "r"(v)); }
+
+        int scan(const char *s, int *out)
+        {
+            int n = 0;
+            while (*s && *s != '.') {
+                switch (*s) {
+                case 'a': sink(1); s++; break;
+                case 'b': sink(2); s++; break;
+                case 'c': sink(3); s += 2; break;
+                case 'd': n++; s++; break;
+                case 'e': n += 2; s++; break;
+                case 'w': case 'x': case 'y': case 'z': {
+                    int i = 0;
+                    while (*s >= 'w' && *s <= 'z') { i = i * 4 + *s - 'w'; s++; }
+                    out[n & 7] = i;
+                    break;
+                }
+                default: s++; break;
+                }
+            }
+            return n;
+        }
+        void _start(void) {}
+
+    The jump table is the .rodata chunk at 0x402000.
+-->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x401000" readonly="true">
+554889e5897dfc8b45fc905dc3554889e54883ec2048897de8488975e0c745fc
+00000000e9d5000000488b45e80fb6000fbec083e86183f8190f87b900000089
+c0488b04c500204000ffe0bf01000000e8abffffff488345e801e99f000000bf
+02000000e897ffffff488345e801e98b000000bf03000000e883ffffff488345
+e802eb7a8345fc01488345e801eb6f8345fc02488345e801eb64c745f8000000
+00eb218b45f88d148500000000488b45e80fb6000fbec001d083e8778945f848
+8345e801488b45e80fb6003c767e0b488b45e80fb6003c7a7ec98b45fc489883
+e007488d148500000000488b45e04801c28b45f88902eb06488345e80190488b
+45e80fb60084c0740f488b45e80fb6003c2e0f8511ffffff8b45fcc9c3554889
+e5905dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x402000" readonly="true">
+4b104000000000005f1040000000000073104000000000008410400000000000
+8f10400000000000f810400000000000f810400000000000f810400000000000
+f810400000000000f810400000000000f810400000000000f810400000000000
+f810400000000000f810400000000000f810400000000000f810400000000000
+f810400000000000f810400000000000f810400000000000f810400000000000
+f810400000000000f8104000000000009a104000000000009a10400000000000
+9a104000000000009a10400000000000
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="sink"/>
+<symbol space="ram" offset="0x40100d" name="scan"/>
+</binaryimage>
+<script>
+  <com>lo fu scan</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SWITCHCOND #1: no if or while is left without its condition" min="0" max="0">^ *(if|while) *$</stringmatch>
+<stringmatch name="SWITCHCOND #2: the switch prints once" min="1" max="1">^    switch\(\*v1\) \{$</stringmatch>
+<stringmatch name="SWITCHCOND #3: the inner loop runs inside its case" min="1" max="1">^      case 0x7a:$
+^        v2 = 0;$
+^        for \(; \('w' &lt;= \*v1 &amp;&amp; \(\*v1 &lt;= 'z'\)\); v1 = &amp;v1\[1\]\) \{$</stringmatch>
+<stringmatch name="SWITCHCOND #4: the loop around the switch" min="1" max="1">^  while \(\(\*v1 &amp;&amp; \(\*v1 != '\.'\)\)\) \{$
+^    switch\(\*v1\) \{$</stringmatch>
+</decompilertest>

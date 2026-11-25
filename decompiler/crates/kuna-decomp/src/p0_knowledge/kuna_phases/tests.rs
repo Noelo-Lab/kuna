@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_238() {
-    assert_eq!(kuna_num_settables(), 238);
-    assert_eq!(SETTABLE_TABLE.len(), 238);
+fn settable_count_is_244() {
+    assert_eq!(kuna_num_settables(), 244);
+    assert_eq!(SETTABLE_TABLE.len(), 244);
 }
 
 #[test]
-fn tier_counts_are_50_core_125_transform_63_analysis() {
+fn tier_counts_are_50_core_131_transform_63_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_50_core_125_transform_63_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (50, 125, 63));
+    assert_eq!((core, transform, analysis), (50, 131, 63));
 }
 
 #[test]
@@ -264,7 +264,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_76() {
+fn option_values_live_value_present_for_78() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -555,6 +555,9 @@ fn option_values_live_value_present_for_76() {
                             // (kuna) `retsplitlimit` takes `off|<n>`, an op count;
                             // its live value is `Architecture::ret_split_limit`.
                             | "retsplitlimit"
+                            // (kuna) `tailform` takes `off|on|<n>|<void>,<value>`;
+                            // its live value is `Architecture::tail_form`.
+                            | "tailform"
                             // (kuna) `narrowargs` takes `off|on|callers`; its
                             // live value is the pair `Architecture::narrow_args`
                             // and `Architecture::narrow_args_callers`.
@@ -601,11 +604,19 @@ fn option_values_live_value_present_for_76() {
                             // reason.  Its live value is
                             // `Architecture::arm_constant_shift`.
                             | "armconstshift"
+                            // (kuna) `armshiftguard` takes a MODE
+                            // (`always|needed|never`) over an enum field; its
+                            // live value is `Architecture::arm_shift_guard`.
+                            | "armshiftguard"
                             // (kuna) `constselectjump` takes a MODE
                             // (`off|reentry|on`) over an enum field, for the
                             // same reason.  Its live value is
                             // `Architecture::const_select_jump`.
                             | "constselectjump"
+                            // (kuna) `looptest` takes a MODE
+                            // (`binary|proven|assume`) over an enum field; its
+                            // live value is `Architecture::loop_test`.
+                            | "looptest"
                             // (kuna) `declorder` takes a MODE (`natural|name`)
                             // over an enum field, for the same reason.  Its live
                             // value is `Architecture::decl_order`.
@@ -880,7 +891,10 @@ fn option_values_live_value_present_for_76() {
     // +1 for `switchextent` (live_field = switch_extent).
     // +1 for `switchmerge` (live_field = switchmerge).
     // +1 for `cachereturn` (live_field = cache_return).
-    assert_eq!(with_live, 87);
+    // +1 for `bytestorewidth` (live_field = byte_store_width).
+    // +1 for `varargsave` (live_field = vararg_save).
+    // +1 for `boolbranch` (live_field = bool_branch_keep).
+    assert_eq!(with_live, 90);
 }
 
 #[test]
@@ -1144,7 +1158,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `cachereturn`; its P4 row sits after `mixedtailret`.
     // +1 for `swiftobjcthunk`; its P1 row sits after `swiftcall`.
     // +1 each for `swifthelpers` and `valuewitness`.
-    assert_eq!(json.matches("},\n").count(), 237);
+    // +1 for `bytestorewidth`; its P3 row sits after `globalarrayanchor`.
+    // +1 for `boolbranch`; its P3 row sits after `bytestorewidth`.
+    assert_eq!(json.matches("},\n").count(), 243);
     // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 

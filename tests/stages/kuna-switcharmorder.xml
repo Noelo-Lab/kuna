@@ -1,0 +1,111 @@
+<decompilertest>
+<!--
+    Switch arm order and the default arm of a void function's tail switch.
+    P8 structure `switchcaseorder` (no option) and P9 `voidtailreturn`.
+
+    BUG 1: upstream sorts the arms of a switch by label and the `default:` arm
+    sorts under its table entry's label, so `force_str` printed `default:` between
+    `case 0:` and `case 1:`; its arm ends in a call to the no-return `die`, which
+    prints no statement that stops it, so the text fell through into `case 1:`,
+    an edge the program does not have.  FIX: `default:` prints after the other
+    arms and an arm ending in a no-return call after all of them.  Asserts #1
+    and #2 pin the fixed order in one pass.
+
+    BUG 2: `enable` ends with a switch that has no `default:`; with the
+    epilogue duplicated into each arm, the values that leave the switch printed
+    as `default: return;`.  FIX (`voidtailreturn`, default on): the switch is the
+    last statement of a void function, so that arm is left out.  Pass 1 (default)
+    asserts #3, pass 2 (`option voidtailreturn off`) keeps the arm, #4.
+
+    The linear chains need `option loweredswitch linear` to re-roll.  gcc 11.4
+    -O2 -fno-pie -no-pie -fno-jump-tables -fno-tree-switch-conversion
+    -fcf-protection=none -nostdlib -static -Wl,-Ttext=0x401000 (x86-64) of
+
+        __attribute__((noreturn, noinline)) void die(const char *fmt, int v) { for (;;) __asm__ volatile("" ::"r"(fmt), "r"(v)); }
+        const char *nid_name(int nid) {
+          switch (nid) {
+          case 415: return "p256";
+          case 715: return "p384";
+          case 716: return "p521";
+          default: return 0;
+          }
+        }
+        void enable(unsigned *r, int ch) {
+          switch (ch) {
+          case 1: *r |= 1; break;
+          case 2: *r |= 0x10000; break;
+          case 3: *r |= 0x10001; break;
+          }
+        }
+        const char *force_str(int t) {
+          switch (t) {
+          case 0: return "   ";
+          case 1: return "[*]";
+          case 2: return "[!]";
+          default: die("bad %d", t);
+          }
+        }
+        __attribute__((noinline)) int sink(int x) { return x * 7 + 3; }
+        int two(int t, int *p) {
+          switch (t) {
+          case 4: p[0] = sink(1); break;
+          case 9: p[1] = sink(2); break;
+          default: p[2] = 0; break;
+          }
+          return p[3];
+        }
+        void _start(void) {}
+-->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x401000" readonly="true">
+ebfe66662e0f1f8400000000000f1f00b80520400081ffcb0200007421b80a20
+400081ffcc020000741481ff9f010000b800204000ba00000000480f45c2c390
+83fe02741b83fe03740e83fe017401c3830f01c30f1f4000810f01000100c390
+810f00000100c3660f1f84000000000083ff01743b83ff02741685ff742289fe
+bf1b204000e876ffffff660f1f440000b817204000c3662e0f1f840000000000
+b80f204000c3662e0f1f840000000000b813204000c3662e0f1f840000000000
+8d04fd0000000029f883c003c30f1f0083ff04741383ff097426c74608000000
+008b460cc30f1f00bf01000000e8ceffffff89068b460cc30f1f840000000000
+bf02000000e8b6ffffff8946048b460cc366662e0f1f8400000000000f1f4000
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0x402000" readonly="true">
+703235360070333834007035323100202020005b2a5d005b215d006261642025
+6400
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="die"/>
+<symbol space="ram" offset="0x401010" name="nid_name"/>
+<symbol space="ram" offset="0x401040" name="enable"/>
+<symbol space="ram" offset="0x401070" name="force_str"/>
+<symbol space="ram" offset="0x4010c0" name="sink"/>
+<symbol space="ram" offset="0x4010d0" name="two"/>
+</binaryimage>
+<script>
+  <com>option noreturn die</com>
+  <com>option loweredswitch linear</com>
+  <com>lo fu force_str</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu enable</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option voidtailreturn off</com>
+  <com>lo fu enable</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SWITCH ARM ORDER #1: default prints after the other arms" min="1" max="1">^    case 2:$
+^      return 0x402017;$
+^    default:$</stringmatch>
+<stringmatch name="SWITCH ARM ORDER #2: nothing prints after the no-return arm" min="1" max="1">^      die\(0x40201b,a0\); // no-return$
+^    $
+^  \}$</stringmatch>
+<stringmatch name="SWITCH ARM ORDER #3: a void function's tail switch prints no default: return;" min="1" max="1">^    case 3:$
+^      \*a0 = \*a0 \| 0x10001;$
+^      return;$
+^    $
+^  \}$</stringmatch>
+<stringmatch name="SWITCH ARM ORDER #4: voidtailreturn off keeps default: return;" min="1" max="1">^    default:$
+^      return;$</stringmatch>
+</decompilertest>

@@ -33,6 +33,10 @@ name = "integration"
 path = "tests/integration.rs"
 
 [[test]]
+name = "load_option_isolation"
+path = "tests/load_option_isolation.rs"
+
+[[test]]
 name = "verify_w10_callarg_piece_switchhide_guard"
 path = "tests/verify_w10_callarg_piece_switchhide_guard.rs"
 

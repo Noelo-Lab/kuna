@@ -7,7 +7,10 @@
     "{{BIN}}",
     "--addr",
     "0x1405",
-    "--json"
+    "--json",
+    "--option",
+    "returndup",
+    "on"
   ],
   "cwd": "{{WORK}}",
   "env": {
@@ -53,5 +56,5 @@
       }
     ]
   },
-  "notes": "Acceptance of elfmain on the in-repo stripped PIE fixture: crt1 hands main to __libc_start_main as `lea rdi,[rip+0x286]`, which entry oracle 4 already decoded to 0x1405. Before: `unsigned long sub_1405(int a0,unsigned long *a1)`. The third parameter is declared because the park is locked and two would delete a live envp. The last clause pins the element type reaching a call site."
+  "notes": "Acceptance of elfmain on the in-repo stripped PIE fixture: crt1 hands main to __libc_start_main, which entry oracle 4 decoded to 0x1405. Before: `unsigned long sub_1405(int a0,unsigned long *a1)`. The third parameter is declared because the park is locked. The last clause pins the element type reaching a call site, with `returndup on` keeping main's returns merged."
 }

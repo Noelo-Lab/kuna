@@ -1,4 +1,6 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
+#[path = "ppc32_computed_lr.rs"]
+mod ppc32_computed_lr;
 #[path = "mips_elf_selection.rs"]
 mod mips_elf_selection;
 #[path = "return_branch_cli.rs"]
@@ -49,6 +51,8 @@ mod archive_members_cli;
 
 #[path = "assert_callee.rs"]
 mod assert_callee;
+#[path = "stated_jump_targets.rs"]
+mod stated_jump_targets;
 
 #[path = "array_member_bits.rs"]
 mod array_member_bits;
@@ -178,6 +182,8 @@ mod coldentry_source_boundary;
 mod compact_switch_cli;
 #[path = "switch_self_loop_cli.rs"]
 mod switch_self_loop_cli;
+#[path = "open_dispatch.rs"]
+mod open_dispatch;
 #[path = "indirect_dispatch.rs"]
 mod indirect_dispatch;
 
@@ -327,6 +333,12 @@ mod libgcc_divdi3;
 
 #[path = "rettriangle_round_trip.rs"]
 mod rettriangle_round_trip;
+
+#[path = "tailform_round_trip.rs"]
+mod tailform_round_trip;
+
+#[path = "tailform_noreturn_round_trip.rs"]
+mod tailform_noreturn_round_trip;
 
 #[path = "return_copy_clone.rs"]
 mod return_copy_clone;
@@ -506,6 +518,8 @@ mod repeated_global_pointer_stores;
 
 #[path = "stored_return_values.rs"]
 mod stored_return_values;
+#[path = "forced_return_callers.rs"]
+mod forced_return_callers;
 
 #[path = "strings_cli.rs"]
 mod strings_cli;
@@ -733,6 +747,9 @@ mod float_literal_width;
 #[path = "project_call_declarations.rs"]
 mod project_call_declarations;
 
+#[path = "project_unit_calls.rs"]
+mod project_unit_calls;
+
 #[path = "parameter_spill_reuse.rs"]
 mod parameter_spill_reuse;
 
@@ -926,3 +943,8 @@ mod xrefs_immutable_got;
 
 #[path = "types_header.rs"]
 mod types_header;
+
+#[path = "assert_storage_names.rs"]
+mod assert_storage_names;
+#[path = "bounds_checked_prototypes.rs"]
+mod bounds_checked_prototypes;

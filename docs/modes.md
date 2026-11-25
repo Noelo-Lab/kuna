@@ -119,10 +119,11 @@ build failure. The options it enables:
   Listing-consuming passes — `fid`, `aif`, the discovered-no-return family),
   `fast_funcdisc`, `eh_frame_full`, `funcstart_patterns`, `addrtable`,
   `operand_refs`, `widestrings32` (4-byte `wchar_t`/`char32_t` literals),
-  `fid`, `rtti`, `itaniumrtti`, `aif` (at `strict`, the aligned gap cursor; its
-  `precise` value adds upstream's corroboration test, which costs more real
-  functions than it removes phantoms, and no mode sets it), `objc`, `cfstrings`,
-  `pdb`, `macho-arm64e`
+  `fid`, `rtti`, `itaniumrtti`, `aif` (at `strict`), `objc`, `cfstrings`,
+  `pdb`, `macho-arm64e`. AIF uses its ordinary aligned cursor unless the
+  processor declares a slot width and the image supplies section origins.
+  Its `precise` value adds upstream's corroboration test, which costs more real
+  functions than it removes phantoms in the measured corpus. No preset selects it.
 - **analysis tier, ARM entry discovery** (DIV-93): `cortexmvectors`, `ptrentry`,
   `tailcallentry`, `poolentry` — the four-step sequence that takes stripped ARM
   entry recall from 88.63% to 93.31% over the 110 non-x86-64 decbench twins while
@@ -130,7 +131,7 @@ build failure. The options it enables:
   also need `listing`, which this preset supplies; off ARM they are measured
   no-ops (identical entry sets on 90 x86-64 twins and 12 i386 PE images).
 
-`returndup` (DIV-54), `pdb` (DIV-129), `cfstrings`, the presentation defaults
+`returndup` (DIV-54, at its shipped value `auto`), `pdb` (DIV-129), `cfstrings`, the presentation defaults
 (`partialaccess`, `voidtailreturn`, `importdata`, `calltargettype`, `libcnames`)
 and the target-gated passes (`sparcstructret`, `v850indirectbranch`,
 `cortexmpriv`, `x64syscall`, `armfloatreturn`/`armfloatargs`, `rtti`,

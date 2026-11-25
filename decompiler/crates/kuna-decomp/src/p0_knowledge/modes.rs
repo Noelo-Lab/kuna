@@ -146,7 +146,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("sparcstructret", "on"), // SPARC-idiom-gated; no-op off-SPARC
     ("v850indirectbranch", "on"), // V850-gated (kuna_v850indbranch::applies); no-op off-V850
     ("regionedgeorder", "on"),
-    ("returndup", "on"), // default-ON since DIV-54; kept so the preset owns it
+    ("returndup", "auto"), // the shipped default (DIV-54 `on`, then `auto`); kept so the preset owns it
     // (kuna) Decline the returndup split at the join of a one-block `if`, so
     // `if (c) f(); return 0;` is not printed as `if (!c) return 0; f(); return 0;`.
     // Shipped OFF because the decbench O2 sample moved aggregate GED by +60 (it is
@@ -424,7 +424,6 @@ mod tests {
         for want in [
             "listing",
             "switchguardbound",
-            "returndup",
             "sparcstructret",
             "v850indirectbranch",
             "globalarrayanchor",
@@ -434,9 +433,13 @@ mod tests {
                 "aggressive must enable `{want}`"
             );
         }
-        // Every aggressive override turns its option on; `aif` takes its aligned cursor.
+        // Every aggressive override turns its option on; `aif` takes its aligned
+        // cursor and `returndup` its shipped `auto`.
         assert!(agg.contains(&("aif", "strict")), "aggressive must set `aif strict`");
-        assert!(agg.iter().all(|(o, v)| *v == "on" || (*o, *v) == ("aif", "strict")));
+        assert!(agg.contains(&("returndup", "auto")), "aggressive must set `returndup auto`");
+        assert!(agg
+            .iter()
+            .all(|(o, v)| *v == "on" || (*o, *v) == ("aif", "strict") || (*o, *v) == ("returndup", "auto")));
     }
 
     /// The preset's headline contract, enforced rather than sampled: **every**
@@ -553,14 +556,15 @@ mod tests {
         /// `rustprobestack` did not clear its default wall-time confidence bounds.
         /// `highsliceguard` added 10.8% CPU time when recovering the upstream table.
         /// `rustarrayzero` missed the initial default-on CPU median budget.
-        /// `ppcapu` selects the e500 model, whose scalar call arguments are not
-        /// yet recovered, so it requires an explicit option.
+        /// `bytestorewidth` decides from byte content alone, which cannot tell an
+        /// integer from a string chunk; on, an escape-holding stack string is no
+        /// longer joined into `builtin_strncpy`.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["dwarf_lines",
               "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
-              "armconstshift", "wrapadd", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "ppcapu", "rustprobestack", "highsliceguard", "rustarrayzero",
+              "armconstshift", "wrapadd", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "rustprobestack", "highsliceguard", "rustarrayzero", "bytestorewidth",
               // `lazyfuncs` changes no output, but its saving is a single-function
               // property: the whole-binary surfaces the presets drive (decompile-all,
               // the web front-end, the benchmark) materialize every target they walk
@@ -593,12 +597,11 @@ mod tests {
             // a local speed measurement do not justify a broad preset flip.
             "stackaddrargtrial",
             "paramcopyhoist",
-            // `guardarm` / `loopcondhoist` land as opt-ins with their whole-O0
-            // bidirectional sweep already recorded in their catalog rows; preset
-            // membership makes them the default output, which is a DIV-recorded
-            // default change and gets its own PR (the 0/675 ablation and the speed
-            // number are the two things that PR has to add).
-            "guardarm",
+            // `loopcondhoist` lands as an opt-in with its whole-O0 bidirectional
+            // sweep already recorded in its catalog row; preset membership makes
+            // it the default output, which is a DIV-recorded default change and
+            // gets its own PR (the 0/675 ablation and the speed number are the
+            // two things that PR has to add).
             "loopcondhoist",
             // `switchselector` is the one entry here whose evaluation is already
             // done and recorded (its catalog row carries the 0/675 datatest

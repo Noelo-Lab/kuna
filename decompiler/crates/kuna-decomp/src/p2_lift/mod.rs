@@ -6,6 +6,7 @@
 pub mod funcdata_resolveflow;
 pub mod flow;
 pub mod kuna_ppc32piccalls;
+pub mod kuna_ppc32lrflow;
 pub mod kuna_armflowcontext;
 pub mod jumptable;
 pub mod kuna_emulatefunction;
@@ -26,7 +27,10 @@ pub mod kuna_loweredswitch;
 pub mod kuna_loweredswitchlabels;
 pub mod kuna_loweredswitchvalue; // (kuna) prove a re-rolled lowered switch reads the value its cascade compared
 pub mod kuna_loweredswitchexact; // (kuna) keep a re-rolled lowered switch only when it is its compare tree
+pub mod kuna_loweredswitchkeep; // (kuna) withdraw a re-rolled switch the function prints worse with
+pub mod kuna_loweredswitchpath; // (kuna) install a lowered switch along the raw paths of its compare tree
 pub mod kuna_loweredswitchheads; // (kuna) try a lowered-switch cascade behind every head on its variable
+pub mod kuna_o0switch; // (kuna) how an unoptimized function's compare chain was compiled: a switch or an if-chain
 pub mod kuna_noreturn_externmatch; // (kuna) angr incorrect-duplication-chcon: name-matched extern no-return
 pub mod kuna_noreturnextern; // (kuna) angr tail-tail-bytes-ret-dup: undefined-extern name-based no-return
 pub mod kuna_tailcalljump;
@@ -78,3 +82,4 @@ pub mod kuna_indirectreturn;
 pub mod kuna_nullable_reloc;
 
 pub(crate) mod kuna_atomicxadd;
+pub(crate) mod kuna_opendispatch;

@@ -86,6 +86,9 @@ pub(crate) enum Slot {
     Image,
     /// After `read symbols`, before `load function`.
     Program,
+    /// After the program slot: a jump's destinations are checked against the
+    /// functions it declares.
+    Jump,
     /// After `load function`, before the first `decompile`.
     Function,
     /// After the first `decompile` (forcing a second one).
@@ -168,6 +171,14 @@ pub(crate) fn console_form(
             Some(f) => return Err(unbindable(&f)),
             None => (Slot::Function, format!("comment instruction {addr:#x} {text}")),
         },
+        Body::JumpTable { addr, targets } => {
+            use std::fmt::Write;
+            let mut line = format!("override jumptable {addr:#x}");
+            for target in targets {
+                write!(line, " {target:#x}").unwrap();
+            }
+            (Slot::Jump, line)
+        }
         Body::Flow { func, addr, kind } => match names_another(func, target) {
             Some(f) => return Err(unbindable(&f)),
             None => (Slot::Function, format!("override flow {addr:#x} {kind}")),

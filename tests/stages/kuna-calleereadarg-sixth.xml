@@ -1,0 +1,46 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A caller with six parameters loses the argument it tests.
+
+        int six(int a, int i, int b, int c, int d, int s) {
+          unsigned char buf[16]; buf[0] = a; unsigned char *p = buf;
+          e(s); if (s & 1) p++;
+          p[i & 7] = b + c + d;
+          if (buf[0]) return ext(buf[0]) + 1;
+          return 5;
+        }
+
+    clang 22 -O2 (-fno-stack-protector -fcf-protection=none, linked
+    -nostdlib -static -Ttext=0x401000, ext and e defined in the image) loads
+    buf[0] into edi, tests it there and calls ext, which reads edi.
+    onlyOpUse refuses the trial (the value also feeds the CBRANCH), and
+    calleereadarg declined to restore it because six's own entry reads r9,
+    the last SysV argument register, which it took as a sign that six may
+    be variadic.  six reads r9 with mov %r9d,%ebx: a sixth parameter, not a
+    register-save prologue, which only stores the registers.  kuna printed
+    `return ext() + 1;`.
+
+    Stage: P4 active input-trial scoring (kuna_calleereadarg.rs, always on).
+    The caller counts as possibly variadic only when its entry reads the
+    last argument register just to store it.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+8d047fc36666662e0f1f840000000000c36666666666662e0f1f840000000000
+55415741564154534883ec104489cb4489c54189ce4189d74189f440883c2444
+89cfe8c9ffffff83e301488d041c4501f74101ef4183e40745883c040fb63c24
+85ff7409e897ffffffffc0eb05b8050000004883c4105b415c415e415f5dc390
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="ext"/>
+<symbol space="ram" offset="0x401010" name="e"/>
+<symbol space="ram" offset="0x401020" name="six"/>
+</binaryimage>
+<script>
+  <com>lo fu six</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="calleereadarg-sixth #1: six never drops the argument it tests" min="0" max="0">ext\(\)</stringmatch>
+<stringmatch name="calleereadarg-sixth #2: six passes buf[0] to ext" min="1" max="1">return ext\(\(uint1\)v[0-9]+\[0\]\) \+ 1;</stringmatch>
+</decompilertest>

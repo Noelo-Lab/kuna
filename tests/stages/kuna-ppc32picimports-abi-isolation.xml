@@ -1,0 +1,45 @@
+<decompilertest>
+<!--
+  A load-time option chosen in one test file must not reach the next file's loads.
+  Sorted, this file runs right after kuna-ppc32picimports-abi-indirect.xml, whose
+  script leaves `ppc32picimports abi` selected. Stage: P1 external refinement;
+  no option (strict correctness fix in the harness's per-file reset).
+  Bug: the first two loads ran under the earlier file's abi, so `check` in the
+  swapped image printed `__stack_chk_fail(); // no-return` instead of sub_1800()
+  and `return 7`. Fix: both fresh loads run under the default off. The last pass
+  shows an explicit `option ... abi` before `clear architecture` still carries
+  to the next load inside one script.
+-->
+<binaryimage arch="PowerPC:BE:32:default">
+  <bytechunk space="ram" offset="0x1000" readonly="true">4e800020</bytechunk>
+  <symbol space="ram" offset="0x1000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-imports.elf</com>
+  <com>read symbols</com>
+  <com>load function check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-cache-swapped.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports off</com>
+  <com>load function check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option ppc32picimports abi</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-cache-swapped.elf</com>
+  <com>read symbols</com>
+  <com>load function check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="fresh loads keep the unnamed stub" min="2" max="2">sub_1800\(</stringmatch>
+<stringmatch name="fresh loads retain the reachable return" min="2" max="2">return 7;</stringmatch>
+<stringmatch name="no fresh load names an earlier file's import" min="0" max="0">extra\(</stringmatch>
+<stringmatch name="an in-script abi reload names the swapped image's terminal import" min="1" max="1">__stack_chk_fail\(</stringmatch>
+<stringmatch name="only the abi reload carries a no-return contract" min="1" max="1">no-return</stringmatch>
+</decompilertest>

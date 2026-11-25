@@ -58,7 +58,9 @@
     `iteboolean` accept, and mutates no p-code).  Without it 2 of the 3
     identical diamonds fold and the middle one stays an explicit
     `if (c) v1 = 7; else { v1 = 9; }`; all 3 fold, and the statements around
-    them are unchanged.
+    them are unchanged.  The script sets `option iteregion on`: each arm of
+    the source's if/else stores to x at -O0, and `iteregion auto` keeps that
+    form, so the default would fold none of them.
 -->
 <bytechunk space="ram" offset="0x101000">
 f30f1efa554889e54883ec30897dec488975e0488955d8488b45e0ffd0837dec
@@ -70,6 +72,7 @@ d889c7ffd2488b45e0ffd0837dec007409c745fc07000000eb07c745fc090000
 <symbol space="ram" offset="0x101000" name="t"/>
 </binaryimage>
 <script>
+  <com>option iteregion on</com>
   <com>lo fu t</com>
   <com>decompile</com>
   <com>print C</com>

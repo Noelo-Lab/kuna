@@ -49,7 +49,7 @@ use kuna_base::xml::{DocumentStorage, Element};
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::options::register_option_elements;
 use kuna_decomp::raw_arch::RawBinaryArchitectureCapability;
-use kuna_decomp::kuna_memoryspecs::IntoSpecRoot;
+use kuna_decomp::kuna_memoryspecs::{IntoSpecRoot, SpecRoot};
 use kuna_decomp::kuna_loadoptions::LoadOptions;
 use kuna_decomp::sleigh_arch::{register_sleigh_arch_ids, LanguageDatabase, SleighArchitecture};
 use kuna_decomp::xml_arch::XmlArchitectureCapability;
@@ -72,6 +72,23 @@ pub use crate::entry_selector::{
     DataName, EntryLookupError, EntryProvenance, EntrySelector, FunctionEntry, NameSuggestion,
     ObjectLocation,
 };
+
+/// Who states a fact about a function: the loader's symbol table, or the
+/// caller, whose declaration outranks it.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Declarer {
+    Loader,
+    Caller,
+}
+
+/// A function the caller is about to declare at `entry`, with the byte
+/// extent it states, so its effect on installed facts is checked before it
+/// is made.
+#[derive(Clone, Copy)]
+pub(crate) struct PendingFunction {
+    pub entry: u64,
+    pub size: Option<u64>,
+}
 
 /// One function symbol discovered in the `<binaryimage>` (name → entry address).
 #[derive(Debug, Clone)]
@@ -264,6 +281,7 @@ pub struct RawPcodeOp {
 }
 
 /// A SLEIGH address-space, offset and byte-size tuple.
+#[derive(PartialEq, Eq)]
 pub struct RawPcodeVarnode {
     pub space: String,
     pub offset: u64,
@@ -672,6 +690,15 @@ pub struct ConsoleProgram {
     /// that this address IS a function, so it outranks the section-flag test
     /// that list otherwise filters by.
     declared_entries: BTreeSet<u64>,
+    /// Sorted entries of the loader's own function symbols, before discovery
+    /// registers any: the image's declaration of where its functions start.
+    /// ISA bits are cleared.
+    loader_function_entries: Vec<u64>,
+    /// Sorted `(part, parent)` entries of the function parts a compiler
+    /// split off another function, ISA bits cleared.
+    loader_split_parts: Vec<(u64, u64)>,
+    /// The largest function size the symbol table states.
+    loader_max_size: u64,
     /// (kuna) The name `--define-function <start>[-<end>]=<name>` gave each
     /// declared entry, keyed by the same normalized VMA as
     /// [`Self::declared_entries`].
@@ -700,7 +727,8 @@ pub struct ConsoleProgram {
     /// with, in the order they were given -- the one override plane an agent
     /// states facts through (`crate::assertions`).  Empty for every invocation
     /// that passed none, which is what keeps the plane free.
-    assertions: Vec<crate::assertions::Directive>,
+    assertions: Rc<[crate::assertions::Directive]>,
+    function_assertion_slots: Rc<[usize]>,
     /// One slot per [`Self::assertions`] entry: what became of that directive.
     /// `None` until something claims it, so a directive no surface reached is
     /// still distinguishable from one that was applied.
@@ -2537,6 +2565,113 @@ impl ConsoleProgram {
         self.declared_entries.contains(&self.thumb_normalized(vma))
     }
 
+    /// Record the loader's function entries and split parts, before
+    /// discovery registers any entry of its own. An undefined import's
+    /// synthetic address is no code entry.
+    fn record_loader_functions(&mut self, symbols: &[ProgramSymbol], split_parts: &[(u64, u64)]) {
+        let mut entries: Vec<u64> = symbols
+            .iter()
+            .filter(|s| s.provenance != EntryProvenance::UndefinedExternal)
+            .map(|s| self.isa_bit_cleared(s.addr.get_offset()))
+            .collect();
+        entries.sort_unstable();
+        entries.dedup();
+        let mut parts: Vec<(u64, u64)> = split_parts
+            .iter()
+            .map(|&(part, parent)| (self.isa_bit_cleared(part), self.isa_bit_cleared(parent)))
+            .collect();
+        parts.sort_unstable();
+        parts.dedup();
+        self.loader_function_entries = entries;
+        self.loader_split_parts = parts;
+    }
+
+    /// The mask that clears the ISA bit an ARM or MIPS code pointer may carry.
+    fn isa_mask(&self) -> u64 {
+        if self.description().starts_with("ARM") || self.arch().archid.starts_with("MIPS:") {
+            !1
+        } else {
+            !0
+        }
+    }
+
+    /// `vma` without the ISA bit an ARM or MIPS code pointer may carry.
+    fn isa_bit_cleared(&self, vma: u64) -> u64 {
+        vma & self.isa_mask()
+    }
+
+    /// Who declares a function at `vma`, counting `pending` as made: the
+    /// caller over the loader's symbol table. Entries discovery added are not
+    /// declarations.
+    pub(crate) fn function_declarer(&self, vma: u64, pending: Option<PendingFunction>) -> Option<Declarer> {
+        if pending.is_some_and(|p| p.entry == vma)
+            || self.declared_entries.iter().any(|&entry| self.isa_bit_cleared(entry) == vma)
+        {
+            Some(Declarer::Caller)
+        } else {
+            self.loader_function_entries.binary_search(&vma).is_ok().then_some(Declarer::Loader)
+        }
+    }
+
+    /// The `(entry, size, declarer of the size)` of every declared function
+    /// whose known extent holds `vma`, counting `pending` as made. A caller's
+    /// extent replaces the symbol table's size; an entry with neither has no
+    /// known extent.
+    ///
+    /// The symbol table's sizes are sorted by entry, so only the entries
+    /// within the largest size below `vma` are visited.
+    pub(crate) fn functions_holding(&self, vma: u64, pending: Option<PendingFunction>) -> Vec<(u64, u64, Declarer)> {
+        let mask = self.isa_mask();
+        let caller_extent = |entry: u64| match pending.filter(|p| p.entry == entry) {
+            Some(p) => p.size,
+            None => [entry, entry | 1]
+                .into_iter()
+                .filter(|&at| at & mask == entry)
+                .find_map(|at| self.declared_extents.get(&at))
+                .map(|&size| size as u64),
+        };
+        let sizes = &self.arch().func_sizes;
+        let loader_size = |entry: u64| {
+            let at = sizes.partition_point(|&(at, _)| at & mask < entry);
+            sizes.get(at).filter(|&&(at, _)| at & mask == entry).map(|&(_, size)| size)
+        };
+        let declared = self
+            .declared_entries
+            .iter()
+            .map(|&entry| entry & mask)
+            .chain(pending.map(|p| p.entry))
+            .filter_map(|entry| match caller_extent(entry) {
+                Some(size) => Some((entry, size, Declarer::Caller)),
+                None => Some((entry, loader_size(entry)?, Declarer::Loader)),
+            });
+        let below = sizes.partition_point(|&(at, _)| at & mask <= vma);
+        let symbols = sizes[..below]
+            .iter()
+            .rev()
+            .map(|&(at, size)| (at & mask, size, Declarer::Loader))
+            .take_while(|&(entry, _, _)| vma - entry < self.loader_max_size)
+            .filter(|&(entry, _, _)| caller_extent(entry).is_none());
+        let mut holders: Vec<(u64, u64, Declarer)> = declared
+            .chain(symbols)
+            .filter(|&(entry, size, _)| entry <= vma && vma - entry < size)
+            .collect();
+        holders.sort_unstable();
+        holders.dedup();
+        holders
+    }
+
+    /// Are the functions entered at `a` and `b` parts of one function: the
+    /// same entry, or split parts of the same parent?
+    pub(crate) fn same_function(&self, a: u64, b: u64) -> bool {
+        let parts = &self.loader_split_parts;
+        let roots = |entry: u64| {
+            let start = parts.partition_point(|&(part, _)| part < entry);
+            let parents = parts[start..].iter().take_while(move |&&(part, _)| part == entry);
+            std::iter::once(entry).chain(parents.map(|&(_, parent)| parent))
+        };
+        roots(a).any(|root| roots(b).any(|other| other == root))
+    }
+
     /// (kuna, issue #1438) Every declared entry's byte address and how much of
     /// its extent the input maps, in address order.
     pub fn declarations(
@@ -2574,6 +2709,7 @@ impl ConsoleProgram {
     /// directive so the report keeps the caller's own order however the
     /// directives are later dispatched.
     pub fn set_assertions(&mut self, directives: Vec<crate::assertions::Directive>) {
+        self.arch_mut().stated_jump_targets.clear();
         if directives.iter().any(|directive| matches!(directive.body,
             crate::assertions::Body::Flow { .. }
             | crate::assertions::Body::Callee { .. }
@@ -2584,12 +2720,23 @@ impl ConsoleProgram {
             self.callwide_unavailable("selected function flow or storage assertions lack a full image proof");
         }
         self.assertion_outcomes = vec![None; directives.len()];
-        self.assertions = directives;
+        self.function_assertion_slots = directives.iter().enumerate()
+            .filter(|(_, d)| d.body.is_function_scoped() && d.body.cross_function_prototype().is_none())
+            .map(|(slot, _)| slot).collect();
+        self.assertions = directives.into();
     }
 
     /// The installed assertions, in the order they were given.
     pub fn assertions(&self) -> &[crate::assertions::Directive] {
         &self.assertions
+    }
+
+    pub(crate) fn local_directives(&self) -> crate::assertions::LocalDirectives {
+        crate::assertions::LocalDirectives { all: self.assertions.clone(), slots: self.function_assertion_slots.clone() }
+    }
+
+    pub(crate) fn assertion_applied(&self, slot: usize) -> bool {
+        self.assertion_outcomes[slot].as_ref().is_some_and(|o| o.status == "applied")
     }
 
     /// Record what became of the `i`-th directive.
@@ -2607,6 +2754,17 @@ impl ConsoleProgram {
             .map(|(directive, outcome)| {
                 outcome.clone().unwrap_or_else(|| crate::assertions::unclaimed(directive))
             })
+            .collect()
+    }
+
+    /// The report rows a run that decompiles nothing can settle: every
+    /// directive except the per-function ones only a decompile binds.
+    pub fn image_assertion_outcomes(&self) -> Vec<crate::assertions::Outcome> {
+        self.assertion_outcomes()
+            .into_iter()
+            .enumerate()
+            .filter(|(slot, _)| self.function_assertion_slots.binary_search(slot).is_err())
+            .map(|(_, outcome)| outcome)
             .collect()
     }
 
@@ -2643,6 +2801,9 @@ impl ConsoleProgram {
     /// lands on the address every later resolution of it uses
     /// ([`Self::resolve_entry`] normalizes the same way) rather than on an odd
     /// shadow entry the loads would never find.
+    ///
+    /// A declaration under which an installed `jumptable` destination would
+    /// enter another function is refused before anything changes.
     pub fn declare_function(
         &mut self,
         addr: Address,
@@ -2657,6 +2818,12 @@ impl ConsoleProgram {
             ),
             None => addr,
         };
+        let pending = PendingFunction {
+            entry: self.isa_bit_cleared(addr.get_offset()),
+            size: u64::try_from(size).ok().filter(|&size| size > 0),
+        };
+        crate::jump_targets::require_declaration_keeps_cases(self, pending)
+            .map_err(|reason| KunaError::lowlevel(format!("cannot declare a function at {:#x}: {reason}", self.output_code_offset(pending.entry))))?;
         let explicit = name.map(str::to_string).filter(|n| !n.is_empty());
         let name = match &explicit {
             Some(n) => n.clone(),
@@ -3847,12 +4014,52 @@ fn build_registry() -> IdRegistry {
 /// roots).  A root may also be a tree held in memory
 /// ([`kuna_decomp::kuna_memoryspecs::MemorySpecs`]).
 fn scan_language_database(spec_roots: &[impl IntoSpecRoot], registry: &IdRegistry) -> KunaResult<LanguageDatabase> {
+    let roots: Vec<SpecRoot> = spec_roots.iter().map(IntoSpecRoot::to_spec_root).collect();
+    let key: Option<Vec<std::path::PathBuf>> = roots
+        .iter()
+        .map(|root| match root {
+            SpecRoot::Dir(path) => Some(path.clone()),
+            SpecRoot::Memory(_) => None,
+        })
+        .collect();
+    let reused = |key: &[std::path::PathBuf]| {
+        let scans = REUSED_SCANS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        scans.as_ref()?.iter().find(|(k, _)| k == key).map(|(_, db)| db.clone())
+    };
+    if let Some(db) = key.as_deref().and_then(reused) {
+        return Ok(db);
+    }
     let mut db = LanguageDatabase::new();
-    for root in spec_roots {
-        db.add_spec_root(&root.to_spec_root());
+    for root in &roots {
+        db.add_spec_root(root);
     }
     db.get_descriptions(registry)?;
+    if let Some(key) = key {
+        let mut scans = REUSED_SCANS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(scans) = scans.as_mut() {
+            scans.push((key, db.clone()));
+        }
+    }
     Ok(db)
+}
+
+type ReusedScans = Vec<(Vec<std::path::PathBuf>, LanguageDatabase)>;
+
+static REUSED_SCANS: std::sync::Mutex<Option<ReusedScans>> = std::sync::Mutex::new(None);
+
+/// From now on, reuse spec work across the bootstraps of this process: each
+/// set of on-disk spec roots is scanned once, and every later bootstrap over
+/// the same roots gets a copy of that scan; and each `.sla` a thread decodes
+/// twice is kept, so later translators from it are copies of the decoded form
+/// ([`kuna_sleigh::kuna_slacache`]). For runners whose spec trees cannot change
+/// while they run and that build many architectures, such as the datatest
+/// harness. A kept `.sla` costs about as much memory as one translator.
+pub fn reuse_specs() {
+    kuna_sleigh::kuna_slacache::enable();
+    REUSED_SCANS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get_or_insert_with(Vec::new);
 }
 
 /// Scan `spec_roots` into a [`LanguageDatabase`] once, for [`Bootstrap`]s to
@@ -4113,6 +4320,8 @@ pub(crate) fn bootstrap_xml_image(
     // The XML path runs no analysis tier, so no facts are stashed and the gated
     // commit at `read symbols` is a no-op (parity is structurally untouched).
     let mut prog = empty_program(arch.into_sleigh(), registry, ProgramContainer::Xml, description);
+    let split_parts = xml_split_parts(&symbols);
+    prog.record_loader_functions(&symbols, &split_parts);
     prog.symbols = SymbolStream::from_loader(symbols);
     // C++ `conf->readLoaderSymbols("::")` (testfunction.cc:160 / consolemain.cc:104):
     // install the binaryimage symbols as FunctionSymbols so a CALL to one resolves
@@ -4309,13 +4518,19 @@ fn object_import_slot_stash(
 }
 
 /// A program with nothing loaded beyond the engine: every stash empty, every
-/// declaration absent. Each bootstrap fills in what its loader supplies.
+/// declaration absent. Each bootstrap fills in what its loader supplies. An XML
+/// or raw image runs at the base its caller states, so its code cannot move.
 fn empty_program(
-    arch: SleighArchitecture,
+    mut arch: SleighArchitecture,
     registry: IdRegistry,
     container: ProgramContainer,
     description: String,
 ) -> ConsoleProgram {
+    if matches!(container, ProgramContainer::Xml | ProgramContainer::Raw) {
+        if let Some(base) = arch.base_mut() {
+            base.runtime_code_relocation = false;
+        }
+    }
     ConsoleProgram {
         callwide: Default::default(),
         arch,
@@ -4346,6 +4561,9 @@ fn empty_program(
         data_name_aliases: HashMap::new(),
         declared_extents: BTreeMap::new(),
         declared_entries: BTreeSet::new(),
+        loader_function_entries: Vec::new(),
+        loader_split_parts: Vec::new(),
+        loader_max_size: 0,
         declared_names: BTreeMap::new(),
         declared_bytes: BTreeMap::new(),
         declared_revision: 0,
@@ -4353,7 +4571,8 @@ fn empty_program(
         anonymous_symbols: std::cell::OnceCell::new(),
         canonical_entries: std::cell::RefCell::new(None),
         entry_names: std::cell::RefCell::new(None),
-        assertions: Vec::new(),
+        assertions: Rc::default(),
+        function_assertion_slots: Rc::default(),
         assertion_outcomes: Vec::new(),
         pending_prototypes: BTreeMap::new(),
         raw_address_units: None,
@@ -4614,6 +4833,7 @@ pub fn bootstrap_from_mz_bytes(
     Bootstrap::new(spec_roots).target(target).arm_isa(isa).mz_bytes(path, bytes)
 }
 
+/// DOS picks the segment an `MZ` load module runs at, so its code can move.
 pub(crate) fn bootstrap_mz_bytes(
     path: &str,
     bytes: &[u8],
@@ -4662,6 +4882,7 @@ pub(crate) fn bootstrap_mz_bytes(
         languages,
         Some(image.module.clone()),
     )?;
+    program.arch_mut().runtime_code_relocation = true;
     if let Some(space) = program.analysis_code_space.clone() {
         kuna_analysis::loader::kuna_realmodecs::paint(program.arch(), &space, &image.code_segments);
         if target.starts_with("x86:LE:16:Real Mode") {
@@ -4810,6 +5031,7 @@ pub(crate) fn bootstrap_te_bytes(
     let entry = loader.entry();
     let image_metadata =
         ProgramImageMetadata { entry: Some(entry), sections: loader.section_metadata() };
+    sleigh.base_mut().unwrap().runtime_code_relocation = loader.runtime_code_relocation();
     sleigh.base_mut().unwrap().set_loader(Box::new(loader));
     let input_context_paints = install_input_isa(
         sleigh.base_mut().unwrap(),
@@ -5037,6 +5259,7 @@ pub(crate) fn bootstrap_object(
     // section; an entry that only carries the Thumb bit arms the
     // `entrythumbflow` walk, exactly as a TE with that shape does.
     let arch_id = sleigh.arch_id().to_string();
+    sleigh.base_mut().unwrap().runtime_code_relocation = loader.runtime_code_relocation;
     let parsed = is_arm32_language(&arch_id)
         .then(|| kuna_analysis::loadimage_object::parse_object(&*bytes).ok())
         .flatten();
@@ -5165,6 +5388,7 @@ pub(crate) fn bootstrap_object(
         .map(|s| (s.name.clone(), s.vma, s.size))
         .collect();
     let func_sizes = loader.func_symbol_sizes();
+    let split_parts = loader.func_split_parts().to_vec();
 
     // readLoaderSymbols (the ELF FUNC symbols) BEFORE handing the loader off.
     let mut symbols = read_loader_symbols_generic(&loader);
@@ -5306,12 +5530,15 @@ pub(crate) fn bootstrap_object(
             .map(|(site, _)| Address::new(Rc::clone(&code_space), site)).collect());
         prog.arch_mut().loader_mips_imports = Rc::new(elf_functions.imports.iter()
             .map(|&entry| Address::new(Rc::clone(&code_space), entry)).collect());
+        prog.arch_mut().loader_glibc_imports = Rc::new(elf_functions.glibc_imports.iter()
+            .map(|(&entry, name)| (Address::new(Rc::clone(&code_space), entry), name.clone())).collect());
         if let Ok(loc) = prog.arch().get_register_varnode(b"t9") {
             prog.arch_mut().loader_mips_t9 = Some((loc.clone(), mips_t9_probe(
                 prog.arch().translate().loader_rc(), elf32, little, loc.size)));
         }
     }
     prog.load_notes = load_notes;
+    prog.record_loader_functions(&symbols, &split_parts);
     prog.symbols = SymbolStream::from_loader(symbols);
     prog.object_sections = object_sections;
     prog.image_metadata = Some(image_metadata);
@@ -5375,6 +5602,7 @@ pub(crate) fn bootstrap_object(
     // binary-search.
     prog.arch_mut().litpool_const = std::rc::Rc::new(litpool_const);
     prog.arch_mut().eh_sections = Some(std::rc::Rc::new(eh_sections));
+    prog.loader_max_size = func_sizes.iter().map(|&(_, size)| size).max().unwrap_or(0);
     prog.arch_mut().func_sizes = std::rc::Rc::new(func_sizes);
 
     // (kuna `globalref`) ... and the sections a program's data objects live in.
@@ -5467,8 +5695,9 @@ fn commit_analysis_output(
     if let Some(entry) = out.go_chanrecv2 {
         prog.arch_mut().go_chanrecv2 = Some(entry);
     }
-    if !out.case_entries.is_empty() {
-        let cases: std::collections::BTreeSet<u64> = out.case_entries.iter().copied().collect();
+    if !out.case_entries.is_empty() || !out.interior_entries.is_empty() {
+        let cases: std::collections::BTreeSet<u64> =
+            out.case_entries.iter().chain(&out.interior_entries).copied().collect();
         out.entries.retain(|e| !cases.contains(e));
     }
     for slot in std::mem::take(&mut out.ppc32_pic_slots) {
@@ -6989,6 +7218,19 @@ fn read_loader_symbols_generic(loader: &dyn LoadImage) -> Vec<ProgramSymbol> {
     out
 }
 
+/// The `(part, parent)` entries of split function parts among the symbols of
+/// an XML image, whose names are as written.
+fn xml_split_parts(symbols: &[ProgramSymbol]) -> Vec<(u64, u64)> {
+    symbols
+        .iter()
+        .filter_map(|part| {
+            let parent = kuna_analysis::loadimage_object::split_part_parent(part.name.as_bytes())?;
+            Some(symbols.iter().filter(move |s| s.name.as_bytes() == parent).map(move |s| (part.addr.get_offset(), s.addr.get_offset())))
+        })
+        .flatten()
+        .collect()
+}
+
 /// A load image that errors on every read — handed to `build_translator` as the
 /// placeholder before the real opened image replaces it (the C++ `DummyImg` /
 /// e2e-gate shape).
@@ -7041,6 +7283,27 @@ mod te_probe_tests {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn function_assertion_index_shares_only_the_selected_report_slots() {
+        use crate::assertsyntax::parse_directive;
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let mut prog = super::bootstrap_from_object(
+            root.join("tests/fixtures/stated-jump/dispatch.elf").to_str().unwrap(), "",
+            &[root.join("specs").to_string_lossy().into_owned()],
+        ).unwrap();
+        let jump = parse_directive("jumptable 401009 401020 401030 401050").unwrap();
+        let mut directives = vec![jump; 1000];
+        directives.insert(123, parse_directive("flow dispatch::401009 call").unwrap());
+        prog.set_assertions(directives);
+        let first = prog.local_directives();
+        let next = prog.local_directives();
+        assert_eq!(&*first.slots, &[123]);
+        assert!(std::rc::Rc::ptr_eq(&first.slots, &next.slots));
+        assert!(std::rc::Rc::ptr_eq(&first.all, &next.all));
+        prog.set_assertions(Vec::new());
+        assert!(prog.local_directives().slots.is_empty());
+    }
+
     use std::rc::Rc;
 
     use kuna_base::space::{spacetype, AddrSpace};

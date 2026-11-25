@@ -13,8 +13,10 @@
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
 </binaryimage>
 <script>
+  <!-- kuna: tailform default-on; this test pins the binary's own function-tail return layout -->
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/highslice_guard_x86_64</com>
+  <com>option tailform off</com>
   <com>phase catalog highsliceguard</com>
   <com>read symbols</com>
   <com>parse line extern uint4 narrow_guard(uint8 x);</com>
@@ -23,6 +25,7 @@
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/highslice_guard_x86_64</com>
+  <com>option tailform off</com>
   <com>option highsliceguard on</com>
   <com>phase catalog highsliceguard</com>
   <com>read symbols</com>

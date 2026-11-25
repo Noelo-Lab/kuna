@@ -58,7 +58,9 @@ fn an_imported_stack_chk_fail_local_takes_no_arguments_unlike_an_undeclared_name
     for (endian, target) in [("be", "BE"), ("le", "LE")] {
         let fixture = format!("ppc32_stack_chk_local_{endian}.o");
         let e500 = format!("PowerPC:{target}:32:e500");
-        for args in [&["--mode", "fast"][..], &["--mode", "fast", "--target", &e500][..]] {
+        let pinned = ["--mode", "fast", "--option", "tailform", "off"];
+        let e500_args = ["--mode", "fast", "--option", "tailform", "off", "--target", &e500];
+        for args in [&pinned[..], &e500_args[..]] {
             let out = decompile(&common::fixture(&fixture), "r6", args);
             assert!(out.contains("  __stack_chk_fail_local(); // no-return\n}"), "{endian} {args:?}\n{out}");
             assert!(out.contains("return a0 * 3;"), "{endian} {args:?}\n{out}");
