@@ -946,10 +946,12 @@ does: `Double.NaN`, `Long.MAX_VALUE` and `Math.PI` rather than their values unle
 Numbers print with the JDK's own algorithms (section 10.13).
 
 **Failed methods.** A method whose schedule threw is written as its signature and a body
-of comments (`ClassWriter::dump_error`): `$VF: Couldn't be decompiled`, then with
-`jvm_dump_exception_on_error` the `error-message` note (a request to report the class to
-kuna's tracker, Vineflower's in compat mode; section 10.16), the exception
-text and its throw location, and a listing of the method's bytecode. The class around it is written normally.
+of comments (`ClassWriter::dump_error`): `$VF: Couldn't be decompiled`, then the
+`error-message` note (a request to report the class to kuna's tracker, Vineflower's in
+compat mode; section 10.16), the exception text and its throw location, and a listing of
+the method's bytecode. The class around it is written normally. (Vineflower's
+`dump-exception-on-error`, which the corpus fixture turns off, drops the note and the
+exception.)
 
 **Layout.** The buffer is a tree of line groups; after a class is written,
 `decompiler/nonnative/kuna-jvm/src/p9_emit/text_buffer.rs (TextBuffer::reformat)` breaks
@@ -983,8 +985,8 @@ it. A method span further carries the method's `$VF:` comments when its wrapper'
 **Failure granularity.** A method failure becomes the comment block above and the class
 survives. A class whose processing throws (section 10.11) is written as
 `// $VF: Couldn't be decompiled` followed by the exception, in place of its body. A class
-whose writing throws is written, with `jvm_dump_exception_on_error`, as a
-`/* $VF: Unable to decompile class ... */` comment, and without it not at all. Nothing
+whose writing throws is written as a `/* $VF: Unable to decompile class ... */` comment
+(not at all under the corpus fixture's `dump-exception-on-error=0`). Nothing
 else stops the run: the other classes of the input are still written. A Java
 `RuntimeException` and an ordinary Rust panic (an index out of bounds, an `unwrap` on
 `None`) are caught at these boundaries alike (section 10.13), and so is recursion deeper

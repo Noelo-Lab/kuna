@@ -23,6 +23,7 @@ Vineflower keys kuna sets itself, so they are not options:
 - `preferred-line-length` -- fixed at Vineflower's default, 160 columns; the corpus runner sets it for Vineflower's own tests
 - `error-message` -- fixed: the note under a failure comment asks for reports to kuna's tracker (Vineflower's in compat mode); the corpus fixture sets it empty
 - `dump-bytecode-on-error` -- fixed on: a failed method's comment lists its bytecode
+- `dump-exception-on-error` -- fixed on: a failure comment names the exception; the corpus fixture turns it off
 
 Three tiers:
 
@@ -180,8 +181,6 @@ Three tiers:
 | need the type argument of a generic method call | [`jvm_explicit_generics`](#jvm_explicit_generics----on--off-default-off) |
 | x -> { return x + 1; } where x -> x + 1 is wanted (option is off) | [`jvm_inline_simple_lambdas`](#jvm_inline_simple_lambdas----on--off-default-on) |
 | one-line lambdas hard to diff | [`jvm_inline_simple_lambdas`](#jvm_inline_simple_lambdas----on--off-default-on) |
-| exception text and at src/... lines inside a failed method | [`jvm_dump_exception_on_error`](#jvm_dump_exception_on_error----on--off-default-on) |
-| need to know why a method failed (option is off) | [`jvm_dump_exception_on_error`](#jvm_dump_exception_on_error----on--off-default-on) |
 | /* $VF: ... */ and // $VF: comments clutter the output | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
 | need to know where the decompiler approximated (option is off) | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
 | stack trace names lambda$main$0 or Main$1 and the matching code is hard to find | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics----on--off-default-off) |
@@ -700,15 +699,6 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 - **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
 - **Also spelled:** `inline-simple-lambdas`, `isl`
 - **Example:** `kuna decompile app.jar com.ex.Streams --option jvm_inline_simple_lambdas off`
-
-### `jvm_dump_exception_on_error` -- on | off, default `on`
-
-- **Symptoms:** exception text and at src/... lines inside a failed method; need to know why a method failed (option is off).
-- **What it does:** Inside a method or class that could not be decompiled, write the error-message note and the exception with its throw location; off leaves just $VF: Couldn't be decompiled (a class that fails entirely then has no output).
-- **When to flip:** Turn off for clean output when failures are expected; keep on to learn why a method failed.
-- **Where / provenance:** p9_emit/class_writer, fernflower · vineflower · vineflower-option
-- **Also spelled:** `dump-exception-on-error`, `dee`
-- **Example:** `kuna decompile obf.jar a.b --option jvm_dump_exception_on_error off`
 
 ### `jvm_decompiler_comments` -- on | off, default `on`
 

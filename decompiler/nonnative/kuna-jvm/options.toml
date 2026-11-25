@@ -848,28 +848,6 @@ tier = "analysis"
 symptoms = "class or method named like a Java keyword|identifiers that are not valid Java (obfuscated names)|many classes named a, b, c that clash"
 
 [[option]]
-option = "jvm_dump_exception_on_error"
-vineflower = "dump-exception-on-error"
-short = "dee"
-aliases = ["dump-exception-on-error", "dee"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p9_emit"
-subphase = "class_writer, fernflower"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Inside a method or class that could not be decompiled, write the error-message note and the exception with its throw location; off leaves just $VF: Couldn't be decompiled (a class that fails entirely then has no output)."
-use_when = "Turn off for clean output when failures are expected; keep on to learn why a method failed."
-example = "kuna decompile obf.jar a.b --option jvm_dump_exception_on_error off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.DUMP_EXCEPTION_ON_ERROR (dump-exception-on-error, -dee)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "exception text and at src/... lines inside a failed method|need to know why a method failed (option is off)"
-
-[[option]]
 option = "jvm_decompiler_comments"
 vineflower = "decompiler-comments"
 short = "dec"
@@ -1420,3 +1398,7 @@ kuna = "fixed: the note under a failure comment asks for reports to kuna's track
 [[driver_owned]]
 vineflower = "dump-bytecode-on-error"
 kuna = "fixed on: a failed method's comment lists its bytecode"
+
+[[driver_owned]]
+vineflower = "dump-exception-on-error"
+kuna = "fixed on: a failure comment names the exception; the corpus fixture turns it off"

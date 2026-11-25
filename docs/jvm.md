@@ -292,8 +292,8 @@ named kuna option that is off by default.
    ```
 
    (That is compat mode; by default the second line names kuna's tracker, fix
-   `report_to_kuna`.) With `jvm_dump_exception_on_error off` neither decompiler
-   writes the exception. Run in compat mode with the command-line defaults of both
+   `report_to_kuna`.) With `dump-exception-on-error=0`, as the corpus fixture sets it,
+   neither decompiler writes the exception. Run in compat mode with the command-line defaults of both
    decompilers, 11 of the 598 Java corpus cases and
    2 of the 73 Kotlin ones differ only in this, and so do every difference on the Kotlin
    libraries above but one (item 5): Vineflower fails the same method with the same
@@ -626,8 +626,7 @@ example):
    both decompilers *without a JDK* (the corpus runs without one): replace JDK types the
    failure needs by nested stand-ins, and compare `vf-decompile --fixture --opt
    dump-exception-on-error=1 ...` with `kuna decompile-project DIR --option include-runtime ''
-   --option jvm_plugins 0 --option jvm_vineflower_compat 1 --option dump-exception-on-error 1
-   -o NEW_DIR` (`--option` takes Vineflower's option names and kuna's own rows by their
+   --option jvm_plugins 0 --option jvm_vineflower_compat 1 -o NEW_DIR` (`--option` takes Vineflower's option names and kuna's own rows by their
    names). For the Rust backtrace of the caught
    throw, set `KUNA_JVM_BACKTRACE` to a piece of its message (`1` prints every caught
    throw, and the engine throws and catches routinely); build with
