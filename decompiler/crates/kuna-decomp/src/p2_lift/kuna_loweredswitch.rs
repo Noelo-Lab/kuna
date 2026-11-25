@@ -51,7 +51,7 @@
 //!   [`analyze_cmp`] ([`CmpNode`]), [`target_start`], [`recover_cascade`],
 //!   [`advance_past_guards`], and [`ActionLowerSwitchDetect::apply`] — the
 //!   `ActionLowerSwitchDetect::apply` head-finding + cascade walk, transcribed.
-//! * [`OptionLowerSwitch`] — the `loweredswitch on|off|linear|tree|all` parse + message
+//! * [`OptionLowerSwitch`] — the `loweredswitch on|off|auto|linear|tree|all` parse + message
 //!   (`OptionLowerSwitch::apply`).
 //!
 //! ## The install half (`ActionLowerSwitchInstall` +

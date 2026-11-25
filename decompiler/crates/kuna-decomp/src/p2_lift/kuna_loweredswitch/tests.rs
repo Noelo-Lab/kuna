@@ -802,6 +802,22 @@ fn option_apply_widening_values() {
 }
 
 #[test]
+fn the_compiled_form_decides_before_the_shape() {
+    use crate::p2_lift::kuna_o0switch::Form;
+    let shape = |values, bodies| CascadeShape { values, bodies, range: false };
+    let on = LoweredSwitchMode::On;
+    assert!(cascade_is_switch(shape(3, 3), on, None));
+    assert!(!cascade_is_switch(shape(3, 3), on, Some(Form::IfChain)));
+    assert!(!cascade_is_switch(CascadeShape { values: 5, bodies: 5, range: true }, on, Some(Form::IfChain)));
+    assert!(!cascade_is_switch(shape(2, 2), on, None));
+    assert!(cascade_is_switch(shape(2, 2), on, Some(Form::Switch)));
+    assert!(cascade_is_switch(shape(3, 2), on, Some(Form::Switch)));
+    assert!(!cascade_is_switch(shape(2, 1), on, Some(Form::Switch)));
+    assert!(!cascade_is_switch(shape(17, 17), on, Some(Form::Switch)));
+    assert!(!cascade_is_switch(shape(2, 2), LoweredSwitchMode::Off, Some(Form::Switch)));
+}
+
+#[test]
 fn option_apply_bad_value_errors() {
     assert!(OptionLowerSwitch.apply("maybe").is_err());
     assert_eq!(OptionLowerSwitch::NAME, "loweredswitch");
