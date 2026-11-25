@@ -337,6 +337,9 @@ mod libgcc_divdi3;
 #[path = "rettriangle_round_trip.rs"]
 mod rettriangle_round_trip;
 
+#[path = "retshape_round_trip.rs"]
+mod retshape_round_trip;
+
 #[path = "tailform_round_trip.rs"]
 mod tailform_round_trip;
 
@@ -838,6 +841,8 @@ mod ppc32_pic_calls;
 
 #[path = "ppc32_pic_abi.rs"]
 mod ppc32_pic_abi;
+#[path = "ppc32_pic_note.rs"]
+mod ppc32_pic_note;
 
 #[path = "compact_json.rs"]
 mod compact_json;

@@ -556,7 +556,10 @@ const PIN_FAILLOG_DIFF_CEILING: [f64; 3] = [0.09, 0.12, 0.15];
 // 0x272a/0x2731, then write 0x6288 before 0x6278 as the binary does at
 // 0x2738/0x273f. The former early 0x6278 assignment and global reread become
 // one local capture; the extra line preserves the actual memory-write order.
-const PIN_FAILLOG_C_LINES: [usize; 3] = [281, 34, 92];
+// sub_3ad0 92 -> 91 with `dedupitetail latch` on by default: the `--root` scan's
+// two copies of `i < argc` join into one latch, so the loop is one `do` loop with
+// the option tests inside instead of a `while( true )` nested in it.
+const PIN_FAILLOG_C_LINES: [usize; 3] = [279, 34, 91];
 // Tokens Java's `getC()` cleaner REWRITES (`IllegalCharCppTransformer`).
 // Phase 3 measured 57/10/24 (whole rendered declarators like
 // `"unsigned long *"` as single `<type>` tokens, received by scripts/exports
@@ -622,7 +625,12 @@ const PIN_FAILLOG_VARDECL_UNRESOLVED: [usize; 3] = [0, 0, 0];
 // stated nothing is now read by its body, and its direct calls' targets are
 // walked too (`reads_through_calls`): four instructions of a target no earlier
 // probe reached.
-const PIN_FAILLOG_GETPCODE_TOTAL: u64 = 2146;
+// (kuna `dedupitetail latch`) RAISED the total 2146 -> 2382 and left the DISTINCT
+// count at 1048, unmoved. sub_3ad0's joined `--root` loop still prints a goto
+// inside it, so the function is decompiled a second time without the join to
+// compare gotos (the joined form keeps fewer), and that second decompile re-asks
+// the p-code of instructions this session had already decoded.
+const PIN_FAILLOG_GETPCODE_TOTAL: u64 = 2382;
 const PIN_FAILLOG_DECODED_INSTS: usize = 1048;
 // Whole-session getMappedSymbols traffic: Phase 2 pinned this at 0 (the
 // providers did not exist); Phase 3 pins the real query-through traffic —

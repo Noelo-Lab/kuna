@@ -178,6 +178,15 @@ pub struct Funcdata {
     /// (kuna) Whether the function's code is unoptimized, decided once after
     /// the first heritage pass (`p3_dataflow/kuna_unoptimized.rs`).
     pub(crate) kuna_unoptimized: Option<bool>,
+    /// (kuna `dedupitetail latch`) Loop latches joined so far, and whether this
+    /// decompile runs without the join (`p8_structure/kuna_latchjoin.rs`).
+    pub(crate) kuna_latch_joins: u32,
+    pub(crate) kuna_latch_join_withdrawn: bool,
+    /// The blocks the joined latches were placed in.
+    pub(crate) kuna_latch_blocks: Vec<crate::context::BlockId>,
+    /// (kuna) Whether that first heritage pass saw the function address its
+    /// frame through a frame pointer.
+    pub(crate) kuna_frame_pointer: bool,
     /// (kuna `returndup auto`) The return statements read at the first
     /// heritage pass (`p8_structure/kuna_o0returns.rs`).
     pub(crate) kuna_o0returns: Option<Box<crate::p8_structure::kuna_o0returns::Record>>,
@@ -819,6 +828,10 @@ impl Funcdata {
             kuna_vararg_save: false,
             kuna_flow_ranges: Vec::new(),
             kuna_unoptimized: None,
+            kuna_latch_joins: 0,
+            kuna_latch_join_withdrawn: false,
+            kuna_latch_blocks: Vec::new(),
+            kuna_frame_pointer: false,
             kuna_o0returns: None,
             kuna_o0select: None,
             kuna_o0switch: None,
@@ -4509,6 +4522,7 @@ impl Funcdata {
         self.kuna_vararg_save = false;
         self.kuna_flow_ranges.clear();
         self.kuna_unoptimized = None;
+        self.kuna_frame_pointer = false;
         self.kuna_o0returns = None;
         self.kuna_o0select = None;
         self.kuna_o0switch = None;

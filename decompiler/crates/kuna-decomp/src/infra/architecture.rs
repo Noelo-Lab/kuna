@@ -977,11 +977,9 @@ pub struct Architecture {
     /// clauses; the earlier-addressed arm becomes the `if` clause instead of
     /// out-index 0.
     pub guard_arm: crate::p8_structure::kuna_ifnoexit::GuardArmMode,
-    /// (kuna) Defer a live loop head in `CollapseStructure`'s deferred
-    /// `ruleBlockIfNoExit` scan while a non-head candidate remains (option
-    /// `loopcondhoist`, default-off opt-in), so `ruleBlockWhileDo` keeps the
-    /// loop's head test instead of emitting `while(true) { if (!C) ...; }`.
-    pub loop_cond_hoist: bool,
+    /// (kuna) Which exit of a loop the structurers keep as the loop's own
+    /// (option `loopcondhoist`); see [`crate::p8_structure::kuna_loopcond`].
+    pub loop_cond_hoist: crate::p8_structure::kuna_loopcond::LoopCondHoist,
     /// Preserve secondary natural-loop latches as continues (`loopcontinue`).
     pub loop_continue: bool,
     /// (kuna) `loopcontinue auto`: in a function `kuna_unoptimized` flags, the
@@ -1105,6 +1103,9 @@ pub struct Architecture {
     /// (`gotoreduce`/`crossjumprevert`) (`dedup_ite_tail`, opt-in
     /// default-off).
     pub dedup_ite_tail: bool,
+    /// (kuna) join duplicated loop latches (`dedupitetail latch`); see
+    /// [`crate::p8_structure::kuna_latchjoin`].
+    pub latch_join: bool,
     /// (kuna) angr `ITERegionConverter`: rewrite a two-arm assignment *diamond*
     /// (`if (c) v = A; else v = B;`, both arms a single COPY to the same
     /// variable, converging on one tail) to a `?:` ternary (`v = c ? A : B;`).
@@ -1165,6 +1166,10 @@ pub struct Architecture {
     /// size of its conditional tail; `None` when off.  Read by
     /// [`crate::p8_structure::kuna_tailform`].
     pub tail_form: Option<crate::p8_structure::kuna_tailform::TailFormPolicy>,
+    /// (kuna) `returndup auto`: in optimized functions, fold adjacent guards
+    /// and give the arms of a merged return their own.  Read by
+    /// [`crate::p8_structure::kuna_retshape`].
+    pub ret_shape: crate::p8_structure::kuna_retshape::RetShapePolicy,
     /// (kuna) Hoist a leading const-guard into an early return (`if (c) return K;`) by
     /// peeling only the CONSTANT arm of a mixed return phi — the per-edge narrowing of
     /// angr SAILR `ReturnDuplicatorHigh` that `duplicate_shared_returns`' whole-block
@@ -2608,7 +2613,7 @@ impl Architecture {
             loop_continue: true,
             loop_continue_record: false, // (kuna) option loopcontinue auto; reset_defaults sets the shipped default
             post_increment: true,
-            loop_cond_hoist: false,
+            loop_cond_hoist: crate::p8_structure::kuna_loopcond::LoopCondHoist::Off, // (kuna) option loopcondhoist; reset_defaults sets the shipped default
             region_loop_refine: false,
             region_edge_order: false,
             outline_spec: String::new(),
@@ -2618,6 +2623,7 @@ impl Architecture {
             flatten_ifelse: false,
             revert_cross_jumps: false,
             dedup_ite_tail: false,
+            latch_join: false, // (kuna) option dedupitetail latch; reset_defaults sets the shipped default
             iteregion: false,
             iteregion_record: false,
             iteexpr: false,
@@ -2628,6 +2634,7 @@ impl Architecture {
             returndup_record: false, // (kuna) option returndup auto; reset_defaults sets the shipped default
             returndup_triangle: false, // (kuna) option rettriangle; reset_defaults sets the shipped default
             tail_form: None, // (kuna) option tailform; reset_defaults sets the shipped default
+            ret_shape: crate::p8_structure::kuna_retshape::RetShapePolicy::off(), // (kuna) option returndup auto; reset_defaults sets the shipped default
             early_return: false,
             switch_return: false,
             recover_loop_break: false,
@@ -2956,16 +2963,19 @@ impl Architecture {
         self.flatten_ifelse = true; // (kuna) DIV-13 default-on (angr IfElseFlattener; 0/675 ablation)
         self.revert_cross_jumps = true; // (kuna) DIV-13 default-on (angr SAILR CrossJumpReverter; 0/675 ablation)
         self.dedup_ite_tail = true; // (kuna) DIV-13 default-on (angr structurer ITE region-dedup — merge duplicated if/else tails; 0/675 ablation)
+        self.latch_join = true; // (kuna) option dedupitetail default `latch`: join loop latches the compiler copied into each path (kuna_latchjoin)
         self.iteregion_record = true; // (kuna) `iteregion auto` default: the recorded conditional values decide unoptimized functions
         self.iteregion = true; // (kuna) DIV-17 default-on (angr ITERegionConverter: assignment-diamond -> `?:` ternary, decbench F5). Per-test opt-out (`option iteregion off`) on the datatests it changes keeps the corpus byte-identical.
         self.iteexpr = false; // (kuna) computed-arm ?: extension: runtime choice, default-off (corpus byte-identical).
         self.iteboolean = true; // (kuna) DIV-51 default-on (short-circuit 0/1 select -> boolean assignment; 0/675 ablation). Per-test opt-out (`option iteboolean off`) on the one stage test it changes keeps the corpus byte-identical.
         self.tail_form = Some(crate::p8_structure::kuna_tailform::TailFormPolicy::shipped()); // (kuna) option tailform default `model`
+        self.loop_cond_hoist = crate::p8_structure::kuna_loopcond::LoopCondHoist::On; // (kuna) option loopcondhoist default `on`: the loop's condition is its exit, read from the layout in functions `kuna_unoptimized` calls unoptimized; `auto` keeps the structurer's choice in optimized ones
         self.guard_arm = crate::p8_structure::kuna_ifnoexit::GuardArmMode::Auto; // (kuna) option guardarm default `auto`: the layout tie-break only in functions `kuna_unoptimized` calls unoptimized; `option guardarm off` restores out-index order everywhere
         self.returndup_triangle = false; // (kuna) option rettriangle default-off: decbench sample O0 -163 GED / +56 perfect, O2 +60 GED / +1 perfect; on in the aggressive preset
         self.duplicate_shared_returns = true; // (kuna) DIV-54 default-on, superseding the DIV-18 revert (angr SAILR gotoless ReturnDuplicatorHigh). The -976 GED-perfect regression that reverted it was measured before #137 added the const-return gate (`returndup_is_const_ret`); re-ablated on 52,862 decbench functions the selective pass is +417 GED-perfect / -7,756 aggregate GED, net-positive in every one of nine tested partitions. Per-test opt-out (`option returndup off`) on the datatests it changes keeps the corpus byte-identical.
         self.duplicate_call_returns = false; // (kuna) `returndup calls` is opt-in: the merged call is often the source's own ternary argument
         self.returndup_record = true; // (kuna) `returndup auto` default: in unoptimized functions the recorded return statements decide the splits
+        self.ret_shape.on = true; // (kuna) `returndup auto` default: in optimized functions adjacent guards fold and merged returns split per arm
         self.early_return = true; // (kuna) DIV-23 default-on (angr SAILR ReturnDuplicatorHigh PER-EDGE const-guard early-return hoisting: peel only the CONSTANT arm of a mixed return phi). The const-only narrowing of returndup that returndup's whole-block gate cannot reach; unlike broad returndup (DIV-18, -976 regression), the decbench ablation measured this NET-POSITIVE (+47 perfect matches, -576 summed GED, 158:54 improved:regressed across 508 sailr binaries) because it only recovers genuine source early-return guards. Per-test opt-out (`option earlyreturn off`) on the datatests it changes keeps the corpus byte-identical.
         self.switch_return = true; // (kuna) DIV-25 default-on. The continuation of earlyreturn (DIV-23) to WIDE multi-way switch-phi returns (`switch { case: v=K; break; } return v` above earlyreturn's 16-in-edge cap -> per-case `return K`); same per-edge const-peel machinery so it inherits earlyreturn's safety (peels only CONSTANT arms, so it cannot cause returndup's variable-return regression). The decbench ablation of the wide-switch delta on top of default earlyreturn-on measured NET-POSITIVE (+2 perfect matches, -107 summed GED, 3:0 improved:regressed across 17 sailr binaries, zero regressions). Per-test opt-out (`option switchreturn off`) on the datatests it changes keeps the corpus byte-identical.
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
@@ -3175,6 +3185,9 @@ impl Architecture {
     /// See [`crate::modes`]. The frontend-only `auto` policy errors here because
     /// an Architecture has no input-file size; file frontends resolve it to a
     /// concrete preset before this method. Errors on an unknown mode name.
+    /// `ppc32picimports abi` acts only while an image loads, so the preset
+    /// sets it for the next load and leaves the open image's live mode, a
+    /// caller-local `on` included, as it was.
     pub fn apply_mode(&mut self, name: &str) -> KunaResult<String> {
         if crate::modes::mode_is_automatic(name) {
             return Err(KunaError::parse(
@@ -3188,9 +3201,11 @@ impl Architecture {
                 known.join(", ")
             ))
         })?;
+        let ppc32picimports = self.analysis_ppc32picimports;
         for (opt, val) in overrides {
             self.set_kuna_option(opt, val)?;
         }
+        self.analysis_ppc32picimports = ppc32picimports;
         Ok(format!(
             "mode {name} applied ({} option override{})",
             overrides.len(),
@@ -3835,6 +3850,7 @@ impl Architecture {
         ctx.flatten_ifelse = self.flatten_ifelse; // ifelseflatten
         ctx.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert
         ctx.dedup_ite_tail = self.dedup_ite_tail; // dedupitetail
+        ctx.latch_join = self.latch_join; // dedupitetail latch
         ctx.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
         ctx.iteregion_record = self.iteregion_record; // iteregion auto
         ctx.iteexpr = self.iteexpr; // iteexpr (computed-arm ?: extension, runtime-choice)
@@ -3845,6 +3861,7 @@ impl Architecture {
         ctx.returndup_record = self.returndup_record; // returndup auto
         ctx.returndup_triangle = self.returndup_triangle; // rettriangle (one-block-if join)
         ctx.tail_form = self.tail_form.map(|p| crate::p8_structure::kuna_tailform::TailFormPolicy { elide_void: self.voidtailreturn, loop_test: self.loop_test, ..p }); // tailform
+        ctx.ret_shape = crate::p8_structure::kuna_retshape::RetShapePolicy { loop_test: self.loop_test, ..self.ret_shape }; // returndup auto
         ctx.early_return = self.early_return; // earlyreturn
         ctx.switch_return = self.switch_return; // switchreturn
         ctx.recover_loop_break = self.recover_loop_break; // loopbreak_recovery

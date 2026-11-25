@@ -45,6 +45,25 @@ bytes. A three-case switch over a struct field that gcc loads into a register
 once re-rolls too: the install reads the switch value from that load through
 the register copy and its zero extension.
 
+`kuna-loopcondhoist.xml` checks option `loopcondhoist` (default `on`) on
+gcc x86-64. In three -O0 functions the loop's condition, read from the layout,
+is the loop's exit: a `for` whose `break` carries two stores keeps them in the
+break arm, a `while` with an early `return` prints as a `for` with the return
+inside, and a `break` to the return after the loop stays a `break`. The -O2
+build of the third prints as a `while` on its bottom test. Under `option
+loopcondhoist off` the first two and the -O2 one are `while( true )` with the
+condition inside (the third keeps its loop through `loopcontinue auto`); under
+`auto` only the -O2 one is.
+
+`kuna-latchjoin.xml` checks option `dedupitetail` (default `latch`) on gcc
+-O2 x86-64. gcc copies `p = p->next; if (p) goto top;` into both paths of a
+`while (p) { if (p->cls == cls) ...; p = p->next; }` loop; by default the
+copies are joined and `visit` and `count` print that one loop, with `count`'s
+sum (which gcc scheduled between the load and the test of one copy) left in the
+`if`. A busy-wait inside a `for` loop shares the outer loop's header but has a
+latch of its own, and stays a loop inside the loop. Under `option dedupitetail
+on` the two copies print as a `while` loop inside a `do` loop.
+
 `kuna-guardauto.xml` checks option `guardarm` (default `auto`) on two x86-64
 functions. In a gcc -O0 `unget`, whose parameters live in frame slots, the
 default prints the source's flat guard `if (c == -1 || ...) return -1;`, and
@@ -116,6 +135,11 @@ fixture, `outer` calls `free` through a real stub, then an exported function
 shaped like a `pld` stub, which keeps its name, and a local one that loads a
 GOT entry instead of a PLT slot, which stays `sub_`. The fixtures and their
 recipe are in `tests/fixtures/ppc64-plt-stubs/`.
+
+`kuna-ppc32picimports-aggressive.xml` loads a small PPC32 secure-PLT PIC
+image twice. With the catalog defaults its PIC stub stays `sub_1800`; after
+`mode aggressive`, which sets `ppc32picimports abi` and which `auto` selects
+for files under 500 KiB, the same call prints as the import `extra`.
 
 `kuna-narrowed-call-input.xml` checks a call through a typed field whose
 argument was narrowed to two bytes before the field's prototype was forced on
@@ -536,6 +560,8 @@ writeup, not here.
 | `kuna-strlenscan.xml` | gcc 9 expands `strlen` inline as `repnz scasb`, which printed as a do/while over the string and `~count - 1` (authored C, Ubuntu 20.04 gcc 9.4 -O1) | P3 simplification-quiescence, inline string length | `option strlenscan on\|off` |
 | `kuna-opaquepredicate.xml` | a branch on a comparison that is constant for every input (`x * (x + 1) & 1`, `x * x & 3`, `(x \| y) - (x & y) != (x ^ y)`) kept its dead arm (authored C, clang -O0) | P3 simplification-quiescence, constant comparisons | `option opaquepredicate on\|off` |
 | `kuna-rettriangle.xml` | `returndup` split the shared return after a one-block `if`, printing `if (c) f(); return 0;` as `if (!c) return 0; f(); return 0;` (authored C, gcc -O0, stack-protected) | P8 goto-quality, return duplication | `option rettriangle on\|off` |
+| `kuna-retshape-guards.xml` | an optimized function printed its source's `if (a \|\| b \|\| c) return 0;` as three guards with the same `return 0` (authored C, gcc -O2, the fixture loaded whole); two guards each checking a call's result stay two | P8 goto-quality, print-tree edit after final structuring | `option returndup auto\|record` |
+| `kuna-retshape-arms.xml` | an optimized function printed `if (c) v = f(); else { ...; v = -1; } return v;` where the source returns in each arm, the arms joined by the stack-protector check (authored C, gcc -O2, the fixture loaded whole); a one-armed update keeps its one return | P8 goto-quality, return-block split before the final structuring | `option returndup auto\|record` |
 | `kuna-tailform.xml` | the function-tail `if` printed in the form the return layout picked: `if (a0) return; note();` for `if (a == 0) note();`, a guard and a second `return 0` for a wrapped two-call body, the arm repeating the final `return 0`, a six-statement void body wrapped, and a list walk whose guard `looptest` owns (authored C, gcc -O2) | P8 goto-quality, print-tree edit after final structuring | `option tailform off\|on\|<n>\|<void>,<value>` |
 | `kuna-tailform-noreturn.xml` | a function ending in a call that does not return printed with that call last and the other side's return inside the `if`: `if (v2) return v2 + 7; __fprintf_chk(..); exit(2);`, a merged two-test `abort` and the test after a loop the same way, and a void store-and-return arm before `abort();` (authored C, gcc -O2, the fixture loaded whole) | P8 goto-quality, print-tree edit after final structuring | `option tailform off\|on` |
 | `kuna-tailform-model.xml` | the C runtime's `__do_global_dtors_aux` (`if (completed) return; ...`) printed as the guard clause by the default `model`, which still wraps a one-call tail; `option tailform on` keeps the four-line tail wrapped by the size threshold (authored C, gcc -O2, the fixture loaded whole) | P8 goto-quality, print-tree edit after final structuring | `option tailform model\|on` |

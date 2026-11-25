@@ -491,7 +491,7 @@ kuna_options! { self, p1;
     },
     "loopcondhoist" => {
         let (val, msg) =
-            crate::p8_structure::kuna_ifnoexit::OptionLoopCondHoist.apply(p1)?;
+            crate::p8_structure::kuna_loopcond::OptionLoopCondHoist.apply(p1)?;
         self.loop_cond_hoist = val;
         Ok(msg)
     },
@@ -547,9 +547,10 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "dedupitetail" => {
-        let (val, msg) =
+        let (val, latch, msg) =
             crate::p8_structure::kuna_dedupitetail::OptionDedupIteTail.apply(p1)?;
         self.dedup_ite_tail = val;
+        self.latch_join = latch;
         Ok(msg)
     },
     "iteregion" => {
@@ -572,11 +573,12 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "returndup" => {
-        let (val, calls, record, msg) =
+        let (val, calls, record, shapes, msg) =
             crate::p8_structure::kuna_returndup::OptionReturnDup.apply(p1)?;
         self.duplicate_shared_returns = val;
         self.duplicate_call_returns = calls;
         self.returndup_record = record;
+        self.ret_shape.on = shapes;
         Ok(msg)
     },
     "rettriangle" => {

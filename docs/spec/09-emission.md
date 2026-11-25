@@ -4967,16 +4967,31 @@ operations, for cosmetic cast suppression, and for other output languages.
 conversion serves explicit casts, COPY assignments, returns and typed STORE
 values. It uses the printed source type and requires a one-byte integer value
 and a one-byte Boolean destination. Enum values, nonintegers and inconsistent
-storage widths retain their existing handling. An implied call must have a
-compatible byte result in its call prototype or the verified scalar call-result
-conversion described below. Wider results must retain their
-separate narrowing operation: a byte extracted from a callback result becomes
-`callback() as u8 != 0`, not a comparison of the complete result. The expression
+storage widths retain their existing handling. An implied call takes its
+result type from its call prototype or the verified scalar call-result
+conversion described below and, when neither states one (or the prototype's
+output is `void`), from the callee's recovered return type. A Boolean result
+keeps the cast, which is valid Rust; a one-byte integer result prints
+`call() != 0`; any other result, unknown or wider, prints `call() as u8 != 0`,
+which tests the low byte the caller reads whatever the callee's printed return
+type is, where a bare `call() as bool` would not compile. Wider results must
+retain their separate narrowing operation: a byte extracted from a callback
+result becomes `callback() as u8 != 0`, not a comparison of the complete result. The expression
 also replaces the outer Boolean cast when the `boolbyte` SUBPIECE path inserts
 an intermediate unsigned-byte cast. Rust retains the intermediate cast even
 when the upper bits are proven zero, so both truncation forms yield a valid
 Boolean expression. The source is evaluated once, and the normal
-operator stack preserves surrounding Boolean and arithmetic precedence.
+operator stack preserves surrounding Boolean and arithmetic precedence. The
+comparison uses C's `!=` token, which keeps the parentheses around a bitwise
+operand (`(value as u8 & 0x55) != 0`), except directly under another
+comparison, where it takes Rust's own token: Rust comparisons do not chain, so
+`(f() != 0) != g` is parenthesised rather than printed as `f() != 0 != g`. A
+constant of Boolean type prints as `false` or `true` where what consumes it is
+Boolean too (`kuna_rustboolcast.rs (rust_boolean_constant)`): the return value
+of a function that returns `bool`, a declared `bool` variable a copy assigns
+(followed through implied copies), or the other side of `==` or `!=`. Elsewhere
+it keeps its integer spelling, because a merged variable can be declared at an
+integer type while one of its pieces is typed Boolean.
 Cosmetic cast suppression disables the conversion.
 C and Go emission are unchanged.
 

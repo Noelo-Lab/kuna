@@ -8639,8 +8639,16 @@ impl PrintC {
     /// `push_cast_open` / `push_cast_close` rather than emitting the type inline.
     /// Map a token from the opcode table onto the active language's spelling and
     /// precedence (`LangProfile::map_token`).
-    fn lang_token(&self, tok: &'static OpToken) -> &'static OpToken {
+    pub(crate) fn lang_token(&self, tok: &'static OpToken) -> &'static OpToken {
         (self.lang().map_token)(tok)
+    }
+
+    /// (kuna outlang) Whether the operator on top of the stack is a comparison.
+    pub(crate) fn top_is_comparison(&self) -> bool {
+        self.revpol.last().is_some_and(|top| {
+            top.tok.token_type == crate::printlanguage::TokenType::Binary
+                && matches!(top.tok.print1, "==" | "!=" | "<" | "<=" | ">" | ">=")
+        })
     }
 
     /// Push the operator for a field reached THROUGH a pointer.
@@ -11152,7 +11160,9 @@ impl PrintC {
             // by `push_float` (the decimal literal), every other metatype reaches
             // `push_integer` with `ct->getDisplayFormat()` as its `displayFormat`.
             let ct = fd.vn_type_read_facing(vn, op);
-            if self.out_lang == crate::kuna_lang::OutLang::Go && ct.get_metatype() == type_metatype::TYPE_BOOL {
+            if (self.out_lang == crate::kuna_lang::OutLang::Go && ct.get_metatype() == type_metatype::TYPE_BOOL)
+                || (self.out_lang == crate::kuna_lang::OutLang::Rust && self.rust_boolean_constant(fd, arch, vn, op))
+            {
                 self.push_atom(&Atom::with_op_vn(if off == 0 { "false" } else { "true" },
                     TagType::VarToken, crate::printlanguage::SyntaxHighlight::const_color,
                     op_key(op), vn_key(vn)));
