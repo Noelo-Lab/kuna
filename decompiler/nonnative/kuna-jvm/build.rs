@@ -143,10 +143,10 @@ fn generate(table: &Table) -> String {
         let aliases: Vec<String> = r.aliases.iter().map(|a| format!("{a:?}")).collect();
         let _ = writeln!(
             out,
-            "    JvmOption {{ option: {:?}, vineflower: {:?}, short: {:?}, aliases: &[{}], values: {:?}, default: {:?}, destructive: {}, phase: {:?}, subphase: {:?}, strength: {:?}, rewind: {:?}, issue: {:?}, summary: {:?}, use_when: {:?}, example: {:?}, source_decompiler: {:?}, inspiration: {:?}, change_kind: {:?}, tier: {:?}, symptoms: {:?} }},",
-            r.option,
+            "    JvmOption {{ vineflower: {:?}, short: {:?}, row: OptionRow {{ option: {:?}, aliases: &[{}], values: {:?}, default: {:?}, destructive: {}, phase: {:?}, subphase: {:?}, strength: {:?}, rewind: {:?}, issue: {:?}, summary: {:?}, use_when: {:?}, example: {:?}, source_decompiler: {:?}, inspiration: {:?}, change_kind: {:?}, tier: {:?}, symptoms: {:?} }} }},",
             r.vineflower,
             r.short,
+            r.option,
             aliases.join(", "),
             r.values,
             r.default,

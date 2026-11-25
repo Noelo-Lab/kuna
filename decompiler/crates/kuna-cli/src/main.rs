@@ -27,7 +27,6 @@ mod jsonfmt;
 mod kuna_allocrelease;
 mod limits;
 mod loadtime;
-#[cfg(feature = "jvm")]
 mod nonnative;
 mod optname;
 mod output;
@@ -86,8 +85,7 @@ fn main() -> ExitCode {
         paths::SLACOMP_SUBCOMMAND => return kuna_slacomp::slacompmain::main(args[1..].to_vec()),
         _ => {}
     }
-    #[cfg(feature = "jvm")]
-    if let Some(code) = nonnative::dispatch(sub, &args[2..]) {
+    if let Some(code) = nonnative::dispatch(nonnative::ENGINES, sub, &args[2..]) {
         return ExitCode::from(code as u8);
     }
     let mut rest = args[2..].to_vec();
@@ -408,7 +406,7 @@ fn cmd_catalog(argv: &[String]) -> Result<i32, String> {
         return Err("--json, --markdown, --check are mutually exclusive".into());
     }
     let selected = catalog::Engine::parse(engine.as_deref())?;
-    if selected == catalog::Engine::Default {
+    if matches!(selected, catalog::Engine::Default) {
         apply_engine(engine.as_deref());
     }
     let pinned_by = if decomp_dbg_flag {

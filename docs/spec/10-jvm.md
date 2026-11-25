@@ -5,6 +5,7 @@ Anchors:
   - decompiler/nonnative/kuna-jvm/src
   - decompiler/nonnative/kuna-jvm/options.toml
   - decompiler/crates/kuna-cli/src/nonnative
+  - decompiler/nonnative/kuna-managed
 ```
 
 Chapters 01-09 describe the native pipeline: machine code lifted through SLEIGH to
@@ -1142,20 +1143,30 @@ stays in Vineflower's option map like any key Vineflower does not read.
 
 **The CLI seam.** `kuna-cli` routes an input to this engine before any native code runs
 when the input operand is a class file, an archive or a directory (chapter 00, section
-0.2); its non-native module (this chapter's third anchor) builds a driver configuration
-from the command line, slices classes and methods out of the delivered text by their
-spans, and renders the native CLI's text and JSON shapes, tagging each unit with its
-language (`java`, or `kotlin` for a unit the Kotlin plugin wrote, whose file name ends in
-`.kt`). Before a command that decompiles (not `functions`) it sets glibc's heap policy
-for the process (`decompiler/crates/kuna-cli/src/nonnative/jvm/heap.rs (tune)`, Linux
-with glibc only): a 256 MiB top pad, no trimming, and blocks up to 32 MiB served from the
-heaps instead of fresh mappings. The engine threads allocate and free many small objects,
-and under the default policy each heap's growth and trimming are memory-map calls under
-one process-wide lock that serialize the threads; the native path never sets it. For the
-same reason it arms the per-method memory limit (chapter 00, `kuna_fnmemory`) without the
-heap release the native drivers make before each function
-(`decompiler/crates/kuna-cli/src/nonnative/jvm/run.rs (arm_memory_limit)`). The CLI
-surface is `docs/cli.md` ("JVM inputs").
+0.2). The CLI meets the engine through a contract of its own crate, `kuna-managed` (this
+chapter's fourth anchor), which any managed-bytecode engine implements: an `Engine` sniffs,
+classifies and opens its inputs and owns its option rows, and an opened `Program` lists
+its types and members, resolves its selection grammar to a target and runs a selection,
+delivering each root's unit (text, path, language, and the spans of the types and members
+written into it) as the driver finishes it. The JVM side is
+`decompiler/nonnative/kuna-jvm/src/infra/kuna_engine.rs`: it turns the resolved `--option`
+pairs into the driver configuration (the JDK of `jvm_include_runtime` included), installs a
+silent engine logger that marks each method's start and end on the CLI's stall watch and
+arms its memory guard around the method, and converts each delivered class result into a
+unit. The CLI's non-native module (this chapter's third anchor) is the same for every
+engine: it slices types and members out of the delivered text by their spans and renders
+the native CLI's text and JSON shapes, tagging each unit with its language (`java`, or
+`kotlin` for a unit the Kotlin plugin wrote, whose file name ends in `.kt`). Before a
+command that decompiles (not `functions`) it sets glibc's heap policy for the process
+(`decompiler/crates/kuna-cli/src/nonnative/heap.rs (tune)`, Linux with glibc only): a 256
+MiB top pad, no trimming, and blocks up to 32 MiB served from the heaps instead of fresh
+mappings. The engine threads allocate and free many small objects, and under the default
+policy each heap's growth and trimming are memory-map calls under one process-wide lock
+that serialize the threads; the native path never sets it. For the same reason it arms the
+per-method memory limit (chapter 00, `kuna_fnmemory`) without the heap release the native
+drivers make before each function
+(`decompiler/crates/kuna-cli/src/nonnative/run.rs (arm_memory_limit)`). The CLI surface is
+`docs/cli.md` ("JVM inputs").
 
 ## 10.15 Kotlin
 

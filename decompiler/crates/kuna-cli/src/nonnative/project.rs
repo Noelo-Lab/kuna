@@ -1,39 +1,32 @@
-//! `kuna decompile-project` for a JVM input: a Java and Kotlin source tree.
+//! `kuna decompile-project` for a managed input: a source tree.
 //!
-//! Each top-level class is written to the engine's own output path,
+//! Each root type is written to the engine's own output path (for the JVM,
 //! `DIR/<package path>/<Class>.java`, or `<Class>.kt` for a class the Kotlin
-//! plugin wrote (nested classes stay inside). A class the engine produced no
-//! text for gets a `.java` stub at the path its name implies, holding
-//! `// kuna: could not decompile <class>: <reason>`. The summary line counts
-//! the files of each extension, classes the engine decompiled or not, methods
+//! plugin wrote; nested types stay inside). A type the engine produced no
+//! text for gets a stub at `<name>.<extension>`, holding
+//! `// kuna: could not decompile <type>: <reason>`. The summary line counts
+//! the files of each extension, types the engine decompiled or not, members
 //! whose text holds a failure (their own or a body written inside them,
-//! `failures`), and, when there are any, failed bodies outside every method.
-//! The command exits 0 when at least one class was decompiled.
+//! `failures`), and, when there are any, failed bodies outside every member.
+//! The command exits 0 when at least one type was decompiled.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 
 use super::args::Args;
 use super::failures::{self, Units};
-use super::render;
 use super::run::{self, Outcome};
-use super::select::{java_name, Target};
 
 pub(crate) fn run(args: &Args) -> i32 {
-    let loaded = match render::load_or_report(args) {
-        Ok(loaded) => loaded,
+    let mut program = match run::open(args) {
+        Ok(program) => program,
         Err(status) => return status,
     };
-    kuna_jvm::kuna_driver::trace(|| "cli loaded".into());
-    let own = loaded.own_class();
     let mut wanted: Option<BTreeSet<String>> = None;
     for text in args.functions.iter().flatten() {
-        match loaded.universe.resolve(text, own.as_deref(), &args.input) {
+        match program.resolve(text) {
             Ok(target) => {
-                let class = match &target {
-                    Target::Class(class) | Target::Methods { class, .. } => class,
-                };
-                wanted.get_or_insert_with(BTreeSet::new).insert(class.clone());
+                wanted.get_or_insert_with(BTreeSet::new).insert(target.owner().to_string());
             }
             Err(e) => {
                 eprintln!("error: {e}");
@@ -49,26 +42,26 @@ pub(crate) fn run(args: &Args) -> i32 {
         eprintln!("error: cannot create {}: {e}", out_dir.display());
         return 1;
     }
+    if let Err(status) = run::prepare(args, &mut *program) {
+        return status;
+    }
+    let inventory = program.inventory();
     let select = wanted
         .as_ref()
-        .map(|classes| classes.iter().flat_map(|c| loaded.universe.chain(c)).collect::<BTreeSet<String>>());
-    let status = render::execute(args, &loaded, select, &|mut outcome, _runtime| {
-        kuna_jvm::kuna_driver::trace(|| "cli write start".into());
+        .map(|names| names.iter().flat_map(|c| inventory.chain(c)).collect::<BTreeSet<String>>());
+    run::drive(&*program, args, select, &|mut outcome| {
         if wanted.is_some() {
             let keep: BTreeSet<String> = Units::new(&outcome)
-                .holding(&loaded.universe, wanted.as_ref())
+                .holding(inventory, wanted.as_ref())
                 .iter()
-                .map(|r| r.qualified_name.clone())
+                .map(|r| r.name.clone())
                 .collect();
-            outcome.results.retain(|r| keep.contains(&r.qualified_name));
+            outcome.results.retain(|r| keep.contains(&r.name));
         }
-        let status = write_tree(args, &out_dir, &outcome);
-        kuna_jvm::kuna_driver::trace(|| "cli write end".into());
+        let status = write_tree(args, inventory.display, &out_dir, &outcome);
         run::abandon(outcome);
         status
-    });
-    kuna_jvm::kuna_driver::trace(|| "cli end".into());
-    status
+    })
 }
 
 /// `relative` (an engine output path) as a path under the export directory:
@@ -84,9 +77,11 @@ fn safe_relative(relative: &str) -> PathBuf {
     out
 }
 
-fn write_tree(args: &Args, out_dir: &Path, outcome: &Outcome) -> i32 {
+fn write_tree(args: &Args, display: fn(&str) -> String, out_dir: &Path, outcome: &Outcome) -> i32 {
+    let extension = args.engine.extension();
     let mut written: BTreeSet<PathBuf> = BTreeSet::new();
-    let (mut java_files, mut kotlin_files, mut bytes) = (0usize, 0usize, 0usize);
+    let mut files: BTreeMap<String, usize> = BTreeMap::new();
+    let mut bytes = 0usize;
     let (mut classes_ok, mut classes_failed) = (0usize, 0usize);
     let (mut methods_ok, mut methods_failed) = (0usize, 0usize);
     let mut outside_failed = 0usize;
@@ -100,49 +95,40 @@ fn write_tree(args: &Args, out_dir: &Path, outcome: &Outcome) -> i32 {
             std::fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
         }
         std::fs::write(&path, text).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
-        if relative.extension().is_some_and(|e| e == "kt") {
-            kotlin_files += 1;
-        } else {
-            java_files += 1;
-        }
+        let ext = relative.extension().map_or(String::new(), |e| e.to_string_lossy().into_owned());
+        *files.entry(ext).or_insert(0) += 1;
         bytes += text.len();
         Ok(())
     };
-    let stub = |class: &str, why: &str| {
-        format!(
-            "// kuna: could not decompile {}: {}\n",
-            java_name(class),
-            why.replace('\n', " ")
-        )
+    let stub = |name: &str, why: &str| {
+        format!("// kuna: could not decompile {}: {}\n", display(name), why.replace('\n', " "))
     };
+    let stub_path = |name: &str| safe_relative(&format!("{name}.{extension}"));
     let mut failed: Vec<(String, String)> = Vec::new();
-    for result in &outcome.results {
-        let written = match &result.unit {
-            Some(unit) => {
-                for method in &unit.methods {
-                    if method.error.is_some() || !method.nested.is_empty() {
+    for unit in &outcome.results {
+        let written = match &unit.text {
+            Some(text) => {
+                for member in &unit.members {
+                    if member.error.is_some() || !member.nested.is_empty() {
                         methods_failed += 1;
                     } else {
                         methods_ok += 1;
                     }
                 }
-                outside_failed += failures::outside_methods(unit, &unit.qualified_name).len();
+                outside_failed += failures::outside_members(unit, &unit.name).len();
                 if let Some(why) = failures::unit_failure(unit) {
                     classes_failed += 1;
-                    failed.push((result.qualified_name.clone(), why));
+                    failed.push((unit.name.clone(), why));
                 } else {
                     classes_ok += 1;
                 }
-                write(safe_relative(&unit.path), &unit.content)
+                write(safe_relative(&unit.path), text)
             }
             None => {
-                let why = result.error.clone().unwrap_or_else(|| "no output".into());
+                let why = unit.error.clone().unwrap_or_else(|| "no output".into());
                 classes_failed += 1;
-                failed.push((result.qualified_name.clone(), why.clone()));
-                write(
-                    safe_relative(&format!("{}.java", result.qualified_name)),
-                    &stub(&result.qualified_name, &why),
-                )
+                failed.push((unit.name.clone(), why.clone()));
+                write(stub_path(&unit.name), &stub(&unit.name, &why))
             }
         };
         if let Err(e) = written {
@@ -153,18 +139,18 @@ fn write_tree(args: &Args, out_dir: &Path, outcome: &Outcome) -> i32 {
     for (name, why) in &outcome.missing {
         classes_failed += 1;
         failed.push((name.clone(), why.clone()));
-        if let Err(e) = write(safe_relative(&format!("{name}.java")), &stub(name, why)) {
+        if let Err(e) = write(stub_path(name), &stub(name, why)) {
             eprintln!("error: {e}");
             return 1;
         }
     }
     for (name, why) in &failed {
-        eprintln!("warning: could not decompile {}: {why}", java_name(name));
+        eprintln!("warning: could not decompile {}: {why}", display(name));
     }
-    let files = match (java_files, kotlin_files) {
-        (java, 0) => format!("{java} .java files"),
-        (0, kotlin) => format!("{kotlin} .kt files"),
-        (java, kotlin) => format!("{java} .java files, {kotlin} .kt files"),
+    let files = if files.is_empty() {
+        format!("0 .{extension} files")
+    } else {
+        files.iter().map(|(ext, n)| format!("{n} .{ext} files")).collect::<Vec<_>>().join(", ")
     };
     let outside = if outside_failed > 0 {
         format!("; outside methods: {outside_failed} failed")
@@ -189,34 +175,30 @@ fn write_tree(args: &Args, out_dir: &Path, outcome: &Outcome) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    use super::super::{args, toy};
     use super::{safe_relative, write_tree};
-    use super::super::args::{parse, Sub};
-    use super::super::run::Outcome;
-    use kuna_jvm::kuna_driver::ClassResult;
-    use kuna_jvm::kuna_input::InputKind;
+    use crate::nonnative::run::Outcome;
+    use kuna_managed::Unit;
     use std::path::PathBuf;
 
     #[test]
-    fn a_class_without_output_gets_a_marker_stub_and_fails_the_export() {
+    fn a_type_without_output_gets_a_marker_stub_and_fails_the_export() {
         let dir = tempfile::tempdir().unwrap();
-        let argv = vec!["app.jar".to_string()];
-        let Ok(args) = parse(Sub::Project, &argv, "app.jar", InputKind::Archive) else {
-            panic!("parse");
-        };
+        let argv = vec!["x.toy".to_string()];
+        let args = args::parse(&toy::TOY, args::Sub::Project, &argv, "x.toy", &toy::kind()).unwrap();
         let outcome = Outcome {
-            results: vec![ClassResult {
-                index: 0,
-                qualified_name: "com/ex/Broken".into(),
-                unit: None,
+            results: vec![Unit {
+                name: "ex/Broken".into(),
                 error: Some("the engine failed: boom".into()),
+                ..Unit::default()
             }],
-            missing: vec![("com/ex/Gone".into(), "not a top-level class of the input".into())],
+            missing: vec![("ex/Gone".into(), "not a top-level class of the input".into())],
             error: None,
         };
-        assert_eq!(write_tree(&args, dir.path(), &outcome), 1);
-        let broken = std::fs::read_to_string(dir.path().join("com/ex/Broken.java")).unwrap();
-        assert_eq!(broken, "// kuna: could not decompile com.ex.Broken: the engine failed: boom\n");
-        let gone = std::fs::read_to_string(dir.path().join("com/ex/Gone.java")).unwrap();
+        assert_eq!(write_tree(&args, |n| n.replace('/', "."), dir.path(), &outcome), 1);
+        let broken = std::fs::read_to_string(dir.path().join("ex/Broken.toy")).unwrap();
+        assert_eq!(broken, "// kuna: could not decompile ex.Broken: the engine failed: boom\n");
+        let gone = std::fs::read_to_string(dir.path().join("ex/Gone.toy")).unwrap();
         let marker = regex::Regex::new(r"\$VF: Couldn't be decompiled|kuna: (?:could not|couldn't) decompile").unwrap();
         assert!(marker.is_match(&gone), "{gone}");
     }

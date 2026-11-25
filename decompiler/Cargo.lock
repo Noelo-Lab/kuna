@@ -287,6 +287,7 @@ dependencies = [
  "kuna-console",
  "kuna-decomp",
  "kuna-jvm",
+ "kuna-managed",
  "kuna-num",
  "kuna-slacomp",
  "kuna-sleigh",
@@ -357,6 +358,7 @@ name = "kuna-jvm"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "kuna-managed",
  "serde",
  "sha2",
  "toml",
@@ -368,6 +370,10 @@ version = "0.1.0"
 dependencies = [
  "kuna-harness",
 ]
+
+[[package]]
+name = "kuna-managed"
+version = "0.1.0"
 
 [[package]]
 name = "kuna-num"

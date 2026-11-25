@@ -10,10 +10,39 @@ source language rather than over p-code.
 | Crate | Input | Output | Origin |
 |---|---|---|---|
 | `kuna-jvm` | JVM class files, jars, directories of classes | Java; Kotlin for classes compiled from Kotlin | Rust port of Vineflower 1.12.0 and its bundled Kotlin, variable-renaming and IDEA not-null plugins (Apache-2.0) |
+| `kuna-managed` | - | - | kuna: the contract between the CLI and a managed engine (no dependencies) |
 
 What the engines do share with the native side is the front door: the `kuna` CLI, its option
 catalog and its output formats. `kuna-cli` picks the engine from the input file: the dispatch
-is `decompiler/crates/kuna-cli/src/nonnative.rs`, and the JVM command lines, selection grammar,
-output shapes and catalog rows are under `decompiler/crates/kuna-cli/src/nonnative/`.
-The engine's own documentation is `docs/jvm.md` (`kuna docs jvm`); its algorithm is
-`docs/spec/10-jvm.md`.
+and the registry of engines are `decompiler/crates/kuna-cli/src/nonnative.rs`, and the command
+lines, output shapes and catalog rows every managed engine shares are under
+`decompiler/crates/kuna-cli/src/nonnative/`. The JVM engine's side of the contract (its
+selection grammar, the JDK a run reads, its messages) is
+`decompiler/nonnative/kuna-jvm/src/infra/kuna_engine.rs`; its documentation is `docs/jvm.md`
+(`kuna docs jvm`), its algorithm `docs/spec/10-jvm.md`.
+
+## Adding an engine
+
+An engine implements the two traits of `kuna-managed` in its own crate and is added to
+`ENGINES` in `kuna-cli/src/nonnative.rs` (one line, behind its cargo feature).
+
+- `Engine`: its name (the `--engine` value, catalog tag, option prefix and `kuna docs` topic)
+  and label; a cheap `sniff`, run on every invocation; `classify`, naming an input's kind or
+  refusing it; `open`, which turns an input into a `Program`; its option rows with the text of
+  its generated catalog, `resolve` for `--option NAME VALUE` and `check` for its own table
+  rules; `language` for `--language`, `usage` for `--help`, and `hidden`, why a selected type
+  or member has no text of its own.
+- `Program`, an opened input: its `Inventory` (types and members read without decompiling,
+  and how a type name prints), `resolve` from the engine's selection grammar to a `Target`,
+  `prepare` (what a run reads besides the input, such as a runtime library), and `run`, which
+  decompiles a selection and delivers each root type's `Unit` (path, language, text, the
+  spans of the types and members written into it with their line mappings and failures)
+  through a callback, in root order.
+
+The CLI gives every engine the rest: `decompile`, `decompile-all`, `decompile-project` and
+`functions` with their flags and triage, capability errors for the other subcommands and
+refusals of the native-only flags, the text and JSON documents, the source-tree export, the
+reports of failed and hidden code, `kuna catalog --engine <name>` (rows, Markdown, `--check`),
+and the stall watchdog and per-member memory limit, which the engine serves by marking each
+member on the `Watch` and calling the `MemoryGuard` around it. The engine owns its inputs, its
+names and selection grammar, its options, its threads, the decompilation and its text.
