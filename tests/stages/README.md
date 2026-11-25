@@ -31,6 +31,15 @@ bytes. A three-case switch over a struct field that gcc loads into a register
 once re-rolls too: the install reads the switch value from that load through
 the register copy and its zero extension.
 
+`kuna-loopcondhoist.xml` checks option `loopcondhoist` (default `on`) on
+gcc x86-64. In three -O0 functions the loop's condition, read from the layout,
+is the loop's exit: a `for` whose `break` carries two stores keeps them in the
+break arm, a `while` with an early `return` prints as a `for` with the return
+inside, and a `break` to the return after the loop stays a `break`. The -O2
+build of the third prints as a `while` on its bottom test. Under `option
+loopcondhoist off` all four are `while( true )` with the condition inside;
+under `auto` only the -O2 one is.
+
 `kuna-guardauto.xml` checks option `guardarm` (default `auto`) on two x86-64
 functions. In a gcc -O0 `unget`, whose parameters live in frame slots, the
 default prints the source's flat guard `if (c == -1 || ...) return -1;`, and

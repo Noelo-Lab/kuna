@@ -35,7 +35,9 @@
 //! last; the region structurer keeps the condition's exit edge structural; and
 //! `ActionReturnSplit` does not copy a return block for a jump that is a
 //! `break` to it, so both paths still meet there and the jump prints as
-//! `break`.  Each is a different nesting of the same blocks.
+//! `break`.  Each is a different nesting of the same blocks.  A structuring
+//! that prints more `goto`s ([`printed_gotos`]) than the structurer's own
+//! choice is not kept.
 
 use kuna_base::error::{KunaError, KunaResult};
 
@@ -150,17 +152,47 @@ pub fn is_loop_break(sb: &BlockGraph, bl: BlockId) -> bool {
     let Some(target) = target.and_then(|t| sb.get_front_leaf(t)) else {
         return false;
     };
+    let Some(l) = enclosing_loop(sb, bl) else {
+        return false;
+    };
+    sb.block(l).get_parent().is_some_and(|outer| sb.next_flow_after(outer, l) == Some(target))
+}
+
+/// The innermost loop block around `bl`, if any.
+fn enclosing_loop(sb: &BlockGraph, bl: BlockId) -> Option<BlockId> {
     let mut cur = bl;
     while let Some(p) = sb.block(cur).get_parent() {
         if matches!(sb.block(p).get_type(), BlockType::WhileDo | BlockType::DoWhile | BlockType::InfLoop) {
-            let Some(outer) = sb.block(p).get_parent() else {
-                return false;
-            };
-            return sb.next_flow_after(outer, p) == Some(target);
+            return Some(p);
         }
         cur = p;
     }
-    false
+    None
+}
+
+/// How many jumps the structured tree under `root` prints as `goto`: a goto
+/// that is not the next statement, not a `break` of its innermost loop and not
+/// a `continue` to that loop's start.
+pub fn printed_gotos(sb: &BlockGraph, root: BlockId) -> usize {
+    let mut n = 0;
+    let mut stack = vec![root];
+    while let Some(bl) = stack.pop() {
+        let target = match sb.block(bl).get_type() {
+            BlockType::Goto if sb.goto_prints(bl) => sb.block(bl).get_goto_target(),
+            BlockType::If => sb.block(bl).get_if_goto_target(),
+            _ => None,
+        };
+        if let Some(t) = target.and_then(|t| sb.get_front_leaf(t)) {
+            let cont = enclosing_loop(sb, bl).and_then(|l| sb.get_front_leaf(l)) == Some(t);
+            if !cont && !is_loop_break(sb, bl) {
+                n += 1;
+            }
+        }
+        for k in 0..sb.block(bl).get_size() {
+            stack.push(sb.block(bl).get_block(k));
+        }
+    }
+    n
 }
 
 /// The in-edges of RETURN block `b` that enter a return statement another

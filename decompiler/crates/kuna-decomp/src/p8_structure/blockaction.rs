@@ -3833,6 +3833,43 @@ impl ActionBlockStructure {
     }
 }
 
+/// The per-function inputs `CollapseStructure` reads besides the graph.
+type CollapseInputs = (
+    crate::p8_structure::kuna_ifnoexit::ExitLeafFacts,
+    std::collections::BTreeSet<BlockId>,
+    crate::p8_structure::kuna_condfold::CondFoldSets,
+    std::collections::BTreeMap<BlockId, usize>,
+    std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)>,
+);
+
+/// Run `CollapseStructure` once over the seeded `sblocks`, returning its result,
+/// change count and the deferred condition flips.
+fn collapse_once(
+    data: &mut Funcdata,
+    loop_cond: Option<crate::p8_structure::kuna_loopcond::Rule>,
+    inputs: CollapseInputs,
+    guard_arm: bool,
+    apply_index: u32,
+) -> (KunaResult<()>, int4, Vec<BlockId>) {
+    let (exitleaf_facts, complex_blocks, condfold_sets, switch_blocks, switch_case_edges) = inputs;
+    let sroot = data.sblocks_root();
+    if data.get_arch().loop_continue {
+        crate::p8_structure::kuna_loopcontinue::refine_latches(data.sblocks_mut(), sroot);
+    }
+    let mut collapse = CollapseStructure::new(data.sblocks_mut(), sroot)
+        .with_exitleaf_facts(exitleaf_facts, apply_index)
+        .with_guard_arm(guard_arm)
+        .with_loop_cond(loop_cond)
+        .with_complex_blocks(complex_blocks)
+        .with_condfold_sets(condfold_sets)
+        .with_switch_blocks(switch_blocks)
+        .with_switch_case_edges(switch_case_edges);
+    let res = collapse.collapse_all();
+    let cc = collapse.get_change_count();
+    let flips = collapse.take_pending_flips();
+    (res, cc, flips)
+}
+
 impl Action for ActionBlockStructure {
     fn base(&self) -> &ActionBase {
         &self.base
@@ -3867,8 +3904,25 @@ impl Action for ActionBlockStructure {
         // knot or the hang-guard), re-seed `sblocks` and fall through to the
         // unchanged `CollapseStructure` path.  OFF (default) skips this entirely and
         // output is byte-identical.
+        let loop_cond = data.get_arch().loop_cond_hoist.rule(crate::kuna_unoptimized::is_unoptimized(data));
         if data.get_arch().region_structure {
-            match crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline) {
+            let mut rs = crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline, loop_cond);
+            if loop_cond.is_some() && matches!(rs, Ok((true, _))) {
+                let with = crate::p8_structure::kuna_loopcond::printed_gotos(data.sblocks_ref(), data.sblocks_root());
+                if with > 0 {
+                    data.reseed_sblocks_copy();
+                    let plain = crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline, None);
+                    let better = matches!(plain, Ok((true, _)))
+                        && crate::p8_structure::kuna_loopcond::printed_gotos(data.sblocks_ref(), data.sblocks_root()) < with;
+                    if better {
+                        rs = plain;
+                    } else {
+                        data.reseed_sblocks_copy();
+                        rs = crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline, loop_cond);
+                    }
+                }
+            }
+            match rs {
                 Ok((true, flips)) => {
                     // Realize the deferred data-flow half of the loop-condition
                     // `negateCondition`s the region structurer recorded (the same
@@ -3912,7 +3966,6 @@ impl Action for ActionBlockStructure {
         let mut exitleaf_facts = crate::p8_structure::kuna_ifnoexit::ExitLeafFacts::default();
         let dbg_ifne = crate::p8_structure::kuna_ifnoexit::trace_enabled();
         let guard_arm = data.get_arch().guard_arm.applies(crate::kuna_unoptimized::is_unoptimized(data));
-        let loop_cond = data.get_arch().loop_cond_hoist.rule(crate::kuna_unoptimized::is_unoptimized(data));
         let want_addr = dbg_ifne || guard_arm || loop_cond.is_some();
         let nbb = data.bblocks_get_size();
         for i in 0..nbb {
@@ -3979,27 +4032,37 @@ impl Action for ActionBlockStructure {
                 apply_index
             );
         }
-        let sroot = data.sblocks_root();
-        if data.get_arch().loop_continue {
-            crate::p8_structure::kuna_loopcontinue::refine_latches(data.sblocks_mut(), sroot);
+        // (kuna, `option loopcondhoist`) A structuring by the loop conditions that
+        // prints more gotos than the upstream exit choice is not kept.
+        let retry = loop_cond.map(|_| {
+            (exitleaf_facts.clone(), complex_blocks.clone(), condfold_sets.clone(), switch_blocks.clone(), switch_case_edges.clone())
+        });
+        let (mut collapse_res, mut cc, mut flips) = collapse_once(
+            data,
+            loop_cond,
+            (exitleaf_facts, complex_blocks, condfold_sets, switch_blocks, switch_case_edges),
+            guard_arm,
+            apply_index,
+        );
+        if let Some(inputs) = retry {
+            let with = crate::p8_structure::kuna_loopcond::printed_gotos(data.sblocks_ref(), data.sblocks_root());
+            if collapse_res.is_ok() && with > 0 {
+                data.reseed_sblocks_copy();
+                let plain = collapse_once(data, None, inputs.clone(), guard_arm, apply_index);
+                let without = crate::p8_structure::kuna_loopcond::printed_gotos(data.sblocks_ref(), data.sblocks_root());
+                if plain.0.is_ok() && without < with {
+                    (collapse_res, cc, flips) = plain;
+                } else {
+                    data.reseed_sblocks_copy();
+                    (collapse_res, cc, flips) = collapse_once(data, loop_cond, inputs, guard_arm, apply_index);
+                }
+            }
         }
-        let mut collapse = CollapseStructure::new(data.sblocks_mut(), sroot)
-            .with_exitleaf_facts(exitleaf_facts, apply_index)
-            .with_guard_arm(guard_arm)
-            .with_loop_cond(loop_cond)
-            .with_complex_blocks(complex_blocks)
-            .with_condfold_sets(condfold_sets)
-            .with_switch_blocks(switch_blocks)
-            .with_switch_case_edges(switch_case_edges);
-        let collapse_res = collapse.collapse_all();
-        let cc = collapse.get_change_count();
         // Realize the deferred data-flow half of BlockBasic::negateCondition: each
         // recorded bblocks block has its trailing CBRANCH `boolean_flip`/
         // `fallthru_true` toggled (XOR-reduced — even flips cancel).  This must run
         // whether or not `collapse_all` Err'd, because the flips that were already
         // recorded reflect topology changes the collapse committed before aborting.
-        let flips = collapse.take_pending_flips();
-        drop(collapse); // release the sblocks borrow before touching the obank
         for bb in flips {
             data.block_basic_negate_lastop(bb);
         }

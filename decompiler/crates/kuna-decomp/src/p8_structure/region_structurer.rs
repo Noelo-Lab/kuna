@@ -148,6 +148,7 @@ impl OptionRegionStructure {
 pub fn run_region_structurer(
     data: &mut Funcdata,
     deadline: Option<std::time::Instant>,
+    loop_cond: Option<crate::p8_structure::kuna_loopcond::Rule>,
 ) -> KunaResult<(bool, Vec<BlockId>)> {
     // ---- 1. Region identification over the real CFG (W7 adapter proof) --------
     // recursive_structurer._analyze runs the RegionIdentifier first; here it both
@@ -201,7 +202,6 @@ pub fn run_region_structurer(
     // region structurer (the refinement is dead).  Read before the `sblocks_mut`
     // borrow so we still hold `&Funcdata`.
     let loop_refine = data.get_arch().region_loop_refine;
-    let loop_cond = data.get_arch().loop_cond_hoist.rule(crate::kuna_unoptimized::is_unoptimized(data));
     // SAILR P2 last-resort edge-virtualization ordering gate (`regionedgeorder`,
     // default-OFF opt-in).  Read while we still hold `&Funcdata`.
     let edge_order = data.get_arch().region_edge_order;
