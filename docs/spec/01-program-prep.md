@@ -2164,6 +2164,32 @@ funcsym stream:
   is recovered as a `tailcalljump` to a discovered function instead of flowing into
   the stub and rendering `(*dat_...)(...)`; the FP-return-type recovery it unblocks
   is a Ghidra-divergent follow-up (`docs/features/ifuncfpret/proposal.md`).
+  PowerPC64 ELFv2 has no `.plt` code: `.plt` is a NOBITS table of slots and the
+  linker writes each call stub into `.text`, where
+  `decompiler/crates/kuna-analysis/src/loader/elf_plt.rs (decode_ppc_text)` finds
+  them with `decompiler/crates/kuna-analysis/src/loader/kuna_ppc64_stubs.rs (stub_at)`.
+  A stub loads its import's slot into r12 and ends `mtctr r12; bctr`, after an
+  optional `std r2,24(r1)` TOC save (`--plt-localentry` omits it). The slot is
+  TOC-relative, `[addis r12,r2,ha;] ld r12,lo(r2|r12)` with the TOC at
+  `.got + 0x8000`; pc-relative for Power10 callers, `mflr r12; bcl 20,31,.+4;
+  mflr r11; mtlr r12; [addis r12,r11,ha;] ld r12,lo(r11|r12)` from the address
+  after the `bcl`; or a Power10 `pld r12,off` (GNU ld `--power10-stubs`, lld).
+  When both TOC and pc-relative code call an import, GNU ld writes the TOC
+  save followed by a pc-relative stub, a `pld` one after a `nop` that keeps the
+  `pld` 8-byte aligned, and pc-relative callers enter it one word in; the stub
+  is named at both entries.
+  GNU ld writes the TOC form without `addis` whenever the slot is within 32 KiB
+  of the TOC, which is every stub of most libraries; lld writes the `addis` form.
+  An image without a `.got` has only pc-relative stubs. A stub is named only
+  when its slot carries an `R_PPC64_JMP_SLOT` relocation, since a GOT entry
+  holding a function's address loads with the same instructions, and never at
+  or inside a defined function of either symbol table (lld's local `__plt_*`
+  stub symbols aside): GCC writes the `pld` sequence itself for a Power10
+  `-fno-plt` sibling call, and naming that function after its callee would
+  replace its own name. Every stub is named, so an import that several stub
+  groups call carries its name at each. The TOC forms assume one TOC; a later
+  TOC group of a multi-TOC image computes its slots from the first and
+  normally names nothing. ELFv1 function descriptors resolve separately.
   Two ABIs need special handling: PowerPC (ELFv2 `.plt` is a NOBITS data table, not
   decodable code; PPC32 uses its own secure-PLT stub shape), and **MIPS**, which
   has no PLT and no jump-slot relocations at all — its resolver walks the

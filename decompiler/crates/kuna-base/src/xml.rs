@@ -2324,7 +2324,8 @@ mod tests {
         // and kuna-glibcvoidimport / a glibc-versioned MIPS void import receives its arguments
         // and kuna-vcmp-carry / ARM vcmp sets the carry for unordered operands
         // and kuna-loweredswitch-auto / an unoptimized function keeps the switch or if-chain its tests record
-        assert_eq!(count, 912, "corpus file count drifted");
+        // and kuna-ppc64-plt-stubs / every PPC64 ELFv2 linker stub form names its import
+        assert_eq!(count, 913, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
