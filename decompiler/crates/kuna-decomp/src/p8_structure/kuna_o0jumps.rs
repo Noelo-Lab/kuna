@@ -235,6 +235,40 @@ fn jump_only(fd: &Funcdata, b: BlockId) -> bool {
         && fd.obank().get(ops[0]).is_some_and(|o| o.code() == OpCode::CPUI_BRANCH)
 }
 
+/// After the short-circuit folds, make each recorded edge into a loop latch
+/// (the block holding a `for` loop's step or a `do` loop's test) a goto, so
+/// the structurer keeps the tests the source ended with `continue;` and
+/// prints them that way.  An edge into a loop head is a back edge the loop
+/// rules already turn into `continue;`.
+pub(crate) fn mark_continues(graph: &mut BlockGraph, root: BlockId) {
+    if std::env::var_os("KUNA_O0J_NOMARK").is_some() {
+        return;
+    }
+    let mut marks = Vec::new();
+    for i in 0..graph.block(root).get_size() {
+        let c = graph.block(root).get_block(i);
+        let b = graph.block(c);
+        if b.is_switch_out() {
+            continue;
+        }
+        for e in 0..b.size_out() {
+            if id_of(b.get_out_label(e)) == 0 || b.is_goto_out(e) || b.is_back_edge_out(e) {
+                continue;
+            }
+            let t = b.get_out(e);
+            let tb = graph.block(t);
+            let latch = (0..tb.size_out()).any(|k| tb.is_back_edge_out(k));
+            let head = (0..tb.size_in()).any(|k| tb.is_back_edge_in(k));
+            if t != c && latch && !head {
+                marks.push((c, e));
+            }
+        }
+    }
+    for (c, e) in marks {
+        let _ = graph.set_goto_branch(c, e);
+    }
+}
+
 /// Whether `ActionReturnSplit` leaves in-edge `i` of RETURN block `b` to
 /// the structured goto `goto_block`: in a function whose returns
 /// `returndup auto` placed, an edge recorded as a jump statement that leaves
@@ -273,6 +307,12 @@ pub(crate) fn id_of(label: uint4) -> uint4 {
 /// statement, or neither carries one.
 pub(crate) fn may_join(graph: &BlockGraph, a: BlockId, ai: int4, b: BlockId, bj: int4) -> bool {
     if id_of(graph.block(a).get_out_label(ai)) == id_of(graph.block(b).get_out_label(bj)) {
+        return true;
+    }
+    let t = graph.block(a).get_out(ai);
+    let tb = graph.block(t);
+    // TEMP: KUNA_O0J_HEADGATE=1 also gates at a loop head.
+    if std::env::var_os("KUNA_O0J_HEADGATE").is_none() && (0..tb.size_in()).any(|k| tb.is_back_edge_in(k)) {
         return true;
     }
     // TEMP measurement switch KUNA_O0J_KINDS = c | b | cb | all (default all).

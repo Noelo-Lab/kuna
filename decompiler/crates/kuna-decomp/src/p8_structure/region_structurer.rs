@@ -732,6 +732,8 @@ impl<'a> RegionStructurer<'a> {
                 break;
             }
         }
+        // (kuna `loopcontinue auto`) recorded continues stay jumps.
+        crate::p8_structure::kuna_o0jumps::mark_continues(self.graph, self.graph_id);
 
         let mut rounds: i64 = 0;
         while self.size() > 1 {

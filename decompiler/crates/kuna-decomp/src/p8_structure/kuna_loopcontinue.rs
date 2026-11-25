@@ -158,6 +158,7 @@ pub(crate) fn continue_points(data: &Funcdata, root: BlockId) -> BTreeMap<BlockI
             BlockType::WhileDo if block.get_iterate_op().is_none() => {
                 graph.sub_block(id, 0).and_then(|cond| graph.get_front_leaf(cond))
             }
+            BlockType::WhileDo => step_leaf(data, id),
             BlockType::DoWhile if data.get_arch().do_while_continue => graph
                 .sub_block(id, 0)
                 .and_then(|body| graph.get_exit_leaf(body))
@@ -171,15 +172,33 @@ pub(crate) fn continue_points(data: &Funcdata, root: BlockId) -> BTreeMap<BlockI
     points
 }
 
+/// A `for` loop's last leaf when it prints nothing but the loop's iterate
+/// statement: a jump to it runs exactly what `continue;` runs.
+fn step_leaf(data: &Funcdata, id: BlockId) -> Option<BlockId> {
+    let graph = data.sblocks_ref();
+    let step = graph.block(id).get_iterate_op()?;
+    let leaf = graph.sub_block(id, 1).and_then(|body| graph.get_exit_leaf(body))?;
+    let bb = graph.block(leaf).get_copy()?;
+    if data.obank().get(step).and_then(|o| o.get_parent()) != Some(bb) {
+        return None;
+    }
+    prints_only(data, leaf, Some(step)).then_some(leaf)
+}
+
 /// Does the structured leaf `leaf` print no statement besides its branch?
 fn prints_only_its_branch(data: &Funcdata, leaf: BlockId) -> bool {
+    prints_only(data, leaf, None)
+}
+
+/// Does the structured leaf `leaf` print nothing besides its branch and `except`?
+fn prints_only(data: &Funcdata, leaf: BlockId, except: Option<crate::context::OpId>) -> bool {
     let Some(bb) = data.sblocks_ref().block(leaf).get_copy() else { return false };
     let BlockKind::Basic(basic) = data.bblocks_ref().block(bb).kind() else { return false };
     let mut cur = basic.op_head;
     while let Some(op) = cur {
         cur = data.bb_op_next(op);
         let Some(o) = data.obank().get(op) else { return false };
-        if o.is_branch() || o.not_printed() || o.is_marker() {
+        if o.is_branch() || o.not_printed() || o.is_marker() || Some(op) == except {
             continue;
         }
         let implied = o.get_out().and_then(|v| data.vbank().get(v)).is_some_and(|v| v.is_implied());

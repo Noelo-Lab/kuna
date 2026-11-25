@@ -3129,6 +3129,8 @@ impl<'a> CollapseStructure<'a> {
         self.order_loop_bodies();
 
         self.collapse_conditions()?;
+        // (kuna `loopcontinue auto`) recorded continues stay jumps.
+        crate::p8_structure::kuna_o0jumps::mark_continues(self.graph, self.graph_id);
 
         let mut isolated_count = self.collapse_internal(None)?;
         while isolated_count < self.size() {
