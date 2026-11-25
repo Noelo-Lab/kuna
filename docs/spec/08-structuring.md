@@ -1847,7 +1847,10 @@ kuna printed one return fed by assignments in both arms of the last `if`, the
 source wrote that form for 5 of 204 functions; where it printed adjacent guards
 with the same return, the source had a `||` guard in 241 of 626 and separate
 guards in 160. In functions the detector of chapter 03 does not call
-unoptimized, `auto` re-spells both
+unoptimized and that do not address their frame through a frame pointer (the
+detector's own evidence, cached at the first heritage pass: small `-O0`
+functions it misses keep one, optimizing compilers rarely do), `auto` re-spells
+both
 (`decompiler/crates/kuna-decomp/src/p8_structure/kuna_retshape.rs`).
 
 **Guards.** `kuna_retshape.rs (ActionRetShape)` runs on the final tree right
@@ -1903,8 +1906,10 @@ guard fold alone is +60 (63 / 3) and the merged-return split +222 (242 / 20).
 The losses are sources that wrote the other form: separate guards each checking
 a call's result, `status = f(); ... return status;`, a ternary, a one-armed
 assignment. The two shapes never touch a function the detector calls
-unoptimized, and those it misses at -O0 move 64 functions to an exact match and
-29 off. Each is a print-tree edit or a split of a value-only block, so both
+unoptimized or one with a frame pointer; at -O0 the functions both tests let
+through (mostly firmware built with optimization) move 61 functions to an exact
+match and 8 off (+5 and +48 on the two halves); without the frame-pointer test
+two small openssh functions in nine binaries were lost. Each is a print-tree edit or a split of a value-only block, so both
 print the same program.
 
 ### loopcontinue auto — the jump statements an unoptimized function was written with

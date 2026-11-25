@@ -25,8 +25,9 @@
 //! a `goto`.  A one-block `if` (`v = a; if (c) v = b; return v;`) qualifies
 //! when `b` does not read `a` (not the update `if (c) v += k;`).
 //!
-//! Functions [`crate::p3_dataflow::kuna_unoptimized`] flags keep the binary's
-//! form; `returndup record` (and `on`) keep it everywhere.
+//! Functions [`crate::p3_dataflow::kuna_unoptimized`] flags, and functions
+//! that address their frame through a frame pointer, keep the binary's form;
+//! `returndup record` (and `on`) keep it everywhere.
 
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
@@ -56,8 +57,13 @@ impl RetShapePolicy {
     }
 }
 
+/// The shapes apply in a function the detector does not call unoptimized and
+/// that does not address its frame through a frame pointer (small `-O0`
+/// functions the detector misses keep one).
 fn applies(fd: &Funcdata) -> bool {
-    fd.get_arch().ret_shape.on && !crate::p3_dataflow::kuna_unoptimized::is_unoptimized(fd)
+    fd.get_arch().ret_shape.on
+        && !crate::p3_dataflow::kuna_unoptimized::is_unoptimized(fd)
+        && !crate::p3_dataflow::kuna_unoptimized::frame_pointer(fd)
 }
 
 pub struct ActionRetShape {
