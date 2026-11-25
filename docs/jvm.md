@@ -893,8 +893,8 @@ writers record each one as they write it (`src/infra/kuna_spans.rs`), changing n
 | The engine writes | Recorded as | The CLI reports |
 |---|---|---|
 | `// $VF: Couldn't be decompiled` as a method's body | the method's `error` | that method failed |
-| the same comment as the body of a lambda, of a method of an anonymous or local class, or `// $VF: Couldn't be decompiled` for such a class, written inside method M | a `BodyFailure` on M's span (and the anonymous class's method keeps its own `error`) | M failed too, naming the body (`nested_errors`); one `warning:` per body |
-| any of these outside every method (a field initializer's lambda, a member class) | a `BodyFailure` on the class's span | the class's `nested_errors`; `decompile-project` counts them as `outside methods` |
+| the same comment as the body of a lambda, of a method of an anonymous or local class, or `// $VF: Couldn't be decompiled` for such a class, written inside method M | a `Failure` on M's span (and the anonymous class's method keeps its own `error`) | M failed too, naming the body (`nested_errors`); one `warning:` per body |
+| any of these outside every method (a field initializer's lambda, a member class) | a `Failure` on the class's span | the class's `nested_errors`; `decompile-project` counts them as `outside methods` |
 | `/* $VF: Unable to decompile class */` in place of a whole unit (the Java and Kotlin writers' last resort) | the unit's `error` | a failed class (`status: "failed"`) on every command, with that reason |
 | a `$VF:` comment above a method that the engine flags as an error (`MethodWrapper::add_error_comment`, the comments that carry the report-this note) | the method span's `warnings` | a `warning:`, not a failure |
 | any other `$VF:` comment, or a line only logged | nothing | nothing |

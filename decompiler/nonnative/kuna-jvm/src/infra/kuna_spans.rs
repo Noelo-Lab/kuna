@@ -7,7 +7,8 @@
 //! printed, so recording changes no output. When the root class's text is
 //! final, [`finish`] turns the marks into byte offsets and 1-based lines, and
 //! groups the buffer's bytecode-offset mapping (what `BytecodeMappingTracer`
-//! receives, whatever `bytecode-source-mapping` says) by method and line.
+//! receives, whatever `bytecode-source-mapping` says) by method and line, as
+//! the CLI contract's spans (`kuna_managed::{TypeSpan, MemberSpan}`).
 //! Recording is active only between [`begin`] and [`take`].
 //!
 //! A body the writers print inside another one and cannot decompile (a
@@ -21,71 +22,44 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
+use kuna_managed::{Failure, MemberSpan, TypeSpan};
+
 use crate::class_wrapper::ClassWrapper;
 use crate::interpreter_util::InterpreterUtil;
+use crate::kuna_engine::java_name;
+use crate::kuna_inventory::method_access_names;
 use crate::method_wrapper::MethodWrapper;
 use crate::rt::Caught;
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
 
-/// One class written into the text: `start..end` are byte offsets.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ClassSpan {
-    /// Internal name (`a/b/C$D`).
-    pub internal: String,
-    pub start: usize,
-    pub end: usize,
-    /// 1-based lines of the first and the last character.
-    pub start_line: u32,
-    pub end_line: u32,
-    /// Set when the class could not be written (its text is an error comment).
-    pub error: Option<String>,
-    /// Bodies written in this class's text outside its methods that could not be decompiled.
-    pub nested: Vec<BodyFailure>,
-}
-
-/// One method written into the text: `start..end` are byte offsets covering
-/// its annotations, header and body, from the start of its first line.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct MethodSpan {
-    /// Internal name of the declaring class.
-    pub class: String,
-    pub name: String,
-    pub descriptor: String,
-    /// Access flags from the class file.
-    pub access: i32,
-    pub start: usize,
-    pub end: usize,
-    pub start_line: u32,
-    pub end_line: u32,
-    /// Why the method could not be decompiled or written (it then prints Vineflower's error comment).
-    pub error: Option<String>,
-    /// `(1-based line, bytecode offsets)` pairs in line order, offsets ascending.
-    pub lines: Vec<(u32, Vec<u32>)>,
-    /// Other bodies written inside this method's text that could not be decompiled.
-    pub nested: Vec<BodyFailure>,
-    /// The method's `$VF:` comments when the engine flags them as errors.
-    pub warnings: Vec<String>,
-}
-
 /// A body that could not be decompiled: a method (or lambda), or a class when
 /// `name` is empty.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct BodyFailure {
+#[derive(Clone, Default)]
+struct BodyFailure {
     /// Internal name of the class.
-    pub class: String,
-    pub name: String,
-    pub descriptor: String,
-    pub error: String,
+    class: String,
+    name: String,
+    descriptor: String,
+    error: String,
+}
+
+impl BodyFailure {
+    /// Named like a method (`com.ex.Main.lambda$main$0(I)V`) or a class (`com.ex.Main$1`).
+    fn failure(self) -> Failure {
+        let class = java_name(&self.class);
+        let body = if self.name.is_empty() { class } else { format!("{class}.{}{}", self.name, self.descriptor) };
+        Failure { body, error: self.error }
+    }
 }
 
 /// What one root class's writing recorded.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Recorded {
     pub error: Option<String>,
-    pub classes: Vec<ClassSpan>,
-    pub methods: Vec<MethodSpan>,
+    pub classes: Vec<TypeSpan>,
+    pub methods: Vec<MemberSpan>,
 }
 
 /// An open span; `None` when nothing is being recorded.
@@ -365,14 +339,13 @@ pub fn finish(buffer: &TextBuffer, content: &str) {
                 let error = failed.then(|| {
                     reason.unwrap_or_else(|| format!("Class {internal} couldn't be written."))
                 });
-                classes.push(ClassSpan {
-                    internal,
+                classes.push(TypeSpan {
+                    name: internal,
                     start,
                     end,
                     start_line,
-                    end_line,
                     error,
-                    nested,
+                    nested: nested.into_iter().map(BodyFailure::failure).collect(),
                 });
             }
             Pending::Method {
@@ -404,18 +377,18 @@ pub fn finish(buffer: &TextBuffer, content: &str) {
                     InterpreterUtil::make_unique_key(&name, &descriptor),
                 );
                 let lines = lines.get(&key).cloned().unwrap_or_default();
-                methods.push(MethodSpan {
-                    class,
+                methods.push(MemberSpan {
+                    owner: class,
                     name,
-                    descriptor,
-                    access,
+                    signature: descriptor,
+                    access: method_access_names(access as u16),
                     start,
                     end,
                     start_line,
                     end_line,
                     error,
                     lines,
-                    nested,
+                    nested: nested.into_iter().map(BodyFailure::failure).collect(),
                     warnings,
                 });
             }
@@ -529,5 +502,21 @@ impl<'a> Text<'a> {
             e = end;
         }
         (s, e)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BodyFailure;
+
+    #[test]
+    fn nested_bodies_are_named_like_methods_or_classes() {
+        let failure = |class: &str, name: &str, descriptor: &str| {
+            BodyFailure { class: class.into(), name: name.into(), descriptor: descriptor.into(), error: "boom".into() }
+                .failure()
+        };
+        assert_eq!(failure("com/ex/Main", "lambda$main$0", "(I)V").body, "com.ex.Main.lambda$main$0(I)V");
+        assert_eq!(failure("com/ex/Main$1", "", "").body, "com.ex.Main$1");
+        assert_eq!(failure("com/ex/Main$1", "", "").error, "boom");
     }
 }

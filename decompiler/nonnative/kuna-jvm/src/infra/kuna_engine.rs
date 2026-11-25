@@ -22,8 +22,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use kuna_managed::{
-    Catalog, Engine, Failure, Inventory, Kind, MemberInfo, MemberSpan, MemoryGuard, Program, RunSettings, Runtime,
-    Target, TypeInfo, TypeSpan, Unit, Watch,
+    Catalog, Engine, Inventory, Kind, MemberInfo, MemoryGuard, Program, RunSettings, Runtime, Target, TypeInfo, Unit,
+    Watch,
 };
 
 use crate::i_fernflower_logger::{IFernflowerLogger, Severity};
@@ -31,7 +31,6 @@ use crate::kuna_driver::{self, ClassResult, DriverConfig, Jobs, LoggerFactory};
 use crate::kuna_input::{self, InputError, InputKind, InputSet, LoadOptions, SharedRuntime};
 use crate::kuna_inventory::{self, class_access_names, method_access_names, ClassInfo};
 use crate::kuna_options;
-use crate::kuna_spans::BodyFailure;
 use crate::rt::Caught;
 
 const DOCS_POINTER: &str = "kuna docs jvm";
@@ -409,58 +408,15 @@ fn unit(result: ClassResult) -> Unit {
             ..Unit::default()
         };
     };
-    let language = class.language();
     Unit {
         name: result.qualified_name,
+        language: class.language(),
         path: class.path,
-        language,
         text: Some(class.content),
         error: result.error,
-        types: class
-            .classes
-            .into_iter()
-            .map(|c| TypeSpan {
-                name: c.internal,
-                start: c.start,
-                end: c.end,
-                start_line: c.start_line,
-                error: c.error,
-                nested: failures(c.nested),
-            })
-            .collect(),
-        members: class
-            .methods
-            .into_iter()
-            .map(|m| MemberSpan {
-                access: method_access_names(m.access as u16),
-                owner: m.class,
-                name: m.name,
-                signature: m.descriptor,
-                start: m.start,
-                end: m.end,
-                start_line: m.start_line,
-                end_line: m.end_line,
-                error: m.error,
-                lines: m.lines,
-                nested: failures(m.nested),
-                warnings: m.warnings,
-            })
-            .collect(),
+        types: class.classes,
+        members: class.methods,
     }
-}
-
-/// Failed bodies named like methods (`com.ex.Main.lambda$main$0(I)V`) or classes (`com.ex.Main$1`).
-fn failures(list: Vec<BodyFailure>) -> Vec<Failure> {
-    list.into_iter()
-        .map(|f| Failure {
-            body: if f.name.is_empty() {
-                java_name(&f.class)
-            } else {
-                format!("{}.{}{}", java_name(&f.class), f.name, f.descriptor)
-            },
-            error: f.error,
-        })
-        .collect()
 }
 
 /// The class `text` names in `inv`, or why it names none (`Ok(None)`: no such class).
@@ -701,18 +657,5 @@ mod tests {
         assert!(e.contains("its overloads are com.ex.Main.add(II)I"), "{e}");
         let e = resolve(&u, "zzzz", "app.jar").unwrap_err();
         assert!(e.contains("kuna functions app.jar"), "{e}");
-    }
-
-    #[test]
-    fn nested_bodies_are_named_like_methods_or_classes() {
-        let failure = |class: &str, name: &str, descriptor: &str| BodyFailure {
-            class: class.into(),
-            name: name.into(),
-            descriptor: descriptor.into(),
-            error: "boom".into(),
-        };
-        let named = failures(vec![failure("com/ex/Main", "lambda$main$0", "(I)V"), failure("com/ex/Main$1", "", "")]);
-        assert_eq!(named[0].body, "com.ex.Main.lambda$main$0(I)V");
-        assert_eq!(named[1].body, "com.ex.Main$1");
     }
 }

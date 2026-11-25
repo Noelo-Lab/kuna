@@ -22,6 +22,8 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::rc::Rc;
 
+use kuna_managed::{MemberSpan, TypeSpan};
+
 use crate::class_writer::ClassWriter;
 use crate::classes_processor::{ClassNode, ClassNodeType, ClassesProcessor};
 use crate::context_source::{read_class_info, IContextSource};
@@ -38,7 +40,6 @@ use crate::kuna_fixes::{self, KunaFix, KunaFixes};
 use crate::kuna_options;
 use crate::kuna_partition::RootSelection;
 use crate::kuna_plugins;
-use crate::kuna_spans::{ClassSpan, MethodSpan};
 use crate::plugin_context::PluginContext;
 use crate::plugin_source::PluginSource;
 use crate::pool_interceptor::PoolInterceptor;
@@ -63,9 +64,9 @@ pub struct DecompiledClass {
     /// error comment Vineflower writes in its place).
     pub error: Option<String>,
     /// Every class written into `content`, in writing order.
-    pub classes: Vec<ClassSpan>,
+    pub classes: Vec<TypeSpan>,
     /// Every method written into `content`, in writing order.
-    pub methods: Vec<MethodSpan>,
+    pub methods: Vec<MemberSpan>,
 }
 
 /// `JrtFinder.CURRENT`.

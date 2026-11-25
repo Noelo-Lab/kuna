@@ -33,7 +33,7 @@ fn check(unit: &DecompiledClass) {
     let root = unit
         .classes
         .iter()
-        .find(|c| c.internal == unit.qualified_name)
+        .find(|c| c.name == unit.qualified_name)
         .unwrap_or_else(|| panic!("{}: no span for the root class", unit.qualified_name));
     assert!(root.error.is_none());
     let root_text = &content[root.start..root.end];
@@ -58,15 +58,15 @@ fn check(unit: &DecompiledClass) {
         let declared = declaration(slice);
         let expected = match method.name.as_str() {
             "<clinit>" => "static {".to_string(),
-            "<init>" => format!("{}(", simple_name(&method.class)),
+            "<init>" => format!("{}(", simple_name(&method.owner)),
             name => format!("{name}("),
         };
         assert!(
             declared.contains(&expected),
             "{}.{}{}: declaration line {declared:?} lacks {expected:?}",
-            method.class,
+            method.owner,
             method.name,
-            method.descriptor
+            method.signature
         );
         assert!(
             method.error.is_none(),
@@ -123,7 +123,7 @@ fn nested_classes_have_spans_inside_their_outer_class() {
     let inner = unit
         .classes
         .iter()
-        .find(|c| c.internal == "pkg/TestAnonymousClassConstructor$InnerPublic")
+        .find(|c| c.name == "pkg/TestAnonymousClassConstructor$InnerPublic")
         .expect("member class span");
     let text = &unit.content[inner.start..inner.end];
     assert!(
@@ -133,11 +133,11 @@ fn nested_classes_have_spans_inside_their_outer_class() {
     assert!(unit
         .methods
         .iter()
-        .any(|m| m.class == inner.internal && m.start >= inner.start && m.end <= inner.end));
+        .any(|m| m.owner == inner.name && m.start >= inner.start && m.end <= inner.end));
     let anonymous = unit
         .classes
         .iter()
-        .find(|c| c.internal == "pkg/TestAnonymousClassConstructor$1")
+        .find(|c| c.name == "pkg/TestAnonymousClassConstructor$1")
         .expect("anonymous class span");
     assert!(unit.content[anonymous.start..anonymous.end]
         .trim_start()
@@ -175,24 +175,18 @@ fn failures_written_inside_a_method_are_recorded_against_it() {
     let units = decompile(&set, &options(&[("jvm_vineflower_compat", "1")]));
     let unit = units.iter().find(|u| u.qualified_name == "com/ex/fail/Nested").unwrap();
     let method = |name: &str| unit.methods.iter().find(|m| m.name == name).unwrap();
-    let bodies = |name: &str| {
-        method(name)
-            .nested
-            .iter()
-            .map(|f| format!("{}.{}{}", f.class, f.name, f.descriptor))
-            .collect::<Vec<_>>()
-    };
+    let bodies = |name: &str| method(name).nested.iter().map(|f| f.body.clone()).collect::<Vec<_>>();
     assert!(method("escape").error.is_none());
-    assert_eq!(bodies("escape"), ["com/ex/fail/Nested.lambda$escape$1(Ljava/lang/StringBuilder;I)V"]);
+    assert_eq!(bodies("escape"), ["com.ex.fail.Nested.lambda$escape$1(Ljava/lang/StringBuilder;I)V"]);
     assert_eq!(bodies("both").len(), 2);
-    assert_eq!(bodies("later"), ["com/ex/fail/Nested$1.run()V"]);
+    assert_eq!(bodies("later"), ["com.ex.fail.Nested$1.run()V"]);
     let run = method("run");
     assert!(run.error.is_some() && run.nested.is_empty());
     assert!(bodies("plain").is_empty());
-    let root = unit.classes.iter().find(|c| c.internal == unit.qualified_name).unwrap();
+    let root = unit.classes.iter().find(|c| c.name == unit.qualified_name).unwrap();
     assert!(root.error.is_none());
     assert_eq!(root.nested.len(), 1, "the field initializer's lambda");
-    assert!(root.nested[0].name.starts_with("lambda$static$"));
+    assert!(root.nested[0].body.starts_with("com.ex.fail.Nested.lambda$static$"), "{:?}", root.nested[0]);
     for failure in unit.methods.iter().flat_map(|m| &m.nested) {
         assert!(failure.error.contains("invalid constant type"), "{failure:?}");
     }
