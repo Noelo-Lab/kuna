@@ -2120,6 +2120,10 @@ impl<'a> CollapseStructure<'a> {
             if self.graph.block(orblock).get_out(1 - j) == bl {
                 continue; // No looping
             }
+            // (kuna `loopcontinue auto`) tests written as different jump statements stay apart.
+            if !crate::p8_structure::kuna_o0jumps::may_join(self.graph, bl, 1 - i, orblock, j as int4) {
+                continue;
+            }
 
             if i == 1 {
                 // orblock needs to be false out of bl

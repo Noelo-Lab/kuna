@@ -9,6 +9,30 @@ use std::collections::BTreeMap;
 use crate::block::{block_flags, BlockGraph, BlockKind, BlockType};
 use crate::context::BlockId;
 use crate::funcdata::Funcdata;
+use kuna_base::error::KunaResult;
+
+/// The `loopcontinue` option: `on`, `off`, or `auto` (`on`, and in an
+/// unoptimized function the jump statements the binary records keep their
+/// tests apart, [`crate::p8_structure::kuna_o0jumps`]).
+pub struct OptionLoopContinue;
+
+impl OptionLoopContinue {
+    /// Parse `on`/`off`/`auto`, returning whether continues are recovered,
+    /// whether the recorded jump statements decide unoptimized functions, and
+    /// a confirmation message.
+    pub fn apply(&self, p1: &str) -> KunaResult<(bool, bool, String)> {
+        if p1 == "auto" {
+            return Ok((
+                true,
+                true,
+                "Secondary loop-latch continue recovery turned on, recorded jump statements in unoptimized functions".to_string(),
+            ));
+        }
+        let val = crate::options::on_or_off(p1)?;
+        let prop = if val { "on" } else { "off" };
+        Ok((val, false, format!("Secondary loop-latch continue recovery turned {prop}")))
+    }
+}
 
 pub(crate) fn refine_latches(graph: &mut BlockGraph, root: BlockId) {
     let mut edges = Vec::new();
