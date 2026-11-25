@@ -1082,11 +1082,6 @@ macro commit_logic_flags(flags, shift) {
 :"XOR" "A5",logical_left,logical_right is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_0=0x0 & slot_10_22=0x1ba5 & (slot_9_9=0 | slot_8_9=2 | slot_7_9=6) & (slot_5_5=0 | slot_4_5=2 | slot_3_5=6 | slot_2_5=14) & logical_left & logical_right { local value:2 = logical_left ^ logical_right; A5L = value; A5H = 0; GB5 = 0; local flags:2 = zext(value == 0) << 3; commit_logic_flags(flags, 0); }
 :"XOR" "A5",logical_left,logical_right "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_10_22=0x1ba5 & (slot_9_9=0 | slot_8_9=2 | slot_7_9=6) & (slot_5_5=0 | slot_4_5=2 | slot_3_5=6 | slot_2_5=14) & logical_left & logical_right); (slot_mode=0 & nop_right) { local value:2 = logical_left ^ logical_right; A5L = value; A5H = 0; GB5 = 0; local flags:2 = zext(value == 0) << 3; commit_logic_flags(flags, 0); }
 :^nop_left "||" "XOR" "A5",logical_left,logical_right is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_0=0x0 & slot_10_22=0x1ba5 & (slot_9_9=0 | slot_8_9=2 | slot_7_9=6) & (slot_5_5=0 | slot_4_5=2 | slot_3_5=6 | slot_2_5=14) & logical_left & logical_right) { local value:2 = logical_left ^ logical_right; A5L = value; A5H = 0; GB5 = 0; local flags:2 = zext(value == 0) << 3; commit_logic_flags(flags, 6); }
-:"OR.CE1" "INTBASE","LSA1","X1" is carmel_issue=4 & wide_left_mode=0 & logic_ce_bank=0 & wide_right_mode=1 & wide_0_22=0x635b4a & wide_40_45=0x1e { if ((EST & 0x1000) == 0) goto <logic_disabled>; local lhs:4 = (LSA1W & 0xffffff); local rhs:4 = zext(X1); local bits:4 = lhs | rhs; local flags:2 = zext(bits == 0) << 3; INTBASE = bits:2; commit_logic_flags(flags, 0); <logic_disabled> }
-:"OR.CE1" "INTBASE","LSA1","X1" is carmel_issue=4 & wide_left_mode=0 & logic_ce_bank=0 & wide_right_mode=1 & wide_0_22=0x635b8a & wide_40_45=0x1e { if ((EST & 0x1000) == 0) goto <logic_disabled>; local lhs:4 = (LSA1W & 0xffffff); local rhs:4 = zext(X1); local bits:4 = lhs | rhs; local flags:2 = zext(bits == 0) << 3; INTBASE = bits:2; commit_logic_flags(flags, 0); <logic_disabled> }
-:"AND.CE1" "LC1","LEA1","X1" is carmel_issue=4 & wide_left_mode=0 & logic_ce_bank=0 & wide_right_mode=1 & wide_0_22=0x67538e & wide_40_45=0x1e { if ((EST & 0x1000) == 0) goto <logic_disabled>; local lhs:4 = (LEA1W & 0xffffff); local rhs:4 = zext(X1); local bits:4 = lhs & rhs; local flags:2 = zext(bits == 0) << 3; LC1 = bits:2; commit_logic_flags(flags, 0); <logic_disabled> }
-:"XOR.CE1" "LC1","USER_IO","X1" is carmel_issue=4 & wide_left_mode=0 & logic_ce_bank=0 & wide_right_mode=1 & wide_0_22=0x6b539e & wide_40_45=0x1e { if ((EST & 0x1000) == 0) goto <logic_disabled>; local lhs:4 = zext(USER_IO); local rhs:4 = zext(X1); local bits:4 = lhs ^ rhs; local flags:2 = zext(bits == 0) << 3; LC1 = bits:2; commit_logic_flags(flags, 0); <logic_disabled> }
-:"OR.CE1" "INTBASE","PACFG","X1" is carmel_issue=4 & wide_left_mode=0 & logic_ce_bank=0 & wide_right_mode=1 & wide_0_22=0x635baa & wide_40_45=0x1e { if ((EST & 0x1000) == 0) goto <logic_disabled>; local lhs:4 = zext(PACFG); local rhs:4 = zext(X1); local bits:4 = lhs | rhs; local flags:2 = zext(bits == 0) << 3; INTBASE = bits:2; commit_logic_flags(flags, 0); <logic_disabled> }
 :"XOR" "R0","A0L","A0L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x6a8242 & wide_40_45=0x10 { local lhs:4 = zext(A0L); local rhs:4 = zext(A0L); local bits:4 = lhs ^ rhs; local flags:2 = zext(bits == 0) << 3; R0 = bits:2; commit_logic_flags(flags, 0); }
 :"XOR" "R0","A0","A1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x6a8222 & wide_40_45=0x9 { local lhs:4 = (zext(A0H) * 0x10000 + zext(A0L)); local rhs:4 = (zext(A1H) * 0x10000 + zext(A1L)); local bits:4 = lhs ^ rhs; local guard:1 = GB0 ^ GB1; local sign32:1 = (bits & 0x80000000) != 0; local extend:1 = guard != (0 - sign32); local flags:2 = (zext(bits == 0 && guard == 0) << 3) | (zext((guard & 0x80) != 0) << 4) | (zext(extend) << 5); R0 = bits:2; commit_logic_flags(flags, 0); }
 :"XOR" "R4","A0","A1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_22=0x6a9222 & wide_40_45=0x9 { local lhs:4 = (zext(A0H) * 0x10000 + zext(A0L)); local rhs:4 = (zext(A1H) * 0x10000 + zext(A1L)); local bits:4 = lhs ^ rhs; local guard:1 = GB0 ^ GB1; local sign32:1 = (bits & 0x80000000) != 0; local extend:1 = guard != (0 - sign32); local flags:2 = (zext(bits == 0 && guard == 0) << 3) | (zext((guard & 0x80) != 0) << 4) | (zext(extend) << 5); R4 = bits:2; commit_logic_flags(flags, 0); }
@@ -1259,7 +1254,7 @@ wide_logic_rmw_operator: "OR"  is wide_logic_rmw_op=0 { export 0:2; }
 wide_logic_rmw_operator: "AND" is wide_logic_rmw_op=1 { export 1:2; }
 wide_logic_rmw_operator: "XOR" is wide_logic_rmw_op=2 { export 2:2; }
 
-macro wide_logic_rmw_word(op, lhs, rhs, result) {
+macro wide_logic_bitop(op, lhs, rhs, result) {
     local operation:2 = op;
     result = lhs | rhs;
     if (operation == 0) goto <done>;
@@ -1290,7 +1285,7 @@ macro wide_logic_rmw_pstatus(word) {
 }
 :^wide_logic_rmw_operator "USER_IO","USER_IO","A0" is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x21b5e & wide_40_45=8 {
     local upper:2;
-    wide_logic_rmw_word(wide_logic_rmw_operator, 0:2, A0H, upper);
+    wide_logic_bitop(wide_logic_rmw_operator, 0:2, A0H, upper);
     USER_IO = upper;
     wide_logic_rmw_est(0:2);
 }
@@ -1309,7 +1304,7 @@ macro wide_logic_rmw_pstatus(word) {
 }
 :^wide_logic_rmw_operator "A0L","A0L","A0L" is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x21e42 & wide_40_45=0x10 {
     local result:2;
-    wide_logic_rmw_word(wide_logic_rmw_operator, A0L, A0L, result);
+    wide_logic_bitop(wide_logic_rmw_operator, A0L, A0L, result);
     A0L = result;
     local flags:2 = zext(result == 0) << 3;
     wide_logic_rmw_est(flags);
@@ -1319,7 +1314,7 @@ macro wide_logic_rmw_pstatus(word) {
     local value:2 = *[data]:2 address;
     local rhs:2 = wide_load_literal_bits;
     local result:2;
-    wide_logic_rmw_word(wide_logic_rmw_operator, value, rhs, result);
+    wide_logic_bitop(wide_logic_rmw_operator, value, rhs, result);
     modify_ptr(R0, RN0, RM0, RL0, 0, 2);
     *[data]:2 address = result;
     local flags:2 = zext(result == 0) << 3;
@@ -1327,24 +1322,42 @@ macro wide_logic_rmw_pstatus(word) {
 }
 :^wide_logic_rmw_operator "PSTATUS","PSTATUS","A0" is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x21b56 & wide_40_45=8 {
     local upper:2;
-    wide_logic_rmw_word(wide_logic_rmw_operator, 0:2, A0H, upper);
+    wide_logic_bitop(wide_logic_rmw_operator, 0:2, A0H, upper);
     wide_logic_rmw_pstatus(upper);
     wide_logic_rmw_est(0:2);
 }
 
-@define WIDE_LOGIC_CE "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_20_22=6 & wide_logic_rmw_operator"
-:^wide_logic_rmw_operator "CE1" "INTBASE","IO","X1" is $(WIDE_LOGIC_CE) & unary_wide_ce_bank=0 & wide_logic_rmw_route=0x35be2 & wide_40_45=0x1e {
+macro wide_logic_ce1(dst, lhs, rhs, op) {
     local flags:2 = EST & 0xcfff;
     local enabled:2;
     unary_ce(CECFG1, EST, CETBL, 0, enabled);
     if (enabled == 0) goto <publish>;
-    # The I/O operand has no driven input on this route.
-    local result:2;
-    wide_logic_rmw_word(wide_logic_rmw_operator, 0:2, X1, result);
-    INTBASE = result;
+    local a:4 = zext(lhs);
+    local b:4 = zext(rhs);
+    local result:4;
+    wide_logic_bitop(op, a, b, result);
+    dst = result:2;
     flags = (flags & 0xffc7) | (zext(result == 0) << 3);
   <publish>
     wide_logic_rmw_est(flags);
+}
+
+@define WIDE_LOGIC_CE "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_20_22=6 & wide_logic_rmw_operator"
+@define WIDE_LOGIC_CONTROL_INPUT "$(WIDE_LOGIC_CE) & unary_wide_ce_bank=0 & wide_40_45=0x1e"
+:^wide_logic_rmw_operator "CE1" "INTBASE","IO","X1" is $(WIDE_LOGIC_CONTROL_INPUT) & wide_logic_rmw_route=0x35be2 {
+    wide_logic_ce1(INTBASE, 0:2, X1, wide_logic_rmw_operator);
+}
+:^wide_logic_rmw_operator "CE1" "INTBASE","LSA1","X1" is $(WIDE_LOGIC_CONTROL_INPUT) & (wide_logic_rmw_route=0x35b4a | wide_logic_rmw_route=0x35b8a) {
+    wide_logic_ce1(INTBASE, LSA1, X1, wide_logic_rmw_operator);
+}
+:^wide_logic_rmw_operator "CE1" "LC1","LEA1","X1" is $(WIDE_LOGIC_CONTROL_INPUT) & wide_logic_rmw_route=0x3538e {
+    wide_logic_ce1(LC1, LEA1, X1, wide_logic_rmw_operator);
+}
+:^wide_logic_rmw_operator "CE1" "LC1","USER_IO","X1" is $(WIDE_LOGIC_CONTROL_INPUT) & wide_logic_rmw_route=0x3539e {
+    wide_logic_ce1(LC1, USER_IO, X1, wide_logic_rmw_operator);
+}
+:^wide_logic_rmw_operator "CE1" "INTBASE","PACFG","X1" is $(WIDE_LOGIC_CONTROL_INPUT) & wide_logic_rmw_route=0x35baa {
+    wide_logic_ce1(INTBASE, PACFG, X1, wide_logic_rmw_operator);
 }
 :^wide_logic_rmw_operator "CE2" "discard","IO","*R6--:long" is $(WIDE_LOGIC_CE) & unary_wide_ce_bank=1 & wide_logic_rmw_route=0x35fe1 & wide_40_45=0x1e {
     local enabled:2;
@@ -1414,7 +1427,7 @@ macro unary_max_flags(word) {
 
 :^wide_logic_rmw_operator "LC1",wide_lc_rn,wide_lc_r is $(WIDE_LOGIC_RMW) & wide_lc_r_bank=4 & wide_lc_logic_form=0x1a95 & wide_0_1=2 & wide_lc_r & wide_lc_rn {
     local result:2;
-    wide_logic_rmw_word(wide_logic_rmw_operator, wide_lc_rn, wide_lc_r, result);
+    wide_logic_bitop(wide_logic_rmw_operator, wide_lc_rn, wide_lc_r, result);
     LC1 = result;
     local flags:2 = zext(result == 0) << 3;
     wide_logic_rmw_est(flags);
@@ -1429,7 +1442,7 @@ macro wide_logic_discard_long(op, base, step, modulo, bound, shift, accumulator)
     local sampled:8 = zext(low) | (zext(high) << 16);
     local acc:8 = zext(accumulator);
     local result:8;
-    wide_logic_rmw_word(op, acc, sampled, result);
+    wide_logic_bitop(op, acc, sampled, result);
     local guard:1 = result(4);
     local negative:1 = (guard & 0x80) != 0;
     local extension:1 = guard != (0 - zext((result & 0x80000000) != 0));

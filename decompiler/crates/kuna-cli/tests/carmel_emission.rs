@@ -426,6 +426,55 @@ fn carmel_wide_logic_separates_conditional_results_from_address_updates() {
     }
 }
 
+#[test]
+fn carmel_wide_logic_tests_the_full_saved_loop_address_before_word_writeback() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-logic-loop-address", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    fs::write(&binary, [
+        0x1e, 0x85, 0xa8, 0xe3, 0x5b, 0x8a, // OR CE1 INTBASE,LSA1,X1
+        0x2b, 0xd8, 0, 0x2b, 0xec, 0,
+    ]).unwrap();
+    let mut emitted = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    for (reg, name) in [("INTBASE", "word"), ("EST", "flags")] {
+        let output = common::process::required_output(Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0", "--json", "--assert-strict",
+                "--assert", &format!("return %{reg} unsigned short"),
+                "--assert", "param 0 %LSA1W unsigned long saved_start",
+                "--assert", "param 1 %X1 unsigned short input_word",
+                "--assert", "param 2 %INTBASE unsigned short in_base",
+                "--assert", "param 3 %EST unsigned short in_est",
+                "--assert", "param 4 %CETBL unsigned short table",
+                "--assert", "param 5 %CECFG1 unsigned short ce1",
+                "--assert", "param 6 %CECFG2 unsigned short ce2",
+            ]));
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        emitted.push_str(&function["code"].as_str().unwrap().replace("sub_0", name));
+        emitted.push('\n');
+    }
+    emitted.push_str(
+        "int main(void) {\n\
+         if (word(0x120000,0,0x2468,0x0010,0xffff,0,0) != 0) return 1;\n\
+         if (flags(0x120000,0,0x2468,0x0010,0xffff,0,0) != 0x3000) return 2;\n\
+         if (flags(0,0,0x2468,0x0010,0xffff,0,0) != 0x3008) return 3;\n\
+         if (word(0x120000,0,0x2468,0x0010,0,0,0) != 0x2468) return 4;\n\
+         return 0;\n\
+         }\n",
+    );
+    fs::write(&source, &emitted).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")
