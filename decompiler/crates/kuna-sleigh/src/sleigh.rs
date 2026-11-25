@@ -43,6 +43,9 @@ use crate::translate::{
     TranslateBase, UniqueLayout,
 };
 
+#[path = "sleigh/kuna_carmel_delay.rs"]
+mod kuna_carmel_delay;
+
 #[cfg(test)]
 #[path = "sleigh/operand_tests.rs"]
 mod operand_tests;
@@ -1092,6 +1095,7 @@ struct SleighBuilder<'a> {
     uniqueoffset: u64,
     /// Displacement within the pre-resolved delay range of a split Carmel schedule.
     split_delay_offset: Option<i32>,
+    carmel_delay_uops: kuna_carmel_delay::DelayUops,
     cache: &'a mut PcodeCacher,
 }
 
@@ -1423,29 +1427,9 @@ impl PcodeBuilder for SleighBuilder<'_> {
             *offset = fall_offset - fall_base;
         }
         if let Some(start) = carmel_start {
-            let (before, slot) = self.cache.issued.split_at(start);
-            let memory = |op: &PcodeData| matches!(op.opc, OpCode::CPUI_LOAD | OpCode::CPUI_STORE);
-            let unsafe_flow = |op: &PcodeData| match op.opc {
-                OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH => op
-                    .invar
-                    .and_then(|i| self.cache.pool[i].space.as_ref())
-                    .is_none_or(|space| space.get_type() != spacetype::IPTR_CONSTANT),
-                OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND
-                | OpCode::CPUI_RETURN | OpCode::CPUI_CALLOTHER => true,
-                _ => false,
-            };
-            let source: &ParserContext = &self.contexts[saved_ctx].ctx;
-            let rejects_memory = |name: &[u8]| {
-                self.engine.context_db.borrow().get_variable(name)
-                    .is_ok_and(|field| field.get_value(&source.context) != 0)
-            };
-            if slot.iter().any(unsafe_flow)
-                || slot.iter().any(memory)
-                    && (counted && delay_budget > 1 || before.iter().any(memory)
-                        || rejects_memory(b"carmel_repeating") || rejects_memory(b"carmel_delay_no_memory"))
-            {
-                return Err(KunaError::unimpl("Unsupported Carmel delay issue effects", fall_base));
-            }
+            self.carmel_delay_uops.record(
+                self.cache, start, counted && consumed > 1, fall_base,
+            )?;
         }
         self.cur = saved_cur;
         self.cur_ctx = saved_ctx;
@@ -1911,10 +1895,7 @@ impl Sleigh {
             let addr = pos.addr.clone();
             cache.get_context(&**db, &addr, &mut pos.context);
             if inside_carmel_delay {
-                if let Ok(field) = db.get_variable(b"carmel_single_issue") {
-                    // A delay executes only the next issue, not a DATA scheduling pair.
-                    field.set_value(&mut pos.context, 1);
-                }
+                kuna_carmel_delay::select_single_issue(&**db, pos);
             }
         }
         pos.set_delay_slot(0);
@@ -2597,34 +2578,6 @@ impl Sleigh {
         }
     }
 
-    fn uses_carmel_issues(&self) -> bool {
-        self.base.base.get_alignment() == 3
-            && self.base.manager.get_default_code_space().is_some_and(|space| {
-                space.get_word_size() == 3 && space.get_name() == "code"
-            })
-            && self.context_db.borrow().get_variable(b"carmel_issue").is_ok()
-    }
-
-    fn carmel_counted_delay(&self, pos: &ParserContext) -> bool {
-        self.context_db.borrow().get_variable(b"carmel_counted_delay")
-            .is_ok_and(|field| field.get_value(&pos.context) != 0)
-    }
-
-    fn carmel_split_delay(&self, pos: &ParserContext) -> bool {
-        let db = self.context_db.borrow();
-        db.get_variable(b"carmel_split_delay")
-            .is_ok_and(|field| field.get_value(&pos.context) != 0)
-    }
-
-    fn check_carmel_fetch(&self, addr: &Address) -> KunaResult<()> {
-        if self.base.base.get_alignment() == 3
-            && matches!(self.context_db.borrow().get_variable_value(b"carmel_bad_fetch", addr), Ok(1))
-        {
-            return Err(KunaError::bad_data("Carmel fetch rejected before issue"));
-        }
-        Ok(())
-    }
-
     fn one_instruction_with_map(
         &self,
         emit: &mut dyn PcodeEmit,
@@ -2732,13 +2685,17 @@ impl Sleigh {
             uniquemask: umask,
             uniqueoffset: (contexts[0].addr.get_offset() & u64::from(umask)) << 8,
             split_delay_offset: (counted && self.carmel_split_delay(&contexts[0].ctx)).then_some(0),
+            carmel_delay_uops: kuna_carmel_delay::DelayUops::default(),
             cache: &mut cache,
         };
         builder.cur.point = Some(contexts[0].ctx.base_state);
         let main_ct = builder.walker().get_constructor_inner()?;
         let handle = table.get_constructor(main_ct)?.get_templ();
         let tpl = handle.map(|h| &self.base.templates[h]);
-        match builder.build(tpl, -1) {
+        let built = builder.build(tpl, -1).and_then(|()| {
+            builder.carmel_delay_uops.validate(builder.cache, contexts[0].ctx.get_length())
+        });
+        match built {
             Ok(()) => {}
             Err(KunaError::Unimpl { .. }) => {
                 // C++ rethrows with a descriptive message + instruction_length.

@@ -3862,12 +3862,14 @@ effects. A Carmel delay is measured in issues, not fetches. For a one-issue
 delay the loader paints the following issue's byte length. For longer delays
 the translator counts independently decoded issues. It checks that each issue
 is mapped before adding its p-code. Nested transfers and unimplemented delay
-effects stop lift instead of introducing a control-flow edge. Memory effects
-that require unmodeled ordering with a transfer or another delayed issue are
-also rejected. The translator
-applies these delay rules only to a language with alignment 3 whose default
-`code` space has three-byte words and which defines the `carmel_issue`
-context field; every other language keeps the unchanged delay-slot path. The
+effects stop lift instead of introducing a control-flow edge. The translator
+keeps the uop range for a memory-bearing slot until the whole instruction is
+built. It rejects memory in a multi-issue delay, another memory effect
+outside that range, or a local backedge that crosses it.
+`kuna_carmel_delay.rs` owns the policy: it applies only to a language with
+alignment 3 whose default `code` space has three-byte words and which defines
+the `carmel_issue` context field. Every other language keeps the ordinary
+byte-budget delay-slot path. The
 p-code emulator likewise converts an indirect transfer's CODE-word operand to
 a byte offset only in such a `code` space.
 

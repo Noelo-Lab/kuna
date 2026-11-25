@@ -54,6 +54,48 @@ fn carmel_odd_eq_has_two_delay_issues_and_skips_the_rest_only_when_taken() {
 }
 
 #[test]
+fn carmel_delay_refuses_unmodeled_data_order_without_discarding_the_slot() {
+    let nop = [0x2b, 0xec, 0];
+    let store = [[0x80, 0x56, 0x78], [0xc6, 0x40, 0]];
+    let binary = common::scratch_file("carmel-delay-data-order", "bin");
+    let goto = [0x2b, 0x00, 0x52];
+    let repeat = [0x2b, 0xc0, 0x03];
+    let call = [0x28, 0x82, 0x61];
+
+    for (owner, slot, expected) in [
+        (goto, store, &["STORE", "BRANCH"][..]),
+        (call, [nop; 2], &["STORE", "STORE", "CBRANCH", "CALL", "BRANCH"][..]),
+        (repeat, store, &[][..]),
+        (call, store, &[][..]),
+    ] {
+        let mut code = [[nop; 2]; 16];
+        code[0] = [owner, nop];
+        code[1] = slot;
+        fs::write(&binary, code.as_flattened().as_flattened()).unwrap();
+        let (stdout, stderr, status) = common::run_kuna(&[
+            "raw-pcode", binary.to_str().unwrap(), "0", "--raw-image", "--target",
+            "Carmel:BE:24:default:default", "--base", "0", "--count", "1", "--json",
+        ]);
+        let doc: Value = serde_json::from_str(&stdout).unwrap_or_else(|_| panic!("{stdout}\n{stderr}"));
+        let instructions = doc["instructions"].as_array().unwrap();
+        if expected.is_empty() {
+            assert_eq!(status, 1, "{doc}");
+            assert_eq!(doc["error"]["address"], 0, "{doc}");
+            assert!(instructions.is_empty(), "{doc}");
+        } else {
+            assert_eq!(status, 0, "{doc}\n{stderr}");
+            let [instruction] = instructions.as_slice() else { panic!("{doc}"); };
+            let ops: Vec<_> = instruction["ops"].as_array().unwrap().iter().filter_map(|op| {
+                let opcode = op["opcode"].as_str().unwrap();
+                matches!(opcode, "LOAD" | "STORE" | "BRANCH" | "CBRANCH" | "CALL").then_some(opcode)
+            }).collect();
+            assert_eq!(ops, expected, "{doc}");
+        }
+    }
+    fs::remove_file(binary).unwrap();
+}
+
+#[test]
 fn carmel_backtrace_projections_preserve_the_other_lane_and_the_vetoed_write() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
