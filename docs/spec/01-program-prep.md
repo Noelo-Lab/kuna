@@ -2326,8 +2326,11 @@ funcsym stream:
   are unaffected. In the console, set the option before `load file`; CLI
   options are bridged before either loader runs. The `abi` mode is opt-in because
   the proof walks every function:
-  about 0.3-0.4 s for libstdc++ or libc, which makes listing a PPC32 PIC
-  image's functions 1.1-1.8x slower and a single-function decompile up to 3x.
+  about 0.15-0.3 s for libstdc++ or libc, which makes listing a PPC32 PIC
+  image's functions about 1.05-1.35x slower and a single-function decompile
+  of a large library up to 2.9x. A meet updates the stored state in place and
+  reports whether it changed, and a stub is found from any byte it covers by
+  one hash lookup.
   The default path and other formats pay nothing, and the proof runs once per
   image content. Resolved PPC32 import names take
   precedence over local stub labels, which remain aliases. Existing library
