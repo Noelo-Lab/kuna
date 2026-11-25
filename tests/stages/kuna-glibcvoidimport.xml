@@ -80,5 +80,5 @@
 <stringmatch name="Unversioned, other-library, GLIBC_PRIVATE and caller-declared zero-argument imports pass nothing" min="4" max="4">^  free\(\);$</stringmatch>
 <stringmatch name="Another name's declaration at a glibc-versioned free keeps today's recovery" min="1" max="1">^  exit\(\);$</stringmatch>
 <stringmatch name="A glibc import that returns a value keeps its argument" min="1" max="1">strlen\(a0\) \+ 1</stringmatch>
-<stringmatch name="A void glibc import with a double parameter keeps today's recovery" min="1" max="1">^  sincos\(\);$</stringmatch>
+<stringmatch name="A glibc import no table declares on MIPS keeps today's recovery" min="1" max="1">^  sincos\(\);$</stringmatch>
 </decompilertest>

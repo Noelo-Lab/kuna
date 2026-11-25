@@ -78,8 +78,8 @@ do when a console declaration names the stub `free`. An unversioned `free`, one
 versioned by another library or by `GLIBC_PRIVATE`, and a caller's
 `void free(void)` declaration pass nothing, and a console declaration naming
 the stub `exit` keeps today's `exit();`. The same glibc image keeps
-`strlen(a0) + 1` and today's recovery of `sincos`, whose `double` parameter the
-rule does not cover.
+`strlen(a0) + 1`, and `sincos`, which no table declares on MIPS, keeps today's
+recovery.
 
 `kuna-narrowed-call-input.xml` checks a call through a typed field whose
 argument was narrowed to two bytes before the field's prototype was forced on
