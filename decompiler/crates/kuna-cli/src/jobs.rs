@@ -2321,7 +2321,7 @@ mod tests {
     }
 
     #[test]
-    fn result_encoding_matches_the_version_twelve_wire_layout() {
+    fn result_encoding_matches_the_version_thirteen_wire_layout() {
         let dir = ScratchDir::create().unwrap();
         let path = dir.path().join("wire.bin").to_string_lossy().into_owned();
         let result = FuncResult {

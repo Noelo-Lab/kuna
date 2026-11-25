@@ -2221,14 +2221,18 @@ joined where they touch, in the units of `address`. That takes in a branch's del
 slot, and code the decompile went on to prove dead, which the C leaves out. Where
 `size` runs on through the alignment padding to the next entry, `ranges` stops at
 the last instruction the flow reached, and a body laid out around another function
-lists each piece; the instructions of a callee it inlines count as its own. A function
-whose C failed to render was decoded all the same and keeps its ranges; one whose
-decompile failed has none. `--omit ranges` leaves the key out.
+lists each piece. The instructions of a callee it inlines whole count as its own; a
+callee with no branch or call, folded onto the call, adds none. Two records' ranges
+can overlap, as a function's and its split-off `.cold` part's do where each jumps
+into the other. A function whose C failed to render was decoded all the same and
+keeps its ranges; one whose decompile failed has none. `--omit ranges` leaves the
+key out.
 
 A whole-binary `decompile-all --json` run also carries a top-level `coverage`
 object after `count`: how much of the image's executable code the run lifted and
-decompiled. A whole-binary run is one with no `--functions`, `--addr` or triage
-filter.
+decompiled. A whole-binary run keeps every discovered function: it has no
+`--functions` or `--addr`, and no triage filter that drops a function. A byte that
+several records cover counts once.
 
 - `executable_bytes` is what the image holds of its CODE sections. Where it has no
   section table, it counts the executable load segments, the same spans the `size`
@@ -2237,7 +2241,9 @@ filter.
 - `decompiled_bytes` is the part covered by the `ranges` of the records whose
   `error` is `null`.
 - `unlifted_nul_bytes` counts the NUL bytes no record covers. These are alignment
-  fill and zero-filled tails far more often than code.
+  fill and zero-filled tails far more often than code. Fill of any other byte, such
+  as the NOPs and `INT3`s x86 compilers pad with, stays in the total, as does data
+  laid out in the code (a literal pool, a switch table).
 - `lifted_share` and `decompiled_share` are those two byte counts over
   `executable_bytes` minus `unlifted_nul_bytes`, to four places. They are `null`
   when that total is 0.
