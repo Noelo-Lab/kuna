@@ -134,6 +134,7 @@ define register offset=0x25c size=2 [ RN5S ];
 define register offset=0x25e size=2 [ RN6S ];
 define register offset=0x260 size=2 [ RN7S ];
 
+define register offset=0x150 size=1 [ TRAPCTX ];
 define register offset=0x160 size=16 [ contextreg ];
 define context contextreg
     carmel_issue = (0,2) noflow
@@ -2424,6 +2425,22 @@ data_load_dst: "R7" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x29c & w
 :"RETURN" "delay 2" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd804); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local target:3; pop_link(target); delayslot(2); return [target]; }
 :"RETURN" "delay 3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd806); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local target:3; pop_link(target); delayslot(3); return [target]; }
 :"RETURN CE1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd801); (slot_mode=0 & nop_right) { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <return_disabled>; local target:3; pop_link(target); return [target]; <return_disabled> goto inst_next; }
+
+# TRAPCTX holds nested trap sources, newest in the two low bits.
+macro retire_trap() {
+    local active:2 = zext(TRAPCTX != 0);
+    PSTATUS = PSTATUS & (0xffef | (active << 4));
+    TRAPCTX = TRAPCTX >> 2;
+}
+:"RETI" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd810); (slot_mode=0 & nop_right) { local target:4; pop_link(target); retire_trap(); return [target]; }
+:"RETI" "delay 1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd812); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local target:4; pop_link(target); retire_trap(); delayslot(1); return [target]; }
+:"RETI" "delay 2" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd814); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local target:4; pop_link(target); retire_trap(); delayslot(2); return [target]; }
+:"RETI" "delay 3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd816); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local target:4; pop_link(target); retire_trap(); delayslot(3); return [target]; }
+:"RETI CE1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd811); (slot_mode=0 & nop_right) { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <veto>; local target:4; pop_link(target); retire_trap(); return [target]; <veto> goto inst_next; }
+trap_skip_next: word_address is epsilon [ word_address = (inst_start + 4) & 0xffffff; ] { export *[code]:3 word_address; }
+:"TRAP 1" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & carmel_next_issue_size=6 & slot_0_22=0x2bd001); (slot_mode=0 & nop_right)) & link_2_0 & trap_skip_next { if ((TRAPCTX & 3) == 1 || ((TRAPCTX >> 2) & 3) == 1 || ((TRAPCTX >> 4) & 3) == 1) goto <ignored>; local vectored:1 = TRAPCTX == 0; push_link(link_2_0); TRAPCTX = (TRAPCTX << 2) | 1; if (!vectored) goto trap_skip_next; local target:3 = (zext(INTBASE & 0x1fff) << 11) | 8; goto [target]; <ignored> }
+:"TRAP 2" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & carmel_next_issue_size=6 & slot_0_22=0x2bd002); (slot_mode=0 & nop_right)) & link_2_0 & trap_skip_next { if ((TRAPCTX & 3) == 2 || ((TRAPCTX >> 2) & 3) == 2 || ((TRAPCTX >> 4) & 3) == 2) goto <ignored>; push_link(link_2_0); TRAPCTX = (TRAPCTX << 2) | 2; goto trap_skip_next; <ignored> }
+:"TRAP 3" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & carmel_next_issue_size=6 & slot_0_22=0x2bd003); (slot_mode=0 & nop_right)) & link_2_0 & trap_skip_next { if (TRAPCTX != 0) goto <ignored>; push_link(link_2_0); TRAPCTX = (TRAPCTX << 2) | 3; goto trap_skip_next; <ignored> }
 
 :CLRBTR clrbtr_mask is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_0=0x0 & slot_13_22=0x16d & clrbtr_mask { BTR1 = 0; }
 :CLRBTR clrbtr_mask "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_13_22=0x16d & clrbtr_mask); (slot_mode=0 & nop_right) { BTR1 = 0; }

@@ -3935,6 +3935,20 @@ execution enable pushes the link and calls. With address enable alone,
 `SP` decreases by two and the instruction jumps without writing either
 link word. With neither enable it falls through without touching the stack.
 
+Compact `RETI` with an inactive right lane samples the two DATA link words
+and admits zero through three delay issues. Undelayed CE1 can veto the pop
+and transfer unless execution or address enable is set. A taken `RETI`
+releases the newest active trap source without changing `PSTATUS`; with
+no active trap it clears bit four of `PSTATUS`. Ordinary `RETURN` does not
+consume trap state.
+
+`TRAPCTX` is lift state, not an encoded register operand. The compact
+`TRAP 1` through `TRAP 3` forms with an inactive right lane and a following
+complete issue record accepted sources there and push a two-word link.
+An already-active source 1 or 2 is ignored, and source 3 is ignored when
+any trap is active. Source 1 vectors through `INTBASE` when no trap is
+active; accepted non-vectored entries skip the following issue.
+
 Lifted absolute peripheral moves address `io` and `ext` as separate 16-bit
 word spaces. A peripheral word and a `data` word at the same numeric
 address do not alias.

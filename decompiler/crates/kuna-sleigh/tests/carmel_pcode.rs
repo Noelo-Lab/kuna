@@ -928,3 +928,44 @@ fn compact_ce1_callabs_only_stores_a_link_when_execution_is_enabled() {
         assert_eq!((m.data(0x40ff), m.data(0x4100)), if write { (0x1002, 1) } else { (0x1415, 0x2618) });
     }
 }
+
+#[test]
+fn reti_consumes_nested_traps_before_clearing_unstacked_status() {
+    let mut fetches = [(NOP, NOP); 17];
+    fetches[0] = (0x2bd001, NOP);
+    fetches[1] = (0x2bd810, NOP);
+    fetches[4] = (0x2bd002, NOP);
+    fetches[5] = (INC_A1, NOP);
+    fetches[6] = (0x2bd810, NOP);
+    let issues = [(0, 1, 6), (2, 1, 6), (8, 1, 6), (10, 1, 6), (12, 1, 6), (32, 1, 0)];
+    let mut m = Machine::new(0, &fetches, &issues, None);
+    m.seed(&[("INTBASE", 0), ("TRAPCTX", 0), ("SP", 0x4040), ("PSTATUS", 0x10)]);
+    m.seed_data(0x4041, 32);
+    m.seed_data(0x4042, 0);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 3 * 8);
+    assert_eq!((m.reg("TRAPCTX"), m.reg("SP"), m.data(0x403f)), (1, 0x403e, 2));
+    assert_eq!(m.step(), 3 * 12);
+    assert_eq!((m.reg("TRAPCTX"), m.reg("SP"), m.data(0x403d)), (6, 0x403c, 10));
+    assert_eq!(m.step(), 3 * 10);
+    assert_eq!((m.reg("TRAPCTX"), m.reg("SP"), m.reg("PSTATUS")), (1, 0x403e, 0x10));
+    assert_eq!(m.step(), 3 * 12);
+    assert_eq!(m.step(), 3 * 2);
+    assert_eq!((m.reg("TRAPCTX"), m.reg("SP"), m.reg("PSTATUS"), m.reg("A1L")), (0, 0x4040, 0x10, 1));
+    assert_eq!(m.step(), 3 * 32);
+    assert_eq!((m.reg("SP"), m.reg("PSTATUS")), (0x4042, 0));
+}
+
+#[test]
+fn reti_ce1_veto_preserves_the_active_frame_and_address_enable_consumes_it() {
+    let issues = [(0, 1, 6), (2, 1, 6), (4, 1, 0)];
+    for (mode, dst, sp, context) in [(0, 2, 0x4040, 6), (0x1000, 4, 0x4042, 1)] {
+        let mut m = Machine::new(0, &[(0x2bd811, NOP), (NOP, NOP), (NOP, NOP)], &issues, None);
+        m.seed(&[("PSTATUS", 0x10), ("SP", 0x4040), ("TRAPCTX", 6), ("CECFG1", mode), ("CETBL", 0)]);
+        m.seed_data(0x4041, 4);
+        m.seed_data(0x4042, 0);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 3 * dst);
+        assert_eq!((m.reg("SP"), m.reg("TRAPCTX"), m.reg("PSTATUS")), (sp, context, 0x10));
+    }
+}
