@@ -11,7 +11,6 @@ impl KotlinOptions {
     pub const DECOMPILE_KOTLIN: &'static str = "kt-enable";
     pub const UNKNOWN_DEFAULT_ARG_STRING: &'static str = "kt-unknown-defaults";
     pub const COLLAPSE_STRING_CONCATENATION: &'static str = "kt-collapse-string-concat";
-    pub const ALWAYS_EXPORT_METADATA: &'static str = "kt-export-metadata";
     pub const DECOMPILE_FACADES: &'static str = "kt-decompile-facades";
 
     /// The option fields, in declaration order.
@@ -55,17 +54,6 @@ impl KotlinOptions {
             dynamic_default_value: None,
         },
         PreferenceOption {
-            field: "ALWAYS_EXPORT_METADATA",
-            key: KotlinOptions::ALWAYS_EXPORT_METADATA,
-            short_name: None,
-            name: Some("Always export metadata"),
-            description: Some(
-                "If Kotlin decompilation is disabled, metadata will not be parsed. If enabled, this will always parse Kotlin metadata for use by other plugins.",
-            ),
-            type_: Some(OptionType::Boolean),
-            dynamic_default_value: None,
-        },
-        PreferenceOption {
             field: "DECOMPILE_FACADES",
             key: KotlinOptions::DECOMPILE_FACADES,
             short_name: None,
@@ -83,7 +71,6 @@ impl KotlinOptions {
         cons.add_default(KotlinOptions::DECOMPILE_KOTLIN, "1");
         cons.add_default(KotlinOptions::UNKNOWN_DEFAULT_ARG_STRING, "...");
         cons.add_default(KotlinOptions::COLLAPSE_STRING_CONCATENATION, "1");
-        cons.add_default(KotlinOptions::ALWAYS_EXPORT_METADATA, "0");
         cons.add_default(KotlinOptions::DECOMPILE_FACADES, "0");
     }
 }

@@ -152,7 +152,6 @@ Three tiers:
 | renamed inner classes not nested | [`jvm_validate_inner_classes_names`](#jvm_validate_inner_classes_names----on--off-default-on) |
 | inner and anonymous classes missing when decompiling one .class file | [`jvm_siblings`](#jvm_siblings----on--off-default-on) |
 | unrelated Name$x.class files nested into the class | [`jvm_siblings`](#jvm_siblings----on--off-default-on) |
-| a Vineflower command line to replay sets --kt-export-metadata=1 (the output is the same either way) | [`jvm_kt_export_metadata`](#jvm_kt_export_metadata----on--off-default-off) |
 | nonsense generic types from a tampered Signature attribute | [`jvm_decompile_generics`](#jvm_decompile_generics----on--off-default-on) |
 | need erased types that match the method descriptors | [`jvm_decompile_generics`](#jvm_decompile_generics----on--off-default-on) |
 | raw List where List<String> was expected (option is off) | [`jvm_decompile_generics`](#jvm_decompile_generics----on--off-default-on) |
@@ -613,15 +612,6 @@ What the engine loads and infers before any class is written.
 - **When to flip:** Turn off to decompile exactly the given class file, e.g. when a directory holds unrelated classes with the same prefix.
 - **Where / provenance:** p0_knowledge/kuna_input · kuna · kuna-input
 - **Example:** `kuna decompile Main.class --option jvm_siblings off`
-
-### `jvm_kt_export_metadata` -- on | off, default `off`
-
-- **Symptoms:** a Vineflower command line to replay sets --kt-export-metadata=1 (the output is the same either way).
-- **What it does:** Kotlin plugin: parse the @kotlin.Metadata of Kotlin classes even when jvm_kt_enable is off, so that the parsed metadata is available to other plugins; it does not change what is written (needs jvm_plugins on, the default).
-- **When to flip:** Only together with jvm_kt_enable off, to replay a Vineflower command line that passes it; kuna has no other consumer of the parsed metadata, so the Java output is the same either way.
-- **Where / provenance:** kotlin/kotlin_chooser · vineflower · vineflower-option
-- **Also spelled:** `kt-export-metadata`
-- **Example:** `kuna decompile app.jar com.ex.UserKt --option jvm_kt_enable off --option jvm_kt_export_metadata on`
 
 ## Rendering defaults
 

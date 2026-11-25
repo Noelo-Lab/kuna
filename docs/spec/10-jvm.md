@@ -1183,8 +1183,7 @@ which takes the spec's extension, `kt`. A nested class therefore follows its roo
 chooser is asked once more while statements are written, to decide whether they end in a
 semicolon.) With `jvm_kt_enable`
 off, a Kotlin class takes the Java pipeline and is written as Java, the `@Metadata`
-annotation printed like any other annotation; `jvm_kt_export_metadata` then still parses
-the metadata, for other plugins (kuna bundles none that read it), and changes no output.
+annotation printed like any other annotation, and its metadata is not parsed.
 With `jvm_plugins off` no plugin is loaded and every class is Java.
 
 **Metadata.** Asking the chooser also parses the class's metadata, once

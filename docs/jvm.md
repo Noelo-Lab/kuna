@@ -807,7 +807,6 @@ each also answers to Vineflower's name (`kt-enable`, ...):
 | `jvm_kt_unknown_defaults` | `...` | the text after `=` for a default argument whose value could not be recovered from the `$default` stub; empty writes none |
 | `jvm_kt_collapse_string_concat` | `on` | write string concatenations as string templates (`"count=${c.count}"`); `off` keeps `"count=" + c.count` |
 | `jvm_kt_decompile_facades` | `off` | also write the forwarding functions of a multifile facade (`@file:JvmMultifileClass`), not only the comment listing its parts |
-| `jvm_kt_export_metadata` | `off` | parse the metadata even with `jvm_kt_enable off`, for other plugins; changes no output in kuna |
 
 **Known limits.** The Kotlin output is Vineflower's, so it has Vineflower's gaps, apart
 from those kuna's fixes close (*Kuna-only fixes*, above). The plugin rewrites syntax, not
