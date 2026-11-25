@@ -420,6 +420,14 @@ define token wide (48)
     swap_reg_short_group = (43,45)
     swap_reg_full_group = (44,45)
     swap_address_group = (5,9)
+    swap_base = (2,4)
+    swap_step = (2,4)
+    swap_modulo = (2,4)
+    swap_bound = (2,4)
+    swap_pacfg_shift = (2,4)
+    swap_modify = (5,6)
+    swap_long = (8,8)
+    swap_register_address = (9,9)
 ;
 
 attach variables [inc_source] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _];
@@ -459,6 +467,11 @@ attach values [agu_3_shift] [10 12 14 _ 12 14 14 _];
 attach variables [address_literal_dst] [R0 R1 R2 R3 R4 R5 R6 R7 RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
 attach variables [swap_reg_lo] [A0L A1L A2L A3L A4L A5L FF1 FF2];
 attach variables [swap_reg_full] [A0L A1L A2L A3L A4L A5L FF1 FF2 A0H A1H A2H A3H A4H A5H X1 X2];
+attach variables [swap_base] [R0 R1 R2 R3 R4 R5 R6 R7];
+attach variables [swap_step] [RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
+attach variables [swap_modulo] [RM0 RM0 RM2 RM2 RM4 RM4 RM6 RM6];
+attach variables [swap_bound] [RL0 RL0 RL2 RL2 RL4 RL4 RL6 RL6];
+attach values [swap_pacfg_shift] [0 2 4 6 8 10 12 14];
 attach variables [div_step_dst] [A0 A1 A2 A3 A4 A5 _ _];
 attach variables [div_step_dst_lo] [A0L A1L A2L A3L A4L A5L _ _];
 attach variables [div_step_dst_hi] [A0H A1H A2H A3H A4H A5H _ _];
@@ -815,7 +828,7 @@ macro reverse_word(value, reversed) {
     reversed = (x << 8) | (x >> 8);
 }
 
-macro modify_ptr(reg, increment, rm, rl, shift, modifier) {
+macro modify_ptr_scaled(reg, increment, rm, rl, shift, modifier, width) {
     local action:2 = modifier;
     if (action == 0) goto <done>;
     local incoming:2 = reg;
@@ -823,7 +836,7 @@ macro modify_ptr(reg, increment, rm, rl, shift, modifier) {
     local mode:2 = (PACFG >> mode_shift) & 3;
     local delta:2 = increment;
     if (action == 1) goto <with_delta>;
-    delta = 5 - action * 2;
+    delta = (5 - action * 2) * width;
   <with_delta>
     local result:2 = incoming + delta;
     if (mode == 2) goto <pair>;
@@ -856,6 +869,11 @@ macro modify_ptr(reg, increment, rm, rl, shift, modifier) {
     reg = result;
   <done>
 }
+
+macro modify_ptr(reg, increment, rm, rl, shift, modifier) {
+    modify_ptr_scaled(reg, increment, rm, rl, shift, modifier, 1:2);
+}
+
 agu_group_0: agu_0_r,agu_1_r is (slot_13_14=0 | slot_12_14=2 | slot_13_14=2 | slot_12_14=6) & agu_0_r & agu_0_rn & agu_0_rm & agu_0_rl & agu_0_shift & agu_modifier_0 & agu_1_r & agu_1_rn & agu_1_rm & agu_1_rl & agu_1_shift & agu_modifier_1 { modify_ptr(agu_0_r, agu_0_rn, agu_0_rm, agu_0_rl, agu_0_shift, agu_modifier_0); modify_ptr(agu_1_r, agu_1_rn, agu_1_rm, agu_1_rl, agu_1_shift, agu_modifier_1); }
 agu_group_1: agu_2_r,agu_3_r is (slot_10_11=0 | slot_9_11=2 | slot_10_11=2 | slot_9_11=6) & agu_2_r & agu_2_rn & agu_2_rm & agu_2_rl & agu_2_shift & agu_modifier_2 & agu_3_r & agu_3_rn & agu_3_rm & agu_3_rl & agu_3_shift & agu_modifier_3 { modify_ptr(agu_2_r, agu_2_rn, agu_2_rm, agu_2_rl, agu_2_shift, agu_modifier_2); modify_ptr(agu_3_r, agu_3_rn, agu_3_rm, agu_3_rl, agu_3_shift, agu_modifier_3); }
 :"ADDRUPDATE" agu_group_0,agu_group_1 is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_0=0x0 & slot_15_22=0x59 & agu_group_0 & agu_group_1 { build agu_group_0; build agu_group_1; }
@@ -1793,14 +1811,20 @@ wide_load_literal: "#"^wide_load_literal_bits is wide_load_literal_bits { export
 # SWAP exchanges one DATA word even when the operand selector names a long.
 swap_word_register: swap_reg_lo is wide_0_1=0 & swap_reg_short_group=0 & swap_reg_lo { export swap_reg_lo; }
 swap_word_register: swap_reg_full is wide_0_1=2 & swap_reg_full_group=1 & swap_reg_full { export swap_reg_full; }
-swap_fixed_address: "*"^word_address is (wide_2_9=0x86 | wide_2_9=0x87 | wide_2_9=0x8e | wide_2_9=0x8f | swap_address_group=0x1c | swap_address_group=0x1d | swap_address_group=0x1e | swap_address_group=0x1f) [ word_address = 0xffff; ] { export *[const]:2 word_address; }
-swap_fixed_address: "*"^absolute_data_addr is (swap_address_group=7 | swap_address_group=15) & absolute_data_addr { export *[const]:2 absolute_data_addr; }
+swap_address: "*"^word_address is (wide_2_9=0x86 | wide_2_9=0x87 | wide_2_9=0x8e | wide_2_9=0x8f | swap_address_group=0x1c | swap_address_group=0x1d | swap_address_group=0x1e | swap_address_group=0x1f) [ word_address = 0xffff; ] { export *[const]:2 word_address; }
+swap_address: "*"^absolute_data_addr is (swap_address_group=7 | swap_address_group=15) & absolute_data_addr { export *[const]:2 absolute_data_addr; }
+swap_address: "*"^swap_base is swap_register_address=0 & wide_7_7=0 & swap_modify & swap_long & swap_base & swap_step & swap_modulo & swap_bound & swap_pacfg_shift {
+    local address:2 = swap_base;
+    local stride:2 = 1 + swap_long;
+    modify_ptr_scaled(swap_base, swap_step, swap_modulo, swap_bound, swap_pacfg_shift, swap_modify, stride);
+    export address;
+}
 
-:SWAP swap_fixed_address,swap_word_register is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_13_22=0x21a & swap_fixed_address & swap_word_register {
-    local data_word:2 = *[data]:2 swap_fixed_address;
+:SWAP swap_address,swap_word_register is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_13_22=0x21a & swap_address & swap_word_register {
+    local data_word:2 = *[data]:2 swap_address;
     local register_word:2 = swap_word_register;
     swap_word_register = data_word;
-    *[data]:2 swap_fixed_address = register_word;
+    *[data]:2 swap_address = register_word;
     local flags:2 = (EST & 0xffc4) | (zext(data_word == 0) << 3) | (zext(data_word >= 0x8000) << 4);
     local ce1:2;
     local ce2:2;

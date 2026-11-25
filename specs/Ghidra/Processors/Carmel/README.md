@@ -100,9 +100,10 @@ whole accumulators, and address registers; it also supports short DATA
 through `R0` indirect/postincrement and absolute DATA loads into address
 registers. Wide LOAD covers selected accumulator, pointer and configuration
 destinations, including immediate pointer setup that leaves a bound intact.
-Marked wide `SWAP` exchanges one register word with absolute DATA. An
-unbound first address selector uses DATA word `0xffff`, not the literal
-field or a second DATA word.
+Marked wide `SWAP` exchanges one register word with absolute or indirect
+DATA. An unbound first address selector uses DATA word `0xffff`, not the
+literal field. An indirect long selector sets the pointer stride but
+still exchanges only one word at the original address.
 Selected wide address transfers add the immediate displacement to a word
 source, including saved CODE addresses and the `R3` address unit.
 Selected CE2 logical shifts use configuration-word sources and preserve

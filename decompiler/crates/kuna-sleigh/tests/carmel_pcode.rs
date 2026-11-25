@@ -624,6 +624,23 @@ fn wide_swap_exchanges_only_the_word_at_its_effective_data_address() {
 }
 
 #[test]
+fn wide_swap_uses_the_old_pointer_and_a_long_stride_for_word_data() {
+    let mut m = Machine::new(
+        0,
+        &[(0x900000, 0xc34142), (NOP, NOP)],
+        &[(0, 5, 6), (2, 1, 0)],
+        None,
+    );
+    m.seed(&[("A0", 0x12ab436010), ("R0", 0x4045), ("RN0", 3), ("RM0", 7), ("PACFG", 2)]);
+    m.seed_data(0x4045, 0x8123);
+    m.seed_data(0x4046, 0xbc31);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("A0"), m.reg("R0")), (0x12ab438123, 0x403f));
+    assert_eq!((m.data(0x4045), m.data(0x4046)), (0x6010, 0xbc31));
+}
+
+#[test]
 fn link_uses_address_enable_before_its_independently_predicated_store() {
     for (config, table, sp, frame, saved) in [
         (0, 0, 0x4040, 0xc048, 0x2299),
