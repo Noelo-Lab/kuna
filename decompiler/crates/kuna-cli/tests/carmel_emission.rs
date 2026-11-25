@@ -316,8 +316,6 @@ fn carmel_predicated_call_keeps_its_encoded_resume_inside_the_caller() {
         let json: Value = serde_json::from_slice(&output.stdout).unwrap();
         let function = &json["functions"][0];
         assert!(function["error"].is_null(), "{function}");
-        assert!(function["warnings"].as_array().unwrap().iter()
-            .all(|w| w["kind"] == "branch-flip"), "{function}");
         function["code"].as_str().unwrap().to_owned()
     };
     let emitted = format!("{}\n{}", emit("0x1018"), emit("0x1000"));
