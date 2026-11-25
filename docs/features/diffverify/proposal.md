@@ -1,6 +1,8 @@
 # [PROPOSAL] diffverify — differential semantic checking with z3, QEMU and kuna
 
-Status: **proposal**. Design only; nothing is implemented before approval.
+Status: **proposal**. Slices C1, C2, C3 and C4 (on the corpus kuna has) are implemented in
+`decompiler/crates/kuna-verify`. Their measurements and the design changes they forced
+are in `c1-results.md`, `c2-results.md`, `c3-results.md` and `c4-results.md`.
 Evidence, coverage estimates and the hard part: `analysis.md` in this folder.
 
 ## What this makes possible
@@ -29,8 +31,9 @@ candidate change that makes a function newly `DIFFERS` is rejected before review
 
 1. **No home-grown solver or machine emulator.** z3 proves and finds inputs (C5), QEMU
    (through Unicorn where `qemu-user` is unavailable) checks the lift, and kuna's SLEIGH
-   emulator runs the machine code. kuna owns the encoding, the small symbolic executor
-   that builds it (C5), and an interpreter for its own `Funcdata` (Tier C).
+   translator and op semantics run the machine code. kuna owns the encoding, the small
+   symbolic executor that builds it (C5), and an interpreter for its own `Funcdata`
+   (Tier C).
 2. **Dev-only.** A new workspace crate, `kuna-verify`, next to `kuna-harness`. The release
    binary does not link it and its output is byte-identical. Emitted C does not change,
    so there is no option row or DIV entry.
@@ -55,17 +58,23 @@ candidate change that makes a function newly `DIFFERS` is rejected before review
    x86-64 `RDX:RAX` trim is one entry: option `returnpair`, x86-64, the `RDX` half of a
    16-byte return, machine `RDX = 0`. A difference that matches an entry is
    `DIVERGES(entry)`; a different difference under the same option is still `DIFFERS`.
+   C1 found a second entry, `switchrunon-cut-row` (`c1-results.md` §3).
    Each entry counts its matches, so a sudden rise is visible. The list is part of the
    first slice, not an afterthought.
 
 ## Tier C — run both sides (first)
 
 **Machine side.**
-- Run the function's own machine code from its entry with `EmulatePcodeCache` (SLEIGH
-  p-code over the load image) until it returns.
+- Run the function's own machine code from its entry until it returns. Each instruction
+  is lifted by the program's SLEIGH translator, and its ops are evaluated with the
+  `OpBehavior` table `EmulatePcodeCache` uses (`c1-results.md` §6 says why not the engine
+  itself).
 - Inputs: a full random machine state, with seeded edge values (0, -1, sign boundaries,
   shift counts ≥ width). Both sides start from this same raw state: the same register,
   stack and memory values.
+- Argument registers keep the extension the ABI documents for the claimed parameters
+  (`narrowext abi`): a caller cannot pass a 32-bit `int` in a 64-bit RISC-V register
+  without sign-extending it, so no input does.
 - Pointer arguments point into a mapped scratch region with the same contents **and the
   same addresses** on both sides. A pointer that differs between the sides makes every
   address-dependent value differ, which is a harness false positive, not a bug. All of
@@ -106,22 +115,34 @@ function's type, because the binary alone cannot settle it:
 - Stores outside the function's own frame.
 - The ordered call sequence, each call with its callee and arguments.
 
-**Calls.**
-- The machine side runs a stub at each call. The stub records the call, returns a
-  recorded random value in the return registers, clobbers caller-saved registers, and
-  writes recorded random bytes to the memory the call can reach. That set is:
-  - what its pointer arguments point to;
-  - memory that escaped before the call;
-  - every writable global: the image's writable sections, since a callee with no
-    arguments can still change `counter`.
-
-  Without the memory writes, a rule that reuses a value loaded before the call as if the
+**Calls.** As built in C2 (`c2-results.md` §1):
+- Both sides run the same stub at each call. It records the call with kuna's arguments
+  and the memory the callee could read, kills the registers the model lists as
+  killed-by-call and every output register with values fixed by the run and the call's
+  index, and pops `extrapop`.
+- It may write the image's writable data and 4 KiB past every pointer passed to a call
+  so far, lazily, with bytes fixed by the call's index. That is no more than kuna itself
+  treats as changed by a call, so a value kuna keeps across one stays equal unless kuna
+  is wrong to keep it. Writing all memory outside the stack is too much: it rewrites the
+  stack canary, which kuna rightly keeps.
+  Since C4, a pointer into the frame reaches only the local object kuna's symbol gives
+  it. That object is compared at the call, as the bytes outside the stack are
+  (`c4-results.md` §5).
+- Without the memory writes, a rule that reuses a value loaded before the call as if the
   call could not change it would agree with the machine and be missed.
-- The decompiled side replays the same return values and memory writes call by call.
-  INDIRECT is a copy unless the recorded effect wrote that storage.
-- A different call sequence is itself `DIFFERS`.
-- A call whose reachable memory the harness cannot bound (an escaped pointer of unknown
-  extent, writable memory outside the image) is `UNKNOWN(call-effect)`.
+- INDIRECT is moved after the op it guards. Its output is the call's value for a killed
+  register, what memory holds for a stack or memory location, and its input otherwise.
+- Calls are compared in order on the call instruction's address, and a computed target
+  when both sides compute it. A different call sequence is itself `DIFFERS`. An argument
+  is `DIFFERS` against a declared callee prototype and `PROTOTYPE_SUSPECT` against a
+  recovered one.
+- Where kuna has no call at an instruction that calls code in the image (inlined,
+  injected or dropped), the machine runs the callee for real, so a deliberate removal
+  agrees and a wrong one shows in what the callee does.
+- Since C4 (`c4-results.md` §4), a call or tail call to code in the image runs for real
+  on the machine side, and kuna's side replays the effect it recorded. Such callees share
+  a step pool of their own, so they never spend the caller's budget. A callee the model
+  cannot run, or one that exhausts the pool, gets the stub.
 
 **Needs no phase hooks.** The machine side reads the binary and the decompiled side reads
 the finished `Funcdata`. Loops are fine: execution is bounded by a step budget, and a run
@@ -254,7 +275,7 @@ localize than inside a whole-function proof.
 ## Tier L — the lift against the machine (QEMU/Unicorn)
 
 **Compares** one instruction's effect on random state:
-- kuna side: SLEIGH p-code in `EmulatePcodeCache`;
+- kuna side: the SLEIGH p-code and op semantics Tier C's machine side runs;
 - machine side: Unicorn, which is QEMU's TCG as a library and runs on macOS, unlike
   `qemu-user`.
 
@@ -275,6 +296,11 @@ This tier makes Tier C's machine side trustworthy.
 
 ## Tier P — printed C against the binary (later, separate proposal)
 
+Until this tier exists, `AGREES` says the final IR computes what the machine code
+computes, not that the printed C does: a printer fault (a cast, an operator's precedence,
+a type's spelling) is not in the IR. Mutation recall (`mutation.md`) measures IR faults
+only, and the printed C is a separate axis.
+
 1. Compile one function's printed C with a generated header for kuna's
    `undefinedN`/`intN` types.
 2. Link it into a harness next to the original.
@@ -293,14 +319,15 @@ library rather than stubbed.
 
 | slice | scope | done when |
 |---|---|---|
-| C1 | Tier C on register-only leaf functions: no calls and no memory access at all, except loads from read-only image data; same raw state on both sides; physical-ABI and typed-contract return checks; `PROTOTYPE_SUSPECT`; `UNKNOWN(unsupported-op)`; declared-divergence predicates | reverting #794 gives `DIFFERS` against its fixture's source contract; verdict table over `tests/datatests` + `tests/stages`, with per-function and total time |
-| C2 | memory and call effects: stack, pointer-argument and global memory; call stubs that write reachable memory, globals included; `UNKNOWN(call-effect)` | reverting #801 gives `DIFFERS`; a rule that keeps a pre-call load across a call that writes it gives `DIFFERS` |
-| C3 | rule localization over the C1/C2 verdicts | candidate culprits include `subvar_zext` on reverted #794; cost per finding |
-| C4 | corpus run (decbench binaries); precision and recall | precision: triage of every `DIFFERS` into bug / declared divergence / harness bug. Recall: of the ~44 visible P3/P4 fixes that have a fixture, how many give `DIFFERS` when reverted. Published table with both |
-| C5 | concolic inputs: expressions over the inputs on both sides, branch conditions negated through z3, capped paths and queries | a fixture whose difference appears only on one 32-bit value gives `DIFFERS`, where 256 random runs give `AGREES`; new paths reached per function on the corpus |
+| C1 | Tier C on register-only leaf functions: no calls and no memory access at all, except loads from read-only image data; same raw state on both sides; physical-ABI and typed-contract return checks; `PROTOTYPE_SUSPECT`; `UNKNOWN(unsupported-op)`; declared-divergence predicates | reverting #794 gives `DIFFERS` against its fixture's source contract; verdict table over `tests/datatests` + `tests/stages`, with per-function and total time. **Done** (`c1-results.md`) |
+| C2 | memory and call effects: stack, pointer-argument and global memory; call stubs that write reachable memory, globals included | reverting #801 gives `DIFFERS`; a rule that keeps a pre-call load across a call that writes it gives `DIFFERS`. **Done** (`c2-results.md`; both by a fault injected in a local build) |
+| C3 | rule localization over the C1/C2 verdicts | candidate culprits include `subvar_zext` on reverted #794; cost per finding. **Done** (`c3-results.md`: by holding back one rule at a time rather than reverting; 15 of 113 corpus `DIFFERS` named down to a rule application, the rest are action-level) |
+| C4 | corpus run (decbench binaries); precision and recall | precision: triage of every `DIFFERS` into bug / declared divergence / harness bug. Recall: of the ~44 visible P3/P4 fixes that have a fixture, how many give `DIFFERS` when reverted. Published table with both. **Precision and recall done on `tests/datatests` + `tests/stages`** (`c4-results.md`: 7 of 22 restored bugs caught without a contract, 11 with one). **decbench done** (`c4-decbench-results.md`: 28,233 functions of 66 binaries, 80% `AGREES`; 243 `DIFFERS` triaged by class, five new kuna bugs) |
+| C5 | concolic inputs: expressions over the inputs on both sides, branch conditions negated through z3, capped paths and queries | a fixture whose difference appears only on one 32-bit value gives `DIFFERS`, where 256 random runs give `AGREES`; new paths reached per function on the corpus **Done** (`c5-results.md`: `--concolic N`; a value-specific fault caught that 256 random runs miss; on decbench, concolic runs in 49 of 250 sample functions and 105 of 405 `ls` functions) |
 | S1 | Tier S for loop-free `AGREES` functions that pass the static entry condition, under the budget | `EQUIVALENT` and `UNKNOWN(budget)` counts on the same corpus; every `sat` replays or is classified |
 | S2 | bounded loops; budget baseline and budget-regression flag | `EQUIVALENT(≤k)` counts; a deliberately bloating rule change is flagged by budget alone |
-| L1 | Tier L for x86-64, AArch64, ARM | per-arch mismatch report with skip list |
+| L1 | Tier L for x86-64, AArch64, ARM | per-arch mismatch report with skip list. **Done** (`tier-l-results.md`: 8,805 instruction forms against Unicorn; x86-64 differs only in the `AF` the spec does not compute; three SLEIGH spec errors on AArch64 and Thumb) |
+| M | mutation testing of the check: one semantic fault planted at a time in kuna's side of a function that agrees | recall per fault kind, the faults reached counted apart. **Done** (`mutation.md`: 76% of reached mutants caught on the corpus, 74–75% on `ls` and `find`; the gaps it showed in the check are fixed, and claims the check cannot verify are reported as such) |
 | P | separate proposal | — |
 
 C5 comes after C2 and before S1: most of what C1 skips needs C2's memory and call model
@@ -310,9 +337,27 @@ first, and S1 reuses C5's expressions.
 gate only once the `DIFFERS` set is empty or every entry is a declared divergence, with a
 baseline file like `docs/baseline.json`.
 
+That job exists: `make verify-corpus`, and a `continue-on-error` step of the parity-gates
+job in `.github/workflows/tests.yml`. Each function's verdict class over
+`tests/datatests` + `tests/stages` is pinned in `docs/baseline-verify.json`:
+- `AGREES`, `DIFFERS`, `DIVERGES(id)` or `UNKNOWN(reason)`;
+- no run count and no address, so the file changes only when a verdict does.
+
+A function that now differs, or a file that can no longer be checked, is an error
+annotation, and `make verify-corpus` exits 1. Every other change is a notice. The step
+uploads the verdict table and its own recording of the baseline. Re-record:
+`make verify-corpus VERIFY_ARGS='--save-baseline docs/baseline-verify.json'`.
+
+Each file is checked in a worker process of its own. A process that checked
+`kuna-ppc32picimports-abi` or `-reversed-save` before `kuna-ppc32picimports` decompiles
+`check` differently there: as `__stack_chk_fail();` instead of `sub_1800(); return 7;`.
+So verdicts that depended on how files were spread over workers now do not.
+
 ## Cost
 
-Nothing has been measured yet; C1 measures it. What the design expects, and why:
+C1 measured Tier C (`c1-results.md` §5): 3.6 s of checking for 3,979 functions over both
+corpora, and 20.6 s of wall time including every decompile, on 14 worker processes.
+What the design expects for the rest, and why:
 
 - **Tier C** costs one decompile, which a check needs anyway, plus n concrete runs of
   one function (256 by default), each capped by a step budget. There is no solver and

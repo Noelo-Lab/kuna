@@ -386,6 +386,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "kuna-verify"
+version = "0.1.0"
+dependencies = [
+ "kuna-base",
+ "kuna-console",
+ "kuna-decomp",
+ "kuna-num",
+ "kuna-sleigh",
+ "object",
+ "regex",
+ "serde_json",
+ "slotmap",
+]
+
+[[package]]
 name = "kuna-wasm"
 version = "0.1.0"
 dependencies = [

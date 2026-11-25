@@ -90,7 +90,8 @@ concrete execution before symbolic proof, and a declared-divergence list from da
 ## 5. Pieces kuna already has
 
 - **Machine-side emulator.** `kuna-sleigh/src/emulate.rs` has `EmulatePcodeCache`, which
-  runs SLEIGH p-code over the load image.
+  runs SLEIGH p-code over the load image. C1 reuses its op table, not the engine: the
+  engine needs an `Rc<dyn Translate>`, and the `Architecture` owns its translator.
 - **Graph-side op semantics.** `p2_lift/kuna_emulatefunction.rs` has
   `EmulateFunction`/`EmulatePcodeOp`, which evaluates ops over a `Funcdata` syntax tree
   with a varnode-keyed state, for jump-table recovery. Only its per-op arithmetic carries
