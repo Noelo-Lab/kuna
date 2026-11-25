@@ -1,4 +1,6 @@
-//! (kuna pushan) Flat CFG to synthetic p-code.
+//! (kuna devirtualize) Flat CFG to synthetic p-code: how the graph Pushan's
+//! exploration recovers (Sudhir, Basque, Gibbs et al., NDSS 2027; see
+//! [`kuna_devirtualize`](super::kuna_devirtualize)) reaches the decompiler.
 //!
 //! Every recovered node becomes a run of synthetic instructions, one per
 //! native instruction it executed, at addresses no section maps; the
@@ -27,7 +29,7 @@ use OpCode::*;
 use super::kuna_symemu::{classify_space, LiftedInsn, SymTarget, RawOp, Space};
 use super::kuna_symexpr::{ExprArena, ExprId, ExprKind, VarId};
 use super::kuna_symstate::Loc;
-use super::kuna_pushanflow::{FlatCfg, NodeExit, NodeId};
+use super::kuna_devirtflow::{FlatCfg, NodeExit, NodeId};
 
 pub struct EmitConfig {
     pub syn_base: u64,
@@ -899,7 +901,7 @@ impl<'a> Emitter<'a> {
     }
     /// One witness slot per deciding boolean of every atom-based select.
     fn assign_slots(&mut self) {
-        if std::env::var("KUNA_PUSHAN_NO_WITNESS").is_ok() {
+        if std::env::var("KUNA_DEVIRT_NO_WITNESS").is_ok() {
             return;
         }
         let mut atoms: Vec<ExprId> = Vec::new();
@@ -1128,7 +1130,7 @@ impl<'a> Emitter<'a> {
         OverlayOp { opc: op.opc, out: op.out.clone(), ins: op.ins.clone() }
     }
 
-    fn rewrite_insn(&mut self, node: &super::kuna_pushanflow::Node, k: usize, insn: &LiftedInsn) -> (Vec<OverlayOp>, Vec<Option<MemRef>>) {
+    fn rewrite_insn(&mut self, node: &super::kuna_devirtflow::Node, k: usize, insn: &LiftedInsn) -> (Vec<OverlayOp>, Vec<Option<MemRef>>) {
         let is_last = k + 1 == node.insns.len();
         let trace = node.traces.get(k);
         let mut out: Vec<OverlayOp> = Vec::with_capacity(insn.ops.len() + 2);
@@ -1353,7 +1355,7 @@ impl<'a> Emitter<'a> {
 
     /// The value a register holds when control leaves `node`, when the
     /// emulation fixed it along a single path.
-    fn exit_value(&mut self, node: &super::kuna_pushanflow::Node, off: u64, size: u8) -> Option<ExprId> {
+    fn exit_value(&mut self, node: &super::kuna_devirtflow::Node, off: u64, size: u8) -> Option<ExprId> {
         for (k, insn) in node.insns.iter().enumerate().rev() {
             let tr = node.traces.get(k)?;
             if tr.forked {
@@ -1443,7 +1445,7 @@ impl<'a> Emitter<'a> {
     /// may be passing on: it is rewritten as a read of that value, saved at
     /// entry, so the parameter analysis sees what it sees in native code that
     /// leaves the register alone (an argument only when a later one is).
-    fn undefined_arguments(&mut self, node: &super::kuna_pushanflow::Node, out: &mut Vec<OverlayOp>) {
+    fn undefined_arguments(&mut self, node: &super::kuna_devirtflow::Node, out: &mut Vec<OverlayOp>) {
         let args: Vec<(u64, u8)> = self.conf.call_args.iter().copied().filter(|(o, _)| *o != self.conf.sp_reg).collect();
         for (off, size) in args {
             let Some(v) = self.exit_value(node, off, size) else { continue };
@@ -1470,7 +1472,7 @@ impl<'a> Emitter<'a> {
     /// The same for the return register at a return: a function that merely
     /// restores the caller's register, or returns a call's leftovers, returns
     /// nothing.
-    fn undefined_return(&mut self, node: &super::kuna_pushanflow::Node, out: &mut Vec<OverlayOp>) {
+    fn undefined_return(&mut self, node: &super::kuna_devirtflow::Node, out: &mut Vec<OverlayOp>) {
         let (off, size) = (self.conf.return_reg, self.conf.ptr_size);
         let Some(v) = self.exit_value(node, off, size) else { return };
         if self.never_defined(v, off, &mut BTreeSet::new(), 0, &mut Origins::default()) {
@@ -1481,7 +1483,7 @@ impl<'a> Emitter<'a> {
     }
 
     /// What liveness may assume at the node's exit.
-    fn exit_info(&mut self, node: &super::kuna_pushanflow::Node) -> ExitInfo {
+    fn exit_info(&mut self, node: &super::kuna_devirtflow::Node) -> ExitInfo {
         let ptr = self.conf.ptr_size;
         let mut info = ExitInfo::default();
         if !matches!(node.exit, NodeExit::Call { .. } | NodeExit::Return | NodeExit::TailCall(_) | NodeExit::TailCallSlot(_)) {
@@ -1508,7 +1510,7 @@ impl<'a> Emitter<'a> {
         info
     }
 
-    fn append_exit(&mut self, node: &super::kuna_pushanflow::Node, insn: &LiftedInsn, out: &mut Vec<OverlayOp>, kept_flow: bool) {
+    fn append_exit(&mut self, node: &super::kuna_devirtflow::Node, insn: &LiftedInsn, out: &mut Vec<OverlayOp>, kept_flow: bool) {
         match &node.exit {
             NodeExit::Branch(s) => out.push(self.branch_op(syn_addr(self.conf, *s))),
             NodeExit::CondBranch { fall, .. } => out.push(self.branch_op(syn_addr(self.conf, *fall))),
@@ -1702,7 +1704,7 @@ impl<'a> Emitter<'a> {
 
     /// Compile every atom from the node's recorded variable homes; None when
     /// one reads a variable with no home or uses a form p-code cannot state.
-    fn rematerialize(&mut self, node: &super::kuna_pushanflow::Node, atoms: &[ExprId], out: &mut Vec<OverlayOp>) -> Option<BTreeMap<ExprId, VarnodeData>> {
+    fn rematerialize(&mut self, node: &super::kuna_devirtflow::Node, atoms: &[ExprId], out: &mut Vec<OverlayOp>) -> Option<BTreeMap<ExprId, VarnodeData>> {
         let (locs, sp_off) = node.exit_locs.as_ref()?;
         let homes: BTreeMap<u32, (Loc, i128)> = locs.iter().map(|(v, l, k)| (*v, (*l, *k))).collect();
         let mut ops = Vec::new();

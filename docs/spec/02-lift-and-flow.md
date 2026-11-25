@@ -4457,7 +4457,7 @@ instead of its bytes, and after the plain flow `generate_flow` asks it once
 more (chapter [10](10-deobfuscation.md), §10.1). When a body is recovered, the
 flow follower lifts its overlay through the ordinary translator calls, its
 mapped-byte checks accept overlay addresses, and the instruction bound is at
-least 4,000,000. VM devirtualization (`option pushan`) is the plane's first
+least 4,000,000. VM devirtualization (the `devirtualize` technique of `option deobfuscate`) is the plane's first
 deobfuscator (§10.2).
 
 ## Darwin AArch64 stack probes

@@ -9,15 +9,16 @@
 //!   recovered body tells the stages after it).
 //! * The symbolic evaluation kit, which depends on nothing else in the
 //!   decompiler: [`kuna_symexpr`], [`kuna_symstate`], [`kuna_symemu`].
-//! * Deobfuscators: the VM devirtualizer, option `pushan` ([`kuna_pushan`],
-//!   [`kuna_pushanflow`], [`kuna_pushanemit`], [`kuna_pushanrules`]).
+//! * Techniques: the VM devirtualizer, `deobfuscate devirtualize`, a port of
+//!   Pushan (NDSS 2027) ([`kuna_devirtualize`],
+//!   [`kuna_devirtflow`], [`kuna_devirtemit`], [`kuna_residuerules`]).
 
 pub mod kuna_deobf; // (kuna deobf) stage hooks and the deobfuscator registry
 pub mod kuna_body; // (kuna deobf) a recovered body's facts and analysis policy
 pub mod kuna_symexpr; // (kuna deobf) symbolic expression arena
 pub mod kuna_symstate; // (kuna deobf) byte-granular abstract registers and memory
 pub mod kuna_symemu; // (kuna deobf) symbolic p-code emulator
-pub mod kuna_pushanflow; // (kuna pushan) VPC-sensitive flat-CFG exploration
-pub mod kuna_pushanemit; // (kuna pushan) flat CFG -> synthetic p-code overlay
-pub mod kuna_pushan; // (kuna pushan) option `pushan`: devirtualize VM-protected functions
-pub mod kuna_pushanrules; // (kuna pushan) arithmetic residue of a devirtualized body
+pub mod kuna_devirtflow; // (kuna devirtualize) VPC-sensitive flat-CFG exploration
+pub mod kuna_devirtemit; // (kuna devirtualize) flat CFG -> synthetic p-code overlay
+pub mod kuna_devirtualize; // (kuna devirtualize) technique `devirtualize`: VM-protected functions (port of Pushan, NDSS 2027)
+pub mod kuna_residuerules; // (kuna devirtualize) arithmetic residue of a devirtualized body

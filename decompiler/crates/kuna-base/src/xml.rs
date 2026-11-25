@@ -2320,9 +2320,9 @@ mod tests {
         // and kuna-retvalue / a result its callers read is returned though stored or loaded through
         // and kuna-rex-before-prefix / an x86-64 REX prefix that a legacy prefix follows is ignored
         // and kuna-returndup-auto / an unoptimized function keeps the returns its binary records
-        // and kuna-pushan / a VM-protected entry stub devirtualized (option pushan)
-        // and kuna-pushan-sound / a devirtualized body says nothing false about its program
-        // and kuna-pushan-interp / an in-function bytecode interpreter devirtualized (option pushan)
+        // and kuna-devirtualize / a VM-protected entry stub devirtualized (deobfuscate devirtualize)
+        // and kuna-devirtualize-sound / a devirtualized body says nothing false about its program
+        // and kuna-devirtualize-interp / an in-function bytecode interpreter devirtualized (deobfuscate devirtualize)
         // and kuna-spillptr-loadguard / a LOAD through a spilled stack pointer is guarded
         // and kuna-piececover / a byte saved across a wider write of its slot keeps its old value
         assert_eq!(count, 914, "corpus file count drifted");

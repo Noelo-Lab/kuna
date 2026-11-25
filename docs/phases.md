@@ -65,7 +65,7 @@ stage hooks it needs: the front (before P2's flow follower, where it can hand ov
 body in place of the function's bytes), after the plain flow, the P3 rule pool, and a final
 audit. The phases after the flow read one contract, the recovered body's facts and analysis
 policy, and never ask which deobfuscator produced it. Its first member is the VM devirtualizer
-(`option pushan`). Spec: `docs/spec/10-deobfuscation.md`.
+(`option deobfuscate`, technique `devirtualize`). Spec: `docs/spec/10-deobfuscation.md`.
 
 The **program-prep analyses** that sit *outside* this phase model (the loader/analyzer tier
 Ghidra runs as "Run Analysis": PLT/GOT markup, strings, DWARF, demangling, function-start

@@ -1,4 +1,4 @@
-//! (kuna pushan) Constraint-free symbolic emulation of lifted p-code.
+//! (kuna devirtualize) Constraint-free symbolic emulation of lifted p-code.
 //!
 //! One instruction at a time, the emulator runs the SLEIGH p-code of a native
 //! instruction over a [`State`], computing every value as an expression in the

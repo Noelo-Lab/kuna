@@ -1227,7 +1227,8 @@ fn usage() {
         "usage: kuna decompile <binary> <name|0xaddr> [--addr] [--json] [--raw] [--regions] \\\n\
          \x20                     [--no-vars] [--omit aliases,line_mappings,variables,types] \\\n\
          \x20                     [--language auto|c|rust|go] [--mode auto|reliable|aggressive|fast] \\\n\
-         \x20                     [--option N V].. [--kassert ARGS].. \\\n\
+         \x20                     [--option N V].. [--deobfuscate auto|off|TECHNIQUE,..] \\\n\
+         \x20                     [--kassert ARGS].. \\\n\
          \x20                     [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                     [--assert DIRECTIVE|@FILE].. [--assert-strict] \\\n\
          \x20                     [--types FILE.h|DIR].. [--types-cpp CC] \\\n\
@@ -1255,6 +1256,11 @@ fn usage() {
          `kuna catalog` lists them and `kuna docs options` explains the tiers.\n\
          --mode applies an option preset (`kuna modes`); omitted, `auto` picks one by\n\
          input size.  Explicit --option values win over the preset.\n\
+         --deobfuscate LIST selects the deobfuscation techniques (it abbreviates\n\
+         --option deobfuscate LIST): `auto`, the default, lets each act where it\n\
+         detects its obfuscation; `off` shows the protected code as it is; technique\n\
+         names separated by commas (`devirtualize`: VM-protected functions) run those\n\
+         alone, on this function, without waiting for their detection.\n\
          --language selects the output language; omitted, it follows the binary.\n\
          --max-fn-memory MiB stops the decompile once the process doing it holds\n\
          more than MiB resident and the function added 64 MiB or more, and\n\

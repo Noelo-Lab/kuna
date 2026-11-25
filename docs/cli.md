@@ -242,12 +242,23 @@ kuna decompile ./stripped.bin 0x401040 --addr
 kuna decompile ./a.out main --option compareform canonical
 kuna decompile ./sparc.elf main --option returnpair single
 kuna decompile ./a.out main --language rust
+kuna decompile ./protected.exe main --deobfuscate off
 ```
 
 Drives `decomp_dbg` as a subprocess and captures `print C` via `openfile write`, so
 interactive prompts never pollute the output. `--option NAME VALUE` (repeatable) and
 `--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
 auto|reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
+`--deobfuscate LIST` selects the deobfuscation techniques and is accepted by
+every subcommand that takes `--option`, of which it abbreviates one, `--option
+deobfuscate LIST`. `auto` (the default) lets each technique act on the
+functions where it detects its obfuscation, `off` decompiles the protected code
+as it is, and technique names separated by commas run those alone, on the
+requested function, without waiting for their detection. The one technique so
+far is `devirtualize`, which recovers a function protected by a VM-based
+obfuscator (VMProtect, Themida, Tigress Virtualize) with the Pushan algorithm
+(NDSS 2027); the header of a function it recovered starts with `warn:
+devirtualize:`. An unknown technique is an error that lists the known ones.
 For an AArch64 target (any compiler spec with `<prefersplit>`), a single-function
 decompile also bootstraps its direct callees' recovered parameter types — at most
 32, no recursion, types only — so a split-register argument takes the callee's

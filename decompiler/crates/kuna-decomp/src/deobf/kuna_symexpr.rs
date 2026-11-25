@@ -1,4 +1,4 @@
-//! (kuna pushan) Symbolic expressions for the devirtualizer's constraint-free
+//! (kuna devirtualize) Symbolic expressions for the devirtualizer's constraint-free
 //! emulation (Sudhir et al., "Pushan", NDSS 2027; angr PR #7680).
 //!
 //! A hash-consed DAG of p-code operations over symbolic variables.  Every node

@@ -824,14 +824,14 @@ pub struct Architecture {
     /// (kuna) Reconstruct a compiler-lowered comparison cascade into a switch
     /// (C++ `recover_lowered_switch`).
     pub recover_lowered_switch: bool,
-    /// (kuna `pushan`) Devirtualize VM-protected functions: 0 off, 1 auto, 2 on.
-    pub pushan_mode: u8,
+    /// (kuna deobf) Which deobfuscation techniques run (option `deobfuscate`).
+    pub deobfuscate: crate::kuna_deobf::Selection,
     /// (kuna deobf) Recovered bodies by entry offset (restarts re-flow); an
     /// option that changes what a deobfuscator recovers clears it.
     pub deobf_bodies: std::collections::BTreeMap<u64, Rc<crate::kuna_body::RecoveredBody>>,
-    /// (kuna `pushan`) The image's executable sections large enough to hold an
-    /// interpreter, computed once; `auto` never looks further without two.
-    pub pushan_vm_sections: Option<Vec<(u64, u64)>>,
+    /// (kuna devirtualize) The image's executable sections large enough to hold
+    /// an interpreter, computed once; detection never looks further without two.
+    pub devirt_vm_sections: Option<Vec<(u64, u64)>>,
     /// (kuna) An unread zero element right after an open stack character
     /// array is that array's terminator, and the array ends after it (option
     /// `nulterminator`).  See [`crate::p6_variables::kuna_nulterminator`].
@@ -2562,9 +2562,9 @@ impl Architecture {
             libc_names: false, // (kuna) option libcnames; reset_defaults sets the shipped default
             recover_array_stride: false,
             recover_lowered_switch: false,
-            pushan_mode: 0, // (kuna) option pushan; reset_defaults sets the shipped default
+            deobfuscate: crate::kuna_deobf::Selection::Only(Vec::new()), // (kuna) option deobfuscate; reset_defaults sets the shipped default
             deobf_bodies: std::collections::BTreeMap::new(),
-            pushan_vm_sections: None,
+            devirt_vm_sections: None,
             nul_terminator: false,
             end_ptr_bound: true,
             cast_object: false, // (kuna) option castobject; reset_defaults sets the shipped default
@@ -2914,7 +2914,7 @@ impl Architecture {
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
-        self.pushan_mode = crate::kuna_pushan::MODE_AUTO; // (kuna) option pushan default auto: a function whose entry transfers into another executable section is devirtualized
+        self.deobfuscate = crate::kuna_deobf::Selection::Auto; // (kuna) option deobfuscate default auto: each technique acts where it detects its obfuscation
         self.lowered_switch_linear = false; // (kuna) `loweredswitch linear` is opt-in: a linear chain also reads as a hand-written if/else-if
         self.lowered_switch_tree = false; // (kuna) `loweredswitch tree` is opt-in: the 16-case cap is the structurer's fail-safe
         self.cast_object = true; // (kuna) option castobject default-on: a stack local whose address only fills declared int * parameters, whose readers agree, is declared int; evidence in docs/features/castobject/default-on-evaluation.md

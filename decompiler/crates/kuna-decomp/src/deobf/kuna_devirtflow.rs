@@ -1,6 +1,8 @@
-//! (kuna pushan) VPC-sensitive flat-CFG recovery.
+//! (kuna devirtualize) VPC-sensitive flat-CFG recovery.
 //!
-//! The paper's stage 1.  A node is a native address plus the virtual program
+//! Stage 1 of Pushan (Sudhir, Basque, Gibbs et al., NDSS 2027; angr PR #7680),
+//! the paper [`kuna_devirtualize`](super::kuna_devirtualize) ports.  A node
+//! is a native address plus the virtual program
 //! counter the interpreter holds when it gets there (and the register holding
 //! it, when it is one), so every bytecode instruction's handler copy is its
 //! own block and the recovered graph is the protected program's control flow
@@ -217,19 +219,19 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        let trace = std::env::var("KUNA_PUSHAN_TRACE")
+        let trace = std::env::var("KUNA_DEVIRT_TRACE")
             .ok()
             .and_then(|p| std::fs::File::create(p).ok())
             .map(|f| std::rc::Rc::new(std::cell::RefCell::new(f)));
         let knob = |name: &str, default: u64| std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default);
         Config {
-            max_nodes: knob("KUNA_PUSHAN_MAX_NODES", 200_000) as usize,
+            max_nodes: knob("KUNA_DEVIRT_MAX_NODES", 200_000) as usize,
             max_block_insns: 4096,
             max_rounds: 40,
             max_select_targets: 16,
-            max_work: knob("KUNA_PUSHAN_MAX_WORK", MAX_WORK),
-            max_memory: knob("KUNA_PUSHAN_MAX_MEMORY", MAX_MEMORY),
-            max_seconds: knob("KUNA_PUSHAN_SECONDS", MAX_SECONDS),
+            max_work: knob("KUNA_DEVIRT_MAX_WORK", MAX_WORK),
+            max_memory: knob("KUNA_DEVIRT_MAX_MEMORY", MAX_MEMORY),
+            max_seconds: knob("KUNA_DEVIRT_SECONDS", MAX_SECONDS),
             trace,
         }
     }
@@ -1418,7 +1420,7 @@ impl<'a> Explorer<'a> {
                 for u in &trace.userops {
                     let _ = writeln!(t.borrow_mut(), "        userop: {u}");
                 }
-                if let Ok(mode) = std::env::var("KUNA_PUSHAN_TRACE_OPS") {
+                if let Ok(mode) = std::env::var("KUNA_DEVIRT_TRACE_OPS") {
                     for (i, op) in insn.ops.iter().enumerate() {
                         if let Some(Some(v)) = trace.op_out.get(i) {
                             if mode == "all" || self.arena.is_const(*v).is_none() {

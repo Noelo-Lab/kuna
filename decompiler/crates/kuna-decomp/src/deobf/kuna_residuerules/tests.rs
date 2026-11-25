@@ -168,8 +168,8 @@ fn root_inputs(fd: &Funcdata, root: VarnodeId) -> Vec<VarnodeId> {
     (0..op.num_input()).map(|i| op.get_in(i).unwrap()).collect()
 }
 
-fn logic() -> RulePushanLogic {
-    RulePushanLogic::new("analysis")
+fn logic() -> RuleResidueLogic {
+    RuleResidueLogic::new("analysis")
 }
 
 #[test]
@@ -331,8 +331,8 @@ fn ordinary_expressions_and_other_functions_are_left_alone() {
     let nb2 = o.add(na2, b);
     let sub = o.not(nb2);
     assert_eq!(check(&mut fd, &mut logic(), or, &[a, b]), None);
-    assert_eq!(check(&mut fd, &mut RulePushanPiece::new("analysis"), piece, &[a]), None);
-    assert_eq!(check(&mut fd, &mut RulePushanArith::new("analysis"), sub, &[a, b]), None);
+    assert_eq!(check(&mut fd, &mut RuleResiduePiece::new("analysis"), piece, &[a]), None);
+    assert_eq!(check(&mut fd, &mut RuleResidueArith::new("analysis"), sub, &[a, b]), None);
 }
 
 #[test]
@@ -344,7 +344,7 @@ fn not_of_not_plus_is_a_subtraction() {
     let nx = o.not(x);
     let sum = o.add(nx, y);
     let root = o.not(sum);
-    let mut arith = RulePushanArith::new("analysis");
+    let mut arith = RuleResidueArith::new("analysis");
     assert_eq!(check(&mut fd, &mut arith, root, &[x, y]), Some(CPUI_INT_ADD));
     let inputs = root_inputs(&fd, root);
     assert_eq!(inputs[0], x);
@@ -367,7 +367,7 @@ fn negations_around_a_rotate_fold_into_one_constant() {
         let one = k(o.fd, 4, 1);
         o.add(nx, one)
     };
-    let mut arith = RulePushanArith::new("analysis");
+    let mut arith = RuleResidueArith::new("analysis");
     assert_eq!(check(&mut fd, &mut arith, root, &[r]), Some(CPUI_INT_ADD));
     let inputs = root_inputs(&fd, root);
     assert_eq!(constant_value(&fd, inputs[1]), Some(0xc65cfe5d));
@@ -391,7 +391,7 @@ fn pieces_of_one_shifted_value_rejoin() {
     let top = o.shr(v, 0x33);
     let hi = o.sub(top, 0, 2);
     let root = o.op(CPUI_PIECE, 8, &[hi, lo]);
-    let mut piece = RulePushanPiece::new("analysis");
+    let mut piece = RuleResiduePiece::new("analysis");
     assert_eq!(check(&mut fd, &mut piece, root, &[v]), Some(CPUI_COPY));
     assert_eq!(root_inputs(&fd, root), vec![shifted]);
 }
@@ -422,7 +422,7 @@ fn piece_rejoin_preserves_every_bit() {
                         o.sub(s2, 0, hi)
                     };
                     let root = o.op(CPUI_PIECE, lo + hi, &[hi_vn, lo_vn]);
-                    if check(&mut fd, &mut RulePushanPiece::new("analysis"), root, &[v]).is_some() {
+                    if check(&mut fd, &mut RuleResiduePiece::new("analysis"), root, &[v]).is_some() {
                         fired += 1;
                     }
                 }
@@ -463,7 +463,7 @@ fn an_addition_of_disjoint_values_never_carries() {
     let low = o.mask(y, 0xff);
     let disjoint = o.op(CPUI_INT_CARRY, 1, &[hi, low]);
     let plain = o.op(CPUI_INT_CARRY, 1, &[x, y]);
-    let mut rule = RulePushanCarry::new("analysis");
+    let mut rule = RuleResidueCarry::new("analysis");
     assert_eq!(check(&mut fd, &mut rule, carry, &[x]), Some(CPUI_COPY));
     assert_eq!(check(&mut fd, &mut rule, overflow, &[x]), Some(CPUI_COPY));
     fd.vbank_mut().get_mut(low).unwrap().set_nz_mask(0xff);
@@ -483,7 +483,7 @@ fn the_carry_of_an_added_complement_is_an_unsigned_compare() {
     let left = o.op(CPUI_INT_CARRY, 1, &[ny2, x]);
     let ny3 = o.not(y);
     let overflow = o.op(CPUI_INT_SCARRY, 1, &[x, ny3]);
-    let mut rule = RulePushanCarry::new("analysis");
+    let mut rule = RuleResidueCarry::new("analysis");
     assert_eq!(check(&mut fd, &mut rule, right, &[x, y]), Some(CPUI_INT_LESS));
     assert_eq!(check(&mut fd, &mut rule, left, &[x, y]), Some(CPUI_INT_LESS));
     assert_eq!(check(&mut fd, &mut rule, overflow, &[x, y]), None);
@@ -547,7 +547,7 @@ fn table(fd: &Funcdata, nodes: &[VarnodeId], a: VarnodeId, b: VarnodeId) -> Vec<
 
 /// Random trees of byte-wide AND/OR/XOR/NOT/ADD/SUB/negation/scaling, shifts,
 /// truncations, zero extensions, PIECEs and carries over two byte inputs and
-/// constants, with every non-zero mask exact: each pushan rule, applied to
+/// constants, with every non-zero mask exact: each residue rule, applied to
 /// each op, must leave the op's value unchanged on all 65536 input pairs.
 #[test]
 fn every_rule_rewrite_is_an_identity_on_all_byte_inputs() {
@@ -603,10 +603,10 @@ fn every_rule_rewrite_is_an_identity_on_all_byte_inputs() {
         }
         for (i, &n) in ops.iter().enumerate() {
             let rules: [Box<dyn Rule>; 4] = [
-                Box::new(RulePushanLogic::new("analysis")),
-                Box::new(RulePushanArith::new("analysis")),
-                Box::new(RulePushanPiece::new("analysis")),
-                Box::new(RulePushanCarry::new("analysis")),
+                Box::new(RuleResidueLogic::new("analysis")),
+                Box::new(RuleResidueArith::new("analysis")),
+                Box::new(RuleResiduePiece::new("analysis")),
+                Box::new(RuleResidueCarry::new("analysis")),
             ];
             for (r, mut rule) in rules.into_iter().enumerate() {
                 let Some(op) = fd.vbank().get(n).unwrap().get_def() else { continue };

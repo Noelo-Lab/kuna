@@ -1,28 +1,49 @@
-//! (kuna pushan) Devirtualization of VM-protected functions — `option pushan`.
+//! (kuna devirtualize) Devirtualization of VM-protected functions: the
+//! `devirtualize` technique of `option deobfuscate`.
 //!
-//! Port of Pushan (Sudhir et al., "Pushan: Trace-Free Deobfuscation of
-//! Virtualization-Obfuscated Binaries", NDSS 2027; angr PR #7680) onto p-code.
+//! # The algorithm is Pushan's
+//!
+//! This technique is a port of **Pushan**: Sudhir, Basque, Gibbs et al.,
+//! "Pushan: Trace-Free Deobfuscation of Virtualization-Obfuscated Binaries",
+//! NDSS 2027, and of its reference implementation, angr PR #7680
+//! (`VMDeobfuscation` / `CFGVMDeobfuscation`).  The code is named for what the
+//! technique does, but the method is the paper's and none of it is kuna's
+//! invention: the interpreter is emulated symbolically with no path
+//! constraints, every block is keyed by its native address and the virtual
+//! program counter (VPC sensitivity), locations that differ where paths meet
+//! are symbolized over further rounds until the graph is stable, and the
+//! protected program's own control flow comes out as a flat graph that an
+//! ordinary decompiler then simplifies.  What is kuna's is the carrier: p-code
+//! in place of VEX, an evaluation-based identity test in place of the solver,
+//! and the synthetic-overlay emission.  Anyone changing the exploration
+//! ([`kuna_devirtflow`](super::kuna_devirtflow)), the emission
+//! ([`kuna_devirtemit`](super::kuna_devirtemit)) or the residue rules
+//! ([`kuna_residuerules`](super::kuna_residuerules)) should read the paper
+//! first; `docs/spec/10-deobfuscation.md` §10.2 maps its stages onto this code.
+//!
+//! # What it does
+//!
 //! A function whose entry jumps into the interpreter of a VM-based protector
 //! (VMProtect, Themida) decompiles, by default, to the interpreter's dispatch
 //! loop or to a two-line stub.  With this on, the flow follower is handed a
 //! synthetic program instead: the protected function's own control flow,
-//! recovered by VPC-sensitive, constraint-free symbolic emulation of the
-//! interpreter ([`kuna_pushanflow`](super::kuna_pushanflow)) and emitted as
-//! p-code with the interpreter's constant machinery folded away
-//! ([`kuna_pushanemit`](super::kuna_pushanemit)).  The rest of the decompiler
-//! (SSA, dead code, stack variables, types, structuring) does the paper's
-//! stage 2 and 3 on that program unchanged.
+//! recovered by the exploration and emitted as p-code with the interpreter's
+//! constant machinery folded away.  The rest of the decompiler (SSA, dead
+//! code, stack variables, types, structuring) does the paper's stage 2 and 3
+//! on that program unchanged.
 //!
 //! It is a member of the deobfuscation plane
-//! ([`kuna_deobf`](super::kuna_deobf)): [`Pushan`] recovers the body at the
-//! front, or after the plain flow for an interpreter that is the function's
-//! own body, states the body's facts and analysis policy, and audits the
-//! decompiled result.
+//! ([`kuna_deobf`](super::kuna_deobf)): [`Devirtualize`] recovers the body at
+//! the front, or after the plain flow for an interpreter that is the
+//! function's own body, states the body's facts and analysis policy, and
+//! audits the decompiled result.
 //!
-//! `auto` (the default) devirtualizes a function whose direct native flow
-//! reaches a branch or call into a separate executable section of at least
-//! 64 KiB — the stub a protector leaves at the original entry; `on` treats the requested function
-//! as protected regardless; `off` restores the plain flow.
+//! Under `deobfuscate auto` (the default) it acts on a function whose direct
+//! native flow reaches a branch or call into a separate executable section of
+//! at least 64 KiB, the stub a protector leaves at the original entry, and on
+//! one whose plain flow is an interpreter over file data.  Named
+//! (`deobfuscate devirtualize`), it treats the requested function as
+//! protected regardless.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -30,7 +51,6 @@ use std::io::Write;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::int4;
 use kuna_base::space::AddrSpace;
 use kuna_num::opcodes::OpCode;
@@ -39,37 +59,21 @@ use kuna_sleigh::kuna_pcodeoverlay::PcodeOverlay;
 use kuna_sleigh::loadimage::{section_flags, LoadImageSection};
 use kuna_sleigh::translate::{PcodeEmit, UniqueLayout};
 
-use super::kuna_pushanemit::{emit, EmitConfig, EmitStats};
+use super::kuna_devirtemit::{emit, EmitConfig, EmitStats};
 use super::kuna_symemu::{classify_space, LiftedInsn, SymTarget, RawOp, Space};
-use super::kuna_pushanflow::{Abi, Config, Explorer, NodeExit, Stats};
+use super::kuna_devirtflow::{Abi, Config, Explorer, NodeExit, Stats};
 use super::kuna_symstate::SymImage;
 use super::kuna_body::{BodyFacts, BodyPolicy, RecoveredBody};
-use super::kuna_deobf::Deobfuscator;
+use super::kuna_deobf::{Deobfuscator, Engage};
 use crate::architecture::Architecture;
 use crate::fspec::EXTRAPOP_UNKNOWN;
 use crate::funcdata::Funcdata;
 
-pub const MODE_OFF: u8 = 0;
-pub const MODE_AUTO: u8 = 1;
-pub const MODE_ON: u8 = 2;
-
-pub struct OptionPushan;
-
-impl OptionPushan {
-    pub const NAME: &'static str = "pushan";
-
-    pub fn apply(&self, p1: &str) -> KunaResult<(u8, String)> {
-        match p1 {
-            "off" | "false" | "no" => Ok((MODE_OFF, "VM devirtualization turned off".into())),
-            "auto" => Ok((MODE_AUTO, "VM devirtualization set to auto (protected entry stubs)".into())),
-            "on" | "true" | "yes" | "force" => Ok((MODE_ON, "VM devirtualization forced on".into())),
-            other => Err(KunaError::parse(format!("pushan expects auto|on|off, got {other}"))),
-        }
-    }
-}
+/// The technique's name in `option deobfuscate`.
+pub const NAME: &str = "devirtualize";
 
 /// The devirtualized program for one function entry.
-pub struct PushanProgram {
+pub struct DevirtProgram {
     pub entry: u64,
     /// Registers (offset, size) an external call leaves undefined.
     pub call_kills: Vec<(u64, u8)>,
@@ -692,7 +696,7 @@ pub fn detect_vm_entry(target: &ArchTarget<'_>, entry: u64) -> Option<u64> {
     None
 }
 
-impl PushanProgram {
+impl DevirtProgram {
     /// What the recovered program may be missing or get wrong, for the
     /// function's header ([`caveats_of`]).
     pub fn caveats(&self) -> Option<String> {
@@ -731,7 +735,7 @@ pub fn caveats_of(s: &Stats) -> Option<String> {
     if s.dropped_stores > 0 {
         out.push(format!("{} store{} to unresolved addresses not modelled", s.dropped_stores, if s.dropped_stores == 1 { "" } else { "s" }));
     }
-    (!out.is_empty()).then(|| format!("pushan: incomplete: {}", out.join(", ")))
+    (!out.is_empty()).then(|| format!("devirtualize: incomplete: {}", out.join(", ")))
 }
 
 /// The process's peak resident set (`VmHWM`), for the exploration log.
@@ -758,9 +762,9 @@ fn import_thunk(target: &ArchTarget<'_>, addr: u64) -> bool {
 /// keep ECX and EDX as possible arguments besides the stack: `__fastcall` and
 /// `__thiscall` pass them, and MSVC's `__security_check_cookie` takes the
 /// cookie in ECX.
-pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, String> {
+pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<DevirtProgram, String> {
     let target = ArchTarget::new(arch, entry).ok_or("no code space")?;
-    let abi = abi_for(arch, &target).ok_or("unsupported architecture for pushan (x86/x86-64 only)")?;
+    let abi = abi_for(arch, &target).ok_or("unsupported architecture for devirtualization (x86/x86-64 only)")?;
     let sp_reg = abi.sp;
     let ptr = abi.ptr_size;
     let mut live_at_exit = abi.callee_saved.clone();
@@ -824,7 +828,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
         return_reg,
         call_arg_bytes: if ptr == 8 { 0xa8 } else { 0x44 },
         call_home_bytes: if ptr == 8 && target.teb.is_some() { 0x20 } else { 0 },
-        eliminate_dead: std::env::var("KUNA_PUSHAN_NO_DCE").is_err(),
+        eliminate_dead: std::env::var("KUNA_DEVIRT_NO_DCE").is_err(),
         slot_base: {
             let mut regs = std::collections::BTreeMap::new();
             arch.translate().get_all_registers(&mut regs);
@@ -846,9 +850,9 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
         .call_args
         .iter()
         .filter(|(o, _)| *o != sp_reg)
-        .map(|&(off, size)| (super::kuna_pushanemit::undef_register(&conf, off), size))
+        .map(|&(off, size)| (super::kuna_devirtemit::undef_register(&conf, off), size))
         .collect();
-    placeholders.push((super::kuna_pushanemit::undef_register(&conf, return_reg), ptr));
+    placeholders.push((super::kuna_devirtemit::undef_register(&conf, return_reg), ptr));
     call_kills.extend(placeholders.iter().copied());
     let explored_hwm = peak_rss();
     let (overlay, emit_stats) = emit(&cfg, &mut explorer.arena, &target, &conf, entry);
@@ -882,7 +886,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
         emit_stats.dead,
         emit_stats.privatized
     ));
-    if let Ok(path) = std::env::var("KUNA_PUSHAN_DUMP") {
+    if let Ok(path) = std::env::var("KUNA_DEVIRT_DUMP") {
         if let Ok(mut f) = std::fs::File::create(&path) {
             for (addr, insn) in &overlay.insns {
                 let _ = writeln!(f, "{addr:#x}: {} {}", insn.mnemonic, insn.body);
@@ -906,12 +910,12 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
             }
         }
     }
-    if let Ok(path) = std::env::var("KUNA_PUSHAN_LOG") {
+    if let Ok(path) = std::env::var("KUNA_DEVIRT_LOG") {
         if let Ok(mut f) = std::fs::File::create(&path) {
             for l in &log {
                 let _ = writeln!(f, "{l}");
             }
-            let mut keys: Vec<(usize, &super::kuna_pushanflow::NodeKey)> =
+            let mut keys: Vec<(usize, &super::kuna_devirtflow::NodeKey)> =
                 explorer.to_symbolize.iter().map(|(k, v)| (v.len(), k)).collect();
             keys.sort_by(|a, b| b.0.cmp(&a.0));
             let _ = writeln!(f, "escaped frame offsets: {:?}", cfg.escapes);
@@ -926,7 +930,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
             }
             for (i, n) in cfg.nodes.iter().enumerate() {
                 let self_loop = matches!(n.exit, NodeExit::Branch(s) if s as usize == i);
-                let dump = std::env::var("KUNA_PUSHAN_LOG_INSNS").is_ok()
+                let dump = std::env::var("KUNA_DEVIRT_LOG_INSNS").is_ok()
                     || self_loop
                     || matches!(n.exit, NodeExit::Unresolved(_) | NodeExit::Halt(_));
                 let _ = writeln!(
@@ -955,7 +959,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
                         let _ = writeln!(f, "    [{k}] {:#x} {}", insn.addr, insn.asm);
                         if let Some(t) = n.traces.get(k) {
                             for a in &t.accesses {
-                                let sym = if a.addr.is_none() && std::env::var("KUNA_PUSHAN_LOG_SYM").is_ok() {
+                                let sym = if a.addr.is_none() && std::env::var("KUNA_DEVIRT_LOG_SYM").is_ok() {
                                     let r = explorer.arena.affine_probe(a.addr_expr);
                                     format!(" probe={r:?} expr={}", explorer.arena.fmt(a.addr_expr).chars().take(400).collect::<String>())
                                 } else {
@@ -1001,7 +1005,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
         .collect();
     slots.sort_unstable();
     slots.dedup();
-    Ok(PushanProgram {
+    Ok(DevirtProgram {
         entry,
         call_kills,
         placeholders,
@@ -1038,7 +1042,7 @@ fn describe_exit(e: &NodeExit) -> String {
 }
 
 /// [`devirtualize`] off the drive's clock ([`crate::decompile_drive::uncharge`]).
-fn devirtualize_unclocked(arch: &mut Architecture, entry: u64) -> Result<PushanProgram, String> {
+fn devirtualize_unclocked(arch: &mut Architecture, entry: u64) -> Result<DevirtProgram, String> {
     let started = std::time::Instant::now();
     let program = devirtualize(arch, entry);
     crate::decompile_drive::uncharge(arch, started.elapsed());
@@ -1059,7 +1063,7 @@ fn devirtualize_unclocked(arch: &mut Architecture, entry: u64) -> Result<PushanP
 /// as aliased.  The trials are judged by their data flow alone, as angr's
 /// call-site maker reads the slots above the return address.  The structure
 /// is rebuilt once the interpreter's dead stores are gone, and the residue
-/// rules ([`kuna_pushanrules`](super::kuna_pushanrules)) apply.
+/// rules ([`kuna_residuerules`](super::kuna_residuerules)) apply.
 const POLICY: BodyPolicy = BodyPolicy {
     guard_stack_stores: true,
     join_stack_inputs: true,
@@ -1069,7 +1073,7 @@ const POLICY: BodyPolicy = BodyPolicy {
     residue_rules: true,
 };
 
-impl PushanProgram {
+impl DevirtProgram {
     /// The program as the plane's recovered body.  Every external call kills
     /// the ABI's scratch registers outright: the interpreter re-saves its
     /// whole context right after each call, reading registers the callee just
@@ -1082,7 +1086,7 @@ impl PushanProgram {
     /// is incidental.
     fn into_body(self) -> RecoveredBody {
         let mut header = vec![format!(
-            "pushan: devirtualized VM-protected function ({} nodes, {} instructions, {} rounds{}{})",
+            "devirtualize: VM-protected function recovered ({} nodes, {} instructions, {} rounds{}{})",
             self.stats.nodes,
             self.stats.insns,
             self.stats.rounds,
@@ -1092,7 +1096,7 @@ impl PushanProgram {
         header.extend(self.caveats());
         let entries = &self.emit_stats.entry_regs;
         RecoveredBody {
-            by: OptionPushan::NAME,
+            by: NAME,
             overlay: Rc::clone(&self.overlay),
             facts: BodyFacts {
                 call_kills: self.call_kills.iter().map(|&(o, s)| (o, s as int4)).collect(),
@@ -1111,28 +1115,24 @@ impl PushanProgram {
 }
 
 /// The VM devirtualizer as a member of the deobfuscation plane.
-pub struct Pushan;
+pub struct Devirtualize;
 
-impl Deobfuscator for Pushan {
+impl Deobfuscator for Devirtualize {
     fn name(&self) -> &'static str {
-        OptionPushan::NAME
+        NAME
     }
 
-    /// `on` devirtualizes the function; `auto` only one whose direct native
-    /// flow enters an interpreter section ([`detect_vm_entry`]).  A program
-    /// that never entered an interpreter is dropped: the plain flow is the
-    /// right answer.
-    fn front(&self, arch: &mut Architecture, fd: &mut Funcdata) -> Option<RecoveredBody> {
-        let mode = arch.pushan_mode;
+    /// Forced, the function is devirtualized; on detection, only one whose
+    /// direct native flow enters an interpreter section ([`detect_vm_entry`]).
+    /// A program that never entered an interpreter is dropped: the plain flow
+    /// is the right answer.
+    fn front(&self, arch: &mut Architecture, fd: &mut Funcdata, how: Engage) -> Option<RecoveredBody> {
         let entry = fd.get_address().get_offset();
-        if mode == MODE_OFF {
-            return None;
-        }
-        if mode == MODE_AUTO {
-            if arch.pushan_vm_sections.is_none() {
-                arch.pushan_vm_sections = Some(large_code_sections(arch));
+        if how == Engage::Detect {
+            if arch.devirt_vm_sections.is_none() {
+                arch.devirt_vm_sections = Some(large_code_sections(arch));
             }
-            let candidates = arch.pushan_vm_sections.as_deref().unwrap_or(&[]);
+            let candidates = arch.devirt_vm_sections.as_deref().unwrap_or(&[]);
             if !candidates.iter().any(|&(s, e)| !(s <= entry && entry < e)) {
                 return None;
             }
@@ -1142,25 +1142,28 @@ impl Deobfuscator for Pushan {
             Ok(p) if p.stats.vm_nodes == 0 => None,
             Ok(p) => Some(p.into_body()),
             Err(e) => {
-                fd.warning_header(&format!("pushan: devirtualization failed: {e}"));
+                fd.warning_header(&format!("devirtualize: failed: {e}"));
                 None
             }
         }
     }
 
-    fn after_flow(&self, arch: &mut Architecture, fd: &Funcdata) -> Option<RecoveredBody> {
+    fn after_flow(&self, arch: &mut Architecture, fd: &Funcdata, how: Engage) -> Option<RecoveredBody> {
+        if how != Engage::Detect {
+            return None;
+        }
         interpreter_after_flow(arch, fd)
     }
 
     fn audit(&self, arch: &Architecture, fd: &mut Funcdata, body: &RecoveredBody) {
-        let Some(p) = body.detail.downcast_ref::<PushanProgram>() else { return };
+        let Some(p) = body.detail.downcast_ref::<DevirtProgram>() else { return };
         warn_unshown_escapes(p, fd);
         warn_protector_state(arch, p, fd);
         warn_lost_stores(p, fd);
     }
 }
 
-/// `auto` on a function whose plain flow has a computed jump: probe it for an
+/// Detection on a function whose plain flow has a computed jump: probe it for an
 /// interpreter that is the function's own body
 /// ([`Explorer::probe_interpreter`]) and, when one is found and its
 /// exploration decides a dispatch, cache the devirtualized program, so the
@@ -1168,13 +1171,10 @@ impl Deobfuscator for Pushan {
 /// of its ops; a front-end whose translator is not SLEIGH (Ghidra's), which
 /// cannot serve the overlay, pays nothing.
 fn interpreter_after_flow(arch: &mut Architecture, fd: &Funcdata) -> Option<RecoveredBody> {
-    if arch.pushan_mode != MODE_AUTO {
-        return None;
-    }
     let entry = fd.get_address().get_offset();
     let started = std::time::Instant::now();
     if !interpreter_shape(arch, fd) {
-        if let Ok(path) = std::env::var("KUNA_PUSHAN_PROBE_LOG") {
+        if let Ok(path) = std::env::var("KUNA_DEVIRT_PROBE_LOG") {
             if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
                 let _ = writeln!(f, "{entry:#x} scan {:.3}ms", started.elapsed().as_secs_f64() * 1000.0);
             }
@@ -1192,7 +1192,7 @@ fn interpreter_after_flow(arch: &mut Architecture, fd: &Funcdata) -> Option<Reco
         lap[2] = target.lifts.borrow().len() as f64;
         r
     };
-    if let Ok(path) = std::env::var("KUNA_PUSHAN_PROBE_LOG") {
+    if let Ok(path) = std::env::var("KUNA_DEVIRT_PROBE_LOG") {
         if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
             let _ = writeln!(f, "{entry:#x} found={found} target={:.3} setup={:.3} lifts={} {:.3}ms", lap[0], lap[1], lap[2], started.elapsed().as_secs_f64() * 1000.0);
         }
@@ -1270,7 +1270,7 @@ fn copy_routine_name(name: &str) -> bool {
 /// the exploration saw it), while no op of the body computes that address:
 /// printed so, the local looks as if no call could change it.  Run once the
 /// body is decompiled.
-fn warn_unshown_escapes(p: &PushanProgram, fd: &mut Funcdata) {
+fn warn_unshown_escapes(p: &DevirtProgram, fd: &mut Funcdata) {
     let mut escapes: BTreeSet<i64> = BTreeSet::new();
     let mut taken: BTreeSet<i64> = BTreeSet::new();
     for op in fd.obank().iter_alive() {
@@ -1313,14 +1313,14 @@ fn warn_unshown_escapes(p: &PushanProgram, fd: &mut Funcdata) {
         .count();
     if unshown > 0 {
         fd.warning_header(&format!(
-            "pushan: incomplete: {unshown} local{} whose address a call receives printed as never passed",
+            "devirtualize: incomplete: {unshown} local{} whose address a call receives printed as never passed",
             if unshown == 1 { "" } else { "s" }
         ));
     }
 }
 
 /// Warn when the decompiled body of a devirtualized function still reads or
-/// writes the protector's own memory ([`PushanProgram::protector`]): a cell
+/// writes the protector's own memory ([`DevirtProgram::protector`]): a cell
 /// of the interpreter's context the emulation did not fold or privatize
 /// survives as a global, so the body computes with VM state the program
 /// never had.  Counted over the final ops (heritage's joins and call guards
@@ -1328,7 +1328,7 @@ fn warn_unshown_escapes(p: &PushanProgram, fd: &mut Funcdata) {
 /// a load or store whose address is a constant inside them plus an offset.
 /// Reads of an import slot a call went through are the program's own.
 /// Run once the body is decompiled.
-fn warn_protector_state(arch: &Architecture, p: &PushanProgram, fd: &mut Funcdata) {
+fn warn_protector_state(arch: &Architecture, p: &DevirtProgram, fd: &mut Funcdata) {
     if p.protector.is_empty() {
         return;
     }
@@ -1393,7 +1393,7 @@ fn warn_protector_state(arch: &Architecture, p: &PushanProgram, fd: &mut Funcdat
             (0, w) => part(w, "write"),
             (r, w) => format!("{} and {}", part(r, "read"), part(w, "write")),
         };
-        fd.warning_header(&format!("pushan: incomplete: {what} of the protector's own memory left in the body"));
+        fd.warning_header(&format!("devirtualize: incomplete: {what} of the protector's own memory left in the body"));
     }
 }
 
@@ -1405,7 +1405,7 @@ fn warn_protector_state(arch: &Architecture, p: &PushanProgram, fd: &mut Funcdat
 /// are folded.  A store counts when a basic block the final function keeps
 /// covers its instruction, so a store in removed code counts nothing.  Run
 /// once the body is decompiled.
-fn warn_lost_stores(p: &PushanProgram, fd: &mut Funcdata) {
+fn warn_lost_stores(p: &DevirtProgram, fd: &mut Funcdata) {
     let Some(space) = fd.get_address().get_space().cloned() else { return };
     if p.emit_stats.lost_stores.is_empty() {
         return;
@@ -1419,7 +1419,7 @@ fn warn_lost_stores(p: &PushanProgram, fd: &mut Funcdata) {
         .collect();
     let n = p.emit_stats.lost_stores.iter().filter(|&&a| covers.iter().any(|c| c.in_range(&Address::new(space.clone(), a), 1))).count();
     if n > 0 {
-        fd.warning_header(&format!("pushan: incomplete: {n} store{} through an address the emulation could not place on a path of the body", if n == 1 { "" } else { "s" }));
+        fd.warning_header(&format!("devirtualize: incomplete: {n} store{} through an address the emulation could not place on a path of the body", if n == 1 { "" } else { "s" }));
     }
 }
 

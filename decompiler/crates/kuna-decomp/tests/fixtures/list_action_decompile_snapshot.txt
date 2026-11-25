@@ -190,10 +190,10 @@
 0189                             doublein
 0190                             doubleout
 0191                             stackprobeloop
-0192                             pushanlogic
-0193                             pushanarith
-0194                             pushanpiece
-0195                             pushancarry
+0192                             residuelogic
+0193                             residuearith
+0194                             residuepiece
+0195                             residuecarry
 
 0196        !                        lanedivide
 0197                                 multicse

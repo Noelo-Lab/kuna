@@ -177,6 +177,9 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         let choice = kuna_decomp::kuna_kernelcacheboot::KernelcacheBoot::in_force();
         return Some(Cow::Owned(choice.as_str().into_owned()));
     }
+    if option == kuna_decomp::kuna_deobf::Selection::NAME {
+        return Some(Cow::Owned(conf.deobfuscate.value()));
+    }
     Some(Cow::Borrowed(match option {
         "bytearrayc" => on_off(conf.print().options.bytearray_c),
         "partialaccess" => on_off(conf.print().options.partial_access),

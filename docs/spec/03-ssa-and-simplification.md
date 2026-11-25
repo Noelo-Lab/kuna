@@ -4064,12 +4064,12 @@ Always on. Upstream Ghidra's rendering prints the same `undefined1 auVarN [16]`
 blobs — this is a deliberate readability divergence, not a fidelity fix, and it
 is inert on every function with no wide multiply.
 
-**Devirtualized residue** (rides on option `pushan`, no option of its own) —
-`decompiler/crates/kuna-decomp/src/deobf/kuna_pushanrules.rs
-(RulePushanLogic)`, `(RulePushanArith)`, `(RulePushanPiece)` and
-`(RulePushanCarry)`, four oppool1 rules whose first test is
+**Devirtualized residue** (rides on the `devirtualize` technique of option `deobfuscate`, no option of its own) —
+`decompiler/crates/kuna-decomp/src/deobf/kuna_residuerules.rs
+(RuleResidueLogic)`, `(RuleResidueArith)`, `(RuleResiduePiece)` and
+`(RuleResidueCarry)`, four oppool1 rules whose first test is
 the body's policy (`BodyPolicy::residue_rules`), set only for a
-body pushan replaced with its synthetic program (chapter [10](10-deobfuscation.md), §10.2). Every other function, and so the whole datatest corpus, keeps
+body the devirtualizer replaced with its synthetic program (chapter [10](10-deobfuscation.md), §10.2). Every other function, and so the whole datatest corpus, keeps
 its output byte for byte, and the gate costs one emptiness check per visited
 op. The rules clean up what a VMProtect interpreter leaves after
 devirtualization: its handlers build every logic operation from NOR gates
@@ -4080,7 +4080,7 @@ with a PIECE. Each rewrite is an exact bitvector identity and is taken only when
 the result is strictly smaller than the expression it replaces, so the rules
 reach a fixpoint with each other and with the upstream rules.
 
-`RulePushanLogic` fires on INT_AND, INT_OR, INT_XOR and INT_NEGATE, and on an
+`RuleResidueLogic` fires on INT_AND, INT_OR, INT_XOR and INT_NEGATE, and on an
 INT_ADD of two non-constant operands, at least one of them a logic operator,
 whose non-zero masks are disjoint (no carry can occur, so the sum is an OR — the
 way a flag-merging handler joins two masked halves of a word). It gathers the
@@ -4111,7 +4111,7 @@ is what turns `~(~v & ~c) & ~(v & ~(~c | ~c))` into `v ^ c`, `~(~x & ~x & 0xffff
 & 0x815` into `x & 0x815`, and the tested bit of a re-assembled flags word into
 the one flag term that can set it.
 
-`RulePushanArith` fires on INT_NEGATE, INT_ADD, INT_SUB, INT_MULT by a constant
+`RuleResidueArith` fires on INT_NEGATE, INT_ADD, INT_SUB, INT_MULT by a constant
 and INT_2COMP. It reads the tree of those operators below the root (at most 64)
 as a linear form over the leaves modulo the root's width, with `~x` taken as
 `-x - 1`; equal leaves (the same test as above) cancel. It rewrites only a tree
@@ -4122,7 +4122,7 @@ in the canonical shape the upstream rules use (`x + y * -1`), so `~(~x + y)`
 prints `x - y`, `~-~r + 0xc65cfe5f` prints `0xc65cfe5d - r`, and `~x + 1` prints
 `-x`, while `~x + 5` (no cheaper) is left alone.
 
-`RulePushanPiece` fires on PIECE. It describes each half as a run of bits of a
+`RuleResiduePiece` fires on PIECE. It describes each half as a run of bits of a
 deeper value, following SUBPIECE, logical right shifts by a constant, ZEXT and
 COPY (a SUBPIECE is followed only when the run stays inside it or the
 SUBPIECE reaches the top of its input, so zero fill agrees). When the high half
@@ -4134,7 +4134,7 @@ hash loop of a VMProtect "ultra" body reads `v ^= v >> 3` again only after the
 two halves of `v >> 3`, spilled to the 6-byte and 2-byte VM stack cells, are
 recognised as one shift.
 
-`RulePushanCarry` fires on INT_CARRY and INT_SCARRY. An addition whose operands
+`RuleResidueCarry` fires on INT_CARRY and INT_SCARRY. An addition whose operands
 share no set bit (disjoint non-zero masks, or one operand the NOT of a value
 equal to the other) carries out of no position, so neither the unsigned carry
 nor the signed overflow can be set, and the op becomes the constant 0. The

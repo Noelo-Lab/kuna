@@ -1,4 +1,4 @@
-//! Arithmetic residue left in a devirtualized (pushan) body.
+//! (kuna devirtualize) Arithmetic residue left in a devirtualized body.
 //!
 //! VMProtect builds every logic operation from NOR gates (`NOT a = NOR(a,a)`),
 //! spells `x - y` as `~(~x + y)`, and a value its handlers split across two
@@ -11,17 +11,17 @@
 //! function (a body whose policy sets `residue_rules`) and every rewrite is an exact
 //! bitvector identity that makes the expression strictly smaller.
 //!
-//! * [`RulePushanLogic`] evaluates a tree of AND/OR/XOR/NOT (and additions of
+//! * [`RuleResidueLogic`] evaluates a tree of AND/OR/XOR/NOT (and additions of
 //!   operands with disjoint non-zero masks, through truncations and zero
 //!   extensions) bit-parallel over every 0/1
 //!   assignment of its distinct leaves, groups bit positions by the boolean
 //!   function they compute, and replaces the tree with the cheapest equivalent
 //!   built from minimal formulas of at most three leaves and constant masks.
-//! * [`RulePushanArith`] rewrites a sum that contains a bitwise NOT as its linear
+//! * [`RuleResidueArith`] rewrites a sum that contains a bitwise NOT as its linear
 //!   form (`~x = -x - 1`), cancelling equal terms.
-//! * [`RulePushanPiece`] folds a PIECE of two slices of one value back into the
+//! * [`RuleResiduePiece`] folds a PIECE of two slices of one value back into the
 //!   value, its shift or its truncation.
-//! * [`RulePushanCarry`] clears the carry and signed overflow of an addition
+//! * [`RuleResidueCarry`] clears the carry and signed overflow of an addition
 //!   whose operands share no set bit, such as `x + ~x`, and reads the carry
 //!   of `x + ~y` as the unsigned comparison `y < x`.
 
@@ -60,7 +60,7 @@ fn unmovable(data: &Funcdata, vn: VarnodeId) -> bool {
 }
 
 fn set_op(data: &mut Funcdata, op: OpId, code: OpCode, inputs: &[VarnodeId]) {
-    data.op_set_all_input(op, inputs).expect("pushan rule inputs");
+    data.op_set_all_input(op, inputs).expect("residue rule inputs");
     data.op_set_opcode(op, crate::typeop::seam_type_op_for(code));
 }
 
@@ -68,7 +68,7 @@ fn insert(data: &mut Funcdata, before: OpId, code: OpCode, width: i32, inputs: &
     let address = data.obank().get(before).unwrap().get_addr().clone();
     let op = data.new_op(inputs.len() as i32, address);
     set_op(data, op, code, inputs);
-    let out = data.new_unique_out(width, op).expect("pushan rule output");
+    let out = data.new_unique_out(width, op).expect("residue rule output");
     data.op_insert_before(op, before);
     out
 }
@@ -165,7 +165,7 @@ fn devirtualized_only(data: &Funcdata) -> bool {
     data.kuna_body().policy.residue_rules
 }
 
-macro_rules! pushan_rule {
+macro_rules! residue_rule {
     ($name:ident) => {
         pub struct $name {
             group: String,
@@ -317,7 +317,7 @@ fn apply(op: OpCode, a: u64, b: u64) -> u64 {
 }
 
 // ---------------------------------------------------------------------------
-// RulePushanLogic
+// RuleResidueLogic
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, Copy)]
@@ -611,9 +611,9 @@ fn rewrite(data: &mut Funcdata, op: OpId, e: &Expr, tree: &LogicTree) {
     }
 }
 
-pushan_rule!(RulePushanLogic);
+residue_rule!(RuleResidueLogic);
 
-impl Rule for RulePushanLogic {
+impl Rule for RuleResidueLogic {
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![CPUI_INT_AND, CPUI_INT_OR, CPUI_INT_XOR, CPUI_INT_NEGATE, CPUI_INT_ADD]
     }
@@ -654,7 +654,7 @@ impl Rule for RulePushanLogic {
 }
 
 // ---------------------------------------------------------------------------
-// RulePushanArith
+// RuleResidueArith
 // ---------------------------------------------------------------------------
 
 struct Linear {
@@ -750,9 +750,9 @@ fn linear_def(data: &Funcdata, vn: VarnodeId, width: i32) -> Option<(OpCode, Vec
     }
 }
 
-pushan_rule!(RulePushanArith);
+residue_rule!(RuleResidueArith);
 
-impl Rule for RulePushanArith {
+impl Rule for RuleResidueArith {
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![CPUI_INT_NEGATE, CPUI_INT_ADD, CPUI_INT_SUB, CPUI_INT_MULT, CPUI_INT_2COMP]
     }
@@ -825,7 +825,7 @@ impl Rule for RulePushanArith {
 }
 
 // ---------------------------------------------------------------------------
-// RulePushanPiece
+// RuleResiduePiece
 // ---------------------------------------------------------------------------
 
 /// `vn` equals bits `[shift, shift + 8*size(vn))` of `base`, zero above `base`.
@@ -870,9 +870,9 @@ fn slices(data: &Funcdata, vn: VarnodeId) -> Vec<Slice> {
     chain
 }
 
-pushan_rule!(RulePushanPiece);
+residue_rule!(RuleResiduePiece);
 
-impl Rule for RulePushanPiece {
+impl Rule for RuleResiduePiece {
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![CPUI_PIECE]
     }
@@ -940,12 +940,12 @@ impl Rule for RulePushanPiece {
 }
 
 // ---------------------------------------------------------------------------
-// RulePushanCarry
+// RuleResidueCarry
 // ---------------------------------------------------------------------------
 
-pushan_rule!(RulePushanCarry);
+residue_rule!(RuleResidueCarry);
 
-impl Rule for RulePushanCarry {
+impl Rule for RuleResidueCarry {
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![CPUI_INT_CARRY, CPUI_INT_SCARRY]
     }

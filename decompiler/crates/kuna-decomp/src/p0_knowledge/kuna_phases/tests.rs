@@ -74,7 +74,7 @@ fn tier_counts_are_50_core_132_transform_63_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    // +1 transform for `pushan` (VM devirtualization).
+    // +1 transform for `deobfuscate` (the deobfuscation plane's technique list).
     assert_eq!((core, transform, analysis), (50, 132, 63));
 }
 
@@ -693,10 +693,10 @@ fn option_values_live_value_present_for_78() {
                             // (kuna) `gowritebarrier`: the same MODE shape;
                             // its live value is `Architecture::go_write_barrier`.
                             | "gowritebarrier"
-                            // (kuna) `pushan`: the same MODE shape
-                            // (`off|auto|on`); its live value is
-                            // `Architecture::pushan_mode`.
-                            | "pushan"
+                            // (kuna) `deobfuscate` takes `auto`, `off` or a
+                            // LIST of technique names; its live value is
+                            // `Architecture::deobfuscate`.
+                            | "deobfuscate"
                             // (kuna) `impliedrefs`/`termdup` take an INTEGER
                             // (`2|3|4|<n>`), which the codegen live reader (a
                             // bool `live_true`/`live_false` pair) cannot
@@ -1165,7 +1165,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 each for `swifthelpers` and `valuewitness`.
     // +1 for `bytestorewidth`; its P3 row sits after `globalarrayanchor`.
     // +1 for `boolbranch`; its P3 row sits after `bytestorewidth`.
-    // +1 for `pushan`; its P2 row sits beside `loweredswitch`.
+    // +1 for `deobfuscate`; its P2 row sits beside `loweredswitch`.
     assert_eq!(json.matches("},\n").count(), 244);
     // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }

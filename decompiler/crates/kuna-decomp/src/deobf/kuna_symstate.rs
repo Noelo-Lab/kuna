@@ -1,4 +1,4 @@
-//! (kuna pushan) The abstract machine state the devirtualizer emulates over.
+//! (kuna devirtualize) The abstract machine state the devirtualizer emulates over.
 //!
 //! Registers, SLEIGH temporaries and memory are byte-granular stores of
 //! `(expression, byte index)` cells, so overlapping x86 sub-registers and

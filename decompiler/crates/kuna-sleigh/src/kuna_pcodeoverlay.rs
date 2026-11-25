@@ -1,7 +1,7 @@
 //! (kuna) A table of precomputed p-code served in place of decoding bytes.
 //!
 //! A deobfuscator that recovers a function body (the VM devirtualizer, option
-//! `pushan`) builds it as synthetic instructions at addresses no section maps;
+//! `deobfuscate`) builds it as synthetic instructions at addresses no section maps;
 //! the flow follower lifts them through the ordinary [`Translate`](crate::translate::Translate)
 //! calls, so a translator consults its overlay before touching the image.  An
 //! entry is one synthetic instruction: its p-code, its length (the distance

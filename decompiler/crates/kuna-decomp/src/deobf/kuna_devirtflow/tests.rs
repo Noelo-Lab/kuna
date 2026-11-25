@@ -8,7 +8,7 @@ use kuna_base::space::{spacetype, AddrSpace, ConstantSpace};
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 
-use super::super::kuna_pushan::caveats_of;
+use super::super::kuna_devirtualize::caveats_of;
 use super::super::kuna_symemu::RawOp;
 use super::*;
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds pushan_vm2_x86_64: a static x86-64 ELF with one stack-machine
+"""Builds devirt_vm2_x86_64: a static x86-64 ELF with one stack-machine
 interpreter in its own 64 KiB executable section `.vmp0` and several protected
 functions, each an entry stub `push key; jmp vm_entry` whose key selects its
 bytecode.  The bytecodes are hand-written programs whose correct decompilation
@@ -26,7 +26,7 @@ keeps in an unaligned context cell beside one that two joining paths set
 differently, and a local written at an address no identity places.
 Every program sits
 in its own 256-byte block of seeded random filler (entropy above 7 bits/byte).
-Regenerate with `python3 pushan_vm2_x86_64.py` (needs GNU as/ld)."""
+Regenerate with `python3 devirt_vm2_x86_64.py` (needs GNU as/ld)."""
 import os, random, subprocess, tempfile
 
 OPS = ["LDCTX", "STCTX", "LEAV", "LDIMM", "ADD", "SUB", "MUL", "LT", "EQ", "LD", "ST", "JZ", "JMP", "JMPI", "CALL", "CALLP", "EXIT"]
@@ -404,7 +404,7 @@ def symbols(path):
 
 
 here = os.path.dirname(os.path.abspath(__file__))
-dst = os.path.join(here, "pushan_vm2_x86_64")
+dst = os.path.join(here, "devirt_vm2_x86_64")
 with tempfile.TemporaryDirectory() as d:
     state = rng.getstate()
     probe = os.path.join(d, "probe")

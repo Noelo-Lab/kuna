@@ -1,10 +1,10 @@
 <decompilertest>
 <binaryimage arch="x86:LE:64:default:gcc">
 <!--
-    Kuna pushan in-function interpreters: P2 flow-follow, option pushan
+    Kuna devirtualize, in-function interpreters: P2 flow-follow, option deobfuscate
     (default auto).  The script loads the x86-64 PIE
-    decompiler/crates/kuna-analysis/tests/fixtures/pushan_interp_x86_64
-    (source pushan_interp_x86_64.c, gcc -O0): nine functions that are their
+    decompiler/crates/kuna-analysis/tests/fixtures/devirt_interp_x86_64
+    (source devirt_interp_x86_64.c, gcc -O0): nine functions that are their
     own bytecode interpreters, the shape Tigress Virtualize gives a function,
     each running `s = 0; for (i = 0; i < 10; i++) s += a < i ? i : a;
     return s;` with its virtual PC in a local.  sw_writable dispatches by a
@@ -19,7 +19,7 @@
     under a branch and reads st[1..3] only through &st[0] plus a computed
     offset.
 
-    Pass 1 (`option pushan off`) is the bug: sw_writable decompiles to its
+    Pass 1 (`option deobfuscate off`) is the bug: sw_writable decompiles to its
     interpreter, its virtual PC pointed at sw_code (#1) and a loop around
     the switch on the fetched opcode, with no trace of the virtual program.
     Pass 2 (the default) finds each interpreter after the plain flow showed a
@@ -56,14 +56,14 @@ c3
 </binaryimage>
 <script>
   <com>clear architecture</com>
-  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pushan_interp_x86_64</com>
-  <com>option pushan off</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/devirt_interp_x86_64</com>
+  <com>option deobfuscate off</com>
   <com>read symbols</com>
   <com>load function sw_writable</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
-  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pushan_interp_x86_64</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/devirt_interp_x86_64</com>
   <com>read symbols</com>
   <com>load function sw_writable</com>
   <com>decompile</com>
@@ -94,24 +94,24 @@ c3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="PUSHAN-INTERP #1: off, sw_writable is its interpreter, its VPC pointed at sw_code" min="1" max="1">v[0-9]+ = sw_code;</stringmatch>
-<stringmatch name="PUSHAN-INTERP #2: auto, every interpreter is devirtualized" min="9" max="9">pushan: devirtualized VM-protected function</stringmatch>
-<stringmatch name="PUSHAN-INTERP #3: auto, writable bytecode is an assumption" min="8" max="8">assumes its bytecode in writable memory is what the file holds</stringmatch>
-<stringmatch name="PUSHAN-INTERP #4: auto, the virtual loop" min="5" max="5">for \(v[0-9]+ = 0; v[0-9]+ &lt;= 9; v[0-9]+ = v[0-9]+ \+ 1\) \{</stringmatch>
-<stringmatch name="PUSHAN-INTERP #5: auto, the virtual branch" min="5" max="5">if \(v[0-9]+ &lt;= a0\)
+<stringmatch name="DEVIRTUALIZE-INTERP #1: off, sw_writable is its interpreter, its VPC pointed at sw_code" min="1" max="1">v[0-9]+ = sw_code;</stringmatch>
+<stringmatch name="DEVIRTUALIZE-INTERP #2: auto, every interpreter is devirtualized" min="9" max="9">devirtualize: VM-protected function recovered</stringmatch>
+<stringmatch name="DEVIRTUALIZE-INTERP #3: auto, writable bytecode is an assumption" min="8" max="8">assumes its bytecode in writable memory is what the file holds</stringmatch>
+<stringmatch name="DEVIRTUALIZE-INTERP #4: auto, the virtual loop" min="5" max="5">for \(v[0-9]+ = 0; v[0-9]+ &lt;= 9; v[0-9]+ = v[0-9]+ \+ 1\) \{</stringmatch>
+<stringmatch name="DEVIRTUALIZE-INTERP #5: auto, the virtual branch" min="5" max="5">if \(v[0-9]+ &lt;= a0\)
 v[0-9]+ = a0;</stringmatch>
-<stringmatch name="PUSHAN-INTERP #6: auto, the sum is returned" min="5" max="5">v[0-9]+ = v[0-9]+;
+<stringmatch name="DEVIRTUALIZE-INTERP #6: auto, the sum is returned" min="5" max="5">v[0-9]+ = v[0-9]+;
 \}
 return v[0-9]+;</stringmatch>
-<stringmatch name="PUSHAN-INTERP #7: auto, th_copied keeps its memcpy" min="1" max="1">memcpy\(</stringmatch>
-<stringmatch name="PUSHAN-INTERP #10: auto, th_inline has no copy loop" min="0" max="0">while \(v[0-9]+\) \{</stringmatch>
-<stringmatch name="PUSHAN-INTERP #8: auto, wv_woven follows its first program" min="1" max="1">follows the first of 2 interleaved bytecode programs</stringmatch>
-<stringmatch name="PUSHAN-INTERP #9: auto, sw_patched is incomplete" min="1" max="1">pushan: incomplete: 1 unresolved computed jump</stringmatch>
-<stringmatch name="PUSHAN-INTERP #11: auto, tg_indexed keeps the branch only the indexed loop reads" min="1" max="1">if \(5 &lt; a0\)
+<stringmatch name="DEVIRTUALIZE-INTERP #7: auto, th_copied keeps its memcpy" min="1" max="1">memcpy\(</stringmatch>
+<stringmatch name="DEVIRTUALIZE-INTERP #10: auto, th_inline has no copy loop" min="0" max="0">while \(v[0-9]+\) \{</stringmatch>
+<stringmatch name="DEVIRTUALIZE-INTERP #8: auto, wv_woven follows its first program" min="1" max="1">follows the first of 2 interleaved bytecode programs</stringmatch>
+<stringmatch name="DEVIRTUALIZE-INTERP #9: auto, sw_patched is incomplete" min="1" max="1">devirtualize: incomplete: 1 unresolved computed jump</stringmatch>
+<stringmatch name="DEVIRTUALIZE-INTERP #11: auto, tg_indexed keeps the branch only the indexed loop reads" min="1" max="1">if \(5 &lt; a0\)
 v[0-9]+\[1\] = a0 \+ 1U \| 0x78;</stringmatch>
-<stringmatch name="PUSHAN-INTERP #12: auto, the three Tigress-style programs keep the stores their indexed loops read" min="3" max="3">v[0-9]+\[3\] = a0 \+ 3;</stringmatch>
-<stringmatch name="PUSHAN-INTERP #13: auto, tg_istore reads back the slots its indexed stores wrote" min="1" max="1">return v[0-9]+\[3\] \+ v[0-9]+\[1\];</stringmatch>
-<stringmatch name="PUSHAN-INTERP #14: auto, tg_istore does not return the values from before its indexed stores" min="0" max="0">return a0 \* 2 \+ 4;</stringmatch>
-<stringmatch name="PUSHAN-INTERP #15: auto, the three Tigress-style programs keep the store to st[2] that only an indexed load reads" min="3" max="3">v[0-9]+\[2\] = a0 \+ 2;</stringmatch>
-<stringmatch name="PUSHAN-INTERP #16: auto, tg_carried keeps the loop's update of st[2], which only the indexed load reads" min="1" max="1">v[0-9]+\[2\] = a0 \+ v[0-9]+\[2\];</stringmatch>
+<stringmatch name="DEVIRTUALIZE-INTERP #12: auto, the three Tigress-style programs keep the stores their indexed loops read" min="3" max="3">v[0-9]+\[3\] = a0 \+ 3;</stringmatch>
+<stringmatch name="DEVIRTUALIZE-INTERP #13: auto, tg_istore reads back the slots its indexed stores wrote" min="1" max="1">return v[0-9]+\[3\] \+ v[0-9]+\[1\];</stringmatch>
+<stringmatch name="DEVIRTUALIZE-INTERP #14: auto, tg_istore does not return the values from before its indexed stores" min="0" max="0">return a0 \* 2 \+ 4;</stringmatch>
+<stringmatch name="DEVIRTUALIZE-INTERP #15: auto, the three Tigress-style programs keep the store to st[2] that only an indexed load reads" min="3" max="3">v[0-9]+\[2\] = a0 \+ 2;</stringmatch>
+<stringmatch name="DEVIRTUALIZE-INTERP #16: auto, tg_carried keeps the loop's update of st[2], which only the indexed load reads" min="1" max="1">v[0-9]+\[2\] = a0 \+ v[0-9]+\[2\];</stringmatch>
 </decompilertest>

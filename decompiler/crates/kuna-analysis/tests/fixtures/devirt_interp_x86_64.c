@@ -1,4 +1,4 @@
-/* pushan_interp_x86_64: in-function bytecode interpreters, the shape Tigress
+/* devirt_interp_x86_64: in-function bytecode interpreters, the shape Tigress
    `Virtualize` gives a function (the interpreter is the function's own body,
    its virtual PC a local, its bytecode in the image), written by hand.
 
@@ -56,14 +56,14 @@
                     }
                     return s;
 
-   `./pushan_interp_x86_64 A...` prints the eight results for a = argc (46
+   `./devirt_interp_x86_64 A...` prints the eight results for a = argc (46
    for a = 1, tg_indexed 9, tg_istore 8, tg_carried 13; 66, 144, 28 and 48
    for a = 6).
 
    Build (gcc 11, Ubuntu 22.04 defaults: PIE, stack-clash protection; the
    copy is a memcpy call, as gcc emits for Tigress's 81 KB array, rather than
    the inline `rep movsq` it would use for this one):
-       gcc -O0 -fno-builtin-memcpy -o pushan_interp_x86_64 pushan_interp_x86_64.c */
+       gcc -O0 -fno-builtin-memcpy -o devirt_interp_x86_64 devirt_interp_x86_64.c */
 #include <stdio.h>
 #include <string.h>
 

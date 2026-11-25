@@ -28,11 +28,33 @@ after the flow reads. Its code lives in one folder whatever stage it acts at.
 | rule pool | `universalaction.rs (universal_sched)` | contributes rules, each gated by the body's policy |
 | `audit` | `decompile_drive.rs`, once the function is decompiled | writes header warnings for what the result still holds |
 
-The front asks the deobfuscators of `DEOBFUSCATORS` in order and takes the
-first body one recovers. A function no deobfuscator claims is lifted from its
+The front asks the selected deobfuscators of `DEOBFUSCATORS` in order and
+takes the first body one recovers. A function no deobfuscator claims is lifted from its
 bytes and pays only their detection. `after_flow` is skipped for a function
 that already has a recovered body, and for a front-end whose translator is not
 SLEIGH (Ghidra's), which cannot serve an overlay.
+
+**Selecting techniques.** One option names what runs: `option deobfuscate
+auto|off|<technique>[,<technique>...]`, default `auto`, which the CLI also
+spells `--deobfuscate LIST` (`decompiler/crates/kuna-cli/src/args.rs (lower_deobfuscate)`
+rewrites the flag into the option before any subcommand reads its arguments).
+A technique is named for the obfuscation it undoes, not for the algorithm that
+undoes it; the names are those of the registry (`Deobfuscator::name`), so a
+new row in `DEOBFUSCATORS` is a new value. The value parses into a
+`kuna_deobf.rs (Selection)`:
+
+| Value | Which techniques act | How each is engaged |
+|---|---|---|
+| `auto` | all | `Engage::Detect`: on the functions its own detection finds |
+| `off` | none | the protected code is decompiled as it is |
+| `a,b` | the named ones alone | `Engage::Force`: on the function it is handed, without waiting for its detection |
+
+The plane reads the option, and a technique does not: each hook is passed the
+`Engage` it was selected with, so what "detect" and "force" mean is the only
+thing a technique decides. A name the registry does not hold is an error that
+lists the ones it does, at the CLI before anything is loaded and in the
+engine's option dispatch. Setting the option clears the body cache. One
+technique exists so far, `devirtualize` (§10.2).
 
 **The recovered body.** A body (`decompiler/crates/kuna-decomp/src/deobf/kuna_body.rs (RecoveredBody)`)
 is the overlay the flow follower lifts
@@ -89,22 +111,35 @@ They read the image and lift instructions through two traits (`SymImage`,
 `SymTarget`), which a deobfuscator implements over the architecture. §10.2
 describes them where the VM devirtualizer uses them.
 
-**Adding a deobfuscator.** A module in the plane's folder, a row in
-`DEOBFUSCATORS`, and its option. One that recovers bodies states their facts
+**Adding a deobfuscator.** A module in the plane's folder and a row in
+`DEOBFUSCATORS`, which makes its name a value of `option deobfuscate`. One that recovers bodies states their facts
 and policy; one that only respells values registers its rules and needs no
 body at all. A stage the plane has no hook at yet gets one the same way: a
 method on `Deobfuscator` with an empty default, and one call from that stage.
 
-## 10.2 VM devirtualization (`pushan`)
+## 10.2 VM devirtualization (`devirtualize`): the Pushan port
 
-**(angr) `option pushan auto|on|off`, default auto,
-`decompiler/crates/kuna-decomp/src/deobf/kuna_pushan.rs (Pushan)`.**
-A port of Pushan (Sudhir et al., "Pushan: Trace-Free Deobfuscation of
-Virtualization-Obfuscated Binaries", NDSS 2027; angr PR #7680) onto p-code.
+**(angr) technique `devirtualize` of `option deobfuscate`, on under the
+default `auto`,
+`decompiler/crates/kuna-decomp/src/deobf/kuna_devirtualize.rs (Devirtualize)`.**
+
+**The algorithm is Pushan's.** This technique is a port onto p-code of Pushan:
+Sudhir, Basque, Gibbs et al., "Pushan: Trace-Free Deobfuscation of
+Virtualization-Obfuscated Binaries", NDSS 2027, and of its reference
+implementation, angr PR #7680 (`VMDeobfuscation` / `CFGVMDeobfuscation`). The
+option and the code are named for what the technique does, but the method is
+the paper's: symbolic emulation of the interpreter with no path constraints,
+blocks keyed by native address and virtual program counter, symbolization of
+the locations that differ where paths meet until the graph is stable, and a
+flat graph handed to an ordinary decompiler. "The paper" below always means
+that paper, and its stage numbers are the ones used here. What kuna adds is
+the carrier: p-code, an evaluation-based identity test where the original
+asks a solver, and emission as a synthetic overlay.
+
 A function protected by a VM-based obfuscator (VMProtect, Themida) keeps only a
 stub at its original entry: it pushes some context and jumps into an
 interpreter in a section the protector added, which runs the function's
-bytecode. Without the option the flow follower lifts that stub and stops at the
+bytecode. Without the technique the flow follower lifts that stub and stops at the
 interpreter's computed dispatch, so the function decompiles to an empty body or
 to the interpreter's dispatch loop. With it, the flow follower is handed a
 different program: the protected function's own control flow, recovered by
@@ -114,11 +149,11 @@ paper's stages 2 and 3 do (SSA, dead code, stack variables, types, structuring).
 x86 and x86-64 are supported; any other target reports a header warning and
 keeps the plain flow.
 
-**Detection.** `auto` devirtualizes a function only when the image has a
+**Detection.** Under `deobfuscate auto` the technique acts on a function only when the image has a
 candidate interpreter section other than the one holding the entry, and the
 function's direct native flow reaches into such a section. A candidate is a
 loaded executable section of at least 0x10000 bytes that the toolchain does
-not emit for every program (`kuna_pushan.rs (toolchain_code_section)`): not
+not emit for every program (`kuna_devirtualize.rs (toolchain_code_section)`): not
 an ELF `.plt*`, `.iplt`, `.init` or `.fini`, not a section whose name contains
 `text` in either case (`.text.unlikely`, the kernel's `.init.text`, Mach-O
 `__text`, PE `.textbss`), not Mach-O `__stubs`, `__stub_helper` or
@@ -128,7 +163,7 @@ an ELF `.plt*`, `.iplt`, `.init` or `.fini`, not a section whose name contains
 PLT or jumps to its cold part. The names come from the loader
 (`LoadImage::kuna_section_names`); a section without one is a candidate on
 its size. An image with no candidate left returns before any instruction is
-lifted, so those binaries pay nothing. `kuna_pushan.rs (detect_vm_entry)`
+lifted, so those binaries pay nothing. `kuna_devirtualize.rs (detect_vm_entry)`
 walks fall-throughs, direct jumps and both sides of conditionals from the
 entry, without following calls, for up to 4096 instructions. The first branch
 or call whose target lies in a candidate section other than the entry's is the
@@ -141,12 +176,12 @@ is not explored for calling them. That covers
 both the stub a protector leaves at a whole-function entry and an SDK-marked
 region's `push imm; call vm_entry`. The sections come from the loader
 (`ArchTarget::new`, falling back to segments), so a raw image or an XML
-`<binaryimage>` reports none, and `auto` never fires on it. An interpreter
+`<binaryimage>` reports none, and detection never fires on it. An interpreter
 that is the function's own body (Tigress `Virtualize`: a `switch` or a
 threaded `goto *pc` over bytecode in the image, no protector section) has no
-such entry. `auto` looks for one only after the plain flow has been followed,
+such entry. Detection looks for one only after the plain flow has been followed,
 and only in a function whose plain flow has an interpreter's shape
-(`kuna_pushan.rs (interpreter_shape)`). Either a computed jump lies in a cycle
+(`kuna_devirtualize.rs (interpreter_shape)`). Either a computed jump lies in a cycle
 of the flow graph, as a switch dispatch does inside its loop, or the function
 copies memory (a call to a `memcpy`-like routine, or a `rep movs`) and has a
 jump the flow could not recover and treats as a call (a CALLIND with an
@@ -155,22 +190,23 @@ shows. A tail call through a pointer, or a `switch` outside a loop, is not a
 candidate. Every other function pays one scan of its ops, and a front-end
 whose translator is not SLEIGH (Ghidra's, which cannot serve the overlay)
 pays nothing. Threaded code over bytecode that is not copied (its array a
-global) is therefore found under `on` only. For a candidate,
-`kuna_pushan.rs (interpreter_after_flow)` runs the interpreter probe described
+global) is therefore found only when the technique is named (`deobfuscate
+devirtualize`). For a candidate,
+`kuna_devirtualize.rs (interpreter_after_flow)` runs the interpreter probe described
 below. When the probe finds a dispatch and the exploration decides at least one
 computed jump of the interpreter, the plane caches the recovered body and the
 flow is followed again from it (`kuna_deobf.rs (after_flow)`, §10.1). An ordinary `switch`
 stops the probe at its first computed jump, since no fetch through a pointer
-cell precedes it. `on` skips the detection and devirtualizes the requested
+cell precedes it. Naming the technique skips the detection and devirtualizes the requested
 function, probing for an in-function interpreter first when the function does
-not enter a protector section. Under both values, an exploration that never reaches a block inside
+not enter a protector section. Either way, an exploration that never reaches a block inside
 the interpreter (`vm_nodes == 0`) is discarded and the plain flow is used, so a
-false detection costs one exploration and changes nothing. `off` always uses
+false detection costs one exploration and changes nothing. `deobfuscate off` always uses
 the plain flow. A successful result is cached per entry on the architecture
 (`Architecture::deobf_bodies`, the plane's cache), so re-decompiling the same function does not explore it again.
 
 **Exploration keys.** The flat graph is built by
-`decompiler/crates/kuna-decomp/src/deobf/kuna_pushanflow.rs (Explorer)`. A
+`decompiler/crates/kuna-decomp/src/deobf/kuna_devirtflow.rs (Explorer)`. A
 node is a native address plus the virtual program counter (VPC) the
 interpreter holds when it gets there, plus the stack pointer's offset from its
 entry value (`Explorer::at_depth`). As a result, every bytecode
@@ -813,7 +849,7 @@ everywhere else, x86-64 included, a callee pops nothing), the way angr's
   counted for the inner one, and the outer call then counts one fewer, so the
   error ends at the outer call.
 
-**Emission.** `decompiler/crates/kuna-decomp/src/deobf/kuna_pushanemit.rs
+**Emission.** `decompiler/crates/kuna-decomp/src/deobf/kuna_devirtemit.rs
 (emit)` turns the graph into a
 `decompiler/crates/kuna-sleigh/src/kuna_pcodeoverlay.rs (PcodeOverlay)`. Each
 node becomes a run of synthetic instructions, one per native instruction it
@@ -961,7 +997,7 @@ with these edits:
   homes into fresh ops, and the exit branches on the compiled comparisons
   (`Emitter::rematerialize`). The condition is then the program's own
   comparison, not the interpreter's flag arithmetic that happened to compute
-  it. Before that, `kuna_pushanflow.rs (fuse_signed_compares)` replaces a pair
+  it. Before that, `kuna_devirtflow.rs (fuse_signed_compares)` replaces a pair
   of sign and overflow atoms of one addition, which the assignments consult
   only through their exclusive or, by the single signed comparison it encodes
   (`a < -b`). That pair is the shape of a `jl`, `jge`, `jg` or `jle`.
@@ -986,7 +1022,7 @@ with these edits:
   the frame register.
 
 **How the decompiler consumes it.** The program is handed over as a recovered
-body (`kuna_pushan.rs (PushanProgram::into_body)`), and the plane's front hook
+body (`kuna_devirtualize.rs (DevirtProgram::into_body)`), and the plane's front hook
 (§10.1) is called by
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (generate_flow)`
 before the `FlowInfo` is built. It installs the overlay on the SLEIGH
@@ -999,7 +1035,7 @@ round counts, and an instruction budget of at least 4,000,000.
 **The exploration's limits.** An exploration that does not reach its fixpoint
 is ended by a work budget, a memory bound or a wall-clock backstop
 (`Explorer::exhausted`), and a round that reaches 200,000 nodes ends at the node
-limit (`KUNA_PUSHAN_MAX_NODES`). The work budget and the memory bound are
+limit (`KUNA_DEVIRT_MAX_NODES`). The work budget and the memory bound are
 functions of the work done alone, so one input stops at the same step, with the
 same output, on any machine and under any load. A wall-clock budget cut the
 targets near it at a different point on every run, and a loaded machine cut
@@ -1017,10 +1053,10 @@ work and the CPU time correlate at r = 0.98 (0.99 between their logarithms);
 emulated ops alone reach 0.60, because the identity test on Themida's mixed
 boolean-arithmetic stack addresses and the substitutions of its case splits
 cost as much as all the emulation and have little to do with the number of
-instructions. The budget is 2.3 billion units (`KUNA_PUSHAN_MAX_WORK`):
+instructions. The budget is 2.3 billion units (`KUNA_DEVIRT_MAX_WORK`):
 libpng_themida, the slowest target that reaches its fixpoint, needs 1.93
 billion, which take about 105 s on a quiet machine, so the budget is about
-125 s of such work. The memory bound is 3,328 MiB (`KUNA_PUSHAN_MAX_MEMORY`,
+125 s of such work. The memory bound is 3,328 MiB (`KUNA_DEVIRT_MAX_MEMORY`,
 bytes) on an estimate made of counts too (`Explorer::memory_estimate`): the
 capacities of the arena's node tables and caches, the store pages alive
 (`kuna_symstate.rs (live_pages)`, counted by the pages themselves as they
@@ -1039,7 +1075,7 @@ the process at 3,752 MiB, where the wall-clock budget
 let it run to 61,525 nodes and 12 to 16 GB on a quiet machine. The last
 round's graph is dropped before the next round starts, since nothing of it is
 read again, so two rounds' states and traces never coexist. The wall-clock
-backstop (600 s, `KUNA_PUSHAN_SECONDS`) is five times what the work
+backstop (600 s, `KUNA_DEVIRT_SECONDS`) is five times what the work
 budget takes on a quiet machine and only ends an exploration on a much slower
 or overloaded one. The limits are checked between nodes, before each
 instruction of a node, and at each location a merge compares, and a case split
@@ -1048,7 +1084,7 @@ both cleared when the exploration ends, so the emitter's splits depend on
 neither). No single step therefore runs past a limit by more than one
 instruction or one substitution. The round in progress is then the last: a
 node stopped inside ends there as a path not followed. A second header warning
-(`PushanProgram::caveats`) says what the recovered program may miss or get
+(`DevirtProgram::caveats`) says what the recovered program may miss or get
 wrong: computed jumps left unresolved, paths not followed, an exploration cut
 short by its work budget, its memory bound, its node limit or its wall-clock
 limit (the warning names which) or ending without its fixpoint, paths joined at
@@ -1115,7 +1151,7 @@ the placeholder itself, an input nothing wrote, instead of taking it as a real
 movement into the argument register. It marks every COPY into or out of an
 entry-value register the same way, so the walk reaches the function's own
 input, and the entry-value registers are among those every call preserves.
-Once the body is decompiled, `kuna_pushan.rs (warn_unshown_escapes)` takes
+Once the body is decompiled, `kuna_devirtualize.rs (warn_unshown_escapes)` takes
 the locals whose address a call left in the body receives (the offsets the
 last round saw in that call's argument registers and outgoing words,
 `Node::call_escapes`, keyed by the call's overlay address), counts those the
@@ -1123,24 +1159,24 @@ body still reads or writes while no op of it computes their address, and the
 header says so ("N locals whose address a call receives printed as never
 passed"): printed that way, a local looks as if no call could change it,
 which is the claim the call model exists to avoid.
-`kuna_pushan.rs (warn_protector_state)` then counts what the decompiled body
+`kuna_devirtualize.rs (warn_protector_state)` then counts what the decompiled body
 still reads or writes of the protector's own memory: the candidate
 interpreter sections (`Section::vm_candidate`) the exploration ran VM code
-in, recorded as `PushanProgram::protector`. A protected program keeps its
+in, recorded as `DevirtProgram::protector`. A protected program keeps its
 own data where the compiler put it, so a location there is the
 interpreter's state, unless it is an import slot a call or tail call of the
-exploration went through (`PushanProgram::slots`). The count runs over the
+exploration went through (`DevirtProgram::slots`). The count runs over the
 final ops, so dead code and heritage's own joins (MULTIEQUAL, an INDIRECT or
 a COPY that keeps a location's value in place) count nothing: an op reading
 or writing a memory varnode inside the sections, and a load or store whose
 address is a constant inside them or adds one (through casts and copies).
 A body with any such access carries
-"pushan: incomplete: N reads and M writes of the protector's own memory left
+"devirtualize: incomplete: N reads and M writes of the protector's own memory left
 in the body". Such a body computes with a VM context cell as if it were a
 global of the program, which is what the exploration could not resolve (a
 Themida loop symbolized past its fixpoint), or holds the interpreter state the
 privatization had to leave in memory.
-`kuna_pushan.rs (warn_lost_stores)` finally counts the stores the exploration
+`kuna_devirtualize.rs (warn_lost_stores)` finally counts the stores the exploration
 lost that lie on a path of the decompiled body: the emitter records the
 overlay address of every live instruction whose store was lost and not found
 dead in the overlay (`EmitStats::lost_stores`), and a store counts when a
@@ -1149,7 +1185,7 @@ store op, decides: a value the exploration read back from before the store is
 folded into the program as a constant, so the decompiler finds the store
 itself dead and removes it, and the body says something false with no trace
 of the store left. Code the decompiler removed counts nothing. A body with
-any such store carries "pushan: incomplete: N stores through an address the
+any such store carries "devirtualize: incomplete: N stores through an address the
 emulation could not place on a path of the body". An unplaced load needs no
 count: it reads an unknown, which the emitter never folds, so the overlay
 keeps the program's own load.
@@ -1199,7 +1235,7 @@ temporary and a CALLIND on the temporary. When `ActionDefaultParams` runs,
 that temporary is not yet linked to its COPY, so the call never receives the
 prototype parked at the slot, and the constant stays an `undefined4` that the
 printer's `char *` path never sees. So `devirtualize` collects the program's
-literals (`kuna_pushan.rs (string_constants)`) as `operand_refs` does for a
+literals (`kuna_devirtualize.rs (string_constants)`) as `operand_refs` does for a
 native operand. These are the pointer-sized constants a COPY or STORE of the
 emitted program writes (the values the emitter folded, and the immediates of
 the native code it kept). A constant qualifies when it lands in a read-only,
@@ -1278,13 +1314,13 @@ a two-way CBRANCH. Every structuring then starts from the orientation the
 emitter chose, so the result depends on the program and not on how often it
 was structured.
 
-Pinned by `tests/stages/kuna-pushan.xml`. It runs two passes over the
-synthetic `pushan_vm_x86_64` fixture, a push/ret-dispatched stack-machine
+Pinned by `tests/stages/kuna-devirtualize.xml`. It runs two passes over the
+synthetic `devirt_vm_x86_64` fixture, a push/ret-dispatched stack-machine
 interpreter in a 64 KiB `.vmp0` whose bytecode computes `arg0 == 0 ? 7 :
-arg0 + 5` with a cmov-selected virtual branch. With `off`, the function is an
+arg0 + 5` with a cmov-selected virtual branch. With `deobfuscate off`, the function is an
 empty body. With the default, the virtual branch and both returns are
-recovered. `tests/stages/kuna-pushan-sound.xml` decompiles twenty
-hand-written programs of the `pushan_vm2_x86_64` fixture, each aimed at a way
+recovered. `tests/stages/kuna-devirtualize-sound.xml` decompiles twenty
+hand-written programs of the `devirt_vm2_x86_64` fixture, each aimed at a way
 the recovered program could say something false: loops whose exit tests need
 more than two observed counter values (a `setl` the JZ selects on by `cmov`,
 an equality, a bound of 2^40), a branch on a comparison stored and reloaded,
@@ -1308,11 +1344,11 @@ of its frame pointer, kept in an unaligned context cell beside one that the
 two arms of a branch set differently (`f_cell`, which returns the value
 written), and a local written at an address no identity places (`f_lost`,
 whose header reports the lost store).
-`tests/stages/kuna-pushan-interp.xml` runs two passes over the
-`pushan_interp_x86_64` fixture (gcc -O0 from its committed C source), six
+`tests/stages/kuna-devirtualize-interp.xml` runs two passes over the
+`devirt_interp_x86_64` fixture (gcc -O0 from its committed C source), six
 functions that are their own interpreters of one virtual program with a loop
 and a branch, and two that interpret other programs in Tigress's style, every
-variable reached through its slot's address pushed on the virtual stack. With `off`, the switch-dispatched one decompiles to its
+variable reached through its slot's address pushed on the virtual stack. With `deobfuscate off`, the switch-dispatched one decompiles to its
 interpreter. With the default, switch dispatch over writable and read-only
 bytecode, threaded code copied by `memcpy` into a stack-probed local or by an
 inline `rep movsq` that leaves no copy loop behind, and two
@@ -1328,11 +1364,11 @@ not the values stored before the loop.
 The expression arena and the state have unit tests in
 `decompiler/crates/kuna-decomp/src/deobf/kuna_symexpr/tests.rs` and
 `decompiler/crates/kuna-decomp/src/deobf/kuna_symstate/tests.rs`;
-`decompiler/crates/kuna-decomp/src/deobf/kuna_pushanflow/tests.rs` explores a
+`decompiler/crates/kuna-decomp/src/deobf/kuna_devirtflow/tests.rs` explores a
 counting loop under a tiny work budget, memory bound and wall-clock limit and
 checks that each ends the exploration with the caveat naming it, and that a
 budget cut stops two runs at the same step; and
-`decompiler/crates/kuna-decomp/src/deobf/kuna_pushanrules/tests.rs`
+`decompiler/crates/kuna-decomp/src/deobf/kuna_residuerules/tests.rs`
 checks every rewrite of the four arithmetic rules on random byte-wide trees
 against all 65,536 pairs of inputs.
 

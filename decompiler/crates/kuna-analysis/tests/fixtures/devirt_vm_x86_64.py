@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Builds pushan_vm_x86_64: a static x86-64 ELF whose `func` is a protector's
+"""Builds devirt_vm_x86_64: a static x86-64 ELF whose `func` is a protector's
 entry stub (`push imm; jmp vm_entry`) into a push/ret-dispatched stack-machine
 interpreter in its own 64 KiB executable section `.vmp0`.  The bytecode sits in
 a 256-byte block of seeded random filler (entropy above 7 bits/byte) and
 computes `return arg0 == 0 ? 7 : arg0 + 5`; its JZ selects the next virtual PC
-with a cmov.  Regenerate with `python3 pushan_vm_x86_64.py` (needs GNU as/ld)."""
+with a cmov.  Regenerate with `python3 devirt_vm_x86_64.py` (needs GNU as/ld)."""
 import os, random, subprocess, tempfile
 OP = {"LDCTX": 0x3c, "LDIMM": 0x9e, "ADD": 0x51, "EXIT": 0xd7, "JZ": 0x6a}
 def prog():
@@ -47,4 +47,4 @@ with tempfile.TemporaryDirectory() as d:
     open(s, "w").write("\n".join(out))
     subprocess.run(["as", "--64", "-o", o, s], check=True)
     subprocess.run(["ld", "-static", "-e", "func", "--discard-all", "--build-id=none", "-o",
-                    os.path.join(here, "pushan_vm_x86_64"), o], check=True)
+                    os.path.join(here, "devirt_vm_x86_64"), o], check=True)
