@@ -94,6 +94,9 @@ struct Plan {
     b: BlockId,
     ops_a: Vec<OpId>,
     ops_b: Vec<OpId>,
+    /// TEMP stats: run-input merges, stores in the run.
+    run_merges: usize,
+    stores: usize,
 }
 
 fn bb_ops(data: &Funcdata, bl: BlockId) -> Vec<OpId> {
@@ -249,6 +252,9 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
     let g = data.bblocks_ref();
     let (ba, bb) = (g.block(a), g.block(b));
     let nout = ba.size_out();
+    if nout == 1 && std::env::var_os("KUNA_LJ_COND").is_some() {
+        return Err("uncond latch (COND)".into());
+    }
     if nout != bb.size_out() || !(1..=2).contains(&nout) {
         return Err(format!("outs {}/{}", nout, bb.size_out()));
     }
@@ -323,7 +329,9 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
             data.vbank().get(v).unwrap().get_def().and_then(|d| pos.get(&d).copied())
         };
         // Returns Err(cut) when the run must start after index `cut`.
-        let check_pair = |va: VarnodeId, vb: VarnodeId, negated_ok: bool| -> Result<(), Result<usize, String>> {
+        let strict = std::env::var_os("KUNA_LJ_STRICT").is_some();
+        let run_merges = std::cell::Cell::new(0usize);
+        let check_pair = |va: VarnodeId, vb: VarnodeId, negated_ok: bool, at: Option<usize>| -> Result<(), Result<usize, String>> {
             if va == vb {
                 return Ok(());
             }
@@ -353,6 +361,12 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
             if xa.get_size() != xb.get_size() {
                 return Err(Err("merge size".into()));
             }
+            if let Some(k) = at {
+                if strict {
+                    return Err(Ok(k));
+                }
+                run_merges.set(run_merges.get() + 1);
+            }
             Ok(())
         };
         for (k, (oa, ob, slots)) in run.iter().enumerate() {
@@ -365,10 +379,9 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
                 let va = pa.get_in(s).unwrap();
                 let vb = pb.get_in(slots[s as usize]).unwrap();
                 let negated_ok = !(pa.code() == OpCode::CPUI_CBRANCH && matches!(cond, Some((_, _, true))));
-                match check_pair(va, vb, negated_ok) {
+                match check_pair(va, vb, negated_ok, Some(k)) {
                     Ok(()) => {}
                     Err(Ok(cut)) => {
-                        let _ = k;
                         start += cut + 1;
                         continue 'outer;
                     }
@@ -412,7 +425,7 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
                     continue;
                 }
                 let (va, vb) = (p.get_in(sa).unwrap(), p.get_in(sb).unwrap());
-                match check_pair(va, vb, true) {
+                match check_pair(va, vb, true, None) {
                     Ok(()) => {}
                     Err(Ok(cut)) => {
                         start += cut + 1;
@@ -430,11 +443,20 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
         } else if run.iter().all(|(o, _, _)| data.obank().get(*o).unwrap().code() == OpCode::CPUI_BRANCH) {
             return Err("only a branch".into());
         }
+        let stores = run
+            .iter()
+            .filter(|(o, _, _)| data.obank().get(*o).unwrap().code() == OpCode::CPUI_STORE)
+            .count();
+        if stores > 0 && std::env::var_os("KUNA_LJ_NOSTORE").is_some() {
+            return Err("store (NOSTORE)".into());
+        }
         return Ok(Plan {
             a,
             b,
             ops_a: run.iter().map(|p| p.0).collect(),
             ops_b: run.iter().map(|p| p.1).collect(),
+            run_merges: run_merges.get(),
+            stores,
         });
     }
 }
@@ -616,18 +638,38 @@ fn dump(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId, r: &Verdict) {
         format!("{{\"at\":\"{}\",\"outs\":[{}],\"ops\":\"{}\"}}", start_of(data, bl), outs.join(","), names.join(" "))
     };
     let (verdict, run) = match r {
-        Ok(p) => ("ok".to_string(), p.ops_a.len()),
+        Ok(p) => (format!("ok nout={} rm={} st={}", data.bblocks_ref().block(a).size_out(), p.run_merges, p.stores), p.ops_a.len()),
         Err(e) => (e.replace('"', "'"), 0),
     };
+    let tdesc = |bl: BlockId| -> String {
+        let blk = data.bblocks_ref().block(bl);
+        let mut v = Vec::new();
+        for i in 0..blk.size_out() {
+            let t = blk.get_out(i);
+            let ops: Vec<String> = bb_ops(data, t)
+                .iter()
+                .map(|&o| format!("{:?}", data.obank().get(o).unwrap().code()).trim_start_matches("CPUI_").to_lowercase())
+                .collect();
+            let tb = data.bblocks_ref().block(t);
+            v.push(format!("{{\"t\":\"{}\",\"in\":{},\"out\":{},\"ops\":\"{}\"}}", start_of(data, t), tb.size_in(), tb.size_out(), ops.join(" ")));
+        }
+        format!("[{}]", v.join(","))
+    };
+    let extra = if verdict.starts_with("targets differ") || verdict.starts_with("outs") {
+        format!(",\"ta\":{},\"tb\":{}", tdesc(a), tdesc(b))
+    } else {
+        String::new()
+    };
     let line = format!(
-        "{{\"fn\":\"{}\",\"addr\":\"{:x}\",\"h\":\"{}\",\"a\":{},\"b\":{},\"v\":\"{}\",\"run\":{}}}\n",
+        "{{\"fn\":\"{}\",\"addr\":\"{:x}\",\"h\":\"{}\",\"a\":{},\"b\":{},\"v\":\"{}\",\"run\":{}{}}}\n",
         data.get_name(),
         data.get_address().get_offset(),
         start_of(data, h),
         desc(a),
         desc(b),
         verdict,
-        run
+        run,
+        extra
     );
     let path = std::path::Path::new(&dir).join(format!("{}.jsonl", std::process::id()));
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
