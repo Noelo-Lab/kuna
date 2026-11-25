@@ -1019,21 +1019,61 @@ struct GuardSite {
 }
 
 impl GuardSite {
+    /// LOADs that read the memory the loop header sees: walking back from the guard's
+    /// branch through blocks entered only from the one before, every op between the
+    /// LOAD and the loop is free of side effects, or is a STORE to bytes the LOAD does
+    /// not read (the same base value at disjoint constant offsets).
+    fn fresh_loads(&self, lp: &Loop) -> BTreeSet<OpId> {
+        let fd = lp.fd;
+        let bb = fd.bblocks_ref();
+        let none = BTreeSet::new();
+        let b = Builder { fd, subst: None, body: &lp.body, fresh: &none };
+        let addr = |o: &crate::op::PcodeOp, size: i32| {
+            let mut budget = 64;
+            let e = b.build(o.get_in(1)?, 0, &mut budget)?;
+            Some(base_offset(e, i64::from(size)))
+        };
+        let mut fresh = BTreeSet::new();
+        let mut stores: Vec<(Expr, i64, i64)> = Vec::new();
+        let mut blk = self.block;
+        for _ in 0..4 {
+            let mut op = fd.bb_op_tail(blk);
+            while let Some(o) = op {
+                let Some(p) = fd.obank().get(o) else { return fresh };
+                match p.code() {
+                    OpCode::CPUI_LOAD => {
+                        let size = p.get_out().and_then(|v| fd.vbank().get(v)).map_or(0, |v| v.get_size());
+                        let seen = stores.is_empty()
+                            || addr(p, size).is_some_and(|(base, lo, hi)| {
+                                stores.iter().all(|(sb, slo, shi)| *sb == base && (hi <= *slo || *shi <= lo))
+                            });
+                        if seen {
+                            fresh.insert(o);
+                        }
+                    }
+                    OpCode::CPUI_STORE => {
+                        let size = p.get_in(2).and_then(|v| fd.vbank().get(v)).map_or(0, |v| v.get_size());
+                        match addr(p, size) {
+                            Some(r) if size > 0 => stores.push(r),
+                            _ => return fresh,
+                        }
+                    }
+                    c if has_side_effect(c) || p.is_call() => return fresh,
+                    _ => {}
+                }
+                op = p.basic_neighbours().0;
+            }
+            if bb.block(blk).size_in() != 1 {
+                break;
+            }
+            blk = bb.block(blk).get_in(0);
+        }
+        fresh
+    }
+
     fn compare(&mut self, lp: &Loop) -> Option<Cond> {
         let fd = lp.fd;
-        let mut fresh = BTreeSet::new();
-        let mut pure_tail = true;
-        let mut op = fd.bb_op_tail(self.block);
-        while let Some(o) = op {
-            let Some(p) = fd.obank().get(o) else { break };
-            if p.code() == OpCode::CPUI_LOAD && pure_tail {
-                fresh.insert(o);
-            }
-            if has_side_effect(p.code()) || p.is_call() {
-                pure_tail = false;
-            }
-            op = p.basic_neighbours().0;
-        }
+        let mut fresh = self.fresh_loads(lp);
         let pre_pure = self.pre.iter().all(|&b| block_ops(fd, b).iter().all(|&o| {
             fd.obank().get(o).is_some_and(|p| !has_side_effect(p.code()) && !p.is_call())
         }));
@@ -1423,6 +1463,42 @@ fn same_value(a: Option<Expr>, b: Option<Expr>) -> bool {
     }
 }
 
+/// An address as a base expression and the byte range `[lo, hi)` an access of `size`
+/// bytes covers from it: constant terms of sums and constant-index pointer arithmetic
+/// fold into the offset.
+fn base_offset(e: Expr, size: i64) -> (Expr, i64, i64) {
+    fn split(e: Expr) -> (Expr, i64) {
+        match e {
+            Expr::Op { code: OpCode::CPUI_INT_ADD, args, size } if args.len() == 2 => {
+                let mut it = args.into_iter();
+                let (a, b) = (it.next().unwrap_or(Expr::Const { size, val: 0 }), it.next().unwrap_or(Expr::Const { size, val: 0 }));
+                match (a.konst(), b.konst()) {
+                    (Some(k), None) => {
+                        let (base, off) = split(b);
+                        (base, off.wrapping_add(sext(k, size)))
+                    }
+                    (None, Some(k)) => {
+                        let (base, off) = split(a);
+                        (base, off.wrapping_add(sext(k, size)))
+                    }
+                    _ => (Expr::Op { code: OpCode::CPUI_INT_ADD, size, args: vec![a, b] }, 0),
+                }
+            }
+            Expr::Op { code: OpCode::CPUI_PTRADD, args, size } if args.len() == 3 && args[1].konst().is_some() && args[2].konst().is_some() => {
+                let k = sext(args[1].konst().unwrap_or(0), args[1].size()).wrapping_mul(args[2].konst().unwrap_or(0) as i64);
+                let (base, off) = split(args.into_iter().next().unwrap_or(Expr::Const { size, val: 0 }));
+                (base, off.wrapping_add(k))
+            }
+            other => (other, 0),
+        }
+    }
+    let (base, off) = split(e);
+    if !(-(1 << 31)..1 << 31).contains(&off) {
+        return (Expr::Const { size: 0, val: u64::MAX }, 0, i64::MAX);
+    }
+    (base, off, off + size)
+}
+
 /// `e` with every occurrence of `fact.0` replaced by the constant `fact.1`.
 fn with_fact(e: Expr, fact: Option<&(Expr, Expr)>) -> Expr {
     let Some((from, to)) = fact else { return e };
@@ -1665,6 +1741,16 @@ fn simplify(e: Expr) -> Expr {
                 let c = ks[2].unwrap_or(0);
                 Some(a.wrapping_add(b.wrapping_mul(c)))
             }
+            OpCode::CPUI_INT_EQUAL => Some(u64::from(a == b)),
+            OpCode::CPUI_INT_NOTEQUAL => Some(u64::from(a != b)),
+            OpCode::CPUI_INT_LESS => Some(u64::from(a < b)),
+            OpCode::CPUI_INT_LESSEQUAL => Some(u64::from(a <= b)),
+            OpCode::CPUI_INT_SLESS => Some(u64::from(sext(a, asz) < sext(b, asz))),
+            OpCode::CPUI_INT_SLESSEQUAL => Some(u64::from(sext(a, asz) <= sext(b, asz))),
+            OpCode::CPUI_BOOL_NEGATE => Some(u64::from(a == 0)),
+            OpCode::CPUI_BOOL_AND => Some(u64::from(a != 0 && b != 0)),
+            OpCode::CPUI_BOOL_OR => Some(u64::from(a != 0 || b != 0)),
+            OpCode::CPUI_BOOL_XOR => Some(u64::from((a != 0) != (b != 0))),
             _ => None,
         };
         if let Some(v) = folded {
