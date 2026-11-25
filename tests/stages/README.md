@@ -21,6 +21,16 @@ if/else whose arms each store 1 or 0 keeps its `if`. Under `option iteregion on`
 the first prints as an `if` without an `else`, the stores fold into a
 conditional and the computed arm keeps its `if`.
 
+`kuna-loweredswitch-auto.xml` checks option `loweredswitch` (default `auto`)
+on gcc -O0 x86-64: a two-case `switch`, whose tests each jump to their case on
+a match, re-rolls, and an if/else-if chain of three tests that each fall into
+their own body keeps its tests. Under `option loweredswitch on` the two-case
+switch prints as two tests and the three-test chain re-rolls. An installed
+switch stays for the session, so the second pass reads a second copy of the
+bytes. A three-case switch over a struct field that gcc loads into a register
+once re-rolls too: the install reads the switch value from that load through
+the register copy and its zero extension.
+
 `kuna-guardauto.xml` checks option `guardarm` (default `auto`) on two x86-64
 functions. In a gcc -O0 `unget`, whose parameters live in frame slots, the
 default prints the source's flat guard `if (c == -1 || ...) return -1;`, and

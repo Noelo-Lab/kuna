@@ -3189,7 +3189,15 @@ load of that size. A wider location whose low bytes were last written by a zero 
 sign extension is followed into what was extended, so gcc -O0's
 `movzwl -4(%rbp),%eax ; cmp $0xea60,%eax` over an `unsigned short` reads the
 two-byte load. Every path must reach the same operand, or the install reads the
-home storage.
+home storage. When detection held the value in a temporary that a load wrote (a
+field, a global or a pointed-to byte the compiler loaded once into a register),
+there is no home storage to fall back to, and the operand must be that load. No
+other temporary then counts as the home, and the walk also follows a register
+copy of the value and an extension whose low bytes it is, past a write that
+extends a location into itself: x86-64 zero-extends every 32-bit register write
+into the whole register, so gcc -O0's `mov eax,[rax+0x48] ; cmp eax,2` lifts to
+a load, a copy into `EAX`, `RAX = zext(EAX)` and a compare of a copy of `EAX`,
+and reads the load.
 
 Whichever storage it reads, a named switch is then checked. Detection records a
 restart-stable *name* for the compared value
@@ -3307,7 +3315,7 @@ the first head, as before, but never introduced by a later one. A record's
 dispatch value is then subject to the value check like any other. Measured
 byte-identical on the 675-assertion datatest corpus when the check was introduced.
 
-### Which cascades are switches — `loweredswitch on|linear|tree|all`
+### Which cascades are switches — `loweredswitch on|auto|linear|tree|all`
 
 gcc lowers every switch below its case-count threshold to compares: a
 binary-search tree with range splits once there are enough cases, and below that
@@ -3356,6 +3364,68 @@ the sink, the value check, the exactness check and the every-head rule apply
 under each value, and the re-roll is installed through the same restart, so a
 switch installed for a function stays if the value is narrowed later in the
 session.
+In an unoptimized function the default `auto` replaces the shape guess with
+what the binary records (next section).
+
+### loweredswitch auto — the switch or if-chain an unoptimized function was written with
+
+In optimized code a small `switch` and an if/else-if chain over one variable
+compile to the same compares, so the shape rule above guesses. Unoptimized code
+keeps them apart by layout. An unoptimizing compiler emits a `switch` as a run
+of tests laid out one after another, each jumping to its case on a match and
+falling through to the next test, with the case bodies after the run; an
+`if (x == K)` falls through into its own body on a match and jumps to the next
+`else if` on a mismatch:
+
+```text
+switch (x)          cmp x,1 ; je case1 ; cmp x,2 ; je case2 ; jmp default
+if (x == 1) ...     cmp x,1 ; jne next ; <body> ; next: cmp x,2 ; jne ...
+```
+
+gcc ends the run with a jump to the default, or reverses its last test so
+that it falls into a case body laid out right after it (`cmp x,'N' ; je N ;
+cmp x,'n' ; jne end ; <n body>`); clang tests every value as
+`sub ; je case ; jmp next`. A switch of three or more values
+that gcc lowers to a binary-search tree keeps the polarity on its equality
+tests. What the compared value is does not separate the two forms: a switch
+over a plain `int` local compares its frame slot in every test as the
+if-chain does, and only a selector that needs a temporary (a promoted `char`, a
+field, a global, a computed value) is loaded once for the whole run.
+
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_o0switch.rs (record)` reads
+every conditional branch at the first heritage pass of a function the detector
+of chapter 03 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_unoptimized.rs
+(is_unoptimized)`) calls unoptimized, before simplification normalizes branch
+senses and propagates loads away. For each CBRANCH it records, by the address
+of the branch: whether the condition is an equality against a constant
+(`x == K`, or the flag form `x - K == 0`, possibly negated or read back through
+a copied flag) and, if so, whether the branch is taken when the values are
+equal; and the instruction that produced the compared value, followed back
+through register moves to the load or computation. The record is kept on the
+`Funcdata` for the rest of the decompile.
+
+`kuna_o0switch.rs (verdict)` reads the record for the tests of a cascade
+`kuna_loweredswitch.rs (recover_cascade)` found, in address order. A test
+without a record, or fewer than two equality tests, decides nothing. An
+equality test before the last that falls into its body on a match makes the
+cascade an if-chain. Otherwise every equality test but the last jumps on its
+match, and the cascade is a switch when the last jumps too, when there are
+three or more equality tests, or when one load feeds every test; a two-test
+chain whose last test falls into its body is also how an `if (x != K)`
+followed by another test, and a two-value `||`, compile, so it is left
+undecided. `cascade_is_switch` takes the
+verdict before the shape: a switch re-rolls with two to sixteen values and any
+two distinct bodies (shared bodies are `case` labels of one arm), an if-chain
+never re-rolls, whatever its size or number of bodies, and an undecided cascade
+keeps the shape rule. Every other guard of the recogniser and the keep pass
+still applies, and neither the retry after a withdrawal nor the keep pass's
+exemption from its goto test reads the record: the retry decides by the shape
+rule, as the recogniser it retries did, and only a tree the shape rule takes is
+exempt. Otherwise a three-case tree the keep pass withdraws would come back as
+a two-case switch behind its first test, reached through a goto. On the
+decbench corpus's unoptimized functions the polarity separates 841 of 842
+x86-64 switch cascades and every Thumb one from the if-chains. `option loweredswitch on` restores the shape rule everywhere, and
+`linear`, `tree` and `all` widen the shape rule without reading the record.
 
 ### Where a cascade starts and what the install must keep (part of `loweredswitch`)
 
