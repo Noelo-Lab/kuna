@@ -1,5 +1,36 @@
 # Stage-model issue testcases
 
+`kuna-armshiftguard.xml` checks option `armshiftguard` (default `needed`) on
+clang -O2 Thumb code. A register LSL whose count is masked with `& 0x1f`, or is
+a four-bit field, prints the plain `1 << (pin & 0x1f)` because its count cannot
+reach 32; an unbounded count keeps the `n < 32u ? x << n : 0` guard. `never`
+drops that guard too, `always` restores all three, and with `armconstshift on`
+a guard-free shift of a signed literal keeps its unsigned conversion.
+
+`kuna-returndup-auto.xml` checks option `returndup` (default `auto`) on gcc -O0
+x86-64: a guard clause `if (!c) return 0;` keeps its own return, a body that
+shares the epilogue's `return 3` prints one return, a void `if (c) return;`
+keeps its bare return and `if (c) return a; return b;` returns each
+parameter. Under `option returndup on` both guard clauses print wrapped by the
+size rule and the two parameter returns merge into one variable.
+
+`kuna-iteregion-auto.xml` checks option `iteregion` (default `auto`) on gcc
+-O0 x86-64: a conditional value that each arm loads into a register before one
+store after the join prints as `?:`, also when one arm is computed, and an
+if/else whose arms each store 1 or 0 keeps its `if`. Under `option iteregion on`
+the first prints as an `if` without an `else`, the stores fold into a
+conditional and the computed arm keeps its `if`.
+
+`kuna-loweredswitch-auto.xml` checks option `loweredswitch` (default `auto`)
+on gcc -O0 x86-64: a two-case `switch`, whose tests each jump to their case on
+a match, re-rolls, and an if/else-if chain of three tests that each fall into
+their own body keeps its tests. Under `option loweredswitch on` the two-case
+switch prints as two tests and the three-test chain re-rolls. An installed
+switch stays for the session, so the second pass reads a second copy of the
+bytes. A three-case switch over a struct field that gcc loads into a register
+once re-rolls too: the install reads the switch value from that load through
+the register copy and its zero extension.
+
 `kuna-guardauto.xml` checks option `guardarm` (default `auto`) on two x86-64
 functions. In a gcc -O0 `unget`, whose parameters live in frame slots, the
 default prints the source's flat guard `if (c == -1 || ...) return -1;`, and
@@ -31,6 +62,46 @@ leaves a stale register off a callee that never reads it.
 returning the input argument. Its CLI companion covers both byte orders,
 conditional transfers, joins, stack reloads and ordinary ABI returns, and
 compiles and executes the emitted C at O0/O2.
+
+`kuna-stated-jump-placement.xml` checks stated computed-jump destinations
+whose case labels the jump's value could never equal. A real-mode `jmp ax`
+takes an offset in its code segment, a `jmp far [bx]` takes an offset in the
+segment it loads, whether or not the destinations fit 16 bits, and DOS picks
+the segment an MZ executable runs at. Each rejects its `override jumptable`
+and keeps the unresolved jump.
+
+`kuna-stated-jump-owners.xml` checks which stated destinations stay in the
+function that holds the jump. A GCC-style `.cold` part of the jumping
+function is a case, in a loaded ELF and in an XML image whose symbols are
+named as written, and so is the entry of a caller-declared extent that
+holds the site, beside a size-less inner symbol. A size-less exported symbol
+holds no site, so a jump to its entry from an unsymbolized function is
+refused, as is the entry of `ordinary` from `dispatch`. A later `function
+bounds` that would make an installed destination another function's entry is
+refused, and the installed set and its identical restatement stay in use.
+
+`kuna-glibcvoidimport.xml` checks MIPS PIC wrappers that pass their pointer
+to `free` without touching the argument register. Where the image's symbol
+version binds `free` to glibc (`free@GLIBC_2.0` from `libc.so.6` or
+`libpthread.so.0`), the N32, O32 and N64 wrappers forward the pointer, as they
+do when a console declaration names the stub `free`. An unversioned `free`, one
+versioned by another library or by `GLIBC_PRIVATE`, and a caller's
+`void free(void)` declaration pass nothing, and a console declaration naming
+the stub `exit` keeps today's `exit();`. The same glibc image keeps
+`strlen(a0) + 1`, and `sincos`, which no table declares on MIPS, keeps today's
+recovery.
+
+`kuna-ppc64-plt-stubs.xml` checks PowerPC64 ELFv2 shared objects whose
+wrappers call `free` and `strlen` through each linker stub form: GNU ld's
+TOC stub with and without the `r2` save, its pc-relative stub for Power10
+callers and its `pld` stub, lld's `addis` and `pld` stubs, big-endian
+ELFv2, and GNU ld's stubs for an import that both TOC and pc-relative code
+call, which pc-relative callers enter one word in. Every wrapper prints
+`free(a0)` and `strlen(a0) + 1`. In the assembly
+fixture, `outer` calls `free` through a real stub, then an exported function
+shaped like a `pld` stub, which keeps its name, and a local one that loads a
+GOT entry instead of a PLT slot, which stays `sub_`. The fixtures and their
+recipe are in `tests/fixtures/ppc64-plt-stubs/`.
 
 `kuna-narrowed-call-input.xml` checks a call through a typed field whose
 argument was narrowed to two bytes before the field's prototype was forced on
@@ -305,6 +376,8 @@ writeup, not here.
 
 | `gh1628-x86-vmx-decode-flags.xml` | [Kuna #1628](https://github.com/Noelo-Lab/kuna/issues/1628) | S1 decode-table / S2 p-code lift (x86 spec-fix, no option) | `VMREAD`/`VMWRITE` decode without REX.W in 64-bit mode; every VMX user-op returns its status (0/1/2) and `vmxflags` sets ZF/CF from it, so `setna` after `vmlaunch` reads the VMX outcome; `VMPTRST` stores the VMCS pointer |
 
+| `kuna-rex-before-prefix.xml` | Authored x86-64 prefix order | S1 decode-table (x86 spec-fix, no option) | a REX prefix that a legacy prefix follows is ignored, as the CPU ignores it (`f3 48 67 ab` is `rep stos` of dwords with a 32-bit address; `48 67 f3 48 a5` keeps the last REX.W), instead of the legacy prefix decoding as a bad opcode |
+
 | `gh1674-subpiece-shadow-wide-const.xml` | [Kuna #1674](https://github.com/Noelo-Lab/kuna/issues/1674) | P6 merge (cover intersection, partial copy shadow; no option) | a constant truncated by 8 or more bytes reads 0 instead of shifting a 64-bit offset by 64 or more bits, so the function decompiles in a build with overflow checks |
 
 | `gh9184-x86-fma-ymm256.xml` | [GH-9184](https://github.com/NationalSecurityAgency/ghidra/issues/9184) | S1/S2 decode + pcode-semantics (x86 spec-fix, no option) | SLEIGH YMM FMA uses 256-bit `local tmp:32` (was `tmp:16`) |
@@ -417,7 +490,7 @@ writeup, not here.
 | `gh468-nulterminator.xml` | kuna [GH-468](https://github.com/Noelo-Lab/kuna/issues/468) (MSVC `/Od` `canary_check`: `char buf[64]` terminated by `buf[sizeof(buf) - 1] = 0` after `strncpy(buf, in, 63)` printed as `uint1 v3 [63]` plus a separate never-read `char v8 = 0` at stack - 0x19) | P6 variable & storage model, stack-frame layout (`ScopeLocal::restructure` closes an open integer array exactly one element after an unread zero store at its end; nothing after that element joins it) | `option nulterminator on\|off`: on = `uint1 v [64]` with `v[0x3f] = 0`, off = the `[63]` array beside the split-off char. Hand-assembled neighbours pin the extent: `pad_after` and `wide_str` gain only the terminator (`[34]` not `[40]`, `uint2 [15]`); a second zero two elements past the new end, a byte after alignment padding, a zeroed local read later, a slot read directly, a non-zero store, a zeroed int after an `int4` array, a two-byte zero after a `char` array and an address-taken byte all stay separate in both passes |
 | `gh510-phiopflags.xml` | kuna [GH-510](https://github.com/Noelo-Lab/kuna/issues/510) (an 18 MB Windows PE: six functions produced no output at all, each one a `LOSS-131` record carrying `index out of bounds: the len is N but the index is N`) | P3 SSA construction, the op-property triple heritage caches on the ops it creates (`glb->inst[opc]`): the phi carries `special|marker|nocollapse` as upstream's `TypeOpMulti` does, so the raw-stack-pointer `PTRSUB(sp,#0)` placeholder is not spliced into a block's leading phi run and `ConditionalJoin::cutDownMultiequals` cannot stop short of a phi it has to cut; correctness fix, no option | default, single pass: 0 of 5 assertions pass pre-fix (the error stub `void scan_list(void)`), 5/5 post-fix |
 | `kuna-floatgrouping.xml` | kuna [GH-641](https://github.com/Noelo-Lab/kuna/issues/641) (two x86-64 functions multiplying the same three floats in opposite orders decompiled to the same C, because `CPUI_FLOAT_MULT`/`CPUI_FLOAT_ADD` pushed the associative integer `*`/`+` tokens and the printer dropped the parentheses around a same-token right operand; one of the two renderings computed a different value than the function it came from) | P9 emit, the operator-token table and the `parentheses` binary case: the two float opcodes get their own singletons carrying `left_to_right_only`, which leaves a same-token left operand bare and parenthesises a right one; correctness fix, no option | default, single pass: the right-grouped product and sum keep `a * (b * c)` / `a + (b + c)` and the flat chain matches exactly one function of each pair, where pre-fix it matched both |
-| `kuna-arm-register-shift.xml` | kuna [GH-849](https://github.com/Noelo-Lab/kuna/issues/849) (a variable ARM LSL can emit undefined C shifts for low-eight-bit counts 32 through 255) | P9 C emission, a guarded `CPUI_INT_LEFT` with unsigned shiftee, restricted to repeatable ARM operands; correctness fix, no option | default, single pass: preserves `count & 0xff`, checks `< 32`, emits an unsigned shift plus zero fallback, and avoids compound assignment when the guard applies |
+| `kuna-arm-register-shift.xml` | kuna [GH-849](https://github.com/Noelo-Lab/kuna/issues/849) (a variable ARM LSL can emit undefined C shifts for low-eight-bit counts 32 through 255) | P9 C emission, a guarded `CPUI_INT_LEFT` with unsigned shiftee, restricted to repeatable ARM operands; option `armshiftguard` (its counts are unbounded, so the default `needed` keeps every guard) | default, single pass: preserves `count & 0xff`, checks `< 32`, emits an unsigned shift plus zero fallback, and avoids compound assignment when the guard applies |
 | `kuna-arm-register-shift-signed.xml` | kuna [GH-849](https://github.com/Noelo-Lab/kuna/issues/849) follow-up (the shift's unsigned C repair must retain the signed value consumed by ARM signed compare and ASR) | P9 C emission, signed true/false conditional arms around the guarded unsigned LSL | default: output retains signed comparison and arithmetic shift behavior |
 | `kuna-call-array-extent.xml` | Synthetic call-escaped frame storage | P6 stack-frame-layout | `option callarrayextent on\|off` |
 | `kuna-arraysize.xml` | decbench type_match census: stack buffers declared with the alignment padding below the next object | P6 stack-frame-layout (an escaped buffer ends at the byte count its library call states) | `option arraysize off\|on\|calls` |
@@ -429,6 +502,8 @@ writeup, not here.
 | `kuna-rettriangle.xml` | `returndup` split the shared return after a one-block `if`, printing `if (c) f(); return 0;` as `if (!c) return 0; f(); return 0;` (authored C, gcc -O0, stack-protected) | P8 goto-quality, return duplication | `option rettriangle on\|off` |
 | `kuna-tailform.xml` | the function-tail `if` printed in the form the return layout picked: `if (a0) return; note();` for `if (a == 0) note();`, a guard and a second `return 0` for a wrapped two-call body, the arm repeating the final `return 0`, a six-statement void body wrapped, and a list walk whose guard `looptest` owns (authored C, gcc -O2) | P8 goto-quality, print-tree edit after final structuring | `option tailform off\|on\|<n>\|<void>,<value>` |
 | `kuna-tailform-noreturn.xml` | a function ending in a call that does not return printed with that call last and the other side's return inside the `if`: `if (v2) return v2 + 7; __fprintf_chk(..); exit(2);`, a merged two-test `abort` and the test after a loop the same way, and a void store-and-return arm before `abort();` (authored C, gcc -O2, the fixture loaded whole) | P8 goto-quality, print-tree edit after final structuring | `option tailform off\|on` |
+| `kuna-tailform-model.xml` | the C runtime's `__do_global_dtors_aux` (`if (completed) return; ...`) printed wrapped by the 4-line threshold; `option tailform model` prints the guard clause, and still wraps a one-call tail (authored C, gcc -O2, the fixture loaded whole) | P8 goto-quality, print-tree edit after final structuring | `option tailform on\|model` |
+| `kuna-tailform-voidreturn.xml` | a void function's last statement `if (!completed) { ...; completed = 1; return; }` printed with the arm's redundant `return;` (the C runtime's `__do_global_dtors_aux`, gcc -O0 fixture loaded whole) | P8 goto-quality, print-tree edit after final structuring | `option tailform off\|on` |
 
 `kuna-minss-nan.xml` pins an authored scalar MINSS and ratio/clamp probe.
 P3 and P9 preserve the negation of an ordered float comparison as `!(a < b)`
@@ -700,3 +775,32 @@ is returned beside another call's result: two functions that tail-call each
 other and a declared `int forward_byte`, the shape of readline's
 `rl_forward_char`. The partner's call output narrows with the RETURN, so both
 return `int4` and the declared call is not zero-extended.
+
+`gh1922-declared-caller-readarg-thumb.xml` checks Thumb callers with declared
+fixed parameter lists that save `r3` as gcc's alignment pad (`push {r3, lr}`):
+a newlib-shaped copy keeps the size the caller also multiplies with, and the
+`data` and `len` a caller passes on untouched. A callee that reads only `r0`
+and `r1` still gets two arguments.
+
+`gh1922-pushpad-caller-readarg-thumb.xml` checks the same alignment pad with
+no declaration: a Thumb caller whose `push {r3, r4, r5, r6, r7, lr}` stores
+`r3` beneath `lr` keeps the length it also stores, a callee that reads only
+`r0` and `r1` still gets two arguments, and a caller that saves `r0`-`r3` in
+a push of their own (a variadic register save) still loses it, as does one
+that pads with `push {r3, ..., lr}` and saves `r1`-`r3` with `stm` (clang
+-Oz).
+
+`kuna-retvalue.xml` checks that a function its callers read a result from
+returns it though it also stores or loads through it, and that zero stores into
+globals do not make a returned zero look like a `-fzero-call-used-regs`
+epilogue. gcc -O2's `make_cell` stores through what `malloc` returned,
+`skip_blanks` loads through the pointer it advances, and `lookup` walks a list
+through its cursor, each read by `main`: they print their return, where they
+printed `void`. `reset` (`movl $0,gi; xor %eax,%eax; movl $0,gj; ret`) returns
+its zero. `push_cell`, whose result `main` ignores, stays `void`. A strict fix
+with one pass.
+
+`kuna-vcmp-carry.xml` checks the ARM conditions that read the carry after
+`vcmp`/`vcmpe` and `vmrs APSR_nzcv, fpscr`. The hardware sets C for unordered
+operands, so `hi` and `cs` are taken for a NaN and `ls` and `cc` are not; each
+printed test is false exactly when its branch is taken, NaN included.

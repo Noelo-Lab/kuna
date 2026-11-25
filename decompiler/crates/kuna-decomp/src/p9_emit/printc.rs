@@ -1655,6 +1655,9 @@ pub struct PrintC {
     /// [`crate::kuna_globalref`].
     globalref: crate::kuna_globalref::Plan,
     named_globals: crate::kuna_namedglobals::References,
+    /// The helpers and user-defined operations this function's C calls. See
+    /// [`crate::kuna_unitcalls`].
+    unit_calls: crate::kuna_unitcalls::Calls,
     /// Per-body spelling of a goto-target leaf whose address label another
     /// printed label already uses (see [`assign_label_names`](PrintC::assign_label_names)).
     label_names: std::collections::BTreeMap<BlockId, String>,
@@ -1710,6 +1713,7 @@ impl PrintC {
             stmt_op: None,
             globalref: crate::kuna_globalref::Plan::default(),
             named_globals: crate::kuna_namedglobals::References::default(),
+            unit_calls: crate::kuna_unitcalls::Calls::default(),
             label_names: std::collections::BTreeMap::new(),
         }
     }
@@ -2788,6 +2792,7 @@ impl PrintC {
         // type-name chokepoint below reads `self.rt_ctx`.
         self.rt_ctx = RealTypeCtx::for_function(fd, arch, self.out_lang);
         self.named_globals = crate::kuna_namedglobals::References::default();
+        self.unit_calls = crate::kuna_unitcalls::Calls::default();
         self.globalref = crate::kuna_globalref::plan(
             fd,
             arch,
@@ -5224,11 +5229,11 @@ impl PrintC {
             .get(m.cbranch)
             .map(|o| (o.get_addlflags() & crate::op::pcodeop_addlflags::kuna_iteregion) != 0)
             .unwrap_or(false);
+        let arms = [Some(m.true_op), m.else_op];
         if marked
-            && !self.needs_storage_assignment(fd, m.true_op)
-            && !self.needs_storage_assignment(fd, m.else_op)
-            && !self.converts_storage_load(fd, arch, m.true_op)
-            && !self.converts_storage_load(fd, arch, m.else_op)
+            && arms.into_iter().flatten().all(|op| {
+                !self.needs_storage_assignment(fd, op) && !self.converts_storage_load(fd, arch, op)
+            })
         {
             Some(m)
         } else {
@@ -5450,7 +5455,10 @@ impl PrintC {
             &MarkupRef::none(),
         );
         self.emit.spaces(1, 0);
-        self.op_push_ir(fd, arch, m.else_op, None);
+        match m.else_op {
+            Some(op) => self.op_push_ir(fd, arch, op, None),
+            None => self.push_vn_explicit_ir(fd, arch, m.dest, m.true_op),
+        }
         self.cast_implied.set_arm_drops(Vec::new());
         if !ternary {
             self.recurse();
@@ -6684,6 +6692,7 @@ impl PrintC {
                 // decode is a pseudo-call naming the failure, not a return.
                 let halt = fd.obank().get(op).map(|o| o.get_halt_type()).unwrap_or(0);
                 if let Some(nm) = crate::kuna_decodehalt::halt_call_name(halt) {
+                    self.unit_calls.record(fd, op, nm);
                     self.emit.tag_func_name(nm, SyntaxHighlight::FuncnameColor, &kw_markup);
                     self.emit.print(crate::printlanguage::OPEN_PAREN, SyntaxHighlight::NoColor);
                     self.emit.print(crate::printlanguage::CLOSE_PAREN, SyntaxHighlight::NoColor);
@@ -7232,6 +7241,7 @@ impl PrintC {
             return;
         }
         let name = func_operator_name(fd, op, opc);
+        self.unit_calls.record(fd, op, &name);
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
         // The name is pushed as an *operator* token (C++ `optoken`, no_color).
         self.push_atom(&Atom::with_op(
@@ -7337,6 +7347,7 @@ impl PrintC {
                 (false, Some(op)) => String::from_utf8_lossy(op.get_name()).into_owned(),
                 (false, None) => format!("CALLOTHER[{:#x}]", in0_off),
             };
+            self.unit_calls.record(fd, op, &nm);
             self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
             self.push_atom(&Atom::with_op(
                 nm,
@@ -8604,12 +8615,13 @@ impl PrintC {
         arch: &Architecture,
         m: &crate::p8_structure::kuna_iteregion::IteAssignMatch,
     ) -> Vec<OpId> {
+        let Some(else_op) = m.else_op else { return Vec::new() };
         if !self.cast_implied.arms_enabled() || !self.lang().caps.ternary {
             return Vec::new();
         }
         let Some(strat) = cast_strategy_for(arch) else { return Vec::new() };
         let view = ImpliedView { pc: self, fd, arch, strat };
-        crate::kuna_castternary::arm_drops(&self.cast_implied, &view, fd, [m.true_op, m.else_op], m.dest)
+        crate::kuna_castternary::arm_drops(&self.cast_implied, &view, fd, [m.true_op, else_op], m.dest)
     }
 
     /// C++ `PrintC::pushType` (printc.cc:1540) for a base type, reduced to the
@@ -11775,6 +11787,11 @@ impl PrintC {
 
     pub fn globalref_plan(&self) -> &crate::kuna_globalref::Plan {
         &self.globalref
+    }
+
+    /// The helpers and user-defined operations the last function printed calls.
+    pub fn unit_calls(&self) -> &crate::kuna_unitcalls::Calls {
+        &self.unit_calls
     }
 
     fn push_member_base_ir(

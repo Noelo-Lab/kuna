@@ -49,11 +49,13 @@ pub mod elfv1;
 mod elfv1_imports;
 pub mod kuna_ppc32_imports;
 pub mod kuna_ppc64r12;
+mod kuna_ppc64_stubs;
 mod kuna_ppc32picimports;
 pub use kuna_ppc32picimports::{ImportProofMemo, ImportProofScope};
 // (kuna) ELF section-table tolerance: an image whose section headers are
 // unreadable still has program headers describing every loadable byte.
 pub mod elf_shdr;
+pub mod ieee695;
 // (kuna) PE data-directory tolerance: a `NumberOfRvaAndSizes` larger than its own
 // optional header is clamped to the directories that are really present.
 pub mod pe_datadirs;
@@ -65,6 +67,7 @@ pub mod pe_dosmagic;
 pub mod pe_headers;
 // (kuna) ET_REL relocatable-object (`.o`) load-layout + relocation engine.
 pub mod reloc_object;
+pub mod srecord;
 // Architecture-aware ELF instruction/data relocation encoders used by the
 // relocatable-object layout. Kept separate so bitfield rules are unit-testable.
 mod reloc_apply;
@@ -135,11 +138,13 @@ pub mod kuna_armfuncmode;
 pub mod kuna_floatabi;
 // (kuna) does an arm64 image's platform have the callee extend a narrow return?
 pub mod kuna_returnext;
+pub mod kuna_spillselects;
 // (kuna #1288) the x86 real-mode code segment a loader paints into the decode context.
 pub mod kuna_realmodecs;
 // (kuna `mzdgroup`) the data segment an MS-DOS program's startup code loads into DS.
 pub mod kuna_mzdgroup;
 
 pub mod kuna_mipsstubs;
+pub mod ihex;
 
 mod kuna_nullable_reloc;

@@ -67,6 +67,7 @@ ffffa6f1ffff
 <symbol space="ram" offset="0x401106" name="f"/>
 </binaryimage>
 <script>
+  <com>option returndup on</com>
   <com>option switchreturn off</com>
   <com>lo fu f</com>
   <com>decompile</com>

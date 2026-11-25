@@ -683,6 +683,7 @@ pub(super) fn build(
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
+        kuna_library_table: false,
     };
     let byval = tail.and_then(|tail| byval_decl(&pieces, &tail, types, ptr, word_size));
     Some(MsvcSig { pieces, model: x86_32.then(|| decl.convention.model()), byval })

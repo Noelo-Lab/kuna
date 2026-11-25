@@ -1,0 +1,70 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `option loweredswitch` value `auto` (the default), P2 switch-model: in
+    a function the per-function detector (p3_dataflow/kuna_unoptimized.rs)
+    calls unoptimized, how the compare tests were laid out
+    (p2_lift/kuna_o0switch.rs) decides whether a cascade re-rolls.
+
+    gcc 11 -O0 (-fno-pic -fno-stack-protector -fcf-protection=none) of
+        struct S { int pad; int t; };
+        extern void f1(void), f2(void), f3(void);
+        int sw2(int y, int x) { switch (x) { case 1: f1(); break; case 2: f2(); break; } return y; }
+        int if3(int x) { if (x == 1) f1(); else if (x == 2) f2(); else if (x == 7) f3(); return 0; }
+        int swf(struct S *p) { switch (p->t) { case 0: f1(); break; case 1: f2(); break; case 2: f3(); break; } return 0; }
+        void f1(void) {} void f2(void) {} void f3(void) {}
+    sw2's tests each jump to their case on a match (`cmp x,1 ; je ; cmp x,2 ;
+    je ; jmp`); if3's each fall into their own body (`cmp x,1 ; jne next`).
+    swf compares a field it loads into a register once (`mov eax,[rax+4] ;
+    cmp eax,2 ; je ; ...`), so the install reads the switch value from that
+    load through the register copy and its zero extension.
+    An installed switch stays for the rest of a session, so the bytes are
+    loaded twice and pass 2 reads the copy at 0x200000.
+
+    Pass 1 (default auto): sw2's two cases print as a switch (#1, #2), if3
+    keeps its tests (#3) and swf's three cases print as a switch (#7). Pass 2
+    (option loweredswitch on, the old default): sw2_on prints its two tests
+    (#4) and if3_on's three tests with a body each re-roll (#5, #6).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">554889e54883ec10897dfc8975f8837df8017408837df8027409eb0de887000000eb06e887000000908b45fcc9c3554889e54883ec10897dfc837dfc017507e864000000eb18837dfc027507e85e000000eb0b837dfc077505e858000000b800000000c9c3554889e54883ec1048897df8488b45f88b400483f802741e83f8027f1f85c0740783f8017409eb14e816000000eb0de816000000eb06e81600000090b800000000c9c3554889e5905dc3554889e5905dc3554889e5905dc3</bytechunk>
+<bytechunk space="ram" offset="0x200000" readonly="true">554889e54883ec10897dfc8975f8837df8017408837df8027409eb0de887000000eb06e887000000908b45fcc9c3554889e54883ec10897dfc837dfc017507e864000000eb18837dfc027507e85e000000eb0b837dfc077505e858000000b800000000c9c3554889e54883ec1048897df8488b45f88b400483f802741e83f8027f1f85c0740783f8017409eb14e816000000eb0de816000000eb06e81600000090b800000000c9c3554889e5905dc3554889e5905dc3554889e5905dc3</bytechunk>
+<symbol space="ram" offset="0x100000" name="sw2"/>
+<symbol space="ram" offset="0x10002e" name="if3"/>
+<symbol space="ram" offset="0x100065" name="swf"/>
+<symbol space="ram" offset="0x1000a8" name="f1"/>
+<symbol space="ram" offset="0x1000af" name="f2"/>
+<symbol space="ram" offset="0x1000b6" name="f3"/>
+<symbol space="ram" offset="0x200000" name="sw2_on"/>
+<symbol space="ram" offset="0x20002e" name="if3_on"/>
+<symbol space="ram" offset="0x200065" name="swf_on"/>
+<symbol space="ram" offset="0x2000a8" name="f1_on"/>
+<symbol space="ram" offset="0x2000af" name="f2_on"/>
+<symbol space="ram" offset="0x2000b6" name="f3_on"/>
+</binaryimage>
+<script>
+  <com>lo fu sw2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu if3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu swf</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option loweredswitch on</com>
+  <com>lo fu sw2_on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu if3_on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LOWEREDSWITCH AUTO #1: sw2's two cases print as a switch (pass 1)" min="1" max="1">^  switch\(a1\) \{$</stringmatch>
+<stringmatch name="LOWEREDSWITCH AUTO #2: each arm of sw2's switch returns y (pass 1)" min="3" max="3">^      return a0;$</stringmatch>
+<stringmatch name="LOWEREDSWITCH AUTO #3: if3 keeps its last test (pass 1)" min="1" max="1">^      if \(a0 == 7\)$</stringmatch>
+<stringmatch name="LOWEREDSWITCH AUTO #4: with loweredswitch on sw2_on prints its second test (pass 2)" min="1" max="1">^    if \(a1 == 2\)$</stringmatch>
+<stringmatch name="LOWEREDSWITCH AUTO #5: with loweredswitch on if3_on re-rolls (pass 2)" min="1" max="1">^  switch\(a0\) \{$</stringmatch>
+<stringmatch name="LOWEREDSWITCH AUTO #6: if3_on's third test is a label (pass 2)" min="1" max="1">^    case 7:$</stringmatch>
+<stringmatch name="LOWEREDSWITCH AUTO #7: swf switches on the field it loaded into a register (pass 1)" min="1" max="1">^  switch\(.*\[1\]\) \{$</stringmatch>
+</decompilertest>

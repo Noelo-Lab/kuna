@@ -277,9 +277,9 @@ fn a_number_shaped_rename_of_a_library_name_is_kept() {
 #[test]
 fn a_rename_onto_a_library_name_leaves_the_other_local_addressable() {
     let code = check_in_mode(None, &["name v1 len"]);
-    assert!(code.contains("  v2 = strlen(input);\n") && code.contains("  len = 0;\n"), "{code}");
+    assert!(code.contains("  v2 = strlen(input);\n") && code.contains("  len = strcmp(input,secret);\n"), "{code}");
     let code = check_in_mode(None, &["name v1 len", "name v2 size"]);
-    assert!(code.contains("  size = strlen(input);\n") && code.contains("  len = 0;\n"), "{code}");
+    assert!(code.contains("  size = strlen(input);\n") && code.contains("  len = strcmp(input,secret);\n"), "{code}");
 }
 
 /// Two renames in turn, the second naming the local the page showed as `v7`

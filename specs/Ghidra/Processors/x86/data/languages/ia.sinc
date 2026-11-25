@@ -2376,8 +2376,8 @@ macro fucompe(val1, val2) {
 # Specification is "REX.W"
 @define REX_W      "longMode=1 & rexprefix=1 & rexWprefix=1"
 
-
-
+# A REX prefix before a legacy prefix is not the last prefix before the opcode, so the CPU ignores it: undo it and decode on from the legacy prefix
+:^instruction is $(LONGMODE_ON) & instrPhase=1 & rexprefix=1 & (over=0x66 | over=0x67 | over=0xf2 | over=0xf3 | over=0xf0 | over=0x2e | over=0x36 | over=0x3e | over=0x26 | over=0x64 | over=0x65) & instruction [ instrPhase=0; rexprefix=0; opsize=1 $xor prefix_66; rexWprefix=0; rexRprefix=0; rexXprefix=0; rexBprefix=0; ] {}
 # TODO I don't think the following line can really happen because the 66 67 prefix must come before REX prefix
 :^instruction is $(LONGMODE_ON) & instrPhase=0 & over=0x66 & opsize=2; instruction   [ opsize=0; mandover=mandover $xor 1; ] {} # Operand size override
 :^instruction is $(LONGMODE_ON) & instrPhase=0 & over=0x67 & addrsize=2; instruction [ addrsize=1; ] {} # Address size override

@@ -1606,10 +1606,10 @@ selector emits `-0xd =>` where it once printed `0xfff3 =>`, a pattern rustc
 rejects as out of range for `i16`, and a sign-extended `i16` selector no
 longer carries the widened `0xfffffff3`.
 
-**(kuna) Dynamic ARM LSL in C.** ARM register-controlled `LSL` uses the low
-eight bits of its count, so counts 32 through 255 must produce zero for a
-32-bit value. C makes a shift by 32 or more undefined. The selector and
-repeatability proof live in
+**(kuna) Dynamic ARM LSL in C — `option armshiftguard`.** ARM register-controlled
+`LSL` uses the low eight bits of its count, so counts 32 through 255 must
+produce zero for a 32-bit value. C makes a shift by 32 or more undefined. The
+selector and repeatability proof live in
 `p9_emit/kuna_armregistershift.rs (plan_arm_register_lsl)`; the C printer emits
 the plan as a guarded conditional. It preserves the lifted count expression,
 compares its unsigned same-width cast with the shifted value's bit width, and
@@ -1632,10 +1632,40 @@ non-repeatable ARM inputs keep their existing output. Under `regnarrow` (chapter
 an unsigned narrow value prints as that value, since the guard already casts it
 and the shift reads it the same (`(unsigned int)v4 < 32u ? (unsigned int)1 << v4 :
 0u` where a narrowed counter printed `(unsigned int)(unsigned int)v4`;
-`unsigned_extension_source`). The 12-byte reproduction
-and emitted-form checks are in `tests/stages/kuna-arm-register-shift.xml`; signed
-comparison and ASR consumers are in
-`tests/stages/kuna-arm-register-shift-signed.xml`.
+`unsigned_extension_source`).
+
+Which shifts carry the guard is option `armshiftguard`
+(`p9_emit/kuna_armshiftguard.rs (guard_needed)`). The guard is a `?:` that no
+source writes, so it costs a branch in the printed control flow of every
+firmware bit operation such as `1 << (pin & 0x1f)`. Under the default `needed`
+the planner first asks whether the count can reach 32 at all: its non-zero
+mask, the set of bits it may hold, is the engine's stored mask (chapter
+[03](03-ssa-and-simplification.md), `ActionNonzeroMask`) intersected with the
+mask re-derived over its definition at print time
+(`kuna_boolbyte::value_mask`), so a Varnode created after the last mask pass is
+still bounded by its definition. A mask below 32 (`count_below_width`) proves
+every value of the count lies in 0..31, and the shift then takes the ordinary
+binary-operator path, printing `x << n` like any other shift. This covers a
+count masked with `& 0x1f` or narrower, a field extracted by shift and mask
+(`(c & 0xfff) >> 8`), a remainder by 32 or less, a narrow zero-extended
+value, a left-shifted small field (`(c & 7) << 2`), a sum of disjoint or small
+masks, and a variable whose every reaching definition is one of these. A count
+the mask cannot bound keeps its guard, including a loop counter whose bound is
+only a branch and the double-word shift complement `(n - 0x20 & 0xff)` that a
+compiler's inline 64-bit shift relies on. `always` restores the guard on every
+qualifying shift; `never` drops it everywhere, printing the plain C shift
+`x << (n & 0xff)`. Under `never` a count that reaches 32 prints as undefined C
+instead of the machine's zero: for a source shift by a variable that is the
+same undefined behavior the source had, but for the low word of a compiler's
+inline 64-bit shift, whose complement count is out of range on every call, the
+printed C no longer computes the binary's value. The register-count right
+shifts (`LSR`/`ASR` by register, `INT_RIGHT`/`INT_SRIGHT` of the same
+`n & 0xff`) are not guarded under any value. The 12-byte reproduction and
+emitted-form checks are in `tests/stages/kuna-arm-register-shift.xml` (unbounded
+counts, so the default keeps them guarded); signed comparison and ASR consumers
+are in `tests/stages/kuna-arm-register-shift-signed.xml`; the three values on
+clang Thumb code (a masked count, a four-bit field, an unbounded count) are in
+`tests/stages/kuna-armshiftguard.xml`.
 
 **(kuna) Fixed ARM LSL with a signed operand in C.** A constant-count 32-bit
 `INT_LEFT` still computes the low 32 bits when its declared operand is signed.
@@ -1643,7 +1673,11 @@ C11 instead makes a negative signed shiftee or signed overflow undefined,
 including when the function converts the result to unsigned on return.
 `p9_emit/kuna_armconstantshift.rs (plan_arm_constant_lsl)` selects ARM shifts
 with a constant count below 32, equal four-byte input/output widths, and a
-signed integer or signed enum shiftee. The C printer casts that operand to
+signed integer or signed enum shiftee. A register count whose non-zero mask
+proves it below 32 (`kuna_armshiftguard::count_below_width`, the proof
+`armshiftguard needed` uses to drop the range guard) counts as an in-range
+fixed count, so a shift that loses its guard keeps the unsigned conversion when
+this option is on. The C printer casts that operand to
 `uint4` before the shift, preserving locked declarations. If the output type
 is signed, it casts the whole unsigned shift back to `int4` to preserve signed
 comparisons and arithmetic right shifts. That signed conversion and negative
@@ -3948,6 +3982,92 @@ header's alone: the body still spells a call to such a function and a cast to
 such a type with the one name they share, so the exported `.c` keeps the clash
 the header sheds.
 
+**(kuna) The header declares, on request, the helpers and user-defined
+operations the code calls.** The printer spells an op C has no
+operator for as a call to a helper named after the op and its operand sizes
+(`SCARRY4(a,b)`, `SUB168(x,8)`, `CONCAT44(hi,lo)`), a SLEIGH user-defined
+operation as a call to its name (`invalidInstructionException()`), and a RETURN
+planted where the bytes would not decode as a call naming the failure
+(`halt_baddata()`). Nothing declared them, so an export that printed one did
+not compile on its own. While a function prints, `printc.rs
+(PrintC::op_func_ir)`, `printc.rs (PrintC::op_callother_ir)` and the halt arm
+of the RETURN printer record each such name with the op's output in the
+printer's per-function set
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_unitcalls.rs`), which starts
+empty with each function, and the function's call declarations
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_callprototypes.rs`) take one
+`T name(KUNA_ANY_ARGS);` per name. `T` is `bool` for the carry and borrow
+tests, and otherwise the op's output, spelled as the float of its width where
+a user-defined operation's output is a float (`FLOAT_RINT`), or `void` when it
+has none. The header
+writes them in a block of their own, one `extern` per name at the widest type
+any function's calls have (at one width the `undefinedN` spelling, which takes
+the integer operators a float does not, so the choice does not depend on the
+order the functions land in), and only for code that defines
+`KUNA_DECLARE_HELPERS`. Each line is also under `#ifndef name`, and a name the
+header already declares, or a C keyword (MIPS's `break` user-defined
+operation), is left out. A wide call's declaration check (`callwide`) does not
+count these lines. The opt-in is there because code that
+compiles an export usually brings its own definitions (a `CONCAT44` macro,
+`static inline` x87 conversions, `<unistd.h>`'s `syscall`), which a declaration
+would contradict. Code that does define it and also includes a C library
+header declaring an operation's name (`syscall`, `sin`, `sleep`, `wait`) gets
+two declarations that disagree. There is no fixed parameter list, because the printed
+arguments are whatever the binary passed and a prototype would reject a
+faithful call. The prelude defines `KUNA_ANY_ARGS` as `...` where `()` means no
+parameters (C23, and the c2x modes of gcc 13 and clang 16 on) and as nothing
+before. An output with no `undefinedN` or float spelling gets no declaration,
+and neither do the float constants the printer spells `NAN`, `INFINITY` and
+`FLOAT_UNKNOWN`. The prelude's `undefined16` is an `unsigned __int128` aligned
+to one byte where the compiler has the type, so arithmetic on a 16-byte value
+(a rax:rdx pair) compiles and a record holding one keeps its layout. The byte
+struct remains the fallback, and clang on Windows takes it too: it lays a record
+out the Microsoft way, which ignores the one-byte alignment.
+
+**An import called with no prototype is declared in an export.** The ELF
+loader names an import's GOT slot after the import, and `ActionDeindirect`
+turns a `call *slot` into a call by that name, so `_start`'s hand-off to glibc
+prints as `__libc_start_main(main,…)`. No prototype table lists
+`__libc_start_main`, so the call's prototype is not locked, its declaration was
+skipped, and the export did not compile. Now
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_callprototypes.rs
+(declarations)` records a call to an import (`kuna_calleepop.rs
+(is_imported)`: `externref` at the callee's address) whose prototype is not
+complete with the call's output, as the printer records a helper, and the
+function's call declarations take one `extern T name(KUNA_ANY_ARGS);` per name:
+`T` is the output, spelled as the float of its width where the output is a
+float, or `void` when it has none. The header writes them in a block of their
+own ahead of the helpers', one per name at the widest type any function's calls
+have, and not under the `KUNA_DECLARE_HELPERS` opt-in: the body calls the import
+and nothing else declares it. A name the header already declares (a function of
+the export, a declared call target, a type, a global) is left out, and so is
+that name in the helpers' block, which also leaves out a name the imports'
+block declares. A wide call's declaration check
+(`callwide`) does not count these lines. Code that includes a C library header
+declaring such an import's name gets two declarations that disagree.
+
+**A jump stub takes any arguments in an export.** kuna decompiles an import's
+PLT stub as a function of the program, and its body only jumps through the
+import's GOT slot, so kuna recovers `(void)` for it. Its callers pass the
+import's arguments, so `main`'s `strfry(&v1)` against `unsigned long
+strfry(void)` did not compile. In a `decompile-project` export with C output,
+`decompiler/crates/kuna-console/src/project.rs (decompile_pulled)` gives a jump
+stub that kuna recovered no parameters for the parameter list `(KUNA_ANY_ARGS)`
+in place of `(void)`, in its prototype and its definition line alike, or in
+neither (`kuna_unitcalls.rs (unknown_stub_params)`). A jump stub
+(`project.rs (is_jump_stub)`) is one indirect jump, perhaps after `endbr64` or
+`endbr32`: an x86 PLT stub, a CET `.plt.sec` stub (GNU ld's `bnd jmp` decodes as
+one jump), or a PE or Mach-O import thunk. A stub kuna recovered parameters for
+keeps them, and so does one whose input list is locked, as a library
+declaration's `void abort(void)` is: its callers pass what it says. A direct
+`jmp` to a decompiled function is not a stub, and an AArch64 PLT or Mach-O stub
+(`adrp; ldr; br`) or an ARM PLT stub (`add; add; ldr pc`) is several
+instructions. gcc before 13 at `-std=c2x` has no spelling for such a
+definition: it rejects `f(...)` and reads the definition `f()` as taking
+nothing, so there a call with arguments that follows the stub's definition
+still fails. Function bodies, every other prototype and the output
+of `kuna decompile` and `decompile-all` are unchanged.
+
 **The prototype — one token stream, two documents.** The prototype segment of
 §9.2's document walk was extracted verbatim into `printc.rs
 (PrintC::emit_prototype_declaration)` — pure code motion, byte-identical
@@ -3971,8 +4091,10 @@ uint4;`, …; 8-byte integers always spell `long long` so the text is
 data-model independent; `bool` is covered by `#include <stdbool.h>`;
 `char`/`void` are real C and emit nothing), then the fixed Ghidra/kuna
 `undefined` family — `undefined`, `undefined1..8` (3/5/6/7 mapped to the next
-larger unsigned integer, each carrying a sizeof-divergence note) and
-`undefined16`/`undefined32` as byte-array structs. The non-printer half of
+larger unsigned integer, each carrying a sizeof-divergence note),
+`undefined16` as a one-byte-aligned `unsigned __int128` where the compiler has
+the type (and is not clang on Windows) and a byte-array struct where it does
+not, and `undefined32` as a byte-array struct. The non-printer half of
 the export (section enumeration, one-instruction disassembly, raw image
 bytes, named data symbols for the `.asm`/`README.md` artifacts) lives on the
 console engine, `decompiler/crates/kuna-console/src/engine.rs
@@ -4241,7 +4363,10 @@ the Mach-O symbol-pointer and unwind sections. The merged ranges reach the
 engine as `infra/architecture.rs (Architecture::globalref_ranges)`, installed by
 the object bootstrap beside the `litpoolconst` ranges; every path without a
 section table leaves them empty, so the rule is inert for the XML datatest
-corpus.
+corpus. The ranges bound which constant addresses become `&dat_<addr>`; a
+`dat_<addr>` the body already reads or writes directly is declared wherever it
+lies, a GOT slot or an import address table entry included (*The declaration*
+below).
 
 **What one function knows.** `kuna_globalref.rs (plan)` walks the function
 once when its document starts, and records three facts:
@@ -4283,7 +4408,12 @@ off the printer, after `print_c`, every address the function named and every
 piece of unnamed program data it read or wrote directly, each with the C
 declaration the structure-member declarator builds for it (`printc.rs
 (declaration_text)`), its size, and whether it stood for `void`, was a direct
-access, or is a record or union. They travel as `FuncResult::globals`, which
+access, or is a record or union. Unnamed means that no global Symbol covers it,
+wherever it lies: an import's GOT slot, which a PLT stub jumps through, counts
+too, though it lies outside the sections the loader classifies as program data,
+so the stub's `(*dat_<slot>)()` names a declared object. The code address a
+branch or call names is a reference, not storage the body reads, and is never
+declared. They travel as `FuncResult::globals`, which
 the `--jobs` wire carries like the type records, and
 `decompiler/crates/kuna-console/src/project.rs (global_declarations)` turns
 them into one `extern` line per named address in the `decompile-project`

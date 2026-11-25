@@ -797,6 +797,24 @@ fn option_apply_widening_values() {
     assert_eq!(flags("linear"), (true, true, false));
     assert_eq!(flags("tree"), (true, false, true));
     assert_eq!(flags("all"), (true, true, true));
+    assert_eq!(flags("auto"), (true, false, false));
+    assert_eq!(OptionLowerSwitch.apply("auto").unwrap().0, LoweredSwitchMode::Auto);
+}
+
+#[test]
+fn the_compiled_form_decides_before_the_shape() {
+    use crate::p2_lift::kuna_o0switch::Form;
+    let shape = |values, bodies| CascadeShape { values, bodies, range: false };
+    let on = LoweredSwitchMode::On;
+    assert!(cascade_is_switch(shape(3, 3), on, None));
+    assert!(!cascade_is_switch(shape(3, 3), on, Some(Form::IfChain)));
+    assert!(!cascade_is_switch(CascadeShape { values: 5, bodies: 5, range: true }, on, Some(Form::IfChain)));
+    assert!(!cascade_is_switch(shape(2, 2), on, None));
+    assert!(cascade_is_switch(shape(2, 2), on, Some(Form::Switch)));
+    assert!(cascade_is_switch(shape(3, 2), on, Some(Form::Switch)));
+    assert!(!cascade_is_switch(shape(2, 1), on, Some(Form::Switch)));
+    assert!(!cascade_is_switch(shape(17, 17), on, Some(Form::Switch)));
+    assert!(!cascade_is_switch(shape(2, 2), LoweredSwitchMode::Off, Some(Form::Switch)));
 }
 
 #[test]

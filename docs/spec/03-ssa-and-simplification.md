@@ -901,14 +901,41 @@ result. Argument trials still pass through normal use scoring. The output
 guard kills the surrounding bytes independently; it does not preserve unknown
 upper bits across a call or narrow other uses of the physical register.
 Floating-point slots, ambiguous contained entries, unnamed ranges, other
-address widths and memory ranges are excluded, with one exception: a range
-that holds exactly one model input slot, a float slot at its low end, gets that
+address widths and memory ranges are excluded, with one exception on each
+side. On the input side, a range that holds exactly one model input slot, a float slot at its low end, gets that
 slot's trial where the direct callee stated nothing and its body reads the slot
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs
 (guard_call_read_float_input)`, chapter 04 *Callee-read float argument*). The
 trial is as wide as the callee reads, never less than the slot's minimum: an
 `xmm0` the caller wrote whole with `pxor` and then `cvtsi2ss` passes the four
 bytes a `movss %xmm0,g` callee reads, which simplify to the converted float.
+The output side has the mirror exception
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_calloverlap.rs
+(auto_float_output)`): a call whose output is not locked gets the output guard
+when the only model return slot inside the range is the model's first float
+return slot and sits at the range's low end, and nothing in the run states or
+has recovered a returned value for the callee. gcc -O2 findutils `pred_newer`
+moves the `double` result of an unprototyped `difftime` with `movapd
+%xmm0,%xmm1`, a 16-byte read, and before this rule printed the sum of a
+variable nothing assigns after a bare `difftime();`. The guard proposes the
+return slot only; the output trial becomes the call's result where a read after
+the call reaches it, and dead-code elimination removes it everywhere else, so a
+call whose `xmm0` the caller overwrites first gains no result. A range holding
+several return slots, a later float slot (x86-64 `XMM1_Qa`, the second half of
+a two-double return) and general slots keep the legacy behavior. So does a
+callee `decompile-all` recovered returning a value (its callee-first ledger,
+chapter 04 `voidret`): a caller that keeps such a callee's float as integer
+bits (`movq %xmm0,%rbx`) has the output trial dropped there, and the guard
+having marked the range unaffected, the pre-call `xmm0` would then pass
+through the call. A callee recovered `void` still takes the guard; the read it
+files is the evidence `voidret` redoes the callee with. Its callers are then
+decompiled again against the recovered return, which they state, so the guard
+does not run there a second time: in the default callee-first `decompile-all`
+an ELF import's PLT entry gains the `double` return (`double difftime(void)`)
+and its callers keep the read unassigned. A single-function decompile, a
+`decompile-all` with `protoorder off`, and a call through a PE import's IAT
+slot or a function pointer have no ledger entry for the callee, and connect
+the result.
 `off` disables the partial-range guards; `in` and `full` retain their broader
 opt-in behavior.
 
