@@ -19,3 +19,14 @@ fn elem_id_is_in_the_kuna_range() {
     assert_eq!(ELEM_TRUTHYCOND.get_id(), 4115);
     assert_eq!(OptionTruthyCond::NAME, "truthycond");
 }
+
+#[test]
+fn set_truthy_mode_sets_both_flags() {
+    let mut o = crate::printc::PrintCOptions::new();
+    o.set_truthy_mode(TruthyCond::On);
+    assert!(o.truthy_cond && !o.truthy_ptr_chain);
+    o.set_truthy_mode(TruthyCond::Off);
+    assert!(!o.truthy_cond && !o.truthy_ptr_chain);
+    o.set_truthy_mode(TruthyCond::PtrChain);
+    assert!(o.truthy_cond && o.truthy_ptr_chain);
+}
