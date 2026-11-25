@@ -969,6 +969,56 @@ fn resolve_mips_imports(file: &object::File) -> Vec<PltSym> {
     out
 }
 
+/// The libraries glibc itself provides, whose `GLIBC_*` versions name glibc's
+/// own definitions.
+const GLIBC_LIBRARIES: &[&[u8]] = &[
+    b"libc.so.6", b"libm.so.6", b"libpthread.so.0", b"libdl.so.2", b"librt.so.1", b"libutil.so.1",
+    b"libresolv.so.2", b"libanl.so.1",
+];
+
+/// The names of the MIPS image's undefined dynamic functions whose symbol
+/// requires a public `GLIBC_*` version of a glibc library, so the link resolved
+/// them to glibc's own definitions. `GLIBC_PRIVATE` is glibc's internal
+/// interface, which its headers do not declare, and a name also imported under
+/// another version is left out. Empty off-MIPS and without symbol versioning.
+pub(crate) fn mips_glibc_import_names(file: &object::File) -> HashSet<Vec<u8>> {
+    if !super::kuna_mipsabi::is_mips(file.architecture()) {
+        return HashSet::new();
+    }
+    match file {
+        object::File::Elf32(elf) => requiring_glibc(elf),
+        object::File::Elf64(elf) => requiring_glibc(elf),
+        _ => HashSet::new(),
+    }
+}
+
+fn requiring_glibc<'data, Elf, R>(elf: &object::read::elf::ElfFile<'data, Elf, R>) -> HashSet<Vec<u8>>
+where
+    Elf: object::read::elf::FileHeader,
+    R: object::ReadRef<'data>,
+{
+    let endian = elf.endian();
+    let Ok(Some(versions)) = elf.elf_section_table().versions(endian, elf.data()) else {
+        return HashSet::new();
+    };
+    let (mut glibc, mut other) = (HashSet::new(), HashSet::new());
+    for sym in elf.dynamic_symbols() {
+        if sym.kind() != object::SymbolKind::Text || !sym.is_undefined() {
+            continue;
+        }
+        let Ok(name) = sym.name_bytes() else { continue };
+        let required = versions.version(versions.version_index(endian, sym.index())).ok().flatten();
+        let by_glibc = required.is_some_and(|version| {
+            version.file().is_some_and(|file| GLIBC_LIBRARIES.contains(&file))
+                && version.name().starts_with(b"GLIBC_")
+                && version.name() != b"GLIBC_PRIVATE"
+        });
+        if by_glibc { &mut glibc } else { &mut other }.insert(strip_version(name));
+    }
+    glibc.retain(|name| !other.contains(name));
+    glibc
+}
+
 /// The MIPS GOT external slots' `[start, stop]` (inclusive) byte ranges, to be
 /// marked **constant** so the engine folds the `lw $t9, off($gp)` indirect-call
 /// load to the stub address (the analog of `setConstant` on the GOT pointer
@@ -1148,6 +1198,29 @@ mod tests {
     //! address.  The x86 paths are covered end-to-end by the real-binary fixtures
     //! in `loadimage_object`'s tests.
     use super::*;
+
+    #[test]
+    fn only_public_glibc_versioned_mips_imports_are_bound_to_glibc() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/mips-glibc-imports");
+        for (image, glibc) in [
+            ("n32-glibc.elf", true),
+            ("o32-glibc.elf", true),
+            ("n64-glibc.elf", true),
+            ("n32-pthread.elf", true),
+            ("n32-unversioned.elf", false),
+            ("n32-other.elf", false),
+            ("n32-private.elf", false),
+        ] {
+            let bytes = std::fs::read(fixtures.join(image)).expect("fixture");
+            let file = object::File::parse(bytes.as_slice()).expect("ELF");
+            let mut imports: Vec<Vec<u8>> = resolve_mips_imports(&file).into_iter().map(|import| import.name).collect();
+            let mut bound: Vec<Vec<u8>> = mips_glibc_import_names(&file).into_iter().collect();
+            imports.sort_unstable();
+            bound.sort_unstable();
+            assert_eq!(imports.len(), 3, "{image}");
+            assert_eq!(bound, if glibc { imports } else { Vec::new() }, "{image}");
+        }
+    }
 
     #[test]
     fn aarch64_plt_decode() {

@@ -70,6 +70,17 @@ refused, as is the entry of `ordinary` from `dispatch`. A later `function
 bounds` that would make an installed destination another function's entry is
 refused, and the installed set and its identical restatement stay in use.
 
+`kuna-glibcvoidimport.xml` checks MIPS PIC wrappers that pass their pointer
+to `free` without touching the argument register. Where the image's symbol
+version binds `free` to glibc (`free@GLIBC_2.0` from `libc.so.6` or
+`libpthread.so.0`), the N32, O32 and N64 wrappers forward the pointer, as they
+do when a console declaration names the stub `free`. An unversioned `free`, one
+versioned by another library or by `GLIBC_PRIVATE`, and a caller's
+`void free(void)` declaration pass nothing, and a console declaration naming
+the stub `exit` keeps today's `exit();`. The same glibc image keeps
+`strlen(a0) + 1`, and `sincos`, which no table declares on MIPS, keeps today's
+recovery.
+
 `kuna-narrowed-call-input.xml` checks a call through a typed field whose
 argument was narrowed to two bytes before the field's prototype was forced on
 the call: the function decompiles and passes the sum widened to the parameter.

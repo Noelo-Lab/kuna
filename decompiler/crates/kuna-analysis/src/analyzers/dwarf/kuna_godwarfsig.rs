@@ -375,6 +375,7 @@ impl Facts {
             outtype: Some(Rc::clone(&output_type)), intypes: vec![Rc::clone(&input_type)],
             innames: vec![sanitize_symbol_name(&input.name, self.names).into_owned()], first_var_arg_slot: -1,
             output_storage: None, input_storage: Vec::new(), kuna_library_names: None,
+            kuna_library_table: false,
         };
         let mut assigned = Vec::new();
         arch.default_fp()?.assign_parameter_storage(&pieces, &mut assigned, false, types, arch.manage()).ok()?;
@@ -605,6 +606,7 @@ impl Facts {
             name: sanitize_symbol_name(name, self.names).into_owned(),
             outtype: Some(outtype), intypes, innames: names, first_var_arg_slot: -1,
             output_storage: None, input_storage: Vec::new(), kuna_library_names: None,
+            kuna_library_table: false,
         };
         let mut assigned = Vec::new();
         arch.default_fp()?.assign_parameter_storage(&pieces, &mut assigned, false, types, arch.manage()).ok()?;
