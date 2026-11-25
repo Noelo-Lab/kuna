@@ -10,11 +10,13 @@ pub struct Declarations {
     pub callwide_prototypes: Vec<crate::kuna_callwide::ExportPrototype>,
 }
 
-/// The declarations of `fd`'s named calls with complete prototypes, plus the
-/// helpers and user-defined operations its C calls, which `arch`'s printer
-/// recorded when it last printed a function: call this right after printing `fd`.
+/// The declarations of `fd`'s named calls with complete prototypes and of the
+/// imports it calls without one, plus the helpers and user-defined operations
+/// its C calls, which `arch`'s printer recorded when it last printed a
+/// function: call this right after printing `fd`.
 pub fn declarations(arch: &Architecture, fd: &Funcdata) -> Result<Declarations, String> {
     let mut declarations = BTreeSet::new();
+    let mut imports = crate::kuna_unitcalls::Calls::default();
     let mut callwide_prototypes = Vec::new();
     if let Some(contract) = crate::kuna_callwide::definition_prototype(fd, fd.get_display_name())? {
         callwide_prototypes.push(contract);
@@ -34,6 +36,9 @@ pub fn declarations(arch: &Architecture, fd: &Funcdata) -> Result<Declarations, 
         if wide.is_none()
             && (!proto.has_store() || !proto.is_input_locked() || !proto.is_output_locked())
         {
+            if crate::p6_variables::kuna_calleepop::is_imported(fd, call.get_entry_address()) {
+                imports.record(fd, call.get_op(), &name);
+            }
             continue;
         }
         let mut bytes = name.bytes();
@@ -88,6 +93,7 @@ pub fn declarations(arch: &Architecture, fd: &Funcdata) -> Result<Declarations, 
             crate::printc::declaration_text(&Rc::new(code), &name, rt.clone())
         ));
     }
+    declarations.extend(imports.import_declarations());
     declarations.extend(arch.print().unit_calls().declarations());
     Ok(Declarations {
         declarations: declarations.into_iter().collect(),

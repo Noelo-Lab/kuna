@@ -4024,6 +4024,28 @@ to one byte where the compiler has the type, so arithmetic on a 16-byte value
 struct remains the fallback, and clang on Windows takes it too: it lays a record
 out the Microsoft way, which ignores the one-byte alignment.
 
+**An import called with no prototype is declared in an export.** The ELF
+loader names an import's GOT slot after the import, and `ActionDeindirect`
+turns a `call *slot` into a call by that name, so `_start`'s hand-off to glibc
+prints as `__libc_start_main(main,…)`. No prototype table lists
+`__libc_start_main`, so the call's prototype is not locked, its declaration was
+skipped, and the export did not compile. Now
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_callprototypes.rs
+(declarations)` records a call to an import (`kuna_calleepop.rs
+(is_imported)`: `externref` at the callee's address) whose prototype is not
+complete with the call's output, as the printer records a helper, and the
+function's call declarations take one `extern T name(KUNA_ANY_ARGS);` per name:
+`T` is the output, spelled as the float of its width where the output is a
+float, or `void` when it has none. The header writes them in a block of their
+own ahead of the helpers', one per name at the widest type any function's calls
+have, and not under the `KUNA_DECLARE_HELPERS` opt-in: the body calls the import
+and nothing else declares it. A name the header already declares (a function of
+the export, a declared call target, a type, a global) is left out, and so is
+that name in the helpers' block, which also leaves out a name the imports'
+block declares. A wide call's declaration check
+(`callwide`) does not count these lines. Code that includes a C library header
+declaring such an import's name gets two declarations that disagree.
+
 **A jump stub takes any arguments in an export.** kuna decompiles an import's
 PLT stub as a function of the program, and its body only jumps through the
 import's GOT slot, so kuna recovers `(void)` for it. Its callers pass the
