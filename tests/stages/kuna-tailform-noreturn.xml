@@ -21,8 +21,9 @@
     store and a `return;`).
 
     Pass 1 runs with `option tailform off` and prints the binary's form: the
-    valued return inside the `if`, the fatal call last.  Pass 2 (the default)
-    prints the fatal arm as the `if` body and the return after it.
+    valued return inside the `if`, the fatal call last.  Pass 2 (`option
+    tailform on`; the default `model` prints these four the same) prints the
+    fatal arm as the `if` body and the return after it.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
