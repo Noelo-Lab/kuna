@@ -1077,7 +1077,7 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
         }
         if s.falls_through {
             let next = at.wrapping_add(*len);
-            if track && !strayed && !seen.contains_key(&next) {
+            if !strayed && !seen.contains_key(&next) {
                 strayed = next != entry.get_offset() && is_entry(arch, &space, next);
             }
             work.push((next, s.state));

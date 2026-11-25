@@ -544,6 +544,13 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// The extrapop every return of the function at the direct-call `entry`
+    /// takes, when its walk followed every path. See
+    /// [`crate::p4_calls::kuna_calleepurge::callee_return_pop`].
+    fn query_call_returns_extra_pop(&self, _entry: &Address) -> Option<int4> {
+        None
+    }
+
     /// The stack bytes the caller removes right after the indirect call at
     /// `call_at`. See [`crate::p4_calls::kuna_calleereginputs`].
     fn query_callind_cleanup(&self, _call_at: &Address) -> u32 {
@@ -3426,6 +3433,7 @@ truncating the fall-through here"
             fc.set_callee_reg_model(self.env.query_call_register_model(&callee));
             fc.set_callee_arg_registers(self.env.query_call_arg_registers(&callee));
             fc.set_callee_purge(self.env.query_call_extra_pop(&callee));
+            fc.set_callee_returns_pop(self.env.query_call_returns_extra_pop(&callee));
             let call_at = self.data.obank().get(op).map(|o| o.get_addr().clone());
             if let Some(call_at) = call_at {
                 let args = self.env.query_call_stack_arg_bytes(&callee, &call_at);

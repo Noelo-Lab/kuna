@@ -583,6 +583,11 @@ impl Action for ActionDefaultParams {
                     match (callee_pieces, default_fp.clone(), arch.types()) {
                         (Some(pieces), Some(dfp), Some(types)) => {
                             let mut fp = crate::fspec::FuncProto::new();
+                            let proven = if callee_model.is_none() {
+                                crate::p4_calls::kuna_calleeprotostack::unnamed_declaration_pop(data, i)
+                            } else {
+                                data.get_call_specs(i).callee_purge()
+                            };
                             // The host-declared model wins over defaultfp when
                             // present (Phase 3); a declaration that names none
                             // follows the image's float convention.
@@ -609,7 +614,7 @@ impl Action for ActionDefaultParams {
                                 Ok(()) => {
                                     crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
                                         &mut fp,
-                                        data.get_call_specs(i).callee_purge(),
+                                        proven,
                                     );
                                     let op = data.get_call_specs(i).get_op();
                                     (!own_slot || crate::p4_calls::kuna_slotargs::backed(data, op, &fp))

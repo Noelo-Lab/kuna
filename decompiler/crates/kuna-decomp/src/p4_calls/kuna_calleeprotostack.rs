@@ -52,6 +52,9 @@
 //!   pop is taken instead of the parameter list's: GCC's DWARF names no
 //!   convention, so a MinGW image's `__cdecl` function is declared under the
 //!   default `__stdcall` model, and its `ret` is what says it pops nothing.
+//!   For such an unnamed declaration a callee whose pop is not proven (it
+//!   calls an import, so its stack pointer at `ret` is a range) takes the pop
+//!   every return it reaches adds ([`unnamed_declaration_pop`]).
 //! * **The reach.** Only for an input-locked, non-variadic prototype whose
 //!   extrapop is known by the rule above; only for a stack range wholly at or
 //!   above that extrapop in the CALLEE's frame (the return-address slot and the
@@ -86,6 +89,15 @@ pub fn resolve_declared_extra_pop(fp: &mut FuncProto, proven: Option<int4>) {
         Some(ep) => fp.set_extra_pop(ep),
         None => fp.resolve_extra_pop(),
     }
+}
+
+/// The extrapop the callee of direct call `i` states by its own code, for a
+/// declaration that names no calling convention: the pop its returns prove,
+/// or else the one every return it reaches takes (`ret 0xc`) when the walk
+/// followed every path ([`crate::p4_calls::kuna_calleepurge::callee_return_pop`]).
+pub fn unnamed_declaration_pop(data: &crate::funcdata::Funcdata, i: int4) -> Option<int4> {
+    let fc = data.get_call_specs(i);
+    fc.callee_purge().or_else(|| fc.callee_returns_pop())
 }
 
 /// The callee-frame offset at and above which a declared callee's stack contract

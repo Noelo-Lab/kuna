@@ -19,9 +19,11 @@
     P0 assert:  none (a correctness fix).
 
     dwarfpop_mingw_pe_i386.exe (MinGW GCC -O2 -g, source and build line in
-    dwarfpop_mingw_pe_i386.c): add_cache (0x401080) calls fill on one of two
-    paths that merge before a call to copy, which takes add_cache's own ptr;
-    version (0x401110) clears a local struct with fill and passes it to query.
+    dwarfpop_mingw_pe_i386.c): add_cache (0x4010d0) calls clear on one of two
+    paths that merge before a call to copy, which takes add_cache's own ptr.
+    clear calls the import puts, so only its `ret` states its pop. version
+    (0x401160) clears a local struct with fill, which calls nothing, and
+    passes it to query.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -32,16 +34,16 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarfpop_mingw_pe_i386.exe</com>
   <com>read symbols</com>
-  <com>load addr 0x401080</com>
+  <com>load addr 0x4010d0</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>load addr 0x401110</com>
+  <com>load addr 0x401160</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="DWARFPOP #1: copy takes the caller's own ptr after the merge" min="1" max="1">_copy\(dst,ptr,len\);</stringmatch>
-<stringmatch name="DWARFPOP #2: fill keeps its three arguments" min="2" max="2">_fill\([^,()]+,0,[^,()]+\);</stringmatch>
+<stringmatch name="DWARFPOP #2: clear and fill keep their three arguments" min="2" max="2">_(clear|fill)\([^,()]+,0,[^,()]+\);</stringmatch>
 <stringmatch name="DWARFPOP #3: version reads the fields query wrote" min="1" max="1">return si\.minor \+ 0x24 \+ si\.major \* 10;</stringmatch>
 <stringmatch name="DWARFPOP #4: no outgoing argument is stored into the local" min="0" max="0">si\.kind = </stringmatch>
 </decompilertest>

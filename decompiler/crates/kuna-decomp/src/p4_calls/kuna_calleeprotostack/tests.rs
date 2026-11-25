@@ -66,8 +66,9 @@ fn resolve_declared_extra_pop_takes_the_pop_the_callee_proves() {
     let mut fp = void_store_proto();
     fp.set_input_lock(true);
     fp.set_extra_pop(EXTRAPOP_UNKNOWN);
-    resolve_declared_extra_pop(&mut fp, Some(4));
-    assert_eq!(fp.get_extra_pop(), 4);
+    // No parameters: the list alone would imply 4.
+    resolve_declared_extra_pop(&mut fp, Some(12));
+    assert_eq!(fp.get_extra_pop(), 12);
 }
 
 #[test]

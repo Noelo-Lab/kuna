@@ -4885,8 +4885,19 @@ reference in the caller by twelve. A `memset` called on one of two paths that
 merge then leaves the merged block reading a `memcpy` source from a slot nothing
 wrote, and the outgoing arguments and return addresses of later calls print as
 stores into a local struct. The `ret` of such a callee proves a pop of 4, and the
-call takes it. A callee the walk cannot read (an indirect jump, a return reached
-with the stack pointer unknown) still takes the declaration's pop, and a model
+call takes it. A callee that itself calls an import (`call puts`, through its
+`jmp [IAT]` thunk) cannot be read that far: the import's pop is unknown, so a
+callee built without a frame pointer reaches its `ret` with the stack pointer
+known only as a range, and nothing is proven. For a declaration that names no
+convention, the call then takes the pop every return the walk reaches adds
+(`ret` is 4, `ret 0xc` is 16), when the walk followed every path, reached no
+`int3` and fell through into no other function
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleeprotostack.rs
+(unnamed_declaration_pop)`, read off
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleepurge.rs (callee_return_pop)`
+at flow). A declaration that names its convention, `__stdcall` included, takes
+only the proven pop, never that one. A callee whose returns disagree, or whose
+walk ran into an indirect jump, still takes the declaration's pop, and a model
 that states its own extrapop is left alone as before.
 
 The same park is read a second time, at de-indirection. `ActionDefaultParams`
