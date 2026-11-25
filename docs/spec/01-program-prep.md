@@ -2363,6 +2363,15 @@ funcsym stream:
   prototypes, no-return facts and name-based xrefs therefore see the same
   imported identity, including when a terminal call has no mapped fall-through
   bytes. This does not add a sectionless PPC32 resolver.
+  A CLI run that leaves the option short of `abi` (by `--option`, its mode
+  preset or `KUNA_PPC32PICIMPORTS`) on an image whose validated `.plt` has
+  r30-relative stubs says so in a `ppc32-pic-imports` note, counted by
+  `decompiler/crates/kuna-analysis/src/loader/kuna_ppc32_imports.rs (pic_stub_count)`.
+  The count is of complete stub shapes, so `abi` may name fewer. The note
+  reads the 20-byte ELF header first and goes no further unless it is ELF32
+  `EM_PPC`; it then resolves the mode the subcommand loads under (`xrefs`
+  defaults to `reliable`, the others to `auto`). `strings` and `read`,
+  which print no import names, get no note.
   Every input named so far is keyed on the section table — `object` builds its
   dynamic-relocation iterator by scanning it for `SHT_REL`/`SHT_RELA`, reads
   `.dynsym` as a section, and the stub scan finds `.plt*` by name — so an ELF

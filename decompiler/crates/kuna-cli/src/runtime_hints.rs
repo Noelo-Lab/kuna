@@ -364,7 +364,7 @@ pub fn note_to_stderr(binary: &str) {
 
 /// The subcommands that take a binary and are not themselves the answer to a
 /// hint (`unpack` is what the UPX hint points at).
-const NOTED_SUBCOMMANDS: &[&str] = &[
+pub(crate) const NOTED_SUBCOMMANDS: &[&str] = &[
     "decompile",
     "decompile-all",
     "decompile-project",
@@ -393,6 +393,7 @@ pub fn note_for_invocation(sub: &str, rest: &[String]) {
         .find(|a| !a.starts_with('-') && std::path::Path::new(a.as_str()).is_file())
     {
         note_to_stderr(binary);
+        crate::ppc32_pic_note::note_for_invocation(sub, binary, rest);
     }
 }
 

@@ -1303,6 +1303,7 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
         return 1;
     };
     let mut summary = summarize(&args.binary, &prog, filters, &graph, &all, &selected);
+    summary.runtime.extend(crate::ppc32_pic_note::hint(&args.binary, &args.options));
     if let Some(manifest) = &rust_manifest {
         summary.rust_fields = crate::rust_signatures::fields(manifest, prog.rust_profile_report());
     }

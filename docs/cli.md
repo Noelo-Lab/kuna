@@ -2072,6 +2072,7 @@ function application uses the in-process engine for text and JSON and rejects
   | `upx` / `neolite` / `pklite` | `UPX0`/`UPX1` sections, `UPX!` in the first 4 KiB or a UPX PackHeader; the NEOLite stub; a PKLITE stub at the DOS entry point | `UPX packed: run 'kuna unpack'` |
   | `twinbasic` / `vb6` | `twinBASIC` / an `MSVBVM60.DLL` import name in a PE | the runtime model and what to use for P-Code |
   | `go` / `rust` | the toolchain verdict the loader already makes | informational (`actionable: false`); a `rust` row says `Rust binary (rustc 1.95.0): …` when the compiler is known |
+  | `ppc32-pic-imports` | a PPC32 ELF whose validated `.plt` has r30-relative PIC stubs, in a run of a subcommand that prints import names (every noted one but `strings` and `read`) whose `--option`, mode preset (each subcommand's default mode, `auto`'s choice included) or `KUNA_PPC32PICIMPORTS` leaves `ppc32picimports` short of `abi` | `3 PPC32 PIC import stubs print as sub_; --option ppc32picimports abi may name them by proving r30 at every call (…)` |
 
   A `rust` row carries two more facts. `version` is the compiler release: the
   `rustc version` record of `.comment` (prerelease suffix kept, `1.89.0-nightly`),
