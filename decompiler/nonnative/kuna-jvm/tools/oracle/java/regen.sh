@@ -35,7 +35,7 @@ run() { python3 -I "$TOOLS/scripts/run_oracle.py" --manifest "$OUT/manifest.json
 echo "== oracle: fixture options (expected/)";        run --mode fixture
 echo "== oracle: plain CLI defaults (expected-defaults/)"; run --mode defaults
 echo "== validate against upstream .dec"
-python3 -I "$TOOLS/scripts/validate.py" --manifest "$OUT/manifest.json" --vf-src "$VF_SRC" --out-root "$OUT" \
+python3 -I "$TOOLS/../validate.py" --manifest "$OUT/manifest.json" --vf-src "$VF_SRC" --out-root "$OUT" \
   --categories "$TOOLS/scripts/mismatch-categories.json"
 (cd "$OUT" && find classes expected expected-defaults manifest.json -type f ! -name '*.tmp*' -print0 \
    | LC_ALL=C sort -z | xargs -0 sha256sum) > "$OUT/SHA256SUMS.tmp"

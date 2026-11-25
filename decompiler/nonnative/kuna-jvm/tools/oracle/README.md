@@ -11,12 +11,13 @@ nothing in this directory runs in CI.
 | Path | What |
 |---|---|
 | `fetch_vineflower.sh` | the release jar and a source checkout at the release commit |
+| `validate.py` | checks either corpus's outputs against upstream's `.dec` files (both `regen.sh` run it) |
 | `java/` | the Java corpus: core's `SingleClassesTest`, 598 runnable tests |
 | `kotlin/` | the Kotlin corpus: `KotlinTests` (66) and core's 7 `KOTLIN` tests |
 | `*/regen.sh` | rebuild a corpus end to end |
 | `java/bin/vf-decompile`, `kotlin/bin/vf-decompile-kt` | decompile anything through the test fixture's API path |
 | `*/driver/src/` | the Java drivers behind those front-ends (`VfDriver`, `KtVfDriver`, `JasmCompile`) |
-| `*/scripts/` | fetch, compile, manifest, oracle run, validation and cross-check steps |
+| `*/scripts/` | fetch, compile, manifest, oracle run and cross-check steps |
 
 ## The workspace: `KUNA_JVM_ORACLE`
 
@@ -145,7 +146,7 @@ corpus).
 - The *Javadoc* sets pass an `IFabricJavadocProvider` object; `vf-decompile --javadoc plain|markdown`
   recreates both.
 
-**Validation** (`scripts/validate.py`, `reports/match-fixture.json`): 598 of 598 outputs pass the
+**Validation** (`validate.py`, `reports/match-fixture.json`): 598 of 598 outputs pass the
 fixture's own comparison with upstream's `.dec`; 597 match the primary file and one,
 `default/pkg/TestJava11StringConcat`, matches upstream's `_1.dec`, which records the string-concat code
 a different javac 11 build emits (`scripts/mismatch-categories.json`).

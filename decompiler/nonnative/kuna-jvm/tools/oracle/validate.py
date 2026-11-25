@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Compare oracle outputs with upstream testData/results/*.dec the way TestDefinition.run does:
-getContent() = UTF-8 text, "\\r\\n" -> "\\n", String.trim(); on mismatch retry against <name>_1.dec.
+"""Compare oracle outputs (the Java or the Kotlin corpus) with upstream testData/results/*.dec the way
+TestDefinition.run does: getContent() = UTF-8 text, "\\r\\n" -> "\\n", String.trim(); on mismatch retry
+against <name>_1.dec.
 
 Usage: validate.py --manifest M --vf-src VF --out-root OUT [--mode fixture|defaults] [--categories FILE]
 Writes <out-root>/reports/match-<mode>.json and unified diffs under <out-root>/reports/diffs-<mode>/.
