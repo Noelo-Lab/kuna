@@ -170,10 +170,6 @@ fn resolution_and_aliases() {
     }
     assert_eq!(find("rbr").unwrap().option, "jvm_remove_bridge");
     assert_eq!(
-        resolve("jvm_excluded_classes", "^com/ex/.*").unwrap(),
-        ("excluded-classes", "^com/ex/.*".to_string())
-    );
-    assert_eq!(
         resolve("jrt", "off").unwrap(),
         ("include-runtime", "0".to_string())
     );

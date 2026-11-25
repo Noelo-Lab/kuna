@@ -140,14 +140,6 @@ impl ClassesProcessor {
         let verify_anonymous_classes =
             DecompilerContext::get_option(IFernflowerPreferences::VERIFY_ANONYMOUS_CLASSES);
 
-        let mut excluded_matcher = None;
-        let excluded_regex =
-            DecompilerContext::get_property(IFernflowerPreferences::EXCLUDED_CLASSES)
-                .expect("getProperty(EXCLUDED_CLASSES)");
-        if !excluded_regex.is_empty() {
-            excluded_matcher = Some(JavaPattern::compile(&excluded_regex));
-        }
-
         let mut included_matcher = None;
         let included_regex =
             DecompilerContext::get_property(IFernflowerPreferences::INCLUDED_CLASSES)
@@ -176,11 +168,6 @@ impl ClassesProcessor {
         let map_root_classes = self.get_map_root_classes();
         for cl in classes {
             let qualified_name = cl.qualified_name();
-            if let Some(matcher) = &excluded_matcher {
-                if matcher.matches(&qualified_name) {
-                    continue;
-                }
-            }
             if let Some(matcher) = &included_matcher {
                 if !matcher.matches(&qualified_name) {
                     continue;

@@ -37,17 +37,6 @@ b/Outer$A$1	ROOT	Outer$A$1	32	\N		\N		\N
 b/Outer$A$Deep	ROOT	Outer$A$Deep	32	\N		\N		\N
 b/Outer$B	ROOT	Outer$B	33	\N		\N		\N
 b/Outer$C	ROOT	Outer$C	1536	\N		\N		\N
-== load excluded
-b/Natives	ROOT	Natives	1057	\N		\N		\N
-b/Outer	ROOT	Outer	33	\N	b/Outer$1,b/Outer$1Local,b/Outer$1LocalE,b/Outer$1LocalI,b/Outer$2,b/Outer$B,b/Outer$C	\N		\N
-b/Outer$1	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Object
-b/Outer$1Local	LOCAL	Local	0	b/Outer		run ()V	b/Outer	\N
-b/Outer$1LocalE	LOCAL	LocalE	16408	b/Outer		run ()V	b/Outer	\N
-b/Outer$1LocalI	LOCAL	LocalI	1536	b/Outer		run ()V	b/Outer	\N
-b/Outer$2	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Runnable
-b/Outer$B	MEMBER	B	9	b/Outer		\N	b/Outer	\N
-b/Outer$C	MEMBER	C	1546	b/Outer		\N	b/Outer	\N
-log	WARN	Nested class b/Outer$A missing!
 == load included
 b/Natives	ROOT	Natives	1057	\N		\N		\N
 b/Outer	ROOT	Outer	33	\N	b/Outer$1,b/Outer$2	\N		\N

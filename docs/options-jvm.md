@@ -148,8 +148,6 @@ Three tiers:
 | class or method named like a Java keyword | [`jvm_rename_members`](#jvm_rename_members----on--off-default-off) |
 | identifiers that are not valid Java (obfuscated names) | [`jvm_rename_members`](#jvm_rename_members----on--off-default-off) |
 | many classes named a, b, c that clash | [`jvm_rename_members`](#jvm_rename_members----on--off-default-off) |
-| decompiling a fat jar spends time on bundled libraries | [`jvm_excluded_classes`](#jvm_excluded_classes-----default-) |
-| output includes generated or third-party classes | [`jvm_excluded_classes`](#jvm_excluded_classes-----default-) |
 | only one package of a large jar is of interest | [`jvm_included_classes`](#jvm_included_classes-----default-) |
 | decompile-project takes too long on the whole jar | [`jvm_included_classes`](#jvm_included_classes-----default-) |
 | member classes of an obfuscated jar written as separate top-level classes | [`jvm_validate_inner_classes_names`](#jvm_validate_inner_classes_names----on--off-default-on) |
@@ -560,15 +558,6 @@ What the engine loads and infers before any class is written.
 - **Where / provenance:** p0_knowledge/fernflower, identifier_converter, converter_helper · vineflower · vineflower-option
 - **Also spelled:** `rename-members`, `ren`
 - **Example:** `kuna decompile-project obf.jar -o out --option jvm_rename_members on`
-
-### `jvm_excluded_classes` -- <regex>, default ``
-
-- **Symptoms:** decompiling a fat jar spends time on bundled libraries; output includes generated or third-party classes.
-- **What it does:** Do not decompile classes whose internal name (a/b/C$D) fully matches this Java regular expression; they still give context to the others.
-- **When to flip:** Set to skip bundled libraries or generated code in a fat jar, e.g. ^com/google/.* or .*\$\$Lambda.*.
-- **Where / provenance:** p1_classfile/classes_processor · vineflower · vineflower-option
-- **Also spelled:** `excluded-classes`
-- **Example:** `kuna decompile-project app.jar -o out --option jvm_excluded_classes "^org/slf4j/.*"`
 
 ### `jvm_included_classes` -- <regex>, default ``
 

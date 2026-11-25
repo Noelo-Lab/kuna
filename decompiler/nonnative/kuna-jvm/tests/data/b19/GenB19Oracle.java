@@ -121,7 +121,6 @@ public class GenB19Oracle {
     load("default", own);
     load("verify-anonymous", own, IFernflowerPreferences.VERIFY_ANONYMOUS_CLASSES, "1");
     load("no-inner", own, IFernflowerPreferences.DECOMPILE_INNER, "0");
-    load("excluded", own, IFernflowerPreferences.EXCLUDED_CLASSES, "b/Outer\\$A.*");
     load("included", own, IFernflowerPreferences.INCLUDED_CLASSES, "b/(Natives|Outer(\\$[0-9]+)?)");
     load("no-name-check", own, IFernflowerPreferences.VALIDATE_INNER_CLASSES_NAMES, "0");
     load("inconsistent", inconsistent);

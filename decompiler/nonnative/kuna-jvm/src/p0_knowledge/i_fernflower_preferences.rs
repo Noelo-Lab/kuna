@@ -71,7 +71,6 @@ impl IFernflowerPreferences {
     pub const DECOMPILE_COMPLEX_CONDYS: &str = "decompile-complex-constant-dynamic";
     pub const FORCE_JSR_INLINE: &str = "force-jsr-inline";
     pub const MARK_CORRESPONDING_SYNTHETICS: &str = "mark-corresponding-synthetics";
-    pub const EXCLUDED_CLASSES: &str = "excluded-classes";
     pub const INCLUDED_CLASSES: &str = "included-classes";
     pub const VALIDATE_INNER_CLASSES_NAMES: &str = "validate-inner-classes-names";
     pub const PRETTIFY_IFS: &str = "prettify-ifs";
@@ -157,7 +156,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::DECOMPILE_COMPLEX_CONDYS, "0".to_string()),
             (IFernflowerPreferences::FORCE_JSR_INLINE, "0".to_string()),
             (IFernflowerPreferences::MARK_CORRESPONDING_SYNTHETICS, "0".to_string()),
-            (IFernflowerPreferences::EXCLUDED_CLASSES, "".to_string()),
             (IFernflowerPreferences::INCLUDED_CLASSES, "".to_string()),
             (IFernflowerPreferences::VALIDATE_INNER_CLASSES_NAMES, "1".to_string()),
             (IFernflowerPreferences::PRETTIFY_IFS, "1".to_string()),
@@ -269,7 +267,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "DECOMPILE_COMPLEX_CONDYS", key: IFernflowerPreferences::DECOMPILE_COMPLEX_CONDYS, short_name: Some("dcc"), name: Some("Decompile complex constant-dynamic expressions"), description: Some("Some constant-dynamic expressions can't be converted to a single Java expression with identical run-time behaviour. This decompiles them to a similar non-lazy expression, marked with a comment."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "FORCE_JSR_INLINE", key: IFernflowerPreferences::FORCE_JSR_INLINE, short_name: Some("fji"), name: Some("Force JSR inline"), description: Some("Forces the processing of JSR instructions even if the class files shouldn't contain it (Java 7+)"), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "MARK_CORRESPONDING_SYNTHETICS", key: IFernflowerPreferences::MARK_CORRESPONDING_SYNTHETICS, short_name: Some("mcs"), name: Some("Mark Corresponding Synthetics"), description: Some("Mark lambdas and anonymous and local classes with their respective synthetic constructs"), type_: None, dynamic_default_value: None },
-    PreferenceOption { field: "EXCLUDED_CLASSES", key: IFernflowerPreferences::EXCLUDED_CLASSES, short_name: None, name: Some("Excluded Classes"), description: Some("Exclude classes from decompilation if their fully qualified names match the specified regular expression."), type_: Some(OptionType::String), dynamic_default_value: None },
     PreferenceOption { field: "INCLUDED_CLASSES", key: IFernflowerPreferences::INCLUDED_CLASSES, short_name: None, name: Some("Included Classes"), description: Some("Include classes in decompilation only if their fully qualified names match the specified regular expression."), type_: Some(OptionType::String), dynamic_default_value: None },
     PreferenceOption { field: "VALIDATE_INNER_CLASSES_NAMES", key: IFernflowerPreferences::VALIDATE_INNER_CLASSES_NAMES, short_name: None, name: Some("Validate inner classes names"), description: Some("Validates that the inner class name is correct (if it is separated using \"$\" for example BaseClass$InnerClass). If not then inner class won't be processed."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "PRETTIFY_IFS", key: IFernflowerPreferences::PRETTIFY_IFS, short_name: None, name: Some("Prettify Ifs"), description: Some("Use heuristics to restructure if statements to make them clearer to read."), type_: Some(OptionType::Boolean), dynamic_default_value: None },

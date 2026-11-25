@@ -176,9 +176,9 @@ without a JVM, so the default policy is always used.
 **Nesting.** `decompiler/nonnative/kuna-jvm/src/p1_classfile/classes_processor.rs
 (ClassesProcessor::load_classes)` turns the own classes into a forest of class nodes. A
 class whose qualified name was already loaded is skipped with an error log; a class whose
-internal name matches `jvm_excluded_classes`, or does not match `jvm_included_classes`
-(both full-match Java regular expressions, run by the small backtracking engine in the
-same file), is left out of the forest but still gives context. With `jvm_decompile_inner`
+internal name does not match `jvm_included_classes` (a full-match Java regular
+expression, run by the small backtracking engine in the same file) is left out of the
+forest but still gives context. With `jvm_decompile_inner`
 (the default), the `InnerClasses` entries of every class are read into records of type
 *member*, *local* or *anonymous* (an entry with no simple name is anonymous; one whose
 `EnclosingMethod` names a method is local), each remembering which class declared it.

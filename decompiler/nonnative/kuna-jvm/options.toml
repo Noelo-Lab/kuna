@@ -936,28 +936,6 @@ tier = "core"
 symptoms = "stack trace names lambda$main$0 or Main$1 and the matching code is hard to find|need the class file of an anonymous class"
 
 [[option]]
-option = "jvm_excluded_classes"
-vineflower = "excluded-classes"
-short = ""
-aliases = ["excluded-classes"]
-values = "<regex>"
-default = ""
-destructive = false
-phase = "p1_classfile"
-subphase = "classes_processor"
-strength = "HARD"
-rewind = "p1_classfile"
-issue = ""
-summary = "Do not decompile classes whose internal name (a/b/C$D) fully matches this Java regular expression; they still give context to the others."
-use_when = "Set to skip bundled libraries or generated code in a fat jar, e.g. ^com/google/.* or .*\\$\\$Lambda.*."
-example = "kuna decompile-project app.jar -o out --option jvm_excluded_classes \"^org/slf4j/.*\""
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.EXCLUDED_CLASSES (excluded-classes)"
-change_kind = "vineflower-option"
-tier = "analysis"
-symptoms = "decompiling a fat jar spends time on bundled libraries|output includes generated or third-party classes"
-
-[[option]]
 option = "jvm_included_classes"
 vineflower = "included-classes"
 short = ""
