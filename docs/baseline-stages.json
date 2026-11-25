@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5428,
-    5428
+    5437,
+    5437
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4793,6 +4793,15 @@
     "data:restartwarnings #1: the prototype carries no warning of the discarded pass",
     "data:restartwarnings #2: nothing reports a duplicated return",
     "data:restartwarnings #3: the kept pass's own comment still prints",
+    "data:retshape arms #1: default, the measured arm returns its call",
+    "data:retshape arms #2: default, the error arm returns -1",
+    "data:retshape arms #3: the one-armed update keeps one return",
+    "data:retshape arms #4: record, the arms assign the merged variable",
+    "data:retshape arms #5: record, one return of the variable",
+    "data:retshape guards #1: default, the three guards fold into one",
+    "data:retshape guards #2: two tests that call something stay two guards",
+    "data:retshape guards #3: record, the three guards as structured",
+    "data:retshape guards #4: the returned sum is printed in both passes",
     "data:retsplitglobal #1: the shared epilogue is cloned into all three predecessors with the option off and emitted once with it on",
     "data:retsplitglobal #2: every store of the epilogue is cloned, not just its head (the last one counts the same)",
     "data:retsplitglobal #3: the vectorised store loop the epilogue reads back is untouched by the split decision (three unrolled sites x two passes)",
