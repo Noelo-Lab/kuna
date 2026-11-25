@@ -57,21 +57,21 @@ int main(void) {
 
 /// Each re-spelled function and the text printed with `keep` and with `return`.
 const CHANGED: &[(&str, &str, &str)] = &[
-    ("is_abs", "  if ((a0) && (*a0 == '/'))\n    return 1;\n  return 0;", "  return ((a0) && (*a0 == '/'));"),
+    ("is_abs", "  if ((a0 != NULL) && (*a0 == '/'))\n    return 1;\n  return 0;", "  return ((a0 != NULL) && (*a0 == '/'));"),
     (
         "is_full",
         "    return 0;\n  return 1;",
         "  return !((((unsigned int *)a0)[0x17] <= 0xff) && (1 <= ((int *)a0)[0x18]));",
     ),
     ("probe_ok", "  if ((!probe(a0)) && (((char *)a0)[1]))", "  return ((!probe(a0)) && (((char *)a0)[1]));"),
-    ("last_match", "    return 1;\n  return 0;", "  return ((a0) && ("),
+    ("last_match", "    return 1;\n  return 0;", "  return ((a0 != NULL) && ("),
 ];
 
 /// The neighbours, which print the same `if` under both values.
 const KEPT: &[(&str, &str)] = &[
     ("same", "  if (a0 == a1)\n    return 1;\n  return 0;"),
     ("either", "  if (a1 == 9)\n    return 1;\n  return 0;"),
-    ("bump_and_test", "  if ((a0) && (a1 == *a0))\n    return 1;\n  return 0;"),
+    ("bump_and_test", "  if ((a0 != NULL) && (a1 == *a0))\n    return 1;\n  return 0;"),
 ];
 
 /// The printed function `name`, from its header comment to the next.

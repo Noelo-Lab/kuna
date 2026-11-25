@@ -60,8 +60,8 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "truthycond" => {
-        let (val, msg) = crate::kuna_truthycond::OptionTruthyCond.apply(p1)?;
-        self.print_mut().options.set_truthy_cond(val);
+        let (mode, msg) = crate::kuna_truthycond::OptionTruthyCond.apply(p1)?;
+        self.print_mut().options.set_truthy_mode(mode);
         Ok(msg)
     },
     "braceelide" => {

@@ -25,6 +25,7 @@
 <symbol space="ram" offset="0x1000a2" name="bump_and_test"/>
 </binaryimage>
 <script>
+<com>option truthycond on</com>
 <com>parse line extern int is_abs(char *path);</com>
 <com>parse line extern int is_full(unsigned int *s);</com>
 <com>parse line extern int same(int a, int b);</com>
