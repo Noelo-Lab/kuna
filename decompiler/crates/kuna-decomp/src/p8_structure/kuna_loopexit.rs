@@ -163,6 +163,17 @@ pub fn is_loop_break(sb: &BlockGraph, bl: BlockId) -> bool {
     false
 }
 
+/// The in-edges of RETURN block `b` that enter a return statement another
+/// in-edge enters too, by the unoptimized function's record
+/// ([`crate::p8_structure::kuna_o0returns`]).
+pub(crate) fn shared_return(fd: &crate::funcdata::Funcdata, b: BlockId) -> Vec<kuna_base::types::int4> {
+    use crate::p8_structure::kuna_o0returns::{decided, groups};
+    if decided(fd) {
+        return (0..fd.bblocks_ref().block(b).size_in()).collect();
+    }
+    groups(fd, b).map_or_else(Vec::new, |g| g.into_iter().filter(|p| p.len() > 1).flatten().collect())
+}
+
 #[cfg(test)]
 #[path = "kuna_loopexit/tests.rs"]
 mod tests;

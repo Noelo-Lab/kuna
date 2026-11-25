@@ -1484,8 +1484,9 @@ pub struct CollapseStructure<'a> {
     loop_cond_hoist: bool,
     /// (kuna, `option loopexit`) how this function's loop conditions are found.
     loop_exit: Option<crate::p8_structure::kuna_loopexit::Rule>,
-    /// (kuna, `option loopexit`) the leaf whose test is a loop's condition, per loop.
-    loop_conds: Vec<BlockId>,
+    /// (kuna, `option loopexit`) per loop with a known condition, its index in
+    /// `loopbody` and the leaf whose test is the condition.
+    loop_conds: Vec<(usize, BlockId)>,
 }
 
 impl<'a> CollapseStructure<'a> {
@@ -1536,25 +1537,74 @@ impl<'a> CollapseStructure<'a> {
             let exits = (0..b.size_out()).any(|i| !b.is_goto_out(i) && !self.graph.block(b.get_out(i)).is_mark());
             (self.ifnoexit_arm_addr(bl), b.size_out() == 2 && !b.is_switch_out() && exits)
         };
-        let latches: Vec<(Option<u64>, bool)> = lb.tails.iter().map(|&t| leaves(t)).collect();
+        let walk = rule == crate::p8_structure::kuna_loopexit::Rule::Prefer && std::env::var_os("KUNA_LEX_NOWALK").is_none();
+        let tests: Vec<BlockId> = lb.tails.iter().map(|&t| if walk { self.latch_test(head, t) } else { t }).collect();
+        if tests.contains(&head) {
+            return leaves(head).1.then_some(head);
+        }
+        let latches: Vec<(Option<u64>, bool)> = tests.iter().map(|&t| leaves(t)).collect();
         match condition(rule, leaves(head), &latches)? {
             Cond::Head => Some(head),
-            Cond::Latch(i) => Some(lb.tails[i]),
+            Cond::Latch(i) => Some(tests[i]),
         }
     }
 
-    /// (kuna, `option loopexit`) Is `bl` the current node of a loop condition?
-    fn is_loop_condition(&self, bl: BlockId) -> bool {
-        self.loop_conds.iter().any(|&c| {
-            let mut cur = c;
-            while self.graph.block(cur).get_parent() != Some(self.graph_id) {
-                match self.graph.block(cur).get_parent() {
-                    Some(p) => cur = p,
-                    None => return false,
-                }
+    /// The test that decides whether latch `tail` is reached: `tail` itself, or
+    /// the block in front of the straight-line code that leads to it.
+    fn latch_test(&self, head: BlockId, tail: BlockId) -> BlockId {
+        let mut cur = tail;
+        loop {
+            let b = self.graph.block(cur);
+            if cur == head || b.size_out() == 2 {
+                return cur;
             }
-            cur == bl
-        })
+            if b.size_out() != 1 || b.size_in() != 1 || !self.graph.block(b.get_in(0)).is_mark() {
+                return tail;
+            }
+            cur = b.get_in(0);
+        }
+    }
+
+    /// The top-level component holding `bl`.
+    fn top_component(&self, bl: BlockId) -> Option<BlockId> {
+        let mut cur = bl;
+        while self.graph.block(cur).get_parent() != Some(self.graph_id) {
+            cur = self.graph.block(cur).get_parent()?;
+        }
+        Some(cur)
+    }
+
+    /// Has loop `idx` not yet collapsed into one loop block?
+    fn loop_live(&self, idx: usize) -> bool {
+        let lb = &self.loopbody[idx];
+        let Some(head) = lb.get_head().and_then(|h| self.top_component(h)) else {
+            return false;
+        };
+        lb.tails.iter().any(|&t| self.top_component(t) != Some(head))
+            || (0..self.graph.block(head).size_out()).any(|i| self.graph.block(head).get_out(i) == head)
+    }
+
+    /// (kuna, `option loopexit`) The current nodes of the loop conditions, each
+    /// with whether its loop still holds a live loop.
+    fn loop_condition_nodes(&self) -> std::collections::BTreeMap<BlockId, bool> {
+        let mut out = std::collections::BTreeMap::new();
+        for &(idx, c) in self.loop_conds.iter() {
+            let Some(top) = self.top_component(c) else {
+                continue;
+            };
+            let inner = (0..self.loopbody.len()).any(|j| {
+                let mut up = self.loopbody[j].immed_container;
+                while let Some(u) = up {
+                    if u == idx {
+                        return self.loop_live(j);
+                    }
+                    up = self.loopbody[u].immed_container;
+                }
+                false
+            });
+            *out.entry(top).or_insert(false) |= inner;
+        }
+        out
     }
 
     /// (kuna) Install the `guardarm` / `loopcondhoist` verdicts.  Builder
@@ -1869,7 +1919,7 @@ impl<'a> CollapseStructure<'a> {
                 let looporder_snapshot = self.loopbody.clone();
                 let cond = self.loop_condition(idx);
                 if let Some(c) = cond {
-                    self.loop_conds.push(c);
+                    self.loop_conds.push((idx, c));
                 }
                 self.loopbody[idx].find_exit(&body, self.graph, &looporder_snapshot, cond);
                 self.loopbody[idx].order_tails(self.graph);
@@ -3136,10 +3186,15 @@ impl<'a> CollapseStructure<'a> {
             // Give the non-heads a pass first: once a body block folds, the body
             // collapses to a single back-edge clause and the head test hoists
             // into the `while` header on its own.
-            if self.loop_cond_hoist || !self.loop_conds.is_empty() {
+            let conds = if self.loop_conds.is_empty() {
+                std::collections::BTreeMap::new()
+            } else {
+                self.loop_condition_nodes()
+            };
+            if self.loop_cond_hoist || !conds.is_empty() {
                 while index < self.size() {
                     let bl = self.block_at(index);
-                    let defer = (self.loop_cond_hoist && self.ifnoexit_is_loop_head(bl)) || self.is_loop_condition(bl);
+                    let defer = (self.loop_cond_hoist && self.ifnoexit_is_loop_head(bl)) || conds.contains_key(&bl);
                     if !defer && self.rule_block_if_no_exit(bl) {
                         fullchange = true;
                         break;
@@ -3150,7 +3205,7 @@ impl<'a> CollapseStructure<'a> {
             }
             while !fullchange && index < self.size() {
                 let bl = self.block_at(index);
-                if self.rule_block_if_no_exit(bl) {
+                if conds.get(&bl) != Some(&true) && self.rule_block_if_no_exit(bl) {
                     fullchange = true;
                     break;
                 }
