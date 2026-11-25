@@ -79,6 +79,15 @@ that is set by a jump and only tested still fold. `kuna-boolbranch-thumb.xml`
 checks the same on Thumb: an `ite gt` block folds under both values, a `ble`
 over two `movs` keeps its `if` under `keep`.
 
+`kuna-sdivpow2.xml` checks signed divisions by a power of two whose
+correction of a negative dividend gcc x86-64 emits as a conditional move
+(`lea; test; cmovs; sar`): `x / 8` at -O0 and `x / 1024` of a `long` at -O2
+print with no branch, as do `(bytes + 512) / 1024`, whose offset gcc folds
+into both values, `x / 8 * 8`, which gcc rounds with `and $-8`, and a store of
+`x / 256` through `mov %ah`. An add of 7 before a shift by 2 is not a division
+and keeps its `if`. `kuna-sdivpow2-thumb.xml` checks gcc's two Thumb forms: an
+`it lt; addlt` and an add taken out of line by `blt`.
+
 `kuna-wsignload-a64.xml` checks that an AArch64 sign-extending byte or
 halfword load into a `W` register (`ldrsb`, `ldrsh`, `ldursb`, `ldursh` in
 the unsigned-offset, register, unscaled, pre- and post-index forms)

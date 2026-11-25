@@ -1,0 +1,64 @@
+<decompilertest>
+<!-- P3 signed division by a power of two whose correction of a negative
+     dividend is a conditional move. gcc 11 -fno-pic -fno-stack-protector
+     -fcf-protection=none, x86-64; div8 at -O0, the rest at -O2:
+
+       int div8(int x) { return x / 8; }
+       long div1024(long x) { return x / 1024; }
+       int scaled(int bytes) { return (bytes + 512) / 1024; }
+       int round8(int x) { return x / 8 * 8; }
+       int hibyte(int x, char *p) { *p = x / 256; return x / 256 == 60; }
+       int notdiv(int x) { if (x < 0) x += 7; return x >> 2; }
+
+     gcc adds 2^n - 1 to a negative dividend with lea; test; cmovs (or cmovns
+     over the plain value) before the sar, so the shift reads a join of x and
+     x + (2^n - 1) decided by the sign of x. The division prints with no
+     branch whether the join is shifted (div8, div1024), shifted after an
+     offset that gcc folded into both values (scaled), rounded down with
+     and $-8 (round8), or stored through its second byte (hibyte, mov %ah).
+     notdiv adds 7 before a shift by 2, which is not a division, and keeps
+     its if. -->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">554889e5897dfc8b45fc8d500785c00f48c2c1f8035dc3</bytechunk>
+<bytechunk space="ram" offset="0x100100" readonly="true">4885ff488d87ff030000480f49c748c1f80ac366662e0f1f84000000000066908d87ff05000081c7000200000f49c7c1f80ac366662e0f1f840000000000669085ff8d47070f49c783e0f8c30f1f400085ff8d87ff0000000f49c781ef003c0000882631c081ffff0000000f96c0c39085ff89f88d57070f48c2c1f802c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="div8"/>
+<symbol space="ram" offset="0x100100" name="div1024"/>
+<symbol space="ram" offset="0x100120" name="scaled"/>
+<symbol space="ram" offset="0x100140" name="round8"/>
+<symbol space="ram" offset="0x100150" name="hibyte"/>
+<symbol space="ram" offset="0x100170" name="notdiv"/>
+</binaryimage>
+<script>
+<com>parse line extern int div8(int x);</com>
+<com>parse line extern long div1024(long x);</com>
+<com>parse line extern int scaled(int bytes);</com>
+<com>parse line extern int round8(int x);</com>
+<com>parse line extern int hibyte(int x, char *p);</com>
+<com>parse line extern int notdiv(int x);</com>
+<com>lo fu div8</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu div1024</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu scaled</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu round8</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu hibyte</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu notdiv</com>
+<com>decompile</com>
+<com>print C</com>
+</script>
+<stringmatch name="SDIVPOW2 #1: a cmovs before sar prints as the division" min="1" max="1">^  return x / 8;$</stringmatch>
+<stringmatch name="SDIVPOW2 #2: a cmovns over the 64-bit dividend prints as the division" min="1" max="1">^  return x / 0x400;$</stringmatch>
+<stringmatch name="SDIVPOW2 #3: an offset folded into both values divides the offset dividend" min="1" max="1">^  return \(bytes \+ 0x200\) / 0x400;$</stringmatch>
+<stringmatch name="SDIVPOW2 #4: the join rounded down is the quotient scaled back" min="1" max="1">^  return \(x / 8\) \* 8;$</stringmatch>
+<stringmatch name="SDIVPOW2 #5: the join's second byte is the quotient's low byte" min="1" max="1">^  \*p = x / 0x100;$</stringmatch>
+<stringmatch name="SDIVPOW2 #6: an add of 7 before a shift by 2 is not a division and keeps its if" min="1" max="1">^  if \(x &lt;= -1\)$</stringmatch>
+<stringmatch name="SDIVPOW2 #7: no other function keeps a branch" min="1" max="1">^  if \(</stringmatch>
+</decompilertest>
