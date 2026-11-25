@@ -182,6 +182,9 @@ pub struct Funcdata {
     /// decompile runs without the join (`p8_structure/kuna_latchjoin.rs`).
     pub(crate) kuna_latch_joins: u32,
     pub(crate) kuna_latch_join_withdrawn: bool,
+    /// Unstructured edges of the structure before the first join and of the
+    /// first structure after it.
+    pub(crate) kuna_latch_edges: Option<(i32, Option<i32>)>,
     /// (kuna `returndup auto`) The return statements read at the first
     /// heritage pass (`p8_structure/kuna_o0returns.rs`).
     pub(crate) kuna_o0returns: Option<Box<crate::p8_structure::kuna_o0returns::Record>>,
@@ -825,6 +828,7 @@ impl Funcdata {
             kuna_unoptimized: None,
             kuna_latch_joins: 0,
             kuna_latch_join_withdrawn: false,
+            kuna_latch_edges: None,
             kuna_o0returns: None,
             kuna_o0select: None,
             kuna_o0switch: None,

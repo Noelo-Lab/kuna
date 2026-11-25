@@ -97,6 +97,9 @@ impl Action for ActionLatchJoin {
         {
             return 0;
         }
+        if let Some((before, None)) = data.kuna_latch_edges {
+            data.kuna_latch_edges = Some((before, unstructured_edges(data)));
+        }
         let dry = std::env::var_os("KUNA_LJ_DRY").is_some();
         let mut joins = 0;
         while joins < MAX_JOINS {
@@ -106,6 +109,9 @@ impl Action for ActionLatchJoin {
             };
             if dry {
                 break;
+            }
+            if data.kuna_latch_edges.is_none() {
+                data.kuna_latch_edges = Some((unstructured_edges(data).unwrap_or(-1), None));
             }
             execute(data, &plan);
             joins += 1;
@@ -120,10 +126,32 @@ impl Action for ActionLatchJoin {
 /// drive decompiles such a function again without the join and keeps the result
 /// with fewer gotos.
 pub fn joined_gotos(fd: &Funcdata) -> Option<i32> {
-    if fd.kuna_latch_joins == 0 {
+    if fd.kuna_latch_joins == 0 || !structure_worsened(fd) {
         return None;
     }
     Some(crate::p2_lift::kuna_loweredswitchkeep::printed_gotos(fd))
+}
+
+/// Whether the first structure after the join left more edges unstructured than
+/// the one before it (or either is unknown).  Only then can the finished function
+/// print more gotos than it would without the join, and only then is it worth
+/// decompiling again.
+fn structure_worsened(fd: &Funcdata) -> bool {
+    match fd.kuna_latch_edges {
+        Some((before, Some(after))) if before >= 0 => after > before,
+        _ => true,
+    }
+}
+
+/// Unstructured edges of the current structure (gotos, breaks and continues are
+/// not told apart before the final structuring), `None` when there is none.
+fn unstructured_edges(fd: &Funcdata) -> Option<i32> {
+    if fd.sblocks_get_size() == 0 {
+        return None;
+    }
+    let mut c = crate::block::KunaQualityCounts::default();
+    fd.sblocks_ref().kuna_count_quality(fd.sblocks_root(), &mut c);
+    Some(c.goto_nodes + c.multigoto_edges + c.ifgoto_edges)
 }
 
 /// Whether a decompile without the join is structured and prints fewer gotos
@@ -141,6 +169,8 @@ struct Plan {
     ops_b: Vec<OpId>,
     /// TEMP stat: run inputs that differ between the copies.
     run_merges: usize,
+    /// TEMP stat: why the backward walk stopped.
+    stop: String,
 }
 
 fn bb_ops(data: &Funcdata, bl: BlockId) -> Vec<OpId> {
@@ -510,6 +540,7 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
             ops_a: run.iter().map(|p| p.0).collect(),
             ops_b: run.iter().map(|p| p.1).collect(),
             run_merges: run_merges.get(),
+            stop: stop.clone(),
         });
     }
 }
@@ -673,7 +704,7 @@ fn dump(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId, r: &Verdict) {
         format!("{{\"at\":\"{}\",\"outs\":[{}],\"ops\":\"{}\"}}", start_of(data, bl), outs.join(","), names.join(" "))
     };
     let (verdict, run) = match r {
-        Ok(p) => (format!("ok rm={}", p.run_merges), p.ops_a.len()),
+        Ok(p) => (format!("ok rm={} stop={}", p.run_merges, p.stop), p.ops_a.len()),
         Err(e) => (e.replace('"', "'"), 0),
     };
     let tdesc = |bl: BlockId| -> String {
@@ -718,3 +749,7 @@ fn start_of(data: &Funcdata, bl: BlockId) -> String {
         None => "-".to_string(),
     }
 }
+
+#[cfg(test)]
+#[path = "kuna_latchjoin/tests.rs"]
+mod tests;
