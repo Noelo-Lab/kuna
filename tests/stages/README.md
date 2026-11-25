@@ -92,6 +92,13 @@ guards and a guard after a store keep their `if`s. `kuna-boolret-thumb.xml`
 checks the same on two hand-assembled Thumb functions in gcc -O2's layout, one
 return per path.
 
+`kuna-ptrchain.xml` checks option `truthycond` (default `ptrchain`) on gcc
+-O0 x86-64: a pointer parameter tested as an operand of `&&` or `||` prints
+`p != NULL`, or `p == NULL` for `!p`, in an `if` and in a returned chain, while
+the integer, the call and the field `s->next` beside it, a stand-alone
+`if (p)` and a chain that is a loop's condition stay truthy. Under `option
+truthycond on` every test is truthy.
+
 `kuna-sdivpow2.xml` checks signed divisions by a power of two whose
 correction of a negative dividend gcc x86-64 emits as a conditional move
 (`lea; test; cmovs; sar`): `x / 8` at -O0 and `x / 1024` of a `long` at -O2

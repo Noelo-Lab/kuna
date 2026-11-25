@@ -18,6 +18,7 @@
 <bytechunk space="ram" offset="0x10000" readonly="true">18b103781bb901207047012070470020704700bf00bf00bf00bf00bf00bf00bf18b10b781bb9002070470020704701207047</bytechunk>
 </binaryimage>
 <script>
+<com>option truthycond on</com>
 <com>set context TMode 1 [ram,0x10000] [ram,0x1003f]</com>
 <com>map function r0x10000 is_empty</com>
 <com>map function r0x10020 both_set</com>

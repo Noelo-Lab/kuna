@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5470,
-    5470
+    5480,
+    5480
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2383,6 +2383,16 @@
     "data:PTRAUTHTRAP #7: a guard whose both arms trap is left whole",
     "data:PTRAUTHTRAP #8: a compare guarding brk #0xc470 keeps its check, plain AArch64 and arm64e",
     "data:PTRAUTHTRAP #9: both brk #0xc470 traps stay",
+    "data:PTRCHAIN #10: only the three pointer chain operands print NULL",
+    "data:PTRCHAIN #1: a pointer between a call and an integer keeps its comparison",
+    "data:PTRCHAIN #2: a negated pointer in a chain prints == NULL",
+    "data:PTRCHAIN #3: a returned chain keeps the pointer comparison",
+    "data:PTRCHAIN #4: a loop test stays truthy under both values",
+    "data:PTRCHAIN #5: a stand-alone pointer test stays truthy under both values",
+    "data:PTRCHAIN #6: a field access in a chain stays truthy under both values",
+    "data:PTRCHAIN #7: on prints the pointer truthy between a call and an integer",
+    "data:PTRCHAIN #8: on prints the negated pointer as !p",
+    "data:PTRCHAIN #9: on returns the truthy chain",
     "data:PUSHIMMEDIATERET #1: the unpacker call is preserved",
     "data:PUSHIMMEDIATERET #2: the complete tail-transfer statement is emitted",
     "data:PUSHPADREAD #1: the pad push never reads as an argument the call passes on",

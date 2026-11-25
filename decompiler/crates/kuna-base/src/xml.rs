@@ -2334,7 +2334,7 @@ mod tests {
         // and kuna-sdivpow2(-thumb) / a signed power-of-two division corrected by a conditional add
         // and kuna-boolret(-thumb) / a function that only tests a short-circuit condition returns it
         // and kuna-elfv1-symbolextent / a descriptor symbol's size bounds the code behind it
-        assert_eq!(count, 927, "corpus file count drifted");
+        assert_eq!(count, 928, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
