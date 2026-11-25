@@ -81,6 +81,9 @@ pub enum Guard {
     /// `if (G) { pre; do … while (f); return K; } return K;`: print the condition's
     /// statements and the body; the trailing return is hidden.
     Tail,
+    /// `if (G) { pre; do … while (f); } else { S }`: print the condition's statements
+    /// and the arm (1 or 2) that holds the loop.
+    Arm(i32),
 }
 
 /// The print plan of one function.
@@ -143,7 +146,9 @@ pub fn loop_tests(fd: &Funcdata, root: BlockId, mode: LoopTestMode, decl: DeclTy
         stack.extend(b.get_list().iter().copied());
     }
     for dw in loops {
-        if let Ok(top) = plan_loop(fd, &leaves, dw, mode, decl) {
+        let verdict = plan_loop(fd, &leaves, dw, mode, decl);
+        ltrace(fd, dw, &verdict);
+        if let Ok(top) = verdict {
             plan.top.insert(dw);
             if !top.subst.is_empty() {
                 plan.subst.insert(dw, top.subst);
@@ -163,6 +168,99 @@ pub fn loop_tests(fd: &Funcdata, root: BlockId, mode: LoopTestMode, decl: DeclTy
     plan
 }
 
+fn ltrace(fd: &Funcdata, dw: BlockId, verdict: &Verdict) {
+    let Some(p) = std::env::var_os("KUNA_LOOPTEST_TRACE") else { return };
+    let addr = fd
+        .sblocks_ref()
+        .get_front_leaf(dw)
+        .and_then(|l| fd.sblocks_ref().block(l).get_copy())
+        .and_then(|bb| fd.bb_op_head(bb))
+        .and_then(|op| fd.obank().get(op))
+        .map(|o| o.get_seq_num().get_addr().get_offset())
+        .unwrap_or(0);
+    let what = match verdict {
+        Ok(t) => format!(
+            "top:{}{}",
+            if t.respell.is_some() { "respell-" } else { "" },
+            match t.guard {
+                Some((_, Guard::Wrapped)) => "wrapped",
+                Some((_, Guard::Return)) => "return",
+                Some((_, Guard::Tail)) => "tail",
+                Some((_, Guard::Arm(_))) => "arm",
+                None => if empty_body(fd, dw) { "empty" } else { "noguard" },
+            }
+        ),
+        Err(why) => format!("keep:{why}"),
+    };
+    let mut detail = String::new();
+    if let Ok(lp) = Loop::find(fd, dw) {
+        let cont = lp.entry_cond(&BTreeSet::new());
+        let g = lp.guard(fd);
+        fn ex(e: &Expr) -> String {
+            match e {
+                Expr::Const { val, .. } => format!("{val:#x}"),
+                Expr::Leaf(v, _) => format!("{v:?}").replace("VarnodeId(", "v").replace(')', ""),
+                Expr::Load { addr, at, .. } => format!("*{}({})", if at.is_some() { "@" } else { "" }, ex(addr)),
+                Expr::Op { code, args, .. } => format!(
+                    "{}({})",
+                    format!("{code:?}").trim_start_matches("CPUI_"),
+                    args.iter().map(ex).collect::<Vec<_>>().join(",")
+                ),
+            }
+        }
+        fn cs(c: &Option<Cond>) -> String {
+            let Some(c) = c else { return "-".into() };
+            let s = match &c.lit {
+                Lit::True => "T".to_string(),
+                Lit::Eq(a, b) => format!("{}=={}", ex(a), ex(b)),
+                Lit::Ltu(a, b) => format!("{}<u{}", ex(a), ex(b)),
+                Lit::Lts(a, b) => format!("{}<s{}", ex(a), ex(b)),
+                Lit::Other(e) => ex(e),
+            };
+            format!("{}{}", if c.neg { "!" } else { "" }, s)
+        }
+        let bdesc = |b: BlockId| -> String {
+            let bb = fd.bblocks_ref();
+            let blk = bb.block(b);
+            let ops = crate::p8_structure::kuna_iteregion::printed_ops(fd, b);
+            let last = fd.bb_op_tail(b).and_then(|o| fd.obank().get(o)).map(|o| format!("{:?}", o.code()).trim_start_matches("CPUI_").to_string()).unwrap_or_default();
+            let addr = fd.bb_op_head(b).and_then(|o| fd.obank().get(o)).map(|o| o.get_seq_num().get_addr().get_offset()).unwrap_or(0);
+            let succ: Vec<String> = (0..blk.size_out()).map(|i| format!("{:?}", blk.get_out(i))).collect();
+            format!("[{:?}@{addr:#x} p{} {last} in{} out{:?}]", b, ops.len(), blk.size_in(), succ)
+        };
+        detail = format!(
+            "entry={} | guard={} pre={} skipexit={} skip={} exit={}",
+            cs(&cont),
+            g.as_ref().map(|g| cs(&g.enter)).unwrap_or("none".into()),
+            g.as_ref().map(|g| g.pre.len()).unwrap_or(0),
+            g.as_ref().map(|g| g.skip == lp.exit).unwrap_or(false),
+            g.as_ref().map(|g| bdesc(g.skip)).unwrap_or_default(),
+            bdesc(lp.exit),
+        );
+        detail.truncate(1200);
+    }
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(p) {
+        let line = format!(
+            "looptest\t{:#x}\t{}\t{:#x}\t{}\t{}\n",
+            fd.get_address().get_offset(),
+            fd.get_name(),
+            addr,
+            what,
+            detail
+        );
+        let _ = f.write_all(line.as_bytes());
+    }
+}
+
+fn ldebug(msg: String) {
+    let Some(p) = std::env::var_os("KUNA_LT_DEBUG") else { return };
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(p) {
+        let _ = f.write_all(format!("{msg}\n").as_bytes());
+    }
+}
+
 struct Top {
     guard: Option<(BlockId, Guard)>,
     hidden: Option<(BlockId, OpId, OpId)>,
@@ -175,6 +273,38 @@ type Verdict = Result<Top, &'static str>;
 type Dropped = (BlockId, Guard, Option<(BlockId, OpId, OpId)>);
 
 fn plan_loop(
+    fd: &Funcdata,
+    leaves: &BTreeMap<BlockId, BlockId>,
+    dw: BlockId,
+    mode: LoopTestMode,
+    decl: DeclType,
+) -> Verdict {
+    let verdict = plan_tested(fd, leaves, dw, mode, decl);
+    if verdict.is_err() && empty_body(fd, dw) {
+        return Ok(Top { guard: None, hidden: None, subst: Vec::new(), respell: None });
+    }
+    verdict
+}
+
+/// `do {} while (c);` and `while (c) {}` run the same evaluations of `c` for every
+/// input: a body that prints nothing is the condition's own loop.
+fn empty_body(fd: &Funcdata, dw: BlockId) -> bool {
+    let sb = fd.sblocks_ref();
+    let leaf = sb.block(dw).get_block(0);
+    let lb = sb.block(leaf);
+    if lb.get_type() != BlockType::Copy || lb.is_unstructured_target() || sb.block(dw).is_unstructured_target() {
+        return false;
+    }
+    let Some(bb) = lb.get_copy() else { return false };
+    let Some(tail) = fd.bb_op_tail(bb) else { return false };
+    let b = fd.bblocks_ref().block(bb);
+    b.size_out() == 2
+        && (0..2).any(|i| b.get_out(i) == bb)
+        && fd.obank().get(tail).is_some_and(|o| o.code() == OpCode::CPUI_CBRANCH)
+        && crate::p8_structure::kuna_iteregion::printed_ops(fd, bb) == [tail]
+}
+
+fn plan_tested(
     fd: &Funcdata,
     leaves: &BTreeMap<BlockId, BlockId>,
     dw: BlockId,
@@ -230,6 +360,7 @@ struct Loop<'a> {
     dw: BlockId,
     body: BTreeSet<BlockId>,
     header: BlockId,
+    latch: BlockId,
     cbranch: OpId,
     exit: BlockId,
     entry: BlockId,
@@ -353,7 +484,7 @@ impl<'a> Loop<'a> {
                 c = src;
             }
         }
-        Ok(Loop { fd, dw, body, header, cbranch, exit, entry, latch_inputs, carried, alias, cont_neg })
+        Ok(Loop { fd, dw, body, header, latch, cbranch, exit, entry, latch_inputs, carried, alias, cont_neg })
     }
 
     fn cond_vn(&self) -> VarnodeId {
@@ -406,6 +537,177 @@ impl<'a> Loop<'a> {
             return Ok(());
         }
         Err("condition reads a body value")
+    }
+
+    /// The value `vn` holds after the loop when its body runs zero times: every leaf the
+    /// printed expression reads from the loop is a carried variable in its own
+    /// HighVariable, which still holds its entry value.  Ops in `after` run between the
+    /// loop and the read; `rename` pairs values with the skip path's; `fact` holds there.
+    fn zero_trip(
+        &self,
+        vn: VarnodeId,
+        after: &BTreeSet<BlockId>,
+        rename: &BTreeMap<VarnodeId, VarnodeId>,
+        fact: Option<&(Expr, Expr)>,
+    ) -> Option<Expr> {
+        let mut budget = 256;
+        if !self.zero_trip_ok(vn, after, rename, &mut budget) {
+            return None;
+        }
+        let merged;
+        let subst = if rename.is_empty() {
+            &self.latch_inputs
+        } else {
+            merged = self.latch_inputs.iter().chain(rename).map(|(&a, &b)| (a, b)).collect::<BTreeMap<_, _>>();
+            &merged
+        };
+        let b = Builder { fd: self.fd, subst: Some(subst), body: &self.body, fresh: &BTreeSet::new() };
+        let mut budget = 128;
+        Some(with_fact(b.build(vn, 0, &mut budget)?, fact))
+    }
+
+    fn zero_trip_ok(
+        &self,
+        vn: VarnodeId,
+        after: &BTreeSet<BlockId>,
+        rename: &BTreeMap<VarnodeId, VarnodeId>,
+        budget: &mut i32,
+    ) -> bool {
+        *budget -= 1;
+        let fd = self.fd;
+        let Some(v) = fd.vbank().get(vn) else { return false };
+        if *budget < 0 {
+            return false;
+        }
+        if rename.contains_key(&vn) || v.is_constant() || !v.is_written() {
+            return true;
+        }
+        let Some(op) = v.get_def().and_then(|d| fd.obank().get(d)) else { return false };
+        let parent = op.get_parent();
+        if v.is_implied() || parent.is_some_and(|p| after.contains(&p)) {
+            if !pure_value_op(op.code()) {
+                return false;
+            }
+            let first = usize::from(op.code() == OpCode::CPUI_LOAD) as i32;
+            return (first..op.num_input())
+                .all(|i| op.get_in(i).is_some_and(|x| self.zero_trip_ok(x, after, rename, budget)));
+        }
+        if !parent.is_some_and(|p| self.body.contains(&p)) {
+            return true;
+        }
+        self.latch_inputs.contains_key(&vn) && !self.alias.contains_key(&vn)
+    }
+
+    /// `vn` as the skip path computes it.
+    fn skip_value(&self, vn: VarnodeId, fact: Option<&(Expr, Expr)>) -> Option<Expr> {
+        let none = BTreeSet::new();
+        let builder = Builder { fd: self.fd, subst: None, body: &none, fresh: &none_ops() };
+        let mut budget = 128;
+        Some(with_fact(builder.build(vn, 0, &mut budget)?, fact))
+    }
+
+    /// Do the two returns give the same value when the body runs zero times: `skip`
+    /// returns what `exit` returns with every carried variable at its entry value?
+    fn zero_trip_return(&self, skip: OpId, exit: OpId, fact: Option<&(Expr, Expr)>) -> bool {
+        let fd = self.fd;
+        let (Some(a), Some(b)) = (fd.obank().get(skip), fd.obank().get(exit)) else { return false };
+        if a.num_input() != 2 || b.num_input() != 2 {
+            return false;
+        }
+        let (Some(va), Some(vb)) = (a.get_in(1), b.get_in(1)) else { return false };
+        let z = self.zero_trip(vb, &BTreeSet::new(), &BTreeMap::new(), fact);
+        z.is_some() && self.skip_value(va, fact) == z
+    }
+
+    /// Does the exit block `e` do what the skip block `s` does when the body runs zero
+    /// times: the same calls and stores with the same operands, in the same order, and
+    /// the same return value?
+    fn zero_trip_blocks(&self, s: BlockId, e: BlockId, fact: Option<&(Expr, Expr)>) -> bool {
+        let fd = self.fd;
+        let (ps, pe) = (effect_ops(fd, s), effect_ops(fd, e));
+        if ps.len() != pe.len() || ps.is_empty() {
+            ldebug(format!("ZTB len {} {}", ps.len(), pe.len()));
+            return false;
+        }
+        let after: BTreeSet<BlockId> = [e].into_iter().collect();
+        let mut rename = BTreeMap::new();
+        for (&os, &oe) in ps.iter().zip(&pe) {
+            let (Some(a), Some(b)) = (fd.obank().get(os), fd.obank().get(oe)) else { return false };
+            ldebug(format!("ZTB pair {:?}/{} {:?}/{}", a.code(), a.num_input(), b.code(), b.num_input()));
+            if a.code() != b.code() || a.num_input() != b.num_input() {
+                return false;
+            }
+            let first = match a.code() {
+                OpCode::CPUI_CALL => {
+                    let callee = |o: OpId| {
+                        fd.get_call_specs_index(o)
+                            .map(|i| fd.get_call_specs(i).get_entry_address())
+                            .filter(|a| !a.is_invalid())
+                    };
+                    if callee(os).is_none() || callee(os) != callee(oe) {
+                        return false;
+                    }
+                    1
+                }
+                OpCode::CPUI_STORE | OpCode::CPUI_RETURN => {
+                    if a.code() == OpCode::CPUI_STORE && a.get_in(0) != b.get_in(0) {
+                        let k = |o: &crate::op::PcodeOp| o.get_in(0).and_then(|v| fd.vbank().get(v)).map(|v| v.get_offset());
+                        if k(a) != k(b) {
+                            return false;
+                        }
+                    }
+                    1
+                }
+                _ => 0,
+            };
+            for i in first..a.num_input() {
+                let (Some(x), Some(y)) = (a.get_in(i), b.get_in(i)) else { return false };
+                let z = self.zero_trip(y, &after, &rename, fact);
+                if !same_value(self.skip_value(x, fact), z.clone()) {
+                    ldebug(format!("ZTB fail op {:?} in {i}: skip {:?} exit {:?} fact {:?}", a.code(), self.skip_value(x, fact), z, fact));
+                    return false;
+                }
+            }
+            match (a.get_out(), b.get_out()) {
+                (Some(x), Some(y)) => {
+                    rename.insert(y, x);
+                }
+                (None, None) => {}
+                _ => return false,
+            }
+        }
+        true
+    }
+
+    /// At the join `j`, does every MULTIEQUAL receive the same value over the skip edge
+    /// from `from_skip` as over the exit edge from `from_exit` after zero iterations?
+    fn joins_agree(
+        &self,
+        j: BlockId,
+        from_skip: BlockId,
+        from_exit: BlockId,
+        after: &BTreeSet<BlockId>,
+        fact: Option<&(Expr, Expr)>,
+    ) -> bool {
+        let fd = self.fd;
+        let jb = fd.bblocks_ref().block(j);
+        let slot = |b: BlockId| {
+            let s: Vec<i32> = (0..jb.size_in()).filter(|&i| jb.get_in(i) == b).collect();
+            (s.len() == 1).then(|| s[0])
+        };
+        let (Some(si), Some(ei)) = (slot(from_skip), slot(from_exit)) else { return false };
+        block_ops(fd, j).into_iter().all(|o| {
+            let Some(p) = fd.obank().get(o) else { return false };
+            if p.code() != OpCode::CPUI_MULTIEQUAL {
+                return true;
+            }
+            let (Some(w), Some(u)) = (p.get_in(si), p.get_in(ei)) else { return false };
+            if w == u {
+                return true;
+            }
+            let z = self.zero_trip(u, after, &BTreeMap::new(), fact);
+            z.is_some() && self.skip_value(w, fact) == z
+        })
     }
 
     /// Does the variable `out` belongs to live in the stack frame?  An optimizer that
@@ -700,27 +1002,83 @@ impl GuardSite {
         }
     }
 
+    /// What the skip edge establishes: `a == k` when the loop is skipped because the
+    /// guard's `a != k` failed.
+    fn skip_fact(&self) -> Option<(Expr, Expr)> {
+        let e = self.enter.as_ref()?;
+        match &e.lit {
+            Lit::Eq(a, b) if e.neg && b.konst().is_some() => Some((a.clone(), b.clone())),
+            _ => None,
+        }
+    }
+
     /// The guard node to drop and how, when dropping it keeps the program.
+    ///
+    /// Without the guard, the skip path runs `pre`, the failing top test and the exit
+    /// path `E` in place of the skip path `S`, up to the block `J` where the two meet.
+    /// That is the same program when `S` has no effect but its values, `E` neither has
+    /// one nor reads memory, and every value `J` merges arrives equal over both edges
+    /// with each carried variable at its entry value (a loop that runs zero times).
     fn droppable(&self, lp: &Loop, leaves: &BTreeMap<BlockId, BlockId>) -> Result<Dropped, &'static str> {
         let fd = lp.fd;
         if !printed_pure(fd, self.cbranch) {
             return Err("guard test has a side effect");
         }
+        let fact = self.skip_fact();
+        let bb = fd.bblocks_ref();
+        let single = |b: BlockId| (bb.block(b).size_out() == 1).then(|| bb.block(b).get_out(0));
         let mut rets = None;
-        let form = if self.skip == lp.exit {
-            Guard::Wrapped
-        } else {
-            let a = bare_return(fd, self.skip).ok_or("skip is not a bare return")?;
-            let b = bare_return(fd, lp.exit).ok_or("exit is not a bare return")?;
-            if !same_return(fd, a, b) {
+        let (mut form, s_blk, e_blk, join) = if self.skip == lp.exit {
+            (Guard::Wrapped, None, None, lp.exit)
+        } else if let (Some(a), Some(b)) = (return_op(fd, self.skip), return_op(fd, lp.exit)) {
+            let same = match (bare_return(fd, self.skip), bare_return(fd, lp.exit)) {
+                (Some(_), Some(_)) => same_return(fd, a, b) || lp.zero_trip_return(a, b, fact.as_ref()),
+                _ => lp.zero_trip_blocks(self.skip, lp.exit, fact.as_ref()),
+            };
+            if !same {
+                ldebug(format!("returns differ: bare {:?} {:?}", bare_return(fd, self.skip), bare_return(fd, lp.exit)));
                 return Err("returns differ");
             }
-            if fd.bblocks_ref().block(self.skip).size_in() != 1 {
+            if bb.block(self.skip).size_in() != 1 {
                 return Err("shared skip return");
             }
             rets = Some((a, b));
-            Guard::Return
+            (Guard::Return, None, None, lp.exit)
+        } else if single(self.skip) == Some(lp.exit) {
+            (Guard::Arm(0), Some(self.skip), None, lp.exit)
+        } else if single(lp.exit) == Some(self.skip) {
+            (Guard::Wrapped, None, Some(lp.exit), self.skip)
+        } else if let Some(j) = single(self.skip).filter(|&j| single(lp.exit) == Some(j)) {
+            (Guard::Arm(0), Some(self.skip), Some(lp.exit), j)
+        } else {
+            return Err("skip path does not meet the exit");
         };
+        if let Some(s) = s_blk {
+            if bb.block(s).size_in() != 1 {
+                return Err("shared skip block");
+            }
+            if !block_ops(fd, s).iter().all(|&o| without_effect(fd, o, true)) {
+                return Err("skip block has an effect");
+            }
+        }
+        if let Some(e) = e_blk {
+            if bb.block(e).size_in() != 1 {
+                return Err("shared exit block");
+            }
+            if !block_ops(fd, e).iter().all(|&o| without_effect(fd, o, false)) {
+                return Err("exit block has an effect");
+            }
+        }
+        let after: BTreeSet<BlockId> = e_blk.into_iter().collect();
+        let mut joined = None;
+        let mut agree = || {
+            *joined.get_or_insert_with(|| {
+                lp.joins_agree(join, s_blk.unwrap_or(self.block), e_blk.unwrap_or(lp.latch), &after, fact.as_ref())
+            })
+        };
+        if (s_blk.is_some() || e_blk.is_some()) && !agree() {
+            return Err("join values differ");
+        }
         let mut region: BTreeSet<BlockId> = lp.body.clone();
         region.extend(self.pre.iter().copied());
         for &b in &self.pre {
@@ -752,7 +1110,7 @@ impl GuardSite {
                         .and_then(|d| fd.obank().get(d))
                         .and_then(|d| d.get_parent())
                         .is_some_and(|p| region.contains(&p));
-                    if !in_region {
+                    if !in_region && !agree() {
                         return Err("pre output live on skip path");
                     }
                 }
@@ -771,7 +1129,8 @@ impl GuardSite {
             }
         };
         let ib = sb.block(ifn);
-        if ib.get_size() != 2 || ib.get_if_goto_target().is_some() {
+        let arms = if matches!(form, Guard::Arm(_)) { 3 } else { 2 };
+        if ib.get_size() != arms || ib.get_if_goto_target().is_some() {
             return Err("guard if shape");
         }
         if let Some(parent) = ib.get_parent() {
@@ -780,11 +1139,33 @@ impl GuardSite {
                 return Err("guard is an else arm");
             }
         }
+        let leaf_of = |b: BlockId| -> Result<BlockId, &'static str> {
+            let l = *leaves.get(&b).ok_or("no leaf")?;
+            if sb.block(l).is_unstructured_target() {
+                return Err("labelled block");
+            }
+            Ok(l)
+        };
         let pre_leaves: Vec<BlockId> =
             self.pre.iter().map(|b| leaves.get(b).copied().ok_or("no pre leaf")).collect::<Result<_, _>>()?;
-        let then = flatten(fd, ib.get_block(1));
         let mut loop_seq = pre_leaves;
         loop_seq.push(lp.dw);
+        if let Some(e) = e_blk {
+            loop_seq.push(leaf_of(e)?);
+        }
+        if let Guard::Arm(_) = form {
+            let s = leaf_of(s_blk.ok_or("no skip block")?)?;
+            let (a1, a2) = (flatten(fd, ib.get_block(1)), flatten(fd, ib.get_block(2)));
+            form = if a1 == loop_seq && a2 == [s] {
+                Guard::Arm(1)
+            } else if a2 == loop_seq && a1 == [s] {
+                Guard::Arm(2)
+            } else {
+                return Err("guard arms are not the loop and the skip");
+            };
+            return Ok((ifn, form, None));
+        }
+        let then = flatten(fd, ib.get_block(1));
         if form == Guard::Wrapped {
             if then != loop_seq {
                 return Err("guard body is not the loop");
@@ -929,6 +1310,67 @@ fn bare_return(fd: &Funcdata, bb: BlockId) -> Option<OpId> {
         return None;
     }
     Some(ops[0])
+}
+
+/// The RETURN that ends a block with no successor.
+fn return_op(fd: &Funcdata, bb: BlockId) -> Option<OpId> {
+    if fd.bblocks_ref().block(bb).size_out() != 0 {
+        return None;
+    }
+    let o = fd.bb_op_tail(bb)?;
+    (fd.obank().get(o)?.code() == OpCode::CPUI_RETURN).then_some(o)
+}
+
+/// The ops of a block that print as statements or act on the world, in order.
+fn effect_ops(fd: &Funcdata, bb: BlockId) -> Vec<OpId> {
+    let printed = crate::p8_structure::kuna_iteregion::printed_ops(fd, bb);
+    block_ops(fd, bb)
+        .into_iter()
+        .filter(|o| {
+            printed.contains(o) || fd.obank().get(*o).is_some_and(|p| p.is_call() || has_side_effect(p.code()))
+        })
+        .collect()
+}
+
+/// Can `o` be run or skipped without changing anything but the values it defines?  A
+/// read of memory may be skipped (`may_load`) but not added.
+fn without_effect(fd: &Funcdata, o: OpId, may_load: bool) -> bool {
+    let Some(p) = fd.obank().get(o) else { return false };
+    if p.is_call() || has_side_effect(p.code()) || (p.code() == OpCode::CPUI_LOAD && !may_load) {
+        return false;
+    }
+    p.get_out().and_then(|v| fd.vbank().get(v)).is_none_or(|v| !v.is_addr_tied() && !v.is_persist())
+}
+
+fn none_ops() -> BTreeSet<OpId> {
+    BTreeSet::new()
+}
+
+/// Do two operands carry the same value: equal expressions, or constants of different
+/// widths whose value both extensions agree on?
+fn same_value(a: Option<Expr>, b: Option<Expr>) -> bool {
+    match (a, b) {
+        (Some(Expr::Const { size: s1, val: v1 }), Some(Expr::Const { size: s2, val: v2 })) => {
+            v1 == v2 && (s1 == s2 || v1 >> (8 * s1.min(s2) - 1).clamp(0, 63) == 0)
+        }
+        (Some(x), Some(y)) => x == y,
+        _ => false,
+    }
+}
+
+/// `e` with every occurrence of `fact.0` replaced by the constant `fact.1`.
+fn with_fact(e: Expr, fact: Option<&(Expr, Expr)>) -> Expr {
+    let Some((from, to)) = fact else { return e };
+    if &e == from {
+        return to.clone();
+    }
+    match e {
+        Expr::Op { code, size, args } => {
+            simplify(Expr::Op { code, size, args: args.into_iter().map(|a| with_fact(a, fact)).collect() })
+        }
+        Expr::Load { addr, size, at } => Expr::Load { addr: Box::new(with_fact(*addr, fact)), size, at },
+        other => other,
+    }
 }
 
 fn same_return(fd: &Funcdata, a: OpId, b: OpId) -> bool {
@@ -1485,8 +1927,9 @@ impl PrintC {
         self.emit_block(fd, arch, cond);
         self.emit_comment_block_tree(fd, cond);
         if form != Guard::Return {
+            let arm = if let Guard::Arm(i) = form { i } else { 1 };
             let id = self.emit.begin_block(0);
-            self.emit_block(fd, arch, fd.sblocks_ref().block(blk).get_block(1));
+            self.emit_block(fd, arch, fd.sblocks_ref().block(blk).get_block(arm));
             self.emit.end_block(id);
         }
         self.context.pop_mod();
