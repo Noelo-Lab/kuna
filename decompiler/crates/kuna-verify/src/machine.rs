@@ -95,11 +95,31 @@ pub fn leads_out(env: &Env, target: u64) -> bool {
     t != target && !env.is_code(t)
 }
 
+/// Where a call to `target` goes through thunks that change nothing a callee
+/// can see: each hop writes only temporaries and scratch registers, stores
+/// nothing, leaves the stack pointer and flags alone, and two runs from
+/// different states jump to the same place. A PLT slot's `jmp [got]` and a
+/// plain `jmp f` are such thunks; one that sets or pushes an argument, or
+/// moves the stack pointer, is not. Two calls are the same call when they
+/// reach the same code this way.
+pub fn transparent_target(env: &Env, target: u64) -> u64 {
+    if let Some(&t) = env.transparent.borrow().get(&target) {
+        return t;
+    }
+    let t = follow(env, target, true);
+    env.transparent.borrow_mut().insert(target, t);
+    t
+}
+
 fn follow_thunks(env: &Env, target: u64) -> u64 {
+    follow(env, target, false)
+}
+
+fn follow(env: &Env, target: u64, strict: bool) -> u64 {
     let mut t = target;
     for _ in 0..4 {
-        let a = thunk_hop(env, t, 0);
-        let b = thunk_hop(env, t, 1);
+        let a = thunk_hop(env, t, 0, strict);
+        let b = thunk_hop(env, t, 1, strict);
         match (a, b) {
             (Some(x), Some(y)) if x == y && x != t => t = x,
             _ => break,
@@ -114,11 +134,20 @@ fn writes_argument(env: &Env, out: &VarnodeData) -> bool {
         && env.arg_regs.iter().any(|&(o, n)| out.offset < o + u64::from(n) && o < out.offset + u64::from(out.size))
 }
 
+/// Whether a `strict` hop may write `out`: a temporary or a scratch register.
+fn hidden(env: &Env, out: &VarnodeData) -> bool {
+    let Ok(s) = space(out) else { return false };
+    s.get_type() == spacetype::IPTR_INTERNAL
+        || (s.get_index() == env.register.get_index()
+            && env.scratch_regs.iter().any(|&(o, n)| out.offset >= o && out.offset + u64::from(out.size) <= o + u64::from(n)))
+}
+
 /// Where the thunk at `at` jumps, run from state `run`; `None` when the code
 /// there stores anywhere but the stack (a lazy PLT entry pushes its index),
 /// writes an argument register, calls, tests or does not jump within a few
-/// instructions.
-fn thunk_hop(env: &Env, at: u64, run: u32) -> Option<u64> {
+/// instructions. `strict` also refuses every store and any write but to a
+/// temporary or a scratch register ([`transparent_target`]).
+fn thunk_hop(env: &Env, at: u64, run: u32, strict: bool) -> Option<u64> {
     let mut state = State::new(env, 0x7fff_0000 + run);
     let mut addr = at;
     for _ in 0..3 {
@@ -136,10 +165,11 @@ fn thunk_hop(env: &Env, at: u64, run: u32) -> Option<u64> {
                 OpCode::CPUI_LOAD => {
                     let spc = mem_space(env, op.ins.first()?).ok()?;
                     let ptr = read(&mut state, op.ins.get(1)?).ok()? as u64;
-                    let out = op.out.as_ref().filter(|o| !writes_argument(env, o))?;
+                    let out = op.out.as_ref().filter(|o| !writes_argument(env, o) && (!strict || hidden(env, o)))?;
                     let v = state.read(&spc, spc.wrap_offset(ptr), out.size).ok()?;
                     write(&mut state, out, v).ok()?;
                 }
+                OpCode::CPUI_STORE if strict => return None,
                 OpCode::CPUI_STORE => {
                     let spc = mem_space(env, op.ins.first()?).ok()?;
                     let ptr = read(&mut state, op.ins.get(1)?).ok()? as u64;
@@ -156,7 +186,7 @@ fn thunk_hop(env: &Env, at: u64, run: u32) -> Option<u64> {
                 | OpCode::CPUI_CALLOTHER
                 | OpCode::CPUI_RETURN => return None,
                 opc => {
-                    let out = op.out.as_ref().filter(|o| !writes_argument(env, o))?;
+                    let out = op.out.as_ref().filter(|o| !writes_argument(env, o) && (!strict || hidden(env, o)))?;
                     let mut ins = Vec::with_capacity(op.ins.len());
                     for vn in &op.ins {
                         ins.push((read(&mut state, vn).ok()?, vn.size));

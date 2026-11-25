@@ -39,7 +39,7 @@ const USAGE: &str = "usage:
   kuna-verify localize <test.xml|binary> <function> [--pass N] [--contract FILE.c] [--option NAME VALUE]...
   kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
   kuna-verify mutate <test.xml|dir>... | <binary> <function|0xaddr>... | --all  [--per-function N (6)] [--jobs N] [--file-seconds S]
-options: --runs N (256)  --seed S  --budget OPS (200000)  --concolic QUERIES (0)  --json  --trace  --sleighpath DIR";
+options: --runs N (256)  --seed S  --budget OPS (200000)  --concolic QUERIES (0)  --call-reruns N (4)  --json  --trace  --sleighpath DIR";
 
 struct Args {
     positional: Vec<String>,
@@ -115,6 +115,11 @@ fn parse(argv: &[String]) -> Result<Args, String> {
                 let v = it.next();
                 a.opts.concolic = u32::try_from(num(v, "--concolic")?).map_err(|_| "--concolic: too large")?;
                 a.forward.extend(["--concolic".to_string(), v.cloned().unwrap_or_default()]);
+            }
+            "--call-reruns" => {
+                let v = it.next();
+                a.opts.call_reruns = u32::try_from(num(v, "--call-reruns")?).map_err(|_| "--call-reruns: too large")?;
+                a.forward.extend(["--call-reruns".to_string(), v.cloned().unwrap_or_default()]);
             }
             "--runs" | "--seed" | "--budget" => {
                 let v = it.next();

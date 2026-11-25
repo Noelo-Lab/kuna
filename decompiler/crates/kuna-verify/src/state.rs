@@ -139,6 +139,11 @@ pub struct Env<'p> {
     /// The calling convention's argument registers: a thunk that writes one
     /// changes the call, so it is no thunk.
     pub arg_regs: Vec<(u64, u32)>,
+    /// Registers the convention lets any call clobber that carry no argument
+    /// (`ip` on ARM, `t9` on MIPS): all a transparent thunk may write.
+    pub scratch_regs: Vec<(u64, u32)>,
+    /// Where a call to each target goes through transparent thunks only.
+    pub(crate) transparent: RefCell<HashMap<u64, u64>>,
     pub(crate) insns: RefCell<HashMap<u64, Rc<crate::machine::Insn>, BuildHasherDefault<Fast>>>,
     entries: std::cell::OnceCell<BTreeSet<u64>>,
     stack: Rc<AddrSpace>,
@@ -268,6 +273,8 @@ impl<'p> Env<'p> {
             image_bytes: RefCell::new(HashMap::default()),
             thunks: RefCell::new(HashMap::new()),
             arg_regs: Vec::new(),
+            scratch_regs: Vec::new(),
+            transparent: RefCell::new(HashMap::new()),
             insns: RefCell::new(HashMap::default()),
             entries: std::cell::OnceCell::new(),
             stack: Rc::clone(stack),

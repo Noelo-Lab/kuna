@@ -429,3 +429,38 @@ fn a_callee_reading_past_kuna_s_object_is_compared() {
     assert_eq!(planted.len(), 1, "{rows:?}");
     assert_eq!(planted[0]["killed"], true, "{planted:?}");
 }
+
+fn mutant_rows(path: &std::path::Path, function: &str) -> Vec<serde_json::Value> {
+    let specs = specs();
+    let out = verify(&["mutate", &path.to_string_lossy(), function, "--per-function", "20", "--json", "--sleighpath", &specs]);
+    String::from_utf8_lossy(&out.stdout).lines().filter_map(|l| serde_json::from_str(l).ok()).filter(|v: &serde_json::Value| v.get("operator").is_some()).collect()
+}
+
+/// Thunks that push a different argument before `jmp f` (`push 1; jmp f`,
+/// `push 2; jmp f`, where `f` pops and returns it) are different calls: a
+/// store or a stack-pointer change is never transparent.
+#[test]
+fn thunks_that_push_an_argument_are_different_calls() {
+    let text = [
+        0x59, 0x58, 0x51, 0xc3, 0x6a, 0x01, 0xeb, 0xf8, 0x6a, 0x02, 0xeb, 0xf4, 0x48, 0x83, 0xec, 0x08, 0xe8, 0xef, 0xff, 0xff,
+        0xff, 0x48, 0x83, 0xc4, 0x08, 0xc3,
+    ];
+    let path = object("pushthunks", &text, &[("f", 0, 4), ("push1", 4, 4), ("push2", 8, 4), ("caller", 12, 14)], &[]);
+    let rows = mutant_rows(&path, "caller");
+    let targets: Vec<_> = rows.iter().filter(|r| r["operator"] == "call-target" && r["reached"] == true).collect();
+    assert!(!targets.is_empty(), "{rows:?}");
+    assert!(targets.iter().all(|r| r["killed"] == true), "{targets:?}");
+}
+
+/// A thunk that only jumps is transparent: calling `f` instead of `jt`
+/// (`jt: jmp f`) is the same call, so that mutant is not reported.
+#[test]
+fn a_jump_only_thunk_is_the_function_it_jumps_to() {
+    let text = [0xeb, 0x00, 0x89, 0xf8, 0xc3, 0x48, 0x83, 0xec, 0x08, 0xe8, 0xf2, 0xff, 0xff, 0xff, 0x48, 0x83, 0xc4, 0x08, 0xc3];
+    let path = object("jumpthunk", &text, &[("jt", 0, 2), ("f", 2, 3), ("caller", 5, 14)], &[]);
+    let rows = mutant_rows(&path, "caller");
+    let targets: Vec<_> = rows.iter().filter(|r| r["operator"] == "call-target" && r["reached"] == true).collect();
+    assert_eq!(targets.len(), 1, "{rows:?}");
+    assert!(targets[0]["what"].as_str().unwrap_or("").contains("0x400000 -> 0x400002"), "{targets:?}");
+    assert_eq!(targets[0]["killed"], false, "{targets:?}");
+}

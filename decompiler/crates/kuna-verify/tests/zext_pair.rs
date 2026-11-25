@@ -131,3 +131,16 @@ fn localize_uses_the_contract() {
     let with = localize(&src(Some((SOURCE, "zext_pair.c"))), &specs(), "ins16", None, &opts).unwrap();
     assert!(!matches!(with.finding, Finding::NotDiffering(_)), "{}", with.render());
 }
+
+/// With no reruns allowed, the runs where `twice` drops a pass-through
+/// argument the callee reads are not counted as agreeing, and say so; only the
+/// runs where the dropped values happen to match count.
+#[test]
+fn calls_past_the_rerun_budget_are_not_agreement() {
+    let path = arm_object();
+    let opts = Options { runs: 64, call_reruns: 0, ..Options::default() };
+    let r = &check_binary(&path.to_string_lossy(), &["twice".to_string()], &[], &specs(), Some((SOURCE, "zext_pair.c")), &opts).unwrap()[0];
+    let Verdict::Agrees(n) = r.verdict else { panic!("{}", r.render()) };
+    assert!(n < 64, "{}", r.render());
+    assert!(r.lines.iter().any(|l| l.contains("the machine was not rerun for the rest")), "{}", r.render());
+}

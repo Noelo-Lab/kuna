@@ -41,11 +41,15 @@ pub struct Options {
     /// C5: z3 queries per function for concolic inputs after the random
     /// runs; 0 runs none.
     pub concolic: u32,
+    /// Calls per run whose callee read an argument kuna passes otherwise
+    /// that get a machine rerun with kuna's value. A run with more is not
+    /// counted as agreeing.
+    pub call_reruns: u32,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { runs: 256, seed: 0x6b75_6e61, budget: 200_000, budget_runs: 4, trace: false, concolic: 0 }
+        Options { runs: 256, seed: 0x6b75_6e61, budget: 200_000, budget_runs: 4, trace: false, concolic: 0, call_reruns: 4 }
     }
 }
 
@@ -293,7 +297,7 @@ fn compare_calls(prog: &ConsoleProgram, env: &Env, run: u32, calls: &Calls, m: &
             return differs(vec![format!("call {n}: the machine calls from {:#x}, kuna from {:#x}", mc.at, gc.at)], suspects);
         }
         let (mr, kr) = (code_target(env, mc.target), code_target(env, gc.target));
-        let (mt, kt) = (mr.map(|t| machine::through_thunks(env, t)), kr.map(|t| machine::through_thunks(env, t)));
+        let (mt, kt) = (mr.map(|t| machine::transparent_target(env, t)), kr.map(|t| machine::transparent_target(env, t)));
         let direct = !mc.indirect && !gc.indirect && !calls.site(gc.at).resolved;
         let code_or_outside = |t: u64| env.is_code(t) || !env.code_mapped(t);
         let both = |a: Option<u64>, b: Option<u64>| a.zip(b).is_some_and(|(m, k)| code_or_outside(m) && code_or_outside(k));
@@ -785,6 +789,13 @@ fn check_runs(
     let mut upper = UpperWatch::new(prog, fd, &claim);
     let mut machine_calls = calls::sites(fd, &env);
     env.arg_regs = machine_calls.input_regs.clone();
+    env.scratch_regs = machine_calls
+        .default
+        .killed
+        .iter()
+        .copied()
+        .filter(|&(o, n)| (o, n) != env.sp && !env.arg_regs.iter().any(|&(a, m)| o < a + u64::from(m) && a < o + u64::from(n)))
+        .collect();
     let mut calls = machine_calls.clone();
     let mut program: Program = program::compile(prog, fd, &calls);
     if let Some((m, reached)) = mutation {
@@ -809,6 +820,7 @@ fn check_runs(
     let left_cfg = |mo: &machine::Outcome| mo.indirect.iter().any(|t| !program.starts.contains(t));
     let mut agreed = 0u32;
     let mut unverified_runs = 0u32;
+    let mut unrerun_runs = 0u32;
     let mut trapped_runs = 0u32;
     let mut trapped: Option<String> = None;
     let mut budget_runs = 0u32;
@@ -930,7 +942,8 @@ fn check_runs(
         }
         let mut cc = compare_calls(prog, &env, run, &calls, &mo.calls, &go.calls);
         let mut rerun_failed = None;
-        for ci in go.call_inputs.iter() {
+        let unchecked = go.call_inputs.len().saturating_sub(opts.call_reruns as usize) + go.unkept_inputs;
+        for ci in go.call_inputs.iter().take(opts.call_reruns as usize) {
             if cc.differs.is_some() || cc.stop {
                 break;
             }
@@ -1065,6 +1078,10 @@ fn check_runs(
                 return finish(Verdict::Differs { run, of: opts.runs }, differs(lines), call_suspects);
             }
         }
+        if unchecked > 0 {
+            unrerun_runs += 1;
+            continue;
+        }
         agreed += 1;
     }
     *env.concolic_inputs.borrow_mut() = None;
@@ -1082,6 +1099,10 @@ fn check_runs(
         ),
         (None, Some(d), _) => Verdict::Diverges(d),
         (None, None, Some(t)) if agreed == 0 => Verdict::from_halt(&Halt::Trap(t)),
+        (None, None, None) if agreed == 0 && unrerun_runs > 0 => Verdict::Unknown(format!(
+            "UNKNOWN(call-reruns: every run had more than {} calls whose callee reads an argument kuna passes otherwise)",
+            opts.call_reruns
+        )),
         (None, None, _) => Verdict::Agrees(agreed),
     };
     let mut lines = match contract {
@@ -1091,6 +1112,12 @@ fn check_runs(
     if unverified_runs > 0 && matches!(verdict, Verdict::Agrees(_)) {
         lines.push(format!(
             "note     {unverified_runs} runs ended at a call only kuna says does not return, with no name, layout or run to show it; they are not counted"
+        ));
+    }
+    if unrerun_runs > 0 && matches!(verdict, Verdict::Agrees(_)) {
+        lines.push(format!(
+            "note     {unrerun_runs} runs had more than {} calls whose callee reads an argument kuna passes otherwise; the machine was not rerun for the rest, so they are not counted",
+            opts.call_reruns
         ));
     }
     if trapped_runs > 0 && matches!(verdict, Verdict::Agrees(_)) {

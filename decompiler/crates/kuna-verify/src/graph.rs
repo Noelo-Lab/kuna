@@ -38,12 +38,15 @@ pub struct Outcome {
     /// ran for real read an argument register kuna's call does not pass the
     /// same value in.
     pub call_inputs: Vec<CallInput>,
+    /// Calls past [`CALL_INPUTS`] whose argument reads differ.
+    pub unkept_inputs: usize,
     /// System calls and traps, in order.
     pub events: Vec<crate::calls::UserEvent>,
 }
 
-/// Calls per run whose differing argument reads are each checked by a rerun.
-pub const CALL_INPUTS: usize = 4;
+/// Calls per run whose differing argument reads are kept for a rerun; more
+/// are only counted ([`Outcome::unkept_inputs`]).
+pub const CALL_INPUTS: usize = 64;
 
 /// A call whose callee reads argument-register bytes kuna passes otherwise:
 /// the report, and kuna's bytes (a stand-in where it passes none) for a
@@ -76,6 +79,7 @@ struct Run<'e, 'p, 'c> {
     calls: &'c Calls,
     perturb: Option<&'c Perturb>,
     call_inputs: Vec<CallInput>,
+    unkept_inputs: usize,
     events: Vec<crate::calls::UserEvent>,
     /// The machine's calls, whose recorded effects this side replays.
     replay: &'c [Record],
@@ -108,7 +112,7 @@ impl Run<'_, '_, '_> {
         resolved
             || m == k
             || k.is_none_or(|k| !env.is_code(k))
-            || m.zip(k).is_some_and(|(m, k)| crate::machine::through_thunks(env, m) == crate::machine::through_thunks(env, k))
+            || m.zip(k).is_some_and(|(m, k)| crate::machine::transparent_target(env, m) == crate::machine::transparent_target(env, k))
     }
 
     /// Fill the register save area as `va_start` does: the stores kuna's
@@ -237,9 +241,13 @@ impl Run<'_, '_, '_> {
                 ));
             }
         }
-        if let Some(msg) = first.filter(|_| self.call_inputs.len() < CALL_INPUTS) {
-            let locked = self.calls.site(op.at).locked;
-            self.call_inputs.push(CallInput { msg, with: crate::machine::WithArgs { call: Some(k), bytes, kill_salt: 0 }, locked });
+        if let Some(msg) = first {
+            if self.call_inputs.len() < CALL_INPUTS {
+                let locked = self.calls.site(op.at).locked;
+                self.call_inputs.push(CallInput { msg, with: crate::machine::WithArgs { call: Some(k), bytes, kill_salt: 0 }, locked });
+            } else {
+                self.unkept_inputs += 1;
+            }
         }
         Ok(())
     }
@@ -529,6 +537,7 @@ impl Run<'_, '_, '_> {
             writes: self.state.writes(),
             read_uninitialized: self.state.read_uninitialized,
             call_inputs: self.call_inputs,
+            unkept_inputs: self.unkept_inputs,
             events: self.events,
             calls: self.records,
             noreturn,
@@ -562,6 +571,7 @@ pub fn run(
         calls,
         perturb,
         call_inputs: Vec::new(),
+        unkept_inputs: 0,
         events: Vec::new(),
         replay,
         state: State::new(env, run),
