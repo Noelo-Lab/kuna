@@ -1,0 +1,23 @@
+{
+  "slug": "shared-project-export",
+  "proposal": true,
+  "status": "draft proposal; implementation not approved or included",
+  "track": "tooling",
+  "option": null,
+  "new_option": false,
+  "change_kind": "refactor: move callgraph + callee_first into kuna-console, one project export for kuna-cli and kuna-wasm",
+  "parent": "a3351f838",
+  "owning_files": [
+    "decompiler/crates/kuna-cli/src/decompile_project.rs",
+    "decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs",
+    "decompiler/crates/kuna-cli/src/callgraph.rs",
+    "decompiler/crates/kuna-wasm/src/lib.rs",
+    "decompiler/crates/kuna-console/src/project.rs"
+  ],
+  "observed_evidence": {
+    "engine_parent": "a3351f838",
+    "fauxware": { "c_lines": 190, "c_differing": 4, "h_lines": 92, "h_differing": 2, "example": "accepted: int (CLI) vs void (kuna_wasm project)" },
+    "mcount_x86_64": { "c_lines": 172079, "c_differing": 36213, "h_lines": 3638, "h_differing": 3210 }
+  },
+  "acceptance": "kuna_wasm project artifacts equal kuna decompile-project's on the export fixtures, byte for byte except the README path row; CLI gates unchanged"
+}
