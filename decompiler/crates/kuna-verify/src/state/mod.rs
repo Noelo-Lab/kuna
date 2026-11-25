@@ -124,6 +124,10 @@ pub struct Env<'p> {
     pub booleans: Vec<(i32, u64, u32)>,
     /// The machine's system calls write the kernel's result registers.
     pub kernel: Cell<bool>,
+    /// A stub kills only the registers kuna's IR says the callee does not
+    /// preserve, instead of the calling convention's: the rerun that tells
+    /// whether kuna's preservation claim decides a run.
+    pub stub_recovered: Cell<bool>,
     /// C5: input bytes a z3 model sets for this run, over the random state.
     pub concolic_inputs: RefCell<Option<crate::concolic::Inputs>>,
     /// C5: the machine records its path on this run.
@@ -268,6 +272,7 @@ impl<'p> Env<'p> {
             ret_slot: 0,
             booleans: Vec::new(),
             kernel: Cell::new(true),
+            stub_recovered: Cell::new(false),
             concolic_inputs: RefCell::new(None),
             record_path: Cell::new(false),
             divide_by_zero_is_zero: ["ARM", "AARCH64"].iter().any(|a| prog.arch().archid.starts_with(a)),

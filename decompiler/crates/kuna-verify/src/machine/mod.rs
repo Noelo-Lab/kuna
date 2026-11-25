@@ -253,6 +253,9 @@ pub struct Outcome<'e, 'p> {
     pub convention: Vec<(u64, u64)>,
     /// An in-image callee given a frame object got the stub's guessed effect.
     pub guessed: bool,
+    /// A stubbed call killed registers kuna's IR says the callee preserves:
+    /// kuna's word for them is unchecked.
+    pub narrowed: bool,
     /// System calls and traps, in order.
     pub events: Vec<crate::calls::UserEvent>,
     /// C5: the run's path, when `Env::record_path` was on.
@@ -291,6 +294,7 @@ struct Machine<'e, 'p, 'c> {
     with_args: Option<&'c WithArgs>,
     /// An in-image callee given a frame object fell back to the stub.
     guessed: bool,
+    narrowed: bool,
     /// Temporaries this instruction copied a callee-saved entry value to:
     /// (temporary offset, register offset, size).
     copies: Vec<(u64, u64, u32)>,
@@ -465,7 +469,11 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         self.stubs += 1;
         let site = self.calls.site(at).clone();
         let pop = site.extrapop.ok_or_else(|| Halt::Unsupported(format!("call at {at:#x} with unknown stack cleanup")))?;
-        self.state.call(&site.killed, args, site.ret_ext.as_ref());
+        if site.killed != site.abi_killed {
+            self.narrowed = true;
+        }
+        let killed = if self.env.stub_recovered.get() { &site.killed } else { &site.abi_killed };
+        self.state.call(killed, args, site.ret_ext.as_ref());
         let sp = self.sp();
         let v = self.state.read(&sp.space, sp.off, sp.size)?;
         let after = v.wrapping_add(pop as i64 as u128) & mask(sp.size);
@@ -613,6 +621,7 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
             unverified_noreturn: self.unverified_noreturn,
             followed: self.followed,
             guessed: self.guessed,
+            narrowed: self.narrowed,
             events: self.events,
             convention: self.convention,
             path: self.shadow.map(|s| s.path),
@@ -779,7 +788,12 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(
                     return m.tail_call(addr, target, true);
                 }
                 if top && !env.code_mapped(target) {
-                    return Ok(Exit::Return);
+                    if env.ret_addr.is_none_or(|r| r == target) {
+                        return Ok(Exit::Return);
+                    }
+                    return Err(Halt::Unsupported(format!(
+                        "indirect jump at {addr:#x} out of the image to {target:#x}, not to the return address, and kuna makes no call there"
+                    )));
                 }
                 if top {
                     m.indirect.push(target);
@@ -1050,6 +1064,7 @@ pub fn run<'e, 'p>(
         returns: Vec::new(),
         events: Vec::new(),
         guessed: false,
+        narrowed: false,
         stubs: 0,
         unverified_noreturn: false,
         proved_noreturn: false,

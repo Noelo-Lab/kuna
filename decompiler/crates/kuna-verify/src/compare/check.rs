@@ -506,7 +506,13 @@ fn check_runs(
         }
         let suspect = !cc.suspects.is_empty();
         let argument_doubt = cc.suspects.iter().find(|s| s.ends_with("may not take it")).cloned();
-        let doubtful = suspect || mo.guessed;
+        let narrowing = mo.narrowed && {
+            env.stub_recovered.set(true);
+            let alt = machine::run(&env, run, entry, opts.budget, &machine_calls, None);
+            env.stub_recovered.set(false);
+            alt.map_or(true, |alt| machine_differs(prog, &env, run, &machine_calls, &claim, &mo, &alt).is_some())
+        };
+        let doubtful = suspect || mo.guessed || narrowing;
         let doubt = |lines: &[String]| if suspect { Halt::Doubtful(lines.join("; ")) } else { Halt::Guessed(lines.join("; ")) };
         let undefined = (go.read_uninitialized && (mo.state.read_uninitialized || mo.state.read_saved)) || smashed(&env, &mo.state);
         for s in cc.suspects {

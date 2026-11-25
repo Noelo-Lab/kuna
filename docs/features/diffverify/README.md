@@ -300,6 +300,12 @@ run yet.
   keep in memory either, needs those found from the machine side first.
 - **Symbolic proof (Tier S).** Not started: a relational symbolic engine over both
   sides' p-code belongs in its own pull request.
+- **A return kuna claims narrower than the machine's register.** The return is compared
+  at the width kuna claims, and bytes of the return register outside it are not taken
+  as a wider return just because they vary: a 32-bit result computed in a 64-bit
+  register (`mov rax, rdi` for `int f(long x)`) leaves them varying too. A constant
+  value there is reported as a suspect. A caller that reads those bytes is where a
+  too-narrow return shows, when that caller is checked.
 - **System-call arguments.** kuna passes a system call the registers its block sets
   up, in order, and may leave some out; each one it passes is compared with the
   machine's register, but which ones a given call needs is not modelled, so one it

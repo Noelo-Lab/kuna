@@ -202,3 +202,21 @@ fn an_inferred_bool_parameter_is_also_checked_with_any_byte() {
     assert!(rows.iter().all(|r| r.verdict.label() == "AGREES(256)"), "{all}");
     assert!(rows.iter().any(|r| r.lines.iter().any(|l| l.contains("types bool also took any byte"))), "{all}");
 }
+
+/// `f` keeps a register over a call kuna's IR says the callee preserves; the
+/// callee is stubbed, so the machine kills it as the convention allows, and
+/// whether `f` agrees then rests on kuna's unchecked claim: not AGREES.
+#[test]
+fn a_preservation_kuna_claims_for_a_stubbed_callee_is_not_agreement() {
+    let v = verdicts("kuna-calleescratchbody");
+    let f = of(&v, &["f"]);
+    assert!(f.iter().all(|l| l.starts_with("UNKNOWN(guessed-callee")), "{v:?}");
+}
+
+/// An indirect jump out of the image to anything but the return address,
+/// where kuna makes no call, is not taken for a return.
+#[test]
+fn an_indirect_jump_out_of_the_image_is_not_a_return() {
+    let v = verdicts("kuna-gottailcall");
+    assert!(of(&v, &["notfn"]).iter().all(|l| l.contains("indirect jump") && l.contains("out of the image")), "{v:?}");
+}
