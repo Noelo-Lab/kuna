@@ -3170,8 +3170,11 @@ impl Funcdata {
                 let mut bl = self.bblocks_ref().block(inbl).get_copy_map();
                 while let Some(cur) = bl {
                     if self.sblocks_ref().block(cur).is_mark() {
-                        // (kuna `loopexit`) a `break` to its own return statement is not copied.
-                        if shared.contains(&i) && crate::p8_structure::kuna_loopcond::is_loop_break(self.sblocks_ref(), cur) {
+                        // (kuna `loopcontinue auto`, `loopcondhoist`) a `break` keeps its one return.
+                        if crate::p8_structure::kuna_o0jumps::keeps_return(self, parent, i, cur)
+                            || (shared.contains(&i)
+                                && crate::p8_structure::kuna_loopcond::is_loop_break(self.sblocks_ref(), cur))
+                        {
                             break;
                         }
                         splitedge.push(i);

@@ -1146,6 +1146,9 @@ pub struct ArchContext {
     pub loop_cond_hoist: crate::p8_structure::kuna_loopcond::LoopCondHoist,
     /// Preserve secondary natural-loop latches as continues (`loopcontinue`).
     pub loop_continue: bool,
+    /// (kuna) `loopcontinue auto` — the recorded jump statements keep their
+    /// tests apart in an unoptimized function ([`crate::p8_structure::kuna_o0jumps`]).
+    pub loop_continue_record: bool,
     /// (kuna `loopcontinue`) The output language's do-while runs its test on
     /// `continue;`: C `do..while` and Go's `for` post statement do, Rust's
     /// `loop { ..; if !(c) { break; } }` restarts the body instead.
@@ -1782,6 +1785,7 @@ impl ArchContext {
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: crate::p8_structure::kuna_ifnoexit::GuardArmMode::Off, // guardarm
             loop_continue: true,
+            loop_continue_record: false, // loopcontinue auto
             do_while_continue: true,
             goto_next: false,
             post_increment: false,

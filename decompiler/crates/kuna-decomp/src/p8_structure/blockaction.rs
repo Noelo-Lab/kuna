@@ -2243,6 +2243,10 @@ impl<'a> CollapseStructure<'a> {
             if self.graph.block(orblock).get_out(1 - j) == bl {
                 continue; // No looping
             }
+            // (kuna `loopcontinue auto`) tests written as different jump statements stay apart.
+            if !crate::p8_structure::kuna_o0jumps::may_join(self.graph, bl, 1 - i, orblock, j as int4) {
+                continue;
+            }
 
             if i == 1 {
                 // orblock needs to be false out of bl
@@ -3911,6 +3915,35 @@ impl Action for ActionBlockStructure {
         Some(Box::new(ActionBlockStructure { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
+        // (kuna `loopcontinue auto`) when keeping the recorded jump statements'
+        // tests apart left gotos, structure once more without that and keep
+        // the form with fewer.
+        use crate::p8_structure::kuna_o0jumps as o0j;
+        let saved = data.kuna_o0jumps.is_some().then(|| o0j::orientation(data));
+        o0j::set_gate(true);
+        let res = self.structure_once(data, ctx);
+        if let Some(saved) = saved {
+            let gated = if o0j::refused() && !ctx.deadline_expired() { o0j::gotos(data) } else { 0 };
+            if gated > 0 {
+                data.sblocks_clear();
+                o0j::restore_orientation(data, &saved);
+                o0j::set_gate(false);
+                self.structure_once(data, ctx);
+                if o0j::gotos(data) >= gated {
+                    data.sblocks_clear();
+                    o0j::restore_orientation(data, &saved);
+                    o0j::set_gate(true);
+                    self.structure_once(data, ctx);
+                }
+            }
+        }
+        o0j::set_gate(true);
+        res
+    }
+}
+
+impl ActionBlockStructure {
+    fn structure_once(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         // C++ blockaction.cc:2170.
         if data.sblocks_get_size() != 0 {
             crate::p8_structure::kuna_condstmts::record_hits(data);
@@ -4168,6 +4201,8 @@ impl Action for ActionFinalStructure {
         if data.get_arch().loop_continue {
             let points = crate::p8_structure::kuna_loopcontinue::continue_points(data, sroot);
             crate::p8_structure::kuna_loopcontinue::recover_continues(data.sblocks_mut(), sroot, &points);
+            // (kuna `loopcontinue auto`) the recorded `continue;` statements.
+            crate::p8_structure::kuna_o0jumps::print_continues(data, &points);
         }
         data.sblocks_mut().mark_unstructured(sroot);
         // graph.markLabelBumpUp(false): let loop blocks steal the label of their
