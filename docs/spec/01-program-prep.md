@@ -2357,8 +2357,14 @@ funcsym stream:
   of a large library up to 2.9x. A meet updates the stored state in place and
   reports whether it changed, and a stub is found from any byte it covers by
   one hash lookup.
-  The default path and other formats pay nothing, and the proof runs once per
-  image content. Resolved PPC32 import names take
+  The `aggressive` preset sets `abi`, and `auto` selects that preset for files
+  under 500 KiB, so a small PPC32 PIC image gets the names without the option;
+  larger files and the catalog default keep `off`. A front end applies the
+  preset's `abi` before it loads the image, the browser restoring the
+  load-option environment afterwards; the console's `mode` on an open image
+  sets it for the next `load file` and keeps the live mode, and the Ghidra
+  preset layer skips it. Other formats pay nothing,
+  and the proof runs once per image content. Resolved PPC32 import names take
   precedence over local stub labels, which remain aliases. Existing library
   prototypes, no-return facts and name-based xrefs therefore see the same
   imported identity, including when a terminal call has no mapped fall-through

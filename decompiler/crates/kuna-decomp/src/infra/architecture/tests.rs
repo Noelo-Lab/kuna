@@ -182,6 +182,19 @@ fn apply_mode_aggressive_flips_offdefault_flags_but_not_dwarf_lines() {
 }
 
 #[test]
+fn apply_mode_aggressive_sets_ppc32picimports_abi_for_the_next_load_only() {
+    use crate::kuna_ppc32picimports::Mode;
+    let environment = crate::kuna_loadoptions::EnvSnapshot::capture();
+    let mut arch = Architecture::new("test:LE:32", bare_sleigh());
+    arch.set_kuna_option("ppc32picimports", "on").expect("on applies");
+    arch.apply_mode("aggressive").expect("aggressive mode applies");
+    let (live, next, env) = (arch.analysis_ppc32picimports, arch.load_options().ppc32picimports, Mode::from_env());
+    environment.restore();
+    assert_eq!(live, Mode::On);
+    assert_eq!((next, env), (Mode::Abi, Mode::Abi));
+}
+
+#[test]
 fn apply_mode_reliable_is_a_no_op() {
     let mut arch = Architecture::new("test:LE:32", bare_sleigh());
     arch.apply_mode("reliable").expect("reliable mode applies");
