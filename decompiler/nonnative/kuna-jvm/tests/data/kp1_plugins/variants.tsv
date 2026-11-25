@@ -1,13 +1,13 @@
-# variant	classes dir	main class	option pairs (k=v, ';'-separated) over the test fixture's base map, plugins on
-notnull	classes	NotNullChecks	dump-exception-on-error=0
-notnull-off	classes	NotNullChecks	dump-exception-on-error=0;resugar-idea-notnull=0
-notnull-nodebug	classes_nodebug	NotNullChecks	dump-exception-on-error=0
-jad	classes	Naming	dump-exception-on-error=0;variable-renaming=jad
-jad-params	classes	Naming	dump-exception-on-error=0;variable-renaming=jad;rename-parameters=1
-jad-legacy	classes	Naming	dump-exception-on-error=0;jad-style-variable-naming=1;jad-style-parameter-naming=1
-jad-params-nodebug	classes_nodebug	Naming	dump-exception-on-error=0;variable-renaming=jad;rename-parameters=1
-tiny	classes	Naming	dump-exception-on-error=0;variable-renaming=tiny
-tiny-params	classes	Naming	dump-exception-on-error=0;variable-renaming=tiny;rename-parameters=1
-tiny-params-nodebug	classes_nodebug	Naming	dump-exception-on-error=0;variable-renaming=tiny;rename-parameters=1
-tiny-jad-params	classes	Naming	dump-exception-on-error=0;variable-renaming=tiny;jad-style-parameter-naming=1
-unknown-renamer	classes	Naming	dump-exception-on-error=0;variable-renaming=nosuch;jad-style-variable-naming=1
+# variant	classes dir	main class	option pairs (k=v, ';'-separated) over the test fixture's base map, plugins on	digest of the release jar's text (gen.sh)
+notnull	classes	NotNullChecks	dump-exception-on-error=0	ec0084dc1c532a40
+notnull-off	classes	NotNullChecks	dump-exception-on-error=0;resugar-idea-notnull=0	36b847fda5590f71
+notnull-nodebug	classes_nodebug	NotNullChecks	dump-exception-on-error=0	3e1122fd55b6658e
+jad	classes	Naming	dump-exception-on-error=0;variable-renaming=jad	f596ea0a3771d89a
+jad-params	classes	Naming	dump-exception-on-error=0;variable-renaming=jad;rename-parameters=1	b62a5f6c31f506cd
+jad-legacy	classes	Naming	dump-exception-on-error=0;jad-style-variable-naming=1;jad-style-parameter-naming=1	b62a5f6c31f506cd
+jad-params-nodebug	classes_nodebug	Naming	dump-exception-on-error=0;variable-renaming=jad;rename-parameters=1	f4958bcbbdbccb10
+tiny	classes	Naming	dump-exception-on-error=0;variable-renaming=tiny	fa6074b18fb4dc19
+tiny-params	classes	Naming	dump-exception-on-error=0;variable-renaming=tiny;rename-parameters=1	e0a4bc3c4ec7b0a7
+tiny-params-nodebug	classes_nodebug	Naming	dump-exception-on-error=0;variable-renaming=tiny;rename-parameters=1	bc7c631027303066
+tiny-jad-params	classes	Naming	dump-exception-on-error=0;variable-renaming=tiny;jad-style-parameter-naming=1	fa6074b18fb4dc19
+unknown-renamer	classes	Naming	dump-exception-on-error=0;variable-renaming=nosuch;jad-style-variable-naming=1	5a96003ba5aefa8f

@@ -1,6 +1,6 @@
 //! Final-text regressions for port bugs found by a pass-trace sweep:
 //! vendored corpus classes run with the Default set's options plus a few overrides, compared with
-//! Vineflower 1.12.0's output for the same run (`tests/data/trace_sweep/gen.sh`).
+//! the digest of Vineflower 1.12.0's output for the same run (`tests/data/trace_sweep/gen.sh`).
 
 use std::path::{Path, PathBuf};
 
@@ -11,6 +11,14 @@ fn root() -> PathBuf {
 }
 
 fn regress(classes: &[&str], overrides: &[(&str, &str)], compare: &str, expected: &str) {
+    let digests = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/trace_sweep/digests.tsv"),
+    )
+    .unwrap();
+    let digest = digests
+        .lines()
+        .find_map(|l| l.strip_prefix(&format!("{expected}\t")))
+        .unwrap_or_else(|| panic!("no digest for {expected}"));
     let cases = load_cases(&root().join("cases.tsv")).expect("tests/jvm/cases.tsv loads");
     let mut case = cases
         .iter()
@@ -26,12 +34,7 @@ fn regress(classes: &[&str], overrides: &[(&str, &str)], compare: &str, expected
         overlay_option(&mut case.options, k, v);
     }
     case.compare = vec![compare.to_string()];
-    case.digest = None;
-    case.expected = Some(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/data/trace_sweep")
-            .join(expected),
-    );
+    case.digest = Some(digest.to_string());
     let r = with_engine_stack(move || run_case(&case));
     assert_eq!(
         r.status,
@@ -51,6 +54,6 @@ fn nameless_method_parameters_keep_their_slot() {
         &["java21/ext/TestEnum2.class"],
         &[("decompile-enums", "0")],
         "TestEnum2.java",
-        "TestEnum2-denum0.java",
+        "TestEnum2-denum0",
     );
 }
