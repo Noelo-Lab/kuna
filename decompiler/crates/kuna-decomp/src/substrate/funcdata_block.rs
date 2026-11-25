@@ -3364,6 +3364,13 @@ impl Funcdata {
             }
         }
 
+        // (kuna `retshape`) a shared return of a value the arms merge.
+        for b in crate::p8_structure::kuna_retshape::arm_returns(self, max_inedges) {
+            if !parents.contains(&b) {
+                parents.push(b);
+            }
+        }
+
         // (kuna) A shared return that is the out-target two guards must keep in
         // common is the operand chain of a short-circuit expression: splitting it
         // blocks `rule_block_or` permanently, and the source's

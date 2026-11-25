@@ -39,6 +39,9 @@ pub enum GuardForm {
     Binary,
     /// Adjacent guards with the same bare return fold into one `||` guard.
     Or,
+    /// [`GuardForm::Or`], except that two tests that both call something stay
+    /// separate guards when the return is void or a constant.
+    OrCalls,
     /// Each `||` operand of a bare-return guard becomes its own guard.
     Split,
 }
@@ -47,13 +50,16 @@ pub enum GuardForm {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetShapePolicy {
     pub guards: GuardForm,
+    /// A shared return of a value the arms merge prints as one return per arm
+    /// (`returndup` splits the return block).
+    pub arms: bool,
     /// The `looptest` mode, whose plan owns the guard `if`s it drops.
     pub loop_test: LoopTestMode,
 }
 
 impl RetShapePolicy {
     pub fn off() -> Self {
-        RetShapePolicy { guards: GuardForm::Binary, loop_test: LoopTestMode::Binary }
+        RetShapePolicy { guards: GuardForm::Binary, arms: false, loop_test: LoopTestMode::Binary }
     }
 
     /// The shipped default.
@@ -62,7 +68,7 @@ impl RetShapePolicy {
     }
 
     fn is_off(&self) -> bool {
-        self.guards == GuardForm::Binary
+        self.guards == GuardForm::Binary && !self.arms
     }
 }
 
@@ -98,7 +104,7 @@ impl Action for ActionRetShape {
             return 0;
         }
         let edits = match policy.guards {
-            GuardForm::Or => fold_guards(data, &policy),
+            GuardForm::Or | GuardForm::OrCalls => fold_guards(data, &policy),
             GuardForm::Split => split_guards(data, &policy),
             GuardForm::Binary => 0,
         };
@@ -185,10 +191,25 @@ fn containers(data: &Funcdata) -> Vec<BlockId> {
 
 /// `list[i]` and `list[i + 1]` are guards that return the same value, and the
 /// second one's test is all it prints.
-fn foldable(data: &Funcdata, list: &[BlockId], i: usize, conds: &[(BlockId, BlockId)], claimed: &[BlockId]) -> bool {
+fn foldable(
+    data: &Funcdata,
+    policy: &RetShapePolicy,
+    list: &[BlockId],
+    i: usize,
+    conds: &[(BlockId, BlockId)],
+    claimed: &[BlockId],
+) -> bool {
     let (x, y) = (list[i], list[i + 1]);
     let Some(k) = guard_ret(data, x) else { return false };
     if guard_ret(data, y) != Some(k) || claimed.contains(&x) || claimed.contains(&y) {
+        return false;
+    }
+    let (cx, cy) = (tf::cond_of(data, x, conds), tf::cond_of(data, y, conds));
+    if policy.guards == GuardForm::OrCalls
+        && matches!(k, Key::Void | Key::Const(..))
+        && test_calls(data, last_leaf(data, cx))
+        && test_calls(data, first_leaf(data, cy))
+    {
         return false;
     }
     if tf::labelled(data, y) {
@@ -199,7 +220,40 @@ fn foldable(data: &Funcdata, list: &[BlockId], i: usize, conds: &[(BlockId, Bloc
     if refs.contains(&y) || refs.contains(&ry) {
         return false;
     }
-    quiet(data, tf::cond_of(data, y, conds))
+    quiet(data, cy)
+}
+
+fn first_leaf(data: &Funcdata, c: BlockId) -> BlockId {
+    let g = data.sblocks_ref();
+    let mut c = c;
+    while g.block(c).get_type() == BlockType::Condition {
+        c = g.block(c).get_block(0);
+    }
+    c
+}
+
+fn last_leaf(data: &Funcdata, c: BlockId) -> BlockId {
+    let g = data.sblocks_ref();
+    let mut c = c;
+    while g.block(c).get_type() == BlockType::Condition {
+        c = g.block(c).get_block(1);
+    }
+    c
+}
+
+/// Whether the test of condition leaf `c` calls something (a call the printer
+/// folds into the test, not one printed as a statement before it).
+fn test_calls(data: &Funcdata, c: BlockId) -> bool {
+    let Some(bb) = data.sblocks_ref().block(c).get_copy() else { return false };
+    let mut cur = data.bb_op_head(bb);
+    while let Some(o) = cur {
+        cur = data.bb_op_next(o);
+        let call = data.obank().get(o).is_some_and(|op| matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND));
+        if call && !tf::op_prints(data, o) {
+            return true;
+        }
+    }
+    false
 }
 
 fn fold_guards(data: &mut Funcdata, policy: &RetShapePolicy) -> usize {
@@ -211,11 +265,11 @@ fn fold_guards(data: &mut Funcdata, policy: &RetShapePolicy) -> usize {
         }
         let view = tf::build_view(data, c);
         let none: &[BlockId] = &[];
-        if !(0..view.list.len().saturating_sub(1)).any(|i| foldable(data, &view.list, i, &view.conds, none)) {
+        if !(0..view.list.len().saturating_sub(1)).any(|i| foldable(data, policy, &view.list, i, &view.conds, none)) {
             continue;
         }
         let claimed = claimed.get_or_insert_with(|| tf::claimed_guards(data, policy.loop_test));
-        if !(0..view.list.len().saturating_sub(1)).any(|i| foldable(data, &view.list, i, &view.conds, claimed)) {
+        if !(0..view.list.len().saturating_sub(1)).any(|i| foldable(data, policy, &view.list, i, &view.conds, claimed)) {
             continue;
         }
         if !tf::materialize(data, c, view) {
@@ -223,7 +277,7 @@ fn fold_guards(data: &mut Funcdata, policy: &RetShapePolicy) -> usize {
         }
         while edits < MAX_EDITS {
             let list = data.sblocks_ref().block(c).get_list().to_vec();
-            let Some(i) = (0..list.len().saturating_sub(1)).find(|&i| foldable(data, &list, i, &[], claimed)) else {
+            let Some(i) = (0..list.len().saturating_sub(1)).find(|&i| foldable(data, policy, &list, i, &[], claimed)) else {
                 break;
             };
             fold(data, c, &list, i);
@@ -319,19 +373,131 @@ fn split(data: &mut Funcdata, ifb: BlockId) {
     }
 }
 
-/// The `retshape off|or|split` option.
+/// Most ops a value tail may hold.
+const MAX_TAIL_OPS: usize = 16;
+
+/// The shared return blocks of an optimized function whose returned value the
+/// arms merge (`if (c) v = f(); else v = g(); return v;`), for `returndup` to
+/// give every arm its own return.  The block may compute the value from the
+/// merge (a cast or an extension) but do nothing else; a block that only runs
+/// into the return (the join a stripped stack-protector check leaves) is
+/// spliced into it first.
+pub(crate) fn arm_returns(fd: &mut Funcdata, max_inedges: int4) -> Vec<BlockId> {
+    let mut out = Vec::new();
+    if !fd.get_arch().ret_shape.arms || crate::p3_dataflow::kuna_unoptimized::is_unoptimized(fd) {
+        return out;
+    }
+    let rets: Vec<_> = fd.obank().iter_code(OpCode::CPUI_RETURN).collect();
+    for r in rets {
+        let Some(op) = fd.obank().get(r) else { continue };
+        if op.is_dead() || op.get_halt_type() != 0 || op.num_input() < 2 {
+            continue;
+        }
+        let Some(mut b) = op.get_parent() else { continue };
+        let g = fd.bblocks_ref();
+        if g.block(b).size_in() == 1 {
+            let p = g.block(b).get_in(0);
+            let pb = g.block(p);
+            if pb.size_out() != 1 || pb.size_in() < 2 || !value_tail(fd, p) || !value_tail(fd, b) {
+                continue;
+            }
+            if fd.splice_block_basic(p).is_err() {
+                continue;
+            }
+            b = p;
+        }
+        let n = fd.bblocks_ref().block(b).size_in();
+        if n < 2 || n > max_inedges || !value_tail(fd, b) || !merged_value(fd, b) {
+            continue;
+        }
+        if fd.get_arch().returndup_triangle && crate::p8_structure::kuna_rettriangle::is_triangle_join(fd, b) {
+            continue;
+        }
+        out.push(b);
+    }
+    out
+}
+
+/// Block `b` only computes a value: no memory access, call or branch, inputs
+/// already defined, and no write to a global but the return's own
+/// `glob = glob` guard copies.
+fn value_tail(fd: &Funcdata, b: BlockId) -> bool {
+    let ops = fd.bb_ops(b);
+    ops.len() <= MAX_TAIL_OPS
+        && ops.iter().all(|&o| {
+            let Some(op) = fd.obank().get(o) else { return false };
+            if matches!(
+                op.code(),
+                OpCode::CPUI_STORE
+                    | OpCode::CPUI_LOAD
+                    | OpCode::CPUI_CALL
+                    | OpCode::CPUI_CALLIND
+                    | OpCode::CPUI_CALLOTHER
+                    | OpCode::CPUI_BRANCH
+                    | OpCode::CPUI_CBRANCH
+                    | OpCode::CPUI_BRANCHIND
+                    | OpCode::CPUI_INDIRECT
+                    | OpCode::CPUI_NEW
+            ) {
+                return false;
+            }
+            let settled = (0..op.num_input())
+                .filter_map(|i| op.get_in(i))
+                .all(|v| fd.vbank().get(v).is_some_and(|v| v.is_constant() || v.is_annotation() || !v.is_free()));
+            let out = op.get_out().and_then(|v| fd.vbank().get(v));
+            let local = out.is_none_or(|v| {
+                !v.is_persist()
+                    || (op.code() == OpCode::CPUI_COPY
+                        && op.get_in(0).and_then(|i| fd.vbank().get(i)).is_some_and(|i| i.get_addr() == v.get_addr()))
+            });
+            settled && local
+        })
+}
+
+/// The value `RETURN` hands back in block `b` is a merge of `b`'s in-edges,
+/// perhaps cast or extended.
+fn merged_value(fd: &Funcdata, b: BlockId) -> bool {
+    let Some(ret) = fd.bb_op_tail(b).and_then(|t| fd.obank().get(t)) else { return false };
+    if ret.code() != OpCode::CPUI_RETURN {
+        return false;
+    }
+    let mut v = ret.get_in(1);
+    for _ in 0..8 {
+        let Some(def) = v.and_then(|v| fd.vbank().get(v)).and_then(|v| v.get_def()).and_then(|d| fd.obank().get(d)) else {
+            return false;
+        };
+        if def.get_parent() != Some(b) {
+            return false;
+        }
+        match def.code() {
+            OpCode::CPUI_MULTIEQUAL => return true,
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT | OpCode::CPUI_SUBPIECE => {
+                v = def.get_in(0)
+            }
+            _ => return false,
+        }
+    }
+    false
+}
+
+/// The `retshape` option.
 pub struct OptionRetShape;
 
 impl OptionRetShape {
     pub const NAME: &'static str = "retshape";
 
     pub fn apply(&self, p1: &str) -> KunaResult<(RetShapePolicy, String)> {
-        let guards = match p1 {
-            "off" => GuardForm::Binary,
-            "or" => GuardForm::Or,
-            "split" => GuardForm::Split,
-            _ => return Err(KunaError::parse("Must specify retshape as 'off', 'or' or 'split'")),
-        };
-        Ok((RetShapePolicy { guards, ..RetShapePolicy::off() }, format!("Return shape policy: guards {guards:?}")))
+        let mut policy = RetShapePolicy::off();
+        for tok in p1.split(',').map(str::trim) {
+            match tok {
+                "off" => {}
+                "or" => policy.guards = GuardForm::Or,
+                "orcalls" => policy.guards = GuardForm::OrCalls,
+                "split" => policy.guards = GuardForm::Split,
+                "arms" => policy.arms = true,
+                _ => return Err(KunaError::parse("Must specify retshape as 'off' or a list of 'or', 'orcalls', 'split', 'arms'")),
+            }
+        }
+        Ok((policy, format!("Return shape policy: guards {:?}, arms {}", policy.guards, policy.arms)))
     }
 }
