@@ -3781,8 +3781,11 @@ impl Action for ActionBlockStructure {
         // knot or the hang-guard), re-seed `sblocks` and fall through to the
         // unchanged `CollapseStructure` path.  OFF (default) skips this entirely and
         // output is byte-identical.
+        crate::p8_structure::region_structurer::LEX_FN.with(|c| c.set(data.get_address().get_offset()));
         if data.get_arch().region_structure {
-            match crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline) {
+            let rsres = crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline);
+            crate::p8_structure::region_structurer::lex_dump(&format!("\"k\":\"rs\",\"ok\":{}", matches!(rsres, Ok((true, _))) as u8));
+            match rsres {
                 Ok((true, flips)) => {
                     // Realize the deferred data-flow half of the loop-condition
                     // `negateCondition`s the region structurer recorded (the same

@@ -80,6 +80,18 @@ use crate::context::BlockId;
 
 use kuna_base::marshal::ElementId;
 
+// TEMP loopexit dump (remove before commit)
+thread_local! { pub static LEX_FN: std::cell::Cell<u64> = const { std::cell::Cell::new(0) }; }
+pub fn lex_dump(line: &str) {
+    if let Some(d) = std::env::var_os("KUNA_LOOPEXIT_DUMP") {
+        use std::io::Write;
+        let p = std::path::Path::new(&d).join(format!("{}.jsonl", std::process::id()));
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(p) {
+            let _ = writeln!(f, "{{\"f\":\"0x{:x}\",{}}}", LEX_FN.with(|c| c.get()), line);
+        }
+    }
+}
+
 /// Marshaling element `<regionstructure>` (kuna).  ElementIds live in the 4000+
 /// range (the next free id after `tailcalljump` = 4101).
 pub const ELEM_REGIONSTRUCTURE: ElementId = ElementId::new("regionstructure", 4102);
@@ -741,10 +753,12 @@ impl<'a> RegionStructurer<'a> {
             }
             rounds += 1;
             if rounds > cap {
+                lex_dump("\"k\":\"why\",\"r\":\"cap\"");
                 // Hang-guard: report non-convergence so the caller falls back.
                 return Ok(false);
             }
             if self.has_stranded_component() {
+                lex_dump("\"k\":\"why\",\"r\":\"stranded\"");
                 if std::env::var_os("KUNA_RS_DEBUG").is_some() {
                     eprintln!("[rs] STRANDED: {} components remain (round {rounds})", self.size());
                 }
@@ -809,6 +823,7 @@ impl<'a> RegionStructurer<'a> {
             if self.virtualize_one_edge()? {
                 continue;
             }
+            lex_dump("\"k\":\"why\",\"r\":\"stuck\"");
             // Nothing matched and >1 node remains and no edge to virtualize:
             // an un-virtualizable knot.  Report failure (caller falls back).
             if std::env::var_os("KUNA_RS_DEBUG").is_some() {
@@ -829,8 +844,9 @@ impl<'a> RegionStructurer<'a> {
             }
             return Ok(false);
         }
-        Ok(self.size() == 1
-            && crate::kuna_switchcond::misplaced_condition(self.graph, self.graph_id).is_none())
+        let mis = crate::kuna_switchcond::misplaced_condition(self.graph, self.graph_id).is_some();
+        if mis { lex_dump("\"k\":\"why\",\"r\":\"misplaced\""); }
+        Ok(self.size() == 1 && !mis)
     }
 
     // -----------------------------------------------------------------------
@@ -2555,6 +2571,13 @@ impl<'a> RegionStructurer<'a> {
         //      virtualized loop-exit gotos to `break;`.
         if exit_edges.len() > 1 {
             let keep = self.choose_structural_exit(head, &exit_edges, normal_exit);
+            if std::env::var_os("KUNA_LOOPEXIT_DUMP").is_some() {
+                let ex: Vec<String> = exit_edges.iter().map(|&(s, e, d)| format!("[\"0x{:x}\",\"0x{:x}\",{},{},{},{}]",
+                    self.component_addr(s).unwrap_or(0), self.component_addr(d).unwrap_or(0), (s == head) as u8,
+                    Some((s, e)) == keep, self.graph.block(d).size_in(), self.graph.block(d).size_out())).collect();
+                lex_dump(&format!("\"k\":\"refine\",\"head\":\"0x{:x}\",\"normal\":\"0x{:x}\",\"ri\":{},\"exits\":[{}]",
+                    head_addr.unwrap_or(0), normal_exit.and_then(|n| self.component_addr(n)).unwrap_or(0), ri_loop.is_some() as u8, ex.join(",")));
+            }
             for &(src, e, _dst) in exit_edges.iter() {
                 if Some((src, e)) == keep {
                     continue;
