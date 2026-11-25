@@ -909,3 +909,22 @@ fn compact_goabs_combines_the_two_data_words_without_pushing_a_link() {
     assert_eq!((m.reg("R0"), m.reg("SP"), m.reg("A0L")), (0x4200, 0x4100, 0x20a));
     assert_eq!((m.data(0x40ff), m.data(0x4100)), (0x1415, 0x2618));
 }
+
+#[test]
+fn compact_ce1_callabs_only_stores_a_link_when_execution_is_enabled() {
+    let base = 0x11000;
+    let target = base + 6;
+    let fetches = [(0x2bcb01, NOP), (NOP, NOP), (NOP, NOP), (NOP, NOP)];
+    let issues = [(0, 1, 6), (2, 1, 6), (4, 1, 6), (6, 1, 0)];
+    for (table, cfg, take, write) in [(0, 0, false, false), (0xffff, 0, true, true),
+                                      (0, 0x1000, true, false), (0xffff, 0x1000, true, true)] {
+        let mut m = Machine::new(base, &fetches, &issues, None);
+        m.seed(&[("A0", (0x81 << 32) | target), ("EST", 0), ("CETBL", table), ("CECFG1", cfg), ("SP", 0x4100)]);
+        m.seed_data(0x40ff, 0x1415);
+        m.seed_data(0x4100, 0x2618);
+        m.start(base).unwrap();
+        assert_eq!(m.step(), 3 * if take { target } else { base + 2 });
+        assert_eq!(m.reg("SP"), if take { 0x40fe } else { 0x4100 });
+        assert_eq!((m.data(0x40ff), m.data(0x4100)), if write { (0x1002, 1) } else { (0x1415, 0x2618) });
+    }
+}

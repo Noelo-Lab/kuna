@@ -62,6 +62,8 @@ It retires at most five delay issues but saves the link from the encoded
 delay, including when the encoding requests six or seven.
 Compact unconditional `CALLABS` with an inactive right lane takes its target
 from `(R0)` or the low 32 bits of `A0`, with up to three delay issues.
+Undelayed `CALLABS A0 CE1` can transfer with address enable alone, but
+only execution enable writes the two stack link words.
 Compact CALL admits zero or one delay issue. Compact RETURN also admits
 two or three delay issues with an inactive right lane, and an undelayed
 CE1 form whose address enable can override a veto. Immediate REPEAT handles

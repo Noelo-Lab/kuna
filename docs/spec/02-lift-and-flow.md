@@ -3930,6 +3930,10 @@ continuation follows the pushed link rather than the extent of those issues.
 Compact unconditional `CALLABS` with an inactive right lane uses the same
 link rule. It admits zero through three delay issues and samples either the
 two DATA words at `R0` or the low 32 bits of `A0` before executing them.
+In the undelayed CE1 `CALLABS A0` form with an inactive right lane,
+execution enable pushes the link and calls. With address enable alone,
+`SP` decreases by two and the instruction jumps without writing either
+link word. With neither enable it falls through without touching the stack.
 
 Lifted absolute peripheral moves address `io` and `ext` as separate 16-bit
 word spaces. A peripheral word and a `data` word at the same numeric
