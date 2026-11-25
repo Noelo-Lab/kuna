@@ -58,10 +58,6 @@ impl Plugin for VariableRenamingPlugin {
             return Renamers::get(&name);
         }
 
-        if DecompilerContext::get_option(VariableRenamingOptions::USE_JAD_VARNAMING) {
-            return Renamers::get("jad");
-        }
-
         None
     }
 }

@@ -97,9 +97,8 @@ primitives one letter and steps through `a`..`z`, `ba`... on a clash, and an obj
 class name with a lowercase first letter (plural for arrays), numbered on a clash, with `_`
 after a keyword. A lambda body's method, an anonymous class's methods and a local class's
 methods take over the enclosing method's naming state (`jad`'s counters, `tiny`'s used
-names) once the enclosing method has been renamed. With no renamer named, the deprecated
-`jvm_jad_style_variable_naming` selects `jad`; an unknown name selects none, and the names
-stay as Vineflower's own pipeline gives them. `jvm_rename_parameters` (and, for `jad` only,
+names) once the enclosing method has been renamed. With no renamer named, or an unknown
+name, there is none, and the names stay as Vineflower's own pipeline gives them. `jvm_rename_parameters` (and, for `jad` only,
 the deprecated `jvm_jad_style_parameter_naming`) renames parameters too; with a
 LocalVariableTable, a parameter's entry carries no type at that point, so `tiny`, which
 needs one, fails the method as Vineflower's provider does. **IdeaNotNull** registers one

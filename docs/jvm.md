@@ -880,9 +880,9 @@ public static int loop(int n) {
 ```
 
 `tiny` with `jvm_rename_parameters on` fails every method that has a LocalVariableTable
-(`NullPointerException: type`), as Vineflower's provider does. The two deprecated
-Vineflower flags, `jvm_jad_style_variable_naming` and `jvm_jad_style_parameter_naming`,
-are accepted for old command lines.
+(`NullPointerException: type`), as Vineflower's provider does. Vineflower's deprecated
+`jad-style-variable-naming` flag is not an option: `jvm_variable_renaming jad` names the
+renamer.
 
 ## How failures are reported
 

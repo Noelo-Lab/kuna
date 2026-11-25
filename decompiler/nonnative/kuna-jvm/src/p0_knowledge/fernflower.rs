@@ -632,7 +632,6 @@ impl OptionParser {
     /// `SHORT_TO_LONG_NAME_MAP.get(shortName)`.
     fn short_to_long_name(short_name: &str) -> Option<String> {
         match short_name {
-            "jvn" => return Some("jad-style-variable-naming".to_string()),
             "jpr" => return Some("jad-style-parameter-naming".to_string()),
             _ => {}
         }

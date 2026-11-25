@@ -73,7 +73,7 @@ fn plugin_variants_match_vineflower() {
             variant_case(f[0], f[1], f[2], f[3], f[4])
         })
         .collect();
-    assert_eq!(cases.len(), 12);
+    assert_eq!(cases.len(), 11);
     let mut problems = Vec::new();
     for case in cases {
         let id = case.id.clone();
@@ -111,11 +111,6 @@ fn bundled_plugins_register_in_oracle_order_with_their_options() {
             (
                 "VariableRenaming".to_string(),
                 "rename-parameters",
-                Some("0".to_string())
-            ),
-            (
-                "VariableRenaming".to_string(),
-                "jad-style-variable-naming",
                 Some("0".to_string())
             ),
             (

@@ -1331,28 +1331,6 @@ tier = "transform"
 symptoms = "locals renamed but parameters still named var1 or paramN|parameter names do not follow the renamer's scheme"
 
 [[option]]
-option = "jvm_jad_style_variable_naming"
-vineflower = "jad-style-variable-naming"
-short = ""
-aliases = ["jad-style-variable-naming"]
-values = "on|off"
-default = "off"
-destructive = false
-phase = "plugins"
-subphase = "variable_renaming_plugin"
-strength = "HARD"
-rewind = "plugins"
-issue = ""
-summary = "Deprecated in Vineflower: when jvm_variable_renaming is unset, use the jad renamer."
-use_when = "Only to replay Vineflower command lines that still pass the deprecated flag; prefer jvm_variable_renaming jad."
-example = "kuna decompile obf.jar a.b --option jvm_jad_style_variable_naming on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 VariableRenaming plugin: VariableRenamingOptions.USE_JAD_VARNAMING (jad-style-variable-naming)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "an old Vineflower command line with --jad-style-variable-naming=1 gives JAD-style names|locals named var1 var2 where JAD-style names were expected"
-
-[[option]]
 option = "jvm_jad_style_parameter_naming"
 vineflower = "jad-style-parameter-naming"
 short = ""
