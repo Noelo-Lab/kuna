@@ -1,5 +1,5 @@
 {
- "notes": "Kotlin cases vendored by kotlin_corpus.py from the Kotlin oracle corpus ($KUNA_JVM_ORACLE/corpus-kt): the fixture form of every case that needs no library. KotlinTests sets load only the Kotlin plugin in Vineflower (jvm_plugins on here: the other two bundled plugins do not change these outputs, per the corpus crosscheck); core SingleClassesTest sets load none and print Java. option_pairs are the complete effective option map. regen.py adds these cases to cases.tsv.",
+ "notes": "Kotlin cases vendored by kotlin_corpus.py from the Kotlin oracle corpus ($KUNA_JVM_ORACLE/corpus-kt): the fixture form of every case that needs no library. KotlinTests sets load only the Kotlin plugin in Vineflower (jvm_plugins on here: the other two bundled plugins do not change these outputs, per the corpus crosscheck); core SingleClassesTest sets load none and print Java. option_pairs are the complete effective option map; oracle is the expected text's path in the corpus and vineflower its digest. regen.py adds these cases to cases.tsv.",
  "corpus_manifest_sha256": "ca579c7d53b76a59e5ff80c43611475fe2bb77cdf51ad41178253e30ebee8b85",
  "excluded": [
   {
@@ -240,7 +240,8 @@
    "class_files": [
     "kotlin/core-kt/pkg/TestIllegalVarName.class"
    ],
-   "oracle": "expected/kotlin-core-default/pkg/TestIllegalVarName.java",
+   "oracle": "expected/core-default/pkg/TestIllegalVarName.java",
+   "vineflower": "7dbf066914cc729a",
    "decompiled_file": "TestIllegalVarName.kt",
    "decompiled_file_fallback": "TestIllegalVarName.java",
    "reference": "testData/results/pkg/TestIllegalVarName.dec"
@@ -252,7 +253,8 @@
     "kotlin/core-kt/pkg/TestKotlinEnumWhen.class",
     "kotlin/core-kt/pkg/TestKotlinEnumWhen$WhenMappings.class"
    ],
-   "oracle": "expected/kotlin-core-default/pkg/TestKotlinEnumWhen.java",
+   "oracle": "expected/core-default/pkg/TestKotlinEnumWhen.java",
+   "vineflower": "92b79a3961b392c6",
    "decompiled_file": "TestKotlinEnumWhen.kt",
    "decompiled_file_fallback": "TestKotlinEnumWhen.java",
    "reference": "testData/results/pkg/TestKotlinEnumWhen.dec"
@@ -263,7 +265,8 @@
    "class_files": [
     "kotlin/core-kt/pkg/TestRunSuspend.class"
    ],
-   "oracle": "expected/kotlin-core-default/pkg/TestRunSuspend.java",
+   "oracle": "expected/core-default/pkg/TestRunSuspend.java",
+   "vineflower": "1ca741c9a8e6528c",
    "decompiled_file": "TestRunSuspend.kt",
    "decompiled_file_fallback": "TestRunSuspend.java",
    "reference": "testData/results/pkg/TestRunSuspend.dec"
@@ -275,7 +278,8 @@
     "kotlin/core-kt/pkg/TestSuspendLambdaKt.class",
     "kotlin/core-kt/pkg/TestSuspendLambdaKt$sl1$1.class"
    ],
-   "oracle": "expected/kotlin-core-default/pkg/TestSuspendLambdaKt.java",
+   "oracle": "expected/core-default/pkg/TestSuspendLambdaKt.java",
+   "vineflower": "be1fd65a2b7a408d",
    "decompiled_file": "TestSuspendLambdaKt.kt",
    "decompiled_file_fallback": "TestSuspendLambdaKt.java",
    "reference": "testData/results/pkg/TestSuspendLambdaKt.dec"
@@ -286,7 +290,8 @@
    "class_files": [
     "kotlin/core-kt/pkg/TestSynchronizedUnprotected.class"
    ],
-   "oracle": "expected/kotlin-core-default/pkg/TestSynchronizedUnprotected.java",
+   "oracle": "expected/core-default/pkg/TestSynchronizedUnprotected.java",
+   "vineflower": "4b0ebeab5bb53362",
    "decompiled_file": "TestSynchronizedUnprotected.kt",
    "decompiled_file_fallback": "TestSynchronizedUnprotected.java",
    "reference": "testData/results/pkg/TestSynchronizedUnprotected.dec"
@@ -300,7 +305,8 @@
     "kotlin/kt/pkg/TestAnnotations$RepeatableAnnotation.class",
     "kotlin/kt/pkg/TestAnnotations$TestAnnotation.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestAnnotations.kt",
+   "oracle": "expected/entire-classpath/pkg/TestAnnotations.kt",
+   "vineflower": "6dcff3fcc187b08b",
    "decompiled_file": "TestAnnotations.kt",
    "decompiled_file_fallback": "TestAnnotations.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestAnnotations.dec"
@@ -318,7 +324,8 @@
     "kotlin/kt/pkg/TestAnonymousEverything$testNoTypeReference$newList$1.class",
     "kotlin/kt/pkg/TestAnonymousEverything$testSerializableLambda$lambda$1.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestAnonymousEverything.kt",
+   "oracle": "expected/entire-classpath/pkg/TestAnonymousEverything.kt",
+   "vineflower": "7113e6a8f4b8557e",
    "decompiled_file": "TestAnonymousEverything.kt",
    "decompiled_file_fallback": "TestAnonymousEverything.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestAnonymousEverything.dec"
@@ -329,7 +336,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestAnyType.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestAnyType.kt",
+   "oracle": "expected/entire-classpath/pkg/TestAnyType.kt",
+   "vineflower": "3393b72a07852438",
    "decompiled_file": "TestAnyType.kt",
    "decompiled_file_fallback": "TestAnyType.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestAnyType.dec"
@@ -340,7 +348,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestBitwiseFunctions.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestBitwiseFunctions.kt",
+   "oracle": "expected/entire-classpath/pkg/TestBitwiseFunctions.kt",
+   "vineflower": "7c15a6907a9f567a",
    "decompiled_file": "TestBitwiseFunctions.kt",
    "decompiled_file_fallback": "TestBitwiseFunctions.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestBitwiseFunctions.dec"
@@ -355,7 +364,8 @@
     "kotlin/kt/pkg/TestClassDec$Vec2iVal.class",
     "kotlin/kt/pkg/TestClassDec$Vec2iVar.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestClassDec.kt",
+   "oracle": "expected/entire-classpath/pkg/TestClassDec.kt",
+   "vineflower": "d7c9e4594fdd0146",
    "decompiled_file": "TestClassDec.kt",
    "decompiled_file_fallback": "TestClassDec.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestClassDec.dec"
@@ -366,7 +376,8 @@
    "class_files": [
     "kotlin/ktold/pkg/TestClassicStringInterpolation.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestClassicStringInterpolation.kt",
+   "oracle": "expected/entire-classpath/pkg/TestClassicStringInterpolation.kt",
+   "vineflower": "fd2fea82ef46df9a",
    "decompiled_file": "TestClassicStringInterpolation.kt",
    "decompiled_file_fallback": "TestClassicStringInterpolation.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestClassicStringInterpolation.dec"
@@ -378,7 +389,8 @@
     "kotlin/kt/pkg/TestCompanionObject.class",
     "kotlin/kt/pkg/TestCompanionObject$Companion.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestCompanionObject.kt",
+   "oracle": "expected/entire-classpath/pkg/TestCompanionObject.kt",
+   "vineflower": "fb21055d1b3ae20a",
    "decompiled_file": "TestCompanionObject.kt",
    "decompiled_file_fallback": "TestCompanionObject.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestCompanionObject.dec"
@@ -389,7 +401,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestComparison.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestComparison.kt",
+   "oracle": "expected/entire-classpath/pkg/TestComparison.kt",
+   "vineflower": "427b57b2ab9e5ab3",
    "decompiled_file": "TestComparison.kt",
    "decompiled_file_fallback": "TestComparison.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestComparison.dec"
@@ -402,7 +415,8 @@
     "kotlin/kt/pkg/TestCompileTimeErrors$Test.class",
     "kotlin/kt/pkg/TestCompileTimeErrors$test2$1.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestCompileTimeErrors.kt",
+   "oracle": "expected/entire-classpath/pkg/TestCompileTimeErrors.kt",
+   "vineflower": "b2fa51e1eb11fafc",
    "decompiled_file": "TestCompileTimeErrors.kt",
    "decompiled_file_fallback": "TestCompileTimeErrors.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestCompileTimeErrors.dec"
@@ -413,7 +427,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestConstructors.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestConstructors.kt",
+   "oracle": "expected/entire-classpath/pkg/TestConstructors.kt",
+   "vineflower": "7e7062b2ecb776a4",
    "decompiled_file": "TestConstructors.kt",
    "decompiled_file_fallback": "TestConstructors.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestConstructors.dec"
@@ -424,7 +439,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestContracts.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestContracts.kt",
+   "oracle": "expected/entire-classpath/pkg/TestContracts.kt",
+   "vineflower": "ff1cff0b49916d30",
    "decompiled_file": "TestContracts.kt",
    "decompiled_file_fallback": "TestContracts.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestContracts.dec"
@@ -435,7 +451,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestConvertedK2JOps.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestConvertedK2JOps.kt",
+   "oracle": "expected/entire-classpath/pkg/TestConvertedK2JOps.kt",
+   "vineflower": "d7d310d0c08e8065",
    "decompiled_file": "TestConvertedK2JOps.kt",
    "decompiled_file_fallback": "TestConvertedK2JOps.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestConvertedK2JOps.dec"
@@ -446,7 +463,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestDataClass.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestDataClass.kt",
+   "oracle": "expected/entire-classpath/pkg/TestDataClass.kt",
+   "vineflower": "784f7947966540a7",
    "decompiled_file": "TestDataClass.kt",
    "decompiled_file_fallback": "TestDataClass.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestDataClass.dec"
@@ -457,7 +475,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestDestructors.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestDestructors.kt",
+   "oracle": "expected/entire-classpath/pkg/TestDestructors.kt",
+   "vineflower": "2ead47b4414be305",
    "decompiled_file": "TestDestructors.kt",
    "decompiled_file_fallback": "TestDestructors.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestDestructors.dec"
@@ -468,7 +487,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestEnumClass.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestEnumClass.kt",
+   "oracle": "expected/entire-classpath/pkg/TestEnumClass.kt",
+   "vineflower": "54346c8b61c48efd",
    "decompiled_file": "TestEnumClass.kt",
    "decompiled_file_fallback": "TestEnumClass.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestEnumClass.dec"
@@ -479,7 +499,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestExtensionFun.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestExtensionFun.kt",
+   "oracle": "expected/entire-classpath/pkg/TestExtensionFun.kt",
+   "vineflower": "bd159429c16af106",
    "decompiled_file": "TestExtensionFun.kt",
    "decompiled_file_fallback": "TestExtensionFun.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestExtensionFun.dec"
@@ -490,7 +511,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestForRange.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestForRange.kt",
+   "oracle": "expected/entire-classpath/pkg/TestForRange.kt",
+   "vineflower": "08a64829180f7672",
    "decompiled_file": "TestForRange.kt",
    "decompiled_file_fallback": "TestForRange.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestForRange.dec"
@@ -501,7 +523,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestFunVarargs.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestFunVarargs.kt",
+   "oracle": "expected/entire-classpath/pkg/TestFunVarargs.kt",
+   "vineflower": "ef48bbc7a965df1a",
    "decompiled_file": "TestFunVarargs.kt",
    "decompiled_file_fallback": "TestFunVarargs.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestFunVarargs.dec"
@@ -513,7 +536,8 @@
     "kotlin/kt/pkg/TestFuncRefKt.class",
     "kotlin/kt/pkg/TestFuncRefKt$test$1.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestFuncRef.kt",
+   "oracle": "expected/entire-classpath/pkg/TestFuncRef.kt",
+   "vineflower": "b6cb5c198f370782",
    "decompiled_file": "TestFuncRefKt.kt",
    "decompiled_file_fallback": "TestFuncRefKt.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestFuncRef.dec"
@@ -524,7 +548,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestGenerics.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestGenerics.kt",
+   "oracle": "expected/entire-classpath/pkg/TestGenerics.kt",
+   "vineflower": "ad09bc0866493b3b",
    "decompiled_file": "TestGenerics.kt",
    "decompiled_file_fallback": "TestGenerics.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestGenerics.dec"
@@ -535,7 +560,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestIfRange.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestIfRange.kt",
+   "oracle": "expected/entire-classpath/pkg/TestIfRange.kt",
+   "vineflower": "6a52fd3c7790dc01",
    "decompiled_file": "TestIfRange.kt",
    "decompiled_file_fallback": "TestIfRange.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestIfRange.dec"
@@ -546,7 +572,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestInfixFun.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestInfixFun.kt",
+   "oracle": "expected/entire-classpath/pkg/TestInfixFun.kt",
+   "vineflower": "128b3ee83cd23234",
    "decompiled_file": "TestInfixFun.kt",
    "decompiled_file_fallback": "TestInfixFun.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestInfixFun.dec"
@@ -557,7 +584,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestKotlinTypes.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestKotlinTypes.kt",
+   "oracle": "expected/entire-classpath/pkg/TestKotlinTypes.kt",
+   "vineflower": "97d4ce1893bf70eb",
    "decompiled_file": "TestKotlinTypes.kt",
    "decompiled_file_fallback": "TestKotlinTypes.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestKotlinTypes.dec"
@@ -568,7 +596,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestKt.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestKt.kt",
+   "oracle": "expected/entire-classpath/pkg/TestKt.kt",
+   "vineflower": "b72c3b2861bb7dbf",
    "decompiled_file": "TestKt.kt",
    "decompiled_file_fallback": "TestKt.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestKt.dec"
@@ -579,7 +608,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestLabeledJumps.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestLabeledJumps.kt",
+   "oracle": "expected/entire-classpath/pkg/TestLabeledJumps.kt",
+   "vineflower": "f0f8047112185a3a",
    "decompiled_file": "TestLabeledJumps.kt",
    "decompiled_file_fallback": "TestLabeledJumps.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestLabeledJumps.dec"
@@ -590,7 +620,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestNonInlineLambda.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestNonInlineLambda.kt",
+   "oracle": "expected/entire-classpath/pkg/TestNonInlineLambda.kt",
+   "vineflower": "b62169c9e381c476",
    "decompiled_file": "TestNonInlineLambda.kt",
    "decompiled_file_fallback": "TestNonInlineLambda.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestNonInlineLambda.dec"
@@ -601,7 +632,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestNothingReturns.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestNothingReturns.kt",
+   "oracle": "expected/entire-classpath/pkg/TestNothingReturns.kt",
+   "vineflower": "275708659ffcfef4",
    "decompiled_file": "TestNothingReturns.kt",
    "decompiled_file_fallback": "TestNothingReturns.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestNothingReturns.dec"
@@ -612,7 +644,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestNullable.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestNullable.kt",
+   "oracle": "expected/entire-classpath/pkg/TestNullable.kt",
+   "vineflower": "6ed91bf3041837b2",
    "decompiled_file": "TestNullable.kt",
    "decompiled_file_fallback": "TestNullable.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestNullable.dec"
@@ -623,7 +656,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestNullableOperator.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestNullableOperator.kt",
+   "oracle": "expected/entire-classpath/pkg/TestNullableOperator.kt",
+   "vineflower": "ce675a6bd557d83e",
    "decompiled_file": "TestNullableOperator.kt",
    "decompiled_file_fallback": "TestNullableOperator.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestNullableOperator.dec"
@@ -634,7 +668,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestObject.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestObject.kt",
+   "oracle": "expected/entire-classpath/pkg/TestObject.kt",
+   "vineflower": "8b3ea94b969ab635",
    "decompiled_file": "TestObject.kt",
    "decompiled_file_fallback": "TestObject.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestObject.dec"
@@ -645,7 +680,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestParams.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestParams.kt",
+   "oracle": "expected/entire-classpath/pkg/TestParams.kt",
+   "vineflower": "c2c7d7fc9902b382",
    "decompiled_file": "TestParams.kt",
    "decompiled_file_fallback": "TestParams.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestParams.dec"
@@ -657,7 +693,8 @@
     "kotlin/kt/pkg/TestPoorNames.class",
     "kotlin/kt/pkg/TestPoorNames$Class with spaces.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestPoorNames.kt",
+   "oracle": "expected/entire-classpath/pkg/TestPoorNames.kt",
+   "vineflower": "d7111d386d0869f1",
    "decompiled_file": "TestPoorNames.kt",
    "decompiled_file_fallback": "TestPoorNames.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestPoorNames.dec"
@@ -669,7 +706,8 @@
     "kotlin/kt/pkg/TestPropertyAccess.class",
     "kotlin/kt/ext/Person.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestPropertyAccess.kt",
+   "oracle": "expected/entire-classpath/pkg/TestPropertyAccess.kt",
+   "vineflower": "20ea25b9d49a4c74",
    "decompiled_file": "TestPropertyAccess.kt",
    "decompiled_file_fallback": "TestPropertyAccess.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestPropertyAccess.dec"
@@ -681,7 +719,8 @@
     "kotlin/kt/pkg/TestReflection.class",
     "kotlin/kt/pkg/TestReflection$testFunctionReference$f$1.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestReflection.kt",
+   "oracle": "expected/entire-classpath/pkg/TestReflection.kt",
+   "vineflower": "0a08ff1f8b2c7d63",
    "decompiled_file": "TestReflection.kt",
    "decompiled_file_fallback": "TestReflection.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestReflection.dec"
@@ -692,7 +731,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestSafeCasts.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestSafeCasts.kt",
+   "oracle": "expected/entire-classpath/pkg/TestSafeCasts.kt",
+   "vineflower": "bf7187e95dd6ac49",
    "decompiled_file": "TestSafeCasts.kt",
    "decompiled_file_fallback": "TestSafeCasts.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestSafeCasts.dec"
@@ -705,7 +745,8 @@
     "kotlin/kt/pkg/TestSealedHierarchy$TestClass.class",
     "kotlin/kt/pkg/TestSealedHierarchy$TestObject.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestSealedHierarchy.kt",
+   "oracle": "expected/entire-classpath/pkg/TestSealedHierarchy.kt",
+   "vineflower": "a419bfac7c1bce67",
    "decompiled_file": "TestSealedHierarchy.kt",
    "decompiled_file_fallback": "TestSealedHierarchy.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestSealedHierarchy.dec"
@@ -716,7 +757,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestShadowParam.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestShadowParam.kt",
+   "oracle": "expected/entire-classpath/pkg/TestShadowParam.kt",
+   "vineflower": "42b91870b5d7af22",
    "decompiled_file": "TestShadowParam.kt",
    "decompiled_file_fallback": "TestShadowParam.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestShadowParam.dec"
@@ -732,7 +774,8 @@
     "kotlin/kt/pkg/TestSmartCasts$X$DefaultImpls.class",
     "kotlin/kt/pkg/TestSmartCasts$X.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestSmartCasts.kt",
+   "oracle": "expected/entire-classpath/pkg/TestSmartCasts.kt",
+   "vineflower": "87c1678d4487d32a",
    "decompiled_file": "TestSmartCasts.kt",
    "decompiled_file_fallback": "TestSmartCasts.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestSmartCasts.dec"
@@ -743,7 +786,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestStringInterpolation.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestStringInterpolation.kt",
+   "oracle": "expected/entire-classpath/pkg/TestStringInterpolation.kt",
+   "vineflower": "da0df8907e08f376",
    "decompiled_file": "TestStringInterpolation.kt",
    "decompiled_file_fallback": "TestStringInterpolation.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestStringInterpolation.dec"
@@ -754,7 +798,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestSynchronized.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestSynchronized.kt",
+   "oracle": "expected/entire-classpath/pkg/TestSynchronized.kt",
+   "vineflower": "4612ee78873db0a3",
    "decompiled_file": "TestSynchronized.kt",
    "decompiled_file_fallback": "TestSynchronized.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestSynchronized.dec"
@@ -765,7 +810,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestTailrecFunctions.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestTailrecFunctions.kt",
+   "oracle": "expected/entire-classpath/pkg/TestTailrecFunctions.kt",
+   "vineflower": "f5b4aadd9bde1d59",
    "decompiled_file": "TestTailrecFunctions.kt",
    "decompiled_file_fallback": "TestTailrecFunctions.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestTailrecFunctions.dec"
@@ -776,7 +822,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestTopLevelKt.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestTopLevelKt.kt",
+   "oracle": "expected/entire-classpath/pkg/TestTopLevelKt.kt",
+   "vineflower": "f8a074b1e3701135",
    "decompiled_file": "TestTopLevelKt.kt",
    "decompiled_file_fallback": "TestTopLevelKt.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestTopLevelKt.dec"
@@ -787,7 +834,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestTryCatchExpressions.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryCatchExpressions.kt",
+   "oracle": "expected/entire-classpath/pkg/TestTryCatchExpressions.kt",
+   "vineflower": "c6a708ad995bd5ea",
    "decompiled_file": "TestTryCatchExpressions.kt",
    "decompiled_file_fallback": "TestTryCatchExpressions.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestTryCatchExpressions.dec"
@@ -798,7 +846,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestTryCatchFinally.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryCatchFinally.kt",
+   "oracle": "expected/entire-classpath/pkg/TestTryCatchFinally.kt",
+   "vineflower": "da88faf1e9267348",
    "decompiled_file": "TestTryCatchFinally.kt",
    "decompiled_file_fallback": "TestTryCatchFinally.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestTryCatchFinally.dec"
@@ -809,7 +858,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestTryCatchNested.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryCatchNested.kt",
+   "oracle": "expected/entire-classpath/pkg/TestTryCatchNested.kt",
+   "vineflower": "d1f7e9dbc8cb0330",
    "decompiled_file": "TestTryCatchNested.kt",
    "decompiled_file_fallback": "TestTryCatchNested.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestTryCatchNested.dec"
@@ -820,7 +870,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestTryCatchThrowable.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryCatchThrowable.kt",
+   "oracle": "expected/entire-classpath/pkg/TestTryCatchThrowable.kt",
+   "vineflower": "feaac61d75746536",
    "decompiled_file": "TestTryCatchThrowable.kt",
    "decompiled_file_fallback": "TestTryCatchThrowable.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestTryCatchThrowable.dec"
@@ -831,7 +882,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestTryFinally.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryFinally.kt",
+   "oracle": "expected/entire-classpath/pkg/TestTryFinally.kt",
+   "vineflower": "7a1de49ef370e5c5",
    "decompiled_file": "TestTryFinally.kt",
    "decompiled_file_fallback": "TestTryFinally.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestTryFinally.dec"
@@ -842,7 +894,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestTryFinallyExpressions.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryFinallyExpressions.kt",
+   "oracle": "expected/entire-classpath/pkg/TestTryFinallyExpressions.kt",
+   "vineflower": "9b6b399d69a092ad",
    "decompiled_file": "TestTryFinallyExpressions.kt",
    "decompiled_file_fallback": "TestTryFinallyExpressions.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestTryFinallyExpressions.dec"
@@ -853,7 +906,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestTryLoop.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryLoop.kt",
+   "oracle": "expected/entire-classpath/pkg/TestTryLoop.kt",
+   "vineflower": "ce795283eb08c171",
    "decompiled_file": "TestTryLoop.kt",
    "decompiled_file_fallback": "TestTryLoop.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestTryLoop.dec"
@@ -864,7 +918,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestTryLoop2.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryLoop2.kt",
+   "oracle": "expected/entire-classpath/pkg/TestTryLoop2.kt",
+   "vineflower": "03844a9cea09b1ce",
    "decompiled_file": "TestTryLoop2.kt",
    "decompiled_file_fallback": "TestTryLoop2.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestTryLoop2.dec"
@@ -875,7 +930,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestTryLoopNoCatch.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryLoopNoCatch.kt",
+   "oracle": "expected/entire-classpath/pkg/TestTryLoopNoCatch.kt",
+   "vineflower": "f07b15b44d952756",
    "decompiled_file": "TestTryLoopNoCatch.kt",
    "decompiled_file_fallback": "TestTryLoopNoCatch.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestTryLoopNoCatch.dec"
@@ -886,7 +942,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestTryLoopRecompile.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryLoopRecompile.kt",
+   "oracle": "expected/entire-classpath/pkg/TestTryLoopRecompile.kt",
+   "vineflower": "1fd8c34e9eed7646",
    "decompiled_file": "TestTryLoopRecompile.kt",
    "decompiled_file_fallback": "TestTryLoopRecompile.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestTryLoopRecompile.dec"
@@ -897,7 +954,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestTryLoopReturnFinally.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryLoopReturnFinally.kt",
+   "oracle": "expected/entire-classpath/pkg/TestTryLoopReturnFinally.kt",
+   "vineflower": "5132ad4dfbe432ed",
    "decompiled_file": "TestTryLoopReturnFinally.kt",
    "decompiled_file_fallback": "TestTryLoopReturnFinally.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestTryLoopReturnFinally.dec"
@@ -908,7 +966,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestTryLoopSimpleFinally.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryLoopSimpleFinally.kt",
+   "oracle": "expected/entire-classpath/pkg/TestTryLoopSimpleFinally.kt",
+   "vineflower": "c70222935270987c",
    "decompiled_file": "TestTryLoopSimpleFinally.kt",
    "decompiled_file_fallback": "TestTryLoopSimpleFinally.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestTryLoopSimpleFinally.dec"
@@ -919,7 +978,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestTryReturn.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryReturn.kt",
+   "oracle": "expected/entire-classpath/pkg/TestTryReturn.kt",
+   "vineflower": "4806d1f12ebdc268",
    "decompiled_file": "TestTryReturn.kt",
    "decompiled_file_fallback": "TestTryReturn.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestTryReturn.dec"
@@ -931,7 +991,8 @@
     "kotlin/kt/pkg/TestTrySplit.class",
     "kotlin/kt/pkg/TestTrySplit$Companion.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestTrySplit.kt",
+   "oracle": "expected/entire-classpath/pkg/TestTrySplit.kt",
+   "vineflower": "85eab7561e0ac082",
    "decompiled_file": "TestTrySplit.kt",
    "decompiled_file_fallback": "TestTrySplit.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestTrySplit.dec"
@@ -943,7 +1004,8 @@
     "kotlin/kt/pkg/TestTrySynchronized.class",
     "kotlin/kt/pkg/TestTrySynchronized$Companion.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestTrySynchronized.kt",
+   "oracle": "expected/entire-classpath/pkg/TestTrySynchronized.kt",
+   "vineflower": "00261c3d8355311c",
    "decompiled_file": "TestTrySynchronized.kt",
    "decompiled_file_fallback": "TestTrySynchronized.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestTrySynchronized.dec"
@@ -954,7 +1016,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestTryVar.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestTryVar.kt",
+   "oracle": "expected/entire-classpath/pkg/TestTryVar.kt",
+   "vineflower": "fa9c0aed6caeb6e5",
    "decompiled_file": "TestTryVar.kt",
    "decompiled_file_fallback": "TestTryVar.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestTryVar.dec"
@@ -965,7 +1028,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestVarReplaceKt.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestVarReplace.kt",
+   "oracle": "expected/entire-classpath/pkg/TestVarReplace.kt",
+   "vineflower": "e63e444e393f1a6c",
    "decompiled_file": "TestVarReplaceKt.kt",
    "decompiled_file_fallback": "TestVarReplaceKt.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestVarReplace.dec"
@@ -976,7 +1040,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestVars.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestVars.kt",
+   "oracle": "expected/entire-classpath/pkg/TestVars.kt",
+   "vineflower": "084f333f1b87618c",
    "decompiled_file": "TestVars.kt",
    "decompiled_file_fallback": "TestVars.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestVars.dec"
@@ -987,7 +1052,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestWhen.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestWhen.kt",
+   "oracle": "expected/entire-classpath/pkg/TestWhen.kt",
+   "vineflower": "e855043f5632ef37",
    "decompiled_file": "TestWhen.kt",
    "decompiled_file_fallback": "TestWhen.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestWhen.dec"
@@ -998,7 +1064,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestWhenBoolean.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestWhenBoolean.kt",
+   "oracle": "expected/entire-classpath/pkg/TestWhenBoolean.kt",
+   "vineflower": "2a47beb04a14dae3",
    "decompiled_file": "TestWhenBoolean.kt",
    "decompiled_file_fallback": "TestWhenBoolean.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestWhenBoolean.dec"
@@ -1009,7 +1076,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestWhenControlFlow.class"
    ],
-   "oracle": "expected/kotlin-entire-classpath/pkg/TestWhenControlFlow.kt",
+   "oracle": "expected/entire-classpath/pkg/TestWhenControlFlow.kt",
+   "vineflower": "7914e0adc2eca726",
    "decompiled_file": "TestWhenControlFlow.kt",
    "decompiled_file_fallback": "TestWhenControlFlow.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestWhenControlFlow.dec"
@@ -1020,7 +1088,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestMultifile.class"
    ],
-   "oracle": "expected/kotlin-multifile-facade/pkg/TestMultifile.kt",
+   "oracle": "expected/multifile-facade/pkg/TestMultifile.kt",
+   "vineflower": "d52c295002f45e96",
    "decompiled_file": "TestMultifile.kt",
    "decompiled_file_fallback": "TestMultifile.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestMultifile.dec"
@@ -1031,7 +1100,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestMultifile__TestMultifileAKt.class"
    ],
-   "oracle": "expected/kotlin-multifile-facade/pkg/TestMultifile__TestMultifileA.kt",
+   "oracle": "expected/multifile-facade/pkg/TestMultifile__TestMultifileA.kt",
+   "vineflower": "af2a31fa448e9763",
    "decompiled_file": "TestMultifile__TestMultifileAKt.kt",
    "decompiled_file_fallback": "TestMultifile__TestMultifileAKt.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestMultifile__TestMultifileA.dec"
@@ -1042,7 +1112,8 @@
    "class_files": [
     "kotlin/kt/pkg/TestMultifile__TestMultifileBKt.class"
    ],
-   "oracle": "expected/kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB.kt",
+   "oracle": "expected/multifile-facade/pkg/TestMultifile__TestMultifileB.kt",
+   "vineflower": "b4654466634d8f12",
    "decompiled_file": "TestMultifile__TestMultifileBKt.kt",
    "decompiled_file_fallback": "TestMultifile__TestMultifileBKt.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestMultifile__TestMultifileB.dec"

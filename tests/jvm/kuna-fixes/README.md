@@ -7,14 +7,16 @@ Each case is a small class that Vineflower 1.12.0 fails on (or prints wrong), ru
 (`tests/jvm/cases.tsv`) on the fixture's base option map plus
 `dump-exception-on-error=0`, so no exception text is printed:
 
-- `kuna-fixes-compat/<id>`, `jvm_vineflower_compat` on: `expected-compat/<id>.java` is what the released
-  `vineflower-1.12.0.jar` prints (`vf-decompile --fixture`), failure comment included.
+- `kuna-fixes-compat/<id>`, `jvm_vineflower_compat` on: its text must be what the released
+  `vineflower-1.12.0.jar` prints (`vf-decompile --fixture`), failure comment included, pinned by the
+  case's `vineflower` digest in `cases.json`.
 - `kuna-fixes/<id>`, kuna's defaults: `expected/<id>.java` is kuna's reviewed output.
 
 A Kotlin case (`"language": "kotlin"` in `cases.json`) also runs with `jvm_plugins=1`, its oracle with
 Vineflower's bundled plugins (`vf-decompile --plugins`), and its texts are `<id>.kt`. A case with
 `compare_fallback` compares the unit of the class kuna writes it inside. `classes/` holds the class files,
-`src/` their source. What a fix changes on its case: `diff -u expected-compat/<id>.java expected/<id>.java`.
+`src/` their source. What a fix changes on its case: `python3 -I tests/jvm/regen.py --expected-text DIR
+kuna-fixes-compat/<id>` writes Vineflower's text, then `diff -u DIR/kuna-fixes-compat/<id>.java expected/<id>.java`.
 
 | Case | Fix id | Compiled with | With the fix |
 |---|---|---|---|

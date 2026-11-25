@@ -52,10 +52,12 @@ fn variant_case(variant: &str, dir: &str, main: &str, pairs: &str) -> Case {
         options,
         class_files,
         libraries: Vec::new(),
-        expected: data()
-            .join("expected")
-            .join(variant)
-            .join(format!("{main}.java")),
+        expected: Some(
+            data()
+                .join("expected")
+                .join(variant)
+                .join(format!("{main}.java")),
+        ),
         compare: vec![format!("{main}.java")],
         javadoc: None,
         jdks: Vec::new(),

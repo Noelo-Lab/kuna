@@ -1,9 +1,0 @@
-package pkg;
-
-public enum TestEnumStaticField {
-   TEST_1,
-   TEST_2;
-
-   public static Integer field;
-}
-

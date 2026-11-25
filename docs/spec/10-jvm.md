@@ -1398,11 +1398,11 @@ context means every fix on. Unit tests that must isolate one fix build the set
 `KunaFixes::DEFAULT.without(KunaFix::X)` and run with it through `Fernflower::new_with_fixes`
 (or a corpus `Case`'s `fixes`); no option reaches that set. The regression corpus's runner
 (`decompiler/nonnative/kuna-jvm/src/infra/kuna_corpus.rs (engine_options)`) turns compat
-on unless a case says otherwise, so its Vineflower-oracle cases test the plain port (each
-also runs with the defaults, against a digest of the text it printed when last reviewed),
-and each fix has a case that runs in both modes (`tests/jvm/kuna-fixes/`): in compat mode it
-must print the released Vineflower jar's text, failure comment included, and by default
-kuna's reviewed text.
+on unless a case says otherwise, so its Vineflower-oracle cases test the plain port against
+a digest of the released Vineflower jar's text (each also runs with the defaults, against a
+digest of the text it printed when last reviewed), and each fix has a case that runs in both
+modes (`tests/jvm/kuna-fixes/`): in compat mode it must print the release jar's text,
+failure comment included (pinned by its digest), and by default kuna's reviewed text.
 
 **Invariants.**
 

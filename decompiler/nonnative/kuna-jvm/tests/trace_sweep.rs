@@ -26,9 +26,12 @@ fn regress(classes: &[&str], overrides: &[(&str, &str)], compare: &str, expected
         overlay_option(&mut case.options, k, v);
     }
     case.compare = vec![compare.to_string()];
-    case.expected = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/data/trace_sweep")
-        .join(expected);
+    case.digest = None;
+    case.expected = Some(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/data/trace_sweep")
+            .join(expected),
+    );
     let r = with_engine_stack(move || run_case(&case));
     assert_eq!(
         r.status,

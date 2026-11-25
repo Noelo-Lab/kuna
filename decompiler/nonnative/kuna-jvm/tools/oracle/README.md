@@ -5,7 +5,8 @@ same class files and options. This directory builds that ground truth: it replay
 test registrations (core's `SingleClassesTest`, the Kotlin plugin's `KotlinTests`) against class
 files compiled from Vineflower's `testData` sources the way Vineflower's Gradle build compiles them,
 and records what the jar prints. The vendored regression corpus in `tests/jvm/` (607 cases, the
-`make test-jvm` gate) is cut from the two corpora built here; nothing in this directory runs in CI.
+`make test-jvm` gate) is cut from the two corpora built here and pins their text by its digest;
+nothing in this directory runs in CI.
 
 | Path | What |
 |---|---|
@@ -227,9 +228,10 @@ of an `--only` run and then fails to save the first class, so the script creates
 
 | Consumer | Reads |
 |---|---|
-| `tests/jvm/regen.py` | `corpus/manifest.json`, `classes/`, `expected/`, `reports/match-fixture.json`: vendors the 530 cases that need no JDK library and writes `cases.tsv` and `README.md`; `--skip-vendor --full-manifest FILE` writes all 598 runnable cases for `corpus --manifest FILE` |
-| `tests/jvm/plugin_oracle.py` | `java/scripts/compile_sets.sh` and `java/bin/vf-decompile --plugins`, the Vineflower checkout's plugin test data, `corpus/expected-defaults/`: the 6 plugin cases |
-| `tests/jvm/kotlin_corpus.py` | `corpus-kt/manifest.json`, `classes/`, `expected/` (checked against `SHA256SUMS`): the 71 vendorable Kotlin cases and `kotlin.json`; `--full-manifest` all 73 cases in all three forms; `--overlays` the plugin cases under option overlays, through `kotlin/bin/vf-decompile-kt` |
+| `tests/jvm/regen.py` | `corpus/manifest.json`, `classes/`, `expected/`, `reports/match-fixture.json`: vendors the class files of the 530 cases that need no JDK library and writes `cases.tsv` (with the digest of each case's `expected/` text) and `README.md`; `--skip-vendor --full-manifest FILE` writes all 598 runnable cases for `kuna test --jvm --manifest FILE`; `--expected-text DIR CASE...` writes the text a vendored case's digest pins, from `corpus/expected/`, `corpus-kt/expected/`, the Vineflower checkout's `.dec` files or a `java/bin/vf-decompile` run |
+| `tests/jvm/plugin_oracle.py` | `java/scripts/compile_sets.sh` and `java/bin/vf-decompile --plugins`, the Vineflower checkout's plugin test data, `corpus/expected-defaults/`: the 6 plugin cases and their digests in `plugins.json` |
+| `tests/jvm/kotlin_corpus.py` | `corpus-kt/manifest.json`, `classes/`, `expected/` (checked against `SHA256SUMS`): the 71 vendorable Kotlin cases and `kotlin.json` (each with its text's digest); `--full-manifest` all 73 cases in all three forms; `--overlays` the plugin cases under option overlays, through `kotlin/bin/vf-decompile-kt` |
+| `tests/jvm/kuna_fix_case.py` | `java/bin/vf-decompile`: a kuna-fixes case's compat digest in `kuna-fixes/cases.json` |
 | `decompiler/nonnative/kuna-jvm/tests/data/*/gen.sh` | the jar, the JDKs, kotlinc, asmtools, `corpus/classes` and `vf-decompile` |
 
 Order: `kotlin_corpus.py` and `plugin_oracle.py` write their cases into `tests/jvm`, then `regen.py`

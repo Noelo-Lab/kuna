@@ -597,6 +597,45 @@ fn test_jvm_runs_corpus_cases() {
     assert_eq!(miss.status.code(), Some(2));
     assert_eq!(kuna(&["test", "--jvm", "--datatests"]).status.code(), Some(2));
     assert_eq!(kuna(&["test", "--jvm", "--baseline", "x.txt"]).status.code(), Some(2));
+    assert_eq!(kuna(&["test", "--save-digests"]).status.code(), Some(2));
+}
+
+/// A copy of the manifest with one case's two digests broken: `--out` writes both runs' text,
+/// `--save-digests` restores the `kuna` digest and never the `vineflower` one.
+#[test]
+fn test_jvm_writes_texts_and_re_records_kuna_digests() {
+    let id = "default/pkg/TestEnhancedForLoops";
+    let tests_jvm = common::repo_root().join("tests/jvm");
+    let text = std::fs::read_to_string(tests_jvm.join("cases.tsv")).unwrap();
+    let at = text.find(&format!("case\t{id}\t")).unwrap();
+    let digest_at = |record: &str| at + text[at..].find(&format!("\n{record}\t")).unwrap() + record.len() + 2;
+    let (v, k) = (digest_at("vineflower"), digest_at("kuna"));
+    let pinned = &text[k..k + 16];
+    let zero = "0000000000000000";
+    let broken = format!("{}{zero}{}{zero}{}", &text[..v], &text[v + 16..k], &text[k + 16..]);
+    let header = "kuna-jvm-corpus\t1\n";
+    let broken = broken.replacen(header, &format!("{header}root\t{}\n", tests_jvm.display()), 1);
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("jvm-corpus-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let manifest = dir.join("cases.tsv");
+    std::fs::write(&manifest, &broken).unwrap();
+    let (m, out) = (manifest.display().to_string(), dir.join("out").display().to_string());
+    let run = |extra: &[&str]| kuna(&[&["test", "--jvm", "--manifest", &m, "--name", id][..], extra].concat());
+
+    let red = run(&["--out", &out, "--save-digests"]);
+    assert_eq!(red.status.code(), Some(1), "{}", stderr(&red));
+    assert!(stdout(&red).contains(&format!("[jvm] kuna/{id}: Mismatch digest {pinned}, pinned {zero}")), "{}", stdout(&red));
+    assert!(stdout(&red).contains(&format!("[jvm] {id}: Mismatch digest ")), "{}", stdout(&red));
+    assert!(stderr(&red).contains(&format!("kuna/{id}: {zero} -> {pinned}")), "{}", stderr(&red));
+    for run_id in [id.to_string(), format!("kuna/{id}")] {
+        assert!(dir.join("out").join(format!("{run_id}.java")).is_file(), "{run_id}");
+    }
+    let saved = std::fs::read_to_string(&manifest).unwrap();
+    assert_eq!(saved, broken.replacen(&format!("kuna\t{zero}"), &format!("kuna\t{pinned}"), 1));
+    let red = run(&[]);
+    assert!(stdout(&red).starts_with("jvm: 1/2 cases matched"), "{}", stdout(&red));
+    assert_eq!(run(&["--out", &out]).status.code(), Some(2), "a used --out directory");
 }
 
 #[test]

@@ -1,5 +1,5 @@
-//! The corpus harness: manifest parsing, the fixture's comparison, failure keys, baselines,
-//! the child-process result record, and the vendored corpus under `tests/jvm/`.
+//! The corpus harness: manifest parsing, the fixture's comparison, digests, failure keys, and the
+//! vendored corpus under `tests/jvm/`.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -66,19 +66,14 @@ fn unit(path: &str, content: &str) -> DecompiledClass {
 fn result(id: &str, status: CaseStatus) -> CaseResult {
     CaseResult {
         id: id.to_string(),
-        set: "Default".to_string(),
         status,
         actual: Some("x".to_string()),
         actual_path: Some("pkg/X.java".to_string()),
-        units: vec!["pkg/X.java".to_string()],
         first_diff: None,
-        failed_methods_actual: 0,
-        failed_methods_expected: 0,
         error: None,
         failure: None,
         reason: None,
         log: Vec::new(),
-        millis: 1,
     }
 }
 
@@ -120,7 +115,7 @@ fn manifest_sets_cases_and_overlays() {
     assert_eq!(a.libraries, vec![PathBuf::from("/abs/lib.jar")]);
     assert_eq!(
         a.expected,
-        PathBuf::from("/m/data/expected/default/pkg/TestA.java")
+        Some(PathBuf::from("/m/data/expected/default/pkg/TestA.java"))
     );
     assert_eq!(
         a.compare,
@@ -183,6 +178,8 @@ fn manifest_errors_name_the_line() {
     .contains("unknown set `Nope`"));
     assert!(bad(&with("case\tq/Q\tDefault\nexpected\ty\ncompare\tz\n")).contains("no class files"));
     assert!(bad(&with("case\tq/Q\tDefault\nclass\tx\ncompare\tz\n")).contains("no expected file"));
+    assert!(bad(&with("case\tq/Q\tDefault\nclass\tx\nexpected\ty\nvineflower\t0\n"))
+        .contains("both `expected` and `vineflower`"));
     assert!(bad("kuna-jvm-corpus\t1\nopt\ta\tb\n").contains("line 2: `opt` outside a set or case"));
     assert!(
         bad("kuna-jvm-corpus\t1\nset\tS\ts\nclass\tx\n").contains("line 3: `class` outside a case")
@@ -218,29 +215,41 @@ fn the_short_form_derives_classes_expected_and_compare() {
     };
     let classes = ["c/p/A.class", "c/p/A$1.class", "c/p/A$B$C.class", "c/p/B.class"];
     assert_eq!(names(&cases[0]), classes);
-    assert_eq!(cases[0].expected, root.join("expected/s/p/A.kt"));
+    assert_eq!(cases[0].expected, Some(root.join("expected/s/p/A.kt")));
     assert_eq!(cases[0].compare, ["A.kt", "A.java"]);
     assert_eq!(names(&cases[1]), ["c/p/B.class", "c/p/A.class"]);
-    assert_eq!(cases[1].expected, root.join("x/p/B.java"));
+    assert_eq!(cases[1].expected, Some(root.join("x/p/B.java")));
     assert_eq!(cases[1].compare, ["B.java"]);
+
+    let pinned = parse_cases(&format!("{text}case\ts/p/AB\tS\tc/p/AB\nvineflower\tx\n"), &root).unwrap();
+    assert_eq!((&pinned[2].expected, &pinned[2].compare[..]), (&None, &["AB.java".to_string()][..]));
 }
 
 #[test]
-fn a_digest_record_adds_a_default_mode_run() {
+fn digest_records_pin_the_compat_and_the_default_mode_run() {
     let cases = parse_cases(
-        &format!("{SAMPLE}digest\t0123456789abcdef\n"),
+        &format!(
+            "{SAMPLE}case\tsingle/pkg/TestD\tSingle\nclass\tjava8/pkg/TestD.class\n\
+             vineflower\tfedcba9876543210\nkuna\t0123456789abcdef\n"
+        ),
         Path::new("/m"),
     )
     .unwrap();
-    let (case, run) = (&cases[2], &cases[3]);
-    assert_eq!(run.id, "kuna/single/pkg/TestC");
+    let (case, run) = (&cases[3], &cases[4]);
+    assert_eq!(case.id, "single/pkg/TestD");
+    assert_eq!(
+        (&case.expected, &case.compare[..], &case.digest),
+        (&None, &["TestD.java".to_string()][..], &Some("fedcba9876543210".into()))
+    );
+    assert_eq!(run.id, "kuna/single/pkg/TestD");
     let mut options = case.options.clone();
     options.push(("jvm_vineflower_compat".into(), "0".into()));
     assert_eq!(run.options, options);
     assert_eq!(
-        (&run.class_files, &run.compare, &run.digest),
-        (&case.class_files, &case.compare, &Some("0123456789abcdef".into()))
+        (&run.class_files, &run.compare, &run.expected, &run.digest),
+        (&case.class_files, &case.compare, &None, &Some("0123456789abcdef".into()))
     );
+    assert_eq!(cases[2].digest, None);
 
     assert_eq!(text_digest("abc"), "ba7816bf8f01cfea");
     let mut case = sample()[0].clone();
@@ -256,7 +265,7 @@ fn a_digest_record_adds_a_default_mode_run() {
     assert_eq!(
         failure_key(&r).unwrap(),
         format!(
-            "digest {}, pinned {} (corpus --out DIR writes the text)",
+            "digest {}, pinned {} (--out DIR writes the text)",
             text_digest("class TestA {}"),
             text_digest("class TestA {\n}")
         )
@@ -264,19 +273,17 @@ fn a_digest_record_adds_a_default_mode_run() {
 }
 
 #[test]
-fn fields_escape_round_trip() {
-    for s in [
-        "",
-        "plain",
-        "a\tb",
-        "line\nnext\r\n",
-        "back\\slash",
-        "\\t literal",
-        "@@end@@",
+fn fields_unescape() {
+    for (field, s) in [
+        ("", ""),
+        ("plain", "plain"),
+        ("a\\tb", "a\tb"),
+        ("line\\nnext\\r\\n", "line\nnext\r\n"),
+        ("back\\\\slash", "back\\slash"),
+        ("\\\\t literal", "\\t literal"),
+        ("trailing\\", "trailing\\"),
     ] {
-        let e = escape_field(s);
-        assert!(!e.contains('\t') && !e.contains('\n') && !e.contains('\r'));
-        assert_eq!(unescape_field(&e), s);
+        assert_eq!(unescape_field(field), s);
     }
 }
 
@@ -350,7 +357,6 @@ fn evaluation_statuses() {
                 throwable: None,
             },
         ],
-        millis: 7,
     };
 
     let crlf = expected.replace('\n', "\r\n") + "  \r\n";
@@ -361,12 +367,10 @@ fn evaluation_statuses() {
     );
     assert_eq!(r.status, CaseStatus::Match);
     assert_eq!(r.first_diff, None);
-    assert_eq!((r.failed_methods_actual, r.failed_methods_expected), (1, 1));
     assert_eq!(
         r.log.iter().map(|l| l.message.as_str()).collect::<Vec<_>>(),
         ["warn"]
     );
-    assert_eq!(r.millis, 7);
     assert_eq!(failure_key(&r), None);
 
     let wrong = "package pkg;\n\nclass TestA {\n   // $VF: Couldn't be decompiled\n   // $VF: Couldn't be decompiled\n}";
@@ -378,7 +382,6 @@ fn evaluation_statuses() {
     assert_eq!(r.status, CaseStatus::Mismatch);
     let d = r.first_diff.clone().unwrap();
     assert_eq!((d.line, d.expected.as_deref()), (5, Some("}")));
-    assert_eq!((r.failed_methods_actual, r.failed_methods_expected), (2, 1));
     assert_eq!(failure_key(&r).as_deref(), Some("mismatch"));
 
     let r = evaluate_text(
@@ -388,7 +391,6 @@ fn evaluation_statuses() {
     );
     assert_eq!(r.status, CaseStatus::Mismatch);
     assert_eq!(r.actual, None);
-    assert_eq!(r.units, ["pkg/Other.java"]);
     assert_eq!(failure_key(&r).as_deref(), Some("mismatch: no output"));
 
     let err = thrown(
@@ -406,7 +408,6 @@ fn evaluation_statuses() {
         failure_key(&r).as_deref(),
         Some("NullPointerException: src/x.rs:1")
     );
-    assert_eq!(error_head(&r), "NullPointerException: x");
 }
 
 #[test]
@@ -474,8 +475,8 @@ fn failure_keys() {
     assert_eq!(key(&r), "panic: boom");
 
     let mut crash = result("b", CaseStatus::EngineError);
-    crash.failure = Some("crash: stack overflow".into());
-    assert_eq!(key(&crash), "crash: stack overflow");
+    crash.failure = Some("harness: no result".into());
+    assert_eq!(key(&crash), "harness: no result");
 
     let mut unsupported = result("c", CaseStatus::Unsupported);
     unsupported.reason = Some("jdk 8 not found (/x)".into());
@@ -500,81 +501,15 @@ fn failure_keys() {
     let ok = result("g", CaseStatus::Match);
     let all = vec![u2, ok, r, crash, unsupported];
     assert_eq!(
-        totals_line(&all),
-        "corpus: 1/5 match, 0 mismatch, 3 error, 1 unsupported"
+        totals(&all),
+        Totals {
+            total: 5,
+            matched: 1,
+            mismatch: 0,
+            error: 3,
+            unsupported: 1
+        }
     );
-}
-
-#[test]
-fn baseline_regressions_and_saving() {
-    let baseline: BTreeSet<String> = parse_baseline("# header\nb\n\na\n  c  \nz\n");
-    assert_eq!(
-        baseline.iter().map(String::as_str).collect::<Vec<_>>(),
-        ["a", "b", "c", "z"]
-    );
-    assert_eq!(parse_baseline(&format_baseline(&baseline)), baseline);
-
-    let results = vec![
-        result("a", CaseStatus::Match),
-        result("b", CaseStatus::Mismatch),
-        result("c", CaseStatus::EngineError),
-        result("d", CaseStatus::Match),
-        result("e", CaseStatus::Unsupported),
-    ];
-    let report = compare_baseline(&baseline, &results);
-    assert_eq!(report.regressions, ["b", "c"]);
-    assert_eq!(report.improvements, ["d"]);
-    assert_eq!(report.not_run, ["z"]);
-
-    let next = next_baseline(&baseline, &results);
-    assert_eq!(
-        next.iter().map(String::as_str).collect::<Vec<_>>(),
-        ["a", "d", "z"]
-    );
-    let clean = compare_baseline(&next, &results);
-    assert!(clean.regressions.is_empty() && clean.improvements.is_empty());
-}
-
-#[test]
-fn result_records_round_trip() {
-    let mut r = result("default/pkg/TestA", CaseStatus::Mismatch);
-    r.actual = Some("line\t1\nline\\2\n@@end@@\n\r\n".to_string());
-    r.units = vec!["a/B.java".into(), "pkg/TestA.java".into()];
-    r.first_diff = Some(FirstDiff {
-        line: 3,
-        expected: Some("e\tx".into()),
-        actual: None,
-    });
-    r.failed_methods_actual = 2;
-    r.failed_methods_expected = 1;
-    r.error = Some(thrown(None, "boom\nsecond", "src/a.rs:1"));
-    r.failure = Some("crash: x".into());
-    r.reason = Some("why".into());
-    r.log = vec![
-        LogLine {
-            severity: Severity::Warn,
-            message: "w".into(),
-            throwable: None,
-        },
-        LogLine {
-            severity: Severity::Error,
-            message: "e".into(),
-            throwable: Some(thrown(Some("UnportedError"), "UnportedError: X.y", "")),
-        },
-    ];
-    r.millis = 1234;
-    let text = format!("noise\n{}", r.to_record());
-    assert_eq!(CaseResult::from_record(&text).unwrap(), r);
-
-    let mut empty = result("x", CaseStatus::Unsupported);
-    empty.actual = None;
-    empty.actual_path = None;
-    empty.units.clear();
-    let twice = format!("{}junk\n{}", r.to_record(), empty.to_record());
-    assert_eq!(CaseResult::from_record(&twice).unwrap(), empty);
-    assert!(CaseResult::from_record("nothing").is_err());
-    let record = r.to_record();
-    assert!(CaseResult::from_record(&record[..record.len() / 2]).is_err());
 }
 
 fn vendored() -> Vec<Case> {
@@ -585,7 +520,7 @@ fn vendored() -> Vec<Case> {
 /// A kuna-fixes case in Kotlin: it runs with the plugins and compares `<Stem>.kt` (or `.java`), then
 /// the units of its `compare_fallback` classes the same way.
 fn kotlin_fix_case(case: &Case) -> bool {
-    let kotlin = is_kuna_fix(case) && case.expected.extension().is_some_and(|e| e == "kt");
+    let kotlin = is_kuna_fix(case) && case.compare[0].ends_with(".kt");
     if kotlin {
         let class = case.class_files[0].file_stem().unwrap().to_string_lossy();
         assert_eq!(
@@ -603,11 +538,21 @@ fn is_kuna_fix(case: &Case) -> bool {
     case.set_slug == "kuna-fixes" || case.set_slug == "kuna-fixes-compat"
 }
 
+fn is_digest(digest: &Option<String>) -> bool {
+    digest
+        .as_deref()
+        .is_some_and(|d| d.len() == 16 && d.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+}
+
 #[test]
 fn vendored_corpus_is_complete() {
-    let all = vendored();
-    assert_eq!(all.iter().filter(|c| c.digest.is_some()).count(), 607);
-    let cases: Vec<Case> = all.into_iter().filter(|c| c.digest.is_none()).collect();
+    let (default_runs, cases): (Vec<Case>, Vec<Case>) = vendored()
+        .into_iter()
+        .partition(|c| c.id.starts_with(DEFAULT_RUN));
+    assert_eq!(default_runs.len(), 607);
+    for run in &default_runs {
+        assert!(run.expected.is_none() && is_digest(&run.digest), "{}", run.id);
+    }
     assert_eq!(cases.iter().filter(|c| !is_kuna_fix(c)).count(), 607);
     let compat: BTreeSet<&str> = cases
         .iter()
@@ -619,6 +564,13 @@ fn vendored_corpus_is_complete() {
         .collect();
     assert!(!fixed.is_empty());
     assert_eq!(compat, fixed, "every kuna-fixes case runs in both modes");
+    for case in cases.iter().filter(|c| c.set_slug == "kuna-fixes-compat") {
+        let twin = cases
+            .iter()
+            .find(|c| c.id == case.id.replacen("kuna-fixes-compat/", "kuna-fixes/", 1))
+            .unwrap();
+        assert_eq!(case.compare, twin.compare, "{}", case.id);
+    }
     for case in cases.iter().filter(|c| is_kuna_fix(c)) {
         let compat = if case.set_slug == "kuna-fixes-compat" { "1" } else { "0" };
         assert_eq!(
@@ -661,7 +613,12 @@ fn vendored_corpus_is_complete() {
             case.id
         );
         assert!(case.jdks.is_empty(), "{} needs a JDK", case.id);
-        assert!(case.expected.is_file(), "{}", case.expected.display());
+        if case.set_slug == "kuna-fixes" {
+            assert!(case.digest.is_none(), "{}", case.id);
+            assert!(case.expected.as_ref().is_some_and(|e| e.is_file()), "{}", case.id);
+        } else {
+            assert!(case.expected.is_none() && is_digest(&case.digest), "{}", case.id);
+        }
         for class in &case.class_files {
             assert!(class.is_file(), "{}", class.display());
         }
@@ -762,6 +719,7 @@ fn vendored_expected_texts_match_themselves() {
         .into_iter()
         .filter(|c| c.digest.is_none())
         .collect();
+    assert_eq!(cases.len(), 290);
     let mut matched = 0;
     for case in &cases {
         let run = expected_as_actual(case).unwrap();
