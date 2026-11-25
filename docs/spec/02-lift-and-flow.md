@@ -3918,6 +3918,13 @@ long DATA route writes neither an ALU result nor ALU flags, but
 postdecrements `R6` by two words when CE2 or its address-update override
 permits it.
 
+In the covered qualified `MUL` and `MULUS` forms, the address override
+allows the DATA fetch, its postincrement, and the multiplier input latch
+even when CE vetoes accumulator and ALU flag writeback. A compact right
+parallel multiply uses `X2` and the second flag lane. The wide form uses
+`X1` and the first flag lane under either qualifier, and its unsigned
+first operand bypasses product limiting.
+
 For covered wide signed/unsigned multiply-subtract forms, the result bank
 selects the extended addend and result width. The first multiplier source
 publishes to `X1`. `ALIM` inhibits new loss status without clamping the result.

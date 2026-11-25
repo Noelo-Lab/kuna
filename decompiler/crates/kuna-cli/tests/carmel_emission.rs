@@ -517,6 +517,71 @@ fn carmel_wide_logic_tests_the_full_saved_loop_address_before_word_writeback() {
     }
 }
 
+#[test]
+fn carmel_predicated_multiply_updates_its_latch_without_vetoed_writeback() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-qualified-mul", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let regs = ["R0", "X2", "A0L", "A0H", "A1L", "EST", "CECFG1", "CECFG2", "CETBL", "ECFG", "PACFG", "RM0", "RL0"];
+    let mut emitted = String::from("#include <stdbool.h>\n#include <stdint.h>\nvolatile unsigned short cell_0100;\n");
+    for (issue, results) in [
+        ([0x2b, 0xec, 0, 0x41, 0x04, 0x23], [("R0", "pointer"), ("X2", "latch"), ("A0L", "low"), ("EST", "flags")]),
+        ([0x51, 0x0c, 0xd6, 0xb2, 0x88, 0x21], [("R0", "wide_pointer"), ("X2", "wide_wrong_latch"), ("A0H", "wide_high"), ("EST", "wide_flags")]),
+    ] {
+        let mut code = vec![0x80, 0x01, 0, 0xc6, 0x42, 0x80];
+        code.extend(issue);
+        code.extend([0x2b, 0xd8, 0, 0x2b, 0xec, 0]);
+        fs::write(&binary, code).unwrap();
+        for (reg, name) in results {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0", "--json", "--assert-strict",
+                "--assert", "data [data,0x100] volatile unsigned short cell_0100",
+                "--assert", &format!("return %{reg} unsigned short"),
+            ]);
+            for (i, reg) in regs.into_iter().enumerate() {
+                kuna.args(["--assert", &format!("param {i} %{reg} unsigned short in_{}", reg.to_ascii_lowercase())]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            emitted.push_str(&function["code"].as_str().unwrap().replace("sub_0", name));
+            emitted.push('\n');
+        }
+    }
+    emitted.push_str(
+        "int main(void) {\n\
+         cell_0100 = 101;\n\
+         if (pointer(0x100,19,0x4321,5,3,0,0,0,0,0,0,0,0) != 0x100) return 1;\n\
+         if (pointer(0x100,19,0x4321,5,3,0,0,0x1000,0,0,0,0,0) != 0x101) return 2;\n\
+         if (latch(0x100,19,0x4321,5,3,0,0,0x1000,0,0,0,0,0) != 101) return 3;\n\
+         if (low(0x100,19,0x4321,5,3,0,0,0x1000,0,0,0,0,0) != 0x4321) return 4;\n\
+         if (low(0x100,19,0x4321,5,3,0,0,0,0xff00,0,0,0,0) != 303) return 5;\n\
+         if (flags(0x100,19,0x4321,5,3,0,0,0,0xff00,0,0,0,0) != 0x2000) return 11;\n\
+         cell_0100 = 0xfffe;\n\
+         if (flags(0x100,19,0x4321,5,3,0,0,0,0xff00,0,0,0,0) != 0x2400) return 12;\n\
+         cell_0100 = 0x8000;\n\
+         if (flags(0x100,19,0x4321,5,0x8000,0,0,0,0xff00,5,0,0,0) != 0x2900) return 6;\n\
+         cell_0100 = 0xffff;\n\
+         if (wide_pointer(0x100,19,0x4321,5,0x7fff,0,0,0,0xff00,5,0,0,0) != 0x101) return 7;\n\
+         if (wide_wrong_latch(0x100,19,0x4321,5,0x7fff,0,0,0,0xff00,5,0,0,0) != 19) return 8;\n\
+         if (wide_high(0x100,19,0x4321,5,0x7fff,0,0,0,0xff00,5,0,0,0) != 0xfffd) return 9;\n\
+         if (wide_flags(0x100,19,0x4321,5,0x7fff,0,0,0,0xff00,5,0,0,0) != 0x2020) return 10;\n\
+         return cell_0100 != 0xffff;\n\
+         }\n",
+    );
+    fs::write(&source, &emitted).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")

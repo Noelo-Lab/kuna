@@ -1262,7 +1262,7 @@ macro wide_logic_bitop(op, lhs, rhs, result) {
   <done>
 }
 
-macro wide_logic_rmw_est(flags) {
+macro publish_alu_ce(flags) {
     local feedback:2 = (EST & 0x3000) | flags;
     local first:2;
     local second:2;
@@ -1279,33 +1279,33 @@ macro wide_logic_rmw_pstatus(word) {
 @define WIDE_LOGIC_RMW "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & logic_ce_bank=1 & wide_20_22=6 & wide_logic_rmw_operator"
 :^wide_logic_rmw_operator "USER_IO","USER_IO",wide_load_literal_bits is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x21b5e & wide_40_45=0xf & wide_load_literal_bits {
     USER_IO = 0;
-    wide_logic_rmw_est(0:2);
+    publish_alu_ce(0:2);
 }
 :^wide_logic_rmw_operator "USER_IO","USER_IO","A0" is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x21b5e & wide_40_45=8 {
     local upper:2;
     wide_logic_bitop(wide_logic_rmw_operator, 0:2, A0H, upper);
     USER_IO = upper;
-    wide_logic_rmw_est(0:2);
+    publish_alu_ce(0:2);
 }
 :^wide_logic_rmw_operator "USER_IO","USER_IO","*R0++" is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x21b5c & wide_40_45=0x10 {
     modify_ptr(R0, RN0, RM0, RL0, 0, 2);
     USER_IO = 0;
-    wide_logic_rmw_est(0:2);
+    publish_alu_ce(0:2);
 }
 :^wide_logic_rmw_operator "PSTATUS","A0L","PSTATUS" is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x21e43 & wide_40_45=0x15 {
     wide_logic_rmw_pstatus(0:2);
-    wide_logic_rmw_est(0:2);
+    publish_alu_ce(0:2);
 }
 :^wide_logic_rmw_operator "OP3","A0L","INTBASE" is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x23a43 & wide_40_45=0x16 {
     INTBASE = 0;
-    wide_logic_rmw_est(0:2);
+    publish_alu_ce(0:2);
 }
 :^wide_logic_rmw_operator "A0L","A0L","A0L" is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x21e42 & wide_40_45=0x10 {
     local result:2;
     wide_logic_bitop(wide_logic_rmw_operator, A0L, A0L, result);
     A0L = result;
     local flags:2 = zext(result == 0) << 3;
-    wide_logic_rmw_est(flags);
+    publish_alu_ce(flags);
 }
 :^wide_logic_rmw_operator "*R0++","*R0++",wide_load_literal_bits is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x21842 & wide_40_45=0xf & wide_load_literal_bits {
     local address:2 = R0;
@@ -1316,13 +1316,13 @@ macro wide_logic_rmw_pstatus(word) {
     modify_ptr(R0, RN0, RM0, RL0, 0, 2);
     *[data]:2 address = result;
     local flags:2 = zext(result == 0) << 3;
-    wide_logic_rmw_est(flags);
+    publish_alu_ce(flags);
 }
 :^wide_logic_rmw_operator "PSTATUS","PSTATUS","A0" is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x21b56 & wide_40_45=8 {
     local upper:2;
     wide_logic_bitop(wide_logic_rmw_operator, 0:2, A0H, upper);
     wide_logic_rmw_pstatus(upper);
-    wide_logic_rmw_est(0:2);
+    publish_alu_ce(0:2);
 }
 
 macro wide_logic_ce1(dst, lhs, rhs, op) {
@@ -1337,7 +1337,7 @@ macro wide_logic_ce1(dst, lhs, rhs, op) {
     dst = result:2;
     flags = (flags & 0xffc7) | (zext(result == 0) << 3);
   <publish>
-    wide_logic_rmw_est(flags);
+    publish_alu_ce(flags);
 }
 
 @define WIDE_LOGIC_CE "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_20_22=6 & wide_logic_rmw_operator"
@@ -1365,8 +1365,50 @@ macro wide_logic_ce1(dst, lhs, rhs, op) {
     modify_ptr_scaled(R6, RN6, RM6, RL6, 12, 3, 2:2);
   <publish>
     local flags:2 = EST & 0xcfff;
-    wide_logic_rmw_est(flags);
+    publish_alu_ce(flags);
 }
+
+macro qualified_data_multiply(latch, cfg, bank, shift, mixed) {
+    local flags:2 = EST & 0xcfff;
+    local enabled:2;
+    unary_ce(cfg, EST, CETBL, bank, enabled);
+    if (enabled == 0 && (cfg & 0x1000) == 0) goto <publish>;
+    local address:2 = R0;
+    local word:2 = *[data]:2 address;
+    modify_ptr(R0, RN0, RM0, RL0, 0, 2);
+    latch = word;
+    if (enabled == 0) goto <publish>;
+    local a:8 = sext(word);
+    local unsigned_first:1 = mixed;
+    if (unsigned_first == 0) goto <operands_ready>;
+    a = zext(word);
+  <operands_ready>
+    local b:8 = sext(A1L);
+    local scale:8 = 1 + zext(ECFG & 1);
+    local product:8 = a * b * scale;
+    local upper:8 = (product & 0xffffffffff) >> 31;
+    local extended:1 = (upper != 0) && (upper != 0x1ff);
+    local limited:1 = (unsigned_first == 0) && extended && ((ECFG & 4) != 0);
+    local result:8 = product - zext(limited);
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = result(4);
+    local active:2 = (zext(limited) << 2) | (zext(product == 0) << 3)
+                  | (zext(product s< 0) << 4) | (zext(extended) << 5);
+    local lane:4 = shift;
+    flags = (flags & ~(0x3b:2 << lane)) | (active << lane);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+@define QUALIFIED_MUL "slot_0_22=0x410423"
+:"MUL CE1" "A0","*R0++","A1L" is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & $(QUALIFIED_MUL) { qualified_data_multiply(X1, CECFG1, 0, 0, 0); }
+:"MUL CE1" "A0","*R0++","A1L" "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(QUALIFIED_MUL)); (slot_mode=0 & nop_right) { qualified_data_multiply(X1, CECFG1, 0, 0, 0); }
+:^nop_left "||" "MUL CE2" "A0","*R0++","A1L" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(QUALIFIED_MUL)) { qualified_data_multiply(X2, CECFG2, 1, 6, 0); }
+
+@define QUALIFIED_WIDE_MUL "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_24_45=0x110cd6 & wide_0_22=0x328821"
+:"MULUS CE1" "A0","*R0++","A1L" is $(QUALIFIED_WIDE_MUL) & unary_wide_ce_bank=0 { qualified_data_multiply(X1, CECFG1, 0, 0, 1); }
+:"MULUS CE2" "A0","*R0++","A1L" is $(QUALIFIED_WIDE_MUL) & unary_wide_ce_bank=1 { qualified_data_multiply(X1, CECFG2, 1, 0, 1); }
 
 macro move_address_literal(dst, immediate, cfg, bank) {
     local incoming:2 = EST;
@@ -1428,7 +1470,7 @@ macro unary_max_flags(word) {
     wide_logic_bitop(wide_logic_rmw_operator, wide_lc_rn, wide_lc_r, result);
     LC1 = result;
     local flags:2 = zext(result == 0) << 3;
-    wide_logic_rmw_est(flags);
+    publish_alu_ce(flags);
 }
 
 macro wide_logic_discard_long(op, base, step, modulo, bound, shift, accumulator) {
@@ -1445,7 +1487,7 @@ macro wide_logic_discard_long(op, base, step, modulo, bound, shift, accumulator)
     local negative:1 = (guard & 0x80) != 0;
     local extension:1 = guard != (0 - zext((result & 0x80000000) != 0));
     local flags:2 = (zext(result == 0) << 3) | (zext(negative) << 4) | (zext(extension) << 5);
-    wide_logic_rmw_est(flags);
+    publish_alu_ce(flags);
 }
 
 :^wide_logic_rmw_operator "EST","*R5++","A3" is $(WIDE_LOGIC_RMW) & wide_40_45=0xb & wide_logic_rmw_route=0x30556 {
