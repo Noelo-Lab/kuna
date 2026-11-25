@@ -3167,6 +3167,10 @@ impl Funcdata {
                 let mut bl = self.bblocks_ref().block(inbl).get_copy_map();
                 while let Some(cur) = bl {
                     if self.sblocks_ref().block(cur).is_mark() {
+                        // (kuna `loopcontinue auto`) a recorded `break` keeps its one return.
+                        if crate::p8_structure::kuna_o0jumps::keeps_return(self, parent, i, cur) {
+                            break;
+                        }
                         splitedge.push(i);
                         retnode.push(parent);
                         bl = None;

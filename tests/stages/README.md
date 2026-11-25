@@ -25,6 +25,16 @@ if/else whose arms each store 1 or 0 keeps its `if`. Under `option iteregion on`
 the first prints as an `if` without an `else`, the stores fold into a
 conditional and the computed arm keeps its `if`.
 
+`kuna-loopcontinue-auto.xml` checks option `loopcontinue` (default `auto`) on
+gcc -O0 x86-64, and `kuna-loopcontinue-auto-thumb.xml` on gcc -O0 Thumb: in a
+`for` loop whose first two tests share one bare `continue;` and whose third
+has its own, the two print as one `if (...) continue;` and the third as
+another, and the plain `if` after them stays an `if`; a loop test and a bare
+`break;` test stay apart, so the loop keeps its `for` header and prints the
+`break`; a `continue;` in a `do` loop prints as written. Under `option
+loopcontinue on` the four tests fold into one chain, the break test folds into
+the loop condition and the `do` loop nests its call.
+
 `kuna-loweredswitch-auto.xml` checks option `loweredswitch` (default `auto`)
 on gcc -O0 x86-64: a two-case `switch`, whose tests each jump to their case on
 a match, re-rolls, and an if/else-if chain of three tests that each fall into
@@ -512,7 +522,7 @@ writeup, not here.
 | `kuna-rettriangle.xml` | `returndup` split the shared return after a one-block `if`, printing `if (c) f(); return 0;` as `if (!c) return 0; f(); return 0;` (authored C, gcc -O0, stack-protected) | P8 goto-quality, return duplication | `option rettriangle on\|off` |
 | `kuna-tailform.xml` | the function-tail `if` printed in the form the return layout picked: `if (a0) return; note();` for `if (a == 0) note();`, a guard and a second `return 0` for a wrapped two-call body, the arm repeating the final `return 0`, a six-statement void body wrapped, and a list walk whose guard `looptest` owns (authored C, gcc -O2) | P8 goto-quality, print-tree edit after final structuring | `option tailform off\|on\|<n>\|<void>,<value>` |
 | `kuna-tailform-noreturn.xml` | a function ending in a call that does not return printed with that call last and the other side's return inside the `if`: `if (v2) return v2 + 7; __fprintf_chk(..); exit(2);`, a merged two-test `abort` and the test after a loop the same way, and a void store-and-return arm before `abort();` (authored C, gcc -O2, the fixture loaded whole) | P8 goto-quality, print-tree edit after final structuring | `option tailform off\|on` |
-| `kuna-tailform-model.xml` | the C runtime's `__do_global_dtors_aux` (`if (completed) return; ...`) printed wrapped by the 4-line threshold; `option tailform model` prints the guard clause, and still wraps a one-call tail (authored C, gcc -O2, the fixture loaded whole) | P8 goto-quality, print-tree edit after final structuring | `option tailform on\|model` |
+| `kuna-tailform-model.xml` | the C runtime's `__do_global_dtors_aux` (`if (completed) return; ...`) printed as the guard clause by the default `model`, which still wraps a one-call tail; `option tailform on` keeps the four-line tail wrapped by the size threshold (authored C, gcc -O2, the fixture loaded whole) | P8 goto-quality, print-tree edit after final structuring | `option tailform model\|on` |
 | `kuna-tailform-voidreturn.xml` | a void function's last statement `if (!completed) { ...; completed = 1; return; }` printed with the arm's redundant `return;` (the C runtime's `__do_global_dtors_aux`, gcc -O0 fixture loaded whole) | P8 goto-quality, print-tree edit after final structuring | `option tailform off\|on` |
 
 `kuna-minss-nan.xml` pins an authored scalar MINSS and ratio/clamp probe.

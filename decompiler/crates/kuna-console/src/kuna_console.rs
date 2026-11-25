@@ -181,7 +181,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "bytearrayc" => on_off(conf.print().options.bytearray_c),
         "partialaccess" => on_off(conf.print().options.partial_access),
         "infloopstyle" => if conf.print().options.inf_loop_top { "while" } else { "do" },
-        "loopcontinue" => on_off(conf.loop_continue),
+        "loopcontinue" => if conf.loop_continue_record { "auto" } else { on_off(conf.loop_continue) },
         "postinc" => on_off(conf.post_increment),
         "compareform" => {
             if conf.present_lessequal {
