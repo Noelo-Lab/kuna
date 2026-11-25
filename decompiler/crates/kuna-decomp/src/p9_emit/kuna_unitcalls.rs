@@ -17,33 +17,37 @@
 //! `void` without one; a name called both with and without an output, or at two
 //! output sizes, takes the widest, and at one width the `undefinedN` spelling.
 //!
-//! An import the code calls with no known prototype is the fourth: the loader
-//! names an import's GOT slot after it, so a `call *slot` prints as a call by
-//! the import's name (`__libc_start_main(main)`), and nothing declared a name
-//! no prototype table lists. Its declaration is the same, at the type of the
-//! call's output, and the float of its width where that output is a float.
-//!
 //! The printer keeps one [`Calls`] for the function it is printing, starts it
 //! empty with each function and answers it from `PrintC::unit_calls`, which
 //! [`crate::kuna_callprototypes::declarations`] reads to put the declarations
 //! with the function's other call declarations.
 //!
+//! An import the code calls with no known prototype is also called by a name
+//! nothing declared: the loader names an import's GOT slot after it, so a
+//! `call *slot` prints as a call by the import's name
+//! (`__libc_start_main(main)`). [`crate::kuna_callprototypes::declarations`]
+//! records each such call in a [`Calls`] of its own, and declares it as
+//! `extern T name(KUNA_ANY_ARGS);`, at the type of the call's output, spelled
+//! as the float of its width where that output is a float.
+//!
 //! The header writes the imports in a block of their own ([`header_block`]),
 //! one per name across every function at the widest type a call has, and the
-//! rest in a second block the same way, but only when the including code
-//! defines `KUNA_DECLARE_HELPERS`: code that compiles an export
+//! helpers and operations in a second block the same way, but only when the
+//! including code defines `KUNA_DECLARE_HELPERS`: code that compiles an export
 //! often brings its own definitions (a `CONCAT44` macro, `static inline` x87
 //! conversions, `<unistd.h>`'s `syscall`), which a declaration would contradict.
-//! Each one is also skipped where the including code defined its name as a
-//! macro, and where the header already declares the name, as an import too.
+//! Each helper is also skipped where the including code defined its name as a
+//! macro, and where the header already declares the name, as an import
+//! included. An import is skipped only where the header already declares it.
 //!
 //! Limits:
 //! - An output with no `undefinedN` or float spelling (9 or 12 bytes) is not
-//!   declared, and neither are the float constants the printer spells `NAN`,
-//!   `INFINITY` and `FLOAT_UNKNOWN`, so a unit that holds one still does not
-//!   compile.
-//! - A name that is a C keyword (MIPS's `break`) is not declared; the call the
-//!   body prints still does not compile.
+//!   declared, for a helper or an import, and neither are the float constants
+//!   the printer spells `NAN`, `INFINITY` and `FLOAT_UNKNOWN`, so a unit that
+//!   holds one still does not compile.
+//! - A name that is a C keyword (MIPS's `break`) or not a C identifier (an
+//!   import spelled with its library) is not declared; the call the body
+//!   prints still does not compile.
 //! - Code that defines `KUNA_DECLARE_HELPERS` and also includes a C library
 //!   header that declares an operation's name (`syscall`, `sin`, `sleep`,
 //!   `wait`) gets two declarations that disagree, and so does code that
@@ -74,8 +78,8 @@ const C_KEYWORDS: &[&str] = &[
     "_Thread_local",
 ];
 
-/// The helpers and operations one function's C calls, by name, each at the
-/// widest declared type a call has.
+/// The helpers and operations, or the imports, one function's C calls, by
+/// name, each at the widest declared type a call has.
 #[derive(Default)]
 pub struct Calls(BTreeMap<String, Returns>);
 

@@ -4040,8 +4040,9 @@ float, or `void` when it has none. The header writes them in a block of their
 own ahead of the helpers', one per name at the widest type any function's calls
 have, and not under the `KUNA_DECLARE_HELPERS` opt-in: the body calls the import
 and nothing else declares it. A name the header already declares (a function of
-the export, a declared call target, a type) is left out, and the helpers' block
-leaves out a name the imports' block declares. A wide call's declaration check
+the export, a declared call target, a type, a global) is left out, and so is
+that name in the helpers' block, which also leaves out a name the imports'
+block declares. A wide call's declaration check
 (`callwide`) does not count these lines. Code that includes a C library header
 declaring such an import's name gets two declarations that disagree.
 
