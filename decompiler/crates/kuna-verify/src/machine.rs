@@ -667,7 +667,7 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
             Err(Halt::Budget) if !outer && self.steps > budget => Err(Halt::Budget),
             Ok(exit @ (Exit::Return | Exit::Leave | Exit::Unwind(_))) => {
                 let site = self.calls.site(at);
-                let mut keep = site.killed.clone();
+                let mut keep = site.abi_killed.clone();
                 keep.push(self.env.sp);
                 for o in self.state.preserve_registers(&saved, &keep) {
                     if !self.convention.contains(&(at, o)) {

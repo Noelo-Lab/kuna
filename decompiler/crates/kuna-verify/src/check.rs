@@ -930,7 +930,12 @@ fn check_runs(
         }
         let mut cc = compare_calls(prog, &env, run, &calls, &mo.calls, &go.calls);
         if let Some(ci) = go.call_input.as_ref().filter(|_| cc.differs.is_none() && !cc.stop) {
-            if let Ok(alt) = machine::run(&env, run, entry, opts.budget, &machine_calls, Some(&ci.with)) {
+            let rerun = machine::run(&env, run, entry, opts.budget, &machine_calls, Some(&ci.with));
+            if let Err(h) = &rerun {
+                unknown.get_or_insert(Halt::Doubtful(format!("{}; the machine could not be rerun with kuna's arguments: {}", ci.msg, Verdict::from_halt(h).label())));
+                continue;
+            }
+            if let Ok(alt) = rerun {
                 let callee = ci.with.call.and_then(|k| callee_differs(prog, &machine_calls, mo.calls.get(k), alt.calls.get(k)));
                 if let Some(d) = machine_differs(prog, &env, run, &machine_calls, &claim, &mo, &alt).or(callee) {
                     let l = format!("{}; given kuna's arguments, the machine's {d}", ci.msg);
@@ -951,6 +956,7 @@ fn check_runs(
             continue;
         }
         let suspect = !cc.suspects.is_empty();
+        let argument_doubt = cc.suspects.iter().find(|s| s.ends_with("may not take it")).cloned();
         let doubtful = suspect || mo.guessed;
         let doubt = |lines: &[String]| if suspect { Halt::Doubtful(lines.join("; ")) } else { Halt::Guessed(lines.join("; ")) };
         let undefined = (go.read_uninitialized && (mo.state.read_uninitialized || mo.state.read_saved)) || smashed(&env, &mo.state);
@@ -986,6 +992,10 @@ fn check_runs(
         }
         if mo.noreturn && mo.unverified_noreturn {
             unverified_runs += 1;
+            continue;
+        }
+        if let Some(s) = argument_doubt {
+            unknown.get_or_insert(Halt::Doubtful(s));
             continue;
         }
         let mut ms = mo.state;

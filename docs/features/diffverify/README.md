@@ -67,7 +67,7 @@ ins16  DIFFERS  (run 1 of 256)
 | `AGREES(n)` | `n` runs agreed. Runs that trapped on both sides are not counted. |
 | `DIFFERS` | one run gave a difference. The report says which run and what differed. |
 | `DIVERGES(id)` | the difference is one kuna makes on purpose, a declared divergence (`src/divergence.rs`): `switchrunon-cut-row`, `synthesized-call`, `gowritebarrier`, `panic-check`, `ptrauth-trap`, `copy-overlap`, `divide-by-zero`, `nan-quieting`, `syscall-result`. Each one names the option that makes the trade, and the pattern the difference has to match. Any other difference under the same option is still `DIFFERS`. A declared call leaves out only itself and what follows it in that run: the calls and memory before it are still compared. |
-| `UNKNOWN(reason)` | the check could not decide. `budget`: a side ran past `--budget` ops. `unsupported-op`: an op or user op the model does not run. `trap`: only one side trapped, or both trapped in every run. `harness`: the model failed. `no switch row`: a switch value no row of kuna's table takes. `prototype-suspect`: the difference rests on a callee prototype kuna recovered and may have wrong. `uninitialized-local`: kuna's result depends on a local nothing assigned. `guessed-callee`: a callee whose effect the model had to guess. `noreturn-unverified`: every run ended at a call only kuna says does not return (§2). `timeout`: no verdict within `--fn-seconds`. |
+| `UNKNOWN(reason)` | the check could not decide. `budget`: a side ran past `--budget` ops. `unsupported-op`: an op or user op the model does not run. `trap`: only one side trapped, or both trapped in every run. `harness`: the model failed. `no switch row`: a switch value no row of kuna's table takes. `prototype-suspect`: the difference rests on a callee prototype kuna recovered and may have wrong. `uninitialized-local`: kuna's result depends on a local nothing assigned. `guessed-callee`: a callee whose effect the model had to guess. `noreturn-unverified`: every run ended at a call only kuna says does not return (§2). `assumed-domain`: it agrees only while a parameter kuna's recovered prototype types `bool` holds 0 or 1 (§5). `timeout`: no verdict within `--fn-seconds`. |
 | `SKIPPED(reason)` | reserved for Tier S. |
 
 Exit status: 1 when a function differs, 3 when a file could not be checked, 2 for a usage
@@ -161,7 +161,11 @@ common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES 
    the frame (`global = &x`), or it was stored in an object already reachable
    (`h.p = &x; f(&h)`). It declares divergences (`divergence.rs`), and
    returns `UNKNOWN` where a difference rests on a guess. It also reruns kuna's side with
-   other values in anything kuna's C reads but never assigns.
+   other values in anything kuna's C reads but never assigns. Both sides start a
+   parameter kuna's recovered prototype types `bool` at 0 or 1; a function that agrees is
+   then run again with any byte there, and agreeing only on 0 and 1 is
+   `UNKNOWN(assumed-domain)`, since the domain is kuna's claim, not the program's.
+   Declared prototypes and the extensions the ABI documents keep their domain.
 7. **Report.** `report.rs` prints the verdict as text or JSON.
 
 | module | role |
@@ -261,7 +265,33 @@ run yet.
 4. **Reduce it** to a few lines of C where you can (`clang --target=...`). Check that
    `kuna decompile` prints the same wrong C, then file it or fix it.
 
-## 9. The other documents
+## 9. Not done yet
+
+- **Tier S and Tier P.** Proving agreement symbolically, and checking the printed C, are
+  designed (`proposal.md`) but not built.
+- **PLT thunks as external calls everywhere.** Only the no-return check treats a thunk
+  that leads out of the image as an external call. Doing it everywhere exposes frame
+  pointers a function forms out of bounds (`ls` `O0` `group_number`, `&buf[-8]` aliasing
+  another slot), and how to judge those needs a design first.
+- **The domain of an inferred narrow parameter.** An inferred `bool` is also checked with
+  any byte (§5); an `int` kuna infers in a register the ABI extends is still checked only
+  with extended values, which is right only when the inferred width is.
+- **Stack arguments to a callee run for real.** The machine's callee runs on the
+  machine's arguments and kuna's side replays its effect. A register argument kuna gets
+  wrong is caught by rerunning the machine with kuna's value (the callee reads it); a
+  stack argument is not, so a stack argument kuna's recovered prototype misses or gets
+  wrong (x86-32 `cdecl`) can agree. Extending that rerun to the outgoing argument area
+  needs kuna's stack inputs mapped to the callee's reads first.
+- **Code after a call kuna thinks returns.** If kuna misses that a call does not return,
+  it prints the bytes after it as code. No run reaches them on either side, so this is
+  invisible here; it is a readability fault for Tier P. A run in which a callee aborts
+  on its input stops on both sides, which is right.
+- **Speed.** Comparing memory by page rather than by byte, a lifting cache shared by a
+  worker's functions, and overlapping z3 queries with runs. None is at the top of the
+  current profile.
+- **The pull-request experiment** of §7 has not been run.
+
+## 10. The other documents
 
 | file | what it holds |
 |---|---|

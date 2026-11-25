@@ -381,3 +381,13 @@ fn a_pointer_stored_unaligned_still_escapes() {
     assert_eq!(planted.len(), 1, "{rows:?}");
     assert_eq!(planted[0]["killed"], true, "{planted:?}");
 }
+
+/// A binary that cannot be loaded is a file that could not be checked (3), not
+/// a usage error (2).
+#[test]
+fn a_binary_that_cannot_be_loaded_exits_3() {
+    let missing = std::env::temp_dir().join(format!("kuna-verify-missing-{}.o", std::process::id()));
+    let specs = specs();
+    let out = verify(&["check", &missing.to_string_lossy(), "f", "--sleighpath", &specs]);
+    assert_eq!(out.status.code(), Some(3), "{}", String::from_utf8_lossy(&out.stderr));
+}

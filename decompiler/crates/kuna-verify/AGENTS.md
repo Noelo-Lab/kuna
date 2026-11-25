@@ -50,3 +50,12 @@ entry that no longer applies can be removed.
   The first `drop-arg` mutant shortened the call and left the prototype, so the check
   caught it by construction and recall read too high. A mutant must leave kuna's facts
   as a real fault would.
+- 2026-11-25 · Claude Opus 5.5 · PR #1830
+  Stopped the machine at a no-return call kuna thinks returns, to catch the missed
+  no-return. A callee that aborts only on some inputs then made `hash_insert` and others
+  `DIFFERS`, though kuna's C calls the same callee and stops too. Code after a call that
+  never returns is unreachable on both sides; missing that is not a semantic difference.
+- 2026-11-25 · Claude Opus 5.5 · PR #1830
+  Counted every argument suspect as a doubt that keeps a run from agreeing. A callee
+  reading a register its declared prototype does not take (Go's context register) is not
+  an argument kuna dropped; only a recovered prototype's suspect is a doubt.

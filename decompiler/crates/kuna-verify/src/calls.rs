@@ -56,8 +56,12 @@ pub struct Site {
     /// The compiler left none of the function after the call: evidence the
     /// call does not return that does not come from kuna.
     pub laid_out_noreturn: bool,
-    /// Register ranges the call kills.
+    /// Register ranges the call kills, as kuna's IR has it: the calling
+    /// convention's, less what kuna found the callee preserves.
     pub killed: Vec<(u64, u32)>,
+    /// The calling convention's alone. A callee run for real keeps only the
+    /// other registers, so a register kuna wrongly thinks preserved differs.
+    pub abi_killed: Vec<(u64, u32)>,
     /// Where each of kuna's arguments is passed, by input slot; `None` where
     /// it is not machine state.
     pub args: Vec<Option<Arg>>,
@@ -381,6 +385,7 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
                 extrapop: pop,
                 noreturn: proto.is_no_return() || halts_after(fd, env, op.get_addr()) || falls_into_another(fd, env, op.get_addr().get_offset()),
                 laid_out_noreturn: falls_into_another(fd, env, op.get_addr().get_offset()),
+                abi_killed: killed(env, proto),
                 killed: killed(env, proto)
                     .into_iter()
                     .filter(|&(off, size)| {
@@ -408,6 +413,7 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
         noreturn: false,
         laid_out_noreturn: false,
         killed: killed(env, own),
+        abi_killed: killed(env, own),
         args: Vec::new(),
         locked: false,
         params: 0,
