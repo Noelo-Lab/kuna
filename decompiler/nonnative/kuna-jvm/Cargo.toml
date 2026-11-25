@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 flate2.workspace = true
+kuna-managed.workspace = true
 sha2 = "0.11"
 
 [build-dependencies]

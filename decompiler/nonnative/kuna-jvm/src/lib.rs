@@ -50,7 +50,7 @@ pub mod substrate;
 
 pub use infra::{
     cancelation_manager, class_pass, class_pass_location, decompile_record, java_pass_location,
-    java_pass_registrar, kuna_corpus, kuna_driver, kuna_partition, kuna_spans, looping_pass_builder,
+    java_pass_registrar, kuna_corpus, kuna_driver, kuna_engine, kuna_partition, kuna_spans, looping_pass_builder,
     main_pass_builder, method_processor, named_pass, pass, pass_context, plugin_context,
     validation_helper, wrapped_pass,
 };

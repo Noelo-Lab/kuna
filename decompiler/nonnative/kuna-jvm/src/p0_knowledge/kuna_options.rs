@@ -10,35 +10,28 @@
 //! [`resolve`] turns a name and a value as a user writes them into the
 //! Vineflower key and value the engine takes.
 
+use kuna_managed::OptionRow;
+
 use crate::context_source::java_parse_int;
 use crate::rt::try_catch;
 
-/// One option row; the fields are those of a `[[settable]]` row of
-/// `kuna-decomp/phases.toml`, plus Vineflower's names.
+/// One option row: the CLI's row (the fields of a `[[settable]]` row of
+/// `kuna-decomp/phases.toml`), plus Vineflower's names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct JvmOption {
-    pub option: &'static str,
+    pub row: OptionRow,
     /// Vineflower's long name; empty for an option of kuna's own.
     pub vineflower: &'static str,
     /// Vineflower's three-letter name, if it has one.
     pub short: &'static str,
-    pub aliases: &'static [&'static str],
-    pub values: &'static str,
-    pub default: &'static str,
-    pub destructive: bool,
-    pub phase: &'static str,
-    pub subphase: &'static str,
-    pub strength: &'static str,
-    pub rewind: &'static str,
-    pub issue: &'static str,
-    pub summary: &'static str,
-    pub use_when: &'static str,
-    pub example: &'static str,
-    pub source_decompiler: &'static str,
-    pub inspiration: &'static str,
-    pub change_kind: &'static str,
-    pub tier: &'static str,
-    pub symptoms: &'static str,
+}
+
+impl std::ops::Deref for JvmOption {
+    type Target = OptionRow;
+
+    fn deref(&self) -> &OptionRow {
+        &self.row
+    }
 }
 
 /// A Vineflower key kuna sets itself; `kuna` says what sets it.
@@ -297,7 +290,7 @@ pub fn suggest(name: &str) -> Option<&'static str> {
         .map(|(_, c)| c)
 }
 
-fn distance(a: &str, b: &str) -> usize {
+pub(crate) fn distance(a: &str, b: &str) -> usize {
     let a: Vec<char> = a.chars().collect();
     let b: Vec<char> = b.chars().collect();
     let mut row: Vec<usize> = (0..=b.len()).collect();

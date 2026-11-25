@@ -21,6 +21,8 @@ pub trait Engine: Sync {
     fn name(&self) -> &'static str;
     /// `JVM`: how messages name the engine and its inputs.
     fn label(&self) -> &'static str;
+    /// What its inputs are: `class files, jars, directories`.
+    fn inputs(&self) -> &'static str;
     /// The file extension of a type that has no text (`java`).
     fn extension(&self) -> &'static str;
     /// Whether `path` is this engine's input; runs on every invocation, so a `stat` and a short read.
@@ -71,7 +73,7 @@ pub struct Catalog {
 }
 
 /// The fields of a `[[settable]]` row of `phases.toml`, and the other names the option answers to.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OptionRow {
     pub option: &'static str,
     pub aliases: &'static [&'static str],
