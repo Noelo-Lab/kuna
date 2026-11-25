@@ -201,6 +201,9 @@ pub mod modifiers {
     /// (kuna `truthycond ptrchain`) The expression being pushed is a direct
     /// operand of a printed `&&`/`||`.
     pub const CHAIN_OPERAND: uint4 = 0x40000;
+    /// (kuna `truthycond ptrchain`) The expression being pushed is part of a
+    /// loop's condition.
+    pub const LOOP_CONDITION: uint4 = 0x80000;
 }
 
 /// Possible types of [`Atom`] (C++ `PrintLanguage::tagtype`,

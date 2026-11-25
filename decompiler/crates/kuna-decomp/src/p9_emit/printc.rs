@@ -5972,7 +5972,10 @@ impl PrintC {
         self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         self.emit.spaces(1, 0);
         // Emit the conditional statement (the condition block, comma-separated).
+        self.context.push_mod();
+        self.context.set_mod(modifiers::LOOP_CONDITION);
         self.emit_block(fd, arch, cond_block);
+        self.context.pop_mod();
         self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         self.emit.spaces(1, 0);
         // Emit the iterator statement.
@@ -6054,7 +6057,7 @@ impl PrintC {
             self.emit.spaces(1, 0);
             let id1 = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
             self.context.push_mod();
-            self.context.set_mod(modifiers::COMMA_SEPARATE);
+            self.context.set_mod(modifiers::COMMA_SEPARATE | modifiers::LOOP_CONDITION);
             self.emit_block(fd, arch, cond_block);
             self.context.pop_mod();
             self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id1);
@@ -6108,7 +6111,7 @@ impl PrintC {
         self.emit.spaces(1, 0);
         self.emit.tag_op(self.lang().kw_while, SyntaxHighlight::KeywordColor, &MarkupRef::none());
         self.emit.spaces(1, 0);
-        self.context.set_mod(modifiers::ONLY_BRANCH);
+        self.context.set_mod(modifiers::ONLY_BRANCH | modifiers::LOOP_CONDITION);
         self.emit_block(fd, arch, body);
         self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         // (kuna warnstyle, DIV-39) body/condition warnings still pending land
@@ -6979,7 +6982,7 @@ impl PrintC {
                 if let Some(other) = self.truthy_other_operand(fd, op).filter(|&other| {
                     !(chain_operand
                         && self.options.truthy_ptr_chain
-                        && self.bare_pointer_variable(fd, arch, other, op))
+                        && self.bare_pointer_variable(fd, other, op))
                 }) {
                     if tok.print1 == "==" {
                         self.push_op(&tokens::BOOLEAN_NOT, Some(op_key(op)));
@@ -7006,7 +7009,10 @@ impl PrintC {
             if let Some(v) = fd.obank().get(op).and_then(|o| o.get_in(slot)) {
                 if boolean_operands {
                     self.context.push_mod();
-                    self.context.set_mod(modifiers::CONDITION_CONTEXT | modifiers::CHAIN_OPERAND);
+                    self.context.set_mod(modifiers::CONDITION_CONTEXT);
+                    if !self.context.is_set(modifiers::LOOP_CONDITION) {
+                        self.context.set_mod(modifiers::CHAIN_OPERAND);
+                    }
                     self.push_vn_ir(fd, arch, v, op);
                     self.context.pop_mod();
                 } else {
@@ -13007,7 +13013,7 @@ fn import_slot_name(fd: &Funcdata, mut vn: VarnodeId) -> Option<String> {
 /// address, so a read of the whole value it was loaded with, before or after a
 /// call, is `&import`. An operator C does not apply to a pointer (a mask, a
 /// shift, a multiply) keeps the slot name.
-pub(crate) fn import_slot_address(fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId) -> Option<String> {
+fn import_slot_address(fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId) -> Option<String> {
     if arch.data_import_slots.is_empty() {
         return None;
     }

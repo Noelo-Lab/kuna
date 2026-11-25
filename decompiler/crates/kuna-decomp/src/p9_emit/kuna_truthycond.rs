@@ -9,7 +9,8 @@
 //! `option truthycond on` elides the zero comparison in boolean contexts;
 //! `off` restores the upstream explicit form; `ptrchain` (the default) is `on`
 //! except that a bare pointer variable that is itself an operand of `&&`/`||`
-//! keeps its comparison (`p != NULL && n`, `p == NULL || n`).
+//! keeps its comparison (`p != NULL && n`, `p == NULL || n`), unless the chain
+//! is a loop's condition.
 //!
 //! The rendering itself lives in [`crate::printc`]: the
 //! [`crate::printlanguage::modifiers::CONDITION_CONTEXT`] mod bit marks
@@ -20,13 +21,13 @@
 //! compares, enum-typed zeros, and equate-named zeros are excluded; value
 //! contexts (`v = (x != 0)`, `return x != 0`, call arguments) never normalize.
 //! [`crate::printlanguage::modifiers::CHAIN_OPERAND`] marks the expression that
-//! is a direct operand of a printed `&&`/`||`, and
+//! is a direct operand of a printed `&&`/`||` outside a loop's condition
+//! ([`crate::printlanguage::modifiers::LOOP_CONDITION`]), and
 //! [`PrintC::bare_pointer_variable`] decides the `ptrchain` exception.
 
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::ElementId;
 
-use crate::architecture::Architecture;
 use crate::block::BlockType;
 use crate::context::{BlockId, OpId, VarnodeId};
 use crate::dtype::type_metatype::{TYPE_PTR, TYPE_PTRREL};
@@ -72,9 +73,12 @@ impl OptionTruthyCond {
 
 impl PrintC {
     /// Mark the clause `blk` of a printed `&&`/`||` chain as a chain operand: a
-    /// basic block's branch or a nested chain (which marks its own clauses).
+    /// basic block's branch or a nested chain (which marks its own clauses).  A
+    /// loop's condition marks nothing.
     pub(crate) fn mark_chain_operand(&mut self, fd: &Funcdata, blk: BlockId) {
-        if matches!(fd.sblocks_ref().block(blk).get_type(), BlockType::Copy | BlockType::Condition) {
+        if !self.context.is_set(modifiers::LOOP_CONDITION)
+            && matches!(fd.sblocks_ref().block(blk).get_type(), BlockType::Copy | BlockType::Condition)
+        {
             self.context.set_mod(modifiers::CHAIN_OPERAND);
         } else {
             self.context.unset_mod(modifiers::CHAIN_OPERAND);
@@ -84,16 +88,10 @@ impl PrintC {
     /// Whether `vn`, read by `op`, prints as a plain variable name whose
     /// declared type is a pointer: not an expression, constant, partial or
     /// field access, address-of, or a global.
-    pub(crate) fn bare_pointer_variable(&self, fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId) -> bool {
+    pub(crate) fn bare_pointer_variable(&self, fd: &Funcdata, vn: VarnodeId, op: OpId) -> bool {
         let vn = self.loop_tests.leaf(vn);
         let Some(v) = fd.vbank().get(vn) else { return false };
-        if v.is_implied() || v.is_constant() || v.is_annotation() {
-            return false;
-        }
-        if v.is_persist()
-            && (std::env::var_os("KUNA_PTRCMP_GLOBALS").is_none()
-                || (arch.import_data && crate::printc::import_slot_address(fd, arch, vn, op).is_some()))
-        {
+        if v.is_implied() || v.is_constant() || v.is_annotation() || v.is_persist() {
             return false;
         }
         let Some((_, sym_off, sym_type)) = v.get_high().and_then(|high| self.emitted_high_symbol(fd, high)) else {

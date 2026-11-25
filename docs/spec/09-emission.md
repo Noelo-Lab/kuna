@@ -450,6 +450,31 @@ context bit, so stacked boolean comparisons collapse fully. `option
 truthycond off` restores upstream Ghidra's explicit comparisons, exercised
 by `tests/stages/kuna-cnorm-truthycond.xml`.
 
+The default value, `ptrchain`, makes one exception to the truthy form. When the
+comparison is itself an operand of a printed `&&` or `||` and the value it
+tests prints as a plain pointer variable, the comparison stays: `p && n`
+prints as `(p != NULL) && (n)` and `!p || !n` as `(p == NULL) || (!n)`. Source
+code spells a pointer test that way inside an `if`, ternary or returned chain
+more often than not. Integers, flags, stand-alone conditions such as `if (p)`
+and the chain that is a loop's condition keep the truthy form, because there
+the bare `while (p && ...)` is the common spelling. A second mod bit,
+`CHAIN_OPERAND`, marks the operand of the chain. It is set on each clause of a
+condition block (`printc.rs (PrintC::emit_block_condition)`, through
+`kuna_truthycond.rs (PrintC::mark_chain_operand)`, which covers the `if`,
+ternary and returned forms that print a chain) and on the operands of a
+`&&`/`||` operator inside one expression. The `for`, `while` and `do` emitters
+set a third bit, `LOOP_CONDITION`, while they print the loop's condition, and
+under it no operand is marked. `op_push_ir` keeps the bit only through the comparison
+itself, the branch that carries it and a `!` that is absorbed into the
+comparison. A printed `!`, any other operator and a clause that prints
+statements first (the comma form `(v = f(), !v)`) clear it, so only the direct
+operand of `&&`/`||` qualifies. `kuna_truthycond.rs
+(PrintC::bare_pointer_variable)` accepts a value that prints as a variable
+name and nothing else: not an expression, a constant, a partial or field
+access, an address-of form or a global. Its declared type must be a pointer.
+`option truthycond on` restores the truthy form everywhere. This value is
+exercised by `tests/stages/kuna-ptrchain.xml`.
+
 **Brace form (P9/`brace-form`, `option braceelide`).** A single-statement if
 body renders braceless with the statement indented on the next line (kuna
 default, DIV-38): `printc.rs (PrintC::emit_block_if)` consults

@@ -63,6 +63,7 @@
 </binaryimage>
 
 <script>
+  <com>option truthycond on</com>
   <com>lo fu scan</com>
   <com>decompile</com>
   <com>print C</com>
