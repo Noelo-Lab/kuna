@@ -2327,7 +2327,9 @@ mod tests {
         // and kuna-ppc64-plt-stubs / every PPC64 ELFv2 linker stub form names its import
         // and kuna-stackalignbuf / a buffer rounded up inside the frame keeps its rounding
         // and kuna-loopcontinue-auto(-thumb) / an unoptimized function keeps the continue/break tests its binary records
-        assert_eq!(count, 916, "corpus file count drifted");
+        // and kuna-looptest-zerotrip / a guard drops when its skip path is the loop's exit path run zero times
+        // and kuna-looptest-entry / an empty body, a frame counter, a reused or recomputed value test at the top
+        assert_eq!(count, 918, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

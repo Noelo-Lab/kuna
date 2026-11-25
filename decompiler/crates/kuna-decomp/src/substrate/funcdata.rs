@@ -172,6 +172,9 @@ pub struct Funcdata {
     /// (kuna `varargsave`) Set when the first heritage pass folded this
     /// function's variadic register-save prologue (`p4_calls/kuna_varargsave.rs`).
     pub(crate) kuna_vararg_save: bool,
+    /// (kuna `coverage`) The bytes of every instruction the flow decoded
+    /// ([`crate::flow::decoded_ranges`]).
+    pub(crate) kuna_flow_ranges: Vec<(u64, u64)>,
     /// (kuna) Whether the function's code is unoptimized, decided once after
     /// the first heritage pass (`p3_dataflow/kuna_unoptimized.rs`).
     pub(crate) kuna_unoptimized: Option<bool>,
@@ -814,6 +817,7 @@ impl Funcdata {
             kuna_later_wanted: std::rc::Rc::default(),
             kuna_x87_empty_returns: Vec::new(),
             kuna_vararg_save: false,
+            kuna_flow_ranges: Vec::new(),
             kuna_unoptimized: None,
             kuna_o0returns: None,
             kuna_o0select: None,
@@ -3833,6 +3837,13 @@ impl Funcdata {
         self.vbank.num_varnodes()
     }
 
+    /// (kuna `coverage`) The bytes of every instruction the flow decoded for
+    /// this function, delay slots included: engine byte offsets, half-open,
+    /// ascending and joined where they touch. Empty before the flow runs.
+    pub fn flow_ranges(&self) -> &[(u64, u64)] {
+        &self.kuna_flow_ranges
+    }
+
     /// Get the basic blocks container (C++ `getBasicBlocks`).
     pub fn bblocks_ref(&self) -> &BlockGraph {
         &self.bblocks
@@ -4496,6 +4507,7 @@ impl Funcdata {
         self.kuna_fpu_trunc_views.clear();
         self.kuna_x87_empty_returns.clear();
         self.kuna_vararg_save = false;
+        self.kuna_flow_ranges.clear();
         self.kuna_unoptimized = None;
         self.kuna_o0returns = None;
         self.kuna_o0select = None;
