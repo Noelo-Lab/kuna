@@ -84,6 +84,15 @@ def set_records(s, base):
     return opts, javadoc
 
 
+REMOVED_OPTIONS = {'dump-text-tokens': '0'}
+
+
+def removed_options(t):
+    """The pairs of `t` that set an option kuna-jvm does not have to anything but the value it is fixed at
+    (REMOVED_OPTIONS): such a test checks behaviour kuna deleted, so it is not run."""
+    return [f'{k}={v}' for k, v in t['options'].items() if REMOVED_OPTIONS.get(k, v) != v]
+
+
 def exclusion(t):
     rt = t['options'].get('include-runtime')
     if isinstance(rt, str) and rt.startswith('${java.'):
@@ -483,7 +492,7 @@ Line oriented, tab separated; fields escape `\\\\`, `\\t`, `\\n`, `\\r`; `#` sta
 - Of the oracle corpus's {runnable} runnable tests, **{excluded} are not vendored** because their
   output depends on a particular JDK's class library; run them from the external corpus (below).
   {skipped} registered tests are not runnable from it (Groovy and Scala sources it never compiles, and the
-  Kotlin ones, which the Kotlin cases below cover).
+  Kotlin ones, which the Kotlin cases below cover), and {removed_note}.
 - {unsupported_note}
 - Plugin cases (`plugins.json`): **{nplugin}** ({plugin_sets}). The fixture sets replay the tests of
   Vineflower's bundled plugins (`plugins/idea-not-null`, `plugins/variable-renaming`: the plugin's
@@ -584,6 +593,17 @@ the `passing` list of `--json`, with a run of the base. Regenerate this director
 """
 
 
+def removed_note(removed):
+    """The README's account of the tests not run because they set an option kuna-jvm does not have."""
+    by_pairs = {}
+    for t in removed:
+        by_pairs.setdefault((', '.join(f'`{p}`' for p in removed_options(t)), t['set']), []).append(t['id'])
+    if not by_pairs:
+        return 'none sets an option kuna-jvm does not have'
+    return '; '.join(f'{len(ids)} set {pairs} (set *{s}*), an option kuna-jvm does not have, and are not run: '
+                     + ', '.join(f'`{i}`' for i in ids) for (pairs, s), ids in by_pairs.items())
+
+
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -610,6 +630,8 @@ def main():
     sets = {s['name']: s for s in m['sets']}
     runnable = sorted((t for t in m['tests'] if t['status'] == 'ok'), key=lambda t: t['id'])
     skipped = [t for t in m['tests'] if t['status'] != 'ok']
+    removed = [t for t in runnable if removed_options(t)]
+    runnable = [t for t in runnable if not removed_options(t)]
     for t in runnable:
         check_effective(t, sets, base)
 
@@ -697,6 +719,7 @@ def main():
         nclasses=len(class_files), cls_kb=cls_b // 1024,
         total_kb=(cls_b + man_b) // 1024, runnable=len(runnable), excluded=len(excluded),
         skipped=len(skipped), unsupported_note=unsupported_note, excluded_list=excluded_list,
+        removed_note=removed_note(removed),
         nplugin=len(pm['tests']),
         noracle=len(included) + len(pm['tests']) + len(km['tests']), nfix=len(fm['cases']),
         nfixruns=len(FIX_SETS) * len(fm['cases']),

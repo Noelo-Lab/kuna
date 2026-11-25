@@ -1,7 +1,5 @@
-//! TextUtil against Vineflower's own (`data/GenTextUtilGolden.java`), the token
-//! visitor chain, and the small value classes of `util`.
-
-use std::rc::Rc;
+//! TextUtil against Vineflower's own (`data/GenTextUtilGolden.java`) and the small value
+//! classes of `util`.
 
 use kuna_jvm::int_helper::IntHelper;
 use kuna_jvm::interpreter_util::InterpreterUtil;
@@ -9,8 +7,6 @@ use kuna_jvm::key::Key;
 use kuna_jvm::pair::Pair;
 use kuna_jvm::rt::{try_catch, JavaEq, JavaHash};
 use kuna_jvm::text_buffer::TextBuffer;
-use kuna_jvm::text_range::TextRange;
-use kuna_jvm::text_token_visitor::TextTokenVisitor;
 use kuna_jvm::text_util::TextUtil;
 
 #[test]
@@ -44,77 +40,6 @@ fn text_util_matches_vineflower() {
     let mut s = String::from(">");
     TextUtil::append(&mut s, "[]", 3);
     assert_eq!(s, ">[][][]");
-}
-
-struct Recorder {
-    tag: &'static str,
-    log: Rc<std::cell::RefCell<Vec<String>>>,
-    next: Option<Box<dyn TextTokenVisitor>>,
-}
-
-impl TextTokenVisitor for Recorder {
-    fn get_next(&mut self) -> Option<&mut dyn TextTokenVisitor> {
-        match &mut self.next {
-            Some(next) => Some(next.as_mut()),
-            None => None,
-        }
-    }
-
-    fn start(&mut self, content: &str) {
-        self.log
-            .borrow_mut()
-            .push(format!("{} start {}", self.tag, content.len()));
-        self.start_base(content);
-    }
-
-    fn visit_class(&mut self, range: TextRange, declaration: bool, name: &str) {
-        self.log.borrow_mut().push(format!(
-            "{} class {}-{} {} {}",
-            self.tag,
-            range.start,
-            range.get_end(),
-            declaration,
-            name
-        ));
-        self.visit_class_base(range, declaration, name);
-    }
-
-    fn end(&mut self) {
-        self.log.borrow_mut().push(format!("{} end", self.tag));
-        self.end_base();
-    }
-}
-
-#[test]
-fn a_factory_visitor_sees_every_token() {
-    let mut buf = TextBuffer::with_format("\n", "   ", 160);
-    buf.append("new ");
-    buf.append_class("Map.Entry", false, "java/util/Map$Entry");
-    buf.append("();");
-    buf.append_all_classes("Outer.Inner", Some("a/Outer$Inner"));
-    let log = Rc::new(std::cell::RefCell::new(Vec::new()));
-    let l2 = log.clone();
-    let mut visitor = <dyn TextTokenVisitor>::create_visitor_with(Rc::new(
-        move |next: Box<dyn TextTokenVisitor>| {
-            Box::new(Recorder {
-                tag: "outer",
-                log: l2.clone(),
-                next: Some(next),
-            }) as Box<dyn TextTokenVisitor>
-        },
-    ));
-    buf.visit_tokens(Some(visitor.as_mut()));
-    assert_eq!(
-        *log.borrow(),
-        vec![
-            "outer start 27",
-            "outer class 4-13 false java/util/Map$Entry",
-            "outer class 16-21 false a/Outer",
-            "outer class 22-27 false a/Outer$Inner",
-            "outer end",
-        ]
-    );
-    buf.visit_tokens(None);
 }
 
 #[test]

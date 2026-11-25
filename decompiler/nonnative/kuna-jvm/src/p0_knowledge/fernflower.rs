@@ -42,12 +42,10 @@ use crate::kuna_spans::{ClassSpan, MethodSpan};
 use crate::plugin_context::PluginContext;
 use crate::plugin_source::PluginSource;
 use crate::pool_interceptor::PoolInterceptor;
-use crate::rt::{try_catch, Caught, JHashMap, JavaException, JavaStr, Shared};
+use crate::rt::{try_catch, Caught, JHashMap, JavaException, JavaStr};
 use crate::struct_class::StructClass;
 use crate::struct_context::{qualified_name_of, StructContext};
 use crate::text_buffer::TextBuffer;
-use crate::text_token_dump_visitor::TextTokenDumpVisitor;
-use crate::text_token_visitor::{Factory, TextTokenVisitor};
 
 /// One decompiled root class, as the Java's `IOutputSink.acceptClass` receives it,
 /// plus where its classes and methods lie in `content` (kuna).
@@ -474,27 +472,11 @@ impl IDecompiledData for FernflowerDecompiledData {
 
     fn get_class_content(&self, cl: StructClass) -> Option<String> {
         let class_processor = self.class_processor();
-        let buffer = Shared::new(TextBuffer::with_capacity(
-            ClassesProcessor::AVERAGE_CLASS_SIZE,
-        ));
+        let mut buffer = TextBuffer::with_capacity(ClassesProcessor::AVERAGE_CLASS_SIZE);
         let result = try_catch(|| {
-            class_processor.write_class(cl, &mut buffer.borrow_mut());
-
-            if DecompilerContext::get_option(IFernflowerPreferences::DUMP_TEXT_TOKENS) {
-                let dumped = buffer.clone();
-                let factory: Rc<dyn Factory> = Rc::new(move |next| {
-                    Box::new(TextTokenDumpVisitor::new(next, dumped.clone()))
-                        as Box<dyn TextTokenVisitor>
-                });
-                let mut visitor = <dyn TextTokenVisitor>::create_visitor_with(factory);
-                TextBuffer::visit_tokens_shared(&buffer, Some(&mut *visitor));
-            } else {
-                let mut visitor = <dyn TextTokenVisitor>::create_visitor();
-                buffer.borrow().visit_tokens(Some(&mut *visitor));
-            }
-
-            let res = buffer.borrow().convert_to_string_and_allow_data_discard();
-            crate::kuna_spans::finish(&buffer.borrow(), &res);
+            class_processor.write_class(cl, &mut buffer);
+            let res = buffer.convert_to_string_and_allow_data_discard();
+            crate::kuna_spans::finish(&buffer, &res);
             Some(res)
         });
         match result {

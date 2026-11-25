@@ -137,8 +137,8 @@ pub use p8_structure::{
 };
 pub use p9_emit::{
     bytecode_mapping_tracer, bytecode_source_mapper, class_text_token, class_writer,
-    field_text_token, import_collector, method_text_token, text_buffer, text_range, text_token,
-    text_token_dump_visitor, text_token_visitor, variable_text_token,
+    field_text_token, import_collector, method_text_token, text_buffer, text_token,
+    variable_text_token,
 };
 pub use plugins::{
     idea_not_null_options, idea_not_null_pass, idea_not_null_plugin, jad_name_provider, renamers,

@@ -178,27 +178,6 @@ opt	ignore-invalid-bytecode	1
 opt	verify-anonymous-classes	1
 opt	ternary-constant-simplification	1
 opt	verify-pre-post-merges	1
-set	Text Tokens	text-tokens
-opt	log-level	warn
-opt	decompile-generics	1
-opt	remove-synthetic	1
-opt	remove-bridge	1
-opt	keep-literals	1
-opt	__unit_test_mode__	1
-opt	new-line-separator	1
-opt	error-message	
-opt	include-runtime	
-opt	dump-text-tokens	1
-opt	bytecode-source-mapping	1
-opt	__dump_original_lines__	1
-opt	dump-exception-on-error	0
-opt	ignore-invalid-bytecode	1
-opt	verify-anonymous-classes	1
-opt	include-classpath	0
-opt	ternary-in-if	1
-opt	force-jsr-inline	1
-opt	preferred-line-length	120
-opt	verify-pre-post-merges	1
 set	With Idea Not Null	with-idea-not-null
 opt	log-level	warn
 opt	decompile-generics	1
@@ -1906,18 +1885,6 @@ kuna	8225055d31930e25
 case	ternary-constant-simplification/pkg/TestReturnTernaryConstantSimplification	Ternary Constant Simplification	classes/java8/pkg/TestReturnTernaryConstantSimplification
 vineflower	66af2274c4d96559
 kuna	4c118e72f071b2e9
-case	text-tokens/pkg/TestTextTokens	Text Tokens	classes/java8/pkg/TestTextTokens
-vineflower	4ab8b239b649d962
-kuna	4ab8b239b649d962
-case	text-tokens/pkg/TestTextTokens2	Text Tokens	classes/java16/pkg/TestTextTokens2
-vineflower	93ccbf7d331f9d47
-kuna	93ccbf7d331f9d47
-case	text-tokens/pkg/TestTextTokens3	Text Tokens	classes/java8/pkg/TestTextTokens3
-vineflower	f3078912d837af23
-kuna	f3078912d837af23
-case	text-tokens/pkg/TestTypeAnnotationsTokens	Text Tokens	classes/java21/pkg/TestTypeAnnotationsTokens
-vineflower	734a242ee752ea3e
-kuna	734a242ee752ea3e
 case	jad-naming/TestJadLvtCollision	JAD Naming	classes/plugins/variable-renaming/custom/TestJadLvtCollision
 vineflower	2bd0a2858284dcf5
 kuna	2bd0a2858284dcf5

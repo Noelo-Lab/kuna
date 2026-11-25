@@ -188,8 +188,6 @@ Three tiers:
 | need to know why a method failed (option is off) | [`jvm_dump_exception_on_error`](#jvm_dump_exception_on_error----on--off-default-on) |
 | /* $VF: ... */ and // $VF: comments clutter the output | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
 | need to know where the decompiler approximated (option is off) | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
-| need the source positions of identifiers for navigation | [`jvm_dump_text_tokens`](#jvm_dump_text_tokens----on--off-default-off-destructive-opt-in) |
-| debugging which identifier a name in the output refers to | [`jvm_dump_text_tokens`](#jvm_dump_text_tokens----on--off-default-off-destructive-opt-in) |
 | stack trace names lambda$main$0 or Main$1 and the matching code is hard to find | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics----on--off-default-off) |
 | need the class file of an anonymous class | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics----on--off-default-off) |
 | output differs from Vineflower's test fixture but matches java -jar | [`jvm_plugins`](#jvm_plugins----on--off-default-on) |
@@ -760,15 +758,6 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 - **Where / provenance:** p9_emit/class_writer, finally_processor, assignment_exprent, const_exprent, invocation_exprent · vineflower · vineflower-option
 - **Also spelled:** `decompiler-comments`, `dec`
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_decompiler_comments off`
-
-### `jvm_dump_text_tokens` -- on | off, default `off` (destructive opt-in)
-
-- **Symptoms:** need the source positions of identifiers for navigation; debugging which identifier a name in the output refers to.
-- **What it does:** Debug aid: append to every file a dump of its text tokens (each class, field, method and variable reference or declaration with its line:column range).
-- **When to flip:** Turn on only to debug token positions; the appended dump is not Java.
-- **Where / provenance:** p0_knowledge/fernflower, text_token_dump_visitor · vineflower · vineflower-option
-- **Also spelled:** `dump-text-tokens`, `dtt`
-- **Example:** `kuna decompile app.jar com.ex.Main --option jvm_dump_text_tokens on`
 
 ### `jvm_mark_corresponding_synthetics` -- on | off, default `off`
 

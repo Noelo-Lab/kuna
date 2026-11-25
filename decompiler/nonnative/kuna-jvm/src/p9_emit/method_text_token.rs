@@ -1,9 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/util/token/MethodTextToken.java`.
 
 use crate::method_descriptor::MethodDescriptor;
-use crate::text_range::TextRange;
 use crate::text_token::{TextToken, TextTokenKind};
-use crate::text_token_visitor::TextTokenVisitor;
 
 #[derive(Clone)]
 pub struct MethodTextToken {
@@ -32,15 +30,5 @@ impl MethodTextToken {
                 descriptor,
             }),
         )
-    }
-
-    pub fn visit(&self, token: &TextToken, visitor: &mut dyn TextTokenVisitor) {
-        visitor.visit_method(
-            TextRange::new(token.start, token.length),
-            token.declaration,
-            &self.class_name,
-            &self.name,
-            &self.descriptor,
-        );
     }
 }

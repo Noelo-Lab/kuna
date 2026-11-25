@@ -1,9 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/util/token/VariableTextToken.java`.
 
 use crate::method_descriptor::MethodDescriptor;
-use crate::text_range::TextRange;
 use crate::text_token::{TextToken, TextTokenKind};
-use crate::text_token_visitor::TextTokenVisitor;
 
 #[derive(Clone)]
 pub struct VariableTextToken {
@@ -41,30 +39,5 @@ impl VariableTextToken {
                 name,
             }),
         )
-    }
-
-    pub fn visit(&self, token: &TextToken, visitor: &mut dyn TextTokenVisitor) {
-        let range = TextRange::new(token.start, token.length);
-        if self.parameter {
-            visitor.visit_parameter(
-                range,
-                token.declaration,
-                &self.class_name,
-                &self.method_name,
-                &self.method_descriptor,
-                self.index,
-                &self.name,
-            );
-        } else {
-            visitor.visit_local(
-                range,
-                token.declaration,
-                &self.class_name,
-                &self.method_name,
-                &self.method_descriptor,
-                self.index,
-                &self.name,
-            );
-        }
     }
 }

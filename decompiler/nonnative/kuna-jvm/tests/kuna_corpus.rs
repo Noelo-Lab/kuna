@@ -549,11 +549,11 @@ fn vendored_corpus_is_complete() {
     let (default_runs, cases): (Vec<Case>, Vec<Case>) = vendored()
         .into_iter()
         .partition(|c| c.id.starts_with(DEFAULT_RUN));
-    assert_eq!(default_runs.len(), 607);
+    assert_eq!(default_runs.len(), 603);
     for run in &default_runs {
         assert!(run.expected.is_none() && is_digest(&run.digest), "{}", run.id);
     }
-    assert_eq!(cases.iter().filter(|c| !is_kuna_fix(c)).count(), 607);
+    assert_eq!(cases.iter().filter(|c| !is_kuna_fix(c)).count(), 603);
     let compat: BTreeSet<&str> = cases
         .iter()
         .filter_map(|c| c.id.strip_prefix("kuna-fixes-compat/"))

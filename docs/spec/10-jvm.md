@@ -958,8 +958,9 @@ method's bytecode. The class around it is written normally.
 argument lists, chained calls and long operator chains at their recorded break points
 wherever a line exceeds `jvm_preferred_line_length` (160), and indents with
 `jvm_indent_string` (three spaces). Offsets and widths are counted in UTF-16 units, as Java
-counts them. Every reference and declaration in the text is a text token;
-`jvm_dump_text_tokens` appends a dump of them with their positions.
+counts them. Every reference and declaration in the text is recorded as a text token
+(Vineflower's hook for IDE consumers; kuna reads none), and kuna's zero-width span marks
+(`kuna_spans`) ride the same mechanism, following every later edit.
 
 **Line mapping.** While expressions are written,
 `decompiler/nonnative/kuna-jvm/src/p9_emit/bytecode_mapping_tracer.rs` records which

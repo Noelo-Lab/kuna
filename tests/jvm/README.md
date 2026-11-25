@@ -46,7 +46,7 @@ validated); do not edit by hand.
   - `java9`: javac 9.0.4
 - Pinned text: `vineflower-1.12.0.jar` (sha256 `1dfcfe97...b9d`) on OpenJDK 17.0.20.1 through
   `ConsoleDecompiler` with the test fixture's options and saver (the oracle corpus's `expected/`).
-  530 of the 530 vendored outputs pass the fixture's comparison with upstream's
+  526 of the 526 vendored outputs pass the fixture's comparison with upstream's
   `testData/results/*.dec` (or its `_1.dec`).
 
 ## What a case is
@@ -88,16 +88,16 @@ Line oriented, tab separated; fields escape `\\`, `\t`, `\n`, `\r`; `#` starts a
 
 ## Counts
 
-- Vendored: **1794 runs** in all, each of which must match: the 607 Vineflower-oracle cases (the
+- Vendored: **1786 runs** in all, each of which must match: the 603 Vineflower-oracle cases (the
   Java cases here, the plugin and Kotlin cases below) twice, in compat mode against Vineflower's text and
   with kuna's defaults against kuna's (their `vineflower` and `kuna` digests), and 580 runs of the
   290 kuna-fixes cases (below).
-- Java cases: **530** (Complex Condys 1, Default 505, Javadoc 1, Lambda to Anonymous Class 2, Literals 4, LVT 5, Markdown Javadoc 1, No LVT 1, Renaming 1, Synthetics Marking 3, Ternary Constant Simplification 2, Text Tokens 4), 858 class files (890 KiB); 1085 KiB in all
+- Java cases: **526** (Complex Condys 1, Default 505, Javadoc 1, Lambda to Anonymous Class 2, Literals 4, LVT 5, Markdown Javadoc 1, No LVT 1, Renaming 1, Synthetics Marking 3, Ternary Constant Simplification 2), 845 class files (874 KiB); 1068 KiB in all
   with `cases.tsv`.
-- Of the oracle corpus's 598 runnable tests, **68 are not vendored** because their
+- Of the oracle corpus's 594 runnable tests, **68 are not vendored** because their
   output depends on a particular JDK's class library; run them from the external corpus (below).
   13 registered tests are not runnable from it (Groovy and Scala sources it never compiles, and the
-  Kotlin ones, which the Kotlin cases below cover).
+  Kotlin ones, which the Kotlin cases below cover), and 4 set `dump-text-tokens=1` (set *Text Tokens*), an option kuna-jvm does not have, and are not run: `text-tokens/pkg/TestTextTokens`, `text-tokens/pkg/TestTextTokens2`, `text-tokens/pkg/TestTextTokens3`, `text-tokens/pkg/TestTypeAnnotationsTokens`.
 - The runner installs the test's `fabric:javadoc` provider (`FixtureJavadocProvider`) for `javadoc/pkg/TestJavadoc`, `markdown-javadoc/pkg/TestMarkdownJavadoc`.
 - Plugin cases (`plugins.json`): **6** (With Idea Not Null 1, JAD Naming 3, Tiny Naming 1, Plugin Defaults 1). The fixture sets replay the tests of
   Vineflower's bundled plugins (`plugins/idea-not-null`, `plugins/variable-renaming`: the plugin's
@@ -190,7 +190,7 @@ Most Vineflower-oracle cases' text is also upstream's `testData/results/<test cl
 decompiler/target/release/kuna test --jvm
 # a few cases, writing their text
 decompiler/target/release/kuna test --jvm --name TestEnhancedForLoops --out NEW_DIR
-# all 598 runnable cases, JDK-dependent ones included, from the external corpus
+# all 594 runnable cases, JDK-dependent ones included, from the external corpus
 python3 -I tests/jvm/regen.py --skip-vendor --full-manifest all-cases.tsv
 decompiler/target/release/kuna test --jvm --manifest all-cases.tsv
 ```

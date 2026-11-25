@@ -1,8 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/util/token/ClassTextToken.java`.
 
-use crate::text_range::TextRange;
 use crate::text_token::{TextToken, TextTokenKind};
-use crate::text_token_visitor::TextTokenVisitor;
 
 #[derive(Clone, Debug)]
 pub struct ClassTextToken {
@@ -18,13 +16,5 @@ impl ClassTextToken {
             declaration,
             TextTokenKind::Class(ClassTextToken { qualified_name }),
         )
-    }
-
-    pub fn visit(&self, token: &TextToken, visitor: &mut dyn TextTokenVisitor) {
-        visitor.visit_class(
-            TextRange::new(token.start, token.length),
-            token.declaration,
-            &self.qualified_name,
-        );
     }
 }
