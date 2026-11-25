@@ -12,11 +12,16 @@ on `fauxware`, and 36,213 lines of `.c` and 3,210 of `.h` on `mcount_x86_64`
 
 1. **The call graph and the callee-first decompile move from `kuna-cli` into `kuna-console`,
    unchanged.**
-   - `kuna-cli/src/callgraph*` (1,411 lines) and `decompile_all/callee_first.rs` (959 lines)
-     become `kuna-console` modules.
+   - `kuna-cli/src/callgraph*` (1,411 lines), `image.rs`, and
+     `decompile_all/callee_first.rs` (959 lines), `custom_reg_callers.rs` (329 lines) and
+     `result_store.rs`, with the result codec it borrows from `jobs::wire`, become
+     `kuna-console` modules.
    - `kuna-cli` re-exports them, so its call sites do not change.
-   - `callee_first` takes the six `Args` fields it reads (`binary`, `no_vars`, `recording`,
-     `slice_pref`, `stated`, `wants_provenance`) as a small options struct.
+   - `callee_first` takes what it reads of `Args` as a small options struct: the binary, the
+     slice preference, and the per-function time and memory budgets that `arm_fn_budgets`
+     arms (`analysis.md`).
+   - The result store takes its spool file from the caller. `tempfile::tempfile()` panics
+     on `wasm32-wasip1`, so the browser passes none and keeps results in memory.
    - The `kuna_allocrelease::after_analysis` hook moves with it, or is passed in as a
      closure.
    - This is a pure move, so the gates should show byte-identical output.
@@ -35,7 +40,11 @@ on `fauxware`, and 36,213 lines of `.c` and 3,210 of `.h` on `mcount_x86_64`
 The CLI-only surfaces stay where they are: `--jobs` (worker processes), `--stream` and
 `--progress` (incremental files), and the folder write. The two `load_program`s also stay
 separate, since WASI paths and the browser's option set differ. Only the export
-converges.
+converges, except for one driver default of the CLI's loader that reaches the artifacts,
+`errortoomanyinstructions off` (`analysis.md`). The browser's loader takes it too, or the
+parity test cannot hold for a function past the instruction budget. The paragraph in
+`docs/web-integration.md` that lists the export's differences from the CLI drops the
+order.
 
 ## Tests
 
@@ -53,5 +62,6 @@ converges.
   depend on? `kuna-console` already holds the program and the project builders, so the
   proposal starts there.
 - Should the browser keep an address-order escape hatch, as `--option protoorder off` is
-  on the CLI? The browser already accepts `--option`, so the same switch should apply
-  unchanged.
+  on the CLI? `kuna_wasm` takes only `--mode`, `--language` and `--assert` today
+  (`--option` exits 64 with `unknown option --option`), so a hatch would be a new flag on
+  the browser surface.
