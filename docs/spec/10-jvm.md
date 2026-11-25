@@ -83,10 +83,13 @@ registers each plugin's passes there and asks it for a language spec, which take
 method pipeline and the class writer for the classes it claims. Plugins are
 not discovered on a class path: the engine carries the plugins `java -jar vineflower.jar`
 bundles, in its registration order, in
-`decompiler/nonnative/kuna-jvm/src/infra/kuna_plugins.rs`, and `jvm_plugins` (on by
-default, as with `java -jar`; off is Vineflower's test fixture, which loads none) decides
-whether they load. Each plugin's options join the option map with the plugin's defaults
-when the plugins initialize, and an option a caller set keeps its value. Two are ported, in
+`decompiler/nonnative/kuna-jvm/src/infra/kuna_plugins.rs`, and the custom property
+`jvm_plugins` (on unless set; the corpus runner turns it off for Vineflower's test fixture,
+which loads none) decides whether they load. It is not a catalog option: a plugin's effect
+is gated by its own options, so off gives what `jvm_kt_enable off` and
+`jvm_resugar_idea_notnull off` give with no renamer. Each plugin's options join the option
+map with the plugin's defaults when the plugins initialize, and an option a caller set
+keeps its value. Two are ported, in
 `decompiler/nonnative/kuna-jvm/src/plugins`. **VariableRenaming** registers no pass; it
 supplies the variable naming factory, which every method's local names pass through when
 `VarDefinitionHelper` settles them and every parameter name passes through when it is
@@ -1132,7 +1135,7 @@ the crate's build script. Keys the front end sets itself (thread count, time lim
 selection, logging, line separator, line mapping, class-path keys a JVM would serve), and
 the formatting and failure-comment keys kuna fixes at Vineflower's defaults, are listed
 there as `[[driver_owned]]` and refused as user options. kuna's own rows resolve to
-their own names; `Fernflower::new` takes `jvm_plugins`, `jvm_vineflower_compat` and
+their own names; `Fernflower::new` takes `jvm_plugins` (no row), `jvm_vineflower_compat` and
 `jvm_javac_layout` (section 10.9, stored in the context and copied to the per-class
 contexts) off the property list before the rest becomes Vineflower's option map (section
 10.16), so that map is the one Vineflower would build. Any other key, a `jvm_fix_*` name included, is not a
@@ -1185,7 +1188,7 @@ chooser is asked once more while statements are written, to decide whether they 
 semicolon.) With `jvm_kt_enable`
 off, a Kotlin class takes the Java pipeline and is written as Java, the `@Metadata`
 annotation printed like any other annotation, and its metadata is not parsed.
-With `jvm_plugins off` no plugin is loaded and every class is Java.
+With no plugin loaded (`jvm_plugins=0`, the corpus fixture) every class is Java.
 
 **Metadata.** Asking the chooser also parses the class's metadata, once
 (`KotlinChooser::parse_metadata_for`). The annotation's `k` (the kind), `d1` (the data)

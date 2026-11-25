@@ -180,9 +180,6 @@ Three tiers:
 | need to know where the decompiler approximated (option is off) | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
 | stack trace names lambda$main$0 or Main$1 and the matching code is hard to find | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics----on--off-default-off) |
 | need the class file of an anonymous class | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics----on--off-default-off) |
-| output differs from Vineflower's test fixture but matches java -jar | [`jvm_plugins`](#jvm_plugins----on--off-default-on) |
-| a class is written in a plugin's language instead of Java | [`jvm_plugins`](#jvm_plugins----on--off-default-on) |
-| a bundled plugin's pass changes the Java output | [`jvm_plugins`](#jvm_plugins----on--off-default-on) |
 | output differs from Vineflower 1.12.0 | [`jvm_vineflower_compat`](#jvm_vineflower_compat----on--off-default-off) |
 | need Vineflower's exact text, failure comments included | [`jvm_vineflower_compat`](#jvm_vineflower_compat----on--off-default-off) |
 | a method decompiles in kuna but fails in Vineflower | [`jvm_vineflower_compat`](#jvm_vineflower_compat----on--off-default-off) |
@@ -466,7 +463,7 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 ### `jvm_variable_renaming` -- jad | tiny | <name>, default ``
 
 - **Symptoms:** locals named var1 var2 var3 with no hint of their type; obfuscated or meaningless local names from a forged LocalVariableTable; names differ from a Vineflower run with --variable-renaming=jad or tiny.
-- **What it does:** Rename locals with a renamer of the VariableRenaming plugin (needs jvm_plugins on, the default): jad names them after their type JAD-style (i, j, k, l, s, flag, file1, aobject), tiny the way tiny-remapper does (i, l, bl, the class name lowercased, plural for arrays); unset or an unknown name keeps the LocalVariableTable or var names.
+- **What it does:** Rename locals with a renamer of the VariableRenaming plugin: jad names them after their type JAD-style (i, j, k, l, s, flag, file1, aobject), tiny the way tiny-remapper does (i, l, bl, the class name lowercased, plural for arrays); unset or an unknown name keeps the LocalVariableTable or var names.
 - **When to flip:** Set jad or tiny on obfuscated or debug-info-free code whose var1, var2 or forged names say nothing about the variables, or to match a Vineflower run that used the same renamer.
 - **Where / provenance:** plugins/variable_renaming_plugin, renamers, jad_name_provider, tiny_name_provider · vineflower · vineflower-option
 - **Also spelled:** `variable-renaming`
@@ -484,7 +481,7 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 ### `jvm_resugar_idea_notnull` -- on | off, default `on`
 
 - **Symptoms:** if (x == null) { $$$reportNull$$$0(0); } at the top of methods; explicit null checks on @NotNull parameters or before returns (option is off).
-- **What it does:** Remove the null checks IntelliJ IDEA's compiler inserts for @NotNull parameters and return values (if (x == null) { $$$reportNull$$$0(n); }), leaving the @NotNull annotations (IdeaNotNull plugin; needs jvm_plugins on, the default).
+- **What it does:** Remove the null checks IntelliJ IDEA's compiler inserts for @NotNull parameters and return values (if (x == null) { $$$reportNull$$$0(n); }), leaving the @NotNull annotations (IdeaNotNull plugin).
 - **When to flip:** Turn off to see the checks IDEA instrumented into a method, e.g. to confirm which parameters are checked at run time.
 - **Where / provenance:** plugins/idea_not_null_pass, idea_not_null_plugin · vineflower · vineflower-option
 - **Also spelled:** `resugar-idea-notnull`, `inn`
@@ -493,7 +490,7 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 ### `jvm_kt_show_public` -- on | off, default `on`
 
 - **Symptoms:** every Kotlin declaration starts with public; public modifiers that Kotlin source would omit.
-- **What it does:** Kotlin plugin: write the public modifier on public classes, functions, constructors and properties of Kotlin classes, which Kotlin source normally leaves implicit (needs jvm_plugins and jvm_kt_enable on, the defaults).
+- **What it does:** Kotlin plugin: write the public modifier on public classes, functions, constructors and properties of Kotlin classes, which Kotlin source normally leaves implicit (needs jvm_kt_enable on, the default).
 - **When to flip:** Turn off for idiomatic Kotlin with public implied, so that only internal, protected and private members carry a visibility keyword.
 - **Where / provenance:** kotlin/kotlin_writer, k_function, k_constructor, k_utils · vineflower · vineflower-option
 - **Also spelled:** `kt-show-public`
@@ -686,14 +683,6 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 - **Also spelled:** `mark-corresponding-synthetics`, `mcs`
 - **Example:** `kuna decompile app.jar com.ex.Handlers --option jvm_mark_corresponding_synthetics on`
 
-### `jvm_plugins` -- on | off, default `on`
-
-- **Symptoms:** output differs from Vineflower's test fixture but matches java -jar; a class is written in a plugin's language instead of Java; a bundled plugin's pass changes the Java output.
-- **What it does:** Load the plugins bundled with the engine (Vineflower's VariableRenaming, Kotlin and IdeaNotNull), as java -jar vineflower.jar does; off runs the bare Java pipeline, like Vineflower's test fixture.
-- **When to flip:** Turn off to see what the core Java decompiler makes of a class a plugin would claim, or to compare with Vineflower's test fixture, which loads no plugin.
-- **Where / provenance:** p0_knowledge/fernflower, kuna_plugins · kuna · kuna-plugins
-- **Example:** `kuna decompile app.jar com.ex.Main --option jvm_plugins off`
-
 ### `jvm_vineflower_compat` -- on | off, default `off`
 
 - **Symptoms:** output differs from Vineflower 1.12.0; need Vineflower's exact text, failure comments included; a method decompiles in kuna but fails in Vineflower; failure comment names the kuna issue tracker instead of Vineflower's; a kuna fix is suspected of changing a method.
@@ -705,7 +694,7 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 ### `jvm_kt_enable` -- on | off, default `on`
 
 - **Symptoms:** Kotlin classes come out as Java with @Metadata(mv = ..., d1 = ...); a Kotlin class is written as .kt but Java output is wanted; Kotlin output of a class is wrong or failed.
-- **What it does:** Kotlin plugin: write classes that carry @kotlin.Metadata as Kotlin source (.kt) through the plugin's own pipeline and writer; off writes them as Java (.java) with the @Metadata annotation, like any other class (needs jvm_plugins on, the default).
+- **What it does:** Kotlin plugin: write classes that carry @kotlin.Metadata as Kotlin source (.kt) through the plugin's own pipeline and writer; off writes them as Java (.java) with the @Metadata annotation, like any other class.
 - **When to flip:** Turn off to see the Java view of a Kotlin class (accessor methods, $default bridges, Intrinsics checks, every JVM method on its own), or when the Kotlin output of a class is wrong or fails and the Java output is enough; the CLI's --language java turns it off for the run.
 - **Where / provenance:** kotlin/kotlin_chooser · vineflower · vineflower-option
 - **Also spelled:** `kt-enable`

@@ -688,7 +688,6 @@ fn a_kotlin_class_prints_as_kotlin_and_language_java_prints_it_as_java() {
     assert!(java.contains("\npublic final class Counter {\n"), "{java}");
     assert!(java.contains("\n   public final int bump(int by) {\n"), "{java}");
     assert_eq!(ok(&jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--option", "jvm_kt_enable", "off"])), java);
-    assert_eq!(ok(&jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--option", "jvm_plugins", "off"])), java);
     assert_eq!(ok(&jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--language", "auto"])), kotlin);
     let out = jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--language", "java", "--option", "kt-enable", "1"]);
     assert_eq!(out.status.code(), Some(2));

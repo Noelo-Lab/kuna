@@ -229,9 +229,10 @@ objects by creation in the arena; see the fidelity contract below.
   The Kotlin plugin also ships a prebuilt jar (`plugins/kotlin/libs/metadata.jar`) with a
   shaded copy of the Kotlin compiler's metadata schema and the protobuf-lite runtime it
   runs on; kuna ports the parts it reads as `src/kotlin/kt_proto.rs` and
-  `src/kotlin/kt_flags.rs`. Plugins are not discovered on a class path: `jvm_plugins`
-  (default `on`, as with `java -jar`) loads the bundle, and `off` runs the bare Java
-  pipeline of Vineflower's test fixture.
+  `src/kotlin/kt_flags.rs`. Plugins are not discovered on a class path: the bundle always
+  loads, as with `java -jar`, and each plugin acts only through its options
+  (`jvm_kt_enable`, `jvm_variable_renaming`, `jvm_resugar_idea_notnull`); the corpus runner
+  alone runs the bare Java pipeline of Vineflower's test fixture (`jvm_plugins=0`).
 - **Not ported:** a user renamer class and Vineflower's `include-classpath` need a JVM and
   are refused (`options.toml`, `[[driver_owned]]`); third-party plugin jars cannot be
   loaded. Vineflower has no Scala or Groovy support, so classes compiled from those
@@ -626,7 +627,8 @@ example):
    both decompilers *without a JDK* (the corpus runs without one): replace JDK types the
    failure needs by nested stand-ins, and compare `vf-decompile --fixture --opt
    dump-exception-on-error=1 ...` with `kuna decompile-project DIR --option include-runtime ''
-   --option jvm_plugins 0 --option jvm_vineflower_compat 1 -o NEW_DIR` (`--option` takes Vineflower's option names and kuna's own rows by their
+   --option jvm_kt_enable 0 --option jvm_resugar_idea_notnull 0 --option jvm_vineflower_compat 1
+   -o NEW_DIR` (`--option` takes Vineflower's option names and kuna's own rows by their
    names). For the Rust backtrace of the caught
    throw, set `KUNA_JVM_BACKTRACE` to a piece of its message (`1` prints every caught
    throw, and the engine throws and catches routinely); build with
@@ -792,8 +794,7 @@ companion object's member is in the `$Companion` class, and a method the Kotlin 
 folds into another declaration (a `$default` stub, a lambda's method, a `@JvmStatic`
 forwarder) has no text of its own. `--language java` (`jvm_kt_enable off`) writes every
 class as Java, which shows what the Kotlin view hides: the accessors, the `$default` stubs,
-the `Intrinsics` checks; `--option jvm_plugins off` also gives Java, since it loads no
-plugin. Every JSON record carries the `language` of its unit. `docs/cli.md`, "Kotlin
+the `Intrinsics` checks. Every JSON record carries the `language` of its unit. `docs/cli.md`, "Kotlin
 classes", has the naming table and examples.
 
 **Options.** The plugin's options are the `jvm_kt_*` rows of `kuna catalog --engine jvm`;

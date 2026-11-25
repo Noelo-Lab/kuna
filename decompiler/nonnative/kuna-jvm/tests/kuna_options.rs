@@ -189,10 +189,6 @@ fn resolution_and_aliases() {
         resolve("jvm_siblings", "off").unwrap(),
         ("jvm_siblings", "0".to_string())
     );
-    assert_eq!(
-        resolve("jvm_plugins", "off").unwrap(),
-        (kuna_plugins::JVM_PLUGINS, "0".to_string())
-    );
     assert_eq!(resolve("old-try-dedup", "1").unwrap().0, "old-try-dedup");
 }
 
@@ -203,6 +199,8 @@ fn resolution_errors() {
     let err = resolve("decompile-finaly", "on").unwrap_err();
     assert!(err.contains("did you mean decompile-finally"), "{err}");
     let err = resolve("jvm_nothing_like_this_at_all", "on").unwrap_err();
+    assert!(err.contains("unknown JVM option"), "{err}");
+    let err = resolve(kuna_plugins::JVM_PLUGINS, "off").unwrap_err();
     assert!(err.contains("unknown JVM option"), "{err}");
     for name in [
         "thread-count",
