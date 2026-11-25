@@ -770,7 +770,8 @@ impl Action for ActionExtraPopSetup {
         let sb_size = point.size as int4;
 
         let exact = crate::p4_calls::kuna_calleepurge::every_pop_settled(data);
-        let defer = crate::p4_calls::kuna_declaredpop::allowed(data, exact);
+        let proven = crate::p4_calls::kuna_calleepurge::every_pop_proven(data);
+        let defer = crate::p4_calls::kuna_declaredpop::allowed(data, proven);
         for i in 0..data.num_calls() {
             let mut extrapop = data.get_call_specs(i).get_extra_pop();
             if extrapop == EXTRAPOP_UNKNOWN && exact {

@@ -122,6 +122,15 @@ pub fn every_pop_settled(data: &crate::funcdata::Funcdata) -> bool {
     all && !(stated && shares_cleanup(data))
 }
 
+/// Does every call in `data` have a pop its prototype states or its callee's
+/// returns prove, not only state by their constants?
+pub fn every_pop_proven(data: &crate::funcdata::Funcdata) -> bool {
+    (0..data.num_calls()).all(|i| {
+        let fc = data.get_call_specs(i);
+        fc.get_extra_pop() != EXTRAPOP_UNKNOWN || fc.callee_purge().is_some()
+    })
+}
+
 /// Does a direct call in `data` pop arguments above its return address and
 /// leave its caller more to remove right after it? Delphi passes a nested
 /// routine its parent's frame (`push ebp; push x; call f; pop ecx` to a `ret

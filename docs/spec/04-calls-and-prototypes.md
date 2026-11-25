@@ -1866,8 +1866,12 @@ that machinery.
   `INT_ADD` after the solve (`write_unplaced`): a frame sized at run time, or a
   stack pointer an exception handler loads from its frame. A direct call's
   declared pop (a DWARF or demangled declaration of the image's own function)
-  keeps the `INT_ADD`, and so does every pop in a function with nothing to
-  guess.
+  keeps the `INT_ADD`, and so does every pop in a function whose pops are
+  all stated or proven (`kuna_calleepurge.rs (every_pop_proven)`). A function
+  that is settled only because some callee's returns' constants state its pop
+  still defers: its pops are written exactly, but the declared import's stays
+  the solver's equation, since the early `INT_ADD` breaks the local-alias
+  boundary there just as it does next to a guess.
 
   The two forms are solved alike only where nothing in the solve reads the
   form (`kuna_declaredpop.rs (allowed)`), so a function keeps every `INT_ADD`
