@@ -237,6 +237,15 @@ fn ltrace(fd: &Funcdata, dw: BlockId, verdict: &Verdict) {
             g.as_ref().map(|g| bdesc(g.skip)).unwrap_or_default(),
             bdesc(lp.exit),
         );
+        if matches!(verdict, Err("respelled guard differs" | "bound not a multiple of the step")) {
+            let g = lp.guard(fd);
+            let fresh = g.as_ref().map(|g| g.fresh.clone()).unwrap_or_default();
+            match lp.respell(&fresh, &|_| None) {
+                Ok(r) => detail.push_str(&format!(" resp={}", cs(&Some(r.entry)))),
+                Err(w) => detail.push_str(&format!(" resp-err={w}")),
+            }
+            detail.push_str(&format!(" rs={}", lp.respell_parts(&fresh)));
+        }
         if matches!(verdict, Err("condition reads a body value")) {
             detail.push_str(&format!(" leaf={}", lp.body_leaf_kind(lp.cond_vn(), 0)));
         }
@@ -861,6 +870,21 @@ impl<'a> Loop<'a> {
             (false, false) => &tokens::LESS_EQUAL,
         };
         Ok(Respelled { op: def, tok, entry })
+    }
+
+    fn respell_parts(&self, fresh: &BTreeSet<OpId>) -> String {
+        let fd = self.fd;
+        let cv = fd.vbank().get(self.cond_vn());
+        let Some(op) = cv.and_then(|v| v.get_def()).and_then(|d| fd.obank().get(d)) else { return "?".into() };
+        let (Some(i0), Some(i1)) = (op.get_in(0), op.get_in(1)) else { return "?".into() };
+        let (x, b) = if self.carried.contains_key(&i0) { (i0, i1) } else { (i1, i0) };
+        let Some(&out) = self.carried.get(&x) else { return "nocarried".into() };
+        let step = self.step(x, out);
+        let builder = Builder { fd, subst: None, body: &self.body, fresh };
+        let mut budget = 128;
+        let ex = self.latch_inputs.get(&x).and_then(|&e| builder.build(e, 0, &mut budget));
+        let eb = builder.build(b, 0, &mut budget);
+        format!("step={step:?} x_e={ex:?} b={eb:?}").replace("Const { size: ", "C{").replace("VarnodeId(", "v")
     }
 
     /// Is `vn` the same value on every iteration: defined before the loop, or an implied
@@ -1848,6 +1872,55 @@ fn cond_of(e: &Expr) -> Cond {
     Cond::pos(Lit::Other(e.clone()))
 }
 
+/// `a == b` when both are the same sum of non-constant terms plus a constant: then they
+/// are equal exactly when the constants are, modulo the word.
+fn linear_eq(a: &Expr, b: &Expr) -> Option<bool> {
+    fn walk(e: &Expr, neg: bool, size: i32, terms: &mut Vec<(Expr, bool)>, k: &mut u64, depth: u32) -> bool {
+        if depth > 16 || e.size() != size {
+            return false;
+        }
+        let add = |k: &mut u64, v: u64| *k = if neg { k.wrapping_sub(v) } else { k.wrapping_add(v) };
+        match e {
+            Expr::Const { val, .. } => {
+                add(k, *val);
+                true
+            }
+            Expr::Op { code: OpCode::CPUI_INT_ADD, args, .. } if args.len() == 2 => {
+                walk(&args[0], neg, size, terms, k, depth + 1) && walk(&args[1], neg, size, terms, k, depth + 1)
+            }
+            Expr::Op { code: OpCode::CPUI_INT_SUB, args, .. } if args.len() == 2 => {
+                walk(&args[0], neg, size, terms, k, depth + 1) && walk(&args[1], !neg, size, terms, k, depth + 1)
+            }
+            Expr::Op { code: OpCode::CPUI_PTRADD, args, .. } if args.len() == 3 && args[1].size() == size => {
+                let Some(s) = args[2].konst() else { return false };
+                if !walk(&args[0], neg, size, terms, k, depth + 1) {
+                    return false;
+                }
+                match args[1].konst() {
+                    Some(i) => add(k, i.wrapping_mul(s)),
+                    None => terms.push((Expr::Op { code: OpCode::CPUI_INT_MULT, size, args: vec![args[1].clone(), konst(size, s)] }, neg)),
+                }
+                true
+            }
+            other => {
+                terms.push((other.clone(), neg));
+                true
+            }
+        }
+    }
+    let size = a.size();
+    if !(1..=8).contains(&size) || b.size() != size {
+        return None;
+    }
+    let (mut ta, mut tb, mut ka, mut kb) = (Vec::new(), Vec::new(), 0u64, 0u64);
+    if !walk(a, false, size, &mut ta, &mut ka, 0) || !walk(b, false, size, &mut tb, &mut kb, 0) || ta.is_empty() {
+        return None;
+    }
+    ta.sort();
+    tb.sort();
+    (ta == tb).then(|| (ka ^ kb) & calc_mask(size) == 0)
+}
+
 /// `&p[i]` and `&p[j]` over the same element size: two element pointers into one array
 /// compare as their indices (C pointer arithmetic).
 fn same_array(a: &Expr, b: &Expr) -> Option<(Expr, Expr)> {
@@ -1899,6 +1972,9 @@ fn narrow_enough(n: &Expr, size: i32, k: u64) -> bool {
 fn eq(a: Expr, b: Expr) -> Cond {
     if let (Some(x), Some(y)) = (a.konst(), b.konst()) {
         return Cond::of_bool(x == y);
+    }
+    if let Some(same) = linear_eq(&a, &b) {
+        return Cond::of_bool(same);
     }
     if let Some((i, j)) = same_array(&a, &b) {
         return eq(i, j);
