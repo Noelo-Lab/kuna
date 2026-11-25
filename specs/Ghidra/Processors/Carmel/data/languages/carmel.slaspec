@@ -2206,6 +2206,13 @@ macro pop_link(target) {
     SP = high_address;
 }
 
+# TRAPCTX holds nested trap sources, newest in the two low bits.
+macro retire_trap() {
+    local active:2 = zext(TRAPCTX != 0);
+    PSTATUS = PSTATUS & (0xffef | (active << 4));
+    TRAPCTX = TRAPCTX >> 2;
+}
+
 direct_target: word_address is rel_words [ word_address = (inst_start + rel_words) & 0xffffff; ] { export *[code]:3 word_address; }
 link_1_0: word_address is epsilon [ word_address = (inst_start + 1) & 0xffffff; ] { export *[const]:3 word_address; }
 link_1_1: word_address is epsilon [ word_address = (inst_start + 3) & 0xffffff; ] { export *[const]:3 word_address; }
@@ -2411,7 +2418,7 @@ data_load_dst: "R6" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x298 & w
 data_load_dst: "R7" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x29c & wide_13_22=0x21b & wide_40_45=0x38 { export R7; }
 :MOVE data_load_dst,"*"^absolute_data_addr is carmel_issue=5 & data_load_dst & absolute_data_addr { local address:2 = absolute_data_addr; data_load_dst = *[data]:2 address; }
 
-# RETURN EQ1: the guarded parallel delay admits no SP or DATA dependency.
+# EQ1 returns: sample the incoming EST and pop only on the taken path.
 :"RETURN EQ1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be070); (slot_mode=0 & nop_right) { local taken:1 = (EST & 8) != 0; if (!taken) goto <return_veto>; local target:3; pop_link(target); return [target]; <return_veto> goto inst_next; }
 :"RETURN EQ1" "delay 1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be071); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(1); if (!taken) goto <return_veto>; local target:3; pop_link(target); return [target]; <return_veto> goto inst_next; }
 :"RETURN EQ1" "delay 2" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be072); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(2); if (!taken) goto <return_veto>; local target:3; pop_link(target); return [target]; <return_veto> goto inst_next; }
@@ -2420,18 +2427,20 @@ data_load_dst: "R7" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x29c & w
 :"RETURN EQ1" "delay 5" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be075); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(5); if (!taken) goto <return_veto>; local target:3; pop_link(target); return [target]; <return_veto> goto inst_next; }
 :"RETURN EQ1" "delay 6" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be076); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(6); if (!taken) goto <return_veto>; local target:3; pop_link(target); return [target]; <return_veto> goto inst_next; }
 :"RETURN EQ1" "delay 7" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be077); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(6); if (!taken) goto <return_veto>; local target:3; pop_link(target); return [target]; <return_veto> goto inst_next; }
+:"RETI EQ1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be270); (slot_mode=0 & nop_right) { local taken:1 = (EST & 8) != 0; if (!taken) goto <return_veto>; local target:4; pop_link(target); retire_trap(); return [target]; <return_veto> goto inst_next; }
+:"RETI EQ1" "delay 1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be271); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(1); if (!taken) goto <return_veto>; local target:4; pop_link(target); retire_trap(); return [target]; <return_veto> goto inst_next; }
+:"RETI EQ1" "delay 2" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be272); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(2); if (!taken) goto <return_veto>; local target:4; pop_link(target); retire_trap(); return [target]; <return_veto> goto inst_next; }
+:"RETI EQ1" "delay 3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be273); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(3); if (!taken) goto <return_veto>; local target:4; pop_link(target); retire_trap(); return [target]; <return_veto> goto inst_next; }
+:"RETI EQ1" "delay 4" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be274); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(4); if (!taken) goto <return_veto>; local target:4; pop_link(target); retire_trap(); return [target]; <return_veto> goto inst_next; }
+:"RETI EQ1" "delay 5" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be275); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(5); if (!taken) goto <return_veto>; local target:4; pop_link(target); retire_trap(); return [target]; <return_veto> goto inst_next; }
+:"RETI EQ1" "delay 6" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be276); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(6); if (!taken) goto <return_veto>; local target:4; pop_link(target); retire_trap(); return [target]; <return_veto> goto inst_next; }
+:"RETI EQ1" "delay 7" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be277); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = (EST & 8) != 0; delayslot(6); if (!taken) goto <return_veto>; local target:4; pop_link(target); retire_trap(); return [target]; <return_veto> goto inst_next; }
 
 # Compact RETURN: the link uses DATA words SP+1 and SP+2.
 :"RETURN" "delay 2" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd804); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local target:3; pop_link(target); delayslot(2); return [target]; }
 :"RETURN" "delay 3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd806); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local target:3; pop_link(target); delayslot(3); return [target]; }
 :"RETURN CE1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd801); (slot_mode=0 & nop_right) { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <return_disabled>; local target:3; pop_link(target); return [target]; <return_disabled> goto inst_next; }
 
-# TRAPCTX holds nested trap sources, newest in the two low bits.
-macro retire_trap() {
-    local active:2 = zext(TRAPCTX != 0);
-    PSTATUS = PSTATUS & (0xffef | (active << 4));
-    TRAPCTX = TRAPCTX >> 2;
-}
 :"RETI" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd810); (slot_mode=0 & nop_right) { local target:4; pop_link(target); retire_trap(); return [target]; }
 :"RETI" "delay 1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd812); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local target:4; pop_link(target); retire_trap(); delayslot(1); return [target]; }
 :"RETI" "delay 2" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd814); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local target:4; pop_link(target); retire_trap(); delayslot(2); return [target]; }

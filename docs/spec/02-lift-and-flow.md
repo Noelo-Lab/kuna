@@ -3904,10 +3904,11 @@ Lifted compact delayed `EQ` reads the incoming `EST` condition before any
 delay issue executes. The delay runs on both paths, including when the
 transfer itself is the right slot of a sequential fetch.
 
-The guarded compact `RETURN EQ1` counts at most six complete parallel
-increment issues, including when the encoded delay is seven. It samples
-incoming `EST` before the delay and reads the two DATA link words only
-on the taken path. The mapped CODE guard does not validate a runtime link.
+The guarded compact `RETURN EQ1` and `RETI EQ1` forms count at most six
+complete parallel increment issues, including when the encoded delay is
+seven. They sample incoming `EST` before the delay and read the two DATA
+link words only on the taken path. `RETI EQ1` also changes trap state only
+on that path. The mapped CODE guard does not validate a runtime link.
 An ordinary compact `RETURN` with an inactive right lane can retire two
 or three following issues. In the undelayed CE1 form, either execution or
 address enable allows the stack pop and transfer.

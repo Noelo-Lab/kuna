@@ -67,6 +67,8 @@ only execution enable writes the two stack link words.
 Compact `RETI` with an inactive right lane admits up to three delay issues
 and has an undelayed CE1 form. It pops the active trap source if present;
 otherwise it clears bit four of `PSTATUS`.
+Guarded `RETURN EQ1` and `RETI EQ1` retire up to six delay issues on both
+paths; only a taken return reads the link or retires a trap source.
 Compact CALL admits zero or one delay issue. Compact RETURN also admits
 two or three delay issues with an inactive right lane, and an undelayed
 CE1 form whose address enable can override a veto. Immediate REPEAT handles

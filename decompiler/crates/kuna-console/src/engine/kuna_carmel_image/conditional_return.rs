@@ -13,7 +13,7 @@ pub(super) struct ReturnDelay(u64);
 impl ReturnDelay {
     pub(super) fn parse(fetch: &Fetch) -> Option<Self> {
         match *fetch {
-            [0x2b, 0xe0, d, 0x2b, 0xec, 0] if d & 0xf8 == 0x70 => Some(Self(u64::from((d & 7).min(6)))),
+            [0x2b, 0xe0 | 0xe2, d, 0x2b, 0xec, 0] if d & 0xf8 == 0x70 => Some(Self(u64::from((d & 7).min(6)))),
             _ => None,
         }
     }
