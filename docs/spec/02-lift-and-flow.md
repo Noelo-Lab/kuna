@@ -3409,7 +3409,11 @@ verdict before the shape: a switch re-rolls with two to sixteen values and any
 two distinct bodies (shared bodies are `case` labels of one arm), an if-chain
 never re-rolls, whatever its size or number of bodies, and an undecided cascade
 keeps the shape rule. Every other guard of the recogniser and the keep pass
-still applies. On the decbench corpus's unoptimized functions the polarity
+still applies, and neither the retry after a withdrawal nor the keep pass's
+exemption from its goto test reads the record: the retry decides by the shape
+rule, as the recogniser it retries did, and only a tree the shape rule takes is
+exempt. Otherwise a three-case tree the keep pass withdraws would come back as
+a two-case switch behind its first test, reached through a goto. On the decbench corpus's unoptimized functions the polarity
 separates 841 of 842 x86-64 switch cascades and every Thumb one from the
 if-chains. `option loweredswitch on` restores the shape rule everywhere, and
 `linear`, `tree` and `all` widen the shape rule without reading the record.
