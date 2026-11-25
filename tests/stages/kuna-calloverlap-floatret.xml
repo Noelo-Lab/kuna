@@ -1,0 +1,55 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna #1918: a call's double result read with a 16-byte register move.
+
+    findutils `pred_newer` (gcc -O2) calls the unprototyped `difftime` and
+    moves its result with `movapd %xmm0,%xmm1` before zeroing `xmm0` with
+    `pxor`. Both instructions are single 128-bit operations on the whole
+    `XmmReg`, so the heritaged `xmm0` range is 16 bytes and the SysV return
+    slot `XMM0_Qa` sits inside it. Without an output guard the call defines
+    nothing in that range and the result prints as a variable no statement
+    assigns.
+
+    Synthetic reduction:
+        1140  53                 PUSH     RBX
+        1141  48 89 d3           MOV      RBX,RDX
+        1144  e8 27 00 00 00     CALL     0x1170        ; result in XMM0_Qa
+        1149  66 0f 28 c8        MOVAPD   XMM1,XMM0     ; 16-byte read of xmm0
+        114d  66 0f ef c0        PXOR     XMM0,XMM0
+        1151  f2 48 0f 2a c3     CVTSI2SD XMM0,RBX
+        1156  f2 0f 58 c1        ADDSD    XMM0,XMM1
+        115a  5b                 POP      RBX
+        115b  c3                 RET
+    and the callee, with no symbol and so no prototype:
+        1170  48 29 f7           SUB      RDI,RSI
+        1173  66 0f ef c0        PXOR     XMM0,XMM0
+        1177  f2 48 0f 2a c7     CVTSI2SD XMM0,RDI
+        117c  c3                 RET
+
+    Stage: P3 heritage call guarding, option calloverlap. Pass 1 (off) pins
+    the bug; pass 2 (the default auto) gives the call the float return slot at
+    the low end of the wider register and the sum reads it.
+-->
+<bytechunk space="ram" offset="0x1140">
+534889d3e827000000660f28c8660fefc0f2480f2ac3f20f58c15bc3
+</bytechunk>
+<bytechunk space="ram" offset="0x1170">
+4829f7660fefc0f2480f2ac7c3
+</bytechunk>
+<symbol space="ram" offset="0x1140" name="f"/>
+</binaryimage>
+<script>
+  <com>option calloverlap off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calloverlap auto</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLOVERLAP FLOATRET #1: off, the call defines no result" min="1" max="1">^  sub_1170\(a0,a1\);</stringmatch>
+<stringmatch name="CALLOVERLAP FLOATRET #2: off, the sum reads a variable nothing assigns" min="1" max="1">return \(float8\)a2 \+ v1;</stringmatch>
+<stringmatch name="CALLOVERLAP FLOATRET #3: auto, the sum reads the call's result" min="1" max="1">return \(float8\)a2 \+ \(float8\)sub_1170\(a0,a1\);</stringmatch>
+</decompilertest>

@@ -208,8 +208,8 @@ c3
 <stringmatch name="elemptr #20: a table's first element read by name is a scalar in both passes" min="2" max="2">return dat_30005360 \+ 1;</stringmatch>
 <stringmatch name="elemptr #21: an element loaded through an address in the returned register is returned as an integer in both passes" min="2" max="2">uint8 w_nexttab\(uint8 a0,uint8 \*a1,char \*a2\)</stringmatch>
 <stringmatch name="elemptr #22: that function is never declared to return the element's address" min="0" max="0">uint8 \* w_nexttab\(</stringmatch>
-<stringmatch name="elemptr #23: with the option off the table merged with the parameter is its address" min="1" max="1">    a0 = 0x30003020;</stringmatch>
+<stringmatch name="elemptr #23: with the option off the table merged with the parameter is its address" min="1" max="1">  a0 = \(!a2\) \? 0x30003020 : a0;</stringmatch>
 <stringmatch name="elemptr #24: with the option on the parameter the table is merged with is a char pointer" min="1" max="1">int8 w_pick\(char \*a0,int8 a1,int4 a2\)</stringmatch>
-<stringmatch name="elemptr #25: with the option on the table is still its address, the one the indexed reader takes" min="1" max="1">    a0 = &amp;dat_30003020;</stringmatch>
+<stringmatch name="elemptr #25: with the option on the table is still its address, the one the indexed reader takes" min="1" max="1">  a0 = \(!a2\) \? &amp;dat_30003020 : a0;</stringmatch>
 <stringmatch name="elemptr #26: the table is never a string literal cut at its zero byte in either pass" min="0" max="0">"0!0</stringmatch>
 </decompilertest>

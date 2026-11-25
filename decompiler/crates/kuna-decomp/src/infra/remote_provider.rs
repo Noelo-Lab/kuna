@@ -388,6 +388,7 @@ impl RemoteProto {
             output_storage: None,
             input_storage: Vec::new(),
             kuna_library_names: None,
+            kuna_library_table: false,
         };
         if self.custom {
             pieces.output_storage = self.out_type.as_ref().map(|ct| {

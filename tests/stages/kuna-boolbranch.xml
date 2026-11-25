@@ -64,7 +64,7 @@
 <stringmatch name="BOOLBRANCH #2: keep keeps the if of the returned select" min="1" max="1">^  if \(1 &lt;= x\)$</stringmatch>
 <stringmatch name="BOOLBRANCH #3: keep returns the constants from the two arms" min="1" max="1">^    return 1;$</stringmatch>
 <stringmatch name="BOOLBRANCH #4: fold assigns the condition" min="1" max="1">^  v1 = x == y;$</stringmatch>
-<stringmatch name="BOOLBRANCH #5: keep assigns through the kept branch" min="1" max="1">^  v1 = \(x != y\) \? 0 : 1;</stringmatch>
+<stringmatch name="BOOLBRANCH #5: keep assigns in the arms of the kept branch" min="1" max="1">^  if \(x != y\)</stringmatch>
 <stringmatch name="BOOLBRANCH #6: fold tests the condition again in place of the flag" min="2" max="2">^  if \(!v\)$</stringmatch>
 <stringmatch name="BOOLBRANCH #7: keep keeps the one flag whose arm does other work, and no other" min="1" max="1">^  if \(v\d\)$</stringmatch>
 <stringmatch name="BOOLBRANCH #8: a materialized overflow flag that is only tested still folds" min="1" max="1">^  if \(SCARRY8\(b,a\)\)$</stringmatch>

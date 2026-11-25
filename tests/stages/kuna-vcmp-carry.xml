@@ -1,0 +1,61 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8:default">
+<!--
+    ARM vcmp/vcmpe and vmrs APSR_nzcv set NZCV=0011 for unordered operands, so
+    C is set for a NaN: hi and cs are taken, ls and cc are not. P2 lift: the
+    FloatVectorCompare macro in ARMneon.sinc computed C as op2 f<= op1, false
+    for a NaN, so each of these four conditions printed the wrong decision for
+    it. C is now !(op1 f< op2). Strict correctness fix, no option: the one
+    pass is the fix.
+
+    The script loads vcmp_carry_a32.o (source beside it): four functions
+    branch on hi, ls, cs and cc after vcmp.f64 d0,d1, one on cs after
+    vcmpe.f32 s0,#0. Each returns 5 when its branch is taken and 3 otherwise;
+    every printed test below is false exactly when the branch is taken,
+    NaN included.
+-->
+  <bytechunk space="ram" offset="0x1000" readonly="true">1eff2fe1</bytechunk>
+  <symbol space="ram" offset="0x1000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/vcmp_carry_a32.o</com>
+  <com>read symbols</com>
+  <com>load function a32_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function a32_ls</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function a32_cs</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function a32_cc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function a32_cs_zero</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="kuna-vcmp-carry #1: hi is not taken only when ordered and not greater" min="1" max="1">a32_hi\(float8 a0,float8 a1\)
+\{
+  if \(a0 &lt;= a1\)
+    return 3;</stringmatch>
+<stringmatch name="kuna-vcmp-carry #2: ls is not taken for a NaN" min="1" max="1">a32_ls\(float8 a0,float8 a1\)
+\{
+  if \(!\(a0 &lt; a1\) &amp;&amp; a0 != a1\)
+    return 3;</stringmatch>
+<stringmatch name="kuna-vcmp-carry #3: cs is not taken only when ordered and less" min="1" max="1">a32_cs\(float8 a0,float8 a1\)
+\{
+  if \(a0 &lt; a1\)
+    return 3;</stringmatch>
+<stringmatch name="kuna-vcmp-carry #4: cc is not taken for a NaN" min="1" max="1">a32_cc\(float8 a0,float8 a1\)
+\{
+  if \(!\(a0 &lt; a1\)\)
+    return 3;</stringmatch>
+<stringmatch name="kuna-vcmp-carry #5: cs after a compare with zero" min="1" max="1">a32_cs_zero\(float4 a0\)
+\{
+  if \(a0 &lt; 0\.0f\)
+    return 3;</stringmatch>
+<stringmatch name="kuna-vcmp-carry #6: no test reads C as an ordered greater-or-equal" min="0" max="0">a1 &lt;= a0</stringmatch>
+</decompilertest>

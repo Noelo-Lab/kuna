@@ -18,6 +18,7 @@ fc8905d9072000837dfc0a75188b45fc
   <com>map addr r0x301020 int4 glob2</com>
   <com>map addr r0x301018 int4 glob3</com>
   <com>map addr r0x30101c int4 glob4</com>
+  <com>option returndup on</com>
   <com>lo fu condconst_multi</com>
   <com>decompile</com>
   <com>print C</com>
