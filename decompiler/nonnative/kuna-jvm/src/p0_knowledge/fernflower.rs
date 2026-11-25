@@ -631,10 +631,6 @@ impl OptionParser {
 
     /// `SHORT_TO_LONG_NAME_MAP.get(shortName)`.
     fn short_to_long_name(short_name: &str) -> Option<String> {
-        match short_name {
-            "jpr" => return Some("jad-style-parameter-naming".to_string()),
-            _ => {}
-        }
         IFernflowerPreferences::all_options()
             .iter()
             .rev()

@@ -322,8 +322,7 @@ pub struct JADNameProviderFactory;
 impl IVariableNamingFactory for JADNameProviderFactory {
     fn create_factory(&self, method: StructMethod) -> Rc<dyn IVariableNameProvider> {
         Rc::new(JADNameProvider::new(
-            DecompilerContext::get_option(VariableRenamingOptions::RENAME_PARAMETERS)
-                || DecompilerContext::get_option(VariableRenamingOptions::USE_JAD_PARAMETER_NAMING),
+            DecompilerContext::get_option(VariableRenamingOptions::RENAME_PARAMETERS),
             method,
         ))
     }

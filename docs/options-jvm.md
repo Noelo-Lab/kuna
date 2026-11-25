@@ -120,8 +120,6 @@ Three tiers:
 | names differ from a Vineflower run with --variable-renaming=jad or tiny | [`jvm_variable_renaming`](#jvm_variable_renaming----jad--tiny---default-) |
 | locals renamed but parameters still named var1 or paramN | [`jvm_rename_parameters`](#jvm_rename_parameters----on--off-default-off) |
 | parameter names do not follow the renamer's scheme | [`jvm_rename_parameters`](#jvm_rename_parameters----on--off-default-off) |
-| an old Vineflower command line with --jad-style-parameter-naming=1 renames parameters | [`jvm_jad_style_parameter_naming`](#jvm_jad_style_parameter_naming----on--off-default-off) |
-| parameters keep their names under the jad renamer | [`jvm_jad_style_parameter_naming`](#jvm_jad_style_parameter_naming----on--off-default-off) |
 | if (x == null) { $$$reportNull$$$0(0); } at the top of methods | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull----on--off-default-on) |
 | explicit null checks on @NotNull parameters or before returns (option is off) | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull----on--off-default-on) |
 | every Kotlin declaration starts with public | [`jvm_kt_show_public`](#jvm_kt_show_public----on--off-default-on) |
@@ -495,15 +493,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** plugins/jad_name_provider, tiny_name_provider · vineflower · vineflower-option
 - **Also spelled:** `rename-parameters`
 - **Example:** `kuna decompile obf.jar a.b --option jvm_variable_renaming tiny --option jvm_rename_parameters on`
-
-### `jvm_jad_style_parameter_naming` -- on | off, default `off`
-
-- **Symptoms:** an old Vineflower command line with --jad-style-parameter-naming=1 renames parameters; parameters keep their names under the jad renamer.
-- **What it does:** Deprecated in Vineflower: like jvm_rename_parameters, but for the jad renamer only.
-- **When to flip:** Only to replay Vineflower command lines that still pass the deprecated flag; prefer jvm_rename_parameters.
-- **Where / provenance:** plugins/jad_name_provider · vineflower · vineflower-option
-- **Also spelled:** `jad-style-parameter-naming`
-- **Example:** `kuna decompile obf.jar a.b --option jvm_variable_renaming jad --option jvm_jad_style_parameter_naming on`
 
 ### `jvm_resugar_idea_notnull` -- on | off, default `on`
 

@@ -8,5 +8,4 @@ jad-params-nodebug	classes_nodebug	Naming	dump-exception-on-error=0;variable-ren
 tiny	classes	Naming	dump-exception-on-error=0;variable-renaming=tiny	fa6074b18fb4dc19
 tiny-params	classes	Naming	dump-exception-on-error=0;variable-renaming=tiny;rename-parameters=1	e0a4bc3c4ec7b0a7
 tiny-params-nodebug	classes_nodebug	Naming	dump-exception-on-error=0;variable-renaming=tiny;rename-parameters=1	bc7c631027303066
-tiny-jad-params	classes	Naming	dump-exception-on-error=0;variable-renaming=tiny;jad-style-parameter-naming=1	fa6074b18fb4dc19
 unknown-renamer	classes	Naming	dump-exception-on-error=0;variable-renaming=nosuch	5a96003ba5aefa8f
