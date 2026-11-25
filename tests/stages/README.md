@@ -11,6 +11,11 @@ unbounded 32-bit count as well, `never` drops the 64-bit shifts' guards,
 `always` restores all three 32-bit guards, and with `armconstshift on` a
 guard-free shift of a signed literal keeps its unsigned conversion.
 
+`kuna-elfv1-symbolextent.xml` checks that the gap walk (`aif`) names no function
+inside the code of a sized PowerPC64 ELFv1 symbol, in both byte orders, and keeps a
+routine with no symbol, a symbol inside another function, and a routine behind a
+descriptor that states its own size.
+
 `kuna-returndup-auto.xml` checks option `returndup` (default `auto`) on gcc -O0
 x86-64: a guard clause `if (!c) return 0;` keeps its own return, a body that
 shares the epilogue's `return 3` prints one return, a void `if (c) return;`
