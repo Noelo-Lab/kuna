@@ -10,7 +10,6 @@
 //! [`resolve`] turns a name and a value as a user writes them into the
 //! Vineflower key and value the engine takes.
 
-use crate::context_source::java_parse_int;
 use crate::rt::try_catch;
 
 /// One option row; the fields are those of a `[[settable]]` row of
@@ -59,8 +58,6 @@ pub const JAVAC_LAYOUT: &str = "jvm_javac_layout";
 pub enum ValueKind {
     /// `on|off`, also `1|0|true|false`.
     Bool,
-    /// A decimal integer.
-    Int,
     /// Any text.
     Text,
     /// A Java regular expression.
@@ -73,7 +70,6 @@ impl JvmOption {
     pub fn kind(&self) -> ValueKind {
         match self.values {
             "on|off" => ValueKind::Bool,
-            "<n>" => ValueKind::Int,
             "<regex>" => ValueKind::Regex,
             "on|off|current|<path>" => ValueKind::Runtime,
             _ => ValueKind::Text,
@@ -112,8 +108,8 @@ pub fn find(name: &str) -> Option<&'static JvmOption> {
 /// kuna-side option (`jvm_siblings`, `jvm_plugins`, `jvm_vineflower_compat`)
 /// the key is the option's own name; `Fernflower::new` takes `jvm_plugins` and
 /// `jvm_vineflower_compat` itself.
-/// Booleans come back as `1`/`0`, integers in decimal, `include-runtime` as
-/// `1` (on, true), `0` (off, false), `current` or the given path.
+/// Booleans come back as `1`/`0`, `include-runtime` as `1` (on, true), `0`
+/// (off, false), `current` or the given path.
 pub fn resolve(name: &str, value: &str) -> Result<(&'static str, String), String> {
     let Some(row) = find(name) else {
         if let Some(owned) = JVM_DRIVER_OWNED.iter().find(|d| {
@@ -145,10 +141,6 @@ pub fn resolve(name: &str, value: &str) -> Result<(&'static str, String), String
             Some(true) => "1".to_string(),
             Some(false) => "0".to_string(),
             None => return bad("on|off"),
-        },
-        ValueKind::Int => match java_parse_int(value.trim()) {
-            Some(n) => n.to_string(),
-            None => return bad("an integer"),
         },
         ValueKind::Regex => {
             let compiled = try_catch(|| {

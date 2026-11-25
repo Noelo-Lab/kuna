@@ -956,8 +956,8 @@ method's bytecode. The class around it is written normally.
 **Layout.** The buffer is a tree of line groups; after a class is written,
 `decompiler/nonnative/kuna-jvm/src/p9_emit/text_buffer.rs (TextBuffer::reformat)` breaks
 argument lists, chained calls and long operator chains at their recorded break points
-wherever a line exceeds `jvm_preferred_line_length` (160), and indents with three
-spaces (Vineflower's `indent-string`, fixed). Offsets and widths are counted in UTF-16
+wherever a line exceeds 160 columns, and indents with three spaces (Vineflower's
+`preferred-line-length` and `indent-string`, fixed at their defaults). Offsets and widths are counted in UTF-16
 units, as Java counts them. Every reference and declaration in the text is recorded as a text token
 (Vineflower's hook for IDE consumers; kuna reads none), and kuna's zero-width span marks
 (`kuna_spans`) ride the same mechanism, following every later edit.
@@ -1130,8 +1130,9 @@ Vineflower's three-letter option names as their long names (`mpm` is
 turns a `jvm_*` name, or Vineflower's long or three-letter name, and a value as a user
 writes it into the Vineflower key and value; the table is generated from `options.toml` by
 the crate's build script. Keys the front end sets itself (thread count, time limit, method
-selection, logging, line separator, line mapping, class-path keys a JVM would serve) are
-listed there as `[[driver_owned]]` and refused as user options. kuna's own rows resolve to
+selection, logging, line separator, line mapping, class-path keys a JVM would serve), and
+the formatting and failure-comment keys kuna fixes at Vineflower's defaults, are listed
+there as `[[driver_owned]]` and refused as user options. kuna's own rows resolve to
 their own names; `Fernflower::new` takes `jvm_plugins`, `jvm_vineflower_compat` and
 `jvm_javac_layout` (section 10.9, stored in the context and copied to the per-class
 contexts) off the property list before the rest becomes Vineflower's option map (section

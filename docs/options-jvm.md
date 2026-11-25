@@ -20,6 +20,7 @@ Vineflower keys kuna sets itself, so they are not options:
 - `__unit_test_mode__` -- corpus runner only
 - `__dump_original_lines__` -- corpus runner only
 - `indent-string` -- fixed at Vineflower's default, three spaces
+- `preferred-line-length` -- fixed at Vineflower's default, 160 columns; the corpus runner sets it for Vineflower's own tests
 
 Three tiers:
 
@@ -177,8 +178,6 @@ Three tiers:
 | need the type argument of a generic method call | [`jvm_explicit_generics`](#jvm_explicit_generics----on--off-default-off) |
 | x -> { return x + 1; } where x -> x + 1 is wanted (option is off) | [`jvm_inline_simple_lambdas`](#jvm_inline_simple_lambdas----on--off-default-on) |
 | one-line lambdas hard to diff | [`jvm_inline_simple_lambdas`](#jvm_inline_simple_lambdas----on--off-default-on) |
-| very long lines in builder chains | [`jvm_preferred_line_length`](#jvm_preferred_line_length-----default-160) |
-| expressions wrapped across lines unexpectedly | [`jvm_preferred_line_length`](#jvm_preferred_line_length-----default-160) |
 | failure comment asks to report to an issue tracker | [`jvm_error_message`](#jvm_error_message-----default-please-report-this-to-the-vineflower-issue-tracker-at-httpsgithubcomvineflowervineflowerissues-with-a-copy-of-the-class-file-if-you-have-the-rights-to-distribute-it) |
 | failure comment should carry a project-specific note | [`jvm_error_message`](#jvm_error_message-----default-please-report-this-to-the-vineflower-issue-tracker-at-httpsgithubcomvineflowervineflowerissues-with-a-copy-of-the-class-file-if-you-have-the-rights-to-distribute-it) |
 | failed method shows a long // Bytecode: listing | [`jvm_dump_bytecode_on_error`](#jvm_dump_bytecode_on_error----on--off-default-on) |
@@ -703,15 +702,6 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 - **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
 - **Also spelled:** `inline-simple-lambdas`, `isl`
 - **Example:** `kuna decompile app.jar com.ex.Streams --option jvm_inline_simple_lambdas off`
-
-### `jvm_preferred_line_length` -- <n>, default `160`
-
-- **Symptoms:** very long lines in builder chains; expressions wrapped across lines unexpectedly.
-- **What it does:** Break argument lists, chained calls and long operator chains at their possible break points when a line would run past this many characters.
-- **When to flip:** Lower it for narrow terminals or diffs, raise it to keep each expression on one line.
-- **Where / provenance:** p9_emit/text_buffer · vineflower · vineflower-option
-- **Also spelled:** `preferred-line-length`, `pll`
-- **Example:** `kuna decompile app.jar com.ex.Main --option jvm_preferred_line_length 100`
 
 ### `jvm_error_message` -- <text>, default `Please report this to the Vineflower issue tracker, at https://github.com/Vineflower/vineflower/issues with a copy of the class file (if you have the rights to distribute it!)`
 
