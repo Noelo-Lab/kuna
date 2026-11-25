@@ -956,9 +956,9 @@ method's bytecode. The class around it is written normally.
 **Layout.** The buffer is a tree of line groups; after a class is written,
 `decompiler/nonnative/kuna-jvm/src/p9_emit/text_buffer.rs (TextBuffer::reformat)` breaks
 argument lists, chained calls and long operator chains at their recorded break points
-wherever a line exceeds `jvm_preferred_line_length` (160), and indents with
-`jvm_indent_string` (three spaces). Offsets and widths are counted in UTF-16 units, as Java
-counts them. Every reference and declaration in the text is recorded as a text token
+wherever a line exceeds `jvm_preferred_line_length` (160), and indents with three
+spaces (Vineflower's `indent-string`, fixed). Offsets and widths are counted in UTF-16
+units, as Java counts them. Every reference and declaration in the text is recorded as a text token
 (Vineflower's hook for IDE consumers; kuna reads none), and kuna's zero-width span marks
 (`kuna_spans`) ride the same mechanism, following every later edit.
 

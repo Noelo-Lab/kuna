@@ -366,8 +366,6 @@ fn jvm_options_resolve_by_name_and_alias() {
     for spelling in [["jvm_decompile_finally", "off"], ["decompile-finally", "0"], ["fdi", "false"]] {
         ok(&jvm(&["decompile", &jar(), "com.ex.Main", "--option", spelling[0], spelling[1]]));
     }
-    let indented = ok(&jvm(&["decompile", &jar(), "com.ex.Main", "--option", "jvm_indent_string", "\t"]));
-    assert!(indented.contains("\n\tpublic static boolean check(String key) {\n"), "{indented}");
 }
 
 #[test]

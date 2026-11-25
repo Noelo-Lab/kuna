@@ -19,6 +19,7 @@ Vineflower keys kuna sets itself, so they are not options:
 - `decompile-preview` -- read nowhere in Vineflower 1.12.0: it has no effect
 - `__unit_test_mode__` -- corpus runner only
 - `__dump_original_lines__` -- corpus runner only
+- `indent-string` -- fixed at Vineflower's default, three spaces
 
 Three tiers:
 
@@ -176,8 +177,6 @@ Three tiers:
 | need the type argument of a generic method call | [`jvm_explicit_generics`](#jvm_explicit_generics----on--off-default-off) |
 | x -> { return x + 1; } where x -> x + 1 is wanted (option is off) | [`jvm_inline_simple_lambdas`](#jvm_inline_simple_lambdas----on--off-default-on) |
 | one-line lambdas hard to diff | [`jvm_inline_simple_lambdas`](#jvm_inline_simple_lambdas----on--off-default-on) |
-| three-space indentation does not match the project style | [`jvm_indent_string`](#jvm_indent_string-----default----) |
-| output too wide when nested deeply | [`jvm_indent_string`](#jvm_indent_string-----default----) |
 | very long lines in builder chains | [`jvm_preferred_line_length`](#jvm_preferred_line_length-----default-160) |
 | expressions wrapped across lines unexpectedly | [`jvm_preferred_line_length`](#jvm_preferred_line_length-----default-160) |
 | failure comment asks to report to an issue tracker | [`jvm_error_message`](#jvm_error_message-----default-please-report-this-to-the-vineflower-issue-tracker-at-httpsgithubcomvineflowervineflowerissues-with-a-copy-of-the-class-file-if-you-have-the-rights-to-distribute-it) |
@@ -704,15 +703,6 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 - **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
 - **Also spelled:** `inline-simple-lambdas`, `isl`
 - **Example:** `kuna decompile app.jar com.ex.Streams --option jvm_inline_simple_lambdas off`
-
-### `jvm_indent_string` -- <text>, default `   `
-
-- **Symptoms:** three-space indentation does not match the project style; output too wide when nested deeply.
-- **What it does:** The text written once per indentation level (three spaces by default).
-- **When to flip:** Set to four spaces or a tab to match a code base's style, or two spaces for compact output.
-- **Where / provenance:** p9_emit/text_buffer, text_util · vineflower · vineflower-option
-- **Also spelled:** `indent-string`, `ind`
-- **Example:** `kuna decompile app.jar com.ex.Main --option jvm_indent_string "    "`
 
 ### `jvm_preferred_line_length` -- <n>, default `160`
 

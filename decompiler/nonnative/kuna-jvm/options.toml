@@ -8,7 +8,8 @@
 # this file into the static table of src/p0_knowledge/kuna_options.rs; a test
 # checks it one to one against IFernflowerPreferences.all_options().
 #
-# [[driver_owned]] keys are set by kuna's driver or front end, never by a row.
+# [[driver_owned]] keys are set by kuna's driver or front end, or fixed at
+# Vineflower's default (the corpus runner may still pass them), never by a row.
 
 [[option]]
 option = "jvm_remove_bridge"
@@ -847,28 +848,6 @@ tier = "analysis"
 symptoms = "class or method named like a Java keyword|identifiers that are not valid Java (obfuscated names)|many classes named a, b, c that clash"
 
 [[option]]
-option = "jvm_indent_string"
-vineflower = "indent-string"
-short = "ind"
-aliases = ["indent-string", "ind"]
-values = "<text>"
-default = "   "
-destructive = false
-phase = "p9_emit"
-subphase = "text_buffer, text_util"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "The text written once per indentation level (three spaces by default)."
-use_when = "Set to four spaces or a tab to match a code base's style, or two spaces for compact output."
-example = "kuna decompile app.jar com.ex.Main --option jvm_indent_string \"    \""
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.INDENT_STRING (indent-string, -ind)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "three-space indentation does not match the project style|output too wide when nested deeply"
-
-[[option]]
 option = "jvm_preferred_line_length"
 vineflower = "preferred-line-length"
 short = "pll"
@@ -1491,3 +1470,7 @@ kuna = "corpus runner only"
 [[driver_owned]]
 vineflower = "__dump_original_lines__"
 kuna = "corpus runner only"
+
+[[driver_owned]]
+vineflower = "indent-string"
+kuna = "fixed at Vineflower's default, three spaces"

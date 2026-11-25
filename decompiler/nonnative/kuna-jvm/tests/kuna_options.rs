@@ -174,10 +174,6 @@ fn resolution_and_aliases() {
         ("preferred-line-length", "120".to_string())
     );
     assert_eq!(
-        resolve("jvm_indent_string", "\t").unwrap(),
-        ("indent-string", "\t".to_string())
-    );
-    assert_eq!(
         resolve("jvm_excluded_classes", "^com/ex/.*").unwrap(),
         ("excluded-classes", "^com/ex/.*".to_string())
     );
@@ -216,7 +212,7 @@ fn resolution_errors() {
     assert!(err.contains("did you mean decompile-finally"), "{err}");
     let err = resolve("jvm_nothing_like_this_at_all", "on").unwrap_err();
     assert!(err.contains("unknown JVM option"), "{err}");
-    for name in ["thread-count", "jvm_thread_count", "max-time-per-method"] {
+    for name in ["thread-count", "jvm_thread_count", "max-time-per-method", "jvm_indent_string"] {
         let err = resolve(name, "4").unwrap_err();
         assert!(err.contains("set by kuna itself"), "{err}");
     }
