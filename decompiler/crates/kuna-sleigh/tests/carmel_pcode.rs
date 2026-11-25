@@ -294,6 +294,24 @@ fn immediate_repeat_skips_or_replays_only_its_next_issue() {
 }
 
 #[test]
+fn ce1_repeat_executes_once_on_veto_or_uses_the_literal_count() {
+    for (count, cfg, table, expected) in [
+        (0, 0, 0, 1), (3, 0, 0, 1), (0, 0x1000, 0, 0), (3, 0x1000, 0, 3), (3, 0, 0xffff, 3),
+    ] {
+        let mut m = Machine::new(
+            0, &[(count, 0xcec000), (INC_A0, NOP), (INC_A1, NOP), (NOP, NOP)],
+            &[(0, 4, 6), (2, 1, 6), (4, 1, 6), (6, 1, 0)], None,
+        );
+        m.seed(&[("A0L", 7), ("A1L", 12), ("CECFG1", cfg), ("CETBL", table)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 12);
+        assert_eq!((m.reg("A0L"), m.reg("A1L")), (7 + expected, 12));
+        assert_eq!(m.step(), 18);
+        assert_eq!(m.reg("A1L"), 13);
+    }
+}
+
+#[test]
 fn wide_data_store_uses_the_old_word_address_and_postincrements_r0() {
     for (low, expected_r0) in [(0xc64000, 0x4100), (0xc64040, 0x4101)] {
         let mut m = Machine::new(0, &[(0x808e4c, low), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);

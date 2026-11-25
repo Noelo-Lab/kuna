@@ -72,8 +72,10 @@ paths; only a taken return reads the link or retires a trap source.
 Compact CALL admits zero or one delay issue. Compact RETURN also admits
 two or three delay issues with an inactive right lane, and an undelayed
 CE1 form whose address enable can override a veto. Immediate REPEAT handles
-one register-only following issue, including zero repeats. REPEAT does not lift a
-transfer or DATA access in that issue.
+one register-only following issue, including zero repeats. For wide CE1
+REPEAT, a veto with address enable clear executes that issue once; otherwise
+the immediate count applies. REPEAT does not lift a transfer or DATA access
+in the repeated issue.
 The explicit post-CALL branch past an unexecuted sequential slot is part of
 the caller's control flow, even if analysis found a function entry there.
 Unconditional wide relative CALL without delay uses the same two-word DATA
