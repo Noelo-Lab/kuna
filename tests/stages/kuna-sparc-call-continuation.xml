@@ -1,0 +1,22 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+<!--
+    P1 raw-image function discovery. CALL at 0x0 targets 0x20; its delay
+    slot is a NOP and its local continuation at 0x8 is a RETL. The
+    continuation stays in the caller rather than becoming a third entry.
+    Single pass: the only seeded entry is 0x0; discovery must find 0x20.
+-->
+<bytechunk space="ram" offset="0x0" readonly="true">81c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x0" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load raw sparc:BE:32:default:default 0x0 0x0 tests/fixtures/kuna-sparc-call-continuation.bin</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SPARC call roles: actual callee is discovered" min="1" max="1">\bsub_20\b</stringmatch>
+<stringmatch name="SPARC call roles: caller entry is retained" min="1" max="1">\bsub_0\b</stringmatch>
+<stringmatch name="SPARC call roles: local continuation is not an entry" min="0" max="0">\bsub_8\b</stringmatch>
+</decompilertest>

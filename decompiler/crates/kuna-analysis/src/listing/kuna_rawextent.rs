@@ -115,7 +115,7 @@ struct Walk<'a> {
 /// One instruction's length and successors, from the Listing or a fresh decode.
 struct Step<'a> {
     len: u32,
-    is_call: bool,
+    call_count: usize,
     is_conditional: bool,
     unresolved_jump: bool,
     flows: Cow<'a, [u64]>,
@@ -174,14 +174,11 @@ impl Walk<'_> {
             if self.exits.sites.binary_search(&vma).is_ok() {
                 continue;
             }
-            if step.is_call {
-                if !step.flows.iter().any(|target| self.noreturn.contains(target)) {
-                    stack.extend(step.fall_through.map(|next| (next, false)));
-                }
-                continue;
+            let (calls, branches) = step.flows.split_at(step.call_count);
+            stack.extend(branches.iter().map(|&target| (target, step.is_conditional)));
+            if step.is_conditional || !matches!(calls, [target] if self.noreturn.contains(target)) {
+                stack.extend(step.fall_through.map(|next| (next, false)));
             }
-            stack.extend(step.flows.iter().map(|&target| (target, step.is_conditional)));
-            stack.extend(step.fall_through.map(|next| (next, false)));
             if step.unresolved_jump {
                 match self.through(vma) {
                     Through::Table(offset) => {
@@ -200,9 +197,10 @@ impl Walk<'_> {
         if let Some(insn) = self.listing.instruction_at(vma) {
             return Some(Step {
                 len: insn.len,
-                is_call: insn.flow.is_call,
+                call_count: insn.call_count as usize,
                 is_conditional: insn.flow.is_conditional,
-                unresolved_jump: insn.flow.is_computed && insn.flow.is_jump && insn.flows.is_empty(),
+                unresolved_jump: insn.flow.is_computed && insn.flow.is_jump && insn.branches().is_empty()
+                    && (!insn.flow.is_call || insn.flow.kind == super::FlowKind::ComputedJump),
                 flows: Cow::Borrowed(&insn.flows),
                 fall_through: insn.fall_through,
             });
@@ -214,9 +212,10 @@ impl Walk<'_> {
         let c = classify(&decoded.ops, vma, decoded.len);
         Some(Step {
             len: decoded.len,
-            is_call: c.flow.is_call,
+            call_count: c.call_count,
             is_conditional: c.flow.is_conditional,
-            unresolved_jump: c.flow.is_computed && c.flow.is_jump && c.flows.is_empty(),
+            unresolved_jump: c.flow.is_computed && c.flow.is_jump && c.branches().is_empty()
+                && (!c.flow.is_call || c.flow.kind == super::FlowKind::ComputedJump),
             flows: Cow::Owned(c.flows),
             fall_through: c.fall_through,
         })

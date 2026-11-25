@@ -31,8 +31,9 @@ use super::model::{FlowKind, FlowType, RawOp};
 pub struct Classified {
     /// The instruction's flow type (predicate set + kind).
     pub flow: FlowType,
-    /// Static control targets (absolute VMAs): branch/call destinations.
+    /// Static control targets (absolute VMAs), with direct call targets first.
     pub flows: Vec<u64>,
+    pub(crate) call_count: usize,
     /// The fall-through VMA, or `None` for a terminal instruction.
     pub fall_through: Option<u64>,
 }
@@ -50,6 +51,7 @@ pub struct Classified {
 pub fn classify(ops: &[RawOp], vma: u64, len: u32) -> Classified {
     let fall_vma = vma.wrapping_add(len as u64);
     let mut flows: Vec<u64> = Vec::new();
+    let mut call_count = 0;
     let mut skips: Vec<usize> = Vec::new();
     let mut flow = FlowType::default();
 
@@ -63,7 +65,7 @@ pub fn classify(ops: &[RawOp], vma: u64, len: u32) -> Classified {
                 // (constant space), which resolves to fall-through (gotcha 1).
                 if let Some(target) = absolute_branch_target(op) {
                     if target == fall_vma {
-                        skips.push(flows.len());
+                        skips.push(flows.len() - call_count);
                     }
                     flows.push(target);
                 }
@@ -90,7 +92,8 @@ pub fn classify(ops: &[RawOp], vma: u64, len: u32) -> Classified {
                 // CALL target == in0 (flow.rs CALL case; the in0 address is the
                 // callee entry). It is a code address, never constant-relative.
                 if let Some(target) = absolute_branch_target(op) {
-                    flows.push(target);
+                    flows.insert(call_count, target);
+                    call_count += 1;
                 }
                 flow.kind = FlowKind::Call;
                 flow.is_call = true;
@@ -126,14 +129,33 @@ pub fn classify(ops: &[RawOp], vma: u64, len: u32) -> Classified {
     let fall_through = has_fallthrough.then_some(fall_vma);
     if flow.is_call && has_fallthrough {
         for at in skips.into_iter().rev() {
-            flows.remove(at);
+            flows.remove(at + call_count);
         }
     }
 
-    Classified { flow, flows, fall_through }
+    Classified { flow, flows, call_count, fall_through }
 }
 
 impl Classified {
+    pub(crate) fn calls(&self) -> &[u64] {
+        &self.flows[..self.call_count]
+    }
+
+    pub(crate) fn branches(&self) -> &[u64] {
+        &self.flows[self.call_count..]
+    }
+
+    /// Separate direct callees and branches, retaining the existing storage
+    /// when only one kind of edge is present.
+    pub fn into_calls_and_branches(self) -> (Vec<u64>, Vec<u64>) {
+        let Self { mut flows, call_count, .. } = self;
+        if call_count == 0 {
+            return (Vec::new(), flows);
+        }
+        let branches = flows.split_off(call_count);
+        (flows, branches)
+    }
+
     /// The skip a predicated instruction (`ldrne`, `moveq`, `popeq {..,pc}`,
     /// `bxne r3`) lifts to ahead of its own `ops`, when it is one of `flows`:
     /// a `CBRANCH` to the next instruction that other ops follow. It is a flow
@@ -145,7 +167,7 @@ impl Classified {
     pub fn condition_skip(&self, ops: &[RawOp], vma: u64, len: u32) -> Option<u64> {
         let skip = vma.wrapping_add(u64::from(len));
         let (_, body) = ops.split_last()?;
-        (self.flows.contains(&skip)
+        (self.branches().contains(&skip)
             && body.iter().any(|op| op.opcode == OpCode::CPUI_CBRANCH && absolute_branch_target(op) == Some(skip)))
         .then_some(skip)
     }
@@ -304,6 +326,25 @@ mod tests {
         assert!(c.flow.is_call);
         assert_eq!(c.flows, vec![0x4000]);
         assert_eq!(c.fall_through, Some(0x1004));
+    }
+
+    #[test]
+    fn explicit_non_fallthrough_continuation_is_not_a_callee() {
+        let (ram, _) = spaces();
+        let continuation = op(OpCode::CPUI_BRANCH, Some(vn(&ram, 0x1008)));
+        let direct = classify(&[
+            op(OpCode::CPUI_CALL, Some(vn(&ram, 0x4000))), continuation.clone(),
+        ], 0x1000, 4);
+        assert_eq!(direct.calls(), [0x4000]);
+        assert_eq!(direct.branches(), [0x1008]);
+        assert_eq!(direct.fall_through, None);
+
+        let indirect = classify(&[
+            op(OpCode::CPUI_CALLIND, Some(vn(&ram, 0x9999))), continuation,
+        ], 0x1000, 4);
+        assert!(indirect.flow.is_call && indirect.flow.is_indirect);
+        assert!(indirect.calls().is_empty());
+        assert_eq!(indirect.branches(), [0x1008]);
     }
 
     /// A call to the next instruction (the i386 `call $+5` get-PC idiom) keeps

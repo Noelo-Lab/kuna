@@ -1725,6 +1725,23 @@ fn dwarf_source_line_comments_stay_opt_in_under_every_mode() {
 }
 
 #[test]
+fn sparc_call_continuation_is_not_a_raw_function_entry() {
+    let path = common::scratch_file("sparc call and continuation", "bin");
+    let words = [0x40000008_u32, 0x01000000, 0x81c3e008, 0x01000000,
+                 0x01000000, 0x01000000, 0x01000000, 0x01000000, 0x81c3e008, 0x01000000];
+    std::fs::write(&path, words.into_iter().flat_map(u32::to_be_bytes).collect::<Vec<_>>()).unwrap();
+    let (stdout, stderr, ok) = run_kuna(&[
+        "functions", path.to_str().unwrap(), "--json", "--raw-image", "--target",
+        "sparc:BE:32:default:default", "--base", "0", "--entry", "0", "--sleighpath", &specs(),
+    ]);
+    std::fs::remove_file(path).unwrap();
+    assert!(ok, "raw functions failed: {stderr}");
+    assert!(stdout.contains("\"count\": 2"), "{stdout}");
+    assert!(stdout.contains("\"address_hex\": \"0x0\""), "{stdout}");
+    assert!(stdout.contains("\"address_hex\": \"0x20\""), "{stdout}");
+}
+
+#[test]
 fn raw_image_supported_surfaces_share_seed_and_base_semantics() {
     let path = common::scratch_file("raw thumb image", "bin");
     std::fs::write(&path, [0x07, 0x20, 0x70, 0x47]).unwrap();

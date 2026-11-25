@@ -492,7 +492,10 @@ fn call_target(listing: &Listing, vma: u64) -> Option<u64> {
     if !insn.flow.is_call {
         return None;
     }
-    insn.flows.first().copied().or(Some(u64::MAX))
+    match insn.calls() {
+        [callee] => Some(*callee),
+        _ => Some(u64::MAX),
+    }
 }
 
 /// One instruction's p-code. A branch inside the instruction makes whatever it

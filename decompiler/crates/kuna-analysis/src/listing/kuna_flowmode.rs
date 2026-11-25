@@ -336,16 +336,9 @@ impl Proof<'_, '_> {
                 .find(|&&(addr, _)| addr == target)
                 .map_or(mode, |&(_, value)| value)
         };
-        let targets = class
-            .flows
-            .iter()
-            .copied()
-            .filter(|&target| Some(target) != class.fall_through);
-        let (calls, branches) = if class.flow.is_call {
-            (targets.map(|t| (t, mode_at(t))).collect(), Vec::new())
-        } else {
-            (Vec::new(), targets.collect())
-        };
+        let branches = class.branches().iter().copied()
+            .filter(|&target| Some(target) != class.fall_through).collect();
+        let calls = class.calls().iter().copied().map(|target| (target, mode_at(target))).collect();
         self.decoded.insert(
             at,
             Proven {

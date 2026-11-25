@@ -370,12 +370,11 @@ fn routine(
         if insn.is_terminal || insn.kind == FlowKind::ComputedJump || is_trap(&insn) {
             continue;
         }
-        for &to in &insn.flows {
-            if insn.is_call {
-                if !decoder.in_exec(to) {
-                    return None;
-                }
-            } else if to >= target && to < gap_hi {
+        if insn.calls().iter().any(|&to| !decoder.in_exec(to)) {
+            return None;
+        }
+        for &to in insn.branches() {
+            if to >= target && to < gap_hi {
                 work.push((to, false, stack));
             } else if !is_entry(to) {
                 return None;
@@ -527,6 +526,7 @@ mod tests {
         super::ProbedInsn {
             len: 1, encoded_len: 1, kind: crate::listing::FlowKind::Fallthrough, is_call: false, is_terminal: false,
             fall_through: None, flows: Vec::new(), mnemonic: std::rc::Rc::from(mnemonic),
+            call_count: 0,
             operands: operands.to_string(), reusable: None,
         }
     }

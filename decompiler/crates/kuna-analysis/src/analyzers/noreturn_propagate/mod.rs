@@ -173,7 +173,10 @@ fn collect_error_noreturn_callsites(
             // `call_is_terminal_error` = is_call && target is error && arg0 nonzero const
             // (its name is "terminal" because such a call never returns; it is valid at
             // any body position, not only the last).
-            if error_recog.call_is_terminal_error(&body, vma, insn, false) {
+            if !insn.flow.is_jump
+                && !insn.flow.is_conditional
+                && error_recog.call_is_terminal_error(&body, vma, insn, false)
+            {
                 sites.push(vma);
             }
         }
@@ -332,7 +335,7 @@ impl ErrorRecognizer {
         if self.exit_sites.contains(&call_vma) {
             return true;
         }
-        if !call.flows.iter().any(|t| self.is_error(*t)) {
+        if call.calls().is_empty() || !call.calls().iter().all(|t| self.is_error(*t)) {
             return false;
         }
         arg0_is_nonzero_const_before(body, call_vma, require_contiguous)
@@ -483,8 +486,19 @@ fn function_is_no_return(
     else {
         return false;
     };
-    let last_is_terminal_transfer = (last.flow.is_call || last.flow.is_jump)
-        && last.flows.iter().any(|t| terminal.contains(t));
+    // A mixed call/jump has successors whose execution relative to the call is
+    // not recorded. Leave it to the reachability walk, which keeps those edges.
+    if last.flow.is_conditional || (last.flow.is_call && last.flow.is_jump) {
+        return false;
+    }
+    let last_is_terminal_transfer = if last.flow.is_call {
+        calls_only_noreturn(last, terminal)
+    } else {
+        last.flow.is_jump
+            && !last.flow.has_fallthrough
+            && !last.branches().is_empty()
+            && last.branches().iter().all(|t| terminal.contains(t))
+    };
     // (kuna, decbench F2) …or a tail `call error(nonzero,…)`: glibc error()/
     // error_at_line() with a nonzero constant status calls exit() and never
     // returns, so the wrapper is no-return even though `error` itself is NOT on the
@@ -516,7 +530,7 @@ fn function_is_no_return(
         // it is either an escaping branch to a possibly-returning neighbour or a
         // skip into the unreachable padding tail — both disqualify.
         if insn.flow.is_jump {
-            for &t in &insn.flows {
+            for &t in insn.branches() {
                 let in_body = t >= entry && t <= last_vma;
                 if !in_body && !terminal.contains(&t) {
                     return false;
@@ -525,6 +539,10 @@ fn function_is_no_return(
         }
     }
     true
+}
+
+fn calls_only_noreturn(insn: &Insn, terminal: &BTreeSet<u64>) -> bool {
+    !insn.calls().is_empty() && insn.calls().iter().all(|t| terminal.contains(t))
 }
 
 /// **CFG-reachability no-return** — the port of Ghidra's
@@ -546,8 +564,8 @@ fn function_is_no_return(
 /// `call sshpkt_vfatal`, the write/return tail dead).
 ///
 /// Instruction-level reachability over the Listing body (kuna has no separate
-/// block CFG in this tier, but `Insn` carries `fall_through` + resolved `flows` +
-/// the flow flags — enough). **Conservative by construction:** every uncertainty
+/// block CFG in this tier, but `Insn` carries `fall_through`, resolved call and
+/// branch targets, and flow flags). **Conservative by construction:** every uncertainty
 /// (a reachable `RETURN`/terminal, an unresolved indirect jump, a branch escaping
 /// the body to a possibly-returning neighbour, a call with no modelled
 /// fall-through that is not itself terminal) returns `false` — a false positive
@@ -614,90 +632,47 @@ fn reaches_only_noreturn_walk<B: InstructionBody + ?Sized>(
             return false;
         };
 
-        // A reachable RETURN (terminal that is not a call) ⇒ the function returns.
-        if insn.flow.is_terminal && !insn.flow.is_call {
+        if insn.flow.is_terminal {
             return false;
         }
 
-        // A call/jump whose static target is already no-return (or a value-conditional
-        // `error(nonzero,…)` tail) ends this path: its fall-through is dead code.
-        let transfers_to_noreturn = (insn.flow.is_call || insn.flow.is_jump)
-            && insn.flows.iter().any(|t| terminal.contains(t));
-        // error(nonzero,…): use the same contiguous predecessor chain that the old
-        // temporary straight-line window supplied to the argument back-scan.
-        let transfers_to_error =
-            insn.flow.is_call && error_recog.call_is_terminal_error(body, vma, insn, true);
-        // A CONDITIONAL jump (`ja`/`jne`/… — a jump that also FALLS THROUGH) to a
-        // no-return target ends only its TAKEN arm; the fall-through (the normal,
-        // non-taken path) must still be walked. This is the GCC -O2 hot/cold-split
-        // shape: an assertion / stack-canary check `jcc <.cold fragment>` where the
-        // `.cold` fragment is `call abort`/`__stack_chk_fail` (no-return), while the
-        // function returns on the fall-through. Short-circuiting here (as an
-        // unconditional transfer does) skips that returning path and wrongly
-        // concludes the whole function no-return — which then propagates up every
-        // caller (the coreutils `quotearg_*` family → `fmt`/main's dropped file-open
-        // `error()` path). IDA Pro / Ghidra both treat such a function as returning.
-        // So only short-circuit an UNCONDITIONAL transfer (a call whose no-return
-        // callee makes its fall-through dead, or a jump with no fall-through); a
-        // conditional jump falls into the `is_jump` handler below, which walks BOTH
-        // its taken (→ terminal) and fall-through arms.
-        let conditional_jump = insn.flow.is_jump && insn.flow.has_fallthrough;
-        if (transfers_to_noreturn || transfers_to_error) && !conditional_jump {
+        // Only a call with no branch or predicate can kill the instruction's
+        // entire continuation. The Listing does not say which branch edges
+        // precede the call, so keep them (and any fall-through) in a mixed flow.
+        if insn.flow.is_call
+            && !insn.flow.is_jump
+            && !insn.flow.is_conditional
+            && (calls_only_noreturn(insn, terminal)
+                || error_recog.call_is_terminal_error(body, vma, insn, true))
+        {
             hit_noreturn = true;
             continue;
         }
 
-        if insn.flow.is_call {
-            // A returning call: control continues at the fall-through.
-            match insn.fall_through {
-                Some(ft) => match classify(ft) {
+        if insn.flow.is_jump {
+            let computed = insn.flow.is_computed || insn.flow.is_indirect;
+            // For a mixed computed transfer the flag does not tell us whether an
+            // indirect branch is unresolved, even if static branch targets exist.
+            if computed && (insn.flow.is_call || insn.branches().is_empty()) {
+                return false;
+            }
+            for &target in insn.branches() {
+                match classify(target) {
                     Succ::Follow(v) => todo.push(v),
                     Succ::NoReturn => hit_noreturn = true,
                     Succ::Escape => return false,
-                },
-                // A call with no modelled fall-through that is not to a terminal
-                // callee: we cannot reason about where control goes → returns.
-                None => return false,
+                }
             }
-            continue;
-        }
-
-        if insn.flow.is_jump {
-            if insn.flow.is_computed || insn.flow.is_indirect {
-                // Resolved switch: follow every case target. Unresolved ⇒ cannot prove.
-                if insn.flows.is_empty() {
+            if !insn.flow.has_fallthrough && insn.fall_through.is_none() {
+                if insn.branches().is_empty() {
                     return false;
                 }
-                for &t in &insn.flows {
-                    match classify(t) {
-                        Succ::Follow(v) => todo.push(v),
-                        Succ::NoReturn => hit_noreturn = true,
-                        Succ::Escape => return false,
-                    }
-                }
-            } else {
-                for &t in &insn.flows {
-                    match classify(t) {
-                        Succ::Follow(v) => todo.push(v),
-                        Succ::NoReturn => hit_noreturn = true,
-                        Succ::Escape => return false,
-                    }
-                }
-                // A conditional jump also falls through.
-                if insn.flow.has_fallthrough {
-                    if let Some(ft) = insn.fall_through {
-                        match classify(ft) {
-                            Succ::Follow(v) => todo.push(v),
-                            Succ::NoReturn => hit_noreturn = true,
-                            Succ::Escape => return false,
-                        }
-                    }
-                }
+                continue;
             }
-            continue;
         }
 
-        // A straight-line instruction: follow its fall-through.
+        // Follow the recorded continuation of a straight-line instruction, call,
+        // or conditional branch.
         match insn.fall_through {
             Some(ft) => match classify(ft) {
                 Succ::Follow(v) => todo.push(v),
@@ -808,6 +783,7 @@ mod tests {
             fall_through: ft,
             flow,
             flows,
+            call_count: 0,
             mnemonic: "".into(),
             operands: String::new(),
             pcode: None,
@@ -892,6 +868,7 @@ mod tests {
             fall_through: Some(1),
             flow,
             flows: vec![],
+            call_count: 0,
             mnemonic: mnemonic.into(),
             operands: operands.into(),
             pcode: None,
@@ -943,6 +920,7 @@ mod tests {
         let mut call = insn("CALL", "0x500", true, false);
         call.addr = 0x100;
         call.flows = vec![0x500];
+        call.call_count = 1;
         let next_function = mk_insn(
             0x200,
             None,
@@ -982,6 +960,7 @@ mod tests {
         let mut call = insn("CALL", "0x500", true, false);
         call.addr = 0x110;
         call.flows = vec![0x500];
+        call.call_count = 1;
         let listing = Listing::from_insns_for_test(vec![definition, call.clone()], true);
         let body = ListingInstructionBody::new(&listing, 0x100, None);
         let recog = ErrorRecognizer {
@@ -1007,6 +986,7 @@ mod tests {
         let mut call = insn("CALL", "0x500", true, false);
         call.addr = 0x110;
         call.flows = vec![0x500];
+        call.call_count = 1;
         let listing = Listing::from_insns_for_test(vec![definition, clobber, call.clone()], true);
         let body = ListingInstructionBody::new(&listing, 0x100, None);
         assert!(
@@ -1042,6 +1022,7 @@ mod tests {
             len: 1,
             fall_through,
             flow,
+            call_count: if is_call { flows.len() as u32 } else { 0 },
             flows,
             mnemonic: "".into(),
             operands: String::new(),
@@ -1150,6 +1131,22 @@ mod tests {
             rinsn(0x120, None, vec![], false, false, true, false, false, false),
         ];
         assert!(!walk(&b), "a reachable ret on the taken branch ⇒ returns (conservative)");
+    }
+
+    #[test]
+    fn reach_mixed_call_and_branch_keeps_returning_successors() {
+        let ret = rinsn(0x105, None, vec![], false, false, true, false, false, false);
+        let mut branch_skips_call =
+            rinsn(0x100, None, vec![ABORT, 0x105], true, true, false, false, false, false);
+        branch_skips_call.call_count = 1;
+        branch_skips_call.flow.is_conditional = true;
+        assert!(!walk(&[branch_skips_call, ret.clone()]));
+
+        let mut returning_call =
+            rinsn(0x100, Some(0x105), vec![0x60, ABORT], true, true, false, false, false, true);
+        returning_call.call_count = 1;
+        returning_call.flow.is_conditional = true;
+        assert!(!walk(&[returning_call, ret]));
     }
 
     #[test]

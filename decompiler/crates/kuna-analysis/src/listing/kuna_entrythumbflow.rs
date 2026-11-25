@@ -210,19 +210,14 @@ fn walk_from_entry(
         }
         painted.push((addr, instruction_end));
         let classified = classify(&decoded.ops, addr, decoded.len);
-        let follow_targets = if classified.flow.is_call {
-            !classified.flow.is_indirect && is_mode_preserving_call(translate, addr, code_space)
-        } else {
-            true
-        };
+        if !classified.calls().is_empty() && is_mode_preserving_call(translate, addr, code_space) {
+            pending.extend(classified.calls().iter().map(|&target| target & !1));
+        }
+        pending.extend(classified.branches().iter().map(|&target| target & !1));
         // Only an unconditional no-return call removes fall-through. An IT
         // guard can skip the call, leaving its successor reachable.
-        let returns = !classified.flow.is_call
-            || classified.flow.is_conditional
-            || !classified.flows.iter().any(|target| noreturn.contains(&(target & !1)));
-        if follow_targets {
-            pending.extend(classified.flows.into_iter().map(|target| target & !1));
-        }
+        let returns = classified.flow.is_conditional
+            || !matches!(classified.calls(), [target] if noreturn.contains(&(target & !1)));
         if let Some(fall_through) = classified.fall_through.filter(|_| returns) {
             pending.push(fall_through);
         }

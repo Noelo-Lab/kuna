@@ -104,10 +104,10 @@ fn branch_targets(listing: &Listing, entries: &[u64]) -> BTreeMap<u64, Vec<u64>>
     let known: BTreeSet<u64> = entries.iter().copied().collect();
     let mut out: BTreeMap<u64, Vec<u64>> = BTreeMap::new();
     for (&vma, insn) in listing.instructions() {
-        if insn.flow.kind != FlowKind::UnconditionalBranch {
+        if insn.flow.kind != FlowKind::UnconditionalBranch || insn.flow.is_call {
             continue;
         }
-        for &t in &insn.flows {
+        for &t in insn.branches() {
             if t != vma && !known.contains(&t) && listing.is_instruction_start(t) {
                 out.entry(t).or_default().push(vma);
             }
@@ -145,8 +145,8 @@ fn predecessors_are_branches(listing: &Listing, target: u64) -> bool {
         r.kind == RefKind::Code
             && listing.instruction_at(r.from).is_some_and(|i| {
                 i.fall_through != Some(target)
-                    && (!i.flows.contains(&target)
-                        || i.flow.kind == FlowKind::UnconditionalBranch)
+                    && (!i.branches().contains(&target)
+                        || (i.flow.kind == FlowKind::UnconditionalBranch && !i.flow.is_call))
             })
     })
 }
@@ -188,9 +188,7 @@ fn terminates(listing: &Listing, target: u64) -> bool {
         if matches!(i.flow.kind, FlowKind::Return | FlowKind::ComputedJump) {
             return true;
         }
-        if !i.flow.is_call {
-            work.extend(i.flows.iter().copied());
-        }
+        work.extend(i.branches().iter().copied());
         work.extend(i.fall_through);
     }
     false
@@ -244,6 +242,7 @@ mod tests {
         Insn {
             addr: 0,
             len: 2,
+            call_count: 0,
             fall_through: None,
             flow: Default::default(),
             flows: Vec::new(),
