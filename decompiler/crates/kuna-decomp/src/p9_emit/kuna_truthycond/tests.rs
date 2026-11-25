@@ -1,13 +1,16 @@
 use super::*;
 
 #[test]
-fn apply_parses_on_off_and_reports() {
+fn apply_parses_each_value_and_reports() {
     let (val, msg) = OptionTruthyCond.apply("on").unwrap();
-    assert!(val);
+    assert_eq!(val, TruthyCond::On);
     assert_eq!(msg, "Truthy condition rendering turned on");
     let (val, msg) = OptionTruthyCond.apply("off").unwrap();
-    assert!(!val);
+    assert_eq!(val, TruthyCond::Off);
     assert_eq!(msg, "Truthy condition rendering turned off");
+    let (val, _) = OptionTruthyCond.apply("ptrchain").unwrap();
+    assert_eq!(val, TruthyCond::PtrChain);
+    assert_eq!(OptionTruthyCond.apply("").unwrap().0, TruthyCond::On);
     assert!(OptionTruthyCond.apply("sideways").is_err());
 }
 

@@ -198,6 +198,9 @@ pub mod modifiers {
     pub const CONDITION_CONTEXT: uint4 = 0x10000;
     /// Take a raw address when Rust emits an indexed STORE operand.
     pub(crate) const RUST_RAW_INDEX_ADDRESS: uint4 = 0x20000;
+    /// (kuna `truthycond ptrchain`) The expression being pushed is a direct
+    /// operand of a printed `&&`/`||`.
+    pub const CHAIN_OPERAND: uint4 = 0x40000;
 }
 
 /// Possible types of [`Atom`] (C++ `PrintLanguage::tagtype`,
