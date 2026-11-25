@@ -54,6 +54,7 @@ pub use kuna_ppc32picimports::{ImportProofMemo, ImportProofScope};
 // (kuna) ELF section-table tolerance: an image whose section headers are
 // unreadable still has program headers describing every loadable byte.
 pub mod elf_shdr;
+pub mod ieee695;
 // (kuna) PE data-directory tolerance: a `NumberOfRvaAndSizes` larger than its own
 // optional header is clamped to the directories that are really present.
 pub mod pe_datadirs;
@@ -143,5 +144,6 @@ pub mod kuna_realmodecs;
 pub mod kuna_mzdgroup;
 
 pub mod kuna_mipsstubs;
+pub mod ihex;
 
 mod kuna_nullable_reloc;
