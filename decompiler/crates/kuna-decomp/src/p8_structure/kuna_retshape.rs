@@ -46,20 +46,46 @@ pub enum GuardForm {
     Split,
 }
 
+/// Which merged returns of a value split into one return per arm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArmForm {
+    /// None: the binary's shared return.
+    Merged,
+    /// Every predecessor of the return block ends an arm (has one out-edge),
+    /// entered from one place or from one short-circuit chain.
+    Arms,
+    /// [`ArmForm::Arms`], and every arm is entered from one place.
+    ArmsSingle,
+    /// Every shared return of a merged value (for measuring).
+    All,
+}
+
 /// The `retshape` option value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetShapePolicy {
     pub guards: GuardForm,
-    /// A shared return of a value the arms merge prints as one return per arm
-    /// (`returndup` splits the return block).
-    pub arms: bool,
+    /// Which shared returns of a value the arms merge print as one return per
+    /// arm (`returndup` splits the return block).
+    pub arms: ArmForm,
+    /// `tailform`'s merge drops an arm's `return v;` that prints the same
+    /// value as the function's final return, not only the same SSA value.
+    pub tail_values: bool,
+    /// `tailform`'s void merge drops an arm's last `return;` also when the arm
+    /// holds a guard the `looptest` plan drops.
+    pub tail_void: bool,
     /// The `looptest` mode, whose plan owns the guard `if`s it drops.
     pub loop_test: LoopTestMode,
 }
 
 impl RetShapePolicy {
     pub fn off() -> Self {
-        RetShapePolicy { guards: GuardForm::Binary, arms: false, loop_test: LoopTestMode::Binary }
+        RetShapePolicy {
+            guards: GuardForm::Binary,
+            arms: ArmForm::Merged,
+            tail_values: false,
+            tail_void: false,
+            loop_test: LoopTestMode::Binary,
+        }
     }
 
     /// The shipped default.
@@ -68,7 +94,7 @@ impl RetShapePolicy {
     }
 
     fn is_off(&self) -> bool {
-        self.guards == GuardForm::Binary && !self.arms
+        self.guards == GuardForm::Binary && self.arms == ArmForm::Merged
     }
 }
 
@@ -384,36 +410,62 @@ const MAX_TAIL_OPS: usize = 16;
 /// spliced into it first.
 pub(crate) fn arm_returns(fd: &mut Funcdata, max_inedges: int4) -> Vec<BlockId> {
     let mut out = Vec::new();
-    if !fd.get_arch().ret_shape.arms || crate::p3_dataflow::kuna_unoptimized::is_unoptimized(fd) {
+    let form = fd.get_arch().ret_shape.arms;
+    if form == ArmForm::Merged || crate::p3_dataflow::kuna_unoptimized::is_unoptimized(fd) {
         return out;
     }
     let rets: Vec<_> = fd.obank().iter_code(OpCode::CPUI_RETURN).collect();
+    let mut folded: Option<std::collections::BTreeMap<BlockId, int4>> = None;
     for r in rets {
         let Some(op) = fd.obank().get(r) else { continue };
         if op.is_dead() || op.get_halt_type() != 0 || op.num_input() < 2 {
             continue;
         }
-        let Some(mut b) = op.get_parent() else { continue };
+        let Some(b) = op.get_parent() else { continue };
         let g = fd.bblocks_ref();
-        if g.block(b).size_in() == 1 {
-            let p = g.block(b).get_in(0);
-            let pb = g.block(p);
-            if pb.size_out() != 1 || pb.size_in() < 2 || !value_tail(fd, p) || !value_tail(fd, b) {
-                continue;
-            }
-            if fd.splice_block_basic(p).is_err() {
-                continue;
-            }
-            b = p;
-        }
-        let n = fd.bblocks_ref().block(b).size_in();
-        if n < 2 || n > max_inedges || !value_tail(fd, b) || !merged_value(fd, b) {
+        let join = if g.block(b).size_in() == 1 && g.block(g.block(b).get_in(0)).size_out() == 1 {
+            g.block(b).get_in(0)
+        } else {
+            b
+        };
+        let n = g.block(join).size_in();
+        if n < 2 || n > max_inedges || !value_tail(fd, b) || !value_tail(fd, join) || !merged_value(fd, b, join) {
             continue;
         }
-        if fd.get_arch().returndup_triangle && crate::p8_structure::kuna_rettriangle::is_triangle_join(fd, b) {
+        let preds: Vec<BlockId> = (0..n).map(|i| g.block(join).get_in(i)).collect();
+        if form != ArmForm::All && preds.iter().any(|&p| g.block(p).size_out() != 1) {
             continue;
         }
-        out.push(b);
+        let shared: Vec<BlockId> = preds.iter().copied().filter(|&p| g.block(p).size_in() > 1).collect();
+        if form != ArmForm::All && !shared.is_empty() {
+            if form == ArmForm::ArmsSingle {
+                continue;
+            }
+            let folded = folded.get_or_insert_with(|| crate::p8_structure::kuna_orchain::folded_in_degree(fd));
+            if shared.iter().any(|p| folded.get(p).copied() != Some(1)) {
+                continue;
+            }
+        }
+        if join != b && fd.splice_block_basic(join).is_err() {
+            continue;
+        }
+        if fd.get_arch().returndup_triangle && crate::p8_structure::kuna_rettriangle::is_triangle_join(fd, join) {
+            continue;
+        }
+        if std::env::var_os("KUNA_RETSHAPE_TRACE").is_some() {
+            let g = fd.bblocks_ref();
+            let preds: Vec<String> = (0..g.block(join).size_in())
+                .map(|i| {
+                    let p = g.block(join).get_in(i);
+                    format!("b{}/in{}out{}", g.block(p).get_index(), g.block(p).size_in(), g.block(p).size_out())
+                })
+                .collect();
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(std::env::var_os("KUNA_RETSHAPE_TRACE").unwrap()) {
+                let _ = writeln!(f, "TRACE retshape arms {} b{} spliced={} preds {:?}", fd.get_name(), g.block(join).get_index(), join != b, preds);
+            }
+        }
+        out.push(join);
     }
     out
 }
@@ -454,9 +506,10 @@ fn value_tail(fd: &Funcdata, b: BlockId) -> bool {
         })
 }
 
-/// The value `RETURN` hands back in block `b` is a merge of `b`'s in-edges,
-/// perhaps cast or extended.
-fn merged_value(fd: &Funcdata, b: BlockId) -> bool {
+/// The value `RETURN` hands back in block `b` is a merge of the in-edges of
+/// `join` (`b` itself, or the block that only runs into it), perhaps cast or
+/// extended.
+fn merged_value(fd: &Funcdata, b: BlockId, join: BlockId) -> bool {
     let Some(ret) = fd.bb_op_tail(b).and_then(|t| fd.obank().get(t)) else { return false };
     if ret.code() != OpCode::CPUI_RETURN {
         return false;
@@ -466,11 +519,12 @@ fn merged_value(fd: &Funcdata, b: BlockId) -> bool {
         let Some(def) = v.and_then(|v| fd.vbank().get(v)).and_then(|v| v.get_def()).and_then(|d| fd.obank().get(d)) else {
             return false;
         };
-        if def.get_parent() != Some(b) {
+        let at = def.get_parent();
+        if at != Some(b) && at != Some(join) {
             return false;
         }
         match def.code() {
-            OpCode::CPUI_MULTIEQUAL => return true,
+            OpCode::CPUI_MULTIEQUAL => return at == Some(join),
             OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT | OpCode::CPUI_SUBPIECE => {
                 v = def.get_in(0)
             }
@@ -478,6 +532,72 @@ fn merged_value(fd: &Funcdata, b: BlockId) -> bool {
         }
     }
     false
+}
+
+/// Whether `tailform`'s void merge may drop a `return;` past a looptest guard.
+pub(crate) fn void_tails(fd: &Funcdata) -> bool {
+    fd.get_arch().ret_shape.tail_void && !crate::p3_dataflow::kuna_unoptimized::is_unoptimized(fd)
+}
+
+/// Whether two returned values of different SSA identity print the same value
+/// at the end of a function: equal constants, the same named variable, or the
+/// same side-effect-free expression over such leaves.  Only `tailform`'s merge
+/// asks, for a `return` that ends an arm right before the final `return`, where
+/// no statement runs between the two.
+pub(crate) fn same_return(fd: &Funcdata, a: RetKey, b: RetKey) -> bool {
+    if !fd.get_arch().ret_shape.tail_values || crate::p3_dataflow::kuna_unoptimized::is_unoptimized(fd) {
+        return false;
+    }
+    match (a, b) {
+        (RetKey::Vn(x), RetKey::Vn(y)) => same_value(fd, x, y, 6),
+        _ => false,
+    }
+}
+
+fn same_value(fd: &Funcdata, x: VarnodeId, y: VarnodeId, depth: u32) -> bool {
+    if x == y {
+        return true;
+    }
+    let (Some(vx), Some(vy)) = (fd.vbank().get(x), fd.vbank().get(y)) else { return false };
+    if vx.get_size() != vy.get_size() {
+        return false;
+    }
+    if vx.is_constant() || vy.is_constant() || vx.is_annotation() || vy.is_annotation() {
+        return vx.is_constant() == vy.is_constant()
+            && vx.is_annotation() == vy.is_annotation()
+            && vx.get_addr() == vy.get_addr();
+    }
+    if !vx.is_implied() && !vy.is_implied() {
+        return vx.get_high().is_some() && vx.get_high() == vy.get_high();
+    }
+    if !(vx.is_implied() && vy.is_implied()) || depth == 0 {
+        return false;
+    }
+    let (Some(dx), Some(dy)) = (
+        vx.get_def().and_then(|d| fd.obank().get(d)),
+        vy.get_def().and_then(|d| fd.obank().get(d)),
+    ) else {
+        return false;
+    };
+    if dx.code() != dy.code() || dx.num_input() != dy.num_input() {
+        return false;
+    }
+    if matches!(
+        dx.code(),
+        OpCode::CPUI_CALL
+            | OpCode::CPUI_CALLIND
+            | OpCode::CPUI_CALLOTHER
+            | OpCode::CPUI_MULTIEQUAL
+            | OpCode::CPUI_INDIRECT
+            | OpCode::CPUI_NEW
+            | OpCode::CPUI_STORE
+    ) {
+        return false;
+    }
+    (0..dx.num_input()).all(|i| match (dx.get_in(i), dy.get_in(i)) {
+        (Some(a), Some(b)) => same_value(fd, a, b, depth - 1),
+        _ => false,
+    })
 }
 
 /// The `retshape` option.
@@ -494,10 +614,18 @@ impl OptionRetShape {
                 "or" => policy.guards = GuardForm::Or,
                 "orcalls" => policy.guards = GuardForm::OrCalls,
                 "split" => policy.guards = GuardForm::Split,
-                "arms" => policy.arms = true,
-                _ => return Err(KunaError::parse("Must specify retshape as 'off' or a list of 'or', 'orcalls', 'split', 'arms'")),
+                "arms" => policy.arms = ArmForm::Arms,
+                "arms1" => policy.arms = ArmForm::ArmsSingle,
+                "armsall" => policy.arms = ArmForm::All,
+                "tailvalues" => policy.tail_values = true,
+                "tailvoid" => policy.tail_void = true,
+                _ => {
+                    return Err(KunaError::parse(
+                        "Must specify retshape as 'off' or a list of 'or', 'orcalls', 'split', 'arms', 'arms1', 'armsall'",
+                    ))
+                }
             }
         }
-        Ok((policy, format!("Return shape policy: guards {:?}, arms {}", policy.guards, policy.arms)))
+        Ok((policy, format!("Return shape policy: guards {:?}, arms {:?}", policy.guards, policy.arms)))
     }
 }

@@ -567,7 +567,9 @@ fn site_decision(data: &Funcdata, cx: &Ctx, shape: TailShape, lines: usize, at: 
 /// Whether `b` is a one-arm `if` whose arm ends in the `return key` the
 /// function ends with anyway (and is more than that return).
 fn merges(data: &Funcdata, cx: &Ctx, b: BlockId, key: RetKey) -> bool {
-    if !plain_if(data, b) || holds_claimed(data, cx, b) {
+    // (kuna `retshape`) a void arm's last `return;` drops past a looptest guard.
+    let past_claimed = key == RetKey::Void && crate::p8_structure::kuna_retshape::void_tails(data);
+    if !plain_if(data, b) || (!past_claimed && holds_claimed(data, cx, b)) {
         return false;
     }
     // (kuna `returndup auto`) a recorded valued return is not merged away.
@@ -737,7 +739,7 @@ fn terminal_returns(data: &Funcdata, b: BlockId, key: RetKey, alone: bool) -> us
 fn elidable_return(data: &Funcdata, b: BlockId, key: RetKey, alone: bool) -> bool {
     data.sblocks_ref().block(b).get_flags() & (F_RET_ONLY | F_RET_SKIP) == 0
         && !labelled(data, b)
-        && leaf_return(data, b) == Some(key)
+        && leaf_return(data, b).is_some_and(|k| k == key || crate::p8_structure::kuna_retshape::same_return(data, k, key))
         && !(alone && bare_return(data, b).is_some())
 }
 
