@@ -42,6 +42,11 @@ use crate::funcdata::Funcdata;
 const MAX_JOINS: usize = 16;
 /// Operations one copy has and the other lacks that the backward walk steps over.
 const MAX_SKIPS: usize = 2;
+/// Functions larger than this many ops are not decompiled a second time to check
+/// a joined loop's gotos: the second run costs as much as the first, and on the
+/// decbench corpus every function where the unjoined result printed fewer gotos
+/// had under 500 ops.
+const MAX_RECHECK_OPS: usize = 1000;
 
 /// An operation that reads and writes no memory and has no other effect, so it
 /// can run before operations it followed when it reads none of their outputs: it
@@ -122,12 +127,13 @@ impl Action for ActionLatchJoin {
     }
 }
 
-/// The gotos the finished function prints when a latch was joined and a goto
-/// jumps within a loop that holds a joined latch, else `None`.  The drive then
+/// The gotos the finished function prints when a latch was joined, the function
+/// has at most [`MAX_RECHECK_OPS`] ops and a goto jumps within a loop that holds a
+/// joined latch, else `None`.  The drive then
 /// decompiles the function again without the join and keeps the result with
 /// fewer gotos.
 pub fn joined_gotos(fd: &Funcdata) -> Option<i32> {
-    if fd.kuna_latch_joins == 0 || gotos_near_joins(fd) == 0 {
+    if fd.kuna_latch_joins == 0 || fd.obank().iter_alive().count() > MAX_RECHECK_OPS || gotos_near_joins(fd) == 0 {
         return None;
     }
     Some(crate::p2_lift::kuna_loweredswitchkeep::printed_gotos(fd))
