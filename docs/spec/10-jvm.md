@@ -948,8 +948,8 @@ Numbers print with the JDK's own algorithms (section 10.13).
 
 **Failed methods.** A method whose schedule threw is written as its signature and a body
 of comments (`ClassWriter::dump_error`): `$VF: Couldn't be decompiled`, then with
-`jvm_dump_exception_on_error` the `jvm_error_message` note (by default a request to report
-the class to kuna's tracker, Vineflower's in compat mode; section 10.16), the exception
+`jvm_dump_exception_on_error` the `error-message` note (a request to report the class to
+kuna's tracker, Vineflower's in compat mode; section 10.16), the exception
 text and its throw location, and with `jvm_dump_bytecode_on_error` a listing of the
 method's bytecode. The class around it is written normally.
 
@@ -1411,8 +1411,8 @@ failure comment included (pinned by its digest), and by default kuna's reviewed 
 - The failure marker line never changes: the CLI and the benchmark count failed methods by
   it. `report_to_kuna` changes only the `error-message` note under it, putting kuna's
   request (`KUNA_ERROR_MESSAGE`) in place of the default before the caller's options are
-  applied, so a `jvm_error_message` the caller sets still wins; it reads the set being
-  built, since `Fernflower::new` has installed no context yet.
+  applied, so an `error-message` the caller passes (the corpus fixture's empty one) still
+  wins; it reads the set being built, since `Fernflower::new` has installed no context yet.
 - The `kt_*` fixes change Kotlin output only: in a pass or writer that Java output shares,
   they act only on a class written as Kotlin (a class with Kotlin metadata, the Kotlin
   plugin on).

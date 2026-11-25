@@ -21,6 +21,7 @@ Vineflower keys kuna sets itself, so they are not options:
 - `__dump_original_lines__` -- corpus runner only
 - `indent-string` -- fixed at Vineflower's default, three spaces
 - `preferred-line-length` -- fixed at Vineflower's default, 160 columns; the corpus runner sets it for Vineflower's own tests
+- `error-message` -- fixed: the note under a failure comment asks for reports to kuna's tracker (Vineflower's in compat mode); the corpus fixture sets it empty
 
 Three tiers:
 
@@ -178,8 +179,6 @@ Three tiers:
 | need the type argument of a generic method call | [`jvm_explicit_generics`](#jvm_explicit_generics----on--off-default-off) |
 | x -> { return x + 1; } where x -> x + 1 is wanted (option is off) | [`jvm_inline_simple_lambdas`](#jvm_inline_simple_lambdas----on--off-default-on) |
 | one-line lambdas hard to diff | [`jvm_inline_simple_lambdas`](#jvm_inline_simple_lambdas----on--off-default-on) |
-| failure comment asks to report to an issue tracker | [`jvm_error_message`](#jvm_error_message-----default-please-report-this-to-the-vineflower-issue-tracker-at-httpsgithubcomvineflowervineflowerissues-with-a-copy-of-the-class-file-if-you-have-the-rights-to-distribute-it) |
-| failure comment should carry a project-specific note | [`jvm_error_message`](#jvm_error_message-----default-please-report-this-to-the-vineflower-issue-tracker-at-httpsgithubcomvineflowervineflowerissues-with-a-copy-of-the-class-file-if-you-have-the-rights-to-distribute-it) |
 | failed method shows a long // Bytecode: listing | [`jvm_dump_bytecode_on_error`](#jvm_dump_bytecode_on_error----on--off-default-on) |
 | need the instructions of a method that failed to decompile (option is off) | [`jvm_dump_bytecode_on_error`](#jvm_dump_bytecode_on_error----on--off-default-on) |
 | exception text and at src/... lines inside a failed method | [`jvm_dump_exception_on_error`](#jvm_dump_exception_on_error----on--off-default-on) |
@@ -702,15 +701,6 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 - **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
 - **Also spelled:** `inline-simple-lambdas`, `isl`
 - **Example:** `kuna decompile app.jar com.ex.Streams --option jvm_inline_simple_lambdas off`
-
-### `jvm_error_message` -- <text>, default `Please report this to the Vineflower issue tracker, at https://github.com/Vineflower/vineflower/issues with a copy of the class file (if you have the rights to distribute it!)`
-
-- **Symptoms:** failure comment asks to report to an issue tracker; failure comment should carry a project-specific note.
-- **What it does:** The note (one comment line per text line) written after $VF: Couldn't be decompiled when exception dumps are on; unset, it points to kuna's issue tracker, or with jvm_vineflower_compat on to Vineflower's (the default shown, Vineflower's own).
-- **When to flip:** Replace it with your own text (it then wins over both trackers), or set it empty to drop the note.
-- **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
-- **Also spelled:** `error-message`, `erm`
-- **Example:** `kuna decompile app.jar com.ex.Main --option jvm_error_message "see kuna docs jvm"`
 
 ### `jvm_dump_bytecode_on_error` -- on | off, default `on`
 

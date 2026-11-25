@@ -848,28 +848,6 @@ tier = "analysis"
 symptoms = "class or method named like a Java keyword|identifiers that are not valid Java (obfuscated names)|many classes named a, b, c that clash"
 
 [[option]]
-option = "jvm_error_message"
-vineflower = "error-message"
-short = "erm"
-aliases = ["error-message", "erm"]
-values = "<text>"
-default = "Please report this to the Vineflower issue tracker, at https://github.com/Vineflower/vineflower/issues with a copy of the class file (if you have the rights to distribute it!)"
-destructive = false
-phase = "p9_emit"
-subphase = "class_writer"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "The note (one comment line per text line) written after $VF: Couldn't be decompiled when exception dumps are on; unset, it points to kuna's issue tracker, or with jvm_vineflower_compat on to Vineflower's (the default shown, Vineflower's own)."
-use_when = "Replace it with your own text (it then wins over both trackers), or set it empty to drop the note."
-example = "kuna decompile app.jar com.ex.Main --option jvm_error_message \"see kuna docs jvm\""
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.ERROR_MESSAGE (error-message, -erm)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "failure comment asks to report to an issue tracker|failure comment should carry a project-specific note"
-
-[[option]]
 option = "jvm_dump_bytecode_on_error"
 vineflower = "dump-bytecode-on-error"
 short = "dbe"
@@ -1456,3 +1434,7 @@ kuna = "fixed at Vineflower's default, three spaces"
 [[driver_owned]]
 vineflower = "preferred-line-length"
 kuna = "fixed at Vineflower's default, 160 columns; the corpus runner sets it for Vineflower's own tests"
+
+[[driver_owned]]
+vineflower = "error-message"
+kuna = "fixed: the note under a failure comment asks for reports to kuna's tracker (Vineflower's in compat mode); the corpus fixture sets it empty"
