@@ -2955,6 +2955,28 @@ tier = "transform"
 symptoms = "call rendered with fewer arguments than the disassembly passes when the missing argument register is spilled to the frame before the call|floating-point argument dropped at the FIRST of several calls that reuse the same value|a spurious 4-byte stack local appears where a call argument should be|clang -O2 packed-double code calls atan2 with one argument instead of two|argument register stored to a caller-frame slot and reloaded after the call is not recognized as an argument"
 
 [[settable]]
+option = "comparedarg"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P4"
+subphase = "active-input-trial-scoring"
+strength = "HARD"
+rewind = "P4"
+issue = "GH-1918"
+summary = "Keep the values a caller compares with each other before a call to a callee with no body as that call's arguments. Funcdata::onlyOpUse (funcdata_varnode.cc:1851) rejects a trial whose value also reaches a branch, so `if (s->sec == ref->sec) return 0; return elapsed(s->sec, ref->sec);`, which clang -O2 compiles to `mov (%rdi),%rdi; mov (%rsi),%rsi; cmp %rsi,%rdi; je; call elapsed@plt`, printed `elapsed()`: the compare scores both trials inactive, and an import kuna has no prototype for has no body for calleearitybody or passthrough to restore the list from. With the option on, a comparison of the value with another Varnode the same call reads at an argument slot (directly or through the copy `cmp` makes of it) is not a competing use. It applies only at a direct, non-variadic call whose callee is a trampoline that jumps through a GOT slot or a register, or an address with no code to decode; a local function, also one reached through a PLT stub or one the entry probe gave up on, keeps the upstream rejection. Both compared values must be computed by the function (not its inputs, not loop joins), every argument register up to the later of the two must hold such a value, and the compare must not sit on a cycle that can repeat without making the call, so a search loop's `p->id != key` and a counted loop's `i < n` are not taken."
+use_when = "On by default (0/675 datatest assertions move; on whole-binary runs only find's pred_newer, pred_anewer and pred_cnewer change, gaining `difftime(v1,v3)`). Turn it OFF when a call to an import gains an argument the callee does not take: the KNOWN FALSE-POSITIVE MODE is a one-argument import called right after a compare of its argument register with the next one, `mov (%rdi),%rdi; mov (%rsi),%rsi; cmp %rsi,%rdi; je skip; call f@plt` where `f` takes one argument, which prints `f(a,b)`; nothing in the caller tells that from a two-argument `f`. A stated prototype (DWARF, a library signature, `--assert prototype`) is not affected. Off reproduces the upstream rejection: the call prints with no arguments, as `elapsed()`."
+example = "option comparedarg off"
+source_decompiler = "kuna"
+inspiration = "GH-1918 (find pred_newer calls difftime with no arguments); upstream Funcdata::onlyOpUse (funcdata_varnode.cc:1851) and FuncCallSpecs::checkInputTrialUse (fspec.cc:5592)"
+change_kind = "new-caller-evidence"
+tier = "transform"
+symptoms = "a call to an import prints with no arguments though the caller loads both argument registers and compares them just before the call|`if (a == b) return 0; return f(a, b);` prints `f()`|find's pred_newer prints `difftime()`|a one-argument import prints with a second argument that the caller only compared with the first"
+live_field = "compared_arg"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "indexaliasguard"
 values = "off|load|global|full"
 default = "global"
