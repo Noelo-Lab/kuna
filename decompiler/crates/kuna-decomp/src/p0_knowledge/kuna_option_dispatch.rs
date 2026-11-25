@@ -491,7 +491,7 @@ kuna_options! { self, p1;
     },
     "loopcondhoist" => {
         let (val, msg) =
-            crate::p8_structure::kuna_ifnoexit::OptionLoopCondHoist.apply(p1)?;
+            crate::p8_structure::kuna_loopcond::OptionLoopCondHoist.apply(p1)?;
         self.loop_cond_hoist = val;
         Ok(msg)
     },
