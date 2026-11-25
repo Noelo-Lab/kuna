@@ -1165,6 +1165,9 @@ pub struct Architecture {
     /// size of its conditional tail; `None` when off.  Read by
     /// [`crate::p8_structure::kuna_tailform`].
     pub tail_form: Option<crate::p8_structure::kuna_tailform::TailFormPolicy>,
+    /// (kuna) `retshape`: how adjacent guards and tail returns of optimized
+    /// functions print.  Read by [`crate::p8_structure::kuna_retshape`].
+    pub ret_shape: crate::p8_structure::kuna_retshape::RetShapePolicy,
     /// (kuna) Hoist a leading const-guard into an early return (`if (c) return K;`) by
     /// peeling only the CONSTANT arm of a mixed return phi — the per-edge narrowing of
     /// angr SAILR `ReturnDuplicatorHigh` that `duplicate_shared_returns`' whole-block
@@ -2628,6 +2631,7 @@ impl Architecture {
             returndup_record: false, // (kuna) option returndup auto; reset_defaults sets the shipped default
             returndup_triangle: false, // (kuna) option rettriangle; reset_defaults sets the shipped default
             tail_form: None, // (kuna) option tailform; reset_defaults sets the shipped default
+            ret_shape: crate::p8_structure::kuna_retshape::RetShapePolicy::off(), // (kuna) option retshape; reset_defaults sets the shipped default
             early_return: false,
             switch_return: false,
             recover_loop_break: false,
@@ -2961,6 +2965,7 @@ impl Architecture {
         self.iteexpr = false; // (kuna) computed-arm ?: extension: runtime choice, default-off (corpus byte-identical).
         self.iteboolean = true; // (kuna) DIV-51 default-on (short-circuit 0/1 select -> boolean assignment; 0/675 ablation). Per-test opt-out (`option iteboolean off`) on the one stage test it changes keeps the corpus byte-identical.
         self.tail_form = Some(crate::p8_structure::kuna_tailform::TailFormPolicy::shipped()); // (kuna) option tailform default `model`
+        self.ret_shape = crate::p8_structure::kuna_retshape::RetShapePolicy::shipped(); // (kuna) option retshape
         self.guard_arm = crate::p8_structure::kuna_ifnoexit::GuardArmMode::Auto; // (kuna) option guardarm default `auto`: the layout tie-break only in functions `kuna_unoptimized` calls unoptimized; `option guardarm off` restores out-index order everywhere
         self.returndup_triangle = false; // (kuna) option rettriangle default-off: decbench sample O0 -163 GED / +56 perfect, O2 +60 GED / +1 perfect; on in the aggressive preset
         self.duplicate_shared_returns = true; // (kuna) DIV-54 default-on, superseding the DIV-18 revert (angr SAILR gotoless ReturnDuplicatorHigh). The -976 GED-perfect regression that reverted it was measured before #137 added the const-return gate (`returndup_is_const_ret`); re-ablated on 52,862 decbench functions the selective pass is +417 GED-perfect / -7,756 aggregate GED, net-positive in every one of nine tested partitions. Per-test opt-out (`option returndup off`) on the datatests it changes keeps the corpus byte-identical.
@@ -3845,6 +3850,7 @@ impl Architecture {
         ctx.returndup_record = self.returndup_record; // returndup auto
         ctx.returndup_triangle = self.returndup_triangle; // rettriangle (one-block-if join)
         ctx.tail_form = self.tail_form.map(|p| crate::p8_structure::kuna_tailform::TailFormPolicy { elide_void: self.voidtailreturn, loop_test: self.loop_test, ..p }); // tailform
+        ctx.ret_shape = crate::p8_structure::kuna_retshape::RetShapePolicy { loop_test: self.loop_test, ..self.ret_shape }; // retshape
         ctx.early_return = self.early_return; // earlyreturn
         ctx.switch_return = self.switch_return; // switchreturn
         ctx.recover_loop_break = self.recover_loop_break; // loopbreak_recovery

@@ -201,7 +201,7 @@ impl Action for ActionTailForm {
 
 /// The value a bare `return` hands back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RetKey {
+pub(crate) enum RetKey {
     Void,
     Const(int4, uintb),
     Vn(VarnodeId),
@@ -233,10 +233,10 @@ enum Edit {
 /// (`Ls`/`Graph`) and every condition-list prefix of a top-level `if` hoisted
 /// into one sequence.
 #[derive(Default)]
-struct View {
-    list: Vec<BlockId>,
-    conds: Vec<(BlockId, BlockId)>,
-    dropped: Vec<BlockId>,
+pub(crate) struct View {
+    pub(crate) list: Vec<BlockId>,
+    pub(crate) conds: Vec<(BlockId, BlockId)>,
+    pub(crate) dropped: Vec<BlockId>,
 }
 
 struct Ctx {
@@ -313,7 +313,7 @@ fn run(data: &mut Funcdata, policy: &TailFormPolicy) -> usize {
 /// The guard `if`s the `looptest` plan of the current tree drops; this pass
 /// leaves them, and everything around them, to that plan.  The printer's sign
 /// plan does not exist yet, so counters keep their high's own declared type.
-fn claimed_guards(data: &Funcdata, mode: LoopTestMode) -> Vec<BlockId> {
+pub(crate) fn claimed_guards(data: &Funcdata, mode: LoopTestMode) -> Vec<BlockId> {
     let Some(root) = data.sblocks_ref().root else { return Vec::new() };
     if mode == LoopTestMode::Binary {
         return Vec::new();
@@ -326,7 +326,7 @@ fn holds_claimed(data: &Funcdata, cx: &Ctx, b: BlockId) -> bool {
     cx.claimed.contains(&b) || data.sblocks_ref().block(b).get_list().iter().any(|&c| holds_claimed(data, cx, c))
 }
 
-fn top_container(data: &Funcdata) -> Option<BlockId> {
+pub(crate) fn top_container(data: &Funcdata) -> Option<BlockId> {
     let g = data.sblocks_ref();
     let root = g.root?;
     let list = g.block(root).get_list();
@@ -337,14 +337,14 @@ fn top_container(data: &Funcdata) -> Option<BlockId> {
     }
 }
 
-fn returns_void(data: &Funcdata) -> bool {
+pub(crate) fn returns_void(data: &Funcdata) -> bool {
     data.get_func_proto()
         .get_output_type()
         .map(|t| t.get_metatype() == crate::dtype::type_metatype::TYPE_VOID)
         .unwrap_or(false)
 }
 
-fn build_view(data: &Funcdata, top: BlockId) -> View {
+pub(crate) fn build_view(data: &Funcdata, top: BlockId) -> View {
     let mut v = View::default();
     for &c in data.sblocks_ref().block(top).get_list() {
         push_item(data, c, &mut v);
@@ -388,7 +388,7 @@ fn push_item(data: &Funcdata, c: BlockId, v: &mut View) {
 /// keeps only its condition's last component, and the emptied containers are
 /// freed.  Declines (changing nothing) when a container it would free carries a
 /// label or is named by a goto.
-fn materialize(data: &mut Funcdata, top: BlockId, view: View) -> bool {
+pub(crate) fn materialize(data: &mut Funcdata, top: BlockId, view: View) -> bool {
     if view.dropped.is_empty() && view.conds.is_empty() {
         return true;
     }
@@ -418,7 +418,7 @@ fn materialize(data: &mut Funcdata, top: BlockId, view: View) -> bool {
     true
 }
 
-fn goto_refs(data: &Funcdata) -> Vec<BlockId> {
+pub(crate) fn goto_refs(data: &Funcdata) -> Vec<BlockId> {
     let mut out = Vec::new();
     for blk in data.sblocks_ref().arena.values() {
         match blk.kind() {
@@ -616,7 +616,7 @@ fn wrapped_site(data: &Funcdata, cx: &Ctx, ifb: BlockId, r: BlockId, conds: &[(B
     Some(if cx.elide { lines.saturating_sub(terminal_returns(data, clause, RetKey::Void, true)) } else { lines })
 }
 
-fn cond_of(data: &Funcdata, ifb: BlockId, conds: &[(BlockId, BlockId)]) -> BlockId {
+pub(crate) fn cond_of(data: &Funcdata, ifb: BlockId, conds: &[(BlockId, BlockId)]) -> BlockId {
     conds
         .iter()
         .find(|&&(i, _)| i == ifb)
@@ -625,13 +625,13 @@ fn cond_of(data: &Funcdata, ifb: BlockId, conds: &[(BlockId, BlockId)]) -> Block
 }
 
 /// An `if` with one arm and no `goto`.
-fn plain_if(data: &Funcdata, b: BlockId) -> bool {
+pub(crate) fn plain_if(data: &Funcdata, b: BlockId) -> bool {
     let b = data.sblocks_ref().block(b);
     b.get_type() == BlockType::If && b.get_size() == 2 && b.get_if_goto_target().is_none()
 }
 
 /// `Some(K)` when `ifb` prints `if (c) return K;`.
-fn guard_key(data: &Funcdata, ifb: BlockId) -> Option<RetKey> {
+pub(crate) fn guard_key(data: &Funcdata, ifb: BlockId) -> Option<RetKey> {
     if !plain_if(data, ifb) {
         return None;
     }
@@ -654,12 +654,12 @@ fn final_return(data: &Funcdata, last: BlockId, void: bool) -> Final {
     Final::Open
 }
 
-fn is_leaf(data: &Funcdata, b: BlockId) -> bool {
+pub(crate) fn is_leaf(data: &Funcdata, b: BlockId) -> bool {
     data.sblocks_ref().block(b).get_type() == BlockType::Copy && data.sblocks_ref().block(b).get_copy().is_some()
 }
 
 /// The value of the `RETURN` ending leaf `b`, if it ends in one.
-fn leaf_return(data: &Funcdata, b: BlockId) -> Option<RetKey> {
+pub(crate) fn leaf_return(data: &Funcdata, b: BlockId) -> Option<RetKey> {
     let bb = data.sblocks_ref().block(b).get_copy()?;
     let tail = data.bb_op_tail(bb)?;
     let op = data.obank().get(tail)?;
@@ -673,7 +673,7 @@ fn leaf_return(data: &Funcdata, b: BlockId) -> Option<RetKey> {
     }
 }
 
-fn value_key(data: &Funcdata, vn: VarnodeId) -> Option<RetKey> {
+pub(crate) fn value_key(data: &Funcdata, vn: VarnodeId) -> Option<RetKey> {
     let v = data.vbank().get(vn)?;
     if v.is_constant() {
         return Some(RetKey::Const(v.get_size(), v.get_offset()));
@@ -692,7 +692,7 @@ fn value_key(data: &Funcdata, vn: VarnodeId) -> Option<RetKey> {
 
 /// `Some(K)` when `b` (a leaf, or a one-element list of one) prints only
 /// `return K;` and carries no label.
-fn bare_return(data: &Funcdata, b: BlockId) -> Option<RetKey> {
+pub(crate) fn bare_return(data: &Funcdata, b: BlockId) -> Option<RetKey> {
     let g = data.sblocks_ref();
     let mut b = b;
     while matches!(g.block(b).get_type(), BlockType::Ls | BlockType::Graph) && g.block(b).get_size() == 1 {
@@ -758,7 +758,7 @@ fn has_return(data: &Funcdata, b: BlockId, skip_own_tail: bool) -> bool {
 /// Whether `b` holds a `RETURN` that marks flow kuna could not follow, where
 /// the function does not really end: a decode failure, a `halt`, or a no-return
 /// halt with no call before it (flow cut at the next function's entry).
-fn truncated(data: &Funcdata, b: BlockId) -> bool {
+pub(crate) fn truncated(data: &Funcdata, b: BlockId) -> bool {
     use crate::op::pcodeop_flags as f;
     let blk = data.sblocks_ref().block(b);
     let Some(bb) = blk.get_copy() else {
@@ -784,7 +784,7 @@ fn truncated(data: &Funcdata, b: BlockId) -> bool {
     true
 }
 
-fn labelled(data: &Funcdata, b: BlockId) -> bool {
+pub(crate) fn labelled(data: &Funcdata, b: BlockId) -> bool {
     let g = data.sblocks_ref();
     if g.block(b).is_unstructured_target() {
         return true;
@@ -817,7 +817,7 @@ fn falls_through(data: &Funcdata, b: BlockId) -> bool {
 /// The printer's statement test for one op of a leaf (see
 /// `PrintC::emit_basic_block_ops`), resolving the ambiguous cases toward
 /// "prints".
-fn op_prints(data: &Funcdata, o: OpId) -> bool {
+pub(crate) fn op_prints(data: &Funcdata, o: OpId) -> bool {
     let Some(op) = data.obank().get(o) else {
         return false;
     };
@@ -942,7 +942,7 @@ pub(crate) fn negate(data: &mut Funcdata, c: BlockId, top: bool) {
     }
 }
 
-fn new_leaf(data: &mut Funcdata, bb: BlockId, flags: uint4) -> BlockId {
+pub(crate) fn new_leaf(data: &mut Funcdata, bb: BlockId, flags: uint4) -> BlockId {
     let mut leaf = FlowBlock::new_kind(BlockKind::Copy { copy: Some(bb) });
     leaf.set_flag(flags);
     data.sblocks_mut().arena.insert(leaf)
@@ -1018,7 +1018,7 @@ fn guard(data: &mut Funcdata, cx: &mut Ctx, list: &[BlockId], i: usize) -> bool 
     true
 }
 
-fn free_subtree(data: &mut Funcdata, b: BlockId) {
+pub(crate) fn free_subtree(data: &mut Funcdata, b: BlockId) {
     let kids = data.sblocks_ref().block(b).get_list().to_vec();
     for k in kids {
         free_subtree(data, k);

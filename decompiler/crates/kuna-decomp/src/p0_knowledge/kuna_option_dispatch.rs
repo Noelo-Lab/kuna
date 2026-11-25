@@ -589,6 +589,11 @@ kuna_options! { self, p1;
         self.tail_form = val;
         Ok(msg)
     },
+    "retshape" => {
+        let (val, msg) = crate::p8_structure::kuna_retshape::OptionRetShape.apply(p1)?;
+        self.ret_shape = val;
+        Ok(msg)
+    },
     "earlyreturn" => {
         let (val, msg) =
             crate::p8_structure::kuna_earlyreturn::OptionEarlyReturn.apply(p1)?;
