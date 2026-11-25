@@ -37,7 +37,7 @@ use kuna_base::space::spacetype;
 use kuna_base::types::{int4, uint4};
 use kuna_num::opcodes::OpCode;
 
-use crate::block::BlockGraph;
+use crate::block::{BlockGraph, BlockType};
 use crate::context::BlockId;
 use crate::funcdata::Funcdata;
 
@@ -89,6 +89,7 @@ pub(crate) fn record(fd: &mut Funcdata) {
             None => stmts.push((key, vec![edge])),
         }
     };
+    let mut landings: Vec<(u64, BlockId)> = Vec::new();
     let n = fd.bblocks_get_size();
     for bi in 0..n {
         let p = fd.bblocks_get_block(bi);
@@ -109,7 +110,12 @@ pub(crate) fn record(fd: &mut Funcdata) {
         let d = fd.bblocks_ref().block(p).get_out(taken);
         let Some(s) = start(fd, d) else { continue };
         if dest < s && s - dest <= MAX_GAP {
-            let key = if jump_only(fd, d) { Key::Block(d) } else { Key::Landing(dest) };
+            let key = if jump_only(fd, d) {
+                Key::Block(d)
+            } else {
+                landings.push((dest, d));
+                Key::Landing(dest)
+            };
             add(&mut stmts, key, (p, taken));
         }
         if code == OpCode::CPUI_CBRANCH {
@@ -121,6 +127,32 @@ pub(crate) fn record(fd: &mut Funcdata) {
                     forwarded_tests(fd, p, m, &mut stmts);
                 }
             }
+        }
+    }
+    // A fall-through runs the `nop`s between its block and the next one, so it
+    // shares the first landing in that gap (a closing brace both reach).
+    for bi in 0..n {
+        let p = fd.bblocks_get_block(bi);
+        let Some(tail) = fd.bb_op_tail(p).and_then(|t| fd.obank().get(t)) else { continue };
+        let b = fd.bblocks_ref().block(p);
+        let slot = match tail.code() {
+            OpCode::CPUI_CBRANCH if b.size_out() == 2 => {
+                if tail.is_boolean_flip() {
+                    1
+                } else {
+                    0
+                }
+            }
+            OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_RETURN => continue,
+            _ if b.size_out() == 1 => 0,
+            _ => continue,
+        };
+        let d = b.get_out(slot);
+        let last = tail.get_addr().get_offset();
+        let Some(s) = start(fd, d) else { continue };
+        let hit = landings.iter().filter(|&&(a, t)| t == d && a > last && a < s).map(|&(a, _)| a).min();
+        if let Some(a) = hit {
+            add(&mut stmts, Key::Landing(a), (p, slot));
         }
     }
     // Every way into a jump-only statement block belongs to that statement.
@@ -201,6 +233,34 @@ fn jump_only(fd: &Funcdata, b: BlockId) -> bool {
     ops.len() == 1
         && fd.bblocks_ref().block(b).size_out() == 1
         && fd.obank().get(ops[0]).is_some_and(|o| o.code() == OpCode::CPUI_BRANCH)
+}
+
+/// Whether `ActionReturnSplit` leaves in-edge `i` of RETURN block `b` to
+/// the structured goto `goto_block`: in a function whose returns
+/// `returndup auto` placed, an edge recorded as a jump statement that leaves
+/// its innermost loop for the block after that loop is the source's `break`
+/// out of the loop, not a second `return`.
+pub(crate) fn keeps_return(fd: &Funcdata, b: BlockId, i: int4, goto_block: BlockId) -> bool {
+    if fd.kuna_o0jumps.is_none() || !crate::p8_structure::kuna_o0returns::decided(fd) {
+        return false;
+    }
+    if id_of(fd.bblocks_ref().block(b).get_in_label(i)) == 0 {
+        return false;
+    }
+    let Some(leaf) = fd.bblocks_ref().block(b).get_copy_map() else { return false };
+    let sg = fd.sblocks_ref();
+    let mut cur = goto_block;
+    while let Some(up) = sg.block(cur).get_parent() {
+        match sg.block(up).get_type() {
+            BlockType::WhileDo | BlockType::DoWhile | BlockType::InfLoop => {
+                let Some(outer) = sg.block(up).get_parent() else { return false };
+                return sg.next_flow_after(outer, up) == Some(leaf);
+            }
+            BlockType::Switch => return false,
+            _ => cur = up,
+        }
+    }
+    false
 }
 
 /// The jump-statement id an edge label carries; 0 for none.
