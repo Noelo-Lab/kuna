@@ -1,12 +1,13 @@
 <decompilertest>
 <binaryimage arch="x86:LE:64:default:gcc">
 <!--
-    kuna `tailform model`: the function-tail `if` is wrapped or turned into a
-    guard clause by saved logistic weights over the site's features instead of
-    the 4-line size threshold.
+    kuna `tailform model`, the default: the function-tail `if` is wrapped or
+    turned into a guard clause by saved logistic weights over the site's
+    features instead of the 4-line size threshold.
 
     Stage / sub-stage: P8 "goto-quality", a print-tree edit after final
-    structuring.  The P0 assertion `option tailform model` selects the weights.
+    structuring.  The P0 assertion `option tailform on` selects the size
+    threshold instead of the weights.
 
     The image is decompiler/crates/kuna-analysis/tests/fixtures/
     tailform_gcc_O2_x86_64, loaded whole.  Its `__do_global_dtors_aux` is the C
@@ -14,6 +15,9 @@
     four-line tail the threshold keeps wrapped, which the model, with no
     statements before the site, an `x` test and an assignment last, prints as
     the source's guard clause.  `note_if_zero` (one call) is wrapped by both.
+
+    Pass 1 runs with the default and prints the guard clause and the wrapped
+    call; pass 2 (`option tailform on`) keeps the four-line tail wrapped.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
@@ -22,23 +26,22 @@
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/tailform_gcc_O2_x86_64</com>
   <com>read symbols</com>
-  <com>option tailform on</com>
-  <com>load function __do_global_dtors_aux</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option tailform model</com>
   <com>load function __do_global_dtors_aux</com>
   <com>decompile</com>
   <com>print C</com>
   <com>load function note_if_zero</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option tailform on</com>
+  <com>load function __do_global_dtors_aux</com>
+  <com>decompile</com>
+  <com>print C</com>
 </script>
-<stringmatch name="tailform model #1: on, the four-line tail stays wrapped" min="1" max="1">^  if \(!completed\.0\) \{$</stringmatch>
-<stringmatch name="tailform model #2: model, the tail follows a guard clause" min="1" max="1">^  if \(completed\.0\)$
+<stringmatch name="tailform model #1: default, the tail follows a guard clause" min="1" max="1">^  if \(completed\.0\)$
 ^    return;$
 ^  if \(dat_3ff8\)$</stringmatch>
-<stringmatch name="tailform model #3: model, the one-call tail is wrapped" min="1" max="1">^  if \(!a0\)$
+<stringmatch name="tailform model #2: default, the one-call tail is wrapped" min="1" max="1">^  if \(!a0\)$
 ^    note\(\);</stringmatch>
+<stringmatch name="tailform model #3: on, the four-line tail stays wrapped" min="1" max="1">^  if \(!completed\.0\) \{$</stringmatch>
 <stringmatch name="tailform model #4: the runtime's store is printed in both passes" min="2" max="2">^ *completed\.0 = 1;$</stringmatch>
 </decompilertest>

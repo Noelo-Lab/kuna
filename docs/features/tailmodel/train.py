@@ -200,6 +200,7 @@ def main():
     ap.add_argument("--ungated", action="store_true", help="decide unoptimized functions too, with the detector as features")
     ap.add_argument("--fit-only", action="store_true", help="train the written table on the FIT half of the projects only "
                     "(an end-to-end run of it then measures the CHECK half held out)")
+    ap.add_argument("--check-only", action="store_true", help="train the written table on the CHECK half only")
     args = ap.parse_args()
     opts = args.opts.split(",")
     rows, stats = examples(args, opts)
@@ -236,6 +237,8 @@ def main():
     train = dec & use
     if args.fit_only:
         train &= np.array([fit_half(r["project"]) for r in rows])
+    if args.check_only:
+        train &= np.array([not fit_half(r["project"]) for r in rows])
     sc, lr = fit(X[train], iw[train])
     w = lr.coef_[0] / sc.scale_
     b = lr.intercept_[0] - (lr.coef_[0] * sc.mean_ / sc.scale_).sum()
