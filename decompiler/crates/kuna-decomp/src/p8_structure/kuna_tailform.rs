@@ -692,7 +692,7 @@ fn value_key(data: &Funcdata, vn: VarnodeId) -> Option<RetKey> {
 
 /// `Some(K)` when `b` (a leaf, or a one-element list of one) prints only
 /// `return K;` and carries no label.
-fn bare_return(data: &Funcdata, b: BlockId) -> Option<RetKey> {
+pub(crate) fn bare_return(data: &Funcdata, b: BlockId) -> Option<RetKey> {
     let g = data.sblocks_ref();
     let mut b = b;
     while matches!(g.block(b).get_type(), BlockType::Ls | BlockType::Graph) && g.block(b).get_size() == 1 {

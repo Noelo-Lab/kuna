@@ -875,6 +875,7 @@ pub fn universal_sched(
             // `if` by the size of its conditional tail (print-tree edit only).
             act!(crate::p8_structure::kuna_retshape::ActionRetShape::boxed("blockrecovery")),
             act!(crate::p8_structure::kuna_tailform::ActionTailForm::boxed("blockrecovery")),
+            act!(crate::p8_structure::kuna_boolret::ActionBoolRet::boxed("blockrecovery")),
             // (kuna) angr ITERegionConverter (option `iteregion`, default-OFF — a
             // runtime choice).  After the tree is final + goto targets labelled,
             // mark a narrow two-arm assignment diamond (`if (c) v=A; else v=B;`,

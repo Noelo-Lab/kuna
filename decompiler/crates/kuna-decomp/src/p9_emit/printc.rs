@@ -4919,6 +4919,10 @@ impl PrintC {
             self.emit_block_if_bool(fd, arch, m);
             return;
         }
+        if let Some(ret) = crate::p8_structure::kuna_boolret::returned(fd, blk) {
+            self.emit_block_if_return(fd, arch, blk, ret);
+            return;
+        }
         if let Some(m) = self.ite_ternary_match(fd, arch, blk) {
             self.emit_block_if_ite(fd, arch, m);
             return;
@@ -5354,6 +5358,36 @@ impl PrintC {
         if my_pending_indent >= 0 {
             self.emit.close_brace_indent(self.lang().kw_close_curly, my_pending_indent);
         }
+        self.context.pop_mod();
+    }
+
+    /// (kuna `boolbranch return`) Emit a flagged guard `if` as `return ( cond );`,
+    /// the condition through the same `ONLY_BRANCH` renderer as the `if` header
+    /// and the statement anchored on the guard's `RETURN`.
+    fn emit_block_if_return(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId, ret: OpId) {
+        use crate::prettyprint::Emit;
+
+        let cond = fd.sblocks_ref().block(blk).get_block(0);
+        self.context.push_mod();
+        self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH | modifiers::PENDING_BRACE);
+        self.context.push_mod();
+        self.context.set_mod(modifiers::NO_BRANCH);
+        self.emit_block(fd, arch, cond);
+        self.context.pop_mod();
+        self.emit_comment_block_tree(fd, cond);
+
+        self.emit.tag_line();
+        let markup = self.op_markup(fd, ret);
+        let sid = self.emit.begin_statement(&markup);
+        self.emit.tag_op(self.lang().kw_return, SyntaxHighlight::KeywordColor, &markup);
+        self.emit.spaces(1, 0);
+        self.context.push_mod();
+        self.context.set_mod(modifiers::ONLY_BRANCH);
+        self.emit_block(fd, arch, cond);
+        self.context.pop_mod();
+        self.emit.end_statement(sid);
+        self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
+        self.flush_eol_warnings();
         self.context.pop_mod();
     }
 
