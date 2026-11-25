@@ -2371,6 +2371,16 @@ funcsym stream:
   prototypes, no-return facts and name-based xrefs therefore see the same
   imported identity, including when a terminal call has no mapped fall-through
   bytes. This does not add a sectionless PPC32 resolver.
+  A CLI run that leaves the option short of `abi` (by `--option`, its mode
+  preset or `KUNA_PPC32PICIMPORTS`) on an image whose `.plt` holds validated
+  slots and whose code has r30-relative stubs says so in a `ppc32-pic-imports`
+  note, counted by
+  `decompiler/crates/kuna-analysis/src/loader/kuna_ppc32_imports.rs (pic_stub_count)`.
+  The count is of complete stub shapes, so `abi` may name fewer. The note
+  reads the 20-byte ELF header first and goes no further unless it is ELF32
+  `EM_PPC`; it then resolves the mode the subcommand loads under (`xrefs`
+  defaults to `reliable`, the others to `auto`). `strings` and `read`,
+  which print no import names, get no note.
   Every input named so far is keyed on the section table — `object` builds its
   dynamic-relocation iterator by scanning it for `SHT_REL`/`SHT_RELA`, reads
   `.dynsym` as a section, and the stub scan finds `.plt*` by name — so an ELF
@@ -3013,6 +3023,30 @@ already says which bytes are code (over stripped x86-64 ELF the clip's overshoot
 is alignment padding, 694 of 1,093 functions; MSVC lays a switch table out after
 its function in `.text`, and ARM a literal pool, both bytes of the function), and
 another raw language would need its own table and literal-pool readers.
+
+(kuna `coverage`) **A decompile reports the exact body beside the bound**
+(always on; `decompiler/crates/kuna-console/src/kuna_coverage.rs (output_ranges)`).
+The flow records the bytes of every instruction it decodes for a function, delay
+slots included (§2, `decoded_ranges`), so a decompile knows its function's body,
+code it goes on to prove dead included. Mapped to the target's address units as
+`line_mappings` is, the ranges ride `FuncResult::ranges` across the `--jobs` wire
+and the result store. A function whose C failed to render keeps its ranges, since
+it was decoded; a function whose decompile failed has none. Over a batch,
+`Code::measure_results` sets those ranges against the bytes the image holds for the
+CODE spans the extent clip uses: the section table, or else the executable load
+segments. The spans are snapshotted, a bit per byte for whether it is NUL, before a
+`--jobs` parent drops its program. The measure gives three counts:
+
+- the bytes some function lifted;
+- the bytes covered by a function that decompiled without an error;
+- the NUL bytes no function lifted.
+
+The NUL bytes are alignment fill or a zero-filled tail far more often than code, so
+they are left out of the total a share is taken of. Only bytes inside the spans
+count, so a block lifted outside them, such as an `--addr` into data, adds nothing.
+`decompile-all --json --coverage` reports the measure as `coverage`, and a
+whole-binary project export's completion line reports its two shares. Nothing here
+changes what is decompiled or printed.
 
 Naming a pointer slot is not by itself enough to bind a call *through* it. An ELF
 PLT stub and a Mach-O `__stubs` entry are code, so the call is direct and the name

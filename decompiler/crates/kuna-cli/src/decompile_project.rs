@@ -400,11 +400,42 @@ pub(crate) fn decompile_project(
         .map(|(n, s)| format!("{n} ({s} bytes)"))
         .collect::<Vec<_>>()
         .join(", ");
+    let coverage = whole.then(|| kuna_console::kuna_coverage::Code::of(&prog).measure_results(&results));
     Ok(ProjectCompletion {
         summary: format!(
-            "wrote {}: {files}; functions: {ok} ok, {failed} failed\n",
-            out_dir.display()
+            "wrote {}: {files}; functions: {ok} ok, {failed} failed{}\n",
+            out_dir.display(),
+            coverage_clause(coverage.as_ref())
         ),
         error,
     })
+}
+
+/// (kuna `coverage`) The completion line's `; code: ...` clause: how much of the
+/// program's executable bytes a whole-binary export lifted and decompiled, NUL
+/// bytes no function lifted left out. Empty for a narrowed export, and when the
+/// image publishes no executable bytes.
+pub(crate) fn coverage_clause(coverage: Option<&kuna_console::kuna_coverage::Coverage>) -> String {
+    let Some(coverage) = coverage else {
+        return String::new();
+    };
+    let (Some(lifted), Some(decompiled)) = (coverage.lifted_share(), coverage.decompiled_share()) else {
+        return String::new();
+    };
+    format!(
+        "; code: {} lifted, {} decompiled of {} bytes",
+        percent(lifted),
+        percent(decompiled),
+        coverage.share_total()
+    )
+}
+
+/// `share` as a percentage to one decimal, never rounded up to a whole 100.
+fn percent(share: f64) -> String {
+    let shown = format!("{:.1}%", share * 100.0);
+    if share < 1.0 && shown == "100.0%" {
+        "99.9%".to_string()
+    } else {
+        shown
+    }
 }

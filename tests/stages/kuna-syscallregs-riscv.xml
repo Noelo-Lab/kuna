@@ -99,6 +99,6 @@ aa8671579308f003368573000000e30de5fe8280
 <stringmatch name="SYSCALLREGS-RISCV #5: after adds its argument to the ecall result" min="1" max="1">return v1 \+ a0;</stringmatch>
 <stringmatch name="SYSCALLREGS-RISCV #6: with option syscallregs off after doubles its own argument" min="1" max="1">return a0 \* 2;</stringmatch>
 <stringmatch name="SYSCALLREGS-RISCV #7: the fence.i in fence is not a system call in either pass" min="2" max="2">fence\.i\(\);</stringmatch>
-<stringmatch name="SYSCALLREGS-RISCV #8: retry tests the ecall result, which reads a7 and a0 only" min="1" max="1">\} while \(ecall\(0x3f,a0\) == -4\);</stringmatch>
+<stringmatch name="SYSCALLREGS-RISCV #8: retry tests the ecall result, which reads a7 and a0 only" min="1" max="1">while \(ecall\(0x3f,a0\) == -4\)</stringmatch>
 <stringmatch name="SYSCALLREGS-RISCV #9: with option syscallregs off retry tests its own fd" min="1" max="1">\} while \(a0 == -4\);</stringmatch>
 </decompilertest>

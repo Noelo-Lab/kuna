@@ -206,6 +206,28 @@ while (i != 16)` prints `while` because its entry test folds to true. A guard
 a retry loop whose test reads a body value stays do-while. `option looptest
 binary` restores every do-while and guard.
 
+`kuna-looptest-zerotrip.xml` checks the guard drop of option `looptest` on gcc
+-O2 x86-64 loops whose skip path has its own copy of the code after the loop.
+A sum that returns `0.0` when skipped, a byte comparison that returns `0`, a
+list count whose skip path calls `report(NULL, 0)` and a bucket walk whose
+else arm sets its counter to 0 print `while (c)` without the guard, as does a
+pair of counted loops sharing one counter register: each skip path is the exit
+path with the carried variables at their start values. Controls whose skip
+path returns `-1`, calls `report(head, 1)`, sets `-1`, or keeps a parameter the
+loop would overwrite keep their guards. `option looptest binary` restores every
+guard.
+
+`kuna-looptest-entry.xml` checks the top tests of option `looptest` that need
+no guard drop, on gcc -O2 x86-64 (one function at -O0). A polling loop with an
+empty body prints `while (poll_busy()) {}`; counted loops whose guard reads a
+field loaded in the `&&` block before it, or loaded before a store to the field
+next to it, and one whose counter lives in the frame because its address is
+taken, lose their guards; a walk from `s + 8` to `s + 0x48` tests at the top;
+and a loop whose test recomputes the next row pointer prints the carried
+pointer. A test of a body value, an unoptimized function's frame counter and a
+walk to a pointer argument stay do-while loops. `option looptest binary`
+restores every do-while.
+
 `kuna-switchmerge.xml` checks option `switchmerge`: two AArch64 range-checked
 jump tables on one selector, the second reached when the first's range check
 fails, print as one `switch` whose holes take the one `default:` arm. In `f`
