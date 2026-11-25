@@ -19,7 +19,8 @@ use crate::Options;
 /// Where a script comes from: a datatest, or an object file and options.
 pub enum Source<'a> {
     Datatest(&'a str),
-    Binary { path: &'a str, functions: Vec<String>, options: &'a [(String, String)] },
+    /// `contract` is a C source and its name (`--contract`), as `check` takes it.
+    Binary { path: &'a str, functions: Vec<String>, options: &'a [(String, String)], contract: Option<(&'a str, &'a str)> },
 }
 
 pub enum Finding {
@@ -32,8 +33,10 @@ pub enum Finding {
     Rules { applied: usize, culprits: Vec<Culprit>, inconclusive: Vec<String>, report: Report },
 }
 
-/// Application `k` of `total` of `rule`, at `addr`, is the first after which
-/// the function differs: with `k - 1` it agrees.
+/// Application `k` of `total` of `rule`, at `addr`: with `k - 1` allowed the
+/// function agrees over every run, with `k` it differs. Found by bisection,
+/// which assumes a later application does not undo a difference, so `k` is a
+/// candidate, not a proven first cause.
 pub struct Culprit {
     pub rule: String,
     pub k: u64,
@@ -65,14 +68,30 @@ fn probe(src: &Source, roots: &[String], decompile: usize, mode: Mode, opts: &Op
             let (prog, commands) = session::load_datatest(path, roots)?;
             (commands, Some(prog))
         }
-        Source::Binary { path, functions, options } => (session::binary_script(path, functions, options), None),
+        Source::Binary { path, functions, options, .. } => (session::binary_script(path, functions, options), None),
     };
+    let source = match src {
+        Source::Binary { contract, .. } => *contract,
+        Source::Datatest(_) => None,
+    };
+    let mut failure = None;
     session::run(commands, conf, roots, true, Some(&mut cap), |prog, fd| {
         if seen == decompile {
-            report = Some(check_function(prog, fd, None, opts));
+            let contract = match source.map(|(src, name)| crate::contract::from_source(src, fd.get_name(), name, crate::abi::c_sizes(prog))) {
+                Some(Err(e)) => {
+                    failure = Some(e);
+                    None
+                }
+                Some(Ok(c)) => Some(c),
+                None => None,
+            };
+            report = Some(check_function(prog, fd, contract.as_ref(), opts));
         }
         seen += 1;
     })?;
+    if let Some(e) = failure {
+        return Err(e);
+    }
     Ok((report, cap.result.unwrap_or_default()))
 }
 
@@ -97,7 +116,7 @@ pub fn localize(
             }
             r.reports
         }
-        Source::Binary { path, functions, options } => crate::check_binary(path, functions, options, roots, None, opts)?,
+        Source::Binary { path, functions, options, contract } => crate::check_binary(path, functions, options, roots, *contract, opts)?,
     };
     let mine: Vec<usize> = all.iter().enumerate().filter(|(_, r)| r.function == function).map(|(i, _)| i).collect();
     if mine.is_empty() {
@@ -191,7 +210,7 @@ impl Localized {
             }
             Finding::Rules { applied, culprits, inconclusive, report } => {
                 let mut s = format!(
-                    "{head}  differs; of the {applied} rules that applied, it agrees without these, in the order their last needed application ran:\n"
+                    "{head}  differs; of the {applied} rules that applied, it agrees without these, in the order their last needed application ran (candidates found by bisection):\n"
                 );
                 for (i, c) in culprits.iter().enumerate() {
                     let at = c.addr.map_or_else(|| "?".to_string(), |a| format!("{a:#x}"));

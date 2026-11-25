@@ -3,7 +3,7 @@
 //! ```text
 //! kuna-verify check <binary> <function|0xaddr>... | --all  [--jobs N] [--fn-seconds S] [--contract FILE.c] [--option NAME VALUE]...
 //! kuna-verify corpus <test.xml|dir>...  [--jobs N] [--file-seconds S] [--baseline FILE] [--save-baseline FILE]
-//! kuna-verify localize <test.xml|binary> <function> [--pass N] [--option NAME VALUE]...
+//! kuna-verify localize <test.xml|binary> <function> [--pass N] [--contract FILE.c] [--option NAME VALUE]...
 //! kuna-verify intervene <test.xml|binary> <function> [--pass N] [--localize] [--option NAME VALUE]...
 //! kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
 //! common: [--runs N] [--seed S] [--budget OPS] [--concolic QUERIES] [--json] [--sleighpath DIR]
@@ -37,7 +37,7 @@ use serde_json::{json, Value};
 const USAGE: &str = "usage:
   kuna-verify check <binary> <function|0xaddr>... | --all  [--jobs N] [--fn-seconds S] [--contract FILE.c] [--option NAME VALUE]...
   kuna-verify corpus <test.xml|dir>...  [--jobs N] [--file-seconds S] [--baseline FILE] [--save-baseline FILE]
-  kuna-verify localize <test.xml|binary> <function> [--pass N] [--option NAME VALUE]...
+  kuna-verify localize <test.xml|binary> <function> [--pass N] [--contract FILE.c] [--option NAME VALUE]...
   kuna-verify intervene <test.xml|binary> <function> [--pass N] [--localize] [--option NAME VALUE]...
   kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
   kuna-verify mutate <test.xml|dir>... | <binary> <function|0xaddr>... | --all  [--per-function N (6)] [--jobs N] [--file-seconds S] [--intervene]
@@ -54,6 +54,9 @@ struct Args {
     jobs: Option<usize>,
     fn_seconds: u64,
     file_seconds: u64,
+    /// `--fn-seconds` or `--file-seconds` was given: every check then runs in
+    /// a worker process, which is what a time limit can stop.
+    timed: bool,
     per_function: usize,
     baseline: Option<String>,
     save_baseline: Option<String>,
@@ -81,6 +84,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         jobs: None,
         fn_seconds: 600,
         file_seconds: 1200,
+        timed: false,
         per_function: 6,
         baseline: None,
         save_baseline: None,
@@ -134,8 +138,14 @@ fn parse(argv: &[String]) -> Result<Args, String> {
                 a.sleighpath = Some(v);
             }
             "--jobs" => a.jobs = Some(num(it.next(), "--jobs")? as usize),
-            "--fn-seconds" => a.fn_seconds = num(it.next(), "--fn-seconds")?.max(1),
-            "--file-seconds" => a.file_seconds = num(it.next(), "--file-seconds")?.max(1),
+            "--fn-seconds" => {
+                a.fn_seconds = num(it.next(), "--fn-seconds")?.max(1);
+                a.timed = true;
+            }
+            "--file-seconds" => {
+                a.file_seconds = num(it.next(), "--file-seconds")?.max(1);
+                a.timed = true;
+            }
             "--per-function" => a.per_function = num(it.next(), "--per-function")?.max(1) as usize,
             "--regs" | "--flags" => {
                 let v: Vec<String> = it.next().ok_or(format!("{arg} needs names"))?.split(',').filter(|s| !s.is_empty()).map(str::to_string).collect();
@@ -205,11 +215,11 @@ fn run_check(a: &Args) -> Result<ExitCode, String> {
     }
     let jobs = a.jobs.unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get())).max(1);
     let started = Instant::now();
-    let rows = if jobs == 1 || functions.len() <= CHUNK {
-        let source = match &a.contract {
-            Some(f) => Some((std::fs::read_to_string(f).map_err(|e| format!("{f}: {e}"))?, f.clone())),
-            None => None,
-        };
+    let source = match &a.contract {
+        Some(f) => Some((std::fs::read_to_string(f).map_err(|e| format!("{f}: {e}"))?, f.clone())),
+        None => None,
+    };
+    let rows = if !a.timed && (jobs == 1 || functions.len() <= CHUNK) {
         let mut rows = Vec::new();
         check_binary_each(
             binary,
@@ -391,14 +401,20 @@ fn run_chunk_worker(a: &Args) -> Result<ExitCode, String> {
         return Err(USAGE.to_string());
     };
     let roots = spec_roots(a.sleighpath.as_deref());
-    let source = match &a.contract {
-        Some(f) => Some((std::fs::read_to_string(f).map_err(|e| format!("{f}: {e}"))?, f.clone())),
-        None => None,
-    };
     let line = |v: Value| {
         let mut out = std::io::stdout().lock();
         let _ = writeln!(out, "{v}");
         let _ = out.flush();
+    };
+    let source = match &a.contract {
+        Some(f) => match std::fs::read_to_string(f) {
+            Ok(s) => Some((s, f.clone())),
+            Err(e) => {
+                line(json!({"error": format!("{f}: {e}")}));
+                return Ok(ExitCode::SUCCESS);
+            }
+        },
+        None => None,
     };
     let got = check_binary_each(
         binary,
@@ -568,7 +584,7 @@ fn run_corpus(a: &Args) -> Result<ExitCode, String> {
         .jobs
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()))
         .clamp(1, files.len().max(1));
-    let results: Vec<FileRows> = if jobs == 1 {
+    let results: Vec<FileRows> = if jobs == 1 && !a.timed {
         let roots = spec_roots(a.sleighpath.as_deref());
         files
             .iter()
@@ -692,10 +708,15 @@ fn run_localize(a: &Args) -> Result<ExitCode, String> {
         return Err(USAGE.to_string());
     };
     let roots = spec_roots(a.sleighpath.as_deref());
+    let source = match &a.contract {
+        Some(f) => Some((std::fs::read_to_string(f).map_err(|e| format!("{f}: {e}"))?, f.clone())),
+        None => None,
+    };
     let src = if target.ends_with(".xml") {
         localize::Source::Datatest(target)
     } else {
-        localize::Source::Binary { path: target, functions: vec![function.clone()], options: &a.options }
+        let contract = source.as_ref().map(|(s, n)| (s.as_str(), n.as_str()));
+        localize::Source::Binary { path: target, functions: vec![function.clone()], options: &a.options, contract }
     };
     let found = localize::localize(&src, &roots, function, a.pass, &a.opts)?;
     print!("{}", found.render());
@@ -715,7 +736,7 @@ fn run_intervene(a: &Args) -> Result<ExitCode, String> {
     let src = if target.ends_with(".xml") {
         localize::Source::Datatest(target)
     } else {
-        localize::Source::Binary { path: target, functions: vec![function.clone()], options: &a.options }
+        localize::Source::Binary { path: target, functions: vec![function.clone()], options: &a.options, contract: None }
     };
     let (decompile, mut found) = kuna_verify::intervene::search_source(&src, &roots, function, a.pass, &a.opts)?;
     if a.localize && found.run.is_some() {
@@ -868,7 +889,7 @@ fn run_mutate(a: &Args) -> Result<ExitCode, String> {
         }
         rows.lock().unwrap_or_else(|e| e.into_inner()).push(v);
     };
-    if jobs == 1 {
+    if jobs == 1 && !a.timed {
         for t in &tasks {
             let emit = |o: kuna_verify::mutate::Outcome| print(mutant_json(&o));
             if datatests {
@@ -889,9 +910,11 @@ fn run_mutate(a: &Args) -> Result<ExitCode, String> {
                 scope.spawn(|| loop {
                     let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     let Some(t) = tasks.get(i) else { break };
-                    let out = Command::new(&exe).arg("mutate").args(t).args(&flags).stderr(Stdio::null()).output();
-                    let Ok(out) = out else { continue };
-                    for l in String::from_utf8_lossy(&out.stdout).lines() {
+                    let Some(out) = output_within(Command::new(&exe).arg("mutate").args(t).args(&flags), a.file_seconds) else {
+                        eprintln!("kuna-verify: {}: no mutants in {} s", t[0], a.file_seconds);
+                        continue;
+                    };
+                    for l in out.lines() {
                         if let Ok(mut v) = serde_json::from_str::<Value>(l) {
                             if v.get("operator").is_some() {
                                 v["file"] = Value::from(t[0].as_str());
@@ -906,6 +929,32 @@ fn run_mutate(a: &Args) -> Result<ExitCode, String> {
     let rows = rows.into_inner().unwrap_or_else(|e| e.into_inner());
     print_mutation_summary(&rows, a.json);
     Ok(ExitCode::SUCCESS)
+}
+
+/// Run `cmd` and return its standard output, or `None` when it fails to
+/// start or has not finished in `seconds`, in which case it is killed.
+fn output_within(cmd: &mut Command, seconds: u64) -> Option<String> {
+    let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::null()).spawn().ok()?;
+    let mut stdout = child.stdout.take()?;
+    let reader = std::thread::spawn(move || {
+        let mut out = String::new();
+        let _ = std::io::Read::read_to_string(&mut stdout, &mut out);
+        out
+    });
+    let deadline = Instant::now() + std::time::Duration::from_secs(seconds);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(std::time::Duration::from_millis(50)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = reader.join();
+                return None;
+            }
+        }
+    }
+    reader.join().ok()
 }
 
 fn print_mutation_summary(rows: &[Value], json: bool) {

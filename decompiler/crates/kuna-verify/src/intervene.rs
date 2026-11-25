@@ -532,7 +532,7 @@ pub fn search_source(
             let (prog, commands) = crate::session::load_datatest(path, roots)?;
             crate::session::drive(commands, Some(prog), roots, each)?;
         }
-        crate::localize::Source::Binary { path, functions, options } => {
+        crate::localize::Source::Binary { path, functions, options, .. } => {
             crate::session::run(crate::session::binary_script(path, functions, options), None, roots, true, None, each)?;
         }
     }

@@ -34,6 +34,12 @@ rules held back. A per-thread cap in the rule pool does this
    the search itself checks only up to 32 runs past the full decompile's failing run.
 5. Culprits are listed in the order their `k`-th application ran in the full decompile.
 
+The binary search assumes that once an application makes the function differ, the
+later ones do not undo it. A rewrite that a later application cancels breaks that, and
+can hide an earlier application that already differed. So `k` is a candidate: the
+agreeing end with `k - 1` is checked over every run and the differing end with `k` is a
+concrete counterexample, but neither shows that `k` is the first or the only cause.
+
 Holding back every rule at once does not work as a baseline. Without the folding
 rules, stack addresses are never resolved and actions see a different program. So
 the first design, a cap on all applications, was dropped.

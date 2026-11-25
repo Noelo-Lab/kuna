@@ -1,8 +1,10 @@
 //! The corpus baseline (`docs/baseline-verify.json`): each datatest file's
 //! verdict classes in script order, and how a run compares with it.
 //!
-//! A class leaves out what varies without the verdict changing: an `AGREES`
-//! run count, a `DIFFERS` run, an `UNKNOWN` address. Rows pair by function and
+//! A class leaves out what varies without the verdict changing: a `DIFFERS`
+//! run, an `UNKNOWN` address. It keeps an `AGREES` run count, so a function
+//! that still agrees on fewer than half the runs it agreed on is lost coverage;
+//! a smaller change in the count is not reported. Rows pair by function and
 //! occurrence, so a file whose function list changed is still compared. A
 //! function that now differs where it did not, a new function that differs,
 //! or a file that can no longer be checked is a regression; lost coverage is a
@@ -23,7 +25,8 @@ pub const ERROR: &str = "ERROR";
 /// What the baseline records of a verdict.
 pub fn class(r: &Row) -> String {
     match r.class.as_str() {
-        "AGREES" | "DIFFERS" => r.class.clone(),
+        "AGREES" => r.label.clone(),
+        "DIFFERS" => r.class.clone(),
         "UNKNOWN" | "SKIPPED" => format!("{})", r.reason().unwrap_or_else(|| r.class.clone())),
         _ => r.label.clone(),
     }
@@ -44,7 +47,7 @@ pub fn render(b: &Baseline) -> String {
 /// `name class`, where a name may hold spaces (`-[A b:]`) and so may the
 /// reason of an `UNKNOWN`, `SKIPPED` or `DIVERGES` class (`UNKNOWN(no switch row)`).
 fn split_row(r: &str) -> Option<(&str, &str)> {
-    let tagged = r.ends_with(')').then(|| [" UNKNOWN(", " SKIPPED(", " DIVERGES("].iter().filter_map(|t| r.rfind(t)).max()).flatten();
+    let tagged = r.ends_with(')').then(|| [" UNKNOWN(", " SKIPPED(", " DIVERGES(", " AGREES("].iter().filter_map(|t| r.rfind(t)).max()).flatten();
     match tagged {
         Some(i) => Some((&r[..i], &r[i + 1..])),
         None => r.rsplit_once(' '),
@@ -107,11 +110,19 @@ fn name((f, n): &(String, usize)) -> String {
     if *n == 1 { f.clone() } else { format!("{f} (decompile {n})") }
 }
 
+/// Whether a class is an agreement, and over how many runs when it says.
+fn agrees(k: &str) -> Option<Option<u32>> {
+    if k == "AGREES" {
+        return Some(None);
+    }
+    k.strip_prefix("AGREES(").and_then(|r| r.strip_suffix(')')).map(|n| n.parse().ok())
+}
+
 pub fn compare(base: &Baseline, now: &Baseline) -> Changes {
     let mut c = Changes::default();
     let count = |b: &Baseline| {
         let rows = b.values().flatten();
-        (rows.clone().filter(|(_, k)| k == "AGREES").count(), rows.count())
+        (rows.clone().filter(|(_, k)| agrees(k).is_some()).count(), rows.count())
     };
     let (was_agreed, was_all) = count(base);
     let (now_agreed, now_all) = count(now);
@@ -144,9 +155,17 @@ pub fn compare(base: &Baseline, now: &Baseline) -> Changes {
                 continue;
             }
             let line = format!("{file} {f}: {o} -> {k}");
+            if let (Some(was), Some(is)) = (agrees(o), agrees(k)) {
+                if let (Some(was), Some(is)) = (was, is) {
+                    if is.saturating_mul(2) < was {
+                        c.lost.push(format!("{line}, fewer than half the runs"));
+                    }
+                }
+                continue;
+            }
             if k == "DIFFERS" || k == ERROR {
                 c.regressions.push(line);
-            } else if o == "AGREES" {
+            } else if agrees(o).is_some() {
                 c.lost.push(line);
             } else {
                 c.other.push(line);
@@ -154,7 +173,7 @@ pub fn compare(base: &Baseline, now: &Baseline) -> Changes {
         }
         for (key, k) in was.iter().filter(|(key, _)| !new.contains_key(key)) {
             let line = format!("{file} {}: {k}, no longer decompiled", name(key));
-            if k == "AGREES" {
+            if agrees(k).is_some() {
                 c.lost.push(line);
             } else {
                 c.other.push(line);
@@ -219,6 +238,19 @@ mod tests {
         assert_eq!(c.regressions, ["a h: not in the baseline, DIFFERS"]);
         assert_eq!(c.lost, ["a g: AGREES, no longer decompiled"]);
         assert_eq!((c.agreed, c.functions), ((1, 0), (2, 2)));
+    }
+
+    /// An agreement over far fewer runs is lost coverage; a small change in the
+    /// count, or a count against an old class without one, is not reported.
+    #[test]
+    fn an_agreement_over_far_fewer_runs_is_lost_coverage() {
+        let base = b(&[("a", &[("f", "AGREES(256)"), ("g", "AGREES(256)"), ("h", "AGREES")])]);
+        let now = b(&[("a", &[("f", "AGREES(1)"), ("g", "AGREES(250)"), ("h", "AGREES(3)")])]);
+        let c = compare(&base, &now);
+        assert_eq!(c.lost, ["a f: AGREES(256) -> AGREES(1), fewer than half the runs"]);
+        assert!(c.regressions.is_empty() && c.other.is_empty());
+        assert_eq!(c.agreed, (3, 3));
+        assert_eq!(parse(&render(&now)).unwrap(), now);
     }
 
     /// A function decompiled twice pairs each decompile with its own.

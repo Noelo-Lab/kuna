@@ -94,6 +94,19 @@ enum Flow {
 }
 
 impl Run<'_, '_, '_> {
+    /// Whether the machine's callee is kuna's, so its recorded effect may be
+    /// replayed: the same address, the same code through thunks, a call kuna
+    /// bound past a stub, or a target of kuna's that is not code in the image
+    /// (an import, a PIC GOT slot), which the call check leaves alone.
+    fn same_callee(&self, machine: Option<u64>, kuna: Option<u64>, resolved: bool) -> bool {
+        let env = self.state.env;
+        let (m, k) = (crate::check::code_target(env, machine), crate::check::code_target(env, kuna));
+        resolved
+            || m == k
+            || k.is_none_or(|k| !env.is_code(k))
+            || m.zip(k).is_some_and(|(m, k)| crate::machine::through_thunks(env, m) == crate::machine::through_thunks(env, k))
+    }
+
     /// Fill the register save area as `va_start` does: the stores kuna's
     /// `varargsave` folded, the vector ones only when the incoming `al` is set.
     fn va_start(&mut self, env: &Env, f: &kuna_decomp::kuna_varargsave::Folded) -> Result<(), Halt> {
@@ -378,7 +391,7 @@ impl Run<'_, '_, '_> {
                 }
                 let k = self.records.len() - 1;
                 self.check_inputs(op, k)?;
-                let real = self.replay.get(k).filter(|r| r.at == at).and_then(|r| r.effect.clone());
+                let real = self.replay.get(k).filter(|r| r.at == at && self.same_callee(r.target, target, site.resolved)).and_then(|r| r.effect.clone());
                 match real {
                     Some(effect) => self.state.replay(&effect),
                     None => {

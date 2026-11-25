@@ -115,3 +115,19 @@ fn a_dropped_pass_through_argument_differs() {
     assert!(matches!(r.verdict, Verdict::Differs { .. }), "{}", r.render());
     assert!(r.render().contains("kuna's call passes nothing there"), "{}", r.render());
 }
+
+/// `localize` checks under the same contract as `check`: without it the
+/// narrowed `ins16` does not differ, so there is nothing to localize.
+#[test]
+fn localize_uses_the_contract() {
+    use kuna_verify::localize::{localize, Finding, Source};
+    let path = arm_object();
+    let path = path.to_string_lossy();
+    let options = vec![("returnpair".to_string(), "single".to_string())];
+    let opts = Options { runs: 64, ..Options::default() };
+    let src = |contract| Source::Binary { path: &path, functions: vec!["ins16".to_string()], options: &options, contract };
+    let without = localize(&src(None), &specs(), "ins16", None, &opts).unwrap();
+    assert!(matches!(without.finding, Finding::NotDiffering(_)), "{}", without.render());
+    let with = localize(&src(Some((SOURCE, "zext_pair.c"))), &specs(), "ins16", None, &opts).unwrap();
+    assert!(!matches!(with.finding, Finding::NotDiffering(_)), "{}", with.render());
+}

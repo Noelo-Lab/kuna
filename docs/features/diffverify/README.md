@@ -99,10 +99,10 @@ error, and 0 otherwise. With `--baseline`, it is 1 only for a regression (§6).
 ```sh
 kuna-verify check <binary> <function|0xaddr>... | --all  [--jobs N] [--fn-seconds S] [--contract FILE.c] [--option NAME VALUE]...
 kuna-verify corpus <test.xml|dir>...  [--jobs N] [--file-seconds S] [--baseline FILE] [--save-baseline FILE]
-kuna-verify localize <test.xml|binary> <function> [--pass N] [--option NAME VALUE]...
+kuna-verify localize <test.xml|binary> <function> [--pass N] [--contract FILE.c] [--option NAME VALUE]...
 kuna-verify intervene <test.xml|binary> <function> [--pass N] [--localize] [--option NAME VALUE]...
 kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
-kuna-verify mutate <test.xml|dir>... | <binary> <function|0xaddr>... | --all  [--per-function N] [--jobs N] [--intervene]
+kuna-verify mutate <test.xml|dir>... | <binary> <function|0xaddr>... | --all  [--per-function N] [--jobs N] [--file-seconds S] [--intervene]
 common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES (0)] [--json] [--trace] [--sleighpath DIR]
 ```
 
@@ -110,12 +110,20 @@ common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES 
   the discovery passes off x86-64), so the function checked is the one the CLI prints.
   `--option` passes kuna options through. With `--jobs`, the functions run in fixed chunks
   of 32, one worker process per chunk. A function with no verdict after `--fn-seconds` is
-  `UNKNOWN(timeout)`.
+  `UNKNOWN(timeout)`. A time limit stops only a worker process, so giving `--fn-seconds`
+  (or `--file-seconds` to `corpus` and `mutate`) runs even one function or file in one.
+  A `--contract` file is read before any worker starts, and a worker that cannot read it
+  fails the run.
 - **`corpus`** checks every decompile a datatest script makes, under the options that
   script sets, one worker process per file. A worker still running after `--file-seconds`
   is killed and its file reported as an error.
-- **`localize`** names the rule application after which a function starts to differ, by
-  holding rules back one at a time (`c3-results.md`).
+- **`localize`** names candidate rule applications after which a function starts to
+  differ, by holding rules back one at a time (`c3-results.md`), under the same
+  `--contract` as `check`. For each rule it bisects the number of applications allowed:
+  with `k - 1` the function agrees over every run, with `k` it differs. Bisection assumes
+  that once an application makes the function differ, later ones do not undo it; a rewrite
+  that a later one cancels can hide an earlier application, so `k` is a candidate to look
+  at, not a proof that it is the first or the only cause.
 - **`intervene`** replays the differing run with one change to kuna's side at a time:
   an op's output set to the machine's value, or one op's opcode, operand order, branch
   or constant changed. It names each change after which the run agrees, as a
@@ -190,8 +198,9 @@ common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES 
 
 - **A regression** is a function that now differs where it did not, a new function that
   differs, or a file that can no longer be checked. It fails the step.
-- **Lost coverage** is a function that agreed and no longer does, or one no longer
-  checked. It is a warning.
+- **Lost coverage** is a function that agreed and no longer does, one that still agrees
+  on fewer than half the runs it agreed on (the baseline keeps the `AGREES` count), or one
+  no longer checked. It is a warning.
 - **Every other change** is listed, with the `AGREES` count before and after.
 
 Rows are paired by function and occurrence, so a file whose function list changed is
@@ -227,9 +236,9 @@ It is not a replacement for review. What it does not cover:
   quality are outside what running the IR can see.
 
 **Feedback an agent can act on.** A `DIFFERS` names an input, the call or byte that
-differs and what each side did; `localize` then names the rule application after which
-the function first differs (`c3-results.md`), and `intervene` names the ops whose change
-makes the run agree (`csic-results.md`). That is a place to start debugging, not
+differs and what each side did; `localize` then names candidate rule applications after
+which the function starts to differ (`c3-results.md`), and `intervene` names the ops whose
+change makes the run agree (`csic-results.md`). That is a place to start debugging, not
 only a verdict, which is what an agent fixing its own change needs.
 
 **What is not claimed.** `AGREES` means the runs made agreed, not that the two are

@@ -342,3 +342,42 @@ ac24a00000000f29b424b00000000f29bc24c0000000488d8424e0000000488d\
     let labels: Vec<String> = res.reports.iter().map(|r| r.verdict.label()).collect();
     assert_eq!(labels, ["AGREES(32)", "AGREES(32)"], "{}", res.reports.iter().map(|r| r.render()).collect::<String>());
 }
+
+/// A call the machine makes through a register and kuna prints direct
+/// (`lea rax,[rip+one]; call rax` as `one()`) has its target compared, and the
+/// machine's callee effect is replayed only for the same callee: a mutant that
+/// names `two` instead is caught.
+#[test]
+fn a_devirtualized_call_to_the_wrong_function_is_caught() {
+    let text = [
+        0xb8, 0x01, 0, 0, 0, 0xc3, 0xb8, 0x02, 0, 0, 0, 0xc3, 0x48, 0x83, 0xec, 0x08, 0x48, 0x8d, 0x05, 0xe9, 0xff, 0xff, 0xff,
+        0xff, 0xd0, 0x83, 0xc0, 0x0a, 0x48, 0x83, 0xc4, 0x08, 0xc3,
+    ];
+    let path = object("devirt", &text, &[("one", 0, 6), ("two", 6, 6), ("callvia", 12, 21)], &[]);
+    let specs = specs();
+    let out = verify(&["mutate", &path.to_string_lossy(), "callvia", "--json", "--sleighpath", &specs]);
+    let rows: Vec<serde_json::Value> =
+        String::from_utf8_lossy(&out.stdout).lines().filter_map(|l| serde_json::from_str(l).ok()).filter(|v: &serde_json::Value| v.get("operator").is_some()).collect();
+    let targets: Vec<_> = rows.iter().filter(|r| r["operator"] == "call-target" && r["reached"] == true).collect();
+    assert!(!targets.is_empty(), "{rows:?}");
+    assert!(targets.iter().all(|r| r["killed"] == true), "{targets:?}");
+}
+
+/// A frame address stored at an unaligned address (a packed structure's
+/// pointer field) still makes the object it points to reachable by a callee:
+/// `x = 1; *(int **)0x600001 = &x; sink();` with `x = 0` planted is caught.
+#[test]
+fn a_pointer_stored_unaligned_still_escapes() {
+    let text = [
+        0x48, 0x83, 0xec, 0x28, 0xc7, 0x44, 0x24, 0x14, 0x01, 0, 0, 0, 0x48, 0x8d, 0x44, 0x24, 0x14, 0x3e, 0x48, 0x89, 0x04, 0x25,
+        0x01, 0x00, 0x60, 0x00, 0xe8, 0, 0, 0, 0, 0x48, 0x83, 0xc4, 0x28, 0xc3,
+    ];
+    let path = object("unaligned", &text, &[("give", 0, text.len() as u64)], &[(27, "sink")]);
+    let specs = specs();
+    let out = verify(&["mutate", &path.to_string_lossy(), "give", "--per-function", "20", "--json", "--sleighpath", &specs]);
+    let rows: Vec<serde_json::Value> =
+        String::from_utf8_lossy(&out.stdout).lines().filter_map(|l| serde_json::from_str(l).ok()).filter(|v: &serde_json::Value| v.get("operator").is_some()).collect();
+    let planted: Vec<_> = rows.iter().filter(|r| r["what"].as_str().unwrap_or("").starts_with("constant 0x1 -> 0x0")).collect();
+    assert_eq!(planted.len(), 1, "{rows:?}");
+    assert_eq!(planted[0]["killed"], true, "{planted:?}");
+}
