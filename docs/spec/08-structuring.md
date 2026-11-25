@@ -1936,18 +1936,29 @@ arm rule is a one-block `if` (`fresh_triangle`): `v = a; if (c) v = b; return
 v;` splits when `b` does not read `a` (through copies), which is the source's
 `if (!c) return a; return b;`, while the update keeps its merge.
 
-Measured on the decbench corpus against `record` (main 068372109), `auto` makes
-305 more O2-noinline functions structurally exact and 23 fewer (+204 on one
-half of the projects, +78 on the other), and no function gains a `goto`; the
-guard fold alone is +60 (63 / 3) and the merged-return split +222 (242 / 20).
-The losses are sources that wrote the other form: separate guards each checking
-a call's result, `status = f(); ... return status;`, a ternary, a one-armed
-assignment. The two shapes never touch a function the detector calls
-unoptimized or one with a frame pointer; at -O0 the functions both tests let
-through (mostly firmware built with optimization) move 61 functions to an exact
-match and 8 off (+5 and +48 on the two halves); without the frame-pointer test
-two small openssh functions in nine binaries were lost. Each is a print-tree edit or a split of a value-only block, so both
-print the same program.
+Measured on the decbench corpus against `record` in the same build (main
+fb88f5865, where `record` prints every function byte for byte as before),
+`auto` makes 305 more O2-noinline functions structurally exact and 23 fewer
+(+204 on one half of the projects, +78 on the other); measured one at a time
+on the previous main (068372109), the guard fold was +60 (63 / 3) and the merged-return split
++222 (242 / 20). The losses are sources that wrote the other form: a ternary, a
+result variable assigned in each arm and returned once, separate guards each
+checking a call's result. The two shapes never touch a function the detector
+calls unoptimized or one with a frame pointer; at -O0 the functions both tests
+let through (mostly firmware built with optimization) move 61 functions to an
+exact match and 8 off (+5 and +48 on the two halves); without the frame-pointer
+test two small openssh functions in nine binaries were lost. Each is a
+print-tree edit or a split of a value-only block, so both print the same
+program. One function of the 35,197 gains a `goto`, through `loopcondhoist`:
+with the arms split, the loop-condition structuring of its last pass prints a
+`goto`, the retry without the rule does no better, and the function falls back
+to `CollapseStructure` (with `loopcondhoist off`, or with `record`, it has
+none). The extra work is one pass over the final tree, a check of each valued
+return block, and one more round of the main loop in a function whose arms
+split (0.5% more heritage passes over sshd, 0.3% over bash). Measured with
+`KUNA_ACTION_PROF` and one job, `record` and `auto` side by side, whole-binary
+time on those two binaries moves by +0.3% and -1.5%, inside the run-to-run
+noise; `ActionRetShape` itself takes 5-10 ms per binary.
 
 ### loopcontinue auto — the jump statements an unoptimized function was written with
 
