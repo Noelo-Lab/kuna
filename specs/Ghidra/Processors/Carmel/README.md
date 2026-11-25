@@ -74,7 +74,8 @@ and has an undelayed CE1 form. It pops the active trap source if present;
 otherwise it clears bit four of `PSTATUS`.
 Guarded `RETURN EQ1` and `RETI EQ1` retire up to six delay issues on both
 paths; only a taken return reads the link or retires a trap source.
-Compact CALL admits zero or one delay issue. Compact RETURN also admits
+Compact CALL admits up to three delay issues in sequential form or with
+an inactive parallel peer. Compact RETURN also admits
 two or three delay issues with an inactive right lane, and an undelayed
 CE1 form whose address enable can override a veto. Immediate REPEAT handles
 one register-only following issue, including zero repeats. For wide CE1
@@ -85,7 +86,7 @@ Selected dynamic REPEAT forms sample `A0L`, a postmodified `R1`, or an
 absolute DATA word before three setup issues. A zero count skips only the
 first body issue. The wide DATA encoding can replay a range of up to five
 issues. Setup and body must be register-only and contain no transfers.
-The explicit post-CALL branch past an unexecuted sequential slot is part of
+An explicit post-CALL branch to the encoded resume word remains part of
 the caller's control flow, even if analysis found a function entry there.
 Unconditional wide relative CALL retires at most three following issues.
 Its two-word DATA stack link uses the encoded delay, even for delays four

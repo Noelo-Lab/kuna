@@ -507,6 +507,26 @@ fn wide_relative_call_limits_the_delay_but_returns_to_the_encoded_word() {
 }
 
 #[test]
+fn compact_call_counts_a_sequential_right_issue_but_keeps_the_odd_link() {
+    let mut m = Machine::new(
+        0, &[(0xab2066, INC_A0), (INC_A0, NOP), (INC_A1, NOP), (SEQUENTIAL | NOP, INC_A2),
+             (NOP, NOP), (NOP, NOP), (RETURN, NOP), (NOP, NOP)],
+        &[(0, 2, 3), (1, 3, 6), (2, 1, 6), (4, 1, 3), (6, 2, 3), (7, 3, 6),
+          (8, 1, 6), (10, 1, 6), (12, 1, 6), (14, 1, 0)],
+        None,
+    );
+    m.seed(&[("SP", 0x4040)]);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 36);
+    assert_eq!((m.reg("A0L"), m.reg("A1L"), m.reg("A2L")), (2, 1, 0));
+    assert_eq!((m.reg("SP"), m.data(0x403f), m.data(0x4040)), (0x403e, 7, 0));
+    assert_eq!(m.step(), 21);
+    assert_eq!(m.reg("SP"), 0x4040);
+    assert_eq!(m.step(), 24);
+    assert_eq!(m.reg("A2L"), 1);
+}
+
+#[test]
 fn delayed_compact_eq_samples_est_before_its_two_counted_issues() {
     for (est, a0, a1, next) in [(8, 7, 9, 36), (0, 0xffff, 0xffff, 18)] {
         let mut m = Machine::new(

@@ -2257,6 +2257,8 @@ macro retire_trap() {
 direct_target: word_address is rel_words [ word_address = (inst_start + rel_words) & 0xffffff; ] { export *[code]:3 word_address; }
 link_1_0: word_address is epsilon [ word_address = (inst_start + 1) & 0xffffff; ] { export *[const]:3 word_address; }
 link_1_1: word_address is epsilon [ word_address = (inst_start + 3) & 0xffffff; ] { export *[const]:3 word_address; }
+link_1_2: word_address is epsilon [ word_address = (inst_start + 5) & 0xffffff; ] { export *[const]:3 word_address; }
+link_1_3: word_address is epsilon [ word_address = (inst_start + 7) & 0xffffff; ] { export *[const]:3 word_address; }
 link_2_0: word_address is epsilon [ word_address = (inst_start + 2) & 0xffffff; ] { export *[const]:3 word_address; }
 link_2_1: word_address is epsilon [ word_address = (inst_start + 4) & 0xffffff; ] { export *[const]:3 word_address; }
 link_2_2: word_address is epsilon [ word_address = (inst_start + 6) & 0xffffff; ] { export *[const]:3 word_address; }
@@ -2265,8 +2267,10 @@ link_2_4: word_address is epsilon [ word_address = (inst_start + 10) & 0xffffff;
 link_2_5: word_address is epsilon [ word_address = (inst_start + 12) & 0xffffff; ] { export *[const]:3 word_address; }
 link_2_6: word_address is epsilon [ word_address = (inst_start + 14) & 0xffffff; ] { export *[const]:3 word_address; }
 link_2_7: word_address is epsilon [ word_address = (inst_start + 16) & 0xffffff; ] { export *[const]:3 word_address; }
-# A CALL delayed by one compact slot resumes at its pushed word, past that slot's sequential partner.
+# CALL saves the current issue width plus two CODE words per encoded delay.
 resume_1_1: word_address is epsilon [ word_address = (inst_start + 3) & 0xffffff; ] { export *[code]:3 word_address; }
+resume_1_2: word_address is epsilon [ word_address = (inst_start + 5) & 0xffffff; ] { export *[code]:3 word_address; }
+resume_1_3: word_address is epsilon [ word_address = (inst_start + 7) & 0xffffff; ] { export *[code]:3 word_address; }
 resume_2_1: word_address is epsilon [ word_address = (inst_start + 4) & 0xffffff; ] { export *[code]:3 word_address; }
 resume_2_2: word_address is epsilon [ word_address = (inst_start + 6) & 0xffffff; ] { export *[code]:3 word_address; }
 resume_2_3: word_address is epsilon [ word_address = (inst_start + 8) & 0xffffff; ] { export *[code]:3 word_address; }
@@ -2315,6 +2319,12 @@ resume_2_7: word_address is epsilon [ word_address = (inst_start + 16) & 0xfffff
 :"CALL" direct_target "delay 1" "||" complete_right is carmel_next_issue_size=6 & ((carmel_issue=1 & slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x159 & direct_target); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right)) & link_2_1 { push_link(link_2_1); build complete_right; delayslot(6); call direct_target; }
 :^nop_left "||" "CALL" direct_target "delay 1" is carmel_next_issue_size=6 & ((carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x159 & direct_target)) & link_2_1 { push_link(link_2_1); delayslot(6); call direct_target; }
 :^complete_left "||" "CALL" direct_target "delay 1" is carmel_next_issue_size=6 & ((carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left); (slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x159 & direct_target)) & link_2_1 { push_link(link_2_1); build complete_left; delayslot(6); call direct_target; }
+:"CALL" direct_target "delay 2" is (((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x4 & slot_13_22=0x159 & direct_target) & link_1_2 & resume_1_2 [ carmel_counted_delay=1; ] { push_link(link_1_2); delayslot(2); call direct_target; goto resume_1_2; }
+:"CALL" direct_target "delay 2" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_2=0x4 & slot_13_22=0x159 & direct_target); (slot_mode=0 & nop_right)) & link_2_2 & resume_2_2 [ carmel_counted_delay=1; ] { push_link(link_2_2); delayslot(2); call direct_target; goto resume_2_2; }
+:^nop_left "||" "CALL" direct_target "delay 2" is ((carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_2=0x4 & slot_13_22=0x159 & direct_target)) & link_2_2 & resume_2_2 [ carmel_counted_delay=1; ] { push_link(link_2_2); delayslot(2); call direct_target; goto resume_2_2; }
+:"CALL" direct_target "delay 3" is (((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x6 & slot_13_22=0x159 & direct_target) & link_1_3 & resume_1_3 [ carmel_counted_delay=1; ] { push_link(link_1_3); delayslot(3); call direct_target; goto resume_1_3; }
+:"CALL" direct_target "delay 3" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_2=0x6 & slot_13_22=0x159 & direct_target); (slot_mode=0 & nop_right)) & link_2_3 & resume_2_3 [ carmel_counted_delay=1; ] { push_link(link_2_3); delayslot(3); call direct_target; goto resume_2_3; }
+:^nop_left "||" "CALL" direct_target "delay 3" is ((carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_2=0x6 & slot_13_22=0x159 & direct_target)) & link_2_3 & resume_2_3 [ carmel_counted_delay=1; ] { push_link(link_2_3); delayslot(3); call direct_target; goto resume_2_3; }
 :"RETURN" is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_22=0x2bd800 { local target:3; pop_link(target); return [target]; }
 :"RETURN" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd800); (slot_mode=0 & nop_right) { local target:3; pop_link(target); return [target]; }
 :"RETURN" "||" complete_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd800); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) { local target:3; pop_link(target); build complete_right; return [target]; }
