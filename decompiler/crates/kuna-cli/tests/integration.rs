@@ -838,6 +838,8 @@ mod ppc32_pic_calls;
 
 #[path = "ppc32_pic_abi.rs"]
 mod ppc32_pic_abi;
+#[path = "ppc32_pic_note.rs"]
+mod ppc32_pic_note;
 
 #[path = "compact_json.rs"]
 mod compact_json;

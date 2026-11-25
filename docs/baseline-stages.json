@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5419,
-    5419
+    5425,
+    5425
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1742,6 +1742,12 @@
     "data:LOOPCONDHOIST #1: OFF leaves the head test inside an infinite loop (pass 1 only)",
     "data:LOOPCONDHOIST #2: ON hoists the head test into the loop header (pass 2 only)",
     "data:LOOPCONDHOIST #3: the OFF pass needs a break to reach the match arm; the ON pass does not (pass 1 only)",
+    "data:LOOPCONDHOIST-LAYOUT #1: the -O0 for loop keeps its condition and the stores before its break (passes 1 and 3)",
+    "data:LOOPCONDHOIST-LAYOUT #2: the break arm carries the stores (passes 1 and 3)",
+    "data:LOOPCONDHOIST-LAYOUT #3: the -O0 while with an early return is a for loop with the return inside (pass 1)",
+    "data:LOOPCONDHOIST-LAYOUT #4: the -O0 break to the shared return stays a break (passes 1 and 2)",
+    "data:LOOPCONDHOIST-LAYOUT #5: the -O2 latch test is the loop condition by default (pass 1 only)",
+    "data:LOOPCONDHOIST-LAYOUT #6: off prints three loops as while( true ), auto the -O2 one (passes 2 and 3)",
     "data:LOOPCONTINUE #10: no goto or synthetic label remains",
     "data:LOOPCONTINUE #1: OFF three loops plus ON one loop",
     "data:LOOPCONTINUE #2: one outer infinite loop per pass",
