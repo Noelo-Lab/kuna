@@ -189,7 +189,6 @@ Three tiers:
 | output too wide when nested deeply | [`jvm_indent_string`](#jvm_indent_string-----default----) |
 | very long lines in builder chains | [`jvm_preferred_line_length`](#jvm_preferred_line_length-----default-160) |
 | expressions wrapped across lines unexpectedly | [`jvm_preferred_line_length`](#jvm_preferred_line_length-----default-160) |
-| decompiled files need a provenance or license header | [`jvm_banner`](#jvm_banner-----default-) |
 | failure comment asks to report to an issue tracker | [`jvm_error_message`](#jvm_error_message-----default-please-report-this-to-the-vineflower-issue-tracker-at-httpsgithubcomvineflowervineflowerissues-with-a-copy-of-the-class-file-if-you-have-the-rights-to-distribute-it) |
 | failure comment should carry a project-specific note | [`jvm_error_message`](#jvm_error_message-----default-please-report-this-to-the-vineflower-issue-tracker-at-httpsgithubcomvineflowervineflowerissues-with-a-copy-of-the-class-file-if-you-have-the-rights-to-distribute-it) |
 | failed method shows a long // Bytecode: listing | [`jvm_dump_bytecode_on_error`](#jvm_dump_bytecode_on_error----on--off-default-on) |
@@ -783,15 +782,6 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 - **Where / provenance:** p9_emit/text_buffer · vineflower · vineflower-option
 - **Also spelled:** `preferred-line-length`, `pll`
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_preferred_line_length 100`
-
-### `jvm_banner` -- <text>, default ``
-
-- **Symptoms:** decompiled files need a provenance or license header.
-- **What it does:** Text written verbatim at the top of every decompiled file (include your own trailing newline).
-- **When to flip:** Set to mark generated sources, e.g. a // Decompiled by kuna from app.jar header.
-- **Where / provenance:** p0_knowledge/fernflower · vineflower · vineflower-option
-- **Also spelled:** `banner`, `ban`
-- **Example:** `kuna decompile-project app.jar -o out --option jvm_banner "// decompiled\n"`
 
 ### `jvm_error_message` -- <text>, default `Please report this to the Vineflower issue tracker, at https://github.com/Vineflower/vineflower/issues with a copy of the class file (if you have the rights to distribute it!)`
 

@@ -59,7 +59,6 @@ impl IFernflowerPreferences {
     pub const NEW_LINE_SEPARATOR: &str = "new-line-separator";
     pub const INDENT_STRING: &str = "indent-string";
     pub const PREFERRED_LINE_LENGTH: &str = "preferred-line-length";
-    pub const BANNER: &str = "banner";
     pub const ERROR_MESSAGE: &str = "error-message";
     pub const THREADS: &str = "thread-count";
     pub const DUMP_ORIGINAL_LINES: &str = "__dump_original_lines__";
@@ -153,7 +152,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::NEW_LINE_SEPARATOR, "1".to_string()),
             (IFernflowerPreferences::INDENT_STRING, "   ".to_string()),
             (IFernflowerPreferences::PREFERRED_LINE_LENGTH, "160".to_string()),
-            (IFernflowerPreferences::BANNER, "".to_string()),
             (IFernflowerPreferences::ERROR_MESSAGE, "Please report this to the Vineflower issue tracker, at https://github.com/Vineflower/vineflower/issues with a copy of the class file (if you have the rights to distribute it!)".to_string()),
             (IFernflowerPreferences::UNIT_TEST_MODE, "0".to_string()),
             (IFernflowerPreferences::DUMP_ORIGINAL_LINES, "0".to_string()),
@@ -271,7 +269,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "NEW_LINE_SEPARATOR", key: IFernflowerPreferences::NEW_LINE_SEPARATOR, short_name: Some("nls"), name: Some("[DEPRECATED] New Line Seperator"), description: Some("Use \\n instead of \\r\\n for new lines. Deprecated, do not use."), type_: Some(OptionType::Boolean), dynamic_default_value: Some("Disabled on Windows, enabled on other systems") },
     PreferenceOption { field: "INDENT_STRING", key: IFernflowerPreferences::INDENT_STRING, short_name: Some("ind"), name: Some("Indent String"), description: Some("A string of spaces or tabs that is placed for each indent level."), type_: Some(OptionType::String), dynamic_default_value: None },
     PreferenceOption { field: "PREFERRED_LINE_LENGTH", key: IFernflowerPreferences::PREFERRED_LINE_LENGTH, short_name: Some("pll"), name: Some("Preferred line length"), description: Some("Max line length before formatting is applied."), type_: Some(OptionType::Integer), dynamic_default_value: None },
-    PreferenceOption { field: "BANNER", key: IFernflowerPreferences::BANNER, short_name: Some("ban"), name: Some("Banner"), description: Some("A message to display at the top of the decompiled file."), type_: Some(OptionType::String), dynamic_default_value: None },
     PreferenceOption { field: "ERROR_MESSAGE", key: IFernflowerPreferences::ERROR_MESSAGE, short_name: Some("erm"), name: Some("Error Message"), description: Some("Message to display when an error occurs in the decompiler."), type_: Some(OptionType::String), dynamic_default_value: None },
     PreferenceOption { field: "THREADS", key: IFernflowerPreferences::THREADS, short_name: Some("thr"), name: Some("Thread Count"), description: Some("How many threads to use to decompile."), type_: Some(OptionType::Integer), dynamic_default_value: Some("all available processors") },
     PreferenceOption { field: "DUMP_ORIGINAL_LINES", key: IFernflowerPreferences::DUMP_ORIGINAL_LINES, short_name: None, name: None, description: None, type_: None, dynamic_default_value: None },

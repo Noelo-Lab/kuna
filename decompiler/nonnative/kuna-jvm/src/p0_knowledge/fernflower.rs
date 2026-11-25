@@ -478,10 +478,6 @@ impl IDecompiledData for FernflowerDecompiledData {
             ClassesProcessor::AVERAGE_CLASS_SIZE,
         ));
         let result = try_catch(|| {
-            buffer.borrow_mut().append(
-                &DecompilerContext::get_property(IFernflowerPreferences::BANNER)
-                    .expect("getProperty(BANNER)"),
-            );
             class_processor.write_class(cl, &mut buffer.borrow_mut());
 
             if DecompilerContext::get_option(IFernflowerPreferences::DUMP_TEXT_TOKENS) {

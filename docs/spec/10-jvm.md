@@ -922,7 +922,7 @@ eagerly; otherwise the raw constant-dynamic form is kept.
 
 `decompiler/nonnative/kuna-jvm/src/p9_emit/class_writer.rs (ClassWriter::write_class)`
 writes a root class and everything nested in it into a text buffer, and
-`ClassesProcessor::write_class` puts the header in front: `jvm_banner`, the package, and
+`ClassesProcessor::write_class` puts the header in front: the package and
 the imports `decompiler/nonnative/kuna-jvm/src/p9_emit/import_collector.rs (ImportCollector)`
 collected while the body was written. The collector decides, per class name, whether
 the short name can be used in this file without ambiguity, and lists the imports that
