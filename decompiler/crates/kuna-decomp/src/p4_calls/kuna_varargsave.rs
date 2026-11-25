@@ -81,6 +81,8 @@ const XMM_ARGS: [&str; 8] = [
 ];
 /// Bytes of the general-register part of the save area.
 const GP_AREA: i64 = 48;
+/// Bytes of the whole save area: six general and eight vector registers.
+pub const SAVE_AREA: i64 = GP_AREA + 16 * 8;
 /// Bytes of a `va_list` before its `reg_save_area` field, and of the field.
 const VA_LIST_HEAD: i64 = 16;
 const VA_LIST_FIELD: i64 = 8;
@@ -100,6 +102,21 @@ struct Plan {
     guard: BlockId,
     edge: int4,
     gp_stores: Vec<OpId>,
+    folded: Folded,
+}
+
+/// The stores a fold removed, so a reader of the function can put back what
+/// `va_start` means: each register at the incoming stack pointer plus a frame
+/// offset, the vector registers only when the incoming `al` is nonzero.
+#[derive(Clone, Debug, Default)]
+pub struct Folded {
+    /// The save area's offset from the incoming stack pointer; it spans
+    /// [`SAVE_AREA`] bytes.
+    pub area: i64,
+    /// The `al` register: offset and size in the register space.
+    pub al: (u64, u32),
+    /// `(register offset, register size, frame offset, vector)` per store.
+    pub stores: Vec<(u64, u32, i64, bool)>,
 }
 
 /// Fold the prologue of `fd` when it matches; called once, right after the
@@ -124,6 +141,7 @@ pub(crate) fn fold(fd: &mut Funcdata) -> bool {
         }
     }
     fd.kuna_vararg_save = true;
+    fd.kuna_vararg_folded = Some(plan.folded);
     true
 }
 
@@ -600,10 +618,19 @@ fn find(fd: &Funcdata) -> Option<Plan> {
     if body_reads_save_area(fd, &fr, sp, area, &saved) {
         return None;
     }
+    let place = |r: &Reg| (r.offset, r.size as u32);
+    let mut stores: Vec<(u64, u32, i64, bool)> = gp_saves
+        .iter()
+        .map(|&(k, _)| (place(&gp[k as usize]), area + 8 * k as i64, false))
+        .chain(xmm_saves.iter().map(|&(j, off)| (place(&xmm[j as usize]), off, true)))
+        .map(|((o, n), f, v)| (o, n, f, v))
+        .collect();
+    stores.sort_unstable_by_key(|s| s.2);
     Some(Plan {
         guard: candidate,
         edge: blocks.block(candidate).get_out_index(save_block),
         gp_stores: gp_saves.into_iter().map(|(_, op)| op).collect(),
+        folded: Folded { area, al: place(&al), stores },
     })
 }
 

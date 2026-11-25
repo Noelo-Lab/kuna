@@ -148,6 +148,44 @@ jobs:
           cd decompiler
           cargo test -p kuna-ghidra --release -- --include-ignored --nocapture
 
+      # diffverify (docs/features/diffverify/): kuna-verify runs every function the
+      # two corpora decompile against the machine code and compares each verdict
+      # with docs/baseline-verify.json. Not a gate yet (the proposal's CI rule):
+      # a function that newly differs is an error annotation on the run, other
+      # changes are notices, and the job's result is untouched. The verdict
+      # table and this run's own baseline are uploaded to re-record from.
+      - name: diffverify corpus vs docs/baseline-verify.json (non-gating)
+        id: diffverify
+        continue-on-error: true
+        run: |
+          (cd decompiler && cargo build --release -p kuna-verify)
+          set +e
+          ./decompiler/target/release/kuna-verify corpus tests/datatests tests/stages --trace \
+            --baseline docs/baseline-verify.json --save-baseline diffverify-baseline.json \
+            > diffverify.md 2> diffverify-changes.txt
+          status=$?
+          set -e
+          grep -E '^::(error|warning|notice) ' diffverify.md || true
+          {
+            echo '### diffverify'
+            echo '```'
+            sed -n '/^files /,$p' diffverify.md
+            cat diffverify-changes.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+
+      - name: Upload the diffverify verdicts
+        if: always() && steps.diffverify.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: diffverify
+          path: |
+            diffverify.md
+            diffverify-changes.txt
+            diffverify-baseline.json
+          if-no-files-found: ignore
+
       # Node 22: the web suites below are written for (and only run on) a
       # current Node; the runner's default Node is not pinned. The suites that
       # drive headless Chrome (decompile-browser, -collab-browser, -collab-page,

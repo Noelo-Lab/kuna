@@ -52,5 +52,159 @@
     "S2",
     "L1",
     "P"
+  ],
+  "status": "C1, C2 and C3 implemented; C4 precision and recall on tests/datatests + tests/stages and on decbench",
+  "measurements": {
+    "C1": {
+      "corpus": "tests/datatests + tests/stages, 256 runs per function",
+      "files": 782,
+      "functions": 3979,
+      "verdicts": {
+        "AGREES": 696,
+        "DIFFERS": 4,
+        "DIVERGES": 3,
+        "UNKNOWN": 331,
+        "SKIPPED": 2945
+      },
+      "differs_triage": {
+        "known_bug": 3,
+        "harness": 1
+      },
+      "check_seconds": 3.6,
+      "wall_seconds": 20.6,
+      "peak_rss_mb": 454,
+      "results": "docs/features/diffverify/c1-results.md",
+      "check_seconds_first_build": 49.8,
+      "wall_seconds_one_worker": 66,
+      "workers": 14
+    },
+    "C2": {
+      "corpus": "tests/datatests + tests/stages, 256 runs per function",
+      "functions": 3979,
+      "verdicts": {
+        "AGREES": 2482,
+        "DIFFERS": 500,
+        "DIVERGES": 3,
+        "UNKNOWN": 994,
+        "SKIPPED": 0
+      },
+      "c1_agrees_regressed": 0,
+      "differs_triaged": false,
+      "check_seconds": 50.3,
+      "wall_seconds": 11.0,
+      "workers": 14,
+      "peak_rss_mb": 332,
+      "done_when": "both checks by a fault injected in a local build",
+      "results": "docs/features/diffverify/c2-results.md"
+    },
+    "C4": {
+      "corpus": "tests/datatests + tests/stages, 256 runs per function",
+      "functions": 4030,
+      "verdicts": {
+        "AGREES": 3174,
+        "DIFFERS": 92,
+        "DIVERGES": 12,
+        "UNKNOWN": 752
+      },
+      "c1_agrees_regressed": 0,
+      "c2_agrees_regressed": 12,
+      "differs_triage": {
+        "section2": {
+          "kuna_bug": 5,
+          "pinned_by_test": 8,
+          "source_ub": 3,
+          "harness_limit": 12
+        },
+        "call_checks_added": 49,
+        "call_checks_false_positives": 0
+      },
+      "check_seconds": 152.9,
+      "wall_seconds": 22.9,
+      "workers": 14,
+      "peak_rss_mb": 216,
+      "recall": {
+        "fixes_since_2026_06": 56,
+        "with_stage_fixture": 39,
+        "measured": 27,
+        "semantic_bugs_reproduced": 22,
+        "caught_no_contract": 7,
+        "caught_with_contract": 11,
+        "missed": 11,
+        "ir_equivalent": 3,
+        "crash_file_error": 1,
+        "not_reproduced": 1,
+        "method": "fault restored by hand in a local build per fix (sources moved since, so reverts do not apply); fixture assertions confirm the pre-fix output",
+        "before_call_checks": {
+          "caught_no_contract": 5,
+          "caught_with_contract": 9
+        }
+      },
+      "results": "docs/features/diffverify/c4-results.md",
+      "kuna_bugs": [
+        "gh8777-flagcompare-sborrow FUN_0 (RuleSborrowGe polarity)",
+        "kuna-repframecopy sub_4012c0 (stack-pop guess)",
+        "kuna-stackviews obj_global_reuse (default stackviews off drops stores to an escaped frame)",
+        "kuna-libctypes next_byte x2 (recovered return wider than int)"
+      ],
+      "float_support": {
+        "newly_judged": 242,
+        "new_differs": 15,
+        "kuna_defects": 5,
+        "harness_limit_functions": 3
+      },
+      "system_calls": {
+        "newly_judged": 72,
+        "new_differs": 21,
+        "new_differs_pinned_off_passes": 21,
+        "new_diverges": 12
+      }
+    }
+  },
+  "c3": {
+    "results": "docs/features/diffverify/c3-results.md",
+    "command": "kuna-verify localize <test.xml|binary> <function> [--pass N]",
+    "corpus_differs": 113,
+    "named_a_rule": 15,
+    "action_level": 98,
+    "wall_seconds_12_jobs": 199
+  },
+  "c4_decbench": {
+    "results": "docs/features/diffverify/c4-decbench-results.md",
+    "dataset": "noelo-lab/decbench-dataset",
+    "sample_set": {"functions": 250, "agrees": 157, "unknown": 92, "differs": 1},
+    "all_functions": {"binaries": 66, "functions": 28233, "agrees": 22683, "differs": 243, "unknown": 5306},
+    "harness_fixes": ["noreturn-halt", "bool-return", "segment-bases", "thumb-interworking", "barriers", "exclusive-monitor", "x87-extended", "cortex-m-system-registers", "memory-builtins", "readonly-store-trap"],
+    "sample_set_after_second_round": {"functions": 250, "agrees": 172, "unknown": 78, "differs": 0}
+  },
+  "c5": {
+    "results": "docs/features/diffverify/c5-results.md",
+    "option": "kuna-verify check ... --concolic QUERIES",
+    "sample_set": {"functions_with_concolic_runs": 49, "concolic_runs": 80, "new_differs": 0, "new_divergences": 2},
+    "ls_O2": {"functions_with_concolic_runs": 105, "concolic_runs": 237, "wall_seconds_before": 3.3, "wall_seconds_after": 13.4}
+  },
+  "tier_l": {
+    "results": "docs/features/diffverify/tier-l-results.md",
+    "command": "python3 scripts/diffverify/tier_l.py x86-64|aarch64|thumb BINARY",
+    "forms": {"x86-64": 6686, "thumb": 1330, "aarch64": 789},
+    "differ": {"x86-64": 0, "thumb": 16, "aarch64": 8},
+    "spec_errors": ["aarch64 ldrsh/ldrsb W sign-extends into X", "thumb stmia skips writeback with base in list", "thumb-2 ands/bics/mvns leave C"]
+  },
+  "ci": {
+    "baseline": "docs/baseline-verify.json",
+    "make": "make verify-corpus",
+    "workflow_step": "parity gates: diffverify corpus vs docs/baseline-verify.json (non-gating)",
+    "regression": "a function that newly differs, or a file that can no longer be checked"
+  },
+  "declared_divergences": [
+    "copy-overlap",
+    "divide-by-zero",
+    "returnpair-rdx-zero",
+    "switchrunon-cut-row",
+    "synthesized-call",
+    "gowritebarrier",
+    "nan-quieting",
+    "syscall-result",
+    "panic-check",
+    "ptrauth-trap"
   ]
 }

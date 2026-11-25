@@ -4008,6 +4008,18 @@ a partial clone beside it. The root label is set where the variant is selected
 point: it changes nothing the engine emits, and with the variable unset it costs
 one cached read per `apply`.
 
+A rule pool also answers to a per-thread rule cap
+(`decompiler/crates/kuna-decomp/src/infra/kuna_rulecap.rs`), which only the
+differential checker `kuna-verify` arms (`docs/features/diffverify/`, slice C3).
+Armed, every rule application is counted by rule name, in order, with the
+address of the op it rewrote. One named rule can be limited to its first `n`
+applications (`ActionPool::process_op` skips it after that), while every other
+rule and every action runs as usual, so the decompile still completes. The checker
+reruns a decompile that computes something other than the binary with one rule
+held back at a time, and bisects the limit of each rule it agrees without, to
+name the application after which it differs. Unarmed, the pool reads one
+thread-local flag per rule attempt and nothing else changes.
+
 ## 0.7 Feedback edges
 
 The pipeline is a fixpoint machine wearing a pipeline's clothes. Beyond the

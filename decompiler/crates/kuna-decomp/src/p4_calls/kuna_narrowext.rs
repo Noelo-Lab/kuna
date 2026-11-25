@@ -85,10 +85,15 @@ pub struct Rules {
 
 /// The rules for `arch` under its `narrowext` value.
 pub fn rules(arch: &Architecture) -> Rules {
+    rules_for(arch, arch.narrow_ext)
+}
+
+/// The rules for `arch` under `mode`.
+pub fn rules_for(arch: &Architecture, mode: NarrowExtMode) -> Rules {
     let id = arch.archid.as_str();
-    let compiler = arch.narrow_ext == NarrowExtMode::Compiler;
+    let compiler = mode == NarrowExtMode::Compiler;
     let gated = |w, documented: bool| (compiler || documented).then_some(w);
-    match arch.narrow_ext {
+    match mode {
         NarrowExtMode::Off => Rules::default(),
         _ if id.starts_with("RISCV:") || id.starts_with("Loongarch:") => Rules {
             input: Some(Widen::Register),
