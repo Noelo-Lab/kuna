@@ -181,6 +181,13 @@ pub struct Funcdata {
     /// (kuna `iteregion auto`) The conditional values read at the first
     /// heritage pass (`p8_structure/kuna_o0select.rs`).
     pub(crate) kuna_o0select: Option<Box<crate::p8_structure::kuna_o0select::Record>>,
+    /// (kuna `loweredswitch auto`) How the conditional branches of an
+    /// unoptimized function were compiled, read at the first heritage pass
+    /// (`p2_lift/kuna_o0switch.rs`).
+    pub(crate) kuna_o0switch: Option<Box<crate::p2_lift::kuna_o0switch::Record>>,
+    /// (kuna `loopcontinue auto`) The jump statements read at the first
+    /// heritage pass (`p8_structure/kuna_o0jumps.rs`).
+    pub(crate) kuna_o0jumps: Option<Box<crate::p8_structure::kuna_o0jumps::Record>>,
     pub(crate) kuna_fpu_trunc_views: Vec<OpId>,
     /// Boolean properties associated with \b this function (C++ `flags`)
     flags: uint4,
@@ -810,6 +817,8 @@ impl Funcdata {
             kuna_unoptimized: None,
             kuna_o0returns: None,
             kuna_o0select: None,
+            kuna_o0switch: None,
+            kuna_o0jumps: None,
             flags: 0,
             clean_up_index: 0,
             high_level_index: 0,
@@ -4490,6 +4499,8 @@ impl Funcdata {
         self.kuna_unoptimized = None;
         self.kuna_o0returns = None;
         self.kuna_o0select = None;
+        self.kuna_o0switch = None;
+        self.kuna_o0jumps = None;
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).
         self.flags &= !(funcdata_flags::highlevel_on
             | funcdata_flags::blocks_generated

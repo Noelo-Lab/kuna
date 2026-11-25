@@ -1146,6 +1146,9 @@ pub struct ArchContext {
     pub loop_cond_hoist: bool,
     /// Preserve secondary natural-loop latches as continues (`loopcontinue`).
     pub loop_continue: bool,
+    /// (kuna) `loopcontinue auto` — the recorded jump statements keep their
+    /// tests apart in an unoptimized function ([`crate::p8_structure::kuna_o0jumps`]).
+    pub loop_continue_record: bool,
     /// (kuna `loopcontinue`) The output language's do-while runs its test on
     /// `continue;`: C `do..while` and Go's `for` post statement do, Rust's
     /// `loop { ..; if !(c) { break; } }` restarts the body instead.
@@ -1266,6 +1269,8 @@ pub struct ArchContext {
     pub lowered_switch_linear: bool,
     /// (kuna) `loweredswitch tree|all` — compare trees re-roll from 2 to 64 cases.
     pub lowered_switch_tree: bool,
+    /// (kuna) `loweredswitch auto` — unoptimized functions decide by the compiled tests.
+    pub lowered_switch_compiled: bool,
     pub cond_fold: int4,
     /// (kuna) `condstmts`: most statements a folded condition operand may print
     /// before its test; negative = off.  See [`crate::p8_structure::kuna_condstmts`].
@@ -1561,6 +1566,9 @@ pub struct ArchContext {
     pub loader_transfer_sites: Rc<std::collections::BTreeSet<Address>>,
     /// MIPS GOT import entries identified by the loader, never ordinary definitions.
     pub loader_mips_imports: Rc<std::collections::BTreeSet<Address>>,
+    /// The [`Self::loader_mips_imports`] whose symbol version binds them to glibc,
+    /// with the versioned symbol's name.
+    pub loader_glibc_imports: Rc<std::collections::BTreeMap<Address, String>>,
     pub nullable_relocations: Rc<std::collections::BTreeMap<u64, Vec<crate::kuna_nullable_reloc::NullableRelocation>>>,
     pub nullable_literal_values: Rc<std::collections::BTreeSet<u64>>,
     /// The calling convention each declared callee was declared under, keyed the
@@ -1777,6 +1785,7 @@ impl ArchContext {
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: crate::p8_structure::kuna_ifnoexit::GuardArmMode::Off, // guardarm
             loop_continue: true,
+            loop_continue_record: false, // loopcontinue auto
             do_while_continue: true,
             goto_next: false,
             post_increment: false,
@@ -1801,6 +1810,7 @@ impl ArchContext {
             switch_selector_guard: false, // switchselector (opt-in default-off)
             lowered_switch_linear: false, // loweredswitch linear|all
             lowered_switch_tree: false, // loweredswitch tree|all
+            lowered_switch_compiled: false, // loweredswitch auto
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)
             cond_stmts: -1,              // condstmts (-1 = off)
             goto_reduce: crate::p8_structure::kuna_gotoreduce::GotoReduceMode::Off, // gotoreduce
@@ -1882,6 +1892,7 @@ impl ArchContext {
             callee_protos: Rc::new(Vec::new()),
             loader_transfer_sites: Rc::default(),
             loader_mips_imports: Rc::default(),
+            loader_glibc_imports: Rc::default(),
             nullable_relocations: Rc::default(),
             nullable_literal_values: Rc::default(),
             // No tracked registers until build_arch_handle snapshots the context DB.

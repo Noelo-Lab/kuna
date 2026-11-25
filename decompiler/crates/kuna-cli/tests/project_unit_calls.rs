@@ -158,3 +158,43 @@ fn a_jump_stub_with_a_declared_prototype_keeps_it() {
     assert!(body.lines().any(|line| line == "void abort(void)"), "{fixture}:\n{body}");
     assert!(!header.contains("abort(KUNA_ANY_ARGS)") && !body.contains("abort(KUNA_ANY_ARGS)"));
 }
+
+/// A call through an import's GOT slot prints as a call by the import's name,
+/// so an export declares an import no prototype table lists as taking any
+/// arguments, at the type of its call's output, whether or not the including
+/// code defines `KUNA_DECLARE_HELPERS`. `got_import_x86_64`'s `_start` hands
+/// `main` to `__libc_start_main` through its slot, as glibc's crt1.o does, and
+/// `main` returns 1 more than `got_value` returns.
+#[test]
+fn an_export_that_calls_imports_through_their_got_slots_compiles() {
+    if process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        eprintln!("an_export_that_calls_imports_through_their_got_slots_compiles: skipping (no `cc`)");
+        return;
+    }
+    let fixture = "got_import_x86_64";
+    let dir = export(fixture);
+    let c = dir.join(format!("{fixture}.c"));
+    let header = std::fs::read_to_string(dir.join(format!("{fixture}.h"))).unwrap();
+    let body = std::fs::read_to_string(&c).unwrap();
+    for (name, declaration) in [
+        ("__libc_start_main", "extern void __libc_start_main(KUNA_ANY_ARGS);"),
+        ("got_value", "extern undefined4 got_value(KUNA_ANY_ARGS);"),
+    ] {
+        assert!(body.contains(&format!("{name}(")), "{fixture} calls no {name}:\n{body}");
+        assert!(header.lines().any(|line| line == declaration), "{fixture}'s header lacks {declaration}:\n{header}");
+    }
+    for standard in ["-std=c11", "-std=c2x"] {
+        let out = Command::new("cc")
+            .args([standard, "-fsyntax-only"])
+            .args(common::CC_GCC15_DEMOTE)
+            .args(["-Werror=implicit-function-declaration", "-Werror=undef"])
+            .arg(&c)
+            .capped_output()
+            .expect("spawn cc");
+        assert!(
+            out.status.success(),
+            "{fixture}'s export failed cc {standard}:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}

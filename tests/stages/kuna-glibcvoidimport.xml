@@ -1,0 +1,84 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default">
+<bytechunk space="ram" offset="0x1000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x1000" name="stage_entry"/>
+</binaryimage>
+<script>
+<com>clear architecture</com>
+<com>load file tests/fixtures/mips-glibc-imports/n32-glibc.elf</com>
+<com>read symbols</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function measure</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function turn</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/mips-glibc-imports/o32-glibc.elf</com>
+<com>read symbols</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/mips-glibc-imports/n64-glibc.elf</com>
+<com>read symbols</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/mips-glibc-imports/n32-pthread.elf</com>
+<com>read symbols</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/mips-glibc-imports/n32-glibc.elf</com>
+<com>read symbols</com>
+<com>function bounds 0x10b4 0x10c3 as free</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/mips-glibc-imports/n32-unversioned.elf</com>
+<com>read symbols</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/mips-glibc-imports/n32-other.elf</com>
+<com>read symbols</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/mips-glibc-imports/n32-private.elf</com>
+<com>read symbols</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/mips-glibc-imports/n32-glibc.elf</com>
+<com>read symbols</com>
+<com>function bounds 0x10b4 0x10c3 as exit</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/mips-glibc-imports/n32-glibc.elf</com>
+<com>read symbols</com>
+<com>map prototype free void free(void);</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="A glibc-versioned void import receives the pointer it is passed in N32, O32, N64, from libpthread and under its own declared name" min="5" max="5">free\(a0\);</stringmatch>
+<stringmatch name="Each forwarding wrapper takes the pointer as its parameter" min="5" max="5">void release\(void \*a0\)</stringmatch>
+<stringmatch name="Unversioned, other-library, GLIBC_PRIVATE and caller-declared zero-argument imports pass nothing" min="4" max="4">^  free\(\);$</stringmatch>
+<stringmatch name="Another name's declaration at a glibc-versioned free keeps today's recovery" min="1" max="1">^  exit\(\);$</stringmatch>
+<stringmatch name="A glibc import that returns a value keeps its argument" min="1" max="1">strlen\(a0\) \+ 1</stringmatch>
+<stringmatch name="A glibc import no table declares on MIPS keeps today's recovery" min="1" max="1">^  sincos\(\);$</stringmatch>
+</decompilertest>

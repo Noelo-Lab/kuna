@@ -359,6 +359,7 @@ kuna_options! { self, p1;
         self.recover_lowered_switch = mode.enabled();
         self.lowered_switch_linear = mode.linear();
         self.lowered_switch_tree = mode.tree();
+        self.lowered_switch_compiled = mode == crate::kuna_loweredswitch::LoweredSwitchMode::Auto;
         Ok(msg)
     },
     "nulterminator" => {
@@ -494,7 +495,12 @@ kuna_options! { self, p1;
         self.loop_cond_hoist = val;
         Ok(msg)
     },
-    "loopcontinue" => on_off!(loop_continue, "Secondary loop-latch continue recovery"),
+    "loopcontinue" => {
+        let (val, record, msg) = crate::p8_structure::kuna_loopcontinue::OptionLoopContinue.apply(p1)?;
+        self.loop_continue = val;
+        self.loop_continue_record = record;
+        Ok(msg)
+    },
     "postinc" => on_off!(post_increment, "Pointer steps folded into *p++"),
     "regionlooprefine" => on_off!(
         region_loop_refine,

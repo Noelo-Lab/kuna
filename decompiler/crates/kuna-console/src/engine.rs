@@ -5530,6 +5530,8 @@ pub(crate) fn bootstrap_object(
             .map(|(site, _)| Address::new(Rc::clone(&code_space), site)).collect());
         prog.arch_mut().loader_mips_imports = Rc::new(elf_functions.imports.iter()
             .map(|&entry| Address::new(Rc::clone(&code_space), entry)).collect());
+        prog.arch_mut().loader_glibc_imports = Rc::new(elf_functions.glibc_imports.iter()
+            .map(|(&entry, name)| (Address::new(Rc::clone(&code_space), entry), name.clone())).collect());
         if let Ok(loc) = prog.arch().get_register_varnode(b"t9") {
             prog.arch_mut().loader_mips_t9 = Some((loc.clone(), mips_t9_probe(
                 prog.arch().translate().loader_rc(), elf32, little, loc.size)));

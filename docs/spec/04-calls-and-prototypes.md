@@ -10277,6 +10277,19 @@ concrete, non-void declaration supplies the imported call's argument and return
 storage, because a preserved incoming argument register cannot establish an
 import's arity. Unknown, missing or void return types, incomplete parameter
 types and variadic declarations, which fix no arity, decline that case.
+A void return binds only where the image proves whose declaration it is:
+the built-in library table's glibc declaration (`PrototypePieces::kuna_library_table`)
+of the very symbol that an import's dynamic symbol version ties to glibc
+(a public `GLIBC_*` version of a glibc library, §1), with at most four integer
+or pointer parameters no wider than a pointer, which every MIPS ABI passes in
+its first argument registers. A `free` that takes nothing from another library
+compiles to the same call, so neither the import name, an unversioned symbol,
+another library's version, `GLIBC_PRIVATE`, a debug-info declaration, nor a
+console declaration lifts the void exclusion. A `--define-function` that names
+the import seeds the table's declaration of that name, which binds only when
+the name is the versioned symbol's own. The table describes glibc's current
+headers and the version name is not compared with it. A caller's `prototype`
+assertion is a locked declaration and still wins.
 Ordinary MIPS definitions and other architectures retain the code-type
 behavior. The construction lives in
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_qualifiedcall.rs`.
