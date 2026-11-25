@@ -31,7 +31,14 @@
 //! block's in-edges keep their labels when they are re-pointed at its
 //! successor, so when the structurer folds two tests that share a successor
 //! the labels still say whether the source wrote them as one statement:
-//! [`may_join`] lets the fold join two edges only when they carry the same id.
+//! [`may_join`] lets the fold join two edges into a loop's step or test (a
+//! `continue;`) or out of a loop (a `break;`) only when they carry the same
+//! id.  A recorded `break` into the function's one recorded return stays a
+//! `break` ([`keeps_return`]), and after structuring a loop body's last
+//! `if (c) { S }` whose test reaches the loop's continue point only through
+//! recorded statements prints as `if (!c) continue; S` ([`print_continues`]).
+//! When keeping the tests apart leaves more `goto`s than folding them, the
+//! function is structured as before ([`gotos`]).
 
 use kuna_base::space::spacetype;
 use kuna_base::types::{int4, uint4};
@@ -183,7 +190,6 @@ pub(crate) fn record(fd: &mut Funcdata) {
         }
         count += 1;
     }
-    dump(fd, &stmts);
     fd.kuna_o0jumps = Some(Box::new(Record { statements: count }));
 }
 
@@ -359,40 +365,20 @@ pub(crate) fn keeps_return(fd: &Funcdata, b: BlockId, i: int4, goto_block: Block
     false
 }
 
-/// How far the next structuring follows the record: keep the recorded
-/// statements' tests apart and make their continues jumps (2), only keep the
-/// tests apart (1), or neither (0).
-#[derive(Clone, Copy)]
-struct Use {
-    level: u8,
-    /// Folds refused and continues made jumps since [`set_level`].
-    acted: u32,
-}
-
 thread_local! {
-    static USE: std::cell::Cell<Use> = const { std::cell::Cell::new(Use { level: 1, acted: 0 }) };
+    /// Whether [`may_join`] keeps recorded statements apart, and how many folds
+    /// it refused since [`set_gate`].
+    static GATE: std::cell::Cell<(bool, u32)> = const { std::cell::Cell::new((true, 0)) };
 }
 
-fn level() -> u8 {
-    USE.with(|u| u.get().level)
+/// Turn the fold gate on or off for the next structuring and reset its count.
+pub(crate) fn set_gate(on: bool) {
+    GATE.with(|g| g.set((on, 0)));
 }
 
-fn acted() {
-    USE.with(|u| {
-        let mut v = u.get();
-        v.acted += 1;
-        u.set(v)
-    });
-}
-
-/// Set how far the next structuring follows the record, and reset its count.
-pub(crate) fn set_level(level: u8) {
-    USE.with(|u| u.set(Use { level, acted: 0 }));
-}
-
-/// Whether the record changed anything since [`set_level`].
-pub(crate) fn acted_since() -> bool {
-    USE.with(|u| u.get().acted > 0)
+/// Whether the gate refused a fold since [`set_gate`].
+pub(crate) fn refused() -> bool {
+    GATE.with(|g| g.get().1 > 0)
 }
 
 /// The out-edge order of every two-way block, to put the graph back after a
@@ -417,9 +403,7 @@ pub(crate) fn restore_orientation(data: &mut Funcdata, saved: &[(BlockId, BlockI
 
 /// The structured jumps that print as `goto`: every goto block, or `if` with
 /// a goto target, except one that leaves its innermost loop for the block
-/// after the loop (a `break`) or goes to where that loop's `continue;` goes:
-/// an infinite loop's first leaf, or the body's last leaf when it prints
-/// nothing but a `for` step or a `do` loop's test.
+/// after the loop (a `break`) or restarts an infinite loop (a `continue`).
 pub(crate) fn gotos(data: &Funcdata) -> usize {
     let sg = data.sblocks_ref();
     let mut n = 0;
@@ -443,16 +427,7 @@ pub(crate) fn gotos(data: &Funcdata) -> usize {
             let ty = sg.block(up).get_type();
             if matches!(ty, BlockType::WhileDo | BlockType::DoWhile | BlockType::InfLoop | BlockType::Switch) {
                 let after = sg.block(up).get_parent().and_then(|o| sg.next_flow_after(o, up));
-                let cont = match ty {
-                    BlockType::InfLoop => sg.get_front_leaf(up) == Some(t),
-                    BlockType::WhileDo | BlockType::DoWhile => {
-                        let body = sg.sub_block(up, if ty == BlockType::WhileDo { 1 } else { 0 });
-                        body.and_then(|x| sg.get_exit_leaf(x)) == Some(t)
-                            && printed_ops(data, t) <= usize::from(ty == BlockType::WhileDo)
-                    }
-                    _ => false,
-                };
-                structured = after == Some(t) || cont;
+                structured = after == Some(t) || (ty == BlockType::InfLoop && sg.get_front_leaf(up) == Some(t));
                 break;
             }
             cur = up;
@@ -464,79 +439,116 @@ pub(crate) fn gotos(data: &Funcdata) -> usize {
     n
 }
 
-/// How many statements the structured leaf `leaf` prints besides its branch.
-fn printed_ops(data: &Funcdata, leaf: BlockId) -> usize {
-    let Some(bb) = data.sblocks_ref().block(leaf).get_copy() else { return usize::MAX };
-    data.bb_ops(bb)
-        .into_iter()
-        .filter(|&o| {
-            data.obank().get(o).is_some_and(|op| {
-                !(op.is_branch() || op.not_printed() || op.is_marker())
-                    && !op.get_out().and_then(|v| data.vbank().get(v)).is_some_and(|v| v.is_implied())
-            })
-        })
-        .count()
-}
-
 /// The jump-statement id an edge label carries; 0 for none.
 pub(crate) fn id_of(label: uint4) -> uint4 {
     (label & ID_MASK) >> ID_SHIFT
 }
 
 /// Whether a fold may join out-edge `ai` of `a` and out-edge `bj` of `b`,
-/// which reach the same block, into one condition: both carry the same jump
-/// statement, or neither carries one.
+/// which reach the same block, into one condition.  Two edges into a loop's
+/// step or test (a latch: `continue;`) or out of a loop (`break;`) join only
+/// when both carry the same recorded jump statement or neither carries one.
+/// Edges into a loop head join as before: the loop rules need the head's
+/// in-edges folded, and gcc sends all but the last test of a `||` group
+/// straight to a `while` test.
 pub(crate) fn may_join(graph: &BlockGraph, a: BlockId, ai: int4, b: BlockId, bj: int4) -> bool {
-    if id_of(graph.block(a).get_out_label(ai)) == id_of(graph.block(b).get_out_label(bj)) || level() == 0 {
+    if id_of(graph.block(a).get_out_label(ai)) == id_of(graph.block(b).get_out_label(bj)) || !GATE.with(|g| g.get().0) {
         return true;
     }
-    let t = graph.block(a).get_out(ai);
-    let tb = graph.block(t);
-    // TEMP: KUNA_O0J_HEADGATE=1 also gates at a loop head.
-    if std::env::var_os("KUNA_O0J_HEADGATE").is_none() && (0..tb.size_in()).any(|k| tb.is_back_edge_in(k)) {
+    let tb = graph.block(graph.block(a).get_out(ai));
+    let loop_node = |x: &crate::block::FlowBlock| {
+        (0..x.size_in()).any(|k| x.is_back_edge_in(k)) || (0..x.size_out()).any(|k| x.is_back_edge_out(k))
+    };
+    if (0..tb.size_in()).any(|k| tb.is_back_edge_in(k)) {
         return true;
     }
-    // TEMP measurement switch KUNA_O0J_KINDS = c | b | cb | all (default all).
-    let kinds = std::env::var("KUNA_O0J_KINDS").unwrap_or_else(|_| "cb".into());
-    if kinds == "all" {
-        acted();
+    let latch = (0..tb.size_out()).any(|k| tb.is_back_edge_out(k));
+    let exit = (0..tb.size_in()).any(|k| loop_node(graph.block(tb.get_in(k))));
+    if latch || exit {
+        GATE.with(|g| g.set((true, g.get().1 + 1)));
         return false;
     }
-    let t = graph.block(a).get_out(ai);
-    let tb = graph.block(t);
-    let cont = (0..tb.size_in()).any(|k| tb.is_back_edge_in(k)) || (0..tb.size_out()).any(|k| tb.is_back_edge_out(k));
-    let brk = !cont
-        && (0..tb.size_in()).any(|k| {
-            let p = graph.block(tb.get_in(k));
-            (0..p.size_in()).any(|q| p.is_back_edge_in(q)) || (0..p.size_out()).any(|q| p.is_back_edge_out(q))
-        });
-    let refuse = (cont && kinds.contains('c')) || (brk && kinds.contains('b'));
-    if refuse {
-        acted();
-    }
-    !refuse
+    true
 }
 
-// TEMP debug dump (KUNA_O0J_DUMP=<dir>), removed before commit.
-fn dump(fd: &Funcdata, stmts: &[(Key, Vec<(BlockId, int4)>)]) {
-    let Some(dir) = std::env::var_os("KUNA_O0J_DUMP") else { return };
-    use std::io::Write;
-    let path = std::path::Path::new(&dir).join(format!("{}.txt", std::process::id()));
-    let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) else { return };
-    let mut out = String::new();
-    for (k, edges) in stmts {
-        let ks = match *k {
-            Key::Block(b) => format!("B@{:x}", start(fd, b).unwrap_or(0)),
-            Key::Landing(a) => format!("L@{a:x}"),
-        };
-        let es: Vec<String> = edges
-            .iter()
-            .map(|&(s, slot)| {
-                let at = fd.bb_op_tail(s).and_then(|o| fd.obank().get(o)).map_or(0, |o| o.get_addr().get_offset());
-                format!("{at:x}/{slot}")
-            })
-            .collect();
-        out.push_str(&format!(" {ks}[{}]", es.join(",")));
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::block::{edge_flags, BlockKind, FlowBlock};
+
+    /// Two tests `a`, `b` that both reach `t`; `t` loops back to `head`.
+    fn graph() -> (BlockGraph, [BlockId; 4]) {
+        let mut g = BlockGraph::new();
+        let root = g.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+        let head = g.new_block(root);
+        let a = g.new_block(root);
+        let b = g.new_block(root);
+        let t = g.new_block(root);
+        g.add_edge(head, a);
+        g.add_edge(a, b);
+        g.add_edge(a, t);
+        g.add_edge(b, t);
+        g.add_edge(t, head);
+        g.set_out_edge_flag(t, 0, edge_flags::f_back_edge);
+        (g, [head, a, b, t])
     }
-    let _ = writeln!(f, "{} {:x}{}", fd.get_name(), fd.get_address().get_offset(), out);
+
+    #[test]
+    fn tests_into_a_latch_join_only_through_one_statement() {
+        let (mut g, [_, a, b, _]) = graph();
+        set_gate(true);
+        assert!(may_join(&g, a, 1, b, 0), "no statement on either edge");
+        g.set_out_edge_flag(a, 1, 1 << ID_SHIFT);
+        assert!(!may_join(&g, a, 1, b, 0), "a continue and a plain branch");
+        assert!(refused());
+        g.set_out_edge_flag(b, 0, 2 << ID_SHIFT);
+        assert!(!may_join(&g, a, 1, b, 0), "two different continues");
+        g.clear_out_edge_flag(b, 0, ID_MASK);
+        g.set_out_edge_flag(b, 0, 1 << ID_SHIFT);
+        assert!(may_join(&g, a, 1, b, 0), "one continue reached twice");
+        g.clear_out_edge_flag(b, 0, ID_MASK);
+        set_gate(false);
+        assert!(may_join(&g, a, 1, b, 0), "gate off");
+        assert!(!refused());
+        set_gate(true);
+    }
+
+    #[test]
+    fn tests_into_a_loop_head_join_as_before() {
+        let (mut g, [head, a, b, t]) = graph();
+        g.clear_out_edge_flag(t, 0, edge_flags::f_back_edge);
+        g.add_edge(head, t);
+        g.set_out_edge_flag(t, 0, edge_flags::f_back_edge);
+        let tb = g.block(t);
+        assert!((0..tb.size_in()).any(|k| tb.is_back_edge_in(k)) || (0..tb.size_out()).any(|k| tb.is_back_edge_out(k)));
+        g.set_out_edge_flag(a, 1, 1 << ID_SHIFT);
+        set_gate(true);
+        assert!(!may_join(&g, a, 1, b, 0));
+        let (mut g, [_, a, b, t]) = graph();
+        let back = g.block(t).get_out(0);
+        g.set_out_edge_flag(a, 1, 1 << ID_SHIFT);
+        g.clear_out_edge_flag(t, 0, edge_flags::f_back_edge);
+        g.add_edge(back, t);
+        let n = g.block(back).size_out() - 1;
+        g.set_out_edge_flag(back, n, edge_flags::f_back_edge);
+        assert!(may_join(&g, a, 1, b, 0), "t is a loop head");
+    }
+
+    #[test]
+    fn ids_live_in_their_own_label_bits() {
+        let label = edge_flags::f_back_edge | edge_flags::f_goto_edge | (5 << ID_SHIFT) | (3 << 16);
+        assert_eq!(id_of(label), 5);
+        assert_eq!(id_of(edge_flags::f_immed_copy), 0);
+        assert_eq!(ID_MASK & 0x3ff, 0);
+        assert_eq!(ID_MASK & (0x7fff << 16), 0);
+    }
+
+    #[test]
+    fn loopcontinue_auto_keeps_continue_recovery_and_adds_the_record() {
+        let opt = crate::p8_structure::kuna_loopcontinue::OptionLoopContinue;
+        assert!(matches!(opt.apply("auto"), Ok((true, true, _))));
+        assert!(matches!(opt.apply("on"), Ok((true, false, _))));
+        assert!(matches!(opt.apply("off"), Ok((false, false, _))));
+        assert!(opt.apply("sometimes").is_err());
+    }
 }

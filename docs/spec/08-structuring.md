@@ -168,6 +168,8 @@ with those edges masked and alone cannot establish single entry.
 No p-code, statement, or destination changes.
 
 `kuna_loopcontinue.rs (recover_continues)` runs before `mark_unstructured`.
+The value `auto` (the default) adds the record of jump statements in
+unoptimized code described under `loopcontinue auto` in §8.3.
 A goto or if-goto becomes `continue` only when its target's first leaf is the
 first leaf of its innermost `BlockInfLoop`, or the continue point of its
 innermost conditional loop. Entering a nested loop resets that scope. A
@@ -1787,6 +1789,83 @@ printed as the second (merging non-constant returns instead was measured worse,
 195 functions lost against 9 gained), and a `switch` whose `default: break;`
 is the last statement emits the same `nop` as a `return;`. Optimized functions
 are untouched; `option returndup on` restores the rules everywhere.
+
+### loopcontinue auto — the jump statements an unoptimized function was written with
+
+The short-circuit fold (`try_block_or` in the region structurer, `rule_block_or`
+in `CollapseStructure`) joins two tests whenever they share a successor, so a
+loop body that opens with `if (c == NULL || c->type != 7) continue; if
+(c->addr == NULL) continue; if (match(...)) { ... }` prints as one `&&` chain
+around the body, and a `break;` test right after a loop test folds into the
+loop condition. In optimized code nothing else is left to go by. Unoptimized
+code keeps a marker: gcc `-O0` compiles a bare `continue;`, `break;` or `goto`
+that is the whole arm of an `if` into a block of its own, so that a debugger
+can stop on its line, while a structured `if` branches straight to its join.
+The block is a `nop` the test branches to, followed by a jump to the
+statement's target or falling into it (an `||` group sends every test to the
+same `nop`); a `continue;` whose target is a `while` loop's test is instead
+`jcc L; jmp T; L:`, a jump-only block the last test of the group falls into,
+gcc sending the group's earlier tests straight to `T`. A jump at the end of a
+non-empty block (`{ f(); continue; }`) and an empty statement leave no marker,
+and a `continue;` that is the last statement of the body leaves no branch at
+all. kuna's flow gives a `nop` no p-code, so the marker is a branch that lands
+before the first operation of its destination block.
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_o0jumps.rs (record)` reads
+the raw graph at the first heritage pass of a function the detector of chapter
+03 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_unoptimized.rs
+(is_unoptimized)`) calls unoptimized. A statement is a jump-only block entered
+on the `nop` in front of it, a run of `nop`s (at most eight bytes) a branch
+lands on and that falls into its target (keyed by its address), or the
+jump-only block of the `while` form together with the tests that jump straight
+to its target and run only into the test before it. Every edge into a
+jump-only statement belongs to it, and a fall-through that runs over a landing
+in the gap before its block belongs to that landing (a void function's closing
+brace is a `nop` both a jump and a fall-through reach). The record is carried
+by the edges: bits 10–15 of each edge label hold a statement id (1 to 62, in
+address order; a statement past that is not recorded), and
+`BlockGraph::remove_from_flow` keeps an edge's label when it re-points the
+edge past a removed block, so the ids reach the structurer after
+simplification, and `build_copy_from` copies them into the structured graph.
+
+The fold asks `kuna_o0jumps.rs (may_join)` before it joins two tests: two
+edges into the same block join when they carry the same id or neither carries
+one; otherwise they stay apart when that block is a loop latch (the block
+holding a `for` loop's step or a `do` loop's test, a `continue;`) or a block a
+loop exits to (a `break;`). Edges into a loop head join as before: the loop
+rules need a head's in-edges folded, and the `while` form's forwarding makes
+the record incomplete there. A `goto` the source wrote does not keep tests
+apart either. The loop rules then see the source's tests one by one: a
+`continue;` group prints nested, and a `break;` test stays a second exit that
+`refine_loop_edges` virtualizes and `scopeBreak` prints as `break`.
+
+`ActionReturnSplit` gives every goto into a RETURN block its own copy of the
+block, a `break` included, which would turn the source's one `return` after a
+loop into a second return inside it. In a function whose returns `returndup
+auto` placed (`kuna_o0returns.rs (decided)`), `kuna_o0jumps.rs (keeps_return)`
+leaves such an in-edge alone when it carries a statement id and its
+structured goto leaves its innermost loop for the block after that loop.
+
+After structuring, `kuna_o0jumps.rs (print_continues)` (run by
+`ActionFinalStructure` right after `recover_continues`) prints the recorded
+`continue;` statements: in a while-do or do-while whose `continue;` resumes at
+a known leaf (`kuna_loopcontinue.rs (continue_points)`), the body's last `if
+(c) { S }` before that leaf, whose condition reaches the leaf's block only
+through edges that carry a statement id, becomes `if (!c) continue; S`, and
+the rewrite repeats on `S`'s own last statement. Control reaches the same
+place either way. In a function with a record `continue_points` also gives a
+`for` loop the leaf that holds its iterate statement when that leaf prints
+nothing else, so a jump to it prints as `continue;` too.
+
+Keeping tests apart can leave the structurer a loop it cannot fold, and then
+it falls back to gotos (two tests whose different `break`s both enter the next
+loop's head, say). `ActionBlockStructure` therefore structures a recorded
+function with the record and, when the fold refused a join and the result
+prints a goto that is not a loop's `break` or an infinite loop's `continue`
+(`kuna_o0jumps.rs (gotos)`), structures it again without the record, from the
+same branch orientation (`orientation`, `restore_orientation`), keeping the
+form with fewer gotos. Optimized functions are untouched, and `option
+loopcontinue on` restores the shape rule everywhere.
 
 ### tailform — the form of a function-tail `if`
 

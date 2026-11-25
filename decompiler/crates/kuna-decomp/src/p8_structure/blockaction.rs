@@ -3765,40 +3765,29 @@ impl Action for ActionBlockStructure {
         Some(Box::new(ActionBlockStructure { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
-        // (kuna `loopcontinue auto`) when following the recorded jump
-        // statements left gotos, follow less of the record; keep the form with
-        // the fewest gotos.
+        // (kuna `loopcontinue auto`) when keeping the recorded jump statements'
+        // tests apart left gotos, structure once more without that and keep
+        // the form with fewer.
         use crate::p8_structure::kuna_o0jumps as o0j;
         let saved = data.kuna_o0jumps.is_some().then(|| o0j::orientation(data));
-        o0j::set_level(1);
+        o0j::set_gate(true);
         let res = self.structure_once(data, ctx);
         if let Some(saved) = saved {
-            let mut best = (o0j::gotos(data), 1u8);
-            let mut last = 1u8;
-            let mut acted = o0j::acted_since();
-            for level in [0u8] {
-                if best.0 == 0 || !acted || ctx.deadline_expired() {
-                    break;
-                }
+            let gated = if o0j::refused() && !ctx.deadline_expired() { o0j::gotos(data) } else { 0 };
+            if gated > 0 {
                 data.sblocks_clear();
                 o0j::restore_orientation(data, &saved);
-                o0j::set_level(level);
+                o0j::set_gate(false);
                 self.structure_once(data, ctx);
-                last = level;
-                acted = o0j::acted_since();
-                let n = o0j::gotos(data);
-                if n < best.0 {
-                    best = (n, level);
+                if o0j::gotos(data) >= gated {
+                    data.sblocks_clear();
+                    o0j::restore_orientation(data, &saved);
+                    o0j::set_gate(true);
+                    self.structure_once(data, ctx);
                 }
-            }
-            if best.1 != last {
-                data.sblocks_clear();
-                o0j::restore_orientation(data, &saved);
-                o0j::set_level(best.1);
-                self.structure_once(data, ctx);
             }
         }
-        o0j::set_level(1);
+        o0j::set_gate(true);
         res
     }
 }

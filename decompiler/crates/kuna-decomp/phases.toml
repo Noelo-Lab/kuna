@@ -3032,22 +3032,22 @@ symptoms = "loop emitted as while( true ) with the head test as a guarded exit o
 
 [[settable]]
 option = "loopcontinue"
-values = "on|off"
-default = "on"
+values = "on|off|auto"
+default = "auto"
 destructive = false
 phase = "P8"
 subphase = "goto-quality"
 strength = "HARD"
 rewind = "P8"
 issue = "server-main-nested-retry-loops"
-summary = "Preserve secondary back-edges in single-entry natural loops as continues before CollapseStructure folds retry paths into nested loops. Keep the deepest latch structural; virtualize the others. After collapse, a goto to the first leaf of its innermost infinite loop becomes continue, as does a goto to a conditional loop's own test: a while-do's condition block (not a for, whose continue runs the iterate statement first) or a do-while's last leaf when it prints nothing but the test. Any other conditional loop resets this recovery scope. Head-tested loops, switch bodies, nested loop heads, and conditional retained latches are excluded."
-use_when = "A single source loop with early continues decompiles as nested infinite retry loops, as in a server accept/fork loop. Flip off to restore CollapseStructure's original loop-schema precedence."
+summary = "Preserve secondary back-edges in single-entry natural loops as continues before CollapseStructure folds retry paths into nested loops. Keep the deepest latch structural; virtualize the others. After collapse, a goto to the first leaf of its innermost infinite loop becomes continue, as does a goto to a conditional loop's own test: a while-do's condition block (not a for, whose continue runs the iterate statement first) or a do-while's last leaf when it prints nothing but the test. Any other conditional loop resets this recovery scope. Head-tested loops, switch bodies, nested loop heads, and conditional retained latches are excluded. The value `auto` (the default) keeps all of `on` and lets the binary decide in functions the per-function detector p3_dataflow/kuna_unoptimized.rs calls unoptimized: gcc -O0 compiles a bare `continue;`, `break;` or `goto` that is the whole arm of an `if` into a block of its own (a `nop` the test branches to, then a jump or a fall into the target; in a `while` loop a jump-only block the test falls into), while a structured `if` branches straight to its join. p8_structure/kuna_o0jumps.rs labels the edges into each such statement at the first heritage pass, before simplification removes those blocks. The short-circuit fold then joins two tests into one condition when they go to a loop's step or test, or out of a loop, only if they reached the same statement (edges into a loop head fold as before); a recorded `break` into the function's one recorded return stays a `break` instead of being given its own return; after structuring a loop body's last `if (c) { S }` whose test reaches the loop's continue point only through recorded statements prints as `if (!c) continue; S`; and a goto to a `for` loop's step leaf that prints only the step becomes `continue`. If keeping the tests apart leaves more gotos than folding them, the function is structured as before. Optimized functions are untouched."
+use_when = "Default `auto`. A single source loop with early continues decompiles as nested infinite retry loops, as in a server accept/fork loop; flip off to restore CollapseStructure's original loop-schema precedence. In unoptimized code the binary records which tests the source wrote as separate `continue;`/`break;` statements and `auto` keeps them apart: measured against `on` on the decbench corpus it makes 186 more O0 functions structurally exact and none fewer (+115 on one half of the projects, +71 on the other), changes no O2-noinline body, and adds no goto. A `goto` the source wrote does not keep tests apart. Set `on` to fold the tests by shape again in an unoptimized function."
 example = "option loopcontinue on"
 source_decompiler = "kuna"
-inspiration = "Natural-loop secondary-latch refinement, applied before the CollapseStructure fallback's greedy loop folds"
+inspiration = "Natural-loop secondary-latch refinement, applied before the CollapseStructure fallback's greedy loop folds; gcc -O0 keeps a `nop` for every bare jump statement so a debugger can stop on its line"
 change_kind = "structure-recovery"
 tier = "transform"
-symptoms = "one source loop emitted as multiple nested infinite loops|early continues emitted as retry loops|accept and fork retries obscure a server's main loop|goto label_N; inside a while loop where label_N: is the loop condition|a do-while body jumps to an empty label in front of the loop test"
+symptoms = "one source loop emitted as multiple nested infinite loops|early continues emitted as retry loops|accept and fork retries obscure a server's main loop|goto label_N; inside a while loop where label_N: is the loop condition|a do-while body jumps to an empty label in front of the loop test|-O0 loop body prints one long && chain where the source wrote if (...) continue; statements|-O0 loop test folds a break test into the loop condition|-O0 loop exit with a break prints a second return"
 
 [[settable]]
 option = "regionlooprefine"
