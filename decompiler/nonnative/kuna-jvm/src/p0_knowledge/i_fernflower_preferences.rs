@@ -42,7 +42,6 @@ impl IFernflowerPreferences {
     pub const TRY_LOOP_FIX: &str = "try-loop-fix";
     pub const TERNARY_CONDITIONS: &str = "ternary-in-if";
     pub const SWITCH_EXPRESSIONS: &str = "decompile-switch-expressions";
-    pub const SHOW_HIDDEN_STATEMENTS: &str = "show-hidden-statements";
     pub const OVERRIDE_ANNOTATION: &str = "override-annotation";
     pub const SIMPLIFY_STACK_SECOND_PASS: &str = "simplify-stack";
     pub const VERIFY_VARIABLE_MERGES: &str = "verify-merges";
@@ -135,7 +134,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::TRY_LOOP_FIX, "1".to_string()),
             (IFernflowerPreferences::TERNARY_CONDITIONS, "1".to_string()),
             (IFernflowerPreferences::SWITCH_EXPRESSIONS, "1".to_string()),
-            (IFernflowerPreferences::SHOW_HIDDEN_STATEMENTS, "0".to_string()),
             (IFernflowerPreferences::SIMPLIFY_STACK_SECOND_PASS, "1".to_string()),
             (IFernflowerPreferences::VERIFY_VARIABLE_MERGES, "0".to_string()),
             (IFernflowerPreferences::VERIFY_PRE_POST_VARIABLE_MERGES, "0".to_string()),
@@ -250,7 +248,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "TRY_LOOP_FIX", key: IFernflowerPreferences::TRY_LOOP_FIX, short_name: Some("tlf"), name: Some("Try-Loop fix"), description: Some("Fixes rare cases of malformed decompilation when try blocks are found inside of while loops"), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "TERNARY_CONDITIONS", key: IFernflowerPreferences::TERNARY_CONDITIONS, short_name: Some("tco"), name: Some("[Experimental] Ternary In If Conditions"), description: Some("Tries to collapse if statements that have a ternary in their condition."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "SWITCH_EXPRESSIONS", key: IFernflowerPreferences::SWITCH_EXPRESSIONS, short_name: Some("swe"), name: Some("Decompile Switch Expressions"), description: Some("Decompile switch expressions in modern Java class files."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
-    PreferenceOption { field: "SHOW_HIDDEN_STATEMENTS", key: IFernflowerPreferences::SHOW_HIDDEN_STATEMENTS, short_name: Some("shs"), name: Some("[Debug] Show hidden statements"), description: Some("Display hidden code blocks for debugging purposes."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "OVERRIDE_ANNOTATION", key: IFernflowerPreferences::OVERRIDE_ANNOTATION, short_name: Some("ovr"), name: Some("Override Annotation"), description: Some("Display override annotations for methods known to the decompiler."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "SIMPLIFY_STACK_SECOND_PASS", key: IFernflowerPreferences::SIMPLIFY_STACK_SECOND_PASS, short_name: Some("ssp"), name: Some("Second-Pass Stack Simplification"), description: Some("Simplify variables across stack bounds to resugar complex statements."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "VERIFY_VARIABLE_MERGES", key: IFernflowerPreferences::VERIFY_VARIABLE_MERGES, short_name: Some("vvm"), name: Some("[Experimental] Verify Variable Merges"), description: Some("Tries harder to verify the validity of variable merges. If there are strange variable recompilation issues, this is a good place to start."), type_: Some(OptionType::Boolean), dynamic_default_value: None },

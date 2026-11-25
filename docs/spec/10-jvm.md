@@ -532,8 +532,8 @@ When a full pass of the loop changes nothing, the tail runs once, in this order:
   array, read from the `<clinit>` of the class that holds it) back into a switch over the
   enum constants, and the lowering of a string switch (a switch over `hashCode()` followed
   by `equals` tests into a second switch) back into one switch over the strings; the
-  helper statements this leaves are marked hidden, and `jvm_show_hidden_statements`
-  prints them anyway. If that produced a switch expression, switch expressions, stack
+  helper statements this leaves are marked hidden and are not written. If that produced a
+  switch expression, switch expressions, stack
   variables and versions are processed once more.
 - `ExitHelper::adjust_return_type` and `ExitHelper::remove_redundant_returns` (a trailing
   `return;` of a `void` method is dropped).

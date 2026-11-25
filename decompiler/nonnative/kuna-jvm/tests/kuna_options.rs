@@ -150,10 +150,7 @@ fn rows_are_complete_and_point_at_real_modules() {
         .filter(|r| r.destructive)
         .map(|r| r.option)
         .collect();
-    assert_eq!(
-        destructive,
-        ["jvm_show_hidden_statements", "jvm_dump_text_tokens"]
-    );
+    assert_eq!(destructive, ["jvm_dump_text_tokens"]);
 }
 
 #[test]

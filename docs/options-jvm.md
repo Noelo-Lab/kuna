@@ -177,8 +177,6 @@ Three tiers:
 | var1 var2 names although debug info exists (option is off) | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
 | parameter names differ from the debug-info names | [`jvm_use_method_parameters`](#jvm_use_method_parameters----on--off-default-on) |
 | unexpected final on parameters | [`jvm_use_method_parameters`](#jvm_use_method_parameters----on--off-default-on) |
-| string switch reconstructed wrongly and the hidden hashCode switch is needed | [`jvm_show_hidden_statements`](#jvm_show_hidden_statements----on--off-default-off-destructive-opt-in) |
-| debugging which switch the decompiler discarded | [`jvm_show_hidden_statements`](#jvm_show_hidden_statements----on--off-default-off-destructive-opt-in) |
 | @Override missing on toString or interface methods (supertype not loaded) | [`jvm_override_annotation`](#jvm_override_annotation----on--off-default-on) |
 | @Override that javac did not write is unwanted | [`jvm_override_annotation`](#jvm_override_annotation----on--off-default-on) |
 | decompiled code fails to recompile with an inference error | [`jvm_explicit_generics`](#jvm_explicit_generics----on--off-default-off) |
@@ -726,15 +724,6 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 - **Where / provenance:** p9_emit/class_writer, var_definition_helper · vineflower · vineflower-option
 - **Also spelled:** `use-method-parameters`, `ump`
 - **Example:** `kuna decompile app.jar com.ex.Api --option jvm_use_method_parameters off`
-
-### `jvm_show_hidden_statements` -- on | off, default `off` (destructive opt-in)
-
-- **Symptoms:** string switch reconstructed wrongly and the hidden hashCode switch is needed; debugging which switch the decompiler discarded.
-- **What it does:** Debug aid: also print the switch statements the decompiler marked phantom (scaffolding left over after rebuilding string, enum and pattern switches).
-- **When to flip:** Turn on only to debug the decompiler's switch reconstruction; the output no longer reads as source.
-- **Where / provenance:** substrate/switch_statement · vineflower · vineflower-option
-- **Also spelled:** `show-hidden-statements`, `shs`
-- **Example:** `kuna decompile app.jar com.ex.Codes --option jvm_show_hidden_statements on`
 
 ### `jvm_override_annotation` -- on | off, default `on`
 
