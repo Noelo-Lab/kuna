@@ -158,7 +158,7 @@ pub(crate) fn continue_points(data: &Funcdata, root: BlockId) -> BTreeMap<BlockI
             BlockType::WhileDo if block.get_iterate_op().is_none() => {
                 graph.sub_block(id, 0).and_then(|cond| graph.get_front_leaf(cond))
             }
-            BlockType::WhileDo => step_leaf(data, id),
+            BlockType::WhileDo if data.kuna_o0jumps.is_some() => step_leaf(data, id),
             BlockType::DoWhile if data.get_arch().do_while_continue => graph
                 .sub_block(id, 0)
                 .and_then(|body| graph.get_exit_leaf(body))

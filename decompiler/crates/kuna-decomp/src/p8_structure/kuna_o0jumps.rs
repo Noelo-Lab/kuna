@@ -37,7 +37,7 @@ use kuna_base::space::spacetype;
 use kuna_base::types::{int4, uint4};
 use kuna_num::opcodes::OpCode;
 
-use crate::block::{BlockGraph, BlockType};
+use crate::block::{block_flags, BlockGraph, BlockType};
 use crate::context::BlockId;
 use crate::funcdata::Funcdata;
 
@@ -241,7 +241,7 @@ fn jump_only(fd: &Funcdata, b: BlockId) -> bool {
 /// prints them that way.  An edge into a loop head is a back edge the loop
 /// rules already turn into `continue;`.
 pub(crate) fn mark_continues(graph: &mut BlockGraph, root: BlockId) {
-    if std::env::var_os("KUNA_O0J_NOMARK").is_some() {
+    if std::env::var_os("KUNA_O0J_NOMARK").is_some() || level() < 2 {
         return;
     }
     let mut marks = Vec::new();
@@ -265,7 +265,9 @@ pub(crate) fn mark_continues(graph: &mut BlockGraph, root: BlockId) {
         }
     }
     for (c, e) in marks {
-        let _ = graph.set_goto_branch(c, e);
+        if graph.set_goto_branch(c, e).is_ok() {
+            acted();
+        }
     }
 }
 
@@ -297,6 +299,125 @@ pub(crate) fn keeps_return(fd: &Funcdata, b: BlockId, i: int4, goto_block: Block
     false
 }
 
+/// How far the next structuring follows the record: keep the recorded
+/// statements' tests apart and make their continues jumps (2), only keep the
+/// tests apart (1), or neither (0).
+#[derive(Clone, Copy)]
+struct Use {
+    level: u8,
+    /// Folds refused and continues made jumps since [`set_level`].
+    acted: u32,
+}
+
+thread_local! {
+    static USE: std::cell::Cell<Use> = const { std::cell::Cell::new(Use { level: 2, acted: 0 }) };
+}
+
+fn level() -> u8 {
+    USE.with(|u| u.get().level)
+}
+
+fn acted() {
+    USE.with(|u| {
+        let mut v = u.get();
+        v.acted += 1;
+        u.set(v)
+    });
+}
+
+/// Set how far the next structuring follows the record, and reset its count.
+pub(crate) fn set_level(level: u8) {
+    USE.with(|u| u.set(Use { level, acted: 0 }));
+}
+
+/// Whether the record changed anything since [`set_level`].
+pub(crate) fn acted_since() -> bool {
+    USE.with(|u| u.get().acted > 0)
+}
+
+/// The out-edge order of every two-way block, to put the graph back after a
+/// structuring that negated conditions.
+pub(crate) fn orientation(data: &Funcdata) -> Vec<(BlockId, BlockId)> {
+    (0..data.bblocks_get_size())
+        .map(|i| data.bblocks_get_block(i))
+        .filter(|&b| data.bblocks_ref().block(b).size_out() == 2)
+        .map(|b| (b, data.bblocks_ref().block(b).get_out(0)))
+        .collect()
+}
+
+/// Negate back every two-way block whose out-edge order differs from `saved`.
+pub(crate) fn restore_orientation(data: &mut Funcdata, saved: &[(BlockId, BlockId)]) {
+    for &(b, out0) in saved {
+        let blk = data.bblocks_ref().block(b);
+        if blk.size_out() == 2 && blk.get_out(0) != out0 && blk.get_out(1) == out0 {
+            data.block_basic_negate_lastop(b);
+        }
+    }
+}
+
+/// The structured jumps that print as `goto`: every goto block, or `if` with
+/// a goto target, except one that leaves its innermost loop for the block
+/// after the loop (a `break`) or goes to where that loop's `continue;` goes:
+/// an infinite loop's first leaf, or the body's last leaf when it prints
+/// nothing but a `for` step or a `do` loop's test.
+pub(crate) fn gotos(data: &Funcdata) -> usize {
+    let sg = data.sblocks_ref();
+    let mut n = 0;
+    let mut stack = vec![data.sblocks_root()];
+    while let Some(b) = stack.pop() {
+        for i in 0..sg.block(b).get_size() {
+            stack.push(sg.block(b).get_block(i));
+        }
+        let target = match sg.block(b).get_type() {
+            BlockType::Goto if sg.goto_prints(b) => sg.block(b).get_goto_target(),
+            BlockType::If => sg.block(b).get_if_goto_target(),
+            _ => None,
+        };
+        let Some(t) = target.and_then(|t| sg.get_front_leaf(t)) else { continue };
+        if sg.block(b).get_goto_type() & (block_flags::f_break_goto | block_flags::f_continue_goto) != 0 {
+            continue;
+        }
+        let mut cur = b;
+        let mut structured = false;
+        while let Some(up) = sg.block(cur).get_parent() {
+            let ty = sg.block(up).get_type();
+            if matches!(ty, BlockType::WhileDo | BlockType::DoWhile | BlockType::InfLoop | BlockType::Switch) {
+                let after = sg.block(up).get_parent().and_then(|o| sg.next_flow_after(o, up));
+                let cont = match ty {
+                    BlockType::InfLoop => sg.get_front_leaf(up) == Some(t),
+                    BlockType::WhileDo | BlockType::DoWhile => {
+                        let body = sg.sub_block(up, if ty == BlockType::WhileDo { 1 } else { 0 });
+                        body.and_then(|x| sg.get_exit_leaf(x)) == Some(t)
+                            && printed_ops(data, t) <= usize::from(ty == BlockType::WhileDo)
+                    }
+                    _ => false,
+                };
+                structured = after == Some(t) || cont;
+                break;
+            }
+            cur = up;
+        }
+        if !structured {
+            n += 1;
+        }
+    }
+    n
+}
+
+/// How many statements the structured leaf `leaf` prints besides its branch.
+fn printed_ops(data: &Funcdata, leaf: BlockId) -> usize {
+    let Some(bb) = data.sblocks_ref().block(leaf).get_copy() else { return usize::MAX };
+    data.bb_ops(bb)
+        .into_iter()
+        .filter(|&o| {
+            data.obank().get(o).is_some_and(|op| {
+                !(op.is_branch() || op.not_printed() || op.is_marker())
+                    && !op.get_out().and_then(|v| data.vbank().get(v)).is_some_and(|v| v.is_implied())
+            })
+        })
+        .count()
+}
+
 /// The jump-statement id an edge label carries; 0 for none.
 pub(crate) fn id_of(label: uint4) -> uint4 {
     (label & ID_MASK) >> ID_SHIFT
@@ -306,7 +427,7 @@ pub(crate) fn id_of(label: uint4) -> uint4 {
 /// which reach the same block, into one condition: both carry the same jump
 /// statement, or neither carries one.
 pub(crate) fn may_join(graph: &BlockGraph, a: BlockId, ai: int4, b: BlockId, bj: int4) -> bool {
-    if id_of(graph.block(a).get_out_label(ai)) == id_of(graph.block(b).get_out_label(bj)) {
+    if id_of(graph.block(a).get_out_label(ai)) == id_of(graph.block(b).get_out_label(bj)) || level() == 0 {
         return true;
     }
     let t = graph.block(a).get_out(ai);
@@ -316,8 +437,9 @@ pub(crate) fn may_join(graph: &BlockGraph, a: BlockId, ai: int4, b: BlockId, bj:
         return true;
     }
     // TEMP measurement switch KUNA_O0J_KINDS = c | b | cb | all (default all).
-    let kinds = std::env::var("KUNA_O0J_KINDS").unwrap_or_else(|_| "all".into());
+    let kinds = std::env::var("KUNA_O0J_KINDS").unwrap_or_else(|_| "cb".into());
     if kinds == "all" {
+        acted();
         return false;
     }
     let t = graph.block(a).get_out(ai);
@@ -328,7 +450,11 @@ pub(crate) fn may_join(graph: &BlockGraph, a: BlockId, ai: int4, b: BlockId, bj:
             let p = graph.block(tb.get_in(k));
             (0..p.size_in()).any(|q| p.is_back_edge_in(q)) || (0..p.size_out()).any(|q| p.is_back_edge_out(q))
         });
-    !((cont && kinds.contains('c')) || (brk && kinds.contains('b')))
+    let refuse = (cont && kinds.contains('c')) || (brk && kinds.contains('b'));
+    if refuse {
+        acted();
+    }
+    !refuse
 }
 
 // TEMP debug dump (KUNA_O0J_DUMP=<dir>), removed before commit.
