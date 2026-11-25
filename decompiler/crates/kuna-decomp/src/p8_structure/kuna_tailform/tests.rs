@@ -48,6 +48,8 @@ fn the_option_takes_off_on_one_or_two_thresholds() {
     assert_eq!(o.apply("wrap").unwrap().0.unwrap().rule, TailRule::Wrap);
     assert_eq!(o.apply("guard").unwrap().0.unwrap().rule, TailRule::Guard);
     assert_eq!(o.apply("model").unwrap().0.unwrap().rule, TailRule::Model);
+    assert_eq!(o.apply("model").unwrap().0, Some(TailFormPolicy::shipped()));
+    assert_eq!(TailFormPolicy::default().rule, TailRule::Threshold);
 }
 
 #[test]

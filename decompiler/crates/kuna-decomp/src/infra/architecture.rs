@@ -988,6 +988,10 @@ pub struct Architecture {
     pub loop_cond_hoist: bool,
     /// Preserve secondary natural-loop latches as continues (`loopcontinue`).
     pub loop_continue: bool,
+    /// (kuna) `loopcontinue auto`: in a function `kuna_unoptimized` flags, the
+    /// jump statements the raw block graph records keep their tests apart
+    /// ([`crate::p8_structure::kuna_o0jumps`]).
+    pub loop_continue_record: bool,
     /// (kuna `postinc`) A pointer step after its dereference prints as `*p++`.
     pub post_increment: bool,
     /// (kuna) Region structurer cyclic loop-successor refinement: when
@@ -2607,6 +2611,7 @@ impl Architecture {
             region_structure: true,
             guard_arm: crate::p8_structure::kuna_ifnoexit::GuardArmMode::Off, // (kuna) option guardarm; reset_defaults sets the shipped default
             loop_continue: true,
+            loop_continue_record: false, // (kuna) option loopcontinue auto; reset_defaults sets the shipped default
             post_increment: true,
             loop_cond_hoist: false,
             region_loop_refine: false,
@@ -2946,6 +2951,7 @@ impl Architecture {
         self.array_size = crate::p6_variables::kuna_arraysize::LEVEL_ON; // (kuna) option arraysize default-on: an escaped stack buffer ends at the byte count a library call states for it when that count lies within the alignment padding below the gap (0/675 datatest)
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.loop_continue = true;
+        self.loop_continue_record = true; // (kuna) `loopcontinue auto` default: in unoptimized functions the recorded jump statements keep their tests apart
         self.post_increment = true;
         self.region_loop_refine = true; // (kuna) DIV-13 default-on (region structurer multi-exit/irreducible loop-successor refinement; 0/675 ablation)
         self.region_edge_order = false; // (kuna) SAILR P2 default-OFF opt-in (H2 post-dominator + dominance-tiered edge-virtualization ordering; only reorders which goto is chosen when virtualizing, so OFF is byte-identical)
@@ -2960,7 +2966,7 @@ impl Architecture {
         self.iteregion = true; // (kuna) DIV-17 default-on (angr ITERegionConverter: assignment-diamond -> `?:` ternary, decbench F5). Per-test opt-out (`option iteregion off`) on the datatests it changes keeps the corpus byte-identical.
         self.iteexpr = false; // (kuna) computed-arm ?: extension: runtime choice, default-off (corpus byte-identical).
         self.iteboolean = true; // (kuna) DIV-51 default-on (short-circuit 0/1 select -> boolean assignment; 0/675 ablation). Per-test opt-out (`option iteboolean off`) on the one stage test it changes keeps the corpus byte-identical.
-        self.tail_form = Some(Default::default()); // (kuna) option tailform default-on
+        self.tail_form = Some(crate::p8_structure::kuna_tailform::TailFormPolicy::shipped()); // (kuna) option tailform default `model`
         self.guard_arm = crate::p8_structure::kuna_ifnoexit::GuardArmMode::Auto; // (kuna) option guardarm default `auto`: the layout tie-break only in functions `kuna_unoptimized` calls unoptimized; `option guardarm off` restores out-index order everywhere
         self.returndup_triangle = false; // (kuna) option rettriangle default-off: decbench sample O0 -163 GED / +56 perfect, O2 +60 GED / +1 perfect; on in the aggressive preset
         self.duplicate_shared_returns = true; // (kuna) DIV-54 default-on, superseding the DIV-18 revert (angr SAILR gotoless ReturnDuplicatorHigh). The -976 GED-perfect regression that reverted it was measured before #137 added the const-return gate (`returndup_is_const_ret`); re-ablated on 52,862 decbench functions the selective pass is +417 GED-perfect / -7,756 aggregate GED, net-positive in every one of nine tested partitions. Per-test opt-out (`option returndup off`) on the datatests it changes keeps the corpus byte-identical.
@@ -3003,7 +3009,7 @@ impl Architecture {
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
         self.arm_constant_shift = crate::p9_emit::kuna_armconstantshift::ConstShiftMode::Off;
-        self.arm_shift_guard = crate::p9_emit::kuna_armshiftguard::ShiftGuardMode::Needed; // (kuna) option armshiftguard default `needed`: a count whose non-zero mask is below 32 cannot reach the guard; `option armshiftguard always` restores every guard
+        self.arm_shift_guard = crate::p9_emit::kuna_armshiftguard::ShiftGuardMode::Wide; // (kuna) option armshiftguard default `wide`: only the counts of a lowered double-word shift keep the guard; `needed` adds every count not proven below 32, `always` every guard
         self.wrap_add = false; // (kuna) option wrapadd: default off, the casts cost readability on every widened int sum
         self.rust_array_zero = false;
         self.arm_float_args = true; // (kuna) option armfloatargs: default-ON with armfloatreturn; inert unless the ELF states the VFP procedure-call standard
@@ -3784,6 +3790,7 @@ impl Architecture {
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
         ctx.loop_continue = self.loop_continue;
+        ctx.loop_continue_record = self.loop_continue_record; // loopcontinue auto
         ctx.do_while_continue =
             self.print.out_lang().profile().forms.do_while != crate::kuna_lang::DoWhileForm::RustLoopBreakIf;
         ctx.goto_next = self.goto_next; // gotonext

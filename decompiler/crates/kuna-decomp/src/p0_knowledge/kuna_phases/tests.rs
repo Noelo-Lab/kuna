@@ -605,7 +605,7 @@ fn option_values_live_value_present_for_78() {
                             // `Architecture::arm_constant_shift`.
                             | "armconstshift"
                             // (kuna) `armshiftguard` takes a MODE
-                            // (`always|needed|never`) over an enum field; its
+                            // (`always|needed|wide|never`) over an enum field; its
                             // live value is `Architecture::arm_shift_guard`.
                             | "armshiftguard"
                             // (kuna) `constselectjump` takes a MODE
