@@ -3129,8 +3129,6 @@ impl<'a> CollapseStructure<'a> {
         self.order_loop_bodies();
 
         self.collapse_conditions()?;
-        // (kuna `loopcontinue auto`) recorded continues stay jumps.
-        crate::p8_structure::kuna_o0jumps::mark_continues(self.graph, self.graph_id);
 
         let mut isolated_count = self.collapse_internal(None)?;
         while isolated_count < self.size() {
@@ -3772,13 +3770,13 @@ impl Action for ActionBlockStructure {
         // the fewest gotos.
         use crate::p8_structure::kuna_o0jumps as o0j;
         let saved = data.kuna_o0jumps.is_some().then(|| o0j::orientation(data));
-        o0j::set_level(2);
+        o0j::set_level(1);
         let res = self.structure_once(data, ctx);
         if let Some(saved) = saved {
-            let mut best = (o0j::gotos(data), 2u8);
-            let mut last = 2u8;
+            let mut best = (o0j::gotos(data), 1u8);
+            let mut last = 1u8;
             let mut acted = o0j::acted_since();
-            for level in [1u8, 0] {
+            for level in [0u8] {
                 if best.0 == 0 || !acted || ctx.deadline_expired() {
                     break;
                 }
@@ -3800,7 +3798,7 @@ impl Action for ActionBlockStructure {
                 self.structure_once(data, ctx);
             }
         }
-        o0j::set_level(2);
+        o0j::set_level(1);
         res
     }
 }
@@ -4037,6 +4035,8 @@ impl Action for ActionFinalStructure {
         if data.get_arch().loop_continue {
             let points = crate::p8_structure::kuna_loopcontinue::continue_points(data, sroot);
             crate::p8_structure::kuna_loopcontinue::recover_continues(data.sblocks_mut(), sroot, &points);
+            // (kuna `loopcontinue auto`) the recorded `continue;` statements.
+            crate::p8_structure::kuna_o0jumps::print_continues(data, &points);
         }
         data.sblocks_mut().mark_unstructured(sroot);
         // graph.markLabelBumpUp(false): let loop blocks steal the label of their

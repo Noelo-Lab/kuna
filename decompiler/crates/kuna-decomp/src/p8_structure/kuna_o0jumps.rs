@@ -235,40 +235,100 @@ fn jump_only(fd: &Funcdata, b: BlockId) -> bool {
         && fd.obank().get(ops[0]).is_some_and(|o| o.code() == OpCode::CPUI_BRANCH)
 }
 
-/// After the short-circuit folds, make each recorded edge into a loop latch
-/// (the block holding a `for` loop's step or a `do` loop's test) a goto, so
-/// the structurer keeps the tests the source ended with `continue;` and
-/// prints them that way.  An edge into a loop head is a back edge the loop
-/// rules already turn into `continue;`.
-pub(crate) fn mark_continues(graph: &mut BlockGraph, root: BlockId) {
-    if std::env::var_os("KUNA_O0J_NOMARK").is_some() || level() < 2 {
+/// Print the `continue;` statements the record holds: in each loop whose
+/// `continue;` resumes at `points[loop]`, an `if (c) { S }` that is the last
+/// statement before that point, and whose test leaves for it only through
+/// recorded jump statements, becomes `if (!c) continue; S`.  Control reaches
+/// the same place either way, so only the spelling changes.
+pub(crate) fn print_continues(data: &mut Funcdata, points: &std::collections::BTreeMap<BlockId, BlockId>) {
+    if data.kuna_o0jumps.is_none() {
         return;
     }
-    let mut marks = Vec::new();
-    for i in 0..graph.block(root).get_size() {
-        let c = graph.block(root).get_block(i);
-        let b = graph.block(c);
-        if b.is_switch_out() {
-            continue;
-        }
-        for e in 0..b.size_out() {
-            if id_of(b.get_out_label(e)) == 0 || b.is_goto_out(e) || b.is_back_edge_out(e) {
-                continue;
-            }
-            let t = b.get_out(e);
-            let tb = graph.block(t);
-            let latch = (0..tb.size_out()).any(|k| tb.is_back_edge_out(k));
-            let head = (0..tb.size_in()).any(|k| tb.is_back_edge_in(k));
-            if t != c && latch && !head {
-                marks.push((c, e));
+    for (&lp, &point) in points {
+        let slot = match data.sblocks_ref().block(lp).get_type() {
+            BlockType::WhileDo => 1,
+            BlockType::DoWhile => 0,
+            _ => continue,
+        };
+        for _ in 0..64 {
+            if !continue_once(data, lp, slot, point) {
+                break;
             }
         }
     }
-    for (c, e) in marks {
-        if graph.set_goto_branch(c, e).is_ok() {
-            acted();
+}
+
+/// One rewrite at the end of loop `lp`'s body (its component `slot`).
+fn continue_once(data: &mut Funcdata, lp: BlockId, slot: int4, point: BlockId) -> bool {
+    let Some(body) = data.sblocks_ref().sub_block(lp, slot) else { return false };
+    let flat = matches!(data.sblocks_ref().block(body).get_type(), BlockType::Ls | BlockType::Graph);
+    let list: Vec<BlockId> = if flat { data.sblocks_ref().block(body).get_list().to_vec() } else { vec![body] };
+    let Some(&last) = list.last() else { return false };
+    let i = if last == point && list.len() >= 2 { list.len() - 2 } else { list.len() - 1 };
+    let ifb = list[i];
+    let g = data.sblocks_ref();
+    if g.block(ifb).get_type() != BlockType::If || g.block(ifb).get_size() != 2 || g.block(ifb).get_if_goto_target().is_some() {
+        return false;
+    }
+    let cond = g.block(ifb).get_block(0);
+    let clause = g.block(ifb).get_block(1);
+    let Some(pbb) = g.block(point).get_copy() else { return false };
+    if !leaves_through_record(data, cond, pbb) || !crate::p8_structure::kuna_tailform::negatable(data, cond) {
+        return false;
+    }
+    crate::p8_structure::kuna_tailform::negate(data, cond, true);
+    let sg = data.sblocks_mut();
+    let jump = sg.arena.insert(crate::block::FlowBlock::new_kind(crate::block::BlockKind::If {
+        gototype: block_flags::f_continue_goto,
+        gototarget: Some(point),
+    }));
+    sg.kuna_set_components(jump, vec![cond]);
+    let clause_items = if sg.block(clause).get_type() == BlockType::Ls { sg.block(clause).get_list().to_vec() } else { vec![clause] };
+    let mut items = list[..i].to_vec();
+    items.push(jump);
+    items.extend(clause_items.iter().copied());
+    items.extend(list[i + 1..].iter().copied());
+    if flat {
+        sg.kuna_set_components(body, items);
+    } else {
+        let ls = sg.arena.insert(crate::block::FlowBlock::new_kind(crate::block::BlockKind::Ls));
+        sg.kuna_set_components(ls, items);
+        let mut comps = sg.block(lp).get_list().to_vec();
+        comps[slot as usize] = ls;
+        sg.kuna_set_components(lp, comps);
+    }
+    if clause_items.first() != Some(&clause) {
+        sg.arena.remove(clause);
+    }
+    sg.arena.remove(ifb);
+    true
+}
+
+/// Whether every way the condition `cond` reaches basic block `pbb` is a
+/// recorded jump statement, and there is one.
+fn leaves_through_record(data: &Funcdata, cond: BlockId, pbb: BlockId) -> bool {
+    let sg = data.sblocks_ref();
+    let mut found = false;
+    let mut stack = vec![cond];
+    while let Some(b) = stack.pop() {
+        if sg.block(b).get_type() == BlockType::Copy {
+            let Some(bb) = sg.block(b).get_copy() else { return false };
+            let blk = data.bblocks_ref().block(bb);
+            for e in 0..blk.size_out() {
+                if blk.get_out(e) == pbb {
+                    if id_of(blk.get_out_label(e)) == 0 {
+                        return false;
+                    }
+                    found = true;
+                }
+            }
+        } else {
+            for k in 0..sg.block(b).get_size() {
+                stack.push(sg.block(b).get_block(k));
+            }
         }
     }
+    found
 }
 
 /// Whether `ActionReturnSplit` leaves in-edge `i` of RETURN block `b` to
@@ -310,7 +370,7 @@ struct Use {
 }
 
 thread_local! {
-    static USE: std::cell::Cell<Use> = const { std::cell::Cell::new(Use { level: 2, acted: 0 }) };
+    static USE: std::cell::Cell<Use> = const { std::cell::Cell::new(Use { level: 1, acted: 0 }) };
 }
 
 fn level() -> u8 {
