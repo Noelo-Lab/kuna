@@ -602,6 +602,28 @@ fn absolute_peripheral_moves_keep_equal_data_io_and_ext_word_addresses_distinct(
 }
 
 #[test]
+fn wide_swap_exchanges_only_the_word_at_its_effective_data_address() {
+    let mut m = Machine::new(
+        0,
+        &[(NOP, INC_A1), (0x8023dd, 0xc35618), (0x9f1010, 0xc340e2), (NOP, NOP)],
+        &[(0, 1, 6), (2, 5, 6), (4, 5, 6), (6, 1, 0)],
+        None,
+    );
+    m.seed(&[("A0", 0x12ab436010), ("A1L", 0xffff), ("X2", 0x4d6f), ("CETBL", 0xffff)]);
+    m.seed_data(0xffff, 0x8000);
+    m.seed_data(0x23dd, 0xbcde);
+    m.seed_data(0, 0x4221);
+    m.seed_data(0x1010, 0x4e5d);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!(m.step(), 12);
+    assert_eq!((m.reg("A0"), m.reg("EST")), (0x12ab438000, 0x3250));
+    assert_eq!((m.data(0xffff), m.data(0), m.data(0x23dd)), (0x6010, 0x4221, 0xbcde));
+    assert_eq!(m.step(), 18);
+    assert_eq!((m.reg("X2"), m.reg("EST"), m.data(0x1010)), (0x4e5d, 0x3240, 0x4d6f));
+}
+
+#[test]
 fn link_uses_address_enable_before_its_independently_predicated_store() {
     for (config, table, sp, frame, saved) in [
         (0, 0, 0x4040, 0xc048, 0x2299),
