@@ -10,6 +10,13 @@ state and compares them. Read `docs/features/diffverify/README.md` before changi
 - **A `DIFFERS` is not a kuna bug until the harness is ruled out.** Most false ones so
   far were the checker's, not the decompiler's. Follow `triage.md`: the cause can be
   kuna, the SLEIGH spec, the reference emulator, the checker's evaluator or the harness.
+- **Cross-check against an external tool wherever one can run the same thing.** The
+  machine side and kuna's side share the p-code semantics and the SLEIGH specs, so an
+  error there is the same on both and this check cannot see it. Run the instruction,
+  function or input through an independent tool as well (Unicorn or QEMU, as Tier L does;
+  real hardware; a compiler's own output) and compare. When they disagree, do not assume
+  either side is right: decide whether the external tool, our evaluator or the spec is
+  wrong, from the architecture manual or a third run, and write down which (`triage.md`).
 - **A harness change must not move verdicts it did not mean to move.** Before committing,
   compare every verdict on the corpus, `ls` (`O2`, `O0`) and `find` against the previous
   build, and explain each one that moved.
