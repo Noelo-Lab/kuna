@@ -771,3 +771,8 @@ through its cursor, each read by `main`: they print their return, where they
 printed `void`. `reset` (`movl $0,gi; xor %eax,%eax; movl $0,gj; ret`) returns
 its zero. `push_cell`, whose result `main` ignores, stays `void`. A strict fix
 with one pass.
+
+`kuna-vcmp-carry.xml` checks the ARM conditions that read the carry after
+`vcmp`/`vcmpe` and `vmrs APSR_nzcv, fpscr`. The hardware sets C for unordered
+operands, so `hi` and `cs` are taken for a NaN and `ls` and `cc` are not; each
+printed test is false exactly when its branch is taken, NaN included.

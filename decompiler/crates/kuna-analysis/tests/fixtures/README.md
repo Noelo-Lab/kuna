@@ -2902,3 +2902,14 @@ before its block for `take`, and `unsettled`@`0x4012c0` calls the `__stdcall`
 block for `take`. Source and recipe in `byvalreuse_pe_i386.s`: clang 17 and lld-link 17 (the
 `swift:6.0-jammy` Docker image ships both) reproduce it byte for byte; Ubuntu's clang 14
 does not. Used by `tests/stages/kuna-repframecopy.xml` (#14-#21).
+
+### `vcmp_carry_a32.o` — ARM conditions on the carry after `vcmp`
+
+`vcmp_carry_a32.o` (620 bytes, ELF32 little-endian ARM relocatable, SHA-256
+`066344f66e6f1508962ff4139087e0eed36e27019a7e8c4bcfa51d70e95237ec`) is built from
+`vcmp_carry_a32.s` (`clang --target=armv7a-linux-gnueabihf -mfloat-abi=hard
+-mfpu=vfpv3-d16 -c vcmp_carry_a32.s -o vcmp_carry_a32.o`, clang 22.1.8). `a32_hi`,
+`a32_ls`, `a32_cs` and `a32_cc` branch on that condition after `vcmp.f64 d0, d1;
+vmrs APSR_nzcv, fpscr`, and `a32_cs_zero` on `cs` after `vcmpe.f32 s0, #0`; each
+returns 5 when the branch is taken and 3 otherwise. Used by
+`tests/stages/kuna-vcmp-carry.xml`.
