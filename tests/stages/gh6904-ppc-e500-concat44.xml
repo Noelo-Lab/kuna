@@ -49,6 +49,8 @@
   <!-- returndup (DIV-54 default-on) would split this function's shared epilogue; this
        upstream-issue test pins the merged rendering the GH-6904 fix produces. -->
   <com>option returndup off</com>
+  <!-- kuna: tailform default model; this test pins the 4-line size rule's function-tail form -->
+  <com>option tailform on</com>
   <com>map fun r0x5fc some_funcptr_func</com>
   <com>map fun r0x700 get_funcptr</com>
   <com>parse line extern void * get_funcptr(void *p);</com>

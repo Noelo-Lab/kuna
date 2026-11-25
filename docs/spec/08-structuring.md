@@ -1799,8 +1799,11 @@ wrapped block. Authors do the opposite — over the decbench void-tail sites the
 source wraps 86% of one-line bodies and 29% of bodies over eight lines — so the
 inherited form is wrong more often than chance.
 `decompiler/crates/kuna-decomp/src/p8_structure/kuna_tailform.rs (ActionTailForm)`
-runs after `dedupitetail` and re-spells the tail by the printed size of its
-conditional part, `option tailform <n>` lines (default 4):
+runs after `dedupitetail` and re-spells the tail. By default (`option tailform
+model`) saved weights over the site's features choose the form, as described
+below; under `option tailform on` or `<n>` the printed size of the conditional
+part decides, with `<n>` lines as the threshold (4 for `on`). Both make the
+same rewrites, shown here with the size rule:
 
 - **wrap.** The last top-level `if (c) return K;` whose remaining statements
   print at most `<n>` lines becomes `if (!c) { ... }` followed by the final
@@ -1866,8 +1869,8 @@ decision is made: wrap, guard and the valued merge leave the tree alone, and a
 last `if` whose arm ends in its own return before the final bare return is
 printed as a guard.
 
-`option tailform model` decides each site with saved weights instead of the
-size test. The site's features
+The default, `option tailform model`, decides each site with saved weights
+instead of the size test. The site's features
 (`decompiler/crates/kuna-decomp/src/p8_structure/kuna_tailform/features.rs (compute)`)
 are read off the tree and do not depend on which of the two forms the tree is
 in, apart from the form itself: printed lines, top-level statements,
@@ -1904,7 +1907,17 @@ at 77% held out by project, against 73% for the 4-line threshold, and gains
 data already gives 76%. End to end against `on`, the shipped table gains 98 at
 O2 (190 gained, 92 lost) and 41 at O0 (94 gained, 53 lost), and a table fitted
 on the FIT projects only gains 27 and 32 on the CHECK projects it never saw.
-`on` stays the default.
+
+`model` replaced the size rule as the default on 2026-11-25, after
+`returndup auto`, `iteregion auto` and `loweredswitch auto` had changed which
+functions reach the pass. Re-measured then (main bd07ce279), the shipped table
+against `on` moves 100 more functions to an exact match at O2 (190 gained, 90
+lost; FIT +38, CHECK +62) and 41 at O0 (94 gained, 53 lost; FIT +14, CHECK
++27). XXRETRAINXX The model rewrites
+only within the pass's two forms, so no function computes anything different:
+every changed body holds the same non-control statements under either value.
+The lost functions are sources that wrote the form the size rule happened to
+pick, XXLOSTXX `option tailform on` restores the size rule.
 
 Everything is a print-tree edit on the function's top-level statement list. Its
 nested `Ls`/`Graph` containers and the statement prefix of each top-level `if`'s
@@ -1924,8 +1937,9 @@ In a void function with `voidtailreturn` on, the bare `return;` that ends a
 path moved to the end of the function is flagged `F_RET_SKIP` the same way.
 
 Measured with decbench's own CFG extractor over the O2-noinline corpus (35,189
-functions), the default moves 549 functions to an exact match with the
-source (gained 755, lost 206) and 461 at O0 (gained 717, lost 256).
+functions), the size rule (`on`) moves 549 functions to an exact match with the
+source (gained 755, lost 206) and 461 at O0 (gained 717, lost 256) against
+`off`.
 The threshold was fitted on the even-hash half of the projects and checked on
 the odd half (O2 +230 / +319); one to eight lines all help, the wrap side
 peaks at four, and one value serves void and constant returns. The lost
