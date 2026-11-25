@@ -11160,8 +11160,8 @@ impl PrintC {
             // by `push_float` (the decimal literal), every other metatype reaches
             // `push_integer` with `ct->getDisplayFormat()` as its `displayFormat`.
             let ct = fd.vn_type_read_facing(vn, op);
-            if matches!(self.out_lang, crate::kuna_lang::OutLang::Go | crate::kuna_lang::OutLang::Rust)
-                && ct.get_metatype() == type_metatype::TYPE_BOOL
+            if (self.out_lang == crate::kuna_lang::OutLang::Go && ct.get_metatype() == type_metatype::TYPE_BOOL)
+                || (self.out_lang == crate::kuna_lang::OutLang::Rust && self.rust_boolean_constant(fd, arch, vn, op))
             {
                 self.push_atom(&Atom::with_op_vn(if off == 0 { "false" } else { "true" },
                     TagType::VarToken, crate::printlanguage::SyntaxHighlight::const_color,

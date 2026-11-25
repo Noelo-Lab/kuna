@@ -21,6 +21,37 @@ impl PrintC {
         }
     }
 
+    /// Whether constant `vn` read by `op` prints as `false`/`true`: its type is
+    /// Boolean and so is what consumes it, the function's return value, the
+    /// declared variable a COPY assigns (through implied copies) or the other
+    /// side of an equality test.
+    pub(crate) fn rust_boolean_constant(&self, fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId) -> bool {
+        let boolean = |ty: &Datatype| ty.get_metatype() == type_metatype::TYPE_BOOL && ty.get_size() == 1;
+        boolean(&fd.vn_type_read_facing(vn, op)) && self.rust_boolean_consumer(fd, arch, vn, op, 4)
+    }
+
+    fn rust_boolean_consumer(&self, fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId, depth: u8) -> bool {
+        let boolean = |ty: &Datatype| ty.get_metatype() == type_metatype::TYPE_BOOL && ty.get_size() == 1;
+        let Some(operation) = fd.obank().get(op) else { return false; };
+        match operation.code() {
+            OpCode::CPUI_RETURN => fd.get_func_proto().get_output_type().is_some_and(|ty| boolean(ty)),
+            OpCode::CPUI_COPY => {
+                let Some(out) = operation.get_out() else { return false; };
+                if fd.vbank().get(out).is_some_and(|node| node.is_implied()) {
+                    depth > 0 && fd.lone_descend(out)
+                        .is_some_and(|reader| self.rust_boolean_consumer(fd, arch, out, reader, depth - 1))
+                } else {
+                    boolean(&self.rust_integer_output_type(fd, arch, out))
+                }
+            }
+            OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => (0..2)
+                .filter_map(|slot| operation.get_in(slot))
+                .filter(|&other| other != vn)
+                .any(|other| boolean(&self.rust_integer_value_type(fd, arch, other, op))),
+            _ => false,
+        }
+    }
+
     fn rust_boolean_expression(
         &self,
         fd: &Funcdata,
