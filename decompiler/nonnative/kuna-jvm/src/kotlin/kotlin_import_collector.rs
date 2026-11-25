@@ -4,8 +4,6 @@
 //! `ImportCollector` with `kotlin` set, and the two methods it overrides
 //! branch on that flag.
 
-use crate::decompiler_context::DecompilerContext;
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::import_collector::ImportCollector;
 use crate::k_types::KTypes;
 use crate::fixes::kt_names::kt_escaped_class_name;
@@ -76,10 +74,6 @@ impl KotlinImportCollector {
     }
 
     pub fn write_imports(self, buffer: &mut TextBuffer, add_separator: bool) {
-        if DecompilerContext::get_option(IFernflowerPreferences::REMOVE_IMPORTS) {
-            return;
-        }
-
         let imports = self.0.pack_imports();
         for imp in &imports {
             if kuna_fixes::enabled(KunaFix::KtEscapedClassName) {

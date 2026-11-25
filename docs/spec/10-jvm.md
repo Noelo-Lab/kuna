@@ -84,10 +84,13 @@ registers each plugin's passes there and asks it for a language spec, which take
 method pipeline and the class writer for the classes it claims. Plugins are
 not discovered on a class path: the engine carries the plugins `java -jar vineflower.jar`
 bundles, in its registration order, in
-`decompiler/nonnative/kuna-jvm/src/infra/kuna_plugins.rs`, and `jvm_plugins` (on by
-default, as with `java -jar`; off is Vineflower's test fixture, which loads none) decides
-whether they load. Each plugin's options join the option map with the plugin's defaults
-when the plugins initialize, and an option a caller set keeps its value. Two are ported, in
+`decompiler/nonnative/kuna-jvm/src/infra/kuna_plugins.rs`, and the custom property
+`jvm_plugins` (on unless set; the corpus runner turns it off for Vineflower's test fixture,
+which loads none) decides whether they load. It is not a catalog option: a plugin's effect
+is gated by its own options, so off gives what `jvm_kt_enable off` and
+`jvm_resugar_idea_notnull off` give with no renamer. Each plugin's options join the option
+map with the plugin's defaults when the plugins initialize, and an option a caller set
+keeps its value. Two are ported, in
 `decompiler/nonnative/kuna-jvm/src/plugins`. **VariableRenaming** registers no pass; it
 supplies the variable naming factory, which every method's local names pass through when
 `VarDefinitionHelper` settles them and every parameter name passes through when it is
@@ -98,12 +101,11 @@ primitives one letter and steps through `a`..`z`, `ba`... on a clash, and an obj
 class name with a lowercase first letter (plural for arrays), numbered on a clash, with `_`
 after a keyword. A lambda body's method, an anonymous class's methods and a local class's
 methods take over the enclosing method's naming state (`jad`'s counters, `tiny`'s used
-names) once the enclosing method has been renamed. With no renamer named, the deprecated
-`jvm_jad_style_variable_naming` selects `jad`; an unknown name selects none, and the names
-stay as Vineflower's own pipeline gives them. `jvm_rename_parameters` (and, for `jad` only,
-the deprecated `jvm_jad_style_parameter_naming`) renames parameters too; with a
-LocalVariableTable, a parameter's entry carries no type at that point, so `tiny`, which
-needs one, fails the method as Vineflower's provider does. **IdeaNotNull** registers one
+names) once the enclosing method has been renamed. With no renamer named, or an unknown
+name, there is none, and the names stay as Vineflower's own pipeline gives them.
+`jvm_rename_parameters` renames parameters too; with a LocalVariableTable, a parameter's
+entry carries no type at that point, so `tiny`, which needs one, fails the method as
+Vineflower's provider does. **IdeaNotNull** registers one
 `MainLoop` pass that, while `jvm_resugar_idea_notnull` is on (the default), removes the
 null checks IntelliJ IDEA's compiler instruments: an `if (p == null) $$$reportNull$$$0(n);`
 heading the method body for a parameter whose invisible parameter annotations carry
@@ -177,16 +179,15 @@ without a JVM, so the default policy is always used.
 
 **Nesting.** `decompiler/nonnative/kuna-jvm/src/p1_classfile/classes_processor.rs
 (ClassesProcessor::load_classes)` turns the own classes into a forest of class nodes. A
-class whose qualified name was already loaded is skipped with an error log; a class whose
-internal name matches `jvm_excluded_classes`, or does not match `jvm_included_classes`
-(both full-match Java regular expressions, run by the small backtracking engine in the
-same file), is left out of the forest but still gives context. With `jvm_decompile_inner`
+class whose qualified name was already loaded is skipped with an error log. Every own class
+joins the forest: which roots are written is the driver's selection (`DriverConfig::select`,
+section 10.14), and the others still give context. With `jvm_decompile_inner`
 (the default), the `InnerClasses` entries of every class are read into records of type
 *member*, *local* or *anonymous* (an entry with no simple name is anonymous; one whose
 `EnclosingMethod` names a method is local), each remembering which class declared it.
 Classes often disagree about a nested class; the record from the nested class itself
-wins over its enclosing class's, which wins over a third class's, and
-`jvm_warn_inconsistent_inner_attributes` logs each disagreement. With
+wins over its enclosing class's, which wins over a third class's, and each disagreement
+is logged. With
 `jvm_validate_inner_classes_names`, a member entry is believed only when its name is the
 outer name, `$`, and its simple name. Then, from each root, a breadth-first walk attaches
 nested classes to their enclosing class: an anonymous class loses `static` and records
@@ -255,8 +256,7 @@ type prints erased. Debug attributes feed naming later: the `LocalVariableTable`
 sequence with its exception table
 (`decompiler/nonnative/kuna-jvm/src/p2_lift/full_instruction_sequence.rs`,
 `decompiler/nonnative/kuna-jvm/src/p2_lift/instruction.rs`), one instruction per opcode
-with resolved operands; `jvm_dump_bytecode_on_error` later prints this sequence inside a
-failed method. The method's local-variable count seeds the variable counter, so every
+with resolved operands; the comment of a failed method later lists this sequence. The method's local-variable count seeds the variable counter, so every
 variable the decompiler invents is numbered after the method's own locals.
 
 **Blocks.** `decompiler/nonnative/kuna-jvm/src/p2_lift/control_flow_graph.rs (ControlFlowGraph::new)`
@@ -533,8 +533,8 @@ When a full pass of the loop changes nothing, the tail runs once, in this order:
   array, read from the `<clinit>` of the class that holds it) back into a switch over the
   enum constants, and the lowering of a string switch (a switch over `hashCode()` followed
   by `equals` tests into a second switch) back into one switch over the strings; the
-  helper statements this leaves are marked hidden, and `jvm_show_hidden_statements`
-  prints them anyway. If that produced a switch expression, switch expressions, stack
+  helper statements this leaves are marked hidden and are not written. If that produced a
+  switch expression, switch expressions, stack
   variables and versions are processed once more.
 - `ExitHelper::adjust_return_type` and `ExitHelper::remove_redundant_returns` (a trailing
   `return;` of a `void` method is dropped).
@@ -923,11 +923,11 @@ eagerly; otherwise the raw constant-dynamic form is kept.
 
 `decompiler/nonnative/kuna-jvm/src/p9_emit/class_writer.rs (ClassWriter::write_class)`
 writes a root class and everything nested in it into a text buffer, and
-`ClassesProcessor::write_class` puts the header in front: `jvm_banner`, the package, and
+`ClassesProcessor::write_class` puts the header in front: the package and
 the imports `decompiler/nonnative/kuna-jvm/src/p9_emit/import_collector.rs (ImportCollector)`
 collected while the body was written. The collector decides, per class name, whether
 the short name can be used in this file without ambiguity, and lists the imports that
-requires; `jvm_remove_imports` writes no import statements. A `package-info` class and a
+requires. A `package-info` class and a
 `module-info` class have writers of their own.
 
 **What is written.** For each class: annotations, modifiers, type parameters, `extends`,
@@ -939,10 +939,9 @@ whatever the class-level rewrites hid. `jvm_override_annotation` adds `@Override
 instance method of a Java 5+ class file overrides or implements a method of a supertype
 the engine can see;
 `jvm_mark_corresponding_synthetics` names the synthetic method behind each lambda and the
-class behind each anonymous class in a comment; `jvm_sourcefile_comments` writes the
-`SourceFile` name above each class; `jvm_decompiler_comments` controls every `$VF:` note
+class behind each anonymous class in a comment; `jvm_decompiler_comments` controls every `$VF:` note
 the passes above attached to a method. Lambdas are written inline at their use, without
-braces when the body is one expression (`jvm_inline_simple_lambdas`). Generic method calls
+braces when the body is one expression. Generic method calls
 carry explicit type arguments under `jvm_explicit_generics`. Constants print as source
 does: `Double.NaN`, `Long.MAX_VALUE` and `Math.PI` rather than their values unless
 `jvm_keep_literals` is on, and non-ASCII characters escaped only under
@@ -950,19 +949,21 @@ does: `Double.NaN`, `Long.MAX_VALUE` and `Math.PI` rather than their values unle
 Numbers print with the JDK's own algorithms (section 10.13).
 
 **Failed methods.** A method whose schedule threw is written as its signature and a body
-of comments (`ClassWriter::dump_error`): `$VF: Couldn't be decompiled`, then with
-`jvm_dump_exception_on_error` the `jvm_error_message` note (by default a request to report
-the class to kuna's tracker, Vineflower's in compat mode; section 10.16), the exception
-text and its throw location, and with `jvm_dump_bytecode_on_error` a listing of the
-method's bytecode. The class around it is written normally.
+of comments (`ClassWriter::dump_error`): `$VF: Couldn't be decompiled`, then the
+`error-message` note (a request to report the class to kuna's tracker, Vineflower's in
+compat mode; section 10.16), the exception text and its throw location, and a listing of
+the method's bytecode. The class around it is written normally. (Vineflower's
+`dump-exception-on-error`, which the corpus fixture turns off, drops the note and the
+exception.)
 
 **Layout.** The buffer is a tree of line groups; after a class is written,
 `decompiler/nonnative/kuna-jvm/src/p9_emit/text_buffer.rs (TextBuffer::reformat)` breaks
 argument lists, chained calls and long operator chains at their recorded break points
-wherever a line exceeds `jvm_preferred_line_length` (160), and indents with
-`jvm_indent_string` (three spaces). Offsets and widths are counted in UTF-16 units, as Java
-counts them. Every reference and declaration in the text is a text token;
-`jvm_dump_text_tokens` appends a dump of them with their positions.
+wherever a line exceeds 160 columns, and indents with three spaces (Vineflower's
+`preferred-line-length` and `indent-string`, fixed at their defaults). Offsets and widths are counted in UTF-16
+units, as Java counts them. Every reference and declaration in the text is recorded as a text token
+(Vineflower's hook for IDE consumers; kuna reads none), and kuna's zero-width span marks
+(`kuna_spans`) ride the same mechanism, following every later edit.
 
 **Line mapping.** While expressions are written,
 `decompiler/nonnative/kuna-jvm/src/p9_emit/bytecode_mapping_tracer.rs` records which
@@ -987,8 +988,8 @@ it. A method span further carries the method's `$VF:` comments when its wrapper'
 **Failure granularity.** A method failure becomes the comment block above and the class
 survives. A class whose processing throws (section 10.11) is written as
 `// $VF: Couldn't be decompiled` followed by the exception, in place of its body. A class
-whose writing throws is written, with `jvm_dump_exception_on_error`, as a
-`/* $VF: Unable to decompile class ... */` comment, and without it not at all. Nothing
+whose writing throws is written as a `/* $VF: Unable to decompile class ... */` comment
+(not at all under the corpus fixture's `dump-exception-on-error=0`). Nothing
 else stops the run: the other classes of the input are still written. A Java
 `RuntimeException` and an ordinary Rust panic (an index out of bounds, an `unwrap` on
 `None`) are caught at these boundaries alike (section 10.13), and so is recursion deeper
@@ -1132,9 +1133,10 @@ Vineflower's three-letter option names as their long names (`mpm` is
 turns a `jvm_*` name, or Vineflower's long or three-letter name, and a value as a user
 writes it into the Vineflower key and value; the table is generated from `options.toml` by
 the crate's build script. Keys the front end sets itself (thread count, time limit, method
-selection, logging, line separator, line mapping, class-path keys a JVM would serve) are
-listed there as `[[driver_owned]]` and refused as user options. kuna's own rows resolve to
-their own names; `Fernflower::new` takes `jvm_plugins`, `jvm_vineflower_compat` and
+selection, logging, line separator, line mapping, class-path keys a JVM would serve), and
+the formatting and failure-comment keys kuna fixes at Vineflower's defaults, are listed
+there as `[[driver_owned]]` and refused as user options. kuna's own rows resolve to
+their own names; `Fernflower::new` takes `jvm_plugins` (no row), `jvm_vineflower_compat` and
 `jvm_javac_layout` (section 10.9, stored in the context and copied to the per-class
 contexts) off the property list before the rest becomes Vineflower's option map (section
 10.16), so that map is the one Vineflower would build. Any other key, a `jvm_fix_*` name included, is not a
@@ -1196,9 +1198,8 @@ which takes the spec's extension, `kt`. A nested class therefore follows its roo
 chooser is asked once more while statements are written, to decide whether they end in a
 semicolon.) With `jvm_kt_enable`
 off, a Kotlin class takes the Java pipeline and is written as Java, the `@Metadata`
-annotation printed like any other annotation; `jvm_kt_export_metadata` then still parses
-the metadata, for other plugins (kuna bundles none that read it), and changes no output.
-With `jvm_plugins off` no plugin is loaded and every class is Java.
+annotation printed like any other annotation, and its metadata is not parsed.
+With no plugin loaded (`jvm_plugins=0`, the corpus fixture) every class is Java.
 
 **Metadata.** Asking the chooser also parses the class's metadata, once
 (`KotlinChooser::parse_metadata_for`). The annotation's `k` (the kind), `d1` (the data)
@@ -1339,12 +1340,12 @@ or, for the primary one, the `init` block of its body. Hidden members and the bo
 lambdas compiled to methods (`name$lambda$N`, written inline where they are used) are
 skipped, as are synthetic and bridge members under `jvm_remove_synthetic` and
 `jvm_remove_bridge`. A member the metadata does not describe is written from its JVM
-signature as a plain `fun`, and a warning is logged. `jvm_kt_show_public` writes the `public` that Kotlin source
-leaves implicit (on by default, as in Vineflower). A parameter default is recovered from
+signature as a plain `fun`, and a warning is logged. Every declaration carries its
+visibility, `public` included, which Kotlin source leaves implicit (Vineflower's
+`kt-show-public` default, fixed). A parameter default is recovered from
 the `$default` stub's body (`decompiler/nonnative/kuna-jvm/src/kotlin/default_args_map.rs`):
 the value it assigns when the parameter's mask bit is set; when no value can be read, the
-parameter is written with `jvm_kt_unknown_defaults` (`= ...`), or with no default when
-that text is empty.
+parameter is written with `= ...` (the plugin's `kt-unknown-defaults`, fixed).
 
 **What stays Java-shaped.** The plugin rewrites syntax, not semantics: the statement tree
 and every expression in it are what the Java pipeline recovers from the bytecode. Calls
@@ -1423,8 +1424,8 @@ failure comment included (pinned by its digest), and by default kuna's reviewed 
 - The failure marker line never changes: the CLI and the benchmark count failed methods by
   it. `report_to_kuna` changes only the `error-message` note under it, putting kuna's
   request (`KUNA_ERROR_MESSAGE`) in place of the default before the caller's options are
-  applied, so a `jvm_error_message` the caller sets still wins; it reads the set being
-  built, since `Fernflower::new` has installed no context yet.
+  applied, so an `error-message` the caller passes (the corpus fixture's empty one) still
+  wins; it reads the set being built, since `Fernflower::new` has installed no context yet.
 - The `kt_*` fixes change Kotlin output only: in a pass or writer that Java output shares,
   they act only on a class written as Kotlin (a class with Kotlin metadata, the Kotlin
   plugin on).

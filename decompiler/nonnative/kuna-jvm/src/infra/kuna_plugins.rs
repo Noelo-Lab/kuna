@@ -1,9 +1,11 @@
-//! The plugins bundled with kuna-jvm and the kuna option `jvm_plugins` that
-//! turns them on or off. Vineflower finds plugins on the JVM class path
-//! (`PluginSources`: plugin jars and `ServiceLoader`); `java -jar
-//! vineflower.jar` carries VariableRenaming, Kotlin and IdeaNotNull that way,
-//! its test fixture none. Here the bundled list is the one plugin source, on
-//! by default as in `java -jar`; the corpus fixture runner turns it off.
+//! The plugins bundled with kuna-jvm and the custom property `jvm_plugins`
+//! (not a catalog option) that turns them on or off. Vineflower finds plugins
+//! on the JVM class path (`PluginSources`: plugin jars and `ServiceLoader`);
+//! `java -jar vineflower.jar` carries VariableRenaming, Kotlin and IdeaNotNull
+//! that way, its test fixture none. Here the bundled list is the one plugin
+//! source, on by default as in `java -jar`; the corpus fixture runner turns it
+//! off. Off is what `jvm_kt_enable off` and `jvm_resugar_idea_notnull off` give
+//! with no `jvm_variable_renaming`: each plugin's effect is gated by its option.
 
 use std::rc::Rc;
 

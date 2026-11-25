@@ -102,17 +102,8 @@ impl KSwitchStatement {
             buf.append_buffer(&first_buf);
         }
 
-        let show_if_hidden =
-            DecompilerContext::get_option(IFernflowerPreferences::SHOW_HIDDEN_STATEMENTS);
-
         if self.is_phantom() {
-            if !show_if_hidden {
-                return buf;
-            } else {
-                buf.append_indent(indent)
-                    .append("/*")
-                    .append_line_separator();
-            }
+            return buf;
         }
 
         if head_in_run && first_buf.length() > 0 {
@@ -216,12 +207,6 @@ impl KSwitchStatement {
             indent -= 1;
             buf.append_indent(indent)
                 .append("}")
-                .append_line_separator();
-        }
-
-        if self.is_phantom() {
-            buf.append_indent(indent)
-                .append("*/")
                 .append_line_separator();
         }
 

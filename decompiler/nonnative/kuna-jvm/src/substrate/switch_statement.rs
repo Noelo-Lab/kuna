@@ -7,13 +7,11 @@
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::const_exprent::ConstExprent;
 use crate::dec_helper::DecHelper;
-use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::patterns::{type_switch_enum_label, type_switch_label_lookup};
 use crate::function_exprent::FunctionType;
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_statement::set_head_slot;
 use crate::pattern::Pattern;
 use crate::rt::{JHashMap, JHashSet, JList};
@@ -118,10 +116,7 @@ impl SwitchStatement {
         ));
         buf.append_buffer(&self.get_first().expect("first").to_java(indent));
 
-        let show_phantom =
-            DecompilerContext::get_option(IFernflowerPreferences::SHOW_HIDDEN_STATEMENTS);
-
-        if self.is_phantom() && !show_phantom {
+        if self.is_phantom() {
             return buf;
         }
 
@@ -134,9 +129,6 @@ impl SwitchStatement {
         }
 
         buf.append_indent(indent);
-        if self.is_phantom() {
-            buf.append("/*");
-        }
 
         let head = self.get_headexprent();
         buf.append_buffer(&head.to_java(indent))
@@ -283,10 +275,6 @@ impl SwitchStatement {
         buf.append_indent(indent)
             .append("}")
             .append_line_separator();
-
-        if self.is_phantom() {
-            buf.append("*/");
-        }
 
         buf
     }

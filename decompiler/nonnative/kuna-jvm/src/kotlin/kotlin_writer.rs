@@ -60,7 +60,7 @@ use crate::kotlin_object_processors::KotlinObjectProcessors;
 use crate::kotlin_options::KotlinOptions;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
-use crate::kt_proto::{ClassKind, Modality, Visibility};
+use crate::kt_proto::{ClassKind, Modality};
 use crate::fixes::kt_initializers::kt_file_static_initializer;
 use crate::fixes::kt_anonymous_objects::kt_object_super_call;
 use crate::fixes::kt_jumps;
@@ -505,7 +505,6 @@ impl KotlinWriter {
 
         let wrapper = node.get_wrapper().expect("NullPointerException: wrapper");
         let cl = wrapper.get_class_struct();
-        let pool = cl.get_pool();
 
         KotlinChooser::parse_metadata_for(cl);
         let kt_data = KtAttrs::get(cl, &KElement::KEY());
@@ -545,21 +544,6 @@ impl KotlinWriter {
             Some(KElement::Class(cls)) => cls.flags(),
             Some(_) => 0,
         };
-
-        if DecompilerContext::get_option(IFernflowerPreferences::SOURCE_FILE_COMMENTS) {
-            let source_file_attr = node
-                .with(|d| d.class_struct)
-                .get_attribute(StructGeneralAttribute::ATTRIBUTE_SOURCE_FILE);
-
-            if let Some(source_file_attr) = source_file_attr {
-                let source_file = source_file_attr.get_source_file(pool);
-
-                buffer
-                    .append_indent(indent)
-                    .append(&format!("// $VF: Compiled from {source_file}"))
-                    .append_line_separator();
-            }
-        }
 
         if Flags::CLASS_KIND.get(kotlin_flags) == Some(ClassKind::AnnotationClass)
             || cl.has_modifier(ACC_ANNOTATION)
@@ -1500,11 +1484,7 @@ impl KotlinWriter {
 
         buffer.append_indent(indent);
 
-        if Flags::VISIBILITY.get(kotlin_flags) != Some(Visibility::Public)
-            || DecompilerContext::get_option(KotlinOptions::SHOW_PUBLIC_VISIBILITY)
-        {
-            KUtils::append_visibility(buffer, Flags::VISIBILITY.get(kotlin_flags));
-        }
+        KUtils::append_visibility(buffer, Flags::VISIBILITY.get(kotlin_flags));
 
         if Flags::IS_EXPECT_CLASS.get(kotlin_flags) {
             buffer.append("expect ");

@@ -37,28 +37,6 @@ b/Outer$A$1	ROOT	Outer$A$1	32	\N		\N		\N
 b/Outer$A$Deep	ROOT	Outer$A$Deep	32	\N		\N		\N
 b/Outer$B	ROOT	Outer$B	33	\N		\N		\N
 b/Outer$C	ROOT	Outer$C	1536	\N		\N		\N
-== load excluded
-b/Natives	ROOT	Natives	1057	\N		\N		\N
-b/Outer	ROOT	Outer	33	\N	b/Outer$1,b/Outer$1Local,b/Outer$1LocalE,b/Outer$1LocalI,b/Outer$2,b/Outer$B,b/Outer$C	\N		\N
-b/Outer$1	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Object
-b/Outer$1Local	LOCAL	Local	0	b/Outer		run ()V	b/Outer	\N
-b/Outer$1LocalE	LOCAL	LocalE	16408	b/Outer		run ()V	b/Outer	\N
-b/Outer$1LocalI	LOCAL	LocalI	1536	b/Outer		run ()V	b/Outer	\N
-b/Outer$2	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Runnable
-b/Outer$B	MEMBER	B	9	b/Outer		\N	b/Outer	\N
-b/Outer$C	MEMBER	C	1546	b/Outer		\N	b/Outer	\N
-log	WARN	Nested class b/Outer$A missing!
-== load included
-b/Natives	ROOT	Natives	1057	\N		\N		\N
-b/Outer	ROOT	Outer	33	\N	b/Outer$1,b/Outer$2	\N		\N
-b/Outer$1	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Object
-b/Outer$2	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Runnable
-log	WARN	Nested class b/Outer$1Local missing!
-log	WARN	Nested class b/Outer$C missing!
-log	WARN	Nested class b/Outer$B missing!
-log	WARN	Nested class b/Outer$A missing!
-log	WARN	Nested class b/Outer$1LocalE missing!
-log	WARN	Nested class b/Outer$1LocalI missing!
 == load no-name-check
 b/Natives	ROOT	Natives	1057	\N		\N		\N
 b/Outer	ROOT	Outer	33	\N	b/Outer$1,b/Outer$1Local,b/Outer$1LocalE,b/Outer$1LocalI,b/Outer$2,b/Outer$A,b/Outer$B,b/Outer$C	\N		\N
@@ -85,60 +63,3 @@ log	WARN	Inconsistent inner class entries for b/X$Y!
 log	WARN	  b/X: Y  MEMBER of b/X
 log	WARN	  b/X$Y: Y public static MEMBER of b/X
 log	WARN	Changing mapping to b/X$Y -> Y public static MEMBER of b/X
-== load inconsistent-quiet
-b/X	ROOT	X	33	\N	b/X$Y	\N		\N
-b/X$Y	MEMBER	Y	9	b/X		\N	b/X	\N
-== regex
-regex	b/Outer\\$A.*	b/Outer$A$1	true
-regex	b/Outer\\$A.*	b/Outer	false
-regex	.*Test	a/FooTest	true
-regex	(a|b)/.*	b/x	true
-regex	[a-c]+/X	abc/X	true
-regex	[^a-c]+/X	abc/X	false
-regex	\\w+/\\w+	pkg/Name1	true
-regex	\\d{2,3}	1234	false
-regex	\\d{2,3}	123	true
-regex	\\d{2,}	1234	true
-regex	a*+a	aaa	false
-regex	a*?a	aaa	true
-regex	a++	aaa	true
-regex	(?:ab)*	ababab	true
-regex	(?=b).*	bx	true
-regex	(?!b).*	bx	false
-regex	\\Qa.b\\E	a.b	true
-regex	\\Qa.b\\E	axb	false
-regex	\\Qab\\E*	abbb	true
-regex	x\\.y	x.y	true
-regex	x.y	x\ny	false
-regex	^a$	a	true
-regex	a$	a\n	false
-regex	a{3}	aaa	true
-regex	[\\w$]+	Outer$1	true
-regex	[a-z[0-9]]+	a1b2	true
-regex	\\bfoo\\b.*	foo bar	true
-regex	\\Bfoo	foo	false
-regex	(?>a*)a	aaa	false
-regex	\\u0041\\x42\\0103	ABC	true
-regex	(?<name>ab)+	abab	true
-regex	[]a]+	]a]	true
-regex	a|		true
-regex	(a|ab)(c|bcd)(d*)	abcd	true
-regex	[\\s\\S]*	a b\nc	true
-regex	[a-]+	a-a	true
-regex	\\D\\W\\S	x y	true
-regex	\\t\\$	\t$	true
-regex	(a*)*	aaa	true
-regex	(a?)+b	b	true
-regex	\\Ab\\z	b	true
-regex	a\\Z\\n	a\n	true
-regex	a\\z\\n	a\n	false
-regex	a$\\n	a\n	true
-regex	a**	a	error
-regex	(a	a	error
-regex	[a	a	error
-regex	*a	a	error
-regex	a{2	aa	error
-regex	\\y	y	error
-regex	a)	a	error
-regex	[b-a]	a	error
-regex	a{3,2}	aaa	error

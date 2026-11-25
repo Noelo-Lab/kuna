@@ -6,7 +6,6 @@
 use crate::class_text_token::ClassTextToken;
 use crate::field_text_token::FieldTextToken;
 use crate::method_text_token::MethodTextToken;
-use crate::text_token_visitor::TextTokenVisitor;
 use crate::variable_text_token::VariableTextToken;
 
 #[derive(Clone)]
@@ -39,16 +38,6 @@ impl TextToken {
 
     pub fn shift(&mut self, amount: i32) {
         self.start += amount;
-    }
-
-    pub fn visit(&self, visitor: &mut dyn TextTokenVisitor) {
-        match &self.kind {
-            TextTokenKind::Class(t) => ClassTextToken::visit(t, self, visitor),
-            TextTokenKind::Field(t) => FieldTextToken::visit(t, self, visitor),
-            TextTokenKind::Method(t) => MethodTextToken::visit(t, self, visitor),
-            TextTokenKind::Variable(t) => VariableTextToken::visit(t, self, visitor),
-            TextTokenKind::KunaMark(_) => {}
-        }
     }
 
     pub fn get_start(&self) -> i32 {

@@ -5,7 +5,6 @@ use std::collections::VecDeque;
 use crate::classes_processor::{string_compare_to, ClassNode, ClassNodeType};
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::fixes::kt_names::kt_escaped_class_name;
 use crate::kotlin_import_collector::KotlinImportCollector;
 use crate::kuna_fixes::{self, KunaFix};
@@ -314,10 +313,6 @@ impl ImportCollector {
         if let Some(kotlin) = self.try_as_kotlin() {
             return KotlinImportCollector::write_imports(kotlin, buffer, add_separator);
         }
-        if DecompilerContext::get_option(IFernflowerPreferences::REMOVE_IMPORTS) {
-            return;
-        }
-
         let imports = self.pack_imports();
         for line in &imports {
             buffer

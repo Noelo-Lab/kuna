@@ -1,15 +1,12 @@
 //! The class node trees `ClassesProcessor.loadClasses` builds (and the warnings it logs, on
-//! inconsistent `InnerClasses` entries too) under the options that shape them, and the Java regex
-//! subset of the class filters, against Vineflower 1.12.0 and the JDK (`data/b19/golden.txt`,
-//! `gen.sh`).
+//! inconsistent `InnerClasses` entries too) under the options that shape them, against
+//! Vineflower 1.12.0 (`data/b19/golden.txt`, `gen.sh`).
 
 use std::path::{Path, PathBuf};
 
-use kuna_jvm::classes_processor::java_regex::JavaPattern;
 use kuna_jvm::classes_processor::{string_compare_to, ClassNode, ClassNodeType};
 use kuna_jvm::i_fernflower_logger::Severity;
 use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
-use kuna_jvm::rt::try_catch;
 
 use crate::common::{self, ContextGuard};
 
@@ -25,24 +22,6 @@ fn esc(s: Option<&str>) -> String {
             .replace('\t', "\\t")
             .replace('\n', "\\n"),
     }
-}
-
-fn unesc(s: &str) -> String {
-    let mut out = String::new();
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        if c != '\\' {
-            out.push(c);
-            continue;
-        }
-        match chars.next() {
-            Some('\\') => out.push('\\'),
-            Some('t') => out.push('\t'),
-            Some('n') => out.push('\n'),
-            other => panic!("bad escape {other:?} in {s}"),
-        }
-    }
-    out
 }
 
 /// The golden lines from `== <name>` up to the next section.
@@ -161,7 +140,7 @@ fn load_classes_matches_vineflower() {
     let mut reversed = inconsistent.clone();
     reversed.reverse();
 
-    let runs: [(&str, &[PathBuf], &[(&str, &str)]); 9] = [
+    let runs: [(&str, &[PathBuf], &[(&str, &str)]); 6] = [
         ("default", &own, &[]),
         (
             "verify-anonymous",
@@ -174,30 +153,12 @@ fn load_classes_matches_vineflower() {
             &[(IFernflowerPreferences::DECOMPILE_INNER, "0")],
         ),
         (
-            "excluded",
-            &own,
-            &[(IFernflowerPreferences::EXCLUDED_CLASSES, "b/Outer\\$A.*")],
-        ),
-        (
-            "included",
-            &own,
-            &[(
-                IFernflowerPreferences::INCLUDED_CLASSES,
-                "b/(Natives|Outer(\\$[0-9]+)?)",
-            )],
-        ),
-        (
             "no-name-check",
             &own,
             &[(IFernflowerPreferences::VALIDATE_INNER_CLASSES_NAMES, "0")],
         ),
         ("inconsistent", &inconsistent, &[]),
         ("inconsistent-reversed", &reversed, &[]),
-        (
-            "inconsistent-quiet",
-            &reversed,
-            &[(IFernflowerPreferences::WARN_INCONSISTENT_INNER_CLASSES, "0")],
-        ),
     ];
     for (name, files, options) in runs {
         let guard = open(files, options);
@@ -212,24 +173,5 @@ fn load_classes_matches_vineflower() {
             section(&golden, &format!("load {name}")),
             "load {name}"
         );
-    }
-}
-
-#[test]
-fn java_regex_matches_like_java() {
-    let golden = b19_golden();
-    let cases = section(&golden, "regex");
-    assert!(!cases.is_empty());
-    for case in cases {
-        let fields: Vec<&str> = case.split('\t').collect();
-        let (regex, input, want) = (unesc(fields[1]), unesc(fields[2]), fields[3]);
-        let got = match try_catch(|| JavaPattern::compile(&regex).matches(&input)) {
-            Ok(matched) => matched.to_string(),
-            Err(e) => {
-                assert!(e.is("PatternSyntaxException"), "{regex}: {}", e.message);
-                "error".to_string()
-            }
-        };
-        assert_eq!(got, want, "Pattern.matches({regex:?}, {input:?})");
     }
 }

@@ -1,9 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/util/token/FieldTextToken.java`.
 
 use crate::field_descriptor::FieldDescriptor;
-use crate::text_range::TextRange;
 use crate::text_token::{TextToken, TextTokenKind};
-use crate::text_token_visitor::TextTokenVisitor;
 
 #[derive(Clone)]
 pub struct FieldTextToken {
@@ -32,15 +30,5 @@ impl FieldTextToken {
                 descriptor,
             }),
         )
-    }
-
-    pub fn visit(&self, token: &TextToken, visitor: &mut dyn TextTokenVisitor) {
-        visitor.visit_field(
-            TextRange::new(token.start, token.length),
-            token.declaration,
-            &self.class_name,
-            &self.name,
-            &self.descriptor,
-        );
     }
 }

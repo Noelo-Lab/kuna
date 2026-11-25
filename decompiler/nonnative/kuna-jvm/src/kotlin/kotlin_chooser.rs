@@ -42,9 +42,7 @@ impl KotlinChooser {
     }
 
     pub fn is_language(&self, cl: StructClass) -> bool {
-        let decomp_enabled = DecompilerContext::get_option(KotlinOptions::DECOMPILE_KOTLIN);
-        if !decomp_enabled && !DecompilerContext::get_option(KotlinOptions::ALWAYS_EXPORT_METADATA)
-        {
+        if !DecompilerContext::get_option(KotlinOptions::DECOMPILE_KOTLIN) {
             return false;
         }
 
@@ -54,7 +52,7 @@ impl KotlinChooser {
                 for anno in attr.get_records() {
                     if is_metadata(anno.class_name.as_deref()) {
                         KotlinChooser::parse_metadata_for(cl);
-                        return decomp_enabled;
+                        return true;
                     }
                 }
             }

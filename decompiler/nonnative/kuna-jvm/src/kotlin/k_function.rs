@@ -21,7 +21,6 @@ use crate::k_parameter::KParameter;
 use crate::k_type::KType;
 use crate::k_type_parameter::KTypeParameter;
 use crate::k_utils::KUtils;
-use crate::kotlin_options::KotlinOptions;
 use crate::kotlin_writer::{is_stop_signal, KotlinWriter};
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
@@ -473,11 +472,7 @@ impl KFunction {
         }
 
         let flags = self.flags;
-        if Flags::VISIBILITY.get(flags) != Some(Visibility::Public)
-            || DecompilerContext::get_option(KotlinOptions::SHOW_PUBLIC_VISIBILITY)
-        {
-            KUtils::append_visibility(&mut buf, Flags::VISIBILITY.get(flags));
-        }
+        KUtils::append_visibility(&mut buf, Flags::VISIBILITY.get(flags));
 
         if Flags::IS_EXPECT_FUNCTION.get(flags) {
             buf.append("expect ");

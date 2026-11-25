@@ -8,7 +8,8 @@
 # this file into the static table of src/p0_knowledge/kuna_options.rs; a test
 # checks it one to one against IFernflowerPreferences.all_options().
 #
-# [[driver_owned]] keys are set by kuna's driver or front end, never by a row.
+# [[driver_owned]] keys are set by kuna's driver or front end, or fixed at
+# Vineflower's default (the corpus runner may still pass them), never by a row.
 
 [[option]]
 option = "jvm_remove_bridge"
@@ -649,28 +650,6 @@ tier = "transform"
 symptoms = "switch statement assigning a temporary in every case where a switch expression was written|yield statements misplaced"
 
 [[option]]
-option = "jvm_show_hidden_statements"
-vineflower = "show-hidden-statements"
-short = "shs"
-aliases = ["show-hidden-statements", "shs"]
-values = "on|off"
-default = "off"
-destructive = true
-phase = "substrate"
-subphase = "switch_statement"
-strength = "HARD"
-rewind = "substrate"
-issue = ""
-summary = "Debug aid: also print the switch statements the decompiler marked phantom (scaffolding left over after rebuilding string, enum and pattern switches)."
-use_when = "Turn on only to debug the decompiler's switch reconstruction; the output no longer reads as source."
-example = "kuna decompile app.jar com.ex.Codes --option jvm_show_hidden_statements on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.SHOW_HIDDEN_STATEMENTS (show-hidden-statements, -shs)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "string switch reconstructed wrongly and the hidden hashCode switch is needed|debugging which switch the decompiler discarded"
-
-[[option]]
 option = "jvm_override_annotation"
 vineflower = "override-annotation"
 short = "ovr"
@@ -825,28 +804,6 @@ tier = "core"
 symptoms = "decompiled code fails to recompile with an inference error|need the type argument of a generic method call"
 
 [[option]]
-option = "jvm_inline_simple_lambdas"
-vineflower = "inline-simple-lambdas"
-short = "isl"
-aliases = ["inline-simple-lambdas", "isl"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p9_emit"
-subphase = "class_writer"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Write a lambda whose body is one expression without braces and return (x -> x + 1)."
-use_when = "Turn off for block-bodied lambdas everywhere, e.g. to diff lambda bodies line by line."
-example = "kuna decompile app.jar com.ex.Streams --option jvm_inline_simple_lambdas off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.INLINE_SIMPLE_LAMBDAS (inline-simple-lambdas, -isl)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "x -> { return x + 1; } where x -> x + 1 is wanted (option is off)|one-line lambdas hard to diff"
-
-[[option]]
 option = "jvm_rename_members"
 vineflower = "rename-members"
 short = "ren"
@@ -869,160 +826,6 @@ tier = "analysis"
 symptoms = "class or method named like a Java keyword|identifiers that are not valid Java (obfuscated names)|many classes named a, b, c that clash"
 
 [[option]]
-option = "jvm_indent_string"
-vineflower = "indent-string"
-short = "ind"
-aliases = ["indent-string", "ind"]
-values = "<text>"
-default = "   "
-destructive = false
-phase = "p9_emit"
-subphase = "text_buffer, text_util"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "The text written once per indentation level (three spaces by default)."
-use_when = "Set to four spaces or a tab to match a code base's style, or two spaces for compact output."
-example = "kuna decompile app.jar com.ex.Main --option jvm_indent_string \"    \""
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.INDENT_STRING (indent-string, -ind)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "three-space indentation does not match the project style|output too wide when nested deeply"
-
-[[option]]
-option = "jvm_preferred_line_length"
-vineflower = "preferred-line-length"
-short = "pll"
-aliases = ["preferred-line-length", "pll"]
-values = "<n>"
-default = "160"
-destructive = false
-phase = "p9_emit"
-subphase = "text_buffer"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Break argument lists, chained calls and long operator chains at their possible break points when a line would run past this many characters."
-use_when = "Lower it for narrow terminals or diffs, raise it to keep each expression on one line."
-example = "kuna decompile app.jar com.ex.Main --option jvm_preferred_line_length 100"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.PREFERRED_LINE_LENGTH (preferred-line-length, -pll)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "very long lines in builder chains|expressions wrapped across lines unexpectedly"
-
-[[option]]
-option = "jvm_banner"
-vineflower = "banner"
-short = "ban"
-aliases = ["banner", "ban"]
-values = "<text>"
-default = ""
-destructive = false
-phase = "p0_knowledge"
-subphase = "fernflower"
-strength = "HARD"
-rewind = "p0_knowledge"
-issue = ""
-summary = "Text written verbatim at the top of every decompiled file (include your own trailing newline)."
-use_when = "Set to mark generated sources, e.g. a // Decompiled by kuna from app.jar header."
-example = "kuna decompile-project app.jar -o out --option jvm_banner \"// decompiled\\n\""
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.BANNER (banner, -ban)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "decompiled files need a provenance or license header"
-
-[[option]]
-option = "jvm_error_message"
-vineflower = "error-message"
-short = "erm"
-aliases = ["error-message", "erm"]
-values = "<text>"
-default = "Please report this to the Vineflower issue tracker, at https://github.com/Vineflower/vineflower/issues with a copy of the class file (if you have the rights to distribute it!)"
-destructive = false
-phase = "p9_emit"
-subphase = "class_writer"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "The note (one comment line per text line) written after $VF: Couldn't be decompiled when exception dumps are on; unset, it points to kuna's issue tracker, or with jvm_vineflower_compat on to Vineflower's (the default shown, Vineflower's own)."
-use_when = "Replace it with your own text (it then wins over both trackers), or set it empty to drop the note."
-example = "kuna decompile app.jar com.ex.Main --option jvm_error_message \"see kuna docs jvm\""
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.ERROR_MESSAGE (error-message, -erm)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "failure comment asks to report to an issue tracker|failure comment should carry a project-specific note"
-
-[[option]]
-option = "jvm_warn_inconsistent_inner_attributes"
-vineflower = "warn-inconsistent-inner-attributes"
-short = "win"
-aliases = ["warn-inconsistent-inner-attributes", "win"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p1_classfile"
-subphase = "classes_processor"
-strength = "HARD"
-rewind = "p1_classfile"
-issue = ""
-summary = "Log a warning when classes' InnerClasses entries disagree about a nested class, with both entries and the one chosen; output text is unchanged."
-use_when = "Turn off to quiet the log on jars with many conflicting entries; keep on to learn why a class was nested where it was."
-example = "kuna decompile-all obf.jar --option jvm_warn_inconsistent_inner_attributes off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.WARN_INCONSISTENT_INNER_CLASSES (warn-inconsistent-inner-attributes, -win)"
-change_kind = "vineflower-option"
-tier = "analysis"
-symptoms = "\"Inconsistent inner class entries\" warnings flood stderr|nested class appears under an unexpected outer class"
-
-[[option]]
-option = "jvm_dump_bytecode_on_error"
-vineflower = "dump-bytecode-on-error"
-short = "dbe"
-aliases = ["dump-bytecode-on-error", "dbe"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p9_emit"
-subphase = "class_writer"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Inside a method that could not be decompiled, list its bytecode as comments (offset, opcode, operands, constants)."
-use_when = "Turn off for shorter output when failures are expected and the bytecode is not needed."
-example = "kuna decompile obf.jar a.b --option jvm_dump_bytecode_on_error off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.DUMP_BYTECODE_ON_ERROR (dump-bytecode-on-error, -dbe)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "failed method shows a long // Bytecode: listing|need the instructions of a method that failed to decompile (option is off)"
-
-[[option]]
-option = "jvm_dump_exception_on_error"
-vineflower = "dump-exception-on-error"
-short = "dee"
-aliases = ["dump-exception-on-error", "dee"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p9_emit"
-subphase = "class_writer, fernflower"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Inside a method or class that could not be decompiled, write the error-message note and the exception with its throw location; off leaves just $VF: Couldn't be decompiled (a class that fails entirely then has no output)."
-use_when = "Turn off for clean output when failures are expected; keep on to learn why a method failed."
-example = "kuna decompile obf.jar a.b --option jvm_dump_exception_on_error off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.DUMP_EXCEPTION_ON_ERROR (dump-exception-on-error, -dee)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "exception text and at src/... lines inside a failed method|need to know why a method failed (option is off)"
-
-[[option]]
 option = "jvm_decompiler_comments"
 vineflower = "decompiler-comments"
 short = "dec"
@@ -1043,28 +846,6 @@ inspiration = "Vineflower 1.12.0 IFernflowerPreferences.DECOMPILER_COMMENTS (dec
 change_kind = "vineflower-option"
 tier = "core"
 symptoms = "/* $VF: ... */ and // $VF: comments clutter the output|need to know where the decompiler approximated (option is off)"
-
-[[option]]
-option = "jvm_sourcefile_comments"
-vineflower = "sourcefile-comments"
-short = "sfc"
-aliases = ["sourcefile-comments", "sfc"]
-values = "on|off"
-default = "off"
-destructive = false
-phase = "p9_emit"
-subphase = "class_writer"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Write // $VF: Compiled from <name> above each class whose SourceFile attribute names its source file."
-use_when = "Turn on to see the original file names, which reveal class origins in shaded or repackaged jars."
-example = "kuna decompile app.jar com.ex.Main --option jvm_sourcefile_comments on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.SOURCE_FILE_COMMENTS (sourcefile-comments, -sfc)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "need the original .java file name of a class|repackaged or shaded classes of unknown origin"
 
 [[option]]
 option = "jvm_decompile_complex_constant_dynamic"
@@ -1111,50 +892,6 @@ tier = "transform"
 symptoms = "method with jsr/ret fails to decompile in a modern class file|finally logic of a modern class built from subroutines"
 
 [[option]]
-option = "jvm_dump_text_tokens"
-vineflower = "dump-text-tokens"
-short = "dtt"
-aliases = ["dump-text-tokens", "dtt"]
-values = "on|off"
-default = "off"
-destructive = true
-phase = "p0_knowledge"
-subphase = "fernflower, text_token_dump_visitor"
-strength = "HARD"
-rewind = "p0_knowledge"
-issue = ""
-summary = "Debug aid: append to every file a dump of its text tokens (each class, field, method and variable reference or declaration with its line:column range)."
-use_when = "Turn on only to debug token positions; the appended dump is not Java."
-example = "kuna decompile app.jar com.ex.Main --option jvm_dump_text_tokens on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.DUMP_TEXT_TOKENS (dump-text-tokens, -dtt)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "need the source positions of identifiers for navigation|debugging which identifier a name in the output refers to"
-
-[[option]]
-option = "jvm_remove_imports"
-vineflower = "remove-imports"
-short = "rim"
-aliases = ["remove-imports", "rim"]
-values = "on|off"
-default = "off"
-destructive = false
-phase = "p9_emit"
-subphase = "import_collector"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Write no import statements; names keep the short form an import would allow, so the file reads like the class body alone and no longer compiles."
-use_when = "Turn on to save space when only method bodies are read, e.g. when feeding classes to a model."
-example = "kuna decompile app.jar com.ex.Main --option jvm_remove_imports on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.REMOVE_IMPORTS (remove-imports, -rim)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "long import blocks at the top of every file|imports are noise for the task at hand"
-
-[[option]]
 option = "jvm_mark_corresponding_synthetics"
 vineflower = "mark-corresponding-synthetics"
 short = "mcs"
@@ -1175,50 +912,6 @@ inspiration = "Vineflower 1.12.0 IFernflowerPreferences.MARK_CORRESPONDING_SYNTH
 change_kind = "vineflower-option"
 tier = "core"
 symptoms = "stack trace names lambda$main$0 or Main$1 and the matching code is hard to find|need the class file of an anonymous class"
-
-[[option]]
-option = "jvm_excluded_classes"
-vineflower = "excluded-classes"
-short = ""
-aliases = ["excluded-classes"]
-values = "<regex>"
-default = ""
-destructive = false
-phase = "p1_classfile"
-subphase = "classes_processor"
-strength = "HARD"
-rewind = "p1_classfile"
-issue = ""
-summary = "Do not decompile classes whose internal name (a/b/C$D) fully matches this Java regular expression; they still give context to the others."
-use_when = "Set to skip bundled libraries or generated code in a fat jar, e.g. ^com/google/.* or .*\\$\\$Lambda.*."
-example = "kuna decompile-project app.jar -o out --option jvm_excluded_classes \"^org/slf4j/.*\""
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.EXCLUDED_CLASSES (excluded-classes)"
-change_kind = "vineflower-option"
-tier = "analysis"
-symptoms = "decompiling a fat jar spends time on bundled libraries|output includes generated or third-party classes"
-
-[[option]]
-option = "jvm_included_classes"
-vineflower = "included-classes"
-short = ""
-aliases = ["included-classes"]
-values = "<regex>"
-default = ""
-destructive = false
-phase = "p1_classfile"
-subphase = "classes_processor"
-strength = "HARD"
-rewind = "p1_classfile"
-issue = ""
-summary = "Decompile only classes whose internal name (a/b/C$D) fully matches this Java regular expression; the rest still give context."
-use_when = "Set to focus on one package of a large jar, e.g. ^com/ex/core/.*."
-example = "kuna decompile-project app.jar -o out --option jvm_included_classes \"^com/ex/core/.*\""
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.INCLUDED_CLASSES (included-classes)"
-change_kind = "vineflower-option"
-tier = "analysis"
-symptoms = "only one package of a large jar is of interest|decompile-project takes too long on the whole jar"
 
 [[option]]
 option = "jvm_validate_inner_classes_names"
@@ -1285,28 +978,6 @@ inspiration = "Vineflower's test fixture and IntelliJ integration, which add Nam
 change_kind = "kuna-input"
 tier = "analysis"
 symptoms = "inner and anonymous classes missing when decompiling one .class file|unrelated Name$x.class files nested into the class"
-
-[[option]]
-option = "jvm_plugins"
-vineflower = ""
-short = ""
-aliases = []
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p0_knowledge"
-subphase = "fernflower, kuna_plugins"
-strength = "HARD"
-rewind = "p0_knowledge"
-issue = ""
-summary = "Load the plugins bundled with the engine (Vineflower's VariableRenaming, Kotlin and IdeaNotNull), as java -jar vineflower.jar does; off runs the bare Java pipeline, like Vineflower's test fixture."
-use_when = "Turn off to see what the core Java decompiler makes of a class a plugin would claim, or to compare with Vineflower's test fixture, which loads no plugin."
-example = "kuna decompile app.jar com.ex.Main --option jvm_plugins off"
-source_decompiler = "kuna"
-inspiration = "Vineflower 1.12.0 plugin loading (PluginContext.findPlugins, --list-plugins): java -jar loads VariableRenaming, Kotlin and IdeaNotNull; the test fixture loads none"
-change_kind = "kuna-plugins"
-tier = "core"
-symptoms = "output differs from Vineflower's test fixture but matches java -jar|a class is written in a plugin's language instead of Java|a bundled plugin's pass changes the Java output"
 
 [[option]]
 option = "jvm_vineflower_compat"
@@ -1409,7 +1080,7 @@ subphase = "variable_renaming_plugin, renamers, jad_name_provider, tiny_name_pro
 strength = "HARD"
 rewind = "plugins"
 issue = ""
-summary = "Rename locals with a renamer of the VariableRenaming plugin (needs jvm_plugins on, the default): jad names them after their type JAD-style (i, j, k, l, s, flag, file1, aobject), tiny the way tiny-remapper does (i, l, bl, the class name lowercased, plural for arrays); unset or an unknown name keeps the LocalVariableTable or var names."
+summary = "Rename locals with a renamer of the VariableRenaming plugin: jad names them after their type JAD-style (i, j, k, l, s, flag, file1, aobject), tiny the way tiny-remapper does (i, l, bl, the class name lowercased, plural for arrays); unset or an unknown name keeps the LocalVariableTable or var names."
 use_when = "Set jad or tiny on obfuscated or debug-info-free code whose var1, var2 or forged names say nothing about the variables, or to match a Vineflower run that used the same renamer."
 example = "kuna decompile obf.jar a.b --option jvm_variable_renaming jad"
 source_decompiler = "vineflower"
@@ -1441,50 +1112,6 @@ tier = "transform"
 symptoms = "locals renamed but parameters still named var1 or paramN|parameter names do not follow the renamer's scheme"
 
 [[option]]
-option = "jvm_jad_style_variable_naming"
-vineflower = "jad-style-variable-naming"
-short = ""
-aliases = ["jad-style-variable-naming"]
-values = "on|off"
-default = "off"
-destructive = false
-phase = "plugins"
-subphase = "variable_renaming_plugin"
-strength = "HARD"
-rewind = "plugins"
-issue = ""
-summary = "Deprecated in Vineflower: when jvm_variable_renaming is unset, use the jad renamer."
-use_when = "Only to replay Vineflower command lines that still pass the deprecated flag; prefer jvm_variable_renaming jad."
-example = "kuna decompile obf.jar a.b --option jvm_jad_style_variable_naming on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 VariableRenaming plugin: VariableRenamingOptions.USE_JAD_VARNAMING (jad-style-variable-naming)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "an old Vineflower command line with --jad-style-variable-naming=1 gives JAD-style names|locals named var1 var2 where JAD-style names were expected"
-
-[[option]]
-option = "jvm_jad_style_parameter_naming"
-vineflower = "jad-style-parameter-naming"
-short = ""
-aliases = ["jad-style-parameter-naming"]
-values = "on|off"
-default = "off"
-destructive = false
-phase = "plugins"
-subphase = "jad_name_provider"
-strength = "HARD"
-rewind = "plugins"
-issue = ""
-summary = "Deprecated in Vineflower: like jvm_rename_parameters, but for the jad renamer only."
-use_when = "Only to replay Vineflower command lines that still pass the deprecated flag; prefer jvm_rename_parameters."
-example = "kuna decompile obf.jar a.b --option jvm_variable_renaming jad --option jvm_jad_style_parameter_naming on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 VariableRenaming plugin: VariableRenamingOptions.USE_JAD_PARAMETER_NAMING (jad-style-parameter-naming)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "an old Vineflower command line with --jad-style-parameter-naming=1 renames parameters|parameters keep their names under the jad renamer"
-
-[[option]]
 option = "jvm_resugar_idea_notnull"
 vineflower = "resugar-idea-notnull"
 short = "inn"
@@ -1497,7 +1124,7 @@ subphase = "idea_not_null_pass, idea_not_null_plugin"
 strength = "HARD"
 rewind = "plugins"
 issue = ""
-summary = "Remove the null checks IntelliJ IDEA's compiler inserts for @NotNull parameters and return values (if (x == null) { $$$reportNull$$$0(n); }), leaving the @NotNull annotations (IdeaNotNull plugin; needs jvm_plugins on, the default)."
+summary = "Remove the null checks IntelliJ IDEA's compiler inserts for @NotNull parameters and return values (if (x == null) { $$$reportNull$$$0(n); }), leaving the @NotNull annotations (IdeaNotNull plugin)."
 use_when = "Turn off to see the checks IDEA instrumented into a method, e.g. to confirm which parameters are checked at run time."
 example = "kuna decompile app.jar com.ex.Service --option jvm_resugar_idea_notnull off"
 source_decompiler = "vineflower"
@@ -1505,28 +1132,6 @@ inspiration = "Vineflower 1.12.0 IdeaNotNull plugin: IdeaNotNullOptions.IDEA_NOT
 change_kind = "vineflower-option"
 tier = "transform"
 symptoms = "if (x == null) { $$$reportNull$$$0(0); } at the top of methods|explicit null checks on @NotNull parameters or before returns (option is off)"
-
-[[option]]
-option = "jvm_kt_show_public"
-vineflower = "kt-show-public"
-short = ""
-aliases = ["kt-show-public"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "kotlin"
-subphase = "kotlin_writer, k_function, k_constructor, k_utils"
-strength = "HARD"
-rewind = "kotlin"
-issue = ""
-summary = "Kotlin plugin: write the public modifier on public classes, functions, constructors and properties of Kotlin classes, which Kotlin source normally leaves implicit (needs jvm_plugins and jvm_kt_enable on, the defaults)."
-use_when = "Turn off for idiomatic Kotlin with public implied, so that only internal, protected and private members carry a visibility keyword."
-example = "kuna decompile app.jar com.ex.Service --option jvm_kt_show_public off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 Kotlin plugin: KotlinOptions.SHOW_PUBLIC_VISIBILITY (kt-show-public)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "every Kotlin declaration starts with public|public modifiers that Kotlin source would omit"
 
 [[option]]
 option = "jvm_kt_enable"
@@ -1541,7 +1146,7 @@ subphase = "kotlin_chooser"
 strength = "HARD"
 rewind = "kotlin"
 issue = ""
-summary = "Kotlin plugin: write classes that carry @kotlin.Metadata as Kotlin source (.kt) through the plugin's own pipeline and writer; off writes them as Java (.java) with the @Metadata annotation, like any other class (needs jvm_plugins on, the default)."
+summary = "Kotlin plugin: write classes that carry @kotlin.Metadata as Kotlin source (.kt) through the plugin's own pipeline and writer; off writes them as Java (.java) with the @Metadata annotation, like any other class."
 use_when = "Turn off to see the Java view of a Kotlin class (accessor methods, $default bridges, Intrinsics checks, every JVM method on its own), or when the Kotlin output of a class is wrong or fails and the Java output is enough; the CLI's --language java turns it off for the run."
 example = "kuna decompile app.jar com.ex.UserKt --option jvm_kt_enable off"
 source_decompiler = "vineflower"
@@ -1549,28 +1154,6 @@ inspiration = "Vineflower 1.12.0 Kotlin plugin: KotlinOptions.DECOMPILE_KOTLIN (
 change_kind = "vineflower-option"
 tier = "core"
 symptoms = "Kotlin classes come out as Java with @Metadata(mv = ..., d1 = ...)|a Kotlin class is written as .kt but Java output is wanted|Kotlin output of a class is wrong or failed"
-
-[[option]]
-option = "jvm_kt_unknown_defaults"
-vineflower = "kt-unknown-defaults"
-short = ""
-aliases = ["kt-unknown-defaults"]
-values = "<text>"
-default = "..."
-destructive = false
-phase = "kotlin"
-subphase = "default_args_map"
-strength = "HARD"
-rewind = "kotlin"
-issue = ""
-summary = "Kotlin plugin: the text written after = for a parameter that has a default value the plugin could not recover from the $default bridge (fun f(x: Int = ...)); empty writes no default at all."
-use_when = "Set a marker of your own (for example /* default */) to make unrecovered defaults easy to find, or set it empty to drop them."
-example = "kuna decompile app.jar com.ex.ApiKt --option jvm_kt_unknown_defaults \"/* default */\""
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 Kotlin plugin: KotlinOptions.UNKNOWN_DEFAULT_ARG_STRING (kt-unknown-defaults)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "parameters written as x: Int = ...|default argument values missing from a Kotlin function signature"
 
 [[option]]
 option = "jvm_kt_collapse_string_concat"
@@ -1593,28 +1176,6 @@ inspiration = "Vineflower 1.12.0 Kotlin plugin: KotlinOptions.COLLAPSE_STRING_CO
 change_kind = "vineflower-option"
 tier = "transform"
 symptoms = "\"a\" + b + \"c\" in Kotlin output where a template was written|string templates hide the concatenation order"
-
-[[option]]
-option = "jvm_kt_export_metadata"
-vineflower = "kt-export-metadata"
-short = ""
-aliases = ["kt-export-metadata"]
-values = "on|off"
-default = "off"
-destructive = false
-phase = "kotlin"
-subphase = "kotlin_chooser"
-strength = "HARD"
-rewind = "kotlin"
-issue = ""
-summary = "Kotlin plugin: parse the @kotlin.Metadata of Kotlin classes even when jvm_kt_enable is off, so that the parsed metadata is available to other plugins; it does not change what is written (needs jvm_plugins on, the default)."
-use_when = "Only together with jvm_kt_enable off, to replay a Vineflower command line that passes it; kuna has no other consumer of the parsed metadata, so the Java output is the same either way."
-example = "kuna decompile app.jar com.ex.UserKt --option jvm_kt_enable off --option jvm_kt_export_metadata on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 Kotlin plugin: KotlinOptions.ALWAYS_EXPORT_METADATA (kt-export-metadata)"
-change_kind = "vineflower-option"
-tier = "analysis"
-symptoms = "a Vineflower command line to replay sets --kt-export-metadata=1 (the output is the same either way)"
 
 [[option]]
 option = "jvm_kt_decompile_facades"
@@ -1689,3 +1250,27 @@ kuna = "corpus runner only"
 [[driver_owned]]
 vineflower = "__dump_original_lines__"
 kuna = "corpus runner only"
+
+[[driver_owned]]
+vineflower = "indent-string"
+kuna = "fixed at Vineflower's default, three spaces"
+
+[[driver_owned]]
+vineflower = "preferred-line-length"
+kuna = "fixed at Vineflower's default, 160 columns; the corpus runner sets it for Vineflower's own tests"
+
+[[driver_owned]]
+vineflower = "error-message"
+kuna = "fixed: the note under a failure comment asks for reports to kuna's tracker (Vineflower's in compat mode); the corpus fixture sets it empty"
+
+[[driver_owned]]
+vineflower = "dump-bytecode-on-error"
+kuna = "fixed on: a failed method's comment lists its bytecode"
+
+[[driver_owned]]
+vineflower = "dump-exception-on-error"
+kuna = "fixed on: a failure comment names the exception; the corpus fixture turns it off"
+
+[[driver_owned]]
+vineflower = "kt-unknown-defaults"
+kuna = "fixed at the Kotlin plugin's default: ... stands for a default argument the $default stub does not reveal"

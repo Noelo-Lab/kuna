@@ -229,9 +229,10 @@ objects by creation in the arena; see the fidelity contract below.
   The Kotlin plugin also ships a prebuilt jar (`plugins/kotlin/libs/metadata.jar`) with a
   shaded copy of the Kotlin compiler's metadata schema and the protobuf-lite runtime it
   runs on; kuna ports the parts it reads as `src/kotlin/kt_proto.rs` and
-  `src/kotlin/kt_flags.rs`. Plugins are not discovered on a class path: `jvm_plugins`
-  (default `on`, as with `java -jar`) loads the bundle, and `off` runs the bare Java
-  pipeline of Vineflower's test fixture.
+  `src/kotlin/kt_flags.rs`. Plugins are not discovered on a class path: the bundle always
+  loads, as with `java -jar`, and each plugin acts only through its options
+  (`jvm_kt_enable`, `jvm_variable_renaming`, `jvm_resugar_idea_notnull`); the corpus runner
+  alone runs the bare Java pipeline of Vineflower's test fixture (`jvm_plugins=0`).
 - **Not ported:** a user renamer class and Vineflower's `include-classpath` need a JVM and
   are refused (`options.toml`, `[[driver_owned]]`); third-party plugin jars cannot be
   loaded. Vineflower has no Scala or Groovy support, so classes compiled from those
@@ -292,8 +293,8 @@ named kuna option that is off by default.
    ```
 
    (That is compat mode; by default the second line names kuna's tracker, fix
-   `report_to_kuna`.) With `jvm_dump_exception_on_error off` neither decompiler
-   writes the exception. Run in compat mode with the command-line defaults of both
+   `report_to_kuna`.) With `dump-exception-on-error=0`, as the corpus fixture sets it,
+   neither decompiler writes the exception. Run in compat mode with the command-line defaults of both
    decompilers, 11 of the 598 Java corpus cases and
    2 of the 73 Kotlin ones differ only in this, and so do every difference on the Kotlin
    libraries above but one (item 5): Vineflower fails the same method with the same
@@ -337,7 +338,7 @@ Kotlin output. This table is the description of each; its id names the fix in th
 
 | Fix id | Vineflower 1.12.0 defect | What kuna does |
 |---|---|---|
-| `report_to_kuna` | the note under every error comment asks readers to report the class to Vineflower's tracker | it asks for reports to kuna's tracker (a `jvm_error_message` you set still wins) |
+| `report_to_kuna` | the note under every error comment asks readers to report the class to Vineflower's tracker | it asks for reports to kuna's tracker (the corpus fixture's empty `error-message` still wins) |
 | `lambda_wildcard_return` | fails a method that passes `x::m` on a receiver typed `Foo<?>` to a generic call, when `m` returns `Foo`'s type variable (`NullPointerException: returnType`; spring-boot's `StructuredLoggingJsonProperties.customizers`) | the method decompiles; the lambda keeps the type its call's context gives it |
 | `twr_unary_condition` | fails a method of a Java 11+ class whose `catch (Throwable)` handler starts with `if (!flag)` on a boolean local, taking the condition for a try-with-resources null check (`index out of bounds`; spring-framework's `ConfigurationClassEnhancer.createClass`) | the method decompiles; the `try`/`catch` is written as it is |
 | `if_denest_fallthrough` | turns `if (a) { ...; try { ... } ... } Z` into `if (!a) { Z } else { ... }` although the `try` falls through to `Z`, printing a `break` past `Z` or failing the method (`IllegalStateException: Could not find destination nodes for stat id`; Elasticsearch's `InternalEngine.closeNoLock`) | the `if` keeps its shape when its body reaches the code after it, and the method decompiles |
@@ -626,7 +627,7 @@ example):
    both decompilers *without a JDK* (the corpus runs without one): replace JDK types the
    failure needs by nested stand-ins, and compare `vf-decompile --fixture --opt
    dump-exception-on-error=1 ...` with `kuna decompile-project DIR --option include-runtime ''
-   --option jvm_plugins 0 --option jvm_vineflower_compat 1 --option dump-exception-on-error 1
+   --option jvm_kt_enable 0 --option jvm_resugar_idea_notnull 0 --option jvm_vineflower_compat 1
    -o NEW_DIR` (`--option` takes Vineflower's option names and kuna's own rows by their
    names). For the Rust backtrace of the caught
    throw, set `KUNA_JVM_BACKTRACE` to a piece of its message (`1` prints every caught
@@ -793,8 +794,7 @@ companion object's member is in the `$Companion` class, and a method the Kotlin 
 folds into another declaration (a `$default` stub, a lambda's method, a `@JvmStatic`
 forwarder) has no text of its own. `--language java` (`jvm_kt_enable off`) writes every
 class as Java, which shows what the Kotlin view hides: the accessors, the `$default` stubs,
-the `Intrinsics` checks; `--option jvm_plugins off` also gives Java, since it loads no
-plugin. Every JSON record carries the `language` of its unit. `docs/cli.md`, "Kotlin
+the `Intrinsics` checks. Every JSON record carries the `language` of its unit. `docs/cli.md`, "Kotlin
 classes", has the naming table and examples.
 
 **Options.** The plugin's options are the `jvm_kt_*` rows of `kuna catalog --engine jvm`;
@@ -803,11 +803,8 @@ each also answers to Vineflower's name (`kt-enable`, ...):
 | Option | Default | Effect |
 |---|---|---|
 | `jvm_kt_enable` | `on` | write Kotlin classes as Kotlin; `off` writes them as Java with the `@Metadata` annotation |
-| `jvm_kt_show_public` | `on` | write the `public` that Kotlin source leaves implicit |
-| `jvm_kt_unknown_defaults` | `...` | the text after `=` for a default argument whose value could not be recovered from the `$default` stub; empty writes none |
 | `jvm_kt_collapse_string_concat` | `on` | write string concatenations as string templates (`"count=${c.count}"`); `off` keeps `"count=" + c.count` |
 | `jvm_kt_decompile_facades` | `off` | also write the forwarding functions of a multifile facade (`@file:JvmMultifileClass`), not only the comment listing its parts |
-| `jvm_kt_export_metadata` | `off` | parse the metadata even with `jvm_kt_enable off`, for other plugins; changes no output in kuna |
 
 **Known limits.** The Kotlin output is Vineflower's, so it has Vineflower's gaps, apart
 from those kuna's fixes close (*Kuna-only fixes*, above). The plugin rewrites syntax, not
@@ -880,9 +877,9 @@ public static int loop(int n) {
 ```
 
 `tiny` with `jvm_rename_parameters on` fails every method that has a LocalVariableTable
-(`NullPointerException: type`), as Vineflower's provider does. The two deprecated
-Vineflower flags, `jvm_jad_style_variable_naming` and `jvm_jad_style_parameter_naming`,
-are accepted for old command lines.
+(`NullPointerException: type`), as Vineflower's provider does. Vineflower's deprecated
+`jad-style-variable-naming` and `jad-style-parameter-naming` flags are not options:
+`jvm_variable_renaming jad` and `jvm_rename_parameters` cover them.
 
 ## How failures are reported
 
@@ -908,7 +905,7 @@ The engine's log (the logger the CLI installs is silent) has lines with no comme
 output: `Statement cannot be decomposed although reducible!` is a dead end of DomHelper's
 search that its caller recovers from, unless the method then fails with `parsing
 failure!`, which is reported as above; `Inconsistent inner class entries` says which of
-two conflicting `InnerClasses` records the engine kept (`jvm_warn_inconsistent_inner_attributes`);
+two conflicting `InnerClasses` records the engine kept;
 `Inconsistent anonymous class definition` and `Inconsistent references to the class`
 mean the engine writes that class as a top-level unit of its own instead of inside the
 method that creates it, which the CLI follows (it asks the engine for every class of a

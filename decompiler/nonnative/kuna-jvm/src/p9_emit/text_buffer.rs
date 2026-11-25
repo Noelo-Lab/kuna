@@ -30,10 +30,9 @@ use crate::pair::Pair;
 use crate::rt::jstring::from_utf16;
 use crate::rt::{
     exception, jchar, objects_hash, BitSet, JHashMap, JHashSet, JLinkedHashMap, JavaEq, JavaHash,
-    JavaStr, Shared,
+    JavaStr,
 };
 use crate::text_token::{TextToken, TextTokenKind};
-use crate::text_token_visitor::TextTokenVisitor;
 use crate::type_annotation::{PathValue, TypeAnnotation};
 use crate::var_type::VarType;
 use crate::variable_text_token::VariableTextToken;
@@ -1382,20 +1381,6 @@ impl TextBuffer {
         }
     }
 
-    /// `line:column` of a text offset, as the token dump prints it.
-    pub fn get_pos(&self, index: i32) -> String {
-        let sep = &self.my_line_separator;
-        let before = &self.my_string_builder[..index as usize];
-        let line = split(before, sep).len();
-        let mut line_start = last_index_of(before, sep, before.len() as i32);
-        line_start += if line_start != -1 {
-            sep.len() as i32
-        } else {
-            1
-        };
-        format!("{}:{}", line, index + 1 - line_start)
-    }
-
     pub fn get_tokens(&self) -> Vec<TextToken> {
         self.flatten_tokens(ROOT)
     }
@@ -1408,37 +1393,6 @@ impl TextBuffer {
         }
         result.sort_by_key(|t| t.get_start());
         result
-    }
-
-    pub fn visit_tokens(&self, visitor: Option<&mut dyn TextTokenVisitor>) {
-        let Some(visitor) = visitor else {
-            return;
-        };
-        visitor.start(&text_of(&self.my_string_builder));
-        for token in self.get_tokens() {
-            token.visit(visitor);
-        }
-        visitor.end();
-    }
-
-    /// `visitTokens` for a visitor that reads or writes the visited buffer
-    /// itself (`TextTokenDumpVisitor`): no borrow is held while it runs.
-    pub fn visit_tokens_shared(
-        buffer: &Shared<TextBuffer>,
-        visitor: Option<&mut dyn TextTokenVisitor>,
-    ) {
-        let Some(visitor) = visitor else {
-            return;
-        };
-        let (content, tokens) = {
-            let b = buffer.borrow();
-            (text_of(&b.my_string_builder), b.get_tokens())
-        };
-        visitor.start(&content);
-        for token in tokens {
-            token.visit(visitor);
-        }
-        visitor.end();
     }
 
     /// The leak check of the unported `DebugTrace`: nothing to check.

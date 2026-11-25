@@ -1,6 +1,5 @@
 //! Port of `org/vineflower/kotlin/util/KUtils.java`.
 
-use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::invocation_exprent::InvocationExprent;
 use crate::jthrow;
@@ -13,7 +12,6 @@ use crate::k_invocation_exprent::KInvocationExprent;
 use crate::k_new_exprent::KNewExprent;
 use crate::k_switch_head_exprent::KSwitchHeadExprent;
 use crate::k_var_exprent::KVarExprent;
-use crate::kotlin_options::KotlinOptions;
 use crate::kt_proto::Visibility;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
@@ -80,9 +78,7 @@ impl KUtils {
                 buf.append("private ");
             }
             Visibility::Public => {
-                if DecompilerContext::get_option(KotlinOptions::SHOW_PUBLIC_VISIBILITY) {
-                    buf.append("public ");
-                }
+                buf.append("public ");
             }
             _ => {
                 buf.append(&visibility.name().to_lowercase())

@@ -366,8 +366,6 @@ fn jvm_options_resolve_by_name_and_alias() {
     for spelling in [["jvm_decompile_finally", "off"], ["decompile-finally", "0"], ["fdi", "false"]] {
         ok(&jvm(&["decompile", &jar(), "com.ex.Main", "--option", spelling[0], spelling[1]]));
     }
-    let indented = ok(&jvm(&["decompile", &jar(), "com.ex.Main", "--option", "jvm_indent_string", "\t"]));
-    assert!(indented.contains("\n\tpublic static boolean check(String key) {\n"), "{indented}");
 }
 
 #[test]
@@ -690,7 +688,6 @@ fn a_kotlin_class_prints_as_kotlin_and_language_java_prints_it_as_java() {
     assert!(java.contains("\npublic final class Counter {\n"), "{java}");
     assert!(java.contains("\n   public final int bump(int by) {\n"), "{java}");
     assert_eq!(ok(&jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--option", "jvm_kt_enable", "off"])), java);
-    assert_eq!(ok(&jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--option", "jvm_plugins", "off"])), java);
     assert_eq!(ok(&jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--language", "auto"])), kotlin);
     let out = jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--language", "java", "--option", "kt-enable", "1"]);
     assert_eq!(out.status.code(), Some(2));

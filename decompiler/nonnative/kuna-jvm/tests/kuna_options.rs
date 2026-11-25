@@ -145,15 +145,7 @@ fn rows_are_complete_and_point_at_real_modules() {
             );
         }
     }
-    let destructive: Vec<&str> = rows()
-        .iter()
-        .filter(|r| r.destructive)
-        .map(|r| r.option)
-        .collect();
-    assert_eq!(
-        destructive,
-        ["jvm_show_hidden_statements", "jvm_dump_text_tokens"]
-    );
+    assert!(rows().iter().all(|r| !r.destructive));
 }
 
 #[test]
@@ -178,18 +170,6 @@ fn resolution_and_aliases() {
     }
     assert_eq!(find("rbr").unwrap().option, "jvm_remove_bridge");
     assert_eq!(
-        resolve("jvm_preferred_line_length", "120").unwrap(),
-        ("preferred-line-length", "120".to_string())
-    );
-    assert_eq!(
-        resolve("jvm_indent_string", "\t").unwrap(),
-        ("indent-string", "\t".to_string())
-    );
-    assert_eq!(
-        resolve("jvm_excluded_classes", "^com/ex/.*").unwrap(),
-        ("excluded-classes", "^com/ex/.*".to_string())
-    );
-    assert_eq!(
         resolve("jrt", "off").unwrap(),
         ("include-runtime", "0".to_string())
     );
@@ -209,10 +189,6 @@ fn resolution_and_aliases() {
         resolve("jvm_siblings", "off").unwrap(),
         ("jvm_siblings", "0".to_string())
     );
-    assert_eq!(
-        resolve("jvm_plugins", "off").unwrap(),
-        (kuna_plugins::JVM_PLUGINS, "0".to_string())
-    );
     assert_eq!(resolve("old-try-dedup", "1").unwrap().0, "old-try-dedup");
 }
 
@@ -224,17 +200,21 @@ fn resolution_errors() {
     assert!(err.contains("did you mean decompile-finally"), "{err}");
     let err = resolve("jvm_nothing_like_this_at_all", "on").unwrap_err();
     assert!(err.contains("unknown JVM option"), "{err}");
-    for name in ["thread-count", "jvm_thread_count", "max-time-per-method"] {
+    let err = resolve(kuna_plugins::JVM_PLUGINS, "off").unwrap_err();
+    assert!(err.contains("unknown JVM option"), "{err}");
+    for name in [
+        "thread-count",
+        "jvm_thread_count",
+        "max-time-per-method",
+        "jvm_indent_string",
+        "jvm_preferred_line_length",
+    ] {
         let err = resolve(name, "4").unwrap_err();
         assert!(err.contains("set by kuna itself"), "{err}");
     }
     assert!(resolve("thread-count", "4").unwrap_err().contains("--jobs"));
     let err = resolve("jvm_remove_bridge", "maybe").unwrap_err();
     assert!(err.contains("expected on|off"), "{err}");
-    let err = resolve("jvm_preferred_line_length", "wide").unwrap_err();
-    assert!(err.contains("integer"), "{err}");
-    let err = resolve("jvm_included_classes", "(unclosed").unwrap_err();
-    assert!(err.contains("invalid regular expression"), "{err}");
     assert_eq!(
         kuna_options::suggest("jvm_remove-bridge"),
         Some("jvm_remove_bridge")

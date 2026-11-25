@@ -44,12 +44,10 @@ SOURCE = {
 }
 PLUGINS = {'kotlin-only': '1', 'none': '0'}
 OVERLAYS = {
-    'kt-show-public-off': [('kt-show-public', '0')],
     'kt-collapse-string-concat-off': [('kt-collapse-string-concat', '0')],
     'kt-unknown-defaults-empty': [('kt-unknown-defaults', '')],
     'kt-decompile-facades-on': [('kt-decompile-facades', '1')],
     'kt-enable-off': [('kt-enable', '0')],
-    'kt-enable-off-export': [('kt-enable', '0'), ('kt-export-metadata', '1')],
     'remove-synthetic-on': [('remove-synthetic', '1')],
     'decompile-generics-off': [('decompile-generics', '0')],
     'dump-exception-on': [('dump-exception-on-error', '1'), ('dump-bytecode-on-error', '0')],
