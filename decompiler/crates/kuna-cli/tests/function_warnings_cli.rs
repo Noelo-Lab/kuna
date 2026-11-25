@@ -249,8 +249,8 @@ fn both_warning_styles_report_the_same_warnings() {
     assert!(seen.contains(&("branch-flip".into(), json!(0x406e9f))), "{seen:?}");
     assert_eq!(instruction(&pe, 0x406e9f).0, "JZ");
     let joined = placed(&inline["functions"][1]);
-    let line50: Vec<&Value> = joined.iter().filter(|w| w["line"] == 50).map(|w| &w["address"]).collect();
-    assert_eq!(line50, [&json!(0x406eba), &json!(0x406ed9)], "{joined:?}");
+    let line49: Vec<&Value> = joined.iter().filter(|w| w["line"] == 49).map(|w| &w["address"]).collect();
+    assert_eq!(line49, [&json!(0x406eba), &json!(0x406ed9)], "{joined:?}");
 
     let stripped = common::fixture("pe_imports_stripped.exe");
     let doc = document(&["decompile", &stripped, "0x140001b30", "--json"]);
