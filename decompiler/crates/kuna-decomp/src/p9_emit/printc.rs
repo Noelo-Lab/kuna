@@ -9248,7 +9248,7 @@ impl PrintC {
             (v.is_implied(), v.has_implied_field(), v.get_def())
         };
         if implied {
-            if let Some(to) = self.loop_tests.recomputed(vn) {
+            if let Some(to) = self.loop_tests.printed_as(vn) {
                 self.push_vn_explicit_ir(fd, arch, to, op); // (kuna looptest)
                 return;
             }

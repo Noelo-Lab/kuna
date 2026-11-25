@@ -8,14 +8,17 @@
 //!
 //! A loop prints top-tested when the test at the top means the same thing as the test
 //! at the bottom: every loop-variant leaf of the printed condition is the latch input of
-//! a header MULTIEQUAL in the MULTIEQUAL's own HighVariable, and the condition reads no
-//! call.  Its first evaluation must then agree with the binary.  `proven` accepts a loop
-//! whose entry test `f_entry` (the condition with each latch input replaced by its entry
-//! value) folds to true, or equals the condition of a guard that dominates the loop.  The
-//! guard is dropped when nothing but pure statements sits between it and the loop, those
-//! statements write only variables the skip path never reads, and the skip path reaches
-//! the loop's own exit or an equal bare return.  `assume` also turns loops with no entry
-//! proof.
+//! a header MULTIEQUAL in the MULTIEQUAL's own HighVariable (or an expression that
+//! computes such a latch input again, printed as its variable), and the condition reads
+//! no call.  Its first evaluation must then agree with the binary.  `proven` accepts a
+//! loop whose entry test `f_entry` (the condition with each latch input replaced by its
+//! entry value) folds to true, or equals the condition of a guard that dominates the
+//! loop; a loop whose body prints nothing is its condition's own loop and always turns.
+//! The guard is dropped when nothing but pure statements sits between it and the loop and
+//! the program without it is the same on the skip path: the skip path and the loop's exit
+//! path meet, and every value they merge, or return, agrees once each carried variable
+//! holds its entry value (a loop that runs zero times).  `assume` also turns loops with no
+//! entry proof.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -115,12 +118,12 @@ impl LoopTests {
 
     /// The varnode an explicit leaf prints as.
     pub fn leaf(&self, vn: VarnodeId) -> VarnodeId {
-        self.recomputed(vn).unwrap_or(vn)
+        self.printed_as(vn).unwrap_or(vn)
     }
 
-    /// The carried variable an implied expression of the condition being printed
-    /// prints as, when it computes that variable's next value again.
-    pub fn recomputed(&self, vn: VarnodeId) -> Option<VarnodeId> {
+    /// The carried variable a leaf or an implied expression of the condition being
+    /// printed prints as, when the plan substitutes it.
+    pub fn printed_as(&self, vn: VarnodeId) -> Option<VarnodeId> {
         self.active.iter().find(|(from, _)| *from == vn).map(|&(_, to)| to)
     }
 }
@@ -152,9 +155,7 @@ pub fn loop_tests(fd: &Funcdata, root: BlockId, mode: LoopTestMode, decl: DeclTy
         stack.extend(b.get_list().iter().copied());
     }
     for dw in loops {
-        let verdict = plan_loop(fd, &leaves, dw, mode, decl);
-        ltrace(fd, dw, &verdict);
-        if let Ok(top) = verdict {
+        if let Ok(top) = plan_loop(fd, &leaves, dw, mode, decl) {
             plan.top.insert(dw);
             if !top.subst.is_empty() {
                 plan.subst.insert(dw, top.subst);
@@ -172,111 +173,6 @@ pub fn loop_tests(fd: &Funcdata, root: BlockId, mode: LoopTestMode, decl: DeclTy
         }
     }
     plan
-}
-
-fn ltrace(fd: &Funcdata, dw: BlockId, verdict: &Verdict) {
-    let Some(p) = std::env::var_os("KUNA_LOOPTEST_TRACE") else { return };
-    let addr = fd
-        .sblocks_ref()
-        .get_front_leaf(dw)
-        .and_then(|l| fd.sblocks_ref().block(l).get_copy())
-        .and_then(|bb| fd.bb_op_head(bb))
-        .and_then(|op| fd.obank().get(op))
-        .map(|o| o.get_seq_num().get_addr().get_offset())
-        .unwrap_or(0);
-    let what = match verdict {
-        Ok(t) => format!(
-            "top:{}{}",
-            if t.respell.is_some() { "respell-" } else { "" },
-            match t.guard {
-                Some((_, Guard::Wrapped)) => "wrapped",
-                Some((_, Guard::Return)) => "return",
-                Some((_, Guard::Tail)) => "tail",
-                Some((_, Guard::Arm(_))) => "arm",
-                None => if empty_body(fd, dw) { "empty" } else { "noguard" },
-            }
-        ),
-        Err(why) => format!("keep:{why}"),
-    };
-    let mut detail = String::new();
-    if let Ok(lp) = Loop::find(fd, dw) {
-        let cont = lp.entry_cond(&BTreeSet::new());
-        let g = lp.guard(fd);
-        fn ex(e: &Expr) -> String {
-            match e {
-                Expr::Const { val, .. } => format!("{val:#x}"),
-                Expr::Leaf(v, _) => format!("{v:?}").replace("VarnodeId(", "v").replace(')', ""),
-                Expr::Load { addr, at, .. } => format!("*{}({})", if at.is_some() { "@" } else { "" }, ex(addr)),
-                Expr::Op { code, args, .. } => format!(
-                    "{}({})",
-                    format!("{code:?}").trim_start_matches("CPUI_"),
-                    args.iter().map(ex).collect::<Vec<_>>().join(",")
-                ),
-            }
-        }
-        fn cs(c: &Option<Cond>) -> String {
-            let Some(c) = c else { return "-".into() };
-            let s = match &c.lit {
-                Lit::True => "T".to_string(),
-                Lit::Eq(a, b) => format!("{}=={}", ex(a), ex(b)),
-                Lit::Ltu(a, b) => format!("{}<u{}", ex(a), ex(b)),
-                Lit::Lts(a, b) => format!("{}<s{}", ex(a), ex(b)),
-                Lit::Other(e) => ex(e),
-            };
-            format!("{}{}", if c.neg { "!" } else { "" }, s)
-        }
-        let bdesc = |b: BlockId| -> String {
-            let bb = fd.bblocks_ref();
-            let blk = bb.block(b);
-            let ops = crate::p8_structure::kuna_iteregion::printed_ops(fd, b);
-            let last = fd.bb_op_tail(b).and_then(|o| fd.obank().get(o)).map(|o| format!("{:?}", o.code()).trim_start_matches("CPUI_").to_string()).unwrap_or_default();
-            let addr = fd.bb_op_head(b).and_then(|o| fd.obank().get(o)).map(|o| o.get_seq_num().get_addr().get_offset()).unwrap_or(0);
-            let succ: Vec<String> = (0..blk.size_out()).map(|i| format!("{:?}", blk.get_out(i))).collect();
-            format!("[{:?}@{addr:#x} p{} {last} in{} out{:?}]", b, ops.len(), blk.size_in(), succ)
-        };
-        detail = format!(
-            "entry={} | guard={} pre={} skipexit={} skip={} exit={}",
-            cs(&cont),
-            g.as_ref().map(|g| cs(&g.enter)).unwrap_or("none".into()),
-            g.as_ref().map(|g| g.pre.len()).unwrap_or(0),
-            g.as_ref().map(|g| g.skip == lp.exit).unwrap_or(false),
-            g.as_ref().map(|g| bdesc(g.skip)).unwrap_or_default(),
-            bdesc(lp.exit),
-        );
-        if matches!(verdict, Err("respelled guard differs" | "bound not a multiple of the step")) {
-            let g = lp.guard(fd);
-            let fresh = g.as_ref().map(|g| g.fresh.clone()).unwrap_or_default();
-            match lp.respell(&fresh, &|_| None) {
-                Ok(r) => detail.push_str(&format!(" resp={}", cs(&Some(r.entry)))),
-                Err(w) => detail.push_str(&format!(" resp-err={w}")),
-            }
-            detail.push_str(&format!(" rs={}", lp.respell_parts(&fresh)));
-        }
-        if matches!(verdict, Err("condition reads a body value")) {
-            detail.push_str(&format!(" leaf={}", lp.body_leaf_kind(lp.cond_vn(), 0)));
-        }
-        detail.truncate(1200);
-    }
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(p) {
-        let line = format!(
-            "looptest\t{:#x}\t{}\t{:#x}\t{}\t{}\n",
-            fd.get_address().get_offset(),
-            fd.get_name(),
-            addr,
-            what,
-            detail
-        );
-        let _ = f.write_all(line.as_bytes());
-    }
-}
-
-fn ldebug(msg: String) {
-    let Some(p) = std::env::var_os("KUNA_LT_DEBUG") else { return };
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(p) {
-        let _ = f.write_all(format!("{msg}\n").as_bytes());
-    }
 }
 
 struct Top {
@@ -588,7 +484,7 @@ impl<'a> Loop<'a> {
     /// memory.  The test can print that variable instead.
     fn recomputed(&self, vn: VarnodeId) -> Option<VarnodeId> {
         let none = BTreeSet::new();
-        let b = Builder { fd: self.fd, subst: None, body: &none, fresh: &none_ops() };
+        let b = Builder { fd: self.fd, subst: None, body: &none, fresh: &BTreeSet::new() };
         let mut budget = 64;
         let e = b.build(vn, 0, &mut budget)?;
         if e.has_load() || matches!(e, Expr::Leaf(..) | Expr::Const { .. }) {
@@ -662,7 +558,7 @@ impl<'a> Loop<'a> {
     /// `vn` as the skip path computes it.
     fn skip_value(&self, vn: VarnodeId, fact: Option<&(Expr, Expr)>) -> Option<Expr> {
         let none = BTreeSet::new();
-        let builder = Builder { fd: self.fd, subst: None, body: &none, fresh: &none_ops() };
+        let builder = Builder { fd: self.fd, subst: None, body: &none, fresh: &BTreeSet::new() };
         let mut budget = 128;
         Some(with_fact(builder.build(vn, 0, &mut budget)?, fact))
     }
@@ -687,14 +583,12 @@ impl<'a> Loop<'a> {
         let fd = self.fd;
         let (ps, pe) = (effect_ops(fd, s), effect_ops(fd, e));
         if ps.len() != pe.len() || ps.is_empty() {
-            ldebug(format!("ZTB len {} {}", ps.len(), pe.len()));
             return false;
         }
         let after: BTreeSet<BlockId> = [e].into_iter().collect();
         let mut rename = BTreeMap::new();
         for (&os, &oe) in ps.iter().zip(&pe) {
             let (Some(a), Some(b)) = (fd.obank().get(os), fd.obank().get(oe)) else { return false };
-            ldebug(format!("ZTB pair {:?}/{} {:?}/{}", a.code(), a.num_input(), b.code(), b.num_input()));
             if a.code() != b.code() || a.num_input() != b.num_input() {
                 return false;
             }
@@ -725,7 +619,6 @@ impl<'a> Loop<'a> {
                 let (Some(x), Some(y)) = (a.get_in(i), b.get_in(i)) else { return false };
                 let z = self.zero_trip(y, &after, &rename, fact);
                 if !same_value(self.skip_value(x, fact), z.clone()) {
-                    ldebug(format!("ZTB fail op {:?} in {i}: skip {:?} exit {:?} fact {:?}", a.code(), self.skip_value(x, fact), z, fact));
                     return false;
                 }
             }
@@ -774,57 +667,6 @@ impl<'a> Loop<'a> {
             let z = self.zero_trip(u, after, &BTreeMap::new(), fact);
             z.is_some() && self.skip_value(w, fact) == z
         })
-    }
-
-    fn body_leaf_kind(&self, vn: VarnodeId, depth: u32) -> String {
-        let fd = self.fd;
-        let Some(v) = fd.vbank().get(vn) else { return String::new() };
-        if depth > 20 || v.is_constant() || !v.is_written() {
-            return String::new();
-        }
-        let Some(op) = v.get_def().and_then(|d| fd.obank().get(d)) else { return String::new() };
-        if !op.get_parent().is_some_and(|p| self.body.contains(&p)) {
-            return String::new();
-        }
-        if v.is_implied() {
-            let first = usize::from(op.code() == OpCode::CPUI_LOAD) as i32;
-            for i in first..op.num_input() {
-                if let Some(x) = op.get_in(i) {
-                    let k = self.body_leaf_kind(x, depth + 1);
-                    if !k.is_empty() {
-                        return k;
-                    }
-                }
-            }
-            return String::new();
-        }
-        if self.latch_inputs.contains_key(&vn) {
-            return String::new();
-        }
-        let code = format!("{:?}", op.code()).trim_start_matches("CPUI_").to_string();
-        if op.code() == OpCode::CPUI_MULTIEQUAL {
-            return if op.get_parent() == Some(self.header) { "header-mq".into() } else { "inner-mq".into() };
-        }
-        let mut c = vn;
-        let mut feeds = false;
-        for _ in 0..4 {
-            let uses: Vec<OpId> = fd.vbank().get(c).map(|v| v.descend_iter().collect()).unwrap_or_default();
-            let mut next = None;
-            for u in uses {
-                let Some(uo) = fd.obank().get(u) else { continue };
-                if uo.code() == OpCode::CPUI_MULTIEQUAL && uo.get_parent() == Some(self.header) {
-                    feeds = true;
-                }
-                if matches!(uo.code(), OpCode::CPUI_COPY | OpCode::CPUI_CAST) {
-                    next = uo.get_out();
-                }
-            }
-            match next {
-                Some(n) if !feeds => c = n,
-                _ => break,
-            }
-        }
-        format!("{code}{}", if feeds { "-feeds-header" } else { "" })
     }
 
     /// Does the variable `out` belongs to live in the stack frame?  An optimizer that
@@ -917,21 +759,6 @@ impl<'a> Loop<'a> {
             (false, false) => &tokens::LESS_EQUAL,
         };
         Ok(Respelled { op: def, tok, entry })
-    }
-
-    fn respell_parts(&self, fresh: &BTreeSet<OpId>) -> String {
-        let fd = self.fd;
-        let cv = fd.vbank().get(self.cond_vn());
-        let Some(op) = cv.and_then(|v| v.get_def()).and_then(|d| fd.obank().get(d)) else { return "?".into() };
-        let (Some(i0), Some(i1)) = (op.get_in(0), op.get_in(1)) else { return "?".into() };
-        let (x, b) = if self.carried.contains_key(&i0) { (i0, i1) } else { (i1, i0) };
-        let Some(&out) = self.carried.get(&x) else { return "nocarried".into() };
-        let step = self.step(x, out);
-        let builder = Builder { fd, subst: None, body: &self.body, fresh };
-        let mut budget = 128;
-        let ex = self.latch_inputs.get(&x).and_then(|&e| builder.build(e, 0, &mut budget));
-        let eb = builder.build(b, 0, &mut budget);
-        format!("step={step:?} x_e={ex:?} b={eb:?}").replace("Const { size: ", "C{").replace("VarnodeId(", "v")
     }
 
     /// Is `vn` the same value on every iteration: defined before the loop, or an implied
@@ -1208,7 +1035,6 @@ impl GuardSite {
                 _ => lp.zero_trip_blocks(self.skip, lp.exit, fact.as_ref()),
             };
             if !same {
-                ldebug(format!("returns differ: bare {:?} {:?}", bare_return(fd, self.skip), bare_return(fd, lp.exit)));
                 return Err("returns differ");
             }
             if bb.block(self.skip).size_in() != 1 {
@@ -1516,10 +1342,6 @@ fn without_effect(fd: &Funcdata, o: OpId, may_load: bool) -> bool {
         return false;
     }
     p.get_out().is_none_or(|v| !memory(v))
-}
-
-fn none_ops() -> BTreeSet<OpId> {
-    BTreeSet::new()
 }
 
 /// Do two operands carry the same value: equal expressions, or constants of different
