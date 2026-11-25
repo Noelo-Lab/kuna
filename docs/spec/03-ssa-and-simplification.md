@@ -2067,6 +2067,37 @@ that quotient. `RuleDivOpt` substitutes `(x / 3) * 2` only when the same
 and `RuleModOpt` rules can then recover `x % 3`. Other masks, reciprocals, widths, wide divisions, and
 multiply-without-a-matching-quotient forms are declined.
 
+A signed division by a power of two rounds toward zero by adding `2^n - 1` to
+a negative dividend before the arithmetic shift. When the compiler makes that
+add conditional — gcc's `lea 7(%rax),%rdx; test %rax,%rax; cmovs %rdx,%rax;
+sar $3,%rax` at -O0, the `cmovns` form gcc and clang use at -O2, ARM gcc's
+`it lt; addlt` or a `blt` to an out-of-line `add` — the shift reads a
+MULTIEQUAL of `x` and `x + (2^n - 1)` at the join of a branch on the sign of
+`x`, which printed as `if (x < 0) x += 2^n - 1; ... x >> n`. `RuleDivOpt`
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_sdivpow2.rs`) recognizes
+that join when all of these hold: it has two inputs, the same root plus two
+constants that differ by `2^n - 1` (so `(bytes + 512) / 1024`, whose offset gcc
+folds into both values, divides `bytes + 512`); `n` is at most `8 * size - 2`,
+the largest power whose divisor is positive at the operand's size; each input
+arrives over a different out edge of one CBRANCH block, directly or through a
+block on that edge alone; the branch tests exactly the sign of the dividend
+(`x s< 0`, `x s<= -1`, `-1 s< x` or `0 s<= x`, or the BOOL_NEGATE of one, read
+through the branch's boolean flip); and the add's edge is the one taken when
+the dividend is negative. Each read of the join that is a function of the
+quotient is then rewritten where it stands: `M s>> n` becomes
+`INT_SDIV(x, 2^n)`; so does `M >> n` when every read of its result truncates it
+to at most `8 * size - n` bits, where the logical and the arithmetic shift
+agree; byte `n / 8` of the join becomes the low bytes of a new
+`INT_SDIV(x, 2^n)`; and `M & -2^n` becomes that quotient times `2^n`. Every
+rewrite computes the binary's value for every input, the most negative one
+included, so it is not an option. Once no read of the join is left, dead-code
+removal deletes it and the add, and the `deadcontrolflow` actions remove the
+emptied arm and the branch. A read of another kind (an unsigned comparison of
+the join, a shift by another amount) keeps the join and its branch. A join of
+one byte of each arm (`mov %ah` after which `%eax` stays live), the
+conditional remainder ARM gcc emits (`x & 7`, or `-(-x & 7)` when `-x` is not
+negative) and `abs` are not recognized.
+
 The cleanup pool's `RuleExpandLoad` is upstream's rewrite of a LOAD narrower
 than its pointer's pointee into a LOAD of the whole pointee, with the loaded
 bytes taken back out either as the least-significant truncation or inside the
@@ -3355,7 +3386,7 @@ ARM predicated code: a `moveq`/`movne` pair ahead of the re-tested branch
 `MultiPredicate` zero-slot analysis) collapses to a COPY of the other operand.
 
 (kuna) **Which 0/1 selects fold into their condition** (`option boolbranch
-fold|keep`, default keep,
+fold|keep|return`, default return,
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_boolbranch.rs (keeps_branch)`).
 `ruleaction_7.rs (RuleConditionalMove)` (group `conditionalexe`) turns a
 two-input MULTIEQUAL whose inputs are both boolean, under a CBRANCH root whose
@@ -3400,6 +3431,10 @@ is upstream's rule. On the decbench corpus the default turns 171 functions at
 IT block) into exact matches of the source's control flow and loses 3, where the
 source wrote `return c ? 1 : 0;` or kept a flag the new output also shows
 (`tests/stages/kuna-boolbranch.xml`, `tests/stages/kuna-boolbranch-thumb.xml`).
+`return` is `keep` at this rule; it adds one re-spelling on the final tree,
+for a function whose whole body is a guard on a short-circuit condition that
+returns 1 or 0, which this rule cannot fold under any value (§8, *boolbranch
+return*).
 
 **Conditional constants.** `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
 (ActionConditionalConst)` (mainloop tail, wrapper over

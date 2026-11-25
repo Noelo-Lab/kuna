@@ -198,7 +198,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "stackstruct" => on_off(conf.stack_struct),
         "globalarrayanchor" => on_off(conf.global_array_anchor),
         "opaquepredicate" => on_off(conf.opaque_predicate),
-        "boolbranch" => if conf.bool_branch_keep { "keep" } else { "fold" },
+        "boolbranch" => if conf.bool_ret { "return" } else if conf.bool_branch_keep { "keep" } else { "fold" },
         "memsetrecover" => on_off(conf.memset_recover),
         "rodatastring" => on_off(conf.rodata_string),
         "returnpair" => {

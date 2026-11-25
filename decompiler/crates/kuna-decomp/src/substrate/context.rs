@@ -838,6 +838,8 @@ pub struct ArchContext {
     pub byte_store_width: bool,
     /// (kuna `boolbranch`) Mirror of `Architecture::bool_branch_keep`.
     pub bool_branch_keep: bool,
+    /// (kuna `boolbranch return`) Mirror of `Architecture::bool_ret`, in C output only.
+    pub bool_ret: bool,
     /// (kuna) refuse to split a shared RETURN block that stores to GLOBALS
     /// (`retsplitglobal`).  Read by
     /// [`Funcdata::return_split_is_splittable`](crate::funcdata::Funcdata),
@@ -1700,6 +1702,7 @@ impl ArchContext {
             opaque_predicate: false,
             byte_store_width: false,
             bool_branch_keep: false,
+            bool_ret: false,
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
             ret_split_limit: None,       // retsplitlimit (the ArchSeam carries the real default)
             simd_shuffle_userops: Vec::new(),

@@ -2301,6 +2301,63 @@ off and on, and `kuna-cli/tests/tailform_round_trip.rs` compiles the printed C
 of gcc -O2 and -O0 builds beside the source and checks every function returns
 and stores what the source does.
 
+### boolbranch return — one return of a short-circuit test
+
+`return p != NULL && p[0] == '/';` and `if (p != NULL && p[0] == '/') return 1;
+return 0;` compile to the same branches wherever the compiler materializes the
+value with a jump (every unoptimized build, and optimized code for targets such
+as Cortex-M where gcc branches to a `movs r0,#1` and a `movs r0,#0`): the short
+circuit jumps to a block that sets 1 and a block that sets 0, and structuring
+recovers a guard and a final return. P3 `RuleConditionalMove` cannot fold that
+select into `return C;` under any `boolbranch` value (§3, *Which 0/1 selects fold
+into their condition*), because the 0 arm is entered from every short-circuit
+exit. For a function whose whole body is that test the source almost always
+wrote the one return, so under `option boolbranch return` (the default)
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_boolret.rs (ActionBoolRet)`
+re-spells it after `tailform`, on the final tree.
+
+The match (`kuna_boolret.rs (find)`): the function's top-level statements,
+flattened as `tailform` flattens them, are exactly a one-arm `if` whose arm prints
+only `return K;` and a final leaf that prints only `return K';`, where `K` and `K'`
+are the constants 1 and 0 in either order and the prototype returns an integer,
+a Boolean or an unknown scalar; the condition is a `BlockCondition` chain (an
+`&&`/`||`) every leaf of which prints nothing but its `CBRANCH` test
+(`kuna_boolret.rs (quiet_chain)`), so the function prints no statement besides
+the return (declarations aside) and the condition holds no comma expression; and
+no block involved carries a label or is named by a goto. The edit sets
+`kuna_boolret.rs (F_BOOL_RET)` on the `if`, plus `F_BOOL_RET_NOT` when the guard
+returns 0, and frees the final return leaf. The printer
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (emit_block_if_return)`)
+emits `return ( C );`, or `return !( C );`, with `C` rendered by the same
+`ONLY_BRANCH` path as the `if` header, anchored on the guard's `RETURN`. `C`'s
+operands are evaluated in the same order with the same short circuit, and `&&`,
+`||` and `!` yield exactly 1 or 0, the constants the two returns gave; no p-code
+is touched. The negation is printed as a `!` in front of the unchanged condition
+rather than pushed through it: decbench's extractor makes no node for a bare
+identifier operand, and pushing `!` through the leaves turns kuna's `!x` tests
+into bare `x`, which cost 3 functions at -O2 and 5 at -O0 against the `!` form.
+The context flag `bool_ret` is set only for C output.
+
+Left alone, by measurement against the default on the decbench corpus: a simple
+condition (`if (a == b) return 1; return 0;`), because an unoptimizing compiler
+would have set a flag for `return a == b;`; two or more guards; a condition that
+prints a comma expression (3 sites, all at -O0); and the same test after other
+statements, which in optimized functions only gained 6 and lost 1 at -O2 but
+gained 8 and lost 5 at -O0, negative on one half of the projects. Against
+`keep` on main d85062bb5 the value makes 94 more functions structurally exact
+at -O0 and 4 fewer (+59 on one half of the projects, +31 on the other), and 10
+more at -O2 without inlining (+2, +8), every changed body being exactly
+`if (C) return K; return K';` turned into one return. The losses are sources
+that wrote the `if` (bzip2 `isempty_RL`, `if (c>=0x30 && c<=0x39) { return TRUE; }
+else { return FALSE; }`), which the binary cannot tell apart.
+`tests/stages/kuna-boolret.xml` (gcc -O0 x86-64: a returned `&&`, a negated
+guard, a simple condition, two guards and a guard after a store, under `keep`
+and `return`) and `tests/stages/kuna-boolret-thumb.xml` (two hand-assembled
+Thumb functions in gcc -O2's layout) pin the shapes, and
+`kuna-cli/tests/boolret_round_trip.rs` compiles the functions printed from a
+gcc -O0 fixture under both values beside their source with gcc and clang at
+-O0 and -O2 and checks that each returns what the source returns.
+
 ## 8.4 The quality signal
 
 What kuna can *measure* about a structuring today is the goto census. The

@@ -307,9 +307,10 @@
 0300                  dedupitetail
 0301                  retshape
 0302                  tailform
-0303                  iteregion
-0304                  iteboolean
-0305                  paramcopyhoist
-0306                  lowerswitchkeep
-0307        !         prototypewarnings
-0308                  stop
+0303                  boolret
+0304                  iteregion
+0305                  iteboolean
+0306                  paramcopyhoist
+0307                  lowerswitchkeep
+0308        !         prototypewarnings
+0309                  stop
