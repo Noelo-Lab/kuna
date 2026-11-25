@@ -370,6 +370,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "kuna-managed"
+version = "0.1.0"
+
+[[package]]
 name = "kuna-num"
 version = "0.1.0"
 dependencies = [
