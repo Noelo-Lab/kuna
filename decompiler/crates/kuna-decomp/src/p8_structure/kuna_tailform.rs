@@ -337,7 +337,7 @@ pub(crate) fn top_container(data: &Funcdata) -> Option<BlockId> {
     }
 }
 
-pub(crate) fn returns_void(data: &Funcdata) -> bool {
+fn returns_void(data: &Funcdata) -> bool {
     data.get_func_proto()
         .get_output_type()
         .map(|t| t.get_metatype() == crate::dtype::type_metatype::TYPE_VOID)
@@ -567,9 +567,7 @@ fn site_decision(data: &Funcdata, cx: &Ctx, shape: TailShape, lines: usize, at: 
 /// Whether `b` is a one-arm `if` whose arm ends in the `return key` the
 /// function ends with anyway (and is more than that return).
 fn merges(data: &Funcdata, cx: &Ctx, b: BlockId, key: RetKey) -> bool {
-    // (kuna `retshape`) a void arm's last `return;` drops past a looptest guard.
-    let past_claimed = key == RetKey::Void && crate::p8_structure::kuna_retshape::void_tails(data);
-    if !plain_if(data, b) || (!past_claimed && holds_claimed(data, cx, b)) {
+    if !plain_if(data, b) || holds_claimed(data, cx, b) {
         return false;
     }
     // (kuna `returndup auto`) a recorded valued return is not merged away.
@@ -627,7 +625,7 @@ pub(crate) fn cond_of(data: &Funcdata, ifb: BlockId, conds: &[(BlockId, BlockId)
 }
 
 /// An `if` with one arm and no `goto`.
-pub(crate) fn plain_if(data: &Funcdata, b: BlockId) -> bool {
+fn plain_if(data: &Funcdata, b: BlockId) -> bool {
     let b = data.sblocks_ref().block(b);
     b.get_type() == BlockType::If && b.get_size() == 2 && b.get_if_goto_target().is_none()
 }
@@ -656,12 +654,12 @@ fn final_return(data: &Funcdata, last: BlockId, void: bool) -> Final {
     Final::Open
 }
 
-pub(crate) fn is_leaf(data: &Funcdata, b: BlockId) -> bool {
+fn is_leaf(data: &Funcdata, b: BlockId) -> bool {
     data.sblocks_ref().block(b).get_type() == BlockType::Copy && data.sblocks_ref().block(b).get_copy().is_some()
 }
 
 /// The value of the `RETURN` ending leaf `b`, if it ends in one.
-pub(crate) fn leaf_return(data: &Funcdata, b: BlockId) -> Option<RetKey> {
+fn leaf_return(data: &Funcdata, b: BlockId) -> Option<RetKey> {
     let bb = data.sblocks_ref().block(b).get_copy()?;
     let tail = data.bb_op_tail(bb)?;
     let op = data.obank().get(tail)?;
@@ -675,7 +673,7 @@ pub(crate) fn leaf_return(data: &Funcdata, b: BlockId) -> Option<RetKey> {
     }
 }
 
-pub(crate) fn value_key(data: &Funcdata, vn: VarnodeId) -> Option<RetKey> {
+fn value_key(data: &Funcdata, vn: VarnodeId) -> Option<RetKey> {
     let v = data.vbank().get(vn)?;
     if v.is_constant() {
         return Some(RetKey::Const(v.get_size(), v.get_offset()));
@@ -694,7 +692,7 @@ pub(crate) fn value_key(data: &Funcdata, vn: VarnodeId) -> Option<RetKey> {
 
 /// `Some(K)` when `b` (a leaf, or a one-element list of one) prints only
 /// `return K;` and carries no label.
-pub(crate) fn bare_return(data: &Funcdata, b: BlockId) -> Option<RetKey> {
+fn bare_return(data: &Funcdata, b: BlockId) -> Option<RetKey> {
     let g = data.sblocks_ref();
     let mut b = b;
     while matches!(g.block(b).get_type(), BlockType::Ls | BlockType::Graph) && g.block(b).get_size() == 1 {
@@ -739,7 +737,7 @@ fn terminal_returns(data: &Funcdata, b: BlockId, key: RetKey, alone: bool) -> us
 fn elidable_return(data: &Funcdata, b: BlockId, key: RetKey, alone: bool) -> bool {
     data.sblocks_ref().block(b).get_flags() & (F_RET_ONLY | F_RET_SKIP) == 0
         && !labelled(data, b)
-        && leaf_return(data, b).is_some_and(|k| k == key || crate::p8_structure::kuna_retshape::same_return(data, k, key))
+        && leaf_return(data, b) == Some(key)
         && !(alone && bare_return(data, b).is_some())
 }
 
@@ -760,7 +758,7 @@ fn has_return(data: &Funcdata, b: BlockId, skip_own_tail: bool) -> bool {
 /// Whether `b` holds a `RETURN` that marks flow kuna could not follow, where
 /// the function does not really end: a decode failure, a `halt`, or a no-return
 /// halt with no call before it (flow cut at the next function's entry).
-pub(crate) fn truncated(data: &Funcdata, b: BlockId) -> bool {
+fn truncated(data: &Funcdata, b: BlockId) -> bool {
     use crate::op::pcodeop_flags as f;
     let blk = data.sblocks_ref().block(b);
     let Some(bb) = blk.get_copy() else {
@@ -944,7 +942,7 @@ pub(crate) fn negate(data: &mut Funcdata, c: BlockId, top: bool) {
     }
 }
 
-pub(crate) fn new_leaf(data: &mut Funcdata, bb: BlockId, flags: uint4) -> BlockId {
+fn new_leaf(data: &mut Funcdata, bb: BlockId, flags: uint4) -> BlockId {
     let mut leaf = FlowBlock::new_kind(BlockKind::Copy { copy: Some(bb) });
     leaf.set_flag(flags);
     data.sblocks_mut().arena.insert(leaf)

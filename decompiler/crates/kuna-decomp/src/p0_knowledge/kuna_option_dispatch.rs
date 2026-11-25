@@ -572,11 +572,12 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "returndup" => {
-        let (val, calls, record, msg) =
+        let (val, calls, record, shapes, msg) =
             crate::p8_structure::kuna_returndup::OptionReturnDup.apply(p1)?;
         self.duplicate_shared_returns = val;
         self.duplicate_call_returns = calls;
         self.returndup_record = record;
+        self.ret_shape.on = shapes;
         Ok(msg)
     },
     "rettriangle" => {
@@ -587,11 +588,6 @@ kuna_options! { self, p1;
     "tailform" => {
         let (val, msg) = crate::p8_structure::kuna_tailform::OptionTailForm.apply(p1)?;
         self.tail_form = val;
-        Ok(msg)
-    },
-    "retshape" => {
-        let (val, msg) = crate::p8_structure::kuna_retshape::OptionRetShape.apply(p1)?;
-        self.ret_shape = val;
         Ok(msg)
     },
     "earlyreturn" => {

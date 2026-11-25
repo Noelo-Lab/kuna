@@ -1316,7 +1316,7 @@ pub struct ArchContext {
     /// (kuna) `tailform`: the function-tail form policy, `None` when off -- see
     /// `Architecture::tail_form`.
     pub tail_form: Option<crate::p8_structure::kuna_tailform::TailFormPolicy>,
-    /// (kuna) `retshape` -- see `Architecture::ret_shape`.
+    /// (kuna) `returndup auto` in optimized functions -- see `Architecture::ret_shape`.
     pub ret_shape: crate::p8_structure::kuna_retshape::RetShapePolicy,
     /// (kuna) `paramcopyhoist`: anchor an unmodified incoming parameter's trim COPY
     /// in the entry block rather than at the MULTIEQUAL slot's predecessor tail —
@@ -1826,7 +1826,7 @@ impl ArchContext {
             param_copy_hoist: false,      // paramcopyhoist (parameter copy-shadow -> entry block)
             returndup_triangle: false,    // rettriangle (one-block-if join, copied from the Architecture)
             tail_form: None,              // tailform (copied from the Architecture)
-            ret_shape: crate::p8_structure::kuna_retshape::RetShapePolicy::off(), // retshape (copied from the Architecture)
+            ret_shape: crate::p8_structure::kuna_retshape::RetShapePolicy::off(), // returndup auto (copied from the Architecture)
             duplicate_shared_returns: false, // returndup (opt-in default-off)
             duplicate_call_returns: false, // returndup calls
             returndup_record: false, // returndup auto
