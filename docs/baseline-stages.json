@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5454,
-    5454
+    5464,
+    5464
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2674,6 +2674,16 @@
     "data:SAVED-XMM-WIN64 fixture #1: unaffected XMM6-9 lane spills are absent from the local frame",
     "data:SAVED-XMM-WIN64 fixture #2: the disjoint caller-owned Rect still reaches its helper and return",
     "data:SAVED-XMM-WIN64 fixture #3: an observed XMM spill stays mapped at its frame slot",
+    "data:SDIVPOW2 #1: a cmovs before sar prints as the division",
+    "data:SDIVPOW2 #2: a cmovns over the 64-bit dividend prints as the division",
+    "data:SDIVPOW2 #3: an offset folded into both values divides the offset dividend",
+    "data:SDIVPOW2 #4: the join rounded down is the quotient scaled back",
+    "data:SDIVPOW2 #5: the join's second byte is the quotient's low byte",
+    "data:SDIVPOW2 #6: an add of 7 before a shift by 2 is not a division and keeps its if",
+    "data:SDIVPOW2 #7: no other function keeps a branch",
+    "data:SDIVPOW2 THUMB #1: an it lt; addlt before asrs prints as the division",
+    "data:SDIVPOW2 THUMB #2: an add taken out of line by blt prints as the division",
+    "data:SDIVPOW2 THUMB #3: neither keeps a branch",
     "data:SETLOCALE RETTYPE #1: NULL locale arg is typed char *",
     "data:SETLOCALE RETTYPE #2: no untyped indirect call",
     "data:SETLOCALE RETTYPE #3: call is the named setlocale",
