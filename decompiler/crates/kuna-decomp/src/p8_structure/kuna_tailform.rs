@@ -892,7 +892,7 @@ fn count_lines(data: &Funcdata, b: BlockId, conds: &[(BlockId, BlockId)]) -> usi
 
 /// Whether the condition `c` can be negated in place: its leaves' basic blocks
 /// end in a `CBRANCH` and no other leaf of the tree prints them.
-fn negatable(data: &Funcdata, c: BlockId) -> bool {
+pub(crate) fn negatable(data: &Funcdata, c: BlockId) -> bool {
     let g = data.sblocks_ref();
     match g.block(c).get_type() {
         BlockType::Copy => {
@@ -916,7 +916,7 @@ fn copies_of(data: &Funcdata, bb: BlockId) -> usize {
 /// Negate the printed condition `c` (C++ `FlowBlock::negateCondition`):
 /// flip each leaf's `CBRANCH` and swap its edges, De Morgan through a
 /// `BlockCondition`.
-fn negate(data: &mut Funcdata, c: BlockId, top: bool) {
+pub(crate) fn negate(data: &mut Funcdata, c: BlockId, top: bool) {
     match data.sblocks_ref().block(c).get_type() {
         BlockType::Copy => {
             if let Some(bb) = data.sblocks_ref().block(c).get_copy() {

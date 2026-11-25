@@ -7,6 +7,8 @@
 //! The guard is dead when the count's non-zero mask already keeps it below
 //! the width (a `& 0x1f` mask, a narrow field, a remainder); this module owns
 //! that proof and the per-run choice of when to print the guard at all.
+//! [`crate::p9_emit::kuna_armshiftwide`] finds the counts of a lowered
+//! double-word shift, the ones `wide` still guards.
 
 use crate::architecture::Architecture;
 use crate::context::VarnodeId;
@@ -18,8 +20,11 @@ pub enum ShiftGuardMode {
     /// Every repeatable register LSL is guarded.
     Always,
     /// Only a count not proven below the operand width is guarded.
-    #[default]
     Needed,
+    /// Only an unproven count of a lowered double-word shift is guarded; any
+    /// other count prints the plain C shift.
+    #[default]
+    Wide,
     /// No guard: the plain C shift, undefined where the count reaches the width.
     Never,
 }
@@ -29,6 +34,7 @@ impl ShiftGuardMode {
         match self {
             ShiftGuardMode::Always => "always",
             ShiftGuardMode::Needed => "needed",
+            ShiftGuardMode::Wide => "wide",
             ShiftGuardMode::Never => "never",
         }
     }
@@ -41,11 +47,12 @@ impl OptionArmShiftGuard {
     pub fn apply(&self, p1: &str) -> kuna_base::error::KunaResult<(ShiftGuardMode, String)> {
         let mode = match p1 {
             "always" => ShiftGuardMode::Always,
-            "needed" | "" => ShiftGuardMode::Needed,
+            "needed" => ShiftGuardMode::Needed,
+            "wide" | "" => ShiftGuardMode::Wide,
             "never" => ShiftGuardMode::Never,
             other => {
                 return Err(kuna_base::error::KunaError::parse(format!(
-                    "Unknown armshiftguard value: {other} (expected always|needed|never)"
+                    "Unknown armshiftguard value: {other} (expected always|needed|wide|never)"
                 )))
             }
         };
@@ -64,6 +71,10 @@ pub(crate) fn guard_needed(fd: &Funcdata, arch: &Architecture, count: VarnodeId)
     match arch.arm_shift_guard {
         ShiftGuardMode::Always => true,
         ShiftGuardMode::Needed => !count_below_width(fd, count, 32),
+        ShiftGuardMode::Wide => {
+            !count_below_width(fd, count, 32)
+                && crate::p9_emit::kuna_armshiftwide::double_word_count(fd, count)
+        }
         ShiftGuardMode::Never => false,
     }
 }
