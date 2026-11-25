@@ -582,6 +582,67 @@ fn carmel_predicated_multiply_updates_its_latch_without_vetoed_writeback() {
     }
 }
 
+#[test]
+fn carmel_compact_rmw_result_and_flags_follow_the_physical_lane() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-compact-rmw", "bin");
+    let nop = [0x2b, 0xec, 0];
+    let add = [0x10, 0xb7, 0x57];
+    let mut emitted = String::from("#include <stdbool.h>\n#include <stdint.h>\nvolatile unsigned short cell_c040;\n");
+    for (name, reg, packet) in [
+        ("primary_half", "A5H", [add, nop]),
+        ("secondary_half", "A5H", [nop, add]),
+        ("primary_flags", "EST", [add, nop]),
+        ("secondary_flags", "EST", [nop, add]),
+        ("data_flags", "EST", [[0x10, 0xbf, 0x57], nop]),
+        ("data_pointer", "R3", [[0x10, 0xbf, 0x57], nop]),
+    ] {
+        let code = [
+            [[0x80, 0xc0, 0x40], [0xc6, 0x42, 0x8c]], // MOVE R3, 0xc040
+            packet,
+            [[0x2b, 0xd8, 0], nop],
+        ];
+        fs::write(&binary, code.as_flattened().as_flattened()).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.arg("decompile").arg(&binary).args([
+            "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+            "--json", "--assert-strict", "--assert", &format!("return %{reg} unsigned short"),
+            "--assert", "data [data,0xc040] volatile unsigned short cell_c040",
+        ]);
+        for (i, input) in ["A5H", "CECFG1", "CECFG2", "CETBL", "EST", "ECFG", "RN3", "PACFG", "RM2", "RL2"].into_iter().enumerate() {
+            kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{}", input.to_ascii_lowercase())]);
+        }
+        let output = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        writeln!(emitted, "{}", function["code"].as_str().unwrap().replace("sub_0", name)).unwrap();
+    }
+    emitted.push_str(
+        "int main(void) {\n\
+         cell_c040 = 0x8021;\n\
+         if (primary_half(0x3215,0,0,0xffff,0,0,4,0,0,0) != 0x3215) return 1;\n\
+         if (secondary_half(0x3215,0,0,0xffff,0,0,4,0,0,0) != 0xb236) return 2;\n\
+         if (primary_flags(0x3215,0,0,0xffff,0,0,4,0,0,0) != 0x3010) return 3;\n\
+         if (secondary_flags(0x3215,0,0,0xffff,0,0,4,0,0,0) != 0x3400) return 4;\n\
+         if (data_pointer(0x3215,0x1000,0,0,0,0,4,0,0,0) != 0xc044 || cell_c040 != 0x8021) return 5;\n\
+         if (data_flags(0x3215,0,0,0xffff,0,0,4,0,0,0) != 0x3010 || cell_c040 != 0xb236) return 6;\n\
+         cell_c040 = 0x6000;\n\
+         if (data_flags(0x7000,0,0,0xffff,0,4,4,0,0,0) != 0x3024 || cell_c040 != 0x7fff) return 7;\n\
+         return 0;\n\
+         }\n",
+    );
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    fs::write(&source, &emitted).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")

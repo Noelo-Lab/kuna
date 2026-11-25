@@ -3925,6 +3925,14 @@ parallel multiply uses `X2` and the second flag lane. The wide form uses
 `X1` and the first flag lane under either qualifier, and its unsigned
 first operand bypasses product limiting.
 
+For covered qualified compact `ADD` and `SUB` word read-modify-write forms,
+the left parallel lane computes flags but cannot write back to the first
+accumulator half; the right lane and sequential issues can. Address and
+flag-word register results wrap without feeding the arithmetic flags.
+The DATA result writes the captured operand address, not the postmodified
+pointer. Its width and shift controls apply after the widened status is
+computed.
+
 For covered wide signed/unsigned multiply-subtract forms, the result bank
 selects the extended addend and result width. The first multiplier source
 publishes to `X1`. `ALIM` inhibits new loss status without clamping the result.

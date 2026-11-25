@@ -2088,6 +2088,81 @@ macro compact_long_finish(bits, carry_out, overflow, data_result, mixed, result,
     result = result >> ((ECFG >> 5) & 1);
   <finish>
 }
+
+macro compact_rmw_r3(cfg, bank, address, enabled) {
+    address = R3;
+    local ce_bank:2 = zext(bank);
+    unary_ce(cfg, EST, CETBL, ce_bank, enabled);
+    if (enabled == 0 && (cfg & 0x1000) == 0) goto <done>;
+    modify_ptr(R3, RN3, RM2, RL2, 6, 1);
+  <done>
+}
+
+macro compact_rmw_half(cfg, bank, subtract, write_half, store) {
+    local enabled:2;
+    local address:2;
+    compact_rmw_r3(cfg, bank, address, enabled);
+    if (enabled == 0) goto <done>;
+    local word:2 = *[data]:2 address;
+    local mask:8 = 0xffffffffff;
+    local a:8 = (sext(A5H) << 16) & mask;
+    local b:8 = (sext(word) << 16) & mask;
+    local raw:8 = a + b;
+    if (subtract == 0) goto <finish>;
+    raw = a + ((~b) & mask) + 1;
+  <finish>
+    local result:8;
+    local flags:2;
+    compact_long_finish(raw & mask, raw > mask, 0:1, store, 0:1, result, flags);
+    if (store != 0) goto <data_writeback>;
+    if ((flags & 0x20) == 0 || (ECFG & 0x28) == 8) goto <write_register>;
+    flags = flags | 4;
+  <write_register>
+    if (write_half == 0) goto <status>;
+    A5H = result(2);
+    goto <status>;
+  <data_writeback>
+    *[data]:2 address = result(2);
+  <status>
+    local shift:4 = zext(bank) * 6;
+    local status_bits:2 = (EST & ~(0x3000 | (0x3b << shift))) | (flags << shift);
+    publish_alu_ce(status_bits);
+  <done>
+}
+
+macro compact_rmw_register(cfg, bank, target, connected) {
+    local enabled:2;
+    local address:2;
+    compact_rmw_r3(cfg, bank, address, enabled);
+    if (enabled == 0) goto <done>;
+    local value:2 = *[data]:2 address;
+    if (connected == 0) goto <status>;
+    target = target + value;
+  <status>
+    publish_alu_ce(EST & 0xcfff);
+  <done>
+}
+
+:"ADD" "CE1" "RMW1","A5H","*R3+=RN3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x10b757); (slot_mode=0 & nop_right) { compact_rmw_half(CECFG1, 0:1, 0:1, 0:1, 0:1); }
+:^nop_left "||" "ADD" "CE2" "RMW1","A5H","*R3+=RN3" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_22=0x10b757) { compact_rmw_half(CECFG2, 1:1, 0:1, 1:1, 0:1); }
+:"ADD" "CE1" "RMW1","A5H","*R3+=RN3" is carmel_issue=2 & slot_mode=1 & slot_0_22=0x10b757 { compact_rmw_half(CECFG1, 0:1, 0:1, 1:1, 0:1); }
+:"ADD" "CE1" "RMW2","A5H","*R3+=RN3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x10bf57); (slot_mode=0 & nop_right) { compact_rmw_half(CECFG1, 0:1, 0:1, 0:1, 1:1); }
+:"SUB" "CE1" "RMW1","A5H","*R3+=RN3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0xb757); (slot_mode=0 & nop_right) { compact_rmw_half(CECFG1, 0:1, 1:1, 0:1, 0:1); }
+:^nop_left "||" "SUB" "CE2" "RMW1","A5H","*R3+=RN3" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_22=0xb757) { compact_rmw_half(CECFG2, 1:1, 1:1, 1:1, 0:1); }
+:"ADD" "CE1" "RMW1","R0","*R3+=RN3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x10b017); (slot_mode=0 & nop_right) { compact_rmw_register(CECFG1, 0:1, R0, 0:1); }
+:^nop_left "||" "ADD" "CE2" "RMW1","R0","*R3+=RN3" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_22=0x10b017) { compact_rmw_register(CECFG2, 1:1, R0, 1:1); }
+:"ADD" "CE1" "RMW1","FF1","*R3+=RN3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x10b597); (slot_mode=0 & nop_right) { compact_rmw_register(CECFG1, 0:1, FF1, 1:1); }
+:"ADD" "CE1" "RMW1","RN1","*R2+RN2" is carmel_issue=2 & slot_mode=1 & slot_0_22=0x136c95 {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <done>;
+    local address:2 = R2 + RN2;
+    local value:2 = *[data]:2 address;
+    RN1 = RN1 + value;
+    publish_alu_ce(EST & 0xcfff);
+  <done>
+}
+
 macro compact_long_postmodify(pointer) {
     # The explicit window of this port uses all 16 RM bits, unlike the
     # implicit window. The other modes share the ordinary compact AGU.
