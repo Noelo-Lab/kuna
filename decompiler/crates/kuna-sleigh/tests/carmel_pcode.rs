@@ -641,6 +641,22 @@ fn wide_swap_uses_the_old_pointer_and_a_long_stride_for_word_data() {
 }
 
 #[test]
+fn wide_swap_peer_data_selector_updates_its_pointer_without_reading_that_cell() {
+    let mut m = Machine::new(0, &[(0x914040, 0xc34021), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+    m.seed(&[("A1", 0x234567789a), ("R0", 0x4040), ("RN0", 3), ("R1", 0x4041)]);
+    m.seed_data(0x4040, 0x8123);
+    m.seed_data(0x4041, 0xbc31);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("R0"), m.reg("R1"), m.reg("A1")), (0x4043, 0x4043, 0x2345678123));
+    assert_eq!((m.data(0x4040), m.data(0x4041)), (0x789a, 0xbc31));
+
+    let mut conflict =
+        Machine::new(0, &[(0x904040, 0xc34020), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+    assert!(matches!(conflict.start(0), Err(KunaError::BadData { .. })), "both AGU lanes update R0");
+}
+
+#[test]
 fn link_uses_address_enable_before_its_independently_predicated_store() {
     for (config, table, sp, frame, saved) in [
         (0, 0, 0x4040, 0xc048, 0x2299),

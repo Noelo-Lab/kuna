@@ -104,6 +104,9 @@ Marked wide `SWAP` exchanges one register word with absolute or indirect
 DATA. An unbound first address selector uses DATA word `0xffff`, not the
 literal field. An indirect long selector sets the pointer stride but
 still exchanges only one word at the original address.
+A DATA selector in the second operand can advance its own pointer; it
+does not read a second DATA word. Two updates to the same pointer are
+not lifted.
 Selected wide address transfers add the immediate displacement to a word
 source, including saved CODE addresses and the `R3` address unit.
 Selected CE2 logical shifts use configuration-word sources and preserve
