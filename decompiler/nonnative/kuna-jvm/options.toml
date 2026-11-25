@@ -848,28 +848,6 @@ tier = "analysis"
 symptoms = "class or method named like a Java keyword|identifiers that are not valid Java (obfuscated names)|many classes named a, b, c that clash"
 
 [[option]]
-option = "jvm_dump_bytecode_on_error"
-vineflower = "dump-bytecode-on-error"
-short = "dbe"
-aliases = ["dump-bytecode-on-error", "dbe"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p9_emit"
-subphase = "class_writer"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Inside a method that could not be decompiled, list its bytecode as comments (offset, opcode, operands, constants)."
-use_when = "Turn off for shorter output when failures are expected and the bytecode is not needed."
-example = "kuna decompile obf.jar a.b --option jvm_dump_bytecode_on_error off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.DUMP_BYTECODE_ON_ERROR (dump-bytecode-on-error, -dbe)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "failed method shows a long // Bytecode: listing|need the instructions of a method that failed to decompile (option is off)"
-
-[[option]]
 option = "jvm_dump_exception_on_error"
 vineflower = "dump-exception-on-error"
 short = "dee"
@@ -1438,3 +1416,7 @@ kuna = "fixed at Vineflower's default, 160 columns; the corpus runner sets it fo
 [[driver_owned]]
 vineflower = "error-message"
 kuna = "fixed: the note under a failure comment asks for reports to kuna's tracker (Vineflower's in compat mode); the corpus fixture sets it empty"
+
+[[driver_owned]]
+vineflower = "dump-bytecode-on-error"
+kuna = "fixed on: a failed method's comment lists its bytecode"

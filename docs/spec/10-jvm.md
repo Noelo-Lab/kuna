@@ -253,8 +253,7 @@ type prints erased. Debug attributes feed naming later: the `LocalVariableTable`
 sequence with its exception table
 (`decompiler/nonnative/kuna-jvm/src/p2_lift/full_instruction_sequence.rs`,
 `decompiler/nonnative/kuna-jvm/src/p2_lift/instruction.rs`), one instruction per opcode
-with resolved operands; `jvm_dump_bytecode_on_error` later prints this sequence inside a
-failed method. The method's local-variable count seeds the variable counter, so every
+with resolved operands; the comment of a failed method later lists this sequence. The method's local-variable count seeds the variable counter, so every
 variable the decompiler invents is numbered after the method's own locals.
 
 **Blocks.** `decompiler/nonnative/kuna-jvm/src/p2_lift/control_flow_graph.rs (ControlFlowGraph::new)`
@@ -950,8 +949,7 @@ Numbers print with the JDK's own algorithms (section 10.13).
 of comments (`ClassWriter::dump_error`): `$VF: Couldn't be decompiled`, then with
 `jvm_dump_exception_on_error` the `error-message` note (a request to report the class to
 kuna's tracker, Vineflower's in compat mode; section 10.16), the exception
-text and its throw location, and with `jvm_dump_bytecode_on_error` a listing of the
-method's bytecode. The class around it is written normally.
+text and its throw location, and a listing of the method's bytecode. The class around it is written normally.
 
 **Layout.** The buffer is a tree of line groups; after a class is written,
 `decompiler/nonnative/kuna-jvm/src/p9_emit/text_buffer.rs (TextBuffer::reformat)` breaks
