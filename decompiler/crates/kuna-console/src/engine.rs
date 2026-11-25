@@ -2085,7 +2085,7 @@ impl ConsoleProgram {
         let addr = Address::new(code_space, vma);
         if self.arch.arch_id() == kuna_carmel_image::TARGET {
             let translate = self.arch().translate();
-            let size = translate.instruction_length(&addr)?;
+            let size = self.arch().with_context_db(|context| kuna_carmel_image::listing_size(context, &addr))?;
             let word = vma / 3;
             let start = Address::new(Rc::clone(addr.get_space().unwrap()), 3 * (word & !1));
             let mut fetch = [0; 6];

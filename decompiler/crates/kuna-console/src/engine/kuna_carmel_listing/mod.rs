@@ -1,5 +1,4 @@
-//! CrossView-style text for a framed Carmel issue. SLEIGH still controls
-//! instruction starts, widths, and executable p-code.
+//! CrossView-style text for a framed Carmel issue, independent of p-code support.
 
 mod alu;
 mod control;

@@ -3851,10 +3851,11 @@ and preserves odd CODE word addresses at the command boundary. It does not
 compact omitted slots or decode missing ROM as padding.
 
 The Carmel console listing applies CrossView-style syntax to the framed
-issue. It uses the complete fetch even at an odd entry because some compact
-right-slot operands depend on the preceding slot's display fields. Listing
-unknown text does not invent execution, and recognizing the syntax of an
-unimplemented form does not let flow follow past that form.
+issue without requiring a SLEIGH semantic constructor. It uses the complete
+fetch even at an odd entry because some compact right-slot operands depend
+on the preceding slot's display fields. Unknown text does not invent
+execution, and recognizing the syntax of an unimplemented form does not let
+flow follow past it.
 
 Parallel roots sample both compact lanes before committing their register
 effects. A Carmel delay is measured in issues, not fetches. For a one-issue

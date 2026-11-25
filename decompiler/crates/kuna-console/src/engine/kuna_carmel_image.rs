@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use kuna_analysis::pass::ContextPaint;
 use kuna_base::{address::Address, error::{KunaError, KunaResult}, space::AddrSpace, xml::Element};
+use kuna_sleigh::globalcontext::ContextDatabase;
 use kuna_sleigh::loadimage::LoadImage;
 
 mod conditional_return;
@@ -56,6 +57,24 @@ impl Issue {
             _ => FETCH as u32,
         }
     }
+}
+
+pub(super) fn listing_size(context: &dyn ContextDatabase, addr: &Address) -> KunaResult<i32> {
+    let offset = addr.get_offset();
+    if offset.is_multiple_of(SLOT) {
+        match context.get_variable_value(ISSUE.as_bytes(), addr)? {
+            field if field == Issue::SeqLeft as u32 || field == Issue::SeqRight as u32 => {
+                return Ok(Issue::SeqLeft.size() as i32);
+            }
+            field if field == Issue::Parallel as u32 || field == Issue::WideUnmarked as u32
+                || field == Issue::WideMarked as u32 =>
+            {
+                return Ok(Issue::Parallel.size() as i32);
+            }
+            _ => {}
+        }
+    }
+    Err(KunaError::bad_data(format!("Carmel byte address {offset:#x} is not an issue start")))
 }
 
 #[derive(Default)]

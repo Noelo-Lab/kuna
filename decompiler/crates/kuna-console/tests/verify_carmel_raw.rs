@@ -47,6 +47,19 @@ fn reproduces_fetch_framing_at_zero_and_nonzero_base() {
 }
 
 #[test]
+fn wide_swap_listing_does_not_require_liftable_operands() {
+    for (fetch, mnemonic, operands) in [
+        ([0xc0, 0, 0, 0xc3, 0x40, 0x02], "swap(*r0,", "gb0);"),
+        ([0x99, 0xc6, 0x4e, 0xc3, 0x46, 0xee], "swap(sp,", "a1h);"),
+        ([0xbf, 0xff, 0xff, 0xc3, 0x5f, 0xff], "???;", ""),
+    ] {
+        let program = raw(&fetch, 0x100, &[0x100]).unwrap();
+        assert_eq!(program.disassemble_at(0x300).unwrap(), (6, mnemonic.into(), operands.into()));
+        assert!(program.raw_pcode_at(0x300).is_err());
+    }
+}
+
+#[test]
 fn rejects_unmapped_and_mid_fetch_entries() {
     for (bytes, base, entry, diagnostic) in [
         (FRAME, 1, 1, "even word base"),
