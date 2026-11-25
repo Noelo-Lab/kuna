@@ -800,9 +800,11 @@ fn decode_ppc64_stubs<'n>(vma: u64, data: &[u8], little: bool, toc_base: Option<
     let mut out = Vec::new();
     let mut off = 0usize;
     while off + 4 <= data.len() {
-        match super::kuna_ppc64_stubs::stub_at(word, vma, off, toc_base).and_then(|(slot, len)| Some((slot, len, name(slot)?))) {
-            Some((slot, len, import)) => {
-                out.push(PltSym { addr: vma.wrapping_add(off as u64), name: import.to_vec(), slot: Some(slot) });
+        match super::kuna_ppc64_stubs::stub_at(word, vma, off, toc_base).and_then(|(slot, len, inner)| Some((slot, len, inner, name(slot)?))) {
+            Some((slot, len, inner, import)) => {
+                for entry in [off].into_iter().chain(inner.then_some(off + 4)) {
+                    out.push(PltSym { addr: vma.wrapping_add(entry as u64), name: import.to_vec(), slot: Some(slot) });
+                }
                 off += len;
             }
             None => off += 4,
@@ -1242,8 +1244,8 @@ mod tests {
             ("--plt-localentry, far", vec![0x3d820001, 0xe98c8018, MTCTR, BCTR], toc + 0x10000 - 32744),
             ("pc-relative caller", [&NOTOC[..], &[0x3d8b0003, 0xe98c0010, MTCTR, BCTR]].concat(), 0x10008 + 0x30010),
             ("pc-relative caller, near", [&NOTOC[..], &[0xe98b0010, MTCTR, BCTR]].concat(), 0x10008 + 0x10),
-            ("both callers", [&[0xf8410018][..], &NOTOC[..], &[0x3d8b0003, 0xe98c0010, MTCTR, BCTR]].concat(), 0x1000c + 0x30010),
             ("Power10 pld", vec![0x04100003, 0xe5800018, MTCTR, BCTR], 0x10000 + 0x30018),
+            ("lld, slot far from the TOC", vec![0xf8410018, 0x3d820001, 0xe98c8018, MTCTR, BCTR], toc + 0x10000 - 32744),
         ];
         for (form, words, slot) in forms {
             for little in [true, false] {
@@ -1252,6 +1254,25 @@ mod tests {
         }
         let back = [0x0413ffff, 0xe580fff0, MTCTR, BCTR];
         assert_eq!(ppc64_named(0x10000, &back, true, toc, 0x10000 - 16).len(), 1, "a negative pld displacement");
+    }
+
+    #[test]
+    fn ppc64_stub_for_both_callers_names_both_entries() {
+        const MTCTR: u32 = 0x7d8903a6;
+        const BCTR: u32 = 0x4e800420;
+        const NOTOC: [u32; 4] = [0x7d8802a6, 0x429f0005, 0x7d6802a6, 0x7d8803a6];
+        let forms: [(&str, Vec<u32>, u64); 2] = [
+            ("pc-relative", [&[0xf8410018][..], &NOTOC[..], &[0x3d8b0003, 0xe98c0010, MTCTR, BCTR]].concat(), 0x1000c + 0x30010),
+            ("Power10", vec![0xf8410018, 0x60000000, 0x04100003, 0xe5800018, MTCTR, BCTR], 0x10008 + 0x30018),
+        ];
+        for (form, words, slot) in forms {
+            for little in [true, false] {
+                let named = ppc64_named(0x10000, &words, little, 0x47f00, slot);
+                assert_eq!(named, [(0x10000, b"free".to_vec()), (0x10004, b"free".to_vec())], "{form}");
+            }
+        }
+        let padded = [0x60000000, 0x04100003, 0xe5800018, MTCTR, BCTR];
+        assert_eq!(ppc64_named(0x10000, &padded, true, 0x47f00, 0x10004 + 0x30018), [(0x10004, b"free".to_vec())], "padding before a stub");
     }
 
     #[test]
@@ -1279,9 +1300,11 @@ mod tests {
     #[test]
     fn ppc64_fixture_stubs_are_the_linkers() {
         // Each address is the stub symbol GNU ld (`--emit-stub-syms`) or lld
-        // (`__plt_*`) writes for the same link; see the fixtures' README.
+        // (`__plt_*`) writes for the same link, or the word after it where
+        // pc-relative callers enter a stub that saves the TOC; see the README.
         let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/ppc64-plt-stubs");
         let gnu: &[(u64, &str)] = &[(0x1000, "strlen"), (0x1020, "free")];
+        let both: &[(u64, &str)] = &[(0x2e0, "strlen"), (0x2e4, "strlen"), (0x300, "free"), (0x304, "free")];
         for (image, expected) in [
             ("toc.elf", gnu),
             ("localentry.elf", gnu),
@@ -1291,6 +1314,8 @@ mod tests {
             ("lld-toc.elf", &[(0x13b0, "free"), (0x13c4, "strlen")][..]),
             ("lld-pld.elf", &[(0x1380, "free"), (0x13a0, "strlen")][..]),
             ("guards.elf", &[(0x1000, "free")][..]),
+            ("both.elf", both),
+            ("both-pld.elf", both),
         ] {
             let bytes = std::fs::read(fixtures.join(image)).expect("fixture");
             let file = object::File::parse(bytes.as_slice()).expect("ELF");

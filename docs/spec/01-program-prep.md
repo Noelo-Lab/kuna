@@ -2174,6 +2174,10 @@ funcsym stream:
   `.got + 0x8000`; pc-relative for Power10 callers, `mflr r12; bcl 20,31,.+4;
   mflr r11; mtlr r12; [addis r12,r11,ha;] ld r12,lo(r11|r12)` from the address
   after the `bcl`; or a Power10 `pld r12,off` (GNU ld `--power10-stubs`, lld).
+  When both TOC and pc-relative code call an import, GNU ld writes the TOC
+  save followed by a pc-relative stub, a `pld` one after a `nop` that keeps the
+  `pld` 8-byte aligned, and pc-relative callers enter it one word in; the stub
+  is named at both entries.
   GNU ld writes the TOC form without `addis` whenever the slot is within 32 KiB
   of the TOC, which is every stub of most libraries; lld writes the `addis` form.
   An image without a `.got` has only pc-relative stubs. A stub is named only

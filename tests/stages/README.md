@@ -94,8 +94,10 @@ recovery.
 `kuna-ppc64-plt-stubs.xml` checks PowerPC64 ELFv2 shared objects whose
 wrappers call `free` and `strlen` through each linker stub form: GNU ld's
 TOC stub with and without the `r2` save, its pc-relative stub for Power10
-callers and its `pld` stub, lld's `addis` and `pld` stubs, and big-endian
-ELFv2. Every wrapper prints `free(a0)` and `strlen(a0) + 1`. In the assembly
+callers and its `pld` stub, lld's `addis` and `pld` stubs, big-endian
+ELFv2, and GNU ld's stubs for an import that both TOC and pc-relative code
+call, which pc-relative callers enter one word in. Every wrapper prints
+`free(a0)` and `strlen(a0) + 1`. In the assembly
 fixture, `outer` calls `free` through a real stub, then an exported function
 shaped like a `pld` stub, which keeps its name, and a local one that loads a
 GOT entry instead of a PLT slot, which stays `sub_`. The fixtures and their
