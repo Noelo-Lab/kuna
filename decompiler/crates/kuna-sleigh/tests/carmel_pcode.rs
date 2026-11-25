@@ -890,3 +890,22 @@ fn compact_callabs_selects_its_encoded_source_before_delay_updates_a0() {
         assert_eq!(m.reg("SP"), 0x4100);
     }
 }
+
+#[test]
+fn compact_goabs_combines_the_two_data_words_without_pushing_a_link() {
+    let base = 0x21000;
+    let target = base + 24;
+    let mut fetches = [(INC_A0, NOP); 13];
+    fetches[0] = (0x2bc806, NOP);
+    let issues = [(0, 1, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 6), (24, 1, 0)];
+    let mut m = Machine::new(base, &fetches, &issues, None);
+    m.seed(&[("R0", 0x4200), ("SP", 0x4100), ("A0L", 0x207)]);
+    m.seed_data(0x4200, target & 0xffff);
+    m.seed_data(0x4201, target >> 16);
+    m.seed_data(0x40ff, 0x1415);
+    m.seed_data(0x4100, 0x2618);
+    m.start(base).unwrap();
+    assert_eq!(m.step(), 3 * target);
+    assert_eq!((m.reg("R0"), m.reg("SP"), m.reg("A0L")), (0x4200, 0x4100, 0x20a));
+    assert_eq!((m.data(0x40ff), m.data(0x4100)), (0x1415, 0x2618));
+}

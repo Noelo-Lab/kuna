@@ -3918,6 +3918,9 @@ contribute. Encoded delays six and seven both retire five issues. The
 indirect operand is a CODE word address; an out-of-range payload does not
 wrap into mapped CODE. Stated jump-table destinations can resolve the
 computed edge without replacing the operand with a constant.
+Compact unconditional `GOABS (R0)` with an inactive right lane samples the
+low target word at `R0` and the high word at `R0+1`, without modifying
+`R0` or the stack. It admits up to three following delay issues.
 
 Unconditional wide `CALLABS (R0)` takes the low target word from DATA
 at `R0` and the high word from DATA at `R0+1`, without changing `R0`.
