@@ -7,9 +7,9 @@
 //! `split` prints `A <= x && x <= A + B` (or `x < A || A + B < x`) wherever the
 //! two comparisons give the merged test's truth value for every `x` in the
 //! types the C prints; `merged` keeps the one comparison; `auto` splits except
-//! in a loop's condition and in the stand-alone condition of an `if` in a
-//! function compiled without optimization, where the merged form is the
-//! source's own more often (a `switch` case list, an `ISDIGIT`-style macro).
+//! in a loop's condition and in a stand-alone condition whose range holds at
+//! most 16 values, where the merged form is the source's own more often (a
+//! `switch` case list sharing one body, an `ISDIGIT`-style macro).
 //!
 //! Exactness: the merged test holds when the `n`-bit value of `x` lies in
 //! `[A, A + B]`, which is one interval only when `A + B < 2^n`. Two C
@@ -38,7 +38,9 @@ use crate::printlanguage::modifiers;
 /// Ops a twice-printed expression may contain.
 const PURE_BUDGET: u32 = 8;
 /// Data-flow steps searched from the tested value for a `switch`.
-const SWITCH_DEPTH: u32 = 6;
+const SWITCH_DEPTH: u32 = 10;
+/// `auto`: the fewest values a stand-alone condition's range splits at.
+pub const STANDALONE_MIN_VALUES: u64 = 17;
 
 /// The `rangetest` values.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -47,8 +49,8 @@ pub enum RangeTestMode {
     Merged,
     /// The two comparisons wherever they are exact.
     Split,
-    /// `split`, except loop conditions and stand-alone `if` conditions of
-    /// unoptimized functions.
+    /// `split`, except loop conditions and stand-alone conditions of at most
+    /// 16 values.
     #[default]
     Auto,
 }
@@ -146,9 +148,6 @@ impl PrintC {
         if !matches!(o.code(), OpCode::CPUI_INT_LESS | OpCode::CPUI_INT_LESSEQUAL) {
             return None;
         }
-        if mode == RangeTestMode::Auto && !self.range_split_site(fd, op) {
-            return None;
-        }
         let (in0, in1) = (o.get_in(0)?, o.get_in(1)?);
         let constant = |vn: VarnodeId| fd.vbank().get(vn).filter(|v| v.is_constant()).map(|v| v.get_offset());
         let (c, mut t, const_left) = match (constant(in0), constant(in1)) {
@@ -174,20 +173,22 @@ impl PrintC {
         }
         let a = if add_op.code() == OpCode::CPUI_INT_SUB { k } else { k.wrapping_neg() } & mask;
         let (lo, hi) = interval(a, h, bits)?;
-        if feeds_switch(fd, &[t, x0]) {
+        if mode == RangeTestMode::Auto && !self.range_split_site(op, h) {
             return None;
         }
         let (x, reader) = self.range_operand(fd, x0, add, hi)?;
-        if !printable_twice(fd, x, &mut PURE_BUDGET.clone()) {
+        if !printable_twice(fd, x, &mut PURE_BUDGET.clone()) || branches_to_switch(fd, op) || feeds_switch(fd, &[t, x0, x]) {
             return None;
         }
         Some(RangeSplit { x, reader, lo, hi, size: fd.vbank().get(x)?.get_size(), inside })
     }
 
-    /// `auto`: whether the comparison `op` sits where splitting pays — not in a
-    /// loop's condition, and not the stand-alone condition of an `if` in an
-    /// unoptimized function.
-    fn range_split_site(&self, fd: &Funcdata, op: OpId) -> bool {
+    /// `auto`: whether the comparison `op`, whose range holds `h + 1` values,
+    /// sits where splitting pays: not in a loop's condition, and as a
+    /// stand-alone condition (not an operand of `&&`/`||`) only for a range of
+    /// more than 16 values. A short run of values is more often a `switch` case
+    /// list sharing one body, or a macro, than two comparisons.
+    fn range_split_site(&self, op: OpId, h: u64) -> bool {
         if self.context.is_set(modifiers::LOOP_CONDITION) {
             return false;
         }
@@ -196,7 +197,7 @@ impl PrintC {
             _ => 0,
         };
         let standalone = mods & modifiers::CONDITION_CONTEXT != 0 && mods & modifiers::CHAIN_OPERAND == 0;
-        !(standalone && crate::p3_dataflow::kuna_unoptimized::is_unoptimized(fd))
+        !standalone || h >= STANDALONE_MIN_VALUES - 1
     }
 
     /// The value the two comparisons test and the op that reads it: `x0`, or
@@ -323,6 +324,37 @@ fn printable_twice(fd: &Funcdata, vn: VarnodeId, budget: &mut u32) -> bool {
             | OpCode::CPUI_INT_2COMP
     );
     pure && (0..op.num_input()).all(|i| op.get_in(i).is_some_and(|input| printable_twice(fd, input, budget)))
+}
+
+/// Whether the conditional branch on the comparison `op` (or its negation)
+/// enters a block that ends in a computed jump, directly or through one block
+/// with a single exit: the test is the bound check of a `switch`.
+fn branches_to_switch(fd: &Funcdata, op: OpId) -> bool {
+    let Some(out) = fd.obank().get(op).and_then(|o| o.get_out()) else { return false };
+    let mut values = vec![out];
+    let mut branches = Vec::new();
+    while let Some(vn) = values.pop() {
+        let Some(v) = fd.vbank().get(vn) else { continue };
+        for reader in v.descend_iter() {
+            let Some(r) = fd.obank().get(reader) else { continue };
+            match r.code() {
+                OpCode::CPUI_CBRANCH => branches.extend(r.get_parent()),
+                OpCode::CPUI_BOOL_NEGATE => values.extend(r.get_out()),
+                _ => {}
+            }
+        }
+    }
+    let ends_in_switch = |blk| {
+        fd.bb_op_tail(blk).and_then(|tail| fd.obank().get(tail)).is_some_and(|tail| tail.code() == OpCode::CPUI_BRANCHIND)
+    };
+    branches.into_iter().any(|blk| {
+        let block = fd.bblocks_ref().block(blk);
+        (0..block.size_out()).any(|i| {
+            let next = block.get_out(i);
+            let nb = fd.bblocks_ref().block(next);
+            ends_in_switch(next) || (nb.size_out() == 1 && ends_in_switch(nb.get_out(0)))
+        })
+    })
 }
 
 /// Whether a value reached from `starts` within [`SWITCH_DEPTH`] data-flow
