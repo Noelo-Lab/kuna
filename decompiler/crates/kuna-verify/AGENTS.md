@@ -17,6 +17,9 @@ state and compares them. Read `docs/features/diffverify/README.md` before changi
   stage tests from main, a deliberate harness change), never to absorb a regression.
 - **Fault injections into the engine stay local.** Plant them to test the check, then
   revert; mutants (`kuna-verify mutate`) change only kuna's side, never the machine side.
+- **New work goes in its folder** (`README.md` §5): a comparison in `compare/`, a fact
+  about calls in `abi/`, a tool in `tools/`, a later tier in a folder of its own. Keep
+  the old paths re-exported from `lib.rs`.
 - **Recheck decbench functions by address, or leave out names a binary defines twice.**
   Two functions of one binary can share a name, and `load function NAME` picks one.
 

@@ -7,6 +7,8 @@
 //! run's initial state, any other from the current one. LOAD and STORE use the
 //! same memory model as the machine side, and a call has the same stub.
 
+pub mod program;
+
 use kuna_base::space::AddrSpace;
 use kuna_num::opcodes::get_opname;
 
@@ -108,7 +110,7 @@ impl Run<'_, '_, '_> {
     /// (an import, a PIC GOT slot), which the call check leaves alone.
     fn same_callee(&self, machine: Option<u64>, kuna: Option<u64>, resolved: bool) -> bool {
         let env = self.state.env;
-        let (m, k) = (crate::check::code_target(env, machine), crate::check::code_target(env, kuna));
+        let (m, k) = (crate::compare::observe::code_target(env, machine), crate::compare::observe::code_target(env, kuna));
         resolved
             || m == k
             || k.is_none_or(|k| !env.is_code(k))

@@ -22,7 +22,7 @@ the default, nothing changes: the corpus baseline is the same.
 
   Not inputs: tracked registers, the stack pointer, the extended part of an argument, and
   temporaries. A `bool` argument's byte is constrained to 0 or 1.
-- **Expressions** (`src/concolic.rs`) cover integer arithmetic, logic, shifts,
+- **Expressions** (`src/tools/concolic.rs`) cover integer arithmetic, logic, shifts,
   comparisons, carries, extensions, `PIECE` and `SUBPIECE`. A value that goes through
   anything else, through a call, or through memory a call may change, is concrete from
   there on. Each byte's expression is kept with the byte's concrete value. A later

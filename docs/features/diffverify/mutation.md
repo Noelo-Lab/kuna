@@ -13,7 +13,7 @@ kuna-verify mutate <binary> <function>... --per-function 6 --json    # some func
 
 ## 1. What a mutant is
 
-A mutant changes one op of the compiled decompiled side (`src/program.rs`) or the facts
+A mutant changes one op of the compiled decompiled side (`src/graph/program.rs`) or the facts
 kuna's side reads about one call. The machine side keeps its own copy of the call facts,
 so a mutant never changes how the reference run is made. The one exception is `noreturn`,
 below. Up to `--per-function` mutants (6) are taken per function,

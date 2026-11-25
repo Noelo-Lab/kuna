@@ -69,7 +69,7 @@ ins16  DIFFERS  (run 1 of 256)
 |---|---|
 | `AGREES(n)` | `n` runs agreed. Runs that trapped on both sides, or ran past `--budget` ops on both sides, are not counted, and the report says how many. A run past the budget on one side only makes the function `UNKNOWN(budget)`: one side may loop where the other does not. |
 | `DIFFERS` | one run gave a difference. The report says which run and what differed. |
-| `DIVERGES(id)` | the difference is one kuna makes on purpose, a declared divergence (`src/divergence.rs`): `switchrunon-cut-row`, `synthesized-call`, `gowritebarrier`, `panic-check`, `ptrauth-trap`, `copy-overlap`, `divide-by-zero`, `nan-quieting`, `syscall-result`. Each one names the option that makes the trade, and the pattern the difference has to match. Any other difference under the same option is still `DIFFERS`. A declared call leaves out only itself and what follows it in that run: the calls and memory before it are still compared. |
+| `DIVERGES(id)` | the difference is one kuna makes on purpose, a declared divergence (`src/abi/divergence.rs`): `switchrunon-cut-row`, `synthesized-call`, `gowritebarrier`, `panic-check`, `ptrauth-trap`, `copy-overlap`, `divide-by-zero`, `nan-quieting`, `syscall-result`. Each one names the option that makes the trade, and the pattern the difference has to match. Any other difference under the same option is still `DIFFERS`. A declared call leaves out only itself and what follows it in that run: the calls and memory before it are still compared. |
 | `UNKNOWN(reason)` | the check could not decide. `budget`: a side ran past `--budget` ops. `unsupported-op`: an op or user op the model does not run. `trap`: only one side trapped, or both trapped in every run. `harness`: the model failed. `no switch row`: a switch value no row of kuna's table takes. `prototype-suspect`: the difference rests on a callee prototype kuna recovered and may have wrong. `uninitialized-local`: kuna's result depends on a local nothing assigned. `guessed-callee`: a callee whose effect the model had to guess. `noreturn-unverified`: every run ended at a call only kuna says does not return (§2). `call-reruns`: every run had more calls whose callee reads an argument kuna passes otherwise than `--call-reruns` lets the machine rerun with kuna's value. `assumed-domain`: it agrees only while a parameter kuna's recovered prototype types `bool` holds 0 or 1 (§5). `timeout`: no verdict within `--fn-seconds`. |
 | `SKIPPED(reason)` | reserved for Tier S. |
 
@@ -173,24 +173,22 @@ common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES 
    Declared prototypes and the extensions the ABI documents keep their domain.
 7. **Report.** `report.rs` prints the verdict as text or JSON.
 
-| module | role |
-|---|---|
-| `lib.rs`, `bin/kuna-verify.rs` | entry points, worker processes, the CLI |
-| `session.rs` | drive the console; the load options `kuna decompile` uses |
-| `program.rs` | compile a `Funcdata` for repeated runs |
-| `calls.rs` | per-call facts shared by both sides; no-return sites |
-| `state.rs` | the machine state, memory model, image and stack layout |
-| `machine.rs` | the machine side: lift, run, callees run for real, stubs |
-| `graph.rs` | kuna's side |
-| `value.rs`, `x87.rs` | p-code op semantics, x87's 80-bit format |
-| `check.rs` | runs, comparisons, verdicts |
-| `abi.rs`, `contract.rs`, `storage.rs` | calling conventions, C contracts, storage names |
-| `divergence.rs` | declared divergences |
-| `concolic.rs` | expressions, branch recording, z3 |
-| `localize.rs` | rule localization |
-| `mutate.rs` | mutation testing |
-| `step.rs` | Tier L's kuna side |
-| `baseline.rs`, `report.rs` | corpus baseline, output |
+The crate is grouped by folder; the old module paths (`crate::check`, `crate::calls`,
+...) are re-exported from `lib.rs`, so they still resolve.
+
+| folder | modules | role |
+|---|---|---|
+| `src/` | `lib.rs`, `bin/kuna-verify.rs`, `session.rs` | entry points, worker processes, the CLI; driving the console with the load options `kuna decompile` uses |
+| `semantics/` | `value.rs`, `x87.rs`, `storage.rs` | p-code op semantics both sides share, x87's 80-bit format, storage names |
+| `state/` | `mod.rs`, `mem.rs` | the machine state, image and stack layout; memory by copy-on-write pages, temporaries |
+| `machine/` | `mod.rs`, `thunk.rs` | the machine side: lift, run, callees run for real, stubs; following thunks |
+| `graph/` | `mod.rs`, `program.rs` | kuna's side: compiling a `Funcdata` for repeated runs, and running it |
+| `abi/` | `mod.rs`, `calls.rs`, `contract.rs`, `divergence.rs` | calling conventions, per-call facts both sides share, C contracts, declared divergences |
+| `compare/` | `check.rs`, `observe.rs`, `setup.rs` | the runs and the verdict; comparing calls, memory and system calls; each run's starting state |
+| `tools/` | `localize.rs`, `mutate.rs`, `concolic.rs`, `step.rs` | rule localization, mutation testing, z3 inputs, Tier L's kuna side |
+| `report/` | `mod.rs`, `baseline.rs` | output; the corpus baseline |
+
+A later tier gets a folder of its own (`symbolic/` for Tier S, `printer/` for Tier P).
 
 ## 6. In CI
 

@@ -235,11 +235,11 @@ pub const KNOWN_NORETURN: &[&str] = &[
 /// Ghidra's curated lists of functions that do not return, by platform and
 /// language: data about names, not anything kuna inferred about this binary.
 const NORETURN_LISTS: [&str; 5] = [
-    include_str!("../../kuna-analysis/data/ElfFunctionsThatDoNotReturn"),
-    include_str!("../../kuna-analysis/data/PEFunctionsThatDoNotReturn"),
-    include_str!("../../kuna-analysis/data/PeMacFunctionsThatDoNotReturn"),
-    include_str!("../../kuna-analysis/data/RustFunctionsThatDoNotReturn"),
-    include_str!("../../kuna-analysis/data/GolangFunctionsThatDoNotReturn"),
+    include_str!("../../../kuna-analysis/data/ElfFunctionsThatDoNotReturn"),
+    include_str!("../../../kuna-analysis/data/PEFunctionsThatDoNotReturn"),
+    include_str!("../../../kuna-analysis/data/PeMacFunctionsThatDoNotReturn"),
+    include_str!("../../../kuna-analysis/data/RustFunctionsThatDoNotReturn"),
+    include_str!("../../../kuna-analysis/data/GolangFunctionsThatDoNotReturn"),
 ];
 
 fn listed(plain: &str) -> bool {

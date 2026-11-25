@@ -1,6 +1,10 @@
 //! What kuna claims about a function's interface, and what the calling
 //! convention promises regardless of the claim.
 
+pub mod calls;
+pub mod contract;
+pub mod divergence;
+
 use std::rc::Rc;
 
 use kuna_console::engine::ConsoleProgram;
