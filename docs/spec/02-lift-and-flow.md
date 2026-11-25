@@ -190,6 +190,19 @@ Upstream set only N and Z, so a `bcs` after `ands.w r0,r1,r2,lsr #1` read the
 carry from before it. `movs.w` of an unshifted register still leaves C alone.
 This is a SLEIGH correctness repair, without an inference option.
 
+The ARM VFP compares (`vcmp` and `vcmpe`, f16, f32 and f64, against a
+register or zero, in A32 and Thumb) set the carry for unordered operands.
+The architecture writes NZCV as 0110 for equal, 1000 for less, 0010 for
+greater and 0011 for unordered, so C is "not less than". Upstream's
+`FloatVectorCompare` macro in
+`specs/Ghidra/Processors/ARM/data/languages/ARMneon.sinc` computed C as
+`op2 f<= op1`, which is false for a NaN. After `vmrs APSR_nzcv, fpscr`,
+`bhi` and `bcs` then decided a NaN as not taken and `bls` and `bcc` as
+taken, the opposite of the hardware, whatever the NaN folding does later.
+C is now the negation of N, `!(op1 f< op2)`, the value AArch64 `fcmp`
+already gives it (0011 for unordered, `op1 f>= op2` otherwise). This is a
+SLEIGH correctness repair, without an inference option.
+
 The SPARC floating-to-integer constructors use the integer result width:
 `fdtoi` and `fqtoi` write one 32-bit word through `fsrd`, while `fstox` and
 `fqtox` write 64 bits through `fdrd`. Scalar destinations preserve odd register numbers;

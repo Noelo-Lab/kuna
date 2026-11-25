@@ -178,6 +178,9 @@ pub struct Funcdata {
     /// (kuna `returndup auto`) The return statements read at the first
     /// heritage pass (`p8_structure/kuna_o0returns.rs`).
     pub(crate) kuna_o0returns: Option<Box<crate::p8_structure::kuna_o0returns::Record>>,
+    /// (kuna `iteregion auto`) The conditional values read at the first
+    /// heritage pass (`p8_structure/kuna_o0select.rs`).
+    pub(crate) kuna_o0select: Option<Box<crate::p8_structure::kuna_o0select::Record>>,
     /// (kuna `loweredswitch auto`) How the conditional branches of an
     /// unoptimized function were compiled, read at the first heritage pass
     /// (`p2_lift/kuna_o0switch.rs`).
@@ -810,6 +813,7 @@ impl Funcdata {
             kuna_vararg_save: false,
             kuna_unoptimized: None,
             kuna_o0returns: None,
+            kuna_o0select: None,
             kuna_o0switch: None,
             flags: 0,
             clean_up_index: 0,
@@ -4490,6 +4494,7 @@ impl Funcdata {
         self.kuna_vararg_save = false;
         self.kuna_unoptimized = None;
         self.kuna_o0returns = None;
+        self.kuna_o0select = None;
         self.kuna_o0switch = None;
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).
         self.flags &= !(funcdata_flags::highlevel_on

@@ -1296,6 +1296,9 @@ pub struct ArchContext {
     /// when the source used a ternary).  Read by
     /// [`crate::p8_structure::kuna_iteregion`]'s `ActionIteRegion`.
     pub iteregion: bool,
+    /// (kuna) `iteregion auto` -- the recorded conditional values decide an
+    /// unoptimized function ([`crate::p8_structure::kuna_o0select`]).
+    pub iteregion_record: bool,
     /// (kuna) `iteexpr`: extend iteregion to computed-expression diamond arms (see
     /// `Architecture::iteexpr`).  Per-function snapshot copy.
     pub iteexpr: bool,
@@ -1560,6 +1563,9 @@ pub struct ArchContext {
     pub loader_transfer_sites: Rc<std::collections::BTreeSet<Address>>,
     /// MIPS GOT import entries identified by the loader, never ordinary definitions.
     pub loader_mips_imports: Rc<std::collections::BTreeSet<Address>>,
+    /// The [`Self::loader_mips_imports`] whose symbol version binds them to glibc,
+    /// with the versioned symbol's name.
+    pub loader_glibc_imports: Rc<std::collections::BTreeMap<Address, String>>,
     pub nullable_relocations: Rc<std::collections::BTreeMap<u64, Vec<crate::kuna_nullable_reloc::NullableRelocation>>>,
     pub nullable_literal_values: Rc<std::collections::BTreeSet<u64>>,
     /// The calling convention each declared callee was declared under, keyed the
@@ -1808,6 +1814,7 @@ impl ArchContext {
             revert_cross_jumps: false,   // crossjumprevert (opt-in default-off)
             dedup_ite_tail: false,        // dedupitetail (opt-in default-off)
             iteregion: false,             // iteregion (opt-in default-off, runtime-choice)
+            iteregion_record: false,      // iteregion auto
             iteexpr: false,               // iteexpr (computed-arm ?: extension, default-off)
             iteboolean: false,            // iteboolean (0/1 select -> boolean assignment)
             param_copy_hoist: false,      // paramcopyhoist (parameter copy-shadow -> entry block)
@@ -1881,6 +1888,7 @@ impl ArchContext {
             callee_protos: Rc::new(Vec::new()),
             loader_transfer_sites: Rc::default(),
             loader_mips_imports: Rc::default(),
+            loader_glibc_imports: Rc::default(),
             nullable_relocations: Rc::default(),
             nullable_literal_values: Rc::default(),
             // No tracked registers until build_arch_handle snapshots the context DB.

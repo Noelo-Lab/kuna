@@ -5229,11 +5229,11 @@ impl PrintC {
             .get(m.cbranch)
             .map(|o| (o.get_addlflags() & crate::op::pcodeop_addlflags::kuna_iteregion) != 0)
             .unwrap_or(false);
+        let arms = [Some(m.true_op), m.else_op];
         if marked
-            && !self.needs_storage_assignment(fd, m.true_op)
-            && !self.needs_storage_assignment(fd, m.else_op)
-            && !self.converts_storage_load(fd, arch, m.true_op)
-            && !self.converts_storage_load(fd, arch, m.else_op)
+            && arms.into_iter().flatten().all(|op| {
+                !self.needs_storage_assignment(fd, op) && !self.converts_storage_load(fd, arch, op)
+            })
         {
             Some(m)
         } else {
@@ -5455,7 +5455,10 @@ impl PrintC {
             &MarkupRef::none(),
         );
         self.emit.spaces(1, 0);
-        self.op_push_ir(fd, arch, m.else_op, None);
+        match m.else_op {
+            Some(op) => self.op_push_ir(fd, arch, op, None),
+            None => self.push_vn_explicit_ir(fd, arch, m.dest, m.true_op),
+        }
         self.cast_implied.set_arm_drops(Vec::new());
         if !ternary {
             self.recurse();
@@ -8612,12 +8615,13 @@ impl PrintC {
         arch: &Architecture,
         m: &crate::p8_structure::kuna_iteregion::IteAssignMatch,
     ) -> Vec<OpId> {
+        let Some(else_op) = m.else_op else { return Vec::new() };
         if !self.cast_implied.arms_enabled() || !self.lang().caps.ternary {
             return Vec::new();
         }
         let Some(strat) = cast_strategy_for(arch) else { return Vec::new() };
         let view = ImpliedView { pc: self, fd, arch, strat };
-        crate::kuna_castternary::arm_drops(&self.cast_implied, &view, fd, [m.true_op, m.else_op], m.dest)
+        crate::kuna_castternary::arm_drops(&self.cast_implied, &view, fd, [m.true_op, else_op], m.dest)
     }
 
     /// C++ `PrintC::pushType` (printc.cc:1540) for a base type, reduced to the
