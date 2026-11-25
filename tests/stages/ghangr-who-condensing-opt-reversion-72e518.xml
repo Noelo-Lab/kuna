@@ -78,6 +78,8 @@
   <com>option regionlooprefine off</com>
   <com>option ifelseflatten off</com>
   <com>option switchmultipred off</com>
+  <!-- kuna: the if-chain over the loaded v1 = *a0 re-rolls into a switch once its install reads the loaded selector; this test is about the cross-jump goto, so it keeps the chain -->
+  <com>option loweredswitch off</com>
   <com>option tailcalljump off</com>
   <com>option foldcallret off</com>
   <com>option branchflip off</com>

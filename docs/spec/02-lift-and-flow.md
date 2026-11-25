@@ -3189,7 +3189,15 @@ load of that size. A wider location whose low bytes were last written by a zero 
 sign extension is followed into what was extended, so gcc -O0's
 `movzwl -4(%rbp),%eax ; cmp $0xea60,%eax` over an `unsigned short` reads the
 two-byte load. Every path must reach the same operand, or the install reads the
-home storage.
+home storage. When detection held the value in a temporary that a load wrote (a
+field, a global or a pointed-to byte the compiler loaded once into a register),
+there is no home storage to fall back to, and the operand must be that load. No
+other temporary then counts as the home, and the walk also follows a register
+copy of the value and an extension whose low bytes it is, past a write that
+extends a location into itself: x86-64 zero-extends every 32-bit register write
+into the whole register, so gcc -O0's `mov eax,[rax+0x48] ; cmp eax,2` lifts to
+a load, a copy into `EAX`, `RAX = zext(EAX)` and a compare of a copy of `EAX`,
+and reads the load.
 
 Whichever storage it reads, a named switch is then checked. Detection records a
 restart-stable *name* for the compared value
@@ -3403,8 +3411,9 @@ equality test before the last that falls into its body on a match makes the
 cascade an if-chain. Otherwise every equality test but the last jumps on its
 match, and the cascade is a switch when the last jumps too, when there are
 three or more equality tests, or when one load feeds every test; a two-test
-chain whose last test falls into its body is also how `if (x != K)` and a
-two-value `||` compile, so it is left undecided. `cascade_is_switch` takes the
+chain whose last test falls into its body is also how an `if (x != K)`
+followed by another test, and a two-value `||`, compile, so it is left
+undecided. `cascade_is_switch` takes the
 verdict before the shape: a switch re-rolls with two to sixteen values and any
 two distinct bodies (shared bodies are `case` labels of one arm), an if-chain
 never re-rolls, whatever its size or number of bodies, and an undecided cascade
@@ -3413,9 +3422,9 @@ still applies, and neither the retry after a withdrawal nor the keep pass's
 exemption from its goto test reads the record: the retry decides by the shape
 rule, as the recogniser it retries did, and only a tree the shape rule takes is
 exempt. Otherwise a three-case tree the keep pass withdraws would come back as
-a two-case switch behind its first test, reached through a goto. On the decbench corpus's unoptimized functions the polarity
-separates 841 of 842 x86-64 switch cascades and every Thumb one from the
-if-chains. `option loweredswitch on` restores the shape rule everywhere, and
+a two-case switch behind its first test, reached through a goto. On the
+decbench corpus's unoptimized functions the polarity separates 841 of 842
+x86-64 switch cascades and every Thumb one from the if-chains. `option loweredswitch on` restores the shape rule everywhere, and
 `linear`, `tree` and `all` widen the shape rule without reading the record.
 
 ### Where a cascade starts and what the install must keep (part of `loweredswitch`)

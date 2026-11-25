@@ -27,7 +27,9 @@ a match, re-rolls, and an if/else-if chain of three tests that each fall into
 their own body keeps its tests. Under `option loweredswitch on` the two-case
 switch prints as two tests and the three-test chain re-rolls. An installed
 switch stays for the session, so the second pass reads a second copy of the
-bytes.
+bytes. A three-case switch over a struct field that gcc loads into a register
+once re-rolls too: the install reads the switch value from that load through
+the register copy and its zero extension.
 
 `kuna-guardauto.xml` checks option `guardarm` (default `auto`) on two x86-64
 functions. In a gcc -O0 `unget`, whose parameters live in frame slots, the
