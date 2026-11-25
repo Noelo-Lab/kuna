@@ -7,8 +7,11 @@
     has undefined behavior there. Counts 256 and 288 distinguish the ARM
     low-eight-bit rule from an incorrect `count & 31` rewrite.
 
-    P9 C emission, option armshiftguard: these counts are unbounded, so the
-    default `needed` guards them as `always` does. The printer keeps the
+    P9 C emission, option armshiftguard: these counts are unbounded and are
+    no double-word shift's complement, so the default `wide` prints the plain
+    C shift `1 << (count & 0xff)`, as defined as the source's own shift by
+    `count`, and ShiftAndStore shifts in place. The second pass pins
+    `needed`, which guards them as `always` does. The printer keeps the
     lifted low-eight-bit expression, guards it against the shifted value's
     width, and casts the shifted value to unsigned so count 31 is defined too.
     The rewrite is limited to variable ARM LSLs whose input expressions are
@@ -32,6 +35,13 @@
   <com>load function ShiftOne</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load function ShiftAndStore</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option armshiftguard needed</com>
+  <com>load function ShiftOne</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>load function ShiftValue</com>
   <com>decompile</com>
   <com>print C</com>
@@ -46,5 +56,7 @@
 <stringmatch name="ARM LSL #4: both variable shiftees are converted to unsigned before shifting" min="2" max="2">\(uint4\)value\s*&lt;&lt;</stringmatch>
 <stringmatch name="ARM LSL #5: all overshift arms return zero of the conditional result type" min="3" max="3">:\s*0u?;</stringmatch>
 <stringmatch name="ARM LSL #6: the count is not reduced modulo the operand width" min="0" max="0">&amp; 0x1f</stringmatch>
-<stringmatch name="ARM LSL #7: guarded shifts do not use compound assignment" min="0" max="0">&lt;&lt;\s*=</stringmatch>
+<stringmatch name="ARM LSL #7: only the unguarded default shift uses compound assignment" min="1" max="1">&lt;&lt;\s*=</stringmatch>
+<stringmatch name="ARM LSL #8: by default an unbounded count that is no double-word complement prints the plain shift" min="1" max="1">return 1 &lt;&lt; \(count &amp; 0xff\);</stringmatch>
+<stringmatch name="ARM LSL #9: by default the unguarded shift may shift in place" min="1" max="1">value &lt;&lt;= count &amp; 0xff;</stringmatch>
 </decompilertest>
