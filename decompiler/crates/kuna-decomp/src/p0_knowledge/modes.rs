@@ -270,6 +270,9 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("cfstrings", "on"),     // Mach-O-only; no-op off-Mach-O
     ("pdb", "on"),           // PE-only; no-op off-PE (a shipped default since DIV-129)
     ("macho-arm64e", "on"),  // Mach-O arm64e-only; no-op elsewhere
+    // PPC32 secure-PLT PIC only; no-op elsewhere. The proof walks the whole image
+    // at load, which `auto` bounds by selecting this preset only under 500 KiB.
+    ("ppc32picimports", "abi"),
 ];
 
 /// `fast` = avoid the three exhaustive program-wide discovery paths that dominate
@@ -434,12 +437,12 @@ mod tests {
             );
         }
         // Every aggressive override turns its option on; `aif` takes its aligned
-        // cursor and `returndup` its shipped `auto`.
-        assert!(agg.contains(&("aif", "strict")), "aggressive must set `aif strict`");
-        assert!(agg.contains(&("returndup", "auto")), "aggressive must set `returndup auto`");
-        assert!(agg
-            .iter()
-            .all(|(o, v)| *v == "on" || (*o, *v) == ("aif", "strict") || (*o, *v) == ("returndup", "auto")));
+        // cursor, `returndup` its shipped `auto` and `ppc32picimports` its `abi` proof.
+        let valued = [("aif", "strict"), ("returndup", "auto"), ("ppc32picimports", "abi")];
+        for pair in valued {
+            assert!(agg.contains(&pair), "aggressive must set `{} {}`", pair.0, pair.1);
+        }
+        assert!(agg.iter().all(|&(o, v)| v == "on" || valued.contains(&(o, v))));
     }
 
     /// The preset's headline contract, enforced rather than sampled: **every**
@@ -548,8 +551,6 @@ mod tests {
         ///
         /// `callwide` requires complete caller evidence and remains an explicit
         /// opt-in until its default validation is complete.
-        /// `ppc32picimports` proves PIC caller bases but adds significant load
-        /// cost on large import inventories, so it requires an explicit option.
         /// `rustfmt all` (the String and Stdout write! recoveries) is deliberately
         /// not in the preset for speed: neither writer cleared its speed study.
         /// `rustfmt` is multi-valued, so it is outside this invariant's scope.
@@ -564,7 +565,7 @@ mod tests {
               "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
-              "armconstshift", "wrapadd", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "rustprobestack", "highsliceguard", "rustarrayzero", "bytestorewidth",
+              "armconstshift", "wrapadd", "regsigned", "x86listingswitch", "callwide", "rustprobestack", "highsliceguard", "rustarrayzero", "bytestorewidth",
               // `lazyfuncs` changes no output, but its saving is a single-function
               // property: the whole-binary surfaces the presets drive (decompile-all,
               // the web front-end, the benchmark) materialize every target they walk

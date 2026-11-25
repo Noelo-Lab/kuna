@@ -127,6 +127,11 @@ shaped like a `pld` stub, which keeps its name, and a local one that loads a
 GOT entry instead of a PLT slot, which stays `sub_`. The fixtures and their
 recipe are in `tests/fixtures/ppc64-plt-stubs/`.
 
+`kuna-ppc32picimports-aggressive.xml` loads a small PPC32 secure-PLT PIC
+image twice. With the catalog defaults its PIC stub stays `sub_1800`; after
+`mode aggressive`, which sets `ppc32picimports abi` and which `auto` selects
+for files under 500 KiB, the same call prints as the import `extra`.
+
 `kuna-narrowed-call-input.xml` checks a call through a typed field whose
 argument was narrowed to two bytes before the field's prototype was forced on
 the call: the function decompiles and passes the sum widened to the parameter.
