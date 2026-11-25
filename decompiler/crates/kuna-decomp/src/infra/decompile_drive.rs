@@ -1163,6 +1163,7 @@ fn generate_flow(
     // `FlowInfo::target`).  Drive it before the FlowInfo is consumed.
     let target_snapshot = flow.target_index_snapshot();
     let mut data = flow.data;
+    data.kuna_flow_ranges = crate::flow::decoded_ranges(&data, &target_snapshot);
     data.switch_over_jump_tables(|fd, addr| {
         crate::flow::target_in(fd, &target_snapshot, addr)
     })?;

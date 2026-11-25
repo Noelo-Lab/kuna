@@ -38,5 +38,5 @@ d9660f61d9660ffed3660f60e1660f61e1660ffec44883c0084839c275d466
 <stringmatch name="devectorize #2: option off guards the stride-eight loop on 8 &lt;= length (bug reproduced)" min="1" max="1">8 &lt;= length</stringmatch>
 <stringmatch name="devectorize #3: option off hands the remainder over at length &amp; ~7 (bug reproduced)" min="2" max="2">&amp; 0xfffffff8</stringmatch>
 <stringmatch name="devectorize #4: both passes keep the scalar byte loop body, once each" min="2" max="2">v[0-9]+ \+= bytes\[v[0-9]+\];</stringmatch>
-<stringmatch name="devectorize #5: three loops in all: two in the compiler's shape, one after the re-roll" min="3" max="3">\} while \(</stringmatch>
+<stringmatch name="devectorize #5: three loops in all: two in the compiler's shape, one after the re-roll" min="3" max="3">^ *(\} )?while \(</stringmatch>
 </decompilertest>
