@@ -1332,6 +1332,31 @@ macro wide_logic_rmw_pstatus(word) {
     wide_logic_rmw_est(0:2);
 }
 
+@define WIDE_LOGIC_CE "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_20_22=6 & wide_logic_rmw_operator"
+:^wide_logic_rmw_operator "CE1" "INTBASE","IO","X1" is $(WIDE_LOGIC_CE) & unary_wide_ce_bank=0 & wide_logic_rmw_route=0x35be2 & wide_40_45=0x1e {
+    local flags:2 = EST & 0xcfff;
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <publish>;
+    # The I/O operand has no driven input on this route.
+    local result:2;
+    wide_logic_rmw_word(wide_logic_rmw_operator, 0:2, X1, result);
+    INTBASE = result;
+    flags = (flags & 0xffc7) | (zext(result == 0) << 3);
+  <publish>
+    wide_logic_rmw_est(flags);
+}
+:^wide_logic_rmw_operator "CE2" "discard","IO","*R6--:long" is $(WIDE_LOGIC_CE) & unary_wide_ce_bank=1 & wide_logic_rmw_route=0x35fe1 & wide_40_45=0x1e {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <publish>;
+    # The DATA AGU still advances by two words; neither result drives writeback.
+    modify_ptr_scaled(R6, RN6, RM6, RL6, 12, 3, 2:2);
+  <publish>
+    local flags:2 = EST & 0xcfff;
+    wide_logic_rmw_est(flags);
+}
+
 macro move_address_literal(dst, immediate, cfg, bank) {
     local incoming:2 = EST;
     local first:2;

@@ -372,6 +372,62 @@ fn carmel_wide_logic_control_alias_writes_high_word_and_masks_repeat_depth() {
     }
 }
 
+#[test]
+fn carmel_wide_logic_separates_conditional_results_from_address_updates() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-wide-logic-ce", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let params = ["INTBASE", "X1", "R6", "PACFG", "RM6", "RL6", "CECFG1", "CECFG2", "CETBL", "EST"];
+    let mut emitted = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    for (instruction, projections) in [
+        ([0x1e, 0x85, 0xa8, 0xe3, 0x5b, 0xe2], [("INTBASE", "intbase"), ("EST", "or_flags")]),
+        ([0x5e, 0x68, 0x5e, 0xe7, 0x5f, 0xe1], [("R6", "pointer"), ("EST", "and_flags")]),
+    ] {
+        let mut program = instruction.to_vec();
+        program.extend([0x2b, 0xd8, 0, 0x2b, 0xec, 0]);
+        fs::write(&binary, program).unwrap();
+        for (register, name) in projections {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            command.arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0", "--json", "--assert-strict",
+                "--assert", &format!("return %{register} unsigned short"),
+            ]);
+            for (index, reg) in params.into_iter().enumerate() {
+                command.args(["--assert", &format!("param {index} %{reg} unsigned short in_{}", reg.to_ascii_lowercase())]);
+            }
+            let output = common::process::required_output(&mut command);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            emitted.push_str(&function["code"].as_str().unwrap().replace("sub_0", name));
+            emitted.push('\n');
+        }
+    }
+    emitted.push_str(
+        "int main(void) {\n\
+         if (intbase(0x3210,0x8001,0,0,0,0,0,0,0xffff,0x10) != 0x8001) return 1;\n\
+         if (intbase(0x3210,0x8001,0,0,0,0,0,0,0,0x10) != 0x3210) return 2;\n\
+         if (or_flags(0,0,0,0,0,0,0,0,0xffff,0x10) != 0x3008) return 3;\n\
+         if (or_flags(0,0,0,0,0,0,0,0,0,0x10) != 0x10) return 4;\n\
+         if (pointer(0,0,0x8048,0,7,0,0,0,0,0x10) != 0x8048) return 5;\n\
+         if (pointer(0,0,0x8048,0,7,0,0,0x1000,0,0x10) != 0x8046) return 6;\n\
+         if (pointer(0,0,0x8044,0x2000,7,0x8040,0,0,0xffff,0x10) != 0x804a) return 7;\n\
+         if (pointer(0,0,0x8044,0x3000,7,0x8040,0,0,0xffff,0x10) != 0x8042) return 8;\n\
+         if (and_flags(0,0,0,0,0,0,0,0,0xffff,0x10) != 0x3010) return 9;\n\
+         return 0;\n\
+         }\n",
+    );
+    fs::write(&source, &emitted).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")

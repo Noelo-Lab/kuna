@@ -3908,6 +3908,12 @@ repeat-active bit is set. A low-word destination instead publishes the
 result's zero flag. A postincremented DATA destination stores at the
 original address, before the updated pointer is used by another issue.
 
+In the covered qualified wide logic forms, the undriven I/O operand is
+zero, not `USER_IO`. The CE1 word route writes `INTBASE` and the zero
+flag only when enabled. The CE2 long DATA route writes neither an ALU
+result nor ALU flags, but postdecrements `R6` by two words when CE2 or its
+address-update override permits it.
+
 For covered wide signed/unsigned multiply-subtract forms, the result bank
 selects the extended addend and result width. The first multiplier source
 publishes to `X1`. `ALIM` inhibits new loss status without clamping the result.
