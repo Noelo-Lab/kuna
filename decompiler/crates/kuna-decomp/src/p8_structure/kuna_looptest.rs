@@ -115,7 +115,13 @@ impl LoopTests {
 
     /// The varnode an explicit leaf prints as.
     pub fn leaf(&self, vn: VarnodeId) -> VarnodeId {
-        self.active.iter().find(|(from, _)| *from == vn).map(|&(_, to)| to).unwrap_or(vn)
+        self.recomputed(vn).unwrap_or(vn)
+    }
+
+    /// The carried variable an implied expression of the condition being printed
+    /// prints as, when it computes that variable's next value again.
+    pub fn recomputed(&self, vn: VarnodeId) -> Option<VarnodeId> {
+        self.active.iter().find(|(from, _)| *from == vn).map(|&(_, to)| to)
     }
 }
 
@@ -323,8 +329,13 @@ fn plan_tested(
     mode: LoopTestMode,
     decl: DeclType,
 ) -> Verdict {
-    let lp = Loop::find(fd, dw)?;
-    let subst = lp.top_ok()?;
+    let mut lp = Loop::find(fd, dw)?;
+    let (subst, again) = lp.top_ok()?;
+    for (vn, lv) in again {
+        let (Some(&ev), Some(&out)) = (lp.latch_inputs.get(&lv), lp.carried.get(&lv)) else { return Err("recomputed") };
+        lp.latch_inputs.insert(vn, ev);
+        lp.carried.insert(vn, out);
+    }
     let cont = lp.entry_cond(&BTreeSet::new());
     if cont.as_ref().is_some_and(|c| c.lit == Lit::True && !c.neg) {
         return Ok(Top { guard: None, hidden: None, subst, respell: None });
@@ -504,14 +515,23 @@ impl<'a> Loop<'a> {
     }
 
     /// The printed condition reads, at the top, what it reads at the bottom.
-    fn top_ok(&self) -> Result<Vec<(VarnodeId, VarnodeId)>, &'static str> {
+    /// Also returns the condition's recomputed values (see [`Loop::recomputed`]) with
+    /// the latch input each equals.
+    fn top_ok(&self) -> Result<(Vec<(VarnodeId, VarnodeId)>, Vec<(VarnodeId, VarnodeId)>), &'static str> {
         let mut budget = 256;
         let mut used = Vec::new();
-        self.printed_ok(self.cond_vn(), &mut budget, &mut used)?;
-        Ok(used)
+        let mut again = Vec::new();
+        self.printed_ok(self.cond_vn(), &mut budget, &mut used, &mut again)?;
+        Ok((used, again))
     }
 
-    fn printed_ok(&self, vn: VarnodeId, budget: &mut i32, used: &mut Vec<(VarnodeId, VarnodeId)>) -> Result<(), &'static str> {
+    fn printed_ok(
+        &self,
+        vn: VarnodeId,
+        budget: &mut i32,
+        used: &mut Vec<(VarnodeId, VarnodeId)>,
+        again: &mut Vec<(VarnodeId, VarnodeId)>,
+    ) -> Result<(), &'static str> {
         *budget -= 1;
         if *budget < 0 {
             return Err("condition too large");
@@ -531,9 +551,19 @@ impl<'a> Loop<'a> {
                 return Err("condition has a side effect");
             }
             let first = usize::from(op.code() == OpCode::CPUI_LOAD);
-            for i in first as i32..op.num_input() {
-                let input = op.get_in(i).ok_or("missing input")?;
-                self.printed_ok(input, budget, used)?;
+            let (u, a) = (used.len(), again.len());
+            let inputs = (first as i32..op.num_input())
+                .try_for_each(|i| self.printed_ok(op.get_in(i).ok_or("missing input")?, budget, used, again));
+            if let Err(why) = inputs {
+                used.truncate(u);
+                again.truncate(a);
+                let lv = self.recomputed(vn).ok_or(why)?;
+                let out = *self.carried.get(&lv).ok_or(why)?;
+                if crate::p3_dataflow::kuna_unoptimized::is_unoptimized(self.fd) && self.on_stack(out) {
+                    return Err("loop variable on the stack");
+                }
+                used.push((vn, out));
+                again.push((vn, lv));
             }
             return Ok(());
         }
@@ -551,6 +581,23 @@ impl<'a> Loop<'a> {
             return Ok(());
         }
         Err("condition reads a body value")
+    }
+
+    /// The latch input of a carried variable (in its own HighVariable) that the implied
+    /// expression `vn` computes again: the same pure ops over the same values, reading no
+    /// memory.  The test can print that variable instead.
+    fn recomputed(&self, vn: VarnodeId) -> Option<VarnodeId> {
+        let none = BTreeSet::new();
+        let b = Builder { fd: self.fd, subst: None, body: &none, fresh: &none_ops() };
+        let mut budget = 64;
+        let e = b.build(vn, 0, &mut budget)?;
+        if e.has_load() || matches!(e, Expr::Leaf(..) | Expr::Const { .. }) {
+            return None;
+        }
+        self.carried.keys().copied().filter(|lv| !self.alias.contains_key(lv) && *lv != vn).find(|&lv| {
+            let mut budget = 64;
+            b.build(lv, 0, &mut budget).as_ref() == Some(&e)
+        })
     }
 
     /// The value `vn` holds after the loop when its body runs zero times: every leaf the
