@@ -94,9 +94,8 @@ struct Plan {
     b: BlockId,
     ops_a: Vec<OpId>,
     ops_b: Vec<OpId>,
-    /// TEMP stats: run-input merges, stores in the run.
+    /// TEMP stat: run inputs that differ between the copies.
     run_merges: usize,
-    stores: usize,
 }
 
 fn bb_ops(data: &Funcdata, bl: BlockId) -> Vec<OpId> {
@@ -197,6 +196,7 @@ fn shape(data: &Funcdata, oa: OpId, ob: OpId, negated: bool) -> Result<Vec<i32>,
         | OpCode::CPUI_NEW
         | OpCode::CPUI_CPOOLREF
         | OpCode::CPUI_BRANCHIND
+        | OpCode::CPUI_STORE
         | OpCode::CPUI_RETURN => return Err(format!("op {ca:?}")),
         _ => {}
     }
@@ -251,22 +251,16 @@ fn shape(data: &Funcdata, oa: OpId, ob: OpId, negated: bool) -> Result<Vec<i32>,
 fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict {
     let g = data.bblocks_ref();
     let (ba, bb) = (g.block(a), g.block(b));
-    let nout = ba.size_out();
-    if nout == 1 && std::env::var_os("KUNA_LJ_COND").is_some() {
-        return Err("uncond latch (COND)".into());
+    if ba.size_out() != 2 || bb.size_out() != 2 {
+        return Err(format!("outs {}/{}", ba.size_out(), bb.size_out()));
     }
-    if nout != bb.size_out() || !(1..=2).contains(&nout) {
-        return Err(format!("outs {}/{}", nout, bb.size_out()));
+    let targets = [ba.get_out(0), ba.get_out(1)];
+    if targets[0] == targets[1] {
+        return Err("same targets".into());
     }
-    let targets: Vec<BlockId> = (0..nout).map(|i| ba.get_out(i)).collect();
-    if nout == 2 {
-        if targets[0] == targets[1] {
-            return Err("same targets".into());
-        }
-        let tb = [bb.get_out(0), bb.get_out(1)];
-        if !(tb.contains(&targets[0]) && tb.contains(&targets[1])) {
-            return Err("targets differ".into());
-        }
+    let tb = [bb.get_out(0), bb.get_out(1)];
+    if !(tb.contains(&targets[0]) && tb.contains(&targets[1])) {
+        return Err("targets differ".into());
     }
     if targets.iter().any(|&t| t == a || t == b) || !targets.contains(&h) {
         return Err("self target".into());
@@ -278,15 +272,12 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
         _ => return Err("empty".into()),
     };
     // The condition pair and its sense.
-    let mut cond: Option<(VarnodeId, VarnodeId, bool)> = None;
-    if nout == 2 {
-        let (pa, pb) = (data.obank().get(ta).unwrap(), data.obank().get(tb).unwrap());
-        if pa.code() != OpCode::CPUI_CBRANCH || pb.code() != OpCode::CPUI_CBRANCH {
-            return Err("no cbranch".into());
-        }
-        let negated = true_target(data, a, ta) != true_target(data, b, tb);
-        cond = Some((pa.get_in(1).unwrap(), pb.get_in(1).unwrap(), negated));
+    let (pa, pb) = (data.obank().get(ta).unwrap(), data.obank().get(tb).unwrap());
+    if pa.code() != OpCode::CPUI_CBRANCH || pb.code() != OpCode::CPUI_CBRANCH {
+        return Err("no cbranch".into());
     }
+    let negated = true_target(data, a, ta) != true_target(data, b, tb);
+    let cond = (pa.get_in(1).unwrap(), pb.get_in(1).unwrap(), negated);
     // Walk back pairing ops by shape.
     let mut ia = ops_a.len();
     let mut ib = ops_b.len();
@@ -294,13 +285,9 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
     let mut stop = String::from("start of block");
     while ia > 0 && ib > 0 {
         let (oa, ob) = (ops_a[ia - 1], ops_b[ib - 1]);
-        let negated = match cond {
-            Some((ca, cb, true)) => {
-                data.obank().get(oa).unwrap().get_out() == Some(ca)
-                    && data.obank().get(ob).unwrap().get_out() == Some(cb)
-            }
-            _ => false,
-        };
+        let negated = cond.2
+            && data.obank().get(oa).unwrap().get_out() == Some(cond.0)
+            && data.obank().get(ob).unwrap().get_out() == Some(cond.1);
         match shape(data, oa, ob, negated) {
             Ok(slots) => pairs.push((oa, ob, slots)),
             Err(e) => {
@@ -329,7 +316,6 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
             data.vbank().get(v).unwrap().get_def().and_then(|d| pos.get(&d).copied())
         };
         // Returns Err(cut) when the run must start after index `cut`.
-        let strict = std::env::var_os("KUNA_LJ_STRICT").is_some();
         let run_merges = std::cell::Cell::new(0usize);
         let check_pair = |va: VarnodeId, vb: VarnodeId, negated_ok: bool, at: Option<usize>| -> Result<(), Result<usize, String>> {
             if va == vb {
@@ -361,10 +347,7 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
             if xa.get_size() != xb.get_size() {
                 return Err(Err("merge size".into()));
             }
-            if let Some(k) = at {
-                if strict {
-                    return Err(Ok(k));
-                }
+            if at.is_some() {
                 run_merges.set(run_merges.get() + 1);
             }
             Ok(())
@@ -378,7 +361,7 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
                 }
                 let va = pa.get_in(s).unwrap();
                 let vb = pb.get_in(slots[s as usize]).unwrap();
-                let negated_ok = !(pa.code() == OpCode::CPUI_CBRANCH && matches!(cond, Some((_, _, true))));
+                let negated_ok = !(pa.code() == OpCode::CPUI_CBRANCH && cond.2);
                 match check_pair(va, vb, negated_ok, Some(k)) {
                     Ok(()) => {}
                     Err(Ok(cut)) => {
@@ -436,19 +419,8 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
             }
         }
         // The run must hold the branch and the op computing its condition.
-        if let Some((ca, _, _)) = cond {
-            if def_pos(ca, &pos_a).is_none() {
-                return Err(format!("condition not in run (run {}, {stop})", run.len()));
-            }
-        } else if run.iter().all(|(o, _, _)| data.obank().get(*o).unwrap().code() == OpCode::CPUI_BRANCH) {
-            return Err("only a branch".into());
-        }
-        let stores = run
-            .iter()
-            .filter(|(o, _, _)| data.obank().get(*o).unwrap().code() == OpCode::CPUI_STORE)
-            .count();
-        if stores > 0 && std::env::var_os("KUNA_LJ_NOSTORE").is_some() {
-            return Err("store (NOSTORE)".into());
+        if def_pos(cond.0, &pos_a).is_none() {
+            return Err(format!("condition not in run (run {}, {stop})", run.len()));
         }
         return Ok(Plan {
             a,
@@ -456,15 +428,13 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
             ops_a: run.iter().map(|p| p.0).collect(),
             ops_b: run.iter().map(|p| p.1).collect(),
             run_merges: run_merges.get(),
-            stores,
         });
     }
 }
 
 fn execute(data: &mut Funcdata, plan: &Plan) {
     let (a, b) = (plan.a, plan.b);
-    let nout = data.bblocks_ref().block(a).size_out();
-    let targets: Vec<BlockId> = (0..nout).map(|i| data.bblocks_ref().block(a).get_out(i)).collect();
+    let targets = [data.bblocks_ref().block(a).get_out(0), data.bblocks_ref().block(a).get_out(1)];
     let pos_a: HashMap<OpId, usize> = plan.ops_a.iter().enumerate().map(|(i, &o)| (o, i)).collect();
     let pos_b: HashMap<OpId, usize> = plan.ops_b.iter().enumerate().map(|(i, &o)| (o, i)).collect();
     let in_run = |data: &Funcdata, v: VarnodeId, pos: &HashMap<OpId, usize>| -> bool {
@@ -527,26 +497,9 @@ fn execute(data: &mut Funcdata, plan: &Plan) {
 
     // Control flow: A and B fall into a new block J that takes their out edges.
     let addr = data.obank().get(plan.ops_a[0]).unwrap().get_addr().clone();
-    let j = if nout == 2 {
-        let (t0, t1) = (targets[0], targets[1]);
-        let (a0, b0) = (target_pairs[0].1, target_pairs[0].2);
-        let (a1, b1) = (target_pairs[1].1, target_pairs[1].2);
-        data.node_join_create_block(a, b, t0, t1, a0 > b0, a1 > b1, &addr)
-    } else {
-        let t = targets[0];
-        let (sa, sb) = (target_pairs[0].1, target_pairs[0].2);
-        let graph = data.bblocks_root_pub();
-        let j = data.bblocks_mut().new_block_basic(graph);
-        data.set_basic_block_range(j, &addr, &addr);
-        let (keep, drop) = if sa > sb { (b, a) } else { (a, b) };
-        data.bblocks_mut().remove_edge(drop, t);
-        let s = data.bblocks_ref().block(keep).get_out_index(t);
-        data.bblocks_mut().move_out_edge(keep, s, j);
-        data.bblocks_mut().add_edge(a, j);
-        data.bblocks_mut().add_edge(b, j);
-        data.structure_reset();
-        j
-    };
+    let (a0, b0) = (target_pairs[0].1, target_pairs[0].2);
+    let (a1, b1) = (target_pairs[1].1, target_pairs[1].2);
+    let j = data.node_join_create_block(a, b, targets[0], targets[1], a0 > b0, a1 > b1, &addr);
 
     // MULTIEQUALs for the values that differ between the copies.
     let mut merged: HashMap<(VarnodeId, VarnodeId), VarnodeId> = HashMap::new();
@@ -638,7 +591,7 @@ fn dump(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId, r: &Verdict) {
         format!("{{\"at\":\"{}\",\"outs\":[{}],\"ops\":\"{}\"}}", start_of(data, bl), outs.join(","), names.join(" "))
     };
     let (verdict, run) = match r {
-        Ok(p) => (format!("ok nout={} rm={} st={}", data.bblocks_ref().block(a).size_out(), p.run_merges, p.stores), p.ops_a.len()),
+        Ok(p) => (format!("ok rm={}", p.run_merges), p.ops_a.len()),
         Err(e) => (e.replace('"', "'"), 0),
     };
     let tdesc = |bl: BlockId| -> String {
