@@ -7,6 +7,8 @@
 <com>clear architecture</com>
 <com>load file tests/fixtures/stated-jump/dispatch.elf</com>
 <com>read symbols</com>
+<!-- kuna: tailform default model; this test pins the 4-line size rule's function-tail form -->
+<com>option tailform on</com>
 <com>load function dispatch</com>
 <com>decompile</com>
 <com>print C</com>
