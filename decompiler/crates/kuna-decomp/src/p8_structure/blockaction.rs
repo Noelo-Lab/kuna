@@ -1484,6 +1484,8 @@ pub struct CollapseStructure<'a> {
     /// (kuna, `option loopcondhoist`) per loop with a known condition, its index
     /// in `loopbody` and the leaf whose test is the condition.
     loop_conds: Vec<(usize, BlockId)>,
+    /// (kuna, `option loopcondhoist`) the rule made a choice upstream would not.
+    rule_changed: bool,
 }
 
 impl<'a> CollapseStructure<'a> {
@@ -1512,6 +1514,7 @@ impl<'a> CollapseStructure<'a> {
             guard_arm: false,
             loop_cond: None,
             loop_conds: Vec::new(),
+            rule_changed: false,
         }
     }
 
@@ -1541,6 +1544,15 @@ impl<'a> CollapseStructure<'a> {
             Cond::Head => Some(head),
             Cond::Latch(i) => Some(lb.tails[i]),
         }
+    }
+
+    /// Could `ruleBlockIfNoExit` fold `bl` now?
+    fn ifnoexit_eligible(&self, bl: BlockId) -> bool {
+        let b = self.graph.block(bl);
+        b.size_out() == 2
+            && !b.is_switch_out()
+            && (0..2).all(|i| b.get_out(i) != bl && !b.is_goto_out(i))
+            && (self.ifnoexit_arm_eligible(bl, 0) || self.ifnoexit_arm_eligible(bl, 1))
     }
 
     /// Does the first block of `bl` end in a call that does not return?
@@ -1905,8 +1917,13 @@ impl<'a> CollapseStructure<'a> {
                 let cond = self.loop_condition(idx);
                 if let Some(c) = cond {
                     self.loop_conds.push((idx, c));
+                    let mut upstream = self.loopbody[idx].clone();
+                    upstream.find_exit(&body, self.graph, &looporder_snapshot, None);
+                    self.loopbody[idx].find_exit(&body, self.graph, &looporder_snapshot, cond);
+                    self.rule_changed |= upstream.exitblock != self.loopbody[idx].exitblock;
+                } else {
+                    self.loopbody[idx].find_exit(&body, self.graph, &looporder_snapshot, None);
                 }
-                self.loopbody[idx].find_exit(&body, self.graph, &looporder_snapshot, cond);
                 self.loopbody[idx].order_tails(self.graph);
                 let lb = self.loopbody[idx].clone();
                 lb.extend(&mut body, self.graph);
@@ -3151,21 +3168,29 @@ impl<'a> CollapseStructure<'a> {
             } else {
                 self.loop_condition_nodes()
             };
+            let mut skipped = false;
             if !conds.is_empty() {
                 while index < self.size() {
                     let bl = self.block_at(index);
-                    if !conds.contains_key(&bl) && self.rule_block_if_no_exit(bl) {
+                    if conds.contains_key(&bl) {
+                        skipped |= self.ifnoexit_eligible(bl);
+                    } else if self.rule_block_if_no_exit(bl) {
                         fullchange = true;
+                        self.rule_changed |= skipped;
                         break;
                     }
                     index += 1;
                 }
                 index = 0;
+                skipped = false;
             }
             while !fullchange && index < self.size() {
                 let bl = self.block_at(index);
-                if conds.get(&bl) != Some(&true) && self.rule_block_if_no_exit(bl) {
+                if conds.get(&bl) == Some(&true) {
+                    skipped |= self.ifnoexit_eligible(bl);
+                } else if self.rule_block_if_no_exit(bl) {
                     fullchange = true;
+                    self.rule_changed |= skipped;
                     break;
                 }
                 if self.rule_case_fallthru(bl)? {
@@ -3175,6 +3200,7 @@ impl<'a> CollapseStructure<'a> {
                 index += 1;
             }
             if !fullchange {
+                self.rule_changed |= skipped;
                 break;
             }
         }
@@ -3843,14 +3869,15 @@ type CollapseInputs = (
 );
 
 /// Run `CollapseStructure` once over the seeded `sblocks`, returning its result,
-/// change count and the deferred condition flips.
+/// change count, the deferred condition flips and whether the loop-condition
+/// rule changed a choice.
 fn collapse_once(
     data: &mut Funcdata,
     loop_cond: Option<crate::p8_structure::kuna_loopcond::Rule>,
     inputs: CollapseInputs,
     guard_arm: bool,
     apply_index: u32,
-) -> (KunaResult<()>, int4, Vec<BlockId>) {
+) -> (KunaResult<()>, int4, Vec<BlockId>, bool) {
     let (exitleaf_facts, complex_blocks, condfold_sets, switch_blocks, switch_case_edges) = inputs;
     let sroot = data.sblocks_root();
     if data.get_arch().loop_continue {
@@ -3867,12 +3894,7 @@ fn collapse_once(
     let res = collapse.collapse_all();
     let cc = collapse.get_change_count();
     let flips = collapse.take_pending_flips();
-    let used = !collapse.loop_conds.is_empty();
-    drop(collapse);
-    if used {
-        data.note_loop_cond_used();
-    }
-    (res, cc, flips)
+    (res, cc, flips, collapse.rule_changed)
 }
 
 impl Action for ActionBlockStructure {
@@ -3912,23 +3934,23 @@ impl Action for ActionBlockStructure {
         let loop_cond = crate::p8_structure::kuna_loopcond::rule_for(data);
         if data.get_arch().region_structure {
             let mut rs = crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline, loop_cond);
-            if loop_cond.is_some() && matches!(rs, Ok((true, _))) {
+            if matches!(rs, Ok((true, _, true))) {
                 let with = crate::p8_structure::kuna_loopcond::printed_gotos(data.sblocks_ref(), data.sblocks_root());
                 if with > 0 {
+                    // Kept only against the structurer's own choice: where that one
+                    // fails, so does this, and CollapseStructure decides.
                     data.reseed_sblocks_copy();
-                    let plain = crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline, None);
-                    let better = matches!(plain, Ok((true, _)))
-                        && crate::p8_structure::kuna_loopcond::printed_gotos(data.sblocks_ref(), data.sblocks_root()) < with;
-                    if better {
-                        rs = plain;
-                    } else {
+                    rs = crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline, None);
+                    if matches!(rs, Ok((true, _, _)))
+                        && crate::p8_structure::kuna_loopcond::printed_gotos(data.sblocks_ref(), data.sblocks_root()) >= with
+                    {
                         data.reseed_sblocks_copy();
                         rs = crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline, loop_cond);
                     }
                 }
             }
             match rs {
-                Ok((true, flips)) => {
+                Ok((true, flips, _)) => {
                     // Realize the deferred data-flow half of the loop-condition
                     // `negateCondition`s the region structurer recorded (the same
                     // CBRANCH `boolean_flip`/`fallthru_true` toggle the
@@ -3941,7 +3963,7 @@ impl Action for ActionBlockStructure {
                     self.base_mut().count += 1;
                     return 0;
                 }
-                Ok((false, _)) | Err(_) => {
+                Ok((false, _, _)) | Err(_) => {
                     if ctx.deadline_expired() {
                         return 0;
                     }
@@ -4042,7 +4064,7 @@ impl Action for ActionBlockStructure {
         let retry = loop_cond.map(|_| {
             (exitleaf_facts.clone(), complex_blocks.clone(), condfold_sets.clone(), switch_blocks.clone(), switch_case_edges.clone())
         });
-        let (mut collapse_res, mut cc, mut flips) = collapse_once(
+        let (mut collapse_res, mut cc, mut flips, changed) = collapse_once(
             data,
             loop_cond,
             (exitleaf_facts, complex_blocks, condfold_sets, switch_blocks, switch_case_edges),
@@ -4051,15 +4073,15 @@ impl Action for ActionBlockStructure {
         );
         if let Some(inputs) = retry {
             let with = crate::p8_structure::kuna_loopcond::printed_gotos(data.sblocks_ref(), data.sblocks_root());
-            if collapse_res.is_ok() && with > 0 {
+            if collapse_res.is_ok() && with > 0 && changed {
                 data.reseed_sblocks_copy();
                 let plain = collapse_once(data, None, inputs.clone(), guard_arm, apply_index);
                 let without = crate::p8_structure::kuna_loopcond::printed_gotos(data.sblocks_ref(), data.sblocks_root());
                 if plain.0.is_ok() && without < with {
-                    (collapse_res, cc, flips) = plain;
+                    (collapse_res, cc, flips, _) = plain;
                 } else {
                     data.reseed_sblocks_copy();
-                    (collapse_res, cc, flips) = collapse_once(data, loop_cond, inputs, guard_arm, apply_index);
+                    (collapse_res, cc, flips, _) = collapse_once(data, loop_cond, inputs, guard_arm, apply_index);
                 }
             }
         }

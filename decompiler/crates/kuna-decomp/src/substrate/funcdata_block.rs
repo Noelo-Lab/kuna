@@ -3172,7 +3172,6 @@ impl Funcdata {
                     if self.sblocks_ref().block(cur).is_mark() {
                         // (kuna `loopexit`) a `break` to its own return statement is not copied.
                         if shared.contains(&i) && crate::p8_structure::kuna_loopcond::is_loop_break(self.sblocks_ref(), cur) {
-                            self.note_loop_cond_used();
                             break;
                         }
                         splitedge.push(i);

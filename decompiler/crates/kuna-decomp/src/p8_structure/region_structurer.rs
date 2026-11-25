@@ -149,7 +149,7 @@ pub fn run_region_structurer(
     data: &mut Funcdata,
     deadline: Option<std::time::Instant>,
     loop_cond: Option<crate::p8_structure::kuna_loopcond::Rule>,
-) -> KunaResult<(bool, Vec<BlockId>)> {
+) -> KunaResult<(bool, Vec<BlockId>, bool)> {
     // ---- 1. Region identification over the real CFG (W7 adapter proof) --------
     // recursive_structurer._analyze runs the RegionIdentifier first; here it both
     // proves build_from_block_graph().compute() on a live function and supplies a
@@ -247,13 +247,11 @@ pub fn run_region_structurer(
         .with_loop_cond(loop_cond);
     let ok = st.structure(deadline)?;
     let flips = if ok { st.take_pending_flips() } else { Vec::new() };
-    if st.cond_used.get() {
-        data.note_loop_cond_used();
-    }
+    let changed = st.cond_used.get();
     if std::env::var_os("KUNA_RS_DEBUG").is_some() {
         eprintln!("[rs] structure -> ok={ok} flips={}", flips.len());
     }
-    Ok((ok, flips))
+    Ok((ok, flips, changed))
 }
 
 /// Precompute the bblocks switch-block → jumpvec-slot map and the per-switch
@@ -2571,9 +2569,16 @@ impl<'a> RegionStructurer<'a> {
         //      back-edge → while/do-while/inf-loop); `scopeBreak` then lowers the
         //      virtualized loop-exit gotos to `break;`.
         if exit_edges.len() > 1 {
-            let keep = self
-                .condition_exit(head, &exit_edges)
-                .or_else(|| self.choose_structural_exit(head, &exit_edges, normal_exit));
+            let upstream = self.choose_structural_exit(head, &exit_edges, normal_exit);
+            let keep = match self.condition_exit(head, &exit_edges) {
+                Some(k) => {
+                    if Some(k) != upstream {
+                        self.cond_used.set(true);
+                    }
+                    Some(k)
+                }
+                None => upstream,
+            };
             for &(src, e, _dst) in exit_edges.iter() {
                 if Some((src, e)) == keep {
                     continue;
@@ -2606,14 +2611,10 @@ impl<'a> RegionStructurer<'a> {
         }
         let info = |bl: BlockId| (self.component_addr(bl), self.graph.block(bl).size_out() == 2 && exit_of(bl).is_some());
         let latch_info: Vec<(Option<u64>, bool)> = latches.iter().map(|&l| info(l)).collect();
-        let keep = match condition(rule, info(head), &latch_info)? {
+        match condition(rule, info(head), &latch_info)? {
             Cond::Head => exit_of(head),
             Cond::Latch(i) => exit_of(latches[i]),
-        };
-        if keep.is_some() {
-            self.cond_used.set(true);
         }
-        keep
     }
 
     /// Choose the loop's normal exit target.  With the region identifier's exit

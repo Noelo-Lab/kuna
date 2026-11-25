@@ -170,13 +170,14 @@ A structuring that follows the conditions is kept only where it prints no more
 `goto`s than the structurers' own choice
 (`kuna_loopcond.rs (printed_gotos)` counts the jumps that are neither the next
 statement, a `break` of their innermost loop nor a `continue` to its start).
-`ActionBlockStructure` structures the graph again without the rule when its
-result holds a `goto`, and keeps the version with fewer. Because the first
-structurings decide which return blocks `ActionReturnSplit` and `returndup`
-copy, the drive does the same for the whole function: a function whose rule
-was used and that prints a `goto` is decompiled again with the rule withdrawn
-(`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (decompile_func_full_with_objects_inner)`),
-and the run with fewer `goto`s is kept.
+When the rule changed a choice and the result holds a `goto`,
+`ActionBlockStructure` structures the graph again without it and keeps the
+version with fewer (the region structurer's result is only kept against its
+own choice; where that fails, `CollapseStructure` decides as upstream). The
+check is per structuring: the earlier structurings also decide which return
+blocks `ActionReturnSplit` and `returndup` copy, so a function can still end
+with one more `goto` than upstream, which on the decbench corpus happens to a
+few dozen functions against a few hundred that lose one.
 
 The option takes `off` (the structurers' own choices, as upstream), `auto` (the
 condition in unoptimized functions only) and `on`, the default (unoptimized

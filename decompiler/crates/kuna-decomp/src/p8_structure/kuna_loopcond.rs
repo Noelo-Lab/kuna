@@ -38,9 +38,9 @@
 //! last; the region structurer keeps the condition's exit edge structural; and
 //! `ActionReturnSplit` does not copy a return block for a jump that is a
 //! `break` to it, so both paths still meet there and the jump prints as
-//! `break`.  Each is a different nesting of the same blocks.  A structuring,
-//! or a whole function, that prints more `goto`s ([`printed_gotos`]) than the
-//! structurers' own choice is not kept.
+//! `break`.  Each is a different nesting of the same blocks.  A structuring
+//! that prints more `goto`s ([`printed_gotos`]) than the structurers' own
+//! choice is not kept.
 
 use kuna_base::error::{KunaError, KunaResult};
 
@@ -114,9 +114,6 @@ impl OptionLoopCondHoist {
 
 /// The rule for `fd`, if its loops' conditions are followed.
 pub fn rule_for(fd: &crate::funcdata::Funcdata) -> Option<Rule> {
-    if fd.loop_cond_withdrawn() {
-        return None;
-    }
     fd.get_arch().loop_cond_hoist.rule(crate::p3_dataflow::kuna_unoptimized::is_unoptimized(fd))
 }
 
