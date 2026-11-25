@@ -547,9 +547,10 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "dedupitetail" => {
-        let (val, msg) =
+        let (val, latch, msg) =
             crate::p8_structure::kuna_dedupitetail::OptionDedupIteTail.apply(p1)?;
         self.dedup_ite_tail = val;
+        self.latch_join = latch;
         Ok(msg)
     },
     "iteregion" => {

@@ -591,20 +591,25 @@ fn callee_op_equiv(data: &Funcdata, oa: crate::context::OpId, ob: crate::context
 }
 
 //===========================================================================
-// Option parse (`dedupitetail on|off`).
+// Option parse (`dedupitetail off|on|latch`).
 //===========================================================================
 
-/// The `dedupitetail on|off` ArchOption (angr structurer ITE region-dedup).
+/// The `dedupitetail off|on|latch` ArchOption (angr structurer ITE region-dedup;
+/// `latch` also joins duplicated loop latches, [`crate::p8_structure::kuna_latchjoin`]).
 pub struct OptionDedupIteTail;
 
 impl OptionDedupIteTail {
     /// The option name.
     pub const NAME: &'static str = "dedupitetail";
 
-    /// Parse `on`/`off`, returning the bool value + a confirmation message.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
+    /// Parse `off`/`on`/`latch`, returning whether if/else tails are merged,
+    /// whether loop latches are joined, and a confirmation message.
+    pub fn apply(&self, p1: &str) -> KunaResult<(bool, bool, String)> {
+        if p1 == "latch" {
+            return Ok((true, true, "If/else tail and loop latch deduplication turned on".to_string()));
+        }
         let val = on_or_off(p1)?;
         let prop = if val { "on" } else { "off" };
-        Ok((val, format!("If/else tail deduplication turned {prop}")))
+        Ok((val, false, format!("If/else tail deduplication turned {prop}")))
     }
 }

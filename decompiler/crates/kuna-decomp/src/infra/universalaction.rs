@@ -635,6 +635,7 @@ pub fn universal_sched(
             act!(ActionDeterminedBranch::boxed("unreachable")),
             act!(ActionUnreachable::boxed("unreachable")),
             act!(ActionNodeJoin::boxed("nodejoin")),
+            act!(crate::p8_structure::kuna_latchjoin::ActionLatchJoin::boxed("nodejoin")),
             act!(Box::new(crate::condexe::ActionConditionalExe::new("conditionalexe"))),
             act!(ActionConditionalConst::boxed("analysis")),
         ],
