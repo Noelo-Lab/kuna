@@ -2,7 +2,7 @@
 
 Fission RFC #1101 proposes two research tracks. One is AEQ: tell a queue from a stack, a set
 or a ring buffer by the algebraic laws its operations obey (`push(a); push(b); pop() == b`)
-rather than by struct offsets. Its CSIC track is implemented in `intervene.rs`
+rather than by struct offsets. Its CSIC track is implemented in `tools/intervene.rs`
 (`csic-results.md`). This note says what AEQ would add to `kuna-verify` and what it would
 need. Nothing here is built. Nothing uses Fission's code: only the idea is reused.
 

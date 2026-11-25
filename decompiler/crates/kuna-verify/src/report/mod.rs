@@ -1,6 +1,8 @@
 //! Verdicts and how they are printed: as text for a person, as JSON for a
 //! script or an agent.
 
+pub mod baseline;
+
 use std::time::Duration;
 
 use serde_json::{json, Value};

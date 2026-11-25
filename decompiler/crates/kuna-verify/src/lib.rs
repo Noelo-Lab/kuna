@@ -12,25 +12,21 @@
 //! Development only: the release binary does not link this crate.
 
 pub mod abi;
-pub mod baseline;
-pub mod calls;
-pub mod check;
-pub mod concolic;
-pub mod contract;
-pub mod divergence;
+pub mod compare;
 pub mod graph;
-pub mod intervene;
-pub mod localize;
 pub mod machine;
-pub mod mutate;
-pub mod program;
 pub mod report;
+pub mod semantics;
 pub mod session;
 pub mod state;
-pub mod step;
-pub mod storage;
-pub mod value;
-pub mod x87;
+pub mod tools;
+
+pub use abi::{calls, contract, divergence};
+pub use compare::check;
+pub use graph::program;
+pub use report::baseline;
+pub use semantics::{storage, value, x87};
+pub use tools::{concolic, localize, mutate, step};
 
 use std::time::{Duration, Instant};
 

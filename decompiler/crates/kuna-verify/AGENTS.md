@@ -17,6 +17,9 @@ state and compares them. Read `docs/features/diffverify/README.md` before changi
   stage tests from main, a deliberate harness change), never to absorb a regression.
 - **Fault injections into the engine stay local.** Plant them to test the check, then
   revert; mutants (`kuna-verify mutate`) change only kuna's side, never the machine side.
+- **New work goes in its folder** (`README.md` §5): a comparison in `compare/`, a fact
+  about calls in `abi/`, a tool in `tools/`, a later tier in a folder of its own. Keep
+  the old paths re-exported from `lib.rs`.
 - **Recheck decbench functions by address, or leave out names a binary defines twice.**
   Two functions of one binary can share a name, and `load function NAME` picks one.
 
@@ -50,3 +53,17 @@ entry that no longer applies can be removed.
   The first `drop-arg` mutant shortened the call and left the prototype, so the check
   caught it by construction and recall read too high. A mutant must leave kuna's facts
   as a real fault would.
+- 2026-11-25 · Claude Opus 5.5 · PR #1830
+  Stopped the machine at a no-return call kuna thinks returns, to catch the missed
+  no-return. A callee that aborts only on some inputs then made `hash_insert` and others
+  `DIFFERS`, though kuna's C calls the same callee and stops too. Code after a call that
+  never returns is unreachable on both sides; missing that is not a semantic difference.
+- 2026-11-25 · Claude Opus 5.5 · PR #1830
+  Counted every argument suspect as a doubt that keeps a run from agreeing. A callee
+  reading a register its declared prototype does not take (Go's context register) is not
+  an argument kuna dropped; only a recovered prototype's suspect is a doubt.
+- 2026-11-25 · Claude Opus 5.5 · PR #1830
+  Compared a system call's arguments to the syscall registers by position. kuna's
+  `x64syscall` passes only the registers the block provably sets, in order, so a pass
+  that leaves one out became a false `DIFFERS` (`kuna-x64syscall` `pointer_before`).
+  The arguments are matched as a subsequence of the registers.

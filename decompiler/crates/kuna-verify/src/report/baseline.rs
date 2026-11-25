@@ -110,6 +110,15 @@ fn name((f, n): &(String, usize)) -> String {
     if *n == 1 { f.clone() } else { format!("{f} (decompile {n})") }
 }
 
+/// `UNKNOWN` reasons that stand for a difference the check found but traced
+/// to a guess: one appearing where a function agreed is a regression, since a
+/// guess elsewhere in a run must not let a real difference pass the gate.
+const DIFFERENCE_REASONS: [&str; 4] = ["prototype-suspect", "guessed-callee", "uninitialized-local", "assumed-domain"];
+
+fn found_difference(k: &str) -> bool {
+    k.strip_prefix("UNKNOWN(").is_some_and(|r| DIFFERENCE_REASONS.iter().any(|d| r.starts_with(d)))
+}
+
 /// Whether a class is an agreement, and over how many runs when it says.
 fn agrees(k: &str) -> Option<Option<u32>> {
     if k == "AGREES" {
@@ -163,7 +172,7 @@ pub fn compare(base: &Baseline, now: &Baseline) -> Changes {
                 }
                 continue;
             }
-            if k == "DIFFERS" || k == ERROR {
+            if k == "DIFFERS" || k == ERROR || (agrees(o).is_some() && found_difference(k)) {
                 c.regressions.push(line);
             } else if agrees(o).is_some() {
                 c.lost.push(line);
@@ -251,6 +260,17 @@ mod tests {
         assert!(c.regressions.is_empty() && c.other.is_empty());
         assert_eq!(c.agreed, (3, 3));
         assert_eq!(parse(&render(&now)).unwrap(), now);
+    }
+
+    /// A function that agreed and now has a difference the check traces to a
+    /// guess fails the gate; one that runs out of budget only loses coverage.
+    #[test]
+    fn a_difference_traced_to_a_guess_is_a_regression() {
+        let base = b(&[("a", &[("f", "AGREES(256)"), ("g", "AGREES(256)")])]);
+        let now = b(&[("a", &[("f", "UNKNOWN(prototype-suspect)"), ("g", "UNKNOWN(budget)")])]);
+        let c = compare(&base, &now);
+        assert_eq!(c.regressions, ["a f: AGREES(256) -> UNKNOWN(prototype-suspect)"]);
+        assert_eq!(c.lost, ["a g: AGREES(256) -> UNKNOWN(budget)"]);
     }
 
     /// A function decompiled twice pairs each decompile with its own.

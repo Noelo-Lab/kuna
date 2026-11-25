@@ -3,7 +3,7 @@
 `kuna-verify intervene` takes a run that differs and replays it with one change to kuna's
 side at a time. Each change after which the run agrees is a **counterfactual witness**:
 evidence that the result depends on that op. The idea comes from Fission RFC #1101's CSIC
-track. The code is kuna's own (`src/intervene.rs`). AEQ, the RFC's other track, is
+track. The code is kuna's own (`src/tools/intervene.rs`). AEQ, the RFC's other track, is
 design only (`aeq-design.md`).
 
 ```sh

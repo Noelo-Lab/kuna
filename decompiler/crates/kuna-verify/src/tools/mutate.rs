@@ -261,8 +261,8 @@ pub struct Hit {
     pub ms: f64,
 }
 
-fn hit(c: &crate::intervene::Csic, m: Mutation, at: u64) -> Hit {
-    let on = |w: &&crate::intervene::Witness| w.change.place() == (m.block, m.op);
+fn hit(c: &crate::tools::intervene::Csic, m: Mutation, at: u64) -> Hit {
+    let on = |w: &&crate::tools::intervene::Witness| w.change.place() == (m.block, m.op);
     Hit {
         witnesses: c.witnesses.len(),
         first: c.witnesses.first().is_some_and(|w| on(&w)),
@@ -320,7 +320,7 @@ pub fn mutate_function(prog: &ConsoleProgram, fd: &Funcdata, opts: &Options, per
             let ms = started.elapsed().as_secs_f64() * 1e3;
             let csic = (opts.intervene && matches!(report.verdict, Verdict::Differs { .. })).then(|| {
                 let at = program.blocks[m.block].ops[m.op].at;
-                hit(&crate::intervene::search(prog, fd, opts, Some(m)), m, at)
+                hit(&crate::tools::intervene::search(prog, fd, opts, Some(m)), m, at)
             });
             Some(Outcome {
                 function: fd.get_name().to_string(),

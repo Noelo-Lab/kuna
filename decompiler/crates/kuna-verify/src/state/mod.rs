@@ -7,6 +7,9 @@
 //! pointer is fixed, and image-backed memory reads the load image. Each side then
 //! keeps its own writes on top.
 
+mod mem;
+pub use mem::*;
+
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::BuildHasherDefault;
@@ -126,7 +129,7 @@ pub struct Env<'p> {
     /// C5: the machine records its path on this run.
     pub record_path: Cell<bool>,
     /// CSIC: the machine side's values at kuna's outputs, when observed.
-    pub probe: RefCell<Option<crate::intervene::Probe>>,
+    pub probe: RefCell<Option<crate::tools::intervene::Probe>>,
     /// ARM and AArch64 divide by zero to 0 instead of trapping.
     pub divide_by_zero_is_zero: bool,
     /// Image pages by base address; `None` for a page not mapped whole.
@@ -138,6 +141,14 @@ pub struct Env<'p> {
     image_bytes: RefCell<HashMap<u64, Option<u8>, BuildHasherDefault<Fast>>>,
     /// Where a call to each target goes once thunks are followed.
     pub(crate) thunks: RefCell<HashMap<u64, u64>>,
+    /// The calling convention's argument registers: a thunk that writes one
+    /// changes the call, so it is no thunk.
+    pub arg_regs: Vec<(u64, u32)>,
+    /// The registers the ABI reserves for veneers (ARM's `ip`, AArch64's
+    /// `x16`/`x17`): the only ones a transparent thunk may write.
+    pub scratch_regs: Vec<(u64, u32)>,
+    /// Where a call to each target goes through transparent thunks only.
+    pub(crate) transparent: RefCell<HashMap<u64, u64>>,
     pub(crate) insns: RefCell<HashMap<u64, Rc<crate::machine::Insn>, BuildHasherDefault<Fast>>>,
     entries: std::cell::OnceCell<BTreeSet<u64>>,
     stack: Rc<AddrSpace>,
@@ -267,6 +278,9 @@ impl<'p> Env<'p> {
             mapped,
             image_bytes: RefCell::new(HashMap::default()),
             thunks: RefCell::new(HashMap::new()),
+            arg_regs: Vec::new(),
+            scratch_regs: Vec::new(),
+            transparent: RefCell::new(HashMap::new()),
             insns: RefCell::new(HashMap::default()),
             entries: std::cell::OnceCell::new(),
             stack: Rc::clone(stack),
@@ -575,142 +589,6 @@ impl<'p> Env<'p> {
 
 /// Register offsets past this go through the sparse map.
 const DENSE_REGISTERS: u64 = 1 << 20;
-
-/// The frame bytes a callee run for real reads.
-pub type FrameReads = HashSet<u64, BuildHasherDefault<Fast>>;
-
-/// Memory this side wrote, in 64-byte pages each with a mask of the bytes set.
-/// Every reader that needs an order collects into a sorted map, so the pages
-/// need none.
-#[derive(Clone, Default)]
-struct Mem {
-    /// Shared until written: cloning a state to run a callee for real copies
-    /// the page pointers, not the pages.
-    pages: HashMap<(i32, u64), Rc<Page>, BuildHasherDefault<Fast>>,
-}
-
-#[derive(Clone)]
-struct Page {
-    bytes: [u8; 64],
-    set: u64,
-}
-
-impl Mem {
-    fn get(&self, sp: i32, off: u64) -> Option<u8> {
-        let p = self.pages.get(&(sp, off >> 6))?;
-        let i = off & 63;
-        (p.set >> i & 1 == 1).then(|| p.bytes[i as usize])
-    }
-
-    fn contains(&self, sp: i32, off: u64) -> bool {
-        self.get(sp, off).is_some()
-    }
-
-    fn insert(&mut self, sp: i32, off: u64, b: u8) {
-        let p = Rc::make_mut(self.pages.entry((sp, off >> 6)).or_insert_with(|| Rc::new(Page { bytes: [0; 64], set: 0 })));
-        let i = off & 63;
-        p.bytes[i as usize] = b;
-        p.set |= 1 << i;
-    }
-
-    /// Every byte, in no order.
-    fn iter(&self) -> impl Iterator<Item = ((i32, u64), u8)> + '_ {
-        self.pages.iter().flat_map(|(&(sp, page), p)| {
-            (0..64u64).filter(move |i| p.set >> i & 1 == 1).map(move |i| ((sp, page << 6 | i), p.bytes[i as usize]))
-        })
-    }
-
-    /// The bytes of `sp` in `[start, end)`, in no order: the range's pages
-    /// looked up, or every page scanned when there are fewer of those.
-    fn range(&self, sp: i32, start: u64, end: u64) -> Vec<(u64, u8)> {
-        if end <= start {
-            return Vec::new();
-        }
-        let (first, last) = (start >> 6, (end - 1) >> 6);
-        let inside = |off: u64| off >= start && off < end;
-        if last - first < self.pages.len() as u64 {
-            (first..=last)
-                .filter_map(|page| self.pages.get(&(sp, page)).map(|p| (page, p)))
-                .flat_map(|(page, p)| (0..64u64).filter(move |i| p.set >> i & 1 == 1).map(move |i| (page << 6 | i, p.bytes[i as usize])))
-                .filter(|&(off, _)| inside(off))
-                .collect()
-        } else {
-            self.iter().filter(|&((s, off), _)| s == sp && inside(off)).map(|((_, off), b)| (off, b)).collect()
-        }
-    }
-
-    fn retain(&mut self, mut keep: impl FnMut(i32, u64) -> bool) {
-        self.pages.retain(|&(sp, page), p| {
-            let gone = (0..64u64).filter(|&i| p.set >> i & 1 == 1 && !keep(sp, page << 6 | i)).fold(0u64, |m, i| m | 1 << i);
-            if gone != 0 {
-                Rc::make_mut(p).set &= !gone;
-            }
-            p.set != 0
-        });
-    }
-}
-
-/// The temporaries of the current instruction, one entry per value written:
-/// p-code reads a temporary as it wrote it, so a read is usually one lookup.
-#[derive(Clone, Default)]
-struct Temps {
-    entries: Vec<(u64, u32, u128, bool)>,
-}
-
-impl Temps {
-    fn exact(&self, off: u64, size: u32) -> Option<u128> {
-        self.entries.iter().rev().find(|e| e.0 == off && e.1 == size).map(|e| e.2)
-    }
-
-    fn byte(&self, off: u64) -> Option<u8> {
-        self.entries.iter().rev().find(|e| off >= e.0 && off - e.0 < u64::from(e.1)).map(|&(at, size, v, big)| {
-            let i = off - at;
-            let shift = if big { u64::from(size) - 1 - i } else { i };
-            (v >> (shift * 8)) as u8
-        })
-    }
-
-    fn set(&mut self, off: u64, size: u32, v: u128, big: bool) {
-        let end = off + u64::from(size);
-        if self.entries.iter().any(|e| e.0 < end && off < e.0 + u64::from(e.1)) {
-            let old = std::mem::take(&mut self.entries);
-            for (at, n, val, b) in old {
-                if at < end && off < at + u64::from(n) {
-                    for i in 0..u64::from(n) {
-                        let o = at + i;
-                        if o < off || o >= end {
-                            let shift = if b { u64::from(n) - 1 - i } else { i };
-                            self.entries.push((o, 1, (val >> (shift * 8)) & 0xff, b));
-                        }
-                    }
-                } else {
-                    self.entries.push((at, n, val, b));
-                }
-            }
-        }
-        self.entries.push((off, size, v & crate::value::mask(size), big));
-    }
-}
-
-/// A multiplicative hasher for the temporaries' byte offsets: they are
-/// cleared every instruction, so the map keeps its capacity and its hashing
-/// costs one multiply.
-#[derive(Default, Clone, Copy)]
-pub struct Fast(u64);
-
-impl std::hash::Hasher for Fast {
-    fn finish(&self) -> u64 {
-        self.0
-    }
-    fn write(&mut self, bytes: &[u8]) {
-        for &b in bytes {
-            self.0 = (self.0.rotate_left(5) ^ u64::from(b)).wrapping_mul(0x51_7cc1_b727_220a_95);
-        }
-    }
-    fn write_u64(&mut self, n: u64) {
-        self.0 = (self.0.rotate_left(5) ^ n).wrapping_mul(0x51_7cc1_b727_220a_95);
-    }
-}
 
 /// Bytes of the image read at once.
 const IMAGE_PAGE: u64 = 256;
@@ -1090,7 +968,11 @@ impl<'e, 'p> State<'e, 'p> {
     /// callee can reach: one an argument points to, one whose address this side
     /// stored outside the frame (`global = &x`) or in an object already
     /// reachable (`h.p = &x; f(&h)`), and one an earlier call could reach.
-    pub fn writes_at_call(&mut self, args: &[u128]) -> Writes {
+    /// `wide` (a callee in the image, which may run for real) adds the frame
+    /// bytes above the lowest such object that lie in one of kuna's locals,
+    /// so a callee reading past an object kuna sized too small is compared
+    /// there too.
+    pub fn writes_at_call(&mut self, args: &[u128], wide: bool) -> Writes {
         let mut w = self.writes();
         let ram = self.env.ram.get_index();
         let mut found: Vec<u64> = args.iter().map(|&a| a as u64).collect();
@@ -1116,11 +998,25 @@ impl<'e, 'p> State<'e, 'p> {
                 continue;
             }
             w.objects.push((start, end));
+        }
+        let low = w.objects.iter().map(|o| o.0).min();
+        let take = |w: &mut Writes, start: u64, end: u64, any: bool| {
             for (off, v) in self.mem.range(ram, start, end) {
+                if any && self.env.stack_object(off).is_none() {
+                    continue;
+                }
                 if self.callee_written.contains(&off) {
                     w.skip.insert(off);
                 } else {
                     w.bytes.insert((ram, off), v);
+                }
+            }
+        };
+        match low.filter(|_| wide) {
+            Some(low) => take(&mut w, low, self.env.sp0, true),
+            None => {
+                for (start, end) in w.objects.clone() {
+                    take(&mut w, start, end, false);
                 }
             }
         }
