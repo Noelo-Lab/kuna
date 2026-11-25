@@ -1112,10 +1112,12 @@ every later pass sees one latch; it runs in the main loop right after the
 upstream `ActionNodeJoin`, while the exit the copies share has not yet been
 split by `ActionReturnSplit`.
 
-*Pattern:* two back edges into one header whose source blocks `A` and `B` both
-end in a conditional branch to the same two targets, one of them the header,
+*Pattern:* a header with exactly two back edges, whose source blocks `A` and `B`
+both end in a conditional branch to the same two targets, one of them the header,
 neither of them `A` or `B` (a self-loop latch is a separate inner loop, as in a
-busy-wait). *Identity rule:* the ops of `A` and `B` are paired from the branch
+busy-wait). With a third back edge the joined loop would still have two
+latches, and the structurer prints the third as a goto where it printed an inner
+loop before, so such a header is left alone. *Identity rule:* the ops of `A` and `B` are paired from the branch
 backwards, and the longest run that is operation-for-operation identical is
 kept: same opcode, same arity, equal constants, the same output size, and the
 same output storage whenever the storage is address-tied, persistent or not yet
@@ -1124,7 +1126,10 @@ test (`==`/`!=`, `<`/`<=` with operands swapped, signed and unsigned). Each
 input of a paired op is the same value in both copies, the outputs of
 corresponding ops of the run, or values from before the run, which then meet in
 a new MULTIEQUAL; a value of address-tied or persistent storage, or a constant
-against a non-constant, does not merge. Up to two ops that only one copy has are
+against a non-constant, does not merge. Two loads from different addresses stay
+in their copies (the run starts after them): a merged address would hide which
+memory is read, and a variadic function's read of its own register save area
+would no longer be seen as one. Up to two ops that only one copy has are
 stepped over when they have no effect but their output (no memory access, no
 call, an output in plain register or temporary storage) and read nothing the
 run computes before them; they stay in their copy, ahead of the run. A copy that
@@ -1145,9 +1150,12 @@ becomes a COPY. Every path still runs the same operations in the same order, so
 the join is exact; `count_dns_rr` prints `while (p) { if (...) n++; p =
 p->next; }` instead of a `while` loop inside a `do` loop.
 
-*Goto guard:* joining can move where the structurer needs a goto. A function in
-which a latch was joined and whose finished structure prints a goto is
-decompiled again from the start with the join withdrawn
+*Goto guard:* joining can move where the structurer needs a goto, typically a
+goto between two places in the joined loop where the nested loops used a `break`.
+A function whose finished structure prints a goto from one place to another
+inside a loop that holds a joined latch (`kuna_latchjoin.rs (gotos_near_joins)`;
+any goto at all when that loop is not found) is decompiled again from the start
+with the join withdrawn
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs`, after the
 `stackstoreguard` and `condstmts` re-attempts, which the second decompile runs
 again on its own); the joined result is kept unless the other is structured and

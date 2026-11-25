@@ -1,4 +1,5 @@
-//! Join a loop latch the compiler duplicated into each path that reaches it.
+//! Join a loop latch the compiler duplicated into each path that reaches it
+//! (`option dedupitetail latch`, the default).
 //!
 //! An optimizing compiler copies a loop's latch (the step and the test that jumps
 //! back) into every path through the body that reaches it: tail duplication, jump
@@ -7,26 +8,26 @@
 //! operations, and the structurer prints two loops, one directly inside the other,
 //! where the source has one loop with an `if` in it.
 //!
-//! [`ActionLatchJoin`] runs on the p-code graph, next to the upstream
-//! `ActionNodeJoin`, so every later pass sees one latch.  For two back edges into
-//! one header whose source blocks `A` and `B` leave to the same two targets (or
-//! both only to the header), it pairs their ops from the end backwards and keeps
-//! the longest run that is operation-for-operation identical: same opcode, same
-//! constants, same output storage, and inputs that are either the same value, the
-//! outputs of corresponding ops of the run, or values from before the run (which
-//! meet in a new MULTIEQUAL).  The run must contain the branch and the op that
-//! computes its condition; a condition tested with the opposite sense and the
-//! targets swapped is the same test.  The two runs become one new block `J` that
-//! both `A` and `B` now fall into; `J` keeps `A`'s ops, `B`'s copies are deleted,
-//! and the header's and exit's MULTIEQUAL inputs from `A` and `B` collapse to the
-//! one from `J`.
+//! [`ActionLatchJoin`] runs on the p-code graph next to the upstream
+//! `ActionNodeJoin`, so every later pass sees one latch.  For a header with exactly
+//! two back edges, from blocks `A` and `B` that end in a conditional branch to the
+//! same two targets, it pairs their ops from the branch backwards and keeps the
+//! longest run that is operation-for-operation identical: same opcode, equal
+//! constants, the same output storage where storage matters, and inputs that are
+//! the same value, the outputs of corresponding ops of the run, or values from
+//! before the run, which meet in a new MULTIEQUAL.  A test of the opposite sense
+//! with its targets swapped is the same test; up to [`MAX_SKIPS`] side-effect-free
+//! ops that only one copy has are stepped over and stay in that copy; two loads
+//! from different addresses stay in their copies.  The run must contain the op that
+//! computes the branch condition.  Both copies then fall into one new block `J`
+//! that holds `A`'s run; `B`'s run is deleted and the targets' MULTIEQUAL inputs
+//! from `A` and `B` become the one from `J`.
 //!
-//! The join refuses a run with a call, an INDIRECT or a user op, outputs that do
-//! not name the same storage where storage matters, a value of the run used
-//! anywhere but the run itself and the MULTIEQUALs of the two targets, and a
-//! self-loop latch.  The join is exact: each path still runs the same operations
-//! in the same order.  Unoptimized functions are skipped (they do not duplicate
-//! latches).
+//! Calls, stores, user ops, unconditional and self-loop latches, a value of the
+//! run used anywhere but the run and the targets' MULTIEQUALs, and unoptimized
+//! functions are refused.  The join is exact: each path runs the same operations
+//! in the same order.  The drive decompiles a function again without the join
+//! when the joined loop prints a goto ([`joined_gotos`]).
 
 use std::collections::HashMap;
 
@@ -498,7 +499,7 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
             }
             Ok(())
         };
-        for (oa, ob, slots) in run.iter() {
+        for (k, (oa, ob, slots)) in run.iter().enumerate() {
             let (pa, pb) = (data.obank().get(*oa).unwrap(), data.obank().get(*ob).unwrap());
             let skip0 = matches!(pa.code(), OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH);
             for s in 0..pa.num_input() {
@@ -507,6 +508,17 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
                 }
                 let va = pa.get_in(s).unwrap();
                 let vb = pb.get_in(slots[s as usize]).unwrap();
+                // Loads from two different addresses stay in their copies: a
+                // merged address hides which memory, a stack slot say, is read.
+                if pa.code() == OpCode::CPUI_LOAD
+                    && s == 1
+                    && va != vb
+                    && def_pos(va, &pos_a).is_none()
+                    && def_pos(vb, &pos_b).is_none()
+                {
+                    start += k + 1;
+                    continue 'outer;
+                }
                 let negated_ok = !(pa.code() == OpCode::CPUI_CBRANCH && cond.2);
                 match check_pair(va, vb, negated_ok) {
                     Ok(()) => {}

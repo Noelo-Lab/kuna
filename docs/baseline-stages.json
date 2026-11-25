@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5425,
-    5425
+    5429,
+    5429
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1683,6 +1683,10 @@
     "data:LANEFANOUT #1: sub_e87b0 decompiles despite the shared unique IMUL temporary",
     "data:LANEFANOUT #2: the body reaches the ERANGE error path",
     "data:LANEFANOUT #3: no decompilation failure is reported",
+    "data:LATCHJOIN #1: visit is one while loop with the if inside and the step after it (pass 1)",
+    "data:LATCHJOIN #2: count is one while loop; the sum stays in the if, the step after it (pass 1)",
+    "data:LATCHJOIN #3: sendall keeps its busy-wait inside the outer loop (passes 1 and 2)",
+    "data:LATCHJOIN #4: dedupitetail on prints visit and count as a while loop inside a do loop (pass 2)",
     "data:LIBCTYPES #10: glibc off, a MINTED stream shell has no members, so the refill body reads an offset",
     "data:LIBCTYPES #11: glibc on, the same two accesses are the published field",
     "data:LIBCTYPES #12: glibc off, a MINTED stat shell reads its size through a cast at an offset",
