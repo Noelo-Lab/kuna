@@ -161,7 +161,8 @@ pub struct KunaLoweredSwitchRecord {
     /// a register or stack selector, installed straight to its case bodies, on
     /// the variable with the most compare-only blocks, and its install passes
     /// the stricter checks: the cascade the recogniser took and installed
-    /// before it looked at heads holding other code or followed raw reads.
+    /// before it looked at heads holding other code or followed raw reads, or
+    /// at how an unoptimized function's tests were compiled.
     pub base_shape: bool,
     /// (kuna) Recorded on the retry after a withdrawal: the compare-only
     /// cascade the previous recogniser chose.
@@ -793,7 +794,9 @@ fn count_default_sinks(
 /// static `recoverCascade`).
 ///
 /// Walks the comparison tree, collecting equality cases and the common default.
-/// Returns `Some(record)` on success.
+/// Returns `Some(record)` on success. `layout` lets the compiled test layout of
+/// an unoptimized function decide ([`kuna_o0switch`]); the retry after a
+/// withdrawal decides by the shape alone, as the previous recogniser did.
 ///
 /// `Address`-keyed `BTreeMap`/`BTreeSet` are the faithful port of the C++
 /// `std::map<Address,int4>` / `std::set<Address>`; `Address` carries an
@@ -805,6 +808,7 @@ fn recover_cascade(
     startbb: BlockId,
     cmpmap: &BTreeMap<BlockId, CmpNode>,
     swvar: VarnodeId,
+    layout: bool,
 ) -> Option<KunaLoweredSwitchRecord> {
     // DFS over cascade nodes reading swvar; collect cases + default votes.
     let mut cases: BTreeMap<uintb, Address> = BTreeMap::new();
@@ -1094,10 +1098,8 @@ fn recover_cascade(
         }
     }
     let shape = CascadeShape { values: cases.len(), bodies, range: saw_range };
-    let form = kuna_o0switch::verdict(
-        data,
-        visited.iter().filter_map(|&b| data.bb_op_tail(b)).map(|o| op_addr(data, o).get_offset()),
-    );
+    let tests = visited.iter().filter_map(|&b| data.bb_op_tail(b)).map(|o| op_addr(data, o).get_offset());
+    let form = if layout { kuna_o0switch::verdict(data, tests) } else { None };
     if !cascade_is_switch(shape, mode, form) {
         return None;
     }
@@ -1149,7 +1151,11 @@ fn recover_cascade(
         }
     };
 
-    let base_shape = saw_range && cmpmap.get(&startbb).is_some_and(|c| c.pure) && load_at.is_none() && !paths;
+    let base_shape = saw_range
+        && cmpmap.get(&startbb).is_some_and(|c| c.pure)
+        && load_at.is_none()
+        && !paths
+        && cascade_is_switch(shape, mode, None);
     Some(KunaLoweredSwitchRecord {
         branch_addr,
         var_addr,
@@ -1438,7 +1444,7 @@ impl ActionLowerSwitchDetect {
             let head = advance_past_guards(data, root, cmpmap, swvar);
             let spine: BTreeSet<BlockId> =
                 spine.iter().copied().filter(|bl| *bl == head || cmpmap.get(bl).is_some_and(|cn| cn.pure)).collect();
-            let mut rec = match recover_cascade(data, head, cmpmap, swvar) {
+            let mut rec = match recover_cascade(data, head, cmpmap, swvar, !retry) {
                 Some(r) => r,
                 None => continue,
             };
