@@ -126,7 +126,7 @@ impl Action for ActionLatchJoin {
 /// drive decompiles such a function again without the join and keeps the result
 /// with fewer gotos.
 pub fn joined_gotos(fd: &Funcdata) -> Option<i32> {
-    if fd.kuna_latch_joins == 0 || !structure_worsened(fd) {
+    if fd.kuna_latch_joins == 0 || (std::env::var_os("KUNA_LJ_PREDICT").is_some() && !structure_worsened(fd)) {
         return None;
     }
     Some(crate::p2_lift::kuna_loweredswitchkeep::printed_gotos(fd))
@@ -213,6 +213,9 @@ fn find_plan(data: &Funcdata) -> Option<Plan> {
             }
         }
         if latches.len() < 2 {
+            continue;
+        }
+        if latches.len() != 2 && std::env::var_os("KUNA_LJ_ANY").is_none() {
             continue;
         }
         for x in 0..latches.len() {

@@ -2396,7 +2396,7 @@ fn decompile_func_full_with_objects_inner(
             }
             match joined.take() {
                 None => match result.as_ref().ok().and_then(crate::p8_structure::kuna_latchjoin::joined_gotos) {
-                    Some(with) if with > 0 => joined = Some((result, with)),
+                    Some(with) if with > 0 && std::env::var_os("KUNA_LJ_NOGUARD").is_none() => joined = Some((result, with)),
                     _ => break result,
                 },
                 Some((first, with)) => {
