@@ -67,7 +67,7 @@ ins16  DIFFERS  (run 1 of 256)
 
 | verdict | meaning |
 |---|---|
-| `AGREES(n)` | `n` runs agreed. Runs that trapped on both sides are not counted. |
+| `AGREES(n)` | `n` runs agreed. Runs that trapped on both sides, or ran past `--budget` ops on both sides, are not counted, and the report says how many. A run past the budget on one side only makes the function `UNKNOWN(budget)`: one side may loop where the other does not. |
 | `DIFFERS` | one run gave a difference. The report says which run and what differed. |
 | `DIVERGES(id)` | the difference is one kuna makes on purpose, a declared divergence (`src/divergence.rs`): `switchrunon-cut-row`, `synthesized-call`, `gowritebarrier`, `panic-check`, `ptrauth-trap`, `copy-overlap`, `divide-by-zero`, `nan-quieting`, `syscall-result`. Each one names the option that makes the trade, and the pattern the difference has to match. Any other difference under the same option is still `DIFFERS`. A declared call leaves out only itself and what follows it in that run: the calls and memory before it are still compared. |
 | `UNKNOWN(reason)` | the check could not decide. `budget`: a side ran past `--budget` ops. `unsupported-op`: an op or user op the model does not run. `trap`: only one side trapped, or both trapped in every run. `harness`: the model failed. `no switch row`: a switch value no row of kuna's table takes. `prototype-suspect`: the difference rests on a callee prototype kuna recovered and may have wrong. `uninitialized-local`: kuna's result depends on a local nothing assigned. `guessed-callee`: a callee whose effect the model had to guess. `noreturn-unverified`: every run ended at a call only kuna says does not return (§2). `call-reruns`: every run had more calls whose callee reads an argument kuna passes otherwise than `--call-reruns` lets the machine rerun with kuna's value. `assumed-domain`: it agrees only while a parameter kuna's recovered prototype types `bool` holds 0 or 1 (§5). `timeout`: no verdict within `--fn-seconds`. |
@@ -300,11 +300,6 @@ run yet.
   byte kuna lost entirely (a store to a slot it never recovered) is not compared yet:
   telling it from the outgoing argument area and saved registers, which kuna does not
   keep in memory either, needs those found from the machine side first.
-- **Runs that run out of budget.** One run past `--budget` makes the function
-  `UNKNOWN(budget)` however many other runs agreed; that is 4,283 of the 5,405
-  `UNKNOWN` on decbench. Counting such runs apart, as trapped runs are, would turn most
-  into `AGREES(n)` with a note; that is a change to what `AGREES` claims and is left
-  for a decision.
 - **Symbolic proof (Tier S).** Not started: a relational symbolic engine over both
   sides' p-code belongs in its own pull request.
 - **Speed.** Comparing memory by page rather than by byte, a lifting cache shared by a

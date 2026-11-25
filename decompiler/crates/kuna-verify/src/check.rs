@@ -712,6 +712,12 @@ fn input_line(prog: &ConsoleProgram, env: &Env, run: u32, claim: &Claim) -> Stri
 
 /// Check one decompiled function. `contract`, when given, is the function's
 /// real type.
+/// Runs that may run past the op budget on both sides, counted apart, before
+/// the function stops being run: each costs two full budgets. A run past it on
+/// one side only still makes the function `UNKNOWN(budget)`: one side may loop
+/// where the other does not.
+const BUDGET_RUNS_APART: u32 = 64;
+
 /// Runs of the pass that gives a parameter kuna's recovered prototype types
 /// `bool` any value: the 0-or-1 domain is kuna's claim, not the program's.
 const DOMAIN_RUNS: u32 = 64;
@@ -842,6 +848,7 @@ fn check_runs(
     let mut trapped_runs = 0u32;
     let mut trapped: Option<String> = None;
     let mut budget_runs = 0u32;
+    let mut both_budget_runs = 0u32;
     let mut unsupported_runs = 0u32;
     let mut unknown: Option<Halt> = None;
     let mut diverged: Option<&'static str> = None;
@@ -885,6 +892,13 @@ fn check_runs(
             }
             (Ok(mo), Err(Halt::NoRow(_))) if left_cfg(&mo) => {
                 diverged.get_or_insert(divergence::SWITCH_RUNON.id);
+                continue;
+            }
+            (Err(Halt::Budget), Err(Halt::Budget)) => {
+                both_budget_runs += 1;
+                if both_budget_runs >= BUDGET_RUNS_APART || (agreed == 0 && both_budget_runs >= 4 * opts.budget_runs) {
+                    break;
+                }
                 continue;
             }
             (Err(h), _) | (_, Err(h)) => {
@@ -1112,6 +1126,7 @@ fn check_runs(
     }
     let verdict = match (unknown, diverged, trapped) {
         (Some(h), _, _) => Verdict::from_halt(&h),
+        (None, None, None) if agreed == 0 && both_budget_runs > 0 => Verdict::from_halt(&Halt::Budget),
         (None, None, None) if agreed == 0 && unverified_runs > 0 => Verdict::Unknown(
             "UNKNOWN(noreturn-unverified: every run ended at a call only kuna says does not return)".to_string(),
         ),
@@ -1136,6 +1151,12 @@ fn check_runs(
         lines.push(format!(
             "note     {unrerun_runs} runs had more than {} calls whose callee reads an argument kuna passes otherwise; the machine was not rerun for the rest, so they are not counted",
             opts.call_reruns
+        ));
+    }
+    if both_budget_runs > 0 && matches!(verdict, Verdict::Agrees(_)) {
+        lines.push(format!(
+            "note     {both_budget_runs} runs ran past {} ops on both sides; they are not compared",
+            opts.budget
         ));
     }
     if trapped_runs > 0 && matches!(verdict, Verdict::Agrees(_)) {

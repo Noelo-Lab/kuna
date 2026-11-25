@@ -464,3 +464,17 @@ fn a_jump_only_thunk_is_the_function_it_jumps_to() {
     assert!(targets[0]["what"].as_str().unwrap_or("").contains("0x400000 -> 0x400002"), "{targets:?}");
     assert_eq!(targets[0]["killed"], false, "{targets:?}");
 }
+
+/// A loop bounded by its argument (`while (n) { r++; n--; }`) runs past the op
+/// budget on both sides for a large `n`; those runs are counted apart, and the
+/// runs that finish are compared.
+#[test]
+fn runs_past_the_budget_on_both_sides_are_counted_apart() {
+    let text = [0x31, 0xc0, 0x85, 0xff, 0x74, 0x08, 0x83, 0xc0, 0x01, 0x83, 0xef, 0x01, 0xeb, 0xf4, 0xc3];
+    let path = object("countdown", &text, &[("countdown", 0, text.len() as u64)], &[]);
+    let reports = check(&path, &["countdown"], &Options { runs: 64, budget: 20_000, ..Options::default() });
+    let r = &reports[0];
+    let Verdict::Agrees(n) = r.verdict else { panic!("{}", r.render()) };
+    assert!(n > 0 && n < 64, "{}", r.render());
+    assert!(r.lines.iter().any(|l| l.contains("on both sides; they are not compared")), "{}", r.render());
+}
