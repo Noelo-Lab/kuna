@@ -10,7 +10,6 @@
 //! [`resolve`] turns a name and a value as a user writes them into the
 //! Vineflower key and value the engine takes.
 
-use crate::rt::try_catch;
 
 /// One option row; the fields are those of a `[[settable]]` row of
 /// `kuna-decomp/phases.toml`, plus Vineflower's names.
@@ -60,8 +59,6 @@ pub enum ValueKind {
     Bool,
     /// Any text.
     Text,
-    /// A Java regular expression.
-    Regex,
     /// `on|off|current|<path>` (`include-runtime`).
     Runtime,
 }
@@ -70,7 +67,6 @@ impl JvmOption {
     pub fn kind(&self) -> ValueKind {
         match self.values {
             "on|off" => ValueKind::Bool,
-            "<regex>" => ValueKind::Regex,
             "on|off|current|<path>" => ValueKind::Runtime,
             _ => ValueKind::Text,
         }
@@ -142,18 +138,6 @@ pub fn resolve(name: &str, value: &str) -> Result<(&'static str, String), String
             Some(false) => "0".to_string(),
             None => return bad("on|off"),
         },
-        ValueKind::Regex => {
-            let compiled = try_catch(|| {
-                crate::classes_processor::java_regex::JavaPattern::compile(value);
-            });
-            if let Err(e) = compiled {
-                return Err(format!(
-                    "{}: invalid regular expression {value:?}: {}",
-                    row.option, e.message
-                ));
-            }
-            value.to_string()
-        }
         ValueKind::Runtime => {
             if value.eq_ignore_ascii_case("current") {
                 "current".to_string()

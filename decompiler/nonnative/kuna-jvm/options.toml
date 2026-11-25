@@ -936,28 +936,6 @@ tier = "core"
 symptoms = "stack trace names lambda$main$0 or Main$1 and the matching code is hard to find|need the class file of an anonymous class"
 
 [[option]]
-option = "jvm_included_classes"
-vineflower = "included-classes"
-short = ""
-aliases = ["included-classes"]
-values = "<regex>"
-default = ""
-destructive = false
-phase = "p1_classfile"
-subphase = "classes_processor"
-strength = "HARD"
-rewind = "p1_classfile"
-issue = ""
-summary = "Decompile only classes whose internal name (a/b/C$D) fully matches this Java regular expression; the rest still give context."
-use_when = "Set to focus on one package of a large jar, e.g. ^com/ex/core/.*."
-example = "kuna decompile-project app.jar -o out --option jvm_included_classes \"^com/ex/core/.*\""
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.INCLUDED_CLASSES (included-classes)"
-change_kind = "vineflower-option"
-tier = "analysis"
-symptoms = "only one package of a large jar is of interest|decompile-project takes too long on the whole jar"
-
-[[option]]
 option = "jvm_validate_inner_classes_names"
 vineflower = "validate-inner-classes-names"
 short = ""

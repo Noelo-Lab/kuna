@@ -217,8 +217,6 @@ fn resolution_errors() {
     assert!(resolve("thread-count", "4").unwrap_err().contains("--jobs"));
     let err = resolve("jvm_remove_bridge", "maybe").unwrap_err();
     assert!(err.contains("expected on|off"), "{err}");
-    let err = resolve("jvm_included_classes", "(unclosed").unwrap_err();
-    assert!(err.contains("invalid regular expression"), "{err}");
     assert_eq!(
         kuna_options::suggest("jvm_remove-bridge"),
         Some("jvm_remove_bridge")

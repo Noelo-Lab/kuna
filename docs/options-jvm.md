@@ -148,8 +148,6 @@ Three tiers:
 | class or method named like a Java keyword | [`jvm_rename_members`](#jvm_rename_members----on--off-default-off) |
 | identifiers that are not valid Java (obfuscated names) | [`jvm_rename_members`](#jvm_rename_members----on--off-default-off) |
 | many classes named a, b, c that clash | [`jvm_rename_members`](#jvm_rename_members----on--off-default-off) |
-| only one package of a large jar is of interest | [`jvm_included_classes`](#jvm_included_classes-----default-) |
-| decompile-project takes too long on the whole jar | [`jvm_included_classes`](#jvm_included_classes-----default-) |
 | member classes of an obfuscated jar written as separate top-level classes | [`jvm_validate_inner_classes_names`](#jvm_validate_inner_classes_names----on--off-default-on) |
 | renamed inner classes not nested | [`jvm_validate_inner_classes_names`](#jvm_validate_inner_classes_names----on--off-default-on) |
 | inner and anonymous classes missing when decompiling one .class file | [`jvm_siblings`](#jvm_siblings----on--off-default-on) |
@@ -558,15 +556,6 @@ What the engine loads and infers before any class is written.
 - **Where / provenance:** p0_knowledge/fernflower, identifier_converter, converter_helper · vineflower · vineflower-option
 - **Also spelled:** `rename-members`, `ren`
 - **Example:** `kuna decompile-project obf.jar -o out --option jvm_rename_members on`
-
-### `jvm_included_classes` -- <regex>, default ``
-
-- **Symptoms:** only one package of a large jar is of interest; decompile-project takes too long on the whole jar.
-- **What it does:** Decompile only classes whose internal name (a/b/C$D) fully matches this Java regular expression; the rest still give context.
-- **When to flip:** Set to focus on one package of a large jar, e.g. ^com/ex/core/.*.
-- **Where / provenance:** p1_classfile/classes_processor · vineflower · vineflower-option
-- **Also spelled:** `included-classes`
-- **Example:** `kuna decompile-project app.jar -o out --option jvm_included_classes "^com/ex/core/.*"`
 
 ### `jvm_validate_inner_classes_names` -- on | off, default `on`
 

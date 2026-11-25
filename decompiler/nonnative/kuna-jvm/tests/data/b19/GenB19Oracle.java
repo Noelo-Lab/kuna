@@ -1,15 +1,12 @@
 // Golden vectors for tests/b19_classes.rs: the class node trees ClassesProcessor.loadClasses
 // builds (with its warnings) under several options, the lambda nodes LambdaProcessor adds,
-// the parameter names ClassWrapper.init gives methods without code, and
-// Pattern.matches for the regex syntax the class filters use. Run through gen.sh.
+// and the parameter names ClassWrapper.init gives methods without code. Run through gen.sh.
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 import org.jetbrains.java.decompiler.main.ClassesProcessor.ClassNode;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
@@ -106,11 +103,6 @@ public class GenB19Oracle {
     }
   }
 
-  /** A starred group around {@code inner}: the nested-quantifier case of the regex table. */
-  static String starOfGroup(String inner) {
-    return "(" + inner + ")*";
-  }
-
   public static void main(String[] args) throws Exception {
     File dir = new File(args[0]);
     List<File> own = classFiles(new File(dir, "classes"));
@@ -121,32 +113,8 @@ public class GenB19Oracle {
     load("default", own);
     load("verify-anonymous", own, IFernflowerPreferences.VERIFY_ANONYMOUS_CLASSES, "1");
     load("no-inner", own, IFernflowerPreferences.DECOMPILE_INNER, "0");
-    load("included", own, IFernflowerPreferences.INCLUDED_CLASSES, "b/(Natives|Outer(\\$[0-9]+)?)");
     load("no-name-check", own, IFernflowerPreferences.VALIDATE_INNER_CLASSES_NAMES, "0");
     load("inconsistent", inconsistent);
     load("inconsistent-reversed", reversed);
-
-    System.out.println("== regex");
-    String[][] cases = {
-      {"b/Outer\\$A.*", "b/Outer$A$1"}, {"b/Outer\\$A.*", "b/Outer"}, {".*Test", "a/FooTest"},
-      {"(a|b)/.*", "b/x"}, {"[a-c]+/X", "abc/X"}, {"[^a-c]+/X", "abc/X"}, {"\\w+/\\w+", "pkg/Name1"},
-      {"\\d{2,3}", "1234"}, {"\\d{2,3}", "123"}, {"\\d{2,}", "1234"}, {"a*+a", "aaa"}, {"a*?a", "aaa"},
-      {"a++", "aaa"}, {"(?:ab)*", "ababab"}, {"(?=b).*", "bx"}, {"(?!b).*", "bx"}, {"\\Qa.b\\E", "a.b"},
-      {"\\Qa.b\\E", "axb"}, {"\\Qab\\E*", "abbb"}, {"x\\.y", "x.y"}, {"x.y", "x\ny"}, {"^a$", "a"},
-      {"a$", "a\n"}, {"a{3}", "aaa"}, {"[\\w$]+", "Outer$1"}, {"[a-z[0-9]]+", "a1b2"},
-      {"\\bfoo\\b.*", "foo bar"}, {"\\Bfoo", "foo"}, {"(?>a*)a", "aaa"}, {"\\u0041\\x42\\0103", "ABC"},
-      {"(?<name>ab)+", "abab"}, {"[]a]+", "]a]"}, {"a|", ""}, {"(a|ab)(c|bcd)(d*)", "abcd"},
-      {"[\\s\\S]*", "a b\nc"}, {"[a-]+", "a-a"}, {"\\D\\W\\S", "x y"}, {"\\t\\$", "\t$"}, {starOfGroup("a*"), "aaa"},
-      {"(a?)+b", "b"}, {"\\Ab\\z", "b"}, {"a\\Z\\n", "a\n"}, {"a\\z\\n", "a\n"}, {"a$\\n", "a\n"}, {"a**", "a"}, {"(a", "a"}, {"[a", "a"}, {"*a", "a"},
-      {"a{2", "aa"}, {"\\y", "y"}, {"a)", "a"}, {"[b-a]", "a"}, {"a{3,2}", "aaa"}};
-    for (String[] c : cases) {
-      String result;
-      try {
-        result = Boolean.toString(Pattern.compile(c[0]).matcher("").reset(c[1]).matches());
-      } catch (PatternSyntaxException e) {
-        result = "error";
-      }
-      System.out.println(String.join("\t", "regex", esc(c[0]), esc(c[1]), result));
-    }
   }
 }
