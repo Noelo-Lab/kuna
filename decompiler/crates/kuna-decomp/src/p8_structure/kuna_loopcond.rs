@@ -30,14 +30,17 @@
 //!   (a `while` loop is rotated into a guard and a bottom test), else a test at
 //!   the head.
 //!
+//! An arm into a block that ends in a call that does not return is not an exit
+//! for this purpose, so `for (;;) { …; if (n != len) error(); }` stays one.
+//!
 //! Three passes act on it.  `CollapseStructure` takes the condition's exit as
 //! the loop exit and gives the condition block's arm to `ruleBlockIfNoExit`
 //! last; the region structurer keeps the condition's exit edge structural; and
 //! `ActionReturnSplit` does not copy a return block for a jump that is a
 //! `break` to it, so both paths still meet there and the jump prints as
-//! `break`.  Each is a different nesting of the same blocks.  A structuring
-//! that prints more `goto`s ([`printed_gotos`]) than the structurer's own
-//! choice is not kept.
+//! `break`.  Each is a different nesting of the same blocks.  A structuring,
+//! or a whole function, that prints more `goto`s ([`printed_gotos`]) than the
+//! structurers' own choice is not kept.
 
 use kuna_base::error::{KunaError, KunaResult};
 

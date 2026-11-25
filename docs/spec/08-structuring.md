@@ -181,9 +181,9 @@ and the run with fewer `goto`s is kept.
 The option takes `off` (the structurers' own choices, as upstream), `auto` (the
 condition in unoptimized functions only) and `on`, the default (unoptimized
 functions as under `auto`, optimized ones by the latch-then-head rule). On the
-decbench corpus against main `on` gains 143 and loses 9 exact matches at O0
-and gains 60 and loses 8 at O2-noinline, positive on both project halves at
-both levels; `auto` alone is O0 +126 with O2 unchanged.
+decbench corpus against main `on` gains 142 and loses 2 exact matches at O0
+and gains 64 and loses 1 at O2-noinline, positive on both project halves at
+both levels; `auto` leaves O2-noinline unchanged.
 
 **`loopcontinue` — preserve secondary latches before greedy loop folding.**
 A single-entry natural loop can have several back-edges to the same head:
