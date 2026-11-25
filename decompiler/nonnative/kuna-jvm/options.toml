@@ -804,28 +804,6 @@ tier = "core"
 symptoms = "decompiled code fails to recompile with an inference error|need the type argument of a generic method call"
 
 [[option]]
-option = "jvm_inline_simple_lambdas"
-vineflower = "inline-simple-lambdas"
-short = "isl"
-aliases = ["inline-simple-lambdas", "isl"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p9_emit"
-subphase = "class_writer"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Write a lambda whose body is one expression without braces and return (x -> x + 1)."
-use_when = "Turn off for block-bodied lambdas everywhere, e.g. to diff lambda bodies line by line."
-example = "kuna decompile app.jar com.ex.Streams --option jvm_inline_simple_lambdas off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.INLINE_SIMPLE_LAMBDAS (inline-simple-lambdas, -isl)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "x -> { return x + 1; } where x -> x + 1 is wanted (option is off)|one-line lambdas hard to diff"
-
-[[option]]
 option = "jvm_rename_members"
 vineflower = "rename-members"
 short = "ren"

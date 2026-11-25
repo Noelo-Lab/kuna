@@ -575,9 +575,7 @@ impl ClassWriter {
                         }
                         buffer.append(" ->");
 
-                        let inline = DecompilerContext::get_option(
-                            IFernflowerPreferences::INLINE_SIMPLE_LAMBDAS,
-                        ) && method_wrapper
+                        let inline = method_wrapper
                             .expect("NullPointerException: methodWrapper")
                             .with(|d| d.decompile_error.is_none());
                         if let Some(root) = root.filter(|_| inline) {

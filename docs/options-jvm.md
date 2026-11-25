@@ -174,8 +174,6 @@ Three tiers:
 | @Override that javac did not write is unwanted | [`jvm_override_annotation`](#jvm_override_annotation----on--off-default-on) |
 | decompiled code fails to recompile with an inference error | [`jvm_explicit_generics`](#jvm_explicit_generics----on--off-default-off) |
 | need the type argument of a generic method call | [`jvm_explicit_generics`](#jvm_explicit_generics----on--off-default-off) |
-| x -> { return x + 1; } where x -> x + 1 is wanted (option is off) | [`jvm_inline_simple_lambdas`](#jvm_inline_simple_lambdas----on--off-default-on) |
-| one-line lambdas hard to diff | [`jvm_inline_simple_lambdas`](#jvm_inline_simple_lambdas----on--off-default-on) |
 | /* $VF: ... */ and // $VF: comments clutter the output | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
 | need to know where the decompiler approximated (option is off) | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
 | stack trace names lambda$main$0 or Main$1 and the matching code is hard to find | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics----on--off-default-off) |
@@ -655,15 +653,6 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 - **Where / provenance:** substrate/invocation_exprent · vineflower · vineflower-option
 - **Also spelled:** `explicit-generics`, `ega`
 - **Example:** `kuna decompile app.jar com.ex.Repo --option jvm_explicit_generics on`
-
-### `jvm_inline_simple_lambdas` -- on | off, default `on`
-
-- **Symptoms:** x -> { return x + 1; } where x -> x + 1 is wanted (option is off); one-line lambdas hard to diff.
-- **What it does:** Write a lambda whose body is one expression without braces and return (x -> x + 1).
-- **When to flip:** Turn off for block-bodied lambdas everywhere, e.g. to diff lambda bodies line by line.
-- **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
-- **Also spelled:** `inline-simple-lambdas`, `isl`
-- **Example:** `kuna decompile app.jar com.ex.Streams --option jvm_inline_simple_lambdas off`
 
 ### `jvm_decompiler_comments` -- on | off, default `on`
 
