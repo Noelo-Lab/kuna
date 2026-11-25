@@ -1,5 +1,5 @@
 <decompilertest>
-<!-- P9 C emission, option armshiftguard (default needed), Thumb.
+<!-- P9 C emission, option armshiftguard (default wide), Thumb.
      clang 14 -O2 -mcpu=cortex-m0 of
 
        uint4 MaskedBit(uint4 pin)                 { return 1u << (pin & 0x1f); }
@@ -10,26 +10,51 @@
        FieldShift 0x10020: lsls r1,r1,#20; lsrs r1,r1,#28; lsls r0,r1; bx lr
        AnyShift   0x10040: lsls r0,r1; bx lr
 
+     and clang 14 -O2 -mcpu=cortex-m3 of the 64-bit shifts
+
+       uint8 ShiftLeft64(uint8 value, uint4 count)  { return value << count; }
+       uint8 ShiftRight64(uint8 value, uint4 count) { return value >> count; }
+
+       ShiftLeft64  0x10060: rsb.w r3,r2,#32; lsls r1,r2; lsr.w r3,r0,r3;
+                             orrs r1,r3; subs.w r3,r2,#32; it pl;
+                             lslpl.w r1,r0,r3; lsl.w r0,r0,r2; it pl;
+                             movpl r0,#0; bx lr
+       ShiftRight64 0x10080: rsb.w r3,r2,#32; lsrs r0,r2; lsl.w r3,r1,r3;
+                             orrs r0,r3; subs.w r3,r2,#32; it pl;
+                             lsrpl.w r0,r1,r3; lsr.w r1,r1,r2; it pl;
+                             movpl r1,#0; bx lr
+
      A register LSL shifts by the low byte of the count and yields 0 for 32
-     through 255, so kuna guards it: `n < 32u ? x << n : 0`. The masked count
-     and the four-bit field cannot reach 32, so by default they print the
-     plain shift; AnyShift's count can, so its guard stays. `never` drops it
-     too, and `always` guards all three as before. With `armconstshift on`
-     the guard-free masked shift still converts its signed literal shiftee
-     to unsigned, as for a constant count below 32. -->
+     through 255, so `n < 32u ? x << n : 0` computes the machine's value.
+     The masked count and the four-bit field cannot reach 32 and print the
+     plain shift under every value but `always`. AnyShift's count can: by
+     default it prints the plain C shift, defined exactly where the source's
+     own `value << count` is. A 64-bit shift splits its count into n, n - 32
+     and 32 - n and relies on the machine's 0 (ShiftRight64's `hi << (32 - n)`
+     at n = 0), so by default those LSLs keep their guards; `needed` also
+     guards AnyShift, `never` drops every guard, `always` restores the bounded
+     ones too. With `armconstshift on` the guard-free masked shift still
+     converts its signed literal shiftee to unsigned, as for a constant count
+     below 32. -->
 <binaryimage arch="ARM:LE:32:Cortex:default">
 <bytechunk space="ram" offset="0x10000" readonly="true">1f210140012088407047</bytechunk>
 <bytechunk space="ram" offset="0x10020" readonly="true">0905090f88407047</bytechunk>
 <bytechunk space="ram" offset="0x10040" readonly="true">88407047</bytechunk>
+<bytechunk space="ram" offset="0x10060" readonly="true">c2f12003914020fa03f31943b2f1200358bf00fa03f100fa02f058bf00207047</bytechunk>
+<bytechunk space="ram" offset="0x10080" readonly="true">c2f12003d04001fa03f31843b2f1200358bf21fa03f021fa02f158bf00217047</bytechunk>
 </binaryimage>
 <script>
-<com>set context TMode 1 [ram,0x10000] [ram,0x1004f]</com>
+<com>set context TMode 1 [ram,0x10000] [ram,0x1009f]</com>
 <com>map function r0x10000 MaskedBit</com>
 <com>map function r0x10020 FieldShift</com>
 <com>map function r0x10040 AnyShift</com>
+<com>map function r0x10060 ShiftLeft64</com>
+<com>map function r0x10080 ShiftRight64</com>
 <com>parse line extern uint4 MaskedBit(uint4 pin);</com>
 <com>parse line extern uint4 FieldShift(uint4 value, uint4 ctrl);</com>
 <com>parse line extern uint4 AnyShift(uint4 value, uint4 count);</com>
+<com>parse line extern uint8 ShiftLeft64(uint8 value, uint4 count);</com>
+<com>parse line extern uint8 ShiftRight64(uint8 value, uint4 count);</com>
 <com>lo fu MaskedBit</com>
 <com>decompile</com>
 <com>print C</com>
@@ -39,8 +64,21 @@
 <com>lo fu AnyShift</com>
 <com>decompile</com>
 <com>print C</com>
-<com>option armshiftguard never</com>
+<com>lo fu ShiftLeft64</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu ShiftRight64</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option armshiftguard needed</com>
 <com>lo fu AnyShift</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option armshiftguard never</com>
+<com>lo fu ShiftLeft64</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu ShiftRight64</com>
 <com>decompile</com>
 <com>print C</com>
 <com>option armshiftguard always</com>
@@ -60,10 +98,13 @@
 <com>print C</com>
 <com>quit</com>
 </script>
-<stringmatch name="ARMSHIFTGUARD #1: by default a count masked below 32 prints the plain shift" min="1" max="1">return 1 &lt;&lt; \(pin &amp; 0x1f\);</stringmatch>
-<stringmatch name="ARMSHIFTGUARD #2: by default a four-bit field count prints the plain shift" min="1" max="1">return value &lt;&lt; \(\(ctrl &amp; 0xfff\) &gt;&gt; 8\);</stringmatch>
-<stringmatch name="ARMSHIFTGUARD #3: the unbounded count keeps its guard by default, and always guards all three" min="4" max="4">&lt; 32u \?</stringmatch>
-<stringmatch name="ARMSHIFTGUARD #4: never prints the unbounded count's plain shift" min="1" max="1">return value &lt;&lt; \(count &amp; 0xff\);</stringmatch>
+<stringmatch name="ARMSHIFTGUARD #1: a count masked below 32 prints the plain shift under every value but always" min="1" max="1">return 1 &lt;&lt; \(pin &amp; 0x1f\);</stringmatch>
+<stringmatch name="ARMSHIFTGUARD #2: a four-bit field count prints the plain shift by default" min="1" max="1">return value &lt;&lt; \(\(ctrl &amp; 0xfff\) &gt;&gt; 8\);</stringmatch>
+<stringmatch name="ARMSHIFTGUARD #3: the 64-bit shifts keep four guards by default, needed guards the unbounded count, and always guards all three 32-bit shifts" min="8" max="8">&lt; 32u \?</stringmatch>
+<stringmatch name="ARMSHIFTGUARD #4: by default and under never the unbounded 32-bit count prints the plain shift" min="1" max="1">return value &lt;&lt; \(count &amp; 0xff\);</stringmatch>
 <stringmatch name="ARMSHIFTGUARD #5: always restores the guard on the masked count" min="1" max="1">\(uint4\)\(pin &amp; 0x1f\) &lt; 32u \?</stringmatch>
 <stringmatch name="ARMSHIFTGUARD #6: with armconstshift on, a dropped guard keeps the unsigned shift of the signed literal" min="1" max="1">return \(int4\)\(\(uint4\)1 &lt;&lt; \(pin &amp; 0x1f\)\);</stringmatch>
+<stringmatch name="ARMSHIFTGUARD #7: by default the 64-bit right shift guards the high word's shift by 32 - n" min="1" max="1">\(uint4\)\(0x20 - count &amp; 0xff\) &lt; 32u \?</stringmatch>
+<stringmatch name="ARMSHIFTGUARD #8: never prints the complement count as the plain C shift" min="1" max="1">v2 &lt;&lt; \(0x20 - count &amp; 0xff\);</stringmatch>
+<stringmatch name="ARMSHIFTGUARD #9: by default the 64-bit left shift also guards both word shifts by the program's count, as needed and always guard AnyShift" min="4" max="4">\(uint4\)\(count &amp; 0xff\) &lt; 32u \?</stringmatch>
 </decompilertest>

@@ -12,8 +12,9 @@
     The image is decompiler/crates/kuna-analysis/tests/fixtures/
     callerptr_O0_x86_64, loaded whole.  Its `__do_global_dtors_aux` (the C
     runtime's) ends in `if (!completed) { ...; completed = 1; return; }`.  Pass 1
-    (`option tailform off`) prints the inner `return;`; pass 2 (the default)
-    does not.
+    (`option tailform off`) prints the inner `return;`; pass 2 (`option
+    tailform on`, whose size rule keeps this four-line tail wrapped; the
+    default `model` prints it after a guard clause) does not.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
 <symbol space="ram" offset="0x100000" name="harness_stub"/>

@@ -166,3 +166,64 @@ fn element_pointers_compare_as_indices() {
     assert!(multiple_of(&at(32), &at(16), 4));
     assert!(!multiple_of(&at(32), &at(16), 8));
 }
+
+#[test]
+fn sums_over_the_same_terms_compare_their_constants() {
+    let v = leaves(2);
+    let base = leaf(v[0], 8);
+    let i = leaf(v[1], 8);
+    let off = |k: u64| op(OpCode::CPUI_INT_ADD, 8, vec![base.clone(), konst(8, k)]);
+    let nested = op(OpCode::CPUI_PTRADD, 8, vec![off(4), konst(8, 0x74), konst(8, 1)]);
+    assert_eq!(cond_of(&op(OpCode::CPUI_INT_EQUAL, 1, vec![base.clone(), nested.clone()])), Cond::of_bool(false));
+    assert_eq!(cond_of(&op(OpCode::CPUI_INT_EQUAL, 1, vec![off(0x78), nested])), Cond::of_bool(true));
+    let row = |k: u64| {
+        op(OpCode::CPUI_INT_ADD, 8, vec![off(k), op(OpCode::CPUI_INT_MULT, 8, vec![i.clone(), konst(8, 0x50)])])
+    };
+    assert_eq!(cond_of(&op(OpCode::CPUI_INT_NOTEQUAL, 1, vec![row(8), row(0x58)])), Cond::of_bool(true));
+    let other = op(OpCode::CPUI_INT_ADD, 8, vec![i.clone(), konst(8, 8)]);
+    assert_eq!(linear_eq(&row(8), &other), None);
+    let wrap = op(OpCode::CPUI_INT_ADD, 1, vec![leaf(v[0], 1), konst(1, 0x100)]);
+    assert_eq!(linear_eq(&wrap, &leaf(v[0], 1)), Some(true));
+}
+
+#[test]
+fn constant_comparisons_fold() {
+    assert_eq!(op(OpCode::CPUI_INT_NOTEQUAL, 1, vec![konst(4, 0), konst(4, 0)]), konst(1, 0));
+    assert_eq!(op(OpCode::CPUI_INT_SLESS, 1, vec![konst(4, 0xffff_ffff), konst(4, 0)]), konst(1, 1));
+    assert_eq!(op(OpCode::CPUI_INT_LESS, 1, vec![konst(4, 0xffff_ffff), konst(4, 0)]), konst(1, 0));
+    assert_eq!(op(OpCode::CPUI_BOOL_AND, 1, vec![konst(1, 1), konst(1, 0)]), konst(1, 0));
+}
+
+#[test]
+fn constants_of_two_widths() {
+    assert!(same_value(Some(konst(8, 0)), Some(konst(4, 0))));
+    assert!(same_value(Some(konst(8, 0x7f)), Some(konst(1, 0x7f))));
+    assert!(!same_value(Some(konst(8, 0xffff_ffff)), Some(konst(4, 0xffff_ffff))));
+    assert!(!same_value(Some(konst(4, 1)), Some(konst(4, 2))));
+    assert!(!same_value(None, None));
+}
+
+#[test]
+fn skip_fact_replaces_its_value() {
+    let v = leaves(2);
+    let p = leaf(v[0], 8);
+    let n = leaf(v[1], 4);
+    let fact = (p.clone(), konst(8, 0));
+    let call_args = op(OpCode::CPUI_INT_ADD, 8, vec![p.clone(), konst(8, 8)]);
+    assert_eq!(with_fact(call_args, Some(&fact)), konst(8, 8));
+    assert_eq!(with_fact(n.clone(), Some(&fact)), n);
+}
+
+#[test]
+fn accesses_at_disjoint_offsets_of_one_base() {
+    let v = leaves(2);
+    let base = leaf(v[0], 8);
+    let field = |k: u64| op(OpCode::CPUI_INT_ADD, 8, vec![base.clone(), konst(8, k)]);
+    assert_eq!(base_offset(field(0x30), 8), (base.clone(), 0x30, 0x38));
+    let elem = op(OpCode::CPUI_PTRADD, 8, vec![base.clone(), konst(8, 0x25), konst(8, 4)]);
+    assert_eq!(base_offset(elem, 4), (base.clone(), 0x94, 0x98));
+    let below = op(OpCode::CPUI_INT_ADD, 8, vec![base.clone(), konst(8, 0xffff_ffff_ffff_fff8)]);
+    assert_eq!(base_offset(below, 8), (base.clone(), -8, 0));
+    let (other, _, _) = base_offset(leaf(v[1], 8), 8);
+    assert_ne!(other, base);
+}

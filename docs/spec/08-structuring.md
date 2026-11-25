@@ -168,6 +168,8 @@ with those edges masked and alone cannot establish single entry.
 No p-code, statement, or destination changes.
 
 `kuna_loopcontinue.rs (recover_continues)` runs before `mark_unstructured`.
+The value `auto` (the default) adds the record of jump statements in
+unoptimized code described under `loopcontinue auto` in §8.3.
 A goto or if-goto becomes `continue` only when its target's first leaf is the
 first leaf of its innermost `BlockInfLoop`, or the continue point of its
 innermost conditional loop. Entering a nested loop resets that scope. A
@@ -1468,12 +1470,25 @@ implied ops, which must call nothing and store nothing) that is defined inside
 the loop must be the latch input of a header MULTIEQUAL in the MULTIEQUAL's own
 HighVariable, or a varnode that input is a COPY of. A COPY source in another
 HighVariable of the same type prints as the MULTIEQUAL's variable while the
-condition is printed (`do { q = *p; p = q; } while (q)` prints `while (p)`). A
-condition that reads any other body value (`do c = getc(); while (c != '\n')`)
-keeps the bottom test, and so does a loop whose carried variable has an
-instance in the stack frame: an optimizer that rotates loops keeps their
-counters in registers, so such a loop comes from unoptimized code, whose bottom
-test is the source's own.
+condition is printed (`do { q = *p; p = q; } while (q)` prints `while (p)`).
+An implied expression of the condition that computes a latch input again --
+the same pure ops over the same varnodes, reading no memory, such as `&v2[1]`
+beside `v1 = &v2[1]` -- has that input's value, so it prints as the carried
+variable while the condition is printed, and the entry test reads that
+variable's entry value in its place. A condition that reads any other body
+value (`do c = getc(); while (c != '\n')`) keeps the bottom test, and so does a
+loop whose carried variable has an instance in the stack frame in a function
+the unoptimized-code detector
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_unoptimized.rs`) flags: there
+every counter lives in the frame and a bottom test is the source's own. In an
+optimized function a counter in the frame is one whose address is taken, and
+its loop is tested like any other.
+
+A loop whose body prints nothing -- one block whose only printed op is its
+`CBRANCH` -- is the condition's own loop: `do {} while (c);` and
+`while (c) {}` evaluate `c` the same number of times for every input, calls in
+`c` included, so it prints top-tested whatever `c` reads and without an entry
+proof (`while (poll_busy()) {}`).
 
 *Entry test.* The first top test must agree with the binary, which runs the
 body once before testing. The entry test is the condition with each carried
@@ -1484,11 +1499,18 @@ ordered, comparisons become `==`, unsigned `<` or signed `<` with a constant
 on the right and a negation flag (`0 < n` and `n != 0` meet, unsigned
 `x < 1` is `x == 0`), `x == x + n` is `n == 0`, `p == &p[n]` is `n == 0`
 (C pointer arithmetic), and a zero test sees through a zero or sign extension
-and a multiply or shift by a constant that cannot wrap the extended value. Two
-LOADs are equal when they are the same op, or when their addresses are equal
-and both read the memory the loop header sees: a LOAD the printed condition
-evaluates, one in the guard block after its last call or store, or one in pure
-blocks between the guard and the loop. The loop prints top-tested when the
+and a multiply or shift by a constant that cannot wrap the extended value.
+Comparisons and boolean ops of constants fold, and two sums of the same
+non-constant terms (through `+`, `-` and `PTRADD`) are equal exactly when their
+constants are, modulo the word: `p != &p->v[0x1d]` and `sp - 0x168 !=
+sp - 0x108` fold to true. Two LOADs are equal when they are the same op, or
+when their addresses are equal and both read the memory the loop header sees:
+a LOAD the printed condition evaluates, one in pure blocks between the guard
+and the loop, or one met walking back from the guard's branch -- through the
+guard block and on into each block that is the only way into the one after
+it -- before any call or side effect, where a STORE in between is passed when
+its bytes and the LOAD's are disjoint offsets of the same base value (`p->nalloc
+= 0` between a load of `p->num` and the loop). The loop prints top-tested when the
 entry test folds to true (`i = 0; do … while (i < 16)`), when it equals the
 condition of an edge that dominates the header and whose target has that edge
 as its only way in (no LOADs in this case), or when it equals the condition of
@@ -1531,17 +1553,40 @@ is not the guard's and the loop stays a do-while.
 blocks reaches the guard, a block ending in a `CBRANCH` with one edge toward
 the loop. When its condition (with the edge's polarity) equals the entry test,
 the guard is left out if dropping it keeps the program: its printed condition
-calls nothing; the blocks between it and the loop hold no call, STORE or LOAD
-(a LOAD the guard protects must not run when the loop is skipped); and the
-skip edge goes either to the loop's own exit block or to a bare return equal to
-the one at the loop's exit (both void, the same varnode, or equal expressions).
-When the skip edge reaches the loop exit, every variable those blocks write
-must have all its instances defined in them or in the loop, so the code after
-the loop cannot read it on the skip path. Three tree shapes qualify, checked on
-the flattened lists around the guard `if`: `if (G) { pre; do … while (f); }`
-and `if (G) { pre; do … while (f); return K; } return K;` print the
+calls nothing, and the blocks between it and the loop (`pre`) hold no call,
+STORE or LOAD (a LOAD the guard protects must not run when the loop is
+skipped). Without the guard, the skip path runs `pre`, the top test (false,
+since it is the guard's), and the loop's exit path, instead of what it ran
+before; that is the same program when both reach the same place with the same
+effects and the same values, and the loop then ran zero times, so every carried
+variable still holds its entry value. The check evaluates the exit side that
+way: each value it reads from the loop must be a carried variable in its own
+HighVariable (a varnode the body computes and nothing carries has no value
+after zero iterations), read as its entry value, and on the skip side a
+failed `a != k` guard lets `a` read as `k`. The skip and exit paths qualify in
+these shapes. They are the same block (the skip edge reaches the loop's exit).
+Both end in a return: two bare returns with equal values, the exit's read at
+zero trips (`if (b > 1) { x = a; ... return x; } return a;`), or two blocks
+whose calls, stores and printed statements pair up in order with the same
+callee, the same storage for any write to memory and equal operands, and equal
+return values (`return report(head, n)` against `return report(NULL, 0)`; a
+constant compares equal to one of another width when both extensions agree).
+Or they meet at a join `J`: the skip block `S` (if any) flows into `J`, entered
+only from the guard, and has no call, store or write to memory, so dropping it
+loses nothing; the exit block `E` (if any) flows into `J`, entered only from
+the latch, and has no call, store, LOAD or read of memory, so running it on the
+skip path adds nothing; and every MULTIEQUAL in `J` receives equal values over
+the skip edge and over the exit edge at zero trips (`if (b < end) { n = 0; do
+… } else n = 0;`). A join is also how a write in `pre` to a variable that lives
+on is checked when the skip edge reaches the exit block itself: a value the
+code after the loop reads on the skip path reaches it through a MULTIEQUAL
+there, since variable merging never lets `pre` overwrite a value that is live
+across it. The tree shapes, checked on the flattened lists around the guard
+`if`: `if (G) { pre; do … while (f); E }` and `if (G) { pre; do … while (f);
+E } else { S }` (either arm) print the condition's statements and the loop's
+arm; `if (G) { pre; do … while (f); return K; } return K';` prints the
 condition's statements and the body (the trailing return is hidden, and a void
-function's elided trailing return moves to the loop's), and `if (!G) return K;
+function's elided trailing return moves to the loop's); and `if (!G) return K';
 pre; do … while (f); return K;` prints only the condition's statements. A
 guard that is an `else` arm, or whose shape is anything else, stays, and then
 the loop stays a do-while too: a source author does not write a test twice.
@@ -1788,6 +1833,83 @@ printed as the second (merging non-constant returns instead was measured worse,
 is the last statement emits the same `nop` as a `return;`. Optimized functions
 are untouched; `option returndup on` restores the rules everywhere.
 
+### loopcontinue auto — the jump statements an unoptimized function was written with
+
+The short-circuit fold (`try_block_or` in the region structurer, `rule_block_or`
+in `CollapseStructure`) joins two tests whenever they share a successor, so a
+loop body that opens with `if (c == NULL || c->type != 7) continue; if
+(c->addr == NULL) continue; if (match(...)) { ... }` prints as one `&&` chain
+around the body, and a `break;` test right after a loop test folds into the
+loop condition. In optimized code nothing else is left to go by. Unoptimized
+code keeps a marker: gcc `-O0` compiles a bare `continue;`, `break;` or `goto`
+that is the whole arm of an `if` into a block of its own, so that a debugger
+can stop on its line, while a structured `if` branches straight to its join.
+The block is a `nop` the test branches to, followed by a jump to the
+statement's target or falling into it (an `||` group sends every test to the
+same `nop`); a `continue;` whose target is a `while` loop's test is instead
+`jcc L; jmp T; L:`, a jump-only block the last test of the group falls into,
+gcc sending the group's earlier tests straight to `T`. A jump at the end of a
+non-empty block (`{ f(); continue; }`) and an empty statement leave no marker,
+and a `continue;` that is the last statement of the body leaves no branch at
+all. kuna's flow gives a `nop` no p-code, so the marker is a branch that lands
+before the first operation of its destination block.
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_o0jumps.rs (record)` reads
+the raw graph at the first heritage pass of a function the detector of chapter
+03 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_unoptimized.rs
+(is_unoptimized)`) calls unoptimized. A statement is a jump-only block entered
+on the `nop` in front of it, a run of `nop`s (at most eight bytes) a branch
+lands on and that falls into its target (keyed by its address), or the
+jump-only block of the `while` form together with the tests that jump straight
+to its target and run only into the test before it. Every edge into a
+jump-only statement belongs to it, and a fall-through that runs over a landing
+in the gap before its block belongs to that landing (a void function's closing
+brace is a `nop` both a jump and a fall-through reach). The record is carried
+by the edges: bits 10–15 of each edge label hold a statement id (1 to 62, in
+address order; a statement past that is not recorded), and
+`BlockGraph::remove_from_flow` keeps an edge's label when it re-points the
+edge past a removed block, so the ids reach the structurer after
+simplification, and `build_copy_from` copies them into the structured graph.
+
+The fold asks `kuna_o0jumps.rs (may_join)` before it joins two tests: two
+edges into the same block join when they carry the same id or neither carries
+one; otherwise they stay apart when that block is a loop latch (the block
+holding a `for` loop's step or a `do` loop's test, a `continue;`) or a block a
+loop exits to (a `break;`). Edges into a loop head join as before: the loop
+rules need a head's in-edges folded, and the `while` form's forwarding makes
+the record incomplete there. A `goto` the source wrote does not keep tests
+apart either. The loop rules then see the source's tests one by one: a
+`continue;` group prints nested, and a `break;` test stays a second exit that
+`refine_loop_edges` virtualizes and `scopeBreak` prints as `break`.
+
+`ActionReturnSplit` gives every goto into a RETURN block its own copy of the
+block, a `break` included, which would turn the source's one `return` after a
+loop into a second return inside it. In a function whose returns `returndup
+auto` placed (`kuna_o0returns.rs (decided)`), `kuna_o0jumps.rs (keeps_return)`
+leaves such an in-edge alone when it carries a statement id and its
+structured goto leaves its innermost loop for the block after that loop.
+
+After structuring, `kuna_o0jumps.rs (print_continues)` (run by
+`ActionFinalStructure` right after `recover_continues`) prints the recorded
+`continue;` statements: in a while-do or do-while whose `continue;` resumes at
+a known leaf (`kuna_loopcontinue.rs (continue_points)`), the body's last `if
+(c) { S }` before that leaf, whose condition reaches the leaf's block only
+through edges that carry a statement id, becomes `if (!c) continue; S`, and
+the rewrite repeats on `S`'s own last statement. Control reaches the same
+place either way. In a function with a record `continue_points` also gives a
+`for` loop the leaf that holds its iterate statement when that leaf prints
+nothing else, so a jump to it prints as `continue;` too.
+
+Keeping tests apart can leave the structurer a loop it cannot fold, and then
+it falls back to gotos (two tests whose different `break`s both enter the next
+loop's head, say). `ActionBlockStructure` therefore structures a recorded
+function with the record and, when the fold refused a join and the result
+prints a goto that is not a loop's `break` or an infinite loop's `continue`
+(`kuna_o0jumps.rs (gotos)`), structures it again without the record, from the
+same branch orientation (`orientation`, `restore_orientation`), keeping the
+form with fewer gotos. Optimized functions are untouched, and `option
+loopcontinue on` restores the shape rule everywhere.
+
 ### tailform — the form of a function-tail `if`
 
 `if (c) { S } return K;` and `if (!c) return K; S; return K;` are the same
@@ -1799,8 +1921,11 @@ wrapped block. Authors do the opposite — over the decbench void-tail sites the
 source wraps 86% of one-line bodies and 29% of bodies over eight lines — so the
 inherited form is wrong more often than chance.
 `decompiler/crates/kuna-decomp/src/p8_structure/kuna_tailform.rs (ActionTailForm)`
-runs after `dedupitetail` and re-spells the tail by the printed size of its
-conditional part, `option tailform <n>` lines (default 4):
+runs after `dedupitetail` and re-spells the tail. By default (`option tailform
+model`) saved weights over the site's features choose the form, as described
+below; under `option tailform on` or `<n>` the printed size of the conditional
+part decides, with `<n>` lines as the threshold (4 for `on`). Both make the
+same rewrites, shown here with the size rule:
 
 - **wrap.** The last top-level `if (c) return K;` whose remaining statements
   print at most `<n>` lines becomes `if (!c) { ... }` followed by the final
@@ -1866,8 +1991,8 @@ decision is made: wrap, guard and the valued merge leave the tree alone, and a
 last `if` whose arm ends in its own return before the final bare return is
 printed as a guard.
 
-`option tailform model` decides each site with saved weights instead of the
-size test. The site's features
+The default, `option tailform model`, decides each site with saved weights
+instead of the size test. The site's features
 (`decompiler/crates/kuna-decomp/src/p8_structure/kuna_tailform/features.rs (compute)`)
 are read off the tree and do not depend on which of the two forms the tree is
 in, apart from the form itself: printed lines, top-level statements,
@@ -1904,7 +2029,26 @@ at 77% held out by project, against 73% for the 4-line threshold, and gains
 data already gives 76%. End to end against `on`, the shipped table gains 98 at
 O2 (190 gained, 92 lost) and 41 at O0 (94 gained, 53 lost), and a table fitted
 on the FIT projects only gains 27 and 32 on the CHECK projects it never saw.
-`on` stays the default.
+
+`model` replaced the size rule as the default on 2026-11-25, after
+`returndup auto`, `iteregion auto` and `loweredswitch auto` had changed which
+functions reach the pass. Re-measured then (main bd07ce279), the shipped table
+against `on` moves 100 more functions to an exact match at O2 (190 gained, 90
+lost; FIT +38, CHECK +62) and 41 at O0 (94 gained, 53 lost; FIT +14, CHECK
++27). A table refitted on that main (2,276 sites from new forced runs) was no
+better where it had not been trained: fitted on one half of the projects and
+measured on the other, in both directions, it gains 54 functions at O2 and 41
+at O0 together against 53 and 41 for the shipped table's training data fitted
+the same way, and on the whole corpus it is 8 and 3 functions worse, so the
+table fitted on 2,284 sites of the earlier main stays. The model chooses only
+between the pass's two forms, so no function computes anything different:
+every changed body holds the same non-control statements under either value.
+The lost functions are sources that wrote the form the size rule happened to
+pick: mostly a function whose whole body is one short `if (c) { ... }` with
+nothing before it, which the model prints as a guard clause, and a guard late
+in a chain of guards whose remaining tail the model wraps (openssh's
+`sshbuf_free`, one source function linked into twelve binaries, is 12 of the
+90 O2 losses). `option tailform on` restores the size rule.
 
 Everything is a print-tree edit on the function's top-level statement list. Its
 nested `Ls`/`Graph` containers and the statement prefix of each top-level `if`'s
@@ -1924,8 +2068,9 @@ In a void function with `voidtailreturn` on, the bare `return;` that ends a
 path moved to the end of the function is flagged `F_RET_SKIP` the same way.
 
 Measured with decbench's own CFG extractor over the O2-noinline corpus (35,189
-functions), the default moves 549 functions to an exact match with the
-source (gained 755, lost 206) and 461 at O0 (gained 717, lost 256).
+functions), the size rule (`on`) moves 549 functions to an exact match with the
+source (gained 755, lost 206) and 461 at O0 (gained 717, lost 256) against
+`off`.
 The threshold was fitted on the even-hash half of the projects and checked on
 the odd half (O2 +230 / +319); one to eight lines all help, the wrap side
 peaks at four, and one value serves void and constant returns. The lost
@@ -1952,6 +2097,9 @@ in `abort` or `exit` with the option off and on, and
 `kuna-cli/tests/tailform_noreturn_round_trip.rs` compiles their printed C beside
 the source with `abort` and `exit` turned into a `longjmp`, checking that every
 function returns, stores and stops where the source does.
+`tests/stages/kuna-tailform-model.xml` decompiles the C runtime's
+`__do_global_dtors_aux` under the default, which prints the source's guard
+clause, and under `on`, which keeps the four-line tail wrapped.
 `tests/stages/kuna-tailform.xml` decompiles gcc -O2 functions with the option
 off and on, and `kuna-cli/tests/tailform_round_trip.rs` compiles the printed C
 of gcc -O2 and -O0 builds beside the source and checks every function returns

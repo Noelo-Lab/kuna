@@ -933,6 +933,12 @@ impl ConsoleProgram {
         }
     }
 
+    /// How many bytes one target address unit is: the code space's word size on
+    /// a raw image, else 1.
+    pub fn code_unit_bytes(&self) -> u64 {
+        self.raw_address_units.map_or(1, |(word_size, _)| word_size)
+    }
+
     /// Resolve a function entry address by symbol name (the `queryFunction`
     /// hook): scan the binaryimage symbols read at load.  `None` if no symbol of
     /// that name exists.
