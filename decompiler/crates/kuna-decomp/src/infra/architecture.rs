@@ -270,6 +270,9 @@ pub struct Architecture {
     pub loader_transfer_sites: Rc<std::collections::BTreeSet<Address>>,
     /// MIPS GOT import entries identified by the loader, never ordinary definitions.
     pub loader_mips_imports: Rc<std::collections::BTreeSet<Address>>,
+    /// The [`Self::loader_mips_imports`] whose symbol version binds them to glibc,
+    /// with the versioned symbol's name.
+    pub loader_glibc_imports: Rc<std::collections::BTreeMap<Address, String>>,
     pub nullable_relocations: Rc<std::collections::BTreeMap<u64, Vec<crate::kuna_nullable_reloc::NullableRelocation>>>,
     pub nullable_literal_values: Rc<std::collections::BTreeSet<u64>>,
 
@@ -428,6 +431,9 @@ pub struct Architecture {
     /// fixed ARM LSL (`on`), or also every architecture's fixed 64-bit left
     /// shift (`all`), so the emitted C shift is defined.
     pub arm_constant_shift: crate::p9_emit::kuna_armconstantshift::ConstShiftMode,
+    /// (kuna `armshiftguard`) Which register-controlled ARM LSLs print the
+    /// `n < 32u ? x << n : 0` range guard.
+    pub arm_shift_guard: crate::p9_emit::kuna_armshiftguard::ShiftGuardMode,
     /// (kuna `wrapadd`) Print a four-byte addition that a wider sign extension
     /// observes through unsigned C, so it wraps as the machine word does.
     pub wrap_add: bool,
@@ -629,6 +635,9 @@ pub struct Architecture {
     /// (kuna) `loweredswitch tree|all`: a binary-search compare tree re-rolls
     /// from 2 to 64 cases instead of 3 to 16.
     pub lowered_switch_tree: bool,
+    /// (kuna) `loweredswitch auto`: in an unoptimized function the way the
+    /// compare tests were compiled decides whether a cascade re-rolls.
+    pub lowered_switch_compiled: bool,
     /// (kuna `funcboundflow`) Bound fall-through at a known function entry: when a
     /// fall-through reaches the entry of another known function (the callee just
     /// executed being an unnamed static no-return the analysis could not prove
@@ -1100,6 +1109,11 @@ pub struct Architecture {
     /// format/print/flag code (`flags ? "%s," : "%s"`) — and diverges when the
     /// source used explicit if/else, so an agent flips it per function.
     pub iteregion: bool,
+    /// (kuna) `iteregion auto`: in a function `kuna_unoptimized` flags, print
+    /// the conditional values the raw block graph records as `?:` and the
+    /// recorded statements as `if`/`else`
+    /// ([`crate::p8_structure::kuna_o0select`]).
+    pub iteregion_record: bool,
     /// (kuna) `iteexpr`: extend [`iteregion`](Self::iteregion) to diamonds whose
     /// arms are a single **computed** pure-value assignment (`v = *p`, `v = b + 5`)
     /// — not just a plain `COPY` — matching angr's aggressive `?:` recovery.  A C
@@ -1135,6 +1149,10 @@ pub struct Architecture {
     /// (kuna) `returndup calls`: also split a block that ends in one call and a
     /// return once per predecessor when the call's arguments are merged values.
     pub duplicate_call_returns: bool,
+    /// (kuna) `returndup auto`: in a function `kuna_unoptimized` flags,
+    /// duplicate exactly the return statements the raw block graph records
+    /// ([`crate::p8_structure::kuna_o0returns`]).
+    pub returndup_record: bool,
     /// (kuna) `rettriangle`: decline a `duplicate_shared_returns` split whose
     /// shared RETURN block is the join of a one-block `if`.  Read by
     /// [`crate::p8_structure::kuna_rettriangle::is_triangle_join`].
@@ -1769,6 +1787,8 @@ pub struct Architecture {
     pub kuna_callee_overrides: std::collections::BTreeMap<Address, std::collections::BTreeMap<Address, Address>>,
     /// Complete sets of taken destinations stated for individual computed jumps.
     pub stated_jump_targets: std::collections::BTreeMap<Address, crate::jumptable::StatedJump>,
+    /// Whether the mapped code can run at another address. A load fact; true
+    /// until the loader proves a fixed placement or the caller states the base.
     pub runtime_code_relocation: bool,
     /// (kuna `formatstring`) Which variadic arguments the target passes exactly
     /// as named ones, which bounds what a closed printf/scanf override may
@@ -2390,6 +2410,7 @@ impl Architecture {
             loader_mips_t9: None,
             loader_transfer_sites: Rc::default(),
             loader_mips_imports: Rc::default(),
+            loader_glibc_imports: Rc::default(),
             nullable_relocations: Rc::default(),
             nullable_literal_values: Rc::default(),
 
@@ -2445,6 +2466,7 @@ impl Architecture {
             kuna_call_returns: Vec::new(),
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             arm_constant_shift: crate::p9_emit::kuna_armconstantshift::ConstShiftMode::Off,
+            arm_shift_guard: crate::p9_emit::kuna_armshiftguard::ShiftGuardMode::Always, // (kuna) option armshiftguard; reset_defaults sets the shipped default
             wrap_add: false,
             rust_array_zero: false,
             char_byte: true, // (kuna) option charbyte; reset_defaults sets the shipped default
@@ -2494,6 +2516,7 @@ impl Architecture {
             switch_selector_guard: false, // (kuna) option switchselector; reset_defaults sets the shipped default
             lowered_switch_linear: false, // (kuna) option loweredswitch linear|all
             lowered_switch_tree: false, // (kuna) option loweredswitch tree|all
+            lowered_switch_compiled: false, // (kuna) option loweredswitch auto; reset_defaults sets the shipped default
             sparc_struct_return: false,
             global_array_anchor: false,
             opaque_predicate: false,
@@ -2591,11 +2614,13 @@ impl Architecture {
             revert_cross_jumps: false,
             dedup_ite_tail: false,
             iteregion: false,
+            iteregion_record: false,
             iteexpr: false,
             iteboolean: false,
             param_copy_hoist: false,
             duplicate_shared_returns: false,
             duplicate_call_returns: false,
+            returndup_record: false, // (kuna) option returndup auto; reset_defaults sets the shipped default
             returndup_triangle: false, // (kuna) option rettriangle; reset_defaults sets the shipped default
             tail_form: None, // (kuna) option tailform; reset_defaults sets the shipped default
             early_return: false,
@@ -2717,7 +2742,7 @@ impl Architecture {
             format_override_callpoints: std::collections::BTreeSet::new(),
             kuna_callee_overrides: std::collections::BTreeMap::new(),
             stated_jump_targets: Default::default(),
-            runtime_code_relocation: false,
+            runtime_code_relocation: true,
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
             analysis_listing: false,
             analysis_fast_funcdisc: false,
@@ -2894,6 +2919,7 @@ impl Architecture {
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.lowered_switch_linear = false; // (kuna) `loweredswitch linear` is opt-in: a linear chain also reads as a hand-written if/else-if
         self.lowered_switch_tree = false; // (kuna) `loweredswitch tree` is opt-in: the 16-case cap is the structurer's fail-safe
+        self.lowered_switch_compiled = true; // (kuna) `loweredswitch auto` default: in unoptimized functions the compiled test layout decides switch vs if-chain
         self.cast_object = true; // (kuna) option castobject default-on: a stack local whose address only fills declared int * parameters, whose readers agree, is declared int; evidence in docs/features/castobject/default-on-evaluation.md
         self.end_ptr_bound = true; // (kuna) DIV-177 default-on: a pointer walk's end bound renders on its own buffer (0/675 ablation)
         self.call_mechanism_mode = crate::kuna_callmechanisms::CallMechanismMode::Auto; // (kuna) option callmechanisms default `auto`: the PPC64 cspecs' uponreturn stores r2Save at 0x28(r1), the TOC save slot only under ELFv1, so on an image whose ELFv1 function descriptors the loader validated (a linked image's or an object's .opd) a return payload is installed only at a call whose next instruction reloads the slot it stores. Gated on that loader fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `on` installs them on any image, `off` on none
@@ -2924,6 +2950,7 @@ impl Architecture {
         self.flatten_ifelse = true; // (kuna) DIV-13 default-on (angr IfElseFlattener; 0/675 ablation)
         self.revert_cross_jumps = true; // (kuna) DIV-13 default-on (angr SAILR CrossJumpReverter; 0/675 ablation)
         self.dedup_ite_tail = true; // (kuna) DIV-13 default-on (angr structurer ITE region-dedup — merge duplicated if/else tails; 0/675 ablation)
+        self.iteregion_record = true; // (kuna) `iteregion auto` default: the recorded conditional values decide unoptimized functions
         self.iteregion = true; // (kuna) DIV-17 default-on (angr ITERegionConverter: assignment-diamond -> `?:` ternary, decbench F5). Per-test opt-out (`option iteregion off`) on the datatests it changes keeps the corpus byte-identical.
         self.iteexpr = false; // (kuna) computed-arm ?: extension: runtime choice, default-off (corpus byte-identical).
         self.iteboolean = true; // (kuna) DIV-51 default-on (short-circuit 0/1 select -> boolean assignment; 0/675 ablation). Per-test opt-out (`option iteboolean off`) on the one stage test it changes keeps the corpus byte-identical.
@@ -2932,6 +2959,7 @@ impl Architecture {
         self.returndup_triangle = false; // (kuna) option rettriangle default-off: decbench sample O0 -163 GED / +56 perfect, O2 +60 GED / +1 perfect; on in the aggressive preset
         self.duplicate_shared_returns = true; // (kuna) DIV-54 default-on, superseding the DIV-18 revert (angr SAILR gotoless ReturnDuplicatorHigh). The -976 GED-perfect regression that reverted it was measured before #137 added the const-return gate (`returndup_is_const_ret`); re-ablated on 52,862 decbench functions the selective pass is +417 GED-perfect / -7,756 aggregate GED, net-positive in every one of nine tested partitions. Per-test opt-out (`option returndup off`) on the datatests it changes keeps the corpus byte-identical.
         self.duplicate_call_returns = false; // (kuna) `returndup calls` is opt-in: the merged call is often the source's own ternary argument
+        self.returndup_record = true; // (kuna) `returndup auto` default: in unoptimized functions the recorded return statements decide the splits
         self.early_return = true; // (kuna) DIV-23 default-on (angr SAILR ReturnDuplicatorHigh PER-EDGE const-guard early-return hoisting: peel only the CONSTANT arm of a mixed return phi). The const-only narrowing of returndup that returndup's whole-block gate cannot reach; unlike broad returndup (DIV-18, -976 regression), the decbench ablation measured this NET-POSITIVE (+47 perfect matches, -576 summed GED, 158:54 improved:regressed across 508 sailr binaries) because it only recovers genuine source early-return guards. Per-test opt-out (`option earlyreturn off`) on the datatests it changes keeps the corpus byte-identical.
         self.switch_return = true; // (kuna) DIV-25 default-on. The continuation of earlyreturn (DIV-23) to WIDE multi-way switch-phi returns (`switch { case: v=K; break; } return v` above earlyreturn's 16-in-edge cap -> per-case `return K`); same per-edge const-peel machinery so it inherits earlyreturn's safety (peels only CONSTANT arms, so it cannot cause returndup's variable-return regression). The decbench ablation of the wide-switch delta on top of default earlyreturn-on measured NET-POSITIVE (+2 perfect matches, -107 summed GED, 3:0 improved:regressed across 17 sailr binaries, zero regressions). Per-test opt-out (`option switchreturn off`) on the datatests it changes keeps the corpus byte-identical.
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
@@ -2969,6 +2997,7 @@ impl Architecture {
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
         self.arm_constant_shift = crate::p9_emit::kuna_armconstantshift::ConstShiftMode::Off;
+        self.arm_shift_guard = crate::p9_emit::kuna_armshiftguard::ShiftGuardMode::Needed; // (kuna) option armshiftguard default `needed`: a count whose non-zero mask is below 32 cannot reach the guard; `option armshiftguard always` restores every guard
         self.wrap_add = false; // (kuna) option wrapadd: default off, the casts cost readability on every widened int sum
         self.rust_array_zero = false;
         self.arm_float_args = true; // (kuna) option armfloatargs: default-ON with armfloatreturn; inert unless the ELF states the VFP procedure-call standard
@@ -3631,6 +3660,7 @@ impl Architecture {
         ctx.go_morestack = self.go_morestack;
         ctx.rust_probestack = self.rust_probestack;
         ctx.chkstk_darwin = self.chkstk_darwin && self.image_apple && crate::kuna_chkstkdarwin::applies_to(&self.archid);
+        ctx.stack_abi_align = crate::kuna_framealign::abi_stack_align(&self.archid);
         ctx.type_vote = self.type_vote;
         ctx.go_bool = self.go_bool;
         ctx.go_write_barrier = self.go_write_barrier;
@@ -3792,6 +3822,7 @@ impl Architecture {
         ctx.switch_selector_guard = self.switch_selector_guard; // switchselector
         ctx.lowered_switch_linear = self.lowered_switch_linear; // loweredswitch linear|all
         ctx.lowered_switch_tree = self.lowered_switch_tree; // loweredswitch tree|all
+        ctx.lowered_switch_compiled = self.lowered_switch_compiled; // loweredswitch auto
         ctx.cond_fold = self.cond_fold; // condfold
         ctx.cond_stmts = self.cond_stmts; // condstmts
         ctx.goto_reduce = self.goto_reduce; // gotoreduce
@@ -3799,11 +3830,13 @@ impl Architecture {
         ctx.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert
         ctx.dedup_ite_tail = self.dedup_ite_tail; // dedupitetail
         ctx.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
+        ctx.iteregion_record = self.iteregion_record; // iteregion auto
         ctx.iteexpr = self.iteexpr; // iteexpr (computed-arm ?: extension, runtime-choice)
         ctx.iteboolean = self.iteboolean; // iteboolean (0/1 select -> boolean assignment)
         ctx.param_copy_hoist = self.param_copy_hoist; // paramcopyhoist (parameter copy-shadow -> entry block)
         ctx.duplicate_shared_returns = self.duplicate_shared_returns; // returndup
         ctx.duplicate_call_returns = self.duplicate_call_returns; // returndup calls
+        ctx.returndup_record = self.returndup_record; // returndup auto
         ctx.returndup_triangle = self.returndup_triangle; // rettriangle (one-block-if join)
         ctx.tail_form = self.tail_form.map(|p| crate::p8_structure::kuna_tailform::TailFormPolicy { elide_void: self.voidtailreturn, loop_test: self.loop_test, ..p }); // tailform
         ctx.early_return = self.early_return; // earlyreturn
@@ -3905,6 +3938,7 @@ impl Architecture {
         ctx.callee_protos = callee_protos;
         ctx.loader_transfer_sites = Rc::clone(&self.loader_transfer_sites);
         ctx.loader_mips_imports = Rc::clone(&self.loader_mips_imports);
+        ctx.loader_glibc_imports = Rc::clone(&self.loader_glibc_imports);
         ctx.nullable_relocations = Rc::clone(&self.nullable_relocations);
         ctx.nullable_literal_values = Rc::clone(&self.nullable_literal_values);
         // (kuna) The convention each of those callees was DECLARED under, keyed

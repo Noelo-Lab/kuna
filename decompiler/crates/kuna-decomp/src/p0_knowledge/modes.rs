@@ -146,7 +146,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("sparcstructret", "on"), // SPARC-idiom-gated; no-op off-SPARC
     ("v850indirectbranch", "on"), // V850-gated (kuna_v850indbranch::applies); no-op off-V850
     ("regionedgeorder", "on"),
-    ("returndup", "on"), // default-ON since DIV-54; kept so the preset owns it
+    ("returndup", "auto"), // the shipped default (DIV-54 `on`, then `auto`); kept so the preset owns it
     // (kuna) Decline the returndup split at the join of a one-block `if`, so
     // `if (c) f(); return 0;` is not printed as `if (!c) return 0; f(); return 0;`.
     // Shipped OFF because the decbench O2 sample moved aggregate GED by +60 (it is
@@ -424,7 +424,6 @@ mod tests {
         for want in [
             "listing",
             "switchguardbound",
-            "returndup",
             "sparcstructret",
             "v850indirectbranch",
             "globalarrayanchor",
@@ -434,9 +433,13 @@ mod tests {
                 "aggressive must enable `{want}`"
             );
         }
-        // Every aggressive override turns its option on; `aif` takes its aligned cursor.
+        // Every aggressive override turns its option on; `aif` takes its aligned
+        // cursor and `returndup` its shipped `auto`.
         assert!(agg.contains(&("aif", "strict")), "aggressive must set `aif strict`");
-        assert!(agg.iter().all(|(o, v)| *v == "on" || (*o, *v) == ("aif", "strict")));
+        assert!(agg.contains(&("returndup", "auto")), "aggressive must set `returndup auto`");
+        assert!(agg
+            .iter()
+            .all(|(o, v)| *v == "on" || (*o, *v) == ("aif", "strict") || (*o, *v) == ("returndup", "auto")));
     }
 
     /// The preset's headline contract, enforced rather than sampled: **every**

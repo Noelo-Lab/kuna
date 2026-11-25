@@ -1,0 +1,51 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default">
+<bytechunk space="ram" offset="0x1000" readonly="true">ffe7b80b000000c3</bytechunk>
+<bytechunk space="ram" offset="0x1020" readonly="true">b82c000000c3</bytechunk>
+<symbol space="ram" offset="0x1000" name="split"/>
+<symbol space="ram" offset="0x1020" name="split.cold"/>
+</binaryimage>
+<script>
+<com>function bounds 0x1000 0x1008 as split</com>
+<com>override jumptable 1000 1002 1020</com>
+<com>lo fu split</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/stated-jump/owners.elf</com>
+<com>read symbols</com>
+<com>override jumptable 401015 401000 401017</com>
+<com expecterror="true">override jumptable 401045 401030 401047</com>
+<com>function bounds 0x401060 0x401073 as declared</com>
+<com>override jumptable 401065 401060 401067</com>
+<com>load addr 0x401010</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load addr 0x401040</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function declared</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/stated-jump/dispatch.elf</com>
+<com>read symbols</com>
+<com expecterror="true">override jumptable 401009 401020 401090</com>
+<com>override jumptable 401009 401020 401030</com>
+<com expecterror="true">function bounds 0x401030 as h</com>
+<com>override jumptable 401009 401020 401030</com>
+<com>load function dispatch</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="A split part named in an XML image is one of its parent's cases" min="1" max="1">case 0x1020:</stringmatch>
+<stringmatch name="A part split off the jumping function is one of its cases" min="1" max="1">case 0x401000:</stringmatch>
+<stringmatch name="The jumping function's own block stays a case beside its split part" min="1" max="1">case 0x401017:</stringmatch>
+<stringmatch name="A symbol without a size holds no jump site" min="1" max="1">destination 0x401030 is the entry of function exported,</stringmatch>
+<stringmatch name="The tail jump to that symbol stays unresolved" min="1" max="1">jump-as-call</stringmatch>
+<stringmatch name="A declared extent keeps the loop back to its entry" min="1" max="1">case 0x401067:</stringmatch>
+<stringmatch name="Another function's entry is no case" min="1" max="1">destination 0x401090 is the entry of function ordinary,</stringmatch>
+<stringmatch name="A later declaration cannot strand an installed destination set" min="1" max="1">destination 0x401030 of the computed branch stated at 0x401009 would enter another function</stringmatch>
+<stringmatch name="The kept set and its identical restatement label the case" min="1" max="1">case 0x401030:</stringmatch>
+</decompilertest>

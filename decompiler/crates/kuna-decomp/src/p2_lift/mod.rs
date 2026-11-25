@@ -30,6 +30,7 @@ pub mod kuna_loweredswitchexact; // (kuna) keep a re-rolled lowered switch only 
 pub mod kuna_loweredswitchkeep; // (kuna) withdraw a re-rolled switch the function prints worse with
 pub mod kuna_loweredswitchpath; // (kuna) install a lowered switch along the raw paths of its compare tree
 pub mod kuna_loweredswitchheads; // (kuna) try a lowered-switch cascade behind every head on its variable
+pub mod kuna_o0switch; // (kuna) how an unoptimized function's compare chain was compiled: a switch or an if-chain
 pub mod kuna_noreturn_externmatch; // (kuna) angr incorrect-duplication-chcon: name-matched extern no-return
 pub mod kuna_noreturnextern; // (kuna) angr tail-tail-bytes-ret-dup: undefined-extern name-based no-return
 pub mod kuna_tailcalljump;

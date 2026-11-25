@@ -9,29 +9,53 @@
 //! that writes the stack pointer itself: a prologue's `and rsp,-0x40`, after
 //! which every frame offset is measured from the realigned pointer.
 
+use std::rc::Rc;
+
 use kuna_base::types::{int4, uintb};
 
 use crate::context::{OpId, VarnodeId};
-use crate::fspec::EXTRAPOP_UNKNOWN;
 use crate::funcdata::Funcdata;
 use kuna_num::opcodes::OpCode;
 
 /// The low bits a realigned frame may assume clear in the stack-pointer input.
 const FRAME_ALIGN_BITS: uintb = 0xff;
 
-/// The alignment of a `size`-byte stack pointer at entry. A call that pushes its
-/// return address (the default model's extrapop) leaves it aligned to that push:
-/// 8 on x86-64, 4 on i386. A call that pushes nothing leaves the ABI's alignment,
-/// at least 8 on every such target kuna specs (SPARC, MIPS, ARM, AArch64, PPC,
-/// RISC-V). Neither is more than twice the pointer width.
+/// The alignment of the stack pointer at entry: the ABI's where the stack slots
+/// misstate it ([`abi_stack_align`]), else the widest stack-slot alignment of
+/// the default model's inputs (8 on x86-64, 4 on i386 and SuperH, 1 on AVR,
+/// none on 6502); never more than 8 or twice the pointer width.
 pub(crate) fn entry_alignment(data: &Funcdata, size: int4) -> uintb {
-    let extrapop = data.get_arch().default_fp().map(|m| m.get_extra_pop());
-    let align: uintb = match extrapop {
-        Some(0) => 8,
-        Some(ep) if ep > 0 && ep != EXTRAPOP_UNKNOWN => 1 << (ep as uintb).trailing_zeros(),
-        _ => size.max(1) as uintb,
+    let arch = data.get_arch();
+    let align = if arch.stack_abi_align != 0 {
+        arch.stack_abi_align
+    } else {
+        match (arch.default_fp(), arch.manage().get_stack_space()) {
+            (Some(model), Some(stack)) => model.input_opt().map_or(1, |input| {
+                input
+                    .get_entry()
+                    .iter()
+                    .filter(|e| Rc::ptr_eq(e.get_space(), stack))
+                    .map(|e| e.get_align().max(1) as uintb)
+                    .max()
+                    .unwrap_or(1)
+            }),
+            _ => 1,
+        }
     };
-    align.min(8).min(2 * size.max(1) as uintb)
+    let align = align.min(8).min(2 * size.max(1) as uintb);
+    if align.is_power_of_two() { align } else { 1 << align.ilog2() }
+}
+
+/// The stack alignment an ABI keeps where its 4-byte stack slots misstate it,
+/// or 0 to take the slots: 8 on ARM (AAPCS keeps 8 at every public interface),
+/// AArch64, MIPS, PowerPC, RISC-V, SPARC and LoongArch, whose ABIs keep at
+/// least 8; 2 on the 68000, whose slots say 4 while its stack is word-aligned.
+pub(crate) fn abi_stack_align(archid: &str) -> uintb {
+    match archid.split(':').next().unwrap_or("") {
+        "ARM" | "AARCH64" | "MIPS" | "PowerPC" | "RISCV" | "sparc" | "Loongarch" => 8,
+        "68000" => 2,
+        _ => 0,
+    }
 }
 
 /// The non-zero mask of `vn` as an operand of the `INT_AND` `andop`: the

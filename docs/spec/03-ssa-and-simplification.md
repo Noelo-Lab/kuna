@@ -901,14 +901,41 @@ result. Argument trials still pass through normal use scoring. The output
 guard kills the surrounding bytes independently; it does not preserve unknown
 upper bits across a call or narrow other uses of the physical register.
 Floating-point slots, ambiguous contained entries, unnamed ranges, other
-address widths and memory ranges are excluded, with one exception: a range
-that holds exactly one model input slot, a float slot at its low end, gets that
+address widths and memory ranges are excluded, with one exception on each
+side. On the input side, a range that holds exactly one model input slot, a float slot at its low end, gets that
 slot's trial where the direct callee stated nothing and its body reads the slot
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs
 (guard_call_read_float_input)`, chapter 04 *Callee-read float argument*). The
 trial is as wide as the callee reads, never less than the slot's minimum: an
 `xmm0` the caller wrote whole with `pxor` and then `cvtsi2ss` passes the four
 bytes a `movss %xmm0,g` callee reads, which simplify to the converted float.
+The output side has the mirror exception
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_calloverlap.rs
+(auto_float_output)`): a call whose output is not locked gets the output guard
+when the only model return slot inside the range is the model's first float
+return slot and sits at the range's low end, and nothing in the run states or
+has recovered a returned value for the callee. gcc -O2 findutils `pred_newer`
+moves the `double` result of an unprototyped `difftime` with `movapd
+%xmm0,%xmm1`, a 16-byte read, and before this rule printed the sum of a
+variable nothing assigns after a bare `difftime();`. The guard proposes the
+return slot only; the output trial becomes the call's result where a read after
+the call reaches it, and dead-code elimination removes it everywhere else, so a
+call whose `xmm0` the caller overwrites first gains no result. A range holding
+several return slots, a later float slot (x86-64 `XMM1_Qa`, the second half of
+a two-double return) and general slots keep the legacy behavior. So does a
+callee `decompile-all` recovered returning a value (its callee-first ledger,
+chapter 04 `voidret`): a caller that keeps such a callee's float as integer
+bits (`movq %xmm0,%rbx`) has the output trial dropped there, and the guard
+having marked the range unaffected, the pre-call `xmm0` would then pass
+through the call. A callee recovered `void` still takes the guard; the read it
+files is the evidence `voidret` redoes the callee with. Its callers are then
+decompiled again against the recovered return, which they state, so the guard
+does not run there a second time: in the default callee-first `decompile-all`
+an ELF import's PLT entry gains the `double` return (`double difftime(void)`)
+and its callers keep the read unassigned. A single-function decompile, a
+`decompile-all` with `protoorder off`, and a call through a PE import's IAT
+slot or a function pointer have no ledger entry for the callee, and connect
+the result.
 `off` disables the partial-range guards; `in` and `full` retain their broader
 opt-in behavior.
 
@@ -1948,13 +1975,16 @@ only bits its input already has clear, and fold `(V + c) & mask` into
 add the same way. Upstream gave the stack pointer at entry a non-zero mask
 with its low byte clear, so any stack address rounded to 256 bytes or less
 folded into a frame offset. The stack pointer at entry is instead aligned to
-what the call guarantees
+what the target guarantees
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_framealign.rs
-(entry_alignment)`): to the return-address push where the default model pops
-one (8 on x86-64, 4 on i386), to 8 where the call pushes nothing (SPARC,
-MIPS, ARM, AArch64, PPC, RISC-V, whose ABIs keep at least 8), and never more
-than twice the pointer width. That is what a compiler relies on when it
-addresses the second word of an 8-byte frame slot as `(fp - 0x20) | 4`. The
+(entry_alignment)`): the widest stack-slot alignment of the default
+prototype model's inputs (8 on x86-64, 4 on i386 and SuperH, 1 on AVR and on
+targets with no stack slots, such as the 6502 and 6809), except where the ABI
+keeps another alignment than its slots say (`abi_stack_align`): 8 on ARM,
+AArch64, MIPS, PowerPC, RISC-V, SPARC and LoongArch, 2 on the word-aligned
+68000. It is never more than 8 or twice the pointer width. That is what a
+compiler relies on when it addresses the second word of an 8-byte frame slot
+as `(fp - 0x20) | 4`, as clang does on SPARC. The
 256-byte reading is kept only for a realigned frame, where the AND writes the
 stack pointer itself, directly or through a `COPY` (`and rsp,-0x40` in a
 prologue, `and esp,-0x10` in an i386 `main`): everything after it is
@@ -1966,6 +1996,11 @@ does with `(sp + 0x3f) & ~0x3f`, used to print as `&Stack0 - n`, which is the
 machine's address only when the entry stack pointer is a multiple of 64. It
 now prints the rounding:
 `(uint8)&((char *)__builtin_dwarf_cfa() + 0x1f)[-n] & 0xffffffffffffffc0`.
+A known limit of the realigned reading, older than this rule: a difference
+taken across the stack bases before and after the realignment folds to a
+constant. `push rbp; mov rbp,rsp; and rsp,-32; sub rsp,32; mov rax,rbp; sub
+rax,rsp` prints `return 0x38;`, where the machine gives 0x28 or 0x38
+depending on the entry stack pointer.
 
 `RuleMultiCollapse` keeps its operand traversal, marked-output list and
 temporary rewrite operands in local inline scratch. Wide or deeply nested

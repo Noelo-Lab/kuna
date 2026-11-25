@@ -86,6 +86,9 @@ pub(crate) enum Slot {
     Image,
     /// After `read symbols`, before `load function`.
     Program,
+    /// After the program slot: a jump's destinations are checked against the
+    /// functions it declares.
+    Jump,
     /// After `load function`, before the first `decompile`.
     Function,
     /// After the first `decompile` (forcing a second one).
@@ -174,7 +177,7 @@ pub(crate) fn console_form(
             for target in targets {
                 write!(line, " {target:#x}").unwrap();
             }
-            (Slot::Program, line)
+            (Slot::Jump, line)
         }
         Body::Flow { func, addr, kind } => match names_another(func, target) {
             Some(f) => return Err(unbindable(&f)),

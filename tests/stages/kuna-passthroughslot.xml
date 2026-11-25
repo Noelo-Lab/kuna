@@ -1,0 +1,128 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A call loses its arguments when the caller forwards three or more of its
+    own argument registers untouched and loads a later one itself.
+
+        int getopt_long(int argc, char **argv, const char *opts, void *lo, int *ix)
+        { return internal(argc, argv, opts, lo, ix, 0, 0); }   /* 7 parameters */
+        int w5(int a, char **b, const char *c, void *d)
+        { return in5(a, b, c, d, 0) + 1; }                       /* 5 parameters */
+        int get_int(const void *blob, int node, const char *prop, int def)
+        { int len; const unsigned *cell = getprop(blob, node, prop, &amp;len); ... }
+
+    clang 22 -O2 (-fno-builtin -fno-stack-protector -fcf-protection=none,
+    linked -nostdlib -static -Ttext=0x401000, every callee defined in the
+    image).  Each caller hands rdi, rsi, rdx (and rcx, r8) on untouched and
+    writes only the last register (r8d = 0, r9d = 0, rcx = &amp;len), plus
+    getopt_long's seventh argument at [rsp].  kuna printed `internal();`,
+    `in5() + 1` and `getprop()`: passthrough leaves the trials of forwarded
+    registers inactive until it extends the final list, and
+    `forceInactiveChain` read three or more of them in a row as the end of
+    the argument list, so the register the caller loaded after them went too
+    and left the list with nothing to extend.  getopt_long's callee reads all
+    six argument registers, a run passthrough did not take as an arity claim.
+
+    Stage: P4 active input-trial scoring (kuna_passthrough.rs, option
+    passthrough, on by default).  A forwarded register the callee takes fills
+    its slot in the chain rule; a callee body that reads the whole register
+    file is taken at a call whose caller also stores the first stack
+    argument.  Pass 1 is the default; pass 2 sets passthrough off, where all
+    three calls print with no arguments.  The ARM shapes the fill must not
+    reach are in kuna-passthroughslot-arm.xml.
+
+    Two gcc -O2 shapes at 0x402000 the fill must not reach either.  g3 is
+    `h3(a,b,c) + a` with IPA-RA keeping a in ecx across the call (`mov
+    %edi,%ecx; call h3; add %ecx,%eax`); h3 (`imul %esi,%edi; lea
+    (%rdi,%rdx),%eax; ret`) never reads rcx, so ecx ends the list after the
+    three forwarded registers, not h3(a0,a1,a2,a0).  pid_plus is
+    `sys1(39) + x` after a prologue `push %rbx`; sys1 is a syscall() body that
+    reads every argument register, and a pushed callee-saved register is no
+    stack argument, so its run stays no arity claim, not
+    sys1(0x27,a1,a2,a3,a4,a5).  p_rbx_first is `mov $7,%ebx; push %rbx;
+    call k7` at the function's entry, forwarding rdi..r9 to k7, which reads
+    all six and 8(%rsp): rbx is written before it is pushed, so the push is
+    the seventh argument, k7(a0,a1,a2,a3,a4,a5,7), not a register save.
+    pid_minus is pid_plus built with -fcf-protection: its entry instruction
+    is `endbr64`, which lifts to no p-code, so the push is a prologue save
+    because nothing before it in the entry block writes rbx.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+4101f944034c240844890d1d1100004d85c07403418938488b060fbe000fbe12
+4883f90183d8ff01d0c3660f1f44000050c70424000000004531c9e8c0ffffff
+59c366666666662e0f1f840000000000893dd61000004d85c07403418938488b
+060fbe000fbe124883f90183d8ff01d0c36666666666662e0f1f840000000000
+504531c0e8c7ffffffffc059c30f1f0048c7c0ffffffff660f1f840000000000
+807c070100488d400175f5c30f1f40004889f84d85c0740501ce4189304863c9
+4801c8c36666662e0f1f840000000000554156534889cb89f54989fe4889d7e8
+acffffff4c89f789ee89c14989d85b415e5de9b9ffffff660f1f840000000000
+534883ec1089cb488d4c240ce8bfffffff4885c0740b837c240c047c048b180f
+cb89d84883c4105bc3
+</bytechunk>
+<bytechunk space="ram" offset="0x402000" readonly="true">
+0faffe8d0417c3660f1f84000000000089f9e8e9ffffff01c8c3660f1f440000
+4889f84889f74889d64889ca4d89c24d89c84c8b4c24080f05c3660f1f440000
+534889fbbf27000000e8d2ffffff4801d85bc366662e0f1f8400000000006690
+488b4424084801f84801f04801d04801c84c01c04c01c8c30f1f840000000000
+bb0700000053e8d5ffffff5bc30f1f00f30f1efa534889fbbf27000000e87eff
+ffff4829d85bc3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="internal"/>
+<symbol space="ram" offset="0x401030" name="getopt_long"/>
+<symbol space="ram" offset="0x401050" name="in5"/>
+<symbol space="ram" offset="0x401080" name="w5"/>
+<symbol space="ram" offset="0x401090" name="slen"/>
+<symbol space="ram" offset="0x4010b0" name="getprop_namelen"/>
+<symbol space="ram" offset="0x4010d0" name="getprop"/>
+<symbol space="ram" offset="0x401100" name="get_int"/>
+<symbol space="ram" offset="0x402000" name="h3"/>
+<symbol space="ram" offset="0x402010" name="g3"/>
+<symbol space="ram" offset="0x402020" name="sys1"/>
+<symbol space="ram" offset="0x402040" name="pid_plus"/>
+<symbol space="ram" offset="0x402060" name="k7"/>
+<symbol space="ram" offset="0x402080" name="p_rbx_first"/>
+<symbol space="ram" offset="0x402090" name="pid_minus"/>
+</binaryimage>
+<script>
+  <com>lo fu getopt_long</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu get_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pid_plus</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu p_rbx_first</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pid_minus</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option passthrough off</com>
+  <com>lo fu getopt_long</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu get_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="passthroughslot #1: only with passthrough off does a call lose every argument" min="3" max="3">(internal|in5|getprop)\(\)</stringmatch>
+<stringmatch name="passthroughslot #2: getopt_long forwards its five parameters and loads r9d and the stack argument" min="1" max="1">internal\(a0,a1,a2,a3,a4,0,</stringmatch>
+<stringmatch name="passthroughslot #3: w5 forwards four parameters and loads the fifth" min="1" max="1">return in5\(a0,a1,a2,a3,0\) \+ 1;</stringmatch>
+<stringmatch name="passthroughslot #4: get_int forwards three parameters and passes the address of len" min="1" max="1">getprop\(a0,a1,a2,&amp;v[0-9]+\)</stringmatch>
+<stringmatch name="passthroughslot #5: g3 passes h3 the three registers it forwards, not the ecx it keeps for itself" min="1" max="1">h3\(a0,a1,a2\);</stringmatch>
+<stringmatch name="passthroughslot #6: pid_plus's prologue push %rbx is no stack argument, so sys1 takes only the number" min="1" max="1">sys1\(0x27\) \+ a0;</stringmatch>
+<stringmatch name="passthroughslot #7: p_rbx_first pushes the rbx its entry instruction loads, a seventh argument" min="1" max="1">k7\(a0,a1,a2,a3,a4,a5,7\)</stringmatch>
+<stringmatch name="passthroughslot #8: pid_minus's push %rbx after endbr64 is a prologue save, so sys1 takes only the number" min="1" max="1">sys1\(0x27\) - a0;</stringmatch>
+</decompilertest>
