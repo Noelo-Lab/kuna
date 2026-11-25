@@ -598,12 +598,6 @@ mod tests {
             // a local speed measurement do not justify a broad preset flip.
             "stackaddrargtrial",
             "paramcopyhoist",
-            // `loopcondhoist` lands as an opt-in with its whole-O0 bidirectional
-            // sweep already recorded in its catalog row; preset membership makes
-            // it the default output, which is a DIV-recorded default change and
-            // gets its own PR (the 0/675 ablation and the speed number are the
-            // two things that PR has to add).
-            "loopcondhoist",
             // `switchselector` is the one entry here whose evaluation is already
             // done and recorded (its catalog row carries the 0/675 datatest
             // ablation and the whole-corpus sweep: one function changes across

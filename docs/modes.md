@@ -235,7 +235,7 @@ next call keeps its argument. Flip `--option argclobber off` to keep every
 argument the register model produced, phantom or not.
 
 Separately, these default-off options remain unevaluated for preset membership:
-`guardarm`, `loopcondhoist`, `paramcopyhoist`, `switchselector` and
+`guardarm`, `paramcopyhoist`, `switchselector` and
 `stackaddrargtrial`. Each needs the sweep and speed evidence that would
 justify a preset change. The stack-address option has focused tests and a local
 speed measurement, but no broad sweep. The `UNEVALUATED` list beside the
