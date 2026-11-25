@@ -1671,6 +1671,9 @@ pub struct PrintC {
     /// Per-body spelling of a goto-target leaf whose address label another
     /// printed label already uses (see [`assign_label_names`](PrintC::assign_label_names)).
     label_names: std::collections::BTreeMap<BlockId, String>,
+    /// (kuna `rangetest`) The unsigned comparison being pushed and the print
+    /// modifiers it was reached with, before its dispatch scopes them off.
+    pub(crate) range_entry: Option<(OpId, uint4)>,
 }
 
 impl Default for PrintC {
@@ -1725,6 +1728,7 @@ impl PrintC {
             named_globals: crate::kuna_namedglobals::References::default(),
             unit_calls: crate::kuna_unitcalls::Calls::default(),
             label_names: std::collections::BTreeMap::new(),
+            range_entry: None,
         }
     }
 
@@ -6614,6 +6618,9 @@ impl PrintC {
     /// printc.cc:806-830); every other override ignores it.
     pub(crate) fn op_push_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) {
         let opc = fd.obank().get(op).expect("op_push_ir: stale op").code();
+        if matches!(opc, OpCode::CPUI_INT_LESS | OpCode::CPUI_INT_LESSEQUAL) {
+            self.range_entry = Some((op, self.context.mods()));
+        }
         // (kuna truthycond, DIV-37) CONDITION_CONTEXT only survives through the
         // boolean-preserving operators; any other operator's operands are value
         // context, so scope the bit off across this dispatch (the mod-stack
@@ -6955,6 +6962,12 @@ impl PrintC {
         } else {
             tok
         };
+        if self.out_lang == crate::kuna_lang::OutLang::C {
+            if let Some(split) = self.range_split(fd, arch, op, tok.print1) {
+                self.emit_range_split(fd, arch, op, split);
+                return;
+            }
+        }
         if self.out_lang == crate::kuna_lang::OutLang::Go && self.op_go_binary(fd, arch, tok, op) {
             return;
         }
