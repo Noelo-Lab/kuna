@@ -58,6 +58,7 @@ selected backtrace port only when its predicate allows it.
 Compact unconditional and wide relative GOTO execute up to three following
 issues, counting sequential slots individually. For the qualified wide form,
 the address-enable bit can admit a transfer even when the predicate is false.
+The undelayed wide `GOTO NC1` tests the incoming carry flag.
 Unconditional wide `GOABS A0` samples the accumulator's low 32 bits before
 retiring up to five delay issues. The guard byte does not enter the target.
 Compact unconditional `GOABS (R0)` with an inactive right lane reads a
@@ -74,11 +75,15 @@ and has an undelayed CE1 form. It pops the active trap source if present;
 otherwise it clears bit four of `PSTATUS`.
 Guarded `RETURN EQ1` and `RETI EQ1` retire up to six delay issues on both
 paths; only a taken return reads the link or retires a trap source.
-Compact CALL admits up to three delay issues in sequential form or with
-an inactive parallel peer. Compact RETURN also admits
-two or three delay issues with an inactive right lane, and an undelayed
-CE1 form whose address enable can override a veto. Immediate REPEAT handles
-one register-only following issue, including zero repeats. For wide CE1
+Unconditional compact CALL admits up to three delay issues in sequential
+form or with an inactive parallel peer. Compact `CALL NC1` with an inactive
+right lane retires at most two delay issues. It writes the encoded link on
+both paths but decrements `SP` only when it takes the call. Taken calls
+return to the encoded link; vetoed calls continue after the retired delays.
+Compact RETURN admits two or three delay issues with an inactive right lane,
+and an undelayed CE1 form whose address enable can override a veto.
+Immediate REPEAT handles one register-only following issue, including zero
+repeats. For wide CE1
 REPEAT, a veto with address enable clear executes that issue once; otherwise
 the immediate count applies. REPEAT does not lift a transfer or DATA access
 in the repeated issue.

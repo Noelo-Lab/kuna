@@ -230,6 +230,67 @@ fn carmel_postmodify_returns_the_word_index_not_the_host_object_address() {
     }
 }
 
+#[test]
+fn carmel_predicated_call_keeps_its_encoded_resume_inside_the_caller() {
+    let nop = [0x2b, 0xec, 0x00];
+    let inc = [0x21, 0xac, 0x20];
+    let ret = [0x2b, 0xd8, 0x00];
+    let mut code = [[nop; 2]; 15];
+    code[..6].copy_from_slice(&[
+        [inc, nop], [[0x28, 0x82, 0x5b], nop], [inc, nop],
+        [inc, nop], [inc, nop], [ret, nop],
+    ]);
+    code[12..].copy_from_slice(&[[inc, nop], [inc, nop], [ret, nop]]);
+    let binary = common::scratch_file("carmel-call-resume", "bin");
+    fs::write(&binary, code.as_flattened().as_flattened()).unwrap();
+    let mut inventory = Command::new(env!("CARGO_BIN_EXE_kuna"));
+    inventory.arg("functions").arg(&binary).args([
+        "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0x1000",
+        "--entry", "0x1000", "--json",
+    ]);
+    let listing: Value =
+        serde_json::from_slice(&common::process::required_output(&mut inventory).stdout).unwrap();
+    let functions = listing["functions"].as_array().unwrap();
+    let entries: Vec<_> = functions.iter().map(|f| f["address"].as_u64().unwrap()).collect();
+    // Word 0x100a is the caller's saved link, not a second callee.
+    assert_eq!(entries, [0x1000, 0x1018], "{listing}");
+
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        fs::remove_file(binary).unwrap();
+        return;
+    }
+    let emit = |entry| {
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.arg("decompile").arg(&binary).args([
+            entry, "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base",
+            "0x1000", "--json", "--define-function", "0x1018=fixture_callee", "--assert-strict",
+            "--assert", "param 0 %A0L short input", "--assert", "param 1 %ECFG unsigned short ecfg",
+            "--assert", "return %A0L short",
+            "--assert", "param fixture_callee::0 %A0L short input",
+            "--assert", "param fixture_callee::1 %ECFG unsigned short ecfg",
+            "--assert", "return fixture_callee::%A0L short",
+        ]);
+        let output = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        assert!(function["warnings"].as_array().unwrap().iter()
+            .all(|w| w["kind"] == "branch-flip"), "{function}");
+        function["code"].as_str().unwrap().to_owned()
+    };
+    let emitted = format!("{}\n{}", emit("0x1018"), emit("0x1000"));
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    fs::write(&source, format!(
+        "#include <stdbool.h>\n{emitted}\n\
+         int main(void) {{ return sub_1000(0, 0) != 5 || sub_1000(-1, 0) != 3; }}\n"
+    )).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")

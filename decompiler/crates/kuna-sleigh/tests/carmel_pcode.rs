@@ -527,6 +527,42 @@ fn compact_call_counts_a_sequential_right_issue_but_keeps_the_odd_link() {
 }
 
 #[test]
+fn conditional_call_stores_its_link_on_both_paths_but_only_a_call_decrements_sp() {
+    for (a0, target, sp) in [(0, 12, 0x403e), (0xffff, 8, 0x4040)] {
+        let mut m = Machine::new(
+            0,
+            &[(INC_A0, NOP), (0x28822b, NOP), (INC_A1, NOP), (INC_A2, NOP),
+              (INC_A0, NOP), (NOP, NOP), (NOP, NOP)],
+            &[(0, 1, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 6), (10, 1, 6), (12, 1, 0)],
+            None,
+        );
+        m.seed(&[("A0L", a0), ("A1L", 0xffff), ("SP", 0x4040)]);
+        m.seed_data(0x403f, 0x1188);
+        m.seed_data(0x4040, 0x2299);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!(m.step(), target * 3);
+        assert_eq!((m.reg("A0L"), m.reg("A1L"), m.reg("A2L")), ((a0 + 1) & 0xffff, 0, 1));
+        assert_eq!((m.reg("SP"), m.data(0x403f), m.data(0x4040)), (sp, 10, 0));
+    }
+}
+
+#[test]
+fn wide_nc1_goto_uses_carry_from_the_older_issue() {
+    for (a0, target) in [(0, 8), (0xffff, 4)] {
+        let mut m = Machine::new(
+            0, &[(INC_A0, NOP), (0xc00006, 0xce4004), (INC_A1, NOP), (NOP, NOP), (NOP, NOP)],
+            &[(0, 1, 6), (2, 5, 6), (4, 1, 6), (6, 1, 6), (8, 1, 0)], None,
+        );
+        m.seed(&[("A0L", a0)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!(m.step(), target * 3);
+        assert_eq!(m.reg("A1L"), 0);
+    }
+}
+
+#[test]
 fn delayed_compact_eq_samples_est_before_its_two_counted_issues() {
     for (est, a0, a1, next) in [(8, 7, 9, 36), (0, 0xffff, 0xffff, 18)] {
         let mut m = Machine::new(

@@ -1435,11 +1435,14 @@ impl PcodeBuilder for SleighBuilder<'_> {
                 _ => false,
             };
             let source: &ParserContext = &self.contexts[saved_ctx].ctx;
-            let repeating = self.engine.context_db.borrow().get_variable(b"carmel_repeating")
-                .is_ok_and(|field| field.get_value(&source.context) != 0);
+            let rejects_memory = |name: &[u8]| {
+                self.engine.context_db.borrow().get_variable(name)
+                    .is_ok_and(|field| field.get_value(&source.context) != 0)
+            };
             if slot.iter().any(unsafe_flow)
-                || (repeating || counted && delay_budget > 1 || before.iter().any(memory))
-                    && slot.iter().any(memory)
+                || slot.iter().any(memory)
+                    && (counted && delay_budget > 1 || before.iter().any(memory)
+                        || rejects_memory(b"carmel_repeating") || rejects_memory(b"carmel_delay_no_memory"))
             {
                 return Err(KunaError::unimpl("Unsupported Carmel delay issue effects", fall_base));
             }
