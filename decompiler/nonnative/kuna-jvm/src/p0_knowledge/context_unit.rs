@@ -8,6 +8,8 @@
 
 use std::rc::Rc;
 
+use kuna_managed::{MemberSpan, TypeSpan};
+
 use crate::arena_object;
 use crate::byte_cursor::ByteCursor;
 use crate::class_writer::ClassWriter;
@@ -20,7 +22,7 @@ use crate::i_fernflower_logger::Severity;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::infra::kuna_reclaim::ClassWindow;
 use crate::kuna_partition::{self, Phase, RootSelection};
-use crate::kuna_spans::{self, ClassSpan, MethodSpan};
+use crate::kuna_spans;
 use crate::rt::{rethrow, try_catch, Caught, JLinkedHashSet};
 use crate::struct_class::StructClass;
 use crate::struct_context::{is_io_exception, qualified_name_of};
@@ -387,8 +389,8 @@ struct ClassContext {
     mapping: Option<Vec<i32>>,
     pending_error: Option<Caught>,
     error: Option<String>,
-    classes: Vec<ClassSpan>,
-    methods: Vec<MethodSpan>,
+    classes: Vec<TypeSpan>,
+    methods: Vec<MemberSpan>,
 }
 
 impl ClassContext {

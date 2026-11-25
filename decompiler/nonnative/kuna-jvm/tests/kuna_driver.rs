@@ -209,7 +209,7 @@ fn progress_selection_and_failure_containment() {
                 .unwrap();
             unit.methods
                 .iter()
-                .any(|m| &m.class == *name && !m.lines.is_empty())
+                .any(|m| &m.owner == *name && !m.lines.is_empty())
         })
         .expect("a picked class with code")
         .clone();

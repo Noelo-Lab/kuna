@@ -264,6 +264,7 @@ pub struct Unit {
 }
 
 /// A type written into a unit's text: bytes `start..end`, from 1-based line `start_line`.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TypeSpan {
     pub name: String,
     pub start: usize,
@@ -276,6 +277,7 @@ pub struct TypeSpan {
 }
 
 /// A member written into a unit's text, from the start of its first line.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MemberSpan {
     pub owner: String,
     pub name: String,
