@@ -4614,6 +4614,41 @@ impl<E: FlowEnvironment> PcodeEmit for FlowEmit<'_, '_, E> {
     }
 }
 
+/// (kuna `coverage`) The bytes of every instruction in `fd`'s `visited` map,
+/// delay slots included (each entry's size is the step the flow took over it):
+/// engine byte offsets in the entry's space, half-open, ascending and joined
+/// where they touch. An entry whose first op is an artificial halt (a decode
+/// failure, a flow cut, a stub the flow filled in) was never decoded and is left
+/// out.
+#[allow(clippy::mutable_key_type)]
+pub fn decoded_ranges(fd: &Funcdata, visited: &VisitedMap) -> Vec<(u64, u64)> {
+    let space = fd.get_address().get_space();
+    let mut out: Vec<(u64, u64)> = Vec::new();
+    for (addr, stat) in visited {
+        let Some(size) = u64::try_from(stat.size).ok().filter(|&size| size > 0) else {
+            continue;
+        };
+        let halt = fd
+            .obank()
+            .find_op(&stat.seqnum)
+            .and_then(|op| fd.obank().get(op))
+            .is_some_and(|op| op.get_halt_type() != 0);
+        let elsewhere = match (addr.get_space(), space) {
+            (Some(at), Some(entry)) => !std::rc::Rc::ptr_eq(at, entry),
+            (at, entry) => at.is_some() != entry.is_some(),
+        };
+        if halt || elsewhere {
+            continue;
+        }
+        let (start, end) = (addr.get_offset(), addr.get_offset().saturating_add(size));
+        match out.last_mut() {
+            Some(last) if start <= last.1 => last.1 = last.1.max(end),
+            _ => out.push((start, end)),
+        }
+    }
+    out
+}
+
 /// Free-function `FlowInfo::target` over an explicit `(Funcdata, visited)` pair
 /// (C++ `FlowInfo::target`, `flow.cc:117`): map a flow address to the op
 /// starting its instruction's basic block, following no-p-code fall-thru.  Used

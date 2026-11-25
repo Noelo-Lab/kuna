@@ -569,6 +569,19 @@ ops beyond the deepest internal branch time are dead and deleted
 (`delete_remaining_ops`). The op-creation and classification order here is
 observable — it fixes the SeqNum allocation every later phase keys on.
 
+(kuna `coverage`) When the main flow is done, the decompile drive keeps the
+`visited` map's byte extents on the function as its decoded ranges
+(`flow.rs (decoded_ranges)`, `Funcdata::flow_ranges`): every instruction the flow
+decoded in the entry's space, joined where they touch. Each entry's length is the
+step the flow took, so a branch's delay slot is inside it. An entry whose first op
+is an artificial halt (a decode failure, a cut flow, a filled-in stub) was never
+decoded and is left out. A callee inlined whole (`inline_clone`) merges its flow's
+map into the function's, so its instructions count as the function's own; a
+callee with no branch or call, folded onto the call address (`inline_ez_clone`),
+leaves the map alone and adds none. The ranges outlive the simplifications that
+later drop a dead block, and are what a decompile reports as its function's body
+(§1, *coverage*).
+
 **The dead list is a list, and the walk must treat it as one.** The C++ holds
 `std::list<PcodeOp *>::iterator`s directly (`insertiter` on each op), so
 "the op after this one", "the op before this one" and "the last op" are all
