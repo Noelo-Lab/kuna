@@ -9,15 +9,16 @@
 //! in manifest order, the context is decompiled and then cleared. The fixture's saver writes every
 //! class of a class-file source flat into one directory, so the compared text is the *last*
 //! delivered unit whose file name is the case's `compare` name; it is compared with the expected
-//! text after the fixture's `getContent` normalization (`\r\n` to `\n`, then `String.trim()`).
-//! A case with a `digest` record also runs with kuna's defaults, as `kuna/<id>`, and that text must
-//! have the pinned digest ([`text_digest`]). The manifest format is described in `tests/jvm/README.md`.
+//! text after the fixture's `getContent` normalization (`\r\n` to `\n`, then `String.trim()`), or,
+//! for a case with a `vineflower` record, its normalized text must have that digest
+//! ([`text_digest`]). A case with a `kuna` record also runs with kuna's defaults, as `kuna/<id>`,
+//! and that text must have the record's digest. The manifest format is described in
+//! `tests/jvm/README.md`.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::Instant;
 
 use crate::class_writer::{FabricJavadocStyle, IFabricJavadocProvider};
 use crate::decompiler_context::DecompilerContext;
@@ -36,8 +37,10 @@ use sha2::{Digest, Sha256};
 pub const MANIFEST_HEADER: &str = "kuna-jvm-corpus";
 pub const MANIFEST_VERSION: &str = "1";
 pub const FAILED_METHOD_MARKER: &str = "$VF: Couldn't be decompiled";
-/// The id prefix of a case's default-mode run (its `digest` record).
+/// The id prefix of a case's default-mode run (its `kuna` record).
 pub const DEFAULT_RUN: &str = "kuna/";
+/// The manifest record that pins a default-mode run's digest.
+pub const DEFAULT_RUN_RECORD: &str = "kuna";
 /// Stack for threads that run the engine. The recursion guard (`rt::stack`)
 /// lets the engine use `rt::stack::DEPTH_LIMIT` of it; the rest is headroom.
 pub const ENGINE_STACK_BYTES: usize = 512 << 20;
@@ -110,12 +113,13 @@ pub struct Case {
     pub options: Vec<(String, String)>,
     pub class_files: Vec<PathBuf>,
     pub libraries: Vec<PathBuf>,
-    pub expected: PathBuf,
+    /// The expected text; `None` when `digest` pins it.
+    pub expected: Option<PathBuf>,
     /// The output file compared, then its fallbacks.
     pub compare: Vec<String>,
     pub javadoc: Option<String>,
     pub jdks: Vec<JdkNeed>,
-    /// A default-mode run's pinned [`text_digest`], compared instead of `expected`'s text.
+    /// The pinned [`text_digest`] of the compared text, checked instead of an expected file.
     pub digest: Option<String>,
     /// The fix set to run with instead of the one the options give: a test
     /// hook for isolating one fix (`KunaFixes::without`).
@@ -140,7 +144,8 @@ struct RawCase {
     libs: Vec<String>,
     expected: Option<String>,
     compare: Vec<String>,
-    digest: Option<String>,
+    vineflower: Option<String>,
+    kuna: Option<String>,
 }
 
 /// The option pairs the engine runs `case` with: the fixture registers no plugin, so
@@ -165,20 +170,6 @@ pub fn overlay_option(options: &mut Vec<(String, String)>, key: &str, value: &st
     }
 }
 
-pub fn escape_field(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '\t' => out.push_str("\\t"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            c => out.push(c),
-        }
-    }
-    out
-}
-
 pub fn unescape_field(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars();
@@ -198,38 +189,15 @@ pub fn unescape_field(s: &str) -> String {
     out
 }
 
-fn record_line(fields: &[&str]) -> String {
-    let mut line = fields
-        .iter()
-        .map(|f| escape_field(f))
-        .collect::<Vec<_>>()
-        .join("\t");
-    line.push('\n');
-    line
-}
-
 pub fn load_cases(path: &Path) -> Result<Vec<Case>, String> {
-    load_cases_where(path, |_| true)
-}
-
-/// The cases whose id `keep` accepts, without looking at the files of the others.
-pub fn load_cases_where(path: &Path, keep: impl Fn(&str) -> bool) -> Result<Vec<Case>, String> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read manifest {}: {e}", path.display()))?;
     let base = path.parent().unwrap_or_else(|| Path::new("."));
-    parse_cases_where(&text, base, keep).map_err(|e| format!("{}: {e}", path.display()))
+    parse_cases(&text, base).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// Parses a manifest; relative paths resolve against `root` (default: `base_dir`).
 pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
-    parse_cases_where(text, base_dir, |_| true)
-}
-
-fn parse_cases_where(
-    text: &str,
-    base_dir: &Path,
-    keep: impl Fn(&str) -> bool,
-) -> Result<Vec<Case>, String> {
     let mut header = false;
     let mut root: Option<String> = None;
     let mut java_homes: BTreeMap<String, String> = BTreeMap::new();
@@ -301,7 +269,8 @@ fn parse_cases_where(
                     libs: Vec::new(),
                     expected: None,
                     compare: Vec::new(),
-                    digest: None,
+                    vineflower: None,
+                    kuna: None,
                 });
                 at = At::Case;
             }
@@ -322,7 +291,7 @@ fn parse_cases_where(
                     _ => scoped.current_jdk = Some(args[0].clone()),
                 }
             }
-            "class" | "lib" | "expected" | "compare" | "digest" => {
+            "class" | "lib" | "expected" | "compare" | "vineflower" | DEFAULT_RUN_RECORD => {
                 need(1)?;
                 if !matches!(at, At::Case) {
                     return err(&format!("`{tag}` outside a case"));
@@ -332,7 +301,8 @@ fn parse_cases_where(
                     "class" => case.classes.push(args[0].clone()),
                     "lib" => case.libs.push(args[0].clone()),
                     "expected" => case.expected = Some(args[0].clone()),
-                    "digest" => case.digest = Some(args[0].clone()),
+                    "vineflower" => case.vineflower = Some(args[0].clone()),
+                    DEFAULT_RUN_RECORD => case.kuna = Some(args[0].clone()),
                     _ => case.compare = args.iter().filter(|a| !a.is_empty()).cloned().collect(),
                 }
             }
@@ -364,9 +334,6 @@ fn parse_cases_where(
         if !seen.insert(raw.id.clone()) {
             return err("duplicate case id".to_string());
         }
-        if !keep(&raw.id) && !keep(&format!("{DEFAULT_RUN}{}", raw.id)) {
-            continue;
-        }
         let Some((slug, expected_dir, set)) = sets.get(&raw.set) else {
             return err(format!("unknown set `{}`", raw.set));
         };
@@ -378,9 +345,11 @@ fn parse_cases_where(
         if class_files.is_empty() {
             return err("no class files".to_string());
         }
-        let expected = match raw.expected.as_deref() {
-            Some(path) => resolve(path),
-            None => {
+        let expected = match (&raw.vineflower, raw.expected.as_deref()) {
+            (Some(_), Some(_)) => return err("both `expected` and `vineflower`".to_string()),
+            (Some(_), None) => None,
+            (None, Some(path)) => Some(resolve(path)),
+            (None, None) => {
                 let tail = raw.id.strip_prefix(&format!("{slug}/")).unwrap_or(&raw.id);
                 let base = resolve(expected_dir).join(tail);
                 let Some(ext) = [".java", ".kt"]
@@ -391,7 +360,7 @@ fn parse_cases_where(
                 };
                 let mut path = base.into_os_string();
                 path.push(ext);
-                PathBuf::from(path)
+                Some(PathBuf::from(path))
             }
         };
         let compare = if raw.compare.is_empty() {
@@ -399,7 +368,10 @@ fn parse_cases_where(
                 .file_stem()
                 .unwrap_or_default()
                 .to_string_lossy();
-            let ext = expected.extension().unwrap_or_default().to_string_lossy();
+            let ext = expected
+                .as_ref()
+                .and_then(|e| e.extension())
+                .map_or("java".into(), |e| e.to_string_lossy());
             let mut names = vec![format!("{stem}.{ext}")];
             if ext != "java" {
                 names.push(format!("{stem}.java"));
@@ -435,21 +407,18 @@ fn parse_cases_where(
             compare,
             javadoc: raw.scoped.javadoc.or_else(|| set.javadoc.clone()),
             jdks,
-            digest: None,
+            digest: raw.vineflower,
             fixes: None,
         };
-        let default_run = raw.digest.map(|digest| {
+        let default_run = raw.kuna.map(|digest| {
             let mut run = case.clone();
             run.id = format!("{DEFAULT_RUN}{}", case.id);
             overlay_option(&mut run.options, VINEFLOWER_COMPAT, "0");
+            run.expected = None;
             run.digest = Some(digest);
             run
         });
-        out.extend(
-            std::iter::once(case)
-                .chain(default_run)
-                .filter(|c| keep(&c.id)),
-        );
+        out.extend(std::iter::once(case).chain(default_run));
     }
     Ok(out)
 }
@@ -674,7 +643,6 @@ pub struct EngineRun {
     /// What escaped the run, if anything did.
     pub error: Option<Thrown>,
     pub log: Vec<LogLine>,
-    pub millis: u64,
 }
 
 /// Drops this thread's decompilation state: the current context and every arena object.
@@ -691,7 +659,6 @@ pub fn execute(case: &Case) -> EngineRun {
         records: RefCell::new(Vec::new()),
     });
     let mut units = Vec::new();
-    let start = Instant::now();
     let outcome = try_catch(|| {
         let mut fernflower = match case.fixes {
             Some(fixes) => Fernflower::new_with_fixes(&engine_options(case), logger.clone(), fixes),
@@ -717,7 +684,6 @@ pub fn execute(case: &Case) -> EngineRun {
         TextBuffer::check_leaks();
         run.err().or(cleared.err())
     });
-    let millis = start.elapsed().as_millis() as u64;
     let error = match outcome {
         Ok(error) => error,
         Err(error) => Some(error),
@@ -735,7 +701,6 @@ pub fn execute(case: &Case) -> EngineRun {
         units,
         error: error.as_ref().map(Thrown::from_caught),
         log,
-        millis,
     }
 }
 
@@ -743,7 +708,7 @@ pub fn execute(case: &Case) -> EngineRun {
 pub enum CaseStatus {
     Match,
     Mismatch,
-    /// The run threw (or, isolated, crashed or timed out).
+    /// The run threw.
     EngineError,
     /// The case needs something this machine or the port does not have.
     Unsupported,
@@ -757,17 +722,6 @@ impl CaseStatus {
             CaseStatus::EngineError => "EngineError",
             CaseStatus::Unsupported => "Unsupported",
         }
-    }
-
-    pub fn parse(name: &str) -> Option<CaseStatus> {
-        [
-            CaseStatus::Match,
-            CaseStatus::Mismatch,
-            CaseStatus::EngineError,
-            CaseStatus::Unsupported,
-        ]
-        .into_iter()
-        .find(|s| s.name() == name)
     }
 }
 
@@ -783,44 +737,33 @@ pub struct FirstDiff {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CaseResult {
     pub id: String,
-    pub set: String,
     pub status: CaseStatus,
     /// The compared unit's text as the engine produced it; `None` when no unit had that name.
     pub actual: Option<String>,
     pub actual_path: Option<String>,
-    /// Every delivered unit's path, in delivery order.
-    pub units: Vec<String>,
     pub first_diff: Option<FirstDiff>,
-    pub failed_methods_actual: usize,
-    pub failed_methods_expected: usize,
     /// What the engine threw.
     pub error: Option<Thrown>,
-    /// A failure outside the engine: `crash: ...`, `timeout: ...` or `harness: ...`.
+    /// A failure outside the engine (`harness: ...`).
     pub failure: Option<String>,
     /// Why the case is `Unsupported`.
     pub reason: Option<String>,
     /// Log lines at `Warn` and above.
     pub log: Vec<LogLine>,
-    pub millis: u64,
 }
 
 impl CaseResult {
     fn empty(case: &Case, status: CaseStatus) -> CaseResult {
         CaseResult {
             id: case.id.clone(),
-            set: case.set.clone(),
             status,
             actual: None,
             actual_path: None,
-            units: Vec::new(),
             first_diff: None,
-            failed_methods_actual: 0,
-            failed_methods_expected: 0,
             error: None,
             failure: None,
             reason: None,
             log: Vec::new(),
-            millis: 0,
         }
     }
 
@@ -830,11 +773,10 @@ impl CaseResult {
         r
     }
 
-    /// An `EngineError` that happened outside the engine (`crash: ...`, `timeout: ...`, `harness: ...`).
-    pub fn failed(case: &Case, failure: String, millis: u64) -> CaseResult {
+    /// An `EngineError` that happened outside the engine (`harness: ...`).
+    pub fn failed(case: &Case, failure: String) -> CaseResult {
         let mut r = CaseResult::empty(case, CaseStatus::EngineError);
         r.failure = Some(failure);
-        r.millis = millis;
         r
     }
 }
@@ -901,22 +843,19 @@ pub fn text_digest(text: &str) -> String {
         .collect()
 }
 
-/// Compares what a run produced with the case's expected text (or its pinned digest).
+/// Compares what a run produced with the case's pinned digest, or else its expected text.
 pub fn evaluate(case: &Case, run: EngineRun) -> CaseResult {
-    let read = if case.digest.is_some() {
-        Ok(Vec::new())
-    } else {
-        std::fs::read(&case.expected)
-    };
-    let expected_raw = match read {
-        Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-        Err(e) => {
-            return CaseResult::failed(
-                case,
-                format!("harness: cannot read {}: {e}", case.expected.display()),
-                run.millis,
-            )
-        }
+    let expected_raw = match case.expected.as_ref().filter(|_| case.digest.is_none()) {
+        None => String::new(),
+        Some(path) => match std::fs::read(path) {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Err(e) => {
+                return CaseResult::failed(
+                    case,
+                    format!("harness: cannot read {}: {e}", path.display()),
+                )
+            }
+        },
     };
     evaluate_text(case, run, &expected_raw)
 }
@@ -948,14 +887,10 @@ pub fn evaluate_text(case: &Case, run: EngineRun, expected_raw: &str) -> CaseRes
     };
     CaseResult {
         id: case.id.clone(),
-        set: case.set.clone(),
         status,
         actual: selected.map(|u| u.content.clone()),
         actual_path: selected.map(|u| u.path.clone()),
-        units: run.units.iter().map(|u| u.path.clone()).collect(),
         first_diff: first,
-        failed_methods_actual: selected.map_or(0, |u| count_failed_methods(&u.content)),
-        failed_methods_expected: count_failed_methods(&expected),
         error: run.error,
         failure: None,
         reason: None,
@@ -964,14 +899,14 @@ pub fn evaluate_text(case: &Case, run: EngineRun, expected_raw: &str) -> CaseRes
             .into_iter()
             .filter(|l| l.severity >= Severity::Warn)
             .collect(),
-        millis: run.millis,
     }
 }
 
 /// The run as if the engine had printed the expected text for the compared unit (self-check).
 pub fn expected_as_actual(case: &Case) -> Result<EngineRun, String> {
-    let content = std::fs::read(&case.expected)
-        .map_err(|e| format!("cannot read {}: {e}", case.expected.display()))?;
+    let expected = case.expected.as_ref().ok_or("no expected text")?;
+    let content =
+        std::fs::read(expected).map_err(|e| format!("cannot read {}: {e}", expected.display()))?;
     let class = case.id.split_once('/').map_or("", |(_, class)| class);
     let dir = class.rsplit_once('/').map_or("", |(dir, _)| dir);
     let decoy = DecompiledClass {
@@ -1084,7 +1019,7 @@ pub fn failure_key(r: &CaseResult) -> Option<String> {
     if let (CaseStatus::Mismatch, Some(d)) = (r.status, digest) {
         let [pinned, got] = [&d.expected, &d.actual].map(|v| v.as_deref().unwrap_or("-"));
         return Some(format!(
-            "digest {got}, pinned {pinned} (corpus --out DIR writes the text)"
+            "digest {got}, pinned {pinned} (--out DIR writes the text)"
         ));
     }
     match r.status {
@@ -1123,24 +1058,6 @@ fn located(t: &Thrown, log: &[LogLine]) -> Thrown {
         .unwrap_or_else(|| t.clone())
 }
 
-/// The first line of the most telling error text of a result.
-pub fn error_head(r: &CaseResult) -> String {
-    if let Some(f) = &r.failure {
-        return head(f, 200);
-    }
-    if let Some(t) = &r.error {
-        return head(t.innermost(), 200);
-    }
-    if let Some(reason) = &r.reason {
-        return head(reason, 200);
-    }
-    r.log
-        .iter()
-        .find_map(|l| l.throwable.as_ref())
-        .map(|t| head(t.innermost(), 200))
-        .unwrap_or_default()
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Totals {
     pub total: usize,
@@ -1164,226 +1081,4 @@ pub fn totals(results: &[CaseResult]) -> Totals {
         }
     }
     t
-}
-
-pub fn totals_line(results: &[CaseResult]) -> String {
-    let t = totals(results);
-    format!(
-        "corpus: {}/{} match, {} mismatch, {} error, {} unsupported",
-        t.matched, t.total, t.mismatch, t.error, t.unsupported
-    )
-}
-
-/// A baseline file: one matching case id per line; blank and `#` lines are ignored.
-pub fn parse_baseline(text: &str) -> BTreeSet<String> {
-    text.lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty() && !l.starts_with('#'))
-        .map(str::to_string)
-        .collect()
-}
-
-pub fn format_baseline(ids: &BTreeSet<String>) -> String {
-    let mut out = String::from("# kuna-jvm corpus baseline: the ids of matching cases, sorted\n");
-    for id in ids {
-        out.push_str(id);
-        out.push('\n');
-    }
-    out
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct BaselineReport {
-    /// In the baseline, run, and no longer matching.
-    pub regressions: Vec<String>,
-    /// Matching now, not in the baseline.
-    pub improvements: Vec<String>,
-    /// In the baseline but not run (filtered out or gone from the manifest).
-    pub not_run: Vec<String>,
-}
-
-pub fn compare_baseline(baseline: &BTreeSet<String>, results: &[CaseResult]) -> BaselineReport {
-    let run: BTreeMap<&str, CaseStatus> =
-        results.iter().map(|r| (r.id.as_str(), r.status)).collect();
-    let mut report = BaselineReport::default();
-    for id in baseline {
-        match run.get(id.as_str()) {
-            Some(CaseStatus::Match) => {}
-            Some(_) => report.regressions.push(id.clone()),
-            None => report.not_run.push(id.clone()),
-        }
-    }
-    for (id, status) in &run {
-        if *status == CaseStatus::Match && !baseline.contains(*id) {
-            report.improvements.push(id.to_string());
-        }
-    }
-    report
-}
-
-/// The baseline to save after a run: the matching ids of the run, plus the ids of `previous`
-/// that this run did not cover (a filtered run updates only what it ran).
-pub fn next_baseline(previous: &BTreeSet<String>, results: &[CaseResult]) -> BTreeSet<String> {
-    let run: BTreeSet<&str> = results.iter().map(|r| r.id.as_str()).collect();
-    previous
-        .iter()
-        .filter(|id| !run.contains(id.as_str()))
-        .cloned()
-        .chain(
-            results
-                .iter()
-                .filter(|r| r.status == CaseStatus::Match)
-                .map(|r| r.id.clone()),
-        )
-        .collect()
-}
-
-const RECORD_BEGIN: &str = "@@kuna-jvm-corpus-result@@";
-const RECORD_END: &str = "@@end@@";
-
-fn thrown_fields(t: &Thrown) -> [&str; 3] {
-    [t.class.as_deref().unwrap_or(""), &t.message, &t.location]
-}
-
-fn thrown_from(fields: &[String]) -> Thrown {
-    let get = |i: usize| fields.get(i).cloned().unwrap_or_default();
-    Thrown {
-        class: Some(get(0)).filter(|c| !c.is_empty()),
-        message: get(1),
-        location: get(2),
-    }
-}
-
-impl CaseResult {
-    /// The result as framed text, for a child process to hand to its parent.
-    pub fn to_record(&self) -> String {
-        let mut out = format!("{RECORD_BEGIN}\n");
-        let mut put = |fields: &[&str]| out.push_str(&record_line(fields));
-        put(&["id", &self.id]);
-        put(&["set", &self.set]);
-        put(&["status", self.status.name()]);
-        if let Some(a) = &self.actual {
-            put(&["actual", a]);
-        }
-        if let Some(p) = &self.actual_path {
-            put(&["actual_path", p]);
-        }
-        for u in &self.units {
-            put(&["unit", u]);
-        }
-        if let Some(d) = &self.first_diff {
-            put(&["diff_line", &d.line.to_string()]);
-            if let Some(e) = &d.expected {
-                put(&["diff_expected", e]);
-            }
-            if let Some(a) = &d.actual {
-                put(&["diff_actual", a]);
-            }
-        }
-        put(&[
-            "failed",
-            &self.failed_methods_actual.to_string(),
-            &self.failed_methods_expected.to_string(),
-        ]);
-        if let Some(t) = &self.error {
-            let mut f = vec!["error"];
-            f.extend(thrown_fields(t));
-            put(&f);
-        }
-        if let Some(f) = &self.failure {
-            put(&["failure", f]);
-        }
-        if let Some(r) = &self.reason {
-            put(&["reason", r]);
-        }
-        for l in &self.log {
-            let mut f = vec!["log", l.severity.name(), &l.message];
-            if let Some(t) = &l.throwable {
-                f.extend(thrown_fields(t));
-            }
-            put(&f);
-        }
-        put(&["millis", &self.millis.to_string()]);
-        out.push_str(RECORD_END);
-        out.push('\n');
-        out
-    }
-
-    /// The last framed record in `text` (a child's whole standard output).
-    pub fn from_record(text: &str) -> Result<CaseResult, String> {
-        let begin = format!("{RECORD_BEGIN}\n");
-        let start = text.rfind(&begin).ok_or("no result record")?;
-        let body = &text[start + begin.len() - 1..];
-        let end = body
-            .find(&format!("\n{RECORD_END}"))
-            .ok_or("truncated result record")?;
-        let mut r = CaseResult {
-            id: String::new(),
-            set: String::new(),
-            status: CaseStatus::EngineError,
-            actual: None,
-            actual_path: None,
-            units: Vec::new(),
-            first_diff: None,
-            failed_methods_actual: 0,
-            failed_methods_expected: 0,
-            error: None,
-            failure: None,
-            reason: None,
-            log: Vec::new(),
-            millis: 0,
-        };
-        let mut status = None;
-        for line in body[..end].split('\n').filter(|l| !l.is_empty()) {
-            let fields: Vec<String> = line.split('\t').map(unescape_field).collect();
-            let get = |i: usize| fields.get(i).cloned().unwrap_or_default();
-            let num = |i: usize| -> Result<u64, String> {
-                get(i)
-                    .parse()
-                    .map_err(|_| format!("bad number in `{line}`"))
-            };
-            match fields[0].as_str() {
-                "id" => r.id = get(1),
-                "set" => r.set = get(1),
-                "status" => status = CaseStatus::parse(&get(1)),
-                "actual" => r.actual = Some(get(1)),
-                "actual_path" => r.actual_path = Some(get(1)),
-                "unit" => r.units.push(get(1)),
-                "diff_line" => {
-                    r.first_diff = Some(FirstDiff {
-                        line: num(1)? as usize,
-                        expected: None,
-                        actual: None,
-                    })
-                }
-                "diff_expected" => {
-                    if let Some(d) = r.first_diff.as_mut() {
-                        d.expected = Some(get(1));
-                    }
-                }
-                "diff_actual" => {
-                    if let Some(d) = r.first_diff.as_mut() {
-                        d.actual = Some(get(1));
-                    }
-                }
-                "failed" => {
-                    r.failed_methods_actual = num(1)? as usize;
-                    r.failed_methods_expected = num(2)? as usize;
-                }
-                "error" => r.error = Some(thrown_from(&fields[1..])),
-                "failure" => r.failure = Some(get(1)),
-                "reason" => r.reason = Some(get(1)),
-                "log" => r.log.push(LogLine {
-                    severity: Severity::value_of(&get(1))
-                        .ok_or(format!("bad severity in `{line}`"))?,
-                    message: get(2),
-                    throwable: (fields.len() > 3).then(|| thrown_from(&fields[3..])),
-                }),
-                "millis" => r.millis = num(1)?,
-                other => return Err(format!("unknown result field `{other}`")),
-            }
-        }
-        r.status = status.ok_or("result record without a status")?;
-        Ok(r)
-    }
 }

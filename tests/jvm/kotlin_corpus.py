@@ -13,9 +13,10 @@ and validated (73/73 fixture outputs pass the fixture comparison with upstream's
 Vendoring copies the fixture form of every case that needs no library: the 66 KotlinTests (only the
 Kotlin plugin loaded, kuna's jvm_plugins on) and the 5 core Default tests (no plugin, Java output).
 It writes, under --out:
-  kotlin.json                     the vendored sets and cases; regen.py appends them to cases.tsv
+  kotlin.json                     the vendored sets and cases, each with the path of its expected text in
+                                  <corpus-kt> (`oracle`) and that text's digest (`vineflower`, checked
+                                  against SHA256SUMS); regen.py appends them to cases.tsv
   classes/kotlin/<source set>/... their class files (<corpus-kt>/classes)
-  expected/kotlin-<slug>/...      their expected text (<corpus-kt>/expected), checked against SHA256SUMS
 
 --full-manifest writes a corpus manifest rooted at <corpus-kt> with all 73 cases in each of the three
 forms (sets kotlin-*, kotlin-defaults, kotlin-defaults-stdlib); the 2 core Entire Classpath cases and
@@ -26,7 +27,7 @@ $KUNA_JVM_ORACLE/jdks/jdk17). Existing files are overwritten, nothing is deleted
 --overlays NEW_DIR runs the oracle (the tooling's kotlin/bin/vf-decompile-kt, 16 JVMs) on the 66
 KotlinTests cases under each option overlay of OVERLAYS (the Kotlin plugin's options and a few core
 ones) and writes NEW_DIR/cases.tsv with their expected text under NEW_DIR/expected/; run it with
-`corpus --manifest NEW_DIR/cases.tsv`.
+`kuna test --jvm --manifest NEW_DIR/cases.tsv`.
 """
 import argparse
 import hashlib
@@ -35,7 +36,8 @@ import os
 import shutil
 import sys
 
-FORMAT = 'kuna-jvm-corpus\t1'
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from regen import FORMAT, file_digest, line  # noqa: E402
 SOURCE = {
     'KotlinTests': 'plugins/kotlin/src/test/java/org/vineflower/kotlin/KotlinTests.java',
     'SingleClassesTest': 'test/org/jetbrains/java/decompiler/SingleClassesTest.java',
@@ -66,14 +68,6 @@ def oracle_dir(given, flag, *parts):
     if not root:
         sys.exit(f'{NO_ORACLE}, or pass {flag}')
     return os.path.join(root, *parts)
-
-
-def esc(s):
-    return s.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n').replace('\r', '\\r')
-
-
-def line(*fields):
-    return '\t'.join(esc(str(f)) for f in fields) + '\n'
 
 
 def kotlin_slug(slug):
@@ -155,11 +149,9 @@ def main():
             kept_sets.append(entry)
         elif entry['option_pairs'] != pairs:
             sys.exit(f'{t["id"]}: options differ from the other cases of its set')
-        oracle = 'expected/' + kotlin_slug(t['oracle'].split('/', 1)[1])
         src = os.path.join(corpus, t['oracle'])
         if sums.get(t['oracle']) != sha256(src):
             sys.exit(f'{t["oracle"]}: does not match {corpus}/SHA256SUMS')
-        copy(src, os.path.join(out, oracle))
         classes = []
         for c in t['class_files']:
             if sums.get('classes/' + c) != sha256(os.path.join(corpus, 'classes', c)):
@@ -167,7 +159,7 @@ def main():
             copy(os.path.join(corpus, 'classes', c), os.path.join(out, 'classes', 'kotlin', c))
             classes.append('kotlin/' + c)
         records.append({'id': kotlin_slug(t['id']), 'set': entry['name'], 'class_files': classes,
-                        'oracle': oracle, 'decompiled_file': t['decompiled_file'],
+                        'oracle': t['oracle'], 'vineflower': file_digest(src), 'decompiled_file': t['decompiled_file'],
                         'decompiled_file_fallback': t['decompiled_file_fallback'],
                         'reference': t['reference']})
     doc = {
@@ -175,7 +167,8 @@ def main():
                   'the fixture form of every case that needs no library. KotlinTests sets load only the Kotlin '
                   'plugin in Vineflower (jvm_plugins on here: the other two bundled plugins do not change these '
                   'outputs, per the corpus crosscheck); core SingleClassesTest sets load none and print Java. '
-                  'option_pairs are the complete effective option map. regen.py adds these cases to cases.tsv.'),
+                  'option_pairs are the complete effective option map; oracle is the expected text\'s path in the '
+                  'corpus and vineflower its digest. regen.py adds these cases to cases.tsv.'),
         'corpus_manifest_sha256': sha256(os.path.join(corpus, 'manifest.json')),
         'excluded': [{'id': kotlin_slug(t['id']), 'reason': 'include-classpath=1 with kotlin-stdlib on the oracle '
                       'JVM class path (' + ', '.join(t['driver_classpath_extra']) + ')'}

@@ -5,17 +5,19 @@ same class files and options. This directory builds that ground truth: it replay
 test registrations (core's `SingleClassesTest`, the Kotlin plugin's `KotlinTests`) against class
 files compiled from Vineflower's `testData` sources the way Vineflower's Gradle build compiles them,
 and records what the jar prints. The vendored regression corpus in `tests/jvm/` (607 cases, the
-`make test-jvm` gate) is cut from the two corpora built here; nothing in this directory runs in CI.
+`make test-jvm` gate) is cut from the two corpora built here and pins their text by its digest;
+nothing in this directory runs in CI.
 
 | Path | What |
 |---|---|
 | `fetch_vineflower.sh` | the release jar and a source checkout at the release commit |
+| `validate.py` | checks either corpus's outputs against upstream's `.dec` files (both `regen.sh` run it) |
 | `java/` | the Java corpus: core's `SingleClassesTest`, 598 runnable tests |
 | `kotlin/` | the Kotlin corpus: `KotlinTests` (66) and core's 7 `KOTLIN` tests |
 | `*/regen.sh` | rebuild a corpus end to end |
 | `java/bin/vf-decompile`, `kotlin/bin/vf-decompile-kt` | decompile anything through the test fixture's API path |
 | `*/driver/src/` | the Java drivers behind those front-ends (`VfDriver`, `KtVfDriver`, `JasmCompile`) |
-| `*/scripts/` | fetch, compile, manifest, oracle run, validation and cross-check steps |
+| `*/scripts/` | fetch, compile, manifest, oracle run and cross-check steps |
 
 ## The workspace: `KUNA_JVM_ORACLE`
 
@@ -144,7 +146,7 @@ corpus).
 - The *Javadoc* sets pass an `IFabricJavadocProvider` object; `vf-decompile --javadoc plain|markdown`
   recreates both.
 
-**Validation** (`scripts/validate.py`, `reports/match-fixture.json`): 598 of 598 outputs pass the
+**Validation** (`validate.py`, `reports/match-fixture.json`): 598 of 598 outputs pass the
 fixture's own comparison with upstream's `.dec`; 597 match the primary file and one,
 `default/pkg/TestJava11StringConcat`, matches upstream's `_1.dec`, which records the string-concat code
 a different javac 11 build emits (`scripts/mismatch-categories.json`).
@@ -227,9 +229,10 @@ of an `--only` run and then fails to save the first class, so the script creates
 
 | Consumer | Reads |
 |---|---|
-| `tests/jvm/regen.py` | `corpus/manifest.json`, `classes/`, `expected/`, `reports/match-fixture.json`: vendors the 530 cases that need no JDK library and writes `cases.tsv` and `README.md`; `--skip-vendor --full-manifest FILE` writes all 598 runnable cases for `corpus --manifest FILE` |
-| `tests/jvm/plugin_oracle.py` | `java/scripts/compile_sets.sh` and `java/bin/vf-decompile --plugins`, the Vineflower checkout's plugin test data, `corpus/expected-defaults/`: the 6 plugin cases |
-| `tests/jvm/kotlin_corpus.py` | `corpus-kt/manifest.json`, `classes/`, `expected/` (checked against `SHA256SUMS`): the 71 vendorable Kotlin cases and `kotlin.json`; `--full-manifest` all 73 cases in all three forms; `--overlays` the plugin cases under option overlays, through `kotlin/bin/vf-decompile-kt` |
+| `tests/jvm/regen.py` | `corpus/manifest.json`, `classes/`, `expected/`, `reports/match-fixture.json`: vendors the class files of the 530 cases that need no JDK library and writes `cases.tsv` (with the digest of each case's `expected/` text) and `README.md`; `--skip-vendor --full-manifest FILE` writes all 598 runnable cases for `kuna test --jvm --manifest FILE`; `--expected-text DIR CASE...` writes the text a vendored case's digest pins, from `corpus/expected/`, `corpus-kt/expected/`, the Vineflower checkout's `.dec` files or a `java/bin/vf-decompile` run |
+| `tests/jvm/plugin_oracle.py` | `java/scripts/compile_sets.sh` and `java/bin/vf-decompile --plugins`, the Vineflower checkout's plugin test data, `corpus/expected-defaults/`: the 6 plugin cases and their digests in `plugins.json` |
+| `tests/jvm/kotlin_corpus.py` | `corpus-kt/manifest.json`, `classes/`, `expected/` (checked against `SHA256SUMS`): the 71 vendorable Kotlin cases and `kotlin.json` (each with its text's digest); `--full-manifest` all 73 cases in all three forms; `--overlays` the plugin cases under option overlays, through `kotlin/bin/vf-decompile-kt` |
+| `tests/jvm/kuna_fix_case.py` | `java/bin/vf-decompile`: a kuna-fixes case's compat digest in `kuna-fixes/cases.json` |
 | `decompiler/nonnative/kuna-jvm/tests/data/*/gen.sh` | the jar, the JDKs, kotlinc, asmtools, `corpus/classes` and `vf-decompile` |
 
 Order: `kotlin_corpus.py` and `plugin_oracle.py` write their cases into `tests/jvm`, then `regen.py`

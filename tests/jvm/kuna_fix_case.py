@@ -15,26 +15,25 @@ Steps, all under tests/jvm/kuna-fixes/ (README.md there has the layout):
 
   1. copies the class files to classes/<package>/ and the source to src/<package>/;
   2. runs the released Vineflower jar through the oracle (`vf-decompile --fixture`, plus the options of
-     cases.json, dump-exception-on-error=0, and every --opt) and stores its text as
-     expected-compat/<id>EXT; the text must contain Vineflower's failure comment, unless --wrong-output
-     says the fix corrects code Vineflower prints wrongly;
-  3. records the case in cases.json and rebuilds cases.tsv and the READMEs with regen.py;
-  4. runs the corpus runner on both passes: the compat pass must match Vineflower's text, and kuna's
-     default output becomes expected/<id>EXT (printed as a diff against the compat text, for review);
+     cases.json, dump-exception-on-error=0, and every --opt); the text must contain Vineflower's failure
+     comment, unless --wrong-output says the fix corrects code Vineflower prints wrongly;
+  3. records the case in cases.json with that text's digest (`vineflower`, the compat run's expectation)
+     and rebuilds cases.tsv and the READMEs with regen.py;
+  4. runs `kuna test --jvm` on both passes: the compat pass must match Vineflower's text, and kuna's
+     default output becomes expected/<id>EXT (printed as a diff against Vineflower's text, for review);
   5. runs both passes again: both must match.
 The new case must also pass tests/fix_isolation.rs, and a fix that changes kuna's default text on
 Vineflower's own inputs moves digests that make test-jvm reports (kuna/<id>): read those texts and
-re-record them with the corpus runner's --save-digests (docs/jvm.md, "Fixing a Vineflower bug").
+re-record them with `kuna test --jvm --save-digests` (docs/jvm.md, "Fixing a Vineflower bug").
 
 Needs KUNA_JVM_ORACLE (the oracle workspace, decompiler/nonnative/kuna-jvm/tools/oracle/README.md) and
-cargo; the corpus runner is built in release mode (CARGO_TARGET_DIR is honoured).
+cargo; kuna is built in release mode (CARGO_TARGET_DIR is honoured).
 """
 import argparse
 import difflib
 import glob
 import json
 import os
-import re
 import shutil
 import struct
 import subprocess
@@ -42,10 +41,11 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(HERE)
+from regen import VF_DECOMPILE, fix_ids, text_digest  # noqa: E402
+
 REPO = os.path.dirname(os.path.dirname(HERE))
 FIXES = os.path.join(HERE, 'kuna-fixes')
-VF_DECOMPILE = os.path.join(REPO, 'decompiler/nonnative/kuna-jvm/tools/oracle/java/bin/vf-decompile')
-FIXES_TOML = os.path.join(REPO, 'decompiler/nonnative/kuna-jvm/fixes.toml')
 MARKER = "$VF: Couldn't be decompiled"
 # The fixture's leak check (unit-test mode) fails after the output is saved when a method fails
 # while it is written (once per such method); the saved text is still Vineflower's.
@@ -91,38 +91,33 @@ def class_name(path):
     return utf8[classes[this_class]]
 
 
-def fix_ids():
-    """The ids of the kuna fixes (the `id`s of fixes.toml) and the names of
-    the kuna-form options (options.toml rows with `change_kind = "kuna-form"`; a case of one passes
-    `--opt NAME=1` unless the option is on by default)."""
-    with open(FIXES_TOML, encoding='utf-8') as f:
-        ids = re.findall(r'^\s*\{ id = "([a-z0-9_]+)"', f.read(), re.M)
-    with open(os.path.join(REPO, 'decompiler/nonnative/kuna-jvm/options.toml'), encoding='utf-8') as f:
-        rows = f.read().split('[[option]]')
-    return ids + [m.group(1) for row in rows if 'change_kind = "kuna-form"' in row
-                  for m in [re.search(r'^option = "(\w+)"', row, re.M)] if m]
-
-
 def run(cmd, cwd=None, env=None):
     r = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True)
     return r.returncode, r.stdout, r.stderr
 
 
 def corpus(case_ids, out):
-    """Runs the corpus runner on the given case ids, in process: their statuses (from the `status:` line
-    of each `<id>.log`) and the runner's output."""
-    cmd = ['cargo', 'run', '-q', '--release', '-p', 'kuna-jvm', '--example', 'corpus', '--',
-           '--manifest', os.path.join(HERE, 'cases.tsv'), '--in-process', '--out', out]
+    """Runs `kuna test --jvm` on the given case ids, writing their text under `out`: the ids that match and
+    the runner's output."""
+    cmd = ['cargo', 'run', '-q', '--release', '-p', 'kuna-cli', '--', 'test', '--jvm', '--json',
+           '--manifest', os.path.join(HERE, 'cases.tsv'), '--out', out]
     for case_id in case_ids:
-        cmd += ['--filter', case_id]
+        cmd += ['--name', case_id]
     _, stdout, stderr = run(cmd, cwd=os.path.join(REPO, 'decompiler'))
-    statuses = {}
-    for case_id in case_ids:
-        log = os.path.join(out, case_id + '.log')
-        if os.path.isfile(log):
-            with open(log, encoding='utf-8') as f:
-                statuses[case_id] = next((l[len('status: '):].strip() for l in f if l.startswith('status: ')), None)
-    return statuses, stdout + stderr
+    try:
+        passing = {p.removeprefix('jvm:') for p in json.loads(stdout)['passing']}
+    except (ValueError, KeyError):
+        passing = set()
+    return passing, stdout + stderr
+
+
+def text_of(out, run_id):
+    """The text `kuna test --jvm --out` wrote for a run (`<id>.kt` or `<id>.java`), or ''."""
+    for ext in ('.kt', '.java'):
+        if os.path.isfile(os.path.join(out, run_id + ext)):
+            with open(os.path.join(out, run_id + ext), encoding='utf-8') as f:
+                return f.read()
+    return 
 
 
 def regen():
@@ -149,7 +144,7 @@ def main():
     if not os.environ.get('KUNA_JVM_ORACLE'):
         sys.exit('KUNA_JVM_ORACLE is not set: set it to the JVM oracle workspace '
                  '(decompiler/nonnative/kuna-jvm/tools/oracle/README.md)')
-    ids = fix_ids()
+    ids = fix_ids(REPO)
     if a.fix not in ids:
         sys.exit(f'{a.fix}: no such fix id (add its row to fixes.toml first); the ids are: '
                  + ', '.join(ids))
@@ -189,7 +184,7 @@ def add_case(a, extra, work):
     with open(table_path, encoding='utf-8') as f:
         table = json.load(f)
     vf_out = os.path.join(work, 'vf')
-    cmd = [VF_DECOMPILE, '--fixture'] + (['--plugins'] if language == 'kotlin' else [])
+    cmd = [os.path.join(REPO, VF_DECOMPILE), '--fixture'] + (['--plugins'] if language == 'kotlin' else [])
     for k, v in table['options'] + extra:
         cmd += ['--opt', f'{k}={v}']
     cmd += [os.path.join(FIXES, 'classes', f) for f in class_files] + ['-o', vf_out]
@@ -202,16 +197,14 @@ def add_case(a, extra, work):
         compat_text = f.read()
     if MARKER not in compat_text and not a.wrong_output:
         sys.exit(f'Vineflower decompiles {name} without a failure comment: there is nothing for a fix to change')
-    for sub in ('expected-compat', 'expected'):
-        os.makedirs(os.path.dirname(os.path.join(FIXES, sub, case_id + ext)), exist_ok=True)
-    with open(os.path.join(FIXES, 'expected-compat', case_id + ext), 'w', encoding='utf-8', newline='\n') as f:
-        f.write(compat_text)
     default_path = os.path.join(FIXES, 'expected', case_id + ext)
+    os.makedirs(os.path.dirname(default_path), exist_ok=True)
     if not os.path.exists(default_path):
-        shutil.copyfile(os.path.join(FIXES, 'expected-compat', case_id + ext), default_path)
+        with open(default_path, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(compat_text)
 
-    entry = {'id': case_id, 'fix': a.fix, 'class_files': class_files, 'source': source,
-             'compiler': a.compiler, 'summary': a.summary}
+    entry = {'id': case_id, 'fix': a.fix, 'vineflower': text_digest(compat_text.encode('utf-8')),
+             'class_files': class_files, 'source': source, 'compiler': a.compiler, 'summary': a.summary}
     if language == 'kotlin':
         entry['language'] = 'kotlin'
     if extra:
@@ -229,22 +222,21 @@ def add_case(a, extra, work):
 
     compat_id, default_id = f'kuna-fixes-compat/{case_id}', f'kuna-fixes/{case_id}'
     run_out = os.path.join(work, 'run1')
-    statuses, out = corpus([compat_id, default_id], run_out)
-    actual = os.path.join(run_out, default_id + '.actual.java')
-    if not os.path.isfile(actual):
-        sys.exit(f'the corpus runner produced no output for {default_id}:\n{out}')
-    if statuses.get(compat_id) != 'Match':
-        with open(os.path.join(run_out, compat_id + '.diff'), encoding='utf-8', errors='replace') as f:
-            sys.exit(f'{compat_id}: kuna in compat mode does not print what Vineflower prints; fix the port '
-                     f'first:\n{f.read()}')
-    with open(actual, encoding='utf-8') as f:
-        default_text = f.read()
+    passing, out = corpus([compat_id, default_id], run_out)
+    default_text = text_of(run_out, default_id)
+    if not default_text:
+        sys.exit(f'kuna test --jvm produced no output for {default_id}:\n{out}')
+    if compat_id not in passing:
+        diff = difflib.unified_diff(compat_text.splitlines(), text_of(run_out, compat_id).splitlines(),
+                                    f'vineflower/{case_id}{ext}', f'kuna/{compat_id}{ext}', lineterm='')
+        sys.exit(f'{compat_id}: kuna in compat mode does not print what Vineflower prints; fix the port '
+                 f'first:\n' + '\n'.join(diff))
     with open(default_path, 'w', encoding='utf-8', newline='\n') as f:
         f.write(default_text)
     regen()
 
     diff = difflib.unified_diff(compat_text.splitlines(), default_text.splitlines(),
-                                f'expected-compat/{case_id}{ext}', f'expected/{case_id}{ext}', lineterm='')
+                                f'vineflower/{case_id}{ext}', f'expected/{case_id}{ext}', lineterm='')
     print('\n'.join(diff))
     before, after = compat_text.count(MARKER), default_text.count(MARKER)
     print(f'\nfailed methods: {before} with jvm_vineflower_compat on, {after} with the defaults')
@@ -254,8 +246,8 @@ def add_case(a, extra, work):
     elif after >= before:
         print('warning: the fix does not decompile any method Vineflower fails on in this class')
 
-    statuses, out = corpus([compat_id, default_id], os.path.join(work, 'run2'))
-    if statuses.get(compat_id) != 'Match' or statuses.get(default_id) != 'Match':
+    passing, out = corpus([compat_id, default_id], os.path.join(work, 'run2'))
+    if compat_id not in passing or default_id not in passing:
         sys.exit(f'the two passes do not both match after recording:\n{out}')
     print(f'{compat_id} and {default_id} match; review the diff above, '
           f'then fill in the case\'s summary in kuna-fixes/cases.json (and rerun regen.py) if it is empty')

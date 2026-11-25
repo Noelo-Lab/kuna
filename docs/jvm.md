@@ -103,7 +103,6 @@ byte.
 | `src/kotlin/` | Vineflower's Kotlin plugin: the metadata decoder, its pass schedule, the Kotlin expression and statement layer, the Kotlin writer (below, "Kotlin") |
 | `src/fixes/` | kuna's fixes of Vineflower's defects, one module per family of `fixes.toml` (a folder for a large family), called from the gated sites of the ported files (below, "Kuna-only fixes") |
 | `options.toml` | the `jvm_*` option rows; `build.rs` generates the static table from it |
-| `examples/` | `corpus` (the regression runner) |
 | `tests/` | the unit and differential suite, one `integration` test binary (`tests/integration.rs` registers every file) |
 | `tools/oracle/` | the Vineflower oracle: rebuilds the Java and Kotlin corpora the regression corpus comes from |
 
@@ -180,8 +179,8 @@ objects by creation in the arena; see the fidelity contract below.
   JetBrains' Fernflower through ForgeFlower, FabricMC's fork and Quiltflower. The
   attribution is in the repo's `NOTICE`.
 - **Test data:** the regression corpus in `tests/jvm/` is built from Vineflower's own
-  `testData` sources and registrations (core's and its plugins') and from the output of
-  the released `vineflower-1.12.0.jar` (`tests/jvm/README.md`).
+  `testData` sources and registrations (core's and its plugins') and pins, by digest, the
+  output of the released `vineflower-1.12.0.jar` (`tests/jvm/README.md`).
 - **What was ported.** Of the 273 Java files under `org/jetbrains/java/decompiler/` in
   Vineflower's `src/`, 242 are ported one to one; each names its original in its first
   line, so `grep -r '^//! Port of' decompiler/nonnative/kuna-jvm/src` is the manifest. The
@@ -654,10 +653,10 @@ example):
    tests/jvm/kuna_fix_case.py --fix <id> --class DIR/pkg/TestFoo.class --source
    pkg/TestFoo.java --compiler "javac 17.0.20.1" --summary "<what decompiles now>"`. It
    vendors the class and its `TestFoo$*.class` siblings into `tests/jvm/kuna-fixes/`,
-   stores what the release jar prints (the compat expectation, which must contain the
-   failure comment), checks that kuna in compat mode prints exactly that, stores kuna's
-   default output, prints the diff for review, and rebuilds `cases.tsv` and the READMEs with
-   `regen.py`. The case must also pass `tests/fix_isolation.rs`, which turns its switch off
+   records the digest of what the release jar prints (the compat expectation, which must
+   contain the failure comment) in `cases.json`, checks that kuna in compat mode prints
+   exactly that, stores kuna's default output, prints the diff for review, and rebuilds
+   `cases.tsv` and the READMEs with `regen.py`. The case must also pass `tests/fix_isolation.rs`, which turns its switch off
    alone: a Java case must then print its compat text, and a Kotlin or form-option case
    something other than its default text. A Java case that a second fix also changes names
    that fix in the test's `PARTNERS` table; a Kotlin case whose fix another one masks names
@@ -674,17 +673,17 @@ example):
    mode, a tracker note or an import, or be the fix's own correction; (d) `make
    test-jvm`. Its compat-mode runs must still match; a fix that changes kuna's default
    text on Vineflower's own inputs moves the digests of their default-mode runs
-   (`kuna/<id>`, printed with both digests). Read each moved text (`corpus --filter
-   kuna/<id> --out DIR`), re-record them with `corpus --save-digests`, and name the moved
-   ids in the commit.
+   (`kuna/<id>`, printed with both digests). Read each moved text (`kuna test --jvm --name
+   kuna/<id> --out DIR`), re-record them with `kuna test --jvm --save-digests`, and name the
+   moved ids in the commit.
 7. **Gates**: `cargo test -p kuna-jvm`, `make test-jvm`, `kuna catalog --check`, `make
    check-spec` and `python3 tools/check_spec.py --strict`, `make lint`.
 
 Fixes made in parallel meet in the same files. Keep both sides of `fixes.toml` and of
 `tests/jvm/kuna-fixes/cases.json`, then rerun `regen.py` (it rewrites `cases.tsv` and both
-READMEs, keeping each case's `digest`, and refuses a case whose `fix` is not an id of
-`fixes.toml`); where both sides moved a digest, rerun `corpus --save-digests --out DIR`
-and read the texts of the ids it reports.
+READMEs, keeping each case's `kuna` digest, and refuses a case whose `fix` is not an id of
+`fixes.toml`); where both sides moved a digest, rerun `kuna test --jvm --save-digests --out
+DIR` and read the texts of the ids it reports.
 
 ## The JDK runtime library
 
@@ -994,16 +993,15 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm`) | the gate: every case prints its expected text: each Vineflower-oracle case (Java, plugin and Kotlin) Vineflower's exact text in compat mode and, by default, the text its digest pins, and each kuna-fixes case Vineflower's text in compat mode and kuna's reviewed text by default (`tests/jvm/README.md` has the counts). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm`) | the gate: every case prints its expected text: each Vineflower-oracle case (Java, plugin and Kotlin) Vineflower's exact text in compat mode and, by default, the text its `kuna` digest pins, and each kuna-fixes case Vineflower's text in compat mode and kuna's reviewed text by default; Vineflower's text is pinned by its digest (`tests/jvm/README.md` has the format and the counts). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
-| `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16` | the same corpus gate without the CLI |
 
-Useful corpus-runner flags (`corpus --help` lists all): `--filter SUBSTR` runs matching
-cases in-process (quick); `--out DIR` writes each case's actual text, diff and log;
-`--save-digests` re-records the digests of the default-mode runs it made;
-`--manifest FILE` runs another manifest, such as the full Java or Kotlin one generated from
-the external corpora (`--save-baseline FILE` and `--baseline FILE` gate one whose cases do
-not all match on the machine).
+Useful flags of `kuna test --jvm` (`docs/cli.md`): `--name SUBSTR` runs the matching cases;
+`--out DIR` writes each run's text as `DIR/<id>.java` or `.kt`; `--save-digests` re-records
+the `kuna` digests of the default-mode runs it made; `--manifest FILE` runs another
+manifest, such as the full Java or Kotlin one generated from the external corpora.
+`tests/jvm/regen.py --expected-text DIR CASE...` writes Vineflower's text of named cases
+from the oracle workspace, for a diff against kuna's.
 
 **Regenerating the corpus.** `tests/jvm/` is generated, never edited by hand, from the
 Vineflower oracle that `decompiler/nonnative/kuna-jvm/tools/oracle` builds outside the

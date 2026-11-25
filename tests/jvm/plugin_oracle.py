@@ -12,16 +12,19 @@ $KUNA_JVM_ORACLE/corpus and $KUNA_JVM_ORACLE/vineflower (decompiler/nonnative/ku
 2. Decompiles each case with the oracle tooling's java/bin/vf-decompile --plugins (the release jar's bundled
    plugins, its driver built in <corpus>), adding
    --fixture for fixture sets, with the set's option pairs except kuna's own jvm_plugins; a non-fixture set runs
-   like `java -jar` (--save folder --opt include-runtime=current). The compared file becomes the case's
-   expected text.
+   like `java -jar` (--save folder --opt include-runtime=current). The digest of the compared file's text is
+   the case's `vineflower` digest in plugins.json.
 3. Checks each output against the plugin's upstream .dec with the fixture's comparison (CRLF -> LF, trim), and
    the non-fixture outputs against the oracle corpus's expected-defaults when it has the class.
 
-Writes under --out (default: this script's directory); overwrites, never deletes. Then run regen.py.
+Writes under --out (default: this script's directory): the class files and plugins.json; overwrites, never
+deletes. Then run regen.py.
 """
 import argparse
+import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -102,6 +105,8 @@ def main():
                 copy(os.path.join(root, name), dst)
 
     failures = 0
+    with open(os.path.join(here, 'plugins.json'), encoding='utf-8') as f:
+        text = f.read()
     for t in m['tests']:
         s = sets[t['set']]
         outdir = os.path.join(work, 'run', t['id'])
@@ -120,7 +125,9 @@ def main():
         produced = [os.path.join(r, n) for r, _, fs in os.walk(outdir) for n in fs if n == t['decompiled_file']]
         if len(produced) != 1:
             sys.exit(f'{t["id"]}: expected one {t["decompiled_file"]}, got {produced}')
-        copy(produced[0], os.path.join(out, t['oracle']))
+        digest = hashlib.sha256(get_content(produced[0]).encode('utf-8')).hexdigest()[:16]
+        text = re.sub(r'("id": %s,\n(?:.*\n)*?\s*"vineflower": )"[^"]*"' % re.escape(json.dumps(t['id'])),
+                      lambda match: f'{match.group(1)}"{digest}"', text, count=1)
         if t['reference']:
             ok = get_content(produced[0]) == get_content(os.path.join(vf, t['reference']))
             print(f'{t["id"]}: {"matches" if ok else "DIFFERS FROM"} {t["reference"]}')
@@ -129,6 +136,8 @@ def main():
             ok = os.path.isfile(ref) and get_content(produced[0]) == get_content(ref)
             print(f'{t["id"]}: {"matches" if ok else "DIFFERS FROM"} {os.path.relpath(ref, corpus)}')
         failures += not ok
+    with open(os.path.join(out, 'plugins.json'), 'w', encoding='utf-8', newline='\n') as f:
+        f.write(text)
     if failures:
         sys.exit(f'{failures} case(s) differ from their reference')
 

@@ -38,8 +38,7 @@ echo "== oracle: plain CLI defaults (expected-defaults/)";     run --mode defaul
 echo "== oracle: CLI defaults + -e=kotlin-stdlib-2.0.0.jar (expected-defaults-stdlib/)"
 run --mode defaults --lib tools/m2/kotlin-stdlib-2.0.0.jar --dest-key defaults_stdlib_oracle --suffix=-stdlib
 echo "== validate against upstream .dec"
-python3 -I "$TOOLS/scripts/validate.py" --manifest "$OUT/manifest.json" --vf-src "$VF_SRC" --out-root "$OUT" \
-  --categories "$TOOLS/scripts/mismatch-categories.json"
+python3 -I "$TOOLS/../validate.py" --manifest "$OUT/manifest.json" --vf-src "$VF_SRC" --out-root "$OUT"
 if [ "${SKIP_REALWORLD:-0}" != 1 ]; then
   echo "== real-world references (realworld/*/vf)"
   python3 -I "$TOOLS/scripts/realworld.py" --out-root "$OUT" --work "$WORK/realworld" --java "$JDKS/jdk17/bin/java" \

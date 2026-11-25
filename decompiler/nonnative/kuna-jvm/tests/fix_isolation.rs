@@ -1,7 +1,7 @@
 //! Each kuna fix and form option alone, over the cases of `tests/jvm/kuna-fixes/cases.json` (case
 //! -> fix or option): with only its own fix off (and the form options off) a Java case prints
-//! Vineflower's text, its compat expectation; with only its own switch off a Kotlin case or a
-//! form-option case changes. The two texts themselves are pinned by
+//! Vineflower's text, the one its compat run's `vineflower` digest pins; with only its own switch
+//! off a Kotlin case or a form-option case changes. The two texts themselves are pinned by
 //! `kuna_fixes::every_kuna_fixes_case_matches_in_both_modes`.
 
 use std::path::{Path, PathBuf};
@@ -108,7 +108,7 @@ fn case(all: &[Case], id: &str) -> Case {
 }
 
 fn is_kotlin(case: &Case) -> bool {
-    case.expected.extension().is_some_and(|e| e == "kt")
+    case.compare[0].ends_with(".kt")
 }
 
 #[test]

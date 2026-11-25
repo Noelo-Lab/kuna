@@ -209,7 +209,9 @@ fn cmd_test(argv: &[String]) -> Result<i32, String> {
     let mut save_baseline: Option<String> = None;
     let mut json = false;
     let mut jvm = false;
-    let mut jvm_dir: Option<String> = None;
+    let mut manifest: Option<String> = None;
+    let mut out: Option<String> = None;
+    let mut save_digests = false;
     let mut jobs: Option<usize> = None;
     let mut native_flag: Option<&str> = None;
 
@@ -230,10 +232,9 @@ fn cmd_test(argv: &[String]) -> Result<i32, String> {
                 native_flag = Some("--datatests");
             }
             "--jvm" => jvm = true,
-            "--jvm-dir" => {
-                jvm_dir = Some(take_value(argv, &mut i, "--jvm-dir")?);
-                jvm = true;
-            }
+            "--manifest" => manifest = Some(take_value(argv, &mut i, "--manifest")?),
+            "--out" => out = Some(take_value(argv, &mut i, "--out")?),
+            "--save-digests" => save_digests = true,
             "--jobs" => {
                 let (n, auto) = jobs::parse_jobs(&take_value(argv, &mut i, "--jobs")?)?;
                 jobs = (!auto).then_some(n);
@@ -278,10 +279,10 @@ fn cmd_test(argv: &[String]) -> Result<i32, String> {
         if baseline.is_some() || save_baseline.is_some() {
             return Err("--jvm has no baseline: every case must match".into());
         }
-        return run_jvm_tests(jvm_dir, names, json, jobs);
+        return run_jvm_tests(manifest, names, json, jobs, out, save_digests);
     }
-    if jobs.is_some() {
-        return Err("--jobs applies to --jvm".into());
+    if jobs.is_some() || manifest.is_some() || out.is_some() || save_digests {
+        return Err("--jobs, --manifest, --out and --save-digests apply to --jvm".into());
     }
     if !names.is_empty() && mode == Mode::All {
         return Err("--name requires --unittests, --datatests or --jvm".into());
@@ -302,12 +303,27 @@ fn cmd_test(argv: &[String]) -> Result<i32, String> {
 }
 
 #[cfg(feature = "jvm")]
-fn run_jvm_tests(dir: Option<String>, names: Vec<String>, json: bool, jobs: Option<usize>) -> Result<i32, String> {
-    Ok(nonnative::corpus::run(&nonnative::corpus::JvmTestArgs { dir, names, json, jobs }))
+fn run_jvm_tests(
+    manifest: Option<String>,
+    names: Vec<String>,
+    json: bool,
+    jobs: Option<usize>,
+    out: Option<String>,
+    save_digests: bool,
+) -> Result<i32, String> {
+    let args = nonnative::corpus::JvmTestArgs { manifest, names, json, jobs, out, save_digests };
+    Ok(nonnative::corpus::run(&args))
 }
 
 #[cfg(not(feature = "jvm"))]
-fn run_jvm_tests(_dir: Option<String>, _names: Vec<String>, _json: bool, _jobs: Option<usize>) -> Result<i32, String> {
+fn run_jvm_tests(
+    _: Option<String>,
+    _: Vec<String>,
+    _: bool,
+    _: Option<usize>,
+    _: Option<String>,
+    _: bool,
+) -> Result<i32, String> {
     Err("this kuna was built without the JVM engine (cargo feature `jvm`)".into())
 }
 
@@ -335,11 +351,13 @@ fn usage_test() {
          data is {{corpus,requested,matched,missing}} (file names) and unit is\n\
          {{requested,matched,missing}}, each null when that half did not run.\n\
          \n\
-         --jvm [--jvm-dir D] [--jobs N|auto] runs the JVM engine's corpus (tests/jvm:\n\
-         each case's expected text is Vineflower 1.12.0's output, byte for byte) in\n\
-         this process and fails on any case that does not match; --name N keeps the\n\
-         cases whose id contains N. With --json: {{jvm_footer,passing,returncode,\n\
-         failures,selection}}."
+         --jvm [--manifest F] [--jobs N|auto] [--out D] [--save-digests] runs the JVM\n\
+         engine's corpus (tests/jvm/cases.tsv, or F: Vineflower 1.12.0's text and kuna's\n\
+         own, pinned by digest or expected file) in this process and fails on any case\n\
+         that does not match; --name N keeps the cases whose id contains N; --out D\n\
+         writes each run's text as D/<id>.java|.kt; --save-digests re-records the `kuna`\n\
+         digests of the default-mode runs (kuna/<id>) it made. With --json:\n\
+         {{jvm_footer,passing,returncode,failures,selection}}."
     );
 }
 
