@@ -65,7 +65,6 @@ impl IFernflowerPreferences {
     pub const LINE_SEPARATOR_WIN: &str = "\r\n";
     pub const LINE_SEPARATOR_UNX: &str = "\n";
     pub const SKIP_EXTRA_FILES: &str = "skip-extra-files";
-    pub const WARN_INCONSISTENT_INNER_CLASSES: &str = "warn-inconsistent-inner-attributes";
     pub const DUMP_BYTECODE_ON_ERROR: &str = "dump-bytecode-on-error";
     pub const DUMP_EXCEPTION_ON_ERROR: &str = "dump-exception-on-error";
     pub const DECOMPILER_COMMENTS: &str = "decompiler-comments";
@@ -153,7 +152,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::DUMP_ORIGINAL_LINES, "0".to_string()),
             (IFernflowerPreferences::THREADS, available_processors().to_string()),
             (IFernflowerPreferences::SKIP_EXTRA_FILES, "0".to_string()),
-            (IFernflowerPreferences::WARN_INCONSISTENT_INNER_CLASSES, "1".to_string()),
             (IFernflowerPreferences::DUMP_BYTECODE_ON_ERROR, "1".to_string()),
             (IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR, "1".to_string()),
             (IFernflowerPreferences::DECOMPILER_COMMENTS, "1".to_string()),
@@ -267,7 +265,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "DUMP_ORIGINAL_LINES", key: IFernflowerPreferences::DUMP_ORIGINAL_LINES, short_name: None, name: None, description: None, type_: None, dynamic_default_value: None },
     PreferenceOption { field: "UNIT_TEST_MODE", key: IFernflowerPreferences::UNIT_TEST_MODE, short_name: None, name: None, description: None, type_: None, dynamic_default_value: None },
     PreferenceOption { field: "SKIP_EXTRA_FILES", key: IFernflowerPreferences::SKIP_EXTRA_FILES, short_name: Some("sef"), name: Some("Skip Extra Files"), description: Some("Skip copying non-class files from the input folder or file to the output"), type_: Some(OptionType::Boolean), dynamic_default_value: None },
-    PreferenceOption { field: "WARN_INCONSISTENT_INNER_CLASSES", key: IFernflowerPreferences::WARN_INCONSISTENT_INNER_CLASSES, short_name: Some("win"), name: Some("Warn about inconsistent inner attributes"), description: Some("Warn about inconsistent inner class attributes"), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DUMP_BYTECODE_ON_ERROR", key: IFernflowerPreferences::DUMP_BYTECODE_ON_ERROR, short_name: Some("dbe"), name: Some("Dump Bytecode On Error"), description: Some("Put the bytecode in the method body when an error occurs."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DUMP_EXCEPTION_ON_ERROR", key: IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR, short_name: Some("dee"), name: Some("Dump Exceptions On Error"), description: Some("Put the exception message in the method body or source file when an error occurs."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DECOMPILER_COMMENTS", key: IFernflowerPreferences::DECOMPILER_COMMENTS, short_name: Some("dec"), name: Some("Decompiler Comments"), description: Some("Sometimes, odd behavior of the bytecode or unfixable problems occur. This enables or disables the adding of those to the decompiled output."), type_: Some(OptionType::Boolean), dynamic_default_value: None },

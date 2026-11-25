@@ -148,8 +148,6 @@ Three tiers:
 | class or method named like a Java keyword | [`jvm_rename_members`](#jvm_rename_members----on--off-default-off) |
 | identifiers that are not valid Java (obfuscated names) | [`jvm_rename_members`](#jvm_rename_members----on--off-default-off) |
 | many classes named a, b, c that clash | [`jvm_rename_members`](#jvm_rename_members----on--off-default-off) |
-| "Inconsistent inner class entries" warnings flood stderr | [`jvm_warn_inconsistent_inner_attributes`](#jvm_warn_inconsistent_inner_attributes----on--off-default-on) |
-| nested class appears under an unexpected outer class | [`jvm_warn_inconsistent_inner_attributes`](#jvm_warn_inconsistent_inner_attributes----on--off-default-on) |
 | decompiling a fat jar spends time on bundled libraries | [`jvm_excluded_classes`](#jvm_excluded_classes-----default-) |
 | output includes generated or third-party classes | [`jvm_excluded_classes`](#jvm_excluded_classes-----default-) |
 | only one package of a large jar is of interest | [`jvm_included_classes`](#jvm_included_classes-----default-) |
@@ -602,15 +600,6 @@ What the engine loads and infers before any class is written.
 - **Where / provenance:** p0_knowledge/fernflower, identifier_converter, converter_helper · vineflower · vineflower-option
 - **Also spelled:** `rename-members`, `ren`
 - **Example:** `kuna decompile-project obf.jar -o out --option jvm_rename_members on`
-
-### `jvm_warn_inconsistent_inner_attributes` -- on | off, default `on`
-
-- **Symptoms:** "Inconsistent inner class entries" warnings flood stderr; nested class appears under an unexpected outer class.
-- **What it does:** Log a warning when classes' InnerClasses entries disagree about a nested class, with both entries and the one chosen; output text is unchanged.
-- **When to flip:** Turn off to quiet the log on jars with many conflicting entries; keep on to learn why a class was nested where it was.
-- **Where / provenance:** p1_classfile/classes_processor · vineflower · vineflower-option
-- **Also spelled:** `warn-inconsistent-inner-attributes`, `win`
-- **Example:** `kuna decompile-all obf.jar --option jvm_warn_inconsistent_inner_attributes off`
 
 ### `jvm_excluded_classes` -- <regex>, default ``
 

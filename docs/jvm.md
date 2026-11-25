@@ -908,7 +908,7 @@ The engine's log (the logger the CLI installs is silent) has lines with no comme
 output: `Statement cannot be decomposed although reducible!` is a dead end of DomHelper's
 search that its caller recovers from, unless the method then fails with `parsing
 failure!`, which is reported as above; `Inconsistent inner class entries` says which of
-two conflicting `InnerClasses` records the engine kept (`jvm_warn_inconsistent_inner_attributes`);
+two conflicting `InnerClasses` records the engine kept;
 `Inconsistent anonymous class definition` and `Inconsistent references to the class`
 mean the engine writes that class as a top-level unit of its own instead of inside the
 method that creates it, which the CLI follows (it asks the engine for every class of a

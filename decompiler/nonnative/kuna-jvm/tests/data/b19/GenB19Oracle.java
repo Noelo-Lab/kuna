@@ -126,7 +126,6 @@ public class GenB19Oracle {
     load("no-name-check", own, IFernflowerPreferences.VALIDATE_INNER_CLASSES_NAMES, "0");
     load("inconsistent", inconsistent);
     load("inconsistent-reversed", reversed);
-    load("inconsistent-quiet", reversed, IFernflowerPreferences.WARN_INCONSISTENT_INNER_CLASSES, "0");
 
     System.out.println("== regex");
     String[][] cases = {

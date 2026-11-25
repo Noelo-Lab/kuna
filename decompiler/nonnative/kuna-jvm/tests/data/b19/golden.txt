@@ -85,9 +85,6 @@ log	WARN	Inconsistent inner class entries for b/X$Y!
 log	WARN	  b/X: Y  MEMBER of b/X
 log	WARN	  b/X$Y: Y public static MEMBER of b/X
 log	WARN	Changing mapping to b/X$Y -> Y public static MEMBER of b/X
-== load inconsistent-quiet
-b/X	ROOT	X	33	\N	b/X$Y	\N		\N
-b/X$Y	MEMBER	Y	9	b/X		\N	b/X	\N
 == regex
 regex	b/Outer\\$A.*	b/Outer$A$1	true
 regex	b/Outer\\$A.*	b/Outer	false

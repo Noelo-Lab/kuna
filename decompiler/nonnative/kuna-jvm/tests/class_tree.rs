@@ -161,7 +161,7 @@ fn load_classes_matches_vineflower() {
     let mut reversed = inconsistent.clone();
     reversed.reverse();
 
-    let runs: [(&str, &[PathBuf], &[(&str, &str)]); 9] = [
+    let runs: [(&str, &[PathBuf], &[(&str, &str)]); 8] = [
         ("default", &own, &[]),
         (
             "verify-anonymous",
@@ -193,11 +193,6 @@ fn load_classes_matches_vineflower() {
         ),
         ("inconsistent", &inconsistent, &[]),
         ("inconsistent-reversed", &reversed, &[]),
-        (
-            "inconsistent-quiet",
-            &reversed,
-            &[(IFernflowerPreferences::WARN_INCONSISTENT_INNER_CLASSES, "0")],
-        ),
     ];
     for (name, files, options) in runs {
         let guard = open(files, options);

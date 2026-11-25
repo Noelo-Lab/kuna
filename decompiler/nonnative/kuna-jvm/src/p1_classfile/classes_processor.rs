@@ -299,33 +299,24 @@ impl ClassesProcessor {
                                         };
                                         let old_priority = priority(&existing_rec.source);
                                         let new_priority = priority(&rec.source);
-                                        if DecompilerContext::get_option(
-                                            IFernflowerPreferences::WARN_INCONSISTENT_INNER_CLASSES,
-                                        ) {
-                                            let logger = DecompilerContext::get_logger();
-                                            let message = format!(
-                                                "Inconsistent inner class entries for {inner_name}!"
-                                            );
-                                            logger.write_message(&message, Severity::Warn);
+                                        let logger = DecompilerContext::get_logger();
+                                        let message = format!(
+                                            "Inconsistent inner class entries for {inner_name}!"
+                                        );
+                                        logger.write_message(&message, Severity::Warn);
+                                        logger.write_message(
+                                            &format!("  {}: {}", existing_rec.source, existing_rec),
+                                            Severity::Warn,
+                                        );
+                                        logger.write_message(
+                                            &format!("  {}: {}", rec.source, rec),
+                                            Severity::Warn,
+                                        );
+                                        if new_priority < old_priority {
                                             logger.write_message(
-                                                &format!(
-                                                    "  {}: {}",
-                                                    existing_rec.source, existing_rec
-                                                ),
+                                                &format!("Changing mapping to {inner_name} -> {rec}"),
                                                 Severity::Warn,
                                             );
-                                            logger.write_message(
-                                                &format!("  {}: {}", rec.source, rec),
-                                                Severity::Warn,
-                                            );
-                                            if new_priority < old_priority {
-                                                logger.write_message(
-                                                    &format!(
-                                                        "Changing mapping to {inner_name} -> {rec}"
-                                                    ),
-                                                    Severity::Warn,
-                                                );
-                                            }
                                         }
                                         if new_priority < old_priority {
                                             map_inner_classes.put(inner_name.clone(), rec.clone());

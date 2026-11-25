@@ -184,8 +184,8 @@ same file), is left out of the forest but still gives context. With `jvm_decompi
 *member*, *local* or *anonymous* (an entry with no simple name is anonymous; one whose
 `EnclosingMethod` names a method is local), each remembering which class declared it.
 Classes often disagree about a nested class; the record from the nested class itself
-wins over its enclosing class's, which wins over a third class's, and
-`jvm_warn_inconsistent_inner_attributes` logs each disagreement. With
+wins over its enclosing class's, which wins over a third class's, and each disagreement
+is logged. With
 `jvm_validate_inner_classes_names`, a member entry is believed only when its name is the
 outer name, `$`, and its simple name. Then, from each root, a breadth-first walk attaches
 nested classes to their enclosing class: an anonymous class loses `static` and records

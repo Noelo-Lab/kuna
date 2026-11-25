@@ -913,28 +913,6 @@ tier = "core"
 symptoms = "failure comment asks to report to an issue tracker|failure comment should carry a project-specific note"
 
 [[option]]
-option = "jvm_warn_inconsistent_inner_attributes"
-vineflower = "warn-inconsistent-inner-attributes"
-short = "win"
-aliases = ["warn-inconsistent-inner-attributes", "win"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p1_classfile"
-subphase = "classes_processor"
-strength = "HARD"
-rewind = "p1_classfile"
-issue = ""
-summary = "Log a warning when classes' InnerClasses entries disagree about a nested class, with both entries and the one chosen; output text is unchanged."
-use_when = "Turn off to quiet the log on jars with many conflicting entries; keep on to learn why a class was nested where it was."
-example = "kuna decompile-all obf.jar --option jvm_warn_inconsistent_inner_attributes off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.WARN_INCONSISTENT_INNER_CLASSES (warn-inconsistent-inner-attributes, -win)"
-change_kind = "vineflower-option"
-tier = "analysis"
-symptoms = "\"Inconsistent inner class entries\" warnings flood stderr|nested class appears under an unexpected outer class"
-
-[[option]]
 option = "jvm_dump_bytecode_on_error"
 vineflower = "dump-bytecode-on-error"
 short = "dbe"
