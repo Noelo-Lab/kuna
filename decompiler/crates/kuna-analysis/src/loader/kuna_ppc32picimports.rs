@@ -2346,6 +2346,8 @@ mod tests {
             (seed >> 33) % n
         };
         let values = [Value::Unknown, Value::Constant(1), Value::Constant(2), Value::Entry(30), Value::Stack(8), Value::Return];
+        let slots = [None, Some((16, Value::Return)), Some((20, Value::Stack(0))), Some((24, Value::Return))];
+        let compares = [None, Some((0, 3, 4, Value::Mark(1))), Some((0, 3, 5, Value::Mark(1)))];
         let random = |next: &mut dyn FnMut(u64) -> u64| {
             let mut s = State::entry();
             for r in s.regs.iter_mut() {
@@ -2354,18 +2356,35 @@ mod tests {
                 }
             }
             s.lr = values[next(values.len() as u64) as usize];
+            s.ctr = values[next(values.len() as u64) as usize];
             for o in s.saved.iter_mut() {
                 *o = [UNSAVED, 8, 12][next(3) as usize];
             }
             for slot in s.slots.iter_mut() {
-                *slot = [None, Some((16, Value::Return)), Some((20, Value::Stack(0))), Some((24, Value::Return))][next(4) as usize];
+                *slot = slots[next(4) as usize];
             }
-            s.compare = [None, Some((0, 3, 4, Value::Mark(1))), Some((0, 3, 5, Value::Mark(1)))][next(3) as usize];
+            s.compare = compares[next(3) as usize];
+            s
+        };
+        let perturb = |mut s: State, next: &mut dyn FnMut(u64) -> u64| {
+            let value = values[next(values.len() as u64) as usize];
+            match next(6) {
+                0 => s.regs[next(32) as usize] = value,
+                1 => s.lr = value,
+                2 => s.ctr = value,
+                3 => s.saved[next(32) as usize] = [UNSAVED, 8, 12][next(3) as usize],
+                4 => s.slots[next(SLOTS as u64) as usize] = slots[next(4) as usize],
+                _ => s.compare = compares[next(3) as usize],
+            }
             s
         };
         for _ in 0..20_000 {
             let a = random(&mut next);
-            let b = if next(4) == 0 { a } else { random(&mut next) };
+            let b = match next(4) {
+                0 => a,
+                1 => perturb(a, &mut next),
+                _ => random(&mut next),
+            };
             let expected = copying(&a, &b);
             let mut met = a;
             let changed = met.meet(&b);
