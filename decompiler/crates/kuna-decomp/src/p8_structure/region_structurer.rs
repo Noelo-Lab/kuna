@@ -87,6 +87,11 @@ pub fn lex_dump(line: &str) {
         use std::io::Write;
         let p = std::path::Path::new(&d).join(format!("{}.jsonl", std::process::id()));
         if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(p) {
+            static HDR: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if !HDR.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                let a: Vec<String> = std::env::args().map(|x| format!("{x:?}")).collect();
+                let _ = writeln!(f, "{{\"args\":[{}]}}", a.join(","));
+            }
             let _ = writeln!(f, "{{\"f\":\"0x{:x}\",{}}}", LEX_FN.with(|c| c.get()), line);
         }
     }
@@ -213,6 +218,7 @@ pub fn run_region_structurer(
     // region structurer (the refinement is dead).  Read before the `sblocks_mut`
     // borrow so we still hold `&Funcdata`.
     let loop_refine = data.get_arch().region_loop_refine;
+    let loop_exit = data.get_arch().loop_exit.rule(crate::kuna_unoptimized::is_unoptimized(data));
     // SAILR P2 last-resort edge-virtualization ordering gate (`regionedgeorder`,
     // default-OFF opt-in).  Read while we still hold `&Funcdata`.
     let edge_order = data.get_arch().region_edge_order;
@@ -255,6 +261,7 @@ pub fn run_region_structurer(
         .with_condfold_sets(condfold_sets)
         .with_loop_refine(loop_refine, cyclic_loops, bb_addr)
         .with_edge_order(edge_order);
+    st.loop_exit = loop_exit;
     let ok = st.structure(deadline)?;
     let flips = if ok { st.take_pending_flips() } else { Vec::new() };
     if std::env::var_os("KUNA_RS_DEBUG").is_some() {
@@ -412,6 +419,8 @@ struct RegionStructurer<'a> {
     /// body components through this set and absorbs them into a `BlockInfLoop` once
     /// the switch + conditionals have folded.
     pending_body_addrs: std::collections::BTreeMap<uintb, std::collections::BTreeSet<uintb>>,
+    /// (kuna, `option loopexit`) how this function's loop conditions are found.
+    loop_exit: Option<crate::p8_structure::kuna_loopexit::Rule>,
 }
 
 impl<'a> RegionStructurer<'a> {
@@ -431,6 +440,7 @@ impl<'a> RegionStructurer<'a> {
             edge_order: false,
             pending_inf_loops: std::collections::BTreeSet::new(),
             pending_body_addrs: std::collections::BTreeMap::new(),
+            loop_exit: None,
         }
     }
 
@@ -2570,11 +2580,14 @@ impl<'a> RegionStructurer<'a> {
         //      back-edge → while/do-while/inf-loop); `scopeBreak` then lowers the
         //      virtualized loop-exit gotos to `break;`.
         if exit_edges.len() > 1 {
-            let keep = self.choose_structural_exit(head, &exit_edges, normal_exit);
+            let keep = self
+                .condition_exit(head, &exit_edges)
+                .or_else(|| self.choose_structural_exit(head, &exit_edges, normal_exit));
             if std::env::var_os("KUNA_LOOPEXIT_DUMP").is_some() {
-                let ex: Vec<String> = exit_edges.iter().map(|&(s, e, d)| format!("[\"0x{:x}\",\"0x{:x}\",{},{},{},{}]",
+                let ex: Vec<String> = exit_edges.iter().map(|&(s, e, d)| format!("[\"0x{:x}\",\"0x{:x}\",{},{},{},{},{}]",
                     self.component_addr(s).unwrap_or(0), self.component_addr(d).unwrap_or(0), (s == head) as u8,
-                    Some((s, e)) == keep, self.graph.block(d).size_in(), self.graph.block(d).size_out())).collect();
+                    Some((s, e)) == keep, self.graph.block(d).size_in(), self.graph.block(d).size_out(),
+                    (0..self.graph.block(s).size_out()).any(|k| self.graph.block(s).get_out(k) == head && self.graph.block(s).is_back_edge_out(k)) as u8)).collect();
                 lex_dump(&format!("\"k\":\"refine\",\"head\":\"0x{:x}\",\"normal\":\"0x{:x}\",\"ri\":{},\"exits\":[{}]",
                     head_addr.unwrap_or(0), normal_exit.and_then(|n| self.component_addr(n)).unwrap_or(0), ri_loop.is_some() as u8, ex.join(",")));
             }
@@ -2592,6 +2605,28 @@ impl<'a> RegionStructurer<'a> {
         } else {
             LoopRefineOutcome::NoChange
         })
+    }
+
+    /// (kuna, `option loopexit`) The exit edge of the block whose test is the
+    /// loop's condition, see [`crate::p8_structure::kuna_loopexit`].
+    fn condition_exit(&self, head: BlockId, exit_edges: &[(BlockId, int4, BlockId)]) -> Option<(BlockId, int4)> {
+        use crate::p8_structure::kuna_loopexit::{condition, Cond};
+        let rule = self.loop_exit?;
+        let exit_of = |bl: BlockId| exit_edges.iter().find(|&&(s, _, _)| s == bl).map(|&(s, e, _)| (s, e));
+        let hb = self.graph.block(head);
+        let mut latches: Vec<BlockId> = Vec::new();
+        for j in 0..hb.size_in() {
+            let l = hb.get_in(j);
+            if hb.is_back_edge_in(j) && !hb.is_goto_in(j) && l != head && !latches.contains(&l) {
+                latches.push(l);
+            }
+        }
+        let info = |bl: BlockId| (self.component_addr(bl), self.graph.block(bl).size_out() == 2 && exit_of(bl).is_some());
+        let latch_info: Vec<(Option<u64>, bool)> = latches.iter().map(|&l| info(l)).collect();
+        match condition(rule, info(head), &latch_info)? {
+            Cond::Head => exit_of(head),
+            Cond::Latch(i) => exit_of(latches[i]),
+        }
     }
 
     /// Choose the loop's normal exit target.  With the region identifier's exit

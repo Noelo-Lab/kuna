@@ -489,6 +489,12 @@ kuna_options! { self, p1;
         self.guard_arm = val;
         Ok(msg)
     },
+    "loopexit" => {
+        let (val, msg) =
+            crate::p8_structure::kuna_loopexit::OptionLoopExit.apply(p1)?;
+        self.loop_exit = val;
+        Ok(msg)
+    },
     "loopcondhoist" => {
         let (val, msg) =
             crate::p8_structure::kuna_ifnoexit::OptionLoopCondHoist.apply(p1)?;

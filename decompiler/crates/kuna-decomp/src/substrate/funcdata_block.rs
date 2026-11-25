@@ -3135,6 +3135,11 @@ impl Funcdata {
         }
         let mut splitedge: Vec<int4> = Vec::new();
         let mut retnode: Vec<BlockId> = Vec::new();
+        let keep_breaks = self
+            .get_arch()
+            .loop_exit
+            .rule(crate::p3_dataflow::kuna_unoptimized::is_unoptimized(self))
+            .is_some();
 
         let return_ops: Vec<OpId> = self.obank().iter_code(OpCode::CPUI_RETURN).collect();
         for op in return_ops {
@@ -3153,6 +3158,16 @@ impl Funcdata {
             }
             let mut gotoblocks: Vec<BlockId> = Vec::new();
             self.gather_return_gotos(parent, &mut gotoblocks);
+            if keep_breaks {
+                // (kuna `loopexit`) a `break` to the return block is not copied.
+                gotoblocks.retain(|&gb| {
+                    let brk = crate::p8_structure::kuna_loopexit::is_loop_break(self.sblocks_ref(), gb);
+                    if brk {
+                        self.sblocks_mut().block_mut(gb).clear_mark();
+                    }
+                    !brk
+                });
+            }
             if gotoblocks.is_empty() {
                 continue;
             }
