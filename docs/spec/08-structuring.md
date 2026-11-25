@@ -159,12 +159,24 @@ edge structural (`region_structurer.rs (condition_exit)`). In an unoptimized
 function `ActionReturnSplit` leaves an in-edge of a return block alone when
 the goto it comes from is a `break` of its innermost loop
 (`kuna_loopcond.rs (is_loop_break)`: the goto's target starts the code after
-that loop) and chapter 08's `returndup auto` record says that edge enters the
-same return statement as another (`kuna_loopcond.rs (shared_return)`), so the
+that loop) and the `returndup auto` record (`kuna_o0returns.rs (groups)`) says
+that edge enters the same return statement as another (`kuna_loopcond.rs (shared_return)`), so the
 break prints as `break;` to the one `return`. In optimized code a shared return
 block is as often the compiler merging two `return`s as a source `break`, and
 the split stays. Every change is a different nesting of the same blocks; no
 statement is copied or moved along any path.
+
+A structuring that follows the conditions is kept only where it prints no more
+`goto`s than the structurers' own choice
+(`kuna_loopcond.rs (printed_gotos)` counts the jumps that are neither the next
+statement, a `break` of their innermost loop nor a `continue` to its start).
+`ActionBlockStructure` structures the graph again without the rule when its
+result holds a `goto`, and keeps the version with fewer. Because the first
+structurings decide which return blocks `ActionReturnSplit` and `returndup`
+copy, the drive does the same for the whole function: a function whose rule
+was used and that prints a `goto` is decompiled again with the rule withdrawn
+(`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (decompile_func_full_with_objects_inner)`),
+and the run with fewer `goto`s is kept.
 
 The option takes `off` (the structurers' own choices, as upstream), `auto` (the
 condition in unoptimized functions only) and `on`, the default (unoptimized

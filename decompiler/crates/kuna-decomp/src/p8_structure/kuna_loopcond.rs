@@ -150,7 +150,7 @@ pub fn condition(rule: Rule, head: (Option<u64>, bool), latches: &[(Option<u64>,
 }
 
 /// Is the goto in structured block `bl` a `break`: does its target start the
-/// code that follows the innermost loop around it?
+/// code that follows the innermost loop around it, with no `switch` between?
 pub fn is_loop_break(sb: &BlockGraph, bl: BlockId) -> bool {
     let target = match sb.block(bl).get_type() {
         BlockType::Goto => sb.block(bl).get_goto_target(),
@@ -163,6 +163,16 @@ pub fn is_loop_break(sb: &BlockGraph, bl: BlockId) -> bool {
     let Some(l) = enclosing_loop(sb, bl) else {
         return false;
     };
+    let mut cur = bl;
+    while let Some(p) = sb.block(cur).get_parent() {
+        if p == l {
+            break;
+        }
+        if sb.block(p).get_type() == BlockType::Switch {
+            return false;
+        }
+        cur = p;
+    }
     sb.block(l).get_parent().is_some_and(|outer| sb.next_flow_after(outer, l) == Some(target))
 }
 
@@ -182,12 +192,22 @@ fn enclosing_loop(sb: &BlockGraph, bl: BlockId) -> Option<BlockId> {
 /// that is not the next statement, not a `break` of its innermost loop and not
 /// a `continue` to that loop's start.
 pub fn printed_gotos(sb: &BlockGraph, root: BlockId) -> usize {
+    use crate::block::{block_flags, BlockKind};
     let mut n = 0;
     let mut stack = vec![root];
     while let Some(bl) = stack.pop() {
-        let target = match sb.block(bl).get_type() {
-            BlockType::Goto if sb.goto_prints(bl) => sb.block(bl).get_goto_target(),
-            BlockType::If => sb.block(bl).get_if_goto_target(),
+        let b = sb.block(bl);
+        let target = match b.get_type() {
+            BlockType::Goto if sb.goto_prints(bl) && b.get_goto_type() == block_flags::f_goto_goto => {
+                b.get_goto_target()
+            }
+            BlockType::If if b.get_if_goto_type() == block_flags::f_goto_goto => b.get_if_goto_target(),
+            BlockType::MultiGoto => {
+                if let BlockKind::MultiGoto { gotoedges, .. } = b.kind() {
+                    n += gotoedges.len();
+                }
+                None
+            }
             _ => None,
         };
         if let Some(t) = target.and_then(|t| sb.get_front_leaf(t)) {
