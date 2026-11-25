@@ -38,6 +38,9 @@ use crate::p8_structure::kuna_tailform::{self as tf, RetKey};
 
 /// Structured-block flag on the `if` that prints as `return <condition>;`.
 pub const F_BOOL_RET: uint4 = 0x2000_0000;
+/// With [`F_BOOL_RET`]: the guard returns 0, so the `if` prints
+/// `return !<condition>;`.
+pub const F_BOOL_RET_NOT: uint4 = 0x1000_0000;
 
 /// How deep a condition chain the matcher walks.
 const MAX_DEPTH: u32 = 16;
@@ -93,10 +96,13 @@ fn rewrite(data: &mut Funcdata) -> bool {
     if !tf::materialize(data, top, view) {
         return false;
     }
-    if site.negate {
+    let mut flags = F_BOOL_RET;
+    if site.negate && dev("demorgan") {
         tf::negate(data, site.cond, true);
+    } else if site.negate {
+        flags |= F_BOOL_RET_NOT;
     }
-    data.sblocks_mut().block_mut(site.ifb).set_flag(F_BOOL_RET);
+    data.sblocks_mut().block_mut(site.ifb).set_flag(flags);
     let rest: Vec<BlockId> = data.sblocks_ref().block(top).get_list().iter().copied().filter(|&b| b != site.ret).collect();
     data.sblocks_mut().kuna_set_components(top, rest);
     tf::free_subtree(data, site.ret);
@@ -182,9 +188,10 @@ fn integral_return(data: &Funcdata) -> bool {
     })
 }
 
-/// For the printer: the `RETURN` whose statement the flagged `if` prints, or
-/// `None` when `ifb` is not flagged.
-pub fn returned(data: &Funcdata, ifb: BlockId) -> Option<OpId> {
+/// For the printer: the `RETURN` whose statement the flagged `if` prints and
+/// whether it returns the condition's negation, or `None` when `ifb` is not
+/// flagged.
+pub fn returned(data: &Funcdata, ifb: BlockId) -> Option<(OpId, bool)> {
     let g = data.sblocks_ref();
     let blk = g.block(ifb);
     if blk.get_flags() & F_BOOL_RET == 0 || blk.get_type() != BlockType::If || blk.get_size() != 2 {
@@ -195,5 +202,5 @@ pub fn returned(data: &Funcdata, ifb: BlockId) -> Option<OpId> {
         leaf = g.block(leaf).get_block(0);
     }
     let tail = data.bb_op_tail(g.block(leaf).get_copy()?)?;
-    (data.obank().get(tail)?.code() == OpCode::CPUI_RETURN).then_some(tail)
+    (data.obank().get(tail)?.code() == OpCode::CPUI_RETURN).then_some((tail, blk.get_flags() & F_BOOL_RET_NOT != 0))
 }

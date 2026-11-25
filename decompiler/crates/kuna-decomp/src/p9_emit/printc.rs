@@ -4919,8 +4919,8 @@ impl PrintC {
             self.emit_block_if_bool(fd, arch, m);
             return;
         }
-        if let Some(ret) = crate::p8_structure::kuna_boolret::returned(fd, blk) {
-            self.emit_block_if_return(fd, arch, blk, ret);
+        if let Some((ret, negate)) = crate::p8_structure::kuna_boolret::returned(fd, blk) {
+            self.emit_block_if_return(fd, arch, blk, ret, negate);
             return;
         }
         if let Some(m) = self.ite_ternary_match(fd, arch, blk) {
@@ -5361,10 +5361,11 @@ impl PrintC {
         self.context.pop_mod();
     }
 
-    /// (kuna `boolbranch return`) Emit a flagged guard `if` as `return ( cond );`,
-    /// the condition through the same `ONLY_BRANCH` renderer as the `if` header
-    /// and the statement anchored on the guard's `RETURN`.
-    fn emit_block_if_return(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId, ret: OpId) {
+    /// (kuna `boolbranch return`) Emit a flagged guard `if` as `return ( cond );`
+    /// (`return !( cond );` when `negate`), the condition through the same
+    /// `ONLY_BRANCH` renderer as the `if` header and the statement anchored on
+    /// the guard's `RETURN`.
+    fn emit_block_if_return(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId, ret: OpId, negate: bool) {
         use crate::prettyprint::Emit;
 
         let cond = fd.sblocks_ref().block(blk).get_block(0);
@@ -5381,6 +5382,9 @@ impl PrintC {
         let sid = self.emit.begin_statement(&markup);
         self.emit.tag_op(self.lang().kw_return, SyntaxHighlight::KeywordColor, &markup);
         self.emit.spaces(1, 0);
+        if negate {
+            self.emit.tag_op(tokens::BOOLEAN_NOT.print1, SyntaxHighlight::NoColor, &MarkupRef::none());
+        }
         self.context.push_mod();
         self.context.set_mod(modifiers::ONLY_BRANCH);
         self.emit_block(fd, arch, cond);
