@@ -129,7 +129,91 @@ pub fn joined_gotos(fd: &Funcdata) -> Option<i32> {
     if fd.kuna_latch_joins == 0 || (std::env::var_os("KUNA_LJ_PREDICT").is_some() && !structure_worsened(fd)) {
         return None;
     }
+    if std::env::var_os("KUNA_LJ_WIDE").is_none() && gotos_near_joins(fd) == 0 {
+        return None;
+    }
     Some(crate::p2_lift::kuna_loweredswitchkeep::printed_gotos(fd))
+}
+
+/// Gotos the finished structure prints from or into a loop that holds a joined
+/// latch; every printed goto when no such loop is found.
+fn gotos_near_joins(fd: &Funcdata) -> i32 {
+    use crate::block::{block_flags, BlockKind, BlockType};
+    let g = fd.sblocks_ref();
+    let Some(root) = g.root else { return 0 };
+    let mut nodes = vec![root];
+    let mut i = 0;
+    while i < nodes.len() {
+        nodes.extend(g.block(nodes[i]).get_list().iter().copied());
+        i += 1;
+    }
+    let mut inside: std::collections::BTreeSet<BlockId> = std::collections::BTreeSet::new();
+    for &n in &nodes {
+        let b = g.block(n);
+        if b.get_type() != BlockType::Copy || !b.get_copy().is_some_and(|c| fd.kuna_latch_blocks.contains(&c)) {
+            continue;
+        }
+        let mut up = b.get_parent();
+        while let Some(p) = up {
+            if matches!(g.block(p).get_type(), BlockType::WhileDo | BlockType::DoWhile | BlockType::InfLoop) {
+                let mut sub = vec![p];
+                while let Some(s) = sub.pop() {
+                    if inside.insert(s) {
+                        sub.extend(g.block(s).get_list().iter().copied());
+                    }
+                }
+                break;
+            }
+            up = g.block(p).get_parent();
+        }
+    }
+    if inside.is_empty() {
+        return crate::p2_lift::kuna_loweredswitchkeep::printed_gotos(fd);
+    }
+    let rw = crate::p8_structure::kuna_gotonext::goto_rewrites(
+        g,
+        root,
+        fd.get_arch().recover_loop_break,
+        &crate::p8_structure::kuna_switchmerge::SwitchPlans::default(),
+    );
+    let near = |n: BlockId, t: Option<BlockId>| inside.contains(&n) || t.and_then(|t| g.get_front_leaf(t)).is_some_and(|l| inside.contains(&l));
+    let mut count = 0;
+    for &n in &nodes {
+        let b = g.block(n);
+        match b.get_type() {
+            BlockType::Goto => {
+                if b.get_goto_type() == block_flags::f_goto_goto
+                    && !rw.silent.contains(&n)
+                    && !rw.breaks.contains(&n)
+                    && near(n, b.get_goto_target())
+                {
+                    count += 1;
+                }
+            }
+            BlockType::MultiGoto => {
+                if let BlockKind::MultiGoto { gotoedges, .. } = b.kind() {
+                    count += gotoedges.iter().filter(|&&t| near(n, Some(t))).count() as i32;
+                }
+            }
+            BlockType::Switch => {
+                count += b
+                    .switch_caseblocks()
+                    .iter()
+                    .filter(|c| c.gototype == block_flags::f_goto_goto && !rw.case_breaks.contains(&(n, c.block)) && near(n, Some(c.block)))
+                    .count() as i32;
+            }
+            _ => {
+                if b.get_if_goto_type() == block_flags::f_goto_goto
+                    && !rw.breaks.contains(&n)
+                    && b.get_if_goto_target().is_some()
+                    && near(n, b.get_if_goto_target())
+                {
+                    count += 1;
+                }
+            }
+        }
+    }
+    count
 }
 
 /// Whether the first structure after the join left more edges unstructured than
@@ -616,6 +700,7 @@ fn execute(data: &mut Funcdata, plan: &Plan) {
     let (a0, b0) = (target_pairs[0].1, target_pairs[0].2);
     let (a1, b1) = (target_pairs[1].1, target_pairs[1].2);
     let j = data.node_join_create_block(a, b, targets[0], targets[1], a0 > b0, a1 > b1, &addr);
+    data.kuna_latch_blocks.push(j);
 
     // MULTIEQUALs for the values that differ between the copies.
     let mut merged: HashMap<(VarnodeId, VarnodeId), VarnodeId> = HashMap::new();

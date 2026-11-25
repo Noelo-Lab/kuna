@@ -182,6 +182,8 @@ pub struct Funcdata {
     /// decompile runs without the join (`p8_structure/kuna_latchjoin.rs`).
     pub(crate) kuna_latch_joins: u32,
     pub(crate) kuna_latch_join_withdrawn: bool,
+    /// The blocks the joined latches were placed in.
+    pub(crate) kuna_latch_blocks: Vec<crate::context::BlockId>,
     /// Unstructured edges of the structure before the first join and of the
     /// first structure after it.
     pub(crate) kuna_latch_edges: Option<(i32, Option<i32>)>,
@@ -828,6 +830,7 @@ impl Funcdata {
             kuna_unoptimized: None,
             kuna_latch_joins: 0,
             kuna_latch_join_withdrawn: false,
+            kuna_latch_blocks: Vec::new(),
             kuna_latch_edges: None,
             kuna_o0returns: None,
             kuna_o0select: None,
