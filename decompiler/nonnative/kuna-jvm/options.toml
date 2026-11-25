@@ -1266,28 +1266,6 @@ tier = "core"
 symptoms = "Kotlin classes come out as Java with @Metadata(mv = ..., d1 = ...)|a Kotlin class is written as .kt but Java output is wanted|Kotlin output of a class is wrong or failed"
 
 [[option]]
-option = "jvm_kt_unknown_defaults"
-vineflower = "kt-unknown-defaults"
-short = ""
-aliases = ["kt-unknown-defaults"]
-values = "<text>"
-default = "..."
-destructive = false
-phase = "kotlin"
-subphase = "default_args_map"
-strength = "HARD"
-rewind = "kotlin"
-issue = ""
-summary = "Kotlin plugin: the text written after = for a parameter that has a default value the plugin could not recover from the $default bridge (fun f(x: Int = ...)); empty writes no default at all."
-use_when = "Set a marker of your own (for example /* default */) to make unrecovered defaults easy to find, or set it empty to drop them."
-example = "kuna decompile app.jar com.ex.ApiKt --option jvm_kt_unknown_defaults \"/* default */\""
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 Kotlin plugin: KotlinOptions.UNKNOWN_DEFAULT_ARG_STRING (kt-unknown-defaults)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "parameters written as x: Int = ...|default argument values missing from a Kotlin function signature"
-
-[[option]]
 option = "jvm_kt_collapse_string_concat"
 vineflower = "kt-collapse-string-concat"
 short = ""
@@ -1402,3 +1380,7 @@ kuna = "fixed on: a failed method's comment lists its bytecode"
 [[driver_owned]]
 vineflower = "dump-exception-on-error"
 kuna = "fixed on: a failure comment names the exception; the corpus fixture turns it off"
+
+[[driver_owned]]
+vineflower = "kt-unknown-defaults"
+kuna = "fixed at the Kotlin plugin's default: ... stands for a default argument the $default stub does not reveal"

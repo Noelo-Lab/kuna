@@ -1331,8 +1331,7 @@ signature as a plain `fun`, and a warning is logged. `jvm_kt_show_public` writes
 leaves implicit (on by default, as in Vineflower). A parameter default is recovered from
 the `$default` stub's body (`decompiler/nonnative/kuna-jvm/src/kotlin/default_args_map.rs`):
 the value it assigns when the parameter's mask bit is set; when no value can be read, the
-parameter is written with `jvm_kt_unknown_defaults` (`= ...`), or with no default when
-that text is empty.
+parameter is written with `= ...` (the plugin's `kt-unknown-defaults`, fixed).
 
 **What stays Java-shaped.** The plugin rewrites syntax, not semantics: the statement tree
 and every expression in it are what the Java pipeline recovers from the bytecode. Calls

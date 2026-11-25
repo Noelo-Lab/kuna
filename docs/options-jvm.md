@@ -24,6 +24,7 @@ Vineflower keys kuna sets itself, so they are not options:
 - `error-message` -- fixed: the note under a failure comment asks for reports to kuna's tracker (Vineflower's in compat mode); the corpus fixture sets it empty
 - `dump-bytecode-on-error` -- fixed on: a failed method's comment lists its bytecode
 - `dump-exception-on-error` -- fixed on: a failure comment names the exception; the corpus fixture turns it off
+- `kt-unknown-defaults` -- fixed at the Kotlin plugin's default: ... stands for a default argument the $default stub does not reveal
 
 Three tiers:
 
@@ -129,8 +130,6 @@ Three tiers:
 | explicit null checks on @NotNull parameters or before returns (option is off) | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull----on--off-default-on) |
 | every Kotlin declaration starts with public | [`jvm_kt_show_public`](#jvm_kt_show_public----on--off-default-on) |
 | public modifiers that Kotlin source would omit | [`jvm_kt_show_public`](#jvm_kt_show_public----on--off-default-on) |
-| parameters written as x: Int = ... | [`jvm_kt_unknown_defaults`](#jvm_kt_unknown_defaults-----default-) |
-| default argument values missing from a Kotlin function signature | [`jvm_kt_unknown_defaults`](#jvm_kt_unknown_defaults-----default-) |
 | "a" + b + "c" in Kotlin output where a template was written | [`jvm_kt_collapse_string_concat`](#jvm_kt_collapse_string_concat----on--off-default-on) |
 | string templates hide the concatenation order | [`jvm_kt_collapse_string_concat`](#jvm_kt_collapse_string_concat----on--off-default-on) |
 | a facade class prints only This is a multifile facade and a list of files | [`jvm_kt_decompile_facades`](#jvm_kt_decompile_facades----on--off-default-off) |
@@ -503,15 +502,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** kotlin/kotlin_writer, k_function, k_constructor, k_utils · vineflower · vineflower-option
 - **Also spelled:** `kt-show-public`
 - **Example:** `kuna decompile app.jar com.ex.Service --option jvm_kt_show_public off`
-
-### `jvm_kt_unknown_defaults` -- <text>, default `...`
-
-- **Symptoms:** parameters written as x: Int = ...; default argument values missing from a Kotlin function signature.
-- **What it does:** Kotlin plugin: the text written after = for a parameter that has a default value the plugin could not recover from the $default bridge (fun f(x: Int = ...)); empty writes no default at all.
-- **When to flip:** Set a marker of your own (for example /* default */) to make unrecovered defaults easy to find, or set it empty to drop them.
-- **Where / provenance:** kotlin/default_args_map · vineflower · vineflower-option
-- **Also spelled:** `kt-unknown-defaults`
-- **Example:** `kuna decompile app.jar com.ex.ApiKt --option jvm_kt_unknown_defaults "/* default */"`
 
 ### `jvm_kt_collapse_string_concat` -- on | off, default `on`
 
