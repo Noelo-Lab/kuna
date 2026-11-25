@@ -771,10 +771,11 @@ Three tiers:
 | need the analysis-canonical compare form to diff against upstream ghidra output | [`compareform`](#compareform----canonical--original-default-original) |
 | &base[index] rendering unwanted; consumer expects raw pointer arithmetic | [`arraynotation`](#arraynotation----on--off-default-on) |
 | indexed array form where base + offset arithmetic is desired for diffing | [`arraynotation`](#arraynotation----on--off-default-on) |
-| if (x != 0) where idiomatic C reads if (x) | [`truthycond`](#truthycond----on--off-default-on) |
-| if (p == NULL) where if (!p) is wanted | [`truthycond`](#truthycond----on--off-default-on) |
-| explicit zero comparison in conditions unwanted | [`truthycond`](#truthycond----on--off-default-on) |
-| truthy condition rendering needs to match upstream ghidra for diffing | [`truthycond`](#truthycond----on--off-default-on) |
+| if (x != 0) where idiomatic C reads if (x) | [`truthycond`](#truthycond----on--off--ptrchain-default-ptrchain) |
+| if (p == NULL) where if (!p) is wanted | [`truthycond`](#truthycond----on--off--ptrchain-default-ptrchain) |
+| explicit zero comparison in conditions unwanted | [`truthycond`](#truthycond----on--off--ptrchain-default-ptrchain) |
+| p != NULL && n where p && n is wanted | [`truthycond`](#truthycond----on--off--ptrchain-default-ptrchain) |
+| truthy condition rendering needs to match upstream ghidra for diffing | [`truthycond`](#truthycond----on--off--ptrchain-default-ptrchain) |
 | if (x) { stmt; } where braceless if (x) stmt; is wanted | [`braceelide`](#braceelide----on--off-default-on) |
 | single-statement if body keeps braces | [`braceelide`](#braceelide----on--off-default-on) |
 | braced one-liner bodies unwanted | [`braceelide`](#braceelide----on--off-default-on) |
@@ -2548,13 +2549,13 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **Where / provenance:** P9/pointer-notation · ghidra-upstream · presentation-default · GH-558
 - **Example:** `option arraynotation off`
 
-### `truthycond` -- on | off, default `on`
+### `truthycond` -- on | off | ptrchain, default `ptrchain`
 
-- **Symptoms:** if (x != 0) where idiomatic C reads if (x); if (p == NULL) where if (!p) is wanted; explicit zero comparison in conditions unwanted; truthy condition rendering needs to match upstream ghidra for diffing.
-- **What it does:** Render a boolean-context zero comparison in truthy form (if (x) / if (!p)) vs the explicit comparison (if (x != 0) / if (p == NULL)).
-- **When to flip:** On by default (DIV-36): idiomatic C for if/while/for/ternary conditions and &&/||/! operands. Flip off to reproduce upstream Ghidra's explicit comparisons or to diff against Ghidra output. Float compares, enum-typed zeros, and equate-named zeros always keep the explicit form; value uses (v = (x != 0)) are never rewritten.
+- **Symptoms:** if (x != 0) where idiomatic C reads if (x); if (p == NULL) where if (!p) is wanted; explicit zero comparison in conditions unwanted; p != NULL && n where p && n is wanted; truthy condition rendering needs to match upstream ghidra for diffing.
+- **What it does:** Render a boolean-context zero comparison in truthy form (if (x) / if (!p)) vs the explicit comparison (if (x != 0) / if (p == NULL)); ptrchain keeps the comparison for a pointer variable that is an operand of && / ||.
+- **When to flip:** ptrchain by default: idiomatic C for if/while/for/ternary conditions and &&/||/! operands (DIV-36), except that a plain pointer variable (parameter or local) tested as an operand of && / || outside a loop's condition prints p != NULL / p == NULL, the spelling source code uses more often there. on makes every boolean-context test truthy (p && n); off reproduces upstream Ghidra's explicit comparisons for diffing. Float compares, enum-typed zeros, and equate-named zeros always keep the explicit form; value uses (v = (x != 0)) are never rewritten.
 - **Where / provenance:** P9/condition-form · kuna · presentation-default · kuna-cnorm-fmt
-- **Example:** `option truthycond off`
+- **Example:** `option truthycond on`
 
 ### `braceelide` -- on | off, default `on`
 

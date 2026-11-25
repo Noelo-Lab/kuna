@@ -447,6 +447,9 @@ pub struct PrintCOptions {
     /// `option truthycond`).  Float compares, enum-typed and equate-named
     /// zeros are excluded; value contexts (`v = (x != 0)`) never normalize.
     pub truthy_cond: bool,
+    /// (kuna `truthycond ptrchain`) Under `truthy_cond`, a bare pointer variable
+    /// that is an operand of `&&`/`||` keeps its comparison (`p != NULL`).
+    pub truthy_ptr_chain: bool,
     /// (kuna) A single-statement if-body drops its braces and prints the
     /// statement indented on the next line (DIV-38, `option braceelide`).
     /// Copy-leaf single-statement bodies only; labels/comments keep braces.
@@ -510,6 +513,7 @@ impl PrintCOptions {
             unplaced: false,
             array_notation: true, // (kuna) DIV-2 default-on (GH-558)
             truthy_cond: true, // (kuna) DIV-37; no upstream equivalent
+            truthy_ptr_chain: true,
             brace_elide: true, // (kuna) DIV-38; no upstream equivalent
             inf_loop_top: true,
             warn_inline: true, // (kuna) DIV-39; no upstream equivalent
@@ -560,6 +564,12 @@ impl PrintCOptions {
     /// (kuna) Current truthy-condition rendering flag.
     pub fn truthy_cond(&self) -> bool {
         self.truthy_cond
+    }
+    /// (kuna) Set both truthy-condition flags from a `truthycond` value.
+    pub fn set_truthy_mode(&mut self, mode: crate::kuna_truthycond::TruthyCond) {
+        use crate::kuna_truthycond::TruthyCond;
+        self.truthy_cond = mode != TruthyCond::Off;
+        self.truthy_ptr_chain = mode == TruthyCond::PtrChain;
     }
     /// (kuna) Toggle single-statement if-body brace elision (`option
     /// braceelide`, DIV-38).
@@ -4049,7 +4059,7 @@ impl PrintC {
     /// Resolve the emitted name plus the symbol-relative geometry used to render
     /// partial accesses. Independently declared fallback pieces deliberately have
     /// no shared-symbol geometry: their declared identifier denotes the piece.
-    fn emitted_high_symbol(
+    pub(crate) fn emitted_high_symbol(
         &self,
         fd: &Funcdata,
         high: crate::context::HighVariableId,
@@ -4543,11 +4553,15 @@ impl PrintC {
             }
 
             let id = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
+            self.context.push_mod();
+            self.mark_chain_operand(fd, b0);
             self.emit_block(fd, arch, b0);
+            self.context.pop_mod();
             self.context.push_mod();
             self.context.unset_mod(modifiers::ONLY_BRANCH);
             // comma_separate is placed only on the second block.
             self.context.set_mod(modifiers::COMMA_SEPARATE);
+            self.mark_chain_operand(fd, b1);
 
             // Emit the && / || token as if it were on the RPN stack (C++ builds a
             // ReversePolish with op==0, visited==1, and calls emitOp).
@@ -5958,7 +5972,10 @@ impl PrintC {
         self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         self.emit.spaces(1, 0);
         // Emit the conditional statement (the condition block, comma-separated).
+        self.context.push_mod();
+        self.context.set_mod(modifiers::LOOP_CONDITION);
         self.emit_block(fd, arch, cond_block);
+        self.context.pop_mod();
         self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         self.emit.spaces(1, 0);
         // Emit the iterator statement.
@@ -6040,7 +6057,7 @@ impl PrintC {
             self.emit.spaces(1, 0);
             let id1 = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
             self.context.push_mod();
-            self.context.set_mod(modifiers::COMMA_SEPARATE);
+            self.context.set_mod(modifiers::COMMA_SEPARATE | modifiers::LOOP_CONDITION);
             self.emit_block(fd, arch, cond_block);
             self.context.pop_mod();
             self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id1);
@@ -6094,7 +6111,7 @@ impl PrintC {
         self.emit.spaces(1, 0);
         self.emit.tag_op(self.lang().kw_while, SyntaxHighlight::KeywordColor, &MarkupRef::none());
         self.emit.spaces(1, 0);
-        self.context.set_mod(modifiers::ONLY_BRANCH);
+        self.context.set_mod(modifiers::ONLY_BRANCH | modifiers::LOOP_CONDITION);
         self.emit_block(fd, arch, body);
         self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         // (kuna warnstyle, DIV-39) body/condition warnings still pending land
@@ -6215,6 +6232,13 @@ impl PrintC {
             return;
         }
         let mut separator = false;
+        // (kuna `truthycond ptrchain`) A chain clause that prints statements is a
+        // comma expression: its branch is no longer the `&&`/`||` operand.
+        let chain_clause =
+            self.context.is_set(modifiers::CHAIN_OPERAND) && self.context.is_set(modifiers::COMMA_SEPARATE);
+        if chain_clause {
+            self.context.push_mod();
+        }
         let mut cur = if bblocks { fd.bb_op_head(bb) } else { sblocks_basic_head(fd, bb) };
         while let Some(inst) = cur {
             if crate::decompile_drive::deadline_passed_in("rendering C") {
@@ -6266,6 +6290,13 @@ impl PrintC {
                 self.emit_comment_group(fd, Some(inst));
                 self.emit.tag_line();
             }
+            if chain_clause {
+                if separator || !o.is_branch() {
+                    self.context.unset_mod(modifiers::CHAIN_OPERAND);
+                } else {
+                    self.context.set_mod(modifiers::CHAIN_OPERAND);
+                }
+            }
             if let Some(last) = self.emit_rust_array_init(fd, arch, inst) {
                 cur = fd.bb_op_next(last);
             } else {
@@ -6280,6 +6311,9 @@ impl PrintC {
                 self.flush_eol_warnings();
             }
             separator = true;
+        }
+        if chain_clause {
+            self.context.pop_mod();
         }
         // emitCommentGroup(None): any remaining comments in the block.
         if !self.context.is_set(modifiers::COMMA_SEPARATE) {
@@ -6583,22 +6617,33 @@ impl PrintC {
         // (kuna truthycond, DIV-37) CONDITION_CONTEXT only survives through the
         // boolean-preserving operators; any other operator's operands are value
         // context, so scope the bit off across this dispatch (the mod-stack
-        // frame restores it for our siblings).
-        let scope_off_cond = self.context.is_set(modifiers::CONDITION_CONTEXT)
-            && !matches!(
-                opc,
-                OpCode::CPUI_INT_EQUAL
-                    | OpCode::CPUI_INT_NOTEQUAL
-                    | OpCode::CPUI_FLOAT_EQUAL
-                    | OpCode::CPUI_FLOAT_NOTEQUAL
-                    | OpCode::CPUI_BOOL_AND
-                    | OpCode::CPUI_BOOL_OR
-                    | OpCode::CPUI_BOOL_NEGATE
-                    | OpCode::CPUI_CBRANCH
-            );
+        // frame restores it for our siblings).  CHAIN_OPERAND survives only
+        // into the comparison it marks (and the branch or absorbed `!` that
+        // carries it there).
+        let mut clear = 0;
+        if !matches!(
+            opc,
+            OpCode::CPUI_INT_EQUAL
+                | OpCode::CPUI_INT_NOTEQUAL
+                | OpCode::CPUI_FLOAT_EQUAL
+                | OpCode::CPUI_FLOAT_NOTEQUAL
+                | OpCode::CPUI_BOOL_AND
+                | OpCode::CPUI_BOOL_OR
+                | OpCode::CPUI_BOOL_NEGATE
+                | OpCode::CPUI_CBRANCH
+        ) {
+            clear |= modifiers::CONDITION_CONTEXT;
+        }
+        if !matches!(
+            opc,
+            OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL | OpCode::CPUI_BOOL_NEGATE | OpCode::CPUI_CBRANCH
+        ) {
+            clear |= modifiers::CHAIN_OPERAND;
+        }
+        let scope_off_cond = self.context.mods() & clear != 0;
         if scope_off_cond {
             self.context.push_mod();
-            self.context.unset_mod(modifiers::CONDITION_CONTEXT);
+            self.context.unset_mod(clear);
         }
         self.op_push_ir_inner(fd, arch, op, read_op, opc);
         if scope_off_cond {
@@ -6676,6 +6721,9 @@ impl PrintC {
                 self.context.set_mod(modifiers::CONDITION_CONTEXT);
                 if use_negate_token {
                     self.context.set_mod(modifiers::NEGATETOKEN);
+                }
+                if booleanflip {
+                    self.context.unset_mod(modifiers::CHAIN_OPERAND);
                 }
                 if let Some(vn) = in1 {
                     self.push_vn_ir(fd, arch, vn, op);
@@ -6926,16 +6974,24 @@ impl PrintC {
         if self.context.is_set(modifiers::CONDITION_CONTEXT)
             && (tok.print1 == "==" || tok.print1 == "!=")
         {
-            self.context.unset_mod(modifiers::CONDITION_CONTEXT);
+            let chain_operand = self.context.is_set(modifiers::CHAIN_OPERAND);
+            self.context.unset_mod(modifiers::CONDITION_CONTEXT | modifiers::CHAIN_OPERAND);
             // (kuna outlang) truthycond (DIV-37) renders `x != 0` as `x`, which is
             // not a condition in a language without implicit bool conversion.
             if self.options.truthy_cond && self.lang().caps.implicit_bool_conditions {
-                if let Some(other) = self.truthy_other_operand(fd, op) {
+                if let Some(other) = self.truthy_other_operand(fd, op).filter(|&other| {
+                    !(chain_operand
+                        && self.options.truthy_ptr_chain
+                        && self.bare_pointer_variable(fd, other, op))
+                }) {
                     if tok.print1 == "==" {
                         self.push_op(&tokens::BOOLEAN_NOT, Some(op_key(op)));
                     }
                     self.context.push_mod();
                     self.context.set_mod(modifiers::CONDITION_CONTEXT);
+                    if chain_operand && tok.print1 == "!=" {
+                        self.context.set_mod(modifiers::CHAIN_OPERAND);
+                    }
                     self.push_vn_ir(fd, arch, other, op);
                     self.context.pop_mod();
                     return;
@@ -6954,6 +7010,9 @@ impl PrintC {
                 if boolean_operands {
                     self.context.push_mod();
                     self.context.set_mod(modifiers::CONDITION_CONTEXT);
+                    if !self.context.is_set(modifiers::LOOP_CONDITION) {
+                        self.context.set_mod(modifiers::CHAIN_OPERAND);
+                    }
                     self.push_vn_ir(fd, arch, v, op);
                     self.context.pop_mod();
                 } else {
@@ -7040,7 +7099,7 @@ impl PrintC {
         }
     }
 
-    fn printed_operand_type(&self, fd: &Funcdata, vn: VarnodeId, op: OpId) -> std::rc::Rc<crate::dtype::Datatype> {
+    pub(crate) fn printed_operand_type(&self, fd: &Funcdata, vn: VarnodeId, op: OpId) -> std::rc::Rc<crate::dtype::Datatype> {
         fd.vbank().get(vn).and_then(|v| (!v.is_implied()).then_some(v.get_high()).flatten())
             .and_then(|high| self.declared_local(high)).and_then(|local| local.ty.clone())
             .or_else(|| declared_variable_type(fd, vn))
@@ -7233,6 +7292,7 @@ impl PrintC {
             self.push_op(&tokens::BOOLEAN_NOT, Some(op_key(op)));
             self.context.push_mod();
             self.context.set_mod(modifiers::CONDITION_CONTEXT);
+            self.context.unset_mod(modifiers::CHAIN_OPERAND);
             if let Some(vn) = in0 {
                 self.push_vn_ir(fd, arch, vn, op);
             }
@@ -12312,7 +12372,7 @@ impl PrintC {
 
     /// (kuna indirectargs) Is `vn` the ABI pointer input of a parameter printed
     /// as its value, so that `&name` stands for it and `name` for its target?
-    fn is_value_indirect_input(&self, fd: &Funcdata, vn: VarnodeId) -> bool {
+    pub(crate) fn is_value_indirect_input(&self, fd: &Funcdata, vn: VarnodeId) -> bool {
         self.out_lang == crate::kuna_lang::OutLang::C
             && fd.vbank().get(vn).is_some_and(|v| {
                 v.is_input()
