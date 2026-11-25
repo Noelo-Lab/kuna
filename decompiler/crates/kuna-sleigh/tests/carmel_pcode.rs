@@ -484,6 +484,29 @@ fn qualified_wide_goto_samples_address_enable_before_the_delay() {
 }
 
 #[test]
+fn wide_relative_call_limits_the_delay_but_returns_to_the_encoded_word() {
+    let base = 0x11000;
+    for delay in 0..=7 {
+        let mut fetches = [(NOP, NOP); 14];
+        fetches[0] = (0x800018, 0xcf8200 | delay << 11);
+        fetches[1..=8].fill((INC_A0, NOP));
+        fetches[12] = (RETURN, NOP);
+        let issues: [(u64, u32, u32); 14] =
+            std::array::from_fn(|i| (2 * i as u64, if i == 0 { 5 } else { 1 }, 6));
+        let mut m = Machine::new(base, &fetches, &issues, None);
+        m.seed(&[("A0L", 7), ("SP", 0x4040)]);
+        m.start(base).unwrap();
+        assert_eq!(m.step(), 3 * (base + 24));
+        assert_eq!(m.reg("A0L"), 7 + u64::from(delay.min(3)));
+        assert_eq!(m.reg("SP"), 0x403e);
+        let link = base + 2 + 2 * u64::from(delay);
+        assert_eq!((m.data(0x403f), m.data(0x4040)), (link & 0xffff, link >> 16));
+        assert_eq!(m.step(), 3 * link);
+        assert_eq!(m.reg("SP"), 0x4040);
+    }
+}
+
+#[test]
 fn delayed_compact_eq_samples_est_before_its_two_counted_issues() {
     for (est, a0, a1, next) in [(8, 7, 9, 36), (0, 0xffff, 0xffff, 18)] {
         let mut m = Machine::new(

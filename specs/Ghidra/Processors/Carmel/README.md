@@ -87,8 +87,9 @@ first body issue. The wide DATA encoding can replay a range of up to five
 issues. Setup and body must be register-only and contain no transfers.
 The explicit post-CALL branch past an unexecuted sequential slot is part of
 the caller's control flow, even if analysis found a function entry there.
-Unconditional wide relative CALL without delay uses the same two-word DATA
-stack link. Marked wide MOVE covers signed literals to accumulator halves,
+Unconditional wide relative CALL retires at most three following issues.
+Its two-word DATA stack link uses the encoded delay, even for delays four
+through seven. Marked wide MOVE covers signed literals to accumulator halves,
 whole accumulators, and address registers; it also supports short DATA
 through `R0` indirect/postincrement and absolute DATA loads into address
 registers. Wide LOAD covers selected accumulator, pointer and configuration
