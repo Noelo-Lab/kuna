@@ -291,6 +291,45 @@ fn carmel_predicated_call_keeps_its_encoded_resume_inside_the_caller() {
     }
 }
 
+#[test]
+fn carmel_wide_logic_control_alias_writes_high_word_and_masks_repeat_depth() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-wide-logic-control", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    for (operator, expected) in [(0xe2, [0x3450, 0xf1ab, 0x000b]),
+                                 (0xe6, [0, 0, 0]),
+                                 (0xea, [0x3450, 0xf1ab, 0x000b])] {
+        fs::write(&binary, [
+            0xc8, 0xa1, 0x3c, operator, 0x1b, 0x56, // PSTATUS, PSTATUS, A0
+            0x2b, 0xd8, 0x00, 0x2b, 0xec, 0x00, // RETURN
+        ]).unwrap();
+        let output = common::process::required_output(Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0", "--json", "--assert-strict",
+                "--assert", "return %PSTATUS unsigned short",
+                "--assert", "param 0 %A0H unsigned short a_hi",
+            ]));
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        let emitted = function["code"].as_str().unwrap();
+        let [a, b, c] = expected;
+        fs::write(&source, format!(
+            "{emitted}\nint main(void) {{\n\
+             return sub_0(0x3456) != {a} || sub_0(0xf1ab) != {b} || sub_0(0x000f) != {c};\n\
+             }}\n",
+        )).unwrap();
+        run_emitted_c(&source, &executable, emitted);
+    }
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")

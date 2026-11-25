@@ -356,6 +356,8 @@ define token wide (48)
     wide_38_39 = (38,39)
     bitfield_descriptor = (24,39) hex
     wide_0_22 = (0,22)
+    wide_logic_rmw_op = (18,19)
+    wide_logic_rmw_route = (0,17)
     wide_40_45 = (40,45)
     wide_0_10 = (0,10)
     wide_13_22 = (13,22)
@@ -1243,6 +1245,85 @@ macro unary_ce(cfg, est, tbl, bank, enabled) {
     local index:2 = (first << 2) | (second << 1) | third;
     enabled = (tbl >> (index + bank * 8)) & 1;
     <unary_ce_ready>
+}
+
+# An aliased control result uses the high word, while an ordinary RMW
+# destination uses the low word and publishes the ALU's zero flag.
+wide_logic_rmw_operator: "OR"  is wide_logic_rmw_op=0 { export 0:2; }
+wide_logic_rmw_operator: "AND" is wide_logic_rmw_op=1 { export 1:2; }
+wide_logic_rmw_operator: "XOR" is wide_logic_rmw_op=2 { export 2:2; }
+
+macro wide_logic_rmw_word(op, lhs, rhs, result) {
+    local operation:2 = op;
+    result = lhs | rhs;
+    if (operation == 0) goto <done>;
+    result = lhs & rhs;
+    if (operation == 1) goto <done>;
+    result = lhs ^ rhs;
+  <done>
+}
+
+macro wide_logic_rmw_est(flags) {
+    local feedback:2 = (EST & 0x3000) | flags;
+    local first:2;
+    local second:2;
+    unary_ce(CECFG1, feedback, CETBL, 0, first);
+    unary_ce(CECFG2, feedback, CETBL, 1, second);
+    EST = flags | (first << 12) | (second << 13);
+}
+
+macro wide_logic_rmw_pstatus(word) {
+    local depth:2 = (word & 3) * zext((word & 8) != 0);
+    PSTATUS = (word & 0xfff8) | depth;
+}
+
+@define WIDE_LOGIC_RMW "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & logic_ce_bank=1 & wide_20_22=6 & wide_logic_rmw_operator"
+:^wide_logic_rmw_operator "USER_IO","USER_IO",wide_load_literal_bits is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x21b5e & wide_40_45=0xf & wide_load_literal_bits {
+    USER_IO = 0;
+    wide_logic_rmw_est(0:2);
+}
+:^wide_logic_rmw_operator "USER_IO","USER_IO","A0" is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x21b5e & wide_40_45=8 {
+    local upper:2;
+    wide_logic_rmw_word(wide_logic_rmw_operator, 0:2, A0H, upper);
+    USER_IO = upper;
+    wide_logic_rmw_est(0:2);
+}
+:^wide_logic_rmw_operator "USER_IO","USER_IO","*R0++" is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x21b5c & wide_40_45=0x10 {
+    modify_ptr(R0, RN0, RM0, RL0, 0, 2);
+    USER_IO = 0;
+    wide_logic_rmw_est(0:2);
+}
+:^wide_logic_rmw_operator "PSTATUS","A0L","PSTATUS" is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x21e43 & wide_40_45=0x15 {
+    wide_logic_rmw_pstatus(0:2);
+    wide_logic_rmw_est(0:2);
+}
+:^wide_logic_rmw_operator "OP3","A0L","INTBASE" is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x23a43 & wide_40_45=0x16 {
+    INTBASE = 0;
+    wide_logic_rmw_est(0:2);
+}
+:^wide_logic_rmw_operator "A0L","A0L","A0L" is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x21e42 & wide_40_45=0x10 {
+    local result:2;
+    wide_logic_rmw_word(wide_logic_rmw_operator, A0L, A0L, result);
+    A0L = result;
+    local flags:2 = zext(result == 0) << 3;
+    wide_logic_rmw_est(flags);
+}
+:^wide_logic_rmw_operator "*R0++","*R0++",wide_load_literal_bits is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x21842 & wide_40_45=0xf & wide_load_literal_bits {
+    local address:2 = R0;
+    local value:2 = *[data]:2 address;
+    local rhs:2 = wide_load_literal_bits;
+    local result:2;
+    wide_logic_rmw_word(wide_logic_rmw_operator, value, rhs, result);
+    modify_ptr(R0, RN0, RM0, RL0, 0, 2);
+    *[data]:2 address = result;
+    local flags:2 = zext(result == 0) << 3;
+    wide_logic_rmw_est(flags);
+}
+:^wide_logic_rmw_operator "PSTATUS","PSTATUS","A0" is $(WIDE_LOGIC_RMW) & wide_logic_rmw_route=0x21b56 & wide_40_45=8 {
+    local upper:2;
+    wide_logic_rmw_word(wide_logic_rmw_operator, 0:2, A0H, upper);
+    wide_logic_rmw_pstatus(upper);
+    wide_logic_rmw_est(0:2);
 }
 
 macro move_address_literal(dst, immediate, cfg, bank) {

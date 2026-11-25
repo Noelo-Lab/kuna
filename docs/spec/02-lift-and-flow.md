@@ -3897,6 +3897,12 @@ and take carry from the input's low bit. The status destination discards
 the word but still drives carry. The unconnected configuration input
 rejects at decode, even when CE2 would veto execution.
 
+Covered wide logical read-modify-write forms send the high result word to
+aliased control registers. `PSTATUS` keeps its two depth bits only when the
+repeat-active bit is set. A low-word destination instead publishes the
+result's zero flag. A postincremented DATA destination stores at the
+original address, before the updated pointer is used by another issue.
+
 For covered wide signed/unsigned multiply-subtract forms, the result bank
 selects the extended addend and result width. The first multiplier source
 publishes to `X1`. `ALIM` inhibits new loss status without clamping the result.
