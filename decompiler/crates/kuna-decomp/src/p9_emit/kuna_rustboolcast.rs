@@ -69,7 +69,7 @@ impl PrintC {
         }
         let Some(value) = fd.obank().get(op).and_then(|operation| operation.get_in(0))
             else { return false; };
-        self.push_op(&tokens::NOT_EQUAL, Some(op_key(op)));
+        self.push_op(self.lang_token(&tokens::NOT_EQUAL), Some(op_key(op)));
         self.push_cast_open(byte, op);
         self.push_vn_ir(fd, arch, value, op);
         self.push_cast_close(byte);
@@ -79,6 +79,10 @@ impl PrintC {
         true
     }
 
+    /// A byte-valued expression converted to `bool` prints as `expr != 0`
+    /// (Rust has no integer-to-`bool` cast); a call whose result is not stated
+    /// as one byte tests its low byte, `call as u8 != 0`. A value that already
+    /// is Boolean is left to the cast.
     pub(crate) fn push_rust_boolean_conversion(
         &mut self,
         fd: &Funcdata,
@@ -105,25 +109,42 @@ impl PrintC {
                     matches!(operation.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND))
                 {
                     let Some(index) = fd.get_call_specs_index(def) else { return false; };
-                    let proto = fd.get_call_specs(index).proto();
+                    let call = fd.get_call_specs(index);
+                    let proto = call.proto();
                     let result = self.call_result_plan(fd, arch, def).map(|plan| plan.target)
-                        .or_else(|| proto.has_store().then(|| proto.get_output_type().cloned()).flatten());
-                    let Some(result) = result else { return false; };
-                    if result.get_size() != 1 || result.is_enum_type()
+                        .or_else(|| proto.has_store().then(|| proto.get_output_type().cloned()).flatten())
+                        .filter(|result| result.get_metatype() != type_metatype::TYPE_VOID)
+                        .or_else(|| fd.kuna_protoorder_types(call.get_entry_address())
+                            .and_then(|recovered| recovered.output.as_ref())
+                            .map(|(_, _, recovered)| Rc::clone(recovered)));
+                    if result.as_ref().is_some_and(|result| {
+                        result.get_metatype() == type_metatype::TYPE_BOOL && result.get_size() == 1
+                    }) {
+                        return false;
+                    }
+                    if result.as_ref().is_some_and(|result| result.is_enum_type()
                         || !matches!(result.get_metatype(), type_metatype::TYPE_INT
-                            | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN)
+                            | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN))
                     {
                         return false;
+                    }
+                    if result.is_none_or(|result| result.get_size() != 1) {
+                        let Ok(byte) = arch.types().get_base(1, type_metatype::TYPE_UINT) else { return false; };
+                        self.push_op(self.lang_token(&tokens::NOT_EQUAL), Some(op_key(op)));
+                        self.push_cast_open(&byte, op);
+                        self.push_vn_ir(fd, arch, value, op);
+                        self.push_cast_close(&byte);
+                        self.push_atom(&Atom::with_op(
+                            "0", TagType::Syntax, SyntaxHighlight::const_color, op_key(op),
+                        ));
+                        return true;
                     }
                 }
             }
         }
-        let context = if node.is_implied() {
-            let Some(context) = crate::kuna_rustintegers::needs_integer_context(fd, value, op, 8)
-                else { return false; };
-            context
-        } else { false };
-        self.push_op(&tokens::NOT_EQUAL, Some(op_key(op)));
+        let context = node.is_implied()
+            && crate::kuna_rustintegers::needs_integer_context(fd, value, op, 8).unwrap_or(true);
+        self.push_op(self.lang_token(&tokens::NOT_EQUAL), Some(op_key(op)));
         if context {
             let signed = source.get_metatype() == type_metatype::TYPE_INT
                 && !(source.is_char_print() && source.is_core_type());

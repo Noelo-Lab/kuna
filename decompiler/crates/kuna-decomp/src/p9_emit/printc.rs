@@ -8639,7 +8639,7 @@ impl PrintC {
     /// `push_cast_open` / `push_cast_close` rather than emitting the type inline.
     /// Map a token from the opcode table onto the active language's spelling and
     /// precedence (`LangProfile::map_token`).
-    fn lang_token(&self, tok: &'static OpToken) -> &'static OpToken {
+    pub(crate) fn lang_token(&self, tok: &'static OpToken) -> &'static OpToken {
         (self.lang().map_token)(tok)
     }
 
