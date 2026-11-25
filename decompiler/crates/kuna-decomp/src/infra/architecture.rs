@@ -3174,6 +3174,9 @@ impl Architecture {
     /// See [`crate::modes`]. The frontend-only `auto` policy errors here because
     /// an Architecture has no input-file size; file frontends resolve it to a
     /// concrete preset before this method. Errors on an unknown mode name.
+    /// `ppc32picimports abi` acts only while an image loads, so the preset
+    /// sets it for the next load and leaves the open image's live mode, a
+    /// caller-local `on` included, as it was.
     pub fn apply_mode(&mut self, name: &str) -> KunaResult<String> {
         if crate::modes::mode_is_automatic(name) {
             return Err(KunaError::parse(
@@ -3187,9 +3190,11 @@ impl Architecture {
                 known.join(", ")
             ))
         })?;
+        let ppc32picimports = self.analysis_ppc32picimports;
         for (opt, val) in overrides {
             self.set_kuna_option(opt, val)?;
         }
+        self.analysis_ppc32picimports = ppc32picimports;
         Ok(format!(
             "mode {name} applied ({} option override{})",
             overrides.len(),
