@@ -1913,11 +1913,20 @@ on the FIT projects only gains 27 and 32 on the CHECK projects it never saw.
 functions reach the pass. Re-measured then (main bd07ce279), the shipped table
 against `on` moves 100 more functions to an exact match at O2 (190 gained, 90
 lost; FIT +38, CHECK +62) and 41 at O0 (94 gained, 53 lost; FIT +14, CHECK
-+27). XXRETRAINXX The model rewrites
-only within the pass's two forms, so no function computes anything different:
++27). A table refitted on that main (2,276 sites from new forced runs) was no
+better where it had not been trained: fitted on one half of the projects and
+measured on the other, in both directions, it gains 54 functions at O2 and 41
+at O0 together against 53 and 41 for the shipped table's training data fitted
+the same way, and on the whole corpus it is 8 and 3 functions worse, so the
+table fitted on 2,284 sites of the earlier main stays. The model chooses only
+between the pass's two forms, so no function computes anything different:
 every changed body holds the same non-control statements under either value.
 The lost functions are sources that wrote the form the size rule happened to
-pick, XXLOSTXX `option tailform on` restores the size rule.
+pick: mostly a function whose whole body is one short `if (c) { ... }` with
+nothing before it, which the model prints as a guard clause, and a guard late
+in a chain of guards whose remaining tail the model wraps (openssh's
+`sshbuf_free`, one source function linked into twelve binaries, is 12 of the
+90 O2 losses). `option tailform on` restores the size rule.
 
 Everything is a print-tree edit on the function's top-level statement list. Its
 nested `Ls`/`Graph` containers and the statement prefix of each top-level `if`'s
@@ -1966,6 +1975,9 @@ in `abort` or `exit` with the option off and on, and
 `kuna-cli/tests/tailform_noreturn_round_trip.rs` compiles their printed C beside
 the source with `abort` and `exit` turned into a `longjmp`, checking that every
 function returns, stores and stops where the source does.
+`tests/stages/kuna-tailform-model.xml` decompiles the C runtime's
+`__do_global_dtors_aux` under the default, which prints the source's guard
+clause, and under `on`, which keeps the four-line tail wrapped.
 `tests/stages/kuna-tailform.xml` decompiles gcc -O2 functions with the option
 off and on, and `kuna-cli/tests/tailform_round_trip.rs` compiles the printed C
 of gcc -O2 and -O0 builds beside the source and checks every function returns
