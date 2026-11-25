@@ -415,6 +415,7 @@ fn prototype(
                 output_storage: None,
                 input_storage: Vec::new(),
                 kuna_library_names: None,
+                kuna_library_table: false,
             };
             let code = tf.get_type_code_proto(&proto).ok()?;
             Some((a, tf.get_type_pointer(ptr_size, code, 1).ok()?))
@@ -457,6 +458,7 @@ fn prototype(
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
+        kuna_library_table: false,
     })
 }
 

@@ -11888,7 +11888,16 @@ call through the first stub names its import.
 Without a callee prototype, a preserved incoming argument register cannot
 establish import arity: calls with and without that argument can have identical
 instructions. A declared prototype supplies that missing contract
-(`kuna_gotimportproto.rs`, §4).
+(`kuna_gotimportproto.rs`, §4). The loader also records, by name, which
+imports' dynamic symbols require a public `GLIBC_*` version of one of glibc's
+own libraries (`libc.so.6`, `libm.so.6`, `libpthread.so.0`, `libdl.so.2`,
+`librt.so.1`, `libutil.so.1`, `libresolv.so.2`, `libanl.so.1`)
+(`decompiler/crates/kuna-analysis/src/loader/elf_plt.rs (mips_glibc_import_names)`),
+reading `.gnu.version` once for each undefined dynamic function and marking
+the imports of those names, so the built-in glibc declaration of such an
+import may also state a void result. `GLIBC_PRIVATE` is glibc's internal
+interface, which its headers do not declare, so it does not count, and a name
+also imported under another version is not marked.
 
 
 ### Weak import identity and slot membership

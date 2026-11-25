@@ -322,5 +322,6 @@ fn prototype_for(arch: &Architecture, main: u64, slots: &[Slot]) -> Option<Proto
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
+        kuna_library_table: false,
     })
 }
