@@ -95,7 +95,8 @@ fn deciding_edge(data: &Funcdata, join: BlockId, slot: int4) -> Option<(BlockId,
 /// The dividend `x` and the power `n` when `m` is `x < 0 ? x + (2^n - 1) : x`:
 /// a two-input MULTIEQUAL whose inputs are `x` and `x + (2^n - 1)`, each decided
 /// by one edge of the same branch, the add's edge being taken exactly when
-/// `x < 0`.  `n` stops at `8 * size - 2`, the largest power whose divisor is
+/// `x < 0`, and `x` defined where it reaches the join's reads (not in its own
+/// arm).  `n` stops at `8 * size - 2`, the largest power whose divisor is
 /// positive at the operand's size.
 fn corrected(data: &Funcdata, m: VarnodeId) -> Option<(VarnodeId, u32)> {
     let phi = def_op(data, m, OpCode::CPUI_MULTIEQUAL)?;
@@ -127,6 +128,11 @@ fn corrected(data: &Funcdata, m: VarnodeId) -> Option<(VarnodeId, u32)> {
     let (branch, add_edge) = deciding_edge(data, join, add_slot)?;
     let (branch_x, x_edge) = deciding_edge(data, join, 1 - add_slot)?;
     if branch != branch_x || add_edge == x_edge {
+        return None;
+    }
+    let x_arm = data.bblocks_ref().block(join).get_in(1 - add_slot);
+    let x_def = data.vbank().get(x)?.get_def().and_then(|d| data.obank().get(d)?.get_parent());
+    if x_arm != branch && x_def == Some(x_arm) {
         return None;
     }
     let cb = data.obank().get(data.bb_op_tail(branch)?)?;

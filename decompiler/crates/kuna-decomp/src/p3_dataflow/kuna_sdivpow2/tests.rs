@@ -59,6 +59,7 @@ struct Shape {
     flip: bool,
     add_on_true_edge: bool,
     diamond: bool,
+    x_in_arm: bool,
     base: u64,
     addend: u64,
     shift: u64,
@@ -71,6 +72,7 @@ const DIV8: Shape = Shape {
     flip: false,
     add_on_true_edge: true,
     diamond: false,
+    x_in_arm: false,
     base: 0,
     addend: 7,
     shift: 3,
@@ -107,6 +109,13 @@ fn build(s: &Shape) -> Built {
         let k = fd.new_constant(s.size, s.base);
         op(&mut fd, b, 0x1000, OpCode::CPUI_INT_ADD, &[r, k], s.size).1
     };
+    let tested = x;
+    let x = if s.x_in_arm {
+        let k = fd.new_constant(s.size, s.base);
+        op(&mut fd, d, 0x1010, OpCode::CPUI_INT_ADD, &[r, k], s.size).1
+    } else {
+        x
+    };
     let k = fd.new_constant(s.size, (s.base + s.addend) & calc_mask(s.size));
     let (_, t) = op(&mut fd, b, 0x1002, OpCode::CPUI_INT_ADD, &[r, k], s.size);
     let k = match s.cond {
@@ -115,7 +124,7 @@ fn build(s: &Shape) -> Built {
         _ => calc_mask(s.size),
     };
     let k = fd.new_constant(s.size, k);
-    let ins = if s.cond_x_first { [x, k] } else { [k, x] };
+    let ins = if s.cond_x_first { [tested, k] } else { [k, tested] };
     let (_, c) = op(&mut fd, b, 0x1004, s.cond, &ins, 1);
     let target = fd.new_constant(8, 0x1100);
     let (cb, _) = op(&mut fd, b, 0x1008, OpCode::CPUI_CBRANCH, &[target, c], 1);
@@ -161,6 +170,12 @@ fn an_offset_dividend_is_divided_whole() {
     assert!(divides(&Shape { base: 0x200, addend: 0x3ff, shift: 10, ..DIV8 }));
     assert!(divides(&Shape { base: 0xffff_fff0, cond: OpCode::CPUI_INT_SLESSEQUAL, ..DIV8 }));
     assert!(!divides(&Shape { base: 0x200, addend: 0x5ff, shift: 10, ..DIV8 }));
+}
+
+#[test]
+fn a_dividend_computed_in_its_own_arm_does_not_reach_the_join() {
+    assert!(divides(&Shape { diamond: true, base: 0x200, addend: 0x3ff, shift: 10, ..DIV8 }));
+    assert!(!divides(&Shape { diamond: true, x_in_arm: true, base: 0x200, addend: 0x3ff, shift: 10, ..DIV8 }));
 }
 
 #[test]
