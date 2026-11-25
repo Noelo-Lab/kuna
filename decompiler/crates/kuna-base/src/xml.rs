@@ -2333,8 +2333,9 @@ mod tests {
         // and kuna-latchjoin / a loop latch the compiler copied into each path is joined into one
         // and kuna-sdivpow2(-thumb) / a signed power-of-two division corrected by a conditional add
         // and kuna-boolret(-thumb) / a function that only tests a short-circuit condition returns it
+        // and kuna-elfv1-symbolextent / a descriptor symbol's size bounds the code behind it
         // and kuna-cxxalloc / the C++ allocation operators keep their arguments and are __cdecl on i386
-        assert_eq!(count, 928, "corpus file count drifted");
+        assert_eq!(count, 929, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

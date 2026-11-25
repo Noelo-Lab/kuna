@@ -7670,7 +7670,12 @@ and x86 images this removes 492 starts, every one inside a sized symbol, and add
 none. A stripped shared object
 keeps the sizes of its exported functions in `.dynsym`, and those filter the same
 way; an image with no sized function symbol (a fully stripped executable, Mach-O)
-is unchanged. The rule trusts the size: a symbol-less routine that hand-written
+is unchanged. A PowerPC64 ELFv1 symbol names a function descriptor in `.opd` and states
+the size of the code, so its extent starts at the descriptor's validated code word. One
+that states 24 bytes is left out: the dot-symbol ABI (GCC's `-mcall-aixdesc`, GMP's
+assembly) gives every descriptor its own size, and the `.name` symbol at the code states
+the function's. A function whose code is itself 24 bytes then filters nothing, as before.
+The rule trusts the size: a symbol-less routine that hand-written
 assembly places inside another function's `.size`, and that only a data pointer
 reaches, loses its pattern start. One with an FDE or a direct call is still found
 by those passes.
