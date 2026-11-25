@@ -55,6 +55,15 @@ loopcondhoist off` the first two and the -O2 one are `while( true )` with the
 condition inside (the third keeps its loop through `loopcontinue auto`); under
 `auto` only the -O2 one is.
 
+`kuna-latchjoin.xml` checks option `dedupitetail` (default `latch`) on gcc
+-O2 x86-64. gcc copies `p = p->next; if (p) goto top;` into both paths of a
+`while (p) { if (p->cls == cls) ...; p = p->next; }` loop; by default the
+copies are joined and `visit` and `count` print that one loop, with `count`'s
+sum (which gcc scheduled between the load and the test of one copy) left in the
+`if`. A busy-wait inside a `for` loop shares the outer loop's header but has a
+latch of its own, and stays a loop inside the loop. Under `option dedupitetail
+on` the two copies print as a `while` loop inside a `do` loop.
+
 `kuna-guardauto.xml` checks option `guardarm` (default `auto`) on two x86-64
 functions. In a gcc -O0 `unget`, whose parameters live in frame slots, the
 default prints the source's flat guard `if (c == -1 || ...) return -1;`, and

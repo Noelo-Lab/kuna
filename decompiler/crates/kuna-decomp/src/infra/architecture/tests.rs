@@ -153,6 +153,11 @@ fn reset_defaults_is_idempotent_after_mutation() {
     assert_eq!(arch.signedness, crate::kuna_typeround::SignPolicy::Auto);
 }
 
+/// The tests that write the process-wide load-option environment and restore it
+/// run one at a time: a restore in one would otherwise erase what the other just
+/// set before it reads it back.
+static LOAD_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[test]
 fn apply_mode_aggressive_flips_offdefault_flags_but_not_dwarf_lines() {
     let mut arch = Architecture::new("test:LE:32", bare_sleigh());
@@ -163,6 +168,7 @@ fn apply_mode_aggressive_flips_offdefault_flags_but_not_dwarf_lines() {
     assert!(!arch.switch_guard_bound);
     assert!(!arch.analysis_dwarf_lines);
 
+    let _env = LOAD_ENV.lock().unwrap_or_else(|e| e.into_inner());
     let environment = crate::kuna_loadoptions::EnvSnapshot::capture();
     arch.apply_mode("aggressive").expect("aggressive mode applies");
     environment.restore();
@@ -186,6 +192,7 @@ fn apply_mode_aggressive_flips_offdefault_flags_but_not_dwarf_lines() {
 #[test]
 fn apply_mode_aggressive_sets_ppc32picimports_abi_for_the_next_load_only() {
     use crate::kuna_ppc32picimports::Mode;
+    let _env = LOAD_ENV.lock().unwrap_or_else(|e| e.into_inner());
     let environment = crate::kuna_loadoptions::EnvSnapshot::capture();
     let mut arch = Architecture::new("test:LE:32", bare_sleigh());
     arch.set_kuna_option("ppc32picimports", "on").expect("on applies");

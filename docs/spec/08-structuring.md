@@ -1100,6 +1100,75 @@ which starts at the same leaf, so the goto keeps its label and lands on the
 same statement. A dropped copy hands over to the copy that was kept. Before
 this, the goto kept the freed node's id and printing its label panicked.
 
+**Loop latches (`dedupitetail latch`, the default).** An optimizing compiler
+copies a loop's latch, the step and the test that jumps back, into each path
+through the body that reaches it (tail duplication, jump threading through the
+latch, rotation of a loop whose body ends in an `if`). The loop header then has
+two back edges whose source blocks end in the same operations, and the
+structurer prints two loops, one directly inside the other, where the source
+has one loop with an `if` in it. `decompiler/crates/kuna-decomp/src/p8_structure/kuna_latchjoin.rs
+(ActionLatchJoin)` joins such copies on the p-code graph, before structuring, so
+every later pass sees one latch; it runs in the main loop right after the
+upstream `ActionNodeJoin`, while the exit the copies share has not yet been
+split by `ActionReturnSplit`.
+
+*Pattern:* a header with exactly two back edges, whose source blocks `A` and `B`
+both end in a conditional branch to the same two targets, one of them the header,
+neither of them `A` or `B` (a self-loop latch is a separate inner loop, as in a
+busy-wait). With a third back edge the joined loop would still have two
+latches, and the structurer prints the third as a goto where it printed an inner
+loop before, so such a header is left alone. *Identity rule:* the ops of `A` and `B` are paired from the branch
+backwards, and the longest run that is operation-for-operation identical is
+kept: same opcode, same arity, equal constants, the same output size, and the
+same output storage whenever the storage is address-tied, persistent or not yet
+in SSA form. A test with the opposite sense and its targets swapped is the same
+test (`==`/`!=`, `<`/`<=` with operands swapped, signed and unsigned). Each
+input of a paired op is the same value in both copies, the outputs of
+corresponding ops of the run, or values from before the run, which then meet in
+a new MULTIEQUAL; a value of address-tied or persistent storage, or a constant
+against a non-constant, does not merge. Two loads from different addresses stay
+in their copies (the run starts after them): a merged address would hide which
+memory is read, and a variadic function's read of its own register save area
+would no longer be seen as one. Up to two ops that only one copy has are
+stepped over when they have no effect but their output (no memory access, no
+call, an output in plain register or temporary storage) and read nothing the
+run computes before them; they stay in their copy, ahead of the run. A copy that
+reads a value of the run that the other copy does not cuts the run to start
+after it. The run must hold the op that computes the branch condition. *Refused:*
+calls, user ops, INDIRECTs, MULTIEQUALs, stores, any value of the run used
+anywhere but the run and the target MULTIEQUALs on the copy's own edge,
+irreducible edges, unconditional latches, and unoptimized functions
+(`p3_dataflow/kuna_unoptimized.rs`), which do not duplicate latches.
+
+*Transform:* `Funcdata::node_join_create_block` gives `A` and `B` one new
+successor `J` that takes their out edges (the control-flow half
+`ConditionalJoin` uses). `J` receives the MULTIEQUALs for the values that differ
+and then `A`'s run, in order; `B`'s run is deleted. In each target, the
+MULTIEQUAL inputs from `A` and `B` become one input from `J`: the run's output,
+the shared value, or the new MULTIEQUAL; a target MULTIEQUAL left with one input
+becomes a COPY. Every path still runs the same operations in the same order, so
+the join is exact; `count_dns_rr` prints `while (p) { if (...) n++; p =
+p->next; }` instead of a `while` loop inside a `do` loop.
+
+*Goto guard:* joining can move where the structurer needs a goto, typically a
+goto between two places in the joined loop where the nested loops used a `break`.
+A function of at most `kuna_latchjoin.rs (MAX_RECHECK_OPS)` = 1000 ops whose
+finished structure prints a goto from one place to another inside a loop that
+holds a joined latch (`kuna_latchjoin.rs (gotos_near_joins)`; any goto at all
+when that loop is not found) is decompiled again from the start with the join
+withdrawn
+(`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs`, after the
+`stackstoreguard` and `condstmts` re-attempts, which the second decompile runs
+again on its own); the joined result is kept unless the other is structured and
+prints strictly fewer gotos (`kuna_latchjoin.rs (fewer_gotos)`, counted by the
+print-time census in `p2_lift/kuna_loweredswitchkeep.rs (printed_gotos)`). The
+second decompile costs as much as the first; on the decbench O2 corpus the
+unjoined result printed fewer gotos in 32 of 479 such functions, all under 500
+ops, so larger functions keep the joined result unchecked.
+
+`option dedupitetail on` keeps only the if/else hoisting above and prints the
+copies as before; `off` turns both off.
+
 ### iteregion — `?:` recovery (angr `ITERegionConverter`)
 
 `decompiler/crates/kuna-decomp/src/p8_structure/kuna_iteregion.rs
