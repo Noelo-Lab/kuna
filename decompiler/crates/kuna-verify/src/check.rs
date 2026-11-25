@@ -7,7 +7,7 @@
 //! typed contract is given, at the contract's width with kuna's value converted
 //! to the contract type by C's rules.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Instant;
 
@@ -658,6 +658,9 @@ fn machine_differs(
     if let Some(l) = compare_calls(prog, env, run, calls, &a.calls, &b.calls).differs {
         return Some(format!("calls differ: {}", l.join("; ")));
     }
+    if let Some(l) = compare_events(prog, &a.events, &b.events) {
+        return Some(format!("system calls differ: {}", l.join("; ")));
+    }
     compare_writes(env, run, &a.state.writes(), &b.state.writes(), None).map(|d| format!("memory at exit differs: {d}"))
 }
 
@@ -681,6 +684,9 @@ fn depends(
     }
     if let Some(l) = compare_calls(prog, env, run, calls, &a.calls, &b.calls).differs {
         return Some(l.join("; "));
+    }
+    if let Some(l) = compare_events(prog, &a.events, &b.events) {
+        return Some(format!("its system calls: {}", l.join("; ")));
     }
     compare_writes(env, run, &a.writes, &b.writes, None).map(|d| format!("memory at exit {d}"))
 }
@@ -712,6 +718,22 @@ fn input_line(prog: &ConsoleProgram, env: &Env, run: u32, claim: &Claim) -> Stri
 
 /// Check one decompiled function. `contract`, when given, is the function's
 /// real type.
+/// The registers the ABI reserves for veneers and PLT stubs, which a callee
+/// may not expect to hold anything at its entry: ARM's `ip` (`r12`), AArch64's
+/// `x16` and `x17`. A transparent thunk may write only these.
+fn veneer_registers(prog: &ConsoleProgram) -> Vec<(u64, u32)> {
+    let arch = prog.arch();
+    let names: &[&str] = if arch.archid.starts_with("AARCH64") {
+        &["x16", "x17"]
+    } else if arch.archid.starts_with("ARM") {
+        &["r12"]
+    } else {
+        &[]
+    };
+    let Some(lookup) = arch.manage().register_lookup() else { return Vec::new() };
+    names.iter().filter_map(|n| lookup.probe_register(n)).map(|r| (r.offset, r.size)).collect()
+}
+
 /// Runs that may run past the op budget on both sides, counted apart, before
 /// the function stops being run: each costs two full budgets. A run past it on
 /// one side only still makes the function `UNKNOWN(budget)`: one side may loop
@@ -740,10 +762,12 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
             );
             report.lines = wide.lines;
             report.suspects = wide.suspects;
-        } else if matches!(wide.verdict, Verdict::Agrees(_)) {
+        } else if let Verdict::Agrees(n) = wide.verdict {
+            report.lines.push(format!("note     a parameter kuna's recovered prototype types bool also took any byte, in {n} runs that agree"));
+        } else {
             report.lines.push(format!(
-                "note     a parameter kuna's recovered prototype types bool also took any byte, in {} runs that agree",
-                free.runs
+                "note     a parameter kuna's recovered prototype types bool held only 0 or 1: with any byte the check ended {}, so the agreement covers only that domain",
+                wide.verdict.label()
             ));
         }
     }
@@ -819,13 +843,7 @@ fn check_runs(
     let mut upper = UpperWatch::new(prog, fd, &claim);
     let mut machine_calls = calls::sites(fd, &env);
     env.arg_regs = machine_calls.input_regs.clone();
-    env.scratch_regs = machine_calls
-        .default
-        .killed
-        .iter()
-        .copied()
-        .filter(|&(o, n)| (o, n) != env.sp && !env.arg_regs.iter().any(|&(a, m)| o < a + u64::from(m) && a < o + u64::from(n)))
-        .collect();
+    env.scratch_regs = veneer_registers(prog);
     let mut calls = machine_calls.clone();
     let mut program: Program = program::compile(prog, fd, &calls);
     if let Some((m, reached)) = mutation {
@@ -886,7 +904,6 @@ fn check_runs(
             m = machine::run(&env, run, entry, opts.budget, &machine_calls, None);
             g = graph::run(&env, &program, run, opts.budget, &calls, m.as_ref().map(|mo| mo.calls.as_slice()).unwrap_or(&[]), None);
         }
-        let replay: &[Record] = m.as_ref().map(|mo| mo.calls.as_slice()).unwrap_or(&[]);
         let (mo, go) = match (m, g) {
             (Err(Halt::Trap(t)), Err(Halt::Trap(_))) => {
                 trapped.get_or_insert(t);
@@ -1103,8 +1120,18 @@ fn check_runs(
             perturbed_runs += 1;
             let replay: &[Record] = mo.calls.as_slice();
             for u in &perturb {
-                let Ok(gp) = graph::run(&env, &program, run, opts.budget, &calls, replay, Some(&u.perturb)) else { continue };
-                let Some(d) = depends(prog, &env, run, &calls, &claim, &go, &gp) else { continue };
+                let d = match graph::run(&env, &program, run, opts.budget, &calls, replay, Some(&u.perturb)) {
+                    Ok(gp) => match depends(prog, &env, run, &calls, &claim, &go, &gp) {
+                        Some(d) => d,
+                        None => continue,
+                    },
+                    Err(Halt::Trap(t)) => format!("whether it traps ({t})"),
+                    Err(h) => {
+                        let why = format!("with other values in {}, kuna's side ends {}", u.names, Verdict::from_halt(&h).label());
+                        unknown.get_or_insert(Halt::Undefined(why));
+                        continue;
+                    }
+                };
                 if u.shared {
                     let with = if u.entry.is_empty() {
                         machine::WithArgs { call: None, bytes: Vec::new(), kill_salt: 0x5a5a_5a5a }

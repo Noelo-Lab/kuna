@@ -302,6 +302,10 @@ run yet.
   keep in memory either, needs those found from the machine side first.
 - **Symbolic proof (Tier S).** Not started: a relational symbolic engine over both
   sides' p-code belongs in its own pull request.
+- **System-call arguments.** kuna passes a system call the registers its block sets
+  up, in order, and may leave some out; each one it passes is compared with the
+  machine's register, but which ones a given call needs is not modelled, so one it
+  leaves out is not a difference here.
 - **Speed.** Comparing memory by page rather than by byte, a lifting cache shared by a
   worker's functions, and overlapping z3 queries with runs. None is at the top of the
   current profile.

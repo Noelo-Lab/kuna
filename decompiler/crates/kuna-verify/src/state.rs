@@ -139,8 +139,8 @@ pub struct Env<'p> {
     /// The calling convention's argument registers: a thunk that writes one
     /// changes the call, so it is no thunk.
     pub arg_regs: Vec<(u64, u32)>,
-    /// Registers the convention lets any call clobber that carry no argument
-    /// (`ip` on ARM, `t9` on MIPS): all a transparent thunk may write.
+    /// The registers the ABI reserves for veneers (ARM's `ip`, AArch64's
+    /// `x16`/`x17`): the only ones a transparent thunk may write.
     pub scratch_regs: Vec<(u64, u32)>,
     /// Where a call to each target goes through transparent thunks only.
     pub(crate) transparent: RefCell<HashMap<u64, u64>>,
@@ -1130,7 +1130,7 @@ impl<'e, 'p> State<'e, 'p> {
             w.objects.push((start, end));
         }
         let low = w.objects.iter().map(|o| o.0).min();
-        let mut take = |w: &mut Writes, start: u64, end: u64, any: bool| {
+        let take = |w: &mut Writes, start: u64, end: u64, any: bool| {
             for (off, v) in self.mem.range(ram, start, end) {
                 if any && self.env.stack_object(off).is_none() {
                     continue;

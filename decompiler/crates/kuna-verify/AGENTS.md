@@ -59,3 +59,8 @@ entry that no longer applies can be removed.
   Counted every argument suspect as a doubt that keeps a run from agreeing. A callee
   reading a register its declared prototype does not take (Go's context register) is not
   an argument kuna dropped; only a recovered prototype's suspect is a doubt.
+- 2026-11-25 · Claude Opus 5.5 · PR #1830
+  Compared a system call's arguments to the syscall registers by position. kuna's
+  `x64syscall` passes only the registers the block provably sets, in order, so a pass
+  that leaves one out became a false `DIFFERS` (`kuna-x64syscall` `pointer_before`).
+  The arguments are matched as a subsequence of the registers.

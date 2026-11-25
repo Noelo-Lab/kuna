@@ -478,3 +478,20 @@ fn runs_past_the_budget_on_both_sides_are_counted_apart() {
     assert!(n > 0 && n < 64, "{}", r.render());
     assert!(r.lines.iter().any(|l| l.contains("on both sides; they are not compared")), "{}", r.render());
 }
+
+/// Thunks that set a scratch register the callee then reads (`mov r10d,1;
+/// jmp helper` against `mov r10d,2; jmp helper`, `helper: mov eax,r10d`) are
+/// different calls: only the ABI's veneer registers may be written by a
+/// transparent thunk.
+#[test]
+fn thunks_that_set_a_scratch_register_are_different_calls() {
+    let text = [
+        0x44, 0x89, 0xd0, 0xc3, 0x41, 0xba, 0x01, 0, 0, 0, 0xeb, 0xf4, 0x41, 0xba, 0x02, 0, 0, 0, 0xeb, 0xec, 0x48, 0x83, 0xec,
+        0x08, 0xe8, 0xe7, 0xff, 0xff, 0xff, 0x48, 0x83, 0xc4, 0x08, 0xc3,
+    ];
+    let path = object("scratchthunks", &text, &[("helper", 0, 4), ("set1", 4, 8), ("set2", 12, 8), ("caller", 20, 14)], &[]);
+    let rows = mutant_rows(&path, "caller");
+    let targets: Vec<_> = rows.iter().filter(|r| r["operator"] == "call-target" && r["reached"] == true).collect();
+    assert!(!targets.is_empty(), "{rows:?}");
+    assert!(targets.iter().all(|r| r["killed"] == true), "{targets:?}");
+}

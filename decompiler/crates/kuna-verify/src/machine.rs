@@ -96,9 +96,11 @@ pub fn leads_out(env: &Env, target: u64) -> bool {
 }
 
 /// Where a call to `target` goes through thunks that change nothing a callee
-/// can see: each hop writes only temporaries and scratch registers, stores
-/// nothing, leaves the stack pointer and flags alone, and two runs from
-/// different states jump to the same place. A PLT slot's `jmp [got]` and a
+/// can see: each hop writes only temporaries and the registers the ABI keeps
+/// for veneers ([`Env::scratch_regs`]), reads no register it did not write
+/// itself, stores nothing and leaves the stack pointer and flags alone. So the
+/// destination depends only on the code and the image's bytes, never on the
+/// state at the call. A PLT slot's `jmp [got]` and a
 /// plain `jmp f` are such thunks; one that sets or pushes an argument, or
 /// moves the stack pointer, is not. Two calls are the same call when they
 /// reach the same code this way.
@@ -134,7 +136,7 @@ fn writes_argument(env: &Env, out: &VarnodeData) -> bool {
         && env.arg_regs.iter().any(|&(o, n)| out.offset < o + u64::from(n) && o < out.offset + u64::from(out.size))
 }
 
-/// Whether a `strict` hop may write `out`: a temporary or a scratch register.
+/// Whether a `strict` hop may write `out`: a temporary or a veneer register.
 fn hidden(env: &Env, out: &VarnodeData) -> bool {
     let Ok(s) = space(out) else { return false };
     s.get_type() == spacetype::IPTR_INTERNAL
@@ -150,9 +152,22 @@ fn hidden(env: &Env, out: &VarnodeData) -> bool {
 fn thunk_hop(env: &Env, at: u64, run: u32, strict: bool) -> Option<u64> {
     let mut state = State::new(env, 0x7fff_0000 + run);
     let mut addr = at;
+    let mut written: Vec<(u64, u32)> = Vec::new();
+    let is_reg = |vn: &VarnodeData| space(vn).is_ok_and(|s| s.get_index() == env.register.get_index());
     for _ in 0..3 {
         let insn = lift(env, addr).ok()?;
         for op in &insn.ops {
+            if strict {
+                let unset = op.ins.iter().filter(|vn| is_reg(vn)).any(|vn| {
+                    !written.iter().any(|&(o, n)| vn.offset >= o && vn.offset + u64::from(vn.size) <= o + u64::from(n))
+                });
+                if unset {
+                    return None;
+                }
+                if let Some(out) = op.out.as_ref().filter(|o| is_reg(o)) {
+                    written.push((out.offset, out.size));
+                }
+            }
             match op.opc {
                 OpCode::CPUI_BRANCH => {
                     let t = op.ins.first()?;
