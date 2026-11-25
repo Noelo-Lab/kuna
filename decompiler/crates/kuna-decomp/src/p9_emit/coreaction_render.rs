@@ -1112,6 +1112,16 @@ fn is_pointer(
     numeric: &HashSet<uintb>,
     full_encoding: &mut uintb,
 ) -> Option<(GlobalContainer, Address)> {
+    // A word address can also be an architectural integer, such as a
+    // postmodified address register returned as a scalar. Do not replace
+    // that number with a host C object address based on an exact symbol
+    // match alone: require evidence for this use in the word space.
+    if spc.get_word_size() != 1
+        && search_for_space_attribute(data, vn, op)
+            .is_none_or(|access| access.get_index() != spc.get_index())
+    {
+        return None;
+    }
     let glb = Rc::clone(data.get_arch());
     let vn_offset = data.vbank().get(vn)?.get_offset();
     let vn_size = data.vbank().get(vn)?.get_size();

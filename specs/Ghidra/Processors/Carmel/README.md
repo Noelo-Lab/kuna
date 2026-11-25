@@ -47,6 +47,11 @@ zero and register-half MOVE; half-register CMP/CMPU and signed full-accumulator
 CMP with an inactive peer; signed register-only MUL, MAC, MSU, and DIV;
 logical and arithmetic low-half shifts with an inactive peer; assigned
 ADDRUPDATE pointer pairs; and ordinary signed conditional GOTO with no delay.
+Compact signed literal MOVE writes `R` or `RN` when its lane predicate or
+address enable is set. A following `MOVE A2,*R1++RN1` reads DATA at the old
+`R1` and uses the new `RN1` to postmodify the pointer.
+Emitted C keeps the returned pointer register in DATA word units even
+when that same address has a named DATA object.
 Selected compact long ADD, SUB, and multiply forms preserve status and
 two-word DATA results with an inactive peer. Qualified CLRBTR clears the
 selected backtrace port only when its predicate allows it.

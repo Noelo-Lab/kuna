@@ -261,6 +261,48 @@ fn wide_literal_to_address_register_does_not_shift_or_set_alu_status() {
 }
 
 #[test]
+fn signed_compact_address_move_uses_the_issue_lane_and_preserves_arithmetic_flags() {
+    for (fetch, mode, word, register, cfg, table, expected) in [
+        ((0x310101, NOP), 1, 0, "R0", (0, 0), 0xff00, 0x2345),
+        ((0x310101, NOP), 1, 0, "R0", (0x1000, 0), 0xff00, 0xff80),
+        ((0xb10fd1, NOP), 2, 0, "R7", (0, 0), 0x00ff, 0xffe8),
+        ((SEQUENTIAL | NOP, 0x3116ff), 3, 1, "RN3", (0, 0), 0x00ff, 0x007f),
+        ((NOP, 0x3117d1), 1, 0, "RN3", (0, 0), 0x00ff, 0x2345),
+        ((NOP, 0x3117d1), 1, 0, "RN3", (0, 0), 0xff00, 0xffe8),
+    ] {
+        let issues = if mode == 1 { [(0, 1, 6), (1, 0, 0), (2, 1, 0)] }
+                     else { [(0, 2, 3), (1, 3, 6), (2, 1, 0)] };
+        let mut m = Machine::new(0, &[fetch, (NOP, NOP)], &issues, None);
+        m.seed(&[(register, 0x2345), ("CECFG1", cfg.0), ("CECFG2", cfg.1), ("CETBL", table), ("EST", 2)]);
+        m.start(word).unwrap();
+        assert_eq!(m.step(), if mode == 2 { 3 } else { 6 });
+        assert_eq!(m.reg(register), expected);
+        assert_eq!(m.reg("EST"), 2 | (if table == 0xff00 { 0x2000 } else { 0x1000 }));
+    }
+}
+
+#[test]
+fn compact_data_move_reads_the_old_address_and_uses_the_new_signed_increment() {
+    for (cfg, value, rn, pointer, accumulator, flags) in [
+        (0, 0, 3, 0x414b, 0, 8),
+        (0x1000, 0x8333, 0xffe8, 0x4130, 0xffffff8333, 0x10),
+    ] {
+        let mut m = Machine::new(
+            0, &[(0x3113d1, NOP), (0x31dc92, NOP), (NOP, NOP)], &[(0, 1, 6), (2, 1, 6), (4, 1, 0)], None,
+        );
+        m.seed(&[("R1", 0x4148), ("RN1", 3), ("CECFG1", cfg), ("A2", 0x23567890), ("EST", 0xfff)]);
+        m.seed_data(0x4148, value);
+        m.seed_data(pointer, 0x7777);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!(m.reg("RN1"), rn);
+        assert_eq!(m.step(), 12);
+        assert_eq!((m.reg("R1"), m.reg("A2"), m.reg("EST")), (pointer, accumulator, flags));
+        assert_eq!((m.data(0x4148), m.data(pointer)), (value, 0x7777));
+    }
+}
+
+#[test]
 fn signed_mac_and_msu_preserve_native_wrap_limit_and_no_borrow() {
     for (word, lhs, rhs, accumulator, ecfg, result, est) in [
         (0x58d114, 2, 3, 0x7fffffffff, 0, 0x8000000005, 0x36),

@@ -333,6 +333,8 @@ define token slot (24)
     compact_frame_delta = (1,8) signed
     clrbtr_mask = (1,12) hex
     slot_13_22 = (13,22)
+    address_literal_dst = (9,12)
+    address_literal_value = (1,8) signed
     rel_words = (3,12) signed
     slot_0_2 = (0,2)
     conditional_words = (2,8) signed
@@ -448,6 +450,7 @@ attach variables [agu_3_rn] [RN5 RN6 RN7 _ RN6 RN7 RN7 _];
 attach variables [agu_3_rm] [RM4 RM6 RM6 _ RM6 RM6 RM6 _];
 attach variables [agu_3_rl] [RL4 RL6 RL6 _ RL6 RL6 RL6 _];
 attach values [agu_3_shift] [10 12 14 _ 12 14 14 _];
+attach variables [address_literal_dst] [R0 R1 R2 R3 R4 R5 R6 R7 RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
 attach variables [div_step_dst] [A0 A1 A2 A3 A4 A5 _ _];
 attach variables [div_step_dst_lo] [A0L A1L A2L A3L A4L A5L _ _];
 attach variables [div_step_dst_hi] [A0H A1H A2H A3H A4H A5H _ _];
@@ -1201,6 +1204,41 @@ macro unary_ce(cfg, est, tbl, bank, enabled) {
     local index:2 = (first << 2) | (second << 1) | third;
     enabled = (tbl >> (index + bank * 8)) & 1;
     <unary_ce_ready>
+}
+
+macro move_address_literal(dst, immediate, cfg, bank) {
+    local incoming:2 = EST;
+    local first:2;
+    local second:2;
+    unary_ce(CECFG1, incoming, CETBL, 0, first);
+    unary_ce(CECFG2, incoming, CETBL, 1, second);
+    local selected:2 = first * (1 - bank) + second * bank;
+    if (selected == 0 && (cfg & 0x1000) == 0) goto <publish>;
+    local byte:1 = immediate;
+    dst = sext(byte);
+  <publish>
+    EST = (incoming & 0xcfff) | (first << 12) | (second << 13);
+}
+
+@define ADDRESS_LITERAL "slot_13_22=0x188 & slot_0_0=1 & address_literal_dst & address_literal_value"
+:"MOVE CE1" address_literal_dst,address_literal_value is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & $(ADDRESS_LITERAL) { move_address_literal(address_literal_dst, address_literal_value, CECFG1, 0); }
+:"MOVE CE1" address_literal_dst,address_literal_value "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(ADDRESS_LITERAL)); (slot_mode=0 & nop_right) { move_address_literal(address_literal_dst, address_literal_value, CECFG1, 0); }
+:^nop_left "||" "MOVE CE2" address_literal_dst,address_literal_value is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(ADDRESS_LITERAL)) { move_address_literal(address_literal_dst, address_literal_value, CECFG2, 1); }
+
+:"MOVE" "A2","*R1++RN1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x31dc92); (slot_mode=0 & nop_right) {
+    local address:2 = R1;
+    modify_ptr(R1, RN1, RM0, RL0, 2, 1);
+    local value:2 = *[data]:2 address;
+    local negative:1 = value s< 0;
+    A2L = value;
+    A2H = 0 - zext(negative);
+    GB2 = 0 - negative;
+    local flags:2 = (EST & 0x3000) | (zext(value == 0) << 3) | (zext(negative) << 4);
+    local first:2;
+    local second:2;
+    unary_ce(CECFG1, flags, CETBL, 0, first);
+    unary_ce(CECFG2, flags, CETBL, 1, second);
+    EST = (flags & 0xfff) | (first << 12) | (second << 13);
 }
 
 macro unary_not_flags(word) {

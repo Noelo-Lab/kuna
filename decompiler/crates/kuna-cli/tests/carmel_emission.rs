@@ -188,6 +188,48 @@ fn carmel_data_repeat_replays_the_range_and_skips_only_its_first_issue_at_zero()
     fs::remove_file(binary).unwrap();
 }
 
+#[test]
+fn carmel_postmodify_returns_the_word_index_not_the_host_object_address() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let code = [
+        0x80, 0x41, 0x48, 0xc6, 0x42, 0x84, // MOVE R1,0x4148
+        0x31, 0xdc, 0x92, 0x2b, 0xec, 0x00, // MOVE A2,*R1++RN1
+        0x2b, 0xd8, 0x00, 0x2b, 0xec, 0x00,
+    ];
+    let binary = common::scratch_file("carmel-postmodify-word", "bin");
+    fs::write(&binary, code).unwrap();
+    let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+    kuna.arg("decompile").arg(&binary).args([
+        "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+        "--json", "--assert-strict", "--assert", "return %R1 unsigned short",
+        "--assert", "data [data,0x4148] volatile unsigned short word_4148",
+        "--assert", "param 0 %RN1 unsigned short step",
+        "--assert", "param 1 %PACFG unsigned short cfg",
+        "--assert", "param 2 %RM0 unsigned short bound",
+        "--assert", "param 3 %RL0 unsigned short lower",
+    ]);
+    let output = common::process::required_output(&mut kuna);
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let function = &json["functions"][0];
+    assert!(function["error"].is_null(), "{function}");
+    let emitted = function["code"].as_str().unwrap();
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    fs::write(&source, format!(
+        "#include <stdbool.h>\nvolatile unsigned short word_4148 = 0x3333;\n{emitted}\n\
+         int main(void) {{\n\
+           if (sub_0(3, 0, 0, 0) != 0x414b) return 1;\n\
+           return sub_0(0xffe8, 0, 0, 0) != 0x4130 || word_4148 != 0x3333;\n\
+         }}\n"
+    )).unwrap();
+    run_emitted_c(&source, &executable, emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")
