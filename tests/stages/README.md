@@ -51,8 +51,9 @@ is the loop's exit: a `for` whose `break` carries two stores keeps them in the
 break arm, a `while` with an early `return` prints as a `for` with the return
 inside, and a `break` to the return after the loop stays a `break`. The -O2
 build of the third prints as a `while` on its bottom test. Under `option
-loopcondhoist off` all four are `while( true )` with the condition inside;
-under `auto` only the -O2 one is.
+loopcondhoist off` the first two and the -O2 one are `while( true )` with the
+condition inside (the third keeps its loop through `loopcontinue auto`); under
+`auto` only the -O2 one is.
 
 `kuna-guardauto.xml` checks option `guardarm` (default `auto`) on two x86-64
 functions. In a gcc -O0 `unget`, whose parameters live in frame slots, the

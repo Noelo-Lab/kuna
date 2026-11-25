@@ -36,8 +36,10 @@
     stores written before its break inside the break arm (#2), find a for loop
     with its return inside (#3), readc a while loop whose break reaches the one
     return (#4), and the -O2 readc a while loop on its latch test (#5).
-    Pass 2 (option loopcondhoist off): each of the four loops is
-    `while( true )` with its condition as an inner exit, the old output (#6).
+    Pass 2 (option loopcondhoist off): lookup, find and the -O2 readc are
+    `while( true )` with the condition as an inner exit, the old output (#6);
+    the -O0 readc keeps its form, because `loopcontinue auto` keeps the break
+    gcc recorded with its one return (#4).
     Pass 3 (option loopcondhoist auto): lookup keeps the source form (#1, #2);
     the -O2 readc is not unoptimized and keeps `while( true )` (#6).
 -->
@@ -114,11 +116,11 @@ c366662e0f1f8400000000000f1f400085f67e2c0fb60a4863f631c0eb0b66904883c0014839f074
 <stringmatch name="LOOPCONDHOIST-LAYOUT #3: the -O0 while with an early return is a for loop with the return inside (pass 1)" min="1" max="1">^  for \(v1 = 0; v1 &lt; a1; v1 = v1 \+ 1\) \{
 ^    if \(\*a0\[v1\] == \*a2\)
 ^      return v1;</stringmatch>
-<stringmatch name="LOOPCONDHOIST-LAYOUT #4: the -O0 break to the shared return stays a break (pass 1)" min="1" max="1">^  while \(dat_102000\) \{
+<stringmatch name="LOOPCONDHOIST-LAYOUT #4: the -O0 break to the shared return stays a break (passes 1 and 2)" min="2" max="2">^  while \(dat_102000\) \{
 ^    v1 = get\(dat_102000\);
 ^    \*a0 = v1;
 ^    if \(\*a0 != -1\) break;</stringmatch>
 <stringmatch name="LOOPCONDHOIST-LAYOUT #5: the -O2 latch test is the loop condition by default (pass 1 only)" min="1" max="1">^  while \(dat_102000\) \{
 ^    v1 = get_o2\(dat_102000\);</stringmatch>
-<stringmatch name="LOOPCONDHOIST-LAYOUT #6: off prints each loop as while( true ), auto the -O2 one (passes 2 and 3)" min="5" max="5">while\( true \) \{</stringmatch>
+<stringmatch name="LOOPCONDHOIST-LAYOUT #6: off prints three loops as while( true ), auto the -O2 one (passes 2 and 3)" min="4" max="4">while\( true \) \{</stringmatch>
 </decompilertest>
