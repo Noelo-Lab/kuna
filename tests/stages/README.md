@@ -25,6 +25,16 @@ if/else whose arms each store 1 or 0 keeps its `if`. Under `option iteregion on`
 the first prints as an `if` without an `else`, the stores fold into a
 conditional and the computed arm keeps its `if`.
 
+`kuna-loopcontinue-auto.xml` checks option `loopcontinue` (default `auto`) on
+gcc -O0 x86-64, and `kuna-loopcontinue-auto-thumb.xml` on gcc -O0 Thumb: in a
+`for` loop whose first two tests share one bare `continue;` and whose third
+has its own, the two print as one `if (...) continue;` and the third as
+another, and the plain `if` after them stays an `if`; a loop test and a bare
+`break;` test stay apart, so the loop keeps its `for` header and prints the
+`break`; a `continue;` in a `do` loop prints as written. Under `option
+loopcontinue on` the four tests fold into one chain, the break test folds into
+the loop condition and the `do` loop nests its call.
+
 `kuna-loweredswitch-auto.xml` checks option `loweredswitch` (default `auto`)
 on gcc -O0 x86-64: a two-case `switch`, whose tests each jump to their case on
 a match, re-rolls, and an if/else-if chain of three tests that each fall into
