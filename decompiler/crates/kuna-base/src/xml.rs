@@ -2315,7 +2315,7 @@ mod tests {
         // and gh1922-declared-caller-readarg-thumb / a declared fixed caller's pushed r3 is no va-save
         // and kuna-stated-jump-placement / stated destinations a segment, a narrow offset or a DOS load cannot label
         // and kuna-stated-jump-owners / stated destinations stay in the declared function that holds the jump
-        // and kuna-armshiftguard / an ARM register LSL whose count cannot reach 32 prints no range guard
+        // and kuna-armshiftguard / an ARM register LSL prints no range guard unless a lowered 64-bit shift relies on it
         // and gh1922-pushpad-caller-readarg-thumb / r3 pushed beneath lr is no va-save
         // and kuna-retvalue / a result its callers read is returned though stored or loaded through
         // and kuna-rex-before-prefix / an x86-64 REX prefix that a legacy prefix follows is ignored
@@ -2325,7 +2325,10 @@ mod tests {
         // and kuna-vcmp-carry / ARM vcmp sets the carry for unordered operands
         // and kuna-loweredswitch-auto / an unoptimized function keeps the switch or if-chain its tests record
         // and kuna-ppc64-plt-stubs / every PPC64 ELFv2 linker stub form names its import
-        assert_eq!(count, 913, "corpus file count drifted");
+        // and kuna-loopcontinue-auto(-thumb) / an unoptimized function keeps the continue/break tests its binary records
+        // and kuna-looptest-zerotrip / a guard drops when its skip path is the loop's exit path run zero times
+        // and kuna-looptest-entry / an empty body, a frame counter, a reused or recomputed value test at the top
+        assert_eq!(count, 917, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -90,6 +90,7 @@ const NATIVE_ONLY: &[&str] = &[
     "--kassert",
     "--raw",
     "--regions",
+    "--coverage",
     "--sleighpath",
     "--decomp-dbg",
     "--engine",
