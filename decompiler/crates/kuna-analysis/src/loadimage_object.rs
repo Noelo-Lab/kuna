@@ -486,6 +486,8 @@ struct FuncSym {
 pub struct ElfFunctionProvenance {
     pub definitions: HashSet<u64>,
     pub imports: HashSet<u64>,
+    /// The MIPS imports whose symbol version binds them to glibc, by name.
+    pub glibc_imports: std::collections::HashMap<u64, String>,
 }
 
 /// One **data** symbol: a defined `.symtab`/`.dynsym` `STT_OBJECT` entry (the BFD
@@ -533,6 +535,9 @@ pub struct ObjectLoadImage {
     /// (kuna) The container's floating-point argument convention
     /// ([`crate::loader::kuna_floatabi::float_arg_registers`]).
     float_arg_registers: Option<bool>,
+    /// (kuna) clang built the image
+    /// ([`crate::loader::kuna_spillselects::built_by_clang`]).
+    built_by_clang: bool,
     /// (kuna) Whether the container states floating-point register hardware
     /// ([`crate::loader::kuna_armfloatabi::fp_hardware`]).
     float_hardware: Option<bool>,
@@ -1136,8 +1141,12 @@ impl ObjectLoadImage {
         // spelling (`audit_export_a` for `_audit_export_a`), which lookup accepts
         // anyway; it is a second name only where this stream named the address.
         let mut named_by_imports: HashSet<u64> = HashSet::new();
+        let glibc_names = if is_elf { crate::loader::elf_plt::mips_glibc_import_names(&file) } else { HashSet::new() };
         for p in fmt.resolve_imports(&file, bytes) {
             if is_elf { elf_functions.imports.insert(if arm32_decoder { p.addr & !1 } else { p.addr }); }
+            if glibc_names.contains(&p.name) {
+                elf_functions.glibc_imports.insert(p.addr, String::from_utf8_lossy(&p.name).into_owned());
+            }
             if seen.insert(p.addr) {
                 if is_macho {
                     named_by_imports.insert(p.addr);
@@ -1232,6 +1241,7 @@ impl ObjectLoadImage {
             filename: filename.to_string(),
             arm_vfp_args: crate::loader::kuna_armfloatabi::vfp_args(&file),
             float_arg_registers: crate::loader::kuna_floatabi::float_arg_registers(&file),
+            built_by_clang: crate::loader::kuna_spillselects::built_by_clang(&file),
             float_hardware: crate::loader::kuna_armfloatabi::fp_hardware(&file),
             callee_extends_returns: crate::loader::kuna_returnext::callee_extends_returns(&file),
             archtype,
@@ -1416,6 +1426,7 @@ impl ObjectLoadImage {
             filename: filename.to_string(),
             arm_vfp_args: crate::loader::kuna_armfloatabi::vfp_args(&file),
             float_arg_registers: crate::loader::kuna_floatabi::float_arg_registers(&file),
+            built_by_clang: crate::loader::kuna_spillselects::built_by_clang(&file),
             float_hardware: crate::loader::kuna_armfloatabi::fp_hardware(&file),
             callee_extends_returns: crate::loader::kuna_returnext::callee_extends_returns(&file),
             archtype,
@@ -1727,6 +1738,8 @@ impl LoadImage for ObjectLoadImage {
 
     fn float_arg_registers(&self) -> Option<bool> { self.float_arg_registers }
 
+    fn built_by_clang(&self) -> bool { self.built_by_clang }
+
     fn float_hardware(&self) -> Option<bool> { self.float_hardware }
 
     fn callee_extends_returns(&self) -> Option<bool> { self.callee_extends_returns }
@@ -1892,6 +1905,8 @@ impl LoadImage for ObjectLoadImage {
             .map(|addr| addr.wadd(badjust)).collect();
         self.elf_functions.imports = self.elf_functions.imports.drain()
             .map(|addr| addr.wadd(badjust)).collect();
+        self.elf_functions.glibc_imports = self.elf_functions.glibc_imports.drain()
+            .map(|(addr, name)| (addr.wadd(badjust), name)).collect();
         for s in self.funcsyms.iter_mut().chain(&mut self.funcsym_aliases) {
             s.addr = s.addr.wadd(badjust);
         }

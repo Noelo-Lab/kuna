@@ -1,0 +1,58 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `option iteregion` value `auto` (the default), P8 goto-quality: in a
+    function the per-function detector (p3_dataflow/kuna_unoptimized.rs) calls
+    unoptimized, how the raw block graph joins a conditional value
+    (p8_structure/kuna_o0select.rs) decides whether it prints as `?:`.
+
+    gcc 11 -O0 (-fno-pic -fno-stack-protector -fcf-protection=none) of
+        extern void use(int);
+        int pick(int c, int a, int b) { int x = c ? a : b; return x + 1; }
+        int flag(int a, int b) { int x; if (a > b) x = 1; else x = 0; return x + 2; }
+        void arg(int c, int a) { use(c ? a + 1 : 7); }
+    pick's and arg's arms each load a register that is stored or passed once
+    after the join; flag's arms each store to x.
+
+    Pass 1 (default auto): pick prints its conditional value (#1), flag keeps
+    its if/else (#2, #3) and arg's computed arm folds (#4). Pass 2 (option
+    iteregion on, the old default): pick prints an if without an else (#5),
+    flag's two constant stores fold into a conditional (#6) and arg keeps its
+    if/else (#7).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">554889e5897dec8975e88955e4837dec0074058b45e8eb038b45e48945fc8b45fc83c0015dc3554889e5897dec8975e88b45ec3b45e87e09c745fc01000000eb07c745fc000000008b45fc83c0025dc3554889e54883ec10897dfc8975f8837dfc0074088b45f883c001eb05b80700000089c7e80300000090c9c3554889e5897dfc905dc3</bytechunk>
+<symbol space="ram" offset="0x100000" name="pick"/>
+<symbol space="ram" offset="0x100026" name="flag"/>
+<symbol space="ram" offset="0x100050" name="arg"/>
+<symbol space="ram" offset="0x10007b" name="use"/>
+</binaryimage>
+<script>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu flag</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu arg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option iteregion on</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu flag</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu arg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ITEREGION AUTO #1: pick prints its conditional value (pass 1)" min="1" max="1">^  a2 = \(a0\) \? a1 : a2;$</stringmatch>
+<stringmatch name="ITEREGION AUTO #2: flag keeps the store of its then arm (pass 1)" min="1" max="1">^    v1 = 0;$</stringmatch>
+<stringmatch name="ITEREGION AUTO #3: flag keeps the store of its else arm (pass 1)" min="1" max="1">^    v1 = 1;$</stringmatch>
+<stringmatch name="ITEREGION AUTO #4: arg's computed arm folds into the conditional (pass 1)" min="1" max="1">^  a1 = \(a0\) \? a1 \+ 1 : 7;</stringmatch>
+<stringmatch name="ITEREGION AUTO #5: with iteregion on pick prints an if without an else (pass 2)" min="1" max="1">^    a2 = a1;$</stringmatch>
+<stringmatch name="ITEREGION AUTO #6: with iteregion on flag folds into a conditional (pass 2)" min="1" max="1">^  v1 = \(a0 &lt;= a1\) \? 0 : 1;</stringmatch>
+<stringmatch name="ITEREGION AUTO #7: with iteregion on arg keeps its if/else (pass 2)" min="1" max="1">^    a1 \+= 1;$</stringmatch>
+</decompilertest>

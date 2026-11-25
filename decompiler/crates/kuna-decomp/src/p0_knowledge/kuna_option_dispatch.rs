@@ -364,6 +364,7 @@ kuna_options! { self, p1;
         self.recover_lowered_switch = mode.enabled();
         self.lowered_switch_linear = mode.linear();
         self.lowered_switch_tree = mode.tree();
+        self.lowered_switch_compiled = mode == crate::kuna_loweredswitch::LoweredSwitchMode::Auto;
         Ok(msg)
     },
     "nulterminator" => {
@@ -552,8 +553,9 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "iteregion" => {
-        let (val, msg) = crate::p8_structure::kuna_iteregion::OptionIteRegion.apply(p1)?;
+        let (val, record, msg) = crate::p8_structure::kuna_iteregion::OptionIteRegion.apply(p1)?;
         self.iteregion = val;
+        self.iteregion_record = record;
         Ok(msg)
     },
     "iteexpr" => on_off!(iteexpr, "Computed-expression arm ?: recovery (iteregion extension)"),

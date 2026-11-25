@@ -1,5 +1,6 @@
-//! (kuna) The p-code helpers and user-defined operations a function's C calls
-//! by name, so a project header can declare each one.
+//! (kuna) The p-code helpers, user-defined operations and imports a
+//! function's C calls by name with no prototype, so a project header can
+//! declare each one.
 //!
 //! The printer spells three things as calls nothing declared, so a unit that
 //! named one did not compile: an op C has no operator for, as a helper named
@@ -21,24 +22,36 @@
 //! [`crate::kuna_callprototypes::declarations`] reads to put the declarations
 //! with the function's other call declarations.
 //!
-//! The header writes them in a block of their own ([`header_block`]), one per
-//! name across every function at the widest type a call has, and only when the
+//! An import the code calls with no known prototype is also called by a name
+//! nothing declared: the loader names an import's GOT slot after it, so a
+//! `call *slot` prints as a call by the import's name
+//! (`__libc_start_main(main)`). [`crate::kuna_callprototypes::declarations`]
+//! records each such call in a [`Calls`] of its own, and declares it as
+//! `extern T name(KUNA_ANY_ARGS);`, at the type of the call's output, spelled
+//! as the float of its width where that output is a float.
+//!
+//! The header writes the imports in a block of their own ([`header_block`]),
+//! one per name across every function at the widest type a call has, and the
+//! helpers and operations in a second block the same way, but only when the
 //! including code defines `KUNA_DECLARE_HELPERS`: code that compiles an export
 //! often brings its own definitions (a `CONCAT44` macro, `static inline` x87
 //! conversions, `<unistd.h>`'s `syscall`), which a declaration would contradict.
-//! Each one is also skipped where the including code defined its name as a
-//! macro, and where the header already declares the name.
+//! Each helper is also skipped where the including code defined its name as a
+//! macro, and where the header already declares the name, as an import
+//! included. An import is skipped only where the header already declares it.
 //!
 //! Limits:
 //! - An output with no `undefinedN` or float spelling (9 or 12 bytes) is not
-//!   declared, and neither are the float constants the printer spells `NAN`,
-//!   `INFINITY` and `FLOAT_UNKNOWN`, so a unit that holds one still does not
-//!   compile.
-//! - A name that is a C keyword (MIPS's `break`) is not declared; the call the
-//!   body prints still does not compile.
+//!   declared, for a helper or an import, and neither are the float constants
+//!   the printer spells `NAN`, `INFINITY` and `FLOAT_UNKNOWN`, so a unit that
+//!   holds one still does not compile.
+//! - A name that is a C keyword (MIPS's `break`) or not a C identifier (an
+//!   import spelled with its library) is not declared; the call the body
+//!   prints still does not compile.
 //! - Code that defines `KUNA_DECLARE_HELPERS` and also includes a C library
 //!   header that declares an operation's name (`syscall`, `sin`, `sleep`,
-//!   `wait`) gets two declarations that disagree.
+//!   `wait`) gets two declarations that disagree, and so does code that
+//!   includes a header declaring an import kuna has no prototype for.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -65,8 +78,8 @@ const C_KEYWORDS: &[&str] = &[
     "_Thread_local",
 ];
 
-/// The helpers and operations one function's C calls, by name, each at the
-/// widest declared type a call has.
+/// The helpers and operations, or the imports, one function's C calls, by
+/// name, each at the widest declared type a call has.
 #[derive(Default)]
 pub struct Calls(BTreeMap<String, Returns>);
 
@@ -88,6 +101,11 @@ impl Calls {
         self.0.iter().map(|(name, (_, ty))| format!("{ty} {name}(KUNA_ANY_ARGS);")).collect()
     }
 
+    /// One `extern T name(KUNA_ANY_ARGS);` per name recorded, for imports.
+    pub fn import_declarations(&self) -> Vec<String> {
+        self.declarations().into_iter().map(|declaration| format!("extern {declaration}")).collect()
+    }
+
     fn note(&mut self, name: &str, returns: Returns) {
         match self.0.get_mut(name) {
             Some(kept) if replaces(returns, *kept) => *kept = returns,
@@ -99,18 +117,26 @@ impl Calls {
     }
 }
 
-/// Whether `declaration` is one [`Calls::declarations`] made.
+/// Whether `declaration` is one [`Calls::declarations`] or
+/// [`Calls::import_declarations`] made.
 pub fn is_helper(declaration: &str) -> bool {
     declaration.trim_end().ends_with("(KUNA_ANY_ARGS);")
 }
 
-/// The header's block of the helpers the `declarations` of every function
-/// hold: one `extern` per name, at the widest type a call has, under
-/// `#ifdef KUNA_DECLARE_HELPERS` and `#ifndef <name>`, skipping each name
-/// `declared` says the header already declares. Empty when there is none.
+/// The header's blocks of the imports and the helpers the `declarations` of
+/// every function hold: one `extern` per name, at the widest type a call has,
+/// skipping each name `declared` says the header already declares. The
+/// imports' block always declares them; the helpers' declares each under
+/// `#ifdef KUNA_DECLARE_HELPERS` and `#ifndef <name>`, and leaves out a name
+/// the imports' block declares. Empty when there is neither.
 pub fn header_block<'d>(declarations: impl IntoIterator<Item = &'d str>, declared: impl Fn(&str) -> bool) -> String {
-    let mut widest: BTreeMap<&str, (i32, &str)> = BTreeMap::new();
+    let mut imports: BTreeMap<&str, (i32, &str)> = BTreeMap::new();
+    let mut helpers: BTreeMap<&str, (i32, &str)> = BTreeMap::new();
     for declaration in declarations.into_iter().map(str::trim).filter(|d| is_helper(d)) {
+        let (widest, declaration) = match declaration.strip_prefix("extern ") {
+            Some(import) => (&mut imports, import),
+            None => (&mut helpers, declaration),
+        };
         let Some((ty, name)) = declaration.trim_end_matches("(KUNA_ANY_ARGS);").rsplit_once(' ') else {
             continue;
         };
@@ -123,15 +149,23 @@ pub fn header_block<'d>(declarations: impl IntoIterator<Item = &'d str>, declare
             *kept = (rank, ty);
         }
     }
-    if widest.is_empty() {
-        return String::new();
+    helpers.retain(|name, _| !imports.contains_key(name));
+    let mut out = String::new();
+    if !imports.is_empty() {
+        out.push_str("\n/* the imports the code calls with no known prototype */\n");
+        for (name, (_, ty)) in imports {
+            let _ = writeln!(out, "extern {ty} {name}(KUNA_ANY_ARGS);");
+        }
     }
-    let mut out = String::from(
+    if helpers.is_empty() {
+        return out;
+    }
+    out.push_str(
         "\n/* the p-code helpers, user-defined operations and halts the code calls:\n   \
          define KUNA_DECLARE_HELPERS to declare each one the including code has not\n   \
          defined as a macro */\n#ifdef KUNA_DECLARE_HELPERS\n",
     );
-    for (name, (_, ty)) in widest {
+    for (name, (_, ty)) in helpers {
         let _ = write!(out, "#ifndef {name}\nextern {ty} {name}(KUNA_ANY_ARGS);\n#endif\n");
     }
     out.push_str("#endif\n");
@@ -162,6 +196,45 @@ fn declarable(name: &str) -> bool {
     is_identifier(name) && !C_KEYWORDS.contains(&name)
 }
 
+/// Give a jump stub's `proto` and its definition in `code` an unknown parameter
+/// list, `(KUNA_ANY_ARGS)`, where kuna recovered `(void)`. A stub's body only
+/// jumps through the import's slot, so kuna sees no parameter, while its
+/// callers pass the import's arguments, which `(void)` would refuse.
+/// Both change, or neither: the definition is the line that starts with the
+/// prototype's declarator. A stub kuna recovered parameters for is left as it
+/// is, and so is a declarator whose last `(void)` is not the function's own, as
+/// in a function returning a function pointer. Before C23, clang warns at a
+/// call that passes arguments to `()` (`-Wdeprecated-non-prototype`); it
+/// compiles.
+pub fn unknown_stub_params(proto: &mut Option<String>, code: &mut Option<String>) {
+    let (Some(proto), Some(code)) = (proto.as_mut(), code.as_mut()) else {
+        return;
+    };
+    let declarator = proto.trim().trim_end_matches(';').to_owned();
+    let Some(head) = declarator
+        .strip_suffix("(void)")
+        .filter(|head| head.ends_with(|c: char| c.is_ascii_alphanumeric() || c == '_'))
+    else {
+        return;
+    };
+    let Some(at) = definition_line(code, &declarator) else {
+        return;
+    };
+    let open = format!("{head}(KUNA_ANY_ARGS)");
+    code.replace_range(at..at + declarator.len(), &open);
+    *proto = proto.replacen(&declarator, &open, 1);
+}
+
+/// Where `code`'s definition line starts with `declarator`: at the start of a
+/// line, followed by the end of the line or a trailing comment.
+fn definition_line(code: &str, declarator: &str) -> Option<usize> {
+    let bytes = code.as_bytes();
+    code.match_indices(declarator).map(|(at, _)| at).find(|&at| {
+        (at == 0 || bytes[at - 1] == b'\n')
+            && matches!(bytes.get(at + declarator.len()), None | Some(b'\n' | b' '))
+    })
+}
+
 fn is_identifier(name: &str) -> bool {
     let mut bytes = name.bytes();
     bytes.next().is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
@@ -174,10 +247,10 @@ fn returns(fd: &Funcdata, code: OpCode, out: Option<VarnodeId>) -> Option<Return
     returns_of(code, out.map(|vn| vn.get_size()), float)
 }
 
-/// The declared type of a call to `code`'s helper or operation with an output
-/// of `size` bytes, or with none; `float` says the output is typed a float,
-/// which spells a user-defined operation's output (`FLOAT_RINT`) as the float
-/// of its width, but not a p-code helper's (`SUB168`).
+/// The declared type of a call to `code`'s helper, operation or import with an
+/// output of `size` bytes, or with none; `float` says the output is typed a
+/// float, which spells a user-defined operation's (`FLOAT_RINT`) or an import's
+/// output as the float of its width, but not a p-code helper's (`SUB168`).
 fn returns_of(code: OpCode, size: Option<i32>, float: bool) -> Option<Returns> {
     use OpCode::*;
     let Some(size) = size else {
@@ -197,7 +270,7 @@ fn returns_of(code: OpCode, size: Option<i32>, float: bool) -> Option<Returns> {
         CPUI_FLOAT_ABS | CPUI_FLOAT_SQRT | CPUI_FLOAT_CEIL | CPUI_FLOAT_FLOOR | CPUI_FLOAT_ROUND
     ) {
         float_name?
-    } else if let Some(ty) = float_name.filter(|_| float && code == CPUI_CALLOTHER) {
+    } else if let Some(ty) = float_name.filter(|_| float && matches!(code, CPUI_CALLOTHER | CPUI_CALL)) {
         ty
     } else {
         match size {
@@ -266,6 +339,80 @@ mod tests {
     }
 
     #[test]
+    fn the_header_always_declares_each_import_once_at_its_widest() {
+        let mut calls = Calls::default();
+        calls.note("got_value", (4, "undefined4"));
+        assert_eq!(calls.import_declarations(), ["extern undefined4 got_value(KUNA_ANY_ARGS);"]);
+        let declarations = [
+            "extern void __libc_start_main(KUNA_ANY_ARGS);",
+            "extern void got_value(KUNA_ANY_ARGS);",
+            "extern undefined4 got_value(KUNA_ANY_ARGS);",
+            "extern double scale(KUNA_ANY_ARGS);",
+            "extern undefined8 strfry(KUNA_ANY_ARGS);",
+            "undefined8 rdtsc(KUNA_ANY_ARGS);",
+            "void syscall(KUNA_ANY_ARGS);",
+            "extern undefined8 syscall(KUNA_ANY_ARGS);",
+        ];
+
+        let block = header_block(declarations, |name| name == "strfry");
+
+        assert_eq!(
+            block,
+            "\n/* the imports the code calls with no known prototype */\n\
+             extern void __libc_start_main(KUNA_ANY_ARGS);\n\
+             extern undefined4 got_value(KUNA_ANY_ARGS);\n\
+             extern double scale(KUNA_ANY_ARGS);\n\
+             extern undefined8 syscall(KUNA_ANY_ARGS);\n\
+             \n/* the p-code helpers, user-defined operations and halts the code calls:\n   \
+             define KUNA_DECLARE_HELPERS to declare each one the including code has not\n   \
+             defined as a macro */\n#ifdef KUNA_DECLARE_HELPERS\n\
+             #ifndef rdtsc\nextern undefined8 rdtsc(KUNA_ANY_ARGS);\n#endif\n\
+             #endif\n"
+        );
+        assert!(is_helper("extern void __libc_start_main(KUNA_ANY_ARGS);"));
+        assert_eq!(header_block(["extern void exit(KUNA_ANY_ARGS);"], |name| name == "exit"), "");
+    }
+
+    /// The definition line may carry a trailing comment, and a mention in a
+    /// comment above it is not the definition. A recovered parameter, no
+    /// definition line, or a `(void)` that is not the function's own changes
+    /// neither the prototype nor the code.
+    #[test]
+    fn a_stub_recovered_with_no_parameters_takes_any() {
+        let rewrite = |proto: &str, code: &str| {
+            let (mut proto, mut code) = (Some(proto.to_owned()), Some(code.to_owned()));
+            unknown_stub_params(&mut proto, &mut code);
+            (proto.unwrap(), code.unwrap())
+        };
+        assert_eq!(
+            rewrite("unsigned long strfry(void);", "unsigned long strfry(void)\n{\n  return (*dat_1002730)();\n}"),
+            (
+                "unsigned long strfry(KUNA_ANY_ARGS);".to_owned(),
+                "unsigned long strfry(KUNA_ANY_ARGS)\n{\n  return (*dat_1002730)();\n}".to_owned()
+            )
+        );
+        assert_eq!(
+            rewrite("void f(void);", "// was void f(void) once\nvoid f(void) // warn: bad data\n{\n}").1,
+            "// was void f(void) once\nvoid f(KUNA_ANY_ARGS) // warn: bad data\n{\n}"
+        );
+        assert_eq!(
+            rewrite("char *strdup(char *a0);", "char *strdup(char *a0)\n{\n}"),
+            ("char *strdup(char *a0);".to_owned(), "char *strdup(char *a0)\n{\n}".to_owned())
+        );
+        assert_eq!(
+            rewrite("void f(void);", "// void f(void)\nint g(void)\n{\n}"),
+            ("void f(void);".to_owned(), "// void f(void)\nint g(void)\n{\n}".to_owned())
+        );
+        assert_eq!(
+            rewrite("int (*f(void))(void);", "int (*f(void))(void)\n{\n}"),
+            ("int (*f(void))(void);".to_owned(), "int (*f(void))(void)\n{\n}".to_owned())
+        );
+        let (mut none, mut code) = (None, Some("x".to_owned()));
+        unknown_stub_params(&mut none, &mut code);
+        assert_eq!(code.as_deref(), Some("x"));
+    }
+
+    #[test]
     fn a_same_width_tie_keeps_the_undefined_spelling_in_either_order() {
         for (first, second) in [((8, "double"), (8, "undefined8")), ((8, "undefined8"), (8, "double"))] {
             let mut calls = Calls::default();
@@ -328,6 +475,9 @@ mod tests {
             (CPUI_SUBPIECE, Some(8), true, Some((8, "undefined8"))),
             (CPUI_PIECE, Some(16), true, Some((16, "undefined16"))),
             (CPUI_INT_ZEXT, Some(4), true, Some((4, "undefined4"))),
+            (CPUI_CALL, None, false, Some((-1, "void"))),
+            (CPUI_CALL, Some(4), false, Some((4, "undefined4"))),
+            (CPUI_CALL, Some(8), true, Some((8, "double"))),
         ];
         for (code, size, float, returns) in cases {
             assert_eq!(returns_of(code, size, float), returns, "{code:?} {size:?} {float}");

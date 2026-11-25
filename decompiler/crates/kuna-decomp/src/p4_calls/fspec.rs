@@ -4026,6 +4026,9 @@ pub struct PrototypePieces {
     /// signature and the name locks stay as they were; only the naming pass
     /// reads them, and only under `option libcnames`.
     pub kuna_library_names: Option<&'static crate::kuna_libcnames::LibraryNames>,
+    /// (kuna) Whether a built-in library table supplied this declaration,
+    /// rather than the image, a debug-info unit or the caller.
+    pub kuna_library_table: bool,
 }
 
 // =============================================================================

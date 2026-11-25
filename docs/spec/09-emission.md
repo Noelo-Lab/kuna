@@ -4024,6 +4024,50 @@ to one byte where the compiler has the type, so arithmetic on a 16-byte value
 struct remains the fallback, and clang on Windows takes it too: it lays a record
 out the Microsoft way, which ignores the one-byte alignment.
 
+**An import called with no prototype is declared in an export.** The ELF
+loader names an import's GOT slot after the import, and `ActionDeindirect`
+turns a `call *slot` into a call by that name, so `_start`'s hand-off to glibc
+prints as `__libc_start_main(main,…)`. No prototype table lists
+`__libc_start_main`, so the call's prototype is not locked, its declaration was
+skipped, and the export did not compile. Now
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_callprototypes.rs
+(declarations)` records a call to an import (`kuna_calleepop.rs
+(is_imported)`: `externref` at the callee's address) whose prototype is not
+complete with the call's output, as the printer records a helper, and the
+function's call declarations take one `extern T name(KUNA_ANY_ARGS);` per name:
+`T` is the output, spelled as the float of its width where the output is a
+float, or `void` when it has none. The header writes them in a block of their
+own ahead of the helpers', one per name at the widest type any function's calls
+have, and not under the `KUNA_DECLARE_HELPERS` opt-in: the body calls the import
+and nothing else declares it. A name the header already declares (a function of
+the export, a declared call target, a type, a global) is left out, and so is
+that name in the helpers' block, which also leaves out a name the imports'
+block declares. A wide call's declaration check
+(`callwide`) does not count these lines. Code that includes a C library header
+declaring such an import's name gets two declarations that disagree.
+
+**A jump stub takes any arguments in an export.** kuna decompiles an import's
+PLT stub as a function of the program, and its body only jumps through the
+import's GOT slot, so kuna recovers `(void)` for it. Its callers pass the
+import's arguments, so `main`'s `strfry(&v1)` against `unsigned long
+strfry(void)` did not compile. In a `decompile-project` export with C output,
+`decompiler/crates/kuna-console/src/project.rs (decompile_pulled)` gives a jump
+stub that kuna recovered no parameters for the parameter list `(KUNA_ANY_ARGS)`
+in place of `(void)`, in its prototype and its definition line alike, or in
+neither (`kuna_unitcalls.rs (unknown_stub_params)`). A jump stub
+(`project.rs (is_jump_stub)`) is one indirect jump, perhaps after `endbr64` or
+`endbr32`: an x86 PLT stub, a CET `.plt.sec` stub (GNU ld's `bnd jmp` decodes as
+one jump), or a PE or Mach-O import thunk. A stub kuna recovered parameters for
+keeps them, and so does one whose input list is locked, as a library
+declaration's `void abort(void)` is: its callers pass what it says. A direct
+`jmp` to a decompiled function is not a stub, and an AArch64 PLT or Mach-O stub
+(`adrp; ldr; br`) or an ARM PLT stub (`add; add; ldr pc`) is several
+instructions. gcc before 13 at `-std=c2x` has no spelling for such a
+definition: it rejects `f(...)` and reads the definition `f()` as taking
+nothing, so there a call with arguments that follows the stub's definition
+still fails. Function bodies, every other prototype and the output
+of `kuna decompile` and `decompile-all` are unchanged.
+
 **The prototype — one token stream, two documents.** The prototype segment of
 §9.2's document walk was extracted verbatim into `printc.rs
 (PrintC::emit_prototype_declaration)` — pure code motion, byte-identical
@@ -4319,7 +4363,10 @@ the Mach-O symbol-pointer and unwind sections. The merged ranges reach the
 engine as `infra/architecture.rs (Architecture::globalref_ranges)`, installed by
 the object bootstrap beside the `litpoolconst` ranges; every path without a
 section table leaves them empty, so the rule is inert for the XML datatest
-corpus.
+corpus. The ranges bound which constant addresses become `&dat_<addr>`; a
+`dat_<addr>` the body already reads or writes directly is declared wherever it
+lies, a GOT slot or an import address table entry included (*The declaration*
+below).
 
 **What one function knows.** `kuna_globalref.rs (plan)` walks the function
 once when its document starts, and records three facts:
@@ -4361,7 +4408,12 @@ off the printer, after `print_c`, every address the function named and every
 piece of unnamed program data it read or wrote directly, each with the C
 declaration the structure-member declarator builds for it (`printc.rs
 (declaration_text)`), its size, and whether it stood for `void`, was a direct
-access, or is a record or union. They travel as `FuncResult::globals`, which
+access, or is a record or union. Unnamed means that no global Symbol covers it,
+wherever it lies: an import's GOT slot, which a PLT stub jumps through, counts
+too, though it lies outside the sections the loader classifies as program data,
+so the stub's `(*dat_<slot>)()` names a declared object. The code address a
+branch or call names is a reference, not storage the body reads, and is never
+declared. They travel as `FuncResult::globals`, which
 the `--jobs` wire carries like the type records, and
 `decompiler/crates/kuna-console/src/project.rs (global_declarations)` turns
 them into one `extern` line per named address in the `decompile-project`

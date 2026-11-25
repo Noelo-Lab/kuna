@@ -270,6 +270,9 @@ pub struct Architecture {
     pub loader_transfer_sites: Rc<std::collections::BTreeSet<Address>>,
     /// MIPS GOT import entries identified by the loader, never ordinary definitions.
     pub loader_mips_imports: Rc<std::collections::BTreeSet<Address>>,
+    /// The [`Self::loader_mips_imports`] whose symbol version binds them to glibc,
+    /// with the versioned symbol's name.
+    pub loader_glibc_imports: Rc<std::collections::BTreeMap<Address, String>>,
     pub nullable_relocations: Rc<std::collections::BTreeMap<u64, Vec<crate::kuna_nullable_reloc::NullableRelocation>>>,
     pub nullable_literal_values: Rc<std::collections::BTreeSet<u64>>,
 
@@ -632,6 +635,9 @@ pub struct Architecture {
     /// (kuna) `loweredswitch tree|all`: a binary-search compare tree re-rolls
     /// from 2 to 64 cases instead of 3 to 16.
     pub lowered_switch_tree: bool,
+    /// (kuna) `loweredswitch auto`: in an unoptimized function the way the
+    /// compare tests were compiled decides whether a cascade re-rolls.
+    pub lowered_switch_compiled: bool,
     /// (kuna `funcboundflow`) Bound fall-through at a known function entry: when a
     /// fall-through reaches the entry of another known function (the callee just
     /// executed being an unnamed static no-return the analysis could not prove
@@ -1111,6 +1117,11 @@ pub struct Architecture {
     /// format/print/flag code (`flags ? "%s," : "%s"`) — and diverges when the
     /// source used explicit if/else, so an agent flips it per function.
     pub iteregion: bool,
+    /// (kuna) `iteregion auto`: in a function `kuna_unoptimized` flags, print
+    /// the conditional values the raw block graph records as `?:` and the
+    /// recorded statements as `if`/`else`
+    /// ([`crate::p8_structure::kuna_o0select`]).
+    pub iteregion_record: bool,
     /// (kuna) `iteexpr`: extend [`iteregion`](Self::iteregion) to diamonds whose
     /// arms are a single **computed** pure-value assignment (`v = *p`, `v = b + 5`)
     /// — not just a plain `COPY` — matching angr's aggressive `?:` recovery.  A C
@@ -2407,6 +2418,7 @@ impl Architecture {
             loader_mips_t9: None,
             loader_transfer_sites: Rc::default(),
             loader_mips_imports: Rc::default(),
+            loader_glibc_imports: Rc::default(),
             nullable_relocations: Rc::default(),
             nullable_literal_values: Rc::default(),
 
@@ -2512,6 +2524,7 @@ impl Architecture {
             switch_selector_guard: false, // (kuna) option switchselector; reset_defaults sets the shipped default
             lowered_switch_linear: false, // (kuna) option loweredswitch linear|all
             lowered_switch_tree: false, // (kuna) option loweredswitch tree|all
+            lowered_switch_compiled: false, // (kuna) option loweredswitch auto; reset_defaults sets the shipped default
             sparc_struct_return: false,
             global_array_anchor: false,
             opaque_predicate: false,
@@ -2612,6 +2625,7 @@ impl Architecture {
             revert_cross_jumps: false,
             dedup_ite_tail: false,
             iteregion: false,
+            iteregion_record: false,
             iteexpr: false,
             iteboolean: false,
             param_copy_hoist: false,
@@ -2917,6 +2931,7 @@ impl Architecture {
         self.deobfuscate = crate::kuna_deobf::Selection::Auto; // (kuna) option deobfuscate default auto: each technique acts where it detects its obfuscation
         self.lowered_switch_linear = false; // (kuna) `loweredswitch linear` is opt-in: a linear chain also reads as a hand-written if/else-if
         self.lowered_switch_tree = false; // (kuna) `loweredswitch tree` is opt-in: the 16-case cap is the structurer's fail-safe
+        self.lowered_switch_compiled = true; // (kuna) `loweredswitch auto` default: in unoptimized functions the compiled test layout decides switch vs if-chain
         self.cast_object = true; // (kuna) option castobject default-on: a stack local whose address only fills declared int * parameters, whose readers agree, is declared int; evidence in docs/features/castobject/default-on-evaluation.md
         self.end_ptr_bound = true; // (kuna) DIV-177 default-on: a pointer walk's end bound renders on its own buffer (0/675 ablation)
         self.call_mechanism_mode = crate::kuna_callmechanisms::CallMechanismMode::Auto; // (kuna) option callmechanisms default `auto`: the PPC64 cspecs' uponreturn stores r2Save at 0x28(r1), the TOC save slot only under ELFv1, so on an image whose ELFv1 function descriptors the loader validated (a linked image's or an object's .opd) a return payload is installed only at a call whose next instruction reloads the slot it stores. Gated on that loader fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `on` installs them on any image, `off` on none
@@ -2947,6 +2962,7 @@ impl Architecture {
         self.flatten_ifelse = true; // (kuna) DIV-13 default-on (angr IfElseFlattener; 0/675 ablation)
         self.revert_cross_jumps = true; // (kuna) DIV-13 default-on (angr SAILR CrossJumpReverter; 0/675 ablation)
         self.dedup_ite_tail = true; // (kuna) DIV-13 default-on (angr structurer ITE region-dedup — merge duplicated if/else tails; 0/675 ablation)
+        self.iteregion_record = true; // (kuna) `iteregion auto` default: the recorded conditional values decide unoptimized functions
         self.iteregion = true; // (kuna) DIV-17 default-on (angr ITERegionConverter: assignment-diamond -> `?:` ternary, decbench F5). Per-test opt-out (`option iteregion off`) on the datatests it changes keeps the corpus byte-identical.
         self.iteexpr = false; // (kuna) computed-arm ?: extension: runtime choice, default-off (corpus byte-identical).
         self.iteboolean = true; // (kuna) DIV-51 default-on (short-circuit 0/1 select -> boolean assignment; 0/675 ablation). Per-test opt-out (`option iteboolean off`) on the one stage test it changes keeps the corpus byte-identical.
@@ -3817,6 +3833,7 @@ impl Architecture {
         ctx.switch_selector_guard = self.switch_selector_guard; // switchselector
         ctx.lowered_switch_linear = self.lowered_switch_linear; // loweredswitch linear|all
         ctx.lowered_switch_tree = self.lowered_switch_tree; // loweredswitch tree|all
+        ctx.lowered_switch_compiled = self.lowered_switch_compiled; // loweredswitch auto
         ctx.cond_fold = self.cond_fold; // condfold
         ctx.cond_stmts = self.cond_stmts; // condstmts
         ctx.goto_reduce = self.goto_reduce; // gotoreduce
@@ -3824,6 +3841,7 @@ impl Architecture {
         ctx.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert
         ctx.dedup_ite_tail = self.dedup_ite_tail; // dedupitetail
         ctx.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
+        ctx.iteregion_record = self.iteregion_record; // iteregion auto
         ctx.iteexpr = self.iteexpr; // iteexpr (computed-arm ?: extension, runtime-choice)
         ctx.iteboolean = self.iteboolean; // iteboolean (0/1 select -> boolean assignment)
         ctx.param_copy_hoist = self.param_copy_hoist; // paramcopyhoist (parameter copy-shadow -> entry block)
@@ -3931,6 +3949,7 @@ impl Architecture {
         ctx.callee_protos = callee_protos;
         ctx.loader_transfer_sites = Rc::clone(&self.loader_transfer_sites);
         ctx.loader_mips_imports = Rc::clone(&self.loader_mips_imports);
+        ctx.loader_glibc_imports = Rc::clone(&self.loader_glibc_imports);
         ctx.nullable_relocations = Rc::clone(&self.nullable_relocations);
         ctx.nullable_literal_values = Rc::clone(&self.nullable_literal_values);
         // (kuna) The convention each of those callees was DECLARED under, keyed

@@ -14,6 +14,23 @@ keeps its bare return and `if (c) return a; return b;` returns each
 parameter. Under `option returndup on` both guard clauses print wrapped by the
 size rule and the two parameter returns merge into one variable.
 
+`kuna-iteregion-auto.xml` checks option `iteregion` (default `auto`) on gcc
+-O0 x86-64: a conditional value that each arm loads into a register before one
+store after the join prints as `?:`, also when one arm is computed, and an
+if/else whose arms each store 1 or 0 keeps its `if`. Under `option iteregion on`
+the first prints as an `if` without an `else`, the stores fold into a
+conditional and the computed arm keeps its `if`.
+
+`kuna-loweredswitch-auto.xml` checks option `loweredswitch` (default `auto`)
+on gcc -O0 x86-64: a two-case `switch`, whose tests each jump to their case on
+a match, re-rolls, and an if/else-if chain of three tests that each fall into
+their own body keeps its tests. Under `option loweredswitch on` the two-case
+switch prints as two tests and the three-test chain re-rolls. An installed
+switch stays for the session, so the second pass reads a second copy of the
+bytes. A three-case switch over a struct field that gcc loads into a register
+once re-rolls too: the install reads the switch value from that load through
+the register copy and its zero extension.
+
 `kuna-guardauto.xml` checks option `guardarm` (default `auto`) on two x86-64
 functions. In a gcc -O0 `unget`, whose parameters live in frame slots, the
 default prints the source's flat guard `if (c == -1 || ...) return -1;`, and
@@ -62,6 +79,29 @@ holds no site, so a jump to its entry from an unsymbolized function is
 refused, as is the entry of `ordinary` from `dispatch`. A later `function
 bounds` that would make an installed destination another function's entry is
 refused, and the installed set and its identical restatement stay in use.
+
+`kuna-glibcvoidimport.xml` checks MIPS PIC wrappers that pass their pointer
+to `free` without touching the argument register. Where the image's symbol
+version binds `free` to glibc (`free@GLIBC_2.0` from `libc.so.6` or
+`libpthread.so.0`), the N32, O32 and N64 wrappers forward the pointer, as they
+do when a console declaration names the stub `free`. An unversioned `free`, one
+versioned by another library or by `GLIBC_PRIVATE`, and a caller's
+`void free(void)` declaration pass nothing, and a console declaration naming
+the stub `exit` keeps today's `exit();`. The same glibc image keeps
+`strlen(a0) + 1`, and `sincos`, which no table declares on MIPS, keeps today's
+recovery.
+
+`kuna-ppc64-plt-stubs.xml` checks PowerPC64 ELFv2 shared objects whose
+wrappers call `free` and `strlen` through each linker stub form: GNU ld's
+TOC stub with and without the `r2` save, its pc-relative stub for Power10
+callers and its `pld` stub, lld's `addis` and `pld` stubs, big-endian
+ELFv2, and GNU ld's stubs for an import that both TOC and pc-relative code
+call, which pc-relative callers enter one word in. Every wrapper prints
+`free(a0)` and `strlen(a0) + 1`. In the assembly
+fixture, `outer` calls `free` through a real stub, then an exported function
+shaped like a `pld` stub, which keeps its name, and a local one that loads a
+GOT entry instead of a PLT slot, which stays `sub_`. The fixtures and their
+recipe are in `tests/fixtures/ppc64-plt-stubs/`.
 
 `kuna-narrowed-call-input.xml` checks a call through a typed field whose
 argument was narrowed to two bytes before the field's prototype was forced on
@@ -781,3 +821,8 @@ through its cursor, each read by `main`: they print their return, where they
 printed `void`. `reset` (`movl $0,gi; xor %eax,%eax; movl $0,gj; ret`) returns
 its zero. `push_cell`, whose result `main` ignores, stays `void`. A strict fix
 with one pass.
+
+`kuna-vcmp-carry.xml` checks the ARM conditions that read the carry after
+`vcmp`/`vcmpe` and `vmrs APSR_nzcv, fpscr`. The hardware sets C for unordered
+operands, so `hi` and `cs` are taken for a NaN and `ls` and `cc` are not; each
+printed test is false exactly when its branch is taken, NaN included.

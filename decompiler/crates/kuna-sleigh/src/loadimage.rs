@@ -110,6 +110,10 @@ pub trait LoadImage {
     /// platform, `None` when the container says nothing.
     fn callee_extends_returns(&self) -> Option<bool> { None }
 
+    /// (kuna) Whether the container says clang built the image, whose
+    /// unoptimized code keeps a value that crosses a branch in a stack slot.
+    fn built_by_clang(&self) -> bool { false }
+
     /// Get the name of the LoadImage.
     ///
     /// The loadimage is usually associated with a file. This routine
