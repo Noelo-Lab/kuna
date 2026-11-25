@@ -227,3 +227,9 @@ differ. On `ls` (`O2`, `O0`) and `find`, 77 moved to `AGREES` and one to `DIFFER
 `O0` `mpsort_into_tmp`, not yet triaged). The full decbench run has not been repeated
 under the new rule.
 
+Each such run costs two full budgets, so after four of them a function's later runs get
+an eighth of the budget, and one that then runs past it on one side only is run again
+with the whole budget before it counts as looping. On the test corpus that puts the
+check at 194 CPU-seconds against 156 before the rule (`--jobs 4`, a loaded machine) and
+4,102 functions agreeing against 3,931; without the shorter budget it took 323.
+

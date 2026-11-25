@@ -718,6 +718,12 @@ fn input_line(prog: &ConsoleProgram, env: &Env, run: u32, claim: &Claim) -> Stri
 /// where the other does not.
 const BUDGET_RUNS_APART: u32 = 64;
 
+/// Once `budget_runs` runs have run past the budget on both sides, later runs
+/// get this fraction of it: a run is only cut off sooner, never compared
+/// differently. One that then runs past it on one side only is run again with
+/// the whole budget before it counts as one side looping.
+const SHORT_BUDGET: u64 = 8;
+
 /// Runs of the pass that gives a parameter kuna's recovered prototype types
 /// `bool` any value: the 0-or-1 domain is kuna's claim, not the program's.
 const DOMAIN_RUNS: u32 = 64;
@@ -868,13 +874,19 @@ fn check_runs(
         };
         *env.concolic_inputs.borrow_mut() = inputs.clone();
         env.record_path.set(opts.concolic > 0 && (inputs.is_some() || run < RECORDED_RUNS));
-        let m = machine::run(&env, run, entry, opts.budget, &machine_calls, None);
+        let short = both_budget_runs >= opts.budget_runs;
+        let run_budget = if short { opts.budget / SHORT_BUDGET } else { opts.budget };
+        let mut m = machine::run(&env, run, entry, run_budget, &machine_calls, None);
         env.record_path.set(false);
         if let Some(path) = m.as_ref().ok().and_then(|mo| mo.path.clone()).filter(|p| !p.branches.is_empty()) {
             work.add(run, inputs.clone(), path);
         }
+        let mut g = graph::run(&env, &program, run, run_budget, &calls, m.as_ref().map(|mo| mo.calls.as_slice()).unwrap_or(&[]), None);
+        if short && matches!(m, Err(Halt::Budget)) != matches!(g, Err(Halt::Budget)) {
+            m = machine::run(&env, run, entry, opts.budget, &machine_calls, None);
+            g = graph::run(&env, &program, run, opts.budget, &calls, m.as_ref().map(|mo| mo.calls.as_slice()).unwrap_or(&[]), None);
+        }
         let replay: &[Record] = m.as_ref().map(|mo| mo.calls.as_slice()).unwrap_or(&[]);
-        let g = graph::run(&env, &program, run, opts.budget, &calls, replay, None);
         let (mo, go) = match (m, g) {
             (Err(Halt::Trap(t)), Err(Halt::Trap(_))) => {
                 trapped.get_or_insert(t);
@@ -1155,8 +1167,7 @@ fn check_runs(
     }
     if both_budget_runs > 0 && matches!(verdict, Verdict::Agrees(_)) {
         lines.push(format!(
-            "note     {both_budget_runs} runs ran past {} ops on both sides; they are not compared",
-            opts.budget
+            "note     {both_budget_runs} runs ran past the op budget on both sides; they are not compared"
         ));
     }
     if trapped_runs > 0 && matches!(verdict, Verdict::Agrees(_)) {
