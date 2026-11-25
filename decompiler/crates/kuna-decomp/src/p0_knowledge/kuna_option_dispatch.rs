@@ -359,6 +359,7 @@ kuna_options! { self, p1;
         self.recover_lowered_switch = mode.enabled();
         self.lowered_switch_linear = mode.linear();
         self.lowered_switch_tree = mode.tree();
+        self.lowered_switch_compiled = mode == crate::kuna_loweredswitch::LoweredSwitchMode::Auto;
         Ok(msg)
     },
     "nulterminator" => {

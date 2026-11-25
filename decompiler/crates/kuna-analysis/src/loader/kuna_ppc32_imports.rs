@@ -160,14 +160,19 @@ pub(super) fn stubs(file: &object::File<'_>) -> Vec<(u64, Stub)> {
         let Ok(bytes) = section.data() else {
             continue;
         };
+        let little = file.is_little_endian();
+        let read = |b: &[u8]| {
+            let b: [u8; 4] = b[..4].try_into().unwrap();
+            if little { u32::from_le_bytes(b) } else { u32::from_be_bytes(b) }
+        };
         for off in (0..bytes.len()).step_by(4) {
             let Some(code) = bytes.get(off..off.saturating_add(16)) else {
                 break;
             };
-            if !matches!(word(file, code) & 0xffff_0000, 0x817e_0000 | 0x3d7e_0000 | 0x3d60_0000) {
+            if !matches!(read(code) & 0xffff_0000, 0x817e_0000 | 0x3d7e_0000 | 0x3d60_0000) {
                 continue;
             }
-            let words: [u32; 4] = std::array::from_fn(|i| word(file, &code[4 * i..]));
+            let words: [u32; 4] = std::array::from_fn(|i| read(&code[4 * i..]));
             if let Some(form) = stub(&words) {
                 out.push((section.address() + off as u64, form));
             }

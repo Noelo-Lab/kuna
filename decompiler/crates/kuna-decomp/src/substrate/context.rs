@@ -1266,6 +1266,8 @@ pub struct ArchContext {
     pub lowered_switch_linear: bool,
     /// (kuna) `loweredswitch tree|all` — compare trees re-roll from 2 to 64 cases.
     pub lowered_switch_tree: bool,
+    /// (kuna) `loweredswitch auto` — unoptimized functions decide by the compiled tests.
+    pub lowered_switch_compiled: bool,
     pub cond_fold: int4,
     /// (kuna) `condstmts`: most statements a folded condition operand may print
     /// before its test; negative = off.  See [`crate::p8_structure::kuna_condstmts`].
@@ -1804,6 +1806,7 @@ impl ArchContext {
             switch_selector_guard: false, // switchselector (opt-in default-off)
             lowered_switch_linear: false, // loweredswitch linear|all
             lowered_switch_tree: false, // loweredswitch tree|all
+            lowered_switch_compiled: false, // loweredswitch auto
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)
             cond_stmts: -1,              // condstmts (-1 = off)
             goto_reduce: crate::p8_structure::kuna_gotoreduce::GotoReduceMode::Off, // gotoreduce

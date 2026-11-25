@@ -21,6 +21,16 @@ if/else whose arms each store 1 or 0 keeps its `if`. Under `option iteregion on`
 the first prints as an `if` without an `else`, the stores fold into a
 conditional and the computed arm keeps its `if`.
 
+`kuna-loweredswitch-auto.xml` checks option `loweredswitch` (default `auto`)
+on gcc -O0 x86-64: a two-case `switch`, whose tests each jump to their case on
+a match, re-rolls, and an if/else-if chain of three tests that each fall into
+their own body keeps its tests. Under `option loweredswitch on` the two-case
+switch prints as two tests and the three-test chain re-rolls. An installed
+switch stays for the session, so the second pass reads a second copy of the
+bytes. A three-case switch over a struct field that gcc loads into a register
+once re-rolls too: the install reads the switch value from that load through
+the register copy and its zero extension.
+
 `kuna-guardauto.xml` checks option `guardarm` (default `auto`) on two x86-64
 functions. In a gcc -O0 `unget`, whose parameters live in frame slots, the
 default prints the source's flat guard `if (c == -1 || ...) return -1;`, and
@@ -80,6 +90,18 @@ versioned by another library or by `GLIBC_PRIVATE`, and a caller's
 the stub `exit` keeps today's `exit();`. The same glibc image keeps
 `strlen(a0) + 1`, and `sincos`, which no table declares on MIPS, keeps today's
 recovery.
+
+`kuna-ppc64-plt-stubs.xml` checks PowerPC64 ELFv2 shared objects whose
+wrappers call `free` and `strlen` through each linker stub form: GNU ld's
+TOC stub with and without the `r2` save, its pc-relative stub for Power10
+callers and its `pld` stub, lld's `addis` and `pld` stubs, big-endian
+ELFv2, and GNU ld's stubs for an import that both TOC and pc-relative code
+call, which pc-relative callers enter one word in. Every wrapper prints
+`free(a0)` and `strlen(a0) + 1`. In the assembly
+fixture, `outer` calls `free` through a real stub, then an exported function
+shaped like a `pld` stub, which keeps its name, and a local one that loads a
+GOT entry instead of a PLT slot, which stays `sub_`. The fixtures and their
+recipe are in `tests/fixtures/ppc64-plt-stubs/`.
 
 `kuna-narrowed-call-input.xml` checks a call through a typed field whose
 argument was narrowed to two bytes before the field's prototype was forced on
@@ -771,3 +793,8 @@ through its cursor, each read by `main`: they print their return, where they
 printed `void`. `reset` (`movl $0,gi; xor %eax,%eax; movl $0,gj; ret`) returns
 its zero. `push_cell`, whose result `main` ignores, stays `void`. A strict fix
 with one pass.
+
+`kuna-vcmp-carry.xml` checks the ARM conditions that read the carry after
+`vcmp`/`vcmpe` and `vmrs APSR_nzcv, fpscr`. The hardware sets C for unordered
+operands, so `hi` and `cs` are taken for a NaN and `ls` and `cc` are not; each
+printed test is false exactly when its branch is taken, NaN included.

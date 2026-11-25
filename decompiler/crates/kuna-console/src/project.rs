@@ -1507,9 +1507,10 @@ pub fn build_header_with_names(
             calls.entry(name).or_default().insert(declaration.trim());
         }
     }
+    let data: BTreeSet<_> = results.iter().flat_map(|r| &r.globals).map(|g| g.name.as_str()).collect();
     let helpers = kuna_decomp::kuna_unitcalls::header_block(
         results.iter().flat_map(|r| &r.call_declarations).map(String::as_str),
-        |name| own.contains(name) || shadowed.contains(name) || calls.contains_key(name),
+        |name| own.contains(name) || shadowed.contains(name) || calls.contains_key(name) || data.contains(name),
     );
     if !calls.is_empty() { out.push_str("\n/* declared call targets */\n"); }
     for (name, declarations) in calls {
@@ -2259,6 +2260,30 @@ mod tests {
         assert!(!header[targets..block].contains("SCARRY4"), "{header}");
         assert!(header[block..prototypes].contains("#ifndef SCARRY4\nextern bool SCARRY4(KUNA_ANY_ARGS);\n#endif\n"), "{header}");
         assert!(!header.contains("puts(KUNA_ANY_ARGS)") && !header.contains("local(KUNA_ANY_ARGS)"), "{header}");
+    }
+
+    #[test]
+    fn an_import_declaration_is_written_unless_the_header_declares_its_name() {
+        let mut result = streamed("int local(int a0);", "int");
+        result.call_declarations = vec![
+            "extern void __libc_start_main(KUNA_ANY_ARGS);".into(),
+            "extern undefined8 local(KUNA_ANY_ARGS);".into(),
+            "extern undefined8 environ(KUNA_ANY_ARGS);".into(),
+            "extern undefined4 puts(KUNA_ANY_ARGS);".into(),
+            "int puts(char *a0);".into(),
+        ];
+        result.globals.push(super::GlobalInfo {
+            address: 0x5000, name: "environ".into(), declaration: "char **environ".into(),
+            size: 8, unknown: false, direct: true, aggregate: false, elem: false, integer: false,
+        });
+        let header = super::build_header("fresh", "", "", &[result]).unwrap();
+        let block = "\n/* the imports the code calls with no known prototype */\n\
+                     extern void __libc_start_main(KUNA_ANY_ARGS);\n";
+        assert!(header.contains(block), "{header}");
+        assert!(!header.contains("KUNA_DECLARE_HELPERS"), "{header}");
+        for name in ["local", "environ", "puts"] {
+            assert!(!header.contains(&format!("{name}(KUNA_ANY_ARGS)")), "{header}");
+        }
     }
 
     fn wide_call() -> FuncResult {

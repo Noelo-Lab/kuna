@@ -370,7 +370,10 @@ pub enum HeadOperand {
 /// their writer, which must be integer or boolean arithmetic. The operand is a
 /// `size`-byte location in `home`'s space that nothing from the reading op up to
 /// the branch writes, or the output of a `size`-byte load; every path must reach
-/// the same operand.
+/// the same operand. When `home` is a temporary (a selector loaded into one) no
+/// location is the operand: the walk follows copies and extensions back to the
+/// load, past a write that extends a location into itself (x86-64 zero-extends
+/// every 32-bit register write into the whole register).
 pub(crate) fn head_compare_operand(
     data: &Funcdata,
     head: BlockId,
@@ -379,6 +382,7 @@ pub(crate) fn head_compare_operand(
     size: int4,
 ) -> Option<HeadOperand> {
     let home_space = home.get_space()?.get_index();
+    let home_temp = home.get_space()?.get_type() == spacetype::IPTR_INTERNAL;
     let mut ops = Vec::new();
     let block = data.bblocks_ref().block(head);
     if block.size_in() == 1 && block.get_in(0) != head {
@@ -420,16 +424,27 @@ pub(crate) fn head_compare_operand(
                 }
                 Some(ooff == off && osz == sz)
             };
-            let prior = ops[..pos].iter().enumerate().rev().find_map(|(p, &o)| overlap(o).map(|exact| (o, p, exact)));
-            let candidate = space == home_space && v.get_size() == size;
-            if let Some((o, p, _)) = prior {
-                if v.get_size() > size {
+            let prior = ops[..pos]
+                .iter()
+                .enumerate()
+                .rev()
+                .filter(|&(_, &o)| !(home_temp && extends_into_itself(data, o, space, off, sz)))
+                .find_map(|(p, &o)| overlap(o).map(|exact| (o, p, exact)));
+            let candidate = !home_temp && space == home_space && v.get_size() == size;
+            if let Some((o, p, exact)) = prior {
+                if v.get_size() > size || home_temp {
                     if let Some(inner) = extended_low_bytes(data, o, space, off, v.get_size()) {
                         if seen.insert(o) {
                             work.push((inner, p));
                         }
                         continue;
                     }
+                }
+                if home_temp && exact && data.obank().get(o)?.code() == OpCode::CPUI_COPY {
+                    if seen.insert(o) {
+                        work.push((data.obank().get(o)?.get_in(0)?, p));
+                    }
+                    continue;
                 }
             }
             match prior {
@@ -476,6 +491,30 @@ pub(crate) fn head_compare_operand(
         }
     }
     found
+}
+
+/// Whether `op` zero- or sign-extends a location into storage whose low bytes
+/// are that same location and hold the `sz` bytes at `off` in space `space`,
+/// which it then leaves as they were.
+fn extends_into_itself(data: &Funcdata, op: OpId, space: int4, off: uintb, sz: uintb) -> bool {
+    let Some(o) = data.obank().get(op) else { return false };
+    if !matches!(o.code(), OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT) {
+        return false;
+    }
+    let (Some(out), Some(input)) =
+        (o.get_out().and_then(|v| data.vbank().get(v)), o.get_in(0).and_then(|v| data.vbank().get(v)))
+    else {
+        return false;
+    };
+    let (Some(out_space), Some(in_space)) = (out.get_addr().get_space(), input.get_addr().get_space()) else {
+        return false;
+    };
+    if out_space.get_index() != space || in_space.get_index() != space || input.is_written() {
+        return false;
+    }
+    let (ooff, osz, ioff, isz) = (out.get_offset(), out.get_size() as uintb, input.get_offset(), input.get_size() as uintb);
+    let low = if out_space.is_big_endian() { ooff.wrapping_add(osz).wrapping_sub(isz) } else { ooff };
+    ioff == low && off >= ioff && off.wrapping_add(sz) <= ioff.wrapping_add(isz)
 }
 
 /// The input of `op` when `op` zero- or sign-extends it into storage whose low

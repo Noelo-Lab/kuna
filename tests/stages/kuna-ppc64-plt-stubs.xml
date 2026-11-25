@@ -1,0 +1,112 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default">
+<bytechunk space="ram" offset="0x1000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x1000" name="stage_entry"/>
+</binaryimage>
+<script>
+<com>clear architecture</com>
+<com>load file tests/fixtures/ppc64-plt-stubs/toc.elf</com>
+<com>read symbols</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function measure</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/ppc64-plt-stubs/localentry.elf</com>
+<com>read symbols</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function measure</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/ppc64-plt-stubs/notoc.elf</com>
+<com>read symbols</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function measure</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/ppc64-plt-stubs/pld.elf</com>
+<com>read symbols</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function measure</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/ppc64-plt-stubs/lld-toc.elf</com>
+<com>read symbols</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function measure</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/ppc64-plt-stubs/lld-pld.elf</com>
+<com>read symbols</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function measure</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/ppc64-plt-stubs/be.elf</com>
+<com>read symbols</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function measure</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/ppc64-plt-stubs/both.elf</com>
+<com>read symbols</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function measure</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function release_pcrel</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function measure_pcrel</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/ppc64-plt-stubs/both-pld.elf</com>
+<com>read symbols</com>
+<com>load function release</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function measure</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function release_pcrel</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function measure_pcrel</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/ppc64-plt-stubs/guards.elf</com>
+<com>read symbols</com>
+<com>load function outer</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="Every PPC64 ELFv2 linker stub form, and a Power10 stub beside stub-shaped functions, names free for the pointer its caller forwards" min="12" max="12">free\(a0\);</stringmatch>
+<stringmatch name="Every PPC64 ELFv2 linker stub form names strlen for the string its caller measures" min="11" max="11">strlen\(a0\) \+ 1</stringmatch>
+<stringmatch name="An exported function shaped like a stub keeps its own name" min="1" max="1">^  release\(a0\);$</stringmatch>
+<stringmatch name="A stub-shaped function that loads a GOT entry is not an import stub" min="1" max="1">^  sub_10[0-9a-f]{2}\(a0\);$</stringmatch>
+</decompilertest>
