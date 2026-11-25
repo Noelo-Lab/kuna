@@ -303,10 +303,10 @@ fn continue_once(data: &mut Funcdata, lp: BlockId, slot: int4, point: BlockId) -
         comps[slot as usize] = ls;
         sg.kuna_set_components(lp, comps);
     }
-    if clause_items.first() != Some(&clause) {
-        sg.arena.remove(clause);
+    if let Some(&first) = clause_items.first().filter(|&&c| c != clause) {
+        sg.kuna_free_replaced(clause, first);
     }
-    sg.arena.remove(ifb);
+    sg.kuna_free_replaced(ifb, jump);
     true
 }
 
