@@ -34,12 +34,16 @@ pub struct Outcome {
     pub writes: Writes,
     /// It read a byte of its own frame that nothing wrote.
     pub read_uninitialized: bool,
-    /// The first call where a callee the machine ran for real read an
-    /// argument register kuna's call does not pass the same value in.
-    pub call_input: Option<CallInput>,
+    /// The calls, up to [`CALL_INPUTS`] of them, where a callee the machine
+    /// ran for real read an argument register kuna's call does not pass the
+    /// same value in.
+    pub call_inputs: Vec<CallInput>,
     /// System calls and traps, in order.
     pub events: Vec<crate::calls::UserEvent>,
 }
+
+/// Calls per run whose differing argument reads are each checked by a rerun.
+pub const CALL_INPUTS: usize = 4;
 
 /// A call whose callee reads argument-register bytes kuna passes otherwise:
 /// the report, and kuna's bytes (a stand-in where it passes none) for a
@@ -71,7 +75,7 @@ const MAX_BUILTIN_BYTES: u64 = 1 << 20;
 struct Run<'e, 'p, 'c> {
     calls: &'c Calls,
     perturb: Option<&'c Perturb>,
-    call_input: Option<CallInput>,
+    call_inputs: Vec<CallInput>,
     events: Vec<crate::calls::UserEvent>,
     /// The machine's calls, whose recorded effects this side replays.
     replay: &'c [Record],
@@ -233,9 +237,9 @@ impl Run<'_, '_, '_> {
                 ));
             }
         }
-        if let (Some(msg), None) = (first, self.call_input.as_ref()) {
+        if let Some(msg) = first.filter(|_| self.call_inputs.len() < CALL_INPUTS) {
             let locked = self.calls.site(op.at).locked;
-            self.call_input = Some(CallInput { msg, with: crate::machine::WithArgs { call: Some(k), bytes, kill_salt: 0 }, locked });
+            self.call_inputs.push(CallInput { msg, with: crate::machine::WithArgs { call: Some(k), bytes, kill_salt: 0 }, locked });
         }
         Ok(())
     }
@@ -383,7 +387,8 @@ impl Run<'_, '_, '_> {
                     args.push(self.input(op, k)?);
                 }
                 let indirect = direct.is_none();
-                let writes = self.state.writes_at_call(&args);
+                let wide = target.is_some_and(|t| self.state.env.code_mapped(t));
+                let writes = self.state.writes_at_call(&args, wide);
                 crate::calls::record(&mut self.records, Record { at, target, indirect, args, writes, effect: None, frame_reads: None, live_in: None })?;
                 let site = self.calls.site(at);
                 if site.noreturn {
@@ -523,7 +528,7 @@ impl Run<'_, '_, '_> {
             overlapping_copy: self.overlapping_copy,
             writes: self.state.writes(),
             read_uninitialized: self.state.read_uninitialized,
-            call_input: self.call_input,
+            call_inputs: self.call_inputs,
             events: self.events,
             calls: self.records,
             noreturn,
@@ -556,7 +561,7 @@ pub fn run(
     let mut r = Run {
         calls,
         perturb,
-        call_input: None,
+        call_inputs: Vec::new(),
         events: Vec::new(),
         replay,
         state: State::new(env, run),

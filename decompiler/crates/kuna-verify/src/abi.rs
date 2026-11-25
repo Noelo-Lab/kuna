@@ -80,6 +80,7 @@ pub fn c_sizes(prog: &ConsoleProgram) -> CSizes {
         long: t.get_size_of_long() as u32,
         long_long: t.get_size_of_long_long() as u32,
         pointer: t.get_size_of_pointer() as u32,
+        char_signed: !["ARM", "AARCH64", "PowerPC", "RISCV", "s390"].iter().any(|p| prog.arch().archid.starts_with(p)),
     }
 }
 

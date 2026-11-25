@@ -391,3 +391,41 @@ fn a_binary_that_cannot_be_loaded_exits_3() {
     let out = verify(&["check", &missing.to_string_lossy(), "f", "--sleighpath", &specs]);
     assert_eq!(out.status.code(), Some(3), "{}", String::from_utf8_lossy(&out.stderr));
 }
+
+/// Two thunks that reach the same function are the same call only when they
+/// leave the arguments alone: `add edi,1; jmp f` and `add edi,2; jmp f` are
+/// not, so a mutant that calls the second instead of the first is caught.
+#[test]
+fn thunks_that_change_an_argument_are_different_calls() {
+    let text = [
+        0x89, 0xf8, 0xc3, 0x83, 0xc7, 0x01, 0xeb, 0xf8, 0x83, 0xc7, 0x02, 0xeb, 0xf3, 0x48, 0x83, 0xec, 0x08, 0xe8, 0xed, 0xff, 0xff,
+        0xff, 0x48, 0x83, 0xc4, 0x08, 0xc3,
+    ];
+    let path = object("thunks", &text, &[("f", 0, 3), ("plus1", 3, 5), ("plus2", 8, 5), ("caller", 13, 14)], &[]);
+    let specs = specs();
+    let out = verify(&["mutate", &path.to_string_lossy(), "caller", "--json", "--sleighpath", &specs]);
+    let rows: Vec<serde_json::Value> =
+        String::from_utf8_lossy(&out.stdout).lines().filter_map(|l| serde_json::from_str(l).ok()).filter(|v: &serde_json::Value| v.get("operator").is_some()).collect();
+    let targets: Vec<_> = rows.iter().filter(|r| r["operator"] == "call-target" && r["reached"] == true).collect();
+    assert!(!targets.is_empty(), "{rows:?}");
+    assert!(targets.iter().all(|r| r["killed"] == true), "{targets:?}");
+}
+
+/// A callee that reads past the object kuna gives it (kuna types `[rsp]` as
+/// four bytes, the callee reads `[rdi+4]`) is compared there too, when the
+/// bytes are another of kuna's locals: `v2 = 4` planted for `v2 = 5` is caught.
+#[test]
+fn a_callee_reading_past_kuna_s_object_is_compared() {
+    let text = [
+        0x8b, 0x47, 0x04, 0xc3, 0x48, 0x83, 0xec, 0x18, 0xc6, 0x04, 0x24, 0x07, 0xc7, 0x44, 0x24, 0x04, 0x05, 0, 0, 0, 0x48, 0x89,
+        0xe7, 0xe8, 0xe4, 0xff, 0xff, 0xff, 0x48, 0x83, 0xc4, 0x18, 0xc3,
+    ];
+    let path = object("pastobject", &text, &[("reader", 0, 4), ("give", 4, 29)], &[]);
+    let specs = specs();
+    let out = verify(&["mutate", &path.to_string_lossy(), "give", "--per-function", "20", "--json", "--sleighpath", &specs]);
+    let rows: Vec<serde_json::Value> =
+        String::from_utf8_lossy(&out.stdout).lines().filter_map(|l| serde_json::from_str(l).ok()).filter(|v: &serde_json::Value| v.get("operator").is_some()).collect();
+    let planted: Vec<_> = rows.iter().filter(|r| r["what"].as_str().unwrap_or("").starts_with("constant 0x5 -> 0x4")).collect();
+    assert_eq!(planted.len(), 1, "{rows:?}");
+    assert_eq!(planted[0]["killed"], true, "{planted:?}");
+}

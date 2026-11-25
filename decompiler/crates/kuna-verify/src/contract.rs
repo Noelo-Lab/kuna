@@ -14,6 +14,10 @@ pub struct CSizes {
     pub long: u32,
     pub long_long: u32,
     pub pointer: u32,
+    /// Plain `char` is signed: x86 yes; ARM, AArch64, PowerPC, RISC-V and
+    /// s390 System V ABIs no. Spell `signed char` or `unsigned char` where a
+    /// target's compiler differs (Apple's and Windows' ARM ABIs sign it).
+    pub char_signed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,7 +101,8 @@ fn base_type(words: &[&str], sizes: CSizes) -> Option<(u32, bool)> {
     } else {
         return None;
     };
-    Some((size, !unsigned))
+    let plain_char = has("char") && !unsigned && !has("signed");
+    Some((size, if plain_char { sizes.char_signed } else { !unsigned }))
 }
 
 /// `(size, signed, pointer)` of a spelled type, through typedefs.
@@ -141,7 +146,7 @@ pub fn from_source(src: &str, function: &str, source: &str, sizes: CSizes) -> Re
 mod tests {
     use super::*;
 
-    const ARM: CSizes = CSizes { int: 4, long: 4, long_long: 8, pointer: 4 };
+    const ARM: CSizes = CSizes { int: 4, long: 4, long_long: 8, pointer: 4, char_signed: false };
 
     #[test]
     fn return_types_resolve_through_typedefs() {
@@ -165,5 +170,18 @@ mod tests {
         let wide = "unsigned __int128 m(unsigned long a);\nNI unsigned q(int x);";
         assert_eq!(from_source(wide, "m", "s", ARM).unwrap().ret.size, 16);
         assert!(from_source(wide, "q", "s", ARM).is_err());
+    }
+
+    /// Plain `char` takes the target's signedness; spelled out, it does not.
+    #[test]
+    fn plain_char_follows_the_target() {
+        let src = "char a(void);
+signed char b(void);
+unsigned char c(void);";
+        let x86 = CSizes { char_signed: true, ..ARM };
+        assert!(!from_source(src, "a", "s", ARM).unwrap().ret.signed);
+        assert!(from_source(src, "a", "s", x86).unwrap().ret.signed);
+        assert!(from_source(src, "b", "s", ARM).unwrap().ret.signed);
+        assert!(!from_source(src, "c", "s", x86).unwrap().ret.signed);
     }
 }

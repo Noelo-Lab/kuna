@@ -122,7 +122,9 @@ common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES 
   with `k - 1` the function agrees over every run, with `k` it differs. Bisection assumes
   that once an application makes the function differ, later ones do not undo it; a rewrite
   that a later one cancels can hide an earlier application, so `k` is a candidate to look
-  at, not a proof that it is the first or the only cause.
+  at, not a proof that it is the first or the only cause. Holding a rule back also
+  changes which rules apply after it, so a culprit may be one side of an interaction
+  rather than the direct cause.
 - **`step`** is Tier L's kuna side: one instruction's p-code from random register values,
   as JSON. `scripts/diffverify/tier_l.py` runs it against Unicorn.
 - **`mutate`** plants faults in kuna's side and reports how many the check catches
@@ -282,6 +284,10 @@ run yet.
   stack argument is not, so a stack argument kuna's recovered prototype misses or gets
   wrong (x86-32 `cdecl`) can agree. Extending that rerun to the outgoing argument area
   needs kuna's stack inputs mapped to the callee's reads first.
+- **Object sizes for a callee outside the image.** What a callee can reach through a
+  frame pointer is kuna's local that holds it. A callee run for real is also compared on
+  the bytes it reads past that local, when they are another of kuna's locals; a stubbed
+  callee reads nothing the model sees, so there kuna's sizing still bounds the compare.
 - **Code after a call kuna thinks returns.** If kuna misses that a call does not return,
   it prints the bytes after it as code. No run reaches them on either side, so this is
   invisible here; it is a readability fault for Tier P. A run in which a callee aborts

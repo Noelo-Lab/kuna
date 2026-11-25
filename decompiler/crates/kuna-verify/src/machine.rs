@@ -108,9 +108,16 @@ fn follow_thunks(env: &Env, target: u64) -> u64 {
     t
 }
 
+/// Whether `out` is an argument register the calling convention reads.
+fn writes_argument(env: &Env, out: &VarnodeData) -> bool {
+    space(out).is_ok_and(|s| s.get_index() == env.register.get_index())
+        && env.arg_regs.iter().any(|&(o, n)| out.offset < o + u64::from(n) && o < out.offset + u64::from(out.size))
+}
+
 /// Where the thunk at `at` jumps, run from state `run`; `None` when the code
 /// there stores anywhere but the stack (a lazy PLT entry pushes its index),
-/// calls, tests or does not jump within a few instructions.
+/// writes an argument register, calls, tests or does not jump within a few
+/// instructions.
 fn thunk_hop(env: &Env, at: u64, run: u32) -> Option<u64> {
     let mut state = State::new(env, 0x7fff_0000 + run);
     let mut addr = at;
@@ -129,7 +136,7 @@ fn thunk_hop(env: &Env, at: u64, run: u32) -> Option<u64> {
                 OpCode::CPUI_LOAD => {
                     let spc = mem_space(env, op.ins.first()?).ok()?;
                     let ptr = read(&mut state, op.ins.get(1)?).ok()? as u64;
-                    let out = op.out.as_ref()?;
+                    let out = op.out.as_ref().filter(|o| !writes_argument(env, o))?;
                     let v = state.read(&spc, spc.wrap_offset(ptr), out.size).ok()?;
                     write(&mut state, out, v).ok()?;
                 }
@@ -149,7 +156,7 @@ fn thunk_hop(env: &Env, at: u64, run: u32) -> Option<u64> {
                 | OpCode::CPUI_CALLOTHER
                 | OpCode::CPUI_RETURN => return None,
                 opc => {
-                    let out = op.out.as_ref()?;
+                    let out = op.out.as_ref().filter(|o| !writes_argument(env, o))?;
                     let mut ins = Vec::with_capacity(op.ins.len());
                     for vn in &op.ins {
                         ins.push((read(&mut state, vn).ok()?, vn.size));
@@ -430,7 +437,7 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         for st in &self.calls.pointer_regs {
             given.push(self.state.read_storage(&st.space, st.off, st.size)?);
         }
-        let r = Record { at, target, indirect, args: args.clone(), writes: self.state.writes_at_call(&given), effect: None, frame_reads: None, live_in: None };
+        let r = Record { at, target, indirect, args: args.clone(), writes: self.state.writes_at_call(&given, target.is_some_and(|t| self.env.code_mapped(t))), effect: None, frame_reads: None, live_in: None };
         crate::calls::record(&mut self.records, r)?;
         if let Some(o) = self.with_args.filter(|o| o.call == Some(self.records.len() - 1)) {
             let register = std::rc::Rc::clone(&self.env.register);

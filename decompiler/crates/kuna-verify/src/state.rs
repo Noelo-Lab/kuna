@@ -136,6 +136,9 @@ pub struct Env<'p> {
     image_bytes: RefCell<HashMap<u64, Option<u8>, BuildHasherDefault<Fast>>>,
     /// Where a call to each target goes once thunks are followed.
     pub(crate) thunks: RefCell<HashMap<u64, u64>>,
+    /// The calling convention's argument registers: a thunk that writes one
+    /// changes the call, so it is no thunk.
+    pub arg_regs: Vec<(u64, u32)>,
     pub(crate) insns: RefCell<HashMap<u64, Rc<crate::machine::Insn>, BuildHasherDefault<Fast>>>,
     entries: std::cell::OnceCell<BTreeSet<u64>>,
     stack: Rc<AddrSpace>,
@@ -264,6 +267,7 @@ impl<'p> Env<'p> {
             mapped,
             image_bytes: RefCell::new(HashMap::default()),
             thunks: RefCell::new(HashMap::new()),
+            arg_regs: Vec::new(),
             insns: RefCell::new(HashMap::default()),
             entries: std::cell::OnceCell::new(),
             stack: Rc::clone(stack),
@@ -1087,7 +1091,11 @@ impl<'e, 'p> State<'e, 'p> {
     /// callee can reach: one an argument points to, one whose address this side
     /// stored outside the frame (`global = &x`) or in an object already
     /// reachable (`h.p = &x; f(&h)`), and one an earlier call could reach.
-    pub fn writes_at_call(&mut self, args: &[u128]) -> Writes {
+    /// `wide` (a callee in the image, which may run for real) adds the frame
+    /// bytes above the lowest such object that lie in one of kuna's locals,
+    /// so a callee reading past an object kuna sized too small is compared
+    /// there too.
+    pub fn writes_at_call(&mut self, args: &[u128], wide: bool) -> Writes {
         let mut w = self.writes();
         let ram = self.env.ram.get_index();
         let mut found: Vec<u64> = args.iter().map(|&a| a as u64).collect();
@@ -1113,11 +1121,25 @@ impl<'e, 'p> State<'e, 'p> {
                 continue;
             }
             w.objects.push((start, end));
+        }
+        let low = w.objects.iter().map(|o| o.0).min();
+        let mut take = |w: &mut Writes, start: u64, end: u64, any: bool| {
             for (off, v) in self.mem.range(ram, start, end) {
+                if any && self.env.stack_object(off).is_none() {
+                    continue;
+                }
                 if self.callee_written.contains(&off) {
                     w.skip.insert(off);
                 } else {
                     w.bytes.insert((ram, off), v);
+                }
+            }
+        };
+        match low.filter(|_| wide) {
+            Some(low) => take(&mut w, low, self.env.sp0, true),
+            None => {
+                for (start, end) in w.objects.clone() {
+                    take(&mut w, start, end, false);
                 }
             }
         }

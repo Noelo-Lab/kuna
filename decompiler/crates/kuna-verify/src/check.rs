@@ -194,11 +194,10 @@ fn compare_writes(env: &Env, run: u32, machine: &Writes, kuna: &Writes, read: Op
         .copied()
         .filter(|&(sp, off)| {
             let both = |o: &(u64, u64)| off >= o.0 && off < o.1 && kuna.objects.contains(o);
+            let past = |o: &(u64, u64)| off >= o.1 && off < env.sp0 && kuna.objects.contains(o);
+            let reached = machine.objects.iter().any(both) || read.is_some_and(|r| r.contains(&off) && machine.objects.iter().any(past));
             !(sp == ram && env.in_stack(off, 1))
-                || (machine.objects.iter().any(both)
-                    && read.is_none_or(|r| r.contains(&off))
-                    && !machine.skip.contains(&off)
-                    && !kuna.skip.contains(&off))
+                || (reached && read.is_none_or(|r| r.contains(&off)) && !machine.skip.contains(&off) && !kuna.skip.contains(&off))
         })
         .collect();
     let mut first = None;
@@ -785,6 +784,7 @@ fn check_runs(
     let compare = Compare { prog, claim: &claim, contract: contract.zip(contract_storage.as_ref()) };
     let mut upper = UpperWatch::new(prog, fd, &claim);
     let mut machine_calls = calls::sites(fd, &env);
+    env.arg_regs = machine_calls.input_regs.clone();
     let mut calls = machine_calls.clone();
     let mut program: Program = program::compile(prog, fd, &calls);
     if let Some((m, reached)) = mutation {
@@ -929,23 +929,31 @@ fn check_runs(
             continue;
         }
         let mut cc = compare_calls(prog, &env, run, &calls, &mo.calls, &go.calls);
-        if let Some(ci) = go.call_input.as_ref().filter(|_| cc.differs.is_none() && !cc.stop) {
-            let rerun = machine::run(&env, run, entry, opts.budget, &machine_calls, Some(&ci.with));
-            if let Err(h) = &rerun {
-                unknown.get_or_insert(Halt::Doubtful(format!("{}; the machine could not be rerun with kuna's arguments: {}", ci.msg, Verdict::from_halt(h).label())));
-                continue;
+        let mut rerun_failed = None;
+        for ci in go.call_inputs.iter() {
+            if cc.differs.is_some() || cc.stop {
+                break;
             }
-            if let Ok(alt) = rerun {
-                let callee = ci.with.call.and_then(|k| callee_differs(prog, &machine_calls, mo.calls.get(k), alt.calls.get(k)));
-                if let Some(d) = machine_differs(prog, &env, run, &machine_calls, &claim, &mo, &alt).or(callee) {
-                    let l = format!("{}; given kuna's arguments, the machine's {d}", ci.msg);
-                    if ci.locked {
-                        cc.suspects.push(format!("{l}; the callee's declared prototype does not take it"));
-                    } else {
-                        cc.differs = Some(vec![l]);
-                    }
+            let alt = match machine::run(&env, run, entry, opts.budget, &machine_calls, Some(&ci.with)) {
+                Ok(alt) => alt,
+                Err(h) => {
+                    rerun_failed = Some(format!("{}; the machine could not be rerun with kuna's arguments: {}", ci.msg, Verdict::from_halt(&h).label()));
+                    break;
+                }
+            };
+            let callee = ci.with.call.and_then(|k| callee_differs(prog, &machine_calls, mo.calls.get(k), alt.calls.get(k)));
+            if let Some(d) = machine_differs(prog, &env, run, &machine_calls, &claim, &mo, &alt).or(callee) {
+                let l = format!("{}; given kuna's arguments, the machine's {d}", ci.msg);
+                if ci.locked {
+                    cc.suspects.push(format!("{l}; the callee's declared prototype does not take it"));
+                } else {
+                    cc.differs = Some(vec![l]);
                 }
             }
+        }
+        if let Some(msg) = rerun_failed.filter(|_| cc.differs.is_none()) {
+            unknown.get_or_insert(Halt::Doubtful(msg));
+            continue;
         }
         if cc.differs.is_none() && !cc.stop {
             cc.differs = compare_events(prog, &mo.events, &go.events);
