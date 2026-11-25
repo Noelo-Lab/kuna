@@ -512,7 +512,11 @@ fn option_heading(st: &MarkdownRow<'_>) -> String {
         st.option,
         st.values.replace('|', " | "),
         st.default,
-        if st.destructive { " (destructive opt-in)" } else { "" },
+        match (st.destructive, st.option) {
+            (true, "constselectjump") => " (`on` is destructive)",
+            (true, _) => " (destructive opt-in)",
+            _ => "",
+        },
     )
 }
 

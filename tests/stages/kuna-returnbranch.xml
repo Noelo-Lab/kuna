@@ -1,0 +1,64 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:32:default">
+<!--
+    kuna returnbranch: MIPS hand-written code may load a constant code address
+    into $ra and jump through it. SLEIGH marks `jr ra` as a RETURN whatever
+    the register holds, so the function ended at the jump and the store it
+    reaches was dropped.
+
+        0x1000  or   t0,ra,zero      save the incoming return address
+        0x1004  lui  ra,0x0
+        0x1008  ori  ra,ra,0x1014    ra = the local continuation
+        0x100c  jr   ra              lifted as RETURN
+        0x1010  nop
+        0x1014  sw   a0,0(a1)        the store the RETURN dropped
+        0x1018  or   ra,t0,zero
+        0x101c  jr   ra              the real return
+        0x1020  nop
+
+    On, a RETURN whose target the straight-line entry prefix proves constant
+    flows as an indirect branch, which jump recovery follows to 0x1014. The
+    second `jr ra` follows a branch, so it stays a RETURN.
+
+    `bounce_leading_nop` is the same shape behind an instruction that emits no
+    p-code at all:
+
+        0x1040  nop                   emits nothing, so the first operation of
+        0x1044  or   t0,ra,zero       the function carries 0x1044, not 0x1040
+        0x1048  lui  ra,0x0
+        0x104c  ori  ra,ra,0x1058
+        0x1050  jr   ra
+        0x1054  nop
+        0x1058  sw   a0,4(a1)         a distinct store, so each assertion names
+        0x105c  or   ra,t0,zero       exactly one function
+        0x1060  jr   ra
+        0x1064  nop
+
+    The prefix may begin after a run of decoded instructions that emitted no
+    p-code, since they cannot have changed anything; requiring an operation at
+    the entry address itself rejected the whole proof.
+
+    Stage: P2 lift and flow (flow classification). Two passes per function:
+    option returnbranch off (the bug), then on (the default).
+
+    Assert #1: only the default keeps the store.
+    Assert #2: a leading instruction without p-code does not defeat the proof.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">03e040253c1f000037ff101403e0000800000000aca400000100f82503e0000800000000000000000000000000000000000000000000000000000000000000000000000003e040253c1f000037ff105803e0000800000000aca400040100f82503e0000800000000</bytechunk>
+<symbol space="ram" offset="0x1000" name="bounce"/>
+<symbol space="ram" offset="0x1040" name="bounce_leading_nop"/>
+</binaryimage>
+<script>
+<com>parse line extern void bounce(int value, int *slot);</com>
+<com>parse line extern void bounce_leading_nop(int value, int *slot);</com>
+<com>option returnbranch off</com>
+<com>lo fu bounce</com><com>decompile</com><com>print C</com>
+<com>lo fu bounce_leading_nop</com><com>decompile</com><com>print C</com>
+<com>option returnbranch on</com>
+<com>lo fu bounce</com><com>decompile</com><com>print C</com>
+<com>lo fu bounce_leading_nop</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="returnbranch #1: only the default keeps the store" min="1" max="1">\*slot = value;</stringmatch>
+<stringmatch name="returnbranch #2: a leading instruction without p-code does not defeat the proof" min="1" max="1">slot\[1\] = value;</stringmatch>
+</decompilertest>

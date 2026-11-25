@@ -2202,6 +2202,7 @@ mod tests {
         // and kuna-calleepurge / an x86-32 callee's stack purge read off its own returns
         // and kuna-calleeargs / an x86-32 callee's own code bounds its stack arguments
         // and kuna-fcvtround-a64 / AArch64 FCVT and FRINT round in their own mode
+        // and kuna-pacflow-a64 / a hidden AArch64 pac*/aut*/xpac* passes its register through
         // and kuna-repframecopy / a by-value argument copied with rep movs reaches its call
         // and kuna-libcnames-win32 / a local takes the name of the Win32 call it meets
         // and kuna-libcnames-addr / a stack object takes the name of the library parameter its address meets
@@ -2215,7 +2216,116 @@ mod tests {
         // and kuna-x86-directalias-freed / and does so after an earlier call stops taking that pointer
         // and kuna-itaniumvfunc / an Itanium virtual method named after the function, not its vtable
         // and kuna-itaniumctors / Itanium constructors and destructors named from their vptr stores
-        assert_eq!(count, 768, "corpus file count drifted");
+        // and kuna-switchselfloop / a switch that heads its own loop keeps the loop
+        // and kuna-wide-shifts / armconstshift all shifts a signed 64-bit operand unsigned
+        // and kuna-sharedpush / a push above a branch is the argument of the call on each arm
+        // and kuna-ebpf-elf-map-reloc / an EM_BPF object loads and its map and subprogram relocations land in imm
+        // and kuna-riscv-zcmp / RISC-V Zcmp push/pop decode under the Zcmp language variant
+        // and gh1627-x86-senduipi-gatherpf / SENDUIPI is not RDRAND and VGATHERPF indexes with a ZMM register
+        // and gh1628-x86-vmx-decode-flags / VMREAD/VMWRITE decode without REX.W and VMX instructions set CF/ZF
+        // and kuna-kernelbug / a Linux kernel __bug_table trap prints as __WARN(file,line) or BUG()
+        // and kuna-kernelcacheboot / an Auxiliary kernel collection resolved against its boot collection (option kernelcache-boot)
+        // and gh1674-subpiece-shadow-wide-const / a subpiece shadow 8 bytes into a 16-byte constant reads 0
+        // and kuna-wrapadd / wrapadd wraps a widened four-byte sum before its extension
+        // and kuna-rustversion-commit / a Rust image without .comment gets its release from /rustc/<commit>/ paths
+        // and kuna-sharedpush-regparm / a declared list its callee's register reads contradict shares no push
+        // and kuna-acleintrinsics / AArch64 MTE tag instructions and barriers print as ACLE intrinsics
+        // and kuna-assert-callee / a stated destination makes an indirect call direct
+        // and kuna-assert-format-isolate / a constant's format set by its instruction, and an isolated local
+        // and kuna-callproto / one call through a pointer is given its own prototype
+        // and kuna-dyldcacheobjc / a dyld shared cache image's ObjC metadata is read through the cache
+        // and kuna-dyldimage-merge / dyldimage A+B loads two dyld shared cache images as one program
+        // and kuna-blobs / an embedded PNG, GIF, JPEG, zip or gzip is returned by name
+        // and kuna-repstring, kuna-repstring-i386 / x86 rep movs/stos/cmpsb print as copy, fill and compare builtins
+        // and kuna-reentereddispatch / a re-entered dispatch keeps every step's store
+        // and kuna-dispatch-values / dispatcher return values survive narrowing and copies
+        // and ghangr-go-paniccheck-return / a returning Go panic check keeps its continuation
+        // and ghangr-go-aarch64-stack-stride / adjacent eight-byte spills keep their declared inputs
+        // and ghangr-go-mcall-resumption / a scheduler switch preserves its caller's continuation
+        // and kuna-restart-warnings / a restart drops the warnings of the pass it discards
+        // and kuna-narrowed-call-input / a call argument narrowed before its prototype is forced stays valid
+        // and kuna-extrapop-function / option extrapop <n> <name> sets a named function's extrapop
+        // and kuna-condexe-heritage / condexe removes a re-test whose block holds unread ops
+        // and kuna-dwarf-addrx / a DWARF 5 DW_OP_addrx global takes its name on both byte orders
+        // and kuna-pacmodifier-arg-a64e / a hidden signing's modifier is not a call argument
+        // and kuna-objcdirect / an Objective-C direct method's receiver is its class
+        // and kuna-itaniumrtti-macho / Itanium RTTI on a Mach-O through chained-fixup binds
+        // and kuna-itaniumrtti-macho-classic / and through classic LC_DYLD_INFO binds
+        // and kuna-typeorder / distinct types order by id and shape before heap address
+        // and kuna-loopcontinue-while / a jump to a do-while's own test prints as continue
+        // and kuna-switchsingle / a jump table whose entries all name one block is a direct branch
+        // and kuna-protoorder-tailcallees / a single decompile states its tail callees' prototypes first
+        // and kuna-typevote / a variable left undefinedN takes the type its ops vote for (option typevote)
+        // and kuna-gotonext / a goto to the statement that runs next is left out, a loop or switch exit prints break (option gotonext)
+        // and kuna-loweredswitch-linear / loweredswitch linear re-rolls a linear equality chain
+        // and kuna-loweredswitch-tree / loweredswitch tree re-rolls a twenty-case compare tree
+        // and kuna-maxlinewidth / option maxlinewidth breaks plain-text lines
+        // and kuna-postinc / a pointer step after its dereference prints *p++
+        // and kuna-returndupcalls / gcc -Os cross-jumped call tails split per path
+        // and kuna-panicloc / a Rust panic Location record is typed and named after its position (option panicloc)
+        // and kuna-gotypenames / Go type descriptors and itabs named as the linker spells them, go1.16 on
+        // and kuna-opaquepredicate / a comparison constant for every input folds under opaquepredicate
+        // and kuna-stubbinds / a stripped Mach-O stub is named from the chained bind on its slot (option stubbinds)
+        // and kuna-calleefilledarg / an objc_msgSend$ selector stub keeps the arguments staged after x1 (option calleefilledarg)
+        // and kuna-calleefilledarg-ctramp / a C trampoline that fills rsi keeps the positional rule
+        // and kuna-switchextent-a64 / an unchecked AArch64 table ends at the function's next table (option switchextent)
+        // and kuna-switchnext-a64 / a byte-masked last table ends at the next function's table (option switchextent)
+        // and kuna-objcforin / an SDK struct pointer parameter types the stack object passed to it (option objcsdk)
+        // and kuna-switchnextcsel-a64 / a csel-picked next table still ends a byte-masked last table (option switchextent)
+        // and kuna-switchmerge / a search tree of jump tables prints as one switch (option switchmerge)
+        // and kuna-switchmerge-values / a hole the default code sends to the same place prints no label, and a 1100-entry table is a switch
+        // and kuna-switchmerge-split / a range split between two switches, and an == test heading default, print as one switch
+        // and kuna-jumptableslots / a guarded table indexed by x >> 8 past jumptablemax stays a computed call
+        // and kuna-cachereturn / a lazy accessor returns the value of its cache cell (option cachereturn)
+        // and kuna-thunknames / a placeholder jump thunk is named after its target (option thunknames)
+        // and kuna-swifthelpers / Swift instantiation helpers and lazy witness table accessors (option swifthelpers)
+        // and kuna-aif-slot-edges / inferred entries start a complete section-relative slot
+        // and kuna-powerpc-isel / explicit language and call recovery
+        // and kuna-mips-o64-calls / O64 stack arguments and Octeon conditional calls
+        // and kuna-mips-kscratch / Octeon kernel scratch transfers preserve both selectors across calls
+        // and kuna-mips-kscratch3 / Octeon III additional kernel scratch registers
+        // and kuna-piecepathology / a call's declared int is the return, not the clobbered rest of its register
+        // and kuna-returnhintcaller / a callee return hint keeps the argument passed in the return register
+        // and kuna-boundschecked / an Annex K bounds-checked call keeps every declared argument
+        // and kuna-declaredpop / a declared import pop is the stack solver's equation
+        // and kuna-fcmp-unordered / ARM and AArch64 float conditions keep their unordered case
+        // and kuna-bytestorewidth / a constant word store into a byte array keeps its width (bytestorewidth)
+        // and kuna-calleefloatreads / a call passes the float register its unstated callee reads
+        // and kuna-calleepreservesargs / a register a leaf callee leaves alone carries a value to the next call
+        // and kuna-framepublish-seh / a published SEH record holds only the frame writes at or above it
+        // and kuna-switcharmorder / default and no-return switch arms print last, no default: return; at a void tail
+        // and kuna-loweredswitch-small / small compare-lowered switches re-roll by default (option loweredswitch)
+        // and kuna-thumb-stmia-writeback / Thumb stmia writes its base back when the base is in the list
+        // and kuna-varargsave / the x86-64 System V variadic register-save prologue
+        // and kuna-boolbranch, kuna-boolbranch-thumb / a branch instruction selecting 1 or 0 keeps its if
+        // and kuna-wsignload-a64 / AArch64 W-register sign-extending loads zero bits 63:32
+        // and kuna-thumb2-logical-carry / Thumb-2 ands/bics/movs/mvns set C from the shifter
+        // and kuna-ppc32picimports-abi-isolation / one file's load-time option never reaches the next file's loads
+        // and kuna-tailform-noreturn / a call that does not return prints as the if body before the return
+        // and kuna-expandload-opsize / a widened AND flag test keeps its op sizes
+        // and kuna-switchcond / a folded switch is never printed where a condition belongs
+        // and kuna-guardauto / the guardarm layout tie-break applies by default only to unoptimized code
+        // and kuna-stated-jump / caller-stated computed branch destinations
+        // and kuna-passthroughslot / forwarded registers fill their slots ahead of a loaded argument
+        // and kuna-passthroughslot-arm / an ARM pad or a register the callee does not take is no filled slot
+        // and gh1916-stackpadarg-x86 / a stack slot's pushed pad is not part of its int argument
+        // and kuna-tailform-model / saved weights choose the function-tail form
+        // and kuna-tailform-voidreturn / a void tail if drops the return the function end repeats
+        // and kuna-calloverlap-floatret / a call's float result inside a wider XMM range
+        // and gh1922-declared-caller-readarg-thumb / a declared fixed caller's pushed r3 is no va-save
+        // and kuna-stated-jump-placement / stated destinations a segment, a narrow offset or a DOS load cannot label
+        // and kuna-stated-jump-owners / stated destinations stay in the declared function that holds the jump
+        // and kuna-armshiftguard / an ARM register LSL whose count cannot reach 32 prints no range guard
+        // and gh1922-pushpad-caller-readarg-thumb / r3 pushed beneath lr is no va-save
+        // and kuna-retvalue / a result its callers read is returned though stored or loaded through
+        // and kuna-rex-before-prefix / an x86-64 REX prefix that a legacy prefix follows is ignored
+        // and kuna-returndup-auto / an unoptimized function keeps the returns its binary records
+        // and kuna-iteregion-auto / an unoptimized function keeps the ?: or if/else its binary records
+        // and kuna-glibcvoidimport / a glibc-versioned MIPS void import receives its arguments
+        // and kuna-vcmp-carry / ARM vcmp sets the carry for unordered operands
+        // and kuna-loweredswitch-auto / an unoptimized function keeps the switch or if-chain its tests record
+        // and kuna-ppc64-plt-stubs / every PPC64 ELFv2 linker stub form names its import
+        assert_eq!(count, 913, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -90,6 +90,8 @@ b861000000c3b862000000c3
 <symbol space="ram" offset="0x100a00" name="right2"/>
 </binaryimage>
 <script>
+  <!-- kuna: tailform default-on; this test pins the binary's own function-tail return layout -->
+  <com>option tailform off</com>
   <com>parse line extern int4 pick(uint1 sel,int4 flag);</com>
   <com>parse line extern int4 pick2(uint1 sel);</com>
   <com>lo fu pick</com>

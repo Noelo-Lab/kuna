@@ -131,10 +131,25 @@ issues; even a small error matters if it changes the checker's comparison.
 3. Change one relevant option for the affected function, keeping other settings fixed.
    Compare against the original result and evidence; stop once the uncertainty is resolved.
 
-Supply known prototypes/types with `--assert`, or function entries with
-`--define-function`; consult `kuna docs cli` for syntax. Save reusable assertions in
-an `@file` and check acceptance. `--assert` requires decompilation without `--stream`
-and without a worker pool (`--jobs 1`).
+For a custom processor with fixed instruction slots, keep the executable section
+headers when comparing function inventories. AIF counts slots from each section
+start when the processor spec declares `kuna.aif.sectionInstructionStride`.
+A segment-only ELF or raw mapping uses the ordinary cursor for the selected mode.
+
+Supply known prototypes and types with `--assert` and function entries with
+`--define-function`. If assembly or execution establishes every taken destination
+of a computed jump, pass `--assert 'jumptable SITE TARGET [TARGET ...]'` using
+hexadecimal code addresses. Keep the guard's fall-through out of the list.
+Destinations must stay in the jumping function; state one tail-call target
+with `callee`. A symbol without a size, such as a PE export, holds no jump,
+so declare the function's extent with `--define-function START-END=NAME` when
+a destination is its entry or another symbol inside it. Kuna rejects the set where case labels would be false, such as a PIE, shared
+object or relocatable PE, TE or MZ image, a segmented jump, or a destination
+wider than the jump's value, and the function then decompiles as without it. Use `--assert-strict` to catch rejected facts. Save reusable directives one per
+line and pass `--assert @FILE`. For `decompile-all --jobs N` with multiple
+workers, every directive must be a `jumptable`. Use `--jobs 1` for a mixed
+file. For project exports with assertions, use serial, non-streaming mode.
+See `kuna docs cli` for a runnable example and address conventions.
 
 ## Follow challenge clues and verify critical operations
 
@@ -144,6 +159,7 @@ query string owners and references:
 ```bash
 kuna strings ./challenge --filter '(?i)password|flag|correct|wrong' --json
 kuna crypto ./challenge --json          # AES/SHA/MD5/CRC/TEA/Base64 constants + the functions using them
+kuna blobs ./challenge --json           # embedded PNG/JPEG/GIF/BMP/ICO/zip/gzip/xz/zstd files, exact lengths (--extract DIR)
 kuna xrefs ./challenge --from main --json
 ```
 

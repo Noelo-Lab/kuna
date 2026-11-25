@@ -1,0 +1,54 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:golang">
+<!-- Authored in tests/fixtures/go-aarch64-divide/guard.S. SDIV has a
+     nontrapping zero case; the compiler's fail edge must stay explicit. -->
+<bytechunk space="ram" offset="0x100000" readonly="true">610000b4000cc19ac0035fd65d000094200020d4</bytechunk>
+<symbol space="ram" offset="0x100000" name="guarded_quotient"/>
+<bytechunk space="ram" offset="0x100040" readonly="true">000cc19ac0035fd6</bytechunk>
+<symbol space="ram" offset="0x100040" name="raw_quotient"/>
+<bytechunk space="ram" offset="0x100080" readonly="true">3f0002eb62000054007861f8c0035fd63d000094200020d4</bytechunk>
+<symbol space="ram" offset="0x100080" name="bounds_control"/>
+<bytechunk space="ram" offset="0x1000c0" readonly="true">610000b4000cc19ac0035fd62f000094200020d4</bytechunk>
+<symbol space="ram" offset="0x1000c0" name="application_guard"/>
+<bytechunk space="ram" offset="0x100100" readonly="true">610000b420000094200020d41d000094200020d4</bytechunk>
+<symbol space="ram" offset="0x100100" name="mixed_panics"/>
+<bytechunk space="ram" offset="0x100140" readonly="true">610000b4000cc19ac0035fd610000094200020d4</bytechunk>
+<symbol space="ram" offset="0x100140" name="abi_quotient"/>
+<bytechunk space="ram" offset="0x100180" readonly="true">200020d4200020d4200020d4200020d4</bytechunk>
+<symbol space="ram" offset="0x100180" name="runtime.panicdivide"/>
+<symbol space="ram" offset="0x100184" name="runtime.panicIndex"/>
+<symbol space="ram" offset="0x100188" name="application.panicdivide"/>
+<symbol space="ram" offset="0x10018c" name="runtime.panicdivide.abi0"/>
+</binaryimage>
+<script>
+  <com>option tailform off</com>
+  <com>option sourcelang go</com><com>option outlang go</com>
+  <com>option noreturn runtime.panicdivide</com>
+  <com>option noreturn application.panicdivide</com>
+  <com>map prototype guarded_quotient int8 guarded_quotient(int8 a,int8 b);</com>
+  <com>map prototype raw_quotient int8 raw_quotient(int8 a,int8 b);</com>
+  <com>map prototype bounds_control int8 bounds_control(int8 *data,uint8 index,uint8 length);</com>
+  <com>map prototype application_guard int8 application_guard(int8 a,int8 b);</com>
+  <com>map prototype mixed_panics void mixed_panics(int8 a,int8 b);</com>
+  <com>map prototype abi_quotient int8 abi_quotient(int8 a,int8 b);</com>
+  <com>load function guarded_quotient</com><com>decompile</com><com>print C</com><com>print raw</com>
+  <com>option gobounds off</com>
+  <com>decompile</com><com>print C</com><com>print raw</com>
+  <com>option gobounds on</com>
+  <com>load function raw_quotient</com><com>decompile</com><com>print C</com><com>print raw</com>
+  <com>load function bounds_control</com><com>decompile</com><com>print C</com><com>print raw</com>
+  <com>load function application_guard</com><com>decompile</com><com>print C</com>
+  <com>load function mixed_panics</com><com>decompile</com><com>print C</com><com>print raw</com>
+  <com>load function abi_quotient</com><com>decompile</com><com>print C</com><com>print raw</com>
+  <com>option sourcelang auto</com>
+</script>
+<stringmatch name="Go AArch64 compiler division keeps the original fail edge in default and audit modes" min="2" max="2">^0x00100000:[[:xdigit:]]+:[[:space:]]+goto .*else Block_.*:0x0010000c</stringmatch>
+<stringmatch name="Go AArch64 compiler division prints its terminal panic in both modes" min="3" max="3">^[[:space:]]+runtime\.panicdivide\(\) // no-return</stringmatch>
+<stringmatch name="Go AArch64 divide guard recognizes the exact ABI0 helper" min="1" max="1">^0x0010014c:[[:xdigit:]]+:[[:space:]]+call fruntime\.panicdivide\.abi0\(</stringmatch>
+<stringmatch name="Go AArch64 bare SDIV still computes its quotient" min="1" max="1">^0x00100040:[[:xdigit:]]+:.*x0\(i\) / x1\(i\)</stringmatch>
+<stringmatch name="Go AArch64 bare SDIV never gains a panic helper" min="0" max="0">^0x001000(40|44):[[:xdigit:]]+:.*call</stringmatch>
+<stringmatch name="Go AArch64 ordinary bounds folding still keeps the indexed access" min="1" max="1">return \*\(\*int64\)\(unsafe.Add\(unsafe.Pointer\(data\),index \* 8\)\)</stringmatch>
+<stringmatch name="Go AArch64 ordinary bounds folding still removes its own helper" min="0" max="0">^0x00100090:[[:xdigit:]]+:.*call</stringmatch>
+<stringmatch name="Go AArch64 an application helper with the same suffix remains" min="1" max="1">^[[:space:]]+application\.panicdivide\(\) // no-return</stringmatch>
+<stringmatch name="Go AArch64 a two-panic branch retains both arms" min="2" max="2">^0x001001(04|0c):[[:xdigit:]]+:[[:space:]]+call fruntime\.panic(Index|divide)\(</stringmatch>
+</decompilertest>

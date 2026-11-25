@@ -116,7 +116,7 @@ fn split_qualifier(tok: &str) -> (Option<String>, String) {
 /// shortcut `R`, "Bad address: R"), so it is rewritten to `%RDI` here: a token
 /// that starts with a letter and carries no `0x` cannot be any of the other
 /// forms.
-fn normalize_storage(tok: &str) -> String {
+pub(crate) fn normalize_storage(tok: &str) -> String {
     let bare_name = tok.starts_with(|c: char| c.is_ascii_alphabetic())
         && !tok.contains("0x")
         && !tok.contains("0X")
@@ -170,6 +170,19 @@ fn take_token(s: &str) -> (&str, &str) {
         Some(at) => (&s[..at], s[at..].trim_start()),
         None => (s, ""),
     }
+}
+
+pub(crate) fn jump_targets(text: &str) -> Result<(u64, Vec<u64>), String> {
+    let mut tokens = text.split_whitespace();
+    let site = tokens.next().and_then(parse_vma).ok_or("jumptable needs a hex branch address")?;
+    let mut targets = tokens.map(|s| parse_vma(s).ok_or_else(|| format!("invalid jump destination {s:?}")))
+        .collect::<Result<Vec<_>, _>>()?;
+    if targets.is_empty() {
+        return Err("jumptable needs at least one taken destination".into());
+    }
+    targets.sort_unstable();
+    targets.dedup();
+    Ok((site, targets))
 }
 
 /// Parse one directive line.
@@ -282,6 +295,38 @@ pub fn parse_directive(spec: &str) -> Result<Directive, String> {
             }
             Body::Type { func, symbol, decl: decl.to_string() }
         }
+        "format" => {
+            let (addr, tail) = take_token(rest);
+            let (func, addr) = split_qualifier(addr);
+            let addr = parse_vma(&addr).ok_or_else(|| bad("format needs a hex <addr>"))?;
+            let (format, tail) = take_token(tail);
+            if crate::kuna_constformat::format_code(format).is_none() {
+                return Err(bad("format needs <addr> then one of hex, dec, oct, bin, char"));
+            }
+            let (value, tail) = take_token(tail);
+            if !tail.is_empty() {
+                return Err(bad("format takes exactly <addr> <format> [<value>]"));
+            }
+            let value = match value {
+                "" => None,
+                value => Some(
+                    crate::kuna_constformat::parse_value(value)
+                        .ok_or_else(|| bad("format's <value> is decimal, or hex with 0x"))?,
+                ),
+            };
+            Body::Format { func, addr, format: format.to_string(), value }
+        }
+        "isolate" => {
+            let (symbol, tail) = take_token(rest);
+            let (func, symbol) = split_qualifier(symbol);
+            if symbol.is_empty() {
+                return Err(bad("isolate needs <symbol>"));
+            }
+            if !tail.is_empty() {
+                return Err(bad("isolate takes exactly <symbol>"));
+            }
+            Body::Isolate { func, symbol }
+        }
         "readonly" | "volatile" => {
             let (addr, size) = parse_range(rest)
                 .ok_or_else(|| bad("needs <addr>+<size> (e.g. 0x404028+8)"))?;
@@ -312,6 +357,10 @@ pub fn parse_directive(spec: &str) -> Result<Directive, String> {
             }
             Body::Bytes { addr, data }
         }
+        "jumptable" => {
+            let (addr, targets) = jump_targets(rest).map_err(|e| bad(&e))?;
+            Body::JumpTable { addr, targets }
+        }
         "flow" => {
             let (addr, kind) = take_token(rest);
             let (func, addr) = split_qualifier(addr);
@@ -329,12 +378,31 @@ pub fn parse_directive(spec: &str) -> Result<Directive, String> {
             }
             Body::Flow { func, addr, kind: kind.to_string() }
         }
+        "callee" => {
+            let (addr, callee) = take_token(rest);
+            let (func, addr) = split_qualifier(addr);
+            let addr = parse_vma(&addr).ok_or_else(|| bad("callee needs a hex <callsite>"))?;
+            let (callee, tail) = take_token(callee);
+            if callee.is_empty() || !tail.is_empty() {
+                return Err(bad("callee takes exactly <callsite> <name|address>"));
+            }
+            Body::Callee { func, addr, callee: callee.to_string() }
+        }
+        "callproto" => {
+            let (site, decl) = take_token(rest);
+            let (func, site) = split_qualifier(site);
+            let addr = parse_vma(&site).ok_or_else(|| bad("callproto needs a hex <callsite>"))?;
+            if decl.is_empty() {
+                return Err(bad("callproto needs <callsite> then a C declaration"));
+            }
+            Body::CallProto { func, addr, decl: decl.to_string() }
+        }
         "" => return Err("--assert: empty directive".into()),
         other => {
             return Err(format!(
                 "--assert {raw:?}: unknown directive {other:?} (want one of \
-                 function, typedef, prototype, data, param, return, comment, flow, name, \
-                 type, readonly, volatile, bytes)"
+                 function, typedef, prototype, callproto, data, param, return, comment, flow, jumptable, callee, \
+                 name, type, format, isolate, readonly, volatile, bytes)"
             ))
         }
     };

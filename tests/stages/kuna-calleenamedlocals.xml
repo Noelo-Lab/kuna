@@ -217,6 +217,8 @@ c3c3c3
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu s4</com>
+  <!-- Reload the active entry for a fresh edit probe. -->
+  <com>lo fu s4</com>
   <com>decompile</com>
   <com>rename v2 v1</com>
   <com>decompile</com>
@@ -248,6 +250,7 @@ c3c3c3
   <com>lo fu m2</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu s4</com>
   <com>lo fu s4</com>
   <com>decompile</com>
   <com>rename v2 v1</com>

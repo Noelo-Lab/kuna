@@ -118,3 +118,66 @@ fn required_commands_must_exist_and_succeed() {
     }))
     .is_err());
 }
+
+#[cfg(unix)]
+fn fake_compiler(program: &str) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let path = common::scratch_file("fake-sanitizer-compiler", "sh");
+    std::fs::write(
+        &path,
+        format!(
+            "#!/bin/sh\nwhile [ \"$#\" -gt 1 ]; do [ \"$1\" = -o ] && out=\"$2\"; shift; done\nprintf '#!/bin/sh\\n{program}\\n' > \"$out\"\nchmod +x \"$out\"\n"
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    path
+}
+
+#[cfg(unix)]
+#[test]
+fn only_a_sanitizer_runtime_that_hangs_is_skipped() {
+    let hanging = fake_compiler("exec sleep 600");
+    let start = Instant::now();
+    assert!(!process::probe_sanitizer(
+        &hanging,
+        &["-fsanitize=address"],
+        Duration::from_millis(500)
+    ));
+    assert!(start.elapsed() < Duration::from_secs(30));
+    let working = fake_compiler("exit 0");
+    assert!(process::probe_sanitizer(
+        &working,
+        &["-fsanitize=address"],
+        Duration::from_secs(30)
+    ));
+    let failing = fake_compiler("exit 1");
+    assert!(process::probe_sanitizer(
+        &failing,
+        &["-fsanitize=address"],
+        Duration::from_secs(30)
+    ));
+    let missing = common::scratch_file("absent-sanitizer-compiler", "sh");
+    assert!(process::probe_sanitizer(
+        &missing,
+        &["-fsanitize=address"],
+        Duration::from_secs(30)
+    ));
+    for path in [hanging, working, failing] {
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[test]
+fn capped_runs_keep_the_uncapped_results() {
+    use common::process::Capped;
+    let output = child("fail").capped_output().unwrap();
+    assert_eq!(output.status.code(), Some(7));
+    assert_eq!(output.stderr, b"child diagnostic\n");
+    assert_eq!(child("fail").capped_status().unwrap().code(), Some(7));
+    let absent = common::scratch_file("capped-absent-tool", "exe");
+    assert_eq!(
+        Command::new(absent).capped_output().unwrap_err().kind(),
+        std::io::ErrorKind::NotFound
+    );
+}

@@ -157,7 +157,34 @@ pub struct DirectiveSymbol {
 }
 
 pub struct Funcdata {
+    /// (kuna `switchextent`) The jump tables the function's extent dispatches
+    /// through, and those a Swift enum's case indexes, once a flow with a
+    /// computed jump decoded it (`p2_lift/kuna_switchextent.rs`).
+    pub(crate) kuna_extent_tables: Option<std::rc::Rc<crate::kuna_switchextent::ExtentTables>>,
+    /// (kuna `switchextent`) The tables of the functions after this one, once
+    /// a table that is the function's last asked for them.
+    pub(crate) kuna_later_tables: Option<std::rc::Rc<Vec<u64>>>,
+    /// (kuna `switchextent`) The table whose sanity check asked the flow for
+    /// [`Self::kuna_later_tables`], shared with the jump-table partial.
+    pub(crate) kuna_later_wanted: std::rc::Rc<std::cell::Cell<Option<u64>>>,
+    pub(crate) open_dispatch_returns: Vec<crate::p2_lift::kuna_opendispatch::ReturnGuard>,
     pub(crate) kuna_x87_empty_returns: Vec<Address>,
+    /// (kuna `varargsave`) Set when the first heritage pass folded this
+    /// function's variadic register-save prologue (`p4_calls/kuna_varargsave.rs`).
+    pub(crate) kuna_vararg_save: bool,
+    /// (kuna) Whether the function's code is unoptimized, decided once after
+    /// the first heritage pass (`p3_dataflow/kuna_unoptimized.rs`).
+    pub(crate) kuna_unoptimized: Option<bool>,
+    /// (kuna `returndup auto`) The return statements read at the first
+    /// heritage pass (`p8_structure/kuna_o0returns.rs`).
+    pub(crate) kuna_o0returns: Option<Box<crate::p8_structure::kuna_o0returns::Record>>,
+    /// (kuna `iteregion auto`) The conditional values read at the first
+    /// heritage pass (`p8_structure/kuna_o0select.rs`).
+    pub(crate) kuna_o0select: Option<Box<crate::p8_structure::kuna_o0select::Record>>,
+    /// (kuna `loweredswitch auto`) How the conditional branches of an
+    /// unoptimized function were compiled, read at the first heritage pass
+    /// (`p2_lift/kuna_o0switch.rs`).
+    pub(crate) kuna_o0switch: Option<Box<crate::p2_lift::kuna_o0switch::Record>>,
     pub(crate) kuna_fpu_trunc_views: Vec<OpId>,
     /// Boolean properties associated with \b this function (C++ `flags`)
     flags: uint4,
@@ -334,6 +361,8 @@ pub struct Funcdata {
     qlst: Vec<FuncCallSpecs>,
     /// Proofs belong to this entry's flow only, and are rebuilt after clear/restart.
     pub(crate) ppc32_pic_calls: std::collections::BTreeMap<u64, crate::kuna_ppc32piccalls::CallBinding>,
+    /// (kuna tailform) Where flow warned that a call does not return.
+    kuna_noreturn_notes: Vec<Address>,
     /// HighVariable merging engine (C++ `Merge covermerge`, `funcdata.hh:91`).
     ///
     /// The C++ `Funcdata` owns a single `Merge` whose `copyTrims` accumulator
@@ -379,6 +408,7 @@ pub struct Funcdata {
     pub(crate) stack_object_assertions: Vec<crate::kuna_stackobjectasserts::ObjectAssertion>,
     pub(crate) stack_object_bound_uses: std::collections::BTreeSet<(crate::kuna_stackobjects::SourcePoint, i32)>,
     pub(crate) stack_alias_holds: Option<std::collections::BTreeSet<VarnodeId>>,
+    pub(crate) stack_frame_published: Option<i64>,
     pub(crate) callee_memory: std::collections::HashMap<
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_calleememory::CalleeMemory>,
@@ -441,6 +471,9 @@ pub struct Funcdata {
     /// is what lets the front-ends report the rejection (`--assert` ledger, exit
     /// code) while still emitting the C.
     kuna_rejected_flow: Vec<(Address, kuna_base::types::uint4, String)>,
+    /// (kuna `--assert callee`) The caller-stated indirect-call destinations
+    /// the followed flow did not apply, as `(call site, callee, reason)`.
+    kuna_rejected_callee: Vec<(Address, Address, String)>,
     /// (kuna `--assert`) The local-scope Symbols the `name`/`type` directives
     /// applied to THIS pass renamed, retyped or created, each keyed back to the
     /// identifier the pass printed for its variable.  A rebuilt `Funcdata` starts
@@ -516,8 +549,8 @@ pub struct Funcdata {
     kuna_own_entry_dead: Option<std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>>,
     /// (kuna `passthrough`) The same probes with what each direct call's target
     /// takes added ([`crate::kuna_calleedeadarg::reads_through_calls`]), for the
-    /// callees `protoorder` stated a prototype for.  Read only by
-    /// [`crate::p4_calls::kuna_passthrough::stated_width`].
+    /// callees `protoorder` stated a prototype for and the ones it stated
+    /// nothing for.  Read only by `passthrough`.
     kuna_callee_entry_through: std::collections::HashMap<
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
@@ -612,6 +645,9 @@ pub struct Funcdata {
     /// writes the return register, which carries no argument, just before them
     /// (`xor %eax,%eax` is SysV's vector-register count).
     kuna_passthrough_vararg_calls: Vec<crate::context::OpId>,
+    /// (kuna `passthrough`) The CALL ops the caller hands a stack argument,
+    /// past a full argument-register file.
+    kuna_passthrough_stack_arg_calls: Vec<crate::context::OpId>,
     /// (kuna `msvcbyval`) The calls whose by-value slot `ActionDefaultParams`
     /// sized, with the constructor call that builds each.
     kuna_msvc_byval_sites: Vec<crate::p4_calls::kuna_msvcbyval::ByvalSite>,
@@ -642,6 +678,8 @@ pub struct Funcdata {
     /// (kuna `elfmain`) The C runtime's `main` declaration this function's inputs
     /// take, when it is an executable's own `main`. See [`crate::kuna_elfmaindecl`].
     kuna_elfmain: Option<std::rc::Rc<crate::kuna_elfmaindecl::Runtime>>,
+    pub(crate) kuna_go_receiver: Option<crate::kuna_gopointermethod::Receiver>,
+    go_string_input: Option<Box<crate::kuna_gostringinput::GoStringInput>>,
     /// (kuna `swiftcall`) Names and types for the inputs this function's
     /// analysis recovers. See [`crate::kuna_inputhints`].
     kuna_input_hints: Option<std::rc::Rc<Vec<crate::kuna_inputhints::InputHint>>>,
@@ -684,6 +722,7 @@ pub struct Funcdata {
     /// the return-half placement test
     /// ([`crate::kuna_retpushedhalf::PushedRegisters`]).
     kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters,
+    pub(crate) kuna_atomic_xadds: Vec<crate::p2_lift::kuna_atomicxadd::Instruction>,
 }
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
@@ -765,8 +804,17 @@ impl Funcdata {
         };
 
         Ok(Funcdata {
+            open_dispatch_returns: Vec::new(),
             kuna_fpu_trunc_views: Vec::new(),
+            kuna_extent_tables: None,
+            kuna_later_tables: None,
+            kuna_later_wanted: std::rc::Rc::default(),
             kuna_x87_empty_returns: Vec::new(),
+            kuna_vararg_save: false,
+            kuna_unoptimized: None,
+            kuna_o0returns: None,
+            kuna_o0select: None,
+            kuna_o0switch: None,
             flags: 0,
             clean_up_index: 0,
             high_level_index: 0,
@@ -820,6 +868,7 @@ impl Funcdata {
             heritage: crate::heritage::Heritage::new(),
             qlst: Vec::new(),
             ppc32_pic_calls: Default::default(),
+            kuna_noreturn_notes: Vec::new(),
             covermerge: None,
             cover_blocks: None,
             affecting_ops_revision: 0,
@@ -832,6 +881,7 @@ impl Funcdata {
             stack_object_assertions: Vec::new(),
             stack_object_bound_uses: std::collections::BTreeSet::new(),
             stack_alias_holds: None,
+            stack_frame_published: None,
             callee_memory: std::collections::HashMap::new(),
             pending_comments: Vec::new(),
             kuna_infertypes_settled: false,
@@ -841,6 +891,7 @@ impl Funcdata {
             kuna_call_mechanisms: Default::default(),
             kuna_fspec_handles: Vec::new(),
             kuna_rejected_flow: Vec::new(),
+            kuna_rejected_callee: Vec::new(),
             kuna_directive_symbols: Vec::new(),
             kuna_prior_names: Default::default(),
             kuna_default_name_end: 1,
@@ -885,6 +936,7 @@ impl Funcdata {
             kuna_callret_returned: Vec::new(),
             kuna_passthrough_claims: Vec::new(),
             kuna_passthrough_vararg_calls: Vec::new(),
+            kuna_passthrough_stack_arg_calls: Vec::new(),
             kuna_msvc_byval_sites: Vec::new(),
             kuna_readarg_vararg_calls: Vec::new(),
             kuna_passthrough_variadic: false,
@@ -894,6 +946,8 @@ impl Funcdata {
             kuna_calleevote_inputs: None,
             kuna_callerargs: None,
             kuna_elfmain: None,
+            kuna_go_receiver: None,
+            go_string_input: None,
             kuna_input_hints: None,
             kuna_calleevote_closed: false,
             kuna_elemptr_blocked: None,
@@ -907,6 +961,7 @@ impl Funcdata {
             kuna_elemptr_no_objects: false,
             kuna_elemptr_stated: std::collections::HashMap::new(),
             kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters::default(),
+            kuna_atomic_xadds: Vec::new(),
         })
     }
 
@@ -953,6 +1008,7 @@ impl Funcdata {
     /// ([`Self::drain_pending_comments`]) and flushed by the decompile drive.
     pub fn warning(&mut self, txt: &str, ad: &Address) {
         let msg = self.warning_prefix() + txt;
+        self.kuna_note_noreturn(crate::architecture::comment_type::warning, ad, &msg);
         self.pending_comments.push((
             crate::architecture::comment_type::warning,
             ad.clone(),
@@ -994,6 +1050,11 @@ impl Funcdata {
         std::mem::take(&mut self.pending_comments)
     }
 
+    /// Discard the buffered comments of any type in `types`.
+    pub fn drop_pending_comments(&mut self, types: kuna_base::types::uint4) {
+        self.pending_comments.retain(|(tp, _, _)| tp & types == 0);
+    }
+
     /// How many analysis comments are buffered (a mark for
     /// [`Self::truncate_pending_comments`]).
     pub fn pending_comment_count(&self) -> usize {
@@ -1030,7 +1091,20 @@ impl Funcdata {
         ad: Address,
         txt: String,
     ) {
+        self.kuna_note_noreturn(tp, &ad, &txt);
         self.pending_comments.push((tp, ad, txt));
+    }
+
+    /// (kuna tailform) Remember a warning the printer shows as `// no-return`.
+    fn kuna_note_noreturn(&mut self, tp: kuna_base::types::uint4, ad: &Address, txt: &str) {
+        if tp == crate::architecture::comment_type::warning && crate::printc::warning_slug(txt) == "no-return" {
+            self.kuna_noreturn_notes.push(ad.clone());
+        }
+    }
+
+    /// (kuna tailform) Whether flow warned that the call at `ad` does not return.
+    pub fn kuna_noreturn_note(&self, ad: &Address) -> bool {
+        self.kuna_noreturn_notes.contains(ad)
     }
 
     /// (kuna) Record why the decompile pipeline aborted for this function.
@@ -1070,6 +1144,21 @@ impl Funcdata {
     /// (kuna) The flow overrides this function's flow follow refused.
     pub fn kuna_rejected_flow_overrides(&self) -> &[(Address, kuna_base::types::uint4, String)] {
         &self.kuna_rejected_flow
+    }
+
+    /// (kuna) Record a stated indirect-call destination the flow did not apply.
+    /// Idempotent per call site.
+    pub fn note_rejected_callee_override(&mut self, site: Address, callee: Address, reason: &str) {
+        if self.kuna_rejected_callee.iter().any(|(s, _, _)| s == &site) {
+            return;
+        }
+        self.kuna_rejected_callee.push((site, callee, reason.to_string()));
+    }
+
+    /// (kuna) The stated indirect-call destinations this function's flow did
+    /// not apply.
+    pub fn kuna_rejected_callee_overrides(&self) -> &[(Address, Address, String)] {
+        &self.kuna_rejected_callee
     }
 
     /// (kuna `--assert`) The Symbols a `name`/`type` directive touched on this pass.
@@ -1231,6 +1320,16 @@ impl Funcdata {
     ) -> Option<&crate::kuna_calleedeadarg::CalleeEntryDead> {
         let sp = entry.get_space()?;
         self.kuna_callee_entry_dead.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
+    }
+
+    /// (kuna `calleefilledarg`) The same probe, shared, for a `ParamActive` to
+    /// hold through `fillinMap`.
+    pub fn kuna_callee_entry_dead_shared(
+        &self,
+        entry: &Address,
+    ) -> Option<std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>> {
+        let sp = entry.get_space()?;
+        self.kuna_callee_entry_dead.get(&(sp.get_index(), entry.get_offset())).cloned()
     }
 
     /// (kuna `hiddenretarg`) Remember the leaves of a value vetoed from a call.
@@ -1634,6 +1733,14 @@ impl Funcdata {
         self.kuna_elfmain.as_deref()
     }
 
+    pub(crate) fn set_go_string_input(&mut self, formal: Option<crate::kuna_gostringinput::GoStringInput>) {
+        self.go_string_input = formal.map(Box::new);
+    }
+
+    pub(crate) fn go_string_input(&self) -> Option<&crate::kuna_gostringinput::GoStringInput> {
+        self.go_string_input.as_deref()
+    }
+
     /// (kuna `swiftcall`) Seed the input hints. See [`crate::kuna_inputhints`].
     pub fn kuna_set_input_hints(&mut self, hints: Option<std::rc::Rc<Vec<crate::kuna_inputhints::InputHint>>>) {
         self.kuna_input_hints = hints;
@@ -1820,6 +1927,16 @@ impl Funcdata {
     /// (kuna `passthrough`) The CALL ops set up as variadic calls.
     pub fn kuna_passthrough_vararg_calls(&self) -> &[crate::context::OpId] {
         &self.kuna_passthrough_vararg_calls
+    }
+
+    /// (kuna `passthrough`) Record the CALL ops handed a stack argument.
+    pub fn kuna_set_passthrough_stack_arg_calls(&mut self, ops: Vec<crate::context::OpId>) {
+        self.kuna_passthrough_stack_arg_calls = ops;
+    }
+
+    /// (kuna `passthrough`) The CALL ops handed a stack argument.
+    pub fn kuna_passthrough_stack_arg_calls(&self) -> &[crate::context::OpId] {
+        &self.kuna_passthrough_stack_arg_calls
     }
 
     /// (kuna `msvcbyval`) Record the calls whose by-value slot was sized.
@@ -3467,17 +3584,42 @@ impl Funcdata {
             return;
         }
         let homes = self.kuna_storage_sources.entry(destination).or_default();
+        // Preserve first-seen order. Index only large merges so small vectors
+        // and single-source updates do not allocate a temporary hash table.
+        let address_key = |address: &Address| {
+            use kuna_base::address::AddrSpacePtr;
+            let space = match address.base_ptr() {
+                AddrSpacePtr::Null => 0,
+                AddrSpacePtr::Max => usize::MAX,
+                AddrSpacePtr::Spc(space) => std::rc::Rc::as_ptr(space) as usize,
+            };
+            (space, address.get_offset())
+        };
+        let key = |source: &crate::kuna_varsources::StorageSource| {
+            (address_key(&source.address), source.size, source.write_address.as_ref().map(address_key))
+        };
+        let mut seen = (homes.len() >= 64 && sources.size_hint().0 >= 16).then(|| {
+            let mut seen = crate::kuna_fasthash::FxHashSet::default();
+            seen.reserve(homes.len());
+            seen.extend(homes.iter().map(key));
+            seen
+        });
         for source in sources {
             if Self::kuna_storage_write_matches(&self.kuna_denied_storage_writes, &source)
                 && !Self::kuna_storage_write_matches(&self.kuna_meaningful_storage_writes, &source)
             {
                 continue;
             }
-            if !homes.iter().any(|home| {
+            let new = if let Some(seen) = &mut seen {
+                seen.insert(key(&source))
+            } else {
+                !homes.iter().any(|home| {
                 home.address == source.address
                     && home.size == source.size
                     && home.write_address == source.write_address
-            }) {
+                })
+            };
+            if new {
                 homes.push(source);
             }
         }
@@ -4109,9 +4251,11 @@ impl Funcdata {
     /// op's parent, splice it onto the per-op intrusive basic-block list before
     /// `before`, then compute `ordbefore`/`ordafter` from neighbours and either
     /// set an overflow-safe midpoint or recompute the whole order. An append that
-    /// finds no room renumbers into the lower half of the order space, so later
-    /// appends do not renumber the block again every few ops. The BRANCHIND
-    /// `f_switch_out` mark is applied via the block flags.
+    /// finds no room renumbers into the lower half of the order space, and an
+    /// append that makes a block 256 ops or longer takes a gap that shrinks with
+    /// the block's length, so each renumbering leaves room for as many appends as
+    /// the block already holds and building a block stays linear in its ops.
+    /// The BRANCHIND `f_switch_out` mark is applied via the block flags.
     pub fn bb_insert_op(&mut self, op: OpId, bl: BlockId, before: Option<OpId>) {
         if self.op_is_call_or_store(op) {
             self.affecting_ops_changed();
@@ -4149,7 +4293,8 @@ impl Funcdata {
         // on overflow) else the order of the op we inserted before.
         let ordafter: uintm = match before {
             None => {
-                let oa = ordbefore.wadd(0x1000000);
+                let gap = (uintm::MAX / self.bb_op_len(bl) as uintm).min(0x1000000);
+                let oa = ordbefore.wadd(gap);
                 if oa <= ordbefore {
                     uintm::MAX
                 } else {
@@ -4331,18 +4476,26 @@ impl Funcdata {
     /// given (type-locked, equates, asserted identities) and the prototype only
     /// its locked parts, so a restarted analysis starts where a fresh decompile
     /// does. The W3 IR clears (`clearBlocks`, `obank.clear`, `vbank.clear`) and
-    /// the flag/index reset are faithful. Buffered comments survive, as C++
-    /// comments already in the database survive a restart.
+    /// the flag/index reset are faithful. Buffered comments survive; the
+    /// restart drive drops the warnings (`refollow_flow`).
     pub fn clear(&mut self) {
+        self.kuna_atomic_xadds.clear();
         self.ppc32_pic_calls.clear();
+        self.kuna_noreturn_notes.clear();
         self.kuna_regnarrow_runs = 0;
         self.kuna_regnarrow_values.clear();
         self.kuna_regnarrow_failed.clear();
         self.kuna_regsigned_values.clear();
 
         self.kuna_call_mechanisms = Default::default();
+        self.open_dispatch_returns.clear();
         self.kuna_fpu_trunc_views.clear();
         self.kuna_x87_empty_returns.clear();
+        self.kuna_vararg_save = false;
+        self.kuna_unoptimized = None;
+        self.kuna_o0returns = None;
+        self.kuna_o0select = None;
+        self.kuna_o0switch = None;
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).
         self.flags &= !(funcdata_flags::highlevel_on
             | funcdata_flags::blocks_generated
@@ -4387,6 +4540,7 @@ impl Funcdata {
         self.stack_objects.clear();
         self.stack_object_bound_uses.clear();
         self.stack_alias_holds = None;
+        self.stack_frame_published = None;
         self.callee_memory.clear();
         self.clear_blocks();
         self.obank.clear();
@@ -4425,6 +4579,7 @@ impl Funcdata {
         self.kuna_callee_split_calls.clear();
         self.kuna_passthrough_claims.clear();
         self.kuna_passthrough_vararg_calls.clear();
+        self.kuna_passthrough_stack_arg_calls.clear();
         self.kuna_msvc_byval_sites.clear();
         self.kuna_readarg_vararg_calls.clear();
         self.kuna_passthrough_variadic = false;
@@ -4856,7 +5011,9 @@ impl Funcdata {
 
     /// C++ `Varnode::findSubpieceShadow` (`varnode.cc:1025-1072`): does `vn`
     /// equal `whole` truncated by `least_byte` least-significant bytes, allowing
-    /// COPY/MULTIEQUAL in the flow path (bounded recursion depth 1).
+    /// COPY/MULTIEQUAL in the flow path (bounded recursion depth 1).  A constant
+    /// `whole` wider than 8 bytes holds zero above bit 63, so a truncation of 8
+    /// or more bytes reads 0 (the C++ shift is undefined there).
     fn find_subpiece_shadow(&self, vn: VarnodeId, least_byte: int4, whole: VarnodeId, recurse: int4) -> bool {
         let vn = self.skip_copy_chain(vn);
         let v = match self.vbank.get(vn) {
@@ -4873,7 +5030,7 @@ impl Funcdata {
                 if !wv.get_addr().is_constant() {
                     return false;
                 }
-                let off = (wv.get_offset() >> (least_byte * 8))
+                let off = wv.get_offset().checked_shr(least_byte as u32 * 8).unwrap_or(0)
                     & kuna_base::address::calc_mask(v.get_size());
                 return off == v.get_offset();
             }
@@ -5649,10 +5806,7 @@ impl<'a> FuncdataCoverCtx<'a> {
             table
         });
         if let Some(&Some(bid)) = usize::try_from(index).ok().and_then(|at| table.get(at)) {
-            debug_assert!((0..n)
-                .map(|i| self.fd.bblocks_get_block(i))
-                .find(|&b| self.fd.bblocks.block(b).get_index() == index)
-                .is_some_and(|b| b == bid));
+            debug_assert_eq!(self.fd.bblocks.block(bid).get_index(), index);
             return bid;
         }
         for i in 0..n {
@@ -6585,14 +6739,14 @@ mod tests {
         let mut fd = build_fd();
         let (block, _) = make_block_with_ops(&mut fd, 1);
         let start = fd.affecting_ops_revision();
-        for i in 0..20_000u64 {
+        for i in 0..200_000u64 {
             let op = fd.obank.create_at(1, Address::new(ram_space(&fd), 0x2000 + i));
             fd.obank.change_opcode(op, TypeOp::new(OpCode::CPUI_COPY, 0, "COPY"));
             fd.bb_insert_op(op, block, None);
         }
         assert_strict_block_order(&fd, block);
         let renumbers = fd.affecting_ops_revision() - start;
-        assert!(renumbers <= 100, "{renumbers} renumbers");
+        assert!(renumbers <= 16, "{renumbers} renumbers");
     }
 
     #[test]
@@ -6973,5 +7127,23 @@ mod tests {
         fd.clear_covermerge();
         let third = fd.with_covermerge(|merge, _data| merge.copy_trims_len());
         assert_eq!(third, 0);
+    }
+
+    /// Kuna #1674: a constant wider than 8 bytes holds zero above bit 63, so a
+    /// piece 8 or more bytes into it shadows only the constant 0.
+    #[test]
+    fn partial_copy_shadow_reads_zero_above_bit_63_of_a_wide_constant() {
+        let mut fd = build_fd();
+        let zero16 = fd.new_constant(16, 0);
+        let low16 = fd.new_constant(16, 0x1234);
+        let zero8 = fd.new_constant(8, 0);
+        let low8 = fd.new_constant(8, 0x1234);
+        let zero4 = fd.new_constant(4, 0);
+        assert!(fd.varnode_partial_copy_shadow(low8, low16, 0));
+        assert!(fd.varnode_partial_copy_shadow(zero8, zero16, 8));
+        assert!(fd.varnode_partial_copy_shadow(zero8, low16, 8));
+        assert!(fd.varnode_partial_copy_shadow(zero4, low16, 12));
+        assert!(!fd.varnode_partial_copy_shadow(low8, low16, 8));
+        assert!(!fd.varnode_partial_copy_shadow(low8, zero16, 8));
     }
 }

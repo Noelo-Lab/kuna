@@ -134,6 +134,22 @@ pub fn read_code(data: &mut Funcdata, callother: OpId, code: &VarnodeData) -> Ku
 /// [`kuna_sparcstructret`](crate::kuna_sparcstructret) does for the same
 /// lowering of SPARC's `unimp`.
 pub fn brk_site(data: &Funcdata, op: OpId, breakpoint: u32) -> Option<(OpId, uintb)> {
+    let id = trap_producer(data, op)?;
+    let prev = data.obank().get(id)?;
+    if prev.num_input() != 3 {
+        return None;
+    }
+    let constant = |slot| prev.get_in(slot).and_then(|v| data.vbank().get(v)).filter(|v| v.is_constant());
+    if constant(0)?.get_offset() != breakpoint as uintb {
+        return None;
+    }
+    constant(1).filter(|v| v.get_size() == 2).map(|v| (id, v.get_offset()))
+}
+
+/// The CALLOTHER that wrote exactly the storage the dead-list BRANCHIND `op`
+/// jumps through, in the same instruction, with nothing in between writing it;
+/// `None` for any other producer.
+pub fn trap_producer(data: &Funcdata, op: OpId) -> Option<OpId> {
     let branch = data.obank().get(op)?;
     if branch.code() != OpCode::CPUI_BRANCHIND || !data.obank().on_dead_list(op) {
         return None;
@@ -149,14 +165,7 @@ pub fn brk_site(data: &Funcdata, op: OpId, breakpoint: u32) -> Option<(OpId, uin
         let out = prev.get_out().and_then(|v| data.vbank().get(v));
         if let Some(out) = out.filter(|v| v.intersects(target)) {
             let exact = out.get_addr() == target.get_addr() && out.get_size() == target.get_size();
-            if !exact || prev.code() != OpCode::CPUI_CALLOTHER || prev.num_input() != 3 {
-                return None;
-            }
-            let constant = |slot| prev.get_in(slot).and_then(|v| data.vbank().get(v)).filter(|v| v.is_constant());
-            if constant(0)?.get_offset() != breakpoint as uintb {
-                return None;
-            }
-            return constant(1).filter(|v| v.get_size() == 2).map(|v| (id, v.get_offset()));
+            return (exact && prev.code() == OpCode::CPUI_CALLOTHER).then_some(id);
         }
         if prev.is_instruction_start() {
             return None;

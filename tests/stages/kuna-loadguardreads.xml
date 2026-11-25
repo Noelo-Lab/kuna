@@ -23,11 +23,11 @@
   <com>print C</com>
   <com>count pcode</com>
 </script>
-<stringmatch name="loadguardreads #1: gather prints" min="1" max="1">^int8 gather\(int8 a0,unsigned long a1\)$</stringmatch>
+<stringmatch name="loadguardreads #1: gather prints" min="1" max="1">^int8 gather\(int8 a0,uint1 \*a1\)$</stringmatch>
 <stringmatch name="loadguardreads #2: the 65 calls to reg are kept" min="65" max="65">reg\(</stringmatch>
 <stringmatch name="loadguardreads #3: the 64 struct writes each callee may read are kept" min="64" max="64">^  v[0-9]+ = v1( \+ (0x)?[0-9a-f]+)?;$</stringmatch>
-<stringmatch name="loadguardreads #4: the table is read at all 256 indexes" min="1" max="1">v5\[v4\[0xff\] &amp; 0x3f\];$</stringmatch>
+<stringmatch name="loadguardreads #4: the table is read at all 256 indexes" min="1" max="1">v3\[a1\[0xff\] &amp; 0x3f\];$</stringmatch>
 <stringmatch name="loadguardreads #5: the live IR is upstream's" min="1" max="1">Count - pcode = 11538</stringmatch>
 <stringmatch name="loadguardreads #6: no guard COPY per LOAD per range is built" min="0" max="0">Count - created = 81135</stringmatch>
-<stringmatch name="loadguardreads #7: a guard COPY is built only per Varnode reached and per guard read again" min="1" max="1">Count - created = 29824</stringmatch>
+<stringmatch name="loadguardreads #7: a guard COPY is built only per Varnode reached and per guard read again" min="1" max="1">Count - created = 29759</stringmatch>
 </decompilertest>

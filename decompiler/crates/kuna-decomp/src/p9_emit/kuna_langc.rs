@@ -157,7 +157,14 @@ impl TypeSpeller for CSpeller {
             .map(|(m, _)| m)
             .take_while(|m| m.get_metatype() != type_metatype::TYPE_CODE)
             .any(|m| matches!(m.get_metatype(), type_metatype::TYPE_PTR));
-        let base_name = if let Some(n) = self.relabel(cx, base, under_pointer) {
+        let definition_name = if cx.c_type_definition {
+            crate::printc::c_type_definition_name(base)
+        } else {
+            None
+        };
+        let base_name = if let Some(name) = definition_name {
+            name.into_owned()
+        } else if let Some(n) = self.relabel(cx, base, under_pointer) {
             n.into_owned()
         } else if base.get_name().is_empty() {
             self.anonymous(base)

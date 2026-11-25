@@ -784,6 +784,7 @@ fn assign_map_standard_input_walk() {
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
+        kuna_library_table: false,
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
@@ -851,6 +852,7 @@ fn assign_map_standard_out_hidden_return_emits_indirect_output_plus_pointer_para
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
+        kuna_library_table: false,
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
@@ -1102,6 +1104,7 @@ fn proto_model_assign_parameter_storage_orders_output_first() {
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
+        kuna_library_table: false,
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     model
@@ -2121,6 +2124,7 @@ fn modelrule_gotostack_routes_oversized_float_to_aligned_stack_footprint() {
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
+        kuna_library_table: false,
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
@@ -2156,6 +2160,7 @@ fn modelrule_precedes_metatype_fallback() {
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
+        kuna_library_table: false,
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
@@ -2200,6 +2205,7 @@ fn no_modelrule_falls_through_to_metatype_fallback() {
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
+        kuna_library_table: false,
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
@@ -2280,6 +2286,7 @@ fn w10_float_typeclass_failing_rule_does_not_short_circuit_chain() {
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
+        kuna_library_table: false,
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
@@ -2319,6 +2326,7 @@ fn w10_float_typeclass_pointermax_rule_appends_after_existing_rules() {
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
+        kuna_library_table: false,
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
@@ -2376,6 +2384,99 @@ fn explicit_return_storage_removes_only_the_model_hidden_return_input() {
     assert_eq!(prototype.get_param(1).unwrap().get_address().get_offset(), 0x10);
     assert_eq!(prototype.get_param(1).unwrap().get_name(), "second");
     assert_eq!(prototype.get_output().get_address().get_offset(), 0x100);
+}
+
+#[test]
+fn return_only_seed_preserves_partial_contract_locks() {
+    use crate::dtype::TypeFactoryImpl;
+    let (manager, reg) = manager_with_default_data_space();
+    let types = TypeFactoryImpl::new();
+    types.setup_sizes(Some(4), 8, 8);
+    let model = Rc::new(three_reg_proto_model(&manager, &reg));
+    let output = ParameterPieces {
+        addr: Address::new(reg.clone(), 0x80), type_: Some(int4_type()),
+        flags: parameter_pieces_flags::TYPELOCK,
+    };
+    for (full, input, custom_output, input_locked, output_locked) in [
+        (false, false, true, false, true),
+        (false, true, false, true, false),
+        (false, true, true, true, true),
+        (true, false, true, true, true),
+        (true, true, true, true, true),
+        (true, false, false, true, true),
+    ] {
+        let pieces = PrototypePieces {
+            outtype: full.then(int4_type),
+            intypes: if input { vec![int4_type()] } else { Vec::new() },
+            innames: if input { vec!["retained".into()] } else { Vec::new() },
+            input_storage: if input {
+                vec![(0, ParameterPieces {
+                    addr: Address::new(reg.clone(), 0x40), type_: Some(int4_type()),
+                    flags: parameter_pieces_flags::TYPELOCK | parameter_pieces_flags::NAMELOCK,
+                })]
+            } else { Vec::new() },
+            output_storage: custom_output.then(|| output.clone()),
+            first_var_arg_slot: -1,
+            ..Default::default()
+        };
+        let mut prototype = FuncProto::new();
+        for _ in 0..2 {
+            prototype.seed_locked_from_pieces(
+                &pieces, model.clone(), types.get_type_void().unwrap(), &types, &manager,
+            ).unwrap();
+            assert_eq!(prototype.is_input_locked(), input_locked, "{pieces:?}");
+            assert_eq!(prototype.is_output_locked(), output_locked, "{pieces:?}");
+            assert!(prototype.is_model_locked());
+            assert_eq!(prototype.num_params(), i32::from(input));
+            assert_eq!(prototype.flags & func_proto_flags::VOIDINPUTLOCK != 0,
+                input_locked && !input);
+            if input {
+                let parameter = prototype.get_param(0).unwrap();
+                assert_eq!(parameter.get_address(), Address::new(reg.clone(), 0x40));
+                assert_eq!(parameter.get_name(), "retained");
+                assert!(parameter.is_name_locked());
+            }
+            if custom_output {
+                assert_eq!(prototype.get_output().get_address(), output.addr);
+                assert_eq!(prototype.get_output().get_size(), 4);
+                assert_eq!(prototype.get_output_type().unwrap().get_metatype(), type_metatype::TYPE_INT);
+            }
+        }
+    }
+}
+
+#[test]
+fn return_only_seed_does_not_unlock_other_input_metadata() {
+    use crate::dtype::TypeFactoryImpl;
+    let (manager, reg) = manager_with_default_data_space();
+    let types = TypeFactoryImpl::new();
+    types.setup_sizes(Some(4), 8, 8);
+    let model = Rc::new(three_reg_proto_model(&manager, &reg));
+    for input_metadata in 0..3 {
+        let mut pieces = PrototypePieces {
+            output_storage: Some(ParameterPieces {
+                addr: Address::new(reg.clone(), 0x80), type_: Some(int4_type()),
+                flags: parameter_pieces_flags::TYPELOCK,
+            }),
+            first_var_arg_slot: -1,
+            ..Default::default()
+        };
+        match input_metadata {
+            0 => pieces.first_var_arg_slot = 0,
+            1 => pieces.innames.push("untyped_input".into()),
+            _ => pieces.input_storage.push((0, ParameterPieces {
+                addr: Address::new(reg.clone(), 0x40), type_: Some(int4_type()),
+                flags: parameter_pieces_flags::TYPELOCK,
+            })),
+        }
+        let mut prototype = FuncProto::new();
+        prototype.seed_locked_from_pieces(
+            &pieces, model.clone(), types.get_type_void().unwrap(), &types, &manager,
+        ).unwrap();
+        assert!(prototype.is_input_locked(), "{pieces:?}");
+        assert!(prototype.is_output_locked());
+        assert_eq!(prototype.is_dotdotdot(), input_metadata == 0);
+    }
 }
 
 #[test]

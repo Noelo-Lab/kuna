@@ -1,0 +1,40 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+  <bytechunk space="ram" offset="0x100000" readonly="true">90</bytechunk>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/rust-option-niche/option-amd64</com>
+  <com>read symbols</com>
+  <com>option setlanguage rust-language</com>
+  <com>load function named_some</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function named_none</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function named_payload</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function returned_some</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function raw_null</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option setlanguage c-language</com>
+  <com>load function named_some</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Rust named niche Option tests the whole declared owner" min="2" max="2">if let ::core::option::Option::Some\(_\) = value</stringmatch>
+<stringmatch name="Rust named niche Option retains its exact nominal parameter type" min="3" max="3">unsafe fn named_(?:some|none|payload)\(mut value: core::option::Option&lt;&amp;u64&gt;\)</stringmatch>
+<stringmatch name="Rust named niche Option preserves both branch pairs and the C replay" min="6" max="6">^ +on_(?:some\(0x(?:11|1f)\)|none\(0x(?:1d|2b)\));$</stringmatch>
+<stringmatch name="Rust niche Option does not hide a consumed payload" min="1" max="1">x = \*\(value\.Some as \*mut u64\);</stringmatch>
+<stringmatch name="Rust niche Option leaves the single-word returned owner separate" min="1" max="1">if make_niche\(present,payload\)\.Some != core::ptr::null_mut\(\)</stringmatch>
+<stringmatch name="Rust niche Option does not pattern-match its returned control" min="0" max="0">if let .* = make_niche\(</stringmatch>
+<stringmatch name="Rust niche Option retains one returned control call" min="1" max="1">make_niche\(present,payload\)</stringmatch>
+<stringmatch name="Rust niche Option leaves ordinary pointer null tests unchanged" min="1" max="1">if value != core::ptr::null_mut\(\)</stringmatch>
+<stringmatch name="C niche Option retains its existing field condition" min="1" max="1">if \(value\.Some\)</stringmatch>
+<stringmatch name="C niche Option retains its existing declaration" min="1" max="1">uint8 named_some\(core::option::Option&lt;&amp;u64&gt; value\)</stringmatch>
+</decompilertest>

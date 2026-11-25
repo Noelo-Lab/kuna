@@ -1,0 +1,120 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `gotonext`: a `goto` whose target is the statement that runs next
+    anyway is left out (upstream `BlockGoto::gotoPrints`), a `goto` to the
+    statement after the innermost enclosing loop or switch prints as
+    `break;`, and the label only those gotos reached goes with them.  A switch
+    case that is a `BlockGoto` to another case chains to it, so the case sort
+    places the target right after it and the jump becomes a fall-through.
+
+    Stage / sub-stage: P8 "goto-quality".  The P0 assertion
+    `option gotonext on|off` decides the rendering; on is the default.
+
+    The bytes are decompiler/crates/kuna-analysis/tests/fixtures/gotonext.c
+    built at -O2 -fno-pie -no-pie -nostartfiles (x86-64 SysV): gcc 15.3 at
+    0x401000 (fall, arith, strcase) and clang 22.1 linked at 0x501000
+    (fall_clang).  fall has case fall-throughs, arith one case that leaves the
+    switch, strcase a loop exit to the outer loop's next iteration.
+
+    Pass 1 runs with no option line, the shipped default (on).  Pass 2
+    (`option gotonext off`) reproduces the gotos.
+-->
+<bytechunk space="ram" offset="0x401000">
+b8ffffffffc331c0c30f1f8000000000f30f1efa8d04fd0000000029f883c003c30f1f400066662e0f1f840000000000f30f1efa85f67e288d56ffb801000000
+40f6c601740a89f88d56fe83fe0174160fafc783ea020fafc783faff75f2c390b801000000c3c3660f1f840000000000f30f1efa83ff070f8783ffffff89f848
+89c23eff24c500204000660f1f440000bf03000000e876ffffff894608bf04000000e869ffffff89460c89d7e85fffffff8946108b4614c30f1f840000000000
+bf01000000e846ffffff8906bf02000000e83affffff8946048b4614c30f1f00bf05000000e826ffffff894620bf04000000e819ffffff8946248b4614c36690
+bf09000000e806ffffff89461c8b4614c30f1f400066662e0f1f840000000000f30f1efa89f089d683ff070f87d5feffff89ff3eff24fd402040000f1f440000
+89c7e8c9feffff29f0c3660f1f44000001d0c30f1f4400000fafc2c30f1f400083fa02742b89c7e9c4feffff0f1f400099f7fec30f1f400099f7fe89c7e98efe
+ffff660f1f440000f7d8c30f1f4400000fafc0c39066662e0f1f840000000000f30f1efa4989f94531d24531c0eb149083e82083f919770383ea2038c2753149
+83c001430fb63c01420fb60c0689f883ef6189ca83e96183ff1976d483f91976d738d0750b84c075d64489d0c30f1f004183c2014883c6104183fa0675ac41ba
+ffffffff4489d0c3
+</bytechunk>
+<bytechunk space="ram" offset="0x402000" readonly="true">
+c010400000000000cc1040000000000090104000000000009d10400000000000aa104000000000000011400000000000e010400000000000ed10400000000000
+50114000000000004711400000000000581140000000000040114000000000006011400000000000701140000000000078114000000000008811400000000000
+</bytechunk>
+<bytechunk space="ram" offset="0x501000">
+f30f1efa8d04fd0000000029f883c003c36666666666662e0f1f840000000000f30f1efab80100000085f60f8ede00000083fe08730789f1e99e00000089f281
+e2f8ffff7f89f183e107660f6ec7660f70d000660f6f05a50f0000660f70daf589d0660f6fc8662e0f1f840000000000660f70e1f5660ff4ca660f70c9e8660f
+f4e3660f70e4e8660f62cc660f70e0f5660ff4c2660f70c0e8660ff4e3660f70e4e8660f62c483c0f875c5660f70d1f5660f70d8f5660ff4da660ff4c1660f70
+c8ee660ff4c8660f70c3aa660ff4c3660ff4c1660f7ec039d674340fafc783f902722c0fafc783f90274240fafc783f904721c0fafc783f90474140fafc783f9
+06720c0fafc70faff883f9070f44c7c3f30f1efa83ff070f8793000000554156534889f389f941be04000000bf0200000089c83eff24c510205000bf01000000
+e8bbfeffffbf020000008903eb5189cdbf03000000e8a6feffff89e989430889cdbf04000000e895feffff89e989430c41be1000000089cfeb25bf05000000e8
+7cfeffff89432041be24000000bf04000000eb0b41be1c000000bf09000000e85cfeffff428904338b43145b415e5dc3b8ffffffffc3662e0f1f840000000000
+f30f1efa83ff07774e89f83eff24c55020500001f289d0c383fa02753d0faff689f0c30fafd689d0c35389f789d3e80dfeffff29d85bc3f7de89f0c329d689f0
+c389f089d199f7f9c389f089d199f7f989c7e9e9fdffff31c0c389f789d6e9fdfdffff666666662e0f1f840000000000f30f1efa31c0662e0f1f840000000000
+0fb614078d4a9f448d42e080f91a410fb6c80f43ca440fb60406418d509f458d48e080fa1a410fb6d1410f43d084c9740748ffc038d174c831c038d10f84dc01
+000031c031d2662e0f1f84000000000089c10fb60417440fb6541610448d409f448d48e04180f81a450fb6c1440f43c0418d429f458d4ae03c1a450fb6c9450f
+43ca4584c0b8010000000f45c1740848ffc24538c874b94538c80f847e01000031d289c86666662e0f1f84000000000089c10fb60417440fb6541620448d409f
+448d48e04180f81a450fb6c1440f43c0418d429f458d4ae03c1a450fb6c9450f43ca4584c0b8020000000f45c1740848ffc24538c874b94538c80f841e010000
+31d289c86666662e0f1f84000000000089c10fb60417440fb6541630448d409f448d48e04180f81a450fb6c1440f43c0418d429f458d4ae03c1a450fb6c9450f
+43ca4584c0b8030000000f45c1740848ffc24538c874b94538c80f84be00000031d289c86666662e0f1f84000000000089c10fb60417440fb6541640448d409f
+448d48e04180f81a450fb6c1440f43c0418d429f458d4ae03c1a450fb6c9450f43ca4584c0b8040000000f45c1740848ffc24538c874b94538c8746231c0ba05
+000000666666662e0f1f840000000000440fb60c07440fb6540650458d419f458d59e04180f81a450fb6c3450f43c1458d4a9f458d5ae04180f91a450fb6cb45
+0f43ca4584c00f44ca740848ffc04538c874bd4538c8b8ffffffff0f44c1c3
+</bytechunk>
+<bytechunk space="ram" offset="0x502000" readonly="true">
+010000000100000001000000010000003b115000000000009f115000000000004e115000000000005f1150000000000070115000000000009411500000000000
+7a115000000000008711500000000000d311500000000000fc11500000000000e311500000000000e911500000000000d8115000000000000112500000000000
+0912500000000000f711500000000000
+</bytechunk>
+<symbol space="ram" offset="0x401010" name="sink"/>
+<symbol space="ram" offset="0x401030" name="power"/>
+<symbol space="ram" offset="0x401070" name="fall"/>
+<symbol space="ram" offset="0x401120" name="arith"/>
+<symbol space="ram" offset="0x4011a0" name="strcase"/>
+<symbol space="ram" offset="0x501000" name="sink_clang"/>
+<symbol space="ram" offset="0x501020" name="power_clang"/>
+<symbol space="ram" offset="0x501110" name="fall_clang"/>
+</binaryimage>
+<script>
+  <com>lo fu fall</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu arith</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu strcase</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fall_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option gotonext off</com>
+  <com>lo fu fall</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu arith</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu strcase</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fall_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="gotonext #1: gcc case fall-throughs print without a goto by default" min="1" max="1">^    case 0:$
+^      \*a1 = sink\(1\);$
+^    case 1:$</stringmatch>
+<stringmatch name="gotonext #2: clang case 2 chains to case 3 and case 3 to case 4, so they print in order and fall through" min="1" max="1">^      a1\[2\] = sink_clang\(3\);$
+^    case 3:$
+^      a1\[3\] = sink_clang\(4\);$
+^    case 4:$</stringmatch>
+<stringmatch name="gotonext #3: the case that leaves the switch prints break" min="1" max="1">^    case 4:$
+^      break;$</stringmatch>
+<stringmatch name="gotonext #4: the inner loop exits to the outer loop's next step through break" min="2" max="2">!= v\d\) break;$</stringmatch>
+<stringmatch name="gotonext #5: with the option off the case falls into the next case through a goto -- the bug" min="1" max="1">^      \*a1 = sink\(1\);$
+^      goto label_4010cc;$
+^    case 1:$
+^label_4010cc:$</stringmatch>
+<stringmatch name="gotonext #6: off, the clang chain is lost and case 3 prints first" min="1" max="1">^  switch\(a0\) \{$
+^    case 3:$
+^label_50115f:$</stringmatch>
+<stringmatch name="gotonext #7: off, the leaving case and the loop exits jump to labels" min="1" max="1">^    case 4:$
+^      goto label_401160;$</stringmatch>
+<stringmatch name="gotonext #8: 13 gotos with the option off, 3 by default" min="16" max="16">goto label_</stringmatch>
+<stringmatch name="gotonext #9: 12 labels with the option off, 3 by default" min="15" max="15">^label_</stringmatch>
+</decompilertest>

@@ -14,6 +14,35 @@ use super::*;
 use crate::printlanguage::{parentheses, ReversePolish};
 
 #[test]
+fn max_line_size_bounds_the_comment_indent_and_survives_markup() {
+    let mut print = PrintC::new();
+    assert!(print.set_line_comment_indent(500).is_ok());
+    assert!(print.set_max_line_size(19).is_err());
+    print.set_max_line_size(40).unwrap();
+    assert!(print.set_line_comment_indent(40).is_err());
+    print.set_line_comment_indent(30).unwrap();
+    print.set_markup(true);
+    assert_eq!(print.emit_mut().get_max_line_size(), -1);
+    print.set_markup(false);
+    assert_eq!(print.emit_mut().get_max_line_size(), 40);
+    print.reset_wire_option_defaults();
+    assert_eq!(print.emit_mut().get_max_line_size(), -1);
+}
+
+#[test]
+fn go_output_never_breaks_lines() {
+    let mut print = PrintC::new();
+    print.set_max_line_size(40).unwrap();
+    print.set_name("go-language");
+    assert_eq!(print.emit_mut().get_max_line_size(), -1);
+    print.set_name("c-language");
+    assert_eq!(print.emit_mut().get_max_line_size(), 40);
+    print.set_name("go-language");
+    print.set_max_line_size(60).unwrap();
+    assert_eq!(print.emit_mut().get_max_line_size(), -1);
+}
+
+#[test]
 fn case_labels_without_ops_keep_their_numeric_value() {
     let mut print = PrintC::new();
     print.set_output_stream();
@@ -372,6 +401,139 @@ mod stack_pointer_high_leaf {
             partial_high,
             "local"
         ));
+    }
+
+    #[test]
+    fn rust_array_initialization_requires_complete_independent_contiguous_writes() {
+        use crate::dtype::DatatypeKind;
+        use std::process::Command;
+        for (count, mutation) in [2, 5, 8].into_iter().flat_map(|count| (0..10).map(move |m| (count, m))) {
+            let (mut fd, register) = build_fd();
+            fd.get_func_proto_mut().attach_internal_store(Rc::new(
+                Datatype::new(0, type_metatype::TYPE_VOID),
+            ));
+            let root = fd.bblocks_root_pub();
+            let block = fd.bblocks_mut().new_block_basic(root);
+            let word = Rc::new(Datatype::new_with_align(8, 8, type_metatype::TYPE_UINT));
+            let mut array = Datatype::new_with_align(count * 8, 8, type_metatype::TYPE_ARRAY);
+            array.kind = DatatypeKind::Array { arrayof: Rc::clone(&word), arraysize: count };
+            let array = Rc::new(array);
+            let mut outputs = Vec::new();
+            let mut operations = Vec::new();
+            for i in 0..count as u64 {
+                let out = fd.new_varnode(
+                    8,
+                    &Address::new(Rc::clone(&register), 0x20 + i * 8),
+                    Some(Rc::clone(&word)),
+                );
+                let value = fd.new_constant(8, i + 3);
+                let op = fd.new_op(1, Address::new(Rc::clone(&register), 0x1000 + i));
+                fd.op_set_opcode_code(op, OpCode::CPUI_COPY);
+                fd.op_set_input(op, value, 0).unwrap();
+                fd.op_set_output(op, out).unwrap();
+                fd.op_insert_end(op, block);
+                outputs.push(out);
+                operations.push(op);
+            }
+            let input_type = if mutation == 9 {
+                Rc::new(Datatype::new_with_align(8, 8, type_metatype::TYPE_INT))
+            } else {
+                Rc::clone(&word)
+            };
+            let input = fd.new_varnode(
+                8, &Address::new(Rc::clone(&register), if mutation == 8 { 0x20 } else { 0x200 }), Some(input_type),
+            );
+            let input = fd.set_input_varnode(input).unwrap();
+            fd.set_high_level();
+            let high = fd.vbank().get(input).unwrap().get_high().unwrap();
+            fd.high_bank_mut().get_mut(high).unwrap().set_kuna_name("value");
+            for (i, &out) in outputs.iter().enumerate() {
+                let high = fd.vbank().get(out).unwrap().get_high().unwrap();
+                let h = fd.high_bank_mut().get_mut(high).unwrap();
+                h.set_kuna_name(if mutation == 3 && i == 1 { "other" } else { "array" });
+                h.set_symbol_type(Rc::clone(&array));
+                h.set_symbol_offset(if mutation == 1 { 0 } else { i as i32 * 8 });
+            }
+            match mutation {
+                2 => {
+                    fd.op_set_input(operations[1], outputs[0], 0).unwrap();
+                }
+                4 => {
+                    fd.op_uninsert(operations[1]);
+                }
+                5 => {
+                    fd.vbank_mut().get_mut(outputs[0]).unwrap().set_flags_pub(
+                        crate::varnode::varnode_flags::volatil,
+                    );
+                }
+                6 => {
+                    let call = fd.new_op(1, Address::new(register, 0x1002));
+                    fd.op_set_opcode_code(call, OpCode::CPUI_CALL);
+                    let destination = fd.new_constant(8, 0x2000);
+                    fd.op_set_input(call, destination, 0).unwrap();
+                    fd.op_insert_before(call, operations[1]);
+                }
+                7..=9 => {
+                    fd.op_set_input(operations[1], input, 0).unwrap();
+                }
+                _ => {}
+            }
+            let mut printer = PrintC::new();
+            printer.out_lang = crate::kuna_lang::OutLang::Rust;
+            printer.rt_ctx.lang = printer.out_lang;
+            printer.rt_ctx.enabled = true;
+            printer.rt_ctx.long_is_8 = true;
+            printer.rt_ctx.ctypes = true;
+            printer.set_output_stream();
+            printer.emit_basic_block_ops(&fd, &bare_arch(), block, true);
+            let text = printer.emit_mut().output_str();
+            if matches!(mutation, 0 | 7 | 9) {
+                let mut expected: Vec<u64> = (3..count as u64 + 3).collect();
+                let value = if mutation == 9 {
+                    expected[1] = (-4i64) as u64;
+                    "-4i64"
+                } else {
+                    "4u64"
+                };
+                let nonce = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+                let path = std::env::temp_dir().join(format!(
+                    "kuna-rust-array-init-{}-{nonce}.rs", std::process::id(),
+                ));
+                let executable = path.with_extension("exe");
+                std::fs::write(&path, format!(
+                    "fn main() {{ let value={value}; let mut array:[u64;{count}]; {text} println!(\"{{:?}}\",array); }}"
+                )).unwrap();
+                let build = Command::new("rustc")
+                    .args(["--edition=2021", "--crate-name", "recovered_array_init"])
+                    .arg(&path).arg("-o").arg(&executable).output().unwrap();
+                assert!(build.status.success(), "{text}\n{}", String::from_utf8_lossy(&build.stderr));
+                let run = Command::new(&executable).output().unwrap();
+                assert!(run.status.success());
+                assert_eq!(String::from_utf8(run.stdout).unwrap(), format!("{expected:?}\n"));
+                std::fs::remove_file(path).unwrap();
+                std::fs::remove_file(executable).unwrap();
+                assert!(text.contains("array = ["), "{text}");
+                assert!(!text.contains("array["), "{text}");
+                let mut marked = PrintC::new();
+                marked.out_lang = crate::kuna_lang::OutLang::Rust;
+                marked.rt_ctx = printer.rt_ctx.clone();
+                marked.set_markup(true);
+                marked.emit_fd = Some(&fd as *const Funcdata);
+                marked.emit_basic_block_ops(&fd, &bare_arch(), block, true);
+                marked.emit_mut().take_markup_bytes();
+                let provenance = marked.emit_mut().take_markup_provenance();
+                marked.emit_fd = None;
+                let output_ref = fd.vbank().get(outputs[0]).unwrap().get_create_index() as u64;
+                let operation_ref = fd.obank().get(operations[0]).unwrap().get_time() as u64;
+                assert!(provenance.associations.iter().any(|association| {
+                    association.varref == Some(output_ref) && association.opref == Some(operation_ref)
+                }));
+            } else {
+                assert!(!text.contains("array = ["), "mutation {mutation}: {text}");
+                assert!(text.contains("array[0] = 3;"), "mutation {mutation}: {text}");
+            }
+        }
     }
 }
 
@@ -852,6 +1014,44 @@ mod decompile_project_type_render {
         assert!(
             out.contains("typedef char *mystr;\n"),
             "pointer typedef line missing:\n{out}"
+        );
+    }
+
+    #[test]
+    fn c_type_definition_aliases_keep_qualifiers_and_nested_declarators() {
+        use crate::kuna_typequal::{qualified_type, CONST, VOLATILE};
+
+        let value = named(4, type_metatype::TYPE_UINT, "uint4");
+        let mut element = (*struct_of("elm.tag", 4, &[(0, "value", value)])).clone();
+        element.display_name = "debug.pretty".into();
+        let element = Rc::new(element);
+        let pointer = ptr_to(qualified_type(Rc::clone(&element), CONST));
+        let volatile_pointer = qualified_type(Rc::clone(&pointer), VOLATILE);
+        let mut alias = (*pointer).clone();
+        alias.name = "elm.ref".into();
+        alias.display_name = "debug.pointer".into();
+        alias.id = Datatype::hash_name("elm.ref");
+        alias.typedef_imm = Some(Rc::clone(&volatile_pointer));
+        let alias = Rc::new(alias);
+        let consumer = struct_of(
+            "Holder", 32,
+            &[
+                (0, "p", Rc::clone(&volatile_pointer)),
+                (8, "list", array_of(Rc::clone(&alias), 2)),
+                (24, "table", ptr_to(array_of(Rc::clone(&element), 3))),
+            ],
+        );
+
+        let header = render_type_definitions(&[element, alias, consumer], RealTypeCtx::OFF);
+        assert!(header.contains("typedef struct elm_tag elm_tag;"), "{header}");
+        assert!(header.contains("typedef const elm_tag * volatile elm_ref;"), "{header}");
+        assert!(
+            header.contains("    const elm_tag * volatile p;\n    elm_ref list[2];\n    elm_tag (*table)[3];"),
+            "{header}"
+        );
+        assert_eq!(
+            crate::printc::declaration_text(&volatile_pointer, "local", RealTypeCtx::OFF),
+            "const debug.pretty * volatile local"
         );
     }
 
@@ -2270,14 +2470,26 @@ mod w10_printc_cast_render {
     #[path = "rust_integer_assignments.rs"]
     mod rust_integer_assignments;
 
+    #[path = "rust_wrapping_arithmetic.rs"]
+    mod rust_wrapping_arithmetic;
+
+    #[path = "rust_niche_option.rs"]
+    mod rust_niche_option;
+
     #[path = "rust_boolean_conversions.rs"]
     mod rust_boolean_conversions;
+
+    #[path = "rust_store_width.rs"]
+    mod rust_store_width;
 
     #[path = "scalar_call_results.rs"]
     mod scalar_call_results;
 
     #[path = "call_argument_extensions.rs"]
     mod call_argument_extensions;
+
+    #[path = "opaque_operations.rs"]
+    mod opaque_operations;
 
     /// Build a 1-input cast op (`opc`) whose in0 is a constant `k` (renders as a
     /// literal, deterministic) and whose OUTPUT carries the data-type `out_ty`.

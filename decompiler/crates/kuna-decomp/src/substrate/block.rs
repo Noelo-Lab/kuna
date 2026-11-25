@@ -651,6 +651,10 @@ impl FlowBlock {
     pub fn get_in_rev_index(&self, i: int4) -> int4 {
         self.intothis[i as usize].reverse_index
     }
+    /// (kuna) The label of the i-th \e in edge.
+    pub fn get_in_label(&self, i: int4) -> uint4 {
+        self.intothis[i as usize].label
+    }
     /// Get the \b false output FlowBlock (C++ `getFalseOut`).
     pub fn get_false_out(&self) -> BlockId {
         self.get_out(0)
@@ -1362,6 +1366,18 @@ impl BlockGraph {
     ///   * `BlockSwitch` (`block.cc:3690`): next case block (fall-thru) front-leaf,
     ///     or recurse into the parent for the last case; `None` otherwise.
     pub fn next_flow_after(&self, this_id: BlockId, bl: BlockId) -> Option<BlockId> {
+        self.next_flow_after_impl(this_id, bl, false)
+    }
+
+    /// [`next_flow_after`](BlockGraph::next_flow_after) as the C printer lays the
+    /// blocks out: a switch case whose body does not exit the switch (no `break;`
+    /// is printed after it) falls into the next case even when the body is not a
+    /// `BlockGoto`.
+    pub fn next_printed_flow_after(&self, this_id: BlockId, bl: BlockId) -> Option<BlockId> {
+        self.next_flow_after_impl(this_id, bl, true)
+    }
+
+    fn next_flow_after_impl(&self, this_id: BlockId, bl: BlockId, case_fallthru: bool) -> Option<BlockId> {
         match self.arena[this_id].get_type() {
             BlockType::Goto => {
                 let target = self.arena[this_id].get_goto_target()?;
@@ -1373,7 +1389,7 @@ impl BlockGraph {
                     return None;
                 }
                 let parent = self.arena[this_id].get_parent()?;
-                self.next_flow_after(parent, this_id)
+                self.next_flow_after_impl(parent, this_id, case_fallthru)
             }
             BlockType::WhileDo => {
                 if self.sub_block(this_id, 0) == Some(bl) {
@@ -1390,20 +1406,13 @@ impl BlockGraph {
                 if self.sub_block(this_id, 0) == Some(bl) {
                     return None;
                 }
-                // Fall-thru must be a goto block (else there is a break).
-                if self.arena[bl].get_type() != BlockType::Goto {
-                    return None;
-                }
                 let cases = self.arena[this_id].switch_caseblocks();
-                let mut idx = cases.len();
-                for (i, c) in cases.iter().enumerate() {
-                    if c.block == bl {
-                        idx = i;
-                        break;
-                    }
-                }
-                if idx == cases.len() {
-                    return None; // didn't find block
+                let Some(idx) = cases.iter().position(|c| c.block == bl) else {
+                    return None;
+                };
+                // Fall-thru must be a goto block (else there is a break).
+                if self.arena[bl].get_type() != BlockType::Goto && !(case_fallthru && !cases[idx].isexit) {
+                    return None;
                 }
                 let next = idx + 1;
                 if next < cases.len() {
@@ -1412,7 +1421,7 @@ impl BlockGraph {
                 }
                 // last case: flow is to the switch exit
                 let parent = self.arena[this_id].get_parent()?;
-                self.next_flow_after(parent, this_id)
+                self.next_flow_after_impl(parent, this_id, case_fallthru)
             }
             BlockType::Graph | BlockType::Ls => {
                 // BlockGraph::nextFlowAfter: block after `bl` in `list`.
@@ -1432,7 +1441,7 @@ impl BlockGraph {
                     _ => {
                         // Off the end of the list (or not found): recurse up.
                         let parent = self.arena[this_id].get_parent()?;
-                        self.next_flow_after(parent, this_id)
+                        self.next_flow_after_impl(parent, this_id, case_fallthru)
                     }
                 }
             }
@@ -2736,6 +2745,16 @@ impl BlockGraph {
             }
             ret
         }
+    }
+
+    /// (kuna `tailform`) Replace the components of the print-tree node `id` with
+    /// `list`, re-parenting each to `id`.  A print-tree edit only: edges and
+    /// p-code are untouched.
+    pub fn kuna_set_components(&mut self, id: BlockId, list: Vec<BlockId>) {
+        for &c in &list {
+            self.arena[c].parent = Some(id);
+        }
+        self.arena[id].list = list;
     }
 
     /// Build a new BlockList collapsing the given components

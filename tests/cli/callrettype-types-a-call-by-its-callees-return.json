@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "p-f3ee305cfad9",
+  "probe_id": "p-4e4fb43a7fe6",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -35,8 +35,7 @@
       "v1 = skip_blanks\\(a0\\);",
       "FILE \\* pick_stream\\(int a0\\)",
       "stream = pick_stream\\(a0\\);",
-      "s = after_colon\\(a0\\);",
-      "s = fallback_name\\(\\);",
+      "s = \\(a0\\) \\? after_colon\\(a0\\) : fallback_name\\(\\);",
       "return \\(unsigned long\\)signed_delta\\(a0,a1\\) >> 0x3f;",
       "\\(unsigned int\\)hash_of\\(a0\\) % 7",
       "  mark\\(a0\\);\\n"
@@ -48,5 +47,5 @@
       "\\(char \\*\\)fallback_name\\("
     ]
   },
-  "notes": "ON: callees are decompiled first and state their recovered return type, so skip_blanks (char *), pick_stream (FILE * from a global) and after_colon/fallback_name (char * from strchr) print without a conversion. Controls keep theirs: signed_delta read through a logical shift, hash_of beside strcmp, the void mark()."
+  "notes": "ON: callees are decompiled first and state their recovered return type, so skip_blanks (char *), pick_stream (FILE * from a global) and after_colon/fallback_name (char * from strchr, the arms of the source's ?:) print without a conversion. Controls keep theirs: signed_delta read through a logical shift, hash_of beside strcmp, the void mark()."
 }

@@ -12,7 +12,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use object::read::{Object, ObjectSection};
+use object::read::ObjectSection;
 
 use crate::objc::sections::MachoImage;
 
@@ -141,6 +141,10 @@ pub struct Context {
     /// offset vector; zero for an enum.
     pub num_fields: u32,
     pub field_offset_vector: u32,
+    /// An enum's case count: its payload cases (the low 24 bits of
+    /// `NumPayloadCasesAndPayloadSizeOffset`) plus its empty cases; zero for
+    /// any other kind.
+    pub num_cases: u32,
     /// A class's mangled superclass type name.
     pub superclass_type: Option<u64>,
     pub vtable: Vec<VTableEntry>,
@@ -319,25 +323,24 @@ impl<'a> Reader<'a> {
         String::from_utf8(bytes).ok()
     }
 
-    /// Every 4-byte self-relative entry of the section named `name`.
+    /// Every 4-byte self-relative entry of the sections named `name`.
     fn section_entries(&self, file: &object::File, name: &str) -> Vec<u64> {
-        let Some(sec) = file.section_by_name(name) else {
-            return Vec::new();
-        };
-        let addr = sec.address();
-        let Ok(data) = sec.data() else {
-            return Vec::new();
-        };
         let mut out = Vec::new();
-        for i in 0..data.len() / 4 {
-            let slot = addr.wrapping_add((i * 4) as u64);
-            let Some(off) = self.img.read_i32(slot) else {
+        for sec in crate::objc::sections::sections_named(file, name) {
+            let addr = sec.address();
+            let Ok(data) = sec.data() else {
                 continue;
             };
-            if off == 0 {
-                continue;
+            for i in 0..data.len() / 4 {
+                let slot = addr.wrapping_add((i * 4) as u64);
+                let Some(off) = self.img.read_i32(slot) else {
+                    continue;
+                };
+                if off == 0 {
+                    continue;
+                }
+                out.push(slot.wrapping_add(off as i64 as u64));
             }
-            out.push(slot.wrapping_add(off as i64 as u64));
         }
         out
     }
@@ -405,7 +408,7 @@ impl<'a> Reader<'a> {
                 }
             }
         }
-        if let Some(sec) = file.section_by_name(names.fieldmd) {
+        for sec in crate::objc::sections::sections_named(file, names.fieldmd) {
             let base = sec.address();
             let size = sec.size();
             let mut at = base;
@@ -463,6 +466,7 @@ impl<'a> Reader<'a> {
             fields: None,
             num_fields: 0,
             field_offset_vector: 0,
+            num_cases: 0,
             superclass_type: None,
             vtable: Vec::new(),
             overrides: Vec::new(),
@@ -515,6 +519,11 @@ impl<'a> Reader<'a> {
                         ctx.num_fields = self.img.read_u32(addr.wrapping_add(36))?;
                         ctx.field_offset_vector = self.img.read_u32(addr.wrapping_add(40))?;
                         self.class_tables(&mut ctx)?;
+                    }
+                    ContextKind::Enum => {
+                        let payload = self.img.read_u32(addr.wrapping_add(20))? & 0x00ff_ffff;
+                        let empty = self.img.read_u32(addr.wrapping_add(24))?;
+                        ctx.num_cases = payload.checked_add(empty)?;
                     }
                     _ => {}
                 }

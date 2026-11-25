@@ -32,6 +32,8 @@ use crate::loadimage_object::{
 };
 
 const TE_HEADER_SIZE: usize = 40;
+/// `DataDirectory[0].Size`: the base-relocation table's length.
+const BASE_RELOCATION_SIZE_OFFSET: usize = 28;
 const SECTION_HEADER_SIZE: usize = 40;
 
 #[derive(Clone)]
@@ -142,6 +144,7 @@ pub struct TeLoadImage {
     entry: u64,
     machine_thumb_hint: bool,
     entry_thumb_hint: bool,
+    base_relocations: bool,
     spaceid: Option<Rc<AddrSpace>>,
     cursection: Cell<usize>,
 }
@@ -474,6 +477,7 @@ impl TeLoadImage {
             entry_thumb_hint: decodes_as_arm32
                 && info.mode_policy == Some(ArmModePolicy::EntryBit)
                 && entry_rva & 1 != 0,
+            base_relocations: read_u32(bytes, BASE_RELOCATION_SIZE_OFFSET).unwrap() != 0,
             spaceid: None,
             cursection: Cell::new(0),
         })
@@ -556,6 +560,12 @@ impl TeLoadImage {
 
     pub fn entry(&self) -> u64 {
         self.entry
+    }
+
+    /// Whether the image keeps base relocations, so firmware may load it
+    /// elsewhere. An execute-in-place image strips them and runs where linked.
+    pub fn runtime_code_relocation(&self) -> bool {
+        self.base_relocations
     }
 
     /// Whether the machine word declares a wholly Thumb instruction stream.
@@ -775,6 +785,8 @@ pub mod synthetic {
         /// SectionAlignment == FileAlignment layout); set it lower for an
         /// ordinary 0x200-file-aligned image.
         pub raw_pointer: u32,
+        /// `DataDirectory[0]` as `(VirtualAddress, Size)`; zero when stripped.
+        pub base_relocations: (u32, u32),
     }
 
     impl TeImage {
@@ -785,6 +797,7 @@ pub mod synthetic {
                 entry_rva: CODE_RVA | 1,
                 code: code.to_vec(),
                 raw_pointer: CODE_RAW_POINTER,
+                base_relocations: (0, 0),
             }
         }
 
@@ -795,6 +808,7 @@ pub mod synthetic {
                 entry_rva: CODE_RVA,
                 code: code.to_vec(),
                 raw_pointer: CODE_RAW_POINTER,
+                base_relocations: (0, 0),
             }
         }
 
@@ -810,6 +824,11 @@ pub mod synthetic {
 
         pub fn raw_pointer(mut self, raw_pointer: u32) -> Self {
             self.raw_pointer = raw_pointer;
+            self
+        }
+
+        pub fn base_relocations(mut self, rva: u32, size: u32) -> Self {
+            self.base_relocations = (rva, size);
             self
         }
 
@@ -834,6 +853,8 @@ pub mod synthetic {
             bytes[8..12].copy_from_slice(&self.entry_rva.to_le_bytes());
             bytes[12..16].copy_from_slice(&CODE_RVA.to_le_bytes());
             bytes[16..24].copy_from_slice(&IMAGE_BASE.to_le_bytes());
+            bytes[24..28].copy_from_slice(&self.base_relocations.0.to_le_bytes());
+            bytes[28..32].copy_from_slice(&self.base_relocations.1.to_le_bytes());
             bytes[40..45].copy_from_slice(b".text");
             bytes[48..52].copy_from_slice(&size.to_le_bytes());
             bytes[52..56].copy_from_slice(&CODE_RVA.to_le_bytes());
@@ -878,6 +899,17 @@ mod tests {
             .unwrap();
         manager.set_default_code_space(1).unwrap();
         manager
+    }
+
+    #[test]
+    fn base_relocations_mean_the_image_can_move() {
+        let fixed = TeLoadImage::from_bytes("xip.te", &synthetic_thumb_te()).unwrap();
+        assert!(!fixed.runtime_code_relocation());
+        let mut code = vec![0x07, 0x20, 0x70, 0x47];
+        code.extend_from_slice(&[0, 0x10, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0]);
+        let shadowed = TeImage::thumb(&code).base_relocations(CODE_RVA + 4, 12).build();
+        let shadowed = TeLoadImage::from_bytes("shadowed.te", &shadowed).unwrap();
+        assert!(shadowed.runtime_code_relocation());
     }
 
     #[test]

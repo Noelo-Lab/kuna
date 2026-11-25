@@ -1,0 +1,42 @@
+<!-- P1 language and calling-convention binding, option goabi.
+     Off reproduces the missing AMD64 stack inputs. Auto binds the proven
+     store and both calls while preserving private and foreign runtime paths. -->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>option goabi off</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-abi0-model/linux-amd64</com>
+  <com>read symbols</com><com>option outlang go</com>
+  <com>load function main.store</com><com>decompile</com><com>print C</com>
+  <com>load function main.callStore</com><com>decompile</com><com>print C</com>
+  <com>option goabi auto</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-abi0-model/linux-amd64</com>
+  <com>read symbols</com><com>option outlang go</com>
+  <com>load function main.store</com><com>decompile</com><com>print C</com>
+  <com>load function main.callStore</com><com>decompile</com><com>print C</com>
+  <com>load function main.abi0</com><com>decompile</com><com>print C</com>
+  <com>load addr 0x454c40</com><com>decompile</com><com>print C</com>
+  <com>load function runtime.sigtramp</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-pair-results/go1.27.3-pair</com>
+  <com>read symbols</com><com>option outlang go</com>
+  <com>load addr 0x47c9e0</com><com>decompile</com><com>print C</com>
+  <com>load addr 0x47f8c0</com><com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="Go ABI0 off loses the stack parameters" min="1" max="1">func store\(\) \{</stringmatch>
+<stringmatch name="Go ABI0 auto recovers both stack parameters" min="1" max="1">func store\(a0 u?int64, a1 u?int64\)</stringmatch>
+<stringmatch name="Go ABI0 auto binds the operands in the callee" min="1" max="1">sink = a0 \* (0x)?3 \+ a1</stringmatch>
+<stringmatch name="Go ABI0 auto recovers the first call's stack operands" min="1" max="1">store\.abi0\(a0, *a1\)</stringmatch>
+<stringmatch name="Go ABI0 auto preserves reversed caller operands" min="1" max="1">store\.abi0\(a1, *a0\)</stringmatch>
+<stringmatch name="Go ABI0 leaves an ordinary function with that name under ABIInternal" min="1" max="1">func abi0\(a0 uint64\) uint64</stringmatch>
+<stringmatch name="Go ABI0 leaves the returning runtime wrapper uninferred" min="1" max="1">func (write|abi0)\(\) \{</stringmatch>
+<stringmatch name="Go ABI0 leaves the signal trampoline's prior rendering intact" min="1" max="1">v1 = sigtrampgo\.abi0\(\)
+return v1</stringmatch>
+<stringmatch name="Go ABI0 keeps the private gogo tail transfer under the existing model" min="1" max="1">gogo\(a0, *v1,</stringmatch>
+<stringmatch name="Go ABI0 keeps the nonreturning exitThread continuation under the existing model" min="1" max="1">\)\(v1, *a1, *0x47f8d7\) // int3-pad</stringmatch>
+</decompilertest>

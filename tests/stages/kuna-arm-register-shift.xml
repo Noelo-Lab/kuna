@@ -7,7 +7,8 @@
     has undefined behavior there. Counts 256 and 288 distinguish the ARM
     low-eight-bit rule from an incorrect `count & 31` rewrite.
 
-    P9 C emission, correctness fix without an option. The printer keeps the
+    P9 C emission, option armshiftguard: these counts are unbounded, so the
+    default `needed` guards them as `always` does. The printer keeps the
     lifted low-eight-bit expression, guards it against the shifted value's
     width, and casts the shifted value to unsigned so count 31 is defined too.
     The rewrite is limited to variable ARM LSLs whose input expressions are

@@ -1078,14 +1078,14 @@ impl Heritage {
     ///
     /// A negative number indicates the number of passes to wait before the
     /// first heritage will occur.  Errors if the space is not heritaged (the
-    /// C++ throws `LowlevelError`).
+    /// C++ throws `LowlevelError`) or the per-space info is not built yet.
     pub fn num_heritage_passes(&self, spc: &Rc<AddrSpace>) -> kuna_base::error::KunaResult<int4> {
-        let info = self.get_info(spc);
-        if !info.is_heritaged() {
+        let info = self.infolist.get(spc.get_index() as usize);
+        let Some(info) = info.filter(|info| info.is_heritaged()) else {
             return Err(kuna_base::error::KunaError::lowlevel(
                 "Trying to calculate passes for non-heritaged space",
             ));
-        }
+        };
         Ok(self.pass - info.delay)
     }
 
@@ -1844,7 +1844,8 @@ impl Heritage {
             if own_output {
                 if fc.is_input_active()
                     && tryregister
-                    && crate::kuna_varargretreg::argument_in_own_output(fd, fc, &trans_addr, size)
+                    && (crate::kuna_lockedreturnarg::argument_in_locked_output(fc)
+                        || crate::kuna_varargretreg::argument_in_own_output(fd, fc, &trans_addr, size))
                 {
                     Self::guard_call_input(fd, fc, addr, &trans_addr, size, overlap_level);
                 }
@@ -2027,7 +2028,8 @@ impl Heritage {
                             fd, fc, addr, &trans_addr, size, write,
                         ) || ((overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_FULL
                             || (overlap_level == super::kuna_calloverlap::LEVEL_AUTO
-                                && super::kuna_calloverlap::auto_register(fd.get_arch().manage(), fc.proto(), &trans_addr, size, true)))
+                                && (super::kuna_calloverlap::auto_register(fd.get_arch().manage(), fc.proto(), &trans_addr, size, true)
+                                    || super::kuna_calloverlap::auto_float_output(fd, fc, &trans_addr, size))))
                             && self
                                 .try_output_overlap_guard(fd, fc, addr, &trans_addr, size, write))
                         {
@@ -2191,7 +2193,9 @@ impl Heritage {
     /// its inputs, and append its argument Varnode to the CALL op
     /// (`heritage.cc:1496-1510`).  (kuna) Also reached for a range the call's own
     /// output covers exactly, which upstream skips whole, when a variadic call
-    /// passes an argument there ([`crate::kuna_varargretreg`]).  A range the call
+    /// passes an argument there ([`crate::kuna_varargretreg`]), or when a
+    /// non-variadic call's output is locked while its inputs are still recovered
+    /// ([`crate::kuna_lockedreturnarg`]).  A range the call
     /// may not take whole still yields the single-precision pieces its stated
     /// prototype names ([`crate::kuna_armfloatargs`]).
     fn guard_call_input(
@@ -2259,7 +2263,30 @@ impl Heritage {
                     && super::kuna_calloverlap::auto_register(fd.get_arch().manage(), fc.proto(), trans_addr, size, false))
             {
                 Self::guard_call_overlapping_input(fd, fc, addr, trans_addr, size);
+            } else if overlap_level == super::kuna_calloverlap::LEVEL_AUTO {
+                Self::guard_call_read_float_input(fd, fc, addr, trans_addr, size);
             }
+        }
+    }
+
+    /// (kuna) Under `calloverlap auto`, register the trial of the one float slot
+    /// inside the heritaged range that a callee which stated nothing reads, as
+    /// wide as it reads it ([`crate::p4_calls::kuna_calleefloatreads::contained_read`]):
+    /// x86-64 `movss %xmm0,g` takes the low four bytes of an `xmm0` the caller
+    /// wrote whole with `pxor`.
+    fn guard_call_read_float_input(
+        fd: &mut crate::funcdata::Funcdata,
+        fc: &mut crate::fspec::FuncCallSpecs,
+        addr: &Address,
+        trans_addr: &Address,
+        size: int4,
+    ) {
+        let Some((slot, width)) = crate::p4_calls::kuna_calleefloatreads::contained_read(fd, fc, trans_addr, size) else {
+            return;
+        };
+        let trunc_addr = addr + slot.get_offset().wrapping_sub(trans_addr.get_offset()) as i64;
+        if fc.get_active_input().which_trial(&trunc_addr, size) < 0 {
+            Self::truncated_input_trial(fd, fc, addr, size, &trunc_addr, width);
         }
     }
 

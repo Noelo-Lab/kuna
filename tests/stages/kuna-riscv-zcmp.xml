@@ -1,0 +1,68 @@
+<decompilertest>
+<binaryimage arch="RISCV:LE:32:Zcmp">
+<!--
+    Kuna GH-1630: RISC-V Zcmp/Zcmt decode (cm.push, cm.pop, cm.popret,
+    cm.popretz, cm.mvsa01, cm.mva01s, cm.jt, cm.jalt).
+
+    Zcmp reuses the c.fsdsp encoding space, so an -Os embedded prologue
+    `cm.push {ra,s0-s1},-16` decoded as `c.fsdsp fs8,0x30(sp)` and the
+    `cm.popret` epilogue as a second float store followed by a jump through
+    whatever ra held: the saves, the stack adjustment and the return were lost.
+
+    Stage / sub-stage: P2 lift (RISC-V SLEIGH spec `riscv.zc.sinc`) plus P0
+    language selection (`loader/kuna_riscvzc.rs`): an ELF whose
+    `Tag_RISCV_arch` lists zcmp or zcmt takes the `RISCV:LE:32:Zcmp` language
+    variant, whose processor spec sets the `Zcmp` context bit. A strict
+    correctness fix: no option, one pass.
+
+    The script loads the committed fixtures (sources and build commands in
+    decompiler/crates/kuna-cli/tests/fixtures/riscv_zcmp/README.md):
+    keep.elf is the issue's repro, `unsigned keep(unsigned a, unsigned b)
+    { unsigned x = ext(a); ext(b); return ext(x); }` at -Os with
+    -march=rv32imac_zcmp; zc_ops.elf is hand-written assembly: swapcall
+    saves a0/a1 with cm.mvsa01, swaps them back with cm.mva01s and ends in
+    cm.popret; zret ends in cm.popretz; popsep pops then returns.
+
+    #1-#3 prove keep is an ordinary three-call body (no float store, no
+    jump-as-call, the third call's result reaches the return register).
+    #4-#6 prove the register moves, the zeroed return and the plain pop.
+    #7 proves the lifted p-code: the push stores ra, s0 and s1 and drops sp
+    by 16, the popret reloads them and returns through ra.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">8280</bytechunk>
+<symbol space="ram" offset="0x1000" name="stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/riscv_zcmp/keep.elf</com>
+  <com>read symbols</com>
+  <com>load function keep</com>
+  <com>print raw</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/riscv_zcmp/zc_ops.elf</com>
+  <com>read symbols</com>
+  <com>load function swapcall</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function zret</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function popsep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ZCMP #1: keep has no float store" min="0" max="0">fs8</stringmatch>
+<stringmatch name="ZCMP #2: keep has no jump-as-call epilogue" min="0" max="0">jump-as-call</stringmatch>
+<stringmatch name="ZCMP #3a: keep's first call takes a0" min="1" max="1">v1 = ext\(a0\);</stringmatch>
+<stringmatch name="ZCMP #3b: keep's third call takes the first result" min="1" max="1">ext\(v1\);</stringmatch>
+<stringmatch name="ZCMP #7a: cm.push stores ra, s0 and s1 below sp" min="3" max="3">^0x0000120c:[0-9a-f]+:\s+\*\(ram,u0x[0-9a-f]+\(free\)\) = (ra|s0|s1)\(free\)</stringmatch>
+<stringmatch name="ZCMP #7b: cm.push drops sp by 16" min="1" max="1">^0x0000120c:[0-9a-f]+:\s+sp\(0x0000120c:[0-9a-f]+\) = sp\(free\) - #0x10</stringmatch>
+<stringmatch name="ZCMP #7c: cm.popret reloads ra, s0 and s1" min="3" max="3">^0x0000122e:[0-9a-f]+:\s+(ra|s0|s1)\(0x0000122e:[0-9a-f]+\) = \*\(ram,u0x[0-9a-f]+\(free\)\)</stringmatch>
+<stringmatch name="ZCMP #7d: cm.popret returns through ra" min="1" max="1">^0x0000122e:[0-9a-f]+:\s+return\(ra\(free\)\)</stringmatch>
+<stringmatch name="ZCMP #4: cm.mvsa01/cm.mva01s swap the arguments" min="1" max="1">return ext2\(a1,a0\) \+ 1;</stringmatch>
+<stringmatch name="ZCMP #5: cm.popretz returns zero" min="1" max="1">return 0;</stringmatch>
+<stringmatch name="ZCMP #6: cm.pop restores s0 before the return" min="1" max="1">return ext\(\) \+ a0;</stringmatch>
+</decompilertest>

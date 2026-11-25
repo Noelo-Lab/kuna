@@ -104,6 +104,11 @@
 <symbol space="ram" offset="0x140001300" name="c"/>
 </binaryimage>
 <script>
+  <!-- looptest (default proven) prints the bounded walks as `while (v3 != &v1[8])`:
+       with the bound rebuilt on the buffer the entry test folds to true.  Kept
+       bottom-tested so both passes print the loop the same way. -->
+  <com>option looptest binary</com>
+  <com>option postinc off</com>
   <com>option endptrbound off</com>
   <com>lo fu f</com>
   <com>decompile</com>

@@ -1,0 +1,177 @@
+{
+  "change_kind": "correctness-fix",
+  "baseline_revision": "a235735ec2387cb5e019e891a82efe6a885523e2",
+  "validated_patch_sha256": "4599fe6dcbeb670bd89da1448a07ecf0277f8c5b83a334c51cbc07f0e721e1a6",
+  "source_manifest_sha256": "11eb203c49ffefdd9c8fac707522a16c1eaa67d39f758fc666362368a5df04c0",
+  "spec_manifest_sha256": "f152aa3d246a0c9ab08c49af6233d35b6a259f46fe5bb3fb4f8bbe4e88294c9a",
+  "stage_baselines_sha256": {
+    "old": "702aae1e3034527e1476a0cb017f10ed35e287743decfe1a63d3e9b5c0b57597",
+    "new": "8ee90c6cf616169ed877f169946f045823169dd526886dd85136a05ffeff6dd3"
+  },
+  "tools_sha256": {
+    "before_output_reference": {
+      "kuna": "4b7ec3bd86e1095022ec5e0064d53e2b7c7fefa0f8b681713ea1e11007578b95",
+      "decomp_dbg": "cfd79449f8f8d87066d6fec84091c7f804d0a61069c339f9d2ee4d45fc84b52b",
+      "decomp_test_dbg": "765a1ac7ca0e2decf2dafb3288b6d8c5409e8b0514313d0ee6ac065b90f1585d"
+    },
+    "candidate": {
+      "kuna": "3211d436b13a55f402f56cbe6b20c7e50896f0be80495597f3807efe65ffce48",
+      "decomp_dbg": "239d0d6fff914a2480bc1a51136b5f9bff64f7717b6f2f30be839233226a9ac8",
+      "decomp_test_dbg": "9224c3008690cfda31195fc3149c7b5648fde1c631defcff18db217a5bd0d7da"
+    }
+  },
+  "speed_off_ms": 0.03134464008423189,
+  "speed_on_ms": 0.03166170771388958,
+  "speed_delta_pct": -2.388,
+  "speed_samples": 8,
+  "speed_budget_pct": 5,
+  "speed_within_budget": null,
+  "speed_forced_off": false,
+  "validation": {
+    "original_assertions": 675,
+    "stage_prior_assertions": 4516,
+    "stage_candidate_assertions": 4519,
+    "stage_added_assertions": [
+      "data:C type definition members retain the array of pointers",
+      "data:C type definition members retain the pointer to an array",
+      "data:C type definition members use the declared pointer alias"
+    ],
+    "focused_base": "0/3",
+    "focused_candidate": "3/3",
+    "focused_pure_rust_units": 1,
+    "c11_layout_assertions": 8,
+    "go_rust_type_blocks_exact": true,
+    "ordinary_c_go_rust_functions_exact": true,
+    "catalog_and_spec": "pass",
+    "before_output_revision": "3a7385b58ae1562137d3d71bf0f77b9aa667f891",
+    "xml_corpus_files": 782,
+    "focused_unit_previous_snapshot": "3a7385b58ae1562137d3d71bf0f77b9aa667f891",
+    "current_release_gate": "pass"
+  },
+  "timing": {
+    "affinity": [
+      33
+    ],
+    "siblings": [
+      73
+    ],
+    "preflight_load_pct_by_interval": [
+      {
+        "33": {
+          "idle": 2.667,
+          "iowait": 0.0,
+          "busy": 97.333
+        },
+        "73": {
+          "idle": 0.0,
+          "iowait": 0.0,
+          "busy": 100.0
+        }
+      },
+      {
+        "33": {
+          "idle": 18.667,
+          "iowait": 0.0,
+          "busy": 81.333
+        },
+        "73": {
+          "idle": 0.0,
+          "iowait": 0.0,
+          "busy": 100.0
+        }
+      },
+      {
+        "33": {
+          "idle": 17.333,
+          "iowait": 0.0,
+          "busy": 82.667
+        },
+        "73": {
+          "idle": 0.0,
+          "iowait": 0.0,
+          "busy": 100.0
+        }
+      },
+      {
+        "33": {
+          "idle": 10.39,
+          "iowait": 0.0,
+          "busy": 89.61
+        },
+        "73": {
+          "idle": 0.0,
+          "iowait": 0.0,
+          "busy": 100.0
+        }
+      }
+    ],
+    "pairs_per_mode": 8,
+    "results": {
+      "definitions": {
+        "repeats": 30000,
+        "spread_pct": {
+          "wall": {
+            "min": -20.729,
+            "q1": -10.999,
+            "median": -2.388,
+            "q3": 5.398,
+            "max": 22.219
+          },
+          "cpu": {
+            "min": -4.173,
+            "q1": -1.474,
+            "median": 0.106,
+            "q3": 1.323,
+            "max": 18.581
+          }
+        },
+        "peak_timed_sibling_busy_pct": 100.0
+      },
+      "ordinary": {
+        "repeats": 2500,
+        "spread_pct": {
+          "wall": {
+            "min": -32.672,
+            "q1": -11.157,
+            "median": 11.273,
+            "q3": 64.739,
+            "max": 176.368
+          },
+          "cpu": {
+            "min": -32.672,
+            "q1": -3.825,
+            "median": 11.257,
+            "q3": 42.104,
+            "max": 86.172
+          }
+        },
+        "peak_timed_sibling_busy_pct": 100.0
+      }
+    },
+    "raw_timing_sha256": "149bf71be2dc4d7acf4fffa46528687fd56a17566d672a842c40bbd730368bd1",
+    "disposition": "inconclusive",
+    "base_revision": "3a7385b58ae1562137d3d71bf0f77b9aa667f891",
+    "current_host_idle_preflight": "deferred"
+  },
+  "base_tree": "d786e3dbb22b8975bc1947d644c3656a7bab69b6",
+  "previous_workspace_gate": {
+    "source_base": "b779fcffdc00c7d6e453dd58ba88c5192bd42d78",
+    "staged_tree": "d92039d0a09fa2c5144399c9c267ef5c2e5934b7",
+    "source_manifest_sha256": "16e574c98156842817ee3045b14442a4bd566ba67a62f25dbb7ea34b0f90e53f",
+    "staged_patch_sha256": "ce388259dd919ce762c6f7a29ae9b6dfcb8ec67f5cc7de7f3e4a3b89f677a2a6",
+    "spec_manifest_sha256": "f152aa3d246a0c9ab08c49af6233d35b6a259f46fe5bb3fb4f8bbe4e88294c9a",
+    "suite": "make rust-test",
+    "go": "go1.27.2",
+    "cargo_jobs": 2,
+    "test_threads": 8,
+    "isolation": "untraced offline bubblewrap with read-only source and specs",
+    "make_exit": 0,
+    "workspace_result_blocks": 74,
+    "passed": 11103,
+    "failed": 0,
+    "ignored": 39,
+    "failed_names": [],
+    "log_sha256": "bad7df51c53c2d1e138c9c5b5e21d51ad113af864df219243e4adf069c6966c6"
+  },
+  "identical_build_source_revision": "14f629a27f426fe2f3383caeb2d29f84d470d099"
+}

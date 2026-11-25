@@ -224,7 +224,7 @@ fn scan_bytes(code: &[u8], base: u64, sigs: &[Signature]) -> Vec<(u64, usize)> {
 /// else the caller does with those values.
 fn bind(out: &mut AnalysisOutput, ctx: &AnalysisCtx, addr: u64, name: &str) {
     let Some((model, operands)) = kuna_decomp::kuna_x87intrinsic::model_for(name) else { return };
-    out.models.push(ModelFact { func_addr: addr, model, maybe_self: false });
+    out.models.push(ModelFact { func_addr: addr, model, maybe_self: false, leaf_stack_inputs: None });
     use kuna_decomp::dtype::type_metatype;
     let Ok(ld) = ctx.arch.types().get_base(10, type_metatype::TYPE_FLOAT) else { return };
     out.prototypes_at.push((
@@ -238,6 +238,7 @@ fn bind(out: &mut AnalysisOutput, ctx: &AnalysisCtx, addr: u64, name: &str) {
             output_storage: None,
             input_storage: Vec::new(),
             kuna_library_names: None,
+            kuna_library_table: false,
         },
     ));
 }

@@ -1,0 +1,64 @@
+<decompilertest>
+<!--
+    A C function that only tail-calls through a function pointer is not a
+    selector stub, and the positional rule still holds at a call to it.
+
+      tramp      mov rax,[g_fp]; mov esi,5; jmp rax             (g_fp(x, 5))
+      tramp2     mov rax,[g_fp]; mov rdi,[g_x]; mov esi,1; jmp rax
+                                                                (g_fp(g_x, 1))
+
+    Both read no register on entry and leave through an indirect jump, and
+    both write rsi before anything could read it.  The callers are clang -O0:
+    each calls puts, which kills rsi, then divides with cqo; idiv, which
+    leaves the remainder in rdx with no other reader:
+
+      caller     tramp((a - e) / 3)
+      caller2    q = (a - e) / 7; tramp2(); return q;
+
+    rsi is definitely-not-used at both calls and rdx scores active.  The
+    positional rule is what keeps the remainder off the call: a C callee
+    takes its parameters in order, so a register after one the caller did
+    not fill is no argument however the callee fills it.  Only an
+    Objective-C selector stub (objc_msgSend$<sel>), whose convention has no
+    parameter in the selector register, steps over it
+    (kuna_calleefilledarg.rs, option calleefilledarg).
+
+    Stage / sub-stage: P4 "active-input-trial-scoring".  Bytes are clang
+    14: tramp/tramp2 at -O2, the callers at -O0; puts is a ret stub.
+-->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x1030" readonly="true">
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1140" readonly="true">
+488b05f12e0000be05000000ffe06690488b05e92e0000488b3dea2e0000ffe0
+488b05d12e0000488b3dda2e0000be01000000ffe0662e0f1f84000000000090
+554889e54883ec2048897df8488975f0488955e8488b7de8e893feffff488b45
+f8482b45f0b903000000489948f7f94889c7e889ffffff31c04883c4205dc390
+554889e54883ec2048897df8488975f0488955e8488b7de8e853feffff488b45
+f8482b45f0b907000000489948f7f9488945e0e858ffffff488b45e04883c420
+5dc3662e0f1f8400000000000f1f4000554889e54883ec2048897df8488975f0
+488955e8488b7de8e803feffff488b45f8482b45f0b907000000489948f7f948
+8945e0e818ffffff488b45e04883c4205dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x4038">
+00000000000000000000000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x1030" name="puts"/>
+<symbol space="ram" offset="0x1140" name="tramp"/>
+<symbol space="ram" offset="0x1150" name="tramp0"/>
+<symbol space="ram" offset="0x1160" name="tramp2"/>
+<symbol space="ram" offset="0x1180" name="caller"/>
+<symbol space="ram" offset="0x11c0" name="caller0"/>
+<symbol space="ram" offset="0x1210" name="caller2"/>
+</binaryimage>
+<script>
+  <com>parse line extern int puts(char *s);</com>
+  <com>lo fu caller</com>  <com>decompile</com>  <com>print C</com>
+  <com>lo fu caller2</com>  <com>decompile</com>  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="calleefilledarg-ctramp #1: the trampoline that fills rsi takes only the quotient" min="1" max="1">tramp\(\(a0 - a1\) / 3\);</stringmatch>
+<stringmatch name="calleefilledarg-ctramp #2: the trampoline that fills rdi and rsi takes nothing" min="1" max="1">tramp2\(\);</stringmatch>
+<stringmatch name="calleefilledarg-ctramp #3: no idiv remainder reaches a call" min="0" max="0">%</stringmatch>
+</decompilertest>

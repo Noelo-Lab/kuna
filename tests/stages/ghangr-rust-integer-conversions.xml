@@ -1,9 +1,24 @@
 <decompilertest>
 <binaryimage arch="x86:LE:64:default:gcc">
-<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
-<symbol space="ram" offset="0x100000" name="harness_stub"/>
+<bytechunk space="ram" offset="0x100000" readonly="true">89f84000f0c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="add8"/>
+<bytechunk space="ram" offset="0x100020" readonly="true">4889f84829f0c3</bytechunk>
+<symbol space="ram" offset="0x100020" name="sub64"/>
+<bytechunk space="ram" offset="0x100040" readonly="true">89f80fafc6c3</bytechunk>
+<symbol space="ram" offset="0x100040" name="mul32"/>
+<bytechunk space="ram" offset="0x100060" readonly="true">4889f848f7d8c3</bytechunk>
+<symbol space="ram" offset="0x100060" name="negate64"/>
 </binaryimage>
 <script>
+  <com>option outlang rust</com>
+  <com>map prototype add8 uint1 add8(uint1 left,uint1 right);</com>
+  <com>map prototype sub64 int8 sub64(int8 left,int8 right);</com>
+  <com>map prototype mul32 uint4 mul32(uint4 left,uint4 right);</com>
+  <com>map prototype negate64 uint8 negate64(uint8 value);</com>
+  <com>load function add8</com><com>decompile</com><com>print C</com>
+  <com>load function sub64</com><com>decompile</com><com>print C</com>
+  <com>load function mul32</com><com>decompile</com><com>print C</com>
+  <com>load function negate64</com><com>decompile</com><com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_integer_conversions_x86_64</com>
   <com>read symbols</com>
@@ -15,13 +30,13 @@
   <com>map prototype call_unsigned int8 call_unsigned(uint8 value);</com>
   <com>map prototype negative_mask uint8 negative_mask(int8 value);</com>
   <com>map prototype counted_unsigned uint8 counted_unsigned(uint8 value);</com>
+  <com>load function mixed_add32</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>load function as_unsigned8</com>
   <com>decompile</com>
   <com>print C</com>
   <com>load function as_signed16</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function mixed_add32</com>
   <com>decompile</com>
   <com>print C</com>
   <com>load function inplace64</com>
@@ -61,13 +76,45 @@
 </script>
 <stringmatch name="Rust signed byte return preserves bits as unsigned" min="1" max="1">return value as u8;</stringmatch>
 <stringmatch name="Rust unsigned short return preserves bits as signed" min="1" max="1">return value as i16;</stringmatch>
-<stringmatch name="Rust mixed word addition converts its signed operand" min="1" max="1">return right as u32 \+ left;</stringmatch>
-<stringmatch name="Rust mixed wide addition restores its signed result" min="1" max="1">return \(left as u64 \+ right\) as i64;</stringmatch>
+<!-- Check the four fixed-width operations immediately before the mixed addition. -->
+<stringmatch name="Rust mixed word addition converts its signed operand" min="1" max="1">^unsafe fn add8\(
+^\{$
+^\s*return u8::wrapping_add\((left,right|right,left)\);$
+^\}$
+^$
+^$
+^#\[allow\(
+^unsafe fn sub64\(
+^\{$
+^\s*return i64::wrapping_sub\(left,right\);$
+^\}$
+^$
+^$
+^#\[allow\(
+^unsafe fn mul32\(
+^\{$
+^\s*return u32::wrapping_mul\((left,right|right,left)\);$
+^\}$
+^$
+^$
+^#\[allow\(
+^unsafe fn negate64\(
+^\{$
+^\s*return u64::wrapping_neg\(value\);$
+^\}$
+^$
+^$
+^#\[allow\(
+^unsafe fn mixed_add32\(
+^\{$
+^\s*return u32::wrapping_add\(right as u32,left\);$
+^\}$</stringmatch>
+<stringmatch name="Rust mixed wide addition restores its signed result" min="1" max="1">return u64::wrapping_add\(left as u64,right\) as i64;</stringmatch>
 <stringmatch name="Rust converted call return evaluates the call once" min="1" max="1">return counted_unsigned\(value\) as i64;</stringmatch>
 <stringmatch name="Rust bitwise mask preserves its full unsigned bits" min="1" max="1">return value as u64 &amp; 0xffffffffffffff7f;</stringmatch>
 <stringmatch name="Rust literal shift keeps its full source width" min="1" max="1">return ::core::convert::identity::&lt;i64&gt;\(1 &lt;&lt; \(n as u8 &amp; 0x3f\)\) as u64;</stringmatch>
 <stringmatch name="Rust nested shift retains context through an existing cast" min="1" max="1">return \(::core::convert::identity::&lt;i64&gt;\(1 &lt;&lt; \(n as u8 &amp; 0x3f\)\) as u64\) &gt;&gt; \(m as u8 &amp; 0x3f\);</stringmatch>
-<stringmatch name="Rust loop conversion keeps one callback evaluation" min="1" max="1">acc = acc \+ counted_unsigned\(step\) as i64;</stringmatch>
-<stringmatch name="Rust cast at the end of subtraction preserves comparison parsing" min="1" max="1">return \(a - \(b as u64\) &lt; c\) as u64;</stringmatch>
-<stringmatch name="Rust cast at the end of subtraction preserves shift parsing" min="1" max="1">return a - \(b as u64\) &lt;&lt; \(n as u8 &amp; 0x3f\);</stringmatch>
+<stringmatch name="Rust loop conversion keeps one callback evaluation" min="1" max="1">acc = i64::wrapping_add\(acc,counted_unsigned\(step\) as i64\);</stringmatch>
+<stringmatch name="Rust cast at the end of subtraction preserves comparison parsing" min="1" max="1">return \(u64::wrapping_sub\(a,b as u64\) &lt; c\) as u64;</stringmatch>
+<stringmatch name="Rust cast at the end of subtraction preserves shift parsing" min="1" max="1">return u64::wrapping_sub\(a,b as u64\) &lt;&lt; \(n as u8 &amp; 0x3f\);</stringmatch>
 </decompilertest>

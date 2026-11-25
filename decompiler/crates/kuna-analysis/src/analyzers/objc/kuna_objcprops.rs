@@ -21,6 +21,14 @@ mod property_list_t {
 
 /// A property's selectors with their encodings: `(selector, encoding)`.
 pub fn declarations(img: &MachoImage, list_va: u64) -> Vec<(String, String)> {
+    properties(img, list_va)
+        .into_iter()
+        .flat_map(|(name, attrs)| from_attributes(&name, &attrs))
+        .collect()
+}
+
+/// Each property's name and attribute string: `(name, attributes)`.
+pub fn properties(img: &MachoImage, list_va: u64) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let Some(ent) = list_va.checked_add(property_list_t::ENTSIZE).and_then(|a| img.read_u32(a)) else { return out };
     let Some(count) = list_va.checked_add(property_list_t::COUNT).and_then(|a| img.read_u32(a)) else { return out };
@@ -37,7 +45,7 @@ pub fn declarations(img: &MachoImage, list_va: u64) -> Vec<(String, String)> {
         let Some(attrs) = rec.checked_add(img.ptr_size()).and_then(|a| img.rebase_ptr(a)).and_then(|p| img.read_cstr(p)) else {
             continue;
         };
-        out.extend(from_attributes(&name, &attrs));
+        out.push((name, attrs));
     }
     out
 }

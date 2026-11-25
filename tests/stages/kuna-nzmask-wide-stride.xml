@@ -1,0 +1,48 @@
+<decompilertest>
+<binaryimage arch="RISCV:LE:64:RV64GC">
+<!--
+    Kuna GH-1661: a bit-test guard above two RV64 tail calls panicked
+    jump-table recovery with a shift overflow.
+
+    `slli a1,a0,0x23; bltz a1` tests bit 28 of a 32-bit argument, so the
+    shifted value's non-zero mask is 0xfffffff800000000: its lowest set bit
+    is 35.  Each `auipc t1; jr -0x18(t1)` tail call is a computed jump, and
+    its guard analysis pulls the branch condition back through the shift and
+    intersects it with the range that mask describes.  CircleRange::setNZMask
+    builds that range with the stride 1 << 35, which the 32-bit step cannot
+    hold: a debug build panicked, a release build wrapped the stride to 8.
+
+    Stage / sub-stage: P5 range fabric (`CircleRange::set_nz_mask`), consumed
+    by P2 jump-table guard analysis (`circlerange_pull_back`).  A strict
+    correctness fix: no option, one pass.  A mask whose stride does not fit
+    the step forms no range and the guard keeps the range it had.
+
+    Source (rustc -O, riscv64gc-unknown-none-elf, the .text bytes of a, b and
+    pick verbatim below):
+
+        pub extern "C" fn a(x: u32) -> u32 { read_volatile(x as *const u32) }
+        pub extern "C" fn b(x: u32) -> u32 { read_volatile((x + 8) as *const u32) }
+        pub extern "C" fn pick(x: u32) -> u32 {
+            if x & (1 << 28) != 0 { b(x) } else { a(x) }
+        }
+
+    #1 proves pick decompiles (the bit test survives as the guard); #2-#3
+    prove both tail-call destinations are reached, one per arm.
+-->
+<bytechunk space="ram" offset="0x1116e" readonly="true">
+021501910841828002150191084582809315350263c6050017030000670083fe
+17030000670083fe
+</bytechunk>
+<symbol space="ram" offset="0x1116e" name="a"/>
+<symbol space="ram" offset="0x11176" name="b"/>
+<symbol space="ram" offset="0x1117e" name="pick"/>
+</binaryimage>
+<script>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="GH1661 #1: pick decompiles with the bit test as its guard" min="1" max="1">if \(\(int8\)\(a0 &lt;&lt; 0x23\) &lt;= -1\)</stringmatch>
+<stringmatch name="GH1661 #2: the clear-bit arm reaches a" min="1" max="1">return \*\(int4 \*\)\(a0 &amp; 0xffffffff\);</stringmatch>
+<stringmatch name="GH1661 #3: the set-bit arm reaches b" min="1" max="1">return \*\(int4 \*\)\(\(a0 &amp; 0xffffffff\) \+ 8\);</stringmatch>
+</decompilertest>

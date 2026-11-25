@@ -191,6 +191,9 @@ impl Action for ActionGoMorestack {
             self.base.count += 1;
             changed = 1;
         }
+        if changed != 0 {
+            crate::p4_calls::kuna_passthrough::claim_after_go_stack_guard(data);
+        }
         changed
     }
 }

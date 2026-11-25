@@ -21,8 +21,9 @@
  *
  *   by_name_g2 (gcc -O2): parked `int (void *, void *)`; both callers keep
  *   `unsigned long *` and their calls.
- *   by_name_c2 (clang -O2): ent_before_c2 forwards its registers untouched and
- *   prints `by_name_c2()`, no arguments against two, so it is refused.
+ *   by_name_c2 (clang -O2): ent_before_c2 forwards its registers untouched;
+ *   `passthrough` reads by_name_c2's body and passes both, so it is parked
+ *   like by_name_g2.
  *
  * `worker_*` is a `pthread_create` start routine handed an integer id through
  * its `void *`; `run_share_*` runs one share itself, forwarding its own `long`
@@ -30,8 +31,9 @@
  *
  *   worker_g6 (gcc -O2): parked `void *(void *)`; run_share_g6 and
  *   run_quiet_g6 keep `long` and their calls.
- *   worker_c7 (clang -O2): run_share_c7 tail-forwards its register and prints
- *   `worker_c7()`, so it is refused.
+ *   worker_c7 (clang -O2): run_share_c7 tail-forwards its register, which
+ *   worker_c7's body reads, so it is passed and worker_c7 is parked like
+ *   worker_g6.
  *
  * Build (symbols kept, no DWARF):
  *   gcc -O0 -DPART=1 -fno-stack-protector -fcf-protection=none \

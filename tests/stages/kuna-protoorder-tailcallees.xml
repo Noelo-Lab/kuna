@@ -1,0 +1,85 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna protoorder, single-function drive: the callees a function tail-calls.
+
+    gcc 15.3 -O2 -fno-pic -no-pie -nostartfiles -static (x86-64) of
+
+        int sink;
+        int target(int a, int *b) { if (b) *b = a; sink = a; return a * 3 + 1; }
+        int thunk(int a) { return target(a, 0); }            xor esi,esi; jmp target
+        int helper(int a, int b, int c) { sink = b; return a + b * c; }
+        int pass(int a, int b, int c) { return helper(a, b + 1, c); }   add esi,1; jmp helper
+
+    A decompile of one function has no callee-first run behind it.  Nothing in
+    `thunk` reads RAX after the tail call, so the call kept no result and the
+    thunk printed as void; `pass` dropped `c`, which it forwards untouched in
+    EDX.  The single-function drive now decompiles each callee the function
+    tail-calls and states its recovered prototype first, as a callee-first
+    decompile-all does.
+
+    Stage / sub-stage: P4 "prototype-source", option `protoorder`.  Pass 1
+    (`protoorder off`) pins the output without any callee statement, pass 2
+    (the default) pins the forwarded result and argument.
+
+    The last two passes load the `macho_arm64e_auth` fixture, whose
+    `_tail_auth` is `bl _helper; ...; b _helper2` with `_helper(int)` and
+    `_helper2(int)` each returning in w0: `return _helper2(_helper(a0))`.
+    Stating only the tail callee printed
+    `int _tail_auth(unsigned int a0) { _helper(a0); return _helper2(); }`, a
+    return value computed from no argument.  The drive now also states the callee of the
+    call before the tail call, and `passthrough` hands that callee's stated
+    result in x0 to the tail callee that reads it.  Pass 3
+    (`option passthrough off`) pins the argument-less calls, pass 4 (the
+    default) the chain.
+-->
+<bytechunk space="ram" offset="0x401000">
+f30f1efa4885f67402893e893def1f00008d447f01c3662e0f1f840000000000f30f1efa31f6ebd80f1f840000000000f30f1efa8935c61f00000faff28d043e
+c30f1f400066662e0f1f840000000000f30f1efa83c601ebd70f1f8000000000f30f1efabf01000000ba03000000e8adffffffbe0200000089c1e8d1ffffff01
+c8c30f1f0066662e0f1f840000000000f30f1efabf01000000ba03000000e87dffffffbe02000000eba6
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="target"/>
+<symbol space="ram" offset="0x401020" name="thunk"/>
+<symbol space="ram" offset="0x401030" name="helper"/>
+<symbol space="ram" offset="0x401050" name="pass"/>
+</binaryimage>
+<script>
+  <com>option protoorder off</com>
+  <com>lo fu thunk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pass</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option protoorder cycles</com>
+  <com>lo fu thunk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pass</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_arm64e_auth</com>
+  <com>read symbols</com>
+  <com>option passthrough off</com>
+  <com>load function _tail_auth</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_arm64e_auth</com>
+  <com>read symbols</com>
+  <com>load function _tail_auth</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="tail callees #1: with nothing stated the thunk drops the tail call's result" min="1" max="1">^  target\(a0,0\); // tail-call$</stringmatch>
+<stringmatch name="tail callees #2: the thunk returns the tail call's result" min="1" max="1">^  return target\(a0,NULL\); // tail-call$</stringmatch>
+<stringmatch name="tail callees #3: with nothing stated the forwarder passes the argument helper's body reads, but not its result" min="1" max="1">^  helper\(a0,a1 \+ 1,a2\); // tail-call$</stringmatch>
+<stringmatch name="tail callees #4: the forwarder passes its third argument through" min="1" max="1">^  return helper\(a0,a1 \+ 1,a2\); // tail-call$</stringmatch>
+<stringmatch name="tail callees #5: the forwarder takes the three parameters its callee reads" min="1" max="1">^int4 pass\(int4 a0,int4 a1,int4 a2\)$</stringmatch>
+<stringmatch name="tail callees #6: without passthrough the tail call after _helper takes nothing" min="1" max="1">^  _helper2\(\); // tail-call$</stringmatch>
+<stringmatch name="tail callees #7: the call before the tail call passes the incoming x0" min="1" max="1">^  v1 = _helper\(a0\);$</stringmatch>
+<stringmatch name="tail callees #8: the tail call passes on _helper's result in x0" min="1" max="1">^  return _helper2\(v1\); // tail-call$</stringmatch>
+<stringmatch name="tail callees #9: no tail call returns a value computed from no argument" min="0" max="0">^  return _helper2\(\); // tail-call$</stringmatch>
+</decompilertest>

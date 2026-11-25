@@ -1,0 +1,41 @@
+<!-- P1 no-return propagation. Go scheduler resumption preserves the caller's
+     continuation while a lookalike wrapper and the actual exit remain terminal.
+     Explicit function and call-site overrides still choose their own flow. -->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-mcall-resumption/mcall-elf</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load function main.yield</com><com>decompile</com><com>print C</com>
+  <com>load function main.stop</com><com>decompile</com><com>print C</com>
+  <com>load function main.mcall</com><com>decompile</com><com>print C</com>
+  <com>option noreturn runtime.mcall true</com>
+  <com>load function main.yield</com><com>decompile</com><com>print raw</com>
+  <com>option noreturn runtime.mcall false</com>
+  <com>load function main.yield</com>
+  <com>override flow 0x401017 callreturn</com>
+  <com>decompile</com><com>print raw</com>
+</script>
+<stringmatch name="Go mcall retains the resumed caller continuation" min="1" max="1">^void main\.yield\(void\)$
+^\{$
+^\s+runtime\.mcall\(0x402000\);$
+^\s+dat_[[:xdigit:]]+ = 0x5a;$
+^\}$</stringmatch>
+<stringmatch name="Go mcall lookalike still propagates terminal flow to its caller" min="1" max="1">^void main\.stop\(void\)$
+^\{$
+^\s+main\.mcall\(\); // no-return$
+^\}$</stringmatch>
+<stringmatch name="Go mcall correction preserves the terminal goexit0 callback" min="1" max="1">^void main\.mcall\(void\)$
+^\{$
+^\s+runtime\.goexit0\(\); // no-return$
+^\}$</stringmatch>
+<stringmatch name="Go mcall explicit no-return assertion cuts the continuation" min="1" max="1">^0x00401017:[[:xdigit:]]+:\s+call fruntime\.mcall\(free\)\(#0x402000\)$
+^0x00401017:[[:xdigit:]]+:\s+return\(#0x1:4\)$</stringmatch>
+<stringmatch name="Go mcall explicit call-site flow override cuts the continuation" min="1" max="1">^0x00401017:[[:xdigit:]]+:\s+call fruntime\.mcall\(free\)\(#0x402000\)$
+^0x00401017:[[:xdigit:]]+:\s+return\(#0x0:1\)$</stringmatch>
+</decompilertest>

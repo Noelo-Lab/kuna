@@ -75,5 +75,5 @@ e90301aae10300aae00309aa08088052010000d4c0035fd6e90300aa88158052
 <stringmatch name="SYSCALLREGS-AARCH64 #4: after reads the svc result" min="1" max="1">v1 = CallSupervisor\(0,0xac\);</stringmatch>
 <stringmatch name="SYSCALLREGS-AARCH64 #5: after adds its argument to the svc result" min="1" max="1">a0 = v1 \+ a0;</stringmatch>
 <stringmatch name="SYSCALLREGS-AARCH64 #6: with option syscallregs off after doubles its own argument" min="1" max="1">v1 = a0 \* 2;</stringmatch>
-<stringmatch name="SYSCALLREGS-AARCH64 #7: the barrier in fence is not a system call in either pass" min="2" max="2">DataMemoryBarrier\(2,3\);</stringmatch>
+<stringmatch name="SYSCALLREGS-AARCH64 #7: the barrier in fence is not a system call in either pass" min="2" max="2">__dmb\(11\);</stringmatch>
 </decompilertest>

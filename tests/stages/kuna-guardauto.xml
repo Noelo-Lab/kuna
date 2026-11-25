@@ -1,0 +1,66 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `option guardarm` (default `auto`), P8 goto-quality: the
+    ruleBlockIfNoExit arm tie-break by code layout, applied only in functions
+    the per-function detector (p3_dataflow/kuna_unoptimized.rs) calls
+    unoptimized.
+
+    unget is gcc 11 -O0 (-fno-pic -fno-stack-protector -fcf-protection=none):
+        struct buf { char *data; long len; long pos; };
+        int unget(int c, struct buf *bp)
+        {
+          if (c == -1 || bp == 0 || bp->pos == 0)
+            return -1;
+          bp->data[DEC(bp->pos)] = c;
+          return c;
+        }
+    (DEC is the C pre-decrement operator, which an XML comment cannot spell.)
+    Its prologue stores both argument registers to the frame and the body
+    reloads them from there, so it is unoptimized; both arms of the guard end
+    in a return, and the earlier one in the layout is the source's clause.
+
+    backup is gcc 11 -O2 of
+        void backup(void)
+        { if (width() > 1 && narrow == 0) point = prev(point); else point -= 1; }
+    with width, prev, narrow and point linked in. It keeps a value in no
+    frame slot and has no frame pointer, so it is not called unoptimized, and
+    its layout (the else arm first) is the optimizer's, not the author's.
+
+    Pass 1 (default auto): unget prints the source's flat guard (#1) and
+    backup keeps the out-index arm order (#3). Pass 2 (option guardarm off):
+    unget nests its body under the negated guard, the old output (#2).
+    Pass 3 (option guardarm on): the layout also decides backup's tie and
+    puts the else arm first (#4).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">554889e5897dfc488975f0837dfcff741448837df000740d488b45f0488b40104885c07507b8ffffffffeb2e488b45f0488b08488b45f0488b4010488d50ff488b45f048895010488b45f0488b40104801c88b55fc88108b45fc5dc30f1f40004883ec08e84700000083f8017e0a8b05900f000085c074188b05820f000083e8018905790f00004883c408c30f1f40008b3d6a0f0000e82500000089055f0f00004883c408c3662e0f1f8400000000008b054e0f000083c002c3660f1f4400008d47fec366662e0f1f84000000000090ebfe</bytechunk>
+<bytechunk space="ram" offset="0x101000">0000000000000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="unget"/>
+<symbol space="ram" offset="0x100060" name="backup"/>
+<symbol space="ram" offset="0x1000b0" name="width"/>
+<symbol space="ram" offset="0x1000c0" name="prev"/>
+</binaryimage>
+<script>
+  <com>option returndup on</com>
+  <com>lo fu unget</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu backup</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option guardarm off</com>
+  <com>lo fu unget</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option guardarm on</com>
+  <com>lo fu backup</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GUARDAUTO #1: by default the unoptimized function's guard is flat with the return as its clause (pass 1)" min="1" max="1">^  if \(\(\(a0 == -1\) \|\| \(!a1\)\) \|\| \(!a1->field_0x10\)\)
+^    return -1;</stringmatch>
+<stringmatch name="GUARDAUTO #2: with the option off the body is nested under the negated guard (pass 2)" min="1" max="1">^  if \(\(\(a0 != -1\) &amp;&amp; \(a1\)\) &amp;&amp; \(a1->field_0x10\)\) \{</stringmatch>
+<stringmatch name="GUARDAUTO #3: by default the optimized function keeps the out-index arm order (pass 1)" min="1" max="1">^  if \(\(2 &lt;= \(int4\)width\(\)\) &amp;&amp; \(!dat_101004\)\) \{</stringmatch>
+<stringmatch name="GUARDAUTO #4: with the option on the layout decides the optimized function too (pass 3)" min="1" max="1">^  if \(\(\(int4\)width\(\) &lt;= 1\) \|\| \(dat_101004\)\) \{</stringmatch>
+</decompilertest>

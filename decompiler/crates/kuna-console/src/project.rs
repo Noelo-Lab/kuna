@@ -748,7 +748,7 @@ pub fn decompile_pulled(
                 flow_overrides: &flow_ovr,
                 mapped_params: &seed.mapped_params,
             },
-            &[],
+            &seed.proto_overrides,
         );
         prog.arch_mut().kuna_record_names = false;
         // (kuna `--assert`) The symbol-scoped second pass. `name`/`type` name a
@@ -783,7 +783,7 @@ pub fn decompile_pulled(
                             flow_overrides: &flow_ovr,
                             mapped_params: &carried_params,
                         },
-                        &[],
+                        &seed.proto_overrides,
                     )
                     .result;
                     prog.arch_mut().kuna_prior_names = Default::default();
@@ -800,6 +800,18 @@ pub fn decompile_pulled(
                 // (kuna `--assert`) The flow overrides the follower REFUSED are only
                 // known now: `function_seed` recorded `applied` when it seeded them.
                 crate::assertions::record_rejected_flow_overrides(
+                    prog,
+                    &name,
+                    single_target,
+                    &fd,
+                );
+                crate::assertions::record_rejected_callee_overrides(
+                    prog,
+                    &name,
+                    single_target,
+                    &fd,
+                );
+                crate::assertions::record_unbound_call_prototypes(
                     prog,
                     &name,
                     single_target,
@@ -876,6 +888,7 @@ pub fn decompile_pulled(
                 }
                 let emitted_name = fd.get_display_name().to_string();
                 prog.arch_mut().print_mut().set_record_pointer_arguments(want_pointer_arguments);
+                let line_size = prog.arch_mut().print_mut().suspend_line_size();
                 let budget = kuna_decomp::decompile_drive::RenderBudget::enter(prog.arch(), &fd);
                 let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     if header_carries_types {
@@ -966,16 +979,28 @@ pub fn decompile_pulled(
                     ))
                 });
                 drop(budget);
+                prog.arch_mut().print_mut().restore_line_size(line_size);
                 fd.set_display_name(&original_display);
                 match rendered {
                     Ok((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, (pointerargs, warnings), stack_objects)) => {
                     crate::assertions::verify_printed(prog, &fd, &code, &replayed);
+                    if replay {
+                        crate::assertions::verify_formats(prog, &fd, &name, single_target);
+                    }
+                    let (mut code, mut proto) = (Some(code), proto);
+                    if header_carries_types
+                        && prog.arch().print().out_lang() == kuna_decomp::kuna_lang::OutLang::C
+                        && !fd.get_func_proto().is_input_locked()
+                        && is_jump_stub(prog, byte_address)
+                    {
+                        kuna_decomp::kuna_unitcalls::unknown_stub_params(&mut proto, &mut code);
+                    }
                     sink(FuncResult {
                         name,
                         address,
                         byte_address,
                         size: size as i64,
-                        code: Some(code),
+                        code,
                         error: None,
                         proto,
                         emitted_c_name: (header_carries_types && prog.arch().print().out_lang() == kuna_decomp::kuna_lang::OutLang::C).then_some(emitted_name),
@@ -1203,6 +1228,21 @@ pub fn sanitize_guard(file_name: &str) -> String {
     s
 }
 
+/// Is the function at `vma` a jump stub: one indirect jump, such as an x86 PLT
+/// stub's `jmp [GOT]` or a PE or Mach-O import thunk, perhaps after `endbr64` or
+/// `endbr32` (a CET `.plt.sec` stub; GNU ld's `bnd jmp` decodes as one jump)? A
+/// stub forwards whatever its caller passes, so in an export one kuna recovered
+/// no parameters for takes any. An AArch64 PLT or Mach-O stub (`adrp; ldr; br`)
+/// or an ARM PLT stub (`add; add; ldr pc`) is several instructions, and a direct
+/// `jmp` to a decompiled function keeps the parameters recovered for it.
+fn is_jump_stub(prog: &ConsoleProgram, vma: u64) -> bool {
+    prog.lone_jump_target(vma) == Some(None)
+        || (prog
+            .read_bytes(vma, 4)
+            .is_some_and(|b| matches!(b.as_slice(), [0xf3, 0x0f, 0x1e, 0xfa | 0xfb]))
+            && prog.lone_jump_target(vma + 4) == Some(None))
+}
+
 /// (kuna) Every name the type block introduces as a TYPEDEF name.
 ///
 /// C has one ordinary-identifier namespace, so a typedef and a function cannot
@@ -1358,7 +1398,8 @@ pub fn deferred_callwide_header<'a>(
             } else {
                 required.insert(contract.name.as_str());
                 if !result.call_declarations.iter().any(|decl| {
-                    declarator_name(decl.trim().trim_end_matches(';')) == contract.name
+                    !kuna_decomp::kuna_unitcalls::is_helper(decl)
+                        && declarator_name(decl.trim().trim_end_matches(';')) == contract.name
                 }) {
                     return Err(format!("callwide export: missing call declaration for {}", contract.name));
                 }
@@ -1388,6 +1429,7 @@ pub fn deferred_callwide_header<'a>(
             continue;
         }
         let declarations: BTreeSet<_> = results.iter().flat_map(|r| &r.call_declarations)
+            .filter(|decl| !kuna_decomp::kuna_unitcalls::is_helper(decl))
             .filter(|decl| declarator_name(decl.trim().trim_end_matches(';')) == name)
             .map(|decl| decl.trim()).collect();
         if declarations.len() != 1 {
@@ -1459,11 +1501,17 @@ pub fn build_header_with_names(
         .collect();
     let mut calls: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
     for declaration in results.iter().flat_map(|r| &r.call_declarations) {
+        if kuna_decomp::kuna_unitcalls::is_helper(declaration) { continue; }
         let name = declarator_name(declaration.trim().trim_end_matches(';'));
         if !own.contains(&name) {
             calls.entry(name).or_default().insert(declaration.trim());
         }
     }
+    let data: BTreeSet<_> = results.iter().flat_map(|r| &r.globals).map(|g| g.name.as_str()).collect();
+    let helpers = kuna_decomp::kuna_unitcalls::header_block(
+        results.iter().flat_map(|r| &r.call_declarations).map(String::as_str),
+        |name| own.contains(name) || shadowed.contains(name) || calls.contains_key(name) || data.contains(name),
+    );
     if !calls.is_empty() { out.push_str("\n/* declared call targets */\n"); }
     for (name, declarations) in calls {
         let text = declarations.iter().copied().collect::<Vec<_>>().join(" ");
@@ -1476,6 +1524,7 @@ pub fn build_header_with_names(
             let _ = writeln!(out, "extern {text}");
         }
     }
+    out.push_str(&helpers);
     out.push_str("\n/* function prototypes */\n");
     for r in results {
         match (&r.proto, &r.error) {
@@ -2193,6 +2242,50 @@ mod tests {
         assert!(!header.contains("extern int split") && !header.contains("extern long split"), "{header}");
     }
 
+    #[test]
+    fn helper_declarations_stay_out_of_the_call_targets_until_asked_for() {
+        let mut result = streamed("int local(int a0);", "int");
+        result.call_declarations = vec![
+            "int puts(char *a0);".into(),
+            "bool SCARRY4(KUNA_ANY_ARGS);".into(),
+            "undefined8 puts(KUNA_ANY_ARGS);".into(),
+            "void local(KUNA_ANY_ARGS);".into(),
+        ];
+        let header = super::build_header("fresh", "", "", &[result]).unwrap();
+        let at = |text: &str| header.find(text).unwrap_or_else(|| panic!("no {text}: {header}"));
+        let (targets, block, prototypes) =
+            (at("/* declared call targets */"), at("#ifdef KUNA_DECLARE_HELPERS"), at("/* function prototypes */"));
+        assert!(targets < block && block < prototypes, "{header}");
+        assert!(header[targets..block].contains("extern int puts(char *a0);"), "{header}");
+        assert!(!header[targets..block].contains("SCARRY4"), "{header}");
+        assert!(header[block..prototypes].contains("#ifndef SCARRY4\nextern bool SCARRY4(KUNA_ANY_ARGS);\n#endif\n"), "{header}");
+        assert!(!header.contains("puts(KUNA_ANY_ARGS)") && !header.contains("local(KUNA_ANY_ARGS)"), "{header}");
+    }
+
+    #[test]
+    fn an_import_declaration_is_written_unless_the_header_declares_its_name() {
+        let mut result = streamed("int local(int a0);", "int");
+        result.call_declarations = vec![
+            "extern void __libc_start_main(KUNA_ANY_ARGS);".into(),
+            "extern undefined8 local(KUNA_ANY_ARGS);".into(),
+            "extern undefined8 environ(KUNA_ANY_ARGS);".into(),
+            "extern undefined4 puts(KUNA_ANY_ARGS);".into(),
+            "int puts(char *a0);".into(),
+        ];
+        result.globals.push(super::GlobalInfo {
+            address: 0x5000, name: "environ".into(), declaration: "char **environ".into(),
+            size: 8, unknown: false, direct: true, aggregate: false, elem: false, integer: false,
+        });
+        let header = super::build_header("fresh", "", "", &[result]).unwrap();
+        let block = "\n/* the imports the code calls with no known prototype */\n\
+                     extern void __libc_start_main(KUNA_ANY_ARGS);\n";
+        assert!(header.contains(block), "{header}");
+        assert!(!header.contains("KUNA_DECLARE_HELPERS"), "{header}");
+        for name in ["local", "environ", "puts"] {
+            assert!(!header.contains(&format!("{name}(KUNA_ANY_ARGS)")), "{header}");
+        }
+    }
+
     fn wide_call() -> FuncResult {
         let mut result = streamed("unsigned long long caller(void);", "unsigned long long");
         result.call_declarations = vec!["unsigned long long producer(int,int,int,int);".into()];
@@ -2201,6 +2294,17 @@ mod tests {
             inputs: vec![true; 4], definition: false,
         }];
         result
+    }
+
+    #[test]
+    fn a_helper_named_like_a_wide_call_target_neither_declares_nor_contradicts_it() {
+        let mut result = wide_call();
+        result.call_declarations.push("void producer(KUNA_ANY_ARGS);".into());
+        let header = super::build_header("fresh", "", "", std::slice::from_ref(&result)).unwrap();
+        assert!(header.contains("extern unsigned long long producer(int,int,int,int);"), "{header}");
+        assert!(!header.contains("producer(KUNA_ANY_ARGS)"), "{header}");
+        result.call_declarations.retain(|declaration| declaration.contains("KUNA_ANY_ARGS"));
+        assert!(super::build_header("fresh", "", "", &[result]).is_err());
     }
 
     #[test]

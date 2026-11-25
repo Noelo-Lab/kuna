@@ -1,6 +1,5 @@
-//! Defined C for a signed operand of a fixed, in-range 32-bit ARM LSL.
-
-use std::rc::Rc;
+//! Defined C for a signed operand of an in-range 32-bit ARM LSL: a constant
+//! count below 32, or a register count whose non-zero mask keeps it there.
 
 use crate::architecture::Architecture;
 use crate::context::{OpId, VarnodeId};
@@ -8,11 +7,48 @@ use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
 use kuna_num::opcodes::OpCode;
 
-pub(crate) struct ArmConstantLslPlan {
-    pub(crate) lhs: VarnodeId,
-    pub(crate) count: VarnodeId,
-    pub(crate) unsigned_type: Rc<Datatype>,
-    pub(crate) signed_result_type: Option<Rc<Datatype>>,
+use crate::p9_emit::kuna_constantshift::ConstantLslPlan;
+
+/// (kuna `armconstshift`) Which fixed left shifts of a signed operand print
+/// through an unsigned conversion.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ConstShiftMode {
+    /// Every shift keeps upstream's spelling.
+    #[default]
+    Off,
+    /// ARM's fixed 32-bit LSL.
+    On,
+    /// `On`, and every architecture's fixed 64-bit left shift.
+    All,
+}
+
+impl ConstShiftMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ConstShiftMode::Off => "off",
+            ConstShiftMode::On => "on",
+            ConstShiftMode::All => "all",
+        }
+    }
+}
+
+/// The `armconstshift` option parser.
+pub struct OptionArmConstShift;
+
+impl OptionArmConstShift {
+    pub fn apply(&self, p1: &str) -> kuna_base::error::KunaResult<(ConstShiftMode, String)> {
+        let mode = match p1 {
+            "off" => ConstShiftMode::Off,
+            "on" | "" => ConstShiftMode::On,
+            "all" => ConstShiftMode::All,
+            other => {
+                return Err(kuna_base::error::KunaError::parse(format!(
+                    "Unknown armconstshift value: {other} (expected off|on|all)"
+                )))
+            }
+        };
+        Ok((mode, format!("Constant-shift C11 conversion set to {}", mode.as_str())))
+    }
 }
 
 /// Convert before shifting to compute ARM's low 32 bits without signed C UB.
@@ -21,8 +57,8 @@ pub(crate) fn plan_arm_constant_lsl(
     fd: &Funcdata,
     arch: &Architecture,
     op: OpId,
-) -> Option<ArmConstantLslPlan> {
-    if !arch.arm_constant_shift || !arch.archid.starts_with("ARM:") {
+) -> Option<ConstantLslPlan> {
+    if arch.arm_constant_shift == ConstShiftMode::Off || !arch.archid.starts_with("ARM:") {
         return None;
     }
     let o = fd.obank().get(op)?;
@@ -30,13 +66,8 @@ pub(crate) fn plan_arm_constant_lsl(
         return None;
     }
     let (lhs, count) = (o.get_in(0)?, o.get_in(1)?);
-    let (lhs_v, count_v, out_v) = (
-        fd.vbank().get(lhs)?,
-        fd.vbank().get(count)?,
-        fd.vbank().get(o.get_out()?)?,
-    );
-    if !count_v.is_constant()
-        || count_v.get_offset() >= 32
+    let (lhs_v, out_v) = (fd.vbank().get(lhs)?, fd.vbank().get(o.get_out()?)?);
+    if !crate::p9_emit::kuna_armshiftguard::count_below_width(fd, count, 32)
         || lhs_v.get_size() != 4
         || out_v.get_size() != 4
         || !signed_shiftee(fd, arch, lhs, op)
@@ -50,7 +81,7 @@ pub(crate) fn plan_arm_constant_lsl(
         }
         _ => None,
     };
-    Some(ArmConstantLslPlan {
+    Some(ConstantLslPlan {
         lhs,
         count,
         unsigned_type,

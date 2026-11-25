@@ -39,7 +39,8 @@
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
-use kuna_base::types::int4;
+use kuna_base::space::spacetype;
+use kuna_base::types::{int4, uintb};
 
 use kuna_num::opcodes::OpCode;
 
@@ -194,6 +195,31 @@ impl Funcdata {
         }
     }
 
+    /// (kuna `gotonext`) Re-derive each fall-thru chain from the case blocks: a
+    /// case that is a `BlockGoto` to another case's entry block chains to that
+    /// case.  `grab_case_basic` reads the target's switch out-index from sblocks
+    /// edges, which a target wrapped in its own `BlockGoto` has lost and whose
+    /// remaining indices can be stale, so a chain could be missed or point at the
+    /// case itself, and the sort then put that case first under label 0.
+    fn chain_fallthru_cases(&self, cases: &mut [crate::block::CaseOrder]) {
+        let sb = self.sblocks_ref();
+        for i in 0..cases.len() {
+            let blk = sb.block(cases[i].block);
+            if cases[i].gototype != 0 || blk.get_type() != crate::block::BlockType::Goto {
+                continue;
+            }
+            let target = blk.get_goto_target().and_then(|t| sb.get_front_leaf(t)).and_then(|f| sb.sub_block(f, 0));
+            cases[i].chain = match target {
+                Some(t) => cases
+                    .iter()
+                    .position(|c| c.gototype == 0 && c.basicblock == Some(t))
+                    .filter(|&j| j != i)
+                    .map_or(-1, |j| j as i32),
+                None => -1,
+            };
+        }
+    }
+
     /// `BlockSwitch::finalizePrinting` for a single switch node (block.cc:3607).
     fn finalize_one_switch(&mut self, sw: BlockId) {
         let jt_index = match self.sblocks_ref().block(sw).switch_jt_index() {
@@ -207,6 +233,9 @@ impl Funcdata {
             None => return,
         };
         let ncase = cases.len();
+        if self.get_arch().goto_next {
+            self.chain_fallthru_cases(&mut cases);
+        }
         // Construct the depth parameter, to sort fall-thru cases.
         for i in 0..ncase {
             let mut j = cases[i].chain;
@@ -255,6 +284,8 @@ impl Funcdata {
         }
         // stable_sort by CaseOrder::compare (label, then depth).
         cases.sort_by(crate::block::CaseOrder::compare);
+        // (kuna `switchcaseorder`) default and unstopped arms last.
+        crate::p8_structure::kuna_switchcaseorder::order_cases(self, &mut cases);
         if let Some(slot) = self.sblocks_mut().block_mut(sw).switch_caseblocks_mut() {
             *slot = cases;
         }
@@ -1962,11 +1993,13 @@ impl Funcdata {
     ///      to the new BRANCHIND so the existing structurer + printer emit a
     ///      `switch`.
     ///
-    /// Returns `Ok(Some((jt_index, read_head_operand)))` on success, `Ok(None)` if
-    /// the CFG no longer matches the record (e.g. the head/targets were merged
-    /// away — install declines gracefully rather than corrupting the CFG).
-    /// `read_head_operand` reports that `prefer_head_operand` found an operand of
-    /// the head compare other than `var_addr` and the switch reads it.
+    /// Returns `Ok(Some((jt_index, read_head_operand, strict)))` on success,
+    /// `Ok(None)` if the CFG no longer matches the record (e.g. the head/targets
+    /// were merged away — install declines gracefully rather than corrupting the
+    /// CFG). `read_head_operand` reports that `prefer_head_operand` found an
+    /// operand of the head compare other than `var_addr` and the switch reads it;
+    /// `strict` that the install enters every body directly and passes the value
+    /// check with every raw read counted as a use.
     #[allow(clippy::too_many_arguments)]
     pub fn kuna_install_lowered_switch(
         &mut self,
@@ -1978,7 +2011,11 @@ impl Funcdata {
         default_target: &Address,
         signed_labels: bool,
         prefer_head_operand: bool,
-    ) -> KunaResult<Option<(usize, bool)>> {
+        load_at: Option<&Address>,
+        path_spine: &[Address],
+        path_returns: &[(Address, int4)],
+        linear: bool,
+    ) -> KunaResult<Option<(usize, bool, bool)>> {
         use kuna_base::types::uintb;
 
         // Don't re-install if a table already exists for this branch address.
@@ -1998,53 +2035,84 @@ impl Funcdata {
         // address-table entry; duplicate-valued cases collapse to the same edge,
         // and the C++ trivial recovery emits one label per edge).
         // (kuna `loweredswitchexact`) every label of a shared body is kept instead.
-        let mut out_targets: Vec<Address> = Vec::new();
-        let mut out_labels: Vec<Vec<uintb>> = Vec::new();
-        let mut out_is_default: Vec<bool> = Vec::new();
-
-        for (i, tgt) in case_targets.iter().enumerate() {
-            if tgt == default_target {
-                continue; // a case that coincides with the default folds away
+        // (kuna `loweredswitchpath`) A tree that loads each case's value inside it
+        // installs along its raw paths.
+        let (out_blocks, out_labels, out_is_default, strict) = if !path_spine.is_empty() {
+            use crate::p2_lift::kuna_loweredswitchpath as lsp;
+            let arms = match lsp::plan_install(self, head, var_addr, var_size, case_vals, prefer_head_operand, load_at, path_spine, path_returns) {
+                Some(arms) if arms.len() >= 3 => arms,
+                _ => return Ok(None),
+            };
+            let targets: Vec<BlockId> = arms.iter().map(|a| a.target).collect();
+            if self.kuna_lowered_switch_strands_table(head, &targets) {
+                return Ok(None);
             }
-            if let Some(k) = out_targets.iter().position(|a| a == tgt) {
-                out_labels[k].push(case_vals[i]);
-                continue; // duplicate target: one out-edge
+            if linear && !crate::p2_lift::kuna_loweredswitchexact::raw_cases_private(self, head, &targets[..targets.len() - 1], &targets) {
+                return Ok(None);
             }
-            out_targets.push(tgt.clone());
-            out_labels.push(vec![case_vals[i]]);
-            out_is_default.push(false);
-        }
-        // Default out-edge last.
-        out_targets.push(default_target.clone());
-        out_labels.push(vec![0]);
-        out_is_default.push(true);
+            let blocks = lsp::build_arm_blocks(self, &arms)?;
+            let n = arms.len();
+            let labels: Vec<Vec<uintb>> = arms.into_iter().map(|a| if a.labels.is_empty() { vec![0] } else { a.labels }).collect();
+            (blocks, labels, (0..n).map(|i| i + 1 == n).collect::<Vec<bool>>(), false)
+        } else {
+            let mut out_targets: Vec<Address> = Vec::new();
+            let mut out_labels: Vec<Vec<uintb>> = Vec::new();
+            let mut out_is_default: Vec<bool> = Vec::new();
 
-        // Resolve every target to a live basic block; if any is missing the CFG no
-        // longer matches — decline.
-        let mut out_blocks: Vec<BlockId> = Vec::with_capacity(out_targets.len());
-        for tgt in &out_targets {
-            match self.kuna_block_at_start(tgt) {
-                Some(b) => out_blocks.push(b),
-                None => return Ok(None),
+            for (i, tgt) in case_targets.iter().enumerate() {
+                if tgt == default_target {
+                    continue; // a case that coincides with the default folds away
+                }
+                if let Some(k) = out_targets.iter().position(|a| a == tgt) {
+                    out_labels[k].push(case_vals[i]);
+                    continue; // duplicate target: one out-edge
+                }
+                out_targets.push(tgt.clone());
+                out_labels.push(vec![case_vals[i]]);
+                out_is_default.push(false);
             }
-        }
-        // Need at least 2 case edges + a default for a switch.
-        if out_blocks.len() < 3 {
-            return Ok(None);
-        }
+            // Default out-edge last.
+            out_targets.push(default_target.clone());
+            out_labels.push(vec![0]);
+            out_is_default.push(true);
 
-        // The rewiring severs the head's out-edges, so everything reachable only
-        // through the cascade spine is swept.  If an already-recovered jump table
-        // sits down there, the cascade was a guard chain in front of a genuine
-        // switch and installing would delete it — decline.
-        if self.kuna_lowered_switch_strands_table(head, &out_blocks) {
-            return Ok(None);
-        }
-        // (kuna `loweredswitchexact`) Nothing a deleted compare block writes may be
-        // read again on the raw p-code this edits.
-        if !crate::p2_lift::kuna_loweredswitchexact::raw_install_keeps_values(self, head, &out_blocks) {
-            return Ok(None);
-        }
+            // Resolve every target to a live basic block; if any is missing the CFG no
+            // longer matches — decline.
+            let mut out_blocks: Vec<BlockId> = Vec::with_capacity(out_targets.len());
+            for tgt in &out_targets {
+                match self.kuna_block_at_start(tgt) {
+                    Some(b) => out_blocks.push(b),
+                    None => return Ok(None),
+                }
+            }
+            // (kuna `loweredswitchexact`) Enter each body through the raw block the tree
+            // reaches it by.
+            let entered = out_blocks.clone();
+            crate::p2_lift::kuna_loweredswitchexact::raw_case_entries(self, head, &mut out_blocks);
+            // Need at least 2 case edges + a default for a switch.
+            if out_blocks.len() < 3 {
+                return Ok(None);
+            }
+
+            // The rewiring severs the head's out-edges, so everything reachable only
+            // through the cascade spine is swept.  If an already-recovered jump table
+            // sits down there, the cascade was a guard chain in front of a genuine
+            // switch and installing would delete it — decline.
+            if self.kuna_lowered_switch_strands_table(head, &out_blocks) {
+                return Ok(None);
+            }
+            // (kuna `loweredswitchexact`) Nothing a deleted compare block writes may be
+            // read again on the raw p-code this edits.
+            if !crate::p2_lift::kuna_loweredswitchexact::raw_install_keeps_values(self, head, &out_blocks) {
+                return Ok(None);
+            }
+            let strict = out_blocks == entered
+                && crate::p2_lift::kuna_loweredswitchexact::raw_install_keeps_values_strictly(self, head, &out_blocks);
+            if linear && !crate::p2_lift::kuna_loweredswitchexact::raw_cases_private(self, head, &out_blocks[..out_blocks.len() - 1], &out_blocks) {
+                return Ok(None);
+            }
+            (out_blocks, out_labels, out_is_default, strict)
+        };
 
         // The head's trailing op must be the recorded CBRANCH.
         let cbranch = match self.bb_op_tail(head) {
@@ -2069,6 +2137,17 @@ impl Funcdata {
         } else {
             None
         };
+        // (kuna) A selector the detection graph held in a temporary has no storage
+        // to fall back to: the head compare must read the output of that load.
+        if let Some(at) = load_at {
+            let loaded = match &head_operand {
+                Some(HeadOperand::Value(v)) => self.vbank().get(*v).and_then(|v| v.get_def()).and_then(|d| self.obank().get(d)),
+                _ => None,
+            };
+            if !loaded.is_some_and(|op| op.code() == OpCode::CPUI_LOAD && op.get_addr() == at) {
+                return Ok(None);
+            }
+        }
         let read_head_operand = head_operand.is_some();
         let swvn = match head_operand {
             Some(_) => None,
@@ -2208,7 +2287,7 @@ impl Funcdata {
 
         self.jumpvec_mut().push(jt);
         let idx = self.num_jump_tables() as usize - 1;
-        Ok(Some((idx, read_head_operand)))
+        Ok(Some((idx, read_head_operand, strict)))
     }
 
     /// (kuna) Would installing the lowered switch at `head` strand a genuine jump
@@ -2482,8 +2561,10 @@ impl Funcdata {
         shared: &mut Option<Funcdata>,
     ) -> Result<Option<usize>, crate::jumptable::RecoveryMode> {
         use crate::jumptable::RecoveryMode;
+        let encoding = crate::kuna_indirectreturn::target_encoding(self, op);
         // linkJumpTable: search for a pre-existing table.
         if let Some(idx) = self.link_jump_table(op) {
+            self.get_jump_table_mut(idx as int4).kuna_set_target_encoding(encoding);
             let jt = self.get_jump_table(idx as int4);
             if !jt.is_override() && !jt.is_partial() && jt.num_entries() != 0 {
                 return Ok(Some(idx)); // Previously calculated, complete, non-override
@@ -2509,7 +2590,8 @@ impl Funcdata {
         }
         // Trial recovery into a fresh table appended to jumpvec.
         let addr = self.obank().get(op).unwrap().get_addr().clone();
-        let trial = crate::jumptable::JumpTable::new(addr);
+        let mut trial = crate::jumptable::JumpTable::new(addr);
+        trial.kuna_set_target_encoding(encoding);
         self.jumpvec_mut().push(trial);
         let idx = self.num_jump_tables() as usize - 1;
         let mode = self.stage_jump_table(idx, op, record_loads, visited, run_pipeline, shared);
@@ -2544,18 +2626,9 @@ impl Funcdata {
         let share = self.get_arch().jumptable_share_partial;
         let mut owned: Option<Funcdata> = None;
         if !share || shared.is_none() {
-            let mut fresh = match self.build_jumptable_partial() {
-                Ok(p) => p,
-                Err(_) => return RecoveryMode::FailNormal,
-            };
-            // Mark the partial as a jump-table-recovery clone, then build its blocks
-            // and run the reduced "jumptable" universalAction over it (C++
-            // partial.truncatedFlow + allacts.setCurrent("jumptable") + perform).
-            fresh.set_flag_raw(crate::funcdata::funcdata_flags::jumptablerecovery_on);
-            if run_pipeline(&mut fresh, visited).is_err() {
-                // C++ catches LowlevelError, warns, and returns fail_normal.
+            let Some(fresh) = self.jumptable_partial(visited, run_pipeline) else {
                 return RecoveryMode::FailNormal;
-            }
+            };
             if share {
                 *shared = Some(fresh);
             } else {
@@ -2600,12 +2673,15 @@ impl Funcdata {
         let addr2 = partial.obank().get(partop).unwrap().get_addr().clone();
         jt.set_indirect_op_addr(partop, addr2);
         let res = if jt.is_partial() {
-            let targets = self.get_override().multistage_targets(&addr).map(<[Address]>::to_vec);
-            jt.recover_multistage(partial).map(|()| {
-                if let Some(targets) = targets {
-                    jt.kuna_adopt_multistage_targets(targets);
-                }
-            })
+            let recovered = jt.recover_multistage(partial);
+            // A failed re-entry must preserve its followed singleton. An ordinary
+            // restart uses the guarded targets established by the late model.
+            if self.get_override().multistage_targets(&addr)
+                .is_some_and(|targets| jt.kuna_adopt_multistage_targets(targets, recovered.is_err())) {
+                Ok(())
+            } else {
+                recovered
+            }
         } else {
             jt.recover_addresses(partial)
         };
@@ -2623,6 +2699,18 @@ impl Funcdata {
                 }
             }
         }
+    }
+
+    /// Build the SSA view of the flow decoded so far.
+    pub(crate) fn jumptable_partial(
+        &self,
+        visited: &crate::flow::VisitedMap,
+        run_pipeline: &mut crate::flow::JtPipelineFn<'_>,
+    ) -> Option<Funcdata> {
+        let mut partial = self.build_jumptable_partial().ok()?;
+        partial.set_flag_raw(crate::funcdata::funcdata_flags::jumptablerecovery_on);
+        run_pipeline(&mut partial, visited).ok()?;
+        Some(partial)
     }
 
     /// Build the partial Funcdata for jump-table recovery: a fresh function
@@ -2653,6 +2741,9 @@ impl Funcdata {
             }
         }
         partial.truncated_flow_clone(self)?;
+        partial.kuna_extent_tables = self.kuna_extent_tables.clone();
+        partial.kuna_later_tables = self.kuna_later_tables.clone();
+        partial.kuna_later_wanted = std::rc::Rc::clone(&self.kuna_later_wanted);
         Ok(partial)
     }
 
@@ -2839,6 +2930,16 @@ impl Funcdata {
     /// The original block must have no out edges and more than one (non-redundant)
     /// in edge.
     pub fn node_split(&mut self, b: BlockId, inedge: int4) -> KunaResult<()> {
+        self.node_split_cloning(b, inedge, false).map(|_| ())
+    }
+
+    /// (kuna `returndup calls`) [`Self::node_split`] for a block holding calls:
+    /// each cloned call gets its own call spec.  Returns the new block.
+    pub fn node_split_calls(&mut self, b: BlockId, inedge: int4) -> KunaResult<BlockId> {
+        self.node_split_cloning(b, inedge, true)
+    }
+
+    fn node_split_cloning(&mut self, b: BlockId, inedge: int4, calls: bool) -> KunaResult<BlockId> {
         // Split node b along inedge.
         if self.bblocks_ref().block(b).size_out() != 0 {
             return Err(KunaError::lowlevel(
@@ -2865,13 +2966,14 @@ impl Funcdata {
         let bprime = self.node_split_block_edge(b, inedge);
         // Copy b's ops into bprime (p-code half).
         let mut cloner = CloneBlockOps::new();
+        cloner.calls = calls;
         cloner.clone_block(self, b, bprime, inedge)?;
 
         // We would need to patch outputs here for the more general case when b
         // has out edges (any references not in b to varnodes defined in b need
         // MULTIEQUALs defined in b's out blocks).  b has no out edges here.
         self.structure_reset();
-        Ok(())
+        Ok(bprime)
     }
 
     /// Clone the p-code ops of an expression right before `follow_op`, returning
@@ -2956,7 +3058,7 @@ impl Funcdata {
     /// substantive operation in the block (C++ `ActionReturnSplit::isSplittable`,
     /// `blockaction.cc:2242`).  Only MULTIEQUAL / COPY / RETURN ops with
     /// constant/annotation/non-free inputs are allowed.
-    fn return_split_is_splittable(&self, b: BlockId) -> bool {
+    pub(crate) fn return_split_is_splittable(&self, b: BlockId) -> bool {
         let mut global_stores: usize = 0;
         let mut cur = self.bb_op_head(b);
         while let Some(op) = cur {
@@ -3204,7 +3306,8 @@ impl Funcdata {
     }
 
     pub(crate) fn returndup_apply(&mut self, max_splits: int4, max_inedges: int4) -> int4 {
-        let mut count = 0;
+        // (kuna `returndup auto`) the recorded return statements first.
+        let mut count = crate::p8_structure::kuna_o0returns::split(self, max_splits, max_inedges);
 
         // Collect the candidate RETURN blocks up front — `node_split` mutates the CFG
         // (adds duplicate blocks, calls `structure_reset`), so we must not iterate the
@@ -3228,6 +3331,9 @@ impl Funcdata {
                 continue;
             }
             if !self.return_split_is_splittable(parent) {
+                continue;
+            }
+            if crate::p8_structure::kuna_o0returns::recorded(self, parent) {
                 continue;
             }
             // (kuna, angr-selective) Only duplicate a SIMPLE CONST-RETURN region — angr
@@ -3374,6 +3480,9 @@ impl Funcdata {
                 continue;
             }
             if !self.return_split_is_splittable(parent) {
+                continue;
+            }
+            if crate::p8_structure::kuna_o0returns::recorded(self, parent) {
                 continue;
             }
             let mut edges = self.earlyreturn_const_edges(parent);
@@ -4154,11 +4263,15 @@ struct CloneBlockOps {
     clone_list: Vec<(OpId, OpId)>,
     /// Map from original op to its clone (C++ `origToClone`).
     orig_to_clone: std::collections::BTreeMap<OpId, OpId>,
+    /// (kuna `returndup calls`) Clone CALLs and INDIRECTs too: each cloned call
+    /// gets its own copy of the call spec, and a cloned INDIRECT names the
+    /// cloned call.
+    calls: bool,
 }
 
 impl CloneBlockOps {
     fn new() -> Self {
-        CloneBlockOps { clone_list: Vec::new(), orig_to_clone: std::collections::BTreeMap::new() }
+        CloneBlockOps { clone_list: Vec::new(), orig_to_clone: std::collections::BTreeMap::new(), calls: false }
     }
 
     /// Make a basic clone of the p-code op copying its basic control-flow
@@ -4315,6 +4428,18 @@ impl CloneBlockOps {
             .expect("cloneExpression: last clone has output"))
     }
 
+    /// (kuna `returndup calls`) Give the clone of a call op its own copy of the
+    /// original's call spec; returns the new spec's fspec handle.
+    fn clone_call_spec(&self, data: &mut Funcdata, orig_op: OpId, clone_op: OpId) -> Option<uintb> {
+        let idx = data.get_call_specs_index(orig_op)?;
+        let spec = data.get_call_specs(idx).clone_for_op(clone_op);
+        let new_idx = data.push_call_specs(spec);
+        let handle = crate::flow::next_fspec_handle();
+        let style = data.get_arch().kuna_name_style();
+        data.get_call_specs(new_idx).register_in_fspec_space(handle, style);
+        Some(handle)
+    }
+
     /// Map original-op input Varnodes to the input slots of the cloned ops
     /// (C++ `CloneBlockOps::patchInputs`, `funcdata_block.cc:1066`).
     fn patch_inputs(&self, data: &mut Funcdata, inedge: int4) -> KunaResult<()> {
@@ -4336,11 +4461,12 @@ impl CloneBlockOps {
                     data.op_set_opcode_code(orig_op, OpCode::CPUI_COPY);
                     one_input_phis.push(orig_op);
                 }
-            } else if orig_code == OpCode::CPUI_INDIRECT {
+            } else if orig_code == OpCode::CPUI_INDIRECT && !self.calls {
                 return Err(KunaError::lowlevel("Can't clone INDIRECTs"));
-            } else if data.obank().get(orig_op).expect("patchInputs").is_call() {
+            } else if data.obank().get(orig_op).expect("patchInputs").is_call() && !self.calls {
                 return Err(KunaError::lowlevel("Can't clone CALLs"));
             } else {
+                let fspec = if self.calls { self.clone_call_spec(data, orig_op, clone_op) } else { None };
                 let n_in = data.obank().get(clone_op).expect("patchInputs").num_input();
                 for i in 0..n_in {
                     let orig_vn = data
@@ -4360,8 +4486,15 @@ impl CloneBlockOps {
                             v.get_addr().clone(),
                         )
                     };
+                    let space_type = vaddr.get_space().map(|s| s.get_type());
                     let clone_vn = if is_const {
                         orig_vn
+                    } else if is_annot && fspec.is_some() && space_type == Some(spacetype::IPTR_FSPEC) {
+                        data.new_varnode_call_specs(fspec.unwrap())
+                    } else if is_annot && self.calls && space_type == Some(spacetype::IPTR_IOP) {
+                        let target = crate::funcdata_varnode::op_iop_decode(vaddr.get_offset());
+                        let target = self.orig_to_clone.get(&target).copied().unwrap_or(target);
+                        data.new_varnode_iop(target)
                     } else if is_annot {
                         data.new_code_ref(&vaddr)
                     } else if is_free {

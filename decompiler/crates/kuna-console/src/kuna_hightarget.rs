@@ -441,14 +441,7 @@ pub fn apply_local(
     if kuna_decomp::kuna_stackobjectasserts::apply(fd, name, newname, retype.clone())? {
         return Ok(None);
     }
-    let (target, name) = match resolve_local(fd, name, retype.is_none().then_some(newname), maxduplicates) {
-        Ok(target) => (target, name.to_string()),
-        Err(error) if error.starts_with("Ambiguous name") => return Err(error),
-        Err(error) => match arch.and_then(|arch| resolve_shown(fd, arch, name, maxduplicates)) {
-            Some(found) => found?,
-            None => return Err(error),
-        },
-    };
+    let (target, name) = resolve_target(fd, name, retype.is_none().then_some(newname), maxduplicates, arch)?;
     let name = name.as_str();
     let sym = match target {
         LocalTarget::Printed(target) => {
@@ -541,6 +534,69 @@ pub fn apply_local(
         fd.kuna_set_directive_retype(sym, unit_type);
     }
     Ok(Some(sym))
+}
+
+/// The local `name` reads as ([`resolve_local`]), else the one a print of the
+/// function declares under it ([`resolve_shown`]), with the name the
+/// directive is recorded under.
+fn resolve_target(
+    fd: &mut Funcdata,
+    name: &str,
+    renaming_to: Option<&str>,
+    maxduplicates: u32,
+    arch: Option<&Architecture>,
+) -> Result<(LocalTarget, String), String> {
+    match resolve_local(fd, name, renaming_to, maxduplicates) {
+        Ok(target) => Ok((target, name.to_string())),
+        Err(error) if error.starts_with("Ambiguous name") => Err(error),
+        Err(error) => match arch.and_then(|arch| resolve_shown(fd, arch, name, maxduplicates)) {
+            Some(found) => found,
+            None => Err(error),
+        },
+    }
+}
+
+/// Keep the local `name` resolves to from merging with other variables (C++
+/// `IfcIsolate`, `Symbol::setIsolated`): its Symbol is isolated, which also
+/// locks the type it has. A printed local no Symbol backs gets one over its
+/// storage, as a `type` directive stating its present type would map. A
+/// stack local or a parameter keeps the type the analysis gives it, and the
+/// next decompile isolates it again by its storage
+/// (`kuna_decomp::kuna_isolated`).
+pub fn isolate_local(
+    fd: &mut Funcdata,
+    name: &str,
+    maxduplicates: u32,
+    arch: Option<&Architecture>,
+) -> Result<SymbolId, String> {
+    let number = library_number(fd, name);
+    let name = number.as_deref().unwrap_or(name);
+    let (target, name) = resolve_target(fd, name, None, maxduplicates, arch)?;
+    match target {
+        LocalTarget::Printed(target) => {
+            let symbol = bind_printed_local(fd, &target, "", target.dtype.clone(), true)?;
+            fd.kuna_record_directive_symbol(DirectiveSymbol {
+                symbol,
+                printed: name,
+                bound: Some((target.addr.clone(), target.size, target.high)),
+                retyped: true,
+                unit_type: None,
+            });
+            Ok(symbol)
+        }
+        LocalTarget::Symbol(sym) => {
+            let bound = fd.kuna_directive_symbols().iter().any(|d| d.symbol == sym && d.bound.is_some());
+            let lm = fd.get_scope_local_mut().ok_or_else(|| "Function has no local scope".to_string())?;
+            if bound {
+                lm.set_symbol_isolated(sym, true);
+                return Ok(sym);
+            }
+            lm.set_symbol_identity_isolated(sym);
+            let printed = lm.database().symbol(sym).name.clone();
+            fd.kuna_record_directive_symbol(DirectiveSymbol { symbol: sym, printed, bound: None, retyped: false, unit_type: None });
+            Ok(sym)
+        }
+    }
 }
 
 /// Does any varnode live in `sym`'s storage? A local only ever reached

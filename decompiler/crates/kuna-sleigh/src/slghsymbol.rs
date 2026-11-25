@@ -3400,6 +3400,42 @@ const MAX_TABLES: i64 = 0x0010_0000;
 const MAX_SYMBOLS: i64 = 0x0100_0000;
 
 impl SymbolTable {
+    /// Move every space reference onto the space of the same index in the
+    /// remap's manager.
+    pub(crate) fn remap_spaces(&mut self, remap: &crate::sleighbase::SpaceRemap<'_>) {
+        for sym in self.symbollist.iter_mut().flatten() {
+            match &mut sym.kind {
+                SymbolKind::Space(s) => remap.space(&mut s.space),
+                SymbolKind::Varnode(v) => remap.opt_space(&mut v.fix.space),
+                SymbolKind::Epsilon(EpsilonSymbol { const_space })
+                | SymbolKind::Start(StartSymbol { const_space })
+                | SymbolKind::End(EndSymbol { const_space })
+                | SymbolKind::Next2(Next2Symbol { const_space })
+                | SymbolKind::FlowDest(FlowDestSymbol { const_space })
+                | SymbolKind::FlowRef(FlowRefSymbol { const_space }) => remap.opt_space(const_space),
+                SymbolKind::Macro(m) => {
+                    if let Some(construct) = &mut m.construct {
+                        Rc::make_mut(construct).remap_spaces(remap);
+                    }
+                }
+                SymbolKind::Token(_)
+                | SymbolKind::UserOp(_)
+                | SymbolKind::Value(_)
+                | SymbolKind::ValueMap(_)
+                | SymbolKind::Name(_)
+                | SymbolKind::Context(_)
+                | SymbolKind::VarnodeList(_)
+                | SymbolKind::Operand(_)
+                | SymbolKind::Subtable(_)
+                | SymbolKind::Section(_)
+                | SymbolKind::Bitrange(_)
+                | SymbolKind::Label(_) => {}
+            }
+        }
+    }
+}
+
+impl SymbolTable {
     /// C++ `SymbolTable(void)`.
     pub fn new() -> SymbolTable {
         SymbolTable::default()
@@ -3882,6 +3918,19 @@ impl SymbolTable {
         ))
     }
 
+    /// Java `Constructor.buildPattern` "operand ... has an issue": an operand
+    /// defined as itself or as a bare operand whose pattern is generated after
+    /// its own.
+    fn operand_before_definition(&self, opid: u32) -> KunaError {
+        let nm = self
+            .symbol(opid)
+            .map(|s| name_text(s.get_name()).to_string())
+            .unwrap_or_default();
+        KunaError::sleigh(format!(
+            "{nm}: operand is defined as itself or an operand that follows it"
+        ))
+    }
+
     /// C++ `Constructor::buildPattern(ostream &s)` driven from the symbol
     /// table.  Generates a [`TokenPattern`] per operand, runs the
     /// constructor's pattern equation, resolves operand offsets, validates
@@ -3934,11 +3983,13 @@ impl SymbolTable {
                     let patexp = self.symbol(tripid)?.get_pattern_expression()?;
                     match patexp {
                         Some(pe) => pe.gen_min_pattern(&oppattern),
-                        None => TokenPattern::new_true(),
+                        None => Some(TokenPattern::new_true()),
                     }
+                    .ok_or_else(|| self.operand_before_definition(opid))?
                 }
             } else if let Some(pe) = operand.get_defining_expression() {
                 pe.gen_min_pattern(&oppattern)
+                    .ok_or_else(|| self.operand_before_definition(opid))?
             } else {
                 let nm = name_text(self.symbol(opid)?.get_name()).to_string();
                 return Err(KunaError::sleigh(format!("{nm}: operand is undefined")));

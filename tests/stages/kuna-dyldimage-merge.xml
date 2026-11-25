@@ -1,0 +1,46 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A">
+<!--
+    Kuna: P1 environment binding, option dyldimage with several images
+    (`A+B`). The script loads the committed synthetic dyld shared cache
+    (decompiler/crates/kuna-analysis/tests/fixtures/dyld_cache_arm64e.py):
+    libcaller calls libcallee's callee_add through a __TEXT_STUBS island.
+
+    Pass 1 (`option dyldimage /usr/lib/libcaller.dylib`) is the gap: only
+    libcaller is loaded. caller_entry decompiles, but callee_add at
+    0x180002800 is "not mapped in this input", and a script command naming it
+    aborts the script, so pass 1 cannot print it. Pass 2
+    (`libcaller+libcallee`) rebuilds both images into one program: callee_add
+    decompiles at its cache address (asserts #1-#2, each matched once in the
+    whole script). caller_entry reads the same in both passes: its island call
+    stays named (assert #3) and libcaller's local symbols are still read from
+    the .symbols file (assert #4).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c0035fd6</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>option dyldimage /usr/lib/libcaller.dylib</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dyld_cache_arm64e/dyld_shared_cache_arm64e</com>
+  <com>read symbols</com>
+  <com>load function caller_entry</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option dyldimage libcaller+libcallee</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dyld_cache_arm64e/dyld_shared_cache_arm64e</com>
+  <com>read symbols</com>
+  <com>load function _callee_add</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function caller_entry</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="dyldimage merge #1: A+B loads the callee as a function of the same program" min="1" max="1">int4 _callee_add\(int4 a0,int4 a1\)</stringmatch>
+<stringmatch name="dyldimage merge #2: the callee's body decompiles from the second image's bytes" min="1" max="1">return a0 \+ a1;</stringmatch>
+<stringmatch name="dyldimage merge #3: the caller names its island call in both passes" min="2" max="2">v1 = callee_add\(\);</stringmatch>
+<stringmatch name="dyldimage merge #4: the caller's local symbols are read in both passes" min="2" max="2">_helper_local\(a0\);</stringmatch>
+</decompilertest>

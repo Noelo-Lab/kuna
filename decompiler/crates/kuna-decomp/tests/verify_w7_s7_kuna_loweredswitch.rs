@@ -437,12 +437,12 @@ fn v4_notequal_match_is_the_not_taken_edge() {
 fn v5_option_and_store_surface() {
     // Option parse: on/off/empty/bad — the C++ onOrOff contract.
     let (on, msg_on) = OptionLowerSwitch.apply("on").unwrap();
-    assert!(on);
+    assert!(on.enabled());
     assert_eq!(msg_on, "Lowered comparison-cascade switch recovery turned on");
     let (off_v, msg_off) = OptionLowerSwitch.apply("off").unwrap();
-    assert!(!off_v);
+    assert!(!off_v.enabled());
     assert_eq!(msg_off, "Lowered comparison-cascade switch recovery turned off");
-    assert!(OptionLowerSwitch.apply("").unwrap().0, "empty => on (onOrOff)");
+    assert!(OptionLowerSwitch.apply("").unwrap().0.enabled(), "empty => on (onOrOff)");
     assert!(OptionLowerSwitch.apply("nonsense").is_err());
 
     // Empty store: no record for a fresh function.

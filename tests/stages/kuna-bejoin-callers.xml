@@ -38,6 +38,7 @@
 <script>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/bejoin_callers_ppc32_O2</com>
+  <com>option typevote off</com>
   <com>option partialaccess off</com>
   <com>read symbols</com>
   <com>lo fu add64</com>
@@ -85,5 +86,5 @@
 <stringmatch name="bejoin-callers #2b: the default stores the high word at the lower address" min="2" max="2">sinku\._0_4_ = \(int4\)\(\(uint8\)v1 &gt;&gt; 0x20\);</stringmatch>
 <stringmatch name="bejoin-callers #2c: evidence reads both pairs r3 low" min="2" max="2">unsigned long long v1; // r4:r3</stringmatch>
 <stringmatch name="bejoin-callers #3: keep stays an int in both passes" min="2" max="2">int4 keep\(int4 a0\)</stringmatch>
-<stringmatch name="bejoin-callers #3b: c_hi reads add_hi's int in both passes" min="2" max="2">sink32 = add_hi\(\);</stringmatch>
+<stringmatch name="bejoin-callers #3b: c_hi reads add_hi's int in both passes" min="2" max="2">sink32 = add_hi\(a0,a1,a2,a3\);</stringmatch>
 </decompilertest>

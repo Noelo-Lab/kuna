@@ -151,7 +151,7 @@ where
         if let Ok(Some((segment, section_data))) = Mach::Segment::from_command(command) {
             let seg_name = trim(segment.name());
             if seg_name == b"__TEXT" {
-                text_base = Some(segment.vmaddr(endian).into());
+                text_base.get_or_insert(segment.vmaddr(endian).into());
             }
             if let Ok(secs) = segment.sections(endian, section_data) {
                 for sec in secs {

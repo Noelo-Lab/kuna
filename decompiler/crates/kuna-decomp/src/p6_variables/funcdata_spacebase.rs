@@ -618,6 +618,7 @@ impl Funcdata {
         state.gather_symbols(&hints);
         crate::p6_variables::kuna_arrayextent::extend_unbounded(self, &mut state, &space, &unbounded);
 
+        super::kuna_callarrayextent::coalesce_delay_slot_init(self, &mut state, &space);
         super::kuna_callarrayextent::coalesce(self, &mut state, &space);
         super::kuna_arraysize::gather(self, &mut state, &space);
 

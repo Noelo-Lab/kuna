@@ -332,3 +332,67 @@ fn fast_inventory_walk_leaves_pclntab_functions_to_the_table() {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+/// Zero the 4-byte magic of every `pcHeader` in the file at `bin` (a magic
+/// followed by two zero pad bytes, a quantum of 1, 2 or 4 and a pointer size of
+/// 4 or 8), writing the result to `out`. Returns how many were wiped.
+fn wipe_pclntab_magic(bin: &std::path::Path, out: &std::path::Path) -> usize {
+    let mut bytes = std::fs::read(bin).expect("read fixture");
+    let hits: Vec<usize> = bytes
+        .windows(8)
+        .enumerate()
+        .step_by(4)
+        .filter(|(_, w)| {
+            let magic = u32::from_le_bytes([w[0], w[1], w[2], w[3]]);
+            matches!(magic, 0xffff_fffa | 0xffff_fffb | 0xffff_fff0 | 0xffff_fff1)
+                && w[4..6] == [0, 0]
+                && matches!(w[6], 1 | 2 | 4)
+                && matches!(w[7], 4 | 8)
+        })
+        .map(|(i, _)| i)
+        .collect();
+    for &i in &hits {
+        bytes[i..i + 4].fill(0);
+    }
+    std::fs::write(out, bytes).expect("write wiped fixture");
+    hits.len()
+}
+
+/// A packer that overwrites the `pcHeader` magic leaves the table and
+/// `runtime.firstmoduledata` intact. The inventory of the wiped image must be
+/// the unmodified image's, name for name and extent for extent, on each
+/// container format, and `main.main` must still call `main.compute` by name.
+#[test]
+fn wiped_pclntab_magic_recovers_the_same_functions() {
+    if !go_available() {
+        eprintln!("verify_go_pclntab: skipping (`go` not on PATH)");
+        return;
+    }
+    for (goos, goarch) in [("linux", "amd64"), ("windows", "amd64"), ("darwin", "arm64"), ("linux", "386")] {
+        let dir = std::env::temp_dir().join(format!("kuna_go_wiped_{goos}_{goarch}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (intact, wiped) = (dir.join("go_stripped"), dir.join("go_wiped"));
+        if !build_go(&dir, &intact, goos, goarch, /* strip */ true) {
+            let _ = std::fs::remove_dir_all(&dir);
+            panic!("installed Go compiler failed to build the {goos}/{goarch} fixture");
+        }
+        assert_eq!(wipe_pclntab_magic(&intact, &wiped), 1, "{goos}/{goarch}: one pcHeader to wipe");
+        let inventory = |bin: &std::path::Path| {
+            let prog = bootstrap(bin.to_str().expect("utf8 path"));
+            let entries: Vec<(u64, String, u64)> = prog
+                .function_entries_canonical()
+                .into_iter()
+                .map(|e| (e.addr.get_offset(), e.name, e.size))
+                .collect();
+            (prog, entries)
+        };
+        let (_, want) = inventory(&intact);
+        let (prog, got) = inventory(&wiped);
+        assert!(want.iter().any(|e| e.1 == "main.compute"), "{goos}/{goarch}: intact names recovered");
+        assert_eq!(got.len(), want.len(), "{goos}/{goarch}: function count");
+        assert!(got == want, "{goos}/{goarch}: the wiped image's inventory differs from the intact one");
+        let c = decompile(prog, "main.main");
+        assert!(c.contains("main.compute("), "{goos}/{goarch} wiped main.main must call main.compute by name:\n{c}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

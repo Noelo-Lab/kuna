@@ -1,0 +1,40 @@
+<decompilertest>
+<!-- angr 6afa0c79 test_demangle_drops_llvm_suffix. Loader symbol naming is a
+     correctness fix: decode the exact legacy closure name after LLVM renaming.
+     The authored ELF bodies only return zero. The unsuffixed twin calibrates
+     the decoded scope; C++, malformed and uppercase controls keep their paths. -->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+<com>clear architecture</com>
+<com>load file tests/fixtures/rust-legacy-llvm/llvm.elf</com>
+<com>read symbols</com><com>load function 0x401000</com><com>decompile</com><com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/rust-legacy-llvm/ordinary.elf</com>
+<com>read symbols</com><com>load function 0x401000</com><com>decompile</com><com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/rust-legacy-llvm/cpp.elf</com>
+<com>read symbols</com><com>load function 0x401000</com><com>decompile</com><com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/rust-legacy-llvm/uppercase.elf</com>
+<com>read symbols</com><com>load function 0x401000</com><com>decompile</com><com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/rust-legacy-llvm/uppercase-bare.elf</com>
+<com>read symbols</com><com>load function 0x401000</com><com>decompile</com><com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/rust-legacy-llvm/malformed.elf</com>
+<com>read symbols</com><com>load function 0x401000</com><com>decompile</com><com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/rust-legacy-llvm/invalid-suffix.elf</com>
+<com>read symbols</com><com>load function 0x401000</com><com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="Rust LLVM suffix and ordinary name share the decoded closure scope" min="2" max="2">^unsigned long std::rt::lang_start_internal::\{\{closure\}\}\(void\)</stringmatch>
+<stringmatch name="Rust LLVM suffix leaves no escaped closure identifier" min="0" max="0">^unsigned long std::rt::lang_start_internal::_\$u7b\$</stringmatch>
+<stringmatch name="Rust LLVM recognition preserves the ordinary C++ name" min="1" max="1">^unsigned long demo::foo\(void\)</stringmatch>
+<stringmatch name="Rust LLVM recognition preserves existing uppercase hash treatment" min="2" max="2">^unsigned long demo::hABCDEF0123456789\(void\)</stringmatch>
+<stringmatch name="Rust LLVM recognition preserves malformed legacy names" min="1" max="1">^unsigned long _ZN999bad17h0123456789abcdefE\.llvm\.9325873435131735662\(void\)</stringmatch>
+<stringmatch name="Rust LLVM recognition preserves unsupported suffix handling" min="1" max="1">^unsigned long demo::keep\(void\)</stringmatch>
+<stringmatch name="Rust LLVM name recovery preserves all authored bodies" min="7" max="7">^  return 0;</stringmatch>
+</decompilertest>

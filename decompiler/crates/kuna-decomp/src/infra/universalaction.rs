@@ -445,6 +445,7 @@ pub fn universal_sched(
         rrow!("lessone", "analysis", crate::ruleaction_1::RuleLessOne::new("analysis")),
         rrow!("rangemeld", "analysis", crate::ruleaction_1::RuleRangeMeld::new("analysis")),
         rrow!("ovlesssimplify", "analysis", crate::kuna_ovlesssimplify::RuleOvLessSimplify::with_group("analysis")),
+        rrow!("opaquepredicate", "analysis", crate::kuna_opaquepredicate::RuleOpaquePredicate::new("analysis")),
         rrow!("floatrange", "analysis", crate::ruleaction_2::RuleFloatRange),
         rrow!("piece2zext", "analysis", crate::ruleaction_1::RulePiece2Zext::new("analysis")),
         rrow!("piece2sext", "analysis", crate::ruleaction_1::RulePiece2Sext::new("analysis")),
@@ -533,6 +534,7 @@ pub fn universal_sched(
     // they reference the same inner table.
     let lowered_store = crate::kuna_loweredswitch::new_shared_store();
     let lowered_store_install = lowered_store.clone();
+    let lowered_store_keep = lowered_store.clone();
     let lowered_store_detect = lowered_store;
 
     // --- stackstall (inside mainloop) -------------------------------------
@@ -708,6 +710,10 @@ pub fn universal_sched(
             // passes above: mainloop has settled the count and the searched byte
             // to constants, and the repeating fullloop folds what it leaves.
             act!(Box::new(crate::kuna_strlenscan::ActionStrlenScan::new(false, "returnsplit"))),
+            // (kuna) repstring (option `repstring`): the same loop shape for
+            // `rep movs`, `rep stos` and `repz cmpsb`, collapsed into a copy,
+            // fill or compare builtin by removing the edge into the body.
+            act!(Box::new(crate::kuna_repstring::ActionRepString::new("returnsplit"))),
             act!(ActionReturnSplit::boxed("returnsplit")),
             // (kuna) angr SAILR gotoless `ReturnDuplicatorHigh` (option `returndup`,
             // default-OFF).  Runs right after ActionReturnSplit (the goto-driven
@@ -720,6 +726,9 @@ pub fn universal_sched(
             // same merge/naming passes and are re-structured by the next fullloop
             // iteration (and the final ActionBlockStructure).
             act!(crate::p8_structure::kuna_returndup::ActionReturnDup::boxed("returnsplit")),
+            // (kuna) `returndup calls`: split a cross-jumped `call f; return`
+            // block per predecessor.
+            act!(crate::p8_structure::kuna_returndupcalls::ActionReturnDupCalls::boxed("returnsplit")),
             // (kuna) angr SAILR `ReturnDuplicatorHigh`, per-edge const narrowing (option
             // `earlyreturn`, default-OFF).  Sibling of ActionReturnDup: peels only the
             // CONSTANT arm of a mixed return phi (the guard's `return K`), leaving the
@@ -801,6 +810,7 @@ pub fn universal_sched(
             act!(ActionStructureTransform::boxed("blockrecovery", true)),
             act!(ActionNormalizeBranches::boxed("normalizebranches")),
             act!(crate::kuna_armfloatargs::ActionArmFloatArgs::boxed("merge")),
+            act!(crate::p9_emit::kuna_returnselector::ActionReturnSelector::boxed("merge")),
             act!(ActionAssignHigh::boxed("merge")),
             act!(ActionMergeRequired::boxed("merge")),
             act!(ActionMarkExplicit::boxed("merge")),
@@ -814,6 +824,7 @@ pub fn universal_sched(
             act!(ActionMergeType::boxed("merge")),
             act!(ActionHideShadow::boxed("merge")),
             act!(ActionCopyMarker::boxed("merge")),
+            act!(crate::kuna_typevote::ActionTypeVote::boxed("typerecovery")),
             act!(ActionLateDoNothing::boxed("blockrecovery")),
             act!(ActionBlockStructure::boxed("blockrecovery")),
             act!(ActionPreferComplement::boxed("blockrecovery", false)),
@@ -836,6 +847,7 @@ pub fn universal_sched(
             act!(crate::kuna_calltargettype::ActionCallTargetType::boxed("typerecovery")),
             act!(ActionSetCasts::boxed("casts")),
             act!(ActionFinalStructure::boxed("blockrecovery")),
+            act!(crate::kuna_postinc::ActionPostIncrement::boxed("blockrecovery")),
             // (kuna) angr SAILR return-tail goto-reduction (option `gotoreduce`):
             // call-free return tails at `return`, then return tails with a call
             // (`free(p); return;`) at `on`.  Runs after the tree is final + goto
@@ -858,6 +870,9 @@ pub fn universal_sched(
             // tail (shared prefix/suffix of statement-equivalent leaves across both
             // arms) by hoisting the shared blocks out of the `if`, emitting one copy.
             act!(crate::p8_structure::kuna_dedupitetail::ActionDedupIteTail::boxed("blockrecovery")),
+            // (kuna) tailform: choose the wrapped or guard form of each function-tail
+            // `if` by the size of its conditional tail (print-tree edit only).
+            act!(crate::p8_structure::kuna_tailform::ActionTailForm::boxed("blockrecovery")),
             // (kuna) angr ITERegionConverter (option `iteregion`, default-OFF — a
             // runtime choice).  After the tree is final + goto targets labelled,
             // mark a narrow two-arm assignment diamond (`if (c) v=A; else v=B;`,
@@ -879,6 +894,14 @@ pub fn universal_sched(
             // and no merge or structuring decision can be perturbed by the move --
             // only which basic block's statement list holds the COPY changes.
             act!(crate::p6_variables::kuna_paramcopyhoist::ActionParamCopyHoist::boxed("merge")),
+            // (kuna) loweredswitch: once the structure and prototypes are final,
+            // withdraw a re-rolled switch the function prints worse with.
+            SchedNode::Action(Box::new(move || {
+                Box::new(crate::p2_lift::kuna_loweredswitchkeep::ActionLowerSwitchKeep::with_store(
+                    "blockrecovery",
+                    lowered_store_keep.clone(),
+                ))
+            })),
             act!(ActionPrototypeWarnings::boxed("protorecovery")),
             act!(ActionStop::boxed("base")),
         ],

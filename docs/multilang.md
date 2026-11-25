@@ -410,6 +410,9 @@ struct synthesis).
 **Rust**: `sourcelang` detection, v0/legacy demangling, `rustabi` ScalarPair returns,
 `variantnames` (DWARF enum discriminants), `fatstr`+records (length-carried literals),
 `rustfmt` (fmt::Arguments macro recovery), plus securitycheck/cleanupcode panic/drop elision.
+The compiler release comes from `.comment` or, when that record is gone, from the commit in
+the `/rustc/<commit>/` source paths; `summary.runtime` reports it with the registry crates
+the image names.
 
 **Swift** (default-on): `swiftdemangle` (full `$s`), `swiftmetadata` (type/function naming
 from `__swift5_*`), struct layout, `swiftcall` (swiftself/swifterror). Remaining gap:

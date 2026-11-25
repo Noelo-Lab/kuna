@@ -181,7 +181,7 @@ where
 
 /// Read a ULEB128 at `*at`, below `end`; `None` past `end` or wider than 64
 /// bits.
-fn uleb(data: &[u8], at: &mut usize, end: usize) -> Option<u64> {
+pub(crate) fn uleb(data: &[u8], at: &mut usize, end: usize) -> Option<u64> {
     let mut value = 0u64;
     let mut shift = 0u32;
     loop {

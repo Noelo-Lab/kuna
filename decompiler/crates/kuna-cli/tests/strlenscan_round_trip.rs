@@ -9,6 +9,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 const SOURCE: &str = include_str!("../../kuna-analysis/tests/fixtures/strlenscan.c");
 
@@ -33,7 +34,7 @@ const SCANS: &[&str] = &["scan_slash", "raw_count"];
 const AFTER: &[&str] = &["len_then_clear", "len_then_wipe", "len_then_free"];
 
 const PRELUDE: &str = "#include <stdbool.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n\
-                       #define STRLENSCAN_NO_MAIN\n";
+                       #define STRLENSCAN_NO_MAIN\n#define builtin_memcpy memcpy\n";
 
 /// Calls the printed functions through prototype-less pointers and compares
 /// each result, and each buffer they write, with the source function's.  A
@@ -191,7 +192,7 @@ fn an_inline_string_length_round_trips_through_the_printed_strlen() {
                         "{cc} {level} rejected the printed C ({image}, strlenscan {opt}):\n{}\n{text}",
                         String::from_utf8_lossy(&out.stderr)
                     );
-                    let run = Command::new(&exe).output().expect("run the round trip");
+                    let run = Command::new(&exe).capped_output().expect("run the round trip");
                     assert!(
                         run.status.success(),
                         "{image} printed with strlenscan {opt} and built by {cc} {level} computes a different value:\n{}\n{text}",

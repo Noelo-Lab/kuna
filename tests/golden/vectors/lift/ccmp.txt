@@ -83,220 +83,220 @@ insn ram:0x42cb08 4
   COPY (register,0x0,8) (register,0x40f0,8)
   RETURN - (register,0x0,8)
 insn ram:0x42cb0c 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb0c,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb0c,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb10 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb10,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb10,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb14 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb14,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb14,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb18 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb18,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb18,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb1c 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb1c,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb1c,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb20 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb20,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb20,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb24 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb24,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb24,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb28 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb28,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb28,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb2c 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb2c,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb2c,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb30 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb30,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb30,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb34 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb34,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb34,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb38 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb38,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb38,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb3c 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb3c,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb3c,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb40 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb40,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb40,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb44 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb44,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb44,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb48 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb48,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb48,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb4c 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb4c,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb4c,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb50 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb50,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb50,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb54 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb54,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb54,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb58 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb58,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb58,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb5c 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb5c,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb5c,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb60 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb60,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb60,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb64 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb64,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb64,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb68 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb68,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb68,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb6c 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb6c,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb6c,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb70 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb70,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb70,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb74 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb74,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb74,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb78 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb78,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb78,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb7c 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb7c,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb7c,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb80 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb80,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb80,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb84 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb84,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb84,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb88 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb88,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb88,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb8c 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb8c,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb8c,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb90 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb90,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb90,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb94 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb94,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb94,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb98 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb98,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb98,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cb9c 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cb9c,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cb9c,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cba0 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cba0,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cba0,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cba4 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cba4,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cba4,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cba8 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cba8,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cba8,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbac 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbac,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbac,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbb0 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbb0,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbb0,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbb4 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbb4,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbb4,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbb8 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbb8,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbb8,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbbc 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbbc,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbbc,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbc0 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbc0,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbc0,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbc4 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbc4,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbc4,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbc8 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbc8,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbc8,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbcc 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbcc,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbcc,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbd0 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbd0,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbd0,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbd4 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbd4,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbd4,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbd8 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbd8,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbd8,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbdc 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbdc,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbdc,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbe0 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbe0,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbe0,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbe4 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbe4,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbe4,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbe8 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbe8,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbe8,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbec 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbec,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbec,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbf0 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbf0,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbf0,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbf4 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbf4,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbf4,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbf8 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbf8,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbf8,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cbfc 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cbfc,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cbfc,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cc00 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cc00,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cc00,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cc04 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cc04,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cc04,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cc08 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cc08,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cc08,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cc0c 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cc0c,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cc0c,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cc10 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cc10,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cc10,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cc14 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cc14,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cc14,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cc18 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cc18,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cc18,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cc1c 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cc1c,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cc1c,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cc20 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cc20,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cc20,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cc24 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cc24,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cc24,8)
+  BRANCHIND - (unique,0x90d00,8)
 insn ram:0x42cc28 4
-  CALLOTHER (unique,0x90100,8) (const,0x78,4) (const,0x0,2) (const,0x42cc28,8)
-  BRANCHIND - (unique,0x90100,8)
+  CALLOTHER (unique,0x90d00,8) (const,0x78,4) (const,0x0,2) (const,0x42cc28,8)
+  BRANCHIND - (unique,0x90d00,8)
 # golden lift ram:0x4f9588 80 (kuna_goldengen.cc; see tests/golden/vectors/lift/README.md)
 lifterror dataunavail ram:0x4f9588 Bytes at 0x004f9588 are not mapped

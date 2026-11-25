@@ -1,0 +1,60 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Kuna GH-1651: Linux kernel WARN/BUG sites (always on).
+
+    Issue: a kernel module plants a `ud2` at every WARN_ON/BUG_ON site and
+    describes it in a `__bug_table` entry (trap address, source file and line,
+    flags whose bit 0 says the handler resumes). kuna did not read the table, so
+    each site printed as `(*(void (*)(void))invalidInstructionException())();
+    // jump-as-call` followed by a return: a WARN site that falls through to the
+    next instruction appeared to leave the function, and a BUG site that ends the
+    path appeared to return.
+
+    Stage / sub-stage: P1 program prep reads the table
+    (`kuna-analysis/src/analyzers/kernelbug`), recovering the entry layout from
+    the module's `.rela__bug_table`; P2 flow classification
+    (`p2_lift/kuna_kernelbug.rs`) turns the trap's CALLOTHER into `__WARN(file,
+    line)` and falls through, or into `BUG()` followed by a no-return halt. The
+    module's undefined `__fentry__` and `__x86_return_thunk` take the cspec
+    call-fixups a defined symbol already took.
+
+    Fixture: `decompiler/crates/kuna-analysis/tests/fixtures/kernel_bugtable_x86_64.ko`,
+    built against a 7.3 x86-64 kernel (CONFIG_DEBUG_BUGVERBOSE, relative
+    pointers, the 16-byte entry with a format field) from
+
+      int kwarn_counter;
+      noinline int kwarn_check(int value)
+      {
+        WARN_ON(value < 0);
+        kwarn_counter += value;
+        BUG_ON(value > 100);
+        return kwarn_counter;
+      }
+
+    then stripped of its debug sections. gcc duplicates the add on the WARN path, so the
+    fall-through shows as a second `kwarn_counter += a0`.
+
+    One pass at the default: #1-#2 the two sites print as the kernel statements,
+    #3 the WARN path continues into the add, #4 nothing prints as a call through
+    the trap user-op, #5-#6 the profiling hook and return thunk dissolve.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/kernel_bugtable_x86_64.ko</com>
+  <com>read symbols</com>
+  <com>load function kwarn_check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="kernelbug #1: the WARN site prints with its file and line" min="1" max="1">^    __WARN\("kwarn_bugsite.c",9\);$</stringmatch>
+<stringmatch name="kernelbug #2: the BUG site prints as the function's last statement" min="1" max="1">^  BUG\(\);$</stringmatch>
+<stringmatch name="kernelbug #3: the WARN path falls through to the add" min="2" max="2">kwarn_counter \+= a0;</stringmatch>
+<stringmatch name="kernelbug #4: no site is a call through the trap user-op" min="0" max="0">invalidInstructionException</stringmatch>
+<stringmatch name="kernelbug #5: the undefined __fentry__ hook dissolves" min="0" max="0">__fentry__\(\)</stringmatch>
+<stringmatch name="kernelbug #6: the undefined return thunk is a return" min="0" max="0">__x86_return_thunk</stringmatch>
+</decompilertest>

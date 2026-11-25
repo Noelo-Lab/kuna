@@ -1,0 +1,55 @@
+<!--
+  kuna switch self loop: a switch that is its own loop header lost its loop
+  in the region structurer.
+
+  GCC and Clang compile `for (;;) switch (next_selector(x)) { ... }` with one
+  jump table at the loop head; every case but the default jumps straight back
+  to it. P8 structure / RegionStructurer::try_switch_cases treated such a case
+  as a continue to an enclosing loop, so folding the switch made its own
+  backedge internal and dropped it: the output ran the dispatch once. A
+  backedge to the switch itself is now internal to the loop; with no other
+  exit the switch is the exit that restores its self-edge, and beside a case
+  leaving to another block or restarting an enclosing loop the fold declines
+  and the ordinary collapse keeps the loop. Correctness fix, no option: one
+  pass pins the loop for both objects of switch_self_loop_x86_64.c (with and
+  without leaving cases, and mixed_loop, whose case 4 restarts the enclosing
+  loop), for Clang's direct_mixed, whose empty case 0 jumps straight back to
+  the dispatch block, and for the hand-written GCC-shaped hoist_dispatch. The
+  CLI companion switch_self_loop_cli.rs executes the emitted C against the
+  objects.
+-->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/switch_self_loop_gcc_x86_64.o</com>
+  <com>read symbols</com>
+  <com>load function self_loop</com><com>decompile</com><com>print C</com>
+  <com>load function self_loop_exit</com><com>decompile</com><com>print C</com>
+  <com>load function mixed_loop</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/switch_self_loop_clang_x86_64.o</com>
+  <com>read symbols</com>
+  <com>load function self_loop</com><com>decompile</com><com>print C</com>
+  <com>load function self_loop_exit</com><com>decompile</com><com>print C</com>
+  <com>load function mixed_loop</com><com>decompile</com><com>print C</com>
+  <com>load function direct_mixed</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/switchtable_gcc_x86_64</com>
+  <com>read symbols</com>
+  <com>load function hoist_dispatch</com><com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="SWITCHSELFLOOP #1: each dispatch is the body of its loop" min="8" max="8">while\( true \) \{
+switch\(next_selector\(</stringmatch>
+<stringmatch name="SWITCHSELFLOOP #2: a leaving case runs the shared tail and returns" min="4" max="4">t5\(\);
+t0\(\);.*
+return;</stringmatch>
+<stringmatch name="SWITCHSELFLOOP #3: the default case returns" min="7" max="7">default:
+return;</stringmatch>
+<stringmatch name="SWITCHSELFLOOP #4: restarting the enclosing loop leaves the inner dispatch loop intact" min="3" max="3">t5\(\);
+while\( true \) \{
+switch\(next_selector\(</stringmatch>
+</decompilertest>

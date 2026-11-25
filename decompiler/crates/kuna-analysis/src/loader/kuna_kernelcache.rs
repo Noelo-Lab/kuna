@@ -14,8 +14,10 @@
 use kuna_decomp::kuna_kernelcache::KernelcacheChoice;
 
 pub use fileset::FilesetMap;
+pub use linked::LinkSearch;
 
 mod fileset;
+mod linked;
 mod lzfse;
 mod lzss;
 
@@ -52,8 +54,23 @@ pub fn is_container(bytes: &[u8]) -> bool {
 }
 
 /// Unwrap a container and select one fileset entry, per `choice`. Input that is
-/// neither a container nor an `MH_FILESET` comes back unchanged.
+/// neither a container nor an `MH_FILESET` comes back unchanged. No other file
+/// is read, so pointers into a linked collection stay unresolved.
 pub fn peel(bytes: Vec<u8>, choice: &KernelcacheChoice) -> Result<Peeled, String> {
+    peel_linked(bytes, choice, &LinkSearch::none())
+}
+
+/// [`peel`] for the bytes of the file at `path`: the collections a System or
+/// Auxiliary collection links are looked up per the `kernelcache-boot` option
+/// in force.
+pub fn peel_file(path: &std::path::Path, bytes: Vec<u8>, choice: &KernelcacheChoice) -> Result<Peeled, String> {
+    let boot = kuna_decomp::kuna_kernelcacheboot::KernelcacheBoot::in_force();
+    peel_linked(bytes, choice, &LinkSearch::new(path, boot))
+}
+
+/// [`peel`], resolving pointers into linked collections against the files
+/// `search` finds.
+pub fn peel_linked(bytes: Vec<u8>, choice: &KernelcacheChoice, search: &LinkSearch) -> Result<Peeled, String> {
     if *choice == KernelcacheChoice::Off {
         return Ok(Peeled { bytes, note: None, fileset: None });
     }
@@ -66,7 +83,7 @@ pub fn peel(bytes: Vec<u8>, choice: &KernelcacheChoice) -> Result<Peeled, String
         bytes
     };
     let (bytes, map) = if fileset::is_fileset(&bytes) {
-        let (image, note, map) = fileset::extract(bytes, choice)?;
+        let (image, note, map) = fileset::extract(bytes, choice, search)?;
         notes.push(note);
         (image, Some(map))
     } else {

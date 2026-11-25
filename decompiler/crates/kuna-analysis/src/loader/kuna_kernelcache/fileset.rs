@@ -3,17 +3,18 @@
 
 use kuna_decomp::kuna_kernelcache::KernelcacheChoice;
 
+use super::linked::{self, LinkSearch};
 use crate::loader::format::macho::resolve_chained_fixups;
 
 const MH_MAGIC_64: u32 = 0xfeed_facf;
-const MH_EXECUTE: u32 = 0x2;
+pub(super) const MH_EXECUTE: u32 = 0x2;
 const MH_FILESET: u32 = 0xc;
-const LC_SEGMENT_64: u32 = 0x19;
+pub(super) const LC_SEGMENT_64: u32 = 0x19;
 const LC_FILESET_ENTRY: u32 = 0x8000_0035;
 const LC_SYMTAB: u32 = 0x2;
 const LC_DYSYMTAB: u32 = 0xb;
 const HEADER_LEN: usize = 32;
-const NLIST_LEN: usize = 16;
+pub(super) const NLIST_LEN: usize = 16;
 const SEGMENT_LEN: usize = 72;
 const SECTION_LEN: usize = 80;
 const N_EXT: u8 = 0x01;
@@ -91,7 +92,7 @@ struct Segment {
 }
 
 /// `(cmd, offset)` of each load command of the 64-bit header at `at`.
-fn load_commands(bytes: &[u8], at: usize) -> Option<Vec<(u32, usize)>> {
+pub(super) fn load_commands(bytes: &[u8], at: usize) -> Option<Vec<(u32, usize)>> {
     if rd_u32(bytes, at)? != MH_MAGIC_64 {
         return None;
     }
@@ -193,16 +194,18 @@ fn select<'a>(all: &'a [FilesetEntry], choice: &KernelcacheChoice) -> Result<&'a
 }
 
 /// Cut the chosen entry out of a kernel collection: rebase every chained-fixup
-/// pointer slot, then copy the entry's header and load commands to offset 0.
+/// pointer slot, those into a linked collection against the file `search`
+/// finds, then copy the entry's header and load commands to offset 0.
 pub(super) fn extract(
     mut bytes: Vec<u8>,
     choice: &KernelcacheChoice,
+    search: &LinkSearch,
 ) -> Result<(Vec<u8>, String, FilesetMap), String> {
     let all = entries(&bytes).ok_or("malformed MH_FILESET load commands")?;
     let entry = select(&all, choice)?.clone();
     let index = all.iter().position(|e| e.fileoff == entry.fileoff).unwrap_or(0);
     let map = fileset_map(&bytes, &all, index);
-    let applied = apply_fixups(&mut bytes)?;
+    let (applied, linked) = apply_fixups(&mut bytes, search)?;
 
     let at = usize::try_from(entry.fileoff).map_err(|_| "fileset entry offset out of range")?;
     let sizeofcmds = rd_u32(&bytes, at + 20).ok_or("truncated fileset entry header")? as usize;
@@ -215,8 +218,13 @@ pub(super) fn extract(
         return Err(format!("cannot cut {} out of its collection: its data starts inside the header", entry.id));
     }
     let bound = if entry.filetype == MH_EXECUTE { 0 } else { bind_to_collection(&mut bytes, &all, index) };
+    append_bound_symbols(&mut bytes, at, &linked.names);
     bytes.copy_within(at..at + header_len, 0);
-    let bound = if bound > 0 { format!(", {bound} undefined symbols bound to the collection") } else { String::new() };
+    let mut bound = if bound > 0 { format!(", {bound} undefined symbols bound to the collection") } else { String::new() };
+    for clause in &linked.notes {
+        bound.push_str(", ");
+        bound.push_str(clause);
+    }
     let note = format!(
         "MH_FILESET: loaded {} (entry {} of {}, {applied} chained-fixup pointers rebased{bound}); \
          choose another entry with --option kernelcache <bundle-id>",
@@ -229,31 +237,35 @@ pub(super) fn extract(
 
 /// An entry's `LC_SYMTAB` and its `LC_DYSYMTAB` external-defined and undefined
 /// index ranges, clamped to the symbols the file actually holds.
-struct Symbols {
-    symoff: usize,
+pub(super) struct Symbols {
+    pub(super) symoff: usize,
     stroff: usize,
+    /// Every symbol the table holds.
+    pub(super) count: usize,
     extdef: std::ops::Range<usize>,
     undef: std::ops::Range<usize>,
 }
 
-fn symbols(bytes: &[u8], cmds: &[(u32, usize)]) -> Option<Symbols> {
+pub(super) fn symbols(bytes: &[u8], cmds: &[(u32, usize)]) -> Option<Symbols> {
     let (_, st) = *cmds.iter().find(|&&(cmd, _)| cmd == LC_SYMTAB)?;
-    let (_, dy) = *cmds.iter().find(|&&(cmd, _)| cmd == LC_DYSYMTAB)?;
-    let symoff = rd_u32(bytes, st + 8)? as usize;
-    let nsyms = (rd_u32(bytes, st + 12)? as usize).min(bytes.len().saturating_sub(symoff) / NLIST_LEN);
+    let mut syms = symbols_of(bytes, st)?;
+    let Some(&(_, dy)) = cmds.iter().find(|&&(cmd, _)| cmd == LC_DYSYMTAB) else { return Some(syms) };
     let range = |i: usize| -> Option<std::ops::Range<usize>> {
-        let first = (rd_u32(bytes, dy + i)? as usize).min(nsyms);
-        Some(first..first.saturating_add(rd_u32(bytes, dy + i + 4)? as usize).min(nsyms))
+        let first = (rd_u32(bytes, dy + i)? as usize).min(syms.count);
+        Some(first..first.saturating_add(rd_u32(bytes, dy + i + 4)? as usize).min(syms.count))
     };
-    Some(Symbols {
-        symoff,
-        stroff: rd_u32(bytes, st + 16)? as usize,
-        extdef: range(16)?,
-        undef: range(24)?,
-    })
+    (syms.extdef, syms.undef) = (range(16)?, range(24)?);
+    Some(syms)
 }
 
-fn nlist_name<'a>(bytes: &'a [u8], syms: &Symbols, index: usize, work: &mut usize) -> Option<&'a [u8]> {
+/// The symbol table of the `LC_SYMTAB` at `st`, its index ranges empty.
+fn symbols_of(bytes: &[u8], st: usize) -> Option<Symbols> {
+    let symoff = rd_u32(bytes, st + 8)? as usize;
+    let count = (rd_u32(bytes, st + 12)? as usize).min(bytes.len().saturating_sub(symoff) / NLIST_LEN);
+    Some(Symbols { symoff, stroff: rd_u32(bytes, st + 16)? as usize, count, extdef: 0..0, undef: 0..0 })
+}
+
+pub(super) fn nlist_name<'a>(bytes: &'a [u8], syms: &Symbols, index: usize, work: &mut usize) -> Option<&'a [u8]> {
     let strx = rd_u32(bytes, syms.symoff.checked_add(index.checked_mul(NLIST_LEN)?)?)? as usize;
     let tail = bytes.get(syms.stroff.checked_add(strx)?..)?;
     let window = &tail[..tail.len().min(*work)];
@@ -268,7 +280,7 @@ fn nlist_name<'a>(bytes: &'a [u8], syms: &Symbols, index: usize, work: &mut usiz
 /// The work [`bind_to_collection`] may spend, in commands, sections and symbol
 /// name bytes visited: an honest collection costs a fraction of its size, while
 /// entry headers sharing load commands or a name table would multiply it.
-fn bind_work(bytes: &[u8]) -> usize {
+pub(super) fn bind_work(bytes: &[u8]) -> usize {
     bytes.len().saturating_mul(4).max(1 << 20)
 }
 
@@ -345,7 +357,7 @@ fn bind_to_collection(bytes: &mut [u8], all: &[FilesetEntry], index: usize) -> u
 
 /// The address ranges of an entry's instruction-bearing sections. A segment's
 /// sections are read only as far as its own `cmdsize` holds them.
-fn code_ranges(bytes: &[u8], cmds: &[(u32, usize)], work: &mut usize) -> Option<Vec<std::ops::Range<u64>>> {
+pub(super) fn code_ranges(bytes: &[u8], cmds: &[(u32, usize)], work: &mut usize) -> Option<Vec<std::ops::Range<u64>>> {
     let mut out = Vec::new();
     for &(cmd, p) in cmds {
         if cmd != LC_SEGMENT_64 {
@@ -368,38 +380,92 @@ fn code_ranges(bytes: &[u8], cmds: &[(u32, usize)], work: &mut usize) -> Option<
     Some(out)
 }
 
+/// The lowest address a collection maps file content at: the base its own
+/// kernel-cache fixup targets are offsets from.
+pub(super) fn image_base(bytes: &[u8]) -> Option<u64> {
+    segments(bytes, 0)?.iter().filter(|s| s.filesize > 0).map(|s| s.vmaddr).min()
+}
+
+/// Give the entry whose header is at `at` one `N_ABS | N_EXT` symbol per
+/// `(address, name)`, the form [`bind_to_collection`] leaves a bound import
+/// in. The entry's symbols are copied to the end of the file with the new ones
+/// after them, the new names follow, and `LC_SYMTAB` is pointed at the copy;
+/// the string table keeps its offset and grows to reach the new names. Returns
+/// how many were added: none when the entry has no `LC_SYMTAB` or the file
+/// would outgrow its 32-bit offsets.
+fn append_bound_symbols(bytes: &mut Vec<u8>, at: usize, names: &[(u64, Vec<u8>)]) -> usize {
+    let plan = || {
+        let cmds = load_commands(bytes, at)?;
+        let (_, st) = *cmds.iter().find(|&&(cmd, _)| cmd == LC_SYMTAB)?;
+        let syms = symbols_of(bytes, st)?;
+        let old = bytes.get(syms.symoff..syms.symoff.checked_add(syms.count.checked_mul(NLIST_LEN)?)?)?;
+        let symoff = bytes.len().next_multiple_of(8);
+        let strings = symoff + old.len() + names.len() * NLIST_LEN;
+        let mut table = vec![0u8; symoff - bytes.len()];
+        table.extend_from_slice(old);
+        let mut pool = Vec::new();
+        for (addr, name) in names {
+            let strx = u32::try_from((strings + pool.len()).checked_sub(syms.stroff)?).ok()?;
+            table.extend_from_slice(&strx.to_le_bytes());
+            table.extend_from_slice(&[N_ABS | N_EXT, 0, 0, 0]);
+            table.extend_from_slice(&addr.to_le_bytes());
+            pool.extend_from_slice(name);
+            pool.push(0);
+        }
+        table.extend_from_slice(&pool);
+        let strsize = u32::try_from(bytes.len() + table.len() - syms.stroff).ok()?;
+        let count = u32::try_from(syms.count + names.len()).ok()?;
+        Some((st, u32::try_from(symoff).ok()?, count, strsize, table))
+    };
+    if names.is_empty() {
+        return 0;
+    }
+    let Some((st, symoff, count, strsize, table)) = plan() else { return 0 };
+    bytes.extend_from_slice(&table);
+    bytes[st + 8..st + 12].copy_from_slice(&symoff.to_le_bytes());
+    bytes[st + 12..st + 16].copy_from_slice(&count.to_le_bytes());
+    bytes[st + 20..st + 24].copy_from_slice(&strsize.to_le_bytes());
+    names.len()
+}
+
 /// Write every rebase of the collection's `LC_DYLD_CHAINED_FIXUPS` into its slot,
-/// with the pointer-authentication bits stripped.
-fn apply_fixups(bytes: &mut [u8]) -> Result<usize, String> {
+/// with the pointer-authentication bits stripped: the collection's own from its
+/// base, and those into a linked collection from the file `search` finds.
+/// Returns the count of the collection's own and what the linked files gave.
+fn apply_fixups(bytes: &mut [u8], search: &LinkSearch) -> Result<(usize, linked::Linked), String> {
     let mut segs = segments(bytes, 0).ok_or("malformed MH_FILESET segments")?;
     segs.retain(|s| s.filesize > 0);
     segs.sort_by_key(|s| s.vmaddr);
-    let rebases: Vec<(u64, u64)> = {
+    let (rebases, targets): (Vec<(u64, u64)>, Vec<(u64, u8, u64)>) = {
         let file = object::File::parse(&*bytes).map_err(|e| format!("MH_FILESET: {e}"))?;
-        resolve_chained_fixups(&file, bytes).rebases().collect()
+        let fixups = resolve_chained_fixups(&file, bytes);
+        (fixups.rebases().collect(), fixups.linked_targets().collect())
     };
-    let mut applied = 0;
-    for (va, target) in rebases {
-        let Some(seg) = segs[..segs.partition_point(|s| s.vmaddr <= va)].last() else { continue };
+    let linked = if targets.is_empty() { linked::Linked::default() } else { linked::resolve(bytes, &targets, search) };
+    let mut write = |va: u64, target: u64| {
+        let Some(seg) = segs[..segs.partition_point(|s| s.vmaddr <= va)].last() else { return false };
         if va - seg.vmaddr >= seg.filesize.saturating_sub(7) {
-            continue;
+            return false;
         }
         let Some(off) = seg.fileoff.checked_add(va - seg.vmaddr).and_then(|o| usize::try_from(o).ok()) else {
-            continue;
+            return false;
         };
-        if let Some(slot) = bytes.get_mut(off..off.saturating_add(8)) {
-            slot.copy_from_slice(&target.to_le_bytes());
-            applied += 1;
-        }
+        let Some(slot) = bytes.get_mut(off..off.saturating_add(8)) else { return false };
+        slot.copy_from_slice(&target.to_le_bytes());
+        true
+    };
+    let applied = rebases.into_iter().filter(|&(va, target)| write(va, target)).count();
+    for &(va, target) in &linked.rebases {
+        write(va, target);
     }
-    Ok(applied)
+    Ok((applied, linked))
 }
 
-fn rd_u32(b: &[u8], off: usize) -> Option<u32> {
+pub(super) fn rd_u32(b: &[u8], off: usize) -> Option<u32> {
     b.get(off..off.checked_add(4)?).map(|s| u32::from_le_bytes(s.try_into().unwrap()))
 }
 
-fn rd_u64(b: &[u8], off: usize) -> Option<u64> {
+pub(super) fn rd_u64(b: &[u8], off: usize) -> Option<u64> {
     b.get(off..off.checked_add(8)?).map(|s| u64::from_le_bytes(s.try_into().unwrap()))
 }
 

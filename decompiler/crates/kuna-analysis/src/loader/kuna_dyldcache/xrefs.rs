@@ -241,7 +241,7 @@ struct ImageNames {
 }
 
 /// Symbol names by address across the whole cache, built per image on demand.
-struct Names<'a> {
+pub(super) struct Names<'a> {
     cache: &'a DyldCache,
     ranges: Vec<(u64, u64, usize)>,
     images: RefCell<HashMap<usize, Rc<ImageNames>>>,
@@ -254,7 +254,7 @@ struct Names<'a> {
 impl<'a> Names<'a> {
     /// Every image's segment ranges; an alias (an entry sharing another's
     /// header address) adds none of its own.
-    fn new(cache: &'a DyldCache) -> Names<'a> {
+    pub(super) fn new(cache: &'a DyldCache) -> Names<'a> {
         let mut seen = std::collections::HashSet::new();
         let mut ranges: Vec<(u64, u64, usize)> = (0..cache.images().len())
             .filter(|&i| seen.insert(cache.images()[i].address))
@@ -298,6 +298,22 @@ impl<'a> Names<'a> {
         }
         let indirect = self.cache.image_indirect_symbols(index).unwrap_or_default();
         ImageNames { by_addr, symbols, indirect }
+    }
+
+    /// The image holding `addr`, with `addr`. For an address no image holds,
+    /// `through_stubs` follows the stub there to the image holding its target,
+    /// with that target.
+    pub(super) fn owner(&self, mut addr: u64, through_stubs: bool) -> Option<(u64, usize)> {
+        for _ in 0..=MAX_STUB_HOPS {
+            if let Some(index) = self.image_at(addr) {
+                return Some((addr, index));
+            }
+            if !through_stubs {
+                return None;
+            }
+            addr = follow_stub(self.cache, addr)?;
+        }
+        None
     }
 
     fn at(&self, addr: u64) -> Option<Vec<u8>> {

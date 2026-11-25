@@ -33,7 +33,7 @@
     },
     "stdout_matches": [
       "Unknown pseudo relocation protocol version %d\\.\\\\n\"\\); // no-return",
-      "Unknown pseudo relocation bit size %d\\.\\\\n\",v[0-9]+\\); // no-return"
+      "Unknown pseudo relocation bit size %d\\.\\\\n\",[^;]+\\); // no-return"
     ],
     "stdout_absent": [
       "funcboundflow"

@@ -35,6 +35,7 @@ mod kuna_insnstore;
 pub mod context;
 pub mod decode;
 pub mod kuna_callbackentry;
+pub mod kuna_calltable;
 pub mod kuna_callerreads;
 pub mod kuna_poolextents;
 pub mod kuna_entrythumbflow;
@@ -45,6 +46,7 @@ pub mod kuna_mzsweep;
 pub mod kuna_rawdiscover;
 pub mod kuna_rawextent;
 pub mod kuna_tailcallentry;
+pub mod kuna_falseentry;
 pub mod kuna_thunkentry;
 mod kuna_walkcontext;
 mod kuna_fingerprintcontext;
@@ -56,9 +58,12 @@ mod kuna_pcform;
 mod kuna_picbase;
 mod kuna_picpool;
 mod kuna_poolref;
+mod kuna_gotcall;
 mod kuna_regcarry;
 mod kuna_ppclocalentry;
 mod kuna_pltstub;
+mod kuna_a64switch;
+mod kuna_switchextent;
 mod kuna_switchtable;
 mod kuna_thumbswitch;
 mod kuna_a32switch;
@@ -118,6 +123,30 @@ impl ListingDetail {
     pub const PARTITION_ONLY: ListingDetail = ListingDetail { assembly: false, refs: false };
 }
 
+/// Executable coverage may come from section headers, load segments or a
+/// caller's mapping. Only section headers establish instruction-slot origins.
+#[derive(Clone)]
+struct ExecutableCoverage {
+    ranges: Vec<(u64, u64)>,
+    section_backed: bool,
+}
+
+impl ExecutableCoverage {
+    fn from_object(file: &object::File) -> Self {
+        let mut ranges: Vec<_> = crate::entry::executable_sections(file)
+            .into_iter()
+            .map(|(lo, hi, _)| (lo, hi))
+            .collect();
+        ranges.sort_unstable();
+        Self { ranges, section_backed: file.sections().next().is_some() }
+    }
+
+    fn from_ranges(mut ranges: Vec<(u64, u64)>) -> Self {
+        ranges.sort_unstable();
+        Self { ranges, section_backed: false }
+    }
+}
+
 /// The Listing facade: three sub-models sharing one decode pass (design §2.5).
 pub struct Listing {
     /// Instruction model, keyed by VMA.
@@ -127,7 +156,7 @@ pub struct Listing {
     /// Discovered/seeded functions, keyed by entry VMA (ordered).
     funcs: BTreeMap<u64, DiscoveredFunction>,
     /// The coverage universe for the partition / gap walk (sorted, disjoint).
-    exec_ranges: Vec<(u64, u64)>,
+    coverage: ExecutableCoverage,
     /// Whether the instruction model carries disassembly text.
     has_assembly: bool,
     /// Whether the reference model was built (vs. deliberately skipped).
@@ -194,19 +223,19 @@ impl Listing {
         funcs: BTreeMap<u64, DiscoveredFunction>,
         exec_ranges: Vec<(u64, u64)>,
     ) -> Listing {
-        Self::from_partition_store(insns.into_iter().collect(), funcs, exec_ranges)
+        Self::from_partition_store(insns.into_iter().collect(), funcs, ExecutableCoverage::from_ranges(exec_ranges))
     }
 
     fn from_partition_store(
         insns: kuna_insnstore::InstructionStore,
         funcs: BTreeMap<u64, DiscoveredFunction>,
-        exec_ranges: Vec<(u64, u64)>,
+        coverage: ExecutableCoverage,
     ) -> Listing {
         Listing {
             insns,
             refs: kuna_compactrefs::ReferenceIndex::default(),
             funcs,
-            exec_ranges,
+            coverage,
             has_assembly: true,
             has_refs: false,
             stack_callback_refs: Vec::new(),
@@ -398,11 +427,7 @@ impl Listing {
         );
         // The executable-range universe (design §2.4 / §3.4 out-of-bounds gate),
         // sorted by low VMA so the partition / gap queries can binary-search it.
-        let mut exec_ranges: Vec<(u64, u64)> = crate::entry::executable_sections(file)
-            .into_iter()
-            .map(|(lo, hi, _data)| (lo, hi))
-            .collect();
-        exec_ranges.sort_unstable();
+        let coverage = ExecutableCoverage::from_object(file);
 
         // The code space the Addresses are built in.
         let code_space = match arch.manage().get_default_code_space() {
@@ -416,7 +441,7 @@ impl Listing {
                     insns: kuna_insnstore::InstructionStore::default(),
                     refs: kuna_compactrefs::ReferenceIndex::default(),
                     funcs: BTreeMap::new(),
-                    exec_ranges,
+                    coverage,
                     has_assembly: detail.assembly,
                     has_refs: false,
                     stack_callback_refs: Vec::new(),
@@ -474,6 +499,8 @@ impl Listing {
         );
         let a32_pool = kuna_a32switch::applies(file, arch).then(|| kuna_poolref::PoolImage::new(file)).flatten();
         let a32_tables = a32_pool.as_ref().map(|pool| kuna_a32switch::A32Tables::new(arch, pool));
+        let a64_pool = kuna_a64switch::applies(file).then(|| kuna_poolref::PoolImage::new(file)).flatten();
+        let a64_tables = a64_pool.as_ref().map(|pool| kuna_a64switch::A64Tables::new(arch, pool, seeds));
         let x86_tables = arch
             .analysis_x86listingswitch
             .then(|| kuna_x86listingswitch::X86Tables::new(file, arch))
@@ -482,7 +509,7 @@ impl Listing {
             translate,
             arch,
             &code_space,
-            &exec_ranges,
+            &coverage.ranges,
             seeds,
             &seed_funcs,
             &painter,
@@ -497,6 +524,7 @@ impl Listing {
             resumed,
             tables.as_ref(),
             a32_tables.as_ref(),
+            a64_tables.as_ref(),
             x86_tables.as_ref(),
             memo,
         );
@@ -507,7 +535,7 @@ impl Listing {
             insns: st.insns,
             refs,
             funcs: st.funcs,
-            exec_ranges,
+            coverage,
             has_assembly: detail.assembly,
             has_refs: detail.refs,
             stack_callback_refs: st
@@ -542,8 +570,7 @@ impl Listing {
         seeds: &[u64],
         detail: ListingDetail,
     ) -> Listing {
-        let mut exec_ranges: Vec<(u64, u64)> = exec_ranges.to_vec();
-        exec_ranges.sort_unstable();
+        let coverage = ExecutableCoverage::from_ranges(exec_ranges.to_vec());
         let seed_funcs: BTreeMap<u64, DiscoveredFunction> = seeds
             .iter()
             .map(|&entry| {
@@ -564,7 +591,7 @@ impl Listing {
             translate,
             arch,
             code_space,
-            &exec_ranges,
+            &coverage.ranges,
             seeds,
             &seed_funcs,
             &context::ContextPainter::empty(),
@@ -581,13 +608,14 @@ impl Listing {
             None,
             None,
             None,
+            None,
         );
         let refs = kuna_compactrefs::ReferenceIndex::new(st.refs);
         Listing {
             insns: st.insns,
             refs,
             funcs: st.funcs,
-            exec_ranges,
+            coverage,
             has_assembly: detail.assembly,
             has_refs: detail.refs,
             stack_callback_refs: Vec::new(),
@@ -608,7 +636,7 @@ impl Listing {
             insns: insns.into_iter().map(|i| (i.addr, i)).collect(),
             refs: kuna_compactrefs::ReferenceIndex::default(),
             funcs: BTreeMap::new(),
-            exec_ranges: vec![(0, u64::MAX)],
+            coverage: ExecutableCoverage::from_ranges(vec![(0, u64::MAX)]),
             has_assembly,
             has_refs: false,
             stack_callback_refs: Vec::new(),
@@ -630,7 +658,7 @@ impl Listing {
             insns: insns.into_iter().map(|i| (i.addr, i)).collect(),
             refs: kuna_compactrefs::ReferenceIndex::default(),
             funcs: funcs.into_iter().map(|f| (f.entry, f)).collect(),
-            exec_ranges,
+            coverage: ExecutableCoverage::from_ranges(exec_ranges),
             has_assembly: true,
             has_refs: false,
             stack_callback_refs,
@@ -730,7 +758,7 @@ impl Listing {
     /// disjoint). The AIF gap-walk (`aif`) needs it to bound its speculative
     /// gap decode (`memory.contains` / executable-block guard).
     pub fn exec_ranges(&self) -> &[(u64, u64)] {
-        &self.exec_ranges
+        &self.coverage.ranges
     }
 
     /// Whether a reference model was built. False for a Listing built with
@@ -825,7 +853,10 @@ impl Listing {
     /// span; returns the first executable-range address that is not covered by an
     /// instruction, or `None` if every executable byte after `vma` is covered.
     pub fn first_undefined_after(&self, vma: u64) -> Option<u64> {
-        let mut probe = vma.checked_add(1)?;
+        self.first_undefined_at_or_after(vma.checked_add(1)?)
+    }
+
+    pub(crate) fn first_undefined_at_or_after(&self, mut probe: u64) -> Option<u64> {
         loop {
             // Advance past any executable range we have already fallen off the end
             // of, snapping `probe` up to the next range's low bound.
@@ -852,15 +883,19 @@ impl Listing {
         }
     }
 
+    pub(crate) fn has_section_origins(&self) -> bool {
+        self.coverage.section_backed
+    }
+
     /// True iff `vma` lands inside any executable range `[lo, hi)`.
     fn in_exec(&self, vma: u64) -> bool {
-        self.exec_ranges.iter().any(|&(lo, hi)| vma >= lo && vma < hi)
+        self.coverage.ranges.iter().any(|&(lo, hi)| vma >= lo && vma < hi)
     }
 
     /// The executable range containing `vma`, else the first range starting at-or
     /// -after `vma` (exec ranges are sorted by low bound).
-    fn range_containing_or_after(&self, vma: u64) -> Option<(u64, u64)> {
-        self.exec_ranges.iter().copied().find(|&(_, hi)| vma < hi)
+    pub(crate) fn range_containing_or_after(&self, vma: u64) -> Option<(u64, u64)> {
+        self.coverage.ranges.iter().copied().find(|&(_, hi)| vma < hi)
     }
 
     // ---- xref model (read-only, design §6 / PR4) ----
@@ -961,7 +996,7 @@ mod tests {
             insns,
             refs: kuna_compactrefs::ReferenceIndex::default(),
             funcs: BTreeMap::new(),
-            exec_ranges: Vec::new(),
+            coverage: ExecutableCoverage::from_ranges(Vec::new()),
             has_assembly: true,
             has_refs: true,
             stack_callback_refs: Vec::new(),

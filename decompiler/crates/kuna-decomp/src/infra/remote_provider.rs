@@ -388,6 +388,7 @@ impl RemoteProto {
             output_storage: None,
             input_storage: Vec::new(),
             kuna_library_names: None,
+            kuna_library_table: false,
         };
         if self.custom {
             pieces.output_storage = self.out_type.as_ref().map(|ct| {
@@ -1597,6 +1598,7 @@ impl RemoteScope {
                 is_function,
                 func_inject_id,
                 func_no_return,
+                func_extra_pop: None,
             });
             // Mark the range answered so no interior address re-queries.
             st.answered.insert_range(Rc::clone(spc), first, last);

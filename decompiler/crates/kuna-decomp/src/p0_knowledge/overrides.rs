@@ -376,6 +376,11 @@ impl Override {
         self.flowoverride.insert(addr, type_);
     }
 
+    /// Forget a temporary flow decision after its raw graph has been verified.
+    pub(crate) fn remove_flow_override(&mut self, addr: &Address) {
+        self.flowoverride.remove(addr);
+    }
+
     /// Record an exact `/GS` checker call site for the restart re-flow.
     pub fn insert_msvc_cookie_call(&mut self, addr: Address) {
         self.msvc_cookie_calls.insert(addr);

@@ -1,0 +1,92 @@
+{
+  "source": "shift.c",
+  "source_sha256": "18d46d0f74b6ba8f210e6188a77157dd86decc1c13d335cd4b02c0f37181f19f",
+  "compiler": {
+    "name": "clang",
+    "sha256": "412bbe8c60571a1eb06f48fde89635033621caeb01a9b4ee76d46711bae8e932",
+    "version": "Ubuntu clang version 21.1.8 (6ubuntu1)"
+  },
+  "objects": [
+    {
+      "file": "x86-64.elf",
+      "sha256": "90a2a90d5aeb5c44b83a726eadbf4fd3bc1b6d16b0e318d55fcdf3d20ae6152f",
+      "target": "x86:LE:64:default",
+      "call": true,
+      "command": [
+        "clang",
+        "--target=x86_64-linux-gnu",
+        "-O2",
+        "-ffreestanding",
+        "-fno-pic",
+        "-fno-pie",
+        "-fno-stack-protector",
+        "-c",
+        "shift.c",
+        "-o",
+        "x86-64.elf",
+        "-DTEST_CALL"
+      ]
+    },
+    {
+      "file": "aarch64.elf",
+      "sha256": "1c21da14f0d73d0660d10866d966b1a1788bfd3f7728efd0c70b1b64bbaeff35",
+      "target": "AARCH64:LE:64:v8A",
+      "call": false,
+      "command": [
+        "clang",
+        "--target=aarch64-linux-gnu",
+        "-O2",
+        "-ffreestanding",
+        "-fno-pic",
+        "-fno-pie",
+        "-fno-stack-protector",
+        "-c",
+        "shift.c",
+        "-o",
+        "aarch64.elf"
+      ]
+    },
+    {
+      "file": "ppc64.elf",
+      "sha256": "b49555f198560dddbfc99d0604dc548e2cd157fee0044aa70c7a9d72dc9aaf1e",
+      "target": "PowerPC:BE:64:default",
+      "call": false,
+      "command": [
+        "clang",
+        "--target=powerpc64-linux-gnu",
+        "-O2",
+        "-ffreestanding",
+        "-fno-pic",
+        "-fno-pie",
+        "-fno-stack-protector",
+        "-c",
+        "shift.c",
+        "-o",
+        "ppc64.elf"
+      ]
+    },
+    {
+      "file": "mips64.elf",
+      "sha256": "c41ef6c29cce540b58ac4b64213f01dd62f0755cf7127a02100df622f1044c13",
+      "target": "MIPS:BE:64:octeon:default",
+      "call": false,
+      "command": [
+        "clang",
+        "--target=mips64-linux-gnuabi64",
+        "-O2",
+        "-ffreestanding",
+        "-fno-pic",
+        "-fno-pie",
+        "-fno-stack-protector",
+        "-c",
+        "shift.c",
+        "-o",
+        "mips64.elf",
+        "-march=octeon",
+        "-mabi=64",
+        "-mno-abicalls",
+        "-msoft-float"
+      ]
+    }
+  ]
+}

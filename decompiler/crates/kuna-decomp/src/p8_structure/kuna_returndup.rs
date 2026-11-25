@@ -61,7 +61,7 @@
 //! epilogue is semantics-preserving: no side-effecting op is cloned, and each
 //! predecessor reaches a return with the same MULTIEQUAL-selected value it did before.
 //!
-//! It is gated by `option returndup on|off` (`duplicate_shared_returns`, DIV-54
+//! It is gated by `option returndup on|off|calls` (`duplicate_shared_returns`, DIV-54
 //! default-ON, superseding the DIV-18 revert — the const-return gate is what turned
 //! the aggregate decbench measurement positive) — when off, [`ActionReturnDup::apply`]
 //! early-returns and output is byte-identical to upstream.  It is broad: any function
@@ -142,21 +142,39 @@ impl Action for ActionReturnDup {
 }
 
 //===========================================================================
-// Option parse (`returndup on|off`).
+// Option parse (`returndup on|off|auto|calls`).
 //===========================================================================
 
-/// The `returndup on|off` ArchOption (angr SAILR gotoless `ReturnDuplicatorHigh`
-/// shared-bare-epilogue return duplication).
+/// The `returndup on|off|auto|calls` ArchOption (angr SAILR gotoless
+/// `ReturnDuplicatorHigh` shared-bare-epilogue return duplication; `auto`
+/// follows [`crate::p8_structure::kuna_o0returns`] in unoptimized functions;
+/// `calls` is `auto` plus [`crate::p8_structure::kuna_returndupcalls`]).
 pub struct OptionReturnDup;
 
 impl OptionReturnDup {
     /// The option name.
     pub const NAME: &'static str = "returndup";
 
-    /// Parse `on`/`off`, returning the bool value + a confirmation message.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
+    /// Parse `on`/`off`/`auto`/`calls`, returning whether bare epilogues are
+    /// duplicated, whether call tails are too, whether the recorded return
+    /// statements decide unoptimized functions, and a confirmation message.
+    pub fn apply(&self, p1: &str) -> KunaResult<(bool, bool, bool, String)> {
+        match p1 {
+            "calls" => {
+                return Ok((true, true, true, "Shared return duplication turned on, call tails included".to_string()))
+            }
+            "auto" => {
+                return Ok((
+                    true,
+                    false,
+                    true,
+                    "Shared return duplication turned on, recorded returns in unoptimized functions".to_string(),
+                ))
+            }
+            _ => {}
+        }
         let val = on_or_off(p1)?;
         let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Shared bare-epilogue return duplication turned {prop}")))
+        Ok((val, false, false, format!("Shared bare-epilogue return duplication turned {prop}")))
     }
 }

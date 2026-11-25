@@ -1,0 +1,204 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:64:default">
+<bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<!--
+  kuna armconstshift all: a fixed 64-bit left shift of a signed operand is
+  undefined C for negative values and for bits shifted into or past the sign,
+  although every machine computes it modulo 2^64. P9 emission / cast-policy;
+  P0 assertion `option armconstshift`. Two passes over LLVM objects for x86-64,
+  AArch64, PowerPC64 and MIPS64 (tests/fixtures/wide-integer-emission/shift.c):
+  `off` (the default) keeps upstream's `value << 0x1f`; `all` shifts the
+  unsigned conversion, keeps a sign extension inside it and restores the signed
+  result, while the shared store to *echo stays. The CLI companion
+  wide_shift_emission.rs executes the `all` output under UBSan at O0/O2.
+-->
+<script>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/x86-64.elf</com>
+<com>read symbols</com>
+<com>map prototype shift31 long long shift31(long long value, long long *echo);</com>
+<com>lo fu shift31</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/x86-64.elf</com>
+<com>read symbols</com>
+<com>map prototype shift63 long long shift63(long long value);</com>
+<com>lo fu shift63</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/x86-64.elf</com>
+<com>read symbols</com>
+<com>map prototype widened_shift31 long long widened_shift31(int value);</com>
+<com>lo fu widened_shift31</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/aarch64.elf</com>
+<com>read symbols</com>
+<com>map prototype shift31 long long shift31(long long value, long long *echo);</com>
+<com>lo fu shift31</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/aarch64.elf</com>
+<com>read symbols</com>
+<com>map prototype shift63 long long shift63(long long value);</com>
+<com>lo fu shift63</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/aarch64.elf</com>
+<com>read symbols</com>
+<com>map prototype widened_shift31 long long widened_shift31(int value);</com>
+<com>lo fu widened_shift31</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/ppc64.elf</com>
+<com>read symbols</com>
+<com>map prototype shift31 long long shift31(long long value, long long *echo);</com>
+<com>lo fu shift31</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/ppc64.elf</com>
+<com>read symbols</com>
+<com>map prototype shift63 long long shift63(long long value);</com>
+<com>lo fu shift63</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/ppc64.elf</com>
+<com>read symbols</com>
+<com>map prototype widened_shift31 long long widened_shift31(int value);</com>
+<com>lo fu widened_shift31</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/mips64.elf</com>
+<com>read symbols</com>
+<com>map prototype shift31 long long shift31(long long value, long long *echo);</com>
+<com>lo fu shift31</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/mips64.elf</com>
+<com>read symbols</com>
+<com>map prototype shift63 long long shift63(long long value);</com>
+<com>lo fu shift63</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/mips64.elf</com>
+<com>read symbols</com>
+<com>map prototype widened_shift31 long long widened_shift31(int value);</com>
+<com>lo fu widened_shift31</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/x86-64.elf</com>
+<com>read symbols</com>
+<com>option armconstshift all</com>
+<com>map prototype shift31 long long shift31(long long value, long long *echo);</com>
+<com>lo fu shift31</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/x86-64.elf</com>
+<com>read symbols</com>
+<com>option armconstshift all</com>
+<com>map prototype shift63 long long shift63(long long value);</com>
+<com>lo fu shift63</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/x86-64.elf</com>
+<com>read symbols</com>
+<com>option armconstshift all</com>
+<com>map prototype widened_shift31 long long widened_shift31(int value);</com>
+<com>lo fu widened_shift31</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/aarch64.elf</com>
+<com>read symbols</com>
+<com>option armconstshift all</com>
+<com>map prototype shift31 long long shift31(long long value, long long *echo);</com>
+<com>lo fu shift31</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/aarch64.elf</com>
+<com>read symbols</com>
+<com>option armconstshift all</com>
+<com>map prototype shift63 long long shift63(long long value);</com>
+<com>lo fu shift63</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/aarch64.elf</com>
+<com>read symbols</com>
+<com>option armconstshift all</com>
+<com>map prototype widened_shift31 long long widened_shift31(int value);</com>
+<com>lo fu widened_shift31</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/ppc64.elf</com>
+<com>read symbols</com>
+<com>option armconstshift all</com>
+<com>map prototype shift31 long long shift31(long long value, long long *echo);</com>
+<com>lo fu shift31</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/ppc64.elf</com>
+<com>read symbols</com>
+<com>option armconstshift all</com>
+<com>map prototype shift63 long long shift63(long long value);</com>
+<com>lo fu shift63</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/ppc64.elf</com>
+<com>read symbols</com>
+<com>option armconstshift all</com>
+<com>map prototype widened_shift31 long long widened_shift31(int value);</com>
+<com>lo fu widened_shift31</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/mips64.elf</com>
+<com>read symbols</com>
+<com>option armconstshift all</com>
+<com>map prototype shift31 long long shift31(long long value, long long *echo);</com>
+<com>lo fu shift31</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/mips64.elf</com>
+<com>read symbols</com>
+<com>option armconstshift all</com>
+<com>map prototype shift63 long long shift63(long long value);</com>
+<com>lo fu shift63</com>
+<com>decompile</com>
+<com>print C</com>
+<com>clear architecture</com>
+<com>load file tests/fixtures/wide-integer-emission/mips64.elf</com>
+<com>read symbols</com>
+<com>option armconstshift all</com>
+<com>map prototype widened_shift31 long long widened_shift31(int value);</com>
+<com>lo fu widened_shift31</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="wide-shifts #1: the default keeps the compact shift" min="8" max="8">return value &lt;&lt; 0x[13]f;</stringmatch>
+<stringmatch name="wide-shifts #2: all shifts the complete unsigned input" min="8" max="8">\(uint8\)value &lt;&lt; 0x[13]f</stringmatch>
+<stringmatch name="wide-shifts #3: shared value stores remain in both passes" min="8" max="8">\*echo = value;</stringmatch>
+<stringmatch name="wide-shifts #4: a sign extension stays inside the unsigned conversion" min="3" max="3">\(uint8\)\(int8\)value &lt;&lt; 0x1f</stringmatch>
+</decompilertest>

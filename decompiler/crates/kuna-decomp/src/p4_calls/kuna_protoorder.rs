@@ -734,6 +734,7 @@ fn a_float_can_arrive_in(data: &Funcdata, node: &crate::varnode::Varnode) -> boo
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
+        kuna_library_table: false,
     };
     let mut fp = FuncProto::new();
     if fp.seed_locked_from_pieces(&pieces, Rc::clone(dfp), void_ty, types, arch.manage()).is_err() {
@@ -1398,15 +1399,14 @@ pub enum Decline {
     VoidVoid,
     /// The recovered prototype carries a `...`.
     ///
-    /// This is NOT the variadic rule, and must not be presented as one.
-    /// `FuncProto::is_dotdotdot` is only ever set from a DECLARED signature, and
-    /// a declared entry is rejected one branch earlier by [`Decline::Declared`],
-    /// so on a stripped image this variant cannot fire at all -- measured at
-    /// zero `variadic` declines across 878 parks on four binaries.  It stays as
-    /// the converter's own guard (`recovered_pieces` is public and is tested
-    /// standalone); what actually answers for a variadic on stripped input is
-    /// [`Decline::UnderRecovered`], which reads the register-save prologue in
-    /// the callee's own body.
+    /// This is NOT the whole variadic rule, and must not be presented as one.
+    /// `FuncProto::is_dotdotdot` is set from a DECLARED signature, which
+    /// [`Decline::Declared`] rejects one branch earlier, and on an x86-64
+    /// System V image from a register-save prologue `varargsave` folded
+    /// ([`crate::kuna_varargsave`]); such a prototype is declined here, so its
+    /// callers recover their own arguments.  A variadic whose prologue stays in
+    /// its body is answered by [`Decline::UnderRecovered`], which reads that
+    /// prologue in the callee's own body.
     Variadic,
     /// Model selection did not settle on a known prototype model, so the storage
     /// the parked types would be re-bound to is itself a guess.
@@ -1539,6 +1539,7 @@ pub fn recovered_pieces(
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
+        kuna_library_table: false,
     };
     let mut storage: Vec<(Address, int4)> = Vec::new();
     for i in 0..nparams {
@@ -1687,9 +1688,10 @@ fn trim_unjustified_tail(
 /// the register its next argument would arrive in?
 ///
 /// This is the guard `Decline::Variadic` cannot be: `FuncProto::is_dotdotdot`
-/// is only ever set from a DECLARED signature, and a declared entry never
-/// reaches the policy at all ([`Decline::Declared`] fires first), so on a
-/// stripped image it can never fire.  A body-level read of the next argument
+/// is set only from a DECLARED signature, which never reaches the policy at
+/// all ([`Decline::Declared`] fires first), or from a prologue `varargsave`
+/// folded, so a stripped variadic whose prologue stays in its body never
+/// carries it.  A body-level read of the next argument
 /// register is the shape that CAN, and it is what both dangerous populations
 /// look like from the outside: a SysV variadic's register-save prologue
 /// (`test al,al; movaps %xmm0,0x50(%rsp); ...`) reads every argument register

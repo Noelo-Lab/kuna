@@ -15,6 +15,15 @@ compiler trampolines, a closure suffix, broken type references, oversized scalar
 a producer without register-ABI evidence, wrong result locations, stack inputs
 and integer/float register overflow.
 
+The string wrappers use kind-24 descriptors and ordered DWARF pieces for the
+data and length registers. They cover raw header bits, a byte loop, a shifted
+ABI pair, an ordinary call, and a bounds branch. Their controls use the same
+machine bodies with separate scalar formals, a kind-25 record, short or reversed
+pieces, and a colliding parameter name. Two-input cases add a second complete pair, including a
+direct forwarder and mixed integer and float arguments. Malformed second
+locations, a kind-25 second formal, collisions with the second pair's word names
+and three string formals keep the original inferred prototype.
+
 `verify_godwarfsig.rs` compares compressed and uncompressed recoveries, checks
 rejected contracts against the disabled option, and compiles/executes eleven
 supported Go bodies without prototype assertions. The record-pointer body is

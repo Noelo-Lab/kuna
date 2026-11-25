@@ -49,11 +49,13 @@ pub mod elfv1;
 mod elfv1_imports;
 pub mod kuna_ppc32_imports;
 pub mod kuna_ppc64r12;
+mod kuna_ppc64_stubs;
 mod kuna_ppc32picimports;
 pub use kuna_ppc32picimports::{ImportProofMemo, ImportProofScope};
 // (kuna) ELF section-table tolerance: an image whose section headers are
 // unreadable still has program headers describing every loadable byte.
 pub mod elf_shdr;
+pub mod ieee695;
 // (kuna) PE data-directory tolerance: a `NumberOfRvaAndSizes` larger than its own
 // optional header is clamped to the directories that are really present.
 pub mod pe_datadirs;
@@ -65,6 +67,7 @@ pub mod pe_dosmagic;
 pub mod pe_headers;
 // (kuna) ET_REL relocatable-object (`.o`) load-layout + relocation engine.
 pub mod reloc_object;
+pub mod srecord;
 // Architecture-aware ELF instruction/data relocation encoders used by the
 // relocatable-object layout. Kept separate so bitfield rules are unit-testable.
 mod reloc_apply;
@@ -90,6 +93,7 @@ pub mod kuna_dataptrs;
 // function it defines.
 pub(crate) mod kuna_pltlocal;
 pub mod kuna_elfgotimports;
+pub mod kuna_machodataslots;
 // (kuna) `msvcfpconst`: recover an MSVC `__real@` floating-point constant COMDAT
 // from its mangled symbol name -- materialise the undefined half's bytes at its
 // synthetic extern slot, and mark both halves foldable.
@@ -99,6 +103,8 @@ pub mod format;
 // typed import-pointer slots + upstream's strictly PE-only no-return API names.
 pub mod kuna_peimportcall;
 pub mod kuna_authptrcall;
+// (kuna) `stubbinds`: a stripped stub is named from the chained bind on its slot.
+pub mod kuna_stubbinds;
 // (kuna) `rexthunk`: an x86-64 `REX FF 25` tail jump is not an import thunk.
 pub(crate) mod kuna_rexthunk;
 // (kuna) `peordinal`: name a PE import-by-ordinal from a built-in export table.
@@ -118,6 +124,8 @@ pub mod mips_markers;
 pub mod kuna_mipsentry;
 pub(crate) mod kuna_mipsabi;
 pub mod kuna_mipsocteon;
+// (kuna) RISC-V Zcmp/Zcmt language selection from `Tag_RISCV_arch`.
+pub mod kuna_riscvzc;
 // (kuna) Go toolchain version off the build-info blob (goreg shell layouts).
 pub mod gobuildinfo;
 pub mod noreturn;
@@ -130,11 +138,13 @@ pub mod kuna_armfuncmode;
 pub mod kuna_floatabi;
 // (kuna) does an arm64 image's platform have the callee extend a narrow return?
 pub mod kuna_returnext;
+pub mod kuna_spillselects;
 // (kuna #1288) the x86 real-mode code segment a loader paints into the decode context.
 pub mod kuna_realmodecs;
 // (kuna `mzdgroup`) the data segment an MS-DOS program's startup code loads into DS.
 pub mod kuna_mzdgroup;
 
 pub mod kuna_mipsstubs;
+pub mod ihex;
 
 mod kuna_nullable_reloc;

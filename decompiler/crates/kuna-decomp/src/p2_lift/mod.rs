@@ -6,6 +6,7 @@
 pub mod funcdata_resolveflow;
 pub mod flow;
 pub mod kuna_ppc32piccalls;
+pub mod kuna_ppc32lrflow;
 pub mod kuna_armflowcontext;
 pub mod jumptable;
 pub mod kuna_emulatefunction;
@@ -18,6 +19,7 @@ pub mod kuna_switchguardbound;
 pub mod kuna_switchguardrange;
 pub mod kuna_switchsharedcase;
 pub mod kuna_switchrunon; // (kuna) an unguarded jump table stops where its rows leave the function
+pub mod kuna_switchextent; // (kuna) an unguarded jump table ends at the function's next table
 pub mod kuna_constselectjump; // (kuna) recover a BRANCHIND whose destination is selected between constants
 pub mod kuna_sparcstructret;
 pub mod kuna_stackprobeloop;
@@ -25,7 +27,10 @@ pub mod kuna_loweredswitch;
 pub mod kuna_loweredswitchlabels;
 pub mod kuna_loweredswitchvalue; // (kuna) prove a re-rolled lowered switch reads the value its cascade compared
 pub mod kuna_loweredswitchexact; // (kuna) keep a re-rolled lowered switch only when it is its compare tree
+pub mod kuna_loweredswitchkeep; // (kuna) withdraw a re-rolled switch the function prints worse with
+pub mod kuna_loweredswitchpath; // (kuna) install a lowered switch along the raw paths of its compare tree
 pub mod kuna_loweredswitchheads; // (kuna) try a lowered-switch cascade behind every head on its variable
+pub mod kuna_o0switch; // (kuna) how an unoptimized function's compare chain was compiled: a switch or an if-chain
 pub mod kuna_noreturn_externmatch; // (kuna) angr incorrect-duplication-chcon: name-matched extern no-return
 pub mod kuna_noreturnextern; // (kuna) angr tail-tail-bytes-ret-dup: undefined-extern name-based no-return
 pub mod kuna_tailcalljump;
@@ -52,20 +57,29 @@ pub mod kuna_msvcstrappend; // (kuna) collapse an inlined MSVC std::string push_
 pub mod kuna_fastfailnoreturn; // (kuna) a Windows `int 0x29` (__fastfail) ends the flow instead of unbalancing the stack
 pub mod kuna_msvcimportcall; // (kuna `msvcsig`) a call through an import slot with a locked MSVC prototype is direct from the flow on
 pub mod kuna_mipsunaligned; // (kuna) lift a MIPS lwl/lwr-style unaligned pair as one whole access
+pub mod kuna_memtag; // (kuna) lift the AArch64 memory-tagging instructions with their tag effect
 pub mod kuna_int3pad; // (kuna) name the int3 pad control ran into instead of printing it as a call through swi()
 pub mod kuna_brktrap; // (kuna) an AArch64 brk compiler trap ends the flow instead of returning through SoftwareBreakpoint
+pub mod kuna_kernelbug; // (kuna) a Linux kernel __bug_table trap prints as BUG() or __WARN(file,line)
 pub mod kuna_decodehalt; // (kuna) a halt planted where the decode failed says so instead of printing as an ordinary return
 pub mod kuna_fpuemu; // (kuna) decode the 8087 emulator's INT 34h-3Dh as the x87 instructions they stand for
 pub mod kuna_jumptablefault; // (kuna) test-only: panic one function's jump-table recovery
 
 pub mod kuna_gojumpchain;
+pub mod kuna_returnbranch;
 
 pub mod kuna_rustprobestack;
 pub mod kuna_chkstkdarwin; // (kuna) remove the Darwin AArch64 stack probe so the registers it preserves survive it
 
 pub(crate) mod kuna_highslice_guard;
+pub mod kuna_calleeoverride; // (kuna) a caller-stated destination for an indirect call
 pub mod kuna_stubtailcall; // (kuna) a loader-proven lazy-binding stub flows as a tail call
 
 pub mod kuna_ppcpcread;
 
+pub mod kuna_indirectreturn;
+
 pub mod kuna_nullable_reloc;
+
+pub(crate) mod kuna_atomicxadd;
+pub(crate) mod kuna_opendispatch;

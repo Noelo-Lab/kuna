@@ -1288,6 +1288,8 @@ z_vm32z: "zmmword ptr "^vMem32z is vMem32z { export vMem32z; }
 x_vm64x: "xmmword ptr "^vMem64x is vMem64x { export vMem64x; }
 y_vm64y: "ymmword ptr "^vMem64y is vMem64y { export vMem64y; }
 z_vm64z: "zmmword ptr "^vMem64z is vMem64z { export vMem64z; }
+@else
+z_vm64z: "zmmword ptr "^vMem32z is vMem32z { export vMem32z; }
 @endif
 
 Reg32_m8:     Rmr32     is mod=3 & Rmr32                     { export Rmr32; }
@@ -2374,8 +2376,8 @@ macro fucompe(val1, val2) {
 # Specification is "REX.W"
 @define REX_W      "longMode=1 & rexprefix=1 & rexWprefix=1"
 
-
-
+# A REX prefix before a legacy prefix is not the last prefix before the opcode, so the CPU ignores it: undo it and decode on from the legacy prefix
+:^instruction is $(LONGMODE_ON) & instrPhase=1 & rexprefix=1 & (over=0x66 | over=0x67 | over=0xf2 | over=0xf3 | over=0xf0 | over=0x2e | over=0x36 | over=0x3e | over=0x26 | over=0x64 | over=0x65) & instruction [ instrPhase=0; rexprefix=0; opsize=1 $xor prefix_66; rexWprefix=0; rexRprefix=0; rexXprefix=0; rexBprefix=0; ] {}
 # TODO I don't think the following line can really happen because the 66 67 prefix must come before REX prefix
 :^instruction is $(LONGMODE_ON) & instrPhase=0 & over=0x66 & opsize=2; instruction   [ opsize=0; mandover=mandover $xor 1; ] {} # Operand size override
 :^instruction is $(LONGMODE_ON) & instrPhase=0 & over=0x67 & addrsize=2; instruction [ addrsize=1; ] {} # Address size override
@@ -4154,6 +4156,13 @@ define pcodeop swap_bytes;
 @endif
 
 :NOP            is vexMode=0 & byte=0x90 & (mandover=0 | mandover=4 | mandover=1) & (rexprefix=0 | rexWRXBprefix=8)  { }
+# PREFETCHIT0/1 (0F 18 /7, /6) are only prefetches in their RIP-relative form in
+# 64-bit mode; every other 0F 18 /4../7 encoding stays a reserved NOP.  The
+# opsize split makes each form a specialization of the reserved NOP it overlaps.
+@ifdef IA64
+:PREFETCHIT0 m8 is $(LONGMODE_ON) & vexMode=0 & (opsize=0 | opsize=1 | opsize=2) & byte=0x0f; byte=0x18; ( mod=0 & r_m=5 & reg_opcode=7 ) ... & m8 { }
+:PREFETCHIT1 m8 is $(LONGMODE_ON) & vexMode=0 & (opsize=0 | opsize=1 | opsize=2) & byte=0x0f; byte=0x18; ( mod=0 & r_m=5 & reg_opcode=6 ) ... & m8 { }
+@endif
 :NOP rm16       is vexMode=0 & mandover & opsize=0 & byte=0x0f; high5=3; rm16  ...    { }
 :NOP rm32       is vexMode=0 & mandover & opsize=1 & byte=0x0f; high5=3; rm32  ...    { }
 :NOP^"/reserved" rm16 is vexMode=0 & mandover & opsize=0 & byte=0x0f; byte=0x18; rm16 & reg_opcode_hb=1 ...    { }
@@ -4918,37 +4927,49 @@ define pcodeop verw;
 
 #
 # Intel hardware assisted virtualization opcodes
+#
+# Every VMX instruction reports VMsucceed, VMfailValid or VMfailInvalid in the
+# flags (Intel SDM 31.2): the user-op returns that status as 0, 1 or 2 (the
+# values the __vmx_* compiler intrinsics return) and vmxflags sets ZF for
+# VMfailValid, CF for VMfailInvalid and clears the rest.  VMREAD also produces
+# a value, so its status comes from the separate vmx_status user-op.
+define pcodeop vmx_status;
+
+macro vmxflags(status) {
+	ZF = (status == 1);
+	CF = (status == 2);
+	OF = 0; SF = 0; AF = 0; PF = 0;
+}
+macro vmxsucceed() {
+	ZF = 0; CF = 0; OF = 0; SF = 0; AF = 0; PF = 0;
+}
 
 # All except VMCALL and VMFUNC generate invalid-opcode exceptions if executed in compatibility mode
 @ifdef IA64
-:INVEPT Reg64, m128  is $(LONGMODE_ON) & vexMode=0 & bit64=1 & $(PRE_66) & byte=0x0f; byte=0x38; byte=0x80; Reg64 ... & m128 { invept(Reg64, m128); }
-:INVVPID Reg64, m128 is $(LONGMODE_ON) & vexMode=0 & bit64=1 & $(PRE_66) & byte=0x0f; byte=0x38; byte=0x81; Reg64 ... & m128 { invvpid(Reg64, m128); }
-:VMCLEAR m64    is $(LONGMODE_ON) & vexMode=0 & $(PRE_66) & byte=0x0f; byte=0xc7; ( mod != 0b11 & reg_opcode=6 ) ... & m64 { vmclear(m64); }
-#TODO: this launches the VM managed by the current VMCS.  How is the VMCS expressed for the emulator?  For Ghidra analysis?
-:VMLAUNCH       is $(LONGMODE_ON) & vexMode=0 & byte=0x0f; byte=0x01; byte=0xc2                          { vmlaunch(); }
-#TODO: this resumes the VM managed by the current VMCS.  How is the VMCS expressed for the emulator?  For Ghidra analysis?
-:VMRESUME       is $(LONGMODE_ON) & vexMode=0 & byte=0x0f; byte=0x01; byte=0xc3                          { vmresume(); }
-#TODO: this loads the VMCS pointer from the m64 memory address and makes the VMCS pointer valid; how to express
-#  this for analysis and emulation?
-:VMPTRLD m64    is $(LONGMODE_ON) & vexMode=0 & byte=0x0f; byte=0xc7; ( mod != 0b11 & reg_opcode=6 ) ... & m64 { vmptrld(m64); }
-#TODO: stores the current VMCS pointer into the specified 64-bit memory address; how to express this for analysis and emulation?
-:VMPTRST m64    is $(LONGMODE_ON) & vexMode=0 & byte=0x0f; byte=0xc7; ( mod != 0b11 & reg_opcode=7 ) ... & m64  { vmptrst(m64); }
-:VMREAD rm64, Reg64  is $(LONGMODE_ON) & $(PRE_NO) & vexMode=0 & opsize=2 & byte=0x0f; byte=0x78; rm64 & Reg64 ...     { rm64 = vmread(Reg64); }
-:VMWRITE Reg64, rm64 is $(LONGMODE_ON) & $(PRE_NO) & vexMode=0 & opsize=2 & byte=0x0f; byte=0x79; rm64 & Reg64 ...    { vmwrite(rm64,Reg64); }
-:VMXOFF         is $(LONGMODE_ON) & vexMode=0 & byte=0x0f; byte=0x01; byte=0xc4                           { vmxoff(); }
-:VMXON m64      is $(LONGMODE_ON) & vexMode=0 & $(PRE_F3) & byte=0x0f; byte=0xc7; ( mod != 0b11 & reg_opcode=6 ) ... & m64  { vmxon(m64); }
+:INVEPT Reg64, m128  is $(LONGMODE_ON) & vexMode=0 & bit64=1 & $(PRE_66) & byte=0x0f; byte=0x38; byte=0x80; Reg64 ... & m128 { local status:4 = invept(Reg64, m128); vmxflags(status); }
+:INVVPID Reg64, m128 is $(LONGMODE_ON) & vexMode=0 & bit64=1 & $(PRE_66) & byte=0x0f; byte=0x38; byte=0x81; Reg64 ... & m128 { local status:4 = invvpid(Reg64, m128); vmxflags(status); }
+:VMCLEAR m64    is $(LONGMODE_ON) & vexMode=0 & $(PRE_66) & byte=0x0f; byte=0xc7; ( mod != 0b11 & reg_opcode=6 ) ... & m64 { local status:4 = vmclear(m64); vmxflags(status); }
+:VMLAUNCH       is $(LONGMODE_ON) & vexMode=0 & byte=0x0f; byte=0x01; byte=0xc2                          { local status:4 = vmlaunch(); vmxflags(status); }
+:VMRESUME       is $(LONGMODE_ON) & vexMode=0 & byte=0x0f; byte=0x01; byte=0xc3                          { local status:4 = vmresume(); vmxflags(status); }
+:VMPTRLD m64    is $(LONGMODE_ON) & vexMode=0 & byte=0x0f; byte=0xc7; ( mod != 0b11 & reg_opcode=6 ) ... & m64 { local status:4 = vmptrld(m64); vmxflags(status); }
+:VMPTRST m64    is $(LONGMODE_ON) & vexMode=0 & byte=0x0f; byte=0xc7; ( mod != 0b11 & reg_opcode=7 ) ... & m64  { m64 = vmptrst(); vmxsucceed(); }
+# VMREAD/VMWRITE take 64-bit operands in 64-bit mode whatever REX.W says.
+:VMREAD rm64, Reg64  is $(LONGMODE_ON) & $(PRE_NO) & vexMode=0 & byte=0x0f; byte=0x78; rm64 & Reg64 ...     { rm64 = vmread(Reg64); local status:4 = vmx_status(); vmxflags(status); }
+:VMWRITE Reg64, rm64 is $(LONGMODE_ON) & $(PRE_NO) & vexMode=0 & byte=0x0f; byte=0x79; rm64 & Reg64 ...    { local status:4 = vmwrite(rm64,Reg64); vmxflags(status); }
+:VMXOFF         is $(LONGMODE_ON) & vexMode=0 & byte=0x0f; byte=0x01; byte=0xc4                           { local status:4 = vmxoff(); vmxflags(status); }
+:VMXON m64      is $(LONGMODE_ON) & vexMode=0 & $(PRE_F3) & byte=0x0f; byte=0xc7; ( mod != 0b11 & reg_opcode=6 ) ... & m64  { local status:4 = vmxon(m64); vmxflags(status); }
 @else
-:INVEPT Reg32, m128  is vexMode=0 & bit64=0 & $(PRE_66) & byte=0x0f; byte=0x38; byte=0x80; Reg32 ... & m128 { invept(Reg32, m128); }
-:INVVPID Reg32, m128 is vexMode=0 & bit64=0 & $(PRE_66) & byte=0x0f; byte=0x38; byte=0x81; Reg32 ... & m128 { invvpid(Reg32, m128); }
-:VMCLEAR m64    is vexMode=0 & $(PRE_66) & byte=0x0f; byte=0xc7; ( mod != 0b11 & reg_opcode=6 ) ... & m64 { vmclear(m64); }
-:VMLAUNCH       is vexMode=0 & byte=0x0f; byte=0x01; byte=0xc2                          { vmlaunch(); }
-:VMRESUME       is vexMode=0 & byte=0x0f; byte=0x01; byte=0xc3                          { vmresume(); }
-:VMPTRLD m64    is vexMode=0 & byte=0x0f; byte=0xc7; ( mod != 0b11 & reg_opcode=6 ) ... & m64 { vmptrld(m64); }
-:VMPTRST m64    is vexMode=0 & byte=0x0f; byte=0xc7; ( mod != 0b11 & reg_opcode=7 ) ... & m64  { vmptrst(m64); }
-:VMREAD rm32, Reg32  is $(PRE_NO) & vexMode=0 & opsize=1 & byte=0x0f; byte=0x78; rm32 & check_rm32_dest ... & Reg32 ...     { rm32 = vmread(Reg32); build check_rm32_dest; }
-:VMWRITE Reg32, rm32 is $(PRE_NO) & vexMode=0 & opsize=1 & byte=0x0f; byte=0x79; rm32 & Reg32 ... & check_Reg32_dest ...   { vmwrite(rm32,Reg32); build check_Reg32_dest; }
-:VMXOFF         is vexMode=0 & byte=0x0f; byte=0x01; byte=0xc4                           { vmxoff(); }
-:VMXON m64      is vexMode=0 & $(PRE_F3) & byte=0x0f; byte=0xc7; ( mod != 0b11 & reg_opcode=6 ) ... & m64  { vmxon(m64); }
+:INVEPT Reg32, m128  is vexMode=0 & bit64=0 & $(PRE_66) & byte=0x0f; byte=0x38; byte=0x80; Reg32 ... & m128 { local status:4 = invept(Reg32, m128); vmxflags(status); }
+:INVVPID Reg32, m128 is vexMode=0 & bit64=0 & $(PRE_66) & byte=0x0f; byte=0x38; byte=0x81; Reg32 ... & m128 { local status:4 = invvpid(Reg32, m128); vmxflags(status); }
+:VMCLEAR m64    is vexMode=0 & $(PRE_66) & byte=0x0f; byte=0xc7; ( mod != 0b11 & reg_opcode=6 ) ... & m64 { local status:4 = vmclear(m64); vmxflags(status); }
+:VMLAUNCH       is vexMode=0 & byte=0x0f; byte=0x01; byte=0xc2                          { local status:4 = vmlaunch(); vmxflags(status); }
+:VMRESUME       is vexMode=0 & byte=0x0f; byte=0x01; byte=0xc3                          { local status:4 = vmresume(); vmxflags(status); }
+:VMPTRLD m64    is vexMode=0 & byte=0x0f; byte=0xc7; ( mod != 0b11 & reg_opcode=6 ) ... & m64 { local status:4 = vmptrld(m64); vmxflags(status); }
+:VMPTRST m64    is vexMode=0 & byte=0x0f; byte=0xc7; ( mod != 0b11 & reg_opcode=7 ) ... & m64  { m64 = vmptrst(); vmxsucceed(); }
+:VMREAD rm32, Reg32  is $(PRE_NO) & vexMode=0 & opsize=1 & byte=0x0f; byte=0x78; rm32 & check_rm32_dest ... & Reg32 ...     { rm32 = vmread(Reg32); build check_rm32_dest; local status:4 = vmx_status(); vmxflags(status); }
+:VMWRITE Reg32, rm32 is $(PRE_NO) & vexMode=0 & opsize=1 & byte=0x0f; byte=0x79; rm32 & Reg32 ... & check_Reg32_dest ...   { local status:4 = vmwrite(rm32,Reg32); build check_Reg32_dest; vmxflags(status); }
+:VMXOFF         is vexMode=0 & byte=0x0f; byte=0x01; byte=0xc4                           { local status:4 = vmxoff(); vmxflags(status); }
+:VMXON m64      is vexMode=0 & $(PRE_F3) & byte=0x0f; byte=0xc7; ( mod != 0b11 & reg_opcode=6 ) ... & m64  { local status:4 = vmxon(m64); vmxflags(status); }
 @endif
 
 :VMCALL         is vexMode=0 & byte=0x0f; byte=0x01; byte=0xc1                          { vmcall(); }

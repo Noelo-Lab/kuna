@@ -1,0 +1,37 @@
+<decompilertest>
+  <binaryimage arch="x86:LE:64:default:gcc">
+    <bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+    <symbol space="ram" offset="0x100000" name="harness_stub" />
+  </binaryimage>
+  <script>
+    <com>clear architecture</com>
+    <com>load file tests/fixtures/rust-process-exit/linux-amd64</com>
+    <com>read symbols</com>
+    <com>option outlang c</com>
+    <com>load function exit_choice</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>load function returning_names</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>option outlang rust</com>
+    <com>load function exit_choice</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>load function returning_names</com>
+    <com>decompile</com>
+    <com>print C</com>
+  </script>
+  <stringmatch name="Rust process exit never falls into the dead trap" min="0" max="0">invalidInstructionException</stringmatch>
+  <stringmatch name="Rust process exit keeps the ordinary returning arm" min="2" max="2">return 0x1b;</stringmatch>
+  <stringmatch name="Rust process exit retains its conditional store" min="2" max="2">\*a2 = 0x1f;</stringmatch>
+  <stringmatch name="Rust process exit keeps both exit codes and terminates" min="2" max="2">v1 = 0;
+if \(?a1 != 0xb\)? \{
+\*a2 = 0x1f;
+v1 = 1;
+\}
+\bexit\(v1\); // no-return</stringmatch>
+  <stringmatch name="Rust process exit leaves the other namespace returning" min="2" max="2">lookalike::process::exit\(a0\)</stringmatch>
+  <stringmatch name="Rust process exit leaves the longer function name returning" min="2" max="2">exit_status\(v1\)</stringmatch>
+  <stringmatch name="Rust process exit keeps the store after returning helpers" min="2" max="2">\*a1 = </stringmatch>
+</decompilertest>

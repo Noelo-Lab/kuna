@@ -1,0 +1,64 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `loweredswitch tree`: a compare tree of more than sixteen cases.
+
+    gcc -O0 lowers a sparse switch to a tree of `==` and `>` tests on the switch
+    variable with no jump table, whatever its size.  loweredswitch finds the tree
+    but takes three to sixteen cases only (the cap keeps a very wide synthesized
+    switch away from the structurer), so this twenty-case switch stays a deep
+    if/else tree.  `loweredswitch tree` moves the limits to two and sixty-four
+    cases for a cascade that has a range node.
+
+    Stage / sub-stage: P2 "switch-model", option `loweredswitch on|tree`.
+
+    gcc 15.3 -O0 -fno-pie -no-pie -nostartfiles -static -fcf-protection=none
+    (x86-64) of
+
+        __attribute__((noinline)) int sink(int x) { return x * 7 + 3; }
+        int wide(int x) {
+          switch (x) {
+          case 3: return sink(1);    case 9: return sink(2);
+          ...                        (cases 3, 9, 14, 22, 31, 40, 47, 55, 63, 71, 78, 86, 95, 101, 110, 118, 127, 133, 142, 150)
+          case 150: return sink(20);
+          default: return -1;
+          }
+        }
+
+    Pass 1 is the default (`on`), pass 2 sets `loweredswitch tree`.
+-->
+<bytechunk space="ram" offset="0x401000">
+554889e5897dfc8b55fc89d0c1e00329d083c0035dc3554889e54883ec08897dfc817dfc960000000f8471020000817dfc960000000f8f70020000817dfc8e00
+00000f844b020000817dfc8e0000000f8f56020000817dfc850000000f8425020000817dfc850000000f8f3c020000837dfc7f0f8402020000837dfc7f0f8f28
+020000837dfc760f84e2010000837dfc760f8f14020000837dfc6e0f84c2010000837dfc6e0f8f00020000837dfc650f84a2010000837dfc650f8fec01000083
+7dfc5f0f8482010000837dfc5f0f8fd8010000837dfc560f8462010000837dfc560f8fc4010000837dfc4e0f8442010000837dfc4e0f8fb0010000837dfc470f
+8422010000837dfc470f8f9c010000837dfc3f0f84ff000000837dfc3f0f8f88010000837dfc370f84dc000000837dfc370f8f74010000837dfc2f0f84b90000
+00837dfc2f0f8f60010000837dfc280f8496000000837dfc280f8f4c010000837dfc1f7477837dfc1f0f8f3c010000837dfc167458837dfc160f8f2c01000083
+7dfc0e7439837dfc0e0f8f1c010000837dfc03740b837dfc097414e90b010000bf01000000e856feffffe901010000bf02000000e847feffffe9f2000000bf03
+000000e838feffffe9e3000000bf04000000e829feffffe9d4000000bf05000000e81afeffffe9c5000000bf06000000e80bfeffffe9b6000000bf07000000e8
+fcfdffffe9a7000000bf08000000e8edfdffffe998000000bf09000000e8defdffffe989000000bf0a000000e8cffdffffeb7dbf0b000000e8c3fdffffeb71bf
+0c000000e8b7fdffffeb65bf0d000000e8abfdffffeb59bf0e000000e89ffdffffeb4dbf0f000000e893fdffffeb41bf10000000e887fdffffeb35bf11000000
+e87bfdffffeb29bf12000000e86ffdffffeb1dbf13000000e863fdffffeb11bf14000000e857fdffffeb05b8ffffffffc9c3554889e5905dc3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="sink"/>
+<symbol space="ram" offset="0x401016" name="wide"/>
+</binaryimage>
+<script>
+  <com>option returndup on</com>
+  <com>lo fu wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option loweredswitch tree</com>
+  <com>lo fu wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="loweredswitch tree #1: by default the twenty-case tree stays nested ifs" min="1" max="1">^  if \(a0 != 0x96\) \{</stringmatch>
+<stringmatch name="loweredswitch tree #2: with tree it re-rolls into one switch" min="1" max="1">^  switch\(a0\) \{</stringmatch>
+<stringmatch name="loweredswitch tree #3: all twenty case values are labels" min="20" max="20">^    case (0x[0-9a-f]+|[0-9]+):$</stringmatch>
+<stringmatch name="loweredswitch tree #4: the first and last cases keep their bodies" min="1" max="1">^    case 3:$
+^      v1 = sink\(1\);$</stringmatch>
+<stringmatch name="loweredswitch tree #5: values outside the cases reach the default" min="1" max="1">^    default:$
+^      return 0xffffffff;$</stringmatch>
+</decompilertest>

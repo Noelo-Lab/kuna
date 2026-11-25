@@ -1,0 +1,1317 @@
+# Zcmp / Zcmt code-size extensions (RISC-V Zc* v1.0.0).
+#
+# cm.push, cm.pop, cm.popret, cm.popretz, cm.mvsa01, cm.mva01s (Zcmp) and
+# cm.jt, cm.jalt (Zcmt) live in the c.fsdsp encoding space (op=10, funct3=101),
+# so they are incompatible with Zcd and decode only under the Zcmp context
+# bit, which the RISCV:LE:32:Zcmp / RISCV:LE:64:Zcmp language variants set.
+# The register list rlist (bits 7:4) is a prefix of {ra,s0,...,s11}; rlist 15
+# is the full list (s10 is never saved without s11). The stack adjustment is the
+# list's size rounded up to 16 bytes plus 16*spimm (bits 3:2).
+
+attach variables [ zcs0709 zcs0204 ] [ s0 s1 s2 s3 s4 s5 s6 s7 ];
+
+@if ADDRSIZE == "32"
+zcadj16: adj is cop0203 [ adj = 16 + (cop0203 << 4); ] { export *[const]:$(XLEN) adj; }
+zcadj32: adj is cop0203 [ adj = 32 + (cop0203 << 4); ] { export *[const]:$(XLEN) adj; }
+zcadj48: adj is cop0203 [ adj = 48 + (cop0203 << 4); ] { export *[const]:$(XLEN) adj; }
+zcadj64: adj is cop0203 [ adj = 64 + (cop0203 << 4); ] { export *[const]:$(XLEN) adj; }
+
+:cm.push "{ra}",-^zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=4 & zcadj16
+{
+	*[ram]:4 (sp - 4) = ra;
+	sp = sp - zcadj16;
+}
+
+:cm.pop "{ra}",zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=4 & zcadj16
+{
+	local top:$(XLEN) = sp + zcadj16;
+	ra = *[ram]:4 (top - 4);
+	sp = top;
+}
+
+:cm.popretz "{ra}",zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=4 & zcadj16
+{
+	local top:$(XLEN) = sp + zcadj16;
+	ra = *[ram]:4 (top - 4);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra}",zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=4 & zcadj16
+{
+	local top:$(XLEN) = sp + zcadj16;
+	ra = *[ram]:4 (top - 4);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0}",-^zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=5 & zcadj16
+{
+	*[ram]:4 (sp - 8) = ra;
+	*[ram]:4 (sp - 4) = s0;
+	sp = sp - zcadj16;
+}
+
+:cm.pop "{ra,s0}",zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=5 & zcadj16
+{
+	local top:$(XLEN) = sp + zcadj16;
+	ra = *[ram]:4 (top - 8);
+	s0 = *[ram]:4 (top - 4);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0}",zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=5 & zcadj16
+{
+	local top:$(XLEN) = sp + zcadj16;
+	ra = *[ram]:4 (top - 8);
+	s0 = *[ram]:4 (top - 4);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0}",zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=5 & zcadj16
+{
+	local top:$(XLEN) = sp + zcadj16;
+	ra = *[ram]:4 (top - 8);
+	s0 = *[ram]:4 (top - 4);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s1}",-^zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=6 & zcadj16
+{
+	*[ram]:4 (sp - 12) = ra;
+	*[ram]:4 (sp - 8) = s0;
+	*[ram]:4 (sp - 4) = s1;
+	sp = sp - zcadj16;
+}
+
+:cm.pop "{ra,s0-s1}",zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=6 & zcadj16
+{
+	local top:$(XLEN) = sp + zcadj16;
+	ra = *[ram]:4 (top - 12);
+	s0 = *[ram]:4 (top - 8);
+	s1 = *[ram]:4 (top - 4);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s1}",zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=6 & zcadj16
+{
+	local top:$(XLEN) = sp + zcadj16;
+	ra = *[ram]:4 (top - 12);
+	s0 = *[ram]:4 (top - 8);
+	s1 = *[ram]:4 (top - 4);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s1}",zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=6 & zcadj16
+{
+	local top:$(XLEN) = sp + zcadj16;
+	ra = *[ram]:4 (top - 12);
+	s0 = *[ram]:4 (top - 8);
+	s1 = *[ram]:4 (top - 4);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s2}",-^zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=7 & zcadj16
+{
+	*[ram]:4 (sp - 16) = ra;
+	*[ram]:4 (sp - 12) = s0;
+	*[ram]:4 (sp - 8) = s1;
+	*[ram]:4 (sp - 4) = s2;
+	sp = sp - zcadj16;
+}
+
+:cm.pop "{ra,s0-s2}",zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=7 & zcadj16
+{
+	local top:$(XLEN) = sp + zcadj16;
+	ra = *[ram]:4 (top - 16);
+	s0 = *[ram]:4 (top - 12);
+	s1 = *[ram]:4 (top - 8);
+	s2 = *[ram]:4 (top - 4);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s2}",zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=7 & zcadj16
+{
+	local top:$(XLEN) = sp + zcadj16;
+	ra = *[ram]:4 (top - 16);
+	s0 = *[ram]:4 (top - 12);
+	s1 = *[ram]:4 (top - 8);
+	s2 = *[ram]:4 (top - 4);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s2}",zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=7 & zcadj16
+{
+	local top:$(XLEN) = sp + zcadj16;
+	ra = *[ram]:4 (top - 16);
+	s0 = *[ram]:4 (top - 12);
+	s1 = *[ram]:4 (top - 8);
+	s2 = *[ram]:4 (top - 4);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s3}",-^zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=8 & zcadj32
+{
+	*[ram]:4 (sp - 20) = ra;
+	*[ram]:4 (sp - 16) = s0;
+	*[ram]:4 (sp - 12) = s1;
+	*[ram]:4 (sp - 8) = s2;
+	*[ram]:4 (sp - 4) = s3;
+	sp = sp - zcadj32;
+}
+
+:cm.pop "{ra,s0-s3}",zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=8 & zcadj32
+{
+	local top:$(XLEN) = sp + zcadj32;
+	ra = *[ram]:4 (top - 20);
+	s0 = *[ram]:4 (top - 16);
+	s1 = *[ram]:4 (top - 12);
+	s2 = *[ram]:4 (top - 8);
+	s3 = *[ram]:4 (top - 4);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s3}",zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=8 & zcadj32
+{
+	local top:$(XLEN) = sp + zcadj32;
+	ra = *[ram]:4 (top - 20);
+	s0 = *[ram]:4 (top - 16);
+	s1 = *[ram]:4 (top - 12);
+	s2 = *[ram]:4 (top - 8);
+	s3 = *[ram]:4 (top - 4);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s3}",zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=8 & zcadj32
+{
+	local top:$(XLEN) = sp + zcadj32;
+	ra = *[ram]:4 (top - 20);
+	s0 = *[ram]:4 (top - 16);
+	s1 = *[ram]:4 (top - 12);
+	s2 = *[ram]:4 (top - 8);
+	s3 = *[ram]:4 (top - 4);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s4}",-^zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=9 & zcadj32
+{
+	*[ram]:4 (sp - 24) = ra;
+	*[ram]:4 (sp - 20) = s0;
+	*[ram]:4 (sp - 16) = s1;
+	*[ram]:4 (sp - 12) = s2;
+	*[ram]:4 (sp - 8) = s3;
+	*[ram]:4 (sp - 4) = s4;
+	sp = sp - zcadj32;
+}
+
+:cm.pop "{ra,s0-s4}",zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=9 & zcadj32
+{
+	local top:$(XLEN) = sp + zcadj32;
+	ra = *[ram]:4 (top - 24);
+	s0 = *[ram]:4 (top - 20);
+	s1 = *[ram]:4 (top - 16);
+	s2 = *[ram]:4 (top - 12);
+	s3 = *[ram]:4 (top - 8);
+	s4 = *[ram]:4 (top - 4);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s4}",zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=9 & zcadj32
+{
+	local top:$(XLEN) = sp + zcadj32;
+	ra = *[ram]:4 (top - 24);
+	s0 = *[ram]:4 (top - 20);
+	s1 = *[ram]:4 (top - 16);
+	s2 = *[ram]:4 (top - 12);
+	s3 = *[ram]:4 (top - 8);
+	s4 = *[ram]:4 (top - 4);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s4}",zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=9 & zcadj32
+{
+	local top:$(XLEN) = sp + zcadj32;
+	ra = *[ram]:4 (top - 24);
+	s0 = *[ram]:4 (top - 20);
+	s1 = *[ram]:4 (top - 16);
+	s2 = *[ram]:4 (top - 12);
+	s3 = *[ram]:4 (top - 8);
+	s4 = *[ram]:4 (top - 4);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s5}",-^zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=10 & zcadj32
+{
+	*[ram]:4 (sp - 28) = ra;
+	*[ram]:4 (sp - 24) = s0;
+	*[ram]:4 (sp - 20) = s1;
+	*[ram]:4 (sp - 16) = s2;
+	*[ram]:4 (sp - 12) = s3;
+	*[ram]:4 (sp - 8) = s4;
+	*[ram]:4 (sp - 4) = s5;
+	sp = sp - zcadj32;
+}
+
+:cm.pop "{ra,s0-s5}",zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=10 & zcadj32
+{
+	local top:$(XLEN) = sp + zcadj32;
+	ra = *[ram]:4 (top - 28);
+	s0 = *[ram]:4 (top - 24);
+	s1 = *[ram]:4 (top - 20);
+	s2 = *[ram]:4 (top - 16);
+	s3 = *[ram]:4 (top - 12);
+	s4 = *[ram]:4 (top - 8);
+	s5 = *[ram]:4 (top - 4);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s5}",zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=10 & zcadj32
+{
+	local top:$(XLEN) = sp + zcadj32;
+	ra = *[ram]:4 (top - 28);
+	s0 = *[ram]:4 (top - 24);
+	s1 = *[ram]:4 (top - 20);
+	s2 = *[ram]:4 (top - 16);
+	s3 = *[ram]:4 (top - 12);
+	s4 = *[ram]:4 (top - 8);
+	s5 = *[ram]:4 (top - 4);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s5}",zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=10 & zcadj32
+{
+	local top:$(XLEN) = sp + zcadj32;
+	ra = *[ram]:4 (top - 28);
+	s0 = *[ram]:4 (top - 24);
+	s1 = *[ram]:4 (top - 20);
+	s2 = *[ram]:4 (top - 16);
+	s3 = *[ram]:4 (top - 12);
+	s4 = *[ram]:4 (top - 8);
+	s5 = *[ram]:4 (top - 4);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s6}",-^zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=11 & zcadj32
+{
+	*[ram]:4 (sp - 32) = ra;
+	*[ram]:4 (sp - 28) = s0;
+	*[ram]:4 (sp - 24) = s1;
+	*[ram]:4 (sp - 20) = s2;
+	*[ram]:4 (sp - 16) = s3;
+	*[ram]:4 (sp - 12) = s4;
+	*[ram]:4 (sp - 8) = s5;
+	*[ram]:4 (sp - 4) = s6;
+	sp = sp - zcadj32;
+}
+
+:cm.pop "{ra,s0-s6}",zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=11 & zcadj32
+{
+	local top:$(XLEN) = sp + zcadj32;
+	ra = *[ram]:4 (top - 32);
+	s0 = *[ram]:4 (top - 28);
+	s1 = *[ram]:4 (top - 24);
+	s2 = *[ram]:4 (top - 20);
+	s3 = *[ram]:4 (top - 16);
+	s4 = *[ram]:4 (top - 12);
+	s5 = *[ram]:4 (top - 8);
+	s6 = *[ram]:4 (top - 4);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s6}",zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=11 & zcadj32
+{
+	local top:$(XLEN) = sp + zcadj32;
+	ra = *[ram]:4 (top - 32);
+	s0 = *[ram]:4 (top - 28);
+	s1 = *[ram]:4 (top - 24);
+	s2 = *[ram]:4 (top - 20);
+	s3 = *[ram]:4 (top - 16);
+	s4 = *[ram]:4 (top - 12);
+	s5 = *[ram]:4 (top - 8);
+	s6 = *[ram]:4 (top - 4);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s6}",zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=11 & zcadj32
+{
+	local top:$(XLEN) = sp + zcadj32;
+	ra = *[ram]:4 (top - 32);
+	s0 = *[ram]:4 (top - 28);
+	s1 = *[ram]:4 (top - 24);
+	s2 = *[ram]:4 (top - 20);
+	s3 = *[ram]:4 (top - 16);
+	s4 = *[ram]:4 (top - 12);
+	s5 = *[ram]:4 (top - 8);
+	s6 = *[ram]:4 (top - 4);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s7}",-^zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=12 & zcadj48
+{
+	*[ram]:4 (sp - 36) = ra;
+	*[ram]:4 (sp - 32) = s0;
+	*[ram]:4 (sp - 28) = s1;
+	*[ram]:4 (sp - 24) = s2;
+	*[ram]:4 (sp - 20) = s3;
+	*[ram]:4 (sp - 16) = s4;
+	*[ram]:4 (sp - 12) = s5;
+	*[ram]:4 (sp - 8) = s6;
+	*[ram]:4 (sp - 4) = s7;
+	sp = sp - zcadj48;
+}
+
+:cm.pop "{ra,s0-s7}",zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=12 & zcadj48
+{
+	local top:$(XLEN) = sp + zcadj48;
+	ra = *[ram]:4 (top - 36);
+	s0 = *[ram]:4 (top - 32);
+	s1 = *[ram]:4 (top - 28);
+	s2 = *[ram]:4 (top - 24);
+	s3 = *[ram]:4 (top - 20);
+	s4 = *[ram]:4 (top - 16);
+	s5 = *[ram]:4 (top - 12);
+	s6 = *[ram]:4 (top - 8);
+	s7 = *[ram]:4 (top - 4);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s7}",zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=12 & zcadj48
+{
+	local top:$(XLEN) = sp + zcadj48;
+	ra = *[ram]:4 (top - 36);
+	s0 = *[ram]:4 (top - 32);
+	s1 = *[ram]:4 (top - 28);
+	s2 = *[ram]:4 (top - 24);
+	s3 = *[ram]:4 (top - 20);
+	s4 = *[ram]:4 (top - 16);
+	s5 = *[ram]:4 (top - 12);
+	s6 = *[ram]:4 (top - 8);
+	s7 = *[ram]:4 (top - 4);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s7}",zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=12 & zcadj48
+{
+	local top:$(XLEN) = sp + zcadj48;
+	ra = *[ram]:4 (top - 36);
+	s0 = *[ram]:4 (top - 32);
+	s1 = *[ram]:4 (top - 28);
+	s2 = *[ram]:4 (top - 24);
+	s3 = *[ram]:4 (top - 20);
+	s4 = *[ram]:4 (top - 16);
+	s5 = *[ram]:4 (top - 12);
+	s6 = *[ram]:4 (top - 8);
+	s7 = *[ram]:4 (top - 4);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s8}",-^zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=13 & zcadj48
+{
+	*[ram]:4 (sp - 40) = ra;
+	*[ram]:4 (sp - 36) = s0;
+	*[ram]:4 (sp - 32) = s1;
+	*[ram]:4 (sp - 28) = s2;
+	*[ram]:4 (sp - 24) = s3;
+	*[ram]:4 (sp - 20) = s4;
+	*[ram]:4 (sp - 16) = s5;
+	*[ram]:4 (sp - 12) = s6;
+	*[ram]:4 (sp - 8) = s7;
+	*[ram]:4 (sp - 4) = s8;
+	sp = sp - zcadj48;
+}
+
+:cm.pop "{ra,s0-s8}",zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=13 & zcadj48
+{
+	local top:$(XLEN) = sp + zcadj48;
+	ra = *[ram]:4 (top - 40);
+	s0 = *[ram]:4 (top - 36);
+	s1 = *[ram]:4 (top - 32);
+	s2 = *[ram]:4 (top - 28);
+	s3 = *[ram]:4 (top - 24);
+	s4 = *[ram]:4 (top - 20);
+	s5 = *[ram]:4 (top - 16);
+	s6 = *[ram]:4 (top - 12);
+	s7 = *[ram]:4 (top - 8);
+	s8 = *[ram]:4 (top - 4);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s8}",zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=13 & zcadj48
+{
+	local top:$(XLEN) = sp + zcadj48;
+	ra = *[ram]:4 (top - 40);
+	s0 = *[ram]:4 (top - 36);
+	s1 = *[ram]:4 (top - 32);
+	s2 = *[ram]:4 (top - 28);
+	s3 = *[ram]:4 (top - 24);
+	s4 = *[ram]:4 (top - 20);
+	s5 = *[ram]:4 (top - 16);
+	s6 = *[ram]:4 (top - 12);
+	s7 = *[ram]:4 (top - 8);
+	s8 = *[ram]:4 (top - 4);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s8}",zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=13 & zcadj48
+{
+	local top:$(XLEN) = sp + zcadj48;
+	ra = *[ram]:4 (top - 40);
+	s0 = *[ram]:4 (top - 36);
+	s1 = *[ram]:4 (top - 32);
+	s2 = *[ram]:4 (top - 28);
+	s3 = *[ram]:4 (top - 24);
+	s4 = *[ram]:4 (top - 20);
+	s5 = *[ram]:4 (top - 16);
+	s6 = *[ram]:4 (top - 12);
+	s7 = *[ram]:4 (top - 8);
+	s8 = *[ram]:4 (top - 4);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s9}",-^zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=14 & zcadj48
+{
+	*[ram]:4 (sp - 44) = ra;
+	*[ram]:4 (sp - 40) = s0;
+	*[ram]:4 (sp - 36) = s1;
+	*[ram]:4 (sp - 32) = s2;
+	*[ram]:4 (sp - 28) = s3;
+	*[ram]:4 (sp - 24) = s4;
+	*[ram]:4 (sp - 20) = s5;
+	*[ram]:4 (sp - 16) = s6;
+	*[ram]:4 (sp - 12) = s7;
+	*[ram]:4 (sp - 8) = s8;
+	*[ram]:4 (sp - 4) = s9;
+	sp = sp - zcadj48;
+}
+
+:cm.pop "{ra,s0-s9}",zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=14 & zcadj48
+{
+	local top:$(XLEN) = sp + zcadj48;
+	ra = *[ram]:4 (top - 44);
+	s0 = *[ram]:4 (top - 40);
+	s1 = *[ram]:4 (top - 36);
+	s2 = *[ram]:4 (top - 32);
+	s3 = *[ram]:4 (top - 28);
+	s4 = *[ram]:4 (top - 24);
+	s5 = *[ram]:4 (top - 20);
+	s6 = *[ram]:4 (top - 16);
+	s7 = *[ram]:4 (top - 12);
+	s8 = *[ram]:4 (top - 8);
+	s9 = *[ram]:4 (top - 4);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s9}",zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=14 & zcadj48
+{
+	local top:$(XLEN) = sp + zcadj48;
+	ra = *[ram]:4 (top - 44);
+	s0 = *[ram]:4 (top - 40);
+	s1 = *[ram]:4 (top - 36);
+	s2 = *[ram]:4 (top - 32);
+	s3 = *[ram]:4 (top - 28);
+	s4 = *[ram]:4 (top - 24);
+	s5 = *[ram]:4 (top - 20);
+	s6 = *[ram]:4 (top - 16);
+	s7 = *[ram]:4 (top - 12);
+	s8 = *[ram]:4 (top - 8);
+	s9 = *[ram]:4 (top - 4);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s9}",zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=14 & zcadj48
+{
+	local top:$(XLEN) = sp + zcadj48;
+	ra = *[ram]:4 (top - 44);
+	s0 = *[ram]:4 (top - 40);
+	s1 = *[ram]:4 (top - 36);
+	s2 = *[ram]:4 (top - 32);
+	s3 = *[ram]:4 (top - 28);
+	s4 = *[ram]:4 (top - 24);
+	s5 = *[ram]:4 (top - 20);
+	s6 = *[ram]:4 (top - 16);
+	s7 = *[ram]:4 (top - 12);
+	s8 = *[ram]:4 (top - 8);
+	s9 = *[ram]:4 (top - 4);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s11}",-^zcadj64 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=15 & zcadj64
+{
+	*[ram]:4 (sp - 52) = ra;
+	*[ram]:4 (sp - 48) = s0;
+	*[ram]:4 (sp - 44) = s1;
+	*[ram]:4 (sp - 40) = s2;
+	*[ram]:4 (sp - 36) = s3;
+	*[ram]:4 (sp - 32) = s4;
+	*[ram]:4 (sp - 28) = s5;
+	*[ram]:4 (sp - 24) = s6;
+	*[ram]:4 (sp - 20) = s7;
+	*[ram]:4 (sp - 16) = s8;
+	*[ram]:4 (sp - 12) = s9;
+	*[ram]:4 (sp - 8) = s10;
+	*[ram]:4 (sp - 4) = s11;
+	sp = sp - zcadj64;
+}
+
+:cm.pop "{ra,s0-s11}",zcadj64 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=15 & zcadj64
+{
+	local top:$(XLEN) = sp + zcadj64;
+	ra = *[ram]:4 (top - 52);
+	s0 = *[ram]:4 (top - 48);
+	s1 = *[ram]:4 (top - 44);
+	s2 = *[ram]:4 (top - 40);
+	s3 = *[ram]:4 (top - 36);
+	s4 = *[ram]:4 (top - 32);
+	s5 = *[ram]:4 (top - 28);
+	s6 = *[ram]:4 (top - 24);
+	s7 = *[ram]:4 (top - 20);
+	s8 = *[ram]:4 (top - 16);
+	s9 = *[ram]:4 (top - 12);
+	s10 = *[ram]:4 (top - 8);
+	s11 = *[ram]:4 (top - 4);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s11}",zcadj64 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=15 & zcadj64
+{
+	local top:$(XLEN) = sp + zcadj64;
+	ra = *[ram]:4 (top - 52);
+	s0 = *[ram]:4 (top - 48);
+	s1 = *[ram]:4 (top - 44);
+	s2 = *[ram]:4 (top - 40);
+	s3 = *[ram]:4 (top - 36);
+	s4 = *[ram]:4 (top - 32);
+	s5 = *[ram]:4 (top - 28);
+	s6 = *[ram]:4 (top - 24);
+	s7 = *[ram]:4 (top - 20);
+	s8 = *[ram]:4 (top - 16);
+	s9 = *[ram]:4 (top - 12);
+	s10 = *[ram]:4 (top - 8);
+	s11 = *[ram]:4 (top - 4);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s11}",zcadj64 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=15 & zcadj64
+{
+	local top:$(XLEN) = sp + zcadj64;
+	ra = *[ram]:4 (top - 52);
+	s0 = *[ram]:4 (top - 48);
+	s1 = *[ram]:4 (top - 44);
+	s2 = *[ram]:4 (top - 40);
+	s3 = *[ram]:4 (top - 36);
+	s4 = *[ram]:4 (top - 32);
+	s5 = *[ram]:4 (top - 28);
+	s6 = *[ram]:4 (top - 24);
+	s7 = *[ram]:4 (top - 20);
+	s8 = *[ram]:4 (top - 16);
+	s9 = *[ram]:4 (top - 12);
+	s10 = *[ram]:4 (top - 8);
+	s11 = *[ram]:4 (top - 4);
+	sp = top;
+	return [ra];
+}
+
+@endif
+
+@if ADDRSIZE == "64"
+zcadj16: adj is cop0203 [ adj = 16 + (cop0203 << 4); ] { export *[const]:$(XLEN) adj; }
+zcadj32: adj is cop0203 [ adj = 32 + (cop0203 << 4); ] { export *[const]:$(XLEN) adj; }
+zcadj48: adj is cop0203 [ adj = 48 + (cop0203 << 4); ] { export *[const]:$(XLEN) adj; }
+zcadj64: adj is cop0203 [ adj = 64 + (cop0203 << 4); ] { export *[const]:$(XLEN) adj; }
+zcadj80: adj is cop0203 [ adj = 80 + (cop0203 << 4); ] { export *[const]:$(XLEN) adj; }
+zcadj96: adj is cop0203 [ adj = 96 + (cop0203 << 4); ] { export *[const]:$(XLEN) adj; }
+zcadj112: adj is cop0203 [ adj = 112 + (cop0203 << 4); ] { export *[const]:$(XLEN) adj; }
+
+:cm.push "{ra}",-^zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=4 & zcadj16
+{
+	*[ram]:8 (sp - 8) = ra;
+	sp = sp - zcadj16;
+}
+
+:cm.pop "{ra}",zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=4 & zcadj16
+{
+	local top:$(XLEN) = sp + zcadj16;
+	ra = *[ram]:8 (top - 8);
+	sp = top;
+}
+
+:cm.popretz "{ra}",zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=4 & zcadj16
+{
+	local top:$(XLEN) = sp + zcadj16;
+	ra = *[ram]:8 (top - 8);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra}",zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=4 & zcadj16
+{
+	local top:$(XLEN) = sp + zcadj16;
+	ra = *[ram]:8 (top - 8);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0}",-^zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=5 & zcadj16
+{
+	*[ram]:8 (sp - 16) = ra;
+	*[ram]:8 (sp - 8) = s0;
+	sp = sp - zcadj16;
+}
+
+:cm.pop "{ra,s0}",zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=5 & zcadj16
+{
+	local top:$(XLEN) = sp + zcadj16;
+	ra = *[ram]:8 (top - 16);
+	s0 = *[ram]:8 (top - 8);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0}",zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=5 & zcadj16
+{
+	local top:$(XLEN) = sp + zcadj16;
+	ra = *[ram]:8 (top - 16);
+	s0 = *[ram]:8 (top - 8);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0}",zcadj16 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=5 & zcadj16
+{
+	local top:$(XLEN) = sp + zcadj16;
+	ra = *[ram]:8 (top - 16);
+	s0 = *[ram]:8 (top - 8);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s1}",-^zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=6 & zcadj32
+{
+	*[ram]:8 (sp - 24) = ra;
+	*[ram]:8 (sp - 16) = s0;
+	*[ram]:8 (sp - 8) = s1;
+	sp = sp - zcadj32;
+}
+
+:cm.pop "{ra,s0-s1}",zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=6 & zcadj32
+{
+	local top:$(XLEN) = sp + zcadj32;
+	ra = *[ram]:8 (top - 24);
+	s0 = *[ram]:8 (top - 16);
+	s1 = *[ram]:8 (top - 8);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s1}",zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=6 & zcadj32
+{
+	local top:$(XLEN) = sp + zcadj32;
+	ra = *[ram]:8 (top - 24);
+	s0 = *[ram]:8 (top - 16);
+	s1 = *[ram]:8 (top - 8);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s1}",zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=6 & zcadj32
+{
+	local top:$(XLEN) = sp + zcadj32;
+	ra = *[ram]:8 (top - 24);
+	s0 = *[ram]:8 (top - 16);
+	s1 = *[ram]:8 (top - 8);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s2}",-^zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=7 & zcadj32
+{
+	*[ram]:8 (sp - 32) = ra;
+	*[ram]:8 (sp - 24) = s0;
+	*[ram]:8 (sp - 16) = s1;
+	*[ram]:8 (sp - 8) = s2;
+	sp = sp - zcadj32;
+}
+
+:cm.pop "{ra,s0-s2}",zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=7 & zcadj32
+{
+	local top:$(XLEN) = sp + zcadj32;
+	ra = *[ram]:8 (top - 32);
+	s0 = *[ram]:8 (top - 24);
+	s1 = *[ram]:8 (top - 16);
+	s2 = *[ram]:8 (top - 8);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s2}",zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=7 & zcadj32
+{
+	local top:$(XLEN) = sp + zcadj32;
+	ra = *[ram]:8 (top - 32);
+	s0 = *[ram]:8 (top - 24);
+	s1 = *[ram]:8 (top - 16);
+	s2 = *[ram]:8 (top - 8);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s2}",zcadj32 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=7 & zcadj32
+{
+	local top:$(XLEN) = sp + zcadj32;
+	ra = *[ram]:8 (top - 32);
+	s0 = *[ram]:8 (top - 24);
+	s1 = *[ram]:8 (top - 16);
+	s2 = *[ram]:8 (top - 8);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s3}",-^zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=8 & zcadj48
+{
+	*[ram]:8 (sp - 40) = ra;
+	*[ram]:8 (sp - 32) = s0;
+	*[ram]:8 (sp - 24) = s1;
+	*[ram]:8 (sp - 16) = s2;
+	*[ram]:8 (sp - 8) = s3;
+	sp = sp - zcadj48;
+}
+
+:cm.pop "{ra,s0-s3}",zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=8 & zcadj48
+{
+	local top:$(XLEN) = sp + zcadj48;
+	ra = *[ram]:8 (top - 40);
+	s0 = *[ram]:8 (top - 32);
+	s1 = *[ram]:8 (top - 24);
+	s2 = *[ram]:8 (top - 16);
+	s3 = *[ram]:8 (top - 8);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s3}",zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=8 & zcadj48
+{
+	local top:$(XLEN) = sp + zcadj48;
+	ra = *[ram]:8 (top - 40);
+	s0 = *[ram]:8 (top - 32);
+	s1 = *[ram]:8 (top - 24);
+	s2 = *[ram]:8 (top - 16);
+	s3 = *[ram]:8 (top - 8);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s3}",zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=8 & zcadj48
+{
+	local top:$(XLEN) = sp + zcadj48;
+	ra = *[ram]:8 (top - 40);
+	s0 = *[ram]:8 (top - 32);
+	s1 = *[ram]:8 (top - 24);
+	s2 = *[ram]:8 (top - 16);
+	s3 = *[ram]:8 (top - 8);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s4}",-^zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=9 & zcadj48
+{
+	*[ram]:8 (sp - 48) = ra;
+	*[ram]:8 (sp - 40) = s0;
+	*[ram]:8 (sp - 32) = s1;
+	*[ram]:8 (sp - 24) = s2;
+	*[ram]:8 (sp - 16) = s3;
+	*[ram]:8 (sp - 8) = s4;
+	sp = sp - zcadj48;
+}
+
+:cm.pop "{ra,s0-s4}",zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=9 & zcadj48
+{
+	local top:$(XLEN) = sp + zcadj48;
+	ra = *[ram]:8 (top - 48);
+	s0 = *[ram]:8 (top - 40);
+	s1 = *[ram]:8 (top - 32);
+	s2 = *[ram]:8 (top - 24);
+	s3 = *[ram]:8 (top - 16);
+	s4 = *[ram]:8 (top - 8);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s4}",zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=9 & zcadj48
+{
+	local top:$(XLEN) = sp + zcadj48;
+	ra = *[ram]:8 (top - 48);
+	s0 = *[ram]:8 (top - 40);
+	s1 = *[ram]:8 (top - 32);
+	s2 = *[ram]:8 (top - 24);
+	s3 = *[ram]:8 (top - 16);
+	s4 = *[ram]:8 (top - 8);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s4}",zcadj48 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=9 & zcadj48
+{
+	local top:$(XLEN) = sp + zcadj48;
+	ra = *[ram]:8 (top - 48);
+	s0 = *[ram]:8 (top - 40);
+	s1 = *[ram]:8 (top - 32);
+	s2 = *[ram]:8 (top - 24);
+	s3 = *[ram]:8 (top - 16);
+	s4 = *[ram]:8 (top - 8);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s5}",-^zcadj64 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=10 & zcadj64
+{
+	*[ram]:8 (sp - 56) = ra;
+	*[ram]:8 (sp - 48) = s0;
+	*[ram]:8 (sp - 40) = s1;
+	*[ram]:8 (sp - 32) = s2;
+	*[ram]:8 (sp - 24) = s3;
+	*[ram]:8 (sp - 16) = s4;
+	*[ram]:8 (sp - 8) = s5;
+	sp = sp - zcadj64;
+}
+
+:cm.pop "{ra,s0-s5}",zcadj64 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=10 & zcadj64
+{
+	local top:$(XLEN) = sp + zcadj64;
+	ra = *[ram]:8 (top - 56);
+	s0 = *[ram]:8 (top - 48);
+	s1 = *[ram]:8 (top - 40);
+	s2 = *[ram]:8 (top - 32);
+	s3 = *[ram]:8 (top - 24);
+	s4 = *[ram]:8 (top - 16);
+	s5 = *[ram]:8 (top - 8);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s5}",zcadj64 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=10 & zcadj64
+{
+	local top:$(XLEN) = sp + zcadj64;
+	ra = *[ram]:8 (top - 56);
+	s0 = *[ram]:8 (top - 48);
+	s1 = *[ram]:8 (top - 40);
+	s2 = *[ram]:8 (top - 32);
+	s3 = *[ram]:8 (top - 24);
+	s4 = *[ram]:8 (top - 16);
+	s5 = *[ram]:8 (top - 8);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s5}",zcadj64 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=10 & zcadj64
+{
+	local top:$(XLEN) = sp + zcadj64;
+	ra = *[ram]:8 (top - 56);
+	s0 = *[ram]:8 (top - 48);
+	s1 = *[ram]:8 (top - 40);
+	s2 = *[ram]:8 (top - 32);
+	s3 = *[ram]:8 (top - 24);
+	s4 = *[ram]:8 (top - 16);
+	s5 = *[ram]:8 (top - 8);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s6}",-^zcadj64 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=11 & zcadj64
+{
+	*[ram]:8 (sp - 64) = ra;
+	*[ram]:8 (sp - 56) = s0;
+	*[ram]:8 (sp - 48) = s1;
+	*[ram]:8 (sp - 40) = s2;
+	*[ram]:8 (sp - 32) = s3;
+	*[ram]:8 (sp - 24) = s4;
+	*[ram]:8 (sp - 16) = s5;
+	*[ram]:8 (sp - 8) = s6;
+	sp = sp - zcadj64;
+}
+
+:cm.pop "{ra,s0-s6}",zcadj64 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=11 & zcadj64
+{
+	local top:$(XLEN) = sp + zcadj64;
+	ra = *[ram]:8 (top - 64);
+	s0 = *[ram]:8 (top - 56);
+	s1 = *[ram]:8 (top - 48);
+	s2 = *[ram]:8 (top - 40);
+	s3 = *[ram]:8 (top - 32);
+	s4 = *[ram]:8 (top - 24);
+	s5 = *[ram]:8 (top - 16);
+	s6 = *[ram]:8 (top - 8);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s6}",zcadj64 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=11 & zcadj64
+{
+	local top:$(XLEN) = sp + zcadj64;
+	ra = *[ram]:8 (top - 64);
+	s0 = *[ram]:8 (top - 56);
+	s1 = *[ram]:8 (top - 48);
+	s2 = *[ram]:8 (top - 40);
+	s3 = *[ram]:8 (top - 32);
+	s4 = *[ram]:8 (top - 24);
+	s5 = *[ram]:8 (top - 16);
+	s6 = *[ram]:8 (top - 8);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s6}",zcadj64 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=11 & zcadj64
+{
+	local top:$(XLEN) = sp + zcadj64;
+	ra = *[ram]:8 (top - 64);
+	s0 = *[ram]:8 (top - 56);
+	s1 = *[ram]:8 (top - 48);
+	s2 = *[ram]:8 (top - 40);
+	s3 = *[ram]:8 (top - 32);
+	s4 = *[ram]:8 (top - 24);
+	s5 = *[ram]:8 (top - 16);
+	s6 = *[ram]:8 (top - 8);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s7}",-^zcadj80 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=12 & zcadj80
+{
+	*[ram]:8 (sp - 72) = ra;
+	*[ram]:8 (sp - 64) = s0;
+	*[ram]:8 (sp - 56) = s1;
+	*[ram]:8 (sp - 48) = s2;
+	*[ram]:8 (sp - 40) = s3;
+	*[ram]:8 (sp - 32) = s4;
+	*[ram]:8 (sp - 24) = s5;
+	*[ram]:8 (sp - 16) = s6;
+	*[ram]:8 (sp - 8) = s7;
+	sp = sp - zcadj80;
+}
+
+:cm.pop "{ra,s0-s7}",zcadj80 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=12 & zcadj80
+{
+	local top:$(XLEN) = sp + zcadj80;
+	ra = *[ram]:8 (top - 72);
+	s0 = *[ram]:8 (top - 64);
+	s1 = *[ram]:8 (top - 56);
+	s2 = *[ram]:8 (top - 48);
+	s3 = *[ram]:8 (top - 40);
+	s4 = *[ram]:8 (top - 32);
+	s5 = *[ram]:8 (top - 24);
+	s6 = *[ram]:8 (top - 16);
+	s7 = *[ram]:8 (top - 8);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s7}",zcadj80 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=12 & zcadj80
+{
+	local top:$(XLEN) = sp + zcadj80;
+	ra = *[ram]:8 (top - 72);
+	s0 = *[ram]:8 (top - 64);
+	s1 = *[ram]:8 (top - 56);
+	s2 = *[ram]:8 (top - 48);
+	s3 = *[ram]:8 (top - 40);
+	s4 = *[ram]:8 (top - 32);
+	s5 = *[ram]:8 (top - 24);
+	s6 = *[ram]:8 (top - 16);
+	s7 = *[ram]:8 (top - 8);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s7}",zcadj80 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=12 & zcadj80
+{
+	local top:$(XLEN) = sp + zcadj80;
+	ra = *[ram]:8 (top - 72);
+	s0 = *[ram]:8 (top - 64);
+	s1 = *[ram]:8 (top - 56);
+	s2 = *[ram]:8 (top - 48);
+	s3 = *[ram]:8 (top - 40);
+	s4 = *[ram]:8 (top - 32);
+	s5 = *[ram]:8 (top - 24);
+	s6 = *[ram]:8 (top - 16);
+	s7 = *[ram]:8 (top - 8);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s8}",-^zcadj80 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=13 & zcadj80
+{
+	*[ram]:8 (sp - 80) = ra;
+	*[ram]:8 (sp - 72) = s0;
+	*[ram]:8 (sp - 64) = s1;
+	*[ram]:8 (sp - 56) = s2;
+	*[ram]:8 (sp - 48) = s3;
+	*[ram]:8 (sp - 40) = s4;
+	*[ram]:8 (sp - 32) = s5;
+	*[ram]:8 (sp - 24) = s6;
+	*[ram]:8 (sp - 16) = s7;
+	*[ram]:8 (sp - 8) = s8;
+	sp = sp - zcadj80;
+}
+
+:cm.pop "{ra,s0-s8}",zcadj80 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=13 & zcadj80
+{
+	local top:$(XLEN) = sp + zcadj80;
+	ra = *[ram]:8 (top - 80);
+	s0 = *[ram]:8 (top - 72);
+	s1 = *[ram]:8 (top - 64);
+	s2 = *[ram]:8 (top - 56);
+	s3 = *[ram]:8 (top - 48);
+	s4 = *[ram]:8 (top - 40);
+	s5 = *[ram]:8 (top - 32);
+	s6 = *[ram]:8 (top - 24);
+	s7 = *[ram]:8 (top - 16);
+	s8 = *[ram]:8 (top - 8);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s8}",zcadj80 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=13 & zcadj80
+{
+	local top:$(XLEN) = sp + zcadj80;
+	ra = *[ram]:8 (top - 80);
+	s0 = *[ram]:8 (top - 72);
+	s1 = *[ram]:8 (top - 64);
+	s2 = *[ram]:8 (top - 56);
+	s3 = *[ram]:8 (top - 48);
+	s4 = *[ram]:8 (top - 40);
+	s5 = *[ram]:8 (top - 32);
+	s6 = *[ram]:8 (top - 24);
+	s7 = *[ram]:8 (top - 16);
+	s8 = *[ram]:8 (top - 8);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s8}",zcadj80 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=13 & zcadj80
+{
+	local top:$(XLEN) = sp + zcadj80;
+	ra = *[ram]:8 (top - 80);
+	s0 = *[ram]:8 (top - 72);
+	s1 = *[ram]:8 (top - 64);
+	s2 = *[ram]:8 (top - 56);
+	s3 = *[ram]:8 (top - 48);
+	s4 = *[ram]:8 (top - 40);
+	s5 = *[ram]:8 (top - 32);
+	s6 = *[ram]:8 (top - 24);
+	s7 = *[ram]:8 (top - 16);
+	s8 = *[ram]:8 (top - 8);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s9}",-^zcadj96 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=14 & zcadj96
+{
+	*[ram]:8 (sp - 88) = ra;
+	*[ram]:8 (sp - 80) = s0;
+	*[ram]:8 (sp - 72) = s1;
+	*[ram]:8 (sp - 64) = s2;
+	*[ram]:8 (sp - 56) = s3;
+	*[ram]:8 (sp - 48) = s4;
+	*[ram]:8 (sp - 40) = s5;
+	*[ram]:8 (sp - 32) = s6;
+	*[ram]:8 (sp - 24) = s7;
+	*[ram]:8 (sp - 16) = s8;
+	*[ram]:8 (sp - 8) = s9;
+	sp = sp - zcadj96;
+}
+
+:cm.pop "{ra,s0-s9}",zcadj96 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=14 & zcadj96
+{
+	local top:$(XLEN) = sp + zcadj96;
+	ra = *[ram]:8 (top - 88);
+	s0 = *[ram]:8 (top - 80);
+	s1 = *[ram]:8 (top - 72);
+	s2 = *[ram]:8 (top - 64);
+	s3 = *[ram]:8 (top - 56);
+	s4 = *[ram]:8 (top - 48);
+	s5 = *[ram]:8 (top - 40);
+	s6 = *[ram]:8 (top - 32);
+	s7 = *[ram]:8 (top - 24);
+	s8 = *[ram]:8 (top - 16);
+	s9 = *[ram]:8 (top - 8);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s9}",zcadj96 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=14 & zcadj96
+{
+	local top:$(XLEN) = sp + zcadj96;
+	ra = *[ram]:8 (top - 88);
+	s0 = *[ram]:8 (top - 80);
+	s1 = *[ram]:8 (top - 72);
+	s2 = *[ram]:8 (top - 64);
+	s3 = *[ram]:8 (top - 56);
+	s4 = *[ram]:8 (top - 48);
+	s5 = *[ram]:8 (top - 40);
+	s6 = *[ram]:8 (top - 32);
+	s7 = *[ram]:8 (top - 24);
+	s8 = *[ram]:8 (top - 16);
+	s9 = *[ram]:8 (top - 8);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s9}",zcadj96 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=14 & zcadj96
+{
+	local top:$(XLEN) = sp + zcadj96;
+	ra = *[ram]:8 (top - 88);
+	s0 = *[ram]:8 (top - 80);
+	s1 = *[ram]:8 (top - 72);
+	s2 = *[ram]:8 (top - 64);
+	s3 = *[ram]:8 (top - 56);
+	s4 = *[ram]:8 (top - 48);
+	s5 = *[ram]:8 (top - 40);
+	s6 = *[ram]:8 (top - 32);
+	s7 = *[ram]:8 (top - 24);
+	s8 = *[ram]:8 (top - 16);
+	s9 = *[ram]:8 (top - 8);
+	sp = top;
+	return [ra];
+}
+
+:cm.push "{ra,s0-s11}",-^zcadj112 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x18 & cop0407=15 & zcadj112
+{
+	*[ram]:8 (sp - 104) = ra;
+	*[ram]:8 (sp - 96) = s0;
+	*[ram]:8 (sp - 88) = s1;
+	*[ram]:8 (sp - 80) = s2;
+	*[ram]:8 (sp - 72) = s3;
+	*[ram]:8 (sp - 64) = s4;
+	*[ram]:8 (sp - 56) = s5;
+	*[ram]:8 (sp - 48) = s6;
+	*[ram]:8 (sp - 40) = s7;
+	*[ram]:8 (sp - 32) = s8;
+	*[ram]:8 (sp - 24) = s9;
+	*[ram]:8 (sp - 16) = s10;
+	*[ram]:8 (sp - 8) = s11;
+	sp = sp - zcadj112;
+}
+
+:cm.pop "{ra,s0-s11}",zcadj112 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1a & cop0407=15 & zcadj112
+{
+	local top:$(XLEN) = sp + zcadj112;
+	ra = *[ram]:8 (top - 104);
+	s0 = *[ram]:8 (top - 96);
+	s1 = *[ram]:8 (top - 88);
+	s2 = *[ram]:8 (top - 80);
+	s3 = *[ram]:8 (top - 72);
+	s4 = *[ram]:8 (top - 64);
+	s5 = *[ram]:8 (top - 56);
+	s6 = *[ram]:8 (top - 48);
+	s7 = *[ram]:8 (top - 40);
+	s8 = *[ram]:8 (top - 32);
+	s9 = *[ram]:8 (top - 24);
+	s10 = *[ram]:8 (top - 16);
+	s11 = *[ram]:8 (top - 8);
+	sp = top;
+}
+
+:cm.popretz "{ra,s0-s11}",zcadj112 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1c & cop0407=15 & zcadj112
+{
+	local top:$(XLEN) = sp + zcadj112;
+	ra = *[ram]:8 (top - 104);
+	s0 = *[ram]:8 (top - 96);
+	s1 = *[ram]:8 (top - 88);
+	s2 = *[ram]:8 (top - 80);
+	s3 = *[ram]:8 (top - 72);
+	s4 = *[ram]:8 (top - 64);
+	s5 = *[ram]:8 (top - 56);
+	s6 = *[ram]:8 (top - 48);
+	s7 = *[ram]:8 (top - 40);
+	s8 = *[ram]:8 (top - 32);
+	s9 = *[ram]:8 (top - 24);
+	s10 = *[ram]:8 (top - 16);
+	s11 = *[ram]:8 (top - 8);
+	sp = top;
+	a0 = 0;
+	return [ra];
+}
+
+:cm.popret "{ra,s0-s11}",zcadj112 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop0812=0x1e & cop0407=15 & zcadj112
+{
+	local top:$(XLEN) = sp + zcadj112;
+	ra = *[ram]:8 (top - 104);
+	s0 = *[ram]:8 (top - 96);
+	s1 = *[ram]:8 (top - 88);
+	s2 = *[ram]:8 (top - 80);
+	s3 = *[ram]:8 (top - 72);
+	s4 = *[ram]:8 (top - 64);
+	s5 = *[ram]:8 (top - 56);
+	s6 = *[ram]:8 (top - 48);
+	s7 = *[ram]:8 (top - 40);
+	s8 = *[ram]:8 (top - 32);
+	s9 = *[ram]:8 (top - 24);
+	s10 = *[ram]:8 (top - 16);
+	s11 = *[ram]:8 (top - 8);
+	sp = top;
+	return [ra];
+}
+
+@endif
+
+:cm.mvsa01 zcs0709,zcs0204 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop1012=0x3 & cop0506=0x1 & zcs0709 & zcs0204
+{
+	zcs0709 = a0;
+	zcs0204 = a1;
+}
+
+:cm.mva01s zcs0709,zcs0204 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop1012=0x3 & cop0506=0x3 & zcs0709 & zcs0204
+{
+	a0 = zcs0709;
+	a1 = zcs0204;
+}
+
+# cm.jt / cm.jalt: an indirect jump through the jvt (CSR 0x017) jump table;
+# indexes below 32 are jumps, 32..255 are calls.
+:cm.jt cop0209 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop1012=0x0 & cop0709=0 & cop0209
+{
+	local jvt:$(XLEN) = *[csreg]:$(XLEN) 0x17:2;
+	local ea:$(XLEN) = (jvt & ~0x3f) + cop0209 * $(XLEN);
+	local target:$(XLEN) = *[ram]:$(XLEN) ea;
+	goto [target];
+}
+
+:cm.jalt cop0209 is Zcmp=1 & cop0001=0x2 & cop1315=0x5 & cop1012=0x0 & (cop0707=1 | cop0808=1 | cop0909=1) & cop0209
+{
+	local jvt:$(XLEN) = *[csreg]:$(XLEN) 0x17:2;
+	local ea:$(XLEN) = (jvt & ~0x3f) + cop0209 * $(XLEN);
+	local target:$(XLEN) = *[ram]:$(XLEN) ea;
+	ra = inst_next;
+	call [target];
+}

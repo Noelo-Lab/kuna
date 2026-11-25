@@ -545,12 +545,12 @@ pub trait ArchOptionContext {
     fn set_no_cast_printing(&mut self, val: bool);
     /// `PrintC::setHideImpliedExts(val)` (options.cc:504).  // STUB(W8)
     fn set_hide_implied_exts(&mut self, val: bool);
-    /// `glb->print->setMaxLineSize(val)` (options.cc:524).  // STUB(W8)
-    fn set_max_line_size(&mut self, val: int4);
+    /// `glb->print->setMaxLineSize(val)` (options.cc:524).
+    fn set_max_line_size(&mut self, val: int4) -> KunaResult<()>;
     /// `glb->print->setIndentIncrement(val)` (options.cc:541).  // STUB(W8)
     fn set_indent_increment(&mut self, val: int4);
-    /// `glb->print->setLineCommentIndent(val)` (options.cc:559).  // STUB(W8)
-    fn set_line_comment_indent(&mut self, val: int4);
+    /// `glb->print->setLineCommentIndent(val)` (options.cc:559).
+    fn set_line_comment_indent(&mut self, val: int4) -> KunaResult<()>;
     /// `glb->print->setCommentStyle(p1)` (options.cc:570).  // STUB(W8)
     fn set_comment_style(&mut self, style: &str);
     /// `glb->print->getHeaderComment()` (options.cc:583).  // STUB(W8)
@@ -1026,7 +1026,7 @@ impl ArchOption for OptionMaxLineWidth {
         if val == -1 {
             return Err(KunaError::parse("Must specify integer linewidth"));
         }
-        glb.set_max_line_size(val);
+        glb.set_max_line_size(val)?;
         Ok(format!("Maximum line width set to {p1}"))
     }
 }
@@ -1074,7 +1074,7 @@ impl ArchOption for OptionCommentIndent {
         if val == -1 {
             return Err(KunaError::parse("Must specify integer comment indent"));
         }
-        glb.set_line_comment_indent(val);
+        glb.set_line_comment_indent(val)?;
         Ok(format!("Comment indent set to {p1}"))
     }
 }

@@ -405,6 +405,7 @@ pub fn bind(types: &Types, regs: &Registers, symbols: &[(u64, String)], out: &mu
         out.swift_types.models.push(ModelFact {
             func_addr: f,
             model: binding.model,
+            leaf_stack_inputs: None,
             maybe_self: binding.maybe_self,
         });
         if binding.self_t.is_some() {

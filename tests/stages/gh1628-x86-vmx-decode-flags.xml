@@ -1,0 +1,83 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Kuna #1628: "x86-64: VMREAD/VMWRITE without REX.W are bad instructions;
+    VMX instructions do not set CF/ZF"
+    https://github.com/Noelo-Lab/kuna/issues/1628
+
+    clang -O2 -fno-stack-protector of
+      unsigned long rd(unsigned long field) {
+          unsigned long v; unsigned char fail;
+          __asm__ volatile("vmread %2, %0; setna %1" : "=r"(v), "=qm"(fail) : "r"(field) : "cc");
+          return fail ? 0 : v;
+      }
+      int launch(void) {
+          unsigned char fail;
+          __asm__ volatile("vmlaunch; setna %0" : "=qm"(fail) :: "cc", "memory");
+          return fail;
+      }
+    plus two hand-written functions: wr (vmwrite %rsi,%rdi; setbe %al; movzbl %al,%eax; ret) and
+    st (vmptrst (%rdi); ret).
+
+    In 64-bit mode VMREAD and VMWRITE always take 64-bit operands and compilers
+    encode them without REX.W (`0f 78 f9`, `0f 79 fe`); the spec only decoded
+    the REX.W form, so `rd` was halt_baddata().  VMX instructions report
+    VMsucceed / VMfailValid (ZF) / VMfailInvalid (CF) in the flags, and the
+    p-code wrote no flags, so the setna after vmlaunch read whatever an earlier
+    instruction left in CF/ZF (`&Stack0 <= (char *)0x18`).  VMPTRST stored
+    nothing: it passed the loaded qword to its user-op.
+
+    Stage: S1 decode-table / S2 p-code lift (x86 spec-fix, no option).  Each
+    VMX user-op returns its status (0 succeed, 1 VMfailValid, 2 VMfailInvalid,
+    the __vmx_* intrinsic values) and vmxflags sets ZF/CF from it; VMREAD keeps
+    its value output and takes the status from vmx_status.
+-->
+<bytechunk space="ram" offset="0x1000">
+f30f1efa0f78f90f964424ff31c0807c24ff00480f44c1c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1020">
+f30f1efa0f01c20f964424ff0fb64424ffc3
+</bytechunk>
+<bytechunk space="ram" offset="0x1040">
+0f79fe0f96c00fb6c0c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1050">
+0fc73fc3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="rd"/>
+<symbol space="ram" offset="0x1020" name="launch"/>
+<symbol space="ram" offset="0x1040" name="wr"/>
+<symbol space="ram" offset="0x1050" name="st"/>
+</binaryimage>
+<script>
+  <com>disassemble 0x1004 0x1007</com>
+  <com>disassemble 0x1040 0x1043</com>
+  <com>parse line extern unsigned long rd(unsigned long field);</com>
+  <com>parse line extern int launch(void);</com>
+  <com>parse line extern int wr(unsigned long field, unsigned long value);</com>
+  <com>parse line extern void st(unsigned long *vmcs);</com>
+  <com>lo fu rd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu launch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu wr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu st</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH1628 #1: 0f 78 f9 (no REX.W) is VMREAD RCX, RDI" min="1" max="1">^0x0+1004: VMREAD +RCX, RDI</stringmatch>
+<stringmatch name="GH1628 #2: 0f 79 fe (no REX.W) is VMWRITE RDI, RSI" min="1" max="1">^0x0+1040: VMWRITE +RDI, RSI</stringmatch>
+<stringmatch name="GH1628 #3: no function hits bad instruction data" min="0" max="0">halt_baddata</stringmatch>
+<stringmatch name="GH1628 #4: rd reads the field" min="1" max="1">= vmread\(field\);</stringmatch>
+<stringmatch name="GH1628 #5: rd tests the status for a VMfail" min="1" max="1">if \(v1 == 2 \|\| v1 == 1\)</stringmatch>
+<stringmatch name="GH1628 #6a: launch runs vmlaunch for its status" min="1" max="1">v1 = vmlaunch\(\);</stringmatch>
+<stringmatch name="GH1628 #6b: launch and wr return the VMX status test, not a stack-address comparison" min="2" max="2">return v1 == 2 \|\| v1 == 1;</stringmatch>
+<stringmatch name="GH1628 #7: no stale flag reaches the result" min="0" max="0">Stack0</stringmatch>
+<stringmatch name="GH1628 #8: wr runs vmwrite for its status" min="1" max="1">v1 = vmwrite\(value,field\);</stringmatch>
+<stringmatch name="GH1628 #9: VMPTRST stores the current VMCS pointer" min="1" max="1">\*vmcs = vmptrst\(\);</stringmatch>
+</decompilertest>

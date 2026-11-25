@@ -992,6 +992,12 @@ pub mod param_trial_flags {
     pub const STACK_ADDRESS: uint4 = 0x800;
     /// (kuna) Solid only through a reload from the caller's frame.
     pub const FRAME_RELOAD: uint4 = 0x1000;
+    /// (kuna) `calleefilledarg`: the callee loads this register itself, so the
+    /// slot is no parameter and no evidence about the slots after it.
+    pub const CALLEE_FILLED: uint4 = 0x2000;
+    /// (kuna) `passthrough`: the caller forwards its own incoming register
+    /// here untouched and the callee takes it, so the slot is filled.
+    pub const FORWARDED: uint4 = 0x4000;
 }
 
 /// A register or memory location that may be used to pass a parameter or return
@@ -1164,6 +1170,13 @@ impl ParamTrial {
     pub fn has_stack_address(&self) -> bool { self.flags & param_trial_flags::STACK_ADDRESS != 0 }
     pub fn set_frame_reload(&mut self) { self.flags |= param_trial_flags::FRAME_RELOAD; }
     pub fn has_frame_reload(&self) -> bool { self.flags & param_trial_flags::FRAME_RELOAD != 0 }
+    /// (kuna) `calleefilledarg`: the callee writes this register before it
+    /// could read it, and the caller put nothing in it.
+    pub fn set_callee_filled(&mut self) { self.flags |= param_trial_flags::CALLEE_FILLED; }
+    pub fn is_callee_filled(&self) -> bool { self.flags & param_trial_flags::CALLEE_FILLED != 0 }
+    /// (kuna) `passthrough`: the caller forwards the callee's parameter here.
+    pub fn set_forwarded(&mut self) { self.flags |= param_trial_flags::FORWARDED; }
+    pub fn is_forwarded(&self) -> bool { self.flags & param_trial_flags::FORWARDED != 0 }
 
     /// Does this show solid movement into the Varnode (C++ `hasAncestorSolid`)?
     pub fn has_ancestor_solid(&self) -> bool {
@@ -1335,6 +1348,16 @@ pub struct ParamActive {
     /// of the model these trials are scored against?  Set by
     /// `ActionActiveParam`; see [`crate::p4_calls::kuna_calleereginputs`].
     callee_reads_registers: bool,
+    /// (kuna `passthrough`) Does the caller store into the first stack-argument
+    /// slot, so a stack slot past a run of forwarded registers may be an
+    /// argument?  Set by `ActionActiveParam`.
+    forwarded_stack: bool,
+    /// (kuna `passthrough`) The registers the callee takes by passthrough's
+    /// evidence, where a trial is forwarded.  Set by `ActionActiveParam`.
+    forwarded_takes: Vec<Address>,
+    /// (kuna `passthrough`) The argument registers the callee's decode shows it
+    /// never takes, where a trial is forwarded.  Set by `ActionActiveParam`.
+    forwarded_untaken: Vec<Address>,
     /// (kuna) `condexeret`: where the output trials stand with respect to the one
     /// retry pass; see [`crate::p4_calls::kuna_condexeret`].
     cond_exe_retry: crate::p4_calls::kuna_condexeret::CondExeRetry,
@@ -1345,6 +1368,10 @@ pub struct ParamActive {
     /// (kuna) `armfloatargs`: s-registers the function's body reads on entry,
     /// which are parameters even where they would be a back-fill slot.
     read_singles: Vec<Address>,
+    /// (kuna) `calleefilledarg`: the callee's entry-liveness probe, which says
+    /// which argument registers it loads itself; see
+    /// [`crate::p4_calls::kuna_calleefilledarg`].
+    callee_filled: Option<Rc<crate::p4_calls::kuna_calleedeadarg::CalleeEntryDead>>,
 }
 
 impl ParamActive {
@@ -1364,9 +1391,13 @@ impl ParamActive {
             own_input_gap: false,      // (kuna) inputparamgap
             stack_arg_gap: false,      // (kuna) stackarggap
             callee_reads_registers: false, // (kuna) calleereginputs
+            forwarded_stack: false,    // (kuna) passthrough
+            forwarded_takes: Vec::new(), // (kuna) passthrough
+            forwarded_untaken: Vec::new(), // (kuna) passthrough
             cond_exe_retry: Default::default(), // (kuna) condexeret
             single_floats: Vec::new(), // (kuna) armfloatargs
             read_singles: Vec::new(),  // (kuna) armfloatargs
+            callee_filled: None,       // (kuna) calleefilledarg
         }
     }
 
@@ -1510,6 +1541,31 @@ impl ParamActive {
         self.stack_arg_gap = val;
     }
 
+    /// (kuna `passthrough`) May a stack slot past a run of forwarded registers
+    /// be an argument?
+    pub fn is_forwarded_stack(&self) -> bool {
+        self.forwarded_stack
+    }
+
+    /// (kuna `passthrough`) Record whether the caller stores into the first
+    /// stack-argument slot, the registers the callee takes and those it never
+    /// takes.
+    pub fn set_forwarded_evidence(&mut self, stored: bool, takes: Vec<Address>, untaken: Vec<Address>) {
+        self.forwarded_stack = stored;
+        self.forwarded_takes = takes;
+        self.forwarded_untaken = untaken;
+    }
+
+    /// (kuna `passthrough`) Does the callee never take the register at `addr`?
+    pub fn is_forwarded_untaken(&self, addr: &Address) -> bool {
+        self.forwarded_untaken.iter().any(|a| a == addr)
+    }
+
+    /// (kuna `passthrough`) Does the callee take the register at `addr`?
+    pub fn is_forwarded_take(&self, addr: &Address) -> bool {
+        self.forwarded_takes.iter().any(|a| a == addr)
+    }
+
     /// (kuna `calleereginputs`) Does the callee read every register parameter
     /// of the model?
     pub fn is_callee_reads_registers(&self) -> bool {
@@ -1530,6 +1586,25 @@ impl ParamActive {
     /// (kuna) `armfloatargs`: record the s-registers the body reads on entry.
     pub fn set_read_singles(&mut self, addrs: Vec<Address>) {
         self.read_singles = addrs;
+    }
+
+    /// (kuna) `calleefilledarg`: hand over the callee's entry-liveness probe.
+    pub fn set_callee_filled(
+        &mut self,
+        dead: Option<Rc<crate::p4_calls::kuna_calleedeadarg::CalleeEntryDead>>,
+    ) {
+        self.callee_filled = dead;
+    }
+
+    /// (kuna) `calleefilledarg`: is trial `i` a register slot the callee loads
+    /// itself and the caller never filled?  Either the scoring marked it so
+    /// ([`ParamTrial::is_callee_filled`]), or it is a hole `buildTrialMap`
+    /// backfilled on a register the probe proves written before any read.
+    pub fn is_callee_filled(&self, i: int4) -> bool {
+        let t = self.get_trial(i);
+        t.is_callee_filled()
+            || (t.is_unref()
+                && self.callee_filled.as_ref().is_some_and(|d| d.proves_dead(t.get_address(), t.get_size())))
     }
     /// (kuna) `condexeret`: the state of the retry pass.
     pub fn cond_exe_retry(&self) -> &crate::p4_calls::kuna_condexeret::CondExeRetry {
@@ -3252,6 +3327,11 @@ impl ParamListStandard {
         let mut curgroup = -1;
         let mut alldefnouse = false;
         for i in start..stop {
+            if active.is_callee_filled(i) {
+                // (kuna) `calleefilledarg`: not a slot of this callee.
+                // See [`crate::p4_calls::kuna_calleefilledarg`].
+                continue;
+            }
             let (entry, defnouse) = {
                 let curtrial = active.get_trial(i);
                 (curtrial.get_entry(), curtrial.is_definitely_not_used())
@@ -3291,9 +3371,13 @@ impl ParamListStandard {
     ) {
         let mut seenchain = false;
         let mut chainlength = 0;
+        let mut filled = false;
+        let mut hole = false;
+        let mut over = false;
+        let mut spared = false;
         let mut max = -1;
         for i in start..stop {
-            let (defnouse, is_act, is_unref, addr_is_spacebase, slotgrp, protected) = {
+            let (defnouse, is_act, is_unref, addr_is_spacebase, slotgrp, protected, forwarded, taken, untaken) = {
                 let trial = active.get_trial(i);
                 let addr_sb = trial
                     .get_address()
@@ -3319,12 +3403,24 @@ impl ParamListStandard {
                         trial,
                         &self.entry,
                     ) || crate::p4_calls::kuna_stackaddrargtrial::trial_is_protected(active, trial, &self.entry),
+                    trial.is_forwarded(),
+                    active.is_forwarded_take(trial.get_address()),
+                    active.is_forwarded_untaken(trial.get_address()),
                 )
             };
             if defnouse {
                 continue;
             }
+            // (kuna) `passthrough`: a run of inactive slots that holds a
+            // register the caller forwards to a callee that takes it, and
+            // otherwise only registers the callee takes, is filled; any other
+            // run is a chain as upstream counts it. Past a filled run, a stack
+            // slot needs the caller's own store into the first one, and a
+            // register the callee never takes ends the list.
+            let stored = addr_is_spacebase && active.is_forwarded_stack();
             if !is_act {
+                filled |= forwarded;
+                hole |= !forwarded && !taken && !stored;
                 if is_unref && active.is_recover_subcall() && addr_is_spacebase {
                     seenchain = true;
                 }
@@ -3359,10 +3455,27 @@ impl ParamListStandard {
                     chainlength += slotgrp - prev_slotgrp;
                 }
                 if chainlength > maxchain {
-                    seenchain = true;
+                    if filled {
+                        over = true;
+                    } else {
+                        seenchain = true;
+                    }
                 }
             } else {
+                if over {
+                    if hole {
+                        seenchain = true;
+                    } else {
+                        spared = true;
+                    }
+                }
+                if spared && if addr_is_spacebase { !stored } else { untaken } {
+                    seenchain = true;
+                }
                 chainlength = 0;
+                filled = false;
+                hole = false;
+                over = false;
                 // (kuna) `inputparamgap`: a protected trial is a REGISTER the
                 // function's own body reads before writing, and the chain does
                 // not get to veto it.  Trials sort into parameter order, so
@@ -3381,7 +3494,9 @@ impl ParamListStandard {
                 let trial = active.get_trial(i);
                 (trial.is_definitely_not_used(), trial.is_active())
             };
-            if defnouse {
+            // (kuna) `calleefilledarg`: a hole the callee fills itself is
+            // never materialised as an argument.
+            if defnouse || active.is_callee_filled(i) {
                 continue;
             }
             if !is_act {
@@ -3911,6 +4026,9 @@ pub struct PrototypePieces {
     /// signature and the name locks stay as they were; only the naming pass
     /// reads them, and only under `option libcnames`.
     pub kuna_library_names: Option<&'static crate::kuna_libcnames::LibraryNames>,
+    /// (kuna) Whether a built-in library table supplied this declaration,
+    /// rather than the image, a debug-info unit or the caller.
+    pub kuna_library_table: bool,
 }
 
 // =============================================================================
@@ -4212,6 +4330,30 @@ impl ProtoModel {
     /// (kuna) The input resource model, or `None` before `build_param_list`.
     pub fn input_opt(&self) -> Option<&ParamListStandard> {
         self.input.as_ref()
+    }
+
+    /// Restrict a convention with one forward stack resource to a whole-slot frame area.
+    pub fn kuna_bound_stack_inputs(&self, bytes: u32) -> Option<Self> {
+        let input = self.input_opt()?;
+        let [entry] = input.entry.as_slice() else { return None };
+        let bytes = i32::try_from(bytes).ok()?;
+        if entry.get_space().get_type() != spacetype::IPTR_SPACEBASE
+            || entry.is_reverse_stack()
+            || entry.alignment <= 0
+            || bytes <= 0
+            || bytes > entry.size
+            || bytes % entry.alignment != 0
+        {
+            return None;
+        }
+        let mut model = self.clone();
+        let input = model.input_mut();
+        let entry = &mut input.entry[0];
+        entry.size = bytes;
+        entry.minsize = entry.alignment;
+        entry.numslots = bytes / entry.alignment;
+        input.populate_resolver();
+        Some(model)
     }
     /// Borrow the output resource model (panics if not yet built — C++ would
     /// dereference a null `output`).
@@ -6033,12 +6175,21 @@ impl FuncProto {
         // unconditionally, so those pieces aborted the process the moment the
         // function was decompiled. The declared type IS the return type — adopt it
         // and the model has something to assign against, after which `set_pieces`
-        // replaces the derived storage with the explicit one as before.
+        // replaces the derived storage with the explicit one as before. With
+        // no stated inputs, leave input recovery open on the rebuilt callee.
         if pieces.outtype.is_none() {
             if let Some(declared) = pieces.output_storage.as_ref().and_then(|p| p.type_.clone()) {
                 let mut typed = pieces.clone();
                 typed.outtype = Some(declared);
-                return self.set_pieces(&typed, Some(defaultfp), typefactory, manager);
+                self.set_pieces(&typed, Some(defaultfp), typefactory, manager)?;
+                if pieces.intypes.is_empty()
+                    && pieces.innames.is_empty()
+                    && pieces.input_storage.is_empty()
+                    && pieces.first_var_arg_slot < 0
+                {
+                    self.set_input_lock(false);
+                }
+                return Ok(());
             }
         }
         self.set_pieces(pieces, Some(defaultfp), typefactory, manager)
@@ -6870,6 +7021,9 @@ pub struct FuncCallSpecs {
     /// (kuna) The model the direct callee's register inputs select. See
     /// [`crate::p4_calls::kuna_calleereginputs`].
     callee_reg_model: Option<Rc<ProtoModel>>,
+    /// (kuna) How many of EAX, ECX and EDX the direct callee reads before
+    /// writing them. See [`crate::p4_calls::kuna_calleereginputs`].
+    callee_arg_registers: u8,
     /// (kuna) The extrapop the direct callee's own returns state. See
     /// [`crate::p4_calls::kuna_calleepurge`].
     callee_purge: Option<int4>,
@@ -6924,6 +7078,7 @@ impl FuncCallSpecs {
             jump_target_storage: None,       // (kuna) tailcalljump
             plt_stub: None,                  // (kuna) pltlocal
             callee_reg_model: None,
+            callee_arg_registers: 0,
             callee_purge: None,
             callee_stack_arg_bytes: None,
             callee_moves_stack: false,
@@ -6963,6 +7118,7 @@ impl FuncCallSpecs {
         res.jump_target_storage = self.jump_target_storage.clone();
         res.plt_stub = self.plt_stub.clone();
         res.callee_reg_model = self.callee_reg_model.clone();
+        res.callee_arg_registers = self.callee_arg_registers;
         res.callee_purge = self.callee_purge;
         res.callee_stack_arg_bytes = self.callee_stack_arg_bytes;
         res.callee_moves_stack = self.callee_moves_stack;
@@ -7333,6 +7489,17 @@ impl FuncCallSpecs {
     /// Record the model the direct callee's register inputs select.
     pub fn set_callee_reg_model(&mut self, model: Option<Rc<ProtoModel>>) {
         self.callee_reg_model = model;
+    }
+
+    /// How many of EAX, ECX and EDX the direct callee reads before writing them.
+    pub fn callee_arg_registers(&self) -> u8 {
+        self.callee_arg_registers
+    }
+
+    /// Record how many of EAX, ECX and EDX the direct callee reads before
+    /// writing them.
+    pub fn set_callee_arg_registers(&mut self, count: u8) {
+        self.callee_arg_registers = count;
     }
 
     /// The extrapop the direct callee's own returns state, if read.
@@ -7942,8 +8109,9 @@ impl FuncCallSpecs {
     ///
     /// `None` entries in `newinput` indicate stack parameters.  The op-input
     /// reuse path reads the CALL operands (the W3 op, via `data`); the stack
-    /// path needs a spacebase placeholder.  Returns `false` only if a stack
-    /// variable is needed and there is no placeholder.
+    /// path needs a spacebase placeholder.  Returns `false` if a stack
+    /// variable is needed and there is no placeholder, or (kuna) if a reused
+    /// input was narrowed below its parameter since its trial was recorded.
     fn transfer_locked_input(
         &self,
         data: &Funcdata,
@@ -7972,6 +8140,12 @@ impl FuncCallSpecs {
                     .get(self.op)
                     .expect("transferLockedInput: stale call op")
                     .get_in(reuse);
+                let narrowed = vn
+                    .and_then(|vn| data.vbank().get(vn))
+                    .is_some_and(|vn| vn.get_size() < param.get_size());
+                if narrowed {
+                    return Ok(false);
+                }
                 newinput.push(vn);
             } else {
                 if !stackref_resolved {

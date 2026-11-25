@@ -1,0 +1,43 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--summary",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/rust_crate_paths_x86_64",
+    "binary_sha256": "be5a0deee53f54e73c504abd124e82ccfd2ae3b39537f2889b6a6200de0ce881",
+    "binary_size": 446752,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/rust_crate_paths_x86_64"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "\"id\": \"rust\"",
+      "\"version\": \"1\\.95\\.0\"",
+      "Rust binary \\(rustc 1\\.95\\.0\\): output defaults to --language rust",
+      "\"name\": \"arrayvec\"",
+      "\"version\": \"0\\.7\\.6\""
+    ],
+    "stdout_absent": [
+      "\"version\": null"
+    ],
+    "stdout_is_json": true
+  },
+  "notes": "The image is a Rust 1.95.0 program whose `.comment` section was removed. The compiler commit in its standard library source paths (`/rustc/<commit>/library/...`) maps to the release, and the registry path of its one dependency names the crate and its version.",
+  "probe_id": "p-3f925479d946"
+}

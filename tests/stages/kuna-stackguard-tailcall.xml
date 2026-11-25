@@ -101,6 +101,10 @@ f30f1efa90c3
 <symbol space="ram" offset="0x401300" name="report"/>
 </binaryimage>
 <script>
+  <!-- looptest (default proven) prints the loops this test pins as do-while with the
+       test at the top (their entry tests fold to true); kept bottom-tested here. -->
+  <com>option looptest binary</com>
+  <com>option protoorder off</com>
   <com>lo fu t2</com>
   <com>decompile</com>
   <com>print C</com>

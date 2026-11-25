@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/passthrough_clobbered_aarch64",
+    "binary_sha256": "81e1a9e7a7c97f203814ffa2afacd4fbb1641acbebc4dcf262142b6545d8236c",
+    "binary_size": 3312,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/passthrough_clobbered_aarch64",
+    "selector": "check",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "^int check\\([a-z ]+ a0,[a-z *]+ a1\\)$",
+      "vlog\\(\"bad %s\\\\n\",[^;]*a1[^;]*\\);"
+    ],
+    "stdout_absent": [
+      "^int check\\([^)]*a2",
+      "vlog\\(\"bad %s\\\\n\",[^;]*,a2\\)"
+    ]
+  },
+  "notes": "check never sets x2 before vlog; the import ext between the entry and the call may clobber it, so x2 is no argument of vlog and no parameter of check, though vlog's va_start save reads x2."
+}

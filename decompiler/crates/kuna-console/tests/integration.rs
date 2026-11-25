@@ -7,6 +7,9 @@ mod verify_goextensions;
 #[path = "verify_gobyteextract.rs"]
 mod verify_gobyteextract;
 
+#[path = "verify_op_sizes.rs"]
+mod verify_op_sizes;
+
 #[path = "verify_gobyteview.rs"]
 mod verify_gobyteview;
 
@@ -216,6 +219,8 @@ mod verify_go_pclntab;
 mod verify_go_noreturn_stripped;
 #[path = "verify_go_morestack.rs"]
 mod verify_go_morestack;
+#[path = "verify_go_mcall.rs"]
+mod verify_go_mcall;
 #[path = "verify_fatstr_records.rs"]
 mod verify_fatstr_records;
 #[path = "verify_go_writebarrier.rs"]
@@ -335,19 +340,29 @@ mod verify_noreturn_propagate;
 mod verify_objc;
 #[path = "verify_swiftmetadata.rs"]
 mod verify_swiftmetadata;
+#[path = "verify_swiftobjcthunk.rs"]
+mod verify_swiftobjcthunk;
 #[path = "verify_swifttypes.rs"]
 mod verify_swifttypes;
+#[path = "verify_valuewitness.rs"]
+mod verify_valuewitness;
 #[path = "verify_swiftcall.rs"]
 mod verify_swiftcall;
 
 #[path = "verify_importdata.rs"]
 mod verify_importdata;
 
+#[path = "verify_cstringconst.rs"]
+mod verify_cstringconst;
+
 #[path = "verify_cfstring.rs"]
 mod verify_cfstring;
 
 #[path = "verify_elfgotimports.rs"]
 mod verify_elfgotimports;
+
+#[path = "verify_machodataslots.rs"]
+mod verify_machodataslots;
 
 #[path = "verify_object_formats.rs"]
 mod verify_object_formats;
@@ -458,6 +473,9 @@ mod verify_x86listingswitch;
 #[path = "verify_symbolstream.rs"]
 mod verify_symbolstream;
 
+#[path = "verify_falseentry.rs"]
+mod verify_falseentry;
+
 #[path = "verify_tailcallentry.rs"]
 mod verify_tailcallentry;
 
@@ -533,6 +551,8 @@ mod verify_outlang_go;
 mod verify_godwarfsig;
 #[path = "verify_gopairreturns.rs"]
 mod verify_gopairreturns;
+#[path = "verify_gointerror.rs"]
+mod verify_gointerror;
 
 #[path = "verify_rustextensions.rs"]
 mod verify_rustextensions;
@@ -557,3 +577,12 @@ mod verify_bootstrap;
 
 #[path = "mips_weak_imports.rs"]
 mod mips_weak_imports;
+
+#[path = "indirect_dispatch_flow.rs"]
+mod indirect_dispatch_flow;
+
+#[path = "verify_immutable_got.rs"]
+mod verify_immutable_got;
+
+#[path = "export_unit_calls.rs"]
+mod export_unit_calls;

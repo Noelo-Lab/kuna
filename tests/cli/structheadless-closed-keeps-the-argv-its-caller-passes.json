@@ -35,7 +35,7 @@
     "stdout_matches": [
       "long obsolete_count\\(int a0,char \\*\\*a1\\)",
       "strtol\\(a1\\[1\\],NULL,10\\)",
-      "bool main\\(int a0,char \\*\\*a1\\)",
+      "\\bmain\\(int a0,char \\*\\*a1\\)",
       "unsigned int mode_of\\(struct_\\d+ \\*a0\\)"
     ],
     "stdout_absent": [
@@ -43,5 +43,5 @@
     ]
   },
   "notes": "CLOSED: `obsolete_count` reads only `argv[1]` and `argv[2]` of the `char **` main passes it and hands `getopt` (tail's parse_obsolete_option shape). The callers' type and getopt's declaration outrank a record read past its start; `mode_of`, which nothing outside types, is still one.",
-  "probe_id": "a-18f5f9db2387"
+  "probe_id": "a-47784f2c6567"
 }

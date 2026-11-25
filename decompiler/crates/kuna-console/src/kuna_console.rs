@@ -172,11 +172,17 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::in_force();
         return Some(Cow::Owned(choice.as_str().to_string()));
     }
+    if option == "kernelcache-boot" {
+        let _load = conf.load_scope();
+        let choice = kuna_decomp::kuna_kernelcacheboot::KernelcacheBoot::in_force();
+        return Some(Cow::Owned(choice.as_str().into_owned()));
+    }
     Some(Cow::Borrowed(match option {
         "bytearrayc" => on_off(conf.print().options.bytearray_c),
         "partialaccess" => on_off(conf.print().options.partial_access),
         "infloopstyle" => if conf.print().options.inf_loop_top { "while" } else { "do" },
         "loopcontinue" => on_off(conf.loop_continue),
+        "postinc" => on_off(conf.post_increment),
         "compareform" => {
             if conf.present_lessequal {
                 "original"
@@ -191,6 +197,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "callarrayextent" => on_off(conf.call_array_extent),
         "stackstruct" => on_off(conf.stack_struct),
         "globalarrayanchor" => on_off(conf.global_array_anchor),
+        "opaquepredicate" => on_off(conf.opaque_predicate),
+        "boolbranch" => if conf.bool_branch_keep { "keep" } else { "fold" },
         "memsetrecover" => on_off(conf.memset_recover),
         "rodatastring" => on_off(conf.rodata_string),
         "returnpair" => {
@@ -262,7 +270,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "stackviews" => on_off(conf.stack_views),
         "v850indirectbranch" => on_off(conf.v850_indirect_branch),
         "switchmodbound" => on_off(conf.switch_modulo_bound),
-        "constselectjump" => on_off(conf.const_select_jump),
+        "constselectjump" => conf.const_select_jump.as_str(),
+        "looptest" => conf.loop_test.as_str(),
         "switchsharedcase" => on_off(conf.switch_shared_case),
         "realtypes" => on_off(conf.realtypes),
         // (kuna `calloverlap`) Report the selected overlap policy.
@@ -288,6 +297,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
             (true, true) => "glibc",
         },
         "strings" => on_off(conf.analysis_strings),
+        "blobs" => on_off(conf.analysis_blobs),
         "widestrings" => on_off(conf.analysis_widestrings),
         "widestrings32" => on_off(conf.analysis_widestrings32),
         "entry_disc" => on_off(conf.analysis_entry_disc),
@@ -295,7 +305,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "unwindstarts" => on_off(conf.analysis_unwindstarts),
         "ppc32picimports" => conf.analysis_ppc32picimports.as_str(),
         "ifuncfpret" => on_off(conf.analysis_ifuncfpret),
-        "ppcapu" => on_off(conf.analysis_ppcapu),
+        "ppcapu" => conf.analysis_ppcapu.as_str(),
         // (kuna `goabi`) Two-valued but spelled auto|off, so it reports its token.
         "goabi" => {
             if conf.analysis_goabi {
@@ -336,7 +346,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         // (kuna `aif`) Four-valued, so it reports its own token.
         "aif" => conf.analysis_aif.as_str(),
         "aifpoolslide" => on_off(conf.analysis_aifpoolslide),
-        "armconstshift" => on_off(conf.arm_constant_shift),
+        "armconstshift" => conf.arm_constant_shift.as_str(),
+        "armshiftguard" => conf.arm_shift_guard.as_str(),
         // (PR-8) Mach-O arm64e spec selection: reflects the recorded requested
         // state (the live spec-selection gate is the load-time env var, but the
         // catalog `current` mirrors the `option macho-arm64e on|off` request).
@@ -820,9 +831,22 @@ impl IfaceCommandAction for IfcKunaAssert {
             Dispatch::Retype => Err(engine_unavailable(
                 "parse_type + Scope::retypeSymbol (IfaceDecompData::readSymbol) for kassert type-propagation",
             )),
-            Dispatch::Isolate => Err(engine_unavailable(
-                "Symbol::setIsolated (IfaceDecompData::readSymbol) for kassert merge-aggressiveness",
-            )),
+            Dispatch::Isolate => {
+                let Some(name) = tokens.first().cloned() else {
+                    return Err(IfaceError::parse("merge-aggressiveness assertion needs <name>"));
+                };
+                let dcp = dcp_mut(status)?;
+                let maxduplicates = kuna_decomp::kuna_dynamichashmax::MAX_DUPLICATES;
+                dcp.local_symbol_fd(&name)?;
+                let (Some(fd), arch) = (dcp.fd.as_mut(), dcp.conf.as_ref().map(|p| p.arch())) else {
+                    return Err(IfaceError::execution("no function selected"));
+                };
+                crate::kuna_hightarget::isolate_local(fd, &name, maxduplicates, arch)
+                    .map_err(IfaceError::execution)?;
+                status.out(&applied_line);
+                self.assert_log.borrow_mut().push(record);
+                Ok(())
+            }
             Dispatch::Rename => {
                 if tokens.len() < 2 {
                     return Err(IfaceError::parse(
@@ -1622,6 +1646,11 @@ pub fn register_kuna_commands(status: &mut IfaceStatus) {
     status.register_com(
         Box::new(crate::ifacedecomp::IfcOverrideBytes),
         &["override", "bytes"],
+    );
+    // (kuna) Nor this: where an indirect call goes is the reader's knowledge.
+    status.register_com(
+        Box::new(crate::ifacedecomp::IfcOverrideIndirect),
+        &["override", "indirect"],
     );
 }
 

@@ -76,6 +76,9 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
         if let Some(ty) = crate::kuna_roundingops::output_type(data, op) {
             return ty;
         }
+        if let Some(ty) = crate::kuna_repstring::output_type(data, op) {
+            return ty;
+        }
         let in0_off = o
             .get_in(0)
             .and_then(|v| data.vbank().get(v))
@@ -154,11 +157,22 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
         }
     }
 
+    // (kuna `loweredswitch`) A re-rolled switch reads its selector the way the
+    // equality and signed compares it replaced did: as a signed integer.
+    if opcode == OpCode::CPUI_BRANCHIND && slot == 0 && crate::kuna_loweredswitch::reads_signed_selector(data, op) {
+        if let Some(t) = arch.types().and_then(|tlst| tlst.get_base(in_size, type_metatype::TYPE_INT).ok()) {
+            return t;
+        }
+    }
+
     if opcode == OpCode::CPUI_CALLOTHER {
         if let Some(ty) = crate::kuna_octeoneffects::input_type(data, op, slot) {
             return ty;
         }
         if let Some(ty) = crate::kuna_roundingops::input_type(data, op, slot) {
+            return ty;
+        }
+        if let Some(ty) = crate::kuna_repstring::input_type(data, op, slot) {
             return ty;
         }
     }
@@ -171,6 +185,25 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
             == Some(crate::userop::BUILTIN_STRLEN as u64)
     {
         if let Some(tlst) = arch.types() {
+            let ws = data.get_arch().manage().get_default_data_space().map(|s| s.get_word_size()).unwrap_or(1);
+            if let Ok(ptr) = tlst.get_type_char(1).and_then(|c| tlst.get_type_pointer(in_size, c, ws)) {
+                return ptr;
+            }
+        }
+    }
+
+    // (kuna kernelbug) `__WARN(file,line)`: the file is a `char *`, the line an `int`.
+    if opcode == OpCode::CPUI_CALLOTHER
+        && slot > 0
+        && o.get_in(0).and_then(|v| data.vbank().get(v)).map(|v| v.get_offset())
+            == Some(crate::userop::BUILTIN_KERNEL_WARN as u64)
+    {
+        if let Some(tlst) = arch.types() {
+            if in_size == 4 {
+                if let Ok(t) = tlst.get_base(4, type_metatype::TYPE_INT) {
+                    return t;
+                }
+            }
             let ws = data.get_arch().manage().get_default_data_space().map(|s| s.get_word_size()).unwrap_or(1);
             if let Ok(ptr) = tlst.get_type_char(1).and_then(|c| tlst.get_type_pointer(in_size, c, ws)) {
                 return ptr;
@@ -489,6 +522,9 @@ fn build_localtypes(data: &mut Funcdata) {
         let ct = if from_seed { ct } else { crate::kuna_regnarrow::unsigned_vote(data, vn, &ct).unwrap_or(ct) };
         // (kuna `narrowargs callers`) A parameter its callers narrow takes their extension's type.
         let ct = if from_seed { ct } else { crate::kuna_callerargs::input_vote(data, vn, &ct).unwrap_or(ct) };
+        // (kuna `valuewitness`) The word before Swift type metadata, read at
+        // a table offset, is the value witness table. See `kuna_valuewitness`.
+        let ct = if from_seed { ct } else { crate::kuna_valuewitness::output_vote(data, vn).unwrap_or(ct) };
         // (kuna `ptrfromuse`) A function input whose only memory role is to be a
         // LOAD/STORE base has no pointer candidate in the fold above, because
         // `TypeOpIntAdd` votes `int<N>` for it and refuses to carry the pointer
@@ -1383,6 +1419,8 @@ fn propagate_int_add(
         Some(alttype)
     } else if inslot == -1 {
         None // Don't propagate pointer types output -> input
+    } else if crate::kuna_valuewitness::outside_header(data, op, inslot, &alttype) {
+        None
     } else {
         propagate_add_in2_out(data, alttype, op, inslot)
     }

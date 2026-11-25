@@ -3825,7 +3825,7 @@ impl Action for ActionBlockStructure {
         // block start address (trace only).
         let mut exitleaf_facts = crate::p8_structure::kuna_ifnoexit::ExitLeafFacts::default();
         let dbg_ifne = crate::p8_structure::kuna_ifnoexit::trace_enabled();
-        let guard_arm = data.get_arch().guard_arm;
+        let guard_arm = data.get_arch().guard_arm.applies(crate::kuna_unoptimized::is_unoptimized(data));
         let loop_cond_hoist = data.get_arch().loop_cond_hoist;
         let want_addr = dbg_ifne || guard_arm;
         let nbb = data.bblocks_get_size();
@@ -3989,7 +3989,8 @@ impl Action for ActionFinalStructure {
         // it enables is the BlockCopy label statement.
         let sroot = data.sblocks_root();
         if data.get_arch().loop_continue {
-            crate::p8_structure::kuna_loopcontinue::recover_continues(data.sblocks_mut(), sroot);
+            let points = crate::p8_structure::kuna_loopcontinue::continue_points(data, sroot);
+            crate::p8_structure::kuna_loopcontinue::recover_continues(data.sblocks_mut(), sroot, &points);
         }
         data.sblocks_mut().mark_unstructured(sroot);
         // graph.markLabelBumpUp(false): let loop blocks steal the label of their

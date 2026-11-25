@@ -1,0 +1,66 @@
+<decompilertest>
+<binaryimage arch="eBPF:LE:64:default">
+<!--
+    Kuna #1652: P1 loader, eBPF ELF objects (no option: a correctness fix).
+    The script loads a clang `-target bpf -O2 -c` object (source beside the
+    fixture) and lets the loader pick the language from EM_BPF (247); the
+    big-endian twin takes eBPF:BE:64:default the same way.
+
+    Asserts #1-#2 prove the R_BPF_64_64 map reference lands in the two imm
+    halves of the 16-byte lddw and the opcode survives: the function body is
+    recovered and the map symbol is the lookup's first argument. Assert #3
+    proves the `call 1` helper id takes the pspec default-symbol name.
+    Assert #4 proves the R_BPF_64_32 subprogram call resolves to the callee
+    in `.text` (`(S - P) / 8 - 1` into imm, not a 32-bit write over the
+    opcode). Assert #5 proves the big-endian object loads and relocates too.
+    Asserts #6-#7 load an object whose two static callees in `.text` are
+    both named by the `.text` section symbol: the call's own `imm` (`-1`,
+    then `2`) is the REL addend `(imm + 1) * 8` that selects the callee, so
+    `prog` calls `twice` and then `plus7`, not `twice` twice; the
+    big-endian twin keeps the source register in the low nibble of the
+    register byte, and its calls are relocated too.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">9500000000000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ebpf/bpf_map.o</com>
+  <com>read symbols</com>
+  <com>load function prog</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ebpf/bpf_subcall.o</com>
+  <com>read symbols</com>
+  <com>load function prog</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ebpf/bpf_map_be.o</com>
+  <com>read symbols</com>
+  <com>load function prog</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ebpf/bpf_static_call.o</com>
+  <com>read symbols</com>
+  <com>load function prog</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ebpf/bpf_static_call_be.o</com>
+  <com>read symbols</com>
+  <com>load function prog</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ebpf #1: the lddw opcode survives the map relocation" min="0" max="0">halt_baddata</stringmatch>
+<stringmatch name="ebpf #2: the map reference is the named map symbol" min="3" max="3">bpf_map_lookup_elem\(counters,&amp;</stringmatch>
+<stringmatch name="ebpf #3: the helper id names the pspec helper" min="3" max="3">v1 = .*bpf_map_lookup_elem\(counters,&amp;v2\);</stringmatch>
+<stringmatch name="ebpf #4: the subprogram call resolves to the .text callee" min="1" max="1">helper\(v1\);</stringmatch>
+<stringmatch name="ebpf #5: the map increment is recovered in every object" min="2" max="2">\*v1 = \*v1 \+ 1;</stringmatch>
+<stringmatch name="ebpf #6: a static callee named by the .text section symbol is the one its imm selects" min="2" max="2">return plus7\(a0(?: &amp; 0xffffffff)?\) \^ v1;</stringmatch>
+<stringmatch name="ebpf #7: the first static call reaches twice in both byte orders" min="2" max="2">v1 = twice\(</stringmatch>
+</decompilertest>

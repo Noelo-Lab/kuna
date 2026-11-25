@@ -611,6 +611,27 @@ fn circlerange_size_and_predicates() {
 }
 
 // ---------------------------------------------------------------------------
+// setNZMask stride width
+// ---------------------------------------------------------------------------
+
+#[test]
+fn circlerange_nzmask_stride_must_fit_the_step() {
+    let mut r = CircleRange::new_empty();
+    assert!(r.set_nz_mask(0x0000_0000_ffff_fff0, 8));
+    assert_eq!((r.get_min(), r.get_end(), r.get_step()), (0, 0x1_0000_0000, 16));
+
+    let mut widest = CircleRange::new_empty();
+    assert!(widest.set_nz_mask(0xffff_ffff_c000_0000, 8));
+    assert_eq!((widest.get_min(), widest.get_end(), widest.get_step()), (0, 0, 1 << 30));
+
+    for nz in [0xffff_ffff_8000_0000u64, 0xffff_fff8_0000_0000, 1 << 63] {
+        let mut wide = CircleRange::new_empty();
+        assert!(!wide.set_nz_mask(nz, 8), "{nz:#x}");
+        assert!(wide.is_empty(), "{nz:#x}");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Widener semantics (WidenerFull / WidenerNone)
 // ---------------------------------------------------------------------------
 

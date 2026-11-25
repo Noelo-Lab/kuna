@@ -1,0 +1,79 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Objective-C metadata of a dyld shared cache image (Noelo-Lab/kuna#1623).
+
+    Issue: in an image loaded from a cache the `objc` pass recovered nothing. A
+    cache's small method lists hold their selectors (`0x40000000`) and type
+    strings (`0x20000000`) as offsets from the cache's selector base, and carry
+    the uniqued and sorted flags in the two low bits of `entsizeAndFlags`; the
+    strings and the `__objc_selrefs` targets live in libobjc's `__OBJC_RO`
+    region outside the image; `class_ro_t.baseMethods` with its low bit set is
+    a relative list of lists.
+
+    Fix: `loader/kuna_dyldcache.rs` finds the selector base in the cache
+    header's ObjCOptimizationHeader, else in libobjc's `objc_opt_t`
+    (`__objc_opt_ro`, version 16); `analyzers/objc/kuna_objccache.rs` reads
+    addresses outside the image through the cache; `methods.rs` decodes the
+    flags; `classt.rs` walks the list of lists.
+
+    `dyld_cache_objc.py` builds two caches with one stripped `libgreeter.dylib`
+    (no symbols at all) and a `libobjc.A.dylib` owning the strings: the first
+    with the ObjCOptimizationHeader, the `_v16` one without it (its header
+    ends before `objcOptsOffset`), so the fallback is what finds the base.
+
+    Pass 1 (`objc off`): the IMP is `sub_180001800`. Pass 2 and 3 (`objc on`,
+    each cache): `int -[Greeter greet:](Greeter *self,objc_selector *_cmd,int arg1)`
+    from the type string `i24@0:8i16`. Pass 2 also shows `-[Greeter count]`,
+    the `objc_msgSend$count` stub typed from it, and `-[Greeter shout]`, a
+    preattached category method whose IMP is in libobjc, named as an import.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>option dyldimage /usr/lib/libgreeter.dylib</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dyld_cache_objc/dyld_shared_cache_arm64e</com>
+  <com>option objc off</com>
+  <com>read symbols</com>
+  <com>load addr 0x180001800</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option dyldimage /usr/lib/libgreeter.dylib</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dyld_cache_objc/dyld_shared_cache_arm64e</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load addr 0x180001800</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x180001810</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x180001820</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x180001830</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option dyldimage /usr/lib/libgreeter.dylib</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dyld_cache_objc_v16/dyld_shared_cache_arm64e</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load addr 0x180001800</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="DYLDCACHEOBJC #1: objc off, the stripped image's IMP has no name" min="1" max="1">sub_180001800\(</stringmatch>
+<stringmatch name="DYLDCACHEOBJC #2: direct selectors and relative types name and type the method (header selector base, then the objc_opt_t fallback)" min="2" max="2">int4 -\[Greeter greet:\]\(Greeter \*self,objc_selector \*_cmd,int4 arg1\)</stringmatch>
+<stringmatch name="DYLDCACHEOBJC #3: the body under the declared parameter name, both caches" min="2" max="2">arg1 \* 3 \+ 7</stringmatch>
+<stringmatch name="DYLDCACHEOBJC #3b: the body under the generic parameter name, objc off" min="1" max="1">a2 \* 3 \+ 7</stringmatch>
+<stringmatch name="DYLDCACHEOBJC #4: the second method of the list of lists' first list" min="1" max="1">int4 -\[Greeter count\]\(Greeter \*self,objc_selector \*_cmd\)</stringmatch>
+<stringmatch name="DYLDCACHEOBJC #5: the stub is named from its selector reference and typed from the method" min="1" max="1">return objc_msgSend\$count\(a0\);</stringmatch>
+<stringmatch name="DYLDCACHEOBJC #6: a preattached category method of another image is named as an import" min="1" max="1">-\[Greeter shout\]\(\);</stringmatch>
+</decompilertest>

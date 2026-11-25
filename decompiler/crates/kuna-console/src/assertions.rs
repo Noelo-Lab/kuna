@@ -21,10 +21,14 @@
 //!   return [<func>::]<storage> <decl>      map return           P4 prototype-source
 //!   name [<func>::]<symbol> <newname>      rename               P9 naming-policy
 //!   type [<func>::]<symbol> <C type>       retype               P5 type-propagation
+//!   format [<func>::]<addr> <fmt> [<val>]  force constant       P9 literal-format
+//!   isolate [<func>::]<symbol>             isolate              P6 merge-aggressiveness
 //!   typedef <C declaration>                parse line           P5
 //!   data <addr> <C typedeclaration>        map address          P5 const-pointer
 //!   comment [<func>::]<addr> <text>        comment instruction  P9
 //!   flow [<func>::]<addr> <flowkind>       override flow        P2 flow-classification
+//!   callee [<func>::]<addr> <name|addr>    override indirect    P2 flow-classification
+//!   callproto [<func>::]<callsite> <decl>  override prototype   P4 prototype-source
 //!   function <start>[-<end>][=<name>]      function bounds      P1  (= --define-function)
 //!   readonly <addr>+<size>                 readonly             P1 code-data-partition
 //!   volatile <addr>+<size>                 volatile             P1 code-data-partition
@@ -57,14 +61,19 @@
 //! * **Program-scoped** (`function`, `typedef`, `prototype`, `data`) is applied
 //!   by [`apply_program_scoped`] right after the analysis commit, so a declared
 //!   fact outranks whatever discovery decided.
-//! * **Function-scoped** (`param`, `return`, `comment`, `flow`) is turned into
+//! * **Function-scoped** (`param`, `return`, `comment`, `flow`, `callee`, `callproto`) is turned into
 //!   decompile SEEDS by [`function_seed`] — the facts the drive consumes at flow
 //!   time.  `flow` is the sharpest of them: it reclassifies the flow out of one
 //!   instruction (`branch`, `call`, `callreturn`, `return`), which is how a
 //!   caller corrects a function whose body the flow-follower walked out of — an
 //!   indirect `call *%rdx` that never returns, a tail call kuna read as a call,
-//!   a jump into a neighbour.
-//! * **Symbol-scoped** (`name`, `type`) can only be applied AFTER a decompile:
+//!   a jump into a neighbour.  `callee` states where one indirect call goes,
+//!   so the flow builds it as a direct call to that function
+//!   ([`crate::kuna_calleeoverride`]).  `callproto` states the arguments and
+//!   return of ONE call instruction ([`crate::kuna_callproto`]), which is what
+//!   a call through a pointer or a variadic callback needs: no callee symbol
+//!   carries its signature.  An address no call is at is rejected.
+//! * **Symbol-scoped** (`name`, `type`, `format`, `isolate`) can only be applied AFTER a decompile:
 //!   a local like `v2` does not exist until one has run (`rename v2 buf` before
 //!   the first decompile answers `No symbol named: v2`, which is precisely the
 //!   bug that makes today's `--kassert p9 naming-policy` inert).  So
@@ -119,10 +128,23 @@ pub enum Body {
     /// `flow [<func>::]<addr> branch|call|callreturn|return` — the flow out of
     /// this instruction is not what kuna decided it was.
     Flow { func: Option<String>, addr: u64, kind: String },
+    /// All taken destinations of the computed branch at a code address.
+    JumpTable { addr: u64, targets: Vec<u64> },
+    /// `callee [<func>::]<callsite> <name|address>` — the indirect call at this
+    /// instruction goes to this function.
+    Callee { func: Option<String>, addr: u64, callee: String },
+    /// `callproto [<func>::]<callsite> <C declaration>` — the prototype of the
+    /// one call made by the instruction at this address.
+    CallProto { func: Option<String>, addr: u64, decl: String },
     /// `name [<func>::]<symbol> <newname>` — rename a local.
     Name { func: Option<String>, symbol: String, newname: String },
     /// `type [<func>::]<symbol> <C type>` — retype a local.
     Type { func: Option<String>, symbol: String, decl: String },
+    /// `format [<func>::]<addr> hex|dec|oct|bin|char [<value>]` — the constant
+    /// the instruction at `addr` reads is printed in this form.
+    Format { func: Option<String>, addr: u64, format: String, value: Option<u64> },
+    /// `isolate [<func>::]<symbol>` — this local is not merged with others.
+    Isolate { func: Option<String>, symbol: String },
     /// `readonly <addr>+<size>` — the bytes in this range never change at run
     /// time, so a load from it is its initialiser.
     Readonly { addr: u64, size: int4 },
@@ -168,9 +190,14 @@ impl Body {
             Body::Param { .. } => ("param", "P4", "prototype-source"),
             Body::Return { .. } => ("return", "P4", "prototype-source"),
             Body::Comment { .. } => ("comment", "P9", "external-refinement"),
+            Body::JumpTable { .. } => ("jumptable", "P2", "switch-model"),
             Body::Flow { .. } => ("flow", "P2", "flow-classification"),
+            Body::Callee { .. } => ("callee", "P2", "flow-classification"),
+            Body::CallProto { .. } => ("callproto", "P4", "prototype-source"),
             Body::Name { .. } => ("name", "P9", "naming-policy"),
             Body::Type { .. } => ("type", "P5", "type-propagation"),
+            Body::Format { .. } => ("format", "P9", "literal-format"),
+            Body::Isolate { .. } => ("isolate", "P6", "merge-aggressiveness"),
             Body::Readonly { .. } => ("readonly", "P1", "code-data-partition"),
             Body::Volatile { .. } => ("volatile", "P1", "code-data-partition"),
             Body::Bytes { .. } => ("bytes", "P1", "code-data-partition"),
@@ -185,22 +212,30 @@ impl Body {
             | Body::Return { func, .. }
             | Body::Comment { func, .. }
             | Body::Flow { func, .. }
+            | Body::Callee { func, .. }
+            | Body::CallProto { func, .. }
             | Body::Name { func, .. }
-            | Body::Type { func, .. } => func.as_deref(),
+            | Body::Type { func, .. }
+            | Body::Format { func, .. }
+            | Body::Isolate { func, .. } => func.as_deref(),
             _ => None,
         }
     }
 
     /// Is this directive applied per-function (rather than once per program)?
-    fn is_function_scoped(&self) -> bool {
+    pub(crate) fn is_function_scoped(&self) -> bool {
         matches!(
             self,
             Body::Param { .. }
                 | Body::Return { .. }
                 | Body::Comment { .. }
                 | Body::Flow { .. }
+                | Body::Callee { .. }
+                | Body::CallProto { .. }
                 | Body::Name { .. }
                 | Body::Type { .. }
+                | Body::Format { .. }
+                | Body::Isolate { .. }
         )
     }
 
@@ -210,7 +245,7 @@ impl Body {
     /// a function this run does not decompile: they describe a signature, and a
     /// CALLER needs its callee's signature.  `comment`, `flow`, `name` and `type`
     /// describe the inside of one function body and have no cross-function
-    /// reading at all.
+    /// reading at all, and neither does `callee`.
     pub(crate) fn cross_function_prototype(&self) -> Option<String> {
         match self {
             Body::Param { func, .. } | Body::Return { func, .. } => func.clone(),
@@ -221,7 +256,7 @@ impl Body {
     /// Is this directive one that can only be applied to an already-decompiled
     /// function (because the symbol it names does not exist before)?
     fn is_symbol_scoped(&self) -> bool {
-        matches!(self, Body::Name { .. } | Body::Type { .. })
+        matches!(self, Body::Name { .. } | Body::Type { .. } | Body::Format { .. } | Body::Isolate { .. })
     }
 }
 
@@ -290,7 +325,7 @@ fn code_addr(prog: &ConsoleProgram, vma: u64) -> Result<Address, String> {
 }
 
 /// Scale a user address without treating its low bit as a function state bit.
-fn data_addr(prog: &ConsoleProgram, vma: u64) -> Result<Address, String> {
+pub(crate) fn data_addr(prog: &ConsoleProgram, vma: u64) -> Result<Address, String> {
     let vma = prog.input_address_offset(vma).map_err(|e| e.explain().to_string())?;
     let space = prog
         .arch()
@@ -374,7 +409,8 @@ fn overlay_bytes(prog: &mut ConsoleProgram, vma: u64, data: &[u8]) -> Result<(),
 }
 
 /// Apply the program-scoped directives (`function`, `typedef`, `prototype`,
-/// `data`) and record an [`Outcome`] for each.
+/// `data`, `jumptable`) and record an [`Outcome`] for each. Jump destinations
+/// are checked against declared functions, so `jumptable` directives go last.
 ///
 /// Called right after the analysis commit — a caller-declared fact outranks
 /// discovery — and before any function is selected.  The function- and
@@ -385,7 +421,9 @@ fn overlay_bytes(prog: &mut ConsoleProgram, vma: u64, data: &[u8]) -> Result<(),
 pub fn apply_program_scoped(prog: &mut ConsoleProgram) {
     let _load = prog.arch().load_scope();
     let directives = prog.assertions().to_vec();
-    for (i, directive) in directives.iter().enumerate() {
+    let jump = |d: &&Directive| matches!(d.body, Body::JumpTable { .. });
+    let others = directives.iter().enumerate().filter(|(_, d)| !jump(d));
+    for (i, directive) in others.chain(directives.iter().enumerate().filter(|(_, d)| jump(d))) {
         // A QUALIFIED `param`/`return` is a statement about the named function's
         // prototype and holds whether or not this run decompiles it, so it is
         // applied here rather than waiting for a selection that may never name
@@ -452,6 +490,7 @@ fn apply_one_program_scoped(prog: &mut ConsoleProgram, body: &Body) -> Result<()
                 .map_err(|e| e.explain().to_string())
         }
         Body::Prototype { func, decl } => apply_prototype(prog, func, decl),
+        Body::JumpTable { addr, targets } => crate::jump_targets::install(prog, *addr, targets),
         Body::Data { addr, decl } => apply_data(prog, *addr, decl),
         Body::Readonly { addr, size } => {
             paint_property(prog, *addr, *size, kuna_decomp::varnode::varnode_flags::readonly)
@@ -930,6 +969,22 @@ pub struct FunctionSeed {
     /// `override flow` facts, in the drive's `flow_overrides` shape: the flow
     /// type forced at each named instruction.
     pub flow_overrides: Vec<(Address, uint4)>,
+    /// `override prototype` facts, in the drive's `proto_overrides` shape: the
+    /// prototype forced onto the call at each named instruction.
+    pub proto_overrides: Vec<(Address, PrototypePieces)>,
+}
+
+/// Per-function traversal references the original report slots. Image facts,
+/// including large target lists, never enter this index.
+pub(crate) struct LocalDirectives {
+    pub all: Rc<[Directive]>,
+    pub slots: Rc<[usize]>,
+}
+
+impl LocalDirectives {
+    fn iter(&self) -> impl Iterator<Item = (usize, &Directive)> {
+        self.slots.iter().map(|&i| (i, &self.all[i]))
+    }
 }
 
 /// Build the [`FunctionSeed`] for the function `name` entered at `entry`, and
@@ -943,22 +998,13 @@ pub fn function_seed(
     entry: &Address,
     single: bool,
 ) -> FunctionSeed {
-    let directives = prog.assertions().to_vec();
+    let directives = prog.local_directives();
     let mut seed = FunctionSeed {
         pending_proto: prog.pending_prototype(name).cloned(),
         ..Default::default()
     };
-    for (i, directive) in directives.iter().enumerate() {
-        if directive.body.is_symbol_scoped() || !directive.body.is_function_scoped() {
-            continue;
-        }
-        // Already applied program-scoped, onto the prototype of the function it
-        // names; `pending_proto` above picks it back up when that function is the
-        // one being decompiled.
-        if directive.body.cross_function_prototype().is_some() {
-            continue;
-        }
-        if !binds_to(&directive.body, name, single) {
+    for (i, directive) in directives.iter() {
+        if directive.body.is_symbol_scoped() || !binds_to(&directive.body, name, single) {
             continue;
         }
         let outcome = match seed_one(prog, &directive.body, name, entry, &mut seed) {
@@ -967,7 +1013,51 @@ pub fn function_seed(
         };
         prog.set_assertion_outcome(i, outcome);
     }
+    if directives.iter().any(|(_, d)| matches!(d.body, Body::CallProto { .. })) {
+        let applied = |i| prog.assertion_applied(i);
+        for i in restated_sites(directives.iter(), call_proto_site, applied, |d| binds_to(&d.body, name, single)) {
+            prog.set_assertion_outcome(i, restated(&directives.all[i]));
+        }
+    }
     seed
+}
+
+/// The `callproto` directives a later one replaces: of those `binds` and
+/// `applied` accept, every one a later one names the same call site after.  A
+/// call keeps the newest prototype stated for it, as the console's `override
+/// prototype` does.
+pub fn restated_call_prototypes(
+    directives: &[Directive],
+    applied: impl Fn(usize) -> bool,
+    binds: impl Fn(&Directive) -> bool,
+) -> Vec<usize> {
+    restated_sites(directives.iter().enumerate(), call_proto_site, applied, binds)
+}
+
+fn call_proto_site(body: &Body) -> Option<u64> {
+    match body { Body::CallProto { addr, .. } => Some(*addr), _ => None }
+}
+
+fn restated_sites<'a>(
+    directives: impl Iterator<Item = (usize, &'a Directive)>,
+    site: fn(&Body) -> Option<u64>,
+    applied: impl Fn(usize) -> bool,
+    binds: impl Fn(&Directive) -> bool,
+) -> Vec<usize> {
+    let mut latest = std::collections::HashMap::new();
+    let mut replaced = Vec::new();
+    for (slot, d) in directives {
+        if let Some(addr) = site(&d.body).filter(|_| applied(slot) && binds(d)) {
+            replaced.extend(latest.insert(addr, slot));
+        }
+    }
+    replaced.sort_unstable();
+    replaced
+}
+
+/// The outcome of a `callproto` a later one for the same call replaced.
+pub fn restated(directive: &Directive) -> Outcome {
+    directive.rejected("a later callproto states this call again, and that one is applied")
 }
 
 /// Downgrade the outcome of every `flow` directive bound to `name` that the flow
@@ -989,8 +1079,8 @@ pub fn record_rejected_flow_overrides(
     if refused.is_empty() {
         return;
     }
-    let directives = prog.assertions().to_vec();
-    for (i, directive) in directives.iter().enumerate() {
+    let directives = prog.local_directives();
+    for (i, directive) in directives.iter() {
         let Body::Flow { addr, kind, .. } = &directive.body else { continue };
         if !binds_to(&directive.body, name, single) {
             continue;
@@ -1002,6 +1092,89 @@ pub fn record_rejected_flow_overrides(
         };
         let outcome = directive.refused(reason.clone());
         prog.set_assertion_outcome(i, outcome);
+    }
+}
+
+/// Downgrade the outcome of every applied `callee` directive bound to `name`
+/// that a later one for the same call site replaced ([`restated_callees`]), or
+/// whose call site the followed flow did not turn into a direct call, as
+/// [`record_rejected_flow_overrides`] does for `flow`.
+pub fn record_rejected_callee_overrides(
+    prog: &mut ConsoleProgram,
+    name: &str,
+    single: bool,
+    fd: &Funcdata,
+) {
+    if !prog.local_directives().iter().any(|(_, d)| matches!(d.body, Body::Callee { .. })) {
+        return;
+    }
+    let directives = prog.local_directives();
+    let binds = |d: &Directive| binds_to(&d.body, name, single);
+    let restated = restated_sites(directives.iter(), callee_site, |i| prog.assertion_applied(i), binds);
+    let refused = fd.kuna_rejected_callee_overrides();
+    for (i, directive) in directives.iter() {
+        let Body::Callee { addr, .. } = &directive.body else { continue };
+        if !prog.assertion_applied(i) || !binds(directive) {
+            continue;
+        }
+        let outcome = if restated.contains(&i) {
+            restated_callee(directive)
+        } else {
+            let Ok(at) = code_addr(prog, *addr) else { continue };
+            let Some((_, _, reason)) = refused.iter().find(|(site, _, _)| site == &at) else {
+                continue;
+            };
+            directive.refused(reason.clone())
+        };
+        prog.set_assertion_outcome(i, outcome);
+    }
+}
+
+/// The `callee` directives a later one replaces: of those `binds` and `applied`
+/// accept, every one a later one names the same call site after. The call keeps
+/// the destination stated last, as the console's `override indirect` does.
+pub fn restated_callees(
+    directives: &[Directive],
+    applied: impl Fn(usize) -> bool,
+    binds: impl Fn(&Directive) -> bool,
+) -> Vec<usize> {
+    restated_sites(directives.iter().enumerate(), callee_site, applied, binds)
+}
+
+fn callee_site(body: &Body) -> Option<u64> {
+    match body { Body::Callee { addr, .. } => Some(*addr), _ => None }
+}
+
+/// The outcome of a `callee` a later one for the same call site replaced.
+pub fn restated_callee(directive: &Directive) -> Outcome {
+    directive.rejected("a later callee states this call site again, and that one is applied")
+}
+
+/// Reject every `callproto` directive bound to `name` whose address no call of
+/// the decompiled function is at.  [`function_seed`] recorded `applied` when it
+/// seeded it; which instructions call is known only once flow has followed.
+pub fn record_unbound_call_prototypes(
+    prog: &mut ConsoleProgram,
+    name: &str,
+    single: bool,
+    fd: &Funcdata,
+) {
+    if !prog.local_directives().iter().any(|(_, d)| matches!(d.body, Body::CallProto { .. })) {
+        return;
+    }
+    let directives = prog.local_directives();
+    for (i, directive) in directives.iter() {
+        let Body::CallProto { addr, .. } = &directive.body else { continue };
+        if !binds_to(&directive.body, name, single)
+            || !prog.assertion_applied(i)
+        {
+            continue;
+        }
+        let Ok(at) = code_addr(prog, *addr) else { continue };
+        if !crate::kuna_callproto::has_call_at(fd, &at) {
+            let outcome = directive.rejected(crate::kuna_callproto::NO_CALL);
+            prog.set_assertion_outcome(i, outcome);
+        }
     }
 }
 
@@ -1064,6 +1237,7 @@ fn seed_one(
                 ));
             }
             let at = code_addr(prog, *addr)?;
+            crate::jump_targets::require_unstated(prog, &at)?;
             seed.flow_overrides.push((at.clone(), type_));
             // (kuna) The same chain extension the `override flow` console
             // command performs, for the in-process drive (`decompile-all`,
@@ -1083,6 +1257,17 @@ fn seed_one(
             }
             Ok(())
         }
+        Body::Callee { addr, callee, .. } => {
+            let at = code_addr(prog, *addr)?;
+            crate::kuna_calleeoverride::plant(prog, entry, &at, callee)
+        }
+        Body::CallProto { addr, decl, .. } => {
+            let at = code_addr(prog, *addr)?;
+            let pieces = crate::kuna_callproto::parse(prog, decl)?;
+            seed.proto_overrides.retain(|(site, _)| site != &at);
+            seed.proto_overrides.push((at, pieces));
+            Ok(())
+        }
         _ => Err("internal: not a function-scoped directive".into()),
     }
 }
@@ -1090,9 +1275,9 @@ fn seed_one(
 /// Are there symbol-scoped directives bound to `name`?  The second decompile
 /// pass exists only for these, so every run without one keeps its current cost.
 pub fn has_symbol_scoped(prog: &ConsoleProgram, name: &str, single: bool) -> bool {
-    prog.assertions()
+    prog.local_directives()
         .iter()
-        .any(|d| d.body.is_symbol_scoped() && binds_to(&d.body, name, single))
+        .any(|(_, d)| d.body.is_symbol_scoped() && binds_to(&d.body, name, single))
 }
 
 /// Apply the symbol-scoped directives (`name`, `type`) to the first pass's
@@ -1115,10 +1300,10 @@ pub fn apply_symbol_scoped(
     single: bool,
 ) -> Option<Vec<Expected>> {
     let _load = prog.arch().load_scope();
-    let directives = prog.assertions().to_vec();
+    let directives = prog.local_directives();
     let mut applied_any = false;
     let mut touched: Vec<(usize, kuna_decomp::database::SymbolId, Option<Rc<Datatype>>)> = Vec::new();
-    for (i, directive) in directives.iter().enumerate() {
+    for (i, directive) in directives.iter() {
         if !directive.body.is_symbol_scoped() || !binds_to(&directive.body, name, single) {
             continue;
         }
@@ -1150,6 +1335,15 @@ fn apply_one_symbol_scoped(
                 .map_err(|e| e.explain().to_string())?;
             let applied = crate::kuna_hightarget::apply_local(fd, symbol, &newname, Some(ct.clone()), maxduplicates, Some(prog.arch()))?;
             Ok((applied, Some(ct)))
+        }
+        Body::Format { addr, format, value, .. } => {
+            let at = code_addr(prog, *addr)?;
+            crate::kuna_constformat::apply(fd, prog.arch(), &at, format, *value, maxduplicates)?;
+            Ok((None, None))
+        }
+        Body::Isolate { symbol, .. } => {
+            crate::kuna_hightarget::isolate_local(fd, symbol, maxduplicates, Some(prog.arch()))?;
+            Ok((None, None))
         }
         _ => Err("internal: not a symbol-scoped directive".into()),
     }
@@ -1219,14 +1413,33 @@ pub enum Shown {
 /// type, did not reach the output and is reported refused rather than
 /// applied; one declared under a suffixed name is applied, and says so.
 pub fn verify_printed(prog: &mut ConsoleProgram, fd: &Funcdata, code: &str, expected: &[Expected]) {
-    let directives = prog.assertions().to_vec();
+    let directives = prog.local_directives();
     for (i, shown) in check_printed(prog.arch(), fd, code, expected) {
-        let Some(directive) = directives.get(i) else { continue };
+        let Some(directive) = directives.all.get(i) else { continue };
         let outcome = match shown {
             Shown::Refused(reason) => directive.refused(reason),
             Shown::AppliedAs(note) => Outcome { detail: Some(note), ..directive.applied() },
         };
         prog.set_assertion_outcome(i, outcome);
+    }
+}
+
+/// Refuse each `format` directive bound to `name` that was applied and whose
+/// constant the replayed decompile `fd` does not hold in that form: the
+/// replay finds the constant again by its dataflow hash, and one it cannot
+/// find prints as before.
+pub fn verify_formats(prog: &mut ConsoleProgram, fd: &Funcdata, name: &str, single: bool) {
+    let directives = prog.local_directives();
+    for (i, directive) in directives.iter() {
+        let Body::Format { addr, format, value, .. } = &directive.body else { continue };
+        if !binds_to(&directive.body, name, single) || !prog.assertion_applied(i) {
+            continue;
+        }
+        let Ok(at) = code_addr(prog, *addr) else { continue };
+        if !crate::kuna_constformat::holds(fd, &at, format, *value) {
+            let outcome = directive.refused(crate::kuna_constformat::NOT_REPLAYED);
+            prog.set_assertion_outcome(i, outcome);
+        }
     }
 }
 

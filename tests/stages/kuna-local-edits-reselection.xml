@@ -1,0 +1,52 @@
+<!-- Three independent functions use the same native-width local slot and
+     default name. Explicit local names and types follow that function through
+     console selection and output-language changes. -->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+  <bytechunk space="ram" offset="0x1000" readonly="true">53e8fa0200004889c3488d7811e8ee0200004801d85bc3</bytechunk>
+  <bytechunk space="ram" offset="0x1100" readonly="true">53e8fa0100004889c3488d7811e8ee0100004801d85bc3</bytechunk>
+  <bytechunk space="ram" offset="0x1200" readonly="true">53e8fa0000004889c3488d7833e8ee0000004801d85bc3</bytechunk>
+  <bytechunk space="ram" offset="0x1300" readonly="true">488d047fc3</bytechunk>
+  <symbol space="ram" offset="0x1000" name="typed_a"/>
+  <symbol space="ram" offset="0x1100" name="typed_b"/>
+  <symbol space="ram" offset="0x1200" name="untouched"/>
+  <symbol space="ram" offset="0x1300" name="triple"/>
+</binaryimage>
+<script>
+  <com>parse line typedef uint8 TypeA;</com>
+  <com>parse line typedef int8 TypeB;</com>
+  <com>option outlang rust</com>
+  <com>load function typed_a</com>
+  <com>decompile</com>
+  <com>retype v1 TypeB</com>
+  <com>rename v1 old_user_a</com>
+  <com>retype v1 TypeA</com>
+  <com>rename v1 user_a</com>
+  <com>decompile</com>
+  <com>option outlang c</com>
+  <com>print C</com>
+  <com>load function typed_b</com>
+  <com>decompile</com>
+  <com>retype v1 TypeB</com>
+  <com>rename v1 user_b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function untouched</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr r0x1000 reopened_a</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option outlang rust</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option outlang c</com>
+  <com>load function typed_b</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Console local type A remains bound to its function entry" min="2" max="2">TypeA user_a; // rax \| rbx</stringmatch>
+<stringmatch name="Console local type B remains bound to its function entry" min="2" max="2">TypeB user_b; // rax \| rbx</stringmatch>
+<stringmatch name="Console reselected Rust function keeps its user local name" min="1" max="1">let mut user_a: u64; // rax \| rbx</stringmatch>
+<stringmatch name="Console untouched function keeps its original local name" min="1" max="1">return triple\(v1 \+ 0x33\) \+ v1;</stringmatch>
+</decompilertest>

@@ -4,9 +4,15 @@ use std::collections::{BTreeSet, HashMap};
 use super::{elf_plt::PltSym, elfv1::Descriptors};
 
 pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
+    let mut out = Vec::new();
+    visit(file, |addr, name, _, _| out.push(PltSym { addr, name, slot: None }));
+    out
+}
+
+pub(super) fn visit(file: &object::File<'_>, mut found: impl FnMut(u64, Vec<u8>, Option<u64>, usize)) {
     let descriptors=Descriptors::read_for_imports(file);
-    if descriptors.0.is_empty() {return Vec::new();}
-    let Some(tocs): Option<BTreeSet<_>>=descriptors.0.iter().map(|d|d.toc).collect() else {return Vec::new();};
+    if descriptors.0.is_empty() {return;}
+    let Some(tocs): Option<BTreeSet<_>>=descriptors.0.iter().map(|d|d.toc).collect() else {return;};
     let names: HashMap<_,_>=file.dynamic_symbols().filter_map(|s|
         s.name_bytes().ok().filter(|n|!n.is_empty()).map(|n|(s.index().0,super::elf_plt::strip_version(n)))
     ).collect();
@@ -19,9 +25,8 @@ pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
             if let Some(name)=names.get(&index.0) {slots.insert(slot,name.clone());}
         }
     }
-    if slots.is_empty() {return Vec::new();}
+    if slots.is_empty() {return;}
     let lazy=LazyResolver::read(file);
-    let mut out=Vec::new();
     for section in file.sections() {
         if !matches!(section.flags(),SectionFlags::Elf {sh_flags} if sh_flags & 6 == 6) {continue;}
         let Ok(bytes)=section.data() else {continue;};
@@ -31,16 +36,18 @@ pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
             let first=if file.is_little_endian() {u32::from_le_bytes(first)} else {u32::from_be_bytes(first)};
             if first!=0xf8410028 {continue;}
             let words=words(file,&bytes[off..bytes.len().min(off+36)]);
-            let Some((delta,branch))=stub_displacement(&words) else {continue;};
+            let Some((delta,branch,len))=stub_shape(&words) else {continue;};
             let addr=section.address().wrapping_add(off as u64);
             if let Some(branch)=branch {
                 let Some(slot)=lazy.as_ref().and_then(|r|r.slot(file,addr.wrapping_add(branch as u64))) else {continue;};
                 if !tocs.iter().all(|toc|toc.wrapping_add(delta as u64)==slot) {continue;}
             }
-            if let Some(name)=unique_import(delta,&tocs,&slots) {out.push(PltSym {addr,name,slot:None});}
+            if let Some(name) = unique_import(delta, &tocs, &slots) {
+                let slot = tocs.first().filter(|_| tocs.len() == 1).map(|toc| toc.wrapping_add(delta as u64));
+                found(addr, name, slot, len);
+            }
         }
     }
-    out
 }
 
 fn unique_import(delta: i64, tocs: &BTreeSet<u64>, slots: &HashMap<u64,Vec<u8>>) -> Option<Vec<u8>> {
@@ -56,7 +63,12 @@ fn mtctr(reg: u32) -> u32 { 0x7c0903a6 | (reg<<21) }
 
 /// Return the TOC displacement and optional lazy-branch offset from the stub start.
 /// The environment load is optional; from r2 itself it must precede the TOC load.
-fn stub_displacement(w: &[u32]) -> Option<(i64,Option<i64>)> {
+#[cfg(test)]
+fn stub_displacement(w: &[u32]) -> Option<(i64, Option<i64>)> {
+    stub_shape(w).map(|(delta, branch, _)| (delta, branch))
+}
+
+fn stub_shape(w: &[u32]) -> Option<(i64,Option<i64>,usize)> {
     if w.first()!=Some(&0xf8410028) {return None;}
     let mut i=1;
     let mut base=2;
@@ -79,10 +91,10 @@ fn stub_displacement(w: &[u32]) -> Option<(i64,Option<i64>)> {
         if *w.get(i)?!=mtctr(target) {return None;}i+=1;
     }
     if base!=2 && ld(*w.get(i)?,11,base)==Some(low+16) {i+=1;}
-    if *w.get(i)?==0x4e800420 {return Some((high+low,None));}
+    if *w.get(i)?==0x4e800420 {return Some((high+low,None,(i+1)*4));}
     if *w.get(i)?!=0x28220000 {return None;}i+=1;
     if *w.get(i)? & !0x00600000 != 0x4c820420 {return None;}i+=1;
-    Some((high+low,Some(i as i64*4+branch_displacement(*w.get(i)?)?)))
+    Some((high+low,Some(i as i64*4+branch_displacement(*w.get(i)?)?),(i+1)*4))
 }
 
 fn branch_displacement(word: u32) -> Option<i64> {

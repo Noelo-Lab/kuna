@@ -1,6 +1,8 @@
 <decompilertest>
 <!-- Go DWARF signature import: compressed cross-CU types, result formals,
-     caller contracts and an incompatible location that retains inference. -->
+     caller contracts and an incompatible location that retains inference.
+     The status-only receive uses a compiler-owned result and a private
+     word destination proven by its channel's DWARF element type. -->
 <binaryimage arch="x86:LE:64:default:gcc">
 <bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
@@ -45,7 +47,27 @@
   <com>option godwarfsig on</com><com>read symbols</com><com>option outlang go</com>
   <com>load function main.identity</com><com>decompile</com><com>print C</com>
   <com>load function main.wrongRegister</com><com>decompile</com><com>print C</com>
+  <com>echo godwarfsig result outputs begin</com>
   <com>load function main.resultRange</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-channel-status/status-elf</com>
+  <com>option godwarfsig off</com><com>read symbols</com><com>option outlang c</com>
+  <com>load function main.recvStatus</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-channel-status/status-elf</com>
+  <com>option godwarfsig on</com><com>read symbols</com><com>option outlang go</com>
+  <com>load function main.recvStatus</com><com>decompile</com><com>print C</com>
+  <com>load function main.discardStatus</com><com>decompile</com><com>print C</com>
+  <com>load function main.otherSlot</com><com>decompile</com><com>print C</com>
+  <com>load function main.widerElement</com><com>decompile</com><com>print C</com>
+  <com>load function main.otherCallee</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-channel-status/status-elf</com>
+  <com>option godwarfsig on</com><com>read symbols</com><com>option outlang go</com>
+  <com>map prototype runtime.chanrecv2 bool receive(void *channel, int8 *scratch);</com>
+  <com>map prototype main.recvStatus bool recvStatus(void *overrideChannel);</com>
+  <com>load function main.recvStatus</com><com>decompile</com><com>print C</com>
+  <com>echo godwarfsig result outputs end</com>
 </script>
 <stringmatch name="off loses an untouched pointer result" min="1" max="1">func fromWord\(\) \{</stringmatch>
 <stringmatch name="off loses a narrowing result" min="1" max="1">func narrow\(\) \{</stringmatch>
@@ -60,7 +82,66 @@
 <stringmatch name="empty entry range off retains inference" min="2" max="2">func identity\(\) \{</stringmatch>
 <stringmatch name="empty entry range on recovers a proven RET identity" min="2" max="2">func identity\(p uint64\) \*int32</stringmatch>
 <stringmatch name="empty entry range wrong register stays uninferred" min="2" max="2">func wrongRegister\(\) \{</stringmatch>
-<stringmatch name="uncompressed invalid result stays uninferred" min="1" max="1">func resultRange\(\) \{</stringmatch>
+<!-- Match the original invalid result and every receive body inside the
+     markers. The owned result keeps the full channel and word destination.
+     The raw, discarded, different-slot, wider and different-callee cases
+     retain their calls. Explicit declarations keep their signed scratch. -->
+<stringmatch name="uncompressed invalid result stays uninferred" min="1" max="1">^\s*godwarfsig result outputs begin$
+^\s*$
+^// main\.resultRange$
+^func resultRange\(\) \{$
+^  return$
+^\}$
+^\s*$
+^void main\.recvStatus\(unsigned long a0\)$
+^\{$
+^  char v1 \[8\];(?: // [^()]*)?$
+^\s*$
+^  runtime\.chanrecv2\(a0,v1\);$
+^\}$
+^\s*$
+^// main\.recvStatus$
+^func recvStatus\(c unsafe\.Pointer\) bool \{$
+^  var v1 uint64(?: // [^()]*)?$
+^\s*$
+^  return runtime\.chanrecv2\(c,&amp;v1\)$
+^\}$
+^\s*$
+^// main\.discardStatus$
+^func discardStatus\(a0 uint64\) \{$
+^  var v1 \[8\]byte(?: // [^()]*)?$
+^\s*$
+^  runtime\.chanrecv2\(a0,v1\)$
+^\}$
+^\s*$
+^// main\.otherSlot$
+^func otherSlot\(a0 uint64\) \{$
+^  var v1 \[16\]byte(?: // [^()]*)?$
+^\s*$
+^  runtime\.chanrecv2\(a0,v1\)$
+^\}$
+^\s*$
+^// main\.widerElement$
+^func widerElement\(a0 uint64\) \{$
+^  var v1 \[8\]byte(?: // [^()]*)?$
+^\s*$
+^  runtime\.chanrecv2\(a0,v1\)$
+^\}$
+^\s*$
+^// main\.otherCallee$
+^func otherCallee\(a0 uint64\) \{$
+^  var v1 \[8\]byte(?: // [^()]*)?$
+^\s*$
+^  localReceive\(a0,v1\)$
+^\}$
+^\s*$
+^// main\.recvStatus$
+^func recvStatus\(overrideChannel unsafe\.Pointer\) bool \{$
+^  var v1 int64(?: // [^()]*)?$
+^\s*$
+^  return runtime\.chanrecv2\(overrideChannel,&amp;v1\)$
+^\}$
+^\s*godwarfsig result outputs end$</stringmatch>
 <stringmatch name="Go result formals never become generic inputs" min="0" max="0">_kuna_ident_7e7230</stringmatch>
 <stringmatch name="Go record type in its own package is unqualified" min="1" max="1">func scale\(p \*point, k int64\)</stringmatch>
 </decompilertest>

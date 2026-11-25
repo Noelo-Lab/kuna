@@ -239,6 +239,8 @@ pub(super) struct StepCtx<'a> {
     pub tables: Option<&'a super::kuna_thumbswitch::HalfwordTables<'a>>,
     /// `armframes`: the table reader for an A32 jump-table dispatch.
     pub a32_tables: Option<&'a super::kuna_a32switch::A32Tables<'a>>,
+    /// The table reader for an AArch64 compact jump-table dispatch.
+    pub a64_tables: Option<&'a super::kuna_a64switch::A64Tables<'a>>,
     /// `armframes`: the decodes certified by earlier frame-recovery rounds.
     pub memo: Option<&'a super::kuna_decodememo::DecodeMemo>,
 }
@@ -391,6 +393,16 @@ where
             refs.file(vma, target, RefKind::Code);
         }
     }
+    // The case bodies of an AArch64 compact table are this function's own
+    // successors. See [`super::kuna_a64switch`].
+    if let Some(tables) = ctx.a64_tables.filter(|_| {
+        c.flow.is_computed && c.flow.is_jump && !c.flow.is_call && c.flows.is_empty()
+    }) {
+        for target in tables.targets(ctx.translate, ctx.code_space, ctx.exec_ranges, vma).cases {
+            out.insn(target);
+            refs.file(vma, target, RefKind::Code);
+        }
+    }
     true
 }
 
@@ -462,6 +474,7 @@ pub(super) fn walk(
     resumed: Option<WalkState>,
     tables: Option<&super::kuna_thumbswitch::HalfwordTables<'_>>,
     a32_tables: Option<&super::kuna_a32switch::A32Tables<'_>>,
+    a64_tables: Option<&super::kuna_a64switch::A64Tables<'_>>,
     x86_tables: Option<&super::kuna_x86listingswitch::X86Tables<'_>>,
     memo: Option<&super::kuna_decodememo::DecodeMemo>,
 ) -> WalkState {
@@ -480,7 +493,7 @@ pub(super) fn walk(
     let policy = WalkPolicy::from_arch(arch, want_stack_callbacks);
     let ctx = StepCtx {
         translate, code_space, exec_ranges, local_entries, tail_transfers, policy, detail, tables,
-        a32_tables, memo,
+        a32_tables, a64_tables, memo,
     };
 
     let st = walk_plain(&ctx, arch, seeds, seed_funcs, painter, plan, frames, arm_walk, resumed);

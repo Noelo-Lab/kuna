@@ -1,4 +1,7 @@
 <binaryimage arch="MIPS:BE:32:default:default">
 <bytechunk space="ram" offset="0x100000" readonly="true">7c80000903e0000800000000</bytechunk>
 <symbol space="ram" offset="0x100000" name="cooperate"/>
+<!-- MIPS32 DSP absq_s.ph $v0,$a0; jr $ra; nop -->
+<bytechunk space="ram" offset="0x100020" readonly="true">7c04125203e0000800000000</bytechunk>
+<symbol space="ram" offset="0x100020" name="packed_abs"/>
 </binaryimage>

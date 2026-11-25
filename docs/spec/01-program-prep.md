@@ -174,7 +174,15 @@ bridged across the process by environment variables the CLI exports:
 `KUNA_MACHO_ARM64E` (`macho-arm64e`),
 `KUNA_MACHO_SLICE` (`--slice`), `KUNA_ARM_ISA` (`--isa`),
 `KUNA_DYLD_IMAGE` (`dyldimage`, `--image`), `KUNA_DYLDCROSSREFS` (`dyldcrossrefs`). For those,
-the option rows exist for discoverability while the live gate is the env var. The
+the option rows exist for discoverability while the live gate is the env var. A
+console `option` line writes its load-time value to the same variable, which is
+how `option ... ; clear architecture ; load file` loads with it inside one
+script. The datatest harness therefore restores every variable
+`LoadOptions::from_env` reads to its value at the start of the run before each
+test file (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_loadoptions.rs
+(EnvSnapshot)`, `decompiler/crates/kuna-harness/src/testfunction.rs (clear)`):
+without that, one file's choice (a `ppc32picimports abi` load, say) reached
+every later file's loads in the same process. The
 external-artifact paths `kuna_fid_db` and `kuna_pdb_path` are different: they only
 *locate* the artifact, and only as one tier among others (`pdb` also searches
 beside the image, §1.4) — the `fid`/`pdb` passes stay flag-gated at the deferred
@@ -203,6 +211,12 @@ no second copy of the read semantics to drift. Every site that writes the bytes
 overlay requested after publication fails closed.
 
 ## 1.2 Load image
+
+The Intel HEX reader (`decompiler/crates/kuna-analysis/src/loader/ihex.rs (read)`)
+validates record lengths, checksums, and EOF. A segment or linear extension
+replaces the base for later data addresses. Start records carry either CS:IP
+or a linear address. Data payload lengths do not set the address unit: an
+input profile decides where to map the unscaled addresses and what gaps mean.
 
 `decompiler/crates/kuna-analysis/src/loadimage_object.rs (ObjectLoadImage)` is the
 real-binary `LoadImage` backend — the substitution for upstream's GPL-licensed
@@ -239,10 +253,23 @@ about the read changes — the same segment walk, the same zero-fill past the la
 segment it crosses, the same unmapped-start `DataUnavailError` — and a request
 of 512 bytes or fewer still follows exactly the path it always did.
 
+The binary IEEE-695/TIOF reader
+(`decompiler/crates/kuna-analysis/src/loader/ieee695.rs (module)`) opens an
+indexed module without selecting a target. It bounds each nonzero W-part
+offset by the next part (an empty part may share the next part's offset, as
+binutils writes an empty trailer) and verifies the module-end record. Record
+cursors decode compact numeric fields and names (including the 0xDE/0xDF
+lengths of names of 128 bytes or more) and tokenize relocation expressions
+inside those bounds. Section placement, symbol binding, and relocation field encoding
+remain the responsibility of the input profile.
+
 The mapping unit is the ELF **`PT_LOAD` segment** (what the OS actually maps), not the BFD
 section list. Where upstream returns a BFD target string for the Java side to
 re-map, kuna resolves the SLEIGH language id directly off the object header
-(machine + endianness + class → e.g. `x86:LE:64:default:gcc`).
+(machine + endianness + class → e.g. `x86:LE:64:default:gcc`). An `EM_BPF` (247)
+object takes `eBPF:LE:64:default` or `eBPF:BE:64:default` by its byte order, the
+same two ids the vendored `eBPF.opinion` declares, so a `clang --target=bpf -c`
+program loads without `--target`.
 
 (kuna) ELF target selection also reads declared instruction and ABI requirements
 (`decompiler/crates/kuna-analysis/src/loader/kuna_mipstarget.rs`). MIPS ELF32 can
@@ -315,15 +342,33 @@ Octeon N32/N64 selection does not intercept ELF32 O32 images, including
 little-endian images carrying Octeon machine flags: they retain generic MIPS
 selection, and an explicit target still takes precedence.
 
+(kuna) A RISC-V ELF whose `Tag_RISCV_arch` attribute lists `zcmp` or `zcmt`
+selects the `RISCV:LE:32:Zcmp` or `RISCV:LE:64:Zcmp` language
+(`decompiler/crates/kuna-analysis/src/loader/kuna_riscvzc.rs`), whose processor
+spec sets the `Zcmp` context bit so the `c.fsdsp` encoding space decodes as the
+Zc stack and jump-table instructions (§2). The attribute is read from the
+`.riscv.attributes` section, or from the `PT_RISCV_ATTRIBUTES` segment when the
+image has no sections; extension names are compared with their versions
+stripped (`zcmp1p0` is `zcmp`). An image that also declares `zcd`, or `c`
+together with `d`, has no bundled language and requires an explicit target.
+Every other RISC-V image keeps the default selection, including one whose
+attribute blobs are malformed, truncated or conflicting, and `--target` always
+wins.
+
 (kuna) PowerPC32 ELF APU requirements are read by
-`decompiler/crates/kuna-analysis/src/loader/kuna_ppcaputarget.rs` when the
-default-off `ppcapu` load-time option is on. SPE and embedded floating-point APUs
-then select the e500 decoder. The option stays off until the e500 model recovers
-scalar call arguments held in its 64-bit registers. Shared requirements such as
-ISEL do not identify a processor and retain the generic decoder, including its
-AltiVec support. `EF_PPC_EMB` alone likewise does not select a processor. Unknown
-APU versions and malformed or unsupported requirements keep the generic decoder
-and print a `[kuna target]` note. Explicit `--target` takes precedence. A
+`decompiler/crates/kuna-analysis/src/loader/kuna_ppcaputarget.rs` unless the
+`ppcapu` load-time option is `off`. Under its default `isel`, an ISEL, SPE or
+embedded floating-point requirement, or the embedded ABI flag alone, selects the
+`isel` variant: the generic PowerPC32 registers, AltiVec and calling convention
+plus ISEL, so it decodes everything the generic model does. `ppcapu on` instead
+selects e500 for SPE and embedded floating-point requirements; it stays explicit
+because the e500 model does not yet recover every scalar call argument held in its
+64-bit registers. The e500 `isel` writes the low word and preserves the
+destination’s upper SPE word. PMR, RFMCI and cache locking alone retain the
+generic decoder.
+A nonempty note owner must be NUL-terminated before the loader can skip an
+unrelated note. Unknown APU versions and malformed or unsupported requirements keep the generic
+decoder and print a `[kuna target]` note. Explicit `--target` takes precedence. A
 selected language never falls back to a different ISA if its specification is
 missing. The explicit e500mc target uses the standard PowerPC32 FPR argument and
 return convention, while its 64-bit integer results keep the explicit `r3:r4`
@@ -364,10 +409,78 @@ byte-identical to before, and `elf_language_ids` enumerates the golang ids so
 the resolves-in-the-DB gate proves them vendored. Measured on a stripped
 go1.22 hello-world (1,544 functions): functions with recovered parameters
 544 → 992, functions reading a never-assigned register local 853 → 501, zero
-failures either way. Per-symbol `abi0` binding is deliberately absent: the
-go1.22 pclntab carries no `.abi0` names and the canonical entry inventory
-collapses the unstripped symtab aliases, so no `.abi0` spelling reaches the
-engine — alias-aware symbol plumbing has to come first.
+failures either way.
+
+On AMD64 ELF with `goabi auto`, the Go function-table pass
+(`decompiler/crates/kuna-analysis/src/analyzers/pclntab/kuna_goabi0.rs`)
+compares the original defined text symbols with the pclntab entries. A
+symbol `name.abi0` must match a pclntab entry at the same address named
+`name`, which keeps the binding independent of the name chosen for display.
+The pass checks the linker's function-data base against the matching
+`runtime.firstmoduledata` and bounds `FUNCDATA_ArgInfo`'s offset entry by its
+own function record. The complete incoming list must describe consecutive
+eight-byte scalar inputs from offset zero, covering the whole area declared
+by `_func.args`. Since the list excludes results, there is no room for a
+nonzero stack result. A missing list, gaps, narrower inputs, aggregate or
+truncation markers, generic dictionary arguments and an area with extra
+bytes keep inference.
+
+The function must have the ordinary FuncID and no flags other than the
+optional assembly flag. Its nonempty ELF text symbol must end within the
+pclntab function extent and cover at most 256 mapped bytes. After loader
+attachment, the commit checks those bytes with a context-isolated SLEIGH walk
+(`decompiler/crates/kuna-analysis/src/analyzers/pclntab/kuna_goabi0_leaf.rs`).
+The walk must reach a decoded near return at the symbol boundary without a branch,
+call, processor user operation or stack-pointer write before the return.
+This keeps private runtime tail transfers and thread-exit paths under the
+existing model. The model-fact commit binds a qualifying function and direct
+calls to a bounded copy of the stack-input model. Stripped images lack the
+alias proof. Call-bearing functions, independently proven result storage,
+other input shapes and source types require separate evidence.
+
+The AArch64 Go `abi-internal` model contributes zero net stack-pointer
+movement when a call returns
+(`specs/Ghidra/Processors/AARCH64/data/languages/AARCH64_golang.cspec`).
+`BL` places the link in a register, and the callee restores its own frame;
+there is no additional eight-byte pop. The model therefore states
+`extrapop="0"`. A nonzero value makes `ActionExtraPopSetup` insert an
+artificial stack-pointer addition after each call, disconnecting a saved
+argument and an earlier recursive result from their later loads. This
+correction changes only that model's return stack effect: its stackshift,
+stack-argument offsets, register banks and other Go models remain as stated.
+The AArch64 C model already has a zero extra pop.
+
+(kuna) **The default model follows the image's Go release**
+(`decompiler/crates/kuna-decomp/src/infra/architecture.rs
+(kuna_go_stack_default)`, run right after the cspec's models are registered).
+The register ABI reached amd64 in go1.17 and arm64 in go1.18
+(`decompiler/crates/kuna-decomp/src/p1_partition/kuna_goreg.rs
+(register_abi)`); 386 never got it, and its golang cspec already defaults to
+`abi0`. An older image passes every argument on the stack, so under
+`abi-internal` its calls lost all their arguments (`main.add3();` in a go1.16
+build). Such an image takes `abi0` as its default model. The AArch64 `abi0`
+model states `extrapop="0"` for the reason given above for `abi-internal`:
+`BL` pushes nothing, so with the eight-byte pop every call moved the caller's
+stack pointer and its later outgoing arguments read as stores to its own
+parameters. The release is the
+one on the load options, read by
+`decompiler/crates/kuna-analysis/src/loader/gobuildinfo.rs
+(go_toolchain_version)` from the build-info blob in either form: the inline
+strings of go1.18+, or the pair of pointers to Go string headers that go1.13
+to go1.17 wrote, resolved through the image. An image with no blob (before
+go1.13) is placed by the pclntab format of its named table section
+(`decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs
+(format_last_release)`): the go1.2 layout ends at go1.15 and the go1.16 layout
+at go1.17, so the first is a stack image on both CPUs and the second on arm64
+only. An image with no release keeps the cspec default. The cspec's `abi0`
+states no output, because a Go stack result sits after the arguments at an
+offset the model cannot give, so a callee's stack result is still not shown as
+a return value. On a stripped go1.16.15 build `main.main` went from
+`main.add3(); os.Exit();` to `main.add3(dat_4e7738,2,7); os.Exit(v1);`. The
+same test removes the goroutine register below: before the register ABI `g`
+lived in thread-local storage and R14/x28 were ordinary registers, so
+`goroutine_register` names none and a function that used the register as
+scratch no longer prints `g`.
 
 (kuna) **With the golang cspec active, the goroutine register becomes the
 named, typed global `g`** (always on;
@@ -470,7 +583,7 @@ parse, so an image whose table is usable is passed on byte for byte; the rewrite
 kept only if the rewritten copy actually parses, so corruption elsewhere still
 reports `object`'s own error rather than a misleading one about the section table.
 What was dropped, and what survived it, is reported on stderr. The CLI surfaces
-that parse the image themselves rather than through the loader (`strings`, `crypto`,
+that parse the image themselves rather than through the loader (`strings`, `crypto`, `blobs`,
 `xrefs`, `decompile-graph`, the call graph) read it through the same normalization
 (`elf_shdr (read_image)`), so a recovered image is recovered everywhere.
 
@@ -659,7 +772,16 @@ the second channel a name arrives through as well: an analysis pass's recovered
 name (a DWARF `DW_AT_name`, a Go `pclntab` entry, a PDB public symbol) is
 sanitized in `kuna-analysis`'s pass driver
 (`decompiler/crates/kuna-analysis/src/pass.rs (AnalysisOutput::sanitize_names)`)
-before the commit boundary of §1.4 sees it. Like the other gates consumed inside
+before the commit boundary of §1.4 sees it. That driver renames the facts that
+carry a name of their own — symbols, prototypes and their parameters, locals —
+but a struct or union tag, a member, an enumerator and a typedef live inside the
+datatype a fact merely points at, so the DWARF pass escapes the `safe` set where
+it first reads a `DW_AT_name`
+(`decompiler/crates/kuna-analysis/src/analyzers/dwarf/mod.rs (die_name)`), for
+every DIE below the unit; the unit's own name is a path and stays verbatim. Under
+`ident` those type-side names keep the `safe` spelling, because folding them
+further could merge two distinct types onto one interned name; under `off` they
+are verbatim like every other name. Like the other gates consumed inside
 `load file` it is carried by a process environment variable. Print-time
 sanitizing would be the wrong seam: §0.4 explains that the string in the symbol
 table is the key `kuna decompile <name>` and `load function` are passed, so a
@@ -832,7 +954,15 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   non-empty section out above `0x400000` (`RELOC_BASE`, matching CLE so addresses
   line up with angr's), apply the relocations, rebase defined symbols, and bind
   each undefined extern to a synthetic call target in an extern area above the
-  sections so calls render by name. COMMON symbols instead reserve their
+  sections so calls render by name. A section header's size is a claim the file
+  need not back, so the layout allocates zero-fill only for data — `SHT_NOBITS`
+  storage and a data extent past the end of the file — and at most 256 MiB of it
+  per object (`reloc_object.rs (ZERO_FILL_LIMIT)`); code is laid out at the bytes
+  the file holds, because absent bytes are not instructions. A section cut short
+  this way is laid out at its reduced size, one left with no bytes is dropped,
+  and each is named on the loader's diagnostic line. The analyzer tier's
+  rebased view (`kuna_relocrebase.rs (rebased_view)`) writes the same reduced
+  sizes into its section headers, so no pass scans the declared extent. COMMON symbols instead reserve their
   full size (ELF `st_size`, COFF symbol value), using the ELF alignment carried
   by `st_value` or a 16-byte synthetic alignment for COFF, in a separate synthetic
   area after the maximum undefined-symbol slot extent. Their addresses are
@@ -1006,7 +1136,26 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   The split forms truncate rather than range-check, and reject a REL-style
   implicit addend, which cannot be reassembled from one half. SPARC64 (V9)
   instruction relocations, and GOT/TLS forms that need linker-built tables,
-  remain unsupported.
+  remain unsupported. eBPF objects are REL-only and every program ships as one,
+  so its three instruction forms are encoded rather than written as plain words:
+  `R_BPF_64_64` names the 16-byte `lddw` (a map or global reference) and lands
+  `S + A` in the two 32-bit `imm` fields at +4 and +12, the addend read back from
+  those same halves, with the opcode, registers and offset untouched;
+  `R_BPF_64_32` is the `call` to a BPF subprogram (source register 1, the high
+  nibble of the register byte little-endian and the low nibble big-endian) and
+  writes `(S + A - P) / 8 - 1`, the displacement in instructions from the next
+  instruction, into the `imm` at +4; its addend is the field's own `imm` in
+  instructions past the symbol, `(imm + 1) * 8`, which is `0` for LLVM's `-1`
+  against a function symbol and the callee's offset when a static callee is
+  named by its section symbol; `R_BPF_64_ABS64`, `R_BPF_64_ABS32` and
+  `R_BPF_64_NODYLD32` are the data words of `.maps`, `.BTF` and `.BTF.ext`.
+  A `call` whose `imm` is a helper id (source register 0) carries no
+  relocation; it reaches the `syscall` space, where the pspec
+  `<default_symbols>` label at that id names the callee
+  (`bpf_map_lookup_elem`), as a Ghidra function created at a labelled address
+  does. Only a label outside the default code space names a call this way: a
+  code-space label such as ARM's or AArch64's `Reset` at address 0 does not, so
+  a call to an unresolved weak function at 0 keeps its `sub_0` name.
 
   An undefined symbol reached through any branch or call instruction field —
   not only a call-spelled one — is bound to a named extern slot. A tail call is
@@ -1205,10 +1354,55 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   a System collection or an Auxiliary one built without a System collection,
   told apart by whichever of levels 1 and 3 its chains name (neither can point
   into the other's level). With no plist, or chains naming both, the level is
-  unknown and no kernel-collection target is written; targets at other levels
-  are never written
-  (`decompiler/crates/kuna-analysis/src/loader/format/macho/chained.rs (resolve_kernel_cache_levels)`)
-  — and one entry is cut out as a thin Mach-O by copying
+  unknown and no kernel-collection target is written; a target at another
+  level is kept aside with its level and offset, and counted as damage of the
+  walk, because only the file of that collection holds its base
+  (`decompiler/crates/kuna-analysis/src/loader/format/macho/chained.rs (resolve_kernel_cache_levels)`).
+  Those targets are what a macOS System or Auxiliary collection
+  (`SystemKernelExtensions.kc`, `AuxiliaryKernelExtensions.kc`) uses for every
+  pointer into the kernel: a kext's call slots, the vtables and metaclass
+  pointers its classes inherit. `kernelcache-boot` (kuna, default `auto`,
+  env-bridged through `KUNA_KERNELCACHE_BOOT`) resolves them from the other
+  file. The plist names each linked collection by UUID, `_BootKCID` for level 0
+  and `_PageableKCID` for level 1, as a 16-byte base64 `<data>` value. `auto`
+  takes the first 4096 entries the directory of the input lists, in name
+  order, keeps the regular files other than the input whose first 16 bytes are an
+  `MH_FILESET` header (at most 16), and reads each whole until every wanted
+  UUID is found; a path value names one regular file, which may be an IMG4 or
+  IM4P container, or a directory searched the same way; `off` reads no other
+  file. A candidate is the linked collection only if
+  its `LC_UUID` or its own plist's `_PrelinkKCID` equals the wanted UUID, so a
+  boot collection from another build is never used: its offsets would land on
+  other functions. For a match, each slot gets the linked file's base (its
+  lowest file-backed segment address, the rule the own level uses) plus the
+  offset, pointer-authentication bits dropped. Then each such address that a
+  section symbol of the linked file defines inside an instruction-bearing
+  section is named: the kernel entry's symbol tables are read before the
+  kexts', each distinct entry header once, under the same work budget as the
+  bind below
+  (`decompiler/crates/kuna-analysis/src/loader/kuna_kernelcache/linked.rs (resolve)`).
+  The names reach the loaded entry as symbols of its own: its symbol table is
+  copied to the end of the file with one `N_ABS | N_EXT` symbol per named
+  address after it, the names follow, and the entry's `LC_SYMTAB` is pointed at
+  the copy, its string table keeping its offset and growing to reach the new
+  names
+  (`decompiler/crates/kuna-analysis/src/loader/kuna_kernelcache/fileset.rs (append_bound_symbols)`).
+  That is the form the collection bind below leaves an import in. The builder
+  of a collection turns each bind of a kext's symbol-pointer sections (`__got`,
+  `__auth_got`) and of `__auth_ptr` into a rebase, so after the peel the value
+  of such a slot is the only record of what it is bound to: the import walk
+  makes each 8-byte slot of those sections that holds a bound import's address,
+  and that the indirect-symbol table did not name, an import slot of that
+  function
+  (`decompiler/crates/kuna-analysis/src/loader/macho_stubs.rs (push_kext_bound_slots)`),
+  and a call through it prints the kernel function's name. A data target (a
+  vtable, a metaclass object) is rebased and not named. The load note states,
+  per level, how many pointers were rebased from which file and how many
+  functions were named, or how many stay unresolved and why (the option is off,
+  the plist carries no UUID for the level, no file with that UUID was found).
+  An unresolved slot keeps its packed word. A collection with no target at
+  another level reads no other file, so every other input is unaffected.
+  Then one entry is cut out as a thin Mach-O by copying
   its header and load commands to file offset 0. Nothing else moves: every
   entry's file offsets are already absolute in the collection, so its
   segments, symbol table and indirect-symbol table read correctly in place. The
@@ -1330,6 +1524,62 @@ On the iOS 16.4.1 arm64e cache (44 sub-caches) and the iOS 14.8 arm64 cache
 rebuilt `__text` of an image matches an independent extraction of the same
 build byte for byte, and its data differs only where that extraction left
 chained pointers undecoded.
+
+A `dyldimage` value may join several names with `+`
+(`Foundation+CoreFoundation`), and the loader then works on all of them as one
+program, so a call from one image into another can be followed without a
+second run. `kuna_dyldcache.rs (DyldCache::select_all)` resolves each name the
+way a single one is resolved; since `+` also occurs inside install names
+(`libc++.1.dylib`, `libc++abi.dylib`), `kuna_dyldcache.rs (select_images)`
+takes from each piece the longest run of `+`-joined pieces that names an
+image, a run ending only at the end of the value or before a non-empty piece,
+so `libc++.1.dylib` stays one image and `libc++` is not read as `libc`. Then
+`kuna_dyldcache/merge.rs (DyldCache::extract_merged)` rebuilds each image on
+its own, as above, and joins the results into one thin Mach-O (an entry named
+twice, or two entries sharing a header, count once, and one image is rebuilt
+exactly as before). The joined file opens with a header page of its own,
+because the segment commands of several images need not fit in the padding
+before the first section of one (the rebuilt Foundation of iOS 16.4.1 has
+2,808 bytes spare and CoreFoundation's segment commands take 4,904). Every non-`__LINKEDIT` segment follows at its
+cache address, images in address order, and one `__LINKEDIT` closes the file.
+It holds one symbol table, ordered as `LC_DYSYMTAB` requires (locals, external
+definitions, undefined symbols), in which each symbol's section ordinal is
+moved past the sections of the images before it. A Mach-O symbol names its
+section in one byte, so the images may hold at most 255 sections together and
+a larger selection is refused with that count. The indirect-symbol tables are
+concatenated, their entries renumbered to the merged symbol table, and the
+`reserved1` of every stub, symbol-pointer and thread-local-pointer section is
+moved to its image's part. The function starts of all images are decoded,
+sorted and written as one table counted from the lowest `__TEXT`, and
+`macho_entry.rs (walk)` counts from the first `__TEXT` command for that reason.
+The `kuna.dyld.xrefs` notes are joined, without the call targets that now lie
+inside a loaded image (the image's own symbol names them). The identity
+commands (`LC_ID_DYLIB`, `LC_UUID`, the dylib list) are those of the image
+named first. Export tries and data-in-code are not carried: every export of a
+cache image is also an external definition in its symbol table. A joined
+Mach-O holds one `__objc_classlist`, `__cfstring`, `__swift5_types` (and so
+on) per image, so the ObjC, CFString and Swift passes read every section of a
+name (`objc/sections.rs (sections_named)`), not the first. On the iOS 16.4.1
+cache, `Foundation+CoreFoundation` lists exactly the 50,742 and 11,166
+functions the two images list alone. In a sample of 24 functions (12 from
+each image) the decompiled text matched the single-image text except in two
+ways: a reference into the other image now resolves to its symbol, and a
+local may be renamed where its name collides with a symbol of the other image
+(`ptr` became `ptr_2`). A call through a stub island still renders as a named
+import of the calling image.
+
+The CLI widens the selection on demand
+(`decompiler/crates/kuna-cli/src/followimages.rs (apply)`). Before `decompile`,
+`disassemble` or `xrefs` loads a cache, each `0x` address of the request that
+the selected images do not hold is looked up in the segment ranges of every
+image (`kuna_dyldcache.rs (follow_images)`), and the image that holds it is
+appended to the selection, up to `--follow-images N` images (default 2; 0
+turns the lookup off). A stub-island address belongs to no image; for
+`decompile` and `disassemble` the stub is followed (up to four hops, the same
+walk that names cross-image calls) and the request is rewritten to the
+function it jumps to. `xrefs` leaves such an address alone, since the island is
+what the call sites reference. Each step prints a `[kuna]` note on stderr,
+and past the limit the note names the image to add.
 
 An explicit target changes only language selection: the parsed container still
 owns section mapping, image base, symbols, and imports. Container header class is
@@ -1882,6 +2132,13 @@ their reads, a video-mode probe keeps its read of the EGA switches at 0x487,
 and the hard-disk parameter vectors at 0x104 and 0x118 are read where the code
 reads them.
 
+The Motorola S-record reader
+(`decompiler/crates/kuna-analysis/src/loader/srecord.rs (read)`) validates
+lengths, checksums, the optional data-record count, and the terminator. It
+returns the original address and encoded width for each data or start record.
+S-records have assigned addresses but no relocation entries. The reader does
+not assume a memory bank, a byte-addressed target, or a rule for filling gaps.
+
 ## 1.3 Loader markup
 
 Import naming exists because a CALL into a linkage stub carries no symbol: without
@@ -1907,6 +2164,32 @@ funcsym stream:
   is recovered as a `tailcalljump` to a discovered function instead of flowing into
   the stub and rendering `(*dat_...)(...)`; the FP-return-type recovery it unblocks
   is a Ghidra-divergent follow-up (`docs/features/ifuncfpret/proposal.md`).
+  PowerPC64 ELFv2 has no `.plt` code: `.plt` is a NOBITS table of slots and the
+  linker writes each call stub into `.text`, where
+  `decompiler/crates/kuna-analysis/src/loader/elf_plt.rs (decode_ppc_text)` finds
+  them with `decompiler/crates/kuna-analysis/src/loader/kuna_ppc64_stubs.rs (stub_at)`.
+  A stub loads its import's slot into r12 and ends `mtctr r12; bctr`, after an
+  optional `std r2,24(r1)` TOC save (`--plt-localentry` omits it). The slot is
+  TOC-relative, `[addis r12,r2,ha;] ld r12,lo(r2|r12)` with the TOC at
+  `.got + 0x8000`; pc-relative for Power10 callers, `mflr r12; bcl 20,31,.+4;
+  mflr r11; mtlr r12; [addis r12,r11,ha;] ld r12,lo(r11|r12)` from the address
+  after the `bcl`; or a Power10 `pld r12,off` (GNU ld `--power10-stubs`, lld).
+  When both TOC and pc-relative code call an import, GNU ld writes the TOC
+  save followed by a pc-relative stub, a `pld` one after a `nop` that keeps the
+  `pld` 8-byte aligned, and pc-relative callers enter it one word in; the stub
+  is named at both entries.
+  GNU ld writes the TOC form without `addis` whenever the slot is within 32 KiB
+  of the TOC, which is every stub of most libraries; lld writes the `addis` form.
+  An image without a `.got` has only pc-relative stubs. A stub is named only
+  when its slot carries an `R_PPC64_JMP_SLOT` relocation, since a GOT entry
+  holding a function's address loads with the same instructions, and never at
+  or inside a defined function of either symbol table (lld's local `__plt_*`
+  stub symbols aside): GCC writes the `pld` sequence itself for a Power10
+  `-fno-plt` sibling call, and naming that function after its callee would
+  replace its own name. Every stub is named, so an import that several stub
+  groups call carries its name at each. The TOC forms assume one TOC; a later
+  TOC group of a multi-TOC image computes its slots from the first and
+  normally names nothing. ELFv1 function descriptors resolve separately.
   Two ABIs need special handling: PowerPC (ELFv2 `.plt` is a NOBITS data table, not
   decodable code; PPC32 uses its own secure-PLT stub shape), and **MIPS**, which
   has no PLT and no jump-slot relocations at all — its resolver walks the
@@ -2069,8 +2352,11 @@ funcsym stream:
   are unaffected. In the console, set the option before `load file`; CLI
   options are bridged before either loader runs. The `abi` mode is opt-in because
   the proof walks every function:
-  about 0.3-0.4 s for libstdc++ or libc, which makes listing a PPC32 PIC
-  image's functions 1.1-1.8x slower and a single-function decompile up to 3x.
+  about 0.15-0.3 s for libstdc++ or libc, which makes listing a PPC32 PIC
+  image's functions about 1.05-1.35x slower and a single-function decompile
+  of a large library up to 2.9x. A meet updates the stored state in place and
+  reports whether it changed, and a stub is found from any byte it covers by
+  one hash lookup.
   The default path and other formats pay nothing, and the proof runs once per
   image content. Resolved PPC32 import names take
   precedence over local stub labels, which remain aliases. Existing library
@@ -2331,6 +2617,40 @@ funcsym stream:
   stop that fold. The same holds for a local GOT entry (`RELATIVE` to an in-image
   object) inside RELRO, which the fold above already renders as the object. A
   local entry outside RELRO stays a dereference for the reason given above.
+- **Mach-O data-import slots** (kuna, `machodataslots`, committed under
+  `importdata`, default on;
+  `decompiler/crates/kuna-analysis/src/loader/kuna_machodataslots.rs`): the
+  Mach-O counterpart. The indirect-symbol walk (`macho_stubs.rs`) names every
+  `__got` / `__la_symbol_ptr` entry after the import it holds and hands each to
+  the function-symbol stream, so a call through the slot resolves and the slot
+  is a canonical inventory entry (chapter [00](00-overview.md)). A symbol-pointer
+  slot of a data object is a pointer word too, but never a callable one, and it
+  was listed as a size-0 function all the same: 7,865 of a 72 MB Swift app's
+  270,680 entries were `__got` words. The walk keeps out of the import stream
+  every slot whose import's *mangling* says it is data (`is_data_import`): an
+  Objective-C class, metaclass, ivar-offset, protocol or exception-type object
+  by its `_OBJC_*_$_` prefix; a Swift symbol by the kind at the top of its
+  demangling tree (`kuna_swift::is_data_symbol`: type metadata, a nominal type,
+  protocol, conformance, opaque-type, method, property or enum-case descriptor,
+  a witness table, a cache, a field offset, an async or coro function-pointer
+  record, a variable's storage; an accessor, thunk, constructor or metadata
+  accessor is code); an Itanium C++ symbol whose encoding carries no parameter
+  list (a static data member, a vtable, typeinfo, guard variable). A plain C
+  import carries no such mark and stays a callable slot, as before. The slot is
+  still an import slot (`import_slots`, so `peimportcall` paints it `externref`),
+  and the pass names it for its import exactly as `elfgotimports` names a
+  `GLOB_DAT` slot — a symbol-table `FunctionSymbol`, demangled and sanitized as
+  the function stream spells it, never an inventory entry — so `PrintC::op_load`
+  renders the read as the import: `return OBJC_CLASS_$_NSObject;`,
+  `return Swift.String.type_metadata;`. The app above lists 2,541 fewer entries;
+  no other entry moves. The Swift metadata reader (`analyzers/swift`) still
+  resolves a relative pointer through such a slot to the import it holds, so a
+  witness of an imported protocol keeps its name on an image whose binds are
+  classic `LC_DYLD_INFO` opcodes rather than chained fixups. The slot's name,
+  like an ELF GOT data slot's, is a data alias (`lookup_data_alias`), so
+  `kuna xrefs --to` and `kuna read` select the slot by the import's name. The
+  walk runs on every read of the import stream, so each demangled
+  classification is memoized per thread.
 - **In-code literal pools** (kuna, `litpoolconst`, always on, DIV-136,
   `decompiler/crates/kuna-decomp/src/p1_partition/kuna_litpoolconst.rs`): the
   third user of the same "constant by construction, not by policy" exception, and
@@ -2475,6 +2795,27 @@ funcsym stream:
   is stripped. The image's own exports (its external `nlist` entries and its
   export trie) join the stream only when they lie in a code section (§1.2,
   `data_exports`).
+  (kuna `stubbinds`, default on) A stripped image can keep a stub whose
+  indirect-symbol entry no longer indexes anything: a chained-fixups link
+  records each import again as the bind on the slot its stub loads, so `strip`
+  may drop the undefined `nlist` and write `INDIRECT_SYMBOL_LOCAL | ABS` over
+  the entry, which is how the SwiftPM-built frameworks of an App Store app ship
+  most of their Swift stdlib and runtime calls. The walk above leaves such a
+  stub `sub_<addr>`.
+  `decompiler/crates/kuna-analysis/src/loader/kuna_stubbinds.rs (StubBindsPass)`
+  decodes each stub of an `S_SYMBOL_STUBS` section the walk did not name to the
+  slot it jumps through (`adrp; ldr; br` on arm64, the `adrp; add; ldr; braa` of
+  an arm64e `__auth_stubs` entry, `jmp [rip+disp32]` on x86-64), reads the
+  slot's addend-free chained bind (`chained.rs`) and names the stub after the
+  import, one leading `_` stripped and the name demangled as the walk's names
+  are, so `sub_fc80(0x28)` renders `Swift._StringGuts.grow(_:)(0x28)`. A stub
+  that does not decode, a slot with no bind, and a bind with an addend are left
+  alone, and the slot itself is not this pass's to name. The name is a pass
+  function symbol, not a format-resolver import, so the built-in libc
+  prototypes (which match the resolver's imports) are not seeded on it. The
+  chains are walked only when the indirect-symbol walk left some stub unnamed.
+  Mach-O only, inert without chained fixups or with a complete indirect-symbol
+  table, so every datatest is byte-identical.
 - **dyld shared cache cross-image references** (kuna, `dyldcrossrefs`,
   default on, env-bridged): an image rebuilt from a dyld shared cache calls into
   other images past its own stubs. The cache builder sends a `bl` to a stub
@@ -2504,6 +2845,33 @@ funcsym stream:
   calls `os_unfair_lock_lock_with_options` through an island on iOS 16 and
   through `HomeKit`'s rewritten stub on iOS 14, and both render the name.
 
+- **Jump thunks** (kuna `thunknames`, default on,
+  `decompiler/crates/kuna-console/src/engine/kuna_thunknames.rs`): a function
+  whose first instruction is a direct unconditional branch is a thunk (a
+  linker branch island, an identical-code-folding forwarder, an outlined tail
+  call; one `b <target>` on arm64). No loader names it, so it stays
+  `sub_<addr>` and every call through it is anonymous. While committing the
+  entries, the engine decodes the first instruction of every discovered entry
+  and keeps each direct unconditional branch to another address whose p-code
+  is that one BRANCH. A delay slot is part of its branch, so a MIPS `j f`
+  whose slot holds `addiu $a0,$a0,16` (a `this` adjustor) is not a thunk,
+  while `j f; nop` is. After every
+  other name source, a thunk still named by a placeholder is renamed
+  `j_<target>` when its target's function has a name that is not a
+  placeholder. A thunk to a thunk is named in the next round (`j_j_<name>`),
+  for at most four rounds; a name already in use takes the first free `_<n>`
+  suffix, in thunk address order within a round. After every prototype
+  stream has run, each renamed thunk also takes what its chain's target
+  carries for a call to it: the parked prototype and the bound prototype model (each
+  only where the thunk has none of its own), and the target's Swift `self`
+  classification, so a call through the thunk is typed as a call to the
+  target. A thunk with a name of its own (`cmp3: jmp memcmp`) keeps its
+  own prototype recovery, since its source signature need not be the
+  target's. Under `lazyfuncs` only the
+  thunks whose chain ends at an entry some fact names are made functions
+  eagerly. Indirect stubs (`adrp; ldr; br`, arm64e `braa`) are named by the
+  stub passes above, not here.
+
 The import currency deliberately includes both executable linkage stubs and
 pointer slots in data sections: the latter must be function symbols so indirect
 calls resolve to a name and library prototype. They are not function bodies.
@@ -2512,7 +2880,9 @@ decompilation selects only entries contained by a loader `CODE` section
 (`decompiler/crates/kuna-console/src/engine.rs
 (ConsoleProgram::function_entries_executable)`). Explicit decompiling selection
 uses the same body distinction: a lone IAT slot is refused with its import name
-and address, while a name shared by a stub and slot selects the sole body-bearing
+and address (among several selectors of one filtered run it is reported and
+skipped, and the run fails only when the skips leave nothing to decompile;
+`decompiler/crates/kuna-cli/src/decompile_all.rs (resolve_targets)`), while a name shared by a stub and slot selects the sole body-bearing
 stub. Generic lookup still resolves the slot for call binding and inventory
 consumers. Loaders without section metadata keep the complete inventory.
 
@@ -2963,6 +3333,27 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   bytes, valid UTF-8 at least 90% printable-or-whitespace, and the direct
   (relocation-less) arm additionally keeps the NUL scan's minimum of four.
   The engine half of the option is chapter [05](05-types.md)'s `RuleFatStr`.
+- **Rust panic `Location` records** (`panicloc`, kuna, default on,
+  rustc-detected images only,
+  `decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_panicloc.rs
+  (PanicLocationPass)`): every Rust panic site passes
+  `&'static core::panic::Location { file: &str, line: u32, col: u32 }`, so a
+  bounds check read `panic_bounds_check(a2,a1,0x51150)`. The pass scans
+  read-only data (and `.data.rel.ro`) at pointer alignment for the record's
+  shape: the `file` pointer reaches read-only text of `1..=0x1000` bytes that
+  ends in `.rs` (rustc 1.89 counts the trailing NUL in the length; it is
+  dropped) and passes the `&str` record text test, `1 <= line <= 0xffffff`
+  and `1 <= col <= 0xfff`. Columns are 1-based, so a zero column rejects the
+  look-alikes whose third word is the high half of a pointer or length: a
+  `&str` table on a non-PIE, a `(&str, usize)` pair, the `log` crate's
+  `(target, module, file, line)` record. On a PIE the pointer word is an
+  `R_*_RELATIVE` slot, so its value is the relocation addend. Each record
+  becomes a typed data symbol of type `core::panic::Location` (built once: a
+  `&str { data_ptr, length }` field, then `line` and `col`) named from the
+  last two path components and the position (`panic_loc_src_main_rs_10_5`),
+  so the call prints `&panic_loc_tiny_rs_15_9`. The file name is also a
+  bounded string fact of exact length. Pinned by
+  `tests/stages/kuna-panicloc.xml`.
 - **Wide strings** (`widestrings`, the `StringsAnalyzer` `allCharWidths` arm,
   `decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_widestrings.rs
   (scan_wide_strings)`): the same matcher over 2-byte little-endian code units —
@@ -3303,6 +3694,35 @@ moves.
   no signature gets worse. A function that returns through a `_restgpr_N_x` tail
   branch, which the return recovery reads as an opaque call, stays `void` (89),
   and in 18 the value now shows as that tail call's argument.
+  The C11 Annex K bounds-checked functions whose declarations agree across
+  implementations have rows of their own: `memset_s`, `memcpy_s`, `memmove_s`,
+  `strcpy_s`, `strncpy_s`, `strcat_s`, `strncat_s` and `sprintf_s`. The
+  signatures come from `gcc -aux-info` over mingw-w64's headers, and
+  `memset_s`'s, which mingw-w64 lacks, from FreeBSD's `<string.h>`; both define
+  `errno_t` as `int` and `rsize_t` as `size_t`, as Annex K does. `snprintf_s`,
+  which some libraries give an extra count, and `strtok_s` and `qsort_s`, whose
+  Annex K and Microsoft parameter lists differ, are left out. The rows matter
+  for more than types. GCC loads a size passed both as the capacity and as the
+  count into the later register and copies it into the earlier one
+  (`mov x3,#64; mov w2,#0; mov x1,x3` on AArch64, `movs r3,#64; movs r2,#0;
+  mov r1,r3` in Thumb-2), and call recovery rejects a register trial whose
+  value also reaches an earlier, active argument of the same call
+  (`check_call_double_use`, chapter 04), so without a row `memset_s(p, 64, 0,
+  64)` printed `memset_s(v1,0x40,0)`. With the rows each call takes exactly its
+  declared arguments: a Thumb `memcpy_s` no longer takes the `r3` its caller
+  pushed for alignment as a fifth one, and `sprintf_s` prints its format
+  string. The rows are not seeded at the PLT stub of a name the image itself
+  defines: a library that carries its own `memset_s(void *, int)` or
+  `strcpy_s(char *, const char *)` and calls it through its stub would be
+  handed the declared count (`memset_s(v1,0x40,a2,a3)`), so its calls keep
+  what call recovery finds. On a large AArch64 shared library that imports them, every printed
+  `memset_s`, `memcpy_s` and `strncpy_s` call has four arguments, where 577 of
+  627, 329 of 489 and 6 of 376 had three, six or two. The `int` result has the
+  effect any `int`-returning row already has (`puts`, `fclose`): 28 `void`
+  functions there now return a value, 10 the result of a bounded tail call, 13 a
+  result a bounded call leaves in `w0`, and 5 PLT stubs of other imports by
+  propagation; and three calls to an undeclared import that takes no arguments
+  are passed the preceding call's result.
   Two complex-valued rows, `cexpf` and `cexp`, are
   seeded with the DWARF pass's complex pair types (below), and only where that
   layout applies to the value's width, so a call passes and returns the value
@@ -3822,7 +4242,7 @@ moves.
   parameterless functions. Names from such minimal units retain their namespace
   qualification, so Rust `core::fmt::write` does not become a global `write`
   alias that could inherit the C import's incompatible signature.
-  The `godwarfsig` arm (on by default, inert off amd64 Go with DWARF)
+  The default-on `godwarfsig` arm
   (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_godwarfsig.rs`)
   recovers complete scalar/pointer contracts from Go compiler units on
   little-endian amd64 under `abi-internal`. It requires the producer's `regabi`
@@ -3843,6 +4263,32 @@ moves.
   only the Go-specific importer may install a source signature. Unsupported
   Go contracts therefore retain inference in compressed and uncompressed files.
 
+  On little-endian AArch64 Go ELF with uncompressed or zlib-compressed
+  DWARF, this importer also accepts a single pointer-to-`int32` input and
+  one signed `int32` or `int64` result. The concrete DWARF definition must
+  have a unique entry and match the linked text function's name and full
+  extent. Require the Go register-ABI producer,
+  explicit input and result roles, and an X0 location at entry for the input.
+  A result location can name X0 or be explicitly empty in the debug record.
+  The `abi-internal` model must independently place the pointer in X0 and
+  choose the low four or eight bytes of X0 for the result. This preserves
+  the `int32` boundary even when a widened `int64` function has the same
+  machine body. Explicit prototypes still take precedence at the entry.
+  This recovers the physical signature. Receiver declarations and method
+  call syntax continue to require verified Go pointer method metadata,
+  which currently applies to amd64.
+
+  The AArch64 importer limits the total retained DWARF section size to
+  64 MiB, counting the larger of each stored and decoded size. When
+  enabled, it validates compressed streams and scans complete Go units
+  for the selected types and direct formals. It counts duplicate
+  definitions before considering the type shape and checks the linked
+  name and extent before reading parameter locations. Malformed headers,
+  invalid compressed streams and oversized section sets leave signature
+  inference in place. The generic DWARF importer continues its ordinary
+  section loading and traversal for every format.
+
+
   Accepted inputs occupy the verified Go integer or float register sequence;
   an explicit empty location is permitted for an optimized-away input. A
   nonempty location must identify its expected entry register. Go DWARF 5 may
@@ -3862,8 +4308,29 @@ moves.
   must still match the validated graph; a generic void-pointer fallback cannot
   silently satisfy a typed contract.
 
+  A unique function with a scalar or void result may also import up to two Go
+  string inputs as their ABI words. Each input needs a Go kind-24, 16-byte
+  descriptor with a byte pointer at offset zero and a signed machine-width
+  length at offset eight. Each entry location must contain two ordered
+  eight-byte register pieces in consecutive expected integer slots. Scalars
+  and each accepted pair advance the integer slots independently of the float
+  bank. Every slot goes through the ordinary scalar storage checks. The output
+  names the separate pointer and length parameters `<formal>_data` and
+  `<formal>_len`. Calls keep both words of each input and explicit function
+  and call-site prototypes retain precedence. Ambiguous names, missing or
+  partial locations, conflicting types, and unsupported contracts fall back
+  to inference for the entire function. An accepted single string input also
+  records the exact function entry, source formal, physical slot indexes, and
+  register storage beside the committed DWARF prototype. Replacing the
+  declaration clears that record even when all displayed physical types and
+  names agree. P9 may use it for a guarded byte read after checking the
+  effective definition. The imported definition and all calls keep their
+  physical words. Slice layouts, string results, and grouping these inputs
+  into a source-level parameter remain outside this arm.
+
   Paired results are part of this importer (formerly the separate
-  `gopairreturns` option); it remains off by default. Exactly two signed or unsigned 64-bit integer
+  `gopairreturns` option) and follow the target-gated `godwarfsig` default.
+  Exactly two signed or unsigned 64-bit integer
   results may follow the scalar inputs. Result allocation restarts independently
   at RAX and RBX. Explicit result locations must name those registers in source
   order; unavailable locations still require the compiler and complete type
@@ -3879,6 +4346,58 @@ moves.
   The facet stores signedness, never interned type references. Existing names
   require matching metadata and complete layout; unrelated names or stale
   metadata cannot be overwritten. No metatype or pcode output count changes.
+
+  A separate bounded result proof
+  (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_godwarfsig/kuna_goerror.rs`)
+  accepts an actual Go `int` followed by `error`. The first type must name
+  signed eight-byte `int` with Go kind 2. The second must resolve through an
+  `error` typedef carrying interface kind 20 to the sixteen-byte
+  `runtime.iface` struct, kind 25, with exactly `tab` at zero and `data` at
+  eight. The table is an eight-byte pointer to the named 32-byte runtime
+  `runtime.itab` or `internal/abi.ITab` struct; its internals remain opaque.
+  The data is an eight-byte `unsafe.Pointer`. Alias walks are bounded and
+  refuse cycles, conflicting kinds, incomplete declarations, qualifiers,
+  bitfields and inconsistent extents. The composite result requires an
+  explicitly empty result location: neither missing location metadata nor a
+  lone register proves its two words. The complete ordered function contract,
+  unique entry, producer, input checks and ABI model gates still apply.
+
+  Storage assignment must prove the zero-flag 24-byte join RCX/RBX/RAX before
+  interning `__kuna_go_int_error_result`. This ordinary struct contains the
+  signed integer `result0` and separate opaque pointers `error_tab` and
+  `error_data` at offsets zero, eight and sixteen. Its `GoIntErrorResults`
+  facet validates the complete storage and protects reserved-name reuse;
+  existing conflicting types or stale metadata are refused. Definitions and
+  calls consume the same raw carrier through the normal prototype importer.
+  Table and data stay separate, preserving the distinction between nil and
+  typed nil. This does not infer `error` from register count, reinterpret
+  data as a nil discriminator, or introduce high-level Go error syntax.
+  Stripped images, arbitrary interfaces and other composite results retain
+  inference. With `godwarfsig off`, this carrier and its metadata are absent.
+
+  A status-only channel receive on amd64 Go ELF can supply a single boolean
+  contract. Its unique concrete entry must have a register-ABI input in RAX
+  declared as the compiler's receive-only `int` channel and a sole one-byte
+  boolean result. The channel typedef must resolve to the complete compiler
+  backing record through an eight-byte pointer. `DW_AT_go_elem` must resolve
+  to the signed eight-byte Go `int`. That width must fit the private stack
+  slot addressed by the guarded receive instruction sequence. The loader
+  verifies the sequence against the exact executable `runtime.chanrecv2`
+  entry from Go's function table and preserves the proven caller and call site
+  for §4's locked-call recovery. Unavailable, ambiguous or inconsistent
+  evidence leaves the ordinary inference path in place.
+
+  Named amd64 Go ELF images with supported linked layouts can additionally
+  carry a pointer receiver on a complete imported scalar prototype. The
+  rooted module descriptor and symbol table must agree on the type region,
+  text base, and unique named pointer and record. A method-table entry must
+  identify the same ordinary executable function through both Ifn and Tfn.
+  The receiver, argument, result and record fields must independently agree
+  with the compiler DWARF runtime type offsets and layouts, including the
+  RAX and RBX input locations and word-sized result. A value-method record,
+  wrapper flag, trampoline, duplicate or missing type evidence leaves the
+  ordinary declaration. The function symbol retains receiver evidence only
+  while the exact imported prototype and name remain in authority.
 
   Native Go zlib debug sections are retained compressed at load time. Their
   combined stored/declared extents are bounded to 64 MiB and are inflated only
@@ -4084,7 +4603,11 @@ moves.
   declaration-only) is not part of the layout. Global `DW_OP_addr` locations
   are read in the DWARF reader's byte order and must be exactly one address of
   the unit's address size; an address followed by more operations is not a
-  static location.
+  static location. A DWARF 5 producer writes the same location as
+  `DW_OP_addrx <index>` (GNU split DWARF: `DW_OP_GNU_addr_index`); that index
+  is resolved through the unit's `.debug_addr` table
+  (`dwarf/mod.rs (indexed_addr_location)`), so a clang `-g` binary whose
+  statics have no ELF symbol still names them.
   The mapper recurses each member's
   `DW_AT_type` through the same DIE switch; bitfields come off `DW_AT_bit_size`
   with either the DWARF 4/5 `DW_AT_data_bit_offset` or the DWARF 2/3
@@ -4463,9 +4986,28 @@ moves.
   wrong answer confidently, and every Rust binary rendered its own call graph as
   escape soup (`core::ptr::drop_in_place$LT$…$GT$` where `nm -C` gives
   `core::ptr::drop_in_place<…>`). `sourcelang::is_rust_mangled` identifies both
-  Rust schemes exactly — a `_R` prefix, or the legacy `17h<16 hex>E` hash tail —
-  so a symbol carrying either goes to `rustc_demangle` first. A C symbol carries
-  neither, so the arm is unreachable for one.
+  Rust schemes by the v0 grammar or the legacy `17h<16 lowercase hex>E` hash tail,
+  so a symbol carrying either goes to `rustc_demangle` first.
+
+  Legacy Rust uses lowercase hexadecimal for its compiler hash. An uppercase
+  or mixed-case hash-shaped component can be a user name, including when an
+  actual lowercase hash follows it. The reduced-name pass keeps that component,
+  and the Rust fallback keeps it when the demangler would elide it under
+  alternate formatting. An accepted LLVM suffix still follows the demangler's
+  existing suffix rules. `tests/stages/ghangr-rust-uppercase-legacy-hash.xml`
+  pins these spellings and ordinary Itanium, MSVC, legacy and v0 names.
+
+  A legacy Rust name with an LLVM import suffix still goes to the Rust
+  demangler first. `decompiler/crates/kuna-analysis/src/analyzers/sourcelang/kuna_legacy_llvm.rs` removes the suffix
+  only for recognition: the preceding name must have a lowercase 16-digit
+  Rust hash, the nonempty suffix must use the LLVM characters accepted by
+  `rustc_demangle`, and that parser must accept the complete name. The original
+  spelling reaches the demangler, which decodes its escapes and omits the LLVM
+  suffix. This preserves the closure scope in the pinned
+  `lang_start_internal` name instead of installing its dollar escapes as an
+  Itanium identifier. Names without the hash, malformed names, uppercase-hash
+  lookalikes and unsupported suffixes keep their existing paths; ordinary
+  unsuffixed recognition and the versioned-symbol guard are unchanged.
 
   The v0 arm requires the **leading underscore**, and that requirement is
   load-bearing rather than cosmetic. A prefix test written as
@@ -4704,7 +5246,9 @@ moves.
   `.data` has a valid blob but its table is in writable data, and one carried
   twice (a const copy in `.rdata`, a writable one in `.data`) has a blob and
   a read-only table whose only `moduledata` names the address the table had in
-  its own image. Both questions must hold. The arm runs first, as on every format, and
+  its own image. A table whose magic was overwritten is counted when the
+  `moduledata` record describes it whole (`kuna_gomoduledata.rs (locate)`,
+  below) and its functab lies in read-only data. Both questions must hold. The arm runs first, as on every format, and
   returns before the `.rdata` toolchain-record scan the later arms do.
   Nothing else changes for a non-Go PE: its verdict is the same as before. The
   same blob lookup (`buildinfo_blob`) gives the version-keyed `goreg` shells
@@ -4762,7 +5306,12 @@ moves.
   upstream's only-if-no-fixup-set check so a hand-applied fixup is never clobbered.
   The same name match runs when a caller names a function with
   `--define-function` / `function bounds … as NAME`, so declaring a stripped
-  helper's CRT name installs its fixup too.
+  helper's CRT name installs its fixup too. A relocatable object's undefined
+  symbols carry no type — a kernel module's `__fentry__` and
+  `__x86_return_thunk` are `NOTYPE UND` — and the loader binds each one a call
+  reaches as an extern function, so an untyped undefined symbol is matched like
+  a FUNC one; without that the module's every function opened with
+  `__fentry__();` and ended its tail jump in `__x86_return_thunk(); // tail-call`.
   On a PE32 i386 image (target-gated, always on, inert elsewhere) the pass also
   recognizes the statically linked MSVC float-to-integer helpers by their bytes
   (`decompiler/crates/kuna-analysis/src/analyzers/callfixup/kuna_msvcftolsig.rs`),
@@ -4776,6 +5325,83 @@ moves.
   Each entry is committed as a function symbol under its CRT name (plus a
   placeholder rename for one another fact already installed) and as a call-fixup
   fact; a match only names and tags, and a near miss of any one byte is no match.
+- **Linux kernel `__bug_table`** (`kernelbug`, always on, inert without the
+  section; `decompiler/crates/kuna-analysis/src/analyzers/kernelbug/mod.rs
+  (KernelBugPass)`): the kernel's `WARN_ON`/`BUG_ON` macros plant a trap (`ud2`,
+  AArch64 `brk #0x800`) and describe it in a `struct bug_entry` — the trap's
+  address, under `CONFIG_DEBUG_BUGVERBOSE` the source file and line, and a flags
+  word whose bit 0 (`BUGFLAG_WARNING`) says the handler resumes after the trap.
+  The pass reads every entry into a `KernelBugSite` the flow consumes (chapter
+  02, `kernelbug`). The entry layout is not declared in the image, so it is
+  recovered from the section itself. A module (`ET_REL`) keeps
+  `.rela__bug_table`, read on the rebased view: the relocations whose target is
+  an executable section are the `bug_addr` fields, their spacing is the entry
+  size, and the other relocations inside an entry are its pointer fields (a
+  32-bit self-relative displacement under `CONFIG_GENERIC_BUG_RELATIVE_POINTERS`,
+  an absolute 64-bit pointer otherwise). A linked image (`vmlinux`) is probed,
+  even when it keeps its relocations (an x86-64 `vmlinux` links with
+  `--emit-relocs`, whose offsets are addresses, not section offsets): the sizes
+  8, 12 and 16 are tried in turn and the first
+  under which every `bug_addr` lands in executable bytes wins — under a wrong
+  size the field read is a string displacement or a line/flags word, which lands
+  outside the code — and a field is a pointer when every entry's value lands in a
+  non-executable section. A `bug_addr` need not be a trap: a 7.x kernel's `WARN()`
+  with arguments is a `call __WARN_trap` the table also names, which the flow
+  leaves alone. Behind the pointers sit `line` (two bytes, only with a `file`)
+  and `flags`. With two pointer fields the second is `file` (the first is 7.x's
+  `format`); with one, it is `file` when the string it points at is a source path
+  (`lib/a.c`) and `format` otherwise, which is the one case the layout alone
+  does not decide. A layout is kept only when `flags` ends the entry, before at
+  most its alignment padding, so a stride with room no field explains (a
+  12-byte entry whose second word is no string pointer) is declined rather than
+  read with a displacement standing in for the flags. Before Linux 5.19
+  (`69505e3d9a39`) a self-relative `file` counted from the start of the entry
+  rather than from the field, so read the newer way it lands four bytes into the
+  path; the older reading is taken when it puts more `file` fields on the first
+  byte of a string, over 64 entries spread evenly through the table (a linked
+  image keeps its entries in link order, and the first string of a merged
+  string blob can follow binary data with no NUL before it, so the leading
+  entries alone can mislead the vote). A table no size explains yields
+  nothing. Section and code lookups are binary searches, so the work is linear
+  in the table whatever the section count. The 14,223 entries of
+  a 7.3 x86-64 `vmlinux` read in under 0.2 s. Committed sorted by trap address
+  onto `Architecture::kernel_bug_sites`.
+- **Embedded images and archives** (`blobs on|off`, default on;
+  `decompiler/crates/kuna-analysis/src/analyzers/blobs/mod.rs (BlobPass)`): a
+  program that ships a logo, an icon set or a packed resource stores the whole
+  file in a data section, where it showed only as the string fragments of its
+  header (`PNG`, `IHDR`, `IDATx`) and as a bare address in the code that hands
+  it out. The pass searches every mapped, file-backed section for nine magic
+  numbers (`blobs/mod.rs (scan)`) and keeps a candidate only when its container
+  structure walks to its end, which is also what gives the exact length. A PNG
+  is its chunks from `IHDR` to `IEND` with every chunk CRC-32 checked and an
+  `IDAT` present; a JPEG its marker segments to `EOI` after a frame header and
+  a scan, skipping the entropy-coded bytes; a GIF its blocks to the trailer
+  after at least one image; a BMP a header whose file size equals the pixel
+  array its DIB header describes; an ICO a directory whose images follow it
+  back to back, each a PNG or a DIB of the entry's dimensions
+  (`blobs/images.rs`). A zip is found from its end-of-central-directory
+  record, whose directory must sit right before it and name a local header for
+  every entry, so a stub in front of the archive is not part of it and a zip64
+  archive is not reported; a gzip member is inflated into a discarded buffer to
+  check the trailer's CRC-32 and length, the one kind whose length cannot be
+  known otherwise; an xz stream needs a footer and an index whose CRC-32s match
+  and whose index sums to the bytes between header and index; a zstd frame is
+  its frame and block headers to the last block, with a compressed block whose
+  literals and sequences headers fit it, or raw and RLE blocks that sum to the
+  declared content size (`blobs/archives.rs`). No pixels are decoded. A
+  truncated file is not a blob, and a file stored inside an earlier-starting
+  one (a PNG in a zip, a PNG in an ICO) is not reported separately. The image
+  is hostile input: every read is bounds-checked and the bytes one scan may
+  walk are capped at sixteen times the section, after which it returns what it
+  has. The commit (`decompiler/crates/kuna-console/src/kuna_blobdata.rs
+  (commit)`) runs after every other data source, so a DWARF global or a
+  symbol-table object keeps the address; where nothing covers it the blob
+  becomes `<kind>_<addr>` (`png_3c0`), an `unsigned char[length]` with name and
+  type locked, and the string facts that fall inside any blob are not planted.
+  Each blob's first address is also recorded for constant-pointer recovery
+  (chapter 05, `blobs`). `kuna blobs` runs the same scan as an inventory, with
+  the functions that reference each file.
 - **x87 intrinsics** (`x87intrinsics`, always on, i386 only;
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_x87intrinsics.rs
   (X87IntrinsicPass)`): binds the MSVC one-operand x87 math intrinsics to the
@@ -4826,26 +5452,33 @@ every other binary's pass list is byte-identical to before the pass existed):
   into `.data` with the rest of the data segment), and the type
   metadata is then found by CROSS-VALIDATION inside the moduledata window in
   whichever of its two historical forms is present — never by hardcoded field
-  offsets. Through go1.25: the `types`/`etypes` pair plus the `typelinks`
+  offsets. Through go1.26: the `types`/`etypes` pair plus the `typelinks`
   slice, sampled entries required to decode as plausible `_type` records.
-  From go1.26 the slice is gone: moduledata carries `types, typedesclen,
-  etypes` and the records sit consecutively in `[types + 8, types +
+  From go1.27 the slice is gone: moduledata carries `types, typedesclen,
+  etypes` and the records sit consecutively in `[types + ptrSize, types +
   typedesclen)`, enumerated by advancing each record's own descriptor size
   (`internal/abi.Type::DescriptorSize` — the per-kind wrapper, the optional
   uncommon block and its methods, and the kind's trailing arrays), the walk
   accepted only when records decode back to back and refused whole on the
   first divergence. That is what lets one implementation hold across
-  go1.18..go1.27's layout drift (verified under go1.22, go1.25 and go1.27;
+  go1.18..go1.27's layout drift (verified under go1.22, go1.25, go1.26 and go1.27;
   the e2e gate is `verify_gotypes`). Typelinks hold the pointer forms
   interface conversion reaches (`*main.Point`), so the walk follows a
   pointer record's elem to the named struct pointee. It interns
   package-qualified named struct shells (fields at their recorded offsets,
   zero-size embedded markers dropped, overlapping or over-extent layouts
-  refused whole). A validated Go 1.18 build-info version selects the older
-  `offset << 1 | embedded` struct-field encoding: the importer shifts the
-  word before checking the field extent. Go 1.19 and later use byte offsets
-  directly. An absent or unrecognized version retains the direct-offset
-  interpretation; the importer never guesses from a plausible shifted layout.
+  refused whole). The build-info version
+  (`decompiler/crates/kuna-analysis/src/loader/gobuildinfo.rs (go_version)`,
+  read from the inline go1.18+ blob or the pointer form go1.13..go1.17
+  binaries carry) selects the metadata encodings that changed before go1.19:
+  a Go 1.9..1.18 version selects the older `offset << 1 | embedded`
+  struct-field encoding (the importer shifts the word before checking the
+  field extent; Go 1.19 and later use byte offsets directly), and a Go 1.16
+  or older version selects the big-endian `u16` name length that preceded
+  the go1.17 varint, which is what lets a go1.16 image's descriptors decode
+  at all. An absent or unrecognized version retains the direct-offset and
+  varint interpretations; the importer never guesses from a plausible
+  shifted layout.
   The same bounds and overlap checks apply after decoding. Stripped amd64
   and arm64 tests include an embedded pointer field at a nonzero offset.
   Named struct fields held by value are completed before their enclosing
@@ -4874,8 +5507,14 @@ every other binary's pass list is byte-identical to before the pass existed):
   Their base type record is 32 bytes, moduledata and slice words are four bytes,
   and each struct field occupies three words. Header shells and pointer types
   use four-byte words as well. A build-info version identifying Go 1.18 through
-  1.25 is required for 32-bit import; unknown versions and the newer 32-bit
-  descriptor-region layout are refused until qualified.
+  1.26 selects the 32-bit typelinks path. Go 1.26 keeps the typelinks and
+  itablinks slices when `firstmoduledata` moves into `.go.module`.
+  Go 1.27 selects the consecutive descriptor path and uses the pointer width
+  for alignment, wrapper fields,
+  slices and function type pointers. Method entries stay fixed-width, and the
+  Go 1.27 map wrapper uses ten words plus one aligned flags slot. A partial
+  final descriptor refuses the region. Unknown versions are refused on
+  32-bit targets.
   Stripped i386 and ARM tests cover integer, string, embedded-pointer and nested
   value fields, with the existing amd64 and arm64 tests as controls. Interning happens at
   `load file`, the walk is bounded (20,000 typelinks), and the
@@ -4901,12 +5540,32 @@ every other binary's pass list is byte-identical to before the pass existed):
   them. A descriptor is a global of layout `internal/abi.Type` that
   Go's linker names `type:main.Point` / `type:*main.Point` / `type:[]uint8`;
   stripping deletes those symtab names while the records stay reachable
-  through the moduledata. Every decodable record (typelinks or the go1.26+
-  descriptor region, a pointer record's pointee included, deduplicated by
-  VMA and emitted in address order) becomes one typed-data fact: the record's
-  VMA, the linker-spelling `type:<name>` symbol (the decoded name — a
-  pointer record genuinely starts with `*`, an extra-star name was already
-  stripped by the record reader), and the `go.typedesc` shell — the
+  through the moduledata. The typelinks (and the go1.27+ descriptor region)
+  list the types interface conversion reaches; the types those are built
+  from have descriptors of their own that allocation and reflection sites
+  name just as often, so the located records are the roots of a walk over
+  the type graph
+  (`decompiler/crates/kuna-analysis/src/analyzers/gotypes/kuna_typeglobals.rs (reachable)`): `ptrToThis`, the
+  element and key of an array, chan, map, pointer or slice, a func's
+  parameters and results, an interface's method types and a struct's field
+  types, bounded at 200,000 descriptors. Every reachable record (deduplicated
+  by VMA, emitted in address order) becomes one typed-data fact: the record's
+  VMA, the linker-spelling `type:<name>` symbol, and the `go.typedesc` shell.
+  The name is the linker's
+  (`decompiler/crates/kuna-analysis/src/analyzers/gotypes/kuna_typeglobals.rs (linker_name)`): a named
+  type's package qualifier is the full import path from its
+  `uncommontype.pkgPath` (`type:internal/poll.FD`, where the name record
+  holds `poll.FD`), and a pointer, slice, array or map spelling is rebuilt
+  from its elements' so the qualifier reaches it (`type:*internal/poll.FD`,
+  `type:[]io/fs.DirEntry`); a func or chan type, an anonymous struct and a
+  map type's own `pkgPath` (its record changed size with the swiss-table
+  maps) keep the record's spelling. A pointer record genuinely starts with
+  `*`; an extra-star name was already stripped by the record reader. The
+  `gonewtype` client maps the symbol back to the interned record by
+  dropping the directory part of a named type's own qualifier, before any
+  type arguments (`geom.Box[example.com/q/store.T]` keeps its argument's
+  path); a pointer, slice, array, map or func spelling is kept whole and
+  refuses. The shell is the
   48/32-byte `abi.Type` base record at the harvest's own decode offsets
   (`Size_` through `PtrToThis`), spanning only the base record so the mapped
   extent never overlaps the next descriptor; runtime code walking a
@@ -4931,8 +5590,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   `decompiler/crates/kuna-analysis/src/analyzers/gotypes/kuna_itabs.rs`): each
   static `itab` the runtime lists binds one interface type to one concrete
   type and Go's linker names it `go:itab.<concrete>,<interface>`. The records
-  sit in the `itablinks` pointer slice of moduledata (go1.18..go1.25) or, from
-  go1.26, in the contiguous `[types + itaboffset, + itabsize)` region walked by
+  sit in the `itablinks` pointer slice of moduledata (go1.18..go1.26) or, from
+  go1.27, in the contiguous `[types + itaboffset, + itabsize)` region walked by
   each record's `internal/abi.ITab::Size()` — the parallel of the typelinks →
   descriptor-region change `locate_type_meta_descriptors` already handles —
   both located by cross-validation in the moduledata window (sampled records
@@ -4946,12 +5605,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   how Go's own symtab names an itab), so an interface conversion renders
   `go:itab.main.Point,fmt.Stringer` instead of a bare `&DAT_<addr>`. An itab
   the image already names is left to that name, so the pass only ADDS the ones
-  stripping removed. Sub-package types keep the `_type` record's short package
-  name (`reflectlite.rtype`, matching every other recovered Go type) rather
-  than the linker's full import path (`internal/reflectlite.rtype`); the
-  names are unambiguous and byte-identical to the linker for top-level
-  packages (e2e: `verify_gotypes::stripped_go_itab_renders_named`, green on
-  the itablinks and the contiguous-region layouts).
+  stripping removed. Both names are the linker's spellings (`linker_name`,
+  full import paths: `go:itab.*internal/poll.FD,io.Writer`), so a stripped
+  image's itab symbols match an unstripped build's byte for byte (e2e:
+  `verify_gotypes::stripped_go_itab_renders_named`, green on the itablinks
+  and the contiguous-region layouts).
 
 - **Go pclntab** (`gopclntab`, Go-detected binaries only, always on;
   `decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs`): the runtime
@@ -4991,6 +5649,36 @@ every other binary's pass list is byte-identical to before the pass existed):
   `minpc`/`maxpc`/`text`/`etext` nest) — an external link puts `crt` code and
   `.init`/`.plt` ahead of `runtime.text` — falling back to the lowest code section
   when no record is found.
+
+  A packer or obfuscator can overwrite the header's magic in the file (putting
+  it back, or skipping the runtime's start-up check, when the program runs) and
+  leave the table itself intact. When no magic
+  matches a table the image names, the pass finds `runtime.firstmoduledata` by
+  its shape and reads the table from that record alone, never consulting the
+  header
+  (`decompiler/crates/kuna-analysis/src/analyzers/pclntab/kuna_gomoduledata.rs
+  (locate)`). Every pointer-aligned position of every section that is not code
+  is tried; section names and kinds are not consulted, because a packer renames
+  them. A go1.16+ record is `pcHeader`, then the `funcnametab`, `cutab`,
+  `filetab`, `pctab`, `pclntable` and `ftab` slices, `findfunctab`, and
+  `minpc`, `maxpc`, `text`, `etext`. It is accepted when `ftab` starts where
+  `pclntable` does, the header, the name table and the functab sit in that
+  order, every slice's length is within its capacity, `len(ftab) - 1` is a
+  function count in range, the four PC bounds nest, and the functab bears the
+  bounds out: its first entry is `minpc` and its closing entry is `maxpc`, the
+  identity the runtime itself checks at start-up. That last test also selects
+  the entry shape: 32-bit offsets from `text` (go1.18+) are tried first, then
+  absolute pointers (go1.16/go1.17). A go1.5–go1.15 record opens with
+  `pclntable` and `ftab` instead, with `ftab` starting 8 bytes plus one pointer
+  into the table, and is checked the same way. The name table, the functab, the
+  `_func` base, the function count and the text base all come from the record,
+  so the names, entries and extents are the unmodified image's, and a header
+  wiped whole reads the same as one with only its magic gone. The record's
+  first word is still the header's address, which is what the Go type harvest
+  anchors on, so it works unchanged. The PE detection above counts such a table
+  when its functab lies in read-only data. The search runs only after every
+  magic-based route has failed, so an image with an intact header never pays
+  for it.
 - **MSVC RTTI** (`rtti`, PE-only, on by default and inert elsewhere;
   `decompiler/crates/kuna-analysis/src/analyzers/rtti/mod.rs`): find the shared
   `type_info` vftable, byte-search back from each `.?A…@@` TypeDescriptor to its
@@ -5018,7 +5706,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   exactly what a search per class would. A search per class is
   `O(classes × image)`: `torch_cpu.dll` (31,623 type descriptors in 309 MB) did
   not finish loading in 30 minutes that way.
-- **(kuna) Itanium RTTI** (`itaniumrtti`, ELF-only, on by default and inert elsewhere;
+- **(kuna) Itanium RTTI** (`itaniumrtti`, ELF and Mach-O, on by default and inert elsewhere;
   `decompiler/crates/kuna-analysis/src/analyzers/rtti/kuna_itaniumrtti.rs`): the
   GCC/Clang counterpart of the pass above, and a capability with **no Ghidra
   equivalent at all** — upstream's `RttiAnalyzer` is a Microsoft-PE analyzer and its
@@ -5172,6 +5860,27 @@ every other binary's pass list is byte-identical to before the pass existed):
   so no anchor exists and the output is empty. Independent code-pointer-run scanning
   — which would find such vtables heuristically — is deliberately **not** part of
   this pass.
+
+  **On Mach-O** the same walk runs over a copy of the sections in which every
+  `LC_DYLD_CHAINED_FIXUPS` slot holds what dyld writes there
+  (`kuna_itaniumrtti.rs (MachoSlots)`, over
+  `loader/format/macho/chained.rs (resolve_chained_fixups)`): a rebase's
+  target, or 0 for a bind, which is the shape an ELF import slot has in the
+  file. The bind slots are the "relocated" set the slot walk steps over. The
+  exact anchor is a bind to `__ZTVN10__cxxabiv1…_type_infoE` (the Mach-O
+  spelling, one more `_`) with addend `2 × ptr`; `__ZTI…` symbols are the
+  second source. The copy is made only after an anchor is found, so a Mach-O
+  without C++ RTTI pays for the bind list alone. Apple's arm64 ABI sets bit 63
+  of a typeinfo's name pointer when the type may be duplicated across images
+  and must be compared by string, so the name pointer is read with that bit
+  cleared. On a `-fixup_chains` dylib whose `Circle` and `Square` typeinfos
+  are local, `make()` changes from `v1 = 0x40a8;` to `v1 = Square_vptr;`. A
+  classic `LC_DYLD_INFO` image already has the ELF shape (rebased pointers in
+  the file, zeros in bind slots); only its bind names are needed, and they
+  come from replaying the bind opcodes
+  (`loader/format/macho/dyldinfo.rs (resolve_dyld_info_binds)`), which keeps
+  no addend, so the anchor is accepted on the name alone. Pinned by
+  `tests/stages/kuna-itaniumrtti-macho.xml` and its `-classic` twin.
 - **Objective-C** (`objc`, Mach-O-only, on by default and inert elsewhere;
   `decompiler/crates/kuna-analysis/src/analyzers/objc/mod.rs`): walk
   `__objc_classlist` → `class_t` → `class_ro_t` → method lists (both absolute and
@@ -5309,6 +6018,31 @@ every other binary's pass list is byte-identical to before the pass existed):
     denotes a complete struct (DWARF) is that struct. Class (`+`) methods keep
     `objc_object *self`. The number of classes given a layout is bounded
     (32,768): every type the factory interns costs a linear name scan.
+  - **Direct methods**
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcdirect.rs (emit)`):
+    a method declared `__attribute__((objc_direct))` (or in an
+    `objc_direct_members` class) is called as a C function. It is in no
+    `method_list_t`, takes no `_cmd`, and has no type encoding; only its
+    symbol, `-[UILabel _setAllowsDefaultTighteningForTruncation:]`, says it is
+    a method (iOS 16.4's UIKitCore has 1,541, named by the dyld shared
+    cache's local symbols). The walk above never reaches it, so its
+    receiver stayed whatever inference made of the first argument while the
+    offset variables it loads were still folded: an ivar read printed
+    `((objc_object **)a0)[0x56]`, with neither the field nor the
+    `_OBJC_IVAR_$_` name. Every method symbol of the image whose address no
+    method list gave now hints `x0` as `self` on AArch64 — an unlocked input hint (`kuna_inputhints`, the seam Swift's
+    `self` uses, applied here under the default convention), because a
+    prototype would have to state the other parameters and nothing declares
+    them. Under `objcivars` an instance method's hint carries the `<Class> *`
+    of the class the symbol names (category spelling dropped), the same struct
+    a listed method's `self` takes, so the read is `self->_configuration`; a
+    class method's hint, and every hint with `objcivars` off, only names
+    `self`. A body that never reads the register declares no parameter, as
+    with any hint, and a function Swift already hinted keeps that hint.
+    x86-64 gets no hint: a direct method returning a struct in memory
+    (`- (CGRect)frame`) takes the result buffer in `RDI` and `self` in
+    `RSI`, and nothing in the symbol says which shape a method has, so a
+    `self` hint on `RDI` would type the result buffer as the receiver.
   - **Declarations typed by class**
     (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcprops.rs (declarations)`):
     a method's own encoding spells every object as a bare `@`, so the structs
@@ -5372,7 +6106,31 @@ every other binary's pass list is byte-identical to before the pass existed):
     `v = objc_msgSend$bounds(view); objc_msgSend$setFrame:(view, v.x, v.y, v.width, v.height)`.
     Only nested by-value structs are flattened into their leaf members; a
     pointer member is one pointer-sized field whatever it points to
-    (`{S=^{T=ii}q}` has two members, a pointer and a `q`).
+    (`{S=^{T=ii}q}` has two members, a pointer and a `q`). The leaves keep their
+    C offsets: each member is aligned to its size (at most a pointer's), a
+    nested struct to its widest member and padded to a multiple of it, and the
+    struct's size is padded the same way, so `{S={T=iC}C}` puts the last `C` at
+    8 and `{Tri=iii}` is 12 bytes, not 16. A layout with a bitfield member
+    (`b3`), whose packing the encoding does not give, is not laid out at all.
+    A pointer to a named struct whose layout the encoding spells (`^{S=Q^@}`,
+    from the image's metadata or from the headers) is a pointer to that struct
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/encoding.rs (struct_type_at)`),
+    with the member names the encoding carries (`{S="count"Q"items"^@}`) and
+    `[N T]` members as arrays; an anonymous or empty layout (`^{?=Q}`,
+    `^{__CFString=}`) stays `void *`. The header reader spells a pointer to a
+    `typedef struct { … } Name;` that way, member names included
+    (`(NSFastEnumerationState *)` is
+    `^{NSFastEnumerationState="state"Q"itemsPtr"^@"mutationsPtr"^Q"extra"[5Q]}`),
+    a pointer to a struct it cannot lay out (a bitfield, a nested definition,
+    no body) as `^v` and never as a class pointer, a pointer to a scalar with its
+    pointee (`NSInteger *` is `^q`), an array parameter (`id [_Nonnull]`) as a
+    pointer to its element, and the lightweight generic parameters of an
+    `@interface Name<K, V>` as `id` (so `NSDictionary`'s `(K [])` spelling of
+    `countByEnumeratingWithState:objects:count:` agrees with `NSEnumerator.h`'s
+    `(id [])`). The typelocked struct pointer then types the stack object whose
+    address the caller passes (P6 `gatherOpen`), so a for-in loop's eight words
+    of enumeration state are one `NSFastEnumerationState` local and the loop
+    reads `state.itemsPtr[i]` and `*state.mutationsPtr`.
     System V x86-64 has no such registers past two eightbytes (it passes a
     larger struct on the stack), so a selector with such an argument or return
     gets no prototype there
@@ -5380,6 +6138,49 @@ every other binary's pass list is byte-identical to before the pass existed):
     The 1.9 MB app: 2,897 → 1,221 argument-less stub calls; an 84 MB app sample: 32 → 4, 60 of
     265 stub calls change shape (`setTransitioningDelegate:(v3, delegate)`,
     `presentViewController:animated:completion:(vc, (UIViewController *)v10, 1, NULL)`).
+  - **A dyld shared cache image**
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objccache.rs (CacheReader)`,
+    `decompiler/crates/kuna-analysis/src/loader/kuna_dyldcache.rs (objc_selector_base)`,
+    kuna, no option: it rides `objc`): an image rebuilt out of a cache keeps
+    its own sections, but the cache builder moved the rest of its metadata. A
+    small method list holds its selectors as offsets from the cache's *selector
+    base* (`entsizeAndFlags & 0x40000000`) and, under `0x20000000`, its type
+    strings too. The strings and the `__objc_selrefs` targets live in libobjc's
+    `__OBJC_RO` region, outside the image. `class_ro_t.baseMethods` with its low
+    bit set names a relative list of lists (`entsize 8`; each entry's `>> 16` is
+    the list's offset from the entry, its low 16 bits an image index), the shape
+    of preattached categories. When the image under analysis was loaded from a
+    cache (`AnalysisCtx::image_path` opens it), `MachoImage::with_cache` reads
+    every address outside the image's own sections through the cache, one slid
+    page at a time with pointers unslid, each page read once and each read
+    charged to the walk budget. `methods.rs (read_small_direct)` resolves the
+    two flags from the base and `classt.rs (method_lists)` walks the list of
+    lists. The base comes from the `ObjCOptimizationHeader` the cache header
+    names (`objcOptsOffset`; `relativeMethodSelectorBaseAddressOffset` at
+    +0x30, an offset from the cache base), else from libobjc's `objc_opt_t`
+    (`__objc_opt_ro`, version 16 on, the same field at +0x28 as a signed offset
+    from the record) on an older cache. A method whose IMP lies outside the image, a
+    category of another image preattached to this image's class, is named at
+    that address as an import (`AnalysisOutput::import_slot_names`) and makes
+    no function. Class, super and protocol reference slots hold plain pointers
+    into other images, so the same reads name them; the cache's hash tables are
+    not consulted.
+    Two readings apply to every Mach-O, and a cache is where they show. The
+    entry size of a method list is `entsizeAndFlags & 0xfffc`: the two low bits
+    are the uniqued and sorted flags, which the cache builder sets on disk, and
+    reading them as size walks 15-byte records. And the linker merges the
+    categories of a class into one, so the metadata names only the merged
+    category while the symbol keeps the original (`-[NSObject(NSKeyValueCoding)
+    valueForKeyPath:]` against a metadata `NSObject(Foundation)`); a symbol at
+    the IMP that spells the same class and selector is the label
+    (`sections.rs (MachoImage::method_symbol)`), which is also what lets the
+    prototype reach a function the symbol table already named.
+    Foundation out of an iOS 16.4 arm64e cache: 3,979 `objc_msgSend$<sel>` stubs
+    named (none before), every selector, class, super and protocol reference
+    slot named (6,050, 566, 481 and 33), `self` and `_cmd` typed on its methods.
+    `tests/stages/kuna-dyldcacheobjc.xml` runs the two synthetic caches of
+    `dyld_cache_objc.py`, one with the header and one with only the
+    `objc_opt_t`.
   Decoding every method's encoding asks the type factory for `objc_object *`
   once per argument, and the factory finds a type by name with a linear scan of
   every type it holds; with thousands of class structs interned that scan is no
@@ -5389,7 +6190,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   a stripped Swift binary keeps its reflection sections, and they name much of
   its code. The pass reads `__swift5_types` / `swift5_type_metadata` (the nominal
   type context descriptors: kind, parent chain, name, metadata accessor, field
-  descriptor, and for a class the trailing vtable and override table),
+  descriptor, for a class the trailing vtable and override table, and for an
+  enum its case count: the payload cases in the low 24 bits of the word at
+  +20 plus the empty cases at +24, which `AnalysisOutput::swift_enum_cases`
+  hands to the engine keyed by the enum's metadata accessor, so that chapter
+  2's `switchextent` bounds the enum's `switch` tables),
   `__swift5_protos` (protocol descriptors with their requirement rows),
   `__swift5_proto` (conformance descriptors: protocol, conforming type, witness
   table pattern, resilient witnesses) and `__swift5_fieldmd` (field descriptors),
@@ -5605,6 +6410,66 @@ every other binary's pass list is byte-identical to before the pass existed):
   vtable getters and 2,821 witness getters, for about 0.1 s and 3 MB over the
   naming arm. The stage test `tests/stages/kuna-swifttypes.xml` runs the
   stripped swiftc-built `swift_types_elf` with the arm off and on.
+  The arm also types the result of every call to an accessor that no
+  prototype covers (a local generic or runtime-initialized type's, an
+  imported `…Ma` stub's) and of every call to an instantiation helper the
+  helper arm below names: an accessor returns the metadata first whatever
+  arguments it takes, and a generic type's accessor takes its generic
+  arguments after the request, which an import's name does not tell, so
+  only the result is locked, at the call site, through the per-site output
+  type lock (`kuna-decomp/src/p5_types/kuna_swiftmetaresult.rs`, a
+  `sitetypelock` client, 05), and the arguments stay recovered. A result
+  that is a register pair or that joins another value through a phi is
+  left untyped. A read outside the 16-byte record (the value witness table
+  word below it, the field offset vector and generic arguments past it)
+  would print as an element of an array of records; `valuewitness` keeps
+  such offsets byte offsets, so these results are typed only while that
+  option is on.
+- **Swift helpers** (`swifthelpers`, the helper arm of the pass above,
+  default-on and inert unless `swiftmetadata` is on; arm64 only;
+  `decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swifthelpers.rs`):
+  swiftc emits two kinds of function into every image that uses generic
+  types, and a stripped image leaves them `sub_`. The arm reads every `bl`
+  target in the text once and recognises them by their bodies.
+  `__swift_instantiateConcreteTypeFromMangledName` (and its `Abstract`
+  twin) tests a cache word and otherwise makes its one call, to
+  `swift_getTypeByMangledNameInContext2` (`…InMetadataState2`), with a
+  mangled name found through a 32-bit relative offset (`add xD, xB, wN,
+  sxtw`). The register `xB` is based on says where the name record is: the
+  cache word itself (the one-argument form, which holds the offset and the
+  negated length until it is filled) or the second argument (the
+  two-argument form Apple's toolchain emits). Runtime calls are recognised
+  by the import a stub or PLT entry jumps to, a stripped stub decoded to
+  its slot. The helper is named, given the prototype `void *f(void *cache[,
+  void *name])`, and at every call whose arguments are `adrp`/`add` or
+  `adr` constants the mangled name is demangled, its symbolic references
+  resolved through the descriptor table as for field types above, and the
+  cache word named after the type as the image's own `…MD` symbol would be
+  (`hf.Box<hf.Unit>.type_metadata_demangling_cache`, typed as a metadata
+  pointer). A lazy protocol witness table accessor opens with `adrp; ldr
+  x0, [cache]; cbz x0; ret`, then makes a call for the concrete type's
+  metadata, moves its result to x1 and calls `swift_getWitnessTable` with a
+  conformance descriptor in x0 (local, or loaded from a `__got` slot). The
+  type comes from that call (an instantiation helper call read as above, a
+  local non-generic type's accessor, an imported `…Ma`), the protocol from
+  the descriptor, and the function is named
+  `<T:P>.lazy_protocol_witness_table_accessor` with the prototype `void
+  *f(void)`, its cache `<T:P>.lazy_protocol_witness_table_cache`, the
+  conformance's type replaced by the concrete one so two instantiations of
+  one generic conformance keep apart names. The names follow the
+  metadata pass's label-gated rename; a body that does not decode to these
+  shapes and a call whose arguments are not constants are left alone. Both
+  shapes are the shrink-wrapped ones, the cache test before any frame setup:
+  a helper that saves its frame first and branches back to the epilogue
+  after the runtime call, or an accessor that opens with `stp x29, x30`
+  (swiftc 6.0's aarch64 output, and an Xcode-built macOS app), is not
+  recognised. The facts are held apart (`AnalysisOutput::swift_helpers`) so `option
+  swifthelpers off` drops them at commit. On a 72 MB third-party iOS app the
+  arm names 278 helper copies (one pair per statically linked package), 818
+  lazy accessors and 18,549 caches, for about 0.4 s of load time in a dev
+  build. The stage test
+  `tests/stages/kuna-swifthelpers.xml` runs the stripped
+  `swift_helpers_arm64_elf` with both arms off and on.
 - **Swift calling convention** (`swiftcall`, the calling-convention arm of the
   pass above, default-on and inert unless `swiftmetadata` and `swifttypes` are
   on, which the `aggressive` preset does and `auto` selects for any binary
@@ -5658,6 +6523,171 @@ every other binary's pass list is byte-identical to before the pass existed):
   `swift_call_syms_elf` on, and `swift_call_native_elf` on, where a C function
   uses r12 as an ordinary variable and a class witness of a class-bound
   protocol takes the reference.
+- **Swift slot names from `@objc` thunks** (`swiftobjcthunk`, the naming arm
+  of `swiftmetadata` for Mach-O arm64, default-on and inert unless
+  `swiftmetadata` is on;
+  `decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swiftobjcthunk.rs`):
+  a Swift method descriptor carries no name, so in a stripped image the first
+  arm names a class's vtable slots by position (`Sentry.SentryOnDemandReplay.vtable#20.method`)
+  and every call through one prints that. An `@objc` member also has an
+  Objective-C entry point. For each `__objc_classlist` class whose `class_t`
+  data word carries a Swift bit (`FAST_IS_SWIFT_LEGACY|STABLE`) and whose
+  metadata `Description` word (offset 0x40) is a local class descriptor, the
+  arm reads the class's and metaclass's method lists and property lists. Each
+  method's IMP is a bridging thunk; its `bl`/`b` targets are read up to the
+  next stated function start (the load commands' and exports' function
+  starts, every IMP and every slot implementation; at most 128 instructions).
+  When the targets reach exactly one implementation the class's vtable or
+  override table lists, and none of them sends an Objective-C message (a call
+  into `__objc_stubs`, or a stub whose `adrp`/`ldr` (or arm64e `adrp`/`add`/`ldr`)
+  slot is bound to `objc_msgSend*`), the slot is named after the member, if
+  its kind fits the selector: a getter or setter after the property whose
+  accessor the selector is (`Class.isFullSession.getter`), a method after its
+  selector (`Class.addFrameWithTimestamp:label:`), an initializer after an
+  `init…` selector; an instance slot takes only a `-` method and a class slot
+  only a `+` one, while an initializer (whose descriptor is not an instance
+  member) takes a `-init…` method. The send check matters for an override of
+  an inherited Objective-C method (`layoutSubviews`): it has no vtable slot,
+  and when `-O` inlines its body into the thunk, the thunk sends to `super`
+  and then calls some other slot directly, which must not take its selector.
+  The same holds for any `@objc` member whose body `-O` inlines into its
+  thunk: under whole-module optimization the body's call to another member
+  of the class is direct (`@objc func tap() { handle() }` gives a thunk that
+  calls `handle()`), so the hit is only taken as the thunk's own slot when
+  nothing points elsewhere. If one of the class's own vtable slots of the kind
+  the thunk's selector names (a method or `init` selector: method or
+  initializer slots; a getter or setter selector: that accessor kind) has no
+  implementation, the member that owns it was inlined everywhere, its thunk
+  included, so the thunk names nothing; and a hit that another implementation
+  of the class calls or branches to directly (the member's own surviving body,
+  when a subclass override or public visibility keeps it, is a call to what the
+  thunk calls) names nothing either. A hit's kind must also be the selector's:
+  a property accessor's thunk never names a method slot. An implementation that
+  carries a Swift symbol (`_$s…`, say the exported symbol of a public method)
+  keeps the positional claim, so the symbol's own name (`act(_:)`) is reported
+  rather than the selector (`act:`). On the `-O -wmo` crate fixture
+  `macho_swift_objcthunk_inlined_arm64` the two `handle()` bodies keep
+  `vtable#3.method`; the cost is recall on whole-module builds, where a class
+  whose members were inlined away names none of that kind.
+  The name belongs to the method descriptor, so an override in a subclass
+  takes it too (`Sub.addFrameWithTimestamp:label:`); a slot two thunks name
+  differently keeps its position. The pass runs at load, before `option`
+  commands, so it records each renamed function's positional name
+  (`AnalysisOutput::swift_positional_names`), and the commit boundary
+  restores those names when the gate is off. On Perplexity for iOS (an 84 MB
+  arm64 app) the arm without the inlined-body checks named 346 of the 1,723
+  positional slot implementations (178 methods, 6 initializers, 87 getters,
+  75 setters) with no measurable load cost; with them, the OneSignal
+  frameworks' `OneSignalUser` names 13 of its 75 positional slots and
+  `OneSignalOSCore` 2 of 37, each a bridging thunk around a large body. The crate test `kuna-console/tests/verify_swiftobjcthunk.rs`
+  runs the stripped fixture `macho_swift_objcthunk_arm64` with the arm on and
+  off, and checks the inlined-body and symbol cases on
+  `macho_swift_objcthunk_inlined_arm64`.
+- **Swift value witnesses** (`valuewitness`, the value-witness arm of the pass
+  above, default-on and inert unless `swiftmetadata` is on;
+  `decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swiftwitness.rs`,
+  `decompiler/crates/kuna-decomp/src/p5_types/kuna_valuewitness.rs`): the word
+  before a struct's or enum's type metadata points at its value witness table,
+  the functions the runtime and generic code call to copy, move and destroy a
+  value whose layout they do not know (`initializeBufferWithCopyOfBuffer`,
+  `destroy`, `initializeWithCopy`, `assignWithCopy`, `initializeWithTake`,
+  `assignWithTake`, `getEnumTagSinglePayload`, `storeEnumTagSinglePayload`),
+  then `size`, `stride`, `flags` and `extraInhabitantCount`, and when the flags
+  carry `HasEnumWitnesses` `getEnumTag`, `destructiveProjectEnumData` and
+  `destructiveInjectEnumTag`. A stripped image keeps the tables, so the arm
+  finds each local struct's and enum's table — through the static metadata a
+  non-generic accessor returns, the incomplete metadata a singleton-initialized
+  type's descriptor points at, or the value witnesses of a generic type's
+  default instantiation pattern — checking that the metadata's kind and
+  descriptor are the type's before it reads the word before it. A slot the
+  loader binds to another image (the runtime's builtin tables for trivial
+  layouts, `$sBi64_WV` and kin) names nothing. Each function in a local table
+  is named the way the demangler spells the value-witness symbol
+  (`Module.Point.destroy_value_witness`); a body several types' tables share
+  is named after the first with `.merged#N`, and a function another record
+  claims (a method, an accessor) keeps that claim. A function the image's
+  symbol table names (the shared `__swift_memcpy16_8` and
+  `__swift_noop_void_return` helpers of an unstripped image) keeps that name
+  and only takes the witness prototype. A function that is one
+  witness and nothing else gets its runtime prototype (`swift/ABI/ValueWitness.def`)
+  bound by address: `void *initializeWithCopy(void *dest, void *src,
+  swift.type_metadata *self)`, `void destroy(void *object, swift.type_metadata
+  *self)`, `unsigned int getEnumTagSinglePayload(void *value, unsigned int
+  emptyCases, swift.type_metadata *self)` and so on. With `swifttypes` on, the
+  layout arm types each table `swift.value_witness_table` (or
+  `swift.enum_value_witness_table` when it has the enum witnesses), whose
+  function slots are pointers of those signatures, and the decompiler types the
+  table where code loads it: an 8-byte LOAD from `p + -8` whose result is read
+  at a table offset votes `swift.value_witness_table *` (the enum layout when a
+  read ends past offset 0x58, each read measured by its width, so the 4-byte
+  `flags` and `extraInhabitantCount` and a byte of the flags end inside the
+  common table) in type inference, and pointer arithmetic leaves a
+  constant offset off a `swift.type_metadata *` that falls outside its 16-byte
+  header (the `-8`, and the field offsets and generic arguments past it) a
+  byte offset instead of rewriting it to `meta[-1].field` or `meta[1].kind`,
+  and type inference does not carry the metadata pointer type to such a sum,
+  so a generic argument reads as `((long *)meta)[2]`, not as the `kind` of a
+  record at `meta + 0x10`. A witness call then prints as
+  `(*(*(swift.value_witness_table **)(meta + -8))->initializeWithCopy)(dest,src,meta)`
+  and an allocation as `->size`. The vote looks the table type up by name and
+  only the Swift pass interns it, so code without Swift metadata is unchanged.
+  A witness call takes the slot's prototype before parameter recovery, so type
+  recovery does not have to force it later (which costs a restart once the
+  call's inputs are fixed): `ActionDefaultParams` reads the call's lifted
+  p-code back from its target (an address `INT_ADD` in either operand order,
+  as the lifter writes `call *0x20(%r12)` constant first), through register
+  copies, spills and reloads,
+  calls that keep the register, and blocks with one way in, to a load at a
+  table offset from a word loaded from `p + -8`, and copies the slot's
+  prototype, input-locked. A slot call the walk misses and type recovery finds
+  after the inputs are fixed keeps the inputs already recovered and does not
+  restart the function.
+  The witness facts ride in `AnalysisOutput::swift_witnesses`, which the commit
+  drops under `option valuewitness off`. On a large third-party iOS app (268k
+  functions) the arm names 27,667 functions, up from none, and load time is
+  unchanged.
+  On arm64 the arm also names the outlined value-witness helpers
+  (`kuna-analysis/src/analyzers/swift/kuna_swiftoutlined.rs`). swiftc
+  copies, moves and destroys a value of a type whose layout is only known at
+  run time through a small helper per type and operation: fetch the type's
+  metadata, load the table from the word before it, call one witness
+  (`destroy`, `initializeWithCopy`, `assignWithCopy`, `initializeWithTake`,
+  `assignWithTake`), hand the value back. Each function start is decoded by a
+  register tracker that accepts only the forms such a helper uses (frame
+  setup and teardown, register moves, `mov #imm`, `adrp`/`add`/`adr`, a load
+  through a constant page, the `-8` table load, the slot load, one call for
+  the metadata and the witness call, `ret`). The helper must return the
+  address it was given (its `dest` for a copy or take), as swiftc's helpers
+  do: a value witness function of the same shape (the `destroy` of a struct
+  whose one non-trivial field is resilient calls that field's witness and
+  returns nothing) is not a helper of the field's type, and a function the
+  witness tables or a record already claim is skipped. The metadata must
+  come from an accessor call with request 0 (a local type's accessor, or an
+  import whose symbol is a type metadata accessor), a local type's static
+  metadata (kind and descriptor checked), a pointer slot (a bound import's
+  type metadata, or a rebased pointer to local static metadata), an accessor
+  passed as an argument, or a call with the helper's own arguments (a merged
+  helper's instantiation call). The witness's value arguments must be the
+  helper's arguments and its metadata argument the fetched metadata. The
+  helper is named the way the demangler spells the symbol,
+  `Module.T.outlined_destroy`, `Module.T.outlined_init_with_copy`,
+  `outlined_init_with_take`, `outlined_assign_with_copy`,
+  `outlined_assign_with_take`; one whose type is its caller's choice (the
+  linker merged the helpers of several types) is `outlined_destroy.merged`
+  and so on. Its prototype is the one the body states: `void *f(void *value)`
+  for a destroy, `void *f(void *src, void *dest)` for the others (the
+  arguments in the order the helper takes them, the value it returns), plus
+  the `swift.type_metadata *(*accessor)(unsigned long)` or the instantiation
+  arguments a merged helper takes. A helper whose metadata comes from
+  `__swift_instantiateConcreteTypeFromMangledName` at a constant cache is
+  left unnamed: its type is in the mangled name the cache points at. On the
+  same app the arm names 3,024 helpers (2,697 with their type, 327 merged),
+  and 210 calls in a 390-function sample print as named helper calls. The
+  stripped arm64 dylib `swift_outlined_macho` covers a per-type helper, two
+  merged ones and one fed by the instantiation helper.
+  The crate test `kuna-console/tests/verify_valuewitness.rs` runs the stripped
+  swiftc-built `swift_witness_elf` (a struct, an enum and a generic struct, and
+  a generic function that moves a `T`) with the arm on and off.
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the
@@ -5822,7 +6852,10 @@ every other binary's pass list is byte-identical to before the pass existed):
   of a `sig/` tree loads only the libraries that can apply.
   At every discovered entry the byte trie is walked over the first `pattern_len`
   bytes; a module matches when the byte-swapped CRC-16/X.25 of the `crc_len` bytes
-  after the prefix, its tail bytes and its expected instruction bits agree. A
+  after the prefix, its tail bytes and its expected instruction bits agree. An
+  entry with fewer bytes than the prefix left in its section is walked over
+  zero-padded code and keeps only the modules whose length fits in what is left,
+  so a short function that ends the section is matched like any other. A
   reference names a function when the instruction covering its offset points
   there: a branch or call target or, on x86, the address its 32-bit field encodes
   (an `ifunc` resolver references its implementations with `lea`, which the Listing
@@ -5847,6 +6880,17 @@ every other binary's pass list is byte-identical to before the pass existed):
   signature guesses (`FidMatch::by_signature`): the commit applies the metadata
   renames (PDB, Objective-C, Swift) first, so a guess never replaces one, and
   applies a guess only when every FID and FLIRT name at that address agrees.
+  A supplied function name is protected even when it resembles a `sub_` or
+  `FUN_` placeholder. Before replacing a discovery placeholder, the engine
+  checks both the signature spelling and its loader-style canonical spelling
+  for existing name ownership. A collision leaves the placeholder and the
+  established name available at their original addresses.
+  A defined ELF object label inside an allocated, mapped section reserves its
+  spelling for this check even when its declared size is zero. Its name
+  provides ownership evidence only and supplies no data object extent.
+  Eligible signature proposals at different entries that share a raw or
+  canonical spelling all keep their placeholders. Ownership is checked before
+  any of the proposals are installed, so traversal order cannot choose an owner.
   When the two passes disagree, the function keeps its placeholder rather than
   taking whichever name sorts first.
   Measured on stripped static programs against their unstripped twins (right/wrong
@@ -5862,6 +6906,126 @@ every other binary's pass list is byte-identical to before the pass existed):
   can still make the pass slow, because every module of a crafted file can match
   at every entry, so `KUNA_FLIRT_SIGS` should name signature files from a trusted
   source.
+  The opt-in report API in
+  `decompiler/crates/kuna-analysis/src/analyzers/flirt/kuna_rustprofiles.rs`
+  compares an explicit set of Rust version/optimization candidates on the same
+  caller-supplied Listing and entry set. It retains each external signature
+  source's identity, inline/no-inline bank, header library name, and accepted
+  `core::`, `std::`, or `alloc::` match addresses and full names. The shared
+  matcher can report an already-named entry when its exact signature name agrees;
+  this does not emit a rename or alter matching rounds. Name collisions,
+  reference-site requirements, CRC checks and ambiguous module names still
+  refuse. Ordinary `FlirtPass` renames retain their existing behavior and do not
+  collect report records.
+  Each candidate's score is the greater of its two bank counts, not their sum.
+  An absent bank makes the comparison incomplete; duplicate banks are errors.
+  An empty candidate set, all-zero scores and tied best scores report distinct
+  unresolved outcomes. A unique positive maximum identifies only the best
+  measured candidate, never an authenticated compiler version or permission to
+  enable an ABI/layout recovery. The API accepts linked little-endian x86-64
+  ELF images and checks external signatures' x86 processor, ELF applicability
+  and non-startup status. The caller supplies the signature provenance and
+  candidate set; no signature corpus is bundled or downloaded, and no candidate
+  is inferred from a fixture's name or a nightly version number.
+  `kuna functions --summary --json --rust-signature-manifest PATH` requests this
+  report for one loaded image. The CLI validates the explicit corpus/candidate
+  manifest and hashes each signature's bytes before constructing the request.
+  The request is distinct from `KUNA_FLIRT_SIGS` and does not turn on `flirt`,
+  `listing`, or another analysis consumer. The console consumes it once during
+  the deferred image-analysis commit; the observer in
+  `decompiler/crates/kuna-analysis/src/passes.rs` receives the final accepted
+  Listing after recovery and never applies the report's matches as names.
+  If a Listing is already required, that same object supplies the report. If
+  only reporting requires it, consumer gates retain their original values.
+  Unsupported targets decline before a reporting-only decode. A repeated
+  analysis commit retains the completed report without rescoring.
+  The report considers function entries in each text section's final 128 KiB;
+  summary presentation filters do not change its candidate set or evidence.
+  `compiler_provenance` contains independently observed Rust `.comment` records
+  and complete `/rustc/<40-hex-commit>/library/` source-path hashes, including
+  conflicting records. No source path is translated into a nominal version.
+  `rust_signature_profile` carries compatibility scores and explicit unresolved
+  statuses, with the verified external manifest/source identities. These fields
+  are absent unless requested; stable compiler and formatter-layout facts remain
+  separate. Malformed manifests and hash mismatches fail before image analysis.
+  The CLI can include `comment_profile_hint` based on consistent stable ELF
+  `.comment` records and the availability of both requested O3 banks. It chooses
+  the closest patch at or below the compiler in the same minor, or the newest
+  complete O3 profile of the same major when the compiler minor is above the
+  requested range. Prereleases, conflicting versions and changes in major
+  version have no such hint. The report evaluates scores and ties independently
+  of the hint. Compiler identity, ABI and layout recovery use their original
+  evidence.
+  The separate `--apply-rust-signatures PATH` request explicitly trusts the same
+  hashed manifest for names. It is available on `functions` and one-function
+  `decompile`, whose text and JSON forms share the in-process load. Application
+  consumes the final accepted Listing once before selection; inventory uses the
+  same analysis defaults as decompilation, and selecting an address does not
+  implicitly disable discovery. Explicit analysis options still apply.
+  `decompiler/crates/kuna-analysis/src/analyzers/flirt/kuna_rustprofiles/kuna_application.rs`
+  requires a positive unique profile after every requested candidate is complete.
+  Each proposal must have the exact same raw symbol and address in both banks of
+  that profile. The maximum bank score alone authorizes no names. Empty agreement,
+  unresolved profiles, unavailable analysis and unsupported images fail explicitly.
+  Agreed pairs become ordinary signature `FidMatch` records, sanitized before
+  merging with all other analysis output. The normal commit requires an existing
+  discovered function and arbitrates metadata, loader ownership, raw/canonical
+  name collisions, other FID/FLIRT guesses and vetoes. Agreement proposes a name;
+  it does not bypass those refusals or imply types, ABI, compiler identity or
+  side effects. The ordinary runtime version and registry-crate fields remain
+  sourced from the image, independently of the selected signature profile.
+  Later caller declarations and assertions keep their precedence.
+  Bytes overlays are refused before loading, and the console independently
+  declines application after an effective overlay. Archive inputs are refused
+  before member selection or fan-out, including an archive holding linked ELF
+  members. Ordinary archive commands retain their behavior. Slice/target/ISA and
+  image-selection overrides are refused. Batch and worker application is not
+  supported: ordinary inventory replay cannot replace existing placeholders or
+  preserve all accepted aliases without a separate image-bound fact transport.
+  No request changes the normal load. Report-only requests retain their original
+  shape and behavior and cannot be combined with application in the same run.
+  `kuna rust-signatures check` validates a local installed or explicit manifest
+  before any image is opened. The command uses the same hash, signature format
+  and applicability checks as a report and requires both banks for every
+  candidate to indicate availability. The check reads only the requested
+  manifest location and its referenced banks. Reports and application each
+  obtain their own explicit manifest inputs.
+- **FLIRT signature writer** (`kuna flirt make`, a build-time command that no
+  decompile reaches;
+  `decompiler/crates/kuna-analysis/src/analyzers/flirt/kuna_flirtpat.rs (patterns_from_object)`,
+  `decompiler/crates/kuna-analysis/src/analyzers/flirt/kuna_flirtsig.rs (build_sig)`):
+  writes the `.pat` and `.sig` files the FLIRT pass above reads, from object files
+  or the members of a static library. One pattern is made per function start that
+  carries a global name (aliases at one address share it, a strong name before a
+  weak one, fewer leading underscores first): the function's bytes, up to its
+  symbol size or else to the next function symbol of the section, with every byte
+  a relocation rewrites left variable. On the fixed-width instruction sets
+  (AArch64, MIPS, PowerPC, SPARC, LoongArch) the whole instruction word is
+  variable. On x86 the bytes a linker may rewrite when it relaxes the relocation
+  are variable too: the opcode and ModRM in front of a `GOTPCRELX`, `GOT32X` or
+  initial-exec TLS field, and the whole general-dynamic and local-dynamic TLS call
+  sequences. A relocation against a global name is recorded as a reference at the
+  field's offset. Functions with only a local symbol, names a compiler or
+  assembler made up (`.L` labels, mapping symbols, `.cold`/`.part.N`/`.isra.N`/`.constprop.N`
+  clones, PC thunks, static-initialization stubs) and functions with fewer than
+  four fixed bytes in their first 32 yield no pattern. A `.pat` line is the first
+  32 bytes in hex (`..` for a variable byte), the length and value of the CRC-16
+  over the fixed bytes that follow (at most 255, ending at the first variable
+  byte), the function length, `:0000 name` per public name, `^offset name` per
+  reference and the bytes after the CRC region; `---` closes the file.
+  The `.sig` is format version 10, uncompressed: the header (processor id, a
+  file-type mask naming the executable format the objects link into, the library
+  name) and a prefix tree over the 32 leading bytes whose leaves list their
+  modules by CRC. Functions with the same leading bytes, CRC length and CRC
+  collide, and are resolved in this order: an offset after the CRC region where
+  all of them have a fixed byte and two differ splits the group by that tail
+  byte, repeatedly; then an offset where all of them refer to a global name that
+  the library does not define as data splits it by that reference, which the
+  matcher confirms against the call target (a module holds one reference, so
+  only a function alone with its name is resolved). Functions with the same bytes
+  and the same name become one module. Whatever still collides is listed on
+  stderr and left out of the `.sig`: no name is chosen and no module is merged
+  under two names.
 - **Format strings** (`formatstring off|static|full`, default `static`;
   `decompiler/crates/kuna-analysis/src/analyzers/formatstring/mod.rs`): what a
   `printf`/`scanf`-family call does with its variadic arguments is stated by its
@@ -8017,7 +9181,7 @@ start fingerprint shared by at least 4 already-discovered functions
 (`FINGERPRINT_THRESHOLD`) — the exhaustive gap oracle for functions with no
 static or accepted pointer-table root. The option's four values are cumulative
 settings of one walk (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_aif.rs`):
-`off` runs no walk, `on` runs it with the byte-granular cursor, `strict` with the
+`off` runs no walk. With the ordinary cursor policy, `on` runs the byte-granular walk, `strict` the
 aligned cursor described below, and `precise` adds upstream's second fingerprint
 test to `strict`. The `aggressive` preset sets `strict`; the whole-binary drivers
 inject `on` on a non-x86-64 image when the selected mode names no value.
@@ -8069,13 +9233,30 @@ cursor: it advances to the next 4-byte boundary rather than the next byte, and a
 candidate is probed only when it is 4-byte aligned **or** it is the first byte of its
 hole. The hole-start exemption is the whole distinction the setting draws — a hole
 boundary is evidence, since the recursive-descent walk decoded up to exactly there
-and stopped, while an interior byte the cursor slid onto is a guess. The stride is 4
-on every architecture deliberately: 16-byte alignment kills nine tenths of the bad
+and stopped, while an interior byte the cursor slid onto is a guess. The ordinary strict cursor uses a stride of 4
+deliberately: 16-byte alignment kills nine tenths of the bad
 Cortex-M entries but takes four fifths of the real ones with it. Declining a probe
 also *recovers* entries rather than only removing them, because an accept advances
 the cursor past the accepted body — a phantom accepted one halfword inside a literal
-pool consumes the real function behind it. `aif on` keeps the byte-granular cursor
-exactly.
+pool consumes the real function behind it. `aif on` uses the ordinary byte-granular cursor unless the processor specifies a slot width.
+
+A processor spec can declare a positive byte width with
+`kuna.aif.sectionInstructionStride`. When the object provides section headers,
+the gap walk probes slots counted from each executable section's start, including
+address zero. A restricted decode window clips the walk while retaining the
+original section's slot positions. The entire first slot must be available in
+the section and decoder window. Known instruction extents cover their bytes
+even when another decode starts inside them or they cross a section boundary.
+The entry instruction's own encoding must fit in the slot. On a delay-slot
+processor the body walk still consumes the branch and its delay slot together.
+The same bounds apply when padding, a literal pool or a recovered prologue moves
+the entry. When padding supplies the destination, AIF tests that slot before
+validating the body of the run. The body must reach the destination before AIF
+publishes it. A straight padding path ending at a trap is refused even when
+zero fill follows the trap.
+A replacement processor spec that omits the width restores the ordinary policy.
+Segment-only and raw mappings carry no section
+origin, so the selected AIF mode supplies the ordinary cursor policy there.
 
 (kuna, GH-299) The complementary reject the issue asks for — refuse a candidate
 bracketed by a known function — is the bracket rule of
@@ -8366,6 +9547,58 @@ an entry" a property of the wiring rather than of a heuristic. Output-changing
 (more functions), hence default-off; ARM-only and Listing-tier, so it is a strict
 no-op on every other architecture, with `listing off`, and on the XML datatest path.
 
+**Call tables** (`calltable`, on by default; kuna;
+`decompiler/crates/kuna-analysis/src/listing/kuna_calltable.rs (scan)`). A
+table a computed transfer indexes is either a switch or a table of functions.
+The tables are read with the register-chain fold the switch reader uses
+(`decompiler/crates/kuna-analysis/src/listing/kuna_switchtable.rs
+(register_targets)`), which also answers for a `CALLIND` and reads a pointer
+table with no range check up to 256 entries, stopping at the first word that
+is not code of the section the transfer is in; such a read is flagged
+`unbounded` and is never taken as a switch. Nothing marks where a table with
+no range check ends, so a function table followed by another switch's table
+reads on into its case labels: such a read is cut before the first target
+that is a case of a range-checked switch or already code inside a function
+(`decompiler/crates/kuna-analysis/src/listing/kuna_calltable.rs
+(call_table_run)`), and the walk behind `kuna xrefs` reads its unchecked
+indexed calls only once its queue has drained, when those switches have been
+decoded. A switch reached only through the call table itself is not decoded
+by then, so a table with no range check also ends before the first word that
+code names as an address, decoded or not: every pointer-aligned read-only
+address that four bytes of a code section spell (the displacement of `jmp
+*tbl(,%rdi,8)`, a pool word) is collected once, on the first such read
+(`decompiler/crates/kuna-analysis/src/listing/kuna_poolref.rs (code_named)`).
+The walk reads a switch whose operand names its table up to the first word
+that is not code, with no count, and votes that read by the strict rule for
+an unchecked table, so a switch table that runs on into a table of known
+functions stays a switch. The vote (`decompiler/crates/kuna-analysis/src/listing/kuna_calltable.rs
+(is_call_table)`): an indexed call calls every entry; a jump through a
+range-checked table whose distinct targets are 40% or more other functions'
+entries is a table of tail calls; a jump through an unchecked table is one
+only when every target is already another function's entry, so it never adds
+a function. An unchecked switch (gcc drops the range check under
+`__builtin_unreachable()`) and a computed goto read exactly like a table of
+tail calls, and gcc aligns their labels to 16 bytes as it does functions, so
+an unchecked jump to targets that are not yet functions is left alone. The
+targets of a call table become entries, and in the `kuna xrefs` walk they are
+call references of the dispatcher rather than its switch cases. The other way
+round, a discovered, non-symbol entry that sits on a case of a switch and that
+no call reaches is dropped at the commit (`AnalysisOutput::case_entries`): a
+case body that opens `push rbp; mov rbp,rsp` looks like a function to a
+prologue scan. On the fixture `calltable_x86_64` the two functions of the
+called table are found, its read stops at the next switch's cases, the
+labels of an unchecked jump table are not functions, and the prologue-shaped
+case is no longer a function. On the fixture `calltable_split_x86_64` the
+function `h0` of a called table is found, and neither the cases of `bsw`,
+whose table follows and which only `h0` reaches, nor those of `sw`, whose
+table runs on into a table of functions, are functions or call targets. Over
+529 stripped decbench ELFs, 1,150 ELF and PE fixtures and four sqlite3 builds
+the function lists do not move; over 200 generated non-PIE gcc/clang programs
+without unwind tables it finds 257 table-only functions and adds no false
+start, and over 320 generated multi-file non-PIE gcc, clang and i386 programs
+1,944 and none. A table reached only through an unchecked jump is no longer
+found by running into it from the table before.
+
 **Tail-call entries** (`tailcallentry`, on by default, ARM-only; kuna;
 `decompiler/crates/kuna-analysis/src/listing/kuna_tailcallentry.rs (tail_call_entries)`)
 closes the walk's other structural blind spot. The recursive-descent walk
@@ -8502,6 +9735,56 @@ output — discovery-only `kuna functions` runs about 6% longer on a Cortex-M im
 because it discovers and reports more functions — and is amortized away end to end,
 where the extra bodies dominate the extra discovery.
 
+**Interior entries** (always on wherever the walk's functions are committed,
+i.e. with `listing` and `funcstart_patterns`; kuna;
+`decompiler/crates/kuna-analysis/src/listing/kuna_falseentry.rs (interior_entries)`)
+remove the entries the speculative oracles above plant inside real functions. The
+prologue-pattern scan, the ARM frame scan and the gap walk judge a candidate by its
+first bytes, and on optimized code those bytes occur mid-function: a shrink-wrapped
+function pushes its frame after an early test (`cmp; bgt out; push {r4,r5,lr}`), a
+variadic one saves its argument registers before the frame push, a switch case or a
+block the compiler moved past the return opens with a push, and when the gap walk
+skips a real entry whose first two mnemonics are rare it accepts the next block that
+looks like a prologue. The decompiler stops the real function's flow at such an
+entry (`funcboundflow`, §2) and decompiles the rest as a function of its own, so the
+real function loses the code past it. The pass reads the finished partition and every
+entry stream of this commit (the load-time entries included) and drops, through
+`AnalysisOutput::interior_entries` at the commit, the candidates that are another
+function's code. Code is **live** when it is reachable from an attested entry over
+static branch, call and switch-case targets and over fall-throughs that provably
+continue — the trust notion of `poolextents`, made lenient in two ways: an indirect
+call is taken to return, and a jump through a register counts as a return of the
+function it ends; a direct call to a function no path of which returns and a user
+operation still end the flow — or, failing that, from a
+Thumb code pointer stored in data, in a literal pool the Listing proves, or naming a
+candidate. An entry is **attested** when a symbol, an entry oracle, a load-time
+oracle other than the pattern scan, a code-pointer scan, a call table or a direct call
+(from any candidate's decoded code) names it, and an attested entry is never dropped:
+a hand-written routine can fall into a second, separately called one. Three facts make
+an unattested candidate interior. (1) A live instruction that is not a call, a user
+operation, padding or zero fill ends exactly at it and continues there, by falling
+through or as the skip of a predicated instruction (`it eq; bxeq lr`); an
+unconditional branch to the next address is a tail call and does not count. (2) The
+flow of the surviving entry before it, entering no callee and stepping onto no other
+surviving entry, reaches a conditional branch or a switch case (the walk's resolved
+tables, or the run of Thumb code pointers stored right after an `ldr.w pc,[rN,rM,lsl
+#2]`) that targets it. (3) That flow runs into it and also branches past it, at or
+before the next surviving entry: a shrink-wrapped function whose real entry only a
+speculative oracle found. Facts 2 and 3 read the preceding entry's own flow, so a
+function whose first instruction heads a loop keeps its entry — its loop branch is
+reached only through it. When the code that runs into an interior entry is reached
+only from a code pointer no oracle accepted (the pointer-entry scan needs an
+undefined gap, and the planted entry splits it), that pointer target is emitted as an
+entry in its place, unless live code runs into it too. Measured on the 63 stripped
+ARM decbench binaries against their unstripped twins (34,019 symbol starts), entries
+at no symbol fall from 1,616 to 708, no symbol start is dropped and the ten entries
+added are symbol starts. On the fixture `cortexm_falseentry_le32` the push after a
+predicated return, the push after a `cbz` past the return and the push inside a
+pointer-only handler stop being functions, the handler's real start becomes one, and
+a pattern-only function after padding and a call that never returns stays one. A
+strict no-op on x86-64, whose drivers leave `funcstart_patterns` off, and on the XML
+datatest path.
+
 Driver defaults (kuna): `kuna decompile-all` and `kuna decompile` inject
 `option listing on` unless the caller names `listing` (DIV-15/DIV-22) — without it
 the default-on no-return propagation is a structural no-op and a stripped binary's
@@ -8550,7 +9833,38 @@ widened by every veneer whose slot carries a dynamic relocation against a symbol
 the image defines at that body's address
 (`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (export_alias_class)`). The
 join is again the relocation's binding, not the name, and a query by address keeps
-the plain class.
+the plain class. A named query also checks ARM and AArch64 PLT code, PowerPC32
+absolute and executable BSS PLT entries, and PowerPC64 ELFv1 descriptor stubs.
+The stub must reach the slot relocated against that definition. On ELFv1 the
+symbol names a validated descriptor whose entry is the queried function. The
+stub’s own slot access is excluded from the caller list, and so is a `data`
+row whose value merely equals the stub’s or slot’s address (an immediate or a
+page base in position-independent code), which a query by that address still lists.
+
+An x86-64 ELF memory-indirect call can have a proven local target through an
+immutable GOT slot. `decompiler/crates/kuna-analysis/src/listing/kuna_gotcall.rs`
+uses the loader's `fixup_sites` result. It requires complete relocation
+coverage and an unambiguous, aligned eight-byte relative rebase within
+`.got`. The full slot must be file-backed in one readable PT_LOAD
+mapping and either read-only or wholly within the protected GNU_RELRO
+extent. The loaded word must equal the relocation target. The target
+must match a defined `STT_FUNC` entry within its declared executable section
+and file-backed executable code.
+An IFUNC alias, unmodeled relocation span, overlapping mapping or fixup,
+mutable slot, or symbol bind prevents the inference.
+
+The single CALLIND must take the slot directly or through a bounded chain
+of exact-width COPY definitions in the same instruction. Other control
+transfers, partial writes and a pointer carried from an earlier instruction
+keep the existing listing behavior. A user-stated callee at the instruction
+also keeps that path. The listing files references by instruction address,
+including when several functions can reach it. A proven call enters the
+existing call worklist and gets a Call reference to the actual callee.
+The physical slot gets a separate Read, and other proven operand reads
+and writes remain. A previously projected slot Call from that instruction
+becomes a Read. The instruction still contributes to `hasIndirectCalls`
+because the machine instruction is indirect. The reference index leaves
+the decompiler's flow and stored assertions alone.
 
 (kuna) The **call** spelling of that first indirection needs a third rule, because
 it does not arrive in the shape the first one reads. `CALL qword ptr
@@ -9116,6 +10430,15 @@ holds a code address and is not code. A `--from` answer
 about anything other than code decoded in a code section, and a `--to` answer while
 such targets exist, say so in a note.
 
+(kuna, GH #1696) For an incoming JSON query the walk retains the lowest-address
+direct call site it decoded to the selected address outside the walked sections
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (stopped_direct_call_site)`).
+When that exact address belongs to the unwalked executable-section coverage, is
+absent from the canonical function inventory, and has no declared data symbol,
+the CLI reports it as a call destination candidate. A jump, an indirect call, or
+a call to another alias does not provide that evidence. This annotation leaves
+discovery and the default project-export selection unchanged.
+
 (kuna) Both of those rules read a reference out of *one instruction's* p-code,
 which is the whole answer on x86-64 and no answer at all in 32-bit
 position-independent code. There the address of a string, a global or a function
@@ -9157,7 +10480,10 @@ worse than reporting nothing and no parity gate could see it: the base is offere
 to a function whose body never writes the register at all, or from its own
 establishment up to the next write of it (in GCC output, the epilogue's restore),
 and to no other function. A body that reuses the register for its own purposes
-contributes no references rather than wrong ones.
+contributes no references rather than wrong ones. The pass runs only on a
+32-bit image: a 64-bit one (x86-64, AArch64) forms PC-relative addresses
+directly, which the constant scan already reads, so the walk never probes its
+prologues for the idiom.
 
 (kuna) One indirection further out is the same defect on ARM, and PIC base
 folding does not reach it: an ARM immediate cannot hold an arbitrary address, so
@@ -9927,6 +11253,43 @@ GCC 14 no longer emits either form from C in ARM state (it compresses the table
 to bytes, `ldrb rN,[rT,rN]; add pc,pc,rN,lsl #2`); that form is not read. Thumb
 `ldr pc` tables are not read either: their PC is 4 bytes ahead, not 8.
 
+**AArch64 compact tables** (`decompiler/crates/kuna-analysis/src/listing/kuna_a64switch.rs`,
+always on) are read in both walks by the register-chain fold above. clang and
+gcc lower an AArch64 `switch` to a table of byte, halfword or word offsets in
+`__const`/`.rodata`, each scaled to instructions and added to an `adr` base
+(`adrp`/`add` table; `adr` base; `ldrh w13,[x11,x10,lsl #1]`; `add
+x12,x12,x13,lsl #2`; `br x12`; gcc's `add x0,x1,w0,sxtb #2` reads a byte back
+signed). The fold's narrow table word, shifted left by one to three (`lsl #2`,
+or a multiply by two or four) and added to a constant, is the case address
+(`kuna_switchtable.rs (Val::Relative)`), and the dispatch slice follows a
+constant left shift so the entry's `lsl #2` reaches the load. The count comes
+from the range check, read the way the delta-table read reads one, with one
+more shape: when the instruction before the dispatch's block does not fall
+through, the check may be the branch *into* the block (`cmp w9,#0xb; b.ls
+dispatch`, clang's second table of a `switch` over two value ranges), found
+among the decoded instructions above the block head and read with the taken
+arm as the in-range one (`kuna_switchtable.rs (entering_guard)`). In the
+Listing walk every aligned word of the executable ranges counts as decoded
+for that search: AArch64 instructions are four bytes, so the code above a
+dispatch reads the same whether the walk reached it yet or not. A table with
+no range check at all is read when `switchextent` (default on) bounds it: a
+function's jump tables are emitted back to back in one read-only section, so
+the table runs to the lowest table of the same function above it, found by
+decoding the function's extent (its entry to the next known entry, or a MiB)
+linearly and naming the table of each computed jump the fold proves reads
+one (`decompiler/crates/kuna-analysis/src/listing/kuna_switchextent.rs`);
+what an instruction writes after a branch inside its own p-code (an AArch64
+`csel`/`csinc`) is unknown to the fold, as in chapter 2's extent decode.
+A function's last table has no such bound and is not read: an object the
+function merely reads may sit anywhere in the section, and a bound taken
+from one could run the table on into another function's, whose entries are
+plausible code addresses measured from the wrong base. The cases are the
+dispatcher's own successors, so no gap entry is planted on them: cmark-gfm's
+re2c scanner `_scan_html_block_start` listed as 104 bytes plus five `sub_`
+functions is one function of 4,484 bytes, and the framework's 442 functions
+are 407, the 35 case bodies gone; the Swift `AssetItem` copy helper of a
+13 KB iOS app function keeps its 27-case enum dispatch.
+
 (kuna, GH-299) **Bounded i386 switch coverage** (`x86listingswitch`, default-off;
 `decompiler/crates/kuna-analysis/src/listing/kuna_x86listingswitch.rs`) extends
 the discovery Listing for linked little-endian i386 ELF and PE images. It
@@ -10164,6 +11527,19 @@ the image defines matches: a linked image's own helper is no-return only when
 its body shows it.
 Name-based: free, exact, and useless on stripped custom wrappers.
 
+`decompiler/crates/kuna-analysis/src/loader/kuna_rustnoreturn.rs` additionally
+recognizes the complete legacy-mangled `std::process::exit` path in a Rust ELF.
+The suffix must contain exactly sixteen lowercase hexadecimal hash digits and
+the final mangling terminator; malformed and extended spellings refuse. The
+vendored list is unchanged. This supplies the same address-keyed
+no-return fact as the existing panic entries. This preserves the exit-code argument
+and preceding effects while preventing flow into the compiler's dead trap padding;
+existing structuring can then duplicate the closed exit tail without introducing
+a Rust panic for a reachable branch. Other namespaces, longer names such as
+`std::process::exit_status`, and non-Rust compiler selections do not gain this fact.
+The rule does not infer no-return from a leaf named `exit`, recover stripped
+wrappers, or add a Rust-v0 signature.
+
 **Pclntab names** (the `gonoreturn` pass,
 `decompiler/crates/kuna-analysis/src/analyzers/pclntab/kuna_gonoreturn.rs
 (GoNoReturnPass)`, kuna, gated by `noreturn_known`, Go-detected binaries only;
@@ -10186,6 +11562,8 @@ duplicates of `noreturn_known`'s. Registered only for `Compiler::Go` (beside
 `gopclntab`, preserving that pass's appended-last contract), so every non-Go
 pass set is byte-identical; `option noreturn_known off` disables it together
 with the symbol-table pass.
+The Go name list leaves `runtime.panicCheck1` returnable so callers retain
+the path from the conditional check to `runtime.gopanic`.
 
 **Discovered, ≥3 evidence** (`noreturn_disc`,
 `decompiler/crates/kuna-analysis/src/analyzers/noreturn_disc/mod.rs`, the
@@ -10244,6 +11622,14 @@ threshold; `call abort` followed by padding, invisible to the evidence predicate
 which unconditionally cannot return. Without it, every caller grows a spurious
 fall-through edge into the cold path that structures into an invalid
 `while(true)`+`goto`.
+
+On Go AMD64 ELF, `pclntab/kuna_gomcall.rs` independently identifies the
+unique `runtime.mcall` name and entry address in pclntab and verifies that
+the entry lies within the Listing's executable ranges. The saved goroutine
+context can resume its caller. The propagation sweep skips that address
+because its scheduler body reaches terminal handlers without a reachable
+machine return. Existing terminal seeds, scheduler callback analysis, and
+explicit callee and call-site overrides still apply.
 
 An import stub is never a candidate (`import_stubs`, read from the same
 `resolve_imports` stream the Known pass and the `error` recognizer use, keeping
@@ -10372,8 +11758,19 @@ the C++ inheritance chain modeled by composition:
   statics become an explicit `LanguageDatabase` value the bootstrap owns), find the
   `.pspec`/`.cspec`/`.sla` files, build the SLEIGH translator, and run the
   `Architecture::init` tail (type factory, prototype models, print language). The
-  upstream translator-reuse cache is deliberately not ported — it affects build
-  speed only — and is the recorded loss here. (kuna) A spec root is a
+  upstream translator-reuse cache, which hands a later architecture the same
+  `Sleigh` object, is not ported: each architecture owns its translator and its
+  address spaces, which the `.ldefs` truncations and the `.cspec` then modify.
+  (kuna) Instead, in a process that turns reuse on (below), a thread keeps the
+  decoded form of each `.sla` it has decoded twice
+  (`decompiler/crates/kuna-sleigh/src/kuna_slacache.rs`), keyed by the file's
+  full contents. A later translator from the same bytes is a copy of that
+  template (`decompiler/crates/kuna-sleigh/src/sleighbase.rs
+  (SleighBase::clone_decoded)`): a new space set is built from the `.sla`'s space
+  records, every space reference in the symbol table and the constructor
+  templates moves to the space of the same index in it, and the register
+  cross-reference and context variables are rebuilt as a decode builds them. The
+  copy equals a fresh decode and shares no space with the template. A spec root is a
   directory or a tree held in memory
   (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_memoryspecs.rs
   (MemorySpecs)`): a table of `/`-separated relative paths and their contents.
@@ -10384,7 +11781,14 @@ the C++ inheritance chain modeled by composition:
   `decompiler/crates/kuna-console/src/engine.rs (language_database)` scans a
   list of roots once. A bootstrap over the result skips the `.ldefs` scan and
   reads only its own language's `.sla`, `.pspec` and `.cspec`
-  (`LanguageDatabase::read_spec`), so threads may share one database.
+  (`LanguageDatabase::read_spec`), so threads may share one database. A runner
+  whose spec trees cannot change while it runs and that builds many
+  architectures, such as the datatest harness, calls
+  `decompiler/crates/kuna-console/src/engine.rs (reuse_specs)` instead: from
+  then on every bootstrap over the same on-disk roots gets a copy of the first
+  scan of them, and translators are copies of kept `.sla` templates as above.
+  A kept template costs about as much memory as one translator, which is why
+  reuse is the runner's choice and a single-binary run never keeps one.
 - `decompiler/crates/kuna-decomp/src/p1_partition/xml_arch.rs (XmlArchitecture)`
   binds the decompiler's XML `<binaryimage>` container — the datatest corpus's
   entire load path, and the reason the analysis tier can be default-on without
@@ -10437,9 +11841,37 @@ The standalone loader also records an optional stable Rust compiler version from
 ELF `.comment` in `Architecture::rustc_stable_version`. The record parser
 in `decompiler/crates/kuna-analysis/src/analyzers/sourcelang/kuna_rustversion.rs`
 requires three numeric components and rejects prerelease suffixes, malformed
-Rust records and conflicting versions. Missing metadata remains unknown even
-when `sourcelang` is forced. This image fact survives option resets and lets
+Rust records and conflicting versions. This image fact survives option resets and lets
 versioned consumers such as the P9 `rustfmt` recoveries reject unsupported layouts.
+
+An image whose `.comment` holds no `rustc version` record (the section was
+removed, or the release profile never wrote one) still names its compiler: every
+panic location the standard library carries is a source path of the form
+`/rustc/<commit>/library/...`, where `<commit>` is the 40-digit hash of the
+compiler build. For such an image, when the loader detected it as Rust, the parser
+collects those paths over the whole file, accepting `/` or `\` after the hash. When they all name one commit, it is
+looked up in `kuna_rustreleases.rs`, a table of the commit of every stable release
+tag of rust-lang/rust, sorted by hash and regenerated by
+`scripts/gen_rustreleases.py`. The match is on the full hash. A commit outside the
+table (a nightly, a beta, a distribution build), paths that disagree, or no path
+at all leave the version unknown, also when `sourcelang` is forced. A `.comment`
+record always wins: the paths are consulted only when no record exists, so an
+image with a rejected record (a prerelease, conflicting versions) stays unknown. An
+image not detected as Rust is never scanned, so its load cost is unchanged.
+The `rustfmt` pieces layout uses the same fallback and accepts the commits of
+1.89.0, 1.90.0 and the one verified nightly.
+
+`kuna functions --summary` reports the same evidence in the `rust` row of
+`summary.runtime` for every container format: `version` is the `.comment` version
+token (prerelease suffix kept) or the release found from the source paths. The row
+also lists the registry crates the image names. `kuna_rustcrates.rs` scans for
+`registry/src/<index>/<crate>-<version>/`, where `<index>` is a registry host
+followed by `-` and 16 hex digits, and splits the crate directory at the first `-`
+that begins a `major.minor.patch` version, so `sha-1-0.10.1` is `sha-1` at
+`0.10.1`. Either path separator is accepted and the Cargo home prefix is not
+matched, so images built in a container or on Windows list their crates too. The
+list is sorted, each pair once, and holds only crates that left a source path in
+the image.
 
 For verified stable Rust 1.93.0/1.93.1 images, the standalone loader also retains
 primitive integer Display callback types in `Architecture::rust_display_formatters`.
@@ -10485,7 +11917,16 @@ call through the first stub names its import.
 Without a callee prototype, a preserved incoming argument register cannot
 establish import arity: calls with and without that argument can have identical
 instructions. A declared prototype supplies that missing contract
-(`kuna_gotimportproto.rs`, §4).
+(`kuna_gotimportproto.rs`, §4). The loader also records, by name, which
+imports' dynamic symbols require a public `GLIBC_*` version of one of glibc's
+own libraries (`libc.so.6`, `libm.so.6`, `libpthread.so.0`, `libdl.so.2`,
+`librt.so.1`, `libutil.so.1`, `libresolv.so.2`, `libanl.so.1`)
+(`decompiler/crates/kuna-analysis/src/loader/elf_plt.rs (mips_glibc_import_names)`),
+reading `.gnu.version` once for each undefined dynamic function and marking
+the imports of those names, so the built-in glibc declaration of such an
+import may also state a void result. `GLIBC_PRIVATE` is glibc's internal
+interface, which its headers do not declare, so it does not count, and a name
+also imported under another version is not marked.
 
 
 ### Weak import identity and slot membership

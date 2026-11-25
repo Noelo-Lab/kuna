@@ -32,6 +32,13 @@ The function contains no `cs`, `neg`, `vs` or register branch, so its
 instructions, operations and temporary aliasing are unchanged; 150 lines change
 only unique-space offsets by `0xc00`.
 
+`ccmp.txt` was refreshed for the AArch64 memory-tagging constructors (#1626).
+The function contains no memory-tagging instruction, so its instructions,
+operations and temporary aliasing are unchanged; 144 lines change only
+unique-space offsets. The refreshed lines are the Rust runtime's output over
+specs compiled by `slacomp`, which reproduces the pinned C++ compiler's
+previous AArch64 digest on the previous sources.
+
 ## Regeneration
 
 ```bash
@@ -125,3 +132,11 @@ AARCH64:LE:64:v8A / MIPS:LE:32:default:default / MIPS:BE:32:default /
 PowerPC:BE:32:e500 / sparc:BE:32:default / RISCV:LE:32:default /
 8051:BE:16:default / 8085:LE:16:default / PIC-24F:LE:24:default:default /
 68000:BE:32:default.
+
+`ccmp.txt` was refreshed again for the AArch64 `W`-destination sign-extending
+loads, whose constructors gained a 4-byte temporary. The function contains no
+such load, so its instructions, operations and temporary aliasing are
+unchanged; 144 lines change only unique-space offsets, each by `0x1000`. The
+refreshed lines are the Rust runtime's output over specs compiled by
+`slacomp`, which reproduces the pinned C++ compiler's previous AArch64 digest
+on the previous sources.

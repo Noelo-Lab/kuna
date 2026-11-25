@@ -1,6 +1,8 @@
 //! Command dispatch for the kuna CLI.
 
 mod args;
+mod armember;
+mod blobs;
 mod callgraph;
 mod catalog;
 mod crypto;
@@ -13,6 +15,8 @@ mod decompile_graph;
 mod disassemble;
 mod embedded_specs;
 mod fid;
+mod flirt;
+mod followimages;
 mod assertdecl;
 mod funcdecl;
 mod function_info;
@@ -30,6 +34,7 @@ mod output;
 mod paths;
 mod project_stream;
 mod runtime_hints;
+mod rust_signatures;
 mod skill;
 mod specs;
 mod strings;
@@ -56,6 +61,7 @@ const COMMANDS: &[(&str, CommandHandler)] = &[
     ("xrefs", xrefs::run),
     ("strings", strings::run),
     ("crypto", crypto::run),
+    ("blobs", blobs::run),
     ("unpack", unpack::run),
     ("docs", docs::run),
     ("install-skill", |args| args::report(skill::run(args))),
@@ -64,6 +70,8 @@ const COMMANDS: &[(&str, CommandHandler)] = &[
     ("modes", cmd_modes),
     ("specs", specs::run),
     ("fid", fid::run),
+    ("flirt", flirt::run),
+    ("rust-signatures", rust_signatures::run),
 ];
 
 fn main() -> ExitCode {
@@ -87,8 +95,24 @@ fn main() -> ExitCode {
         eprintln!("error: {e}");
         return ExitCode::from(2);
     }
+    let follow_limit = match followimages::take_limit(&mut rest) {
+        Ok(limit) => limit,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    let _staged = match armember::resolve(sub, &mut rest) {
+        Ok(armember::Resolved::Run(staged)) => staged,
+        Ok(armember::Resolved::Done(code)) => return ExitCode::from(code as u8),
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    loadtime::export_image_selection(&rest);
+    followimages::apply(sub, &mut rest, follow_limit);
     let rest = rest.as_slice();
-    loadtime::export_image_selection(rest);
     runtime_hints::note_for_invocation(sub, rest);
     let code = match sub {
         "-V" | "--version" | "version" => {
@@ -128,13 +152,14 @@ fn usage() {
          this CLI well, embedded in the binary, no network -- for Claude Code, Codex and OpenCode\n\
          (`--dir DIR` for other agents).  `kuna install-skill --print` shows it without installing.\n\
          \n\
-         kuna decompile <binary> [--isa auto|arm|thumb] <func> [--addr] [--json] [--no-vars] [--omit aliases,line_mappings,variables,types] [--slice ARCH] [--language auto|c|rust|go] [--mode auto|reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]... [--max-fn-seconds N] [--max-fn-memory MiB] [--raw-image --target T --base VMA]\n\
-         kuna decompile-all <binary> [--isa auto|arm|thumb] [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--omit aliases,line_mappings,variables,types] [--language auto|c|rust|go] [--max-fn-seconds N] [--max-fn-memory MiB] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]... [--raw-image --target T --base VMA (--entry|--addr VMA)...]\n\
-         kuna decompile-project <binary> [--isa auto|arm|thumb] [-o DIR] [--functions a,b,..] [--addr 0xVMA]... [--max-fn-seconds N] [--max-fn-memory MiB] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]... [--raw-image --target T --base VMA (--entry|--addr VMA)...]\n\
+         kuna decompile <binary> [--isa auto|arm|thumb] <func> [--addr] [--json] [--no-vars] [--omit aliases,line_mappings,variables,types] [--slice ARCH] [--language auto|c|rust|go] [--mode auto|reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]... [--types FILE.h|DIR]... [--types-cpp CC] [--max-fn-seconds N] [--max-fn-memory MiB] [--raw-image --target T --base VMA]\n\
+         kuna decompile-all <binary> [--isa auto|arm|thumb] [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--omit aliases,line_mappings,variables,types] [--language auto|c|rust|go] [--max-fn-seconds N] [--max-fn-memory MiB] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]... [--types FILE.h|DIR]... [--types-cpp CC] [--raw-image --target T --base VMA (--entry|--addr VMA)...]\n\
+         kuna decompile-project <binary> [--isa auto|arm|thumb] [-o DIR] [--functions a,b,..] [--addr 0xVMA]... [--max-fn-seconds N] [--max-fn-memory MiB] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]... [--types FILE.h|DIR]... [--types-cpp CC] [--raw-image --target T --base VMA (--entry|--addr VMA)...]\n\
          kuna decompile-graph <binary> [--isa auto|arm|thumb] [-o FILE] [--label TEXT] [--max-fn-seconds N] [--max-fn-memory MiB] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]...\n\
          kuna functions <binary> [--isa auto|arm|thumb] [--json] [--jobs N|auto] [--mode auto|reliable|aggressive|fast] [--define-function S[-E][=N]|@FILE]... [--raw-image --target T --base VMA (--entry|--addr VMA)...]\n\
          kuna xrefs <binary> [--isa auto|arm|thumb] (--to <name|0xaddr> | --from <name|0xaddr>) [--json] [--kind call,jump,data,read,write] [--mode auto|reliable|aggressive|fast]\n\
          kuna crypto <binary> [--isa auto|arm|thumb] [--json] [--algorithm SUBSTR] [--section NAME] [--no-xrefs]\n\
+         kuna blobs <binary> [--isa auto|arm|thumb] [--json] [--extract DIR] [--kind png,jpeg,gif,bmp,ico,zip,gzip,xz,zstd] [--section NAME] [--no-xrefs]\n\
          kuna unpack <binary> [-o OUT] [--json]\n\
          kuna unpack <dyld_shared_cache> (--list | --image NAME [-o OUT]) [--json]\n\
          kuna strings <binary> [--isa auto|arm|thumb] [--json] [--min-length N] [--filter REGEX] [--encoding ascii|utf16|all] [--section NAME] [--no-xrefs]\n\
@@ -150,9 +175,14 @@ fn usage() {
          kuna specs [-a <dir>] [<slaspec>...] [--diff]\n\
          kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>\n\
          kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n\
+         kuna flirt make <lib.a|*.o ...> -o <out.pat> [--sig <out.sig>] [--libname NAME]\n\
+         kuna rust-signatures check [--manifest PATH] [--json]\n\
          kuna --version\n\
          \n\
-         --image NAME (any subcommand): load that image of a dyld shared cache"
+         --image NAME[+NAME...] (any subcommand): load those images of a dyld shared cache\n\
+         --follow-images N (decompile, disassemble, xrefs): also load up to N images holding\n\
+         a requested address outside them (default 2)\n\
+         --member [NAME] (any <binary> that is an ar archive): load that member, or list the members when no NAME follows; <lib.a>:NAME is the same selection"
     );
 }
 

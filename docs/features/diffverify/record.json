@@ -1,0 +1,56 @@
+{
+  "slug": "diffverify",
+  "track": "infrastructure",
+  "scope": "large",
+  "proposal": true,
+  "option": null,
+  "default_on": false,
+  "change_kind": "tooling",
+  "phase": null,
+  "owning_crate": "decompiler/crates/kuna-verify",
+  "external_tools": [
+    "z3 (SMT-LIB 2 over a pipe)",
+    "Unicorn / qemu-user"
+  ],
+  "first_slice": "C1",
+  "motivating_fix": "https://github.com/Noelo-Lab/kuna/pull/794",
+  "optional_dependency": [
+    "https://github.com/Noelo-Lab/kuna/issues/1641"
+  ],
+  "tiers": {
+    "C": "concrete: SLEIGH emulation of the binary vs a new interpreter over the final Funcdata, from the same raw state; prototype claims checked against a typed contract (source, DWARF) when one exists, else PROTOTYPE_SUSPECT",
+    "S": "z3 proof over SMT-LIB 2 of SLEIGH p-code vs the Funcdata, under a deterministic budget (rlimit, unroll and query caps); bounded loops; budget regressions flagged",
+    "L": "SLEIGH lift vs Unicorn/qemu-user",
+    "P": "printed C vs binary (separate proposal)"
+  },
+  "coverage_estimate": {
+    "p3_p4_fixes_since_2026_06": 56,
+    "body_rewrite": 15,
+    "prototype_abi": 29,
+    "not_visible": 12,
+    "prototype_abi_note": "DIFFERS only with a typed contract; otherwise PROTOTYPE_SUSPECT at most"
+  },
+  "prior_work": [
+    {
+      "name": "D-Helix",
+      "venue": "USENIX Security 2024",
+      "url": "https://www.usenix.org/system/files/usenixsecurity24-zou.pdf"
+    }
+  ],
+  "measurements_required": {
+    "C1": "per-function and total Tier C time",
+    "C3": "localization cost per finding",
+    "C4": "precision (triage) and recall (reverted fixes)"
+  },
+  "slices": [
+    "C1 register-only leaf functions",
+    "C2 memory and call effects",
+    "C3 rule localization",
+    "C4 corpus, precision and recall",
+    "C5 concolic inputs",
+    "S1",
+    "S2",
+    "L1",
+    "P"
+  ]
+}

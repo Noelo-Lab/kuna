@@ -1,0 +1,1414 @@
+{
+  "state": "replayed_b5d9_focused_stages_passed_with_a447_build",
+  "opportunity": "rustwrapping::fixed-width arithmetic",
+  "test_name": "ghangr-rust-integer-conversions",
+  "stage_file": "tests/stages/ghangr-rust-integer-conversions.xml",
+  "binary": null,
+  "selector": "add8",
+  "func_addr": "0x100000",
+  "phase": "P9",
+  "option": null,
+  "default_on": true,
+  "change_kind": "strict_correctness",
+  "inspiration": "Fixed-width machine arithmetic as witnessed by authored scalar cases",
+  "baseline_commit": "a42c0364798cec80c4363fee0519f0f65b86d5e1",
+  "baseline_tree": "38e71af6de0b603c461b3cac2712068827f3d16b",
+  "baseline_cli_sha256": "c97431c0a97a2b7c931289fd764b8582c81a567919a4d9bad2ee5ef203174863",
+  "candidate_cli_sha256": "e1a7b355e8ce1c0f8f82d9fd52ae9f836c5f683c510bcb4184f5d3e4f98b699a",
+  "ablation_changed": 0,
+  "parity": "OK",
+  "parity_scope": "upstream datatests",
+  "validation": {
+    "upstream_datatests": "675/675",
+    "stage_baseline": "4427/4427",
+    "new_stage_before": "0/4",
+    "new_stage_after": "4/4",
+    "new_assertions": 4,
+    "removed_assertions": 0,
+    "spec": "passed",
+    "catalog": "passed",
+    "tools": {
+      "run": 136,
+      "skipped": 1
+    },
+    "workspace": "pending"
+  },
+  "native": {
+    "compiler_flags": [
+      "--edition=2021",
+      "-C overflow-checks=yes"
+    ],
+    "optimization_levels": [
+      0,
+      2
+    ],
+    "complete_emitted_arithmetic_functions": 40,
+    "arithmetic_cases_per_level": 2088,
+    "callback_cases_per_level": 125,
+    "wide_primitive_ir_test": "passed",
+    "wide_expression_cases_per_level": 36
+  },
+  "off_target": {
+    "authored_c_go_identical": 80,
+    "fixture_c_go_json_identical": 346
+  },
+  "speed_off_ms": null,
+  "speed_on_ms": null,
+  "speed_delta_pct": 2.973,
+  "speed_samples": 20,
+  "speed_budget_pct": 5,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "timing": {
+    "method": "Exact parent and candidate releases on CPU 76 with matching compiled specs. Each of ten alternating ABBA and BAAB rounds compares the mean of two invocations per build. The reported delta is the median of the paired deltas.",
+    "sample_unit": "timed invocations per build per workload",
+    "absolute_medians": "The timing script retained paired deltas only.",
+    "base_command": [
+      "decompile-all",
+      "<image>",
+      "--json",
+      "--no-vars",
+      "--omit",
+      "aliases,line_mappings,variables,types",
+      "--language",
+      "<language>"
+    ],
+    "authored_binary_sha256": "aaee9480111ad7c0249f6d097955e5b10aabed834fc31cce1b4b4653c5120028",
+    "rust_fixture": "decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_flags_real_x86_64",
+    "rust_fixture_sha256": "8fc4bd9225151ce8b081866e7de08593cad56795a7c684781a9e9922ad951af0",
+    "rust_fixture_extra_flags": [
+      "--max-size",
+      "384",
+      "--limit",
+      "128",
+      "--max-fn-seconds",
+      "3",
+      "--mode",
+      "fast"
+    ],
+    "rust_fixture_changed_bodies": 45,
+    "rust_fixture_errors_each_arm": 0,
+    "workloads": [
+      {
+        "workload": "authored_40_functions",
+        "language": "c",
+        "pairs": 10,
+        "wall_delta_pct": -0.166,
+        "cpu_delta_pct": -0.168,
+        "paired_wall_deltas_pct": [
+          -1.125,
+          -0.138,
+          1.861,
+          -0.96,
+          -8.834,
+          617.218,
+          -0.346,
+          2.113,
+          0.265,
+          -0.193
+        ],
+        "paired_cpu_deltas_pct": [
+          -1.113,
+          -0.152,
+          1.864,
+          -0.997,
+          -8.838,
+          2.009,
+          -0.359,
+          2.122,
+          0.26,
+          -0.184
+        ]
+      },
+      {
+        "workload": "authored_40_functions",
+        "language": "go",
+        "pairs": 10,
+        "wall_delta_pct": -0.251,
+        "cpu_delta_pct": -0.389,
+        "paired_wall_deltas_pct": [
+          4.359,
+          -65.645,
+          -0.52,
+          -4.156,
+          12.601,
+          131.734,
+          2.603,
+          0.019,
+          -20.829,
+          -2.613
+        ],
+        "paired_cpu_deltas_pct": [
+          1.809,
+          -1.942,
+          -0.526,
+          -4.166,
+          12.59,
+          -0.253,
+          2.618,
+          0.012,
+          -20.851,
+          -2.603
+        ]
+      },
+      {
+        "workload": "authored_40_functions",
+        "language": "rust",
+        "pairs": 10,
+        "wall_delta_pct": 2.973,
+        "cpu_delta_pct": 2.962,
+        "paired_wall_deltas_pct": [
+          6.813,
+          3.116,
+          3.385,
+          333.672,
+          2.83,
+          1.98,
+          0.13,
+          0.445,
+          -2.532,
+          4.664
+        ],
+        "paired_cpu_deltas_pct": [
+          6.836,
+          3.102,
+          3.356,
+          3.473,
+          2.822,
+          1.989,
+          0.15,
+          0.448,
+          -2.549,
+          4.658
+        ]
+      },
+      {
+        "workload": "rust_fmt_flags_real_x86_64_bounded_128",
+        "language": "rust",
+        "pairs": 10,
+        "wall_delta_pct": -1.953,
+        "cpu_delta_pct": -1.95,
+        "paired_wall_deltas_pct": [
+          3.44,
+          -3.084,
+          -1.276,
+          -0.697,
+          -4.817,
+          -6.161,
+          -1.316,
+          -2.59,
+          -13.138,
+          0.947
+        ],
+        "paired_cpu_deltas_pct": [
+          3.221,
+          -3.082,
+          -1.276,
+          -0.7,
+          -4.815,
+          -6.164,
+          -1.312,
+          -2.588,
+          -13.141,
+          0.944
+        ]
+      }
+    ]
+  },
+  "limitation": "128-bit output is verified at primitive IR. An x86-64 __int128 binary still recovers 64-bit argument limbs and a split result.",
+  "replay": {
+    "parent_commit": "3a7385b58ae1562137d3d71bf0f77b9aa667f891",
+    "parent_tree": "9620bc8cecf88e68a7844431f03f605b5f15a0dd",
+    "source_parent_commit": "b46e21a6a4014ae1d492c88579e36c238944f926",
+    "source_validation_scope": "All other validation and timing fields retain the earlier a42 snapshot; replay validation is pending.",
+    "parent_stage_assertions": 4498,
+    "expected_stage_assertions": 4502,
+    "stage_baseline_unchanged": false,
+    "xml_corpus_files": 779,
+    "runtime_workspace": "pending: original fixture execution is not authorized",
+    "stage_baseline_regenerated_after_pass": true,
+    "candidate_stage_assertions": 4502,
+    "candidate_cli_sha256": "9a3e267038c450cb5038ddb489cad26bc5c2ae273f10071bca8e8d7cc0886605",
+    "candidate_harness_sha256": "2bbc3e4b8747692c68f4d6977be320fe8d3661d275dc3faa47be21d138b8c43e",
+    "validation": {
+      "release_build": "passed",
+      "upstream_datatests": "675/675",
+      "stages": "4502/4502",
+      "parent_stages_retained": 4498,
+      "new_stage_assertions": 4,
+      "removed_stage_assertions": 0,
+      "catalog": "passed",
+      "spec": "passed",
+      "c_go_identical_records": 426,
+      "prior_native_arithmetic_bodies_identical": 40,
+      "prior_native_loop_body_identical": true,
+      "prior_release_loop_full_text_identical": true,
+      "original_fixture_binaries_executed": 0,
+      "timing": "bounded paired median budget met; coarse shared-host sample",
+      "workspace_runtime": "pending"
+    },
+    "timing": {
+      "state": "completed_bounded_budget_met_with_noise",
+      "parent_commit": "3a7385b58ae1562137d3d71bf0f77b9aa667f891",
+      "method": "Ten alternating ABBA/BAAB rounds per workload after four warmup invocations, two timed launches per build per round. Report median paired mean ratio; retain every round. Startup-inclusive wall and child CPU milliseconds.",
+      "samples_per_build_per_workload": 20,
+      "paired_rounds_per_workload": 10,
+      "affinity_cpu": 17,
+      "smt_sibling": 57,
+      "precheck_intervals": 4,
+      "precheck_interval_seconds": 2,
+      "noise": {
+        "interval_seconds": 2,
+        "intervals": 26,
+        "sibling_busy_median_pct": 0.48206486386023606,
+        "sibling_busy_max_pct": 76.52582159624413,
+        "sibling_busy_over_5pct_intervals": [
+          {
+            "elapsed_s": 2.135790118947625,
+            "busy_pct": 76.52582159624413
+          },
+          {
+            "elapsed_s": 54.00214363913983,
+            "busy_pct": 42.5
+          }
+        ]
+      },
+      "workloads": [
+        {
+          "image": "matrix.elf",
+          "language": "c",
+          "pairs": 10,
+          "flags": [],
+          "time_columns_ms": [
+            "wall",
+            "cpu"
+          ],
+          "rounds": [
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  202.89036724716425,
+                  202.48599999999996
+                ],
+                [
+                  124.9171900562942,
+                  124.56799999999984
+                ]
+              ],
+              "candidate": [
+                [
+                  205.7786639779806,
+                  205.387
+                ],
+                [
+                  205.97414812073112,
+                  205.5650000000001
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  123.38266242295504,
+                  123.08699999999989
+                ],
+                [
+                  124.03403362259269,
+                  123.74200000000008
+                ]
+              ],
+              "candidate": [
+                [
+                  128.9024567231536,
+                  128.5759999999999
+                ],
+                [
+                  124.80990774929523,
+                  124.50499999999987
+                ]
+              ]
+            },
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  120.7589153200388,
+                  120.46800000000007
+                ],
+                [
+                  122.96317890286446,
+                  122.66500000000002
+                ]
+              ],
+              "candidate": [
+                [
+                  121.29114707931876,
+                  120.99200000000043
+                ],
+                [
+                  125.5139890126884,
+                  125.19799999999987
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  122.16708296909928,
+                  121.87300000000012
+                ],
+                [
+                  120.75921799987555,
+                  120.46600000000008
+                ]
+              ],
+              "candidate": [
+                [
+                  125.11160084977746,
+                  124.7910000000001
+                ],
+                [
+                  121.00591929629445,
+                  120.67999999999968
+                ]
+              ]
+            },
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  118.89798520132899,
+                  118.60800000000037
+                ],
+                [
+                  120.02481520175934,
+                  119.71500000000013
+                ]
+              ],
+              "candidate": [
+                [
+                  124.81890106573701,
+                  124.49999999999983
+                ],
+                [
+                  120.26905501261353,
+                  119.95399999999967
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  120.03054982051253,
+                  119.72700000000003
+                ],
+                [
+                  119.11964137107134,
+                  118.8269999999998
+                ]
+              ],
+              "candidate": [
+                [
+                  123.65459790453315,
+                  123.33299999999959
+                ],
+                [
+                  119.20085595920682,
+                  118.90199999999984
+                ]
+              ]
+            },
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  451.69257605448365,
+                  126.38900000000042
+                ],
+                [
+                  124.36904571950436,
+                  124.09000000000015
+                ]
+              ],
+              "candidate": [
+                [
+                  123.91499988734722,
+                  123.58800000000025
+                ],
+                [
+                  121.91914301365614,
+                  121.58200000000008
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  122.93356424197555,
+                  122.64600000000003
+                ],
+                [
+                  117.95489536598325,
+                  117.66099999999969
+                ]
+              ],
+              "candidate": [
+                [
+                  123.771698679775,
+                  123.47700000000039
+                ],
+                [
+                  121.13302107900381,
+                  120.80800000000048
+                ]
+              ]
+            },
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  122.45836481451988,
+                  122.16199999999967
+                ],
+                [
+                  122.23416985943913,
+                  121.94199999999933
+                ]
+              ],
+              "candidate": [
+                [
+                  131.36521633714437,
+                  130.53399999999948
+                ],
+                [
+                  124.64138213545084,
+                  124.33500000000097
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  381.1267982237041,
+                  127.00800000000024
+                ],
+                [
+                  123.41116787865758,
+                  123.02299999999944
+                ]
+              ],
+              "candidate": [
+                [
+                  133.20469297468662,
+                  132.91999999999993
+                ],
+                [
+                  126.64189701899886,
+                  126.33699999999992
+                ]
+              ]
+            }
+          ],
+          "wall_base_median_ms": 122.69596452824771,
+          "wall_candidate_median_ms": 124.72564494237304,
+          "wall_delta_percent": 1.608307558337596,
+          "wall_deltas": [
+            25.608090150753714,
+            2.544560867364476,
+            1.2649825117144298,
+            1.31365733737685,
+            2.5803965401631546,
+            1.5493454777076865,
+            -57.32502676641529,
+            1.6672696389675057,
+            4.623787895168774,
+            -48.498109666346245
+          ],
+          "cpu_base_median_ms": 122.40399999999985,
+          "cpu_candidate_median_ms": 124.4175000000004,
+          "cpu_delta_percent": 2.0941550721333857,
+          "cpu_deltas": [
+            25.652644517419244,
+            2.5329276543679446,
+            1.257336519518204,
+            1.2924044417116365,
+            2.5725590899741135,
+            1.5430468573151668,
+            -2.1195389633463124,
+            1.6553824898988267,
+            4.410005571396414,
+            3.6899424471366293
+          ]
+        },
+        {
+          "image": "matrix.elf",
+          "language": "go",
+          "pairs": 10,
+          "flags": [],
+          "time_columns_ms": [
+            "wall",
+            "cpu"
+          ],
+          "rounds": [
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  117.20552342012525,
+                  116.91200000000057
+                ],
+                [
+                  117.71271377801895,
+                  117.4260000000007
+                ]
+              ],
+              "candidate": [
+                [
+                  119.01691416278481,
+                  118.72399999999939
+                ],
+                [
+                  117.95932007953525,
+                  117.65999999999943
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  127.421532291919,
+                  127.10899999999947
+                ],
+                [
+                  117.5316502340138,
+                  117.2530000000005
+                ]
+              ],
+              "candidate": [
+                [
+                  120.67109299823642,
+                  120.38699999999913
+                ],
+                [
+                  119.73738670349121,
+                  119.4380000000006
+                ]
+              ]
+            },
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  124.53366490080953,
+                  124.24399999999957
+                ],
+                [
+                  121.68639991432428,
+                  121.35299999999916
+                ]
+              ],
+              "candidate": [
+                [
+                  124.79060562327504,
+                  124.51399999999957
+                ],
+                [
+                  121.02591386064887,
+                  120.72300000000058
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  119.08723879605532,
+                  118.79999999999913
+                ],
+                [
+                  118.9986290410161,
+                  118.69799999999952
+                ]
+              ],
+              "candidate": [
+                [
+                  119.94301527738571,
+                  119.64900000000145
+                ],
+                [
+                  118.80701314657927,
+                  118.49800000000022
+                ]
+              ]
+            },
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  120.0232720002532,
+                  119.69199999999924
+                ],
+                [
+                  117.52360174432397,
+                  117.18400000000062
+                ]
+              ],
+              "candidate": [
+                [
+                  122.37714696675539,
+                  122.05800000000045
+                ],
+                [
+                  119.55762794241309,
+                  119.24400000000057
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  119.6190039627254,
+                  119.29999999999995
+                ],
+                [
+                  118.10473818331957,
+                  117.82200000000032
+                ]
+              ],
+              "candidate": [
+                [
+                  123.68547124788165,
+                  123.32600000000049
+                ],
+                [
+                  803.179255221039,
+                  128.23500000000055
+                ]
+              ]
+            },
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  116.88521085307002,
+                  116.57199999999968
+                ],
+                [
+                  120.33161707222462,
+                  120.02400000000036
+                ]
+              ],
+              "candidate": [
+                [
+                  118.40826692059636,
+                  118.10400000000065
+                ],
+                [
+                  119.78334607556462,
+                  119.49399999999999
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  115.71718193590641,
+                  115.44700000000051
+                ],
+                [
+                  118.12212085351348,
+                  117.82100000000106
+                ]
+              ],
+              "candidate": [
+                [
+                  118.34586691111326,
+                  118.02699999999876
+                ],
+                [
+                  119.1428448073566,
+                  118.83199999999982
+                ]
+              ]
+            },
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  117.90672270581126,
+                  117.60499999999973
+                ],
+                [
+                  118.05250309407711,
+                  117.71799999999865
+                ]
+              ],
+              "candidate": [
+                [
+                  121.15971371531487,
+                  120.86999999999959
+                ],
+                [
+                  119.89673878997564,
+                  119.57800000000107
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  126.15681905299425,
+                  125.82100000000062
+                ],
+                [
+                  121.40892492607236,
+                  121.0909999999994
+                ]
+              ],
+              "candidate": [
+                [
+                  122.16162914410233,
+                  121.87900000000118
+                ],
+                [
+                  124.07953897491097,
+                  123.74399999999808
+                ]
+              ]
+            }
+          ],
+          "wall_base_median_ms": 118.56037494726479,
+          "wall_candidate_median_ms": 119.91987703368068,
+          "wall_delta_percent": 0.6434869956273848,
+          "wall_deltas": [
+            0.8760482237230693,
+            -1.8553352838042936,
+            -0.1638962005443778,
+            0.27895842492762224,
+            1.8471727686508732,
+            289.89152623195025,
+            0.4109257675317002,
+            1.5606482253055498,
+            2.1602150490716454,
+            -0.5350400417940326
+          ],
+          "cpu_base_median_ms": 118.25999999999992,
+          "cpu_candidate_median_ms": 119.61350000000127,
+          "cpu_delta_percent": 0.648302285133362,
+          "cpu_deltas": [
+            0.8730978330435235,
+            -1.8566716592597232,
+            -0.14658159505148705,
+            0.2732654590788197,
+            1.868488154140202,
+            6.089270502104727,
+            0.4235067372232004,
+            1.539431040690098,
+            2.1778576679722272,
+            -0.5220483411097043
+          ]
+        },
+        {
+          "image": "matrix.elf",
+          "language": "rust",
+          "pairs": 10,
+          "flags": [],
+          "time_columns_ms": [
+            "wall",
+            "cpu"
+          ],
+          "rounds": [
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  120.73247833177447,
+                  120.4070000000006
+                ],
+                [
+                  123.15909704193473,
+                  122.84300000000093
+                ]
+              ],
+              "candidate": [
+                [
+                  123.59732296317816,
+                  123.29399999999868
+                ],
+                [
+                  122.19352694228292,
+                  121.88900000000125
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  124.93215408176184,
+                  124.65999999999954
+                ],
+                [
+                  124.0589409135282,
+                  123.75200000000186
+                ]
+              ],
+              "candidate": [
+                [
+                  125.68137794733047,
+                  125.38499999999874
+                ],
+                [
+                  123.92848590388894,
+                  123.61999999999807
+                ]
+              ]
+            },
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  121.27145193517208,
+                  120.96800000000086
+                ],
+                [
+                  119.54940296709538,
+                  119.22999999999995
+                ]
+              ],
+              "candidate": [
+                [
+                  121.50377174839377,
+                  121.22199999999994
+                ],
+                [
+                  122.92571412399411,
+                  122.63300000000044
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  129.63657826185226,
+                  129.363000000001
+                ],
+                [
+                  121.99929263442755,
+                  121.69500000000077
+                ]
+              ],
+              "candidate": [
+                [
+                  127.72119184955955,
+                  127.42699999999863
+                ],
+                [
+                  124.03727974742651,
+                  123.7509999999995
+                ]
+              ]
+            },
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  123.81563615053892,
+                  123.49299999999985
+                ],
+                [
+                  121.84124672785401,
+                  121.5230000000007
+                ]
+              ],
+              "candidate": [
+                [
+                  126.82129489257932,
+                  126.49200000000027
+                ],
+                [
+                  124.28498081862926,
+                  123.9669999999986
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  123.40821465477347,
+                  123.10500000000158
+                ],
+                [
+                  122.90226807817817,
+                  122.5960000000006
+                ]
+              ],
+              "candidate": [
+                [
+                  126.10755115747452,
+                  125.80499999999795
+                ],
+                [
+                  124.11631504073739,
+                  123.81300000000061
+                ]
+              ]
+            },
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  121.8859632499516,
+                  121.58799999999958
+                ],
+                [
+                  122.6512799039483,
+                  122.33800000000095
+                ]
+              ],
+              "candidate": [
+                [
+                  126.41434697434306,
+                  126.08900000000034
+                ],
+                [
+                  124.09712607041001,
+                  123.76899999999935
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  123.38373390957713,
+                  123.08299999999983
+                ],
+                [
+                  123.08984529227018,
+                  122.78999999999884
+                ]
+              ],
+              "candidate": [
+                [
+                  124.25084877759218,
+                  123.94599999999967
+                ],
+                [
+                  122.86321679130197,
+                  122.57500000000033
+                ]
+              ]
+            },
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  126.37839885428548,
+                  126.03700000000018
+                ],
+                [
+                  120.2074303291738,
+                  119.90300000000164
+                ]
+              ],
+              "candidate": [
+                [
+                  124.96223812922835,
+                  124.62199999999956
+                ],
+                [
+                  123.02920408546925,
+                  122.70000000000047
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  120.1638258062303,
+                  119.87500000000128
+                ],
+                [
+                  120.2684729360044,
+                  119.9469999999998
+                ]
+              ],
+              "candidate": [
+                [
+                  123.19533620029688,
+                  122.89100000000097
+                ],
+                [
+                  120.95744581893086,
+                  120.6579999999997
+                ]
+              ]
+            }
+          ],
+          "wall_base_median_ms": 122.77677399106324,
+          "wall_candidate_median_ms": 124.06720290891826,
+          "wall_delta_percent": 1.1386041836235483,
+          "wall_deltas": [
+            0.7787372437287665,
+            0.2485104360624213,
+            1.4984711235183301,
+            0.04872147212937605,
+            2.218294382377728,
+            1.5888010213122472,
+            2.4430756697020994,
+            0.2598600503635806,
+            0.570029930711291,
+            1.5474140938866565
+          ],
+          "cpu_base_median_ms": 122.46700000000078,
+          "cpu_candidate_median_ms": 123.75999999999942,
+          "cpu_delta_percent": 1.1585748232524118,
+          "cpu_deltas": [
+            0.794655704007563,
+            0.23871632610155125,
+            1.5224939424972606,
+            0.04779772004730454,
+            2.2214875763208575,
+            1.5942141057612158,
+            2.4318850799009306,
+            0.26355069487147276,
+            0.5619256729276323,
+            1.5540692680402701
+          ]
+        },
+        {
+          "image": "rust_fmt_flags_real_x86_64",
+          "language": "rust",
+          "pairs": 10,
+          "flags": [
+            "--max-size",
+            "384",
+            "--limit",
+            "128",
+            "--max-fn-seconds",
+            "3",
+            "--mode",
+            "fast"
+          ],
+          "time_columns_ms": [
+            "wall",
+            "cpu"
+          ],
+          "rounds": [
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  780.8779780752957,
+                  780.5470000000008
+                ],
+                [
+                  735.9862867742777,
+                  735.6849999999965
+                ]
+              ],
+              "candidate": [
+                [
+                  757.4153263121843,
+                  757.1000000000025
+                ],
+                [
+                  742.1852578409016,
+                  741.8659999999991
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  756.8206479772925,
+                  756.4910000000018
+                ],
+                [
+                  776.3061369769275,
+                  775.9999999999972
+                ]
+              ],
+              "candidate": [
+                [
+                  756.1069116927683,
+                  755.7900000000033
+                ],
+                [
+                  770.5356441438198,
+                  770.2249999999999
+                ]
+              ]
+            },
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  768.628345336765,
+                  768.3119999999999
+                ],
+                [
+                  758.3867688663304,
+                  758.0530000000012
+                ]
+              ],
+              "candidate": [
+                [
+                  777.8208800591528,
+                  777.4840000000003
+                ],
+                [
+                  766.1669789813459,
+                  765.8379999999987
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  775.3929048776627,
+                  775.0909999999989
+                ],
+                [
+                  764.1372876241803,
+                  763.8310000000033
+                ]
+              ],
+              "candidate": [
+                [
+                  801.9563211128116,
+                  801.6809999999995
+                ],
+                [
+                  782.5992610305548,
+                  782.2810000000029
+                ]
+              ]
+            },
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  769.4454160518944,
+                  769.1169999999987
+                ],
+                [
+                  792.8421809338033,
+                  792.5600000000018
+                ]
+              ],
+              "candidate": [
+                [
+                  828.8433230482042,
+                  828.5229999999988
+                ],
+                [
+                  806.4764142036438,
+                  806.1729999999985
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  795.8830296993256,
+                  795.5609999999992
+                ],
+                [
+                  785.8638889156282,
+                  785.5319999999972
+                ]
+              ],
+              "candidate": [
+                [
+                  838.8065677136183,
+                  838.476
+                ],
+                [
+                  787.5725789926946,
+                  787.0550000000005
+                ]
+              ]
+            },
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  791.0723630338907,
+                  790.2710000000015
+                ],
+                [
+                  793.8386090099812,
+                  793.5330000000072
+                ]
+              ],
+              "candidate": [
+                [
+                  777.5490880012512,
+                  777.2190000000049
+                ],
+                [
+                  791.1400641314685,
+                  790.8419999999934
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  783.6521952413023,
+                  783.3079999999999
+                ],
+                [
+                  791.2130919285119,
+                  790.8990000000014
+                ]
+              ],
+              "candidate": [
+                [
+                  800.0852749682963,
+                  799.7639999999997
+                ],
+                [
+                  795.3816121444106,
+                  795.0370000000033
+                ]
+              ]
+            },
+            {
+              "order": "ABBA",
+              "base": [
+                [
+                  784.5405312255025,
+                  784.2109999999938
+                ],
+                [
+                  788.8401877135038,
+                  788.5369999999945
+                ]
+              ],
+              "candidate": [
+                [
+                  782.0499408990145,
+                  781.7530000000081
+                ],
+                [
+                  804.4063998386264,
+                  804.0790000000042
+                ]
+              ]
+            },
+            {
+              "order": "BAAB",
+              "base": [
+                [
+                  807.8925330191851,
+                  807.5779999999995
+                ],
+                [
+                  797.1445159055293,
+                  796.8340000000014
+                ]
+              ],
+              "candidate": [
+                [
+                  821.3808820582926,
+                  821.0749999999969
+                ],
+                [
+                  815.7251058146358,
+                  815.41
+                ]
+              ]
+            }
+          ],
+          "wall_base_median_ms": 784.0963632334024,
+          "wall_candidate_median_ms": 789.3563215620816,
+          "wall_delta_percent": 1.209824068158294,
+          "wall_deltas": [
+            -1.1381163823646068,
+            -0.42294148020025624,
+            1.1114981560782278,
+            2.9246188129869566,
+            4.674692445044015,
+            2.8217047598512845,
+            -1.0235161594113196,
+            1.30814998023836,
+            0.8310526270750351,
+            1.9980186108288667
+          ],
+          "cpu_base_median_ms": 783.7594999999968,
+          "cpu_candidate_median_ms": 788.948499999997,
+          "cpu_delta_percent": 1.2095771374339148,
+          "cpu_deltas": [
+            -1.1387439389219822,
+            -0.42257996947427934,
+            1.110940043829478,
+            2.926724031497363,
+            4.675678773523373,
+            2.810587359504102,
+            -0.9939992574845347,
+            1.3082142310383515,
+            0.8319196718116428,
+            1.9990501192957977
+          ]
+        }
+      ],
+      "budget_pct": 5,
+      "max_paired_median_wall_or_cpu_delta_pct": 2.0941550721333857,
+      "within_budget": true,
+      "raw_samples_sha256": "a2c888de23e43a9f313db01bc5954e93a2b785f28373e5fc443d1ecef7136f23",
+      "noise_sha256": "042b78febcf4464642b5a5cebaef5c281ffcd2ee4da7d4a8722a6c67c4e6ac16",
+      "limitations": [
+        "Single coarse matched run on a shared host; no repetition or outlier removal.",
+        "SMT sibling was mostly idle but had activity spikes; C/Go individual wall pairs ranged from -57.33% to +289.89%.",
+        "Only the authored40-function fixture and a bounded128-function real-Rust sample were timed; not a whole-corpus speed claim.",
+        "The 128-function sample uses max-size384,limit128,max-fn-seconds3,mode fast; both builds use identical flags."
+      ],
+      "original_fixture_binaries_executed": 0
+    }
+  },
+  "replay_b779": {
+    "base_commit": "b779fcffdc00c7d6e453dd58ba88c5192bd42d78",
+    "parent_stage_baseline": 4512,
+    "expected_stage_baseline": 4516,
+    "added_assertions": 4,
+    "new_xml_count": 781,
+    "exact_build": "pending",
+    "workspace": "pending",
+    "integrated_parity": "pending",
+    "timing": "pending",
+    "evidence": "/home/mahaloz/kwt/ap-rust-wrapping-b779-evidence"
+  },
+  "replay_b5d9": {
+    "base_commit": "b5d9f8563c97d35c51e6c2c2d1d586b2793f3567",
+    "parent_stage_baseline": 4591,
+    "expected_stage_baseline": 4591,
+    "added_assertions": 0,
+    "removed_assertions": 0,
+    "xml_count": 796,
+    "focused_stage_tool_sha256": "b74031a93f6326749fc2eba3ca9f22b862b9b314919b8cf6139aed98cd00b15b",
+    "focused_stage_assertions": "47/47",
+    "exact_build": "pending",
+    "workspace": "pending",
+    "integrated_parity": "pending"
+  }
+}

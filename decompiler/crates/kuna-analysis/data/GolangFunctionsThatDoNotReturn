@@ -2,7 +2,7 @@
 
 #runtime.abort and runtime.systemstack_switch intentionally have bytes that can cause undefined instruction errors in Ghidra 
 #
-# Vendored verbatim from Ghidra Ghidra/Features/Base/data/GolangFunctionsThatDoNotReturn
+# Adapted from Ghidra Ghidra/Features/Base/data/GolangFunctionsThatDoNotReturn
 # (the data backing NoReturnFunctionAnalyzer's `compiler id="golang"` arm in
 # Ghidra/Features/Base/data/noReturnFunctionConstraints.xml). Applied IN ADDITION
 # to ElfFunctionsThatDoNotReturn when the source language is detected as Go.
@@ -60,7 +60,6 @@ runtime.goPanicSliceBU
 runtime.goPanicSliceConvert
 
 runtime.panic
-runtime.panicCheck1
 runtime.panicCheck2
 runtime.panicdivide
 runtime.panicdottypeE

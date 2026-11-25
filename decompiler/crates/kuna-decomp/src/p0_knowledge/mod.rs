@@ -24,6 +24,7 @@ pub mod kuna_ppcapu;
 // (kuna) Apple firmware container / kernel-collection entry selection (load-time,
 // env-bridged).
 pub mod kuna_kernelcache;
+pub mod kuna_kernelcacheboot;
 // (kuna) PE chained-`UNWIND_INFO` `.pdata` entry suppression option gate
 // (load-time, env-bridged).
 // (kuna) x86-64 PE REX-prefixed tail-jump import-thunk rejection option gate
@@ -46,6 +47,8 @@ pub mod kuna_goabi;
 // (kuna) Discriminant-value naming for recovered variant parts (load-time,
 // env-bridged; the first VariantLayout consumer).
 pub mod kuna_gotypes;
+pub mod kuna_gopointermethod;
+pub mod kuna_gostringinput;
 // (kuna) Language facets: what a C-shaped type means in the source language
 // (the VariantLayout-style side table on the type factory).
 pub mod kuna_langfacet;

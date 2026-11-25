@@ -101,6 +101,12 @@ pub struct RelocSymbolInfo {
     pub undefined: bool,
 }
 
+/// The most zero-fill one object's layout will allocate for bytes its file does
+/// not hold (`SHT_NOBITS`, or a section extent past the end of the file). A
+/// section header declares that size freely, so it is a claim, not a length.
+/// Code gets none: bytes the file does not hold are not instructions.
+const ZERO_FILL_LIMIT: u64 = 256 << 20;
+
 const DIAGNOSTIC_SAMPLE_LIMIT: usize = 3;
 const DIAGNOSTIC_GROUP_LIMIT: usize = 8;
 
@@ -124,6 +130,16 @@ struct RelocDiagnosticGroup {
 pub struct RelocDiagnostics {
     groups: HashMap<RelocDiagnosticKey, RelocDiagnosticGroup>,
     total: usize,
+    truncated: Vec<TruncatedSection>,
+    truncated_total: usize,
+}
+
+/// A section laid out shorter than its header declares.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TruncatedSection {
+    pub name: String,
+    pub declared: u64,
+    pub laid: u64,
 }
 
 impl RelocDiagnostics {
@@ -155,8 +171,20 @@ impl RelocDiagnostics {
         }
     }
 
+    fn record_truncated(&mut self, name: &str, declared: u64, laid: u64) {
+        self.truncated_total += 1;
+        if self.truncated.len() < DIAGNOSTIC_GROUP_LIMIT {
+            self.truncated.push(TruncatedSection { name: name.to_string(), declared, laid });
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
-        self.total == 0
+        self.total == 0 && self.truncated_total == 0
+    }
+
+    /// The sections laid out short, up to the display limit.
+    pub fn truncated_sections(&self) -> &[TruncatedSection] {
+        &self.truncated
     }
 
     pub fn total(&self) -> usize {
@@ -166,8 +194,25 @@ impl RelocDiagnostics {
     /// Render a fixed-size diagnostic report. The number of relocation records
     /// affects counts only, never the number of emitted stderr lines.
     pub fn report_lines(&self) -> Vec<String> {
-        if self.is_empty() {
-            return Vec::new();
+        let mut lines: Vec<String> = self
+            .truncated
+            .iter()
+            .map(|t| {
+                format!(
+                    "section {:?} declares {:#x} byte(s), more than the file holds; laid out {:#x} \
+                     (code is not zero-filled, data up to {:#x} per object)",
+                    t.name, t.declared, t.laid, ZERO_FILL_LIMIT
+                )
+            })
+            .collect();
+        if self.truncated_total > self.truncated.len() {
+            lines.push(format!(
+                "{} more truncated section(s) suppressed",
+                self.truncated_total - self.truncated.len()
+            ));
+        }
+        if self.total == 0 {
+            return lines;
         }
         let mut groups: Vec<&RelocDiagnosticGroup> = self.groups.values().collect();
         groups.sort_by_key(|group| {
@@ -179,13 +224,13 @@ impl RelocDiagnostics {
         });
         let shown = groups.len().min(DIAGNOSTIC_GROUP_LIMIT);
         let hidden = groups.len() - shown;
-        let mut lines = vec![format!(
+        lines.push(format!(
             "{} relocation(s) skipped in {} group(s); showing {} group(s), {} suppressed",
             self.total,
             groups.len(),
             shown,
             hidden
-        )];
+        ));
         for group in groups.into_iter().take(DIAGNOSTIC_GROUP_LIMIT) {
             let kind = group
                 .key
@@ -244,6 +289,9 @@ pub struct RelocLayout {
     /// (see [`crate::loader::kuna_relocrebase`]) — sections are laid out
     /// non-contiguously, so there is no single global offset.
     pub section_vma: HashMap<SectionIndex, u64>,
+    /// `(section, laid size)` for each section laid out shorter than its header
+    /// declares, a dropped one at size 0.
+    pub shortened: Vec<(SectionIndex, u64)>,
     /// The undefined/COMMON symbol -> synthetic address map, keyed by the parsed
     /// object's own [`SymbolIndex`].  Same purpose as [`Self::section_vma`], for
     /// the externs.
@@ -315,6 +363,8 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
     let mut vma_of: HashMap<SectionIndex, u64> = HashMap::new();
     let mut section_info: Vec<RelocSectionInfo> = Vec::new();
     let mut cursor = RELOC_BASE;
+    let mut zero_fill_left = ZERO_FILL_LIMIT;
+    let mut shortened: Vec<(SectionIndex, u64)> = Vec::new();
     // Not mapped at run time: .rela.*, .symtab, .debug_*, … An empty section
     // occupies no memory; laying it out would alias the next section's VMA (a
     // COFF object carries empty `.text`/`.data`/`.bss` placeholders ahead of its
@@ -346,25 +396,34 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
             cursor = align_up(cursor, 16).wrapping_add(g.size());
             gp = Some(g);
         }
-        let size = sec.size();
+        let declared = sec.size();
         let align = sec.align().max(1);
         let vma = align_up(cursor, align);
-        // PROGBITS bytes verbatim; NOBITS (.bss) zero-filled to its RAM size.
-        let data: Vec<u8> = if matches!(sec.kind(), SectionKind::UninitializedData) {
-            vec![0u8; size as usize]
+        // PROGBITS bytes verbatim; NOBITS (.bss) and a short data extent are
+        // zero-filled to the RAM size, within the object's zero-fill budget.
+        let mut data: Vec<u8> = if matches!(sec.kind(), SectionKind::UninitializedData) {
+            Vec::new()
         } else {
-            match sec.data() {
-                Ok(d) => {
-                    let mut v = d.to_vec();
-                    // A short file extent (rare) is zero-padded to the RAM size.
-                    if (v.len() as u64) < size {
-                        v.resize(size as usize, 0);
-                    }
-                    v
-                }
-                Err(_) => vec![0u8; size as usize],
-            }
+            sec.data().map(|d| d.to_vec()).unwrap_or_default()
         };
+        let held = data.len() as u64;
+        let flags = fmt.section_bits(sec.name().unwrap_or(""), sec.kind(), sec.flags());
+        let code = flags & kuna_sleigh::loadimage::section_flags::CODE != 0
+            || sec.kind() == SectionKind::Text;
+        let fillable = if code { 0 } else { zero_fill_left };
+        let fill = declared.saturating_sub(held).min(fillable);
+        zero_fill_left -= fill;
+        let size = declared.min(held + fill);
+        if fill != 0 {
+            data.resize((held + fill) as usize, 0);
+        }
+        if size < declared {
+            diagnostics.record_truncated(sec.name().unwrap_or(""), declared, size);
+            shortened.push((sec.index(), size));
+            if size == 0 {
+                continue;
+            }
+        }
         vma_of.insert(sec.index(), vma);
         section_info.push(RelocSectionInfo {
             index: sec.index().0,
@@ -376,7 +435,7 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
             index: sec.index(),
             vma,
             size,
-            flags: fmt.section_bits(sec.name().unwrap_or(""), sec.kind(), sec.flags()),
+            flags,
             data,
         });
         cursor = vma.wrapping_add(size);
@@ -813,6 +872,7 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         funcsizes,
         diagnostics,
         section_vma: vma_of,
+        shortened,
         extern_addr: extern_of,
         extern_range,
         common_range: common_allocator.range(),
@@ -978,6 +1038,8 @@ fn relocation_name(architecture: Architecture, r_type: u32) -> &'static str {
         (Architecture::Sparc | Architecture::Sparc32Plus, object::elf::R_SPARC_LO10) => {
             "R_SPARC_LO10"
         }
+        (Architecture::Bpf, object::elf::R_BPF_64_64) => "R_BPF_64_64",
+        (Architecture::Bpf, object::elf::R_BPF_64_32) => "R_BPF_64_32",
         _ => "ELF relocation",
     }
 }
@@ -2232,5 +2294,105 @@ mod tests {
         assert_eq!(word_at(&layout, vma(".opd") + 8, 8), toc);
         let reached = toc as i64 + (half(&layout, vma(".text")) << 16) + half(&layout, vma(".text") + 4);
         assert_eq!(reached as u64, vma(".data") + 0x40);
+    }
+
+    /// `floatparam_x86_64.o` with the `sh_size` of the named section replaced.
+    fn with_section_size(name: &str, size: u64) -> Vec<u8> {
+        with_section_field(include_bytes!("../../tests/fixtures/floatparam_x86_64.o"), name, 0x20, size)
+    }
+
+    /// `image` with one 8-byte section header field of the named section replaced.
+    fn with_section_field(image: &[u8], name: &str, field: usize, value: u64) -> Vec<u8> {
+        let mut bytes = image.to_vec();
+        let index = object::File::parse(image).unwrap().section_by_name(name).unwrap().index().0;
+        let shoff = u64::from_le_bytes(bytes[0x28..0x30].try_into().unwrap()) as usize;
+        let at = shoff + index * 64 + field;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        bytes
+    }
+
+    fn laid(bytes: &[u8]) -> RelocLayout {
+        layout_relocatable(&object::File::parse(bytes).unwrap(), &ElfFormat)
+    }
+
+    fn section<'a>(layout: &'a RelocLayout, name: &str) -> Option<&'a RelocSectionInfo> {
+        layout.section_info.iter().find(|s| s.name == name)
+    }
+
+    #[test]
+    fn declared_zero_fill_is_bounded_per_object() {
+        let plain = laid(include_bytes!("../../tests/fixtures/floatparam_x86_64.o"));
+        assert!(plain.diagnostics.is_empty(), "{:?}", plain.diagnostics);
+        assert_eq!(section(&plain, ".bss").unwrap().size, 8);
+
+        let within = laid(&with_section_size(".bss", 1 << 20));
+        assert!(within.diagnostics.is_empty(), "{:?}", within.diagnostics);
+        assert_eq!(section(&within, ".bss").unwrap().size, 1 << 20);
+
+        for declared in [ZERO_FILL_LIMIT + 1, 0x9110_9de2, 0x00ff_ffff_ffff_0000, u64::MAX] {
+            let layout = laid(&with_section_size(".bss", declared));
+            let bss = section(&layout, ".bss").unwrap();
+            assert_eq!(bss.size, ZERO_FILL_LIMIT, "{declared:#x}");
+            assert_eq!(
+                layout.diagnostics.truncated_sections(),
+                [TruncatedSection { name: ".bss".into(), declared, laid: ZERO_FILL_LIMIT }]
+            );
+            let total: usize = layout.segments.iter().map(|(_, data)| data.len()).sum();
+            assert!(total as u64 <= ZERO_FILL_LIMIT + (1 << 20), "{total:#x}");
+            assert_eq!(section(&layout, ".text"), section(&plain, ".text"));
+            assert_eq!(section(&layout, ".data").unwrap().size, 4);
+            assert!(layout.diagnostics.report_lines()[0].contains("\".bss\""));
+        }
+    }
+
+    #[test]
+    fn a_file_backed_extent_past_the_file_is_bounded_and_code_is_never_filled() {
+        let declared = u64::MAX / 2;
+        let layout = laid(&with_section_size(".text", declared));
+        assert!(section(&layout, ".text").is_none());
+        assert_eq!(
+            layout.diagnostics.truncated_sections(),
+            [TruncatedSection { name: ".text".into(), declared, laid: 0 }]
+        );
+        assert_eq!(section(&layout, ".bss").unwrap().size, 8);
+
+        let layout = laid(&with_section_size(".data", declared));
+        assert_eq!(section(&layout, ".bss").unwrap().size, 8);
+        assert_eq!(section(&layout, ".data").unwrap().size, ZERO_FILL_LIMIT - 8);
+        assert_eq!(layout.diagnostics.truncated_sections().len(), 1);
+    }
+
+    #[test]
+    fn the_analyzer_view_carries_the_laid_sizes() {
+        for (name, declared, laid) in [(".text", 1u64 << 40, 0), (".bss", 1 << 40, ZERO_FILL_LIMIT)] {
+            let bytes = with_section_size(name, declared);
+            let file = object::File::parse(&*bytes).unwrap();
+            let view = crate::loader::kuna_relocrebase::rebased_view(&file, &bytes).unwrap();
+            let seen = object::File::parse(&*view.bytes).unwrap();
+            assert_eq!(seen.section_by_name(name).unwrap().size(), laid, "{name}");
+            assert!(view.ranges.iter().all(|&(lo, hi)| hi - lo <= ZERO_FILL_LIMIT));
+        }
+    }
+
+    #[test]
+    fn executable_zero_fill_storage_is_not_filled() {
+        const WRITE_ALLOC_EXEC: u64 = 0x7;
+        let bytes = with_section_field(&with_section_size(".bss", 1 << 40), ".bss", 0x8, WRITE_ALLOC_EXEC);
+        let layout = laid(&bytes);
+        assert!(section(&layout, ".bss").is_none());
+        assert_eq!(layout.diagnostics.truncated_sections()[0].laid, 0);
+    }
+
+    #[test]
+    fn an_object_left_with_no_section_still_gets_the_patched_view() {
+        let mut bytes = with_section_size(".text", 1 << 40);
+        for name in [".rodata.cst4", ".bss", ".data"] {
+            bytes = with_section_field(&bytes, name, 0x20, 0);
+        }
+        let file = object::File::parse(&*bytes).unwrap();
+        assert!(laid(&bytes).section_vma.is_empty());
+        let view = crate::loader::kuna_relocrebase::rebased_view(&file, &bytes).unwrap();
+        let seen = object::File::parse(&*view.bytes).unwrap();
+        assert_eq!(seen.section_by_name(".text").unwrap().size(), 0);
     }
 }

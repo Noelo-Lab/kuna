@@ -78,8 +78,8 @@ use kuna_base::types::{int4, int8, uint4, uintb};
 use crate::dtype::type_metatype;
 use crate::options::{BraceStyle, NamespaceStrategy};
 use crate::prettyprint::{
-    BraceStyle as EmitBraceStyle, Emit, EmitBase, EmitMarkup, EmitNoMarkup, MarkupProvenance,
-    MarkupRef, SyntaxHighlight,
+    BraceStyle as EmitBraceStyle, Emit, EmitBase, EmitMarkup, EmitNoMarkup, EmitPrettyPrint,
+    LowLevel, MarkupProvenance, MarkupRef, SyntaxHighlight,
 };
 use crate::printlanguage::{
     format_binary, modifiers, most_natural_base, parentheses, unicode_needs_escape, Atom, OpToken,
@@ -240,6 +240,8 @@ pub mod tokens {
     pub static CONDITIONAL: OpToken = op_token("?", ":", 3, 16, false, TokenType::Binary, 1, 0);
     /// The assignment operator `=` (printc.cc:57).
     pub static ASSIGNMENT: OpToken = op_token("=", "", 2, 14, false, TokenType::Binary, 1, 5);
+    /// (kuna `postinc`) `p++`, a postfix around its one operand and a blank.
+    pub static POST_INCREMENT: OpToken = op_token("", "++", 2, 66, false, TokenType::Postsurround, 0, 0);
     /// The comma operator `,` for parameter lists (printc.cc:58).
     pub static COMMA: OpToken = op_token(",", "", 2, 2, true, TokenType::Binary, 0, 0);
     /// The `new` operator (printc.cc:59).
@@ -1286,6 +1288,9 @@ pub enum PrintEmit {
     NoMarkup(EmitNoMarkup),
     /// The packed clang token-markup back-end (ghidra-mode `decompileAt`).
     Markup(EmitMarkup),
+    /// The line-breaking printer over the plain-text back-end, active once
+    /// `option maxlinewidth` sets a line size.
+    Pretty(Box<EmitPrettyPrint>),
 }
 
 /// Forward one [`Emit`] call to whichever [`PrintEmit`] variant is active — the
@@ -1295,18 +1300,34 @@ macro_rules! pe_forward {
         match $self {
             PrintEmit::NoMarkup(e) => e.$method($($arg),*),
             PrintEmit::Markup(e) => e.$method($($arg),*),
+            PrintEmit::Pretty(e) => e.$method($($arg),*),
         }
     };
 }
 
 impl PrintEmit {
+    /// The plain-text sink, directly or under the line-breaking printer.
+    fn plain_mut(&mut self) -> Option<&mut EmitNoMarkup> {
+        match self {
+            PrintEmit::NoMarkup(e) => Some(e),
+            PrintEmit::Pretty(e) => match e.lowlevel_mut() {
+                LowLevel::NoMarkup(s) => Some(s),
+                LowLevel::Markup(_) => None,
+            },
+            PrintEmit::Markup(_) => None,
+        }
+    }
     /// Reset the active back-end's output buffer (C++ `Emit::setOutputStream`),
     /// dispatched to the concrete leaf (both leaves clear their owned sink).
     /// Type-divergent (not on the [`Emit`] trait): the leaves' sinks differ.
     pub fn set_output_stream(&mut self) {
         match self {
-            PrintEmit::NoMarkup(e) => e.set_output_stream(),
             PrintEmit::Markup(e) => e.set_output_stream(),
+            _ => {
+                if let Some(s) = self.plain_mut() {
+                    s.set_output_stream();
+                }
+            }
         }
     }
     /// Borrow the accumulated plain text (the `EmitNoMarkup` standalone
@@ -1316,33 +1337,31 @@ impl PrintEmit {
         match self {
             PrintEmit::NoMarkup(e) => e.output(),
             PrintEmit::Markup(_) => "",
+            PrintEmit::Pretty(e) => e.output(),
         }
     }
     /// Take ownership of the accumulated packed markup bytes (the `EmitMarkup`
     /// `doc_function_markup` return); empty on the plain-text leaf.
     pub fn take_markup_bytes(&mut self) -> Vec<u8> {
         match self {
-            PrintEmit::NoMarkup(_) => Vec::new(),
             PrintEmit::Markup(e) => e.take_output(),
+            _ => Vec::new(),
         }
     }
     /// Take the structured associations captured by the markup leaf.
     pub fn take_markup_provenance(&mut self) -> MarkupProvenance {
         match self {
-            PrintEmit::NoMarkup(_) => MarkupProvenance::default(),
             PrintEmit::Markup(e) => e.take_provenance(),
+            _ => MarkupProvenance::default(),
         }
     }
     /// Take the root statement associations captured by the plain-text leaf.
     pub fn take_plain_statement_provenance(&mut self) -> MarkupProvenance {
-        match self {
-            PrintEmit::NoMarkup(e) => e.take_statement_provenance(),
-            PrintEmit::Markup(_) => MarkupProvenance::default(),
-        }
+        self.plain_mut().map(|e| e.take_statement_provenance()).unwrap_or_default()
     }
     /// Enable or disable the plain-text statement-root sidecar.
     pub fn set_plain_statement_provenance(&mut self, val: bool) {
-        if let PrintEmit::NoMarkup(e) = self {
+        if let Some(e) = self.plain_mut() {
             e.set_capture_statement_provenance(val);
         }
     }
@@ -1355,14 +1374,18 @@ impl PrintEmit {
     /// Take the tokens captured by the markup leaf.
     pub fn take_markup_tokens(&mut self) -> Vec<crate::prettyprint::EmitToken> {
         match self {
-            PrintEmit::NoMarkup(_) => Vec::new(),
             PrintEmit::Markup(e) => e.take_tokens(),
+            _ => Vec::new(),
         }
     }
     /// Whether the plain-text statement-root sidecar is active.
     pub fn captures_plain_statement_provenance(&self) -> bool {
         match self {
             PrintEmit::NoMarkup(e) => e.captures_statement_provenance(),
+            PrintEmit::Pretty(e) => match e.lowlevel() {
+                LowLevel::NoMarkup(s) => s.captures_statement_provenance(),
+                LowLevel::Markup(_) => false,
+            },
             PrintEmit::Markup(_) => false,
         }
     }
@@ -1518,6 +1541,9 @@ pub struct PrintC {
     /// `<function>` document.  A concrete enum (not `Box<dyn Emit>`), so the
     /// ~260 `self.emit.<method>()` sites stay static (see [`PrintEmit`]).
     pub(crate) emit: PrintEmit,
+    /// The `option maxlinewidth` line size for plain-text output; `None` (the
+    /// kuna default) prints each statement on one line.
+    plain_line_size: Option<int4>,
     /// (kuna) Scoped raw pointer to the [`Funcdata`] currently being emitted,
     /// live ONLY for the duration of [`emit_function_document`](PrintC::emit_function_document).
     /// Lets the fd-free RPN leaf emitters ([`emit_atom`](PrintC::emit_atom) /
@@ -1547,6 +1573,21 @@ pub struct PrintC {
     /// [`emit_function_body`](PrintC::emit_function_body) and cleared after, so it
     /// is live only for that function's emission.
     void_tail_return: Option<OpId>,
+    /// (kuna `tailform`) The `RETURN` of the leaf being emitted that the leaf
+    /// leaves out ([`crate::p8_structure::kuna_tailform::skipped_return`]).
+    tailform_skip: Option<OpId>,
+    /// (kuna `voidtailreturn`) The `default:` arm (switch, case index) of the
+    /// switch a void function ends with, when that arm only returns.
+    void_tail_default: Option<(BlockId, usize)>,
+    /// (kuna `gotonext`) The gotos left out or printed as `break;`, and the labels
+    /// only they reached.  Computed per function at the top of
+    /// [`emit_function_body`](PrintC::emit_function_body).
+    goto_rewrites: crate::p8_structure::kuna_gotonext::GotoRewrites,
+    /// (kuna `switchmerge`) The printed arms of each C `switch` whose arms differ
+    /// from its own cases.  Computed per function with `goto_rewrites`.
+    switch_plans: crate::p8_structure::kuna_switchmerge::SwitchPlans,
+    /// (kuna `looptest`) The loops printed top-tested and the guards dropped.
+    pub(crate) loop_tests: crate::p8_structure::kuna_looptest::LoopTests,
     /// (kuna) Resolved `realtypes` rendering context for the function currently
     /// being printed — the `Architecture::realtypes` gate plus the data-model fact
     /// (`long` is 8 bytes) needed to relabel residual `TYPE_UNKNOWN` (`xunknownN`)
@@ -1587,6 +1628,7 @@ pub struct PrintC {
     local_name_standalones: std::collections::HashSet<crate::context::HighVariableId>,
     /// (kuna) The locals the last document declared, as [`DeclaredLocal`]s.
     declared_locals: Vec<DeclaredLocal>,
+    declared_local_index: std::collections::HashMap<crate::context::HighVariableId, usize>,
     /// (kuna) The entry of the function the last document printed.
     declared_entry: Option<Address>,
     /// Final C declarations, including storage and symbol overrides.
@@ -1613,6 +1655,9 @@ pub struct PrintC {
     /// [`crate::kuna_globalref`].
     globalref: crate::kuna_globalref::Plan,
     named_globals: crate::kuna_namedglobals::References,
+    /// The helpers and user-defined operations this function's C calls. See
+    /// [`crate::kuna_unitcalls`].
+    unit_calls: crate::kuna_unitcalls::Calls,
     /// Per-body spelling of a goto-target leaf whose address label another
     /// printed label already uses (see [`assign_label_names`](PrintC::assign_label_names)).
     label_names: std::collections::BTreeMap<BlockId, String>,
@@ -1634,12 +1679,18 @@ impl PrintC {
             name: CAPABILITY_NAME.to_string(),
             flat: false,
             emit: PrintEmit::NoMarkup(EmitNoMarkup::new()),
+            plain_line_size: None,
             emit_fd: None,
             revpol: Vec::new(),
             nodepend: Vec::new(),
             pending: 0,
             commsorter: crate::comment::CommentSorter::new(),
             void_tail_return: None,
+            tailform_skip: None,
+            void_tail_default: None,
+            goto_rewrites: Default::default(),
+            switch_plans: Default::default(),
+            loop_tests: Default::default(),
             rt_ctx: RealTypeCtx::OFF,
             out_lang: crate::kuna_lang::OutLang::C,
             eol_warns: Vec::new(),
@@ -1651,6 +1702,7 @@ impl PrintC {
             local_name_aliases: std::collections::HashMap::new(),
             local_name_standalones: std::collections::HashSet::new(),
             declared_locals: Vec::new(),
+            declared_local_index: Default::default(),
             declared_entry: None,
             pointer_decls: crate::kuna_pointerargs::Declarations::default(),
             record_pointer_arguments: false,
@@ -1661,6 +1713,7 @@ impl PrintC {
             stmt_op: None,
             globalref: crate::kuna_globalref::Plan::default(),
             named_globals: crate::kuna_namedglobals::References::default(),
+            unit_calls: crate::kuna_unitcalls::Calls::default(),
             label_names: std::collections::BTreeMap::new(),
         }
     }
@@ -1698,6 +1751,9 @@ impl PrintC {
         self.name = name.to_string();
         self.out_lang =
             crate::kuna_lang::OutLang::from_print_name(name).unwrap_or(crate::kuna_lang::OutLang::C);
+        if self.plain_line_size.is_some() && !self.emit.emits_markup() {
+            self.emit = self.plain_emit();
+        }
     }
 
     /// The active output language.
@@ -1816,8 +1872,7 @@ impl PrintC {
         self.emit.close_brace_indent("}", id);
         self.emit.tag_line();
         self.emit.end_function(id1);
-
-        // After the C++ flush the bound ostream holds the text.
+        self.emit.flush().expect("PrintC::docFunction: emit flush");
         self.emit.output_str().to_string()
     }
 
@@ -1843,12 +1898,52 @@ impl PrintC {
     pub fn set_hide_implied_exts(&mut self, val: bool) {
         self.options.set_hide_implied_exts(val);
     }
-    /// C++ `glb->print->setMaxLineSize(val)` (options.cc:524).
-    pub fn set_max_line_size(&mut self, _val: int4) -> KunaResult<()> {
-        // STUB(W8 prettyprint): EmitNoMarkup ignores line size; EmitPrettyPrint
-        // honours it.  Recorded so the option succeeds (the C++ validates the
-        // range inside Emit::setMaxLineSize; the no-markup path is unbounded).
+    /// C++ `glb->print->setMaxLineSize(val)` (options.cc:524). Plain-text output
+    /// goes through [`EmitPrettyPrint`] from here on, which breaks lines longer
+    /// than `val`; the markup back-end is left unbroken.
+    pub fn set_max_line_size(&mut self, val: int4) -> KunaResult<()> {
+        EmitPrettyPrint::new().set_max_line_size_pretty(val)?;
+        self.plain_line_size = Some(val);
+        if !self.emit.emits_markup() {
+            self.emit = self.plain_emit();
+        }
         Ok(())
+    }
+    /// Print unbroken lines until [`Self::restore_line_size`], for a render
+    /// whose records (warning lines, line mappings, call-argument positions)
+    /// address its text line by line. Returns the line size to restore.
+    pub fn suspend_line_size(&mut self) -> Option<int4> {
+        let size = self.plain_line_size.take();
+        if size.is_some() && !self.emit.emits_markup() {
+            self.emit = self.plain_emit();
+        }
+        size
+    }
+    /// Undo [`Self::suspend_line_size`].
+    pub fn restore_line_size(&mut self, size: Option<int4>) {
+        if size.is_some() {
+            self.plain_line_size = size;
+            if !self.emit.emits_markup() {
+                self.emit = self.plain_emit();
+            }
+        }
+    }
+    /// A fresh plain-text back-end honoring [`Self::plain_line_size`] for C
+    /// output only (Go ends a statement at a line break; Rust and Go print
+    /// unbroken), carrying the current indent increment.
+    fn plain_emit(&self) -> PrintEmit {
+        let mut emit = match self.plain_line_size.filter(|_| self.out_lang == crate::kuna_lang::OutLang::C) {
+            Some(size) => {
+                let mut pretty = EmitPrettyPrint::new();
+                pretty
+                    .set_max_line_size_pretty(size)
+                    .expect("plain_line_size was validated when set");
+                PrintEmit::Pretty(Box::new(pretty))
+            }
+            None => PrintEmit::NoMarkup(EmitNoMarkup::new()),
+        };
+        emit.set_indent_increment(self.emit.get_indent_increment());
+        emit
     }
     /// C++ `glb->print->setIndentIncrement(val)` (options.cc:541).
     pub fn set_indent_increment(&mut self, val: int4) {
@@ -1856,9 +1951,7 @@ impl PrintC {
     }
     /// C++ `glb->print->setLineCommentIndent(val)` (options.cc:559).
     pub fn set_line_comment_indent(&mut self, val: int4) -> KunaResult<()> {
-        // C++ PrintLanguage::setLineCommentIndent validates against maxlinesize;
-        // the EmitNoMarkup max is unbounded, so any non-negative value is valid.
-        self.context.set_line_comment_indent(val, int4::MAX)
+        self.context.set_line_comment_indent(val, self.plain_line_size.unwrap_or(int4::MAX))
     }
     /// C++ `glb->print->getHeaderComment()` (options.cc:583).
     pub fn header_comment_flags(&self) -> uint4 {
@@ -1913,13 +2006,17 @@ impl PrintC {
     /// inplaceops, conventionprinting, nocastprinting, hideimpliedexts, the
     /// four brace formats — plus the kuna rendering toggles, whose
     /// construction defaults ARE the shipped defaults) and the emitter's
-    /// indent increment (Java default 2).  `max_line_size` and
-    /// `comment_style` are recorded-no-op stubs with no state to reset;
-    /// everything context-held (integer format, comment indent/flags,
-    /// namespace strategy, language) is reset by the caller's fresh
-    /// [`PrintContext`](crate::printlanguage::PrintContext).
+    /// indent increment (Java default 2), and the plain-text line size (back
+    /// to unbroken lines).  `comment_style` is a recorded-no-op stub with no
+    /// state to reset; everything context-held (integer format, comment
+    /// indent/flags, namespace strategy, language) is reset by the caller's
+    /// fresh [`PrintContext`](crate::printlanguage::PrintContext).
     pub fn reset_wire_option_defaults(&mut self) {
         self.options = PrintCOptions::new();
+        self.plain_line_size = None;
+        if !self.emit.emits_markup() {
+            self.emit = self.plain_emit();
+        }
         self.emit.set_indent_increment(2);
     }
 
@@ -1987,6 +2084,7 @@ impl PrintC {
         self.eol_warns.clear();
         self.warnings.clear();
         self.void_tail_return = None;
+        self.void_tail_default = None;
         self.stmt_op = None;
         self.label_names.clear();
         self.local_name_overrides.clear();
@@ -1996,6 +2094,7 @@ impl PrintC {
         self.local_name_aliases.clear();
         self.local_name_standalones.clear();
         self.declared_locals.clear();
+        self.declared_local_index.clear();
         self.declared_entry = None;
         self.pointer_decls.clear();
         self.record_pointer_arguments = false;
@@ -2177,7 +2276,7 @@ impl PrintC {
     /// (C++ passes the `PcodeOp *`): `opref = op->getTime()`, the `<ast>`
     /// `<seqnum uniq>`. Gated on the markup back-end or an explicitly requested
     /// plain statement sidecar, so the ordinary plain-text path does no lookup.
-    fn op_markup(&self, fd: &Funcdata, op: OpId) -> MarkupRef {
+    pub(crate) fn op_markup(&self, fd: &Funcdata, op: OpId) -> MarkupRef {
         if !self.emit.emits_markup()
             && !self.emit.captures_plain_statement_provenance()
         {
@@ -2505,13 +2604,13 @@ impl PrintC {
     /// datatest path NEVER calls this, so `emit` stays `NoMarkup` and the
     /// 675-assertion byte output is untouched.
     pub fn set_markup(&mut self, val: bool) {
-        let increment = self.emit.get_indent_increment();
         self.emit = if val {
-            PrintEmit::Markup(EmitMarkup::new())
+            let mut markup = PrintEmit::Markup(EmitMarkup::new());
+            markup.set_indent_increment(self.emit.get_indent_increment());
+            markup
         } else {
-            PrintEmit::NoMarkup(EmitNoMarkup::new())
+            self.plain_emit()
         };
-        self.emit.set_indent_increment(increment);
     }
 
     /// Emit the ghidra-mode `decompileAt` clang token-markup `<function>` document
@@ -2644,6 +2743,7 @@ impl PrintC {
         self.local_name_aliases.clear();
         self.local_name_standalones.clear();
         self.declared_locals.clear();
+        self.declared_local_index.clear();
         self.declared_entry = Some(fd.get_address().clone());
         self.pointer_decls.clear();
         self.begin_pointer_record(fd);
@@ -2692,6 +2792,7 @@ impl PrintC {
         // type-name chokepoint below reads `self.rt_ctx`.
         self.rt_ctx = RealTypeCtx::for_function(fd, arch, self.out_lang);
         self.named_globals = crate::kuna_namedglobals::References::default();
+        self.unit_calls = crate::kuna_unitcalls::Calls::default();
         self.globalref = crate::kuna_globalref::plan(
             fd,
             arch,
@@ -2738,25 +2839,43 @@ impl PrintC {
         // ScopeLocal symbol walk is the W4 surface; we emit from the named
         // HighVariables directly (the `kuna_name` stand-in), which is the same set
         // of locals the scope would declare.
-        let _emitted_decls = self.emit_local_var_decls(fd, arch);
-        self.emit_indirect_input_aliases(fd);
-        crate::kuna_renderfault::check(fd.get_address().get_offset());
-        if fd.sblocks_get_size() != 0 {
-            self.emit_function_body(fd, arch);
+        let atomic_return = if self.out_lang == crate::kuna_lang::OutLang::Go
+            && !self.signature_param_names.values().any(|name| name == "atomic" || name == "unsafe")
+        {
+            super::kuna_goatomicreturn::plan(fd, arch)
         } else {
-            // No structured tree: keep the brace-matched shell and name the real
-            // cause.  A caught pipeline abort discards the analyzed Funcdata, so
-            // what is being rendered is the previous, un-decompiled one — that is
-            // a pipeline failure (the driver stamped its reason), NOT structuring
-            // declining on analyzed IR.
-            self.emit.tag_line();
-            let warning = match fd.kuna_pipeline_failure() {
-                Some(reason) => format!("WARNING: decompilation failed: {reason}"),
-                None => "WARNING: structured blocks unavailable (structuring declined)".to_string(),
-            };
-            let text = format!("/* {warning} */");
-            self.emit.print(&text, SyntaxHighlight::CommentColor);
-            self.record_warning(crate::kuna_functionwarnings::Warning::new(None, &warning), &text);
+            None
+        };
+        if let Some(plan) = atomic_return {
+            crate::kuna_renderfault::check(fd.get_address().get_offset());
+            if let Some(block) = fd.obank().get(plan.atomic).and_then(|op| op.get_parent()) {
+                self.commsorter.setup_block_list(fd.bblocks_ref().block(block).get_index());
+            }
+            self.emit.reset_pending_fired();
+            self.emit_comment_group(fd, Some(plan.atomic));
+            self.emit_go_atomic_return(fd, arch, &plan);
+            self.emit_comment_group(fd, None);
+        } else {
+            let _emitted_decls = self.emit_local_var_decls(fd, arch);
+            self.emit_indirect_input_aliases(fd);
+            crate::kuna_renderfault::check(fd.get_address().get_offset());
+            if fd.sblocks_get_size() != 0 {
+                self.emit_function_body(fd, arch);
+            } else {
+                // No structured tree: keep the brace-matched shell and name the real
+                // cause.  A caught pipeline abort discards the analyzed Funcdata, so
+                // what is being rendered is the previous, un-decompiled one — that is
+                // a pipeline failure (the driver stamped its reason), NOT structuring
+                // declining on analyzed IR.
+                self.emit.tag_line();
+                let warning = match fd.kuna_pipeline_failure() {
+                    Some(reason) => format!("WARNING: decompilation failed: {reason}"),
+                    None => "WARNING: structured blocks unavailable (structuring declined)".to_string(),
+                };
+                let text = format!("/* {warning} */");
+                self.emit.print(&text, SyntaxHighlight::CommentColor);
+                self.record_warning(crate::kuna_functionwarnings::Warning::new(None, &warning), &text);
+            }
         }
         // (kuna warnstyle, DIV-39) drain any slug still pending from a
         // construct with no closer flush point onto the last body line, so no
@@ -2765,6 +2884,7 @@ impl PrintC {
         self.emit.close_brace_indent("}", id);
         self.emit.tag_line();
         self.emit.end_function(id1);
+        self.emit.flush().expect("PrintC::docFunction: emit flush");
         // (kuna) Retire the scoped fd pointer (see the field doc): it is valid
         // only for this call's dynamic extent.
         self.emit_fd = None;
@@ -3165,9 +3285,10 @@ impl PrintC {
             return;
         }
         let sz = proto.num_params();
-        if sz == 0 {
+        // (kuna varargsave) a variadic list with no named parameter is `(...)`.
+        if sz == 0 && !proto.is_dotdotdot() {
             self.emit.tag_type("void", SyntaxHighlight::TypeColor, markup);
-        } else {
+        } else if sz != 0 {
             let mut print_comma = false;
             for i in 0..sz {
                 let param = match proto.get_param(i) {
@@ -3773,6 +3894,7 @@ impl PrintC {
             if array_count.is_none() {
                 self.cast_implied.record_local(*high, name, format!("{decl_type}{decl_back}"));
             }
+            self.declared_local_index.entry(*high).or_insert(self.declared_locals.len());
             self.declared_locals.push(DeclaredLocal {
                 high: *high,
                 base: base_names.get(high).cloned().unwrap_or_else(|| name.clone()),
@@ -3908,7 +4030,7 @@ impl PrintC {
     /// its own, or the one it was collapsed into.
     pub fn declared_local(&self, high: crate::context::HighVariableId) -> Option<&DeclaredLocal> {
         let owner = self.local_name_aliases.get(&high).copied().unwrap_or(high);
-        self.declared_locals.iter().find(|local| local.high == owner)
+        self.declared_local_index.get(&owner).and_then(|&i| self.declared_locals.get(i))
     }
 
     /// Resolve the emitted spelling of a named HighVariable in this function.
@@ -4239,9 +4361,54 @@ impl PrintC {
         } else {
             None
         };
+        self.void_tail_default = if arch.voidtailreturn {
+            crate::p9_emit::kuna_voidtailswitch::elidable_tail_default(fd, self.void_tail_return)
+        } else {
+            None
+        };
+        let c_switch = matches!(self.lang().forms.switch, crate::kuna_lang::SwitchForm::CSwitch);
+        self.switch_plans = if arch.switchmerge && c_switch {
+            let facts = crate::p8_structure::kuna_switchmerge::PrintFacts {
+                prints_nothing: &|head| self.header_prints_nothing(fd, head),
+                labels: &|sw| self.switch_label_set(fd, arch, sw),
+                arm_labels: &|sw, index| {
+                    let case = &fd.sblocks_ref().block(sw).switch_caseblocks()[index];
+                    self.switch_case_labels(fd, arch, sw, case).into_iter().map(|l| l.0).collect()
+                },
+                block_prints_nothing: &|bb| self.ops_print_nothing(fd, bb),
+            };
+            crate::p8_structure::kuna_switchmerge::switch_plans(fd, sroot, &facts)
+        } else {
+            Default::default()
+        };
+        self.goto_rewrites = if arch.goto_next && c_switch {
+            crate::p8_structure::kuna_gotonext::goto_rewrites(
+                fd.sblocks_ref(),
+                sroot,
+                arch.recover_loop_break,
+                &self.switch_plans,
+            )
+        } else {
+            Default::default()
+        };
+        let loop_tests = if matches!(self.lang().forms.do_while, crate::kuna_lang::DoWhileForm::CDoWhile) {
+            crate::p8_structure::kuna_looptest::loop_tests(fd, sroot, arch.loop_test, &|high| {
+                self.sign_plan.decl_type(high).cloned()
+            })
+        } else {
+            Default::default()
+        };
+        self.loop_tests = loop_tests;
+        if let Some(&ret) = self.void_tail_return.and_then(|op| self.loop_tests.tail_returns.get(&op)) {
+            self.void_tail_return = Some(ret);
+        }
         self.assign_label_names(fd, sroot);
         self.emit_block_graph(fd, arch, sroot);
+        self.loop_tests = Default::default();
         self.void_tail_return = None;
+        self.void_tail_default = None;
+        self.goto_rewrites = Default::default();
+        self.switch_plans = Default::default();
         self.label_names.clear();
     }
 
@@ -4260,7 +4427,7 @@ impl PrintC {
         while let Some(b) = stack.pop() {
             let blk = sb.block(b);
             if blk.get_type() == BlockType::Copy {
-                if blk.is_unstructured_target() {
+                if blk.is_unstructured_target() && !self.goto_rewrites.labels.contains(&b) {
                     targets.push(b);
                 }
                 continue;
@@ -4295,11 +4462,21 @@ impl PrintC {
     /// `FlowBlock::emit(PrintLanguage*)` -> `PrintC::emitBlock*`).
     pub(crate) fn emit_block(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         use crate::block::BlockType;
+        if self.context.is_set(modifiers::ONLY_BRANCH | modifiers::COMMA_SEPARATE)
+            && !crate::kuna_switchcond::renders_branch(fd.sblocks_ref(), blk)
+        {
+            self.emit_misplaced_condition();
+            return;
+        }
         match fd.sblocks_ref().block(blk).get_type() {
+            BlockType::Copy if self.loop_tests.hidden.contains(&blk) => {} // (kuna looptest)
             BlockType::Copy => self.emit_block_copy(fd, arch, blk),
             BlockType::Basic => self.emit_block_basic(fd, arch, blk),
             BlockType::Ls => self.emit_block_ls(fd, arch, blk),
-            BlockType::If => self.emit_block_if(fd, arch, blk),
+            BlockType::If => match self.switch_plans.ifs.get(&blk) {
+                Some(&sw) => self.emit_block_switch(fd, arch, sw),
+                None => self.emit_block_if(fd, arch, blk),
+            },
             BlockType::Graph => self.emit_block_graph(fd, arch, blk),
             BlockType::Goto => self.emit_block_goto(fd, arch, blk),
             BlockType::WhileDo => self.emit_block_while_do(fd, arch, blk),
@@ -4316,6 +4493,16 @@ impl PrintC {
                 }
             }
         }
+    }
+
+    /// A condition slot holding a block with no branch to print (see
+    /// [`crate::kuna_switchcond`]): its statements already printed, so print a
+    /// warning where the condition belongs rather than the statements again.
+    fn emit_misplaced_condition(&mut self) {
+        let warning = crate::kuna_switchcond::MISPLACED_CONDITION_WARNING;
+        let text = format!("/* {warning} */");
+        self.emit.print(&text, SyntaxHighlight::CommentColor);
+        self.record_warning(crate::kuna_functionwarnings::Warning::new(None, warning), &text);
     }
 
     /// C++ `PrintC::emitBlockCondition` (printc.cc:2985): emit a `BlockCondition`
@@ -4345,6 +4532,15 @@ impl PrintC {
                 .block(blk)
                 .get_condition_opcode()
                 .unwrap_or(OpCode::CPUI_BOOL_AND);
+
+            if self.out_lang == crate::kuna_lang::OutLang::Go
+                && opc == OpCode::CPUI_BOOL_AND
+                && crate::p9_emit::kuna_goorderedcompare::redundant_right(fd, arch, b0, b1).is_some()
+                && !self.cond_block_emits_statements(fd, b1)
+            {
+                self.emit_block(fd, arch, b0);
+                return;
+            }
 
             let id = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
             self.emit_block(fd, arch, b0);
@@ -4386,8 +4582,18 @@ impl PrintC {
         // to an enclosing loop head (`isLabelBumpUp`).
         self.emit_any_label_statement(fd, blk);
         if let Some(under) = fd.sblocks_ref().block(blk).get_copy() {
+            // (kuna tailform) A leaf that prints only its return.
+            if let Some(ret) = crate::p8_structure::kuna_tailform::only_return(fd, blk) {
+                self.emit.tag_line();
+                self.emit_statement(fd, arch, ret);
+                self.flush_eol_warnings();
+                return;
+            }
+            let skip = crate::p8_structure::kuna_tailform::skipped_return(fd, blk);
+            let saved = std::mem::replace(&mut self.tailform_skip, skip);
             // The copy's `copy` field is a *bblocks* BlockId.
             self.emit_basic_block_ops(fd, arch, under, true);
+            self.tailform_skip = saved;
         }
     }
 
@@ -4440,7 +4646,7 @@ impl PrintC {
         }
         // Structured: only print labels for unstructured-jump targets that are
         // t_copy leaves.
-        if !fd.sblocks_ref().block(bl).is_unstructured_target() {
+        if !fd.sblocks_ref().block(bl).is_unstructured_target() || self.goto_rewrites.labels.contains(&bl) {
             return;
         }
         if fd.sblocks_ref().block(bl).get_type() != BlockType::Copy {
@@ -4642,6 +4848,10 @@ impl PrintC {
     /// structured list emitted here flows in declaration order.
     fn emit_block_ls(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         let list: Vec<BlockId> = fd.sblocks_ref().block(blk).get_list().to_vec();
+        self.emit_block_list(fd, arch, &list);
+    }
+
+    fn emit_block_list(&mut self, fd: &Funcdata, arch: &Architecture, list: &[BlockId]) {
         if self.context.is_set(modifiers::ONLY_BRANCH) {
             if let Some(&last) = list.last() {
                 self.emit_block(fd, arch, last);
@@ -4701,6 +4911,10 @@ impl PrintC {
         // `dest = ( cond );`.  Checked BEFORE the ternary so the more specific
         // form wins when both match; the mark is set only with
         // `option iteboolean on`.
+        if let Some(&guard) = self.loop_tests.guards.get(&blk) {
+            self.emit_dropped_guard(fd, arch, blk, guard); // (kuna looptest)
+            return;
+        }
         if let Some(m) = self.ite_boolean_match(fd, blk) {
             self.emit_block_if_bool(fd, arch, m);
             return;
@@ -4790,14 +5004,16 @@ impl PrintC {
         self.emit.spaces(1, 0);
         self.context.push_mod();
         self.context.set_mod(modifiers::ONLY_BRANCH);
-        self.emit_block(fd, arch, cond_block);
+        if !self.emit_rust_option_condition(fd, arch, cond_block) {
+            self.emit_block(fd, arch, cond_block);
+        }
         self.context.pop_mod();
 
         // If the if has an unstructured-branch target, emit a goto/break/continue
         // instead of a braced body.
         let goto_target = fd.sblocks_ref().block(blk).get_if_goto_target();
         if let Some(target) = goto_target {
-            let gototype = fd.sblocks_ref().block(blk).get_if_goto_type();
+            let gototype = self.goto_rewrites.gototype(blk, fd.sblocks_ref().block(blk).get_if_goto_type());
             // (kuna outlang) C's one-line `if (cond) goto L;` needs no braces; a
             // language that requires block braces gets `if cond { goto-form }`.
             if self.lang().caps.brace_elision {
@@ -4924,7 +5140,9 @@ impl PrintC {
         // Would emit_any_label_statement print a `label_xxx:` line?
         if !fd.sblocks_ref().block(body).is_label_bump_up() {
             if let Some(front) = fd.sblocks_ref().get_front_leaf(body) {
-                if fd.sblocks_ref().block(front).is_unstructured_target() {
+                if fd.sblocks_ref().block(front).is_unstructured_target()
+                    && !self.goto_rewrites.labels.contains(&front)
+                {
                     return false;
                 }
             }
@@ -4932,6 +5150,7 @@ impl PrintC {
         let Some(under) = fd.sblocks_ref().block(body).get_copy() else {
             return false;
         };
+        let tailform_skip = crate::p8_structure::kuna_tailform::skipped_return(fd, body);
         let mut printed = 0;
         let mut cur = fd.bb_op_head(under);
         while let Some(inst) = cur {
@@ -4940,7 +5159,7 @@ impl PrintC {
                 Some(o) => o,
                 None => continue,
             };
-            if self.is_suppressed_statement(fd, inst) {
+            if self.is_suppressed_statement(fd, inst) || Some(inst) == tailform_skip {
                 continue;
             }
             // The body always prints under NO_BRANCH: every branch op is skipped.
@@ -5010,11 +5229,11 @@ impl PrintC {
             .get(m.cbranch)
             .map(|o| (o.get_addlflags() & crate::op::pcodeop_addlflags::kuna_iteregion) != 0)
             .unwrap_or(false);
+        let arms = [Some(m.true_op), m.else_op];
         if marked
-            && !self.needs_storage_assignment(fd, m.true_op)
-            && !self.needs_storage_assignment(fd, m.else_op)
-            && !self.converts_storage_load(fd, arch, m.true_op)
-            && !self.converts_storage_load(fd, arch, m.else_op)
+            && arms.into_iter().flatten().all(|op| {
+                !self.needs_storage_assignment(fd, op) && !self.converts_storage_load(fd, arch, op)
+            })
         {
             Some(m)
         } else {
@@ -5236,7 +5455,10 @@ impl PrintC {
             &MarkupRef::none(),
         );
         self.emit.spaces(1, 0);
-        self.op_push_ir(fd, arch, m.else_op, None);
+        match m.else_op {
+            Some(op) => self.op_push_ir(fd, arch, op, None),
+            None => self.push_vn_explicit_ir(fd, arch, m.dest, m.true_op),
+        }
         self.cast_implied.set_arm_drops(Vec::new());
         if !ternary {
             self.recurse();
@@ -5290,22 +5512,39 @@ impl PrintC {
         // after the `switch (v) {` header brace.
         self.flush_eol_warnings();
 
-        let ncase = fd.sblocks_ref().block(blk).switch_caseblocks().len();
-        for i in 0..ncase {
-            self.emit_switch_case(fd, arch, blk, i);
+        let mut arms = self.switch_arms(fd, blk);
+        if let Some((sw, index)) = self.void_tail_default {
+            arms.retain(|a| !(a.owner == sw && a.index == index && a.guard.is_none() && a.skip == 0));
+        }
+        let ncase = arms.len();
+        for (i, arm) in arms.iter().enumerate() {
+            let owner = arm.owner;
+            if owner != blk && arms[..i].iter().all(|a| a.owner != owner) {
+                self.emit_comment_block_tree(fd, fd.sblocks_ref().block(owner).get_block(0));
+            }
+            self.emit_switch_case(fd, arch, *arm);
             let id = self.emit.start_indent();
-            let gototype = fd.sblocks_ref().block(blk).switch_caseblocks()[i].gototype;
-            if gototype != 0 {
-                self.emit.tag_line();
-                let caseblk = fd.sblocks_ref().block(blk).switch_caseblocks()[i].block;
-                self.emit_goto_statement(fd, switch_block, caseblk, gototype);
-            } else {
-                let caseblk = fd.sblocks_ref().block(blk).switch_caseblocks()[i].block;
+            let case = fd.sblocks_ref().block(owner).switch_caseblocks()[arm.index].clone();
+            if let Some((guard, _)) = arm.guard {
                 let id2 = self.emit.begin_block(0);
-                self.emit_block(fd, arch, caseblk);
+                self.emit_block(fd, arch, fd.sblocks_ref().block(guard).get_block(1));
+                self.emit.end_block(id2);
+            } else if case.gototype != 0 {
+                self.emit.tag_line();
+                let gototype = self.goto_rewrites.case_gototype(owner, case.block, case.gototype);
+                let head = fd.sblocks_ref().block(owner).get_block(0);
+                self.emit_goto_statement(fd, head, case.block, gototype);
+            } else {
+                let caseblk = case.block;
+                let id2 = self.emit.begin_block(0);
+                if arm.skip > 0 {
+                    self.emit_arm_rest(fd, arch, caseblk, arm.skip);
+                } else {
+                    self.emit_block(fd, arch, caseblk);
+                }
                 // Blocks that formally exit the switch need an explicit `break;`
                 // (unless it is the last case, whose fall-through is the close).
-                let isexit = fd.sblocks_ref().block(blk).switch_caseblocks()[i].isexit;
+                let isexit = case.isexit;
                 let last = i == ncase - 1;
                 if (isexit && !last) || (last && self.emit.label_dangling()) {
                     self.emit.tag_line();
@@ -5322,12 +5561,21 @@ impl PrintC {
 
     /// C++ `PrintC::emitSwitchCase` (printc.cc:3278): emit the `case N:` /
     /// `default:` label(s) for one case arm.
-    pub(crate) fn emit_switch_case(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId, casenum: usize) {
-        let case = fd.sblocks_ref().block(blk).switch_caseblocks()[casenum].clone();
+    pub(crate) fn emit_switch_case(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        arm: crate::p8_structure::kuna_switchmerge::PlannedCase,
+    ) {
+        let blk = arm.owner;
+        let case = fd.sblocks_ref().block(blk).switch_caseblocks()[arm.index].clone();
         // The case block's first op — used only for markup tagging.
         let firstop = self.case_first_op(fd, case.block);
 
-        if case.isdefault {
+        if let Some((_, value)) = arm.guard {
+            let (_, sz, signed) = self.switch_case_label(fd, arch, blk, &case, 0);
+            self.emit_numeric_case_label(value, sz, signed, None);
+        } else if case.isdefault || arm.as_default {
             // default: (the label value is informational; default emits no value).
             // C++ `emit->tagCaseLabel(..., op, ...)` with op = the case's first op —
             // `opref = firstop->getTime()`, the `<ast>` `<seqnum uniq>`.
@@ -5338,14 +5586,21 @@ impl PrintC {
             self.emit_default_case_label(case.label, &case_markup);
         } else {
             // case <label>: — one line per index targeting this case.
+            let char_selector = lowered_char_selector(fd, blk);
             for i in 0..self.switch_case_label_count(fd, blk, &case) {
                 let (val, sz, signed) = self.switch_case_label(fd, arch, blk, &case, i);
-                self.emit_numeric_case_label(
-                    val,
-                    sz,
-                    signed,
-                    firstop.or_else(|| self.any_op(fd, case.block)),
-                );
+                let op = firstop.or_else(|| self.any_op(fd, case.block));
+                if let (Some((ct, vn)), Some(op)) = (char_selector.as_ref().filter(|_| val < 0x80), op) {
+                    self.emit.tag_line();
+                    self.emit.print(self.lang().kw_case, SyntaxHighlight::KeywordColor);
+                    self.emit.spaces(1, 0);
+                    self.push_char_constant_ir(fd, ct, val, op, *vn);
+                    self.recurse();
+                    self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
+                    self.emit.note_label();
+                    continue;
+                }
+                self.emit_numeric_case_label(val, sz, signed, op);
             }
         }
     }
@@ -5385,12 +5640,43 @@ impl PrintC {
             }
             _ => case.label,
         };
+        let (sz, mask, signed) = self.switch_label_form(fd, arch, blk);
+        (val & mask, sz, signed)
+    }
+
+    /// (kuna `switchmerge`) Every label of a non-default case arm, as
+    /// [`switch_case_label`](PrintC::switch_case_label) gives them for
+    /// `0..switch_case_label_count`, reading the table once instead of once per
+    /// label.
+    pub(crate) fn switch_case_labels(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        blk: BlockId,
+        case: &crate::block::CaseOrder,
+    ) -> Vec<(uintb, int4, bool)> {
+        let n = self.switch_case_label_count(fd, blk, case) as usize;
+        let raw: Vec<uintb> = match (fd.sblocks_ref().block(blk).switch_jt_index(), case.basicblock) {
+            (Some(j), Some(bb)) => {
+                let jt = fd.get_jump_table(j as int4);
+                let indices = jt.kuna_indices_by_block(fd, bb).unwrap_or_default();
+                (0..n).map(|i| jt.get_label_by_index(indices.get(i).copied().unwrap_or(0))).collect()
+            }
+            _ => vec![case.label; n],
+        };
+        let (sz, mask, signed) = self.switch_label_form(fd, arch, blk);
+        raw.into_iter().map(|val| (val & mask, sz, signed)).collect()
+    }
+
+    /// The byte size, value mask and signedness every label of switch `blk`
+    /// prints with.
+    fn switch_label_form(&self, fd: &Funcdata, arch: &Architecture, blk: BlockId) -> (int4, uintb, bool) {
         let sz = self.switch_var_size(fd, blk);
-        let Some(j) = jt_index else {
-            return (val, sz, false);
+        let Some(j) = fd.sblocks_ref().block(blk).switch_jt_index() else {
+            return (sz, uintb::MAX, false);
         };
         let jt = fd.get_jump_table(j as int4);
-        let val = if jt.kuna_lowered_var().is_none() { val & calc_mask(sz) } else { val };
+        let mask = if jt.kuna_lowered_var().is_none() { calc_mask(sz) } else { uintb::MAX };
         let text_signed = self.lang().caps.signed_text_byte;
         let lowered = jt.get_indirect_op().and_then(|op| lowered_switch_label_form(fd, arch, op, text_signed));
         let signed = match lowered {
@@ -5401,7 +5687,87 @@ impl PrintC {
                 .and_then(|op| native_switch_label_signedness(fd, arch, op, text_signed))
                 .unwrap_or(jt.kuna_has_signed_labels()),
         };
-        (val, sz, signed)
+        (sz, mask, signed)
+    }
+
+    /// (kuna `switchmerge`) The arms `emit_block_switch_c` prints for `blk`.
+    fn switch_arms(&self, fd: &Funcdata, blk: BlockId) -> Vec<crate::p8_structure::kuna_switchmerge::PlannedCase> {
+        if let Some(arms) = self.switch_plans.plans.get(&blk) {
+            return arms.clone();
+        }
+        let n = fd.sblocks_ref().block(blk).switch_caseblocks().len();
+        (0..n)
+            .map(|index| crate::p8_structure::kuna_switchmerge::PlannedCase::new(blk, index))
+            .collect()
+    }
+
+    /// (kuna `switchmerge`) Print a switch arm from the `skip`th block of its
+    /// list, keeping the trailing jump of a `BlockGoto` around the list.
+    fn emit_arm_rest(&mut self, fd: &Funcdata, arch: &Architecture, caseblk: BlockId, skip: usize) {
+        let (list, _) = crate::p8_structure::kuna_switchmerge::arm_list(fd.sblocks_ref(), caseblk);
+        if list.is_empty() {
+            return;
+        }
+        if fd.sblocks_ref().block(caseblk).get_type() == crate::block::BlockType::Goto {
+            self.emit_block_goto_from(fd, arch, caseblk, skip);
+        } else {
+            let list = fd.sblocks_ref().block(caseblk).get_list().to_vec();
+            self.emit_block_list(fd, arch, &list[skip..]);
+        }
+    }
+
+    /// (kuna `switchmerge`) Does the switch header block `head` print no
+    /// statement before its `switch`?  Mirrors the skips of
+    /// [`emit_basic_block_ops`](PrintC::emit_basic_block_ops) in `NO_BRANCH` mode.
+    pub(crate) fn header_prints_nothing(&self, fd: &Funcdata, head: BlockId) -> bool {
+        let graph = fd.sblocks_ref();
+        let mut head = head;
+        while graph.block(head).get_type() == crate::block::BlockType::MultiGoto && graph.block(head).get_size() == 1 {
+            head = graph.block(head).get_block(0);
+        }
+        graph.block(head).get_copy().is_some_and(|bb| self.ops_print_nothing(fd, bb))
+    }
+
+    /// (kuna `switchmerge`) Does the basic block `bb` print no statement
+    /// besides its branch?
+    pub(crate) fn ops_print_nothing(&self, fd: &Funcdata, bb: BlockId) -> bool {
+        let mut cur = fd.bb_op_head(bb);
+        while let Some(inst) = cur {
+            cur = fd.bb_op_next(inst);
+            let Some(o) = fd.obank().get(inst) else {
+                continue;
+            };
+            if self.is_suppressed_statement(fd, inst) || o.is_branch() {
+                continue;
+            }
+            let implied = o.get_out().and_then(|out| fd.vbank().get(out)).is_some_and(|v| v.is_implied());
+            if !implied || crate::kuna_stackbytes::assignment(fd, inst).is_some() {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// (kuna `switchmerge`) The label values the non-default arms of `sw` print,
+    /// with their byte size and signedness.
+    pub(crate) fn switch_label_set(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        sw: BlockId,
+    ) -> Option<crate::p8_structure::kuna_switchmerge::LabelSet> {
+        let mut values = std::collections::BTreeSet::new();
+        let mut form = None;
+        for case in fd.sblocks_ref().block(sw).switch_caseblocks().iter().filter(|c| !c.isdefault) {
+            for (val, sz, signed) in self.switch_case_labels(fd, arch, sw, case) {
+                if form.is_some_and(|f| f != (sz, signed)) || !values.insert(val) {
+                    return None;
+                }
+                form = Some((sz, signed));
+            }
+        }
+        let (sz, signed) = form?;
+        Some((values, sz, signed))
     }
 
     fn emit_default_case_label(&mut self, value: uintb, markup: &MarkupRef) {
@@ -5492,21 +5858,33 @@ impl PrintC {
     /// C++ `PrintC::emitBlockGoto` (printc.cc:2915): emit the block's body
     /// (no_branch) then the trailing `goto`/`break`/`continue` statement.
     ///
-    /// STUB(W7): `BlockGoto::gotoPrints` consults `getParent()->nextFlowAfter` to
-    /// suppress a `goto` to the very next printed block; `nextFlowAfter` is not
-    /// yet ported, so the goto is always emitted when a target is present (an
-    /// over-emit, never an under-emit — a redundant `goto LAB_x;` to the
-    /// fallthrough where C++ would drop it).  Recorded as a loss.
+    /// `BlockGoto::gotoPrints` is honoured under option `gotonext`
+    /// ([`goto_rewrites`](PrintC::goto_rewrites)); off, the goto is emitted whenever
+    /// a target is present.
     fn emit_block_goto(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        self.emit_block_goto_from(fd, arch, blk, 0);
+    }
+
+    /// `emit_block_goto`, printing the body list from its `skip`th block when
+    /// `skip > 0` (the rest of a switch arm whose leading switches merged).
+    fn emit_block_goto_from(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId, skip: usize) {
         self.context.push_mod();
         self.context.set_mod(modifiers::NO_BRANCH);
         let inner = fd.sblocks_ref().block(blk).get_block(0);
-        self.emit_block(fd, arch, inner);
+        if skip > 0 {
+            let list = fd.sblocks_ref().block(inner).get_list().to_vec();
+            self.emit_block_list(fd, arch, &list[skip..]);
+        } else {
+            self.emit_block(fd, arch, inner);
+        }
         self.context.pop_mod();
-        // gotoPrints(): emit the trailing goto unless it targets the next block.
+        if self.goto_rewrites.silent.contains(&blk) {
+            self.flush_eol_warnings();
+            return;
+        }
         if let Some(target) = fd.sblocks_ref().block(blk).get_goto_target() {
             self.emit.tag_line();
-            let gototype = fd.sblocks_ref().block(blk).get_goto_type();
+            let gototype = self.goto_rewrites.gototype(blk, fd.sblocks_ref().block(blk).get_goto_type());
             self.emit_goto_statement(fd, inner, target, gototype);
             // (kuna warnstyle, DIV-39) pending block warnings land after the
             // trailing goto/break/continue.
@@ -5654,6 +6032,10 @@ impl PrintC {
     }
 
     fn emit_block_do_while_c(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        if self.loop_tests.top.contains(&blk) {
+            self.emit_block_do_while_top(fd, arch, blk); // (kuna looptest)
+            return;
+        }
         // dowhile block NEVER prints the final branch.
         self.context.push_mod();
         self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
@@ -5814,7 +6196,7 @@ impl PrintC {
             // and a structural divergence.  Elided only when
             // `elidable_void_tail_return` proved it is the LAST statement of a void
             // function reached on exactly one structured path.
-            if Some(inst) == self.void_tail_return {
+            if Some(inst) == self.void_tail_return || Some(inst) == self.tailform_skip {
                 continue;
             }
             if o.is_branch() {
@@ -5846,7 +6228,11 @@ impl PrintC {
                 self.emit_comment_group(fd, Some(inst));
                 self.emit.tag_line();
             }
-            self.emit_statement(fd, arch, inst);
+            if let Some(last) = self.emit_rust_array_init(fd, arch, inst) {
+                cur = fd.bb_op_next(last);
+            } else {
+                self.emit_statement(fd, arch, inst);
+            }
             // (kuna warnstyle, DIV-39) warnings collected for this statement
             // land after its semicolon — but NEVER inside a comma-separated
             // header (`while (...)` / `for (...)` parens), where an inline
@@ -5964,7 +6350,8 @@ impl PrintC {
             return false;
         }
         if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts
-            && (crate::kuna_rustsigned::plan(fd, op).is_some()
+            && (self.rust_wrapping_plan(fd, arch, op).is_some()
+                || crate::kuna_rustsigned::plan(fd, op).is_some()
                 || self.rust_integer_binary_plan(fd, arch, op).is_some())
         {
             return false;
@@ -5988,10 +6375,13 @@ impl PrintC {
             && (crate::p9_emit::kuna_armregistershift::plan_arm_register_lsl(fd, arch, op)
                 .is_some()
                 || crate::p9_emit::kuna_armconstantshift::plan_arm_constant_lsl(fd, arch, op)
+                    .or_else(|| self.fixed64_shift_plan(fd, arch, op))
                     .is_some())
         {
             return false;
         }
+        if self.out_lang == crate::kuna_lang::OutLang::C
+            && self.widened_add_plan(fd, arch, op).is_some() { return false; }
         // (kuna) `x += -c` reads poorly: when the INT_ADD addend is a plain
         // negative signed constant (no equate/display override, not char-typed,
         // not the unnegatable type minimum), render `x -= c` with the negated
@@ -6150,7 +6540,7 @@ impl PrintC {
     /// else `None` at the top of an expression (printc.cc:2579 passes `(PcodeOp *)0`).
     /// Only `opIntSext`/`opIntZext` consume it (the extension-cast-implied test,
     /// printc.cc:806-830); every other override ignores it.
-    fn op_push_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) {
+    pub(crate) fn op_push_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) {
         let opc = fd.obank().get(op).expect("op_push_ir: stale op").code();
         // (kuna truthycond, DIV-37) CONDITION_CONTEXT only survives through the
         // boolean-preserving operators; any other operator's operands are value
@@ -6302,6 +6692,7 @@ impl PrintC {
                 // decode is a pseudo-call naming the failure, not a return.
                 let halt = fd.obank().get(op).map(|o| o.get_halt_type()).unwrap_or(0);
                 if let Some(nm) = crate::kuna_decodehalt::halt_call_name(halt) {
+                    self.unit_calls.record(fd, op, nm);
                     self.emit.tag_func_name(nm, SyntaxHighlight::FuncnameColor, &kw_markup);
                     self.emit.print(crate::printlanguage::OPEN_PAREN, SyntaxHighlight::NoColor);
                     self.emit.print(crate::printlanguage::CLOSE_PAREN, SyntaxHighlight::NoColor);
@@ -6313,7 +6704,9 @@ impl PrintC {
                     self.emit.spaces(1, 0);
                     if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
                         if self.out_lang == crate::kuna_lang::OutLang::Go {
-                            if self.rt_ctx.go_pair_types.is_none() || !self.push_go_pair_return(fd, arch, vn, op) {
+                            let emitted_pair = self.rt_ctx.go_pair_types.is_some()
+                                && self.push_go_pair_return(fd, arch, vn, op);
+                            if !emitted_pair && !self.push_go_zero_record_return(fd, vn, op) {
                                 if let Some(target) = fd.get_func_proto().get_output_type() {
                                     self.push_go_value_as(fd, arch, vn, op, target);
                                 } else { self.push_vn_ir(fd, arch, vn, op); }
@@ -6399,7 +6792,7 @@ impl PrintC {
                 // Table-driven binary / unary / functional forms.
                 match op_emit_kind(opc) {
                     OpEmitKind::Binary(tok) => {
-                        let tok = self.lang_token(tok);
+                        let tok = self.lang_token(self.loop_tests.token(op).unwrap_or(tok)); // (kuna looptest)
                         self.op_binary_ir(fd, arch, tok, op)
                     }
                     OpEmitKind::Unary(tok) => {
@@ -6452,9 +6845,20 @@ impl PrintC {
                 self.emit_arm_register_lsl(fd, arch, op, plan);
                 return;
             }
+            if let Some(plan) = self.widened_add_plan(fd, arch, op) {
+                if let Some(ty) = &plan.signed { self.push_cast_open(ty, op); }
+                self.push_op(tok, Some(op_key(op)));
+                self.push_cast_open(&plan.unsigned, op);
+                self.push_vn_ir(fd, arch, plan.lhs, op);
+                self.push_cast_close(&plan.unsigned);
+                self.push_vn_ir(fd, arch, plan.rhs, op);
+                if let Some(ty) = &plan.signed { self.push_cast_close(ty); }
+                return;
+            }
             if tok.print1 == "<<" {
-                if let Some(plan) = crate::p9_emit::kuna_armconstantshift::plan_arm_constant_lsl(fd, arch, op) {
-                    self.emit_arm_constant_lsl(fd, arch, op, plan);
+                if let Some(plan) = crate::p9_emit::kuna_armconstantshift::plan_arm_constant_lsl(fd, arch, op)
+                    .or_else(|| self.fixed64_shift_plan(fd, arch, op)) {
+                    self.emit_constant_lsl(fd, arch, op, plan);
                     return;
                 }
             }
@@ -6469,6 +6873,7 @@ impl PrintC {
             return;
         }
         if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts {
+            if self.op_rust_wrapping(fd, arch, op) { return; }
             if self.op_rust_integer_binary(fd, arch, tok, op) { return; }
             if let Some(plan) = crate::kuna_rustsigned::plan(fd, op) {
                 self.emit_rust_signed_text(fd, arch, tok, op, plan);
@@ -6597,13 +7002,34 @@ impl PrintC {
         }
     }
 
+    fn printed_operand_type(&self, fd: &Funcdata, vn: VarnodeId, op: OpId) -> std::rc::Rc<crate::dtype::Datatype> {
+        fd.vbank().get(vn).and_then(|v| (!v.is_implied()).then_some(v.get_high()).flatten())
+            .and_then(|high| self.declared_local(high)).and_then(|local| local.ty.clone())
+            .or_else(|| declared_variable_type(fd, vn))
+            .unwrap_or_else(|| fd.vn_type_read_facing(vn, op))
+    }
+
+    fn fixed64_shift_plan(&self, fd: &Funcdata, arch: &Architecture, op: OpId)
+        -> Option<crate::p9_emit::kuna_constantshift::ConstantLslPlan>
+    {
+        crate::p9_emit::kuna_constantshift::plan_fixed64_lsl(fd, arch, op,
+            |vn| self.printed_operand_type(fd, vn, op))
+    }
+
+    fn widened_add_plan(&self, fd: &Funcdata, arch: &Architecture, op: OpId)
+        -> Option<crate::p9_emit::kuna_widenedadd::WidenedAddPlan>
+    {
+        crate::p9_emit::kuna_widenedadd::plan(fd, arch, op,
+            |vn| self.printed_operand_type(fd, vn, op))
+    }
+
     /// Emit each fixed-shift operand once, converting the shiftee before LSL.
-    fn emit_arm_constant_lsl(
+    fn emit_constant_lsl(
         &mut self,
         fd: &Funcdata,
         arch: &Architecture,
         op: OpId,
-        plan: crate::p9_emit::kuna_armconstantshift::ArmConstantLslPlan,
+        plan: crate::p9_emit::kuna_constantshift::ConstantLslPlan,
     ) {
         if let Some(result_type) = &plan.signed_result_type {
             self.push_cast_open(result_type, op);
@@ -6683,6 +7109,11 @@ impl PrintC {
 
     /// C++ `PrintLanguage::opUnary` over the IR (printlanguage.cc:573).
     fn op_unary_ir(&mut self, fd: &Funcdata, arch: &Architecture, tok: &'static OpToken, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts
+            && self.op_rust_wrapping(fd, arch, op)
+        {
+            return;
+        }
         self.push_op(tok, Some(op_key(op)));
         if let Some(v0) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
             self.push_vn_ir(fd, arch, v0, op);
@@ -6803,7 +7234,14 @@ impl PrintC {
     /// next layer).
     fn op_func_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         let opc = fd.obank().get(op).expect("op_func_ir: stale op").code();
+        if opc == OpCode::CPUI_FLOAT_NAN
+            && self.out_lang == crate::kuna_lang::OutLang::Go
+            && self.op_go_float_nan(fd, arch, op)
+        {
+            return;
+        }
         let name = func_operator_name(fd, op, opc);
+        self.unit_calls.record(fd, op, &name);
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
         // The name is pushed as an *operator* token (C++ `optoken`, no_color).
         self.push_atom(&Atom::with_op(
@@ -6835,6 +7273,41 @@ impl PrintC {
         }
     }
 
+    /// (kuna `acleintrinsics`) Render a user op under its ACLE spelling.
+    fn push_acle_intrinsic(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        call: &crate::kuna_acleintrinsics::Intrinsic,
+    ) {
+        use crate::kuna_acleintrinsics::Arg;
+        self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+        self.push_atom(&Atom::with_op(
+            call.name.to_string(),
+            TagType::OpToken,
+            crate::printlanguage::SyntaxHighlight::funcname_color,
+            op_key(op),
+        ));
+        if call.args.is_empty() {
+            self.push_atom(&Atom::syntax(
+                "",
+                TagType::BlankToken,
+                crate::printlanguage::SyntaxHighlight::no_color,
+            ));
+            return;
+        }
+        for _ in 1..call.args.len() {
+            self.push_op(&tokens::COMMA, Some(op_key(op)));
+        }
+        for arg in &call.args {
+            match *arg {
+                Arg::Vn(vn) => self.push_vn_ir(fd, arch, vn, op),
+                Arg::Dec(val) => self.push_constant_ir_fmt_sign(val, 4, op, display_format::FORCE_DEC, false),
+            }
+        }
+    }
+
     /// C++ `PrintC::opCallother` (printc.cc:693): render a CALLOTHER (user
     /// p-code op).  The op's in0 constant indexes a `UserPcodeOp` whose
     /// `getDisplay()` selects the form:
@@ -6851,25 +7324,30 @@ impl PrintC {
             Some(v) => fd.vbank().get(v).map(|vn| vn.get_offset()).unwrap_or(0),
             None => 0,
         };
-        let display = arch
-            .userops
-            .get_op(in0_off as u32)
-            .map(|u| u.get_display())
-            .unwrap_or(0);
+        let rust = self.out_lang == crate::kuna_lang::OutLang::Rust;
+        let userop = if rust {
+            u32::try_from(in0_off)
+                .ok()
+                .and_then(|index| arch.userops.get_op(index))
+        } else {
+            arch.userops.get_op(in0_off as u32)
+        };
+        let display = userop.map_or(0, |op| op.get_display());
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         if display == 0 {
-            // Functional syntax: for CALLOTHER the operator name resolves to the
-            // userop's name (the base getOperatorName), or the generic
-            // `CALLOTHER[index]` fallback.
-            let mut nm = match arch.userops.get_op(in0_off as u32) {
-                Some(u) => String::from_utf8_lossy(u.get_name()).into_owned(),
-                None => format!("CALLOTHER[{:#x}]", in0_off),
-            };
-            if self.out_lang == crate::kuna_lang::OutLang::Rust
-                && crate::kuna_rustuserop::raw_keyword(&nm)
-            {
-                nm.insert_str(0, "r#");
+            let acle = userop.and_then(|u| {
+                crate::kuna_acleintrinsics::intrinsic(fd, arch, op, u.get_name())
+            });
+            if let Some(call) = acle {
+                self.push_acle_intrinsic(fd, arch, op, &call);
+                return;
             }
+            let nm = match (rust, userop) {
+                (true, op) => crate::kuna_rustuserop::operator_name(op.map(|u| u.get_name()), in0_off),
+                (false, Some(op)) => String::from_utf8_lossy(op.get_name()).into_owned(),
+                (false, None) => format!("CALLOTHER[{:#x}]", in0_off),
+            };
+            self.unit_calls.record(fd, op, &nm);
             self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
             self.push_atom(&Atom::with_op(
                 nm,
@@ -6884,7 +7362,16 @@ impl PrintC {
                 }
                 for i in 1..nin {
                     if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
-                        self.push_vn_ir(fd, arch, vn, op);
+                        // (kuna kernelbug) a `__WARN(file,line)` line is a decimal.
+                        let line = in0_off == crate::userop::BUILTIN_KERNEL_WARN as u64
+                            && i == nin - 1
+                            && fd.vbank().get(vn).is_some_and(|v| v.is_constant() && v.get_size() == 4);
+                        if line {
+                            let val = fd.vbank().get(vn).map(|v| v.get_offset()).unwrap_or(0);
+                            self.push_constant_ir_fmt_sign(val, 4, op, display_format::FORCE_DEC, false);
+                        } else {
+                            self.push_vn_ir(fd, arch, vn, op);
+                        }
                     }
                 }
             } else {
@@ -8128,12 +8615,13 @@ impl PrintC {
         arch: &Architecture,
         m: &crate::p8_structure::kuna_iteregion::IteAssignMatch,
     ) -> Vec<OpId> {
+        let Some(else_op) = m.else_op else { return Vec::new() };
         if !self.cast_implied.arms_enabled() || !self.lang().caps.ternary {
             return Vec::new();
         }
         let Some(strat) = cast_strategy_for(arch) else { return Vec::new() };
         let view = ImpliedView { pc: self, fd, arch, strat };
-        crate::kuna_castternary::arm_drops(&self.cast_implied, &view, fd, [m.true_op, m.else_op], m.dest)
+        crate::kuna_castternary::arm_drops(&self.cast_implied, &view, fd, [m.true_op, else_op], m.dest)
     }
 
     /// C++ `PrintC::pushType` (printc.cc:1540) for a base type, reduced to the
@@ -8507,29 +8995,30 @@ impl PrintC {
         }
 
         // Direct CALL: the callee name from the fspec annotation.
-        let name = self.call_callee_name(fd, op);
-        for scope in self.call_scope_prefix(fd, arch, op, &name) {
-            self.push_op(&tokens::SCOPE, None);
-            self.push_atom(&Atom::syntax(
-                scope,
-                TagType::Syntax,
-                crate::printlanguage::SyntaxHighlight::global_color,
+        let first_argument = self.push_go_direct_method(fd, arch, op).unwrap_or_else(|| {
+            let name = self.call_callee_name(fd, op);
+            for scope in self.call_scope_prefix(fd, arch, op, &name) {
+                self.push_op(&tokens::SCOPE, None);
+                self.push_atom(&Atom::syntax(
+                    scope,
+                    TagType::Syntax,
+                    crate::printlanguage::SyntaxHighlight::global_color,
+                ));
+            }
+            self.push_atom(&Atom::with_op(
+                name,
+                TagType::FuncToken,
+                crate::printlanguage::SyntaxHighlight::funcname_color,
+                op_key(op),
             ));
-        }
-        self.push_atom(&Atom::with_op(
-            name,
-            TagType::FuncToken,
-            crate::printlanguage::SyntaxHighlight::funcname_color,
-            op_key(op),
-        ));
-        // count = numInput - 1 (no hidden-this: skip = -1).  The argument Varnodes
-        // are in[1..].
-        let count = nin - 1;
+            1
+        });
+        let count = nin - first_argument;
         if count > 0 {
             for _ in 0..(count - 1) {
                 self.push_op(&tokens::COMMA, Some(op_key(op)));
             }
-            for i in 1..nin {
+            for i in first_argument..nin {
                 if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
                     self.pointer_candidate = if self.pointer_record.is_some() && !self.emit.emits_markup() {
                         let view = PointerView { pc: self, fd };
@@ -8550,6 +9039,44 @@ impl PrintC {
             ));
         }
         self.push_call_result_close(result_conversion, op);
+    }
+
+    fn push_go_direct_method(
+        &mut self, fd: &Funcdata, arch: &Architecture, op: OpId,
+    ) -> Option<i32> {
+        use super::kuna_langgo::identifier;
+
+        if self.out_lang != crate::kuna_lang::OutLang::Go {
+            return None;
+        }
+        let method = super::kuna_gomethod::direct_method(fd, arch, op)?;
+        let shadowed = self.signature_param_names.values().any(|name| name == &method.type_name)
+            || self.declared_locals.iter().any(|local| identifier(&local.name) == method.type_name);
+        let (name, first_argument) = if shadowed {
+            let receiver = fd.vbank().get(method.receiver)?;
+            if receiver.is_implied() || receiver.is_constant() {
+                return None;
+            }
+            let ty = receiver.get_high()
+                .and_then(|high| self.declared_local(high))
+                .and_then(|local| local.ty.clone())
+                .or_else(|| declared_variable_type(fd, method.receiver))?;
+            if !method.has_selector_type(&ty) {
+                return None;
+            }
+            self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
+            self.push_vn_ir(fd, arch, method.receiver, op);
+            (method.member, 2)
+        } else {
+            (format!("(*{}).{}", method.type_name, method.member), 1)
+        };
+        self.push_atom(&Atom::with_op(
+            name,
+            TagType::OpToken,
+            crate::printlanguage::SyntaxHighlight::funcname_color,
+            op_key(op),
+        ));
+        Some(first_argument)
     }
 
     fn emit_indirect_input_aliases(&mut self, fd: &Funcdata) {
@@ -8736,7 +9263,7 @@ impl PrintC {
                 return;
             }
         }
-        self.push_vn_explicit_ir(fd, arch, vn, op);
+        self.push_vn_explicit_ir(fd, arch, self.loop_tests.leaf(vn), op); // (kuna looptest)
     }
 
     /// C++ `PrintC::pushImpliedField` (printc.cc:2161-2192): an implied Varnode
@@ -8871,6 +9398,17 @@ impl PrintC {
     /// as an explicit `*ptr`.  A statement LOAD through the byte-copy helper copies
     /// straight into its printed destination member's scalar type.
     fn op_load_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::Go {
+            if let Some(view) = super::kuna_gostringindex::prove(fd, op) {
+                self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
+                self.push_go_call("unsafe.String", op);
+                self.push_op(&tokens::COMMA, Some(op_key(op)));
+                self.push_vn_ir(fd, arch, view.data, op);
+                self.push_vn_ir(fd, arch, view.len, op);
+                self.push_vn_ir(fd, arch, view.index, op);
+                return;
+            }
+        }
         if self.out_lang == crate::kuna_lang::OutLang::C {
             if let Some(mut access) = crate::kuna_stackmem::access(fd, op) {
                 if self.stmt_op == Some(op) {
@@ -8897,6 +9435,9 @@ impl PrintC {
             ));
             return;
         }
+        if self.push_post_increment(fd, arch, op, ptr) {
+            return;
+        }
         let usearray = self.check_array_deref(fd, ptr) || self.is_value_indirect_input(fd, ptr);
         let mut m = self.context.mods();
         if usearray && !self.context.is_set(modifiers::FORCE_POINTER) {
@@ -8905,6 +9446,19 @@ impl PrintC {
             self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
         }
         self.push_vn_ir_m(fd, arch, ptr, op, m);
+    }
+
+    /// (kuna `postinc`) `*ptr++` for a LOAD or STORE `kuna_postinc` marked.
+    fn push_post_increment(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, ptr: VarnodeId) -> bool {
+        let marked = fd.obank().get(op).is_some_and(|o| o.get_addlflags() & crate::op::pcodeop_addlflags::kuna_postinc != 0);
+        if !marked {
+            return false;
+        }
+        self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+        self.push_op(&tokens::POST_INCREMENT, Some(op_key(op)));
+        self.push_vn_explicit_ir(fd, arch, ptr, op);
+        self.push_atom(&Atom::syntax("", TagType::BlankToken, crate::printlanguage::SyntaxHighlight::no_color));
+        true
     }
 
     fn storage_load_member_type(
@@ -8934,6 +9488,12 @@ impl PrintC {
     /// notation absorbing the deref).  A byte-copy helper's compound initializer
     /// takes the rendered source member's scalar type, so it copies those bits.
     fn op_store_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust
+            && !self.options.nocasts
+            && self.op_rust_store_width(fd, arch, op)
+        {
+            return;
+        }
         if self.out_lang == crate::kuna_lang::OutLang::C {
             if let Some(mut access) = crate::kuna_stackmem::access(fd, op) {
                 if let Some(target) = access.value.and_then(|value| self.partial_piece_type(fd, arch, value, op, 2))
@@ -8952,6 +9512,12 @@ impl PrintC {
             None => return,
         };
         let val = fd.obank().get(op).and_then(|o| o.get_in(2));
+        if self.push_post_increment(fd, arch, op, ptr) {
+            if let Some(val) = val {
+                self.push_vn_ir_m(fd, arch, val, op, mods);
+            }
+            return;
+        }
         let usearray = self.check_array_deref(fd, ptr) || self.is_value_indirect_input(fd, ptr);
         let mut m = mods;
         if usearray && !self.context.is_set(modifiers::FORCE_POINTER) {
@@ -9634,6 +10200,11 @@ impl PrintC {
     /// C++ `PrintC::opPtradd` (printc.cc:900).  `ptr[index]` (value), `&ptr[index]`
     /// (array-notation address), or `ptr + index` (plain pointer arithmetic).
     fn op_ptradd_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        let raw_address = self.context.is_set(modifiers::RUST_RAW_INDEX_ADDRESS);
+        if raw_address {
+            self.context
+                .set_mods(self.context.mods() & !modifiers::RUST_RAW_INDEX_ADDRESS);
+        }
         if self.out_lang == crate::kuna_lang::OutLang::Go {
             self.op_go_ptradd(fd, arch, op);
             return;
@@ -9652,7 +10223,11 @@ impl PrintC {
             self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
         } else if self.options.array_notation() {
             // (kuna) S9 pointer-notation sub-stage: EMIT &base[index].
-            let tok = self.lang_token(&tokens::ADDRESSOF);
+            let tok = if raw_address {
+                &crate::kuna_rustarrayaddr::RAW_ADDRESS
+            } else {
+                self.lang_token(&tokens::ADDRESSOF)
+            };
             self.push_op(tok, Some(op_key(op)));
             self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
         } else {
@@ -10623,8 +11198,14 @@ impl PrintC {
                 // are indexed, never that they end at a zero byte.
                 if !v.is_synthetic_literal() && off != 0 && !crate::kuna_elemptr::reaches_element_pointer(fd, vn) {
                     if let Some(sub) = ct.get_ptr_to() {
-                        // (kuna `cfstrings`) An entry reads as its string whatever its type.
-                        let sub = if sub.is_char_print() { Some(sub) } else { cfstring_char(arch, off) };
+                        // (kuna `cfstrings`) An entry reads as its string whatever its type,
+                        // and so does a literal (kuna `cstringconst`).
+                        let sub = if sub.is_char_print() {
+                            Some(sub)
+                        } else {
+                            cfstring_char(arch, off)
+                                .or_else(|| crate::kuna_cstringconst::literal_char(arch, off, ct.get_size()))
+                        };
                         if let Some(sub) = sub {
                             // point = op->getAddr() (the using op's address; used only
                             // by a segmented resolver — flat spaces ignore it).
@@ -10721,6 +11302,17 @@ impl PrintC {
                 }
                 return;
             }
+            // (kuna `cstringconst`) A constant at the start of a literal that a
+            // call takes as an argument its prototype does not declare a scalar
+            // reads as the literal.
+            if !v.is_synthetic_literal() && self.out_lang == crate::kuna_lang::OutLang::C {
+                if let Some(sub) = crate::kuna_cstringconst::call_literal_char(arch, fd, op, vn, off, sz) {
+                    let point = fd.obank().get(op).map(|o| o.get_addr().clone()).unwrap_or_default();
+                    if self.push_ptr_char_constant_ir(arch, off, sz, &sub, &point, op, vn, None) {
+                        return;
+                    }
+                }
+            }
             // Integer path.  Inside `push_integer` (printc.cc:1376) the varnode
             // high's equate-Symbol format OVERRIDES the read-facing type's format
             // when present.  So: equate-Symbol format wins; otherwise the
@@ -10740,6 +11332,17 @@ impl PrintC {
                 lit.force_sized,
                 lit.size_suffix,
             );
+            return;
+        }
+        if let Some(name) = arch.import_data.then(|| import_slot_address(fd, arch, vn, op)).flatten() {
+            self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+            self.push_atom(&Atom::with_op_vn(
+                name,
+                TagType::VarToken,
+                crate::printlanguage::SyntaxHighlight::global_color,
+                op_key(op),
+                vn_key(vn),
+            ));
             return;
         }
         // HighVariable name resolution (C++ `pushSymbolDetail`: `high->getSymbol()`
@@ -11186,6 +11789,11 @@ impl PrintC {
         &self.globalref
     }
 
+    /// The helpers and user-defined operations the last function printed calls.
+    pub fn unit_calls(&self) -> &crate::kuna_unitcalls::Calls {
+        &self.unit_calls
+    }
+
     fn push_member_base_ir(
         &mut self,
         fd: &Funcdata,
@@ -11320,6 +11928,14 @@ impl PrintC {
                         None => {
                             if ct.get_size() as int8 <= suboff_bytes || suboff_bytes < 0 {
                                 self.op_func_ir(fd, arch, op);
+                                return;
+                            }
+                            if self.out_lang == crate::kuna_lang::OutLang::Go
+                                && !valueon
+                                && !ptype.is_formal_pointer_rel()
+                                && word_size == 1
+                                && self.push_go_record_prefix_address(fd, arch, op, &ct, suboff_bytes)
+                            {
                                 return;
                             }
                             // Default field name `field_0x<hex>`.
@@ -11548,14 +12164,21 @@ impl PrintC {
             // whole-symbol cover the C++ `setSymbol` records for a size-matching
             // entry) is also a bare-name render, so `off <= 0` covers both.
             if sym_off <= 0 {
-                if self.out_lang == crate::kuna_lang::OutLang::C
+                if matches!(self.out_lang, crate::kuna_lang::OutLang::C | crate::kuna_lang::OutLang::Rust)
                     && sym_type.as_ref().is_some_and(|ty| ty.get_metatype() == crate::dtype::type_metatype::TYPE_CODE)
                 {
                     if let Some(address) = spacebase_unnamed_address(arch, fd, op, &ct, in1const, ptr_size) {
                         let point = fd.obank().get(op).map(|o| o.get_addr().clone()).unwrap_or_default();
-                        if let Some(prefix) = crate::kuna_funcptrnames::prefix(
-                            fd, arch, &address, &point, &name, self.context.namespace_strategy(),
-                        ) {
+                        let prefix = if self.out_lang == crate::kuna_lang::OutLang::Rust {
+                            crate::kuna_rustfuncptr::prefix(
+                                fd, arch, &address, &point, &name, self.context.namespace_strategy(),
+                            )
+                        } else {
+                            crate::kuna_funcptrnames::prefix(
+                                fd, arch, &address, &point, &name, self.context.namespace_strategy(),
+                            )
+                        };
+                        if let Some(prefix) = prefix {
                             for scope in prefix {
                                 self.push_op(&tokens::SCOPE, None);
                                 self.push_atom(&Atom::syntax(
@@ -12273,6 +12896,66 @@ fn import_slot_name(fd: &Funcdata, mut vn: VarnodeId) -> Option<String> {
     fd.get_arch().query_function(v.get_addr()).map(|(name, _, _)| name)
 }
 
+/// The import whose address `op` reads when `vn` is the slot of a data import
+/// itself, not a pointer through it: the loader fills the slot with the import's
+/// address, so a read of the whole value it was loaded with, before or after a
+/// call, is `&import`. An operator C does not apply to a pointer (a mask, a
+/// shift, a multiply) keeps the slot name.
+fn import_slot_address(fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId) -> Option<String> {
+    if arch.data_import_slots.is_empty() {
+        return None;
+    }
+    let v = fd.vbank().get(vn)?;
+    let slot = v.get_addr();
+    let space = slot.get_space()?;
+    let reader = fd.obank().get(op)?;
+    if !(v.is_persist() && arch.data_import_slots.contains(&(space.get_index(), slot.get_offset())))
+        || v.get_size() as u32 != space.get_addr_size()
+        || reader.get_out() == Some(vn)
+        || integer_only_operator(reader.code())
+        || !holds_loaded_value(fd, vn, 8)
+    {
+        return None;
+    }
+    fd.get_arch().query_function(v.get_addr()).map(|(name, _, _)| name)
+}
+
+/// An operator whose C spelling rejects a pointer operand.
+fn integer_only_operator(code: OpCode) -> bool {
+    matches!(
+        code,
+        OpCode::CPUI_INT_AND
+            | OpCode::CPUI_INT_OR
+            | OpCode::CPUI_INT_XOR
+            | OpCode::CPUI_INT_NEGATE
+            | OpCode::CPUI_INT_2COMP
+            | OpCode::CPUI_INT_LEFT
+            | OpCode::CPUI_INT_RIGHT
+            | OpCode::CPUI_INT_SRIGHT
+            | OpCode::CPUI_INT_MULT
+            | OpCode::CPUI_INT_DIV
+            | OpCode::CPUI_INT_SDIV
+            | OpCode::CPUI_INT_REM
+            | OpCode::CPUI_INT_SREM
+    )
+}
+
+/// Is `vn` the slot's value at entry, carried only across calls (`INDIRECT`)
+/// and joins (`MULTIEQUAL`), never a value the function stored into it?
+fn holds_loaded_value(fd: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    let Some(v) = fd.vbank().get(vn) else { return false };
+    let Some(def) = v.get_def().filter(|_| v.is_written()) else { return true };
+    let Some(o) = fd.obank().get(def) else { return false };
+    depth > 0
+        && match o.code() {
+            OpCode::CPUI_INDIRECT => o.get_in(0).is_some_and(|i| holds_loaded_value(fd, i, depth - 1)),
+            OpCode::CPUI_MULTIEQUAL => {
+                (0..o.num_input()).all(|k| o.get_in(k).is_some_and(|i| i == vn || holds_loaded_value(fd, i, depth - 1)))
+            }
+            _ => false,
+        }
+}
+
 /// Does a printed op other than a `LOAD` through `vn` (directly or through
 /// inline COPYs) read `vn`?
 fn read_beyond_loads(fd: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
@@ -12327,6 +13010,21 @@ fn sblocks_basic_head(fd: &Funcdata, bb: BlockId) -> Option<OpId> {
         BlockKind::Basic(b) => b.op_head,
         _ => None,
     }
+}
+
+/// (kuna `loweredswitch`) The selector of the re-rolled switch `blk` and its
+/// `char` type, when the selector is a one-byte character, or of no known type
+/// and so read as the `char` its equality compares read it as.
+fn lowered_char_selector(fd: &Funcdata, blk: BlockId) -> Option<(std::rc::Rc<crate::dtype::Datatype>, VarnodeId)> {
+    let jt = fd.get_jump_table(fd.sblocks_ref().block(blk).switch_jt_index()? as int4);
+    jt.kuna_lowered_var()?;
+    let op = jt.get_indirect_op()?;
+    let vn = fd.obank().get(op)?.get_in(0)?;
+    let mut ct = fd.vn_type_read_facing(vn, op);
+    if ct.get_metatype() == type_metatype::TYPE_UNKNOWN {
+        ct = crate::p5_types::coreaction_infertypes::input_type_local(fd, op, 0);
+    }
+    (ct.get_size() == 1 && ct.is_char_print()).then_some((ct, vn))
 }
 
 /// Tail op of an sblocks-arena basic block.
@@ -12647,6 +13345,18 @@ pub(crate) fn sanitize_type_name(name: &str) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Owned(s)
 }
 
+/// The name declared in the type-definition block, shared by its uses.
+pub(crate) fn c_type_definition_name(ct: &crate::dtype::Datatype) -> Option<std::borrow::Cow<'_, str>> {
+    use crate::dtype::DatatypeKind;
+    if ct.is_core_type() || ct.get_name().is_empty() || ct.has_stripped() {
+        return None;
+    }
+    (ct.get_typedef().is_some()
+        || matches!(&ct.kind, DatatypeKind::Struct { .. } | DatatypeKind::Union { .. })
+        || ct.is_enum_type())
+        .then(|| sanitize_type_name(ct.get_name()))
+}
+
 /// (kuna, GH-340) Make `raw` safe to interpolate into a `/* … */` comment.
 ///
 /// The `/* renamed from "<raw>" */` note prints the type name a binary actually
@@ -12727,6 +13437,7 @@ pub(crate) fn compose_type_body(
     rt: RealTypeCtx,
 ) -> String {
     use crate::dtype::DatatypeKind;
+    let rt = rt.for_type_definition();
     let mut out = String::new();
     match &ct.kind {
         DatatypeKind::Struct { field, bitfield } => {
@@ -12828,7 +13539,7 @@ pub(crate) fn compose_typedef_line(
     name: &str,
     rt: RealTypeCtx,
 ) -> String {
-    format!("typedef {};\n", field_decl_text(base, name, rt.clone()))
+    format!("typedef {};\n", field_decl_text(base, name, rt.for_type_definition()))
 }
 
 /// (kuna) The full `docTypeDefinitions` walk over an already
@@ -12848,22 +13559,14 @@ pub(crate) fn render_type_definitions(
     let is_composite = |ct: &Rc<Datatype>| {
         matches!(&ct.kind, DatatypeKind::Struct { .. } | DatatypeKind::Union { .. })
     };
-    // A type this emitter renders: user-defined (non-core), named, not an
-    // internal partial (`has_stripped`), and a typedef / struct / union / enum.
-    let relevant = |ct: &Rc<Datatype>| {
-        !ct.is_core_type()
-            && !ct.get_name().is_empty()
-            && !ct.has_stripped()
-            && (ct.get_typedef().is_some() || is_composite(ct) || ct.is_enum_type())
-    };
-
     // Which sanitized composite tag names have a COMPLETE definition somewhere
     // (drives the `/* opaque */` annotation on forward-only names).
     let mut complete_names: HashSet<String> = HashSet::new();
     for ct in deporder {
-        if relevant(ct) && is_composite(ct) && ct.get_typedef().is_none() && !ct.is_incomplete()
-        {
-            complete_names.insert(sanitize_type_name(ct.get_name()).into_owned());
+        if is_composite(ct) && ct.get_typedef().is_none() && !ct.is_incomplete() {
+            if let Some(name) = c_type_definition_name(ct) {
+                complete_names.insert(name.into_owned());
+            }
         }
     }
 
@@ -12872,11 +13575,11 @@ pub(crate) fn render_type_definitions(
     // -- Pass 1: the forward-declaration block (every struct/union tag). -----
     let mut fwd: HashSet<String> = HashSet::new();
     for ct in deporder {
-        if !relevant(ct) || !is_composite(ct) || ct.get_typedef().is_some() {
+        if !is_composite(ct) || ct.get_typedef().is_some() {
             continue;
         }
+        let Some(name) = c_type_definition_name(ct) else { continue };
         let raw = ct.get_name();
-        let name = sanitize_type_name(raw);
         if !fwd.insert(name.to_string()) {
             continue; // one forward declaration per tag name
         }
@@ -12897,11 +13600,8 @@ pub(crate) fn render_type_definitions(
     // -- Pass 2: bodies in dependency order. ---------------------------------
     let mut defined: HashSet<String> = HashSet::new();
     for ct in deporder {
-        if !relevant(ct) {
-            continue;
-        }
+        let Some(name) = c_type_definition_name(ct) else { continue };
         let raw = ct.get_name();
-        let name = sanitize_type_name(raw);
         if let Some(base) = ct.get_typedef() {
             // A typedef (of anything, including a composite clone — checked
             // FIRST since the clone carries the base's kind).  The struct-tag
@@ -12985,6 +13685,7 @@ impl RealTypeCtx {
             long_is_8: arch.types().get_size_of_long() == 8,
             ctypes: arch.ctypes,
             model: crate::kuna_ctypes::CDataModel::from_types(&*arch.types()),
+            c_type_definition: false,
             go_package: None,
             go_pair_types: (lang == crate::kuna_lang::OutLang::Go
                 && arch.analysis_godwarfsig).then(|| arch.types_rc()),
@@ -13727,6 +14428,12 @@ fn to_emit_hl(hl: crate::printlanguage::SyntaxHighlight) -> SyntaxHighlight {
         Pl::special_color => SyntaxHighlight::SpecialColor,
     }
 }
+
+#[path = "kuna_rustarrayinit.rs"]
+mod kuna_rustarrayinit;
+
+#[path = "kuna_rustoption_niche.rs"]
+mod kuna_rustoption_niche;
 
 #[cfg(test)]
 mod tests;

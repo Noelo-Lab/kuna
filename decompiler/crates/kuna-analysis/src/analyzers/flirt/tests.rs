@@ -4,12 +4,15 @@ use super::*;
 /// four bytes at offset 32, length 40, public `myfunc`.
 const TINY: &str = "49444153474e0600000000000000000000000000000000000000000000000000000007000001000000746573746c6962010400554889e50004bc1628006d7966756e6300";
 
-fn tiny() -> Signature {
-    let bytes: Vec<u8> = (0..TINY.len()).step_by(2).map(|i| u8::from_str_radix(&TINY[i..i + 2], 16).unwrap()).collect();
-    Signature::parse(&bytes).expect("tiny sig parses")
+pub(super) fn tiny() -> Signature {
+    Signature::parse(&tiny_bytes()).expect("tiny sig parses")
 }
 
-fn code() -> Vec<u8> {
+pub(super) fn tiny_bytes() -> Vec<u8> {
+    (0..TINY.len()).step_by(2).map(|i| u8::from_str_radix(&TINY[i..i + 2], 16).unwrap()).collect()
+}
+
+pub(super) fn code() -> Vec<u8> {
     let mut c = vec![0x55, 0x48, 0x89, 0xe5];
     c.extend([0u8; 28]);
     c.extend([0x90u8; 8]);
@@ -97,4 +100,37 @@ fn names_compare_without_decorations() {
     assert!(same_name("_strlen", "strlen"));
     assert!(same_name("j___imp__CreateFileW@28", "CreateFileW"));
     assert!(!same_name("strlen", "strnlen"));
+}
+
+#[test]
+fn reports_existing_matches_without_changing_rename_results() {
+    let signature = tiny();
+    let matcher = Matcher::new(&signature, Endian::Little);
+    let bytes = code();
+    let image = Image { spans: vec![(0x1000, &bytes)], x86_fields: true, pads: X86_PADS };
+    let listing = Listing::from_insns_for_test(Vec::new(), false);
+    let matchers = [matcher];
+    let expected = BTreeMap::from([(0x1000, "myfunc".into())]);
+    for sites in [false, true] {
+        assert_eq!(match_all(&matchers, &image, &listing, &[0x1000], HashMap::new(), sites), expected);
+        assert_eq!(accepted_matches(&matchers, &image, &listing, &[0x1000], HashMap::new(), sites), expected);
+        let existing = HashMap::from([(0x1000, "myfunc".into())]);
+        assert!(match_all(&matchers, &image, &listing, &[0x1000], existing.clone(), sites).is_empty());
+        assert_eq!(accepted_matches(&matchers, &image, &listing, &[0x1000], existing, sites), expected);
+        let elsewhere = HashMap::from([(0x2000, "myfunc".into())]);
+        assert!(accepted_matches(&matchers, &image, &listing, &[0x1000], elsewhere, sites).is_empty());
+    }
+}
+
+#[test]
+fn reporting_does_not_resolve_identical_names_at_two_entries() {
+    let signature = tiny();
+    let matchers = [Matcher::new(&signature, Endian::Little)];
+    let bytes = code();
+    let image = Image { spans: vec![(0x1000, &bytes), (0x2000, &bytes)], x86_fields: true, pads: X86_PADS };
+    let listing = Listing::from_insns_for_test(Vec::new(), false);
+    for sites in [false, true] {
+        assert!(match_all(&matchers, &image, &listing, &[0x1000, 0x2000], HashMap::new(), sites).is_empty());
+        assert!(accepted_matches(&matchers, &image, &listing, &[0x1000, 0x2000], HashMap::new(), sites).is_empty());
+    }
 }

@@ -46,7 +46,7 @@
   <stringmatch name="a full 16-byte vector parameter is not split" min="1" max="1">^void ccw_vector\(char a0\[16\]</stringmatch>
   <stringmatch name="a tagged address does not become a float" min="0" max="0">^.*ccw_tagged\((double|float8)</stringmatch>
   <stringmatch name="a mixed-width base stays a record, not a double pointer" min="1" max="1">^.*ccw_mixed\(struct_[0-9]+ \*a0\)</stringmatch>
-  <stringmatch name="the mixed record keeps its double field" min="1" max="1">a0->field_0x0 != 0\.0</stringmatch>
+  <stringmatch name="the mixed record keeps its double field" min="1" max="1">0\.0 &lt; a0->field_0x0</stringmatch>
   <stringmatch name="the mixed record keeps its short field" min="1" max="1">a0->field_0x16</stringmatch>
   <stringmatch name="a dynamic double array is a double access" min="1" max="1">\*\((double|float8) \*\)\(a0 \+ a1 \* 8\)</stringmatch>
   <stringmatch name="a non-dominated split value is typed float8" min="1" max="1">float8 v1; // d0</stringmatch>

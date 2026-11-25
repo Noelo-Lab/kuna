@@ -182,7 +182,7 @@ pub fn plan(fd: &Funcdata, arch: &Architecture, on: bool, is_c: bool) -> Plan {
                 pointees.insert(off, Seen::merge(seen, to, arch.elem_ptr));
             }
         } else if data_space.is_some() && v.get_addr().get_space().map(|s| s.get_index()) == data_space {
-            let unnamed = in_ranges(&arch.globalref_ranges, v.get_offset())
+            let unnamed = !v.is_annotation()
                 && fd.get_arch().query_container_global(v.get_addr(), v.get_size(), &Address::new_invalid()).is_none();
             // (kuna `elemptr`) A global the rule typed, or whose fold names its
             // pointee and which nothing uses as a number, is used only as that
@@ -446,6 +446,7 @@ fn void_reader_converts(fd: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
     let ty_of = |v: Option<VarnodeId>| v.and_then(|v| fd.vbank().get(v)).map(|v| Rc::clone(v.get_type()));
     match o.code() {
         OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN => slot >= 1,
+        OpCode::CPUI_CALLOTHER => fd.get_arch().rep_string && crate::kuna_repstring::input_type(fd, op, slot).is_some(),
         OpCode::CPUI_COPY => ty_of(o.get_out()).is_some_and(|t| is_void_pointer(&t)),
         OpCode::CPUI_STORE => {
             slot == 2

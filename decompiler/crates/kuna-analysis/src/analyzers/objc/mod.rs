@@ -54,6 +54,8 @@
 pub mod classt;
 pub mod encoding;
 pub mod kuna_objccats;
+mod kuna_objccache;
+pub mod kuna_objcdirect;
 pub mod kuna_objcivars;
 pub mod kuna_objcprops;
 pub mod kuna_objcprotos;
@@ -108,7 +110,11 @@ impl AnalysisPass for ObjcMetadataPass {
         } else {
             crate::loader::format::macho::resolve_dyld_info_binds(ctx.file, ctx.bytes)
         };
-        let img = MachoImage::with_fixups(ctx.file, fixups).with_binds(binds);
+        let mut img = MachoImage::with_fixups(ctx.file, fixups).with_binds(binds).with_method_symbols(ctx.file);
+        if let Some(cache) = ctx.image_path.and_then(kuna_objccache::CacheReader::open) {
+            let base = cache.selector_base();
+            img = img.with_cache(Rc::new(move |va, n| cache.read(va, n)), base);
+        }
         let architecture = ctx.file.architecture();
 
         // The type-mapping context for IMP/ivar prototypes (PR-O2).
@@ -124,7 +130,7 @@ impl AnalysisPass for ObjcMetadataPass {
         // classes are read first so every instance layout is known before any
         // method is typed — a subclass embeds its local superclass's struct.
         let mut classes: Vec<(classt::ClassT, String)> = Vec::new();
-        if let Some((cl_addr, cl_data)) = img.classlist(ctx.file) {
+        for (cl_addr, cl_data) in img.classlists(ctx.file) {
             let ps = img.ptr_size() as usize;
             for (i, _) in cl_data.chunks_exact(ps).enumerate() {
                 let Some(class_ptr) = img.read_ptr(cl_addr.wrapping_add((i * ps) as u64)) else { continue };
@@ -151,7 +157,7 @@ impl AnalysisPass for ObjcMetadataPass {
         for (class, name) in &classes {
             let meta_ro = classt::metaclass_ro(&img, class.isa);
             for ro in [Some(class.ro), meta_ro].into_iter().flatten() {
-                if let Some(list) = classt::base_methods(&img, ro) {
+                for list in classt::method_lists(&img, ro) {
                     for m in methods::walk_method_list(&img, list, architecture) {
                         selectors.record(&m.selector, m.types.as_deref());
                     }
@@ -196,10 +202,10 @@ impl AnalysisPass for ObjcMetadataPass {
             });
             let self_type = objcivars.then(|| structs.self_type(&tctx, name)).flatten();
             let shown = display_class_name(name);
-            if let Some(list) = classt::base_methods(&img, class.ro) {
+            for list in classt::method_lists(&img, class.ro) {
                 self.emit_methods(&img, &tctx, architecture, &shown, '-', list, self_type.as_ref(), &mut selectors, &mut out);
             }
-            if let Some(list) = classt::metaclass_ro(&img, class.isa).and_then(|ro| classt::base_methods(&img, ro)) {
+            for list in classt::metaclass_ro(&img, class.isa).map(|ro| classt::method_lists(&img, ro)).unwrap_or_default() {
                 self.emit_methods(&img, &tctx, architecture, &shown, '+', list, None, &mut selectors, &mut out);
             }
             if let Some(ivar_list) = classt::base_ivars(&img, class.ro) {
@@ -216,6 +222,7 @@ impl AnalysisPass for ObjcMetadataPass {
                 self.emit_methods(&img, &tctx, architecture, &cat.label, '+', list, None, &mut selectors, &mut out);
             }
         }
+        kuna_objcdirect::emit(&img, architecture, &tctx, objcivars.then_some(&structs), &mut out);
         for proto in &protocols {
             out.symbols.push(SymFact {
                 addr: proto.addr,
@@ -265,8 +272,17 @@ impl ObjcMetadataPass {
                 continue;
             }
             // `-[Greeter greet:]` / `+[Greeter classMethod]` — the ObjC method name
-            // the printer renders. Selectors are ASCII, so no demangling.
-            let label = format!("{kind}[{class} {sel}]", sel = m.selector);
+            // the printer renders. Selectors are ASCII, so no demangling. A symbol
+            // spelling the same method under another category name is kept.
+            let owner = class.split('(').next().unwrap_or(class);
+            let label = match img.method_symbol(m.imp, kind, owner, &m.selector) {
+                Some(symbol) => symbol.to_string(),
+                None => format!("{kind}[{class} {sel}]", sel = m.selector),
+            };
+            if img.in_cache() && img.read(m.imp, 4).is_none() {
+                out.import_slot_names.push((m.imp, label));
+                continue;
+            }
 
             // The IMP must exist as a function for the rename to bind, even when it
             // is reachable ONLY through the metadata (no call edge / no
@@ -292,7 +308,6 @@ impl ObjcMetadataPass {
             // The spelling the class's own property gives the selector, else the
             // method's own: another class's property of the same selector says
             // nothing about this class's return type.
-            let owner = class.split('(').next().unwrap_or(class);
             let enc = selectors.encoding_for_class(owner, &m.selector).map(str::to_string).or_else(|| m.types.clone());
             if let Some(enc) = enc.as_deref() {
                 if let Some(pieces) = encoding::decode_method(&label, enc, tctx, None) {
@@ -399,7 +414,7 @@ mod tests {
         assert_eq!(file.format(), object::BinaryFormat::MachO, "fixture must be a Mach-O");
 
         let img = MachoImage::new(&file);
-        let (cl_addr, cl_data) = img.classlist(&file).expect("__objc_classlist present");
+        let (cl_addr, cl_data) = img.classlists(&file).into_iter().next().expect("__objc_classlist present");
         let ps = img.ptr_size() as usize;
         assert_eq!(ps, 8, "the fixture is a 64-bit Mach-O");
 
@@ -436,7 +451,7 @@ mod tests {
         assert_eq!(file.architecture(), object::Architecture::X86_64);
 
         let img = MachoImage::new(&file);
-        let (cl_addr, _) = img.classlist(&file).expect("__objc_classlist present");
+        let (cl_addr, _) = img.classlists(&file).into_iter().next().expect("__objc_classlist present");
         let class_ptr = img.read_ptr(cl_addr).expect("class_t pointer");
         let class = classt::read_class_t(&img, class_ptr).expect("class_t reads");
         let list = classt::base_methods(&img, class.ro).expect("baseMethods present");
@@ -491,7 +506,7 @@ mod tests {
 
         // (2) The arm64 walk THROUGH the resolved overlay recovers the method name.
         let img = MachoImage::with_fixups(&file, fixups);
-        let (cl_addr, _cl_data) = img.classlist(&file).expect("__objc_classlist present");
+        let (cl_addr, _cl_data) = img.classlists(&file).into_iter().next().expect("__objc_classlist present");
         let class_ptr = img.read_ptr(cl_addr).expect("class_t pointer (resolved)");
         assert_eq!(class_ptr, 0x100008000, "the resolved class_t VMA");
 
@@ -527,7 +542,7 @@ mod tests {
             // With an empty overlay, read_ptr falls through to the raw section word.
             let img = MachoImage::with_fixups(&file, fixups);
             let img_raw = MachoImage::new(&file);
-            if let Some((cl_addr, _)) = img.classlist(&file) {
+            if let Some((cl_addr, _)) = img.classlists(&file).into_iter().next() {
                 assert_eq!(
                     img.read_ptr(cl_addr),
                     img_raw.read_ptr(cl_addr),

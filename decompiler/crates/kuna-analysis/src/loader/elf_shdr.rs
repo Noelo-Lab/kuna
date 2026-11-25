@@ -83,7 +83,8 @@ pub fn read_image_selected(
         None => std::fs::read(path)?,
     };
     let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::in_force();
-    let peeled = super::kuna_kernelcache::peel(bytes, &choice).map_err(std::io::Error::other)?;
+    let peeled = super::kuna_kernelcache::peel_file(std::path::Path::new(path), bytes, &choice)
+        .map_err(std::io::Error::other)?;
     let bytes = super::macho_fat::peel_fat_image(peeled.bytes, pref);
     let (bytes, shdr) = tolerate_unusable_section_table(bytes);
     let (bytes, magic) = super::pe_dosmagic::tolerate_corrupt_dos_magic(bytes);
