@@ -74,6 +74,7 @@ artifact builders, moved there from `kuna-cli` so wasm32-wasip1 can reach them w
 
 ```
 metadata(binary).len() → resolve_overrides_for_size(...) // <500 KiB aggressive; <2 MiB reliable; else fast; auto adds ctypes=on
+  → load-time overrides (macho-arm64e, ppc32picimports) into the environment, restored once the program is built
   → bootstrap_from_object(binary, "", [spec_root])   // load image + resolve arch + build translator
   → apply resolved overrides + command-scoped discovery policy + non-conflicting driver injections
   → commit_pending_analysis()                                   // the `read symbols` seam

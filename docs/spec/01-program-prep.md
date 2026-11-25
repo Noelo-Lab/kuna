@@ -2350,8 +2350,8 @@ funcsym stream:
   and table reads per code word; an image that exhausts it gets no PIC names. Both byte orders
   are supported. Off keeps PIC stubs unresolved; BSS-PLT and absolute stubs
   are unaffected. In the console, set the option before `load file`; CLI
-  options are bridged before either loader runs. The `abi` mode is opt-in because
-  the proof walks every function:
+  options are bridged before either loader runs. The `abi` mode is off in the
+  catalog default because the proof walks every function:
   about 0.15-0.3 s for libstdc++ or libc, which makes listing a PPC32 PIC
   image's functions about 1.05-1.35x slower and a single-function decompile
   of a large library up to 2.9x. A meet updates the stored state in place and
@@ -2363,7 +2363,9 @@ funcsym stream:
   preset's `abi` before it loads the image, the browser restoring the
   load-option environment afterwards; the console's `mode` on an open image
   sets it for the next `load file` and keeps the live mode, and the Ghidra
-  preset layer skips it. Other formats pay nothing,
+  preset layer skips it. `kuna xrefs` loads under `reliable` unless `--mode`
+  names another preset, so it names these imports only with `--mode
+  aggressive` or the option. Other formats pay nothing,
   and the proof runs once per image content. Resolved PPC32 import names take
   precedence over local stub labels, which remain aliases. Existing library
   prototypes, no-return facts and name-based xrefs therefore see the same

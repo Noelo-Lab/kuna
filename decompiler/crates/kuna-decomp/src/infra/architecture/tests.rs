@@ -163,7 +163,9 @@ fn apply_mode_aggressive_flips_offdefault_flags_but_not_dwarf_lines() {
     assert!(!arch.switch_guard_bound);
     assert!(!arch.analysis_dwarf_lines);
 
+    let environment = crate::kuna_loadoptions::EnvSnapshot::capture();
     arch.apply_mode("aggressive").expect("aggressive mode applies");
+    environment.restore();
 
     // Representative aggressive members turned on.
     assert!(arch.analysis_listing);
